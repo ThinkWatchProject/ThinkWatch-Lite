@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* 主题在首次绘制之前定好，否则会闪一下白（DESIGN.md §9.7）。
+   这里直接跟随系统，没有切换器就不需要那段内联脚本。 */
+:root {
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
