@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useRequests } from "./useRequests";
-import type { CoreStatus } from "./types";
+import Setup from "./Setup";
+import Connect from "./Connect";
+import type { CoreStatus, SetupResponse } from "./types";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" } {
@@ -21,6 +23,7 @@ export default function App() {
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
+  const [setup, setSetup] = useState<SetupResponse | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -52,6 +55,23 @@ export default function App() {
   }, []);
 
   const c = describeCore(core);
+
+  // 引导：还没有上游就走 §7.6 的五步。判据是 status.providers，不是一个
+  // 单独的「引导完了没」标志 —— 那种标志会和真实状态漂移，然后出现
+  // 「明明配好了却还在引导」或者反过来。
+  if (status && status.providers === 0 && !setup) {
+    return <Setup onDone={setSetup} />;
+  }
+  // 刚配完：等第一个请求。
+  //
+  // **收到之后不要立刻切走** —— 那一声「它真的在工作了」是整个引导的
+  // 收尾，也是这类工具最难的一关（让用户相信流量真的经过我们了）。
+  // 切换交给用户点，不要替他做。
+  if (setup) {
+    return (
+      <Connect setup={setup} seen={rows.length > 0} onEnter={() => setSetup(null)} />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">

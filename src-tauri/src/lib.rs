@@ -17,6 +17,7 @@ use supervisor::{CoreState, Supervisor};
 pub struct AppState {
     pub control: ControlClient,
     pub core_state: Arc<tokio::sync::Mutex<CoreState>>,
+    pub supervisor: Arc<Supervisor>,
 }
 
 /// twcore 在哪。
@@ -80,10 +81,51 @@ async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String>
     })
 }
 
+#[tauri::command]
+async fn probe_upstream(
+    state: tauri::State<'_, AppState>,
+    base_url: String,
+    key: String,
+) -> Result<tw_api::ProbeResponse, String> {
+    state
+        .control
+        .probe(&base_url, &key)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn setup_first_provider(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    base_url: String,
+    key: String,
+) -> Result<tw_api::SetupResponse, String> {
+    let r = state
+        .control
+        .setup(&name, &base_url, &key)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    // 配置写完必须让 core 重起才生效（M2 之前没有热重载）。**不做这一步
+    // 的话，用户点完「用它」会发现什么都没变** —— 而他没有任何线索知道
+    // 是因为进程还端着旧配置。
+    state
+        .supervisor
+        .request_restart()
+        .await
+        .map_err(|e| format!("配置写好了，但 core 没能重启：{e:#}。手动重开一次应用即可。"))?;
+    Ok(r)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![core_status, core_state])
+        .invoke_handler(tauri::generate_handler![
+            core_status,
+            core_state,
+            probe_upstream,
+            setup_first_provider
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let binary = locate_core(&handle)?;
@@ -94,6 +136,7 @@ pub fn run() {
             app.manage(AppState {
                 control: ControlClient::new(socket),
                 core_state: core_state.clone(),
+                supervisor: sup.clone(),
             });
 
             // 守护循环。**它跑在后台任务里而不是阻塞 setup** —— core 起

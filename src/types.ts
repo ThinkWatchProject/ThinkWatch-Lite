@@ -78,3 +78,17 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     }
   }
 }
+
+export interface ProbeResponse {
+  ok: boolean;
+  protocol: string | null;
+  latency_ms: number;
+  models: string[];
+  error: string | null;
+}
+
+export interface SetupResponse {
+  gateway_key: string;
+  gateway_addr: string;
+  config_path: string;
+}

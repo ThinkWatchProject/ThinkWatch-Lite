@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
@@ -40,6 +41,12 @@ pub struct Supervisor {
     config: Option<PathBuf>,
     policy: Mutex<RestartPolicy>,
     state: Arc<Mutex<CoreState>>,
+    /// 这次退出是我们自己要求的吗。
+    ///
+    /// **主动重启不该算进退避阶梯** —— 改一次配置就重启一次，配五次就
+    /// 进安全模式，那是荒唐的。这个标志把「它崩了」和「我们让它退的」
+    /// 分开，而这两件事在 `wait()` 眼里长得一模一样。
+    intentional: Arc<AtomicBool>,
 }
 
 impl Supervisor {
@@ -49,11 +56,30 @@ impl Supervisor {
             config,
             policy: Mutex::new(RestartPolicy::new()),
             state: Arc::new(Mutex::new(CoreState::Stopped)),
+            intentional: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn state_handle(&self) -> Arc<Mutex<CoreState>> {
         self.state.clone()
+    }
+
+    /// 让 core 重起一次（改完配置之后用）。
+    ///
+    /// 做法是标记意图然后杀掉它，让守护循环自己把它拉起来 —— 而不是在
+    /// 这里再写一遍启动逻辑。两处启动逻辑就是两处会漂移。
+    pub async fn request_restart(&self) -> anyhow::Result<()> {
+        let pid = match &*self.state.lock().await {
+            CoreState::Running { pid } => *pid,
+            other => anyhow::bail!("core 现在是 {other:?}，没在跑，不用重启"),
+        };
+        self.intentional.store(true, Ordering::SeqCst);
+        // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉。
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        Ok(())
     }
 
     /// 拼命令行。
@@ -108,6 +134,16 @@ impl Supervisor {
             // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
             *self.state.lock().await = CoreState::Stopped;
             return Ok(false);
+        }
+
+        if self.intentional.swap(false, Ordering::SeqCst) {
+            // 我们自己要求的退出。立刻重起，不计入失败。
+            tracing::info!("按要求重启 core");
+            *self.state.lock().await = CoreState::Restarting {
+                attempt: 0,
+                in_ms: 0,
+            };
+            return Ok(true);
         }
 
         let mut policy = self.policy.lock().await;
@@ -187,6 +223,13 @@ mod tests {
         // 一个「装错了」的问题伪装成「core 一直在崩」。
         let s = sup();
         assert!(s.run_once(false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn restarting_something_that_is_not_running_says_so() {
+        // 不该静默成功 —— 那会让「配置改了但没生效」多一种成因。
+        let s = sup();
+        assert!(s.request_restart().await.is_err());
     }
 
     #[tokio::test]

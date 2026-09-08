@@ -72,6 +72,73 @@ impl ControlClient {
         Ok(s)
     }
 
+    /// 发一个 POST，body 是 JSON。
+    async fn post_json<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Req,
+    ) -> Result<Res> {
+        let stream = tokio::net::UnixStream::connect(&self.socket)
+            .await
+            .with_context(|| {
+                format!(
+                    "连不上控制面 {}。core 可能还没起来，或者已经挂了。",
+                    self.socket.display()
+                )
+            })?;
+        let io = TokioIo::new(stream);
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+        tokio::spawn(async move {
+            let _ = conn.await;
+        });
+        let payload = serde_json::to_string(body)?;
+        let req = hyper::Request::builder()
+            .method(hyper::Method::POST)
+            .uri(path)
+            .header(hyper::header::HOST, "localhost")
+            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .body(payload)?;
+        let resp = sender.send_request(req).await?;
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await?.to_bytes();
+        if !status.is_success() {
+            // 控制面对可预期的失败回的是人话（比如「已经配过上游了」），
+            // 原样带出去 —— 在这里重新包装一遍只会把它埋掉。
+            anyhow::bail!("{}", String::from_utf8_lossy(&bytes));
+        }
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    /// 探一个上游能不能用。零成本，用户可以随便点。
+    pub async fn probe(&self, base_url: &str, key: &str) -> Result<tw_api::ProbeResponse> {
+        self.post_json(
+            "/probe",
+            &tw_api::ProbeRequest {
+                base_url: base_url.to_string(),
+                key: key.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// 首次运行：写下第一个上游。
+    pub async fn setup(
+        &self,
+        name: &str,
+        base_url: &str,
+        key: &str,
+    ) -> Result<tw_api::SetupResponse> {
+        self.post_json(
+            "/setup",
+            &tw_api::SetupRequest {
+                name: name.to_string(),
+                base_url: base_url.to_string(),
+                key: key.to_string(),
+            },
+        )
+        .await
+    }
+
     /// 订阅事件流，逐条交给回调。
     ///
     /// 断开就返回 —— **重连由调用方决定**。守护那边已经有退避逻辑了，

@@ -21,6 +21,7 @@ tauri-plugin-shell = "2"
 tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", branch = "main" }
 
 anyhow = "1"
+libc = "0.2"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "client", "client-legacy"] }
 http-body-util = "0.1"
