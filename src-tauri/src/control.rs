@@ -151,6 +151,12 @@ impl ControlClient {
         .await
     }
 
+    /// 界面要显示的配置概览。
+    pub async fn overview(&self) -> Result<tw_api::Overview> {
+        let body = self.get("/overview").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
     /// 订阅事件流，逐条交给回调。
     ///
     /// 断开就返回 —— **重连由调用方决定**。守护那边已经有退避逻辑了，

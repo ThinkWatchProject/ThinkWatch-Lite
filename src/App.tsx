@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRequests } from "./useRequests";
 import Setup from "./Setup";
 import Connect from "./Connect";
-import type { CoreStatus, SetupResponse } from "./types";
+import Config from "./Config";
+import type { CoreStatus, Overview, SetupResponse } from "./types";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" } {
@@ -24,6 +25,8 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
+  const [tab, setTab] = useState<"requests" | "config">("requests");
+  const [ov, setOv] = useState<Overview | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -38,6 +41,12 @@ export default function App() {
         }
       } catch (e) {
         if (alive) setError(typeof e === "string" ? e : String(e));
+      }
+      try {
+        const o = await invoke<Overview>("overview");
+        if (alive) setOv(o);
+      } catch {
+        /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
       try {
         const c = await invoke<string>("core_state");
@@ -96,9 +105,22 @@ export default function App() {
         {status?.gateway_addr && (
           <code className="text-xs text-neutral-500">{status.gateway_addr}</code>
         )}
-        <span className="ml-auto text-xs text-neutral-500">
-          {status ? `${status.providers} 个上游 · ${status.clients} 个客户端` : ""}
-        </span>
+        <nav className="ml-auto flex gap-1 text-xs">
+          {(["requests", "config"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={
+                "rounded px-2 py-1 " +
+                (tab === t
+                  ? "bg-neutral-200 dark:bg-neutral-800"
+                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+              }
+            >
+              {t === "requests" ? "请求" : "配置"}
+            </button>
+          ))}
+        </nav>
       </header>
 
       {error && (
@@ -107,6 +129,13 @@ export default function App() {
         </div>
       )}
 
+      {tab === "config" ? (
+        ov ? (
+          <Config ov={ov} />
+        ) : (
+          <p className="p-5 text-xs text-neutral-500">读取配置中…</p>
+        )
+      ) : (
       <main className="p-5">
         {rows.length === 0 ? (
           // 空状态永远在回答「接下来该做什么」（§7.13）。
@@ -166,6 +195,7 @@ export default function App() {
           </table>
         )}
       </main>
+      )}
     </div>
   );
 }

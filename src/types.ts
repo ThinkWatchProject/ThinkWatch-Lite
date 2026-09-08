@@ -101,3 +101,49 @@ export interface SetupResponse {
   gateway_addr: string;
   config_path: string;
 }
+
+// —— 配置概览。**密钥只有来源，没有值** —— Rust 侧就没发过来。 ——
+export interface ProviderView {
+  name: string;
+  base_url: string;
+  key_source: string;
+  protocol: string | null;
+  proxy: string;
+  health: "ok" | "open";
+}
+
+export interface RouteView {
+  name: string;
+  to: string;
+  /** 空 = 兜底 */
+  conditions: string[];
+}
+
+export interface GroupView {
+  name: string;
+  kind: string;
+  providers: string[];
+  /** 这个策略会不会让 prompt cache 不稳定。**要直说** —— 它决定账单。 */
+  hurts_cache: boolean;
+}
+
+export interface ClientView {
+  name: string;
+  key: string;
+  max_concurrent: number | null;
+}
+
+export interface ListenView {
+  bind: string;
+  port: number;
+  allow_from: string[];
+  exposed: boolean;
+}
+
+export interface Overview {
+  providers: ProviderView[];
+  routes: RouteView[];
+  groups: GroupView[];
+  clients: ClientView[];
+  listen: ListenView;
+}

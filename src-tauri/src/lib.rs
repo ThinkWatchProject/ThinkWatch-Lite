@@ -87,6 +87,11 @@ async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String>
 }
 
 #[tauri::command]
+async fn overview(state: tauri::State<'_, AppState>) -> Result<tw_api::Overview, String> {
+    state.control.overview().await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn probe_upstream(
     state: tauri::State<'_, AppState>,
     base_url: String,
@@ -136,6 +141,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             core_status,
             core_state,
+            overview,
             probe_upstream,
             setup_first_provider
         ])
