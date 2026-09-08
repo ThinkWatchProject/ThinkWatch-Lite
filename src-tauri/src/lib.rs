@@ -6,9 +6,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tauri::image::Image;
+use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
 pub mod control;
+pub mod menubar;
 pub mod supervisor;
 
 use control::ControlClient;
@@ -146,6 +149,14 @@ pub fn run() {
                 supervise(sup, h).await;
             });
 
+            // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
+            // 用户就已经看到它了 —— 开机自启时尤其重要（§2.4）。
+            let tray = build_tray(&handle)?;
+            let h = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                menubar_loop(tray, h).await;
+            });
+
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();
             let sock = default_socket();
@@ -198,6 +209,79 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
             tracing::debug!("事件流断开：{e:#}");
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+/// 建托盘。图标先画一个「启动中」的状态。
+///
+/// **不在 tauri.conf.json 里配 `trayIcon`** —— 配了的话 Tauri 会自己再
+/// 建一个，菜单栏上就出现两个图标。图标是运行时画出来的（§7.4：两行
+/// 必须自己渲染成图片），配置里那份静态图没有意义。
+fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
+    let s = menubar::MenuBarState::default();
+    let (rgba, w, h) = menubar::render_rgba(
+        &s.line1(),
+        &s.line2(),
+        s.is_template(),
+        menubar::Appearance::Dark,
+    );
+    let tray = TrayIconBuilder::new()
+        .icon(Image::new_owned(rgba, w, h))
+        // 模板图靠 alpha 自动跟随菜单栏亮暗反色
+        .icon_as_template(true)
+        .build(app)?;
+    Ok(tray)
+}
+
+/// 每秒更新一次菜单栏。
+///
+/// **空闲时跳过渲染**（§7.4）：文字没变就不重画。菜单栏是这个应用唯一
+/// 常驻的东西，它自己耗电就直接违反了「空闲 CPU 约等于零」。
+async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
+    let mut prev = menubar::MenuBarState::default();
+    // 第一帧无条件画，之后靠 needs_redraw
+    let mut first = true;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        let next = match app.try_state::<AppState>() {
+            Some(state) => collect_menubar_state(&state).await,
+            None => continue,
+        };
+        if !first && !next.needs_redraw(&prev) {
+            continue;
+        }
+        first = false;
+
+        let template = next.is_template();
+        let (rgba, w, h) = menubar::render_rgba(
+            &next.line1(),
+            &next.line2(),
+            template,
+            menubar::Appearance::Dark,
+        );
+        let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
+        // **模板标志要跟着状态一起切**（§7.4）：告警时关掉它才能上色，
+        // 恢复时再打开才能重新自动适配亮暗。
+        let _ = tray.set_icon_as_template(template);
+        prev = next;
+    }
+}
+
+async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::MenuBarState {
+    let core = state.core_state.lock().await.clone();
+    let status = match core {
+        CoreState::Running { .. } => menubar::Status::Normal,
+        CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,
+        CoreState::SafeMode | CoreState::Stopped => menubar::Status::Disconnected,
+    };
+    // 花费和速率要等 M3 的计价才有真数（§4.3）。**现在如实显示「不知道」**
+    // ——画一个 $0.00 会是一个断言：今天没花钱。那不是我们知道的事。
+    menubar::MenuBarState {
+        cost_today: None,
+        tokens_per_sec: None,
+        active: 0,
+        status,
     }
 }
 
