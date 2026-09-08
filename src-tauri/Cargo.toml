@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-autostart = "2"
 tauri-plugin-shell = "2"
 
 # 控制面契约来自 core。UI 和 CLI 依赖同一份类型，不会各写一遍。

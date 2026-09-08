@@ -55,6 +55,18 @@ impl ControlClient {
         Ok(resp.into_body().collect().await?.to_bytes().to_vec())
     }
 
+    /// 带超时的心跳探测。
+    ///
+    /// **必须有超时**：一个卡死的 core 会让连接一直挂着，而没有超时的
+    /// 探测本身就变成了卡死的一部分 —— 守护会永远停在这一行，再也发现
+    /// 不了任何东西。
+    pub async fn ping(&self, timeout: std::time::Duration) -> Result<()> {
+        tokio::time::timeout(timeout, self.get("/status"))
+            .await
+            .map_err(|_| anyhow::anyhow!("控制面 {timeout:?} 内没回话"))??;
+        Ok(())
+    }
+
     pub async fn status(&self) -> Result<tw_api::Status> {
         let body = self.get("/status").await?;
         let s: tw_api::Status = serde_json::from_slice(&body)?;

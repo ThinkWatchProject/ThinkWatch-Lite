@@ -11,8 +11,10 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
+pub mod health;
 pub mod policy;
 
+pub use health::{HealthTracker, Verdict};
 pub use policy::{Decision, RestartPolicy, should_interrupt};
 
 /// 跑多久算「这次起来是健康的」。短于这个时间就死，说明是启动就崩，
@@ -62,6 +64,32 @@ impl Supervisor {
 
     pub fn state_handle(&self) -> Arc<Mutex<CoreState>> {
         self.state.clone()
+    }
+
+    /// core 活着但不响应了，把它换掉。
+    ///
+    /// **和 `request_restart` 的区别在于计不计入退避**：这是一次失败，
+    /// 如果 core 反复卡死，最终应该进安全模式。改配置那种重启不是。
+    pub async fn report_wedged(&self) -> anyhow::Result<()> {
+        let pid = match &*self.state.lock().await {
+            CoreState::Running { pid } => *pid,
+            other => anyhow::bail!("core 现在是 {other:?}，不用管"),
+        };
+        tracing::error!(pid, "core 活着但不响应，换掉它");
+        // 卡死的进程可能连信号处理器都跑不了，所以先 TERM 后 KILL。
+        // 只发 TERM 的话，一个真的死锁住的进程会一直留着。
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        // 还在的话强杀。这里不检查它死没死 —— kill 一个已经没了的 pid
+        // 是无害的，而多做一次检查会引入一个 TOCTOU 窗口。
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+        Ok(())
     }
 
     /// 让 core 重起一次（改完配置之后用）。
