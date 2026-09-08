@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ProbeResponse, SetupResponse } from "./types";
+import type { ModelList, ProbeResponse, SetupResponse } from "./types";
 
 /**
  * 首次运行（DESIGN.md §7.6）。全程不该超过三分钟。
@@ -125,16 +125,7 @@ export default function Setup({ onDone }: { onDone: (r: SetupResponse) => void }
           <p className="font-medium text-emerald-800 dark:text-emerald-200">
             通了 · {probe.latency_ms}ms
           </p>
-          {probe.models.length > 0 ? (
-            <p className="mt-1 text-emerald-700 dark:text-emerald-300">
-              报出 {probe.models.length} 个模型，比如 {probe.models.slice(0, 3).join("、")}
-            </p>
-          ) : (
-            // 拿不到列表不是失败。说清楚，否则用户会以为哪里没配对。
-            <p className="mt-1 text-emerald-700 dark:text-emerald-300">
-              这家不提供模型列表 —— 很常见，不影响使用。
-            </p>
-          )}
+          <ModelNote list={probe.models} />
           <button
             onClick={doSetup}
             disabled={busy}
@@ -146,4 +137,53 @@ export default function Setup({ onDone }: { onDone: (r: SetupResponse) => void }
       )}
     </div>
   );
+}
+
+/**
+ * 模型清单的结果说人话。
+ *
+ * **三种"没有列表"要分开说**，因为它们该让用户做的事不一样：上游没这个
+ * 接口 → 知道就行；我们没认出格式 → 这是我们的 bug，值得反馈；真的空
+ * → 大概率账号有问题。塌成一句"这家不提供模型列表"会把后两种都说成
+ * 第一种，而那在第二种情况下是**编的**。
+ */
+function ModelNote({ list }: { list: ModelList }) {
+  const base = "mt-1 text-emerald-700 dark:text-emerald-300";
+  switch (list.kind) {
+    case "listed":
+      return (
+        <p className={base}>
+          报出 {list.models.length} 个模型，比如 {list.models.slice(0, 3).join("、")}
+        </p>
+      );
+    case "not_implemented":
+      return (
+        <p className={base}>
+          这家没有模型列表接口（HTTP {list.status}）—— 很常见，转发不受影响。
+          <br />
+          代价是按模型筛选、模型清单这些功能对它用不了。
+        </p>
+      );
+    case "unrecognized":
+      // 这条要显眼，而且要说清楚是**我们**没认出来。用户看到它应该想到
+      // "去提个 issue"，而不是"这家上游有问题"。
+      return (
+        <div className="mt-1 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <p className="font-medium">它返回了模型列表，但我们没认出格式。</p>
+          <p className="mt-1">
+            转发不受影响，但模型相关的功能对它用不了。
+            <b>这是我们的解析缺口，不是这家上游的问题</b> —— 把下面这段贴给我们就能修。
+          </p>
+          <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 p-1.5 font-mono text-[10px] dark:bg-amber-900">
+            {list.sample}
+          </pre>
+        </div>
+      );
+    case "empty":
+      return (
+        <p className={base}>
+          它说自己一个模型都没有。转发能通，但这通常意味着账号还没开通权限。
+        </p>
+      );
+  }
 }

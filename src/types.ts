@@ -79,11 +79,20 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
   }
 }
 
+/** 模型清单的结果。空列表不足以表达三种不同的情况 —— 见 Rust 侧的注释。 */
+export type ModelList =
+  | { kind: "listed"; models: string[] }
+  /** 上游没有这个接口。不是错误，但按模型路由那类功能对它用不了。 */
+  | { kind: "not_implemented"; status: number }
+  /** 2xx 但我们没认出形状 —— 这是我们的缺口，要报出来去修。 */
+  | { kind: "unrecognized"; sample: string }
+  | { kind: "empty" };
+
 export interface ProbeResponse {
   ok: boolean;
   protocol: string | null;
   latency_ms: number;
-  models: string[];
+  models: ModelList;
   error: string | null;
 }
 
