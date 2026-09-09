@@ -20,7 +20,7 @@ function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" 
 }
 
 export default function App() {
-  const rows = useRequests();
+  const { rows, locallyAnswered } = useRequests();
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +78,11 @@ export default function App() {
   // 切换交给用户点，不要替他做。
   if (setup) {
     return (
-      <Connect setup={setup} seen={rows.length > 0} onEnter={() => setSetup(null)} />
+      <Connect
+          setup={setup}
+          seen={rows.length > 0 || locallyAnswered > 0}
+          onEnter={() => setSetup(null)}
+        />
     );
   }
 
@@ -152,6 +156,13 @@ export default function App() {
               <br />
               第一个请求进来时，它会出现在这里。
             </p>
+            {locallyAnswered > 0 && (
+              // **这句话信息量很大**：客户端已经连上了，只是还没发过真实
+              // 请求。没有它，用户会以为整条链路都不通（§4.8）。
+              <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-300">
+                已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
+              </p>
+            )}
           </div>
         ) : (
           <table className="w-full text-left text-xs tabular-nums">
@@ -193,6 +204,11 @@ export default function App() {
               ))}
             </tbody>
           </table>
+        )}
+        {locallyAnswered > 0 && rows.length > 0 && (
+          <p className="mt-3 text-xs text-neutral-500">
+            另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
+          </p>
         )}
       </main>
       )}

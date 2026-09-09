@@ -15,6 +15,9 @@ const MAX_ROWS = 500;
  */
 export function useRequests() {
   const [rows, setRows] = useState<RequestRow[]>([]);
+  // 本地应答单独计数。**这是个正向数字**（§4.8）—— 它既证明客户端确实
+  // 连上了，又说明那些探测一分钱都没花。
+  const [locallyAnswered, setLocallyAnswered] = useState(0);
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
@@ -25,7 +28,12 @@ export function useRequests() {
       if (pending.current.length === 0) return;
       const batch = pending.current;
       pending.current = [];
-      for (const ev of batch) applyEvent(store.current, ev);
+      let local = 0;
+      for (const ev of batch) {
+        if (ev.kind === "locally_answered") local += 1;
+        applyEvent(store.current, ev);
+      }
+      if (local > 0) setLocallyAnswered((n) => n + local);
       // 超出上限时按 id 顺序丢最老的
       if (store.current.size > MAX_ROWS) {
         const ids = [...store.current.keys()].sort((a, b) => a - b);
@@ -53,5 +61,5 @@ export function useRequests() {
     };
   }, []);
 
-  return rows;
+  return { rows, locallyAnswered };
 }

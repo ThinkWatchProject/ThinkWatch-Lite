@@ -9,7 +9,14 @@ export type CoreEvent =
   | { kind: "request_started"; id: number; client: string; provider: string; method: string; path: string; at_ms: number }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
   | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number }
-  | { kind: "request_failed"; id: number; source: string; message: string };
+  | { kind: "request_failed"; id: number; source: string; message: string }
+  /**
+   * 客户端的辅助请求被本地应答了，一个字节都没发给上游（§4.8）。
+   *
+   * **它不进请求列表。**成本 0、延迟 0 的东西混进请求总数和延迟统计里，
+   * 会让那两个数字都变得没意义。它单独计数。
+   */
+  | { kind: "locally_answered"; id: number; client: string; probe: string; at_ms: number };
 
 export interface CoreStatus {
   api_version: number;
@@ -68,6 +75,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       }
       break;
     }
+    case "locally_answered":
+      // 故意不建行。计数在 useRequests 里单独做。
+      break;
     case "request_failed": {
       const r = rows.get(ev.id);
       if (r) {
