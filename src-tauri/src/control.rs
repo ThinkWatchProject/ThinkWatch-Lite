@@ -167,6 +167,30 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
 
+    /// L3 测速要花多少。**必须先问这个。**
+    pub async fn speed_quote(&self, model: String) -> Result<tw_api::SpeedQuote> {
+        self.post_json(
+            "/speed/quote",
+            &tw_api::SpeedRunRequest {
+                provider: None,
+                model,
+            },
+        )
+        .await
+    }
+
+    /// 真的跑。**这一步花钱。**
+    pub async fn speed_run(&self, model: String) -> Result<Vec<tw_api::SpeedResult>> {
+        self.post_json(
+            "/speed/run",
+            &tw_api::SpeedRunRequest {
+                provider: None,
+                model,
+            },
+        )
+        .await
+    }
+
     /// 出站密钥检测攒下的证据（§5.0）。
     pub async fn leaks(&self) -> Result<Vec<tw_api::LeakGroup>> {
         Ok(serde_json::from_slice(&self.get("/leaks").await?)?)

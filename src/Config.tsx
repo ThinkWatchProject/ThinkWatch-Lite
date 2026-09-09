@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
+import SpeedTest from "./SpeedTest";
 import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
 
 /**
@@ -368,6 +369,10 @@ export default function Config({
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{speed["*"].error}</p>
         )}
       </section>
+
+      {/* L3 测速。**放在 L1 下面，两句成本说明并排** —— 用户要能一眼
+          看出「那个不花钱、这个花钱」（§4.6） */}
+      <SpeedTest models={[]} />
 
       <section>
         <h2 className="text-sm font-semibold">路由规则</h2>

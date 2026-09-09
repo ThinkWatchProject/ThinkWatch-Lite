@@ -261,6 +261,43 @@ export function usd(micros: number): string {
   return `$${v.toFixed(2)}`;
 }
 
+/**
+ * L3 测速要花多少（§4.6）。
+ *
+ * **这是「你确认要花钱吗」那个对话框的全部内容。**触发前必须显示它，
+ * 而不是点了才知道。
+ */
+export interface SpeedEstimate {
+  provider: string;
+  model: string;
+  /** 输入 token。**精确值** —— 请求是固定的 */
+  input_tokens: number;
+  max_output_tokens: number;
+  cost_micros: number | null;
+  note: string;
+}
+
+export interface SpeedQuote {
+  items: SpeedEstimate[];
+  /** 总计。**有一项算不出来就是 null** —— 给一个看起来完整的数字，用户
+      会以为那就是全部代价 */
+  total_micros: number | null;
+  pricing_date: string;
+}
+
+export interface SpeedResult {
+  provider: string;
+  model: string;
+  ok: boolean;
+  connect_ms: number;
+  /** **首 token。**这一层唯一值得测的东西 */
+  ttft_ms: number | null;
+  total_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  error: string | null;
+}
+
 // —— 配置（§3.8 的双向同步）——
 export interface ConfigText {
   path: string;

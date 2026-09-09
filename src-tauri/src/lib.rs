@@ -162,6 +162,33 @@ async fn request_detail(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// L3 测速的报价。**零成本** —— 它只是算了一下。
+#[tauri::command]
+async fn speed_quote(
+    state: tauri::State<'_, AppState>,
+    model: String,
+) -> Result<tw_api::SpeedQuote, String> {
+    state
+        .control
+        .speed_quote(model)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// 真的跑一次测速。**这一步花钱** —— 界面必须先把报价摆给用户看过
+/// （§4.6）。
+#[tauri::command]
+async fn speed_run(
+    state: tauri::State<'_, AppState>,
+    model: String,
+) -> Result<Vec<tw_api::SpeedResult>, String> {
+    state
+        .control
+        .speed_run(model)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
     state.control.config().await.map_err(|e| format!("{e:#}"))
@@ -254,6 +281,8 @@ pub fn run() {
             probe_upstream,
             speed_test,
             dashboard,
+            speed_quote,
+            speed_run,
             request_detail,
             get_config,
             patch_config,
