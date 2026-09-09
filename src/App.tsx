@@ -20,7 +20,7 @@ function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" 
 }
 
 export default function App() {
-  const { rows, locallyAnswered } = useRequests();
+  const { rows, locallyAnswered, rejected, configVersion } = useRequests();
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +61,9 @@ export default function App() {
       alive = false;
       clearInterval(h);
     };
-  }, []);
+    // configVersion 变了就立刻再拉一次 —— 不然用户在编辑器里改完，
+    // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效（§3.8）。
+  }, [configVersion]);
 
   const c = describeCore(core);
 
@@ -133,9 +135,32 @@ export default function App() {
         </div>
       )}
 
+      {/*
+        配置没通过校验。**这条要一直挂着，直到下一次成功换入**（§3.8）——
+        一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
+
+        第一句先说「还在按旧配置转发」，因为那是他最想知道的：会不会断。
+      */}
+      {rejected && (
+        <div className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-xs dark:border-amber-800 dark:bg-amber-950">
+          <p className="font-medium text-amber-900 dark:text-amber-200">
+            配置没能生效，还在按上一份转发。
+          </p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            {rejected.stage}错误
+            {rejected.line != null && `（第 ${rejected.line} 行）`}：{rejected.message}
+          </p>
+          {rejected.excerpt && (
+            <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 px-2 py-1 font-mono text-[11px] text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+              {rejected.line}│ {rejected.excerpt}
+            </pre>
+          )}
+        </div>
+      )}
+
       {tab === "config" ? (
         ov ? (
-          <Config ov={ov} />
+          <Config ov={ov} configVersion={configVersion} />
         ) : (
           <p className="p-5 text-xs text-neutral-500">读取配置中…</p>
         )

@@ -1,6 +1,82 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { L1Result, Overview } from "./types";
+import { useEffect } from "react";
+import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
+
+/**
+ * 一个能改的字段。
+ *
+ * **失焦才提交，而且值没变就什么都不做。**每敲一个键就发一次 patch 会
+ * 在历史里堆满噪音，而历史是回滚的依据（§3.8）。
+ *
+ * 提交时带上 `version` —— 那是乐观并发的凭据。用户在编辑器里同时改了
+ * 什么，界面无从知道，所以永远不覆盖。
+ */
+function EditableCell({
+  value,
+  path,
+  version,
+  onSaved,
+  mono,
+}: {
+  value: string;
+  path: string;
+  version: string | null;
+  onSaved: (err: string | null) => void;
+  mono?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  // 外面换了版本（别人改了文件）就跟着走 —— 否则用户会盯着一个已经
+  // 不存在的值发呆
+  useEffect(() => setDraft(value), [value]);
+
+  async function commit() {
+    if (draft === value || busy) return;
+    if (!version) {
+      onSaved("还没读到配置版本，稍等一下再试");
+      setDraft(value);
+      return;
+    }
+    setBusy(true);
+    try {
+      const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
+      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      await invoke("patch_config", { ops, baseVersion: version });
+      onSaved(null);
+    } catch (e) {
+      // **失败时把草稿退回原值。**留着一个没保存成功的值，用户下次
+      // 看这一行会以为它已经生效了。
+      setDraft(value);
+      onSaved(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <input
+      value={draft}
+      disabled={busy}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        // Esc 放弃这次编辑
+        if (e.key === "Escape") {
+          setDraft(value);
+          e.currentTarget.blur();
+        }
+      }}
+      className={
+        "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 " +
+        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
+        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600 " +
+        (mono ? "font-mono" : "")
+      }
+    />
+  );
+}
 
 /**
  * 一次 L1 测速的结果。
@@ -42,8 +118,37 @@ function SpeedRows({ r }: { r: L1Result }) {
  * 转移」「分组」这些词 —— 那些概念对他确实不存在。但**模型路由一直在**，
  * 因为一个上游就有几十个模型，那个问题从第一天就存在。
  */
-export default function Config({ ov }: { ov: Overview }) {
+export default function Config({
+  ov,
+  configVersion,
+}: {
+  ov: Overview;
+  configVersion: string | null;
+}) {
   const multi = ov.providers.length >= 2;
+  const [cfg, setCfg] = useState<ConfigText | null>(null);
+  const [history, setHistory] = useState<ConfigVersion[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // 每次配置换了版本就重新拉一遍 —— 手里那份的 version 过期之后，
+  // 下一次编辑会撞 409，而用户看不出为什么
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const c = await invoke<ConfigText>("get_config");
+        if (alive) setCfg(c);
+        const h = await invoke<ConfigVersion[]>("config_history");
+        if (alive) setHistory(h);
+      } catch (e) {
+        if (alive) setSaveError(typeof e === "string" ? e : String(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [configVersion]);
   const [speed, setSpeed] = useState<Record<string, L1Result>>({});
   const [testing, setTesting] = useState<string | null>(null);
 
@@ -94,7 +199,61 @@ export default function Config({ ov }: { ov: Overview }) {
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
               这是排查线路问题最直接的一个动作 */}
           <span className="text-xs text-neutral-400">只握手，不发请求，不花钱</span>
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="ml-auto text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            {showHistory ? "收起历史" : `历史（${history.length}）`}
+          </button>
         </div>
+
+        {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
+            「有人抢先改了」，正确的反应是刷新再改（§3.8） */}
+        {saveError && (
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            没能保存：{saveError}
+          </p>
+        )}
+
+        {showHistory && (
+          <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800">
+            {history.length === 0 && (
+              <p className="px-3 py-2 text-xs text-neutral-500">
+                还没有历史版本。第一次改配置之后就有了。
+              </p>
+            )}
+            {history.map((v) => (
+              <div
+                key={v.version}
+                className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 text-xs last:border-b-0 dark:border-neutral-900"
+              >
+                <span className="font-mono text-neutral-500">{v.version.slice(7)}</span>
+                <span className="text-neutral-500">{v.origin}</span>
+                <span className="text-neutral-400">
+                  {new Date(v.at_ms).toLocaleString()}
+                </span>
+                {v.current ? (
+                  // 不标出来的话，用户会以为第一条是「上一版」然后回滚到自己身上
+                  <span className="ml-auto text-emerald-600 dark:text-emerald-400">现在这版</span>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      setSaveError(null);
+                      try {
+                        await invoke("rollback_config", { version: v.version });
+                      } catch (e) {
+                        setSaveError(typeof e === "string" ? e : String(e));
+                      }
+                    }}
+                    className="ml-auto text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+                  >
+                    回到这版
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <table className="mt-2 w-full text-left text-xs">
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200 dark:border-neutral-800">
@@ -112,7 +271,15 @@ export default function Config({ ov }: { ov: Overview }) {
             {ov.providers.map((p) => (
               <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
                 <td className="py-1.5 font-medium">{p.name}</td>
-                <td className="font-mono text-neutral-500">{p.base_url}</td>
+                <td className="text-neutral-500">
+                  <EditableCell
+                    mono
+                    value={p.base_url}
+                    path={`/providers/${p.name}/base_url`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                  />
+                </td>
                 <td className="text-neutral-500">
                   {/* 猜不出协议不是错误 —— 但要说清按什么转发 */}
                   {p.protocol ?? <span title="按 Anthropic 转发">未知</span>}

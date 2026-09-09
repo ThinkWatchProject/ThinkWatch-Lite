@@ -124,6 +124,49 @@ async fn speed_test(
 }
 
 #[tauri::command]
+async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
+    state.control.config().await.map_err(|e| format!("{e:#}"))
+}
+
+/// 改一个字段。**总是带 `base_version`** —— 用户在编辑器里改了什么，
+/// 界面无从知道（§3.8）。
+#[tauri::command]
+async fn patch_config(
+    state: tauri::State<'_, AppState>,
+    ops: Vec<tw_api::PatchOp>,
+    base_version: String,
+) -> Result<tw_api::ConfigWritten, String> {
+    state
+        .control
+        .patch_config(ops, base_version)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn config_history(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<tw_api::ConfigVersion>, String> {
+    state
+        .control
+        .config_history()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn rollback_config(
+    state: tauri::State<'_, AppState>,
+    version: String,
+) -> Result<tw_api::ConfigWritten, String> {
+    state
+        .control
+        .rollback(version)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn setup_first_provider(
     state: tauri::State<'_, AppState>,
     name: String,
@@ -135,14 +178,9 @@ async fn setup_first_provider(
         .setup(&name, &base_url, &key)
         .await
         .map_err(|e| format!("{e:#}"))?;
-    // 配置写完必须让 core 重起才生效（M2 之前没有热重载）。**不做这一步
-    // 的话，用户点完「用它」会发现什么都没变** —— 而他没有任何线索知道
-    // 是因为进程还端着旧配置。
-    state
-        .supervisor
-        .request_restart()
-        .await
-        .map_err(|e| format!("配置写好了，但 core 没能重启：{e:#}。手动重开一次应用即可。"))?;
+    // **不再重启 core。**M2 的热重载让这一步变成了纯粹的浪费 ——
+    // 一次重启是两秒的断线，而配置在 `/setup` 返回之前就已经生效了
+    // （它走的是和别的改动同一扇门，§3.8）。
     Ok(r)
 }
 
@@ -163,6 +201,10 @@ pub fn run() {
             overview,
             probe_upstream,
             speed_test,
+            get_config,
+            patch_config,
+            config_history,
+            rollback_config,
             setup_first_provider
         ])
         .setup(|app| {

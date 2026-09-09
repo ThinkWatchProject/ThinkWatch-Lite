@@ -90,6 +90,17 @@ impl ControlClient {
         path: &str,
         body: &Req,
     ) -> Result<Res> {
+        self.send_json(hyper::Method::POST, path, body).await
+    }
+
+    /// 带 JSON body 的请求。**PATCH 和 POST 只差一个动词** —— 分两份
+    /// 写就是两份会漂移，而漂移的那份大概率是漏了错误处理的那份。
+    async fn send_json<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
+        &self,
+        method: hyper::Method,
+        path: &str,
+        body: &Req,
+    ) -> Result<Res> {
         let stream = tokio::net::UnixStream::connect(&self.socket)
             .await
             .with_context(|| {
@@ -105,7 +116,7 @@ impl ControlClient {
         });
         let payload = serde_json::to_string(body)?;
         let req = hyper::Request::builder()
-            .method(hyper::Method::POST)
+            .method(method)
             .uri(path)
             .header(hyper::header::HOST, "localhost")
             .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -139,6 +150,42 @@ impl ControlClient {
     /// 耗时互相干扰，而这一层存在的全部意义就是那几个数字准不准。
     pub async fn l1(&self, req: tw_api::L1Request) -> Result<Vec<tw_api::L1Result>> {
         self.post_json("/l1", &req).await
+    }
+
+    /// 当前配置的原文和版本号。
+    pub async fn config(&self) -> Result<tw_api::ConfigText> {
+        let body = self.get("/config").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
+    /// 按字段改配置。
+    ///
+    /// **带上 `base_version`** —— 不带就是「我知道我在覆盖」，而界面
+    /// 永远不该那样做：用户在编辑器里改了什么，我们无从知道（§3.8）。
+    pub async fn patch_config(
+        &self,
+        ops: Vec<tw_api::PatchOp>,
+        base_version: String,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PATCH,
+            "/config",
+            &tw_api::ConfigPatch {
+                base_version: Some(base_version),
+                ops,
+            },
+        )
+        .await
+    }
+
+    pub async fn config_history(&self) -> Result<Vec<tw_api::ConfigVersion>> {
+        let body = self.get("/config/history").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
+    pub async fn rollback(&self, version: String) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/config/rollback", &tw_api::RollbackRequest { version })
+            .await
     }
 
     /// 首次运行：写下第一个上游。

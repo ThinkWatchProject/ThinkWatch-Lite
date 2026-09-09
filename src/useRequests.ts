@@ -18,6 +18,15 @@ export function useRequests() {
   // 本地应答单独计数。**这是个正向数字**（§4.8）—— 它既证明客户端确实
   // 连上了，又说明那些探测一分钱都没花。
   const [locallyAnswered, setLocallyAnswered] = useState(0);
+  /**
+   * 最后一次配置被拒的样子。**留着直到下一次成功换入**（§3.8）——
+   * 一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
+   */
+  const [rejected, setRejected] = useState<Extract<CoreEvent, { kind: "config_rejected" }> | null>(
+    null,
+  );
+  /** 配置换过几次。App 用它决定要不要重新拉概览 */
+  const [configVersion, setConfigVersion] = useState<string | null>(null);
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
@@ -31,6 +40,12 @@ export function useRequests() {
       let local = 0;
       for (const ev of batch) {
         if (ev.kind === "locally_answered") local += 1;
+        if (ev.kind === "config_rejected") setRejected(ev);
+        if (ev.kind === "config_reloaded") {
+          // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好
+          setRejected(null);
+          setConfigVersion(ev.version);
+        }
         applyEvent(store.current, ev);
       }
       if (local > 0) setLocallyAnswered((n) => n + local);
@@ -61,5 +76,5 @@ export function useRequests() {
     };
   }, []);
 
-  return { rows, locallyAnswered };
+  return { rows, locallyAnswered, rejected, configVersion };
 }

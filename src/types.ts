@@ -16,7 +16,24 @@ export type CoreEvent =
    * **它不进请求列表。**成本 0、延迟 0 的东西混进请求总数和延迟统计里，
    * 会让那两个数字都变得没意义。它单独计数。
    */
-  | { kind: "locally_answered"; id: number; client: string; probe: string; at_ms: number };
+  | { kind: "locally_answered"; id: number; client: string; probe: string; at_ms: number }
+  /** 配置换了一份新的进去，已经生效。界面靠它知道自己手里那份过期了。 */
+  | { kind: "config_reloaded"; id: number; version: string; origin: string; at_ms: number }
+  /**
+   * 新配置没过关，**旧的还在服务**。
+   *
+   * 这不是崩溃，是一条要展示给人看的信息 —— 桌面工具不能因为一个笔误
+   * 就断线（§3.8）。
+   */
+  | {
+      kind: "config_rejected";
+      id: number;
+      stage: string;
+      message: string;
+      line: number | null;
+      excerpt: string | null;
+      at_ms: number;
+    };
 
 export interface CoreStatus {
   api_version: number;
@@ -76,7 +93,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       break;
     }
     case "locally_answered":
-      // 故意不建行。计数在 useRequests 里单独做。
+    case "config_reloaded":
+    case "config_rejected":
+      // 都不进请求列表。配置事件是另一回事，App 单独接。
       break;
     case "request_failed": {
       const r = rows.get(ev.id);
@@ -126,6 +145,32 @@ export interface L1Result {
   /** 解释为什么某一段不在上面。**没有这句话，缺一段看起来就像 bug** */
   notes?: string[];
   error?: string | null;
+}
+
+// —— 配置（§3.8 的双向同步）——
+export interface ConfigText {
+  path: string;
+  text: string;
+  /** `blake3:xxxxxxxxxxxx`。**改配置时必须带上它** —— 那是乐观并发的凭据 */
+  version: string;
+}
+
+export type PatchValue = string | number | boolean | null;
+
+export interface PatchOp {
+  op: "replace";
+  /** 按名字定位：`/providers/官方/base_url`。下标会在重排之后指向另一个东西 */
+  path: string;
+  value: PatchValue;
+}
+
+export interface ConfigVersion {
+  version: string;
+  at_ms: number;
+  origin: string;
+  bytes: number;
+  /** 历史里包括当前版本，不标出来用户会回滚到自己身上 */
+  current: boolean;
 }
 
 export interface SetupResponse {
