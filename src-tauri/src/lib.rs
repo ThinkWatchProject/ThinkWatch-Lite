@@ -144,6 +144,19 @@ async fn patch_config(
 }
 
 #[tauri::command]
+async fn put_config(
+    state: tauri::State<'_, AppState>,
+    text: String,
+    base_version: String,
+) -> Result<tw_api::ConfigWritten, String> {
+    state
+        .control
+        .put_config(text, base_version)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn config_history(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<tw_api::ConfigVersion>, String> {
@@ -203,6 +216,7 @@ pub fn run() {
             speed_test,
             get_config,
             patch_config,
+            put_config,
             config_history,
             rollback_config,
             setup_first_provider

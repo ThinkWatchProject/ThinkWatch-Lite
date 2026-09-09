@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
+import ConfigTextMode from "./ConfigText";
 import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
 
 /**
@@ -130,6 +131,12 @@ export default function Config({
   const [history, setHistory] = useState<ConfigVersion[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  /**
+   * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
+   * 用户知道 YAML 长什么样（§0.6：默认值不该要求用户额外懂什么）。
+   */
+  const [mode, setMode] = useState<"form" | "text">("form");
+  const [reloadKey, setReloadKey] = useState(0);
 
   // 每次配置换了版本就重新拉一遍 —— 手里那份的 version 过期之后，
   // 下一次编辑会撞 409，而用户看不出为什么
@@ -148,7 +155,7 @@ export default function Config({
     return () => {
       alive = false;
     };
-  }, [configVersion]);
+  }, [configVersion, reloadKey]);
   const [speed, setSpeed] = useState<Record<string, L1Result>>({});
   const [testing, setTesting] = useState<string | null>(null);
 
@@ -182,6 +189,27 @@ export default function Config({
     }
   }
 
+  if (mode === "text") {
+    return (
+      <div className="space-y-3 p-5">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-sm font-semibold">配置文件</h2>
+          <button
+            onClick={() => setMode("form")}
+            className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            回到表单
+          </button>
+        </div>
+        {cfg ? (
+          <ConfigTextMode doc={cfg} onSaved={() => setReloadKey((k) => k + 1)} />
+        ) : (
+          <p className="text-xs text-neutral-500">读取中…</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 p-5">
       <section>
@@ -200,8 +228,14 @@ export default function Config({
               这是排查线路问题最直接的一个动作 */}
           <span className="text-xs text-neutral-400">只握手，不发请求，不花钱</span>
           <button
-            onClick={() => setShowHistory((v) => !v)}
+            onClick={() => setMode("text")}
             className="ml-auto text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            改文件
+          </button>
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {showHistory ? "收起历史" : `历史（${history.length}）`}
           </button>

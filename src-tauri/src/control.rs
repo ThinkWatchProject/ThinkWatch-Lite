@@ -178,6 +178,20 @@ impl ControlClient {
         .await
     }
 
+    /// 整份写回去（文本模式）。
+    pub async fn put_config(
+        &self,
+        text: String,
+        base_version: String,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            "/config",
+            &tw_api::ConfigWrite { base_version, text },
+        )
+        .await
+    }
+
     pub async fn config_history(&self) -> Result<Vec<tw_api::ConfigVersion>> {
         let body = self.get("/config/history").await?;
         Ok(serde_json::from_slice(&body)?)
