@@ -167,6 +167,13 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
 
+    /// 一条请求的全部细节，含 body。
+    pub async fn request_detail(&self, id: i64) -> Result<tw_api::RequestDetail> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/request/{id}")).await?,
+        )?)
+    }
+
     /// 订阅额度。按量付费的账号没有，那时是空列表。
     pub async fn quota(&self) -> Result<Vec<tw_api::ProviderQuota>> {
         Ok(serde_json::from_slice(&self.get("/quota").await?)?)

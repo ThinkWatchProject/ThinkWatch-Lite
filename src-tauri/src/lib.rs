@@ -148,6 +148,18 @@ pub struct Dashboard {
 }
 
 #[tauri::command]
+async fn request_detail(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+) -> Result<tw_api::RequestDetail, String> {
+    state
+        .control
+        .request_detail(id)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
     state.control.config().await.map_err(|e| format!("{e:#}"))
 }
@@ -239,6 +251,7 @@ pub fn run() {
             probe_upstream,
             speed_test,
             dashboard,
+            request_detail,
             get_config,
             patch_config,
             put_config,

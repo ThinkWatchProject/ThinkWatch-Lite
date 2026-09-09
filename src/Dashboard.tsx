@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import RequestDrawer from "./RequestDrawer";
 import { usd, type Dashboard as Data } from "./types";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -21,6 +22,9 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 export default function Dashboard({ tick }: { tick: number }) {
   const [d, setD] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** —— 用户要能一边看
+      详情一边对着列表里的别的行 */
+  const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -177,7 +181,11 @@ export default function Dashboard({ tick }: { tick: number }) {
             </thead>
             <tbody>
               {d.history.map((r) => (
-                <tr key={r.id} className="border-b border-neutral-100 dark:border-neutral-900">
+                <tr
+                  key={r.id}
+                  onClick={() => setOpen(r.id)}
+                  className="cursor-pointer border-b border-neutral-100 hover:bg-neutral-100 dark:border-neutral-900 dark:hover:bg-neutral-900"
+                >
                   <td className="py-1.5 text-neutral-500">
                     {new Date(r.at_ms).toLocaleTimeString()}
                   </td>
@@ -219,6 +227,8 @@ export default function Dashboard({ tick }: { tick: number }) {
           </table>
         </section>
       )}
+
+      {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
 
       {/* 存储状态。**正常时不显示** —— §0.6：没问题的时候不该占地方 */}
       {d.storage && d.storage.level !== "正常" && (

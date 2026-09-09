@@ -211,6 +211,20 @@ export interface StorageStatus {
   forwarding_affected: boolean;
 }
 
+/** 一份存下来的 body。**已脱敏**（§9.7）。 */
+export interface BodyView {
+  text: string;
+  /** 原本多长。**截断了要说出来** —— 不说的话用户会以为请求本身就长这样 */
+  original_len: number;
+  truncated: boolean;
+}
+
+export interface RequestDetail {
+  row: HistoryRow;
+  request_body: BodyView | null;
+  response_body: BodyView | null;
+}
+
 export interface Dashboard {
   summary: Summary;
   latency: LatencyView[];
