@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type BodyView, type RequestDetail } from "./types";
 
-type Tab = "timeline" | "payload" | "usage";
+type Tab = "timeline" | "routing" | "payload" | "usage";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -110,7 +110,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
       {d && r && (
         <>
           <nav className="flex gap-1 border-b border-neutral-200 px-4 py-2 text-xs dark:border-neutral-800">
-            {(["timeline", "payload", "usage"] as const).map((t) => (
+            {(["timeline", "routing", "payload", "usage"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -121,7 +121,13 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                     : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
                 }
               >
-                {t === "timeline" ? "时间线" : t === "payload" ? "内容" : "用量"}
+                {t === "timeline"
+                  ? "时间线"
+                  : t === "routing"
+                    ? "路由"
+                    : t === "payload"
+                      ? "内容"
+                      : "用量"}
               </button>
             ))}
           </nav>
@@ -166,6 +172,59 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 <Row label="字节" value={r.bytes?.toLocaleString() ?? "—"} />
               </div>
             )}
+
+            {tab === "routing" &&
+              (r.routing ? (
+                <div className="space-y-3">
+                  {/* **「命中第 4 条」远不如「命中『带缓存的必须走官方』」
+                      有用**（§3.4） */}
+                  <div className="space-y-1">
+                    <Row label="命中规则" value={r.routing.rule} />
+                    {r.routing.group && <Row label="经过策略组" value={r.routing.group} />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium">尝试链</div>
+                    <ol className="mt-1 space-y-1">
+                      {r.routing.attempts.map((a, i) => (
+                        <li
+                          key={`${a.provider}-${i}`}
+                          className="flex items-baseline gap-3 rounded border border-neutral-200 px-2 py-1 dark:border-neutral-800"
+                        >
+                          <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
+                          <span className="font-medium">{a.provider}</span>
+                          {/* **失败的原因要留着** —— 一条说「试过 A → B →
+                              C」的链和一条还说清每一跳为什么失败的链，
+                              排查价值差得远（§4.2） */}
+                          <span
+                            className={
+                              a.outcome === "成功"
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-amber-700 dark:text-amber-400"
+                            }
+                          >
+                            {a.outcome}
+                          </span>
+                          <span className="ml-auto text-neutral-500">{a.ms}ms</span>
+                        </li>
+                      ))}
+                    </ol>
+                    {r.routing.attempts.length > 1 && (
+                      // **用户能看见故障转移在替他工作，这是信任的来源**
+                      // （§4.2）。一个静默切换过的请求和一个一次就成的
+                      // 请求，在他眼里应该是不同的。
+                      <p className="mt-1.5 text-neutral-500">
+                        这次发生了故障转移：前 {r.routing.attempts.length - 1} 家没成，我们替你
+                        换到了下一家。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-neutral-500">
+                  这条记录没有路由信息。可能是本地应答的（它根本没到上游），也可能是这个功能
+                  上线之前记下的。
+                </p>
+              ))}
 
             {tab === "payload" && (
               <div className="space-y-4">

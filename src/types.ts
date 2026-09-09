@@ -182,6 +182,21 @@ export interface LatencyView {
   samples: number;
 }
 
+/** 尝试链里的一跳。 */
+export interface AttemptView {
+  provider: string;
+  /** 「成功」「429」「连不上上游」这类人话。**失败的原因要留着**（§4.2） */
+  outcome: string;
+  ms: number;
+}
+
+/** 一次请求的路由决策。**详情抽屉的路由那一页吃它。** */
+export interface RoutingView {
+  rule: string;
+  group: string | null;
+  attempts: AttemptView[];
+}
+
 export interface HistoryRow {
   id: number;
   at_ms: number;
@@ -201,6 +216,8 @@ export interface HistoryRow {
   cost_estimated: boolean;
   error: string | null;
   local: boolean;
+  /** 路由决策与尝试链。老记录没有它 */
+  routing: RoutingView | null;
 }
 
 export interface StorageStatus {
