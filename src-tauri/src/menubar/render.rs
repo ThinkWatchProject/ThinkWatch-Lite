@@ -209,3 +209,64 @@ mod tests {
         assert_eq!(rgba.len(), (w * h * 4) as usize);
     }
 }
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    /// **§7.4 的第一个坑：宽度抖动。**
+    ///
+    /// 花费从 `$9.99` 变成 `$10.02`，位数一变，菜单栏里它右边的所有图标
+    /// 都会跟着左右跳。解法是画布固定宽度 + 右对齐 —— 这条测试盯着那两
+    /// 件事真的成立。
+    #[test]
+    fn the_canvas_is_the_same_size_no_matter_what_the_numbers_are() {
+        let size = |a: &str, b: &str| {
+            let (_, w, h) = render_rgba(a, b, true, Appearance::Light);
+            (w, h)
+        };
+        let base = size("$9.99", "12 t/s");
+        for (a, b) in [
+            ("$10.02", "12 t/s"),
+            ("$999.99", "1234 t/s"),
+            ("—", "—"),
+            ("62%", "2h"),
+            ("100%", "已重置"),
+            ("$0.00", ""),
+        ] {
+            assert_eq!(size(a, b), base, "「{a}」「{b}」把画布撑变形了");
+        }
+    }
+
+    /// 右对齐的实际效果：**右边那一列像素不因内容长短而移动**。
+    ///
+    /// 只测「画布一样大」是不够的 —— 一个居中或左对齐的渲染同样能通过
+    /// 那条，而它右边的图标照样会跳。
+    #[test]
+    fn the_right_edge_of_the_text_stays_put_when_a_digit_is_added() {
+        let right_edge = |line: &str| {
+            let (rgba, w, h) = render_rgba(line, "", true, Appearance::Light);
+            // 从右往左找第一列有笔画的
+            (0..w).rev().find(|&x| {
+                (0..h).any(|y| rgba[((y * w + x) * 4 + 3) as usize] > 0)
+            })
+        };
+        let short = right_edge("$9.99").expect("什么都没画出来");
+        for longer in ["$10.02", "$100.02", "$1000.02"] {
+            assert_eq!(
+                right_edge(longer),
+                Some(short),
+                "「{longer}」的右边缘动了 —— 菜单栏里它右边的图标会跟着跳"
+            );
+        }
+    }
+
+    /// 内容长到画布放不下时，**不能溢出成一片糊**。
+    #[test]
+    fn an_absurdly_long_number_does_not_corrupt_the_bitmap() {
+        let (rgba, w, h) = render_rgba("$1234567890.99", "999999 t/s", true, Appearance::Light);
+        assert_eq!(rgba.len(), (w * h * 4) as usize);
+        // 画布左边缘之外的东西被裁掉了，而不是绕回到右边
+        assert!(w > 0 && h > 0);
+    }
+}

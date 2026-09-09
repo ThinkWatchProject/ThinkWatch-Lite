@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
+import Sparkline from "./Sparkline";
 import { triggers } from "./triggers";
 import { usd, type Dashboard as Data } from "./types";
 
@@ -140,6 +141,14 @@ export default function Dashboard({ tick }: { tick: number }) {
                 自己起的名字通常是这样）。想让它们也算进来的话，在 pricing.yaml 里写上单价。
               </p>
             )}
+
+            {/*
+              最近一段时间的请求量。**画的是节奏，不是金额** —— 金额已经
+              在上面那几个数字里了，而「刚才发生了什么」是另一个问题。
+            */}
+            <div className="mt-4">
+              <Sparkline rows={d.history} now={Date.now()} />
+            </div>
 
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-xs">
               <dt className="text-neutral-500">输入 / 输出</dt>
