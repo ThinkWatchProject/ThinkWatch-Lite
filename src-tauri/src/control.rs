@@ -229,6 +229,20 @@ impl ControlClient {
         )?)
     }
 
+    /// 矩阵上能写的是哪几个客户端。
+    pub async fn mcp_targets(&self) -> Result<Vec<tw_api::McpTargetView>> {
+        Ok(serde_json::from_slice(&self.get("/mcp/targets").await?)?)
+    }
+
+    /// 算一份 MCP 改动。**不落盘。**
+    pub async fn mcp_plan(&self, req: tw_api::McpOpRequest) -> Result<tw_api::PlanView> {
+        self.send_json(hyper::Method::POST, "/mcp/plan", &req).await
+    }
+
+    pub async fn mcp_apply(&self, req: tw_api::McpOpRequest) -> Result<tw_api::AdoptResponse> {
+        self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
+    }
+
     /// 会话列表（§7.9）。
     pub async fn sessions(&self) -> Result<Vec<tw_api::SessionView>> {
         Ok(serde_json::from_slice(&self.get("/sessions").await?)?)

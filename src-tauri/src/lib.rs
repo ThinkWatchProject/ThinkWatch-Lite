@@ -264,6 +264,30 @@ async fn rollback_config(
 }
 
 #[tauri::command]
+async fn mcp_targets(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<tw_api::McpTargetView>, String> {
+    state.control.mcp_targets().await.map_err(|e| format!("{e:#}"))
+}
+
+/// **算一下，不落盘。**和接管一样，中间夹着用户看 diff 的那一下。
+#[tauri::command]
+async fn mcp_plan(
+    state: tauri::State<'_, AppState>,
+    req: tw_api::McpOpRequest,
+) -> Result<tw_api::PlanView, String> {
+    state.control.mcp_plan(req).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn mcp_apply(
+    state: tauri::State<'_, AppState>,
+    req: tw_api::McpOpRequest,
+) -> Result<tw_api::AdoptResponse, String> {
+    state.control.mcp_apply(req).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn sessions(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::SessionView>, String> {
     state.control.sessions().await.map_err(|e| format!("{e:#}"))
 }
@@ -422,7 +446,10 @@ pub fn run() {
             scan_configs,
             dry_run,
             sessions,
-            session_detail
+            session_detail,
+            mcp_targets,
+            mcp_plan,
+            mcp_apply
         ])
         .setup(|app| {
             let handle = app.handle().clone();

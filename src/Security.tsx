@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { McpView, ScanFinding, ScanResponse } from "./types";
+import type {
+  AdoptResponse,
+  McpOpRequest,
+  McpTargetView,
+  McpView,
+  PlanView,
+  ScanFinding,
+  ScanResponse,
+} from "./types";
 
 /**
  * 客户端配置面（DESIGN.md §5.3、§7.12）。
@@ -21,11 +29,18 @@ export default function Security() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<ScanFinding | null>(null);
+  const [targets, setTargets] = useState<McpTargetView[]>([]);
+  const [pending, setPending] = useState<{ req: McpOpRequest; plan: PlanView } | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      setData(await invoke<ScanResponse>("scan_configs", { projects: [] }));
+      const [scan, ts] = await Promise.all([
+        invoke<ScanResponse>("scan_configs", { projects: [] }),
+        invoke<McpTargetView[]>("mcp_targets"),
+      ]);
+      setData(scan);
+      setTargets(ts);
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
@@ -34,6 +49,34 @@ export default function Security() {
       setBusy(false);
     }
   }, []);
+
+  /** 点了格子。**先算一份 diff**，不直接写 —— 和接管同一条纪律。 */
+  async function ask(req: McpOpRequest) {
+    setBusy(true);
+    setError(null);
+    try {
+      setPending({ req, plan: await invoke<PlanView>("mcp_plan", { req }) });
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm() {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      await invoke<AdoptResponse>("mcp_apply", { req: pending.req });
+      setPending(null);
+      await load();
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+      setPending(null);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -121,7 +164,7 @@ export default function Security() {
         )}
       </section>
 
-      <Matrix mcp={data.mcp} conflicting={data.conflicting} />
+      <Matrix mcp={data.mcp} conflicting={data.conflicting} targets={targets} busy={busy} onAsk={ask} />
 
       {data.hooks.length > 0 && (
         <section>
@@ -163,6 +206,15 @@ export default function Security() {
       )}
 
       {open && <Detail f={open} onClose={() => setOpen(null)} />}
+      {pending && (
+        <McpConfirm
+          plan={pending.plan}
+          req={pending.req}
+          busy={busy}
+          onCancel={() => setPending(null)}
+          onConfirm={confirm}
+        />
+      )}
     </div>
   );
 }
@@ -173,8 +225,26 @@ export default function Security() {
  * M4 的简化版**只看不搬**：格子告诉你谁配了什么，同名不同配置标个记号。
  * 点格子执行复制是 §7.12 里更完整的那一版，等这一版用顺了再说。
  */
-function Matrix({ mcp, conflicting }: { mcp: McpView[]; conflicting: string[] }) {
-  const clients = [...new Set(mcp.map((m) => m.client))].sort();
+function Matrix({
+  mcp,
+  conflicting,
+  targets,
+  busy,
+  onAsk,
+}: {
+  mcp: McpView[];
+  conflicting: string[];
+  targets: McpTargetView[];
+  busy: boolean;
+  onAsk: (req: McpOpRequest) => void;
+}) {
+  // 列 = 所有能写的位置 ∪ 已经配了东西的位置。
+  // **不能写的也要出现在表里** —— 看得见是第一目标，只是它的格子点不动
+  const clients = [
+    ...new Set([...targets.map((t) => t.client), ...mcp.map((m) => m.client)]),
+  ].sort();
+  const canWrite = (c: string) => targets.find((t) => t.client === c)?.copyable ?? false;
+  const whyNot = (c: string) => targets.find((t) => t.client === c)?.why_not ?? "这个客户端不在可写清单里";
   const names = [...new Set(mcp.map((m) => m.name))].sort();
   if (names.length === 0) {
     return (
@@ -190,7 +260,8 @@ function Matrix({ mcp, conflicting }: { mcp: McpView[]; conflicting: string[] })
     <section>
       <h2 className="mb-1 text-sm font-medium">MCP server · {names.length}</h2>
       <p className="mb-2 text-xs text-neutral-500">
-        每一个都是一个能执行程序、或者能收走你上下文的入口。这里只展示，不做增删。
+        每一个都是一个能执行程序、或者能收走你上下文的入口。
+        点格子可以在客户端之间复制、或者从某个客户端移除 —— 改之前会先给你看 diff。
       </p>
       <div className="overflow-x-auto">
         <table className="text-xs">
@@ -220,18 +291,48 @@ function Matrix({ mcp, conflicting }: { mcp: McpView[]; conflicting: string[] })
                   </td>
                   {clients.map((c) => {
                     const m = at(n, c);
+                    const writable = canWrite(c);
+                    // 空格子从哪儿抄过来。多个来源时用第一个能抄的
+                    const source = mcp.find((x) => x.name === n && canWrite(x.client));
+                    const can = writable && (m ? true : !!source);
+                    const title = !writable
+                      ? whyNot(c)
+                      : m
+                        ? `从 ${c} 移除`
+                        : source
+                          ? `从 ${source.client} 复制过来`
+                          : "没有能抄的来源";
                     return (
                       <td key={c} className="px-2 py-1 text-center">
-                        {!m ? (
-                          <span className="text-neutral-300 dark:text-neutral-700">·</span>
-                        ) : m.enabled ? (
-                          "✓"
-                        ) : (
-                          // 关掉的还在配置里，一次编辑就能打开
-                          <span className="text-neutral-400" title="配置里写着 enabled: false">
-                            ○
-                          </span>
-                        )}
+                        <button
+                          className={
+                            "w-6 rounded " +
+                            (can
+                              ? "hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                              : "cursor-default opacity-60")
+                          }
+                          title={title}
+                          disabled={!can || busy}
+                          onClick={() =>
+                            can &&
+                            onAsk(
+                              m
+                                ? { op: "remove", name: n, to: c }
+                                : { op: "copy", name: n, from: source!.client, to: c },
+                            )
+                          }
+                        >
+                          {!m ? (
+                            <span className="text-neutral-300 dark:text-neutral-700">·</span>
+                          ) : m.enabled ? (
+                            "✓"
+                          ) : (
+                            // 关掉的还在配置里，一次编辑就能打开
+                            <span className="text-neutral-400" title="配置里写着 enabled: false">
+                              ○
+                            </span>
+                          )}
+                        </button>
                       </td>
                     );
                   })}
@@ -260,6 +361,70 @@ function Matrix({ mcp, conflicting }: { mcp: McpView[]; conflicting: string[] })
         </table>
       </div>
     </section>
+  );
+}
+
+/**
+ * 点了格子之后的确认框。
+ *
+ * **和接管走同一条纪律**（§7.12）：字段级合并、写前全文备份、展示 diff
+ * 让用户确认。往客户端配置里写东西，风险和接管完全一样。
+ */
+function McpConfirm({
+  plan,
+  req,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  plan: PlanView;
+  req: McpOpRequest;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onCancel}>
+      <div
+        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-sm font-medium">
+          {req.op === "copy" ? `把 ${req.name} 复制到 ${req.to}` : `从 ${req.to} 移除 ${req.name}`}
+        </div>
+        <div className="mt-1 text-xs text-neutral-500">
+          要改 <code>{plan.path}</code>
+        </div>
+        {plan.noop ? (
+          <div className="mt-3 text-xs">已经是这样了，什么都不用改。</div>
+        ) : (
+          <>
+            <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 text-[11px] leading-relaxed dark:bg-neutral-950">
+              {plan.after}
+            </pre>
+            <div className="mt-2 text-xs text-neutral-500">
+              改之前会把整个文件备份一份。除了这一项，其余一个字节都不动。
+              {req.op === "copy" &&
+                " MCP 的 env 里可能带着密钥，复制会把它一起搬到目标文件里。"}
+            </div>
+          </>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onCancel}>
+            取消
+          </button>
+          {!plan.noop && (
+            <button
+              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+              onClick={onConfirm}
+              disabled={busy}
+            >
+              确认
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

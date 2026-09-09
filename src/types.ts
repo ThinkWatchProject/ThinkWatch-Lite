@@ -596,3 +596,20 @@ export interface DryRunResult {
   /** 候选链里此刻熔断着的那些 */
   circuit_open: string[];
 }
+
+export interface McpOpRequest {
+  op: "copy" | "remove";
+  name: string;
+  /** copy 时从哪个客户端取 */
+  from?: string;
+  to: string;
+}
+
+export interface McpTargetView {
+  client: string;
+  name: string;
+  path: string;
+  /** 能不能往里写。**不能写的照样在清单里** —— 看得见是第一目标 */
+  copyable: boolean;
+  why_not: string;
+}
