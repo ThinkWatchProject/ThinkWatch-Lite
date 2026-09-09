@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
+import { triggers } from "./triggers";
 import { usd, type Dashboard as Data } from "./types";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -57,8 +58,11 @@ export default function Dashboard({ tick }: { tick: number }) {
   if (!d) return <p className="p-5 text-xs text-neutral-500">读取中…</p>;
 
   const s = d.summary;
+  const t = triggers(null, d);
   const hasEstimate = s.cost_micros_estimated > 0;
-  const nothingYet = s.requests === 0 && s.locally_answered === 0;
+  // §0.6：条件不满足就**不出现**，不是折叠。一个还没有任何数据的成本
+  // 面板是在展示空壳，而它占的地方本来可以放「接下来该做什么」
+  const nothingYet = !t.cost;
 
   return (
     <div className="space-y-8 p-5">
@@ -162,7 +166,9 @@ export default function Dashboard({ tick }: { tick: number }) {
         </section>
       )}
 
-      {d.latency.length > 0 && (
+      {/* 延迟排行只在有得比的时候才有意义 —— 一家上游一个模型的时候，
+          这张表说的是「它就是这么快」，那已经写在上面了 */}
+      {d.latency.length > 1 && (
         <section>
           <div className="flex items-baseline gap-3">
             <h2 className="text-sm font-semibold">延迟</h2>

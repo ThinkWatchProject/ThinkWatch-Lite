@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
 import SpeedTest from "./SpeedTest";
+import { triggers } from "./triggers";
 import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
 
 /**
@@ -127,7 +128,10 @@ export default function Config({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const multi = ov.providers.length >= 2;
+  // 触发条件全在一个地方（§0.6）—— 散在各个组件里的
+  // `providers.length >= 2` 回答不了那条反面判据
+  const t = triggers(ov, null);
+  const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
   const [history, setHistory] = useState<ConfigVersion[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -216,7 +220,7 @@ export default function Config({
       <section>
         <div className="flex items-baseline gap-3">
           <h2 className="text-sm font-semibold">上游</h2>
-          {multi && (
+          {t.comparison && (
             <button
               onClick={() => test(undefined)}
               disabled={testing !== null}
