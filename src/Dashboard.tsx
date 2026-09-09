@@ -128,6 +128,40 @@ export default function Dashboard({ tick }: { tick: number }) {
         )}
       </section>
 
+      {/*
+        出站密钥检测攒下的证据（§5.0）。**只在真的发现过东西时出现** ——
+        没发现的时候显示一句「一切正常」是在占地方（§0.6），而这一块的
+        全部说服力来自「它说的是已经发生在你身上的事」。
+      */}
+      {d.leaks.length > 0 && (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            过去 7 天，有请求把密钥发了出去
+          </h2>
+          <ul className="mt-2 space-y-1.5 text-xs text-amber-900 dark:text-amber-200">
+            {d.leaks.map((l) => (
+              <li key={`${l.provider}/${l.kind}`}>
+                <span className="font-medium">{l.requests}</span> 个请求把{" "}
+                <span className="font-medium">{l.kind}</span> 发给了{" "}
+                <span className="font-medium">{l.provider || "上游"}</span>
+                {l.masked.length > 0 && (
+                  // **打码之后才显示。**把发现的密钥原样贴出来，等于
+                  // 把泄漏搬了个家（§9.7）
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {" "}
+                    · 涉及 {l.masked.join("、")}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            现在是观察模式，只记录、没有改变任何请求。要让它真的替换成占位符，把
+            config.yaml 里的 <code>security.redact</code> 改成 <code>enforce</code>。
+          </p>
+        </section>
+      )}
+
       {d.latency.length > 0 && (
         <section>
           <div className="flex items-baseline gap-3">

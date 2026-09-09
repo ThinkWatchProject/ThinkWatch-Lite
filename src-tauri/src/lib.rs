@@ -135,6 +135,7 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         latency: c.latency().await.unwrap_or_default(),
         history: c.history(200).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
+        leaks: c.leaks().await.unwrap_or_default(),
     })
 }
 
@@ -145,6 +146,8 @@ pub struct Dashboard {
     history: Vec<tw_api::HistoryRow>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑（§4.7）
     storage: Option<tw_api::StorageStatus>,
+    /// 出站密钥检测攒下的证据（§5.0 的观察态）
+    leaks: Vec<tw_api::LeakGroup>,
 }
 
 #[tauri::command]

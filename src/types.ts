@@ -225,11 +225,26 @@ export interface RequestDetail {
   response_body: BodyView | null;
 }
 
+/**
+ * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay-cn」（§5.0）。
+ *
+ * **这比任何功能介绍都有说服力**，因为它说的是已经发生在你身上的事。
+ */
+export interface LeakGroup {
+  provider: string;
+  kind: string;
+  requests: number;
+  last_at_ms: number;
+  /** 涉及哪几把，**都已打码** */
+  masked: string[];
+}
+
 export interface Dashboard {
   summary: Summary;
   latency: LatencyView[];
   history: HistoryRow[];
   storage: StorageStatus | null;
+  leaks: LeakGroup[];
 }
 
 /**

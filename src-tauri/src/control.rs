@@ -167,6 +167,11 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
 
+    /// 出站密钥检测攒下的证据（§5.0）。
+    pub async fn leaks(&self) -> Result<Vec<tw_api::LeakGroup>> {
+        Ok(serde_json::from_slice(&self.get("/leaks").await?)?)
+    }
+
     /// 一条请求的全部细节，含 body。
     pub async fn request_detail(&self, id: i64) -> Result<tw_api::RequestDetail> {
         Ok(serde_json::from_slice(
