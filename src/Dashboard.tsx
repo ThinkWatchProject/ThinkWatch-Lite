@@ -111,6 +111,18 @@ export default function Dashboard({ tick }: { tick: number }) {
                   hint={`${s.subscription_tokens.toLocaleString()} token · 不计入金额`}
                 />
               )}
+              {/*
+                缓存省了多少（§4.4）。**算的是差额** —— 「如果这些 token
+                没命中缓存，要多花多少」。对 Claude Code 用户，这通常是
+                成本结构里最大的一块。
+              */}
+              {s.cache_saved_micros > 0 && (
+                <Stat
+                  label="缓存省下"
+                  value={usd(s.cache_saved_micros)}
+                  hint="命中缓存少花的钱"
+                />
+              )}
               {s.locally_answered > 0 && (
                 <Stat
                   label="本地应答"
@@ -175,6 +187,43 @@ export default function Dashboard({ tick }: { tick: number }) {
             现在是观察模式，只记录、没有改变任何请求。要让它真的替换成占位符，把
             config.yaml 里的 <code>security.redact</code> 改成 <code>enforce</code>。
           </p>
+        </section>
+      )}
+
+      {/*
+        **按上游分是另一个问题。**「哪个模型慢」的下一步是换模型，
+        「哪家上游慢」的下一步是换上游 —— 合成一张表两个都答不好（§4.6）。
+        只有一家上游时不显示：那时这张表说的是「它就是这么快」。
+      */}
+      {t.comparison && d.latency_by_provider.length > 1 && (
+        <section>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-sm font-semibold">哪家更快</h2>
+            <span className="text-xs text-neutral-400">首字节，按上游分</span>
+          </div>
+          <table className="mt-2 w-full text-left text-xs tabular-nums">
+            <thead className="text-neutral-500">
+              <tr className="border-b border-neutral-200 dark:border-neutral-800">
+                <th className="py-2 font-medium">上游</th>
+                <th className="font-medium">通常（P50）</th>
+                <th className="font-medium">最糟（P95）</th>
+                <th className="font-medium">样本</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.latency_by_provider.map((l) => (
+                <tr key={l.model} className="border-b border-neutral-100 dark:border-neutral-900">
+                  <td className="py-1.5">{l.model}</td>
+                  <td>{l.p50}ms</td>
+                  <td>{l.p95}ms</td>
+                  <td className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
+                    {l.samples}
+                    {l.samples < 10 && " · 数据不足"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 

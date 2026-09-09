@@ -174,6 +174,8 @@ export interface Summary {
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
   subscription_tokens: number;
+  /** 缓存命中一共省下了多少微分。**算的是差额**（§4.4） */
+  cache_saved_micros: number;
   /** 价目表的快照日期。**成本旁边要标它**（§4.3.0） */
   pricing_date: string;
 }
@@ -224,6 +226,8 @@ export interface HistoryRow {
   routing: RoutingView | null;
   /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
   billing: string;
+  /** 缓存命中省下了多少微分。null = 算不出来（§4.4） */
+  cache_saved_micros: number | null;
 }
 
 export interface StorageStatus {
@@ -265,6 +269,8 @@ export interface LeakGroup {
 export interface Dashboard {
   summary: Summary;
   latency: LatencyView[];
+  /** 按上游分。**和按模型分是两个问题**（§4.6） */
+  latency_by_provider: LatencyView[];
   history: HistoryRow[];
   storage: StorageStatus | null;
   leaks: LeakGroup[];

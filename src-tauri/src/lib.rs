@@ -133,6 +133,7 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
     Ok(Dashboard {
         summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
+        latency_by_provider: c.latency_by_provider().await.unwrap_or_default(),
         history: c.history(200).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
@@ -143,6 +144,8 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
 pub struct Dashboard {
     summary: tw_api::Summary,
     latency: Vec<tw_api::LatencyView>,
+    /// 按上游分。**和按模型分是两个问题**（§4.6）
+    latency_by_provider: Vec<tw_api::LatencyView>,
     history: Vec<tw_api::HistoryRow>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑（§4.7）
     storage: Option<tw_api::StorageStatus>,

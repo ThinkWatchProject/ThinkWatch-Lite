@@ -208,6 +208,13 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/quota").await?)?)
     }
 
+    /// 按上游分的延迟。**「哪家 TTFT 最差」问的是这个。**
+    pub async fn latency_by_provider(&self) -> Result<Vec<tw_api::LatencyView>> {
+        Ok(serde_json::from_slice(
+            &self.get("/latency/provider").await?,
+        )?)
+    }
+
     pub async fn storage(&self) -> Result<tw_api::StorageStatus> {
         Ok(serde_json::from_slice(&self.get("/storage").await?)?)
     }

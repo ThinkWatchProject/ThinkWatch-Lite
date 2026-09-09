@@ -43,7 +43,11 @@ export interface Triggers {
 // 用的开关，是在制造一个以后没人记得为什么存在的分支。
 
 export function triggers(ov: Overview | null, d: Dashboard | null): Triggers {
-  const providers = ov?.providers.length ?? 0;
+  // 没有 overview 时（Dashboard 那条路），从历史里的上游名字数 ——
+  // **问题存不存在，看的是实际发生过什么，不是配置里写了几个**
+  const providers =
+    ov?.providers.length ??
+    new Set((d?.history ?? []).filter((r) => !r.local && r.provider).map((r) => r.provider)).size;
   // 「在发请求的客户端」不是「配置里的客户端」—— 配了三把 key 却只有
   // 一个客户端在用，那个问题同样不存在
   const activeClients = new Set((d?.history ?? []).filter((r) => !r.local).map((r) => r.client));
