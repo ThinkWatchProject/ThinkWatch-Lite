@@ -573,3 +573,26 @@ export interface SessionDetail {
   session: SessionView;
   turns: TurnView[];
 }
+
+// ---------------------------------------------------------------- 路由试算
+
+export interface RuleTrace {
+  name: string;
+  verdict: "matched" | "skipped" | "phase_two";
+  /** 没命中时，是哪个条件没对上 */
+  why: string | null;
+}
+
+export interface DryRunResult {
+  outcome: "route" | "deny" | "no_match";
+  rule: string | null;
+  reason: string | null;
+  candidates: string[];
+  via_group: string | null;
+  set: string[];
+  trace: RuleTrace[];
+  /** 这条路会不会伤到 prompt cache。**要直说 —— 它决定账单** */
+  hurts_cache: boolean;
+  /** 候选链里此刻熔断着的那些 */
+  circuit_open: string[];
+}

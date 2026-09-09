@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
 import SpeedTest from "./SpeedTest";
 import { triggers } from "./triggers";
+import DryRun from "./DryRun";
 import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
 
 /**
@@ -407,6 +408,9 @@ export default function Config({
           ))}
         </ol>
       </section>
+
+      {/* 「为什么没走我以为的那条」和「走了哪条」是同一个问题的两面 */}
+      <DryRun models={[]} />
 
       {/* §0.6：分组这个概念只在真的有组的时候出现 */}
       {ov.groups.length > 0 && (
