@@ -583,10 +583,48 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
         CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,
         CoreState::SafeMode | CoreState::Stopped => menubar::Status::Disconnected,
     };
-    // 花费和速率要等 M3 的计价才有真数（§4.3）。**现在如实显示「不知道」**
-    // ——画一个 $0.00 会是一个断言：今天没花钱。那不是我们知道的事。
+    if !matches!(status, menubar::Status::Normal) {
+        // core 没在跑的时候，上一次的数字已经不代表现在了。**显示破折号
+        // 而不是一个凝固的旧值** —— 后者会让人以为它还在更新。
+        return menubar::MenuBarState {
+            active: 0,
+            status,
+            ..Default::default()
+        };
+    }
+    // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了 $0.00」
+    // 是句废话（§4.3.2）。按量付费的账号根本没有那些响应头。
+    let quota = state.control.quota().await.unwrap_or_default();
+    let tightest = quota
+        .iter()
+        .flat_map(|p| p.windows.iter())
+        .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent));
+
+    // 花费从库里来。拿不到就是「不知道」——**画一个 $0.00 会是一个断言：
+    // 今天没花钱**，而那不是我们知道的事（§4.3）。
+    let cost_today = if tightest.is_some() {
+        None
+    } else {
+        state
+            .control
+            .summary()
+            .await
+            .ok()
+            // **只用实测的那部分。**把估算混进这个数字里，就是在一块
+            // 用户每天扫一眼的地方假装精确（§4.3）。
+            .map(|s| s.cost_micros_exact as f64 / 1e6)
+    };
+
     menubar::MenuBarState {
-        cost_today: None,
+        cost_today,
+        quota_percent: tightest.map(|w| w.used_percent),
+        quota_reset_in_secs: tightest.and_then(|w| w.reset_in_secs),
+        quota_warning: tightest.is_some_and(|w| {
+            matches!(
+                w.status.as_deref(),
+                Some("allowed_warning") | Some("rejected")
+            )
+        }),
         tokens_per_sec: None,
         active: 0,
         status,

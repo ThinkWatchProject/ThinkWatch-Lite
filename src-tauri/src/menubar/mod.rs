@@ -15,6 +15,22 @@ pub struct MenuBarState {
     /// 第一行：今日花费。`None` 表示还不知道 —— 画成破折号而不是 `$0.00`，
     /// **0 是一个值，破折号不是**。
     pub cost_today: Option<f64>,
+    /// 订阅额度：最紧张那个窗口用了百分之多少（§4.3.2）。
+    ///
+    /// **有它就显示它，而不是金额。**订阅用户的账单是固定的，「今天花了
+    /// $0.00」对他没有任何信息量；他想知道的是「还能用多久」。同一块
+    /// 50 像素，两种人格。
+    ///
+    /// 按量付费的账号根本没有这些响应头，那时它是 None ——
+    /// **不是 0%**，那会画出一个假的空进度条。
+    pub quota_percent: Option<f64>,
+    /// 那个窗口还有多少秒重置。**上游没给就是 None** —— 编一个倒计时
+    /// 出来，用户会照着它安排自己的活
+    pub quota_reset_in_secs: Option<u64>,
+    /// 上游说快到额度了（`allowed_warning` / `rejected`）。
+    ///
+    /// **限流不再是突然发生的**（§4.3.2）：菜单栏在撞上 429 之前就变色。
+    pub quota_warning: bool,
     /// 第二行：输出速率
     pub tokens_per_sec: Option<u32>,
     /// 有没有正在跑的流。有的话数字旁加一个点
@@ -39,6 +55,9 @@ impl Default for MenuBarState {
     fn default() -> Self {
         Self {
             cost_today: None,
+            quota_percent: None,
+            quota_reset_in_secs: None,
+            quota_warning: false,
             tokens_per_sec: None,
             active: 0,
             status: Status::Starting,
@@ -51,10 +70,13 @@ impl MenuBarState {
     pub fn line1(&self) -> String {
         match self.status {
             Status::Starting | Status::Disconnected => "—".to_string(),
-            _ => match self.cost_today {
+            // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了
+            // $0.00」是句废话 —— 他想知道的是还能用多久（§4.3.2）。
+            _ => match (self.quota_percent, self.cost_today) {
+                (Some(p), _) => format!("{}%", p.round() as i64),
                 // 两位小数固定，宽度才稳（§7.4 的「宽度抖动」）
-                Some(c) => format!("${c:.2}"),
-                None => "—".to_string(),
+                (None, Some(c)) => format!("${c:.2}"),
+                (None, None) => "—".to_string(),
             },
         }
     }
@@ -64,11 +86,18 @@ impl MenuBarState {
         match self.status {
             Status::Starting => "—".to_string(),
             Status::Disconnected => "!".to_string(),
-            _ => match self.tokens_per_sec {
-                Some(t) if self.active > 0 => format!("{t} t/s ·"),
-                Some(t) => format!("{t} t/s"),
-                None if self.active > 0 => format!("{} ▶", self.active),
-                None => "—".to_string(),
+            // 订阅用户的第二行是「多久重置」。**没有 reset 头就不画** ——
+            // 那时退回速率，而不是编一个时间
+            _ => match (
+                self.quota_percent,
+                self.quota_reset_in_secs,
+                self.tokens_per_sec,
+            ) {
+                (Some(_), Some(secs), _) => reset_label(secs),
+                (_, _, Some(t)) if self.active > 0 => format!("{t} t/s ·"),
+                (_, _, Some(t)) => format!("{t} t/s"),
+                _ if self.active > 0 => format!("{} ▶", self.active),
+                _ => "—".to_string(),
             },
         }
     }
@@ -78,7 +107,9 @@ impl MenuBarState {
     /// **模板图只能是单色**，所以告警状态必须关掉它自己上色 —— 那正是
     /// §7.4 里那个折中：正常状态享受自动适配，告警状态换彩色。
     pub fn is_template(&self) -> bool {
-        !matches!(self.status, Status::Blocked)
+        // 额度告警也要上色：**限流是「你马上要撞墙了」，那和一次安全
+        // 拦截同等重要** —— 而单色的模板图说不出「注意」这件事。
+        !matches!(self.status, Status::Blocked) && !self.quota_warning
     }
 
     /// 这一帧要不要重画。
@@ -86,7 +117,22 @@ impl MenuBarState {
     /// **空闲时跳过渲染**（§7.4）。没有活跃请求、文字也没变的时候不做
     /// 无谓的重绘 —— 这直接关系到 §4.5 那条「空闲 CPU 约等于零」。
     pub fn needs_redraw(&self, prev: &MenuBarState) -> bool {
-        self.line1() != prev.line1() || self.line2() != prev.line2() || self.status != prev.status
+        self.line1() != prev.line1()
+            || self.line2() != prev.line2()
+            || self.status != prev.status
+            // 颜色变了也要重画，哪怕字一模一样
+            || self.quota_warning != prev.quota_warning
+    }
+}
+
+/// 「2h」「45m」「3d」。**宽度要稳**（§7.4 的宽度抖动）：一个在
+/// 「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动。
+fn reset_label(secs: u64) -> String {
+    match secs {
+        0 => "已重置".to_string(),
+        s if s < 3600 => format!("{}m", s.div_ceil(60)),
+        s if s < 86_400 => format!("{}h", s.div_ceil(3600)),
+        s => format!("{}d", s.div_ceil(86_400)),
     }
 }
 
@@ -98,6 +144,9 @@ mod tests {
         MenuBarState {
             cost_today: cost,
             tokens_per_sec: tps,
+            quota_percent: None,
+            quota_reset_in_secs: None,
+            quota_warning: false,
             active,
             status,
         }
@@ -187,5 +236,84 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod quota_tests {
+    use super::*;
+
+    fn sub(percent: f64, reset: Option<u64>, warn: bool) -> MenuBarState {
+        MenuBarState {
+            cost_today: Some(0.0),
+            quota_percent: Some(percent),
+            quota_reset_in_secs: reset,
+            quota_warning: warn,
+            status: Status::Normal,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_subscription_account_sees_a_percentage_not_a_price() {
+        // **对订阅用户「今天花了 $0.00」是句废话** —— 他的账单是固定的，
+        // 想知道的是还能用多久（§4.3.2）。
+        let s = sub(62.0, Some(7200), false);
+        assert_eq!(s.line1(), "62%");
+        assert_eq!(s.line2(), "2h");
+    }
+
+    #[test]
+    fn a_pay_as_you_go_account_still_sees_the_price() {
+        let s = MenuBarState {
+            cost_today: Some(3.42),
+            status: Status::Normal,
+            ..Default::default()
+        };
+        assert_eq!(s.line1(), "$3.42");
+    }
+
+    #[test]
+    fn no_reset_header_means_no_countdown_not_a_made_up_one() {
+        // **编一个倒计时出来，用户会照着它安排自己的活**（§4.3.2）。
+        let s = sub(62.0, None, false);
+        assert_eq!(s.line2(), "—", "上游没给重置时间，我们却画了一个");
+    }
+
+    #[test]
+    fn the_reset_label_keeps_a_stable_width() {
+        // 一个在「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动
+        // （§7.4 的宽度抖动）。
+        assert_eq!(reset_label(0), "已重置");
+        assert_eq!(reset_label(59), "1m");
+        assert_eq!(reset_label(3599), "60m");
+        assert_eq!(reset_label(3600), "1h");
+        assert_eq!(reset_label(7200), "2h");
+        assert_eq!(reset_label(86_400), "1d");
+        assert_eq!(reset_label(86_401), "2d");
+    }
+
+    #[test]
+    fn a_quota_warning_switches_off_the_template_so_it_can_be_coloured() {
+        // **限流是「你马上要撞墙了」，那和一次安全拦截同等重要** ——
+        // 而单色的模板图说不出「注意」这件事。
+        assert!(!sub(95.0, None, true).is_template());
+        assert!(sub(95.0, None, false).is_template());
+    }
+
+    #[test]
+    fn a_colour_change_alone_still_triggers_a_redraw() {
+        // 字一模一样但颜色变了，不重画的话用户永远看不到那个告警。
+        let calm = sub(95.0, Some(60), false);
+        let warn = sub(95.0, Some(60), true);
+        assert_eq!(calm.line1(), warn.line1());
+        assert!(warn.needs_redraw(&calm));
+    }
+
+    #[test]
+    fn a_percentage_is_rounded_so_the_width_does_not_jitter() {
+        assert_eq!(sub(62.4, None, false).line1(), "62%");
+        assert_eq!(sub(62.6, None, false).line1(), "63%");
+        assert_eq!(sub(100.0, None, false).line1(), "100%");
     }
 }

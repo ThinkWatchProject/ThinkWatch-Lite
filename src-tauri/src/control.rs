@@ -167,6 +167,11 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
 
+    /// 订阅额度。按量付费的账号没有，那时是空列表。
+    pub async fn quota(&self) -> Result<Vec<tw_api::ProviderQuota>> {
+        Ok(serde_json::from_slice(&self.get("/quota").await?)?)
+    }
+
     pub async fn storage(&self) -> Result<tw_api::StorageStatus> {
         Ok(serde_json::from_slice(&self.get("/storage").await?)?)
     }
