@@ -33,7 +33,15 @@ export type CoreEvent =
       line: number | null;
       excerpt: string | null;
       at_ms: number;
-    };
+    }
+  /**
+   * 客户端配置面上**新出现**了可疑的东西（§5.3）。
+   *
+   * **只有新出现的才会进来。**「一个用了半年的 skill 突然多了一段零宽
+   * 字符」这个信号，比「这个文件里有可疑内容」强得多 —— 而后者在用户
+   * 打开安全页的时候已经全部看过了。
+   */
+  | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number };
 
 export interface CoreStatus {
   api_version: number;
@@ -95,7 +103,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "locally_answered":
     case "config_reloaded":
     case "config_rejected":
-      // 都不进请求列表。配置事件是另一回事，App 单独接。
+    case "scan_alert":
+      // 都不进请求列表。配置事件和扫描告警是另一回事，App 单独接 ——
+      // 后者说的是磁盘上的文件，和请求没有关系。
       break;
     case "request_failed": {
       const r = rows.get(ev.id);

@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { applyEvent, type CoreEvent, type HistoryRow, type RequestRow } from "./types";
+import {
+  applyEvent,
+  type CoreEvent,
+  type HistoryRow,
+  type RequestRow,
+  type ScanFinding,
+} from "./types";
 
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
 const MAX_ROWS = 500;
@@ -23,6 +29,13 @@ export function useRequests() {
    * 最后一次配置被拒的样子。**留着直到下一次成功换入**（§3.8）——
    * 一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
    */
+  /**
+   * 配置面上新出现的可疑内容（§5.3）。
+   *
+   * **只攒新出现的那些**，而且不清空 —— 用户可能正在别的页上，这条
+   * 提示要一直挂着直到他去看过。
+   */
+  const [alerts, setAlerts] = useState<ScanFinding[]>([]);
   const [rejected, setRejected] = useState<Extract<CoreEvent, { kind: "config_rejected" }> | null>(
     null,
   );
@@ -79,6 +92,7 @@ export function useRequests() {
       for (const ev of batch) {
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
+        if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
         if (ev.kind === "config_reloaded") {
           // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好
           setRejected(null);
@@ -114,5 +128,5 @@ export function useRequests() {
     };
   }, []);
 
-  return { rows, locallyAnswered, rejected, configVersion };
+  return { rows, locallyAnswered, rejected, configVersion, alerts, clearAlerts: () => setAlerts([]) };
 }

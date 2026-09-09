@@ -24,7 +24,15 @@ import type {
  * - **不存任何状态。**每次打开现扫一遍，你看到的永远是磁盘上此刻的
  *   真实情况；没有「同步失效了」这种问题，因为压根没有同步状态。
  */
-export default function Security() {
+export default function Security({
+  alerts,
+  onSeen,
+}: {
+  /** 监听到的、**新出现**的那些（§5.3）。它们已经在下面的完整列表里了，
+   *  这里单独再说一遍是因为「刚刚变的」和「一直就有」是两个信号。 */
+  alerts: ScanFinding[];
+  onSeen: () => void;
+}) {
   const [data, setData] = useState<ScanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,6 +128,39 @@ export default function Security() {
         <div className="text-xs text-amber-600 dark:text-amber-400">
           有 {data.unreadable.length} 份文件读不动，这次没扫到：{data.unreadable.join("、")}
         </div>
+      )}
+
+      {alerts.length > 0 && (
+        <section className="rounded border border-red-300 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-red-900 dark:text-red-200">
+              刚刚新出现的 · {alerts.length} 处
+            </h2>
+            <button
+              className="ml-auto rounded px-2 py-0.5 text-xs text-red-700 dark:text-red-300"
+              onClick={onSeen}
+            >
+              我看过了
+            </button>
+          </div>
+          {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
+              比「这个文件里有可疑内容」强得多 */}
+          <p className="mt-1 text-xs text-red-800 dark:text-red-300">
+            这些是我们盯着你的配置文件时**新**出现的，不是一直就在那儿的。
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {alerts.map((f, i) => (
+              <li key={i}>
+                <button className="text-left hover:underline" onClick={() => setOpen(f)}>
+                  {f.title}
+                  <span className="ml-2 text-red-700 dark:text-red-400">
+                    {f.path.replace(/^.*\//, "")}:{f.line}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section>

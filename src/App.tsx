@@ -24,7 +24,7 @@ function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" 
 }
 
 export default function App() {
-  const { rows, locallyAnswered, rejected, configVersion } = useRequests();
+  const { rows, locallyAnswered, rejected, configVersion, alerts, clearAlerts } = useRequests();
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +131,12 @@ export default function App() {
               }
             >
               {t === "requests" ? "请求" : t === "sessions" ? "会话" : t === "dashboard" ? "统计" : t === "clients" ? "客户端" : t === "security" ? "安全" : "配置"}
+              {/* 配置面上出现了新东西 —— 挂个角标，直到他去看过（§5.3） */}
+              {t === "security" && alerts.length > 0 && (
+                <span className="ml-1 rounded-full bg-red-600 px-1 text-[10px] text-white">
+                  {alerts.length}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -172,7 +178,7 @@ export default function App() {
       ) : tab === "clients" ? (
         <Clients />
       ) : tab === "security" ? (
-        <Security />
+        <Security alerts={alerts} onSeen={clearAlerts} />
       ) : tab === "config" ? (
         ov ? (
           <Config ov={ov} configVersion={configVersion} />
