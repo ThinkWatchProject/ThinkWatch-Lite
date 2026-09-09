@@ -170,6 +170,10 @@ export interface Summary {
   cost_micros_estimated: number;
   /** 有多少条请求根本没有价格。**不是 0，是「不知道」** */
   unpriced_requests: number;
+  /** 走订阅型上游的请求数。**不参与金额合计**（§4.3.1） */
+  subscription_requests: number;
+  /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
+  subscription_tokens: number;
   /** 价目表的快照日期。**成本旁边要标它**（§4.3.0） */
   pricing_date: string;
 }
@@ -218,6 +222,8 @@ export interface HistoryRow {
   local: boolean;
   /** 路由决策与尝试链。老记录没有它 */
   routing: RoutingView | null;
+  /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
+  billing: string;
 }
 
 export interface StorageStatus {

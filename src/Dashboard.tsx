@@ -99,6 +99,18 @@ export default function Dashboard({ tick }: { tick: number }) {
                 value={`${s.requests}`}
                 hint={s.failed > 0 ? `${s.failed} 条失败` : undefined}
               />
+              {/*
+                **第三栏：订阅调用量。**订阅制的边际成本是零，按 API 价目表
+                算出来的数字是纯虚构的 —— 所以它不进上面那个金额，而是单独
+                显示 token 量（§4.3.1）。
+              */}
+              {s.subscription_requests > 0 && (
+                <Stat
+                  label="订阅调用"
+                  value={`${s.subscription_requests}`}
+                  hint={`${s.subscription_tokens.toLocaleString()} token · 不计入金额`}
+                />
+              )}
               {s.locally_answered > 0 && (
                 <Stat
                   label="本地应答"
@@ -247,7 +259,14 @@ export default function Dashboard({ tick }: { tick: number }) {
                       : "—"}
                   </td>
                   <td>
-                    {r.cost_micros == null ? (
+                    {r.billing === "subscription" ? (
+                      // **「订阅」而不是 $0.00。**后者看起来像一个算出来
+                      // 的结果，会让人误以为这次调用真的免费；「订阅」
+                      // 表达的是「这笔账不在这个维度上」（§4.3.1）
+                      <span className="text-neutral-500" title="这家是订阅制，边际成本为零">
+                        订阅
+                      </span>
+                    ) : r.cost_micros == null ? (
                       // **「没有价格」不是 $0.00。**显示成 0 会让它悄悄
                       // 混进总额的心理预期里（§4.3）
                       <span className="text-neutral-400" title="这个模型不在价目表里">

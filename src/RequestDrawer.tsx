@@ -253,7 +253,12 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                     <Row
                       label="花费"
                       value={
-                        r.cost_micros == null ? (
+                        r.billing === "subscription" ? (
+                          // 「订阅」而不是 $0.00（§4.3.1）
+                          <span className="text-neutral-500">
+                            订阅 —— 这家是订阅制，这笔账不在金额这个维度上
+                          </span>
+                        ) : r.cost_micros == null ? (
                           // 「没有价格」和「花了 0 元」是两件事
                           <span className="text-neutral-500">
                             算不出来 —— 这个模型不在价目表里
