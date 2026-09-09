@@ -5,6 +5,7 @@ import Setup from "./Setup";
 import Connect from "./Connect";
 import Config from "./Config";
 import Clients from "./Clients";
+import Security from "./Security";
 import Dashboard from "./Dashboard";
 import type { CoreStatus, Overview, SetupResponse } from "./types";
 
@@ -27,7 +28,7 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
-  const [tab, setTab] = useState<"requests" | "dashboard" | "clients" | "config">("requests");
+  const [tab, setTab] = useState<"requests" | "dashboard" | "clients" | "security" | "config">("requests");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
@@ -117,7 +118,7 @@ export default function App() {
           <code className="text-xs text-neutral-500">{status.gateway_addr}</code>
         )}
         <nav className="ml-auto flex gap-1 text-xs">
-          {(["requests", "dashboard", "clients", "config"] as const).map((t) => (
+          {(["requests", "dashboard", "clients", "security", "config"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -128,7 +129,7 @@ export default function App() {
                   : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
               }
             >
-              {t === "requests" ? "请求" : t === "dashboard" ? "统计" : t === "clients" ? "客户端" : "配置"}
+              {t === "requests" ? "请求" : t === "dashboard" ? "统计" : t === "clients" ? "客户端" : t === "security" ? "安全" : "配置"}
             </button>
           ))}
         </nav>
@@ -167,6 +168,8 @@ export default function App() {
         <Dashboard tick={dashTick} />
       ) : tab === "clients" ? (
         <Clients />
+      ) : tab === "security" ? (
+        <Security />
       ) : tab === "config" ? (
         ov ? (
           <Config ov={ov} configVersion={configVersion} />

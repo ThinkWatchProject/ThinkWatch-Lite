@@ -263,6 +263,28 @@ async fn rollback_config(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 扫一遍客户端配置面。**只读，什么都不存**（§7.12）。
+#[tauri::command]
+async fn scan_configs(
+    state: tauri::State<'_, AppState>,
+    projects: Vec<String>,
+) -> Result<tw_api::ScanResponse, String> {
+    state
+        .control
+        .scan(&projects)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// 路由试算。**只算，不发任何请求。**
+#[tauri::command]
+async fn dry_run(
+    state: tauri::State<'_, AppState>,
+    req: tw_api::DryRunRequest,
+) -> Result<tw_api::DryRunResult, String> {
+    state.control.dry_run(req).await.map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn list_clients(state: tauri::State<'_, AppState>) -> Result<tw_api::ClientsResponse, String> {
     state.control.clients().await.map_err(|e| format!("{e:#}"))
@@ -379,7 +401,9 @@ pub fn run() {
             adopt_client,
             plan_restore,
             restore_client,
-            diagnose_client
+            diagnose_client,
+            scan_configs,
+            dry_run
         ])
         .setup(|app| {
             let handle = app.handle().clone();

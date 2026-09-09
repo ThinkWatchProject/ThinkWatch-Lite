@@ -9,6 +9,20 @@ use anyhow::{Context, Result};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 
+/// 查询串里的一段。项目路径里有空格和中文是常事。
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 pub struct ControlClient {
     socket: PathBuf,
 }
@@ -213,6 +227,26 @@ impl ControlClient {
         Ok(serde_json::from_slice(
             &self.get("/latency/provider").await?,
         )?)
+    }
+
+    /// 扫一遍客户端配置面。**每次现扫，什么都不存**（§7.12）。
+    pub async fn scan(&self, projects: &[String]) -> Result<tw_api::ScanResponse> {
+        let q = projects
+            .iter()
+            .map(|p| format!("project={}", urlencode(p)))
+            .collect::<Vec<_>>()
+            .join("&");
+        let path = if q.is_empty() {
+            "/scan".to_string()
+        } else {
+            format!("/scan?{q}")
+        };
+        Ok(serde_json::from_slice(&self.get(&path).await?)?)
+    }
+
+    /// 路由试算。**只算，不发任何请求。**
+    pub async fn dry_run(&self, req: tw_api::DryRunRequest) -> Result<tw_api::DryRunResult> {
+        self.send_json(hyper::Method::POST, "/dryrun", &req).await
     }
 
     // ---------------------------------------------------- 客户端接管

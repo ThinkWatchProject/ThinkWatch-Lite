@@ -474,3 +474,60 @@ export interface FindingView {
   /** 用户可以自己执行的下一步。**我们不替他执行。** */
   fix: string | null;
 }
+
+// ---------------------------------------------------------------- 静态扫描
+
+export interface ScanFinding {
+  level: "high" | "medium" | "low";
+  rule: string;
+  kind: "hooks" | "mcp" | "skill" | "command" | "agent" | "instructions";
+  kind_label: string;
+  client: string;
+  path: string;
+  line: number;
+  title: string;
+  detail: string;
+  /** 命中的那一行，**不可见字符已经换成可见记号** */
+  excerpt: string;
+}
+
+export interface McpView {
+  name: string;
+  client: string;
+  command: string;
+  args: string[];
+  url: string | null;
+  /** **只有名字，没有值** */
+  env_keys: string[];
+  enabled: boolean;
+  source: string;
+  third_party: boolean;
+}
+
+export interface SkillView {
+  name: string;
+  client: string;
+  path: string;
+  allowed_tools: string[];
+}
+
+export interface HookView {
+  client: string;
+  event: string;
+  command: string;
+  source: string;
+}
+
+export interface ScanResponse {
+  findings: ScanFinding[];
+  mcp: McpView[];
+  skills: SkillView[];
+  hooks: HookView[];
+  /** 同名但配置不同的 MCP server */
+  conflicting: string[];
+  unreadable: string[];
+  scanned: number;
+  rules_origin: string;
+  rules_warning: string | null;
+  projects: string[];
+}
