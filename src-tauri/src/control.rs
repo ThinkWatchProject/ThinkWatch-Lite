@@ -152,6 +152,25 @@ impl ControlClient {
         self.post_json("/l1", &req).await
     }
 
+    /// 今天的汇总。
+    pub async fn summary(&self) -> Result<tw_api::Summary> {
+        Ok(serde_json::from_slice(&self.get("/summary").await?)?)
+    }
+
+    pub async fn history(&self, limit: usize) -> Result<Vec<tw_api::HistoryRow>> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/history?limit={limit}")).await?,
+        )?)
+    }
+
+    pub async fn latency(&self) -> Result<Vec<tw_api::LatencyView>> {
+        Ok(serde_json::from_slice(&self.get("/latency").await?)?)
+    }
+
+    pub async fn storage(&self) -> Result<tw_api::StorageStatus> {
+        Ok(serde_json::from_slice(&self.get("/storage").await?)?)
+    }
+
     /// 当前配置的原文和版本号。
     pub async fn config(&self) -> Result<tw_api::ConfigText> {
         let body = self.get("/config").await?;

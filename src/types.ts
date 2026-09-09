@@ -147,6 +147,91 @@ export interface L1Result {
   error?: string | null;
 }
 
+// —— 观测（§8）——
+
+/**
+ * 一段时间的汇总。
+ *
+ * **实测、估算、没有价格是三个数，不是一个。**「今日 $12.40 实测 +
+ * ~$0.80 估算，另有 3 条没有价格」比一个混在一起的 $13.20 诚实得多 ——
+ * 后者看起来是个确定的数字（§4.3）。
+ */
+export interface Summary {
+  requests: number;
+  failed: number;
+  /** 本地应答的次数。**是个正向数字**（§4.8） */
+  locally_answered: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  /** 微分：百万分之一美元 */
+  cost_micros_exact: number;
+  cost_micros_estimated: number;
+  /** 有多少条请求根本没有价格。**不是 0，是「不知道」** */
+  unpriced_requests: number;
+  /** 价目表的快照日期。**成本旁边要标它**（§4.3.0） */
+  pricing_date: string;
+}
+
+export interface LatencyView {
+  model: string;
+  p50: number;
+  p95: number;
+  /** 「800ms」是 3 个样本还是 300 个，含义完全不同（§4.6） */
+  samples: number;
+}
+
+export interface HistoryRow {
+  id: number;
+  at_ms: number;
+  client: string;
+  provider: string;
+  model: string;
+  path: string;
+  status: number | null;
+  ttfb_ms: number | null;
+  duration_ms: number | null;
+  bytes: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost_micros: number | null;
+  cost_estimated: boolean;
+  error: string | null;
+  local: boolean;
+}
+
+export interface StorageStatus {
+  level: string;
+  rows: number;
+  blob_bytes: number;
+  /** **永远是 false** —— 观测挂了，代理照跑（§4.7） */
+  forwarding_affected: boolean;
+}
+
+export interface Dashboard {
+  summary: Summary;
+  latency: LatencyView[];
+  history: HistoryRow[];
+  storage: StorageStatus | null;
+}
+
+/**
+ * 微分变成给人看的金额。
+ *
+ * **小额不能显示成 $0.00。**一次便宜的调用是 $0.0003，显示成 $0.00 会让
+ * 用户以为它是免费的 —— 而「看起来免费」正是这类工具最容易造成的误解。
+ */
+export function usd(micros: number): string {
+  const v = micros / 1e6;
+  if (v === 0) return "$0";
+  if (v < 0.01) return `$${v.toFixed(4)}`;
+  if (v < 1) return `$${v.toFixed(3)}`;
+  return `$${v.toFixed(2)}`;
+}
+
 // —— 配置（§3.8 的双向同步）——
 export interface ConfigText {
   path: string;

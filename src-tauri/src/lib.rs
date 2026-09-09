@@ -123,6 +123,30 @@ async fn speed_test(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 今天的汇总、历史、延迟、存储状态。
+///
+/// **四个一起取。**界面上它们是同一块，分四次 invoke 会让那一块在几十
+/// 毫秒里分四次跳变。
+#[tauri::command]
+async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, String> {
+    let c = &state.control;
+    Ok(Dashboard {
+        summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
+        latency: c.latency().await.unwrap_or_default(),
+        history: c.history(200).await.unwrap_or_default(),
+        storage: c.storage().await.ok(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct Dashboard {
+    summary: tw_api::Summary,
+    latency: Vec<tw_api::LatencyView>,
+    history: Vec<tw_api::HistoryRow>,
+    /// 拿不到就是没有 —— 存储层不在的时候网关照常跑（§4.7）
+    storage: Option<tw_api::StorageStatus>,
+}
+
 #[tauri::command]
 async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
     state.control.config().await.map_err(|e| format!("{e:#}"))
@@ -214,6 +238,7 @@ pub fn run() {
             overview,
             probe_upstream,
             speed_test,
+            dashboard,
             get_config,
             patch_config,
             put_config,

@@ -4,6 +4,7 @@ import { useRequests } from "./useRequests";
 import Setup from "./Setup";
 import Connect from "./Connect";
 import Config from "./Config";
+import Dashboard from "./Dashboard";
 import type { CoreStatus, Overview, SetupResponse } from "./types";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
@@ -25,7 +26,9 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
-  const [tab, setTab] = useState<"requests" | "config">("requests");
+  const [tab, setTab] = useState<"requests" | "dashboard" | "config">("requests");
+  /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
+  const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
 
   useEffect(() => {
@@ -48,6 +51,7 @@ export default function App() {
       } catch {
         /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
+      if (alive) setDashTick((t) => t + 1);
       try {
         const c = await invoke<string>("core_state");
         if (alive) setCore(c);
@@ -112,7 +116,7 @@ export default function App() {
           <code className="text-xs text-neutral-500">{status.gateway_addr}</code>
         )}
         <nav className="ml-auto flex gap-1 text-xs">
-          {(["requests", "config"] as const).map((t) => (
+          {(["requests", "dashboard", "config"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -123,7 +127,7 @@ export default function App() {
                   : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
               }
             >
-              {t === "requests" ? "请求" : "配置"}
+              {t === "requests" ? "请求" : t === "dashboard" ? "统计" : "配置"}
             </button>
           ))}
         </nav>
@@ -158,7 +162,9 @@ export default function App() {
         </div>
       )}
 
-      {tab === "config" ? (
+      {tab === "dashboard" ? (
+        <Dashboard tick={dashTick} />
+      ) : tab === "config" ? (
         ov ? (
           <Config ov={ov} configVersion={configVersion} />
         ) : (
