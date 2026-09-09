@@ -133,6 +133,14 @@ impl ControlClient {
         .await
     }
 
+    /// L1 测速：只握手，不发业务请求。**零成本**，用户可以随便点。
+    ///
+    /// 全部不给就测所有上游。core 那边是逐个测的 —— 并发会让每一段的
+    /// 耗时互相干扰，而这一层存在的全部意义就是那几个数字准不准。
+    pub async fn l1(&self, req: tw_api::L1Request) -> Result<Vec<tw_api::L1Result>> {
+        self.post_json("/l1", &req).await
+    }
+
     /// 首次运行：写下第一个上游。
     pub async fn setup(
         &self,

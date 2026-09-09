@@ -104,6 +104,24 @@ async fn probe_upstream(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// L1 测速。零成本，所以不需要任何确认 —— L3 才需要（§4.6）。
+#[tauri::command]
+async fn speed_test(
+    state: tauri::State<'_, AppState>,
+    provider: Option<String>,
+    proxy: Option<String>,
+) -> Result<Vec<tw_api::L1Result>, String> {
+    state
+        .control
+        .l1(tw_api::L1Request {
+            provider,
+            proxy,
+            base_url: None,
+        })
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn setup_first_provider(
     state: tauri::State<'_, AppState>,
@@ -143,6 +161,7 @@ pub fn run() {
             core_state,
             overview,
             probe_upstream,
+            speed_test,
             setup_first_provider
         ])
         .setup(|app| {

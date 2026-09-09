@@ -96,6 +96,28 @@ export interface ProbeResponse {
   error: string | null;
 }
 
+/**
+ * L1 测速的一段。**分段是个列表而不是固定的 DNS/TCP/TLS 三段** ——
+ * 走代理时形状本来就不同：多出「代理握手」，而 socks5h 下根本没有本地
+ * DNS 那一段。
+ */
+export interface L1Segment {
+  name: string;
+  ms: number;
+}
+
+export interface L1Result {
+  /** 实际测的是什么。回显出来，别让用户猜点的那一下测了谁 */
+  target: string;
+  via?: string | null;
+  ok: boolean;
+  segments: L1Segment[];
+  total_ms: number;
+  /** 解释为什么某一段不在上面。**没有这句话，缺一段看起来就像 bug** */
+  notes?: string[];
+  error?: string | null;
+}
+
 export interface SetupResponse {
   gateway_key: string;
   gateway_addr: string;
