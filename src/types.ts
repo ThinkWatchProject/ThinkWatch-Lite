@@ -404,3 +404,73 @@ export interface Overview {
   clients: ClientView[];
   listen: ListenView;
 }
+
+// ---------------------------------------------------------- 客户端接管
+//
+// **`DetectedClient` 和上面的 `ClientView` 是两个东西**：那个是
+// config.yaml 里的一把网关密钥，这个是本机上装着的一个 AI 客户端 App。
+// 中文都叫「客户端」，混起来的话，「有几个客户端」这句话就有两个答案。
+
+export interface DetectedClient {
+  id: string;
+  name: string;
+  path: string;
+  /** 跟完符号链接的真身。和 path 不同时要显示出来 */
+  real: string;
+  installed: boolean;
+  has_config: boolean;
+  adopted_at_ms: number | null;
+  /** 配置里此刻的端点，**读出来的** */
+  endpoint: string | null;
+  shadows: string[];
+  takes_effect: "immediately" | "on_restart";
+  takes_effect_note: string;
+  /** 需要重开终端的客户端不提示「一直没收到请求」—— 那是狼来了 */
+  warns_when_silent: boolean;
+  verified: "measured" | "fields_only";
+  verified_note: string;
+  costs: string[];
+  /** 最后一次收到它的请求。**接管有没有生效，只有它能证明** */
+  last_seen_ms: number | null;
+}
+
+export interface ManualClient {
+  name: string;
+  how: string;
+  caveat: string;
+}
+
+export interface ClientsResponse {
+  clients: DetectedClient[];
+  manual: ManualClient[];
+  gateway_base: string;
+  keys: string[];
+}
+
+export interface PlanView {
+  client: string;
+  path: string;
+  before: string | null;
+  after: string;
+  notes: string[];
+  shadows: string[];
+  noop: boolean;
+  carries_secret: boolean;
+  fields: string[];
+}
+
+export interface AdoptResponse {
+  real: string;
+  backup: string;
+  created: boolean;
+  warnings: string[];
+  takes_effect_note: string;
+}
+
+export interface FindingView {
+  level: "blocking" | "suspect" | "clear";
+  title: string;
+  detail: string;
+  /** 用户可以自己执行的下一步。**我们不替他执行。** */
+  fix: string | null;
+}

@@ -1,0 +1,429 @@
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  AdoptResponse,
+  ClientsResponse,
+  DetectedClient,
+  FindingView,
+  PlanView,
+} from "./types";
+
+/**
+ * 客户端接管页（DESIGN.md §7.11）。
+ *
+ * 这是整个应用里唯一会去改**用户其他软件**配置的地方，所以这一页的
+ * 每一处交互都是按「让他敢按下去、也退得回来」设计的：
+ *
+ * - 接管前必须看到 diff。**没有一键接管按钮** —— 那种按钮顺手到
+ *   没有人会记得先看看要改什么。
+ * - 接管的代价（Remote Control 被禁用之类）在确认框里就列出来，
+ *   不等用户自己撞上（那些不是我们的 bug，但他会算到我们头上）。
+ * - 接管完成后**不宣布成功**，只说「已接管，等第一个请求」。
+ *   我们改了一个文件，但那个文件有没有被读到，只有请求能证明。
+ */
+export default function Clients() {
+  const [data, setData] = useState<ClientsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<{ p: PlanView; c: DetectedClient; restore: boolean } | null>(
+    null,
+  );
+  const [done, setDone] = useState<AdoptResponse | null>(null);
+  const [why, setWhy] = useState<{ id: string; found: FindingView[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setData(await invoke<ClientsResponse>("list_clients"));
+      setError(null);
+    } catch (e) {
+      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      setError(typeof e === "string" ? e : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    // 观察窗口靠轮询：等的是「第一个真实请求」，而它可能几分钟后才来
+    const t = setInterval(() => void load(), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function ask(c: DetectedClient, restore: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await invoke<PlanView>(restore ? "plan_restore" : "plan_adopt", {
+        client: c.id,
+      });
+      setPlan({ p, c, restore });
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm() {
+    if (!plan) return;
+    setBusy(true);
+    try {
+      const r = await invoke<AdoptResponse>(plan.restore ? "restore_client" : "adopt_client", {
+        client: plan.c.id,
+      });
+      setPlan(null);
+      setDone(r);
+      await load();
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+      setPlan(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function diagnose(id: string) {
+    setBusy(true);
+    try {
+      setWhy({ id, found: await invoke<FindingView[]>("diagnose_client", { client: id }) });
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data) {
+    return <div className="p-5 text-sm text-neutral-500">{error ?? "扫描中…"}</div>;
+  }
+
+  const here = data.clients.filter((c) => c.installed);
+  const gone = data.clients.filter((c) => !c.installed);
+
+  return (
+    <div className="space-y-5 p-5">
+      {error && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          {error}
+        </div>
+      )}
+
+      <div className="text-xs text-neutral-500">
+        接管会把这些客户端指向 <code>{data.gateway_base}</code>。
+        只改端点和密钥两个字段，其余原样不动，随时可以还原。
+      </div>
+
+      {here.map((c) => (
+        <Card key={c.id} c={c} busy={busy} onAsk={ask} onWhy={diagnose} />
+      ))}
+
+      {gone.length > 0 && (
+        <details className="text-xs text-neutral-500">
+          <summary className="cursor-pointer">这台机器上没找到的（{gone.length}）</summary>
+          <ul className="mt-2 space-y-1 pl-4">
+            {gone.map((c) => (
+              <li key={c.id}>
+                {c.name} —— 没在 <code>{c.path}</code> 找到
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
+      <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+        <div className="mb-2 text-xs font-medium">接管不了，只能给你步骤</div>
+        <ul className="space-y-2 text-xs text-neutral-600 dark:text-neutral-400">
+          {data.manual.map((m) => (
+            <li key={m.name}>
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">{m.name}</span>
+              <div>{m.how.replace("我们的地址", data.gateway_base)}</div>
+              <div className="text-neutral-500">{m.caveat}</div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {plan && <PlanDialog {...plan} busy={busy} onCancel={() => setPlan(null)} onConfirm={confirm} />}
+      {done && <DoneDialog r={done} onClose={() => setDone(null)} />}
+      {why && <WhyDialog found={why.found} onClose={() => setWhy(null)} />}
+    </div>
+  );
+}
+
+function Card({
+  c,
+  busy,
+  onAsk,
+  onWhy,
+}: {
+  c: DetectedClient;
+  busy: boolean;
+  onAsk: (c: DetectedClient, restore: boolean) => void;
+  onWhy: (id: string) => void;
+}) {
+  const adopted = c.adopted_at_ms != null;
+  // **「已接管」和「已生效」是两回事。**只有请求能证明后者（§7.11）
+  const verified = adopted && c.last_seen_ms != null && c.last_seen_ms > (c.adopted_at_ms ?? 0);
+  const silentFor = adopted && !verified ? Date.now() - (c.adopted_at_ms ?? 0) : 0;
+  // 需要重开终端的客户端不催 —— 用户可能一整天都没重开过，
+  // 那时弹「是不是没生效」是狼来了
+  const nagging = c.warns_when_silent && silentFor > 5 * 60 * 1000;
+
+  return (
+    <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{c.name}</span>
+        {verified ? (
+          <Badge tone="ok">已验证 · 收到过它的请求</Badge>
+        ) : adopted ? (
+          <Badge tone="wait">已接管 · 等第一个请求</Badge>
+        ) : (
+          <Badge tone="idle">没接管</Badge>
+        )}
+        <div className="ml-auto flex gap-1">
+          {adopted && (
+            <button
+              className="rounded px-2 py-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              onClick={() => onWhy(c.id)}
+              disabled={busy}
+            >
+              为什么没生效？
+            </button>
+          )}
+          <button
+            className="rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
+            onClick={() => onAsk(c, adopted)}
+            disabled={busy}
+          >
+            {adopted ? "还原" : "接管…"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
+        <div>
+          <code>{c.real}</code>
+          {/* 用户以为在改 ~/.claude/settings.json，实际写的可能是他
+              dotfiles 仓库里的那份 —— 而那是个会被 git 提交的地方 */}
+          {c.real !== c.path && <span className="ml-1">（{c.path} 是符号链接）</span>}
+        </div>
+        {c.endpoint && <div>现在指向 {c.endpoint}</div>}
+        {c.takes_effect === "on_restart" && <div>{c.takes_effect_note}</div>}
+        {c.verified === "fields_only" && <div>ⓘ {c.verified_note}</div>}
+        {c.shadows.map((s) => (
+          <div key={s} className="text-amber-600 dark:text-amber-400">
+            ⚠ {s} 优先级更高，可能盖住我们
+          </div>
+        ))}
+        {nagging && (
+          <div className="text-amber-600 dark:text-amber-400">
+            接管超过五分钟了还没收到它的请求 —— 点上面那个按钮查一下。
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Badge({ tone, children }: { tone: "ok" | "wait" | "idle"; children: React.ReactNode }) {
+  const cls = {
+    ok: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+    wait: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    idle: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+  }[tone];
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] ${cls}`}>{children}</span>;
+}
+
+function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** 接管前的确认。**这一步不能省** —— 我们要改的是他别的软件的配置。 */
+function PlanDialog({
+  p,
+  c,
+  restore,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  p: PlanView;
+  c: DetectedClient;
+  restore: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Shell onClose={onCancel}>
+      <div className="text-sm font-medium">
+        {restore ? "还原" : "接管"} {c.name}
+      </div>
+      <div className="mt-1 text-xs text-neutral-500">
+        要改 <code>{p.path}</code>
+      </div>
+
+      {p.noop ? (
+        <div className="mt-3 text-xs">已经是这样了，什么都不用改。</div>
+      ) : (
+        <>
+          {p.fields.length > 0 && (
+            <ul className="mt-3 space-y-0.5 text-xs">
+              {p.fields.map((f) => (
+                <li key={f}>
+                  <code>{f}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* 接管的代价要在这里列出来，不能等用户自己发现 */}
+          {p.notes.length > 0 && (
+            <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-neutral-600 dark:text-neutral-400">
+              {p.notes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          )}
+
+          <Diff before={p.before} after={p.after} />
+
+          <div className="mt-3 text-xs text-neutral-500">
+            改之前会把整个文件备份一份。除了上面这几个字段，其余一个字节都不动。
+            {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
+          </div>
+        </>
+      )}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onCancel}>
+          取消
+        </button>
+        {!p.noop && (
+          <button
+            className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {restore ? "还原" : "确认接管"}
+          </button>
+        )}
+      </div>
+    </Shell>
+  );
+}
+
+/** 逐行 diff。**只标改动的行**，其余给上下文 —— 用户要看的是「动了什么」。 */
+function Diff({ before, after }: { before: string | null; after: string }) {
+  const a = (before ?? "").split("\n");
+  const b = after.split("\n");
+  const removed = new Set(a.filter((l) => !b.includes(l)));
+  const added = new Set(b.filter((l) => !a.includes(l)));
+  const rows: { text: string; kind: "add" | "del" | "same" }[] = [];
+  for (const l of a) if (removed.has(l)) rows.push({ text: l, kind: "del" });
+  for (const l of b) rows.push({ text: l, kind: added.has(l) ? "add" : "same" });
+
+  return (
+    <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 text-[11px] leading-relaxed dark:bg-neutral-950">
+      {rows.map((r, i) => (
+        <div
+          key={i}
+          className={
+            r.kind === "add"
+              ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
+              : r.kind === "del"
+                ? "bg-red-50 text-red-900 line-through dark:bg-red-950/50 dark:text-red-300"
+                : "text-neutral-500"
+          }
+        >
+          {r.kind === "add" ? "+ " : r.kind === "del" ? "- " : "  "}
+          {r.text}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+/** 接管完成。**不说「成功」** —— 只有请求能证明它真的生效了。 */
+function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
+  return (
+    <Shell onClose={onClose}>
+      <div className="text-sm font-medium">写好了</div>
+      <div className="mt-2 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+        <div>{r.takes_effect_note}</div>
+        <div>
+          改的是 <code>{r.real}</code>
+        </div>
+        <div>
+          原文件备份在 <code>{r.backup}</code>
+        </div>
+        {r.warnings.map((w) => (
+          <div key={w} className="text-amber-600 dark:text-amber-400">
+            ⚠ {w}
+          </div>
+        ))}
+        <div className="pt-1">
+          接下来等一个真实请求过来 —— 那是唯一能证明它生效了的东西。
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onClose}>
+          知道了
+        </button>
+      </div>
+    </Shell>
+  );
+}
+
+/** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失（§0.6）。 */
+function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
+  return (
+    <Shell onClose={onClose}>
+      <div className="text-sm font-medium">为什么没生效</div>
+      <ul className="mt-3 space-y-2 text-xs">
+        {found.map((f, i) => (
+          <li key={i} className="flex gap-2">
+            <span
+              className={
+                f.level === "blocking"
+                  ? "text-red-600 dark:text-red-400"
+                  : f.level === "suspect"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-emerald-600 dark:text-emerald-400"
+              }
+            >
+              {f.level === "blocking" ? "✗" : f.level === "suspect" ? "?" : "✓"}
+            </span>
+            <div>
+              <div className="font-medium">{f.title}</div>
+              <div className="text-neutral-500">{f.detail}</div>
+              {/* 命令给出来，执行与否是他的事 */}
+              {f.fix && (
+                <code className="mt-1 block rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
+                  {f.fix}
+                </code>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-4 flex justify-end">
+        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onClose}>
+          关掉
+        </button>
+      </div>
+    </Shell>
+  );
+}

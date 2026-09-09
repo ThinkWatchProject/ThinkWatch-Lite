@@ -264,6 +264,71 @@ async fn rollback_config(
 }
 
 #[tauri::command]
+async fn list_clients(state: tauri::State<'_, AppState>) -> Result<tw_api::ClientsResponse, String> {
+    state.control.clients().await.map_err(|e| format!("{e:#}"))
+}
+
+/// **算一下，不落盘。**接管和「算接管」是两个命令，中间夹着用户看
+/// diff 的那一下（§7.11）。
+#[tauri::command]
+async fn plan_adopt(
+    state: tauri::State<'_, AppState>,
+    client: String,
+    key_name: Option<String>,
+) -> Result<tw_api::PlanView, String> {
+    state
+        .control
+        .plan_adopt(client, key_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn adopt_client(
+    state: tauri::State<'_, AppState>,
+    client: String,
+    key_name: Option<String>,
+) -> Result<tw_api::AdoptResponse, String> {
+    state
+        .control
+        .adopt(client, key_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn plan_restore(
+    state: tauri::State<'_, AppState>,
+    client: String,
+) -> Result<tw_api::PlanView, String> {
+    state
+        .control
+        .plan_restore(&client)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn restore_client(
+    state: tauri::State<'_, AppState>,
+    client: String,
+) -> Result<tw_api::AdoptResponse, String> {
+    state
+        .control
+        .restore(&client)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn diagnose_client(
+    state: tauri::State<'_, AppState>,
+    client: String,
+) -> Result<Vec<tw_api::FindingView>, String> {
+    state.control.why(&client).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn setup_first_provider(
     state: tauri::State<'_, AppState>,
     name: String,
@@ -308,7 +373,13 @@ pub fn run() {
             put_config,
             config_history,
             rollback_config,
-            setup_first_provider
+            setup_first_provider,
+            list_clients,
+            plan_adopt,
+            adopt_client,
+            plan_restore,
+            restore_client,
+            diagnose_client
         ])
         .setup(|app| {
             let handle = app.handle().clone();

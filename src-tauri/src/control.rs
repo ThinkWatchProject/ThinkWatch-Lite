@@ -215,6 +215,63 @@ impl ControlClient {
         )?)
     }
 
+    // ---------------------------------------------------- 客户端接管
+
+    /// 本机装了哪些 AI 客户端、各自指向哪儿。**只读。**
+    pub async fn clients(&self) -> Result<tw_api::ClientsResponse> {
+        Ok(serde_json::from_slice(&self.get("/clients").await?)?)
+    }
+
+    /// 算一份接管改动。**不落盘** —— 界面拿它画 diff 给用户确认。
+    pub async fn plan_adopt(
+        &self,
+        client: String,
+        key_name: Option<String>,
+    ) -> Result<tw_api::PlanView> {
+        self.send_json(
+            hyper::Method::POST,
+            "/clients/plan",
+            &tw_api::AdoptRequest { client, key_name },
+        )
+        .await
+    }
+
+    /// 落盘。**用户在 diff 上点过确认之后才该调它。**
+    pub async fn adopt(
+        &self,
+        client: String,
+        key_name: Option<String>,
+    ) -> Result<tw_api::AdoptResponse> {
+        self.send_json(
+            hyper::Method::POST,
+            "/clients/adopt",
+            &tw_api::AdoptRequest { client, key_name },
+        )
+        .await
+    }
+
+    pub async fn plan_restore(&self, client: &str) -> Result<tw_api::PlanView> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/clients/{client}/restore/plan")).await?,
+        )?)
+    }
+
+    pub async fn restore(&self, client: &str) -> Result<tw_api::AdoptResponse> {
+        self.send_json(
+            hyper::Method::POST,
+            &format!("/clients/{client}/restore"),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    /// 「我明明配了，为什么没生效」。
+    pub async fn why(&self, client: &str) -> Result<Vec<tw_api::FindingView>> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/clients/{client}/why")).await?,
+        )?)
+    }
+
     pub async fn storage(&self) -> Result<tw_api::StorageStatus> {
         Ok(serde_json::from_slice(&self.get("/storage").await?)?)
     }
