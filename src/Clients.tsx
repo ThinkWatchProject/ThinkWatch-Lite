@@ -187,7 +187,9 @@ function Card({
               onClick={() => onWhy(c.id)}
               disabled={busy}
             >
-              为什么没生效？
+              {/* 已经收到过它的请求了还问「为什么没生效」，读起来像是我们
+                  自己都不信刚才那个「已验证」 */}
+              {verified ? "检查配置链" : "为什么没生效？"}
             </button>
           )}
           <button
@@ -325,15 +327,54 @@ function PlanDialog({
   );
 }
 
-/** 逐行 diff。**只标改动的行**，其余给上下文 —— 用户要看的是「动了什么」。 */
+/**
+ * 逐行 diff。
+ *
+ * **删掉的行必须留在它原来的位置上。**第一版把所有删除行提到最前面，
+ * 于是「给 MY_OWN 那行末尾加了个逗号」被画成「你的 MY_OWN 被删了，
+ * 另外新增了一行」——用户看到自己的字段带着删除线出现在最上面，正是
+ * 这个对话框本来要消除的那种恐慌。
+ *
+ * 所以用最长公共子序列：没动的行原地不动，改动的行紧挨着显示。
+ */
 function Diff({ before, after }: { before: string | null; after: string }) {
   const a = (before ?? "").split("\n");
   const b = after.split("\n");
-  const removed = new Set(a.filter((l) => !b.includes(l)));
-  const added = new Set(b.filter((l) => !a.includes(l)));
+
+  // LCS 表。配置文件都是几十行，O(n·m) 完全够用。
+  // 摊平成一维的 Uint32Array —— 二维数组每次下标访问在
+  // noUncheckedIndexedAccess 下都是 `number | undefined`
+  const n = a.length;
+  const m = b.length;
+  const w = m + 1;
+  const lcs = new Uint32Array((n + 1) * w);
+  const line = (xs: string[], k: number) => xs[k] ?? "";
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i * w + j] =
+        line(a, i) === line(b, j)
+          ? lcs[(i + 1) * w + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!);
+    }
+  }
   const rows: { text: string; kind: "add" | "del" | "same" }[] = [];
-  for (const l of a) if (removed.has(l)) rows.push({ text: l, kind: "del" });
-  for (const l of b) rows.push({ text: l, kind: added.has(l) ? "add" : "same" });
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (line(a, i) === line(b, j)) {
+      rows.push({ text: line(a, i), kind: "same" });
+      i++;
+      j++;
+    } else if (lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) {
+      rows.push({ text: line(a, i), kind: "del" });
+      i++;
+    } else {
+      rows.push({ text: line(b, j), kind: "add" });
+      j++;
+    }
+  }
+  while (i < n) rows.push({ text: line(a, i++), kind: "del" });
+  while (j < m) rows.push({ text: line(b, j++), kind: "add" });
 
   return (
     <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 text-[11px] leading-relaxed dark:bg-neutral-950">
