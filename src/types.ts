@@ -531,3 +531,45 @@ export interface ScanResponse {
   rules_warning: string | null;
   projects: string[];
 }
+
+// ---------------------------------------------------------------- 会话
+
+export interface SessionView {
+  id: string;
+  client: string;
+  started_ms: number;
+  ended_ms: number;
+  turns: number;
+  /** 有价格的那些轮次加起来，单位是**微分** */
+  cost_micros: number;
+  /** **没有价格的轮数。**「$1.23」和「$1.23，另有 4 轮没有价格」不是一个结论 */
+  unpriced_turns: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cache_saved_micros: number;
+  /** 上下文峰值。**一眼看出哪次任务的上下文失控了** */
+  peak_input_tokens: number;
+  models: string[];
+  errors: number;
+}
+
+export interface TurnView {
+  id: number;
+  at_ms: number;
+  model: string;
+  provider: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  /** **没有价格就是 null，不是 0** */
+  cost_micros: number | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+export interface SessionDetail {
+  session: SessionView;
+  turns: TurnView[];
+}

@@ -263,6 +263,23 @@ async fn rollback_config(
         .map_err(|e| format!("{e:#}"))
 }
 
+#[tauri::command]
+async fn sessions(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::SessionView>, String> {
+    state.control.sessions().await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn session_detail(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<tw_api::SessionDetail, String> {
+    state
+        .control
+        .session_detail(&id)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 /// 扫一遍客户端配置面。**只读，什么都不存**（§7.12）。
 #[tauri::command]
 async fn scan_configs(
@@ -403,7 +420,9 @@ pub fn run() {
             restore_client,
             diagnose_client,
             scan_configs,
-            dry_run
+            dry_run,
+            sessions,
+            session_detail
         ])
         .setup(|app| {
             let handle = app.handle().clone();

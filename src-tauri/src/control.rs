@@ -229,6 +229,18 @@ impl ControlClient {
         )?)
     }
 
+    /// 会话列表（§7.9）。
+    pub async fn sessions(&self) -> Result<Vec<tw_api::SessionView>> {
+        Ok(serde_json::from_slice(&self.get("/sessions").await?)?)
+    }
+
+    /// 一次会话里的每一轮。
+    pub async fn session_detail(&self, id: &str) -> Result<tw_api::SessionDetail> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/sessions/{}", urlencode(id))).await?,
+        )?)
+    }
+
     /// 扫一遍客户端配置面。**每次现扫，什么都不存**（§7.12）。
     pub async fn scan(&self, projects: &[String]) -> Result<tw_api::ScanResponse> {
         let q = projects
