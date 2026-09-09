@@ -247,9 +247,9 @@ mod width_tests {
         let right_edge = |line: &str| {
             let (rgba, w, h) = render_rgba(line, "", true, Appearance::Light);
             // 从右往左找第一列有笔画的
-            (0..w).rev().find(|&x| {
-                (0..h).any(|y| rgba[((y * w + x) * 4 + 3) as usize] > 0)
-            })
+            (0..w)
+                .rev()
+                .find(|&x| (0..h).any(|y| rgba[((y * w + x) * 4 + 3) as usize] > 0))
         };
         let short = right_edge("$9.99").expect("什么都没画出来");
         for longer in ["$10.02", "$100.02", "$1000.02"] {

@@ -13,6 +13,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub mod autostart;
 pub mod control;
+pub mod memcheck;
 pub mod menubar;
 pub mod shellpath;
 pub mod supervisor;
@@ -192,6 +193,20 @@ async fn speed_run(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 最近的请求。**开窗时用它把实时列表填上** —— 关窗销毁了窗口，
+/// 重开时前端是全新的，不填的话用户看到一片空白，而请求明明一直在跑。
+#[tauri::command]
+async fn recent_requests(
+    state: tauri::State<'_, AppState>,
+    limit: usize,
+) -> Result<Vec<tw_api::HistoryRow>, String> {
+    state
+        .control
+        .history(limit)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
     state.control.config().await.map_err(|e| format!("{e:#}"))
@@ -284,6 +299,7 @@ pub fn run() {
             probe_upstream,
             speed_test,
             dashboard,
+            recent_requests,
             speed_quote,
             speed_run,
             request_detail,
@@ -349,6 +365,13 @@ pub fn run() {
                 show_main_window(&handle)?;
             }
 
+            // 量 webview 占多少（§2.4）。**它不是一个功能，是一个回答
+            // 不了就只能猜的问题的工具** —— 「关窗之后隐藏还是销毁」
+            // 取决于隐藏到底放不放得掉那部分内存。
+            if memcheck::requested(std::env::args()) {
+                memcheck::run(handle.clone());
+            }
+
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();
             let sock = default_socket();
@@ -361,11 +384,27 @@ pub fn run() {
         .on_window_event(|window, event| {
             // 点红点只是关窗口，进程留在菜单栏（§7.5）。macOS 上
             // 「关窗不等于退出应用」本来就是标准行为，不需要额外提示。
+            //
+            // **销毁窗口，不是隐藏。**这是实测出来的（§2.4 那条「据此
+            // 定隐藏还是销毁」）：
+            //
+            //   窗口没开过   107 MB
+            //   窗口开着     239 MB
+            //   隐藏之后     235 MB   ← 几乎没降，等三十秒也不降
+            //
+            // 隐藏留下的 128 MB 全是 WebKit 的三个 XPC 进程。而这是一个
+            // 用户开着一整天、一天点开两三次的菜单栏应用 —— 为那两三次
+            // 常驻 128 MB 不划算。销毁的代价是重开时要重新加载一次页面
+            // （几百毫秒），`show_main_window` 本来就会在窗口不存在时
+            // 重建它。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                let app = window.app_handle().clone();
+                let _ = window.destroy();
                 #[cfg(target_os = "macos")]
-                become_accessory(&window.app_handle().clone());
+                become_accessory(&app);
+                #[cfg(not(target_os = "macos"))]
+                let _ = &app;
             }
         })
         .build(tauri::generate_context!())

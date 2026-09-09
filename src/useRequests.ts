@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { applyEvent, type CoreEvent, type RequestRow } from "./types";
+import { invoke } from "@tauri-apps/api/core";
+import { applyEvent, type CoreEvent, type HistoryRow, type RequestRow } from "./types";
 
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
 const MAX_ROWS = 500;
@@ -30,6 +31,43 @@ export function useRequests() {
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
+
+  // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
+  // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
+  // 全新的 —— 不填的话，用户看到的是一片空白，而请求明明一直在跑。
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+        const rows = await invoke<HistoryRow[]>("recent_requests", { limit: 200 });
+        if (!alive) return;
+        for (const h of rows) {
+          // 已经从事件流收到的那条更新（它更全），不要覆盖
+          if (store.current.has(h.id)) continue;
+          store.current.set(h.id, {
+            id: h.id,
+            client: h.client,
+            provider: h.local ? "本地应答" : h.provider,
+            path: h.path,
+            atMs: h.at_ms,
+            state: h.error ? "failed" : "done",
+            status: h.status ?? undefined,
+            ttfbMs: h.ttfb_ms ?? undefined,
+            durationMs: h.duration_ms ?? undefined,
+            bytes: h.bytes ?? undefined,
+            error: h.error ?? undefined,
+          });
+        }
+        setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+      } catch {
+        /* 历史拿不到就从空白开始 —— 事件流照常，几秒后就有内容了 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     const flush = () => {
