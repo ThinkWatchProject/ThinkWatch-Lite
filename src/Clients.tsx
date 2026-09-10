@@ -173,6 +173,28 @@ export default function Clients() {
           ))}
       </div>
 
+      {/*
+        一个都没装的时候，「这里空空如也」是句废话（§7.13）。**空状态
+        永远在回答「接下来该做什么」** —— 而这一页的答案是「装一个，
+        或者手动把端点指过来」。
+      */}
+      {here.length === 0 && (
+        <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            这台机器上没有找到我们认得的客户端。
+          </p>
+          <p className="mt-2 text-xs text-neutral-500">
+            装了 Claude Code、Codex、Gemini CLI 之类的话，跑一次让它生成配置文件，再回来这一页。
+            <br />
+            也可以手动把客户端的端点指到{" "}
+            <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+              {data.gateway_base}
+            </code>
+            。
+          </p>
+        </div>
+      )}
+
       {here.map((c) => (
         <Card key={c.id} c={c} busy={busy} onAsk={ask} onWhy={diagnose} />
       ))}

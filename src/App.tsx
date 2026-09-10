@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
@@ -39,6 +39,14 @@ export default function App() {
    * 所以托盘那一项只是把窗口拉起来问一句，真正的 `exit` 在这里。
    */
   const [askQuit, setAskQuit] = useState(false);
+  /**
+   * 刚出现的那几行（§7.13）。
+   *
+   * **第一个请求进来时那一行要跳出来** —— 它是「它真的在工作」的证明，
+   * 而这类工具最难的一关正是让用户相信流量真的经过我们了。
+   */
+  const [fresh, setFresh] = useState<Set<number>>(new Set());
+  const seenIds = useRef<Set<number>>(new Set());
   /** 打开的那条请求（§7.8 的右侧抽屉） */
   const [open, setOpen] = useState<number | null>(null);
   /**
@@ -52,6 +60,25 @@ export default function App() {
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
+
+  useEffect(() => {
+    const now = rows.map((r) => r.id);
+    const news = now.filter((id) => !seenIds.current.has(id));
+    // 第一次加载（开窗时把历史填进来）不算「刚出现」—— 那时满屏都在
+    // 闪，反而看不出哪一条是新的
+    const first = seenIds.current.size === 0;
+    for (const id of now) seenIds.current.add(id);
+    if (first || news.length === 0) return;
+    setFresh((prev) => new Set([...prev, ...news]));
+    const t = setTimeout(() => {
+      setFresh((prev) => {
+        const next = new Set(prev);
+        for (const id of news) next.delete(id);
+        return next;
+      });
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [rows]);
 
   useEffect(() => {
     const un = listen("ask-quit", () => setAskQuit(true));
@@ -344,6 +371,17 @@ export default function App() {
                 已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
               </p>
             )}
+            {/*
+              **空状态永远在回答「接下来该做什么」**（§7.13）。原来只说
+              了「把客户端指过来」，而没给他一条走过去的路 —— 那句话对
+              一个不想自己改 settings.json 的人等于没说。
+            */}
+            <button
+              onClick={() => setTab("clients")}
+              className="mt-4 rounded border border-neutral-300 px-3 py-1.5 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              帮我写进客户端配置
+            </button>
           </div>
         ) : (
           <table className="w-full text-left text-xs tabular-nums">
@@ -370,7 +408,9 @@ export default function App() {
                     "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
                     (rows[cursor]?.id === r.id
                       ? "bg-neutral-100 dark:bg-neutral-800"
-                      : "")
+                      : fresh.has(r.id)
+                        ? "bg-emerald-50 dark:bg-emerald-950"
+                        : "")
                   }
                 >
                   <td className="py-1.5">
