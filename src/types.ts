@@ -469,6 +469,17 @@ export interface ProviderView {
   protocol: string | null;
   proxy: string;
   health: "ok" | "open";
+  /** 这家怎么收钱。`cheapest` 策略和成本栏都看它 */
+  billing?: string | null;
+  /** 判完的结果（没写时按 base_url 判） */
+  trust?: string;
+  /**
+   * 用户显式写过 `trust` 吗。
+   *
+   * **要能区分「自动判成不受信任」和「用户写了不受信任」** —— 前者改
+   * base_url 就会变，后者不会，显示成一样会让用户以为自己改不动它。
+   */
+  trust_explicit?: boolean;
 }
 
 export interface RouteView {
@@ -481,6 +492,8 @@ export interface RouteView {
 export interface GroupView {
   name: string;
   kind: string;
+  /** 同一次会话固定走同一家。**这一项直接决定账单** */
+  session_affinity?: boolean;
   /** `select` 组当前选中谁。界面要能切它 —— 那是这个策略的全部意义 */
   selected?: string | null;
   providers: string[];
@@ -503,6 +516,8 @@ export interface ListenView {
 
 export interface Overview {
   providers: ProviderView[];
+  /** 配置里定义过的代理名 —— 换代理要从这里选，手打会打错 */
+  proxies?: string[];
   routes: RouteView[];
   groups: GroupView[];
   clients: ClientView[];

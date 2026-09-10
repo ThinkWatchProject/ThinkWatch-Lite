@@ -112,6 +112,71 @@ function EditableCell({
 }
 
 /**
+ * 一个下拉改一个标量字段。
+ *
+ * **和 `EditableCell` 走同一条路**（`patch_config` + 乐观并发），只是
+ * 输入形状不同 —— 枚举字段让用户手打，打错一个字母就是一次静默的
+ * 「配了没生效」。
+ */
+function SelectCell({
+  value,
+  options,
+  path,
+  version,
+  onSaved,
+  onDone,
+}: {
+  value: string;
+  /** `[写进 YAML 的值, 显示给人看的字]` */
+  options: [string, string][];
+  path: string;
+  version: string | null;
+  onSaved: (err: string | null) => void;
+  onDone?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <select
+      value={value}
+      disabled={busy}
+      onChange={async (e) => {
+        if (!version) {
+          onSaved("还没读到配置版本，稍等一下再试");
+          return;
+        }
+        const v = e.target.value;
+        setBusy(true);
+        try {
+          await invoke("patch_config", {
+            // 空串写成 null —— 「没写这个字段」和「写了个空值」是两回事，
+            // 而前者才是「按默认/自动判」的意思
+            ops: [{ op: "replace", path, value: v === "" ? null : v }],
+            baseVersion: version,
+          });
+          onSaved(null);
+          onDone?.();
+        } catch (err) {
+          onSaved(typeof err === "string" ? err : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={
+        "rounded border border-transparent bg-transparent px-1 py-0.5 " +
+        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
+        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600"
+      }
+    >
+      {options.map(([v, label]) => (
+        <option key={v} value={v}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
  * 一次 L1 测速的结果。
  *
  * **每一段单独一行，不画一根合成的进度条。**「建连 292ms」说不出任何
@@ -331,6 +396,8 @@ export default function Config({
               <th className="font-medium">协议</th>
               <th className="font-medium">密钥</th>
               <th className="font-medium">代理</th>
+              <th className="font-medium">计费</th>
+              <th className="font-medium">信任</th>
               {/* 只有一家的时候熔断是旁路的，显示健康列没有意义 */}
               {multi && <th className="font-medium">状态</th>}
               <th className="font-medium"></th>
@@ -350,12 +417,78 @@ export default function Config({
                   />
                 </td>
                 <td className="text-neutral-500">
-                  {/* 猜不出协议不是错误 —— 但要说清按什么转发 */}
-                  {p.protocol ?? <span title="按 Anthropic 转发">未知</span>}
+                  {/*
+                    猜不出协议不是错误 —— 但要能改。自动判错的时候，
+                    这一格就是修它的地方，而原来只能去改 YAML。
+                  */}
+                  <SelectCell
+                    value={p.protocol ?? ""}
+                    options={[
+                      ["", "自动（按 Anthropic 转发）"],
+                      ["anthropic", "anthropic"],
+                      ["openai-chat", "openai-chat"],
+                      ["openai-responses", "openai-responses"],
+                      ["gemini", "gemini"],
+                    ]}
+                    path={`/providers/${p.name}/protocol`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                    onDone={() => setReloadKey((k) => k + 1)}
+                  />
                 </td>
                 {/* 来源，不是值 */}
                 <td className="font-mono text-neutral-500">{p.key_source}</td>
-                <td className="text-neutral-500">{p.proxy}</td>
+                <td className="text-neutral-500">
+                  <SelectCell
+                    value={p.proxy}
+                    options={[
+                      ["direct", "直连"],
+                      ["system", "跟随系统"],
+                      ...(ov.proxies ?? []).map((x) => [x, x] as [string, string]),
+                    ]}
+                    path={`/providers/${p.name}/proxy`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                    onDone={() => setReloadKey((k) => k + 1)}
+                  />
+                </td>
+                {/*
+                  计费方式：它同时决定成本栏怎么显示（§4.3.1）和
+                  `cheapest` 怎么排（§3.5）—— 订阅制的边际成本是零。
+                */}
+                <td className="text-neutral-500">
+                  <SelectCell
+                    value={p.billing ?? ""}
+                    options={[
+                      ["", "自动判"],
+                      ["per-token", "按量"],
+                      ["subscription", "订阅"],
+                      ["unknown", "未知"],
+                    ]}
+                    path={`/providers/${p.name}/billing`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                    onDone={() => setReloadKey((k) => k + 1)}
+                  />
+                </td>
+                {/*
+                  信任级别（§5.2）。**没显式写过的时候要说清是自动判的**
+                  —— 否则用户会以为这一格改不动，或者以为是他自己设的。
+                */}
+                <td className="text-neutral-500">
+                  <SelectCell
+                    value={p.trust_explicit ? (p.trust === "官方" ? "official" : "untrusted") : ""}
+                    options={[
+                      ["", `自动判（现在是${p.trust ?? "不受信任"}）`],
+                      ["official", "官方"],
+                      ["untrusted", "不受信任"],
+                    ]}
+                    path={`/providers/${p.name}/trust`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                    onDone={() => setReloadKey((k) => k + 1)}
+                  />
+                </td>
                 {multi && (
                   <td>
                     {p.health === "ok" ? (
@@ -453,7 +586,24 @@ export default function Config({
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
-                  <span className="text-neutral-500">{g.kind}</span>
+                  <SelectCell
+                    value={
+                      { 按顺序: "fallback", 手动选: "select", 轮流: "load-balance", 选最快: "url-test", 选最便宜: "cheapest" }[
+                        g.kind
+                      ] ?? "fallback"
+                    }
+                    options={[
+                      ["fallback", "按顺序"],
+                      ["select", "手动选"],
+                      ["load-balance", "轮流"],
+                      ["url-test", "选最快"],
+                      ["cheapest", "选最便宜"],
+                    ]}
+                    path={`/groups/${g.name}/type`}
+                    version={cfg?.version ?? null}
+                    onSaved={setSaveError}
+                    onDone={() => setReloadKey((k) => k + 1)}
+                  />
                   <span className="ml-auto font-mono text-neutral-500">
                     {g.providers.join(" → ")}
                   </span>
@@ -506,13 +656,49 @@ export default function Config({
                     </span>
                   </div>
                 )}
+                {/*
+                  **会话粘滞要摆在明面上，因为它直接决定账单。**
+                  关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
+                  而缓存命中与否成本差 5 到 10 倍（§3.5）。
+                */}
+                {g.kind === "轮流" && (
+                  <label className="mt-1.5 flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
+                    <input
+                      type="checkbox"
+                      checked={g.session_affinity ?? true}
+                      onChange={async (e) => {
+                        if (!cfg?.version) {
+                          setSaveError("还没读到配置版本，稍等一下再试");
+                          return;
+                        }
+                        try {
+                          await invoke("patch_config", {
+                            ops: [
+                              {
+                                op: "replace",
+                                path: `/groups/${g.name}/session_affinity`,
+                                value: e.target.checked,
+                              },
+                            ],
+                            baseVersion: cfg.version,
+                          });
+                          setSaveError(null);
+                          setReloadKey((k) => k + 1);
+                        } catch (err) {
+                          setSaveError(typeof err === "string" ? err : String(err));
+                        }
+                      }}
+                    />
+                    会话粘滞（同一次对话固定走同一家）
+                  </label>
+                )}
                 {g.hurts_cache && (
                   // 这句必须在界面上直说：它决定了用户的账单（§3.4）。
                   // 缓存命中与否成本差 5 到 10 倍，而为了省 20% 的单价
                   // 丢掉 90% 的缓存折扣，是一笔怎么算都不划算的账。
                   <p className="mt-1.5 text-amber-700 dark:text-amber-400">
                     ⚠ 这个策略会让 prompt cache 失效，长会话的成本会明显上升。
-                    需要它的话记得开会话粘滞。
+                    {g.kind === "轮流" ? "把上面那个粘滞打开就好。" : ""}
                   </p>
                 )}
               </li>
