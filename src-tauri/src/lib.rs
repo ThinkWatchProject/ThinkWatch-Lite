@@ -411,6 +411,7 @@ async fn setup_first_provider(
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
@@ -633,6 +634,11 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
         let a = app.clone();
         let r = client
             .subscribe_events(move |ev| {
+                // **在客户端弹批准提示的同一瞬间弹一条通知**（§5.2）。
+                // 这是网关位置独有的能力：只有我们同时知道「这个调用长
+                // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
+                // 看到这条，判断质量完全不一样。
+                notify_if_dangerous(&a, &ev);
                 let _ = a.emit("core-event", &ev);
             })
             .await;
@@ -641,6 +647,46 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+}
+
+/// 高危的工具调用要弹系统通知（§5.2）。
+///
+/// **只弹高危的。**中危和脱敏都只进界面 —— 通知的代价是用户学会忽略
+/// 通知，包括那些真该看的（§2.4）。
+fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
+    use tauri_plugin_notification::NotificationExt;
+    let tw_api::Event::ToolCallFlagged {
+        provider,
+        tool,
+        why,
+        excerpt,
+        high,
+        blocked,
+        ..
+    } = ev
+    else {
+        return;
+    };
+    if !high {
+        return;
+    }
+    // 标题里就要有「哪个上游」和「哪个工具」—— 用户是在批准提示旁边
+    // 扫一眼这条通知的，正文他不一定读得完
+    let title = if *blocked {
+        format!("已拦截 {provider} 返回的 {tool} 调用")
+    } else {
+        format!("{provider} 返回了一个可疑的 {tool} 调用")
+    };
+    let body = if *blocked {
+        format!("{why}
+{excerpt}
+这个上游标记为不受信任，响应流已切断。")
+    } else {
+        format!("{why}
+{excerpt}
+建议拒绝这个调用。")
+    };
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。

@@ -241,7 +241,40 @@ export default function App() {
                     )}
                   </td>
                   <td>{r.client}</td>
-                  <td>{r.provider}</td>
+                  <td>
+                    {r.provider}
+                    {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
+                        是脱敏搞坏了功能（§5.1）。所以脱敏发生了就要在
+                        列表这一层看得见，而不是藏在详情里 */}
+                    {r.redacted && r.redacted.length > 0 && (
+                      <span
+                        className="ml-1 rounded bg-neutral-200 px-1 text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                        title={
+                          "发出去之前换掉了：" +
+                          r.redacted.map((x) => `${x.what} ×${x.count}`).join("、") +
+                          "\n模型回显时会自动换回来。"
+                        }
+                      >
+                        已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
+                      </span>
+                    )}
+                    {r.flagged?.some((f) => f.high) && (
+                      <span
+                        className={
+                          "ml-1 rounded px-1 text-[10px] " +
+                          (r.flagged.some((f) => f.blocked)
+                            ? "bg-red-600 text-white"
+                            : "bg-amber-500 text-white")
+                        }
+                        title={r.flagged
+                          .filter((f) => f.high)
+                          .map((f) => `${f.tool}：${f.why}\n${f.excerpt}`)
+                          .join("\n\n")}
+                      >
+                        {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
+                      </span>
+                    )}
+                  </td>
                   <td className="text-neutral-500">{r.path}</td>
                   <td>{r.ttfbMs != null ? `${r.ttfbMs}ms` : "—"}</td>
                   <td>{r.durationMs != null ? `${r.durationMs}ms` : "—"}</td>

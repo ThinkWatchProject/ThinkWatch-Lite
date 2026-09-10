@@ -41,7 +41,39 @@ export type CoreEvent =
    * 字符」这个信号，比「这个文件里有可疑内容」强得多 —— 而后者在用户
    * 打开安全页的时候已经全部看过了。
    */
-  | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number };
+  | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number }
+  /**
+   * 出站脱敏动手了（§5.1）。
+   *
+   * **界面上必须能看到脱敏发生了什么** —— 看不见的安全功能会被用户关掉，
+   * 因为他们会怀疑是脱敏搞坏了功能。事件里只有类别和计数，没有原值。
+   */
+  | {
+      kind: "redacted";
+      id: number;
+      provider: string;
+      items: { kind: string; what: string; count: number }[];
+      at_ms: number;
+    }
+  /**
+   * 上游返回了一个可疑的工具调用（§5.2）。
+   *
+   * **只有我们同时知道「这个调用长什么样」和「它来自哪个上游」** ——
+   * 客户端弹批准提示的同一瞬间，我们弹一条通知。
+   */
+  | {
+      kind: "tool_call_flagged";
+      id: number;
+      provider: string;
+      tool: string;
+      rule: string;
+      why: string;
+      excerpt: string;
+      high: boolean;
+      /** 真的切断了流吗。**高危 + 不受信任 + 拦截态**三者同时成立才会 */
+      blocked: boolean;
+      at_ms: number;
+    };
 
 export interface CoreStatus {
   api_version: number;
@@ -68,6 +100,10 @@ export interface RequestRow {
   durationMs?: number;
   bytes?: number;
   error?: string;
+  /** 这次发出去之前换掉了什么（§5.1）。只有类别和计数，没有原值 */
+  redacted?: { kind: string; what: string; count: number }[];
+  /** 上游返回的可疑工具调用（§5.2） */
+  flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
 }
 
 export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
@@ -107,6 +143,16 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       // 都不进请求列表。配置事件和扫描告警是另一回事，App 单独接 ——
       // 后者说的是磁盘上的文件，和请求没有关系。
       break;
+    case "redacted": {
+      const r = rows.get(ev.id);
+      if (r) r.redacted = ev.items;
+      break;
+    }
+    case "tool_call_flagged": {
+      const r = rows.get(ev.id);
+      if (r) (r.flagged ??= []).push(ev);
+      break;
+    }
     case "request_failed": {
       const r = rows.get(ev.id);
       if (r) {
