@@ -39,6 +39,14 @@ export function useRequests() {
   const [rejected, setRejected] = useState<Extract<CoreEvent, { kind: "config_rejected" }> | null>(
     null,
   );
+  /**
+   * token 端点换发了 refresh token（§3.6）。
+   *
+   * **不自动消失，也不能靠通知**：要做的事是「去改 config.yaml」，而
+   * 那件事没做完之前提示一直成立。核心侧每个上游只报一次，所以这里
+   * 攒起来不会长。
+   */
+  const [rotated, setRotated] = useState<Extract<CoreEvent, { kind: "credential_rotated" }>[]>([]);
   /** 配置换过几次。App 用它决定要不要重新拉概览 */
   const [configVersion, setConfigVersion] = useState<string | null>(null);
   const store = useRef(new Map<number, RequestRow>());
@@ -93,6 +101,11 @@ export function useRequests() {
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
+        if (ev.kind === "credential_rotated") {
+          setRotated((prev) =>
+            prev.some((x) => x.provider === ev.provider) ? prev : [...prev, ev],
+          );
+        }
         if (ev.kind === "config_reloaded") {
           // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好
           setRejected(null);
@@ -128,5 +141,14 @@ export function useRequests() {
     };
   }, []);
 
-  return { rows, locallyAnswered, rejected, configVersion, alerts, clearAlerts: () => setAlerts([]) };
+  return {
+    rows,
+    locallyAnswered,
+    rejected,
+    configVersion,
+    alerts,
+    rotated,
+    clearAlerts: () => setAlerts([]),
+    clearRotated: () => setRotated([]),
+  };
 }

@@ -24,7 +24,8 @@ function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" 
 }
 
 export default function App() {
-  const { rows, locallyAnswered, rejected, configVersion, alerts, clearAlerts } = useRequests();
+  const { rows, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
+    useRequests();
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +172,43 @@ export default function App() {
         </div>
       )}
 
+      {/*
+        token 端点换发了新的 refresh token（§3.6）。
+
+        **现在一切正常，这正是要现在说的理由**：本进程内已经用上新的了，
+        症状要等到下一次重启才出现，而那时没人会想到是几天前的一次轮换。
+
+        第一句先说「现在没事」，因为不说的话这条提示看起来像故障；第二句
+        才说要做什么。可以关掉 —— 用户改完配置之后它不该还挂在那儿。
+      */}
+      {rotated.length > 0 && (
+        <div className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-xs dark:border-amber-800 dark:bg-amber-950">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-medium text-amber-900 dark:text-amber-200">
+                {rotated.map((r) => r.provider).join("、")} 的 token
+                端点换发了新的凭据，当前转发正常。
+              </p>
+              <p className="mt-1 text-amber-800 dark:text-amber-300">
+                但 config.yaml 里那个 refresh token 已经作废了 ——
+                <span className="font-medium">重启之前要把它更新掉</span>
+                ，否则重启之后这家会一直 401。会反复换发的服务器建议改用{" "}
+                <code className="rounded bg-amber-100 px-1 py-0.5 font-mono dark:bg-amber-900/40">
+                  key: {"{ exec: [...] }"}
+                </code>
+                ，让你自己的命令去管这件事。
+              </p>
+            </div>
+            <button
+              onClick={clearRotated}
+              className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            >
+              改好了
+            </button>
+          </div>
+        </div>
+      )}
+
       {tab === "sessions" ? (
         <Sessions />
       ) : tab === "dashboard" ? (
@@ -256,6 +294,29 @@ export default function App() {
                         }
                       >
                         已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
+                      </span>
+                    )}
+                    {/* 方言互转（§4.1.2）。**转了就要看得见，丢了字段
+                        更要看得见** —— 「扩展思考开了却没生效」这个症状
+                        在客户端那头完全无从下手，只有这里知道原因 */}
+                    {r.translated && (
+                      <span
+                        className={
+                          "ml-1 rounded px-1 text-[10px] " +
+                          (r.translated.dropped.length > 0
+                            ? "bg-amber-500 text-white"
+                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
+                        }
+                        title={
+                          `请求从 ${r.translated.from} 方言转成了 ${r.translated.to} 再发出去。` +
+                          (r.translated.dropped.length > 0
+                            ? `\n\n目标方言里没有对应物、只能丢掉的字段：${r.translated.dropped.join("、")}`
+                            : "\n没有字段被丢掉。")
+                        }
+                      >
+                        {r.translated.dropped.length > 0
+                          ? `已转换 · 丢了 ${r.translated.dropped.length} 项`
+                          : "已转换"}
                       </span>
                     )}
                     {r.flagged?.some((f) => f.high) && (

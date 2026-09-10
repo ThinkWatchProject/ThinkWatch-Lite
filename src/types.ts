@@ -56,6 +56,39 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
+   * 这次请求做了方言互转（§4.1.2）。
+   *
+   * **`dropped` 非空时必须让用户看见**：`thinking` 在 OpenAI chat 方言里
+   * 没有对应物，我们只能丢 —— 但悄悄丢掉的话，用户会发现「扩展思考开了
+   * 却没生效」而完全不知道从哪儿查起。
+   */
+  | {
+      kind: "translated";
+      id: number;
+      provider: string;
+      from: string;
+      to: string;
+      dropped: string[];
+      at_ms: number;
+    }
+  /**
+   * token 端点换发了新的 refresh token，config.yaml 里那个已经作废（§3.6）。
+   *
+   * **本进程内已经用上新的了，所以现在一切正常 —— 这正是它危险的地方。**
+   * 症状会在几天后某次重启之后才出现（一片 401），而那时没人会想到是
+   * 几天前的一次轮换。唯一的报警窗口就是现在。
+   *
+   * 每个上游只报一次：会轮换的服务器每次刷新都轮换，而这句话说一次就够。
+   */
+  | {
+      kind: "credential_rotated";
+      id: number;
+      provider: string;
+      /** 已打码 */
+      endpoint: string;
+      at_ms: number;
+    }
+  /**
    * 上游返回了一个可疑的工具调用（§5.2）。
    *
    * **只有我们同时知道「这个调用长什么样」和「它来自哪个上游」** ——
@@ -102,6 +135,8 @@ export interface RequestRow {
   error?: string;
   /** 这次发出去之前换掉了什么（§5.1）。只有类别和计数，没有原值 */
   redacted?: { kind: string; what: string; count: number }[];
+  /** 做过方言互转的话，转成了什么、丢了什么（§4.1.2） */
+  translated?: { from: string; to: string; dropped: string[] };
   /** 上游返回的可疑工具调用（§5.2） */
   flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
 }
@@ -153,6 +188,15 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       if (r) (r.flagged ??= []).push(ev);
       break;
     }
+    case "translated": {
+      const r = rows.get(ev.id);
+      if (r) r.translated = { from: ev.from, to: ev.to, dropped: ev.dropped };
+      break;
+    }
+    case "credential_rotated":
+      // 不进请求列表：它说的是配置文件该改了，跟哪一次请求无关。
+      // App 单独接，挂一条一直在的提示。
+      break;
     case "request_failed": {
       const r = rows.get(ev.id);
       if (r) {
