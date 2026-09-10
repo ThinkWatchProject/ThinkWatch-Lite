@@ -290,6 +290,13 @@ function Matrix({
   const clients = [
     ...new Set([...targets.map((t) => t.client), ...mcp.map((m) => m.client)]),
   ].sort();
+  /**
+   * 正在对比的那个同名服务器（§7.12）。
+   *
+   * **标一个记号只回答了「不一样」，没回答「哪儿不一样」** —— 而用户
+   * 要做的决定恰恰是「以哪边为准」，那个决定需要看见差异。
+   */
+  const [compare, setCompare] = useState<string | null>(null);
   const canWrite = (c: string) => targets.find((t) => t.client === c)?.copyable ?? false;
   const whyNot = (c: string) => targets.find((t) => t.client === c)?.why_not ?? "这个客户端不在可写清单里";
   const names = [...new Set(mcp.map((m) => m.name))].sort();
@@ -330,9 +337,13 @@ function Matrix({
                 <tr key={n} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-2 py-1">
                     {conflicting.includes(n) && (
-                      <span className="mr-1 text-amber-600 dark:text-amber-400" title="同名，但各客户端里的配置不一样">
+                      <button
+                        onClick={() => setCompare(compare === n ? null : n)}
+                        className="mr-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+                        title="同名，但各客户端里的配置不一样 —— 点开对比"
+                      >
                         ⚠
-                      </span>
+                      </button>
                     )}
                     {n}
                   </td>
@@ -407,6 +418,68 @@ function Matrix({
           </tbody>
         </table>
       </div>
+
+      {/*
+        同名不同配置的并排对比（§7.12）。**标一个记号只回答了「不一样」，
+        没回答「哪儿不一样」** —— 而用户要做的决定恰恰是「以哪边为准」。
+      */}
+      {compare && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950">
+          <div className="flex items-baseline justify-between">
+            <p className="font-medium text-amber-900 dark:text-amber-200">
+              <code>{compare}</code> 在各客户端里配得不一样
+            </p>
+            <button
+              onClick={() => setCompare(null)}
+              className="text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+            >
+              收起
+            </button>
+          </div>
+          <div className="mt-2 space-y-2">
+            {mcp
+              .filter((m) => m.name === compare)
+              .map((m) => {
+                const peers = mcp.filter((x) => x.name === compare);
+                // 只把**真的不一样**的字段标出来。全都标一遍等于没标
+                const differs = (get: (x: McpView) => string) =>
+                  new Set(peers.map(get)).size > 1;
+                const cmd = (x: McpView) =>
+                  x.url ? `远端 ${x.url}` : `${x.command} ${x.args.join(" ")}`.trim();
+                const hi = (on: boolean) =>
+                  on
+                    ? "rounded bg-amber-200 px-1 dark:bg-amber-900/60"
+                    : "";
+                return (
+                  <div key={m.client} className="rounded border border-amber-200 bg-white/60 p-2 dark:border-amber-900 dark:bg-black/20">
+                    <div className="font-medium">{m.client}</div>
+                    <div className="mt-0.5 font-mono">
+                      <span className={hi(differs(cmd))}>{cmd(m)}</span>
+                    </div>
+                    {(m.env_keys.length > 0 || differs((x) => x.env_keys.join(","))) && (
+                      <div className="mt-0.5 text-neutral-600 dark:text-neutral-400">
+                        环境变量{" "}
+                        <span className={"font-mono " + hi(differs((x) => x.env_keys.join(",")))}>
+                          {m.env_keys.length > 0 ? m.env_keys.join(" · ") : "（没有）"}
+                        </span>
+                        {/* **只有名字没有值** —— 值里常常就是密钥 */}
+                      </div>
+                    )}
+                    <div className="mt-0.5 text-neutral-500">
+                      <span className={hi(differs((x) => String(x.enabled)))}>
+                        {m.enabled ? "已启用" : "已关闭"}
+                      </span>
+                      <span className="ml-2 font-mono text-[11px]">{m.source}</span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          <p className="mt-2 text-amber-800 dark:text-amber-300">
+            要统一的话，点上面矩阵里你想保留的那一格，再复制到别的客户端 —— 复制前会先给你看 diff。
+          </p>
+        </div>
+      )}
     </section>
   );
 }
