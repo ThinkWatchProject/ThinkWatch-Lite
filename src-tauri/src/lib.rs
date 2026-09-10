@@ -287,6 +287,34 @@ async fn mcp_apply(
     state.control.mcp_apply(req).await.map_err(|e| format!("{e:#}"))
 }
 
+/// **算一下，不发。**和 L3 测速同一条纪律（§4.6）。
+#[tauri::command]
+async fn replay_quote(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    provider: String,
+) -> Result<tw_api::ReplayQuote, String> {
+    state
+        .control
+        .replay_quote(id, provider)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// **这一步花钱。**
+#[tauri::command]
+async fn replay_run(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    provider: String,
+) -> Result<tw_api::ReplayResult, String> {
+    state
+        .control
+        .replay_run(id, provider)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn baseline(state: tauri::State<'_, AppState>) -> Result<tw_api::BaselineResponse, String> {
     state.control.baseline().await.map_err(|e| format!("{e:#}"))
@@ -456,7 +484,9 @@ pub fn run() {
             mcp_targets,
             mcp_plan,
             mcp_apply,
-            baseline
+            baseline,
+            replay_quote,
+            replay_run
         ])
         .setup(|app| {
             let handle = app.handle().clone();

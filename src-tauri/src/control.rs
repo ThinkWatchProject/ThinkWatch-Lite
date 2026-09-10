@@ -243,6 +243,26 @@ impl ControlClient {
         self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
     }
 
+    /// 重放报价。**不发任何请求。**
+    pub async fn replay_quote(&self, id: i64, provider: String) -> Result<tw_api::ReplayQuote> {
+        self.send_json(
+            hyper::Method::POST,
+            "/replay/quote",
+            &tw_api::ReplayRequest { id, provider },
+        )
+        .await
+    }
+
+    /// 真的发。**这一步花钱。**
+    pub async fn replay_run(&self, id: i64, provider: String) -> Result<tw_api::ReplayResult> {
+        self.send_json(
+            hyper::Method::POST,
+            "/replay/run",
+            &tw_api::ReplayRequest { id, provider },
+        )
+        .await
+    }
+
     /// 每个上游最近是不是变了（§5.2 防线三）。
     pub async fn baseline(&self) -> Result<tw_api::BaselineResponse> {
         Ok(serde_json::from_slice(&self.get("/baseline").await?)?)

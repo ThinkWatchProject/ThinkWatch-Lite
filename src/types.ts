@@ -701,3 +701,35 @@ export interface BaselineResponse {
   /** 观测层没起来。**不是没发现，是没看** */
   unavailable: boolean;
 }
+
+// ---------------------------------------------------------------- 请求重放
+
+export interface ReplayQuote {
+  model: string;
+  provider: string;
+  body_bytes: number;
+  input_tokens: number;
+  /** `null` = 订阅型，或者这个模型不在价目表里。**不是 0** */
+  cost_micros: number | null;
+  note: string;
+  /** 发出去之前会不会脱敏 */
+  will_redact: boolean;
+  pricing_date: string;
+}
+
+export interface ReplayResult {
+  provider: string;
+  status: number;
+  ttfb_ms: number;
+  duration_ms: number;
+  bytes: number;
+  /** 已还原占位符、已脱敏、已截断 */
+  body: string;
+  original: {
+    provider: string;
+    status: number | null;
+    ttfb_ms: number | null;
+    duration_ms: number | null;
+    bytes: number | null;
+  };
+}

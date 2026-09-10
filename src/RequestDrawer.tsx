@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { usd, type BodyView, type RequestDetail } from "./types";
+import {
+  usd,
+  type BodyView,
+  type Overview,
+  type ReplayQuote,
+  type ReplayResult,
+  type RequestDetail,
+} from "./types";
 
-type Tab = "timeline" | "routing" | "payload" | "usage";
+type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -110,7 +117,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
       {d && r && (
         <>
           <nav className="flex gap-1 border-b border-neutral-200 px-4 py-2 text-xs dark:border-neutral-800">
-            {(["timeline", "routing", "payload", "usage"] as const).map((t) => (
+            {(["timeline", "routing", "payload", "usage", "replay"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -127,12 +134,15 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                     ? "路由"
                     : t === "payload"
                       ? "内容"
-                      : "用量"}
+                      : t === "usage"
+                        ? "用量"
+                        : "重放"}
               </button>
             ))}
           </nav>
 
           <div className="min-h-0 flex-1 overflow-auto p-4 text-xs">
+            {tab === "replay" && <Replay id={id} originalProvider={r.provider} />}
             {tab === "timeline" && (
               <div className="space-y-1">
                 {/* **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的
@@ -280,5 +290,170 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * 把这条请求原样发给另一个上游（§11 的 M6+）。
+ *
+ * 用途只有一个，但它是这个工具最常被需要的那一个：**这条请求走中转慢
+ * 或者失败了，同样一条发给官方会怎么样？**手工复现一个 Claude Code 的
+ * 请求几乎不可能 —— 那是几十 KB 的 system prompt 加一堆工具定义，而任何
+ * 一处不同都会让对比失去意义。我们手里正好有原样的那一份。
+ *
+ * **它花钱**，所以和 L3 测速一样是三步：选上游 → 看报价 → 点确认。
+ * 中间那一步不能省 —— 触发前必须显示预估消耗，而不是点了才知道。
+ */
+function Replay({ id, originalProvider }: { id: number; originalProvider: string }) {
+  const [ov, setOv] = useState<Overview | null>(null);
+  const [provider, setProvider] = useState("");
+  const [quote, setQuote] = useState<ReplayQuote | null>(null);
+  const [result, setResult] = useState<ReplayResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const o = await invoke<Overview>("overview");
+        setOv(o);
+        // 默认选一个**和原来那次不同的**上游 —— 重放的价值在对比
+        setProvider(o.providers.find((p) => p.name !== originalProvider)?.name ?? o.providers[0]?.name ?? "");
+      } catch (e) {
+        setError(typeof e === "string" ? e : String(e));
+      }
+    })();
+  }, [originalProvider]);
+
+  async function ask() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
+    } catch (e) {
+      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      setError(typeof e === "string" ? e : String(e));
+      setQuote(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function go() {
+    setBusy(true);
+    try {
+      setResult(await invoke<ReplayResult>("replay_run", { id, provider }));
+      setQuote(null);
+    } catch (e) {
+      setError(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-neutral-500">
+        把这条请求**原样**发给另一个上游，和原来那次并排比。请求体是当时存下来的那一份，一个字节都没改。
+      </p>
+      <div className="flex items-center gap-2">
+        <select
+          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+          value={provider}
+          onChange={(e) => {
+            setProvider(e.target.value);
+            setQuote(null);
+          }}
+        >
+          {ov?.providers.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+              {p.name === originalProvider ? "（原来就是它）" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+          onClick={() => void ask()}
+          disabled={busy || !provider}
+        >
+          看报价
+        </button>
+      </div>
+
+      {error && <div className="text-amber-600 dark:text-amber-400">{error}</div>}
+
+      {quote && (
+        <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          {/* **触发前必须显示预估消耗**，而不是点了才知道（§4.6） */}
+          <div>
+            发 {quote.body_bytes} 字节给 <span className="font-medium">{quote.provider}</span>，
+            约 {quote.input_tokens} 个输入 token。
+          </div>
+          <div className="mt-1">{quote.note}</div>
+          {quote.will_redact && (
+            <div className="mt-1 text-neutral-500">
+              发出去之前会按这家的规则脱敏，回显会换回来。
+            </div>
+          )}
+          <div className="mt-1 text-neutral-500">价目表日期 {quote.pricing_date}。</div>
+          <button
+            className="mt-2 rounded bg-neutral-900 px-3 py-1 text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            onClick={() => void go()}
+            disabled={busy}
+          >
+            {busy ? "发送中…" : "确认发送"}
+          </button>
+        </div>
+      )}
+
+      {result && (
+        <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          <table className="w-full">
+            <thead className="text-neutral-500">
+              <tr>
+                <th className="text-left font-normal"></th>
+                <th className="text-right font-normal">{result.original.provider}（原来）</th>
+                <th className="text-right font-normal">{result.provider}（重放）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <Cmp label="状态" a={result.original.status} b={result.status} />
+              <Cmp label="首字节" a={result.original.ttfb_ms} b={result.ttfb_ms} unit="ms" />
+              <Cmp label="耗时" a={result.original.duration_ms} b={result.duration_ms} unit="ms" />
+              <Cmp label="字节" a={result.original.bytes} b={result.bytes} />
+            </tbody>
+          </table>
+          <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] dark:bg-neutral-950">
+            {result.body}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Cmp({
+  label,
+  a,
+  b,
+  unit = "",
+}: {
+  label: string;
+  a: number | null | undefined;
+  b: number;
+  unit?: string;
+}) {
+  return (
+    <tr className="border-t border-neutral-100 dark:border-neutral-900">
+      <td className="py-1 text-neutral-500">{label}</td>
+      {/* **原来那次可能没有这个数**（失败的请求没有耗时）。写「—」而不是 0 */}
+      <td className="text-right">{a == null ? "—" : `${a}${unit}`}</td>
+      <td className="text-right font-medium">
+        {b}
+        {unit}
+      </td>
+    </tr>
   );
 }
