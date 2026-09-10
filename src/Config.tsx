@@ -236,6 +236,14 @@ export default function Config({
    * 用户知道 YAML 长什么样（§0.6：默认值不该要求用户额外懂什么）。
    */
   const [mode, setMode] = useState<"form" | "text">("form");
+  /**
+   * 跳到文本模式时要定位的名字（§7.10）。
+   *
+   * 表单和文本**是同一份文件的两种视图**，不是两个割裂的东西 —— 而让
+   * 用户建立这个心智最有效的一下，就是他点「在文件里看」时那一段真的
+   * 被选中了。
+   */
+  const [focus, setFocus] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // 每次配置换了版本就重新拉一遍 —— 手里那份的 version 过期之后，
@@ -295,14 +303,17 @@ export default function Config({
         <div className="flex items-baseline gap-3">
           <h2 className="text-sm font-semibold">配置文件</h2>
           <button
-            onClick={() => setMode("form")}
+            onClick={() => {
+              setFocus(null);
+              setMode("form");
+            }}
             className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             回到表单
           </button>
         </div>
         {cfg ? (
-          <ConfigTextMode doc={cfg} onSaved={() => setReloadKey((k) => k + 1)} />
+          <ConfigTextMode doc={cfg} focus={focus} onSaved={() => setReloadKey((k) => k + 1)} />
         ) : (
           <p className="text-xs text-neutral-500">读取中…</p>
         )}
@@ -406,7 +417,19 @@ export default function Config({
           <tbody>
             {ov.providers.map((p) => (
               <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 font-medium">{p.name}</td>
+                <td className="py-1.5 font-medium">
+                  {p.name}
+                  <button
+                    title="在配置文件里看这一段"
+                    onClick={() => {
+                      setFocus(p.name);
+                      setMode("text");
+                    }}
+                    className="ml-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                  >
+                    ↗
+                  </button>
+                </td>
                 <td className="text-neutral-500">
                   <EditableCell
                     mono
@@ -586,6 +609,16 @@ export default function Config({
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
+                  <button
+                    title="在配置文件里看这一段"
+                    onClick={() => {
+                      setFocus(g.name);
+                      setMode("text");
+                    }}
+                    className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                  >
+                    ↗
+                  </button>
                   <SelectCell
                     value={
                       { 按顺序: "fallback", 手动选: "select", 轮流: "load-balance", 选最快: "url-test", 选最便宜: "cheapest" }[
