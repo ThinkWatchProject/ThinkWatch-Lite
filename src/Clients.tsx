@@ -30,6 +30,9 @@ export default function Clients() {
   const [done, setDone] = useState<AdoptResponse | null>(null);
   const [why, setWhy] = useState<{ id: string; found: FindingView[] } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 「全部还原」按了一次，等第二次确认。**不弹浏览器的 confirm** ——
+   * 这个项目里所有破坏性操作都走自己的确认界面（接管走 diff 弹窗） */
+  const [confirmAll, setConfirmAll] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -107,9 +110,67 @@ export default function Clients() {
         </div>
       )}
 
-      <div className="text-xs text-neutral-500">
-        接管会把这些客户端指向 <code>{data.gateway_base}</code>。
-        只改端点和密钥两个字段，其余原样不动，随时可以还原。
+      <div className="flex items-start justify-between gap-4">
+        <div className="text-xs text-neutral-500">
+          接管会把这些客户端指向 <code>{data.gateway_base}</code>。
+          只改端点和密钥两个字段，其余原样不动，随时可以还原。
+        </div>
+        {/*
+          **退路要一直看得见**（§7.15）。用户敢按下「接管」的前提，就是
+          看得见怎么退回去 —— 藏在二级菜单里的退路等于没有退路，他会在
+          心里给接管打上「不可逆」的标签，然后犹豫。
+        */}
+        {data.clients.some((c) => c.adopted_at_ms !== null) &&
+          (confirmAll ? (
+            <div className="flex shrink-0 items-center gap-2 text-xs">
+              <span className="text-amber-700 dark:text-amber-400">
+                把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
+                个客户端改回接管之前的样子？它们会立刻不再经过 ThinkWatch。
+              </span>
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  setConfirmAll(false);
+                  setBusy(true);
+                  try {
+                    const rs = await invoke<{ client: string; ok: boolean; detail: string }[]>(
+                      "restore_all",
+                    );
+                    const bad = rs.filter((r) => !r.ok);
+                    // **一家失败不影响别家**，所以逐条报，不能只说「失败了」
+                    setError(
+                      bad.length === 0
+                        ? null
+                        : `有 ${bad.length} 个没还原成功：` +
+                            bad.map((r) => `${r.client}（${r.detail}）`).join("；"),
+                    );
+                    await load();
+                  } catch (e) {
+                    setError(typeof e === "string" ? e : String(e));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                确认全部还原
+              </button>
+              <button
+                onClick={() => setConfirmAll(false)}
+                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              disabled={busy}
+              onClick={() => setConfirmAll(true)}
+              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              全部还原
+            </button>
+          ))}
       </div>
 
       {here.map((c) => (

@@ -454,6 +454,77 @@ async fn plan_restore(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 把所有接管过的客户端一次性还原（§7.15 第二层的第二个入口）。
+///
+/// **这个按钮要一直看得见。**用户敢按下「接管」的前提，就是看得见退路
+/// —— 藏起来的退路等于没有退路，他会在心里给接管打上「不可逆」的标签。
+///
+/// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
+/// 文件被改坏了，不该让另外四个也留在接管状态。
+#[tauri::command]
+async fn restore_all(state: tauri::State<'_, AppState>) -> Result<Vec<RestoreOutcome>, String> {
+    let list = state.control.clients().await.map_err(|e| format!("{e:#}"))?;
+    let mut out = Vec::new();
+    for c in list.clients.iter().filter(|c| c.adopted_at_ms.is_some()) {
+        let r = state.control.restore(&c.name).await;
+        out.push(RestoreOutcome {
+            client: c.name.clone(),
+            ok: r.is_ok(),
+            detail: match r {
+                Ok(_) => "已还原".to_string(),
+                Err(e) => format!("{e:#}"),
+            },
+        });
+    }
+    Ok(out)
+}
+
+#[derive(serde::Serialize)]
+struct RestoreOutcome {
+    client: String,
+    ok: bool,
+    detail: String,
+}
+
+/// 完全卸载（§7.15 第二层的第三个入口）。
+///
+/// 顺序是**先还原、再注销自启、最后才提删数据** —— 反过来的话，中途
+/// 失败会留下一个「客户端还指着一个已经不在的端口」的状态，而那正是
+/// 这一整节要防的事。
+///
+/// **我们不删自己。**macOS 上应用删除没有钩子，也不该由应用自己动手 ——
+/// 最后一句话是「可以把应用拖进废纸篓了」，那一下由用户来。
+#[tauri::command]
+async fn uninstall(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    drop_data: bool,
+) -> Result<Vec<String>, String> {
+    let mut log = Vec::new();
+    for r in restore_all(state).await? {
+        log.push(format!("{} — {}", r.client, r.detail));
+    }
+    // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
+    // 开机自启项的后果，用户在系统设置里看得见、也删得掉
+    use tauri_plugin_autostart::ManagerExt;
+    match app.autolaunch().disable() {
+        Ok(_) => log.push("开机自启已注销".into()),
+        Err(e) => log.push(format!("开机自启没注销掉（去系统设置里删）：{e}")),
+    }
+    if drop_data {
+        let dir = data_dir();
+        match std::fs::remove_dir_all(&dir) {
+            Ok(_) => log.push(format!("数据目录已删除：{}", dir.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log.push(format!("数据目录没删掉：{}（{e}）", dir.display())),
+        }
+    } else {
+        log.push(format!("数据留着没动：{}", data_dir().display()));
+    }
+    log.push("可以把应用拖进废纸篓了。".into());
+    Ok(log)
+}
+
 #[tauri::command]
 async fn restore_client(
     state: tauri::State<'_, AppState>,
@@ -526,6 +597,8 @@ pub fn run() {
             adopt_client,
             plan_restore,
             restore_client,
+            restore_all,
+            uninstall,
             diagnose_client,
             scan_configs,
             dry_run,

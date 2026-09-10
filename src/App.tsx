@@ -8,6 +8,7 @@ import Clients from "./Clients";
 import Security from "./Security";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
+import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview, SetupResponse } from "./types";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
@@ -30,10 +31,72 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
+  /** 打开的那条请求（§7.8 的右侧抽屉） */
+  const [open, setOpen] = useState<number | null>(null);
+  /**
+   * 键盘选中的那一行（§7.14）。
+   *
+   * **`-1` 表示还没用过键盘。**一进页面就高亮第一行，会让用户以为
+   * 那一行有什么特别。
+   */
+  const [cursor, setCursor] = useState(-1);
   const [tab, setTab] = useState<"requests" | "sessions" | "dashboard" | "clients" | "security" | "config">("requests");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
+
+  /**
+   * 列表的键盘导航（§7.14）。
+   *
+   * **「用鼠标一行行点太慢」**，而 Requests 是主战场。
+   *
+   * 两个边界：在输入框里打字时不接管方向键（否则光标动不了）；
+   * 抽屉开着时 `↑↓` 也不动，那时用户在看详情而不是挑行。
+   */
+  useEffect(() => {
+    if (tab !== "requests") return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing =
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable);
+      if (typing) return;
+      if (e.key === "Escape") {
+        setOpen(null);
+        return;
+      }
+      if (open !== null) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setCursor((c) => {
+          const next = e.key === "ArrowDown" ? c + 1 : c - 1;
+          // 第一次按方向键从第一行开始，而不是从「上一行」跳到末尾
+          if (c < 0) return e.key === "ArrowDown" ? 0 : 0;
+          return Math.max(0, Math.min(rows.length - 1, next));
+        });
+      } else if (e.key === "Enter" && cursor >= 0 && rows[cursor]) {
+        e.preventDefault();
+        setOpen(rows[cursor].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, rows, cursor, open]);
+
+  // 换页时把抽屉关掉 —— 它是请求页的东西，留在别的页上没有意义，
+  // 而那时 Esc 也不接管了（键盘那个 effect 只在请求页挂）
+  useEffect(() => {
+    if (tab !== "requests") setOpen(null);
+  }, [tab]);
+
+  // 列表变短了（超上限丢老的）时把光标收回来 —— 指着一行不存在的
+  // 记录，`Enter` 会什么都不发生，而用户不知道为什么
+  useEffect(() => {
+    setCursor((c) => (c >= rows.length ? rows.length - 1 : c));
+  }, [rows.length]);
 
   useEffect(() => {
     let alive = true;
@@ -284,7 +347,16 @@ export default function App() {
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-neutral-100 dark:border-neutral-900"
+                  onClick={() => {
+                    setCursor(rows.indexOf(r));
+                    setOpen(r.id);
+                  }}
+                  className={
+                    "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
+                    (rows[cursor]?.id === r.id
+                      ? "bg-neutral-100 dark:bg-neutral-800"
+                      : "")
+                  }
                 >
                   <td className="py-1.5">
                     {r.state === "in_flight" ? (
@@ -371,6 +443,9 @@ export default function App() {
         )}
       </main>
       )}
+      {/* §7.8 的右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
+          这里才是主战场 */}
+      {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -733,6 +733,8 @@ export default function Config({
       </section>
 
       <Diagnostics />
+
+      <Uninstall />
     </div>
   );
 }
@@ -782,6 +784,100 @@ function Diagnostics() {
           写好了：<code className="break-all">{path}</code>
           <div className="mt-1 text-neutral-500">
             里面的密钥和地址都打过码了，但**交出去之前请自己扫一眼**。
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * 完全卸载（§7.15 第二层的第三个入口）。
+ *
+ * **macOS 上删除应用没有卸载钩子。**拖进废纸篓就是拖进废纸篓，我们没有
+ * 任何机会做清理 —— 而那时五个客户端的 `base_url` 全都指向一个已经没有
+ * 东西在听的端口，所有 AI 客户端同时失效，用户很可能已经忘了是什么改的。
+ *
+ * 所以这个入口必须存在，而且要在他还没删应用的时候就看得见。
+ *
+ * 顺序是**先还原、再注销自启、最后才提删数据** —— 反过来的话，中途失败
+ * 会留下一个「客户端还指着一个不在的端口」的状态，而那正是这一整节要
+ * 防的事。
+ */
+function Uninstall() {
+  const [step, setStep] = useState<"idle" | "ask" | "done">("idle");
+  const [drop, setDrop] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  if (step === "done") {
+    return (
+      <section className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
+        <h2 className="text-sm font-semibold">卸载完成</h2>
+        <ul className="mt-2 space-y-0.5 text-neutral-600 dark:text-neutral-400">
+          {log.map((l, i) => (
+            <li key={i}>· {l}</li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
+      <h2 className="text-sm font-semibold">完全卸载</h2>
+      {step === "idle" ? (
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <p className="text-neutral-500">
+            把所有接管过的客户端改回原样、注销开机自启。
+            <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
+            —— 那时客户端会指着一个没有东西在听的端口。
+          </p>
+          <button
+            onClick={() => setStep("ask")}
+            className="shrink-0 rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            卸载…
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1.5 space-y-2">
+          <p className="text-neutral-600 dark:text-neutral-400">要做这几件事：</p>
+          <ul className="space-y-0.5 text-neutral-600 dark:text-neutral-400">
+            <li>· 把所有接管过的客户端改回接管之前的样子</li>
+            <li>· 注销开机自启</li>
+          </ul>
+          <label className="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
+            <input type="checkbox" checked={drop} onChange={(e) => setDrop(e.target.checked)} />
+            {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
+                「删了才发现还想看」是不可逆的 */}
+            连同数据目录一起删掉（请求历史、成本记录、配置备份）
+          </label>
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  setLog(await invoke<string[]>("uninstall", { dropData: drop }));
+                  setStep("done");
+                } catch (e) {
+                  setLog([typeof e === "string" ? e : String(e)]);
+                  setStep("done");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              确认卸载
+            </button>
+            <button
+              onClick={() => setStep("idle")}
+              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              取消
+            </button>
           </div>
         </div>
       )}
