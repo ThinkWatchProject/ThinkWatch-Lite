@@ -15,7 +15,6 @@ pub mod autostart;
 pub mod control;
 pub mod memcheck;
 pub mod menubar;
-pub mod shellpath;
 pub mod supervisor;
 
 use control::ControlClient;
