@@ -461,6 +461,16 @@ async fn plan_restore(
 ///
 /// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
 /// 文件被改坏了，不该让另外四个也留在接管状态。
+/// 真的退出。**只有确认过的界面能调它**（§7.5）——托盘那一项只是把
+/// 窗口拉起来问一句。
+#[tauri::command]
+async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    // 不问「要不要保留后台代理」—— 那个问题本身就暴露了内部有两个
+    // 进程（§2.2.1）
+    app.exit(0);
+    Ok(())
+}
+
 #[tauri::command]
 async fn restore_all(state: tauri::State<'_, AppState>) -> Result<Vec<RestoreOutcome>, String> {
     let list = state.control.clients().await.map_err(|e| format!("{e:#}"))?;
@@ -598,6 +608,7 @@ pub fn run() {
             plan_restore,
             restore_client,
             restore_all,
+            quit_app,
             uninstall,
             diagnose_client,
             scan_configs,
@@ -950,30 +961,219 @@ fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
     // 托盘菜单。**「退出」在这里，而 ⌘Q 只隐藏窗口**（§2.4）—— 这个
     // 应用退出的代价很高（所有 AI 客户端立刻失联），一个手滑的 ⌘Q 不
     // 该造成那个后果。
-    let open = MenuItem::with_id(app, "open", "打开主界面", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 ThinkWatch Lite", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let menu = build_tray_menu(app, &TrayFacts::default())?;
 
     let tray = TrayIconBuilder::new()
         .icon(Image::new_owned(rgba, w, h))
         // 模板图靠 alpha 自动跟随菜单栏亮暗反色
         .icon_as_template(true)
         .menu(&menu)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => {
-                if let Err(e) = show_main_window(app) {
-                    tracing::error!("开窗口失败：{e}");
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref().to_string();
+            match id.as_str() {
+                "open" => {
+                    if let Err(e) = show_main_window(app) {
+                        tracing::error!("开窗口失败：{e}");
+                    }
+                }
+                "quit" => {
+                    // **退出要确认**（§7.5）：代价是所有 AI 客户端立刻
+                    // 失联，不该由一次手滑造成。托盘里没法弹对话框，
+                    // 所以把窗口拉起来让他在里面确认。
+                    if let Err(e) = show_main_window(app) {
+                        tracing::error!("开窗口失败：{e}");
+                    }
+                    let _ = app.emit("ask-quit", ());
+                }
+                "undo" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let Some(state) = app.try_state::<AppState>() else {
+                            return;
+                        };
+                        // 「上一版」= 历史里的第二条（第一条是现在跑着的）
+                        let hist = state.control.config_history().await;
+                        let target = hist
+                            .ok()
+                            .and_then(|h| h.into_iter().rev().nth(1).map(|v| v.version));
+                        match target {
+                            Some(v) => match state.control.rollback(v.clone()).await {
+                                Ok(_) => tracing::info!(%v, "从托盘撤销了上一次配置修改"),
+                                Err(e) => tracing::warn!("撤销失败：{e:#}"),
+                            },
+                            None => tracing::info!("历史里没有上一版，没什么可撤销的"),
+                        }
+                    });
+                }
+                _ => {
+                    // `组::<组名>::<provider>` —— 托盘里切 select 组（§3.5）
+                    if let Some(rest) = id.strip_prefix("组::") {
+                        let Some((g, p)) = rest.split_once("::") else {
+                            return;
+                        };
+                        let (g, p) = (g.to_string(), p.to_string());
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let Some(state) = app.try_state::<AppState>() else {
+                                return;
+                            };
+                            if let Err(e) = state.control.select_group(&g, &p).await {
+                                tracing::warn!("切换 `{g}` 失败：{e:#}");
+                            }
+                        });
+                    }
                 }
             }
-            "quit" => {
-                // 真的退。不问「要不要保留后台代理」—— 那个问题本身就
-                // 暴露了内部有两个进程（§2.2.1）。
-                app.exit(0);
-            }
-            _ => {}
         })
         .build(app)?;
     Ok(tray)
+}
+
+/// 收一份托盘菜单要的数据。
+///
+/// **只在这一处读，一秒一次。**菜单事件里去读的话，用户点开菜单那一下
+/// 要等一次控制面往返 —— 而菜单是要立刻弹出来的东西。
+async fn collect_tray_facts(
+    state: &tauri::State<'_, AppState>,
+    bar: &menubar::MenuBarState,
+) -> TrayFacts {
+    let running = matches!(bar.status, menubar::Status::Normal);
+    if !running {
+        return TrayFacts {
+            running: false,
+            ..Default::default()
+        };
+    }
+    let groups = state
+        .control
+        .overview()
+        .await
+        .map(|o| {
+            o.groups
+                .into_iter()
+                // 只有 `select` 组能在托盘里切 —— 别的策略是自动决定的，
+                // 给个下拉会让人以为自己在指挥它
+                .filter(|g| g.kind == "手动选")
+                .map(|g| (g.name, g.providers, g.selected))
+                .collect()
+        })
+        .unwrap_or_default();
+    let can_undo = state
+        .control
+        .config_history()
+        .await
+        .map(|h| h.len() >= 2)
+        .unwrap_or(false);
+    TrayFacts {
+        running,
+        cost: bar.cost_today,
+        quota: bar.quota_percent,
+        groups,
+        can_undo,
+    }
+}
+
+/// 托盘菜单要显示的东西。
+///
+/// **只留会影响菜单长相的那几项。**每秒重建一次菜单是浪费，而且 macOS
+/// 上菜单正开着时重建会把它收起来 —— 用户点到一半菜单没了。
+#[derive(Default, PartialEq, Clone)]
+struct TrayFacts {
+    running: bool,
+    /// 今日花费。`None` = 不知道，画破折号而不是 `$0.00`（§4.3）
+    cost: Option<f64>,
+    /// 最紧张那个额度窗口用了多少（订阅账号才有）
+    quota: Option<f64>,
+    /// `select` 组：`(组名, 成员, 当前选中)`
+    groups: Vec<(String, Vec<String>, Option<String>)>,
+    /// 有没有上一版可以撤销
+    can_undo: bool,
+}
+
+/// 按 §7.5 建托盘菜单。
+///
+/// 菜单栏显示的是**状态**，点开才是**操作面板** —— 所以上半截是几行
+/// 读不了的状态，下半截才是能点的东西。
+fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<tauri::Wry>> {
+    use tauri::menu::{PredefinedMenuItem, Submenu};
+    let head = MenuItem::with_id(
+        app,
+        "head",
+        if f.running {
+            "ThinkWatch  ● 运行中"
+        } else {
+            "ThinkWatch  ○ 没在跑"
+        },
+        // **点不动。**它是状态不是操作
+        false,
+        None::<&str>,
+    )?;
+    let money = MenuItem::with_id(
+        app,
+        "money",
+        match (f.quota, f.cost) {
+            // 订阅账号优先显示额度：「今天花了 $0.00」对他是句废话
+            (Some(q), _) => format!("额度  已用 {:.0}%", q * 100.0),
+            (None, Some(c)) => format!("今日  ${c:.2}"),
+            // **破折号不是 0。**画一个 $0.00 是在断言「今天没花钱」
+            (None, None) => "今日  —".to_string(),
+        },
+        false,
+        None::<&str>,
+    )?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> =
+        vec![Box::new(head), Box::new(money), Box::new(sep)];
+
+    // `select` 组：一个子菜单一组，选中的打勾（§3.5「托盘里切」）
+    for (name, members, selected) in &f.groups {
+        let mut subs: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+        for m in members {
+            subs.push(Box::new(tauri::menu::CheckMenuItem::with_id(
+                app,
+                format!("组::{name}::{m}"),
+                m,
+                true,
+                Some(m) == selected.as_ref(),
+                None::<&str>,
+            )?));
+        }
+        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+            subs.iter().map(|b| b.as_ref()).collect();
+        items.push(Box::new(Submenu::with_items(app, name, true, &refs)?));
+    }
+    if !f.groups.is_empty() {
+        items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    }
+
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "undo",
+        "撤销上一次配置修改",
+        // **没得撤就是灰的，不是不显示。**一个时有时无的菜单项，用户
+        // 每次都要重新找它在哪儿
+        f.can_undo,
+        None::<&str>,
+    )?));
+    items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "open",
+        "打开主界面",
+        true,
+        None::<&str>,
+    )?));
+    items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "quit",
+        "退出 ThinkWatch Lite…",
+        true,
+        None::<&str>,
+    )?));
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        items.iter().map(|b| b.as_ref()).collect();
+    Menu::with_items(app, &refs)
 }
 
 /// 每秒更新一次菜单栏。
@@ -982,6 +1182,7 @@ fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
 /// 常驻的东西，它自己耗电就直接违反了「空闲 CPU 约等于零」。
 async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
     let mut prev = menubar::MenuBarState::default();
+    let mut prev_tray = TrayFacts::default();
     // 第一帧无条件画，之后靠 needs_redraw
     let mut first = true;
     loop {
@@ -991,6 +1192,21 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
             Some(state) => collect_menubar_state(&state).await,
             None => continue,
         };
+        // 托盘菜单跟着一起更（§7.5）。**只在内容真的变了的时候重建**
+        // —— 每秒重建一次是浪费，而且 macOS 上菜单正开着时重建会把它
+        // 收起来，用户点到一半菜单没了
+        if let Some(state) = app.try_state::<AppState>() {
+            let facts = collect_tray_facts(&state, &next).await;
+            if first || facts != prev_tray {
+                match build_tray_menu(&app, &facts) {
+                    Ok(m) => {
+                        let _ = tray.set_menu(Some(m));
+                        prev_tray = facts;
+                    }
+                    Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
+                }
+            }
+        }
         if !first && !next.needs_redraw(&prev) {
             continue;
         }

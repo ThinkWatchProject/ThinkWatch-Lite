@@ -413,6 +413,23 @@ impl ControlClient {
         .await
     }
 
+    /// 托盘里切 `select` 组（§3.5：这个策略就是「UI 上点选或托盘里切」）。
+    ///
+    /// **走和界面同一条路** —— `patch_config` 加乐观并发，于是它同样会
+    /// 校验、存历史、防回环。
+    pub async fn select_group(&self, group: &str, provider: &str) -> Result<()> {
+        let cur = self.config().await?;
+        self.patch_config(
+            vec![tw_api::PatchOp::Replace {
+                path: format!("/groups/{group}/selected"),
+                value: tw_api::PatchValue::Str(provider.to_string()),
+            }],
+            cur.version,
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn config_history(&self) -> Result<Vec<tw_api::ConfigVersion>> {
         let body = self.get("/config/history").await?;
         Ok(serde_json::from_slice(&body)?)

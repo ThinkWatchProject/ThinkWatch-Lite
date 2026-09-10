@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import Setup from "./Setup";
 import Connect from "./Connect";
@@ -31,6 +32,13 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
+  /**
+   * 托盘按了「退出」，等确认（§7.5）。
+   *
+   * **退出的代价是所有 AI 客户端立刻失联**，不该由一次手滑造成 ——
+   * 所以托盘那一项只是把窗口拉起来问一句，真正的 `exit` 在这里。
+   */
+  const [askQuit, setAskQuit] = useState(false);
   /** 打开的那条请求（§7.8 的右侧抽屉） */
   const [open, setOpen] = useState<number | null>(null);
   /**
@@ -44,6 +52,13 @@ export default function App() {
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
+
+  useEffect(() => {
+    const un = listen("ask-quit", () => setAskQuit(true));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   /**
    * 列表的键盘导航（§7.14）。
@@ -445,6 +460,34 @@ export default function App() {
       )}
       {/* §7.8 的右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+      {askQuit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+          <div className="w-full max-w-sm rounded-lg bg-white p-4 text-xs shadow-xl dark:bg-neutral-900">
+            <p className="text-sm font-semibold">退出 ThinkWatch Lite？</p>
+            <p className="mt-2 text-neutral-600 dark:text-neutral-400">
+              所有接管过的客户端会立刻失联 ——
+              它们指着的那个端口后面就没有东西在听了。
+            </p>
+            <p className="mt-1 text-neutral-500">
+              只是想关窗口的话，点右上角红叉或按 ⌘W 就行，进程会留在菜单栏。
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setAskQuit(false)}
+                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                不退了
+              </button>
+              <button
+                onClick={() => void invoke("quit_app")}
+                className="rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700"
+              >
+                退出
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
     </div>
   );
