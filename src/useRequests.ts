@@ -42,9 +42,11 @@ export function useRequests() {
   /**
    * token 端点换发了 refresh token（§3.6）。
    *
-   * **不自动消失，也不能靠通知**：要做的事是「去改 config.yaml」，而
-   * 那件事没做完之前提示一直成立。核心侧每个上游只报一次，所以这里
-   * 攒起来不会长。
+   * 写回成功的只报一次，是**告知**：用户的配置文件被我们改了，哪怕改得
+   * 完全正确，他的编辑器弹「文件已更改」时也该知道是谁干的。
+   *
+   * 写回失败的**不自动消失**：重启之前不处理，那家上游就废了。同一个
+   * 上游只留最新那条 —— 失败每次都会报，攒着只是同一句话的副本。
    */
   const [rotated, setRotated] = useState<Extract<CoreEvent, { kind: "credential_rotated" }>[]>([]);
   /** 配置换过几次。App 用它决定要不要重新拉概览 */
@@ -102,9 +104,7 @@ export function useRequests() {
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
         if (ev.kind === "credential_rotated") {
-          setRotated((prev) =>
-            prev.some((x) => x.provider === ev.provider) ? prev : [...prev, ev],
-          );
+          setRotated((prev) => [...prev.filter((x) => x.provider !== ev.provider), ev]);
         }
         if (ev.kind === "config_reloaded") {
           // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好

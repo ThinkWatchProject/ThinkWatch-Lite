@@ -72,20 +72,22 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
-   * token 端点换发了新的 refresh token，config.yaml 里那个已经作废（§3.6）。
+   * token 端点换发了新的 refresh token（§3.6）。
    *
-   * **本进程内已经用上新的了，所以现在一切正常 —— 这正是它危险的地方。**
-   * 症状会在几天后某次重启之后才出现（一片 401），而那时没人会想到是
-   * 几天前的一次轮换。唯一的报警窗口就是现在。
+   * **服务器换发新的那一刻，旧的已经在服务端作废了** —— 所以「不写回
+   * config.yaml」不是保守选项，它保证了配置文件从那一秒起就是坏的，
+   * 只是症状延迟到下次重启（那家上游突然全是 401）。所以默认写回。
    *
-   * 每个上游只报一次：会轮换的服务器每次刷新都轮换，而这句话说一次就够。
+   * `persisted` 说的是那一步成没成：成了只是告知（用户的编辑器会弹
+   * 「文件已更改」，他该知道是谁改的），没成要一直挂着。
    */
   | {
       kind: "credential_rotated";
       id: number;
       provider: string;
-      /** 已打码 */
-      endpoint: string;
+      persisted: boolean;
+      /** 人话。成功说写到哪儿了，失败说卡在哪一步。**不含 token** */
+      detail: string;
       at_ms: number;
     }
   /**

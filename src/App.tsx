@@ -175,38 +175,57 @@ export default function App() {
       {/*
         token 端点换发了新的 refresh token（§3.6）。
 
-        **现在一切正常，这正是要现在说的理由**：本进程内已经用上新的了，
-        症状要等到下一次重启才出现，而那时没人会想到是几天前的一次轮换。
-
-        第一句先说「现在没事」，因为不说的话这条提示看起来像故障；第二句
-        才说要做什么。可以关掉 —— 用户改完配置之后它不该还挂在那儿。
+        **两种完全不同的话，长得也要不一样。**写回成功只是告知 ——
+        用户的配置文件被我们改了，他的编辑器会弹「文件已更改」，那时
+        他该知道是谁干的；写回失败是个必须处理的问题：重启之前不解决，
+        那家上游就废了。
       */}
-      {rotated.length > 0 && (
-        <div className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-xs dark:border-amber-800 dark:bg-amber-950">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="font-medium text-amber-900 dark:text-amber-200">
-                {rotated.map((r) => r.provider).join("、")} 的 token
-                端点换发了新的凭据，当前转发正常。
-              </p>
-              <p className="mt-1 text-amber-800 dark:text-amber-300">
-                但 config.yaml 里那个 refresh token 已经作废了 ——
-                <span className="font-medium">重启之前要把它更新掉</span>
-                ，否则重启之后这家会一直 401。会反复换发的服务器建议改用{" "}
-                <code className="rounded bg-amber-100 px-1 py-0.5 font-mono dark:bg-amber-900/40">
-                  key: {"{ exec: [...] }"}
-                </code>
-                ，让你自己的命令去管这件事。
-              </p>
-            </div>
+      {rotated.map((r) =>
+        r.persisted ? (
+          <div
+            key={r.provider}
+            className="flex items-start justify-between gap-4 border-b border-neutral-200 bg-neutral-50 px-5 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-900"
+          >
+            <p className="text-neutral-600 dark:text-neutral-400">
+              <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                {r.provider}
+              </span>{" "}
+              的 token 端点换发了新凭据，已经帮你写回 config.yaml —— 编辑器里那份可能要重新加载。
+            </p>
             <button
               onClick={clearRotated}
-              className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+              className="shrink-0 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
             >
-              改好了
+              知道了
             </button>
           </div>
-        </div>
+        ) : (
+          <div
+            key={r.provider}
+            className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-xs dark:border-amber-800 dark:bg-amber-950"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-medium text-amber-900 dark:text-amber-200">
+                  {r.provider} 换发了新凭据，但没能写回 config.yaml。当前转发正常。
+                </p>
+                <p className="mt-1 text-amber-800 dark:text-amber-300">
+                  {r.detail}
+                </p>
+                <p className="mt-1 text-amber-800 dark:text-amber-300">
+                  旧的那个已经在服务端作废了 ——
+                  <span className="font-medium">重启之前不处理，这家会一直 401</span>。
+                </p>
+              </div>
+              <button
+                onClick={clearRotated}
+                className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+              >
+                处理好了
+              </button>
+            </div>
+          </div>
+        ),
       )}
 
       {tab === "sessions" ? (
