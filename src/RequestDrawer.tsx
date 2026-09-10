@@ -100,9 +100,11 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
         {r && (
           <span className="text-xs text-neutral-500">{new Date(r.at_ms).toLocaleString()}</span>
         )}
+        {/* §9.8：「录制」不是一个新功能，这一条请求本来就在存储里 */}
+        <SaveFixture id={id} />
         <button
           onClick={onClose}
-          className="ml-auto rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         >
           关闭
         </button>
@@ -290,6 +292,51 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * 另存为回放用例（§9.8）。
+ *
+ * **上游漂移是我们的单元测试永远抓不到的那一类故障** —— Codex 在一个
+ * patch 版本里改了 `auth.json` 的语义、`reasoning_content` 在不同上游
+ * 有三个别名。防它只有一个办法：拿真实流量反复回放。
+ *
+ * 导出时已经走过脱敏（§5.1），但**它会进 git**，所以那句「自己看一眼」
+ * 必须写在按钮旁边而不是文档里。
+ */
+function SaveFixture({ id }: { id: number }) {
+  const [path, setPath] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <span className="ml-auto flex items-center gap-2">
+      {path && (
+        <span className="text-[11px] text-neutral-500" title={path}>
+          写好了，记得自己看一眼再交出去
+        </span>
+      )}
+      {error && <span className="text-[11px] text-amber-600 dark:text-amber-400">{error}</span>}
+      <button
+        className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        disabled={busy}
+        title="把这次的请求和响应存成一个脱敏过的回放用例"
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            setPath(await invoke<string>("save_fixture", { id }));
+          } catch (e) {
+            // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+            setError(typeof e === "string" ? e : String(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "存…" : "另存为测试用例"}
+      </button>
+    </span>
   );
 }
 

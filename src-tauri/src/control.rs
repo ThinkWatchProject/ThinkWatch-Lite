@@ -243,6 +243,13 @@ impl ControlClient {
         self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
     }
 
+    /// 把一条真实请求导出成回放用例（YAML，已脱敏）。
+    pub async fn fixture(&self, id: i64) -> Result<String> {
+        Ok(String::from_utf8(
+            self.get(&format!("/request/{id}/fixture")).await?,
+        )?)
+    }
+
     /// 诊断包的正文（Markdown，已脱敏）。
     pub async fn diagnostics(&self) -> Result<String> {
         Ok(String::from_utf8(self.get("/diagnostics").await?)?)
