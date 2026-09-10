@@ -1183,6 +1183,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
 async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
     let mut prev = menubar::MenuBarState::default();
     let mut prev_tray = TrayFacts::default();
+    let mut tick: u64 = 0;
     // 第一帧无条件画，之后靠 needs_redraw
     let mut first = true;
     loop {
@@ -1194,8 +1195,17 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
         };
         // 托盘菜单跟着一起更（§7.5）。**只在内容真的变了的时候重建**
         // —— 每秒重建一次是浪费，而且 macOS 上菜单正开着时重建会把它
-        // 收起来，用户点到一半菜单没了
-        if let Some(state) = app.try_state::<AppState>() {
+        // 收起来，用户点到一半菜单没了。
+        //
+        // 而**收数据本身也要限频**：菜单要的东西（策略组、历史）得走两次
+        // 控制面往返，一秒两次是在为一个几分钟才变一次的菜单持续付钱，
+        // 而这个应用的第一条约束就是空闲时约等于不存在（§7.4）。
+        // 五秒一次 —— 改完配置最多等五秒菜单跟上，那完全够。
+        tick = tick.wrapping_add(1);
+        // 第一轮无条件建一次，否则托盘头五秒是个空菜单
+        if (tick == 1 || tick % 5 == 0)
+            && let Some(state) = app.try_state::<AppState>()
+        {
             let facts = collect_tray_facts(&state, &next).await;
             if first || facts != prev_tray {
                 match build_tray_menu(&app, &facts) {
