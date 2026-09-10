@@ -243,6 +243,11 @@ impl ControlClient {
         self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
     }
 
+    /// 诊断包的正文（Markdown，已脱敏）。
+    pub async fn diagnostics(&self) -> Result<String> {
+        Ok(String::from_utf8(self.get("/diagnostics").await?)?)
+    }
+
     /// 重放报价。**不发任何请求。**
     pub async fn replay_quote(&self, id: i64, provider: String) -> Result<tw_api::ReplayQuote> {
         self.send_json(

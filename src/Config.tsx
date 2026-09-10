@@ -468,6 +468,60 @@ export default function Config({
           </p>
         )}
       </section>
+
+      <Diagnostics />
     </div>
+  );
+}
+
+/**
+ * 诊断包（§11 的 M6+）。
+ *
+ * 遇到问题时一次性交出「我这儿是什么情况」，省掉来回问一轮（版本？配置？
+ * 哪家上游？）—— 而每一趟都可能问漏。
+ *
+ * **里面的东西全部脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
+ * 看得见所有 API key 的网关，这一步值得多花十秒（§9.7）。
+ */
+function Diagnostics() {
+  const [path, setPath] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold">诊断包</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        版本、上游、熔断状态、最近的失败、脱敏之后的配置原文，攒成一个 Markdown 文件。
+        不含请求体和响应体 —— 它们最有用也最危险。
+      </p>
+      <button
+        className="mt-2 rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            setPath(await invoke<string>("save_diagnostics"));
+          } catch (e) {
+            // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+            setError(typeof e === "string" ? e : String(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "攒着…" : "生成"}
+      </button>
+      {error && <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">{error}</div>}
+      {path && (
+        <div className="mt-2 text-xs">
+          写好了：<code className="break-all">{path}</code>
+          <div className="mt-1 text-neutral-500">
+            里面的密钥和地址都打过码了，但**交出去之前请自己扫一眼**。
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

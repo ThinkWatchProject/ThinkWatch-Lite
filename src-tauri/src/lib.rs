@@ -287,6 +287,35 @@ async fn mcp_apply(
     state.control.mcp_apply(req).await.map_err(|e| format!("{e:#}"))
 }
 
+/// 攒一份诊断包，写到磁盘上，把路径交回去。
+///
+/// **写文件是这一侧的事，不是 core 的。**core 只负责把内容攒出来 ——
+/// 「往哪儿写」是个桌面概念，而它在无头运行时根本不存在。
+#[tauri::command]
+async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let text = state
+        .control
+        .diagnostics()
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let dir = data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(format!("诊断包-{at}.md"));
+    std::fs::write(&path, text).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
+    // **0600。**里面是脱敏过的，但它仍然描述了这台机器上有哪些上游、
+    // 哪些客户端 —— 同机器上的其他用户没有理由读到
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(path.display().to_string())
+}
+
 /// **算一下，不发。**和 L3 测速同一条纪律（§4.6）。
 #[tauri::command]
 async fn replay_quote(
@@ -486,7 +515,8 @@ pub fn run() {
             mcp_apply,
             baseline,
             replay_quote,
-            replay_run
+            replay_run,
+            save_diagnostics
         ])
         .setup(|app| {
             let handle = app.handle().clone();
