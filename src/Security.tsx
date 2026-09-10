@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
+  BaselineResponse,
   McpOpRequest,
   McpTargetView,
   McpView,
@@ -38,17 +39,20 @@ export default function Security({
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<ScanFinding | null>(null);
   const [targets, setTargets] = useState<McpTargetView[]>([]);
+  const [base, setBase] = useState<BaselineResponse | null>(null);
   const [pending, setPending] = useState<{ req: McpOpRequest; plan: PlanView } | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      const [scan, ts] = await Promise.all([
+      const [scan, ts, bl] = await Promise.all([
         invoke<ScanResponse>("scan_configs", { projects: [] }),
         invoke<McpTargetView[]>("mcp_targets"),
+        invoke<BaselineResponse>("baseline"),
       ]);
       setData(scan);
       setTargets(ts);
+      setBase(bl);
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
@@ -204,6 +208,8 @@ export default function Security({
           </ul>
         )}
       </section>
+
+      {base && <Baseline b={base} />}
 
       <Matrix mcp={data.mcp} conflicting={data.conflicting} targets={targets} busy={busy} onAsk={ask} />
 
@@ -466,6 +472,77 @@ function McpConfirm({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 上游行为基线（§5.2 防线三）。
+ *
+ * > 某个中转站用了三个月一直正常，某天开始返回大量 bash 调用 ——
+ * > 这是统计异常，值得告警。
+ *
+ * **报数字，不报结论。**「最近 24 小时 40%，之前 30 天 3%（样本
+ * 120 / 4,200）」比「检测到异常」有用得多 —— 后者用户没法验证，也没法
+ * 判断该不该管。样本不够的时候这一块什么都不说。
+ */
+function Baseline({ b }: { b: BaselineResponse }) {
+  if (b.unavailable) {
+    // **「不是没发现，是没看」**要说出来
+    return (
+      <section>
+        <h2 className="mb-1 text-sm font-medium">上游行为</h2>
+        <p className="text-xs text-neutral-500">观测层没有启动，这一段时间的请求没有被记录，所以没法比。</p>
+      </section>
+    );
+  }
+  const withDrift = b.providers.filter((p) => p.drifts.length > 0);
+  const pct = (x: number) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
+  return (
+    <section>
+      <h2 className="mb-1 text-sm font-medium">上游行为</h2>
+      <p className="mb-2 text-xs text-neutral-500">
+        拿最近 {b.recent_hours} 小时和之前 {b.baseline_days} 天比。样本不够的上游不会出现在这里。
+      </p>
+      {withDrift.length === 0 ? (
+        // §0.6：没风险的时候要说「安全」，而不是让这一块消失
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          ✓ 每个上游的行为都和之前一致
+          {b.providers.length > 0 && (
+            <span className="ml-1 text-emerald-700 dark:text-emerald-400">
+              （比过的：{b.providers.map((p) => p.provider).join("、")}）
+            </span>
+          )}
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {withDrift.map((p) => (
+            <li
+              key={p.provider}
+              className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900 dark:bg-amber-950"
+            >
+              <div className="font-medium">{p.provider} 的行为变了</div>
+              {p.drifts.map((d) => (
+                <div key={d.metric} className="mt-1">
+                  {d.label}：<span className="font-medium">{pct(d.recent)}</span>
+                  <span className="text-neutral-500">
+                    ，之前是 {pct(d.baseline)}
+                    {/* **样本量必须一起给** —— 没有它，比率是个没法判断
+                        可信度的数字 */}
+                    （样本 {d.recent_n} / {d.baseline_n}）
+                  </span>
+                </div>
+              ))}
+              {/* 数过形状的和总数不同时要说清楚 */}
+              {p.recent_inspected < p.recent_total && (
+                <div className="mt-1 text-neutral-500">
+                  最近 {p.recent_total} 条里只有 {p.recent_inspected} 条数过形状 —— 其余那些发生在入站审查关着的时候。
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -669,3 +669,35 @@ export interface McpTargetView {
   copyable: boolean;
   why_not: string;
 }
+
+// ---------------------------------------------------------- 上游行为基线
+
+export interface DriftView {
+  metric: "tool_calls" | "flagged" | "errors";
+  label: string;
+  /** 比率，0..1 */
+  recent: number;
+  baseline: number;
+  /** 两边各自的样本量。**必须一起显示** —— 没有它，比率是个没法判断可信度的数字 */
+  recent_n: number;
+  baseline_n: number;
+  notable: boolean;
+}
+
+export interface ProviderBaseline {
+  provider: string;
+  recent_total: number;
+  baseline_total: number;
+  /** 数过形状的有多少条。和总数不同时要说清楚 */
+  recent_inspected: number;
+  baseline_inspected: number;
+  drifts: DriftView[];
+}
+
+export interface BaselineResponse {
+  recent_hours: number;
+  baseline_days: number;
+  providers: ProviderBaseline[];
+  /** 观测层没起来。**不是没发现，是没看** */
+  unavailable: boolean;
+}

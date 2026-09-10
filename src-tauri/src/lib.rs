@@ -288,6 +288,11 @@ async fn mcp_apply(
 }
 
 #[tauri::command]
+async fn baseline(state: tauri::State<'_, AppState>) -> Result<tw_api::BaselineResponse, String> {
+    state.control.baseline().await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn sessions(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::SessionView>, String> {
     state.control.sessions().await.map_err(|e| format!("{e:#}"))
 }
@@ -450,7 +455,8 @@ pub fn run() {
             session_detail,
             mcp_targets,
             mcp_plan,
-            mcp_apply
+            mcp_apply,
+            baseline
         ])
         .setup(|app| {
             let handle = app.handle().clone();

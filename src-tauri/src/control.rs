@@ -243,6 +243,11 @@ impl ControlClient {
         self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
     }
 
+    /// 每个上游最近是不是变了（§5.2 防线三）。
+    pub async fn baseline(&self) -> Result<tw_api::BaselineResponse> {
+        Ok(serde_json::from_slice(&self.get("/baseline").await?)?)
+    }
+
     /// 会话列表（§7.9）。
     pub async fn sessions(&self) -> Result<Vec<tw_api::SessionView>> {
         Ok(serde_json::from_slice(&self.get("/sessions").await?)?)
