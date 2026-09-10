@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
@@ -31,12 +31,25 @@ function EditableCell({
 }) {
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
+  /**
+   * 输入法正在组字。
+   *
+   * **§9.7 那条数据丢失就在这儿**：cc-switch 报过一个 12 字符的值被
+   * 膨胀成 1396 字符 —— 受控组件在输入法还持有 composition range 时
+   * 把 state 写回 DOM。我们是 Tauri（WebKit）+ 中文用户 + 配置输入框，
+   * 三个条件全中。
+   *
+   * 更阴的是 **WebKit 在窗口切换时不发 `compositionend`** —— 用户输到
+   * 一半点了别的窗口，那个事件永远不来。所以 `blur` 里要强制收尾。
+   */
+  const composing = useRef(false);
   // 外面换了版本（别人改了文件）就跟着走 —— 否则用户会盯着一个已经
   // 不存在的值发呆
   useEffect(() => setDraft(value), [value]);
 
   async function commit() {
-    if (draft === value || busy) return;
+    // 组字中不提交 —— 中间态提交上去的是一段还没成形的文本
+    if (composing.current || draft === value || busy) return;
     if (!version) {
       onSaved("还没读到配置版本，稍等一下再试");
       setDraft(value);
@@ -63,7 +76,23 @@ function EditableCell({
       value={draft}
       disabled={busy}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onCompositionStart={() => (composing.current = true)}
+      onCompositionEnd={(e) => {
+        composing.current = false;
+        setDraft(e.currentTarget.value);
+      }}
+      onBlur={(e) => {
+        // WebKit 窗口切换时不发 `compositionend`，这里强制收尾
+        composing.current = false;
+        setDraft(e.currentTarget.value);
+        void commit();
+      }}
+      // **macOS 会把 API key 的首字母大写。**一行属性的事，不写就是
+      // 一类稳定复现的「key 明明是对的却认证失败」（§9.7）
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
         // Esc 放弃这次编辑
@@ -429,6 +458,54 @@ export default function Config({
                     {g.providers.join(" → ")}
                   </span>
                 </div>
+                {/*
+                  **`select` 组要能在这儿切。**§3.5 说这个策略就是
+                  「UI 上点选」，而切不了的话它等于一个只能改 YAML
+                  才能用的功能。
+
+                  选中之后其余的仍然留着做故障转移 —— 手动选一家不等于
+                  放弃容错，所以这里说的是「优先」而不是「只用」。
+                */}
+                {g.kind === "手动选" && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-neutral-500">优先用</span>
+                    <select
+                      value={g.selected ?? ""}
+                      onChange={async (e) => {
+                        if (!cfg?.version) {
+                          setSaveError("还没读到配置版本，稍等一下再试");
+                          return;
+                        }
+                        try {
+                          await invoke("patch_config", {
+                            ops: [
+                              {
+                                op: "replace",
+                                path: `/groups/${g.name}/selected`,
+                                value: e.target.value,
+                              },
+                            ],
+                            baseVersion: cfg.version,
+                          });
+                          setSaveError(null);
+                          setReloadKey((k) => k + 1);
+                        } catch (err) {
+                          setSaveError(typeof err === "string" ? err : String(err));
+                        }
+                      }}
+                      className="rounded border border-neutral-300 bg-transparent px-1 py-0.5 dark:border-neutral-700"
+                    >
+                      {g.providers.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-neutral-500">
+                      其余的仍然是它的故障转移备选
+                    </span>
+                  </div>
+                )}
                 {g.hurts_cache && (
                   // 这句必须在界面上直说：它决定了用户的账单（§3.4）。
                   // 缓存命中与否成本差 5 到 10 倍，而为了省 20% 的单价

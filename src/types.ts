@@ -481,6 +481,8 @@ export interface RouteView {
 export interface GroupView {
   name: string;
   kind: string;
+  /** `select` 组当前选中谁。界面要能切它 —— 那是这个策略的全部意义 */
+  selected?: string | null;
   providers: string[];
   /** 这个策略会不会让 prompt cache 不稳定。**要直说** —— 它决定账单。 */
   hurts_cache: boolean;
