@@ -431,6 +431,15 @@ impl ControlClient {
     }
 
     /// 光标落在配置的哪一段上（§7.10 的反向联动）。
+    pub async fn pricing(&self) -> Result<tw_api::PricingView> {
+        let body = self.get("/pricing").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
+    pub async fn save_pricing(&self, rows: Vec<tw_api::PriceRow>) -> Result<tw_api::PricingView> {
+        self.send_json(hyper::Method::PUT, "/pricing", &rows).await
+    }
+
     pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
         let body = self.get(&format!("/config/at?offset={offset}")).await?;
         Ok(serde_json::from_slice(&body)?)

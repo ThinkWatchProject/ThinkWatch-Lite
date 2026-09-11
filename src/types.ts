@@ -514,6 +514,25 @@ export interface ListenView {
   exposed: boolean;
 }
 
+/** 一条用户自己写的价格（§4.3.0 第三层）。**单位是每百万 token 的美元** */
+export interface PriceRow {
+  /** `null` = 对所有上游生效 */
+  provider: string | null;
+  model: string;
+  input: number;
+  output: number;
+  /** 内置快照里本来就有这个模型 —— 界面要说清「这条是在覆盖」 */
+  overrides_builtin: boolean;
+}
+
+export interface PricingView {
+  rows: PriceRow[];
+  snapshot_date: string;
+  /** 最近 7 天算不出价钱的请求数。**这是这一页存在的理由** */
+  unpriced_recent: number;
+  unpriced_models: string[];
+}
+
 /** 光标落在配置的哪一段上（§7.10） */
 export interface ConfigAt {
   section: string | null;

@@ -240,6 +240,24 @@ async fn put_config(
 }
 
 /// 光标落在配置的哪一段上（§7.10）。
+/// 用户自己写的那份价格（§4.3.0 第三层）。
+#[tauri::command]
+async fn pricing(state: tauri::State<'_, AppState>) -> Result<tw_api::PricingView, String> {
+    state.control.pricing().await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn save_pricing(
+    state: tauri::State<'_, AppState>,
+    rows: Vec<tw_api::PriceRow>,
+) -> Result<tw_api::PricingView, String> {
+    state
+        .control
+        .save_pricing(rows)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn config_at(
     state: tauri::State<'_, AppState>,
@@ -614,6 +632,8 @@ pub fn run() {
             put_config,
             config_history,
             config_at,
+            pricing,
+            save_pricing,
             rollback_config,
             setup_first_provider,
             list_clients,

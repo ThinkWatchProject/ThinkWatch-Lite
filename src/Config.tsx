@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
+import Pricing from "./Pricing";
 import SpeedTest from "./SpeedTest";
 import { triggers } from "./triggers";
 import DryRun from "./DryRun";
@@ -784,6 +785,8 @@ export default function Config({
           </p>
         )}
       </section>
+
+      <Pricing />
 
       <Diagnostics />
 
