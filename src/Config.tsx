@@ -219,9 +219,12 @@ function SpeedRows({ r }: { r: L1Result }) {
 export default function Config({
   ov,
   configVersion,
+  rejectedLine,
 }: {
   ov: Overview;
   configVersion: string | null;
+  /** 最近一次校验失败指到的行号（§3.8）。文本模式会把它滚进视野 */
+  rejectedLine?: number | null;
 }) {
   // 触发条件全在一个地方（§0.6）—— 散在各个组件里的
   // `providers.length >= 2` 回答不了那条反面判据
@@ -313,7 +316,23 @@ export default function Config({
           </button>
         </div>
         {cfg ? (
-          <ConfigTextMode doc={cfg} focus={focus} onSaved={() => setReloadKey((k) => k + 1)} />
+          <ConfigTextMode
+            doc={cfg}
+            focus={focus}
+            rejectedLine={rejectedLine ?? null}
+            onJumpToForm={(name) => {
+              // 回表单并把那一行滚进视野。**两个方向都要通** ——
+              // 只通一半的话，用户会觉得这两个视图还是两个东西
+              setFocus(null);
+              setMode("form");
+              setTimeout(() => {
+                document
+                  .querySelector(`[data-row="${CSS.escape(name)}"]`)
+                  ?.scrollIntoView({ block: "center" });
+              }, 0);
+            }}
+            onSaved={() => setReloadKey((k) => k + 1)}
+          />
         ) : (
           <p className="text-xs text-neutral-500">读取中…</p>
         )}
@@ -417,7 +436,7 @@ export default function Config({
           <tbody>
             {ov.providers.map((p) => (
               <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 font-medium">
+                <td className="py-1.5 font-medium" data-row={p.name}>
                   {p.name}
                   <button
                     title="在配置文件里看这一段"
@@ -605,6 +624,7 @@ export default function Config({
             {ov.groups.map((g) => (
               <li
                 key={g.name}
+                data-row={g.name}
                 className="rounded-md border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800"
               >
                 <div className="flex items-baseline gap-2">

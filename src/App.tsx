@@ -343,7 +343,7 @@ export default function App() {
         <Security alerts={alerts} onSeen={clearAlerts} />
       ) : tab === "config" ? (
         ov ? (
-          <Config ov={ov} configVersion={configVersion} />
+          <Config ov={ov} configVersion={configVersion} rejectedLine={rejected?.line ?? null} />
         ) : (
           <p className="p-5 text-xs text-neutral-500">读取配置中…</p>
         )

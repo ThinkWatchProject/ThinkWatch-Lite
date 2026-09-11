@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ConfigText as Doc } from "./types";
+import YamlEditor from "./YamlEditor";
+import type { ConfigAt, ConfigText as Doc } from "./types";
 
 /**
  * 文本模式：直接改 config.yaml。
@@ -15,6 +16,8 @@ export default function ConfigTextMode({
   doc,
   onSaved,
   focus,
+  rejectedLine,
+  onJumpToForm,
 }: {
   doc: Doc;
   /** 保存成功。外层拿它去重新拉配置和概览 */
@@ -27,43 +30,12 @@ export default function ConfigTextMode({
    * 替换的信任（§3.8）。
    */
   focus?: string | null;
+  /** 最近一次校验失败指到的行号（§3.8）。**没有就是 null**，不是 0 */
+  rejectedLine?: number | null;
+  /** 点「在表单里看」时回到表单并定位（§7.10 的反向那条） */
+  onJumpToForm?: (name: string) => void;
 }) {
   const [draft, setDraft] = useState(doc.text);
-
-  // 跳过来时把那一段选中并滚到可见处。
-  //
-  // **选中整块而不是只把光标放过去** —— 用户按「在文件里看」是想确认
-  // 「这一段就是刚才表单里那个东西」，而一个看不见的光标回答不了这个。
-  useEffect(() => {
-    if (!focus || !box.current) return;
-    const at = draft.indexOf(`name: ${focus}`);
-    if (at < 0) return;
-    const lineStart = draft.lastIndexOf("\n", at) + 1;
-    // 这一块到下一个同级列表项（或文件末尾）为止
-    const indent = draft.slice(lineStart).match(/^\s*(- )?/)?.[0].length ?? 0;
-    let end = draft.length;
-    let p = draft.indexOf("\n", at);
-    while (p >= 0) {
-      const next = draft.indexOf("\n", p + 1);
-      const line = draft.slice(p + 1, next < 0 ? draft.length : next);
-      // 空行不算结束 —— 一段配置里夹一个空行是很常见的写法
-      if (line.trim() !== "") {
-        const lead = line.match(/^\s*/)?.[0].length ?? 0;
-        if (lead < indent || (lead === indent && line.trimStart().startsWith("- "))) {
-          end = p + 1;
-          break;
-        }
-      }
-      p = next;
-    }
-    const el = box.current;
-    el.focus();
-    el.setSelectionRange(lineStart, end);
-    // 滚到那一行附近。行高按 textarea 的 line-height 估，差几像素无所谓
-    const before = draft.slice(0, lineStart).split("\n").length - 1;
-    el.scrollTop = Math.max(0, (before - 3) * 18);
-  }, [focus, draft]);
-  const box = useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** 打开这一版时文件是什么样。**保存时带的就是它** */
@@ -80,6 +52,59 @@ export default function ConfigTextMode({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.version]);
+
+  /**
+   * 从表单跳过来时要选中的区间（字符下标，CodeMirror 用的就是它）。
+   *
+   * **选中整块而不是只把光标放过去** —— 用户按「在文件里看」是想确认
+   * 「这一段就是刚才表单里那个东西」，而一个看不见的光标回答不了这个。
+   */
+  /**
+   * 光标停在哪一段上（§7.10 的反向联动）。
+   *
+   * **问后端，不在前端猜。**猜错的表现是「我明明点在中转上，右边显示
+   * 的是官方」—— 那比没有这个功能更让人不信任这一页。
+   */
+  const [at, setAt] = useState<ConfigAt | null>(null);
+  const askedFor = useRef(-1);
+  const setCursor = (byteOffset: number) => {
+    // 打字时每个字符问一次是浪费。**只在跨出上一次那一段时才问** ——
+    // 而那个判断很便宜：偏移量变化小于几十个字节就不问
+    if (Math.abs(byteOffset - askedFor.current) < 8) return;
+    askedFor.current = byteOffset;
+    void invoke<ConfigAt>("config_at", { offset: byteOffset })
+      .then(setAt)
+      .catch(() => setAt(null));
+  };
+
+  /** 校验报错指到的那一行。外层把最近一次拒绝传进来 */
+  const errorLine = rejectedLine ?? null;
+
+  const range = useMemo<[number, number] | null>(() => {
+    if (!focus) return null;
+    const at = draft.indexOf(`name: ${focus}`);
+    if (at < 0) return null;
+    const lineStart = draft.lastIndexOf("\n", at) + 1;
+    const indent = draft.slice(lineStart).match(/^\s*(- )?/)?.[0].length ?? 0;
+    let end = draft.length;
+    let p = draft.indexOf("\n", at);
+    while (p >= 0) {
+      const next = draft.indexOf("\n", p + 1);
+      const line = draft.slice(p + 1, next < 0 ? draft.length : next);
+      // 空行不算结束 —— 一段配置里夹一个空行是很常见的写法
+      if (line.trim() !== "") {
+        const lead = line.match(/^\s*/)?.[0].length ?? 0;
+        if (lead < indent || (lead === indent && line.trimStart().startsWith("- "))) {
+          end = p + 1;
+          break;
+        }
+      }
+      p = next;
+    }
+    return [lineStart, end];
+    // 只在 focus 变的时候重算 —— 跟着 draft 变会让用户一打字就被拉回去
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
 
   const stale = base.current !== doc.version;
 
@@ -133,13 +158,33 @@ export default function ConfigTextMode({
         </div>
       )}
 
-      <textarea
-        ref={box}
+      <YamlEditor
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        spellCheck={false}
-        className="h-[52vh] w-full resize-y rounded-md border border-neutral-200 bg-white p-3 font-mono text-xs leading-relaxed dark:border-neutral-800 dark:bg-neutral-900"
+        onChange={setDraft}
+        onCursor={setCursor}
+        focusRange={range}
+        errorLine={errorLine}
       />
+
+      {/*
+        反向联动（§7.10）：光标停在哪儿，就说它是哪一段。
+        **这个提示存在的理由不是方便** —— 它让用户建立「表单就是文件的
+        另一种视图」这个心智，而不是两个割裂的东西。
+      */}
+      {at?.name && (
+        <p className="text-xs text-neutral-500">
+          光标在 <span className="font-medium text-neutral-700 dark:text-neutral-300">{at.name}</span>
+          {at.section ? `（${at.section}）` : ""} 这一段里
+          {onJumpToForm && (
+            <button
+              onClick={() => onJumpToForm(at.name!)}
+              className="ml-1 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            >
+              在表单里看
+            </button>
+          )}
+        </p>
+      )}
 
       <div className="flex items-center gap-3 text-xs">
         <button

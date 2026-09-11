@@ -239,6 +239,19 @@ async fn put_config(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 光标落在配置的哪一段上（§7.10）。
+#[tauri::command]
+async fn config_at(
+    state: tauri::State<'_, AppState>,
+    offset: usize,
+) -> Result<tw_api::ConfigAt, String> {
+    state
+        .control
+        .config_at(offset)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn config_history(
     state: tauri::State<'_, AppState>,
@@ -600,6 +613,7 @@ pub fn run() {
             patch_config,
             put_config,
             config_history,
+            config_at,
             rollback_config,
             setup_first_provider,
             list_clients,

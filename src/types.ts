@@ -514,6 +514,13 @@ export interface ListenView {
   exposed: boolean;
 }
 
+/** 光标落在配置的哪一段上（§7.10） */
+export interface ConfigAt {
+  section: string | null;
+  /** 那一项的名字。**不给下标** —— 用户重排之后它指向另一个东西 */
+  name: string | null;
+}
+
 export interface Overview {
   providers: ProviderView[];
   /** 配置里定义过的代理名 —— 换代理要从这里选，手打会打错 */

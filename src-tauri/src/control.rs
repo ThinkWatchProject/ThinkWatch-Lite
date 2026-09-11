@@ -430,6 +430,12 @@ impl ControlClient {
         Ok(())
     }
 
+    /// 光标落在配置的哪一段上（§7.10 的反向联动）。
+    pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
+        let body = self.get(&format!("/config/at?offset={offset}")).await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
     pub async fn config_history(&self) -> Result<Vec<tw_api::ConfigVersion>> {
         let body = self.get("/config/history").await?;
         Ok(serde_json::from_slice(&body)?)
