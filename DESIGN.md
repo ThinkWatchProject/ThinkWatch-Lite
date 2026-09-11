@@ -4187,7 +4187,7 @@ Surge 的骨架，AI 的血肉。
 | 框架 | React 19 + TypeScript | 和企业版 `web/` 一致，组件和心智可复用 |
 | 样式 | Tailwind v4 + shadcn/ui | 同上。shadcn 是复制到项目里的源码而非依赖，改起来没有阻力 |
 | 表格 | TanStack Table + Virtual | Requests 页要撑几万行不掉帧，虚拟化是硬需求 |
-| 数据 | TanStack Query | 控制面 API 的缓存与失效 |
+| 数据 | ~~TanStack Query~~ **没用上** | 实际是 `useState` + `invoke`。控制面的调用没有一处需要缓存或失效语义 —— 每个页面拉自己那份，事件流负责推送变化。**装着一个没有消费者的库，它会以「我们已经有了」的姿态存在很久**，所以删掉了 |
 | 图表 | **uPlot** | 不用 Recharts。流式数据下 uPlot 性能差一个数量级，而 Dashboard 是每秒更新的 |
 | 编辑器 | Monaco | 配置的文本模式（§3.8） |
 
