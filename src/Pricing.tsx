@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { PriceRow, PricingView } from "./types";
+import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
 
 /**
  * 自定义价格（§4.3.0 的第三层）。
@@ -27,6 +27,17 @@ export default function Pricing() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  /**
+   * 「检查价格更新」走到哪一步了（§4.3.0、§12）。
+   *
+   * **三步，不是一步。**一步意味着「检查」和「写入」是同一次点击，
+   * 而那正是「静默下载」的定义 —— §12 承诺零上传，那也意味着零静默
+   * 下载。用户要先看见「要连哪儿、多大」，再看见「变了什么」，才轮到
+   * 「写进去」。
+   */
+  const [offer, setOffer] = useState<UpdateOffer | null>(null);
+  const [preview, setPreview] = useState<UpdatePreview | null>(null);
+  const [step, setStep] = useState<"idle" | "offering" | "fetching" | "applying">("idle");
 
   const load = useCallback(async () => {
     try {
@@ -193,6 +204,150 @@ export default function Pricing() {
           </p>
         </div>
       )}
+
+      {/*
+        检查价格更新（§4.3.0 第二层）。**绝不在启动时后台偷偷拉** ——
+        §12 承诺了零上传，那也意味着零静默下载。
+      */}
+      <div className="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+        {!offer && !preview && (
+          <div className="flex items-center gap-2">
+            <button
+              disabled={step !== "idle"}
+              onClick={async () => {
+                setStep("offering");
+                try {
+                  setOffer(await invoke<UpdateOffer>("update_offer"));
+                  setErr(null);
+                } catch (e) {
+                  setErr(typeof e === "string" ? e : String(e));
+                } finally {
+                  setStep("idle");
+                }
+              }}
+              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              {step === "offering" ? "查询中…" : "检查价格更新"}
+            </button>
+            <span className="text-neutral-500">
+              内置的是 {data.snapshot_date} 那份。不会自动检查。
+            </span>
+          </div>
+        )}
+
+        {offer && !preview && (
+          <div className="space-y-1.5">
+            {/* **先说要连哪儿、多大。**这是零静默下载里最容易被省掉的一半 */}
+            <p className="text-neutral-600 dark:text-neutral-400">
+              要访问：<code className="font-mono">{offer.url}</code>
+            </p>
+            <p className="text-neutral-500">
+              大小 {offer.bytes ? `${(offer.bytes / 1024 / 1024).toFixed(1)} MB` : "对面没说"}
+              ；下载之后会先给你看变了什么，确认才写入。
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={step !== "idle"}
+                onClick={async () => {
+                  setStep("fetching");
+                  try {
+                    setPreview(await invoke<UpdatePreview>("update_fetch"));
+                    setErr(null);
+                  } catch (e) {
+                    setErr(typeof e === "string" ? e : String(e));
+                  } finally {
+                    setStep("idle");
+                  }
+                }}
+                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+              >
+                {step === "fetching" ? "下载中…" : "下载并对比"}
+              </button>
+              <button
+                onClick={() => setOffer(null)}
+                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                算了
+              </button>
+            </div>
+          </div>
+        )}
+
+        {preview && (
+          <div className="space-y-1.5">
+            <p className="text-neutral-600 dark:text-neutral-400">
+              拉回来 {preview.models} 个带价的模型，
+              {preview.changes.length === 0 ? (
+                <span className="font-medium">和现在这份没有差别</span>
+              ) : (
+                <>
+                  其中 <span className="font-medium">{preview.changes.length}</span> 个和现在不一样
+                </>
+              )}
+              。
+            </p>
+            {preview.changes.length > 0 && (
+              <div className="max-h-40 overflow-y-auto rounded border border-neutral-200 dark:border-neutral-800">
+                <table className="w-full text-left tabular-nums">
+                  <tbody>
+                    {preview.changes.map((c) => (
+                      <tr key={c.model} className="border-b border-neutral-100 last:border-0 dark:border-neutral-900">
+                        <td className="px-2 py-0.5 font-mono">{c.model}</td>
+                        <td className="px-2 text-neutral-500">
+                          {c.old_input === null ? (
+                            "新增"
+                          ) : (
+                            <>
+                              入 {(c.old_input * 1e6).toFixed(2)} → {(c.new_input * 1e6).toFixed(2)}
+                              ，出 {((c.old_output ?? 0) * 1e6).toFixed(2)} →{" "}
+                              {(c.new_output * 1e6).toFixed(2)}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                disabled={step !== "idle"}
+                onClick={async () => {
+                  setStep("applying");
+                  try {
+                    const d = await invoke<PricingView>("update_apply", { token: preview.token });
+                    setData(d);
+                    setRows(d.rows);
+                    setPreview(null);
+                    setOffer(null);
+                    setErr(null);
+                  } catch (e) {
+                    setErr(typeof e === "string" ? e : String(e));
+                  } finally {
+                    setStep("idle");
+                  }
+                }}
+                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+              >
+                {step === "applying" ? "写入中…" : "确认更新"}
+              </button>
+              <button
+                onClick={() => {
+                  setPreview(null);
+                  setOffer(null);
+                }}
+                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                不更新
+              </button>
+            </div>
+            <p className="text-neutral-500">
+              你自己写的那几条覆盖不受影响 —— 更新只换底下那份公共价目表。
+            </p>
+          </div>
+        )}
+      </div>
 
       {err && <p className="mt-2 text-amber-700 dark:text-amber-400">{err}</p>}
     </section>

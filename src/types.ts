@@ -514,6 +514,31 @@ export interface ListenView {
   exposed: boolean;
 }
 
+/** 「检查价格更新」第一步：**先说要访问什么、多大**（§4.3.0、§12） */
+export interface UpdateOffer {
+  url: string;
+  /** `null` = 对面没给 Content-Length */
+  bytes: number | null;
+  current_date: string;
+}
+
+/** 第二步：下载解析完，**给 diff，还没写** */
+export interface UpdatePreview {
+  models: number;
+  changes: PriceChangeView[];
+  /** 第三步要带回来 —— 否则「确认写入」写的可能是另一次下载的结果 */
+  token: string;
+}
+
+export interface PriceChangeView {
+  model: string;
+  /** `null` = 新增的 */
+  old_input: number | null;
+  new_input: number;
+  old_output: number | null;
+  new_output: number;
+}
+
 /** 一条用户自己写的价格（§4.3.0 第三层）。**单位是每百万 token 的美元** */
 export interface PriceRow {
   /** `null` = 对所有上游生效 */

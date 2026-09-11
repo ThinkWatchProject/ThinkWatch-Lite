@@ -258,6 +258,39 @@ async fn save_pricing(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 「检查价格更新」三步走（§4.3.0、§12）。**三个命令，不是一个** ——
+/// 一个命令意味着「检查」和「写入」是同一次调用，而那正是「静默下载」
+/// 的定义。
+#[tauri::command]
+async fn update_offer(state: tauri::State<'_, AppState>) -> Result<tw_api::UpdateOffer, String> {
+    state
+        .control
+        .update_offer()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn update_fetch(state: tauri::State<'_, AppState>) -> Result<tw_api::UpdatePreview, String> {
+    state
+        .control
+        .update_fetch()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn update_apply(
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<tw_api::PricingView, String> {
+    state
+        .control
+        .update_apply(&token)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn config_at(
     state: tauri::State<'_, AppState>,
@@ -633,6 +666,9 @@ pub fn run() {
             config_history,
             config_at,
             pricing,
+            update_offer,
+            update_fetch,
+            update_apply,
             save_pricing,
             rollback_config,
             setup_first_provider,

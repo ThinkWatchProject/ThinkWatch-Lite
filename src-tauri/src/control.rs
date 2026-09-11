@@ -440,6 +440,21 @@ impl ControlClient {
         self.send_json(hyper::Method::PUT, "/pricing", &rows).await
     }
 
+    /// 「检查价格更新」三步走（§4.3.0、§12）。
+    pub async fn update_offer(&self) -> Result<tw_api::UpdateOffer> {
+        self.post_json("/pricing/update/offer", &()).await
+    }
+    pub async fn update_fetch(&self) -> Result<tw_api::UpdatePreview> {
+        self.post_json("/pricing/update/fetch", &()).await
+    }
+    pub async fn update_apply(&self, token: &str) -> Result<tw_api::PricingView> {
+        self.post_json(
+            "/pricing/update/apply",
+            &serde_json::json!({ "token": token }),
+        )
+        .await
+    }
+
     pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
         let body = self.get(&format!("/config/at?offset={offset}")).await?;
         Ok(serde_json::from_slice(&body)?)
