@@ -44,17 +44,10 @@ pnpm tauri dev
 ```
 src/              React 19 + Tailwind 4 前端
 src-tauri/        Tauri 2 外壳：托管 core、渲染菜单栏
-DESIGN.md         设计与规格的记录 —— 每个决定，以及为什么
 ```
 
 网关本体在 ThinkWatch Core 里；这个仓库不含任何路由、转发或计费逻辑，
 它通过一个 unix socket 和 core 说话。
-
-## DESIGN.md
-
-`DESIGN.md` 是规格，也是设计记录 —— 不是生成的文档，也不是 changelog。
-它记着每个决定背后的推理，包括那些后来被推翻的，以及第一次的答案为什么
-是错的。要改这里的行为，它是第一个该读、也是该回写的文件。
 
 ## 许可
 

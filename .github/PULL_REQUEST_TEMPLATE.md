@@ -25,11 +25,3 @@ What you ran and what it showed. For UI changes, say what you actually
 looked at — "the empty state now links to the Clients page, checked with
 zero providers configured" beats "tested manually".
 -->
-
-## DESIGN.md
-
-<!--
-Which section you wrote back into, or why none was needed. If building
-this taught you something the document doesn't know — a measurement, a
-platform constraint, a trap — it goes there.
--->

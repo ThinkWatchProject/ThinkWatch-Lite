@@ -36,18 +36,6 @@ Say *why* in the body, not just *what*; the diff already shows what
 changed. A commit explaining the reasoning behind a non-obvious choice
 saves the next person from re-deriving it or "fixing" it back.
 
-## DESIGN.md is part of the change
-
-`DESIGN.md` is the spec of record. It holds the reasoning behind each
-decision, including the ones that were reversed and why the first answer
-was wrong.
-
-If your change alters behavior the document describes, **write it back**
-in the same PR. If implementing it taught you something the document
-doesn't know — a measurement, a platform constraint, a trap — that
-belongs there too. A design doc that silently drifts from the code is
-worse than no design doc, because it is still trusted.
-
 ## Before you open the PR
 
 ```bash
