@@ -48,18 +48,10 @@ API at a local port, and this is the window onto what happens next:
 ```
 src/              React 19 + Tailwind 4 frontend
 src-tauri/        Tauri 2 shell: supervises core, renders the menu bar
-DESIGN.md         The spec of record — every decision, and why
 ```
 
 The gateway itself lives in ThinkWatch Core; this repository holds no routing,
 forwarding, or accounting logic. It talks to core over a unix socket.
-
-## DESIGN.md
-
-`DESIGN.md` is the specification and the design record — not generated docs and
-not a changelog. It carries the reasoning behind each decision, including the
-ones that were reversed and why the first answer was wrong. If you are changing
-behavior here, it is the file to read first and to write back into.
 
 ## License
 
