@@ -43,22 +43,50 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
         tried.push(p);
     }
 
-    // 开发时：core 是隔壁仓库
-    if let Some(home) = std::env::var_os("HOME") {
-        for profile in ["release", "debug"] {
-            let p = PathBuf::from(&home)
-                .join("Dev/thinkwatch-core/target")
-                .join(profile)
-                .join("twcore");
+    // 显式覆盖优先。**core 放在哪儿是开发者的选择** —— 之前这里写死了
+    // 一个 $HOME 下的固定目录，那是写这段代码的那台机器的布局，换一台
+    // 机器就直接失败，而失败信息会指向一个用户从没听说过的路径。
+    if let Some(explicit) = std::env::var_os("THINKWATCH_CORE_BIN") {
+        let p = PathBuf::from(explicit);
+        if p.exists() {
+            return Ok(p);
+        }
+        tried.push(p);
+    }
+
+    // 开发时：core 是隔壁仓库。cwd 在 `tauri dev` 下是 `src-tauri/`，
+    // 直接跑 `cargo run` 时是仓库根 —— 两种都试，不假设是哪一种。
+    if let Ok(cwd) = std::env::current_dir() {
+        for up in ["../..", ".."] {
+            for profile in ["release", "debug"] {
+                let p = cwd
+                    .join(up)
+                    .join("thinkwatch-core/target")
+                    .join(profile)
+                    .join("twcore");
+                if p.exists() {
+                    // 相对路径能用，但报错信息和日志里出现 `../..` 很难
+                    // 读，所以归一化之后再交出去。
+                    return Ok(p.canonicalize().unwrap_or(p));
+                }
+                tried.push(p);
+            }
+        }
+    }
+
+    // 最后：装在 PATH 上的那个。`cargo install -p twcore` 之后就是这条。
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let p = dir.join("twcore");
             if p.exists() {
                 return Ok(p);
             }
-            tried.push(p);
         }
     }
 
     anyhow::bail!(
-        "找不到 twcore。找过这些位置：\n{}",
+        "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
+         `cargo build -p twcore`。",
         tried
             .iter()
             .map(|p| format!("  · {}", p.display()))
@@ -330,7 +358,11 @@ async fn rollback_config(
 async fn mcp_targets(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<tw_api::McpTargetView>, String> {
-    state.control.mcp_targets().await.map_err(|e| format!("{e:#}"))
+    state
+        .control
+        .mcp_targets()
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// **算一下，不落盘。**和接管一样，中间夹着用户看 diff 的那一下。
@@ -339,7 +371,11 @@ async fn mcp_plan(
     state: tauri::State<'_, AppState>,
     req: tw_api::McpOpRequest,
 ) -> Result<tw_api::PlanView, String> {
-    state.control.mcp_plan(req).await.map_err(|e| format!("{e:#}"))
+    state
+        .control
+        .mcp_plan(req)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -347,7 +383,11 @@ async fn mcp_apply(
     state: tauri::State<'_, AppState>,
     req: tw_api::McpOpRequest,
 ) -> Result<tw_api::AdoptResponse, String> {
-    state.control.mcp_apply(req).await.map_err(|e| format!("{e:#}"))
+    state
+        .control
+        .mcp_apply(req)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// 把一条真实请求存成回放用例（§9.8）。
@@ -470,11 +510,17 @@ async fn dry_run(
     state: tauri::State<'_, AppState>,
     req: tw_api::DryRunRequest,
 ) -> Result<tw_api::DryRunResult, String> {
-    state.control.dry_run(req).await.map_err(|e| format!("{e:#}"))
+    state
+        .control
+        .dry_run(req)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
-async fn list_clients(state: tauri::State<'_, AppState>) -> Result<tw_api::ClientsResponse, String> {
+async fn list_clients(
+    state: tauri::State<'_, AppState>,
+) -> Result<tw_api::ClientsResponse, String> {
     state.control.clients().await.map_err(|e| format!("{e:#}"))
 }
 
@@ -537,7 +583,11 @@ async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn restore_all(state: tauri::State<'_, AppState>) -> Result<Vec<RestoreOutcome>, String> {
-    let list = state.control.clients().await.map_err(|e| format!("{e:#}"))?;
+    let list = state
+        .control
+        .clients()
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     let mut out = Vec::new();
     for c in list.clients.iter().filter(|c| c.adopted_at_ms.is_some()) {
         let r = state.control.restore(&c.name).await;
@@ -616,7 +666,11 @@ async fn diagnose_client(
     state: tauri::State<'_, AppState>,
     client: String,
 ) -> Result<Vec<tw_api::FindingView>, String> {
-    state.control.why(&client).await.map_err(|e| format!("{e:#}"))
+    state
+        .control
+        .why(&client)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -920,13 +974,17 @@ fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
         format!("{provider} 返回了一个可疑的 {tool} 调用")
     };
     let body = if *blocked {
-        format!("{why}
+        format!(
+            "{why}
 {excerpt}
-这个上游标记为不受信任，响应流已切断。")
+这个上游标记为不受信任，响应流已切断。"
+        )
     } else {
-        format!("{why}
+        format!(
+            "{why}
 {excerpt}
-建议拒绝这个调用。")
+建议拒绝这个调用。"
+        )
     };
     let _ = app.notification().builder().title(title).body(body).show();
 }

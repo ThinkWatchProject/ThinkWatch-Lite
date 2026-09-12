@@ -1,0 +1,62 @@
+# The gates every change has to pass.
+#
+# This is a Tauri app, so there are two toolchains: the frontend
+# (typecheck + build) and the Rust shell (fmt + clippy + tests). Both
+# run, because a green Rust side with a broken `tsc` is an app that
+# won't start.
+#
+# No `.app` is built and no artifact is uploaded: this project is
+# macOS-only and deliberately not distributed (see CONTRIBUTING.md), so
+# a signed bundle would be a build product nobody consumes.
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+
+  rust:
+    name: Rust
+    # macOS: the menu-bar rendering and the client-detection paths are
+    # macOS-specific, and `cargo check` on Linux would be checking code
+    # that never runs. Tauri's Linux deps (webkit2gtk) would also have to
+    # be installed to get there.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Format
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+      # Warnings are errors. Relaxing this on CI is the same as removing
+      # it — a warning nobody is forced to read is a warning nobody
+      # reads.
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --manifest-path src-tauri/Cargo.toml

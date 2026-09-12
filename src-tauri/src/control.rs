@@ -240,7 +240,8 @@ impl ControlClient {
     }
 
     pub async fn mcp_apply(&self, req: tw_api::McpOpRequest) -> Result<tw_api::AdoptResponse> {
-        self.send_json(hyper::Method::POST, "/mcp/apply", &req).await
+        self.send_json(hyper::Method::POST, "/mcp/apply", &req)
+            .await
     }
 
     /// 把一条真实请求导出成回放用例（YAML，已脱敏）。
