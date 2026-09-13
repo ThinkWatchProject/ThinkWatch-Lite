@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
 
@@ -73,10 +74,10 @@ export default function Pricing() {
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
+    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold">自定义价格</h2>
+          <h2 className="tw-title font-semibold">自定义价格</h2>
           {problem ? (
             // **具体证据，不是功能介绍**（§0.6）
             <p className="mt-1 text-amber-700 dark:text-amber-400">
@@ -107,10 +108,12 @@ export default function Pricing() {
       {open && (
         <div className="mt-3 space-y-2">
           <p className="text-neutral-500">
-            单价按<span className="font-medium">每百万 token 的美元</span>填 —— 和厂商定价页上印的一样。
-            留空上游 = 对所有上游生效；填了上游 = 只有那一家按这个价算。
+            单价按<span className="font-medium">每百万 token 的美元</span>填，和厂商定价页一致。
+            <Tip text="留空上游对所有上游生效；填了上游则只有那一家按这个价算。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">上游这一列</span>
+            </Tip>
           </p>
-          <table className="w-full text-left tabular-nums">
+          <table className="w-full text-left tw-num">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
                 <th className="py-1 font-medium">上游</th>
@@ -142,7 +145,7 @@ export default function Pricing() {
                     {/* **「覆盖」和「补一个」是两件事** —— 前者要让用户
                         知道他在推翻一个已有的价 */}
                     {r.overrides_builtin && (
-                      <span className="ml-1 text-[10px] text-neutral-400">覆盖内置</span>
+                      <span className="ml-1 tw-label text-neutral-400">覆盖内置</span>
                     )}
                   </td>
                   <td>
@@ -158,13 +161,14 @@ export default function Pricing() {
                     />
                   </td>
                   <td className="text-right">
-                    <button
-                      onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                      className="text-neutral-400 hover:text-red-600"
-                      title="删掉这一条"
-                    >
-                      ×
-                    </button>
+                    <Tip text="删掉这一条自定义价格">
+                      <button
+                        onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                        className="text-neutral-400 hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    </Tip>
                   </td>
                 </tr>
               ))}
@@ -199,8 +203,7 @@ export default function Pricing() {
             {dirty && <span className="text-neutral-500">有未保存的改动</span>}
           </div>
           <p className="text-neutral-500">
-            写进 <code>pricing.yaml</code>，和 <code>config.yaml</code> 放在一起。
-            手改那个文件也完全可以 —— 它只是一份普通 YAML。
+            写进 <code>pricing.yaml</code>，和 <code>config.yaml</code> 放在一起。手改那个文件也可以，它只是一份普通 YAML。
           </p>
         </div>
       )}
@@ -243,7 +246,7 @@ export default function Pricing() {
             </p>
             <p className="text-neutral-500">
               大小 {offer.bytes ? `${(offer.bytes / 1024 / 1024).toFixed(1)} MB` : "对面没说"}
-              ；下载之后会先给你看变了什么，确认才写入。
+              ；下载后先显示变更，确认才写入。
             </p>
             <div className="flex gap-2">
               <button
@@ -288,7 +291,7 @@ export default function Pricing() {
             </p>
             {preview.changes.length > 0 && (
               <div className="max-h-40 overflow-y-auto rounded border border-neutral-200 dark:border-neutral-800">
-                <table className="w-full text-left tabular-nums">
+                <table className="w-full text-left tw-num">
                   <tbody>
                     {preview.changes.map((c) => (
                       <tr key={c.model} className="border-b border-neutral-100 last:border-0 dark:border-neutral-900">
@@ -343,7 +346,7 @@ export default function Pricing() {
               </button>
             </div>
             <p className="text-neutral-500">
-              你自己写的那几条覆盖不受影响 —— 更新只换底下那份公共价目表。
+              你的自定义价格不受影响，更新只换底下那份公共价目表。
             </p>
           </div>
         )}

@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { Tip } from "./ui/Tooltip";
+import AddUpstream from "./AddUpstream";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
@@ -186,17 +188,17 @@ function SelectCell({
  */
 function SpeedRows({ r }: { r: L1Result }) {
   return (
-    <div className="mt-1.5 space-y-0.5 text-xs">
+    <div className="mt-1.5 space-y-0.5 tw-body">
       {r.segments.map((seg) => (
         <div key={seg.name} className="flex gap-3 text-neutral-500">
           <span className="w-32 shrink-0">{seg.name}</span>
-          <span className="font-mono tabular-nums">{seg.ms} ms</span>
+          <span className="font-mono tw-num">{seg.ms} ms</span>
         </div>
       ))}
       {r.ok && (
         <div className="flex gap-3">
           <span className="w-32 shrink-0 text-neutral-500">建连总计</span>
-          <span className="font-mono tabular-nums font-medium">{r.total_ms} ms</span>
+          <span className="font-mono tw-num font-medium">{r.total_ms} ms</span>
         </div>
       )}
       {r.error && (
@@ -218,22 +220,47 @@ function SpeedRows({ r }: { r: L1Result }) {
  * 因为一个上游就有几十个模型，那个问题从第一天就存在。
  */
 export default function Config({
+  section = "gateway",
   ov,
   configVersion,
   rejectedLine,
+  onProviderAdded,
 }: {
+  /**
+   * 这一次渲染哪一域。
+   *
+   * IA 上「路由」和「网关」是源列表里两个并列的面,实现上还是同一个
+   * 组件 —— 因为策略组那一节和 `SelectCell`、配置版本、以及跳去文本
+   * 模式那条路都缠在一起,硬拆会弄坏正在工作的东西。**这是分面的第一
+   * 步,不是终点**:组件真正拆开是下一步的事,拆之前这个参数不该被当成
+   * 一个可以随便加值的开关。
+   *
+   * 文本模式两个面共用 —— 它编辑的是整份文件,本来就不分域。
+   */
+  section?: "gateway" | "routing";
   ov: Overview;
   configVersion: string | null;
   /** 最近一次校验失败指到的行号（§3.8）。文本模式会把它滚进视野 */
   rejectedLine?: number | null;
+  /** 加完第一个上游之后让外面立刻重拉概览，不等那两秒的轮询 */
+  onProviderAdded: () => void;
 }) {
   // 触发条件全在一个地方（§0.6）—— 散在各个组件里的
   // `providers.length >= 2` 回答不了那条反面判据
   const t = triggers(ov, null);
+  useEffect(() => {
+    void invoke<boolean>("autostart_enabled")
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+  }, []);
   const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
   const [history, setHistory] = useState<ConfigVersion[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
+  // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartErr, setAutostartErr] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   /**
    * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
@@ -305,13 +332,13 @@ export default function Config({
     return (
       <div className="space-y-3 p-5">
         <div className="flex items-baseline gap-3">
-          <h2 className="text-sm font-semibold">配置文件</h2>
+          <h2 className="tw-title font-semibold">配置文件</h2>
           <button
             onClick={() => {
               setFocus(null);
               setMode("form");
             }}
-            className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             回到表单
           </button>
@@ -335,7 +362,7 @@ export default function Config({
             onSaved={() => setReloadKey((k) => k + 1)}
           />
         ) : (
-          <p className="text-xs text-neutral-500">读取中…</p>
+          <p className="tw-body text-neutral-500">读取中…</p>
         )}
       </div>
     );
@@ -343,30 +370,31 @@ export default function Config({
 
   return (
     <div className="space-y-8 p-5">
+      {section === "gateway" && (
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="text-sm font-semibold">上游</h2>
+          <h2 className="tw-title font-semibold">上游</h2>
           {t.comparison && (
             <button
               onClick={() => test(undefined)}
               disabled={testing !== null}
-              className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
+              className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
             >
               {testing === "*" ? "测速中…" : "全部测一遍"}
             </button>
           )}
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
               这是排查线路问题最直接的一个动作 */}
-          <span className="text-xs text-neutral-400">只握手，不发请求，不花钱</span>
+          <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
           <button
             onClick={() => setMode("text")}
-            className="ml-auto text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="ml-auto tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             改文件
           </button>
           <button
             onClick={() => setShowHistory((v) => !v)}
-            className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {showHistory ? "收起历史" : `历史（${history.length}）`}
           </button>
@@ -375,7 +403,7 @@ export default function Config({
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
             「有人抢先改了」，正确的反应是刷新再改（§3.8） */}
         {saveError && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             没能保存：{saveError}
           </p>
         )}
@@ -383,14 +411,14 @@ export default function Config({
         {showHistory && (
           <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800">
             {history.length === 0 && (
-              <p className="px-3 py-2 text-xs text-neutral-500">
-                还没有历史版本。第一次改配置之后就有了。
+              <p className="px-3 py-2 tw-body text-neutral-500">
+                还没有历史版本 —— 第一次改配置之后就有了。
               </p>
             )}
             {history.map((v) => (
               <div
                 key={v.version}
-                className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 text-xs last:border-b-0 dark:border-neutral-900"
+                className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 tw-body last:border-b-0 dark:border-neutral-900"
               >
                 <span className="font-mono text-neutral-500">{v.version.slice(7)}</span>
                 <span className="text-neutral-500">{v.origin}</span>
@@ -419,7 +447,17 @@ export default function Config({
             ))}
           </div>
         )}
-        <table className="mt-2 w-full text-left text-xs">
+        {/*
+          一个上游都没有时，这一节是「加第一个」而不是一张空表头。
+          原来这件事是一个全屏的首次运行页面做的 —— 把人挡在产品外面，
+          而那时候网关已经在跑了。配置就该在配置的地方。
+        */}
+        {ov.providers.length === 0 ? (
+          <div className="mt-3">
+            <AddUpstream onDone={onProviderAdded} />
+          </div>
+        ) : (
+        <table className="mt-2 w-full text-left tw-body">
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200 dark:border-neutral-800">
               <th className="py-2 font-medium">名字</th>
@@ -439,8 +477,8 @@ export default function Config({
               <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
                 <td className="py-1.5 font-medium" data-row={p.name}>
                   {p.name}
+                  <Tip text="跳到配置文件里这一段，并选中它">
                   <button
-                    title="在配置文件里看这一段"
                     onClick={() => {
                       setFocus(p.name);
                       setMode("text");
@@ -449,6 +487,7 @@ export default function Config({
                   >
                     ↗
                   </button>
+                  </Tip>
                 </td>
                 <td className="text-neutral-500">
                   <EditableCell
@@ -537,9 +576,9 @@ export default function Config({
                     {p.health === "ok" ? (
                       <span className="text-emerald-600 dark:text-emerald-400">正常</span>
                     ) : (
-                      <span className="text-amber-600 dark:text-amber-400" title="连续失败后暂时不派请求过去，冷却后自动恢复">
-                        熔断中
-                      </span>
+                      <Tip text="连续失败后暂时不派请求过去，冷却之后自动恢复">
+                        <span className="text-amber-600 dark:text-amber-400">熔断中</span>
+                      </Tip>
                     )}
                   </td>
                 )}
@@ -549,13 +588,14 @@ export default function Config({
                     disabled={testing !== null}
                     className="text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
                   >
-                    {testing === p.name ? "测速中…" : "测一下"}
+                    {testing === p.name ? "测速中…" : "测试"}
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        )}
         {/* 结果放在表下面而不是挤进单元格：分段有三到四行，塞进表格会把
             每一行都撑高，而大多数时候它们并不存在 */}
         {ov.providers.map((p) => {
@@ -566,7 +606,7 @@ export default function Config({
               key={p.name}
               className="mt-3 rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
             >
-              <div className="flex items-baseline gap-2 text-xs">
+              <div className="flex items-baseline gap-2 tw-body">
                 <span>{r.ok ? "✅" : "❌"}</span>
                 <span className="font-medium">{p.name}</span>
                 {r.via && <span className="text-neutral-500">经 {r.via}</span>}
@@ -576,24 +616,26 @@ export default function Config({
           );
         })}
         {speed["*"]?.error && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{speed["*"].error}</p>
+          <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">{speed["*"].error}</p>
         )}
       </section>
+      )}
 
       {/* L3 测速。**放在 L1 下面，两句成本说明并排** —— 用户要能一眼
           看出「那个不花钱、这个花钱」（§4.6） */}
       <SpeedTest models={[]} />
 
+      {section === "routing" && (
       <section>
-        <h2 className="text-sm font-semibold">路由规则</h2>
-        <p className="mt-1 text-xs text-neutral-500">
+        <h2 className="tw-title font-semibold">路由规则</h2>
+        <p className="mt-1 tw-body text-neutral-500">
           从上往下匹配，第一条命中的说了算。
         </p>
         <ol className="mt-2 space-y-1.5">
           {ov.routes.map((r, i) => (
             <li
               key={r.name}
-              className="flex items-baseline gap-3 rounded-md border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800"
+              className="flex items-baseline gap-3 rounded-md border border-neutral-200 px-3 py-2 tw-body dark:border-neutral-800"
             >
               <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
               <span className="font-medium">{r.name}</span>
@@ -614,24 +656,26 @@ export default function Config({
         </ol>
       </section>
 
+      )}
+
       {/* 「为什么没走我以为的那条」和「走了哪条」是同一个问题的两面 */}
-      <DryRun models={[]} />
+      {section === "routing" && <DryRun models={[]} />}
 
       {/* §0.6：分组这个概念只在真的有组的时候出现 */}
-      {ov.groups.length > 0 && (
+      {section === "routing" && ov.groups.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold">策略组</h2>
+          <h2 className="tw-title font-semibold">策略组</h2>
           <ul className="mt-2 space-y-1.5">
             {ov.groups.map((g) => (
               <li
                 key={g.name}
                 data-row={g.name}
-                className="rounded-md border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800"
+                className="rounded-md border border-neutral-200 px-3 py-2 tw-body dark:border-neutral-800"
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
+                  <Tip text="跳到配置文件里这一段，并选中它">
                   <button
-                    title="在配置文件里看这一段"
                     onClick={() => {
                       setFocus(g.name);
                       setMode("text");
@@ -640,6 +684,7 @@ export default function Config({
                   >
                     ↗
                   </button>
+                  </Tip>
                   <SelectCell
                     value={
                       { 按顺序: "fallback", 手动选: "select", 轮流: "load-balance", 选最快: "url-test", 选最便宜: "cheapest" }[
@@ -761,9 +806,58 @@ export default function Config({
         </section>
       )}
 
+      {section === "gateway" && (
+        <section>
+          <h2 className="tw-title font-semibold">启动</h2>
+          <label className="mt-2 flex items-start gap-2 tw-body">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={autostart === true}
+              disabled={autostart === null}
+              onChange={async (e) => {
+                const want = e.target.checked;
+                setAutostartErr(null);
+                // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
+                // 状态为准**，不是以这里传出去的那个为准。注册可能失败
+                // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
+                setAutostart(want);
+                try {
+                  setAutostart(await invoke<boolean>("set_autostart", { on: want }));
+                } catch (err) {
+                  setAutostart(!want);
+                  setAutostartErr(typeof err === "string" ? err : String(err));
+                }
+              }}
+            />
+            <span>
+              <span className="text-neutral-800 dark:text-neutral-200">开机时自动启动</span>
+              <span className="mt-0.5 block text-neutral-500">
+                {/*
+                  说清「默认是关的」和「勾了会发生什么」。一个装完就往
+                  登录项里写东西的工具，用户第一次发现它是在系统设置里
+                  看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
+                  要讲清勾上之后系统设置里会多出什么。
+                */}
+                默认不开。
+                <Tip text="勾上会在「系统设置 › 通用 › 登录项」里注册一条。开机后只有菜单栏多一个图标，不会弹出窗口。">
+                  <span className="underline decoration-dotted underline-offset-2">勾上会发生什么</span>
+                </Tip>
+              </span>
+            </span>
+          </label>
+          {autostartErr && (
+            <p className="mt-1.5 tw-body text-amber-700 dark:text-amber-300">
+              {autostartErr}
+            </p>
+          )}
+        </section>
+      )}
+
+      {section === "gateway" && (
       <section>
-        <h2 className="text-sm font-semibold">监听与访问</h2>
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        <h2 className="tw-title font-semibold">监听与访问</h2>
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
           <dt className="text-neutral-500">地址</dt>
           <dd className="font-mono">
             {ov.listen.bind} : {ov.listen.port}
@@ -780,11 +874,15 @@ export default function Config({
           )}
         </dl>
         {ov.listen.exposed && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            网关监听在非本机地址上，局域网里的其他机器能连过来。密钥校验此时是强制的。
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            监听在非本机地址上，局域网里的机器能连过来
+            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">密钥强制校验</span>
+            </Tip>
           </p>
         )}
       </section>
+      )}
 
       <Pricing />
 
@@ -811,13 +909,15 @@ function Diagnostics() {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold">诊断包</h2>
-      <p className="mt-1 text-xs text-neutral-500">
-        版本、上游、熔断状态、最近的失败、脱敏之后的配置原文，攒成一个 Markdown 文件。
-        不含请求体和响应体 —— 它们最有用也最危险。
+      <h2 className="tw-title font-semibold">诊断包</h2>
+      <p className="mt-1 tw-body text-neutral-500">
+        版本、上游、熔断状态、最近的失败、脱敏后的配置原文。
+        <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
+          <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
+        </Tip>。
       </p>
       <button
-        className="mt-2 rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
+        className="mt-2 rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -834,12 +934,12 @@ function Diagnostics() {
       >
         {busy ? "攒着…" : "生成"}
       </button>
-      {error && <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">{error}</div>}
+      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
       {path && (
-        <div className="mt-2 text-xs">
+        <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>
           <div className="mt-1 text-neutral-500">
-            里面的密钥和地址都打过码了，但**交出去之前请自己扫一眼**。
+            里面的密钥和地址都打过码了，但<span className="font-medium">交出去之前请自己扫一眼</span>。
           </div>
         </div>
       )}
@@ -868,8 +968,8 @@ function Uninstall() {
 
   if (step === "done") {
     return (
-      <section className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
-        <h2 className="text-sm font-semibold">卸载完成</h2>
+      <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+        <h2 className="tw-title font-semibold">卸载完成</h2>
         <ul className="mt-2 space-y-0.5 text-neutral-600 dark:text-neutral-400">
           {log.map((l, i) => (
             <li key={i}>· {l}</li>
@@ -880,12 +980,12 @@ function Uninstall() {
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
-      <h2 className="text-sm font-semibold">完全卸载</h2>
+    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+      <h2 className="tw-title font-semibold">完全卸载</h2>
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
           <p className="text-neutral-500">
-            把所有接管过的客户端改回原样、注销开机自启。
+            把接管过的客户端改回原样，注销开机自启。
             <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
             —— 那时客户端会指着一个没有东西在听的端口。
           </p>

@@ -45,10 +45,10 @@ export default function SpeedTest({ models }: { models: string[] }) {
   return (
     <section>
       <div className="flex items-baseline gap-3">
-        <h2 className="text-sm font-semibold">模型测速</h2>
+        <h2 className="tw-title font-semibold">模型测速</h2>
         {/* **说清这一下花钱。**L1 那一栏写的是「不花钱」，两句话必须
             一样醒目，否则用户会以为所有测速都一样 */}
-        <span className="text-xs text-amber-700 dark:text-amber-400">
+        <span className="tw-body text-amber-700 dark:text-amber-400">
           会真的调用模型，花钱
         </span>
       </div>
@@ -59,7 +59,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
           onChange={(e) => setModel(e.target.value)}
           placeholder="claude-sonnet-4-5"
           list="tw-models"
-          className="w-72 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono text-xs dark:border-neutral-700"
+          className="w-72 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono tw-body dark:border-neutral-700"
         />
         <datalist id="tw-models">
           {models.map((m) => (
@@ -69,15 +69,15 @@ export default function SpeedTest({ models }: { models: string[] }) {
         <button
           onClick={ask}
           disabled={busy || !model.trim()}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-xs disabled:opacity-40 dark:border-neutral-700"
+          className="rounded-md border border-neutral-300 px-2 py-1 tw-body disabled:opacity-40 dark:border-neutral-700"
         >
-          {busy && !quote ? "算账中…" : "看看要花多少"}
+          {busy && !quote ? "计算中…" : "预估用量"}
         </button>
       </div>
 
       {/* **报价。**这一步不能省（§4.6） */}
       {quote && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950">
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
           <p className="font-medium text-amber-900 dark:text-amber-200">
             即将测速 · {model}
           </p>
@@ -109,7 +109,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
               disabled={busy}
               className="rounded bg-amber-600 px-2 py-1 text-white disabled:opacity-40"
             >
-              {busy ? "测速中…" : "确认，开始测速"}
+              {busy ? "测试中…" : "确认并开始"}
             </button>
             <button
               onClick={() => setQuote(null)}
@@ -122,7 +122,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
       )}
 
       {results && (
-        <table className="mt-3 w-full text-left text-xs tabular-nums">
+        <table className="mt-3 w-full text-left tw-body tw-num">
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200 dark:border-neutral-800">
               <th className="py-2 font-medium">上游</th>
@@ -164,7 +164,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
       )}
 
       {error && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </p>
       )}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -96,7 +97,7 @@ export default function Clients() {
   }
 
   if (!data) {
-    return <div className="p-5 text-sm text-neutral-500">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-neutral-500">{error ?? "扫描中…"}</div>;
   }
 
   const here = data.clients.filter((c) => c.installed);
@@ -105,15 +106,15 @@ export default function Clients() {
   return (
     <div className="space-y-5 p-5">
       {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </div>
       )}
 
       <div className="flex items-start justify-between gap-4">
-        <div className="text-xs text-neutral-500">
+        <div className="tw-body text-neutral-500">
           接管会把这些客户端指向 <code>{data.gateway_base}</code>。
-          只改端点和密钥两个字段，其余原样不动，随时可以还原。
+          只改端点和密钥两个字段，其余不动，随时可还原。
         </div>
         {/*
           **退路要一直看得见**（§7.15）。用户敢按下「接管」的前提，就是
@@ -122,10 +123,10 @@ export default function Clients() {
         */}
         {data.clients.some((c) => c.adopted_at_ms !== null) &&
           (confirmAll ? (
-            <div className="flex shrink-0 items-center gap-2 text-xs">
+            <div className="flex shrink-0 items-center gap-2 tw-body">
               <span className="text-amber-700 dark:text-amber-400">
                 把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
-                个客户端改回接管之前的样子？它们会立刻不再经过 ThinkWatch。
+                个客户端改回原样？它们会立刻不再经过 ThinkWatch。
               </span>
               <button
                 disabled={busy}
@@ -166,7 +167,7 @@ export default function Clients() {
             <button
               disabled={busy}
               onClick={() => setConfirmAll(true)}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className="shrink-0 rounded border border-neutral-300 px-2 py-1 tw-body hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               全部还原
             </button>
@@ -180,11 +181,14 @@ export default function Clients() {
       */}
       {here.length === 0 && (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            这台机器上没有找到我们认得的客户端。
+          <p className="tw-head text-neutral-600 dark:text-neutral-400">
+            这台机器上没有找到已识别的客户端。
           </p>
-          <p className="mt-2 text-xs text-neutral-500">
-            装了 Claude Code、Codex、Gemini CLI 之类的话，跑一次让它生成配置文件，再回来这一页。
+          <p className="mt-2 tw-body text-neutral-500">
+            装了 Claude Code、Codex、Gemini CLI 的话
+            <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
+              <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
+            </Tip>。
             <br />
             也可以手动把客户端的端点指到{" "}
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
@@ -200,7 +204,7 @@ export default function Clients() {
       ))}
 
       {gone.length > 0 && (
-        <details className="text-xs text-neutral-500">
+        <details className="tw-body text-neutral-500">
           <summary className="cursor-pointer">这台机器上没找到的（{gone.length}）</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {gone.map((c) => (
@@ -214,12 +218,12 @@ export default function Clients() {
 
       {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
       <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-        <div className="mb-2 text-xs font-medium">接管不了，只能给你步骤</div>
-        <ul className="space-y-2 text-xs text-neutral-600 dark:text-neutral-400">
+        <div className="mb-2 tw-body font-medium">接管不了，只能给你步骤</div>
+        <ul className="space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
           {data.manual.map((m) => (
             <li key={m.name}>
               <span className="font-medium text-neutral-900 dark:text-neutral-100">{m.name}</span>
-              <div>{m.how.replace("我们的地址", data.gateway_base)}</div>
+              <div>{m.how.replace("网关地址", data.gateway_base)}</div>
               <div className="text-neutral-500">{m.caveat}</div>
             </li>
           ))}
@@ -255,7 +259,7 @@ function Card({
   return (
     <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{c.name}</span>
+        <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
           <Badge tone="ok">已验证 · 收到过它的请求</Badge>
         ) : adopted ? (
@@ -266,7 +270,7 @@ function Card({
         <div className="ml-auto flex gap-1">
           {adopted && (
             <button
-              className="rounded px-2 py-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              className="rounded px-2 py-1 tw-body text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
               onClick={() => onWhy(c.id)}
               disabled={busy}
             >
@@ -276,7 +280,7 @@ function Card({
             </button>
           )}
           <button
-            className="rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
+            className="rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
             onClick={() => onAsk(c, adopted)}
             disabled={busy}
           >
@@ -285,7 +289,7 @@ function Card({
         </div>
       </div>
 
-      <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
+      <div className="mt-1 space-y-0.5 tw-body text-neutral-500">
         <div>
           <code>{c.real}</code>
           {/* 用户以为在改 ~/.claude/settings.json，实际写的可能是他
@@ -297,12 +301,12 @@ function Card({
         {c.verified === "fields_only" && <div>ⓘ {c.verified_note}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
-            ⚠ {s} 优先级更高，可能盖住我们
+            ⚠ {s} 优先级更高，可能盖过这里的设置
           </div>
         ))}
         {nagging && (
           <div className="text-amber-600 dark:text-amber-400">
-            接管超过五分钟了还没收到它的请求 —— 点上面那个按钮查一下。
+            接管五分钟了还没收到请求 —— 点上面的按钮诊断。
           </div>
         )}
       </div>
@@ -316,7 +320,7 @@ function Badge({ tone, children }: { tone: "ok" | "wait" | "idle"; children: Rea
     wait: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
     idle: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
   }[tone];
-  return <span className={`rounded px-1.5 py-0.5 text-[11px] ${cls}`}>{children}</span>;
+  return <span className={`rounded px-1.5 py-0.5 tw-label ${cls}`}>{children}</span>;
 }
 
 function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -353,19 +357,19 @@ function PlanDialog({
 }) {
   return (
     <Shell onClose={onCancel}>
-      <div className="text-sm font-medium">
+      <div className="tw-head font-medium">
         {restore ? "还原" : "接管"} {c.name}
       </div>
-      <div className="mt-1 text-xs text-neutral-500">
+      <div className="mt-1 tw-body text-neutral-500">
         要改 <code>{p.path}</code>
       </div>
 
       {p.noop ? (
-        <div className="mt-3 text-xs">已经是这样了，什么都不用改。</div>
+        <div className="mt-3 tw-body">已经是这样了，什么都不用改。</div>
       ) : (
         <>
           {p.fields.length > 0 && (
-            <ul className="mt-3 space-y-0.5 text-xs">
+            <ul className="mt-3 space-y-0.5 tw-body">
               {p.fields.map((f) => (
                 <li key={f}>
                   <code>{f}</code>
@@ -376,7 +380,7 @@ function PlanDialog({
 
           {/* 接管的代价要在这里列出来，不能等用户自己发现 */}
           {p.notes.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-neutral-600 dark:text-neutral-400">
+            <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-neutral-600 dark:text-neutral-400">
               {p.notes.map((n) => (
                 <li key={n}>{n}</li>
               ))}
@@ -385,20 +389,20 @@ function PlanDialog({
 
           <Diff before={p.before} after={p.after} />
 
-          <div className="mt-3 text-xs text-neutral-500">
-            改之前会把整个文件备份一份。除了上面这几个字段，其余一个字节都不动。
+          <div className="mt-3 tw-body text-neutral-500">
+            写入前整份备份，除上面这几个字段外一字节不动。
             {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
           </div>
         </>
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onCancel}>
+        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
           取消
         </button>
         {!p.noop && (
           <button
-            className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
             onClick={onConfirm}
             disabled={busy}
           >
@@ -460,7 +464,7 @@ function Diff({ before, after }: { before: string | null; after: string }) {
   while (j < m) rows.push({ text: line(b, j++), kind: "add" });
 
   return (
-    <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 text-[11px] leading-relaxed dark:bg-neutral-950">
+    <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 tw-label leading-relaxed dark:bg-neutral-950">
       {rows.map((r, i) => (
         <div
           key={i}
@@ -484,8 +488,8 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
     <Shell onClose={onClose}>
-      <div className="text-sm font-medium">写好了</div>
-      <div className="mt-2 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+      <div className="tw-head font-medium">写好了</div>
+      <div className="mt-2 space-y-1 tw-body text-neutral-600 dark:text-neutral-400">
         <div>{r.takes_effect_note}</div>
         <div>
           改的是 <code>{r.real}</code>
@@ -499,11 +503,11 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
           </div>
         ))}
         <div className="pt-1">
-          接下来等一个真实请求过来 —— 那是唯一能证明它生效了的东西。
+          接下来等一个真实请求 —— 那是唯一能证明它生效的东西。
         </div>
       </div>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onClose}>
+        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
           知道了
         </button>
       </div>
@@ -515,8 +519,8 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
   return (
     <Shell onClose={onClose}>
-      <div className="text-sm font-medium">为什么没生效</div>
-      <ul className="mt-3 space-y-2 text-xs">
+      <div className="tw-head font-medium">为什么没生效</div>
+      <ul className="mt-3 space-y-2 tw-body">
         {found.map((f, i) => (
           <li key={i} className="flex gap-2">
             <span
@@ -544,8 +548,8 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
         ))}
       </ul>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onClose}>
-          关掉
+        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+          关闭
         </button>
       </div>
     </Shell>

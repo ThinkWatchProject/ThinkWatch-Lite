@@ -10,3 +10,45 @@ body {
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ----------------------------------------------------------------- 字号
+ *
+ * **四级，按用途命名，不按尺寸命名。**
+ *
+ * 之前全站 159 处 `text-xs`（12px）加上零散的 `text-[10px]`/`[11px]`/
+ * `[12px]`/`[13px]`，也就是说：一个 macOS 应用把自己的正文压在了系统
+ * 标准（13px）以下，而且没有任何层级——眼睛没有落点，所以看起来是挤，
+ * 不是密。
+ *
+ * 按尺寸命名的类（text-xs）改不动这件事：下一个人还是会按「看起来差不多
+ * 大」来选。按用途命名之后，「这是正文还是标签」是个能回答的问题。
+ *
+ * · tw-title  15px/600  —— 页标题。一屏一个
+ * · tw-head   13px/500  —— 区块标题、表头
+ * · tw-body   13px      —— 正文、表格数据。**和系统一致**
+ * · tw-label  11px      —— 次要说明、单位、时间戳
+ *
+ * 数字用等宽：金额和延迟要按位对齐，否则一列数字读起来要重新对焦。
+ */
+@utility tw-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+@utility tw-head {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+@utility tw-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+@utility tw-label {
+  font-size: 11px;
+  line-height: 1.45;
+}
+@utility tw-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

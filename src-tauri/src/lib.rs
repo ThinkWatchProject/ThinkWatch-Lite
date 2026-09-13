@@ -673,6 +673,44 @@ async fn diagnose_client(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 开机自启现在是开着的吗。
+///
+/// **默认是关的,而且这不是「还没实现」,是产品决定。**一个装完就自己
+/// 往登录项里写东西的工具,用户第一次发现它是在「系统设置 → 通用 →
+/// 登录项」里看到一个自己没同意过的条目 —— 那一刻损失的信任,比自启
+/// 省下的那点麻烦贵得多。
+///
+/// 所以:出厂不注册,界面上给一个勾选框,勾了才写 plist。
+///
+/// 开发构建里恒返回 false:`cargo tauri dev` 期间注册会把
+/// `target/debug/…` 写进 plist,然后每次开机 launchd 都去启动一个可能
+/// 已经被 `cargo clean` 掉的二进制(§2.4)。
+#[tauri::command]
+fn autostart_enabled(app: tauri::AppHandle) -> bool {
+    if !autostart::allowed_in_this_build() {
+        return false;
+    }
+    use tauri_plugin_autostart::ManagerExt;
+    matches!(app.autolaunch().is_enabled(), Ok(true))
+}
+
+/// 开或关开机自启。
+///
+/// 返回**实际生效的状态**而不是调用方传进来的那个 —— 注册可能失败
+/// (沙盒、权限、只读的 LaunchAgents 目录),那时勾选框必须弹回去。
+/// 回一个 `Ok(())` 让界面自己乐观地打上勾,是这类开关最常见的骗人方式。
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+    if !autostart::allowed_in_this_build() {
+        return Err("开发构建里不注册开机自启 —— 它会把 target/debug 下的二进制写进 plist".into());
+    }
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    let r = if on { mgr.enable() } else { mgr.disable() };
+    r.map_err(|e| format!("{e}"))?;
+    Ok(matches!(mgr.is_enabled(), Ok(true)))
+}
+
 #[tauri::command]
 async fn setup_first_provider(
     state: tauri::State<'_, AppState>,
@@ -726,6 +764,8 @@ pub fn run() {
             save_pricing,
             rollback_config,
             setup_first_provider,
+            autostart_enabled,
+            set_autostart,
             list_clients,
             plan_adopt,
             adopt_client,

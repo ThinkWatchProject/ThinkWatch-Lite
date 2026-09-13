@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import {
   usd,
@@ -32,9 +33,12 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
   if (!b) {
     return (
       <div>
-        <div className="text-xs font-medium">{title}</div>
-        <p className="mt-1 text-xs text-neutral-500">
-          没有存下来。可能是磁盘快满了（那时只记摘要），也可能是这条记录已经过了保留期。
+        <div className="tw-body font-medium">{title}</div>
+        <p className="mt-1 tw-body text-neutral-500">
+          没有存下来
+          <Tip text="两种可能：磁盘快满时只记摘要，或者这条记录已经过了保留期。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+          </Tip>
         </p>
       </div>
     );
@@ -44,8 +48,8 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-xs font-medium">{title}</span>
-        <span className="text-xs text-neutral-400">
+        <span className="tw-body font-medium">{title}</span>
+        <span className="tw-body text-neutral-400">
           {b.original_len.toLocaleString()} 字节
           {/* **截断了要说出来。**不说的话用户会以为请求本身就这么长 */}
           {b.truncated && " · 只存了开头"}
@@ -53,13 +57,13 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
         {big && (
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="ml-auto tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {open ? "折叠" : "展开全部"}
           </button>
         )}
       </div>
-      <pre className="mt-1 max-h-80 overflow-auto rounded-md bg-neutral-100 p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap dark:bg-neutral-900">
+      <pre className="mt-1 max-h-80 overflow-auto rounded-md bg-neutral-100 p-2 font-mono tw-label leading-relaxed break-all whitespace-pre-wrap dark:bg-neutral-900">
         {shown}
         {big && !open && "\n…"}
       </pre>
@@ -96,29 +100,29 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
   return (
     <div className="fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950">
       <header className="flex items-baseline gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-        <span className="text-sm font-semibold">{r?.model || `第 ${id} 号请求`}</span>
+        <span className="tw-title font-semibold">{r?.model || `第 ${id} 号请求`}</span>
         {r && (
-          <span className="text-xs text-neutral-500">{new Date(r.at_ms).toLocaleString()}</span>
+          <span className="tw-body text-neutral-500">{new Date(r.at_ms).toLocaleString()}</span>
         )}
         {/* §9.8：「录制」不是一个新功能，这一条请求本来就在存储里 */}
         <SaveFixture id={id} />
         <button
           onClick={onClose}
-          className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          className="rounded px-2 py-1 tw-body text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         >
           关闭
         </button>
       </header>
 
       {error && (
-        <p className="m-4 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="m-4 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </p>
       )}
 
       {d && r && (
         <>
-          <nav className="flex gap-1 border-b border-neutral-200 px-4 py-2 text-xs dark:border-neutral-800">
+          <nav className="flex gap-1 border-b border-neutral-200 px-4 py-2 tw-body dark:border-neutral-800">
             {(["timeline", "routing", "payload", "usage", "replay"] as const).map((t) => (
               <button
                 key={t}
@@ -143,7 +147,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
             ))}
           </nav>
 
-          <div className="min-h-0 flex-1 overflow-auto p-4 text-xs">
+          <div className="min-h-0 flex-1 overflow-auto p-4 tw-body">
             {tab === "replay" && <Replay id={id} originalProvider={r.provider} />}
             {tab === "timeline" && (
               <div className="space-y-1">
@@ -153,7 +157,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                   label="首字节"
                   value={
                     r.ttfb_ms != null ? (
-                      <span className="text-base">{r.ttfb_ms}ms</span>
+                      <span className="tw-head">{r.ttfb_ms}ms</span>
                     ) : (
                       "—"
                     )
@@ -195,7 +199,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                     {r.routing.group && <Row label="经过策略组" value={r.routing.group} />}
                   </div>
                   <div>
-                    <div className="text-xs font-medium">尝试链</div>
+                    <div className="tw-body font-medium">尝试链</div>
                     <ol className="mt-1 space-y-1">
                       {r.routing.attempts.map((a, i) => (
                         <li
@@ -225,16 +229,17 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                       // （§4.2）。一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
                       <p className="mt-1.5 text-neutral-500">
-                        这次发生了故障转移：前 {r.routing.attempts.length - 1} 家没成，我们替你
-                        换到了下一家。
+                        发生了故障转移：前 {r.routing.attempts.length - 1} 家失败，自动换到了下一家。
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
                 <p className="text-neutral-500">
-                  这条记录没有路由信息。可能是本地应答的（它根本没到上游），也可能是这个功能
-                  上线之前记下的。
+                  这条没有路由信息
+                  <Tip text="要么是本地应答的（根本没到上游），要么是这个功能上线之前记下的。">
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">两种可能</span>
+                  </Tip>
                 </p>
               ))}
 
@@ -243,7 +248,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 <Body b={d.request_body} title="请求" />
                 <Body b={d.response_body} title="响应" />
                 <p className="text-neutral-400">
-                  这两段已经过脱敏：看起来像密钥的东西都打了码。
+                  这两段已脱敏：像密钥的内容都打了码。
                 </p>
               </div>
             )}
@@ -253,8 +258,10 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 {r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**（§4.3）
                   <p className="text-neutral-500">
-                    这家上游没有报用量。有些中转站会吞掉 usage 字段 —— 那时我们不知道这次调用
-                    用了多少，也就算不出钱。
+                    这家上游没有报用量
+                    <Tip text="有些上游会吞掉响应里的 usage 字段。没有它就无法得知这次调用消耗了多少，也就算不出成本。">
+                      <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+                    </Tip>
                   </p>
                 ) : (
                   <>
@@ -312,15 +319,15 @@ function SaveFixture({ id }: { id: number }) {
   return (
     <span className="ml-auto flex items-center gap-2">
       {path && (
-        <span className="text-[11px] text-neutral-500" title={path}>
+        <span className="tw-label text-neutral-500" title={path}>
           写好了，记得自己看一眼再交出去
         </span>
       )}
-      {error && <span className="text-[11px] text-amber-600 dark:text-amber-400">{error}</span>}
+      {error && <span className="tw-label text-amber-600 dark:text-amber-400">{error}</span>}
+      <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
       <button
-        className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        className="rounded px-2 py-1 tw-body text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         disabled={busy}
-        title="把这次的请求和响应存成一个脱敏过的回放用例"
         onClick={async () => {
           setBusy(true);
           setError(null);
@@ -336,6 +343,7 @@ function SaveFixture({ id }: { id: number }) {
       >
         {busy ? "存…" : "另存为测试用例"}
       </button>
+      </Tip>
     </span>
   );
 }
@@ -402,7 +410,10 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   return (
     <div className="space-y-3">
       <p className="text-neutral-500">
-        把这条请求**原样**发给另一个上游，和原来那次并排比。请求体是当时存下来的那一份，一个字节都没改。
+        把这条请求<span className="font-medium">原样</span>发给另一个上游，并排对比
+        <Tip text="请求体是当时存下来的那一份，一个字节都没改 —— 手工复现一个 Claude Code 请求几乎不可能，而任何一处不同都会让对比失去意义。">
+          <span className="ml-1 underline decoration-dotted underline-offset-2">原样是指</span>
+        </Tip>
       </p>
       <div className="flex items-center gap-2">
         <select
@@ -472,7 +483,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
               <Cmp label="字节" a={result.original.bytes} b={result.bytes} />
             </tbody>
           </table>
-          <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] dark:bg-neutral-950">
+          <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 tw-label dark:bg-neutral-950">
             {result.body}
           </pre>
         </div>

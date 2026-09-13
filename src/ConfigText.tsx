@@ -128,7 +128,7 @@ export default function ConfigTextMode({
       {/* 文件在你编辑期间被改过了。**给选择，不替他做决定** ——
           两边都是真实的改动，只有他知道哪个该留 */}
       {stale && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950">
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
           <p className="font-medium text-amber-900 dark:text-amber-200">
             这个文件在你编辑期间被改过了。
           </p>
@@ -144,7 +144,7 @@ export default function ConfigTextMode({
               }}
               className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
-              丢掉我的改动，用文件里的
+              丢掉放弃本地改动，用文件里的
             </button>
             <button
               onClick={() => {
@@ -152,7 +152,7 @@ export default function ConfigTextMode({
               }}
               className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
-              保留我的，覆盖过去
+              保留本地改动，覆盖文件
             </button>
           </div>
         </div>
@@ -172,7 +172,7 @@ export default function ConfigTextMode({
         另一种视图」这个心智，而不是两个割裂的东西。
       */}
       {at?.name && (
-        <p className="text-xs text-neutral-500">
+        <p className="tw-body text-neutral-500">
           光标在 <span className="font-medium text-neutral-700 dark:text-neutral-300">{at.name}</span>
           {at.section ? `（${at.section}）` : ""} 这一段里
           {onJumpToForm && (
@@ -186,7 +186,7 @@ export default function ConfigTextMode({
         </p>
       )}
 
-      <div className="flex items-center gap-3 text-xs">
+      <div className="flex items-center gap-3 tw-body">
         <button
           onClick={save}
           disabled={busy || !dirty}
@@ -202,7 +202,7 @@ export default function ConfigTextMode({
       {/* 保存失败最常见的两种：写错了（语法/字段/语义），和有人抢先改了。
           两者的下一步完全不同，所以原样把 core 那句话显示出来 */}
       {error && (
-        <pre className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <pre className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </pre>
       )}

@@ -54,12 +54,12 @@ export default function DryRun({ models }: { models: string[] }) {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold">试算一条请求</h2>
-      <p className="mt-1 text-xs text-neutral-500">
-        假设现在来这样一个请求，看它会走到哪儿、为什么没走别的那条。只是算一下，不会发出去。
+      <h2 className="tw-title font-semibold">试算一条请求</h2>
+      <p className="mt-1 tw-body text-neutral-500">
+        假设来这样一个请求，看它会走到哪儿、为什么没走别的。只算不发。
       </p>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">
         <input
           className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
           value={model}
@@ -105,7 +105,7 @@ export default function DryRun({ models }: { models: string[] }) {
         </button>
       </div>
 
-      {error && <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">{error}</div>}
+      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
       {r && <Result r={r} />}
     </section>
   );
@@ -113,7 +113,7 @@ export default function DryRun({ models }: { models: string[] }) {
 
 function Result({ r }: { r: DryRunResult }) {
   return (
-    <div className="mt-3 rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
+    <div className="mt-3 rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
       {r.outcome === "deny" ? (
         <div>
           <span className="text-red-600 dark:text-red-400">会被拒绝</span> —— 规则「{r.rule}」：
