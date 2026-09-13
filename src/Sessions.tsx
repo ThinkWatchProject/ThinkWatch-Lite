@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
 
@@ -112,15 +113,15 @@ export default function Sessions() {
 function Cost({ s }: { s: SessionView }) {
   const priced = s.turns - s.unpriced_turns;
   if (priced === 0) {
-    return <span className="text-neutral-500" title="这次会话里没有一轮拿到了价格">没有价格</span>;
+    return <Tip text="这次会话里没有一轮拿到了价格"><span className="text-neutral-500">没有价格</span></Tip>;
   }
   return (
     <>
       {usd(s.cost_micros)}
       {s.unpriced_turns > 0 && (
-        <span className="ml-1 text-neutral-500" title="这几轮的模型没有价目，没有计入">
-          +{s.unpriced_turns} 轮无价
-        </span>
+        <Tip text="这几轮的模型不在价目表里，没有计入合计">
+          <span className="ml-1 text-neutral-500">+{s.unpriced_turns} 轮无价</span>
+        </Tip>
       )}
     </>
   );

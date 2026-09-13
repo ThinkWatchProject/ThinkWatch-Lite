@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import AddUpstream from "./AddUpstream";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
@@ -476,8 +477,8 @@ export default function Config({
               <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
                 <td className="py-1.5 font-medium" data-row={p.name}>
                   {p.name}
+                  <Tip text="跳到配置文件里这一段，并选中它">
                   <button
-                    title="在配置文件里看这一段"
                     onClick={() => {
                       setFocus(p.name);
                       setMode("text");
@@ -486,6 +487,7 @@ export default function Config({
                   >
                     ↗
                   </button>
+                  </Tip>
                 </td>
                 <td className="text-neutral-500">
                   <EditableCell
@@ -574,9 +576,9 @@ export default function Config({
                     {p.health === "ok" ? (
                       <span className="text-emerald-600 dark:text-emerald-400">正常</span>
                     ) : (
-                      <span className="text-amber-600 dark:text-amber-400" title="连续失败后暂时不派请求过去，冷却后自动恢复">
-                        熔断中
-                      </span>
+                      <Tip text="连续失败后暂时不派请求过去，冷却之后自动恢复">
+                        <span className="text-amber-600 dark:text-amber-400">熔断中</span>
+                      </Tip>
                     )}
                   </td>
                 )}
@@ -672,8 +674,8 @@ export default function Config({
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
+                  <Tip text="跳到配置文件里这一段，并选中它">
                   <button
-                    title="在配置文件里看这一段"
                     onClick={() => {
                       setFocus(g.name);
                       setMode("text");
@@ -682,6 +684,7 @@ export default function Config({
                   >
                     ↗
                   </button>
+                  </Tip>
                   <SelectCell
                     value={
                       { 按顺序: "fallback", 手动选: "select", 轮流: "load-balance", 选最快: "url-test", 选最便宜: "cheapest" }[

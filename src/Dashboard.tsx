@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import Sparkline from "./Sparkline";
@@ -321,19 +322,19 @@ export default function Dashboard({ tick }: { tick: number }) {
                       // **「订阅」而不是 $0.00。**后者看起来像一个算出来
                       // 的结果，会让人误以为这次调用真的免费；「订阅」
                       // 表达的是「这笔账不在这个维度上」（§4.3.1）
-                      <span className="text-neutral-500" title="这家是订阅制，边际成本为零">
-                        订阅
-                      </span>
+                      <Tip text="这家是订阅制，边际成本为零">
+                        <span className="text-neutral-500">订阅</span>
+                      </Tip>
                     ) : r.cost_micros == null ? (
                       // **「没有价格」不是 $0.00。**显示成 0 会让它悄悄
                       // 混进总额的心理预期里（§4.3）
-                      <span className="text-neutral-400" title="这个模型不在价目表里">
-                        —
-                      </span>
+                      <Tip text="这个模型不在价目表里">
+                        <span className="text-neutral-400">—</span>
+                      </Tip>
                     ) : r.cost_estimated ? (
-                      <span className="text-amber-700 dark:text-amber-400" title="估算值">
-                        ~{usd(r.cost_micros)}
-                      </span>
+                      <Tip text="估算值 —— 这个模型用的是兜底价，和实测有差">
+                        <span className="text-amber-700 dark:text-amber-400">~{usd(r.cost_micros)}</span>
+                      </Tip>
                     ) : (
                       usd(r.cost_micros)
                     )}

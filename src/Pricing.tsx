@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
 
@@ -158,13 +159,14 @@ export default function Pricing() {
                     />
                   </td>
                   <td className="text-right">
-                    <button
-                      onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                      className="text-neutral-400 hover:text-red-600"
-                      title="删掉这一条"
-                    >
-                      ×
-                    </button>
+                    <Tip text="删掉这一条自定义价格">
+                      <button
+                        onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                        className="text-neutral-400 hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    </Tip>
                   </td>
                 </tr>
               ))}

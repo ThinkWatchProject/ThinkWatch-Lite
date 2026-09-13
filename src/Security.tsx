@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -337,13 +338,14 @@ function Matrix({
                 <tr key={n} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-2 py-1">
                     {conflicting.includes(n) && (
-                      <button
-                        onClick={() => setCompare(compare === n ? null : n)}
-                        className="mr-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-                        title="同名，但各客户端里的配置不一样 —— 点开对比"
-                      >
-                        ⚠
-                      </button>
+                      <Tip text="同名，但各客户端里的配置不一样 —— 点开并排看差异">
+                        <button
+                          onClick={() => setCompare(compare === n ? null : n)}
+                          className="mr-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+                        >
+                          ⚠
+                        </button>
+                      </Tip>
                     )}
                     {n}
                   </td>
@@ -386,9 +388,9 @@ function Matrix({
                             "✓"
                           ) : (
                             // 关掉的还在配置里，一次编辑就能打开
-                            <span className="text-neutral-400" title="配置里写着 enabled: false">
-                              ○
-                            </span>
+                            <Tip text="配置里写着 enabled: false —— 它还列在这里，但不会被加载">
+                              <span className="text-neutral-400">○</span>
+                            </Tip>
                           )}
                         </button>
                       </td>

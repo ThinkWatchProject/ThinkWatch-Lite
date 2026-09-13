@@ -15,6 +15,9 @@ import Config from "./Config";
 import Clients from "./Clients";
 import Security from "./Security";
 import Guard from "./Guard";
+import { Dialog, DialogButton } from "./ui/Dialog";
+import { TooltipRoot } from "./ui/Tooltip";
+import { RowMenu } from "./ui/ContextMenu";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
@@ -349,6 +352,7 @@ export default function App() {
   // 而请求页的空状态一直在说客户端该怎么指过来。
 
   return (
+    <TooltipRoot>
     <div className="flex h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       {/*
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
@@ -682,8 +686,51 @@ export default function App() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr
+                <RowMenu
                   key={r.id}
+                  items={[
+                    { kind: "item", label: "打开详情", onSelect: () => setOpen(r.id) },
+                    { kind: "sep" },
+                    // **按这一行的值筛，不是打开一个筛选器。**排查时的
+                    // 动作是「只看这家」「只看这个客户端」，而手打名字
+                    // 会打错，打错的表现是「筛出来空的」。
+                    {
+                      kind: "item",
+                      label: `只看上游 ${r.provider}`,
+                      onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
+                    },
+                    {
+                      kind: "item",
+                      label: `只看客户端 ${r.client}`,
+                      onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
+                    },
+                    { kind: "sep" },
+                    {
+                      kind: "item",
+                      label: "复制请求 ID",
+                      onSelect: () => void navigator.clipboard.writeText(String(r.id)),
+                    },
+                    {
+                      kind: "item",
+                      label: "复制这一行",
+                      onSelect: () =>
+                        void navigator.clipboard.writeText(
+                          [
+                            new Date(r.atMs).toLocaleString(),
+                            r.client,
+                            r.provider,
+                            r.path,
+                            r.status ?? r.state,
+                            r.durationMs != null ? `${r.durationMs}ms` : "",
+                            r.error ?? "",
+                          ]
+                            .filter(Boolean)
+                            .join("\t"),
+                        ),
+                    },
+                  ]}
+                >
+                <tr
                   onClick={() => {
                     setCursor(rows.indexOf(r));
                     setOpen(r.id);
@@ -771,6 +818,7 @@ export default function App() {
                   <td>{r.durationMs != null ? `${r.durationMs}ms` : "—"}</td>
                   <td>{r.bytes != null ? r.bytes : "—"}</td>
                 </tr>
+                </RowMenu>
               ))}
             </tbody>
           </table>
@@ -787,35 +835,33 @@ export default function App() {
       </div>
 
       {/* 浮层挂在最外层，不跟着右列滚动 */}
-      {askQuit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <div className="w-full max-w-sm rounded-lg bg-white p-4 text-xs shadow-xl dark:bg-neutral-900">
-            <p className="text-sm font-semibold">退出 ThinkWatch Lite？</p>
-            <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-              所有接管过的客户端会立刻失联 ——
-              它们指着的那个端口后面就没有东西在听了。
+      <Dialog
+        open={askQuit}
+        onOpenChange={setAskQuit}
+        danger
+        width="max-w-sm"
+        title="退出 ThinkWatch Lite？"
+        description={
+          <>
+            <p>
+              所有接管过的客户端会立刻失联 —— 它们指着的那个端口后面就没有东西在听了。
             </p>
-            <p className="mt-1 text-neutral-500">
-              只是想关窗口的话，点右上角红叉或按 ⌘W 就行，进程会留在菜单栏。
+            <p className="mt-1.5 text-neutral-500">
+              只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
             </p>
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={() => setAskQuit(false)}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-              >
-                不退了
-              </button>
-              <button
-                onClick={() => void invoke("quit_app")}
-                className="rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700"
-              >
-                退出
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+        footer={
+          <>
+            <DialogButton onClick={() => setAskQuit(false)}>取消</DialogButton>
+            <DialogButton kind="danger" onClick={() => void invoke("quit_app")}>
+              退出
+            </DialogButton>
+          </>
+        }
+      />
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
     </div>
+    </TooltipRoot>
   );
 }

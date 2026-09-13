@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import {
   usd,
@@ -317,10 +318,10 @@ function SaveFixture({ id }: { id: number }) {
         </span>
       )}
       {error && <span className="text-[11px] text-amber-600 dark:text-amber-400">{error}</span>}
+      <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
       <button
         className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         disabled={busy}
-        title="把这次的请求和响应存成一个脱敏过的回放用例"
         onClick={async () => {
           setBusy(true);
           setError(null);
@@ -336,6 +337,7 @@ function SaveFixture({ id }: { id: number }) {
       >
         {busy ? "存…" : "另存为测试用例"}
       </button>
+      </Tip>
     </span>
   );
 }
