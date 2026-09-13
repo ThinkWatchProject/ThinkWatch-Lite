@@ -16,7 +16,7 @@ import Clients from "./Clients";
 import Security from "./Security";
 import Guard from "./Guard";
 import { Dialog, DialogButton } from "./ui/Dialog";
-import { TooltipRoot } from "./ui/Tooltip";
+import { Tip, TooltipRoot } from "./ui/Tooltip";
 import { RowMenu } from "./ui/ContextMenu";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
@@ -472,7 +472,10 @@ export default function App() {
               <span className="font-medium text-neutral-800 dark:text-neutral-200">
                 {r.provider}
               </span>{" "}
-              的 token 端点换发了新凭据，已经帮你写回 config.yaml —— 编辑器里那份可能要重新加载。
+              的 token 端点换发了新凭据，已写回 config.yaml
+              <Tip text="编辑器里打开的那份可能要重新加载 —— 它会弹「文件已在磁盘上更改」。">
+                <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器要重载</span>
+              </Tip>
             </p>
             <button
               onClick={clearRotated}
@@ -627,7 +630,7 @@ export default function App() {
               <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
                 http://{status.gateway_addr}
               </code>{" "}
-              听着 —— 只是还没有地方可以转发。加一个上游，填地址和密钥就行。
+              听着，但还没有地方可以转发。加一个上游只要地址和密钥。
             </p>
             <button
               onClick={() => setTab("config")}
@@ -844,7 +847,7 @@ export default function App() {
         description={
           <>
             <p>
-              所有接管过的客户端会立刻失联 —— 它们指着的那个端口后面就没有东西在听了。
+              所有接管过的客户端会立刻失联 —— 它们指着的端口后面就没东西在听了。
             </p>
             <p className="mt-1.5 text-neutral-500">
               只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。

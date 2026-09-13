@@ -412,7 +412,7 @@ export default function Config({
           <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800">
             {history.length === 0 && (
               <p className="px-3 py-2 tw-body text-neutral-500">
-                还没有历史版本。第一次改配置之后就有了。
+                还没有历史版本 —— 第一次改配置之后就有了。
               </p>
             )}
             {history.map((v) => (
@@ -875,7 +875,10 @@ export default function Config({
         </dl>
         {ov.listen.exposed && (
           <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            网关监听在非本机地址上，局域网里的其他机器能连过来。密钥校验此时是强制的。
+            监听在非本机地址上，局域网里的机器能连过来
+            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">密钥强制校验</span>
+            </Tip>
           </p>
         )}
       </section>
@@ -908,7 +911,7 @@ function Diagnostics() {
     <section>
       <h2 className="tw-title font-semibold">诊断包</h2>
       <p className="mt-1 tw-body text-neutral-500">
-        版本、上游、熔断状态、最近的失败、脱敏后的配置原文，攒成一个 Markdown 文件。
+        版本、上游、熔断状态、最近的失败、脱敏后的配置原文。
         <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
           <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
         </Tip>。
@@ -982,7 +985,7 @@ function Uninstall() {
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
           <p className="text-neutral-500">
-            把所有接管过的客户端改回原样、注销开机自启。
+            把接管过的客户端改回原样，注销开机自启。
             <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
             —— 那时客户端会指着一个没有东西在听的端口。
           </p>

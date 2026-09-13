@@ -176,7 +176,10 @@ export default function Security({
         {data.findings.length === 0 ? (
           // §0.6：没风险的时候要说「安全」，而不是让这一块消失
           <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-            ✓ 没发现问题。隐藏字符、提示注入、危险命令、过宽权限四类都查过了。
+            ✓ 没发现问题
+            <Tip text="隐藏字符、提示注入、危险命令、过宽权限 —— 四类都查过了。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">查了四类</span>
+            </Tip>
           </div>
         ) : (
           <ul className="space-y-1">
@@ -240,7 +243,10 @@ export default function Security({
           <h2 className="mb-1 tw-head font-medium">skill · {data.skills.length}</h2>
           {/* §7.12：skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
           <p className="mb-2 tw-body text-neutral-500">
-            只列出来看，不做跨客户端搬动 —— skill 的跨客户端格式还没有事实标准。
+            只列出来看，不做跨客户端搬动
+            <Tip text="skill 的跨客户端格式还没有事实标准，搬过去大概率是一份对方读不懂的配置。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+            </Tip>
           </p>
           <ul className="space-y-1 tw-body">
             {data.skills.map((s, i) => (
@@ -530,9 +536,12 @@ function McpConfirm({
               {plan.after}
             </pre>
             <div className="mt-2 tw-body text-neutral-500">
-              改之前会把整个文件备份一份。除了这一项，其余一个字节都不动。
-              {req.op === "copy" &&
-                " MCP 的 env 里可能带着密钥，复制会把它一起搬到目标文件里。"}
+              写入前整份备份，除这一项外一字节不动。
+              {req.op === "copy" && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  {" "}env 里可能带着密钥，会一并复制过去。
+                </span>
+              )}
             </div>
           </>
         )}
@@ -571,7 +580,12 @@ function Baseline({ b }: { b: BaselineResponse }) {
     return (
       <section>
         <h2 className="mb-1 tw-head font-medium">上游行为</h2>
-        <p className="tw-body text-neutral-500">观测层没有启动，这一段时间的请求没有被记录，所以没法比。</p>
+        <p className="tw-body text-neutral-500">
+          观测层没启动，这段时间的请求没有记录
+          <Tip text="没有记录就没有基线可比 —— 这不是「没发现异常」，是「没有看」。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">所以没法比</span>
+          </Tip>
+        </p>
       </section>
     );
   }
@@ -581,7 +595,10 @@ function Baseline({ b }: { b: BaselineResponse }) {
     <section>
       <h2 className="mb-1 tw-head font-medium">上游行为</h2>
       <p className="mb-2 tw-body text-neutral-500">
-        拿最近 {b.recent_hours} 小时和之前 {b.baseline_days} 天比。样本不够的上游不会出现在这里。
+        最近 {b.recent_hours} 小时 对比 之前 {b.baseline_days} 天
+        <Tip text="样本不够的上游不会出现在这里 —— 两边各至少 20 条才比，否则一次抖动就能算出「四倍」。">
+          <span className="ml-1 underline decoration-dotted underline-offset-2">样本要求</span>
+        </Tip>
       </p>
       {withDrift.length === 0 ? (
         // §0.6：没风险的时候要说「安全」，而不是让这一块消失
@@ -615,7 +632,10 @@ function Baseline({ b }: { b: BaselineResponse }) {
               {/* 数过形状的和总数不同时要说清楚 */}
               {p.recent_inspected < p.recent_total && (
                 <div className="mt-1 text-neutral-500">
-                  最近 {p.recent_total} 条里只有 {p.recent_inspected} 条数过形状 —— 其余那些发生在入站审查关着的时候。
+                  {p.recent_total} 条里数过形状的有 {p.recent_inspected} 条
+                  <Tip text="其余那些发生在入站审查关着的时候 —— 那段时间没有数据，不是数出来是零。">
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">差额去哪了</span>
+                  </Tip>
                 </div>
               )}
             </li>
@@ -665,7 +685,7 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
               用户会以为我们在误报 */}
           <pre className="overflow-x-auto rounded bg-neutral-50 p-2 dark:bg-neutral-950">{f.excerpt}</pre>
           <div className="text-neutral-500">
-            只报告，不改动任何文件。要处理的话，打开上面那个路径看过再决定。
+            只报告，不改动任何文件。打开上面的路径看过再决定。
           </div>
         </div>
         <div className="mt-4 flex justify-end">

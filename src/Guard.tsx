@@ -42,25 +42,25 @@ const LINES: {
     key: "redact",
     path: "/security/redact",
     title: "出站脱敏",
-    what: "请求发出去之前，先看看里面有没有你的密钥、私钥、连接串。",
+    what: "请求发出之前，检查里面有没有密钥、私钥、连接串。",
     verb: "把它们换成占位符再发，响应回来时换回真值",
-    cost: "会改动请求体。同一段上下文改过之后可能不再命中上游的缓存（§4.1）。",
+    cost: "会改动请求体，同一段上下文可能不再命中上游缓存。",
   },
   {
     key: "inspect_tools",
     path: "/security/inspect_tools",
     title: "工具调用审查",
     what: "上游返回的工具调用里，有没有一步就能拿到执行权的命令。",
-    verb: "切断这一次的响应流，客户端拿到的是残缺的调用（拼不出合法参数）",
-    cost: "只对不受信任的上游生效。误判一次的代价是这一条回答断在半路。",
+    verb: "切断响应流，客户端拿到的调用是残缺的、拼不出合法参数",
+    cost: "只对不受信任的上游生效。误判会让一条回答断在半路。",
   },
   {
     key: "scan_configs",
     path: "/security/scan_configs",
     title: "配置面扫描",
-    what: "客户端那些配置文件里，有没有隐藏字符、注入、危险命令、过宽权限。",
+    what: "客户端配置文件里，有没有隐藏字符、注入、危险命令、过宽权限。",
     verb: "在界面上告警",
-    cost: "它永远不删任何东西 —— 这一条的「拦截」就只是把话说得更响。",
+    cost: "它从不删除任何东西，这里的「拦截」只是把话说得更响。",
   },
 ];
 
@@ -111,19 +111,20 @@ export default function Guard({
       <div>
         <h2 className="tw-title font-semibold">防护</h2>
         <p className="mt-1 tw-body text-neutral-500">
-          三条防线，各自三档。
+          三条防线，各自三档。出厂都停在「观察」
           {/*
-            说清出厂默认，以及为什么是这个默认。用户在这一页做的第一个
-            判断是「我现在到底有没有被保护」，而「观察」这个词本身回答
-            不了它。
+            「我现在到底有没有被保护」是用户在这一页的第一个判断，而
+            「观察」这个词本身回答不了它 —— 所以展开说一句。
           */}
-          出厂都停在「观察」—— 照常检测、照常记录，但不改变任何请求。
+          <Tip text="观察 = 照常检测、照常记录，但不改变任何请求。看到证据之后再决定要不要切到拦截。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">这是什么意思</span>
+          </Tip>
         </p>
       </div>
 
       {!sec && (
         <p className="tw-body text-amber-700 dark:text-amber-300">
-          这份 core 还没有报告防护状态 —— 它比界面旧。升级 core 之后这一页才能用。
+          这份 core 比界面旧，没有报告防护状态。升级后这一页才能用。
         </p>
       )}
 
@@ -203,8 +204,10 @@ export default function Guard({
               这里要说清，否则用户以为自己那份是全集，而我们后来加的新
               攻击模式他一条都收不到。
             */}
-            自己写的是<span className="font-medium">加进去</span>
-            ，不是替换掉内置的 —— 所以以后新增的规则你照样收得到。
+            自己写的是<span className="font-medium">加进去</span>，不是替换
+            <Tip text="所以以后新增的内置规则你照样收得到。整份替换的话，你那份会永远停在复制的那一刻。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么这么设计</span>
+            </Tip>
           </p>
           <p className="mt-2 tw-body text-neutral-500">
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。

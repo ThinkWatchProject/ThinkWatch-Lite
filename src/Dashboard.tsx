@@ -197,7 +197,10 @@ export default function Dashboard({ tick }: { tick: number }) {
             ))}
           </ul>
           <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
-            观察模式：只记录，没有改变任何请求。要真的替换成占位符，去「安全 › 防护」把出站脱敏切到「拦截」。
+            观察模式：只记录，没有改变任何请求。
+            <Tip text="要真的替换成占位符，去「安全 › 防护」把出站脱敏切到「拦截」。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">怎么真的拦</span>
+            </Tip>
           </p>
         </section>
       )}

@@ -56,7 +56,7 @@ export default function DryRun({ models }: { models: string[] }) {
     <section>
       <h2 className="tw-title font-semibold">试算一条请求</h2>
       <p className="mt-1 tw-body text-neutral-500">
-        假设现在来这样一个请求，看它会走到哪儿、为什么没走别的那条。只是算一下，不会发出去。
+        假设来这样一个请求，看它会走到哪儿、为什么没走别的。只算不发。
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">

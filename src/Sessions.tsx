@@ -43,7 +43,7 @@ export default function Sessions() {
         <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
           <p className="tw-head text-neutral-600 dark:text-neutral-400">还没有会话。</p>
           <p className="mt-2 tw-body text-neutral-500">
-            会话是按「同一段对话」把请求聚起来的。你正常用一阵子之后，它们会出现在这里。
+            按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。
           </p>
         </div>
       </div>

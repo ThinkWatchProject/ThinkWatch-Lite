@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -113,7 +114,7 @@ export default function Clients() {
       <div className="flex items-start justify-between gap-4">
         <div className="tw-body text-neutral-500">
           接管会把这些客户端指向 <code>{data.gateway_base}</code>。
-          只改端点和密钥两个字段，其余原样不动，随时可以还原。
+          只改端点和密钥两个字段，其余不动，随时可还原。
         </div>
         {/*
           **退路要一直看得见**（§7.15）。用户敢按下「接管」的前提，就是
@@ -125,7 +126,7 @@ export default function Clients() {
             <div className="flex shrink-0 items-center gap-2 tw-body">
               <span className="text-amber-700 dark:text-amber-400">
                 把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
-                个客户端改回接管之前的样子？它们会立刻不再经过 ThinkWatch。
+                个客户端改回原样？它们会立刻不再经过 ThinkWatch。
               </span>
               <button
                 disabled={busy}
@@ -184,7 +185,10 @@ export default function Clients() {
             这台机器上没有找到已识别的客户端。
           </p>
           <p className="mt-2 tw-body text-neutral-500">
-            装了 Claude Code、Codex、Gemini CLI 之类的话，先跑一次让它生成配置文件，再回到这一页。
+            装了 Claude Code、Codex、Gemini CLI 的话
+            <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
+              <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
+            </Tip>。
             <br />
             也可以手动把客户端的端点指到{" "}
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
@@ -302,7 +306,7 @@ function Card({
         ))}
         {nagging && (
           <div className="text-amber-600 dark:text-amber-400">
-            接管超过五分钟了还没收到它的请求 —— 点上面那个按钮查一下。
+            接管五分钟了还没收到请求 —— 点上面的按钮诊断。
           </div>
         )}
       </div>
@@ -386,7 +390,7 @@ function PlanDialog({
           <Diff before={p.before} after={p.after} />
 
           <div className="mt-3 tw-body text-neutral-500">
-            改之前会把整个文件备份一份。除了上面这几个字段，其余一个字节都不动。
+            写入前整份备份，除上面这几个字段外一字节不动。
             {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
           </div>
         </>
@@ -499,7 +503,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
           </div>
         ))}
         <div className="pt-1">
-          接下来等一个真实请求过来 —— 那是唯一能证明它生效了的东西。
+          接下来等一个真实请求 —— 那是唯一能证明它生效的东西。
         </div>
       </div>
       <div className="mt-4 flex justify-end">

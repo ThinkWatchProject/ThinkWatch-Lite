@@ -35,7 +35,10 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
       <div>
         <div className="tw-body font-medium">{title}</div>
         <p className="mt-1 tw-body text-neutral-500">
-          没有存下来。可能是磁盘快满了（那时只记摘要），也可能是这条记录已经过了保留期。
+          没有存下来
+          <Tip text="两种可能：磁盘快满时只记摘要，或者这条记录已经过了保留期。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+          </Tip>
         </p>
       </div>
     );
@@ -233,8 +236,10 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 </div>
               ) : (
                 <p className="text-neutral-500">
-                  这条记录没有路由信息。可能是本地应答的（它根本没到上游），也可能是这个功能
-                  上线之前记下的。
+                  这条没有路由信息
+                  <Tip text="要么是本地应答的（根本没到上游），要么是这个功能上线之前记下的。">
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">两种可能</span>
+                  </Tip>
                 </p>
               ))}
 
@@ -243,7 +248,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 <Body b={d.request_body} title="请求" />
                 <Body b={d.response_body} title="响应" />
                 <p className="text-neutral-400">
-                  这两段已经过脱敏：看起来像密钥的东西都打了码。
+                  这两段已脱敏：像密钥的内容都打了码。
                 </p>
               </div>
             )}
@@ -405,7 +410,10 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   return (
     <div className="space-y-3">
       <p className="text-neutral-500">
-        把这条请求<span className="font-medium">原样</span>发给另一个上游，和原来那次并排比。请求体是当时存下来的那一份，一个字节都没改。
+        把这条请求<span className="font-medium">原样</span>发给另一个上游，并排对比
+        <Tip text="请求体是当时存下来的那一份，一个字节都没改 —— 手工复现一个 Claude Code 请求几乎不可能，而任何一处不同都会让对比失去意义。">
+          <span className="ml-1 underline decoration-dotted underline-offset-2">原样是指</span>
+        </Tip>
       </p>
       <div className="flex items-center gap-2">
         <select
