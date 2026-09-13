@@ -44,7 +44,7 @@ export function Dialog({
             width
           }
         >
-          <D.Title className="flex items-center gap-2 text-[13px] font-semibold">
+          <D.Title className="flex items-center gap-2 tw-body font-semibold">
             {danger && (
               <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
             )}
@@ -52,12 +52,12 @@ export function Dialog({
           </D.Title>
           {description && (
             <D.Description asChild>
-              <div className="mt-1.5 text-[12px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+              <div className="mt-1.5 tw-body leading-relaxed text-neutral-600 dark:text-neutral-400">
                 {description}
               </div>
             </D.Description>
           )}
-          {children && <div className="mt-3 text-[12px]">{children}</div>}
+          {children && <div className="mt-3 tw-body">{children}</div>}
           {footer && (
             <div className="mt-4 flex justify-end gap-2">{footer}</div>
           )}
@@ -80,7 +80,7 @@ export function DialogButton({
   disabled?: boolean;
 }) {
   const base =
-    "rounded-md px-3 py-1.5 text-[12px] disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400";
+    "rounded-md px-3 py-1.5 tw-body disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-neutral-400";
   const style =
     kind === "danger"
       ? "bg-red-600 text-white hover:bg-red-700"

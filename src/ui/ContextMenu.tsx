@@ -36,7 +36,7 @@ export function RowMenu({
                 key={i}
                 onSelect={it.onSelect}
                 className={
-                  "cursor-default select-none rounded px-2 py-1 text-[12px] outline-none data-[highlighted]:bg-neutral-200 dark:data-[highlighted]:bg-neutral-700 " +
+                  "cursor-default select-none rounded px-2 py-1 tw-body outline-none data-[highlighted]:bg-neutral-200 dark:data-[highlighted]:bg-neutral-700 " +
                   (it.danger ? "text-red-600 dark:text-red-400" : "")
                 }
               >

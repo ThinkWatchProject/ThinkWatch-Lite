@@ -108,8 +108,8 @@ export default function Guard({
   return (
     <div className="space-y-6 p-5">
       <div>
-        <h2 className="text-[15px] font-semibold">防护</h2>
-        <p className="mt-1 text-xs text-neutral-500">
+        <h2 className="tw-title font-semibold">防护</h2>
+        <p className="mt-1 tw-body text-neutral-500">
           三条防线，各自三档。
           {/*
             说清出厂默认，以及为什么是这个默认。用户在这一页做的第一个
@@ -121,7 +121,7 @@ export default function Guard({
       </div>
 
       {!sec && (
-        <p className="text-xs text-amber-700 dark:text-amber-300">
+        <p className="tw-body text-amber-700 dark:text-amber-300">
           这份 core 还没有报告防护状态 —— 它比界面旧。升级 core 之后这一页才能用。
         </p>
       )}
@@ -135,7 +135,7 @@ export default function Guard({
               className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
             >
               <div className="flex items-baseline gap-3">
-                <h3 className="text-[13px] font-medium">{l.title}</h3>
+                <h3 className="tw-body font-medium">{l.title}</h3>
                 <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
                   {MODES.map((m) => (
                     <button
@@ -143,7 +143,7 @@ export default function Guard({
                       disabled={busy === l.path}
                       onClick={() => void set(l.path, m.id)}
                       className={
-                        "rounded px-2.5 py-1 text-[12px] disabled:opacity-50 " +
+                        "rounded px-2.5 py-1 tw-body disabled:opacity-50 " +
                         (cur === m.id
                           ? m.id === "enforce"
                             ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
@@ -157,7 +157,7 @@ export default function Guard({
                 </div>
               </div>
 
-              <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+              <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
                 {l.what}
               </p>
 
@@ -165,7 +165,7 @@ export default function Guard({
                 当前这一档到底在做什么 —— 一句话，随档变化。
                 「观察」最需要这句：它看起来像「没开」，而它其实一直在记。
               */}
-              <p className="mt-1.5 text-xs">
+              <p className="mt-1.5 tw-body">
                 {cur === "off" && (
                   <span className="text-neutral-500">现在：不检测，也不记录。</span>
                 )}
@@ -184,7 +184,7 @@ export default function Guard({
 
               {/* 代价写在切之前，不是切完之后 */}
               {cur !== "enforce" && (
-                <p className="mt-1 text-[11px] text-neutral-400">
+                <p className="mt-1 tw-label text-neutral-400">
                   切到「拦截」：{l.cost}
                 </p>
               )}
@@ -194,8 +194,8 @@ export default function Guard({
 
       {sec && (
         <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="text-[13px] font-medium">扫描规则</h3>
-          <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+          <h3 className="tw-body font-medium">扫描规则</h3>
+          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
             内置规则加上你自己的那几条。
             {/*
               语义是「加法加停用」而不是「整份替换」（core 那边改过一次）。
@@ -205,7 +205,7 @@ export default function Guard({
             自己写的是<span className="font-medium">加进去</span>
             ，不是替换掉内置的 —— 所以以后新增的规则你照样收得到。
           </p>
-          <p className="mt-2 text-xs text-neutral-500">
+          <p className="mt-2 tw-body text-neutral-500">
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
             增删规则要改 config.yaml —— 它是一组带正则的结构，表单填不了（§3.8）。
           </p>
@@ -214,13 +214,13 @@ export default function Guard({
 
       {sec && (
         <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="text-[13px] font-medium">按上游的脱敏类别</h3>
-          <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+          <h3 className="tw-body font-medium">按上游的脱敏类别</h3>
+          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
             上面那个总闸决定脱不脱，这里决定
             <span className="font-medium">每家脱哪几类</span>。
             官方端点默认一类都不脱 —— 为了防一个你本来就信任的对象而自废武功，是这一节最要避免的事（§5.1）。
           </p>
-          <table className="mt-3 w-full text-left text-xs">
+          <table className="mt-3 w-full text-left tw-body">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
                 <th className="py-1.5 font-medium">上游</th>
@@ -257,7 +257,7 @@ export default function Guard({
         </section>
       )}
 
-      {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
+      {err && <p className="tw-body text-red-600 dark:text-red-400">{err}</p>}
     </div>
   );
 }

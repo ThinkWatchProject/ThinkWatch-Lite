@@ -62,8 +62,8 @@ export default function Sparkline({ rows, now }: { rows: HistoryRow[]; now: numb
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-xs text-neutral-500">最近 {label}</span>
-        <span className="text-xs text-neutral-400">峰值 {peak} 条/格</span>
+        <span className="tw-body text-neutral-500">最近 {label}</span>
+        <span className="tw-body text-neutral-400">峰值 {peak} 条/格</span>
       </div>
       {/*
         用 SVG 而不是 canvas：这张图几十个矩形，而 SVG 跟着主题走、

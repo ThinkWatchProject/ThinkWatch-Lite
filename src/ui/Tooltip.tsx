@@ -38,7 +38,7 @@ export function Tip({
           side={side}
           sideOffset={5}
           collisionPadding={8}
-          className="z-50 max-w-[260px] rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 text-[11px] leading-relaxed text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+          className="z-50 max-w-[260px] rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 tw-label leading-relaxed text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
         >
           {text}
           <T.Arrow className="fill-neutral-50 dark:fill-neutral-800" />

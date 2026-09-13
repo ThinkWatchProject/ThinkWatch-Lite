@@ -91,16 +91,16 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="rounded-lg border border-dashed border-neutral-300 p-5 dark:border-neutral-700">
-      <p className="text-sm text-neutral-700 dark:text-neutral-300">
+      <p className="tw-head text-neutral-700 dark:text-neutral-300">
         还没有上游。加一个就能开始转发。
       </p>
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1 tw-body text-neutral-500">
         只要地址和密钥，其余都有默认值 —— 名字按地址猜，协议按 Anthropic 转发，之后都能在这一页改。
       </p>
 
       <div className="mt-4 grid max-w-xl gap-3">
         <label className="grid gap-1">
-          <span className="text-xs text-neutral-500">接口地址</span>
+          <span className="tw-body text-neutral-500">接口地址</span>
           <input
             value={baseUrl}
             onChange={(e) => {
@@ -112,11 +112,11 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
+            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
         <label className="grid gap-1">
-          <span className="text-xs text-neutral-500">密钥</span>
+          <span className="tw-body text-neutral-500">密钥</span>
           {/*
             **不是 type="password"。**这是用户自己机器上自己的 key，而
             填错一个字符的代价是一次看不懂的 401 —— 让他看得见自己粘了
@@ -135,7 +135,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
+            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
       </div>
@@ -144,17 +144,17 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
         <button
           onClick={doProbe}
           disabled={!ready || busy}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-xs hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className="rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           {busy && !probe ? "测试中…" : "测试连接"}
         </button>
         {/* 说清这一下不花钱，否则谨慎的用户不会点 */}
-        <span className="text-xs text-neutral-400">不花钱，可以随便点</span>
+        <span className="tw-body text-neutral-400">不花钱，可以随便点</span>
         {probe?.ok && (
           <button
             onClick={doSetup}
             disabled={busy}
-            className="ml-auto rounded bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            className="ml-auto rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
             保存并开始转发
           </button>
@@ -164,7 +164,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       {probe && (
         <p
           className={
-            "mt-3 text-xs " +
+            "mt-3 tw-body " +
             (probe.ok
               ? "text-emerald-700 dark:text-emerald-300"
               : "text-amber-700 dark:text-amber-300")
@@ -182,7 +182,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       )}
 
       {error && (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p className="mt-3 tw-body text-red-600 dark:text-red-400">{error}</p>
       )}
     </div>
   );

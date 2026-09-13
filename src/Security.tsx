@@ -96,7 +96,7 @@ export default function Security({
   }, [load]);
 
   if (!data) {
-    return <div className="p-5 text-sm text-neutral-500">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-neutral-500">{error ?? "扫描中…"}</div>;
   }
 
   const high = data.findings.filter((f) => f.level === "high").length;
@@ -104,12 +104,12 @@ export default function Security({
   return (
     <div className="space-y-5 p-5">
       {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-xs text-neutral-500">
+      <div className="flex items-center gap-2 tw-body text-neutral-500">
         <span>
           扫了 {data.scanned} 份文件，规则来自{data.rules_origin}。
         </span>
@@ -123,14 +123,14 @@ export default function Security({
       </div>
 
       {data.rules_warning && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {data.rules_warning}
         </div>
       )}
 
       {/* 悄悄跳过比不扫更糟：它会给人一种「查过了」的错觉 */}
       {data.unreadable.length > 0 && (
-        <div className="text-xs text-amber-600 dark:text-amber-400">
+        <div className="tw-body text-amber-600 dark:text-amber-400">
           有 {data.unreadable.length} 份文件读不动，这次没扫到：{data.unreadable.join("、")}
         </div>
       )}
@@ -138,11 +138,11 @@ export default function Security({
       {alerts.length > 0 && (
         <section className="rounded border border-red-300 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-red-900 dark:text-red-200">
+            <h2 className="tw-head font-medium text-red-900 dark:text-red-200">
               刚刚新出现的 · {alerts.length} 处
             </h2>
             <button
-              className="ml-auto rounded px-2 py-0.5 text-xs text-red-700 dark:text-red-300"
+              className="ml-auto rounded px-2 py-0.5 tw-body text-red-700 dark:text-red-300"
               onClick={onSeen}
             >
               我看过了
@@ -150,10 +150,10 @@ export default function Security({
           </div>
           {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
               比「这个文件里有可疑内容」强得多 */}
-          <p className="mt-1 text-xs text-red-800 dark:text-red-300">
+          <p className="mt-1 tw-body text-red-800 dark:text-red-300">
             这些是我们盯着你的配置文件时**新**出现的，不是一直就在那儿的。
           </p>
-          <ul className="mt-2 space-y-1 text-xs">
+          <ul className="mt-2 space-y-1 tw-body">
             {alerts.map((f, i) => (
               <li key={i}>
                 <button className="text-left hover:underline" onClick={() => setOpen(f)}>
@@ -169,13 +169,13 @@ export default function Security({
       )}
 
       <section>
-        <h2 className="mb-2 text-sm font-medium">
+        <h2 className="mb-2 tw-head font-medium">
           发现{data.findings.length > 0 && ` · ${data.findings.length} 处`}
           {high > 0 && <span className="ml-1 text-red-600 dark:text-red-400">（{high} 处高危）</span>}
         </h2>
         {data.findings.length === 0 ? (
           // §0.6：没风险的时候要说「安全」，而不是让这一块消失
-          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
             ✓ 没发现问题。隐藏字符、提示注入、危险命令、过宽权限四类都查过了。
           </div>
         ) : (
@@ -183,7 +183,7 @@ export default function Security({
             {data.findings.map((f, i) => (
               <li key={i}>
                 <button
-                  className="flex w-full items-start gap-2 rounded border border-neutral-200 px-3 py-2 text-left text-xs hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                  className="flex w-full items-start gap-2 rounded border border-neutral-200 px-3 py-2 text-left tw-body hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
                   onClick={() => setOpen(f)}
                 >
                   <span
@@ -216,12 +216,12 @@ export default function Security({
 
       {data.hooks.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-medium">hook · {data.hooks.length}</h2>
+          <h2 className="mb-1 tw-head font-medium">hook · {data.hooks.length}</h2>
           {/* 危险度第一：不需要模型参与就能拿到执行权 */}
-          <p className="mb-2 text-xs text-neutral-500">
+          <p className="mb-2 tw-body text-neutral-500">
             hook 在工具调用前后直接执行 shell 命令 —— 这是唯一不需要模型参与就能拿到执行权的入口。
           </p>
-          <ul className="space-y-1 text-xs">
+          <ul className="space-y-1 tw-body">
             {data.hooks.map((h, i) => (
               <li key={i} className="rounded border border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
                 <span className="text-neutral-500">{h.event}</span>{" "}
@@ -234,12 +234,12 @@ export default function Security({
 
       {data.skills.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-medium">skill · {data.skills.length}</h2>
+          <h2 className="mb-1 tw-head font-medium">skill · {data.skills.length}</h2>
           {/* §7.12：skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
-          <p className="mb-2 text-xs text-neutral-500">
+          <p className="mb-2 tw-body text-neutral-500">
             只列出来看，不做跨客户端搬动 —— skill 的跨客户端格式还没有事实标准。
           </p>
-          <ul className="space-y-1 text-xs">
+          <ul className="space-y-1 tw-body">
             {data.skills.map((s, i) => (
               <li key={i} className="rounded border border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
                 <span className="font-medium">{s.name}</span>
@@ -304,8 +304,8 @@ function Matrix({
   if (names.length === 0) {
     return (
       <section>
-        <h2 className="mb-1 text-sm font-medium">MCP server</h2>
-        <p className="text-xs text-neutral-500">这台机器上没有配置任何 MCP server。</p>
+        <h2 className="mb-1 tw-head font-medium">MCP server</h2>
+        <p className="tw-body text-neutral-500">这台机器上没有配置任何 MCP server。</p>
       </section>
     );
   }
@@ -313,13 +313,13 @@ function Matrix({
 
   return (
     <section>
-      <h2 className="mb-1 text-sm font-medium">MCP server · {names.length}</h2>
-      <p className="mb-2 text-xs text-neutral-500">
+      <h2 className="mb-1 tw-head font-medium">MCP server · {names.length}</h2>
+      <p className="mb-2 tw-body text-neutral-500">
         每一个都是一个能执行程序、或者能收走你上下文的入口。
         点格子可以在客户端之间复制、或者从某个客户端移除 —— 改之前会先给你看 diff。
       </p>
       <div className="overflow-x-auto">
-        <table className="text-xs">
+        <table className="tw-body">
           <thead>
             <tr className="text-neutral-500">
               <th className="px-2 py-1 text-left font-normal">名字</th>
@@ -426,7 +426,7 @@ function Matrix({
         没回答「哪儿不一样」** —— 而用户要做的决定恰恰是「以哪边为准」。
       */}
       {compare && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950">
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
           <div className="flex items-baseline justify-between">
             <p className="font-medium text-amber-900 dark:text-amber-200">
               <code>{compare}</code> 在各客户端里配得不一样
@@ -471,7 +471,7 @@ function Matrix({
                       <span className={hi(differs((x) => String(x.enabled)))}>
                         {m.enabled ? "已启用" : "已关闭"}
                       </span>
-                      <span className="ml-2 font-mono text-[11px]">{m.source}</span>
+                      <span className="ml-2 font-mono tw-label">{m.source}</span>
                     </div>
                   </div>
                 );
@@ -511,20 +511,20 @@ function McpConfirm({
         className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-sm font-medium">
+        <div className="tw-head font-medium">
           {req.op === "copy" ? `把 ${req.name} 复制到 ${req.to}` : `从 ${req.to} 移除 ${req.name}`}
         </div>
-        <div className="mt-1 text-xs text-neutral-500">
+        <div className="mt-1 tw-body text-neutral-500">
           要改 <code>{plan.path}</code>
         </div>
         {plan.noop ? (
-          <div className="mt-3 text-xs">已经是这样了，什么都不用改。</div>
+          <div className="mt-3 tw-body">已经是这样了，什么都不用改。</div>
         ) : (
           <>
-            <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 text-[11px] leading-relaxed dark:bg-neutral-950">
+            <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 tw-label leading-relaxed dark:bg-neutral-950">
               {plan.after}
             </pre>
-            <div className="mt-2 text-xs text-neutral-500">
+            <div className="mt-2 tw-body text-neutral-500">
               改之前会把整个文件备份一份。除了这一项，其余一个字节都不动。
               {req.op === "copy" &&
                 " MCP 的 env 里可能带着密钥，复制会把它一起搬到目标文件里。"}
@@ -532,12 +532,12 @@ function McpConfirm({
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onCancel}>
+          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
             取消
           </button>
           {!plan.noop && (
             <button
-              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+              className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
               onClick={onConfirm}
               disabled={busy}
             >
@@ -565,8 +565,8 @@ function Baseline({ b }: { b: BaselineResponse }) {
     // **「不是没发现，是没看」**要说出来
     return (
       <section>
-        <h2 className="mb-1 text-sm font-medium">上游行为</h2>
-        <p className="text-xs text-neutral-500">观测层没有启动，这一段时间的请求没有被记录，所以没法比。</p>
+        <h2 className="mb-1 tw-head font-medium">上游行为</h2>
+        <p className="tw-body text-neutral-500">观测层没有启动，这一段时间的请求没有被记录，所以没法比。</p>
       </section>
     );
   }
@@ -574,13 +574,13 @@ function Baseline({ b }: { b: BaselineResponse }) {
   const pct = (x: number) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
   return (
     <section>
-      <h2 className="mb-1 text-sm font-medium">上游行为</h2>
-      <p className="mb-2 text-xs text-neutral-500">
+      <h2 className="mb-1 tw-head font-medium">上游行为</h2>
+      <p className="mb-2 tw-body text-neutral-500">
         拿最近 {b.recent_hours} 小时和之前 {b.baseline_days} 天比。样本不够的上游不会出现在这里。
       </p>
       {withDrift.length === 0 ? (
         // §0.6：没风险的时候要说「安全」，而不是让这一块消失
-        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
           ✓ 每个上游的行为都和之前一致
           {b.providers.length > 0 && (
             <span className="ml-1 text-emerald-700 dark:text-emerald-400">
@@ -593,7 +593,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
           {withDrift.map((p) => (
             <li
               key={p.provider}
-              className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900 dark:bg-amber-950"
+              className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body dark:border-amber-900 dark:bg-amber-950"
             >
               <div className="font-medium">{p.provider} 的行为变了</div>
               {p.drifts.map((d) => (
@@ -648,8 +648,8 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
         className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-sm font-medium">{f.title}</div>
-        <div className="mt-2 space-y-2 text-xs text-neutral-600 dark:text-neutral-400">
+        <div className="tw-head font-medium">{f.title}</div>
+        <div className="mt-2 space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
           <div>{f.detail}</div>
           <div>
             <code>
@@ -664,7 +664,7 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
           </div>
         </div>
         <div className="mt-4 flex justify-end">
-          <button className="rounded px-3 py-1 text-xs text-neutral-500" onClick={onClose}>
+          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
             关掉
           </button>
         </div>

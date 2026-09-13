@@ -9,9 +9,9 @@ import { usd, type Dashboard as Data } from "./types";
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-0.5 text-xl tabular-nums">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-neutral-400">{hint}</div>}
+      <div className="tw-body text-neutral-500">{label}</div>
+      <div className="mt-0.5 text-xl tw-num">{value}</div>
+      {hint && <div className="mt-0.5 tw-body text-neutral-400">{hint}</div>}
     </div>
   );
 }
@@ -51,13 +51,13 @@ export default function Dashboard({ tick }: { tick: number }) {
   if (error) {
     return (
       <div className="p-5">
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
         </p>
       </div>
     );
   }
-  if (!d) return <p className="p-5 text-xs text-neutral-500">读取中…</p>;
+  if (!d) return <p className="p-5 tw-body text-neutral-500">读取中…</p>;
 
   const s = d.summary;
   const t = triggers(null, d);
@@ -70,13 +70,13 @@ export default function Dashboard({ tick }: { tick: number }) {
     <div className="space-y-8 p-5">
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="text-sm font-semibold">今天</h2>
-          <span className="text-xs text-neutral-400">从本地零点算起</span>
+          <h2 className="tw-title font-semibold">今天</h2>
+          <span className="tw-body text-neutral-400">从本地零点算起</span>
         </div>
 
         {nothingYet ? (
           // 空状态永远在回答「接下来该做什么」（§7.13）
-          <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-500 dark:border-neutral-700">
+          <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-center tw-body text-neutral-500 dark:border-neutral-700">
             今天还没有请求。把客户端指过来，数字会出现在这里。
           </p>
         ) : (
@@ -137,7 +137,7 @@ export default function Dashboard({ tick }: { tick: number }) {
             {/* **没有价格的那些要说出来。**不说的话，上面那个花费是偏低
                 的，而用户没有任何线索知道少算了什么（§4.3） */}
             {s.unpriced_requests > 0 && (
-              <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+              <p className="mt-3 tw-body text-amber-700 dark:text-amber-400">
                 另有 {s.unpriced_requests} 条请求算不出价钱 —— 它们的模型不在价目表里（中转站
                 自己起的名字通常是这样）。想让它们也算进来的话，在 pricing.yaml 里写上单价。
               </p>
@@ -151,13 +151,13 @@ export default function Dashboard({ tick }: { tick: number }) {
               <Sparkline rows={d.history} now={Date.now()} />
             </div>
 
-            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-xs">
+            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
               <dt className="text-neutral-500">输入 / 输出</dt>
-              <dd className="tabular-nums">
+              <dd className="tw-num">
                 {s.input_tokens.toLocaleString()} / {s.output_tokens.toLocaleString()} token
               </dd>
               <dt className="text-neutral-500">缓存 读 / 写</dt>
-              <dd className="tabular-nums">
+              <dd className="tw-num">
                 {s.cache_read_tokens.toLocaleString()} / {s.cache_write_tokens.toLocaleString()}{" "}
                 token
               </dd>
@@ -173,10 +173,10 @@ export default function Dashboard({ tick }: { tick: number }) {
       */}
       {d.leaks.length > 0 && (
         <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+          <h2 className="tw-title font-semibold text-amber-900 dark:text-amber-200">
             过去 7 天，有请求把密钥发了出去
           </h2>
-          <ul className="mt-2 space-y-1.5 text-xs text-amber-900 dark:text-amber-200">
+          <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
             {d.leaks.map((l) => (
               <li key={`${l.provider}/${l.kind}`}>
                 <span className="font-medium">{l.requests}</span> 个请求把{" "}
@@ -193,7 +193,7 @@ export default function Dashboard({ tick }: { tick: number }) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+          <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
             现在是观察模式，只记录、没有改变任何请求。要让它真的替换成占位符，把
             config.yaml 里的 <code>security.redact</code> 改成 <code>enforce</code>。
           </p>
@@ -208,10 +208,10 @@ export default function Dashboard({ tick }: { tick: number }) {
       {t.comparison && d.latency_by_provider.length > 1 && (
         <section>
           <div className="flex items-baseline gap-3">
-            <h2 className="text-sm font-semibold">哪家更快</h2>
-            <span className="text-xs text-neutral-400">首字节，按上游分</span>
+            <h2 className="tw-title font-semibold">哪家更快</h2>
+            <span className="tw-body text-neutral-400">首字节，按上游分</span>
           </div>
-          <table className="mt-2 w-full text-left text-xs tabular-nums">
+          <table className="mt-2 w-full text-left tw-body tw-num">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
                 <th className="py-2 font-medium">上游</th>
@@ -242,12 +242,12 @@ export default function Dashboard({ tick }: { tick: number }) {
       {d.latency.length > 1 && (
         <section>
           <div className="flex items-baseline gap-3">
-            <h2 className="text-sm font-semibold">延迟</h2>
+            <h2 className="tw-title font-semibold">延迟</h2>
             {/* 用分位数不用平均值：AI 延迟是长尾分布，平均值会被极端值
                 拉偏（§4.6） */}
-            <span className="text-xs text-neutral-400">首字节，按模型分</span>
+            <span className="tw-body text-neutral-400">首字节，按模型分</span>
           </div>
-          <table className="mt-2 w-full text-left text-xs tabular-nums">
+          <table className="mt-2 w-full text-left tw-body tw-num">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
                 <th className="py-2 font-medium">模型</th>
@@ -277,8 +277,8 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {d.history.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold">历史</h2>
-          <table className="mt-2 w-full text-left text-xs tabular-nums">
+          <h2 className="tw-title font-semibold">历史</h2>
+          <table className="mt-2 w-full text-left tw-body tw-num">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
                 <th className="py-2 font-medium">时间</th>
@@ -350,7 +350,7 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {/* 存储状态。**正常时不显示** —— §0.6：没问题的时候不该占地方 */}
       {d.storage && d.storage.level !== "正常" && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {d.storage.level}
           {!d.storage.forwarding_affected && " —— 转发不受影响。"}
         </p>

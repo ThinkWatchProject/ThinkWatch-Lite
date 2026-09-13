@@ -34,15 +34,15 @@ export default function Sessions() {
     return () => clearInterval(t);
   }, [load]);
 
-  if (!rows) return <div className="p-5 text-sm text-neutral-500">{error ?? "读取中…"}</div>;
+  if (!rows) return <div className="p-5 tw-head text-neutral-500">{error ?? "读取中…"}</div>;
 
   if (rows.length === 0) {
     // 空状态永远在回答「接下来该做什么」（§7.13）
     return (
       <div className="p-5">
         <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">还没有会话。</p>
-          <p className="mt-2 text-xs text-neutral-500">
+          <p className="tw-head text-neutral-600 dark:text-neutral-400">还没有会话。</p>
+          <p className="mt-2 tw-body text-neutral-500">
             会话是按「同一段对话」把请求聚起来的。你正常用一阵子之后，它们会出现在这里。
           </p>
         </div>
@@ -52,8 +52,8 @@ export default function Sessions() {
 
   return (
     <div className="p-5">
-      {error && <div className="mb-3 text-xs text-amber-600 dark:text-amber-400">{error}</div>}
-      <table className="w-full text-xs">
+      {error && <div className="mb-3 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
+      <table className="w-full tw-body">
         <thead className="text-neutral-500">
           <tr>
             <th className="px-2 py-1 text-left font-normal">开始</th>
@@ -154,10 +154,10 @@ function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
         className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-sm font-medium">
+        <div className="tw-head font-medium">
           {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
         </div>
-        <div className="mt-1 text-xs text-neutral-500">
+        <div className="mt-1 tw-body text-neutral-500">
           {s.models.join("、")} · 输入 {tokens(s.input_tokens)} / 输出 {tokens(s.output_tokens)} ·
           缓存读 {tokens(s.cache_read_tokens)}
         </div>
@@ -179,7 +179,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.input_tokens ?? 0));
   return (
     <section className="mt-4">
-      <div className="text-xs text-neutral-500">上下文增长（每轮的输入 token）</div>
+      <div className="tw-body text-neutral-500">上下文增长（每轮的输入 token）</div>
       <div className="mt-1 flex h-16 items-end gap-px">
         {turns.map((t) => {
           const v = t.input_tokens ?? 0;
@@ -200,7 +200,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
           );
         })}
       </div>
-      <div className="mt-1 text-[11px] text-neutral-400">
+      <div className="mt-1 tw-label text-neutral-400">
         绿色是缓存命中的部分。峰值 {tokens(max)} token。
       </div>
     </section>
@@ -212,10 +212,10 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.cost_micros ?? 0));
   return (
     <section className="mt-4">
-      <div className="text-xs text-neutral-500">每轮花费</div>
+      <div className="tw-body text-neutral-500">每轮花费</div>
       <ul className="mt-1 space-y-0.5">
         {turns.map((t, i) => (
-          <li key={t.id} className="flex items-center gap-2 text-[11px]">
+          <li key={t.id} className="flex items-center gap-2 tw-label">
             <span className="w-6 text-right text-neutral-400">{i + 1}</span>
             <span className="w-14 text-neutral-500">{t.model.replace(/^claude-/, "")}</span>
             <span className="h-2 flex-1 rounded bg-neutral-100 dark:bg-neutral-800">
