@@ -480,6 +480,13 @@ export interface ProviderView {
    * base_url 就会变，后者不会，显示成一样会让用户以为自己改不动它。
    */
   trust_explicit?: boolean;
+  /**
+   * 这家实际会脱哪几类（§5.1）。给的是判完的结果 —— 不写的话官方端点
+   * 是空的、其余是那四类默认。
+   */
+  redact?: string[];
+  /** 用户显式写过 `redact` 吗。「没写」和「写了空」要能分开 */
+  redact_explicit?: boolean;
 }
 
 export interface RouteView {
@@ -573,6 +580,22 @@ export interface Overview {
   groups: GroupView[];
   clients: ClientView[];
   listen: ListenView;
+  /** 三条防线各自的状态（§5.0）。界面要能配，不只是显示 */
+  security?: SecurityView;
+}
+
+/**
+ * 三条防线。
+ *
+ * **「拦截」在每条上做的事不一样** —— 脱敏是替换、审查是切断、扫描只
+ * 告警。界面上统一叫「拦截」的话，用户点下去并不知道会发生什么（§5.0）。
+ */
+export interface SecurityView {
+  redact: string;
+  inspect_tools: string;
+  scan_configs: string;
+  scan_rules_added: number;
+  scan_rules_disabled: number;
 }
 
 // ---------------------------------------------------------- 客户端接管

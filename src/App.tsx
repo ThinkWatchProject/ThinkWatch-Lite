@@ -2,17 +2,73 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
-import Setup from "./Setup";
-import Connect from "./Connect";
 import Config from "./Config";
 import Clients from "./Clients";
 import Security from "./Security";
+import Guard from "./Guard";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
-import type { CoreStatus, Overview, SetupResponse } from "./types";
+import type { CoreStatus, Overview } from "./types";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
+/**
+ * 主窗口的几个面。
+ *
+ * **源列表,不是标签栏。**原来是 6 个平铺标签挤在标题栏里 —— 那是 Web
+ * 后台的 IA:每个标签一个页面、页面之间平级、越加越挤。原生客户端用
+ * 左侧源列表:它能分组,能挂角标,加一项不会把别的挤窄。
+ *
+ * 分成两组,判据是**打开频率**:上面那组是每天看的,下面那组是配一次
+ * 就不动的。混在一起的话,一个月用一次的「卸载」和每天看的「流量」
+ * 在导航上一样重。
+ */
+type Surface =
+  | "requests"
+  | "sessions"
+  | "dashboard"
+  | "security"
+  | "guard"
+  | "routing"
+  | "config"
+  | "clients";
+
+const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
+  {
+    group: "监控",
+    items: [
+      { id: "requests", label: "流量" },
+      { id: "sessions", label: "会话" },
+      { id: "dashboard", label: "概览" },
+    ],
+  },
+  {
+    // **安全自己一组，不挂在「监控」下面。**
+    //
+    // 它不是一个看板：三条防线各自有三态、有规则集、有拦截动作，那是
+    // 策略，不是观测。塞在监控里的后果不只是归类难看 —— 用户会把它当
+    // 成一个只能看的页面，而 §5.0 的整个设计前提是他看完证据之后**要
+    // 去动那几个开关**。
+    //
+    // 所以拆成两项：发现（看证据）和防护（配策略）。
+    group: "安全",
+    items: [
+      { id: "security", label: "发现" },
+      { id: "guard", label: "防护" },
+    ],
+  },
+  {
+    group: "配置",
+    items: [
+      // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
+      // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
+      { id: "routing", label: "路由" },
+      { id: "config", label: "网关" },
+      { id: "clients", label: "客户端" },
+    ],
+  },
+];
+
 function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" } {
   if (raw.startsWith("running:")) return { text: "运行中", tone: "ok" };
   if (raw === "starting") return { text: "启动中", tone: "warn" };
@@ -31,7 +87,6 @@ export default function App() {
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<SetupResponse | null>(null);
   /**
    * 托盘按了「退出」，等确认（§7.5）。
    *
@@ -56,10 +111,13 @@ export default function App() {
    * 那一行有什么特别。
    */
   const [cursor, setCursor] = useState(-1);
-  const [tab, setTab] = useState<"requests" | "sessions" | "dashboard" | "clients" | "security" | "config">("requests");
+  const [tab, setTab] = useState<Surface>("requests");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
+  // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
+  // 「保存」还看着「还没有上游」，会以为没生效（和 §3.8 那条一样的理由）。
+  const [nudge, setNudge] = useState(0);
 
   useEffect(() => {
     const now = rows.map((r) => r.id);
@@ -176,78 +234,95 @@ export default function App() {
     };
     // configVersion 变了就立刻再拉一次 —— 不然用户在编辑器里改完，
     // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效（§3.8）。
-  }, [configVersion]);
+  }, [configVersion, nudge]);
 
   const c = describeCore(core);
 
-  // 引导：还没有上游就走 §7.6 的五步。判据是 status.providers，不是一个
-  // 单独的「引导完了没」标志 —— 那种标志会和真实状态漂移，然后出现
-  // 「明明配好了却还在引导」或者反过来。
-  if (status && status.providers === 0 && !setup) {
-    return <Setup onDone={setSetup} />;
-  }
-  // 刚配完：等第一个请求。
+  // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
+  // 一个填表向导，填完是一个「等第一个请求」的页面。两道都拆了。
   //
-  // **收到之后不要立刻切走** —— 那一声「它真的在工作了」是整个引导的
-  // 收尾，也是这类工具最难的一关（让用户相信流量真的经过我们了）。
-  // 切换交给用户点，不要替他做。
-  if (setup) {
-    return (
-      <Connect
-          setup={setup}
-          seen={rows.length > 0 || locallyAnswered > 0}
-          onEnter={() => setSetup(null)}
-        />
-    );
-  }
+  // 理由是那堵墙立错了地方 —— 还没配上游的时候，网关已经在跑了，端口、
+  // 网关密钥、客户端检测、配置文件在哪儿，这些全都该看得见。把人挡在
+  // 外面等于说「你还没资格看」，而他要找的恰恰是「该去哪儿配」。
+  //
+  // 现在：主界面照常进，零上游时首页挂一条引导指向配置页，表单长在
+  // 配置页「上游」那一节里（§7.13 的空状态永远在回答「接下来做什么」）。
+  // 「它真的在工作了」那一下也没丢：第一个请求进来时那一行会绿一下，
+  // 而请求页的空状态一直在说客户端该怎么指过来。
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <header
-        className="flex items-center gap-4 border-b border-neutral-200 px-5 py-3 dark:border-neutral-800"
+    <div className="flex h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+      {/*
+        源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
+        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。
+      */}
+      <aside
+        className="flex w-[172px] shrink-0 flex-col border-r border-neutral-200 bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/40"
         data-tauri-drag-region
       >
-        <span className="pl-16 font-semibold">ThinkWatch Lite</span>
-        <span
-          className={
-            "flex items-center gap-1.5 text-xs " +
-            (c.tone === "ok"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : c.tone === "warn"
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-red-600 dark:text-red-400")
-          }
-        >
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
-          {c.text}
-        </span>
-        {status?.gateway_addr && (
-          <code className="text-xs text-neutral-500">{status.gateway_addr}</code>
-        )}
-        <nav className="ml-auto flex gap-1 text-xs">
-          {(["requests", "sessions", "dashboard", "clients", "security", "config"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={
-                "rounded px-2 py-1 " +
-                (tab === t
-                  ? "bg-neutral-200 dark:bg-neutral-800"
-                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
-              }
-            >
-              {t === "requests" ? "请求" : t === "sessions" ? "会话" : t === "dashboard" ? "统计" : t === "clients" ? "客户端" : t === "security" ? "安全" : "配置"}
-              {/* 配置面上出现了新东西 —— 挂个角标，直到他去看过（§5.3） */}
-              {t === "security" && alerts.length > 0 && (
-                <span className="ml-1 rounded-full bg-red-600 px-1 text-[10px] text-white">
-                  {alerts.length}
-                </span>
-              )}
-            </button>
+        {/* 红绿灯占掉左上角,内容从它下面开始 */}
+        <div className="h-[38px] shrink-0" data-tauri-drag-region />
+
+        <nav className="flex-1 overflow-y-auto px-2 pb-3">
+          {SOURCES.map((g) => (
+            <div key={g.group} className="mb-4">
+              <div className="px-2 pb-1 text-[11px] font-medium text-neutral-500">
+                {g.group}
+              </div>
+              {g.items.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => setTab(it.id)}
+                  className={
+                    "flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left text-[13px] " +
+                    (tab === it.id
+                      ? "bg-neutral-900/10 font-medium dark:bg-neutral-100/10"
+                      : "text-neutral-600 hover:bg-neutral-900/5 dark:text-neutral-400 dark:hover:bg-neutral-100/5")
+                  }
+                >
+                  {it.label}
+                  {/* 配置面上出现了新东西 —— 挂个角标,直到他去看过(§5.3) */}
+                  {it.id === "security" && alerts.length > 0 && (
+                    <span className="ml-auto rounded-full bg-red-600 px-1.5 text-[10px] leading-[15px] text-white">
+                      {alerts.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
-      </header>
 
+        {/*
+          状态钉在源列表底部,不在标题栏。
+          **它要一直看得见** —— core 挂了是这个应用唯一「什么都不工作」
+          的状态,而标题栏那一行会被内容顶掉。
+        */}
+        <div className="border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
+          <div
+            className={
+              "flex items-center gap-1.5 text-[11px] " +
+              (c.tone === "ok"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : c.tone === "warn"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-red-600 dark:text-red-400")
+            }
+          >
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+            {c.text}
+          </div>
+          {status?.gateway_addr && (
+            <code className="mt-0.5 block font-mono text-[11px] text-neutral-500">
+              {status.gateway_addr}
+            </code>
+          )}
+        </div>
+      </aside>
+
+      {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="h-[38px] shrink-0" data-tauri-drag-region />
       {error && (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}
@@ -341,14 +416,54 @@ export default function App() {
         <Clients />
       ) : tab === "security" ? (
         <Security alerts={alerts} onSeen={clearAlerts} />
-      ) : tab === "config" ? (
+      ) : tab === "guard" ? (
         ov ? (
-          <Config ov={ov} configVersion={configVersion} rejectedLine={rejected?.line ?? null} />
+          <Guard
+            ov={ov}
+            configVersion={configVersion}
+            onChanged={() => setNudge((n) => n + 1)}
+          />
+        ) : (
+          <p className="p-5 text-xs text-neutral-500">读取配置中…</p>
+        )
+      ) : tab === "routing" || tab === "config" ? (
+        ov ? (
+          <Config
+            key={tab}
+            section={tab === "routing" ? "routing" : "gateway"}
+            ov={ov}
+            configVersion={configVersion}
+            rejectedLine={rejected?.line ?? null}
+            onProviderAdded={() => setNudge((n) => n + 1)}
+          />
         ) : (
           <p className="p-5 text-xs text-neutral-500">读取配置中…</p>
         )
       ) : (
       <main className="p-5">
+        {/*
+          还没有上游 —— 引导，不是拦路（§7.13）。
+          说清三件事：网关已经在跑了（所以这不是故障）、缺的是什么、
+          以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
+        */}
+        {status?.providers === 0 && (
+          <div className="mb-4 rounded-lg border border-neutral-300 bg-neutral-100 p-4 dark:border-neutral-700 dark:bg-neutral-900">
+            <p className="text-sm font-medium">先加一个上游</p>
+            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+              网关已经起来了，在{" "}
+              <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
+                http://{status.gateway_addr}
+              </code>{" "}
+              听着 —— 只是还没有地方可以转发。加一个上游，填地址和密钥就行。
+            </p>
+            <button
+              onClick={() => setTab("config")}
+              className="mt-3 rounded bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+              去配置页加
+            </button>
+          </div>
+        )}
         {rows.length === 0 ? (
           // 空状态永远在回答「接下来该做什么」（§7.13）。
           <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
@@ -500,6 +615,9 @@ export default function App() {
       )}
       {/* §7.8 的右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+      </div>
+
+      {/* 浮层挂在最外层，不跟着右列滚动 */}
       {askQuit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
           <div className="w-full max-w-sm rounded-lg bg-white p-4 text-xs shadow-xl dark:bg-neutral-900">

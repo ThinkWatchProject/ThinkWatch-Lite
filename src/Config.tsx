@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import AddUpstream from "./AddUpstream";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
@@ -218,22 +219,47 @@ function SpeedRows({ r }: { r: L1Result }) {
  * 因为一个上游就有几十个模型，那个问题从第一天就存在。
  */
 export default function Config({
+  section = "gateway",
   ov,
   configVersion,
   rejectedLine,
+  onProviderAdded,
 }: {
+  /**
+   * 这一次渲染哪一域。
+   *
+   * IA 上「路由」和「网关」是源列表里两个并列的面,实现上还是同一个
+   * 组件 —— 因为策略组那一节和 `SelectCell`、配置版本、以及跳去文本
+   * 模式那条路都缠在一起,硬拆会弄坏正在工作的东西。**这是分面的第一
+   * 步,不是终点**:组件真正拆开是下一步的事,拆之前这个参数不该被当成
+   * 一个可以随便加值的开关。
+   *
+   * 文本模式两个面共用 —— 它编辑的是整份文件,本来就不分域。
+   */
+  section?: "gateway" | "routing";
   ov: Overview;
   configVersion: string | null;
   /** 最近一次校验失败指到的行号（§3.8）。文本模式会把它滚进视野 */
   rejectedLine?: number | null;
+  /** 加完第一个上游之后让外面立刻重拉概览，不等那两秒的轮询 */
+  onProviderAdded: () => void;
 }) {
   // 触发条件全在一个地方（§0.6）—— 散在各个组件里的
   // `providers.length >= 2` 回答不了那条反面判据
   const t = triggers(ov, null);
+  useEffect(() => {
+    void invoke<boolean>("autostart_enabled")
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+  }, []);
   const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
   const [history, setHistory] = useState<ConfigVersion[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
+  // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartErr, setAutostartErr] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   /**
    * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
@@ -343,6 +369,7 @@ export default function Config({
 
   return (
     <div className="space-y-8 p-5">
+      {section === "gateway" && (
       <section>
         <div className="flex items-baseline gap-3">
           <h2 className="text-sm font-semibold">上游</h2>
@@ -419,6 +446,16 @@ export default function Config({
             ))}
           </div>
         )}
+        {/*
+          一个上游都没有时，这一节是「加第一个」而不是一张空表头。
+          原来这件事是一个全屏的首次运行页面做的 —— 把人挡在产品外面，
+          而那时候网关已经在跑了。配置就该在配置的地方。
+        */}
+        {ov.providers.length === 0 ? (
+          <div className="mt-3">
+            <AddUpstream onDone={onProviderAdded} />
+          </div>
+        ) : (
         <table className="mt-2 w-full text-left text-xs">
           <thead className="text-neutral-500">
             <tr className="border-b border-neutral-200 dark:border-neutral-800">
@@ -556,6 +593,7 @@ export default function Config({
             ))}
           </tbody>
         </table>
+        )}
         {/* 结果放在表下面而不是挤进单元格：分段有三到四行，塞进表格会把
             每一行都撑高，而大多数时候它们并不存在 */}
         {ov.providers.map((p) => {
@@ -579,11 +617,13 @@ export default function Config({
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{speed["*"].error}</p>
         )}
       </section>
+      )}
 
       {/* L3 测速。**放在 L1 下面，两句成本说明并排** —— 用户要能一眼
           看出「那个不花钱、这个花钱」（§4.6） */}
       <SpeedTest models={[]} />
 
+      {section === "routing" && (
       <section>
         <h2 className="text-sm font-semibold">路由规则</h2>
         <p className="mt-1 text-xs text-neutral-500">
@@ -614,11 +654,13 @@ export default function Config({
         </ol>
       </section>
 
+      )}
+
       {/* 「为什么没走我以为的那条」和「走了哪条」是同一个问题的两面 */}
-      <DryRun models={[]} />
+      {section === "routing" && <DryRun models={[]} />}
 
       {/* §0.6：分组这个概念只在真的有组的时候出现 */}
-      {ov.groups.length > 0 && (
+      {section === "routing" && ov.groups.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold">策略组</h2>
           <ul className="mt-2 space-y-1.5">
@@ -761,6 +803,53 @@ export default function Config({
         </section>
       )}
 
+      {section === "gateway" && (
+        <section>
+          <h2 className="text-sm font-semibold">启动</h2>
+          <label className="mt-2 flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={autostart === true}
+              disabled={autostart === null}
+              onChange={async (e) => {
+                const want = e.target.checked;
+                setAutostartErr(null);
+                // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
+                // 状态为准**，不是以这里传出去的那个为准。注册可能失败
+                // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
+                setAutostart(want);
+                try {
+                  setAutostart(await invoke<boolean>("set_autostart", { on: want }));
+                } catch (err) {
+                  setAutostart(!want);
+                  setAutostartErr(typeof err === "string" ? err : String(err));
+                }
+              }}
+            />
+            <span>
+              <span className="text-neutral-800 dark:text-neutral-200">开机时自动启动</span>
+              <span className="mt-0.5 block text-neutral-500">
+                {/*
+                  说清「默认是关的」和「勾了会发生什么」。一个装完就往
+                  登录项里写东西的工具，用户第一次发现它是在系统设置里
+                  看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
+                  要讲清勾上之后系统设置里会多出什么。
+                */}
+                默认不开。勾上会在「系统设置 › 通用 › 登录项」里注册一条，
+                开机后只有菜单栏多一个图标，不会弹窗口。
+              </span>
+            </span>
+          </label>
+          {autostartErr && (
+            <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+              {autostartErr}
+            </p>
+          )}
+        </section>
+      )}
+
+      {section === "gateway" && (
       <section>
         <h2 className="text-sm font-semibold">监听与访问</h2>
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
@@ -785,6 +874,7 @@ export default function Config({
           </p>
         )}
       </section>
+      )}
 
       <Pricing />
 
