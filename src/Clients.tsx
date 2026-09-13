@@ -181,10 +181,10 @@ export default function Clients() {
       {here.length === 0 && (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
           <p className="tw-head text-neutral-600 dark:text-neutral-400">
-            这台机器上没有找到我们认得的客户端。
+            这台机器上没有找到已识别的客户端。
           </p>
           <p className="mt-2 tw-body text-neutral-500">
-            装了 Claude Code、Codex、Gemini CLI 之类的话，跑一次让它生成配置文件，再回来这一页。
+            装了 Claude Code、Codex、Gemini CLI 之类的话，先跑一次让它生成配置文件，再回到这一页。
             <br />
             也可以手动把客户端的端点指到{" "}
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
@@ -219,7 +219,7 @@ export default function Clients() {
           {data.manual.map((m) => (
             <li key={m.name}>
               <span className="font-medium text-neutral-900 dark:text-neutral-100">{m.name}</span>
-              <div>{m.how.replace("我们的地址", data.gateway_base)}</div>
+              <div>{m.how.replace("网关地址", data.gateway_base)}</div>
               <div className="text-neutral-500">{m.caveat}</div>
             </li>
           ))}
@@ -297,7 +297,7 @@ function Card({
         {c.verified === "fields_only" && <div>ⓘ {c.verified_note}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
-            ⚠ {s} 优先级更高，可能盖住我们
+            ⚠ {s} 优先级更高，可能盖过这里的设置
           </div>
         ))}
         {nagging && (
@@ -545,7 +545,7 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
       </ul>
       <div className="mt-4 flex justify-end">
         <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
-          关掉
+          关闭
         </button>
       </div>
     </Shell>

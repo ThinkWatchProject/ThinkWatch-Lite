@@ -145,13 +145,13 @@ export default function Security({
               className="ml-auto rounded px-2 py-0.5 tw-body text-red-700 dark:text-red-300"
               onClick={onSeen}
             >
-              我看过了
+              标记已读
             </button>
           </div>
           {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
               比「这个文件里有可疑内容」强得多 */}
           <p className="mt-1 tw-body text-red-800 dark:text-red-300">
-            这些是我们盯着你的配置文件时**新**出现的，不是一直就在那儿的。
+            这些是配置文件里<span className="font-medium">新</span>出现的，不是一直就在那儿的。
           </p>
           <ul className="mt-2 space-y-1 tw-body">
             {alerts.map((f, i) => (
@@ -219,7 +219,10 @@ export default function Security({
           <h2 className="mb-1 tw-head font-medium">hook · {data.hooks.length}</h2>
           {/* 危险度第一：不需要模型参与就能拿到执行权 */}
           <p className="mb-2 tw-body text-neutral-500">
-            hook 在工具调用前后直接执行 shell 命令 —— 这是唯一不需要模型参与就能拿到执行权的入口。
+            hook 在工具调用前后直接执行 shell 命令
+            <Tip text="这是唯一不需要模型参与就能拿到执行权的入口 —— 别的都要先说服模型调用某个工具。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么单列</span>
+            </Tip>
           </p>
           <ul className="space-y-1 tw-body">
             {data.hooks.map((h, i) => (
@@ -315,8 +318,10 @@ function Matrix({
     <section>
       <h2 className="mb-1 tw-head font-medium">MCP server · {names.length}</h2>
       <p className="mb-2 tw-body text-neutral-500">
-        每一个都是一个能执行程序、或者能收走你上下文的入口。
-        点格子可以在客户端之间复制、或者从某个客户端移除 —— 改之前会先给你看 diff。
+        每一个都是能执行程序、或能取走上下文的入口。
+        <Tip text="点空格子从已有它的客户端复制过来，点实心格子从这个客户端移除。两种都会先显示 diff 再写入。">
+          <span className="underline decoration-dotted underline-offset-2">点格子可改</span>
+        </Tip>
       </p>
       <div className="overflow-x-auto">
         <table className="tw-body">
@@ -478,7 +483,7 @@ function Matrix({
               })}
           </div>
           <p className="mt-2 text-amber-800 dark:text-amber-300">
-            要统一的话，点上面矩阵里你想保留的那一格，再复制到别的客户端 —— 复制前会先给你看 diff。
+            要统一：点矩阵里你想保留的那一格，复制到别的客户端。写入前会显示 diff。
           </p>
         </div>
       )}
@@ -660,12 +665,12 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
               用户会以为我们在误报 */}
           <pre className="overflow-x-auto rounded bg-neutral-50 p-2 dark:bg-neutral-950">{f.excerpt}</pre>
           <div className="text-neutral-500">
-            我们只报告，不会替你改任何文件。要处理的话，打开上面那个路径自己看一眼再决定。
+            只报告，不改动任何文件。要处理的话，打开上面那个路径看过再决定。
           </div>
         </div>
         <div className="mt-4 flex justify-end">
           <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
-            关掉
+            关闭
           </button>
         </div>
       </div>

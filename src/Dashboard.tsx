@@ -138,8 +138,11 @@ export default function Dashboard({ tick }: { tick: number }) {
                 的，而用户没有任何线索知道少算了什么（§4.3） */}
             {s.unpriced_requests > 0 && (
               <p className="mt-3 tw-body text-amber-700 dark:text-amber-400">
-                另有 {s.unpriced_requests} 条请求算不出价钱 —— 它们的模型不在价目表里（中转站
-                自己起的名字通常是这样）。想让它们也算进来的话，在 pricing.yaml 里写上单价。
+                <Tip text="这些请求用的模型不在价目表里 —— 上游自定义的模型名通常如此。在「配置 › 自定义价格」里给它填一个单价，它们就会计入合计。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    {s.unpriced_requests} 条请求算不出价钱
+                  </span>
+                </Tip>
               </p>
             )}
 
@@ -194,8 +197,7 @@ export default function Dashboard({ tick }: { tick: number }) {
             ))}
           </ul>
           <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
-            现在是观察模式，只记录、没有改变任何请求。要让它真的替换成占位符，把
-            config.yaml 里的 <code>security.redact</code> 改成 <code>enforce</code>。
+            观察模式：只记录，没有改变任何请求。要真的替换成占位符，去「安全 › 防护」把出站脱敏切到「拦截」。
           </p>
         </section>
       )}

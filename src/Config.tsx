@@ -588,7 +588,7 @@ export default function Config({
                     disabled={testing !== null}
                     className="text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
                   >
-                    {testing === p.name ? "测速中…" : "测一下"}
+                    {testing === p.name ? "测速中…" : "测试"}
                   </button>
                 </td>
               </tr>
@@ -839,8 +839,10 @@ export default function Config({
                   看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
                   要讲清勾上之后系统设置里会多出什么。
                 */}
-                默认不开。勾上会在「系统设置 › 通用 › 登录项」里注册一条，
-                开机后只有菜单栏多一个图标，不会弹窗口。
+                默认不开。
+                <Tip text="勾上会在「系统设置 › 通用 › 登录项」里注册一条。开机后只有菜单栏多一个图标，不会弹出窗口。">
+                  <span className="underline decoration-dotted underline-offset-2">勾上会发生什么</span>
+                </Tip>
               </span>
             </span>
           </label>
@@ -906,8 +908,10 @@ function Diagnostics() {
     <section>
       <h2 className="tw-title font-semibold">诊断包</h2>
       <p className="mt-1 tw-body text-neutral-500">
-        版本、上游、熔断状态、最近的失败、脱敏之后的配置原文，攒成一个 Markdown 文件。
-        不含请求体和响应体 —— 它们最有用也最危险。
+        版本、上游、熔断状态、最近的失败、脱敏后的配置原文，攒成一个 Markdown 文件。
+        <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
+          <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
+        </Tip>。
       </p>
       <button
         className="mt-2 rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
@@ -932,7 +936,7 @@ function Diagnostics() {
         <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>
           <div className="mt-1 text-neutral-500">
-            里面的密钥和地址都打过码了，但**交出去之前请自己扫一眼**。
+            里面的密钥和地址都打过码了，但<span className="font-medium">交出去之前请自己扫一眼</span>。
           </div>
         </div>
       )}

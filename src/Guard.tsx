@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { Overview } from "./types";
 
@@ -207,7 +208,7 @@ export default function Guard({
           </p>
           <p className="mt-2 tw-body text-neutral-500">
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
-            增删规则要改 config.yaml —— 它是一组带正则的结构，表单填不了（§3.8）。
+            增删规则要改 config.yaml：它是一组带正则的结构，表单填不了。
           </p>
         </section>
       )}
@@ -218,7 +219,10 @@ export default function Guard({
           <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
             上面那个总闸决定脱不脱，这里决定
             <span className="font-medium">每家脱哪几类</span>。
-            官方端点默认一类都不脱 —— 为了防一个你本来就信任的对象而自废武功，是这一节最要避免的事（§5.1）。
+            官方端点默认一类都不脱
+            <Tip text="为了防一个你本来就信任的对象而自废武功，是这一层最要避免的事。要改的话在 config.yaml 里给那家写 redact。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+            </Tip>
           </p>
           <table className="mt-3 w-full text-left tw-body">
             <thead className="text-neutral-500">

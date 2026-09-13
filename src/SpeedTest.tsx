@@ -71,7 +71,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
           disabled={busy || !model.trim()}
           className="rounded-md border border-neutral-300 px-2 py-1 tw-body disabled:opacity-40 dark:border-neutral-700"
         >
-          {busy && !quote ? "算账中…" : "看看要花多少"}
+          {busy && !quote ? "计算中…" : "预估用量"}
         </button>
       </div>
 
@@ -109,7 +109,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
               disabled={busy}
               className="rounded bg-amber-600 px-2 py-1 text-white disabled:opacity-40"
             >
-              {busy ? "测速中…" : "确认，开始测速"}
+              {busy ? "测试中…" : "确认并开始"}
             </button>
             <button
               onClick={() => setQuote(null)}

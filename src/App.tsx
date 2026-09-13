@@ -503,7 +503,7 @@ export default function App() {
                 onClick={clearRotated}
                 className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
               >
-                处理好了
+                知道了
               </button>
             </div>
           </div>
@@ -668,7 +668,7 @@ export default function App() {
               onClick={() => setTab("clients")}
               className="mt-4 rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
-              帮我写进客户端配置
+              写入客户端配置
             </button>
           </div>
         ) : (

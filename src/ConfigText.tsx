@@ -144,7 +144,7 @@ export default function ConfigTextMode({
               }}
               className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
-              丢掉我的改动，用文件里的
+              丢掉放弃本地改动，用文件里的
             </button>
             <button
               onClick={() => {
@@ -152,7 +152,7 @@ export default function ConfigTextMode({
               }}
               className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
-              保留我的，覆盖过去
+              保留本地改动，覆盖文件
             </button>
           </div>
         </div>

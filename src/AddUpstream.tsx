@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
 
@@ -83,7 +84,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       case "not_implemented":
         return "。它没有模型列表接口，照样能转发，只是按模型名路由那类功能对它用不上";
       case "unrecognized":
-        return "。它返回了一个我们没认出来的模型列表形状 —— 转发不受影响，但值得报一个 issue";
+        return "。它返回的模型列表是一个未识别的形状 —— 转发不受影响，但值得报一个 issue";
       case "empty":
         return "。它的模型列表是空的，照样能转发";
     }
@@ -95,7 +96,10 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
         还没有上游。加一个就能开始转发。
       </p>
       <p className="mt-1 tw-body text-neutral-500">
-        只要地址和密钥，其余都有默认值 —— 名字按地址猜，协议按 Anthropic 转发，之后都能在这一页改。
+        只要地址和密钥。
+        <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
+          <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
+        </Tip>
       </p>
 
       <div className="mt-4 grid max-w-xl gap-3">
@@ -156,7 +160,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             disabled={busy}
             className="ml-auto rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
-            保存并开始转发
+            保存并启用
           </button>
         )}
       </div>

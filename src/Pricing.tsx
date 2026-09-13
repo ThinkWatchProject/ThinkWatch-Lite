@@ -109,7 +109,7 @@ export default function Pricing() {
         <div className="mt-3 space-y-2">
           <p className="text-neutral-500">
             单价按<span className="font-medium">每百万 token 的美元</span>填 —— 和厂商定价页上印的一样。
-            留空上游 = 对所有上游生效；填了上游 = 只有那一家按这个价算。
+            留空上游对所有上游生效，填了则只对那一家。
           </p>
           <table className="w-full text-left tw-num">
             <thead className="text-neutral-500">

@@ -226,8 +226,7 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                       // （§4.2）。一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
                       <p className="mt-1.5 text-neutral-500">
-                        这次发生了故障转移：前 {r.routing.attempts.length - 1} 家没成，我们替你
-                        换到了下一家。
+                        发生了故障转移：前 {r.routing.attempts.length - 1} 家失败，自动换到了下一家。
                       </p>
                     )}
                   </div>
@@ -254,8 +253,10 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
                 {r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**（§4.3）
                   <p className="text-neutral-500">
-                    这家上游没有报用量。有些中转站会吞掉 usage 字段 —— 那时我们不知道这次调用
-                    用了多少，也就算不出钱。
+                    这家上游没有报用量
+                    <Tip text="有些上游会吞掉响应里的 usage 字段。没有它就无法得知这次调用消耗了多少，也就算不出成本。">
+                      <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+                    </Tip>
                   </p>
                 ) : (
                   <>
@@ -404,7 +405,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   return (
     <div className="space-y-3">
       <p className="text-neutral-500">
-        把这条请求**原样**发给另一个上游，和原来那次并排比。请求体是当时存下来的那一份，一个字节都没改。
+        把这条请求<span className="font-medium">原样</span>发给另一个上游，和原来那次并排比。请求体是当时存下来的那一份，一个字节都没改。
       </p>
       <div className="flex items-center gap-2">
         <select
