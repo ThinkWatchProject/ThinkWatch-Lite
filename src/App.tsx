@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
+import {
+  EMPTY_FILTER,
+  facets,
+  filterRows,
+  hasAnyFilter,
+  sortRows,
+  type SortDir,
+  type SortKey,
+} from "./requestTable";
 import Config from "./Config";
 import Clients from "./Clients";
 import Security from "./Security";
@@ -81,9 +90,71 @@ function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" 
   return { text: "已停止", tone: "bad" };
 }
 
+/** 可排序表头。箭头只出现在当前排序列上 —— 每列都挂一个等于没挂。 */
+function Th({
+  k,
+  label,
+  sort,
+  dir,
+  on,
+  className = "",
+}: {
+  k: SortKey;
+  label: string;
+  sort: SortKey;
+  dir: SortDir;
+  on: (k: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort === k;
+  return (
+    <th className={"font-medium " + className}>
+      <button
+        onClick={() => on(k)}
+        className={
+          "-mx-1 rounded px-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 " +
+          (active ? "text-neutral-900 dark:text-neutral-100" : "")
+        }
+      >
+        {label}
+        <span className="ml-0.5 inline-block w-2 text-[10px]">
+          {active ? (dir === "asc" ? "↑" : "↓") : ""}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 export default function App() {
-  const { rows, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
+  const { rows: allRows, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
     useRequests();
+  // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
+  // 一页最常见的意图。
+  const [sortKey, setSortKey] = useState<SortKey>("time");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [filter, setFilter] = useState(EMPTY_FILTER);
+  const rows = useMemo(
+    () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
+    [allRows, filter, sortKey, sortDir],
+  );
+  const facet = useMemo(() => facets(allRows), [allRows]);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * 点表头排序。
+   *
+   * 同一列再点一次翻方向；换一列时**从最有用的那个方向开始** —— 按耗时
+   * 排序的人要找的是慢的那几条，默认给升序等于让他再点一次。时间列反过来，
+   * 默认是新的在前。
+   */
+  function toggleSort(k: SortKey) {
+    if (k === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir(k === "time" ? "desc" : "desc");
+    }
+  }
   const [status, setStatus] = useState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
@@ -154,8 +225,35 @@ export default function App() {
    * 抽屉开着时 `↑↓` 也不动，那时用户在看详情而不是挑行。
    */
   useEffect(() => {
-    if (tab !== "requests") return;
     const onKey = (e: KeyboardEvent) => {
+      // ⌘ 系列**在 typing 判断和「只在请求页」之前**处理 —— ⌘F 的全部
+      // 意义就是从任何地方跳到搜索框：在别的页上按它该切过去，在输入框
+      // 里按它该重选。加上这两个前提就等于把它变成「已经在搜索框里的时
+      // 候才有用」。 —— ⌘F 的全部意义就是从任何
+      // 地方跳到搜索框，而「正在输入」恰恰是它最该生效的场景之一。
+      if (e.metaKey && !e.altKey && !e.ctrlKey) {
+        const k = e.key.toLowerCase();
+        if (k === "f") {
+          e.preventDefault();
+          setTab("requests");
+          // 切页是异步的，聚焦要等它挂上
+          requestAnimationFrame(() => searchRef.current?.select());
+          return;
+        }
+        if (k === ",") {
+          e.preventDefault();
+          setTab("config");
+          return;
+        }
+        if (k === "r") {
+          e.preventDefault();
+          setNudge((n) => n + 1);
+          return;
+        }
+      }
+
+      // 以下是请求页专属的行内导航
+      if (tab !== "requests") return;
       const t = e.target as HTMLElement | null;
       const typing =
         t &&
@@ -442,6 +540,77 @@ export default function App() {
       ) : (
       <main className="p-5">
         {/*
+          过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
+          工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
+        */}
+        {allRows.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              ref={searchRef}
+              value={filter.q}
+              onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+              placeholder="搜索路径、客户端、上游、错误…  ⌘F"
+              spellCheck={false}
+              className="w-64 rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-[12px] outline-none focus:border-neutral-500 dark:border-neutral-700"
+            />
+            <button
+              onClick={() => setFilter((f) => ({ ...f, failedOnly: !f.failedOnly }))}
+              className={
+                "rounded-md px-2 py-1 text-[12px] " +
+                (filter.failedOnly
+                  ? "bg-red-600 text-white"
+                  : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800")
+              }
+            >
+              只看失败
+            </button>
+            {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
+                另外两家出现在这里只会让人以为自己筛错了 */}
+            {facet.clients.length > 1 && (
+              <select
+                value={filter.client}
+                onChange={(e) => setFilter((f) => ({ ...f, client: e.target.value }))}
+                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 text-[12px] dark:border-neutral-700"
+              >
+                <option value="">全部客户端</option>
+                {facet.clients.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            {facet.providers.length > 1 && (
+              <select
+                value={filter.provider}
+                onChange={(e) => setFilter((f) => ({ ...f, provider: e.target.value }))}
+                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 text-[12px] dark:border-neutral-700"
+              >
+                <option value="">全部上游</option>
+                {facet.providers.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            {/*
+              **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」
+              的话，用户会以为总共就这么多 —— 这是过滤器最常见的骗人方式。
+            */}
+            <span className="ml-auto text-[11px] text-neutral-500">
+              {hasAnyFilter(filter)
+                ? `${rows.length} / ${allRows.length} 条`
+                : `${allRows.length} 条`}
+            </span>
+            {hasAnyFilter(filter) && (
+              <button
+                onClick={() => setFilter(EMPTY_FILTER)}
+                className="text-[11px] text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+              >
+                清空
+              </button>
+            )}
+          </div>
+        )}
+
+        {/*
           还没有上游 —— 引导，不是拦路（§7.13）。
           说清三件事：网关已经在跑了（所以这不是故障）、缺的是什么、
           以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
@@ -502,13 +671,13 @@ export default function App() {
           <table className="w-full text-left text-xs tabular-nums">
             <thead className="text-neutral-500">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">状态</th>
+                <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-2" />
                 <th className="font-medium">客户端</th>
                 <th className="font-medium">上游</th>
                 <th className="font-medium">路径</th>
-                <th className="font-medium">首字节</th>
-                <th className="font-medium">耗时</th>
-                <th className="font-medium">字节</th>
+                <Th k="ttfb" label="首字节" sort={sortKey} dir={sortDir} on={toggleSort} />
+                <Th k="duration" label="耗时" sort={sortKey} dir={sortDir} on={toggleSort} />
+                <Th k="bytes" label="字节" sort={sortKey} dir={sortDir} on={toggleSort} />
               </tr>
             </thead>
             <tbody>
