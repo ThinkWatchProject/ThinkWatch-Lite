@@ -450,6 +450,49 @@ export interface SpeedResult {
   error: string | null;
 }
 
+/** 一个出站代理。**密码不在这里** —— 服务端只给「有没有认证」 */
+export interface ProxyView {
+  name: string;
+  /** `socks5` / `socks5h` / `http` / `https` */
+  kind: string;
+  addr: string;
+  has_auth: boolean;
+  /** 有几家上游在用它。删之前要知道 */
+  used_by: number;
+}
+
+/** 一类客户端辅助请求的处置 */
+export interface ProbeView {
+  id: string;
+  label: string;
+  what: string;
+  /** `intercept` / `route` / `passthrough` */
+  mode: string;
+}
+
+export interface LimitsView {
+  max_concurrent: number;
+  per_provider: number;
+  queue_depth: number;
+  queue_timeout_secs: number;
+}
+
+/** 一条规则 */
+export interface RuleView {
+  name: string;
+  to: string;
+  /** `when` 的人话摘要。空 = 兜底 */
+  conditions: string[];
+}
+
+/** 这台机器上的一张网卡（`GET /interfaces`）。同一张网卡可以有多个地址 */
+export interface NicView {
+  /** `en0`、`lo0`、`utun3` */
+  name: string;
+  addr: string;
+  loopback: boolean;
+}
+
 // —— 配置（双向同步） ——
 export interface ConfigText {
   path: string;
@@ -460,12 +503,25 @@ export interface ConfigText {
 
 export type PatchValue = string | number | boolean | null;
 
-export interface PatchOp {
-  op: "replace";
-  /** 按名字定位：`/providers/官方/base_url`。下标会在重排之后指向另一个东西 */
-  path: string;
-  value: PatchValue;
-}
+/**
+ * 一次配置改动。
+ *
+ * 路径一律**按名字**定位：`/providers/官方/base_url`、`/clients/codex`。
+ * 下标会在用户重排之后指向另一个东西，而那种错误完全静默。
+ */
+export type PatchOp =
+  | { op: "replace"; path: string; value: PatchValue }
+  /** 往块式列表末尾加一项。`item` 是那一项的 YAML 片段，不带前导的 `- ` */
+  | { op: "append"; path: string; item: string }
+  /** 删掉列表里的一项。`path` 指向**那一项** */
+  | { op: "remove"; path: string }
+  /**
+   * 把一个列表清成空的（`[]`）。
+   *
+   * **和「把这个键删掉」不是一回事**：`allow` 不写 = 跟客户端方言走，
+   * `allow: []` = 一个都不给。界面上那是两个不同的选项。
+   */
+  | { op: "clear"; path: string };
 
 export interface ConfigVersion {
   version: string;
@@ -510,11 +566,14 @@ export interface ProviderView {
   redact_explicit?: boolean;
 }
 
+/** 一条路由 —— 一组规则，加上绑了它的密钥 */
 export interface RouteView {
   name: string;
-  to: string;
-  /** 空 = 兜底 */
-  conditions: string[];
+  /** 没绑路由的密钥走的就是这条 */
+  default: boolean;
+  /** **显式绑了这条的密钥。**默认路由这里通常是空的 —— 走它的人是「没绑」 */
+  clients: string[];
+  rules: RuleView[];
 }
 
 export interface GroupView {
@@ -533,6 +592,10 @@ export interface ClientView {
   name: string;
   key: string;
   max_concurrent: number | null;
+  /** 绑的那条路由。`null` = 走默认路由 */
+  route?: string | null;
+  /** 能看到哪些模型。三态：不写 / 写非空 / 写 `[]`（一个都不给） */
+  allow?: string[] | null;
 }
 
 export interface ListenView {
@@ -595,14 +658,19 @@ export interface ConfigAt {
 
 export interface Overview {
   providers: ProviderView[];
-  /** 配置里定义过的代理名 —— 换代理要从这里选，手打会打错 */
-  proxies?: string[];
+  /** 配置里定义过的代理 —— 换代理要从这里选，手打会打错 */
+  proxies?: ProxyView[];
   routes: RouteView[];
   groups: GroupView[];
   clients: ClientView[];
   listen: ListenView;
   /** 三条防线各自的状态。界面要能配，不只是显示 */
   security?: SecurityView;
+  /** 没绑路由的密钥走哪条 */
+  default_route?: string;
+  /** 客户端自己发的辅助请求怎么处理 */
+  client_probes?: ProbeView[];
+  limits?: LimitsView;
 }
 
 /**

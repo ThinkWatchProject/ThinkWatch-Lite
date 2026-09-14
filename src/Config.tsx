@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { Tip } from "./ui/Tooltip";
 import AddUpstream from "./AddUpstream";
+import Proxies from "./Proxies";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import ConfigTextMode from "./ConfigText";
@@ -8,7 +9,14 @@ import Pricing from "./Pricing";
 import SpeedTest from "./SpeedTest";
 import { triggers } from "./triggers";
 import DryRun from "./DryRun";
-import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./types";
+import type {
+  ConfigText,
+  ConfigVersion,
+  L1Result,
+  NicView,
+  Overview,
+  PatchOp,
+} from "./types";
 
 /**
  * 一个能改的字段。
@@ -219,6 +227,428 @@ function SpeedRows({ r }: { r: L1Result }) {
  * 转移」「分组」这些词 —— 那些概念对他确实不存在。但**模型路由一直在**，
  * 因为一个上游就有几十个模型，那个问题从第一天就存在。
  */
+/**
+ * 监听方式 —— 网关绑在哪张网卡上。
+ *
+ * 三个选择对应三件真实不同的事：
+ *
+ * · **仅本机** `loopback` —— 绑 127.0.0.1。别的设备连不过来。
+ * · **指定网卡** `<IP>` —— 绑某一张网卡自己的地址。只有那张网卡所在的
+ *   网络连得上。
+ * · **全部网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
+ *
+ * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「全部网卡」是同
+ * 一个地址,区别只在来源白名单的默认值。**那是个白名单概念,伪装成了网卡
+ * 选择**:用户以为网关只在局域网那张网卡上听,实际它在所有网卡上听。
+ *
+ * 改完**立刻生效,不用重启**。core 的 `serve_following_config` 在
+ * `relisten` 上等通知:地址变了就优雅停掉旧监听器(不再接新连接,在跑
+ * 的请求自己跑完)再绑新的 —— nginx reload 的语义。所以这里**不要**加
+ * 「重启网关」的按钮:那句提示会让用户以为还没生效,而它早就生效了。
+ */
+type BindKind = "loopback" | "nic" | "all";
+
+function kindOf(bind: string): BindKind {
+  if (bind === "loopback") return "loopback";
+  if (bind === "all") return "all";
+  return "nic";
+}
+
+const KINDS: { id: BindKind; label: string; what: string }[] = [
+  {
+    id: "loopback",
+    label: "仅本机",
+    what: "绑 127.0.0.1。只有这台电脑上的程序连得上，别的设备连不过来。",
+  },
+  {
+    id: "nic",
+    label: "指定网卡",
+    what: "只绑这一张网卡自己的地址，只有它所在的那个网络连得上。密钥校验强制开启。",
+  },
+  {
+    id: "all",
+    label: "全部网卡",
+    what: "绑 0.0.0.0，每一张网卡都在听 —— 包括对着公网的那张。密钥校验强制开启。",
+  },
+];
+
+/**
+ * 来源白名单（CIDR）。
+ *
+ * **每一条单独增删,不是一个逗号分隔的输入框。**一个框装一串 CIDR 的话,
+ * 改错任何一处的后果都是整份白名单失效 —— 而白名单失效的表现是「全放行」,
+ * 不是「全拦住」。错在安全的那一侧比错在另一侧更该避免。
+ */
+function CidrList({
+  items,
+  configVersion,
+  onErr,
+}: {
+  items: string[];
+  configVersion: string | null;
+  onErr: (e: string | null) => void;
+}) {
+  const [adding, setAdding] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(ops: PatchOp[]) {
+    if (!configVersion) {
+      onErr("还没读到配置版本，稍等一下再试");
+      return;
+    }
+    setBusy(true);
+    onErr(null);
+    try {
+      await invoke("patch_config", { ops, baseVersion: configVersion });
+      setAdding("");
+    } catch (e) {
+      onErr(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {items.length === 0 && <span className="text-neutral-500">（全放行）</span>}
+      {items.map((c, i) => (
+        <span
+          key={c}
+          className="flex items-center gap-1 rounded border border-neutral-300 px-1.5 font-mono tw-label dark:border-neutral-700"
+        >
+          {c}
+          <button
+            disabled={busy}
+            onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
+            className="text-neutral-400 hover:text-red-600 disabled:opacity-30"
+            aria-label={`删掉 ${c}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        value={adding}
+        disabled={busy}
+        placeholder="加一段，比如 192.168.1.0/24"
+        onChange={(e) => setAdding(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && adding.trim()) {
+            void run([
+              { op: "append", path: "/listen/gateway/allow_from", item: adding.trim() },
+            ]);
+          }
+        }}
+        className="w-44 rounded border border-neutral-300 bg-transparent px-1.5 font-mono tw-label outline-none focus:border-neutral-500 dark:border-neutral-700"
+      />
+    </div>
+  );
+}
+
+const PROBE_MODES: { id: string; label: string; what: string }[] = [
+  { id: "intercept", label: "本地应答", what: "一个字节都不发给上游，不花钱。" },
+  { id: "passthrough", label: "原样放行", what: "当成普通请求发出去，按量计费。" },
+  { id: "route", label: "交给路由", what: "走路由规则，可以分流到更便宜的地方。" },
+];
+
+/**
+ * 客户端自己发的辅助请求。
+ *
+ * **这一段以前在界面上完全不存在,而它的缺席是连锁的**:路由条件
+ * `when.intent` 只有在对应那一类被配成「交给路由」时才可能命中 ——
+ * 所以任何写了 `intent` 的规则都是死的,而用户无从知道为什么。
+ */
+function ProbesSection({
+  ov,
+  configVersion,
+}: {
+  ov: Overview;
+  configVersion: string | null;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const probes = ov.client_probes ?? [];
+  if (probes.length === 0) return null;
+
+  async function set(id: string, mode: string) {
+    if (!configVersion) {
+      setErr("还没读到配置版本，稍等一下再试");
+      return;
+    }
+    setBusy(id);
+    setErr(null);
+    try {
+      await invoke("patch_config", {
+        ops: [{ op: "replace", path: `/client_probes/${id}`, value: mode }],
+        baseVersion: configVersion,
+      });
+    } catch (e) {
+      setErr(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="tw-title font-semibold">客户端的辅助请求</h2>
+      <p className="mt-1 tw-body text-neutral-500">
+        客户端自己发的、你没点过的那些请求。它们也花钱。
+      </p>
+      <ul className="mt-2 space-y-1.5">
+        {probes.map((p) => (
+          <li
+            key={p.id}
+            className="rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
+          >
+            <div className="flex items-baseline gap-3">
+              <span className="tw-body font-medium">{p.label}</span>
+              <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+                {PROBE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    disabled={busy === p.id}
+                    onClick={() => void set(p.id, m.id)}
+                    className={
+                      "rounded px-2 py-0.5 tw-body disabled:opacity-50 " +
+                      (p.mode === m.id
+                        ? "bg-neutral-200 dark:bg-neutral-800"
+                        : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+                    }
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mt-1 tw-body text-neutral-600 dark:text-neutral-400">{p.what}</p>
+            <p className="mt-0.5 tw-label text-neutral-500">
+              {PROBE_MODES.find((m) => m.id === p.mode)?.what}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 tw-label text-neutral-500">
+        路由规则里的「辅助请求」条件，只有在这一类选了「交给路由」时才可能命中。
+      </p>
+      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
+    </section>
+  );
+}
+
+/** 并发上限。以前这一整段也没有界面。 */
+function LimitsSection({
+  ov,
+  configVersion,
+}: {
+  ov: Overview;
+  configVersion: string | null;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const l = ov.limits;
+  if (!l) return null;
+  const rows: [string, keyof typeof l, string][] = [
+    ["全局并发", "max_concurrent", "同时在飞的请求上限。超了先排队。"],
+    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮全部。"],
+    ["队列上限", "queue_depth", "排队排到这么多就真的拒绝了。"],
+    ["排队超时", "queue_timeout_secs", "排这么多秒还没轮到就放弃（秒）。"],
+  ];
+  return (
+    <section>
+      <h2 className="tw-title font-semibold">并发</h2>
+      <dl className="mt-2 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-4 gap-y-1 tw-body">
+        {rows.map(([label, key, what]) => (
+          <Fragment key={key}>
+            <dt className="text-neutral-500">{label}</dt>
+            <dd className="font-mono">
+              <EditableCell
+                value={String(l[key])}
+                path={`/limits/${key}`}
+                version={configVersion}
+                onSaved={setErr}
+              />
+            </dd>
+            <dd className="tw-label text-neutral-500">{what}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
+    </section>
+  );
+}
+
+function ListenSection({
+  ov,
+  configVersion,
+}: {
+  ov: Overview;
+  configVersion: string | null;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [nics, setNics] = useState<NicView[] | null>(null);
+  const cur = ov.listen.bind;
+  const kind = kindOf(cur);
+
+  // 网卡清单每次打开这一页现拉 —— 它会变（插拔网线、换 Wi-Fi、起 VPN）
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const list = await invoke<NicView[]>("interfaces");
+        if (alive) setNics(list.filter((n) => !n.loopback));
+      } catch {
+        // 拉不到就只是选单是空的，前后两档照常能选
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [configVersion]);
+
+  async function write(value: string) {
+    if (value === cur || busy) return;
+    if (!configVersion) {
+      setErr("还没读到配置版本，稍等一下再试");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await invoke("patch_config", {
+        ops: [{ op: "replace", path: "/listen/gateway/bind", value }],
+        baseVersion: configVersion,
+      });
+    } catch (e) {
+      setErr(typeof e === "string" ? e : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pickKind(k: BindKind) {
+    if (k === "loopback") return void write("loopback");
+    if (k === "all") return void write("all");
+    // 选「指定网卡」时先落到第一张，用户再从选单里换
+    const first = nics?.[0];
+    if (!first) {
+      setErr("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
+      return;
+    }
+    void write(first.addr);
+  }
+
+  const picked = KINDS.find((k) => k.id === kind);
+
+  return (
+    <section>
+      <div className="flex items-baseline gap-3">
+        <h2 className="tw-title font-semibold">监听与访问</h2>
+        <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+          {KINDS.map((k) => (
+            <button
+              key={k.id}
+              disabled={busy || (k.id === "nic" && nics?.length === 0)}
+              onClick={() => pickKind(k.id)}
+              className={
+                "rounded px-2.5 py-1 tw-body disabled:opacity-40 " +
+                (kind === k.id
+                  ? k.id === "loopback"
+                    ? "bg-neutral-200 dark:bg-neutral-800"
+                    : "bg-amber-500 text-white"
+                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+              }
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
+        {picked?.what}
+      </p>
+
+      {kind === "nic" && (
+        <div className="mt-2 flex items-center gap-2">
+          <select
+            value={cur}
+            disabled={busy}
+            onChange={(e) => void write(e.target.value)}
+            className="rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono tw-body disabled:opacity-50 dark:border-neutral-700"
+          >
+            {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
+                **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
+            {!nics?.some((n) => n.addr === cur) && (
+              <option value={cur}>{cur}（现在找不到这张网卡）</option>
+            )}
+            {nics?.map((n) => (
+              <option key={`${n.name}-${n.addr}`} value={n.addr}>
+                {n.name}　{n.addr}
+              </option>
+            ))}
+          </select>
+          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
+            <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
+              地址会变
+            </span>
+          </Tip>
+        </div>
+      )}
+
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
+        <dt className="text-neutral-500">正在监听</dt>
+        <dd className="flex items-baseline gap-1 font-mono">
+          {ov.listen.bind} :
+          <EditableCell
+            value={String(ov.listen.port)}
+            path="/listen/gateway/port"
+            version={configVersion}
+            onSaved={(e) => setErr(e)}
+          />
+        </dd>
+        <dt className="text-neutral-500">客户端密钥</dt>
+        <dd className="font-mono">
+          {ov.clients.map((c) => `${c.name} ${c.key}`).join("，")}
+        </dd>
+        {ov.listen.exposed && (
+          <>
+            <dt className="text-neutral-500">来源白名单</dt>
+            <dd>
+              <CidrList
+                items={ov.listen.allow_from}
+                configVersion={configVersion}
+                onErr={setErr}
+              />
+            </dd>
+          </>
+        )}
+      </dl>
+
+      {ov.listen.exposed && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          监听在非本机地址上，局域网里的机器能连过来
+          <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">
+              密钥强制校验
+            </span>
+          </Tip>
+        </p>
+      )}
+
+      {err && (
+        <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>
+      )}
+
+      {/*
+        白名单还只能读不能改：`PatchOp::Replace` 只吃标量，而 `allow_from`
+        是一个列表。要在界面上编辑它，得先给补丁协议加一个列表操作 ——
+        那是另一件事，不该在这里塞一个只能改第一项的半吊子输入框。
+      */}
+    </section>
+  );
+}
+
 export default function Config({
   section = "gateway",
   ov,
@@ -237,7 +667,15 @@ export default function Config({
    *
    * 文本模式两个面共用 —— 它编辑的是整份文件,本来就不分域。
    */
-  section?: "gateway" | "routing" | "settings";
+  /**
+   * 这一次渲染哪一域。
+   *
+   * `routing` 这一域现在只剩「试算」和「策略组」—— 路由本身搬去了
+   * `Routes.tsx`。**没跟着搬的原因是它俩和 `SelectCell`、配置版本、
+   * 以及跳去文本模式那条路缠在一起**，硬拆会弄坏正在工作的东西。
+   * 路由页把两个组件叠起来渲染，对用户是一页。
+   */
+  section?: "gateway" | "upstreams" | "routing" | "settings";
   ov: Overview;
   configVersion: string | null;
   /** 最近一次校验失败指到的行号。文本模式会把它滚进视野 */
@@ -370,7 +808,7 @@ export default function Config({
 
   return (
     <div className="space-y-8 p-5">
-      {section === "gateway" && (
+      {section === "upstreams" && (
       <section>
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">上游</h2>
@@ -526,7 +964,9 @@ export default function Config({
                     options={[
                       ["direct", "直连"],
                       ["system", "跟随系统"],
-                      ...(ov.proxies ?? []).map((x) => [x, x] as [string, string]),
+                      ...(ov.proxies ?? []).map(
+                        (x) => [x.name, `${x.name}（${x.kind} ${x.addr}）`] as [string, string],
+                      ),
                     ]}
                     path={`/providers/${p.name}/proxy`}
                     version={cfg?.version ?? null}
@@ -625,40 +1065,6 @@ export default function Config({
           看出「那个不花钱、这个花钱」 */}
       <SpeedTest models={[]} />
 
-      {section === "routing" && (
-      <section>
-        <h2 className="tw-title font-semibold">路由规则</h2>
-        <p className="mt-1 tw-body text-neutral-500">
-          从上往下匹配，第一条命中的说了算。
-        </p>
-        <ol className="mt-2 space-y-1.5">
-          {ov.routes.map((r, i) => (
-            <li
-              key={r.name}
-              className="flex items-baseline gap-3 rounded-md border border-neutral-200 px-3 py-2 tw-body dark:border-neutral-800"
-            >
-              <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
-              <span className="font-medium">{r.name}</span>
-              <span className="text-neutral-500">
-                {r.conditions.length === 0 ? (
-                  // 兜底规则要标出来。少了它，用户会以为「没有兜底」
-                  // 而反复调试一条其实一直在生效的规则。
-                  <span className="rounded bg-neutral-200 px-1.5 py-0.5 dark:bg-neutral-800">
-                    兜底
-                  </span>
-                ) : (
-                  r.conditions.join(" 且 ")
-                )}
-              </span>
-              <span className="ml-auto font-mono text-neutral-500">→ {r.to}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      )}
-
-      {/* 「为什么没走我以为的那条」和「走了哪条」是同一个问题的两面 */}
       {section === "routing" && <DryRun models={[]} />}
 
       {/* 分组这个概念只在真的有组的时候出现 */}
@@ -854,34 +1260,20 @@ export default function Config({
         </section>
       )}
 
+      {section === "upstreams" && (
+        <Proxies ov={ov} configVersion={configVersion} onChanged={onProviderAdded} />
+      )}
+
       {section === "gateway" && (
-      <section>
-        <h2 className="tw-title font-semibold">监听与访问</h2>
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
-          <dt className="text-neutral-500">地址</dt>
-          <dd className="font-mono">
-            {ov.listen.bind} : {ov.listen.port}
-          </dd>
-          <dt className="text-neutral-500">客户端密钥</dt>
-          <dd className="font-mono">
-            {ov.clients.map((c) => `${c.name} ${c.key}`).join("，")}
-          </dd>
-          {ov.listen.exposed && (
-            <>
-              <dt className="text-neutral-500">来源白名单</dt>
-              <dd className="font-mono">{ov.listen.allow_from.join("，") || "（全放行）"}</dd>
-            </>
-          )}
-        </dl>
-        {ov.listen.exposed && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            监听在非本机地址上，局域网里的机器能连过来
-            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">密钥强制校验</span>
-            </Tip>
-          </p>
-        )}
-      </section>
+        <ListenSection ov={ov} configVersion={configVersion} />
+      )}
+
+      {section === "gateway" && (
+        <ProbesSection ov={ov} configVersion={configVersion} />
+      )}
+
+      {section === "gateway" && (
+        <LimitsSection ov={ov} configVersion={configVersion} />
       )}
 
       {/*

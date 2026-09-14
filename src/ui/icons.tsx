@@ -106,6 +106,24 @@ export const IconClient = (p: P) => (
   </S>
 );
 
+/** 上游 —— 一摞机器。和「网关」的两层机架区分开:这是**很多家**,那是**一台** */
+export const IconServer = (p: P) => (
+  <S {...p}>
+    <rect x="2.2" y="2.4" width="11.6" height="3.4" rx="1.2" />
+    <rect x="2.2" y="7.3" width="11.6" height="3.4" rx="1.2" />
+    <path d="M4.6 12.8h6.8" />
+  </S>
+);
+
+/** 密钥 —— 一把钥匙。**不用锁**:锁在这一列里会被读成「安全」,而安全是另一组 */
+export const IconKey = (p: P) => (
+  <S {...p}>
+    <circle cx="5.4" cy="10.6" r="2.8" />
+    <path d="M7.4 8.6 13.4 2.6" />
+    <path d="M11.2 4.8 12.8 6.4" />
+  </S>
+);
+
 /** 设置 —— 两条推子。齿轮留给系统设置,别撞 */
 export const IconSettings = (p: P) => (
   <S {...p}>

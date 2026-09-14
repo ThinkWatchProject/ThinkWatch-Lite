@@ -15,6 +15,8 @@ import {
 } from "./requestTable";
 import Config from "./Config";
 import Clients from "./Clients";
+import Keys from "./Keys";
+import Routes from "./Routes";
 import Security from "./Security";
 import Guard from "./Guard";
 import { Dialog, DialogButton } from "./ui/Dialog";
@@ -28,6 +30,8 @@ import {
   IconGuard,
   IconRoute,
   IconSession,
+  IconKey,
+  IconServer,
   IconSettings,
   IconSidebar,
 } from "./ui/icons";
@@ -56,6 +60,8 @@ type Surface =
   | "security"
   | "guard"
   | "routing"
+  | "keys"
+  | "upstreams"
   | "config"
   | "settings"
   | "clients";
@@ -96,6 +102,8 @@ const SOURCES: {
     items: [
       // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
+      { id: "upstreams", label: "上游" , icon: IconServer },
+      { id: "keys", label: "密钥" , icon: IconKey },
       { id: "routing", label: "路由" , icon: IconRoute },
       { id: "config", label: "网关" , icon: IconGateway },
       { id: "clients", label: "客户端" , icon: IconClient },
@@ -112,16 +120,29 @@ const SOURCES: {
   },
 ];
 
-function describeCore(raw: string): { text: string; tone: "ok" | "warn" | "bad" } {
-  if (raw.startsWith("running:")) return { text: "运行中", tone: "ok" };
-  if (raw === "starting") return { text: "启动中", tone: "warn" };
+/**
+ * core 的状态说成人话。
+ *
+ * `short` 是给收起的源列表用的 —— 那里只有 80px，「重启中（第 3 次）」
+ * 和「安全模式 · 网关未运行」都放不下。**不是截断，是另写一句**：截断
+ * 出来的「安全模式 · 网关未…」比四个字更难读，而第几次重试在那个宽度上
+ * 本来就是悬停才看的细节。
+ */
+function describeCore(raw: string): {
+  text: string;
+  short: string;
+  tone: "ok" | "warn" | "bad";
+} {
+  if (raw.startsWith("running:")) return { text: "运行中", short: "运行中", tone: "ok" };
+  if (raw === "starting") return { text: "启动中", short: "启动中", tone: "warn" };
   if (raw.startsWith("restarting:")) {
     const [, attempt] = raw.split(":");
-    return { text: `重启中（第 ${attempt} 次）`, tone: "warn" };
+    return { text: `重启中（第 ${attempt} 次）`, short: "重启中", tone: "warn" };
   }
   // 安全模式必须显眼：这时候网关不转发了，用户所有的 AI 客户端都在瞎。
-  if (raw === "safe_mode") return { text: "安全模式 · 网关未运行", tone: "bad" };
-  return { text: "已停止", tone: "bad" };
+  if (raw === "safe_mode")
+    return { text: "安全模式 · 网关未运行", short: "安全模式", tone: "bad" };
+  return { text: "已停止", short: "已停止", tone: "bad" };
 }
 
 /** 可排序表头。箭头只出现在当前排序列上 —— 每列都挂一个等于没挂。 */
@@ -460,9 +481,14 @@ export default function App() {
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
         内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。
 
-        **可以收起。**收起之后只剩图标,内容区多出 136px —— 对一个开着
+        **可以收起。**收起之后只剩图标,内容区多出 116px —— 对一个开着
         不关、一直在看图表的应用,这是唯一真正改善主界面的方向。名字进
         悬浮说明,所以收起来不是把信息丢掉,是把它推迟到需要的时候。
+
+        **收起宽度 80px 不是审美选的,是红绿灯定的。**标题栏是 Overlay,
+        三颗灯浮在内容上,最右那颗绿灯的右边缘落在约 71pt 处。侧栏窄于
+        这个数,右边框就会从绿灯身上穿过去 —— 之前用 60px 正是如此。
+        80 给了它 9pt 余量。**改窄之前先量一遍那三颗灯。**
 
         **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分之一
         的高度,而它们说的事情分隔线也说得出:这两项和上面那两项不一样。
@@ -472,7 +498,7 @@ export default function App() {
       <aside
         className={
           "flex shrink-0 flex-col border-r transition-[width] duration-150 ease-out " +
-          (railOpen ? "w-[196px]" : "w-[60px]")
+          (railOpen ? "w-[196px]" : "w-[80px]")
         }
         style={{
           background: "var(--chrome-rail)",
@@ -484,15 +510,19 @@ export default function App() {
         {/* 红绿灯占掉左上角,内容从它下面开始 */}
         <div className="h-[38px] shrink-0" data-tauri-drag-region />
 
-        <nav className={"flex-1 overflow-y-auto pb-3 " + (railOpen ? "px-[9px]" : "px-0")}>
+        <nav
+          className={
+            "flex-1 overflow-y-auto pt-1 pb-3 " + (railOpen ? "px-[9px]" : "px-0")
+          }
+        >
           {SOURCES.map((g, gi) => (
             <div key={g.group}>
               {gi > 0 && (
                 <div
-                  className="my-[7px] h-px"
+                  className="my-[11px] h-px"
                   style={{
                     background: "var(--chrome-hair)",
-                    marginInline: railOpen ? 8 : 17,
+                    marginInline: railOpen ? 8 : 21,
                   }}
                 />
               )}
@@ -510,8 +540,8 @@ export default function App() {
                     className={
                       "relative flex items-center rounded-md " +
                       (railOpen
-                        ? "h-[28px] w-full gap-2 px-2 text-left tw-body "
-                        : "mx-auto h-[40px] w-[40px] justify-center ") +
+                        ? "h-[32px] w-full gap-2.5 px-2 text-left tw-body "
+                        : "mx-auto my-[2px] h-[40px] w-[40px] justify-center ") +
                       (on ? "tw-selected font-medium" : "hover:bg-[var(--chrome-hover)]")
                     }
                   >
@@ -592,23 +622,26 @@ export default function App() {
               }
             >
               {/*
-                **一切正常的时候它不该抢眼。**展开时这个点旁边有「运行中」
-                三个字，它是个标点；收起之后它成了空列里唯一的颜色，一个
-                高饱和的绿点在那儿大声说一件没什么可说的事。
+                80px 放得下「运行中」，所以字放回来了。
+                **有字之后点就不刺眼了** —— 它旁边有东西可读，是个标点，
+                而不是空列里唯一的一抹颜色。所以这里不再压不透明度，和
+                展开时用的是同一套颜色。
 
-                所以正常态压到 45% 不透明、直径 6px —— 看得见，但要主动
-                去看。出问题时才放回满饱和：琥珀和红是真的需要被扫到的。
+                地址放不下（等宽 15 个字符要 79px），留在悬浮说明里。
               */}
-              <span
+              <div
                 className={
-                  "inline-block h-1.5 w-1.5 rounded-full bg-current " +
+                  "flex items-center gap-1 tw-label " +
                   (c.tone === "ok"
-                    ? "text-emerald-600/45 dark:text-emerald-400/45"
+                    ? "text-emerald-600 dark:text-emerald-400"
                     : c.tone === "warn"
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-red-600 dark:text-red-400")
                 }
-              />
+              >
+                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                {c.short}
+              </div>
             </Tip>
           )}
         </div>
@@ -743,7 +776,10 @@ export default function App() {
       ) : tab === "dashboard" ? (
         <Dashboard tick={dashTick} />
       ) : tab === "clients" ? (
-        <Clients />
+        <Clients
+          clientKeys={(ov?.clients ?? []).map((c) => c.name)}
+          configVersion={configVersion}
+        />
       ) : tab === "security" ? (
         <Security alerts={alerts} onSeen={clearAlerts} />
       ) : tab === "guard" ? (
@@ -756,11 +792,43 @@ export default function App() {
         ) : (
           <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
         )
-      ) : tab === "routing" || tab === "config" || tab === "settings" ? (
+      ) : tab === "keys" ? (
+        ov ? (
+          <Keys
+            ov={ov}
+            configVersion={configVersion}
+            onChanged={() => setNudge((n) => n + 1)}
+          />
+        ) : (
+          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+        )
+      ) : tab === "routing" ? (
+        ov ? (
+          <>
+            <Routes
+              ov={ov}
+              configVersion={configVersion}
+              onChanged={() => setNudge((n) => n + 1)}
+            />
+            {/* 试算和策略组还在 Config 里 —— 它俩和文本模式那条路缠着 */}
+            <Config
+              section="routing"
+              ov={ov}
+              configVersion={configVersion}
+              rejectedLine={rejected?.line ?? null}
+              onProviderAdded={() => setNudge((n) => n + 1)}
+            />
+          </>
+        ) : (
+          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+        )
+      ) : tab === "upstreams" || tab === "config" || tab === "settings" ? (
         ov ? (
           <Config
             key={tab}
-            section={tab === "routing" ? "routing" : tab === "settings" ? "settings" : "gateway"}
+            section={
+              tab === "settings" ? "settings" : tab === "upstreams" ? "upstreams" : "gateway"
+            }
             ov={ov}
             configVersion={configVersion}
             rejectedLine={rejected?.line ?? null}
