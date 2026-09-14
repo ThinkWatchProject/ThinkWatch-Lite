@@ -158,6 +158,14 @@ async fn speed_test(
 #[tauri::command]
 async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, String> {
     let c = &state.control;
+    // 趋势图看最近 24 小时、每小时一格。**不是「今天」** —— 今天零点
+    // 刚过的时候「今天」只有一根柱子，而用户想看的是「最近在怎么用」。
+    // 别的数字仍然按今天算（那是账单的口径）。
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+        - 24 * 3_600_000;
     Ok(Dashboard {
         summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
@@ -165,6 +173,13 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         history: c.history(200).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
+        // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
+        // 没有这两个端点，而这一页别的部分照样有用（§4.7 的同一条：
+        // 观测层的缺失不该扩散）。
+        buckets: c.cost_buckets(since, 3_600_000).await.unwrap_or_default(),
+        by_model: c.cost_by("model", since).await.unwrap_or_default(),
+        by_provider: c.cost_by("provider", since).await.unwrap_or_default(),
+        since_ms: since,
     })
 }
 
@@ -179,6 +194,12 @@ pub struct Dashboard {
     storage: Option<tw_api::StorageStatus>,
     /// 出站密钥检测攒下的证据（§5.0 的观察态）
     leaks: Vec<tw_api::LeakGroup>,
+    /// 最近 24 小时、每小时一格。**稀疏的** —— 空桶由界面补
+    buckets: Vec<tw_api::CostBucket>,
+    by_model: Vec<tw_api::CostGroup>,
+    by_provider: Vec<tw_api::CostGroup>,
+    /// 那三样的时间窗起点，界面补空桶要用
+    since_ms: i64,
 }
 
 #[tauri::command]
@@ -673,6 +694,26 @@ async fn diagnose_client(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 这个应用自己的信息。
+///
+/// **排查时最先要问的就是这几个**：哪个版本、数据在哪、core 的二进制
+/// 从哪儿找到的。之前这些散落在日志里，而用户交出一份诊断包之前根本
+/// 看不到它们。
+#[tauri::command]
+fn app_info(app: tauri::AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "version": app.package_info().version.to_string(),
+        "identifier": app.config().identifier,
+        "data_dir": data_dir().display().to_string(),
+        // core 二进制的实际位置。找不到的时候把错误原样给出来 ——
+        // 那条错误里列着找过哪些位置，正是这时候要看的东西。
+        "core_bin": match locate_core(&app) {
+            Ok(p) => p.display().to_string(),
+            Err(e) => format!("{e}"),
+        },
+    })
+}
+
 /// 开机自启现在是开着的吗。
 ///
 /// **默认是关的,而且这不是「还没实现」,是产品决定。**一个装完就自己
@@ -705,6 +746,21 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
         return Err("开发构建里不注册开机自启 —— 它会把 target/debug 下的二进制写进 plist".into());
     }
     use tauri_plugin_autostart::ManagerExt;
+    // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
+    // 而那个目录在一台从没注册过登录项的 Mac 上根本不存在 —— 写文件
+    // 得到的是 `No such file or directory (os error 2)`，一句既不说
+    // 哪个文件、也不说该怎么办的话。
+    //
+    // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
+    // 环境都会撞上。所以自己先建。
+    if on {
+        if let Some(plist) = autostart::plist_path(&app.config().identifier) {
+            if let Some(dir) = plist.parent() {
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
+            }
+        }
+    }
     let mgr = app.autolaunch();
     let r = if on { mgr.enable() } else { mgr.disable() };
     r.map_err(|e| format!("{e}"))?;
@@ -764,6 +820,7 @@ pub fn run() {
             save_pricing,
             rollback_config,
             setup_first_provider,
+            app_info,
             autostart_enabled,
             set_autostart,
             list_clients,

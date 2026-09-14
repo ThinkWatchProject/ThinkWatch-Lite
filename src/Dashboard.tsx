@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
-import Sparkline from "./Sparkline";
 import { triggers } from "./triggers";
+import { BarChart, BarRows } from "./ui/Chart";
+import { densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -150,8 +151,41 @@ export default function Dashboard({ tick }: { tick: number }) {
               最近一段时间的请求量。**画的是节奏，不是金额** —— 金额已经
               在上面那几个数字里了，而「刚才发生了什么」是另一个问题。
             */}
-            <div className="mt-4">
-              <Sparkline rows={d.history} now={Date.now()} />
+            {/*
+              最近 24 小时的花费趋势。**画的是钱，不是请求数** ——
+              这是一个 ToC 的工具，用户打开它第一个想知道的是花了多少。
+              请求数叠在同一根柱子上（淡色），因为「花得多」和「用得多」
+              不总是一回事，而分成两张图会让人来回对照。
+            */}
+            <div className="mt-5">
+              <div className="flex items-baseline gap-2">
+                <h3 className="tw-head font-medium">最近 24 小时</h3>
+                <span className="tw-label text-neutral-400">每格一小时</span>
+              </div>
+              <div className="mt-1.5">
+                <BarChart
+                  height={52}
+                  barClass="fill-neutral-400 dark:fill-neutral-600"
+                  subClass="fill-red-500/70"
+                  empty="最近 24 小时没有请求。"
+                  bars={densify(d.buckets ?? [], d.since_ms ?? 0, Date.now(), 3_600_000).map(
+                    (b) => ({
+                      at: b.at_ms,
+                      // 主高度是花费，失败那部分单独叠一层 —— 一段红比
+                      // 一个「失败 3 条」的数字更容易在余光里被发现
+                      value: (b.cost_micros_exact + b.cost_micros_estimated) / 1000,
+                      sub: b.failed > 0 ? 1 : 0,
+                      label: `${new Date(b.at_ms).getHours()}:00　${usd(
+                        b.cost_micros_exact + b.cost_micros_estimated,
+                      )}　${b.requests} 条${b.failed ? `（${b.failed} 条失败）` : ""}${
+                        b.unpriced_requests
+                          ? `\n其中 ${b.unpriced_requests} 条算不出价钱，没有计入`
+                          : ""
+                      }`,
+                    }),
+                  )}
+                />
+              </div>
             </div>
 
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
@@ -239,6 +273,52 @@ export default function Dashboard({ tick }: { tick: number }) {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {/*
+        钱花在哪儿。**横条不是饼图** —— 饼图比不出 12% 和 15%，而这张图
+        的用途恰恰是排序和比例。
+      */}
+      {(d.by_model ?? []).length > 0 && (
+        <section>
+          <div className="flex items-baseline gap-3">
+            <h2 className="tw-title font-semibold">花在哪儿</h2>
+            <span className="tw-body text-neutral-400">最近 24 小时</span>
+          </div>
+          <div className="mt-2 grid gap-5 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按模型</h3>
+              <BarRows
+                unit={usd}
+                rows={(d.by_model ?? []).slice(0, 6).map((g) => ({
+                  name: g.name,
+                  value: g.cost_micros,
+                  // **算不出价钱的要说出来。**不说的话这根条是偏短的，
+                  // 而看图的人没有线索知道少算了什么（§4.3）
+                  note: g.unpriced_requests
+                    ? `${g.unpriced_requests} 条无价`
+                    : undefined,
+                }))}
+              />
+            </div>
+            {/* 一家上游的时候这张图说的是「全都在这儿」，那已经知道了 */}
+            {(d.by_provider ?? []).length > 1 && (
+              <div>
+                <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按上游</h3>
+                <BarRows
+                  unit={usd}
+                  rows={(d.by_provider ?? []).slice(0, 6).map((g) => ({
+                    name: g.name,
+                    value: g.cost_micros,
+                    note: g.unpriced_requests
+                      ? `${g.unpriced_requests} 条无价`
+                      : undefined,
+                  }))}
+                />
+              </div>
+            )}
+          </div>
         </section>
       )}
 

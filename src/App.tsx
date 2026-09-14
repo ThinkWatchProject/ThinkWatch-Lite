@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
+import { ago, bytes, latency, repeated, statusTone } from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -44,15 +45,19 @@ type Surface =
   | "guard"
   | "routing"
   | "config"
+  | "settings"
   | "clients";
 
 const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
   {
     group: "监控",
     items: [
+      // **概览在最上面。**它回答的是「现在什么情况」，而流量和会话回答
+      // 的是「刚才那一条发生了什么」—— 前者是打开这个应用的默认意图，
+      // 后者是带着问题来的时候才点。
+      { id: "dashboard", label: "概览" },
       { id: "requests", label: "流量" },
       { id: "sessions", label: "会话" },
-      { id: "dashboard", label: "概览" },
     ],
   },
   {
@@ -79,6 +84,15 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
       { id: "config", label: "网关" },
       { id: "clients", label: "客户端" },
     ],
+  },
+  {
+    // **应用自己的设置，不是网关的配置。**
+    //
+    // 开机自启原来挂在「网关」下面，和「上游地址」「监听端口」并列 ——
+    // 那是两类完全不同的东西：一个写进系统的登录项，一个写进 config.yaml。
+    // 分界线就是这个：改的是这个 macOS 应用，还是改网关的配置文件。
+    group: "应用",
+    items: [{ id: "settings", label: "设置" }],
   },
 ];
 
@@ -186,7 +200,7 @@ export default function App() {
    * 那一行有什么特别。
    */
   const [cursor, setCursor] = useState(-1);
-  const [tab, setTab] = useState<Surface>("requests");
+  const [tab, setTab] = useState<Surface>("dashboard");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   /**
@@ -194,7 +208,7 @@ export default function App() {
    * —— 那样每切一次页都会重建计时器，于是切页的瞬间会多打一轮请求。
    * 用 ref 读最新值，依赖数组保持不变。
    */
-  const tabRef = useRef<Surface>("requests");
+  const tabRef = useRef<Surface>("dashboard");
   /**
    * 窗口够不够宽拆成两栏。
    *
@@ -203,6 +217,18 @@ export default function App() {
    * 列表宽度。**判据是实测的窗口宽度，不是一个 CSS 断点** —— 这是桌面
    * 应用，窗口是用户随手拖的。
    */
+  /**
+   * 相对时间要自己走，否则「3s」会一直停在 3s。
+   *
+   * **10 秒一跳，不是 1 秒。**这一列的精度到「秒」就够了，而每秒重渲染
+   * 整张表正是刚修掉的那个毛病 —— 为了让一个数字走起来把它请回来，
+   * 是这类计时器最常见的退化方式。
+   */
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const h = setInterval(() => setNowTick(Date.now()), 10_000);
+    return () => clearInterval(h);
+  }, []);
   const [wide, setWide] = useState(() => window.innerWidth >= 1040);
   useEffect(() => {
     const on = () => setWide(window.innerWidth >= 1040);
@@ -566,11 +592,11 @@ export default function App() {
         ) : (
           <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
         )
-      ) : tab === "routing" || tab === "config" ? (
+      ) : tab === "routing" || tab === "config" || tab === "settings" ? (
         ov ? (
           <Config
             key={tab}
-            section={tab === "routing" ? "routing" : "gateway"}
+            section={tab === "routing" ? "routing" : tab === "settings" ? "settings" : "gateway"}
             ov={ov}
             configVersion={configVersion}
             rejectedLine={rejected?.line ?? null}
@@ -712,19 +738,25 @@ export default function App() {
           </div>
         ) : (
           <table className="w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
+            {/*
+              **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
+              两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
+              那恰恰是排查时唯一要看的区别。
+            */}
+            <thead className="sticky top-0 z-10 bg-neutral-50 text-neutral-500 dark:bg-neutral-950">
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-2" />
+                <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
+                <Th k="time" label="时间" sort={sortKey} dir={sortDir} on={toggleSort} />
                 <th className="font-medium">客户端</th>
                 <th className="font-medium">上游</th>
                 <th className="font-medium">路径</th>
-                <Th k="ttfb" label="首字节" sort={sortKey} dir={sortDir} on={toggleSort} />
-                <Th k="duration" label="耗时" sort={sortKey} dir={sortDir} on={toggleSort} />
-                <Th k="bytes" label="字节" sort={sortKey} dir={sortDir} on={toggleSort} />
+                {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
+                <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="bytes" label="大小" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r, i) => (
                 <RowMenu
                   key={r.id}
                   items={[
@@ -783,19 +815,46 @@ export default function App() {
                         : "")
                   }
                 >
-                  <td className="py-1.5">
-                    {r.state === "in_flight" ? (
-                      <span className="text-amber-600 dark:text-amber-400">进行中</span>
-                    ) : r.state === "failed" ? (
-                      <span className="text-red-600 dark:text-red-400" title={r.error}>
-                        失败
-                      </span>
-                    ) : (
-                      <span className="text-neutral-500">{r.status}</span>
-                    )}
+                  {/*
+                    状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
+                    眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
+                  */}
+                  <td className="py-1 whitespace-nowrap">
+                    {(() => {
+                      const tone = statusTone(r.status, r.state);
+                      const dot =
+                        tone === "bad"
+                          ? "bg-red-500"
+                          : tone === "warn"
+                            ? "bg-amber-500"
+                            : tone === "pending"
+                              ? "bg-amber-400 animate-pulse"
+                              : "bg-emerald-500/60";
+                      return (
+                        <span className="flex items-center gap-1.5">
+                          <span className={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " + dot} />
+                          <span className={tone === "ok" ? "text-neutral-400" : ""}>
+                            {r.state === "in_flight"
+                              ? "…"
+                              : r.state === "failed"
+                                ? "失败"
+                                : r.status}
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </td>
-                  <td>{r.client}</td>
-                  <td>
+                  {/* 时间：列表要的是「刚才那条」，绝对时间留给悬停 */}
+                  <td className="whitespace-nowrap text-neutral-400">
+                    <Tip text={new Date(r.atMs).toLocaleString()}>
+                      <span>{ago(r.atMs, nowTick)}</span>
+                    </Tip>
+                  </td>
+                  {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
+                  <td className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
+                    {r.client}
+                  </td>
+                  <td className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
                     {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
                         是脱敏搞坏了功能（§5.1）。所以脱敏发生了就要在
@@ -852,10 +911,27 @@ export default function App() {
                       </span>
                     )}
                   </td>
-                  <td className="text-neutral-500">{r.path}</td>
-                  <td>{r.ttfbMs != null ? `${r.ttfbMs}ms` : "—"}</td>
-                  <td>{r.durationMs != null ? `${r.durationMs}ms` : "—"}</td>
-                  <td>{r.bytes != null ? r.bytes : "—"}</td>
+                  <td
+                    className={
+                      "truncate " +
+                      (repeated(rows, i, (x) => x.path)
+                        ? "text-neutral-400/50"
+                        : "text-neutral-500")
+                    }
+                  >
+                    {r.path}
+                  </td>
+                  {/*
+                    数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
+                    扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
+                    扫出极值。
+                  */}
+                  <td className="whitespace-nowrap text-right">
+                    {latency(r.ttfbMs, r.durationMs)}
+                  </td>
+                  <td className="whitespace-nowrap text-right text-neutral-400">
+                    {bytes(r.bytes)}
+                  </td>
                 </tr>
                 </RowMenu>
               ))}

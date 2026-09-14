@@ -171,6 +171,34 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/summary").await?)?)
     }
 
+    /// 按时间分桶的花费（概览的趋势图）。
+    ///
+    /// **空桶由界面补。**core 那边只产出有数据的桶 —— 要画多少格只有
+    /// 知道图有多宽的那一层清楚。
+    pub async fn cost_buckets(
+        &self,
+        from_ms: i64,
+        bucket_ms: i64,
+    ) -> Result<Vec<tw_api::CostBucket>> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!(
+                    "/summary/buckets?from_ms={from_ms}&bucket_ms={bucket_ms}"
+                ))
+                .await?,
+        )?)
+    }
+
+    /// 按模型或上游分组的花费。`dim` 只有 `model` / `provider` 两个值 ——
+    /// core 那边是个枚举，写错的值在那里被拒掉。
+    pub async fn cost_by(&self, dim: &str, from_ms: i64) -> Result<Vec<tw_api::CostGroup>> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/summary/by?dim={dim}&from_ms={from_ms}"))
+                .await?,
+        )?)
+    }
+
     pub async fn history(&self, limit: usize) -> Result<Vec<tw_api::HistoryRow>> {
         Ok(serde_json::from_slice(
             &self.get(&format!("/history?limit={limit}")).await?,
