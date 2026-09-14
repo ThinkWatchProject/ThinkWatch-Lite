@@ -16,7 +16,8 @@ base — the commits and the discussion carry over. A bot will remind you.
 
 Two decisions are settled and not up for a PR:
 
-- **macOS only.** Windows and Linux support is out of scope. The menu
+- **macOS first.** Windows and Linux come after the macOS version is
+  done, so PRs adding them won't be merged yet. The menu
   bar is rendered as a macOS bitmap, the client-detection paths are
   macOS paths, and the supervisor talks to launchd.
 - **Not distributed as a build.** No signed `.app`, no installer, no
