@@ -65,7 +65,7 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
     //
     // 它不是一个看板：三条防线各自有三态、有规则集、有拦截动作，那是
     // 策略，不是观测。塞在监控里的后果不只是归类难看 —— 用户会把它当
-    // 成一个只能看的页面，而 §5.0 的整个设计前提是他看完证据之后**要
+    // 成一个只能看的页面，而整个设计前提是他看完证据之后**要
     // 去动那几个开关**。
     //
     // 所以拆成两项：发现（看证据）和防护（配策略）。
@@ -177,24 +177,24 @@ export default function App() {
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   /**
-   * 托盘按了「退出」，等确认（§7.5）。
+   * 托盘按了「退出」，等确认。
    *
    * **退出的代价是所有 AI 客户端立刻失联**，不该由一次手滑造成 ——
    * 所以托盘那一项只是把窗口拉起来问一句，真正的 `exit` 在这里。
    */
   const [askQuit, setAskQuit] = useState(false);
   /**
-   * 刚出现的那几行（§7.13）。
+   * 刚出现的那几行。
    *
    * **第一个请求进来时那一行要跳出来** —— 它是「它真的在工作」的证明，
    * 而这类工具最难的一关正是让用户相信流量真的经过我们了。
    */
   const [fresh, setFresh] = useState<Set<number>>(new Set());
   const seenIds = useRef<Set<number>>(new Set());
-  /** 打开的那条请求（§7.8 的右侧抽屉） */
+  /** 打开的那条请求（右侧抽屉） */
   const [open, setOpen] = useState<number | null>(null);
   /**
-   * 键盘选中的那一行（§7.14）。
+   * 键盘选中的那一行。
    *
    * **`-1` 表示还没用过键盘。**一进页面就高亮第一行，会让用户以为
    * 那一行有什么特别。
@@ -238,7 +238,7 @@ export default function App() {
   const split = wide && tab === "requests" && open != null;
   const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
-  // 「保存」还看着「还没有上游」，会以为没生效（和 §3.8 那条一样的理由）。
+  // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
 
   useEffect(() => {
@@ -268,7 +268,7 @@ export default function App() {
   }, []);
 
   /**
-   * 列表的键盘导航（§7.14）。
+   * 列表的键盘导航。
    *
    * **「用鼠标一行行点太慢」**，而 Requests 是主战场。
    *
@@ -351,7 +351,7 @@ export default function App() {
     let alive = true;
     const tick = async () => {
       try {
-        // Tauri 的 invoke 用**字符串** reject，不是 Error（§9.7）——
+        // Tauri 的 invoke 用**字符串** reject，不是 Error ——
         // `e instanceof Error` 永远是 false，所以按字符串处理。
         const s = await invoke<CoreStatus>("core_status");
         if (alive) {
@@ -385,7 +385,7 @@ export default function App() {
       clearInterval(h);
     };
     // configVersion 变了就立刻再拉一次 —— 不然用户在编辑器里改完，
-    // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效（§3.8）。
+    // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效。
   }, [configVersion, nudge]);
 
   tabRef.current = tab;
@@ -399,7 +399,7 @@ export default function App() {
   // 外面等于说「你还没资格看」，而他要找的恰恰是「该去哪儿配」。
   //
   // 现在：主界面照常进，零上游时首页挂一条引导指向配置页，表单长在
-  // 配置页「上游」那一节里（§7.13 的空状态永远在回答「接下来做什么」）。
+  // 配置页「上游」那一节里（空状态永远在回答「接下来做什么」）。
   // 「它真的在工作了」那一下也没丢：第一个请求进来时那一行会绿一下，
   // 而请求页的空状态一直在说客户端该怎么指过来。
 
@@ -435,7 +435,7 @@ export default function App() {
                   }
                 >
                   {it.label}
-                  {/* 配置面上出现了新东西 —— 挂个角标,直到他去看过(§5.3) */}
+                  {/* 配置面上出现了新东西 —— 挂个角标,直到他去看过 */}
                   {it.id === "security" && alerts.length > 0 && (
                     <span className="ml-auto rounded-full bg-red-600 px-1.5 tw-label leading-[15px] text-white">
                       {alerts.length}
@@ -493,7 +493,7 @@ export default function App() {
       )}
 
       {/*
-        配置没通过校验。**这条要一直挂着，直到下一次成功换入**（§3.8）——
+        配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
         一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
 
         第一句先说「还在按旧配置转发」，因为那是他最想知道的：会不会断。
@@ -516,7 +516,7 @@ export default function App() {
       )}
 
       {/*
-        token 端点换发了新的 refresh token（§3.6）。
+        token 端点换发了新的 refresh token。
 
         **两种完全不同的话，长得也要不一样。**写回成功只是告知 ——
         用户的配置文件被我们改了，他的编辑器会弹「文件已更改」，那时
@@ -680,7 +680,7 @@ export default function App() {
         )}
 
         {/*
-          还没有上游 —— 引导，不是拦路（§7.13）。
+          还没有上游 —— 引导，不是拦路。
           说清三件事：网关已经在跑了（所以这不是故障）、缺的是什么、
           以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
         */}
@@ -703,7 +703,7 @@ export default function App() {
           </div>
         )}
         {rows.length === 0 ? (
-          // 空状态永远在回答「接下来该做什么」（§7.13）。
+          // 空状态永远在回答「接下来该做什么」。
           <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
             <p className="tw-head text-neutral-600 dark:text-neutral-400">
               还没有请求经过。
@@ -719,13 +719,13 @@ export default function App() {
             </p>
             {locallyAnswered > 0 && (
               // **这句话信息量很大**：客户端已经连上了，只是还没发过真实
-              // 请求。没有它，用户会以为整条链路都不通（§4.8）。
+              // 请求。没有它，用户会以为整条链路都不通。
               <p className="mt-3 tw-body text-emerald-700 dark:text-emerald-300">
                 已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
               </p>
             )}
             {/*
-              **空状态永远在回答「接下来该做什么」**（§7.13）。原来只说
+              **空状态永远在回答「接下来该做什么」**。原来只说
               了「把客户端指过来」，而没给他一条走过去的路 —— 那句话对
               一个不想自己改 settings.json 的人等于没说。
             */}
@@ -857,7 +857,7 @@ export default function App() {
                   <td className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
                     {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
-                        是脱敏搞坏了功能（§5.1）。所以脱敏发生了就要在
+                        是脱敏搞坏了功能。所以脱敏发生了就要在
                         列表这一层看得见，而不是藏在详情里 */}
                     {r.redacted && r.redacted.length > 0 && (
                       <span
@@ -871,7 +871,7 @@ export default function App() {
                         已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
                       </span>
                     )}
-                    {/* 方言互转（§4.1.2）。**转了就要看得见，丢了字段
+                    {/* 方言互转。**转了就要看得见，丢了字段
                         更要看得见** —— 「扩展思考开了却没生效」这个症状
                         在客户端那头完全无从下手，只有这里知道原因 */}
                     {r.translated && (
@@ -952,7 +952,7 @@ export default function App() {
         )}
       </main>
       )}
-      {/* §7.8 的右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
+      {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
       </div>
 

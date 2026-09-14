@@ -14,7 +14,7 @@ import type { ConfigText, ConfigVersion, L1Result, Overview, PatchOp } from "./t
  * 一个能改的字段。
  *
  * **失焦才提交，而且值没变就什么都不做。**每敲一个键就发一次 patch 会
- * 在历史里堆满噪音，而历史是回滚的依据（§3.8）。
+ * 在历史里堆满噪音，而历史是回滚的依据。
  *
  * 提交时带上 `version` —— 那是乐观并发的凭据。用户在编辑器里同时改了
  * 什么，界面无从知道，所以永远不覆盖。
@@ -37,7 +37,7 @@ function EditableCell({
   /**
    * 输入法正在组字。
    *
-   * **§9.7 那条数据丢失就在这儿**：cc-switch 报过一个 12 字符的值被
+   * **那条数据丢失就在这儿**：cc-switch 报过一个 12 字符的值被
    * 膨胀成 1396 字符 —— 受控组件在输入法还持有 composition range 时
    * 把 state 写回 DOM。我们是 Tauri（WebKit）+ 中文用户 + 配置输入框，
    * 三个条件全中。
@@ -61,7 +61,7 @@ function EditableCell({
     setBusy(true);
     try {
       const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("patch_config", { ops, baseVersion: version });
       onSaved(null);
     } catch (e) {
@@ -91,7 +91,7 @@ function EditableCell({
         void commit();
       }}
       // **macOS 会把 API key 的首字母大写。**一行属性的事，不写就是
-      // 一类稳定复现的「key 明明是对的却认证失败」（§9.7）
+      // 一类稳定复现的「key 明明是对的却认证失败」
       autoComplete="off"
       autoCorrect="off"
       autoCapitalize="off"
@@ -184,7 +184,7 @@ function SelectCell({
  *
  * **每一段单独一行，不画一根合成的进度条。**「建连 292ms」说不出任何
  * 该修的东西，而「DNS 5ms / TCP 3ms / TLS 283ms」一眼能看出问题在哪
- * 一层（§4.6）。
+ * 一层。
  */
 function SpeedRows({ r }: { r: L1Result }) {
   return (
@@ -215,7 +215,7 @@ function SpeedRows({ r }: { r: L1Result }) {
 /**
  * 上游与规则。
  *
- * **按 §0.6 的触发条件显示**：只有一个 provider 的用户不会看到「故障
+ * **按触发条件显示**：只有一个 provider 的用户不会看到「故障
  * 转移」「分组」这些词 —— 那些概念对他确实不存在。但**模型路由一直在**，
  * 因为一个上游就有几十个模型，那个问题从第一天就存在。
  */
@@ -240,12 +240,12 @@ export default function Config({
   section?: "gateway" | "routing" | "settings";
   ov: Overview;
   configVersion: string | null;
-  /** 最近一次校验失败指到的行号（§3.8）。文本模式会把它滚进视野 */
+  /** 最近一次校验失败指到的行号。文本模式会把它滚进视野 */
   rejectedLine?: number | null;
   /** 加完第一个上游之后让外面立刻重拉概览，不等那两秒的轮询 */
   onProviderAdded: () => void;
 }) {
-  // 触发条件全在一个地方（§0.6）—— 散在各个组件里的
+  // 触发条件全在一个地方 —— 散在各个组件里的
   // `providers.length >= 2` 回答不了那条反面判据
   const t = triggers(ov, null);
   useEffect(() => {
@@ -264,11 +264,11 @@ export default function Config({
   const [showHistory, setShowHistory] = useState(false);
   /**
    * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
-   * 用户知道 YAML 长什么样（§0.6：默认值不该要求用户额外懂什么）。
+   * 用户知道 YAML 长什么样（默认值不该要求用户额外懂什么）。
    */
   const [mode, setMode] = useState<"form" | "text">("form");
   /**
-   * 跳到文本模式时要定位的名字（§7.10）。
+   * 跳到文本模式时要定位的名字。
    *
    * 表单和文本**是同一份文件的两种视图**，不是两个割裂的东西 —— 而让
    * 用户建立这个心智最有效的一下，就是他点「在文件里看」时那一段真的
@@ -298,12 +298,12 @@ export default function Config({
   const [speed, setSpeed] = useState<Record<string, L1Result>>({});
   const [testing, setTesting] = useState<string | null>(null);
 
-  // 测速零成本，所以点了就跑，不弹确认框 —— **要确认的是 L3**（§4.6），
+  // 测速零成本，所以点了就跑，不弹确认框 —— **要确认的是 L3**，
   // 那一层会真的调用模型。这里连一个 token 都不产生。
   async function test(provider?: string) {
     setTesting(provider ?? "*");
     try {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       const rs = await invoke<L1Result[]>("speed_test", { provider, proxy: null });
       setSpeed((prev) => {
         const next = { ...prev };
@@ -401,7 +401,7 @@ export default function Config({
         </div>
 
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
-            「有人抢先改了」，正确的反应是刷新再改（§3.8） */}
+            「有人抢先改了」，正确的反应是刷新再改 */}
         {saveError && (
           <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             没能保存：{saveError}
@@ -535,8 +535,8 @@ export default function Config({
                   />
                 </td>
                 {/*
-                  计费方式：它同时决定成本栏怎么显示（§4.3.1）和
-                  `cheapest` 怎么排（§3.5）—— 订阅制的边际成本是零。
+                  计费方式：它同时决定成本栏怎么显示和
+                  `cheapest` 怎么排 —— 订阅制的边际成本是零。
                 */}
                 <td className="text-neutral-500">
                   <SelectCell
@@ -554,7 +554,7 @@ export default function Config({
                   />
                 </td>
                 {/*
-                  信任级别（§5.2）。**没显式写过的时候要说清是自动判的**
+                  信任级别。**没显式写过的时候要说清是自动判的**
                   —— 否则用户会以为这一格改不动，或者以为是他自己设的。
                 */}
                 <td className="text-neutral-500">
@@ -622,7 +622,7 @@ export default function Config({
       )}
 
       {/* L3 测速。**放在 L1 下面，两句成本说明并排** —— 用户要能一眼
-          看出「那个不花钱、这个花钱」（§4.6） */}
+          看出「那个不花钱、这个花钱」 */}
       <SpeedTest models={[]} />
 
       {section === "routing" && (
@@ -661,7 +661,7 @@ export default function Config({
       {/* 「为什么没走我以为的那条」和「走了哪条」是同一个问题的两面 */}
       {section === "routing" && <DryRun models={[]} />}
 
-      {/* §0.6：分组这个概念只在真的有组的时候出现 */}
+      {/* 分组这个概念只在真的有组的时候出现 */}
       {section === "routing" && ov.groups.length > 0 && (
         <section>
           <h2 className="tw-title font-semibold">策略组</h2>
@@ -708,7 +708,7 @@ export default function Config({
                   </span>
                 </div>
                 {/*
-                  **`select` 组要能在这儿切。**§3.5 说这个策略就是
+                  **`select` 组要能在这儿切。**这个策略本身就是
                   「UI 上点选」，而切不了的话它等于一个只能改 YAML
                   才能用的功能。
 
@@ -758,7 +758,7 @@ export default function Config({
                 {/*
                   **会话粘滞要摆在明面上，因为它直接决定账单。**
                   关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
-                  而缓存命中与否成本差 5 到 10 倍（§3.5）。
+                  而缓存命中与否成本差 5 到 10 倍。
                 */}
                 {g.kind === "轮流" && (
                   <label className="mt-1.5 flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
@@ -792,7 +792,7 @@ export default function Config({
                   </label>
                 )}
                 {g.hurts_cache && (
-                  // 这句必须在界面上直说：它决定了用户的账单（§3.4）。
+                  // 这句必须在界面上直说：它决定了用户的账单。
                   // 缓存命中与否成本差 5 到 10 倍，而为了省 20% 的单价
                   // 丢掉 90% 的缓存折扣，是一笔怎么算都不划算的账。
                   <p className="mt-1.5 text-amber-700 dark:text-amber-400">
@@ -934,13 +934,13 @@ function About() {
 }
 
 /**
- * 诊断包（§11 的 M6+）。
+ * 诊断包（M6+）。
  *
  * 遇到问题时一次性交出「我这儿是什么情况」，省掉来回问一轮（版本？配置？
  * 哪家上游？）—— 而每一趟都可能问漏。
  *
  * **里面的东西全部脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
- * 看得见所有 API key 的网关，这一步值得多花十秒（§9.7）。
+ * 看得见所有 API key 的网关，这一步值得多花十秒。
  */
 function Diagnostics() {
   const [path, setPath] = useState<string | null>(null);
@@ -965,7 +965,7 @@ function Diagnostics() {
           try {
             setPath(await invoke<string>("save_diagnostics"));
           } catch (e) {
-            // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+            // Tauri 的 invoke 用字符串 reject，不是 Error
             setError(typeof e === "string" ? e : String(e));
           } finally {
             setBusy(false);
@@ -988,7 +988,7 @@ function Diagnostics() {
 }
 
 /**
- * 完全卸载（§7.15 第二层的第三个入口）。
+ * 完全卸载（第二层的第三个入口）。
  *
  * **macOS 上删除应用没有卸载钩子。**拖进废纸篓就是拖进废纸篓，我们没有
  * 任何机会做清理 —— 而那时五个客户端的 `base_url` 全都指向一个已经没有

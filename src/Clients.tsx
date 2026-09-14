@@ -10,7 +10,7 @@ import type {
 } from "./types";
 
 /**
- * 客户端接管页（DESIGN.md §7.11）。
+ * 客户端接管页。
  *
  * 这是整个应用里唯一会去改**用户其他软件**配置的地方，所以这一页的
  * 每一处交互都是按「让他敢按下去、也退得回来」设计的：
@@ -40,7 +40,7 @@ export default function Clients() {
       setData(await invoke<ClientsResponse>("list_clients"));
       setError(null);
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setError(typeof e === "string" ? e : String(e));
     }
   }, []);
@@ -117,7 +117,7 @@ export default function Clients() {
           只改端点和密钥两个字段，其余不动，随时可还原。
         </div>
         {/*
-          **退路要一直看得见**（§7.15）。用户敢按下「接管」的前提，就是
+          **退路要一直看得见**。用户敢按下「接管」的前提，就是
           看得见怎么退回去 —— 藏在二级菜单里的退路等于没有退路，他会在
           心里给接管打上「不可逆」的标签，然后犹豫。
         */}
@@ -175,7 +175,7 @@ export default function Clients() {
       </div>
 
       {/*
-        一个都没装的时候，「这里空空如也」是句废话（§7.13）。**空状态
+        一个都没装的时候，「这里空空如也」是句废话。**空状态
         永远在回答「接下来该做什么」** —— 而这一页的答案是「装一个，
         或者手动把端点指过来」。
       */}
@@ -249,7 +249,7 @@ function Card({
   onWhy: (id: string) => void;
 }) {
   const adopted = c.adopted_at_ms != null;
-  // **「已接管」和「已生效」是两回事。**只有请求能证明后者（§7.11）
+  // **「已接管」和「已生效」是两回事。**只有请求能证明后者
   const verified = adopted && c.last_seen_ms != null && c.last_seen_ms > (c.adopted_at_ms ?? 0);
   const silentFor = adopted && !verified ? Date.now() - (c.adopted_at_ms ?? 0) : 0;
   // 需要重开终端的客户端不催 —— 用户可能一整天都没重开过，
@@ -515,7 +515,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   );
 }
 
-/** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失（§0.6）。 */
+/** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失。 */
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
   return (
     <Shell onClose={onClose}>

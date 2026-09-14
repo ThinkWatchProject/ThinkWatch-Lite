@@ -1,7 +1,7 @@
 //! ThinkWatch Lite 的 UI 侧。
 //!
 //! 它做三件事：起 core 并看着它、把控制面的数据搬给前端、以及在 core
-//! 挂掉时悄悄修好。用户眼里这一切和 core 是**同一个程序**（§2.2.1）。
+//! 挂掉时悄悄修好。用户眼里这一切和 core 是**同一个程序**。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -97,7 +97,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
 
 #[tauri::command]
 async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status, String> {
-    // Tauri 的 invoke 用**字符串** reject，不是 Error 对象（§9.7）——
+    // Tauri 的 invoke 用**字符串** reject，不是 Error 对象 ——
     // 前端 `e instanceof Error` 永远是 false。所以这里返回 String，
     // 前端那边也按字符串处理。
     state.control.status().await.map_err(|e| format!("{e:#}"))
@@ -133,7 +133,7 @@ async fn probe_upstream(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// L1 测速。零成本，所以不需要任何确认 —— L3 才需要（§4.6）。
+/// L1 测速。零成本，所以不需要任何确认 —— L3 才需要。
 #[tauri::command]
 async fn speed_test(
     state: tauri::State<'_, AppState>,
@@ -174,7 +174,7 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
         // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
-        // 没有这两个端点，而这一页别的部分照样有用（§4.7 的同一条：
+        // 没有这两个端点，而这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。
         buckets: c.cost_buckets(since, 3_600_000).await.unwrap_or_default(),
         by_model: c.cost_by("model", since).await.unwrap_or_default(),
@@ -187,12 +187,12 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
 pub struct Dashboard {
     summary: tw_api::Summary,
     latency: Vec<tw_api::LatencyView>,
-    /// 按上游分。**和按模型分是两个问题**（§4.6）
+    /// 按上游分。**和按模型分是两个问题**
     latency_by_provider: Vec<tw_api::LatencyView>,
     history: Vec<tw_api::HistoryRow>,
-    /// 拿不到就是没有 —— 存储层不在的时候网关照常跑（§4.7）
+    /// 拿不到就是没有 —— 存储层不在的时候网关照常跑
     storage: Option<tw_api::StorageStatus>,
-    /// 出站密钥检测攒下的证据（§5.0 的观察态）
+    /// 出站密钥检测攒下的证据（观察态）
     leaks: Vec<tw_api::LeakGroup>,
     /// 最近 24 小时、每小时一格。**稀疏的** —— 空桶由界面补
     buckets: Vec<tw_api::CostBucket>,
@@ -227,8 +227,7 @@ async fn speed_quote(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 真的跑一次测速。**这一步花钱** —— 界面必须先把报价摆给用户看过
-/// （§4.6）。
+/// 真的跑一次测速。**这一步花钱** —— 界面必须先把报价摆给用户看过。
 #[tauri::command]
 async fn speed_run(
     state: tauri::State<'_, AppState>,
@@ -261,7 +260,7 @@ async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigT
 }
 
 /// 改一个字段。**总是带 `base_version`** —— 用户在编辑器里改了什么，
-/// 界面无从知道（§3.8）。
+/// 界面无从知道。
 #[tauri::command]
 async fn patch_config(
     state: tauri::State<'_, AppState>,
@@ -288,8 +287,8 @@ async fn put_config(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 光标落在配置的哪一段上（§7.10）。
-/// 用户自己写的那份价格（§4.3.0 第三层）。
+/// 光标落在配置的哪一段上。
+/// 用户自己写的那份价格（第三层）。
 #[tauri::command]
 async fn pricing(state: tauri::State<'_, AppState>) -> Result<tw_api::PricingView, String> {
     state.control.pricing().await.map_err(|e| format!("{e:#}"))
@@ -307,7 +306,7 @@ async fn save_pricing(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 「检查价格更新」三步走（§4.3.0、§12）。**三个命令，不是一个** ——
+/// 「检查价格更新」三步走。**三个命令，不是一个** ——
 /// 一个命令意味着「检查」和「写入」是同一次调用，而那正是「静默下载」
 /// 的定义。
 #[tauri::command]
@@ -411,7 +410,7 @@ async fn mcp_apply(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 把一条真实请求存成回放用例（§9.8）。
+/// 把一条真实请求存成回放用例。
 ///
 /// **写文件在这一侧**，和诊断包同一个理由。
 #[tauri::command]
@@ -462,7 +461,7 @@ async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Result<String, S
     Ok(path.display().to_string())
 }
 
-/// **算一下，不发。**和 L3 测速同一条纪律（§4.6）。
+/// **算一下，不发。**和 L3 测速同一条纪律。
 #[tauri::command]
 async fn replay_quote(
     state: tauri::State<'_, AppState>,
@@ -512,7 +511,7 @@ async fn session_detail(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 扫一遍客户端配置面。**只读，什么都不存**（§7.12）。
+/// 扫一遍客户端配置面。**只读，什么都不存**。
 #[tauri::command]
 async fn scan_configs(
     state: tauri::State<'_, AppState>,
@@ -546,7 +545,7 @@ async fn list_clients(
 }
 
 /// **算一下，不落盘。**接管和「算接管」是两个命令，中间夹着用户看
-/// diff 的那一下（§7.11）。
+/// diff 的那一下。
 #[tauri::command]
 async fn plan_adopt(
     state: tauri::State<'_, AppState>,
@@ -585,19 +584,19 @@ async fn plan_restore(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 把所有接管过的客户端一次性还原（§7.15 第二层的第二个入口）。
+/// 把所有接管过的客户端一次性还原（第二层的第二个入口）。
 ///
 /// **这个按钮要一直看得见。**用户敢按下「接管」的前提，就是看得见退路
 /// —— 藏起来的退路等于没有退路，他会在心里给接管打上「不可逆」的标签。
 ///
 /// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
 /// 文件被改坏了，不该让另外四个也留在接管状态。
-/// 真的退出。**只有确认过的界面能调它**（§7.5）——托盘那一项只是把
+/// 真的退出。**只有确认过的界面能调它** ——托盘那一项只是把
 /// 窗口拉起来问一句。
 #[tauri::command]
 async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
     // 不问「要不要保留后台代理」—— 那个问题本身就暴露了内部有两个
-    // 进程（§2.2.1）
+    // 进程
     app.exit(0);
     Ok(())
 }
@@ -631,7 +630,7 @@ struct RestoreOutcome {
     detail: String,
 }
 
-/// 完全卸载（§7.15 第二层的第三个入口）。
+/// 完全卸载（第二层的第三个入口）。
 ///
 /// 顺序是**先还原、再注销自启、最后才提删数据** —— 反过来的话，中途
 /// 失败会留下一个「客户端还指着一个已经不在的端口」的状态，而那正是
@@ -725,7 +724,7 @@ fn app_info(app: tauri::AppHandle) -> serde_json::Value {
 ///
 /// 开发构建里恒返回 false:`cargo tauri dev` 期间注册会把
 /// `target/debug/…` 写进 plist,然后每次开机 launchd 都去启动一个可能
-/// 已经被 `cargo clean` 掉的二进制(§2.4)。
+/// 已经被 `cargo clean` 掉的二进制。
 #[tauri::command]
 fn autostart_enabled(app: tauri::AppHandle) -> bool {
     if !autostart::allowed_in_this_build() {
@@ -781,7 +780,7 @@ async fn setup_first_provider(
         .map_err(|e| format!("{e:#}"))?;
     // **不再重启 core。**M2 的热重载让这一步变成了纯粹的浪费 ——
     // 一次重启是两秒的断线，而配置在 `/setup` 返回之前就已经生效了
-    // （它走的是和别的改动同一扇门，§3.8）。
+    // （它走的是和别的改动同一扇门）。
     Ok(r)
 }
 
@@ -792,7 +791,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(
             // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
             // 不是 SMAppService、也不是登录项 API —— 插件在 macOS 上就是
-            // 写文件（§2.4，读过源码）。
+            // 写文件（读过源码）。
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             // 注册时塞这个标记，启动时靠它判断是不是开机拉起来的。
             Some(vec![autostart::AUTOSTART_FLAG]),
@@ -868,11 +867,11 @@ pub fn run() {
 
             // 自启的路径校验。插件把 `enable()` 那一刻的绝对路径快照写
             // 进 plist，用户把 App 挪个位置就静默失效 —— 而它的
-            // `is_enabled()` 只看文件在不在，仍然说「开着呢」（§2.4）。
+            // `is_enabled()` 只看文件在不在，仍然说「开着呢」。
             check_autostart_path(&handle);
 
             // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
-            // 用户就已经看到它了 —— 开机自启时尤其重要（§2.4）。
+            // 用户就已经看到它了 —— 开机自启时尤其重要。
             let tray = build_tray(&handle)?;
             let h = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -888,7 +887,7 @@ pub fn run() {
                 heartbeat_loop(sock, sup, h).await;
             });
 
-            // 静默启动（§2.4）：开机拉起来的时候屏幕上什么都不该出现，
+            // 静默启动：开机拉起来的时候屏幕上什么都不该出现，
             // 只有菜单栏多一个图标。**图标已经在上面建好了** —— 它不等
             // core 就绪，否则用户开机后会有一段「到底启没启」的空白期。
             if autostart::launched_by_autostart(std::env::args()) {
@@ -900,7 +899,7 @@ pub fn run() {
                 show_main_window(&handle)?;
             }
 
-            // 量 webview 占多少（§2.4）。**它不是一个功能，是一个回答
+            // 量 webview 占多少。**它不是一个功能，是一个回答
             // 不了就只能猜的问题的工具** —— 「关窗之后隐藏还是销毁」
             // 取决于隐藏到底放不放得掉那部分内存。
             if memcheck::requested(std::env::args()) {
@@ -917,10 +916,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 点红点只是关窗口，进程留在菜单栏（§7.5）。macOS 上
+            // 点红点只是关窗口，进程留在菜单栏。macOS 上
             // 「关窗不等于退出应用」本来就是标准行为，不需要额外提示。
             //
-            // **销毁窗口，不是隐藏。**这是实测出来的（§2.4 那条「据此
+            // **销毁窗口，不是隐藏。**这是实测出来的（那条「据此
             // 定隐藏还是销毁」）：
             //
             //   窗口没开过   107 MB
@@ -1027,7 +1026,7 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
         let a = app.clone();
         let r = client
             .subscribe_events(move |ev| {
-                // **在客户端弹批准提示的同一瞬间弹一条通知**（§5.2）。
+                // **在客户端弹批准提示的同一瞬间弹一条通知**。
                 // 这是网关位置独有的能力：只有我们同时知道「这个调用长
                 // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
                 // 看到这条，判断质量完全不一样。
@@ -1042,10 +1041,10 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
     }
 }
 
-/// 高危的工具调用要弹系统通知（§5.2）。
+/// 高危的工具调用要弹系统通知。
 ///
 /// **只弹高危的。**中危和脱敏都只进界面 —— 通知的代价是用户学会忽略
-/// 通知，包括那些真该看的（§2.4）。
+/// 通知，包括那些真该看的。
 fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
     use tauri_plugin_notification::NotificationExt;
     let tw_api::Event::ToolCallFlagged {
@@ -1089,7 +1088,7 @@ fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。
 ///
 /// **每次开机都弹是噪音**，而噪音的代价是用户学会忽略通知 —— 包括那些
-/// 真该看的（§2.4，和守护的分级告知同一条理由）。
+/// 真该看的（和守护的分级告知同一条理由）。
 fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
     let dir = data_dir();
     let marker = dir.join(".autostart-notified");
@@ -1142,7 +1141,7 @@ fn check_autostart_path(app: &tauri::AppHandle) {
 
 /// 主窗口用时才建。
 ///
-/// **「根本不创建」不是「创建后隐藏」**（§2.4）：后者省不了内存也省不了
+/// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了
 /// 启动时间，而且窗口会有一帧闪烁 —— 开机的时候屏幕上什么都不该出现。
 fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("main") {
@@ -1173,7 +1172,7 @@ fn become_accessory(app: &tauri::AppHandle) {
 /// 建托盘。图标先画一个「启动中」的状态。
 ///
 /// **不在 tauri.conf.json 里配 `trayIcon`** —— 配了的话 Tauri 会自己再
-/// 建一个，菜单栏上就出现两个图标。图标是运行时画出来的（§7.4：两行
+/// 建一个，菜单栏上就出现两个图标。图标是运行时画出来的（两行
 /// 必须自己渲染成图片），配置里那份静态图没有意义。
 fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
     let s = menubar::MenuBarState::default();
@@ -1183,7 +1182,7 @@ fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
         s.is_template(),
         menubar::Appearance::Dark,
     );
-    // 托盘菜单。**「退出」在这里，而 ⌘Q 只隐藏窗口**（§2.4）—— 这个
+    // 托盘菜单。**「退出」在这里，而 ⌘Q 只隐藏窗口** —— 这个
     // 应用退出的代价很高（所有 AI 客户端立刻失联），一个手滑的 ⌘Q 不
     // 该造成那个后果。
     let menu = build_tray_menu(app, &TrayFacts::default())?;
@@ -1202,7 +1201,7 @@ fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
                     }
                 }
                 "quit" => {
-                    // **退出要确认**（§7.5）：代价是所有 AI 客户端立刻
+                    // **退出要确认**：代价是所有 AI 客户端立刻
                     // 失联，不该由一次手滑造成。托盘里没法弹对话框，
                     // 所以把窗口拉起来让他在里面确认。
                     if let Err(e) = show_main_window(app) {
@@ -1231,7 +1230,7 @@ fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
                     });
                 }
                 _ => {
-                    // `组::<组名>::<provider>` —— 托盘里切 select 组（§3.5）
+                    // `组::<组名>::<provider>` —— 托盘里切 select 组
                     if let Some(rest) = id.strip_prefix("组::") {
                         let Some((g, p)) = rest.split_once("::") else {
                             return;
@@ -1305,7 +1304,7 @@ async fn collect_tray_facts(
 #[derive(Default, PartialEq, Clone)]
 struct TrayFacts {
     running: bool,
-    /// 今日花费。`None` = 不知道，画破折号而不是 `$0.00`（§4.3）
+    /// 今日花费。`None` = 不知道，画破折号而不是 `$0.00`
     cost: Option<f64>,
     /// 最紧张那个额度窗口用了多少（订阅账号才有）
     quota: Option<f64>,
@@ -1315,7 +1314,7 @@ struct TrayFacts {
     can_undo: bool,
 }
 
-/// 按 §7.5 建托盘菜单。
+/// 建托盘菜单。
 ///
 /// 菜单栏显示的是**状态**，点开才是**操作面板** —— 所以上半截是几行
 /// 读不了的状态，下半截才是能点的东西。
@@ -1350,7 +1349,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> =
         vec![Box::new(head), Box::new(money), Box::new(sep)];
 
-    // `select` 组：一个子菜单一组，选中的打勾（§3.5「托盘里切」）
+    // `select` 组：一个子菜单一组，选中的打勾（这就是「托盘里切」）
     for (name, members, selected) in &f.groups {
         let mut subs: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
         for m in members {
@@ -1403,7 +1402,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
 
 /// 每秒更新一次菜单栏。
 ///
-/// **空闲时跳过渲染**（§7.4）：文字没变就不重画。菜单栏是这个应用唯一
+/// **空闲时跳过渲染**：文字没变就不重画。菜单栏是这个应用唯一
 /// 常驻的东西，它自己耗电就直接违反了「空闲 CPU 约等于零」。
 async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
     let mut prev = menubar::MenuBarState::default();
@@ -1418,13 +1417,13 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
             Some(state) => collect_menubar_state(&state).await,
             None => continue,
         };
-        // 托盘菜单跟着一起更（§7.5）。**只在内容真的变了的时候重建**
+        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建**
         // —— 每秒重建一次是浪费，而且 macOS 上菜单正开着时重建会把它
         // 收起来，用户点到一半菜单没了。
         //
         // 而**收数据本身也要限频**：菜单要的东西（策略组、历史）得走两次
         // 控制面往返，一秒两次是在为一个几分钟才变一次的菜单持续付钱，
-        // 而这个应用的第一条约束就是空闲时约等于不存在（§7.4）。
+        // 而这个应用的第一条约束就是空闲时约等于不存在。
         // 五秒一次 —— 改完配置最多等五秒菜单跟上，那完全够。
         tick = tick.wrapping_add(1);
         // 第一轮无条件建一次，否则托盘头五秒是个空菜单
@@ -1455,7 +1454,7 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
             menubar::Appearance::Dark,
         );
         let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
-        // **模板标志要跟着状态一起切**（§7.4）：告警时关掉它才能上色，
+        // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
         // 恢复时再打开才能重新自动适配亮暗。
         let _ = tray.set_icon_as_template(template);
         prev = next;
@@ -1479,7 +1478,7 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
         };
     }
     // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了 $0.00」
-    // 是句废话（§4.3.2）。按量付费的账号根本没有那些响应头。
+    // 是句废话。按量付费的账号根本没有那些响应头。
     let quota = state.control.quota().await.unwrap_or_default();
     let tightest = quota
         .iter()
@@ -1487,7 +1486,7 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
         .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent));
 
     // 花费从库里来。拿不到就是「不知道」——**画一个 $0.00 会是一个断言：
-    // 今天没花钱**，而那不是我们知道的事（§4.3）。
+    // 今天没花钱**，而那不是我们知道的事。
     let cost_today = if tightest.is_some() {
         None
     } else {
@@ -1497,7 +1496,7 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
             .await
             .ok()
             // **只用实测的那部分。**把估算混进这个数字里，就是在一块
-            // 用户每天扫一眼的地方假装精确（§4.3）。
+            // 用户每天扫一眼的地方假装精确。
             .map(|s| s.cost_micros_exact as f64 / 1e6)
     };
 

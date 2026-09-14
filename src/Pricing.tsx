@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
 
 /**
- * 自定义价格（§4.3.0 的第三层）。
+ * 自定义价格（第三层）。
  *
  * **中转站的价格和官方不同，而没有任何公开数据集会收录它们** —— 这一层
  * 是必需的，而在此之前它只能靠用户手写 `~/.thinkwatch/pricing.yaml`。
@@ -13,7 +13,7 @@ import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types"
  *
  * **有算不出价钱的请求时才展开。**用户不会主动想起要配价格 —— 只有
  * 「最近 7 天有 37 条请求算不出钱，用的是这两个模型」这种具体证据才会
- * （§0.6：高级功能的触发条件要绑在「这个问题存不存在」上，不绑在数量上）。
+ * （高级功能的触发条件要绑在「这个问题存不存在」上，不绑在数量上）。
  * 没有这个问题时它就是一行折叠起来的小字，说一句「都能算出价钱」。
  *
  * # 单位
@@ -29,10 +29,10 @@ export default function Pricing() {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   /**
-   * 「检查价格更新」走到哪一步了（§4.3.0、§12）。
+   * 「检查价格更新」走到哪一步了。
    *
    * **三步，不是一步。**一步意味着「检查」和「写入」是同一次点击，
-   * 而那正是「静默下载」的定义 —— §12 承诺零上传，那也意味着零静默
+   * 而那正是「静默下载」的定义 —— 零上传的承诺同时意味着零静默
    * 下载。用户要先看见「要连哪儿、多大」，再看见「变了什么」，才轮到
    * 「写进去」。
    */
@@ -47,7 +47,7 @@ export default function Pricing() {
       setRows(d.rows);
       setErr(null);
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setErr(typeof e === "string" ? e : String(e));
     }
   }, []);
@@ -79,7 +79,7 @@ export default function Pricing() {
         <div>
           <h2 className="tw-title font-semibold">自定义价格</h2>
           {problem ? (
-            // **具体证据，不是功能介绍**（§0.6）
+            // **具体证据，不是功能介绍**
             <p className="mt-1 text-amber-700 dark:text-amber-400">
               最近 7 天有 {data.unpriced_recent} 条请求算不出价钱
               {data.unpriced_models.length > 0 && (
@@ -209,8 +209,8 @@ export default function Pricing() {
       )}
 
       {/*
-        检查价格更新（§4.3.0 第二层）。**绝不在启动时后台偷偷拉** ——
-        §12 承诺了零上传，那也意味着零静默下载。
+        检查价格更新（第二层）。**绝不在启动时后台偷偷拉** ——
+        零上传的承诺同时意味着零静默下载。
       */}
       <div className="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
         {!offer && !preview && (
@@ -373,7 +373,7 @@ function Cell({
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      // macOS 会把首字母大写，而模型名是大小写敏感的（§9.7）
+      // macOS 会把首字母大写，而模型名是大小写敏感的
       autoComplete="off"
       autoCorrect="off"
       autoCapitalize="off"

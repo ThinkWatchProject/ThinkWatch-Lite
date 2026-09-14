@@ -20,7 +20,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 /**
  * 今天的账。
  *
- * 这一页的每一个数字都受 §4.3 那条约束：**绝不让估算值混进精确数字里
+ * 这一页的每一个数字都受那条约束：**绝不让估算值混进精确数字里
  * 假装准确。**所以成本是三个数并排，不是一个。
  */
 export default function Dashboard({ tick }: { tick: number }) {
@@ -34,7 +34,7 @@ export default function Dashboard({ tick }: { tick: number }) {
     let alive = true;
     (async () => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+        // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<Data>("dashboard");
         if (alive) {
           setD(x);
@@ -63,7 +63,7 @@ export default function Dashboard({ tick }: { tick: number }) {
   const s = d.summary;
   const t = triggers(null, d);
   const hasEstimate = s.cost_micros_estimated > 0;
-  // §0.6：条件不满足就**不出现**，不是折叠。一个还没有任何数据的成本
+  // 条件不满足就**不出现**，不是折叠。一个还没有任何数据的成本
   // 面板是在展示空壳，而它占的地方本来可以放「接下来该做什么」
   const nothingYet = !t.cost;
 
@@ -76,7 +76,7 @@ export default function Dashboard({ tick }: { tick: number }) {
         </div>
 
         {nothingYet ? (
-          // 空状态永远在回答「接下来该做什么」（§7.13）
+          // 空状态永远在回答「接下来该做什么」
           <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-center tw-body text-neutral-500 dark:border-neutral-700">
             今天还没有请求。把客户端指过来，数字会出现在这里。
           </p>
@@ -89,7 +89,7 @@ export default function Dashboard({ tick }: { tick: number }) {
                 hint={`按 ${s.pricing_date} 的价目表`}
               />
               {/* **估算值单独一格，带波浪号。**混进上面那个数里就是在
-                  把一个不确定的东西说成确定的（§4.3） */}
+                  把一个不确定的东西说成确定的 */}
               {hasEstimate && (
                 <Stat
                   label="其中估算"
@@ -105,7 +105,7 @@ export default function Dashboard({ tick }: { tick: number }) {
               {/*
                 **第三栏：订阅调用量。**订阅制的边际成本是零，按 API 价目表
                 算出来的数字是纯虚构的 —— 所以它不进上面那个金额，而是单独
-                显示 token 量（§4.3.1）。
+                显示 token 量。
               */}
               {s.subscription_requests > 0 && (
                 <Stat
@@ -115,7 +115,7 @@ export default function Dashboard({ tick }: { tick: number }) {
                 />
               )}
               {/*
-                缓存省了多少（§4.4）。**算的是差额** —— 「如果这些 token
+                缓存省了多少。**算的是差额** —— 「如果这些 token
                 没命中缓存，要多花多少」。对 Claude Code 用户，这通常是
                 成本结构里最大的一块。
               */}
@@ -136,7 +136,7 @@ export default function Dashboard({ tick }: { tick: number }) {
             </div>
 
             {/* **没有价格的那些要说出来。**不说的话，上面那个花费是偏低
-                的，而用户没有任何线索知道少算了什么（§4.3） */}
+                的，而用户没有任何线索知道少算了什么 */}
             {s.unpriced_requests > 0 && (
               <p className="mt-3 tw-body text-amber-700 dark:text-amber-400">
                 <Tip text="这些请求用的模型不在价目表里 —— 上游自定义的模型名通常如此。在「配置 › 自定义价格」里给它填一个单价，它们就会计入合计。">
@@ -204,8 +204,8 @@ export default function Dashboard({ tick }: { tick: number }) {
       </section>
 
       {/*
-        出站密钥检测攒下的证据（§5.0）。**只在真的发现过东西时出现** ——
-        没发现的时候显示一句「一切正常」是在占地方（§0.6），而这一块的
+        出站密钥检测攒下的证据。**只在真的发现过东西时出现** ——
+        没发现的时候显示一句「一切正常」是在占地方，而这一块的
         全部说服力来自「它说的是已经发生在你身上的事」。
       */}
       {d.leaks.length > 0 && (
@@ -221,7 +221,7 @@ export default function Dashboard({ tick }: { tick: number }) {
                 <span className="font-medium">{l.provider || "上游"}</span>
                 {l.masked.length > 0 && (
                   // **打码之后才显示。**把发现的密钥原样贴出来，等于
-                  // 把泄漏搬了个家（§9.7）
+                  // 把泄漏搬了个家
                   <span className="text-amber-700 dark:text-amber-400">
                     {" "}
                     · 涉及 {l.masked.join("、")}
@@ -241,7 +241,7 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {/*
         **按上游分是另一个问题。**「哪个模型慢」的下一步是换模型，
-        「哪家上游慢」的下一步是换上游 —— 合成一张表两个都答不好（§4.6）。
+        「哪家上游慢」的下一步是换上游 —— 合成一张表两个都答不好。
         只有一家上游时不显示：那时这张表说的是「它就是这么快」。
       */}
       {t.comparison && d.latency_by_provider.length > 1 && (
@@ -295,7 +295,7 @@ export default function Dashboard({ tick }: { tick: number }) {
                   name: g.name,
                   value: g.cost_micros,
                   // **算不出价钱的要说出来。**不说的话这根条是偏短的，
-                  // 而看图的人没有线索知道少算了什么（§4.3）
+                  // 而看图的人没有线索知道少算了什么
                   note: g.unpriced_requests
                     ? `${g.unpriced_requests} 条无价`
                     : undefined,
@@ -329,7 +329,7 @@ export default function Dashboard({ tick }: { tick: number }) {
           <div className="flex items-baseline gap-3">
             <h2 className="tw-title font-semibold">延迟</h2>
             {/* 用分位数不用平均值：AI 延迟是长尾分布，平均值会被极端值
-                拉偏（§4.6） */}
+                拉偏 */}
             <span className="tw-body text-neutral-400">首字节，按模型分</span>
           </div>
           <table className="mt-2 w-full text-left tw-body tw-num">
@@ -406,13 +406,13 @@ export default function Dashboard({ tick }: { tick: number }) {
                     {r.billing === "subscription" ? (
                       // **「订阅」而不是 $0.00。**后者看起来像一个算出来
                       // 的结果，会让人误以为这次调用真的免费；「订阅」
-                      // 表达的是「这笔账不在这个维度上」（§4.3.1）
+                      // 表达的是「这笔账不在这个维度上」
                       <Tip text="这家是订阅制，边际成本为零">
                         <span className="text-neutral-500">订阅</span>
                       </Tip>
                     ) : r.cost_micros == null ? (
                       // **「没有价格」不是 $0.00。**显示成 0 会让它悄悄
-                      // 混进总额的心理预期里（§4.3）
+                      // 混进总额的心理预期里
                       <Tip text="这个模型不在价目表里">
                         <span className="text-neutral-400">—</span>
                       </Tip>
@@ -433,7 +433,7 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
 
-      {/* 存储状态。**正常时不显示** —— §0.6：没问题的时候不该占地方 */}
+      {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
       {d.storage && d.storage.level !== "正常" && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {d.storage.level}

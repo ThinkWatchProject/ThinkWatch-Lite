@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DryRunResult } from "./types";
 
 /**
- * 路由试算（DESIGN.md §3.4）。
+ * 路由试算。
  *
  * 它回答的不是「会走到哪儿」，而是**「为什么没走我以为的那条」** ——
  * 后者才是用户真正在问的问题，所以每条没命中的规则也要列出来，并说清
@@ -45,7 +45,7 @@ export default function DryRun({ models }: { models: string[] }) {
         }),
       );
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setError(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
@@ -148,7 +148,7 @@ function Result({ r }: { r: DryRunResult }) {
             )}
           </div>
           {r.hurts_cache && (
-            // 要直说 —— 它决定账单（§3.4）
+            // 要直说 —— 它决定账单
             <div className="mt-1 text-amber-600 dark:text-amber-400">
               这个组是负载均衡，会让 prompt cache 不稳定。
             </div>

@@ -1,7 +1,7 @@
 import type { Dashboard, Overview } from "./types";
 
 /**
- * 高级功能的触发条件（DESIGN.md §0.6）。
+ * 高级功能的触发条件。
  *
  * **不是「折叠到高级设置里」。**折叠面板仍然在告诉用户「这里有你不懂的
  * 东西」，那种焦虑不比直接显示小多少。条件不满足就**不出现**。
@@ -62,7 +62,7 @@ export function triggers(ov: Overview | null, d: Dashboard | null): Triggers {
     health: providers >= 2,
     comparison: providers >= 2,
     // **有过请求才出现。**一个还没有任何数据的成本面板是在展示一个
-    // 空壳，而它占的地方本来可以放「接下来该做什么」（§7.13）
+    // 空壳，而它占的地方本来可以放「接下来该做什么」
     cost: !!s && (s.requests > 0 || s.locally_answered > 0),
   };
 }

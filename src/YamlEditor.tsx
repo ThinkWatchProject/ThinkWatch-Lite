@@ -6,12 +6,12 @@ import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language"
 import { yaml } from "@codemirror/lang-yaml";
 
 /**
- * 配置文件的编辑器（§7.10）。
+ * 配置文件的编辑器。
  *
  * **为什么是 CodeMirror 6 而不是 Monaco。** Monaco 是整个 VS Code 的
  * 编辑器内核，5MB 起步，它的价值在 IntelliSense 和 TypeScript 服务 ——
  * 我们一样都用不上。这一页要的就三样：语法高亮、行号、光标位置能对到
- * 语义节点。为一页配置把整个前端从 300KB 撑到 5MB 不划算（§7.1 的
+ * 语义节点。为一页配置把整个前端从 300KB 撑到 5MB 不划算（
  * 取舍同一条线）。
  *
  * 换掉 `textarea` 换来的三件事：
@@ -63,7 +63,7 @@ export default function YamlEditor({
           if (u.docChanged) cb.current.onChange(u.state.doc.toString());
           if (u.selectionSet || u.docChanged) {
             // **字节偏移，不是字符偏移。**中文配置下两者差得很远，而
-            // 后端是按字节切的（§9.7 里栽过好几次的那个坑）
+            // 后端是按字节切的（栽过好几次的那个坑）
             const head = u.state.selection.main.head;
             const before = u.state.doc.sliceString(0, head);
             cb.current.onCursor?.(enc.encode(before).length);

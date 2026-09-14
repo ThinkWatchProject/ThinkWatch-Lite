@@ -6,7 +6,7 @@ import type { ConfigAt, ConfigText as Doc } from "./types";
 /**
  * 文本模式：直接改 config.yaml。
  *
- * **它是表单模式的退路，也是它的上限**（§3.8）。表单能改的只有标量值，
+ * **它是表单模式的退路，也是它的上限**。表单能改的只有标量值，
  * 而加一个 provider、删一条规则、写一段注释，都只能在这里做。
  *
  * 语法高亮没有做。Monaco 是几 MB 的依赖，而这一层真正解决的问题是
@@ -23,16 +23,16 @@ export default function ConfigTextMode({
   /** 保存成功。外层拿它去重新拉配置和概览 */
   onSaved: () => void;
   /**
-   * 从表单跳过来时要定位的那个名字（§7.10）。
+   * 从表单跳过来时要定位的那个名字。
    *
    * **这个联动的价值不只是方便**：它让用户亲眼看到「我在表单里改一个
    * 字段，文件里只有那一行变了」，而那比任何文档都更能建立对最小文本
-   * 替换的信任（§3.8）。
+   * 替换的信任。
    */
   focus?: string | null;
-  /** 最近一次校验失败指到的行号（§3.8）。**没有就是 null**，不是 0 */
+  /** 最近一次校验失败指到的行号。**没有就是 null**，不是 0 */
   rejectedLine?: number | null;
-  /** 点「在表单里看」时回到表单并定位（§7.10 的反向那条） */
+  /** 点「在表单里看」时回到表单并定位（反向那条） */
   onJumpToForm?: (name: string) => void;
 }) {
   const [draft, setDraft] = useState(doc.text);
@@ -60,7 +60,7 @@ export default function ConfigTextMode({
    * 「这一段就是刚才表单里那个东西」，而一个看不见的光标回答不了这个。
    */
   /**
-   * 光标停在哪一段上（§7.10 的反向联动）。
+   * 光标停在哪一段上（反向联动）。
    *
    * **问后端，不在前端猜。**猜错的表现是「我明明点在中转上，右边显示
    * 的是官方」—— 那比没有这个功能更让人不信任这一页。
@@ -112,7 +112,7 @@ export default function ConfigTextMode({
     setBusy(true);
     setError(null);
     try {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("put_config", { text: draft, baseVersion: base.current });
       base.current = "";
       onSaved();
@@ -167,7 +167,7 @@ export default function ConfigTextMode({
       />
 
       {/*
-        反向联动（§7.10）：光标停在哪儿，就说它是哪一段。
+        反向联动：光标停在哪儿，就说它是哪一段。
         **这个提示存在的理由不是方便** —— 它让用户建立「表单就是文件的
         另一种视图」这个心智，而不是两个割裂的东西。
       */}

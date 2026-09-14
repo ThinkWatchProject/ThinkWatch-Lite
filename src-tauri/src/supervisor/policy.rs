@@ -2,7 +2,7 @@
 //! 系统状态，这样「连续崩五次会怎样」是可以在毫秒内测出来的，而不是
 //! 要真的把 core 杀五遍。
 //!
-//! 设计见 DESIGN.md §2.2.1。
+//! 设计。
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -83,7 +83,7 @@ impl RestartPolicy {
 
 /// 该不该打断用户。
 ///
-/// **分级告知**（§2.2.1）：偶发崩溃自动恢复了就别打扰人 —— 一个用完就
+/// **分级告知**：偶发崩溃自动恢复了就别打扰人 —— 一个用完就
 /// 忘的通知，代价是用户下次真出事时也不看了。
 pub fn should_interrupt(decision: Decision, failures: usize) -> bool {
     match decision {

@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
 
 /**
- * 会话页（DESIGN.md §7.9）。
+ * 会话页。
  *
  * **孤立地看单个请求，看不出任何有用的东西。**Claude Code 的一次任务是
  * 几十到上百个请求，携带不断增长的上下文。这一页要能回答的是
  * 「我那次重构花了多少、为什么」，而不是「第 47 个请求耗时多少毫秒」。
  *
- * 成本仍然是三态的（§4.3）：没有价格的轮次单独报数，**不当成 0 加进
+ * 成本仍然是三态的：没有价格的轮次单独报数，**不当成 0 加进
  * 总额**。一个会撒谎的成本面板不如没有。
  */
 export default function Sessions() {
@@ -23,7 +23,7 @@ export default function Sessions() {
       setRows(await invoke<SessionView[]>("sessions"));
       setError(null);
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setError(typeof e === "string" ? e : String(e));
     }
   }, []);
@@ -37,7 +37,7 @@ export default function Sessions() {
   if (!rows) return <div className="p-5 tw-head text-neutral-500">{error ?? "读取中…"}</div>;
 
   if (rows.length === 0) {
-    // 空状态永远在回答「接下来该做什么」（§7.13）
+    // 空状态永远在回答「接下来该做什么」
     return (
       <div className="p-5">
         <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
@@ -107,7 +107,7 @@ export default function Sessions() {
 /**
  * 一次会话的花费。
  *
- * **三态**（§4.3）：有价格的加起来，没价格的单独说，一轮都没有价格时
+ * **三态**：有价格的加起来，没价格的单独说，一轮都没有价格时
  * 不显示 $0 —— 那是在撒谎。
  */
 function Cost({ s }: { s: SessionView }) {
@@ -170,7 +170,7 @@ function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
 }
 
 /**
- * 上下文增长曲线。**一眼看出哪次任务的上下文失控了**（§7.9）。
+ * 上下文增长曲线。**一眼看出哪次任务的上下文失控了**。
  *
  * 用条形而不是折线：轮次是离散的，而「第 12 轮突然翻倍」正是要找的
  * 那个东西 —— 折线会把那一跳平滑掉一部分。
@@ -207,7 +207,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
   );
 }
 
-/** 每轮的成本瀑布 —— 找出那个 8 万 token 的文件读取（§7.9）。 */
+/** 每轮的成本瀑布 —— 找出那个 8 万 token 的文件读取。 */
 function Waterfall({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.cost_micros ?? 0));
   return (

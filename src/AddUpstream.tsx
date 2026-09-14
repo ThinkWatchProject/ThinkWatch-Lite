@@ -16,12 +16,12 @@ import type { ModelList, ProbeResponse, SetupResponse } from "./types";
  * 要填的东西就在配置页「上游」那一节里 —— **配置就该在配置的地方**。
  *
  * 只问两样：地址和密钥。名字从 URL 猜，协议不问（对绝大多数上游
- * 「按 Anthropic 转发」就是对的）。这是 §0.6 那条纪律：能少问一个就
+ * 「按 Anthropic 转发」就是对的）。这是那条纪律：能少问一个就
  * 少问一个。
  *
  * 只在一个上游都没有的时候出现：核心那个 `/setup` 端点在已经有配置时
  * 会返回 409 而不是覆盖 —— 整文件重写会把用户的注释和格式全抹掉。之后
- * 再加上游走文本模式（§3.8 的结构性增删）。
+ * 再加上游走文本模式（结构性增删）。
  */
 export default function AddUpstream({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState("");
@@ -47,7 +47,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
     setError(null);
     setProbe(null);
     try {
-      // Tauri 的 invoke 用**字符串** reject，不是 Error 对象（§9.7）
+      // Tauri 的 invoke 用**字符串** reject，不是 Error 对象
       setProbe(await invoke<ProbeResponse>("probe_upstream", { baseUrl, key }));
     } catch (e) {
       setError(typeof e === "string" ? e : String(e));
@@ -73,7 +73,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
     }
   }
 
-  // ModelList 是个带 kind 的联合（§3.9）：「列出来了」「上游没这个接口」
+  // ModelList 是个带 kind 的联合：「列出来了」「上游没这个接口」
   // 「2xx 但形状没认出来」「空的」是四件不同的事，说成同一句会让用户
   // 以为是自己配错了。
   function describeModels(m: ModelList | undefined): string {
@@ -126,7 +126,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             填错一个字符的代价是一次看不懂的 401 —— 让他看得见自己粘了
             什么，比把它盖成圆点有用。
             autoCapitalize/autoCorrect 那一组不能少：macOS 会把首字母
-            大写，那是一类稳定复现的「key 明明是对的却认证失败」（§9.7）。
+            大写，那是一类稳定复现的「key 明明是对的却认证失败」。
           */}
           <input
             value={key}
