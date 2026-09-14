@@ -510,7 +510,7 @@ export default function App() {
                     className={
                       "relative flex items-center rounded-md " +
                       (railOpen
-                        ? "h-[26px] w-full gap-2 px-2 text-left tw-body "
+                        ? "h-[28px] w-full gap-2 px-2 text-left tw-body "
                         : "mx-auto h-[40px] w-[40px] justify-center ") +
                       (on ? "tw-selected font-medium" : "hover:bg-[var(--chrome-hover)]")
                     }
@@ -591,11 +591,19 @@ export default function App() {
                 status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text
               }
             >
+              {/*
+                **一切正常的时候它不该抢眼。**展开时这个点旁边有「运行中」
+                三个字，它是个标点；收起之后它成了空列里唯一的颜色，一个
+                高饱和的绿点在那儿大声说一件没什么可说的事。
+
+                所以正常态压到 45% 不透明、直径 6px —— 看得见，但要主动
+                去看。出问题时才放回满饱和：琥珀和红是真的需要被扫到的。
+              */}
               <span
                 className={
-                  "inline-block h-2 w-2 rounded-full bg-current " +
+                  "inline-block h-1.5 w-1.5 rounded-full bg-current " +
                   (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
+                    ? "text-emerald-600/45 dark:text-emerald-400/45"
                     : c.tone === "warn"
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-red-600 dark:text-red-400")
