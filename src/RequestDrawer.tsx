@@ -71,7 +71,25 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
   );
 }
 
-export default function RequestDrawer({ id, onClose }: { id: number; onClose: () => void }) {
+export default function RequestDrawer({
+  id,
+  onClose,
+  /**
+   * 当成分栏里的一列渲染，而不是浮在右边。
+   *
+   * **排查要来回对照。**覆盖式抽屉的问题是：看详情的时候看不到列表，
+   * 而「这一条和上一条比慢在哪」恰恰要同时看见两边。抓包工具全是主从
+   * 分栏，理由就是这个。
+   *
+   * 浮层模式留着给窄窗口 —— 1100px 拆成两栏之后列表只剩 600px，
+   * 再窄就两边都用不了。
+   */
+  inline = false,
+}: {
+  id: number;
+  onClose: () => void;
+  inline?: boolean;
+}) {
   const [d, setD] = useState<RequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("timeline");
@@ -98,7 +116,13 @@ export default function RequestDrawer({ id, onClose }: { id: number; onClose: ()
   const r = d?.row;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950">
+    <div
+      className={
+        inline
+          ? "flex h-full min-w-0 flex-col border-l border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
+          : "fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
+      }
+    >
       <header className="flex items-baseline gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
         <span className="tw-title font-semibold">{r?.model || `第 ${id} 号请求`}</span>
         {r && (
