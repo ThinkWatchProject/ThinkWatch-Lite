@@ -1,21 +1,28 @@
-"""把 ThinkWatch 的 TW 标识渲染成 macOS 应用图标。
+"""生成 macOS 应用图标。
 
-几何完全取自企业版的 web/public/favicon.svg 和
-web/src/components/brand/think-watch-mark.tsx（两者逐点一致），
-所以桌面端的图标和企业版界面里那个是同一个标识。
+    python3 src-tauri/icons/render.py            # 重新生成并装进 icons/
+    python3 src-tauri/icons/render.py <目录>     # 只导出各个尺寸，用来看效果
 
-本机没有任何 SVG 光栅化工具，所以这里用 SDF（有符号距离场）直接算覆盖度：
-每个形状给出「到边界的距离」，再按一个像素宽度做抗锯齿。好处是分辨率无关，
-16px 和 1024px 都是原生渲染，不是把大图缩下来——缩出来的小图，2px 的描边
-会糊成一团灰。
+第一种用法产出 tauri.conf.json 里列的那四个文件（32x32.png、128x128.png、
+128x128@2x.png、icon.icns）。**别手工改它们** —— 它们是这个脚本的输出，
+手改会和脚本悄悄分叉，下次谁重新生成一次就被覆盖了。
+
+不依赖 SVG 光栅化工具，也不依赖图像库（只要 numpy，PNG 编码在下面）：
+每个形状用 SDF（有符号距离场）给出「到边界的距离」，再按一个像素的宽度
+算覆盖度。好处是分辨率无关，**每个尺寸都是原生画的，不是把大图缩下来**。
+
+标识和企业版是同一个构型（一个 T，竖笔同时是 W 的轴），但**不是同一组
+坐标**。企业版那版（web/public/favicon.svg）要塞进一圈内框里，所以横笔
+只有 14 宽、W 只有 6 深；这里没有内框，字形放大到填满整块，横笔 18 宽、
+W 8 深。改企业版那个标识时，这里不会自动跟着变。
 """
-import numpy as np, zlib, struct, sys, pathlib
+import numpy as np, zlib, struct, sys, shutil, tempfile, subprocess, pathlib
 
-# **霓虹。**近黑的靛蓝底，TW 本身是发光的霓虹管。
+# **霓虹。**近黑的底，TW 本身是发光的霓虹管。
 #
-# 前面几版都是「一块色 + 一个标记」，换个字母就是另一个应用。这一版让
-# 标记自己带光：笔画沿 x 从青渐变到品红，外面三层辉光。底色压到近黑，
-# 是为了让光有地方亮 —— 霓虹在白天不好看，理由一样。
+# 之前几版都是「一块饱和色 + 一个白标记」，换个字母就是另一个应用。这一版
+# 让标记自己带光。底色压到近黑是为了给光留地方 —— 霓虹在白天不好看，
+# 理由一样。
 BG_TOP    = (0x0D, 0x0F, 0x22)   # 靛蓝，左上受一点光
 BG_BOTTOM = (0x02, 0x02, 0x08)   # 近黑
 NEON_A    = (0x22, 0xE5, 0xF2)   # 青，笔画左端
@@ -24,6 +31,30 @@ NEON_B    = (0xF0, 0x5C, 0xD8)   # 品红，笔画右端
 # macOS 的图标网格：内容占画布约 80.5%，四周留透明边。
 # 不留的话，它在程序坞里会比旁边所有应用都大一圈。
 CONTENT = 824 / 1024
+
+# 字形。坐标在 32×32 的格子里，多段折线，圆头圆角由 SDF 天然带出来。
+STROKES = [
+    [(7, 9), (25, 9)],                 # T 横
+    [(16, 9), (16, 17)],               # T 竖（同时是 W 的轴）
+    [(7, 17), (11.5, 25), (16, 17)],   # W 左
+    [(16, 17), (20.5, 25), (25, 17)],  # W 右
+]
+
+# 大小两套配方。**小的不是把大图缩下来，是重画**：按比例缩下去笔画会细到
+# 一个像素以下，抗锯齿会把它抹成一条灰线。
+#
+# 这几个数是三轮返工试出来的，往回调之前先读上一条注释：
+#   half —— 笔画半宽。粗过 2 会把 T 的竖和 W 的夹角堵上，远看是个色块。
+#           细而硬才显得精致：扫一眼扫到的应该是字形，不是墨。
+#   glow —— (半径, 强度)。半径 3.5 和 1.5 都试过，结果一样：图标上一多半
+#           的可见面积成了光晕，整体发虚。**光要窄到贴着笔画**，作用是把
+#           边缘的颜色压满，不是让笔画周围亮起来。
+BIG   = dict(half=1.40, mark=1.00, glow=(0.30, 0.22))
+SMALL = dict(half=1.75, mark=1.04, glow=(0.25, 0.18))   # ≤ 64px
+
+# 管芯留多少白。整根往白里调是让它「看起来在发光」的直觉做法，结果是颜色
+# 变淡 —— 真的霓虹是管壁上颜色最浓，只有芯过曝成白。
+CORE_WHITE = 0.25
 
 
 def sd_round_rect(px, py, cx, cy, hw, hh, r):
@@ -36,8 +67,7 @@ def sd_round_rect(px, py, cx, cy, hw, hh, r):
 
 
 def sd_segment(px, py, ax, ay, bx, by):
-    """到线段的距离。圆头和圆角接头是这个函数天然带的——
-    多段取 min 之后，接头处自然是圆的。"""
+    """到线段的距离。多段取 min 之后，接头处自然是圆的。"""
     pax, pay = px - ax, py - ay
     bax, bay = bx - ax, by - ay
     denom = bax * bax + bay * bay
@@ -46,32 +76,12 @@ def sd_segment(px, py, ax, ay, bx, by):
 
 
 def cover(d, aa):
-    """距离 → 覆盖度。aa 是一个像素在 viewBox 单位下的宽度。"""
+    """距离 → 覆盖度。aa 是一个像素在 32 格坐标下的宽度。"""
     return np.clip(0.5 - d / aa, 0.0, 1.0)
 
 
 def render(size):
-    """画一张。
-
-    底是近黑的圆角方（保留一点径向受光和顶部内高光，否则是一块死黑），
-    TW 是一根霓虹管：
-
-      · 颜色沿 x 从青到品红。**不是整根一个色** —— 单色霓虹在一排图标里
-        就是「一个发光的青字」，渐变才让它有材质。
-      · **笔画要细。**这一版之前用过 2.15 的半宽，想着「粗一点更实」，
-        结果相反：粗笔画在这个字形里把 T 的竖和 W 的夹角糊成一坨，
-        远看是个色块。细而硬的线才显得精致 —— 图标是给人扫一眼的，
-        扫到的应该是字形，不是墨。
-      · **辉光是一道边光，不是光晕。**半径 0.30，比一个像素还窄。
-        之前试过 3.5 和 1.5，两次的结果都是同一个：图标上一多半的可见
-        面积成了光，整体发虚。**光要窄到贴着笔画**，它的作用是让边缘
-        带上饱和的颜色，不是让笔画周围亮起来。
-      · 中心只留很少的白（0.25）。整根往白里调会变成浅色的雾；真的霓虹
-        是管壁上颜色最浓。
-
-    **小尺寸（≤64）另算。**笔画按比例会细到亚像素，所以单独给一个更粗
-    的半宽、字形放大 4%、边光再收窄一点。这不是把大图缩下来，是重画。
-    """
+    """画一张，返回 RGBA 的 uint8 数组。"""
     content_px = size * CONTENT
     scale = content_px / 32.0
     off = (size - content_px) / 2.0
@@ -80,48 +90,41 @@ def render(size):
     px = (xs + 0.5 - off) / scale
     py = (ys + 0.5 - off) / scale
     aa = 1.0 / scale
-    small = size <= 64
+    r = SMALL if size <= 64 else BIG
 
     img = np.zeros((size, size, 4), dtype=np.float64)
 
-    # ── 底 ──────────────────────────────────────────────────────
+    # ── 底：圆角方 + 左上一点径向受光 + 顶部内高光，否则是一块死黑 ──
     body = sd_round_rect(px, py, 16, 16, 16, 16, 7)
     cov = cover(body, aa)
-    r = np.hypot(px - 9.0, py - 7.0) / 30.0
-    t = np.clip(r, 0, 1)[..., None] ** 2.2
+    t = np.clip(np.hypot(px - 9.0, py - 7.0) / 30.0, 0, 1)[..., None] ** 2.2
     grad = np.array(BG_TOP) * (1 - t) + np.array(BG_BOTTOM) * t
     rim = np.clip(1.0 + body / 1.2, 0, 1) * np.clip(1.0 - py / 9.0, 0, 1)
     grad = grad + (255 - grad) * (rim**2 * 0.20)[..., None]
     img[..., :3] = grad / 255.0
     img[..., 3:4] = cov[..., None]
 
-    # ── 霓虹管 ──────────────────────────────────────────────────
-    logo_scale = 1.04 if small else 1.0
-    half = 1.75 if small else 1.40
-    strokes = [
-        [(7, 9), (25, 9)],                 # T 横
-        [(16, 9), (16, 17)],               # T 竖（同时是 W 的轴）
-        [(7, 17), (11.5, 25), (16, 17)],   # W 左
-        [(16, 17), (20.5, 25), (25, 17)],  # W 右
-    ]
+    # ── 霓虹管 ────────────────────────────────────────────────────
     d = np.full((size, size), 1e9)
-    for pts in strokes:
-        pts = [(16 + (x - 16) * logo_scale, 16 + (y - 16) * logo_scale) for x, y in pts]
+    for pts in STROKES:
+        pts = [(16 + (x - 16) * r["mark"], 16 + (y - 16) * r["mark"]) for x, y in pts]
         for (ax, ay), (bx, by) in zip(pts, pts[1:]):
             d = np.minimum(d, sd_segment(px, py, ax, ay, bx, by))
-    d = d - half
+    d = d - r["half"]
 
+    # 颜色沿 x 从青到品红。**不是整根一个色** —— 单色霓虹在一排图标里就是
+    # 「一个发光的青字」，渐变才让它有材质。
     u = np.clip((px - 7) / 18.0, 0, 1)[..., None]
     col = (np.array(NEON_A) * (1 - u) + np.array(NEON_B) * u) / 255.0
 
-    k, strength = (0.25, 0.18) if small else (0.30, 0.22)
-    g = np.exp(-np.clip(d, 0, None) / k) * strength * cov
+    radius, strength = r["glow"]
+    g = np.exp(-np.clip(d, 0, None) / radius) * strength * cov
     img[..., :3] = img[..., :3] + (col - img[..., :3]) * g[..., None]
 
     # 管内：到中线的归一化距离，0 在管壁、1 在芯。次方 1.5 让白只占中间
     # 一小条，管壁保持满饱和。
-    inner = np.clip(-d / half, 0, 1)[..., None]
-    core = col + (1.0 - col) * (inner**1.5 * 0.25)
+    inner = np.clip(-d / r["half"], 0, 1)[..., None]
+    core = col + (1.0 - col) * (inner**1.5 * CORE_WHITE)
     c = cover(d, aa)[..., None]
     img[..., :3] = img[..., :3] * (1 - c) + core * c
 
@@ -143,8 +146,49 @@ def write_png(path, arr):
     pathlib.Path(path).write_bytes(png)
 
 
+# .iconset 里每个名字对应的像素数。@2x 是逻辑尺寸的两倍，所以
+# icon_16x16@2x 和 icon_32x32 都是 32 像素，只是系统在不同场合取不同的那个。
+ICONSET = {
+    "icon_16x16": 16,     "icon_16x16@2x": 32,
+    "icon_32x32": 32,     "icon_32x32@2x": 64,
+    "icon_128x128": 128,  "icon_128x128@2x": 256,
+    "icon_256x256": 256,  "icon_256x256@2x": 512,
+    "icon_512x512": 512,  "icon_512x512@2x": 1024,
+}
+
+# tauri.conf.json 的 bundle.icon 里列的那几个（除 icns 外）。
+BUNDLE_PNGS = {"32x32.png": 32, "128x128.png": 128, "128x128@2x.png": 256}
+
+PREVIEW_SIZES = (16, 32, 64, 128, 256, 512, 1024)
+
+
+def install(icons_dir):
+    """渲染 → 打成 .icns → 写进 icons/。整条链子在这里，不在谁的终端历史里。"""
+    cache = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        iconset = pathlib.Path(tmp) / "tw.iconset"
+        iconset.mkdir()
+        for name, size in ICONSET.items():
+            if size not in cache:
+                cache[size] = render(size)
+            write_png(iconset / f"{name}.png", cache[size])
+        subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset), "-o", str(icons_dir / "icon.icns")],
+            check=True,
+        )
+    for name, size in BUNDLE_PNGS.items():
+        write_png(icons_dir / name, cache[size])
+    print(f"  icon.icns + {' + '.join(BUNDLE_PNGS)} → {icons_dir}")
+
+
 if __name__ == "__main__":
-    out = pathlib.Path(sys.argv[1]); out.mkdir(parents=True, exist_ok=True)
-    for s in (16, 32, 64, 128, 256, 512, 1024):
-        write_png(out / f"{s}.png", render(s))
-        print(f"  {s}x{s}")
+    if len(sys.argv) > 1:
+        out = pathlib.Path(sys.argv[1])
+        out.mkdir(parents=True, exist_ok=True)
+        for s in PREVIEW_SIZES:
+            write_png(out / f"{s}.png", render(s))
+            print(f"  {s}x{s}")
+    elif not shutil.which("iconutil"):
+        sys.exit("iconutil 只有 macOS 上有。想看效果的话给个目录，只导出 PNG。")
+    else:
+        install(pathlib.Path(__file__).resolve().parent)
