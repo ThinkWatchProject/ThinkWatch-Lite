@@ -1,6 +1,6 @@
 //! 开机自启。
 //!
-//! 结论见 DESIGN.md §2.4：**LaunchAgent 自启 GUI，GUI 再拉 sidecar**。
+//! 结论见 **LaunchAgent 自启 GUI，GUI 再拉 sidecar**。
 //! core 不单独注册 —— 那会在系统设置的登录项里出现两个条目、在活动监视器
 //! 里出现两个后台项，而这直接违背「对用户来说这就是一个程序」。
 //!

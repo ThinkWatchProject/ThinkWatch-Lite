@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
 
 /**
- * L3 模型测速。**这一层会花钱**（§4.6）。
+ * L3 模型测速。**这一层会花钱**。
  *
  * 所以它是三步而不是一步：填模型 → **看报价** → 点确认。中间那一步
  * 不能省 —— 触发前必须显示预估消耗，而不是点了才知道。
@@ -20,7 +20,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
     setError(null);
     setResults(null);
     try {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setQuote(await invoke<SpeedQuote>("speed_quote", { model }));
     } catch (e) {
       setError(typeof e === "string" ? e : String(e));
@@ -75,7 +75,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
         </button>
       </div>
 
-      {/* **报价。**这一步不能省（§4.6） */}
+      {/* **报价。**这一步不能省 */}
       {quote && (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
           <p className="font-medium text-amber-900 dark:text-amber-200">
@@ -149,7 +149,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
                     </td>
                     <td>{r.total_ms}ms</td>
                     {/* **实际消耗和预估对照。**有些上游会附加 system
-                        prompt，那时实际比预估多（§4.6） */}
+                        prompt，那时实际比预估多 */}
                     <td className="text-neutral-500">
                       {r.input_tokens != null
                         ? `${r.input_tokens} / ${r.output_tokens ?? 0}`

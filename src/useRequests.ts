@@ -15,22 +15,22 @@ const MAX_ROWS = 500;
 /**
  * 实时请求列表。
  *
- * **每条事件都 setState 会把 React 打死**（DESIGN.md §7.3）：一个流式
+ * **每条事件都 setState 会把 React 打死**：一个流式
  * 请求每秒几十条事件，十个并发就是每秒几百次重渲染。所以事件先进
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
  * 而重渲染次数降了一到两个数量级。
  */
 export function useRequests() {
   const [rows, setRows] = useState<RequestRow[]>([]);
-  // 本地应答单独计数。**这是个正向数字**（§4.8）—— 它既证明客户端确实
+  // 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
   // 连上了，又说明那些探测一分钱都没花。
   const [locallyAnswered, setLocallyAnswered] = useState(0);
   /**
-   * 最后一次配置被拒的样子。**留着直到下一次成功换入**（§3.8）——
+   * 最后一次配置被拒的样子。**留着直到下一次成功换入** ——
    * 一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
    */
   /**
-   * 配置面上新出现的可疑内容（§5.3）。
+   * 配置面上新出现的可疑内容。
    *
    * **只攒新出现的那些**，而且不清空 —— 用户可能正在别的页上，这条
    * 提示要一直挂着直到他去看过。
@@ -40,7 +40,7 @@ export function useRequests() {
     null,
   );
   /**
-   * token 端点换发了 refresh token（§3.6）。
+   * token 端点换发了 refresh token。
    *
    * 写回成功的只报一次，是**告知**：用户的配置文件被我们改了，哪怕改得
    * 完全正确，他的编辑器弹「文件已更改」时也该知道是谁干的。
@@ -62,7 +62,7 @@ export function useRequests() {
     let alive = true;
     (async () => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+        // Tauri 的 invoke 用字符串 reject，不是 Error
         const rows = await invoke<HistoryRow[]>("recent_requests", { limit: 200 });
         if (!alive) return;
         for (const h of rows) {

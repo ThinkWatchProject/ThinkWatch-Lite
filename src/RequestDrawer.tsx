@@ -26,7 +26,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
  *
  * **system prompt 默认折叠。**Claude Code 的 system prompt 有几千 token，
  * 展开会淹没一切 —— 而用户点开这个抽屉是为了看**这一次**发生了什么
- * （§7 的详情抽屉）。
+ * （详情抽屉）。
  */
 function Body({ b, title }: { b: BodyView | null; title: string }) {
   const [open, setOpen] = useState(false);
@@ -98,7 +98,7 @@ export default function RequestDrawer({
     let alive = true;
     (async () => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+        // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<RequestDetail>("request_detail", { id });
         if (alive) {
           setD(x);
@@ -136,7 +136,7 @@ export default function RequestDrawer({
           </span>
         )}
         <span className="flex-1" />
-        {/* §9.8：「录制」不是一个新功能，这一条请求本来就在存储里 */}
+        {/* 「录制」不是一个新功能，这一条请求本来就在存储里 */}
         <SaveFixture id={id} />
         <button
           onClick={onClose}
@@ -225,7 +225,7 @@ export default function RequestDrawer({
               (r.routing ? (
                 <div className="space-y-3">
                   {/* **「命中第 4 条」远不如「命中『带缓存的必须走官方』」
-                      有用**（§3.4） */}
+                      有用** */}
                   <div className="space-y-1">
                     <Row label="命中规则" value={r.routing.rule} />
                     {r.routing.group && <Row label="经过策略组" value={r.routing.group} />}
@@ -242,7 +242,7 @@ export default function RequestDrawer({
                           <span className="font-medium">{a.provider}</span>
                           {/* **失败的原因要留着** —— 一条说「试过 A → B →
                               C」的链和一条还说清每一跳为什么失败的链，
-                              排查价值差得远（§4.2） */}
+                              排查价值差得远 */}
                           <span
                             className={
                               a.outcome === "成功"
@@ -257,8 +257,8 @@ export default function RequestDrawer({
                       ))}
                     </ol>
                     {r.routing.attempts.length > 1 && (
-                      // **用户能看见故障转移在替他工作，这是信任的来源**
-                      // （§4.2）。一个静默切换过的请求和一个一次就成的
+                      // **用户能看见故障转移在替他工作，这是信任的来源**。
+                      // 一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
                       <p className="mt-1.5 text-neutral-500">
                         发生了故障转移：前 {r.routing.attempts.length - 1} 家失败，自动换到了下一家。
@@ -288,7 +288,7 @@ export default function RequestDrawer({
             {tab === "usage" && (
               <div className="space-y-1">
                 {r.input_tokens == null ? (
-                  // **没有 usage 不是「用了 0」**（§4.3）
+                  // **没有 usage 不是「用了 0」**
                   <p className="text-neutral-500">
                     这家上游没有报用量
                     <Tip text="有些上游会吞掉响应里的 usage 字段。没有它就无法得知这次调用消耗了多少，也就算不出成本。">
@@ -305,7 +305,7 @@ export default function RequestDrawer({
                       label="花费"
                       value={
                         r.billing === "subscription" ? (
-                          // 「订阅」而不是 $0.00（§4.3.1）
+                          // 「订阅」而不是 $0.00
                           <span className="text-neutral-500">
                             订阅 —— 这家是订阅制，这笔账不在金额这个维度上
                           </span>
@@ -335,13 +335,13 @@ export default function RequestDrawer({
 }
 
 /**
- * 另存为回放用例（§9.8）。
+ * 另存为回放用例。
  *
  * **上游漂移是我们的单元测试永远抓不到的那一类故障** —— Codex 在一个
  * patch 版本里改了 `auth.json` 的语义、`reasoning_content` 在不同上游
  * 有三个别名。防它只有一个办法：拿真实流量反复回放。
  *
- * 导出时已经走过脱敏（§5.1），但**它会进 git**，所以那句「自己看一眼」
+ * 导出时已经走过脱敏，但**它会进 git**，所以那句「自己看一眼」
  * 必须写在按钮旁边而不是文档里。
  */
 function SaveFixture({ id }: { id: number }) {
@@ -366,7 +366,7 @@ function SaveFixture({ id }: { id: number }) {
           try {
             setPath(await invoke<string>("save_fixture", { id }));
           } catch (e) {
-            // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+            // Tauri 的 invoke 用字符串 reject，不是 Error
             setError(typeof e === "string" ? e : String(e));
           } finally {
             setBusy(false);
@@ -381,7 +381,7 @@ function SaveFixture({ id }: { id: number }) {
 }
 
 /**
- * 把这条请求原样发给另一个上游（§11 的 M6+）。
+ * 把这条请求原样发给另一个上游（M6+）。
  *
  * 用途只有一个，但它是这个工具最常被需要的那一个：**这条请求走中转慢
  * 或者失败了，同样一条发给官方会怎么样？**手工复现一个 Claude Code 的
@@ -419,7 +419,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
     try {
       setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setError(typeof e === "string" ? e : String(e));
       setQuote(null);
     } finally {
@@ -476,7 +476,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
 
       {quote && (
         <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-          {/* **触发前必须显示预估消耗**，而不是点了才知道（§4.6） */}
+          {/* **触发前必须显示预估消耗**，而不是点了才知道 */}
           <div>
             发 {quote.body_bytes} 字节给 <span className="font-medium">{quote.provider}</span>，
             约 {quote.input_tokens} 个输入 token。

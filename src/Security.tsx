@@ -13,7 +13,7 @@ import type {
 } from "./types";
 
 /**
- * 客户端配置面（DESIGN.md §5.3、§7.12）。
+ * 客户端配置面。
  *
  * 两件事放在一页，因为**它们是同一件事的两面**：扫描要知道去哪儿找，
  * 而清单正是那份地址簿。
@@ -22,7 +22,7 @@ import type {
  *
  * - **只报告，不自动删除。**这一页没有任何删除按钮。误报删掉用户的
  *   正常配置比漏报还糟 —— 它会摧毁信任，然后用户关掉整个功能。
- * - **查干净了要说「没发现问题」**，而不是让这一块消失（§0.6）。
+ * - **查干净了要说「没发现问题」**，而不是让这一块消失。
  * - **不存任何状态。**每次打开现扫一遍，你看到的永远是磁盘上此刻的
  *   真实情况；没有「同步失效了」这种问题，因为压根没有同步状态。
  */
@@ -30,7 +30,7 @@ export default function Security({
   alerts,
   onSeen,
 }: {
-  /** 监听到的、**新出现**的那些（§5.3）。它们已经在下面的完整列表里了，
+  /** 监听到的、**新出现**的那些。它们已经在下面的完整列表里了，
    *  这里单独再说一遍是因为「刚刚变的」和「一直就有」是两个信号。 */
   alerts: ScanFinding[];
   onSeen: () => void;
@@ -56,7 +56,7 @@ export default function Security({
       setBase(bl);
       setError(null);
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error（§9.7）
+      // Tauri 的 invoke 用字符串 reject，不是 Error
       setError(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
@@ -174,7 +174,7 @@ export default function Security({
           {high > 0 && <span className="ml-1 text-red-600 dark:text-red-400">（{high} 处高危）</span>}
         </h2>
         {data.findings.length === 0 ? (
-          // §0.6：没风险的时候要说「安全」，而不是让这一块消失
+          // 没风险的时候要说「安全」，而不是让这一块消失
           <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
             ✓ 没发现问题
             <Tip text="隐藏字符、提示注入、危险命令、过宽权限 —— 四类都查过了。">
@@ -241,7 +241,7 @@ export default function Security({
       {data.skills.length > 0 && (
         <section>
           <h2 className="mb-1 tw-head font-medium">skill · {data.skills.length}</h2>
-          {/* §7.12：skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
+          {/* skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
           <p className="mb-2 tw-body text-neutral-500">
             只列出来看，不做跨客户端搬动
             <Tip text="skill 的跨客户端格式还没有事实标准，搬过去大概率是一份对方读不懂的配置。">
@@ -277,10 +277,10 @@ export default function Security({
 }
 
 /**
- * MCP 矩阵（§7.12）。
+ * MCP 矩阵。
  *
  * M4 的简化版**只看不搬**：格子告诉你谁配了什么，同名不同配置标个记号。
- * 点格子执行复制是 §7.12 里更完整的那一版，等这一版用顺了再说。
+ * 点格子执行复制是更完整的那一版，等这一版用顺了再说。
  */
 function Matrix({
   mcp,
@@ -301,7 +301,7 @@ function Matrix({
     ...new Set([...targets.map((t) => t.client), ...mcp.map((m) => m.client)]),
   ].sort();
   /**
-   * 正在对比的那个同名服务器（§7.12）。
+   * 正在对比的那个同名服务器。
    *
    * **标一个记号只回答了「不一样」，没回答「哪儿不一样」** —— 而用户
    * 要做的决定恰恰是「以哪边为准」，那个决定需要看见差异。
@@ -410,7 +410,7 @@ function Matrix({
                   <td className="px-2 py-1 text-neutral-500">
                     {/* **同名不同配置时，不能只显示其中一份。**挑一个显示
                         等于替用户选了个「正确答案」，而这一行的记号说的
-                        恰恰是「没有正确答案，它们不一样」（§7.12） */}
+                        恰恰是「没有正确答案，它们不一样」 */}
                     {conflicting.includes(n)
                       ? mcp
                           .filter((m) => m.name === n)
@@ -433,7 +433,7 @@ function Matrix({
       </div>
 
       {/*
-        同名不同配置的并排对比（§7.12）。**标一个记号只回答了「不一样」，
+        同名不同配置的并排对比。**标一个记号只回答了「不一样」，
         没回答「哪儿不一样」** —— 而用户要做的决定恰恰是「以哪边为准」。
       */}
       {compare && (
@@ -500,7 +500,7 @@ function Matrix({
 /**
  * 点了格子之后的确认框。
  *
- * **和接管走同一条纪律**（§7.12）：字段级合并、写前全文备份、展示 diff
+ * **和接管走同一条纪律**：字段级合并、写前全文备份、展示 diff
  * 让用户确认。往客户端配置里写东西，风险和接管完全一样。
  */
 function McpConfirm({
@@ -565,7 +565,7 @@ function McpConfirm({
 }
 
 /**
- * 上游行为基线（§5.2 防线三）。
+ * 上游行为基线（防线三）。
  *
  * > 某个中转站用了三个月一直正常，某天开始返回大量 bash 调用 ——
  * > 这是统计异常，值得告警。
@@ -601,7 +601,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
         </Tip>
       </p>
       {withDrift.length === 0 ? (
-        // §0.6：没风险的时候要说「安全」，而不是让这一块消失
+        // 没风险的时候要说「安全」，而不是让这一块消失
         <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
           ✓ 每个上游的行为都和之前一致
           {b.providers.length > 0 && (
@@ -665,7 +665,7 @@ function Shape({ m }: { m: McpView }) {
   );
 }
 
-/** 一处发现的详情。**没有删除按钮** —— 删不删由用户自己去改文件（§5.3）。 */
+/** 一处发现的详情。**没有删除按钮** —— 删不删由用户自己去改文件。 */
 function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>

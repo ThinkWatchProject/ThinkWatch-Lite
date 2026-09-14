@@ -1,7 +1,7 @@
 //! 菜单栏那 50 像素。
 //!
 //! 这类工具用户九成时间不开主窗口，所以这一小块常驻显示才是它每天真正
-//! 被看到的界面（DESIGN.md §7.4）。Surge 在那里放速率，因为流量是网络
+//! 被看到的界面。Surge 在那里放速率，因为流量是网络
 //! 代理的核心指标；对一个 AI 网关，**钱才是**。
 
 pub mod font;
@@ -15,7 +15,7 @@ pub struct MenuBarState {
     /// 第一行：今日花费。`None` 表示还不知道 —— 画成破折号而不是 `$0.00`，
     /// **0 是一个值，破折号不是**。
     pub cost_today: Option<f64>,
-    /// 订阅额度：最紧张那个窗口用了百分之多少（§4.3.2）。
+    /// 订阅额度：最紧张那个窗口用了百分之多少。
     ///
     /// **有它就显示它，而不是金额。**订阅用户的账单是固定的，「今天花了
     /// $0.00」对他没有任何信息量；他想知道的是「还能用多久」。同一块
@@ -29,7 +29,7 @@ pub struct MenuBarState {
     pub quota_reset_in_secs: Option<u64>,
     /// 上游说快到额度了（`allowed_warning` / `rejected`）。
     ///
-    /// **限流不再是突然发生的**（§4.3.2）：菜单栏在撞上 429 之前就变色。
+    /// **限流不再是突然发生的**：菜单栏在撞上 429 之前就变色。
     pub quota_warning: bool,
     /// 第二行：输出速率
     pub tokens_per_sec: Option<u32>,
@@ -41,10 +41,10 @@ pub struct MenuBarState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// 还没起来。**开机自启时第一时间就要是这个状态**，不能等 core 就绪
-    /// （§2.4）—— 否则菜单栏上什么都没有，用户以为应用没启动。
+    /// —— 否则菜单栏上什么都没有，用户以为应用没启动。
     Starting,
     Normal,
-    /// 安全拦截。**这是 §5 那套防线真正落地的地方** —— 拦截发生时你可能
+    /// 安全拦截。**这是那套防线真正落地的地方** —— 拦截发生时你可能
     /// 正埋头在别的窗口，系统通知一闪而过很容易错过，但菜单栏一直在。
     Blocked,
     /// core 断开
@@ -71,10 +71,10 @@ impl MenuBarState {
         match self.status {
             Status::Starting | Status::Disconnected => "—".to_string(),
             // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了
-            // $0.00」是句废话 —— 他想知道的是还能用多久（§4.3.2）。
+            // $0.00」是句废话 —— 他想知道的是还能用多久。
             _ => match (self.quota_percent, self.cost_today) {
                 (Some(p), _) => format!("{}%", p.round() as i64),
-                // 两位小数固定，宽度才稳（§7.4 的「宽度抖动」）
+                // 两位小数固定，宽度才稳（「宽度抖动」）
                 (None, Some(c)) => format!("${c:.2}"),
                 (None, None) => "—".to_string(),
             },
@@ -105,7 +105,7 @@ impl MenuBarState {
     /// 用模板图吗（macOS 自动跟随亮暗反色）。
     ///
     /// **模板图只能是单色**，所以告警状态必须关掉它自己上色 —— 那正是
-    /// §7.4 里那个折中：正常状态享受自动适配，告警状态换彩色。
+    /// 那个折中：正常状态享受自动适配，告警状态换彩色。
     pub fn is_template(&self) -> bool {
         // 额度告警也要上色：**限流是「你马上要撞墙了」，那和一次安全
         // 拦截同等重要** —— 而单色的模板图说不出「注意」这件事。
@@ -114,8 +114,8 @@ impl MenuBarState {
 
     /// 这一帧要不要重画。
     ///
-    /// **空闲时跳过渲染**（§7.4）。没有活跃请求、文字也没变的时候不做
-    /// 无谓的重绘 —— 这直接关系到 §4.5 那条「空闲 CPU 约等于零」。
+    /// **空闲时跳过渲染**。没有活跃请求、文字也没变的时候不做
+    /// 无谓的重绘 —— 这直接关系到那条「空闲 CPU 约等于零」。
     pub fn needs_redraw(&self, prev: &MenuBarState) -> bool {
         self.line1() != prev.line1()
             || self.line2() != prev.line2()
@@ -125,7 +125,7 @@ impl MenuBarState {
     }
 }
 
-/// 「2h」「45m」「3d」。**宽度要稳**（§7.4 的宽度抖动）：一个在
+/// 「2h」「45m」「3d」。**宽度要稳**（宽度抖动）：一个在
 /// 「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动。
 fn reset_label(secs: u64) -> String {
     match secs {
@@ -257,7 +257,7 @@ mod quota_tests {
     #[test]
     fn a_subscription_account_sees_a_percentage_not_a_price() {
         // **对订阅用户「今天花了 $0.00」是句废话** —— 他的账单是固定的，
-        // 想知道的是还能用多久（§4.3.2）。
+        // 想知道的是还能用多久。
         let s = sub(62.0, Some(7200), false);
         assert_eq!(s.line1(), "62%");
         assert_eq!(s.line2(), "2h");
@@ -275,7 +275,7 @@ mod quota_tests {
 
     #[test]
     fn no_reset_header_means_no_countdown_not_a_made_up_one() {
-        // **编一个倒计时出来，用户会照着它安排自己的活**（§4.3.2）。
+        // **编一个倒计时出来，用户会照着它安排自己的活**。
         let s = sub(62.0, None, false);
         assert_eq!(s.line2(), "—", "上游没给重置时间，我们却画了一个");
     }
@@ -283,7 +283,7 @@ mod quota_tests {
     #[test]
     fn the_reset_label_keeps_a_stable_width() {
         // 一个在「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动
-        // （§7.4 的宽度抖动）。
+        // （宽度抖动）。
         assert_eq!(reset_label(0), "已重置");
         assert_eq!(reset_label(59), "1m");
         assert_eq!(reset_label(3599), "60m");

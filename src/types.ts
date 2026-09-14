@@ -1,5 +1,5 @@
 import type { CostBucket } from "./format";
-// 控制面契约的 TS 侧。**类型的真相源是 Rust 的 tw-api**（DESIGN.md §9.5）；
+// 控制面契约的 TS 侧。**类型的真相源是 Rust 的 tw-api**；
 // 这里是手工镜像，改一边就要改另一边。
 //
 // 手工镜像是有代价的，而且这个代价会长大 —— cc-switch 的托盘 i18n 就是
@@ -12,7 +12,7 @@ export type CoreEvent =
   | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number }
   | { kind: "request_failed"; id: number; source: string; message: string }
   /**
-   * 客户端的辅助请求被本地应答了，一个字节都没发给上游（§4.8）。
+   * 客户端的辅助请求被本地应答了，一个字节都没发给上游。
    *
    * **它不进请求列表。**成本 0、延迟 0 的东西混进请求总数和延迟统计里，
    * 会让那两个数字都变得没意义。它单独计数。
@@ -24,7 +24,7 @@ export type CoreEvent =
    * 新配置没过关，**旧的还在服务**。
    *
    * 这不是崩溃，是一条要展示给人看的信息 —— 桌面工具不能因为一个笔误
-   * 就断线（§3.8）。
+   * 就断线。
    */
   | {
       kind: "config_rejected";
@@ -36,7 +36,7 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
-   * 客户端配置面上**新出现**了可疑的东西（§5.3）。
+   * 客户端配置面上**新出现**了可疑的东西。
    *
    * **只有新出现的才会进来。**「一个用了半年的 skill 突然多了一段零宽
    * 字符」这个信号，比「这个文件里有可疑内容」强得多 —— 而后者在用户
@@ -44,7 +44,7 @@ export type CoreEvent =
    */
   | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number }
   /**
-   * 出站脱敏动手了（§5.1）。
+   * 出站脱敏动手了。
    *
    * **界面上必须能看到脱敏发生了什么** —— 看不见的安全功能会被用户关掉，
    * 因为他们会怀疑是脱敏搞坏了功能。事件里只有类别和计数，没有原值。
@@ -57,7 +57,7 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
-   * 这次请求做了方言互转（§4.1.2）。
+   * 这次请求做了方言互转。
    *
    * **`dropped` 非空时必须让用户看见**：`thinking` 在 OpenAI chat 方言里
    * 没有对应物，我们只能丢 —— 但悄悄丢掉的话，用户会发现「扩展思考开了
@@ -73,7 +73,7 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
-   * token 端点换发了新的 refresh token（§3.6）。
+   * token 端点换发了新的 refresh token。
    *
    * **服务器换发新的那一刻，旧的已经在服务端作废了** —— 所以「不写回
    * config.yaml」不是保守选项，它保证了配置文件从那一秒起就是坏的，
@@ -92,7 +92,7 @@ export type CoreEvent =
       at_ms: number;
     }
   /**
-   * 上游返回了一个可疑的工具调用（§5.2）。
+   * 上游返回了一个可疑的工具调用。
    *
    * **只有我们同时知道「这个调用长什么样」和「它来自哪个上游」** ——
    * 客户端弹批准提示的同一瞬间，我们弹一条通知。
@@ -136,11 +136,11 @@ export interface RequestRow {
   durationMs?: number;
   bytes?: number;
   error?: string;
-  /** 这次发出去之前换掉了什么（§5.1）。只有类别和计数，没有原值 */
+  /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
   redacted?: { kind: string; what: string; count: number }[];
-  /** 做过方言互转的话，转成了什么、丢了什么（§4.1.2） */
+  /** 做过方言互转的话，转成了什么、丢了什么 */
   translated?: { from: string; to: string; dropped: string[] };
-  /** 上游返回的可疑工具调用（§5.2） */
+  /** 上游返回的可疑工具调用 */
   flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
 }
 
@@ -250,19 +250,19 @@ export interface L1Result {
   error?: string | null;
 }
 
-// —— 观测（§8）——
+// —— 观测 ——
 
 /**
  * 一段时间的汇总。
  *
  * **实测、估算、没有价格是三个数，不是一个。**「今日 $12.40 实测 +
  * ~$0.80 估算，另有 3 条没有价格」比一个混在一起的 $13.20 诚实得多 ——
- * 后者看起来是个确定的数字（§4.3）。
+ * 后者看起来是个确定的数字。
  */
 export interface Summary {
   requests: number;
   failed: number;
-  /** 本地应答的次数。**是个正向数字**（§4.8） */
+  /** 本地应答的次数。**是个正向数字** */
   locally_answered: number;
   input_tokens: number;
   output_tokens: number;
@@ -273,13 +273,13 @@ export interface Summary {
   cost_micros_estimated: number;
   /** 有多少条请求根本没有价格。**不是 0，是「不知道」** */
   unpriced_requests: number;
-  /** 走订阅型上游的请求数。**不参与金额合计**（§4.3.1） */
+  /** 走订阅型上游的请求数。**不参与金额合计** */
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
   subscription_tokens: number;
-  /** 缓存命中一共省下了多少微分。**算的是差额**（§4.4） */
+  /** 缓存命中一共省下了多少微分。**算的是差额** */
   cache_saved_micros: number;
-  /** 价目表的快照日期。**成本旁边要标它**（§4.3.0） */
+  /** 价目表的快照日期。**成本旁边要标它** */
   pricing_date: string;
 }
 
@@ -287,14 +287,14 @@ export interface LatencyView {
   model: string;
   p50: number;
   p95: number;
-  /** 「800ms」是 3 个样本还是 300 个，含义完全不同（§4.6） */
+  /** 「800ms」是 3 个样本还是 300 个，含义完全不同 */
   samples: number;
 }
 
 /** 尝试链里的一跳。 */
 export interface AttemptView {
   provider: string;
-  /** 「成功」「429」「连不上上游」这类人话。**失败的原因要留着**（§4.2） */
+  /** 「成功」「429」「连不上上游」这类人话。**失败的原因要留着** */
   outcome: string;
   ms: number;
 }
@@ -329,7 +329,7 @@ export interface HistoryRow {
   routing: RoutingView | null;
   /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
   billing: string;
-  /** 缓存命中省下了多少微分。null = 算不出来（§4.4） */
+  /** 缓存命中省下了多少微分。null = 算不出来 */
   cache_saved_micros: number | null;
 }
 
@@ -337,11 +337,11 @@ export interface StorageStatus {
   level: string;
   rows: number;
   blob_bytes: number;
-  /** **永远是 false** —— 观测挂了，代理照跑（§4.7） */
+  /** **永远是 false** —— 观测挂了，代理照跑 */
   forwarding_affected: boolean;
 }
 
-/** 一份存下来的 body。**已脱敏**（§9.7）。 */
+/** 一份存下来的 body。**已脱敏**。 */
 export interface BodyView {
   text: string;
   /** 原本多长。**截断了要说出来** —— 不说的话用户会以为请求本身就长这样 */
@@ -356,7 +356,7 @@ export interface RequestDetail {
 }
 
 /**
- * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay-cn」（§5.0）。
+ * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay-cn」。
  *
  * **这比任何功能介绍都有说服力**，因为它说的是已经发生在你身上的事。
  */
@@ -372,7 +372,7 @@ export interface LeakGroup {
 export interface Dashboard {
   summary: Summary;
   latency: LatencyView[];
-  /** 按上游分。**和按模型分是两个问题**（§4.6） */
+  /** 按上游分。**和按模型分是两个问题** */
   latency_by_provider: LatencyView[];
   history: HistoryRow[];
   storage: StorageStatus | null;
@@ -414,7 +414,7 @@ export function usd(micros: number): string {
 }
 
 /**
- * L3 测速要花多少（§4.6）。
+ * L3 测速要花多少。
  *
  * **这是「你确认要花钱吗」那个对话框的全部内容。**触发前必须显示它，
  * 而不是点了才知道。
@@ -450,7 +450,7 @@ export interface SpeedResult {
   error: string | null;
 }
 
-// —— 配置（§3.8 的双向同步）——
+// —— 配置（双向同步） ——
 export interface ConfigText {
   path: string;
   text: string;
@@ -502,7 +502,7 @@ export interface ProviderView {
    */
   trust_explicit?: boolean;
   /**
-   * 这家实际会脱哪几类（§5.1）。给的是判完的结果 —— 不写的话官方端点
+   * 这家实际会脱哪几类。给的是判完的结果 —— 不写的话官方端点
    * 是空的、其余是那四类默认。
    */
   redact?: string[];
@@ -542,7 +542,7 @@ export interface ListenView {
   exposed: boolean;
 }
 
-/** 「检查价格更新」第一步：**先说要访问什么、多大**（§4.3.0、§12） */
+/** 「检查价格更新」第一步：**先说要访问什么、多大** */
 export interface UpdateOffer {
   url: string;
   /** `null` = 对面没给 Content-Length */
@@ -567,7 +567,7 @@ export interface PriceChangeView {
   new_output: number;
 }
 
-/** 一条用户自己写的价格（§4.3.0 第三层）。**单位是每百万 token 的美元** */
+/** 一条用户自己写的价格（第三层）。**单位是每百万 token 的美元** */
 export interface PriceRow {
   /** `null` = 对所有上游生效 */
   provider: string | null;
@@ -586,7 +586,7 @@ export interface PricingView {
   unpriced_models: string[];
 }
 
-/** 光标落在配置的哪一段上（§7.10） */
+/** 光标落在配置的哪一段上 */
 export interface ConfigAt {
   section: string | null;
   /** 那一项的名字。**不给下标** —— 用户重排之后它指向另一个东西 */
@@ -601,7 +601,7 @@ export interface Overview {
   groups: GroupView[];
   clients: ClientView[];
   listen: ListenView;
-  /** 三条防线各自的状态（§5.0）。界面要能配，不只是显示 */
+  /** 三条防线各自的状态。界面要能配，不只是显示 */
   security?: SecurityView;
 }
 
@@ -609,7 +609,7 @@ export interface Overview {
  * 三条防线。
  *
  * **「拦截」在每条上做的事不一样** —— 脱敏是替换、审查是切断、扫描只
- * 告警。界面上统一叫「拦截」的话，用户点下去并不知道会发生什么（§5.0）。
+ * 告警。界面上统一叫「拦截」的话，用户点下去并不知道会发生什么。
  */
 export interface SecurityView {
   redact: string;

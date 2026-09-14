@@ -1,6 +1,6 @@
 //! 控制面客户端：通过 unix socket 和 core 说话。
 //!
-//! 走 socket 而不是 TCP 的理由是权限（DESIGN.md §2.1）：一个 `0700` 的
+//! 走 socket 而不是 TCP 的理由是权限：一个 `0700` 的
 //! socket 文件天然只有当前用户能连，不需要再发明一套 token。
 
 use std::path::{Path, PathBuf};
@@ -84,8 +84,8 @@ impl ControlClient {
     pub async fn status(&self) -> Result<tw_api::Status> {
         let body = self.get("/status").await?;
         let s: tw_api::Status = serde_json::from_slice(&body)?;
-        // 版本不匹配要明确提示「请升级客户端」，而不是以奇怪的方式失败
-        // （§9.6）。这里 UI 和 core 是一起打包的，理论上不该发生 ——
+        // 版本不匹配要明确提示「请升级客户端」，而不是以奇怪的方式失败。
+        // 这里 UI 和 core 是一起打包的，理论上不该发生 ——
         // 但开发时会（一边改 core 一边跑旧 UI），而那正是最需要一句
         // 人话的时候。
         if s.api_version != tw_api::CONTROL_API_VERSION {
@@ -233,7 +233,7 @@ impl ControlClient {
         .await
     }
 
-    /// 出站密钥检测攒下的证据（§5.0）。
+    /// 出站密钥检测攒下的证据。
     pub async fn leaks(&self) -> Result<Vec<tw_api::LeakGroup>> {
         Ok(serde_json::from_slice(&self.get("/leaks").await?)?)
     }
@@ -304,12 +304,12 @@ impl ControlClient {
         .await
     }
 
-    /// 每个上游最近是不是变了（§5.2 防线三）。
+    /// 每个上游最近是不是变了（防线三）。
     pub async fn baseline(&self) -> Result<tw_api::BaselineResponse> {
         Ok(serde_json::from_slice(&self.get("/baseline").await?)?)
     }
 
-    /// 会话列表（§7.9）。
+    /// 会话列表。
     pub async fn sessions(&self) -> Result<Vec<tw_api::SessionView>> {
         Ok(serde_json::from_slice(&self.get("/sessions").await?)?)
     }
@@ -321,7 +321,7 @@ impl ControlClient {
         )?)
     }
 
-    /// 扫一遍客户端配置面。**每次现扫，什么都不存**（§7.12）。
+    /// 扫一遍客户端配置面。**每次现扫，什么都不存**。
     pub async fn scan(&self, projects: &[String]) -> Result<tw_api::ScanResponse> {
         let q = projects
             .iter()
@@ -411,7 +411,7 @@ impl ControlClient {
     /// 按字段改配置。
     ///
     /// **带上 `base_version`** —— 不带就是「我知道我在覆盖」，而界面
-    /// 永远不该那样做：用户在编辑器里改了什么，我们无从知道（§3.8）。
+    /// 永远不该那样做：用户在编辑器里改了什么，我们无从知道。
     pub async fn patch_config(
         &self,
         ops: Vec<tw_api::PatchOp>,
@@ -442,7 +442,7 @@ impl ControlClient {
         .await
     }
 
-    /// 托盘里切 `select` 组（§3.5：这个策略就是「UI 上点选或托盘里切」）。
+    /// 托盘里切 `select` 组（这个策略就是「UI 上点选或托盘里切」）。
     ///
     /// **走和界面同一条路** —— `patch_config` 加乐观并发，于是它同样会
     /// 校验、存历史、防回环。
@@ -459,7 +459,7 @@ impl ControlClient {
         Ok(())
     }
 
-    /// 光标落在配置的哪一段上（§7.10 的反向联动）。
+    /// 光标落在配置的哪一段上（反向联动）。
     pub async fn pricing(&self) -> Result<tw_api::PricingView> {
         let body = self.get("/pricing").await?;
         Ok(serde_json::from_slice(&body)?)
@@ -469,7 +469,7 @@ impl ControlClient {
         self.send_json(hyper::Method::PUT, "/pricing", &rows).await
     }
 
-    /// 「检查价格更新」三步走（§4.3.0、§12）。
+    /// 「检查价格更新」三步走。
     pub async fn update_offer(&self) -> Result<tw_api::UpdateOffer> {
         self.post_json("/pricing/update/offer", &()).await
     }
