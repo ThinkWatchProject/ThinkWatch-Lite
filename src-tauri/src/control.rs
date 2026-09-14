@@ -517,6 +517,26 @@ impl ControlClient {
         .await
     }
 
+    /// 生成一把新的网关密钥。**不写进配置** —— 只是拿一个值去填。
+    ///
+    /// 在 core 里生成，不在界面里：字母表和长度是安全决定，两处各写
+    /// 一份的话迟早只有一处被改。
+    pub async fn new_key(&self) -> Result<String> {
+        let body = self.get("/keys/new").await?;
+        let k: tw_api::NewKey = serde_json::from_slice(&body)?;
+        Ok(k.key)
+    }
+
+    /// 这台机器上有哪些网卡。
+    ///
+    /// **每次现问，不缓存。**插拔网线、连上另一个 Wi-Fi、起一条 VPN，
+    /// 清单就变了 —— 缓存下来只会让选单里出现一个已经不存在的地址，
+    /// 而选中它的后果是网关起不来。
+    pub async fn interfaces(&self) -> Result<Vec<tw_api::NicView>> {
+        let body = self.get("/interfaces").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
     /// 界面要显示的配置概览。
     pub async fn overview(&self) -> Result<tw_api::Overview> {
         let body = self.get("/overview").await?;
