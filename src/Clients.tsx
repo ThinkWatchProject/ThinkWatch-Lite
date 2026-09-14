@@ -22,7 +22,14 @@ import type {
  * - 接管完成后**不宣布成功**，只说「已接管，等第一个请求」。
  *   我们改了一个文件，但那个文件有没有被读到，只有请求能证明。
  */
-export default function Clients() {
+export default function Clients({
+  clientKeys,
+  configVersion,
+}: {
+  /** 配置里已有的密钥名。接管时用来判断「要不要先建一把」 */
+  clientKeys: string[];
+  configVersion: string | null;
+}) {
   const [data, setData] = useState<ClientsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ p: PlanView; c: DetectedClient; restore: boolean } | null>(
@@ -71,8 +78,31 @@ export default function Clients() {
     if (!plan) return;
     setBusy(true);
     try {
+      /*
+        **每个客户端用它自己那把密钥,不再共用第一把。**
+
+        在此之前这里不传 `key_name`,于是 core 一路落到
+        `cfg.clients.first()` —— 五个被接管的客户端拿到同一把密钥。
+        后果是连锁的:`RequestFacts.client` 永远是同一个值,所以按密钥
+        绑路由匹不到、每客户端并发上限形同虚设、流量和会话里也分不出
+        是谁发的。**整条「按客户端」的能力链因为末端少传一个参数而
+        全线失效。**
+
+        没有同名密钥就先建一把。建和用是两次写入,中间那一刻只是「多了
+        一把还没人用的密钥」—— 一个无害的状态,而反过来（先接管再建）
+        那一刻客户端配的是一把不存在的密钥。
+      */
+      const keyName = plan.c.id;
+      if (!plan.restore && !clientKeys.includes(keyName)) {
+        const key = await invoke<string>("new_key");
+        await invoke("patch_config", {
+          ops: [{ op: "append", path: "/clients", item: `name: ${keyName}\nkey: ${key}` }],
+          baseVersion: configVersion,
+        });
+      }
       const r = await invoke<AdoptResponse>(plan.restore ? "restore_client" : "adopt_client", {
         client: plan.c.id,
+        keyName: plan.restore ? null : keyName,
       });
       setPlan(null);
       setDone(r);
