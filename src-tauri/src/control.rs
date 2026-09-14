@@ -594,6 +594,27 @@ impl ControlClient {
 mod tests {
     use super::*;
 
+    /// 界面发出来的每一种补丁操作，这一层都要认得。
+    ///
+    /// **这条缝是真的裂过。**`tw-api` 是按 rev 锁在 core 的 main 上的，
+    /// 而补丁协议加一种操作时，界面这边只是多写一个字符串 —— TypeScript
+    /// 编译得过、Rust 编译也得过（没有哪一行提到那个新分支），只有用户
+    /// 点下去的那一刻才失败。把 UI 发的原样 JSON 在这儿解一遍，锁没跟上
+    /// 就是编译期的事，不是运行期的。
+    #[test]
+    fn every_patch_op_the_ui_sends_still_deserialises() {
+        let raw = r#"[
+            {"op":"replace","path":"/listen/gateway/bind","value":"all"},
+            {"op":"replace","path":"/clients/demo/max_concurrent","value":3},
+            {"op":"replace","path":"/clients/demo/route","value":null},
+            {"op":"append","path":"/clients","item":"name: a\nkey: tw-x"},
+            {"op":"remove","path":"/clients/a"},
+            {"op":"clear","path":"/clients/demo/allow"}
+        ]"#;
+        let ops: Vec<tw_api::PatchOp> = serde_json::from_str(raw).expect("UI 发的 op 解不动");
+        assert_eq!(ops.len(), 6);
+    }
+
     #[tokio::test]
     async fn connecting_to_a_missing_socket_says_core_might_be_down() {
         // 「Connection refused」对用户毫无意义。这里要说的是「core 可能
