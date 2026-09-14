@@ -11,8 +11,15 @@ web/src/components/brand/think-watch-mark.tsx（两者逐点一致），
 """
 import numpy as np, zlib, struct, sys, pathlib
 
-BG   = (0x1E, 0x2A, 0x4A)   # 深靛蓝，企业版 favicon 的底色
-INK  = (0x3D, 0xDB, 0xD9)   # 青色，描边
+# **霓虹。**近黑的靛蓝底，TW 本身是发光的霓虹管。
+#
+# 前面几版都是「一块色 + 一个标记」，换个字母就是另一个应用。这一版让
+# 标记自己带光：笔画沿 x 从青渐变到品红，外面三层辉光。底色压到近黑，
+# 是为了让光有地方亮 —— 霓虹在白天不好看，理由一样。
+BG_TOP    = (0x0D, 0x0F, 0x22)   # 靛蓝，左上受一点光
+BG_BOTTOM = (0x02, 0x02, 0x08)   # 近黑
+NEON_A    = (0x22, 0xE5, 0xF2)   # 青，笔画左端
+NEON_B    = (0xF0, 0x5C, 0xD8)   # 品红，笔画右端
 
 # macOS 的图标网格：内容占画布约 80.5%，四周留透明边。
 # 不留的话，它在程序坞里会比旁边所有应用都大一圈。
@@ -43,51 +50,77 @@ def cover(d, aa):
     return np.clip(0.5 - d / aa, 0.0, 1.0)
 
 
-def over(dst, color, alpha):
-    """把一个纯色按 alpha 合成到 dst（premultiplied 之外的常规 over）。"""
-    a = alpha[..., None]
-    src = np.array(color, dtype=np.float64) / 255.0
-    dst_rgb, dst_a = dst[..., :3], dst[..., 3:4]
-    out_a = a + dst_a * (1 - a)
-    safe = np.where(out_a > 0, out_a, 1)
-    out_rgb = (src * a + dst_rgb * dst_a * (1 - a)) / safe
-    return np.concatenate([out_rgb, out_a], axis=-1)
-
-
 def render(size):
-    # viewBox 是 32 单位；内容区占 CONTENT，居中
+    """画一张。
+
+    底是近黑的圆角方（保留一点径向受光和顶部内高光，否则是一块死黑），
+    TW 是一根霓虹管：
+
+      · 颜色沿 x 从青到品红。**不是整根一个色** —— 单色霓虹在一排图标里
+        就是「一个发光的青字」，渐变才让它有材质。
+      · **边缘饱和，中心才白。**真的霓虹管是玻璃里一根亮到过曝的芯，
+        颜色在管壁上最浓。整根都往白里调的话，笔画变成浅色的雾 ——
+        这一版之前正是这么画的，在程序坞里看就是「虚」。
+      · 辉光收得很紧（0.5 和 1.5 两层，强度 0.5 / 0.2）。**光要少于
+        笔画。**半径拉大到 3 以上时，图标上一多半的可见面积是光晕而不是
+        标记，远看只剩一团亮，认不出是什么字。
+
+    **小尺寸（≤64）另算。**两层辉光在 32 像素上是一团糊，所以只留最紧
+    的一层；笔画加粗、字形放大一点，让它在程序坞里仍然是字。
+    """
     content_px = size * CONTENT
     scale = content_px / 32.0
     off = (size - content_px) / 2.0
 
     ys, xs = np.mgrid[0:size, 0:size]
-    # 像素中心 → viewBox 坐标
     px = (xs + 0.5 - off) / scale
     py = (ys + 0.5 - off) / scale
-    aa = 1.0 / scale  # 一个像素在 viewBox 里有多宽
+    aa = 1.0 / scale
+    small = size <= 64
 
     img = np.zeros((size, size, 4), dtype=np.float64)
 
-    # 底：整块 32×32 圆角矩形，rx=7（favicon.svg 第一行）
-    d = sd_round_rect(px, py, 16, 16, 16, 16, 7)
-    img = over(img, BG, cover(d, aa))
+    # ── 底 ──────────────────────────────────────────────────────
+    body = sd_round_rect(px, py, 16, 16, 16, 16, 7)
+    cov = cover(body, aa)
+    r = np.hypot(px - 9.0, py - 7.0) / 30.0
+    t = np.clip(r, 0, 1)[..., None] ** 2.2
+    grad = np.array(BG_TOP) * (1 - t) + np.array(BG_BOTTOM) * t
+    rim = np.clip(1.0 + body / 1.2, 0, 1) * np.clip(1.0 - py / 9.0, 0, 1)
+    grad = grad + (255 - grad) * (rim**2 * 0.20)[..., None]
+    img[..., :3] = grad / 255.0
+    img[..., 3:4] = cov[..., None]
 
-    # 内框：x=3 y=3 w=26 h=26 rx=6，描边 2 —— 「审计边界」
-    d = np.abs(sd_round_rect(px, py, 16, 16, 13, 13, 6)) - 1.0
-    img = over(img, INK, cover(d, aa))
-
-    # T 的横和竖、W 的两个 V。全部 2.4 宽、圆头圆角。
+    # ── 霓虹管 ──────────────────────────────────────────────────
+    logo_scale = 1.06 if small else 1.0
+    half = 2.4 if small else 2.15
     strokes = [
-        [(9, 10), (23, 10)],              # T 横
-        [(16, 10), (16, 16)],             # T 竖（同时是 W 的轴）
-        [(9, 16), (12, 22), (16, 16)],    # W 左
-        [(16, 16), (20, 22), (23, 16)],   # W 右
+        [(7, 9), (25, 9)],                 # T 横
+        [(16, 9), (16, 17)],               # T 竖（同时是 W 的轴）
+        [(7, 17), (11.5, 25), (16, 17)],   # W 左
+        [(16, 17), (20.5, 25), (25, 17)],  # W 右
     ]
     d = np.full((size, size), 1e9)
     for pts in strokes:
+        pts = [(16 + (x - 16) * logo_scale, 16 + (y - 16) * logo_scale) for x, y in pts]
         for (ax, ay), (bx, by) in zip(pts, pts[1:]):
             d = np.minimum(d, sd_segment(px, py, ax, ay, bx, by))
-    img = over(img, INK, cover(d - 1.2, aa))
+    d = d - half
+
+    u = np.clip((px - 7) / 18.0, 0, 1)[..., None]
+    col = (np.array(NEON_A) * (1 - u) + np.array(NEON_B) * u) / 255.0
+
+    layers = [(0.5, 0.38)] if small else [(0.5, 0.5), (1.5, 0.2)]
+    for k, strength in layers:
+        g = np.exp(-np.clip(d, 0, None) / k) * strength * cov
+        img[..., :3] = img[..., :3] + (col - img[..., :3]) * g[..., None]
+
+    # 管内：到中线的归一化距离，0 在管壁、1 在芯。次方 1.5 让白只占中间
+    # 一小条，管壁保持满饱和。
+    inner = np.clip(-d / half, 0, 1)[..., None]
+    core = col + (1.0 - col) * (inner**1.5 * 0.70)
+    c = cover(d, aa)[..., None]
+    img[..., :3] = img[..., :3] * (1 - c) + core * c
 
     return (np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)
 
