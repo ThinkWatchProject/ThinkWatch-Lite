@@ -237,7 +237,7 @@ export default function Config({
    *
    * 文本模式两个面共用 —— 它编辑的是整份文件,本来就不分域。
    */
-  section?: "gateway" | "routing";
+  section?: "gateway" | "routing" | "settings";
   ov: Overview;
   configVersion: string | null;
   /** 最近一次校验失败指到的行号（§3.8）。文本模式会把它滚进视野 */
@@ -806,9 +806,9 @@ export default function Config({
         </section>
       )}
 
-      {section === "gateway" && (
+      {section === "settings" && (
         <section>
-          <h2 className="tw-title font-semibold">启动</h2>
+          <h2 className="tw-title font-semibold">开机启动</h2>
           <label className="mt-2 flex items-start gap-2 tw-body">
             <input
               type="checkbox"
@@ -884,12 +884,52 @@ export default function Config({
       </section>
       )}
 
-      <Pricing />
+      {/*
+        价格是 config.yaml 旁边那份 pricing.yaml —— 属于网关配置。
+        诊断包和卸载改的是这个应用本身，归「设置」。
+      */}
+      {section === "gateway" && <Pricing />}
 
-      <Diagnostics />
+      {section === "settings" && <About />}
 
-      <Uninstall />
+      {section === "settings" && <Diagnostics />}
+
+      {section === "settings" && <Uninstall />}
     </div>
+  );
+}
+
+/**
+ * 关于。
+ *
+ * **排查时最先要问的就是这几个**：哪个版本、数据在哪、core 从哪儿加载的。
+ * 之前它们只在日志里，而用户在交出诊断包之前根本看不到自己要交什么。
+ */
+function About() {
+  const [info, setInfo] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    void invoke<Record<string, string>>("app_info").then(setInfo).catch(() => {});
+  }, []);
+  if (!info) return null;
+  const rows: [string, string][] = [
+    ["版本", info.version ?? "—"],
+    ["数据目录", info.data_dir ?? "—"],
+    ["core 二进制", info.core_bin ?? "—"],
+  ];
+  return (
+    <section>
+      <h2 className="tw-title font-semibold">关于</h2>
+      <dl className="mt-2 space-y-0.5 tw-body">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-3">
+            <dt className="w-20 shrink-0 text-neutral-500">{k}</dt>
+            <dd className="min-w-0 break-all font-mono tw-label text-neutral-600 dark:text-neutral-400">
+              {v}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 

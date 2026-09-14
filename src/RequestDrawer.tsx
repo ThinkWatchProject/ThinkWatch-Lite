@@ -14,8 +14,8 @@ type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex gap-4 py-1">
-      <span className="w-28 shrink-0 text-neutral-500">{label}</span>
+    <div className="flex gap-3 py-0.5">
+      <span className="w-20 shrink-0 text-neutral-500">{label}</span>
       <span className="min-w-0 break-all">{value}</span>
     </div>
   );
@@ -123,16 +123,24 @@ export default function RequestDrawer({
           : "fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
       }
     >
-      <header className="flex items-baseline gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-        <span className="tw-title font-semibold">{r?.model || `第 ${id} 号请求`}</span>
+      {/*
+        **「关闭」两个字被折成了两行。**那不是设计，是 flex 里没人声明
+        自己不能收缩：标题一长，浏览器就去挤按钮，而按钮挤无可挤就换行。
+        标题截断、按钮 shrink-0 + nowrap，两条缺一不可。
+      */}
+      <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+        <span className="truncate tw-head font-semibold">{r?.model || `第 ${id} 号请求`}</span>
         {r && (
-          <span className="tw-body text-neutral-500">{new Date(r.at_ms).toLocaleString()}</span>
+          <span className="shrink-0 whitespace-nowrap tw-label text-neutral-500">
+            {new Date(r.at_ms).toLocaleTimeString()}
+          </span>
         )}
+        <span className="flex-1" />
         {/* §9.8：「录制」不是一个新功能，这一条请求本来就在存储里 */}
         <SaveFixture id={id} />
         <button
           onClick={onClose}
-          className="rounded px-2 py-1 tw-body text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          className="shrink-0 whitespace-nowrap rounded px-2 py-1 tw-label text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         >
           关闭
         </button>
@@ -341,7 +349,7 @@ function SaveFixture({ id }: { id: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <span className="ml-auto flex items-center gap-2">
+    <span className="flex shrink-0 items-center gap-2">
       {path && (
         <span className="tw-label text-neutral-500" title={path}>
           写好了，记得自己看一眼再交出去
@@ -350,7 +358,7 @@ function SaveFixture({ id }: { id: number }) {
       {error && <span className="tw-label text-amber-600 dark:text-amber-400">{error}</span>}
       <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
       <button
-        className="rounded px-2 py-1 tw-body text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+        className="shrink-0 whitespace-nowrap rounded px-2 py-1 tw-label text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -365,7 +373,7 @@ function SaveFixture({ id }: { id: number }) {
           }
         }}
       >
-        {busy ? "存…" : "另存为测试用例"}
+        {busy ? "存…" : "存为用例"}
       </button>
       </Tip>
     </span>

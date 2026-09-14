@@ -673,6 +673,26 @@ async fn diagnose_client(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 这个应用自己的信息。
+///
+/// **排查时最先要问的就是这几个**：哪个版本、数据在哪、core 的二进制
+/// 从哪儿找到的。之前这些散落在日志里，而用户交出一份诊断包之前根本
+/// 看不到它们。
+#[tauri::command]
+fn app_info(app: tauri::AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "version": app.package_info().version.to_string(),
+        "identifier": app.config().identifier,
+        "data_dir": data_dir().display().to_string(),
+        // core 二进制的实际位置。找不到的时候把错误原样给出来 ——
+        // 那条错误里列着找过哪些位置，正是这时候要看的东西。
+        "core_bin": match locate_core(&app) {
+            Ok(p) => p.display().to_string(),
+            Err(e) => format!("{e}"),
+        },
+    })
+}
+
 /// 开机自启现在是开着的吗。
 ///
 /// **默认是关的,而且这不是「还没实现」,是产品决定。**一个装完就自己
@@ -705,6 +725,22 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
         return Err("开发构建里不注册开机自启 —— 它会把 target/debug 下的二进制写进 plist".into());
     }
     use tauri_plugin_autostart::ManagerExt;
+    // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
+    // 而那个目录在一台从没注册过登录项的 Mac 上根本不存在 —— 写文件
+    // 得到的是 `No such file or directory (os error 2)`，一句既不说
+    // 哪个文件、也不说该怎么办的话。
+    //
+    // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
+    // 环境都会撞上。所以自己先建。
+    if on {
+        if let Some(plist) = autostart::plist_path(&app.config().identifier) {
+            if let Some(dir) = plist.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    format!("建不了 {}：{e}", dir.display())
+                })?;
+            }
+        }
+    }
     let mgr = app.autolaunch();
     let r = if on { mgr.enable() } else { mgr.disable() };
     r.map_err(|e| format!("{e}"))?;
@@ -764,6 +800,7 @@ pub fn run() {
             save_pricing,
             rollback_config,
             setup_first_provider,
+            app_info,
             autostart_enabled,
             set_autostart,
             list_clients,
