@@ -13,7 +13,8 @@
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) and puts
 its config, its traffic, and what it costs you in front of you.
 
-**macOS only, and not distributed as a build.** There is no signed `.app`, no
+**macOS first, and not distributed as a build.** Other platforms come once the
+macOS version is done. There is no signed `.app`, no
 installer, and no release page — run it from source. That is a deliberate scope
 decision, not a gap waiting to be filled.
 

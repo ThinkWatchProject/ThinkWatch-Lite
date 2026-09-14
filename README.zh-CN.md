@@ -13,7 +13,7 @@
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)，
 把它的配置、流量和花费摆到你眼前。
 
-**只做 macOS，不分发构建产物。** 没有签名的 `.app`，没有安装包，没有
+**先做 macOS，不分发构建产物。** 其他系统等 macOS 版做完再适配。没有签名的 `.app`，没有安装包，没有
 release 页面 —— 从源码跑。这是一个明确的范围决定，不是一个待填的坑。
 
 ```bash
