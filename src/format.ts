@@ -84,3 +84,50 @@ export function statusTone(
   if (status >= 400) return "warn";
   return "ok";
 }
+
+/** 一个时间桶（和 core 的 `/summary/buckets` 对应）。 */
+export interface CostBucket {
+  at_ms: number;
+  requests: number;
+  failed: number;
+  cost_micros_exact: number;
+  cost_micros_estimated: number;
+  unpriced_requests: number;
+}
+
+/**
+ * 把稀疏的桶补成稠密的一排。
+ *
+ * **core 刻意不补**：GROUP BY 只产出有数据的桶，而要画多少格只有界面
+ * 知道。补空桶这件事必须做，但要在这里做。
+ *
+ * 为什么必须做：跳过空桶的话，一天里的空档会被两边的柱子挤没，图上
+ * 看起来就是**连续在用** —— 而「昨天下午我根本没碰它」恰恰是看这张图
+ * 想确认的事。一张会把「没用过」画成「在用」的图，比没有图更糟。
+ */
+export function densify(
+  buckets: CostBucket[],
+  sinceMs: number,
+  untilMs: number,
+  bucketMs: number,
+): CostBucket[] {
+  if (bucketMs <= 0 || untilMs <= sinceMs) return [];
+  const by = new Map(buckets.map((b) => [b.at_ms, b]));
+  const out: CostBucket[] = [];
+  // 上限是防御性的：跨度和桶宽算出几万格时，那不是一张图，是一次卡死
+  const n = Math.min(500, Math.ceil((untilMs - sinceMs) / bucketMs));
+  for (let i = 0; i < n; i++) {
+    const at = sinceMs + i * bucketMs;
+    out.push(
+      by.get(at) ?? {
+        at_ms: at,
+        requests: 0,
+        failed: 0,
+        cost_micros_exact: 0,
+        cost_micros_estimated: 0,
+        unpriced_requests: 0,
+      },
+    );
+  }
+  return out;
+}

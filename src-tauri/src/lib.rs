@@ -158,6 +158,14 @@ async fn speed_test(
 #[tauri::command]
 async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, String> {
     let c = &state.control;
+    // 趋势图看最近 24 小时、每小时一格。**不是「今天」** —— 今天零点
+    // 刚过的时候「今天」只有一根柱子，而用户想看的是「最近在怎么用」。
+    // 别的数字仍然按今天算（那是账单的口径）。
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+        - 24 * 3_600_000;
     Ok(Dashboard {
         summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
@@ -165,6 +173,13 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         history: c.history(200).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
+        // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
+        // 没有这两个端点，而这一页别的部分照样有用（§4.7 的同一条：
+        // 观测层的缺失不该扩散）。
+        buckets: c.cost_buckets(since, 3_600_000).await.unwrap_or_default(),
+        by_model: c.cost_by("model", since).await.unwrap_or_default(),
+        by_provider: c.cost_by("provider", since).await.unwrap_or_default(),
+        since_ms: since,
     })
 }
 
@@ -179,6 +194,12 @@ pub struct Dashboard {
     storage: Option<tw_api::StorageStatus>,
     /// 出站密钥检测攒下的证据（§5.0 的观察态）
     leaks: Vec<tw_api::LeakGroup>,
+    /// 最近 24 小时、每小时一格。**稀疏的** —— 空桶由界面补
+    buckets: Vec<tw_api::CostBucket>,
+    by_model: Vec<tw_api::CostGroup>,
+    by_provider: Vec<tw_api::CostGroup>,
+    /// 那三样的时间窗起点，界面补空桶要用
+    since_ms: i64,
 }
 
 #[tauri::command]
@@ -735,9 +756,8 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
     if on {
         if let Some(plist) = autostart::plist_path(&app.config().identifier) {
             if let Some(dir) = plist.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| {
-                    format!("建不了 {}：{e}", dir.display())
-                })?;
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
             }
         }
     }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ago, bytes, latency, repeated, statusTone } from "./format";
+import { ago, bytes, densify, latency, repeated, statusTone } from "./format";
+import { usd } from "./types";
 
 describe("相对时间", () => {
   const now = 1_000_000_000;
@@ -72,5 +73,60 @@ describe("状态分档", () => {
   /** 进行中不能算成功 —— 它还没有结果 */
   it("进行中单独一档", () => {
     expect(statusTone(undefined, "in_flight")).toBe("pending");
+  });
+});
+
+describe("补空桶", () => {
+  const b = (at_ms: number, requests: number) => ({
+    at_ms,
+    requests,
+    failed: 0,
+    cost_micros_exact: 0,
+    cost_micros_estimated: 0,
+    unpriced_requests: 0,
+  });
+
+  /**
+   * 这条是这个函数存在的全部理由：跳过空桶的话，一天里的空档会被两边的
+   * 柱子挤没，图上看起来就是连续在用 —— 而「昨天下午我根本没碰它」正是
+   * 看这张图想确认的事。
+   */
+  it("中间没数据的那一格要补成零，不是跳过", () => {
+    const out = densify([b(0, 2), b(2000, 1)], 0, 3000, 1000);
+    expect(out.map((x) => x.requests)).toEqual([2, 0, 1]);
+    expect(out.map((x) => x.at_ms)).toEqual([0, 1000, 2000]);
+  });
+
+  it("首尾的空格子也要补", () => {
+    const out = densify([b(1000, 5)], 0, 3000, 1000);
+    expect(out.map((x) => x.requests)).toEqual([0, 5, 0]);
+  });
+
+  it("一条数据都没有时给一排零，不是空数组", () => {
+    expect(densify([], 0, 3000, 1000)).toHaveLength(3);
+  });
+
+  /** 跨度大、桶窄时不能算出几万格 —— 那不是一张图，是一次卡死 */
+  it("格子数有上限", () => {
+    expect(densify([], 0, 1_000_000_000, 1000).length).toBe(500);
+  });
+
+  it("参数不合法时给空数组，不是抛异常", () => {
+    expect(densify([], 0, 1000, 0)).toEqual([]);
+    expect(densify([], 1000, 0, 1000)).toEqual([]);
+  });
+});
+
+describe("金额", () => {
+  /** **小额不能显示成 $0.00** —— 那等于告诉用户这次调用是免费的 */
+  it("小于一分钱时不显示成 $0.00", () => {
+    // **$0.00 等于告诉用户这次调用是免费的**，而它不是
+    expect(usd(300)).toBe("$0.0003");
+  });
+  it("正好是零就是零", () => {
+    expect(usd(0)).toBe("$0");
+  });
+  it("大额两位小数", () => {
+    expect(usd(2_500_000)).toBe("$2.50");
   });
 });

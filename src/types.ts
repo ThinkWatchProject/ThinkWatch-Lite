@@ -1,3 +1,4 @@
+import type { CostBucket } from "./format";
 // 控制面契约的 TS 侧。**类型的真相源是 Rust 的 tw-api**（DESIGN.md §9.5）；
 // 这里是手工镜像，改一边就要改另一边。
 //
@@ -376,6 +377,26 @@ export interface Dashboard {
   history: HistoryRow[];
   storage: StorageStatus | null;
   leaks: LeakGroup[];
+  /**
+   * 最近 24 小时、每小时一格。**稀疏的** —— core 那边只产出有数据的桶，
+   * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
+   */
+  buckets?: CostBucket[];
+  by_model?: CostGroup[];
+  by_provider?: CostGroup[];
+  /** 上面三样的时间窗起点，补空桶要用 */
+  since_ms?: number;
+}
+
+/** 按模型或上游分组的花费。 */
+export interface CostGroup {
+  name: string;
+  requests: number;
+  cost_micros: number;
+  /** **算不出价钱的条数要单独给** —— 当成 0 加进去，那根条就是偏短的 */
+  unpriced_requests: number;
+  input_tokens: number;
+  output_tokens: number;
 }
 
 /**

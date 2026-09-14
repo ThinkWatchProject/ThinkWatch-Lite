@@ -52,9 +52,12 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
   {
     group: "监控",
     items: [
+      // **概览在最上面。**它回答的是「现在什么情况」，而流量和会话回答
+      // 的是「刚才那一条发生了什么」—— 前者是打开这个应用的默认意图，
+      // 后者是带着问题来的时候才点。
+      { id: "dashboard", label: "概览" },
       { id: "requests", label: "流量" },
       { id: "sessions", label: "会话" },
-      { id: "dashboard", label: "概览" },
     ],
   },
   {
@@ -197,7 +200,7 @@ export default function App() {
    * 那一行有什么特别。
    */
   const [cursor, setCursor] = useState(-1);
-  const [tab, setTab] = useState<Surface>("requests");
+  const [tab, setTab] = useState<Surface>("dashboard");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
   /**
@@ -205,7 +208,7 @@ export default function App() {
    * —— 那样每切一次页都会重建计时器，于是切页的瞬间会多打一轮请求。
    * 用 ref 读最新值，依赖数组保持不变。
    */
-  const tabRef = useRef<Surface>("requests");
+  const tabRef = useRef<Surface>("dashboard");
   /**
    * 窗口够不够宽拆成两栏。
    *
