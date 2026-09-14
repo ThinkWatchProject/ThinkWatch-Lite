@@ -4,7 +4,7 @@ version = "2026.9.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-description = "面向个人开发者的本地 AI 网关"
+description = "Desktop app for a local AI gateway, built for individual developers"
 
 [lib]
 name = "thinkwatch_lite_lib"
