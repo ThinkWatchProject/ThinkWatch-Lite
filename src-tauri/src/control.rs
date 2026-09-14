@@ -517,6 +517,26 @@ impl ControlClient {
         .await
     }
 
+    /// 生成一把新的网关密钥。**不写进配置** —— 只是拿一个值去填。
+    ///
+    /// 在 core 里生成，不在界面里：字母表和长度是安全决定，两处各写
+    /// 一份的话迟早只有一处被改。
+    pub async fn new_key(&self) -> Result<String> {
+        let body = self.get("/keys/new").await?;
+        let k: tw_api::NewKey = serde_json::from_slice(&body)?;
+        Ok(k.key)
+    }
+
+    /// 这台机器上有哪些网卡。
+    ///
+    /// **每次现问，不缓存。**插拔网线、连上另一个 Wi-Fi、起一条 VPN，
+    /// 清单就变了 —— 缓存下来只会让选单里出现一个已经不存在的地址，
+    /// 而选中它的后果是网关起不来。
+    pub async fn interfaces(&self) -> Result<Vec<tw_api::NicView>> {
+        let body = self.get("/interfaces").await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
     /// 界面要显示的配置概览。
     pub async fn overview(&self) -> Result<tw_api::Overview> {
         let body = self.get("/overview").await?;
@@ -573,6 +593,27 @@ impl ControlClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 界面发出来的每一种补丁操作，这一层都要认得。
+    ///
+    /// **这条缝是真的裂过。**`tw-api` 是按 rev 锁在 core 的 main 上的，
+    /// 而补丁协议加一种操作时，界面这边只是多写一个字符串 —— TypeScript
+    /// 编译得过、Rust 编译也得过（没有哪一行提到那个新分支），只有用户
+    /// 点下去的那一刻才失败。把 UI 发的原样 JSON 在这儿解一遍，锁没跟上
+    /// 就是编译期的事，不是运行期的。
+    #[test]
+    fn every_patch_op_the_ui_sends_still_deserialises() {
+        let raw = r#"[
+            {"op":"replace","path":"/listen/gateway/bind","value":"all"},
+            {"op":"replace","path":"/clients/demo/max_concurrent","value":3},
+            {"op":"replace","path":"/clients/demo/route","value":null},
+            {"op":"append","path":"/clients","item":"name: a\nkey: tw-x"},
+            {"op":"remove","path":"/clients/a"},
+            {"op":"clear","path":"/clients/demo/allow"}
+        ]"#;
+        let ops: Vec<tw_api::PatchOp> = serde_json::from_str(raw).expect("UI 发的 op 解不动");
+        assert_eq!(ops.len(), 6);
+    }
 
     #[tokio::test]
     async fn connecting_to_a_missing_socket_says_core_might_be_down() {

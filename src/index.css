@@ -5,6 +5,56 @@
 :root {
   color-scheme: light dark;
 }
+
+/* --------------------------------------------------------------- 窗口色
+ *
+ * **源列表和窗口底色单独一套 token，不走 Tailwind 的 neutral。**
+ *
+ * neutral 是纯灰。一整条纯灰的侧栏贴在 macOS 上就是「一块网页的
+ * 侧边栏」——系统自己的侧栏永远带一点冷调，因为它是半透的、后面压着
+ * 桌面。这里的中性色统一往蓝偏一点点，是选出来的，不是继承来的。
+ *
+ * 只覆盖窗口外壳（源列表、窗口底、分隔线）。内容区继续用 Tailwind 的
+ * 色阶——把整站色板一次换掉是另一件事，不该混在这次里。
+ */
+:root {
+  --chrome-ground: #f7f8fa; /* 窗口底 */
+  --chrome-rail: #edeff3; /* 源列表 */
+  --chrome-hair: #dce0e6; /* 分隔线 */
+  --chrome-strong: #1b1f27; /* 选中项的字 */
+  --chrome-text: #333a45; /* 普通项的字 */
+  --chrome-dim: #737b88; /* 页脚、次要信息 */
+  --chrome-hover: rgb(0 0 0 / 4.5%);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chrome-ground: #0c0e11;
+    --chrome-rail: #1b1e24;
+    --chrome-hair: #272c34;
+    --chrome-strong: #ffffff;
+    --chrome-text: #d8dce3;
+    --chrome-dim: #8a919d;
+    --chrome-hover: rgb(255 255 255 / 5.5%);
+  }
+}
+
+/* 选中项。
+ *
+ * **跟系统强调色走，不写死蓝色。**用户在系统设置里把强调色换成粉色，
+ * 侧栏应该跟着变；写死的那一刻它又变回一个网页。`AccentColor` 是
+ * CSS Color 4 的系统色，WKWebView 认得；不认的浏览器落到前一行的蓝，
+ * 那也是 macOS 的默认强调色。
+ */
+@utility tw-selected {
+  background: rgb(10 132 255 / 22%);
+  background: color-mix(in srgb, AccentColor 22%, transparent);
+  color: var(--chrome-strong);
+}
+@utility tw-selected-mark {
+  color: #0a84ff;
+  color: AccentColor;
+}
+
 body {
   margin: 0;
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;

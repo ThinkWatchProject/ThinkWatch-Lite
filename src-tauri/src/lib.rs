@@ -96,6 +96,20 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
 }
 
 #[tauri::command]
+async fn new_key(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state.control.new_key().await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn interfaces(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::NicView>, String> {
+    state
+        .control
+        .interfaces()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status, String> {
     // Tauri 的 invoke 用**字符串** reject，不是 Error 对象 ——
     // 前端 `e instanceof Error` 永远是 false。所以这里返回 String，
@@ -798,6 +812,8 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![
             core_status,
+            interfaces,
+            new_key,
             core_state,
             overview,
             probe_upstream,
