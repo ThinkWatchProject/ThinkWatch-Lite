@@ -19,6 +19,18 @@ import Security from "./Security";
 import Guard from "./Guard";
 import { Dialog, DialogButton } from "./ui/Dialog";
 import { Tip, TooltipRoot } from "./ui/Tooltip";
+import {
+  IconClient,
+  IconDashboard,
+  IconFindings,
+  IconFlow,
+  IconGateway,
+  IconGuard,
+  IconRoute,
+  IconSession,
+  IconSettings,
+  IconSidebar,
+} from "./ui/icons";
 import { RowMenu } from "./ui/ContextMenu";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
@@ -48,16 +60,20 @@ type Surface =
   | "settings"
   | "clients";
 
-const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
+type SourceIcon = (p: { size?: number }) => React.ReactElement;
+const SOURCES: {
+  group: string;
+  items: { id: Surface; label: string; icon: SourceIcon }[];
+}[] = [
   {
     group: "监控",
     items: [
       // **概览在最上面。**它回答的是「现在什么情况」，而流量和会话回答
       // 的是「刚才那一条发生了什么」—— 前者是打开这个应用的默认意图，
       // 后者是带着问题来的时候才点。
-      { id: "dashboard", label: "概览" },
-      { id: "requests", label: "流量" },
-      { id: "sessions", label: "会话" },
+      { id: "dashboard", label: "概览" , icon: IconDashboard },
+      { id: "requests", label: "流量" , icon: IconFlow },
+      { id: "sessions", label: "会话" , icon: IconSession },
     ],
   },
   {
@@ -71,8 +87,8 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
     // 所以拆成两项：发现（看证据）和防护（配策略）。
     group: "安全",
     items: [
-      { id: "security", label: "发现" },
-      { id: "guard", label: "防护" },
+      { id: "security", label: "发现" , icon: IconFindings },
+      { id: "guard", label: "防护" , icon: IconGuard },
     ],
   },
   {
@@ -80,9 +96,9 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
     items: [
       // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
-      { id: "routing", label: "路由" },
-      { id: "config", label: "网关" },
-      { id: "clients", label: "客户端" },
+      { id: "routing", label: "路由" , icon: IconRoute },
+      { id: "config", label: "网关" , icon: IconGateway },
+      { id: "clients", label: "客户端" , icon: IconClient },
     ],
   },
   {
@@ -92,7 +108,7 @@ const SOURCES: { group: string; items: { id: Surface; label: string }[] }[] = [
     // 那是两类完全不同的东西：一个写进系统的登录项，一个写进 config.yaml。
     // 分界线就是这个：改的是这个 macOS 应用，还是改网关的配置文件。
     group: "应用",
-    items: [{ id: "settings", label: "设置" }],
+    items: [{ id: "settings", label: "设置" , icon: IconSettings }],
   },
 ];
 
@@ -241,6 +257,29 @@ export default function App() {
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
 
+  /**
+   * 源列表收起还是展开。
+   *
+   * **记住用户的选择。**这是一个开着不关的应用——每次启动都把它展开
+   * 回来，等于每次都要重按一遍。读取放在初始化里而不是 effect 里，
+   * 否则第一帧会先按默认宽度画一次再跳。
+   */
+  const [railOpen, setRailOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem("rail") !== "collapsed";
+    } catch {
+      // 隐私窗口、禁用站点数据都会在这里抛
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("rail", railOpen ? "open" : "collapsed");
+    } catch {
+      // 记不住只是下次要重按一遍，不值得打断任何事
+    }
+  }, [railOpen]);
+
   useEffect(() => {
     const now = rows.map((r) => r.id);
     const news = now.filter((id) => !seenIds.current.has(id));
@@ -282,6 +321,14 @@ export default function App() {
       // 里按它该重选。加上这两个前提就等于把它变成「已经在搜索框里的时
       // 候才有用」。 —— ⌘F 的全部意义就是从任何
       // 地方跳到搜索框，而「正在输入」恰恰是它最该生效的场景之一。
+      // ⌘⌥S 收起/展开源列表 —— 访达、邮件、备忘录都是这个键。
+      // 判 `code` 不判 `key`：macOS 上 ⌥ 会把 s 变成 ß。
+      if (e.metaKey && e.altKey && !e.ctrlKey && e.code === "KeyS") {
+        e.preventDefault();
+        setRailOpen((v) => !v);
+        return;
+      }
+
       if (e.metaKey && !e.altKey && !e.ctrlKey) {
         const k = e.key.toLowerCase();
         if (k === "f") {
@@ -405,44 +452,98 @@ export default function App() {
 
   return (
     <TooltipRoot>
-    <div className="flex h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+    <div
+      className="flex h-screen text-neutral-900 dark:text-neutral-100"
+      style={{ background: "var(--chrome-ground)" }}
+    >
       {/*
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
         内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。
+
+        **可以收起。**收起之后只剩图标,内容区多出 136px —— 对一个开着
+        不关、一直在看图表的应用,这是唯一真正改善主界面的方向。名字进
+        悬浮说明,所以收起来不是把信息丢掉,是把它推迟到需要的时候。
+
+        **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分之一
+        的高度,而它们说的事情分隔线也说得出:这两项和上面那两项不一样。
+        代价是分组的**名字**没了 —— 认下这笔,换来整列读起来是一个对象,
+        而不是四个小区块。
       */}
       <aside
-        className="flex w-[172px] shrink-0 flex-col border-r border-neutral-200 bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/40"
+        className={
+          "flex shrink-0 flex-col border-r transition-[width] duration-150 ease-out " +
+          (railOpen ? "w-[196px]" : "w-[60px]")
+        }
+        style={{
+          background: "var(--chrome-rail)",
+          borderColor: "var(--chrome-hair)",
+          color: "var(--chrome-text)",
+        }}
         data-tauri-drag-region
       >
         {/* 红绿灯占掉左上角,内容从它下面开始 */}
         <div className="h-[38px] shrink-0" data-tauri-drag-region />
 
-        <nav className="flex-1 overflow-y-auto px-2 pb-3">
-          {SOURCES.map((g) => (
-            <div key={g.group} className="mb-4">
-              <div className="px-2 pb-1 tw-label font-medium text-neutral-500">
-                {g.group}
-              </div>
-              {g.items.map((it) => (
-                <button
-                  key={it.id}
-                  onClick={() => setTab(it.id)}
-                  className={
-                    "flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left tw-body " +
-                    (tab === it.id
-                      ? "bg-neutral-900/10 font-medium dark:bg-neutral-100/10"
-                      : "text-neutral-600 hover:bg-neutral-900/5 dark:text-neutral-400 dark:hover:bg-neutral-100/5")
-                  }
-                >
-                  {it.label}
-                  {/* 配置面上出现了新东西 —— 挂个角标,直到他去看过 */}
-                  {it.id === "security" && alerts.length > 0 && (
-                    <span className="ml-auto rounded-full bg-red-600 px-1.5 tw-label leading-[15px] text-white">
-                      {alerts.length}
-                    </span>
-                  )}
-                </button>
-              ))}
+        <nav className={"flex-1 overflow-y-auto pb-3 " + (railOpen ? "px-[9px]" : "px-0")}>
+          {SOURCES.map((g, gi) => (
+            <div key={g.group}>
+              {gi > 0 && (
+                <div
+                  className="my-[7px] h-px"
+                  style={{
+                    background: "var(--chrome-hair)",
+                    marginInline: railOpen ? 8 : 17,
+                  }}
+                />
+              )}
+              {g.items.map((it) => {
+                const on = tab === it.id;
+                // 配置面上出现了新东西 —— 挂个角标,直到他去看过
+                const badge = it.id === "security" ? alerts.length : 0;
+                const Icon = it.icon;
+                const row = (
+                  <button
+                    key={it.id}
+                    onClick={() => setTab(it.id)}
+                    aria-current={on ? "page" : undefined}
+                    aria-label={railOpen ? undefined : it.label}
+                    className={
+                      "relative flex items-center rounded-md " +
+                      (railOpen
+                        ? "h-[26px] w-full gap-2 px-2 text-left tw-body "
+                        : "mx-auto h-[40px] w-[40px] justify-center ") +
+                      (on ? "tw-selected font-medium" : "hover:bg-[var(--chrome-hover)]")
+                    }
+                  >
+                    <Icon size={railOpen ? 16 : 19} />
+                    {railOpen && <span className="truncate">{it.label}</span>}
+                    {badge > 0 &&
+                      (railOpen ? (
+                        <span className="ml-auto rounded-full bg-red-500 px-1.5 tw-label leading-[15px] text-white">
+                          {badge}
+                        </span>
+                      ) : (
+                        // 收起时数字塞不下,只留一个点 —— 它要回答的是
+                        // 「那边有没有新东西」,几条可以点进去再看
+                        <span
+                          className="absolute right-[7px] top-[7px] h-[7px] w-[7px] rounded-full bg-red-500"
+                          style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
+                        />
+                      ))}
+                  </button>
+                );
+                return railOpen ? (
+                  row
+                ) : (
+                  <Tip
+                    key={it.id}
+                    side="right"
+                    text={badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label}
+                  >
+                    {row}
+                  </Tip>
+                );
+              })}
             </div>
           ))}
         </nav>
@@ -450,26 +551,57 @@ export default function App() {
         {/*
           状态钉在源列表底部,不在标题栏。
           **它要一直看得见** —— core 挂了是这个应用唯一「什么都不工作」
-          的状态,而标题栏那一行会被内容顶掉。
+          的状态,而标题栏那一行会被内容顶掉。收起时只剩一个点,但那个点
+          仍然在,颜色仍然说明一切。
         */}
-        <div className="border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          <div
-            className={
-              "flex items-center gap-1.5 tw-label " +
-              (c.tone === "ok"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : c.tone === "warn"
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-red-600 dark:text-red-400")
-            }
-          >
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
-            {c.text}
-          </div>
-          {status?.gateway_addr && (
-            <code className="mt-0.5 block font-mono tw-label text-neutral-500">
-              {status.gateway_addr}
-            </code>
+        <div
+          className={
+            "shrink-0 border-t py-2 " + (railOpen ? "px-3" : "flex justify-center px-0")
+          }
+          style={{ borderColor: "var(--chrome-hair)" }}
+        >
+          {railOpen ? (
+            <>
+              <div
+                className={
+                  "flex items-center gap-1.5 tw-label " +
+                  (c.tone === "ok"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : c.tone === "warn"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400")
+                }
+              >
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                {c.text}
+              </div>
+              {status?.gateway_addr && (
+                <code
+                  className="mt-0.5 block font-mono tw-label"
+                  style={{ color: "var(--chrome-dim)" }}
+                >
+                  {status.gateway_addr}
+                </code>
+              )}
+            </>
+          ) : (
+            <Tip
+              side="right"
+              text={
+                status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text
+              }
+            >
+              <span
+                className={
+                  "inline-block h-2 w-2 rounded-full bg-current " +
+                  (c.tone === "ok"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : c.tone === "warn"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400")
+                }
+              />
+            </Tip>
           )}
         </div>
       </aside>
@@ -485,7 +617,31 @@ export default function App() {
           (split ? "overflow-hidden" : "overflow-y-auto")
         }
       >
-        <div className="h-[38px] shrink-0" data-tauri-drag-region />
+        {/*
+          标题栏那一条。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个
+          属性的元素上,不带的子元素照常可点。
+
+          **收起源列表的按钮放在这儿,不放在源列表里。**收起之后源列表
+          只有 60px 宽,按钮塞进去要么挤掉一个图标位,要么小到点不准;
+          而放在内容这一侧,它在两种状态下都在同一个位置。系统应用
+          （访达、邮件)也是这么放的。
+        */}
+        <div
+          className="flex h-[38px] shrink-0 items-center px-3"
+          data-tauri-drag-region
+        >
+          <Tip side="bottom" text={(railOpen ? "收起源列表" : "展开源列表") + "  ⌘⌥S"}>
+            <button
+              onClick={() => setRailOpen((v) => !v)}
+              aria-label={railOpen ? "收起源列表" : "展开源列表"}
+              aria-expanded={railOpen}
+              className="rounded-md p-1 hover:bg-[var(--chrome-hover)]"
+              style={{ color: "var(--chrome-dim)" }}
+            >
+              <IconSidebar size={16} />
+            </button>
+          </Tip>
+        </div>
       {error && (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {error}

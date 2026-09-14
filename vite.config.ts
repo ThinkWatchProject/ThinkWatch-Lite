@@ -9,4 +9,17 @@ export default defineConfig({
   // 构建产物给 Tauri 打包用
   build: { outDir: "dist", emptyOutDir: true },
   clearScreen: false,
+  test: {
+    /**
+     * **把工作树里的副本挡在外面。**
+     *
+     * `.claude/worktrees/` 下是同一个仓库的另一个检出，里面有一整套同名
+     * 的测试文件。vitest 的默认排除项不包含它，于是套件会被悄悄翻倍：
+     * 这里一度报 8 个文件 68 个测试，而仓库里只有 4 个文件 38 个测试。
+     *
+     * 多跑一遍不是问题，**跑的是旧代码才是** —— 那些副本停在创建工作树
+     * 那天，既可能掩盖真文件的失败，也可能报出一个早已修好的失败。
+     */
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
+  },
 });

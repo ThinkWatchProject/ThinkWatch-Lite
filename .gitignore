@@ -3,3 +3,6 @@ dist
 src-tauri/target
 src-tauri/gen
 .DS_Store
+
+# tsc -b 的增量缓存
+*.tsbuildinfo
