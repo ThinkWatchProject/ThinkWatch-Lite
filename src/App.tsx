@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
+import { useStableState } from "./useStable";
 import {
   EMPTY_FILTER,
   facets,
@@ -158,7 +159,7 @@ export default function App() {
       setSortDir(k === "time" ? "desc" : "desc");
     }
   }
-  const [status, setStatus] = useState<CoreStatus | null>(null);
+  const [status, setStatus] = useStableState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
   const [error, setError] = useState<string | null>(null);
   /**
@@ -188,7 +189,28 @@ export default function App() {
   const [tab, setTab] = useState<Surface>("requests");
   /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
   const [dashTick, setDashTick] = useState(0);
-  const [ov, setOv] = useState<Overview | null>(null);
+  /**
+   * 轮询里要读当前在哪一页，但**不能把 `tab` 加进那个 effect 的依赖**
+   * —— 那样每切一次页都会重建计时器，于是切页的瞬间会多打一轮请求。
+   * 用 ref 读最新值，依赖数组保持不变。
+   */
+  const tabRef = useRef<Surface>("requests");
+  /**
+   * 窗口够不够宽拆成两栏。
+   *
+   * 1100px 拆开之后列表约 620px、检查器 480px —— 两边都还能用。再窄的话
+   * 列表会挤到只剩几列，那时浮层反而是对的：牺牲「同时看见」换回可读的
+   * 列表宽度。**判据是实测的窗口宽度，不是一个 CSS 断点** —— 这是桌面
+   * 应用，窗口是用户随手拖的。
+   */
+  const [wide, setWide] = useState(() => window.innerWidth >= 1040);
+  useEffect(() => {
+    const on = () => setWide(window.innerWidth >= 1040);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const split = wide && tab === "requests" && open != null;
+  const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和 §3.8 那条一样的理由）。
   const [nudge, setNudge] = useState(0);
@@ -319,7 +341,10 @@ export default function App() {
       } catch {
         /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
-      if (alive) setDashTick((t) => t + 1);
+      // **只在概览页可见时才推 tick。**它唯一的用途是让 Dashboard
+      // 重新拉数，而每 2 秒自增一次会让整个 App 重渲染一遍 —— 包括
+      // 用户正在看的请求表。别的页开着的时候，这个计数没有消费者。
+      if (alive && tabRef.current === "dashboard") setDashTick((t) => t + 1);
       try {
         const c = await invoke<string>("core_state");
         if (alive) setCore(c);
@@ -337,6 +362,7 @@ export default function App() {
     // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效（§3.8）。
   }, [configVersion, nudge]);
 
+  tabRef.current = tab;
   const c = describeCore(core);
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
@@ -423,7 +449,16 @@ export default function App() {
       </aside>
 
       {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      {/*
+        分栏时滚动交给两栏各自管，外层不能再滚 —— 否则是两层滚动条，
+        而外面那层会把整个分栏一起推走。
+      */}
+      <div
+        className={
+          "flex min-w-0 flex-1 flex-col " +
+          (split ? "overflow-hidden" : "overflow-y-auto")
+        }
+      >
         <div className="h-[38px] shrink-0" data-tauri-drag-region />
       {error && (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
@@ -545,7 +580,8 @@ export default function App() {
           <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
         )
       ) : (
-      <main className="p-5">
+      <main className={split ? "flex min-h-0 flex-1 overflow-hidden" : ""}>
+        <div className={split ? "min-w-0 flex-1 overflow-y-auto p-5" : "p-5"}>
         {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -831,6 +867,13 @@ export default function App() {
             另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
           </p>
         )}
+        </div>
+        {/* 检查器常驻右栏：看详情的时候列表还在，两边能来回对照 */}
+        {split && (
+          <div className="w-[min(30rem,45%)] shrink-0">
+            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
+          </div>
+        )}
       </main>
       )}
       {/* §7.8 的右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
@@ -863,7 +906,10 @@ export default function App() {
           </>
         }
       />
-      {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
+      {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
+      {open != null && !split && (
+        <RequestDrawer id={open} onClose={() => setOpen(null)} />
+      )}
     </div>
     </TooltipRoot>
   );
