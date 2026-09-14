@@ -49,8 +49,36 @@ export function useRequests() {
    * 上游只留最新那条 —— 失败每次都会报，攒着只是同一句话的副本。
    */
   const [rotated, setRotated] = useState<Extract<CoreEvent, { kind: "credential_rotated" }>[]>([]);
-  /** 配置换过几次。App 用它决定要不要重新拉概览 */
+  /**
+   * 当前配置的版本号。改配置时必须带上它（乐观并发的凭据），App 也用它
+   * 决定要不要重新拉概览。
+   *
+   * **不能只从事件流里拿。**`config_reloaded` 报的是「变化」，而这里要
+   * 的是「现在是什么」—— 全新启动、谁也没改过配置时那个事件永远不来，
+   * 于是它一直是 `null`，而所有写配置的入口都卡在「还没读到配置版本」
+   * 上：防护页的三态、监听方式、上游字段、策略组，一个都写不进去。
+   * 表现是应用看起来是只读的，而错误提示说「稍等一下再试」—— 等多久都
+   * 不会好。
+   *
+   * 所以挂载时主动读一次当前值，之后再由事件流跟进。
+   */
   const [configVersion, setConfigVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const c = await invoke<{ version: string }>("get_config");
+        // 事件先到就听事件的 —— 它比这次读取更新
+        if (alive) setConfigVersion((v) => v ?? c.version);
+      } catch {
+        // core 还没起来。事件流起来之后第一次配置变更会补上，而在那
+        // 之前写配置本来也做不了。
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
