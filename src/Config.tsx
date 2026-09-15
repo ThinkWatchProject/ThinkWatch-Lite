@@ -27,6 +27,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   Collapsible,
   CollapsibleContent,
@@ -99,7 +100,7 @@ function EditableCell({
     try {
       const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      await invoke("patch_config", { ops, baseVersion: version });
+      await patchConfig(ops, version);
     } catch (e) {
       // **失败时把草稿退回原值。**留着一个没保存成功的值，用户下次
       // 看这一行会以为它已经生效了。
@@ -181,12 +182,12 @@ function SelectCell({
         const v = picked === EMPTY ? "" : picked;
         setBusy(true);
         try {
-          await invoke("patch_config", {
+          await patchConfig(
             // 空串写成 null —— 「没写这个字段」和「写了个空值」是两回事，
             // 而前者才是「按默认/自动判」的意思
-            ops: [{ op: "replace", path, value: v === "" ? null : v }],
-            baseVersion: version,
-          });
+            [{ op: "replace", path, value: v === "" ? null : v }],
+            version,
+          );
           onDone?.();
         } catch (err) {
           toast.error(typeof err === "string" ? err : String(err));
@@ -320,7 +321,7 @@ function CidrList({
     }
     setBusy(true);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       setAdding("");
     } catch (e) {
       toast.error(typeof e === "string" ? e : String(e));
@@ -398,10 +399,7 @@ function ProbesSection({
     }
     setBusy(id);
     try {
-      await invoke("patch_config", {
-        ops: [{ op: "replace", path: `/client_probes/${id}`, value: mode }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], configVersion);
     } catch (e) {
       toast.error(typeof e === "string" ? e : String(e));
     } finally {
@@ -528,10 +526,7 @@ function ListenSection({
     }
     setBusy(true);
     try {
-      await invoke("patch_config", {
-        ops: [{ op: "replace", path: "/listen/gateway/bind", value }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path: "/listen/gateway/bind", value }], configVersion);
     } catch (e) {
       toast.error(typeof e === "string" ? e : String(e));
     } finally {
@@ -1155,16 +1150,13 @@ export default function Config({
                           return;
                         }
                         try {
-                          await invoke("patch_config", {
-                            ops: [
+                          await patchConfig([
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/selected`,
                                 value: v,
                               },
-                            ],
-                            baseVersion: cfg.version,
-                          });
+                            ], cfg.version);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
                           toast.error(typeof err === "string" ? err : String(err));
@@ -1208,16 +1200,13 @@ export default function Config({
                           return;
                         }
                         try {
-                          await invoke("patch_config", {
-                            ops: [
+                          await patchConfig([
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/session_affinity`,
                                 value: checked === true,
                               },
-                            ],
-                            baseVersion: cfg.version,
-                          });
+                            ], cfg.version);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
                           toast.error(typeof err === "string" ? err : String(err));

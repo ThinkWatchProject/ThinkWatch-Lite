@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "@/ui/tip";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import type { Overview, PatchOp } from "./types";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   Table,
   TableBody,
@@ -71,7 +71,7 @@ export default function Proxies({
     }
     setBusy(tag);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       onChanged();
       return true;
     } catch (e) {

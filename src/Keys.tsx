@@ -7,6 +7,7 @@ import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   Table,
   TableBody,
@@ -162,7 +163,7 @@ export default function Keys({
     }
     setBusy(tag);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       onChanged();
       return true;
     } catch (e) {

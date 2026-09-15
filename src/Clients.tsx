@@ -12,6 +12,7 @@ import { Button } from "@/ui/button";
 import { Badge } from "@/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   Dialog,
   DialogContent,
@@ -104,11 +105,15 @@ export default function Clients({
       */
       const keyName = plan.c.id;
       if (!plan.restore && !clientKeys.includes(keyName)) {
+        // **类型查出来的。**这里原本直接把 `configVersion` 递进去，而它
+        // 可能还是 null（core 刚起来、第一次配置读回来之前）。那种时候
+        // 建密钥会失败，而接管照样往下走 —— 客户端配上一把不存在的密钥。
+        if (!configVersion) {
+          toast.error("还没读到配置版本，稍等一下再试");
+          return;
+        }
         const key = await invoke<string>("new_key");
-        await invoke("patch_config", {
-          ops: [{ op: "append", path: "/clients", item: `name: ${keyName}\nkey: ${key}` }],
-          baseVersion: configVersion,
-        });
+        await patchConfig([{ op: "append", path: "/clients", item: `name: ${keyName}\nkey: ${key}` }], configVersion);
       }
       const r = await invoke<AdoptResponse>(plan.restore ? "restore_client" : "adopt_client", {
         client: plan.c.id,

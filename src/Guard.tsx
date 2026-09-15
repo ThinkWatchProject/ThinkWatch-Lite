@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Tip } from "@/ui/tip";
-import { invoke } from "@tauri-apps/api/core";
 import type { Overview } from "./types";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   Table,
   TableBody,
@@ -102,10 +102,7 @@ export default function Guard({
       // 走和别的改动同一扇门：带版本号、span 补丁、三道校验。
       // **写进去的是 slug 不是中文标签** —— 写「观察」的话下一次加载
       // 会因为不是合法取值整份被拒，而这一层刻意不做静默回落。
-      await invoke("patch_config", {
-        ops: [{ op: "set", path, value: mode }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path, value: mode }], configVersion);
       onChanged();
     } catch (e) {
       toast.error(typeof e === "string" ? e : String(e));

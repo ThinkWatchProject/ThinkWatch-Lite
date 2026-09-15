@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "@/ui/tip";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
@@ -7,6 +6,7 @@ import type { Overview, PatchOp, RouteView } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { toast } from "sonner";
+import { patchConfig } from "./patch";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -66,7 +66,7 @@ export default function Routes({
     }
     setBusy(tag);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       onChanged();
       return true;
     } catch (e) {
