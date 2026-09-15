@@ -6,6 +6,15 @@ import type { DryRunResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { toast } from "sonner";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/ui/combobox";
 
 /**
  * 路由试算。
@@ -64,17 +73,31 @@ export default function DryRun({ models }: { models: string[] }) {
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">
-        <Input
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="模型名"
-          list="dryrun-models"
-        />
-        <datalist id="dryrun-models">
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
+        {/*
+          **自由输入 + 建议**,不是受限选择:模型名可能是刚发布的、也可能
+          是中转自己起的,列表里没有的照样得能敲进去。原来用的是原生
+          `<datalist>` —— 它能做到这件事,但样式完全不受控(系统画的),
+          而且不支持模糊匹配。`Combobox` 的 `inputValue` 就是自由输入。
+        */}
+        <Combobox
+          items={models}
+          inputValue={model}
+          onInputValueChange={setModel}
+        >
+          <ComboboxTrigger className="w-56">
+            <ComboboxInput placeholder="模型名" />
+          </ComboboxTrigger>
+          <ComboboxContent>
+            <ComboboxEmpty>没有匹配的,直接敲全名也行</ComboboxEmpty>
+            <ComboboxList>
+              {(m: string) => (
+                <ComboboxItem key={m} value={m}>
+                  {m}
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
         <label className="flex items-center gap-1">
           上下文
           <Input

@@ -2,10 +2,18 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/ui/combobox";
 import {
   Table,
   TableBody,
@@ -64,18 +72,22 @@ export default function SpeedTest({ models }: { models: string[] }) {
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <Input
-          className="w-72 font-mono"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="claude-sonnet-4-5"
-          list="tw-models"
-        />
-        <datalist id="tw-models">
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
+        {/* 自由输入 + 建议 —— 理由同「试算」那一页 */}
+        <Combobox items={models} inputValue={model} onInputValueChange={setModel}>
+          <ComboboxTrigger className="w-72">
+            <ComboboxInput className="font-mono" placeholder="claude-sonnet-4-5" />
+          </ComboboxTrigger>
+          <ComboboxContent>
+            <ComboboxEmpty>没有匹配的,直接敲全名也行</ComboboxEmpty>
+            <ComboboxList>
+              {(m: string) => (
+                <ComboboxItem key={m} value={m}>
+                  {m}
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
         <Button
           variant="outline"
           size="sm"

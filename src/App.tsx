@@ -51,6 +51,11 @@ import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/ui/resizable";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -315,6 +320,24 @@ export default function App() {
     return () => window.removeEventListener("resize", on);
   }, []);
   const split = wide && tab === "requests" && open != null;
+  /*
+    分栏的宽度记在本地。**v4 的 react-resizable-panels 去掉了
+    `autoSaveId`**（那一版自己写 localStorage），所以这里自己接一下 ——
+    一共就是读一次、写一次。
+  */
+  const [splitLayout] = useState<Record<string, number> | undefined>(() => {
+    try {
+      const raw = window.localStorage.getItem("tw-split");
+      const v: unknown = raw ? JSON.parse(raw) : null;
+      if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+      const ok = Object.values(v as Record<string, unknown>).every(
+        (n) => typeof n === "number",
+      );
+      return ok ? (v as Record<string, number>) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
   const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
@@ -855,8 +878,32 @@ export default function App() {
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : (
-      <main className={split ? "flex min-h-0 flex-1 overflow-hidden" : ""}>
-        <div className={split ? "min-w-0 flex-1 overflow-y-auto p-5" : "p-5"}>
+      <ResizablePanelGroup
+        orientation="horizontal"
+        defaultLayout={splitLayout}
+        onLayoutChanged={(l) => {
+          try {
+            window.localStorage.setItem("tw-split", JSON.stringify(l));
+          } catch {
+            // 隐私模式之类。记不住而已，不值得为它中断
+          }
+        }}
+        className={split ? "flex min-h-0 flex-1 overflow-hidden" : "!block"}
+      >
+      {/*
+        **分栏那条线可以拖。**原来是写死的 `w-[min(30rem,45%)]` —— 而
+        「列表要多宽、详情要多宽」只有当时在排查的人知道:看路径和错误
+        要宽列表,读 payload 要宽详情。抓包类工具的分隔线一律能拖。
+
+        `autoSaveId` 让它记住 —— react-resizable-panels 自己写
+        localStorage,不用我们再管一份状态。
+      */}
+        <ResizablePanel
+          id="list"
+          defaultSize={62}
+          minSize={35}
+          className={split ? "min-w-0 overflow-y-auto p-5" : "!flex-none p-5"}
+        >
         {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -1182,14 +1229,17 @@ export default function App() {
             另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
           </p>
         )}
-        </div>
+        </ResizablePanel>
         {/* 检查器常驻右栏：看详情的时候列表还在，两边能来回对照 */}
         {split && (
-          <div className="w-[min(30rem,45%)] shrink-0">
-            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
-          </div>
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="detail" defaultSize={38} minSize={25} className="min-w-0">
+              <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
+            </ResizablePanel>
+          </>
         )}
-      </main>
+      </ResizablePanelGroup>
       )}
       {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}

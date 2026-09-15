@@ -15,6 +15,7 @@ import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import {
   Table,
   TableBody,
@@ -59,8 +60,13 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
   }
   const big = b.text.length > 2000;
   const shown = open || !big ? b.text : b.text.slice(0, 2000);
+  /*
+    **`Collapsible` 而不是 `Accordion`。**请求和响应两段是各自独立的,
+    要能同时展开对着看;Accordion 是「一组里只开一个」,那正好是这里
+    不想要的行为。
+  */
   return (
-    <div>
+    <Collapsible open={open} onOpenChange={setOpen}>
       <div className="flex items-baseline gap-2">
         <span className="tw-body font-medium">{title}</span>
         <span className="tw-body text-neutral-400">
@@ -69,21 +75,18 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
           {b.truncated && " · 只存了开头"}
         </span>
         {big && (
-          <Button
-            variant="link"
-            size="xs"
-            className="ml-auto"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? "折叠" : "展开全部"}
-          </Button>
+          <CollapsibleTrigger asChild>
+            <Button variant="link" size="xs" className="ml-auto">
+              {open ? "折叠" : "展开全部"}
+            </Button>
+          </CollapsibleTrigger>
         )}
       </div>
       <pre className="mt-1 max-h-80 overflow-auto rounded-md bg-neutral-100 p-2 font-mono tw-label leading-relaxed break-all whitespace-pre-wrap dark:bg-neutral-900">
         {shown}
         {big && !open && "\n…"}
       </pre>
-    </div>
+    </Collapsible>
   );
 }
 

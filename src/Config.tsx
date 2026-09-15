@@ -29,6 +29,7 @@ import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { ButtonGroup } from "@/ui/button-group";
 import {
   Collapsible,
   CollapsibleContent,
@@ -1452,7 +1453,7 @@ function Uninstall() {
               连同数据目录一起删掉（请求历史、成本记录、配置备份）
             </FieldLabel>
           </Field>
-          <div className="flex gap-2">
+          <ButtonGroup>
             <Button
               variant="destructive"
               size="sm"
@@ -1479,7 +1480,7 @@ function Uninstall() {
             >
               取消
             </Button>
-          </div>
+                    </ButtonGroup>
         </div>
       )}
     </section>

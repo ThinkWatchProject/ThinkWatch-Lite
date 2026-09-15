@@ -229,16 +229,18 @@ export default function Guard({
       )}
 
       {sec && (
-        <section className="rounded-lg border border-border p-4">
-          <h3 className="tw-body font-medium">按上游的脱敏类别</h3>
-          <p className="mt-1.5 tw-body text-muted-foreground">
+        <Item variant="outline" className="flex-col items-stretch">
+          <ItemHeader>
+            <ItemTitle>按上游的脱敏类别</ItemTitle>
+          </ItemHeader>
+          <ItemDescription>
             上面那个总闸决定脱不脱，这里决定
             <span className="font-medium">每家脱哪几类</span>。
             官方端点默认一类都不脱
             <Tip text="为了防一个你本来就信任的对象而自废武功，是这一层最要避免的事。要改的话在 config.yaml 里给那家写 redact。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
             </Tip>
-          </p>
+          </ItemDescription>
           <Table className="mt-3">
             <TableHeader>
               <TableRow>
@@ -272,7 +274,7 @@ export default function Guard({
               ))}
             </TableBody>
           </Table>
-        </section>
+        </Item>
       )}
 
           </div>

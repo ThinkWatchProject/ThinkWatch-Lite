@@ -9,6 +9,13 @@ import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/card";
+import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogAction,
@@ -76,9 +83,11 @@ export default function Routes({
         默认路由单独一块,因为它在模型里就是单独的一个字段
         （顶层的 `default_route`）—— 不是某条路由身上的标志。
       */}
-      <section className="rounded-lg border border-border p-3">
-        <div className="flex items-baseline gap-3">
-          <h3 className="tw-head">默认路由</h3>
+      {/* 标题 + 一个操作 + 一句说明 —— Card 的形状 */}
+      <Card className="py-3">
+        <CardHeader className="gap-1 px-3">
+          <CardTitle className="tw-head font-normal">默认路由</CardTitle>
+          <CardAction>
           <NativeSelect
             size="sm"
             value={defaultRoute}
@@ -96,11 +105,12 @@ export default function Routes({
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <p className="tw-body text-muted-foreground">
+          </CardAction>
+          <CardDescription>
             没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
-          </p>
-        </div>
-      </section>
+          </CardDescription>
+        </CardHeader>
+      </Card>
 
       <section>
         <div className="flex items-baseline gap-3">

@@ -7,6 +7,8 @@ import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
+import { ButtonGroup } from "@/ui/button-group";
+import { Progress } from "@/ui/progress";
 import {
   Table,
   TableBody,
@@ -51,6 +53,8 @@ export default function Pricing() {
   const [offer, setOffer] = useState<UpdateOffer | null>(null);
   const [preview, setPreview] = useState<UpdatePreview | null>(null);
   const [step, setStep] = useState<"idle" | "offering" | "fetching" | "applying">("idle");
+  /** 三步里的第几步。`offer`/`preview` 已经拿到就算这一步过了 */
+  const stepAt = preview || step === "applying" ? 3 : offer || step === "fetching" ? 2 : 1;
 
   const load = useCallback(async () => {
     try {
@@ -228,6 +232,22 @@ export default function Pricing() {
         零上传的承诺同时意味着零静默下载。
       */}
       <div className="mt-3 border-t border-border pt-2">
+        {/*
+          **三步走到哪儿了,要画出来。**原来只有按钮上一个转圈 ——
+          转圈说的是「在忙」,说不出「第二步的下载在忙,还有第三步」。
+          零静默下载这件事的全部意义就是让人看见每一步,那就得把「一共
+          几步、现在第几步」也算进去。
+        */}
+        {(offer || preview || step !== "idle") && (
+          <div className="space-y-1">
+            <Progress value={stepAt * 33.34} className="h-1" />
+            <p className="tw-label text-muted-foreground">
+              第 {stepAt} / 3 步 ·{" "}
+              {stepAt === 1 ? "看对面有没有新的" : stepAt === 2 ? "下载并对比" : "写入"}
+            </p>
+          </div>
+        )}
+
         {!offer && !preview && (
           <div className="flex items-center gap-2">
             <Button
@@ -264,7 +284,7 @@ export default function Pricing() {
               大小 {offer.bytes ? `${(offer.bytes / 1024 / 1024).toFixed(1)} MB` : "对面没说"}
               ；下载后先显示变更，确认才写入。
             </p>
-            <div className="flex gap-2">
+            <ButtonGroup>
               <Button
                 size="sm"
                 disabled={step !== "idle"}
@@ -289,7 +309,7 @@ export default function Pricing() {
               >
                 算了
               </Button>
-            </div>
+                        </ButtonGroup>
           </div>
         )}
 
@@ -330,7 +350,7 @@ export default function Pricing() {
                 </Table>
               </div>
             )}
-            <div className="flex gap-2">
+            <ButtonGroup>
               <Button
                 size="sm"
                 disabled={step !== "idle"}
@@ -362,7 +382,7 @@ export default function Pricing() {
               >
                 不更新
               </Button>
-            </div>
+                        </ButtonGroup>
             <p className="text-muted-foreground">
               你的自定义价格不受影响，更新只换底下那份公共价目表。
             </p>

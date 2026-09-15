@@ -6,6 +6,7 @@ import type { Overview, PatchOp } from "./types";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { ButtonGroup } from "@/ui/button-group";
 import {
   Table,
   TableBody,
@@ -141,7 +142,7 @@ export default function Proxies({
               </span>
             </Tip>
           </div>
-          <div className="flex items-center gap-2">
+          <ButtonGroup>
             <Button
               size="sm"
               disabled={busy === "new" || !f.name.trim() || !f.addr.trim()}
@@ -173,7 +174,7 @@ export default function Proxies({
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
               取消
             </Button>
-          </div>
+                    </ButtonGroup>
         </div>
       )}
 
