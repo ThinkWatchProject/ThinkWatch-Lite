@@ -14,6 +14,7 @@ import type {
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -74,7 +75,7 @@ export default function Security({
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -87,7 +88,7 @@ export default function Security({
     try {
       setPending({ req, plan: await invoke<PlanView>("mcp_plan", { req }) });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -101,7 +102,7 @@ export default function Security({
       setPending(null);
       await load();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setPending(null);
     } finally {
       setBusy(false);
@@ -120,13 +121,7 @@ export default function Security({
 
   return (
     <div className="space-y-5 p-5">
-      {error && (
-        <Alert variant="warning" className="px-3 py-2">
-          <AlertDescription>
-          {error}
-        </AlertDescription>
-        </Alert>
-      )}
+      
 
       <div className="flex items-center gap-2 tw-body text-muted-foreground">
         <span>

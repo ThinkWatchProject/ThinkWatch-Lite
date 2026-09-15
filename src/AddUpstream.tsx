@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { toast } from "sonner";
 import {
   Empty,
   EmptyContent,
@@ -37,7 +38,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
   const [key, setKey] = useState("");
   const [probe, setProbe] = useState<ProbeResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // 从 URL 猜一个名字。用户几乎不会想改它，改名走配置页。
   const guessedName = (() => {
@@ -53,13 +53,12 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
   async function doProbe() {
     setBusy(true);
-    setError(null);
     setProbe(null);
     try {
       // Tauri 的 invoke 用**字符串** reject，不是 Error 对象
       setProbe(await invoke<ProbeResponse>("probe_upstream", { baseUrl, key }));
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -67,7 +66,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
   async function doSetup() {
     setBusy(true);
-    setError(null);
     try {
       await invoke<SetupResponse>("setup_first_provider", {
         name: guessedName,
@@ -76,7 +74,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       });
       onDone();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -197,9 +195,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
         </p>
       )}
 
-      {error && (
-        <p className="mt-3 tw-body text-red-600 dark:text-red-400">{error}</p>
-      )}
+      
       </EmptyContent>
     </Empty>
   );

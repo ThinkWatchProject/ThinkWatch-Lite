@@ -4,6 +4,7 @@ import { Tip } from "@/ui/tip";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import type { Overview, PatchOp } from "./types";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -57,7 +58,6 @@ export default function Proxies({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [f, setF] = useState({ name: "", kind: "socks5h", addr: "", user: "", pass: "" });
@@ -66,17 +66,16 @@ export default function Proxies({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return false;
     }
     setBusy(tag);
-    setErr(null);
     try {
       await invoke("patch_config", { ops, baseVersion: configVersion });
       onChanged();
       return true;
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       return false;
     } finally {
       setBusy(null);
@@ -158,7 +157,7 @@ export default function Proxies({
               disabled={busy === "new" || !f.name.trim() || !f.addr.trim()}
               onClick={async () => {
                 if (proxies.some((p) => p.name === f.name.trim())) {
-                  setErr(`已经有一个叫「${f.name.trim()}」的代理了`);
+                  toast.error(`已经有一个叫「${f.name.trim()}」的代理了`);
                   return;
                 }
                 const lines = [
@@ -247,7 +246,6 @@ export default function Proxies({
         </Table>
       )}
 
-      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
-    </section>
+          </section>
   );
 }

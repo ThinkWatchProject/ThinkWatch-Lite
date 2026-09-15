@@ -48,6 +48,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import type { LucideIcon } from "lucide-react";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
+import { Toaster } from "@/ui/sonner";
+import { toast } from "sonner";
 import {
   Sidebar,
   SidebarContent,
@@ -261,7 +263,6 @@ export default function App() {
   }
   const [status, setStatus] = useStableState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
-  const [error, setError] = useState<string | null>(null);
   /**
    * 托盘按了「退出」，等确认。
    *
@@ -473,10 +474,9 @@ export default function App() {
         const s = await invoke<CoreStatus>("core_status");
         if (alive) {
           setStatus(s);
-          setError(null);
         }
       } catch (e) {
-        if (alive) setError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
       try {
         const o = await invoke<Overview>("overview");
@@ -709,13 +709,6 @@ export default function App() {
             </Button>
           </Tip>
         </div>
-      {error && (
-        <Alert variant="warning" className="border-b px-5 py-2">
-          <AlertDescription>
-          {error}
-        </AlertDescription>
-        </Alert>
-      )}
 
       {/*
         配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
@@ -1246,6 +1239,12 @@ export default function App() {
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />
       )}
+      {/*
+        **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，
+        于是同一句「还没读到配置版本」有六份实现，而滚出视野的那几份用户
+        根本看不到。吐司统一在右下角，谁触发的都一样。
+      */}
+      <Toaster position="bottom-right" closeButton />
     </SidebarProvider>
     </TooltipRoot>
   );

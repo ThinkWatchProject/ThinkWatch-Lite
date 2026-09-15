@@ -3,6 +3,7 @@ import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type { Overview } from "./types";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -88,17 +89,15 @@ export default function Guard({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const sec = ov.security;
 
   async function set(path: string, mode: Mode) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(path);
-    setErr(null);
     try {
       // 走和别的改动同一扇门：带版本号、span 补丁、三道校验。
       // **写进去的是 slug 不是中文标签** —— 写「观察」的话下一次加载
@@ -109,7 +108,7 @@ export default function Guard({
       });
       onChanged();
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(null);
     }
@@ -268,7 +267,6 @@ export default function Guard({
         </section>
       )}
 
-      {err && <p className="tw-body text-red-600 dark:text-red-400">{err}</p>}
-    </div>
+          </div>
   );
 }

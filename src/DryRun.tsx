@@ -5,6 +5,7 @@ import { Field, FieldLabel } from "@/ui/field";
 import type { DryRunResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { toast } from "sonner";
 
 /**
  * 路由试算。
@@ -23,13 +24,11 @@ export default function DryRun({ models }: { models: string[] }) {
   const [thinking, setThinking] = useState(false);
   const [kTokens, setKTokens] = useState(8);
   const [r, setR] = useState<DryRunResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const uid = useId();
 
   async function run() {
     setBusy(true);
-    setError(null);
     try {
       setR(
         await invoke<DryRunResult>("dry_run", {
@@ -51,7 +50,7 @@ export default function DryRun({ models }: { models: string[] }) {
       );
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -119,8 +118,7 @@ export default function DryRun({ models }: { models: string[] }) {
         </Button>
       </div>
 
-      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
-      {r && <Result r={r} />}
+            {r && <Result r={r} />}
     </section>
   );
 }

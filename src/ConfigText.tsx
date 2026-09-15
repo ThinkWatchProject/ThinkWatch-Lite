@@ -5,6 +5,7 @@ import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 
 /**
  * 文本模式：直接改 config.yaml。
@@ -40,7 +41,6 @@ export default function ConfigTextMode({
 }) {
   const [draft, setDraft] = useState(doc.text);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /** 打开这一版时文件是什么样。**保存时带的就是它** */
   const base = useRef(doc.version);
   const dirty = draft !== doc.text;
@@ -51,7 +51,6 @@ export default function ConfigTextMode({
     if (!dirty) {
       setDraft(doc.text);
       base.current = doc.version;
-      setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.version]);
@@ -113,14 +112,13 @@ export default function ConfigTextMode({
 
   async function save() {
     setBusy(true);
-    setError(null);
     try {
       // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("put_config", { text: draft, baseVersion: base.current });
       base.current = "";
       onSaved();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -144,7 +142,6 @@ export default function ConfigTextMode({
               onClick={() => {
                 setDraft(doc.text);
                 base.current = doc.version;
-                setError(null);
               }}
             >
               丢掉放弃本地改动，用文件里的
@@ -209,11 +206,7 @@ export default function ConfigTextMode({
 
       {/* 保存失败最常见的两种：写错了（语法/字段/语义），和有人抢先改了。
           两者的下一步完全不同，所以原样把 core 那句话显示出来 */}
-      {error && (
-        <pre className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </pre>
-      )}
+      
     </div>
   );
 }

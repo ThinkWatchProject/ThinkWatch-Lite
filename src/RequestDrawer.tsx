@@ -11,8 +11,9 @@ import {
 } from "./types";
 import { Button } from "@/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import {
   Table,
   TableBody,
@@ -113,7 +114,6 @@ export default function RequestDrawer({
   inline?: boolean;
 }) {
   const [d, setD] = useState<RequestDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("timeline");
 
   useEffect(() => {
@@ -124,10 +124,9 @@ export default function RequestDrawer({
         const x = await invoke<RequestDetail>("request_detail", { id });
         if (alive) {
           setD(x);
-          setError(null);
         }
       } catch (e) {
-        if (alive) setError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
     })();
     return () => {
@@ -137,14 +136,16 @@ export default function RequestDrawer({
 
   const r = d?.row;
 
-  return (
-    <div
-      className={
-        inline
-          ? "flex h-full min-w-0 flex-col border-l border-border bg-neutral-50 dark:bg-neutral-950"
-          : "fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-border bg-white shadow-xl dark:bg-neutral-950"
-      }
-    >
+  /*
+    **两种壳,一份内容。**分栏时它是右边那一列(排查要来回对照,看详情
+    的时候得同时看见列表);窄窗口时它浮在右边。
+
+    浮的那一半原来是手写的 `fixed inset-y-0 right-0` —— 缺的和另外那几个
+    浮层一样:Esc 关不掉、Tab 会走到背景里、焦点不回到那一行。`Sheet` 就是
+    干这个的,而嵌入那一半它管不着,所以壳分两种、内容只写一遍。
+  */
+  const body = (
+    <>
       {/*
         **「关闭」两个字被折成了两行。**那不是设计，是 flex 里没人声明
         自己不能收缩：标题一长，浏览器就去挤按钮，而按钮挤无可挤就换行。
@@ -160,23 +161,20 @@ export default function RequestDrawer({
         <span className="flex-1" />
         {/* 「录制」不是一个新功能，这一条请求本来就在存储里 */}
         <SaveFixture id={id} />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 whitespace-nowrap"
-          onClick={onClose}
-        >
-          关闭
-        </Button>
+        {/* 浮层模式下 Sheet 自带右上角的关闭，这个只给分栏那一列 */}
+        {inline && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 whitespace-nowrap"
+            onClick={onClose}
+          >
+            关闭
+          </Button>
+        )}
       </header>
 
-      {error && (
-        <Alert variant="warning" className="m-4">
-          <AlertDescription>
-          {error}
-        </AlertDescription>
-        </Alert>
-      )}
+      
 
       {d && r && (
         <Tabs
@@ -347,7 +345,26 @@ export default function RequestDrawer({
           </div>
         </Tabs>
       )}
-    </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="flex h-full min-w-0 flex-col border-l border-border bg-neutral-50 dark:bg-neutral-950">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Sheet open onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="flex w-[min(38rem,90vw)] flex-col p-0 sm:max-w-none">
+        {/* 标题在上面那个 header 里,这里只是读屏软件要的那一句 */}
+        <SheetHeader className="sr-only">
+          <SheetTitle>请求详情</SheetTitle>
+        </SheetHeader>
+        {body}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -364,7 +381,6 @@ export default function RequestDrawer({
 function SaveFixture({ id }: { id: number }) {
   const [path, setPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   return (
     <span className="flex shrink-0 items-center gap-2">
       {path && (
@@ -372,7 +388,6 @@ function SaveFixture({ id }: { id: number }) {
           写好了，记得自己看一眼再交出去
         </span>
       )}
-      {error && <span className="tw-label text-amber-600 dark:text-amber-400">{error}</span>}
       <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
       <Button
         variant="ghost"
@@ -381,12 +396,11 @@ function SaveFixture({ id }: { id: number }) {
         disabled={busy}
         onClick={async () => {
           setBusy(true);
-          setError(null);
           try {
             setPath(await invoke<string>("save_fixture", { id }));
           } catch (e) {
             // Tauri 的 invoke 用字符串 reject，不是 Error
-            setError(typeof e === "string" ? e : String(e));
+            toast.error(typeof e === "string" ? e : String(e));
           } finally {
             setBusy(false);
           }
@@ -416,7 +430,6 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   const [quote, setQuote] = useState<ReplayQuote | null>(null);
   const [result, setResult] = useState<ReplayResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -426,20 +439,19 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         // 默认选一个**和原来那次不同的**上游 —— 重放的价值在对比
         setProvider(o.providers.find((p) => p.name !== originalProvider)?.name ?? o.providers[0]?.name ?? "");
       } catch (e) {
-        setError(typeof e === "string" ? e : String(e));
+        toast.error(typeof e === "string" ? e : String(e));
       }
     })();
   }, [originalProvider]);
 
   async function ask() {
     setBusy(true);
-    setError(null);
     setResult(null);
     try {
       setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setQuote(null);
     } finally {
       setBusy(false);
@@ -452,7 +464,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       setResult(await invoke<ReplayResult>("replay_run", { id, provider }));
       setQuote(null);
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -497,8 +509,6 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           看报价
         </Button>
       </div>
-
-      {error && <div className="text-amber-600 dark:text-amber-400">{error}</div>}
 
       {quote && (
         <div className="rounded border border-border p-3">

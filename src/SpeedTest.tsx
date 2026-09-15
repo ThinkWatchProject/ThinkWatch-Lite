@@ -5,6 +5,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -25,17 +26,15 @@ export default function SpeedTest({ models }: { models: string[] }) {
   const [quote, setQuote] = useState<SpeedQuote | null>(null);
   const [results, setResults] = useState<SpeedResult[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function ask() {
     setBusy(true);
-    setError(null);
     setResults(null);
     try {
       // Tauri 的 invoke 用字符串 reject，不是 Error
       setQuote(await invoke<SpeedQuote>("speed_quote", { model }));
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -43,12 +42,11 @@ export default function SpeedTest({ models }: { models: string[] }) {
 
   async function run() {
     setBusy(true);
-    setError(null);
     try {
       setResults(await invoke<SpeedResult[]>("speed_run", { model }));
       setQuote(null);
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -180,13 +178,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
         </Table>
       )}
 
-      {error && (
-        <Alert variant="warning" className="mt-2">
-          <AlertDescription>
-          {error}
-        </AlertDescription>
-        </Alert>
-      )}
+      
     </section>
   );
 }

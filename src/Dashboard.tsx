@@ -7,6 +7,7 @@ import { BarChart, BarRows } from "@/ui/charts";
 import { densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -50,7 +51,7 @@ export default function Dashboard({ tick }: { tick: number }) {
           setError(null);
         }
       } catch (e) {
-        if (alive) setError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
     })();
     return () => {

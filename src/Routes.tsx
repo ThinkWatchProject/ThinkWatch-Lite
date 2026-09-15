@@ -6,6 +6,7 @@ import { Field, FieldLabel } from "@/ui/field";
 import type { Overview, PatchOp, RouteView } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -45,7 +46,6 @@ export default function Routes({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -61,17 +61,16 @@ export default function Routes({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return false;
     }
     setBusy(tag);
-    setErr(null);
     try {
       await invoke("patch_config", { ops, baseVersion: configVersion });
       onChanged();
       return true;
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       return false;
     } finally {
       setBusy(null);
@@ -147,7 +146,7 @@ export default function Routes({
               onClick={async () => {
                 const n = newName.trim();
                 if (routes.some((r) => r.name === n)) {
-                  setErr(`已经有一条叫「${n}」的路由了`);
+                  toast.error(`已经有一条叫「${n}」的路由了`);
                   return;
                 }
                 // **新路由带一条兜底规则。**空路由是个合法但没用的状态：
@@ -155,7 +154,7 @@ export default function Routes({
                 // 配置看起来是好的。
                 const first = targets[0]?.[0];
                 if (!first) {
-                  setErr("还没有任何上游 —— 先去「网关」加一个。");
+                  toast.error("还没有任何上游 —— 先去「网关」加一个。");
                   return;
                 }
                 const ok = await patch(
@@ -302,8 +301,7 @@ export default function Routes({
           ))}
         </div>
 
-        {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
-      </section>
+              </section>
 
       <AlertDialog
         open={confirmDelete !== null}

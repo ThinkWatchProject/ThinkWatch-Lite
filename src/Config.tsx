@@ -26,6 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
+import { toast } from "sonner";
 import {
   Collapsible,
   CollapsibleContent,
@@ -61,13 +62,11 @@ function EditableCell({
   value,
   path,
   version,
-  onSaved,
   mono,
 }: {
   value: string;
   path: string;
   version: string | null;
-  onSaved: (err: string | null) => void;
   mono?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
@@ -92,7 +91,7 @@ function EditableCell({
     // 组字中不提交 —— 中间态提交上去的是一段还没成形的文本
     if (composing.current || draft === value || busy) return;
     if (!version) {
-      onSaved("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       setDraft(value);
       return;
     }
@@ -101,12 +100,11 @@ function EditableCell({
       const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
       // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("patch_config", { ops, baseVersion: version });
-      onSaved(null);
     } catch (e) {
       // **失败时把草稿退回原值。**留着一个没保存成功的值，用户下次
       // 看这一行会以为它已经生效了。
       setDraft(value);
-      onSaved(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -160,7 +158,6 @@ function SelectCell({
   options,
   path,
   version,
-  onSaved,
   onDone,
 }: {
   value: string;
@@ -168,7 +165,6 @@ function SelectCell({
   options: [string, string][];
   path: string;
   version: string | null;
-  onSaved: (err: string | null) => void;
   onDone?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -178,7 +174,7 @@ function SelectCell({
       disabled={busy}
       onValueChange={async (picked) => {
         if (!version) {
-          onSaved("还没读到配置版本，稍等一下再试");
+          toast.error("还没读到配置版本，稍等一下再试");
           return;
         }
         // 哨兵换回空串，下一行再把空串写成 null
@@ -191,10 +187,9 @@ function SelectCell({
             ops: [{ op: "replace", path, value: v === "" ? null : v }],
             baseVersion: version,
           });
-          onSaved(null);
           onDone?.();
         } catch (err) {
-          onSaved(typeof err === "string" ? err : String(err));
+          toast.error(typeof err === "string" ? err : String(err));
         } finally {
           setBusy(false);
         }
@@ -311,27 +306,24 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
 function CidrList({
   items,
   configVersion,
-  onErr,
 }: {
   items: string[];
   configVersion: string | null;
-  onErr: (e: string | null) => void;
 }) {
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function run(ops: PatchOp[]) {
     if (!configVersion) {
-      onErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(true);
-    onErr(null);
     try {
       await invoke("patch_config", { ops, baseVersion: configVersion });
       setAdding("");
     } catch (e) {
-      onErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -395,25 +387,23 @@ function ProbesSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const probes = ov.client_probes ?? [];
   if (probes.length === 0) return null;
 
   async function set(id: string, mode: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(id);
-    setErr(null);
     try {
       await invoke("patch_config", {
         ops: [{ op: "replace", path: `/client_probes/${id}`, value: mode }],
         baseVersion: configVersion,
       });
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(null);
     }
@@ -460,7 +450,6 @@ function ProbesSection({
       <p className="mt-2 tw-label text-muted-foreground">
         路由规则里的「辅助请求」条件，只有在这一类选了「交给路由」时才可能命中。
       </p>
-      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
     </section>
   );
 }
@@ -473,7 +462,6 @@ function LimitsSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const l = ov.limits;
   if (!l) return null;
   const rows: [string, keyof typeof l, string][] = [
@@ -494,14 +482,12 @@ function LimitsSection({
                 value={String(l[key])}
                 path={`/limits/${key}`}
                 version={configVersion}
-                onSaved={setErr}
               />
             </dd>
             <dd className="tw-label text-muted-foreground">{what}</dd>
           </Fragment>
         ))}
       </dl>
-      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
     </section>
   );
 }
@@ -513,7 +499,6 @@ function ListenSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [nics, setNics] = useState<NicView[] | null>(null);
   const cur = ov.listen.bind;
@@ -538,18 +523,17 @@ function ListenSection({
   async function write(value: string) {
     if (value === cur || busy) return;
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(true);
-    setErr(null);
     try {
       await invoke("patch_config", {
         ops: [{ op: "replace", path: "/listen/gateway/bind", value }],
         baseVersion: configVersion,
       });
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -561,7 +545,7 @@ function ListenSection({
     // 选「指定网卡」时先落到第一张，用户再从选单里换
     const first = nics?.[0];
     if (!first) {
-      setErr("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
+      toast.error("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
       return;
     }
     void write(first.addr);
@@ -655,7 +639,6 @@ function ListenSection({
             value={String(ov.listen.port)}
             path="/listen/gateway/port"
             version={configVersion}
-            onSaved={(e) => setErr(e)}
           />
         </dd>
         <dt className="text-muted-foreground">客户端密钥</dt>
@@ -669,16 +652,12 @@ function ListenSection({
               <CidrList
                 items={ov.listen.allow_from}
                 configVersion={configVersion}
-                onErr={setErr}
               />
             </dd>
           </>
         )}
       </dl>
 
-      {err && (
-        <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>
-      )}
 
       {/*
         白名单还只能读不能改：`PatchOp::Replace` 只吃标量，而 `allow_from`
@@ -734,11 +713,9 @@ export default function Config({
   const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
   const [history, setHistory] = useState<ConfigVersion[]>([]);
-  const [saveError, setSaveError] = useState<string | null>(null);
   // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
   // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
   const [autostart, setAutostart] = useState<boolean | null>(null);
-  const [autostartErr, setAutostartErr] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   /**
    * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
@@ -766,7 +743,7 @@ export default function Config({
         const h = await invoke<ConfigVersion[]>("config_history");
         if (alive) setHistory(h);
       } catch (e) {
-        if (alive) setSaveError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
     })();
     return () => {
@@ -890,13 +867,6 @@ export default function Config({
 
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
             「有人抢先改了」，正确的反应是刷新再改 */}
-        {saveError && (
-          <Alert variant="warning" className="mt-2">
-          <AlertDescription>
-            没能保存：{saveError}
-          </AlertDescription>
-        </Alert>
-        )}
 
         <CollapsibleContent>
           <div className="mt-2 rounded-md border border-border">
@@ -924,11 +894,10 @@ export default function Config({
                     size="xs"
                     className="ml-auto"
                     onClick={async () => {
-                      setSaveError(null);
                       try {
                         await invoke("rollback_config", { version: v.version });
                       } catch (e) {
-                        setSaveError(typeof e === "string" ? e : String(e));
+                        toast.error(typeof e === "string" ? e : String(e));
                       }
                     }}
                   >
@@ -990,7 +959,6 @@ export default function Config({
                     value={p.base_url}
                     path={`/providers/${p.name}/base_url`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                   />
                 </TableCell>
                 <TableCell className="text-muted-foreground">
@@ -1009,7 +977,6 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/protocol`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
                 </TableCell>
@@ -1027,7 +994,6 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/proxy`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
                 </TableCell>
@@ -1046,7 +1012,6 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/billing`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
                 </TableCell>
@@ -1064,7 +1029,6 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/trust`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
                 </TableCell>
@@ -1166,7 +1130,6 @@ export default function Config({
                     ]}
                     path={`/groups/${g.name}/type`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
                   <span className="ml-auto font-mono text-muted-foreground">
@@ -1188,7 +1151,7 @@ export default function Config({
                       value={g.selected ?? EMPTY}
                       onValueChange={async (v) => {
                         if (!cfg?.version) {
-                          setSaveError("还没读到配置版本，稍等一下再试");
+                          toast.error("还没读到配置版本，稍等一下再试");
                           return;
                         }
                         try {
@@ -1202,10 +1165,9 @@ export default function Config({
                             ],
                             baseVersion: cfg.version,
                           });
-                          setSaveError(null);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
-                          setSaveError(typeof err === "string" ? err : String(err));
+                          toast.error(typeof err === "string" ? err : String(err));
                         }
                       }}
                     >
@@ -1242,7 +1204,7 @@ export default function Config({
                       checked={g.session_affinity ?? true}
                       onCheckedChange={async (checked) => {
                         if (!cfg?.version) {
-                          setSaveError("还没读到配置版本，稍等一下再试");
+                          toast.error("还没读到配置版本，稍等一下再试");
                           return;
                         }
                         try {
@@ -1256,10 +1218,9 @@ export default function Config({
                             ],
                             baseVersion: cfg.version,
                           });
-                          setSaveError(null);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
-                          setSaveError(typeof err === "string" ? err : String(err));
+                          toast.error(typeof err === "string" ? err : String(err));
                         }
                       }}
                     />
@@ -1298,7 +1259,6 @@ export default function Config({
               disabled={autostart === null}
               onCheckedChange={async (checked) => {
                 const want = checked === true;
-                setAutostartErr(null);
                 // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
                 // 状态为准**，不是以这里传出去的那个为准。注册可能失败
                 // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
@@ -1307,7 +1267,7 @@ export default function Config({
                   setAutostart(await invoke<boolean>("set_autostart", { on: want }));
                 } catch (err) {
                   setAutostart(!want);
-                  setAutostartErr(typeof err === "string" ? err : String(err));
+                  toast.error(typeof err === "string" ? err : String(err));
                 }
               }}
             />
@@ -1327,11 +1287,6 @@ export default function Config({
               </FieldDescription>
             </FieldContent>
           </Field>
-          {autostartErr && (
-            <p className="mt-1.5 tw-body text-amber-700 dark:text-amber-300">
-              {autostartErr}
-            </p>
-          )}
         </section>
       )}
 
@@ -1412,7 +1367,6 @@ function About() {
 function Diagnostics() {
   const [path, setPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   return (
     <section>
@@ -1430,12 +1384,11 @@ function Diagnostics() {
         disabled={busy}
         onClick={async () => {
           setBusy(true);
-          setError(null);
           try {
             setPath(await invoke<string>("save_diagnostics"));
           } catch (e) {
             // Tauri 的 invoke 用字符串 reject，不是 Error
-            setError(typeof e === "string" ? e : String(e));
+            toast.error(typeof e === "string" ? e : String(e));
           } finally {
             setBusy(false);
           }
@@ -1443,7 +1396,6 @@ function Diagnostics() {
       >
         {busy ? "攒着…" : "生成"}
       </Button>
-      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
       {path && (
         <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>

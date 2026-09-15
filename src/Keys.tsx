@@ -6,6 +6,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -146,7 +147,6 @@ export default function Keys({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -157,17 +157,16 @@ export default function Keys({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return false;
     }
     setBusy(tag);
-    setErr(null);
     try {
       await invoke("patch_config", { ops, baseVersion: configVersion });
       onChanged();
       return true;
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       return false;
     } finally {
       setBusy(null);
@@ -178,7 +177,7 @@ export default function Keys({
     const name = newName.trim();
     if (!name) return;
     if (ov.clients.some((c) => c.name === name)) {
-      setErr(`已经有一把叫「${name}」的密钥了`);
+      toast.error(`已经有一把叫「${name}」的密钥了`);
       return;
     }
     setBusy("new");
@@ -197,7 +196,7 @@ export default function Keys({
         setNewName("");
       }
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setBusy(null);
     }
   }
@@ -208,7 +207,7 @@ export default function Keys({
       const key = await invoke<string>("new_key");
       await patch([{ op: "replace", path: `/clients/${name}/key`, value: key }], name);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setBusy(null);
     }
   }
@@ -328,7 +327,7 @@ export default function Keys({
                       const raw = e.target.value.trim();
                       const v = raw === "" ? null : Number(raw);
                       if (v !== null && (!Number.isFinite(v) || v < 1)) {
-                        setErr("并发上限要是一个 1 以上的整数，或者留空表示不限");
+                        toast.error("并发上限要是一个 1 以上的整数，或者留空表示不限");
                         return;
                       }
                       if ((c.max_concurrent ?? null) === v) return;
@@ -397,8 +396,7 @@ export default function Keys({
           </TableBody>
         </Table>
 
-        {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
-      </section>
+              </section>
 
       <AlertDialog
         open={confirmDelete !== null}

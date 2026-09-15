@@ -9,9 +9,9 @@ import type {
   PlanView,
 } from "./types";
 import { Button } from "@/ui/button";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +58,7 @@ export default function Clients({
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
 
@@ -78,7 +78,7 @@ export default function Clients({
       });
       setPlan({ p, c, restore });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -118,7 +118,7 @@ export default function Clients({
       setDone(r);
       await load();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setPlan(null);
     } finally {
       setBusy(false);
@@ -130,7 +130,7 @@ export default function Clients({
     try {
       setWhy({ id, found: await invoke<FindingView[]>("diagnose_client", { client: id }) });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -145,13 +145,7 @@ export default function Clients({
 
   return (
     <div className="space-y-5 p-5">
-      {error && (
-        <Alert variant="warning" className="px-3 py-2">
-          <AlertDescription>
-          {error}
-        </AlertDescription>
-        </Alert>
-      )}
+      
 
       <div className="flex items-start justify-between gap-4">
         <div className="tw-body text-muted-foreground">
@@ -183,7 +177,7 @@ export default function Clients({
                     );
                     const bad = rs.filter((r) => !r.ok);
                     // **一家失败不影响别家**，所以逐条报，不能只说「失败了」
-                    setError(
+                    toast.error(
                       bad.length === 0
                         ? null
                         : `有 ${bad.length} 个没还原成功：` +
@@ -191,7 +185,7 @@ export default function Clients({
                     );
                     await load();
                   } catch (e) {
-                    setError(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setBusy(false);
                   }

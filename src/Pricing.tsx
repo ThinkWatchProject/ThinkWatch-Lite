@@ -6,6 +6,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -37,7 +38,6 @@ import {
 export default function Pricing() {
   const [data, setData] = useState<PricingView | null>(null);
   const [rows, setRows] = useState<PriceRow[]>([]);
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   /**
@@ -57,10 +57,9 @@ export default function Pricing() {
       const d = await invoke<PricingView>("pricing");
       setData(d);
       setRows(d.rows);
-      setErr(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
   useEffect(() => {
@@ -77,9 +76,8 @@ export default function Pricing() {
       const d = await invoke<PricingView>("save_pricing", { rows });
       setData(d);
       setRows(d.rows);
-      setErr(null);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -240,9 +238,8 @@ export default function Pricing() {
                 setStep("offering");
                 try {
                   setOffer(await invoke<UpdateOffer>("update_offer"));
-                  setErr(null);
                 } catch (e) {
-                  setErr(typeof e === "string" ? e : String(e));
+                  toast.error(typeof e === "string" ? e : String(e));
                 } finally {
                   setStep("idle");
                 }
@@ -275,9 +272,8 @@ export default function Pricing() {
                   setStep("fetching");
                   try {
                     setPreview(await invoke<UpdatePreview>("update_fetch"));
-                    setErr(null);
                   } catch (e) {
-                    setErr(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setStep("idle");
                   }
@@ -346,9 +342,8 @@ export default function Pricing() {
                     setRows(d.rows);
                     setPreview(null);
                     setOffer(null);
-                    setErr(null);
                   } catch (e) {
-                    setErr(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setStep("idle");
                   }
@@ -375,8 +370,7 @@ export default function Pricing() {
         )}
       </div>
 
-      {err && <p className="mt-2 text-amber-700 dark:text-amber-400">{err}</p>}
-    </section>
+          </section>
   );
 }
 

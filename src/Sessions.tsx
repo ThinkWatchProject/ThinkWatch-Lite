@@ -3,6 +3,7 @@ import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -39,7 +40,7 @@ export default function Sessions() {
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
 
@@ -67,8 +68,7 @@ export default function Sessions() {
 
   return (
     <div className="p-5">
-      {error && <div className="mb-3 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
-      <Table>
+            <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="font-normal">开始</TableHead>
@@ -88,7 +88,7 @@ export default function Sessions() {
                 try {
                   setOpen(await invoke<SessionDetail>("session_detail", { id: s.id }));
                 } catch (e) {
-                  setError(typeof e === "string" ? e : String(e));
+                  toast.error(typeof e === "string" ? e : String(e));
                 }
               }}
             >
