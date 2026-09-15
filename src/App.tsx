@@ -45,6 +45,7 @@ import { EMPTY } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import type { LucideIcon } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -109,7 +110,8 @@ type Surface =
   | "settings"
   | "clients";
 
-type SourceIcon = (p: { size?: number }) => React.ReactElement;
+/** lucide 的图标类型。尺寸走 `size`，颜色走 `currentColor`。 */
+type SourceIcon = LucideIcon;
 const SOURCES: {
   group: string;
   items: { id: Surface; label: string; icon: SourceIcon }[];

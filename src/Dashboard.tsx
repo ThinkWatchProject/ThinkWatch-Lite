@@ -3,7 +3,7 @@ import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
-import { BarChart, BarRows } from "./ui/Chart";
+import { BarChart, BarRows } from "@/ui/charts";
 import { densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
@@ -175,9 +175,7 @@ export default function Dashboard({ tick }: { tick: number }) {
               </div>
               <div className="mt-1.5">
                 <BarChart
-                  height={52}
-                  barClass="fill-neutral-400 dark:fill-neutral-600"
-                  subClass="fill-red-500/70"
+                  height={64}
                   empty="最近 24 小时没有请求。"
                   bars={densify(d.buckets ?? [], d.since_ms ?? 0, Date.now(), 3_600_000).map(
                     (b) => ({
