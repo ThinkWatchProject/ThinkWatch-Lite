@@ -91,8 +91,13 @@ export default function DryRun({ models }: { models: string[] }) {
             ["扩展思考", thinking, setThinking],
           ] as const
         ).map(([label, v, set]) => (
-          <label key={label} className="flex items-center gap-1">
-            <input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} />
+          <label key={label} className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              className="tw-check"
+              checked={v}
+              onChange={(e) => set(e.target.checked)}
+            />
             {label}
           </label>
         ))}

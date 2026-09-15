@@ -1170,6 +1170,7 @@ export default function Config({
                   <label className="mt-1.5 flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
                     <input
                       type="checkbox"
+                      className="tw-check"
                       checked={g.session_affinity ?? true}
                       onChange={async (e) => {
                         if (!cfg?.version) {
@@ -1218,7 +1219,7 @@ export default function Config({
           <label className="mt-2 flex items-start gap-2 tw-body">
             <input
               type="checkbox"
-              className="mt-0.5"
+              className="tw-check mt-0.5"
               checked={autostart === true}
               disabled={autostart === null}
               onChange={async (e) => {
@@ -1436,7 +1437,12 @@ function Uninstall() {
             <li>· 注销开机自启</li>
           </ul>
           <label className="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-            <input type="checkbox" checked={drop} onChange={(e) => setDrop(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="tw-check"
+              checked={drop}
+              onChange={(e) => setDrop(e.target.checked)}
+            />
             {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
                 「删了才发现还想看」是不可逆的 */}
             连同数据目录一起删掉（请求历史、成本记录、配置备份）
