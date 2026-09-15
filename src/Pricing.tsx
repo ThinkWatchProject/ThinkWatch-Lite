@@ -175,12 +175,13 @@ export default function Pricing() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Tip text="删掉这一条自定义价格">
-                      <button
+                      <Button
+      variant="ghost"
+      size="icon-xs"
                         onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                        className="text-neutral-400 hover:text-red-600"
                       >
                         ×
-                      </button>
+                      </Button>
                     </Tip>
                   </TableCell>
                 </TableRow>

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
   Table,
   TableBody,
@@ -88,10 +89,9 @@ export default function SpeedTest({ models }: { models: string[] }) {
 
       {/* **报价。**这一步不能省 */}
       {quote && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
-            即将测速 · {model}
-          </p>
+        <Alert variant="warning" className="mt-3">
+          <AlertTitle>即将测速 · {model}</AlertTitle>
+          <AlertDescription>
           <ul className="mt-1.5 space-y-0.5 text-amber-800 dark:text-amber-300">
             {quote.items.map((i) => (
               <li key={i.provider}>
@@ -115,13 +115,14 @@ export default function SpeedTest({ models }: { models: string[] }) {
             </span>
           </p>
           <div className="mt-2 flex gap-2">
-            <button
+            <Button
+              variant="default"
+              size="sm"
               onClick={run}
               disabled={busy}
-              className="rounded bg-amber-600 px-2 py-1 text-white disabled:opacity-40"
             >
               {busy ? "测试中…" : "确认并开始"}
-            </button>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -130,7 +131,8 @@ export default function SpeedTest({ models }: { models: string[] }) {
               取消
             </Button>
           </div>
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {results && (
@@ -176,9 +178,11 @@ export default function SpeedTest({ models }: { models: string[] }) {
       )}
 
       {error && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="mt-2">
+          <AlertDescription>
           {error}
-        </p>
+        </AlertDescription>
+        </Alert>
       )}
     </section>
   );

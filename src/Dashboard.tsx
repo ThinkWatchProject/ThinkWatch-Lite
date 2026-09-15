@@ -6,6 +6,7 @@ import { triggers } from "./triggers";
 import { BarChart, BarRows } from "./ui/Chart";
 import { densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
+import { Alert, AlertDescription } from "@/ui/alert";
 import {
   Table,
   TableBody,
@@ -60,9 +61,11 @@ export default function Dashboard({ tick }: { tick: number }) {
   if (error) {
     return (
       <div className="p-5">
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning">
+          <AlertDescription>
           {error}
-        </p>
+        </AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -442,10 +445,12 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
       {d.storage && d.storage.level !== "正常" && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning">
+          <AlertDescription>
           {d.storage.level}
           {!d.storage.forwarding_affected && " —— 转发不受影响。"}
-        </p>
+        </AlertDescription>
+        </Alert>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import {
 } from "./types";
 import { Button } from "@/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Alert, AlertDescription } from "@/ui/alert";
 import {
   Table,
   TableBody,
@@ -73,12 +74,14 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
           {b.truncated && " · 只存了开头"}
         </span>
         {big && (
-          <button
+          <Button
+      variant="link"
+      size="xs"
+      className="ml-auto"
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {open ? "折叠" : "展开全部"}
-          </button>
+          </Button>
         )}
       </div>
       <pre className="mt-1 max-h-80 overflow-auto rounded-md bg-neutral-100 p-2 font-mono tw-label leading-relaxed break-all whitespace-pre-wrap dark:bg-neutral-900">
@@ -167,9 +170,11 @@ export default function RequestDrawer({
       </header>
 
       {error && (
-        <p className="m-4 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="m-4">
+          <AlertDescription>
           {error}
-        </p>
+        </AlertDescription>
+        </Alert>
       )}
 
       {d && r && (

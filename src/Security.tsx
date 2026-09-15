@@ -12,6 +12,7 @@ import type {
   ScanResponse,
 } from "./types";
 import { Button } from "@/ui/button";
+import { Alert, AlertDescription } from "@/ui/alert";
 import {
   Table,
   TableBody,
@@ -119,9 +120,11 @@ export default function Security({
   return (
     <div className="space-y-5 p-5">
       {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="px-3 py-2">
+          <AlertDescription>
           {error}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       <div className="flex items-center gap-2 tw-body text-muted-foreground">
@@ -139,9 +142,11 @@ export default function Security({
       </div>
 
       {data.rules_warning && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="px-3 py-2">
+          <AlertDescription>
           {data.rules_warning}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {/* 悄悄跳过比不扫更糟：它会给人一种「查过了」的错觉 */}
@@ -174,12 +179,15 @@ export default function Security({
           <ul className="mt-2 space-y-1 tw-body">
             {alerts.map((f, i) => (
               <li key={i}>
-                <button className="text-left hover:underline" onClick={() => setOpen(f)}>
+                <Button
+      variant="link"
+      size="xs"
+      className="text-left" onClick={() => setOpen(f)}>
                   {f.title}
                   <span className="ml-2 text-red-700 dark:text-red-400">
                     {f.path.replace(/^.*\//, "")}:{f.line}
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -193,12 +201,14 @@ export default function Security({
         </h2>
         {data.findings.length === 0 ? (
           // 没风险的时候要说「安全」，而不是让这一块消失
-          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <Alert variant="default" className="px-3 py-2">
+          <AlertDescription>
             ✓ 没发现问题
             <Tip text="隐藏字符、提示注入、危险命令、过宽权限 —— 四类都查过了。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">查了四类</span>
             </Tip>
-          </div>
+          </AlertDescription>
+        </Alert>
         ) : (
           <ul className="space-y-1">
             {data.findings.map((f, i) => (
@@ -370,12 +380,14 @@ function Matrix({
                   <TableCell>
                     {conflicting.includes(n) && (
                       <Tip text="同名，但各客户端里的配置不一样 —— 点开并排看差异">
-                        <button
+                        <Button
+      variant="ghost"
+      size="xs"
+      className="mr-1"
                           onClick={() => setCompare(compare === n ? null : n)}
-                          className="mr-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
                         >
                           ⚠
-                        </button>
+                        </Button>
                       </Tip>
                     )}
                     {n}
@@ -395,13 +407,9 @@ function Matrix({
                           : "没有能抄的来源";
                     return (
                       <TableCell key={c} className="text-center">
-                        <button
-                          className={
-                            "w-6 rounded " +
-                            (can
-                              ? "hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                              : "cursor-default opacity-60")
-                          }
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
                           title={title}
                           disabled={!can || busy}
                           onClick={() =>
@@ -423,7 +431,7 @@ function Matrix({
                               <span className="text-neutral-400">○</span>
                             </Tip>
                           )}
-                        </button>
+                        </Button>
                       </TableCell>
                     );
                   })}
@@ -457,17 +465,19 @@ function Matrix({
         没回答「哪儿不一样」** —— 而用户要做的决定恰恰是「以哪边为准」。
       */}
       {compare && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
+        <Alert variant="warning" className="mt-3">
+          <AlertDescription>
           <div className="flex items-baseline justify-between">
             <p className="font-medium text-amber-900 dark:text-amber-200">
               <code>{compare}</code> 在各客户端里配得不一样
             </p>
-            <button
+            <Button
+      variant="ghost"
+      size="xs"
               onClick={() => setCompare(null)}
-              className="text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
             >
               收起
-            </button>
+            </Button>
           </div>
           <div className="mt-2 space-y-2">
             {mcp
@@ -511,7 +521,8 @@ function Matrix({
           <p className="mt-2 text-amber-800 dark:text-amber-300">
             要统一：点矩阵里你想保留的那一格，复制到别的客户端。写入前会显示 diff。
           </p>
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
     </section>
   );
@@ -623,14 +634,16 @@ function Baseline({ b }: { b: BaselineResponse }) {
       </p>
       {withDrift.length === 0 ? (
         // 没风险的时候要说「安全」，而不是让这一块消失
-        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <Alert variant="default" className="px-3 py-2">
+          <AlertDescription>
           ✓ 每个上游的行为都和之前一致
           {b.providers.length > 0 && (
             <span className="ml-1 text-emerald-700 dark:text-emerald-400">
               （比过的：{b.providers.map((p) => p.provider).join("、")}）
             </span>
           )}
-        </div>
+        </AlertDescription>
+        </Alert>
       ) : (
         <ul className="space-y-2">
           {withDrift.map((p) => (

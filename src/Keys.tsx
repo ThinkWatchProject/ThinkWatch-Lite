@@ -5,6 +5,7 @@ import type { Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
+import { Badge } from "@/ui/badge";
 import {
   Table,
   TableBody,
@@ -72,46 +73,47 @@ function AllowCell({
     return (
       <div className="flex items-center gap-1.5">
         <span className="tw-label text-muted-foreground">全部</span>
-        <button
+        <Button
+      variant="ghost"
+      size="xs"
           disabled={busy}
           onClick={() => onPatch([{ op: "clear", path: `/clients/${client}/allow` }])}
-          className="tw-label text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
         >
           限制
-        </button>
+        </Button>
       </div>
     );
   }
   return (
     <div className="flex flex-wrap items-center gap-1">
       {allow.length === 0 && (
-        <span className="rounded bg-amber-100 px-1.5 tw-label text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          一个都不给
-        </span>
+<Badge variant="warning">一个都不给</Badge>
       )}
-      <button
+      <Button
+      variant="ghost"
+      size="xs"
         disabled={busy}
         onClick={() =>
           onPatch([{ op: "replace", path: `/clients/${client}/allow`, value: null }])
         }
-        className="tw-label text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
       >
         全部
-      </button>
+      </Button>
       {allow.map((m, i) => (
         <span
           key={m}
           className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {m}
-          <button
+          <Button
+      variant="ghost"
+      size="icon-xs"
             disabled={busy}
             onClick={() => onPatch([{ op: "remove", path: `/clients/${client}/allow/${i}` }])}
-            className="text-neutral-400 hover:text-red-600 disabled:opacity-30"
             aria-label={`不再允许 ${m}`}
           >
             ×
-          </button>
+          </Button>
         </span>
       ))}
       <Input

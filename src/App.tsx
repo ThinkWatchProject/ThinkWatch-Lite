@@ -43,6 +43,8 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Toggle } from "@/ui/toggle";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
   Sidebar,
   SidebarContent,
@@ -689,9 +691,11 @@ export default function App() {
           </Tip>
         </div>
       {error && (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="border-b px-5 py-2">
+          <AlertDescription>
           {error}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {/*
@@ -701,10 +705,9 @@ export default function App() {
         第一句先说「还在按旧配置转发」，因为那是他最想知道的：会不会断。
       */}
       {rejected && (
-        <div className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 tw-body dark:border-amber-800 dark:bg-amber-950">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
-            配置没能生效，还在按上一份转发。
-          </p>
+        <Alert variant="warning" className="border-b px-5 py-2.5">
+          <AlertTitle>配置没能生效，还在按上一份转发。</AlertTitle>
+          <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
             {rejected.stage}错误
             {rejected.line != null && `（第 ${rejected.line} 行）`}：{rejected.message}
@@ -714,7 +717,8 @@ export default function App() {
               {rejected.line}│ {rejected.excerpt}
             </pre>
           )}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {/*
@@ -740,12 +744,14 @@ export default function App() {
                 <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器要重载</span>
               </Tip>
             </p>
-            <button
+            <Button
+      variant="ghost"
+      size="xs"
+      className="shrink-0"
               onClick={clearRotated}
-              className="shrink-0 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
             >
               知道了
-            </button>
+            </Button>
           </div>
         ) : (
           <div
@@ -861,17 +867,15 @@ export default function App() {
               placeholder="搜索路径、客户端、上游、错误…  ⌘F"
               spellCheck={false}
             />
-            <button
-              onClick={() => setFilter((f) => ({ ...f, failedOnly: !f.failedOnly }))}
-              className={
-                "rounded-md px-2 py-1 tw-body " +
-                (filter.failedOnly
-                  ? "bg-red-600 text-white"
-                  : "border border-input text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800")
-              }
+            {/* 这是个开关,不是按钮 —— 按下去它要一直保持按下的样子 */}
+            <Toggle
+              variant="outline"
+              size="sm"
+              pressed={filter.failedOnly}
+              onPressedChange={(v) => setFilter((f) => ({ ...f, failedOnly: v }))}
             >
               只看失败
-            </button>
+            </Toggle>
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
             {facet.clients.length > 1 && (
@@ -928,12 +932,13 @@ export default function App() {
                 : `${allRows.length} 条`}
             </span>
             {hasAnyFilter(filter) && (
-              <button
+              <Button
+      variant="link"
+      size="xs"
                 onClick={() => setFilter(EMPTY_FILTER)}
-                className="tw-label text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
               >
                 清空
-              </button>
+              </Button>
             )}
           </div>
         )}

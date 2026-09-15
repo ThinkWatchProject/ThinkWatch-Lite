@@ -339,14 +339,15 @@ function CidrList({
           className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {c}
-          <button
+          <Button
+      variant="ghost"
+      size="icon-xs"
             disabled={busy}
             onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
-            className="text-neutral-400 hover:text-red-600 disabled:opacity-30"
             aria-label={`删掉 ${c}`}
           >
             ×
-          </button>
+          </Button>
         </span>
       ))}
       <Input
@@ -596,11 +597,16 @@ function ListenSection({
         那个专门说这种话的组件来说。
       */}
       {ov.listen.exposed && (
-        <Alert variant="destructive" className="mt-2">
+        <Alert variant="warning" className="mt-2">
           <AlertTitle>不只是本机能连了</AlertTitle>
           <AlertDescription>
-            同一个网络里的设备只要有密钥就能连上这个网关。来源白名单还在起
-            作用,但它挡的是地址,不是人。
+            同一个网络里的机器都能连过来。来源白名单还在起作用，但它挡的是
+            地址，不是人。
+            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">
+                密钥强制校验
+              </span>
+            </Tip>
           </AlertDescription>
         </Alert>
       )}
@@ -662,17 +668,6 @@ function ListenSection({
           </>
         )}
       </dl>
-
-      {ov.listen.exposed && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          监听在非本机地址上，局域网里的机器能连过来
-          <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">
-              密钥强制校验
-            </span>
-          </Tip>
-        </p>
-      )}
 
       {err && (
         <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>
@@ -809,15 +804,16 @@ export default function Config({
       <div className="space-y-3 p-5">
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">配置文件</h2>
-          <button
+          <Button
+      variant="link"
+      size="xs"
             onClick={() => {
               setFocus(null);
               setMode("form");
             }}
-            className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             回到表单
-          </button>
+          </Button>
         </div>
         {cfg ? (
           <ConfigTextMode
@@ -851,37 +847,43 @@ export default function Config({
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">上游</h2>
           {t.comparison && (
-            <button
+            <Button
+      variant="link"
+      size="xs"
               onClick={() => test(undefined)}
               disabled={testing !== null}
-              className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
             >
               {testing === "*" ? "测速中…" : "全部测一遍"}
-            </button>
+            </Button>
           )}
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
               这是排查线路问题最直接的一个动作 */}
           <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
-          <button
+          <Button
+      variant="link"
+      size="xs"
+      className="ml-auto"
             onClick={() => setMode("text")}
-            className="ml-auto tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             改文件
-          </button>
-          <button
+          </Button>
+          <Button
+      variant="link"
+      size="xs"
             onClick={() => setShowHistory((v) => !v)}
-            className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {showHistory ? "收起历史" : `历史（${history.length}）`}
-          </button>
+          </Button>
         </div>
 
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
             「有人抢先改了」，正确的反应是刷新再改 */}
         {saveError && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <Alert variant="warning" className="mt-2">
+          <AlertDescription>
             没能保存：{saveError}
-          </p>
+          </AlertDescription>
+        </Alert>
         )}
 
         {showHistory && (
@@ -905,7 +907,10 @@ export default function Config({
                   // 不标出来的话，用户会以为第一条是「上一版」然后回滚到自己身上
                   <span className="ml-auto text-emerald-600 dark:text-emerald-400">现在这版</span>
                 ) : (
-                  <button
+                  <Button
+      variant="link"
+      size="xs"
+      className="ml-auto"
                     onClick={async () => {
                       setSaveError(null);
                       try {
@@ -914,10 +919,9 @@ export default function Config({
                         setSaveError(typeof e === "string" ? e : String(e));
                       }
                     }}
-                    className="ml-auto text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
                   >
                     回到这版
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
@@ -954,15 +958,17 @@ export default function Config({
                 <TableCell className="font-medium" data-row={p.name}>
                   {p.name}
                   <Tip text="跳到配置文件里这一段，并选中它">
-                  <button
+                  <Button
+      variant="ghost"
+      size="xs"
+      className="ml-1"
                     onClick={() => {
                       setFocus(p.name);
                       setMode("text");
                     }}
-                    className="ml-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
                   >
                     ↗
-                  </button>
+                  </Button>
                   </Tip>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
@@ -1061,13 +1067,14 @@ export default function Config({
                   </TableCell>
                 )}
                 <TableCell className="text-right">
-                  <button
+                  <Button
+      variant="link"
+      size="xs"
                     onClick={() => test(p.name)}
                     disabled={testing !== null}
-                    className="text-muted-foreground underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
                   >
                     {testing === p.name ? "测速中…" : "测试"}
-                  </button>
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -1119,15 +1126,16 @@ export default function Config({
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
                   <Tip text="跳到配置文件里这一段，并选中它">
-                  <button
+                  <Button
+      variant="ghost"
+      size="xs"
                     onClick={() => {
                       setFocus(g.name);
                       setMode("text");
                     }}
-                    className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
                   >
                     ↗
-                  </button>
+                  </Button>
                   </Tip>
                   <SelectCell
                     value={
@@ -1503,7 +1511,9 @@ function Uninstall() {
             </FieldLabel>
           </Field>
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="destructive"
+              size="sm"
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
@@ -1517,10 +1527,9 @@ function Uninstall() {
                   setBusy(false);
                 }
               }}
-              className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
             >
               确认卸载
-            </button>
+            </Button>
             <Button
               variant="outline"
               size="sm"

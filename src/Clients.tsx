@@ -9,6 +9,8 @@ import type {
   PlanView,
 } from "./types";
 import { Button } from "@/ui/button";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -143,9 +145,11 @@ export default function Clients({
   return (
     <div className="space-y-5 p-5">
       {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="px-3 py-2">
+          <AlertDescription>
           {error}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       <div className="flex items-start justify-between gap-4">
@@ -165,7 +169,9 @@ export default function Clients({
                 把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
                 个客户端改回原样？它们会立刻不再经过 ThinkWatch。
               </span>
-              <button
+              <Button
+              variant="default"
+              size="sm"
                 disabled={busy}
                 onClick={async () => {
                   setConfirmAll(false);
@@ -189,10 +195,9 @@ export default function Clients({
                     setBusy(false);
                   }
                 }}
-                className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
               >
                 确认全部还原
-              </button>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -301,11 +306,11 @@ function Card({
       <div className="flex items-center gap-2">
         <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
-          <Badge tone="ok">已验证 · 收到过它的请求</Badge>
+          <Badge variant="success">已验证 · 收到过它的请求</Badge>
         ) : adopted ? (
-          <Badge tone="wait">已接管 · 等第一个请求</Badge>
+          <Badge variant="warning">已接管 · 等第一个请求</Badge>
         ) : (
-          <Badge tone="idle">没接管</Badge>
+          <Badge variant="secondary">没接管</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {adopted && (
@@ -356,14 +361,6 @@ function Card({
   );
 }
 
-function Badge({ tone, children }: { tone: "ok" | "wait" | "idle"; children: React.ReactNode }) {
-  const cls = {
-    ok: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-    wait: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    idle: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-  }[tone];
-  return <span className={`rounded px-1.5 py-0.5 tw-label ${cls}`}>{children}</span>;
-}
 
 /**
  * 这几屏共用的对话框外壳。

@@ -47,6 +47,10 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -131,6 +135,14 @@
   --accent: oklch(97% 0 none);
   --accent-foreground: oklch(20.5% 0 none);
   --destructive: oklch(57.7% 0.245 27.325);
+  /* **红之外还需要一档黄。**这个应用里「要花钱了」「配置要变了」「网关
+   * 暴露在网络上了」和「失败了」是两件事,而 shadcn 只给了 destructive。
+   * amber-600 / amber-200，和原来那批手写横幅用的是同一支。 */
+  --warning: oklch(66.6% 0.179 58.318);
+  --warning-foreground: oklch(41.4% 0.112 45.904);
+  /* 「在转」「健康」「已生效」—— 这一档全 app 一直用 emerald 在说 */
+  --success: oklch(59.6% 0.145 163.225);
+  --success-foreground: oklch(43.2% 0.095 166.913);
   --border: oklch(92.2% 0 none); /* neutral-200：表格线 */
   --input: oklch(87% 0 none); /* neutral-300：控件边 */
   --ring: oklch(55.6% 0 none);
@@ -167,6 +179,10 @@
     --accent: oklch(26.9% 0 none);
     --accent-foreground: oklch(97% 0 none);
     --destructive: oklch(70.4% 0.191 22.216);
+    --warning: oklch(82.8% 0.189 84.429);
+    --warning-foreground: oklch(92.4% 0.12 95.746);
+    --success: oklch(76.5% 0.177 163.223);
+    --success-foreground: oklch(90.5% 0.093 164.15);
     --border: oklch(26.9% 0 none); /* neutral-800 */
     --input: oklch(37.1% 0 none); /* neutral-700 */
     --ring: oklch(55.6% 0 none);
