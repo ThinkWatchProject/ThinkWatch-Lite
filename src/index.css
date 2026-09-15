@@ -2,6 +2,24 @@
 @import "shadcn/tailwind.css";
 @import "tw-animate-css";
 
+/* **Tailwind v4 把无颜色 `border` 的默认色改成了 `currentColor`。**
+ *
+ * v3 是灰色,v4 是「当前文字色」。于是 `border-r`、表格的 `border-b`
+ * 这些只写宽度不写颜色的类,画出来的是**文字的颜色** —— 深色主题下
+ * 一条亮灰竖线贴在源列表边上,表格的横线也跟着发亮。
+ *
+ * shadcn 的 preset 里有这一段专门把它拨回来,我漏抄了。它必须在这儿,
+ * 不在任何组件里 —— 这是整份文档的默认值。 */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+}
+
 /* shadcn 的组件写的是 `bg-primary` 这样的工具类，而工具类要从
  * `--color-*` 生成 —— 这一段就是把上面那组语义变量接上去的地方。
  * 缺了它，组件照样编译、照样渲染，只是**一点样式都没有**：按钮出来

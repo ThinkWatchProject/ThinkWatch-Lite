@@ -2,11 +2,18 @@
 //
 // 那是配 shadcn 默认 48px 收起宽度的(两边各留 8px)。这里的收起宽度被
 // 红绿灯定在 80px,32px 的按钮就成了贴着左边的一小块,两侧各空 24px。
-// 改成 40px 见方、水平居中 —— 这个数跟着 `--sidebar-width-icon` 一起调。
+// 收起时:高 40px、文字藏起来、图标放到 20px。
 //
-// 文字也得**藏起来**,不能只靠 `overflow-hidden` 裁掉:文字还占着 flex
-// 位置,`justify-center` 居中的是"图标+文字"整体,结果图标被挤到左边。
-// 图标同时放大到 20px —— 16px 在 40px 的格子里太小了。
+// **宽度和居中不写在按钮上,写在外面那层的内边距上。**按钮永远是
+// `w-full`,收起时 `SidebarGroup` 的左右内边距从 8px 变到 20px,
+// 80 − 40 = 40px 的按钮自然就居中了。
+//
+// 原来的写法是给按钮一个定宽加 `mx-auto` —— 那两样都不能插值:
+// `auto` 外边距没有中间值,定宽和 `w-full` 之间也不是连续的,于是收起
+// 的那一下按钮会先跳一下位置再落定。改成内边距之后,这条动画上的每一
+// 个属性(容器宽、内边距、高度)都是可插值的长度。
+// 文字必须**藏起来**而不是靠 `overflow-hidden` 裁掉:裁掉的话它还占着
+// flex 位置,`justify-center` 居中的是"图标+文字"整体,图标会偏左。
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
@@ -390,7 +397,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-group"
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+      className={cn("relative flex w-full min-w-0 flex-col p-2 transition-[padding] duration-200 ease-linear group-data-[collapsible=icon]:px-5", className)}
       {...props}
     />
   )
@@ -473,7 +480,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&_svg]:size-5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&_svg]:size-5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {

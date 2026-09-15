@@ -550,7 +550,8 @@ export default function App() {
       */}
       <Sidebar
         collapsible="icon"
-        className="border-r"
+        /* 线用源列表自己那支（带一点冷调），不是内容区的通用 --border */
+        className="border-r border-sidebar-border"
         style={{ background: "var(--chrome-rail)", color: "var(--chrome-text)" }}
         data-tauri-drag-region
       >
