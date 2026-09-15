@@ -2,18 +2,26 @@
 //
 // 那是配 shadcn 默认 48px 收起宽度的(两边各留 8px)。这里的收起宽度被
 // 红绿灯定在 80px,32px 的按钮就成了贴着左边的一小块,两侧各空 24px。
-// 收起时:高 40px、文字藏起来、图标放到 20px。
+// 收起时:高 40px、左右内边距 10px、图标 20px。
 //
-// **宽度和居中不写在按钮上,写在外面那层的内边距上。**按钮永远是
-// `w-full`,收起时 `SidebarGroup` 的左右内边距从 8px 变到 20px,
-// 80 − 40 = 40px 的按钮自然就居中了。
+// **这里一个"居中"都没有,是故意的。**
 //
-// 原来的写法是给按钮一个定宽加 `mx-auto` —— 那两样都不能插值:
-// `auto` 外边距没有中间值,定宽和 `w-full` 之间也不是连续的,于是收起
-// 的那一下按钮会先跳一下位置再落定。改成内边距之后,这条动画上的每一
-// 个属性(容器宽、内边距、高度)都是可插值的长度。
-// 文字必须**藏起来**而不是靠 `overflow-hidden` 裁掉:裁掉的话它还占着
-// flex 位置,`justify-center` 居中的是"图标+文字"整体,图标会偏左。
+// 图标始终靠左,位置完全由两层内边距决定:外层 `SidebarGroup` 的
+// 8→20px,加按钮自己的 8→10px。展开时图标左缘在 16px,收起时在 30px,
+// 配 20px 的图标,中心正好落在 40px —— 也就是 80px 栏的正中。它是
+// **走过去的**,不是在某一帧被居中的。
+//
+// 之前两版都栽在这上面:
+//
+// · 定宽 + `mx-auto` —— `auto` 外边距没有中间值,定宽和 `w-full` 之间
+//   也不连续,按钮在一帧之内换了大小和位置。
+// · `justify-center` + 立刻藏掉文字 —— 点下去那一刻栏还是 196px 宽,
+//   图标先在这个宽度里居中(跳到中间),再随栏收窄一路往左滑。**看起来
+//   像是反着动的。**
+//
+// 文字不用藏,让它被 `overflow-hidden` 裁掉就行 —— 图标的位置既然只由
+// 内边距决定,文字占不占 flex 位置都不影响它。裁掉反而是自然的抹除。
+// 图标尺寸也挂了过渡,否则 16→20 会在第一帧弹一下。
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
@@ -480,7 +488,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&_svg]:size-5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-10! group-data-[collapsible=icon]:px-2.5! group-data-[collapsible=icon]:[&_svg]:size-5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:transition-[width,height] [&_svg]:duration-200 [&_svg]:ease-linear [&>span:last-child]:truncate",
   {
     variants: {
       variant: {
