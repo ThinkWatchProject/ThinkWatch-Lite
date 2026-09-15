@@ -51,14 +51,19 @@
    * 两个字阶里没有的字号，一页上于是有六种大小，层级就散了。
    * 绑上之后 `text-sm` 就是 tw-body，`text-xs` 就是 tw-label，
    * 组件不用改一个字。`copy.test.ts` 会检查这两行还在。 */
+  /* **行高写的是比值,不是 `calc(行高rem / 字号rem)`。**Tailwind 自带的
+   * 值是后一种写法(`calc(1.25 / 0.875)`),照着套很容易把比值填进分子 ——
+   * 我就填错过一次:13px 的行高变成 24px,全应用每一行都胖了 4.5px,而
+   * 没有任何一处看起来是错的,只是"有点丑"。 */
   --text-xs: 0.6875rem; /* 11px = tw-label */
-  --text-xs--line-height: calc(1.45 / 0.6875);
+  --text-xs--line-height: 1.45; /* 和 tw-label 同一个数 */
   --text-sm: 0.8125rem; /* 13px = tw-body */
   /* Input 写的是 `text-base md:text-sm` —— 那是移动端防 iOS 自动放大的
    * 写法。桌面窗口用不上，但窗口拖窄到 768px 以下时 `text-base` 会生效，
    * 不绑就是 16px。绑成同一个 13px，两边都落在字阶上。 */
   --text-base: 0.8125rem;
-  --text-sm--line-height: calc(1.5 / 0.8125);
+  --text-sm--line-height: 1.5; /* 和 tw-body 同一个数 */
+  --text-base--line-height: 1.5;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

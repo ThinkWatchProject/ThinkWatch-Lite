@@ -1,3 +1,12 @@
+// 改过一处:收起时的按钮原本写死 32px 并靠左。
+//
+// 那是配 shadcn 默认 48px 收起宽度的(两边各留 8px)。这里的收起宽度被
+// 红绿灯定在 80px,32px 的按钮就成了贴着左边的一小块,两侧各空 24px。
+// 改成 40px 见方、水平居中 —— 这个数跟着 `--sidebar-width-icon` 一起调。
+//
+// 文字也得**藏起来**,不能只靠 `overflow-hidden` 裁掉:文字还占着 flex
+// 位置,`justify-center` 居中的是"图标+文字"整体,结果图标被挤到左边。
+// 图标同时放大到 20px —— 16px 在 40px 的格子里太小了。
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
@@ -464,7 +473,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&_svg]:size-5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {
