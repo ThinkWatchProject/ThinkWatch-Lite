@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import {
   Table,
   TableBody,
@@ -54,12 +55,12 @@ export default function Sessions() {
     // 空状态永远在回答「接下来该做什么」
     return (
       <div className="p-5">
-        <div className="rounded-lg border border-dashed border-input p-10 text-center">
-          <p className="tw-head text-muted-foreground">还没有会话。</p>
-          <p className="mt-2 tw-body text-muted-foreground">
-            按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。
-          </p>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>还没有会话。</EmptyTitle>
+            <EmptyDescription>按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     );
   }

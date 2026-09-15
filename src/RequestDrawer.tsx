@@ -12,6 +12,7 @@ import {
 import { Button } from "@/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
 import {
   Table,
   TableBody,
@@ -75,9 +76,9 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
         </span>
         {big && (
           <Button
-      variant="link"
-      size="xs"
-      className="ml-auto"
+            variant="link"
+            size="xs"
+            className="ml-auto"
             onClick={() => setOpen((v) => !v)}
           >
             {open ? "折叠" : "展开全部"}
@@ -519,7 +520,8 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             onClick={() => void go()}
             disabled={busy}
           >
-            {busy ? "发送中…" : "确认发送"}
+            {busy && <Spinner />}
+              确认发送
           </Button>
         </div>
       )}

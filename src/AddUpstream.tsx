@@ -4,6 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/ui/empty";
 
 /**
  * 加第一个上游 —— **长在配置页里，不是一个把人挡在外面的独立页面。**
@@ -93,16 +100,17 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-input p-5">
-      <p className="tw-head text-neutral-700 dark:text-neutral-300">
-        还没有上游。加一个就能开始转发。
-      </p>
-      <p className="mt-1 tw-body text-muted-foreground">
-        只要地址和密钥。
-        <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
-          <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
-        </Tip>
-      </p>
+    <Empty className="border border-dashed">
+      <EmptyHeader>
+        <EmptyTitle>还没有上游。加一个就能开始转发。</EmptyTitle>
+        <EmptyDescription>
+          只要地址和密钥。
+          <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
+          </Tip>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
 
       <div className="mt-4 grid max-w-xl gap-3">
         <label className="grid gap-1">
@@ -192,6 +200,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       {error && (
         <p className="mt-3 tw-body text-red-600 dark:text-red-400">{error}</p>
       )}
-    </div>
+      </EmptyContent>
+    </Empty>
   );
 }

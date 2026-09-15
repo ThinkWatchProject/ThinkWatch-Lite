@@ -4,6 +4,7 @@ import YamlEditor from "./YamlEditor";
 import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
 
 /**
  * 文本模式：直接改 config.yaml。
@@ -181,9 +182,9 @@ export default function ConfigTextMode({
           {at.section ? `（${at.section}）` : ""} 这一段里
           {onJumpToForm && (
             <Button
-      variant="link"
-      size="xs"
-      className="ml-1"
+              variant="link"
+              size="xs"
+              className="ml-1"
               onClick={() => onJumpToForm(at.name!)}
             >
               在表单里看
@@ -198,7 +199,8 @@ export default function ConfigTextMode({
           onClick={save}
           disabled={busy || !dirty}
         >
-          {busy ? "保存中…" : "保存"}
+          {busy && <Spinner />}
+              保存
         </Button>
         {dirty && !busy && <span className="text-amber-600 dark:text-amber-400">有未保存的改动</span>}
         <span className="ml-auto font-mono text-neutral-400">{doc.version}</span>

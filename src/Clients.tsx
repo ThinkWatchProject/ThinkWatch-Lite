@@ -11,6 +11,7 @@ import type {
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import {
   Dialog,
   DialogContent,
@@ -170,8 +171,8 @@ export default function Clients({
                 个客户端改回原样？它们会立刻不再经过 ThinkWatch。
               </span>
               <Button
-              variant="default"
-              size="sm"
+                variant="default"
+                size="sm"
                 disabled={busy}
                 onClick={async () => {
                   setConfirmAll(false);
@@ -225,12 +226,10 @@ export default function Clients({
         或者手动把端点指过来」。
       */}
       {here.length === 0 && (
-        <div className="rounded-lg border border-dashed border-input p-8 text-center">
-          <p className="tw-head text-muted-foreground">
-            这台机器上没有找到已识别的客户端。
-          </p>
-          <p className="mt-2 tw-body text-muted-foreground">
-            装了 Claude Code、Codex、Gemini CLI 的话
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>这台机器上没有找到已识别的客户端。</EmptyTitle>
+            <EmptyDescription>装了 Claude Code、Codex、Gemini CLI 的话
             <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
               <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
             </Tip>。
@@ -239,9 +238,9 @@ export default function Clients({
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
               {data.gateway_base}
             </code>
-            。
-          </p>
-        </div>
+            。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {here.map((c) => (

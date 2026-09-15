@@ -46,6 +46,8 @@ import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import type { LucideIcon } from "lucide-react";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { Kbd, KbdGroup } from "@/ui/kbd";
 import {
   Sidebar,
   SidebarContent,
@@ -69,13 +71,15 @@ import {
   TableRow,
 } from "@/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -679,7 +683,20 @@ export default function App() {
           className="flex h-[38px] shrink-0 items-center px-3"
           data-tauri-drag-region
         >
-          <Tip side="bottom" text={(railOpen ? "收起源列表" : "展开源列表") + "  ⌘⌥S"}>
+          {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
+          <Tip
+            side="bottom"
+            text={
+              <>
+                {railOpen ? "收起源列表" : "展开源列表"}
+                <KbdGroup>
+                  <Kbd>⌘</Kbd>
+                  <Kbd>⌥</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </>
+            }
+          >
             <Button
               variant="ghost"
               size="sm"
@@ -747,9 +764,9 @@ export default function App() {
               </Tip>
             </p>
             <Button
-      variant="ghost"
-      size="xs"
-      className="shrink-0"
+              variant="ghost"
+              size="xs"
+              className="shrink-0"
               onClick={clearRotated}
             >
               知道了
@@ -935,8 +952,8 @@ export default function App() {
             </span>
             {hasAnyFilter(filter) && (
               <Button
-      variant="link"
-      size="xs"
+                variant="link"
+                size="xs"
                 onClick={() => setFilter(EMPTY_FILTER)}
               >
                 清空
@@ -971,40 +988,18 @@ export default function App() {
         )}
         {rows.length === 0 ? (
           // 空状态永远在回答「接下来该做什么」。
-          <div className="rounded-lg border border-dashed border-input p-10 text-center">
-            <p className="tw-head text-muted-foreground">
-              还没有请求经过。
-            </p>
-            <p className="mt-2 tw-body text-muted-foreground">
-              把客户端指到{" "}
+          <Empty>
+          <EmptyHeader>
+            <EmptyTitle>还没有请求经过。</EmptyTitle>
+            <EmptyDescription>把客户端指到{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
                 http://{status?.gateway_addr ?? "127.0.0.1:8788"}
               </code>
               ，用配置里那把 tw- 开头的密钥。
               <br />
-              第一个请求进来时，它会出现在这里。
-            </p>
-            {locallyAnswered > 0 && (
-              // **这句话信息量很大**：客户端已经连上了，只是还没发过真实
-              // 请求。没有它，用户会以为整条链路都不通。
-              <p className="mt-3 tw-body text-emerald-700 dark:text-emerald-300">
-                已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
-              </p>
-            )}
-            {/*
-              **空状态永远在回答「接下来该做什么」**。原来只说
-              了「把客户端指过来」，而没给他一条走过去的路 —— 那句话对
-              一个不想自己改 settings.json 的人等于没说。
-            */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => setTab("clients")}
-            >
-              写入客户端配置
-            </Button>
-          </div>
+              第一个请求进来时，它会出现在这里。</EmptyDescription><EmptyDescription>已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
         ) : (
           <Table className="tw-num">
             {/*
@@ -1226,31 +1221,27 @@ export default function App() {
       </div>
 
       {/* 浮层挂在最外层，不跟着右列滚动 */}
-      <Dialog open={askQuit} onOpenChange={setAskQuit}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>退出 ThinkWatch Lite？</DialogTitle>
-            <DialogDescription>
+      <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
+        <AlertDialogContent className="sm:max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>退出 ThinkWatch Lite？</AlertDialogTitle>
+            <AlertDialogDescription>
               所有接管过的客户端会立刻失联 —— 它们指着的端口后面就没东西在听了。
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           <p className="tw-body text-muted-foreground">
             只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
           </p>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAskQuit(false)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
               onClick={() => void invoke("quit_app")}
             >
               退出
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />

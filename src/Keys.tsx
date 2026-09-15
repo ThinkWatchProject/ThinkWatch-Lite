@@ -15,13 +15,15 @@ import {
   TableRow,
 } from "@/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -74,8 +76,8 @@ function AllowCell({
       <div className="flex items-center gap-1.5">
         <span className="tw-label text-muted-foreground">全部</span>
         <Button
-      variant="ghost"
-      size="xs"
+          variant="ghost"
+          size="xs"
           disabled={busy}
           onClick={() => onPatch([{ op: "clear", path: `/clients/${client}/allow` }])}
         >
@@ -90,8 +92,8 @@ function AllowCell({
 <Badge variant="warning">一个都不给</Badge>
       )}
       <Button
-      variant="ghost"
-      size="xs"
+        variant="ghost"
+        size="xs"
         disabled={busy}
         onClick={() =>
           onPatch([{ op: "replace", path: `/clients/${client}/allow`, value: null }])
@@ -106,8 +108,8 @@ function AllowCell({
         >
           {m}
           <Button
-      variant="ghost"
-      size="icon-xs"
+            variant="ghost"
+            size="icon-xs"
             disabled={busy}
             onClick={() => onPatch([{ op: "remove", path: `/clients/${client}/allow/${i}` }])}
             aria-label={`不再允许 ${m}`}
@@ -398,24 +400,20 @@ export default function Keys({
         {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
       </section>
 
-      <Dialog
+      <AlertDialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>删掉密钥「{confirmDelete}」？</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>删掉密钥「{confirmDelete}」？</AlertDialogTitle>
+            <AlertDialogDescription>
               用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
               onClick={() => {
                 const name = confirmDelete;
                 setConfirmDelete(null);
@@ -423,10 +421,10 @@ export default function Keys({
               }}
             >
               删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

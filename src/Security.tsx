@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
 import {
   Table,
   TableBody,
@@ -137,7 +138,8 @@ export default function Security({
           onClick={() => void load()}
           disabled={busy}
         >
-          {busy ? "扫描中…" : "重扫"}
+          {busy && <Spinner />}
+              重扫
         </Button>
       </div>
 
@@ -180,9 +182,10 @@ export default function Security({
             {alerts.map((f, i) => (
               <li key={i}>
                 <Button
-      variant="link"
-      size="xs"
-      className="text-left" onClick={() => setOpen(f)}>
+                  variant="link"
+                  size="xs"
+                  className="text-left" onClick={() => setOpen(f)}
+                >
                   {f.title}
                   <span className="ml-2 text-red-700 dark:text-red-400">
                     {f.path.replace(/^.*\//, "")}:{f.line}
@@ -381,9 +384,9 @@ function Matrix({
                     {conflicting.includes(n) && (
                       <Tip text="同名，但各客户端里的配置不一样 —— 点开并排看差异">
                         <Button
-      variant="ghost"
-      size="xs"
-      className="mr-1"
+                          variant="ghost"
+                          size="xs"
+                          className="mr-1"
                           onClick={() => setCompare(compare === n ? null : n)}
                         >
                           ⚠
@@ -472,8 +475,8 @@ function Matrix({
               <code>{compare}</code> 在各客户端里配得不一样
             </p>
             <Button
-      variant="ghost"
-      size="xs"
+              variant="ghost"
+              size="xs"
               onClick={() => setCompare(null)}
             >
               收起

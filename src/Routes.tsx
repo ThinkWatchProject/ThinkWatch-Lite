@@ -7,13 +7,15 @@ import type { Overview, PatchOp, RouteView } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -284,7 +286,8 @@ export default function Routes({
                           [{ op: "remove", path: `/routes/${r.name}/rules/${rule.name}` }],
                           `rule-${r.name}`,
                         )
-                      }>
+                      }
+                    >
                       删
                     </Button>
                   </li>
@@ -302,26 +305,22 @@ export default function Routes({
         {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
       </section>
 
-      <Dialog
+      <AlertDialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>删掉路由「{confirmDelete?.name}」？</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>删掉路由「{confirmDelete?.name}」？</AlertDialogTitle>
+            <AlertDialogDescription>
               {confirmDelete && confirmDelete.clients.length > 0
                 ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
                 : "这条路由没有密钥绑着，删掉不影响任何请求。"}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
               onClick={() => {
                 const r = confirmDelete;
                 setConfirmDelete(null);
@@ -342,10 +341,10 @@ export default function Routes({
               }}
             >
               删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

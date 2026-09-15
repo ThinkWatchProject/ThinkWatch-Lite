@@ -5,6 +5,7 @@ import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types"
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/ui/spinner";
 import {
   Table,
   TableBody,
@@ -176,8 +177,8 @@ export default function Pricing() {
                   <TableCell className="text-right">
                     <Tip text="删掉这一条自定义价格">
                       <Button
-      variant="ghost"
-      size="icon-xs"
+                        variant="ghost"
+                        size="icon-xs"
                         onClick={() => setRows(rows.filter((_, j) => j !== i))}
                       >
                         ×
@@ -204,7 +205,8 @@ export default function Pricing() {
                     overrides_builtin: false,
                   },
                 ])
-              }>
+              }
+            >
               加一条
             </Button>
             <Button
@@ -212,7 +214,8 @@ export default function Pricing() {
               onClick={save}
               disabled={busy || !dirty}
             >
-              {busy ? "保存中…" : "保存"}
+              {busy && <Spinner />}
+              保存
             </Button>
             {dirty && <span className="text-muted-foreground">有未保存的改动</span>}
           </div>
@@ -245,7 +248,8 @@ export default function Pricing() {
                 }
               }}
             >
-              {step === "offering" ? "查询中…" : "检查价格更新"}
+              {step === "offering" && <Spinner />}
+              检查价格更新
             </Button>
             <span className="text-muted-foreground">
               内置的是 {data.snapshot_date} 那份。不会自动检查。
@@ -279,7 +283,8 @@ export default function Pricing() {
                   }
                 }}
               >
-                {step === "fetching" ? "下载中…" : "下载并对比"}
+                {step === "fetching" && <Spinner />}
+              下载并对比
               </Button>
               <Button
                 variant="outline"
@@ -349,7 +354,8 @@ export default function Pricing() {
                   }
                 }}
               >
-                {step === "applying" ? "写入中…" : "确认更新"}
+                {step === "applying" && <Spinner />}
+              确认更新
               </Button>
               <Button
                 variant="outline"

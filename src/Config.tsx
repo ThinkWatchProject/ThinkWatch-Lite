@@ -24,6 +24,13 @@ import { Input } from "@/ui/input";
 import { cn, EMPTY } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
+import { Switch } from "@/ui/switch";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
 import {
   Table,
   TableBody,
@@ -340,8 +347,8 @@ function CidrList({
         >
           {c}
           <Button
-      variant="ghost"
-      size="icon-xs"
+            variant="ghost"
+            size="icon-xs"
             disabled={busy}
             onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
             aria-label={`删掉 ${c}`}
@@ -805,8 +812,8 @@ export default function Config({
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">配置文件</h2>
           <Button
-      variant="link"
-      size="xs"
+            variant="link"
+            size="xs"
             onClick={() => {
               setFocus(null);
               setMode("form");
@@ -844,36 +851,41 @@ export default function Config({
     <div className="space-y-8 p-5">
       {section === "upstreams" && (
       <section>
+        <Collapsible open={showHistory} onOpenChange={setShowHistory}>
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">上游</h2>
           {t.comparison && (
             <Button
-      variant="link"
-      size="xs"
+              variant="link"
+              size="xs"
               onClick={() => test(undefined)}
               disabled={testing !== null}
             >
-              {testing === "*" ? "测速中…" : "全部测一遍"}
+              {testing === "*" && <Spinner />}
+              全部测一遍
             </Button>
           )}
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
               这是排查线路问题最直接的一个动作 */}
           <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
           <Button
-      variant="link"
-      size="xs"
-      className="ml-auto"
+            variant="link"
+            size="xs"
+            className="ml-auto"
             onClick={() => setMode("text")}
           >
             改文件
           </Button>
-          <Button
-      variant="link"
-      size="xs"
-            onClick={() => setShowHistory((v) => !v)}
-          >
-            {showHistory ? "收起历史" : `历史（${history.length}）`}
-          </Button>
+          {/*
+            **展开这件事交给 Collapsible。**手写的 `{show && …}` 少的是
+            `aria-expanded` 和 `aria-controls` —— 读屏软件不知道这个按钮
+            管的是哪一块，也不知道现在是开是关。
+          */}
+          <CollapsibleTrigger asChild>
+            <Button variant="link" size="xs">
+              {showHistory ? "收起历史" : `历史（${history.length}）`}
+            </Button>
+          </CollapsibleTrigger>
         </div>
 
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
@@ -886,7 +898,7 @@ export default function Config({
         </Alert>
         )}
 
-        {showHistory && (
+        <CollapsibleContent>
           <div className="mt-2 rounded-md border border-border">
             {history.length === 0 && (
               <p className="px-3 py-2 tw-body text-muted-foreground">
@@ -908,9 +920,9 @@ export default function Config({
                   <span className="ml-auto text-emerald-600 dark:text-emerald-400">现在这版</span>
                 ) : (
                   <Button
-      variant="link"
-      size="xs"
-      className="ml-auto"
+                    variant="link"
+                    size="xs"
+                    className="ml-auto"
                     onClick={async () => {
                       setSaveError(null);
                       try {
@@ -926,7 +938,8 @@ export default function Config({
               </div>
             ))}
           </div>
-        )}
+        </CollapsibleContent>
+        </Collapsible>
         {/*
           一个上游都没有时，这一节是「加第一个」而不是一张空表头。
           原来这件事是一个全屏的首次运行页面做的 —— 把人挡在产品外面，
@@ -959,9 +972,9 @@ export default function Config({
                   {p.name}
                   <Tip text="跳到配置文件里这一段，并选中它">
                   <Button
-      variant="ghost"
-      size="xs"
-      className="ml-1"
+                    variant="ghost"
+                    size="xs"
+                    className="ml-1"
                     onClick={() => {
                       setFocus(p.name);
                       setMode("text");
@@ -1068,12 +1081,13 @@ export default function Config({
                 )}
                 <TableCell className="text-right">
                   <Button
-      variant="link"
-      size="xs"
+                    variant="link"
+                    size="xs"
                     onClick={() => test(p.name)}
                     disabled={testing !== null}
                   >
-                    {testing === p.name ? "测速中…" : "测试"}
+                    {testing === p.name && <Spinner />}
+              测试
                   </Button>
                 </TableCell>
               </TableRow>
@@ -1127,8 +1141,8 @@ export default function Config({
                   <span className="font-medium">{g.name}</span>
                   <Tip text="跳到配置文件里这一段，并选中它">
                   <Button
-      variant="ghost"
-      size="xs"
+                    variant="ghost"
+                    size="xs"
                     onClick={() => {
                       setFocus(g.name);
                       setMode("text");
@@ -1273,7 +1287,12 @@ export default function Config({
         <section>
           <h2 className="tw-title font-semibold">开机启动</h2>
           <Field orientation="horizontal" className="mt-2">
-            <Checkbox
+            {/*
+              **开关而不是复选框。**复选框是「在一组里挑几个」，而这是
+              「打开或关掉一个系统行为」—— macOS 的系统设置里这一类一律
+              是开关。`Field` 的 horizontal 布局两者通用。
+            */}
+            <Switch
               id="autostart"
               checked={autostart === true}
               disabled={autostart === null}

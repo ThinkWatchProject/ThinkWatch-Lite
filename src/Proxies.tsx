@@ -235,7 +235,8 @@ export default function Proxies({
                       disabled={busy === p.name || p.used_by > 0}
                       onClick={() =>
                         void patch([{ op: "remove", path: `/proxies/${p.name}` }], p.name)
-                      }>
+                      }
+                    >
                       删除
                     </Button>
                   </Tip>

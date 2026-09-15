@@ -4,6 +4,7 @@ import { usd, type SpeedQuote, type SpeedResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
 import {
   Table,
   TableBody,
@@ -83,7 +84,8 @@ export default function SpeedTest({ models }: { models: string[] }) {
           onClick={ask}
           disabled={busy || !model.trim()}
         >
-          {busy && !quote ? "计算中…" : "预估用量"}
+          {busy && !quote && <Spinner />}
+              预估用量
         </Button>
       </div>
 
@@ -121,7 +123,8 @@ export default function SpeedTest({ models }: { models: string[] }) {
               onClick={run}
               disabled={busy}
             >
-              {busy ? "测试中…" : "确认并开始"}
+              {busy && <Spinner />}
+              确认并开始
             </Button>
             <Button
               variant="ghost"
