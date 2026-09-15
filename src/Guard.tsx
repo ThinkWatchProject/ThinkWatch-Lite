@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type { Overview } from "./types";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import {
   Table,
   TableBody,
@@ -146,25 +147,21 @@ export default function Guard({
             >
               <div className="flex items-baseline gap-3">
                 <h3 className="tw-body font-medium">{l.title}</h3>
-                <div className="ml-auto flex rounded-md border border-input p-0.5">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  value={cur}
+                  disabled={busy === l.path}
+                  onValueChange={(v) => v && void set(l.path, v as Mode)}
+                >
                   {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      disabled={busy === l.path}
-                      onClick={() => void set(l.path, m.id)}
-                      className={
-                        "rounded px-2.5 py-1 tw-body disabled:opacity-50 " +
-                        (cur === m.id
-                          ? m.id === "enforce"
-                            ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                            : "bg-neutral-200 dark:bg-neutral-800"
-                          : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
-                      }
-                    >
+                    <ToggleGroupItem key={m.id} value={m.id}>
                       {m.label}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
+                </ToggleGroup>
               </div>
 
               <p className="mt-2 tw-body text-muted-foreground">

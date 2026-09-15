@@ -10,6 +10,7 @@ import {
   type RequestDetail,
 } from "./types";
 import { Button } from "@/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import {
   Table,
   TableBody,
@@ -172,35 +173,25 @@ export default function RequestDrawer({
       )}
 
       {d && r && (
-        <>
-          <nav className="flex gap-1 border-b border-border px-4 py-2 tw-body">
-            {(["timeline", "routing", "payload", "usage", "replay"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={
-                  "rounded px-2 py-1 " +
-                  (tab === t
-                    ? "bg-neutral-200 dark:bg-neutral-800"
-                    : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
-                }
-              >
-                {t === "timeline"
-                  ? "时间线"
-                  : t === "routing"
-                    ? "路由"
-                    : t === "payload"
-                      ? "内容"
-                      : t === "usage"
-                        ? "用量"
-                        : "重放"}
-              </button>
-            ))}
-          </nav>
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as Tab)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          {/* 换成 Tabs 之后左右方向键能在标签间走 —— 这是手写那版没有的 */}
+          <TabsList className="mx-4 my-2">
+            <TabsTrigger value="timeline">时间线</TabsTrigger>
+            <TabsTrigger value="routing">路由</TabsTrigger>
+            <TabsTrigger value="payload">内容</TabsTrigger>
+            <TabsTrigger value="usage">用量</TabsTrigger>
+            <TabsTrigger value="replay">重放</TabsTrigger>
+          </TabsList>
 
           <div className="min-h-0 flex-1 overflow-auto p-4 tw-body">
-            {tab === "replay" && <Replay id={id} originalProvider={r.provider} />}
-            {tab === "timeline" && (
+            <TabsContent value="replay">
+              <Replay id={id} originalProvider={r.provider} />
+            </TabsContent>
+            <TabsContent value="timeline">
               <div className="space-y-1">
                 {/* **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的
                     一切 —— 一眼看出慢在网络还是慢在模型 */}
@@ -238,10 +229,10 @@ export default function RequestDrawer({
                 />
                 <Row label="字节" value={r.bytes?.toLocaleString() ?? "—"} />
               </div>
-            )}
+            </TabsContent>
 
-            {tab === "routing" &&
-              (r.routing ? (
+            <TabsContent value="routing">
+              {r.routing ? (
                 <div className="space-y-3">
                   {/* **「命中第 4 条」远不如「命中『带缓存的必须走官方』」
                       有用** */}
@@ -292,9 +283,10 @@ export default function RequestDrawer({
                     <span className="ml-1 underline decoration-dotted underline-offset-2">两种可能</span>
                   </Tip>
                 </p>
-              ))}
+              )}
+            </TabsContent>
 
-            {tab === "payload" && (
+            <TabsContent value="payload">
               <div className="space-y-4">
                 <Body b={d.request_body} title="请求" />
                 <Body b={d.response_body} title="响应" />
@@ -302,9 +294,9 @@ export default function RequestDrawer({
                   这两段已脱敏：像密钥的内容都打了码。
                 </p>
               </div>
-            )}
+            </TabsContent>
 
-            {tab === "usage" && (
+            <TabsContent value="usage">
               <div className="space-y-1">
                 {r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
@@ -345,9 +337,9 @@ export default function RequestDrawer({
                   </>
                 )}
               </div>
-            )}
+            </TabsContent>
           </div>
-        </>
+        </Tabs>
       )}
     </div>
   );

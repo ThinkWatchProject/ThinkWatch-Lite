@@ -22,6 +22,8 @@ import type {
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn, EMPTY } from "@/lib/utils";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
   Table,
   TableBody,
@@ -423,23 +425,22 @@ function ProbesSection({
           >
             <div className="flex items-baseline gap-3">
               <span className="tw-body font-medium">{p.label}</span>
-              <div className="ml-auto flex rounded-md border border-input p-0.5">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                value={p.mode}
+                disabled={busy === p.id}
+                /* 择一,不许择空 —— 空了等于没有模式 */
+                onValueChange={(v) => v && void set(p.id, v)}
+              >
                 {PROBE_MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    disabled={busy === p.id}
-                    onClick={() => void set(p.id, m.id)}
-                    className={
-                      "rounded px-2 py-0.5 tw-body disabled:opacity-50 " +
-                      (p.mode === m.id
-                        ? "bg-neutral-200 dark:bg-neutral-800"
-                        : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
-                    }
-                  >
+                  <ToggleGroupItem key={m.id} value={m.id}>
                     {m.label}
-                  </button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
             </div>
             <p className="mt-1 tw-body text-muted-foreground">{p.what}</p>
             <p className="mt-0.5 tw-label text-muted-foreground">
@@ -564,30 +565,45 @@ function ListenSection({
     <section>
       <div className="flex items-baseline gap-3">
         <h2 className="tw-title font-semibold">监听与访问</h2>
-        <div className="ml-auto flex rounded-md border border-input p-0.5">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          value={kind}
+          onValueChange={(v) => v && pickKind(v as BindKind)}
+        >
           {KINDS.map((k) => (
-            <button
+            <ToggleGroupItem
               key={k.id}
+              value={k.id}
               disabled={busy || (k.id === "nic" && nics?.length === 0)}
-              onClick={() => pickKind(k.id)}
-              className={
-                "rounded px-2.5 py-1 tw-body disabled:opacity-40 " +
-                (kind === k.id
-                  ? k.id === "loopback"
-                    ? "bg-neutral-200 dark:bg-neutral-800"
-                    : "bg-amber-500 text-white"
-                  : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
-              }
             >
               {k.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
 
       <p className="mt-2 tw-body text-muted-foreground">
         {picked?.what}
       </p>
+
+      {/*
+        **「已经不只是本机了」这句话得有人说。**原来是把选中的那一档染成
+        琥珀色 —— 那是这个控件里唯一的暴露信号,而换成 ToggleGroup 之后
+        选中态是统一的,信号就没了。与其在一个按钮上盖颜色,不如让库里
+        那个专门说这种话的组件来说。
+      */}
+      {ov.listen.exposed && (
+        <Alert variant="destructive" className="mt-2">
+          <AlertTitle>不只是本机能连了</AlertTitle>
+          <AlertDescription>
+            同一个网络里的设备只要有密钥就能连上这个网关。来源白名单还在起
+            作用,但它挡的是地址,不是人。
+          </AlertDescription>
+        </Alert>
+      )}
 
       {kind === "nic" && (
         <div className="mt-2 flex items-center gap-2">

@@ -44,6 +44,20 @@ import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+} from "@/ui/sidebar";
+import {
   Table,
   TableBody,
   TableCell,
@@ -500,179 +514,141 @@ export default function App() {
 
   return (
     <TooltipRoot>
-    <div
-      className="flex h-screen text-foreground"
-      style={{ background: "var(--chrome-ground)" }}
+    <SidebarProvider
+      open={railOpen}
+      onOpenChange={setRailOpen}
+      className="h-screen min-h-0 text-foreground"
+      style={
+        {
+          background: "var(--chrome-ground)",
+          // 覆盖掉 shadcn 的 16rem / 3rem，理由见下面那段注释
+          "--sidebar-width": "196px",
+          "--sidebar-width-icon": "80px",
+          "--sidebar": "var(--chrome-rail)",
+          "--sidebar-border": "var(--chrome-hair)",
+        } as React.CSSProperties
+      }
     >
       {/*
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
-        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。
+        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。所以
+        `data-tauri-drag-region` 要一路传到 `Sidebar` 上。
 
         **可以收起。**收起之后只剩图标,内容区多出 116px —— 对一个开着
         不关、一直在看图表的应用,这是唯一真正改善主界面的方向。名字进
         悬浮说明,所以收起来不是把信息丢掉,是把它推迟到需要的时候。
 
-        **收起宽度 80px 不是审美选的,是红绿灯定的。**标题栏是 Overlay,
-        三颗灯浮在内容上,最右那颗绿灯的右边缘落在约 71pt 处。侧栏窄于
-        这个数,右边框就会从绿灯身上穿过去 —— 之前用 60px 正是如此。
-        80 给了它 9pt 余量。**改窄之前先量一遍那三颗灯。**
+        **两个宽度都是覆盖掉 shadcn 默认值的,而且各有各的理由。**
+        展开 196px(默认 256px 是给网页后台的,这里只放一列短词);收起
+        80px(默认 48px) —— 这个数不是审美选的,是红绿灯定的:标题栏是
+        Overlay,三颗灯浮在内容上,最右那颗绿灯的右边缘落在约 71pt 处,
+        侧栏窄于这个数,右边框就会从绿灯身上穿过去。80 给了它 9pt 余量。
+        **改窄之前先量一遍那三颗灯。**
 
-        **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分之一
-        的高度,而它们说的事情分隔线也说得出:这两项和上面那两项不一样。
-        代价是分组的**名字**没了 —— 认下这笔,换来整列读起来是一个对象,
-        而不是四个小区块。
+        开合状态仍然自己管(localStorage),没用 `SidebarProvider` 默认的
+        cookie —— 这是个本地应用,没有服务端要读它。
       */}
-      <aside
-        className={
-          "flex shrink-0 flex-col border-r transition-[width] duration-150 ease-out " +
-          (railOpen ? "w-[196px]" : "w-[80px]")
-        }
-        style={{
-          background: "var(--chrome-rail)",
-          borderColor: "var(--chrome-hair)",
-          color: "var(--chrome-text)",
-        }}
+      <Sidebar
+        collapsible="icon"
+        className="border-r"
+        style={{ background: "var(--chrome-rail)", color: "var(--chrome-text)" }}
         data-tauri-drag-region
       >
         {/* 红绿灯占掉左上角,内容从它下面开始 */}
-        <div className="h-[38px] shrink-0" data-tauri-drag-region />
+        <SidebarHeader className="h-[38px] p-0" data-tauri-drag-region />
 
-        <nav
-          className={
-            "flex-1 overflow-y-auto pt-1 pb-3 " + (railOpen ? "px-[9px]" : "px-0")
-          }
-        >
+        <SidebarContent>
           {SOURCES.map((g, gi) => (
-            <div key={g.group}>
-              {gi > 0 && (
-                <div
-                  className="my-[11px] h-px"
-                  style={{
-                    background: "var(--chrome-hair)",
-                    marginInline: railOpen ? 8 : 21,
-                  }}
-                />
-              )}
-              {g.items.map((it) => {
-                const on = tab === it.id;
-                // 配置面上出现了新东西 —— 挂个角标,直到他去看过
-                const badge = it.id === "security" ? alerts.length : 0;
-                const Icon = it.icon;
-                const row = (
-                  <button
-                    key={it.id}
-                    onClick={() => setTab(it.id)}
-                    aria-current={on ? "page" : undefined}
-                    aria-label={railOpen ? undefined : it.label}
-                    className={
-                      "relative flex items-center rounded-md " +
-                      (railOpen
-                        ? "h-[32px] w-full gap-2.5 px-2 text-left tw-body "
-                        : "mx-auto my-[2px] h-[40px] w-[40px] justify-center ") +
-                      (on ? "tw-selected font-medium" : "hover:bg-[var(--chrome-hover)]")
-                    }
-                  >
-                    <Icon size={railOpen ? 16 : 19} />
-                    {railOpen && <span className="truncate">{it.label}</span>}
-                    {badge > 0 &&
-                      (railOpen ? (
-                        <span className="ml-auto rounded-full bg-red-500 px-1.5 tw-label leading-[15px] text-white">
-                          {badge}
-                        </span>
-                      ) : (
-                        // 收起时数字塞不下,只留一个点 —— 它要回答的是
-                        // 「那边有没有新东西」,几条可以点进去再看
-                        <span
-                          className="absolute right-[7px] top-[7px] h-[7px] w-[7px] rounded-full bg-red-500"
-                          style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
-                        />
-                      ))}
-                  </button>
-                );
-                return railOpen ? (
-                  row
-                ) : (
-                  <Tip
-                    key={it.id}
-                    side="right"
-                    text={badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label}
-                  >
-                    {row}
-                  </Tip>
-                );
-              })}
-            </div>
+            <SidebarGroup key={g.group} className="py-0">
+              {/*
+                **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分
+                之一的高度,而它们说的事情分隔线也说得出:这两项和上面那两
+                项不一样。代价是分组的**名字**没了 —— 认下这笔,换来整列读
+                起来是一个对象,而不是四个小区块。
+              */}
+              {gi > 0 && <SidebarSeparator className="my-[11px]" />}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {g.items.map((it) => {
+                    const on = tab === it.id;
+                    // 配置面上出现了新东西 —— 挂个角标,直到他去看过
+                    const badge = it.id === "security" ? alerts.length : 0;
+                    const Icon = it.icon;
+                    return (
+                      <SidebarMenuItem key={it.id}>
+                        <SidebarMenuButton
+                          isActive={on}
+                          onClick={() => setTab(it.id)}
+                          aria-current={on ? "page" : undefined}
+                          tooltip={
+                            badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label
+                          }
+                        >
+                          <Icon size={16} />
+                          <span className="truncate">{it.label}</span>
+                        </SidebarMenuButton>
+                        {badge > 0 && (
+                          <SidebarMenuBadge className="bg-red-500 text-white group-data-[collapsible=icon]:hidden">
+                            {badge}
+                          </SidebarMenuBadge>
+                        )}
+                        {/*
+                          收起时数字塞不下,只留一个点 —— 它要回答的是
+                          「那边有没有新东西」,几条可以点进去再看。
+                        */}
+                        {badge > 0 && (
+                          <span
+                            className="pointer-events-none absolute right-[7px] top-[7px] hidden h-[7px] w-[7px] rounded-full bg-red-500 group-data-[collapsible=icon]:block"
+                            style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
+                          />
+                        )}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           ))}
-        </nav>
+        </SidebarContent>
 
         {/*
           状态钉在源列表底部,不在标题栏。
           **它要一直看得见** —— core 挂了是这个应用唯一「什么都不工作」
-          的状态,而标题栏那一行会被内容顶掉。收起时只剩一个点,但那个点
-          仍然在,颜色仍然说明一切。
+          的状态,而标题栏那一行会被内容顶掉。
         */}
-        <div
-          className={
-            "shrink-0 border-t py-2 " + (railOpen ? "px-3" : "flex justify-center px-0")
-          }
-          style={{ borderColor: "var(--chrome-hair)" }}
-        >
-          {railOpen ? (
-            <>
-              <div
-                className={
-                  "flex items-center gap-1.5 tw-label " +
-                  (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : c.tone === "warn"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400")
-                }
-              >
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
-                {c.text}
-              </div>
-              {status?.gateway_addr && (
-                <code
-                  className="mt-0.5 block font-mono tw-label"
-                  style={{ color: "var(--chrome-dim)" }}
-                >
-                  {status.gateway_addr}
-                </code>
-              )}
-            </>
-          ) : (
-            <Tip
-              side="right"
-              text={
-                status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text
+        <SidebarFooter className="border-t" style={{ borderColor: "var(--chrome-hair)" }}>
+          <Tip
+            side="right"
+            text={status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text}
+          >
+            <div
+              className={
+                "flex items-center gap-1.5 tw-label " +
+                (c.tone === "ok"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : c.tone === "warn"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-red-600 dark:text-red-400")
               }
             >
-              {/*
-                80px 放得下「运行中」，所以字放回来了。
-                **有字之后点就不刺眼了** —— 它旁边有东西可读，是个标点，
-                而不是空列里唯一的一抹颜色。所以这里不再压不透明度，和
-                展开时用的是同一套颜色。
-
-                地址放不下（等宽 15 个字符要 79px），留在悬浮说明里。
-              */}
-              <div
-                className={
-                  "flex items-center gap-1 tw-label " +
-                  (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : c.tone === "warn"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400")
-                }
-              >
-                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+              {/* 展开时写全,收起时 80px 也放得下「运行中」四个字 */}
+              <span className="group-data-[collapsible=icon]:hidden">{c.text}</span>
+              <span className="hidden group-data-[collapsible=icon]:inline">
                 {c.short}
-              </div>
-            </Tip>
+              </span>
+            </div>
+          </Tip>
+          {status?.gateway_addr && (
+            <code
+              className="block font-mono tw-label group-data-[collapsible=icon]:hidden"
+              style={{ color: "var(--chrome-dim)" }}
+            >
+              {status.gateway_addr}
+            </code>
           )}
-        </div>
-      </aside>
+        </SidebarFooter>
+      </Sidebar>
 
       {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
       {/*
@@ -1271,7 +1247,7 @@ export default function App() {
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />
       )}
-    </div>
+    </SidebarProvider>
     </TooltipRoot>
   );
 }
