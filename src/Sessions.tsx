@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { toast } from "sonner";
+import { useCoreEvent } from "./useCoreEvent";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 会话页。
@@ -24,81 +41,81 @@ export default function Sessions() {
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 10000);
-    return () => clearInterval(t);
   }, [load]);
 
-  if (!rows) return <div className="p-5 tw-head text-neutral-500">{error ?? "读取中…"}</div>;
+  // 会话是把存下来的请求聚起来算的，**只在有请求落地之后才会变** ——
+  // 原来每 10 秒重算一遍，空闲时每一遍都算出同一个答案。
+  useCoreEvent(["request_finished", "request_failed"], () => void load());
+
+  if (!rows) return <div className="p-5 tw-head text-muted-foreground">{error ?? "读取中…"}</div>;
 
   if (rows.length === 0) {
     // 空状态永远在回答「接下来该做什么」
     return (
       <div className="p-5">
-        <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
-          <p className="tw-head text-neutral-600 dark:text-neutral-400">还没有会话。</p>
-          <p className="mt-2 tw-body text-neutral-500">
-            按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。
-          </p>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>暂无会话记录</EmptyTitle>
+            <EmptyDescription>按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     );
   }
 
   return (
     <div className="p-5">
-      {error && <div className="mb-3 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
-      <table className="w-full tw-body">
-        <thead className="text-neutral-500">
-          <tr>
-            <th className="px-2 py-1 text-left font-normal">开始</th>
-            <th className="px-2 py-1 text-left font-normal">客户端</th>
-            <th className="px-2 py-1 text-right font-normal">轮次</th>
-            <th className="px-2 py-1 text-right font-normal">时长</th>
-            <th className="px-2 py-1 text-right font-normal">上下文峰值</th>
-            <th className="px-2 py-1 text-right font-normal">缓存省下</th>
-            <th className="px-2 py-1 text-right font-normal">花费</th>
-          </tr>
-        </thead>
-        <tbody>
+            <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="font-normal">开始</TableHead>
+            <TableHead className="font-normal">客户端</TableHead>
+            <TableHead className="text-right font-normal">轮次</TableHead>
+            <TableHead className="text-right font-normal">时长</TableHead>
+            <TableHead className="text-right font-normal">上下文峰值</TableHead>
+            <TableHead className="text-right font-normal">缓存省下</TableHead>
+            <TableHead className="text-right font-normal">花费</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((s) => (
-            <tr
-              key={s.id}
-              className="cursor-pointer border-t border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+            <TableRow
+              key={s.id} className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-900"
               onClick={async () => {
                 try {
                   setOpen(await invoke<SessionDetail>("session_detail", { id: s.id }));
                 } catch (e) {
-                  setError(typeof e === "string" ? e : String(e));
+                  toast.error(typeof e === "string" ? e : String(e));
                 }
               }}
             >
-              <td className="px-2 py-1">{when(s.started_ms)}</td>
-              <td className="px-2 py-1">{s.client}</td>
-              <td className="px-2 py-1 text-right">
+              <TableCell>{when(s.started_ms)}</TableCell>
+              <TableCell>{s.client}</TableCell>
+              <TableCell className="text-right">
                 {/* 轮次和失败数之间要有间隔 —— 挨着写会读成「181 失败」 */}
                 <span>{s.turns}</span>
                 {s.errors > 0 && (
                   <span className="ml-2 text-red-600 dark:text-red-400">{s.errors} 失败</span>
                 )}
-              </td>
-              <td className="px-2 py-1 text-right">{dur(s.ended_ms - s.started_ms)}</td>
-              <td className="px-2 py-1 text-right">{tokens(s.peak_input_tokens)}</td>
-              <td className="px-2 py-1 text-right text-emerald-700 dark:text-emerald-400">
+              </TableCell>
+              <TableCell className="text-right">{dur(s.ended_ms - s.started_ms)}</TableCell>
+              <TableCell className="text-right">{tokens(s.peak_input_tokens)}</TableCell>
+              <TableCell className="text-right text-emerald-700 dark:text-emerald-400">
                 {s.cache_saved_micros > 0 ? usd(s.cache_saved_micros) : "—"}
-              </td>
-              <td className="px-2 py-1 text-right">
+              </TableCell>
+              <TableCell className="text-right">
                 <Cost s={s} />
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       {open && <Detail d={open} onClose={() => setOpen(null)} />}
     </div>
   );
@@ -113,14 +130,14 @@ export default function Sessions() {
 function Cost({ s }: { s: SessionView }) {
   const priced = s.turns - s.unpriced_turns;
   if (priced === 0) {
-    return <Tip text="这次会话里没有一轮拿到了价格"><span className="text-neutral-500">没有价格</span></Tip>;
+    return <Tip text="这次会话里没有一轮拿到了价格"><span className="text-muted-foreground">没有价格</span></Tip>;
   }
   return (
     <>
       {usd(s.cost_micros)}
       {s.unpriced_turns > 0 && (
         <Tip text="这几轮的模型不在价目表里，没有计入合计">
-          <span className="ml-1 text-neutral-500">+{s.unpriced_turns} 轮无价</span>
+          <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无价</span>
         </Tip>
       )}
     </>
@@ -149,23 +166,22 @@ function tokens(n: number) {
 function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
   const { session: s, turns } = d;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
-      <div
-        className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">
-          {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
-        </div>
-        <div className="mt-1 tw-body text-neutral-500">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-1 tw-body text-muted-foreground">
           {s.models.join("、")} · 输入 {tokens(s.input_tokens)} / 输出 {tokens(s.output_tokens)} ·
           缓存读 {tokens(s.cache_read_tokens)}
         </div>
 
         <Growth turns={turns} />
         <Waterfall turns={turns} />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -179,7 +195,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.input_tokens ?? 0));
   return (
     <section className="mt-4">
-      <div className="tw-body text-neutral-500">上下文增长（每轮的输入 token）</div>
+      <div className="tw-body text-muted-foreground">上下文增长（每轮的输入 token）</div>
       <div className="mt-1 flex h-16 items-end gap-px">
         {turns.map((t) => {
           const v = t.input_tokens ?? 0;
@@ -212,12 +228,12 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.cost_micros ?? 0));
   return (
     <section className="mt-4">
-      <div className="tw-body text-neutral-500">每轮花费</div>
+      <div className="tw-body text-muted-foreground">每轮花费</div>
       <ul className="mt-1 space-y-0.5">
         {turns.map((t, i) => (
           <li key={t.id} className="flex items-center gap-2 tw-label">
             <span className="w-6 text-right text-neutral-400">{i + 1}</span>
-            <span className="w-14 text-neutral-500">{t.model.replace(/^claude-/, "")}</span>
+            <span className="w-14 text-muted-foreground">{t.model.replace(/^claude-/, "")}</span>
             <span className="h-2 flex-1 rounded bg-neutral-100 dark:bg-neutral-800">
               <span
                 className="block h-2 rounded bg-neutral-400 dark:bg-neutral-500"

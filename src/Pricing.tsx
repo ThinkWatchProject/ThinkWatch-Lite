@@ -1,7 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { cn } from "@/lib/utils";
+import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
+import { ButtonGroup } from "@/ui/button-group";
+import { Progress } from "@/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * 自定义价格（第三层）。
@@ -25,7 +40,6 @@ import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types"
 export default function Pricing() {
   const [data, setData] = useState<PricingView | null>(null);
   const [rows, setRows] = useState<PriceRow[]>([]);
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   /**
@@ -39,16 +53,17 @@ export default function Pricing() {
   const [offer, setOffer] = useState<UpdateOffer | null>(null);
   const [preview, setPreview] = useState<UpdatePreview | null>(null);
   const [step, setStep] = useState<"idle" | "offering" | "fetching" | "applying">("idle");
+  /** 三步里的第几步。`offer`/`preview` 已经拿到就算这一步过了 */
+  const stepAt = preview || step === "applying" ? 3 : offer || step === "fetching" ? 2 : 1;
 
   const load = useCallback(async () => {
     try {
       const d = await invoke<PricingView>("pricing");
       setData(d);
       setRows(d.rows);
-      setErr(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
   useEffect(() => {
@@ -65,16 +80,15 @@ export default function Pricing() {
       const d = await invoke<PricingView>("save_pricing", { rows });
       setData(d);
       setRows(d.rows);
-      setErr(null);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <section className="rounded-md border border-border p-3 tw-body">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="tw-title font-semibold">自定义价格</h2>
@@ -92,41 +106,43 @@ export default function Pricing() {
               。填上单价，成本栏就能算出来了。
             </p>
           ) : (
-            <p className="mt-1 text-neutral-500">
+            <p className="mt-1 text-muted-foreground">
               经过的请求都能算出价钱。内置价目表是 {data.snapshot_date} 那份快照。
             </p>
           )}
         </div>
-        <button
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
           onClick={() => setOpen(!open)}
-          className="shrink-0 rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           {open ? "收起" : rows.length > 0 ? `${rows.length} 条自定义` : "加一条"}
-        </button>
+        </Button>
       </div>
 
       {open && (
         <div className="mt-3 space-y-2">
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             单价按<span className="font-medium">每百万 token 的美元</span>填，和厂商定价页一致。
             <Tip text="留空上游对所有上游生效；填了上游则只有那一家按这个价算。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">上游这一列</span>
             </Tip>
           </p>
-          <table className="w-full text-left tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-1 font-medium">上游</th>
-                <th className="font-medium">模型</th>
-                <th className="font-medium">输入 $/M</th>
-                <th className="font-medium">输出 $/M</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="tw-num">
+            <TableHeader>
+              <TableRow>
+                <TableHead>上游</TableHead>
+                <TableHead>模型</TableHead>
+                <TableHead>输入 $/M</TableHead>
+                <TableHead>输出 $/M</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r, i) => (
-                <tr key={i} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1">
+                <TableRow key={i}>
+                  <TableCell>
                     <Cell
                       value={r.provider ?? ""}
                       placeholder="（所有）"
@@ -134,8 +150,8 @@ export default function Pricing() {
                         setRows(rows.map((x, j) => (j === i ? { ...x, provider: v || null } : x)))
                       }
                     />
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Cell
                       mono
                       value={r.model}
@@ -147,35 +163,38 @@ export default function Pricing() {
                     {r.overrides_builtin && (
                       <span className="ml-1 tw-label text-neutral-400">覆盖内置</span>
                     )}
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Num
                       value={r.input}
                       onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, input: v } : x)))}
                     />
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Num
                       value={r.output}
                       onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, output: v } : x)))}
                     />
-                  </td>
-                  <td className="text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     <Tip text="删掉这一条自定义价格">
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
                         onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                        className="text-neutral-400 hover:text-red-600"
                       >
                         ×
-                      </button>
+                      </Button>
                     </Tip>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() =>
                 setRows([
                   ...rows,
@@ -189,20 +208,20 @@ export default function Pricing() {
                   },
                 ])
               }
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               加一条
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={save}
               disabled={busy || !dirty}
-              className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
-              {busy ? "保存中…" : "保存"}
-            </button>
-            {dirty && <span className="text-neutral-500">有未保存的改动</span>}
+              {busy && <Spinner />}
+              保存
+            </Button>
+            {dirty && <span className="text-muted-foreground">有未保存的改动</span>}
           </div>
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             写进 <code>pricing.yaml</code>，和 <code>config.yaml</code> 放在一起。手改那个文件也可以，它只是一份普通 YAML。
           </p>
         </div>
@@ -212,27 +231,44 @@ export default function Pricing() {
         检查价格更新（第二层）。**绝不在启动时后台偷偷拉** ——
         零上传的承诺同时意味着零静默下载。
       */}
-      <div className="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+      <div className="mt-3 border-t border-border pt-2">
+        {/*
+          **三步走到哪儿了,要画出来。**原来只有按钮上一个转圈 ——
+          转圈说的是「在忙」,说不出「第二步的下载在忙,还有第三步」。
+          零静默下载这件事的全部意义就是让人看见每一步,那就得把「一共
+          几步、现在第几步」也算进去。
+        */}
+        {(offer || preview || step !== "idle") && (
+          <div className="space-y-1">
+            <Progress value={stepAt * 33.34} className="h-1" />
+            <p className="tw-label text-muted-foreground">
+              第 {stepAt} / 3 步 ·{" "}
+              {stepAt === 1 ? "看对面有没有新的" : stepAt === 2 ? "下载并对比" : "写入"}
+            </p>
+          </div>
+        )}
+
         {!offer && !preview && (
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               disabled={step !== "idle"}
               onClick={async () => {
                 setStep("offering");
                 try {
                   setOffer(await invoke<UpdateOffer>("update_offer"));
-                  setErr(null);
                 } catch (e) {
-                  setErr(typeof e === "string" ? e : String(e));
+                  toast.error(typeof e === "string" ? e : String(e));
                 } finally {
                   setStep("idle");
                 }
               }}
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
-              {step === "offering" ? "查询中…" : "检查价格更新"}
-            </button>
-            <span className="text-neutral-500">
+              {step === "offering" && <Spinner />}
+              检查价格更新
+            </Button>
+            <span className="text-muted-foreground">
               内置的是 {data.snapshot_date} 那份。不会自动检查。
             </span>
           </div>
@@ -241,44 +277,45 @@ export default function Pricing() {
         {offer && !preview && (
           <div className="space-y-1.5">
             {/* **先说要连哪儿、多大。**这是零静默下载里最容易被省掉的一半 */}
-            <p className="text-neutral-600 dark:text-neutral-400">
+            <p className="text-muted-foreground">
               要访问：<code className="font-mono">{offer.url}</code>
             </p>
-            <p className="text-neutral-500">
+            <p className="text-muted-foreground">
               大小 {offer.bytes ? `${(offer.bytes / 1024 / 1024).toFixed(1)} MB` : "对面没说"}
               ；下载后先显示变更，确认才写入。
             </p>
-            <div className="flex gap-2">
-              <button
+            <ButtonGroup>
+              <Button
+                size="sm"
                 disabled={step !== "idle"}
                 onClick={async () => {
                   setStep("fetching");
                   try {
                     setPreview(await invoke<UpdatePreview>("update_fetch"));
-                    setErr(null);
                   } catch (e) {
-                    setErr(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setStep("idle");
                   }
                 }}
-                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
               >
-                {step === "fetching" ? "下载中…" : "下载并对比"}
-              </button>
-              <button
+                {step === "fetching" && <Spinner />}
+              下载并对比
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setOffer(null)}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 算了
-              </button>
-            </div>
+              </Button>
+                        </ButtonGroup>
           </div>
         )}
 
         {preview && (
           <div className="space-y-1.5">
-            <p className="text-neutral-600 dark:text-neutral-400">
+            <p className="text-muted-foreground">
               拉回来 {preview.models} 个带价的模型，
               {preview.changes.length === 0 ? (
                 <span className="font-medium">和现在这份没有差别</span>
@@ -290,13 +327,13 @@ export default function Pricing() {
               。
             </p>
             {preview.changes.length > 0 && (
-              <div className="max-h-40 overflow-y-auto rounded border border-neutral-200 dark:border-neutral-800">
-                <table className="w-full text-left tw-num">
-                  <tbody>
+              <div className="max-h-40 overflow-y-auto rounded border border-border">
+                <Table className="tw-num">
+                  <TableBody>
                     {preview.changes.map((c) => (
-                      <tr key={c.model} className="border-b border-neutral-100 last:border-0 dark:border-neutral-900">
-                        <td className="px-2 py-0.5 font-mono">{c.model}</td>
-                        <td className="px-2 text-neutral-500">
+                      <TableRow key={c.model} className="last:border-0">
+                        <TableCell className="font-mono">{c.model}</TableCell>
+                        <TableCell className="text-muted-foreground">
                           {c.old_input === null ? (
                             "新增"
                           ) : (
@@ -306,15 +343,16 @@ export default function Pricing() {
                               {(c.new_output * 1e6).toFixed(2)}
                             </>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
-            <div className="flex gap-2">
-              <button
+            <ButtonGroup>
+              <Button
+                size="sm"
                 disabled={step !== "idle"}
                 onClick={async () => {
                   setStep("applying");
@@ -324,36 +362,35 @@ export default function Pricing() {
                     setRows(d.rows);
                     setPreview(null);
                     setOffer(null);
-                    setErr(null);
                   } catch (e) {
-                    setErr(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setStep("idle");
                   }
                 }}
-                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
               >
-                {step === "applying" ? "写入中…" : "确认更新"}
-              </button>
-              <button
+                {step === "applying" && <Spinner />}
+              确认更新
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setPreview(null);
                   setOffer(null);
                 }}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 不更新
-              </button>
-            </div>
-            <p className="text-neutral-500">
+              </Button>
+                        </ButtonGroup>
+            <p className="text-muted-foreground">
               你的自定义价格不受影响，更新只换底下那份公共价目表。
             </p>
           </div>
         )}
       </div>
 
-      {err && <p className="mt-2 text-amber-700 dark:text-amber-400">{err}</p>}
-    </section>
+          </section>
   );
 }
 
@@ -369,7 +406,7 @@ function Cell({
   mono?: boolean;
 }) {
   return (
-    <input
+    <Input
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -378,12 +415,8 @@ function Cell({
       autoCorrect="off"
       autoCapitalize="off"
       spellCheck={false}
-      className={
-        "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "dark:hover:border-neutral-700 dark:focus:border-neutral-600 " +
-        (mono ? "font-mono" : "")
-      }
+      variant="inline"
+      className={cn(mono && "font-mono")}
     />
   );
 }
@@ -393,7 +426,9 @@ function Num({ value, onChange }: { value: number; onChange: (v: number) => void
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
-    <input
+    <Input
+      variant="inline"
+      className="w-20 text-right font-mono"
       value={text}
       inputMode="decimal"
       onChange={(e) => {
@@ -401,7 +436,6 @@ function Num({ value, onChange }: { value: number; onChange: (v: number) => void
         const n = Number(e.target.value);
         if (Number.isFinite(n)) onChange(n);
       }}
-      className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono hover:border-neutral-300 focus:border-neutral-400 focus:outline-none dark:hover:border-neutral-700 dark:focus:border-neutral-600"
     />
   );
 }

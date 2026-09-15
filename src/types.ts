@@ -7,9 +7,9 @@ import type { CostBucket } from "./format";
 // （ts-rs 之类），现在还不值得。
 
 export type CoreEvent =
-  | { kind: "request_started"; id: number; client: string; provider: string; method: string; path: string; at_ms: number }
+  | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
-  | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number }
+  | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
   | { kind: "request_failed"; id: number; source: string; message: string }
   /**
    * 客户端的辅助请求被本地应答了，一个字节都没发给上游。
@@ -43,6 +43,21 @@ export type CoreEvent =
    * 打开安全页的时候已经全部看过了。
    */
   | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number }
+  /**
+   * 客户端配置面上的文件动了 —— **不管改了什么**。
+   *
+   * 和 `scan_alert` 是两件事：那条说的是「出现了可疑内容」，值得打断
+   * 用户；这条只说「那几个文件变了」，客户端那一页据此重读一遍接管
+   * 状态。用户在编辑器里把地址改回原样一点都不可疑，但界面必须跟上。
+   */
+  | { kind: "clients_changed"; id: number; at_ms: number }
+  /**
+   * 某家上游的熔断器开了或者合上了。
+   *
+   * **这是少数几个不挂在任何一次请求上的状态变化**，而它在概览和上游
+   * 列表上都看得见。没有它，界面只能定时重读整份配置概览才能发现。
+   */
+  | { kind: "health_changed"; id: number; provider: string; state: "open" | "closed"; at_ms: number }
   /**
    * 出站脱敏动手了。
    *
@@ -111,6 +126,20 @@ export type CoreEvent =
       at_ms: number;
     };
 
+/**
+ * 上游报回来的 token 用量。
+ *
+ * **上游不给就是没有**，不是零 —— 记一笔 0 是在撒谎，而它会一路混进
+ * 「这次花了多少」里。所以整个字段是可选的。
+ */
+export interface UsageView {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  cache_1h?: boolean;
+}
+
 export interface CoreStatus {
   api_version: number;
   version: string;
@@ -127,6 +156,8 @@ export interface RequestRow {
   id: number;
   client: string;
   provider: string;
+  /** 哪个模型。**决定这次多贵、多慢的就是它** */
+  model?: string;
   path: string;
   atMs: number;
   /** 进行中的行也要立刻画出来 —— 流式请求可能要跑几分钟 */
@@ -135,6 +166,18 @@ export interface RequestRow {
   ttfbMs?: number;
   durationMs?: number;
   bytes?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  /**
+   * 这次花了多少微分。
+   *
+   * **事件流里没有它。**价钱是存储层落库时按价目表算出来的，算在
+   * 事件之后 —— 所以刚跑完的那一行先是空的，几秒后由历史补上
+   * （见 useRequests 的对账）。空着显示「—」，不显示 0。
+   */
+  costMicros?: number;
+  /** 上游没给用量、只能按输入长度估的。显示时要带 `~` */
+  costEstimated?: boolean;
   error?: string;
   /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
   redacted?: { kind: string; what: string; count: number }[];
@@ -151,6 +194,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         id: ev.id,
         client: ev.client,
         provider: ev.provider,
+        // 老记录里没有这个字段，空串当作「不知道」
+        model: ev.model || undefined,
         path: ev.path,
         atMs: ev.at_ms,
         state: "in_flight",
@@ -171,6 +216,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.status = ev.status;
         r.bytes = ev.bytes;
         r.durationMs = ev.duration_ms;
+        if (ev.usage) {
+          r.inputTokens = ev.usage.input;
+          r.outputTokens = ev.usage.output;
+        }
       }
       break;
     }
@@ -178,8 +227,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "config_reloaded":
     case "config_rejected":
     case "scan_alert":
-      // 都不进请求列表。配置事件和扫描告警是另一回事，App 单独接 ——
-      // 后者说的是磁盘上的文件，和请求没有关系。
+    case "clients_changed":
+    case "health_changed":
+      // 都不进请求列表。配置事件、扫描告警、熔断状态说的都是「现在
+      // 什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "redacted": {
       const r = rows.get(ev.id);
@@ -277,7 +328,12 @@ export interface Summary {
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
   subscription_tokens: number;
-  /** 缓存命中一共省下了多少微分。**算的是差额** */
+  /**
+   * 用了缓存之后净省下多少微分。
+   *
+   * **净的：命中省下的减去写入多花的。**缓存写是 1.25 倍单价，所以
+   * 这个数可以是负的 —— 而负数是一条结论：这个用法上缓存在亏钱。
+   */
   cache_saved_micros: number;
   /** 价目表的快照日期。**成本旁边要标它** */
   pricing_date: string;
@@ -356,7 +412,7 @@ export interface RequestDetail {
 }
 
 /**
- * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay-cn」。
+ * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay」。
  *
  * **这比任何功能介绍都有说服力**，因为它说的是已经发生在你身上的事。
  */
@@ -378,14 +434,33 @@ export interface Dashboard {
   storage: StorageStatus | null;
   leaks: LeakGroup[];
   /**
-   * 最近 24 小时、每小时一格。**稀疏的** —— core 那边只产出有数据的桶，
+   * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets?: CostBucket[];
+  /**
+   * 同样的格子，再按模型分层。
+   *
+   * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
+   * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
+   */
+  buckets_by_model?: CostBucketGroup[];
   by_model?: CostGroup[];
   by_provider?: CostGroup[];
-  /** 上面三样的时间窗起点，补空桶要用 */
+  /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
+  prev?: Summary | null;
+  /** 上面几样的时间窗起点，补空桶要用 */
   since_ms?: number;
+}
+
+/** 一个时间桶里，某一个模型的那部分。 */
+export interface CostBucketGroup {
+  at_ms: number;
+  name: string;
+  requests: number;
+  failed: number;
+  cost_micros_exact: number;
+  cost_micros_estimated: number;
 }
 
 /** 按模型或上游分组的花费。 */

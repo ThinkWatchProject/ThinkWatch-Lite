@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -11,6 +11,18 @@ import {
 
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
 const MAX_ROWS = 500;
+
+/**
+ * 一次请求跑完之后，隔多久回库里对一次账。
+ *
+ * **价钱不在事件流里。**它是存储层落库时按价目表算的，算在事件之后 ——
+ * 所以刚跑完的那一行，金额那一列必然是空的。不对账的话它一直空到下次
+ * 开窗，而一个永远空着的金额列等于没有这一列。
+ *
+ * 2.5 秒是「落库已经完成」和「人还盯着刚才那一行」之间的那段。它是
+ * **节流不是防抖**：排上之后到期就对，这中间落地多少条都只对这一次。
+ */
+const RECONCILE_MS = 2_500;
 
 /**
  * 实时请求列表。
@@ -82,43 +94,92 @@ export function useRequests() {
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
+  /** 历史读过了吗。**读之前是骨架屏，读完没有才是空状态** */
+  const [seeded, setSeeded] = useState(false);
+  /**
+   * 对过几次账了。
+   *
+   * **概览页靠它决定什么时候重新拉数。**那一页问的是库，而库只在请求
+   * 落地之后才变 —— 定时轮询等于在什么都没发生的时候反复重画一张一样
+   * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
+   */
+  const [settled, setSettled] = useState(0);
+  /**
+   * 「现在什么情况」变了几次。
+   *
+   * **某家上游被熔断、或者恢复了** —— 那是概览和上游列表上看得见的状态，
+   * 而它不属于任何一次请求。core 现在会报这条事件，界面据此重读一遍，
+   * 不再每两秒问一次同样的问题。
+   */
+  const [health, setHealth] = useState(0);
+  const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * 从库里读一遍最近的记录，并进当前列表。
+   *
+   * 两处用它：开窗时把列表填上，以及每批请求跑完之后对一次账。
+   *
+   * **只补，不覆盖。**实时那一行更全 —— 脱敏、方言互转、可疑工具调用
+   * 都只在事件里有，库里没有。而库里独有的是价钱。两边各自是对方的
+   * 补集，所以合并的方向必须是「历史只添信息」。
+   */
+  const pull = useCallback(async () => {
+    // Tauri 的 invoke 用字符串 reject，不是 Error
+    const history = await invoke<HistoryRow[]>("recent_requests", { limit: 200 });
+    for (const h of history) {
+      const cur = store.current.get(h.id);
+      if (cur) {
+        cur.model ??= h.model || undefined;
+        if (h.input_tokens != null) cur.inputTokens = h.input_tokens;
+        if (h.output_tokens != null) cur.outputTokens = h.output_tokens;
+        if (h.cost_micros != null) {
+          cur.costMicros = h.cost_micros;
+          cur.costEstimated = h.cost_estimated;
+        }
+        continue;
+      }
+      store.current.set(h.id, {
+        id: h.id,
+        client: h.client,
+        provider: h.local ? "本地应答" : h.provider,
+        model: h.model || undefined,
+        path: h.path,
+        atMs: h.at_ms,
+        state: h.error ? "failed" : "done",
+        status: h.status ?? undefined,
+        ttfbMs: h.ttfb_ms ?? undefined,
+        durationMs: h.duration_ms ?? undefined,
+        bytes: h.bytes ?? undefined,
+        inputTokens: h.input_tokens ?? undefined,
+        outputTokens: h.output_tokens ?? undefined,
+        costMicros: h.cost_micros ?? undefined,
+        costEstimated: h.cost_estimated,
+        error: h.error ?? undefined,
+      });
+    }
+    setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+    setSettled((n) => n + 1);
+  }, []);
 
   // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
   // 全新的 —— 不填的话，用户看到的是一片空白，而请求明明一直在跑。
   useEffect(() => {
     let alive = true;
-    (async () => {
+    void (async () => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error
-        const rows = await invoke<HistoryRow[]>("recent_requests", { limit: 200 });
-        if (!alive) return;
-        for (const h of rows) {
-          // 已经从事件流收到的那条更新（它更全），不要覆盖
-          if (store.current.has(h.id)) continue;
-          store.current.set(h.id, {
-            id: h.id,
-            client: h.client,
-            provider: h.local ? "本地应答" : h.provider,
-            path: h.path,
-            atMs: h.at_ms,
-            state: h.error ? "failed" : "done",
-            status: h.status ?? undefined,
-            ttfbMs: h.ttfb_ms ?? undefined,
-            durationMs: h.duration_ms ?? undefined,
-            bytes: h.bytes ?? undefined,
-            error: h.error ?? undefined,
-          });
-        }
-        setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+        await pull();
       } catch {
         /* 历史拿不到就从空白开始 —— 事件流照常，几秒后就有内容了 */
       }
+      // **成没成都算读过了。**这个标记只用来决定「画骨架屏还是画空
+      // 状态」，而读失败时该画的是空状态：骨架屏会一直转下去。
+      if (alive) setSeeded(true);
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [pull]);
 
   useEffect(() => {
     const flush = () => {
@@ -127,7 +188,10 @@ export function useRequests() {
       const batch = pending.current;
       pending.current = [];
       let local = 0;
+      let landed = false;
       for (const ev of batch) {
+        if (ev.kind === "request_finished" || ev.kind === "request_failed") landed = true;
+        if (ev.kind === "health_changed") setHealth((n) => n + 1);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
@@ -150,6 +214,17 @@ export function useRequests() {
         }
       }
       setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+      // 跑完就回库里把价钱取回来。**已经排上的不再往后推** —— 往后推
+      // 的话，一串不断的请求会让对账永远排不上号，而那正是最想看见
+      // 金额的时候。排上之后到期就对，中间再落地多少条也只对这一次。
+      if (landed && !reconcile.current) {
+        reconcile.current = setTimeout(() => {
+          reconcile.current = null;
+          void pull().catch(() => {
+            /* 对账失败就维持现状：金额那一列留着「—」，不是错的数 */
+          });
+        }, RECONCILE_MS);
+      }
     };
 
     const schedule = () => {
@@ -166,11 +241,15 @@ export function useRequests() {
     return () => {
       un.then((f) => f());
       if (frame.current !== null) cancelAnimationFrame(frame.current);
+      if (reconcile.current) clearTimeout(reconcile.current);
     };
-  }, []);
+  }, [pull]);
 
   return {
     rows,
+    seeded,
+    settled,
+    health,
     locallyAnswered,
     rejected,
     configVersion,

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 
 pub mod health;
 pub mod policy;
@@ -42,7 +42,9 @@ pub struct Supervisor {
     binary: PathBuf,
     config: Option<PathBuf>,
     policy: Mutex<RestartPolicy>,
-    state: Arc<Mutex<CoreState>>,
+    /// 当前状态。**用 watch 而不是 Mutex，是为了能被订阅** —— 界面
+    /// 需要的是「变了就告诉我」，而拿一个 Mutex 只能反复去问。
+    state: watch::Sender<CoreState>,
     /// 这次退出是我们自己要求的吗。
     ///
     /// **主动重启不该算进退避阶梯** —— 改一次配置就重启一次，配五次就
@@ -57,13 +59,28 @@ impl Supervisor {
             binary,
             config,
             policy: Mutex::new(RestartPolicy::new()),
-            state: Arc::new(Mutex::new(CoreState::Stopped)),
+            state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn state_handle(&self) -> Arc<Mutex<CoreState>> {
-        self.state.clone()
+    /// 现在是什么状态。
+    pub fn state(&self) -> CoreState {
+        self.state.borrow().clone()
+    }
+
+    /// 订阅状态变化。
+    ///
+    /// **每一次转换都推出去。**「core 起来没、是不是在重启、有没有进
+    /// 安全模式」这三个答案一天变不了几次，而界面原来是每两秒问一遍的。
+    pub fn watch(&self) -> watch::Receiver<CoreState> {
+        self.state.subscribe()
+    }
+
+    /// 换一个状态。**`send_replace` 不在乎有没有订阅者** —— 没人听的
+    /// 时候状态照样要更新，那是真相本身，不是一条通知。
+    fn set(&self, next: CoreState) {
+        self.state.send_replace(next);
     }
 
     /// core 活着但不响应了，把它换掉。
@@ -71,8 +88,8 @@ impl Supervisor {
     /// **和 `request_restart` 的区别在于计不计入退避**：这是一次失败，
     /// 如果 core 反复卡死，最终应该进安全模式。改配置那种重启不是。
     pub async fn report_wedged(&self) -> anyhow::Result<()> {
-        let pid = match &*self.state.lock().await {
-            CoreState::Running { pid } => *pid,
+        let pid = match self.state() {
+            CoreState::Running { pid } => pid,
             other => anyhow::bail!("core 现在是 {other:?}，不用管"),
         };
         tracing::error!(pid, "core 活着但不响应，换掉它");
@@ -97,8 +114,8 @@ impl Supervisor {
     /// 做法是标记意图然后杀掉它，让守护循环自己把它拉起来 —— 而不是在
     /// 这里再写一遍启动逻辑。两处启动逻辑就是两处会漂移。
     pub async fn request_restart(&self) -> anyhow::Result<()> {
-        let pid = match &*self.state.lock().await {
-            CoreState::Running { pid } => *pid,
+        let pid = match self.state() {
+            CoreState::Running { pid } => pid,
             other => anyhow::bail!("core 现在是 {other:?}，没在跑，不用重启"),
         };
         self.intentional.store(true, Ordering::SeqCst);
@@ -137,7 +154,7 @@ impl Supervisor {
     ///
     /// 返回 false 表示别再循环了（进了安全模式或被主动停掉）。
     pub async fn run_once(&self, safe: bool) -> anyhow::Result<bool> {
-        *self.state.lock().await = CoreState::Starting;
+        self.set(CoreState::Starting);
         let args = self.command_args(safe);
         let started = Instant::now();
 
@@ -148,7 +165,7 @@ impl Supervisor {
             .spawn()?;
 
         if let Some(pid) = child.id() {
-            *self.state.lock().await = CoreState::Running { pid };
+            self.set(CoreState::Running { pid });
             tracing::info!(pid, safe, "core 已启动");
         }
 
@@ -160,17 +177,17 @@ impl Supervisor {
 
         if safe {
             // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
-            *self.state.lock().await = CoreState::Stopped;
+            self.set(CoreState::Stopped);
             return Ok(false);
         }
 
         if self.intentional.swap(false, Ordering::SeqCst) {
             // 我们自己要求的退出。立刻重起，不计入失败。
             tracing::info!("按要求重启 core");
-            *self.state.lock().await = CoreState::Restarting {
+            self.set(CoreState::Restarting {
                 attempt: 0,
                 in_ms: 0,
-            };
+            });
             return Ok(true);
         }
 
@@ -185,17 +202,17 @@ impl Supervisor {
 
         match decision {
             Decision::RestartAfter(d) => {
-                *self.state.lock().await = CoreState::Restarting {
+                self.set(CoreState::Restarting {
                     attempt: failures,
                     in_ms: d.as_millis() as u64,
-                };
+                });
                 if !d.is_zero() {
                     tokio::time::sleep(d).await;
                 }
                 Ok(true)
             }
             Decision::SafeMode => {
-                *self.state.lock().await = CoreState::SafeMode;
+                self.set(CoreState::SafeMode);
                 tracing::error!(failures, "连续失败太多，进安全模式");
                 Ok(false)
             }
@@ -262,6 +279,6 @@ mod tests {
 
     #[tokio::test]
     async fn state_starts_stopped() {
-        assert_eq!(*sup().state_handle().lock().await, CoreState::Stopped);
+        assert_eq!(sup().state(), CoreState::Stopped);
     }
 }

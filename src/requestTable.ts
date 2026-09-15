@@ -8,7 +8,7 @@ import type { RequestRow } from "./types";
  * 任何东西会回答；而这两种恰恰是排查时最该看见的行。
  */
 
-export type SortKey = "time" | "duration" | "ttfb" | "bytes" | "status";
+export type SortKey = "time" | "duration" | "ttfb" | "tokens" | "cost" | "status";
 export type SortDir = "asc" | "desc";
 
 export interface Filter {
@@ -41,8 +41,14 @@ function valueOf(r: RequestRow, key: SortKey): number | null {
       return r.durationMs ?? null;
     case "ttfb":
       return r.ttfbMs ?? null;
-    case "bytes":
-      return r.bytes ?? null;
+    case "tokens":
+      // 按总量排。**只按输出排会把长上下文的那几次藏起来**，而那恰恰是
+      // 账单上最贵的部分。
+      return r.inputTokens != null && r.outputTokens != null
+        ? r.inputTokens + r.outputTokens
+        : null;
+    case "cost":
+      return r.costMicros ?? null;
     case "status":
       return r.status ?? null;
   }
@@ -80,12 +86,13 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;
     if (!q) return true;
-    // 路径、客户端、上游、错误信息都算 —— 排查时你记得住的往往是错误
-    // 里的那半句话，而不是哪个字段装着它。
+    // 路径、客户端、上游、模型、错误信息都算 —— 排查时你记得住的往往是
+    // 错误里的那半句话，而不是哪个字段装着它。
     return (
       r.path.toLowerCase().includes(q) ||
       r.client.toLowerCase().includes(q) ||
       r.provider.toLowerCase().includes(q) ||
+      (r.model ?? "").toLowerCase().includes(q) ||
       (r.error ?? "").toLowerCase().includes(q)
     );
   });

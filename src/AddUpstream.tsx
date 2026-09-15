@@ -1,7 +1,17 @@
 import { useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { toast } from "sonner";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/ui/empty";
 
 /**
  * 加第一个上游 —— **长在配置页里，不是一个把人挡在外面的独立页面。**
@@ -28,7 +38,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
   const [key, setKey] = useState("");
   const [probe, setProbe] = useState<ProbeResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // 从 URL 猜一个名字。用户几乎不会想改它，改名走配置页。
   const guessedName = (() => {
@@ -44,13 +53,12 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
   async function doProbe() {
     setBusy(true);
-    setError(null);
     setProbe(null);
     try {
       // Tauri 的 invoke 用**字符串** reject，不是 Error 对象
       setProbe(await invoke<ProbeResponse>("probe_upstream", { baseUrl, key }));
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -58,7 +66,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
   async function doSetup() {
     setBusy(true);
-    setError(null);
     try {
       await invoke<SetupResponse>("setup_first_provider", {
         name: guessedName,
@@ -67,7 +74,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       });
       onDone();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -84,28 +91,33 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       case "not_implemented":
         return "。它没有模型列表接口，照样能转发，只是按模型名路由那类功能对它用不上";
       case "unrecognized":
-        return "。模型列表是个未识别的形状 —— 转发不受影响，值得报一个 issue";
+        // **不要在这儿叫用户去报 issue。**那是我们的工作流,不是他的;
+        // 他要知道的只是「这会不会影响我」。想告诉我们的话,「设置」里
+        // 的诊断包本来就在那儿。
+        return "。它的模型列表是个不认识的形状 —— 转发不受影响，只是按模型名路由那类功能对它用不上";
       case "empty":
         return "。它的模型列表是空的，照样能转发";
     }
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 p-5 dark:border-neutral-700">
-      <p className="tw-head text-neutral-700 dark:text-neutral-300">
-        还没有上游。加一个就能开始转发。
-      </p>
-      <p className="mt-1 tw-body text-neutral-500">
-        只要地址和密钥。
-        <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
-          <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
-        </Tip>
-      </p>
+    <Empty className="border border-dashed">
+      <EmptyHeader>
+        <EmptyTitle>尚未配置上游</EmptyTitle>
+        <EmptyDescription>
+          只要地址和密钥。
+          <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
+          </Tip>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
 
       <div className="mt-4 grid max-w-xl gap-3">
         <label className="grid gap-1">
-          <span className="tw-body text-neutral-500">接口地址</span>
-          <input
+          <span className="tw-body text-muted-foreground">接口地址</span>
+          <Input
+            className="font-mono"
             value={baseUrl}
             onChange={(e) => {
               setBaseUrl(e.target.value);
@@ -116,11 +128,10 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
         <label className="grid gap-1">
-          <span className="tw-body text-neutral-500">密钥</span>
+          <span className="tw-body text-muted-foreground">密钥</span>
           {/*
             **不是 type="password"。**这是用户自己机器上自己的 key，而
             填错一个字符的代价是一次看不懂的 401 —— 让他看得见自己粘了
@@ -128,7 +139,8 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize/autoCorrect 那一组不能少：macOS 会把首字母
             大写，那是一类稳定复现的「key 明明是对的却认证失败」。
           */}
-          <input
+          <Input
+            className="font-mono"
             value={key}
             onChange={(e) => {
               setKey(e.target.value);
@@ -139,29 +151,30 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
       </div>
 
       <div className="mt-4 flex items-center gap-3">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={doProbe}
           disabled={!ready || busy}
-          className="rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           {busy && !probe ? "测试中…" : "测试连接"}
-        </button>
+        </Button>
         {/* 说清这一下不花钱，否则谨慎的用户不会点 */}
         <span className="tw-body text-neutral-400">不花钱，可以随便点</span>
         {probe?.ok && (
-          <button
+          <Button
+            size="sm"
+            className="ml-auto"
             onClick={doSetup}
             disabled={busy}
-            className="ml-auto rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
             保存并启用
-          </button>
+          </Button>
         )}
       </div>
 
@@ -185,9 +198,8 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
         </p>
       )}
 
-      {error && (
-        <p className="mt-3 tw-body text-red-600 dark:text-red-400">{error}</p>
-      )}
-    </div>
+      
+      </EmptyContent>
+    </Empty>
   );
 }

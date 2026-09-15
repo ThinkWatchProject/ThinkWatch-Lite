@@ -1,5 +1,7 @@
 import { Fragment, useRef, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import AddUpstream from "./AddUpstream";
 import Proxies from "./Proxies";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +19,30 @@ import type {
   Overview,
   PatchOp,
 } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { cn } from "@/lib/utils";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
+import { Switch } from "@/ui/switch";
+import { toast } from "sonner";
+import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { ButtonGroup } from "@/ui/button-group";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * 一个能改的字段。
@@ -31,13 +57,11 @@ function EditableCell({
   value,
   path,
   version,
-  onSaved,
   mono,
 }: {
   value: string;
   path: string;
   version: string | null;
-  onSaved: (err: string | null) => void;
   mono?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
@@ -62,7 +86,7 @@ function EditableCell({
     // 组字中不提交 —— 中间态提交上去的是一段还没成形的文本
     if (composing.current || draft === value || busy) return;
     if (!version) {
-      onSaved("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       setDraft(value);
       return;
     }
@@ -70,20 +94,19 @@ function EditableCell({
     try {
       const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      await invoke("patch_config", { ops, baseVersion: version });
-      onSaved(null);
+      await patchConfig(ops, version);
     } catch (e) {
       // **失败时把草稿退回原值。**留着一个没保存成功的值，用户下次
       // 看这一行会以为它已经生效了。
       setDraft(value);
-      onSaved(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <input
+    <Input
       value={draft}
       disabled={busy}
       onChange={(e) => setDraft(e.target.value)}
@@ -112,12 +135,8 @@ function EditableCell({
           e.currentTarget.blur();
         }
       }}
-      className={
-        "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600 " +
-        (mono ? "font-mono" : "")
-      }
+      variant="inline"
+      className={cn(mono && "font-mono")}
     />
   );
 }
@@ -134,7 +153,6 @@ function SelectCell({
   options,
   path,
   version,
-  onSaved,
   onDone,
 }: {
   value: string;
@@ -142,48 +160,42 @@ function SelectCell({
   options: [string, string][];
   path: string;
   version: string | null;
-  onSaved: (err: string | null) => void;
   onDone?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <select
+    <NativeSelect
+      size="inline"
       value={value}
       disabled={busy}
-      onChange={async (e) => {
+      onChange={async (ev) => {
         if (!version) {
-          onSaved("还没读到配置版本，稍等一下再试");
+          toast.error("还没读到配置版本，稍等一下再试");
           return;
         }
-        const v = e.target.value;
+        const v = ev.target.value;
         setBusy(true);
         try {
-          await invoke("patch_config", {
+          await patchConfig(
             // 空串写成 null —— 「没写这个字段」和「写了个空值」是两回事，
             // 而前者才是「按默认/自动判」的意思
-            ops: [{ op: "replace", path, value: v === "" ? null : v }],
-            baseVersion: version,
-          });
-          onSaved(null);
+            [{ op: "replace", path, value: v === "" ? null : v }],
+            version,
+          );
           onDone?.();
         } catch (err) {
-          onSaved(typeof err === "string" ? err : String(err));
+          toast.error(typeof err === "string" ? err : String(err));
         } finally {
           setBusy(false);
         }
       }}
-      className={
-        "rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600"
-      }
     >
       {options.map(([v, label]) => (
-        <option key={v} value={v}>
+        <NativeSelectOption key={v} value={v}>
           {label}
-        </option>
+        </NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -198,14 +210,14 @@ function SpeedRows({ r }: { r: L1Result }) {
   return (
     <div className="mt-1.5 space-y-0.5 tw-body">
       {r.segments.map((seg) => (
-        <div key={seg.name} className="flex gap-3 text-neutral-500">
+        <div key={seg.name} className="flex gap-3 text-muted-foreground">
           <span className="w-32 shrink-0">{seg.name}</span>
           <span className="font-mono tw-num">{seg.ms} ms</span>
         </div>
       ))}
       {r.ok && (
         <div className="flex gap-3">
-          <span className="w-32 shrink-0 text-neutral-500">建连总计</span>
+          <span className="w-32 shrink-0 text-muted-foreground">建连总计</span>
           <span className="font-mono tw-num font-medium">{r.total_ms} ms</span>
         </div>
       )}
@@ -235,9 +247,9 @@ function SpeedRows({ r }: { r: L1Result }) {
  * · **仅本机** `loopback` —— 绑 127.0.0.1。别的设备连不过来。
  * · **指定网卡** `<IP>` —— 绑某一张网卡自己的地址。只有那张网卡所在的
  *   网络连得上。
- * · **全部网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
+ * · **不限网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
  *
- * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「全部网卡」是同
+ * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「不限网卡」是同
  * 一个地址,区别只在来源白名单的默认值。**那是个白名单概念,伪装成了网卡
  * 选择**:用户以为网关只在局域网那张网卡上听,实际它在所有网卡上听。
  *
@@ -258,7 +270,7 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
   {
     id: "loopback",
     label: "仅本机",
-    what: "绑 127.0.0.1。只有这台电脑上的程序连得上，别的设备连不过来。",
+    what: "绑定 127.0.0.1。仅本机程序可连接，同网络的其他设备无法访问。",
   },
   {
     id: "nic",
@@ -267,7 +279,7 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
   },
   {
     id: "all",
-    label: "全部网卡",
+    label: "不限网卡",
     what: "绑 0.0.0.0，每一张网卡都在听 —— 包括对着公网的那张。密钥校验强制开启。",
   },
 ];
@@ -282,27 +294,24 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
 function CidrList({
   items,
   configVersion,
-  onErr,
 }: {
   items: string[];
   configVersion: string | null;
-  onErr: (e: string | null) => void;
 }) {
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function run(ops: PatchOp[]) {
     if (!configVersion) {
-      onErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(true);
-    onErr(null);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       setAdding("");
     } catch (e) {
-      onErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -310,24 +319,26 @@ function CidrList({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {items.length === 0 && <span className="text-neutral-500">（全放行）</span>}
+      {items.length === 0 && <span className="text-muted-foreground">（全放行）</span>}
       {items.map((c, i) => (
         <span
           key={c}
-          className="flex items-center gap-1 rounded border border-neutral-300 px-1.5 font-mono tw-label dark:border-neutral-700"
+          className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {c}
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             disabled={busy}
             onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
-            className="text-neutral-400 hover:text-red-600 disabled:opacity-30"
             aria-label={`删掉 ${c}`}
           >
             ×
-          </button>
+          </Button>
         </span>
       ))}
-      <input
+      <Input
+        className="w-44 font-mono"
         value={adding}
         disabled={busy}
         placeholder="加一段，比如 192.168.1.0/24"
@@ -339,7 +350,6 @@ function CidrList({
             ]);
           }
         }}
-        className="w-44 rounded border border-neutral-300 bg-transparent px-1.5 font-mono tw-label outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
     </div>
   );
@@ -365,25 +375,20 @@ function ProbesSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const probes = ov.client_probes ?? [];
   if (probes.length === 0) return null;
 
   async function set(id: string, mode: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(id);
-    setErr(null);
     try {
-      await invoke("patch_config", {
-        ops: [{ op: "replace", path: `/client_probes/${id}`, value: mode }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], configVersion);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(null);
     }
@@ -391,47 +396,45 @@ function ProbesSection({
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">客户端的辅助请求</h2>
-      <p className="mt-1 tw-body text-neutral-500">
+      <h2 className="tw-title font-semibold">客户端探测请求</h2>
+      <p className="mt-1 tw-body text-muted-foreground">
         客户端自己发的、你没点过的那些请求。它们也花钱。
       </p>
       <ul className="mt-2 space-y-1.5">
         {probes.map((p) => (
           <li
             key={p.id}
-            className="rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
+            className="rounded-md border border-border px-3 py-2"
           >
             <div className="flex items-baseline gap-3">
               <span className="tw-body font-medium">{p.label}</span>
-              <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                value={p.mode}
+                disabled={busy === p.id}
+                /* 择一,不许择空 —— 空了等于没有模式 */
+                onValueChange={(v) => v && void set(p.id, v)}
+              >
                 {PROBE_MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    disabled={busy === p.id}
-                    onClick={() => void set(p.id, m.id)}
-                    className={
-                      "rounded px-2 py-0.5 tw-body disabled:opacity-50 " +
-                      (p.mode === m.id
-                        ? "bg-neutral-200 dark:bg-neutral-800"
-                        : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
-                    }
-                  >
+                  <ToggleGroupItem key={m.id} value={m.id}>
                     {m.label}
-                  </button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
             </div>
-            <p className="mt-1 tw-body text-neutral-600 dark:text-neutral-400">{p.what}</p>
-            <p className="mt-0.5 tw-label text-neutral-500">
+            <p className="mt-1 tw-body text-muted-foreground">{p.what}</p>
+            <p className="mt-0.5 tw-label text-muted-foreground">
               {PROBE_MODES.find((m) => m.id === p.mode)?.what}
             </p>
           </li>
         ))}
       </ul>
-      <p className="mt-2 tw-label text-neutral-500">
+      <p className="mt-2 tw-label text-muted-foreground">
         路由规则里的「辅助请求」条件，只有在这一类选了「交给路由」时才可能命中。
       </p>
-      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
     </section>
   );
 }
@@ -444,14 +447,13 @@ function LimitsSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const l = ov.limits;
   if (!l) return null;
   const rows: [string, keyof typeof l, string][] = [
     ["全局并发", "max_concurrent", "同时在飞的请求上限。超了先排队。"],
-    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮全部。"],
-    ["队列上限", "queue_depth", "排队排到这么多就真的拒绝了。"],
-    ["排队超时", "queue_timeout_secs", "排这么多秒还没轮到就放弃（秒）。"],
+    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮不限。"],
+    ["队列上限", "queue_depth", "队列达到此长度后拒绝新请求。"],
+    ["排队超时", "queue_timeout_secs", "排队超过此时长后放弃（秒）。"],
   ];
   return (
     <section>
@@ -459,20 +461,18 @@ function LimitsSection({
       <dl className="mt-2 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-4 gap-y-1 tw-body">
         {rows.map(([label, key, what]) => (
           <Fragment key={key}>
-            <dt className="text-neutral-500">{label}</dt>
+            <dt className="text-muted-foreground">{label}</dt>
             <dd className="font-mono">
               <EditableCell
                 value={String(l[key])}
                 path={`/limits/${key}`}
                 version={configVersion}
-                onSaved={setErr}
               />
             </dd>
-            <dd className="tw-label text-neutral-500">{what}</dd>
+            <dd className="tw-label text-muted-foreground">{what}</dd>
           </Fragment>
         ))}
       </dl>
-      {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
     </section>
   );
 }
@@ -484,7 +484,6 @@ function ListenSection({
   ov: Overview;
   configVersion: string | null;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [nics, setNics] = useState<NicView[] | null>(null);
   const cur = ov.listen.bind;
@@ -509,18 +508,14 @@ function ListenSection({
   async function write(value: string) {
     if (value === cur || busy) return;
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(true);
-    setErr(null);
     try {
-      await invoke("patch_config", {
-        ops: [{ op: "replace", path: "/listen/gateway/bind", value }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path: "/listen/gateway/bind", value }], configVersion);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -532,7 +527,7 @@ function ListenSection({
     // 选「指定网卡」时先落到第一张，用户再从选单里换
     const first = nics?.[0];
     if (!first) {
-      setErr("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
+      toast.error("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
       return;
     }
     void write(first.addr);
@@ -544,52 +539,75 @@ function ListenSection({
     <section>
       <div className="flex items-baseline gap-3">
         <h2 className="tw-title font-semibold">监听与访问</h2>
-        <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          value={kind}
+          onValueChange={(v) => v && pickKind(v as BindKind)}
+        >
           {KINDS.map((k) => (
-            <button
+            <ToggleGroupItem
               key={k.id}
+              value={k.id}
               disabled={busy || (k.id === "nic" && nics?.length === 0)}
-              onClick={() => pickKind(k.id)}
-              className={
-                "rounded px-2.5 py-1 tw-body disabled:opacity-40 " +
-                (kind === k.id
-                  ? k.id === "loopback"
-                    ? "bg-neutral-200 dark:bg-neutral-800"
-                    : "bg-amber-500 text-white"
-                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
-              }
             >
               {k.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
 
-      <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
+      <p className="mt-2 tw-body text-muted-foreground">
         {picked?.what}
       </p>
 
+      {/*
+        **「已经不只是本机了」这句话得有人说。**原来是把选中的那一档染成
+        琥珀色 —— 那是这个控件里唯一的暴露信号,而换成 ToggleGroup 之后
+        选中态是统一的,信号就没了。与其在一个按钮上盖颜色,不如让库里
+        那个专门说这种话的组件来说。
+      */}
+      {ov.listen.exposed && (
+        <Alert variant="warning" className="mt-2">
+          <AlertTitle>网关已暴露在局域网</AlertTitle>
+          <AlertDescription>
+            同一个网络里的机器都能连过来。来源白名单还在起作用，但它挡的是
+            地址，不是人。
+            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">
+                密钥强制校验
+              </span>
+            </Tip>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {kind === "nic" && (
         <div className="mt-2 flex items-center gap-2">
-          <select
+          <NativeSelect
+            size="sm"
+            className="font-mono"
             value={cur}
             disabled={busy}
             onChange={(e) => void write(e.target.value)}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono tw-body disabled:opacity-50 dark:border-neutral-700"
           >
             {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
                 **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
             {!nics?.some((n) => n.addr === cur) && (
-              <option value={cur}>{cur}（现在找不到这张网卡）</option>
+              <NativeSelectOption value={cur}>
+                {cur}（现在找不到这张网卡）
+              </NativeSelectOption>
             )}
             {nics?.map((n) => (
-              <option key={`${n.name}-${n.addr}`} value={n.addr}>
+              <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.addr}>
                 {n.name}　{n.addr}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
-            <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
+          </NativeSelect>
+          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「不限网卡」并留着来源白名单。">
+            <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
               地址会变
             </span>
           </Tip>
@@ -597,48 +615,32 @@ function ListenSection({
       )}
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
-        <dt className="text-neutral-500">正在监听</dt>
+        <dt className="text-muted-foreground">正在监听</dt>
         <dd className="flex items-baseline gap-1 font-mono">
           {ov.listen.bind} :
           <EditableCell
             value={String(ov.listen.port)}
             path="/listen/gateway/port"
             version={configVersion}
-            onSaved={(e) => setErr(e)}
           />
         </dd>
-        <dt className="text-neutral-500">客户端密钥</dt>
+        <dt className="text-muted-foreground">客户端密钥</dt>
         <dd className="font-mono">
           {ov.clients.map((c) => `${c.name} ${c.key}`).join("，")}
         </dd>
         {ov.listen.exposed && (
           <>
-            <dt className="text-neutral-500">来源白名单</dt>
+            <dt className="text-muted-foreground">来源白名单</dt>
             <dd>
               <CidrList
                 items={ov.listen.allow_from}
                 configVersion={configVersion}
-                onErr={setErr}
               />
             </dd>
           </>
         )}
       </dl>
 
-      {ov.listen.exposed && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          监听在非本机地址上，局域网里的机器能连过来
-          <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">
-              密钥强制校验
-            </span>
-          </Tip>
-        </p>
-      )}
-
-      {err && (
-        <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>
-      )}
 
       {/*
         白名单还只能读不能改：`PatchOp::Replace` 只吃标量，而 `allow_from`
@@ -694,11 +696,9 @@ export default function Config({
   const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
   const [history, setHistory] = useState<ConfigVersion[]>([]);
-  const [saveError, setSaveError] = useState<string | null>(null);
   // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
   // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
   const [autostart, setAutostart] = useState<boolean | null>(null);
-  const [autostartErr, setAutostartErr] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   /**
    * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
@@ -726,7 +726,7 @@ export default function Config({
         const h = await invoke<ConfigVersion[]>("config_history");
         if (alive) setHistory(h);
       } catch (e) {
-        if (alive) setSaveError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
     })();
     return () => {
@@ -771,15 +771,16 @@ export default function Config({
       <div className="space-y-3 p-5">
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">配置文件</h2>
-          <button
+          <Button
+            variant="link"
+            size="xs"
             onClick={() => {
               setFocus(null);
               setMode("form");
             }}
-            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             回到表单
-          </button>
+          </Button>
         </div>
         {cfg ? (
           <ConfigTextMode
@@ -800,7 +801,7 @@ export default function Config({
             onSaved={() => setReloadKey((k) => k + 1)}
           />
         ) : (
-          <p className="tw-body text-neutral-500">读取中…</p>
+          <p className="tw-body text-muted-foreground">读取中…</p>
         )}
       </div>
     );
@@ -810,47 +811,51 @@ export default function Config({
     <div className="space-y-8 p-5">
       {section === "upstreams" && (
       <section>
+        <Collapsible open={showHistory} onOpenChange={setShowHistory}>
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">上游</h2>
           {t.comparison && (
-            <button
+            <Button
+              variant="link"
+              size="xs"
               onClick={() => test(undefined)}
               disabled={testing !== null}
-              className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
             >
-              {testing === "*" ? "测速中…" : "全部测一遍"}
-            </button>
+              {testing === "*" && <Spinner />}
+              不限测一遍
+            </Button>
           )}
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
               这是排查线路问题最直接的一个动作 */}
           <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
-          <button
+          <Button
+            variant="link"
+            size="xs"
+            className="ml-auto"
             onClick={() => setMode("text")}
-            className="ml-auto tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             改文件
-          </button>
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
-          >
-            {showHistory ? "收起历史" : `历史（${history.length}）`}
-          </button>
+          </Button>
+          {/*
+            **展开这件事交给 Collapsible。**手写的 `{show && …}` 少的是
+            `aria-expanded` 和 `aria-controls` —— 读屏软件不知道这个按钮
+            管的是哪一块，也不知道现在是开是关。
+          */}
+          <CollapsibleTrigger asChild>
+            <Button variant="link" size="xs">
+              {showHistory ? "收起历史" : `历史（${history.length}）`}
+            </Button>
+          </CollapsibleTrigger>
         </div>
 
         {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
             「有人抢先改了」，正确的反应是刷新再改 */}
-        {saveError && (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            没能保存：{saveError}
-          </p>
-        )}
 
-        {showHistory && (
-          <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800">
+        <CollapsibleContent>
+          <div className="mt-2 rounded-md border border-border">
             {history.length === 0 && (
-              <p className="px-3 py-2 tw-body text-neutral-500">
-                还没有历史版本 —— 第一次改配置之后就有了。
+              <p className="px-3 py-2 tw-body text-muted-foreground">
+                暂无历史版本
               </p>
             )}
             {history.map((v) => (
@@ -858,8 +863,8 @@ export default function Config({
                 key={v.version}
                 className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 tw-body last:border-b-0 dark:border-neutral-900"
               >
-                <span className="font-mono text-neutral-500">{v.version.slice(7)}</span>
-                <span className="text-neutral-500">{v.origin}</span>
+                <span className="font-mono text-muted-foreground">{v.version.slice(7)}</span>
+                <span className="text-muted-foreground">{v.origin}</span>
                 <span className="text-neutral-400">
                   {new Date(v.at_ms).toLocaleString()}
                 </span>
@@ -867,24 +872,26 @@ export default function Config({
                   // 不标出来的话，用户会以为第一条是「上一版」然后回滚到自己身上
                   <span className="ml-auto text-emerald-600 dark:text-emerald-400">现在这版</span>
                 ) : (
-                  <button
+                  <Button
+                    variant="link"
+                    size="xs"
+                    className="ml-auto"
                     onClick={async () => {
-                      setSaveError(null);
                       try {
                         await invoke("rollback_config", { version: v.version });
                       } catch (e) {
-                        setSaveError(typeof e === "string" ? e : String(e));
+                        toast.error(typeof e === "string" ? e : String(e));
                       }
                     }}
-                    className="ml-auto text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
                   >
                     回到这版
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
           </div>
-        )}
+        </CollapsibleContent>
+        </Collapsible>
         {/*
           一个上游都没有时，这一节是「加第一个」而不是一张空表头。
           原来这件事是一个全屏的首次运行页面做的 —— 把人挡在产品外面，
@@ -895,48 +902,49 @@ export default function Config({
             <AddUpstream onDone={onProviderAdded} />
           </div>
         ) : (
-        <table className="mt-2 w-full text-left tw-body">
-          <thead className="text-neutral-500">
-            <tr className="border-b border-neutral-200 dark:border-neutral-800">
-              <th className="py-2 font-medium">名字</th>
-              <th className="font-medium">地址</th>
-              <th className="font-medium">协议</th>
-              <th className="font-medium">密钥</th>
-              <th className="font-medium">代理</th>
-              <th className="font-medium">计费</th>
-              <th className="font-medium">信任</th>
+        <Table className="mt-2">
+          <TableHeader>
+            <TableRow>
+              <TableHead>名字</TableHead>
+              <TableHead>地址</TableHead>
+              <TableHead>协议</TableHead>
+              <TableHead>密钥</TableHead>
+              <TableHead>代理</TableHead>
+              <TableHead>计费</TableHead>
+              <TableHead>信任</TableHead>
               {/* 只有一家的时候熔断是旁路的，显示健康列没有意义 */}
-              {multi && <th className="font-medium">状态</th>}
-              <th className="font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
+              {multi && <TableHead>状态</TableHead>}
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ov.providers.map((p) => (
-              <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 font-medium" data-row={p.name}>
+              <TableRow key={p.name}>
+                <TableCell className="font-medium" data-row={p.name}>
                   {p.name}
                   <Tip text="跳到配置文件里这一段，并选中它">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="ml-1"
                     onClick={() => {
                       setFocus(p.name);
                       setMode("text");
                     }}
-                    className="ml-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
                   >
                     ↗
-                  </button>
+                  </Button>
                   </Tip>
-                </td>
-                <td className="text-neutral-500">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   <EditableCell
                     mono
                     value={p.base_url}
                     path={`/providers/${p.name}/base_url`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                   />
-                </td>
-                <td className="text-neutral-500">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   {/*
                     猜不出协议不是错误 —— 但要能改。自动判错的时候，
                     这一格就是修它的地方，而原来只能去改 YAML。
@@ -952,13 +960,12 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/protocol`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/* 来源，不是值 */}
-                <td className="font-mono text-neutral-500">{p.key_source}</td>
-                <td className="text-neutral-500">
+                <TableCell className="font-mono text-muted-foreground">{p.key_source}</TableCell>
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.proxy}
                     options={[
@@ -970,15 +977,14 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/proxy`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/*
                   计费方式：它同时决定成本栏怎么显示和
                   `cheapest` 怎么排 —— 订阅制的边际成本是零。
                 */}
-                <td className="text-neutral-500">
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.billing ?? ""}
                     options={[
@@ -989,15 +995,14 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/billing`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/*
                   信任级别。**没显式写过的时候要说清是自动判的**
                   —— 否则用户会以为这一格改不动，或者以为是他自己设的。
                 */}
-                <td className="text-neutral-500">
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.trust_explicit ? (p.trust === "官方" ? "official" : "untrusted") : ""}
                     options={[
@@ -1007,12 +1012,11 @@ export default function Config({
                     ]}
                     path={`/providers/${p.name}/trust`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {multi && (
-                  <td>
+                  <TableCell>
                     {p.health === "ok" ? (
                       <span className="text-emerald-600 dark:text-emerald-400">正常</span>
                     ) : (
@@ -1020,21 +1024,23 @@ export default function Config({
                         <span className="text-amber-600 dark:text-amber-400">熔断中</span>
                       </Tip>
                     )}
-                  </td>
+                  </TableCell>
                 )}
-                <td className="text-right">
-                  <button
+                <TableCell className="text-right">
+                  <Button
+                    variant="link"
+                    size="xs"
                     onClick={() => test(p.name)}
                     disabled={testing !== null}
-                    className="text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
                   >
-                    {testing === p.name ? "测速中…" : "测试"}
-                  </button>
-                </td>
-              </tr>
+                    {testing === p.name && <Spinner />}
+              测试
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         )}
         {/* 结果放在表下面而不是挤进单元格：分段有三到四行，塞进表格会把
             每一行都撑高，而大多数时候它们并不存在 */}
@@ -1044,12 +1050,12 @@ export default function Config({
           return (
             <div
               key={p.name}
-              className="mt-3 rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
+              className="mt-3 rounded-md border border-border px-3 py-2"
             >
               <div className="flex items-baseline gap-2 tw-body">
                 <span>{r.ok ? "✅" : "❌"}</span>
                 <span className="font-medium">{p.name}</span>
-                {r.via && <span className="text-neutral-500">经 {r.via}</span>}
+                {r.via && <span className="text-muted-foreground">经 {r.via}</span>}
               </div>
               <SpeedRows r={r} />
             </div>
@@ -1076,20 +1082,21 @@ export default function Config({
               <li
                 key={g.name}
                 data-row={g.name}
-                className="rounded-md border border-neutral-200 px-3 py-2 tw-body dark:border-neutral-800"
+                className="rounded-md border border-border px-3 py-2 tw-body"
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
                   <Tip text="跳到配置文件里这一段，并选中它">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={() => {
                       setFocus(g.name);
                       setMode("text");
                     }}
-                    className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
                   >
                     ↗
-                  </button>
+                  </Button>
                   </Tip>
                   <SelectCell
                     value={
@@ -1106,10 +1113,9 @@ export default function Config({
                     ]}
                     path={`/groups/${g.name}/type`}
                     version={cfg?.version ?? null}
-                    onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                  <span className="ml-auto font-mono text-neutral-500">
+                  <span className="ml-auto font-mono text-muted-foreground">
                     {g.providers.join(" → ")}
                   </span>
                 </div>
@@ -1123,80 +1129,77 @@ export default function Config({
                 */}
                 {g.kind === "手动选" && (
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-neutral-500">优先用</span>
-                    <select
+                    <span className="text-muted-foreground">优先用</span>
+                    <NativeSelect
+                      size="inline"
                       value={g.selected ?? ""}
-                      onChange={async (e) => {
+                      onChange={async (ev) => {
+                        const v = ev.target.value;
                         if (!cfg?.version) {
-                          setSaveError("还没读到配置版本，稍等一下再试");
+                          toast.error("还没读到配置版本，稍等一下再试");
                           return;
                         }
                         try {
-                          await invoke("patch_config", {
-                            ops: [
+                          await patchConfig([
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/selected`,
-                                value: e.target.value,
+                                value: v,
                               },
-                            ],
-                            baseVersion: cfg.version,
-                          });
-                          setSaveError(null);
+                            ], cfg.version);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
-                          setSaveError(typeof err === "string" ? err : String(err));
+                          toast.error(typeof err === "string" ? err : String(err));
                         }
                       }}
-                      className="rounded border border-neutral-300 bg-transparent px-1 py-0.5 dark:border-neutral-700"
                     >
                       {g.providers.map((p) => (
-                        <option key={p} value={p}>
+                        <NativeSelectOption key={p} value={p}>
                           {p}
-                        </option>
+                        </NativeSelectOption>
                       ))}
-                    </select>
-                    <span className="text-neutral-500">
+                    </NativeSelect>
+                    <span className="text-muted-foreground">
                       其余的仍然是它的故障转移备选
                     </span>
                   </div>
                 )}
                 {/*
                   **会话粘滞要摆在明面上，因为它直接决定账单。**
-                  关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
+                  关掉它，一次长会话每轮跳一家，prompt cache 不限失效，
                   而缓存命中与否成本差 5 到 10 倍。
                 */}
                 {g.kind === "轮流" && (
-                  <label className="mt-1.5 flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-                    <input
-                      type="checkbox"
-                      className="tw-check"
+                  <Field
+                    orientation="horizontal"
+                    className="mt-1.5 w-auto text-muted-foreground"
+                  >
+                    <Checkbox
+                      id={`sticky-${g.name}`}
                       checked={g.session_affinity ?? true}
-                      onChange={async (e) => {
+                      onCheckedChange={async (checked) => {
                         if (!cfg?.version) {
-                          setSaveError("还没读到配置版本，稍等一下再试");
+                          toast.error("还没读到配置版本，稍等一下再试");
                           return;
                         }
                         try {
-                          await invoke("patch_config", {
-                            ops: [
+                          await patchConfig([
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/session_affinity`,
-                                value: e.target.checked,
+                                value: checked === true,
                               },
-                            ],
-                            baseVersion: cfg.version,
-                          });
-                          setSaveError(null);
+                            ], cfg.version);
                           setReloadKey((k) => k + 1);
                         } catch (err) {
-                          setSaveError(typeof err === "string" ? err : String(err));
+                          toast.error(typeof err === "string" ? err : String(err));
                         }
                       }}
                     />
-                    会话粘滞（同一次对话固定走同一家）
-                  </label>
+                    <FieldLabel htmlFor={`sticky-${g.name}`}>
+                      会话粘滞（同一次对话固定走同一家）
+                    </FieldLabel>
+                  </Field>
                 )}
                 {g.hurts_cache && (
                   // 这句必须在界面上直说：它决定了用户的账单。
@@ -1216,15 +1219,18 @@ export default function Config({
       {section === "settings" && (
         <section>
           <h2 className="tw-title font-semibold">开机启动</h2>
-          <label className="mt-2 flex items-start gap-2 tw-body">
-            <input
-              type="checkbox"
-              className="tw-check mt-0.5"
+          <Field orientation="horizontal" className="mt-2">
+            {/*
+              **开关而不是复选框。**复选框是「在一组里挑几个」，而这是
+              「打开或关掉一个系统行为」—— macOS 的系统设置里这一类一律
+              是开关。`Field` 的 horizontal 布局两者通用。
+            */}
+            <Switch
+              id="autostart"
               checked={autostart === true}
               disabled={autostart === null}
-              onChange={async (e) => {
-                const want = e.target.checked;
-                setAutostartErr(null);
+              onCheckedChange={async (checked) => {
+                const want = checked === true;
                 // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
                 // 状态为准**，不是以这里传出去的那个为准。注册可能失败
                 // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
@@ -1233,13 +1239,13 @@ export default function Config({
                   setAutostart(await invoke<boolean>("set_autostart", { on: want }));
                 } catch (err) {
                   setAutostart(!want);
-                  setAutostartErr(typeof err === "string" ? err : String(err));
+                  toast.error(typeof err === "string" ? err : String(err));
                 }
               }}
             />
-            <span>
-              <span className="text-neutral-800 dark:text-neutral-200">开机时自动启动</span>
-              <span className="mt-0.5 block text-neutral-500">
+            <FieldContent>
+              <FieldLabel htmlFor="autostart">开机时自动启动</FieldLabel>
+              <FieldDescription>
                 {/*
                   说清「默认是关的」和「勾了会发生什么」。一个装完就往
                   登录项里写东西的工具，用户第一次发现它是在系统设置里
@@ -1250,14 +1256,9 @@ export default function Config({
                 <Tip text="勾上会在「系统设置 › 通用 › 登录项」里注册一条。开机后只有菜单栏多一个图标，不会弹出窗口。">
                   <span className="underline decoration-dotted underline-offset-2">勾上会发生什么</span>
                 </Tip>
-              </span>
-            </span>
-          </label>
-          {autostartErr && (
-            <p className="mt-1.5 tw-body text-amber-700 dark:text-amber-300">
-              {autostartErr}
-            </p>
-          )}
+              </FieldDescription>
+            </FieldContent>
+          </Field>
         </section>
       )}
 
@@ -1315,8 +1316,8 @@ function About() {
       <dl className="mt-2 space-y-0.5 tw-body">
         {rows.map(([k, v]) => (
           <div key={k} className="flex gap-3">
-            <dt className="w-20 shrink-0 text-neutral-500">{k}</dt>
-            <dd className="min-w-0 break-all font-mono tw-label text-neutral-600 dark:text-neutral-400">
+            <dt className="w-20 shrink-0 text-muted-foreground">{k}</dt>
+            <dd className="min-w-0 break-all font-mono tw-label text-muted-foreground">
               {v}
             </dd>
           </div>
@@ -1332,47 +1333,47 @@ function About() {
  * 遇到问题时一次性交出「我这儿是什么情况」，省掉来回问一轮（版本？配置？
  * 哪家上游？）—— 而每一趟都可能问漏。
  *
- * **里面的东西全部脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
+ * **里面的东西不限脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
  * 看得见所有 API key 的网关，这一步值得多花十秒。
  */
 function Diagnostics() {
   const [path, setPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   return (
     <section>
       <h2 className="tw-title font-semibold">诊断包</h2>
-      <p className="mt-1 tw-body text-neutral-500">
+      <p className="mt-1 tw-body text-muted-foreground">
         版本、上游、熔断状态、最近的失败、脱敏后的配置原文。
         <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
           <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
         </Tip>。
       </p>
-      <button
-        className="mt-2 rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
-          setError(null);
           try {
             setPath(await invoke<string>("save_diagnostics"));
           } catch (e) {
             // Tauri 的 invoke 用字符串 reject，不是 Error
-            setError(typeof e === "string" ? e : String(e));
+            toast.error(typeof e === "string" ? e : String(e));
           } finally {
             setBusy(false);
           }
         }}
       >
-        {busy ? "攒着…" : "生成"}
-      </button>
-      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
+        {busy && <Spinner />}
+          生成
+      </Button>
       {path && (
         <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>
-          <div className="mt-1 text-neutral-500">
-            里面的密钥和地址都打过码了，但<span className="font-medium">交出去之前请自己扫一眼</span>。
+          <div className="mt-1 text-muted-foreground">
+            其中的密钥与地址已脱敏，<span className="font-medium">提交前请自行核对</span>。
           </div>
         </div>
       )}
@@ -1401,9 +1402,9 @@ function Uninstall() {
 
   if (step === "done") {
     return (
-      <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+      <section className="rounded-md border border-border p-3 tw-body">
         <h2 className="tw-title font-semibold">卸载完成</h2>
-        <ul className="mt-2 space-y-0.5 text-neutral-600 dark:text-neutral-400">
+        <ul className="mt-2 space-y-0.5 text-muted-foreground">
           {log.map((l, i) => (
             <li key={i}>· {l}</li>
           ))}
@@ -1413,42 +1414,50 @@ function Uninstall() {
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <section className="rounded-md border border-border p-3 tw-body">
       <h2 className="tw-title font-semibold">完全卸载</h2>
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             把接管过的客户端改回原样，注销开机自启。
             <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
             —— 那时客户端会指着一个没有东西在听的端口。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
             onClick={() => setStep("ask")}
-            className="shrink-0 rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
           >
             卸载…
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
-          <p className="text-neutral-600 dark:text-neutral-400">要做这几件事：</p>
-          <ul className="space-y-0.5 text-neutral-600 dark:text-neutral-400">
+          <p className="text-muted-foreground">要做这几件事：</p>
+          <ul className="space-y-0.5 text-muted-foreground">
             <li>· 把所有接管过的客户端改回接管之前的样子</li>
             <li>· 注销开机自启</li>
           </ul>
-          <label className="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-            <input
-              type="checkbox"
-              className="tw-check"
+          <Field
+            orientation="horizontal"
+            className="w-auto text-muted-foreground"
+          >
+            <Checkbox
+              id="drop-data"
               checked={drop}
-              onChange={(e) => setDrop(e.target.checked)}
+              onCheckedChange={(c) => setDrop(c === true)}
             />
             {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
                 「删了才发现还想看」是不可逆的 */}
-            连同数据目录一起删掉（请求历史、成本记录、配置备份）
-          </label>
-          <div className="flex gap-2">
-            <button
+            <FieldLabel htmlFor="drop-data">
+              连同数据目录一起删掉（请求历史、成本记录、配置备份）
+            </FieldLabel>
+          </Field>
+          <ButtonGroup>
+            <Button
+              variant="destructive"
+              size="sm"
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
@@ -1462,17 +1471,17 @@ function Uninstall() {
                   setBusy(false);
                 }
               }}
-              className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
             >
               确认卸载
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setStep("idle")}
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               取消
-            </button>
-          </div>
+            </Button>
+                    </ButtonGroup>
         </div>
       )}
     </section>

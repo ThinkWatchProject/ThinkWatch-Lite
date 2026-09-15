@@ -91,18 +91,100 @@ describe("界面文案", () => {
   });
 
   /**
-   * 字号只能从那四级里选。
+   * 字号只能从那五级里选（tw-display 是概览上那个金额，只此一处）。
    *
    * 按尺寸命名的类（`text-xs`）和硬编码的 `text-[12px]` 是同一个毛病：
    * 下一个人按「看起来差不多大」来选，于是层级又没了。
+   *
+   * **`src/ui/` 不在此列。**那里放的是 shadcn 抄进来的组件，它们统一
+   * 写 `text-sm` / `text-xs`。这不是破例：下面那条检查保证这两个名字
+   * 在 `index.css` 里被绑到 13px 和 11px —— 也就是 tw-body 和 tw-label
+   * 本身。同一个字阶，两个名字，不是第五第六级。
    */
   it("没有绕过 type scale 的字号", () => {
     const bad: string[] = [];
     for (const f of files) {
+      if (f.path.startsWith(join(SRC, "ui"))) continue;
       for (const m of f.text.matchAll(/text-(xs|sm|base|\[\d+px\])/g)) {
         bad.push(`${f.path}: ${m[0]}`);
       }
     }
     expect(bad).toEqual([]);
+  });
+
+  /**
+   * **书面语，不是口语。**
+   *
+   * 这是一个给人管账和排查的工具，界面上的每一句都是产品文案，不是
+   * 聊天。「花在哪儿」「哪家更快」「排这么多秒还没轮到就放弃」这类
+   * 写法读着亲切，但它们在一个要给人看账单的界面里显得不可靠。
+   *
+   * 这里列的是几个反复出现的口语标记，不是完整的语感检查 —— 那件事
+   * 机器做不了。它拦的是最容易滑回去的那几个。
+   */
+  it("文案是书面语", () => {
+    const spoken = [
+      "就好了",
+      "就行",
+      "怎么办",
+      "哪家",
+      "哪儿",
+      "啥",
+      "扫一眼",
+      "攒着",
+      "别的设备",
+      "这么多秒",
+    ];
+    const bad: string[] = [];
+    for (const f of files) {
+      for (const w of spoken) {
+        if (f.text.includes(w)) bad.push(`${f.path}: 「${w}」`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * **界面上不许出现我们的工作流。**
+   *
+   * 「值得报一个 issue」曾经写在上游探测的结果里 —— 那是把维护者的流程
+   * 塞给用户。他要知道的只是「这会不会影响我」;想告诉我们的话,设置里
+   * 的诊断包本来就在那儿。
+   *
+   * 同理不该出现在界面上的还有:仓库、提交、编译、单元测试、调试。这些
+   * 词一旦出现,说明这个功能服务的是我们,不是用他产品的人。
+   */
+  it("文案里没有开发流程的词", () => {
+    const words = [
+      "issue",
+      "git",
+      "仓库",
+      "提交代码",
+      "编译",
+      "单元测试",
+      "回归",
+      "调试",
+      "堆栈",
+    ];
+    const bad: string[] = [];
+    for (const f of files) {
+      for (const w of words) {
+        if (f.text.includes(w)) bad.push(`${f.path}: 「${w}」`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * 上面那条豁免赖以成立的前提。
+   *
+   * 绑定一旦没了，`text-sm` 会悄悄退回 Tailwind 默认的 14px —— 一个
+   * 字阶里没有的字号，而且是从组件里渗进来的，不会有任何一处代码看起来
+   * 是错的。
+   */
+  it("text-sm / text-xs 绑在字阶上", () => {
+    const css = readFileSync(join(SRC, "index.css"), "utf8");
+    expect(css).toContain("--text-sm: 0.8125rem"); // 13px = tw-body
+    expect(css).toContain("--text-xs: 0.6875rem"); // 11px = tw-label
   });
 });

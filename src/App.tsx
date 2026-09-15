@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
-import { ago, bytes, latency, repeated, statusTone } from "./format";
+import { bucketStart, latency, money, repeated, statusTone, tokens, when } from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -19,8 +19,7 @@ import Keys from "./Keys";
 import Routes from "./Routes";
 import Security from "./Security";
 import Guard from "./Guard";
-import { Dialog, DialogButton } from "./ui/Dialog";
-import { Tip, TooltipRoot } from "./ui/Tooltip";
+import { Tip, TooltipRoot } from "@/ui/tip";
 import {
   IconClient,
   IconDashboard,
@@ -33,13 +32,60 @@ import {
   IconKey,
   IconServer,
   IconSettings,
-  IconSidebar,
 } from "./ui/icons";
-import { RowMenu } from "./ui/ContextMenu";
+import { RowMenu } from "@/ui/row-menu";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { cn } from "@/lib/utils";
+import { Toggle } from "@/ui/toggle";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import type { LucideIcon } from "lucide-react";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { Kbd, KbdGroup } from "@/ui/kbd";
+import { Toaster } from "@/ui/sonner";
+import { toast } from "sonner";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Split } from "@/ui/split";
+import { Skeleton } from "@/ui/skeleton";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+} from "@/ui/sidebar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
+
+const DAY_MS = 24 * 3_600_000;
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -66,7 +112,8 @@ type Surface =
   | "settings"
   | "clients";
 
-type SourceIcon = (p: { size?: number }) => React.ReactElement;
+/** lucide 的图标类型。尺寸走 `size`，颜色走 `currentColor`。 */
+type SourceIcon = LucideIcon;
 const SOURCES: {
   group: string;
   items: { id: Surface; label: string; icon: SourceIcon }[];
@@ -163,26 +210,63 @@ function Th({
 }) {
   const active = sort === k;
   return (
-    <th className={"font-medium " + className}>
-      <button
+    <TableHead className={className}>
+      <Button
+        variant="ghost"
+        size="xs"
+        className="-mx-1 px-1"
         onClick={() => on(k)}
-        className={
-          "-mx-1 rounded px-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 " +
-          (active ? "text-neutral-900 dark:text-neutral-100" : "")
-        }
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
       >
-        {label}
+        <span className={cn(active && "text-foreground")}>{label}</span>
         <span className="ml-0.5 inline-block w-2 tw-label">
           {active ? (dir === "asc" ? "↑" : "↓") : ""}
         </span>
-      </button>
-    </th>
+      </Button>
+    </TableHead>
+  );
+}
+
+/**
+ * 表身的骨架。
+ *
+ * **开窗时这一页要先去库里读两百条记录。**读完之前画「暂无请求记录」，
+ * 是在说一件当时还不知道真假的事 —— 而且记录一到，版面会先塌一次再弹
+ * 回来。骨架把行的位置占住，内容落在原地。
+ *
+ * 六行：够说明这里将要出现一张表，又不至于在真的没有记录时留下一屏假
+ * 内容 —— 那种情况下接上的是空状态，不是骨架。
+ */
+function BodySkeleton({ widths }: { widths: string[] }) {
+  return (
+    <TableBody>
+      {Array.from({ length: 6 }, (_, row) => (
+        <TableRow key={row} className="border-b border-neutral-100 dark:border-neutral-900">
+          {widths.map((w, col) => (
+            <TableCell key={col}>
+              <Skeleton className={cn("h-3", w)} />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </TableBody>
   );
 }
 
 export default function App() {
-  const { rows: allRows, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
-    useRequests();
+  const {
+    rows: allRows,
+    seeded,
+    settled,
+    health,
+    locallyAnswered,
+    rejected,
+    configVersion,
+    alerts,
+    rotated,
+    clearRotated,
+    clearAlerts,
+  } = useRequests();
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
   const [sortKey, setSortKey] = useState<SortKey>("time");
@@ -193,6 +277,14 @@ export default function App() {
     [allRows, filter, sortKey, sortDir],
   );
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /**
+   * 客户端这一列只在真的分得开的时候才出现。
+   *
+   * 目标用户「一个 key 就够」，那时整列二十五行是同一个值 —— 占着宽度
+   * 却零信息，而那点宽度给模型名用正好。**按实际出现过的算，不按配置里
+   * 有几个算**：配了两个而只有一个在发请求时，这一列同样是常量。
+   */
+  const showClient = facet.clients.length > 1;
   const searchRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -212,7 +304,6 @@ export default function App() {
   }
   const [status, setStatus] = useStableState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
-  const [error, setError] = useState<string | null>(null);
   /**
    * 托盘按了「退出」，等确认。
    *
@@ -238,14 +329,6 @@ export default function App() {
    */
   const [cursor, setCursor] = useState(-1);
   const [tab, setTab] = useState<Surface>("dashboard");
-  /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
-  const [dashTick, setDashTick] = useState(0);
-  /**
-   * 轮询里要读当前在哪一页，但**不能把 `tab` 加进那个 effect 的依赖**
-   * —— 那样每切一次页都会重建计时器，于是切页的瞬间会多打一轮请求。
-   * 用 ref 读最新值，依赖数组保持不变。
-   */
-  const tabRef = useRef<Surface>("dashboard");
   /**
    * 窗口够不够宽拆成两栏。
    *
@@ -255,17 +338,26 @@ export default function App() {
    * 应用，窗口是用户随手拖的。
    */
   /**
-   * 相对时间要自己走，否则「3s」会一直停在 3s。
+   * 今天从哪一刻算起。
    *
-   * **10 秒一跳，不是 1 秒。**这一列的精度到「秒」就够了，而每秒重渲染
-   * 整张表正是刚修掉的那个毛病 —— 为了让一个数字走起来把它请回来，
-   * 是这类计时器最常见的退化方式。
+   * 时间那一列只有一处跟「现在」有关：今天的记录给到秒，更早的带上
+   * 日期。**那条界线一天只过一次**，所以定时器就定在下一个零点 ——
+   * 原来是每十秒问一遍现在几点，而每问一遍就把整张表重画一遍。
+   *
+   * 跨零点用 `setDate(+1)` 再归零，不是加 86400000：夏令时那两天
+   * 一天不是 24 小时，加毫秒会错开一个钟头。
    */
-  const [nowTick, setNowTick] = useState(Date.now());
+  const [today, setToday] = useState(() => bucketStart(Date.now(), DAY_MS));
   useEffect(() => {
-    const h = setInterval(() => setNowTick(Date.now()), 10_000);
-    return () => clearInterval(h);
-  }, []);
+    const next = new Date(today);
+    next.setDate(next.getDate() + 1);
+    next.setHours(0, 0, 0, 0);
+    const h = setTimeout(
+      () => setToday(bucketStart(Date.now(), DAY_MS)),
+      Math.max(1_000, next.getTime() - Date.now()),
+    );
+    return () => clearTimeout(h);
+  }, [today]);
   const [wide, setWide] = useState(() => window.innerWidth >= 1040);
   useEffect(() => {
     const on = () => setWide(window.innerWidth >= 1040);
@@ -273,10 +365,42 @@ export default function App() {
     return () => window.removeEventListener("resize", on);
   }, []);
   const split = wide && tab === "requests" && open != null;
+  /*
+    分栏的宽度记在本地。**v4 的 react-resizable-panels 去掉了
+    `autoSaveId`**（那一版自己写 localStorage），所以这里自己接一下 ——
+    一共就是读一次、写一次。
+  */
+  const [splitLayout] = useState<Record<string, number> | undefined>(() => {
+    try {
+      const raw = window.localStorage.getItem("tw-split");
+      const v: unknown = raw ? JSON.parse(raw) : null;
+      if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+      const ok = Object.values(v as Record<string, unknown>).every(
+        (n) => typeof n === "number",
+      );
+      return ok ? (v as Record<string, number>) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
   const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
+
+  /**
+   * 概览页什么时候重新拉数。
+   *
+   * **不是定时轮询。**它原来跟着那个两秒一次的状态轮询走，而概览查的是
+   * 库 —— 库只在请求落地之后才变。没有流量的时候，那两秒一次做的全是
+   * 无用功：同一份数据重新序列化、重新渲染、图表重新动画一遍，而屏幕上
+   * 什么都没变。**看起来就是价格一直在闪。**
+   *
+   * 现在跟着对账走：`settled` 每涨一次，说明库里确实多了东西（见
+   * useRequests，它由事件流触发、2.5 秒节流）。`nudge` 是手动刷新。
+   * 都没动的时候，这一页一次请求都不发。
+   */
+  const dashTick = settled + nudge;
 
   /**
    * 源列表收起还是展开。
@@ -415,19 +539,56 @@ export default function App() {
     setCursor((c) => (c >= rows.length ? rows.length - 1 : c));
   }, [rows.length]);
 
+  /**
+   * 守护状态。**推过来的，不是问出来的。**
+   *
+   * 「core 起来没、是不是在重启、有没有进安全模式」一天变不了几次，
+   * 而这三个答案原来是每两秒问一遍的。
+   *
+   * **先挂监听再读一次当前值**，顺序不能反：事件只报变化，而两者之间
+   * 发生的那一次转换会丢 —— 表现是启动瞬间界面卡在「已停止」，直到
+   * 下一次转换才跟上。
+   */
   useEffect(() => {
     let alive = true;
-    const tick = async () => {
+    const un = listen<string>("core-state", (e) => {
+      if (alive) setCore(e.payload);
+    });
+    void un
+      .then(() => invoke<string>("core_state"))
+      .then((c) => {
+        if (alive) setCore(c);
+      })
+      .catch(() => {
+        /* core 还没起来。它起来的那一刻会推一条过来 */
+      });
+    return () => {
+      alive = false;
+      void un.then((f) => f());
+    };
+  }, []);
+
+  /**
+   * 状态与配置概览。**只在真的有理由重读的时候重读。**
+   *
+   * 原来这一段是每两秒一轮的轮询：两次 IPC 往返，而绝大多数轮得到的是
+   * 一模一样的答案。它变化的时机是数得清的，而每一个现在都有事件：
+   *
+   * · 配置换了一份（`configVersion` 跟着 `config_reloaded` 走）
+   * · 某家上游熔断了或恢复了（`health`，core 现在会报）
+   * · 守护状态变了 —— 重启之后监听地址和 pid 都可能不一样
+   * · 用户自己刚改完东西（`nudge`）
+   */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
       try {
         // Tauri 的 invoke 用**字符串** reject，不是 Error ——
         // `e instanceof Error` 永远是 false，所以按字符串处理。
         const s = await invoke<CoreStatus>("core_status");
-        if (alive) {
-          setStatus(s);
-          setError(null);
-        }
+        if (alive) setStatus(s);
       } catch (e) {
-        if (alive) setError(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
       try {
         const o = await invoke<Overview>("overview");
@@ -435,28 +596,12 @@ export default function App() {
       } catch {
         /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
-      // **只在概览页可见时才推 tick。**它唯一的用途是让 Dashboard
-      // 重新拉数，而每 2 秒自增一次会让整个 App 重渲染一遍 —— 包括
-      // 用户正在看的请求表。别的页开着的时候，这个计数没有消费者。
-      if (alive && tabRef.current === "dashboard") setDashTick((t) => t + 1);
-      try {
-        const c = await invoke<string>("core_state");
-        if (alive) setCore(c);
-      } catch {
-        /* core_state 不该失败；失败了也不该盖掉上面那条更有用的错误 */
-      }
-    };
-    tick();
-    const h = setInterval(tick, 2000);
+    })();
     return () => {
       alive = false;
-      clearInterval(h);
     };
-    // configVersion 变了就立刻再拉一次 —— 不然用户在编辑器里改完，
-    // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效。
-  }, [configVersion, nudge]);
+  }, [configVersion, nudge, health, core, setStatus, setOv]);
 
-  tabRef.current = tab;
   const c = describeCore(core);
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
@@ -473,221 +618,221 @@ export default function App() {
 
   return (
     <TooltipRoot>
-    <div
-      className="flex h-screen text-neutral-900 dark:text-neutral-100"
-      style={{ background: "var(--chrome-ground)" }}
+    <SidebarProvider
+      open={railOpen}
+      onOpenChange={setRailOpen}
+      className="h-screen min-h-0 text-foreground"
+      style={
+        {
+          background: "var(--chrome-ground)",
+          // 覆盖掉 shadcn 的 16rem / 3rem，理由见下面那段注释
+          "--sidebar-width": "196px",
+          "--sidebar-width-icon": "80px",
+          "--sidebar": "var(--chrome-rail)",
+          "--sidebar-border": "var(--chrome-hair)",
+        } as React.CSSProperties
+      }
     >
       {/*
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
-        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。
+        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。所以
+        `data-tauri-drag-region` 要一路传到 `Sidebar` 上。
 
         **可以收起。**收起之后只剩图标,内容区多出 116px —— 对一个开着
         不关、一直在看图表的应用,这是唯一真正改善主界面的方向。名字进
         悬浮说明,所以收起来不是把信息丢掉,是把它推迟到需要的时候。
 
-        **收起宽度 80px 不是审美选的,是红绿灯定的。**标题栏是 Overlay,
-        三颗灯浮在内容上,最右那颗绿灯的右边缘落在约 71pt 处。侧栏窄于
-        这个数,右边框就会从绿灯身上穿过去 —— 之前用 60px 正是如此。
-        80 给了它 9pt 余量。**改窄之前先量一遍那三颗灯。**
+        **两个宽度都是覆盖掉 shadcn 默认值的,而且各有各的理由。**
+        展开 196px(默认 256px 是给网页后台的,这里只放一列短词);收起
+        80px(默认 48px) —— 这个数不是审美选的,是红绿灯定的:标题栏是
+        Overlay,三颗灯浮在内容上,最右那颗绿灯的右边缘落在约 71pt 处,
+        侧栏窄于这个数,右边框就会从绿灯身上穿过去。80 给了它 9pt 余量。
+        **改窄之前先量一遍那三颗灯。**
 
-        **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分之一
-        的高度,而它们说的事情分隔线也说得出:这两项和上面那两项不一样。
-        代价是分组的**名字**没了 —— 认下这笔,换来整列读起来是一个对象,
-        而不是四个小区块。
+        开合状态仍然自己管(localStorage),没用 `SidebarProvider` 默认的
+        cookie —— 这是个本地应用,没有服务端要读它。
       */}
-      <aside
-        className={
-          "flex shrink-0 flex-col border-r transition-[width] duration-150 ease-out " +
-          (railOpen ? "w-[196px]" : "w-[80px]")
-        }
-        style={{
-          background: "var(--chrome-rail)",
-          borderColor: "var(--chrome-hair)",
-          color: "var(--chrome-text)",
-        }}
+      <Sidebar
+        collapsible="icon"
+        /* 线用源列表自己那支（带一点冷调），不是内容区的通用 --border */
+        className="border-r border-sidebar-border"
+        style={{ background: "var(--chrome-rail)", color: "var(--chrome-text)" }}
         data-tauri-drag-region
       >
         {/* 红绿灯占掉左上角,内容从它下面开始 */}
-        <div className="h-[38px] shrink-0" data-tauri-drag-region />
+        <SidebarHeader className="h-[38px] p-0" data-tauri-drag-region />
 
-        <nav
-          className={
-            "flex-1 overflow-y-auto pt-1 pb-3 " + (railOpen ? "px-[9px]" : "px-0")
-          }
-        >
+        <SidebarContent>
           {SOURCES.map((g, gi) => (
-            <div key={g.group}>
-              {gi > 0 && (
-                <div
-                  className="my-[11px] h-px"
-                  style={{
-                    background: "var(--chrome-hair)",
-                    marginInline: railOpen ? 8 : 21,
-                  }}
-                />
-              )}
-              {g.items.map((it) => {
-                const on = tab === it.id;
-                // 配置面上出现了新东西 —— 挂个角标,直到他去看过
-                const badge = it.id === "security" ? alerts.length : 0;
-                const Icon = it.icon;
-                const row = (
-                  <button
-                    key={it.id}
-                    onClick={() => setTab(it.id)}
-                    aria-current={on ? "page" : undefined}
-                    aria-label={railOpen ? undefined : it.label}
-                    className={
-                      "relative flex items-center rounded-md " +
-                      (railOpen
-                        ? "h-[32px] w-full gap-2.5 px-2 text-left tw-body "
-                        : "mx-auto my-[2px] h-[40px] w-[40px] justify-center ") +
-                      (on ? "tw-selected font-medium" : "hover:bg-[var(--chrome-hover)]")
-                    }
-                  >
-                    <Icon size={railOpen ? 16 : 19} />
-                    {railOpen && <span className="truncate">{it.label}</span>}
-                    {badge > 0 &&
-                      (railOpen ? (
-                        <span className="ml-auto rounded-full bg-red-500 px-1.5 tw-label leading-[15px] text-white">
-                          {badge}
-                        </span>
-                      ) : (
-                        // 收起时数字塞不下,只留一个点 —— 它要回答的是
-                        // 「那边有没有新东西」,几条可以点进去再看
-                        <span
-                          className="absolute right-[7px] top-[7px] h-[7px] w-[7px] rounded-full bg-red-500"
-                          style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
-                        />
-                      ))}
-                  </button>
-                );
-                return railOpen ? (
-                  row
-                ) : (
-                  <Tip
-                    key={it.id}
-                    side="right"
-                    text={badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label}
-                  >
-                    {row}
-                  </Tip>
-                );
-              })}
-            </div>
+            <SidebarGroup key={g.group} className="py-0">
+              {/*
+                **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分
+                之一的高度,而它们说的事情分隔线也说得出:这两项和上面那两
+                项不一样。代价是分组的**名字**没了 —— 认下这笔,换来整列读
+                起来是一个对象,而不是四个小区块。
+              */}
+              {gi > 0 && <SidebarSeparator className="my-[11px]" />}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {g.items.map((it) => {
+                    const on = tab === it.id;
+                    // 配置面上出现了新东西 —— 挂个角标,直到他去看过
+                    const badge = it.id === "security" ? alerts.length : 0;
+                    const Icon = it.icon;
+                    return (
+                      <SidebarMenuItem key={it.id}>
+                        <SidebarMenuButton
+                          isActive={on}
+                          onClick={() => setTab(it.id)}
+                          aria-current={on ? "page" : undefined}
+                          tooltip={
+                            badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label
+                          }
+                        >
+                          <Icon size={16} />
+                          <span className="truncate">{it.label}</span>
+                        </SidebarMenuButton>
+                        {badge > 0 && (
+                          <SidebarMenuBadge className="bg-red-500 text-white group-data-[collapsible=icon]:hidden">
+                            {badge}
+                          </SidebarMenuBadge>
+                        )}
+                        {/*
+                          收起时数字塞不下,只留一个点 —— 它要回答的是
+                          「那边有没有新东西」,几条可以点进去再看。
+                        */}
+                        {badge > 0 && (
+                          <span
+                            className="pointer-events-none absolute right-[7px] top-[7px] hidden h-[7px] w-[7px] rounded-full bg-red-500 group-data-[collapsible=icon]:block"
+                            style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
+                          />
+                        )}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           ))}
-        </nav>
+        </SidebarContent>
 
         {/*
           状态钉在源列表底部,不在标题栏。
           **它要一直看得见** —— core 挂了是这个应用唯一「什么都不工作」
-          的状态,而标题栏那一行会被内容顶掉。收起时只剩一个点,但那个点
-          仍然在,颜色仍然说明一切。
+          的状态,而标题栏那一行会被内容顶掉。
         */}
-        <div
-          className={
-            "shrink-0 border-t py-2 " + (railOpen ? "px-3" : "flex justify-center px-0")
-          }
-          style={{ borderColor: "var(--chrome-hair)" }}
-        >
-          {railOpen ? (
-            <>
-              <div
-                className={
-                  "flex items-center gap-1.5 tw-label " +
-                  (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : c.tone === "warn"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400")
-                }
-              >
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
-                {c.text}
-              </div>
-              {status?.gateway_addr && (
-                <code
-                  className="mt-0.5 block font-mono tw-label"
-                  style={{ color: "var(--chrome-dim)" }}
-                >
-                  {status.gateway_addr}
-                </code>
-              )}
-            </>
-          ) : (
-            <Tip
-              side="right"
-              text={
-                status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text
+        <SidebarFooter className="border-t" style={{ borderColor: "var(--chrome-hair)" }}>
+          <Tip
+            side="right"
+            text={status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text}
+          >
+            <div
+              className={
+                "flex items-center gap-1.5 tw-label " +
+                (c.tone === "ok"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : c.tone === "warn"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-red-600 dark:text-red-400")
               }
             >
-              {/*
-                80px 放得下「运行中」，所以字放回来了。
-                **有字之后点就不刺眼了** —— 它旁边有东西可读，是个标点，
-                而不是空列里唯一的一抹颜色。所以这里不再压不透明度，和
-                展开时用的是同一套颜色。
-
-                地址放不下（等宽 15 个字符要 79px），留在悬浮说明里。
-              */}
-              <div
-                className={
-                  "flex items-center gap-1 tw-label " +
-                  (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : c.tone === "warn"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400")
-                }
-              >
-                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+              {/* 展开时写全,收起时 80px 也放得下「运行中」四个字 */}
+              <span className="group-data-[collapsible=icon]:hidden">{c.text}</span>
+              <span className="hidden group-data-[collapsible=icon]:inline">
                 {c.short}
-              </div>
-            </Tip>
+              </span>
+            </div>
+          </Tip>
+          {status?.gateway_addr && (
+            <code
+              className="block font-mono tw-label group-data-[collapsible=icon]:hidden"
+              style={{ color: "var(--chrome-dim)" }}
+            >
+              {status.gateway_addr}
+            </code>
           )}
-        </div>
-      </aside>
+        </SidebarFooter>
+      </Sidebar>
 
       {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
       {/*
         分栏时滚动交给两栏各自管，外层不能再滚 —— 否则是两层滚动条，
         而外面那层会把整个分栏一起推走。
       */}
-      <div
-        className={
-          "flex min-w-0 flex-1 flex-col " +
-          (split ? "overflow-hidden" : "overflow-y-auto")
-        }
-      >
+      <div className="flex min-w-0 flex-1 flex-col">
         {/*
-          标题栏那一条。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个
-          属性的元素上,不带的子元素照常可点。
+          工具栏。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个属性的
+          元素上,不带的子元素照常可点。
+
+          **它在滚动容器外面。**之前它是滚动区的第一个子元素,于是往下
+          翻表格时整条跟着卷走了 —— 而这上面放的是「我在哪一页」和收起
+          源列表的开关,两样都是任何时候都该在的。现在滚的是它下面那层。
 
           **收起源列表的按钮放在这儿,不放在源列表里。**收起之后源列表
-          只有 60px 宽,按钮塞进去要么挤掉一个图标位,要么小到点不准;
+          只有 80px 宽,按钮塞进去要么挤掉一个图标位,要么小到点不准;
           而放在内容这一侧,它在两种状态下都在同一个位置。系统应用
           （访达、邮件)也是这么放的。
         */}
         <div
-          className="flex h-[38px] shrink-0 items-center px-3"
+          className="flex h-[38px] shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
           data-tauri-drag-region
         >
-          <Tip side="bottom" text={(railOpen ? "收起源列表" : "展开源列表") + "  ⌘⌥S"}>
-            <button
-              onClick={() => setRailOpen((v) => !v)}
+          {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
+          <Tip
+            side="bottom"
+            text={
+              <>
+                {railOpen ? "收起源列表" : "展开源列表"}
+                <KbdGroup>
+                  <Kbd>⌘</Kbd>
+                  <Kbd>⌥</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </>
+            }
+          >
+            {/*
+              **不要给它 `aria-expanded`。**`ghost` 变体里有一条
+              `aria-expanded:bg-muted` —— 那是给「下拉菜单正开着」用的。
+              挂上去之后,源列表展开时这个按钮常驻一块底色,而悬停是
+              `hover:bg-muted/50`,只有一半浓度:**看起来是反的**,碰上去
+              反而比不碰暗。`SidebarTrigger` 不设这个属性。
+            */}
+            <SidebarTrigger
               aria-label={railOpen ? "收起源列表" : "展开源列表"}
-              aria-expanded={railOpen}
-              className="rounded-md p-1 hover:bg-[var(--chrome-hover)]"
               style={{ color: "var(--chrome-dim)" }}
-            >
-              <IconSidebar size={16} />
-            </button>
+            />
           </Tip>
+
+          {/*
+            当前在哪一页。**收起源列表之后这是唯一的答案** —— 那时候
+            列表里只剩图标,「我在哪」只能靠认图形。展开时它和列表里的
+            高亮互相印证。
+
+            用 `tw-head` 不是 `tw-title`:它是位置指示,不是页面大标题,
+            抢戏就变成两个标题打架。
+          */}
+          <span
+            className="truncate tw-head"
+            style={{ color: "var(--chrome-text)" }}
+            data-tauri-drag-region
+          >
+            {SOURCES.flatMap((g) => g.items).find((i) => i.id === tab)?.label}
+          </span>
         </div>
-      {error && (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </div>
-      )}
+
+        {/*
+          只有这一层滚。工具栏在它上面，钉住不动。
+          分栏时滚动交给两栏各自管，这一层就不能再滚 —— 否则是两层
+          滚动条，而外面那层会把整个分栏一起推走。
+        */}
+        {/*
+          工具栏之下这一层。**滚动不在这儿** —— 请求页交给 `Split`
+          （分栏时两栏各滚各的），其余页面各自在自己的容器里滚。
+          在这儿再加一层滚动就是两层滚动条。
+        */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       {/*
         配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
@@ -696,10 +841,9 @@ export default function App() {
         第一句先说「还在按旧配置转发」，因为那是他最想知道的：会不会断。
       */}
       {rejected && (
-        <div className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 tw-body dark:border-amber-800 dark:bg-amber-950">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
-            配置没能生效，还在按上一份转发。
-          </p>
+        <Alert variant="warning" className="border-b px-5 py-2.5">
+          <AlertTitle>配置校验未通过，仍在使用上一版本</AlertTitle>
+          <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
             {rejected.stage}错误
             {rejected.line != null && `（第 ${rejected.line} 行）`}：{rejected.message}
@@ -709,7 +853,8 @@ export default function App() {
               {rejected.line}│ {rejected.excerpt}
             </pre>
           )}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {/*
@@ -724,10 +869,10 @@ export default function App() {
         r.persisted ? (
           <div
             key={r.provider}
-            className="flex items-start justify-between gap-4 border-b border-neutral-200 bg-neutral-50 px-5 py-2 tw-body dark:border-neutral-800 dark:bg-neutral-900"
+            className="flex items-start justify-between gap-4 border-b border-border bg-neutral-50 px-5 py-2 tw-body dark:bg-neutral-900"
           >
-            <p className="text-neutral-600 dark:text-neutral-400">
-              <span className="font-medium text-neutral-800 dark:text-neutral-200">
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">
                 {r.provider}
               </span>{" "}
               的 token 端点换发了新凭据，已写回 config.yaml
@@ -735,12 +880,14 @@ export default function App() {
                 <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器要重载</span>
               </Tip>
             </p>
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
+              className="shrink-0"
               onClick={clearRotated}
-              className="shrink-0 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
             >
               知道了
-            </button>
+            </Button>
           </div>
         ) : (
           <div
@@ -760,17 +907,30 @@ export default function App() {
                   <span className="font-medium">重启之前不处理，这家会一直 401</span>。
                 </p>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
                 onClick={clearRotated}
-                className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
               >
                 知道了
-              </button>
+              </Button>
             </div>
           </div>
         ),
       )}
 
+      {/*
+        **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
+        真正滚的是下面这个容器（请求页是 `Split` 里的两栏各滚各的）。
+      */}
+      <div
+        className={
+          "flex min-h-0 flex-1 flex-col " +
+          // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
+          (tab === "requests" ? "overflow-hidden" : "overflow-y-auto")
+        }
+      >
       {tab === "sessions" ? (
         <Sessions />
       ) : tab === "dashboard" ? (
@@ -790,7 +950,7 @@ export default function App() {
             onChanged={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "keys" ? (
         ov ? (
@@ -800,7 +960,7 @@ export default function App() {
             onChanged={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "routing" ? (
         ov ? (
@@ -820,7 +980,7 @@ export default function App() {
             />
           </>
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "upstreams" || tab === "config" || tab === "settings" ? (
         ov ? (
@@ -835,78 +995,101 @@ export default function App() {
             onProviderAdded={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : (
-      <main className={split ? "flex min-h-0 flex-1 overflow-hidden" : ""}>
-        <div className={split ? "min-w-0 flex-1 overflow-y-auto p-5" : "p-5"}>
+      <Split
+        split={split}
+        layout={splitLayout}
+        onLayout={(l) => {
+          try {
+            window.localStorage.setItem("tw-split", JSON.stringify(l));
+          } catch {
+            // 隐私模式之类。记不住而已，不值得为它中断
+          }
+        }}
+        detail={
+          split && open != null ? (
+            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
+          ) : null
+        }
+      >
         {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
         */}
         {allRows.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <input
+            <Input
+              className="w-64"
               ref={searchRef}
               value={filter.q}
               onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
               placeholder="搜索路径、客户端、上游、错误…  ⌘F"
               spellCheck={false}
-              className="w-64 rounded-md border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <button
-              onClick={() => setFilter((f) => ({ ...f, failedOnly: !f.failedOnly }))}
-              className={
-                "rounded-md px-2 py-1 tw-body " +
-                (filter.failedOnly
-                  ? "bg-red-600 text-white"
-                  : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800")
-              }
+            {/* 这是个开关,不是按钮 —— 按下去它要一直保持按下的样子 */}
+            <Toggle
+              variant="outline"
+              size="sm"
+              pressed={filter.failedOnly}
+              onPressedChange={(v) => setFilter((f) => ({ ...f, failedOnly: v }))}
             >
               只看失败
-            </button>
+            </Toggle>
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
             {facet.clients.length > 1 && (
-              <select
+              <NativeSelect
+                size="sm"
                 value={filter.client}
-                onChange={(e) => setFilter((f) => ({ ...f, client: e.target.value }))}
-                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 tw-body dark:border-neutral-700"
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, client: e.target.value }))
+                }
               >
-                <option value="">全部客户端</option>
+                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
+                <NativeSelectOption value="">不限客户端</NativeSelectOption>
                 {facet.clients.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <NativeSelectOption key={c} value={c}>
+                    {c}
+                  </NativeSelectOption>
                 ))}
-              </select>
+              </NativeSelect>
             )}
             {facet.providers.length > 1 && (
-              <select
+              <NativeSelect
+                size="sm"
                 value={filter.provider}
-                onChange={(e) => setFilter((f) => ({ ...f, provider: e.target.value }))}
-                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 tw-body dark:border-neutral-700"
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, provider: e.target.value }))
+                }
               >
-                <option value="">全部上游</option>
+                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
+                <NativeSelectOption value="">不限上游</NativeSelectOption>
                 {facet.providers.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <NativeSelectOption key={c} value={c}>
+                    {c}
+                  </NativeSelectOption>
                 ))}
-              </select>
+              </NativeSelect>
             )}
             {/*
               **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」
               的话，用户会以为总共就这么多 —— 这是过滤器最常见的骗人方式。
             */}
-            <span className="ml-auto tw-label text-neutral-500">
+            <span className="ml-auto tw-label text-muted-foreground">
               {hasAnyFilter(filter)
                 ? `${rows.length} / ${allRows.length} 条`
                 : `${allRows.length} 条`}
             </span>
             {hasAnyFilter(filter) && (
-              <button
+              <Button
+                variant="link"
+                size="xs"
                 onClick={() => setFilter(EMPTY_FILTER)}
-                className="tw-label text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
               >
                 清空
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -917,77 +1100,108 @@ export default function App() {
           以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
         */}
         {status?.providers === 0 && (
-          <div className="mb-4 rounded-lg border border-neutral-300 bg-neutral-100 p-4 dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
             <p className="tw-head font-medium">先加一个上游</p>
-            <p className="mt-1 tw-body text-neutral-600 dark:text-neutral-400">
+            <p className="mt-1 tw-body text-muted-foreground">
               网关已经起来了，在{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
                 http://{status.gateway_addr}
               </code>{" "}
               听着，但还没有地方可以转发。加一个上游只要地址和密钥。
             </p>
-            <button
+            <Button
+              size="sm"
+              className="mt-3"
               onClick={() => setTab("config")}
-              className="mt-3 rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
               去配置页加
-            </button>
+            </Button>
           </div>
         )}
-        {rows.length === 0 ? (
-          // 空状态永远在回答「接下来该做什么」。
-          <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
-            <p className="tw-head text-neutral-600 dark:text-neutral-400">
-              还没有请求经过。
-            </p>
-            <p className="mt-2 tw-body text-neutral-500">
-              把客户端指到{" "}
-              <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
-                http://{status?.gateway_addr ?? "127.0.0.1:8788"}
-              </code>
-              ，用配置里那把 tw- 开头的密钥。
-              <br />
-              第一个请求进来时，它会出现在这里。
-            </p>
-            {locallyAnswered > 0 && (
-              // **这句话信息量很大**：客户端已经连上了，只是还没发过真实
-              // 请求。没有它，用户会以为整条链路都不通。
-              <p className="mt-3 tw-body text-emerald-700 dark:text-emerald-300">
-                已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
-              </p>
-            )}
-            {/*
-              **空状态永远在回答「接下来该做什么」**。原来只说
-              了「把客户端指过来」，而没给他一条走过去的路 —— 那句话对
-              一个不想自己改 settings.json 的人等于没说。
-            */}
-            <button
-              onClick={() => setTab("clients")}
-              className="mt-4 rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
-              写入客户端配置
-            </button>
-          </div>
+        {seeded && rows.length === 0 ? (
+          allRows.length > 0 ? (
+            /*
+              有记录，只是全被筛掉了。**这时候说「暂无请求记录」是错的**
+              —— 用户会以为网关断了，而实际上清掉条件就看得见。
+            */
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>没有符合条件的请求</EmptyTitle>
+                <EmptyDescription>
+                  共 {allRows.length} 条记录，当前筛选条件下没有匹配项。
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
+                  清除筛选条件
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            // 空状态永远在回答「接下来该做什么」。
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>暂无请求记录</EmptyTitle>
+                <EmptyDescription>
+                  把客户端指到{" "}
+                  <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+                    http://{status?.gateway_addr ?? "127.0.0.1:8788"}
+                  </code>
+                  ，用配置里那把 tw- 开头的密钥。
+                  <br />
+                  第一个请求进来时，它会出现在这里。
+                </EmptyDescription>
+                {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
+                    拿一个零冒充证据 */}
+                {locallyAnswered > 0 && (
+                  <EmptyDescription>
+                    已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
+                  </EmptyDescription>
+                )}
+              </EmptyHeader>
+            </Empty>
+          )
         ) : (
-          <table className="w-full text-left tw-body tw-num">
+          <Table className="tw-num">
             {/*
               **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
               两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
               那恰恰是排查时唯一要看的区别。
             */}
-            <thead className="sticky top-0 z-10 bg-neutral-50 text-neutral-500 dark:bg-neutral-950">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
+            <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
+              <TableRow>
                 <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
                 <Th k="time" label="时间" sort={sortKey} dir={sortDir} on={toggleSort} />
-                <th className="font-medium">客户端</th>
-                <th className="font-medium">上游</th>
-                <th className="font-medium">路径</th>
+                {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
+                {showClient && <TableHead>客户端</TableHead>}
+                <TableHead>模型</TableHead>
+                <TableHead>上游</TableHead>
                 {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
                 <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="bytes" label="大小" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th k="tokens" label="token" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="cost" label="花费" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+              </TableRow>
+            </TableHeader>
+            {/*
+              走到这里还是空的，只可能是历史没读完 —— 「读完了，确实一条
+              都没有」在上面那一支里已经处理掉了。**事件流先到的行不能被
+              骨架盖住**：那时数据已经在手上了。
+            */}
+            {rows.length === 0 ? (
+              <BodySkeleton
+                widths={[
+                  "w-10",
+                  "w-16",
+                  ...(showClient ? ["w-14"] : []),
+                  "w-32",
+                  "w-16",
+                  "w-16 ml-auto",
+                  "w-14 ml-auto",
+                  "w-12 ml-auto",
+                ]}
+              />
+            ) : (
+            <TableBody>
               {rows.map((r, i) => (
                 <RowMenu
                   key={r.id}
@@ -1002,11 +1216,15 @@ export default function App() {
                       label: `只看上游 ${r.provider}`,
                       onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
                     },
-                    {
-                      kind: "item",
-                      label: `只看客户端 ${r.client}`,
-                      onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
-                    },
+                    ...(showClient
+                      ? ([
+                          {
+                            kind: "item",
+                            label: `只看客户端 ${r.client}`,
+                            onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
+                          },
+                        ] as const)
+                      : []),
                     { kind: "sep" },
                     {
                       kind: "item",
@@ -1021,10 +1239,13 @@ export default function App() {
                           [
                             new Date(r.atMs).toLocaleString(),
                             r.client,
+                            r.model ?? "",
                             r.provider,
                             r.path,
                             r.status ?? r.state,
                             r.durationMs != null ? `${r.durationMs}ms` : "",
+                            tokens(r.inputTokens, r.outputTokens),
+                            money(r.costMicros, r.costEstimated),
                             r.error ?? "",
                           ]
                             .filter(Boolean)
@@ -1033,7 +1254,7 @@ export default function App() {
                     },
                   ]}
                 >
-                <tr
+                <TableRow
                   onClick={() => {
                     setCursor(rows.indexOf(r));
                     setOpen(r.id);
@@ -1051,7 +1272,7 @@ export default function App() {
                     状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
                     眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
                   */}
-                  <td className="py-1 whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap">
                     {(() => {
                       const tone = statusTone(r.status, r.state);
                       const dot =
@@ -1075,18 +1296,37 @@ export default function App() {
                         </span>
                       );
                     })()}
-                  </td>
-                  {/* 时间：列表要的是「刚才那条」，绝对时间留给悬停 */}
-                  <td className="whitespace-nowrap text-neutral-400">
+                  </TableCell>
+                  {/*
+                    时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
+                    看昨天那次时，整列全是「1d」，而这一列的用途就是把
+                    某一行对上号。相对时间留给悬停。
+                  */}
+                  <TableCell className="whitespace-nowrap text-neutral-400">
                     <Tip text={new Date(r.atMs).toLocaleString()}>
-                      <span>{ago(r.atMs, nowTick)}</span>
+                      <span>{when(r.atMs, today)}</span>
                     </Tip>
-                  </td>
+                  </TableCell>
                   {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                  <td className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
-                    {r.client}
-                  </td>
-                  <td className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
+                  {showClient && (
+                    <TableCell className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
+                      {r.client}
+                    </TableCell>
+                  )}
+                  {/*
+                    模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
+                    连着发的两次请求，差别往往只在这里。
+                  */}
+                  <TableCell
+                    className={repeated(rows, i, (x) => x.model ?? "") ? "text-neutral-400/50" : ""}
+                  >
+                    {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
+                        自己的列宽算法吃掉，长名字照样把这一列撑开 */}
+                    <div className="max-w-[13rem] truncate" title={r.model}>
+                      {r.model ?? "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
                     {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
                         是脱敏搞坏了功能。所以脱敏发生了就要在
@@ -1142,83 +1382,88 @@ export default function App() {
                         {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
                       </span>
                     )}
-                  </td>
-                  <td
-                    className={
-                      "truncate " +
-                      (repeated(rows, i, (x) => x.path)
-                        ? "text-neutral-400/50"
-                        : "text-neutral-500")
-                    }
-                  >
-                    {r.path}
-                  </td>
+                  </TableCell>
                   {/*
                     数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
                     扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
                     扫出极值。
                   */}
-                  <td className="whitespace-nowrap text-right">
+                  <TableCell className="whitespace-nowrap text-right">
                     {latency(r.ttfbMs, r.durationMs)}
-                  </td>
-                  <td className="whitespace-nowrap text-right text-neutral-400">
-                    {bytes(r.bytes)}
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-neutral-400">
+                    {tokens(r.inputTokens, r.outputTokens)}
+                  </TableCell>
+                  {/*
+                    **估算值必须带记号。**猜出来的金额和账单上的数字在
+                    列表里长得一模一样，而它们不是一回事。
+                  */}
+                  <TableCell className="whitespace-nowrap text-right">
+                    {r.costEstimated ? (
+                      <Tip text="上游未返回用量，此金额按请求长度估算。">
+                        <span className="underline decoration-dotted underline-offset-2">
+                          {money(r.costMicros, true)}
+                        </span>
+                      </Tip>
+                    ) : (
+                      <span className={r.costMicros == null ? "text-neutral-400" : ""}>
+                        {money(r.costMicros, false)}
+                      </span>
+                    )}
+                  </TableCell>
+                </TableRow>
                 </RowMenu>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+            )}
+          </Table>
         )}
         {locallyAnswered > 0 && rows.length > 0 && (
-          <p className="mt-3 tw-body text-neutral-500">
+          <p className="mt-3 tw-body text-muted-foreground">
             另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
           </p>
         )}
-        </div>
-        {/* 检查器常驻右栏：看详情的时候列表还在，两边能来回对照 */}
-        {split && (
-          <div className="w-[min(30rem,45%)] shrink-0">
-            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
-          </div>
-        )}
-      </main>
+      </Split>
       )}
       {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+        </div>
+        </div>
       </div>
 
       {/* 浮层挂在最外层，不跟着右列滚动 */}
-      <Dialog
-        open={askQuit}
-        onOpenChange={setAskQuit}
-        danger
-        width="max-w-sm"
-        title="退出 ThinkWatch Lite？"
-        description={
-          <>
-            <p>
+      <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
+        <AlertDialogContent className="sm:max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>退出 ThinkWatch Lite？</AlertDialogTitle>
+            <AlertDialogDescription>
               所有接管过的客户端会立刻失联 —— 它们指着的端口后面就没东西在听了。
-            </p>
-            <p className="mt-1.5 text-neutral-500">
-              只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
-            </p>
-          </>
-        }
-        footer={
-          <>
-            <DialogButton onClick={() => setAskQuit(false)}>取消</DialogButton>
-            <DialogButton kind="danger" onClick={() => void invoke("quit_app")}>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="tw-body text-muted-foreground">
+            仅关闭窗口请按 ⌘W，进程将保留在菜单栏。
+          </p>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
+              onClick={() => void invoke("quit_app")}
+            >
               退出
-            </DialogButton>
-          </>
-        }
-      />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />
       )}
-    </div>
+      {/*
+        **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，
+        于是同一句「还没读到配置版本」有六份实现，而滚出视野的那几份用户
+        根本看不到。吐司统一在右下角，谁触发的都一样。
+      */}
+      <Toaster position="bottom-right" closeButton />
+    </SidebarProvider>
     </TooltipRoot>
   );
 }

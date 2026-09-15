@@ -4188,7 +4188,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "tw-api"
 version = "0.1.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?branch=main#4d777064540fcefa052d063eab676989351655a0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?branch=main#c3e1a3379ed3b37e8cffc3337f05dd99a45e5f9b"
 dependencies = [
  "serde",
  "serde_json",

@@ -166,9 +166,23 @@ impl ControlClient {
         self.post_json("/l1", &req).await
     }
 
-    /// 今天的汇总。
-    pub async fn summary(&self) -> Result<tw_api::Summary> {
-        Ok(serde_json::from_slice(&self.get("/summary").await?)?)
+    /// 一个时间窗内的汇总。不给窗口就是 core 的默认口径（今天）。
+    pub async fn summary(&self, from_ms: Option<i64>) -> Result<tw_api::Summary> {
+        let path = match from_ms {
+            Some(f) => format!("/summary?from_ms={f}"),
+            None => "/summary".to_string(),
+        };
+        Ok(serde_json::from_slice(&self.get(&path).await?)?)
+    }
+
+    /// 一段闭区间的汇总。**概览拿它算「较上一个区间」** —— 一个没有
+    /// 参照系的金额只能读，不能判断。
+    pub async fn summary_range(&self, from_ms: i64, to_ms: i64) -> Result<tw_api::Summary> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/summary?from_ms={from_ms}&to_ms={to_ms}"))
+                .await?,
+        )?)
     }
 
     /// 按时间分桶的花费（概览的趋势图）。
@@ -191,6 +205,25 @@ impl ControlClient {
 
     /// 按模型或上游分组的花费。`dim` 只有 `model` / `provider` 两个值 ——
     /// core 那边是个枚举，写错的值在那里被拒掉。
+    /// 按时间分桶、再按模型分层的花费（概览那张堆叠面积图）。
+    ///
+    /// 桶边界和 `cost_buckets` 是同一套算法，**必须如此**：界面按同一个
+    /// 起点补空桶，差一格就会把有数据的那一格画在空位置上。
+    pub async fn cost_buckets_by(
+        &self,
+        dim: &str,
+        from_ms: i64,
+        bucket_ms: i64,
+    ) -> Result<Vec<tw_api::CostBucketGroup>> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!(
+                    "/summary/buckets/by?dim={dim}&from_ms={from_ms}&bucket_ms={bucket_ms}"
+                ))
+                .await?,
+        )?)
+    }
+
     pub async fn cost_by(&self, dim: &str, from_ms: i64) -> Result<Vec<tw_api::CostGroup>> {
         Ok(serde_json::from_slice(
             &self
@@ -270,13 +303,6 @@ impl ControlClient {
     pub async fn mcp_apply(&self, req: tw_api::McpOpRequest) -> Result<tw_api::AdoptResponse> {
         self.send_json(hyper::Method::POST, "/mcp/apply", &req)
             .await
-    }
-
-    /// 把一条真实请求导出成回放用例（YAML，已脱敏）。
-    pub async fn fixture(&self, id: i64) -> Result<String> {
-        Ok(String::from_utf8(
-            self.get(&format!("/request/{id}/fixture")).await?,
-        )?)
     }
 
     /// 诊断包的正文（Markdown，已脱敏）。
