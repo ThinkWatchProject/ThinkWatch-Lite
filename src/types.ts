@@ -328,7 +328,12 @@ export interface Summary {
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
   subscription_tokens: number;
-  /** 缓存命中一共省下了多少微分。**算的是差额** */
+  /**
+   * 用了缓存之后净省下多少微分。
+   *
+   * **净的：命中省下的减去写入多花的。**缓存写是 1.25 倍单价，所以
+   * 这个数可以是负的 —— 而负数是一条结论：这个用法上缓存在亏钱。
+   */
   cache_saved_micros: number;
   /** 价目表的快照日期。**成本旁边要标它** */
   pricing_date: string;
@@ -433,10 +438,29 @@ export interface Dashboard {
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets?: CostBucket[];
+  /**
+   * 同样的格子，再按模型分层。
+   *
+   * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
+   * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
+   */
+  buckets_by_model?: CostBucketGroup[];
   by_model?: CostGroup[];
   by_provider?: CostGroup[];
-  /** 上面三样的时间窗起点，补空桶要用 */
+  /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
+  prev?: Summary | null;
+  /** 上面几样的时间窗起点，补空桶要用 */
   since_ms?: number;
+}
+
+/** 一个时间桶里，某一个模型的那部分。 */
+export interface CostBucketGroup {
+  at_ms: number;
+  name: string;
+  requests: number;
+  failed: number;
+  cost_micros_exact: number;
+  cost_micros_estimated: number;
 }
 
 /** 按模型或上游分组的花费。 */

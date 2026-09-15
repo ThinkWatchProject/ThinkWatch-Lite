@@ -59,6 +59,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-cache-hit: var(--cache-hit);
+  --color-cache-plain: var(--cache-plain);
+  --color-cache-write: var(--cache-write);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -147,11 +150,27 @@
   --input: oklch(87% 0 none); /* neutral-300：控件边 */
   --ring: oklch(55.6% 0 none);
   --radius: 0.5rem;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* **图表的五档是一条蓝色渐变，不是五个灰。**
+   *
+   * shadcn 的中性主题把这五个 token 全给了灰（chroma 全是 0），而概览
+   * 上唯一有颜色的东西就是图 —— 于是整页看着灰扑扑的。
+   *
+   * 用同一个色相的深浅、而不是五个不相干的颜色，是因为它们画的是**一个
+   * 量的组成部分**（这段时间的钱，按模型分）。五个撞色会让人以为它们
+   * 是五类不同的东西。深的在上、浅的在下：贵的模型视觉上也重。
+   *
+   * 红和琥珀不在这条渐变里 —— 那两个颜色整页只留给「出事了」。 */
+  --chart-1: oklch(0.52 0.12 258);
+  --chart-2: oklch(0.63 0.095 253);
+  --chart-3: oklch(0.72 0.07 249);
+  --chart-4: oklch(0.8 0.05 246);
+  --chart-5: oklch(0.86 0.032 243);
+  /* 缓存那根条的三段。**排的是价位，不是类别**：命中 0.1 倍、新输入
+   * 1 倍、写入 1.25 倍 —— 条子上亮的那段越长越好。写入用一档收着的
+   * 琥珀（不是告警那个 `--warning`）：它是唯一会让缓存亏钱的部分。 */
+  --cache-hit: oklch(0.62 0.115 174);
+  --cache-plain: oklch(0.68 0 none);
+  --cache-write: oklch(0.68 0.1 74);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -186,11 +205,15 @@
     --border: oklch(26.9% 0 none); /* neutral-800 */
     --input: oklch(37.1% 0 none); /* neutral-700 */
     --ring: oklch(55.6% 0 none);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+    /* 深底上整条渐变要往亮里挪一档，否则最下面那层黑得像阴影 */
+    --chart-1: oklch(0.82 0.1 262);
+    --chart-2: oklch(0.65 0.09 256);
+    --chart-3: oklch(0.51 0.065 251);
+    --chart-4: oklch(0.42 0.045 247);
+    --chart-5: oklch(0.35 0.03 244);
+    --cache-hit: oklch(0.76 0.12 174);
+    --cache-plain: oklch(0.63 0 none);
+    --cache-write: oklch(0.72 0.1 74);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
