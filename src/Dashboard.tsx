@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { toast } from "sonner";
 import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
 import { Item } from "@/ui/item";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { Skeleton } from "@/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -31,6 +31,42 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+/**
+ * 读数据时的骨架。
+ *
+ * **不是一句「读取中…」。**那一行字占的地方和真正的内容差着两百像素，
+ * 读完之后整页会跳一次；而这一页最大的那个数字恰好在跳动的位置上。
+ * 骨架先按真实版面占位：金额、趋势图、三格指标，各自在自己的位置上。
+ */
+function OverviewSkeleton() {
+  return (
+    <>
+      <div className="mt-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <div className="mt-3">
+          <Skeleton className="h-[72px] w-full" />
+          <div className="mt-1 flex justify-between">
+            <Skeleton className="h-2.5 w-24" />
+            <Skeleton className="h-2.5 w-8" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <Item key={i} variant="outline" className="flex-col items-stretch gap-1">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-2.5 w-24" />
+          </Item>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** 一格的时间标签。桶宽超过一天就只写日期，否则写到小时。 */
 function fmtBucket(atMs: number, bucketMs: number): string {
   const t = new Date(atMs);
@@ -41,10 +77,13 @@ function fmtBucket(atMs: number, bucketMs: number): string {
 }
 
 /**
- * 今天的账。
+ * 用量概览。
  *
  * 这一页的每一个数字都受那条约束：**绝不让估算值混进精确数字里
  * 假装准确。**所以成本是三个数并排，不是一个。
+ *
+ * 口径由页头那个时间范围决定，不是固定的「今天」——「上个月账单对不上」
+ * 和「刚才那阵是不是我自己跑的」是两个问题，而它们要的窗口不一样。
  */
 export default function Dashboard({ tick }: { tick: number }) {
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);
@@ -81,6 +120,19 @@ export default function Dashboard({ tick }: { tick: number }) {
     };
   }, [tick, range.ms]);
 
+  /*
+    标题和时间范围在读到数据之前就该在那儿 —— 它们不依赖数据，而且
+    切换范围本身就是「重读一次」的入口。骨架只盖数据那一块。
+  */
+  const header = (
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="tw-title font-semibold">用量概览</h2>
+      <div className="ml-auto">
+        <RangePicker value={range} onChange={setRange} />
+      </div>
+    </div>
+  );
+
   if (error) {
     return (
       <div className="p-5">
@@ -92,7 +144,16 @@ export default function Dashboard({ tick }: { tick: number }) {
       </div>
     );
   }
-  if (!d) return <p className="p-5 tw-body text-muted-foreground">读取中…</p>;
+  if (!d) {
+    return (
+      <div className="p-5">
+        <section>
+          {header}
+          <OverviewSkeleton />
+        </section>
+      </div>
+    );
+  }
 
   const s = d.summary;
   const t = triggers(null, d);
@@ -104,134 +165,128 @@ export default function Dashboard({ tick }: { tick: number }) {
   return (
     <div className="space-y-8 p-5">
       <section>
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="tw-title font-semibold">用量概览</h2>
-          <div className="ml-auto">
-            <RangePicker value={range} onChange={setRange} />
+        {header}
+
+        {/*
+          **金额是主角，趋势图是它站的地面。**
+          数字回答「多少」，形状回答「什么时候」—— 它们是一句话，
+          所以图紧贴在数字下面、全宽、不套框也不加标题。
+        */}
+        <div className="mt-4">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="tw-num tw-display">
+              {usd(s.cost_micros_exact + s.cost_micros_estimated)}
+            </span>
+            <span className="tw-body text-muted-foreground">
+              {s.requests.toLocaleString()} 次请求
+              {s.failed > 0 && ` · ${s.failed} 次失败`}
+            </span>
+            {hasEstimate && (
+              <Tip text="上游未返回用量，或该模型的单价来自其他平台。这部分金额为估算值。">
+                <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
+                  含估算 {usd(s.cost_micros_estimated)}
+                </span>
+              </Tip>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <BarChart
+              height={72}
+              empty="所选区间内无请求记录。"
+              bars={densify(
+                d.buckets ?? [],
+                d.since_ms ?? 0,
+                Date.now(),
+                bucketMs,
+              ).map((b) => ({
+                at: b.at_ms,
+                value: (b.cost_micros_exact + b.cost_micros_estimated) / 1000,
+                sub: b.failed > 0 ? 1 : 0,
+                label: `${fmtBucket(b.at_ms, bucketMs)}　${usd(
+                  b.cost_micros_exact + b.cost_micros_estimated,
+                )}　${b.requests} 次${b.failed ? `（${b.failed} 次失败）` : ""}`,
+              }))}
+            />
+            <div className="mt-1 flex justify-between tw-label text-muted-foreground">
+              <span>{fmtBucket(d.since_ms ?? 0, bucketMs)}</span>
+              <span>现在</span>
+            </div>
           </div>
         </div>
 
-        {nothingYet ? (
-          <Empty className="mt-3">
-            <EmptyHeader>
-              <EmptyTitle>暂无请求记录</EmptyTitle>
-              <EmptyDescription>
-                将客户端指向 {gatewayHint}，数据将在此显示。
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <>
-            {/*
-              **金额是主角，趋势图是它站的地面。**
-              数字回答「多少」，形状回答「什么时候」—— 它们是一句话，
-              所以图紧贴在数字下面、全宽、不套框也不加标题。
-            */}
-            <div className="mt-4">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="tw-num tw-display">
-                  {usd(s.cost_micros_exact + s.cost_micros_estimated)}
-                </span>
-                <span className="tw-body text-muted-foreground">
-                  {s.requests.toLocaleString()} 次请求
-                  {s.failed > 0 && ` · ${s.failed} 次失败`}
-                </span>
-                {hasEstimate && (
-                  <Tip text="上游未返回用量，或该模型的单价来自其他平台。这部分金额为估算值。">
-                    <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
-                      含估算 {usd(s.cost_micros_estimated)}
-                    </span>
-                  </Tip>
-                )}
-              </div>
+        {/*
+          这三格放的是**别的工具给不出来的数**。请求数、token 数那类
+          通用指标跟在金额后面走，不单独占位。
+        */}
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <Fact
+            label="缓存节省"
+            value={s.cache_saved_micros > 0 ? usd(s.cache_saved_micros) : "—"}
+            hint={
+              s.cache_saved_micros > 0
+                ? `占实际支出的 ${Math.round(
+                    (s.cache_saved_micros /
+                      Math.max(1, s.cache_saved_micros + s.cost_micros_exact)) *
+                      100,
+                  )}%`
+                : "本区间无缓存命中"
+            }
+          />
+          <Fact
+            label="本地应答"
+            value={`${s.locally_answered}`}
+            hint="未转发至上游，无费用"
+          />
+          <Fact
+            label="未计价请求"
+            value={`${s.unpriced_requests}`}
+            hint={
+              s.unpriced_requests > 0
+                ? "该模型不在价目表中，金额未计入"
+                : "全部请求均已计价"
+            }
+          />
+        </div>
 
-              <div className="mt-3">
-                <BarChart
-                  height={72}
-                  empty="所选区间内无请求记录。"
-                  bars={densify(
-                    d.buckets ?? [],
-                    d.since_ms ?? 0,
-                    Date.now(),
-                    bucketMs,
-                  ).map((b) => ({
-                    at: b.at_ms,
-                    value: (b.cost_micros_exact + b.cost_micros_estimated) / 1000,
-                    sub: b.failed > 0 ? 1 : 0,
-                    label: `${fmtBucket(b.at_ms, bucketMs)}　${usd(
-                      b.cost_micros_exact + b.cost_micros_estimated,
-                    )}　${b.requests} 次${b.failed ? `（${b.failed} 次失败）` : ""}`,
-                  }))}
-                />
-                <div className="mt-1 flex justify-between tw-label text-muted-foreground">
-                  <span>{fmtBucket(d.since_ms ?? 0, bucketMs)}</span>
-                  <span>现在</span>
-                </div>
-              </div>
-            </div>
-
-            {/*
-              这三格放的是**别的工具给不出来的数**。请求数、token 数那类
-              通用指标跟在金额后面走，不单独占位。
-            */}
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <Fact
-                label="缓存节省"
-                value={s.cache_saved_micros > 0 ? usd(s.cache_saved_micros) : "—"}
-                hint={
-                  s.cache_saved_micros > 0
-                    ? `占实际支出的 ${Math.round(
-                        (s.cache_saved_micros /
-                          Math.max(1, s.cache_saved_micros + s.cost_micros_exact)) *
-                          100,
-                      )}%`
-                    : "本区间无缓存命中"
-                }
-              />
-              <Fact
-                label="本地应答"
-                value={`${s.locally_answered}`}
-                hint="未转发至上游，无费用"
-              />
-              <Fact
-                label="未计价请求"
-                value={`${s.unpriced_requests}`}
-                hint={
-                  s.unpriced_requests > 0
-                    ? "该模型不在价目表中，金额未计入"
-                    : "不限请求均已计价"
-                }
-              />
-            </div>
-
-            {s.subscription_requests > 0 && (
-              <p className="mt-3 tw-body text-muted-foreground">
-                订阅额度调用 {s.subscription_requests} 次，
-                {s.subscription_tokens.toLocaleString()} token，不计入金额。
-              </p>
-            )}
-
-            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
-              <dt className="text-muted-foreground">输入 / 输出</dt>
-              <dd className="tw-num">
-                {s.input_tokens.toLocaleString()} / {s.output_tokens.toLocaleString()} token
-              </dd>
-              <dt className="text-muted-foreground">缓存读 / 写</dt>
-              <dd className="tw-num">
-                {s.cache_read_tokens.toLocaleString()} / {s.cache_write_tokens.toLocaleString()}{" "}
-                token
-              </dd>
-              <dt className="text-muted-foreground">价目表版本</dt>
-              <dd className="tw-num">{s.pricing_date}</dd>
-            </dl>
-          </>
+        {/*
+          一条记录都没有时**保留版面，不换成一张空卡片**。
+          把整页塌成一行字，等于让用户每次打开都先经历一次「这个
+          应用是不是坏了」；而金额 $0、空的趋势图、三个「—」本身
+          就是答案：确实什么都还没发生。下面这句只补「接下来做什么」。
+        */}
+        {nothingYet && (
+          <p className="mt-4 tw-body text-muted-foreground">
+            将客户端指向{gatewayHint}后，用量与费用将在此处显示。
+          </p>
         )}
+
+        {s.subscription_requests > 0 && (
+          <p className="mt-3 tw-body text-muted-foreground">
+            订阅额度调用 {s.subscription_requests} 次，
+            {s.subscription_tokens.toLocaleString()} token，不计入金额。
+          </p>
+        )}
+
+        <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
+          <dt className="text-muted-foreground">输入 / 输出</dt>
+          <dd className="tw-num">
+            {s.input_tokens.toLocaleString()} / {s.output_tokens.toLocaleString()} token
+          </dd>
+          <dt className="text-muted-foreground">缓存读 / 写</dt>
+          <dd className="tw-num">
+            {s.cache_read_tokens.toLocaleString()} / {s.cache_write_tokens.toLocaleString()}{" "}
+            token
+          </dd>
+          <dt className="text-muted-foreground">价目表版本</dt>
+          <dd className="tw-num">{s.pricing_date}</dd>
+        </dl>
       </section>
 
       {/*
         出站密钥检测攒下的证据。**只在真的发现过东西时出现** ——
         没发现的时候显示一句「一切正常」是在占地方，而这一块的
-        不限说服力来自「它说的是已经发生在你身上的事」。
+        全部说服力来自「它说的是已经发生在你身上的事」。
       */}
       {d.leaks.length > 0 && (
         <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
@@ -309,7 +364,7 @@ export default function Dashboard({ tick }: { tick: number }) {
         <section>
           <div className="flex items-baseline gap-3">
             <h2 className="tw-title font-semibold">成本构成</h2>
-            <span className="tw-body text-neutral-400">最近 24 小时</span>
+            <span className="tw-body text-neutral-400">{range.label}</span>
           </div>
           <div className="mt-2 grid gap-5 lg:grid-cols-2">
             <div>
