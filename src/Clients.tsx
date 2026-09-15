@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -9,6 +9,12 @@ import type {
   PlanView,
 } from "./types";
 import { Button } from "@/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 客户端接管页。
@@ -359,19 +365,35 @@ function Badge({ tone, children }: { tone: "ok" | "wait" | "idle"; children: Rea
   return <span className={`rounded px-1.5 py-0.5 tw-label ${cls}`}>{children}</span>;
 }
 
-function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+/**
+ * 这几屏共用的对话框外壳。
+ *
+ * **原来是手写的 `fixed inset-0` 浮层。**它缺的东西和另外三处一模一样:
+ * Esc 关不掉、Tab 会跑到背景里去、打开时焦点不进来、关上之后焦点不回到
+ * 触发它的那个按钮、读屏软件不知道这是个对话框。每一件都能自己补,而四
+ * 份手写的实现里一定有几份是错的。
+ *
+ * `title` 是新收的参数:shadcn 的 `DialogContent` 要求必须有
+ * `DialogTitle`,那正是读屏软件念出来的那一句。
+ */
+function Shell({
+  title,
+  children,
+  onClose,
+}: {
+  title: React.ReactNode;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -392,10 +414,7 @@ function PlanDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Shell onClose={onCancel}>
-      <div className="tw-head font-medium">
-        {restore ? "还原" : "接管"} {c.name}
-      </div>
+    <Shell onClose={onCancel} title={`${restore ? "还原" : "接管"} ${c.name}`}>
       <div className="mt-1 tw-body text-neutral-500">
         要改 <code>{p.path}</code>
       </div>
@@ -523,8 +542,7 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 /** 接管完成。**不说「成功」** —— 只有请求能证明它真的生效了。 */
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
-    <Shell onClose={onClose}>
-      <div className="tw-head font-medium">写好了</div>
+    <Shell onClose={onClose} title="写好了">
       <div className="mt-2 space-y-1 tw-body text-neutral-600 dark:text-neutral-400">
         <div>{r.takes_effect_note}</div>
         <div>
@@ -554,8 +572,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
 /** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失。 */
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
   return (
-    <Shell onClose={onClose}>
-      <div className="tw-head font-medium">为什么没生效</div>
+    <Shell onClose={onClose} title="为什么没生效">
       <ul className="mt-3 space-y-2 tw-body">
         {found.map((f, i) => (
           <li key={i} className="flex gap-2">

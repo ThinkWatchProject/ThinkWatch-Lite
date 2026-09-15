@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -12,6 +12,12 @@ import type {
   ScanResponse,
 } from "./types";
 import { Button } from "@/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 客户端配置面。
@@ -523,14 +529,15 @@ function McpConfirm({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onCancel}>
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">
-          {req.op === "copy" ? `把 ${req.name} 复制到 ${req.to}` : `从 ${req.to} 移除 ${req.name}`}
-        </div>
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {req.op === "copy"
+              ? `把 ${req.name} 复制到 ${req.to}`
+              : `从 ${req.to} 移除 ${req.name}`}
+          </DialogTitle>
+        </DialogHeader>
         <div className="mt-1 tw-body text-neutral-500">
           要改 <code>{plan.path}</code>
         </div>
@@ -565,8 +572,8 @@ function McpConfirm({
             </Button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -674,12 +681,11 @@ function Shape({ m }: { m: McpView }) {
 /** 一处发现的详情。**没有删除按钮** —— 删不删由用户自己去改文件。 */
 function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">{f.title}</div>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{f.title}</DialogTitle>
+        </DialogHeader>
         <div className="mt-2 space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
           <div>{f.detail}</div>
           <div>
@@ -699,7 +705,7 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
             关闭
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

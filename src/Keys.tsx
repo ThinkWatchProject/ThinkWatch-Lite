@@ -1,11 +1,18 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Tip } from "./ui/Tooltip";
-import { Dialog } from "./ui/Dialog";
+import { Tip } from "@/ui/tip";
 import type { Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -385,31 +392,32 @@ export default function Keys({
       <Dialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
-        danger
-        title={`删掉密钥「${confirmDelete}」？`}
-        description="用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。"
-        footer={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmDelete(null)}
-            >
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删掉密钥「{confirmDelete}」？</DialogTitle>
+            <DialogDescription>
+              用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>
               取消
             </Button>
-            <button
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => {
                 const name = confirmDelete;
                 setConfirmDelete(null);
                 if (name) void patch([{ op: "remove", path: `/clients/${name}` }], name);
               }}
-              className="rounded-md bg-red-600 px-3 py-1 tw-body text-white"
             >
               删除
-            </button>
-          </>
-        }
-      />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

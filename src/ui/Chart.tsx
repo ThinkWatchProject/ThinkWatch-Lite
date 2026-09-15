@@ -1,4 +1,4 @@
-import { Tip } from "./Tooltip";
+import { Tip } from "@/ui/tip";
 
 /**
  * 概览上的两种图。

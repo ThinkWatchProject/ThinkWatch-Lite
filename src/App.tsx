@@ -19,8 +19,7 @@ import Keys from "./Keys";
 import Routes from "./Routes";
 import Security from "./Security";
 import Guard from "./Guard";
-import { Dialog, DialogButton } from "./ui/Dialog";
-import { Tip, TooltipRoot } from "./ui/Tooltip";
+import { Tip, TooltipRoot } from "@/ui/tip";
 import {
   IconClient,
   IconDashboard,
@@ -35,7 +34,7 @@ import {
   IconSettings,
   IconSidebar,
 } from "./ui/icons";
-import { RowMenu } from "./ui/ContextMenu";
+import { RowMenu } from "@/ui/row-menu";
 import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
@@ -43,6 +42,14 @@ import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -1226,31 +1233,31 @@ export default function App() {
       </div>
 
       {/* 浮层挂在最外层，不跟着右列滚动 */}
-      <Dialog
-        open={askQuit}
-        onOpenChange={setAskQuit}
-        danger
-        width="max-w-sm"
-        title="退出 ThinkWatch Lite？"
-        description={
-          <>
-            <p>
+      <Dialog open={askQuit} onOpenChange={setAskQuit}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>退出 ThinkWatch Lite？</DialogTitle>
+            <DialogDescription>
               所有接管过的客户端会立刻失联 —— 它们指着的端口后面就没东西在听了。
-            </p>
-            <p className="mt-1.5 text-neutral-500">
-              只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
-            </p>
-          </>
-        }
-        footer={
-          <>
-            <DialogButton onClick={() => setAskQuit(false)}>取消</DialogButton>
-            <DialogButton kind="danger" onClick={() => void invoke("quit_app")}>
+            </DialogDescription>
+          </DialogHeader>
+          <p className="tw-body text-muted-foreground">
+            只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAskQuit(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void invoke("quit_app")}
+            >
               退出
-            </DialogButton>
-          </>
-        }
-      />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />

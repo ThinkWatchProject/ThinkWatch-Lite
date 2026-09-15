@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import type { Overview, PatchOp } from "./types";

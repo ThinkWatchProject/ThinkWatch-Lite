@@ -1,12 +1,19 @@
 import { useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
-import { Dialog } from "./ui/Dialog";
 import type { Overview, PatchOp, RouteView } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -298,23 +305,23 @@ export default function Routes({
       <Dialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
-        danger
-        title={`删掉路由「${confirmDelete?.name}」？`}
-        description={
-          confirmDelete && confirmDelete.clients.length > 0
-            ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
-            : "这条路由没有密钥绑着，删掉不影响任何请求。"
-        }
-        footer={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmDelete(null)}
-            >
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删掉路由「{confirmDelete?.name}」？</DialogTitle>
+            <DialogDescription>
+              {confirmDelete && confirmDelete.clients.length > 0
+                ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
+                : "这条路由没有密钥绑着，删掉不影响任何请求。"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>
               取消
             </Button>
-            <button
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => {
                 const r = confirmDelete;
                 setConfirmDelete(null);
@@ -333,13 +340,12 @@ export default function Routes({
                 ];
                 void patch(ops, r.name);
               }}
-              className="rounded-md bg-red-600 px-3 py-1 tw-body text-white"
             >
               删除
-            </button>
-          </>
-        }
-      />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

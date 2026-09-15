@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import AddUpstream from "./AddUpstream";

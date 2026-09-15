@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 会话页。
@@ -149,14 +155,13 @@ function tokens(n: number) {
 function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
   const { session: s, turns } = d;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
-      <div
-        className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">
-          {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
-        </div>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
+          </DialogTitle>
+        </DialogHeader>
         <div className="mt-1 tw-body text-neutral-500">
           {s.models.join("、")} · 输入 {tokens(s.input_tokens)} / 输出 {tokens(s.output_tokens)} ·
           缓存读 {tokens(s.cache_read_tokens)}
@@ -164,8 +169,8 @@ function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
 
         <Growth turns={turns} />
         <Waterfall turns={turns} />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
