@@ -134,7 +134,7 @@ export default function Clients({
   }
 
   if (!data) {
-    return <div className="p-5 tw-head text-neutral-500">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-muted-foreground">{error ?? "扫描中…"}</div>;
   }
 
   const here = data.clients.filter((c) => c.installed);
@@ -149,7 +149,7 @@ export default function Clients({
       )}
 
       <div className="flex items-start justify-between gap-4">
-        <div className="tw-body text-neutral-500">
+        <div className="tw-body text-muted-foreground">
           接管会把这些客户端指向 <code>{data.gateway_base}</code>。
           只改端点和密钥两个字段，其余不动，随时可还原。
         </div>
@@ -220,11 +220,11 @@ export default function Clients({
         或者手动把端点指过来」。
       */}
       {here.length === 0 && (
-        <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
-          <p className="tw-head text-neutral-600 dark:text-neutral-400">
+        <div className="rounded-lg border border-dashed border-input p-8 text-center">
+          <p className="tw-head text-muted-foreground">
             这台机器上没有找到已识别的客户端。
           </p>
-          <p className="mt-2 tw-body text-neutral-500">
+          <p className="mt-2 tw-body text-muted-foreground">
             装了 Claude Code、Codex、Gemini CLI 的话
             <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
               <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
@@ -244,7 +244,7 @@ export default function Clients({
       ))}
 
       {gone.length > 0 && (
-        <details className="tw-body text-neutral-500">
+        <details className="tw-body text-muted-foreground">
           <summary className="cursor-pointer">这台机器上没找到的（{gone.length}）</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {gone.map((c) => (
@@ -257,14 +257,14 @@ export default function Clients({
       )}
 
       {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
-      <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+      <div className="rounded border border-border p-3">
         <div className="mb-2 tw-body font-medium">接管不了，只能给你步骤</div>
-        <ul className="space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
+        <ul className="space-y-2 tw-body text-muted-foreground">
           {data.manual.map((m) => (
             <li key={m.name}>
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">{m.name}</span>
+              <span className="font-medium text-foreground">{m.name}</span>
               <div>{m.how.replace("网关地址", data.gateway_base)}</div>
-              <div className="text-neutral-500">{m.caveat}</div>
+              <div className="text-muted-foreground">{m.caveat}</div>
             </li>
           ))}
         </ul>
@@ -297,7 +297,7 @@ function Card({
   const nagging = c.warns_when_silent && silentFor > 5 * 60 * 1000;
 
   return (
-    <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <div className="rounded border border-border p-3">
       <div className="flex items-center gap-2">
         <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
@@ -331,7 +331,7 @@ function Card({
         </div>
       </div>
 
-      <div className="mt-1 space-y-0.5 tw-body text-neutral-500">
+      <div className="mt-1 space-y-0.5 tw-body text-muted-foreground">
         <div>
           <code>{c.real}</code>
           {/* 用户以为在改 ~/.claude/settings.json，实际写的可能是他
@@ -415,7 +415,7 @@ function PlanDialog({
 }) {
   return (
     <Shell onClose={onCancel} title={`${restore ? "还原" : "接管"} ${c.name}`}>
-      <div className="mt-1 tw-body text-neutral-500">
+      <div className="mt-1 tw-body text-muted-foreground">
         要改 <code>{p.path}</code>
       </div>
 
@@ -435,7 +435,7 @@ function PlanDialog({
 
           {/* 接管的代价要在这里列出来，不能等用户自己发现 */}
           {p.notes.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-neutral-600 dark:text-neutral-400">
+            <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-muted-foreground">
               {p.notes.map((n) => (
                 <li key={n}>{n}</li>
               ))}
@@ -444,7 +444,7 @@ function PlanDialog({
 
           <Diff before={p.before} after={p.after} />
 
-          <div className="mt-3 tw-body text-neutral-500">
+          <div className="mt-3 tw-body text-muted-foreground">
             写入前整份备份，除上面这几个字段外一字节不动。
             {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
           </div>
@@ -528,7 +528,7 @@ function Diff({ before, after }: { before: string | null; after: string }) {
               ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
               : r.kind === "del"
                 ? "bg-red-50 text-red-900 line-through dark:bg-red-950/50 dark:text-red-300"
-                : "text-neutral-500"
+                : "text-muted-foreground"
           }
         >
           {r.kind === "add" ? "+ " : r.kind === "del" ? "- " : "  "}
@@ -543,7 +543,7 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
     <Shell onClose={onClose} title="写好了">
-      <div className="mt-2 space-y-1 tw-body text-neutral-600 dark:text-neutral-400">
+      <div className="mt-2 space-y-1 tw-body text-muted-foreground">
         <div>{r.takes_effect_note}</div>
         <div>
           改的是 <code>{r.real}</code>
@@ -589,7 +589,7 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
             </span>
             <div>
               <div className="font-medium">{f.title}</div>
-              <div className="text-neutral-500">{f.detail}</div>
+              <div className="text-muted-foreground">{f.detail}</div>
               {/* 命令给出来，执行与否是他的事 */}
               {f.fix && (
                 <code className="mt-1 block rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">

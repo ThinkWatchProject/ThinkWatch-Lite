@@ -6,11 +6,19 @@ import { triggers } from "./triggers";
 import { BarChart, BarRows } from "./ui/Chart";
 import { densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
-      <div className="tw-body text-neutral-500">{label}</div>
+      <div className="tw-body text-muted-foreground">{label}</div>
       <div className="mt-0.5 text-xl tw-num">{value}</div>
       {hint && <div className="mt-0.5 tw-body text-neutral-400">{hint}</div>}
     </div>
@@ -58,7 +66,7 @@ export default function Dashboard({ tick }: { tick: number }) {
       </div>
     );
   }
-  if (!d) return <p className="p-5 tw-body text-neutral-500">读取中…</p>;
+  if (!d) return <p className="p-5 tw-body text-muted-foreground">读取中…</p>;
 
   const s = d.summary;
   const t = triggers(null, d);
@@ -77,7 +85,7 @@ export default function Dashboard({ tick }: { tick: number }) {
 
         {nothingYet ? (
           // 空状态永远在回答「接下来该做什么」
-          <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-center tw-body text-neutral-500 dark:border-neutral-700">
+          <p className="mt-3 rounded-lg border border-dashed border-input p-6 text-center tw-body text-neutral-500">
             今天还没有请求。把客户端指过来，数字会出现在这里。
           </p>
         ) : (
@@ -189,11 +197,11 @@ export default function Dashboard({ tick }: { tick: number }) {
             </div>
 
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
-              <dt className="text-neutral-500">输入 / 输出</dt>
+              <dt className="text-muted-foreground">输入 / 输出</dt>
               <dd className="tw-num">
                 {s.input_tokens.toLocaleString()} / {s.output_tokens.toLocaleString()} token
               </dd>
-              <dt className="text-neutral-500">缓存 读 / 写</dt>
+              <dt className="text-muted-foreground">缓存 读 / 写</dt>
               <dd className="tw-num">
                 {s.cache_read_tokens.toLocaleString()} / {s.cache_write_tokens.toLocaleString()}{" "}
                 token
@@ -250,29 +258,29 @@ export default function Dashboard({ tick }: { tick: number }) {
             <h2 className="tw-title font-semibold">哪家更快</h2>
             <span className="tw-body text-neutral-400">首字节，按上游分</span>
           </div>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">上游</th>
-                <th className="font-medium">通常（P50）</th>
-                <th className="font-medium">最糟（P95）</th>
-                <th className="font-medium">样本</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-2 tw-num">
+            <TableHeader>
+              <TableRow>
+                <TableHead>上游</TableHead>
+                <TableHead>通常（P50）</TableHead>
+                <TableHead>最糟（P95）</TableHead>
+                <TableHead>样本</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {d.latency_by_provider.map((l) => (
-                <tr key={l.model} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1.5">{l.model}</td>
-                  <td>{l.p50}ms</td>
-                  <td>{l.p95}ms</td>
-                  <td className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
+                <TableRow key={l.model}>
+                  <TableCell>{l.model}</TableCell>
+                  <TableCell>{l.p50}ms</TableCell>
+                  <TableCell>{l.p95}ms</TableCell>
+                  <TableCell className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
                     {l.samples}
                     {l.samples < 10 && " · 数据不足"}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </section>
       )}
 
@@ -288,7 +296,7 @@ export default function Dashboard({ tick }: { tick: number }) {
           </div>
           <div className="mt-2 grid gap-5 lg:grid-cols-2">
             <div>
-              <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按模型</h3>
+              <h3 className="mb-1.5 tw-head font-medium text-muted-foreground">按模型</h3>
               <BarRows
                 unit={usd}
                 rows={(d.by_model ?? []).slice(0, 6).map((g) => ({
@@ -305,7 +313,7 @@ export default function Dashboard({ tick }: { tick: number }) {
             {/* 一家上游的时候这张图说的是「全都在这儿」，那已经知道了 */}
             {(d.by_provider ?? []).length > 1 && (
               <div>
-                <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按上游</h3>
+                <h3 className="mb-1.5 tw-head font-medium text-muted-foreground">按上游</h3>
                 <BarRows
                   unit={usd}
                   rows={(d.by_provider ?? []).slice(0, 6).map((g) => ({
@@ -332,83 +340,82 @@ export default function Dashboard({ tick }: { tick: number }) {
                 拉偏 */}
             <span className="tw-body text-neutral-400">首字节，按模型分</span>
           </div>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">模型</th>
-                <th className="font-medium">通常（P50）</th>
-                <th className="font-medium">最糟（P95）</th>
-                <th className="font-medium">样本</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-2 tw-num">
+            <TableHeader>
+              <TableRow>
+                <TableHead>模型</TableHead>
+                <TableHead>通常（P50）</TableHead>
+                <TableHead>最糟（P95）</TableHead>
+                <TableHead>样本</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {d.latency.map((l) => (
-                <tr key={l.model} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1.5">{l.model}</td>
-                  <td>{l.p50}ms</td>
-                  <td>{l.p95}ms</td>
+                <TableRow key={l.model}>
+                  <TableCell>{l.model}</TableCell>
+                  <TableCell>{l.p50}ms</TableCell>
+                  <TableCell>{l.p95}ms</TableCell>
                   {/* **样本数要显示。**「800ms」是 3 个样本还是 300 个，
                       含义完全不同 —— 少了它这张表就是在假装确定 */}
-                  <td className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
+                  <TableCell className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
                     {l.samples}
                     {l.samples < 10 && " · 数据不足"}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </section>
       )}
 
       {d.history.length > 0 && (
         <section>
           <h2 className="tw-title font-semibold">历史</h2>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">时间</th>
-                <th className="font-medium">模型</th>
-                <th className="font-medium">上游</th>
-                <th className="font-medium">状态</th>
-                <th className="font-medium">首字节</th>
-                <th className="font-medium">token</th>
-                <th className="font-medium">花费</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-2 tw-num">
+            <TableHeader>
+              <TableRow>
+                <TableHead>时间</TableHead>
+                <TableHead>模型</TableHead>
+                <TableHead>上游</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>首字节</TableHead>
+                <TableHead>token</TableHead>
+                <TableHead>花费</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {d.history.map((r) => (
-                <tr
+                <TableRow
                   key={r.id}
-                  onClick={() => setOpen(r.id)}
-                  className="cursor-pointer border-b border-neutral-100 hover:bg-neutral-100 dark:border-neutral-900 dark:hover:bg-neutral-900"
+                  onClick={() => setOpen(r.id)} className="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-900"
                 >
-                  <td className="py-1.5 text-neutral-500">
+                  <TableCell className="text-muted-foreground">
                     {new Date(r.at_ms).toLocaleTimeString()}
-                  </td>
-                  <td>{r.local ? <span className="text-neutral-400">{r.path}</span> : r.model}</td>
-                  <td className="text-neutral-500">{r.local ? "本地应答" : r.provider}</td>
-                  <td>
+                  </TableCell>
+                  <TableCell>{r.local ? <span className="text-neutral-400">{r.path}</span> : r.model}</TableCell>
+                  <TableCell className="text-muted-foreground">{r.local ? "本地应答" : r.provider}</TableCell>
+                  <TableCell>
                     {r.error ? (
                       <span className="text-red-600 dark:text-red-400" title={r.error}>
                         失败
                       </span>
                     ) : (
-                      <span className="text-neutral-500">{r.status}</span>
+                      <span className="text-muted-foreground">{r.status}</span>
                     )}
-                  </td>
-                  <td>{r.ttfb_ms != null ? `${r.ttfb_ms}ms` : "—"}</td>
-                  <td className="text-neutral-500">
+                  </TableCell>
+                  <TableCell>{r.ttfb_ms != null ? `${r.ttfb_ms}ms` : "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {r.input_tokens != null
                       ? `${r.input_tokens.toLocaleString()} / ${(r.output_tokens ?? 0).toLocaleString()}`
                       : "—"}
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     {r.billing === "subscription" ? (
                       // **「订阅」而不是 $0.00。**后者看起来像一个算出来
                       // 的结果，会让人误以为这次调用真的免费；「订阅」
                       // 表达的是「这笔账不在这个维度上」
                       <Tip text="这家是订阅制，边际成本为零">
-                        <span className="text-neutral-500">订阅</span>
+                        <span className="text-muted-foreground">订阅</span>
                       </Tip>
                     ) : r.cost_micros == null ? (
                       // **「没有价格」不是 $0.00。**显示成 0 会让它悄悄
@@ -423,11 +430,11 @@ export default function Dashboard({ tick }: { tick: number }) {
                     ) : (
                       usd(r.cost_micros)
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </section>
       )}
 

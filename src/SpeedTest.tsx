@@ -3,6 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * L3 模型测速。**这一层会花钱**。
@@ -126,45 +134,45 @@ export default function SpeedTest({ models }: { models: string[] }) {
       )}
 
       {results && (
-        <table className="mt-3 w-full text-left tw-body tw-num">
-          <thead className="text-neutral-500">
-            <tr className="border-b border-neutral-200 dark:border-neutral-800">
-              <th className="py-2 font-medium">上游</th>
-              <th className="font-medium">建连</th>
+        <Table className="mt-3 tw-num">
+          <TableHeader>
+            <TableRow>
+              <TableHead>上游</TableHead>
+              <TableHead>建连</TableHead>
               {/* TTFT 才是这一层唯一值得测的东西 */}
-              <th className="font-medium">首 token</th>
-              <th className="font-medium">总计</th>
-              <th className="font-medium">实际消耗</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead>首 token</TableHead>
+              <TableHead>总计</TableHead>
+              <TableHead>实际消耗</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {results.map((r) => (
-              <tr key={r.provider} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5">{r.provider}</td>
+              <TableRow key={r.provider}>
+                <TableCell>{r.provider}</TableCell>
                 {r.error ? (
-                  <td colSpan={4} className="text-red-600 dark:text-red-400">
+                  <TableCell colSpan={4} className="text-red-600 dark:text-red-400">
                     {r.error}
-                  </td>
+                  </TableCell>
                 ) : (
                   <>
-                    <td>{r.connect_ms}ms</td>
-                    <td className="font-medium">
+                    <TableCell>{r.connect_ms}ms</TableCell>
+                    <TableCell className="font-medium">
                       {r.ttft_ms != null ? `${r.ttft_ms}ms` : "—"}
-                    </td>
-                    <td>{r.total_ms}ms</td>
+                    </TableCell>
+                    <TableCell>{r.total_ms}ms</TableCell>
                     {/* **实际消耗和预估对照。**有些上游会附加 system
                         prompt，那时实际比预估多 */}
-                    <td className="text-neutral-500">
+                    <TableCell className="text-muted-foreground">
                       {r.input_tokens != null
                         ? `${r.input_tokens} / ${r.output_tokens ?? 0}`
                         : "上游没报"}
-                    </td>
+                    </TableCell>
                   </>
                 )}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
       {error && (

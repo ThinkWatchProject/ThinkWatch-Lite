@@ -11,6 +11,14 @@ import {
 } from "./types";
 import { Button } from "@/ui/button";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -24,7 +32,7 @@ type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex gap-3 py-0.5">
-      <span className="w-20 shrink-0 text-neutral-500">{label}</span>
+      <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
       <span className="min-w-0 break-all">{value}</span>
     </div>
   );
@@ -43,7 +51,7 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
     return (
       <div>
         <div className="tw-body font-medium">{title}</div>
-        <p className="mt-1 tw-body text-neutral-500">
+        <p className="mt-1 tw-body text-muted-foreground">
           没有存下来
           <Tip text="两种可能：磁盘快满时只记摘要，或者这条记录已经过了保留期。">
             <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
@@ -66,7 +74,7 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
         {big && (
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="ml-auto tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {open ? "折叠" : "展开全部"}
           </button>
@@ -128,8 +136,8 @@ export default function RequestDrawer({
     <div
       className={
         inline
-          ? "flex h-full min-w-0 flex-col border-l border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
-          : "fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
+          ? "flex h-full min-w-0 flex-col border-l border-border bg-neutral-50 dark:bg-neutral-950"
+          : "fixed inset-y-0 right-0 z-20 flex w-[min(38rem,90vw)] flex-col border-l border-border bg-white shadow-xl dark:bg-neutral-950"
       }
     >
       {/*
@@ -137,10 +145,10 @@ export default function RequestDrawer({
         自己不能收缩：标题一长，浏览器就去挤按钮，而按钮挤无可挤就换行。
         标题截断、按钮 shrink-0 + nowrap，两条缺一不可。
       */}
-      <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <span className="truncate tw-head font-semibold">{r?.model || `第 ${id} 号请求`}</span>
         {r && (
-          <span className="shrink-0 whitespace-nowrap tw-label text-neutral-500">
+          <span className="shrink-0 whitespace-nowrap tw-label text-muted-foreground">
             {new Date(r.at_ms).toLocaleTimeString()}
           </span>
         )}
@@ -165,7 +173,7 @@ export default function RequestDrawer({
 
       {d && r && (
         <>
-          <nav className="flex gap-1 border-b border-neutral-200 px-4 py-2 tw-body dark:border-neutral-800">
+          <nav className="flex gap-1 border-b border-border px-4 py-2 tw-body">
             {(["timeline", "routing", "payload", "usage", "replay"] as const).map((t) => (
               <button
                 key={t}
@@ -174,7 +182,7 @@ export default function RequestDrawer({
                   "rounded px-2 py-1 " +
                   (tab === t
                     ? "bg-neutral-200 dark:bg-neutral-800"
-                    : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+                    : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
                 }
               >
                 {t === "timeline"
@@ -247,7 +255,7 @@ export default function RequestDrawer({
                       {r.routing.attempts.map((a, i) => (
                         <li
                           key={`${a.provider}-${i}`}
-                          className="flex items-baseline gap-3 rounded border border-neutral-200 px-2 py-1 dark:border-neutral-800"
+                          className="flex items-baseline gap-3 rounded border border-border px-2 py-1"
                         >
                           <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
                           <span className="font-medium">{a.provider}</span>
@@ -263,7 +271,7 @@ export default function RequestDrawer({
                           >
                             {a.outcome}
                           </span>
-                          <span className="ml-auto text-neutral-500">{a.ms}ms</span>
+                          <span className="ml-auto text-muted-foreground">{a.ms}ms</span>
                         </li>
                       ))}
                     </ol>
@@ -271,14 +279,14 @@ export default function RequestDrawer({
                       // **用户能看见故障转移在替他工作，这是信任的来源**。
                       // 一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
-                      <p className="mt-1.5 text-neutral-500">
+                      <p className="mt-1.5 text-muted-foreground">
                         发生了故障转移：前 {r.routing.attempts.length - 1} 家失败，自动换到了下一家。
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
-                <p className="text-neutral-500">
+                <p className="text-muted-foreground">
                   这条没有路由信息
                   <Tip text="要么是本地应答的（根本没到上游），要么是这个功能上线之前记下的。">
                     <span className="ml-1 underline decoration-dotted underline-offset-2">两种可能</span>
@@ -300,7 +308,7 @@ export default function RequestDrawer({
               <div className="space-y-1">
                 {r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
-                  <p className="text-neutral-500">
+                  <p className="text-muted-foreground">
                     这家上游没有报用量
                     <Tip text="有些上游会吞掉响应里的 usage 字段。没有它就无法得知这次调用消耗了多少，也就算不出成本。">
                       <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
@@ -317,12 +325,12 @@ export default function RequestDrawer({
                       value={
                         r.billing === "subscription" ? (
                           // 「订阅」而不是 $0.00
-                          <span className="text-neutral-500">
+                          <span className="text-muted-foreground">
                             订阅 —— 这家是订阅制，这笔账不在金额这个维度上
                           </span>
                         ) : r.cost_micros == null ? (
                           // 「没有价格」和「花了 0 元」是两件事
-                          <span className="text-neutral-500">
+                          <span className="text-muted-foreground">
                             算不出来 —— 这个模型不在价目表里
                           </span>
                         ) : r.cost_estimated ? (
@@ -362,7 +370,7 @@ function SaveFixture({ id }: { id: number }) {
   return (
     <span className="flex shrink-0 items-center gap-2">
       {path && (
-        <span className="tw-label text-neutral-500" title={path}>
+        <span className="tw-label text-muted-foreground" title={path}>
           写好了，记得自己看一眼再交出去
         </span>
       )}
@@ -454,7 +462,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
 
   return (
     <div className="space-y-3">
-      <p className="text-neutral-500">
+      <p className="text-muted-foreground">
         把这条请求<span className="font-medium">原样</span>发给另一个上游，并排对比
         <Tip text="请求体是当时存下来的那一份，一个字节都没改 —— 手工复现一个 Claude Code 请求几乎不可能，而任何一处不同都会让对比失去意义。">
           <span className="ml-1 underline decoration-dotted underline-offset-2">原样是指</span>
@@ -495,7 +503,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       {error && <div className="text-amber-600 dark:text-amber-400">{error}</div>}
 
       {quote && (
-        <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+        <div className="rounded border border-border p-3">
           {/* **触发前必须显示预估消耗**，而不是点了才知道 */}
           <div>
             发 {quote.body_bytes} 字节给 <span className="font-medium">{quote.provider}</span>，
@@ -503,11 +511,11 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           </div>
           <div className="mt-1">{quote.note}</div>
           {quote.will_redact && (
-            <div className="mt-1 text-neutral-500">
+            <div className="mt-1 text-muted-foreground">
               发出去之前会按这家的规则脱敏，回显会换回来。
             </div>
           )}
-          <div className="mt-1 text-neutral-500">价目表日期 {quote.pricing_date}。</div>
+          <div className="mt-1 text-muted-foreground">价目表日期 {quote.pricing_date}。</div>
           <Button
             size="sm"
             className="mt-2"
@@ -520,22 +528,22 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       )}
 
       {result && (
-        <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-          <table className="w-full">
-            <thead className="text-neutral-500">
-              <tr>
-                <th className="text-left font-normal"></th>
-                <th className="text-right font-normal">{result.original.provider}（原来）</th>
-                <th className="text-right font-normal">{result.provider}（重放）</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded border border-border p-3">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-normal"></TableHead>
+                <TableHead className="text-right font-normal">{result.original.provider}（原来）</TableHead>
+                <TableHead className="text-right font-normal">{result.provider}（重放）</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               <Cmp label="状态" a={result.original.status} b={result.status} />
               <Cmp label="首字节" a={result.original.ttfb_ms} b={result.ttfb_ms} unit="ms" />
               <Cmp label="耗时" a={result.original.duration_ms} b={result.duration_ms} unit="ms" />
               <Cmp label="字节" a={result.original.bytes} b={result.bytes} />
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 tw-label dark:bg-neutral-950">
             {result.body}
           </pre>
@@ -557,14 +565,14 @@ function Cmp({
   unit?: string;
 }) {
   return (
-    <tr className="border-t border-neutral-100 dark:border-neutral-900">
-      <td className="py-1 text-neutral-500">{label}</td>
+    <TableRow>
+      <TableCell className="text-muted-foreground">{label}</TableCell>
       {/* **原来那次可能没有这个数**（失败的请求没有耗时）。写「—」而不是 0 */}
-      <td className="text-right">{a == null ? "—" : `${a}${unit}`}</td>
-      <td className="text-right font-medium">
+      <TableCell className="text-right">{a == null ? "—" : `${a}${unit}`}</TableCell>
+      <TableCell className="text-right font-medium">
         {b}
         {unit}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

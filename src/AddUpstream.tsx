@@ -93,11 +93,11 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 p-5 dark:border-neutral-700">
+    <div className="rounded-lg border border-dashed border-input p-5">
       <p className="tw-head text-neutral-700 dark:text-neutral-300">
         还没有上游。加一个就能开始转发。
       </p>
-      <p className="mt-1 tw-body text-neutral-500">
+      <p className="mt-1 tw-body text-muted-foreground">
         只要地址和密钥。
         <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">
           <span className="ml-1 underline decoration-dotted underline-offset-2">其余都有默认值</span>
@@ -106,7 +106,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
 
       <div className="mt-4 grid max-w-xl gap-3">
         <label className="grid gap-1">
-          <span className="tw-body text-neutral-500">接口地址</span>
+          <span className="tw-body text-muted-foreground">接口地址</span>
           <Input
             className="font-mono"
             value={baseUrl}
@@ -122,7 +122,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
           />
         </label>
         <label className="grid gap-1">
-          <span className="tw-body text-neutral-500">密钥</span>
+          <span className="tw-body text-muted-foreground">密钥</span>
           {/*
             **不是 type="password"。**这是用户自己机器上自己的 key，而
             填错一个字符的代价是一次看不懂的 401 —— 让他看得见自己粘了

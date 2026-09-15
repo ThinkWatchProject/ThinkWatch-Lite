@@ -82,7 +82,7 @@ export default function Routes({
         默认路由单独一块,因为它在模型里就是单独的一个字段
         （顶层的 `default_route`）—— 不是某条路由身上的标志。
       */}
-      <section className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+      <section className="rounded-lg border border-border p-3">
         <div className="flex items-baseline gap-3">
           <h3 className="tw-head">默认路由</h3>
           <Select
@@ -105,7 +105,7 @@ export default function Routes({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <p className="tw-body text-neutral-500">
+          <p className="tw-body text-muted-foreground">
             没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
           </p>
         </div>
@@ -114,7 +114,7 @@ export default function Routes({
       <section>
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">路由</h2>
-          <p className="tw-body text-neutral-500">
+          <p className="tw-body text-muted-foreground">
             一条路由里，从上往下匹配，第一条命中的决定去向。
           </p>
           <Button
@@ -128,7 +128,7 @@ export default function Routes({
         </div>
 
         {adding && (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-input p-2">
             <Input
               className="flex-1"
               autoFocus
@@ -188,16 +188,16 @@ export default function Routes({
           {routes.map((r) => (
             <div
               key={r.name}
-              className="rounded-lg border border-neutral-200 dark:border-neutral-800"
+              className="rounded-lg border border-border"
             >
-              <div className="flex items-baseline gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+              <div className="flex items-baseline gap-2 border-b border-border px-3 py-2">
                 <span className="tw-head">{r.name}</span>
                 {r.default && (
                   <span className="rounded bg-neutral-200 px-1.5 tw-label dark:bg-neutral-800">
                     默认
                   </span>
                 )}
-                <span className="tw-label text-neutral-500">
+                <span className="tw-label text-muted-foreground">
                   {/*
                     绑了这条的密钥。默认路由这里通常是空的 —— 走它的人是
                     「没绑」,不是「绑了它」。把这件事说出来,否则空白读起来
@@ -261,7 +261,7 @@ export default function Routes({
                   >
                     <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
                     <span className="font-medium">{rule.name}</span>
-                    <span className="text-neutral-500">
+                    <span className="text-muted-foreground">
                       {rule.conditions.length === 0 ? (
                         // 兜底规则要标出来。少了它，用户会以为「没有兜底」
                         // 而反复调试一条其实一直在生效的规则。
@@ -272,7 +272,7 @@ export default function Routes({
                         rule.conditions.join(" 且 ")
                       )}
                     </span>
-                    <span className="ml-auto font-mono text-neutral-500">
+                    <span className="ml-auto font-mono text-muted-foreground">
                       → {rule.to}
                     </span>
                     <Button
@@ -390,7 +390,7 @@ function NewRule({
   }
 
   return (
-    <div className="space-y-2 border-b border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+    <div className="space-y-2 border-b border-border bg-neutral-50 p-3 dark:bg-neutral-900/40">
       <div className="flex flex-wrap items-center gap-2 tw-body">
         <Input
           className="min-w-52 flex-1"
@@ -399,7 +399,7 @@ function NewRule({
           placeholder="规则名，比如 超长上下文降级"
           onChange={(e) => setName(e.target.value)}
         />
-        <span className="text-neutral-500">去向</span>
+        <span className="text-muted-foreground">去向</span>
         <Select value={to} onValueChange={setTo}>
           <SelectTrigger size="sm">
             <SelectValue />
@@ -417,7 +417,7 @@ function NewRule({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 tw-body">
-        <span className="text-neutral-500">当</span>
+        <span className="text-muted-foreground">当</span>
         <Input
           className="w-52 font-mono"
           value={model}
@@ -439,7 +439,7 @@ function NewRule({
           <FieldLabel htmlFor={`${uid}-tools`}>带工具调用</FieldLabel>
         </Field>
         <Tip text="三个条件都留空就是一条兜底规则 —— 它会命中这条路由里所有还没被上面的规则拦下的请求。每条路由都该有一条。">
-          <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
+          <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
             都留空 = 兜底
           </span>
         </Tip>

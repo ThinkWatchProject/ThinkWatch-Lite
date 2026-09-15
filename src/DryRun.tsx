@@ -60,7 +60,7 @@ export default function DryRun({ models }: { models: string[] }) {
   return (
     <section>
       <h2 className="tw-title font-semibold">试算一条请求</h2>
-      <p className="mt-1 tw-body text-neutral-500">
+      <p className="mt-1 tw-body text-muted-foreground">
         假设来这样一个请求，看它会走到哪儿、为什么没走别的。只算不发。
       </p>
 
@@ -127,7 +127,7 @@ export default function DryRun({ models }: { models: string[] }) {
 
 function Result({ r }: { r: DryRunResult }) {
   return (
-    <div className="mt-3 rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <div className="mt-3 rounded-md border border-border p-3 tw-body">
       {r.outcome === "deny" ? (
         <div>
           <span className="text-red-600 dark:text-red-400">会被拒绝</span> —— 规则「{r.rule}」：
@@ -182,7 +182,7 @@ function Result({ r }: { r: DryRunResult }) {
 
       {/* **「为什么没走我以为的那条」才是用户在问的问题。** */}
       <details className="mt-2">
-        <summary className="cursor-pointer text-neutral-500">逐条看规则怎么判的</summary>
+        <summary className="cursor-pointer text-muted-foreground">逐条看规则怎么判的</summary>
         <ul className="mt-1 space-y-0.5">
           {r.trace.map((t) => (
             <li key={t.name} className="flex gap-2">
@@ -196,7 +196,7 @@ function Result({ r }: { r: DryRunResult }) {
                 {t.verdict === "matched" ? "✓" : t.verdict === "phase_two" ? "…" : "·"}
               </span>
               <span className="w-40 shrink-0">{t.name}</span>
-              <span className="text-neutral-500">{t.why ?? "命中"}</span>
+              <span className="text-muted-foreground">{t.why ?? "命中"}</span>
             </li>
           ))}
         </ul>

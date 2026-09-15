@@ -175,7 +175,7 @@ export default function ConfigTextMode({
         另一种视图」这个心智，而不是两个割裂的东西。
       */}
       {at?.name && (
-        <p className="tw-body text-neutral-500">
+        <p className="tw-body text-muted-foreground">
           光标在 <span className="font-medium text-neutral-700 dark:text-neutral-300">{at.name}</span>
           {at.section ? `（${at.section}）` : ""} 这一段里
           {onJumpToForm && (

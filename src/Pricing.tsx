@@ -5,6 +5,14 @@ import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types"
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * 自定义价格（第三层）。
@@ -77,7 +85,7 @@ export default function Pricing() {
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <section className="rounded-md border border-border p-3 tw-body">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="tw-title font-semibold">自定义价格</h2>
@@ -95,7 +103,7 @@ export default function Pricing() {
               。填上单价，成本栏就能算出来了。
             </p>
           ) : (
-            <p className="mt-1 text-neutral-500">
+            <p className="mt-1 text-muted-foreground">
               经过的请求都能算出价钱。内置价目表是 {data.snapshot_date} 那份快照。
             </p>
           )}
@@ -112,26 +120,26 @@ export default function Pricing() {
 
       {open && (
         <div className="mt-3 space-y-2">
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             单价按<span className="font-medium">每百万 token 的美元</span>填，和厂商定价页一致。
             <Tip text="留空上游对所有上游生效；填了上游则只有那一家按这个价算。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">上游这一列</span>
             </Tip>
           </p>
-          <table className="w-full text-left tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-1 font-medium">上游</th>
-                <th className="font-medium">模型</th>
-                <th className="font-medium">输入 $/M</th>
-                <th className="font-medium">输出 $/M</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="tw-num">
+            <TableHeader>
+              <TableRow>
+                <TableHead>上游</TableHead>
+                <TableHead>模型</TableHead>
+                <TableHead>输入 $/M</TableHead>
+                <TableHead>输出 $/M</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r, i) => (
-                <tr key={i} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1">
+                <TableRow key={i}>
+                  <TableCell>
                     <Cell
                       value={r.provider ?? ""}
                       placeholder="（所有）"
@@ -139,8 +147,8 @@ export default function Pricing() {
                         setRows(rows.map((x, j) => (j === i ? { ...x, provider: v || null } : x)))
                       }
                     />
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Cell
                       mono
                       value={r.model}
@@ -152,20 +160,20 @@ export default function Pricing() {
                     {r.overrides_builtin && (
                       <span className="ml-1 tw-label text-neutral-400">覆盖内置</span>
                     )}
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Num
                       value={r.input}
                       onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, input: v } : x)))}
                     />
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <Num
                       value={r.output}
                       onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, output: v } : x)))}
                     />
-                  </td>
-                  <td className="text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     <Tip text="删掉这一条自定义价格">
                       <button
                         onClick={() => setRows(rows.filter((_, j) => j !== i))}
@@ -174,11 +182,11 @@ export default function Pricing() {
                         ×
                       </button>
                     </Tip>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -205,9 +213,9 @@ export default function Pricing() {
             >
               {busy ? "保存中…" : "保存"}
             </Button>
-            {dirty && <span className="text-neutral-500">有未保存的改动</span>}
+            {dirty && <span className="text-muted-foreground">有未保存的改动</span>}
           </div>
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             写进 <code>pricing.yaml</code>，和 <code>config.yaml</code> 放在一起。手改那个文件也可以，它只是一份普通 YAML。
           </p>
         </div>
@@ -217,7 +225,7 @@ export default function Pricing() {
         检查价格更新（第二层）。**绝不在启动时后台偷偷拉** ——
         零上传的承诺同时意味着零静默下载。
       */}
-      <div className="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+      <div className="mt-3 border-t border-border pt-2">
         {!offer && !preview && (
           <div className="flex items-center gap-2">
             <Button
@@ -238,7 +246,7 @@ export default function Pricing() {
             >
               {step === "offering" ? "查询中…" : "检查价格更新"}
             </Button>
-            <span className="text-neutral-500">
+            <span className="text-muted-foreground">
               内置的是 {data.snapshot_date} 那份。不会自动检查。
             </span>
           </div>
@@ -247,10 +255,10 @@ export default function Pricing() {
         {offer && !preview && (
           <div className="space-y-1.5">
             {/* **先说要连哪儿、多大。**这是零静默下载里最容易被省掉的一半 */}
-            <p className="text-neutral-600 dark:text-neutral-400">
+            <p className="text-muted-foreground">
               要访问：<code className="font-mono">{offer.url}</code>
             </p>
-            <p className="text-neutral-500">
+            <p className="text-muted-foreground">
               大小 {offer.bytes ? `${(offer.bytes / 1024 / 1024).toFixed(1)} MB` : "对面没说"}
               ；下载后先显示变更，确认才写入。
             </p>
@@ -285,7 +293,7 @@ export default function Pricing() {
 
         {preview && (
           <div className="space-y-1.5">
-            <p className="text-neutral-600 dark:text-neutral-400">
+            <p className="text-muted-foreground">
               拉回来 {preview.models} 个带价的模型，
               {preview.changes.length === 0 ? (
                 <span className="font-medium">和现在这份没有差别</span>
@@ -297,13 +305,13 @@ export default function Pricing() {
               。
             </p>
             {preview.changes.length > 0 && (
-              <div className="max-h-40 overflow-y-auto rounded border border-neutral-200 dark:border-neutral-800">
-                <table className="w-full text-left tw-num">
-                  <tbody>
+              <div className="max-h-40 overflow-y-auto rounded border border-border">
+                <Table className="tw-num">
+                  <TableBody>
                     {preview.changes.map((c) => (
-                      <tr key={c.model} className="border-b border-neutral-100 last:border-0 dark:border-neutral-900">
-                        <td className="px-2 py-0.5 font-mono">{c.model}</td>
-                        <td className="px-2 text-neutral-500">
+                      <TableRow key={c.model} className="last:border-0">
+                        <TableCell className="font-mono">{c.model}</TableCell>
+                        <TableCell className="text-muted-foreground">
                           {c.old_input === null ? (
                             "新增"
                           ) : (
@@ -313,11 +321,11 @@ export default function Pricing() {
                               {(c.new_output * 1e6).toFixed(2)}
                             </>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
             <div className="flex gap-2">
@@ -353,7 +361,7 @@ export default function Pricing() {
                 不更新
               </Button>
             </div>
-            <p className="text-neutral-500">
+            <p className="text-muted-foreground">
               你的自定义价格不受影响，更新只换底下那份公共价目表。
             </p>
           </div>

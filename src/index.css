@@ -137,7 +137,10 @@
     --secondary: oklch(26.9% 0 none); /* neutral-800 */
     --secondary-foreground: oklch(97% 0 none);
     --muted: oklch(26.9% 0 none);
-    --muted-foreground: oklch(55.6% 0 none);
+    /* neutral-400，不是浅色那边的 500：全 app 写的就是
+       `text-neutral-500 dark:text-neutral-400`，深底上要提一档才读得清。
+       shadcn 自己的暗色默认值也是这个。 */
+    --muted-foreground: oklch(70.8% 0 none);
     --accent: oklch(26.9% 0 none);
     --accent-foreground: oklch(97% 0 none);
     --destructive: oklch(70.4% 0.191 22.216);

@@ -42,6 +42,15 @@ import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -181,20 +190,20 @@ function Th({
 }) {
   const active = sort === k;
   return (
-    <th className={"font-medium " + className}>
-      <button
+    <TableHead className={className}>
+      <Button
+        variant="ghost"
+        size="xs"
+        className="-mx-1 px-1"
         onClick={() => on(k)}
-        className={
-          "-mx-1 rounded px-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 " +
-          (active ? "text-neutral-900 dark:text-neutral-100" : "")
-        }
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
       >
-        {label}
+        <span className={cn(active && "text-foreground")}>{label}</span>
         <span className="ml-0.5 inline-block w-2 tw-label">
           {active ? (dir === "asc" ? "↑" : "↓") : ""}
         </span>
-      </button>
-    </th>
+      </Button>
+    </TableHead>
   );
 }
 
@@ -492,7 +501,7 @@ export default function App() {
   return (
     <TooltipRoot>
     <div
-      className="flex h-screen text-neutral-900 dark:text-neutral-100"
+      className="flex h-screen text-foreground"
       style={{ background: "var(--chrome-ground)" }}
     >
       {/*
@@ -743,10 +752,10 @@ export default function App() {
         r.persisted ? (
           <div
             key={r.provider}
-            className="flex items-start justify-between gap-4 border-b border-neutral-200 bg-neutral-50 px-5 py-2 tw-body dark:border-neutral-800 dark:bg-neutral-900"
+            className="flex items-start justify-between gap-4 border-b border-border bg-neutral-50 px-5 py-2 tw-body dark:bg-neutral-900"
           >
-            <p className="text-neutral-600 dark:text-neutral-400">
-              <span className="font-medium text-neutral-800 dark:text-neutral-200">
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">
                 {r.provider}
               </span>{" "}
               的 token 端点换发了新凭据，已写回 config.yaml
@@ -811,7 +820,7 @@ export default function App() {
             onChanged={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "keys" ? (
         ov ? (
@@ -821,7 +830,7 @@ export default function App() {
             onChanged={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "routing" ? (
         ov ? (
@@ -841,7 +850,7 @@ export default function App() {
             />
           </>
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : tab === "upstreams" || tab === "config" || tab === "settings" ? (
         ov ? (
@@ -856,7 +865,7 @@ export default function App() {
             onProviderAdded={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-neutral-500">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : (
       <main className={split ? "flex min-h-0 flex-1 overflow-hidden" : ""}>
@@ -881,7 +890,7 @@ export default function App() {
                 "rounded-md px-2 py-1 tw-body " +
                 (filter.failedOnly
                   ? "bg-red-600 text-white"
-                  : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800")
+                  : "border border-input text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800")
               }
             >
               只看失败
@@ -936,7 +945,7 @@ export default function App() {
               **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」
               的话，用户会以为总共就这么多 —— 这是过滤器最常见的骗人方式。
             */}
-            <span className="ml-auto tw-label text-neutral-500">
+            <span className="ml-auto tw-label text-muted-foreground">
               {hasAnyFilter(filter)
                 ? `${rows.length} / ${allRows.length} 条`
                 : `${allRows.length} 条`}
@@ -944,7 +953,7 @@ export default function App() {
             {hasAnyFilter(filter) && (
               <button
                 onClick={() => setFilter(EMPTY_FILTER)}
-                className="tw-label text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+                className="tw-label text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
               >
                 清空
               </button>
@@ -958,9 +967,9 @@ export default function App() {
           以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
         */}
         {status?.providers === 0 && (
-          <div className="mb-4 rounded-lg border border-neutral-300 bg-neutral-100 p-4 dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
             <p className="tw-head font-medium">先加一个上游</p>
-            <p className="mt-1 tw-body text-neutral-600 dark:text-neutral-400">
+            <p className="mt-1 tw-body text-muted-foreground">
               网关已经起来了，在{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
                 http://{status.gateway_addr}
@@ -978,11 +987,11 @@ export default function App() {
         )}
         {rows.length === 0 ? (
           // 空状态永远在回答「接下来该做什么」。
-          <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center dark:border-neutral-700">
-            <p className="tw-head text-neutral-600 dark:text-neutral-400">
+          <div className="rounded-lg border border-dashed border-input p-10 text-center">
+            <p className="tw-head text-muted-foreground">
               还没有请求经过。
             </p>
-            <p className="mt-2 tw-body text-neutral-500">
+            <p className="mt-2 tw-body text-muted-foreground">
               把客户端指到{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
                 http://{status?.gateway_addr ?? "127.0.0.1:8788"}
@@ -1013,25 +1022,25 @@ export default function App() {
             </Button>
           </div>
         ) : (
-          <table className="w-full text-left tw-body tw-num">
+          <Table className="tw-num">
             {/*
               **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
               两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
               那恰恰是排查时唯一要看的区别。
             */}
-            <thead className="sticky top-0 z-10 bg-neutral-50 text-neutral-500 dark:bg-neutral-950">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
+            <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
+              <TableRow>
                 <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
                 <Th k="time" label="时间" sort={sortKey} dir={sortDir} on={toggleSort} />
-                <th className="font-medium">客户端</th>
-                <th className="font-medium">上游</th>
-                <th className="font-medium">路径</th>
+                <TableHead>客户端</TableHead>
+                <TableHead>上游</TableHead>
+                <TableHead>路径</TableHead>
                 {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
                 <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
                 <Th k="bytes" label="大小" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r, i) => (
                 <RowMenu
                   key={r.id}
@@ -1077,7 +1086,7 @@ export default function App() {
                     },
                   ]}
                 >
-                <tr
+                <TableRow
                   onClick={() => {
                     setCursor(rows.indexOf(r));
                     setOpen(r.id);
@@ -1095,7 +1104,7 @@ export default function App() {
                     状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
                     眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
                   */}
-                  <td className="py-1 whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap">
                     {(() => {
                       const tone = statusTone(r.status, r.state);
                       const dot =
@@ -1119,18 +1128,18 @@ export default function App() {
                         </span>
                       );
                     })()}
-                  </td>
+                  </TableCell>
                   {/* 时间：列表要的是「刚才那条」，绝对时间留给悬停 */}
-                  <td className="whitespace-nowrap text-neutral-400">
+                  <TableCell className="whitespace-nowrap text-neutral-400">
                     <Tip text={new Date(r.atMs).toLocaleString()}>
                       <span>{ago(r.atMs, nowTick)}</span>
                     </Tip>
-                  </td>
+                  </TableCell>
                   {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                  <td className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
+                  <TableCell className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
                     {r.client}
-                  </td>
-                  <td className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
+                  </TableCell>
+                  <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
                     {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
                         是脱敏搞坏了功能。所以脱敏发生了就要在
@@ -1186,36 +1195,36 @@ export default function App() {
                         {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
                       </span>
                     )}
-                  </td>
-                  <td
+                  </TableCell>
+                  <TableCell
                     className={
                       "truncate " +
                       (repeated(rows, i, (x) => x.path)
                         ? "text-neutral-400/50"
-                        : "text-neutral-500")
+                        : "text-muted-foreground")
                     }
                   >
                     {r.path}
-                  </td>
+                  </TableCell>
                   {/*
                     数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
                     扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
                     扫出极值。
                   */}
-                  <td className="whitespace-nowrap text-right">
+                  <TableCell className="whitespace-nowrap text-right">
                     {latency(r.ttfbMs, r.durationMs)}
-                  </td>
-                  <td className="whitespace-nowrap text-right text-neutral-400">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-neutral-400">
                     {bytes(r.bytes)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
                 </RowMenu>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
         {locallyAnswered > 0 && rows.length > 0 && (
-          <p className="mt-3 tw-body text-neutral-500">
+          <p className="mt-3 tw-body text-muted-foreground">
             另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
           </p>
         )}

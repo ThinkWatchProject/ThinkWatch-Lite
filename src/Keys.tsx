@@ -6,6 +6,14 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { EMPTY } from "@/lib/utils";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -63,7 +71,7 @@ function AllowCell({
   if (allow === null) {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="tw-label text-neutral-500">全部</span>
+        <span className="tw-label text-muted-foreground">全部</span>
         <button
           disabled={busy}
           onClick={() => onPatch([{ op: "clear", path: `/clients/${client}/allow` }])}
@@ -93,7 +101,7 @@ function AllowCell({
       {allow.map((m, i) => (
         <span
           key={m}
-          className="flex items-center gap-1 rounded border border-neutral-300 px-1.5 font-mono tw-label dark:border-neutral-700"
+          className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {m}
           <button
@@ -206,7 +214,7 @@ export default function Keys({
       <section>
         <div className="flex items-baseline gap-3">
           <h2 className="tw-title font-semibold">网关密钥</h2>
-          <p className="tw-body text-neutral-500">
+          <p className="tw-body text-muted-foreground">
             没有密钥连不上，本机也一样。
           </p>
           <Button
@@ -220,7 +228,7 @@ export default function Keys({
         </div>
 
         {adding && (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-input p-2">
             <Input
               className="flex-1"
               autoFocus
@@ -249,26 +257,25 @@ export default function Keys({
           </div>
         )}
 
-        <table className="mt-3 w-full tw-body">
-          <thead className="text-left text-neutral-500">
-            <tr className="border-b border-neutral-200 dark:border-neutral-800">
-              <th className="py-1.5 font-medium">名字</th>
-              <th className="font-medium">密钥</th>
-              <th className="font-medium">路由</th>
-              <th className="font-medium">并发上限</th>
-              <th className="font-medium">可见模型</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="mt-3">
+          <TableHeader>
+            <TableRow>
+              <TableHead>名字</TableHead>
+              <TableHead>密钥</TableHead>
+              <TableHead>路由</TableHead>
+              <TableHead>并发上限</TableHead>
+              <TableHead>可见模型</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ov.clients.map((c) => (
-              <tr
+              <TableRow
                 key={c.name}
-                className="border-b border-neutral-100 dark:border-neutral-900"
               >
-                <td className="py-1.5 font-medium">{c.name}</td>
-                <td className="font-mono text-neutral-500">{c.key}</td>
-                <td>
+                <TableCell className="font-medium">{c.name}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{c.key}</TableCell>
+                <TableCell>
                   {/*
                     不绑就是走默认路由 —— 选项里把它写出来，而不是留一个
                     空白。**空白读起来是「还没配」，而它其实一直在生效。**
@@ -305,8 +312,8 @@ export default function Keys({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   <Input
                     variant="inline"
                     className="w-16 font-mono"
@@ -333,8 +340,8 @@ export default function Keys({
                       );
                     }}
                   />
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   {/*
                     **三态,而且第三态是「一个都不给」。**留空 = 只按方言
                     过滤;写了 glob = 再按它保留;写一个空列表 = 这把密钥
@@ -347,8 +354,8 @@ export default function Keys({
                     busy={busy === c.name}
                     onPatch={(ops) => void patch(ops, c.name)}
                   />
-                </td>
-                <td className="text-right">
+                </TableCell>
+                <TableCell className="text-right">
                   <Tip text="换一把新的。旧的立刻失效 —— 用着它的客户端要重新配。">
                     <Button
                       variant="ghost"
@@ -380,11 +387,11 @@ export default function Keys({
                       删除
                     </Button>
                   </Tip>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
 
         {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
       </section>

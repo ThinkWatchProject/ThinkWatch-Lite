@@ -23,6 +23,14 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn, EMPTY } from "@/lib/utils";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -210,14 +218,14 @@ function SpeedRows({ r }: { r: L1Result }) {
   return (
     <div className="mt-1.5 space-y-0.5 tw-body">
       {r.segments.map((seg) => (
-        <div key={seg.name} className="flex gap-3 text-neutral-500">
+        <div key={seg.name} className="flex gap-3 text-muted-foreground">
           <span className="w-32 shrink-0">{seg.name}</span>
           <span className="font-mono tw-num">{seg.ms} ms</span>
         </div>
       ))}
       {r.ok && (
         <div className="flex gap-3">
-          <span className="w-32 shrink-0 text-neutral-500">建连总计</span>
+          <span className="w-32 shrink-0 text-muted-foreground">建连总计</span>
           <span className="font-mono tw-num font-medium">{r.total_ms} ms</span>
         </div>
       )}
@@ -322,11 +330,11 @@ function CidrList({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {items.length === 0 && <span className="text-neutral-500">（全放行）</span>}
+      {items.length === 0 && <span className="text-muted-foreground">（全放行）</span>}
       {items.map((c, i) => (
         <span
           key={c}
-          className="flex items-center gap-1 rounded border border-neutral-300 px-1.5 font-mono tw-label dark:border-neutral-700"
+          className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {c}
           <button
@@ -404,18 +412,18 @@ function ProbesSection({
   return (
     <section>
       <h2 className="tw-title font-semibold">客户端的辅助请求</h2>
-      <p className="mt-1 tw-body text-neutral-500">
+      <p className="mt-1 tw-body text-muted-foreground">
         客户端自己发的、你没点过的那些请求。它们也花钱。
       </p>
       <ul className="mt-2 space-y-1.5">
         {probes.map((p) => (
           <li
             key={p.id}
-            className="rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
+            className="rounded-md border border-border px-3 py-2"
           >
             <div className="flex items-baseline gap-3">
               <span className="tw-body font-medium">{p.label}</span>
-              <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+              <div className="ml-auto flex rounded-md border border-input p-0.5">
                 {PROBE_MODES.map((m) => (
                   <button
                     key={m.id}
@@ -425,7 +433,7 @@ function ProbesSection({
                       "rounded px-2 py-0.5 tw-body disabled:opacity-50 " +
                       (p.mode === m.id
                         ? "bg-neutral-200 dark:bg-neutral-800"
-                        : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+                        : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
                     }
                   >
                     {m.label}
@@ -433,14 +441,14 @@ function ProbesSection({
                 ))}
               </div>
             </div>
-            <p className="mt-1 tw-body text-neutral-600 dark:text-neutral-400">{p.what}</p>
-            <p className="mt-0.5 tw-label text-neutral-500">
+            <p className="mt-1 tw-body text-muted-foreground">{p.what}</p>
+            <p className="mt-0.5 tw-label text-muted-foreground">
               {PROBE_MODES.find((m) => m.id === p.mode)?.what}
             </p>
           </li>
         ))}
       </ul>
-      <p className="mt-2 tw-label text-neutral-500">
+      <p className="mt-2 tw-label text-muted-foreground">
         路由规则里的「辅助请求」条件，只有在这一类选了「交给路由」时才可能命中。
       </p>
       {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
@@ -471,7 +479,7 @@ function LimitsSection({
       <dl className="mt-2 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-4 gap-y-1 tw-body">
         {rows.map(([label, key, what]) => (
           <Fragment key={key}>
-            <dt className="text-neutral-500">{label}</dt>
+            <dt className="text-muted-foreground">{label}</dt>
             <dd className="font-mono">
               <EditableCell
                 value={String(l[key])}
@@ -480,7 +488,7 @@ function LimitsSection({
                 onSaved={setErr}
               />
             </dd>
-            <dd className="tw-label text-neutral-500">{what}</dd>
+            <dd className="tw-label text-muted-foreground">{what}</dd>
           </Fragment>
         ))}
       </dl>
@@ -556,7 +564,7 @@ function ListenSection({
     <section>
       <div className="flex items-baseline gap-3">
         <h2 className="tw-title font-semibold">监听与访问</h2>
-        <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+        <div className="ml-auto flex rounded-md border border-input p-0.5">
           {KINDS.map((k) => (
             <button
               key={k.id}
@@ -568,7 +576,7 @@ function ListenSection({
                   ? k.id === "loopback"
                     ? "bg-neutral-200 dark:bg-neutral-800"
                     : "bg-amber-500 text-white"
-                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+                  : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
               }
             >
               {k.label}
@@ -577,7 +585,7 @@ function ListenSection({
         </div>
       </div>
 
-      <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
+      <p className="mt-2 tw-body text-muted-foreground">
         {picked?.what}
       </p>
 
@@ -603,7 +611,7 @@ function ListenSection({
             </SelectContent>
           </Select>
           <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
-            <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
+            <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
               地址会变
             </span>
           </Tip>
@@ -611,7 +619,7 @@ function ListenSection({
       )}
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
-        <dt className="text-neutral-500">正在监听</dt>
+        <dt className="text-muted-foreground">正在监听</dt>
         <dd className="flex items-baseline gap-1 font-mono">
           {ov.listen.bind} :
           <EditableCell
@@ -621,13 +629,13 @@ function ListenSection({
             onSaved={(e) => setErr(e)}
           />
         </dd>
-        <dt className="text-neutral-500">客户端密钥</dt>
+        <dt className="text-muted-foreground">客户端密钥</dt>
         <dd className="font-mono">
           {ov.clients.map((c) => `${c.name} ${c.key}`).join("，")}
         </dd>
         {ov.listen.exposed && (
           <>
-            <dt className="text-neutral-500">来源白名单</dt>
+            <dt className="text-muted-foreground">来源白名单</dt>
             <dd>
               <CidrList
                 items={ov.listen.allow_from}
@@ -790,7 +798,7 @@ export default function Config({
               setFocus(null);
               setMode("form");
             }}
-            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             回到表单
           </button>
@@ -814,7 +822,7 @@ export default function Config({
             onSaved={() => setReloadKey((k) => k + 1)}
           />
         ) : (
-          <p className="tw-body text-neutral-500">读取中…</p>
+          <p className="tw-body text-muted-foreground">读取中…</p>
         )}
       </div>
     );
@@ -830,7 +838,7 @@ export default function Config({
             <button
               onClick={() => test(undefined)}
               disabled={testing !== null}
-              className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
+              className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
             >
               {testing === "*" ? "测速中…" : "全部测一遍"}
             </button>
@@ -840,13 +848,13 @@ export default function Config({
           <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
           <button
             onClick={() => setMode("text")}
-            className="ml-auto tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="ml-auto tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             改文件
           </button>
           <button
             onClick={() => setShowHistory((v) => !v)}
-            className="tw-body text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="tw-body text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             {showHistory ? "收起历史" : `历史（${history.length}）`}
           </button>
@@ -861,9 +869,9 @@ export default function Config({
         )}
 
         {showHistory && (
-          <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800">
+          <div className="mt-2 rounded-md border border-border">
             {history.length === 0 && (
-              <p className="px-3 py-2 tw-body text-neutral-500">
+              <p className="px-3 py-2 tw-body text-muted-foreground">
                 还没有历史版本 —— 第一次改配置之后就有了。
               </p>
             )}
@@ -872,8 +880,8 @@ export default function Config({
                 key={v.version}
                 className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 tw-body last:border-b-0 dark:border-neutral-900"
               >
-                <span className="font-mono text-neutral-500">{v.version.slice(7)}</span>
-                <span className="text-neutral-500">{v.origin}</span>
+                <span className="font-mono text-muted-foreground">{v.version.slice(7)}</span>
+                <span className="text-muted-foreground">{v.origin}</span>
                 <span className="text-neutral-400">
                   {new Date(v.at_ms).toLocaleString()}
                 </span>
@@ -890,7 +898,7 @@ export default function Config({
                         setSaveError(typeof e === "string" ? e : String(e));
                       }
                     }}
-                    className="ml-auto text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
+                    className="ml-auto text-muted-foreground underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
                   >
                     回到这版
                   </button>
@@ -909,25 +917,25 @@ export default function Config({
             <AddUpstream onDone={onProviderAdded} />
           </div>
         ) : (
-        <table className="mt-2 w-full text-left tw-body">
-          <thead className="text-neutral-500">
-            <tr className="border-b border-neutral-200 dark:border-neutral-800">
-              <th className="py-2 font-medium">名字</th>
-              <th className="font-medium">地址</th>
-              <th className="font-medium">协议</th>
-              <th className="font-medium">密钥</th>
-              <th className="font-medium">代理</th>
-              <th className="font-medium">计费</th>
-              <th className="font-medium">信任</th>
+        <Table className="mt-2">
+          <TableHeader>
+            <TableRow>
+              <TableHead>名字</TableHead>
+              <TableHead>地址</TableHead>
+              <TableHead>协议</TableHead>
+              <TableHead>密钥</TableHead>
+              <TableHead>代理</TableHead>
+              <TableHead>计费</TableHead>
+              <TableHead>信任</TableHead>
               {/* 只有一家的时候熔断是旁路的，显示健康列没有意义 */}
-              {multi && <th className="font-medium">状态</th>}
-              <th className="font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
+              {multi && <TableHead>状态</TableHead>}
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ov.providers.map((p) => (
-              <tr key={p.name} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 font-medium" data-row={p.name}>
+              <TableRow key={p.name}>
+                <TableCell className="font-medium" data-row={p.name}>
                   {p.name}
                   <Tip text="跳到配置文件里这一段，并选中它">
                   <button
@@ -940,8 +948,8 @@ export default function Config({
                     ↗
                   </button>
                   </Tip>
-                </td>
-                <td className="text-neutral-500">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   <EditableCell
                     mono
                     value={p.base_url}
@@ -949,8 +957,8 @@ export default function Config({
                     version={cfg?.version ?? null}
                     onSaved={setSaveError}
                   />
-                </td>
-                <td className="text-neutral-500">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   {/*
                     猜不出协议不是错误 —— 但要能改。自动判错的时候，
                     这一格就是修它的地方，而原来只能去改 YAML。
@@ -969,10 +977,10 @@ export default function Config({
                     onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/* 来源，不是值 */}
-                <td className="font-mono text-neutral-500">{p.key_source}</td>
-                <td className="text-neutral-500">
+                <TableCell className="font-mono text-muted-foreground">{p.key_source}</TableCell>
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.proxy}
                     options={[
@@ -987,12 +995,12 @@ export default function Config({
                     onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/*
                   计费方式：它同时决定成本栏怎么显示和
                   `cheapest` 怎么排 —— 订阅制的边际成本是零。
                 */}
-                <td className="text-neutral-500">
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.billing ?? ""}
                     options={[
@@ -1006,12 +1014,12 @@ export default function Config({
                     onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {/*
                   信任级别。**没显式写过的时候要说清是自动判的**
                   —— 否则用户会以为这一格改不动，或者以为是他自己设的。
                 */}
-                <td className="text-neutral-500">
+                <TableCell className="text-muted-foreground">
                   <SelectCell
                     value={p.trust_explicit ? (p.trust === "官方" ? "official" : "untrusted") : ""}
                     options={[
@@ -1024,9 +1032,9 @@ export default function Config({
                     onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                </td>
+                </TableCell>
                 {multi && (
-                  <td>
+                  <TableCell>
                     {p.health === "ok" ? (
                       <span className="text-emerald-600 dark:text-emerald-400">正常</span>
                     ) : (
@@ -1034,21 +1042,21 @@ export default function Config({
                         <span className="text-amber-600 dark:text-amber-400">熔断中</span>
                       </Tip>
                     )}
-                  </td>
+                  </TableCell>
                 )}
-                <td className="text-right">
+                <TableCell className="text-right">
                   <button
                     onClick={() => test(p.name)}
                     disabled={testing !== null}
-                    className="text-neutral-500 underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
+                    className="text-muted-foreground underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-100"
                   >
                     {testing === p.name ? "测速中…" : "测试"}
                   </button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         )}
         {/* 结果放在表下面而不是挤进单元格：分段有三到四行，塞进表格会把
             每一行都撑高，而大多数时候它们并不存在 */}
@@ -1058,12 +1066,12 @@ export default function Config({
           return (
             <div
               key={p.name}
-              className="mt-3 rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800"
+              className="mt-3 rounded-md border border-border px-3 py-2"
             >
               <div className="flex items-baseline gap-2 tw-body">
                 <span>{r.ok ? "✅" : "❌"}</span>
                 <span className="font-medium">{p.name}</span>
-                {r.via && <span className="text-neutral-500">经 {r.via}</span>}
+                {r.via && <span className="text-muted-foreground">经 {r.via}</span>}
               </div>
               <SpeedRows r={r} />
             </div>
@@ -1090,7 +1098,7 @@ export default function Config({
               <li
                 key={g.name}
                 data-row={g.name}
-                className="rounded-md border border-neutral-200 px-3 py-2 tw-body dark:border-neutral-800"
+                className="rounded-md border border-border px-3 py-2 tw-body"
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
@@ -1123,7 +1131,7 @@ export default function Config({
                     onSaved={setSaveError}
                     onDone={() => setReloadKey((k) => k + 1)}
                   />
-                  <span className="ml-auto font-mono text-neutral-500">
+                  <span className="ml-auto font-mono text-muted-foreground">
                     {g.providers.join(" → ")}
                   </span>
                 </div>
@@ -1137,7 +1145,7 @@ export default function Config({
                 */}
                 {g.kind === "手动选" && (
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-neutral-500">优先用</span>
+                    <span className="text-muted-foreground">优先用</span>
                     <Select
                       value={g.selected ?? EMPTY}
                       onValueChange={async (v) => {
@@ -1176,7 +1184,7 @@ export default function Config({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                    <span className="text-neutral-500">
+                    <span className="text-muted-foreground">
                       其余的仍然是它的故障转移备选
                     </span>
                   </div>
@@ -1189,7 +1197,7 @@ export default function Config({
                 {g.kind === "轮流" && (
                   <Field
                     orientation="horizontal"
-                    className="mt-1.5 w-auto text-neutral-600 dark:text-neutral-400"
+                    className="mt-1.5 w-auto text-muted-foreground"
                   >
                     <Checkbox
                       id={`sticky-${g.name}`}
@@ -1338,8 +1346,8 @@ function About() {
       <dl className="mt-2 space-y-0.5 tw-body">
         {rows.map(([k, v]) => (
           <div key={k} className="flex gap-3">
-            <dt className="w-20 shrink-0 text-neutral-500">{k}</dt>
-            <dd className="min-w-0 break-all font-mono tw-label text-neutral-600 dark:text-neutral-400">
+            <dt className="w-20 shrink-0 text-muted-foreground">{k}</dt>
+            <dd className="min-w-0 break-all font-mono tw-label text-muted-foreground">
               {v}
             </dd>
           </div>
@@ -1366,7 +1374,7 @@ function Diagnostics() {
   return (
     <section>
       <h2 className="tw-title font-semibold">诊断包</h2>
-      <p className="mt-1 tw-body text-neutral-500">
+      <p className="mt-1 tw-body text-muted-foreground">
         版本、上游、熔断状态、最近的失败、脱敏后的配置原文。
         <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
           <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
@@ -1396,7 +1404,7 @@ function Diagnostics() {
       {path && (
         <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>
-          <div className="mt-1 text-neutral-500">
+          <div className="mt-1 text-muted-foreground">
             里面的密钥和地址都打过码了，但<span className="font-medium">交出去之前请自己扫一眼</span>。
           </div>
         </div>
@@ -1426,9 +1434,9 @@ function Uninstall() {
 
   if (step === "done") {
     return (
-      <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+      <section className="rounded-md border border-border p-3 tw-body">
         <h2 className="tw-title font-semibold">卸载完成</h2>
-        <ul className="mt-2 space-y-0.5 text-neutral-600 dark:text-neutral-400">
+        <ul className="mt-2 space-y-0.5 text-muted-foreground">
           {log.map((l, i) => (
             <li key={i}>· {l}</li>
           ))}
@@ -1438,11 +1446,11 @@ function Uninstall() {
   }
 
   return (
-    <section className="rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <section className="rounded-md border border-border p-3 tw-body">
       <h2 className="tw-title font-semibold">完全卸载</h2>
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
-          <p className="text-neutral-500">
+          <p className="text-muted-foreground">
             把接管过的客户端改回原样，注销开机自启。
             <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
             —— 那时客户端会指着一个没有东西在听的端口。
@@ -1458,14 +1466,14 @@ function Uninstall() {
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
-          <p className="text-neutral-600 dark:text-neutral-400">要做这几件事：</p>
-          <ul className="space-y-0.5 text-neutral-600 dark:text-neutral-400">
+          <p className="text-muted-foreground">要做这几件事：</p>
+          <ul className="space-y-0.5 text-muted-foreground">
             <li>· 把所有接管过的客户端改回接管之前的样子</li>
             <li>· 注销开机自启</li>
           </ul>
           <Field
             orientation="horizontal"
-            className="w-auto text-neutral-600 dark:text-neutral-400"
+            className="w-auto text-muted-foreground"
           >
             <Checkbox
               id="drop-data"

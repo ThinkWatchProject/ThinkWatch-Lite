@@ -37,7 +37,7 @@ export function BarChart({
 }) {
   const max = Math.max(1, ...bars.map((b) => b.value + (b.sub ?? 0)));
   if (bars.length === 0) {
-    return <p className="tw-label text-neutral-500">{empty ?? "还没有数据"}</p>;
+    return <p className="tw-label text-muted-foreground">{empty ?? "还没有数据"}</p>;
   }
   // 柱宽按格子数平分，留 1px 缝。**不设最小宽度** —— 一格窄到 2px 也
   // 要画，那正是「这段时间几乎没用」的形状。
@@ -99,7 +99,7 @@ export function BarRows({
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   if (rows.length === 0) {
-    return <p className="tw-label text-neutral-500">还没有数据</p>;
+    return <p className="tw-label text-muted-foreground">还没有数据</p>;
   }
   return (
     <div className="space-y-1">

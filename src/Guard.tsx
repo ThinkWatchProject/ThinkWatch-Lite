@@ -2,6 +2,14 @@ import { useState } from "react";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type { Overview } from "./types";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * 防护 —— 三条防线的策略。
@@ -110,7 +118,7 @@ export default function Guard({
     <div className="space-y-6 p-5">
       <div>
         <h2 className="tw-title font-semibold">防护</h2>
-        <p className="mt-1 tw-body text-neutral-500">
+        <p className="mt-1 tw-body text-muted-foreground">
           三条防线，各自三档。出厂都停在「观察」
           {/*
             「我现在到底有没有被保护」是用户在这一页的第一个判断，而
@@ -134,11 +142,11 @@ export default function Guard({
           return (
             <section
               key={l.key}
-              className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
+              className="rounded-lg border border-border p-4"
             >
               <div className="flex items-baseline gap-3">
                 <h3 className="tw-body font-medium">{l.title}</h3>
-                <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+                <div className="ml-auto flex rounded-md border border-input p-0.5">
                   {MODES.map((m) => (
                     <button
                       key={m.id}
@@ -150,7 +158,7 @@ export default function Guard({
                           ? m.id === "enforce"
                             ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                             : "bg-neutral-200 dark:bg-neutral-800"
-                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
+                          : "text-muted-foreground hover:text-neutral-900 dark:hover:text-neutral-100")
                       }
                     >
                       {m.label}
@@ -159,7 +167,7 @@ export default function Guard({
                 </div>
               </div>
 
-              <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
+              <p className="mt-2 tw-body text-muted-foreground">
                 {l.what}
               </p>
 
@@ -169,16 +177,16 @@ export default function Guard({
               */}
               <p className="mt-1.5 tw-body">
                 {cur === "off" && (
-                  <span className="text-neutral-500">现在：不检测，也不记录。</span>
+                  <span className="text-muted-foreground">现在：不检测，也不记录。</span>
                 )}
                 {cur === "observe" && (
-                  <span className="text-neutral-500">
+                  <span className="text-muted-foreground">
                     现在：检测并记录，<span className="font-medium">不改变任何请求</span>。
                     发现会出现在「安全 › 发现」里。
                   </span>
                 )}
                 {cur === "enforce" && (
-                  <span className="text-neutral-800 dark:text-neutral-200">
+                  <span className="text-foreground">
                     现在：{l.verb}。
                   </span>
                 )}
@@ -195,9 +203,9 @@ export default function Guard({
         })}
 
       {sec && (
-        <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <section className="rounded-lg border border-border p-4">
           <h3 className="tw-body font-medium">扫描规则</h3>
-          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
+          <p className="mt-1.5 tw-body text-muted-foreground">
             内置规则加上你自己的那几条。
             {/*
               语义是「加法加停用」而不是「整份替换」（core 那边改过一次）。
@@ -209,7 +217,7 @@ export default function Guard({
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么这么设计</span>
             </Tip>
           </p>
-          <p className="mt-2 tw-body text-neutral-500">
+          <p className="mt-2 tw-body text-muted-foreground">
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
             增删规则要改 config.yaml：它是一组带正则的结构，表单填不了。
           </p>
@@ -217,9 +225,9 @@ export default function Guard({
       )}
 
       {sec && (
-        <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <section className="rounded-lg border border-border p-4">
           <h3 className="tw-body font-medium">按上游的脱敏类别</h3>
-          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
+          <p className="mt-1.5 tw-body text-muted-foreground">
             上面那个总闸决定脱不脱，这里决定
             <span className="font-medium">每家脱哪几类</span>。
             官方端点默认一类都不脱
@@ -227,28 +235,27 @@ export default function Guard({
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
             </Tip>
           </p>
-          <table className="mt-3 w-full text-left tw-body">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-1.5 font-medium">上游</th>
-                <th className="font-medium">信任</th>
-                <th className="font-medium">脱敏类别</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>上游</TableHead>
+                <TableHead>信任</TableHead>
+                <TableHead>脱敏类别</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {ov.providers.map((p) => (
-                <tr
+                <TableRow
                   key={p.name}
-                  className="border-b border-neutral-100 dark:border-neutral-900"
                 >
-                  <td className="py-1.5 font-medium">{p.name}</td>
-                  <td className="text-neutral-500">
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {p.trust}
                     {!p.trust_explicit && (
                       <span className="ml-1 text-neutral-400">（自动判）</span>
                     )}
-                  </td>
-                  <td className="font-mono text-neutral-500">
+                  </TableCell>
+                  <TableCell className="font-mono text-muted-foreground">
                     {p.redact && p.redact.length > 0 ? (
                       p.redact.join(" · ")
                     ) : (
@@ -256,11 +263,11 @@ export default function Guard({
                         {p.redact_explicit ? "显式设成不脱" : "不脱（官方端点）"}
                       </span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </section>
       )}
 
