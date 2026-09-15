@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
+import { XIcon } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -155,17 +156,21 @@ export default function RequestDrawer({
           </span>
         )}
         <span className="flex-1" />
-        {/* 浮层模式下 Sheet 自带右上角的关闭，这个只给分栏那一列 */}
-        {inline && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 whitespace-nowrap"
-            onClick={onClose}
-          >
-            关闭
-          </Button>
-        )}
+        {/*
+          **关闭按钮在 header 这一行里，不用 Sheet 自带的那个。**
+          自带的是 `absolute top-3 right-3` 的 28px 方块，跨到 y=40，而
+          这条 header 是 `py-2`、底边线在 y=37 —— 那个 × 正好压在线上。
+          放进这一行之后它跟着基线走，两种壳也共用同一个。
+        */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label="关闭"
+          onClick={onClose}
+        >
+          <XIcon />
+        </Button>
       </header>
 
       
@@ -351,7 +356,21 @@ export default function RequestDrawer({
   }
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="flex w-[min(38rem,90vw)] flex-col p-0 sm:max-w-none">
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className="flex w-[min(38rem,90vw)] flex-col p-0 sm:max-w-none"
+        /*
+          **打开时别把焦点放在关闭按钮上。**Radix 默认聚焦第一个可聚焦
+          元素，也就是那个 ×，于是一打开就有个高亮方框套在「关闭」上 ——
+          看起来像是在提示你关掉它。改成聚焦面板本身：焦点仍然在陷阱
+          里（Tab 走不出去、Esc 照样关），只是不落在某个按钮上。
+        */
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus();
+        }}
+      >
         {/* 标题在上面那个 header 里,这里只是读屏软件要的那一句 */}
         <SheetHeader className="sr-only">
           <SheetTitle>请求详情</SheetTitle>
