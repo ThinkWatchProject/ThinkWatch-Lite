@@ -91,7 +91,10 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       case "not_implemented":
         return "。它没有模型列表接口，照样能转发，只是按模型名路由那类功能对它用不上";
       case "unrecognized":
-        return "。模型列表是个未识别的形状 —— 转发不受影响，值得报一个 issue";
+        // **不要在这儿叫用户去报 issue。**那是我们的工作流,不是他的;
+        // 他要知道的只是「这会不会影响我」。想告诉我们的话,「设置」里
+        // 的诊断包本来就在那儿。
+        return "。它的模型列表是个不认识的形状 —— 转发不受影响，只是按模型名路由那类功能对它用不上";
       case "empty":
         return "。它的模型列表是空的，照样能转发";
     }

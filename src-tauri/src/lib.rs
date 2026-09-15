@@ -424,28 +424,6 @@ async fn mcp_apply(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 把一条真实请求存成回放用例。
-///
-/// **写文件在这一侧**，和诊断包同一个理由。
-#[tauri::command]
-async fn save_fixture(state: tauri::State<'_, AppState>, id: i64) -> Result<String, String> {
-    let text = state
-        .control
-        .fixture(id)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    let dir = data_dir().join("fixtures");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
-    let path = dir.join(format!("请求-{id}.yaml"));
-    std::fs::write(&path, text).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(path.display().to_string())
-}
-
 /// 攒一份诊断包，写到磁盘上，把路径交回去。
 ///
 /// **写文件是这一侧的事，不是 core 的。**core 只负责把内容攒出来 ——
@@ -858,7 +836,6 @@ pub fn run() {
             replay_quote,
             replay_run,
             save_diagnostics,
-            save_fixture
         ])
         .setup(|app| {
             let handle = app.handle().clone();

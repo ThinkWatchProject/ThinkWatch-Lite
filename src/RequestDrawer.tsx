@@ -155,8 +155,6 @@ export default function RequestDrawer({
           </span>
         )}
         <span className="flex-1" />
-        {/* 「录制」不是一个新功能，这一条请求本来就在存储里 */}
-        <SaveFixture id={id} />
         {/* 浮层模式下 Sheet 自带右上角的关闭，这个只给分栏那一列 */}
         {inline && (
           <Button
@@ -364,50 +362,6 @@ export default function RequestDrawer({
   );
 }
 
-/**
- * 另存为回放用例。
- *
- * **上游漂移是我们的单元测试永远抓不到的那一类故障** —— Codex 在一个
- * patch 版本里改了 `auth.json` 的语义、`reasoning_content` 在不同上游
- * 有三个别名。防它只有一个办法：拿真实流量反复回放。
- *
- * 导出时已经走过脱敏，但**它会进 git**，所以那句「自己看一眼」
- * 必须写在按钮旁边而不是文档里。
- */
-function SaveFixture({ id }: { id: number }) {
-  const [path, setPath] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return (
-    <span className="flex shrink-0 items-center gap-2">
-      {path && (
-        <span className="tw-label text-muted-foreground" title={path}>
-          写好了，记得自己看一眼再交出去
-        </span>
-      )}
-      <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="shrink-0 whitespace-nowrap"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            setPath(await invoke<string>("save_fixture", { id }));
-          } catch (e) {
-            // Tauri 的 invoke 用字符串 reject，不是 Error
-            toast.error(typeof e === "string" ? e : String(e));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {busy ? "存…" : "存为用例"}
-      </Button>
-      </Tip>
-    </span>
-  );
-}
 
 /**
  * 把这条请求原样发给另一个上游（M6+）。
