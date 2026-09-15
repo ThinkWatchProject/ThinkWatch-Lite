@@ -22,8 +22,17 @@ use supervisor::{CoreState, Supervisor};
 
 pub struct AppState {
     pub control: ControlClient,
-    pub core_state: Arc<tokio::sync::Mutex<CoreState>>,
     pub supervisor: Arc<Supervisor>,
+    /// 菜单栏该重新收一次数了。
+    ///
+    /// **菜单栏原来是每秒醒一次的**，而它每醒一次就走两趟控制面（额度、
+    /// 汇总）。那两个数字只在请求落地或者额度头出现之后才会变 —— 也就是
+    /// 说，一台闲着的机器上每秒两次往返问到的全是上一次的同一个答案，
+    /// 而菜单栏是这个应用唯一常驻的东西。
+    ///
+    /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
+    /// 重收，不是一串。
+    pub menubar: Arc<tokio::sync::Notify>,
 }
 
 /// twcore 在哪。
@@ -119,14 +128,22 @@ async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status
 
 #[tauri::command]
 async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let s = state.core_state.lock().await;
-    Ok(match &*s {
+    Ok(describe_state(&state.supervisor.state()))
+}
+
+/// 守护状态说成界面认得的那个字符串。
+///
+/// **只有这一处。**开窗时问一次、之后每次转换推一条，两条路必须说出
+/// 一模一样的话 —— 各写一遍的话，「重启中（第 3 次）」和「重启中」会
+/// 在某次改动之后悄悄分岔。
+fn describe_state(s: &CoreState) -> String {
+    match s {
         CoreState::Starting => "starting".into(),
         CoreState::Running { pid } => format!("running:{pid}"),
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
         CoreState::SafeMode => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
-    })
+    }
 }
 
 #[tauri::command]
@@ -857,13 +874,28 @@ pub fn run() {
             let binary = locate_core(&handle)?;
             let socket = default_socket();
             let sup = Arc::new(Supervisor::new(binary, None));
-            let core_state = sup.state_handle();
 
             app.manage(AppState {
                 control: ControlClient::new(socket),
-                core_state: core_state.clone(),
                 supervisor: sup.clone(),
+                menubar: Arc::new(tokio::sync::Notify::new()),
             });
+
+            // **状态变化推给界面，不要让它来问。**「core 起来没、是不是
+            // 在重启、有没有进安全模式」一天变不了几次，而界面原来是每
+            // 两秒问一遍的 —— 那三次 IPC 往返里绝大多数得到的是同一个
+            // 答案。字符串和 `core_state` 命令走同一个函数，两条路不会
+            // 说出不一样的话。
+            {
+                let h = handle.clone();
+                let mut rx = sup.watch();
+                tauri::async_runtime::spawn(async move {
+                    while rx.changed().await.is_ok() {
+                        let now = rx.borrow().clone();
+                        let _ = h.emit("core-state", describe_state(&now));
+                    }
+                });
+            }
 
             // 守护循环。**它跑在后台任务里而不是阻塞 setup** —— core 起
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
@@ -985,7 +1017,7 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
 
         // 只在 core 应该在跑的时候探。启动中、重启中、安全模式下探测
         // 失败是**预期的**，把它算进连续失败会让守护自己制造重启循环。
-        let running = matches!(&*sup.state_handle().lock().await, CoreState::Running { .. });
+        let running = matches!(sup.state(), CoreState::Running { .. });
         if !running {
             tracker.reset();
             was_running = false;
@@ -1039,6 +1071,19 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
                 // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
                 // 看到这条，判断质量完全不一样。
                 notify_if_dangerous(&a, &ev);
+                // 菜单栏上那两个数只跟这几种事件有关：花了多少（请求
+                // 落地之后存储层才算得出来）、额度还剩多少。别的事件
+                // 叫醒它只是让它白跑一趟。
+                if matches!(
+                    ev,
+                    tw_api::Event::RequestFinished { .. }
+                        | tw_api::Event::RequestFailed { .. }
+                        | tw_api::Event::QuotaSeen { .. }
+                        | tw_api::Event::ConfigReloaded { .. }
+                ) && let Some(st) = a.try_state::<AppState>()
+                {
+                    st.menubar.notify_one();
+                }
                 let _ = a.emit("core-event", &ev);
             })
             .await;
@@ -1408,69 +1453,90 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     Menu::with_items(app, &refs)
 }
 
-/// 每秒更新一次菜单栏。
+/// 攒多久再收一次数。
 ///
-/// **空闲时跳过渲染**：文字没变就不重画。菜单栏是这个应用唯一
-/// 常驻的东西，它自己耗电就直接违反了「空闲 CPU 约等于零」。
+/// 一串请求只换来一次重收，而不是一条一次。顺便给存储层留出把这一条
+/// 落库的时间 —— 花费是它算出来的，事件到的那一刻还没有。
+const MENUBAR_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// 菜单栏。**被事件叫醒，不是每秒醒一次。**
+///
+/// 它原来一秒一轮：每轮走两趟控制面（额度、汇总），另外每五轮再走两趟
+/// 建托盘菜单。渲染那一层一直有「文字没变就不重画」的保护，但**收数据
+/// 那一层没有** —— 于是一台整天闲着的机器每秒钟都在问两个几小时才会变
+/// 一次的问题。菜单栏是这个应用唯一常驻的东西，它自己耗电就直接违反了
+/// 「空闲时约等于不存在」。
+///
+/// 现在三个理由会叫醒它：请求落地、额度头出现、守护状态变了。都没发生
+/// 的时候，它一次都不醒。
 async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
+    // 两路唤醒信号，在循环外拿一次就够 —— 它们和 AppState 同寿。
+    let Some(wake) = app.try_state::<AppState>().map(|s| s.menubar.clone()) else {
+        return;
+    };
+    // 守护状态自己是一路：core 起来、重启、进安全模式都要立刻反映到
+    // 菜单栏上，而那和请求流没有关系。
+    let Some(mut core_rx) = app.try_state::<AppState>().map(|s| s.supervisor.watch()) else {
+        return;
+    };
+
     let mut prev = menubar::MenuBarState::default();
     let mut prev_tray = TrayFacts::default();
-    let mut tick: u64 = 0;
     // 第一帧无条件画，之后靠 needs_redraw
     let mut first = true;
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        let next = match app.try_state::<AppState>() {
-            Some(state) => collect_menubar_state(&state).await,
-            None => continue,
+        // 应用正在退出，状态已经撤了 —— 收摊，别再画了
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
         };
-        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建**
-        // —— 每秒重建一次是浪费，而且 macOS 上菜单正开着时重建会把它
-        // 收起来，用户点到一半菜单没了。
-        //
-        // 而**收数据本身也要限频**：菜单要的东西（策略组、历史）得走两次
-        // 控制面往返，一秒两次是在为一个几分钟才变一次的菜单持续付钱，
-        // 而这个应用的第一条约束就是空闲时约等于不存在。
-        // 五秒一次 —— 改完配置最多等五秒菜单跟上，那完全够。
-        tick = tick.wrapping_add(1);
-        // 第一轮无条件建一次，否则托盘头五秒是个空菜单
-        if (tick == 1 || tick % 5 == 0)
-            && let Some(state) = app.try_state::<AppState>()
-        {
-            let facts = collect_tray_facts(&state, &next).await;
-            if first || facts != prev_tray {
-                match build_tray_menu(&app, &facts) {
-                    Ok(m) => {
-                        let _ = tray.set_menu(Some(m));
-                        prev_tray = facts;
-                    }
-                    Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
+        let next = collect_menubar_state(&state).await;
+        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建** —— 而且
+        // macOS 上菜单正开着时重建会把它收起来，用户点到一半菜单没了。
+        let facts = collect_tray_facts(&state, &next).await;
+        if first || facts != prev_tray {
+            match build_tray_menu(&app, &facts) {
+                Ok(m) => {
+                    let _ = tray.set_menu(Some(m));
+                    prev_tray = facts;
                 }
+                Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
             }
         }
-        if !first && !next.needs_redraw(&prev) {
-            continue;
+        if first || next.needs_redraw(&prev) {
+            first = false;
+            draw_menubar(&tray, &next);
+            prev = next;
         }
-        first = false;
 
-        let template = next.is_template();
-        let (rgba, w, h) = menubar::render_rgba(
-            &next.line1(),
-            &next.line2(),
-            template,
-            menubar::Appearance::Dark,
-        );
-        let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
-        // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
-        // 恢复时再打开才能重新自动适配亮暗。
-        let _ = tray.set_icon_as_template(template);
-        prev = next;
+        // 等一个理由。**两路都要等** —— 只等事件的话，core 挂了之后
+        // 菜单栏会停在最后那个数字上，而那正是最该说实话的时候。
+        tokio::select! {
+            _ = wake.notified() => {}
+            _ = core_rx.changed() => {}
+        }
+        // 攒一下。`Notify` 只攒一个许可，所以这三秒里来多少条事件，
+        // 醒来之后也只多跑一轮。
+        tokio::time::sleep(MENUBAR_SETTLE).await;
     }
 }
 
+/// 把一帧画到菜单栏上。
+fn draw_menubar(tray: &tauri::tray::TrayIcon, next: &menubar::MenuBarState) {
+    let template = next.is_template();
+    let (rgba, w, h) = menubar::render_rgba(
+        &next.line1(),
+        &next.line2(),
+        template,
+        menubar::Appearance::Dark,
+    );
+    let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
+    // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
+    // 恢复时再打开才能重新自动适配亮暗。
+    let _ = tray.set_icon_as_template(template);
+}
+
 async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::MenuBarState {
-    let core = state.core_state.lock().await.clone();
+    let core = state.supervisor.state();
     let status = match core {
         CoreState::Running { .. } => menubar::Status::Normal,
         CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,

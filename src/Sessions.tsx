@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { usd, type SessionDetail, type SessionView, type TurnView } from "./types";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
+import { useCoreEvent } from "./useCoreEvent";
 import {
   Table,
   TableBody,
@@ -46,9 +47,11 @@ export default function Sessions() {
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 10000);
-    return () => clearInterval(t);
   }, [load]);
+
+  // 会话是把存下来的请求聚起来算的，**只在有请求落地之后才会变** ——
+  // 原来每 10 秒重算一遍，空闲时每一遍都算出同一个答案。
+  useCoreEvent(["request_finished", "request_failed"], () => void load());
 
   if (!rows) return <div className="p-5 tw-head text-muted-foreground">{error ?? "读取中…"}</div>;
 

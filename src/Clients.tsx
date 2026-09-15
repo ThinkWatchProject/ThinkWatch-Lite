@@ -12,6 +12,7 @@ import { Button } from "@/ui/button";
 import { Badge } from "@/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
+import { useCoreEvent } from "./useCoreEvent";
 import { patchConfig } from "./patch";
 import {
   Dialog,
@@ -65,10 +66,24 @@ export default function Clients({
 
   useEffect(() => {
     void load();
-    // 观察窗口靠轮询：等的是「第一个真实请求」，而它可能几分钟后才来
-    const t = setInterval(() => void load(), 5000);
-    return () => clearInterval(t);
   }, [load]);
+
+  /*
+    这一页有两件事会变，而它们各自都有事件：
+
+    · **磁盘上那几个配置文件被改了** —— 用户在编辑器里把地址改回去，
+      接管状态就该跟着变。core 盯着那几个目录，改动会报 `clients_changed`。
+    · **第一个真实请求到了** —— 「已验证」这个标记等的就是它，而它可能
+      几分钟后才来。
+
+    原来两件事都靠每 5 秒重扫一遍磁盘来发现。空闲的机器上那是每分钟
+    十二次白扫，而用户多半根本没打开这一页。
+  */
+  useCoreEvent(
+    ["clients_changed", "request_finished", "request_failed"],
+    () => void load(),
+    3_000,
+  );
 
   async function ask(c: DetectedClient, restore: boolean) {
     setBusy(true);

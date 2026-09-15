@@ -7,25 +7,6 @@
 import { usd } from "./types";
 
 /**
- * 相对时间。
- *
- * 列表里要的是「刚才那条」而不是一个绝对时间戳 —— 排查时的定位方式是
- * 「我刚发的那次」。绝对时间留给悬停。
- *
- * **不做「刚刚」这种模糊档**：两条相差 3 秒的记录都显示「刚刚」，就没法
- * 按时间对上号了，而这一列存在的全部意义就是对号。
- */
-export function ago(atMs: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - atMs) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
-
-/**
  * 首字节和总耗时合成一列。
  *
  * 非流式请求两者几乎相同（`253ms / 254ms`），两列占着宽度却只有一个
@@ -52,7 +33,7 @@ export function latency(
  * 值不携带任何信息，而这一列存在的意义就是把某一行对上号。
  *
  * 今天的记录给到秒（同一分钟内的几次请求要能分开），更早的给到分并带上
- * 日期。相对时间留给悬停。
+ * 日期。完整时间戳留给悬停。
  */
 export function when(atMs: number, now = Date.now()): string {
   const t = new Date(atMs);

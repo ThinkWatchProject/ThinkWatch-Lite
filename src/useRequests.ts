@@ -104,6 +104,14 @@ export function useRequests() {
    * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
    */
   const [settled, setSettled] = useState(0);
+  /**
+   * 「现在什么情况」变了几次。
+   *
+   * **某家上游被熔断、或者恢复了** —— 那是概览和上游列表上看得见的状态，
+   * 而它不属于任何一次请求。core 现在会报这条事件，界面据此重读一遍，
+   * 不再每两秒问一次同样的问题。
+   */
+  const [health, setHealth] = useState(0);
   const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -183,6 +191,7 @@ export function useRequests() {
       let landed = false;
       for (const ev of batch) {
         if (ev.kind === "request_finished" || ev.kind === "request_failed") landed = true;
+        if (ev.kind === "health_changed") setHealth((n) => n + 1);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
@@ -240,6 +249,7 @@ export function useRequests() {
     rows,
     seeded,
     settled,
+    health,
     locallyAnswered,
     rejected,
     configVersion,

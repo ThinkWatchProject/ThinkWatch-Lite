@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ago,
   bucketStart,
   densify,
   latency,
@@ -11,21 +10,6 @@ import {
   when,
 } from "./format";
 import { usd } from "./types";
-
-describe("相对时间", () => {
-  const now = 1_000_000_000;
-  it("按秒、分、时、天分档", () => {
-    expect(ago(now - 3_000, now)).toBe("3s");
-    expect(ago(now - 90_000, now)).toBe("1m");
-    expect(ago(now - 3_600_000 * 5, now)).toBe("5h");
-    expect(ago(now - 86_400_000 * 3, now)).toBe("3d");
-  });
-
-  /** 时钟回拨或者服务端时间靠前时，不要显示负数 */
-  it("未来的时间不显示负数", () => {
-    expect(ago(now + 5_000, now)).toBe("0s");
-  });
-});
 
 describe("延迟合成一列", () => {
   /**

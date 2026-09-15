@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
-import { ago, latency, money, repeated, statusTone, tokens, when } from "./format";
+import { bucketStart, latency, money, repeated, statusTone, tokens, when } from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -84,6 +84,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
+
+const DAY_MS = 24 * 3_600_000;
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -256,6 +258,7 @@ export default function App() {
     rows: allRows,
     seeded,
     settled,
+    health,
     locallyAnswered,
     rejected,
     configVersion,
@@ -335,17 +338,26 @@ export default function App() {
    * 应用，窗口是用户随手拖的。
    */
   /**
-   * 相对时间要自己走，否则「3s」会一直停在 3s。
+   * 今天从哪一刻算起。
    *
-   * **10 秒一跳，不是 1 秒。**这一列的精度到「秒」就够了，而每秒重渲染
-   * 整张表正是刚修掉的那个毛病 —— 为了让一个数字走起来把它请回来，
-   * 是这类计时器最常见的退化方式。
+   * 时间那一列只有一处跟「现在」有关：今天的记录给到秒，更早的带上
+   * 日期。**那条界线一天只过一次**，所以定时器就定在下一个零点 ——
+   * 原来是每十秒问一遍现在几点，而每问一遍就把整张表重画一遍。
+   *
+   * 跨零点用 `setDate(+1)` 再归零，不是加 86400000：夏令时那两天
+   * 一天不是 24 小时，加毫秒会错开一个钟头。
    */
-  const [nowTick, setNowTick] = useState(Date.now());
+  const [today, setToday] = useState(() => bucketStart(Date.now(), DAY_MS));
   useEffect(() => {
-    const h = setInterval(() => setNowTick(Date.now()), 10_000);
-    return () => clearInterval(h);
-  }, []);
+    const next = new Date(today);
+    next.setDate(next.getDate() + 1);
+    next.setHours(0, 0, 0, 0);
+    const h = setTimeout(
+      () => setToday(bucketStart(Date.now(), DAY_MS)),
+      Math.max(1_000, next.getTime() - Date.now()),
+    );
+    return () => clearTimeout(h);
+  }, [today]);
   const [wide, setWide] = useState(() => window.innerWidth >= 1040);
   useEffect(() => {
     const on = () => setWide(window.innerWidth >= 1040);
@@ -527,16 +539,54 @@ export default function App() {
     setCursor((c) => (c >= rows.length ? rows.length - 1 : c));
   }, [rows.length]);
 
+  /**
+   * 守护状态。**推过来的，不是问出来的。**
+   *
+   * 「core 起来没、是不是在重启、有没有进安全模式」一天变不了几次，
+   * 而这三个答案原来是每两秒问一遍的。
+   *
+   * **先挂监听再读一次当前值**，顺序不能反：事件只报变化，而两者之间
+   * 发生的那一次转换会丢 —— 表现是启动瞬间界面卡在「已停止」，直到
+   * 下一次转换才跟上。
+   */
   useEffect(() => {
     let alive = true;
-    const tick = async () => {
+    const un = listen<string>("core-state", (e) => {
+      if (alive) setCore(e.payload);
+    });
+    void un
+      .then(() => invoke<string>("core_state"))
+      .then((c) => {
+        if (alive) setCore(c);
+      })
+      .catch(() => {
+        /* core 还没起来。它起来的那一刻会推一条过来 */
+      });
+    return () => {
+      alive = false;
+      void un.then((f) => f());
+    };
+  }, []);
+
+  /**
+   * 状态与配置概览。**只在真的有理由重读的时候重读。**
+   *
+   * 原来这一段是每两秒一轮的轮询：两次 IPC 往返，而绝大多数轮得到的是
+   * 一模一样的答案。它变化的时机是数得清的，而每一个现在都有事件：
+   *
+   * · 配置换了一份（`configVersion` 跟着 `config_reloaded` 走）
+   * · 某家上游熔断了或恢复了（`health`，core 现在会报）
+   * · 守护状态变了 —— 重启之后监听地址和 pid 都可能不一样
+   * · 用户自己刚改完东西（`nudge`）
+   */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
       try {
         // Tauri 的 invoke 用**字符串** reject，不是 Error ——
         // `e instanceof Error` 永远是 false，所以按字符串处理。
         const s = await invoke<CoreStatus>("core_status");
-        if (alive) {
-          setStatus(s);
-        }
+        if (alive) setStatus(s);
       } catch (e) {
         if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
@@ -546,22 +596,11 @@ export default function App() {
       } catch {
         /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
-      try {
-        const c = await invoke<string>("core_state");
-        if (alive) setCore(c);
-      } catch {
-        /* core_state 不该失败；失败了也不该盖掉上面那条更有用的错误 */
-      }
-    };
-    tick();
-    const h = setInterval(tick, 2000);
+    })();
     return () => {
       alive = false;
-      clearInterval(h);
     };
-    // configVersion 变了就立刻再拉一次 —— 不然用户在编辑器里改完，
-    // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效。
-  }, [configVersion, nudge]);
+  }, [configVersion, nudge, health, core, setStatus, setOv]);
 
   const c = describeCore(core);
 
@@ -1264,8 +1303,8 @@ export default function App() {
                     某一行对上号。相对时间留给悬停。
                   */}
                   <TableCell className="whitespace-nowrap text-neutral-400">
-                    <Tip text={`${new Date(r.atMs).toLocaleString()} · ${ago(r.atMs, nowTick)} 前`}>
-                      <span>{when(r.atMs, nowTick)}</span>
+                    <Tip text={new Date(r.atMs).toLocaleString()}>
+                      <span>{when(r.atMs, today)}</span>
                     </Tip>
                   </TableCell>
                   {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}

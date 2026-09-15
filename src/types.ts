@@ -44,6 +44,21 @@ export type CoreEvent =
    */
   | { kind: "scan_alert"; id: number; alerts: ScanFinding[]; at_ms: number }
   /**
+   * 客户端配置面上的文件动了 —— **不管改了什么**。
+   *
+   * 和 `scan_alert` 是两件事：那条说的是「出现了可疑内容」，值得打断
+   * 用户；这条只说「那几个文件变了」，客户端那一页据此重读一遍接管
+   * 状态。用户在编辑器里把地址改回原样一点都不可疑，但界面必须跟上。
+   */
+  | { kind: "clients_changed"; id: number; at_ms: number }
+  /**
+   * 某家上游的熔断器开了或者合上了。
+   *
+   * **这是少数几个不挂在任何一次请求上的状态变化**，而它在概览和上游
+   * 列表上都看得见。没有它，界面只能定时重读整份配置概览才能发现。
+   */
+  | { kind: "health_changed"; id: number; provider: string; state: "open" | "closed"; at_ms: number }
+  /**
    * 出站脱敏动手了。
    *
    * **界面上必须能看到脱敏发生了什么** —— 看不见的安全功能会被用户关掉，
@@ -212,8 +227,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "config_reloaded":
     case "config_rejected":
     case "scan_alert":
-      // 都不进请求列表。配置事件和扫描告警是另一回事，App 单独接 ——
-      // 后者说的是磁盘上的文件，和请求没有关系。
+    case "clients_changed":
+    case "health_changed":
+      // 都不进请求列表。配置事件、扫描告警、熔断状态说的都是「现在
+      // 什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "redacted": {
       const r = rows.get(ev.id);
