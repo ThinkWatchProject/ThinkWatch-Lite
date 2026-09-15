@@ -7,6 +7,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -17,14 +18,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 /**
  * 路由。
@@ -86,26 +79,23 @@ export default function Routes({
       <section className="rounded-lg border border-border p-3">
         <div className="flex items-baseline gap-3">
           <h3 className="tw-head">默认路由</h3>
-          <Select
+          <NativeSelect
+            size="sm"
             value={defaultRoute}
             disabled={busy === "default"}
-            onValueChange={(v) =>
-              void patch([{ op: "replace", path: "/default_route", value: v }], "default")
+            onChange={(e) =>
+              void patch(
+                [{ op: "replace", path: "/default_route", value: e.target.value }],
+                "default",
+              )
             }
           >
-            <SelectTrigger size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {routes.map((r) => (
-                  <SelectItem key={r.name} value={r.name}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            {routes.map((r) => (
+              <NativeSelectOption key={r.name} value={r.name}>
+                {r.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
           <p className="tw-body text-muted-foreground">
             没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
           </p>
@@ -397,20 +387,13 @@ function NewRule({
           onChange={(e) => setName(e.target.value)}
         />
         <span className="text-muted-foreground">去向</span>
-        <Select value={to} onValueChange={setTo}>
-          <SelectTrigger size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {targets.map(([v, label]) => (
-                <SelectItem key={v} value={v}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <NativeSelect size="sm" value={to} onChange={(e) => setTo(e.target.value)}>
+          {targets.map(([v, label]) => (
+            <NativeSelectOption key={v} value={v}>
+              {label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 tw-body">

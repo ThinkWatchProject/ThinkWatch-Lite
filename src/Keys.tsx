@@ -4,10 +4,10 @@ import { Tip } from "@/ui/tip";
 import type { Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { EMPTY } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Table,
   TableBody,
@@ -26,14 +26,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 /**
  * 网关密钥。
@@ -284,38 +276,35 @@ export default function Keys({
                     不绑就是走默认路由 —— 选项里把它写出来，而不是留一个
                     空白。**空白读起来是「还没配」，而它其实一直在生效。**
                   */}
-                  <Select
-                    value={c.route ?? EMPTY}
+                  <NativeSelect
+                    size="sm"
+                    value={c.route ?? ""}
                     disabled={busy === c.name}
-                    onValueChange={(v) =>
+                    onChange={(e) =>
                       void patch(
                         [
                           {
                             op: "replace",
                             path: `/clients/${c.name}/route`,
-                            value: v === EMPTY ? null : v,
+                            // 原生 option 收空串，「没绑」就是空串本身
+                            value: e.target.value || null,
                           },
                         ],
                         c.name,
                       )
                     }
                   >
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={EMPTY}>默认（{defaultRoute}）</SelectItem>
-                        {routes
-                          .filter((r) => !r.default)
-                          .map((r) => (
-                            <SelectItem key={r.name} value={r.name}>
-                              {r.name}
-                            </SelectItem>
-                          ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                    <NativeSelectOption value="">
+                      默认（{defaultRoute}）
+                    </NativeSelectOption>
+                    {routes
+                      .filter((r) => !r.default)
+                      .map((r) => (
+                        <NativeSelectOption key={r.name} value={r.name}>
+                          {r.name}
+                        </NativeSelectOption>
+                      ))}
+                  </NativeSelect>
                 </TableCell>
                 <TableCell>
                   <Input

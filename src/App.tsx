@@ -41,7 +41,6 @@ import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { EMPTY } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -50,6 +49,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Sidebar,
   SidebarContent,
@@ -82,14 +82,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -891,48 +883,38 @@ export default function App() {
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
             {facet.clients.length > 1 && (
-              <Select
-                value={filter.client  || EMPTY}
-                onValueChange={(v) =>
-                  setFilter((f) => ({ ...f, client: v === EMPTY ? "" : v }))
+              <NativeSelect
+                size="sm"
+                value={filter.client}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, client: e.target.value }))
                 }
               >
-                <SelectTrigger size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={EMPTY}>全部客户端</SelectItem>
-                    {facet.clients.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                <NativeSelectOption value="">全部客户端</NativeSelectOption>
+                {facet.clients.map((c) => (
+                  <NativeSelectOption key={c} value={c}>
+                    {c}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             )}
             {facet.providers.length > 1 && (
-              <Select
-                value={filter.provider  || EMPTY}
-                onValueChange={(v) =>
-                  setFilter((f) => ({ ...f, provider: v === EMPTY ? "" : v }))
+              <NativeSelect
+                size="sm"
+                value={filter.provider}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, provider: e.target.value }))
                 }
               >
-                <SelectTrigger size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={EMPTY}>全部上游</SelectItem>
-                    {facet.providers.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                <NativeSelectOption value="">全部上游</NativeSelectOption>
+                {facet.providers.map((c) => (
+                  <NativeSelectOption key={c} value={c}>
+                    {c}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             )}
             {/*
               **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」

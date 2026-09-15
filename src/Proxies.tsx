@@ -5,6 +5,7 @@ import { Input } from "@/ui/input";
 import type { Overview, PatchOp } from "./types";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Table,
   TableBody,
@@ -13,14 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 const KINDS: { id: string; label: string; what: string }[] = [
   {
@@ -104,20 +97,17 @@ export default function Proxies({
               placeholder="名字，上游那边按它引用"
               onChange={(e) => setF({ ...f, name: e.target.value })}
             />
-            <Select value={f.kind} onValueChange={(v) => setF({ ...f, kind: v })}>
-              <SelectTrigger size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {KINDS.map((k) => (
-                    <SelectItem key={k.id} value={k.id}>
-                      {k.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            <NativeSelect
+              size="sm"
+              value={f.kind}
+              onChange={(e) => setF({ ...f, kind: e.target.value })}
+            >
+              {KINDS.map((k) => (
+                <NativeSelectOption key={k.id} value={k.id}>
+                  {k.label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
             <Input
               className="w-44 font-mono"
               value={f.addr}

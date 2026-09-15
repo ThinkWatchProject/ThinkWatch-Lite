@@ -5,6 +5,13 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import {
+  Item,
+  ItemActions,
+  ItemDescription,
+  ItemHeader,
+  ItemTitle,
+} from "@/ui/item";
+import {
   Table,
   TableBody,
   TableCell,
@@ -137,12 +144,15 @@ export default function Guard({
         LINES.map((l) => {
           const cur = (sec[l.key] as Mode) ?? "observe";
           return (
-            <section
-              key={l.key}
-              className="rounded-lg border border-border p-4"
-            >
-              <div className="flex items-baseline gap-3">
-                <h3 className="tw-body font-medium">{l.title}</h3>
+            /*
+              **一行 = 标题 + 说明 + 右侧操作**，这正是 `Item` 的形状。
+              原来是 `section` 里手拼 `flex items-baseline ml-auto`，而
+              「操作靠右、标题截断、说明换行」这几件事每次都得重写一遍。
+            */
+            <Item key={l.key} variant="outline" className="flex-col items-stretch">
+              <ItemHeader>
+                <ItemTitle>{l.title}</ItemTitle>
+                <ItemActions>
                 <ToggleGroup
                   type="single"
                   variant="outline"
@@ -158,11 +168,10 @@ export default function Guard({
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
-              </div>
+                </ItemActions>
+              </ItemHeader>
 
-              <p className="mt-2 tw-body text-muted-foreground">
-                {l.what}
-              </p>
+              <ItemDescription>{l.what}</ItemDescription>
 
               {/*
                 当前这一档到底在做什么 —— 一句话，随档变化。
@@ -191,13 +200,15 @@ export default function Guard({
                   切到「拦截」：{l.cost}
                 </p>
               )}
-            </section>
+            </Item>
           );
         })}
 
       {sec && (
-        <section className="rounded-lg border border-border p-4">
-          <h3 className="tw-body font-medium">扫描规则</h3>
+        <Item variant="outline" className="flex-col items-stretch">
+          <ItemHeader>
+            <ItemTitle>扫描规则</ItemTitle>
+          </ItemHeader>
           <p className="mt-1.5 tw-body text-muted-foreground">
             内置规则加上你自己的那几条。
             {/*
@@ -214,7 +225,7 @@ export default function Guard({
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
             增删规则要改 config.yaml：它是一组带正则的结构，表单填不了。
           </p>
-        </section>
+        </Item>
       )}
 
       {sec && (

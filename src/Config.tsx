@@ -21,13 +21,14 @@ import type {
 } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { cn, EMPTY } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,14 +42,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 /**
  * 一个能改的字段。
@@ -170,16 +163,16 @@ function SelectCell({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Select
-      value={value || EMPTY}
+    <NativeSelect
+      size="inline"
+      value={value}
       disabled={busy}
-      onValueChange={async (picked) => {
+      onChange={async (ev) => {
         if (!version) {
           toast.error("还没读到配置版本，稍等一下再试");
           return;
         }
-        // 哨兵换回空串，下一行再把空串写成 null
-        const v = picked === EMPTY ? "" : picked;
+        const v = ev.target.value;
         setBusy(true);
         try {
           await patchConfig(
@@ -196,19 +189,12 @@ function SelectCell({
         }
       }}
     >
-      <SelectTrigger size="inline">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {options.map(([v, label]) => (
-            <SelectItem key={v || EMPTY} value={v || EMPTY}>
-              {label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+      {options.map(([v, label]) => (
+        <NativeSelectOption key={v} value={v}>
+          {label}
+        </NativeSelectOption>
+      ))}
+    </NativeSelect>
   );
 }
 
@@ -599,25 +585,26 @@ function ListenSection({
 
       {kind === "nic" && (
         <div className="mt-2 flex items-center gap-2">
-          <Select value={cur} disabled={busy} onValueChange={(v) => void write(v)}>
-            <SelectTrigger size="sm" className="font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
-                    **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
-                {!nics?.some((n) => n.addr === cur) && (
-                  <SelectItem value={cur}>{cur}（现在找不到这张网卡）</SelectItem>
-                )}
-                {nics?.map((n) => (
-                  <SelectItem key={`${n.name}-${n.addr}`} value={n.addr}>
-                    {n.name}　{n.addr}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <NativeSelect
+            size="sm"
+            className="font-mono"
+            value={cur}
+            disabled={busy}
+            onChange={(e) => void write(e.target.value)}
+          >
+            {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
+                **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
+            {!nics?.some((n) => n.addr === cur) && (
+              <NativeSelectOption value={cur}>
+                {cur}（现在找不到这张网卡）
+              </NativeSelectOption>
+            )}
+            {nics?.map((n) => (
+              <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.addr}>
+                {n.name}　{n.addr}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
           <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
             <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
               地址会变
@@ -1142,9 +1129,11 @@ export default function Config({
                 {g.kind === "手动选" && (
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="text-muted-foreground">优先用</span>
-                    <Select
-                      value={g.selected ?? EMPTY}
-                      onValueChange={async (v) => {
+                    <NativeSelect
+                      size="inline"
+                      value={g.selected ?? ""}
+                      onChange={async (ev) => {
+                        const v = ev.target.value;
                         if (!cfg?.version) {
                           toast.error("还没读到配置版本，稍等一下再试");
                           return;
@@ -1163,19 +1152,12 @@ export default function Config({
                         }
                       }}
                     >
-                      <SelectTrigger size="inline">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {g.providers.map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                      {g.providers.map((p) => (
+                        <NativeSelectOption key={p} value={p}>
+                          {p}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
                     <span className="text-muted-foreground">
                       其余的仍然是它的故障转移备选
                     </span>

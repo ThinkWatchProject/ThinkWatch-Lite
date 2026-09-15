@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Table,
   TableBody,
@@ -22,14 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -479,27 +472,21 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         </Tip>
       </p>
       <div className="flex items-center gap-2">
-        <Select
+        <NativeSelect
+          size="sm"
           value={provider}
-          onValueChange={(v) => {
-            setProvider(v);
+          onChange={(e) => {
+            setProvider(e.target.value);
             setQuote(null);
           }}
         >
-          <SelectTrigger size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {ov?.providers.map((p) => (
-                <SelectItem key={p.name} value={p.name}>
-                  {p.name}
-                  {p.name === originalProvider ? "（原来就是它）" : ""}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+          {ov?.providers.map((p) => (
+            <NativeSelectOption key={p.name} value={p.name}>
+              {p.name}
+              {p.name === originalProvider ? "（原来就是它）" : ""}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
         <Button
           variant="outline"
           size="sm"
