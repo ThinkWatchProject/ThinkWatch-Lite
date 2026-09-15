@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "./ui/Tooltip";
+import { Button } from "@/ui/button";
 import type { Overview, PatchOp } from "./types";
 
 const KINDS: { id: string; label: string; what: string }[] = [
@@ -72,12 +73,9 @@ export default function Proxies({
         <p className="tw-body text-neutral-500">
           声明一次，每个上游各自选用。
         </p>
-        <button
-          onClick={() => setAdding(true)}
-          className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 tw-body dark:border-neutral-700"
-        >
+        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setAdding(true)}>
           新建
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -135,7 +133,8 @@ export default function Proxies({
             </Tip>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              size="sm"
               disabled={busy === "new" || !f.name.trim() || !f.addr.trim()}
               onClick={async () => {
                 if (proxies.some((p) => p.name === f.name.trim())) {
@@ -159,16 +158,12 @@ export default function Proxies({
                   setF({ name: "", kind: "socks5h", addr: "", user: "", pass: "" });
                 }
               }}
-              className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               建
-            </button>
-            <button
-              onClick={() => setAdding(false)}
-              className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
               取消
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -215,15 +210,15 @@ export default function Proxies({
                         : "删掉它。"
                     }
                   >
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="xs"
                       disabled={busy === p.name || p.used_by > 0}
                       onClick={() =>
                         void patch([{ op: "remove", path: `/proxies/${p.name}` }], p.name)
-                      }
-                      className="rounded px-2 py-0.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
-                    >
+                      }>
                       删除
-                    </button>
+                    </Button>
                   </Tip>
                 </td>
               </tr>

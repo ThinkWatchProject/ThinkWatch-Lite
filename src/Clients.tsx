@@ -8,6 +8,7 @@ import type {
   FindingView,
   PlanView,
 } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 客户端接管页。
@@ -186,21 +187,24 @@ export default function Clients({
               >
                 确认全部还原
               </button>
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setConfirmAll(false)}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 取消
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
               disabled={busy}
               onClick={() => setConfirmAll(true)}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 tw-body hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               全部还原
-            </button>
+            </Button>
           ))}
       </div>
 
@@ -299,23 +303,25 @@ function Card({
         )}
         <div className="ml-auto flex gap-1">
           {adopted && (
-            <button
-              className="rounded px-2 py-1 tw-body text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => onWhy(c.id)}
               disabled={busy}
             >
               {/* 已经收到过它的请求了还问「为什么没生效」，读起来像是我们
                   自己都不信刚才那个「已验证」 */}
               {verified ? "检查配置链" : "为什么没生效？"}
-            </button>
+            </Button>
           )}
-          <button
-            className="rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onAsk(c, adopted)}
             disabled={busy}
           >
             {adopted ? "还原" : "接管…"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -427,17 +433,17 @@ function PlanDialog({
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           取消
-        </button>
+        </Button>
         {!p.noop && (
-          <button
-            className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          <Button
+            size="sm"
             onClick={onConfirm}
             disabled={busy}
           >
             {restore ? "还原" : "确认接管"}
-          </button>
+          </Button>
         )}
       </div>
     </Shell>
@@ -537,9 +543,9 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
         </div>
       </div>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           知道了
-        </button>
+        </Button>
       </div>
     </Shell>
   );
@@ -578,9 +584,9 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
         ))}
       </ul>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           关闭
-        </button>
+        </Button>
       </div>
     </Shell>
   );

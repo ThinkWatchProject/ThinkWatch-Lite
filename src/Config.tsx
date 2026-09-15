@@ -1,5 +1,7 @@
 import { Fragment, useRef, useState } from "react";
 import { Tip } from "./ui/Tooltip";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import AddUpstream from "./AddUpstream";
 import Proxies from "./Proxies";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +19,7 @@ import type {
   Overview,
   PatchOp,
 } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 一个能改的字段。
@@ -1167,12 +1170,14 @@ export default function Config({
                   而缓存命中与否成本差 5 到 10 倍。
                 */}
                 {g.kind === "轮流" && (
-                  <label className="mt-1.5 flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-                    <input
-                      type="checkbox"
-                      className="tw-check"
+                  <Field
+                    orientation="horizontal"
+                    className="mt-1.5 w-auto text-neutral-600 dark:text-neutral-400"
+                  >
+                    <Checkbox
+                      id={`sticky-${g.name}`}
                       checked={g.session_affinity ?? true}
-                      onChange={async (e) => {
+                      onCheckedChange={async (checked) => {
                         if (!cfg?.version) {
                           setSaveError("还没读到配置版本，稍等一下再试");
                           return;
@@ -1183,7 +1188,7 @@ export default function Config({
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/session_affinity`,
-                                value: e.target.checked,
+                                value: checked === true,
                               },
                             ],
                             baseVersion: cfg.version,
@@ -1195,8 +1200,10 @@ export default function Config({
                         }
                       }}
                     />
-                    会话粘滞（同一次对话固定走同一家）
-                  </label>
+                    <FieldLabel htmlFor={`sticky-${g.name}`}>
+                      会话粘滞（同一次对话固定走同一家）
+                    </FieldLabel>
+                  </Field>
                 )}
                 {g.hurts_cache && (
                   // 这句必须在界面上直说：它决定了用户的账单。
@@ -1216,14 +1223,13 @@ export default function Config({
       {section === "settings" && (
         <section>
           <h2 className="tw-title font-semibold">开机启动</h2>
-          <label className="mt-2 flex items-start gap-2 tw-body">
-            <input
-              type="checkbox"
-              className="tw-check mt-0.5"
+          <Field orientation="horizontal" className="mt-2">
+            <Checkbox
+              id="autostart"
               checked={autostart === true}
               disabled={autostart === null}
-              onChange={async (e) => {
-                const want = e.target.checked;
+              onCheckedChange={async (checked) => {
+                const want = checked === true;
                 setAutostartErr(null);
                 // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
                 // 状态为准**，不是以这里传出去的那个为准。注册可能失败
@@ -1237,9 +1243,9 @@ export default function Config({
                 }
               }}
             />
-            <span>
-              <span className="text-neutral-800 dark:text-neutral-200">开机时自动启动</span>
-              <span className="mt-0.5 block text-neutral-500">
+            <FieldContent>
+              <FieldLabel htmlFor="autostart">开机时自动启动</FieldLabel>
+              <FieldDescription>
                 {/*
                   说清「默认是关的」和「勾了会发生什么」。一个装完就往
                   登录项里写东西的工具，用户第一次发现它是在系统设置里
@@ -1250,9 +1256,9 @@ export default function Config({
                 <Tip text="勾上会在「系统设置 › 通用 › 登录项」里注册一条。开机后只有菜单栏多一个图标，不会弹出窗口。">
                   <span className="underline decoration-dotted underline-offset-2">勾上会发生什么</span>
                 </Tip>
-              </span>
-            </span>
-          </label>
+              </FieldDescription>
+            </FieldContent>
+          </Field>
           {autostartErr && (
             <p className="mt-1.5 tw-body text-amber-700 dark:text-amber-300">
               {autostartErr}
@@ -1349,8 +1355,10 @@ function Diagnostics() {
           <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
         </Tip>。
       </p>
-      <button
-        className="mt-2 rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -1366,7 +1374,7 @@ function Diagnostics() {
         }}
       >
         {busy ? "攒着…" : "生成"}
-      </button>
+      </Button>
       {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
       {path && (
         <div className="mt-2 tw-body">
@@ -1422,12 +1430,14 @@ function Uninstall() {
             <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
             —— 那时客户端会指着一个没有东西在听的端口。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
             onClick={() => setStep("ask")}
-            className="shrink-0 rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
           >
             卸载…
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
@@ -1436,17 +1446,21 @@ function Uninstall() {
             <li>· 把所有接管过的客户端改回接管之前的样子</li>
             <li>· 注销开机自启</li>
           </ul>
-          <label className="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-            <input
-              type="checkbox"
-              className="tw-check"
+          <Field
+            orientation="horizontal"
+            className="w-auto text-neutral-600 dark:text-neutral-400"
+          >
+            <Checkbox
+              id="drop-data"
               checked={drop}
-              onChange={(e) => setDrop(e.target.checked)}
+              onCheckedChange={(c) => setDrop(c === true)}
             />
             {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
                 「删了才发现还想看」是不可逆的 */}
-            连同数据目录一起删掉（请求历史、成本记录、配置备份）
-          </label>
+            <FieldLabel htmlFor="drop-data">
+              连同数据目录一起删掉（请求历史、成本记录、配置备份）
+            </FieldLabel>
+          </Field>
           <div className="flex gap-2">
             <button
               disabled={busy}
@@ -1466,12 +1480,13 @@ function Uninstall() {
             >
               确认卸载
             </button>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setStep("idle")}
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               取消
-            </button>
+            </Button>
           </div>
         </div>
       )}

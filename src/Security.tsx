@@ -11,6 +11,7 @@ import type {
   ScanFinding,
   ScanResponse,
 } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 客户端配置面。
@@ -113,13 +114,14 @@ export default function Security({
         <span>
           扫了 {data.scanned} 份文件，规则来自{data.rules_origin}。
         </span>
-        <button
-          className="rounded border border-neutral-300 px-2 py-0.5 dark:border-neutral-700"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void load()}
           disabled={busy}
         >
           {busy ? "扫描中…" : "重扫"}
-        </button>
+        </Button>
       </div>
 
       {data.rules_warning && (
@@ -141,12 +143,14 @@ export default function Security({
             <h2 className="tw-head font-medium text-red-900 dark:text-red-200">
               刚刚新出现的 · {alerts.length} 处
             </h2>
-            <button
-              className="ml-auto rounded px-2 py-0.5 tw-body text-red-700 dark:text-red-300"
+            <Button
+              variant="destructive"
+              size="xs"
+              className="ml-auto"
               onClick={onSeen}
             >
               标记已读
-            </button>
+            </Button>
           </div>
           {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
               比「这个文件里有可疑内容」强得多 */}
@@ -185,8 +189,10 @@ export default function Security({
           <ul className="space-y-1">
             {data.findings.map((f, i) => (
               <li key={i}>
-                <button
-                  className="flex w-full items-start gap-2 rounded border border-neutral-200 px-3 py-2 text-left tw-body hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex h-auto w-full items-start gap-2 text-left"
                   onClick={() => setOpen(f)}
                 >
                   <span
@@ -206,7 +212,7 @@ export default function Security({
                       {f.path.replace(/^.*\//, "")}:{f.line}
                     </span>
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -546,17 +552,17 @@ function McpConfirm({
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
             取消
-          </button>
+          </Button>
           {!plan.noop && (
-            <button
-              className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            <Button
+              size="sm"
               onClick={onConfirm}
               disabled={busy}
             >
               确认
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -689,9 +695,9 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
           </div>
         </div>
         <div className="mt-4 flex justify-end">
-          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             关闭
-          </button>
+          </Button>
         </div>
       </div>
     </div>

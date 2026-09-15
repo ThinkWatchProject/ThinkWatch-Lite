@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 自定义价格（第三层）。
@@ -97,12 +98,14 @@ export default function Pricing() {
             </p>
           )}
         </div>
-        <button
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
           onClick={() => setOpen(!open)}
-          className="shrink-0 rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           {open ? "收起" : rows.length > 0 ? `${rows.length} 条自定义` : "加一条"}
-        </button>
+        </Button>
       </div>
 
       {open && (
@@ -175,7 +178,9 @@ export default function Pricing() {
             </tbody>
           </table>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() =>
                 setRows([
                   ...rows,
@@ -188,18 +193,16 @@ export default function Pricing() {
                     overrides_builtin: false,
                   },
                 ])
-              }
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
+              }>
               加一条
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={save}
               disabled={busy || !dirty}
-              className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               {busy ? "保存中…" : "保存"}
-            </button>
+            </Button>
             {dirty && <span className="text-neutral-500">有未保存的改动</span>}
           </div>
           <p className="text-neutral-500">
@@ -215,7 +218,9 @@ export default function Pricing() {
       <div className="mt-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
         {!offer && !preview && (
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               disabled={step !== "idle"}
               onClick={async () => {
                 setStep("offering");
@@ -228,10 +233,9 @@ export default function Pricing() {
                   setStep("idle");
                 }
               }}
-              className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               {step === "offering" ? "查询中…" : "检查价格更新"}
-            </button>
+            </Button>
             <span className="text-neutral-500">
               内置的是 {data.snapshot_date} 那份。不会自动检查。
             </span>
@@ -249,7 +253,8 @@ export default function Pricing() {
               ；下载后先显示变更，确认才写入。
             </p>
             <div className="flex gap-2">
-              <button
+              <Button
+                size="sm"
                 disabled={step !== "idle"}
                 onClick={async () => {
                   setStep("fetching");
@@ -262,16 +267,16 @@ export default function Pricing() {
                     setStep("idle");
                   }
                 }}
-                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
               >
                 {step === "fetching" ? "下载中…" : "下载并对比"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setOffer(null)}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 算了
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -314,7 +319,8 @@ export default function Pricing() {
               </div>
             )}
             <div className="flex gap-2">
-              <button
+              <Button
+                size="sm"
                 disabled={step !== "idle"}
                 onClick={async () => {
                   setStep("applying");
@@ -331,19 +337,19 @@ export default function Pricing() {
                     setStep("idle");
                   }
                 }}
-                className="rounded bg-neutral-900 px-2 py-1 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
               >
                 {step === "applying" ? "写入中…" : "确认更新"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setPreview(null);
                   setOffer(null);
                 }}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 不更新
-              </button>
+              </Button>
             </div>
             <p className="text-neutral-500">
               你的自定义价格不受影响，更新只换底下那份公共价目表。

@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "./ui/Tooltip";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
 import { Dialog } from "./ui/Dialog";
 import type { Overview, PatchOp, RouteView } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 路由。
@@ -95,12 +98,14 @@ export default function Routes({
           <p className="tw-body text-neutral-500">
             一条路由里，从上往下匹配，第一条命中的决定去向。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
             onClick={() => setAdding(true)}
-            className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 tw-body dark:border-neutral-700"
           >
             新建路由
-          </button>
+          </Button>
         </div>
 
         {adding && (
@@ -115,7 +120,8 @@ export default function Routes({
               }}
               className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <button
+            <Button
+              size="sm"
               disabled={busy === "new" || !newName.trim()}
               onClick={async () => {
                 const n = newName.trim();
@@ -146,16 +152,16 @@ export default function Routes({
                   setNewName("");
                 }
               }}
-              className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               建
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setAdding(false)}
-              className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
             >
               取消
-            </button>
+            </Button>
           </div>
         )}
 
@@ -184,12 +190,14 @@ export default function Routes({
                       ? "没绑路由的密钥走它"
                       : "还没有密钥绑它"}
                 </span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
                   onClick={() => setAddRuleTo(r.name)}
-                  className="ml-auto rounded px-2 py-0.5 tw-label text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
                 >
                   加规则
-                </button>
+                </Button>
                 <Tip
                   text={
                     r.default
@@ -199,13 +207,14 @@ export default function Routes({
                         : "删掉这条路由。"
                   }
                 >
-                  <button
+                  <Button
+                    variant="destructive"
+                    size="xs"
                     disabled={r.default}
                     onClick={() => setConfirmDelete(r)}
-                    className="rounded px-2 py-0.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
                   >
                     删除
-                  </button>
+                  </Button>
                 </Tip>
               </div>
 
@@ -247,18 +256,18 @@ export default function Routes({
                     <span className="ml-auto font-mono text-neutral-500">
                       → {rule.to}
                     </span>
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="xs"
                       disabled={busy === `rule-${r.name}`}
                       onClick={() =>
                         void patch(
                           [{ op: "remove", path: `/routes/${r.name}/rules/${rule.name}` }],
                           `rule-${r.name}`,
                         )
-                      }
-                      className="rounded px-1.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
-                    >
+                      }>
                       删
-                    </button>
+                    </Button>
                   </li>
                 ))}
                 {r.rules.length === 0 && (
@@ -286,12 +295,13 @@ export default function Routes({
         }
         footer={
           <>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setConfirmDelete(null)}
-              className="rounded-md border border-neutral-300 px-3 py-1 tw-body dark:border-neutral-700"
             >
               取消
-            </button>
+            </Button>
             <button
               onClick={() => {
                 const r = confirmDelete;
@@ -343,6 +353,7 @@ function NewRule({
   onCancel: () => void;
   onCreate: (item: string) => void;
 }) {
+  const uid = useId();
   const [name, setName] = useState("");
   const [model, setModel] = useState("");
   const [tools, setTools] = useState(false);
@@ -398,15 +409,14 @@ function NewRule({
           onChange={(e) => setTokens(e.target.value)}
           className="w-40 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
-        <label className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            className="tw-check"
+        <Field orientation="horizontal" className="w-auto">
+          <Checkbox
+            id={`${uid}-tools`}
             checked={tools}
-            onChange={(e) => setTools(e.target.checked)}
+            onCheckedChange={(c) => setTools(c === true)}
           />
-          带工具调用
-        </label>
+          <FieldLabel htmlFor={`${uid}-tools`}>带工具调用</FieldLabel>
+        </Field>
         <Tip text="三个条件都留空就是一条兜底规则 —— 它会命中这条路由里所有还没被上面的规则拦下的请求。每条路由都该有一条。">
           <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
             都留空 = 兜底
@@ -418,19 +428,20 @@ function NewRule({
         <code className="flex-1 truncate rounded bg-neutral-200/60 px-2 py-1 font-mono tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
           {route} ／ {build().replace(/\n/g, "  ")}
         </code>
-        <button
+        <Button
+          size="sm"
           disabled={busy || !name.trim() || !to}
           onClick={() => onCreate(build())}
-          className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
         >
           加上
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onCancel}
-          className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
         >
           取消
-        </button>
+        </Button>
       </div>
     </div>
   );

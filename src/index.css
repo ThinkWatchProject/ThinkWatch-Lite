@@ -211,65 +211,6 @@
   color: AccentColor;
 }
 
-/* --------------------------------------------------------------- 勾选框
- *
- * **原生的那个太小。**WKWebView 按 AppKit 的规格画,约 13px —— 放在
- * 13px 正文旁边,它比一个字还小,点起来要瞄。这里统一到 16px,和源
- * 列表的图标同一格,一眼就看得见、伸手就点得着。
- *
- * **仍然是一个真的 `<input type="checkbox">`。**`appearance: none` 是
- * 在这个 input 自己身上改样子,不是拿 span 假扮一个 —— 键盘、空格键、
- * 点标签文字、`:disabled`、辅助功能全都还是浏览器在管,一行 JS 都不用
- * 写。换成自绘的那一刻,这些就得一样一样补回来,而漏掉哪一样没人会
- * 发现。
- *
- * 勾上之后跟系统强调色走,和选中项同一条纪律。
- */
-:root {
-  --check-line: #c3c8d0; /* 没勾时的边 */
-  --check-ground: #ffffff;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --check-line: #4a515c;
-    --check-ground: rgb(255 255 255 / 6%);
-  }
-}
-@utility tw-check {
-  appearance: none;
-  -webkit-appearance: none;
-  flex: none; /* 在 flex 行里不许被文字压扁 */
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 1px solid var(--check-line);
-  border-radius: 4px;
-  background: var(--check-ground);
-  background-position: center;
-  background-repeat: no-repeat;
-  transition:
-    background-color 100ms ease-out,
-    border-color 100ms ease-out;
-
-  &:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--check-line) 70%, currentColor);
-  }
-  &:checked {
-    border-color: transparent;
-    background-color: #0a84ff;
-    background-color: AccentColor;
-    /* 白勾。描边画的,和 ui/icons.tsx 里那套同一个画法 */
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.2 8.3 6.7 10.8 11.8 5.4' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  }
-  &:disabled {
-    opacity: 0.4;
-  }
-  &:focus-visible {
-    outline: 2px solid #0a84ff;
-    outline: 2px solid AccentColor;
-    outline-offset: 2px;
-  }
-}
 
 body {
   margin: 0;

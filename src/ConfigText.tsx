@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import YamlEditor from "./YamlEditor";
 import type { ConfigAt, ConfigText as Doc } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 文本模式：直接改 config.yaml。
@@ -136,24 +137,26 @@ export default function ConfigTextMode({
             现在保存会覆盖掉外面那次改动。
           </p>
           <div className="mt-2 flex gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setDraft(doc.text);
                 base.current = doc.version;
                 setError(null);
               }}
-              className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
               丢掉放弃本地改动，用文件里的
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 base.current = doc.version;
               }}
-              className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
               保留本地改动，覆盖文件
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -187,13 +190,13 @@ export default function ConfigTextMode({
       )}
 
       <div className="flex items-center gap-3 tw-body">
-        <button
+        <Button
+          size="sm"
           onClick={save}
           disabled={busy || !dirty}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
         >
           {busy ? "保存中…" : "保存"}
-        </button>
+        </Button>
         {dirty && !busy && <span className="text-amber-600 dark:text-amber-400">有未保存的改动</span>}
         <span className="ml-auto font-mono text-neutral-400">{doc.version}</span>
         <span className="text-neutral-400">{doc.path}</span>

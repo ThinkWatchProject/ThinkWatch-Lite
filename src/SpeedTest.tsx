@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * L3 模型测速。**这一层会花钱**。
@@ -66,13 +67,14 @@ export default function SpeedTest({ models }: { models: string[] }) {
             <option key={m} value={m} />
           ))}
         </datalist>
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={ask}
           disabled={busy || !model.trim()}
-          className="rounded-md border border-neutral-300 px-2 py-1 tw-body disabled:opacity-40 dark:border-neutral-700"
         >
           {busy && !quote ? "计算中…" : "预估用量"}
-        </button>
+        </Button>
       </div>
 
       {/* **报价。**这一步不能省 */}
@@ -111,12 +113,13 @@ export default function SpeedTest({ models }: { models: string[] }) {
             >
               {busy ? "测试中…" : "确认并开始"}
             </button>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setQuote(null)}
-              className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
               取消
-            </button>
+            </Button>
           </div>
         </div>
       )}

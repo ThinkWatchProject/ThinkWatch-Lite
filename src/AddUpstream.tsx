@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 加第一个上游 —— **长在配置页里，不是一个把人挡在外面的独立页面。**
@@ -145,23 +146,25 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       </div>
 
       <div className="mt-4 flex items-center gap-3">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={doProbe}
           disabled={!ready || busy}
-          className="rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           {busy && !probe ? "测试中…" : "测试连接"}
-        </button>
+        </Button>
         {/* 说清这一下不花钱，否则谨慎的用户不会点 */}
         <span className="tw-body text-neutral-400">不花钱，可以随便点</span>
         {probe?.ok && (
-          <button
+          <Button
+            size="sm"
+            className="ml-auto"
             onClick={doSetup}
             disabled={busy}
-            className="ml-auto rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
           >
             保存并启用
-          </button>
+          </Button>
         )}
       </div>
 

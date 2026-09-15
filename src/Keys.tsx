@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "./ui/Tooltip";
 import { Dialog } from "./ui/Dialog";
 import type { Overview, PatchOp } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 网关密钥。
@@ -191,12 +192,14 @@ export default function Keys({
           <p className="tw-body text-neutral-500">
             没有密钥连不上，本机也一样。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
             onClick={() => setAdding(true)}
-            className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 tw-body dark:border-neutral-700"
           >
             新建
-          </button>
+          </Button>
         </div>
 
         {adding && (
@@ -212,19 +215,20 @@ export default function Keys({
               }}
               className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <button
+            <Button
+              size="sm"
               disabled={busy === "new" || !newName.trim()}
               onClick={() => void create()}
-              className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               建
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setAdding(false)}
-              className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
             >
               取消
-            </button>
+            </Button>
           </div>
         )}
 
@@ -322,13 +326,14 @@ export default function Keys({
                 </td>
                 <td className="text-right">
                   <Tip text="换一把新的。旧的立刻失效 —— 用着它的客户端要重新配。">
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       disabled={busy === c.name}
                       onClick={() => void regenerate(c.name)}
-                      className="rounded px-2 py-0.5 tw-label text-neutral-500 hover:text-neutral-900 disabled:opacity-40 dark:hover:text-neutral-100"
                     >
                       换密钥
-                    </button>
+                    </Button>
                   </Tip>
                   {/*
                     **最后一把不给删。**删光之后谁也连不上，而且配置会
@@ -342,13 +347,14 @@ export default function Keys({
                         : "删掉它。用着它的客户端立刻连不上。"
                     }
                   >
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="xs"
                       disabled={busy === c.name || ov.clients.length <= 1}
                       onClick={() => setConfirmDelete(c.name)}
-                      className="rounded px-2 py-0.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
                     >
                       删除
-                    </button>
+                    </Button>
                   </Tip>
                 </td>
               </tr>
@@ -367,12 +373,13 @@ export default function Keys({
         description="用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。"
         footer={
           <>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setConfirmDelete(null)}
-              className="rounded-md border border-neutral-300 px-3 py-1 tw-body dark:border-neutral-700"
             >
               取消
-            </button>
+            </Button>
             <button
               onClick={() => {
                 const name = confirmDelete;

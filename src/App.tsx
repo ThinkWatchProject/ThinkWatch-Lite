@@ -40,6 +40,7 @@ import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
+import { Button } from "@/ui/button";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -672,15 +673,16 @@ export default function App() {
           data-tauri-drag-region
         >
           <Tip side="bottom" text={(railOpen ? "收起源列表" : "展开源列表") + "  ⌘⌥S"}>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setRailOpen((v) => !v)}
               aria-label={railOpen ? "收起源列表" : "展开源列表"}
               aria-expanded={railOpen}
-              className="rounded-md p-1 hover:bg-[var(--chrome-hover)]"
               style={{ color: "var(--chrome-dim)" }}
             >
               <IconSidebar size={16} />
-            </button>
+            </Button>
           </Tip>
         </div>
       {error && (
@@ -760,12 +762,14 @@ export default function App() {
                   <span className="font-medium">重启之前不处理，这家会一直 401</span>。
                 </p>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
                 onClick={clearRotated}
-                className="shrink-0 rounded border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
               >
                 知道了
-              </button>
+              </Button>
             </div>
           </div>
         ),
@@ -926,12 +930,13 @@ export default function App() {
               </code>{" "}
               听着，但还没有地方可以转发。加一个上游只要地址和密钥。
             </p>
-            <button
+            <Button
+              size="sm"
+              className="mt-3"
               onClick={() => setTab("config")}
-              className="mt-3 rounded bg-neutral-900 px-3 py-1.5 tw-body text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
               去配置页加
-            </button>
+            </Button>
           </div>
         )}
         {rows.length === 0 ? (
@@ -961,12 +966,14 @@ export default function App() {
               了「把客户端指过来」，而没给他一条走过去的路 —— 那句话对
               一个不想自己改 settings.json 的人等于没说。
             */}
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
               onClick={() => setTab("clients")}
-              className="mt-4 rounded border border-neutral-300 px-3 py-1.5 tw-body hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               写入客户端配置
-            </button>
+            </Button>
           </div>
         ) : (
           <table className="w-full text-left tw-body tw-num">

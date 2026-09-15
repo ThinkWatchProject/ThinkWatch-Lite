@@ -9,6 +9,7 @@ import {
   type ReplayResult,
   type RequestDetail,
 } from "./types";
+import { Button } from "@/ui/button";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -138,12 +139,14 @@ export default function RequestDrawer({
         <span className="flex-1" />
         {/* 「录制」不是一个新功能，这一条请求本来就在存储里 */}
         <SaveFixture id={id} />
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 whitespace-nowrap"
           onClick={onClose}
-          className="shrink-0 whitespace-nowrap rounded px-2 py-1 tw-label text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
         >
           关闭
-        </button>
+        </Button>
       </header>
 
       {error && (
@@ -357,8 +360,10 @@ function SaveFixture({ id }: { id: number }) {
       )}
       {error && <span className="tw-label text-amber-600 dark:text-amber-400">{error}</span>}
       <Tip text="把这次的请求和响应存成一个脱敏过的回放用例。它会进 git，交出去之前自己看一眼">
-      <button
-        className="shrink-0 whitespace-nowrap rounded px-2 py-1 tw-label text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="shrink-0 whitespace-nowrap"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -374,7 +379,7 @@ function SaveFixture({ id }: { id: number }) {
         }}
       >
         {busy ? "存…" : "存为用例"}
-      </button>
+      </Button>
       </Tip>
     </span>
   );
@@ -463,13 +468,14 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             </option>
           ))}
         </select>
-        <button
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void ask()}
           disabled={busy || !provider}
         >
           看报价
-        </button>
+        </Button>
       </div>
 
       {error && <div className="text-amber-600 dark:text-amber-400">{error}</div>}
@@ -488,13 +494,14 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             </div>
           )}
           <div className="mt-1 text-neutral-500">价目表日期 {quote.pricing_date}。</div>
-          <button
-            className="mt-2 rounded bg-neutral-900 px-3 py-1 text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          <Button
+            size="sm"
+            className="mt-2"
             onClick={() => void go()}
             disabled={busy}
           >
             {busy ? "发送中…" : "确认发送"}
-          </button>
+          </Button>
         </div>
       )}
 

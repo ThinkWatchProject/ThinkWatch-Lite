@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
 import type { DryRunResult } from "./types";
+import { Button } from "@/ui/button";
 
 /**
  * 路由试算。
@@ -21,6 +24,7 @@ export default function DryRun({ models }: { models: string[] }) {
   const [r, setR] = useState<DryRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   async function run() {
     setBusy(true);
@@ -91,23 +95,28 @@ export default function DryRun({ models }: { models: string[] }) {
             ["扩展思考", thinking, setThinking],
           ] as const
         ).map(([label, v, set]) => (
-          <label key={label} className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              className="tw-check"
+          /*
+            **`w-auto` 是布局,不是配色。**`Field` 默认 `w-full` —— 那是
+            给表单一行一个字段用的,而这四个是挤在一条工具条里的开关,
+            撑满会把后面的按钮挤下去。
+          */
+          <Field key={label} orientation="horizontal" className="w-auto">
+            <Checkbox
+              id={`${uid}-${label}`}
               checked={v}
-              onChange={(e) => set(e.target.checked)}
+              onCheckedChange={(c) => set(c === true)}
             />
-            {label}
-          </label>
+            <FieldLabel htmlFor={`${uid}-${label}`}>{label}</FieldLabel>
+          </Field>
         ))}
-        <button
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void run()}
           disabled={busy}
         >
           {busy ? "算…" : "试算"}
-        </button>
+        </Button>
       </div>
 
       {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
