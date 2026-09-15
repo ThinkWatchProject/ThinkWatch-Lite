@@ -96,6 +96,14 @@ export function useRequests() {
   const frame = useRef<number | null>(null);
   /** 历史读过了吗。**读之前是骨架屏，读完没有才是空状态** */
   const [seeded, setSeeded] = useState(false);
+  /**
+   * 对过几次账了。
+   *
+   * **概览页靠它决定什么时候重新拉数。**那一页问的是库，而库只在请求
+   * 落地之后才变 —— 定时轮询等于在什么都没发生的时候反复重画一张一样
+   * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
+   */
+  const [settled, setSettled] = useState(0);
   const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -142,6 +150,7 @@ export function useRequests() {
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+    setSettled((n) => n + 1);
   }, []);
 
   // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
@@ -230,6 +239,7 @@ export function useRequests() {
   return {
     rows,
     seeded,
+    settled,
     locallyAnswered,
     rejected,
     configVersion,

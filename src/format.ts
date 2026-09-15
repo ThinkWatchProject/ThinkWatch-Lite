@@ -148,6 +148,29 @@ export interface CostBucket {
 }
 
 /**
+ * 把一个时刻落到它所在那一格的开头。
+ *
+ * **时间窗必须对齐到格子，不能是「现在往前推 24 小时」。**后者每刷新
+ * 一次就往前挪一点，于是每一格的边界跟着挪：一条固定时间的记录会在两格
+ * 之间来回滑，柱子的高低随之变化 —— 而那是「你什么时候看」造成的，
+ * 不是数据变了。对齐之后，同一个小时里读到的是同一张图。
+ *
+ * **对齐到本地日历，不是对齐到纪元。**一天一格时，纪元对齐的「一天」是
+ * UTC 零点到零点，而格子上写的是本地日期 —— 两者差着时区那几个小时。
+ * 半小时偏移的时区里连整点都对不上。
+ */
+export function bucketStart(atMs: number, bucketMs: number): number {
+  const d = new Date(atMs);
+  if (bucketMs >= 24 * 3_600_000) {
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  const hours = Math.max(1, Math.round(bucketMs / 3_600_000));
+  d.setHours(Math.floor(d.getHours() / hours) * hours, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
  * 把稀疏的桶补成稠密的一排。
  *
  * **core 刻意不补**：GROUP BY 只产出有数据的桶，而要画多少格只有界面

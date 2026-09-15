@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { useStableState } from "./useStable";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
 import { BarChart, BarRows } from "@/ui/charts";
-import { densify } from "./format";
+import { bucketStart, densify } from "./format";
 import { usd, type Dashboard as Data } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { toast } from "sonner";
@@ -87,14 +88,24 @@ function fmtBucket(atMs: number, bucketMs: number): string {
  */
 export default function Dashboard({ tick }: { tick: number }) {
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);
-  /** 桶宽跟着窗口走 —— 和后端那边算的是同一套，否则补空桶会补错格数 */
+  /**
+   * 一格多宽，跟着窗口走：30 天按天，不然是七百多根柱子；一两天按小时。
+   *
+   * **这个判断只在这里做一次。**它和窗口起点一起送给后端，后端照着分格
+   * —— 两边各算一遍的话，补空桶时格子对不上，图上会是一排零。
+   */
   const bucketMs =
     range.ms > 7 * 24 * 3_600_000
       ? 24 * 3_600_000
       : range.ms > 2 * 24 * 3_600_000
         ? 6 * 3_600_000
         : 3_600_000;
-  const [d, setD] = useState<Data | null>(null);
+  /**
+   * **只在内容真的变了的时候才换。**每次 `invoke` 回来都是一个新对象，
+   * 直接 setState 会让整页重画一遍 —— 图表跟着从头动画一次，条子上的
+   * 金额在那 400 毫秒里是跳的。而这一切发生在「什么都没发生」的时候。
+   */
+  const [d, setD] = useStableState<Data | null>(null);
   const gatewayHint = "本机网关地址";
   const [error, setError] = useState<string | null>(null);
   /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** —— 用户要能一边看
@@ -105,8 +116,11 @@ export default function Dashboard({ tick }: { tick: number }) {
     let alive = true;
     (async () => {
       try {
+        // 窗口起点对齐到格子边界，格宽一起送过去 —— 两边各算一遍的话，
+        // 补空桶时格子对不上，整张图会是零。见 bucketStart 的注释。
+        const sinceMs = bucketStart(Date.now() - range.ms, bucketMs);
         // Tauri 的 invoke 用字符串 reject，不是 Error
-        const x = await invoke<Data>("dashboard", { windowMs: range.ms });
+        const x = await invoke<Data>("dashboard", { sinceMs, bucketMs });
         if (alive) {
           setD(x);
           setError(null);
@@ -118,7 +132,7 @@ export default function Dashboard({ tick }: { tick: number }) {
     return () => {
       alive = false;
     };
-  }, [tick, range.ms]);
+  }, [tick, range.ms, bucketMs, setD]);
 
   /*
     标题和时间范围在读到数据之前就该在那儿 —— 它们不依赖数据，而且

@@ -172,25 +172,28 @@ async fn speed_test(
 #[tauri::command]
 async fn dashboard(
     state: tauri::State<'_, AppState>,
-    // 往前看多少毫秒。界面上那三个预设和自定义区间都落到这一个数。
-    window_ms: Option<i64>,
+    // 时间窗的起点，以及趋势图一格多宽。
+    //
+    // **两个都由界面给，这一层不再自己算。**原来这里收的是「往前看多少
+    // 毫秒」，起点是 `now - window` —— 每刷新一次就往前挪一点，于是所有
+    // 格子的边界跟着挪：没有任何新请求，柱子的高低也会变，而那是「你
+    // 什么时候看」造成的，不是数据。格子边界该对齐到**本地**日历（本地
+    // 零点、整点），而本地时区只有界面知道。
+    //
+    // 另一个理由是这两个数原来在两边各算了一遍：一边算窗口，一边算格宽，
+    // 而补空桶要求两边算出来的格子完全重合。对不上的表现是整张图全是零。
+    since_ms: Option<i64>,
+    bucket_ms: Option<i64>,
 ) -> Result<Dashboard, String> {
     let c = &state.control;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let window = window_ms.unwrap_or(24 * 3_600_000).max(60_000);
-    let since = now - window;
-    // 桶宽跟着窗口走：24 小时一小时一格，再长就得按天，否则 30 天会是
-    // 七百多根柱子 —— 那不是一张图。
-    let bucket = if window > 7 * 24 * 3_600_000 {
-        24 * 3_600_000
-    } else if window > 2 * 24 * 3_600_000 {
-        6 * 3_600_000
-    } else {
-        3_600_000
-    };
+    // 兜底是「最近 24 小时、一小时一格」—— 界面总会把这两个值带上，
+    // 这里只是不让缺参数变成一次失败。
+    let since = since_ms.unwrap_or(now - 24 * 3_600_000).min(now);
+    let bucket = bucket_ms.unwrap_or(3_600_000).max(60_000);
     Ok(Dashboard {
         summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
@@ -219,11 +222,12 @@ pub struct Dashboard {
     storage: Option<tw_api::StorageStatus>,
     /// 出站密钥检测攒下的证据（观察态）
     leaks: Vec<tw_api::LeakGroup>,
-    /// 最近 24 小时、每小时一格。**稀疏的** —— 空桶由界面补
+    /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补
     buckets: Vec<tw_api::CostBucket>,
     by_model: Vec<tw_api::CostGroup>,
     by_provider: Vec<tw_api::CostGroup>,
-    /// 那三样的时间窗起点，界面补空桶要用
+    /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，
+    /// 而兜底路径上它不等于界面送来的那个值
     since_ms: i64,
 }
 

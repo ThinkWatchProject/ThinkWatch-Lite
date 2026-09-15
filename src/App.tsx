@@ -252,8 +252,18 @@ function BodySkeleton({ widths }: { widths: string[] }) {
 }
 
 export default function App() {
-  const { rows: allRows, seeded, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
-    useRequests();
+  const {
+    rows: allRows,
+    seeded,
+    settled,
+    locallyAnswered,
+    rejected,
+    configVersion,
+    alerts,
+    rotated,
+    clearRotated,
+    clearAlerts,
+  } = useRequests();
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
   const [sortKey, setSortKey] = useState<SortKey>("time");
@@ -316,14 +326,6 @@ export default function App() {
    */
   const [cursor, setCursor] = useState(-1);
   const [tab, setTab] = useState<Surface>("dashboard");
-  /** Dashboard 每两秒跟着状态轮询一起刷。它查的是库，不是实时流 */
-  const [dashTick, setDashTick] = useState(0);
-  /**
-   * 轮询里要读当前在哪一页，但**不能把 `tab` 加进那个 effect 的依赖**
-   * —— 那样每切一次页都会重建计时器，于是切页的瞬间会多打一轮请求。
-   * 用 ref 读最新值，依赖数组保持不变。
-   */
-  const tabRef = useRef<Surface>("dashboard");
   /**
    * 窗口够不够宽拆成两栏。
    *
@@ -373,6 +375,20 @@ export default function App() {
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
+
+  /**
+   * 概览页什么时候重新拉数。
+   *
+   * **不是定时轮询。**它原来跟着那个两秒一次的状态轮询走，而概览查的是
+   * 库 —— 库只在请求落地之后才变。没有流量的时候，那两秒一次做的全是
+   * 无用功：同一份数据重新序列化、重新渲染、图表重新动画一遍，而屏幕上
+   * 什么都没变。**看起来就是价格一直在闪。**
+   *
+   * 现在跟着对账走：`settled` 每涨一次，说明库里确实多了东西（见
+   * useRequests，它由事件流触发、2.5 秒节流）。`nudge` 是手动刷新。
+   * 都没动的时候，这一页一次请求都不发。
+   */
+  const dashTick = settled + nudge;
 
   /**
    * 源列表收起还是展开。
@@ -530,10 +546,6 @@ export default function App() {
       } catch {
         /* 概览拿不到不该盖掉上面那条更有用的错误 */
       }
-      // **只在概览页可见时才推 tick。**它唯一的用途是让 Dashboard
-      // 重新拉数，而每 2 秒自增一次会让整个 App 重渲染一遍 —— 包括
-      // 用户正在看的请求表。别的页开着的时候，这个计数没有消费者。
-      if (alive && tabRef.current === "dashboard") setDashTick((t) => t + 1);
       try {
         const c = await invoke<string>("core_state");
         if (alive) setCore(c);
@@ -551,7 +563,6 @@ export default function App() {
     // 界面上最多要等两秒才跟上，而那两秒里他会以为没生效。
   }, [configVersion, nudge]);
 
-  tabRef.current = tab;
   const c = describeCore(core);
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是

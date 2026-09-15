@@ -25,6 +25,11 @@ import {
  * 文件名是 `charts`（复数）：`chart.tsx` 是 shadcn 抄进来的那个，而
  * macOS 的文件系统不分大小写，`Chart.tsx` 会把它盖掉。
  *
+ * 两种图都关掉了进场动画。**这不是省一个效果，是修一个 bug**：数据一
+ * 换，recharts 会把柱子从零重新长一遍，而条子尾巴上的金额是跟着柱子末端
+ * 走的 —— 那 400 毫秒里它在跳。刷新一次跳一次，看起来就是「价格一直在
+ * 闪」。一张每次刷新都要重演一遍的图，读的人还得等它演完。
+ *
  * 两种图共用同一条纪律：**没有数据的那一格要画出来，不能跳过**。
  * 跳过的话，一天里的空档会被两边的柱子挤没，图上看起来就是连续在用 ——
  * 而「昨天下午我根本没用」正是看这张图想确认的事。`densify()` 在数据
@@ -67,8 +72,20 @@ export function BarChart({
           content={<ChartTooltipContent labelKey="label" indicator="line" />}
         />
         {/* 叠起来而不是并排：读的是「这一小时一共花了多少，其中多少失败了」 */}
-        <Bar dataKey="value" stackId="a" fill="var(--color-value)" radius={[2, 2, 0, 0]} />
-        <Bar dataKey="sub" stackId="a" fill="var(--color-sub)" radius={[2, 2, 0, 0]} />
+        <Bar
+          dataKey="value"
+          stackId="a"
+          fill="var(--color-value)"
+          radius={[2, 2, 0, 0]}
+          isAnimationActive={false}
+        />
+        <Bar
+          dataKey="sub"
+          stackId="a"
+          fill="var(--color-sub)"
+          radius={[2, 2, 0, 0]}
+          isAnimationActive={false}
+        />
       </RBarChart>
     </ChartContainer>
   );
@@ -120,7 +137,13 @@ export function BarRows({
           cursor={false}
           content={<ChartTooltipContent hideLabel formatter={(v) => unit(Number(v))} />}
         />
-        <Bar dataKey="value" fill="var(--color-value)" radius={3} barSize={12}>
+        <Bar
+          dataKey="value"
+          fill="var(--color-value)"
+          radius={3}
+          barSize={12}
+          isAnimationActive={false}
+        >
           {/* 数字写在条子尾巴上，不另开一列 —— 一列数字要对齐，而条子本来就不等长 */}
           <LabelList
             dataKey="tag"

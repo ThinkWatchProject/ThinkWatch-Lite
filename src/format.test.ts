@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ago, densify, latency, money, repeated, statusTone, tokens, when } from "./format";
+import {
+  ago,
+  bucketStart,
+  densify,
+  latency,
+  money,
+  repeated,
+  statusTone,
+  tokens,
+  when,
+} from "./format";
 import { usd } from "./types";
 
 describe("相对时间", () => {
@@ -107,6 +117,37 @@ describe("状态分档", () => {
   /** 进行中不能算成功 —— 它还没有结果 */
   it("进行中单独一档", () => {
     expect(statusTone(undefined, "in_flight")).toBe("pending");
+  });
+});
+
+describe("格子边界", () => {
+  const HOUR = 3_600_000;
+
+  it("一小时一格落到整点", () => {
+    const t = new Date(2026, 8, 15, 14, 37, 21, 500).getTime();
+    expect(bucketStart(t, HOUR)).toBe(new Date(2026, 8, 15, 14, 0, 0, 0).getTime());
+  });
+
+  it("六小时一格从本地零点数起", () => {
+    const t = new Date(2026, 8, 15, 14, 37).getTime();
+    expect(bucketStart(t, 6 * HOUR)).toBe(new Date(2026, 8, 15, 12, 0, 0, 0).getTime());
+  });
+
+  /**
+   * **一天一格是本地的一天。**按纪元对齐的话，UTC+8 看到的「9/15」
+   * 那一格装的是 9/14 08:00 到 9/15 08:00 —— 格子上写着一个日期，
+   * 里面装的是另一个。
+   */
+  it("一天一格落到本地零点", () => {
+    const t = new Date(2026, 8, 15, 14, 37).getTime();
+    expect(bucketStart(t, 24 * HOUR)).toBe(new Date(2026, 8, 15, 0, 0, 0, 0).getTime());
+  });
+
+  /** 这才是它存在的理由：同一格里的任何时刻，落点都一样 */
+  it("同一格里的两个时刻落到同一个点", () => {
+    const a = new Date(2026, 8, 15, 14, 0, 1).getTime();
+    const b = new Date(2026, 8, 15, 14, 59, 59).getTime();
+    expect(bucketStart(a, HOUR)).toBe(bucketStart(b, HOUR));
   });
 });
 
