@@ -3,6 +3,8 @@ import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { PriceRow, PricingView, UpdateOffer, UpdatePreview } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { cn } from "@/lib/utils";
 
 /**
  * 自定义价格（第三层）。
@@ -375,7 +377,7 @@ function Cell({
   mono?: boolean;
 }) {
   return (
-    <input
+    <Input
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -384,12 +386,8 @@ function Cell({
       autoCorrect="off"
       autoCapitalize="off"
       spellCheck={false}
-      className={
-        "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "dark:hover:border-neutral-700 dark:focus:border-neutral-600 " +
-        (mono ? "font-mono" : "")
-      }
+      variant="inline"
+      className={cn(mono && "font-mono")}
     />
   );
 }
@@ -399,7 +397,9 @@ function Num({ value, onChange }: { value: number; onChange: (v: number) => void
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
-    <input
+    <Input
+      variant="inline"
+      className="w-20 text-right font-mono"
       value={text}
       inputMode="decimal"
       onChange={(e) => {
@@ -407,7 +407,6 @@ function Num({ value, onChange }: { value: number; onChange: (v: number) => void
         const n = Number(e.target.value);
         if (Number.isFinite(n)) onChange(n);
       }}
-      className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono hover:border-neutral-300 focus:border-neutral-400 focus:outline-none dark:hover:border-neutral-700 dark:focus:border-neutral-600"
     />
   );
 }

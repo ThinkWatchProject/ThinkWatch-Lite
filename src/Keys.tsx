@@ -4,6 +4,16 @@ import { Tip } from "./ui/Tooltip";
 import { Dialog } from "./ui/Dialog";
 import type { Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { EMPTY } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 /**
  * 网关密钥。
@@ -89,7 +99,8 @@ function AllowCell({
           </button>
         </span>
       ))}
-      <input
+      <Input
+        className="w-24 font-mono"
         value={adding}
         disabled={busy}
         placeholder="glob"
@@ -102,7 +113,6 @@ function AllowCell({
             setAdding("");
           }
         }}
-        className="w-24 rounded border border-neutral-300 bg-transparent px-1 font-mono tw-label outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
     </div>
   );
@@ -204,7 +214,8 @@ export default function Keys({
 
         {adding && (
           <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
-            <input
+            <Input
+              className="flex-1"
               autoFocus
               value={newName}
               placeholder="给它起个名字，比如 codex"
@@ -213,7 +224,6 @@ export default function Keys({
                 if (e.key === "Enter") void create();
                 if (e.key === "Escape") setAdding(false);
               }}
-              className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
             <Button
               size="sm"
@@ -256,35 +266,43 @@ export default function Keys({
                     不绑就是走默认路由 —— 选项里把它写出来，而不是留一个
                     空白。**空白读起来是「还没配」，而它其实一直在生效。**
                   */}
-                  <select
-                    value={c.route ?? ""}
+                  <Select
+                    value={c.route ?? EMPTY}
                     disabled={busy === c.name}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       void patch(
                         [
                           {
                             op: "replace",
                             path: `/clients/${c.name}/route`,
-                            value: e.target.value === "" ? null : e.target.value,
+                            value: v === EMPTY ? null : v,
                           },
                         ],
                         c.name,
                       )
                     }
-                    className="rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 tw-body disabled:opacity-50 dark:border-neutral-700"
                   >
-                    <option value="">默认（{defaultRoute}）</option>
-                    {routes
-                      .filter((r) => !r.default)
-                      .map((r) => (
-                        <option key={r.name} value={r.name}>
-                          {r.name}
-                        </option>
-                      ))}
-                  </select>
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={EMPTY}>默认（{defaultRoute}）</SelectItem>
+                        {routes
+                          .filter((r) => !r.default)
+                          .map((r) => (
+                            <SelectItem key={r.name} value={r.name}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </td>
                 <td>
-                  <input
+                  <Input
+                    variant="inline"
+                    className="w-16 font-mono"
                     defaultValue={c.max_concurrent ?? ""}
                     placeholder="不限"
                     disabled={busy === c.name}
@@ -307,7 +325,6 @@ export default function Keys({
                         c.name,
                       );
                     }}
-                    className="w-16 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono tw-body hover:border-neutral-300 focus:border-neutral-500 focus:outline-none dark:hover:border-neutral-700"
                   />
                 </td>
                 <td>

@@ -10,6 +10,14 @@ import {
   type RequestDetail,
 } from "./types";
 import { Button } from "@/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -453,21 +461,27 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         </Tip>
       </p>
       <div className="flex items-center gap-2">
-        <select
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+        <Select
           value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value);
+          onValueChange={(v) => {
+            setProvider(v);
             setQuote(null);
           }}
         >
-          {ov?.providers.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.name}
-              {p.name === originalProvider ? "（原来就是它）" : ""}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {ov?.providers.map((p) => (
+                <SelectItem key={p.name} value={p.name}>
+                  {p.name}
+                  {p.name === originalProvider ? "（原来就是它）" : ""}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           size="sm"

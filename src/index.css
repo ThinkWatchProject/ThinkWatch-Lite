@@ -54,6 +54,10 @@
   --text-xs: 0.6875rem; /* 11px = tw-label */
   --text-xs--line-height: calc(1.45 / 0.6875);
   --text-sm: 0.8125rem; /* 13px = tw-body */
+  /* Input 写的是 `text-base md:text-sm` —— 那是移动端防 iOS 自动放大的
+   * 写法。桌面窗口用不上，但窗口拖窄到 768px 以下时 `text-base` 会生效，
+   * 不绑就是 16px。绑成同一个 13px，两边都落在字阶上。 */
+  --text-base: 0.8125rem;
   --text-sm--line-height: calc(1.5 / 0.8125);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);

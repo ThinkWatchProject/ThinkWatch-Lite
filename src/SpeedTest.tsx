@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usd, type SpeedQuote, type SpeedResult } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 
 /**
  * L3 模型测速。**这一层会花钱**。
@@ -55,12 +56,12 @@ export default function SpeedTest({ models }: { models: string[] }) {
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <input
+        <Input
+          className="w-72 font-mono"
           value={model}
           onChange={(e) => setModel(e.target.value)}
           placeholder="claude-sonnet-4-5"
           list="tw-models"
-          className="w-72 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono tw-body dark:border-neutral-700"
         />
         <datalist id="tw-models">
           {models.map((m) => (

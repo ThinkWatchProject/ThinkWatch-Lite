@@ -6,6 +6,15 @@ import { Field, FieldLabel } from "@/ui/field";
 import { Dialog } from "./ui/Dialog";
 import type { Overview, PatchOp, RouteView } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 /**
  * 路由。
@@ -69,23 +78,26 @@ export default function Routes({
       <section className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
         <div className="flex items-baseline gap-3">
           <h3 className="tw-head">默认路由</h3>
-          <select
+          <Select
             value={defaultRoute}
             disabled={busy === "default"}
-            onChange={(e) =>
-              void patch(
-                [{ op: "replace", path: "/default_route", value: e.target.value }],
-                "default",
-              )
+            onValueChange={(v) =>
+              void patch([{ op: "replace", path: "/default_route", value: v }], "default")
             }
-            className="rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 tw-body disabled:opacity-50 dark:border-neutral-700"
           >
-            {routes.map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {routes.map((r) => (
+                  <SelectItem key={r.name} value={r.name}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <p className="tw-body text-neutral-500">
             没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
           </p>
@@ -110,7 +122,8 @@ export default function Routes({
 
         {adding && (
           <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
-            <input
+            <Input
+              className="flex-1"
               autoFocus
               value={newName}
               placeholder="路由名，比如 长上下文"
@@ -118,7 +131,6 @@ export default function Routes({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setAdding(false);
               }}
-              className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
             <Button
               size="sm"
@@ -374,40 +386,43 @@ function NewRule({
   return (
     <div className="space-y-2 border-b border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
       <div className="flex flex-wrap items-center gap-2 tw-body">
-        <input
+        <Input
+          className="min-w-52 flex-1"
           autoFocus
           value={name}
           placeholder="规则名，比如 超长上下文降级"
           onChange={(e) => setName(e.target.value)}
-          className="min-w-52 flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
         <span className="text-neutral-500">去向</span>
-        <select
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className="rounded border border-neutral-300 bg-transparent px-1.5 py-1 dark:border-neutral-700"
-        >
-          {targets.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <Select value={to} onValueChange={setTo}>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {targets.map(([v, label]) => (
+                <SelectItem key={v} value={v}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 tw-body">
         <span className="text-neutral-500">当</span>
-        <input
+        <Input
+          className="w-52 font-mono"
           value={model}
           placeholder="模型 glob，比如 claude-opus-*"
           onChange={(e) => setModel(e.target.value)}
-          className="w-52 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
-        <input
+        <Input
           value={tokens}
           placeholder="输入长度，比如 >200k"
           onChange={(e) => setTokens(e.target.value)}
-          className="w-40 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
+          className="w-40 font-mono"
         />
         <Field orientation="horizontal" className="w-auto">
           <Checkbox

@@ -2,7 +2,16 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Tip } from "./ui/Tooltip";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 import type { Overview, PatchOp } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 const KINDS: { id: string; label: string; what: string }[] = [
   {
@@ -81,29 +90,32 @@ export default function Proxies({
       {adding && (
         <div className="mt-3 space-y-2 rounded-md border border-neutral-300 p-3 dark:border-neutral-700">
           <div className="flex flex-wrap items-center gap-2 tw-body">
-            <input
+            <Input
+              className="w-48"
               autoFocus
               value={f.name}
               placeholder="名字，上游那边按它引用"
               onChange={(e) => setF({ ...f, name: e.target.value })}
-              className="w-48 rounded border border-neutral-300 bg-transparent px-2 py-1 outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <select
-              value={f.kind}
-              onChange={(e) => setF({ ...f, kind: e.target.value })}
-              className="rounded border border-neutral-300 bg-transparent px-1.5 py-1 dark:border-neutral-700"
-            >
-              {KINDS.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.label}
-                </option>
-              ))}
-            </select>
-            <input
+            <Select value={f.kind} onValueChange={(v) => setF({ ...f, kind: v })}>
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {KINDS.map((k) => (
+                    <SelectItem key={k.id} value={k.id}>
+                      {k.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Input
+              className="w-44 font-mono"
               value={f.addr}
               placeholder="127.0.0.1:1080"
               onChange={(e) => setF({ ...f, addr: e.target.value })}
-              className="w-44 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
           </div>
           {KINDS.find((k) => k.id === f.kind)?.what && (
@@ -113,18 +125,18 @@ export default function Proxies({
           )}
           <div className="flex flex-wrap items-center gap-2 tw-body">
             <span className="text-neutral-500">认证（可不填）</span>
-            <input
+            <Input
+              className="w-32"
               value={f.user}
               placeholder="用户名"
               onChange={(e) => setF({ ...f, user: e.target.value })}
-              className="w-32 rounded border border-neutral-300 bg-transparent px-2 py-1 outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <input
+            <Input
+              className="w-32"
               type="password"
               value={f.pass}
               placeholder="密码"
               onChange={(e) => setF({ ...f, pass: e.target.value })}
-              className="w-32 rounded border border-neutral-300 bg-transparent px-2 py-1 outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
             <Tip text="密码写进 config.yaml，和上游的 key 一样是明文。设完之后界面上就看不见它了 —— 这个页面会进日志和诊断包。">
               <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">

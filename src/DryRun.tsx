@@ -4,6 +4,7 @@ import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
 import type { DryRunResult } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 
 /**
  * 路由试算。
@@ -64,8 +65,7 @@ export default function DryRun({ models }: { models: string[] }) {
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">
-        <input
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+        <Input
           value={model}
           onChange={(e) => setModel(e.target.value)}
           placeholder="模型名"
@@ -78,9 +78,9 @@ export default function DryRun({ models }: { models: string[] }) {
         </datalist>
         <label className="flex items-center gap-1">
           上下文
-          <input
+          <Input
+            className="w-16"
             type="number"
-            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
             value={kTokens}
             min={0}
             onChange={(e) => setKTokens(Number(e.target.value))}

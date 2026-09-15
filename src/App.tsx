@@ -41,6 +41,16 @@ import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { EMPTY } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -850,13 +860,13 @@ export default function App() {
         */}
         {allRows.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <input
+            <Input
+              className="w-64"
               ref={searchRef}
               value={filter.q}
               onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
               placeholder="搜索路径、客户端、上游、错误…  ⌘F"
               spellCheck={false}
-              className="w-64 rounded-md border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
             <button
               onClick={() => setFilter((f) => ({ ...f, failedOnly: !f.failedOnly }))}
@@ -872,28 +882,48 @@ export default function App() {
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
             {facet.clients.length > 1 && (
-              <select
-                value={filter.client}
-                onChange={(e) => setFilter((f) => ({ ...f, client: e.target.value }))}
-                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 tw-body dark:border-neutral-700"
+              <Select
+                value={filter.client  || EMPTY}
+                onValueChange={(v) =>
+                  setFilter((f) => ({ ...f, client: v === EMPTY ? "" : v }))
+                }
               >
-                <option value="">全部客户端</option>
-                {facet.clients.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={EMPTY}>全部客户端</SelectItem>
+                    {facet.clients.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             )}
             {facet.providers.length > 1 && (
-              <select
-                value={filter.provider}
-                onChange={(e) => setFilter((f) => ({ ...f, provider: e.target.value }))}
-                className="rounded-md border border-neutral-300 bg-transparent px-1.5 py-1 tw-body dark:border-neutral-700"
+              <Select
+                value={filter.provider  || EMPTY}
+                onValueChange={(v) =>
+                  setFilter((f) => ({ ...f, provider: v === EMPTY ? "" : v }))
+                }
               >
-                <option value="">全部上游</option>
-                {facet.providers.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={EMPTY}>全部上游</SelectItem>
+                    {facet.providers.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             )}
             {/*
               **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」

@@ -20,6 +20,16 @@ import type {
   PatchOp,
 } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { cn, EMPTY } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/select";
 
 /**
  * 一个能改的字段。
@@ -86,7 +96,7 @@ function EditableCell({
   }
 
   return (
-    <input
+    <Input
       value={draft}
       disabled={busy}
       onChange={(e) => setDraft(e.target.value)}
@@ -115,12 +125,8 @@ function EditableCell({
           e.currentTarget.blur();
         }
       }}
-      className={
-        "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600 " +
-        (mono ? "font-mono" : "")
-      }
+      variant="inline"
+      className={cn(mono && "font-mono")}
     />
   );
 }
@@ -150,15 +156,16 @@ function SelectCell({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <select
-      value={value}
+    <Select
+      value={value || EMPTY}
       disabled={busy}
-      onChange={async (e) => {
+      onValueChange={async (picked) => {
         if (!version) {
           onSaved("还没读到配置版本，稍等一下再试");
           return;
         }
-        const v = e.target.value;
+        // 哨兵换回空串，下一行再把空串写成 null
+        const v = picked === EMPTY ? "" : picked;
         setBusy(true);
         try {
           await invoke("patch_config", {
@@ -175,18 +182,20 @@ function SelectCell({
           setBusy(false);
         }
       }}
-      className={
-        "rounded border border-transparent bg-transparent px-1 py-0.5 " +
-        "hover:border-neutral-300 focus:border-neutral-400 focus:outline-none " +
-        "disabled:opacity-50 dark:hover:border-neutral-700 dark:focus:border-neutral-600"
-      }
     >
-      {options.map(([v, label]) => (
-        <option key={v} value={v}>
-          {label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger size="inline">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map(([v, label]) => (
+            <SelectItem key={v || EMPTY} value={v || EMPTY}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -330,7 +339,8 @@ function CidrList({
           </button>
         </span>
       ))}
-      <input
+      <Input
+        className="w-44 font-mono"
         value={adding}
         disabled={busy}
         placeholder="加一段，比如 192.168.1.0/24"
@@ -342,7 +352,6 @@ function CidrList({
             ]);
           }
         }}
-        className="w-44 rounded border border-neutral-300 bg-transparent px-1.5 font-mono tw-label outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
     </div>
   );
@@ -574,23 +583,25 @@ function ListenSection({
 
       {kind === "nic" && (
         <div className="mt-2 flex items-center gap-2">
-          <select
-            value={cur}
-            disabled={busy}
-            onChange={(e) => void write(e.target.value)}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono tw-body disabled:opacity-50 dark:border-neutral-700"
-          >
-            {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
-                **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
-            {!nics?.some((n) => n.addr === cur) && (
-              <option value={cur}>{cur}（现在找不到这张网卡）</option>
-            )}
-            {nics?.map((n) => (
-              <option key={`${n.name}-${n.addr}`} value={n.addr}>
-                {n.name}　{n.addr}
-              </option>
-            ))}
-          </select>
+          <Select value={cur} disabled={busy} onValueChange={(v) => void write(v)}>
+            <SelectTrigger size="sm" className="font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {/* 配置里写着一个当前枚举不到的地址 —— 网线拔了、换了网络。
+                    **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
+                {!nics?.some((n) => n.addr === cur) && (
+                  <SelectItem value={cur}>{cur}（现在找不到这张网卡）</SelectItem>
+                )}
+                {nics?.map((n) => (
+                  <SelectItem key={`${n.name}-${n.addr}`} value={n.addr}>
+                    {n.name}　{n.addr}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
             <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
               地址会变
@@ -1127,9 +1138,9 @@ export default function Config({
                 {g.kind === "手动选" && (
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="text-neutral-500">优先用</span>
-                    <select
-                      value={g.selected ?? ""}
-                      onChange={async (e) => {
+                    <Select
+                      value={g.selected ?? EMPTY}
+                      onValueChange={async (v) => {
                         if (!cfg?.version) {
                           setSaveError("还没读到配置版本，稍等一下再试");
                           return;
@@ -1140,7 +1151,7 @@ export default function Config({
                               {
                                 op: "replace",
                                 path: `/groups/${g.name}/selected`,
-                                value: e.target.value,
+                                value: v,
                               },
                             ],
                             baseVersion: cfg.version,
@@ -1151,14 +1162,20 @@ export default function Config({
                           setSaveError(typeof err === "string" ? err : String(err));
                         }
                       }}
-                      className="rounded border border-neutral-300 bg-transparent px-1 py-0.5 dark:border-neutral-700"
                     >
-                      {g.providers.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger size="inline">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {g.providers.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                     <span className="text-neutral-500">
                       其余的仍然是它的故障转移备选
                     </span>

@@ -3,6 +3,7 @@ import { Tip } from "./ui/Tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelList, ProbeResponse, SetupResponse } from "./types";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 
 /**
  * 加第一个上游 —— **长在配置页里，不是一个把人挡在外面的独立页面。**
@@ -106,7 +107,8 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
       <div className="mt-4 grid max-w-xl gap-3">
         <label className="grid gap-1">
           <span className="tw-body text-neutral-500">接口地址</span>
-          <input
+          <Input
+            className="font-mono"
             value={baseUrl}
             onChange={(e) => {
               setBaseUrl(e.target.value);
@@ -117,7 +119,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
         <label className="grid gap-1">
@@ -129,7 +130,8 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize/autoCorrect 那一组不能少：macOS 会把首字母
             大写，那是一类稳定复现的「key 明明是对的却认证失败」。
           */}
-          <input
+          <Input
+            className="font-mono"
             value={key}
             onChange={(e) => {
               setKey(e.target.value);
@@ -140,7 +142,6 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1.5 font-mono tw-body outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-500"
           />
         </label>
       </div>
