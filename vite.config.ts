@@ -1,9 +1,15 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // shadcn 抄进来的组件一律按 `@/` 引用（`@/lib/utils`、`@/ui/button`），
+  // 它的 CLI 也按这个别名写文件。tsconfig 里有一份一模一样的。
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   // Tauri 期望一个固定端口，随机端口会让它连不上
   server: { port: 1420, strictPort: true },
   // 构建产物给 Tauri 打包用

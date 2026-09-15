@@ -95,14 +95,33 @@ describe("界面文案", () => {
    *
    * 按尺寸命名的类（`text-xs`）和硬编码的 `text-[12px]` 是同一个毛病：
    * 下一个人按「看起来差不多大」来选，于是层级又没了。
+   *
+   * **`src/ui/` 不在此列。**那里放的是 shadcn 抄进来的组件，它们统一
+   * 写 `text-sm` / `text-xs`。这不是破例：下面那条检查保证这两个名字
+   * 在 `index.css` 里被绑到 13px 和 11px —— 也就是 tw-body 和 tw-label
+   * 本身。同一个字阶，两个名字，不是第五第六级。
    */
   it("没有绕过 type scale 的字号", () => {
     const bad: string[] = [];
     for (const f of files) {
+      if (f.path.startsWith(join(SRC, "ui"))) continue;
       for (const m of f.text.matchAll(/text-(xs|sm|base|\[\d+px\])/g)) {
         bad.push(`${f.path}: ${m[0]}`);
       }
     }
     expect(bad).toEqual([]);
+  });
+
+  /**
+   * 上面那条豁免赖以成立的前提。
+   *
+   * 绑定一旦没了，`text-sm` 会悄悄退回 Tailwind 默认的 14px —— 一个
+   * 字阶里没有的字号，而且是从组件里渗进来的，不会有任何一处代码看起来
+   * 是错的。
+   */
+  it("text-sm / text-xs 绑在字阶上", () => {
+    const css = readFileSync(join(SRC, "index.css"), "utf8");
+    expect(css).toContain("--text-sm: 0.8125rem"); // 13px = tw-body
+    expect(css).toContain("--text-xs: 0.6875rem"); // 11px = tw-label
   });
 });
