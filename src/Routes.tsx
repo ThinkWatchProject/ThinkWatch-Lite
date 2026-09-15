@@ -34,7 +34,7 @@ import {
  * 模型的支点:前者意味着求值永远只看一张规则表。
  *
  * 在此之前这一页只能看不能建:`to` 能通过策略组的下拉改,而 `when` 的
- * 十三个条件、`set`、`deny`、`guard` 全部只读,新建一条规则更无从谈起。
+ * 十三个条件、`set`、`deny`、`guard` 不限只读,新建一条规则更无从谈起。
  * **一个只能查看的路由页,等于没有路由这个功能。**
  */
 export default function Routes({
@@ -149,7 +149,7 @@ export default function Routes({
                   return;
                 }
                 // **新路由带一条兜底规则。**空路由是个合法但没用的状态：
-                // 绑上它的密钥会一条规则都匹配不到，请求全部失败，而
+                // 绑上它的密钥会一条规则都匹配不到，请求不限失败，而
                 // 配置看起来是好的。
                 const first = targets[0]?.[0];
                 if (!first) {
@@ -201,7 +201,7 @@ export default function Routes({
                   {/*
                     绑了这条的密钥。默认路由这里通常是空的 —— 走它的人是
                     「没绑」,不是「绑了它」。把这件事说出来,否则空白读起来
-                    像是「没人用」。
+                    像是「未被引用」。
                   */}
                   {r.clients.length > 0
                     ? `${r.clients.join("、")} 绑了它`
@@ -220,7 +220,7 @@ export default function Routes({
                 <Tip
                   text={
                     r.default
-                      ? "默认路由删不了 —— 没绑路由的密钥要走它。先把默认换成别的。"
+                      ? "默认路由不可删除，请先将默认路由指向其他路由。"
                       : r.clients.length > 0
                         ? `还有 ${r.clients.length} 把密钥绑着它，删了它们会退回默认路由。`
                         : "删掉这条路由。"
@@ -292,7 +292,7 @@ export default function Routes({
                 ))}
                 {r.rules.length === 0 && (
                   <li className="px-3 py-2 tw-body text-amber-700 dark:text-amber-400">
-                    这条路由一条规则都没有。绑上它的密钥会匹配不到任何规则，请求全部失败。
+                    这条路由一条规则都没有。绑上它的密钥会匹配不到任何规则，请求不限失败。
                   </li>
                 )}
               </ol>

@@ -91,7 +91,7 @@ describe("界面文案", () => {
   });
 
   /**
-   * 字号只能从那四级里选。
+   * 字号只能从那五级里选（tw-display 是概览上那个金额，只此一处）。
    *
    * 按尺寸命名的类（`text-xs`）和硬编码的 `text-[12px]` 是同一个毛病：
    * 下一个人按「看起来差不多大」来选，于是层级又没了。
@@ -107,6 +107,38 @@ describe("界面文案", () => {
       if (f.path.startsWith(join(SRC, "ui"))) continue;
       for (const m of f.text.matchAll(/text-(xs|sm|base|\[\d+px\])/g)) {
         bad.push(`${f.path}: ${m[0]}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * **书面语，不是口语。**
+   *
+   * 这是一个给人管账和排查的工具，界面上的每一句都是产品文案，不是
+   * 聊天。「花在哪儿」「哪家更快」「排这么多秒还没轮到就放弃」这类
+   * 写法读着亲切，但它们在一个要给人看账单的界面里显得不可靠。
+   *
+   * 这里列的是几个反复出现的口语标记，不是完整的语感检查 —— 那件事
+   * 机器做不了。它拦的是最容易滑回去的那几个。
+   */
+  it("文案是书面语", () => {
+    const spoken = [
+      "就好了",
+      "就行",
+      "怎么办",
+      "哪家",
+      "哪儿",
+      "啥",
+      "扫一眼",
+      "攒着",
+      "别的设备",
+      "这么多秒",
+    ];
+    const bad: string[] = [];
+    for (const f of files) {
+      for (const w of spoken) {
+        if (f.text.includes(w)) bad.push(`${f.path}: 「${w}」`);
       }
     }
     expect(bad).toEqual([]);

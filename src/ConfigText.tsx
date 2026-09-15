@@ -130,7 +130,7 @@ export default function ConfigTextMode({
           两边都是真实的改动，只有他知道哪个该留 */}
       {stale && (
         <Alert variant="warning" className="px-3 py-2">
-          <AlertTitle>这个文件在你编辑期间被改过了。</AlertTitle>
+          <AlertTitle>文件已被其他进程修改</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
             现在保存会覆盖掉外面那次改动。

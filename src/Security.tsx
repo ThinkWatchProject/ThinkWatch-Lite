@@ -251,7 +251,7 @@ export default function Security({
           {/* 危险度第一：不需要模型参与就能拿到执行权 */}
           <p className="mb-2 tw-body text-muted-foreground">
             hook 在工具调用前后直接执行 shell 命令
-            <Tip text="这是唯一不需要模型参与就能拿到执行权的入口 —— 别的都要先说服模型调用某个工具。">
+            <Tip text="这是唯一无需模型参与即可获得执行权限的入口，其余途径均需先促使模型调用工具。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么单列</span>
             </Tip>
           </p>
@@ -517,7 +517,7 @@ function Matrix({
               })}
           </div>
           <p className="mt-2 text-amber-800 dark:text-amber-300">
-            要统一：点矩阵里你想保留的那一格，复制到别的客户端。写入前会显示 diff。
+            如需统一：选择矩阵中要保留的配置，复制到其他客户端。写入前将显示差异。
           </p>
         </AlertDescription>
         </Alert>

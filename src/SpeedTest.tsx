@@ -24,7 +24,7 @@ import {
 } from "@/ui/table";
 
 /**
- * L3 模型测速。**这一层会花钱**。
+ * L3 上游性能测试。**这一层会花钱**。
  *
  * 所以它是三步而不是一步：填模型 → **看报价** → 点确认。中间那一步
  * 不能省 —— 触发前必须显示预估消耗，而不是点了才知道。
@@ -63,7 +63,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
   return (
     <section>
       <div className="flex items-baseline gap-3">
-        <h2 className="tw-title font-semibold">模型测速</h2>
+        <h2 className="tw-title font-semibold">上游性能测试</h2>
         {/* **说清这一下花钱。**L1 那一栏写的是「不花钱」，两句话必须
             一样醒目，否则用户会以为所有测速都一样 */}
         <span className="tw-body text-amber-700 dark:text-amber-400">
@@ -114,7 +114,7 @@ export default function SpeedTest({ models }: { models: string[] }) {
           </ul>
           <p className="mt-2 text-amber-900 dark:text-amber-200">
             {/* **有一项算不出来就不给总计。**给一个看起来完整的数字，
-                用户会以为那就是全部代价 */}
+                用户会以为那就是不限代价 */}
             合计{" "}
             {quote.total_micros != null ? (
               <span className="font-medium">{usd(quote.total_micros)}</span>

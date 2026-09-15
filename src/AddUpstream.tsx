@@ -103,7 +103,7 @@ export default function AddUpstream({ onDone }: { onDone: () => void }) {
   return (
     <Empty className="border border-dashed">
       <EmptyHeader>
-        <EmptyTitle>还没有上游。加一个就能开始转发。</EmptyTitle>
+        <EmptyTitle>尚未配置上游</EmptyTitle>
         <EmptyDescription>
           只要地址和密钥。
           <Tip text="名字按地址猜，协议默认按 Anthropic 转发 —— 对绝大多数上游这是对的。两样之后都能在这一页改。">

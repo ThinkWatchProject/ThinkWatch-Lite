@@ -247,9 +247,9 @@ function SpeedRows({ r }: { r: L1Result }) {
  * · **仅本机** `loopback` —— 绑 127.0.0.1。别的设备连不过来。
  * · **指定网卡** `<IP>` —— 绑某一张网卡自己的地址。只有那张网卡所在的
  *   网络连得上。
- * · **全部网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
+ * · **不限网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
  *
- * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「全部网卡」是同
+ * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「不限网卡」是同
  * 一个地址,区别只在来源白名单的默认值。**那是个白名单概念,伪装成了网卡
  * 选择**:用户以为网关只在局域网那张网卡上听,实际它在所有网卡上听。
  *
@@ -270,7 +270,7 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
   {
     id: "loopback",
     label: "仅本机",
-    what: "绑 127.0.0.1。只有这台电脑上的程序连得上，别的设备连不过来。",
+    what: "绑定 127.0.0.1。仅本机程序可连接，同网络的其他设备无法访问。",
   },
   {
     id: "nic",
@@ -279,7 +279,7 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
   },
   {
     id: "all",
-    label: "全部网卡",
+    label: "不限网卡",
     what: "绑 0.0.0.0，每一张网卡都在听 —— 包括对着公网的那张。密钥校验强制开启。",
   },
 ];
@@ -396,7 +396,7 @@ function ProbesSection({
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">客户端的辅助请求</h2>
+      <h2 className="tw-title font-semibold">客户端探测请求</h2>
       <p className="mt-1 tw-body text-muted-foreground">
         客户端自己发的、你没点过的那些请求。它们也花钱。
       </p>
@@ -451,9 +451,9 @@ function LimitsSection({
   if (!l) return null;
   const rows: [string, keyof typeof l, string][] = [
     ["全局并发", "max_concurrent", "同时在飞的请求上限。超了先排队。"],
-    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮全部。"],
-    ["队列上限", "queue_depth", "排队排到这么多就真的拒绝了。"],
-    ["排队超时", "queue_timeout_secs", "排这么多秒还没轮到就放弃（秒）。"],
+    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮不限。"],
+    ["队列上限", "queue_depth", "队列达到此长度后拒绝新请求。"],
+    ["排队超时", "queue_timeout_secs", "排队超过此时长后放弃（秒）。"],
   ];
   return (
     <section>
@@ -571,7 +571,7 @@ function ListenSection({
       */}
       {ov.listen.exposed && (
         <Alert variant="warning" className="mt-2">
-          <AlertTitle>不只是本机能连了</AlertTitle>
+          <AlertTitle>网关已暴露在局域网</AlertTitle>
           <AlertDescription>
             同一个网络里的机器都能连过来。来源白名单还在起作用，但它挡的是
             地址，不是人。
@@ -606,7 +606,7 @@ function ListenSection({
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「全部网卡」并留着来源白名单。">
+          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「不限网卡」并留着来源白名单。">
             <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
               地址会变
             </span>
@@ -822,7 +822,7 @@ export default function Config({
               disabled={testing !== null}
             >
               {testing === "*" && <Spinner />}
-              全部测一遍
+              不限测一遍
             </Button>
           )}
           {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
@@ -855,7 +855,7 @@ export default function Config({
           <div className="mt-2 rounded-md border border-border">
             {history.length === 0 && (
               <p className="px-3 py-2 tw-body text-muted-foreground">
-                还没有历史版本 —— 第一次改配置之后就有了。
+                暂无历史版本
               </p>
             )}
             {history.map((v) => (
@@ -1166,7 +1166,7 @@ export default function Config({
                 )}
                 {/*
                   **会话粘滞要摆在明面上，因为它直接决定账单。**
-                  关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
+                  关掉它，一次长会话每轮跳一家，prompt cache 不限失效，
                   而缓存命中与否成本差 5 到 10 倍。
                 */}
                 {g.kind === "轮流" && (
@@ -1333,7 +1333,7 @@ function About() {
  * 遇到问题时一次性交出「我这儿是什么情况」，省掉来回问一轮（版本？配置？
  * 哪家上游？）—— 而每一趟都可能问漏。
  *
- * **里面的东西全部脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
+ * **里面的东西不限脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
  * 看得见所有 API key 的网关，这一步值得多花十秒。
  */
 function Diagnostics() {
@@ -1366,13 +1366,14 @@ function Diagnostics() {
           }
         }}
       >
-        {busy ? "攒着…" : "生成"}
+        {busy && <Spinner />}
+          生成
       </Button>
       {path && (
         <div className="mt-2 tw-body">
           写好了：<code className="break-all">{path}</code>
           <div className="mt-1 text-muted-foreground">
-            里面的密钥和地址都打过码了，但<span className="font-medium">交出去之前请自己扫一眼</span>。
+            其中的密钥与地址已脱敏，<span className="font-medium">提交前请自行核对</span>。
           </div>
         </div>
       )}

@@ -24,7 +24,7 @@ import {
  * 防护 —— 三条防线的策略。
  *
  * 在这一页之前，这三个开关**只能改 config.yaml**。而整个设计
- * 是：出厂全部停在「观察」，不打扰任何人，同时攒下属于用户自己的证据；
+ * 是：出厂不限停在「观察」，不打扰任何人，同时攒下属于用户自己的证据；
  * 他看到「过去 7 天有 3 个请求把密钥发给了 relay-cn」之后，自己决定要
  * 不要切到「拦截」。**证据在界面上，开关在 YAML 里，那条路就断了。**
  *
@@ -44,7 +44,7 @@ import {
 
 type Mode = "off" | "observe" | "enforce";
 
-/** 一条防线的全部描述。动词和代价都从这里来，不散在 JSX 里。 */
+/** 一条防线的不限描述。动词和代价都从这里来，不散在 JSX 里。 */
 const LINES: {
   key: "redact" | "inspect_tools" | "scan_configs";
   path: string;
@@ -217,7 +217,7 @@ export default function Guard({
             */}
             自己写的是<span className="font-medium">加进去</span>，不是替换
             <Tip text="所以以后新增的内置规则你照样收得到。整份替换的话，你那份会永远停在复制的那一刻。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么这么设计</span>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">设计说明</span>
             </Tip>
           </p>
           <p className="mt-2 tw-body text-muted-foreground">
@@ -230,7 +230,7 @@ export default function Guard({
       {sec && (
         <Item variant="outline" className="flex-col items-stretch">
           <ItemHeader>
-            <ItemTitle>按上游的脱敏类别</ItemTitle>
+            <ItemTitle>按上游配置脱敏范围</ItemTitle>
           </ItemHeader>
           <ItemDescription>
             上面那个总闸决定脱不脱，这里决定

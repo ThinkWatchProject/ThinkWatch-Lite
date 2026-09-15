@@ -49,7 +49,7 @@ export default function Clients({
   const [done, setDone] = useState<AdoptResponse | null>(null);
   const [why, setWhy] = useState<{ id: string; found: FindingView[] } | null>(null);
   const [busy, setBusy] = useState(false);
-  /** 「全部还原」按了一次，等第二次确认。**不弹浏览器的 confirm** ——
+  /** 「不限还原」按了一次，等第二次确认。**不弹浏览器的 confirm** ——
    * 这个项目里所有破坏性操作都走自己的确认界面（接管走 diff 弹窗） */
   const [confirmAll, setConfirmAll] = useState(false);
 
@@ -100,7 +100,7 @@ export default function Clients({
         全线失效。**
 
         没有同名密钥就先建一把。建和用是两次写入,中间那一刻只是「多了
-        一把还没人用的密钥」—— 一个无害的状态,而反过来（先接管再建）
+        一把还未被引用的密钥」—— 一个无害的状态,而反过来（先接管再建）
         那一刻客户端配的是一把不存在的密钥。
       */
       const keyName = plan.c.id;
@@ -196,7 +196,7 @@ export default function Clients({
                   }
                 }}
               >
-                确认全部还原
+                确认不限还原
               </Button>
               <Button
                 variant="outline"
@@ -214,7 +214,7 @@ export default function Clients({
               disabled={busy}
               onClick={() => setConfirmAll(true)}
             >
-              全部还原
+              不限还原
             </Button>
           ))}
       </div>
@@ -227,9 +227,9 @@ export default function Clients({
       {here.length === 0 && (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>这台机器上没有找到已识别的客户端。</EmptyTitle>
+            <EmptyTitle>未检测到已支持的客户端</EmptyTitle>
             <EmptyDescription>装了 Claude Code、Codex、Gemini CLI 的话
-            <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
+            <Tip text="需先运行一次以生成其配置文件，之后返回此页。未生成配置文件时无法判断其指向。">
               <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
             </Tip>。
             <br />

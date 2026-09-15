@@ -78,7 +78,7 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
         {big && (
           <CollapsibleTrigger asChild>
             <Button variant="link" size="xs" className="ml-auto">
-              {open ? "折叠" : "展开全部"}
+              {open ? "折叠" : "展开不限"}
             </Button>
           </CollapsibleTrigger>
         )}

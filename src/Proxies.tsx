@@ -204,7 +204,7 @@ export default function Proxies({
                 <TableCell className="font-mono text-muted-foreground">{p.addr}</TableCell>
                 <TableCell className="text-muted-foreground">{p.has_auth ? "有" : "—"}</TableCell>
                 <TableCell className="text-muted-foreground">
-                  {p.used_by > 0 ? `${p.used_by} 家上游` : "没人用"}
+                  {p.used_by > 0 ? `${p.used_by} 家上游` : "未被引用"}
                 </TableCell>
                 <TableCell className="text-right">
                   {/*
@@ -215,7 +215,7 @@ export default function Proxies({
                   <Tip
                     text={
                       p.used_by > 0
-                        ? `还有 ${p.used_by} 家上游在用它。先把它们改成别的，再删。`
+                        ? `仍有 ${p.used_by} 个上游引用此代理，请先解除引用。`
                         : "删掉它。"
                     }
                   >

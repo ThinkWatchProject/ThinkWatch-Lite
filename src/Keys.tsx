@@ -45,12 +45,12 @@ import {
 /**
  * 这把密钥能看到哪些模型。
  *
- * 三态,而且**第三态是「一个都不给」** —— 一个写成 `[]` 的空列表。
+ * 三态,而且**第三态是「不允许任何模型」** —— 一个写成 `[]` 的空列表。
  * 那不是坏状态,是「临时停掉这个客户端」的正当用法,所以界面上要能
  * 明确选到它,而不是只能通过「删掉最后一条」意外抵达。
  *
- * 三态之间**每个方向都要能走回去**。第一版只有「全部 → 限制」这一
- * 扇单向门:进了限制态就再也回不到全部,因为协议里当时没有「把这个
+ * 三态之间**每个方向都要能走回去**。第一版只有「不限 → 限制」这一
+ * 扇单向门:进了限制态就再也回不到不限,因为协议里当时没有「把这个
  * 键抹掉」的说法。回去的那条路是写 `null` —— 和路由解绑同一个做法。
  */
 function AllowCell({
@@ -68,7 +68,7 @@ function AllowCell({
   if (allow === null) {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="tw-label text-muted-foreground">全部</span>
+        <span className="tw-label text-muted-foreground">不限</span>
         <Button
           variant="ghost"
           size="xs"
@@ -83,7 +83,7 @@ function AllowCell({
   return (
     <div className="flex flex-wrap items-center gap-1">
       {allow.length === 0 && (
-<Badge variant="warning">一个都不给</Badge>
+<Badge variant="warning">不允许任何模型</Badge>
       )}
       <Button
         variant="ghost"
@@ -93,7 +93,7 @@ function AllowCell({
           onPatch([{ op: "replace", path: `/clients/${client}/allow`, value: null }])
         }
       >
-        全部
+        不限
       </Button>
       {allow.map((m, i) => (
         <span
@@ -335,7 +335,7 @@ export default function Keys({
                 </TableCell>
                 <TableCell>
                   {/*
-                    **三态,而且第三态是「一个都不给」。**留空 = 只按方言
+                    **三态,而且第三态是「不允许任何模型」。**留空 = 只按方言
                     过滤;写了 glob = 再按它保留;写一个空列表 = 这把密钥
                     看不到任何模型,也就用不了 —— 那是「临时停掉这个客户端」
                     的正当用法,而不是一个坏状态。

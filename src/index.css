@@ -283,6 +283,14 @@ body {
  *
  * 数字用等宽：金额和延迟要按位对齐，否则一列数字读起来要重新对焦。
  */
+/* 概览上那个金额。**字阶里唯一一个展示级** —— 它是这一页要回答的那
+ * 个问题的答案，其余都是它的注解。只此一处，多一处就不是展示级了。 */
+@utility tw-display {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
 @utility tw-title {
   font-size: 15px;
   font-weight: 600;

@@ -170,18 +170,29 @@ async fn speed_test(
 /// **四个一起取。**界面上它们是同一块，分四次 invoke 会让那一块在几十
 /// 毫秒里分四次跳变。
 #[tauri::command]
-async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, String> {
+async fn dashboard(
+    state: tauri::State<'_, AppState>,
+    // 往前看多少毫秒。界面上那三个预设和自定义区间都落到这一个数。
+    window_ms: Option<i64>,
+) -> Result<Dashboard, String> {
     let c = &state.control;
-    // 趋势图看最近 24 小时、每小时一格。**不是「今天」** —— 今天零点
-    // 刚过的时候「今天」只有一根柱子，而用户想看的是「最近在怎么用」。
-    // 别的数字仍然按今天算（那是账单的口径）。
-    let since = std::time::SystemTime::now()
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-        - 24 * 3_600_000;
+        .unwrap_or(0);
+    let window = window_ms.unwrap_or(24 * 3_600_000).max(60_000);
+    let since = now - window;
+    // 桶宽跟着窗口走：24 小时一小时一格，再长就得按天，否则 30 天会是
+    // 七百多根柱子 —— 那不是一张图。
+    let bucket = if window > 7 * 24 * 3_600_000 {
+        24 * 3_600_000
+    } else if window > 2 * 24 * 3_600_000 {
+        6 * 3_600_000
+    } else {
+        3_600_000
+    };
     Ok(Dashboard {
-        summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
+        summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
         latency_by_provider: c.latency_by_provider().await.unwrap_or_default(),
         history: c.history(200).await.unwrap_or_default(),
@@ -190,7 +201,7 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
         // 没有这两个端点，而这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。
-        buckets: c.cost_buckets(since, 3_600_000).await.unwrap_or_default(),
+        buckets: c.cost_buckets(since, bucket).await.unwrap_or_default(),
         by_model: c.cost_by("model", since).await.unwrap_or_default(),
         by_provider: c.cost_by("provider", since).await.unwrap_or_default(),
         since_ms: since,
@@ -1485,7 +1496,7 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
     } else {
         state
             .control
-            .summary()
+            .summary(None)
             .await
             .ok()
             // **只用实测的那部分。**把估算混进这个数字里，就是在一块

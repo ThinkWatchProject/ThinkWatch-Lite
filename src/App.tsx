@@ -49,11 +49,7 @@ import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/ui/resizable";
+import { Split } from "@/ui/split";
 import {
   Sidebar,
   SidebarContent,
@@ -402,10 +398,10 @@ export default function App() {
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // ⌘ 系列**在 typing 判断和「只在请求页」之前**处理 —— ⌘F 的全部
+      // ⌘ 系列**在 typing 判断和「只在请求页」之前**处理 —— ⌘F 的不限
       // 意义就是从任何地方跳到搜索框：在别的页上按它该切过去，在输入框
       // 里按它该重选。加上这两个前提就等于把它变成「已经在搜索框里的时
-      // 候才有用」。 —— ⌘F 的全部意义就是从任何
+      // 候才有用」。 —— ⌘F 的不限意义就是从任何
       // 地方跳到搜索框，而「正在输入」恰恰是它最该生效的场景之一。
       // ⌘⌥S 收起/展开源列表 —— 访达、邮件、备忘录都是这个键。
       // 判 `code` 不判 `key`：macOS 上 ⌥ 会把 s 变成 ß。
@@ -746,12 +742,12 @@ export default function App() {
           分栏时滚动交给两栏各自管，这一层就不能再滚 —— 否则是两层
           滚动条，而外面那层会把整个分栏一起推走。
         */}
-        <div
-          className={
-            "flex min-h-0 flex-1 flex-col " +
-            (split ? "overflow-hidden" : "overflow-y-auto")
-          }
-        >
+        {/*
+          工具栏之下这一层。**滚动不在这儿** —— 请求页交给 `Split`
+          （分栏时两栏各滚各的），其余页面各自在自己的容器里滚。
+          在这儿再加一层滚动就是两层滚动条。
+        */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       {/*
         配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
@@ -761,7 +757,7 @@ export default function App() {
       */}
       {rejected && (
         <Alert variant="warning" className="border-b px-5 py-2.5">
-          <AlertTitle>配置没能生效，还在按上一份转发。</AlertTitle>
+          <AlertTitle>配置校验未通过，仍在使用上一版本</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
             {rejected.stage}错误
@@ -839,6 +835,17 @@ export default function App() {
         ),
       )}
 
+      {/*
+        **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
+        真正滚的是下面这个容器（请求页是 `Split` 里的两栏各滚各的）。
+      */}
+      <div
+        className={
+          "flex min-h-0 flex-1 flex-col " +
+          // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
+          (tab === "requests" ? "overflow-hidden" : "overflow-y-auto")
+        }
+      >
       {tab === "sessions" ? (
         <Sessions />
       ) : tab === "dashboard" ? (
@@ -906,32 +913,22 @@ export default function App() {
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
       ) : (
-      <ResizablePanelGroup
-        orientation="horizontal"
-        defaultLayout={splitLayout}
-        onLayoutChanged={(l) => {
+      <Split
+        split={split}
+        layout={splitLayout}
+        onLayout={(l) => {
           try {
             window.localStorage.setItem("tw-split", JSON.stringify(l));
           } catch {
             // 隐私模式之类。记不住而已，不值得为它中断
           }
         }}
-        className={split ? "flex min-h-0 flex-1 overflow-hidden" : "!block"}
+        detail={
+          split && open != null ? (
+            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
+          ) : null
+        }
       >
-      {/*
-        **分栏那条线可以拖。**原来是写死的 `w-[min(30rem,45%)]` —— 而
-        「列表要多宽、详情要多宽」只有当时在排查的人知道:看路径和错误
-        要宽列表,读 payload 要宽详情。抓包类工具的分隔线一律能拖。
-
-        `autoSaveId` 让它记住 —— react-resizable-panels 自己写
-        localStorage,不用我们再管一份状态。
-      */}
-        <ResizablePanel
-          id="list"
-          defaultSize={62}
-          minSize={35}
-          className={split ? "min-w-0 overflow-y-auto p-5" : "!flex-none p-5"}
-        >
         {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -965,8 +962,8 @@ export default function App() {
                   setFilter((f) => ({ ...f, client: e.target.value }))
                 }
               >
-                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">全部客户端</NativeSelectOption>
+                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
+                <NativeSelectOption value="">不限客户端</NativeSelectOption>
                 {facet.clients.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -982,8 +979,8 @@ export default function App() {
                   setFilter((f) => ({ ...f, provider: e.target.value }))
                 }
               >
-                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">全部上游</NativeSelectOption>
+                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
+                <NativeSelectOption value="">不限上游</NativeSelectOption>
                 {facet.providers.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -1040,7 +1037,7 @@ export default function App() {
           // 空状态永远在回答「接下来该做什么」。
           <Empty>
           <EmptyHeader>
-            <EmptyTitle>还没有请求经过。</EmptyTitle>
+            <EmptyTitle>暂无请求记录</EmptyTitle>
             <EmptyDescription>把客户端指到{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
                 http://{status?.gateway_addr ?? "127.0.0.1:8788"}
@@ -1257,20 +1254,11 @@ export default function App() {
             另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
           </p>
         )}
-        </ResizablePanel>
-        {/* 检查器常驻右栏：看详情的时候列表还在，两边能来回对照 */}
-        {split && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="detail" defaultSize={38} minSize={25} className="min-w-0">
-              <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+      </Split>
       )}
       {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+        </div>
         </div>
       </div>
 
@@ -1284,7 +1272,7 @@ export default function App() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <p className="tw-body text-muted-foreground">
-            只是想关窗口的话，按 ⌘W 就行，进程会留在菜单栏。
+            仅关闭窗口请按 ⌘W，进程将保留在菜单栏。
           </p>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>

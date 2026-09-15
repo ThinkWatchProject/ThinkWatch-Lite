@@ -58,7 +58,7 @@ export default function Sessions() {
       <div className="p-5">
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>还没有会话。</EmptyTitle>
+            <EmptyTitle>暂无会话记录</EmptyTitle>
             <EmptyDescription>按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。</EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -67,9 +67,9 @@ export default function DryRun({ models }: { models: string[] }) {
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">试算一条请求</h2>
+      <h2 className="tw-title font-semibold">路由试算</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        假设来这样一个请求，看它会走到哪儿、为什么没走别的。只算不发。
+        按给定条件计算该请求将匹配的路由及其原因。仅计算，不发起请求。
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">

@@ -166,9 +166,13 @@ impl ControlClient {
         self.post_json("/l1", &req).await
     }
 
-    /// 今天的汇总。
-    pub async fn summary(&self) -> Result<tw_api::Summary> {
-        Ok(serde_json::from_slice(&self.get("/summary").await?)?)
+    /// 一个时间窗内的汇总。不给窗口就是 core 的默认口径（今天）。
+    pub async fn summary(&self, from_ms: Option<i64>) -> Result<tw_api::Summary> {
+        let path = match from_ms {
+            Some(f) => format!("/summary?from_ms={f}"),
+            None => "/summary".to_string(),
+        };
+        Ok(serde_json::from_slice(&self.get(&path).await?)?)
     }
 
     /// 按时间分桶的花费（概览的趋势图）。
