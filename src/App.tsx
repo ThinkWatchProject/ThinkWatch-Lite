@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
-import { ago, bytes, latency, repeated, statusTone } from "./format";
+import { ago, latency, money, repeated, statusTone, tokens, when } from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -44,12 +44,13 @@ import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import type { LucideIcon } from "lucide-react";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
+import { Skeleton } from "@/ui/skeleton";
 import {
   Sidebar,
   SidebarContent,
@@ -224,8 +225,34 @@ function Th({
   );
 }
 
+/**
+ * 表身的骨架。
+ *
+ * **开窗时这一页要先去库里读两百条记录。**读完之前画「暂无请求记录」，
+ * 是在说一件当时还不知道真假的事 —— 而且记录一到，版面会先塌一次再弹
+ * 回来。骨架把行的位置占住，内容落在原地。
+ *
+ * 六行：够说明这里将要出现一张表，又不至于在真的没有记录时留下一屏假
+ * 内容 —— 那种情况下接上的是空状态，不是骨架。
+ */
+function BodySkeleton({ widths }: { widths: string[] }) {
+  return (
+    <TableBody>
+      {Array.from({ length: 6 }, (_, row) => (
+        <TableRow key={row} className="border-b border-neutral-100 dark:border-neutral-900">
+          {widths.map((w, col) => (
+            <TableCell key={col}>
+              <Skeleton className={cn("h-3", w)} />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </TableBody>
+  );
+}
+
 export default function App() {
-  const { rows: allRows, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
+  const { rows: allRows, seeded, locallyAnswered, rejected, configVersion, alerts, rotated, clearRotated, clearAlerts } =
     useRequests();
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
@@ -237,6 +264,14 @@ export default function App() {
     [allRows, filter, sortKey, sortDir],
   );
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /**
+   * 客户端这一列只在真的分得开的时候才出现。
+   *
+   * 目标用户「一个 key 就够」，那时整列二十五行是同一个值 —— 占着宽度
+   * 却零信息，而那点宽度给模型名用正好。**按实际出现过的算，不按配置里
+   * 有几个算**：配了两个而只有一个在发请求时，这一列同样是常量。
+   */
+  const showClient = facet.clients.length > 1;
   const searchRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -398,10 +433,10 @@ export default function App() {
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // ⌘ 系列**在 typing 判断和「只在请求页」之前**处理 —— ⌘F 的不限
+      // ⌘ 系列**在 typing 判断和「只在请求页」之前**处理 —— ⌘F 的全部
       // 意义就是从任何地方跳到搜索框：在别的页上按它该切过去，在输入框
       // 里按它该重选。加上这两个前提就等于把它变成「已经在搜索框里的时
-      // 候才有用」。 —— ⌘F 的不限意义就是从任何
+      // 候才有用」。 —— ⌘F 的全部意义就是从任何
       // 地方跳到搜索框，而「正在输入」恰恰是它最该生效的场景之一。
       // ⌘⌥S 收起/展开源列表 —— 访达、邮件、备忘录都是这个键。
       // 判 `code` 不判 `key`：macOS 上 ⌥ 会把 s 变成 ß。
@@ -1033,20 +1068,49 @@ export default function App() {
             </Button>
           </div>
         )}
-        {rows.length === 0 ? (
-          // 空状态永远在回答「接下来该做什么」。
-          <Empty>
-          <EmptyHeader>
-            <EmptyTitle>暂无请求记录</EmptyTitle>
-            <EmptyDescription>把客户端指到{" "}
-              <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
-                http://{status?.gateway_addr ?? "127.0.0.1:8788"}
-              </code>
-              ，用配置里那把 tw- 开头的密钥。
-              <br />
-              第一个请求进来时，它会出现在这里。</EmptyDescription><EmptyDescription>已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        {seeded && rows.length === 0 ? (
+          allRows.length > 0 ? (
+            /*
+              有记录，只是全被筛掉了。**这时候说「暂无请求记录」是错的**
+              —— 用户会以为网关断了，而实际上清掉条件就看得见。
+            */
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>没有符合条件的请求</EmptyTitle>
+                <EmptyDescription>
+                  共 {allRows.length} 条记录，当前筛选条件下没有匹配项。
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
+                  清除筛选条件
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            // 空状态永远在回答「接下来该做什么」。
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>暂无请求记录</EmptyTitle>
+                <EmptyDescription>
+                  把客户端指到{" "}
+                  <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+                    http://{status?.gateway_addr ?? "127.0.0.1:8788"}
+                  </code>
+                  ，用配置里那把 tw- 开头的密钥。
+                  <br />
+                  第一个请求进来时，它会出现在这里。
+                </EmptyDescription>
+                {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
+                    拿一个零冒充证据 */}
+                {locallyAnswered > 0 && (
+                  <EmptyDescription>
+                    已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
+                  </EmptyDescription>
+                )}
+              </EmptyHeader>
+            </Empty>
+          )
         ) : (
           <Table className="tw-num">
             {/*
@@ -1058,14 +1122,35 @@ export default function App() {
               <TableRow>
                 <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
                 <Th k="time" label="时间" sort={sortKey} dir={sortDir} on={toggleSort} />
-                <TableHead>客户端</TableHead>
+                {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
+                {showClient && <TableHead>客户端</TableHead>}
+                <TableHead>模型</TableHead>
                 <TableHead>上游</TableHead>
-                <TableHead>路径</TableHead>
                 {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
                 <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="bytes" label="大小" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="tokens" label="token" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="cost" label="花费" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
               </TableRow>
             </TableHeader>
+            {/*
+              走到这里还是空的，只可能是历史没读完 —— 「读完了，确实一条
+              都没有」在上面那一支里已经处理掉了。**事件流先到的行不能被
+              骨架盖住**：那时数据已经在手上了。
+            */}
+            {rows.length === 0 ? (
+              <BodySkeleton
+                widths={[
+                  "w-10",
+                  "w-16",
+                  ...(showClient ? ["w-14"] : []),
+                  "w-32",
+                  "w-16",
+                  "w-16 ml-auto",
+                  "w-14 ml-auto",
+                  "w-12 ml-auto",
+                ]}
+              />
+            ) : (
             <TableBody>
               {rows.map((r, i) => (
                 <RowMenu
@@ -1081,11 +1166,15 @@ export default function App() {
                       label: `只看上游 ${r.provider}`,
                       onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
                     },
-                    {
-                      kind: "item",
-                      label: `只看客户端 ${r.client}`,
-                      onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
-                    },
+                    ...(showClient
+                      ? ([
+                          {
+                            kind: "item",
+                            label: `只看客户端 ${r.client}`,
+                            onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
+                          },
+                        ] as const)
+                      : []),
                     { kind: "sep" },
                     {
                       kind: "item",
@@ -1100,10 +1189,13 @@ export default function App() {
                           [
                             new Date(r.atMs).toLocaleString(),
                             r.client,
+                            r.model ?? "",
                             r.provider,
                             r.path,
                             r.status ?? r.state,
                             r.durationMs != null ? `${r.durationMs}ms` : "",
+                            tokens(r.inputTokens, r.outputTokens),
+                            money(r.costMicros, r.costEstimated),
                             r.error ?? "",
                           ]
                             .filter(Boolean)
@@ -1155,15 +1247,34 @@ export default function App() {
                       );
                     })()}
                   </TableCell>
-                  {/* 时间：列表要的是「刚才那条」，绝对时间留给悬停 */}
+                  {/*
+                    时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
+                    看昨天那次时，整列全是「1d」，而这一列的用途就是把
+                    某一行对上号。相对时间留给悬停。
+                  */}
                   <TableCell className="whitespace-nowrap text-neutral-400">
-                    <Tip text={new Date(r.atMs).toLocaleString()}>
-                      <span>{ago(r.atMs, nowTick)}</span>
+                    <Tip text={`${new Date(r.atMs).toLocaleString()} · ${ago(r.atMs, nowTick)} 前`}>
+                      <span>{when(r.atMs, nowTick)}</span>
                     </Tip>
                   </TableCell>
                   {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                  <TableCell className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
-                    {r.client}
+                  {showClient && (
+                    <TableCell className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
+                      {r.client}
+                    </TableCell>
+                  )}
+                  {/*
+                    模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
+                    连着发的两次请求，差别往往只在这里。
+                  */}
+                  <TableCell
+                    className={
+                      "max-w-[13rem] truncate " +
+                      (repeated(rows, i, (x) => x.model ?? "") ? "text-neutral-400/50" : "")
+                    }
+                    title={r.model}
+                  >
+                    {r.model ?? "—"}
                   </TableCell>
                   <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
@@ -1222,16 +1333,6 @@ export default function App() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell
-                    className={
-                      "truncate " +
-                      (repeated(rows, i, (x) => x.path)
-                        ? "text-neutral-400/50"
-                        : "text-muted-foreground")
-                    }
-                  >
-                    {r.path}
-                  </TableCell>
                   {/*
                     数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
                     扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
@@ -1241,12 +1342,30 @@ export default function App() {
                     {latency(r.ttfbMs, r.durationMs)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right text-neutral-400">
-                    {bytes(r.bytes)}
+                    {tokens(r.inputTokens, r.outputTokens)}
+                  </TableCell>
+                  {/*
+                    **估算值必须带记号。**猜出来的金额和账单上的数字在
+                    列表里长得一模一样，而它们不是一回事。
+                  */}
+                  <TableCell className="whitespace-nowrap text-right">
+                    {r.costEstimated ? (
+                      <Tip text="上游未返回用量，此金额按请求长度估算。">
+                        <span className="underline decoration-dotted underline-offset-2">
+                          {money(r.costMicros, true)}
+                        </span>
+                      </Tip>
+                    ) : (
+                      <span className={r.costMicros == null ? "text-neutral-400" : ""}>
+                        {money(r.costMicros, false)}
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
                 </RowMenu>
               ))}
             </TableBody>
+            )}
           </Table>
         )}
         {locallyAnswered > 0 && rows.length > 0 && (

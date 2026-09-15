@@ -7,9 +7,9 @@ import type { CostBucket } from "./format";
 // （ts-rs 之类），现在还不值得。
 
 export type CoreEvent =
-  | { kind: "request_started"; id: number; client: string; provider: string; method: string; path: string; at_ms: number }
+  | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
-  | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number }
+  | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
   | { kind: "request_failed"; id: number; source: string; message: string }
   /**
    * 客户端的辅助请求被本地应答了，一个字节都没发给上游。
@@ -111,6 +111,20 @@ export type CoreEvent =
       at_ms: number;
     };
 
+/**
+ * 上游报回来的 token 用量。
+ *
+ * **上游不给就是没有**，不是零 —— 记一笔 0 是在撒谎，而它会一路混进
+ * 「这次花了多少」里。所以整个字段是可选的。
+ */
+export interface UsageView {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  cache_1h?: boolean;
+}
+
 export interface CoreStatus {
   api_version: number;
   version: string;
@@ -127,6 +141,8 @@ export interface RequestRow {
   id: number;
   client: string;
   provider: string;
+  /** 哪个模型。**决定这次多贵、多慢的就是它** */
+  model?: string;
   path: string;
   atMs: number;
   /** 进行中的行也要立刻画出来 —— 流式请求可能要跑几分钟 */
@@ -135,6 +151,18 @@ export interface RequestRow {
   ttfbMs?: number;
   durationMs?: number;
   bytes?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  /**
+   * 这次花了多少微分。
+   *
+   * **事件流里没有它。**价钱是存储层落库时按价目表算出来的，算在
+   * 事件之后 —— 所以刚跑完的那一行先是空的，几秒后由历史补上
+   * （见 useRequests 的对账）。空着显示「—」，不显示 0。
+   */
+  costMicros?: number;
+  /** 上游没给用量、只能按输入长度估的。显示时要带 `~` */
+  costEstimated?: boolean;
   error?: string;
   /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
   redacted?: { kind: string; what: string; count: number }[];
@@ -151,6 +179,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         id: ev.id,
         client: ev.client,
         provider: ev.provider,
+        // 老记录里没有这个字段，空串当作「不知道」
+        model: ev.model || undefined,
         path: ev.path,
         atMs: ev.at_ms,
         state: "in_flight",
@@ -171,6 +201,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.status = ev.status;
         r.bytes = ev.bytes;
         r.durationMs = ev.duration_ms;
+        if (ev.usage) {
+          r.inputTokens = ev.usage.input;
+          r.outputTokens = ev.usage.output;
+        }
       }
       break;
     }
@@ -356,7 +390,7 @@ export interface RequestDetail {
 }
 
 /**
- * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay-cn」。
+ * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay」。
  *
  * **这比任何功能介绍都有说服力**，因为它说的是已经发生在你身上的事。
  */
@@ -378,7 +412,7 @@ export interface Dashboard {
   storage: StorageStatus | null;
   leaks: LeakGroup[];
   /**
-   * 最近 24 小时、每小时一格。**稀疏的** —— core 那边只产出有数据的桶，
+   * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets?: CostBucket[];

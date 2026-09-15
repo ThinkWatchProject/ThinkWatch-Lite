@@ -44,6 +44,36 @@ describe("排序", () => {
     sortRows(rows, "duration", "asc");
     expect(rows.map((r) => r.id)).toEqual([1, 2]);
   });
+
+  /**
+   * 金额同理，而且更要紧：算不出价钱的那几行（订阅制上游、价目表里没有
+   * 的模型）当成 $0 的话，按花费升序排出来的「最便宜的几次」全是它们，
+   * 而它们根本没参加这场比较。
+   */
+  it("按花费排，算不出价钱的排最后", () => {
+    const rows = [
+      row({ id: 1, costMicros: 18_000 }),
+      row({ id: 2 }), // 订阅制，没有金额
+      row({ id: 3, costMicros: 400 }),
+    ];
+    expect(sortRows(rows, "cost", "asc").map((r) => r.id)).toEqual([3, 1, 2]);
+    expect(sortRows(rows, "cost", "desc").map((r) => r.id)).toEqual([1, 3, 2]);
+  });
+
+  /** 按 token 排的是输入加输出 —— 只看输出会把长上下文那几次藏起来 */
+  it("按 token 排看的是总量", () => {
+    const rows = [
+      row({ id: 1, inputTokens: 100, outputTokens: 900 }),
+      row({ id: 2, inputTokens: 120_000, outputTokens: 20 }),
+      row({ id: 3, inputTokens: 50, outputTokens: 50 }),
+    ];
+    expect(sortRows(rows, "tokens", "desc").map((r) => r.id)).toEqual([2, 1, 3]);
+  });
+
+  it("只有一半用量的行不参加 token 排序", () => {
+    const rows = [row({ id: 1, inputTokens: 100 }), row({ id: 2, inputTokens: 1, outputTokens: 1 })];
+    expect(sortRows(rows, "tokens", "desc").map((r) => r.id)).toEqual([2, 1]);
+  });
 });
 
 describe("过滤", () => {
@@ -72,6 +102,15 @@ describe("过滤", () => {
 
   it("自由文本不分大小写", () => {
     expect(filterRows(rows, { ...EMPTY_FILTER, q: "CODEX" })).toHaveLength(1);
+  });
+
+  /** 模型现在是表上的一列，「只看 opus 那几条」就该搜得出来 */
+  it("自由文本也搜模型", () => {
+    const withModel = [
+      row({ id: 1, model: "claude-opus-4-5" }),
+      row({ id: 2, model: "claude-haiku-4-5" }),
+    ];
+    expect(filterRows(withModel, { ...EMPTY_FILTER, q: "opus" }).map((x) => x.id)).toEqual([1]);
   });
 
   it("客户端和上游是与的关系", () => {
