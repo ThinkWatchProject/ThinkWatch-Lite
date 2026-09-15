@@ -121,8 +121,7 @@ export default function Guard({
   return (
     <div className="space-y-6 p-5">
       <div>
-        <h2 className="tw-title font-semibold">防护</h2>
-        <p className="mt-1 tw-body text-muted-foreground">
+        <p className="tw-body text-muted-foreground">
           三条防线，各自三档。出厂都停在「观察」
           {/*
             「我现在到底有没有被保护」是用户在这一页的第一个判断，而

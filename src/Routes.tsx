@@ -114,7 +114,6 @@ export default function Routes({
 
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">路由</h2>
           <p className="tw-body text-muted-foreground">
             一条路由里，从上往下匹配，第一条命中的决定去向。
           </p>

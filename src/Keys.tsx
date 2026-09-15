@@ -209,7 +209,6 @@ export default function Keys({
     <div className="space-y-6 p-5">
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">网关密钥</h2>
           <p className="tw-body text-muted-foreground">
             没有密钥连不上，本机也一样。
           </p>

@@ -32,7 +32,6 @@ import {
   IconKey,
   IconServer,
   IconSettings,
-  IconSidebar,
 } from "./ui/icons";
 import { RowMenu } from "@/ui/row-menu";
 import Sessions from "./Sessions";
@@ -68,6 +67,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarSeparator,
+  SidebarTrigger,
 } from "@/ui/sidebar";
 import {
   Table,
@@ -679,23 +679,22 @@ export default function App() {
         分栏时滚动交给两栏各自管，外层不能再滚 —— 否则是两层滚动条，
         而外面那层会把整个分栏一起推走。
       */}
-      <div
-        className={
-          "flex min-w-0 flex-1 flex-col " +
-          (split ? "overflow-hidden" : "overflow-y-auto")
-        }
-      >
+      <div className="flex min-w-0 flex-1 flex-col">
         {/*
-          标题栏那一条。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个
-          属性的元素上,不带的子元素照常可点。
+          工具栏。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个属性的
+          元素上,不带的子元素照常可点。
+
+          **它在滚动容器外面。**之前它是滚动区的第一个子元素,于是往下
+          翻表格时整条跟着卷走了 —— 而这上面放的是「我在哪一页」和收起
+          源列表的开关,两样都是任何时候都该在的。现在滚的是它下面那层。
 
           **收起源列表的按钮放在这儿,不放在源列表里。**收起之后源列表
-          只有 60px 宽,按钮塞进去要么挤掉一个图标位,要么小到点不准;
+          只有 80px 宽,按钮塞进去要么挤掉一个图标位,要么小到点不准;
           而放在内容这一侧,它在两种状态下都在同一个位置。系统应用
           （访达、邮件)也是这么放的。
         */}
         <div
-          className="flex h-[38px] shrink-0 items-center px-3"
+          className="flex h-[38px] shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
           data-tauri-drag-region
         >
           {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
@@ -712,18 +711,47 @@ export default function App() {
               </>
             }
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRailOpen((v) => !v)}
+            {/*
+              **不要给它 `aria-expanded`。**`ghost` 变体里有一条
+              `aria-expanded:bg-muted` —— 那是给「下拉菜单正开着」用的。
+              挂上去之后,源列表展开时这个按钮常驻一块底色,而悬停是
+              `hover:bg-muted/50`,只有一半浓度:**看起来是反的**,碰上去
+              反而比不碰暗。`SidebarTrigger` 不设这个属性。
+            */}
+            <SidebarTrigger
               aria-label={railOpen ? "收起源列表" : "展开源列表"}
-              aria-expanded={railOpen}
               style={{ color: "var(--chrome-dim)" }}
-            >
-              <IconSidebar size={16} />
-            </Button>
+            />
           </Tip>
+
+          {/*
+            当前在哪一页。**收起源列表之后这是唯一的答案** —— 那时候
+            列表里只剩图标,「我在哪」只能靠认图形。展开时它和列表里的
+            高亮互相印证。
+
+            用 `tw-head` 不是 `tw-title`:它是位置指示,不是页面大标题,
+            抢戏就变成两个标题打架。
+          */}
+          <span
+            className="truncate tw-head"
+            style={{ color: "var(--chrome-text)" }}
+            data-tauri-drag-region
+          >
+            {SOURCES.flatMap((g) => g.items).find((i) => i.id === tab)?.label}
+          </span>
         </div>
+
+        {/*
+          只有这一层滚。工具栏在它上面，钉住不动。
+          分栏时滚动交给两栏各自管，这一层就不能再滚 —— 否则是两层
+          滚动条，而外面那层会把整个分栏一起推走。
+        */}
+        <div
+          className={
+            "flex min-h-0 flex-1 flex-col " +
+            (split ? "overflow-hidden" : "overflow-y-auto")
+          }
+        >
 
       {/*
         配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
@@ -1243,6 +1271,7 @@ export default function App() {
       )}
       {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+        </div>
       </div>
 
       {/* 浮层挂在最外层，不跟着右列滚动 */}
