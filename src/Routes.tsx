@@ -401,6 +401,7 @@ function NewRule({
         <label className="flex items-center gap-1.5">
           <input
             type="checkbox"
+            className="tw-check"
             checked={tools}
             onChange={(e) => setTools(e.target.checked)}
           />
