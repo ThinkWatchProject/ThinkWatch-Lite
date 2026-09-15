@@ -1268,13 +1268,13 @@ export default function App() {
                     连着发的两次请求，差别往往只在这里。
                   */}
                   <TableCell
-                    className={
-                      "max-w-[13rem] truncate " +
-                      (repeated(rows, i, (x) => x.model ?? "") ? "text-neutral-400/50" : "")
-                    }
-                    title={r.model}
+                    className={repeated(rows, i, (x) => x.model ?? "") ? "text-neutral-400/50" : ""}
                   >
-                    {r.model ?? "—"}
+                    {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
+                        自己的列宽算法吃掉，长名字照样把这一列撑开 */}
+                    <div className="max-w-[13rem] truncate" title={r.model}>
+                      {r.model ?? "—"}
+                    </div>
                   </TableCell>
                   <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
                     {r.provider}
