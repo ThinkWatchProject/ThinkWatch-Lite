@@ -1,0 +1,85 @@
+import { useEffect, useReducer, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import type { CoreEvent } from "./types";
+
+/** 实时曲线一格多宽。一秒 —— 再粗就看不出「刚才那一下」了。 */
+export const LIVE_BUCKET_MS = 1_000;
+
+export interface LiveSample {
+  at: number;
+  model: string;
+  tokens: number;
+}
+
+/**
+ * 最近这两分钟，直接从事件流上攒出来。
+ *
+ * **不查库、不轮询。**概览别的部分问的是 SQLite，而那条路的最小延迟是
+ * 「落库 + 下一次刷新」；实时档要的是请求到达的那一刻曲线就动，那只有
+ * 事件流给得了。每条请求需要的三样东西事件里都有：`request_started`
+ * 带模型，`request_finished` 带用量，两者靠 id 对上。
+ *
+ * **金额不在事件流里**，它是落库时按价目表算的。所以实时档只画 token
+ * —— 这不是偷懒，是这一档能诚实画出来的全部。
+ *
+ * 那个每秒一次的定时器**不是轮询**：它什么都不查，只是让曲线往左走。
+ * 不走的话，一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
+ */
+export function useLive(active: boolean, windowMs: number) {
+  const samples = useRef<LiveSample[]>([]);
+  const fails = useRef<number[]>([]);
+  /** id → 模型。`request_started` 知道，`request_finished` 不知道 */
+  const model = useRef(new Map<number, string>());
+  const flying = useRef(new Set<number>());
+  const [, frame] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    if (!active) {
+      // 切走就把攒的东西扔掉。**留着的话，切回来会看到一段假的历史**
+      // —— 那两分钟里其实没人在看，而曲线会画得像一直在跑。
+      samples.current = [];
+      fails.current = [];
+      model.current.clear();
+      flying.current.clear();
+      return;
+    }
+    const un = listen<CoreEvent>("core-event", (e) => {
+      const ev = e.payload;
+      if (ev.kind === "request_started") {
+        model.current.set(ev.id, ev.model || "未知模型");
+        flying.current.add(ev.id);
+      } else if (ev.kind === "request_finished") {
+        flying.current.delete(ev.id);
+        if (ev.usage) {
+          const u = ev.usage;
+          samples.current.push({
+            at: Date.now(),
+            model: model.current.get(ev.id) ?? "未知模型",
+            tokens: u.input + u.output + u.cache_read + u.cache_write,
+          });
+        }
+        model.current.delete(ev.id);
+      } else if (ev.kind === "request_failed") {
+        flying.current.delete(ev.id);
+        model.current.delete(ev.id);
+        fails.current.push(Date.now());
+      }
+    });
+    const h = setInterval(() => {
+      const cut = Date.now() - windowMs;
+      samples.current = samples.current.filter((s) => s.at >= cut);
+      fails.current = fails.current.filter((t) => t >= cut);
+      frame();
+    }, LIVE_BUCKET_MS);
+    return () => {
+      void un.then((f) => f());
+      clearInterval(h);
+    };
+  }, [active, windowMs]);
+
+  return {
+    samples: samples.current,
+    fails: fails.current,
+    inFlight: flying.current.size,
+  };
+}
