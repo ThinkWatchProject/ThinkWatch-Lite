@@ -456,6 +456,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         cost_micros_exact: 0,
         cost_micros_estimated: 0,
         unpriced_requests: 0,
+        no_usage_requests: 0,
       }))
     : densify(d.buckets ?? [], d.since_ms ?? 0, now, bucketMs);
   if (live) {
@@ -590,16 +591,23 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
               )}
               {s.cost_micros_estimated > 0 && (
-                <Tip text="上游未返回用量，或该模型的单价来自其他平台。此部分金额为估算值。">
+                <Tip text="此部分金额为估算值：请求在响应结束前断开或中断，输出用量只计到那一刻；或该模型的单价取自其他平台。">
                   <span className="underline decoration-dotted underline-offset-2">
                     含估算 {usd(s.cost_micros_estimated)}
                   </span>
                 </Tip>
               )}
               {s.unpriced_requests > 0 && (
-                <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。">
+                <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。在价格页配置单价后即可计入。">
                   <span className="underline decoration-dotted underline-offset-2">
                     {s.unpriced_requests} 条未计价
+                  </span>
+                </Tip>
+              )}
+              {(s.no_usage_requests ?? 0) > 0 && (
+                <Tip text="这些请求没有拿到用量：上游未报告，或连接在报告之前已经结束。花费无法计算，没有计入上面的金额。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    {s.no_usage_requests} 条没有用量
                   </span>
                 </Tip>
               )}
@@ -612,6 +620,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               )}
               {s.cost_micros_estimated === 0 &&
                 s.unpriced_requests === 0 &&
+                (s.no_usage_requests ?? 0) === 0 &&
                 s.subscription_requests === 0 && <span>全部按价目表实测</span>}
             </>
           }

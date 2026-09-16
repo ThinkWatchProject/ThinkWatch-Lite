@@ -78,6 +78,16 @@ export function useLive(active: boolean, windowMs: number) {
         }
       } else if (ev.kind === "request_failed") {
         flying.current.delete(ev.id);
+        // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
+        if (ev.usage) {
+          const u = ev.usage;
+          samples.current.push({
+            id: ev.id,
+            at: Date.now(),
+            model: model.current.get(ev.id) ?? "未知模型",
+            tokens: u.input + u.output + u.cache_read + u.cache_write,
+          });
+        }
         model.current.delete(ev.id);
         fails.current.push(Date.now());
       }

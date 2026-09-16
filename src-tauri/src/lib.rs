@@ -1599,6 +1599,7 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
                     ev,
                     tw_api::Event::RequestFinished { .. }
                         | tw_api::Event::RequestFailed { .. }
+                        | tw_api::Event::RequestCancelled { .. }
                         | tw_api::Event::QuotaSeen { .. }
                         | tw_api::Event::ConfigReloaded { .. }
                 ) && let Some(st) = a.try_state::<AppState>()

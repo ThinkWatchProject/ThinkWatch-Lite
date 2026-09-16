@@ -307,6 +307,9 @@ export default function RequestDrawer({
                 {r.input_tokens == null && r.cancelled ? (
                   // 这时候不能说「上游没有报用量」—— 它还没来得及报，客户端就走了
                   <p className="text-muted-foreground">客户端在上游报告用量之前断开了连接</p>
+                ) : r.input_tokens == null && r.error ? (
+                  // 失败的请求没有用量，**不是上游吞掉了它** —— 请求没走到那一步
+                  <p className="text-muted-foreground">请求在上游报告用量之前失败了</p>
                 ) : r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
                   <p className="text-muted-foreground">
@@ -337,6 +340,10 @@ export default function RequestDrawer({
                         ) : r.cost_estimated && r.cancelled ? (
                           <span className="text-amber-700 dark:text-amber-400">
                             ~{usd(r.cost_micros)} · 估算，输出用量只计到客户端断开时
+                          </span>
+                        ) : r.cost_estimated && r.error ? (
+                          <span className="text-amber-700 dark:text-amber-400">
+                            ~{usd(r.cost_micros)} · 估算，输出用量只计到响应中断时
                           </span>
                         ) : r.cost_estimated ? (
                           <span className="text-amber-700 dark:text-amber-400">

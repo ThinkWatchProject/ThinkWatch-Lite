@@ -1486,13 +1486,16 @@ export default function App() {
                   */}
                   <TableCell className="whitespace-nowrap text-right">
                     {r.costEstimated ? (
-                      // 估算的理由要说对：客户端取消的那些不是「上游没给用量」，
-                      // 而是输出只数到了断开那一刻
+                      // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
+                      // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
+                      // 平台借来的
                       <Tip
                         text={
                           r.state === "cancelled"
                             ? "客户端在响应结束前断开，输出用量只计到断开时，实际费用可能更高。"
-                            : "上游未返回用量，此金额按请求长度估算。"
+                            : r.state === "failed"
+                              ? "响应在结束前中断，输出用量只计到中断时，实际费用可能更高。"
+                              : "价目表中没有这个上游的单价，此金额按同一模型在其他平台的单价估算。"
                         }
                       >
                         <span className="underline decoration-dotted underline-offset-2">

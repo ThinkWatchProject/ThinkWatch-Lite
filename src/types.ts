@@ -10,17 +10,32 @@ export type CoreEvent =
   | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
   | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
-  | { kind: "request_failed"; id: number; source: string; message: string }
+  /**
+   * 失败了。`source` 和响应头 `x-thinkwatch-error` 是同一个词表。
+   *
+   * **断在流中间的失败带着用量**（上游断了、被防火墙切断）：那时上游已经
+   * 计了费。响应头之前就失败的没有 `bytes` 和 `usage`，但有 `duration_ms`。
+   */
+  | {
+      kind: "request_failed";
+      id: number;
+      source: string;
+      message: string;
+      bytes?: number;
+      duration_ms?: number;
+      usage?: UsageView;
+    }
   /**
    * 客户端没等到响应结束就断开了（Claude Code 里按 Esc）。
    *
    * **不是失败。**上游那时已经在计费，所以它带着到断开为止的用量，core
-   * 照样落库、照样算钱；但输出只计到断开那一刻，金额一律按估算。
+   * 照样落库、照样算钱；但输出只计到断开那一刻，金额一律按估算。响应头
+   * 到达之前就断开的，没有状态码。
    */
   | {
       kind: "request_cancelled";
       id: number;
-      status: number;
+      status?: number;
       bytes: number;
       duration_ms: number;
       usage?: UsageView;
@@ -263,7 +278,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       const r = rows.get(ev.id);
       if (r) {
         r.state = "cancelled";
-        r.status = ev.status;
+        // 响应头之前就断开的没有状态码 —— 那就保留原样（也是没有）
+        if (ev.status != null) r.status = ev.status;
         r.bytes = ev.bytes;
         r.durationMs = ev.duration_ms;
         // 用量停在断开那一刻。**没有就不填** —— 客户端可能在第一帧之前
@@ -316,6 +332,13 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       if (r) {
         r.state = "failed";
         r.error = ev.message;
+        if (ev.duration_ms != null) r.durationMs = ev.duration_ms;
+        if (ev.bytes != null) r.bytes = ev.bytes;
+        // 断在中间的失败，上游已经为这些 token 计了费
+        if (ev.usage) {
+          r.inputTokens = ev.usage.input;
+          r.outputTokens = ev.usage.output;
+        }
       }
       break;
     }
@@ -382,8 +405,16 @@ export interface Summary {
   /** 微分：百万分之一美元 */
   cost_micros_exact: number;
   cost_micros_estimated: number;
-  /** 有多少条请求根本没有价格。**不是 0，是「不知道」** */
+  /**
+   * 有多少条请求**价目表里没有它的模型**：用量是有的，缺的是单价。
+   * **不是 0，是「不知道」。**配一个价格就能解决。
+   */
   unpriced_requests: number;
+  /**
+   * 有多少条请求**没有拿到用量**，所以同样算不出花费：上游没有报告，或者
+   * 连接在报告之前就结束了。配价格解决不了它。旧版本的 core 不给。
+   */
+  no_usage_requests?: number;
   /** 走订阅型上游的请求数。**不参与金额合计** */
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
@@ -975,8 +1006,14 @@ export interface SessionView {
   turns: number;
   /** 有价格的那些轮次加起来，单位是**微分** */
   cost_micros: number;
-  /** **没有价格的轮数。**「$1.23」和「$1.23，另有 4 轮没有价格」不是一个结论 */
+  /** 其中估算的那部分。**不为 0 时合计要带记号**。旧版本的 core 不给 */
+  cost_micros_estimated?: number;
+  /** 算出了价格的轮数。旧版本的 core 不给 */
+  priced_turns?: number;
+  /** **模型不在价目表里的轮数。**「$1.23」和「$1.23，另有 4 轮没有价格」不是一个结论 */
   unpriced_turns: number;
+  /** 没有拿到用量、算不出花费的轮数。旧版本的 core 不给 */
+  no_usage_turns?: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -1002,6 +1039,8 @@ export interface TurnView {
   error: string | null;
   /** 客户端没等到这一轮结束就断开了。旧版本的 core 不给 */
   cancelled?: boolean;
+  /** 这一轮的金额是估算。**瀑布图上要带记号**。旧版本的 core 不给 */
+  cost_estimated?: boolean;
 }
 
 export interface SessionDetail {

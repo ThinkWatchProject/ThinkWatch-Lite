@@ -128,16 +128,31 @@ export default function Sessions() {
  * 不显示 $0 —— 那是在撒谎。
  */
 function Cost({ s }: { s: SessionView }) {
-  const priced = s.turns - s.unpriced_turns;
+  // 旧版本的 core 不给 `priced_turns`，那时只能按老办法减出来
+  const priced = s.priced_turns ?? s.turns - s.unpriced_turns;
   if (priced === 0) {
     return <Tip text="这次会话里没有一轮拿到了价格"><span className="text-muted-foreground">没有价格</span></Tip>;
   }
+  const estimated = s.cost_micros_estimated ?? 0;
+  const noUsage = s.no_usage_turns ?? 0;
   return (
     <>
-      {usd(s.cost_micros)}
+      {estimated > 0 ? (
+        // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
+        <Tip text={`其中 ${usd(estimated)} 为估算值：请求在响应结束前断开或中断，输出用量只计到那一刻；或模型的单价取自其他平台。`}>
+          <span className="underline decoration-dotted underline-offset-2">~{usd(s.cost_micros)}</span>
+        </Tip>
+      ) : (
+        usd(s.cost_micros)
+      )}
       {s.unpriced_turns > 0 && (
         <Tip text="这几轮的模型不在价目表里，没有计入合计">
           <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无价</span>
+        </Tip>
+      )}
+      {noUsage > 0 && (
+        <Tip text="这几轮没有拿到用量：上游未报告，或连接在报告之前已经结束。花费无法计算，没有计入合计">
+          <span className="ml-1 text-muted-foreground">+{noUsage} 轮没有用量</span>
         </Tip>
       )}
     </>
@@ -245,8 +260,8 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
               {t.cost_micros == null ? (
                 <span className="text-neutral-400">无价</span>
               ) : (
-                // 取消的那一轮输出只计到断开时，金额是估算，要带记号
-                (t.cancelled ? "~" : "") + usd(t.cost_micros)
+                // 估算的金额要带记号：取消、断在中间的那几轮输出只计到断开时
+                (t.cost_estimated ? "~" : "") + usd(t.cost_micros)
               )}
             </span>
             {t.error && <span className="text-red-600 dark:text-red-400">失败</span>}

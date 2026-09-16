@@ -138,6 +138,8 @@ export interface CostBucket {
   cost_micros_exact: number;
   cost_micros_estimated: number;
   unpriced_requests: number;
+  /** 没有拿到用量的条数。旧版本的 core 不给 */
+  no_usage_requests?: number;
 }
 
 /**
@@ -194,6 +196,7 @@ export function densify(
         cost_micros_exact: 0,
         cost_micros_estimated: 0,
         unpriced_requests: 0,
+        no_usage_requests: 0,
       },
     );
   }
