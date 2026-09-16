@@ -54,38 +54,51 @@ pub struct AppState {
 /// Resources 下。**两条路径都要试，而且找不到时要说清楚找过哪儿** ——
 /// 「二进制不存在」是安装期最常见的失败，而默认的错误信息只会说
 /// No such file or directory。
+/// 打包之后，core 只可能在一个地方。
+///
+/// macOS 的 `.app/Contents/MacOS/<exe>` 到 `.app/Contents/Resources/`
+/// 是 bundle 布局定死的关系。别的平台还没有打包形态，到时候各自回答。
+fn bundled_core() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    if dir.ends_with("Contents/MacOS") {
+        return Some(dir.parent()?.join("Resources").join("twcore"));
+    }
+    None
+}
+
+/// twcore 在哪。
+///
+/// **装好的应用和开发布局走两条完全不同的路，中间没有回退。**
+///
+/// 装好之后只认包里那一份：找不到就是安装包坏了，说出来让人重装。
+/// 开发时才去试环境变量、隔壁仓库、PATH。
+///
+/// 这条分界不是整洁，是安全。开发那几条候选里有
+/// `<当前工作目录>/../thinkwatch-core/target/release/twcore` —— 它相对
+/// 的是**进程启动时的工作目录**。把这条留在发出去的应用里，等于让
+/// 「用户从哪个目录启动」决定它执行哪个二进制；而这个进程握着用户全部
+/// 的 API key。同理，装好之后也不再看 `THINKWATCH_CORE_BIN` 和 PATH：
+/// 让环境变量替换掉网关本体，在开发机上是便利，在用户机器上是一个口子。
 pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
+    if let Some(inside) = bundled_core() {
+        if inside.exists() {
+            return Ok(inside);
+        }
+        // **不往下走。**这里不是「再找找别处」，是这份安装包缺东西。
+        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
+    }
+
     let mut tried = Vec::new();
 
-    /*
-        装在包里的那一份，**从可执行文件自己的位置往上数**。
-
-        这里原来问的是 `app.path().resource_dir()` —— 而它在打包出来的
-        `.app` 里实测返回 `unknown path`，于是包里明明有 twcore，应用
-        却报「找不到」，然后悄悄退回去用了隔壁开发仓库里的那个。在开发
-        机上这条 bug 完全看不见：兜底总能找到东西。
-
-        `.app/Contents/MacOS/<exe>` 到 `.app/Contents/Resources/` 是
-        bundle 布局定死的关系，自己数两级不依赖任何 API。
-    */
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
-            let p = contents.join("Resources").join("twcore");
-            if p.exists() {
-                return Ok(p);
-            }
-            tried.push(p);
-        }
-    }
-    // 别的平台上框架那条仍然是对的，留着
+    // 别的平台以后会有自己的打包形态，框架这条留着 —— 它在 macOS 的
+    // `.app` 里实测返回 `unknown path`，所以上面那一段不能指望它。
     if let Ok(dir) = app.path().resource_dir() {
         let p = dir.join("twcore");
         if p.exists() {
             return Ok(p);
         }
-        if !tried.contains(&p) {
-            tried.push(p);
-        }
+        tried.push(p);
     }
 
     // 显式覆盖优先。**core 放在哪儿是开发者的选择** —— 之前这里写死了
@@ -129,25 +142,6 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
         }
     }
 
-    /*
-        **装好的应用和开发布局要说两句不同的话。**
-
-        那一串 `../../thinkwatch-core/target/debug/twcore` 和一句
-        `cargo build -p twcore`，对开发者是答案，对用户是噪音 —— 他
-        既没有那个仓库，也不会去跑 cargo。他需要知道的只有一件事：
-        这份安装包缺东西，重装。
-
-        判据是 macOS 上打包应用的资源目录形状：`.app/Contents/Resources`。
-    */
-    // 同样不问框架：可执行文件在不在 `.app/Contents/MacOS` 里，这件事
-    // 自己看得出来。
-    let bundled = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.ends_with("Contents/MacOS")))
-        .unwrap_or(false);
-    if bundled {
-        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
-    }
     anyhow::bail!(
         "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
          `cargo build -p twcore`。",
