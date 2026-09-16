@@ -1253,13 +1253,11 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
     //
     // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
     // 环境都会撞上。所以自己先建。
-    if on {
-        if let Some(plist) = autostart::plist_path(&app.config().identifier) {
-            if let Some(dir) = plist.parent() {
-                std::fs::create_dir_all(dir)
-                    .map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
-            }
-        }
+    if on
+        && let Some(plist) = autostart::plist_path(&app.config().identifier)
+        && let Some(dir) = plist.parent()
+    {
+        std::fs::create_dir_all(dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
     }
     let mgr = app.autolaunch();
     let r = if on { mgr.enable() } else { mgr.disable() };

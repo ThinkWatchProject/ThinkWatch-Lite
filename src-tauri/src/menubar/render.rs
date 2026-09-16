@@ -77,7 +77,7 @@ mod tests {
     use super::*;
 
     fn opaque_pixels(rgba: &[u8]) -> usize {
-        rgba.chunks_exact(4).filter(|p| p[3] > 0).count()
+        rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 0).count()
     }
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
         // macOS 靠 alpha 自动反色。RGB 里塞了颜色的话，模板模式下会
         // 被忽略；而下一次切到告警色时又要记得关模板标志。
         let (rgba, ..) = render_rgba("$3.42", "47 t/s", true, Appearance::Dark);
-        for p in rgba.chunks_exact(4) {
+        for p in rgba.as_chunks::<4>().0 {
             assert_eq!((p[0], p[1], p[2]), (0, 0, 0));
         }
         assert!(opaque_pixels(&rgba) > 0, "什么都没画");
@@ -112,7 +112,9 @@ mod tests {
         let (light, ..) = render_rgba("$3.42", "!", false, Appearance::Light);
         let (dark, ..) = render_rgba("$3.42", "!", false, Appearance::Dark);
         let first_opaque = |v: &[u8]| {
-            v.chunks_exact(4)
+            v.as_chunks::<4>()
+                .0
+                .iter()
                 .find(|p| p[3] > 0)
                 .map(|p| (p[0], p[1], p[2]))
                 .unwrap()

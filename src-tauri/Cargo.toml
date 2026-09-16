@@ -2,7 +2,11 @@
 name = "thinkwatch-lite"
 version = "2026.9.5"
 edition = "2024"
-rust-version = "1.85"
+# **这个数决定依赖能升到哪一版。**edition 2024 的解析器只挑声明的 Rust
+# 版本编得动的依赖：写 1.85 的时候，`cargo update` 一直停在旧的 time 和
+# serde_with 上，两处安全修复（都要 1.88）就这样进不来。CI 和发布用的是
+# stable，把它往回调不会让谁编译得更顺，只会把修复挡在外面。
+rust-version = "1.88"
 license = "MIT"
 description = "Desktop app for a local AI gateway, built for individual developers"
 
