@@ -880,8 +880,6 @@ struct Found {
 struct Updates {
     /// 查到了、还没装的那一版。更新窗口打开时读它，设置页也读它。
     offer: std::sync::Mutex<Option<Found>>,
-    /// 上一次把更新窗口推到用户面前，是为哪一版、在什么时候。
-    prompted: std::sync::Mutex<Option<update::Prompted>>,
     /// 正在装。**连点两下不能下载两份、替换两次。**
     installing: std::sync::atomic::AtomicBool,
 }
@@ -995,27 +993,11 @@ fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 把查到的版本交给用户。
-///
-/// `asked` 表示是用户自己点的「立即检查」—— 那时不管上一次是什么时候提
-/// 的，都要给他看；自动检查才受「一天最多一次」的节制。
-fn present(app: &tauri::AppHandle, found: Found, asked: bool) {
-    let hub = app.state::<Updates>();
-    *hub.offer.lock().unwrap() = Some(found.clone());
-    let _ = app.emit("update-found", found.clone());
-    let now = std::time::Instant::now();
-    let show = {
-        let mut last = hub.prompted.lock().unwrap();
-        let show = asked || update::due(last.as_ref(), &found.version, now);
-        if show {
-            *last = Some(update::Prompted {
-                version: found.version,
-                at: now,
-            });
-        }
-        show
-    };
-    if show && let Err(e) = show_update_window(app) {
+/// 把查到的版本交给用户：记下来，然后把更新窗口拉起来。
+fn present(app: &tauri::AppHandle, found: Found) {
+    *app.state::<Updates>().offer.lock().unwrap() = Some(found.clone());
+    let _ = app.emit("update-found", found);
+    if let Err(e) = show_update_window(app) {
         tracing::error!("更新窗口打不开：{e}");
     }
 }
@@ -1025,7 +1007,7 @@ fn present(app: &tauri::AppHandle, found: Found, asked: bool) {
 async fn update_check(app: tauri::AppHandle) -> Result<Option<Found>, String> {
     let found = find(&app).await?;
     if let Some(f) = &found {
-        present(&app, f.clone(), true);
+        present(&app, f.clone());
     }
     Ok(found)
 }
@@ -1638,7 +1620,11 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
 /// **不在启动那一刻查。**冷启动那几秒 CPU 和网络都在忙别的 —— 网关要起
 /// 来、控制面要连上；而「有没有新版本」晚两分钟知道，没有任何损失。
 const UPDATE_FIRST_LOOK: std::time::Duration = std::time::Duration::from_secs(120);
-const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// 此后一天查一次。**版本不会一天发好几次**，查得更勤只是多几次请求。
+///
+/// 点过「稍后」的版本，在下一次检查时再提 —— 也就是一天之后。
+const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// 自动检查。查到了就把更新窗口推到用户面前。
 ///
@@ -1651,7 +1637,7 @@ async fn update_loop(app: tauri::AppHandle) {
         // 循环要立刻听话，而不是等到下次启动。
         if update::kind() != update::Install::Dev && update::load_prefs(&data_dir()).check_updates {
             match find(&app).await {
-                Ok(Some(f)) => present(&app, f, false),
+                Ok(Some(f)) => present(&app, f),
                 Ok(None) => {}
                 // 查不到就下次再说。**不告诉用户** —— 网络不通不是他此刻
                 // 要处理的事，而一句「检查更新失败」只会打断他在做的事。

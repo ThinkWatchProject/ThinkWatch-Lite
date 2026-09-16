@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/ui/button";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
+import { Field, FieldContent, FieldLabel } from "@/ui/field";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
@@ -75,9 +75,6 @@ export default function Update() {
         />
         <FieldContent>
           <FieldLabel htmlFor="check-updates">自动检查新版本</FieldLabel>
-          <FieldDescription>
-            启动两分钟后检查一次，此后每六小时一次，只读取一份版本清单。有新版本时弹出更新窗口。
-          </FieldDescription>
         </FieldContent>
       </Field>
 

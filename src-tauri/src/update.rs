@@ -35,9 +35,6 @@ pub const CASK_URL: &str = "https://raw.githubusercontent.com/ThinkWatchProject/
 /// 之前本地的 tap 还是旧的，它一样会回「已经是最新」。
 pub const BREW_UPGRADE: &str = "brew update && brew upgrade --cask thinkwatch-lite";
 
-/// 同一个版本被「稍后」之后，隔多久再提。
-pub const REMIND_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
-
 /// 应用自己的设置文件，放在数据目录里。
 ///
 /// **不是网关的配置。**`config.yaml` 有版本、有历史、能回滚，因为改错一行
@@ -176,26 +173,6 @@ pub fn newer(candidate: &str, current: &str) -> bool {
     ) {
         (Ok(a), Ok(b)) => a > b,
         _ => false,
-    }
-}
-
-/// 上一次弹窗是为哪个版本、在什么时候。
-#[derive(Debug, Clone)]
-pub struct Prompted {
-    pub version: String,
-    pub at: std::time::Instant,
-}
-
-/// 这一次该不该把更新窗口推到用户面前。
-///
-/// **新版本立刻提，同一个版本一天最多一次。**用户点过「稍后」，六小时后
-/// 下一轮检查又把同一个窗口推到他面前，那是在跟他较劲；而一直不再提，
-/// 一个开着几周不重启的菜单栏应用就永远停在旧版本上。
-pub fn due(last: Option<&Prompted>, version: &str, now: std::time::Instant) -> bool {
-    match last {
-        None => true,
-        Some(p) if p.version != version => true,
-        Some(p) => now.saturating_duration_since(p.at) >= REMIND_AFTER,
     }
 }
 
@@ -385,27 +362,6 @@ end
         // 拿不准就当不新 —— 不为一个读不懂的版本号弹窗
         assert!(!newer("latest", "2026.9.2"));
         assert!(!newer("2026.9.3", "not-a-version"));
-    }
-
-    #[test]
-    fn the_same_version_is_offered_at_most_once_a_day() {
-        let t0 = std::time::Instant::now();
-        assert!(due(None, "2026.9.3", t0), "从没提过就提");
-
-        let last = Prompted {
-            version: "2026.9.3".into(),
-            at: t0,
-        };
-        let six_hours = t0 + std::time::Duration::from_secs(6 * 3600);
-        assert!(
-            !due(Some(&last), "2026.9.3", six_hours),
-            "点过「稍后」，下一轮检查不再推同一个"
-        );
-        assert!(due(Some(&last), "2026.9.3", t0 + REMIND_AFTER));
-        assert!(
-            due(Some(&last), "2026.9.4", six_hours),
-            "又出了一个新版本，立刻提"
-        );
     }
 
     /// 本地的 tap 可能是一天前的，没有 `brew update` 的话，这条命令会回
