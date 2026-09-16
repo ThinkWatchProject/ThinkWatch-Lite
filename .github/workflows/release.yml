@@ -60,6 +60,11 @@ jobs:
       # 的架构走，哪天 runner 换了，后面每一行路径都得跟着猜。
       # 编译前 `beforeBuildCommand` 会把 twcore 取回来并核对校验和。
       - name: Build
+        # 签更新包用的私钥。**没有它构建照样成功** —— 只是不产出更新
+        # 包，于是 latest.json 这一步才会失败，而那正是要让它失败的地方。
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target aarch64-apple-darwin
 
       # **拆开看一眼再发。**一个缺了网关的 .app 从文件大小上看不出
@@ -95,13 +100,18 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
+          BUNDLE="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
           mkdir -p dist
           ZIP="dist/ThinkWatch-Lite-$VERSION-arm64.zip"
-          ditto -c -k --keepParent \
-            "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app" \
-            "$ZIP"
+          ditto -c -k --keepParent "$BUNDLE/ThinkWatch Lite.app" "$ZIP"
           ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
           cat "$ZIP.sha256"
+
+          # 更新包和它的清单。tag 上那段话就是应用里显示的发布说明 ——
+          # 自动生成的提交清单在那个位置对用户没有意义。
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > dist/notes.txt
+          python3 scripts/manifest.py "$VERSION" "$BUNDLE" dist dist/notes.txt
+          rm dist/notes.txt
 
       # 解出来再验一次。**压缩这一步本身就可能是那个出错的环节** ——
       # 而它出错的样子恰恰是「zip 下得下来、双击打不开」。
@@ -118,4 +128,7 @@ jobs:
           files: |
             dist/ThinkWatch-Lite-*-arm64.zip
             dist/ThinkWatch-Lite-*-arm64.zip.sha256
+            dist/ThinkWatch-Lite-*-arm64.app.tar.gz
+            dist/ThinkWatch-Lite-*-arm64.app.tar.gz.sig
+            dist/latest.json
           generate_release_notes: true

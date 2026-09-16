@@ -11,6 +11,7 @@ import Pricing from "./Pricing";
 import SpeedTest from "./SpeedTest";
 import { triggers } from "./triggers";
 import DryRun from "./DryRun";
+import Update from "./Update";
 import type {
   ConfigText,
   ConfigVersion,
@@ -1261,6 +1262,8 @@ export default function Config({
           </Field>
         </section>
       )}
+
+      {section === "settings" && <Update />}
 
       {section === "upstreams" && (
         <Proxies ov={ov} configVersion={configVersion} onChanged={onProviderAdded} />
