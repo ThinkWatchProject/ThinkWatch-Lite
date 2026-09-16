@@ -56,9 +56,17 @@ BASE="https://github.com/$REPO/releases/download/$TAG"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
+# 校验和先下（几十字节）。已经有一份对得上的就不再拉那十四兆 —— 本地
+# 反复构建和 CI 每一轮都会走到这儿。
+curl -fsSL "$BASE/$ASSET.sha256" -o "$TMP/sum"
+WANT_SUM=$(awk '{print $1}' "$TMP/sum")
+if [ -f "$OUT" ] && [ "$(shasum -a 256 "$OUT" | awk '{print $1}')" = "$WANT_SUM" ]; then
+  echo "已经是 ${TAG} 那一份，跳过下载"
+  exit 0
+fi
+
 echo "取 twcore ${TAG}"
 curl -fsSL "$BASE/$ASSET" -o "$TMP/twcore"
-curl -fsSL "$BASE/$ASSET.sha256" -o "$TMP/sum"
 
 # 校验和里记的是发布时那个文件名，换个名字就对不上 —— 在临时目录里
 # 按原名核对，核完再改名放过去。
