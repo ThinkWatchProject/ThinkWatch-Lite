@@ -27,6 +27,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 注解 tag 的正文就是应用里显示的发布说明。**浅检出拿不到它**
+          # —— 那时 `refs/tags/x` 是一个直接指向 commit 的轻量引用，
+          # `%(contents:body)` 于是给出那个 commit 的正文；2026.9.1 就是
+          # 这么把一行 `Co-authored-by` 当作发布说明发出去的。
+          fetch-depth: 0
 
       # 先对版本号。**放在构建前面**，因为它是这条流水线里唯一一个
       # 「发现了也没法在本次补救」的问题 —— tag 一旦推上去就得撤回。
@@ -109,7 +115,13 @@ jobs:
 
           # 更新包和它的清单。tag 上那段话就是应用里显示的发布说明 ——
           # 自动生成的提交清单在那个位置对用户没有意义。
-          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > dist/notes.txt
+          #
+          # 轻量 tag 没有正文可取，那就不写发布说明 —— 强行取到的会是被
+          # 打 tag 的那个 commit 的正文，而那是给读历史的人看的。
+          : > dist/notes.txt
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ]; then
+            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > dist/notes.txt
+          fi
           python3 scripts/manifest.py "$VERSION" "$BUNDLE" dist dist/notes.txt
           rm dist/notes.txt
 
