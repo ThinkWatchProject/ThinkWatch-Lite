@@ -106,6 +106,24 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
         }
     }
 
+    /*
+        **装好的应用和开发布局要说两句不同的话。**
+
+        那一串 `../../thinkwatch-core/target/debug/twcore` 和一句
+        `cargo build -p twcore`，对开发者是答案，对用户是噪音 —— 他
+        既没有那个仓库，也不会去跑 cargo。他需要知道的只有一件事：
+        这份安装包缺东西，重装。
+
+        判据是 macOS 上打包应用的资源目录形状：`.app/Contents/Resources`。
+    */
+    let bundled = app
+        .path()
+        .resource_dir()
+        .map(|d| d.ends_with("Contents/Resources"))
+        .unwrap_or(false);
+    if bundled {
+        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
+    }
     anyhow::bail!(
         "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
          `cargo build -p twcore`。",
