@@ -166,7 +166,7 @@ export default function Update() {
       </div>
 
       {found && (
-        <div className="mt-3 space-y-2 rounded-md border p-3">
+        <div className="mt-3 space-y-2 rounded-md border border-border px-3 py-2">
           <p className="tw-body font-medium">
             新版本 {found.version}
             <span className="ml-2 font-normal text-muted-foreground">
