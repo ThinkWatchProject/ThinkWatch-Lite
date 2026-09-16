@@ -1199,6 +1199,12 @@ async fn update_install(
         app.package_info().version.to_string(),
     );
     let _ = app.emit("update-step", Step::Restarting);
+    // 先停掉 core、等它真的退出，再重启应用 —— 否则新起来的应用会先撞上
+    // 旧 core 手里的锁。见 `Supervisor::stop_and_wait`。
+    state
+        .supervisor
+        .stop_and_wait(std::time::Duration::from_secs(5))
+        .await;
     app.restart()
 }
 
@@ -2170,14 +2176,12 @@ async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
     let mut safe = false;
     loop {
         match sup.run_once(safe).await {
-            Ok(true) => {
+            Ok(supervisor::Next::Again) => {
                 let _ = app.emit("core-restarting", ());
                 continue;
             }
-            Ok(false) => {
-                if safe {
-                    break;
-                }
+            Ok(supervisor::Next::Stop) => break,
+            Ok(supervisor::Next::SafeMode) => {
                 // 进安全模式：**必须打断用户并自动开窗**。这时候网关
                 // 已经不转发了，他所有的 AI 客户端都在瞎。
                 safe = true;
