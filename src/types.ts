@@ -336,7 +336,17 @@ export interface Summary {
    * 缓存反而抬高了总支出。
    */
   cache_saved_micros: number;
-  /** 价目表的快照日期。**成本旁边要标它** */
+  /** 本区间有多少个请求带回了可疑工具调用（防线三） */
+  flagged_requests: number;
+  /**
+   * 本区间有多少个请求在出站时被脱敏换过内容（防线一的拦截档）。
+   *
+   * **观察档不产生这个数**，它产生的是外泄证据。两档各有各的痕迹，
+   * 界面上要分别说明 —— 否则切到拦截之后看起来像什么都没发生，而那
+   * 是防护更强的一档。
+   */
+  redacted_requests: number;
+  /** 价目表的快照日期 */
   pricing_date: string;
 }
 
@@ -460,6 +470,16 @@ export interface CostBucketGroup {
   failed: number;
   cost_micros_exact: number;
   cost_micros_estimated: number;
+  /**
+   * 这一格里这一项用掉的 token。
+   *
+   * **四类分开给。**它们的单价差十倍以上，加成一个数之后既算不回钱，
+   * 也说不清这段时间是在写新上下文还是在吃缓存。
+   */
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
 }
 
 /**

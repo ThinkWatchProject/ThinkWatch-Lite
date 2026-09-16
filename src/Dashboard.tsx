@@ -6,10 +6,11 @@ import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
 import { StackedArea } from "@/ui/charts";
 import { bucketStart, compact, densify } from "./format";
-import { usd, type Dashboard as Data, type LatencyView } from "./types";
+import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { toast } from "sonner";
 import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 
 const HOUR = 3_600_000;
@@ -167,8 +168,15 @@ function Spread({ rows }: { rows: LatencyView[] }) {
  * 口径由页头那个时间范围决定，不是固定的「今天」——「上个月账单对不上」
  * 和「刚才那阵是不是我自己跑的」是两个问题，而它们要的窗口不一样。
  */
-export default function Dashboard({ tick }: { tick: number }) {
+export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | null }) {
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);
+  /**
+   * 图按哪个口径画。
+   *
+   * **默认 token。**这一页叫用量概览，而按金额画时一次 opus 突发会把
+   * 前后一周压平 —— 那张图好看，但除了「opus 贵」说不出别的。
+   */
+  const [by, setBy] = useState<"token" | "cost">("token");
   const bucketMs = bucketFor(range.ms);
   /**
    * **只在内容真的变了的时候才换。**每次 `invoke` 回来都是一个新对象，
@@ -275,25 +283,36 @@ export default function Dashboard({ tick }: { tick: number }) {
   /*
     趋势图按模型分层。
 
-    **只保留支出最高的四项，其余合并为「其他」。**一家上游可能报出十几
-    个模型名，十几层叠在九十六像素里已经分辨不出，而排在后面的那些
-    合计往往不到百分之一。
+    **两种口径画的是两种形状。**一次 opus 突发在按金额的图上会压平
+    它前后的整整一周，而它传达的只是「opus 贵」—— 图例里已经写着。
+    同一段时间按 token 画出来，那个峰回到它应有的比例，图才开始能
+    看出作息。头部那两个数等重，图跟着其中一个走就行，但要能切。
+
+    **只保留前四项，其余合并为「其他」。**一家上游可能报出十几个模型
+    名，十几层叠在九十六像素里已经分辨不出，而排在后面的那些合计往往
+    不到百分之一。
   */
   const byBucket = new Map<number, Map<string, number>>();
-  const total = new Map<string, number>();
+  const money = new Map<string, number>();
+  const volume = new Map<string, number>();
   for (const b of d.buckets_by_model ?? []) {
-    const cost = b.cost_micros_exact + b.cost_micros_estimated;
     const name = b.name || "未知模型";
-    total.set(name, (total.get(name) ?? 0) + cost);
+    const cost = b.cost_micros_exact + b.cost_micros_estimated;
+    const tok =
+      b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens;
+    money.set(name, (money.get(name) ?? 0) + cost);
+    volume.set(name, (volume.get(name) ?? 0) + tok);
     const slot = byBucket.get(b.at_ms) ?? new Map<string, number>();
-    slot.set(name, (slot.get(name) ?? 0) + cost);
+    slot.set(name, (slot.get(name) ?? 0) + (by === "token" ? tok : cost));
     byBucket.set(b.at_ms, slot);
   }
-  const ranked = [...total.entries()].sort((a, b) => b[1] - a[1]);
-  const top = ranked.slice(0, 4).map(([name]) => name);
-  const rest = ranked.slice(4);
-  // 画的顺序是从下往上，所以**便宜的垫底、贵的在上** —— 贵的那层在
-  // 视觉上也该是最重的一层。颜色跟着走：chart-1 最亮，给花得最多的。
+  // 排行按当前口径排 —— 切到 token 之后，最贵的那个未必是用得最多的
+  const sortBy = by === "token" ? volume : money;
+  const ranked = [...sortBy.entries()].sort((a, b) => b[1] - a[1]);
+  const top = ranked.slice(0, 5).map(([name]) => name);
+  const rest = ranked.slice(5);
+  // 画的顺序是从下往上，所以**占得少的垫底、占得多的在上** —— 最重的
+  // 那一层在视觉上也该最重。颜色跟着走：chart-1 最亮，给最多的那个。
   const keys = rest.length > 0 ? ["其他", ...[...top].reverse()] : [...top].reverse();
   const shade = [
     "var(--chart-5)",
@@ -305,24 +324,97 @@ export default function Dashboard({ tick }: { tick: number }) {
   const colors = keys.map(
     (_, i) => shade[Math.max(0, shade.length - keys.length + i)] ?? "var(--chart-1)",
   );
+  const restMoney = rest.reduce((a, x) => a + (money.get(x[0]) ?? 0), 0);
+  const restVolume = rest.reduce((a, x) => a + (volume.get(x[0]) ?? 0), 0);
+  // 条长按当前口径里最大的那一项归一 —— 按总量归一的话，一个占七成的
+  // 模型会把其余几条压成看不见的短线，而排行要比的正是它们之间的差距
+  const topMoney = Math.max(restMoney, ...[...money.values()]);
+  const topVolume = Math.max(restVolume, ...[...volume.values()]);
 
   const grid = densify(d.buckets ?? [], d.since_ms ?? 0, Date.now(), bucketMs);
   const area = grid.map((g) => {
+    const slot = byBucket.get(g.at_ms);
+    const sum = [...(slot?.values() ?? [])].reduce((a, v) => a + v, 0);
     const row: Record<string, number | string> = {
-      label: `${fmtBucket(g.at_ms, bucketMs)}　${usd(
-        g.cost_micros_exact + g.cost_micros_estimated,
-      )}　${g.requests} 次${g.failed ? `（${g.failed} 次失败）` : ""}`,
+      label: `${fmtBucket(g.at_ms, bucketMs)}　${
+        by === "token" ? `${compact(sum)} token` : usd(g.cost_micros_exact + g.cost_micros_estimated)
+      }　${g.requests} 次${g.failed ? `（${g.failed} 次失败）` : ""}`,
     };
     let other = 0;
-    for (const [name, v] of byBucket.get(g.at_ms) ?? []) {
-      if (top.includes(name)) row[name] = v / 1000;
-      else other += v;
+    for (const [name, v] of slot ?? []) {
+      // 金额从微分换成千分之一美元：纵轴刻度上那几位小数没有意义
+      const y = by === "token" ? v : v / 1000;
+      if (top.includes(name)) row[name] = y;
+      else other += y;
     }
     // 没有值的那几层要显式给 0，否则 recharts 会把这一格整条断开
     for (const k of top) row[k] ??= 0;
-    if (rest.length > 0) row["其他"] = other / 1000;
+    if (rest.length > 0) row["其他"] = other;
     return row;
   });
+
+  /*
+    三条防线现在各在哪一档，以及这段时间各自看见了什么。
+
+    **档位和所见要一起说。**只说所见的话，「未发现」在关闭档下是句
+    空话；只说档位的话，用户不知道它到底拦下过什么。
+  */
+  const sec = ov?.security;
+  const label = (m: string) => (m === "enforce" ? "拦截" : m === "off" ? "关闭" : "观察");
+  const leaked = d.leaks.reduce((a, l) => a + l.requests, 0);
+  const guards = sec
+    ? [
+        {
+          key: "redact",
+          name: "出站脱敏",
+          mode: sec.redact,
+          modeLabel: label(sec.redact),
+          /*
+            两档留下的痕迹不是同一种：观察档记的是「检测到的外泄」，
+            拦截档记的是「换掉了几处」。**分别说明** —— 用同一句话
+            套两档的话，切到拦截之后会显示成「未发现」。
+          */
+          hits: sec.redact === "enforce" ? s.redacted_requests : leaked,
+          saw:
+            sec.redact === "off"
+              ? "未启用，出站内容不做检查"
+              : sec.redact === "enforce"
+                ? s.redacted_requests > 0
+                  ? `已替换 ${s.redacted_requests} 个请求中的凭据`
+                  : "未发现需要替换的内容"
+                : leaked > 0
+                  ? `检测到 ${leaked} 次凭据外泄，未做替换`
+                  : "未检测到凭据外泄",
+        },
+        {
+          key: "inspect",
+          name: "工具调用检查",
+          mode: sec.inspect_tools,
+          modeLabel: label(sec.inspect_tools),
+          hits: s.flagged_requests,
+          saw:
+            sec.inspect_tools === "off"
+              ? "未启用，上游返回的工具调用不做检查"
+              : s.flagged_requests > 0
+                ? `${s.flagged_requests} 个请求带回可疑工具调用` +
+                  (sec.inspect_tools === "enforce" ? "，已切断" : "")
+                : "未发现可疑工具调用",
+        },
+        {
+          key: "scan",
+          name: "配置面扫描",
+          mode: sec.scan_configs,
+          modeLabel: label(sec.scan_configs),
+          // **这一行不跟着时间区间变。**它说的是此刻磁盘上的状态，
+          // 而文件现在什么样和你选了看几天没有关系。
+          hits: 0,
+          saw:
+            sec.scan_configs === "off"
+              ? "未启用，客户端配置文件不做监控"
+              : "持续监控客户端配置文件，新增可疑内容会立即提示",
+        },
+      ]
+    : [];
 
   /*
     这一段时间里值得单独说明的几件事。
@@ -481,7 +573,19 @@ export default function Dashboard({ tick }: { tick: number }) {
           </div>
         )}
 
-        <div className="mt-5">
+        <div className="mt-6">
+          <div className="mb-2 flex items-baseline gap-3">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={by}
+              onValueChange={(v) => v && setBy(v as "token" | "cost")}
+            >
+              <ToggleGroupItem value="token">token</ToggleGroupItem>
+              <ToggleGroupItem value="cost">花费</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
           <StackedArea
             data={area}
             keys={keys}
@@ -505,26 +609,60 @@ export default function Dashboard({ tick }: { tick: number }) {
           </div>
         </div>
 
-        {/* 图例兼构成：按模型的总额就在这一行，不另开一张构成图 */}
+        {/*
+          图例和构成合成一张排行。
+
+          **药丸式的一行图例在模型一多就会折行，而且不携带比例。**这里
+          的条长就是占比，色块和曲线里那一层同色 —— 图例的职责就是那个
+          映射，保留下来了。两个数都给，当前口径的那个加粗。
+        */}
         {keys.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 tw-body">
-            {[...keys].reverse().map((k, i) => (
-              <span key={k} className="flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{ background: colors[keys.length - 1 - i] }}
-                />
-                {k}
-                <span className="tw-num text-muted-foreground">
-                  {usd(k === "其他" ? rest.reduce((a, x) => a + x[1], 0) : (total.get(k) ?? 0))}
-                </span>
-              </span>
-            ))}
+          <div className="mt-4 space-y-1.5">
+            {[...keys].reverse().map((k, i) => {
+              const c = k === "其他" ? restMoney : (money.get(k) ?? 0);
+              const v = k === "其他" ? restVolume : (volume.get(k) ?? 0);
+              const w = (by === "token" ? v / Math.max(1, topVolume) : c / Math.max(1, topMoney)) * 100;
+              return (
+                <div key={k} className="flex items-center gap-2.5 tw-body">
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
+                    style={{ background: colors[keys.length - 1 - i] }}
+                  />
+                  <span className="w-44 shrink-0 truncate" title={k}>
+                    {k === "其他" ? `其他 ${rest.length} 项` : k}
+                  </span>
+                  <span className="h-2.5 flex-1 rounded-sm bg-muted">
+                    <span
+                      className="block h-full rounded-sm"
+                      style={{ width: `${w}%`, background: colors[keys.length - 1 - i] }}
+                    />
+                  </span>
+                  <Tip text={`${v.toLocaleString()} token`}>
+                    <span
+                      className={
+                        "w-20 shrink-0 text-right tw-num " +
+                        (by === "token" ? "font-medium" : "text-muted-foreground")
+                      }
+                    >
+                      {compact(v)}
+                    </span>
+                  </Tip>
+                  <span
+                    className={
+                      "w-20 shrink-0 text-right tw-num " +
+                      (by === "cost" ? "font-medium" : "text-muted-foreground")
+                    }
+                  >
+                    {usd(c)}
+                  </span>
+                </div>
+              );
+            })}
             {grid.some((g) => g.failed > 0) && (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
+              <p className="flex items-center gap-2.5 pt-0.5 tw-label text-muted-foreground">
                 <span className="inline-block h-2 w-2 shrink-0 rounded-[2px] bg-destructive" />
-                有失败的时段
-              </span>
+                曲线下方的红色刻度标出存在失败的时段
+              </p>
             )}
           </div>
         )}
@@ -560,6 +698,48 @@ export default function Dashboard({ tick }: { tick: number }) {
               <span className="tw-label text-muted-foreground">{x.note}</span>
             </span>
           ))}
+        </section>
+      )}
+
+      {/*
+        安全防护。
+
+        **没有发现时也在，而且说「未发现」。**这一页别处的纪律是「条件
+        不满足就不出现」—— 那条对成本面板成立：一排零不构成安心。但
+        安全是反过来的：**看不见的防护会被当成没开**，而用户需要的恰恰
+        是「它在盯着，这段时间没事」这句话。
+
+        每一行说两件事：**现在是哪一档**，以及**这段时间看见了什么**。
+        「观察」和「拦截」对用户是完全不同的两件事，而这个区别在此之前
+        只有防护页里看得到。
+      */}
+      {sec && (
+        <section>
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h2 className="tw-title font-semibold">安全防护</h2>
+            <p className="tw-body text-muted-foreground">三条防线的当前档位与本区间所见</p>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {guards.map((g) => (
+              <div key={g.key} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tw-body">
+                <span
+                  className={
+                    "inline-block h-2 w-2 shrink-0 translate-y-px rounded-full " +
+                    (g.mode === "off"
+                      ? "bg-muted-foreground/40"
+                      : g.hits > 0
+                        ? "bg-destructive"
+                        : "bg-cache-hit")
+                  }
+                />
+                <span className="w-32 shrink-0">{g.name}</span>
+                <span className="w-16 shrink-0 text-muted-foreground">{g.modeLabel}</span>
+                <span className={g.hits > 0 ? "text-destructive" : "text-muted-foreground"}>
+                  {g.saw}
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

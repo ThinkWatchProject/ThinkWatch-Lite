@@ -934,7 +934,7 @@ export default function App() {
       {tab === "sessions" ? (
         <Sessions />
       ) : tab === "dashboard" ? (
-        <Dashboard tick={dashTick} />
+        <Dashboard tick={dashTick} ov={ov} />
       ) : tab === "clients" ? (
         <Clients
           clientKeys={(ov?.clients ?? []).map((c) => c.name)}
