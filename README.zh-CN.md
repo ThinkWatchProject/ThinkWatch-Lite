@@ -17,16 +17,24 @@
 
 ## 安装
 
-从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
-下载 `ThinkWatch-Lite-<版本>-arm64.zip`，解压，把 `ThinkWatch Lite.app` 拖进
-`/Applications`。网关在包里，没有第二样东西要装。
+```bash
+brew install --cask thinkwatchproject/tap/thinkwatch-lite
+```
 
-这个包**没有经过 Apple 注册开发者签名**，macOS 会把它标记为隔离并拒绝打开。
-去掉这个属性，一次就够：
+网关在包里，没有第二样东西要装。
+
+也可以从
+[release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+下载 `ThinkWatch-Lite-<版本>-arm64.zip`，核对旁边那份 sha256，把
+`ThinkWatch Lite.app` 拖进 `/Applications`。这样会多一步：这个包**没有经过
+Apple 注册开发者签名**，macOS 会把它标记为隔离并拒绝打开，要去掉这个属性。
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 ```
+
+除了解压，[cask](https://github.com/ThinkWatchProject/homebrew-tap) 做的也
+就是这一条。
 
 也可以从源码跑：
 
