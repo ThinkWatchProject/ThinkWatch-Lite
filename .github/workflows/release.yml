@@ -18,6 +18,20 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # 签 `.app` 用的证书。**自签名，不是 Developer ID** —— Gatekeeper 照样
+  # 不认它，第一次打开照样要去掉隔离属性。
+  #
+  # 它存在只为一件事：**让每一版的签名者是同一个。**临时签名（`-`）的
+  # 「指定要求」是那一次构建的 cdhash，每一版都不一样，于是 Homebrew 每次
+  # 升级都判「signer changed」并打一条 macOS 可能会拦的警告。钉在一张证书
+  # 上之后，指定要求变成「这张证书签的 app.thinkwatch.lite」，升级前后是
+  # 同一个签名者，警告就没了。
+  #
+  # 指纹写死在这里，发布前核对 —— 证书被换掉或者 secret 丢了、构建悄悄
+  # 退回临时签名的话，每个用户下一次升级都会再看到那条警告，而流水线不会
+  # 有任何报错。
+  SIGNING_IDENTITY: "ThinkWatchProject (self-signed)"
+  SIGNING_CERT_SHA1: 7a0b45ea2d84acc6fb99cbf00d02e5954171e150
 
 jobs:
   app:
@@ -79,6 +93,32 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 证书进一个临时钥匙串，挂进搜索列表，codesign 才找得到它。
+      #
+      # **不走 Tauri 自带的 `APPLE_CERTIFICATE`。**那条路只认名字形如
+      # 「Developer ID Application: …」、带团队编号的 Apple 证书，自签名的
+      # 证书在那里找不到签名身份 —— 而为了让它认，把证书名字起成 Apple
+      # 那种格式是冒名，不做。
+      - name: Import the signing certificate
+        env:
+          CERTIFICATE: ${{ secrets.CODESIGN_CERTIFICATE }}
+          PASSWORD: ${{ secrets.CODESIGN_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KCPW=$(uuidgen)
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/codesign.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/codesign.p12" -k "$KC" -P "$PASSWORD" -T /usr/bin/codesign
+          # 不设这一条的话，codesign 第一次用私钥时会弹授权框 —— 在
+          # runner 上没有人去点，构建就挂在那里
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/codesign.p12"
+          security find-identity -p codesigning "$KC" | grep -q "$SIGNING_IDENTITY"
+
       # `--target` 写出来，产物路径才是定死的。不写的话它跟着 runner
       # 的架构走，哪天 runner 换了，后面每一行路径都得跟着猜。
       # 编译前 `beforeBuildCommand` 会把 twcore 取回来并核对校验和。
@@ -88,6 +128,9 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 覆盖 tauri.conf.json 里的 `-`。配置里留着临时签名，是为了没有这张
+          # 证书的机器上本地构建照样能打出一个能跑的包
+          APPLE_SIGNING_IDENTITY: ${{ env.SIGNING_IDENTITY }}
         run: pnpm tauri build --target aarch64-apple-darwin
 
       # **拆开看一眼再发。**一个缺了网关的 .app 从文件大小上看不出
@@ -99,14 +142,18 @@ jobs:
           APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app"
           test -d "$APP"
           file "$APP/Contents/MacOS/thinkwatch-lite" | grep -q arm64
-          # 签名是**临时签名**（`signingIdentity: "-"`），不是 Developer
-          # ID —— Gatekeeper 照样会拦，那道拦要靠去掉隔离属性来过。
-          #
-          # 那它还验什么：验这个 `.app` 是一个**结构完整**的包。没有这
-          # 一步的话，包里没有 `_CodeSignature`，而 macOS 对一个封不上
-          # 的包报的是「已损坏」—— 和「开发者身份未知」是两码事，后者
-          # 用户能绕过去，前者不能。
+          # 验这个 `.app` 是一个**结构完整**的包。封不上的包，macOS 报的是
+          # 「已损坏」—— 和「开发者身份未知」是两码事，后者用户能绕过去，
+          # 前者不能。
           codesign --verify --deep --strict "$APP"
+          # 签名者是那一张证书。**临时签名也能通过上面那一行**，所以要单独
+          # 核对：退回临时签名的包照样能装能跑，只是每个 Homebrew 用户下一次
+          # 升级都会看到「signer changed」。
+          REQ=$(codesign -d -r- "$APP" 2>&1)
+          echo "$REQ" | grep -q "certificate root = H\"$SIGNING_CERT_SHA1\"" || {
+            echo "签名证书不对：$REQ" >&2
+            exit 1
+          }
           CORE="$APP/Contents/Resources/twcore"
           test -x "$CORE"
           file "$CORE" | grep -q arm64
@@ -117,21 +164,29 @@ jobs:
             exit 1
           fi
 
-      # 磁盘映像由 Tauri 在构建那一步打好。**在 CI 上它不跑 Finder 的排版
-      # 脚本**（`CI=true` 时自动加 `--skip-jenkins`）—— 那段 AppleScript
-      # 要驱动一个图形界面的 Finder，在 runner 上会挂住或超时。代价是映像
-      # 打开时两个图标按 Finder 的默认方式摆放，没有自定义背景；拖进
-      # 「应用程序」这件事本身不受影响。
+      # 磁盘映像用 dmgbuild 打，版面在 `src-tauri/dmg/`（背景图、图标位置、
+      # 窗口大小）。**不让 Tauri 打**：Tauri 摆图标靠驱动 Finder 的
+      # AppleScript，在 CI 上会自己跳过，发出去的就是 Finder 的默认窗口。
+      # dmgbuild 直接写 Finder 读的那份 .DS_Store，不需要图形界面。
       #
-      # 改名是因为 Tauri 的默认名字里有空格和下划线，而 cask 和下载链接
-      # 要的是一个可以预先写死的名字。
+      # 装在一个虚拟环境里，按哈希装 —— 见 requirements.txt。
+      - name: Build the disk image
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet --require-hashes --no-deps \
+            --only-binary :all: -r src-tauri/dmg/requirements.txt
+          mkdir -p dist
+          "$RUNNER_TEMP/dmgbuild/bin/dmgbuild" -s src-tauri/dmg/settings.py \
+            -D app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app" \
+            -D dir=src-tauri/dmg -D icon=src-tauri/icons/icon.icns \
+            "ThinkWatch Lite" "dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+
       - name: Package
         run: |
           set -euo pipefail
           BUNDLE="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
-          mkdir -p dist
           DMG="dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
-          cp "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/ThinkWatch Lite_${VERSION}_aarch64.dmg" "$DMG"
           ( cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
           cat "$DMG.sha256"
 
@@ -154,6 +209,12 @@ jobs:
           # 拖放的目标。少了它，打开映像的人看到的只有一个应用图标，
           # 不知道该把它放到哪里去。
           test "$(readlink "$MNT/Applications")" = /Applications
+          # 版面在不在。少了其中任何一个，窗口就退回 Finder 的默认样子 ——
+          # 映像照样能用，所以不查就不会有人发现
+          test -s "$MNT/.DS_Store"
+          test -s "$MNT/.background.tiff"
+          # 从映像里拷出来的那一份，签名者也还是那张证书
+          codesign -d -r- "$APP" 2>&1 | grep -q "certificate root = H\"$SIGNING_CERT_SHA1\""
           hdiutil detach "$MNT"
 
       - uses: softprops/action-gh-release@v2
