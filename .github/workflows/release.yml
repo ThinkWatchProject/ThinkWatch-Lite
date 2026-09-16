@@ -58,7 +58,7 @@ jobs:
 
       # `--target` 写出来，产物路径才是定死的。不写的话它跟着 runner
       # 的架构走，哪天 runner 换了，后面每一行路径都得跟着猜。
-      # 打包前 `beforeBundleCommand` 会把 twcore 取回来并核对校验和。
+      # 编译前 `beforeBuildCommand` 会把 twcore 取回来并核对校验和。
       - name: Build
         run: pnpm tauri build --target aarch64-apple-darwin
 

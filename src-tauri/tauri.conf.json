@@ -6,9 +6,8 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist",
-    "beforeBundleCommand": "bash src-tauri/scripts/fetch-core.sh"
+    "beforeBuildCommand": "bash src-tauri/scripts/fetch-core.sh && pnpm build",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [],
