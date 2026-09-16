@@ -38,6 +38,17 @@ pub enum CoreState {
     Stopped,
 }
 
+/// 一次 core 退出之后，守护循环下一步做什么。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Next {
+    /// 再起一个
+    Again,
+    /// 连续失败太多，改用安全模式起
+    SafeMode,
+    /// 不再起了：安全模式里的 core 也退出了，或者它是为了退出应用而被停掉的
+    Stop,
+}
+
 pub struct Supervisor {
     binary: PathBuf,
     config: Option<PathBuf>,
@@ -51,6 +62,11 @@ pub struct Supervisor {
     /// 进安全模式，那是荒唐的。这个标志把「它崩了」和「我们让它退的」
     /// 分开，而这两件事在 `wait()` 眼里长得一模一样。
     intentional: Arc<AtomicBool>,
+    /// 为了退出应用而停的。**和 `intentional` 相反：退了就不再起。**
+    ///
+    /// 两者分开是因为对 `wait()` 来说它们还是长得一模一样 —— 而一个应该
+    /// 立刻重起，一个应该一个都不再起。
+    stopping: AtomicBool,
 }
 
 impl Supervisor {
@@ -61,6 +77,7 @@ impl Supervisor {
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
+            stopping: AtomicBool::new(false),
         }
     }
 
@@ -127,6 +144,42 @@ impl Supervisor {
         Ok(())
     }
 
+    /// 为了退出应用而停掉 core，**并且等它真的退出**。
+    ///
+    /// 应用重启（装完更新）之前要用它。只是自己退出、让 core 靠 `--parent`
+    /// 发现父进程没了再跟着退是不够的：它要一秒左右才发现，而新起来的应用
+    /// 这时已经在拉新的 core —— 锁还在旧的手里，新的连起几次都失败，网关
+    /// 多停一秒，日志里多出几段「已经有一个 twcore 在跑」。这是实测出来的。
+    ///
+    /// 超时还没退就强杀。**不在跑就什么都不做。**
+    pub async fn stop_and_wait(&self, timeout: Duration) {
+        let CoreState::Running { pid } = self.state() else {
+            return;
+        };
+        self.stopping.store(true, Ordering::SeqCst);
+        let mut rx = self.watch();
+        // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉 ——
+        // 下一个 core 要的正是那把锁。
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        let gone = async {
+            while matches!(*rx.borrow_and_update(), CoreState::Running { pid: p } if p == pid) {
+                if rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        };
+        if tokio::time::timeout(timeout, gone).await.is_err() {
+            tracing::warn!(pid, ?timeout, "core 没按时退出，强杀");
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+    }
+
     /// 拼命令行。
     ///
     /// `--parent` 是「一个程序」这条原则的落点：**UI 没了 core 跟着退**。
@@ -151,9 +204,7 @@ impl Supervisor {
     }
 
     /// 一次「起、看着、它死了、决定下一步」的完整循环。
-    ///
-    /// 返回 false 表示别再循环了（进了安全模式或被主动停掉）。
-    pub async fn run_once(&self, safe: bool) -> anyhow::Result<bool> {
+    pub async fn run_once(&self, safe: bool) -> anyhow::Result<Next> {
         self.set(CoreState::Starting);
         let args = self.command_args(safe);
         let started = Instant::now();
@@ -173,12 +224,21 @@ impl Supervisor {
         // 的那个 —— 所以另外两个信号（socket 断开、心跳）不是冗余。
         let status = child.wait().await?;
         let ran_for = started.elapsed();
+
+        // **先看是不是为了退出而停的。**这一条必须排在最前面：落到下面任何
+        // 一个分支里，它都会被当成一次崩溃 —— 要么立刻再起一个去抢那把锁，
+        // 要么攒够次数进安全模式、把主窗口弹出来。
+        if self.stopping.load(Ordering::SeqCst) {
+            tracing::info!(?status, "core 已按要求停止");
+            self.set(CoreState::Stopped);
+            return Ok(Next::Stop);
+        }
         tracing::warn!(?status, ?ran_for, "core 退出");
 
         if safe {
             // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
             self.set(CoreState::Stopped);
-            return Ok(false);
+            return Ok(Next::Stop);
         }
 
         if self.intentional.swap(false, Ordering::SeqCst) {
@@ -188,7 +248,7 @@ impl Supervisor {
                 attempt: 0,
                 in_ms: 0,
             });
-            return Ok(true);
+            return Ok(Next::Again);
         }
 
         let mut policy = self.policy.lock().await;
@@ -209,12 +269,12 @@ impl Supervisor {
                 if !d.is_zero() {
                     tokio::time::sleep(d).await;
                 }
-                Ok(true)
+                Ok(Next::Again)
             }
             Decision::SafeMode => {
                 self.set(CoreState::SafeMode);
                 tracing::error!(failures, "连续失败太多，进安全模式");
-                Ok(false)
+                Ok(Next::SafeMode)
             }
         }
     }
@@ -280,5 +340,72 @@ mod tests {
     #[tokio::test]
     async fn state_starts_stopped() {
         assert_eq!(sup().state(), CoreState::Stopped);
+    }
+
+    /// 一个不管参数、一直跑到被信号杀掉的「core」。
+    fn long_runner(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("fake-core");
+        std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    async fn until_running(s: &Supervisor) -> u32 {
+        let mut rx = s.watch();
+        loop {
+            if let CoreState::Running { pid } = *rx.borrow_and_update() {
+                return pid;
+            }
+            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+                .await
+                .expect("core 迟迟没起来")
+                .unwrap();
+        }
+    }
+
+    /// 这一条是 `stop_and_wait` 存在的理由：为了重启应用而停的 core，**守护
+    /// 循环不能把它当成一次崩溃**。当成崩溃的话，要么立刻再起一个去抢锁，
+    /// 要么进安全模式、把主窗口弹到正在重启的应用上。
+    #[tokio::test]
+    async fn a_core_stopped_for_exit_is_not_restarted() {
+        let s = Arc::new(Supervisor::new(long_runner("stop"), None));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+
+        let t0 = Instant::now();
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "SIGTERM 就该让它退出，不用等到强杀"
+        );
+        assert_eq!(s.state(), CoreState::Stopped);
+        assert_eq!(looped.await.unwrap(), Next::Stop, "停下之后不再起");
+    }
+
+    #[tokio::test]
+    async fn stopping_what_is_not_running_returns_at_once() {
+        let s = sup();
+        let t0 = Instant::now();
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert!(t0.elapsed() < Duration::from_millis(100));
+    }
+
+    /// 对照组：改配置那种重启照旧立刻再起 —— 两个标志没有串。
+    #[tokio::test]
+    async fn a_requested_restart_still_comes_back() {
+        let s = Arc::new(Supervisor::new(long_runner("restart"), None));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+        s.request_restart().await.unwrap();
+        assert_eq!(looped.await.unwrap(), Next::Again);
     }
 }

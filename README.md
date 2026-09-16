@@ -43,15 +43,31 @@ copying the app out of the disk image.
 
 ### Updates
 
-Off by default. Turn it on under Settings and the app checks for a new version
-every six hours, reading a manifest and downloading nothing else. A version it
-does download is verified against a key compiled into the app before it
-replaces anything.
+The app looks for a new version two minutes after it starts and every six hours
+after that, reading a small manifest and nothing else. It can be turned off
+under Settings.
 
-An app Homebrew installed does not replace itself — Homebrew records which
-version it put in `/Applications`, and an app that overwrote that would be
-written back over by the next `brew upgrade`. It says a new version exists and
-leaves `brew upgrade --cask thinkwatch-lite` to do it.
+When there is one, a small window says so, and what happens next depends on how
+the app was installed.
+
+**Downloaded from the releases page:** one press on the install button does the
+rest. The app downloads the update, verifies it against a key compiled into
+itself, waits for the requests the gateway is serving to finish — up to three
+minutes — then replaces itself and restarts. A Claude Code task in the middle
+of a response is not cut off to make room for the update.
+
+**Installed with Homebrew:** the window gives the command to copy, and the app
+never replaces itself. Homebrew records which version it put in `/Applications`;
+an app that overwrote it would be written back over by the next `brew upgrade`.
+The window only appears once the tap carries the new version, so the command
+always has something to install:
+
+```bash
+brew update && brew upgrade --cask thinkwatch-lite
+```
+
+`brew update` comes first because `brew upgrade` refreshes taps at most once a
+day on its own.
 
 Or run it from source:
 

@@ -41,13 +41,25 @@ xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 
 ### 更新
 
-默认不开。在「设置」里打开之后，每六小时检查一次，只读取一份版本清单，不
-下载其他任何内容。真去下载的那个包，在替换任何东西之前会先用编译进应用里
-的那把公钥验签。
+应用启动两分钟后检查一次有没有新版本，此后每六小时一次，只读取一份很小的
+版本清单。可以在「设置」里关闭。
 
-Homebrew 装的实例不自己替换：Homebrew 记着它放进 `/Applications` 的是哪一
-版，应用把它盖掉之后，下一次 `brew upgrade` 会把旧的那版写回来。这种情况下
-应用只提示有新版本，升级交给 `brew upgrade --cask thinkwatch-lite`。
+有新版本时会弹出一个小窗口，接下来怎么做取决于应用是怎么装上来的。
+
+**从 release 页面下载安装的：**按一次安装按钮，剩下的全部自动完成 —— 下载
+更新包，用编译进应用里的公钥验签，等网关手上的请求结束（最多三分钟），然后
+替换并重新启动。正在输出的 Claude Code 任务不会为了更新被掐断在半截。
+
+**用 Homebrew 安装的：**窗口给出更新命令和复制按钮，应用不会替换自己。
+Homebrew 记着它放进 `/Applications` 的是哪一版，应用把它盖掉之后，下一次
+`brew upgrade` 会把旧的那版写回来。这个窗口只在 tap 已经有新版本时才弹出，
+所以给出的命令执行下去一定有东西可装：
+
+```bash
+brew update && brew upgrade --cask thinkwatch-lite
+```
+
+前面要先 `brew update`：`brew upgrade` 自己最多一天才刷新一次 tap。
 
 也可以从源码跑：
 
