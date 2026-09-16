@@ -13,6 +13,7 @@ import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, useLive } from "./useLive";
+import { useCountUp } from "./useCountUp";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -242,6 +243,31 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** */
   const [open, setOpen] = useState<number | null>(null);
 
+  /*
+    三个大数会走过去，不是跳过去。
+
+    **只在同一个口径里走**：换时间范围时那不是「涨了」，是换了一个东西
+    在看 —— 从 251k 滚到 661k 看起来像用量突然翻了三倍，所以
+    `range.label` 一变就直接落值。
+
+    **这三个 hook 必须站在早返回之前。**下面有「还没读到数据」和
+    「出错了」两条 return，而 React 要求每次渲染调用的 hook 数量一致
+    —— 放在后面的话，数据第一次到达的那一刻整页会崩。所以这里用
+    `d?.` 取值，读不到就是 0。
+  */
+  const sum = d?.summary;
+  const tokensAt = useCountUp(
+    sum
+      ? sum.input_tokens + sum.cache_read_tokens + sum.cache_write_tokens + sum.output_tokens
+      : 0,
+    range.label,
+  );
+  const spentAt = useCountUp(
+    sum ? sum.cost_micros_exact + sum.cost_micros_estimated : 0,
+    range.label,
+  );
+  const requestsAt = useCountUp(sum?.requests ?? 0, range.label);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -351,6 +377,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     : 0;
   const hit = ctx > 0 ? s.cache_read_tokens / ctx : null;
   const ratio = s.cache_write_tokens > 0 ? s.cache_read_tokens / s.cache_write_tokens : null;
+
 
   /*
     趋势图按模型分层。**只保留前五项，其余合并为「其他」** —— 一家上游
@@ -536,7 +563,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       */}
       <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
         <Stat
-          n={compact(tokensTotal)}
+          n={compact(tokensAt)}
           unit="token"
           note={
             <>
@@ -553,7 +580,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         />
 
         <Stat
-          n={usd(spent)}
+          n={usd(spentAt)}
           note={
             <>
               {beforeCost > 0 && (
@@ -588,7 +615,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         />
 
         <Stat
-          n={s.requests.toLocaleString()}
+          n={Math.round(requestsAt).toLocaleString()}
           unit="次请求"
           after={s.failed > 0 && <span className="tw-label text-destructive">{s.failed} 次失败</span>}
           note={
