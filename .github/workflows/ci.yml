@@ -5,9 +5,9 @@
 # run, because a green Rust side with a broken `tsc` is an app that
 # won't start.
 #
-# No `.app` is built and no artifact is uploaded: this project is
-# macOS-only and deliberately not distributed (see CONTRIBUTING.md), so
-# a signed bundle would be a build product nobody consumes.
+# No `.app` is built here. That is `release.yml`'s job, and it only runs on
+# a tag — bundling on every push would add minutes to every PR to produce a
+# file nobody downloads.
 name: CI
 
 on:
@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 版本号写在三个文件里，漂了之后谁也不报错 —— 直到打 tag 的那一
+      # 刻，而那时候要收回一个已经推上去的 tag。在改它的那个 PR 上拦。
+      - name: One version, three files
+        run: bash scripts/version.sh
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
