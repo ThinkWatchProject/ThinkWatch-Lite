@@ -8,7 +8,6 @@ import { StackedArea } from "@/ui/charts";
 import { bucketStart, compact, densify } from "./format";
 import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { toast } from "sonner";
 import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
@@ -285,8 +284,15 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           setD(x);
           setError(null);
         }
-      } catch (e) {
-        if (alive) toast.error(typeof e === "string" ? e : String(e));
+      } catch {
+        /*
+          **读不到不在这一层报。**连不上控制面是启动过程中的预期状态，
+          而 App 那边已经用一整面（或一条带子）在说这件事了 —— 这儿再弹
+          一条 toast，就是同一件事说两遍，而且说得更难懂。
+
+          上一次读到的值留着不动：一个凝固的旧数字加上面那句「已断开」，
+          比清空成骨架有用。
+        */
       }
     })();
     return () => {

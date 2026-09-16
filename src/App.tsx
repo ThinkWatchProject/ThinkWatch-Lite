@@ -47,9 +47,9 @@ import type { LucideIcon } from "lucide-react";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
-import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
+import Connect, { trouble } from "./Connect";
 import { Skeleton } from "@/ui/skeleton";
 import {
   Sidebar,
@@ -86,6 +86,15 @@ import {
 } from "@/ui/alert-dialog";
 
 const DAY_MS = 24 * 3_600_000;
+
+/**
+ * 连控制面最多退避重试几次。
+ *
+ * **到了上限就停手**，不再往下试 —— 再试下去就成了轮询。守护状态一变
+ * （启动中 → 运行中、进了重启、进了安全模式）那个 effect 会重跑，那才
+ * 是它该被叫醒的时机。
+ */
+const MAX_TRIES = 8;
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -304,6 +313,16 @@ export default function App() {
   }
   const [status, setStatus] = useStableState<CoreStatus | null>(null);
   const [core, setCore] = useState("stopped");
+  /**
+   * 这次会话连上过控制面吗。
+   *
+   * **决定的是「整窗初始化面」还是「保留页面 + 顶部状态带」。**冷启动
+   * 时后面确实没东西可看；而断线重连时用户本来在看数据，把它清空比留着
+   * 一个旧值更糟 —— 旧值加一句「已断开」至少还回答得了「刚才是什么样」。
+   */
+  const [linked, setLinked] = useState(false);
+  /** 连了第几次了。只用来在界面上说清楚，不参与重试逻辑 */
+  const [tries, setTries] = useState(0);
   /**
    * 托盘按了「退出」，等确认。
    *
@@ -581,28 +600,53 @@ export default function App() {
    */
   useEffect(() => {
     let alive = true;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let n = 0;
+    const read = async () => {
       try {
-        // Tauri 的 invoke 用**字符串** reject，不是 Error ——
-        // `e instanceof Error` 永远是 false，所以按字符串处理。
         const s = await invoke<CoreStatus>("core_status");
-        if (alive) setStatus(s);
-      } catch (e) {
-        if (alive) toast.error(typeof e === "string" ? e : String(e));
+        if (!alive) return;
+        setStatus(s);
+        setLinked(true);
+        setTries(0);
+      } catch {
+        /*
+          **连不上不是错误，是启动过程中的一段。**在此之前这里弹一条
+          toast，而它说的是 `Connection refused (os error 61)` —— 那是
+          给写代码的人看的，用户从中得不到任何该做什么的信息。而且这个
+          effect 跟着守护状态重跑（已停止 → 启动中 → 运行中），于是同样
+          的话会堆三条。
+
+          真正要处理的是一个很具体的窗口期：**core 进程起来了，控制面
+          socket 还没 bind**。退避重试几次就过去了，界面上说第几次。
+        */
+        if (!alive) return;
+        n += 1;
+        setTries(n);
+        if (n <= MAX_TRIES) {
+          timer = setTimeout(() => void read(), Math.min(1600, 200 * 2 ** Math.min(n - 1, 3)));
+        }
+        // 到上限就停手，**不再重试** —— 再试下去就是轮询了。守护状态
+        // 一变这个 effect 会重跑，那才是它该被叫醒的时机。
+        return;
       }
       try {
         const o = await invoke<Overview>("overview");
         if (alive) setOv(o);
       } catch {
-        /* 概览拿不到不该盖掉上面那条更有用的错误 */
+        /* 概览拿不到不影响状态那一半 —— 连上了就是连上了 */
       }
-    })();
+    };
+    void read();
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
   }, [configVersion, nudge, health, core, setStatus, setOv]);
 
   const c = describeCore(core);
+  /** 连上过、又断了。**只在这时候挂那条带子** */
+  const lost = linked && tries > 0 ? trouble(core, tries) : null;
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
   // 一个填表向导，填完是一个「等第一个请求」的页面。两道都拆了。
@@ -921,6 +965,33 @@ export default function App() {
       )}
 
       {/*
+        断线重连。**不是 toast，也不清空页面。**
+
+        用户本来在看数据，清空之后连「刚才是什么样」都没了；而 toast
+        会飘走，飘走之后界面上一点痕迹都不留 —— 于是那些凝固的数字看
+        起来还是新鲜的。一条常驻的带子两件事都解决：数字留着，旁边写着
+        它们为什么不动了。
+      */}
+      {linked && tries > 0 && lost && (
+        <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
+          <span className="font-medium text-amber-900 dark:text-amber-200">
+            {lost.what} —— 下面的数字停在断开之前
+          </span>
+          <span className="text-amber-800 dark:text-amber-300">{lost.next}</span>
+          {lost.retry && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto shrink-0"
+              onClick={() => void invoke("restart_core").catch(() => setNudge((n) => n + 1))}
+            >
+              重新启动
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/*
         **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
         真正滚的是下面这个容器（请求页是 `Split` 里的两栏各滚各的）。
       */}
@@ -931,7 +1002,18 @@ export default function App() {
           (tab === "requests" ? "overflow-hidden" : "overflow-y-auto")
         }
       >
-      {tab === "sessions" ? (
+      {/*
+        **这次会话还没连上过控制面 —— 整窗让给初始化面。**
+        每一页的数据都来自那条 socket，连不上的时候后面确实没东西。
+
+        和「不再有独立初始化页面」那条决定不冲突：那两道门挡的是配置
+        状态（还没配上游），而门后面的东西是存在、可用的；这一道挡的是
+        连接状态。**控制面一答应就立刻让开** —— 哪怕网关还没起来（安全
+        模式下配置、回滚、还原接管都能用，那时绝不能再挡）。
+      */}
+      {!linked ? (
+        <Connect state={core} tries={tries} />
+      ) : tab === "sessions" ? (
         <Sessions />
       ) : tab === "dashboard" ? (
         <Dashboard tick={dashTick} ov={ov} />

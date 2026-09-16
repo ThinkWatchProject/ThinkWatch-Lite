@@ -23,6 +23,19 @@ use supervisor::{CoreState, Supervisor};
 pub struct AppState {
     pub control: ControlClient,
     pub supervisor: Arc<Supervisor>,
+    /// 连 twcore 都没找到时，那句话。
+    ///
+    /// **找不到不该让应用起不来。**在此之前这里是 `locate_core(&handle)?`
+    /// —— `setup` 返回 Err 会让 Tauri 中止启动，**窗口根本不开**，用户
+    /// 看到的是「点了没反应」。而这正是最需要把话说清楚的一种失败：
+    /// 消息里写着找过哪些路径。
+    pub core_missing: Option<String>,
+    /// 守护循环还在跑吗。
+    ///
+    /// 它会退出：安全模式下的 core 也退了，或者 core 根本起不来。
+    /// 退了之后没人再拉它 —— 界面上那个「重新启动」要能把它接回来，
+    /// 而**不能接出第二条循环**。
+    pub supervising: Arc<std::sync::atomic::AtomicBool>,
     /// 菜单栏该重新收一次数了。
     ///
     /// **菜单栏原来是每秒醒一次的**，而它每醒一次就走两趟控制面（额度、
@@ -128,7 +141,41 @@ async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status
 
 #[tauri::command]
 async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    // 连 core 都没找到时，守护状态说什么都没意义 —— 那句话才是答案
+    if let Some(why) = &state.core_missing {
+        return Ok(format!("missing:{why}"));
+    }
     Ok(describe_state(&state.supervisor.state()))
+}
+
+/// 把 core 拉起来。
+///
+/// 两种情形：守护还在跑，那这就是一次普通的重启；守护已经退出了
+/// （安全模式下的 core 也退了、或者 core 根本起不来），那要把循环接
+/// 回来 —— 而**不能接出第二条**，所以用一个标志守着。
+#[tauri::command]
+async fn restart_core(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    if let Some(why) = &state.core_missing {
+        return Err(why.clone());
+    }
+    if state.supervising.swap(true, Ordering::SeqCst) {
+        return state
+            .supervisor
+            .request_restart()
+            .await
+            .map_err(|e| format!("{e:#}"));
+    }
+    let sup = state.supervisor.clone();
+    let flag = state.supervising.clone();
+    tauri::async_runtime::spawn(async move {
+        supervise(sup, app).await;
+        flag.store(false, Ordering::SeqCst);
+    });
+    Ok(())
 }
 
 /// 守护状态说成界面认得的那个字符串。
@@ -834,6 +881,7 @@ pub fn run() {
             interfaces,
             new_key,
             core_state,
+            restart_core,
             overview,
             probe_upstream,
             speed_test,
@@ -880,13 +928,24 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let binary = locate_core(&handle)?;
+            // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
+            // 而它把「找不到一个文件」变成了「应用打不开」。
+            let located = locate_core(&handle);
             let socket = default_socket();
-            let sup = Arc::new(Supervisor::new(binary, None));
+            let sup = Arc::new(Supervisor::new(
+                located
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|_| PathBuf::from("twcore")),
+                None,
+            ));
+            let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(AppState {
                 control: ControlClient::new(socket),
                 supervisor: sup.clone(),
+                core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
+                supervising: supervising.clone(),
                 menubar: Arc::new(tokio::sync::Notify::new()),
             });
 
@@ -908,11 +967,18 @@ pub fn run() {
 
             // 守护循环。**它跑在后台任务里而不是阻塞 setup** —— core 起
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
-            let h = handle.clone();
-            let sup_for_loop = sup.clone();
-            tauri::async_runtime::spawn(async move {
-                supervise(sup_for_loop, h).await;
-            });
+            if located.is_ok() {
+                supervising.store(true, std::sync::atomic::Ordering::SeqCst);
+                let h = handle.clone();
+                let sup_for_loop = sup.clone();
+                let flag = supervising.clone();
+                tauri::async_runtime::spawn(async move {
+                    supervise(sup_for_loop, h).await;
+                    flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                });
+            } else if let Err(e) = &located {
+                tracing::error!("找不到 core：{e:#}");
+            }
 
             // 自启的路径校验。插件把 `enable()` 那一刻的绝对路径快照写
             // 进 plist，用户把 App 挪个位置就静默失效 —— 而它的
