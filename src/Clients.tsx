@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -8,6 +8,18 @@ import type {
   FindingView,
   PlanView,
 } from "./types";
+import { Button } from "@/ui/button";
+import { Badge } from "@/ui/badge";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import { toast } from "sonner";
+import { useCoreEvent } from "./useCoreEvent";
+import { patchConfig } from "./patch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 客户端接管页。
@@ -38,7 +50,7 @@ export default function Clients({
   const [done, setDone] = useState<AdoptResponse | null>(null);
   const [why, setWhy] = useState<{ id: string; found: FindingView[] } | null>(null);
   const [busy, setBusy] = useState(false);
-  /** 「全部还原」按了一次，等第二次确认。**不弹浏览器的 confirm** ——
+  /** 「不限还原」按了一次，等第二次确认。**不弹浏览器的 confirm** ——
    * 这个项目里所有破坏性操作都走自己的确认界面（接管走 diff 弹窗） */
   const [confirmAll, setConfirmAll] = useState(false);
 
@@ -48,16 +60,30 @@ export default function Clients({
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     }
   }, []);
 
   useEffect(() => {
     void load();
-    // 观察窗口靠轮询：等的是「第一个真实请求」，而它可能几分钟后才来
-    const t = setInterval(() => void load(), 5000);
-    return () => clearInterval(t);
   }, [load]);
+
+  /*
+    这一页有两件事会变，而它们各自都有事件：
+
+    · **磁盘上那几个配置文件被改了** —— 用户在编辑器里把地址改回去，
+      接管状态就该跟着变。core 盯着那几个目录，改动会报 `clients_changed`。
+    · **第一个真实请求到了** —— 「已验证」这个标记等的就是它，而它可能
+      几分钟后才来。
+
+    原来两件事都靠每 5 秒重扫一遍磁盘来发现。空闲的机器上那是每分钟
+    十二次白扫，而用户多半根本没打开这一页。
+  */
+  useCoreEvent(
+    ["clients_changed", "request_finished", "request_failed"],
+    () => void load(),
+    3_000,
+  );
 
   async function ask(c: DetectedClient, restore: boolean) {
     setBusy(true);
@@ -68,7 +94,7 @@ export default function Clients({
       });
       setPlan({ p, c, restore });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -89,16 +115,20 @@ export default function Clients({
         全线失效。**
 
         没有同名密钥就先建一把。建和用是两次写入,中间那一刻只是「多了
-        一把还没人用的密钥」—— 一个无害的状态,而反过来（先接管再建）
+        一把还未被引用的密钥」—— 一个无害的状态,而反过来（先接管再建）
         那一刻客户端配的是一把不存在的密钥。
       */
       const keyName = plan.c.id;
       if (!plan.restore && !clientKeys.includes(keyName)) {
+        // **类型查出来的。**这里原本直接把 `configVersion` 递进去，而它
+        // 可能还是 null（core 刚起来、第一次配置读回来之前）。那种时候
+        // 建密钥会失败，而接管照样往下走 —— 客户端配上一把不存在的密钥。
+        if (!configVersion) {
+          toast.error("还没读到配置版本，稍等一下再试");
+          return;
+        }
         const key = await invoke<string>("new_key");
-        await invoke("patch_config", {
-          ops: [{ op: "append", path: "/clients", item: `name: ${keyName}\nkey: ${key}` }],
-          baseVersion: configVersion,
-        });
+        await patchConfig([{ op: "append", path: "/clients", item: `name: ${keyName}\nkey: ${key}` }], configVersion);
       }
       const r = await invoke<AdoptResponse>(plan.restore ? "restore_client" : "adopt_client", {
         client: plan.c.id,
@@ -108,7 +138,7 @@ export default function Clients({
       setDone(r);
       await load();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setPlan(null);
     } finally {
       setBusy(false);
@@ -120,14 +150,14 @@ export default function Clients({
     try {
       setWhy({ id, found: await invoke<FindingView[]>("diagnose_client", { client: id }) });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
   }
 
   if (!data) {
-    return <div className="p-5 tw-head text-neutral-500">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-muted-foreground">{error ?? "扫描中…"}</div>;
   }
 
   const here = data.clients.filter((c) => c.installed);
@@ -135,14 +165,10 @@ export default function Clients({
 
   return (
     <div className="space-y-5 p-5">
-      {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </div>
-      )}
+      
 
       <div className="flex items-start justify-between gap-4">
-        <div className="tw-body text-neutral-500">
+        <div className="tw-body text-muted-foreground">
           接管会把这些客户端指向 <code>{data.gateway_base}</code>。
           只改端点和密钥两个字段，其余不动，随时可还原。
         </div>
@@ -158,7 +184,9 @@ export default function Clients({
                 把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
                 个客户端改回原样？它们会立刻不再经过 ThinkWatch。
               </span>
-              <button
+              <Button
+                variant="default"
+                size="sm"
                 disabled={busy}
                 onClick={async () => {
                   setConfirmAll(false);
@@ -169,7 +197,7 @@ export default function Clients({
                     );
                     const bad = rs.filter((r) => !r.ok);
                     // **一家失败不影响别家**，所以逐条报，不能只说「失败了」
-                    setError(
+                    toast.error(
                       bad.length === 0
                         ? null
                         : `有 ${bad.length} 个没还原成功：` +
@@ -177,30 +205,32 @@ export default function Clients({
                     );
                     await load();
                   } catch (e) {
-                    setError(typeof e === "string" ? e : String(e));
+                    toast.error(typeof e === "string" ? e : String(e));
                   } finally {
                     setBusy(false);
                   }
                 }}
-                className="rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
               >
-                确认全部还原
-              </button>
-              <button
+                确认不限还原
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setConfirmAll(false)}
-                className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 取消
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
               disabled={busy}
               onClick={() => setConfirmAll(true)}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 tw-body hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
-              全部还原
-            </button>
+              不限还原
+            </Button>
           ))}
       </div>
 
@@ -210,13 +240,11 @@ export default function Clients({
         或者手动把端点指过来」。
       */}
       {here.length === 0 && (
-        <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
-          <p className="tw-head text-neutral-600 dark:text-neutral-400">
-            这台机器上没有找到已识别的客户端。
-          </p>
-          <p className="mt-2 tw-body text-neutral-500">
-            装了 Claude Code、Codex、Gemini CLI 的话
-            <Tip text="先跑一次让它生成自己的配置文件，再回到这一页 —— 没有那个文件就无从判断它指向哪儿。">
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>未检测到已支持的客户端</EmptyTitle>
+            <EmptyDescription>装了 Claude Code、Codex、Gemini CLI 的话
+            <Tip text="需先运行一次以生成其配置文件，之后返回此页。未生成配置文件时无法判断其指向。">
               <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
             </Tip>。
             <br />
@@ -224,9 +252,9 @@ export default function Clients({
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
               {data.gateway_base}
             </code>
-            。
-          </p>
-        </div>
+            。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {here.map((c) => (
@@ -234,7 +262,7 @@ export default function Clients({
       ))}
 
       {gone.length > 0 && (
-        <details className="tw-body text-neutral-500">
+        <details className="tw-body text-muted-foreground">
           <summary className="cursor-pointer">这台机器上没找到的（{gone.length}）</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {gone.map((c) => (
@@ -247,14 +275,14 @@ export default function Clients({
       )}
 
       {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
-      <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+      <div className="rounded border border-border p-3">
         <div className="mb-2 tw-body font-medium">接管不了，只能给你步骤</div>
-        <ul className="space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
+        <ul className="space-y-2 tw-body text-muted-foreground">
           {data.manual.map((m) => (
             <li key={m.name}>
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">{m.name}</span>
+              <span className="font-medium text-foreground">{m.name}</span>
               <div>{m.how.replace("网关地址", data.gateway_base)}</div>
-              <div className="text-neutral-500">{m.caveat}</div>
+              <div className="text-muted-foreground">{m.caveat}</div>
             </li>
           ))}
         </ul>
@@ -287,39 +315,41 @@ function Card({
   const nagging = c.warns_when_silent && silentFor > 5 * 60 * 1000;
 
   return (
-    <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <div className="rounded border border-border p-3">
       <div className="flex items-center gap-2">
         <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
-          <Badge tone="ok">已验证 · 收到过它的请求</Badge>
+          <Badge variant="success">已验证 · 收到过它的请求</Badge>
         ) : adopted ? (
-          <Badge tone="wait">已接管 · 等第一个请求</Badge>
+          <Badge variant="warning">已接管 · 等第一个请求</Badge>
         ) : (
-          <Badge tone="idle">没接管</Badge>
+          <Badge variant="secondary">没接管</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {adopted && (
-            <button
-              className="rounded px-2 py-1 tw-body text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => onWhy(c.id)}
               disabled={busy}
             >
               {/* 已经收到过它的请求了还问「为什么没生效」，读起来像是我们
                   自己都不信刚才那个「已验证」 */}
               {verified ? "检查配置链" : "为什么没生效？"}
-            </button>
+            </Button>
           )}
-          <button
-            className="rounded border border-neutral-300 px-2 py-1 tw-body dark:border-neutral-700"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onAsk(c, adopted)}
             disabled={busy}
           >
             {adopted ? "还原" : "接管…"}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div className="mt-1 space-y-0.5 tw-body text-neutral-500">
+      <div className="mt-1 space-y-0.5 tw-body text-muted-foreground">
         <div>
           <code>{c.real}</code>
           {/* 用户以为在改 ~/.claude/settings.json，实际写的可能是他
@@ -344,28 +374,36 @@ function Card({
   );
 }
 
-function Badge({ tone, children }: { tone: "ok" | "wait" | "idle"; children: React.ReactNode }) {
-  const cls = {
-    ok: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-    wait: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    idle: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-  }[tone];
-  return <span className={`rounded px-1.5 py-0.5 tw-label ${cls}`}>{children}</span>;
-}
 
-function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+/**
+ * 这几屏共用的对话框外壳。
+ *
+ * **原来是手写的 `fixed inset-0` 浮层。**它缺的东西和另外三处一模一样:
+ * Esc 关不掉、Tab 会跑到背景里去、打开时焦点不进来、关上之后焦点不回到
+ * 触发它的那个按钮、读屏软件不知道这是个对话框。每一件都能自己补,而四
+ * 份手写的实现里一定有几份是错的。
+ *
+ * `title` 是新收的参数:shadcn 的 `DialogContent` 要求必须有
+ * `DialogTitle`,那正是读屏软件念出来的那一句。
+ */
+function Shell({
+  title,
+  children,
+  onClose,
+}: {
+  title: React.ReactNode;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -386,11 +424,8 @@ function PlanDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Shell onClose={onCancel}>
-      <div className="tw-head font-medium">
-        {restore ? "还原" : "接管"} {c.name}
-      </div>
-      <div className="mt-1 tw-body text-neutral-500">
+    <Shell onClose={onCancel} title={`${restore ? "还原" : "接管"} ${c.name}`}>
+      <div className="mt-1 tw-body text-muted-foreground">
         要改 <code>{p.path}</code>
       </div>
 
@@ -410,7 +445,7 @@ function PlanDialog({
 
           {/* 接管的代价要在这里列出来，不能等用户自己发现 */}
           {p.notes.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-neutral-600 dark:text-neutral-400">
+            <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-muted-foreground">
               {p.notes.map((n) => (
                 <li key={n}>{n}</li>
               ))}
@@ -419,7 +454,7 @@ function PlanDialog({
 
           <Diff before={p.before} after={p.after} />
 
-          <div className="mt-3 tw-body text-neutral-500">
+          <div className="mt-3 tw-body text-muted-foreground">
             写入前整份备份，除上面这几个字段外一字节不动。
             {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
           </div>
@@ -427,17 +462,17 @@ function PlanDialog({
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           取消
-        </button>
+        </Button>
         {!p.noop && (
-          <button
-            className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          <Button
+            size="sm"
             onClick={onConfirm}
             disabled={busy}
           >
             {restore ? "还原" : "确认接管"}
-          </button>
+          </Button>
         )}
       </div>
     </Shell>
@@ -503,7 +538,7 @@ function Diff({ before, after }: { before: string | null; after: string }) {
               ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
               : r.kind === "del"
                 ? "bg-red-50 text-red-900 line-through dark:bg-red-950/50 dark:text-red-300"
-                : "text-neutral-500"
+                : "text-muted-foreground"
           }
         >
           {r.kind === "add" ? "+ " : r.kind === "del" ? "- " : "  "}
@@ -517,9 +552,8 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 /** 接管完成。**不说「成功」** —— 只有请求能证明它真的生效了。 */
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
-    <Shell onClose={onClose}>
-      <div className="tw-head font-medium">写好了</div>
-      <div className="mt-2 space-y-1 tw-body text-neutral-600 dark:text-neutral-400">
+    <Shell onClose={onClose} title="写好了">
+      <div className="mt-2 space-y-1 tw-body text-muted-foreground">
         <div>{r.takes_effect_note}</div>
         <div>
           改的是 <code>{r.real}</code>
@@ -537,9 +571,9 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
         </div>
       </div>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           知道了
-        </button>
+        </Button>
       </div>
     </Shell>
   );
@@ -548,8 +582,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
 /** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失。 */
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
   return (
-    <Shell onClose={onClose}>
-      <div className="tw-head font-medium">为什么没生效</div>
+    <Shell onClose={onClose} title="为什么没生效">
       <ul className="mt-3 space-y-2 tw-body">
         {found.map((f, i) => (
           <li key={i} className="flex gap-2">
@@ -566,7 +599,7 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
             </span>
             <div>
               <div className="font-medium">{f.title}</div>
-              <div className="text-neutral-500">{f.detail}</div>
+              <div className="text-muted-foreground">{f.detail}</div>
               {/* 命令给出来，执行与否是他的事 */}
               {f.fix && (
                 <code className="mt-1 block rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
@@ -578,9 +611,9 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
         ))}
       </ul>
       <div className="mt-4 flex justify-end">
-        <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           关闭
-        </button>
+        </Button>
       </div>
     </Shell>
   );

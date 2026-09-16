@@ -126,7 +126,7 @@ export default function YamlEditor({
   return (
     <div
       ref={host}
-      className="overflow-hidden rounded-md border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+      className="overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900"
     />
   );
 }

@@ -22,8 +22,30 @@ use supervisor::{CoreState, Supervisor};
 
 pub struct AppState {
     pub control: ControlClient,
-    pub core_state: Arc<tokio::sync::Mutex<CoreState>>,
     pub supervisor: Arc<Supervisor>,
+    /// 连 twcore 都没找到时，那句话。
+    ///
+    /// **找不到不该让应用起不来。**在此之前这里是 `locate_core(&handle)?`
+    /// —— `setup` 返回 Err 会让 Tauri 中止启动，**窗口根本不开**，用户
+    /// 看到的是「点了没反应」。而这正是最需要把话说清楚的一种失败：
+    /// 消息里写着找过哪些路径。
+    pub core_missing: Option<String>,
+    /// 守护循环还在跑吗。
+    ///
+    /// 它会退出：安全模式下的 core 也退了，或者 core 根本起不来。
+    /// 退了之后没人再拉它 —— 界面上那个「重新启动」要能把它接回来，
+    /// 而**不能接出第二条循环**。
+    pub supervising: Arc<std::sync::atomic::AtomicBool>,
+    /// 菜单栏该重新收一次数了。
+    ///
+    /// **菜单栏原来是每秒醒一次的**，而它每醒一次就走两趟控制面（额度、
+    /// 汇总）。那两个数字只在请求落地或者额度头出现之后才会变 —— 也就是
+    /// 说，一台闲着的机器上每秒两次往返问到的全是上一次的同一个答案，
+    /// 而菜单栏是这个应用唯一常驻的东西。
+    ///
+    /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
+    /// 重收，不是一串。
+    pub menubar: Arc<tokio::sync::Notify>,
 }
 
 /// twcore 在哪。
@@ -84,6 +106,24 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
         }
     }
 
+    /*
+        **装好的应用和开发布局要说两句不同的话。**
+
+        那一串 `../../thinkwatch-core/target/debug/twcore` 和一句
+        `cargo build -p twcore`，对开发者是答案，对用户是噪音 —— 他
+        既没有那个仓库，也不会去跑 cargo。他需要知道的只有一件事：
+        这份安装包缺东西，重装。
+
+        判据是 macOS 上打包应用的资源目录形状：`.app/Contents/Resources`。
+    */
+    let bundled = app
+        .path()
+        .resource_dir()
+        .map(|d| d.ends_with("Contents/Resources"))
+        .unwrap_or(false);
+    if bundled {
+        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
+    }
     anyhow::bail!(
         "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
          `cargo build -p twcore`。",
@@ -119,14 +159,56 @@ async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status
 
 #[tauri::command]
 async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let s = state.core_state.lock().await;
-    Ok(match &*s {
+    // 连 core 都没找到时，守护状态说什么都没意义 —— 那句话才是答案
+    if let Some(why) = &state.core_missing {
+        return Ok(format!("missing:{why}"));
+    }
+    Ok(describe_state(&state.supervisor.state()))
+}
+
+/// 把 core 拉起来。
+///
+/// 两种情形：守护还在跑，那这就是一次普通的重启；守护已经退出了
+/// （安全模式下的 core 也退了、或者 core 根本起不来），那要把循环接
+/// 回来 —— 而**不能接出第二条**，所以用一个标志守着。
+#[tauri::command]
+async fn restart_core(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    if let Some(why) = &state.core_missing {
+        return Err(why.clone());
+    }
+    if state.supervising.swap(true, Ordering::SeqCst) {
+        return state
+            .supervisor
+            .request_restart()
+            .await
+            .map_err(|e| format!("{e:#}"));
+    }
+    let sup = state.supervisor.clone();
+    let flag = state.supervising.clone();
+    tauri::async_runtime::spawn(async move {
+        supervise(sup, app).await;
+        flag.store(false, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
+/// 守护状态说成界面认得的那个字符串。
+///
+/// **只有这一处。**开窗时问一次、之后每次转换推一条，两条路必须说出
+/// 一模一样的话 —— 各写一遍的话，「重启中（第 3 次）」和「重启中」会
+/// 在某次改动之后悄悄分岔。
+fn describe_state(s: &CoreState) -> String {
+    match s {
         CoreState::Starting => "starting".into(),
         CoreState::Running { pid } => format!("running:{pid}"),
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
         CoreState::SafeMode => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
-    })
+    }
 }
 
 #[tauri::command]
@@ -170,18 +252,32 @@ async fn speed_test(
 /// **四个一起取。**界面上它们是同一块，分四次 invoke 会让那一块在几十
 /// 毫秒里分四次跳变。
 #[tauri::command]
-async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, String> {
+async fn dashboard(
+    state: tauri::State<'_, AppState>,
+    // 时间窗的起点，以及趋势图一格多宽。
+    //
+    // **两个都由界面给，这一层不再自己算。**原来这里收的是「往前看多少
+    // 毫秒」，起点是 `now - window` —— 每刷新一次就往前挪一点，于是所有
+    // 格子的边界跟着挪：没有任何新请求，柱子的高低也会变，而那是「你
+    // 什么时候看」造成的，不是数据。格子边界该对齐到**本地**日历（本地
+    // 零点、整点），而本地时区只有界面知道。
+    //
+    // 另一个理由是这两个数原来在两边各算了一遍：一边算窗口，一边算格宽，
+    // 而补空桶要求两边算出来的格子完全重合。对不上的表现是整张图全是零。
+    since_ms: Option<i64>,
+    bucket_ms: Option<i64>,
+) -> Result<Dashboard, String> {
     let c = &state.control;
-    // 趋势图看最近 24 小时、每小时一格。**不是「今天」** —— 今天零点
-    // 刚过的时候「今天」只有一根柱子，而用户想看的是「最近在怎么用」。
-    // 别的数字仍然按今天算（那是账单的口径）。
-    let since = std::time::SystemTime::now()
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-        - 24 * 3_600_000;
+        .unwrap_or(0);
+    // 兜底是「最近 24 小时、一小时一格」—— 界面总会把这两个值带上，
+    // 这里只是不让缺参数变成一次失败。
+    let since = since_ms.unwrap_or(now - 24 * 3_600_000).min(now);
+    let bucket = bucket_ms.unwrap_or(3_600_000).max(60_000);
     Ok(Dashboard {
-        summary: c.summary().await.map_err(|e| format!("{e:#}"))?,
+        summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
         latency_by_provider: c.latency_by_provider().await.unwrap_or_default(),
         history: c.history(200).await.unwrap_or_default(),
@@ -190,9 +286,15 @@ async fn dashboard(state: tauri::State<'_, AppState>) -> Result<Dashboard, Strin
         // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
         // 没有这两个端点，而这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。
-        buckets: c.cost_buckets(since, 3_600_000).await.unwrap_or_default(),
-        by_model: c.cost_by("model", since).await.unwrap_or_default(),
-        by_provider: c.cost_by("provider", since).await.unwrap_or_default(),
+        buckets: c.cost_buckets(since, bucket).await.unwrap_or_default(),
+        buckets_by_model: c
+            .cost_buckets_by("model", since, bucket)
+            .await
+            .unwrap_or_default(),
+        // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
+        // ——「$4.05」是多还是少，只有和上一个七天比过才知道。
+        // 拿不到就不显示那句对比，不影响这一页别的部分。
+        prev: c.summary_range(since - (now - since), since).await.ok(),
         since_ms: since,
     })
 }
@@ -208,11 +310,15 @@ pub struct Dashboard {
     storage: Option<tw_api::StorageStatus>,
     /// 出站密钥检测攒下的证据（观察态）
     leaks: Vec<tw_api::LeakGroup>,
-    /// 最近 24 小时、每小时一格。**稀疏的** —— 空桶由界面补
+    /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补
     buckets: Vec<tw_api::CostBucket>,
-    by_model: Vec<tw_api::CostGroup>,
-    by_provider: Vec<tw_api::CostGroup>,
-    /// 那三样的时间窗起点，界面补空桶要用
+    /// 同样的格子，再按模型分层。趋势图靠它把「什么时候花的」和
+    /// 「花在哪个模型上」画成同一张图
+    buckets_by_model: Vec<tw_api::CostBucketGroup>,
+    /// 上一个等长区间的汇总。拿不到就是没有对比，不是零
+    prev: Option<tw_api::Summary>,
+    /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，
+    /// 而兜底路径上它不等于界面送来的那个值
     since_ms: i64,
 }
 
@@ -422,28 +528,6 @@ async fn mcp_apply(
         .mcp_apply(req)
         .await
         .map_err(|e| format!("{e:#}"))
-}
-
-/// 把一条真实请求存成回放用例。
-///
-/// **写文件在这一侧**，和诊断包同一个理由。
-#[tauri::command]
-async fn save_fixture(state: tauri::State<'_, AppState>, id: i64) -> Result<String, String> {
-    let text = state
-        .control
-        .fixture(id)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    let dir = data_dir().join("fixtures");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
-    let path = dir.join(format!("请求-{id}.yaml"));
-    std::fs::write(&path, text).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(path.display().to_string())
 }
 
 /// 攒一份诊断包，写到磁盘上，把路径交回去。
@@ -815,6 +899,7 @@ pub fn run() {
             interfaces,
             new_key,
             core_state,
+            restart_core,
             overview,
             probe_upstream,
             speed_test,
@@ -858,28 +943,60 @@ pub fn run() {
             replay_quote,
             replay_run,
             save_diagnostics,
-            save_fixture
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            let binary = locate_core(&handle)?;
+            // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
+            // 而它把「找不到一个文件」变成了「应用打不开」。
+            let located = locate_core(&handle);
             let socket = default_socket();
-            let sup = Arc::new(Supervisor::new(binary, None));
-            let core_state = sup.state_handle();
+            let sup = Arc::new(Supervisor::new(
+                located
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|_| PathBuf::from("twcore")),
+                None,
+            ));
+            let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(AppState {
                 control: ControlClient::new(socket),
-                core_state: core_state.clone(),
                 supervisor: sup.clone(),
+                core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
+                supervising: supervising.clone(),
+                menubar: Arc::new(tokio::sync::Notify::new()),
             });
+
+            // **状态变化推给界面，不要让它来问。**「core 起来没、是不是
+            // 在重启、有没有进安全模式」一天变不了几次，而界面原来是每
+            // 两秒问一遍的 —— 那三次 IPC 往返里绝大多数得到的是同一个
+            // 答案。字符串和 `core_state` 命令走同一个函数，两条路不会
+            // 说出不一样的话。
+            {
+                let h = handle.clone();
+                let mut rx = sup.watch();
+                tauri::async_runtime::spawn(async move {
+                    while rx.changed().await.is_ok() {
+                        let now = rx.borrow().clone();
+                        let _ = h.emit("core-state", describe_state(&now));
+                    }
+                });
+            }
 
             // 守护循环。**它跑在后台任务里而不是阻塞 setup** —— core 起
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
-            let h = handle.clone();
-            let sup_for_loop = sup.clone();
-            tauri::async_runtime::spawn(async move {
-                supervise(sup_for_loop, h).await;
-            });
+            if located.is_ok() {
+                supervising.store(true, std::sync::atomic::Ordering::SeqCst);
+                let h = handle.clone();
+                let sup_for_loop = sup.clone();
+                let flag = supervising.clone();
+                tauri::async_runtime::spawn(async move {
+                    supervise(sup_for_loop, h).await;
+                    flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                });
+            } else if let Err(e) = &located {
+                tracing::error!("找不到 core：{e:#}");
+            }
 
             // 自启的路径校验。插件把 `enable()` 那一刻的绝对路径快照写
             // 进 plist，用户把 App 挪个位置就静默失效 —— 而它的
@@ -993,7 +1110,7 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
 
         // 只在 core 应该在跑的时候探。启动中、重启中、安全模式下探测
         // 失败是**预期的**，把它算进连续失败会让守护自己制造重启循环。
-        let running = matches!(&*sup.state_handle().lock().await, CoreState::Running { .. });
+        let running = matches!(sup.state(), CoreState::Running { .. });
         if !running {
             tracker.reset();
             was_running = false;
@@ -1047,6 +1164,19 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
                 // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
                 // 看到这条，判断质量完全不一样。
                 notify_if_dangerous(&a, &ev);
+                // 菜单栏上那两个数只跟这几种事件有关：花了多少（请求
+                // 落地之后存储层才算得出来）、额度还剩多少。别的事件
+                // 叫醒它只是让它白跑一趟。
+                if matches!(
+                    ev,
+                    tw_api::Event::RequestFinished { .. }
+                        | tw_api::Event::RequestFailed { .. }
+                        | tw_api::Event::QuotaSeen { .. }
+                        | tw_api::Event::ConfigReloaded { .. }
+                ) && let Some(st) = a.try_state::<AppState>()
+                {
+                    st.menubar.notify_one();
+                }
                 let _ = a.emit("core-event", &ev);
             })
             .await;
@@ -1416,69 +1546,90 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     Menu::with_items(app, &refs)
 }
 
-/// 每秒更新一次菜单栏。
+/// 攒多久再收一次数。
 ///
-/// **空闲时跳过渲染**：文字没变就不重画。菜单栏是这个应用唯一
-/// 常驻的东西，它自己耗电就直接违反了「空闲 CPU 约等于零」。
+/// 一串请求只换来一次重收，而不是一条一次。顺便给存储层留出把这一条
+/// 落库的时间 —— 花费是它算出来的，事件到的那一刻还没有。
+const MENUBAR_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// 菜单栏。**被事件叫醒，不是每秒醒一次。**
+///
+/// 它原来一秒一轮：每轮走两趟控制面（额度、汇总），另外每五轮再走两趟
+/// 建托盘菜单。渲染那一层一直有「文字没变就不重画」的保护，但**收数据
+/// 那一层没有** —— 于是一台整天闲着的机器每秒钟都在问两个几小时才会变
+/// 一次的问题。菜单栏是这个应用唯一常驻的东西，它自己耗电就直接违反了
+/// 「空闲时约等于不存在」。
+///
+/// 现在三个理由会叫醒它：请求落地、额度头出现、守护状态变了。都没发生
+/// 的时候，它一次都不醒。
 async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
+    // 两路唤醒信号，在循环外拿一次就够 —— 它们和 AppState 同寿。
+    let Some(wake) = app.try_state::<AppState>().map(|s| s.menubar.clone()) else {
+        return;
+    };
+    // 守护状态自己是一路：core 起来、重启、进安全模式都要立刻反映到
+    // 菜单栏上，而那和请求流没有关系。
+    let Some(mut core_rx) = app.try_state::<AppState>().map(|s| s.supervisor.watch()) else {
+        return;
+    };
+
     let mut prev = menubar::MenuBarState::default();
     let mut prev_tray = TrayFacts::default();
-    let mut tick: u64 = 0;
     // 第一帧无条件画，之后靠 needs_redraw
     let mut first = true;
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        let next = match app.try_state::<AppState>() {
-            Some(state) => collect_menubar_state(&state).await,
-            None => continue,
+        // 应用正在退出，状态已经撤了 —— 收摊，别再画了
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
         };
-        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建**
-        // —— 每秒重建一次是浪费，而且 macOS 上菜单正开着时重建会把它
-        // 收起来，用户点到一半菜单没了。
-        //
-        // 而**收数据本身也要限频**：菜单要的东西（策略组、历史）得走两次
-        // 控制面往返，一秒两次是在为一个几分钟才变一次的菜单持续付钱，
-        // 而这个应用的第一条约束就是空闲时约等于不存在。
-        // 五秒一次 —— 改完配置最多等五秒菜单跟上，那完全够。
-        tick = tick.wrapping_add(1);
-        // 第一轮无条件建一次，否则托盘头五秒是个空菜单
-        if (tick == 1 || tick % 5 == 0)
-            && let Some(state) = app.try_state::<AppState>()
-        {
-            let facts = collect_tray_facts(&state, &next).await;
-            if first || facts != prev_tray {
-                match build_tray_menu(&app, &facts) {
-                    Ok(m) => {
-                        let _ = tray.set_menu(Some(m));
-                        prev_tray = facts;
-                    }
-                    Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
+        let next = collect_menubar_state(&state).await;
+        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建** —— 而且
+        // macOS 上菜单正开着时重建会把它收起来，用户点到一半菜单没了。
+        let facts = collect_tray_facts(&state, &next).await;
+        if first || facts != prev_tray {
+            match build_tray_menu(&app, &facts) {
+                Ok(m) => {
+                    let _ = tray.set_menu(Some(m));
+                    prev_tray = facts;
                 }
+                Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
             }
         }
-        if !first && !next.needs_redraw(&prev) {
-            continue;
+        if first || next.needs_redraw(&prev) {
+            first = false;
+            draw_menubar(&tray, &next);
+            prev = next;
         }
-        first = false;
 
-        let template = next.is_template();
-        let (rgba, w, h) = menubar::render_rgba(
-            &next.line1(),
-            &next.line2(),
-            template,
-            menubar::Appearance::Dark,
-        );
-        let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
-        // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
-        // 恢复时再打开才能重新自动适配亮暗。
-        let _ = tray.set_icon_as_template(template);
-        prev = next;
+        // 等一个理由。**两路都要等** —— 只等事件的话，core 挂了之后
+        // 菜单栏会停在最后那个数字上，而那正是最该说实话的时候。
+        tokio::select! {
+            _ = wake.notified() => {}
+            _ = core_rx.changed() => {}
+        }
+        // 攒一下。`Notify` 只攒一个许可，所以这三秒里来多少条事件，
+        // 醒来之后也只多跑一轮。
+        tokio::time::sleep(MENUBAR_SETTLE).await;
     }
 }
 
+/// 把一帧画到菜单栏上。
+fn draw_menubar(tray: &tauri::tray::TrayIcon, next: &menubar::MenuBarState) {
+    let template = next.is_template();
+    let (rgba, w, h) = menubar::render_rgba(
+        &next.line1(),
+        &next.line2(),
+        template,
+        menubar::Appearance::Dark,
+    );
+    let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
+    // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
+    // 恢复时再打开才能重新自动适配亮暗。
+    let _ = tray.set_icon_as_template(template);
+}
+
 async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::MenuBarState {
-    let core = state.core_state.lock().await.clone();
+    let core = state.supervisor.state();
     let status = match core {
         CoreState::Running { .. } => menubar::Status::Normal,
         CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,
@@ -1508,7 +1659,7 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
     } else {
         state
             .control
-            .summary()
+            .summary(None)
             .await
             .ok()
             // **只用实测的那部分。**把估算混进这个数字里，就是在一块

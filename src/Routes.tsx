@@ -1,8 +1,30 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { Tip } from "./ui/Tooltip";
-import { Dialog } from "./ui/Dialog";
+import { useId, useState } from "react";
+import { Tip } from "@/ui/tip";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
 import type { Overview, PatchOp, RouteView } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { toast } from "sonner";
+import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/card";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 
 /**
  * 路由。
@@ -12,7 +34,7 @@ import type { Overview, PatchOp, RouteView } from "./types";
  * 模型的支点:前者意味着求值永远只看一张规则表。
  *
  * 在此之前这一页只能看不能建:`to` 能通过策略组的下拉改,而 `when` 的
- * 十三个条件、`set`、`deny`、`guard` 全部只读,新建一条规则更无从谈起。
+ * 十三个条件、`set`、`deny`、`guard` 不限只读,新建一条规则更无从谈起。
  * **一个只能查看的路由页,等于没有路由这个功能。**
  */
 export default function Routes({
@@ -24,7 +46,6 @@ export default function Routes({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -40,17 +61,16 @@ export default function Routes({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return false;
     }
     setBusy(tag);
-    setErr(null);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       onChanged();
       return true;
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       return false;
     } finally {
       setBusy(null);
@@ -63,10 +83,13 @@ export default function Routes({
         默认路由单独一块,因为它在模型里就是单独的一个字段
         （顶层的 `default_route`）—— 不是某条路由身上的标志。
       */}
-      <section className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-        <div className="flex items-baseline gap-3">
-          <h3 className="tw-head">默认路由</h3>
-          <select
+      {/* 标题 + 一个操作 + 一句说明 —— Card 的形状 */}
+      <Card className="py-3">
+        <CardHeader className="gap-1 px-3">
+          <CardTitle className="tw-head font-normal">默认路由</CardTitle>
+          <CardAction>
+          <NativeSelect
+            size="sm"
             value={defaultRoute}
             disabled={busy === "default"}
             onChange={(e) =>
@@ -75,37 +98,39 @@ export default function Routes({
                 "default",
               )
             }
-            className="rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 tw-body disabled:opacity-50 dark:border-neutral-700"
           >
             {routes.map((r) => (
-              <option key={r.name} value={r.name}>
+              <NativeSelectOption key={r.name} value={r.name}>
                 {r.name}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-          <p className="tw-body text-neutral-500">
+          </NativeSelect>
+          </CardAction>
+          <CardDescription>
             没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
-          </p>
-        </div>
-      </section>
+          </CardDescription>
+        </CardHeader>
+      </Card>
 
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">路由</h2>
-          <p className="tw-body text-neutral-500">
+          <p className="tw-body text-muted-foreground">
             一条路由里，从上往下匹配，第一条命中的决定去向。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
             onClick={() => setAdding(true)}
-            className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 tw-body dark:border-neutral-700"
           >
             新建路由
-          </button>
+          </Button>
         </div>
 
         {adding && (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
-            <input
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-input p-2">
+            <Input
+              className="flex-1"
               autoFocus
               value={newName}
               placeholder="路由名，比如 长上下文"
@@ -113,22 +138,22 @@ export default function Routes({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setAdding(false);
               }}
-              className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <button
+            <Button
+              size="sm"
               disabled={busy === "new" || !newName.trim()}
               onClick={async () => {
                 const n = newName.trim();
                 if (routes.some((r) => r.name === n)) {
-                  setErr(`已经有一条叫「${n}」的路由了`);
+                  toast.error(`已经有一条叫「${n}」的路由了`);
                   return;
                 }
                 // **新路由带一条兜底规则。**空路由是个合法但没用的状态：
-                // 绑上它的密钥会一条规则都匹配不到，请求全部失败，而
+                // 绑上它的密钥会一条规则都匹配不到，请求不限失败，而
                 // 配置看起来是好的。
                 const first = targets[0]?.[0];
                 if (!first) {
-                  setErr("还没有任何上游 —— 先去「网关」加一个。");
+                  toast.error("还没有任何上游 —— 先去「网关」加一个。");
                   return;
                 }
                 const ok = await patch(
@@ -146,16 +171,16 @@ export default function Routes({
                   setNewName("");
                 }
               }}
-              className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               建
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setAdding(false)}
-              className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
             >
               取消
-            </button>
+            </Button>
           </div>
         )}
 
@@ -163,20 +188,20 @@ export default function Routes({
           {routes.map((r) => (
             <div
               key={r.name}
-              className="rounded-lg border border-neutral-200 dark:border-neutral-800"
+              className="rounded-lg border border-border"
             >
-              <div className="flex items-baseline gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+              <div className="flex items-baseline gap-2 border-b border-border px-3 py-2">
                 <span className="tw-head">{r.name}</span>
                 {r.default && (
                   <span className="rounded bg-neutral-200 px-1.5 tw-label dark:bg-neutral-800">
                     默认
                   </span>
                 )}
-                <span className="tw-label text-neutral-500">
+                <span className="tw-label text-muted-foreground">
                   {/*
                     绑了这条的密钥。默认路由这里通常是空的 —— 走它的人是
                     「没绑」,不是「绑了它」。把这件事说出来,否则空白读起来
-                    像是「没人用」。
+                    像是「未被引用」。
                   */}
                   {r.clients.length > 0
                     ? `${r.clients.join("、")} 绑了它`
@@ -184,28 +209,31 @@ export default function Routes({
                       ? "没绑路由的密钥走它"
                       : "还没有密钥绑它"}
                 </span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
                   onClick={() => setAddRuleTo(r.name)}
-                  className="ml-auto rounded px-2 py-0.5 tw-label text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
                 >
                   加规则
-                </button>
+                </Button>
                 <Tip
                   text={
                     r.default
-                      ? "默认路由删不了 —— 没绑路由的密钥要走它。先把默认换成别的。"
+                      ? "默认路由不可删除，请先将默认路由指向其他路由。"
                       : r.clients.length > 0
                         ? `还有 ${r.clients.length} 把密钥绑着它，删了它们会退回默认路由。`
                         : "删掉这条路由。"
                   }
                 >
-                  <button
+                  <Button
+                    variant="destructive"
+                    size="xs"
                     disabled={r.default}
                     onClick={() => setConfirmDelete(r)}
-                    className="rounded px-2 py-0.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
                   >
                     删除
-                  </button>
+                  </Button>
                 </Tip>
               </div>
 
@@ -233,7 +261,7 @@ export default function Routes({
                   >
                     <span className="w-4 shrink-0 text-neutral-400">{i + 1}</span>
                     <span className="font-medium">{rule.name}</span>
-                    <span className="text-neutral-500">
+                    <span className="text-muted-foreground">
                       {rule.conditions.length === 0 ? (
                         // 兜底规则要标出来。少了它，用户会以为「没有兜底」
                         // 而反复调试一条其实一直在生效的规则。
@@ -244,10 +272,12 @@ export default function Routes({
                         rule.conditions.join(" 且 ")
                       )}
                     </span>
-                    <span className="ml-auto font-mono text-neutral-500">
+                    <span className="ml-auto font-mono text-muted-foreground">
                       → {rule.to}
                     </span>
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="xs"
                       disabled={busy === `rule-${r.name}`}
                       onClick={() =>
                         void patch(
@@ -255,15 +285,14 @@ export default function Routes({
                           `rule-${r.name}`,
                         )
                       }
-                      className="rounded px-1.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
                     >
                       删
-                    </button>
+                    </Button>
                   </li>
                 ))}
                 {r.rules.length === 0 && (
                   <li className="px-3 py-2 tw-body text-amber-700 dark:text-amber-400">
-                    这条路由一条规则都没有。绑上它的密钥会匹配不到任何规则，请求全部失败。
+                    这条路由一条规则都没有。绑上它的密钥会匹配不到任何规则，请求不限失败。
                   </li>
                 )}
               </ol>
@@ -271,28 +300,24 @@ export default function Routes({
           ))}
         </div>
 
-        {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
-      </section>
+              </section>
 
-      <Dialog
+      <AlertDialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
-        danger
-        title={`删掉路由「${confirmDelete?.name}」？`}
-        description={
-          confirmDelete && confirmDelete.clients.length > 0
-            ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
-            : "这条路由没有密钥绑着，删掉不影响任何请求。"
-        }
-        footer={
-          <>
-            <button
-              onClick={() => setConfirmDelete(null)}
-              className="rounded-md border border-neutral-300 px-3 py-1 tw-body dark:border-neutral-700"
-            >
-              取消
-            </button>
-            <button
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>删掉路由「{confirmDelete?.name}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete && confirmDelete.clients.length > 0
+                ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
+                : "这条路由没有密钥绑着，删掉不影响任何请求。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
               onClick={() => {
                 const r = confirmDelete;
                 setConfirmDelete(null);
@@ -311,13 +336,12 @@ export default function Routes({
                 ];
                 void patch(ops, r.name);
               }}
-              className="rounded-md bg-red-600 px-3 py-1 tw-body text-white"
             >
               删除
-            </button>
-          </>
-        }
-      />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -343,6 +367,7 @@ function NewRule({
   onCancel: () => void;
   onCreate: (item: string) => void;
 }) {
+  const uid = useId();
   const [name, setName] = useState("");
   const [model, setModel] = useState("");
   const [tools, setTools] = useState(false);
@@ -361,54 +386,49 @@ function NewRule({
   }
 
   return (
-    <div className="space-y-2 border-b border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+    <div className="space-y-2 border-b border-border bg-neutral-50 p-3 dark:bg-neutral-900/40">
       <div className="flex flex-wrap items-center gap-2 tw-body">
-        <input
+        <Input
+          className="min-w-52 flex-1"
           autoFocus
           value={name}
           placeholder="规则名，比如 超长上下文降级"
           onChange={(e) => setName(e.target.value)}
-          className="min-w-52 flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
-        <span className="text-neutral-500">去向</span>
-        <select
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className="rounded border border-neutral-300 bg-transparent px-1.5 py-1 dark:border-neutral-700"
-        >
+        <span className="text-muted-foreground">去向</span>
+        <NativeSelect size="sm" value={to} onChange={(e) => setTo(e.target.value)}>
           {targets.map(([v, label]) => (
-            <option key={v} value={v}>
+            <NativeSelectOption key={v} value={v}>
               {label}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 tw-body">
-        <span className="text-neutral-500">当</span>
-        <input
+        <span className="text-muted-foreground">当</span>
+        <Input
+          className="w-52 font-mono"
           value={model}
           placeholder="模型 glob，比如 claude-opus-*"
           onChange={(e) => setModel(e.target.value)}
-          className="w-52 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
-        <input
+        <Input
           value={tokens}
           placeholder="输入长度，比如 >200k"
           onChange={(e) => setTokens(e.target.value)}
-          className="w-40 rounded border border-neutral-300 bg-transparent px-2 py-1 font-mono outline-none focus:border-neutral-500 dark:border-neutral-700"
+          className="w-40 font-mono"
         />
-        <label className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            className="tw-check"
+        <Field orientation="horizontal" className="w-auto">
+          <Checkbox
+            id={`${uid}-tools`}
             checked={tools}
-            onChange={(e) => setTools(e.target.checked)}
+            onCheckedChange={(c) => setTools(c === true)}
           />
-          带工具调用
-        </label>
+          <FieldLabel htmlFor={`${uid}-tools`}>带工具调用</FieldLabel>
+        </Field>
         <Tip text="三个条件都留空就是一条兜底规则 —— 它会命中这条路由里所有还没被上面的规则拦下的请求。每条路由都该有一条。">
-          <span className="tw-label text-neutral-500 underline decoration-dotted underline-offset-2">
+          <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
             都留空 = 兜底
           </span>
         </Tip>
@@ -418,19 +438,20 @@ function NewRule({
         <code className="flex-1 truncate rounded bg-neutral-200/60 px-2 py-1 font-mono tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
           {route} ／ {build().replace(/\n/g, "  ")}
         </code>
-        <button
+        <Button
+          size="sm"
           disabled={busy || !name.trim() || !to}
           onClick={() => onCreate(build())}
-          className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
         >
           加上
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onCancel}
-          className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
         >
           取消
-        </button>
+        </Button>
       </div>
     </div>
   );

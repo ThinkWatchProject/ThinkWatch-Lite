@@ -1,21 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ago, bytes, densify, latency, repeated, statusTone } from "./format";
+import {
+  bucketStart,
+  densify,
+  latency,
+  money,
+  repeated,
+  statusTone,
+  tokens,
+  when,
+} from "./format";
 import { usd } from "./types";
-
-describe("相对时间", () => {
-  const now = 1_000_000_000;
-  it("按秒、分、时、天分档", () => {
-    expect(ago(now - 3_000, now)).toBe("3s");
-    expect(ago(now - 90_000, now)).toBe("1m");
-    expect(ago(now - 3_600_000 * 5, now)).toBe("5h");
-    expect(ago(now - 86_400_000 * 3, now)).toBe("3d");
-  });
-
-  /** 时钟回拨或者服务端时间靠前时，不要显示负数 */
-  it("未来的时间不显示负数", () => {
-    expect(ago(now + 5_000, now)).toBe("0s");
-  });
-});
 
 describe("延迟合成一列", () => {
   /**
@@ -40,15 +34,49 @@ describe("延迟合成一列", () => {
   });
 });
 
-describe("字节", () => {
-  it("四位数以上换单位", () => {
-    expect(bytes(85)).toBe("85");
-    expect(bytes(2048)).toBe("2.0K");
-    expect(bytes(3_145_728)).toBe("3.0M");
+describe("绝对时间", () => {
+  // 2026-09-15 14:07:09 本地时间
+  const now = new Date(2026, 8, 15, 14, 7, 9).getTime();
+
+  it("今天的给到秒", () => {
+    // 同一分钟内的几次请求要能分开 —— 少了秒就对不上号了
+    expect(when(new Date(2026, 8, 15, 9, 3, 4).getTime(), now)).toBe("09:03:04");
   });
-  it("没有值不显示 0", () => {
-    // 0 和「没记到」是两件事 —— 显示 0 会让人以为上游返回了空响应
-    expect(bytes(undefined)).toBe("—");
+
+  it("更早的带上日期", () => {
+    expect(when(new Date(2026, 8, 14, 23, 5).getTime(), now)).toBe("09-14 23:05");
+  });
+
+  /** 「今天」按日历天算，不是按 24 小时 —— 隔着零点的两分钟是两天 */
+  it("零点两侧分属两天", () => {
+    expect(when(new Date(2026, 8, 15, 0, 1, 0).getTime(), now)).toBe("00:01:00");
+    expect(when(new Date(2026, 8, 14, 23, 59, 0).getTime(), now)).toBe("09-14 23:59");
+  });
+});
+
+describe("token", () => {
+  it("四位数以上换 k", () => {
+    expect(tokens(463, 87)).toBe("463→87");
+    expect(tokens(2_345, 463)).toBe("2.3k→463");
+    expect(tokens(128_000, 1_200)).toBe("128k→1.2k");
+  });
+
+  it("没有用量就不显示 0", () => {
+    // 还在跑的行、以及上游没报用量的行。0 会让它在排序里冒充一个测量结果
+    expect(tokens(undefined, undefined)).toBe("—");
+    expect(tokens(100, undefined)).toBe("—");
+  });
+});
+
+describe("一行的金额", () => {
+  it("估算的带记号", () => {
+    expect(money(18_000, true)).toBe("~$0.018");
+    expect(money(18_000, false)).toBe("$0.018");
+  });
+
+  it("算不出来的不显示 0", () => {
+    // 订阅制上游、价目表里没有的模型 —— 都不是「零元」
+    expect(money(undefined, false)).toBe("—");
   });
 });
 
@@ -73,6 +101,37 @@ describe("状态分档", () => {
   /** 进行中不能算成功 —— 它还没有结果 */
   it("进行中单独一档", () => {
     expect(statusTone(undefined, "in_flight")).toBe("pending");
+  });
+});
+
+describe("格子边界", () => {
+  const HOUR = 3_600_000;
+
+  it("一小时一格落到整点", () => {
+    const t = new Date(2026, 8, 15, 14, 37, 21, 500).getTime();
+    expect(bucketStart(t, HOUR)).toBe(new Date(2026, 8, 15, 14, 0, 0, 0).getTime());
+  });
+
+  it("六小时一格从本地零点数起", () => {
+    const t = new Date(2026, 8, 15, 14, 37).getTime();
+    expect(bucketStart(t, 6 * HOUR)).toBe(new Date(2026, 8, 15, 12, 0, 0, 0).getTime());
+  });
+
+  /**
+   * **一天一格是本地的一天。**按纪元对齐的话，UTC+8 看到的「9/15」
+   * 那一格装的是 9/14 08:00 到 9/15 08:00 —— 格子上写着一个日期，
+   * 里面装的是另一个。
+   */
+  it("一天一格落到本地零点", () => {
+    const t = new Date(2026, 8, 15, 14, 37).getTime();
+    expect(bucketStart(t, 24 * HOUR)).toBe(new Date(2026, 8, 15, 0, 0, 0, 0).getTime());
+  });
+
+  /** 这才是它存在的理由：同一格里的任何时刻，落点都一样 */
+  it("同一格里的两个时刻落到同一个点", () => {
+    const a = new Date(2026, 8, 15, 14, 0, 1).getTime();
+    const b = new Date(2026, 8, 15, 14, 59, 59).getTime();
+    expect(bucketStart(a, HOUR)).toBe(bucketStart(b, HOUR));
   });
 });
 

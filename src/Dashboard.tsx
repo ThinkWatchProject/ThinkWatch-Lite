@@ -1,217 +1,890 @@
 import { useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { useStableState } from "./useStable";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
-import { BarChart, BarRows } from "./ui/Chart";
-import { densify } from "./format";
-import { usd, type Dashboard as Data } from "./types";
+import { StackedArea } from "@/ui/charts";
+import { bucketStart, compact, densify } from "./format";
+import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Skeleton } from "@/ui/skeleton";
+import { LIVE_BUCKET_MS, useLive } from "./useLive";
+import { useCountUp } from "./useCountUp";
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/** 每一栏最多列几项。超出的写出来有几项，**不静默丢掉**。 */
+const ROWS = 6;
+
+/**
+ * 一格多宽。
+ *
+ * **比「一小时一格」细得多，这是故意的。**少而肥的格子只能看出「这段
+ * 时间有没有用过」；细到四五十格以上，图上开始能看出**作息** —— 白天
+ * 成片、夜里断开、周末矮一截。一张能看出作息的图才是仪表。
+ *
+ * 上限压在 120 格上下：再密就是把噪声当细节，而每一格还要再乘上模型
+ * 个数去查库。
+ */
+function bucketFor(rangeMs: number): number {
+  if (rangeMs > 7 * DAY) return 6 * HOUR;
+  if (rangeMs > 2 * DAY) return 2 * HOUR;
+  return HOUR / 2;
+}
+
+/** 一格的时间标签。跨度大到按天分格时就只写日期。 */
+function fmtBucket(atMs: number, bucketMs: number): string {
+  const t = new Date(atMs);
+  const p = (n: number) => String(n).padStart(2, "0");
+  if (bucketMs >= DAY) return `${t.getMonth() + 1}/${t.getDate()}`;
+  if (bucketMs < 60_000) return `${p(t.getMinutes())}:${p(t.getSeconds())}`;
+  return `${t.getMonth() + 1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())}`;
+}
+
+/**
+ * 读数据时的骨架。
+ *
+ * **不是一句「读取中…」。**那一行字占的地方和真正的内容差着两百像素，
+ * 读完之后整页会跳一次；而这一页最大的那几个数字恰好在跳动的位置上。
+ */
+function OverviewSkeleton() {
   return (
-    <div>
-      <div className="tw-body text-neutral-500">{label}</div>
-      <div className="mt-0.5 text-xl tw-num">{value}</div>
-      {hint && <div className="mt-0.5 tw-body text-neutral-400">{hint}</div>}
+    <>
+      <div className="mt-4 flex flex-wrap gap-x-10 gap-y-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-2.5 w-24" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="mt-4 h-[200px] w-full" />
+      <div className="mt-6 space-y-2">
+        <Skeleton className="h-2.5 w-full" />
+        <Skeleton className="h-2.5 w-full" />
+        <Skeleton className="h-2.5 w-2/3" />
+      </div>
+    </>
+  );
+}
+
+/** 一块密排信息。左边那列标签把所有块钉在同一条竖线上。 */
+function Block({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <section className="flex items-start gap-4 border-t border-border/60 py-2.5">
+      <span className="w-12 shrink-0 pt-0.5 tw-label">{name}</span>
+      <div className="min-w-0 flex-1 space-y-1.5">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * 延迟的分位区间。
+ *
+ * **区间条，不是两列数字。**并排的两列毫秒数要逐行读才能比较，而这张
+ * 图要回答的是「哪个又慢又不稳定」—— 那是条的起点加长度，一次扫视
+ * 就能得到。亮线标的是 P50：多数请求落在它附近。
+ *
+ * 用分位数不用平均值：AI 延迟是长尾分布，平均值会被极端值拉偏。
+ */
+function Spread({ rows, max }: { rows: LatencyView[]; max: number }) {
+  const shown = [...rows].sort((a, b) => b.samples - a.samples).slice(0, ROWS);
+  return (
+    <>
+      {shown.map((l) => (
+        <div key={l.model} className="flex items-center gap-2.5 tw-body">
+          <span className="min-w-0 flex-1 truncate" title={l.model}>
+            {l.model}
+          </span>
+          {/* 条宽固定：两栏的条这样才对齐，能横着比 */}
+          <span className="relative h-2.5 w-26 shrink-0 rounded-sm bg-muted">
+            <span
+              className="absolute inset-y-0 rounded-sm bg-chart-2"
+              style={{
+                left: `${(l.p50 / max) * 100}%`,
+                width: `${((l.p95 - l.p50) / max) * 100}%`,
+              }}
+            />
+            <span
+              className="absolute -top-0.5 h-3.5 w-0.5 bg-chart-1"
+              style={{ left: `${(l.p50 / max) * 100}%` }}
+            />
+          </span>
+          <span className="w-28 shrink-0 text-right tw-num whitespace-nowrap text-muted-foreground">
+            {l.p50} – {l.p95}ms
+          </span>
+          {/*
+            **样本数要显示**：「800ms」是 3 个样本还是 300 个，含义完全
+            不同。不可靠的是**样本数**，不是延迟值 —— 所以只标这个数。
+          */}
+          <span
+            className={
+              "w-11 shrink-0 text-right tw-label " +
+              (l.samples < 10 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")
+            }
+          >
+            {l.samples} 次
+          </span>
+        </div>
+      ))}
+      {rows.length > shown.length && (
+        <p className="tw-label text-muted-foreground">
+          另有 {rows.length - shown.length} 项未列出
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * 页眉上的一个大数。
+ *
+ * **三栏等宽，说明那一行固定占两行高。**在此之前这三组是并排的弹性
+ * 块，而「较上一个区间」在没有可比数据时整个消失 —— 于是切一次时间
+ * 范围，三个数字的横向位置全变了，眼睛每次都要重新找。
+ *
+ * 所以限定语一律放到第二行：第一行只留那个数和单位，宽度由它决定，
+ * 而它在各种区间下长得都差不多。
+ */
+function Stat({
+  n,
+  unit,
+  after,
+  note,
+}: {
+  n: string;
+  unit?: string;
+  after?: React.ReactNode;
+  note: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="tw-num tw-display">{n}</span>
+        {unit && <span className="tw-body text-muted-foreground">{unit}</span>}
+        {after}
+      </div>
+      {/* 高度写死两行：少一条限定语时不该把整页往上收 */}
+      <p className="mt-1 flex min-h-8 flex-wrap items-baseline gap-x-2 tw-label text-muted-foreground">
+        {note}
+      </p>
     </div>
   );
 }
 
 /**
- * 今天的账。
+ * 一个环比。
+ *
+ * **没有参照系的数字只能读，不能判断。**只有花费那一侧有「好坏」：
+ * 少花是好事，所以降下来才上色。用量那一侧两个方向都不上色 —— 多用掉
+ * 一些 token 不是问题，少用也不是成绩。
+ */
+function Delta({ v, more, good }: { v: number; more: string; good?: "down" }) {
+  const better = good === "down" && v < 0;
+  return (
+    <span className={"tw-label " + (better ? "text-cache-hit" : "text-muted-foreground")}>
+      较上一个{more} {v < 0 ? "↓" : "↑"} {Math.abs(v * 100).toFixed(0)}%
+    </span>
+  );
+}
+
+/** 缓存构成条上的一段。 */
+function Swatch({ color, name, n }: { color: string; name: string; n: number }) {
+  return (
+    <Tip text={`${n.toLocaleString()} token`}>
+      <span className="flex items-center gap-1.5">
+        <span className={"inline-block size-2 shrink-0 rounded-[2px] " + color} />
+        {name} {compact(n)}
+      </span>
+    </Tip>
+  );
+}
+
+/**
+ * 用量概览。
  *
  * 这一页的每一个数字都受那条约束：**绝不让估算值混进精确数字里
- * 假装准确。**所以成本是三个数并排，不是一个。
+ * 假装准确。**所以金额旁边永远跟着它的限定词。
+ *
+ * 版面上只有一个视觉锚点：那张图。其余全是发丝线分隔的密排行，左边
+ * 一列标签把它们钉在同一条竖线上 —— **参照物是原生监控工具，不是网页
+ * 后台**。圆角卡片的网格恰恰是最像后台的做法。
  */
-export default function Dashboard({ tick }: { tick: number }) {
-  const [d, setD] = useState<Data | null>(null);
+export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | null }) {
+  const [range, setRange] = useState<Range>(DEFAULT_RANGE);
+  /**
+   * 图按哪个口径画。
+   *
+   * **默认 token。**这一页叫用量概览，而按金额画时一次 opus 突发会把
+   * 前后一周压平 —— 那张图好看，但除了「opus 贵」说不出别的。
+   */
+  const [by, setBy] = useState<"token" | "cost">("token");
+  const live = range.live === true;
+  /*
+    **实时档只有图是实时的。**两分钟窗口里算不出有意义的延迟分位，也
+    统计不出缓存命中率；那些仍然按 24 小时算，图下面有一行小字说明。
+    所以这里查的窗口和图的窗口是两回事。
+  */
+  const queryMs = live ? DAY : range.ms;
+  const bucketMs = live ? LIVE_BUCKET_MS : bucketFor(range.ms);
+  const { samples, fails, inFlight } = useLive(live, range.ms);
+  /**
+   * **只在内容真的变了的时候才换。**每次 `invoke` 回来都是一个新对象，
+   * 直接 setState 会让整页重画一遍，而这一切发生在什么都没发生的时候。
+   */
+  const [d, setD] = useStableState<Data | null>(null);
+  const gatewayHint = "本机网关地址";
   const [error, setError] = useState<string | null>(null);
-  /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** —— 用户要能一边看
-      详情一边对着列表里的别的行 */
+  /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** */
   const [open, setOpen] = useState<number | null>(null);
+
+  /*
+    三个大数会走过去，不是跳过去。
+
+    **只在同一个口径里走**：换时间范围时那不是「涨了」，是换了一个东西
+    在看 —— 从 251k 滚到 661k 看起来像用量突然翻了三倍，所以
+    `range.label` 一变就直接落值。
+
+    **这三个 hook 必须站在早返回之前。**下面有「还没读到数据」和
+    「出错了」两条 return，而 React 要求每次渲染调用的 hook 数量一致
+    —— 放在后面的话，数据第一次到达的那一刻整页会崩。所以这里用
+    `d?.` 取值，读不到就是 0。
+  */
+  const sum = d?.summary;
+  const tokensAt = useCountUp(
+    sum
+      ? sum.input_tokens + sum.cache_read_tokens + sum.cache_write_tokens + sum.output_tokens
+      : 0,
+    range.label,
+  );
+  const spentAt = useCountUp(
+    sum ? sum.cost_micros_exact + sum.cost_micros_estimated : 0,
+    range.label,
+  );
+  const requestsAt = useCountUp(sum?.requests ?? 0, range.label);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
+        // 窗口起点对齐到格子边界，格宽一起送过去 —— 两边各算一遍的话，
+        // 补空桶时格子对不上，整张图会是零。见 bucketStart 的注释。
+        //
+        // 实时档下这次查询要的是 24 小时的汇总，图另有来路，所以格宽
+        // 取一小时就够 —— 一秒一格去查二十四小时是八万多个分组。
+        const q = live ? HOUR : bucketMs;
+        const sinceMs = bucketStart(Date.now() - queryMs, q);
         // Tauri 的 invoke 用字符串 reject，不是 Error
-        const x = await invoke<Data>("dashboard");
+        const x = await invoke<Data>("dashboard", { sinceMs, bucketMs: q });
         if (alive) {
           setD(x);
           setError(null);
         }
-      } catch (e) {
-        if (alive) setError(typeof e === "string" ? e : String(e));
+      } catch {
+        /*
+          **读不到不在这一层报。**连不上控制面是启动过程中的预期状态，
+          而 App 那边已经用一整面（或一条带子）在说这件事了 —— 这儿再弹
+          一条 toast，就是同一件事说两遍，而且说得更难懂。
+
+          上一次读到的值留着不动：一个凝固的旧数字加上面那句「已断开」，
+          比清空成骨架有用。
+        */
       }
     })();
     return () => {
       alive = false;
     };
-  }, [tick]);
+  }, [tick, queryMs, bucketMs, live, setD]);
+
+  /*
+    **两组控件不放在一起。**时间范围管的是整页（下面每一块都跟着它
+    走），口径只管那一张图 —— 两个不同维度的东西并排成一串同样的药丸，
+    读起来就是一排七个平级选项。
+
+    所以范围留在标题行右端（页面级），口径挪到图的正上方、左对齐
+    （图级），中间隔着整排大数字。
+  */
+  const header = (
+    <div className="flex flex-wrap items-center gap-3">
+      <h2 className="tw-title font-semibold">用量概览</h2>
+      <div className="ml-auto">
+        <RangePicker value={range} onChange={setRange} />
+      </div>
+    </div>
+  );
+
+  /**
+   * 图按什么口径画。**两档都在实时下可用** —— core 会在算完价钱之后
+   * 补一条 `request_priced`，所以金额也是推过来的，只比用量晚一拍。
+   */
+  const metric = (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      value={by}
+      onValueChange={(v) => v && setBy(v as "token" | "cost")}
+    >
+      <ToggleGroupItem value="token">token</ToggleGroupItem>
+      <ToggleGroupItem value="cost">花费</ToggleGroupItem>
+    </ToggleGroup>
+  );
 
   if (error) {
     return (
       <div className="p-5">
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </p>
+        <Alert variant="warning">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       </div>
     );
   }
-  if (!d) return <p className="p-5 tw-body text-neutral-500">读取中…</p>;
+  if (!d) {
+    return (
+      <div className="p-5">
+        <section>
+          {header}
+          <OverviewSkeleton />
+        </section>
+      </div>
+    );
+  }
 
   const s = d.summary;
   const t = triggers(null, d);
-  const hasEstimate = s.cost_micros_estimated > 0;
-  // 条件不满足就**不出现**，不是折叠。一个还没有任何数据的成本
-  // 面板是在展示空壳，而它占的地方本来可以放「接下来该做什么」
+  const spent = s.cost_micros_exact + s.cost_micros_estimated;
   const nothingYet = !t.cost;
 
+  /*
+    **「输入」是送往上游的全部上下文，包含命中缓存的那部分。**
+    `input_tokens` 单独一个字段说的是「没命中缓存的那部分」—— 命中率
+    高的时候它只有真实输入的零头，标成「输入」会让人以为自己几乎没用。
+  */
+  const ctx = s.input_tokens + s.cache_read_tokens + s.cache_write_tokens;
+  const tokensTotal = ctx + s.output_tokens;
+  const beforeCost = d.prev ? d.prev.cost_micros_exact + d.prev.cost_micros_estimated : 0;
+  const beforeTokens = d.prev
+    ? d.prev.input_tokens +
+      d.prev.cache_read_tokens +
+      d.prev.cache_write_tokens +
+      d.prev.output_tokens
+    : 0;
+  const hit = ctx > 0 ? s.cache_read_tokens / ctx : null;
+  const ratio = s.cache_write_tokens > 0 ? s.cache_read_tokens / s.cache_write_tokens : null;
+
+
+  /*
+    趋势图按模型分层。**只保留前五项，其余合并为「其他」** —— 一家上游
+    可能报出十几个模型名，十几层叠在两百像素里已经分辨不出，而排在后面
+    的那些合计往往不到百分之一。
+  */
+  const byBucket = new Map<number, Map<string, number>>();
+  const money = new Map<string, number>();
+  const volume = new Map<string, number>();
+  const count = new Map<string, number>();
+  const add = (at: number, name: string, v: number) => {
+    const slot = byBucket.get(at) ?? new Map<string, number>();
+    slot.set(name, (slot.get(name) ?? 0) + v);
+    byBucket.set(at, slot);
+  };
+  if (live) {
+    for (const x of samples) {
+      volume.set(x.model, (volume.get(x.model) ?? 0) + x.tokens);
+      money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
+      count.set(x.model, (count.get(x.model) ?? 0) + 1);
+      add(
+        Math.floor(x.at / LIVE_BUCKET_MS) * LIVE_BUCKET_MS,
+        x.model,
+        by === "token" ? x.tokens : (x.cost ?? 0),
+      );
+    }
+  } else {
+    for (const b of d.buckets_by_model ?? []) {
+      const name = b.name || "未知模型";
+      const cost = b.cost_micros_exact + b.cost_micros_estimated;
+      const tok = b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens;
+      money.set(name, (money.get(name) ?? 0) + cost);
+      volume.set(name, (volume.get(name) ?? 0) + tok);
+      count.set(name, (count.get(name) ?? 0) + b.requests);
+      add(b.at_ms, name, by === "token" ? tok : cost);
+    }
+  }
+  const useTokens = by === "token";
+  // 排行按当前口径排 —— 切到 token 之后，最贵的那个未必是用得最多的
+  const ranked = [...(useTokens ? volume : money).entries()].sort((a, b) => b[1] - a[1]);
+  const top = ranked.slice(0, 5).map(([name]) => name);
+  const rest = ranked.slice(5);
+  // 画的顺序是从下往上：**占得少的垫底、占得多的在上**，最重的那一层
+  // 在视觉上也该最重。颜色跟着走，chart-1 最亮给最多的那个。
+  const keys = rest.length > 0 ? ["其他", ...[...top].reverse()] : [...top].reverse();
+  const shade = [
+    "var(--chart-5)",
+    "var(--chart-4)",
+    "var(--chart-3)",
+    "var(--chart-2)",
+    "var(--chart-1)",
+  ];
+  const colors = keys.map(
+    (_, i) => shade[Math.max(0, shade.length - keys.length + i)] ?? "var(--chart-1)",
+  );
+  const restMoney = rest.reduce((a, x) => a + (money.get(x[0]) ?? 0), 0);
+  const restVolume = rest.reduce((a, x) => a + (volume.get(x[0]) ?? 0), 0);
+  const restCount = rest.reduce((a, x) => a + (count.get(x[0]) ?? 0), 0);
+  // 条长按当前口径里**最大的那一项**归一。按总量归一的话，一个占七成
+  // 的模型会把其余几条压成看不见的短线，而排行要比的正是它们的差距。
+  const topBar = Math.max(
+    1,
+    useTokens ? Math.max(restVolume, ...volume.values()) : Math.max(restMoney, ...money.values()),
+  );
+
+  /*
+    实时档的格子自己铺：两分钟、一秒一格，一路铺到「现在」。
+    历史档沿用后端给的桶 —— 空桶由 `densify` 补成 0，这是面积图不会把
+    空档画成「连续在用」的前提。
+  */
+  const now = Date.now();
+  const liveStart = Math.floor((now - range.ms) / LIVE_BUCKET_MS) * LIVE_BUCKET_MS;
+  const grid = live
+    ? Array.from({ length: Math.round(range.ms / LIVE_BUCKET_MS) }, (_, i) => ({
+        at_ms: liveStart + i * LIVE_BUCKET_MS,
+        requests: 0,
+        failed: 0,
+        cost_micros_exact: 0,
+        cost_micros_estimated: 0,
+        unpriced_requests: 0,
+      }))
+    : densify(d.buckets ?? [], d.since_ms ?? 0, now, bucketMs);
+  if (live) {
+    for (const at of fails) {
+      const g = grid[Math.round((at - liveStart) / LIVE_BUCKET_MS)];
+      if (g) g.failed += 1;
+    }
+  }
+  const area = grid.map((g) => {
+    const slot = byBucket.get(g.at_ms);
+    const sum = [...(slot?.values() ?? [])].reduce((a, v) => a + v, 0);
+    const row: Record<string, number | string> = {
+      label: live
+        ? `${fmtBucket(g.at_ms, bucketMs)}　${useTokens ? `${compact(sum)} token` : usd(sum)}`
+        : `${fmtBucket(g.at_ms, bucketMs)}　${
+            useTokens
+              ? `${compact(sum)} token`
+              : usd(g.cost_micros_exact + g.cost_micros_estimated)
+          }　${g.requests} 次${g.failed ? `（${g.failed} 次失败）` : ""}`,
+    };
+    let other = 0;
+    for (const [name, v] of slot ?? []) {
+      // 金额从微分换成千分之一美元：纵轴上那几位小数没有意义
+      const y = useTokens ? v : v / 1000;
+      if (top.includes(name)) row[name] = y;
+      else other += y;
+    }
+    // 没有值的那几层要显式给 0，否则 recharts 会把这一格整条断开
+    for (const k of top) row[k] ??= 0;
+    if (rest.length > 0) row["其他"] = other;
+    return row;
+  });
+
+  const latMax =
+    Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
+
+  /*
+    三条防线现在各在哪一档，以及这段时间各自看见了什么。
+
+    **档位和所见要一起说。**只说所见的话，「未发现」在关闭档下是句
+    空话；只说档位的话，用户不知道它到底拦下过什么。
+  */
+  const sec = ov?.security;
+  const label = (m: string) => (m === "enforce" ? "拦截" : m === "off" ? "关闭" : "观察");
+  const leaked = d.leaks.reduce((a, l) => a + l.requests, 0);
+  const guards = sec
+    ? [
+        {
+          key: "redact",
+          name: "出站脱敏",
+          mode: sec.redact,
+          /*
+            两档留下的痕迹不是同一种：观察档记的是「检测到的外泄」，
+            拦截档记的是「换掉了几处」。**分别说明** —— 用同一句话套
+            两档的话，切到拦截之后会显示成「未发现」。
+          */
+          hits: sec.redact === "enforce" ? s.redacted_requests : leaked,
+          saw:
+            sec.redact === "off"
+              ? "未启用，出站内容不做检查"
+              : sec.redact === "enforce"
+                ? s.redacted_requests > 0
+                  ? `已替换 ${s.redacted_requests} 个请求中的凭据`
+                  : "未发现需要替换的内容"
+                : leaked > 0
+                  ? `检测到 ${leaked} 次凭据外泄，未做替换`
+                  : "未检测到凭据外泄",
+        },
+        {
+          key: "inspect",
+          name: "工具调用检查",
+          mode: sec.inspect_tools,
+          hits: s.flagged_requests,
+          saw:
+            sec.inspect_tools === "off"
+              ? "未启用，上游返回的工具调用不做检查"
+              : s.flagged_requests > 0
+                ? `${s.flagged_requests} 个请求带回可疑工具调用` +
+                  (sec.inspect_tools === "enforce" ? "，已切断" : "")
+                : "未发现可疑工具调用",
+        },
+        {
+          key: "scan",
+          name: "配置面扫描",
+          mode: sec.scan_configs,
+          // **这一行不跟着时间区间变。**它说的是此刻磁盘上的状态，而
+          // 文件现在什么样和你选了看几天没有关系。
+          hits: 0,
+          saw:
+            sec.scan_configs === "off"
+              ? "未启用，客户端配置文件不做监控"
+              : "持续监控客户端配置文件，新增可疑内容会立即提示",
+        },
+      ]
+    : [];
+
   return (
-    <div className="space-y-8 p-5">
-      <section>
-        <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">今天</h2>
-          <span className="tw-body text-neutral-400">从本地零点算起</span>
-        </div>
-
-        {nothingYet ? (
-          // 空状态永远在回答「接下来该做什么」
-          <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-center tw-body text-neutral-500 dark:border-neutral-700">
-            今天还没有请求。把客户端指过来，数字会出现在这里。
-          </p>
-        ) : (
-          <>
-            <div className="mt-3 grid grid-cols-2 gap-6 sm:grid-cols-4">
-              <Stat
-                label="花费"
-                value={usd(s.cost_micros_exact)}
-                hint={`按 ${s.pricing_date} 的价目表`}
-              />
-              {/* **估算值单独一格，带波浪号。**混进上面那个数里就是在
-                  把一个不确定的东西说成确定的 */}
-              {hasEstimate && (
-                <Stat
-                  label="其中估算"
-                  value={`~${usd(s.cost_micros_estimated)}`}
-                  hint="上游没给用量，或者价格来自别的平台"
-                />
-              )}
-              <Stat
-                label="请求"
-                value={`${s.requests}`}
-                hint={s.failed > 0 ? `${s.failed} 条失败` : undefined}
-              />
-              {/*
-                **第三栏：订阅调用量。**订阅制的边际成本是零，按 API 价目表
-                算出来的数字是纯虚构的 —— 所以它不进上面那个金额，而是单独
-                显示 token 量。
-              */}
-              {s.subscription_requests > 0 && (
-                <Stat
-                  label="订阅调用"
-                  value={`${s.subscription_requests}`}
-                  hint={`${s.subscription_tokens.toLocaleString()} token · 不计入金额`}
-                />
-              )}
-              {/*
-                缓存省了多少。**算的是差额** —— 「如果这些 token
-                没命中缓存，要多花多少」。对 Claude Code 用户，这通常是
-                成本结构里最大的一块。
-              */}
-              {s.cache_saved_micros > 0 && (
-                <Stat
-                  label="缓存省下"
-                  value={usd(s.cache_saved_micros)}
-                  hint="命中缓存少花的钱"
-                />
-              )}
-              {s.locally_answered > 0 && (
-                <Stat
-                  label="本地应答"
-                  value={`${s.locally_answered}`}
-                  hint="客户端探测，没发给上游"
-                />
-              )}
-            </div>
-
-            {/* **没有价格的那些要说出来。**不说的话，上面那个花费是偏低
-                的，而用户没有任何线索知道少算了什么 */}
-            {s.unpriced_requests > 0 && (
-              <p className="mt-3 tw-body text-amber-700 dark:text-amber-400">
-                <Tip text="这些请求用的模型不在价目表里 —— 上游自定义的模型名通常如此。在「配置 › 自定义价格」里给它填一个单价，它们就会计入合计。">
-                  <span className="underline decoration-dotted underline-offset-2">
-                    {s.unpriced_requests} 条请求算不出价钱
-                  </span>
-                </Tip>
-              </p>
-            )}
-
-            {/*
-              最近一段时间的请求量。**画的是节奏，不是金额** —— 金额已经
-              在上面那几个数字里了，而「刚才发生了什么」是另一个问题。
-            */}
-            {/*
-              最近 24 小时的花费趋势。**画的是钱，不是请求数** ——
-              这是一个 ToC 的工具，用户打开它第一个想知道的是花了多少。
-              请求数叠在同一根柱子上（淡色），因为「花得多」和「用得多」
-              不总是一回事，而分成两张图会让人来回对照。
-            */}
-            <div className="mt-5">
-              <div className="flex items-baseline gap-2">
-                <h3 className="tw-head font-medium">最近 24 小时</h3>
-                <span className="tw-label text-neutral-400">每格一小时</span>
-              </div>
-              <div className="mt-1.5">
-                <BarChart
-                  height={52}
-                  barClass="fill-neutral-400 dark:fill-neutral-600"
-                  subClass="fill-red-500/70"
-                  empty="最近 24 小时没有请求。"
-                  bars={densify(d.buckets ?? [], d.since_ms ?? 0, Date.now(), 3_600_000).map(
-                    (b) => ({
-                      at: b.at_ms,
-                      // 主高度是花费，失败那部分单独叠一层 —— 一段红比
-                      // 一个「失败 3 条」的数字更容易在余光里被发现
-                      value: (b.cost_micros_exact + b.cost_micros_estimated) / 1000,
-                      sub: b.failed > 0 ? 1 : 0,
-                      label: `${new Date(b.at_ms).getHours()}:00　${usd(
-                        b.cost_micros_exact + b.cost_micros_estimated,
-                      )}　${b.requests} 条${b.failed ? `（${b.failed} 条失败）` : ""}${
-                        b.unpriced_requests
-                          ? `\n其中 ${b.unpriced_requests} 条算不出价钱，没有计入`
-                          : ""
-                      }`,
-                    }),
-                  )}
-                />
-              </div>
-            </div>
-
-            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 tw-body">
-              <dt className="text-neutral-500">输入 / 输出</dt>
-              <dd className="tw-num">
-                {s.input_tokens.toLocaleString()} / {s.output_tokens.toLocaleString()} token
-              </dd>
-              <dt className="text-neutral-500">缓存 读 / 写</dt>
-              <dd className="tw-num">
-                {s.cache_read_tokens.toLocaleString()} / {s.cache_write_tokens.toLocaleString()}{" "}
-                token
-              </dd>
-            </dl>
-          </>
-        )}
-      </section>
+    <div className="p-5">
+      {header}
 
       {/*
-        出站密钥检测攒下的证据。**只在真的发现过东西时出现** ——
-        没发现的时候显示一句「一切正常」是在占地方，而这一块的
-        全部说服力来自「它说的是已经发生在你身上的事」。
+        三个数并排：**做了多少、花了多少、发了多少次**。它们是同一层的
+        事实，所以同一个字号、同一个宽度的栏。
+
+        **等宽栏，而不是并排的弹性块。**后者会让「较上一个区间」这类
+        时有时无的限定语改变每一栏的宽度，切一次范围三个数字就横向
+        挪一次位置。
+      */}
+      <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
+        <Stat
+          n={compact(tokensAt)}
+          unit="token"
+          note={
+            <>
+              {beforeTokens > 0 && (
+                <Delta v={(tokensTotal - beforeTokens) / beforeTokens} more={range.compare} />
+              )}
+              <Tip text={`${tokensTotal.toLocaleString()} token`}>
+                <span>
+                  输入 {compact(ctx)} · 输出 {compact(s.output_tokens)}
+                </span>
+              </Tip>
+            </>
+          }
+        />
+
+        <Stat
+          n={usd(spentAt)}
+          note={
+            <>
+              {beforeCost > 0 && (
+                <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
+              )}
+              {s.cost_micros_estimated > 0 && (
+                <Tip text="上游未返回用量，或该模型的单价来自其他平台。此部分金额为估算值。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    含估算 {usd(s.cost_micros_estimated)}
+                  </span>
+                </Tip>
+              )}
+              {s.unpriced_requests > 0 && (
+                <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    {s.unpriced_requests} 条未计价
+                  </span>
+                </Tip>
+              )}
+              {s.subscription_requests > 0 && (
+                <Tip text="订阅型上游的边际成本为零，按 API 价目表折算出的金额是虚构的，因此不计入。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    订阅额度 {s.subscription_requests} 次
+                  </span>
+                </Tip>
+              )}
+              {s.cost_micros_estimated === 0 &&
+                s.unpriced_requests === 0 &&
+                s.subscription_requests === 0 && <span>全部按价目表实测</span>}
+            </>
+          }
+        />
+
+        <Stat
+          n={Math.round(requestsAt).toLocaleString()}
+          unit="次请求"
+          after={s.failed > 0 && <span className="tw-label text-destructive">{s.failed} 次失败</span>}
+          note={
+            <>
+              <span>失败率 {((s.failed / Math.max(1, s.requests)) * 100).toFixed(1)}%</span>
+              {live && <span>{inFlight > 0 ? `${inFlight} 个进行中` : "当前空闲"}</span>}
+            </>
+          }
+        />
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 flex justify-end">{metric}</div>
+        <StackedArea
+          data={area}
+          keys={keys}
+          colors={colors}
+          height={200}
+          empty={live ? "等待请求。" : "所选区间内无请求记录。"}
+        />
+        {/*
+          有失败的时段画在基线上。**不往高度里加** —— 加一格固定高度的
+          话，那一格在大桶上看不见、在小桶上直接翻倍，而它本来就不代表
+          任何数量。
+        */}
+        <div className="flex h-0.5 gap-px bg-muted">
+          {grid.map((g) => (
+            <span key={g.at_ms} className={"flex-1 " + (g.failed > 0 ? "bg-destructive" : "")} />
+          ))}
+        </div>
+        <div className="mt-1.5 flex justify-between tw-label text-muted-foreground">
+          {(live
+            ? ["2 分钟前", "90 秒", "60 秒", "30 秒"]
+            : [fmtBucket(d.since_ms ?? 0, bucketMs)]
+          ).map((x) => (
+            <span key={x}>{x}</span>
+          ))}
+          <span className={live ? "text-foreground" : ""}>现在</span>
+        </div>
+        {/* 这一行有没有话说都占一行高：少一句就把下面整块往上提，
+            正是切换时的那种来回动 */}
+        <p className="mt-2 flex min-h-4 flex-wrap items-center gap-x-2 gap-y-1 tw-label text-muted-foreground">
+          {grid.some((g) => g.failed > 0) && (
+            <>
+              <span className="inline-block h-0.5 w-3.5 bg-destructive" />
+              <span>基线上的红色标出存在失败的时段</span>
+            </>
+          )}
+          {/*
+            实时档下这一页有两个口径，必须说清哪个是哪个：**模型排行
+            是这张图的图例**（色块要对得上曲线里那一层），所以跟着图
+            走；而两分钟里算不出分位延迟和命中率，那些连同顶部的数字
+            一起按 24 小时算。
+          */}
+          {live && (
+            <span>顶部数字与缓存、延迟、安全按最近 24 小时统计；模型排行跟随上图</span>
+          )}
+        </p>
+      </div>
+
+      {nothingYet && (
+        <p className="mt-4 tw-body text-muted-foreground">
+          将客户端指向{gatewayHint}后，用量与费用将在此处显示。
+          {s.locally_answered > 0 &&
+            ` 已本地应答 ${s.locally_answered} 次客户端探测 —— 客户端已连上，这些探测未产生费用。`}
+        </p>
+      )}
+
+      <div className="mt-5">
+        {/*
+          图例和构成合成一张排行。**药丸式的一行图例在模型一多就会折行，
+          而且不携带比例。**这里的条长就是占比，色块和曲线里那一层同色
+          —— 图例的职责就是那个映射，保留下来了。
+        */}
+        {/*
+          **这一块永远在。**它在「有数据」和「没数据」之间消失的话，
+          切一次时间范围整页就上下弹一次。没有数据时留一行字占住。
+        */}
+        <Block name="模型">
+          {keys.length === 0 && (
+            <p className="tw-body text-muted-foreground">
+              {live ? "等待请求。" : "所选区间内无请求记录。"}
+            </p>
+          )}
+          {[...keys].reverse().map((k, i) => {
+              const c = k === "其他" ? restMoney : (money.get(k) ?? 0);
+              const v = k === "其他" ? restVolume : (volume.get(k) ?? 0);
+              const n = k === "其他" ? restCount : (count.get(k) ?? 0);
+              const color = colors[keys.length - 1 - i];
+              return (
+                <div key={k} className="flex items-center gap-2.5 tw-body">
+                  <span
+                    className="inline-block size-2 shrink-0 rounded-[2px]"
+                    style={{ background: color }}
+                  />
+                  <span className="w-40 shrink-0 truncate" title={k}>
+                    {k === "其他" ? `其他 ${rest.length} 项` : k}
+                  </span>
+                  <span className="h-2.5 flex-1 rounded-sm bg-muted">
+                    <span
+                      className="block h-full rounded-sm"
+                      style={{
+                        width: `${((useTokens ? v : c) / topBar) * 100}%`,
+                        background: color,
+                      }}
+                    />
+                  </span>
+                  <Tip text={`${v.toLocaleString()} token`}>
+                    <span
+                      className={
+                        "w-16 shrink-0 text-right tw-num " +
+                        (useTokens ? "font-medium" : "text-muted-foreground")
+                      }
+                    >
+                      {compact(v)}
+                    </span>
+                  </Tip>
+                  <span
+                    className={
+                      "w-16 shrink-0 text-right tw-num " +
+                      (by === "cost" ? "font-medium" : "text-muted-foreground")
+                    }
+                  >
+                    {usd(c)}
+                  </span>
+                  <span className="w-11 shrink-0 text-right tw-label text-muted-foreground">
+                    {n} 次
+                  </span>
+                </div>
+              );
+            })}
+        </Block>
+
+        {/*
+          缓存。**要的是率，不是累计量** —— 「省了多少」在一个长会话里
+          只会一路涨，它回答不了「缓存到底有没有在起作用」。
+        */}
+        <Block name="缓存">
+          {ctx === 0 ? (
+            <p className="tw-body text-muted-foreground">所选区间内无 token 记录。</p>
+          ) : (
+            <>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 tw-body">
+              <span className="tw-num tw-title leading-none font-medium">
+                {hit == null ? "—" : `${Math.round(hit * 100)}%`}
+              </span>
+              <span className="text-muted-foreground">命中</span>
+              {/* 这根条**就是命中率的公式本身**：三段按单价排，亮的越长越省 */}
+              <span className="flex h-2.5 min-w-32 flex-1 overflow-hidden rounded-sm">
+                <span
+                  className="bg-cache-hit"
+                  style={{ width: `${(s.cache_read_tokens / ctx) * 100}%` }}
+                />
+                <span
+                  className="bg-cache-plain"
+                  style={{ width: `${(s.input_tokens / ctx) * 100}%` }}
+                />
+                <span
+                  className="bg-cache-write"
+                  style={{ width: `${(s.cache_write_tokens / ctx) * 100}%` }}
+                />
+              </span>
+              {/*
+                **净额，不是毛额。**缓存写入通常按高于输入的单价计费，
+                只统计命中省下的部分，等于声称缓存永远只会降低支出 ——
+                而一份反复重建缓存、命中很少的用法，实际账单高于不使用
+                缓存。倍率各家不同，这个数是按每个模型自己的价目算的。
+              */}
+              <span className="text-muted-foreground">
+                {s.cache_saved_micros < 0 ? "净增成本" : "净节省"}{" "}
+                <span
+                  className={
+                    "tw-num font-medium " +
+                    (s.cache_saved_micros < 0 ? "text-destructive" : "text-cache-hit")
+                  }
+                >
+                  {usd(Math.abs(s.cache_saved_micros))}
+                </span>
+              </span>
+              {/*
+                **不解释倍率。**读写各按几倍计费是某一家的价目，而这一
+                页上的模型可能来自任何一家上游 —— 把一家的计费规则写死
+                在界面上，对别家就是错的。
+
+                旁边那个净节省已经说清了结论，而它是按**每个模型自己的
+                价目**算出来的；读写比只是那个结论的来路，摆在这里让人
+                能自己看一眼比例，不需要再加一段说明。
+              */}
+              {ratio != null && (
+                <span className="text-muted-foreground">
+                  读写比 <span className="tw-num font-medium">{ratio.toFixed(1)} : 1</span>
+                </span>
+              )}
+            </div>
+            {/* 同上：不标倍率。三段的顺序本身就是从便宜到贵 */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 tw-body">
+              <Swatch color="bg-cache-hit" name="缓存读" n={s.cache_read_tokens} />
+              <Swatch color="bg-cache-plain" name="新输入" n={s.input_tokens} />
+              <Swatch color="bg-cache-write" name="缓存写" n={s.cache_write_tokens} />
+            </div>
+            </>
+          )}
+        </Block>
+
+        {/*
+          **左右两栏，各自纵向长。**「哪个模型慢」的下一步是换模型，
+          「哪家上游慢」的下一步是换上游 —— 两个问题各占一栏。排成一行
+          的话，上游一多就横向挤爆了。
+        */}
+        <Block name="延迟">
+          {d.latency.length === 0 ? (
+            <p className="tw-body text-muted-foreground">所选区间内样本不足，暂无分位数据。</p>
+          ) : (
+            <div className="grid gap-x-7 gap-y-3 lg:grid-cols-2">
+              <div className="min-w-0 space-y-1.5">
+                <p className="tw-label text-muted-foreground">按模型 · 首字节 P50 至 P95</p>
+                <Spread rows={d.latency} max={latMax} />
+              </div>
+              {t.comparison && d.latency_by_provider.length > 0 && (
+                <div className="min-w-0 space-y-1.5">
+                  <p className="tw-label text-muted-foreground">按上游 · 同上</p>
+                  <Spread rows={d.latency_by_provider} max={latMax} />
+                </div>
+              )}
+            </div>
+          )}
+        </Block>
+
+        {/*
+          安全。**没有发现时也在，而且说「未发现」。**这一页别处的纪律
+          是「条件不满足就不出现」—— 那条对成本面板成立：一排零不构成
+          安心。但安全是反过来的：**看不见的防护会被当成没开**。
+        */}
+        {guards.length > 0 && (
+          <Block name="安全">
+            {guards.map((g) => (
+              <div key={g.key} className="flex items-baseline gap-2.5 tw-body">
+                <span
+                  className={
+                    "inline-block size-2 shrink-0 translate-y-px rounded-full " +
+                    (g.mode === "off"
+                      ? "bg-muted-foreground/40"
+                      : g.hits > 0
+                        ? "bg-destructive"
+                        : "bg-cache-hit")
+                  }
+                />
+                <span className="w-40 shrink-0">{g.name}</span>
+                <span className="w-11 shrink-0 text-muted-foreground">{label(g.mode)}</span>
+                <span className={g.hits > 0 ? "text-destructive" : "text-muted-foreground"}>
+                  {g.saw}
+                </span>
+              </div>
+            ))}
+          </Block>
+        )}
+      </div>
+
+      {/*
+        出站密钥检测攒下的证据。**只在真的发现过东西时出现** —— 这一块
+        的全部说服力来自「它说的是已经发生在你身上的事」。
       */}
       {d.leaks.length > 0 && (
-        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+        <section className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
           <h2 className="tw-title font-semibold text-amber-900 dark:text-amber-200">
-            过去 7 天，有请求把密钥发了出去
+            凭据外泄检测
           </h2>
           <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
             {d.leaks.map((l) => (
@@ -233,201 +906,11 @@ export default function Dashboard({ tick }: { tick: number }) {
           <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
             观察模式：只记录，没有改变任何请求。
             <Tip text="要真的替换成占位符，去「安全 › 防护」把出站脱敏切到「拦截」。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">怎么真的拦</span>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">
+                怎么真的拦
+              </span>
             </Tip>
           </p>
-        </section>
-      )}
-
-      {/*
-        **按上游分是另一个问题。**「哪个模型慢」的下一步是换模型，
-        「哪家上游慢」的下一步是换上游 —— 合成一张表两个都答不好。
-        只有一家上游时不显示：那时这张表说的是「它就是这么快」。
-      */}
-      {t.comparison && d.latency_by_provider.length > 1 && (
-        <section>
-          <div className="flex items-baseline gap-3">
-            <h2 className="tw-title font-semibold">哪家更快</h2>
-            <span className="tw-body text-neutral-400">首字节，按上游分</span>
-          </div>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">上游</th>
-                <th className="font-medium">通常（P50）</th>
-                <th className="font-medium">最糟（P95）</th>
-                <th className="font-medium">样本</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.latency_by_provider.map((l) => (
-                <tr key={l.model} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1.5">{l.model}</td>
-                  <td>{l.p50}ms</td>
-                  <td>{l.p95}ms</td>
-                  <td className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
-                    {l.samples}
-                    {l.samples < 10 && " · 数据不足"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {/*
-        钱花在哪儿。**横条不是饼图** —— 饼图比不出 12% 和 15%，而这张图
-        的用途恰恰是排序和比例。
-      */}
-      {(d.by_model ?? []).length > 0 && (
-        <section>
-          <div className="flex items-baseline gap-3">
-            <h2 className="tw-title font-semibold">花在哪儿</h2>
-            <span className="tw-body text-neutral-400">最近 24 小时</span>
-          </div>
-          <div className="mt-2 grid gap-5 lg:grid-cols-2">
-            <div>
-              <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按模型</h3>
-              <BarRows
-                unit={usd}
-                rows={(d.by_model ?? []).slice(0, 6).map((g) => ({
-                  name: g.name,
-                  value: g.cost_micros,
-                  // **算不出价钱的要说出来。**不说的话这根条是偏短的，
-                  // 而看图的人没有线索知道少算了什么
-                  note: g.unpriced_requests
-                    ? `${g.unpriced_requests} 条无价`
-                    : undefined,
-                }))}
-              />
-            </div>
-            {/* 一家上游的时候这张图说的是「全都在这儿」，那已经知道了 */}
-            {(d.by_provider ?? []).length > 1 && (
-              <div>
-                <h3 className="mb-1.5 tw-head font-medium text-neutral-500">按上游</h3>
-                <BarRows
-                  unit={usd}
-                  rows={(d.by_provider ?? []).slice(0, 6).map((g) => ({
-                    name: g.name,
-                    value: g.cost_micros,
-                    note: g.unpriced_requests
-                      ? `${g.unpriced_requests} 条无价`
-                      : undefined,
-                  }))}
-                />
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* 延迟排行只在有得比的时候才有意义 —— 一家上游一个模型的时候，
-          这张表说的是「它就是这么快」，那已经写在上面了 */}
-      {d.latency.length > 1 && (
-        <section>
-          <div className="flex items-baseline gap-3">
-            <h2 className="tw-title font-semibold">延迟</h2>
-            {/* 用分位数不用平均值：AI 延迟是长尾分布，平均值会被极端值
-                拉偏 */}
-            <span className="tw-body text-neutral-400">首字节，按模型分</span>
-          </div>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">模型</th>
-                <th className="font-medium">通常（P50）</th>
-                <th className="font-medium">最糟（P95）</th>
-                <th className="font-medium">样本</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.latency.map((l) => (
-                <tr key={l.model} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-1.5">{l.model}</td>
-                  <td>{l.p50}ms</td>
-                  <td>{l.p95}ms</td>
-                  {/* **样本数要显示。**「800ms」是 3 个样本还是 300 个，
-                      含义完全不同 —— 少了它这张表就是在假装确定 */}
-                  <td className={l.samples < 10 ? "text-amber-600 dark:text-amber-400" : ""}>
-                    {l.samples}
-                    {l.samples < 10 && " · 数据不足"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {d.history.length > 0 && (
-        <section>
-          <h2 className="tw-title font-semibold">历史</h2>
-          <table className="mt-2 w-full text-left tw-body tw-num">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-2 font-medium">时间</th>
-                <th className="font-medium">模型</th>
-                <th className="font-medium">上游</th>
-                <th className="font-medium">状态</th>
-                <th className="font-medium">首字节</th>
-                <th className="font-medium">token</th>
-                <th className="font-medium">花费</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.history.map((r) => (
-                <tr
-                  key={r.id}
-                  onClick={() => setOpen(r.id)}
-                  className="cursor-pointer border-b border-neutral-100 hover:bg-neutral-100 dark:border-neutral-900 dark:hover:bg-neutral-900"
-                >
-                  <td className="py-1.5 text-neutral-500">
-                    {new Date(r.at_ms).toLocaleTimeString()}
-                  </td>
-                  <td>{r.local ? <span className="text-neutral-400">{r.path}</span> : r.model}</td>
-                  <td className="text-neutral-500">{r.local ? "本地应答" : r.provider}</td>
-                  <td>
-                    {r.error ? (
-                      <span className="text-red-600 dark:text-red-400" title={r.error}>
-                        失败
-                      </span>
-                    ) : (
-                      <span className="text-neutral-500">{r.status}</span>
-                    )}
-                  </td>
-                  <td>{r.ttfb_ms != null ? `${r.ttfb_ms}ms` : "—"}</td>
-                  <td className="text-neutral-500">
-                    {r.input_tokens != null
-                      ? `${r.input_tokens.toLocaleString()} / ${(r.output_tokens ?? 0).toLocaleString()}`
-                      : "—"}
-                  </td>
-                  <td>
-                    {r.billing === "subscription" ? (
-                      // **「订阅」而不是 $0.00。**后者看起来像一个算出来
-                      // 的结果，会让人误以为这次调用真的免费；「订阅」
-                      // 表达的是「这笔账不在这个维度上」
-                      <Tip text="这家是订阅制，边际成本为零">
-                        <span className="text-neutral-500">订阅</span>
-                      </Tip>
-                    ) : r.cost_micros == null ? (
-                      // **「没有价格」不是 $0.00。**显示成 0 会让它悄悄
-                      // 混进总额的心理预期里
-                      <Tip text="这个模型不在价目表里">
-                        <span className="text-neutral-400">—</span>
-                      </Tip>
-                    ) : r.cost_estimated ? (
-                      <Tip text="估算值 —— 这个模型用的是兜底价，和实测有差">
-                        <span className="text-amber-700 dark:text-amber-400">~{usd(r.cost_micros)}</span>
-                      </Tip>
-                    ) : (
-                      usd(r.cost_micros)
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </section>
       )}
 
@@ -435,10 +918,12 @@ export default function Dashboard({ tick }: { tick: number }) {
 
       {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
       {d.storage && d.storage.level !== "正常" && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {d.storage.level}
-          {!d.storage.forwarding_affected && " —— 转发不受影响。"}
-        </p>
+        <Alert variant="warning" className="mt-5">
+          <AlertDescription>
+            {d.storage.level}
+            {!d.storage.forwarding_affected && " —— 转发不受影响。"}
+          </AlertDescription>
+        </Alert>
       )}
     </div>
   );

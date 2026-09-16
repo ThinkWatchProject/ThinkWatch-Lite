@@ -1,6 +1,20 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Checkbox } from "@/ui/checkbox";
+import { Field, FieldLabel } from "@/ui/field";
 import type { DryRunResult } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { toast } from "sonner";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/ui/combobox";
 
 /**
  * 路由试算。
@@ -19,12 +33,11 @@ export default function DryRun({ models }: { models: string[] }) {
   const [thinking, setThinking] = useState(false);
   const [kTokens, setKTokens] = useState(8);
   const [r, setR] = useState<DryRunResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   async function run() {
     setBusy(true);
-    setError(null);
     try {
       setR(
         await invoke<DryRunResult>("dry_run", {
@@ -46,7 +59,7 @@ export default function DryRun({ models }: { models: string[] }) {
       );
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -54,29 +67,42 @@ export default function DryRun({ models }: { models: string[] }) {
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">试算一条请求</h2>
-      <p className="mt-1 tw-body text-neutral-500">
-        假设来这样一个请求，看它会走到哪儿、为什么没走别的。只算不发。
+      <h2 className="tw-title font-semibold">路由试算</h2>
+      <p className="mt-1 tw-body text-muted-foreground">
+        按给定条件计算该请求将匹配的路由及其原因。仅计算，不发起请求。
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 tw-body">
-        <input
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="模型名"
-          list="dryrun-models"
-        />
-        <datalist id="dryrun-models">
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
+        {/*
+          **自由输入 + 建议**,不是受限选择:模型名可能是刚发布的、也可能
+          是中转自己起的,列表里没有的照样得能敲进去。原来用的是原生
+          `<datalist>` —— 它能做到这件事,但样式完全不受控(系统画的),
+          而且不支持模糊匹配。`Combobox` 的 `inputValue` 就是自由输入。
+        */}
+        <Combobox
+          items={models}
+          inputValue={model}
+          onInputValueChange={setModel}
+        >
+          <ComboboxTrigger className="w-56">
+            <ComboboxInput placeholder="模型名" />
+          </ComboboxTrigger>
+          <ComboboxContent>
+            <ComboboxEmpty>没有匹配的,直接敲全名也行</ComboboxEmpty>
+            <ComboboxList>
+              {(m: string) => (
+                <ComboboxItem key={m} value={m}>
+                  {m}
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
         <label className="flex items-center gap-1">
           上下文
-          <input
+          <Input
+            className="w-16"
             type="number"
-            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
             value={kTokens}
             min={0}
             onChange={(e) => setKTokens(Number(e.target.value))}
@@ -91,34 +117,38 @@ export default function DryRun({ models }: { models: string[] }) {
             ["扩展思考", thinking, setThinking],
           ] as const
         ).map(([label, v, set]) => (
-          <label key={label} className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              className="tw-check"
+          /*
+            **`w-auto` 是布局,不是配色。**`Field` 默认 `w-full` —— 那是
+            给表单一行一个字段用的,而这四个是挤在一条工具条里的开关,
+            撑满会把后面的按钮挤下去。
+          */
+          <Field key={label} orientation="horizontal" className="w-auto">
+            <Checkbox
+              id={`${uid}-${label}`}
               checked={v}
-              onChange={(e) => set(e.target.checked)}
+              onCheckedChange={(c) => set(c === true)}
             />
-            {label}
-          </label>
+            <FieldLabel htmlFor={`${uid}-${label}`}>{label}</FieldLabel>
+          </Field>
         ))}
-        <button
-          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void run()}
           disabled={busy}
         >
           {busy ? "算…" : "试算"}
-        </button>
+        </Button>
       </div>
 
-      {error && <div className="mt-2 tw-body text-amber-600 dark:text-amber-400">{error}</div>}
-      {r && <Result r={r} />}
+            {r && <Result r={r} />}
     </section>
   );
 }
 
 function Result({ r }: { r: DryRunResult }) {
   return (
-    <div className="mt-3 rounded-md border border-neutral-200 p-3 tw-body dark:border-neutral-800">
+    <div className="mt-3 rounded-md border border-border p-3 tw-body">
       {r.outcome === "deny" ? (
         <div>
           <span className="text-red-600 dark:text-red-400">会被拒绝</span> —— 规则「{r.rule}」：
@@ -173,7 +203,7 @@ function Result({ r }: { r: DryRunResult }) {
 
       {/* **「为什么没走我以为的那条」才是用户在问的问题。** */}
       <details className="mt-2">
-        <summary className="cursor-pointer text-neutral-500">逐条看规则怎么判的</summary>
+        <summary className="cursor-pointer text-muted-foreground">逐条看规则怎么判的</summary>
         <ul className="mt-1 space-y-0.5">
           {r.trace.map((t) => (
             <li key={t.name} className="flex gap-2">
@@ -187,7 +217,7 @@ function Result({ r }: { r: DryRunResult }) {
                 {t.verdict === "matched" ? "✓" : t.verdict === "phase_two" ? "…" : "·"}
               </span>
               <span className="w-40 shrink-0">{t.name}</span>
-              <span className="text-neutral-500">{t.why ?? "命中"}</span>
+              <span className="text-muted-foreground">{t.why ?? "命中"}</span>
             </li>
           ))}
         </ul>

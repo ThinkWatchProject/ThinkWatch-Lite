@@ -1,14 +1,31 @@
 import { useState } from "react";
-import { Tip } from "./ui/Tooltip";
-import { invoke } from "@tauri-apps/api/core";
+import { Tip } from "@/ui/tip";
 import type { Overview } from "./types";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { toast } from "sonner";
+import { patchConfig } from "./patch";
+import {
+  Item,
+  ItemActions,
+  ItemDescription,
+  ItemHeader,
+  ItemTitle,
+} from "@/ui/item";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
 
 /**
  * 防护 —— 三条防线的策略。
  *
  * 在这一页之前，这三个开关**只能改 config.yaml**。而整个设计
  * 是：出厂全部停在「观察」，不打扰任何人，同时攒下属于用户自己的证据；
- * 他看到「过去 7 天有 3 个请求把密钥发给了 relay-cn」之后，自己决定要
+ * 他看到「过去 7 天有 3 个请求把密钥发给了 relay」之后，自己决定要
  * 不要切到「拦截」。**证据在界面上，开关在 YAML 里，那条路就断了。**
  *
  * 三件事要在这一页说清楚：
@@ -79,28 +96,23 @@ export default function Guard({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const sec = ov.security;
 
   async function set(path: string, mode: Mode) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return;
     }
     setBusy(path);
-    setErr(null);
     try {
       // 走和别的改动同一扇门：带版本号、span 补丁、三道校验。
       // **写进去的是 slug 不是中文标签** —— 写「观察」的话下一次加载
       // 会因为不是合法取值整份被拒，而这一层刻意不做静默回落。
-      await invoke("patch_config", {
-        ops: [{ op: "set", path, value: mode }],
-        baseVersion: configVersion,
-      });
+      await patchConfig([{ op: "replace", path, value: mode }], configVersion);
       onChanged();
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(null);
     }
@@ -109,8 +121,7 @@ export default function Guard({
   return (
     <div className="space-y-6 p-5">
       <div>
-        <h2 className="tw-title font-semibold">防护</h2>
-        <p className="mt-1 tw-body text-neutral-500">
+        <p className="tw-body text-muted-foreground">
           三条防线，各自三档。出厂都停在「观察」
           {/*
             「我现在到底有没有被保护」是用户在这一页的第一个判断，而
@@ -132,36 +143,34 @@ export default function Guard({
         LINES.map((l) => {
           const cur = (sec[l.key] as Mode) ?? "observe";
           return (
-            <section
-              key={l.key}
-              className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
-            >
-              <div className="flex items-baseline gap-3">
-                <h3 className="tw-body font-medium">{l.title}</h3>
-                <div className="ml-auto flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+            /*
+              **一行 = 标题 + 说明 + 右侧操作**，这正是 `Item` 的形状。
+              原来是 `section` 里手拼 `flex items-baseline ml-auto`，而
+              「操作靠右、标题截断、说明换行」这几件事每次都得重写一遍。
+            */
+            <Item key={l.key} variant="outline" className="flex-col items-stretch">
+              <ItemHeader>
+                <ItemTitle>{l.title}</ItemTitle>
+                <ItemActions>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  value={cur}
+                  disabled={busy === l.path}
+                  onValueChange={(v) => v && void set(l.path, v as Mode)}
+                >
                   {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      disabled={busy === l.path}
-                      onClick={() => void set(l.path, m.id)}
-                      className={
-                        "rounded px-2.5 py-1 tw-body disabled:opacity-50 " +
-                        (cur === m.id
-                          ? m.id === "enforce"
-                            ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                            : "bg-neutral-200 dark:bg-neutral-800"
-                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100")
-                      }
-                    >
+                    <ToggleGroupItem key={m.id} value={m.id}>
                       {m.label}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
-              </div>
+                </ToggleGroup>
+                </ItemActions>
+              </ItemHeader>
 
-              <p className="mt-2 tw-body text-neutral-600 dark:text-neutral-400">
-                {l.what}
-              </p>
+              <ItemDescription>{l.what}</ItemDescription>
 
               {/*
                 当前这一档到底在做什么 —— 一句话，随档变化。
@@ -169,16 +178,16 @@ export default function Guard({
               */}
               <p className="mt-1.5 tw-body">
                 {cur === "off" && (
-                  <span className="text-neutral-500">现在：不检测，也不记录。</span>
+                  <span className="text-muted-foreground">现在：不检测，也不记录。</span>
                 )}
                 {cur === "observe" && (
-                  <span className="text-neutral-500">
+                  <span className="text-muted-foreground">
                     现在：检测并记录，<span className="font-medium">不改变任何请求</span>。
                     发现会出现在「安全 › 发现」里。
                   </span>
                 )}
                 {cur === "enforce" && (
-                  <span className="text-neutral-800 dark:text-neutral-200">
+                  <span className="text-foreground">
                     现在：{l.verb}。
                   </span>
                 )}
@@ -190,14 +199,16 @@ export default function Guard({
                   切到「拦截」：{l.cost}
                 </p>
               )}
-            </section>
+            </Item>
           );
         })}
 
       {sec && (
-        <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="tw-body font-medium">扫描规则</h3>
-          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
+        <Item variant="outline" className="flex-col items-stretch">
+          <ItemHeader>
+            <ItemTitle>扫描规则</ItemTitle>
+          </ItemHeader>
+          <p className="mt-1.5 tw-body text-muted-foreground">
             内置规则加上你自己的那几条。
             {/*
               语义是「加法加停用」而不是「整份替换」（core 那边改过一次）。
@@ -206,49 +217,50 @@ export default function Guard({
             */}
             自己写的是<span className="font-medium">加进去</span>，不是替换
             <Tip text="所以以后新增的内置规则你照样收得到。整份替换的话，你那份会永远停在复制的那一刻。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么这么设计</span>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">设计说明</span>
             </Tip>
           </p>
-          <p className="mt-2 tw-body text-neutral-500">
+          <p className="mt-2 tw-body text-muted-foreground">
             你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
             增删规则要改 config.yaml：它是一组带正则的结构，表单填不了。
           </p>
-        </section>
+        </Item>
       )}
 
       {sec && (
-        <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="tw-body font-medium">按上游的脱敏类别</h3>
-          <p className="mt-1.5 tw-body text-neutral-600 dark:text-neutral-400">
+        <Item variant="outline" className="flex-col items-stretch">
+          <ItemHeader>
+            <ItemTitle>按上游配置脱敏范围</ItemTitle>
+          </ItemHeader>
+          <ItemDescription>
             上面那个总闸决定脱不脱，这里决定
             <span className="font-medium">每家脱哪几类</span>。
             官方端点默认一类都不脱
             <Tip text="为了防一个你本来就信任的对象而自废武功，是这一层最要避免的事。要改的话在 config.yaml 里给那家写 redact。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
             </Tip>
-          </p>
-          <table className="mt-3 w-full text-left tw-body">
-            <thead className="text-neutral-500">
-              <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                <th className="py-1.5 font-medium">上游</th>
-                <th className="font-medium">信任</th>
-                <th className="font-medium">脱敏类别</th>
-              </tr>
-            </thead>
-            <tbody>
+          </ItemDescription>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>上游</TableHead>
+                <TableHead>信任</TableHead>
+                <TableHead>脱敏类别</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {ov.providers.map((p) => (
-                <tr
+                <TableRow
                   key={p.name}
-                  className="border-b border-neutral-100 dark:border-neutral-900"
                 >
-                  <td className="py-1.5 font-medium">{p.name}</td>
-                  <td className="text-neutral-500">
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {p.trust}
                     {!p.trust_explicit && (
                       <span className="ml-1 text-neutral-400">（自动判）</span>
                     )}
-                  </td>
-                  <td className="font-mono text-neutral-500">
+                  </TableCell>
+                  <TableCell className="font-mono text-muted-foreground">
                     {p.redact && p.redact.length > 0 ? (
                       p.redact.join(" · ")
                     ) : (
@@ -256,15 +268,14 @@ export default function Guard({
                         {p.redact_explicit ? "显式设成不脱" : "不脱（官方端点）"}
                       </span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </section>
+            </TableBody>
+          </Table>
+        </Item>
       )}
 
-      {err && <p className="tw-body text-red-600 dark:text-red-400">{err}</p>}
-    </div>
+          </div>
   );
 }

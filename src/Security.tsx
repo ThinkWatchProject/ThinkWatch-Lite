@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Tip } from "./ui/Tooltip";
+import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
@@ -11,6 +11,24 @@ import type {
   ScanFinding,
   ScanResponse,
 } from "./types";
+import { Button } from "@/ui/button";
+import { Alert, AlertDescription } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 
 /**
  * 客户端配置面。
@@ -57,7 +75,7 @@ export default function Security({
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -70,7 +88,7 @@ export default function Security({
     try {
       setPending({ req, plan: await invoke<PlanView>("mcp_plan", { req }) });
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -84,7 +102,7 @@ export default function Security({
       setPending(null);
       await load();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setPending(null);
     } finally {
       setBusy(false);
@@ -96,36 +114,36 @@ export default function Security({
   }, [load]);
 
   if (!data) {
-    return <div className="p-5 tw-head text-neutral-500">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-muted-foreground">{error ?? "扫描中…"}</div>;
   }
 
   const high = data.findings.filter((f) => f.level === "high").length;
 
   return (
     <div className="space-y-5 p-5">
-      {error && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </div>
-      )}
+      
 
-      <div className="flex items-center gap-2 tw-body text-neutral-500">
+      <div className="flex items-center gap-2 tw-body text-muted-foreground">
         <span>
           扫了 {data.scanned} 份文件，规则来自{data.rules_origin}。
         </span>
-        <button
-          className="rounded border border-neutral-300 px-2 py-0.5 dark:border-neutral-700"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void load()}
           disabled={busy}
         >
-          {busy ? "扫描中…" : "重扫"}
-        </button>
+          {busy && <Spinner />}
+              重扫
+        </Button>
       </div>
 
       {data.rules_warning && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <Alert variant="warning" className="px-3 py-2">
+          <AlertDescription>
           {data.rules_warning}
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       {/* 悄悄跳过比不扫更糟：它会给人一种「查过了」的错觉 */}
@@ -141,12 +159,14 @@ export default function Security({
             <h2 className="tw-head font-medium text-red-900 dark:text-red-200">
               刚刚新出现的 · {alerts.length} 处
             </h2>
-            <button
-              className="ml-auto rounded px-2 py-0.5 tw-body text-red-700 dark:text-red-300"
+            <Button
+              variant="destructive"
+              size="xs"
+              className="ml-auto"
               onClick={onSeen}
             >
               标记已读
-            </button>
+            </Button>
           </div>
           {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
               比「这个文件里有可疑内容」强得多 */}
@@ -156,12 +176,16 @@ export default function Security({
           <ul className="mt-2 space-y-1 tw-body">
             {alerts.map((f, i) => (
               <li key={i}>
-                <button className="text-left hover:underline" onClick={() => setOpen(f)}>
+                <Button
+                  variant="link"
+                  size="xs"
+                  className="text-left" onClick={() => setOpen(f)}
+                >
                   {f.title}
                   <span className="ml-2 text-red-700 dark:text-red-400">
                     {f.path.replace(/^.*\//, "")}:{f.line}
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -175,18 +199,22 @@ export default function Security({
         </h2>
         {data.findings.length === 0 ? (
           // 没风险的时候要说「安全」，而不是让这一块消失
-          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <Alert variant="default" className="px-3 py-2">
+          <AlertDescription>
             ✓ 没发现问题
             <Tip text="隐藏字符、提示注入、危险命令、过宽权限 —— 四类都查过了。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">查了四类</span>
             </Tip>
-          </div>
+          </AlertDescription>
+        </Alert>
         ) : (
           <ul className="space-y-1">
             {data.findings.map((f, i) => (
               <li key={i}>
-                <button
-                  className="flex w-full items-start gap-2 rounded border border-neutral-200 px-3 py-2 text-left tw-body hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex h-auto w-full items-start gap-2 text-left"
                   onClick={() => setOpen(f)}
                 >
                   <span
@@ -195,18 +223,18 @@ export default function Security({
                         ? "text-red-600 dark:text-red-400"
                         : f.level === "medium"
                           ? "text-amber-600 dark:text-amber-400"
-                          : "text-neutral-500"
+                          : "text-muted-foreground"
                     }
                   >
                     {f.level === "high" ? "✗" : f.level === "medium" ? "?" : "·"}
                   </span>
                   <span className="flex-1">
                     <span className="font-medium">{f.title}</span>
-                    <span className="ml-2 text-neutral-500">
+                    <span className="ml-2 text-muted-foreground">
                       {f.path.replace(/^.*\//, "")}:{f.line}
                     </span>
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -221,16 +249,16 @@ export default function Security({
         <section>
           <h2 className="mb-1 tw-head font-medium">hook · {data.hooks.length}</h2>
           {/* 危险度第一：不需要模型参与就能拿到执行权 */}
-          <p className="mb-2 tw-body text-neutral-500">
+          <p className="mb-2 tw-body text-muted-foreground">
             hook 在工具调用前后直接执行 shell 命令
-            <Tip text="这是唯一不需要模型参与就能拿到执行权的入口 —— 别的都要先说服模型调用某个工具。">
+            <Tip text="这是唯一无需模型参与即可获得执行权限的入口，其余途径均需先促使模型调用工具。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么单列</span>
             </Tip>
           </p>
           <ul className="space-y-1 tw-body">
             {data.hooks.map((h, i) => (
-              <li key={i} className="rounded border border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
-                <span className="text-neutral-500">{h.event}</span>{" "}
+              <li key={i} className="rounded border border-border px-3 py-1.5">
+                <span className="text-muted-foreground">{h.event}</span>{" "}
                 <code className="break-all">{h.command}</code>
               </li>
             ))}
@@ -242,7 +270,7 @@ export default function Security({
         <section>
           <h2 className="mb-1 tw-head font-medium">skill · {data.skills.length}</h2>
           {/* skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
-          <p className="mb-2 tw-body text-neutral-500">
+          <p className="mb-2 tw-body text-muted-foreground">
             只列出来看，不做跨客户端搬动
             <Tip text="skill 的跨客户端格式还没有事实标准，搬过去大概率是一份对方读不懂的配置。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
@@ -250,11 +278,11 @@ export default function Security({
           </p>
           <ul className="space-y-1 tw-body">
             {data.skills.map((s, i) => (
-              <li key={i} className="rounded border border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
+              <li key={i} className="rounded border border-border px-3 py-1.5">
                 <span className="font-medium">{s.name}</span>
-                <span className="ml-2 text-neutral-500">{s.client}</span>
+                <span className="ml-2 text-muted-foreground">{s.client}</span>
                 {s.allowed_tools.length > 0 && (
-                  <span className="ml-2 text-neutral-500">工具：{s.allowed_tools.join("、")}</span>
+                  <span className="ml-2 text-muted-foreground">工具：{s.allowed_tools.join("、")}</span>
                 )}
               </li>
             ))}
@@ -314,7 +342,7 @@ function Matrix({
     return (
       <section>
         <h2 className="mb-1 tw-head font-medium">MCP server</h2>
-        <p className="tw-body text-neutral-500">这台机器上没有配置任何 MCP server。</p>
+        <p className="tw-body text-muted-foreground">这台机器上没有配置任何 MCP server。</p>
       </section>
     );
   }
@@ -323,43 +351,45 @@ function Matrix({
   return (
     <section>
       <h2 className="mb-1 tw-head font-medium">MCP server · {names.length}</h2>
-      <p className="mb-2 tw-body text-neutral-500">
+      <p className="mb-2 tw-body text-muted-foreground">
         每一个都是能执行程序、或能取走上下文的入口。
         <Tip text="点空格子从已有它的客户端复制过来，点实心格子从这个客户端移除。两种都会先显示 diff 再写入。">
           <span className="underline decoration-dotted underline-offset-2">点格子可改</span>
         </Tip>
       </p>
       <div className="overflow-x-auto">
-        <table className="tw-body">
-          <thead>
-            <tr className="text-neutral-500">
-              <th className="px-2 py-1 text-left font-normal">名字</th>
+        <Table>
+          <TableHeader>
+            <TableRow className="text-muted-foreground">
+              <TableHead className="font-normal">名字</TableHead>
               {clients.map((c) => (
-                <th key={c} className="px-2 py-1 text-left font-normal">
+                <TableHead key={c} className="font-normal">
                   {c}
-                </th>
+                </TableHead>
               ))}
-              <th className="px-2 py-1 text-left font-normal">是什么</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead className="font-normal">是什么</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {names.map((n) => {
               const any = mcp.find((m) => m.name === n)!;
               return (
-                <tr key={n} className="border-t border-neutral-200 dark:border-neutral-800">
-                  <td className="px-2 py-1">
+                <TableRow key={n}>
+                  <TableCell>
                     {conflicting.includes(n) && (
                       <Tip text="同名，但各客户端里的配置不一样 —— 点开并排看差异">
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="mr-1"
                           onClick={() => setCompare(compare === n ? null : n)}
-                          className="mr-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
                         >
                           ⚠
-                        </button>
+                        </Button>
                       </Tip>
                     )}
                     {n}
-                  </td>
+                  </TableCell>
                   {clients.map((c) => {
                     const m = at(n, c);
                     const writable = canWrite(c);
@@ -374,14 +404,10 @@ function Matrix({
                           ? `从 ${source.client} 复制过来`
                           : "没有能抄的来源";
                     return (
-                      <td key={c} className="px-2 py-1 text-center">
-                        <button
-                          className={
-                            "w-6 rounded " +
-                            (can
-                              ? "hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                              : "cursor-default opacity-60")
-                          }
+                      <TableCell key={c} className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
                           title={title}
                           disabled={!can || busy}
                           onClick={() =>
@@ -403,11 +429,11 @@ function Matrix({
                               <span className="text-neutral-400">○</span>
                             </Tip>
                           )}
-                        </button>
-                      </td>
+                        </Button>
+                      </TableCell>
                     );
                   })}
-                  <td className="px-2 py-1 text-neutral-500">
+                  <TableCell className="text-muted-foreground">
                     {/* **同名不同配置时，不能只显示其中一份。**挑一个显示
                         等于替用户选了个「正确答案」，而这一行的记号说的
                         恰恰是「没有正确答案，它们不一样」 */}
@@ -424,12 +450,12 @@ function Matrix({
                     {any.env_keys.length > 0 && (
                       <div className="text-neutral-400">读环境变量：{any.env_keys.join("、")}</div>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/*
@@ -437,17 +463,19 @@ function Matrix({
         没回答「哪儿不一样」** —— 而用户要做的决定恰恰是「以哪边为准」。
       */}
       {compare && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 tw-body dark:border-amber-800 dark:bg-amber-950">
+        <Alert variant="warning" className="mt-3">
+          <AlertDescription>
           <div className="flex items-baseline justify-between">
             <p className="font-medium text-amber-900 dark:text-amber-200">
               <code>{compare}</code> 在各客户端里配得不一样
             </p>
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => setCompare(null)}
-              className="text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
             >
               收起
-            </button>
+            </Button>
           </div>
           <div className="mt-2 space-y-2">
             {mcp
@@ -470,7 +498,7 @@ function Matrix({
                       <span className={hi(differs(cmd))}>{cmd(m)}</span>
                     </div>
                     {(m.env_keys.length > 0 || differs((x) => x.env_keys.join(","))) && (
-                      <div className="mt-0.5 text-neutral-600 dark:text-neutral-400">
+                      <div className="mt-0.5 text-muted-foreground">
                         环境变量{" "}
                         <span className={"font-mono " + hi(differs((x) => x.env_keys.join(",")))}>
                           {m.env_keys.length > 0 ? m.env_keys.join(" · ") : "（没有）"}
@@ -478,7 +506,7 @@ function Matrix({
                         {/* **只有名字没有值** —— 值里常常就是密钥 */}
                       </div>
                     )}
-                    <div className="mt-0.5 text-neutral-500">
+                    <div className="mt-0.5 text-muted-foreground">
                       <span className={hi(differs((x) => String(x.enabled)))}>
                         {m.enabled ? "已启用" : "已关闭"}
                       </span>
@@ -489,9 +517,10 @@ function Matrix({
               })}
           </div>
           <p className="mt-2 text-amber-800 dark:text-amber-300">
-            要统一：点矩阵里你想保留的那一格，复制到别的客户端。写入前会显示 diff。
+            如需统一：选择矩阵中要保留的配置，复制到其他客户端。写入前将显示差异。
           </p>
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
     </section>
   );
@@ -517,15 +546,16 @@ function McpConfirm({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onCancel}>
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">
-          {req.op === "copy" ? `把 ${req.name} 复制到 ${req.to}` : `从 ${req.to} 移除 ${req.name}`}
-        </div>
-        <div className="mt-1 tw-body text-neutral-500">
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {req.op === "copy"
+              ? `把 ${req.name} 复制到 ${req.to}`
+              : `从 ${req.to} 移除 ${req.name}`}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-1 tw-body text-muted-foreground">
           要改 <code>{plan.path}</code>
         </div>
         {plan.noop ? (
@@ -535,7 +565,7 @@ function McpConfirm({
             <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 tw-label leading-relaxed dark:bg-neutral-950">
               {plan.after}
             </pre>
-            <div className="mt-2 tw-body text-neutral-500">
+            <div className="mt-2 tw-body text-muted-foreground">
               写入前整份备份，除这一项外一字节不动。
               {req.op === "copy" && (
                 <span className="text-amber-700 dark:text-amber-400">
@@ -546,21 +576,21 @@ function McpConfirm({
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onCancel}>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
             取消
-          </button>
+          </Button>
           {!plan.noop && (
-            <button
-              className="rounded bg-neutral-900 px-3 py-1 tw-body text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            <Button
+              size="sm"
               onClick={onConfirm}
               disabled={busy}
             >
               确认
-            </button>
+            </Button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -580,7 +610,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
     return (
       <section>
         <h2 className="mb-1 tw-head font-medium">上游行为</h2>
-        <p className="tw-body text-neutral-500">
+        <p className="tw-body text-muted-foreground">
           观测层没启动，这段时间的请求没有记录
           <Tip text="没有记录就没有基线可比 —— 这不是「没发现异常」，是「没有看」。">
             <span className="ml-1 underline decoration-dotted underline-offset-2">所以没法比</span>
@@ -594,7 +624,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
   return (
     <section>
       <h2 className="mb-1 tw-head font-medium">上游行为</h2>
-      <p className="mb-2 tw-body text-neutral-500">
+      <p className="mb-2 tw-body text-muted-foreground">
         最近 {b.recent_hours} 小时 对比 之前 {b.baseline_days} 天
         <Tip text="样本不够的上游不会出现在这里 —— 两边各至少 20 条才比，否则一次抖动就能算出「四倍」。">
           <span className="ml-1 underline decoration-dotted underline-offset-2">样本要求</span>
@@ -602,14 +632,16 @@ function Baseline({ b }: { b: BaselineResponse }) {
       </p>
       {withDrift.length === 0 ? (
         // 没风险的时候要说「安全」，而不是让这一块消失
-        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 tw-body text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <Alert variant="default" className="px-3 py-2">
+          <AlertDescription>
           ✓ 每个上游的行为都和之前一致
           {b.providers.length > 0 && (
             <span className="ml-1 text-emerald-700 dark:text-emerald-400">
               （比过的：{b.providers.map((p) => p.provider).join("、")}）
             </span>
           )}
-        </div>
+        </AlertDescription>
+        </Alert>
       ) : (
         <ul className="space-y-2">
           {withDrift.map((p) => (
@@ -621,7 +653,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
               {p.drifts.map((d) => (
                 <div key={d.metric} className="mt-1">
                   {d.label}：<span className="font-medium">{pct(d.recent)}</span>
-                  <span className="text-neutral-500">
+                  <span className="text-muted-foreground">
                     ，之前是 {pct(d.baseline)}
                     {/* **样本量必须一起给** —— 没有它，比率是个没法判断
                         可信度的数字 */}
@@ -631,7 +663,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
               ))}
               {/* 数过形状的和总数不同时要说清楚 */}
               {p.recent_inspected < p.recent_total && (
-                <div className="mt-1 text-neutral-500">
+                <div className="mt-1 text-muted-foreground">
                   {p.recent_total} 条里数过形状的有 {p.recent_inspected} 条
                   <Tip text="其余那些发生在入站审查关着的时候 —— 那段时间没有数据，不是数出来是零。">
                     <span className="ml-1 underline decoration-dotted underline-offset-2">差额去哪了</span>
@@ -668,13 +700,12 @@ function Shape({ m }: { m: McpView }) {
 /** 一处发现的详情。**没有删除按钮** —— 删不删由用户自己去改文件。 */
 function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
-      <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="tw-head font-medium">{f.title}</div>
-        <div className="mt-2 space-y-2 tw-body text-neutral-600 dark:text-neutral-400">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{f.title}</DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 space-y-2 tw-body text-muted-foreground">
           <div>{f.detail}</div>
           <div>
             <code>
@@ -684,16 +715,16 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
           {/* 不可见字符已经换成可见记号，否则这一行看起来和正常行一样，
               用户会以为我们在误报 */}
           <pre className="overflow-x-auto rounded bg-neutral-50 p-2 dark:bg-neutral-950">{f.excerpt}</pre>
-          <div className="text-neutral-500">
+          <div className="text-muted-foreground">
             只报告，不改动任何文件。打开上面的路径看过再决定。
           </div>
         </div>
         <div className="mt-4 flex justify-end">
-          <button className="rounded px-3 py-1 tw-body text-neutral-500" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             关闭
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

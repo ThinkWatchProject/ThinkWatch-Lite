@@ -1,4 +1,229 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
+@import "tw-animate-css";
+
+/* **Tailwind v4 把无颜色 `border` 的默认色改成了 `currentColor`。**
+ *
+ * v3 是灰色,v4 是「当前文字色」。于是 `border-r`、表格的 `border-b`
+ * 这些只写宽度不写颜色的类,画出来的是**文字的颜色** —— 深色主题下
+ * 一条亮灰竖线贴在源列表边上,表格的横线也跟着发亮。
+ *
+ * shadcn 的 preset 里有这一段专门把它拨回来,我漏抄了。它必须在这儿,
+ * 不在任何组件里 —— 这是整份文档的默认值。 */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+}
+
+/* shadcn 的组件写的是 `bg-primary` 这样的工具类，而工具类要从
+ * `--color-*` 生成 —— 这一段就是把上面那组语义变量接上去的地方。
+ * 缺了它，组件照样编译、照样渲染，只是**一点样式都没有**：按钮出来
+ * 是一行光秃秃的文字，而 Tailwind 不会报任何错。
+ *
+ * **不要加 `@custom-variant dark (&:is(.dark *))`。**shadcn 默认把
+ * `dark:` 重定义成「祖先有 .dark 类」，而 lite 跟随系统、全 app 没有
+ * 任何地方加这个类 —— 加上去的那一刻，现有两百多处 `dark:` 一起失效，
+ * 暗色模式整个消失。Tailwind 默认的 `dark:` 就是 prefers-color-scheme，
+ * 正是 lite 要的，所以这里什么都不用做。
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-cache-hit: var(--cache-hit);
+  --color-cache-plain: var(--cache-plain);
+  --color-cache-write: var(--cache-write);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* **字号也是 token。**shadcn 的组件写的是 `text-sm` / `text-xs`，
+   * 而 lite 的字阶只有四级（tw-title 15 / tw-head 13 / tw-body 13 /
+   * tw-label 11）。不绑的话组件会带进 Tailwind 默认的 14px 和 12px ——
+   * 两个字阶里没有的字号，一页上于是有六种大小，层级就散了。
+   * 绑上之后 `text-sm` 就是 tw-body，`text-xs` 就是 tw-label，
+   * 组件不用改一个字。`copy.test.ts` 会检查这两行还在。 */
+  /* **行高写的是比值,不是 `calc(行高rem / 字号rem)`。**Tailwind 自带的
+   * 值是后一种写法(`calc(1.25 / 0.875)`),照着套很容易把比值填进分子 ——
+   * 我就填错过一次:13px 的行高变成 24px,全应用每一行都胖了 4.5px,而
+   * 没有任何一处看起来是错的,只是"有点丑"。 */
+  --text-xs: 0.6875rem; /* 11px = tw-label */
+  --text-xs--line-height: 1.45; /* 和 tw-label 同一个数 */
+  --text-sm: 0.8125rem; /* 13px = tw-body */
+  /* Input 写的是 `text-base md:text-sm` —— 那是移动端防 iOS 自动放大的
+   * 写法。桌面窗口用不上，但窗口拖窄到 768px 以下时 `text-base` 会生效，
+   * 不绑就是 16px。绑成同一个 13px，两边都落在字阶上。 */
+  --text-base: 0.8125rem;
+  --text-sm--line-height: 1.5; /* 和 tw-body 同一个数 */
+  --text-base--line-height: 1.5;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ─────────────────────────────────────────────────────── shadcn 主题层
+ *
+ * shadcn 的组件全部读这组语义 token，**所以这里决定了它们长什么样**。
+ * 照搬官方默认值的结果就是企业版控制台那副样子：10px 圆角、14px 正文、
+ * 卡片投影 —— 放进一个 1100px 的桌面窗口里一眼就是网页。
+ *
+ * 所以这里不是抄默认值，是把 token 映到 **lite 已经在用的那套度量**。
+ * 好消息是两边本来就重了一半：`muted-foreground` 正好是 neutral-500
+ * （全 app 用了 185 次），`primary` 正好是 neutral-900（主按钮用的就
+ * 是它）。剩下的按实测对齐：
+ *
+ * · `--radius` 取 8px。shadcn 的梯级是 sm/md/lg/xl = 0.6/0.8/1/1.4 倍，
+ *   于是 md≈6.4px、lg=8px —— 和 Tailwind 默认的 6/8 几乎一样，而 lite
+ *   现有的 51 个 `rounded-md`、21 个 `rounded-lg` 就是按那个画的。
+ *   **取官方的 10px 会让全 app 的圆角一起变胖。**
+ * · `--border` 是表格线（neutral-200/800，43 处），`--input` 是控件边
+ *   （neutral-300/700，68 处）—— shadcn 把这两个分开正是为这个。
+ * · `--background` 跟 `--chrome-ground`：内容区直接坐在窗口底色上，
+ *   lite 没有独立的内容底，也没有卡片面。所以 `--card` 和它同色。
+ *
+ * **暗色写在 `prefers-color-scheme` 里，不是 `.dark` 类。**shadcn 默认
+ * 用类切换，那要一段在首次绘制前跑的内联脚本；lite 是跟随系统的，
+ * 没有切换器就不需要那段脚本（文件开头那条注释说的就是这件事）。
+ */
+:root {
+  --background: var(--chrome-ground);
+  --foreground: oklch(20.5% 0 none); /* neutral-900 */
+  --card: var(--chrome-ground);
+  --card-foreground: oklch(20.5% 0 none);
+  --popover: oklch(100% 0 none);
+  --popover-foreground: oklch(20.5% 0 none);
+  --primary: oklch(20.5% 0 none); /* neutral-900：主按钮 */
+  --primary-foreground: oklch(98.5% 0 none);
+  --secondary: oklch(97% 0 none); /* neutral-100 */
+  --secondary-foreground: oklch(20.5% 0 none);
+  --muted: oklch(97% 0 none);
+  --muted-foreground: oklch(55.6% 0 none); /* neutral-500：次要文字 */
+  --accent: oklch(97% 0 none);
+  --accent-foreground: oklch(20.5% 0 none);
+  --destructive: oklch(57.7% 0.245 27.325);
+  /* **红之外还需要一档黄。**这个应用里「要花钱了」「配置要变了」「网关
+   * 暴露在网络上了」和「失败了」是两件事,而 shadcn 只给了 destructive。
+   * amber-600 / amber-200，和原来那批手写横幅用的是同一支。 */
+  --warning: oklch(66.6% 0.179 58.318);
+  --warning-foreground: oklch(41.4% 0.112 45.904);
+  /* 「在转」「健康」「已生效」—— 这一档全 app 一直用 emerald 在说 */
+  --success: oklch(59.6% 0.145 163.225);
+  --success-foreground: oklch(43.2% 0.095 166.913);
+  --border: oklch(92.2% 0 none); /* neutral-200：表格线 */
+  --input: oklch(87% 0 none); /* neutral-300：控件边 */
+  --ring: oklch(55.6% 0 none);
+  --radius: 0.5rem;
+  /* **图表的五档是一条蓝色渐变，不是五个灰。**
+   *
+   * shadcn 的中性主题把这五个 token 全给了灰（chroma 全是 0），而概览
+   * 上唯一有颜色的东西就是图 —— 于是整页看着灰扑扑的。
+   *
+   * 用同一个色相的深浅、而不是五个不相干的颜色，是因为它们画的是**一个
+   * 量的组成部分**（这段时间的钱，按模型分）。五个撞色会让人以为它们
+   * 是五类不同的东西。深的在上、浅的在下：贵的模型视觉上也重。
+   *
+   * 红和琥珀不在这条渐变里 —— 那两个颜色整页只留给「出事了」。 */
+  --chart-1: oklch(0.52 0.12 258);
+  --chart-2: oklch(0.63 0.095 253);
+  --chart-3: oklch(0.72 0.07 249);
+  --chart-4: oklch(0.8 0.05 246);
+  --chart-5: oklch(0.86 0.032 243);
+  /* 缓存构成条的三段。**排列依据是计费单价，不是类别**：命中 0.1 倍、
+   * 新输入 1 倍、写入 1.25 倍 —— 亮的那一段越长越省。写入用一档收敛的
+   * 琥珀（不是告警用的 `--warning`）：它是唯一会抬高总支出的部分。 */
+  --cache-hit: oklch(0.62 0.115 174);
+  --cache-plain: oklch(0.68 0 none);
+  --cache-write: oklch(0.68 0.1 74);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: oklch(97% 0 none); /* neutral-100 */
+    --card-foreground: oklch(97% 0 none);
+    --popover: oklch(20.5% 0 none);
+    --popover-foreground: oklch(97% 0 none);
+    --primary: oklch(97% 0 none);
+    --primary-foreground: oklch(20.5% 0 none);
+    --secondary: oklch(26.9% 0 none); /* neutral-800 */
+    --secondary-foreground: oklch(97% 0 none);
+    --muted: oklch(26.9% 0 none);
+    /* neutral-400，不是浅色那边的 500：全 app 写的就是
+       `text-neutral-500 dark:text-neutral-400`，深底上要提一档才读得清。
+       shadcn 自己的暗色默认值也是这个。 */
+    --muted-foreground: oklch(70.8% 0 none);
+    --accent: oklch(26.9% 0 none);
+    --accent-foreground: oklch(97% 0 none);
+    --destructive: oklch(70.4% 0.191 22.216);
+    --warning: oklch(82.8% 0.189 84.429);
+    --warning-foreground: oklch(92.4% 0.12 95.746);
+    --success: oklch(76.5% 0.177 163.223);
+    --success-foreground: oklch(90.5% 0.093 164.15);
+    --border: oklch(26.9% 0 none); /* neutral-800 */
+    --input: oklch(37.1% 0 none); /* neutral-700 */
+    --ring: oklch(55.6% 0 none);
+    /* 深底上整条渐变要往亮里挪一档，否则最下面那层黑得像阴影 */
+    --chart-1: oklch(0.82 0.1 262);
+    --chart-2: oklch(0.65 0.09 256);
+    --chart-3: oklch(0.51 0.065 251);
+    --chart-4: oklch(0.42 0.045 247);
+    --chart-5: oklch(0.35 0.03 244);
+    --cache-hit: oklch(0.76 0.12 174);
+    --cache-plain: oklch(0.63 0 none);
+    --cache-write: oklch(0.72 0.1 74);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+  }
+}
 
 /* 主题在首次绘制之前定好，否则会闪一下白。
    这里直接跟随系统，没有切换器就不需要那段内联脚本。 */
@@ -55,65 +280,6 @@
   color: AccentColor;
 }
 
-/* --------------------------------------------------------------- 勾选框
- *
- * **原生的那个太小。**WKWebView 按 AppKit 的规格画,约 13px —— 放在
- * 13px 正文旁边,它比一个字还小,点起来要瞄。这里统一到 16px,和源
- * 列表的图标同一格,一眼就看得见、伸手就点得着。
- *
- * **仍然是一个真的 `<input type="checkbox">`。**`appearance: none` 是
- * 在这个 input 自己身上改样子,不是拿 span 假扮一个 —— 键盘、空格键、
- * 点标签文字、`:disabled`、辅助功能全都还是浏览器在管,一行 JS 都不用
- * 写。换成自绘的那一刻,这些就得一样一样补回来,而漏掉哪一样没人会
- * 发现。
- *
- * 勾上之后跟系统强调色走,和选中项同一条纪律。
- */
-:root {
-  --check-line: #c3c8d0; /* 没勾时的边 */
-  --check-ground: #ffffff;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --check-line: #4a515c;
-    --check-ground: rgb(255 255 255 / 6%);
-  }
-}
-@utility tw-check {
-  appearance: none;
-  -webkit-appearance: none;
-  flex: none; /* 在 flex 行里不许被文字压扁 */
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  border: 1px solid var(--check-line);
-  border-radius: 4px;
-  background: var(--check-ground);
-  background-position: center;
-  background-repeat: no-repeat;
-  transition:
-    background-color 100ms ease-out,
-    border-color 100ms ease-out;
-
-  &:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--check-line) 70%, currentColor);
-  }
-  &:checked {
-    border-color: transparent;
-    background-color: #0a84ff;
-    background-color: AccentColor;
-    /* 白勾。描边画的,和 ui/icons.tsx 里那套同一个画法 */
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.2 8.3 6.7 10.8 11.8 5.4' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  }
-  &:disabled {
-    opacity: 0.4;
-  }
-  &:focus-visible {
-    outline: 2px solid #0a84ff;
-    outline: 2px solid AccentColor;
-    outline-offset: 2px;
-  }
-}
 
 body {
   margin: 0;
@@ -140,6 +306,14 @@ body {
  *
  * 数字用等宽：金额和延迟要按位对齐，否则一列数字读起来要重新对焦。
  */
+/* 概览上那个金额。**字阶里唯一一个展示级** —— 它是这一页要回答的那
+ * 个问题的答案，其余都是它的注解。只此一处，多一处就不是展示级了。 */
+@utility tw-display {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
 @utility tw-title {
   font-size: 15px;
   font-weight: 600;

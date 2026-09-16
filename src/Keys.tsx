@@ -1,8 +1,31 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Tip } from "./ui/Tooltip";
-import { Dialog } from "./ui/Dialog";
+import { Tip } from "@/ui/tip";
 import type { Overview, PatchOp } from "./types";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { Badge } from "@/ui/badge";
+import { toast } from "sonner";
+import { patchConfig } from "./patch";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/table";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 
 /**
  * 网关密钥。
@@ -22,12 +45,12 @@ import type { Overview, PatchOp } from "./types";
 /**
  * 这把密钥能看到哪些模型。
  *
- * 三态,而且**第三态是「一个都不给」** —— 一个写成 `[]` 的空列表。
+ * 三态,而且**第三态是「不允许任何模型」** —— 一个写成 `[]` 的空列表。
  * 那不是坏状态,是「临时停掉这个客户端」的正当用法,所以界面上要能
  * 明确选到它,而不是只能通过「删掉最后一条」意外抵达。
  *
- * 三态之间**每个方向都要能走回去**。第一版只有「全部 → 限制」这一
- * 扇单向门:进了限制态就再也回不到全部,因为协议里当时没有「把这个
+ * 三态之间**每个方向都要能走回去**。第一版只有「不限 → 限制」这一
+ * 扇单向门:进了限制态就再也回不到不限,因为协议里当时没有「把这个
  * 键抹掉」的说法。回去的那条路是写 `null` —— 和路由解绑同一个做法。
  */
 function AllowCell({
@@ -45,50 +68,52 @@ function AllowCell({
   if (allow === null) {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="tw-label text-neutral-500">全部</span>
-        <button
+        <span className="tw-label text-muted-foreground">不限</span>
+        <Button
+          variant="ghost"
+          size="xs"
           disabled={busy}
           onClick={() => onPatch([{ op: "clear", path: `/clients/${client}/allow` }])}
-          className="tw-label text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
         >
           限制
-        </button>
+        </Button>
       </div>
     );
   }
   return (
     <div className="flex flex-wrap items-center gap-1">
       {allow.length === 0 && (
-        <span className="rounded bg-amber-100 px-1.5 tw-label text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          一个都不给
-        </span>
+<Badge variant="warning">不允许任何模型</Badge>
       )}
-      <button
+      <Button
+        variant="ghost"
+        size="xs"
         disabled={busy}
         onClick={() =>
           onPatch([{ op: "replace", path: `/clients/${client}/allow`, value: null }])
         }
-        className="tw-label text-neutral-400 hover:text-neutral-700 disabled:opacity-30 dark:hover:text-neutral-200"
       >
-        全部
-      </button>
+        不限
+      </Button>
       {allow.map((m, i) => (
         <span
           key={m}
-          className="flex items-center gap-1 rounded border border-neutral-300 px-1.5 font-mono tw-label dark:border-neutral-700"
+          className="flex items-center gap-1 rounded border border-input px-1.5 font-mono tw-label"
         >
           {m}
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             disabled={busy}
             onClick={() => onPatch([{ op: "remove", path: `/clients/${client}/allow/${i}` }])}
-            className="text-neutral-400 hover:text-red-600 disabled:opacity-30"
             aria-label={`不再允许 ${m}`}
           >
             ×
-          </button>
+          </Button>
         </span>
       ))}
-      <input
+      <Input
+        className="w-24 font-mono"
         value={adding}
         disabled={busy}
         placeholder="glob"
@@ -101,7 +126,6 @@ function AllowCell({
             setAdding("");
           }
         }}
-        className="w-24 rounded border border-neutral-300 bg-transparent px-1 font-mono tw-label outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
     </div>
   );
@@ -116,7 +140,6 @@ export default function Keys({
   configVersion: string | null;
   onChanged: () => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -127,17 +150,16 @@ export default function Keys({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      setErr("还没读到配置版本，稍等一下再试");
+      toast.error("还没读到配置版本，稍等一下再试");
       return false;
     }
     setBusy(tag);
-    setErr(null);
     try {
-      await invoke("patch_config", { ops, baseVersion: configVersion });
+      await patchConfig(ops, configVersion);
       onChanged();
       return true;
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       return false;
     } finally {
       setBusy(null);
@@ -148,7 +170,7 @@ export default function Keys({
     const name = newName.trim();
     if (!name) return;
     if (ov.clients.some((c) => c.name === name)) {
-      setErr(`已经有一把叫「${name}」的密钥了`);
+      toast.error(`已经有一把叫「${name}」的密钥了`);
       return;
     }
     setBusy("new");
@@ -167,7 +189,7 @@ export default function Keys({
         setNewName("");
       }
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setBusy(null);
     }
   }
@@ -178,7 +200,7 @@ export default function Keys({
       const key = await invoke<string>("new_key");
       await patch([{ op: "replace", path: `/clients/${name}/key`, value: key }], name);
     } catch (e) {
-      setErr(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
       setBusy(null);
     }
   }
@@ -187,21 +209,23 @@ export default function Keys({
     <div className="space-y-6 p-5">
       <section>
         <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">网关密钥</h2>
-          <p className="tw-body text-neutral-500">
+          <p className="tw-body text-muted-foreground">
             没有密钥连不上，本机也一样。
           </p>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
             onClick={() => setAdding(true)}
-            className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 tw-body dark:border-neutral-700"
           >
             新建
-          </button>
+          </Button>
         </div>
 
         {adding && (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-300 p-2 dark:border-neutral-700">
-            <input
+          <div className="mt-3 flex items-center gap-2 rounded-md border border-input p-2">
+            <Input
+              className="flex-1"
               autoFocus
               value={newName}
               placeholder="给它起个名字，比如 codex"
@@ -210,49 +234,49 @@ export default function Keys({
                 if (e.key === "Enter") void create();
                 if (e.key === "Escape") setAdding(false);
               }}
-              className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 tw-body outline-none focus:border-neutral-500 dark:border-neutral-700"
             />
-            <button
+            <Button
+              size="sm"
               disabled={busy === "new" || !newName.trim()}
               onClick={() => void create()}
-              className="rounded-md bg-neutral-900 px-2.5 py-1 tw-body text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
             >
               建
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setAdding(false)}
-              className="rounded-md px-2.5 py-1 tw-body text-neutral-500"
             >
               取消
-            </button>
+            </Button>
           </div>
         )}
 
-        <table className="mt-3 w-full tw-body">
-          <thead className="text-left text-neutral-500">
-            <tr className="border-b border-neutral-200 dark:border-neutral-800">
-              <th className="py-1.5 font-medium">名字</th>
-              <th className="font-medium">密钥</th>
-              <th className="font-medium">路由</th>
-              <th className="font-medium">并发上限</th>
-              <th className="font-medium">可见模型</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="mt-3">
+          <TableHeader>
+            <TableRow>
+              <TableHead>名字</TableHead>
+              <TableHead>密钥</TableHead>
+              <TableHead>路由</TableHead>
+              <TableHead>并发上限</TableHead>
+              <TableHead>可见模型</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {ov.clients.map((c) => (
-              <tr
+              <TableRow
                 key={c.name}
-                className="border-b border-neutral-100 dark:border-neutral-900"
               >
-                <td className="py-1.5 font-medium">{c.name}</td>
-                <td className="font-mono text-neutral-500">{c.key}</td>
-                <td>
+                <TableCell className="font-medium">{c.name}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{c.key}</TableCell>
+                <TableCell>
                   {/*
                     不绑就是走默认路由 —— 选项里把它写出来，而不是留一个
                     空白。**空白读起来是「还没配」，而它其实一直在生效。**
                   */}
-                  <select
+                  <NativeSelect
+                    size="sm"
                     value={c.route ?? ""}
                     disabled={busy === c.name}
                     onChange={(e) =>
@@ -261,26 +285,30 @@ export default function Keys({
                           {
                             op: "replace",
                             path: `/clients/${c.name}/route`,
-                            value: e.target.value === "" ? null : e.target.value,
+                            // 原生 option 收空串，「没绑」就是空串本身
+                            value: e.target.value || null,
                           },
                         ],
                         c.name,
                       )
                     }
-                    className="rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 tw-body disabled:opacity-50 dark:border-neutral-700"
                   >
-                    <option value="">默认（{defaultRoute}）</option>
+                    <NativeSelectOption value="">
+                      默认（{defaultRoute}）
+                    </NativeSelectOption>
                     {routes
                       .filter((r) => !r.default)
                       .map((r) => (
-                        <option key={r.name} value={r.name}>
+                        <NativeSelectOption key={r.name} value={r.name}>
                           {r.name}
-                        </option>
+                        </NativeSelectOption>
                       ))}
-                  </select>
-                </td>
-                <td>
-                  <input
+                  </NativeSelect>
+                </TableCell>
+                <TableCell>
+                  <Input
+                    variant="inline"
+                    className="w-16 font-mono"
                     defaultValue={c.max_concurrent ?? ""}
                     placeholder="不限"
                     disabled={busy === c.name}
@@ -288,7 +316,7 @@ export default function Keys({
                       const raw = e.target.value.trim();
                       const v = raw === "" ? null : Number(raw);
                       if (v !== null && (!Number.isFinite(v) || v < 1)) {
-                        setErr("并发上限要是一个 1 以上的整数，或者留空表示不限");
+                        toast.error("并发上限要是一个 1 以上的整数，或者留空表示不限");
                         return;
                       }
                       if ((c.max_concurrent ?? null) === v) return;
@@ -303,12 +331,11 @@ export default function Keys({
                         c.name,
                       );
                     }}
-                    className="w-16 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono tw-body hover:border-neutral-300 focus:border-neutral-500 focus:outline-none dark:hover:border-neutral-700"
                   />
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   {/*
-                    **三态,而且第三态是「一个都不给」。**留空 = 只按方言
+                    **三态,而且第三态是「不允许任何模型」。**留空 = 只按方言
                     过滤;写了 glob = 再按它保留;写一个空列表 = 这把密钥
                     看不到任何模型,也就用不了 —— 那是「临时停掉这个客户端」
                     的正当用法,而不是一个坏状态。
@@ -319,16 +346,17 @@ export default function Keys({
                     busy={busy === c.name}
                     onPatch={(ops) => void patch(ops, c.name)}
                   />
-                </td>
-                <td className="text-right">
+                </TableCell>
+                <TableCell className="text-right">
                   <Tip text="换一把新的。旧的立刻失效 —— 用着它的客户端要重新配。">
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       disabled={busy === c.name}
                       onClick={() => void regenerate(c.name)}
-                      className="rounded px-2 py-0.5 tw-label text-neutral-500 hover:text-neutral-900 disabled:opacity-40 dark:hover:text-neutral-100"
                     >
                       换密钥
-                    </button>
+                    </Button>
                   </Tip>
                   {/*
                     **最后一把不给删。**删光之后谁也连不上，而且配置会
@@ -342,50 +370,48 @@ export default function Keys({
                         : "删掉它。用着它的客户端立刻连不上。"
                     }
                   >
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="xs"
                       disabled={busy === c.name || ov.clients.length <= 1}
                       onClick={() => setConfirmDelete(c.name)}
-                      className="rounded px-2 py-0.5 tw-label text-red-600 hover:underline disabled:opacity-30 dark:text-red-400"
                     >
                       删除
-                    </button>
+                    </Button>
                   </Tip>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
 
-        {err && <p className="mt-2 tw-body text-red-600 dark:text-red-400">{err}</p>}
-      </section>
+              </section>
 
-      <Dialog
+      <AlertDialog
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
-        danger
-        title={`删掉密钥「${confirmDelete}」？`}
-        description="用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。"
-        footer={
-          <>
-            <button
-              onClick={() => setConfirmDelete(null)}
-              className="rounded-md border border-neutral-300 px-3 py-1 tw-body dark:border-neutral-700"
-            >
-              取消
-            </button>
-            <button
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>删掉密钥「{confirmDelete}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive"
               onClick={() => {
                 const name = confirmDelete;
                 setConfirmDelete(null);
                 if (name) void patch([{ op: "remove", path: `/clients/${name}` }], name);
               }}
-              className="rounded-md bg-red-600 px-3 py-1 tw-body text-white"
             >
               删除
-            </button>
-          </>
-        }
-      />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

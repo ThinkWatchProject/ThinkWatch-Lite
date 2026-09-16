@@ -6,3 +6,12 @@ src-tauri/gen
 
 # tsc -b 的增量缓存
 *.tsbuildinfo
+
+# 装进来的 agent skill 正文。
+#
+# **只留 skills-lock.json，不留内容。**那是 328K 第三方文本、没带
+# LICENSE，而这是个 MIT 的公开仓库。锁文件里有来源和哈希，谁都能用
+# `pnpm dlx skills add shadcn/ui` 取回一模一样的一份 —— 和
+# node_modules 与 pnpm-lock.yaml 是同一个分工。
+.agents/
+.claude/

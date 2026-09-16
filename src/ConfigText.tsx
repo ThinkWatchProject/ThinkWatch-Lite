@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import YamlEditor from "./YamlEditor";
 import type { ConfigAt, ConfigText as Doc } from "./types";
+import { Button } from "@/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 
 /**
  * 文本模式：直接改 config.yaml。
@@ -37,7 +41,6 @@ export default function ConfigTextMode({
 }) {
   const [draft, setDraft] = useState(doc.text);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /** 打开这一版时文件是什么样。**保存时带的就是它** */
   const base = useRef(doc.version);
   const dirty = draft !== doc.text;
@@ -48,7 +51,6 @@ export default function ConfigTextMode({
     if (!dirty) {
       setDraft(doc.text);
       base.current = doc.version;
-      setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.version]);
@@ -110,14 +112,13 @@ export default function ConfigTextMode({
 
   async function save() {
     setBusy(true);
-    setError(null);
     try {
       // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("put_config", { text: draft, baseVersion: base.current });
       base.current = "";
       onSaved();
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      toast.error(typeof e === "string" ? e : String(e));
     } finally {
       setBusy(false);
     }
@@ -128,34 +129,35 @@ export default function ConfigTextMode({
       {/* 文件在你编辑期间被改过了。**给选择，不替他做决定** ——
           两边都是真实的改动，只有他知道哪个该留 */}
       {stale && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
-            这个文件在你编辑期间被改过了。
-          </p>
+        <Alert variant="warning" className="px-3 py-2">
+          <AlertTitle>文件已被其他进程修改</AlertTitle>
+          <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
             现在保存会覆盖掉外面那次改动。
           </p>
           <div className="mt-2 flex gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setDraft(doc.text);
                 base.current = doc.version;
-                setError(null);
               }}
-              className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
               丢掉放弃本地改动，用文件里的
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 base.current = doc.version;
               }}
-              className="rounded border border-amber-400 px-2 py-1 text-amber-900 dark:border-amber-700 dark:text-amber-200"
             >
               保留本地改动，覆盖文件
-            </button>
+            </Button>
           </div>
-        </div>
+        </AlertDescription>
+        </Alert>
       )}
 
       <YamlEditor
@@ -172,28 +174,31 @@ export default function ConfigTextMode({
         另一种视图」这个心智，而不是两个割裂的东西。
       */}
       {at?.name && (
-        <p className="tw-body text-neutral-500">
+        <p className="tw-body text-muted-foreground">
           光标在 <span className="font-medium text-neutral-700 dark:text-neutral-300">{at.name}</span>
           {at.section ? `（${at.section}）` : ""} 这一段里
           {onJumpToForm && (
-            <button
+            <Button
+              variant="link"
+              size="xs"
+              className="ml-1"
               onClick={() => onJumpToForm(at.name!)}
-              className="ml-1 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100"
             >
               在表单里看
-            </button>
+            </Button>
           )}
         </p>
       )}
 
       <div className="flex items-center gap-3 tw-body">
-        <button
+        <Button
+          size="sm"
           onClick={save}
           disabled={busy || !dirty}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
         >
-          {busy ? "保存中…" : "保存"}
-        </button>
+          {busy && <Spinner />}
+              保存
+        </Button>
         {dirty && !busy && <span className="text-amber-600 dark:text-amber-400">有未保存的改动</span>}
         <span className="ml-auto font-mono text-neutral-400">{doc.version}</span>
         <span className="text-neutral-400">{doc.path}</span>
@@ -201,11 +206,7 @@ export default function ConfigTextMode({
 
       {/* 保存失败最常见的两种：写错了（语法/字段/语义），和有人抢先改了。
           两者的下一步完全不同，所以原样把 core 那句话显示出来 */}
-      {error && (
-        <pre className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 tw-body text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          {error}
-        </pre>
-      )}
+      
     </div>
   );
 }

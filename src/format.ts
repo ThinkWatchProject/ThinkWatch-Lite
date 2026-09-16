@@ -4,25 +4,7 @@
  * 抽出来是因为这几条都有「边界看起来对、其实不对」的地方，而它们错了
  * 不会报错，只会让一列数字读起来是错的。
  */
-
-/**
- * 相对时间。
- *
- * 列表里要的是「刚才那条」而不是一个绝对时间戳 —— 排查时的定位方式是
- * 「我刚发的那次」。绝对时间留给悬停。
- *
- * **不做「刚刚」这种模糊档**：两条相差 3 秒的记录都显示「刚刚」，就没法
- * 按时间对上号了，而这一列存在的全部意义就是对号。
- */
-export function ago(atMs: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - atMs) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
+import { usd } from "./types";
 
 /**
  * 首字节和总耗时合成一列。
@@ -44,16 +26,56 @@ export function latency(
 }
 
 /**
- * 字节数。
+ * 列表里的绝对时间。
  *
- * 四位数以上换 KB —— 一列 `1486` 和 `85` 混排时，位数差本身会被误读成
- * 数量级差。
+ * **相对时间在这一列会塌掉。**开着窗口看实时流量时「3s / 1m」是有用的，
+ * 而打开应用看昨天那次时，整列二十五行全是 `1d` —— 一个所有行都相同的
+ * 值不携带任何信息，而这一列存在的意义就是把某一行对上号。
+ *
+ * 今天的记录给到秒（同一分钟内的几次请求要能分开），更早的给到分并带上
+ * 日期。完整时间戳留给悬停。
  */
-export function bytes(n: number | undefined): string {
-  if (n == null) return "—";
-  if (n < 1024) return String(n);
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}K`;
-  return `${(n / 1024 / 1024).toFixed(1)}M`;
+export function when(atMs: number, now = Date.now()): string {
+  const t = new Date(atMs);
+  const p = (n: number) => String(n).padStart(2, "0");
+  const today = new Date(now);
+  const sameDay =
+    t.getFullYear() === today.getFullYear() &&
+    t.getMonth() === today.getMonth() &&
+    t.getDate() === today.getDate();
+  if (sameDay) return `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
+  return `${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+}
+
+/**
+ * 一个大数收成三四位。
+ *
+ * 四位数以上换 k：一列 `128000` 和 `463` 混排时，位数差本身会被误读成
+ * 数量级差。而一个逗号分隔的 `514,567` 读起来是账本上的条目，不是一个
+ * 能一眼掂量的量 —— 精确值留给悬停。
+ */
+export function compact(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * 输入与输出 token。
+ *
+ * 合成一列，因为读的时候要的是两者的**比例**：输入远大于输出 = 上下文
+ * 在变贵；输出远大于输入 = 在长篇生成。分成两列反而要来回扫。
+ *
+ * **上游没报用量就是没有，不是零。**还在跑的行同理 —— 显示 0 会让它在
+ * 排序和求和里冒充一个测量结果。
+ */
+export function tokens(
+  input: number | undefined,
+  output: number | undefined,
+): string {
+  if (input == null || output == null) return "—";
+  return `${compact(input)}→${compact(output)}`;
 }
 
 /**
@@ -70,6 +92,23 @@ export function repeated<T>(rows: T[], i: number, get: (r: T) => string): boolea
   const cur = rows[i];
   if (i <= 0 || prev === undefined || cur === undefined) return false;
   return get(prev) === get(cur);
+}
+
+/**
+ * 这一行花了多少。
+ *
+ * **估算值必须带记号。**一个 `$0.018` 和一个按输入长度猜出来的
+ * `$0.018` 在列表里长得一模一样，而后者不该被当成账单上的数。
+ *
+ * 算不出来的显示「—」：订阅制上游的边际成本不在这个维度上，价目表里
+ * 没有的模型也是 —— 两种都不是「零」。
+ */
+export function money(
+  micros: number | undefined,
+  estimated: boolean | undefined,
+): string {
+  if (micros == null) return "—";
+  return (estimated ? "~" : "") + usd(micros);
 }
 
 /** 状态码的语义分档。**眼睛要能一眼扫到那个 5xx。** */
@@ -93,6 +132,29 @@ export interface CostBucket {
   cost_micros_exact: number;
   cost_micros_estimated: number;
   unpriced_requests: number;
+}
+
+/**
+ * 把一个时刻落到它所在那一格的开头。
+ *
+ * **时间窗必须对齐到格子，不能是「现在往前推 24 小时」。**后者每刷新
+ * 一次就往前挪一点，于是每一格的边界跟着挪：一条固定时间的记录会在两格
+ * 之间来回滑，柱子的高低随之变化 —— 而那是「你什么时候看」造成的，
+ * 不是数据变了。对齐之后，同一个小时里读到的是同一张图。
+ *
+ * **对齐到本地日历，不是对齐到纪元。**一天一格时，纪元对齐的「一天」是
+ * UTC 零点到零点，而格子上写的是本地日期 —— 两者差着时区那几个小时。
+ * 半小时偏移的时区里连整点都对不上。
+ */
+export function bucketStart(atMs: number, bucketMs: number): number {
+  const d = new Date(atMs);
+  if (bucketMs >= 24 * 3_600_000) {
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  const hours = Math.max(1, Math.round(bucketMs / 3_600_000));
+  d.setHours(Math.floor(d.getHours() / hours) * hours, 0, 0, 0);
+  return d.getTime();
 }
 
 /**
