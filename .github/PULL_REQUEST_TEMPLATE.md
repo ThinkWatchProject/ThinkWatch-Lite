@@ -5,9 +5,9 @@ GitHub pre-fills the base with this repo's default branch (`main`), the
 release line. Use the "Edit" button next to the title to switch the base
 to `dev`; with the CLI, pass `--base dev`.
 
-Before writing: this app is macOS-only and deliberately not distributed
-as a build. Gateway behavior (routing, forwarding, cost, redaction)
-lives in ThinkWatch Core, not here. See CONTRIBUTING.md.
+Before writing: this app ships as an unsigned arm64 build and nothing
+else. Gateway behavior (routing, forwarding, cost, redaction) lives in
+ThinkWatch Core, not here. See CONTRIBUTING.md.
 -->
 
 ## What this changes

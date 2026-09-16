@@ -13,10 +13,23 @@
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) and puts
 its config, its traffic, and what it costs you in front of you.
 
-**macOS first, and not distributed as a build.** Other platforms come once the
-macOS version is done. There is no signed `.app`, no
-installer, and no release page — run it from source. That is a deliberate scope
-decision, not a gap waiting to be filled.
+**macOS on Apple Silicon.** Other platforms come once the macOS version is done.
+
+## Install
+
+Download `ThinkWatch-Lite-<version>-arm64.zip` from the
+[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases),
+unzip it, and move `ThinkWatch Lite.app` into `/Applications`. The gateway ships
+inside the app — there is nothing else to install.
+
+The build is **not signed by a registered Apple developer**, so macOS puts it in
+quarantine and refuses to open it. Clear that attribute once:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
+```
+
+Or run it from source:
 
 ```bash
 pnpm install

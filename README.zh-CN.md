@@ -13,8 +13,22 @@
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)，
 把它的配置、流量和花费摆到你眼前。
 
-**先做 macOS，不分发构建产物。** 其他系统等 macOS 版做完再适配。没有签名的 `.app`，没有安装包，没有
-release 页面 —— 从源码跑。这是一个明确的范围决定，不是一个待填的坑。
+**先做 macOS，Apple Silicon。** 其他系统等 macOS 版做完再适配。
+
+## 安装
+
+从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+下载 `ThinkWatch-Lite-<版本>-arm64.zip`，解压，把 `ThinkWatch Lite.app` 拖进
+`/Applications`。网关在包里，没有第二样东西要装。
+
+这个包**没有经过 Apple 注册开发者签名**，macOS 会把它标记为隔离并拒绝打开。
+去掉这个属性，一次就够：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
+```
+
+也可以从源码跑：
 
 ```bash
 pnpm install

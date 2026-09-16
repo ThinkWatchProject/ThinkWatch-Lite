@@ -20,8 +20,13 @@ Two decisions are settled and not up for a PR:
   done, so PRs adding them won't be merged yet. The menu
   bar is rendered as a macOS bitmap, the client-detection paths are
   macOS paths, and the supervisor talks to launchd.
-- **Not distributed as a build.** No signed `.app`, no installer, no
-  release workflow, no auto-update. Run it from source.
+- **Apple Silicon only, and unsigned.** The release pipeline produces one
+  artifact: an arm64 `.app` in a zip, ad-hoc signed, with the gateway inside
+  it. A universal binary for Intel and a Developer ID signature are both
+  ongoing costs nobody has taken on — so a PR that adds the notarization step
+  without the account behind it can't be merged, and neither can one that
+  makes the build fall back to whatever architecture the machine happens to
+  be, which ships a file some users can download and cannot open.
 
 The gateway itself — routing, forwarding, cost accounting, redaction —
 lives in [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core).

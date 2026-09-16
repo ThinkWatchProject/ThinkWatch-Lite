@@ -1,0 +1,121 @@
+# 发一版桌面端。
+#
+# **产出一个文件，不是一堆步骤。**`ThinkWatch-Lite-<版本>-arm64.zip`
+# 加一份 sha256 —— Homebrew 的 cask 直接吃这两个，用户手工下载也是
+# 这两个。
+#
+# 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
+# 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出 `.app` 并且
+# 在发出去之前拆开看一眼。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  app:
+    name: ThinkWatch Lite (aarch64-apple-darwin)
+    # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
+    # 拿到的是一个能下载但打不开的文件，那比没有更糟。
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 先对版本号。**放在构建前面**，因为它是这条流水线里唯一一个
+      # 「发现了也没法在本次补救」的问题 —— tag 一旦推上去就得撤回。
+      # 二十秒发现，好过二十分钟之后。
+      - name: The tag is the version in the tree
+        run: |
+          set -euo pipefail
+          GOT=$(bash scripts/version.sh)
+          WANT="${GITHUB_REF_NAME#v}"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
+            exit 1
+          fi
+          echo "VERSION=$GOT" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--target` 写出来，产物路径才是定死的。不写的话它跟着 runner
+      # 的架构走，哪天 runner 换了，后面每一行路径都得跟着猜。
+      # 打包前 `beforeBundleCommand` 会把 twcore 取回来并核对校验和。
+      - name: Build
+        run: pnpm tauri build --target aarch64-apple-darwin
+
+      # **拆开看一眼再发。**一个缺了网关的 .app 从文件大小上看不出
+      # 任何问题 —— 它照样启动，照样出界面，然后停在连接页上。那个 bug
+      # 之前真的被造出来过。
+      - name: Look inside before shipping it
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app"
+          test -d "$APP"
+          file "$APP/Contents/MacOS/thinkwatch-lite" | grep -q arm64
+          # 签名是**临时签名**（`signingIdentity: "-"`），不是 Developer
+          # ID —— Gatekeeper 照样会拦，那道拦要靠去掉隔离属性来过。
+          #
+          # 那它还验什么：验这个 `.app` 是一个**结构完整**的包。没有这
+          # 一步的话，包里没有 `_CodeSignature`，而 macOS 对一个封不上
+          # 的包报的是「已损坏」—— 和「开发者身份未知」是两码事，后者
+          # 用户能绕过去，前者不能。
+          codesign --verify --deep --strict "$APP"
+          CORE="$APP/Contents/Resources/twcore"
+          test -x "$CORE"
+          file "$CORE" | grep -q arm64
+          echo "包里的网关：$("$CORE" --version)"
+          PLIST=$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")
+          if [ "$PLIST" != "$VERSION" ]; then
+            echo "Info.plist 里是 $PLIST，而 tag 是 $VERSION" >&2
+            exit 1
+          fi
+
+      # `ditto` 而不是 `zip`。**`.app` 是一棵带符号链接和扩展属性的
+      # 树**，`zip` 会把它压平成一个打不开的目录。`--keepParent` 让解
+      # 出来的还是 `ThinkWatch Lite.app` 本身，而不是它的内容散一地。
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ZIP="dist/ThinkWatch-Lite-$VERSION-arm64.zip"
+          ditto -c -k --keepParent \
+            "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app" \
+            "$ZIP"
+          ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
+          cat "$ZIP.sha256"
+
+      # 解出来再验一次。**压缩这一步本身就可能是那个出错的环节** ——
+      # 而它出错的样子恰恰是「zip 下得下来、双击打不开」。
+      - name: It survives the round trip
+        run: |
+          set -euo pipefail
+          OUT=$(mktemp -d)
+          ditto -x -k "dist/ThinkWatch-Lite-$VERSION-arm64.zip" "$OUT"
+          test -x "$OUT/ThinkWatch Lite.app/Contents/MacOS/thinkwatch-lite"
+          test -x "$OUT/ThinkWatch Lite.app/Contents/Resources/twcore"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ThinkWatch-Lite-*-arm64.zip
+            dist/ThinkWatch-Lite-*-arm64.zip.sha256
+          generate_release_notes: true
