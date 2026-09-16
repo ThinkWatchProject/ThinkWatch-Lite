@@ -13,16 +13,17 @@ import {
 const MAX_ROWS = 500;
 
 /**
- * 一次请求跑完之后，隔多久回库里对一次账。
+ * 一批请求落地之后，隔多久告诉别人「库里可以重算了」。
  *
- * **价钱不在事件流里。**它是存储层落库时按价目表算的，算在事件之后 ——
- * 所以刚跑完的那一行，金额那一列必然是空的。不对账的话它一直空到下次
- * 开窗，而一个永远空着的金额列等于没有这一列。
+ * **这不是回库取数，只是一个信号。**概览那一页算的是聚合（按模型分层、
+ * 分位延迟、缓存命中率），那些只有 SQL 算得出来，而它们的输入是刚写
+ * 进去的那几行 —— 写入是异步的，请求结束的那一刻还查不到。
  *
- * 2.5 秒是「落库已经完成」和「人还盯着刚才那一行」之间的那段。它是
- * **节流不是防抖**：排上之后到期就对，这中间落地多少条都只对这一次。
+ * **节流不是防抖**：排上之后到期就发，这中间落地多少条都只发这一次。
+ * 往后推的话，一串不断的请求会让信号永远排不上号，而那正是最该重算的
+ * 时候。
  */
-const RECONCILE_MS = 2_500;
+const SETTLE_MS = 2_500;
 
 /**
  * 实时请求列表。
@@ -104,6 +105,14 @@ export function useRequests() {
    * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
    */
   const [settled, setSettled] = useState(0);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * 「库里可以重算了」发生过几次。
+   *
+   * 概览那一页的聚合（按模型分层、分位延迟、命中率）只有 SQL 算得出
+   * 来，而写入是异步的 —— 请求结束那一刻还查不到。这个计数每涨一次，
+   * 就意味着「刚落地的那几行已经在库里了」。
+   */
   /**
    * 「现在什么情况」变了几次。
    *
@@ -112,16 +121,16 @@ export function useRequests() {
    * 不再每两秒问一次同样的问题。
    */
   const [health, setHealth] = useState(0);
-  const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   /**
    * 从库里读一遍最近的记录，并进当前列表。
    *
-   * 两处用它：开窗时把列表填上，以及每批请求跑完之后对一次账。
+   * **只在开窗时用一次。**在此之前它还兼着「回库把价钱取回来」——
+   * 因为价钱不在事件流里。core 现在会报 `request_priced`，那条路没了。
    *
    * **只补，不覆盖。**实时那一行更全 —— 脱敏、方言互转、可疑工具调用
-   * 都只在事件里有，库里没有。而库里独有的是价钱。两边各自是对方的
-   * 补集，所以合并的方向必须是「历史只添信息」。
+   * 都只在事件里有，库里没有。合并的方向必须是「历史只添信息」。
    */
   const pull = useCallback(async () => {
     // Tauri 的 invoke 用字符串 reject，不是 Error
@@ -158,7 +167,6 @@ export function useRequests() {
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-    setSettled((n) => n + 1);
   }, []);
 
   // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
@@ -214,16 +222,12 @@ export function useRequests() {
         }
       }
       setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-      // 跑完就回库里把价钱取回来。**已经排上的不再往后推** —— 往后推
-      // 的话，一串不断的请求会让对账永远排不上号，而那正是最想看见
-      // 金额的时候。排上之后到期就对，中间再落地多少条也只对这一次。
-      if (landed && !reconcile.current) {
-        reconcile.current = setTimeout(() => {
-          reconcile.current = null;
-          void pull().catch(() => {
-            /* 对账失败就维持现状：金额那一列留着「—」，不是错的数 */
-          });
-        }, RECONCILE_MS);
+      // 落地一批就发一次「可以重算聚合了」。**已经排上的不再往后推**
+      if (landed && !settle.current) {
+        settle.current = setTimeout(() => {
+          settle.current = null;
+          setSettled((n) => n + 1);
+        }, SETTLE_MS);
       }
     };
 
@@ -241,7 +245,7 @@ export function useRequests() {
     return () => {
       un.then((f) => f());
       if (frame.current !== null) cancelAnimationFrame(frame.current);
-      if (reconcile.current) clearTimeout(reconcile.current);
+      if (settle.current) clearTimeout(settle.current);
     };
   }, [pull]);
 

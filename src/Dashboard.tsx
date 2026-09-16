@@ -312,27 +312,19 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   );
 
   /**
-   * 图按什么口径画。
-   *
-   * **实时档下「花费」是禁用，不是隐藏。**隐藏会让这一行变宽变窄，
-   * 而这一轮要修的恰恰是「切一下位置就变」。
+   * 图按什么口径画。**两档都在实时下可用** —— core 会在算完价钱之后
+   * 补一条 `request_priced`，所以金额也是推过来的，只比用量晚一拍。
    */
   const metric = (
     <ToggleGroup
       type="single"
       variant="outline"
       size="sm"
-      value={live ? "token" : by}
+      value={by}
       onValueChange={(v) => v && setBy(v as "token" | "cost")}
     >
       <ToggleGroupItem value="token">token</ToggleGroupItem>
-      <ToggleGroupItem
-        value="cost"
-        disabled={live}
-        title={live ? "实时档只统计 token：金额要等请求落库、按价目表算过才有" : undefined}
-      >
-        花费
-      </ToggleGroupItem>
+      <ToggleGroupItem value="cost">花费</ToggleGroupItem>
     </ToggleGroup>
   );
 
@@ -396,8 +388,13 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   if (live) {
     for (const x of samples) {
       volume.set(x.model, (volume.get(x.model) ?? 0) + x.tokens);
+      money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
-      add(Math.floor(x.at / LIVE_BUCKET_MS) * LIVE_BUCKET_MS, x.model, x.tokens);
+      add(
+        Math.floor(x.at / LIVE_BUCKET_MS) * LIVE_BUCKET_MS,
+        x.model,
+        by === "token" ? x.tokens : (x.cost ?? 0),
+      );
     }
   } else {
     for (const b of d.buckets_by_model ?? []) {
@@ -410,7 +407,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       add(b.at_ms, name, by === "token" ? tok : cost);
     }
   }
-  const useTokens = by === "token" || live;
+  const useTokens = by === "token";
   // 排行按当前口径排 —— 切到 token 之后，最贵的那个未必是用得最多的
   const ranked = [...(useTokens ? volume : money).entries()].sort((a, b) => b[1] - a[1]);
   const top = ranked.slice(0, 5).map(([name]) => name);
@@ -466,7 +463,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     const sum = [...(slot?.values() ?? [])].reduce((a, v) => a + v, 0);
     const row: Record<string, number | string> = {
       label: live
-        ? `${fmtBucket(g.at_ms, bucketMs)}　${compact(sum)} token`
+        ? `${fmtBucket(g.at_ms, bucketMs)}　${useTokens ? `${compact(sum)} token` : usd(sum)}`
         : `${fmtBucket(g.at_ms, bucketMs)}　${
             useTokens
               ? `${compact(sum)} token`
@@ -628,7 +625,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       </div>
 
       <div className="mt-4">
-        <div className="mb-2">{metric}</div>
+        <div className="mb-2 flex justify-end">{metric}</div>
         <StackedArea
           data={area}
           keys={keys}
@@ -664,7 +661,15 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               <span>基线上的红色标出存在失败的时段</span>
             </>
           )}
-          {live && <span>以下各项按最近 24 小时统计</span>}
+          {/*
+            实时档下这一页有两个口径，必须说清哪个是哪个：**模型排行
+            是这张图的图例**（色块要对得上曲线里那一层），所以跟着图
+            走；而两分钟里算不出分位延迟和命中率，那些连同顶部的数字
+            一起按 24 小时算。
+          */}
+          {live && (
+            <span>顶部数字与缓存、延迟、安全按最近 24 小时统计；模型排行跟随上图</span>
+          )}
         </p>
       </div>
 
@@ -725,15 +730,13 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                       {compact(v)}
                     </span>
                   </Tip>
-                  {/* 实时档算不出金额，但这一列要占住 —— 少一列的话，
-                      切进实时整张排行的列宽全变 */}
                   <span
                     className={
                       "w-16 shrink-0 text-right tw-num " +
-                      (!live && by === "cost" ? "font-medium" : "text-muted-foreground")
+                      (by === "cost" ? "font-medium" : "text-muted-foreground")
                     }
                   >
-                    {live ? "—" : usd(c)}
+                    {usd(c)}
                   </span>
                   <span className="w-11 shrink-0 text-right tw-label text-muted-foreground">
                     {n} 次

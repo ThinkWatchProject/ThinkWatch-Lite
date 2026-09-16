@@ -50,6 +50,23 @@ export type CoreEvent =
    * 用户；这条只说「那几个文件变了」，客户端那一页据此重读一遍接管
    * 状态。用户在编辑器里把地址改回原样一点都不可疑，但界面必须跟上。
    */
+  /**
+   * 这次请求花了多少 —— **在它跑完之后一小会儿才知道**。
+   *
+   * 价钱不在数据面的职责里：网关知道用了多少 token，而单价是存储层
+   * 落库时查价目表算出来的。所以它是一条独立事件。
+   *
+   * 三个值都可能是 `null`：上游没报用量、模型不在价目表里、或者那家
+   * 是订阅计费 —— **那都不是零**。
+   */
+  | {
+      kind: "request_priced";
+      id: number;
+      cost_micros?: number | null;
+      cost_estimated?: boolean;
+      cache_saved_micros?: number | null;
+      at_ms: number;
+    }
   | { kind: "clients_changed"; id: number; at_ms: number }
   /**
    * 某家上游的熔断器开了或者合上了。
@@ -245,6 +262,14 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "translated": {
       const r = rows.get(ev.id);
       if (r) r.translated = { from: ev.from, to: ev.to, dropped: ev.dropped };
+      break;
+    }
+    case "request_priced": {
+      const r = rows.get(ev.id);
+      if (r && ev.cost_micros != null) {
+        r.costMicros = ev.cost_micros;
+        r.costEstimated = ev.cost_estimated === true;
+      }
       break;
     }
     case "credential_rotated":

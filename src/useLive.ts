@@ -6,9 +6,12 @@ import type { CoreEvent } from "./types";
 export const LIVE_BUCKET_MS = 1_000;
 
 export interface LiveSample {
+  id: number;
   at: number;
   model: string;
   tokens: number;
+  /** 价钱比用量晚一拍到（`request_priced`）。没到之前是 `undefined` */
+  cost?: number;
 }
 
 /**
@@ -19,8 +22,9 @@ export interface LiveSample {
  * 事件流给得了。每条请求需要的三样东西事件里都有：`request_started`
  * 带模型，`request_finished` 带用量，两者靠 id 对上。
  *
- * **金额不在事件流里**，它是落库时按价目表算的。所以实时档只画 token
- * —— 这不是偷懒，是这一档能诚实画出来的全部。
+ * 金额比用量晚一拍：它是存储层落库时按价目表算的，core 算完会补一条
+ * `request_priced`。所以实时档也画得出花费，只是那一格会在请求结束之后
+ * 的几十毫秒里先长出 token、再长出钱。
  *
  * 那个每秒一次的定时器**不是轮询**：它什么都不查，只是让曲线往左走。
  * 不走的话，一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
@@ -53,12 +57,24 @@ export function useLive(active: boolean, windowMs: number) {
         if (ev.usage) {
           const u = ev.usage;
           samples.current.push({
+            id: ev.id,
             at: Date.now(),
             model: model.current.get(ev.id) ?? "未知模型",
             tokens: u.input + u.output + u.cache_read + u.cache_write,
           });
         }
         model.current.delete(ev.id);
+      } else if (ev.kind === "request_priced") {
+        // 价钱补在那一格原来的位置上，**不是补在「现在」** —— 它说的
+        // 是那次请求花了多少，而那次请求发生在几十毫秒之前。
+        // 倒着找：刚落地的那条几乎总在末尾。
+        for (let i = samples.current.length - 1; i >= 0; i--) {
+          const x = samples.current[i];
+          if (x && x.id === ev.id) {
+            if (ev.cost_micros != null) x.cost = ev.cost_micros;
+            break;
+          }
+        }
       } else if (ev.kind === "request_failed") {
         flying.current.delete(ev.id);
         model.current.delete(ev.id);
