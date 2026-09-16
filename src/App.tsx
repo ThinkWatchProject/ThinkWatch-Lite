@@ -1364,16 +1364,20 @@ export default function App() {
                             ? "bg-amber-500"
                             : tone === "pending"
                               ? "bg-amber-400 animate-pulse"
-                              : "bg-emerald-500/60";
+                              : tone === "muted"
+                                ? "bg-neutral-400"
+                                : "bg-emerald-500/60";
                       return (
                         <span className="flex items-center gap-1.5">
                           <span className={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " + dot} />
-                          <span className={tone === "ok" ? "text-neutral-400" : ""}>
+                          <span className={tone === "ok" || tone === "muted" ? "text-neutral-400" : ""}>
                             {r.state === "in_flight"
                               ? "…"
                               : r.state === "failed"
                                 ? "失败"
-                                : r.status}
+                                : r.state === "cancelled"
+                                  ? "已取消"
+                                  : r.status}
                           </span>
                         </span>
                       );
@@ -1482,7 +1486,15 @@ export default function App() {
                   */}
                   <TableCell className="whitespace-nowrap text-right">
                     {r.costEstimated ? (
-                      <Tip text="上游未返回用量，此金额按请求长度估算。">
+                      // 估算的理由要说对：客户端取消的那些不是「上游没给用量」，
+                      // 而是输出只数到了断开那一刻
+                      <Tip
+                        text={
+                          r.state === "cancelled"
+                            ? "客户端在响应结束前断开，输出用量只计到断开时，实际费用可能更高。"
+                            : "上游未返回用量，此金额按请求长度估算。"
+                        }
+                      >
                         <span className="underline decoration-dotted underline-offset-2">
                           {money(r.costMicros, true)}
                         </span>

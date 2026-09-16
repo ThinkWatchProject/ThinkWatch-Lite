@@ -12,6 +12,20 @@ export type CoreEvent =
   | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
   | { kind: "request_failed"; id: number; source: string; message: string }
   /**
+   * 客户端没等到响应结束就断开了（Claude Code 里按 Esc）。
+   *
+   * **不是失败。**上游那时已经在计费，所以它带着到断开为止的用量，core
+   * 照样落库、照样算钱；但输出只计到断开那一刻，金额一律按估算。
+   */
+  | {
+      kind: "request_cancelled";
+      id: number;
+      status: number;
+      bytes: number;
+      duration_ms: number;
+      usage?: UsageView;
+    }
+  /**
    * 客户端的辅助请求被本地应答了，一个字节都没发给上游。
    *
    * **它不进请求列表。**成本 0、延迟 0 的东西混进请求总数和延迟统计里，
@@ -177,8 +191,13 @@ export interface RequestRow {
   model?: string;
   path: string;
   atMs: number;
-  /** 进行中的行也要立刻画出来 —— 流式请求可能要跑几分钟 */
-  state: "in_flight" | "done" | "failed";
+  /**
+   * 进行中的行也要立刻画出来 —— 流式请求可能要跑几分钟。
+   *
+   * `cancelled` 是客户端先断开的那些：**不算失败**，用量和金额只到断开
+   * 那一刻。
+   */
+  state: "in_flight" | "done" | "failed" | "cancelled";
   status?: number;
   ttfbMs?: number;
   durationMs?: number;
@@ -233,6 +252,22 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.status = ev.status;
         r.bytes = ev.bytes;
         r.durationMs = ev.duration_ms;
+        if (ev.usage) {
+          r.inputTokens = ev.usage.input;
+          r.outputTokens = ev.usage.output;
+        }
+      }
+      break;
+    }
+    case "request_cancelled": {
+      const r = rows.get(ev.id);
+      if (r) {
+        r.state = "cancelled";
+        r.status = ev.status;
+        r.bytes = ev.bytes;
+        r.durationMs = ev.duration_ms;
+        // 用量停在断开那一刻。**没有就不填** —— 客户端可能在第一帧之前
+        // 就走了，那时填 0 说的是一件没有发生过的事
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
           r.outputTokens = ev.usage.output;
@@ -419,6 +454,12 @@ export interface HistoryRow {
   cost_estimated: boolean;
   error: string | null;
   local: boolean;
+  /**
+   * 客户端没等到响应结束就断开了。**不是失败**，`error` 为空。
+   *
+   * 可选：旧版本的 core 不给这个字段，那时它等同于 false。
+   */
+  cancelled?: boolean;
   /** 路由决策与尝试链。老记录没有它 */
   routing: RoutingView | null;
   /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
@@ -959,6 +1000,8 @@ export interface TurnView {
   cost_micros: number | null;
   duration_ms: number | null;
   error: string | null;
+  /** 客户端没等到这一轮结束就断开了。旧版本的 core 不给 */
+  cancelled?: boolean;
 }
 
 export interface SessionDetail {

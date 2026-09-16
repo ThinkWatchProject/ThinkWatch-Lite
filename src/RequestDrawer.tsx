@@ -225,6 +225,9 @@ export default function RequestDrawer({
                   value={
                     r.error ? (
                       <span className="text-red-600 dark:text-red-400">{r.error}</span>
+                    ) : r.cancelled ? (
+                      // 不是失败，不标红：上游没有出错，是客户端先断开了
+                      <span>{r.status ?? "—"} · 已取消，客户端在响应结束前断开了连接</span>
                     ) : (
                       (r.status ?? "—")
                     )
@@ -301,7 +304,10 @@ export default function RequestDrawer({
 
             <TabsContent value="usage">
               <div className="space-y-1">
-                {r.input_tokens == null ? (
+                {r.input_tokens == null && r.cancelled ? (
+                  // 这时候不能说「上游没有报用量」—— 它还没来得及报，客户端就走了
+                  <p className="text-muted-foreground">客户端在上游报告用量之前断开了连接</p>
+                ) : r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
                   <p className="text-muted-foreground">
                     这家上游没有报用量
@@ -327,6 +333,10 @@ export default function RequestDrawer({
                           // 「没有价格」和「花了 0 元」是两件事
                           <span className="text-muted-foreground">
                             算不出来 —— 这个模型不在价目表里
+                          </span>
+                        ) : r.cost_estimated && r.cancelled ? (
+                          <span className="text-amber-700 dark:text-amber-400">
+                            ~{usd(r.cost_micros)} · 估算，输出用量只计到客户端断开时
                           </span>
                         ) : r.cost_estimated ? (
                           <span className="text-amber-700 dark:text-amber-400">

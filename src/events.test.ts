@@ -86,4 +86,45 @@ describe("从事件缝出一行", () => {
     });
     expect(rows.get(1)?.costMicros).toBeUndefined();
   });
+
+  /**
+   * 客户端先断开了（Claude Code 里按 Esc）。**这一行不能停在「进行中」**，
+   * 也不能算成失败 —— 上游已经为它计了费，到断开为止的用量要接上。
+   */
+  it("客户端取消的那一行结束于已取消，并接上到断开为止的用量", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, { kind: "request_headers", id: 1, status: 200, ttfb_ms: 900 });
+    applyEvent(rows, {
+      kind: "request_cancelled",
+      id: 1,
+      status: 200,
+      bytes: 312,
+      duration_ms: 2_500,
+      usage: { input: 100_000, output: 1, cache_read: 0, cache_write: 0 },
+    });
+    const r = rows.get(1);
+    expect(r?.state).toBe("cancelled");
+    expect(r?.error).toBeUndefined();
+    expect(r?.status).toBe(200);
+    expect(r?.durationMs).toBe(2_500);
+    expect(r?.inputTokens).toBe(100_000);
+    expect(r?.outputTokens).toBe(1);
+  });
+
+  /** 第一帧之前就断开的，手里没有用量。**不填 0** —— 那说的是「没用 token」 */
+  it("断开时还没有用量就不填", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, {
+      kind: "request_cancelled",
+      id: 1,
+      status: 200,
+      bytes: 0,
+      duration_ms: 400,
+    });
+    expect(rows.get(1)?.state).toBe("cancelled");
+    expect(rows.get(1)?.inputTokens).toBeUndefined();
+    expect(rows.get(1)?.outputTokens).toBeUndefined();
+  });
 });

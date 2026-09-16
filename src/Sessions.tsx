@@ -51,7 +51,7 @@ export default function Sessions() {
 
   // 会话是把存下来的请求聚起来算的，**只在有请求落地之后才会变** ——
   // 原来每 10 秒重算一遍，空闲时每一遍都算出同一个答案。
-  useCoreEvent(["request_finished", "request_failed"], () => void load());
+  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], () => void load());
 
   if (!rows) return <div className="p-5 tw-head text-muted-foreground">{error ?? "读取中…"}</div>;
 
@@ -245,10 +245,12 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
               {t.cost_micros == null ? (
                 <span className="text-neutral-400">无价</span>
               ) : (
-                usd(t.cost_micros)
+                // 取消的那一轮输出只计到断开时，金额是估算，要带记号
+                (t.cancelled ? "~" : "") + usd(t.cost_micros)
               )}
             </span>
             {t.error && <span className="text-red-600 dark:text-red-400">失败</span>}
+            {t.cancelled && <span className="text-neutral-400">已取消</span>}
           </li>
         ))}
       </ul>

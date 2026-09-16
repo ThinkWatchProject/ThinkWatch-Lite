@@ -80,7 +80,7 @@ export default function Clients({
     十二次白扫，而用户多半根本没打开这一页。
   */
   useCoreEvent(
-    ["clients_changed", "request_finished", "request_failed"],
+    ["clients_changed", "request_finished", "request_failed", "request_cancelled"],
     () => void load(),
     3_000,
   );

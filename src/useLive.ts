@@ -52,7 +52,8 @@ export function useLive(active: boolean, windowMs: number) {
       if (ev.kind === "request_started") {
         model.current.set(ev.id, ev.model || "未知模型");
         flying.current.add(ev.id);
-      } else if (ev.kind === "request_finished") {
+      } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
+        // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
         flying.current.delete(ev.id);
         if (ev.usage) {
           const u = ev.usage;
