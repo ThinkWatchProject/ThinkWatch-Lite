@@ -37,6 +37,18 @@ xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 That is the only thing [the cask](https://github.com/ThinkWatchProject/homebrew-tap)
 does beyond unpacking the zip.
 
+### Updates
+
+Off by default. Turn it on under Settings and the app checks for a new version
+every six hours, reading a manifest and downloading nothing else. A version it
+does download is verified against a key compiled into the app before it
+replaces anything.
+
+An app Homebrew installed does not replace itself — Homebrew records which
+version it put in `/Applications`, and an app that overwrote that would be
+written back over by the next `brew upgrade`. It says a new version exists and
+leaves `brew upgrade --cask thinkwatch-lite` to do it.
+
 Or run it from source:
 
 ```bash

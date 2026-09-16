@@ -36,6 +36,16 @@ xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 除了解压，[cask](https://github.com/ThinkWatchProject/homebrew-tap) 做的也
 就是这一条。
 
+### 更新
+
+默认不开。在「设置」里打开之后，每六小时检查一次，只读取一份版本清单，不
+下载其他任何内容。真去下载的那个包，在替换任何东西之前会先用编译进应用里
+的那把公钥验签。
+
+Homebrew 装的实例不自己替换：Homebrew 记着它放进 `/Applications` 的是哪一
+版，应用把它盖掉之后，下一次 `brew upgrade` 会把旧的那版写回来。这种情况下
+应用只提示有新版本，升级交给 `brew upgrade --cask thinkwatch-lite`。
+
 也可以从源码跑：
 
 ```bash

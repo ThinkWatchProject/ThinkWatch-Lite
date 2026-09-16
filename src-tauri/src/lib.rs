@@ -16,6 +16,7 @@ pub mod control;
 pub mod memcheck;
 pub mod menubar;
 pub mod supervisor;
+pub mod update;
 
 use control::ControlClient;
 use supervisor::{CoreState, Supervisor};
@@ -829,6 +830,106 @@ fn app_info(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
+/// 更新这件事的当前状态，一次说完。
+///
+/// 界面要问的从来不是「有没有新版本」一个问题，而是「我这一份是怎么装
+/// 上来的、它能不能自己更新、自动检查开着吗」—— 分成三个命令去问，界面
+/// 就得自己把三个答案拼成一句话，而拼错了没有东西会发现。
+#[derive(serde::Serialize)]
+struct UpdateView {
+    /// 现在跑的是哪一版
+    version: String,
+    /// 这一份是怎么装上来的
+    install: update::Install,
+    /// 它能不能自己把自己换掉
+    can_self_update: bool,
+    /// 自动检查开着吗
+    check_updates: bool,
+}
+
+fn update_view(app: &tauri::AppHandle) -> UpdateView {
+    let install = update::kind();
+    UpdateView {
+        version: app.package_info().version.to_string(),
+        install,
+        can_self_update: install.can_self_update(),
+        check_updates: update::load_prefs(&data_dir()).check_updates,
+    }
+}
+
+#[tauri::command]
+fn update_state(app: tauri::AppHandle) -> UpdateView {
+    update_view(&app)
+}
+
+#[tauri::command]
+fn set_update_check(app: tauri::AppHandle, on: bool) -> Result<UpdateView, String> {
+    update::save_prefs(&data_dir(), &update::Prefs { check_updates: on })
+        .map_err(|e| format!("设置存不下来：{e:#}"))?;
+    Ok(update_view(&app))
+}
+
+/// 找到的新版本。
+#[derive(Clone, serde::Serialize)]
+struct Found {
+    version: String,
+    notes: Option<String>,
+}
+
+/// 去看有没有新版本。
+///
+/// **这一步对所有安装方式都做。**读的是一份几百字节的清单，不下载任何
+/// 东西 —— Homebrew 装的那一份也该知道有新版本了，它只是不自己去装。
+async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let u = app.updater().map_err(|e| e.to_string())?;
+    let found = u.check().await.map_err(|e| e.to_string())?;
+    Ok(found.map(|up| Found {
+        version: up.version.clone(),
+        notes: up.body.clone(),
+    }))
+}
+
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Result<Option<Found>, String> {
+    look(&app).await
+}
+
+/// 下载、验签、替换，然后重启。
+///
+/// **Homebrew 装的一律拒绝。**理由在 `update` 模块开头。这里再挡一次，是
+/// 因为这是一条策略 —— 让它只靠界面上那个按钮不显示来维持，等于让一次
+/// 渲染的疏忽去降级用户的安装。
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    let install = update::kind();
+    if !install.can_self_update() {
+        return Err(match install {
+            update::Install::Homebrew => {
+                "这一份由 Homebrew 管理，更新请执行 brew upgrade --cask thinkwatch-lite".into()
+            }
+            _ => "开发构建不自更新".into(),
+        });
+    }
+    use tauri_plugin_updater::UpdaterExt;
+    let u = app.updater().map_err(|e| e.to_string())?;
+    let Some(up) = u.check().await.map_err(|e| e.to_string())? else {
+        return Err("已经是最新版本".into());
+    };
+    let h = app.clone();
+    up.download_and_install(
+        move |chunk, total| {
+            let _ = h.emit("update-progress", (chunk, total));
+        },
+        || {},
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    // 换完就重启 —— 旧的那份代码还在内存里跑着，留着它只会让下一个问题
+    // 变成「我到底在用哪一版」。
+    app.restart()
+}
+
 /// 开机自启现在是开着的吗。
 ///
 /// **默认是关的,而且这不是「还没实现」,是产品决定。**一个装完就自己
@@ -903,6 +1004,7 @@ async fn setup_first_provider(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
@@ -939,6 +1041,10 @@ pub fn run() {
             rollback_config,
             setup_first_provider,
             app_info,
+            update_state,
+            set_update_check,
+            update_check,
+            update_install,
             autostart_enabled,
             set_autostart,
             list_clients,
@@ -1062,6 +1168,13 @@ pub fn run() {
             let sock = default_socket();
             tauri::async_runtime::spawn(async move {
                 bridge_events(sock, h).await;
+            });
+
+            // 有没有新版本。**循环无条件起，开关在循环里读** —— 用户在
+            // 运行中打开自动检查时，不该要求他重启应用才生效。
+            let h = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                update_loop(h).await;
             });
 
             Ok(())
@@ -1202,6 +1315,55 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
             tracing::debug!("事件流断开：{e:#}");
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+/// 第一次检查之前先等一会儿。
+///
+/// **不在启动那一刻查。**冷启动那几秒 CPU 和网络都在忙别的 —— 网关要起
+/// 来、控制面要连上；而「有没有新版本」晚两分钟知道，没有任何损失。
+const UPDATE_FIRST_LOOK: std::time::Duration = std::time::Duration::from_secs(120);
+const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// 开着自动检查的话，隔一阵看一次。
+///
+/// **同一个版本只提醒一次。**每六小时弹一次同样的通知，用户学会的是忽略
+/// 通知 —— 包括那些真该看的（和高危工具调用那条同一个理由）。
+async fn update_loop(app: tauri::AppHandle) {
+    use tauri_plugin_notification::NotificationExt;
+    let mut told: Option<String> = None;
+    tokio::time::sleep(UPDATE_FIRST_LOOK).await;
+    loop {
+        // 每一轮都重读设置 —— 用户可能在跑着的时候把它关了，那时这个
+        // 循环要立刻听话，而不是等到下次启动。
+        if update::load_prefs(&data_dir()).check_updates {
+            match look(&app).await {
+                Ok(Some(f)) => {
+                    let _ = app.emit("update-found", f.clone());
+                    if told.as_deref() != Some(f.version.as_str()) {
+                        told = Some(f.version.clone());
+                        let body = match update::kind() {
+                            update::Install::Homebrew => {
+                                "执行 brew upgrade --cask thinkwatch-lite 更新。"
+                            }
+                            update::Install::Standalone => "在「设置」中安装。",
+                            update::Install::Dev => "这是开发构建，不自更新。",
+                        };
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title(format!("ThinkWatch Lite {} 可用", f.version))
+                            .body(body)
+                            .show();
+                    }
+                }
+                Ok(None) => {}
+                // 查不到就下次再说。**不告诉用户** —— 网络不通不是他此刻
+                // 要处理的事，而一句「检查更新失败」只会打断他在做的事。
+                Err(e) => tracing::debug!("检查更新：{e}"),
+            }
+        }
+        tokio::time::sleep(UPDATE_EVERY).await;
     }
 }
 

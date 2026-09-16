@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的能力。Tauri v2 的 capability 漏配是静默失败 —— 加一个新命令就要回来确认这里有它。start-dragging 是同一个坑的实例：标题栏是 Overlay，没有一条真的标题栏可以抓，窗口全靠 data-tauri-drag-region 移动，而那条权限不在 core:window 的默认集合里。少了它拖拽区毫无反应，也不报错。",
+  "description": "\u4e3b\u7a97\u53e3\u7684\u80fd\u529b\u3002Tauri v2 \u7684 capability \u6f0f\u914d\u662f\u9759\u9ed8\u5931\u8d25 \u2014\u2014 \u52a0\u4e00\u4e2a\u65b0\u547d\u4ee4\u5c31\u8981\u56de\u6765\u786e\u8ba4\u8fd9\u91cc\u6709\u5b83\u3002start-dragging \u662f\u540c\u4e00\u4e2a\u5751\u7684\u5b9e\u4f8b\uff1a\u6807\u9898\u680f\u662f Overlay\uff0c\u6ca1\u6709\u4e00\u6761\u771f\u7684\u6807\u9898\u680f\u53ef\u4ee5\u6293\uff0c\u7a97\u53e3\u5168\u9760 data-tauri-drag-region \u79fb\u52a8\uff0c\u800c\u90a3\u6761\u6743\u9650\u4e0d\u5728 core:window \u7684\u9ed8\u8ba4\u96c6\u5408\u91cc\u3002\u5c11\u4e86\u5b83\u62d6\u62fd\u533a\u6beb\u65e0\u53cd\u5e94\uff0c\u4e5f\u4e0d\u62a5\u9519\u3002",
   "windows": [
     "main"
   ],
