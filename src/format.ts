@@ -47,8 +47,14 @@ export function when(atMs: number, now = Date.now()): string {
   return `${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
 }
 
-/** 一个 token 数。四位数以上换 k —— 位数差会被误读成数量级差。 */
-function kilo(n: number): string {
+/**
+ * 一个大数收成三四位。
+ *
+ * 四位数以上换 k：一列 `128000` 和 `463` 混排时，位数差本身会被误读成
+ * 数量级差。而一个逗号分隔的 `514,567` 读起来是账本上的条目，不是一个
+ * 能一眼掂量的量 —— 精确值留给悬停。
+ */
+export function compact(n: number): string {
   if (n < 1000) return String(n);
   if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
   if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
@@ -69,7 +75,7 @@ export function tokens(
   output: number | undefined,
 ): string {
   if (input == null || output == null) return "—";
-  return `${kilo(input)}→${kilo(output)}`;
+  return `${compact(input)}→${compact(output)}`;
 }
 
 /**

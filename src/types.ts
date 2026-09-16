@@ -331,8 +331,9 @@ export interface Summary {
   /**
    * 用了缓存之后净省下多少微分。
    *
-   * **净的：命中省下的减去写入多花的。**缓存写是 1.25 倍单价，所以
-   * 这个数可以是负的 —— 而负数是一条结论：这个用法上缓存在亏钱。
+   * **净额：命中节省的部分，减去写入产生的溢价。**缓存写入按 1.25 倍
+   * 单价计费，所以这个数可以是负的 —— 而负数是一条结论：这份用法上，
+   * 缓存反而抬高了总支出。
    */
   cache_saved_micros: number;
   /** 价目表的快照日期。**成本旁边要标它** */
@@ -445,8 +446,6 @@ export interface Dashboard {
    * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
    */
   buckets_by_model?: CostBucketGroup[];
-  by_model?: CostGroup[];
-  by_provider?: CostGroup[];
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
   prev?: Summary | null;
   /** 上面几样的时间窗起点，补空桶要用 */
@@ -461,17 +460,6 @@ export interface CostBucketGroup {
   failed: number;
   cost_micros_exact: number;
   cost_micros_estimated: number;
-}
-
-/** 按模型或上游分组的花费。 */
-export interface CostGroup {
-  name: string;
-  requests: number;
-  cost_micros: number;
-  /** **算不出价钱的条数要单独给** —— 当成 0 加进去，那根条就是偏短的 */
-  unpriced_requests: number;
-  input_tokens: number;
-  output_tokens: number;
 }
 
 /**

@@ -226,8 +226,6 @@ async fn dashboard(
             .cost_buckets_by("model", since, bucket)
             .await
             .unwrap_or_default(),
-        by_model: c.cost_by("model", since).await.unwrap_or_default(),
-        by_provider: c.cost_by("provider", since).await.unwrap_or_default(),
         // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
         // ——「$4.05」是多还是少，只有和上一个七天比过才知道。
         // 拿不到就不显示那句对比，不影响这一页别的部分。
@@ -254,8 +252,6 @@ pub struct Dashboard {
     buckets_by_model: Vec<tw_api::CostBucketGroup>,
     /// 上一个等长区间的汇总。拿不到就是没有对比，不是零
     prev: Option<tw_api::Summary>,
-    by_model: Vec<tw_api::CostGroup>,
-    by_provider: Vec<tw_api::CostGroup>,
     /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，
     /// 而兜底路径上它不等于界面送来的那个值
     since_ms: i64,

@@ -14,9 +14,19 @@ const PRESETS: { id: string; label: string; ms: number }[] = [
   { id: "30d", label: "30 天", ms: 30 * DAY },
 ];
 
-export type Range = { ms: number; label: string };
+export type Range = {
+  ms: number;
+  label: string;
+  /**
+   * 「较上一个 X」里的那个 X。
+   *
+   * **和 `label` 不是一回事。**自定义区间的 label 是「9/8 至今」，
+   * 套进「较上一个」就不通了 —— 那时它只是一段等长的时间。
+   */
+  compare: string;
+};
 
-export const DEFAULT_RANGE: Range = { ms: DAY, label: "24 小时" };
+export const DEFAULT_RANGE: Range = { ms: DAY, label: "24 小时", compare: "24 小时" };
 
 /**
  * 统计口径的时间范围。
@@ -44,7 +54,7 @@ export function RangePicker({
         value={preset?.id ?? ""}
         onValueChange={(v) => {
           const p = PRESETS.find((x) => x.id === v);
-          if (p) onChange({ ms: p.ms, label: p.label });
+          if (p) onChange({ ms: p.ms, label: p.label, compare: p.label });
         }}
       >
         {PRESETS.map((p) => (
@@ -73,6 +83,7 @@ export function RangePicker({
               onChange({
                 ms: Math.max(60_000, ms),
                 label: `${d.toLocaleDateString()} 至今`,
+                compare: "等长区间",
               });
               setOpen(false);
             }}
