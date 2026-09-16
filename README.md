@@ -17,17 +17,25 @@ its config, its traffic, and what it costs you in front of you.
 
 ## Install
 
-Download `ThinkWatch-Lite-<version>-arm64.zip` from the
-[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases),
-unzip it, and move `ThinkWatch Lite.app` into `/Applications`. The gateway ships
-inside the app — there is nothing else to install.
+```bash
+brew install --cask thinkwatchproject/tap/thinkwatch-lite
+```
 
-The build is **not signed by a registered Apple developer**, so macOS puts it in
-quarantine and refuses to open it. Clear that attribute once:
+The gateway ships inside the app — there is nothing else to install.
+
+Or download `ThinkWatch-Lite-<version>-arm64.zip` from the
+[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases),
+check it against the sha256 published beside it, and move `ThinkWatch Lite.app`
+into `/Applications`. One extra step then applies: the build is **not signed by
+a registered Apple developer**, so macOS quarantines it and refuses to open it
+until the attribute is gone.
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 ```
+
+That is the only thing [the cask](https://github.com/ThinkWatchProject/homebrew-tap)
+does beyond unpacking the zip.
 
 Or run it from source:
 
