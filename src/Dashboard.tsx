@@ -269,34 +269,45 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   }, [tick, queryMs, bucketMs, live, setD]);
 
   /*
-    两组控制都在页眉：一个决定图按什么口径画，一个决定看多长时间。
+    **两组控件不放在一起。**时间范围管的是整页（下面每一块都跟着它
+    走），口径只管那一张图 —— 两个不同维度的东西并排成一串同样的药丸，
+    读起来就是一排七个平级选项。
 
-    **实时档下「花费」是禁用，不是隐藏。**隐藏会让页眉在切换时变宽变
-    窄，整排控件跟着挪 —— 而这一轮要修的恰恰是「切一下位置就变」。
+    所以范围留在标题行右端（页面级），口径挪到图的正上方、左对齐
+    （图级），中间隔着整排大数字。
   */
   const header = (
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="tw-title font-semibold">用量概览</h2>
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          value={live ? "token" : by}
-          onValueChange={(v) => v && setBy(v as "token" | "cost")}
-        >
-          <ToggleGroupItem value="token">token</ToggleGroupItem>
-          <ToggleGroupItem
-            value="cost"
-            disabled={live}
-            title={live ? "实时档只统计 token：金额要等请求落库、按价目表算过才有" : undefined}
-          >
-            花费
-          </ToggleGroupItem>
-        </ToggleGroup>
+      <div className="ml-auto">
         <RangePicker value={range} onChange={setRange} />
       </div>
     </div>
+  );
+
+  /**
+   * 图按什么口径画。
+   *
+   * **实时档下「花费」是禁用，不是隐藏。**隐藏会让这一行变宽变窄，
+   * 而这一轮要修的恰恰是「切一下位置就变」。
+   */
+  const metric = (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      value={live ? "token" : by}
+      onValueChange={(v) => v && setBy(v as "token" | "cost")}
+    >
+      <ToggleGroupItem value="token">token</ToggleGroupItem>
+      <ToggleGroupItem
+        value="cost"
+        disabled={live}
+        title={live ? "实时档只统计 token：金额要等请求落库、按价目表算过才有" : undefined}
+      >
+        花费
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 
   if (error) {
@@ -590,6 +601,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       </div>
 
       <div className="mt-4">
+        <div className="mb-2">{metric}</div>
         <StackedArea
           data={area}
           keys={keys}
