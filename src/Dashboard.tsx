@@ -141,6 +141,42 @@ function Spread({ rows, max }: { rows: LatencyView[]; max: number }) {
 }
 
 /**
+ * 页眉上的一个大数。
+ *
+ * **三栏等宽，说明那一行固定占两行高。**在此之前这三组是并排的弹性
+ * 块，而「较上一个区间」在没有可比数据时整个消失 —— 于是切一次时间
+ * 范围，三个数字的横向位置全变了，眼睛每次都要重新找。
+ *
+ * 所以限定语一律放到第二行：第一行只留那个数和单位，宽度由它决定，
+ * 而它在各种区间下长得都差不多。
+ */
+function Stat({
+  n,
+  unit,
+  after,
+  note,
+}: {
+  n: string;
+  unit?: string;
+  after?: React.ReactNode;
+  note: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="tw-num tw-display">{n}</span>
+        {unit && <span className="tw-body text-muted-foreground">{unit}</span>}
+        {after}
+      </div>
+      {/* 高度写死两行：少一条限定语时不该把整页往上收 */}
+      <p className="mt-1 flex min-h-8 flex-wrap items-baseline gap-x-2 tw-label text-muted-foreground">
+        {note}
+      </p>
+    </div>
+  );
+}
+
+/**
  * 一个环比。
  *
  * **没有参照系的数字只能读，不能判断。**只有花费那一侧有「好坏」：
@@ -232,10 +268,32 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     };
   }, [tick, queryMs, bucketMs, live, setD]);
 
+  /*
+    两组控制都在页眉：一个决定图按什么口径画，一个决定看多长时间。
+
+    **实时档下「花费」是禁用，不是隐藏。**隐藏会让页眉在切换时变宽变
+    窄，整排控件跟着挪 —— 而这一轮要修的恰恰是「切一下位置就变」。
+  */
   const header = (
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="tw-title font-semibold">用量概览</h2>
-      <div className="ml-auto">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={live ? "token" : by}
+          onValueChange={(v) => v && setBy(v as "token" | "cost")}
+        >
+          <ToggleGroupItem value="token">token</ToggleGroupItem>
+          <ToggleGroupItem
+            value="cost"
+            disabled={live}
+            title={live ? "实时档只统计 token：金额要等请求落库、按价目表算过才有" : undefined}
+          >
+            花费
+          </ToggleGroupItem>
+        </ToggleGroup>
         <RangePicker value={range} onChange={setRange} />
       </div>
     </div>
@@ -459,98 +517,76 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
 
       {/*
         三个数并排：**做了多少、花了多少、发了多少次**。它们是同一层的
-        事实，所以同一个字号。每个数下面跟着限定它的那几句 —— 失败挂在
-        请求数上，估算和未计价挂在金额上。放别处就要读者自己去对。
+        事实，所以同一个字号、同一个宽度的栏。
+
+        **等宽栏，而不是并排的弹性块。**后者会让「较上一个区间」这类
+        时有时无的限定语改变每一栏的宽度，切一次范围三个数字就横向
+        挪一次位置。
       */}
-      <div className="mt-4 flex flex-wrap gap-x-10 gap-y-3">
-        <div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <Tip text={`${tokensTotal.toLocaleString()} token`}>
-              <span className="tw-num tw-display">{compact(tokensTotal)}</span>
-            </Tip>
-            <span className="tw-body text-muted-foreground">token</span>
-            {beforeTokens > 0 && (
-              <Delta v={(tokensTotal - beforeTokens) / beforeTokens} more={range.compare} />
-            )}
-          </div>
-          <p className="mt-1 tw-label text-muted-foreground">
-            输入 {compact(ctx)} · 输出 {compact(s.output_tokens)}
-          </p>
-        </div>
-
-        <div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="tw-num tw-display">{usd(spent)}</span>
-            {beforeCost > 0 && (
-              <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
-            )}
-          </div>
-          <p className="mt-1 flex flex-wrap items-baseline gap-x-2 tw-label text-muted-foreground">
-            {s.cost_micros_estimated > 0 && (
-              <Tip text="上游未返回用量，或该模型的单价来自其他平台。此部分金额为估算值。">
-                <span className="underline decoration-dotted underline-offset-2">
-                  含估算 {usd(s.cost_micros_estimated)}
+      <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
+        <Stat
+          n={compact(tokensTotal)}
+          unit="token"
+          note={
+            <>
+              {beforeTokens > 0 && (
+                <Delta v={(tokensTotal - beforeTokens) / beforeTokens} more={range.compare} />
+              )}
+              <Tip text={`${tokensTotal.toLocaleString()} token`}>
+                <span>
+                  输入 {compact(ctx)} · 输出 {compact(s.output_tokens)}
                 </span>
               </Tip>
-            )}
-            {s.unpriced_requests > 0 && (
-              <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。">
-                <span className="underline decoration-dotted underline-offset-2">
-                  {s.unpriced_requests} 条未计价
-                </span>
-              </Tip>
-            )}
-            {s.subscription_requests > 0 && (
-              <Tip text="订阅型上游的边际成本为零，按 API 价目表折算出的金额是虚构的，因此不计入。">
-                <span className="underline decoration-dotted underline-offset-2">
-                  订阅额度 {s.subscription_requests} 次
-                </span>
-              </Tip>
-            )}
-            {s.cost_micros_estimated === 0 &&
-              s.unpriced_requests === 0 &&
-              s.subscription_requests === 0 &&
-              "全部按价目表实测"}
-          </p>
-        </div>
+            </>
+          }
+        />
 
-        <div>
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="tw-num tw-display">{s.requests.toLocaleString()}</span>
-            <span className="tw-body text-muted-foreground">次请求</span>
-            {s.failed > 0 && <span className="tw-label text-destructive">{s.failed} 次失败</span>}
-          </div>
-          <p className="mt-1 tw-label text-muted-foreground">
-            {live
-              ? inFlight > 0
-                ? `${inFlight} 个进行中`
-                : "当前空闲"
-              : `失败率 ${((s.failed / Math.max(1, s.requests)) * 100).toFixed(1)}%`}
-          </p>
-        </div>
+        <Stat
+          n={usd(spent)}
+          note={
+            <>
+              {beforeCost > 0 && (
+                <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
+              )}
+              {s.cost_micros_estimated > 0 && (
+                <Tip text="上游未返回用量，或该模型的单价来自其他平台。此部分金额为估算值。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    含估算 {usd(s.cost_micros_estimated)}
+                  </span>
+                </Tip>
+              )}
+              {s.unpriced_requests > 0 && (
+                <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    {s.unpriced_requests} 条未计价
+                  </span>
+                </Tip>
+              )}
+              {s.subscription_requests > 0 && (
+                <Tip text="订阅型上游的边际成本为零，按 API 价目表折算出的金额是虚构的，因此不计入。">
+                  <span className="underline decoration-dotted underline-offset-2">
+                    订阅额度 {s.subscription_requests} 次
+                  </span>
+                </Tip>
+              )}
+              {s.cost_micros_estimated === 0 &&
+                s.unpriced_requests === 0 &&
+                s.subscription_requests === 0 && <span>全部按价目表实测</span>}
+            </>
+          }
+        />
 
-        {/*
-          口径切换。**放在这一排数字的右端，不压在图上** —— 图是会长到
-          顶的，曲线一高就从按钮底下穿过去。这一行右侧本来是空的，放在
-          这儿不多占一点高度。
-
-          实时档没有这个切换：金额是落库时按价目表算的，事件流里没有，
-          那一档只画得出 token。
-        */}
-        {!live && (
-          <div className="ml-auto self-start">
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              value={by}
-              onValueChange={(v) => v && setBy(v as "token" | "cost")}
-            >
-              <ToggleGroupItem value="token">token</ToggleGroupItem>
-              <ToggleGroupItem value="cost">花费</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        )}
+        <Stat
+          n={s.requests.toLocaleString()}
+          unit="次请求"
+          after={s.failed > 0 && <span className="tw-label text-destructive">{s.failed} 次失败</span>}
+          note={
+            <>
+              <span>失败率 {((s.failed / Math.max(1, s.requests)) * 100).toFixed(1)}%</span>
+              {live && <span>{inFlight > 0 ? `${inFlight} 个进行中` : "当前空闲"}</span>}
+            </>
+          }
+        />
       </div>
 
       <div className="mt-4">
@@ -580,7 +616,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           ))}
           <span className={live ? "text-foreground" : ""}>现在</span>
         </div>
-        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 tw-label text-muted-foreground">
+        {/* 这一行有没有话说都占一行高：少一句就把下面整块往上提，
+            正是切换时的那种来回动 */}
+        <p className="mt-2 flex min-h-4 flex-wrap items-center gap-x-2 gap-y-1 tw-label text-muted-foreground">
           {grid.some((g) => g.failed > 0) && (
             <>
               <span className="inline-block h-0.5 w-3.5 bg-destructive" />
@@ -648,16 +686,16 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                       {compact(v)}
                     </span>
                   </Tip>
-                  {!live && (
-                    <span
-                      className={
-                        "w-16 shrink-0 text-right tw-num " +
-                        (by === "cost" ? "font-medium" : "text-muted-foreground")
-                      }
-                    >
-                      {usd(c)}
-                    </span>
-                  )}
+                  {/* 实时档算不出金额，但这一列要占住 —— 少一列的话，
+                      切进实时整张排行的列宽全变 */}
+                  <span
+                    className={
+                      "w-16 shrink-0 text-right tw-num " +
+                      (!live && by === "cost" ? "font-medium" : "text-muted-foreground")
+                    }
+                  >
+                    {live ? "—" : usd(c)}
+                  </span>
                   <span className="w-11 shrink-0 text-right tw-label text-muted-foreground">
                     {n} 次
                   </span>
