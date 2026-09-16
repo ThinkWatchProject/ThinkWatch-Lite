@@ -111,13 +111,19 @@ export function money(
   return (estimated ? "~" : "") + usd(micros);
 }
 
-/** 状态码的语义分档。**眼睛要能一眼扫到那个 5xx。** */
+/**
+ * 状态码的语义分档。**眼睛要能一眼扫到那个 5xx。**
+ *
+ * 客户端取消的单独一档，**不算 bad**：上游没有出错，是客户端先断开了。
+ * 也不算 ok —— 这次响应没有完整送达。
+ */
 export function statusTone(
   status: number | undefined,
-  state: "in_flight" | "done" | "failed",
-): "pending" | "ok" | "warn" | "bad" {
+  state: "in_flight" | "done" | "failed" | "cancelled",
+): "pending" | "ok" | "warn" | "bad" | "muted" {
   if (state === "in_flight") return "pending";
   if (state === "failed") return "bad";
+  if (state === "cancelled") return "muted";
   if (status == null) return "ok";
   if (status >= 500) return "bad";
   if (status >= 400) return "warn";
@@ -132,6 +138,8 @@ export interface CostBucket {
   cost_micros_exact: number;
   cost_micros_estimated: number;
   unpriced_requests: number;
+  /** 没有拿到用量的条数。旧版本的 core 不给 */
+  no_usage_requests?: number;
 }
 
 /**
@@ -188,6 +196,7 @@ export function densify(
         cost_micros_exact: 0,
         cost_micros_estimated: 0,
         unpriced_requests: 0,
+        no_usage_requests: 0,
       },
     );
   }

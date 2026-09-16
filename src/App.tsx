@@ -1364,16 +1364,20 @@ export default function App() {
                             ? "bg-amber-500"
                             : tone === "pending"
                               ? "bg-amber-400 animate-pulse"
-                              : "bg-emerald-500/60";
+                              : tone === "muted"
+                                ? "bg-neutral-400"
+                                : "bg-emerald-500/60";
                       return (
                         <span className="flex items-center gap-1.5">
                           <span className={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " + dot} />
-                          <span className={tone === "ok" ? "text-neutral-400" : ""}>
+                          <span className={tone === "ok" || tone === "muted" ? "text-neutral-400" : ""}>
                             {r.state === "in_flight"
                               ? "…"
                               : r.state === "failed"
                                 ? "失败"
-                                : r.status}
+                                : r.state === "cancelled"
+                                  ? "已取消"
+                                  : r.status}
                           </span>
                         </span>
                       );
@@ -1482,7 +1486,18 @@ export default function App() {
                   */}
                   <TableCell className="whitespace-nowrap text-right">
                     {r.costEstimated ? (
-                      <Tip text="上游未返回用量，此金额按请求长度估算。">
+                      // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
+                      // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
+                      // 平台借来的
+                      <Tip
+                        text={
+                          r.state === "cancelled"
+                            ? "客户端在响应结束前断开，输出用量只计到断开时，实际费用可能更高。"
+                            : r.state === "failed"
+                              ? "响应在结束前中断，输出用量只计到中断时，实际费用可能更高。"
+                              : "价目表中没有这个上游的单价，此金额按同一模型在其他平台的单价估算。"
+                        }
+                      >
                         <span className="underline decoration-dotted underline-offset-2">
                           {money(r.costMicros, true)}
                         </span>

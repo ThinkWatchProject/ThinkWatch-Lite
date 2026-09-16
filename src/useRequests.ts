@@ -154,7 +154,7 @@ export function useRequests() {
         model: h.model || undefined,
         path: h.path,
         atMs: h.at_ms,
-        state: h.error ? "failed" : "done",
+        state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
         status: h.status ?? undefined,
         ttfbMs: h.ttfb_ms ?? undefined,
         durationMs: h.duration_ms ?? undefined,
@@ -198,7 +198,13 @@ export function useRequests() {
       let local = 0;
       let landed = false;
       for (const ev of batch) {
-        if (ev.kind === "request_finished" || ev.kind === "request_failed") landed = true;
+        if (
+          ev.kind === "request_finished" ||
+          ev.kind === "request_failed" ||
+          ev.kind === "request_cancelled"
+        ) {
+          landed = true;
+        }
         if (ev.kind === "health_changed") setHealth((n) => n + 1);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);

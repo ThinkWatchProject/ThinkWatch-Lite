@@ -92,6 +92,16 @@ describe("过滤", () => {
   });
 
   /**
+   * 客户端取消的不是失败。混进「只看失败」的话，按过 Esc 的那些会把真正
+   * 要查的上游错误淹没。
+   */
+  it("只看失败时不含客户端取消的", () => {
+    const withCancelled = [...rows, row({ id: 3, state: "cancelled" })];
+    const r = filterRows(withCancelled, { ...EMPTY_FILTER, failedOnly: true });
+    expect(r.map((x) => x.id)).toEqual([1]);
+  });
+
+  /**
    * 排查时你记得住的常常是错误里的那半句话，而不是哪个字段装着它。
    * 所以自由文本要覆盖错误信息 —— 只搜路径的话，「超时那几条」搜不出来。
    */

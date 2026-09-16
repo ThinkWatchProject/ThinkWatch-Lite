@@ -102,6 +102,13 @@ describe("状态分档", () => {
   it("进行中单独一档", () => {
     expect(statusTone(undefined, "in_flight")).toBe("pending");
   });
+  /**
+   * 客户端取消的不是失败 —— 上游没有出错，状态码也是 200；可它也不是成功，
+   * 响应没有完整送达。标成红点的话，按过 Esc 的每一行都像出了事。
+   */
+  it("客户端取消单独一档，不算失败", () => {
+    expect(statusTone(200, "cancelled")).toBe("muted");
+  });
 });
 
 describe("格子边界", () => {
