@@ -21,8 +21,8 @@ Two decisions are settled and not up for a PR:
   bar is rendered as a macOS bitmap, the client-detection paths are
   macOS paths, and the supervisor talks to launchd.
 - **Apple Silicon only, and unsigned.** The release pipeline produces one
-  artifact: an arm64 `.app` in a zip, ad-hoc signed, with the gateway inside
-  it. A universal binary for Intel and a Developer ID signature are both
+  artifact for people to install: an arm64 `.app` in a disk image, ad-hoc
+  signed, with the gateway inside it. A universal binary for Intel and a Developer ID signature are both
   ongoing costs nobody has taken on — so a PR that adds the notarization step
   without the account behind it can't be merged, and neither can one that
   makes the build fall back to whatever architecture the machine happens to

@@ -25,16 +25,19 @@ brew install --cask thinkwatchproject/tap/thinkwatch-lite
 
 也可以从
 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
-下载 `ThinkWatch-Lite-<版本>-arm64.zip`，核对旁边那份 sha256，把
-`ThinkWatch Lite.app` 拖进 `/Applications`。这样会多一步：这个包**没有经过
-Apple 注册开发者签名**，macOS 会把它标记为隔离并拒绝打开，要去掉这个属性。
+下载 `ThinkWatch-Lite-<版本>-arm64.dmg`，核对旁边那份 sha256，打开它，把
+ThinkWatch Lite 拖进「应用程序」。这样会多一步：这个包**没有经过 Apple 注册
+开发者签名**，macOS 会把它标记为隔离并拒绝打开，要去掉这个属性。
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 ```
 
-除了解压，[cask](https://github.com/ThinkWatchProject/homebrew-tap) 做的也
-就是这一条。
+不用终端的话：第一次打开被拒绝之后，在「系统设置 › 隐私与安全性」里点
+「仍要打开」。
+
+除了从磁盘映像里把应用拷出来，[cask](https://github.com/ThinkWatchProject/homebrew-tap)
+做的也就是去掉这个属性。
 
 ### 更新
 

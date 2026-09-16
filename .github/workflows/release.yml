@@ -1,8 +1,8 @@
 # 发一版桌面端。
 #
-# **产出一个文件，不是一堆步骤。**`ThinkWatch-Lite-<版本>-arm64.zip`
-# 加一份 sha256 —— Homebrew 的 cask 直接吃这两个，用户手工下载也是
-# 这两个。
+# **给人装的只有一个文件。**`ThinkWatch-Lite-<版本>-arm64.dmg` 加一份
+# sha256 —— 网页上下载的是它，Homebrew 的 cask 吃的也是它。另外两样
+# （更新包和它的清单）是给已经装上的应用自己读的。
 #
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出 `.app` 并且
@@ -117,36 +117,50 @@ jobs:
             exit 1
           fi
 
-      # `ditto` 而不是 `zip`。**`.app` 是一棵带符号链接和扩展属性的
-      # 树**，`zip` 会把它压平成一个打不开的目录。`--keepParent` 让解
-      # 出来的还是 `ThinkWatch Lite.app` 本身，而不是它的内容散一地。
+      # 磁盘映像由 Tauri 在构建那一步打好。**在 CI 上它不跑 Finder 的排版
+      # 脚本**（`CI=true` 时自动加 `--skip-jenkins`）—— 那段 AppleScript
+      # 要驱动一个图形界面的 Finder，在 runner 上会挂住或超时。代价是映像
+      # 打开时两个图标按 Finder 的默认方式摆放，没有自定义背景；拖进
+      # 「应用程序」这件事本身不受影响。
+      #
+      # 改名是因为 Tauri 的默认名字里有空格和下划线，而 cask 和下载链接
+      # 要的是一个可以预先写死的名字。
       - name: Package
         run: |
           set -euo pipefail
           BUNDLE="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
           mkdir -p dist
-          ZIP="dist/ThinkWatch-Lite-$VERSION-arm64.zip"
-          ditto -c -k --keepParent "$BUNDLE/ThinkWatch Lite.app" "$ZIP"
-          ( cd dist && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
-          cat "$ZIP.sha256"
+          DMG="dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+          cp "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/ThinkWatch Lite_${VERSION}_aarch64.dmg" "$DMG"
+          ( cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
+          cat "$DMG.sha256"
 
           python3 scripts/manifest.py "$VERSION" "$BUNDLE" dist notes.txt
 
-      # 解出来再验一次。**压缩这一步本身就可能是那个出错的环节** ——
-      # 而它出错的样子恰恰是「zip 下得下来、双击打不开」。
-      - name: It survives the round trip
+      # 挂上去再验一次。**打包这一步本身就可能是那个出错的环节** ——
+      # 而它出错的样子恰恰是「下得下来、打开之后里面的应用起不来」。验的
+      # 是用户会拿到的那个映像，不是构建目录里的那份 `.app`。
+      - name: The disk image holds a working app
         run: |
           set -euo pipefail
-          OUT=$(mktemp -d)
-          ditto -x -k "dist/ThinkWatch-Lite-$VERSION-arm64.zip" "$OUT"
-          test -x "$OUT/ThinkWatch Lite.app/Contents/MacOS/thinkwatch-lite"
-          test -x "$OUT/ThinkWatch Lite.app/Contents/Resources/twcore"
+          MNT=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" \
+            "dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+          APP="$MNT/ThinkWatch Lite.app"
+          codesign --verify --deep --strict "$APP"
+          test -x "$APP/Contents/MacOS/thinkwatch-lite"
+          test -x "$APP/Contents/Resources/twcore"
+          test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "$VERSION"
+          # 拖放的目标。少了它，打开映像的人看到的只有一个应用图标，
+          # 不知道该把它放到哪里去。
+          test "$(readlink "$MNT/Applications")" = /Applications
+          hdiutil detach "$MNT"
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/ThinkWatch-Lite-*-arm64.zip
-            dist/ThinkWatch-Lite-*-arm64.zip.sha256
+            dist/ThinkWatch-Lite-*-arm64.dmg
+            dist/ThinkWatch-Lite-*-arm64.dmg.sha256
             dist/ThinkWatch-Lite-*-arm64.app.tar.gz
             dist/ThinkWatch-Lite-*-arm64.app.tar.gz.sig
             dist/latest.json
