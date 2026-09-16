@@ -54,11 +54,47 @@ pub struct AppState {
 /// Resources 下。**两条路径都要试，而且找不到时要说清楚找过哪儿** ——
 /// 「二进制不存在」是安装期最常见的失败，而默认的错误信息只会说
 /// No such file or directory。
+/// 打包之后，core 只可能在一个地方。
+///
+/// macOS 的 `.app/Contents/MacOS/<exe>` 到 `.app/Contents/Resources/`
+/// 是 bundle 布局定死的关系。别的平台还没有打包形态，到时候各自回答。
+fn bundled_core() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    if dir.ends_with("Contents/MacOS") {
+        return Some(dir.parent()?.join("Resources").join("twcore"));
+    }
+    None
+}
+
+/// twcore 在哪。
+///
+/// **装好的应用和开发布局走两条完全不同的路，中间没有回退。**
+///
+/// 装好之后只认包里那一份：找不到就是安装包坏了，说出来让人重装。
+/// 开发时才去试环境变量、隔壁仓库、PATH。
+///
+/// 这条分界不是整洁，是安全。开发那几条候选里有
+/// `<当前工作目录>/../thinkwatch-core/target/release/twcore` —— 它相对
+/// 的是**进程启动时的工作目录**。把这条留在发出去的应用里，等于让
+/// 「用户从哪个目录启动」决定它执行哪个二进制；而这个进程握着用户全部
+/// 的 API key。同理，装好之后也不再看 `THINKWATCH_CORE_BIN` 和 PATH：
+/// 让环境变量替换掉网关本体，在开发机上是便利，在用户机器上是一个口子。
 pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
+    if let Some(inside) = bundled_core() {
+        if inside.exists() {
+            return Ok(inside);
+        }
+        // **不往下走。**这里不是「再找找别处」，是这份安装包缺东西。
+        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
+    }
+
     let mut tried = Vec::new();
 
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let p = resource_dir.join("twcore");
+    // 别的平台以后会有自己的打包形态，框架这条留着 —— 它在 macOS 的
+    // `.app` 里实测返回 `unknown path`，所以上面那一段不能指望它。
+    if let Ok(dir) = app.path().resource_dir() {
+        let p = dir.join("twcore");
         if p.exists() {
             return Ok(p);
         }
@@ -106,24 +142,6 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
         }
     }
 
-    /*
-        **装好的应用和开发布局要说两句不同的话。**
-
-        那一串 `../../thinkwatch-core/target/debug/twcore` 和一句
-        `cargo build -p twcore`，对开发者是答案，对用户是噪音 —— 他
-        既没有那个仓库，也不会去跑 cargo。他需要知道的只有一件事：
-        这份安装包缺东西，重装。
-
-        判据是 macOS 上打包应用的资源目录形状：`.app/Contents/Resources`。
-    */
-    let bundled = app
-        .path()
-        .resource_dir()
-        .map(|d| d.ends_with("Contents/Resources"))
-        .unwrap_or(false);
-    if bundled {
-        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
-    }
     anyhow::bail!(
         "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
          `cargo build -p twcore`。",

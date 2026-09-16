@@ -51,6 +51,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      # **一个只检查代码的任务为什么要下载一个发布产物。**
+      #
+      # `tauri.conf.json` 声明 `.app` 里装着 twcore，而 Tauri 的
+      # build script 在**编译期**就校验那个文件在不在 —— 所以连
+      # `cargo clippy` 都需要它。
+      #
+      # 换个写法可以绕开（打包完再手工拷一份进去），代价是「没有网关
+      # 的包」又能被悄悄造出来 —— 那正是引入这套东西要修的 bug。宁可
+      # 让 CI 多下十四兆。校验和对得上就不会重复下载。
+      - name: Fetch the core binary the bundle declares
+        run: bash src-tauri/scripts/fetch-core.sh
       - name: Format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
       # Warnings are errors. Relaxing this on CI is the same as removing

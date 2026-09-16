@@ -7,7 +7,8 @@
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "beforeBundleCommand": "bash src-tauri/scripts/fetch-core.sh"
   },
   "app": {
     "windows": [],
@@ -29,6 +30,9 @@
     ],
     "macOS": {
       "minimumSystemVersion": "12.0"
+    },
+    "resources": {
+      "resources/twcore": "twcore"
     }
   }
 }
