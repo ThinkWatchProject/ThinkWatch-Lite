@@ -1,0 +1,4 @@
+
+# 打包时从 core 的 Release 取回来的，不进仓库：它是产物不是源码，
+# 而且钉在哪一版由 Cargo.lock 说了算（见 scripts/fetch-core.sh）
+/resources/

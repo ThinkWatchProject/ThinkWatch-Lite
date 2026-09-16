@@ -57,12 +57,35 @@ pub struct AppState {
 pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     let mut tried = Vec::new();
 
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let p = resource_dir.join("twcore");
+    /*
+        装在包里的那一份，**从可执行文件自己的位置往上数**。
+
+        这里原来问的是 `app.path().resource_dir()` —— 而它在打包出来的
+        `.app` 里实测返回 `unknown path`，于是包里明明有 twcore，应用
+        却报「找不到」，然后悄悄退回去用了隔壁开发仓库里的那个。在开发
+        机上这条 bug 完全看不见：兜底总能找到东西。
+
+        `.app/Contents/MacOS/<exe>` 到 `.app/Contents/Resources/` 是
+        bundle 布局定死的关系，自己数两级不依赖任何 API。
+    */
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
+            let p = contents.join("Resources").join("twcore");
+            if p.exists() {
+                return Ok(p);
+            }
+            tried.push(p);
+        }
+    }
+    // 别的平台上框架那条仍然是对的，留着
+    if let Ok(dir) = app.path().resource_dir() {
+        let p = dir.join("twcore");
         if p.exists() {
             return Ok(p);
         }
-        tried.push(p);
+        if !tried.contains(&p) {
+            tried.push(p);
+        }
     }
 
     // 显式覆盖优先。**core 放在哪儿是开发者的选择** —— 之前这里写死了
@@ -116,10 +139,11 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
 
         判据是 macOS 上打包应用的资源目录形状：`.app/Contents/Resources`。
     */
-    let bundled = app
-        .path()
-        .resource_dir()
-        .map(|d| d.ends_with("Contents/Resources"))
+    // 同样不问框架：可执行文件在不在 `.app/Contents/MacOS` 里，这件事
+    // 自己看得出来。
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.ends_with("Contents/MacOS")))
         .unwrap_or(false);
     if bundled {
         anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");

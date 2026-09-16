@@ -61,3 +61,28 @@ These are load-bearing and a PR that breaks one will be asked to change:
 - **Never delete a user's file or config without showing the diff
   first.** Every destructive action goes through our own confirmation
   UI, never a browser `confirm`.
+
+## Building a `.app`
+
+`pnpm tauri build` produces a self-contained bundle. The `twcore` inside
+it is downloaded from a ThinkWatch-Core release and checksum-verified —
+not copied out of a sibling checkout, because then "which build did we
+hand out" would be a question about somebody's afternoon.
+
+Which release is decided by the `tag` that `Cargo.lock` resolved for
+`tw-api`, so the protocol mirror compiled into the app and the binary
+shipped beside it always come from one core commit. To move to a newer
+core: change the `tag` in `src-tauri/Cargo.toml`, `cargo update -p
+tw-api`, rebuild.
+
+`pnpm tauri dev` does not run any of this and needs no network. There,
+`locate_core` finds a binary in a sibling `thinkwatch-core` checkout.
+
+Apple Silicon only, and the bundle is neither signed nor notarized. On
+macOS 15 and later a downloaded copy has to be cleared once:
+
+    xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
+
+That flag is set by whatever downloaded the file. An update fetched by
+the app itself never carries it, so this is a one-time step rather than
+one per release.
