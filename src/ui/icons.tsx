@@ -1,5 +1,5 @@
 /**
- * 源列表和工具条的图标。
+ * 应用里用到的图标。
  *
  * **从手写换成了 lucide。**这里原来是十二个手画的 16px 描边图形 ——
  * 当时的理由是「不为九个图标引一个依赖」。而 `components.json` 里
@@ -27,3 +27,5 @@ export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机�
 export { KeyRound as IconKey } from "lucide-react"; // 密钥 —— 钥匙，不是锁
 export { SlidersHorizontal as IconSettings } from "lucide-react"; // 设置 —— 推子，齿轮留给系统设置
 export { PanelLeft as IconSidebar } from "lucide-react"; // 收起/展开源列表
+export { Copy as IconCopy } from "lucide-react"; // 复制 —— 两张叠着的纸
+export { Check as IconCopied } from "lucide-react"; // 已复制 —— 一个勾

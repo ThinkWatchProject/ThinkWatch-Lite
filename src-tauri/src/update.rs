@@ -20,6 +20,24 @@ const CASK: &str = "thinkwatch-lite";
 /// Intel 时代的位置；自定义前缀装不了 cask，也就不会出现在这里。
 const BREW_PREFIXES: [&str; 2] = ["/opt/homebrew", "/usr/local"];
 
+/// tap 里的 cask 文件。**Homebrew 那一档以它为准，不以 latest.json 为准。**
+///
+/// 发版的那一刻 latest.json 就有了新版本，而 tap 要等它自己的定时任务把
+/// cask 跟上。在那之前告诉 Homebrew 的用户「有新版本，去 brew upgrade」，
+/// 他照做之后 brew 只会回一句已经是最新 —— 一个弹窗给出的命令，执行下去
+/// 必须真的有用。
+pub const CASK_URL: &str = "https://raw.githubusercontent.com/ThinkWatchProject/homebrew-tap/main/Casks/thinkwatch-lite.rb";
+
+/// Homebrew 的用户要执行的那一条。
+///
+/// **前面必须有 `brew update`。**`brew upgrade` 只在距离上次更新超过
+/// `HOMEBREW_AUTO_UPDATE_SECS`（默认 86400，一天）时才自己去拉 tap；在那
+/// 之前本地的 tap 还是旧的，它一样会回「已经是最新」。
+pub const BREW_UPGRADE: &str = "brew update && brew upgrade --cask thinkwatch-lite";
+
+/// 同一个版本被「稍后」之后，隔多久再提。
+pub const REMIND_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
 /// 应用自己的设置文件，放在数据目录里。
 ///
 /// **不是网关的配置。**`config.yaml` 有版本、有历史、能回滚，因为改错一行
@@ -113,14 +131,72 @@ pub fn kind() -> Install {
 }
 
 /// 应用自己的设置。
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///
+/// 缺字段时取 [`Prefs::default`] 里的值，不是类型的零值 —— 对一个布尔来说
+/// 两者恰好相反。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Prefs {
-    /// 启动时以及此后每隔一段时间，去看有没有新版本。
+    /// 启动之后以及此后每隔一段时间，去看有没有新版本。
     ///
-    /// **出厂是关的。**一个装完就开始往外发请求的工具，用户没同意过 ——
-    /// 而这件事对它自己有好处，对用户只是「有人知道我装了这个」。
+    /// **出厂是开的。**这个应用坐在每一个 AI 请求的必经之路上：脱敏规则、
+    /// 工具调用的检查、对上游的兼容，修好一处都要用户换到那一版才生效，而
+    /// 一个停在旧版本上的网关，用户自己是看不出来的。检查本身只读一份版本
+    /// 清单，不带任何本机的内容；不需要的话在「设置」里关掉。
     pub check_updates: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            check_updates: true,
+        }
+    }
+}
+
+/// 从 cask 文件里读出版本号。
+///
+/// 只认 `version "x"` 这一种写法。`version :latest` 之类不带具体版本的
+/// 写法读出来是 `None` —— 那种 cask 没法比新旧，也就不该弹窗。
+pub fn cask_version(text: &str) -> Option<&str> {
+    text.lines().find_map(|l| {
+        let rest = l.trim_start().strip_prefix("version \"")?;
+        rest.split('"').next().filter(|v| !v.is_empty())
+    })
+}
+
+/// `candidate` 比 `current` 新吗。
+///
+/// **按语义化版本比，不按字符串比** —— 按字符串，2026.9.10 比 2026.9.9 旧。
+/// 任何一边解析不了都算「不新」：拿不准的时候不弹窗。
+pub fn newer(candidate: &str, current: &str) -> bool {
+    match (
+        semver::Version::parse(candidate),
+        semver::Version::parse(current),
+    ) {
+        (Ok(a), Ok(b)) => a > b,
+        _ => false,
+    }
+}
+
+/// 上一次弹窗是为哪个版本、在什么时候。
+#[derive(Debug, Clone)]
+pub struct Prompted {
+    pub version: String,
+    pub at: std::time::Instant,
+}
+
+/// 这一次该不该把更新窗口推到用户面前。
+///
+/// **新版本立刻提，同一个版本一天最多一次。**用户点过「稍后」，六小时后
+/// 下一轮检查又把同一个窗口推到他面前，那是在跟他较劲；而一直不再提，
+/// 一个开着几周不重启的菜单栏应用就永远停在旧版本上。
+pub fn due(last: Option<&Prompted>, version: &str, now: std::time::Instant) -> bool {
+    match last {
+        None => true,
+        Some(p) if p.version != version => true,
+        Some(p) => now.saturating_duration_since(p.at) >= REMIND_AFTER,
+    }
 }
 
 fn prefs_path(dir: &Path) -> PathBuf {
@@ -237,9 +313,28 @@ mod tests {
     }
 
     #[test]
-    fn with_no_settings_file_the_check_is_off() {
+    fn with_no_settings_file_the_check_is_on() {
         let dir = tmp();
+        assert!(load_prefs(&dir).check_updates);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 关掉之后存得住。**这一条防的是 `#[serde(default)]` 的一个坑**：
+    /// 默认值改成开之后，缺字段时取的是 `Default` 而不是布尔的零值，而
+    /// 用户写下的 `false` 必须照样被读成 `false`。
+    #[test]
+    fn turning_the_check_off_is_remembered() {
+        let dir = tmp();
+        save_prefs(
+            &dir,
+            &Prefs {
+                check_updates: false,
+            },
+        )
+        .unwrap();
         assert!(!load_prefs(&dir).check_updates);
+        std::fs::write(prefs_path(&dir), b"{}").unwrap();
+        assert!(load_prefs(&dir).check_updates, "缺字段取默认值，也就是开");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -254,19 +349,70 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 文件坏了按出厂设置 —— 而出厂设置是**不检查**，不是检查。
+    /// 文件坏了按出厂设置。
     #[test]
-    fn a_corrupt_settings_file_falls_back_to_not_checking() {
+    fn a_corrupt_settings_file_falls_back_to_the_default() {
         let dir = tmp();
-        save_prefs(
-            &dir,
-            &Prefs {
-                check_updates: true,
-            },
-        )
-        .unwrap();
         std::fs::write(prefs_path(&dir), b"{ not json").unwrap();
-        assert!(!load_prefs(&dir).check_updates);
+        assert_eq!(load_prefs(&dir), Prefs::default());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 读的是 tap 里真实的那份 cask —— 格式变了，这条先红。
+    #[test]
+    fn the_version_comes_out_of_a_real_cask() {
+        let cask = r#"cask "thinkwatch-lite" do
+  version "2026.9.2"
+  sha256 "bccc9014b1b1df1fb4e33fa5534f1ccb7c431ac41a1b415aa932090c4dfd0cf4"
+
+  url "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/download/v#{version}/ThinkWatch-Lite-#{version}-arm64.dmg"
+end
+"#;
+        assert_eq!(cask_version(cask), Some("2026.9.2"));
+        assert_eq!(
+            cask_version("cask \"x\" do\n  version :latest\nend\n"),
+            None
+        );
+        assert_eq!(cask_version(""), None);
+    }
+
+    #[test]
+    fn versions_compare_as_numbers_not_as_text() {
+        assert!(newer("2026.9.10", "2026.9.9"), "按字符串比会判反");
+        assert!(newer("2026.10.0", "2026.9.9"));
+        assert!(!newer("2026.9.2", "2026.9.2"));
+        assert!(!newer("2026.9.1", "2026.9.2"));
+        // 拿不准就当不新 —— 不为一个读不懂的版本号弹窗
+        assert!(!newer("latest", "2026.9.2"));
+        assert!(!newer("2026.9.3", "not-a-version"));
+    }
+
+    #[test]
+    fn the_same_version_is_offered_at_most_once_a_day() {
+        let t0 = std::time::Instant::now();
+        assert!(due(None, "2026.9.3", t0), "从没提过就提");
+
+        let last = Prompted {
+            version: "2026.9.3".into(),
+            at: t0,
+        };
+        let six_hours = t0 + std::time::Duration::from_secs(6 * 3600);
+        assert!(
+            !due(Some(&last), "2026.9.3", six_hours),
+            "点过「稍后」，下一轮检查不再推同一个"
+        );
+        assert!(due(Some(&last), "2026.9.3", t0 + REMIND_AFTER));
+        assert!(
+            due(Some(&last), "2026.9.4", six_hours),
+            "又出了一个新版本，立刻提"
+        );
+    }
+
+    /// 本地的 tap 可能是一天前的，没有 `brew update` 的话，这条命令会回
+    /// 「已经是最新」—— 而弹窗刚说有新版本。
+    #[test]
+    fn the_brew_command_refreshes_the_tap_first() {
+        assert!(BREW_UPGRADE.starts_with("brew update && "));
+        assert!(BREW_UPGRADE.ends_with("brew upgrade --cask thinkwatch-lite"));
     }
 }

@@ -23,7 +23,7 @@ tauri-plugin-shell = "2"
 # 编出来的东西不一样；而更要紧的是，打进 `.app` 的那个 twcore 二进制
 # 必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是从
 # 这个 tag 去取二进制的（见 scripts/fetch-core.sh）。
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.1.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.1.1" }
 
 anyhow = "1"
 libc = "0.2"
@@ -38,6 +38,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-notification = "2.4.0"
 tauri-plugin-updater = "2"
+# Homebrew 那一档要去读 tap 里的 cask。**和更新器插件同一套 HTTP 与 TLS**
+# —— 版本、特性都对齐它，所以这里不多编译任何东西；系统代理也跟着一起认。
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+semver = "1"
+# Homebrew 那一档的「复制命令」。**在 Rust 这边写剪贴板**，理由见
+# `update_copy_command`。
+tauri-plugin-clipboard-manager = "2"
 
 [profile.release]
 lto = "thin"
