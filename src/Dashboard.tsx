@@ -114,7 +114,7 @@ function Spread({ rows, max }: { rows: LatencyView[]; max: number }) {
               style={{ left: `${(l.p50 / max) * 100}%` }}
             />
           </span>
-          <span className="w-24 shrink-0 text-right tw-num text-muted-foreground">
+          <span className="w-28 shrink-0 text-right tw-num whitespace-nowrap text-muted-foreground">
             {l.p50} – {l.p95}ms
           </span>
           {/*
@@ -157,23 +157,12 @@ function Delta({ v, more, good }: { v: number; more: string; good?: "down" }) {
 }
 
 /** 缓存构成条上的一段。 */
-function Swatch({
-  color,
-  name,
-  n,
-  rate,
-}: {
-  color: string;
-  name: string;
-  n: number;
-  rate: string;
-}) {
+function Swatch({ color, name, n }: { color: string; name: string; n: number }) {
   return (
     <Tip text={`${n.toLocaleString()} token`}>
       <span className="flex items-center gap-1.5">
         <span className={"inline-block size-2 shrink-0 rounded-[2px] " + color} />
         {name} {compact(n)}
-        <span className="tw-label text-muted-foreground">{rate}</span>
       </span>
     </Tip>
   );
@@ -539,12 +528,17 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               : `失败率 ${((s.failed / Math.max(1, s.requests)) * 100).toFixed(1)}%`}
           </p>
         </div>
-      </div>
 
-      <div className="relative mt-4">
-        {/* 实时档只画 token —— 金额是落库时算的，事件流里没有 */}
+        {/*
+          口径切换。**放在这一排数字的右端，不压在图上** —— 图是会长到
+          顶的，曲线一高就从按钮底下穿过去。这一行右侧本来是空的，放在
+          这儿不多占一点高度。
+
+          实时档没有这个切换：金额是落库时按价目表算的，事件流里没有，
+          那一档只画得出 token。
+        */}
         {!live && (
-          <div className="absolute top-0 right-0 z-10">
+          <div className="ml-auto self-start">
             <ToggleGroup
               type="single"
               variant="outline"
@@ -557,6 +551,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
             </ToggleGroup>
           </div>
         )}
+      </div>
+
+      <div className="mt-4">
         <StackedArea
           data={area}
           keys={keys}
@@ -608,9 +605,17 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           而且不携带比例。**这里的条长就是占比，色块和曲线里那一层同色
           —— 图例的职责就是那个映射，保留下来了。
         */}
-        {keys.length > 0 && (
-          <Block name="模型">
-            {[...keys].reverse().map((k, i) => {
+        {/*
+          **这一块永远在。**它在「有数据」和「没数据」之间消失的话，
+          切一次时间范围整页就上下弹一次。没有数据时留一行字占住。
+        */}
+        <Block name="模型">
+          {keys.length === 0 && (
+            <p className="tw-body text-muted-foreground">
+              {live ? "等待请求。" : "所选区间内无请求记录。"}
+            </p>
+          )}
+          {[...keys].reverse().map((k, i) => {
               const c = k === "其他" ? restMoney : (money.get(k) ?? 0);
               const v = k === "其他" ? restVolume : (volume.get(k) ?? 0);
               const n = k === "其他" ? restCount : (count.get(k) ?? 0);
@@ -659,15 +664,17 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 </div>
               );
             })}
-          </Block>
-        )}
+        </Block>
 
         {/*
           缓存。**要的是率，不是累计量** —— 「省了多少」在一个长会话里
           只会一路涨，它回答不了「缓存到底有没有在起作用」。
         */}
-        {ctx > 0 && (
-          <Block name="缓存">
+        <Block name="缓存">
+          {ctx === 0 ? (
+            <p className="tw-body text-muted-foreground">所选区间内无 token 记录。</p>
+          ) : (
+            <>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 tw-body">
               <span className="tw-num tw-title leading-none font-medium">
                 {hit == null ? "—" : `${Math.round(hit * 100)}%`}
@@ -689,9 +696,10 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 />
               </span>
               {/*
-                **净额，不是毛额。**缓存写入按 1.25 倍单价计费，只统计
-                命中省下的部分，等于声称缓存永远只会降低支出 —— 而一份
-                反复重建缓存、命中很少的用法，实际账单高于不使用缓存。
+                **净额，不是毛额。**缓存写入通常按高于输入的单价计费，
+                只统计命中省下的部分，等于声称缓存永远只会降低支出 ——
+                而一份反复重建缓存、命中很少的用法，实际账单高于不使用
+                缓存。倍率各家不同，这个数是按每个模型自己的价目算的。
               */}
               <span className="text-muted-foreground">
                 {s.cache_saved_micros < 0 ? "净增成本" : "净节省"}{" "}
@@ -704,29 +712,40 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                   {usd(Math.abs(s.cache_saved_micros))}
                 </span>
               </span>
+              {/*
+                **不解释倍率。**读写各按几倍计费是某一家的价目，而这一
+                页上的模型可能来自任何一家上游 —— 把一家的计费规则写死
+                在界面上，对别家就是错的。
+
+                旁边那个净节省已经说清了结论，而它是按**每个模型自己的
+                价目**算出来的；读写比只是那个结论的来路，摆在这里让人
+                能自己看一眼比例，不需要再加一段说明。
+              */}
               {ratio != null && (
-                <Tip text="缓存写入按输入单价的 1.25 倍计费，命中读取按 0.1 倍计费。读取量达到写入量的约 28% 即可抵消写入成本；低于该比例，缓存将增加总支出。">
-                  <span className="text-muted-foreground underline decoration-dotted underline-offset-2">
-                    读写比 <span className="tw-num font-medium">{ratio.toFixed(1)} : 1</span>
-                  </span>
-                </Tip>
+                <span className="text-muted-foreground">
+                  读写比 <span className="tw-num font-medium">{ratio.toFixed(1)} : 1</span>
+                </span>
               )}
             </div>
+            {/* 同上：不标倍率。三段的顺序本身就是从便宜到贵 */}
             <div className="flex flex-wrap gap-x-5 gap-y-1 tw-body">
-              <Swatch color="bg-cache-hit" name="缓存读" n={s.cache_read_tokens} rate="0.1 倍单价" />
-              <Swatch color="bg-cache-plain" name="新输入" n={s.input_tokens} rate="1 倍" />
-              <Swatch color="bg-cache-write" name="缓存写" n={s.cache_write_tokens} rate="1.25 倍" />
+              <Swatch color="bg-cache-hit" name="缓存读" n={s.cache_read_tokens} />
+              <Swatch color="bg-cache-plain" name="新输入" n={s.input_tokens} />
+              <Swatch color="bg-cache-write" name="缓存写" n={s.cache_write_tokens} />
             </div>
-          </Block>
-        )}
+            </>
+          )}
+        </Block>
 
         {/*
           **左右两栏，各自纵向长。**「哪个模型慢」的下一步是换模型，
           「哪家上游慢」的下一步是换上游 —— 两个问题各占一栏。排成一行
           的话，上游一多就横向挤爆了。
         */}
-        {d.latency.length > 0 && (
-          <Block name="延迟">
+        <Block name="延迟">
+          {d.latency.length === 0 ? (
+            <p className="tw-body text-muted-foreground">所选区间内样本不足，暂无分位数据。</p>
+          ) : (
             <div className="grid gap-x-7 gap-y-3 lg:grid-cols-2">
               <div className="min-w-0 space-y-1.5">
                 <p className="tw-label text-muted-foreground">按模型 · 首字节 P50 至 P95</p>
@@ -739,8 +758,8 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 </div>
               )}
             </div>
-          </Block>
-        )}
+          )}
+        </Block>
 
         {/*
           安全。**没有发现时也在，而且说「未发现」。**这一页别处的纪律

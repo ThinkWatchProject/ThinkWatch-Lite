@@ -56,8 +56,20 @@ export function StackedArea({
   height?: number;
   empty?: string;
 }) {
+  /*
+    **没数据时也要占住这块地方。**塌成一行字的话，数据一来整页往下弹
+    一百多像素；而切换时间范围时，这一弹是每次都会发生的 —— 页面在
+    「有没有数据」之间来回跳，读的人每次都要重新找位置。
+  */
   if (data.length === 0 || keys.length === 0) {
-    return <p className="tw-label text-muted-foreground">{empty ?? "还没有数据"}</p>;
+    return (
+      <div
+        className="flex w-full items-center justify-center rounded-sm border border-dashed border-border/60"
+        style={{ height }}
+      >
+        <p className="tw-label text-muted-foreground">{empty ?? "还没有数据"}</p>
+      </div>
+    );
   }
   const cfg = Object.fromEntries(
     keys.map((k, i) => [k, { label: k, color: colors[i] }]),
