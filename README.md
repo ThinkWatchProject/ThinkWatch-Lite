@@ -43,9 +43,9 @@ copying the app out of the disk image.
 
 ### Updates
 
-The app looks for a new version two minutes after it starts and every six hours
-after that, reading a small manifest and nothing else. It can be turned off
-under Settings.
+The app looks for a new version shortly after it starts and once a day after
+that, reading a small manifest and nothing else. It can be turned off under
+Settings.
 
 When there is one, a small window says so, and what happens next depends on how
 the app was installed.
