@@ -10,9 +10,13 @@
 # 锁到的那个 tag —— 桌面版编译进去的是那一版的协议镜像，包里装的就
 #必须是同一版的二进制。两处各写一遍就会漂。
 #
-# 只在 `tauri build` 打包那一步跑（`beforeBundleCommand`）。日常
-# `tauri dev` 不经过这里，也不需要网络：那时 `locate_core` 会在隔壁
-# 仓库的 target 里找到一个。
+# 挂在 `beforeBuildCommand` 上，**不是 `beforeBundleCommand`**。
+# `tauri.conf.json` 声明 `.app` 里装着这个文件，而 Tauri 的 build
+# script 在**编译期**就校验它在不在 —— 挂在打包那一步上，等于在一个
+# 干净的检出里永远赶不上：编译先失败。
+#
+# 日常 `tauri dev` 不经过这里，也不需要网络：那时 `locate_core` 会在
+# 隔壁仓库的 target 里找到一个。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
