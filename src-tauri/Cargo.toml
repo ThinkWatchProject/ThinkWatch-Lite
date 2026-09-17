@@ -31,7 +31,7 @@ tauri-plugin-deep-link = "2"
 # 编出来的东西不一样；而更要紧的是，打进 `.app` 的那个 twcore 二进制
 # 必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是从
 # 这个 tag 去取二进制的（见 scripts/fetch-core.sh）。
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.5.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.6.0" }
 
 anyhow = "1"
 libc = "0.2"
@@ -62,3 +62,7 @@ strip = "symbols"
 # core 那边同样保留 unwind，理由一致：catch_unwind 要靠它兜住单个请求的
 # panic，而 abort 会让那层防护失效。
 panic = "unwind"
+
+[dev-dependencies]
+# 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
+tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

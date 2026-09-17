@@ -21,6 +21,7 @@ import Keys from "./Keys";
 import Routes from "./Routes";
 import Security from "./Security";
 import Guard from "./Guard";
+import { Notices } from "./Notices";
 import { Tip, TooltipRoot } from "@/ui/tip";
 import {
   IconClient,
@@ -897,16 +898,20 @@ export default function App() {
             配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
             所以入口放在工具栏，而不是每页各放一套。
           */}
-          {linked && CONFIG_PAGES.has(tab) && (
-            <div className="ml-auto flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
-                配置文件
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                版本历史
-              </Button>
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-1">
+            {linked && CONFIG_PAGES.has(tab) && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
+                  配置文件
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                  版本历史
+                </Button>
+              </>
+            )}
+            {/* 提醒在每一页都在：它说的事不属于任何一页 */}
+            <Notices onNavigate={(v) => setTab(v as Surface)} />
+          </div>
         </div>
 
         {/*
