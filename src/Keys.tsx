@@ -170,7 +170,7 @@ export default function Keys({
     const name = newName.trim();
     if (!name) return;
     if (ov.clients.some((c) => c.name === name)) {
-      toast.error(`已经有一把叫「${name}」的密钥了`);
+      toast.error(`密钥「${name}」已存在`);
       return;
     }
     setBusy("new");
@@ -210,7 +210,7 @@ export default function Keys({
       <section>
         <div className="flex items-baseline gap-3">
           <p className="tw-body text-muted-foreground">
-            没有密钥连不上，本机也一样。
+            客户端须使用密钥连接网关，本机连接也不例外。
           </p>
           <Button
             variant="outline"
@@ -218,7 +218,7 @@ export default function Keys({
             className="ml-auto"
             onClick={() => setAdding(true)}
           >
-            新建
+            新建密钥
           </Button>
         </div>
 
@@ -228,7 +228,7 @@ export default function Keys({
               className="flex-1"
               autoFocus
               value={newName}
-              placeholder="给它起个名字，比如 codex"
+              placeholder="密钥名称，例如 codex"
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void create();
@@ -240,7 +240,7 @@ export default function Keys({
               disabled={busy === "new" || !newName.trim()}
               onClick={() => void create()}
             >
-              建
+              创建
             </Button>
             <Button
               variant="ghost"
@@ -255,7 +255,7 @@ export default function Keys({
         <Table className="mt-3">
           <TableHeader>
             <TableRow>
-              <TableHead>名字</TableHead>
+              <TableHead>名称</TableHead>
               <TableHead>密钥</TableHead>
               <TableHead>路由</TableHead>
               <TableHead>并发上限</TableHead>
@@ -316,7 +316,7 @@ export default function Keys({
                       const raw = e.target.value.trim();
                       const v = raw === "" ? null : Number(raw);
                       if (v !== null && (!Number.isFinite(v) || v < 1)) {
-                        toast.error("并发上限要是一个 1 以上的整数，或者留空表示不限");
+                        toast.error("并发上限须为不小于 1 的整数，留空表示不限");
                         return;
                       }
                       if ((c.max_concurrent ?? null) === v) return;
@@ -348,14 +348,14 @@ export default function Keys({
                   />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Tip text="换一把新的。旧的立刻失效 —— 用着它的客户端要重新配。">
+                  <Tip text="生成新密钥，原密钥立即失效，使用原密钥的客户端需要重新配置。">
                     <Button
                       variant="ghost"
                       size="sm"
                       disabled={busy === c.name}
                       onClick={() => void regenerate(c.name)}
                     >
-                      换密钥
+                      更换密钥
                     </Button>
                   </Tip>
                   {/*
@@ -366,8 +366,8 @@ export default function Keys({
                   <Tip
                     text={
                       ov.clients.length <= 1
-                        ? "这是最后一把。删掉之后谁也连不上，配置也会加载失败。"
-                        : "删掉它。用着它的客户端立刻连不上。"
+                        ? "至少需要保留一个密钥。删除最后一个密钥后，所有客户端将无法连接，配置也将无法加载。"
+                        : "删除此密钥，使用此密钥的客户端将立即无法连接。"
                     }
                   >
                     <Button
@@ -393,9 +393,9 @@ export default function Keys({
       >
         <AlertDialogContent className="sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>删掉密钥「{confirmDelete}」？</AlertDialogTitle>
+            <AlertDialogTitle>删除密钥「{confirmDelete}」</AlertDialogTitle>
             <AlertDialogDescription>
-              用着它的客户端会立刻连不上，要重新配一把。配置有版本历史，删错了能回滚。
+              删除后，使用此密钥的客户端将立即无法连接，需重新配置密钥。可在版本历史中恢复。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

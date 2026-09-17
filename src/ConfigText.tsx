@@ -146,7 +146,7 @@ export default function ConfigTextMode({
           <AlertTitle>文件已被其他进程修改</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            现在保存会覆盖掉外面那次改动。
+            此时保存将覆盖该进程所做的修改。
           </p>
           <div className="mt-2 flex gap-2">
             <Button

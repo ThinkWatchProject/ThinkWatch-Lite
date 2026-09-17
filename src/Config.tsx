@@ -182,9 +182,9 @@ function SelectCell({
  * · **仅本机** `loopback` —— 绑 127.0.0.1。别的设备连不过来。
  * · **指定网卡** `<IP>` —— 绑某一张网卡自己的地址。只有那张网卡所在的
  *   网络连得上。
- * · **不限网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
+ * · **所有网卡** `all` —— 绑 0.0.0.0。**每一张**网卡,包括对着公网的那张。
  *
- * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「不限网卡」是同
+ * 以前中间那档叫「局域网」,而它绑的也是 0.0.0.0 —— 和「所有网卡」是同
  * 一个地址,区别只在来源白名单的默认值。**那是个白名单概念,伪装成了网卡
  * 选择**:用户以为网关只在局域网那张网卡上听,实际它在所有网卡上听。
  *
@@ -210,12 +210,12 @@ const KINDS: { id: BindKind; label: string; what: string }[] = [
   {
     id: "nic",
     label: "指定网卡",
-    what: "只绑这一张网卡自己的地址，只有它所在的那个网络连得上。密钥校验强制开启。",
+    what: "绑定所选网卡的地址。仅该网卡所在网络中的设备可连接，密钥校验强制开启。",
   },
   {
     id: "all",
-    label: "不限网卡",
-    what: "绑 0.0.0.0，每一张网卡都在听 —— 包括对着公网的那张。密钥校验强制开启。",
+    label: "所有网卡",
+    what: "绑定 0.0.0.0，在所有网卡上监听，包括连接公网的网卡。密钥校验强制开启。",
   },
 ];
 
@@ -254,7 +254,7 @@ function CidrList({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {items.length === 0 && <span className="text-muted-foreground">（全放行）</span>}
+      {items.length === 0 && <span className="text-muted-foreground">（允许所有来源）</span>}
       {items.map((c, i) => (
         <span
           key={c}
@@ -266,7 +266,7 @@ function CidrList({
             size="icon-xs"
             disabled={busy}
             onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
-            aria-label={`删掉 ${c}`}
+            aria-label={`删除 ${c}`}
           >
             ×
           </Button>
@@ -276,7 +276,7 @@ function CidrList({
         className="w-44 font-mono"
         value={adding}
         disabled={busy}
-        placeholder="加一段，比如 192.168.1.0/24"
+        placeholder="例如 192.168.1.0/24"
         onChange={(e) => setAdding(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && adding.trim()) {
@@ -368,7 +368,7 @@ function ProbesSection({
         ))}
       </ul>
       <p className="mt-2 tw-label text-muted-foreground">
-        路由规则里的「辅助请求」条件，只有在这一类选了「交给路由」时才可能命中。
+        仅当对应类别设为「交给路由」时，路由规则中的「辅助请求」条件才会命中。
       </p>
     </section>
   );
@@ -385,8 +385,8 @@ function LimitsSection({
   const l = ov.limits;
   if (!l) return null;
   const rows: [string, keyof typeof l, string][] = [
-    ["全局并发", "max_concurrent", "同时在飞的请求上限。超了先排队。"],
-    ["单个上游", "per_provider", "一家上游同时最多几个。防止一家慢拖垮不限。"],
+    ["全局并发", "max_concurrent", "同时处理的请求数上限，超出后进入队列。"],
+    ["单个上游", "per_provider", "单个上游同时处理的请求数上限，避免个别上游变慢时占满全局并发。"],
     ["队列上限", "queue_depth", "队列达到此长度后拒绝新请求。"],
     ["排队超时", "queue_timeout_secs", "排队超过此时长后放弃（秒）。"],
   ];
@@ -462,7 +462,7 @@ function ListenSection({
     // 选「指定网卡」时先落到第一张，用户再从选单里换
     const first = nics?.[0];
     if (!first) {
-      toast.error("没找到可以绑的网卡。插着网线或连着 Wi-Fi 吗？");
+      toast.error("未找到可绑定的网卡，请检查网线或 Wi-Fi 连接。");
       return;
     }
     void write(first.addr);
@@ -508,9 +508,8 @@ function ListenSection({
         <Alert variant="warning" className="mt-2">
           <AlertTitle>网关已暴露在局域网</AlertTitle>
           <AlertDescription>
-            同一个网络里的机器都能连过来。来源白名单还在起作用，但它挡的是
-            地址，不是人。
-            <Tip text="这种情况下密钥校验是强制的，关不掉 —— 否则同网段任何人都能用你的上游额度。">
+            同一网络中的设备均可连接网关。来源白名单仅按 IP 地址限制访问。
+            <Tip text="网关暴露在局域网时，密钥校验强制开启且无法关闭，以防同一网段的其他设备使用上游额度。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">
                 密钥强制校验
               </span>
@@ -532,7 +531,7 @@ function ListenSection({
                 **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
             {!nics?.some((n) => n.addr === cur) && (
               <NativeSelectOption value={cur}>
-                {cur}（现在找不到这张网卡）
+                {cur}（未找到此网卡）
               </NativeSelectOption>
             )}
             {nics?.map((n) => (
@@ -541,9 +540,9 @@ function ListenSection({
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <Tip text="这是这张网卡此刻的地址。DHCP 续租、换一个网络、VPN 起落都可能让它变掉 —— 变了之后网关绑不上，起不来。想要「不管地址怎么变都能用」，选「不限网卡」并留着来源白名单。">
+          <Tip text="此为该网卡当前的地址。DHCP 续租、切换网络或 VPN 连接变化都可能改变该地址，地址变化后网关将无法启动。如需在地址变化后保持可用，请选择「所有网卡」并配置来源白名单。">
             <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
-              地址会变
+              地址可能变化
             </span>
           </Tip>
         </div>
@@ -649,7 +648,7 @@ export default function Config({
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{g.name}</span>
-                  <Tip text="跳到配置文件里这一段，并选中它">
+                  <Tip text="在配置文件中定位此段">
                   <Button
                     variant="ghost"
                     size="xs"
@@ -689,7 +688,7 @@ export default function Config({
                 */}
                 {g.kind === "手动选" && (
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-muted-foreground">优先用</span>
+                    <span className="text-muted-foreground">优先使用</span>
                     <NativeSelect
                       size="inline"
                       value={g.selected ?? ""}
@@ -720,13 +719,13 @@ export default function Config({
                       ))}
                     </NativeSelect>
                     <span className="text-muted-foreground">
-                      其余的仍然是它的故障转移备选
+                      其余上游作为故障转移备选
                     </span>
                   </div>
                 )}
                 {/*
                   **会话粘滞要摆在明面上，因为它直接决定账单。**
-                  关掉它，一次长会话每轮跳一家，prompt cache 不限失效，
+                  关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
                   而缓存命中与否成本差 5 到 10 倍。
                 */}
                 {g.kind === "轮流" && (
@@ -757,7 +756,7 @@ export default function Config({
                       }}
                     />
                     <FieldLabel htmlFor={`sticky-${g.name}`}>
-                      会话粘滞（同一次对话固定走同一家）
+                      会话粘滞（同一会话固定使用同一上游）
                     </FieldLabel>
                   </Field>
                 )}
@@ -766,8 +765,8 @@ export default function Config({
                   // 缓存命中与否成本差 5 到 10 倍，而为了省 20% 的单价
                   // 丢掉 90% 的缓存折扣，是一笔怎么算都不划算的账。
                   <p className="mt-1.5 text-amber-700 dark:text-amber-400">
-                    ⚠ 这个策略会让 prompt cache 失效，长会话的成本会明显上升。
-                    {g.kind === "轮流" ? "把上面那个粘滞打开就好。" : ""}
+                    ⚠ 此策略会使 prompt cache 失效，长会话的费用将明显上升。
+                    {g.kind === "轮流" ? "开启会话粘滞可避免此问题。" : ""}
                   </p>
                 )}
               </li>
@@ -812,9 +811,9 @@ export default function Config({
                   看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
                   要讲清勾上之后系统设置里会多出什么。
                 */}
-                默认不开。
-                <Tip text="勾上会在「系统设置 › 通用 › 登录项」里注册一条。开机后只有菜单栏多一个图标，不会弹出窗口。">
-                  <span className="underline decoration-dotted underline-offset-2">勾上会发生什么</span>
+                默认关闭。
+                <Tip text="开启后将在「系统设置 › 通用 › 登录项」中添加一项。开机后应用仅在菜单栏显示图标，不打开窗口。">
+                  <span className="underline decoration-dotted underline-offset-2">开启后的效果</span>
                 </Tip>
               </FieldDescription>
             </FieldContent>
@@ -886,7 +885,7 @@ function About() {
  * 遇到问题时一次性交出「我这儿是什么情况」，省掉来回问一轮（版本？配置？
  * 哪家上游？）—— 而每一趟都可能问漏。
  *
- * **里面的东西不限脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
+ * **里面的东西全部脱敏过，但仍然要求用户自己看一眼再交出去。**我们是个
  * 看得见所有 API key 的网关，这一步值得多花十秒。
  */
 function Diagnostics() {
@@ -897,8 +896,8 @@ function Diagnostics() {
     <section>
       <h2 className="tw-title font-semibold">诊断包</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        版本、上游、熔断状态、最近的失败、脱敏后的配置原文。
-        <Tip text="不含请求体和响应体。那两样排查时最有用，但也最可能带着你粘进去的东西。">
+        包含版本、上游、熔断状态、近期失败记录与脱敏后的配置文件。
+        <Tip text="不包含请求体与响应体，其中可能含有用户粘贴的内容。">
           <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
         </Tip>。
       </p>
@@ -924,7 +923,7 @@ function Diagnostics() {
       </Button>
       {path && (
         <div className="mt-2 tw-body">
-          写好了：<code className="break-all">{path}</code>
+          已生成：<code className="break-all">{path}</code>
           <div className="mt-1 text-muted-foreground">
             其中的密钥与地址已脱敏，<span className="font-medium">提交前请自行核对</span>。
           </div>
@@ -972,9 +971,9 @@ function Uninstall() {
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
           <p className="text-muted-foreground">
-            把接管过的客户端改回原样，注销开机自启。
-            <span className="font-medium">直接把应用拖进废纸篓不会做这些</span>
-            —— 那时客户端会指着一个没有东西在听的端口。
+            还原所有已接管的客户端，并取消开机启动。
+            <span className="font-medium">直接将应用移到废纸篓不会执行这些操作</span>
+            ，已接管的客户端将指向一个无人监听的端口。
           </p>
           <Button
             variant="outline"
@@ -987,10 +986,10 @@ function Uninstall() {
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
-          <p className="text-muted-foreground">要做这几件事：</p>
+          <p className="text-muted-foreground">将执行以下操作：</p>
           <ul className="space-y-0.5 text-muted-foreground">
-            <li>· 把所有接管过的客户端改回接管之前的样子</li>
-            <li>· 注销开机自启</li>
+            <li>· 将所有已接管的客户端还原为接管前的配置</li>
+            <li>· 取消开机启动</li>
           </ul>
           <Field
             orientation="horizontal"
@@ -1004,7 +1003,7 @@ function Uninstall() {
             {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
                 「删了才发现还想看」是不可逆的 */}
             <FieldLabel htmlFor="drop-data">
-              连同数据目录一起删掉（请求历史、成本记录、配置备份）
+              同时删除数据目录（请求历史、费用记录、配置备份）
             </FieldLabel>
           </Field>
           <ButtonGroup>

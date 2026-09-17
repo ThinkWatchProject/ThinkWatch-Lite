@@ -35,7 +35,7 @@ export interface Trouble {
 export function trouble(raw: string, tries: number): Trouble | null {
   if (raw.startsWith("missing:")) {
     return {
-      what: "找不到 core 程序",
+      what: "未找到 core 程序",
       next: raw.slice("missing:".length),
       bad: true,
       retry: false,
@@ -45,7 +45,7 @@ export function trouble(raw: string, tries: number): Trouble | null {
     const [, attempt = "1", inMs = "0"] = raw.split(":");
     const secs = Math.max(1, Math.round(Number(inMs) / 1000));
     return {
-      what: `core 退出了，正在第 ${attempt} 次重启`,
+      what: `core 已退出，正在进行第 ${attempt} 次重启`,
       next: `${secs} 秒后重试`,
       bad: Number(attempt) >= 3,
       retry: false,
@@ -54,22 +54,22 @@ export function trouble(raw: string, tries: number): Trouble | null {
   if (raw === "safe_mode") {
     return {
       what: "安全模式：网关未运行",
-      next: "配置、回滚、还原接管仍然可用 —— 多半是配置有问题，去网关页看看",
+      next: "配置、回滚与还原接管仍可使用。安全模式通常由配置错误导致，请检查配置文件。",
       bad: true,
       retry: true,
     };
   }
   if (raw === "stopped") {
-    return { what: "core 未运行", next: "点「重新启动」把它拉起来", bad: true, retry: true };
+    return { what: "core 未运行", next: "点击「重新启动」以启动 core", bad: true, retry: true };
   }
   if (raw === "starting") {
-    return { what: "正在启动 core", next: "马上就好", bad: false, retry: false };
+    return { what: "正在启动 core", next: "请稍候", bad: false, retry: false };
   }
   // running:pid —— 进程起来了，控制面还没答应。**这是一个真实的窗口
   // 期**：core 刚 exec 出来，socket 还没 bind 上。
   return {
     what: "正在连接控制面",
-    next: tries > 1 ? `第 ${tries} 次尝试` : "马上就好",
+    next: tries > 1 ? `第 ${tries} 次尝试` : "请稍候",
     bad: tries > 6,
     retry: tries > 6,
   };

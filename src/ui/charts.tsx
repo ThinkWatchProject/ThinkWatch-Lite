@@ -67,7 +67,7 @@ export function StackedArea({
         className="flex w-full items-center justify-center rounded-sm border border-dashed border-border/60"
         style={{ height }}
       >
-        <p className="tw-label text-muted-foreground">{empty ?? "还没有数据"}</p>
+        <p className="tw-label text-muted-foreground">{empty ?? "暂无数据"}</p>
       </div>
     );
   }

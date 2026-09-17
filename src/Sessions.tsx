@@ -62,7 +62,7 @@ export default function Sessions() {
         <Empty>
           <EmptyHeader>
             <EmptyTitle>暂无会话记录</EmptyTitle>
-            <EmptyDescription>按「同一段对话」把请求聚起来。正常用一阵子之后会出现在这里。</EmptyDescription>
+            <EmptyDescription>同一对话中的请求将聚合为会话，并显示在此处。</EmptyDescription>
           </EmptyHeader>
         </Empty>
       </div>
@@ -79,7 +79,7 @@ export default function Sessions() {
             <TableHead className="text-right font-normal">轮次</TableHead>
             <TableHead className="text-right font-normal">时长</TableHead>
             <TableHead className="text-right font-normal">上下文峰值</TableHead>
-            <TableHead className="text-right font-normal">缓存省下</TableHead>
+            <TableHead className="text-right font-normal">缓存节省</TableHead>
             <TableHead className="text-right font-normal">费用</TableHead>
           </TableRow>
         </TableHeader>
@@ -131,7 +131,7 @@ function Cost({ s }: { s: SessionView }) {
   // 旧版本的 core 不给 `priced_turns`，那时只能按老办法减出来
   const priced = s.priced_turns ?? s.turns - s.unpriced_turns;
   if (priced === 0) {
-    return <Tip text="这次会话里没有一轮拿到了价格"><span className="text-muted-foreground">没有价格</span></Tip>;
+    return <Tip text="此会话中没有可计价的轮次"><span className="text-muted-foreground">无法计价</span></Tip>;
   }
   const estimated = s.cost_micros_estimated ?? 0;
   const noUsage = s.no_usage_turns ?? 0;
@@ -139,19 +139,19 @@ function Cost({ s }: { s: SessionView }) {
     <>
       {estimated > 0 ? (
         // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
-        <Tip text={`其中 ${usd(estimated)} 为估算值：请求在响应结束前断开或中断，输出用量只计到那一刻；或模型的单价取自其他平台。`}>
+        <Tip text={`其中 ${usd(estimated)} 为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或模型的单价取自其他平台。`}>
           <span className="underline decoration-dotted underline-offset-2">~{usd(s.cost_micros)}</span>
         </Tip>
       ) : (
         usd(s.cost_micros)
       )}
       {s.unpriced_turns > 0 && (
-        <Tip text="这几轮所用的模型未定价，费用未计入合计">
+        <Tip text="这些轮次所用的模型未定价，费用未计入合计">
           <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无法计价</span>
         </Tip>
       )}
       {noUsage > 0 && (
-        <Tip text="这几轮没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计">
+        <Tip text="这些轮次没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计">
           <span className="ml-1 text-muted-foreground">+{noUsage} 轮无用量</span>
         </Tip>
       )}
@@ -190,7 +190,7 @@ function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
         </DialogHeader>
         <div className="mt-1 tw-body text-muted-foreground">
           {s.models.join("、")} · 输入 {tokens(s.input_tokens)} / 输出 {tokens(s.output_tokens)} ·
-          缓存读 {tokens(s.cache_read_tokens)}
+          缓存读取 {tokens(s.cache_read_tokens)}
         </div>
 
         <Growth turns={turns} />
@@ -220,7 +220,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
               key={t.id}
               className="flex-1 bg-neutral-200 dark:bg-neutral-700"
               style={{ height: `${Math.max(2, (v / max) * 100)}%` }}
-              title={`${tokens(v)} token${cached > 0 ? `，其中 ${tokens(cached)} 是缓存命中` : ""}`}
+              title={`${tokens(v)} token${cached > 0 ? `，其中 ${tokens(cached)} 为缓存命中` : ""}`}
             >
               {/* 缓存命中的那一段单独染色 —— 看出哪一轮打断了缓存 */}
               <div
@@ -232,7 +232,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
         })}
       </div>
       <div className="mt-1 tw-label text-neutral-400">
-        绿色是缓存命中的部分。峰值 {tokens(max)} token。
+        绿色为缓存命中部分。峰值 {tokens(max)} token。
       </div>
     </section>
   );
@@ -258,7 +258,7 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
             <span className="w-16 text-right">
               {/* **没有价格就说没有价格，不写 $0** */}
               {t.cost_micros == null ? (
-                <span className="text-neutral-400">无价</span>
+                <span className="text-neutral-400">无法计价</span>
               ) : (
                 // 估算的金额要带记号：取消、断在中间的那几轮输出只计到断开时
                 (t.cost_estimated ? "~" : "") + usd(t.cost_micros)
