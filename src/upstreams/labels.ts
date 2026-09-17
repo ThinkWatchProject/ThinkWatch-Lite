@@ -13,8 +13,12 @@ export const PROTOCOLS: { id: string; label: string }[] = [
   { id: "gemini", label: "Google Gemini" },
 ];
 
+/** 登录得来的上游，协议不在上面那张表里：它不能在新建表单里选 */
+export const CHATGPT_PROTOCOL = { id: "chatgpt", label: "ChatGPT 账号" };
+
 /** 地址认不出协议、配置里也没写时，请求按客户端发来的格式原样转发 */
 export function protocolLabel(id: string | null | undefined): string {
+  if (id === CHATGPT_PROTOCOL.id) return CHATGPT_PROTOCOL.label;
   return PROTOCOLS.find((p) => p.id === id)?.label ?? "协议未识别";
 }
 

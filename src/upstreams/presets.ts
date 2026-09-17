@@ -23,6 +23,12 @@ export const CUSTOM: Preset = {
   protocol: "",
 };
 
+/**
+ * 「ChatGPT 账号」在服务类型里的取值。**它不是一份预设**：选中它之后走的是登录，
+ * 地址、协议和凭据都由 core 在登录成功时写入
+ */
+export const CHATGPT = "chatgpt-login";
+
 export const PRESETS: Preset[] = [
   {
     id: "anthropic",

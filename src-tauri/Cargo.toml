@@ -21,13 +21,17 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-shell = "2"
+# 在默认浏览器里打开授权页
+tauri-plugin-opener = "2"
+# 浏览器里授权完成之后，那一页把应用带回前台（`thinkwatch://`）
+tauri-plugin-deep-link = "2"
 
 # 控制面契约来自 core。UI 和 CLI 依赖同一份类型，不会各写一遍。
 # **钉在 tag 上，不是分支。**跟着 `main` 走意味着同一份源码今天和明天
 # 编出来的东西不一样；而更要紧的是，打进 `.app` 的那个 twcore 二进制
 # 必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是从
 # 这个 tag 去取二进制的（见 scripts/fetch-core.sh）。
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.4.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.5.0" }
 
 anyhow = "1"
 libc = "0.2"

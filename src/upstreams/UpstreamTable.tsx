@@ -18,6 +18,8 @@ export interface UpstreamActions {
   linkTest: (name: string) => void;
   speedTest: (name: string) => void;
   refreshModels: (name: string) => void;
+  /** ChatGPT 账号上游：额度与重置卡 */
+  account: (name: string) => void;
   toggle: (p: ProviderView) => void;
   locate: (name: string) => void;
   remove: (name: string) => void;
@@ -119,6 +121,9 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
     { kind: "item", label: "链路测速", onSelect: () => a.linkTest(p.name) },
     { kind: "item", label: "推理测速…", onSelect: () => a.speedTest(p.name) },
     { kind: "item", label: "刷新模型列表", onSelect: () => a.refreshModels(p.name) },
+    ...(p.protocol === "chatgpt"
+      ? ([{ kind: "item", label: "额度与重置卡…", onSelect: () => a.account(p.name) }] as MenuItems)
+      : []),
     { kind: "sep" },
     { kind: "item", label: p.disabled ? "启用" : "停用", onSelect: () => a.toggle(p) },
     { kind: "item", label: "在配置文件中定位", onSelect: () => a.locate(p.name) },
