@@ -169,8 +169,7 @@ export default function Clients({
 
       <div className="flex items-start justify-between gap-4">
         <div className="tw-body text-muted-foreground">
-          接管会把这些客户端指向 <code>{data.gateway_base}</code>。
-          只改端点和密钥两个字段，其余不动，随时可还原。
+          接管后，这些客户端将指向 <code>{data.gateway_base}</code>。仅修改端点与密钥两个字段，其余配置保持不变，可随时还原。
         </div>
         {/*
           **退路要一直看得见**。用户敢按下「接管」的前提，就是
@@ -181,8 +180,8 @@ export default function Clients({
           (confirmAll ? (
             <div className="flex shrink-0 items-center gap-2 tw-body">
               <span className="text-amber-700 dark:text-amber-400">
-                把 {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
-                个客户端改回原样？它们会立刻不再经过 ThinkWatch。
+                {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
+                个客户端将还原，其请求将立即不再经过 ThinkWatch。
               </span>
               <Button
                 variant="default"
@@ -200,7 +199,7 @@ export default function Clients({
                     toast.error(
                       bad.length === 0
                         ? null
-                        : `有 ${bad.length} 个没还原成功：` +
+                        : `${bad.length} 个客户端还原失败：` +
                             bad.map((r) => `${r.client}（${r.detail}）`).join("；"),
                     );
                     await load();
@@ -211,7 +210,7 @@ export default function Clients({
                   }
                 }}
               >
-                确认不限还原
+                确认全部还原
               </Button>
               <Button
                 variant="outline"
@@ -229,7 +228,7 @@ export default function Clients({
               disabled={busy}
               onClick={() => setConfirmAll(true)}
             >
-              不限还原
+              全部还原
             </Button>
           ))}
       </div>
@@ -243,12 +242,12 @@ export default function Clients({
         <Empty>
           <EmptyHeader>
             <EmptyTitle>未检测到已支持的客户端</EmptyTitle>
-            <EmptyDescription>装了 Claude Code、Codex、Gemini CLI 的话
+            <EmptyDescription>如已安装 Claude Code、Codex 或 Gemini CLI，
             <Tip text="需先运行一次以生成其配置文件，之后返回此页。未生成配置文件时无法判断其指向。">
-              <span className="underline decoration-dotted underline-offset-2">先跑一次再回来</span>
+              <span className="underline decoration-dotted underline-offset-2">请先运行一次</span>
             </Tip>。
             <br />
-            也可以手动把客户端的端点指到{" "}
+            也可手动将客户端的端点设为{" "}
             <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
               {data.gateway_base}
             </code>
@@ -263,11 +262,11 @@ export default function Clients({
 
       {gone.length > 0 && (
         <details className="tw-body text-muted-foreground">
-          <summary className="cursor-pointer">这台机器上没找到的（{gone.length}）</summary>
+          <summary className="cursor-pointer">未检测到的客户端（{gone.length}）</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {gone.map((c) => (
               <li key={c.id}>
-                {c.name} —— 没在 <code>{c.path}</code> 找到
+                {c.name}：未找到 <code>{c.path}</code>
               </li>
             ))}
           </ul>
@@ -276,7 +275,7 @@ export default function Clients({
 
       {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
       <div className="rounded border border-border p-3">
-        <div className="mb-2 tw-body font-medium">接管不了，只能给你步骤</div>
+        <div className="mb-2 tw-body font-medium">需手动配置的客户端</div>
         <ul className="space-y-2 tw-body text-muted-foreground">
           {data.manual.map((m) => (
             <li key={m.name}>
@@ -319,11 +318,11 @@ function Card({
       <div className="flex items-center gap-2">
         <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
-          <Badge variant="success">已验证 · 收到过它的请求</Badge>
+          <Badge variant="success">已验证 · 已收到请求</Badge>
         ) : adopted ? (
-          <Badge variant="warning">已接管 · 等第一个请求</Badge>
+          <Badge variant="warning">已接管 · 等待首个请求</Badge>
         ) : (
-          <Badge variant="secondary">没接管</Badge>
+          <Badge variant="secondary">未接管</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {adopted && (
@@ -335,7 +334,7 @@ function Card({
             >
               {/* 已经收到过它的请求了还问「为什么没生效」，读起来像是我们
                   自己都不信刚才那个「已验证」 */}
-              {verified ? "检查配置链" : "为什么没生效？"}
+              {verified ? "检查配置链" : "诊断未生效原因"}
             </Button>
           )}
           <Button
@@ -356,17 +355,17 @@ function Card({
               dotfiles 仓库里的那份 —— 而那是个会被 git 提交的地方 */}
           {c.real !== c.path && <span className="ml-1">（{c.path} 是符号链接）</span>}
         </div>
-        {c.endpoint && <div>现在指向 {c.endpoint}</div>}
+        {c.endpoint && <div>当前指向 {c.endpoint}</div>}
         {c.takes_effect === "on_restart" && <div>{c.takes_effect_note}</div>}
         {c.verified === "fields_only" && <div>ⓘ {c.verified_note}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
-            ⚠ {s} 优先级更高，可能盖过这里的设置
+            ⚠ {s} 优先级更高，可能覆盖此处的设置
           </div>
         ))}
         {nagging && (
           <div className="text-amber-600 dark:text-amber-400">
-            接管五分钟了还没收到请求 —— 点上面的按钮诊断。
+            接管已超过五分钟，仍未收到请求。可点击「诊断未生效原因」进行检查。
           </div>
         )}
       </div>
@@ -426,11 +425,11 @@ function PlanDialog({
   return (
     <Shell onClose={onCancel} title={`${restore ? "还原" : "接管"} ${c.name}`}>
       <div className="mt-1 tw-body text-muted-foreground">
-        要改 <code>{p.path}</code>
+        将修改 <code>{p.path}</code>
       </div>
 
       {p.noop ? (
-        <div className="mt-3 tw-body">已经是这样了，什么都不用改。</div>
+        <div className="mt-3 tw-body">配置已是目标状态，无需修改。</div>
       ) : (
         <>
           {p.fields.length > 0 && (
@@ -455,8 +454,8 @@ function PlanDialog({
           <Diff before={p.before} after={p.after} />
 
           <div className="mt-3 tw-body text-muted-foreground">
-            写入前整份备份，除上面这几个字段外一字节不动。
-            {p.carries_secret && "（diff 里的密钥已打码，实际写入的是 config.yaml 里那把真的。）"}
+            写入前将完整备份原文件，除上述字段外不做任何改动。
+            {p.carries_secret && "（差异中的密钥已遮盖，实际写入的是 config.yaml 中的密钥原文。）"}
           </div>
         </>
       )}
@@ -552,14 +551,14 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 /** 接管完成。**不说「成功」** —— 只有请求能证明它真的生效了。 */
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
-    <Shell onClose={onClose} title="写好了">
+    <Shell onClose={onClose} title="已写入配置">
       <div className="mt-2 space-y-1 tw-body text-muted-foreground">
         <div>{r.takes_effect_note}</div>
         <div>
-          改的是 <code>{r.real}</code>
+          已修改 <code>{r.real}</code>
         </div>
         <div>
-          原文件备份在 <code>{r.backup}</code>
+          原文件已备份至 <code>{r.backup}</code>
         </div>
         {r.warnings.map((w) => (
           <div key={w} className="text-amber-600 dark:text-amber-400">
@@ -567,12 +566,12 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
           </div>
         ))}
         <div className="pt-1">
-          接下来等一个真实请求 —— 那是唯一能证明它生效的东西。
+          收到真实请求后，方可确认配置已生效。
         </div>
       </div>
       <div className="mt-4 flex justify-end">
         <Button variant="ghost" size="sm" onClick={onClose}>
-          知道了
+          关闭
         </Button>
       </div>
     </Shell>
@@ -582,7 +581,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
 /** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失。 */
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
   return (
-    <Shell onClose={onClose} title="为什么没生效">
+    <Shell onClose={onClose} title="配置链诊断">
       <ul className="mt-3 space-y-2 tw-body">
         {found.map((f, i) => (
           <li key={i} className="flex gap-2">

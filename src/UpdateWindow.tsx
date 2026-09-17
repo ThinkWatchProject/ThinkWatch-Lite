@@ -166,13 +166,13 @@ export default function UpdateWindow() {
                 {/* 这一步可能要几分钟，而且长短取决于用户自己的请求 */}
                 {step?.step === "waiting" && (
                   <p className="tw-label text-muted-foreground">
-                    关闭这个窗口不影响更新，完成后会发送一条通知。
+                    关闭此窗口不影响更新，更新完成后将发送通知。
                   </p>
                 )}
               </div>
             ) : (
               <p className="tw-body text-muted-foreground">
-                下载完成后自动安装。网关会等手上的请求全部结束，再重新启动。
+                下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。
               </p>
             )}
             {failed && <p className="tw-body text-destructive">{failed}</p>}
@@ -190,7 +190,7 @@ export default function UpdateWindow() {
         ) : offer.install === "homebrew" && offer.command ? (
           <>
             <p className="tw-body text-muted-foreground">
-              这一份由 Homebrew 管理。在终端中执行以下命令完成更新：
+              此应用由 Homebrew 管理，请在终端中执行以下命令完成更新：
             </p>
             {/*
               命令占满整行，复制放进底下那排按钮里当主操作 —— 和另一档的
@@ -206,7 +206,7 @@ export default function UpdateWindow() {
               onFocus={(e) => e.currentTarget.select()}
             />
             {copyFailed && (
-              <p className="tw-label text-destructive">没能写入剪贴板。命令已选中，按 ⌘C 复制。</p>
+              <p className="tw-label text-destructive">未能写入剪贴板。命令已选中，请按 ⌘C 复制。</p>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={close}>

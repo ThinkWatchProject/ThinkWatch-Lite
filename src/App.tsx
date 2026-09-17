@@ -758,7 +758,7 @@ export default function App() {
                           onClick={() => setTab(it.id)}
                           aria-current={on ? "page" : undefined}
                           tooltip={
-                            badge > 0 ? `${it.label} · ${badge} 项新证据` : it.label
+                            badge > 0 ? `${it.label} · ${badge} 项新发现` : it.label
                           }
                         >
                           <Icon size={16} />
@@ -961,9 +961,9 @@ export default function App() {
               <span className="font-medium text-foreground">
                 {r.provider}
               </span>{" "}
-              的 token 端点换发了新凭据，已写回 config.yaml
-              <Tip text="编辑器里打开的那份可能要重新加载 —— 它会弹「文件已在磁盘上更改」。">
-                <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器要重载</span>
+              的 token 端点已换发新凭据，并已写回 config.yaml。
+              <Tip text="如果编辑器中打开了 config.yaml，编辑器可能提示「文件已在磁盘上更改」，需重新加载。">
+                <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器需重新加载</span>
               </Tip>
             </p>
             <Button
@@ -972,7 +972,7 @@ export default function App() {
               className="shrink-0"
               onClick={clearRotated}
             >
-              知道了
+              关闭
             </Button>
           </div>
         ) : (
@@ -983,14 +983,14 @@ export default function App() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-medium text-amber-900 dark:text-amber-200">
-                  {r.provider} 换发了新凭据，但没能写回 config.yaml。当前转发正常。
+                  {r.provider} 已换发新凭据，但未能写回 config.yaml。当前转发正常。
                 </p>
                 <p className="mt-1 text-amber-800 dark:text-amber-300">
                   {r.detail}
                 </p>
                 <p className="mt-1 text-amber-800 dark:text-amber-300">
-                  旧的那个已经在服务端作废了 ——
-                  <span className="font-medium">重启之前不处理，这家会一直 401</span>。
+                  原凭据已在服务端失效。
+                  <span className="font-medium">重启前如未处理，该上游的请求将持续返回 401</span>。
                 </p>
               </div>
               <Button
@@ -999,7 +999,7 @@ export default function App() {
                 className="shrink-0"
                 onClick={clearRotated}
               >
-                知道了
+                关闭
               </Button>
             </div>
           </div>
@@ -1017,7 +1017,7 @@ export default function App() {
       {linked && tries > 0 && lost && (
         <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
           <span className="font-medium text-amber-900 dark:text-amber-200">
-            {lost.what} —— 下面的数字停在断开之前
+            {lost.what} · 以下数据截至连接断开时
           </span>
           <span className="text-amber-800 dark:text-amber-300">{lost.next}</span>
           {lost.retry && (
@@ -1167,7 +1167,7 @@ export default function App() {
               pressed={filter.failedOnly}
               onPressedChange={(v) => setFilter((f) => ({ ...f, failedOnly: v }))}
             >
-              只看失败
+              仅显示失败
             </Toggle>
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
@@ -1179,8 +1179,8 @@ export default function App() {
                   setFilter((f) => ({ ...f, client: e.target.value }))
                 }
               >
-                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
-                <NativeSelectOption value="">不限客户端</NativeSelectOption>
+                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                <NativeSelectOption value="">全部客户端</NativeSelectOption>
                 {facet.clients.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -1196,8 +1196,8 @@ export default function App() {
                   setFilter((f) => ({ ...f, provider: e.target.value }))
                 }
               >
-                {/* 原生 option 收空串，所以「不限」不用再借哨兵 */}
-                <NativeSelectOption value="">不限上游</NativeSelectOption>
+                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                <NativeSelectOption value="">全部上游</NativeSelectOption>
                 {facet.providers.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -1271,19 +1271,19 @@ export default function App() {
               <EmptyHeader>
                 <EmptyTitle>暂无请求记录</EmptyTitle>
                 <EmptyDescription>
-                  把客户端指到{" "}
+                  将客户端的端点设为{" "}
                   <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
                     http://{status?.gateway_addr ?? "127.0.0.1:8788"}
                   </code>
-                  ，用配置里那把 tw- 开头的密钥。
+                  ，并使用以 tw- 开头的客户端密钥。
                   <br />
-                  第一个请求进来时，它会出现在这里。
+                  收到请求后，请求记录将显示在此处。
                 </EmptyDescription>
                 {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
                     拿一个零冒充证据 */}
                 {locallyAnswered > 0 && (
                   <EmptyDescription>
-                    已经本地应答了 {locallyAnswered} 次客户端探测 —— 客户端连上了，而这些探测一分钱没花。
+                    已本地应答 {locallyAnswered} 次客户端探测。客户端已连接网关，这些探测未产生费用。
                   </EmptyDescription>
                 )}
               </EmptyHeader>
@@ -1341,14 +1341,14 @@ export default function App() {
                     // 会打错，打错的表现是「筛出来空的」。
                     {
                       kind: "item",
-                      label: `只看上游 ${r.provider}`,
+                      label: `仅显示上游 ${r.provider}`,
                       onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
                     },
                     ...(showClient
                       ? ([
                           {
                             kind: "item",
-                            label: `只看客户端 ${r.client}`,
+                            label: `仅显示客户端 ${r.client}`,
                             onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
                           },
                         ] as const)
@@ -1361,7 +1361,7 @@ export default function App() {
                     },
                     {
                       kind: "item",
-                      label: "复制这一行",
+                      label: "复制此行",
                       onSelect: () =>
                         void navigator.clipboard.writeText(
                           [
@@ -1467,9 +1467,9 @@ export default function App() {
                       <span
                         className="ml-1 rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
                         title={
-                          "发出去之前换掉了：" +
+                          "发送前已替换：" +
                           r.redacted.map((x) => `${x.what} ×${x.count}`).join("、") +
-                          "\n模型回显时会自动换回来。"
+                          "\n模型回显的内容将自动还原。"
                         }
                       >
                         已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
@@ -1487,14 +1487,14 @@ export default function App() {
                             : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
                         }
                         title={
-                          `请求从 ${r.translated.from} 方言转成了 ${r.translated.to} 再发出去。` +
+                          `请求已从 ${r.translated.from} 协议转换为 ${r.translated.to} 协议后发送。` +
                           (r.translated.dropped.length > 0
-                            ? `\n\n目标方言里没有对应物、只能丢掉的字段：${r.translated.dropped.join("、")}`
-                            : "\n没有字段被丢掉。")
+                            ? `\n\n目标协议不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
+                            : "\n未丢弃任何字段。")
                         }
                       >
                         {r.translated.dropped.length > 0
-                          ? `已转换 · 丢了 ${r.translated.dropped.length} 项`
+                          ? `已转换 · 丢弃 ${r.translated.dropped.length} 项`
                           : "已转换"}
                       </span>
                     )}
@@ -1538,10 +1538,10 @@ export default function App() {
                       <Tip
                         text={
                           r.state === "cancelled"
-                            ? "客户端在响应结束前断开，输出用量只计到断开时，实际费用可能更高。"
+                            ? "客户端在响应结束前断开，输出用量计至断开时，实际费用可能更高。"
                             : r.state === "failed"
-                              ? "响应在结束前中断，输出用量只计到中断时，实际费用可能更高。"
-                              : "价目表中没有这个上游的单价，此金额按同一模型在其他平台的单价估算。"
+                              ? "响应在结束前中断，输出用量计至中断时，实际费用可能更高。"
+                              : "价目表中没有此上游的单价，该金额按同一模型在其他平台的单价估算。"
                         }
                       >
                         <span className="underline decoration-dotted underline-offset-2">
@@ -1563,7 +1563,7 @@ export default function App() {
         )}
         {locallyAnswered > 0 && rows.length > 0 && (
           <p className="mt-3 tw-body text-muted-foreground">
-            另有 {locallyAnswered} 次客户端探测被本地应答，没有发给任何上游。
+            另有 {locallyAnswered} 次客户端探测由网关本地应答，未发送到上游。
           </p>
         )}
       </Split>
@@ -1578,9 +1578,9 @@ export default function App() {
       <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
         <AlertDialogContent className="sm:max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>退出 ThinkWatch Lite？</AlertDialogTitle>
+            <AlertDialogTitle>退出 ThinkWatch Lite</AlertDialogTitle>
             <AlertDialogDescription>
-              所有接管过的客户端会立刻失联 —— 它们指着的端口后面就没东西在听了。
+              退出后网关将停止监听，所有已接管的客户端将立即无法连接。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <p className="tw-body text-muted-foreground">

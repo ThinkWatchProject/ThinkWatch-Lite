@@ -125,7 +125,7 @@ export default function Security({
 
       <div className="flex items-center gap-2 tw-body text-muted-foreground">
         <span>
-          扫了 {data.scanned} 份文件，规则来自{data.rules_origin}。
+          已扫描 {data.scanned} 个文件，扫描规则：{data.rules_origin}。
         </span>
         <Button
           variant="outline"
@@ -134,7 +134,7 @@ export default function Security({
           disabled={busy}
         >
           {busy && <Spinner />}
-              重扫
+              重新扫描
         </Button>
       </div>
 
@@ -149,7 +149,7 @@ export default function Security({
       {/* 悄悄跳过比不扫更糟：它会给人一种「查过了」的错觉 */}
       {data.unreadable.length > 0 && (
         <div className="tw-body text-amber-600 dark:text-amber-400">
-          有 {data.unreadable.length} 份文件读不动，这次没扫到：{data.unreadable.join("、")}
+          {data.unreadable.length} 个文件无法读取，本次未扫描：{data.unreadable.join("、")}
         </div>
       )}
 
@@ -157,7 +157,7 @@ export default function Security({
         <section className="rounded border border-red-300 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
           <div className="flex items-center gap-2">
             <h2 className="tw-head font-medium text-red-900 dark:text-red-200">
-              刚刚新出现的 · {alerts.length} 处
+              新增发现 · {alerts.length} 处
             </h2>
             <Button
               variant="destructive"
@@ -171,7 +171,7 @@ export default function Security({
           {/* 「一个用了半年的 skill 突然多了一段零宽字符」这个信号，
               比「这个文件里有可疑内容」强得多 */}
           <p className="mt-1 tw-body text-red-800 dark:text-red-300">
-            这些是配置文件里<span className="font-medium">新</span>出现的，不是一直就在那儿的。
+            以下内容为配置文件中<span className="font-medium">新近出现</span>的内容，并非原有内容。
           </p>
           <ul className="mt-2 space-y-1 tw-body">
             {alerts.map((f, i) => (
@@ -201,9 +201,9 @@ export default function Security({
           // 没风险的时候要说「安全」，而不是让这一块消失
           <Alert variant="default" className="px-3 py-2">
           <AlertDescription>
-            ✓ 没发现问题
-            <Tip text="隐藏字符、提示注入、危险命令、过宽权限 —— 四类都查过了。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">查了四类</span>
+            ✓ 未发现问题
+            <Tip text="已检查隐藏字符、提示注入、危险命令与过宽权限四类问题。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">检查范围</span>
             </Tip>
           </AlertDescription>
         </Alert>
@@ -252,7 +252,7 @@ export default function Security({
           <p className="mb-2 tw-body text-muted-foreground">
             hook 在工具调用前后直接执行 shell 命令
             <Tip text="这是唯一无需模型参与即可获得执行权限的入口，其余途径均需先促使模型调用工具。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么单列</span>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">风险说明</span>
             </Tip>
           </p>
           <ul className="space-y-1 tw-body">
@@ -271,9 +271,9 @@ export default function Security({
           <h2 className="mb-1 tw-head font-medium">skill · {data.skills.length}</h2>
           {/* skill 只看不搬 —— 跨客户端的格式还没有事实标准 */}
           <p className="mb-2 tw-body text-muted-foreground">
-            只列出来看，不做跨客户端搬动
-            <Tip text="skill 的跨客户端格式还没有事实标准，搬过去大概率是一份对方读不懂的配置。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+            仅列出，不支持跨客户端复制
+            <Tip text="skill 的跨客户端格式尚无通行标准，复制到其他客户端后通常无法被识别。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">说明</span>
             </Tip>
           </p>
           <ul className="space-y-1 tw-body">
@@ -336,13 +336,13 @@ function Matrix({
    */
   const [compare, setCompare] = useState<string | null>(null);
   const canWrite = (c: string) => targets.find((t) => t.client === c)?.copyable ?? false;
-  const whyNot = (c: string) => targets.find((t) => t.client === c)?.why_not ?? "这个客户端不在可写清单里";
+  const whyNot = (c: string) => targets.find((t) => t.client === c)?.why_not ?? "此客户端不支持写入";
   const names = [...new Set(mcp.map((m) => m.name))].sort();
   if (names.length === 0) {
     return (
       <section>
         <h2 className="mb-1 tw-head font-medium">MCP server</h2>
-        <p className="tw-body text-muted-foreground">这台机器上没有配置任何 MCP server。</p>
+        <p className="tw-body text-muted-foreground">本机未配置任何 MCP server。</p>
       </section>
     );
   }
@@ -352,22 +352,22 @@ function Matrix({
     <section>
       <h2 className="mb-1 tw-head font-medium">MCP server · {names.length}</h2>
       <p className="mb-2 tw-body text-muted-foreground">
-        每一个都是能执行程序、或能取走上下文的入口。
-        <Tip text="点空格子从已有它的客户端复制过来，点实心格子从这个客户端移除。两种都会先显示 diff 再写入。">
-          <span className="underline decoration-dotted underline-offset-2">点格子可改</span>
+        每个 MCP server 均可执行程序或读取上下文。
+        <Tip text="点击空白格可从已配置该 server 的客户端复制，点击已配置的格可从该客户端移除。写入前均会显示差异。">
+          <span className="underline decoration-dotted underline-offset-2">点击格子可修改</span>
         </Tip>
       </p>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="text-muted-foreground">
-              <TableHead className="font-normal">名字</TableHead>
+              <TableHead className="font-normal">名称</TableHead>
               {clients.map((c) => (
                 <TableHead key={c} className="font-normal">
                   {c}
                 </TableHead>
               ))}
-              <TableHead className="font-normal">是什么</TableHead>
+              <TableHead className="font-normal">配置</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -377,7 +377,7 @@ function Matrix({
                 <TableRow key={n}>
                   <TableCell>
                     {conflicting.includes(n) && (
-                      <Tip text="同名，但各客户端里的配置不一样 —— 点开并排看差异">
+                      <Tip text="同名 server 在各客户端中的配置不同，点击可并排查看差异">
                         <Button
                           variant="ghost"
                           size="xs"
@@ -401,8 +401,8 @@ function Matrix({
                       : m
                         ? `从 ${c} 移除`
                         : source
-                          ? `从 ${source.client} 复制过来`
-                          : "没有能抄的来源";
+                          ? `从 ${source.client} 复制`
+                          : "没有可复制的来源";
                     return (
                       <TableCell key={c} className="text-center">
                         <Button
@@ -425,7 +425,7 @@ function Matrix({
                             "✓"
                           ) : (
                             // 关掉的还在配置里，一次编辑就能打开
-                            <Tip text="配置里写着 enabled: false —— 它还列在这里，但不会被加载">
+                            <Tip text="配置中为 enabled: false，列出但不会被加载">
                               <span className="text-neutral-400">○</span>
                             </Tip>
                           )}
@@ -448,7 +448,7 @@ function Matrix({
                           ))
                       : <Shape m={any} />}
                     {any.env_keys.length > 0 && (
-                      <div className="text-neutral-400">读环境变量：{any.env_keys.join("、")}</div>
+                      <div className="text-neutral-400">读取环境变量：{any.env_keys.join("、")}</div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -467,7 +467,7 @@ function Matrix({
           <AlertDescription>
           <div className="flex items-baseline justify-between">
             <p className="font-medium text-amber-900 dark:text-amber-200">
-              <code>{compare}</code> 在各客户端里配得不一样
+              <code>{compare}</code> 在各客户端中的配置不一致
             </p>
             <Button
               variant="ghost"
@@ -501,14 +501,14 @@ function Matrix({
                       <div className="mt-0.5 text-muted-foreground">
                         环境变量{" "}
                         <span className={"font-mono " + hi(differs((x) => x.env_keys.join(",")))}>
-                          {m.env_keys.length > 0 ? m.env_keys.join(" · ") : "（没有）"}
+                          {m.env_keys.length > 0 ? m.env_keys.join(" · ") : "（无）"}
                         </span>
                         {/* **只有名字没有值** —— 值里常常就是密钥 */}
                       </div>
                     )}
                     <div className="mt-0.5 text-muted-foreground">
                       <span className={hi(differs((x) => String(x.enabled)))}>
-                        {m.enabled ? "已启用" : "已关闭"}
+                        {m.enabled ? "已启用" : "已停用"}
                       </span>
                       <span className="ml-2 font-mono tw-label">{m.source}</span>
                     </div>
@@ -551,25 +551,25 @@ function McpConfirm({
         <DialogHeader>
           <DialogTitle>
             {req.op === "copy"
-              ? `把 ${req.name} 复制到 ${req.to}`
+              ? `将 ${req.name} 复制到 ${req.to}`
               : `从 ${req.to} 移除 ${req.name}`}
           </DialogTitle>
         </DialogHeader>
         <div className="mt-1 tw-body text-muted-foreground">
-          要改 <code>{plan.path}</code>
+          将修改 <code>{plan.path}</code>
         </div>
         {plan.noop ? (
-          <div className="mt-3 tw-body">已经是这样了，什么都不用改。</div>
+          <div className="mt-3 tw-body">配置已是目标状态，无需修改。</div>
         ) : (
           <>
             <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-50 p-2 tw-label leading-relaxed dark:bg-neutral-950">
               {plan.after}
             </pre>
             <div className="mt-2 tw-body text-muted-foreground">
-              写入前整份备份，除这一项外一字节不动。
+              写入前将完整备份原文件，除此项外不做任何改动。
               {req.op === "copy" && (
                 <span className="text-amber-700 dark:text-amber-400">
-                  {" "}env 里可能带着密钥，会一并复制过去。
+                  env 中可能含有密钥，将一并复制。
                 </span>
               )}
             </div>
@@ -611,9 +611,9 @@ function Baseline({ b }: { b: BaselineResponse }) {
       <section>
         <h2 className="mb-1 tw-head font-medium">上游行为</h2>
         <p className="tw-body text-muted-foreground">
-          观测层没启动，这段时间的请求没有记录
-          <Tip text="没有记录就没有基线可比 —— 这不是「没发现异常」，是「没有看」。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">所以没法比</span>
+          观测层未启动，此期间的请求未被记录
+          <Tip text="没有记录即无基线可供对比。此状态表示未进行检测，而非未发现异常。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">无法对比</span>
           </Tip>
         </p>
       </section>
@@ -625,8 +625,8 @@ function Baseline({ b }: { b: BaselineResponse }) {
     <section>
       <h2 className="mb-1 tw-head font-medium">上游行为</h2>
       <p className="mb-2 tw-body text-muted-foreground">
-        最近 {b.recent_hours} 小时 对比 之前 {b.baseline_days} 天
-        <Tip text="样本不够的上游不会出现在这里 —— 两边各至少 20 条才比，否则一次抖动就能算出「四倍」。">
+        最近 {b.recent_hours} 小时与此前 {b.baseline_days} 天对比
+        <Tip text="两个时段各需至少 20 条样本，样本不足的上游不在此列。">
           <span className="ml-1 underline decoration-dotted underline-offset-2">样本要求</span>
         </Tip>
       </p>
@@ -634,10 +634,10 @@ function Baseline({ b }: { b: BaselineResponse }) {
         // 没风险的时候要说「安全」，而不是让这一块消失
         <Alert variant="default" className="px-3 py-2">
           <AlertDescription>
-          ✓ 每个上游的行为都和之前一致
+          ✓ 各上游的行为与此前一致
           {b.providers.length > 0 && (
             <span className="ml-1 text-emerald-700 dark:text-emerald-400">
-              （比过的：{b.providers.map((p) => p.provider).join("、")}）
+              （已对比：{b.providers.map((p) => p.provider).join("、")}）
             </span>
           )}
         </AlertDescription>
@@ -649,12 +649,12 @@ function Baseline({ b }: { b: BaselineResponse }) {
               key={p.provider}
               className="rounded border border-amber-200 bg-amber-50 px-3 py-2 tw-body dark:border-amber-900 dark:bg-amber-950"
             >
-              <div className="font-medium">{p.provider} 的行为变了</div>
+              <div className="font-medium">{p.provider} 的行为发生变化</div>
               {p.drifts.map((d) => (
                 <div key={d.metric} className="mt-1">
                   {d.label}：<span className="font-medium">{pct(d.recent)}</span>
                   <span className="text-muted-foreground">
-                    ，之前是 {pct(d.baseline)}
+                    ，此前为 {pct(d.baseline)}
                     {/* **样本量必须一起给** —— 没有它，比率是个没法判断
                         可信度的数字 */}
                     （样本 {d.recent_n} / {d.baseline_n}）
@@ -664,9 +664,9 @@ function Baseline({ b }: { b: BaselineResponse }) {
               {/* 数过形状的和总数不同时要说清楚 */}
               {p.recent_inspected < p.recent_total && (
                 <div className="mt-1 text-muted-foreground">
-                  {p.recent_total} 条里数过形状的有 {p.recent_inspected} 条
-                  <Tip text="其余那些发生在入站审查关着的时候 —— 那段时间没有数据，不是数出来是零。">
-                    <span className="ml-1 underline decoration-dotted underline-offset-2">差额去哪了</span>
+                  {p.recent_total} 条请求中已检查 {p.recent_inspected} 条
+                  <Tip text="其余请求发生在工具调用审查关闭期间，这部分没有数据，并非检查结果为零。">
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">未检查的请求</span>
                   </Tip>
                 </div>
               )}
@@ -685,7 +685,7 @@ function Shape({ m }: { m: McpView }) {
       <>
         远端 <code>{m.url}</code>
         {m.third_party && (
-          <span className="ml-1 text-amber-600 dark:text-amber-400">上下文会发到那边</span>
+          <span className="ml-1 text-amber-600 dark:text-amber-400">上下文将发送至该地址</span>
         )}
       </>
     );
@@ -716,7 +716,7 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
               用户会以为我们在误报 */}
           <pre className="overflow-x-auto rounded bg-neutral-50 p-2 dark:bg-neutral-950">{f.excerpt}</pre>
           <div className="text-muted-foreground">
-            只报告，不改动任何文件。打开上面的路径看过再决定。
+            仅报告，不修改任何文件。请打开上述路径查看后再做处理。
           </div>
         </div>
         <div className="mt-4 flex justify-end">

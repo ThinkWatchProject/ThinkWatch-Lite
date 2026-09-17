@@ -34,7 +34,7 @@ import {
  * 模型的支点:前者意味着求值永远只看一张规则表。
  *
  * 在此之前这一页只能看不能建:`to` 能通过策略组的下拉改,而 `when` 的
- * 十三个条件、`set`、`deny`、`guard` 不限只读,新建一条规则更无从谈起。
+ * 十三个条件、`set`、`deny`、`guard` 全部只读,新建一条规则更无从谈起。
  * **一个只能查看的路由页,等于没有路由这个功能。**
  */
 export default function Routes({
@@ -55,7 +55,7 @@ export default function Routes({
   const routes = ov.routes ?? [];
   const defaultRoute = ov.default_route ?? "默认";
   const targets = [
-    ...ov.groups.map((g) => [g.name, `${g.name}（组）`] as const),
+    ...ov.groups.map((g) => [g.name, `${g.name}（策略组）`] as const),
     ...ov.providers.map((p) => [p.name, p.name] as const),
   ];
 
@@ -107,7 +107,7 @@ export default function Routes({
           </NativeSelect>
           </CardAction>
           <CardDescription>
-            没绑路由的密钥走这条。<b>不是所有人都要过的那条。</b>
+            未绑定路由的密钥使用此路由；已绑定路由的密钥不经过此路由。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -115,7 +115,7 @@ export default function Routes({
       <section>
         <div className="flex items-baseline gap-3">
           <p className="tw-body text-muted-foreground">
-            一条路由里，从上往下匹配，第一条命中的决定去向。
+            路由内的规则自上而下依次匹配，由第一条命中的规则决定转发目标。
           </p>
           <Button
             variant="outline"
@@ -133,7 +133,7 @@ export default function Routes({
               className="flex-1"
               autoFocus
               value={newName}
-              placeholder="路由名，比如 长上下文"
+              placeholder="路由名称，例如 长上下文"
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Escape") setAdding(false);
@@ -145,15 +145,15 @@ export default function Routes({
               onClick={async () => {
                 const n = newName.trim();
                 if (routes.some((r) => r.name === n)) {
-                  toast.error(`已经有一条叫「${n}」的路由了`);
+                  toast.error(`路由「${n}」已存在`);
                   return;
                 }
                 // **新路由带一条兜底规则。**空路由是个合法但没用的状态：
-                // 绑上它的密钥会一条规则都匹配不到，请求不限失败，而
+                // 绑上它的密钥会一条规则都匹配不到，请求全部失败，而
                 // 配置看起来是好的。
                 const first = targets[0]?.[0];
                 if (!first) {
-                  toast.error("还没有任何上游 —— 先去「网关」加一个。");
+                  toast.error("尚未配置上游，请先新建上游。");
                   return;
                 }
                 const ok = await patch(
@@ -172,7 +172,7 @@ export default function Routes({
                 }
               }}
             >
-              建
+              创建
             </Button>
             <Button
               variant="ghost"
@@ -204,10 +204,10 @@ export default function Routes({
                     像是「未被引用」。
                   */}
                   {r.clients.length > 0
-                    ? `${r.clients.join("、")} 绑了它`
+                    ? `已绑定：${r.clients.join("、")}`
                     : r.default
-                      ? "没绑路由的密钥走它"
-                      : "还没有密钥绑它"}
+                      ? "未绑定路由的密钥使用此路由"
+                      : "尚无密钥绑定"}
                 </span>
                 <Button
                   variant="ghost"
@@ -215,15 +215,15 @@ export default function Routes({
                   className="ml-auto"
                   onClick={() => setAddRuleTo(r.name)}
                 >
-                  加规则
+                  添加规则
                 </Button>
                 <Tip
                   text={
                     r.default
                       ? "默认路由不可删除，请先将默认路由指向其他路由。"
                       : r.clients.length > 0
-                        ? `还有 ${r.clients.length} 把密钥绑着它，删了它们会退回默认路由。`
-                        : "删掉这条路由。"
+                        ? `${r.clients.length} 个密钥绑定了此路由，删除后这些密钥将改用默认路由。`
+                        : "删除此路由。"
                   }
                 >
                   <Button
@@ -286,13 +286,13 @@ export default function Routes({
                         )
                       }
                     >
-                      删
+                      删除
                     </Button>
                   </li>
                 ))}
                 {r.rules.length === 0 && (
                   <li className="px-3 py-2 tw-body text-amber-700 dark:text-amber-400">
-                    这条路由一条规则都没有。绑上它的密钥会匹配不到任何规则，请求不限失败。
+                    此路由尚无规则。绑定此路由的密钥发出的请求将全部失败。
                   </li>
                 )}
               </ol>
@@ -308,11 +308,11 @@ export default function Routes({
       >
         <AlertDialogContent className="sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>删掉路由「{confirmDelete?.name}」？</AlertDialogTitle>
+            <AlertDialogTitle>删除路由「{confirmDelete?.name}」</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmDelete && confirmDelete.clients.length > 0
-                ? `${confirmDelete.clients.join("、")} 绑着它，删掉之后它们会退回默认路由。`
-                : "这条路由没有密钥绑着，删掉不影响任何请求。"}
+                ? `${confirmDelete.clients.join("、")} 绑定了此路由，删除后将改用默认路由。`
+                : "此路由未被任何密钥绑定，删除后不影响现有请求。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -392,10 +392,10 @@ function NewRule({
           className="min-w-52 flex-1"
           autoFocus
           value={name}
-          placeholder="规则名，比如 超长上下文降级"
+          placeholder="规则名称，例如 超长上下文降级"
           onChange={(e) => setName(e.target.value)}
         />
-        <span className="text-muted-foreground">去向</span>
+        <span className="text-muted-foreground">转发至</span>
         <NativeSelect size="sm" value={to} onChange={(e) => setTo(e.target.value)}>
           {targets.map(([v, label]) => (
             <NativeSelectOption key={v} value={v}>
@@ -406,16 +406,16 @@ function NewRule({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 tw-body">
-        <span className="text-muted-foreground">当</span>
+        <span className="text-muted-foreground">条件</span>
         <Input
           className="w-52 font-mono"
           value={model}
-          placeholder="模型 glob，比如 claude-opus-*"
+          placeholder="模型，例如 claude-opus-*"
           onChange={(e) => setModel(e.target.value)}
         />
         <Input
           value={tokens}
-          placeholder="输入长度，比如 >200k"
+          placeholder="输入长度，例如 >200k"
           onChange={(e) => setTokens(e.target.value)}
           className="w-40 font-mono"
         />
@@ -427,9 +427,9 @@ function NewRule({
           />
           <FieldLabel htmlFor={`${uid}-tools`}>带工具调用</FieldLabel>
         </Field>
-        <Tip text="三个条件都留空就是一条兜底规则 —— 它会命中这条路由里所有还没被上面的规则拦下的请求。每条路由都该有一条。">
+        <Tip text="三个条件均留空时为兜底规则，匹配此路由中未被前序规则命中的全部请求。每条路由应包含一条兜底规则。">
           <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
-            都留空 = 兜底
+            留空即为兜底规则
           </span>
         </Tip>
       </div>
@@ -443,7 +443,7 @@ function NewRule({
           disabled={busy || !name.trim() || !to}
           onClick={() => onCreate(build())}
         >
-          加上
+          添加
         </Button>
         <Button
           variant="ghost"

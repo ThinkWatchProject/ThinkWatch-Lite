@@ -52,9 +52,9 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
       <div>
         <div className="tw-body font-medium">{title}</div>
         <p className="mt-1 tw-body text-muted-foreground">
-          没有存下来
-          <Tip text="两种可能：磁盘快满时只记摘要，或者这条记录已经过了保留期。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+          未保存
+          <Tip text="磁盘空间不足时仅记录摘要，或此记录已超过保留期限。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">说明</span>
           </Tip>
         </p>
       </div>
@@ -74,12 +74,12 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
         <span className="tw-body text-neutral-400">
           {b.original_len.toLocaleString()} 字节
           {/* **截断了要说出来。**不说的话用户会以为请求本身就这么长 */}
-          {b.truncated && " · 只存了开头"}
+          {b.truncated && " · 仅保存开头部分"}
         </span>
         {big && (
           <CollapsibleTrigger asChild>
             <Button variant="link" size="xs" className="ml-auto">
-              {open ? "折叠" : "展开不限"}
+              {open ? "折叠" : "展开全部"}
             </Button>
           </CollapsibleTrigger>
         )}
@@ -228,7 +228,7 @@ export default function RequestDrawer({
                       <span className="text-red-600 dark:text-red-400">{r.error}</span>
                     ) : r.cancelled ? (
                       // 不是失败，不标红：上游没有出错，是客户端先断开了
-                      <span>{r.status ?? "—"} · 已取消，客户端在响应结束前断开了连接</span>
+                      <span>{r.status ?? "—"} · 已取消：客户端在响应结束前断开连接</span>
                     ) : (
                       (r.status ?? "—")
                     )
@@ -278,16 +278,16 @@ export default function RequestDrawer({
                       // 一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
                       <p className="mt-1.5 text-muted-foreground">
-                        发生了故障转移：前 {r.routing.attempts.length - 1} 家失败，自动换到了下一家。
+                        已发生故障转移：前 {r.routing.attempts.length - 1} 个上游失败，已自动切换至下一个上游。
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
                 <p className="text-muted-foreground">
-                  这条没有路由信息
-                  <Tip text="要么是本地应答的（根本没到上游），要么是这个功能上线之前记下的。">
-                    <span className="ml-1 underline decoration-dotted underline-offset-2">两种可能</span>
+                  此请求没有路由信息
+                  <Tip text="此请求由网关本地应答，未发送到上游；或记录于路由信息功能上线之前。">
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">可能原因</span>
                   </Tip>
                 </p>
               )}
@@ -298,7 +298,7 @@ export default function RequestDrawer({
                 <Body b={d.request_body} title="请求" />
                 <Body b={d.response_body} title="响应" />
                 <p className="text-neutral-400">
-                  这两段已脱敏：像密钥的内容都打了码。
+                  请求与响应内容已脱敏，疑似密钥的内容已遮盖。
                 </p>
               </div>
             </TabsContent>
@@ -307,10 +307,10 @@ export default function RequestDrawer({
               <div className="space-y-1">
                 {r.input_tokens == null && r.cancelled ? (
                   // 这时候不能说「上游没有报用量」—— 它还没来得及报，客户端就走了
-                  <p className="text-muted-foreground">客户端在上游报告用量之前断开了连接</p>
+                  <p className="text-muted-foreground">客户端在上游报告用量前断开连接</p>
                 ) : r.input_tokens == null && r.error ? (
                   // 失败的请求没有用量，**不是上游吞掉了它** —— 请求没走到那一步
-                  <p className="text-muted-foreground">请求在上游报告用量之前失败了</p>
+                  <p className="text-muted-foreground">请求在上游报告用量前失败</p>
                 ) : r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
                   <p className="text-muted-foreground">
@@ -463,9 +463,9 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground">
-        把这条请求<span className="font-medium">原样</span>发给另一个上游，并排对比
-        <Tip text="请求体是当时存下来的那一份，一个字节都没改 —— 手工复现一个 Claude Code 请求几乎不可能，而任何一处不同都会让对比失去意义。">
-          <span className="ml-1 underline decoration-dotted underline-offset-2">原样是指</span>
+        将此请求<span className="font-medium">原样</span>发送至另一个上游，并排对比结果
+        <Tip text="使用记录中保存的原始请求体，内容与原请求完全一致。">
+          <span className="ml-1 underline decoration-dotted underline-offset-2">「原样」的含义</span>
         </Tip>
       </p>
       <div className="flex items-center gap-2">
@@ -480,7 +480,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           {ov?.providers.map((p) => (
             <NativeSelectOption key={p.name} value={p.name}>
               {p.name}
-              {p.name === originalProvider ? "（原来就是它）" : ""}
+              {p.name === originalProvider ? "（原上游）" : ""}
             </NativeSelectOption>
           ))}
         </NativeSelect>
@@ -490,7 +490,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           onClick={() => void ask()}
           disabled={busy || !provider}
         >
-          看报价
+          预估费用
         </Button>
       </div>
 
@@ -498,13 +498,13 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         <div className="rounded border border-border p-3">
           {/* **触发前必须显示预估消耗**，而不是点了才知道 */}
           <div>
-            发 {quote.body_bytes} 字节给 <span className="font-medium">{quote.provider}</span>，
-            约 {quote.input_tokens} 个输入 token。
+            将向 <span className="font-medium">{quote.provider}</span> 发送 {quote.body_bytes} 字节，约{" "}
+            {quote.input_tokens} 个输入 token。
           </div>
           <div className="mt-1">{quote.note}</div>
           {quote.will_redact && (
             <div className="mt-1 text-muted-foreground">
-              发出去之前会按这家的规则脱敏，回显会换回来。
+              发送前将按此上游的规则脱敏，回显内容将自动还原。
             </div>
           )}
           <div className="mt-1 text-muted-foreground">价目表日期 {quote.pricing_date}。</div>
@@ -526,7 +526,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             <TableHeader>
               <TableRow>
                 <TableHead className="font-normal"></TableHead>
-                <TableHead className="text-right font-normal">{result.original.provider}（原来）</TableHead>
+                <TableHead className="text-right font-normal">{result.original.provider}（原请求）</TableHead>
                 <TableHead className="text-right font-normal">{result.provider}（重放）</TableHead>
               </TableRow>
             </TableHeader>

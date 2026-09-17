@@ -4,6 +4,7 @@ import type { Overview } from "./types";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { redactLabel } from "./upstreams/labels";
 import {
   Item,
   ItemActions,
@@ -59,25 +60,25 @@ const LINES: {
     key: "redact",
     path: "/security/redact",
     title: "出站脱敏",
-    what: "请求发出之前，检查里面有没有密钥、私钥、连接串。",
-    verb: "把它们换成占位符再发，响应回来时换回真值",
-    cost: "会改动请求体，同一段上下文可能不再命中上游缓存。",
+    what: "请求发送前，检查其中是否含有密钥、私钥或连接串。",
+    verb: "将检出的内容替换为占位符后发送，并在响应中还原为原值",
+    cost: "请求体将被改写，相同上下文可能无法命中上游缓存。",
   },
   {
     key: "inspect_tools",
     path: "/security/inspect_tools",
     title: "工具调用审查",
-    what: "上游返回的工具调用里，有没有一步就能拿到执行权的命令。",
-    verb: "切断响应流，客户端拿到的调用是残缺的、拼不出合法参数",
-    cost: "只对不受信任的上游生效。误判会让一条回答断在半路。",
+    what: "检查上游返回的工具调用中是否含有可直接获得执行权限的命令。",
+    verb: "切断响应流，客户端收到的工具调用不完整，无法构成有效参数",
+    cost: "仅对不受信任的上游生效。发生误判时，回答将在中途中断。",
   },
   {
     key: "scan_configs",
     path: "/security/scan_configs",
     title: "配置面扫描",
-    what: "客户端配置文件里，有没有隐藏字符、注入、危险命令、过宽权限。",
-    verb: "在界面上告警",
-    cost: "它从不删除任何东西，这里的「拦截」只是把话说得更响。",
+    what: "检查客户端配置文件中是否含有隐藏字符、注入内容、危险命令或过宽权限。",
+    verb: "在界面中发出告警",
+    cost: "扫描不会删除任何内容，「拦截」仅在界面中发出告警。",
   },
 ];
 
@@ -122,20 +123,20 @@ export default function Guard({
     <div className="space-y-6 p-5">
       <div>
         <p className="tw-body text-muted-foreground">
-          三条防线，各自三档。出厂都停在「观察」
+          三项防护各有三档，默认均为「观察」。
           {/*
             「我现在到底有没有被保护」是用户在这一页的第一个判断，而
             「观察」这个词本身回答不了它 —— 所以展开说一句。
           */}
-          <Tip text="观察 = 照常检测、照常记录，但不改变任何请求。看到证据之后再决定要不要切到拦截。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">这是什么意思</span>
+          <Tip text="「观察」照常检测并记录，但不改变任何请求。可根据记录结果决定是否切换到「拦截」。">
+            <span className="ml-1 underline decoration-dotted underline-offset-2">「观察」的含义</span>
           </Tip>
         </p>
       </div>
 
       {!sec && (
         <p className="tw-body text-amber-700 dark:text-amber-300">
-          这份 core 比界面旧，没有报告防护状态。升级后这一页才能用。
+          core 版本较旧，未提供防护状态。升级后可使用此页面。
         </p>
       )}
 
@@ -178,17 +179,16 @@ export default function Guard({
               */}
               <p className="mt-1.5 tw-body">
                 {cur === "off" && (
-                  <span className="text-muted-foreground">现在：不检测，也不记录。</span>
+                  <span className="text-muted-foreground">当前：不检测，不记录。</span>
                 )}
                 {cur === "observe" && (
                   <span className="text-muted-foreground">
-                    现在：检测并记录，<span className="font-medium">不改变任何请求</span>。
-                    发现会出现在「安全 › 发现」里。
+                    当前：检测并记录，<span className="font-medium">不改变任何请求</span>。检测结果显示在「安全 › 发现」中。
                   </span>
                 )}
                 {cur === "enforce" && (
                   <span className="text-foreground">
-                    现在：{l.verb}。
+                    当前：{l.verb}。
                   </span>
                 )}
               </p>
@@ -196,7 +196,7 @@ export default function Guard({
               {/* 代价写在切之前，不是切完之后 */}
               {cur !== "enforce" && (
                 <p className="mt-1 tw-label text-neutral-400">
-                  切到「拦截」：{l.cost}
+                  切换到「拦截」后：{l.cost}
                 </p>
               )}
             </Item>
@@ -209,20 +209,17 @@ export default function Guard({
             <ItemTitle>扫描规则</ItemTitle>
           </ItemHeader>
           <p className="mt-1.5 tw-body text-muted-foreground">
-            内置规则加上你自己的那几条。
+            扫描规则由内置规则与自定义规则组成。
             {/*
               语义是「加法加停用」而不是「整份替换」（core 那边改过一次）。
               这里要说清，否则用户以为自己那份是全集，而我们后来加的新
               攻击模式他一条都收不到。
             */}
-            自己写的是<span className="font-medium">加进去</span>，不是替换
-            <Tip text="所以以后新增的内置规则你照样收得到。整份替换的话，你那份会永远停在复制的那一刻。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">设计说明</span>
-            </Tip>
+            自定义规则<span className="font-medium">追加</span>在内置规则之后，不替换内置规则，新版本增加的内置规则同样生效。
           </p>
           <p className="mt-2 tw-body text-muted-foreground">
-            你加了 {sec.scan_rules_added} 条，停用了 {sec.scan_rules_disabled} 条内置的。
-            增删规则要改 config.yaml：它是一组带正则的结构，表单填不了。
+            已添加 {sec.scan_rules_added} 条自定义规则，停用 {sec.scan_rules_disabled} 条内置规则。增删规则需编辑
+            config.yaml。
           </p>
         </Item>
       )}
@@ -233,11 +230,10 @@ export default function Guard({
             <ItemTitle>按上游配置脱敏范围</ItemTitle>
           </ItemHeader>
           <ItemDescription>
-            上面那个总闸决定脱不脱，这里决定
-            <span className="font-medium">每家脱哪几类</span>。
-            官方端点默认一类都不脱
-            <Tip text="为了防一个你本来就信任的对象而自废武功，是这一层最要避免的事。要改的话在 config.yaml 里给那家写 redact。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+            「出站脱敏」决定是否脱敏，此处列出
+            <span className="font-medium">各上游的脱敏类别</span>。官方端点默认不脱敏。
+            <Tip text="在「上游」中编辑该上游，于「安全」一节设置发送前脱敏。">
+              <span className="ml-1 underline decoration-dotted underline-offset-2">修改方式</span>
             </Tip>
           </ItemDescription>
           <Table className="mt-3">
@@ -255,17 +251,18 @@ export default function Guard({
                 >
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {p.trust}
+                    {/* core 给的是 slug（`official` / `untrusted`），不能原样显示 */}
+                    {p.trust === "official" ? "官方端点" : "非官方端点"}
                     {!p.trust_explicit && (
-                      <span className="ml-1 text-neutral-400">（自动判）</span>
+                      <span className="ml-1 text-neutral-400">（自动识别）</span>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-muted-foreground">
+                  <TableCell className="text-muted-foreground">
                     {p.redact && p.redact.length > 0 ? (
-                      p.redact.join(" · ")
+                      p.redact.map(redactLabel).join(" · ")
                     ) : (
-                      <span className="font-sans text-neutral-400">
-                        {p.redact_explicit ? "显式设成不脱" : "不脱（官方端点）"}
+                      <span className="text-neutral-400">
+                        {p.redact_explicit ? "已设置为不脱敏" : "不脱敏（官方端点）"}
                       </span>
                     )}
                   </TableCell>

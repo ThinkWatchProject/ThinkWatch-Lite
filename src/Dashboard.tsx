@@ -527,14 +527,14 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         },
         {
           key: "inspect",
-          name: "工具调用检查",
+          name: "工具调用审查",
           mode: sec.inspect_tools,
           hits: s.flagged_requests,
           saw:
             sec.inspect_tools === "off"
               ? "未启用，上游返回的工具调用不做检查"
               : s.flagged_requests > 0
-                ? `${s.flagged_requests} 个请求带回可疑工具调用` +
+                ? `${s.flagged_requests} 个请求返回了可疑工具调用` +
                   (sec.inspect_tools === "enforce" ? "，已切断" : "")
                 : "未发现可疑工具调用",
         },
@@ -591,7 +591,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
               )}
               {s.cost_micros_estimated > 0 && (
-                <Tip text="此部分金额为估算值：请求在响应结束前断开或中断，输出用量只计到那一刻；或该模型的单价取自其他平台。">
+                <Tip text="此部分金额为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或该模型的单价取自其他平台。">
                   <span className="underline decoration-dotted underline-offset-2">
                     含估算 {usd(s.cost_micros_estimated)}
                   </span>
@@ -600,19 +600,19 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               {s.unpriced_requests > 0 && (
                 <Tip text="这些请求所用的模型未定价，费用未计入上方金额。在「上游 › 价目表」中设置价格后，之后的请求将按该价格计入。">
                   <span className="underline decoration-dotted underline-offset-2">
-                    {s.unpriced_requests} 条未计价
+                    {s.unpriced_requests} 条无法计价
                   </span>
                 </Tip>
               )}
               {(s.no_usage_requests ?? 0) > 0 && (
                 <Tip text="这些请求没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入上方金额。">
                   <span className="underline decoration-dotted underline-offset-2">
-                    {s.no_usage_requests} 条没有用量
+                    {s.no_usage_requests} 条无用量
                   </span>
                 </Tip>
               )}
               {s.subscription_requests > 0 && (
-                <Tip text="订阅型上游的边际成本为零，按 API 价目表折算出的金额是虚构的，因此不计入。">
+                <Tip text="订阅制上游不按用量产生费用，按 API 价目表折算的金额不代表实际费用，因此不计入。">
                   <span className="underline decoration-dotted underline-offset-2">
                     订阅额度 {s.subscription_requests} 次
                   </span>
@@ -692,7 +692,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         <p className="mt-4 tw-body text-muted-foreground">
           将客户端指向{gatewayHint}后，用量与费用将在此处显示。
           {s.locally_answered > 0 &&
-            ` 已本地应答 ${s.locally_answered} 次客户端探测 —— 客户端已连上，这些探测未产生费用。`}
+            `已本地应答 ${s.locally_answered} 次客户端探测。客户端已连接网关，这些探测未产生费用。`}
         </p>
       )}
 
@@ -797,7 +797,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 缓存。倍率各家不同，这个数是按每个模型自己的价目算的。
               */}
               <span className="text-muted-foreground">
-                {s.cache_saved_micros < 0 ? "净增成本" : "净节省"}{" "}
+                {s.cache_saved_micros < 0 ? "净增费用" : "净节省"}{" "}
                 <span
                   className={
                     "tw-num font-medium " +
@@ -824,9 +824,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
             </div>
             {/* 同上：不标倍率。三段的顺序本身就是从便宜到贵 */}
             <div className="flex flex-wrap gap-x-5 gap-y-1 tw-body">
-              <Swatch color="bg-cache-hit" name="缓存读" n={s.cache_read_tokens} />
+              <Swatch color="bg-cache-hit" name="缓存读取" n={s.cache_read_tokens} />
               <Swatch color="bg-cache-plain" name="新输入" n={s.input_tokens} />
-              <Swatch color="bg-cache-write" name="缓存写" n={s.cache_write_tokens} />
+              <Swatch color="bg-cache-write" name="缓存写入" n={s.cache_write_tokens} />
             </div>
             </>
           )}
@@ -898,9 +898,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
             {d.leaks.map((l) => (
               <li key={`${l.provider}/${l.kind}`}>
-                <span className="font-medium">{l.requests}</span> 个请求把{" "}
-                <span className="font-medium">{l.kind}</span> 发给了{" "}
-                <span className="font-medium">{l.provider || "上游"}</span>
+                <span className="font-medium">{l.requests}</span> 个请求向{" "}
+                <span className="font-medium">{l.provider || "上游"}</span> 发送了{" "}
+                <span className="font-medium">{l.kind}</span>
                 {l.masked.length > 0 && (
                   // **打码之后才显示。**把发现的密钥原样贴出来，等于
                   // 把泄漏搬了个家
@@ -913,10 +913,10 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
             ))}
           </ul>
           <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
-            观察模式：只记录，没有改变任何请求。
-            <Tip text="要真的替换成占位符，去「安全 › 防护」把出站脱敏切到「拦截」。">
+            观察模式：仅记录，未改变任何请求。
+            <Tip text="如需替换为占位符，请在「安全 › 防护」中将出站脱敏切换到「拦截」。">
               <span className="ml-1 underline decoration-dotted underline-offset-2">
-                怎么真的拦
+                启用拦截
               </span>
             </Tip>
           </p>
@@ -930,7 +930,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         <Alert variant="warning" className="mt-5">
           <AlertDescription>
             {d.storage.level}
-            {!d.storage.forwarding_affected && " —— 转发不受影响。"}
+            {!d.storage.forwarding_affected && "。转发不受影响。"}
           </AlertDescription>
         </Alert>
       )}
