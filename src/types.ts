@@ -733,14 +733,14 @@ export interface ProviderView {
   base_url: string;
   /** 地址里有被打码的部分 */
   base_url_masked: boolean;
-  /** 密钥的来源，不是值 */
-  key_source: string;
-  /** `key` / `env` / `oauth` */
-  key_kind: "key" | "env" | "oauth";
-  /** `env` 时的变量名 */
-  key_env?: string | null;
-  oauth_endpoint?: string | null;
-  oauth_client_id?: string | null;
+  /** API 密钥：打过码的值或环境变量名。没有密钥是 null */
+  key?: SecretView | null;
+  /** 密钥放在哪个请求头里发：`x-api-key` / `authorization` / `x-goog-api-key` */
+  auth_header: string;
+  /** 其余请求头，按配置里的顺序 */
+  headers?: HeaderView[];
+  /** OAuth 的 token 端点和 client id。refresh token 和 client secret 不出 core */
+  oauth?: OAuthView | null;
   /** 实际生效的协议。推断不出时为 null */
   protocol: string | null;
   /** 协议是配置里写明的，还是按地址推断的 */
@@ -773,6 +773,28 @@ export interface ProviderView {
   references: ReferenceView[];
   /** 选的价目表。null = 默认价目表 */
   pricing?: string | null;
+}
+
+/** 一个可能是密钥的值给界面看的样子 */
+export interface SecretView {
+  /** 打过码的值，或者 `环境变量 ${NAME}` */
+  display: string;
+  /** 整个值恰好是一个 `${NAME}` 时的变量名 */
+  env?: string | null;
+}
+
+/** 一行请求头 */
+export interface HeaderView {
+  name: string;
+  /** 可能是密钥的值是打过码的 */
+  value: string;
+  /** 值打过码。编辑时这一行不回填，留空表示保持原值 */
+  masked: boolean;
+}
+
+export interface OAuthView {
+  endpoint: string;
+  client_id?: string | null;
 }
 
 /** 配置里引用了某个上游的一处 */
@@ -1172,12 +1194,24 @@ export interface ConfigWritten {
   version: string;
 }
 
-/** 凭据的三种写法 */
-export type CredentialInput =
-  | { kind: "key"; value: string }
-  | { kind: "env"; var: string }
+/** 一个密钥类的值怎么改。视图里拿不到原值，所以有「保持原样」 */
+export type SecretChange =
+  | { mode: "keep" }
+  | { mode: "none" }
+  /** 可以写 `${ENV}` 从环境变量读 */
+  | { mode: "set"; value: string };
+
+export interface HeaderInput {
+  name: string;
+  /** 不给表示沿用同名那一行的原值 */
+  value?: string;
+}
+
+export type OAuthChange =
+  | { mode: "keep" }
+  | { mode: "none" }
   | {
-      kind: "oauth";
+      mode: "set";
       refresh: string;
       endpoint: string;
       client_id?: string;
@@ -1191,8 +1225,11 @@ export interface ProviderInput {
   name: string;
   /** 修改时不给就是保持原样 */
   base_url?: string;
-  /** 修改时不给就是保持原样 —— 界面拿不到原值 */
-  key?: CredentialInput;
+  /** 修改时默认保持原样 —— 界面拿不到原值 */
+  key: SecretChange;
+  /** 整张表就是保存之后的样子：没列出来的行被删掉 */
+  headers: HeaderInput[];
+  oauth: OAuthChange;
   /** 不给就按地址推断 */
   protocol?: string;
   proxy: string;
@@ -1227,6 +1264,8 @@ export interface ProviderPreview {
   protocol?: string | null;
   official: boolean;
   redact: string[];
+  /** 按推断出的协议，API 密钥放在哪个请求头里 */
+  auth_header: string;
 }
 
 /** 一个上游的模型清单 */

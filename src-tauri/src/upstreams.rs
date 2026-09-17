@@ -60,9 +60,9 @@ pub async fn test_provider(
 #[tauri::command]
 pub async fn preview_provider(
     state: tauri::State<'_, AppState>,
-    base_url: String,
+    preview: tw_api::ProviderPreviewRequest,
 ) -> Out<tw_api::ProviderPreview> {
-    state.control.preview_provider(base_url).await.map_err(text)
+    state.control.preview_provider(&preview).await.map_err(text)
 }
 
 #[tauri::command]
