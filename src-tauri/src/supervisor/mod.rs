@@ -133,7 +133,10 @@ impl Supervisor {
     pub async fn request_restart(&self) -> anyhow::Result<()> {
         let pid = match self.state() {
             CoreState::Running { pid } => pid,
-            other => anyhow::bail!("core 现在是 {other:?}，没在跑，不用重启"),
+            CoreState::Starting | CoreState::Restarting { .. } => {
+                anyhow::bail!("core 正在启动，请稍后再试")
+            }
+            CoreState::SafeMode | CoreState::Stopped => anyhow::bail!("core 未运行，无法重启"),
         };
         self.intentional.store(true, Ordering::SeqCst);
         // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉。

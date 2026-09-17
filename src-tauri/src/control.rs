@@ -69,7 +69,7 @@ impl ControlClient {
             .await
             .with_context(|| {
                 format!(
-                    "连不上控制面 {}。core 可能还没起来，或者已经挂了。",
+                    "无法连接控制面 {}，core 可能尚未启动或已退出",
                     self.socket.display()
                 )
             })?;
@@ -113,7 +113,7 @@ impl ControlClient {
         // 人话的时候。
         if s.api_version != tw_api::CONTROL_API_VERSION {
             anyhow::bail!(
-                "控制面协议版本对不上：core 是 {}，界面认的是 {}。两边版本不一致，请重新构建。",
+                "控制面协议版本不一致：core 为 {}，界面为 {}。请重新构建。",
                 s.api_version,
                 tw_api::CONTROL_API_VERSION
             );
@@ -142,7 +142,7 @@ impl ControlClient {
             .await
             .with_context(|| {
                 format!(
-                    "连不上控制面 {}。core 可能还没起来，或者已经挂了。",
+                    "无法连接控制面 {}，core 可能尚未启动或已退出",
                     self.socket.display()
                 )
             })?;
