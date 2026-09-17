@@ -13,8 +13,6 @@ export interface Preset {
   /** 空字符串 = 自动识别 */
   protocol: string;
   billing?: string;
-  /** 这类服务不需要密钥时的占位值 */
-  keyPlaceholder?: string;
 }
 
 export const CUSTOM: Preset = {
@@ -61,7 +59,6 @@ export const PRESETS: Preset[] = [
     baseUrl: "http://127.0.0.1:11434",
     protocol: "openai-chat",
     billing: "free",
-    keyPlaceholder: "ollama",
   },
 ];
 

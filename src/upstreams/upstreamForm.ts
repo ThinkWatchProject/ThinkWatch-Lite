@@ -1,13 +1,28 @@
 /**
  * 上游对话框的表单：从视图回填、转成交给 core 的输入、判断能不能往下走。
  *
- * **编辑时凭据和地址默认「保持原样」。**视图里的密钥只有来源、地址可能打了
- * 码，原样写回去会把码写进配置 —— 所以没点「更换」、没改地址时，这两样不发。
+ * **编辑时地址和凭据默认「保持原样」。**视图里的密钥和敏感请求头是打过码的、
+ * 地址也可能打了码，原样写回去会把码写进配置 —— 所以没改地址时地址不发，
+ * 密钥和请求头的值留空表示沿用已保存的，OAuth 没点「更换」时沿用。
  */
-import type { CredentialInput, ModelList, ProviderInput, ProviderView } from "@/types";
+import type { HeaderInput, ModelList, OAuthChange, ProviderInput, ProviderView, SecretChange } from "@/types";
 import { CUSTOM } from "./presets";
 
-export type CredKind = "key" | "env" | "oauth";
+export type AuthMode = "key" | "oauth";
+
+/** 请求头表里的一行 */
+export interface HeaderRow {
+  /** 只给列表渲染用，不发给 core */
+  id: number;
+  name: string;
+  value: string;
+}
+
+let nextRow = 0;
+
+export function headerRow(name = "", value = ""): HeaderRow {
+  return { id: nextRow++, name, value };
+}
 
 export interface UpstreamForm {
   preset: string;
@@ -17,11 +32,16 @@ export interface UpstreamForm {
   baseUrlTouched: boolean;
   /** 空 = 自动识别 */
   protocol: string;
-  credKind: CredKind;
-  /** 编辑时点过「更换」没有。没点就保持原来的凭据 */
-  credTouched: boolean;
+  authMode: AuthMode;
+  /** 新填的 API 密钥 */
   key: string;
-  envVar: string;
+  /** 有已保存的密钥：`key` 留空时沿用 */
+  keySaved: boolean;
+  headers: HeaderRow[];
+  /** 已保存的、值打过码的请求头名（小写）。这些行的值留空时沿用 */
+  savedHeaders: string[];
+  /** 有已保存的 OAuth 凭据、没点「更换」：整份沿用 */
+  oauthSaved: boolean;
   oauthRefresh: string;
   oauthEndpoint: string;
   oauthClientId: string;
@@ -65,10 +85,12 @@ export function blankForm(): UpstreamForm {
     baseUrl: "",
     baseUrlTouched: true,
     protocol: "",
-    credKind: "key",
-    credTouched: true,
+    authMode: "key",
     key: "",
-    envVar: "",
+    keySaved: false,
+    headers: [],
+    savedHeaders: [],
+    oauthSaved: false,
     oauthRefresh: "",
     oauthEndpoint: "",
     oauthClientId: "",
@@ -95,13 +117,16 @@ export function formFromView(p: ProviderView): UpstreamForm {
     baseUrl: p.base_url,
     baseUrlTouched: false,
     protocol: p.protocol_explicit ? (p.protocol ?? "") : "",
-    credKind: p.key_kind,
-    credTouched: false,
-    key: "",
-    envVar: p.key_env ?? "",
+    authMode: p.oauth ? "oauth" : "key",
+    // 环境变量名不是秘密，回填；打过码的密钥不回填
+    key: p.key?.env ? `\${${p.key.env}}` : "",
+    keySaved: p.key != null,
+    headers: (p.headers ?? []).map((h) => headerRow(h.name, h.masked ? "" : h.value)),
+    savedHeaders: (p.headers ?? []).filter((h) => h.masked).map((h) => h.name.toLowerCase()),
+    oauthSaved: p.oauth != null,
     oauthRefresh: "",
-    oauthEndpoint: p.oauth_endpoint ?? "",
-    oauthClientId: p.oauth_client_id ?? "",
+    oauthEndpoint: p.oauth?.endpoint ?? "",
+    oauthClientId: p.oauth?.client_id ?? "",
     oauthClientSecret: "",
     oauthAccess: "",
     proxy: p.proxy,
@@ -118,30 +143,48 @@ export function formFromView(p: ProviderView): UpstreamForm {
   };
 }
 
-function credential(f: UpstreamForm): CredentialInput {
-  switch (f.credKind) {
-    case "key":
-      return { kind: "key", value: f.key };
-    case "env":
-      return { kind: "env", var: f.envVar };
-    case "oauth":
-      return {
-        kind: "oauth",
-        refresh: f.oauthRefresh,
-        endpoint: f.oauthEndpoint,
-        client_id: f.oauthClientId || undefined,
-        client_secret: f.oauthClientSecret || undefined,
-        access: f.oauthAccess || undefined,
-      };
-  }
+/** 这一行的值留空时沿用已保存的 */
+export function keepsSavedValue(f: UpstreamForm, row: HeaderRow): boolean {
+  return row.value.trim() === "" && f.savedHeaders.includes(row.name.trim().toLowerCase());
 }
 
-/** `editing`：改的是已经保存的一家。没动过的地址和凭据不发 */
+function keyChange(f: UpstreamForm): SecretChange {
+  if (f.authMode === "oauth") return { mode: "none" };
+  const key = f.key.trim();
+  if (key !== "") return { mode: "set", value: key };
+  return f.keySaved ? { mode: "keep" } : { mode: "none" };
+}
+
+function headerInputs(f: UpstreamForm): HeaderInput[] {
+  return f.headers
+    .filter((r) => r.name.trim() !== "" || r.value.trim() !== "")
+    .map((r) => ({
+      name: r.name.trim(),
+      value: keepsSavedValue(f, r) ? undefined : r.value.trim(),
+    }));
+}
+
+function oauthChange(f: UpstreamForm): OAuthChange {
+  if (f.authMode === "key") return { mode: "none" };
+  if (f.oauthSaved) return { mode: "keep" };
+  return {
+    mode: "set",
+    refresh: f.oauthRefresh.trim(),
+    endpoint: f.oauthEndpoint.trim(),
+    client_id: f.oauthClientId.trim() || undefined,
+    client_secret: f.oauthClientSecret.trim() || undefined,
+    access: f.oauthAccess.trim() || undefined,
+  };
+}
+
+/** `editing`：改的是已经保存的一家。没动过的地址不发 */
 export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
   return {
     name: f.name,
     base_url: !editing || f.baseUrlTouched ? f.baseUrl.trim() : undefined,
-    key: !editing || f.credTouched ? credential(f) : undefined,
+    key: keyChange(f),
+    headers: headerInputs(f),
+    oauth: oauthChange(f),
     protocol: f.protocol || undefined,
     proxy: f.proxy,
     on_proxy_fail: f.onProxyFail,
@@ -153,6 +196,16 @@ export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
     pricing: f.pricing || undefined,
     disabled: f.disabled,
   };
+}
+
+/**
+ * 连接信息和已保存的那一家比改过没有：地址、协议、凭据、请求头、出站代理。
+ * 改过的话，模型列表要按表单里的新值去问。
+ */
+export function connectionChanged(f: UpstreamForm, p: ProviderView): boolean {
+  const pick = (i: ProviderInput) =>
+    JSON.stringify([i.base_url, i.protocol, i.key, i.headers, i.oauth, i.proxy]);
+  return pick(toInput(f, true)) !== pick(toInput(formFromView(p), true));
 }
 
 /**
@@ -170,11 +223,17 @@ export function connectionMissing(
   if (name === "") return "填写名称";
   if (name !== original && taken.includes(name)) return `名称「${name}」已被其他上游使用`;
   if ((!editing || f.baseUrlTouched) && f.baseUrl.trim() === "") return "填写接口地址";
-  if (!editing || f.credTouched) {
-    if (f.credKind === "key" && f.key.trim() === "") return "填写 API 密钥";
-    if (f.credKind === "env" && f.envVar.trim() === "") return "填写环境变量名";
-    if (f.credKind === "oauth" && (f.oauthRefresh.trim() === "" || f.oauthEndpoint.trim() === ""))
-      return "填写 Refresh Token 与 Token 端点";
+  if (
+    f.authMode === "oauth" &&
+    !f.oauthSaved &&
+    (f.oauthRefresh.trim() === "" || f.oauthEndpoint.trim() === "")
+  )
+    return "填写 Refresh Token 与 Token 端点";
+  for (const r of f.headers) {
+    const header = r.name.trim();
+    if (header === "" && r.value.trim() === "") continue;
+    if (header === "") return "填写请求头名称";
+    if (r.value.trim() === "" && !keepsSavedValue(f, r)) return `填写请求头「${header}」的值`;
   }
   return null;
 }

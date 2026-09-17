@@ -83,7 +83,7 @@ export function UpstreamTable({
                     title={`${protocolLabel(p.protocol)} · ${p.base_url}`}
                   >
                     {protocolLabel(p.protocol)} · {shortUrl(p.base_url)}
-                    {p.key_kind === "oauth" && " · OAuth"}
+                    {p.oauth && " · OAuth"}
                   </div>
                 </TableCell>
                 <ModelsCell p={p} />

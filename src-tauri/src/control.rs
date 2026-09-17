@@ -540,12 +540,11 @@ impl ControlClient {
     }
 
     /// 按接口地址自动识别会得到什么。不联网
-    pub async fn preview_provider(&self, base_url: String) -> Result<tw_api::ProviderPreview> {
-        self.post_json(
-            "/providers/preview",
-            &tw_api::ProviderPreviewRequest { base_url },
-        )
-        .await
+    pub async fn preview_provider(
+        &self,
+        req: &tw_api::ProviderPreviewRequest,
+    ) -> Result<tw_api::ProviderPreview> {
+        self.post_json("/providers/preview", req).await
     }
 
     pub async fn provider_models(&self, name: &str) -> Result<tw_api::ProviderModelsView> {

@@ -45,7 +45,9 @@ export const api = {
   deleteProvider: (name: string, baseVersion: Base) =>
     invoke<ConfigWritten>("delete_provider", { name, baseVersion }),
   testProvider: (test: ProviderTest) => invoke<ProviderTestResult>("test_provider", { test }),
-  previewProvider: (baseUrl: string) => invoke<ProviderPreview>("preview_provider", { baseUrl }),
+  /** `protocol`：表单里选定的协议，不给就是自动识别 */
+  previewProvider: (baseUrl: string, protocol?: string) =>
+    invoke<ProviderPreview>("preview_provider", { preview: { base_url: baseUrl, protocol } }),
   providerModels: (name: string) => invoke<ProviderModelsView>("provider_models", { name }),
   refreshProviderModels: (name: string) =>
     invoke<ProviderModelsView>("refresh_provider_models", { name }),

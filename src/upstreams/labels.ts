@@ -63,11 +63,15 @@ export function redactLabel(id: string): string {
   return REDACT_KINDS.find((k) => k.id === id)?.label ?? id;
 }
 
-export const CREDENTIAL_KINDS: { id: "key" | "env" | "oauth"; label: string }[] = [
+export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
   { id: "key", label: "API 密钥" },
-  { id: "env", label: "环境变量" },
   { id: "oauth", label: "OAuth" },
 ];
+
+/** 密钥所在的请求头，按 HTTP 报文里的写法 */
+export function authHeaderLabel(header: string): string {
+  return header === "authorization" ? "Authorization: Bearer" : header;
+}
 
 export function modelSourceLabel(source: string): string {
   switch (source) {

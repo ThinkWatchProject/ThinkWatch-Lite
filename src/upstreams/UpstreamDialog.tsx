@@ -29,6 +29,7 @@ import { ProxyDialog } from "./ProxyDialog";
 import { SecuritySection } from "./SecuritySection";
 import {
   blankForm,
+  connectionChanged,
   connectionMissing,
   describeModelList,
   formFromView,
@@ -106,7 +107,7 @@ export function UpstreamDialog({
     | { kind: "sheet"; name: string | null; add?: string[] }
   >(null);
 
-  // 「自动识别」此刻会判成什么。只看地址，不联网
+  // 「自动识别」此刻会判成什么、密钥放在哪个请求头。只看地址和选定的协议，不联网
   useEffect(() => {
     const url = form.baseUrl.trim();
     if (!url) {
@@ -115,25 +116,25 @@ export function UpstreamDialog({
     }
     const t = setTimeout(() => {
       api
-        .previewProvider(url)
+        .previewProvider(url, form.protocol || undefined)
         .then(setPreview)
         .catch(() => setPreview(null));
     }, 250);
     return () => clearTimeout(t);
-  }, [form.baseUrl]);
+  }, [form.baseUrl, form.protocol]);
 
   // 新建：连接信息一改，之前检测到的结果和模型列表就不再对应这一家
-  const connectionKey = [
+  const connectionKey = JSON.stringify([
     form.baseUrl,
     form.protocol,
-    form.credKind,
+    form.authMode,
     form.key,
-    form.envVar,
+    form.headers.map((h) => [h.name, h.value]),
     form.oauthRefresh,
     form.oauthEndpoint,
     form.oauthAccess,
     form.proxy,
-  ].join("\n");
+  ]);
   useEffect(() => {
     if (editing) return;
     setTest(null);
@@ -223,7 +224,7 @@ export function UpstreamDialog({
 
   async function refreshModels() {
     // 连接信息改过：按表单里的新值去问；没改过：让 core 刷新已保存的那一家
-    if (!editing || form.baseUrlTouched || form.credTouched) {
+    if (!editing || connectionChanged(form, editing)) {
       await runTest();
       return;
     }
