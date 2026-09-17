@@ -163,7 +163,25 @@ export type CoreEvent =
       /** 真的切断了流吗。**高危 + 不受信任 + 拦截态**三者同时成立才会 */
       blocked: boolean;
       at_ms: number;
+    }
+  /**
+   * 浏览器里的登录有结果了。
+   *
+   * **界面等的就是这一条**：收到它就能说明结果，不用一直问 core。
+   */
+  | {
+      kind: "login_finished";
+      id: number;
+      /** 发起登录时拿到的 ID */
+      login: string;
+      status: LoginStatus;
+      provider?: string;
+      error?: string;
+      at_ms: number;
     };
+
+/** `done` 之外都不会留下上游 */
+export type LoginStatus = "pending" | "done" | "failed" | "expired" | "cancelled";
 
 /**
  * 上游报回来的 token 用量。
@@ -848,6 +866,70 @@ export interface HeaderView {
 export interface OAuthView {
   endpoint: string;
   client_id?: string | null;
+  /** access token 什么时候过期，RFC 3339。不知道时没有 */
+  expires_at?: string | null;
+  /** 最近一次换 token 失败的原因。恢复之后没有 */
+  failure?: string | null;
+  /** 凭据已失效，只有重新登录能恢复 */
+  needs_login?: boolean;
+}
+
+// —— ChatGPT 账号 ——
+
+/** 一次登录。地址要在浏览器里打开，core 在本机等回调 */
+export interface ChatgptLogin {
+  id: string;
+  authorize_url: string;
+  expires_in_secs: number;
+}
+
+export interface ChatgptLoginStatus {
+  id: string;
+  status: LoginStatus;
+  /** 登录成功后写进配置的上游名 */
+  provider?: string | null;
+  /** `plus` / `pro` / `team` … */
+  plan?: string | null;
+  error?: string | null;
+}
+
+/** 账号的订阅额度 */
+export interface ChatgptUsage {
+  plan?: string | null;
+  windows: QuotaWindow[];
+  /** 可用的额度重置卡张数。账号没有这一项时没有 */
+  reset_credits?: number | null;
+}
+
+/** 一张额度重置卡 */
+export interface ResetCreditView {
+  id: string;
+  /** 重置哪种额度，上游的原词 */
+  reset_type: string;
+  /** 上游的原词。`available` 之外的不能用 */
+  status: string;
+  granted_at: string;
+  expires_at?: string | null;
+  title?: string | null;
+  description?: string | null;
+}
+
+export interface ResetCredits {
+  available_count: number;
+  credits: ResetCreditView[];
+}
+
+/**
+ * 用掉一张卡的结果。
+ *
+ * - `reset`：额度已重置
+ * - `nothing_to_reset`：额度没用完，不需要重置，没有扣卡
+ * - `no_credit`：没有可用的卡
+ * - `already_redeemed`：这个幂等键已经用过，额度在那一次已经重置
+ */
+export interface ResetCreditUsed {
+  code: string;
+  windows_reset: number;
 }
 
 /** 配置里引用了某个上游的一处 */

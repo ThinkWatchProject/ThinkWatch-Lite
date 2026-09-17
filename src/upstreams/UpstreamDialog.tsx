@@ -67,6 +67,7 @@ export function UpstreamDialog({
   onSaved,
   onChanged,
   onGoToGuard,
+  onChatgptLogin,
 }: {
   mode: UpstreamDialogMode;
   ov: Overview;
@@ -78,6 +79,8 @@ export function UpstreamDialog({
   /** 对话框里新建了代理或价目表：外面要重新读概览 */
   onChanged: () => void;
   onGoToGuard: () => void;
+  /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框 */
+  onChatgptLogin: () => void;
 }) {
   const editing: ProviderView | null =
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
@@ -322,6 +325,7 @@ export function UpstreamDialog({
               test={test}
               onTest={runTest}
               onNewProxy={() => setNested({ kind: "proxy" })}
+              onChatgptLogin={onChatgptLogin}
             />
           )}
           {section === "models" && (

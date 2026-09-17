@@ -7,6 +7,9 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ChatgptLogin,
+  ChatgptLoginStatus,
+  ChatgptUsage,
   ConfigWritten,
   CostGroup,
   L1Result,
@@ -25,6 +28,8 @@ import type {
   ProviderTestResult,
   ProxySave,
   ProxyTest,
+  ResetCredits,
+  ResetCreditUsed,
   SpeedQuote,
   SpeedResult,
 } from "@/types";
@@ -59,6 +64,18 @@ export const api = {
   deleteProxy: (name: string, baseVersion: Base) =>
     invoke<ConfigWritten>("delete_proxy", { name, baseVersion }),
   testProxy: (test: ProxyTest) => invoke<L1Result>("test_proxy", { test }),
+
+  /** 开始登录并打开授权页。授权地址留在 Rust 侧，界面不经手 */
+  startChatgptLogin: (name: string, proxy: string) =>
+    invoke<ChatgptLogin>("start_chatgpt_login", { name, proxy }),
+  reopenChatgptLogin: (id: string) => invoke<void>("reopen_chatgpt_login", { id }),
+  chatgptLoginStatus: (id: string) => invoke<ChatgptLoginStatus>("chatgpt_login_status", { id }),
+  cancelChatgptLogin: (id: string) => invoke<ChatgptLoginStatus>("cancel_chatgpt_login", { id }),
+  chatgptUsage: (name: string) => invoke<ChatgptUsage>("chatgpt_usage", { name }),
+  chatgptResets: (name: string) => invoke<ResetCredits>("chatgpt_resets", { name }),
+  /** 用掉一张卡。**用掉就回不来**，调用前必须让用户确认 */
+  useChatgptReset: (name: string, creditId: string | null, idempotencyKey: string) =>
+    invoke<ResetCreditUsed>("use_chatgpt_reset", { name, creditId, idempotencyKey }),
 
   pricingStatus: () => invoke<PricingStatus>("pricing_status"),
   refreshPricing: () => invoke<PricingRefreshed>("refresh_pricing"),

@@ -12,6 +12,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub mod autostart;
+pub mod chatgpt;
 pub mod control;
 pub mod memcheck;
 pub mod menubar;
@@ -1211,6 +1212,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
             // 不是 SMAppService、也不是登录项 API —— 插件在 macOS 上就是
@@ -1250,6 +1253,13 @@ pub fn run() {
             upstreams::update_proxy,
             upstreams::delete_proxy,
             upstreams::test_proxy,
+            chatgpt::start_chatgpt_login,
+            chatgpt::reopen_chatgpt_login,
+            chatgpt::chatgpt_login_status,
+            chatgpt::cancel_chatgpt_login,
+            chatgpt::chatgpt_usage,
+            chatgpt::chatgpt_resets,
+            chatgpt::use_chatgpt_reset,
             upstreams::pricing_status,
             upstreams::refresh_pricing,
             upstreams::set_price_auto_update,
@@ -1385,6 +1395,17 @@ pub fn run() {
             // 取决于隐藏到底放不放得掉那部分内存。
             if memcheck::requested(std::env::args()) {
                 memcheck::run(handle.clone());
+            }
+
+            // 浏览器里授权完成之后点「返回 ThinkWatch」：把应用带回前台。
+            // **窗口这时可能根本不存在**（菜单栏模式下关窗即销毁）
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let h = handle.clone();
+                handle.deep_link().on_open_url(move |event| {
+                    let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+                    chatgpt::handle_return(&h, &urls);
+                });
             }
 
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
@@ -1684,7 +1705,7 @@ fn check_autostart_path(app: &tauri::AppHandle) {
 ///
 /// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了
 /// 启动时间，而且窗口会有一帧闪烁 —— 开机的时候屏幕上什么都不该出现。
-fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("main") {
         w.show()?;
         w.set_focus()?;

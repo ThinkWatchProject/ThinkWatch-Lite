@@ -7,7 +7,7 @@ import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from
 import { HeaderEditor } from "./HeaderEditor";
 import { AUTH_MODES, PROTOCOLS, authHeaderLabel, protocolLabel, proxyKindLabel } from "./labels";
 import { FormItem, Note, Segmented } from "./parts";
-import { PRESETS, nameFromUrl, presetById } from "./presets";
+import { CHATGPT, PRESETS, nameFromUrl, presetById } from "./presets";
 import { describeModelList, freeName, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
@@ -23,6 +23,7 @@ export function ConnectionSection({
   test,
   onTest,
   onNewProxy,
+  onChatgptLogin,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -34,6 +35,8 @@ export function ConnectionSection({
   test: ProviderTestResult | null;
   onTest: () => void;
   onNewProxy: () => void;
+  /** 服务类型选了 ChatGPT 账号：那一条走登录，不走这张表单 */
+  onChatgptLogin: () => void;
 }) {
   const proxies = ov.proxies ?? [];
   const taken = ov.providers.map((p) => p.name);
@@ -44,6 +47,10 @@ export function ConnectionSection({
       : "自动识别（未识别，按原格式转发）";
 
   function pickPreset(id: string) {
+    if (id === CHATGPT) {
+      onChatgptLogin();
+      return;
+    }
     const prev = presetById(form.preset);
     const next = presetById(id);
     set({
@@ -75,6 +82,7 @@ export function ConnectionSection({
               onChange={(e) => pickPreset(e.target.value)}
             >
               <NativeSelectOption value="custom">自定义</NativeSelectOption>
+              <NativeSelectOption value={CHATGPT}>ChatGPT 账号（登录）</NativeSelectOption>
               {PRESETS.map((p) => (
                 <NativeSelectOption key={p.id} value={p.id}>
                   {p.label}

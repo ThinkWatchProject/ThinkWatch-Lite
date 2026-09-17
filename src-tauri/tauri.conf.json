@@ -42,6 +42,13 @@
         "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzNjAzNzAzNDU2MzFGRUYKUldUdkgyTkZBemRnczM3QnpqYnpGTGo5SHZNZCtEbmhTVThnOXlTZHpFTy85WENTMWZmWldpaG4K"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "thinkwatch"
+        ]
+      }
     }
   }
 }

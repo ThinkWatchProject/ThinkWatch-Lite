@@ -568,6 +568,57 @@ impl ControlClient {
             .await
     }
 
+    // ───────────────────────────────────────── ChatGPT 账号
+
+    /// 开始一次登录。回来的地址要在浏览器里打开，core 在本机等回调
+    pub async fn start_chatgpt_login(
+        &self,
+        req: &tw_api::ChatgptLoginStart,
+    ) -> Result<tw_api::ChatgptLogin> {
+        self.post_json("/chatgpt/login", req).await
+    }
+
+    pub async fn chatgpt_login_status(&self, id: &str) -> Result<tw_api::ChatgptLoginStatus> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/chatgpt/login/{}", segment(id))).await?,
+        )?)
+    }
+
+    pub async fn cancel_chatgpt_login(&self, id: &str) -> Result<tw_api::ChatgptLoginStatus> {
+        self.send_json(
+            hyper::Method::DELETE,
+            &format!("/chatgpt/login/{}", segment(id)),
+            &(),
+        )
+        .await
+    }
+
+    pub async fn chatgpt_usage(&self, name: &str) -> Result<tw_api::ChatgptUsage> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/providers/{}/chatgpt/usage", segment(name)))
+                .await?,
+        )?)
+    }
+
+    pub async fn chatgpt_resets(&self, name: &str) -> Result<tw_api::ResetCredits> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/providers/{}/chatgpt/resets", segment(name)))
+                .await?,
+        )?)
+    }
+
+    /// 用掉一张额度重置卡。**只在用户明确点下去时调**：卡用掉就回不来
+    pub async fn use_chatgpt_reset(
+        &self,
+        name: &str,
+        req: &tw_api::ResetCreditUse,
+    ) -> Result<tw_api::ResetCreditUsed> {
+        self.post_json(&format!("/providers/{}/chatgpt/resets", segment(name)), req)
+            .await
+    }
+
     // ───────────────────────────────────────── 代理
 
     pub async fn create_proxy(&self, req: &tw_api::ProxySave) -> Result<tw_api::ConfigWritten> {
