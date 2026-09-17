@@ -16,6 +16,7 @@ pub mod chatgpt;
 pub mod control;
 pub mod memcheck;
 pub mod menubar;
+pub mod notices;
 pub mod supervisor;
 pub mod update;
 pub mod upstreams;
@@ -1253,6 +1254,8 @@ pub fn run() {
             upstreams::update_proxy,
             upstreams::delete_proxy,
             upstreams::test_proxy,
+            notices_list,
+            dismiss_notice,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
             chatgpt::chatgpt_login_status,
@@ -1317,6 +1320,15 @@ pub fn run() {
             // 上一次是被更新重启的话，现在说一声
             announce_update(&handle);
 
+            // 通知总线。**判定在这里，不在界面** —— 关窗即销毁 webview
+            let notices = notices::Notices::new(
+                vec![
+                    Box::new(notices::sink::AppSink::new(handle.clone())),
+                    Box::new(notices::SystemSink::new(handle.clone())),
+                ],
+                Some(data_dir().join("notices.json")),
+            );
+            app.manage(notices.clone());
             app.manage(AppState {
                 control: ControlClient::new(socket),
                 supervisor: sup.clone(),
@@ -1336,6 +1348,9 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     while rx.changed().await.is_ok() {
                         let now = rx.borrow().clone();
+                        if let Some(n) = h.try_state::<Arc<notices::Notices>>() {
+                            n.on_core_state(&now);
+                        }
                         let _ = h.emit("core-state", describe_state(&now));
                     }
                 });
@@ -1545,7 +1560,9 @@ async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
                 // 这是网关位置独有的能力：只有我们同时知道「这个调用长
                 // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
                 // 看到这条，判断质量完全不一样。
-                notify_if_dangerous(&a, &ev);
+                if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
+                    n.on_event(&ev);
+                }
                 // 菜单栏上那两个数只跟这几种事件有关：花了多少（请求
                 // 落地之后存储层才算得出来）、额度还剩多少。别的事件
                 // 叫醒它只是让它白跑一趟。
@@ -1603,48 +1620,16 @@ async fn update_loop(app: tauri::AppHandle) {
     }
 }
 
-/// 高危的工具调用要弹系统通知。
-///
-/// **只弹高危的。**中危和脱敏都只进界面 —— 通知的代价是用户学会忽略
-/// 通知，包括那些真该看的。
-fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
-    use tauri_plugin_notification::NotificationExt;
-    let tw_api::Event::ToolCallFlagged {
-        provider,
-        tool,
-        why,
-        excerpt,
-        high,
-        blocked,
-        ..
-    } = ev
-    else {
-        return;
-    };
-    if !high {
-        return;
-    }
-    // 标题里就要有「哪个上游」和「哪个工具」—— 用户是在批准提示旁边
-    // 扫一眼这条通知的，正文他不一定读得完
-    let title = if *blocked {
-        format!("已拦截 {provider} 返回的 {tool} 调用")
-    } else {
-        format!("{provider} 返回了可疑的 {tool} 调用")
-    };
-    let body = if *blocked {
-        format!(
-            "{why}
-{excerpt}
-此上游标记为不受信任，响应流已切断。"
-        )
-    } else {
-        format!(
-            "{why}
-{excerpt}
-建议拒绝此调用。"
-        )
-    };
-    let _ = app.notification().builder().title(title).body(body).show();
+/// 现在挂着的通知。**关窗期间发生的事也在里面** —— 判定在 Rust 侧，界面来取
+#[tauri::command]
+fn notices_list(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<notices::Notice> {
+    notices.list()
+}
+
+/// 用户把一条划掉了
+#[tauri::command]
+fn dismiss_notice(notices: tauri::State<'_, Arc<notices::Notices>>, key: String) {
+    notices.dismiss(&key);
 }
 
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。
