@@ -7,6 +7,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { conditionText } from "./labels";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import {
   Card,
@@ -269,11 +270,17 @@ export default function Routes({
                           兜底
                         </span>
                       ) : (
-                        rule.conditions.join(" 且 ")
+                        rule.conditions.map(conditionText).join(" 且 ")
                       )}
                     </span>
                     <span className="ml-auto font-mono text-muted-foreground">
-                      → {rule.to}
+                      {rule.deny ? (
+                        <span className="font-sans text-destructive">拒绝</span>
+                      ) : rule.to ? (
+                        `→ ${rule.to}`
+                      ) : (
+                        <span className="font-sans">仅改写参数</span>
+                      )}
                     </span>
                     <Button
                       variant="destructive"

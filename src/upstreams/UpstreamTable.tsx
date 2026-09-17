@@ -10,7 +10,7 @@ import {
 } from "@/ui/table";
 import { usd, type Overview, type ProviderView } from "@/types";
 import type { UpstreamStats } from "./api";
-import { billingSummary, egressLabel, protocolLabel, shortUrl } from "./labels";
+import { billingSummary, egressLabel, protocolLabel, quotaWindowLabel, shortUrl } from "./labels";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -157,7 +157,7 @@ function BillingCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | nul
       {billingSummary(p)}
       {tight && (
         <div className="tw-label text-muted-foreground">
-          {tight.label}额度已用 {Math.round(tight.used_percent)}%
+          {quotaWindowLabel(tight.window)}额度已用 {Math.round(tight.used_percent)}%
         </div>
       )}
     </TableCell>

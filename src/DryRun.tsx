@@ -2,12 +2,13 @@ import { useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
-import type { DryRunResult } from "./types";
+import type { DryRunResult, RuleTrace } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
 import { skipLabel } from "./upstreams/labels";
+import { groupKindLabel, mismatchText, setText, translatedText } from "./labels";
 import {
   Combobox,
   ComboboxContent,
@@ -165,6 +166,30 @@ function Skipped({ r }: { r: DryRunResult }) {
   );
 }
 
+/** 候选里要转换格式的上游。转换可能丢字段，试算时就要看得见 */
+function Converted({ r }: { r: DryRunResult }) {
+  if (r.converted.length === 0) return null;
+  return (
+    <div className="mt-1 text-muted-foreground">
+      需转换格式：
+      {r.converted.map((c, i) => (
+        <span key={c.provider}>
+          {i > 0 && "、"}
+          <span className="text-foreground">{c.provider}</span>（{translatedText(c)}）
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** 规则匹配明细里的一行说明 */
+function traceText(t: RuleTrace): string {
+  if (t.verdict === "matched") return "命中";
+  if (t.verdict === "phase_two") return "条件需在选定上游后求值，试算不作判断";
+  if (t.error) return t.error;
+  return t.mismatch ? mismatchText(t.mismatch) : "未命中";
+}
+
 function Result({ r }: { r: DryRunResult }) {
   const matched = (
     <>
@@ -172,7 +197,7 @@ function Result({ r }: { r: DryRunResult }) {
       {r.via_group && (
         <>
           {" "}
-          · 策略组「{r.via_group}」{r.strategy && `（${r.strategy}）`}
+          · 策略组「{r.via_group}」{r.strategy && `（${groupKindLabel(r.strategy)}）`}
         </>
       )}
     </>
@@ -184,11 +209,10 @@ function Result({ r }: { r: DryRunResult }) {
           <span className="text-destructive">拒绝</span> · 规则「{r.rule}」：{r.reason}
         </div>
       ) : r.outcome === "no_match" ? (
-        <div className="text-warning">{r.reason}</div>
+        <div className="text-warning">没有规则命中，且没有兜底规则，请求将返回错误。</div>
       ) : r.outcome === "unavailable" ? (
         <div>
           {matched}
-          {/* core 的 reason 是把下面这份清单拼成的一句话，这里直接列清单 */}
           <div className="mt-1 text-warning">选中的上游均无法服务此请求，请求将返回错误。</div>
           <Skipped r={r} />
         </div>
@@ -216,6 +240,7 @@ function Result({ r }: { r: DryRunResult }) {
             )}
           </div>
           <Skipped r={r} />
+          <Converted r={r} />
           {r.hurts_cache && (
             // 要直说 —— 它决定账单
             <div className="mt-1 text-warning">
@@ -226,8 +251,8 @@ function Result({ r }: { r: DryRunResult }) {
             <div className="mt-1">
               参数改写：
               {r.set.map((s) => (
-                <div key={s} className="ml-2">
-                  {s}
+                <div key={s.field} className="ml-2">
+                  {setText(s)}
                 </div>
               ))}
             </div>
@@ -249,7 +274,7 @@ function Result({ r }: { r: DryRunResult }) {
                 {t.verdict === "matched" ? "✓" : t.verdict === "phase_two" ? "…" : "·"}
               </span>
               <span className="w-40 shrink-0">{t.name}</span>
-              <span className="text-muted-foreground">{t.why ?? "命中"}</span>
+              <span className="text-muted-foreground">{traceText(t)}</span>
             </li>
           ))}
         </ul>

@@ -40,6 +40,7 @@ import Sessions from "./Sessions";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
+import { secretLabel, stageLabel, translatedText } from "./labels";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -931,7 +932,7 @@ export default function App() {
           <AlertTitle>配置校验未通过，仍在使用上一版本</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            {rejected.stage}错误
+            {stageLabel(rejected.stage)}错误
             {rejected.line != null && `（第 ${rejected.line} 行）`}：{rejected.message}
           </p>
           {rejected.excerpt && (
@@ -1468,14 +1469,14 @@ export default function App() {
                         className="ml-1 rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
                         title={
                           "发送前已替换：" +
-                          r.redacted.map((x) => `${x.what} ×${x.count}`).join("、") +
+                          r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`).join("、") +
                           "\n模型回显的内容将自动还原。"
                         }
                       >
                         已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
                       </span>
                     )}
-                    {/* 方言互转。**转了就要看得见，丢了字段
+                    {/* 格式转换。**转了就要看得见，丢了字段
                         更要看得见** —— 「扩展思考开了却没生效」这个症状
                         在客户端那头完全无从下手，只有这里知道原因 */}
                     {r.translated && (
@@ -1487,9 +1488,9 @@ export default function App() {
                             : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
                         }
                         title={
-                          `请求已从 ${r.translated.from} 协议转换为 ${r.translated.to} 协议后发送。` +
+                          `请求已转换格式后发送：${translatedText(r.translated)}。` +
                           (r.translated.dropped.length > 0
-                            ? `\n\n目标协议不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
+                            ? `\n\n目标格式不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
                             : "\n未丢弃任何字段。")
                         }
                       >

@@ -31,7 +31,7 @@ import {
 } from "@/types";
 import { api } from "./api";
 import { TestLine } from "./ConnectionSection";
-import { billingSummary, egressLabel, errorText, skipLabel } from "./labels";
+import { billingSummary, egressLabel, errorText, l1ErrorText, l1SkipText, l1StageLabel, skipLabel } from "./labels";
 import { Boxed, FormItem, Note } from "./parts";
 import { formFromView, toInput } from "./upstreamForm";
 
@@ -172,14 +172,14 @@ export function LinkTestDialog({
                       <TableCell className="align-top whitespace-normal">
                         {r.ok ? (
                           <span className="tabular-nums">
-                            {r.segments.map((s) => `${s.name} ${s.ms} ms`).join(" · ")}
+                            {r.segments.map((s) => `${l1StageLabel(s.stage)} ${s.ms} ms`).join(" · ")}
                           </span>
                         ) : (
-                          <span className="text-destructive">{r.error ?? "无法连接"}</span>
+                          <span className="text-destructive">{l1ErrorText(r)}</span>
                         )}
-                        {(r.notes ?? []).map((n) => (
-                          <div key={n} className="tw-label text-muted-foreground">
-                            {n}
+                        {(r.skipped ?? []).map((s) => (
+                          <div key={`${s.stage.step}-${s.stage.peer}`} className="tw-label text-muted-foreground">
+                            {l1SkipText(s)}
                           </div>
                         ))}
                       </TableCell>

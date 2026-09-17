@@ -4,7 +4,7 @@
  * **同一个概念只有一个叫法**，所以集中在这里：列表、对话框、测速结果里
  * 说的「按量计费」「默认价目表」「自动识别」必须是同一个词。
  */
-import type { PriceFields, PriceSourceView, ProviderView } from "@/types";
+import type { L1Result, L1Skip, L1Stage, PriceFields, PriceSourceView, ProviderView } from "@/types";
 
 export const PROTOCOLS: { id: string; label: string }[] = [
   { id: "anthropic", label: "Anthropic Messages" },
@@ -82,6 +82,54 @@ export function modelSourceLabel(source: string): string {
     default:
       return "未获取";
   }
+}
+
+/** 订阅额度窗口：`5h` / `7d` / `weekly` */
+export function quotaWindowLabel(window: string): string {
+  switch (window) {
+    case "5h":
+      return "5 小时";
+    case "7d":
+      return "7 天";
+    case "weekly":
+      return "每周";
+    default:
+      return window;
+  }
+}
+
+const L1_STEPS: Record<L1Stage["step"], string> = {
+  config: "配置",
+  dns: "DNS 解析",
+  tcp: "TCP 握手",
+  tls: "TLS 握手",
+  handshake: "代理握手",
+};
+
+/** 建连的一步。对着代理的那几步带上「代理」，代理握手本身不用 */
+export function l1StageLabel(s: L1Stage): string {
+  const step = L1_STEPS[s.step] ?? s.step;
+  return s.peer === "proxy" && s.step !== "handshake" ? `${step} · 代理` : step;
+}
+
+/** 某一步不在分段里的原因 */
+export function l1SkipText(s: L1Skip): string {
+  switch (s.reason) {
+    case "plain_http":
+      return "http:// 地址不进行 TLS 握手";
+    case "ip_address":
+      return "地址已是 IP，无需 DNS 解析";
+    case "proxy_resolves":
+      return "域名由代理解析，本机不进行 DNS 解析";
+    default:
+      return s.reason;
+  }
+}
+
+/** 测速失败时的那一句：失败在哪一步，加上原因 */
+export function l1ErrorText(r: L1Result): string {
+  const error = r.error ?? "无法连接";
+  return r.failed ? `${l1StageLabel(r.failed)}：${error}` : error;
 }
 
 /** 候选上游被跳过的原因 */

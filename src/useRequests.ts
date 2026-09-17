@@ -129,8 +129,8 @@ export function useRequests() {
    * **只在开窗时用一次。**在此之前它还兼着「回库把价钱取回来」——
    * 因为价钱不在事件流里。core 现在会报 `request_priced`，那条路没了。
    *
-   * **只补，不覆盖。**实时那一行更全 —— 脱敏、方言互转、可疑工具调用
-   * 都只在事件里有，库里没有。合并的方向必须是「历史只添信息」。
+   * **只补，不覆盖。**实时那一行更全 —— 脱敏和可疑工具调用只在事件里有，
+   * 库里没有。合并的方向必须是「历史只添信息」。
    */
   const pull = useCallback(async () => {
     // Tauri 的 invoke 用字符串 reject，不是 Error
@@ -145,6 +145,7 @@ export function useRequests() {
           cur.costMicros = h.cost_micros;
           cur.costEstimated = h.cost_estimated;
         }
+        cur.translated ??= h.translated ?? undefined;
         continue;
       }
       store.current.set(h.id, {
@@ -164,6 +165,7 @@ export function useRequests() {
         costMicros: h.cost_micros ?? undefined,
         costEstimated: h.cost_estimated,
         error: h.error ?? undefined,
+        translated: h.translated ?? undefined,
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));

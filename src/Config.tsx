@@ -16,6 +16,7 @@ import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
+import { GROUP_KINDS, PROBES } from "./labels";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { ButtonGroup } from "@/ui/button-group";
 
@@ -336,13 +337,15 @@ function ProbesSection({
         客户端自动发起的辅助请求，不由用户操作触发，同样产生费用。
       </p>
       <ul className="mt-2 space-y-1.5">
-        {probes.map((p) => (
+        {probes.map((p) => {
+          const kind = PROBES.find((x) => x.id === p.id);
+          return (
           <li
             key={p.id}
             className="rounded-md border border-border px-3 py-2"
           >
             <div className="flex items-baseline gap-3">
-              <span className="tw-body font-medium">{p.label}</span>
+              <span className="tw-body font-medium">{kind?.label ?? p.id}</span>
               <ToggleGroup
                 type="single"
                 variant="outline"
@@ -360,12 +363,13 @@ function ProbesSection({
                 ))}
               </ToggleGroup>
             </div>
-            <p className="mt-1 tw-body text-muted-foreground">{p.what}</p>
+            {kind && <p className="mt-1 tw-body text-muted-foreground">{kind.what}</p>}
             <p className="mt-0.5 tw-label text-muted-foreground">
               {PROBE_MODES.find((m) => m.id === p.mode)?.what}
             </p>
           </li>
-        ))}
+          );
+        })}
       </ul>
       <p className="mt-2 tw-label text-muted-foreground">
         仅当对应类别设为「交给路由」时，路由规则中的「辅助请求」条件才会命中。
@@ -658,18 +662,8 @@ export default function Config({
                   </Button>
                   </Tip>
                   <SelectCell
-                    value={
-                      { 按顺序: "fallback", 手动选: "select", 轮流: "load-balance", 选最快: "url-test", 选最便宜: "cheapest" }[
-                        g.kind
-                      ] ?? "fallback"
-                    }
-                    options={[
-                      ["fallback", "按顺序"],
-                      ["select", "手动选"],
-                      ["load-balance", "轮流"],
-                      ["url-test", "选最快"],
-                      ["cheapest", "选最便宜"],
-                    ]}
+                    value={g.kind}
+                    options={GROUP_KINDS.map((k) => [k.id, k.label])}
                     path={`/groups/${g.name}/type`}
                     version={cfg?.version ?? null}
                     onDone={() => setReloadKey((k) => k + 1)}
@@ -683,10 +677,10 @@ export default function Config({
                   「UI 上点选」，而切不了的话它等于一个只能改 YAML
                   才能用的功能。
 
-                  选中之后其余的仍然留着做故障转移 —— 手动选一家不等于
+                  选中之后其余的仍然留着做故障转移 —— 手动选择一个上游不等于
                   放弃容错，所以这里说的是「优先」而不是「只用」。
                 */}
-                {g.kind === "手动选" && (
+                {g.kind === "select" && (
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="text-muted-foreground">优先使用</span>
                     <NativeSelect
@@ -728,7 +722,7 @@ export default function Config({
                   关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
                   而缓存命中与否成本差 5 到 10 倍。
                 */}
-                {g.kind === "轮流" && (
+                {g.kind === "load-balance" && (
                   <Field
                     orientation="horizontal"
                     className="mt-1.5 w-auto text-muted-foreground"
@@ -766,7 +760,7 @@ export default function Config({
                   // 丢掉 90% 的缓存折扣，是一笔怎么算都不划算的账。
                   <p className="mt-1.5 text-amber-700 dark:text-amber-400">
                     ⚠ 此策略会使 prompt cache 失效，长会话的费用将明显上升。
-                    {g.kind === "轮流" ? "开启会话粘滞可避免此问题。" : ""}
+                    {g.kind === "load-balance" ? "开启会话粘滞可避免此问题。" : ""}
                   </p>
                 )}
               </li>

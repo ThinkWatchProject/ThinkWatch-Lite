@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/ui/table";
 import type { L1Result, ProxyView } from "@/types";
-import { proxyKindLabel } from "./labels";
+import { l1ErrorText, proxyKindLabel } from "./labels";
 import { NameChips, StatusDot } from "./parts";
 
 /** 一个代理最近一次检测的结果。`running` = 正在检测 */
@@ -89,7 +89,7 @@ function Connectivity({ check }: { check: ProxyCheck | undefined }) {
   const r = check.result;
   if (!r.ok) {
     return (
-      <span title={r.error ?? undefined}>
+      <span title={l1ErrorText(r)}>
         <StatusDot tone="bad">无法连接</StatusDot>
       </span>
     );

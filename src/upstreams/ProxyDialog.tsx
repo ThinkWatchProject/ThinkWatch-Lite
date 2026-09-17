@@ -15,7 +15,7 @@ import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import type { L1Result, Overview, ProxyAuthInput, ProxyInput, ProxyView } from "@/types";
 import { api } from "./api";
-import { PROXY_KINDS, errorText } from "./labels";
+import { PROXY_KINDS, errorText, l1ErrorText } from "./labels";
 import { FormItem, Segmented, StatusDot } from "./parts";
 
 export type ProxyDialogMode = { kind: "create" } | { kind: "edit"; name: string };
@@ -210,7 +210,7 @@ export function ProxyDialog({
                   连接正常 · {auth ? "认证通过 · " : ""}响应 {result.total_ms.toLocaleString()} ms
                 </StatusDot>
               ) : (
-                <StatusDot tone="bad">{result.error ?? "无法连接"}</StatusDot>
+                <StatusDot tone="bad">{l1ErrorText(result)}</StatusDot>
               )
             ) : (
               <span className="tw-label text-muted-foreground">

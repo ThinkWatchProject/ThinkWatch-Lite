@@ -22,6 +22,7 @@ import {
 import ConfigTextMode from "./ConfigText";
 import { when } from "./format";
 import type { ConfigText, ConfigVersion } from "./types";
+import { originLabel } from "./labels";
 
 function errorText(e: unknown): string {
   return typeof e === "string" ? e : String(e);
@@ -151,7 +152,7 @@ export function VersionHistoryDialog({
                 {versions.map((v) => (
                   <TableRow key={v.version}>
                     <TableCell className="tabular-nums">{when(v.at_ms)}</TableCell>
-                    <TableCell className="text-muted-foreground">{v.origin}</TableCell>
+                    <TableCell className="text-muted-foreground">{originLabel(v.origin)}</TableCell>
                     <TableCell className="font-mono text-muted-foreground">{v.version.slice(7, 19)}</TableCell>
                     <TableCell className="text-right">
                       {v.current ? (
