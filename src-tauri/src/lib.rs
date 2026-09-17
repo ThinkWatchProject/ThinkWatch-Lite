@@ -88,7 +88,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
             return Ok(inside);
         }
         // **不往下走。**这里不是「再找找别处」，是这份安装包缺东西。
-        anyhow::bail!("安装包里缺少 twcore 组件。请重新下载安装一次。");
+        anyhow::bail!("安装包缺少 twcore 组件，请重新下载并安装。");
     }
 
     let mut tried = Vec::new();
@@ -145,7 +145,8 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     }
 
     anyhow::bail!(
-        "找不到 twcore。找过这些位置（以及 PATH）：\n{}\n\n         用 THINKWATCH_CORE_BIN 指一个绝对路径，或者在 core 仓库里跑一次 \
+        "未找到 twcore。已查找以下位置及 PATH：\n{}\n\n\
+         可通过 THINKWATCH_CORE_BIN 指定绝对路径，或在 core 仓库中执行 \
          `cargo build -p twcore`。",
         tried
             .iter()
@@ -495,13 +496,13 @@ async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Result<String, S
         .await
         .map_err(|e| format!("{e:#}"))?;
     let dir = data_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建目录 {}：{e}", dir.display()))?;
     let at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let path = dir.join(format!("诊断包-{at}.md"));
-    std::fs::write(&path, text).map_err(|e| format!("写不了 {}：{e}", path.display()))?;
+    std::fs::write(&path, text).map_err(|e| format!("无法写入文件 {}：{e}", path.display()))?;
     // **0600。**里面是脱敏过的，但它仍然描述了这台机器上有哪些上游、
     // 哪些客户端 —— 同机器上的其他用户没有理由读到
     #[cfg(unix)]
@@ -697,26 +698,28 @@ async fn uninstall(
 ) -> Result<Vec<String>, String> {
     let mut log = Vec::new();
     for r in restore_all(state).await? {
-        log.push(format!("{} — {}", r.client, r.detail));
+        log.push(format!("{}：{}", r.client, r.detail));
     }
     // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
     // 开机自启项的后果，用户在系统设置里看得见、也删得掉
     use tauri_plugin_autostart::ManagerExt;
     match app.autolaunch().disable() {
-        Ok(_) => log.push("开机自启已注销".into()),
-        Err(e) => log.push(format!("开机自启没注销掉（去系统设置里删）：{e}")),
+        Ok(_) => log.push("已取消开机启动".into()),
+        Err(e) => log.push(format!(
+            "未能取消开机启动（{e}）。请在「系统设置 › 通用 › 登录项」中关闭 ThinkWatch Lite。"
+        )),
     }
     if drop_data {
         let dir = data_dir();
         match std::fs::remove_dir_all(&dir) {
             Ok(_) => log.push(format!("数据目录已删除：{}", dir.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => log.push(format!("数据目录没删掉：{}（{e}）", dir.display())),
+            Err(e) => log.push(format!("未能删除数据目录：{}（{e}）", dir.display())),
         }
     } else {
-        log.push(format!("数据留着没动：{}", data_dir().display()));
+        log.push(format!("数据目录已保留：{}", data_dir().display()));
     }
-    log.push("可以把应用拖进废纸篓了。".into());
+    log.push("现可将应用移到废纸篓。".into());
     Ok(log)
 }
 
@@ -798,7 +801,7 @@ fn update_state(app: tauri::AppHandle) -> UpdateView {
 #[tauri::command]
 fn set_update_check(app: tauri::AppHandle, on: bool) -> Result<UpdateView, String> {
     update::save_prefs(&data_dir(), &update::Prefs { check_updates: on })
-        .map_err(|e| format!("设置存不下来：{e:#}"))?;
+        .map_err(|e| format!("无法保存设置：{e:#}"))?;
     Ok(update_view(&app))
 }
 
@@ -881,7 +884,7 @@ async fn find(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     let current = app.package_info().version.to_string();
     let cask = fetch_text(update::CASK_URL).await?;
     let Some(version) = update::cask_version(&cask) else {
-        return Err("cask 里读不出版本号".into());
+        return Err("无法从 Homebrew cask 中读取版本号".into());
     };
     if !update::newer(version, &current) {
         return Ok(None);
@@ -1067,13 +1070,16 @@ async fn update_install(
     if !install.can_self_update() {
         return Err(match install {
             update::Install::Homebrew => {
-                format!("这一份由 Homebrew 管理，请执行：{}", update::BREW_UPGRADE)
+                format!(
+                    "此应用由 Homebrew 管理，请在终端中执行：{}",
+                    update::BREW_UPGRADE
+                )
             }
             _ => "开发构建不执行自动更新".into(),
         });
     }
     if hub.installing.swap(true, Ordering::SeqCst) {
-        return Err("更新已经在进行中".into());
+        return Err("更新正在进行中".into());
     }
     // 中途失败要把标记放回去，否则再点一次会被当成「已经在进行中」
     struct Release<'a>(&'a std::sync::atomic::AtomicBool);
@@ -1090,7 +1096,7 @@ async fn update_install(
         .check()
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "已经是最新版本".to_string())?;
+        .ok_or_else(|| "已是最新版本".to_string())?;
 
     let _ = app.emit("update-step", Step::Downloading);
     let h = app.clone();
@@ -1177,7 +1183,7 @@ fn autostart_enabled(app: tauri::AppHandle) -> bool {
 #[tauri::command]
 fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
     if !autostart::allowed_in_this_build() {
-        return Err("开发构建里不注册开机自启 —— 它会把 target/debug 下的二进制写进 plist".into());
+        return Err("开发构建不支持开机启动".into());
     }
     use tauri_plugin_autostart::ManagerExt;
     // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
@@ -1191,7 +1197,7 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
         && let Some(plist) = autostart::plist_path(&app.config().identifier)
         && let Some(dir) = plist.parent()
     {
-        std::fs::create_dir_all(dir).map_err(|e| format!("建不了 {}：{e}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("无法创建目录 {}：{e}", dir.display()))?;
     }
     let mgr = app.autolaunch();
     let r = if on { mgr.enable() } else { mgr.disable() };
@@ -1602,19 +1608,19 @@ fn notify_if_dangerous(app: &tauri::AppHandle, ev: &tw_api::Event) {
     let title = if *blocked {
         format!("已拦截 {provider} 返回的 {tool} 调用")
     } else {
-        format!("{provider} 返回了一个可疑的 {tool} 调用")
+        format!("{provider} 返回了可疑的 {tool} 调用")
     };
     let body = if *blocked {
         format!(
             "{why}
 {excerpt}
-这个上游标记为不受信任，响应流已切断。"
+此上游标记为不受信任，响应流已切断。"
         )
     } else {
         format!(
             "{why}
 {excerpt}
-建议拒绝这个调用。"
+建议拒绝此调用。"
         )
     };
     let _ = app.notification().builder().title(title).body(body).show();
@@ -1861,7 +1867,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
         if f.running {
             "ThinkWatch  ● 运行中"
         } else {
-            "ThinkWatch  ○ 没在跑"
+            "ThinkWatch  ○ 未运行"
         },
         // **点不动。**它是状态不是操作
         false,
