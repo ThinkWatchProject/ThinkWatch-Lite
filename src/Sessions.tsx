@@ -80,7 +80,7 @@ export default function Sessions() {
             <TableHead className="text-right font-normal">时长</TableHead>
             <TableHead className="text-right font-normal">上下文峰值</TableHead>
             <TableHead className="text-right font-normal">缓存省下</TableHead>
-            <TableHead className="text-right font-normal">花费</TableHead>
+            <TableHead className="text-right font-normal">费用</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -146,13 +146,13 @@ function Cost({ s }: { s: SessionView }) {
         usd(s.cost_micros)
       )}
       {s.unpriced_turns > 0 && (
-        <Tip text="这几轮的模型不在价目表里，没有计入合计">
-          <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无价</span>
+        <Tip text="这几轮所用的模型未定价，费用未计入合计">
+          <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无法计价</span>
         </Tip>
       )}
       {noUsage > 0 && (
-        <Tip text="这几轮没有拿到用量：上游未报告，或连接在报告之前已经结束。花费无法计算，没有计入合计">
-          <span className="ml-1 text-muted-foreground">+{noUsage} 轮没有用量</span>
+        <Tip text="这几轮没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计">
+          <span className="ml-1 text-muted-foreground">+{noUsage} 轮无用量</span>
         </Tip>
       )}
     </>
@@ -243,7 +243,7 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
   const max = Math.max(1, ...turns.map((t) => t.cost_micros ?? 0));
   return (
     <section className="mt-4">
-      <div className="tw-body text-muted-foreground">每轮花费</div>
+      <div className="tw-body text-muted-foreground">每轮费用</div>
       <ul className="mt-1 space-y-0.5">
         {turns.map((t, i) => (
           <li key={t.id} className="flex items-center gap-2 tw-label">

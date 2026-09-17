@@ -124,7 +124,7 @@ export default function Clients({
         // 可能还是 null（core 刚起来、第一次配置读回来之前）。那种时候
         // 建密钥会失败，而接管照样往下走 —— 客户端配上一把不存在的密钥。
         if (!configVersion) {
-          toast.error("还没读到配置版本，稍等一下再试");
+          toast.error("配置版本尚未读取，请稍后重试");
           return;
         }
         const key = await invoke<string>("new_key");

@@ -330,7 +330,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       onValueChange={(v) => v && setBy(v as "token" | "cost")}
     >
       <ToggleGroupItem value="token">token</ToggleGroupItem>
-      <ToggleGroupItem value="cost">花费</ToggleGroupItem>
+      <ToggleGroupItem value="cost">费用</ToggleGroupItem>
     </ToggleGroup>
   );
 
@@ -598,14 +598,14 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 </Tip>
               )}
               {s.unpriced_requests > 0 && (
-                <Tip text="这些请求所用的模型不在价目表中，它们的花费没有计入上面的金额。在价格页配置单价后即可计入。">
+                <Tip text="这些请求所用的模型未定价，费用未计入上方金额。在「上游 › 价目表」中设置价格后，之后的请求将按该价格计入。">
                   <span className="underline decoration-dotted underline-offset-2">
                     {s.unpriced_requests} 条未计价
                   </span>
                 </Tip>
               )}
               {(s.no_usage_requests ?? 0) > 0 && (
-                <Tip text="这些请求没有拿到用量：上游未报告，或连接在报告之前已经结束。花费无法计算，没有计入上面的金额。">
+                <Tip text="这些请求没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入上方金额。">
                   <span className="underline decoration-dotted underline-offset-2">
                     {s.no_usage_requests} 条没有用量
                   </span>

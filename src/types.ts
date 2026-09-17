@@ -354,11 +354,16 @@ export type ModelList =
   | { kind: "unrecognized"; sample: string }
   | { kind: "empty" };
 
-export interface ProbeResponse {
+/** 检测一个上游的结果（不保存） */
+export interface ProviderTestResult {
+  /** 地址通、凭据被接受 */
   ok: boolean;
+  /** 按哪种协议测的 */
   protocol: string | null;
   latency_ms: number;
   models: ModelList;
+  /** 经由哪个代理。直连时没有 */
+  via?: string | null;
   error: string | null;
 }
 
@@ -497,6 +502,8 @@ export interface HistoryRow {
   billing: string;
   /** 缓存命中省下了多少微分。null = 算不出来 */
   cache_saved_micros: number | null;
+  /** 按什么价格算的。没算出金额的、老记录没有它 */
+  price_source?: PriceSourceView | null;
 }
 
 export interface StorageStatus {
@@ -607,8 +614,13 @@ export interface SpeedEstimate {
   /** 输入 token。**精确值** —— 请求是固定的 */
   input_tokens: number;
   max_output_tokens: number;
-  cost_micros: number | null;
+  /** 按量计费算得出来时是那个数，不计费时是 0。订阅制、计费方式未知、无法计价时是 null */
+  cost_micros?: number | null;
+  /** `per-token` / `subscription` / `free` / `unknown` */
+  billing: string;
   note: string;
+  /** 服务不了这个模型：`out_of_scope` / `not_offered`。不进合计，也不会被测 */
+  skipped?: string | null;
 }
 
 export interface SpeedQuote {
@@ -632,15 +644,15 @@ export interface SpeedResult {
   error: string | null;
 }
 
-/** 一个出站代理。**密码不在这里** —— 服务端只给「有没有认证」 */
+/** 一个出站代理。**用户名和密码都不在这里** —— 服务端只给「有没有认证」 */
 export interface ProxyView {
   name: string;
-  /** `socks5` / `socks5h` / `http` / `https` */
+  /** `socks5h` / `socks5` / `http` / `https` */
   kind: string;
   addr: string;
   has_auth: boolean;
-  /** 有几家上游在用它。删之前要知道 */
-  used_by: number;
+  /** 哪些上游在用它。删之前要知道，改名时它们会跟着改 */
+  used_by: string[];
 }
 
 /** 一类客户端辅助请求的处置 */
@@ -714,38 +726,69 @@ export interface ConfigVersion {
   current: boolean;
 }
 
-export interface SetupResponse {
-  gateway_key: string;
-  gateway_addr: string;
-  config_path: string;
-}
-
 // —— 配置概览。**密钥只有来源，没有值** —— Rust 侧就没发过来。 ——
 export interface ProviderView {
   name: string;
+  /** 已脱敏。编辑时不要原样写回 */
   base_url: string;
+  /** 地址里有被打码的部分 */
+  base_url_masked: boolean;
+  /** 密钥的来源，不是值 */
   key_source: string;
+  /** `key` / `env` / `oauth` */
+  key_kind: "key" | "env" | "oauth";
+  /** `env` 时的变量名 */
+  key_env?: string | null;
+  oauth_endpoint?: string | null;
+  oauth_client_id?: string | null;
+  /** 实际生效的协议。推断不出时为 null */
   protocol: string | null;
+  /** 协议是配置里写明的，还是按地址推断的 */
+  protocol_explicit: boolean;
+  /** `direct` / `system` / 代理名 */
   proxy: string;
+  /** `fail` / `direct` */
+  on_proxy_fail: string;
+  /** 服务不提供模型列表时用的手动清单 */
+  models: string[];
+  /** 启用范围：模型 ID 或 glob。null = 它提供的全部 */
+  models_only?: string[] | null;
+  /** `discovered` / `manual` / `none` */
+  model_source: string;
+  /** 现在能服务的模型数，已按启用范围过滤。停用时是 0 */
+  model_count: number;
+  disabled: boolean;
   health: "ok" | "open";
-  /** 这家怎么收钱。`cheapest` 策略和成本栏都看它 */
+  /** 配置里写明的计费方式。null = 自动识别 */
   billing?: string | null;
-  /** 判完的结果（没写时按 base_url 判） */
-  trust?: string;
-  /**
-   * 用户显式写过 `trust` 吗。
-   *
-   * **要能区分「自动判成不受信任」和「用户写了不受信任」** —— 前者改
-   * base_url 就会变，后者不会，显示成一样会让用户以为自己改不动它。
-   */
-  trust_explicit?: boolean;
-  /**
-   * 这家实际会脱哪几类。给的是判完的结果 —— 不写的话官方端点
-   * 是空的、其余是那四类默认。
-   */
-  redact?: string[];
-  /** 用户显式写过 `redact` 吗。「没写」和「写了空」要能分开 */
-  redact_explicit?: boolean;
+  /** 实际按什么计费 */
+  billing_effective: string;
+  /** 判完的信任级别 */
+  trust: string;
+  trust_explicit: boolean;
+  /** 实际会脱敏的类别（判完的结果） */
+  redact: string[];
+  redact_explicit: boolean;
+  /** 谁在引用它 */
+  references: ReferenceView[];
+  /** 选的价目表。null = 默认价目表 */
+  pricing?: string | null;
+}
+
+/** 配置里引用了某个上游的一处 */
+export type ReferenceView =
+  | { kind: "rule_target"; route: string; rule: string }
+  | { kind: "rule_condition"; route: string; rule: string }
+  | { kind: "group"; group: string };
+
+/** 一张自定义价目表 */
+export interface PriceSheetView {
+  name: string;
+  multiplier: number;
+  /** 单独覆盖了几个模型 */
+  overrides: number;
+  /** 哪些上游选了它 */
+  used_by: string[];
 }
 
 /** 一条路由 —— 一组规则，加上绑了它的密钥 */
@@ -787,50 +830,6 @@ export interface ListenView {
   exposed: boolean;
 }
 
-/** 「检查价格更新」第一步：**先说要访问什么、多大** */
-export interface UpdateOffer {
-  url: string;
-  /** `null` = 对面没给 Content-Length */
-  bytes: number | null;
-  current_date: string;
-}
-
-/** 第二步：下载解析完，**给 diff，还没写** */
-export interface UpdatePreview {
-  models: number;
-  changes: PriceChangeView[];
-  /** 第三步要带回来 —— 否则「确认写入」写的可能是另一次下载的结果 */
-  token: string;
-}
-
-export interface PriceChangeView {
-  model: string;
-  /** `null` = 新增的 */
-  old_input: number | null;
-  new_input: number;
-  old_output: number | null;
-  new_output: number;
-}
-
-/** 一条用户自己写的价格（第三层）。**单位是每百万 token 的美元** */
-export interface PriceRow {
-  /** `null` = 对所有上游生效 */
-  provider: string | null;
-  model: string;
-  input: number;
-  output: number;
-  /** 内置快照里本来就有这个模型 —— 界面要说清「这条是在覆盖」 */
-  overrides_builtin: boolean;
-}
-
-export interface PricingView {
-  rows: PriceRow[];
-  snapshot_date: string;
-  /** 最近 7 天算不出价钱的请求数。**这是这一页存在的理由** */
-  unpriced_recent: number;
-  unpriced_models: string[];
-}
-
 /** 光标落在配置的哪一段上 */
 export interface ConfigAt {
   section: string | null;
@@ -853,6 +852,8 @@ export interface Overview {
   /** 客户端自己发的辅助请求怎么处理 */
   client_probes?: ProbeView[];
   limits?: LimitsView;
+  /** 自定义价目表。默认价目表的状态看 `pricing_status` */
+  price_sheets: PriceSheetView[];
 }
 
 /**
@@ -1058,7 +1059,10 @@ export interface RuleTrace {
 }
 
 export interface DryRunResult {
-  outcome: "route" | "deny" | "no_match";
+  /** `unavailable`：规则选中的上游都服务不了这个请求 */
+  outcome: "route" | "deny" | "no_match" | "unavailable";
+  /** 经过的策略组按什么排序候选（「按顺序」「选最快」…）。直指上游时没有 */
+  strategy?: string | null;
   rule: string | null;
   reason: string | null;
   candidates: string[];
@@ -1069,6 +1073,14 @@ export interface DryRunResult {
   hurts_cache: boolean;
   /** 候选链里此刻熔断着的那些 */
   circuit_open: string[];
+  /** 规则选中、但服务不了这个请求而被跳过的上游 */
+  skipped: SkippedView[];
+}
+
+export interface SkippedView {
+  provider: string;
+  /** `disabled` / `out_of_scope` / `not_offered` */
+  reason: string;
 }
 
 export interface McpOpRequest {
@@ -1127,8 +1139,10 @@ export interface ReplayQuote {
   provider: string;
   body_bytes: number;
   input_tokens: number;
-  /** `null` = 订阅型，或者这个模型不在价目表里。**不是 0** */
+  /** `null` = 订阅制、计费方式未知，或者这个模型无法计价。**不是 0** */
   cost_micros: number | null;
+  /** 要重放到的那家的计费方式 */
+  billing: string;
   note: string;
   /** 发出去之前会不会脱敏 */
   will_redact: boolean;
@@ -1150,4 +1164,227 @@ export interface ReplayResult {
     duration_ms: number | null;
     bytes: number | null;
   };
+}
+
+// ---------------------------------------------------------------- 上游、代理与价目表的增删改
+
+export interface ConfigWritten {
+  version: string;
+}
+
+/** 凭据的三种写法 */
+export type CredentialInput =
+  | { kind: "key"; value: string }
+  | { kind: "env"; var: string }
+  | {
+      kind: "oauth";
+      refresh: string;
+      endpoint: string;
+      client_id?: string;
+      client_secret?: string;
+      /** 检测一份还没保存的 OAuth 凭据只能用现成的 access token */
+      access?: string;
+    };
+
+/** 新建或修改一个上游时交过去的定义 */
+export interface ProviderInput {
+  name: string;
+  /** 修改时不给就是保持原样 */
+  base_url?: string;
+  /** 修改时不给就是保持原样 —— 界面拿不到原值 */
+  key?: CredentialInput;
+  /** 不给就按地址推断 */
+  protocol?: string;
+  proxy: string;
+  on_proxy_fail: string;
+  models: string[];
+  /** 不给就是它提供的全部 */
+  models_only?: string[];
+  /** 不给就自动识别 */
+  billing?: string;
+  /** 不给就按地址识别 */
+  trust?: string;
+  /** 不给就按地址识别；空数组是「不脱敏」 */
+  redact?: string[];
+  /** 不给就是默认价目表 */
+  pricing?: string;
+  disabled: boolean;
+}
+
+export interface ProviderSave {
+  provider: ProviderInput;
+  base_version?: string;
+}
+
+export interface ProviderTest {
+  provider: ProviderInput;
+  /** 正在编辑的是哪一家。表单里没改的凭据和地址从它那儿取 */
+  current?: string;
+}
+
+/** 按接口地址自动识别的结果（不联网） */
+export interface ProviderPreview {
+  protocol?: string | null;
+  official: boolean;
+  redact: string[];
+}
+
+/** 一个上游的模型清单 */
+export interface ProviderModelsView {
+  provider: string;
+  /** `discovered` / `manual` / `none` */
+  source: string;
+  checked_at_ms?: number | null;
+  error?: string | null;
+  models: ModelRow[];
+}
+
+export interface ModelRow {
+  id: string;
+  /** 在启用范围里 */
+  enabled: boolean;
+  context_window?: number | null;
+  /** 按这个上游选的价目表查到的价格。null = 无法计价 */
+  price?: PriceFields | null;
+  price_source?: PriceSourceView | null;
+  /** 价格是从别的平台借来的，按它算出来的钱是估算 */
+  estimated: boolean;
+}
+
+export interface ProxyInput {
+  name: string;
+  kind: string;
+  /** `host:port` */
+  addr: string;
+  auth: ProxyAuthInput;
+}
+
+/** 视图里拿不到原来的用户名和密码，所以编辑时要能说「保持原样」 */
+export type ProxyAuthInput =
+  | { mode: "keep" }
+  | { mode: "none" }
+  | { mode: "set"; user: string; pass: string };
+
+export interface ProxySave {
+  proxy: ProxyInput;
+  base_version?: string;
+}
+
+export interface ProxyTest {
+  proxy: ProxyInput;
+  current?: string;
+}
+
+/** 默认价目表现在的状态 */
+export interface PricingStatus {
+  /** 数据日期 */
+  date: string;
+  /** `builtin` / `fetched` / `empty` */
+  source: string;
+  models: number;
+  auto_update: boolean;
+  /** 最近一次刷新的时间，成功失败都算 */
+  checked_at_ms?: number | null;
+  /** 最近一次刷新失败的原因 */
+  error?: string | null;
+  /** 最近 7 天无法计价的请求数 */
+  unpriced_recent: number;
+  unpriced_models: UnpricedModel[];
+}
+
+export interface UnpricedModel {
+  provider: string;
+  model: string;
+  requests: number;
+}
+
+export interface PricingRefreshed {
+  status: PricingStatus;
+  /** 价格变了、新增或者移除了的模型数 */
+  changed: number;
+}
+
+/** 单价，美元 / 百万 tokens */
+export interface PriceFields {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write_5m: number;
+  cache_write_1h: number;
+  /** 单次请求输入超过 200K tokens 之后的单价。成对出现 */
+  input_above_200k?: number | null;
+  output_above_200k?: number | null;
+}
+
+/** 一个价格是从哪儿来的 */
+export type PriceSourceView =
+  | { kind: "default"; date: string }
+  | { kind: "scaled"; sheet: string; multiplier: number; date: string }
+  | { kind: "override"; sheet: string };
+
+export interface PriceSheetInput {
+  name: string;
+  multiplier: number;
+  models: Record<string, PriceFields>;
+}
+
+export interface PriceSheetSave {
+  sheet: PriceSheetInput;
+  base_version?: string;
+  /** 保存之后使用这张价目表的上游。给了就恰好是这几家 */
+  used_by?: string[];
+}
+
+export type SheetRef =
+  | { kind: "default" }
+  | { kind: "named"; name: string }
+  | { kind: "draft"; sheet: PriceSheetInput };
+
+export interface PriceQuery {
+  sheet: SheetRef;
+  models?: string[];
+  search?: string;
+  limit?: number;
+}
+
+export interface ResolvedPrice {
+  model: string;
+  price?: PriceFields | null;
+  source?: PriceSourceView | null;
+  estimated: boolean;
+  max_input_tokens?: number | null;
+}
+
+export interface PriceQueryResult {
+  items: ResolvedPrice[];
+  /** 按名字搜时一共有多少个对得上（items 可能被截断） */
+  matched: number;
+}
+
+// ---------------------------------------------------------------- 按上游的统计
+
+/** 按模型或上游分组的费用 */
+export interface CostGroup {
+  name: string;
+  requests: number;
+  cost_micros: number;
+  /** 价目表里没有这个模型的条数（用量是有的） */
+  unpriced_requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** 没有拿到用量的条数 */
+  no_usage_requests?: number;
+}
+
+/** 一个上游最近一次报的订阅额度 */
+export interface ProviderQuota {
+  provider: string;
+  windows: QuotaWindow[];
+}
+
+export interface QuotaWindow {
+  label: string;
+  used_percent: number;
+  reset_in_secs: number | null;
+  status: string | null;
 }

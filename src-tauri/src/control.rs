@@ -23,6 +23,29 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+/// 路径里的一段（上游、代理、价目表的名字）。**斜杠也要转** —— 名字里的
+/// `/` 原样拼进去就成了两段路径，打到另一个端点上。
+fn segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// 删除时带上的版本，拼成查询串。
+fn with_base(path: String, base_version: Option<&str>) -> String {
+    match base_version {
+        Some(v) => format!("{path}?base_version={}", urlencode(v)),
+        None => path,
+    }
+}
+
 pub struct ControlClient {
     socket: PathBuf,
 }
@@ -146,18 +169,6 @@ impl ControlClient {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    /// 探一个上游能不能用。零成本，用户可以随便点。
-    pub async fn probe(&self, base_url: &str, key: &str) -> Result<tw_api::ProbeResponse> {
-        self.post_json(
-            "/probe",
-            &tw_api::ProbeRequest {
-                base_url: base_url.to_string(),
-                key: key.to_string(),
-            },
-        )
-        .await
-    }
-
     /// L1 测速：只握手，不发业务请求。**零成本**，用户可以随便点。
     ///
     /// 全部不给就测所有上游。core 那边是逐个测的 —— 并发会让每一段的
@@ -242,28 +253,27 @@ impl ControlClient {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
 
-    /// L3 测速要花多少。**必须先问这个。**
-    pub async fn speed_quote(&self, model: String) -> Result<tw_api::SpeedQuote> {
+    /// L3 测速要花多少。**必须先问这个。**`providers` 空 = 全部上游
+    pub async fn speed_quote(
+        &self,
+        model: String,
+        providers: Vec<String>,
+    ) -> Result<tw_api::SpeedQuote> {
         self.post_json(
             "/speed/quote",
-            &tw_api::SpeedRunRequest {
-                provider: None,
-                model,
-            },
+            &tw_api::SpeedRunRequest { providers, model },
         )
         .await
     }
 
     /// 真的跑。**这一步花钱。**
-    pub async fn speed_run(&self, model: String) -> Result<Vec<tw_api::SpeedResult>> {
-        self.post_json(
-            "/speed/run",
-            &tw_api::SpeedRunRequest {
-                provider: None,
-                model,
-            },
-        )
-        .await
+    pub async fn speed_run(
+        &self,
+        model: String,
+        providers: Vec<String>,
+    ) -> Result<Vec<tw_api::SpeedResult>> {
+        self.post_json("/speed/run", &tw_api::SpeedRunRequest { providers, model })
+            .await
     }
 
     /// 出站密钥检测攒下的证据。
@@ -284,10 +294,15 @@ impl ControlClient {
     }
 
     /// 按上游分的延迟。**「哪家 TTFT 最差」问的是这个。**
-    pub async fn latency_by_provider(&self) -> Result<Vec<tw_api::LatencyView>> {
-        Ok(serde_json::from_slice(
-            &self.get("/latency/provider").await?,
-        )?)
+    pub async fn latency_by_provider(
+        &self,
+        from_ms: Option<i64>,
+    ) -> Result<Vec<tw_api::LatencyView>> {
+        let path = match from_ms {
+            Some(f) => format!("/latency/provider?from_ms={f}"),
+            None => "/latency/provider".to_string(),
+        };
+        Ok(serde_json::from_slice(&self.get(&path).await?)?)
     }
 
     /// 矩阵上能写的是哪几个客户端。
@@ -485,29 +500,158 @@ impl ControlClient {
         Ok(())
     }
 
-    /// 光标落在配置的哪一段上（反向联动）。
-    pub async fn pricing(&self) -> Result<tw_api::PricingView> {
-        let body = self.get("/pricing").await?;
-        Ok(serde_json::from_slice(&body)?)
+    // ───────────────────────────────────────── 上游
+
+    pub async fn create_provider(
+        &self,
+        req: &tw_api::ProviderSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/providers", req).await
     }
 
-    pub async fn save_pricing(&self, rows: Vec<tw_api::PriceRow>) -> Result<tw_api::PricingView> {
-        self.send_json(hyper::Method::PUT, "/pricing", &rows).await
-    }
-
-    /// 「检查价格更新」三步走。
-    pub async fn update_offer(&self) -> Result<tw_api::UpdateOffer> {
-        self.post_json("/pricing/update/offer", &()).await
-    }
-    pub async fn update_fetch(&self) -> Result<tw_api::UpdatePreview> {
-        self.post_json("/pricing/update/fetch", &()).await
-    }
-    pub async fn update_apply(&self, token: &str) -> Result<tw_api::PricingView> {
-        self.post_json(
-            "/pricing/update/apply",
-            &serde_json::json!({ "token": token }),
+    pub async fn update_provider(
+        &self,
+        name: &str,
+        req: &tw_api::ProviderSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/providers/{}", segment(name)),
+            req,
         )
         .await
+    }
+
+    pub async fn delete_provider(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(format!("/providers/{}", segment(name)), base_version);
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    /// 检测一个上游，**不保存**。零成本，不调用模型
+    pub async fn test_provider(
+        &self,
+        req: &tw_api::ProviderTest,
+    ) -> Result<tw_api::ProviderTestResult> {
+        self.post_json("/providers/test", req).await
+    }
+
+    /// 按接口地址自动识别会得到什么。不联网
+    pub async fn preview_provider(&self, base_url: String) -> Result<tw_api::ProviderPreview> {
+        self.post_json(
+            "/providers/preview",
+            &tw_api::ProviderPreviewRequest { base_url },
+        )
+        .await
+    }
+
+    pub async fn provider_models(&self, name: &str) -> Result<tw_api::ProviderModelsView> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/providers/{}/models", segment(name)))
+                .await?,
+        )?)
+    }
+
+    pub async fn refresh_provider_models(&self, name: &str) -> Result<tw_api::ProviderModelsView> {
+        self.post_json(&format!("/providers/{}/models/refresh", segment(name)), &())
+            .await
+    }
+
+    // ───────────────────────────────────────── 代理
+
+    pub async fn create_proxy(&self, req: &tw_api::ProxySave) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/proxies", req).await
+    }
+
+    pub async fn update_proxy(
+        &self,
+        name: &str,
+        req: &tw_api::ProxySave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/proxies/{}", segment(name)),
+            req,
+        )
+        .await
+    }
+
+    pub async fn delete_proxy(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(format!("/proxies/{}", segment(name)), base_version);
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    /// 检测一个代理：完成握手和认证。**不保存**
+    pub async fn test_proxy(&self, req: &tw_api::ProxyTest) -> Result<tw_api::L1Result> {
+        self.post_json("/proxies/test", req).await
+    }
+
+    // ───────────────────────────────────────── 价目表
+
+    pub async fn pricing_status(&self) -> Result<tw_api::PricingStatus> {
+        Ok(serde_json::from_slice(&self.get("/pricing").await?)?)
+    }
+
+    /// 立即刷新默认价目表
+    pub async fn refresh_pricing(&self) -> Result<tw_api::PricingRefreshed> {
+        self.post_json("/pricing/refresh", &()).await
+    }
+
+    pub async fn set_price_auto_update(
+        &self,
+        req: &tw_api::AutoUpdateSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(hyper::Method::PUT, "/pricing/auto_update", req)
+            .await
+    }
+
+    pub async fn query_prices(&self, req: &tw_api::PriceQuery) -> Result<tw_api::PriceQueryResult> {
+        self.post_json("/pricing/query", req).await
+    }
+
+    pub async fn price_sheet(&self, name: &str) -> Result<tw_api::PriceSheetInput> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/pricing/sheets/{}", segment(name)))
+                .await?,
+        )?)
+    }
+
+    pub async fn create_price_sheet(
+        &self,
+        req: &tw_api::PriceSheetSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/pricing/sheets", req).await
+    }
+
+    pub async fn update_price_sheet(
+        &self,
+        name: &str,
+        req: &tw_api::PriceSheetSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/pricing/sheets/{}", segment(name)),
+            req,
+        )
+        .await
+    }
+
+    pub async fn delete_price_sheet(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(format!("/pricing/sheets/{}", segment(name)), base_version);
+        self.send_json(hyper::Method::DELETE, &path, &()).await
     }
 
     pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
@@ -523,24 +667,6 @@ impl ControlClient {
     pub async fn rollback(&self, version: String) -> Result<tw_api::ConfigWritten> {
         self.post_json("/config/rollback", &tw_api::RollbackRequest { version })
             .await
-    }
-
-    /// 首次运行：写下第一个上游。
-    pub async fn setup(
-        &self,
-        name: &str,
-        base_url: &str,
-        key: &str,
-    ) -> Result<tw_api::SetupResponse> {
-        self.post_json(
-            "/setup",
-            &tw_api::SetupRequest {
-                name: name.to_string(),
-                base_url: base_url.to_string(),
-                key: key.to_string(),
-            },
-        )
-        .await
     }
 
     /// 生成一把新的网关密钥。**不写进配置** —— 只是拿一个值去填。

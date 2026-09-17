@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { XIcon } from "lucide-react";
+import { priceSourceDetail } from "./upstreams/labels";
 import {
   Table,
   TableBody,
@@ -313,47 +314,50 @@ export default function RequestDrawer({
                 ) : r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
                   <p className="text-muted-foreground">
-                    这家上游没有报用量
-                    <Tip text="有些上游会吞掉响应里的 usage 字段。没有它就无法得知这次调用消耗了多少，也就算不出成本。">
-                      <span className="ml-1 underline decoration-dotted underline-offset-2">为什么</span>
+                    上游未报告用量
+                    <Tip text="部分上游的响应不含用量字段。缺少用量时，无法得知此次调用的消耗，也无法计算费用。">
+                      <span className="ml-1 underline decoration-dotted underline-offset-2">说明</span>
                     </Tip>
                   </p>
                 ) : (
                   <>
                     <Row label="输入" value={r.input_tokens.toLocaleString()} />
                     <Row label="输出" value={(r.output_tokens ?? 0).toLocaleString()} />
-                    <Row label="缓存读" value={(r.cache_read_tokens ?? 0).toLocaleString()} />
-                    <Row label="缓存写" value={(r.cache_write_tokens ?? 0).toLocaleString()} />
+                    <Row label="缓存读取" value={(r.cache_read_tokens ?? 0).toLocaleString()} />
+                    <Row label="缓存写入" value={(r.cache_write_tokens ?? 0).toLocaleString()} />
                     <Row
-                      label="花费"
+                      label="费用"
                       value={
                         r.billing === "subscription" ? (
-                          // 「订阅」而不是 $0.00
-                          <span className="text-muted-foreground">
-                            订阅 —— 这家是订阅制，这笔账不在金额这个维度上
-                          </span>
+                          // 「订阅制」而不是 $0.00 —— 消耗的是额度，不是金额
+                          <span className="text-muted-foreground">订阅制，计入订阅额度</span>
+                        ) : r.billing === "free" ? (
+                          <span className="text-muted-foreground">{usd(0)} · 不计费</span>
+                        ) : r.billing === "unknown" ? (
+                          <span className="text-muted-foreground">计费方式未知</span>
                         ) : r.cost_micros == null ? (
-                          // 「没有价格」和「花了 0 元」是两件事
-                          <span className="text-muted-foreground">
-                            算不出来 —— 这个模型不在价目表里
-                          </span>
+                          // 「没有价格」和「费用为 0」是两件事
+                          <span className="text-muted-foreground">无法计价：该模型未定价</span>
                         ) : r.cost_estimated && r.cancelled ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算，输出用量只计到客户端断开时
+                            ~{usd(r.cost_micros)} · 估算值，输出用量计至客户端断开
                           </span>
                         ) : r.cost_estimated && r.error ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算，输出用量只计到响应中断时
+                            ~{usd(r.cost_micros)} · 估算值，输出用量计至响应中断
                           </span>
                         ) : r.cost_estimated ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算
+                            ~{usd(r.cost_micros)} · 估算值
                           </span>
                         ) : (
                           usd(r.cost_micros)
                         )
                       }
                     />
+                    {r.price_source && (
+                      <Row label="价格来源" value={priceSourceDetail(r.price_source)} />
+                    )}
                   </>
                 )}
               </div>

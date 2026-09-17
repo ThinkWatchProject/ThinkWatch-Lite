@@ -14,6 +14,8 @@ import {
   type SortKey,
 } from "./requestTable";
 import Config from "./Config";
+import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
+import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
 import Keys from "./Keys";
 import Routes from "./Routes";
@@ -120,6 +122,29 @@ type Surface =
   | "config"
   | "settings"
   | "clients";
+
+/** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
+const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "config"]);
+
+/** 配置文件里的一段由哪一页管理 */
+function surfaceOf(section: string | null): Surface {
+  switch (section) {
+    case "providers":
+    case "proxies":
+    case "pricing":
+      return "upstreams";
+    case "clients":
+      return "keys";
+    case "routes":
+    case "groups":
+    case "default_route":
+      return "routing";
+    case "security":
+      return "guard";
+    default:
+      return "config";
+  }
+}
 
 /** lucide 的图标类型。尺寸走 `size`，颜色走 `currentColor`。 */
 type SourceIcon = LucideIcon;
@@ -406,6 +431,9 @@ export default function App() {
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
+  /** 配置文件对话框。`focus`：打开时选中的名字 */
+  const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /**
    * 概览页什么时候重新拉数。
@@ -864,6 +892,20 @@ export default function App() {
           >
             {SOURCES.flatMap((g) => g.items).find((i) => i.id === tab)?.label}
           </span>
+          {/*
+            配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
+            所以入口放在工具栏，而不是每页各放一套。
+          */}
+          {linked && CONFIG_PAGES.has(tab) && (
+            <div className="ml-auto flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
+                配置文件
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                版本历史
+              </Button>
+            </div>
+          )}
         </div>
 
         {/*
@@ -1057,24 +1099,32 @@ export default function App() {
               section="routing"
               ov={ov}
               configVersion={configVersion}
-              rejectedLine={rejected?.line ?? null}
-              onProviderAdded={() => setNudge((n) => n + 1)}
+              onOpenConfigFile={(focus) => setConfigFile({ focus })}
             />
           </>
         ) : (
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
-      ) : tab === "upstreams" || tab === "config" || tab === "settings" ? (
+      ) : tab === "upstreams" ? (
+        ov ? (
+          <UpstreamsPage
+            ov={ov}
+            configVersion={configVersion}
+            onChanged={() => setNudge((n) => n + 1)}
+            onOpenConfigFile={(focus) => setConfigFile({ focus })}
+            onNavigate={(to) => setTab(to as Surface)}
+          />
+        ) : (
+          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+        )
+      ) : tab === "config" || tab === "settings" ? (
         ov ? (
           <Config
             key={tab}
-            section={
-              tab === "settings" ? "settings" : tab === "upstreams" ? "upstreams" : "gateway"
-            }
+            section={tab === "settings" ? "settings" : "gateway"}
             ov={ov}
             configVersion={configVersion}
-            rejectedLine={rejected?.line ?? null}
-            onProviderAdded={() => setNudge((n) => n + 1)}
+            onOpenConfigFile={(focus) => setConfigFile({ focus })}
           />
         ) : (
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
@@ -1178,25 +1228,21 @@ export default function App() {
 
         {/*
           还没有上游 —— 引导，不是拦路。
-          说清三件事：网关已经在跑了（所以这不是故障）、缺的是什么、
-          以及去哪儿加。最后一件给一条能点的路，不是一句「请去配置」。
+          说清三件事：网关已在运行（所以这不是故障）、缺的是什么、
+          以及在哪里配置。最后一件给一个能点的入口。
         */}
         {status?.providers === 0 && (
           <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
-            <p className="tw-head font-medium">先加一个上游</p>
+            <p className="tw-head font-medium">尚未配置上游</p>
             <p className="mt-1 tw-body text-muted-foreground">
-              网关已经起来了，在{" "}
+              网关正在{" "}
               <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
                 http://{status.gateway_addr}
               </code>{" "}
-              听着，但还没有地方可以转发。加一个上游只要地址和密钥。
+              监听。配置上游后，请求才能转发。
             </p>
-            <Button
-              size="sm"
-              className="mt-3"
-              onClick={() => setTab("config")}
-            >
-              去配置页加
+            <Button size="sm" className="mt-3" onClick={() => setTab("upstreams")}>
+              前往上游
             </Button>
           </div>
         )}
@@ -1261,7 +1307,7 @@ export default function App() {
                 {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
                 <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
                 <Th k="tokens" label="token" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="cost" label="花费" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="cost" label="费用" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
               </TableRow>
             </TableHeader>
             {/*
@@ -1550,6 +1596,21 @@ export default function App() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {configFile && (
+        <ConfigFileDialog
+          configVersion={configVersion}
+          focus={configFile.focus}
+          rejectedLine={rejected?.line ?? null}
+          onClose={() => setConfigFile(null)}
+          onJump={(section) => {
+            setConfigFile(null);
+            setTab(surfaceOf(section));
+          }}
+        />
+      )}
+      {historyOpen && (
+        <VersionHistoryDialog configVersion={configVersion} onClose={() => setHistoryOpen(false)} />
+      )}
       {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
       {open != null && !split && (
         <RequestDrawer id={open} onClose={() => setOpen(null)} />

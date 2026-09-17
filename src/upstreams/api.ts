@@ -1,0 +1,81 @@
+/**
+ * 上游页用到的控制面调用。
+ *
+ * **只是类型化的 invoke。**名字校验、改名跟随引用、被引用时能不能删、一次
+ * 保存写几个版本，全在 core —— 界面多判断一次，就多一处和 core 说法不一致
+ * 的可能。
+ */
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  ConfigWritten,
+  CostGroup,
+  L1Result,
+  LatencyView,
+  PriceQuery,
+  PriceQueryResult,
+  PriceSheetInput,
+  PriceSheetSave,
+  PricingRefreshed,
+  PricingStatus,
+  ProviderModelsView,
+  ProviderPreview,
+  ProviderQuota,
+  ProviderSave,
+  ProviderTest,
+  ProviderTestResult,
+  ProxySave,
+  ProxyTest,
+  SpeedQuote,
+  SpeedResult,
+} from "@/types";
+
+export interface UpstreamStats {
+  costs: CostGroup[];
+  latency: LatencyView[];
+  quotas: ProviderQuota[];
+}
+
+/** 删除、开关这类不带正文的写入，要带上基于哪一版 */
+type Base = string | null;
+
+export const api = {
+  createProvider: (save: ProviderSave) => invoke<ConfigWritten>("create_provider", { save }),
+  updateProvider: (name: string, save: ProviderSave) =>
+    invoke<ConfigWritten>("update_provider", { name, save }),
+  deleteProvider: (name: string, baseVersion: Base) =>
+    invoke<ConfigWritten>("delete_provider", { name, baseVersion }),
+  testProvider: (test: ProviderTest) => invoke<ProviderTestResult>("test_provider", { test }),
+  previewProvider: (baseUrl: string) => invoke<ProviderPreview>("preview_provider", { baseUrl }),
+  providerModels: (name: string) => invoke<ProviderModelsView>("provider_models", { name }),
+  refreshProviderModels: (name: string) =>
+    invoke<ProviderModelsView>("refresh_provider_models", { name }),
+  upstreamStats: (sinceMs: number) => invoke<UpstreamStats>("upstream_stats", { sinceMs }),
+
+  createProxy: (save: ProxySave) => invoke<ConfigWritten>("create_proxy", { save }),
+  updateProxy: (name: string, save: ProxySave) =>
+    invoke<ConfigWritten>("update_proxy", { name, save }),
+  deleteProxy: (name: string, baseVersion: Base) =>
+    invoke<ConfigWritten>("delete_proxy", { name, baseVersion }),
+  testProxy: (test: ProxyTest) => invoke<L1Result>("test_proxy", { test }),
+
+  pricingStatus: () => invoke<PricingStatus>("pricing_status"),
+  refreshPricing: () => invoke<PricingRefreshed>("refresh_pricing"),
+  setPriceAutoUpdate: (on: boolean, baseVersion: Base) =>
+    invoke<ConfigWritten>("set_price_auto_update", { on, baseVersion }),
+  queryPrices: (query: PriceQuery) => invoke<PriceQueryResult>("query_prices", { query }),
+  priceSheet: (name: string) => invoke<PriceSheetInput>("price_sheet", { name }),
+  createPriceSheet: (save: PriceSheetSave) =>
+    invoke<ConfigWritten>("create_price_sheet", { save }),
+  updatePriceSheet: (name: string, save: PriceSheetSave) =>
+    invoke<ConfigWritten>("update_price_sheet", { name, save }),
+  deletePriceSheet: (name: string, baseVersion: Base) =>
+    invoke<ConfigWritten>("delete_price_sheet", { name, baseVersion }),
+
+  /** 链路测速。不给名字就测全部上游 */
+  linkTest: (provider: string | null) => invoke<L1Result[]>("speed_test", { provider }),
+  /** 推理测速的费用预估。`providers` 空 = 全部上游 */
+  speedQuote: (model: string, providers: string[]) =>
+    invoke<SpeedQuote>("speed_quote", { model, providers }),
+  speedRun: (model: string, providers: string[]) =>
+    invoke<SpeedResult[]>("speed_run", { model, providers }),
+};

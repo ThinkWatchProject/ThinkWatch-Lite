@@ -2,24 +2,11 @@ import { Fragment, useRef, useState } from "react";
 import { Tip } from "@/ui/tip";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
-import AddUpstream from "./AddUpstream";
-import Proxies from "./Proxies";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
-import ConfigTextMode from "./ConfigText";
-import Pricing from "./Pricing";
-import SpeedTest from "./SpeedTest";
-import { triggers } from "./triggers";
 import DryRun from "./DryRun";
 import Update from "./Update";
-import type {
-  ConfigText,
-  ConfigVersion,
-  L1Result,
-  NicView,
-  Overview,
-  PatchOp,
-} from "./types";
+import type { ConfigText, NicView, Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -31,19 +18,6 @@ import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { ButtonGroup } from "@/ui/button-group";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/ui/collapsible";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
 
 /**
  * 一个能改的字段。
@@ -87,7 +61,7 @@ function EditableCell({
     // 组字中不提交 —— 中间态提交上去的是一段还没成形的文本
     if (composing.current || draft === value || busy) return;
     if (!version) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       setDraft(value);
       return;
     }
@@ -171,7 +145,7 @@ function SelectCell({
       disabled={busy}
       onChange={async (ev) => {
         if (!version) {
-          toast.error("还没读到配置版本，稍等一下再试");
+          toast.error("配置版本尚未读取，请稍后重试");
           return;
         }
         const v = ev.target.value;
@@ -200,46 +174,6 @@ function SelectCell({
   );
 }
 
-/**
- * 一次 L1 测速的结果。
- *
- * **每一段单独一行，不画一根合成的进度条。**「建连 292ms」说不出任何
- * 该修的东西，而「DNS 5ms / TCP 3ms / TLS 283ms」一眼能看出问题在哪
- * 一层。
- */
-function SpeedRows({ r }: { r: L1Result }) {
-  return (
-    <div className="mt-1.5 space-y-0.5 tw-body">
-      {r.segments.map((seg) => (
-        <div key={seg.name} className="flex gap-3 text-muted-foreground">
-          <span className="w-32 shrink-0">{seg.name}</span>
-          <span className="font-mono tw-num">{seg.ms} ms</span>
-        </div>
-      ))}
-      {r.ok && (
-        <div className="flex gap-3">
-          <span className="w-32 shrink-0 text-muted-foreground">建连总计</span>
-          <span className="font-mono tw-num font-medium">{r.total_ms} ms</span>
-        </div>
-      )}
-      {r.error && (
-        <p className="text-amber-700 dark:text-amber-400">{r.error}</p>
-      )}
-      {/* 缺一段一定要有话交代，否则看起来像 bug */}
-      {r.notes?.map((n) => (
-        <p key={n} className="text-neutral-400">· {n}</p>
-      ))}
-    </div>
-  );
-}
-
-/**
- * 上游与规则。
- *
- * **按触发条件显示**：只有一个 provider 的用户不会看到「故障
- * 转移」「分组」这些词 —— 那些概念对他确实不存在。但**模型路由一直在**，
- * 因为一个上游就有几十个模型，那个问题从第一天就存在。
- */
 /**
  * 监听方式 —— 网关绑在哪张网卡上。
  *
@@ -304,7 +238,7 @@ function CidrList({
 
   async function run(ops: PatchOp[]) {
     if (!configVersion) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       return;
     }
     setBusy(true);
@@ -357,9 +291,9 @@ function CidrList({
 }
 
 const PROBE_MODES: { id: string; label: string; what: string }[] = [
-  { id: "intercept", label: "本地应答", what: "一个字节都不发给上游，不花钱。" },
-  { id: "passthrough", label: "原样放行", what: "当成普通请求发出去，按量计费。" },
-  { id: "route", label: "交给路由", what: "走路由规则，可以分流到更便宜的地方。" },
+  { id: "intercept", label: "本地应答", what: "由网关直接应答，不发送到上游，不产生费用。" },
+  { id: "passthrough", label: "原样放行", what: "作为普通请求转发，按上游计费方式产生费用。" },
+  { id: "route", label: "交给路由", what: "按路由规则转发，可分流至费用更低的上游。" },
 ];
 
 /**
@@ -382,7 +316,7 @@ function ProbesSection({
 
   async function set(id: string, mode: string) {
     if (!configVersion) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       return;
     }
     setBusy(id);
@@ -399,7 +333,7 @@ function ProbesSection({
     <section>
       <h2 className="tw-title font-semibold">客户端探测请求</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        客户端自己发的、你没点过的那些请求。它们也花钱。
+        客户端自动发起的辅助请求，不由用户操作触发，同样产生费用。
       </p>
       <ul className="mt-2 space-y-1.5">
         {probes.map((p) => (
@@ -509,7 +443,7 @@ function ListenSection({
   async function write(value: string) {
     if (value === cur || busy) return;
     if (!configVersion) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       return;
     }
     setBusy(true);
@@ -656,64 +590,30 @@ export default function Config({
   section = "gateway",
   ov,
   configVersion,
-  rejectedLine,
-  onProviderAdded,
+  onOpenConfigFile,
 }: {
   /**
    * 这一次渲染哪一域。
    *
-   * IA 上「路由」和「网关」是源列表里两个并列的面,实现上还是同一个
-   * 组件 —— 因为策略组那一节和 `SelectCell`、配置版本、以及跳去文本
-   * 模式那条路都缠在一起,硬拆会弄坏正在工作的东西。**这是分面的第一
-   * 步,不是终点**:组件真正拆开是下一步的事,拆之前这个参数不该被当成
-   * 一个可以随便加值的开关。
-   *
-   * 文本模式两个面共用 —— 它编辑的是整份文件,本来就不分域。
+   * `routing` 这一域现在只剩「试算」和「策略组」—— 路由本身在
+   * `Routes.tsx`，上游、代理与价目表在 `upstreams/`。路由页把两个组件叠起来
+   * 渲染，对用户是一页。
    */
-  /**
-   * 这一次渲染哪一域。
-   *
-   * `routing` 这一域现在只剩「试算」和「策略组」—— 路由本身搬去了
-   * `Routes.tsx`。**没跟着搬的原因是它俩和 `SelectCell`、配置版本、
-   * 以及跳去文本模式那条路缠在一起**，硬拆会弄坏正在工作的东西。
-   * 路由页把两个组件叠起来渲染，对用户是一页。
-   */
-  section?: "gateway" | "upstreams" | "routing" | "settings";
+  section?: "gateway" | "routing" | "settings";
   ov: Overview;
   configVersion: string | null;
-  /** 最近一次校验失败指到的行号。文本模式会把它滚进视野 */
-  rejectedLine?: number | null;
-  /** 加完第一个上游之后让外面立刻重拉概览，不等那两秒的轮询 */
-  onProviderAdded: () => void;
+  /** 打开配置文件并定位到这个名字 */
+  onOpenConfigFile: (focus: string | null) => void;
 }) {
-  // 触发条件全在一个地方 —— 散在各个组件里的
-  // `providers.length >= 2` 回答不了那条反面判据
-  const t = triggers(ov, null);
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
       .then(setAutostart)
       .catch(() => setAutostart(false));
   }, []);
-  const multi = t.health;
   const [cfg, setCfg] = useState<ConfigText | null>(null);
-  const [history, setHistory] = useState<ConfigVersion[]>([]);
   // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
   // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
   const [autostart, setAutostart] = useState<boolean | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  /**
-   * 表单还是文本。**默认表单** —— 大多数改动是改一个值，而文本模式要求
-   * 用户知道 YAML 长什么样（默认值不该要求用户额外懂什么）。
-   */
-  const [mode, setMode] = useState<"form" | "text">("form");
-  /**
-   * 跳到文本模式时要定位的名字。
-   *
-   * 表单和文本**是同一份文件的两种视图**，不是两个割裂的东西 —— 而让
-   * 用户建立这个心智最有效的一下，就是他点「在文件里看」时那一段真的
-   * 被选中了。
-   */
-  const [focus, setFocus] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // 每次配置换了版本就重新拉一遍 —— 手里那份的 version 过期之后，
@@ -724,8 +624,6 @@ export default function Config({
       try {
         const c = await invoke<ConfigText>("get_config");
         if (alive) setCfg(c);
-        const h = await invoke<ConfigVersion[]>("config_history");
-        if (alive) setHistory(h);
       } catch (e) {
         if (alive) toast.error(typeof e === "string" ? e : String(e));
       }
@@ -734,344 +632,8 @@ export default function Config({
       alive = false;
     };
   }, [configVersion, reloadKey]);
-  const [speed, setSpeed] = useState<Record<string, L1Result>>({});
-  const [testing, setTesting] = useState<string | null>(null);
-
-  // 测速零成本，所以点了就跑，不弹确认框 —— **要确认的是 L3**，
-  // 那一层会真的调用模型。这里连一个 token 都不产生。
-  async function test(provider?: string) {
-    setTesting(provider ?? "*");
-    try {
-      // Tauri 的 invoke 用字符串 reject，不是 Error
-      const rs = await invoke<L1Result[]>("speed_test", { provider, proxy: null });
-      setSpeed((prev) => {
-        const next = { ...prev };
-        for (const r of rs) next[r.target] = r;
-        return next;
-      });
-    } catch (e) {
-      // 连不上控制面时也要落到界面上，而不是只进控制台
-      const msg = typeof e === "string" ? e : String(e);
-      setSpeed((prev) => ({
-        ...prev,
-        [provider ?? "*"]: {
-          target: provider ?? "*",
-          ok: false,
-          segments: [],
-          total_ms: 0,
-          error: msg,
-        },
-      }));
-    } finally {
-      setTesting(null);
-    }
-  }
-
-  if (mode === "text") {
-    return (
-      <div className="space-y-3 p-5">
-        <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">配置文件</h2>
-          <Button
-            variant="link"
-            size="xs"
-            onClick={() => {
-              setFocus(null);
-              setMode("form");
-            }}
-          >
-            回到表单
-          </Button>
-        </div>
-        {cfg ? (
-          <ConfigTextMode
-            doc={cfg}
-            focus={focus}
-            rejectedLine={rejectedLine ?? null}
-            onJumpToForm={(name) => {
-              // 回表单并把那一行滚进视野。**两个方向都要通** ——
-              // 只通一半的话，用户会觉得这两个视图还是两个东西
-              setFocus(null);
-              setMode("form");
-              setTimeout(() => {
-                document
-                  .querySelector(`[data-row="${CSS.escape(name)}"]`)
-                  ?.scrollIntoView({ block: "center" });
-              }, 0);
-            }}
-            onSaved={() => setReloadKey((k) => k + 1)}
-          />
-        ) : (
-          <p className="tw-body text-muted-foreground">读取中…</p>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 p-5">
-      {section === "upstreams" && (
-      <section>
-        <Collapsible open={showHistory} onOpenChange={setShowHistory}>
-        <div className="flex items-baseline gap-3">
-          <h2 className="tw-title font-semibold">上游</h2>
-          {t.comparison && (
-            <Button
-              variant="link"
-              size="xs"
-              onClick={() => test(undefined)}
-              disabled={testing !== null}
-            >
-              {testing === "*" && <Spinner />}
-              不限测一遍
-            </Button>
-          )}
-          {/* 说清这一下不花钱。**不说的话，谨慎的用户就不会点** —— 而
-              这是排查线路问题最直接的一个动作 */}
-          <span className="tw-body text-neutral-400">只握手，不发请求，不花钱</span>
-          <Button
-            variant="link"
-            size="xs"
-            className="ml-auto"
-            onClick={() => setMode("text")}
-          >
-            改文件
-          </Button>
-          {/*
-            **展开这件事交给 Collapsible。**手写的 `{show && …}` 少的是
-            `aria-expanded` 和 `aria-controls` —— 读屏软件不知道这个按钮
-            管的是哪一块，也不知道现在是开是关。
-          */}
-          <CollapsibleTrigger asChild>
-            <Button variant="link" size="xs">
-              {showHistory ? "收起历史" : `历史（${history.length}）`}
-            </Button>
-          </CollapsibleTrigger>
-        </div>
-
-        {/* 保存失败要说出来。**尤其是 409** —— 它不是「你写错了」，是
-            「有人抢先改了」，正确的反应是刷新再改 */}
-
-        <CollapsibleContent>
-          <div className="mt-2 rounded-md border border-border">
-            {history.length === 0 && (
-              <p className="px-3 py-2 tw-body text-muted-foreground">
-                暂无历史版本
-              </p>
-            )}
-            {history.map((v) => (
-              <div
-                key={v.version}
-                className="flex items-baseline gap-3 border-b border-neutral-100 px-3 py-1.5 tw-body last:border-b-0 dark:border-neutral-900"
-              >
-                <span className="font-mono text-muted-foreground">{v.version.slice(7)}</span>
-                <span className="text-muted-foreground">{v.origin}</span>
-                <span className="text-neutral-400">
-                  {new Date(v.at_ms).toLocaleString()}
-                </span>
-                {v.current ? (
-                  // 不标出来的话，用户会以为第一条是「上一版」然后回滚到自己身上
-                  <span className="ml-auto text-emerald-600 dark:text-emerald-400">现在这版</span>
-                ) : (
-                  <Button
-                    variant="link"
-                    size="xs"
-                    className="ml-auto"
-                    onClick={async () => {
-                      try {
-                        await invoke("rollback_config", { version: v.version });
-                      } catch (e) {
-                        toast.error(typeof e === "string" ? e : String(e));
-                      }
-                    }}
-                  >
-                    回到这版
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </CollapsibleContent>
-        </Collapsible>
-        {/*
-          一个上游都没有时，这一节是「加第一个」而不是一张空表头。
-          原来这件事是一个全屏的首次运行页面做的 —— 把人挡在产品外面，
-          而那时候网关已经在跑了。配置就该在配置的地方。
-        */}
-        {ov.providers.length === 0 ? (
-          <div className="mt-3">
-            <AddUpstream onDone={onProviderAdded} />
-          </div>
-        ) : (
-        <Table className="mt-2">
-          <TableHeader>
-            <TableRow>
-              <TableHead>名字</TableHead>
-              <TableHead>地址</TableHead>
-              <TableHead>协议</TableHead>
-              <TableHead>密钥</TableHead>
-              <TableHead>代理</TableHead>
-              <TableHead>计费</TableHead>
-              <TableHead>信任</TableHead>
-              {/* 只有一家的时候熔断是旁路的，显示健康列没有意义 */}
-              {multi && <TableHead>状态</TableHead>}
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {ov.providers.map((p) => (
-              <TableRow key={p.name}>
-                <TableCell className="font-medium" data-row={p.name}>
-                  {p.name}
-                  <Tip text="跳到配置文件里这一段，并选中它">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="ml-1"
-                    onClick={() => {
-                      setFocus(p.name);
-                      setMode("text");
-                    }}
-                  >
-                    ↗
-                  </Button>
-                  </Tip>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  <EditableCell
-                    mono
-                    value={p.base_url}
-                    path={`/providers/${p.name}/base_url`}
-                    version={cfg?.version ?? null}
-                  />
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {/*
-                    猜不出协议不是错误 —— 但要能改。自动判错的时候，
-                    这一格就是修它的地方，而原来只能去改 YAML。
-                  */}
-                  <SelectCell
-                    value={p.protocol ?? ""}
-                    options={[
-                      ["", "自动（按 Anthropic 转发）"],
-                      ["anthropic", "anthropic"],
-                      ["openai-chat", "openai-chat"],
-                      ["openai-responses", "openai-responses"],
-                      ["gemini", "gemini"],
-                    ]}
-                    path={`/providers/${p.name}/protocol`}
-                    version={cfg?.version ?? null}
-                    onDone={() => setReloadKey((k) => k + 1)}
-                  />
-                </TableCell>
-                {/* 来源，不是值 */}
-                <TableCell className="font-mono text-muted-foreground">{p.key_source}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  <SelectCell
-                    value={p.proxy}
-                    options={[
-                      ["direct", "直连"],
-                      ["system", "跟随系统"],
-                      ...(ov.proxies ?? []).map(
-                        (x) => [x.name, `${x.name}（${x.kind} ${x.addr}）`] as [string, string],
-                      ),
-                    ]}
-                    path={`/providers/${p.name}/proxy`}
-                    version={cfg?.version ?? null}
-                    onDone={() => setReloadKey((k) => k + 1)}
-                  />
-                </TableCell>
-                {/*
-                  计费方式：它同时决定成本栏怎么显示和
-                  `cheapest` 怎么排 —— 订阅制的边际成本是零。
-                */}
-                <TableCell className="text-muted-foreground">
-                  <SelectCell
-                    value={p.billing ?? ""}
-                    options={[
-                      ["", "自动判"],
-                      ["per-token", "按量"],
-                      ["subscription", "订阅"],
-                      ["unknown", "未知"],
-                    ]}
-                    path={`/providers/${p.name}/billing`}
-                    version={cfg?.version ?? null}
-                    onDone={() => setReloadKey((k) => k + 1)}
-                  />
-                </TableCell>
-                {/*
-                  信任级别。**没显式写过的时候要说清是自动判的**
-                  —— 否则用户会以为这一格改不动，或者以为是他自己设的。
-                */}
-                <TableCell className="text-muted-foreground">
-                  <SelectCell
-                    value={p.trust_explicit ? (p.trust === "官方" ? "official" : "untrusted") : ""}
-                    options={[
-                      ["", `自动判（现在是${p.trust ?? "不受信任"}）`],
-                      ["official", "官方"],
-                      ["untrusted", "不受信任"],
-                    ]}
-                    path={`/providers/${p.name}/trust`}
-                    version={cfg?.version ?? null}
-                    onDone={() => setReloadKey((k) => k + 1)}
-                  />
-                </TableCell>
-                {multi && (
-                  <TableCell>
-                    {p.health === "ok" ? (
-                      <span className="text-emerald-600 dark:text-emerald-400">正常</span>
-                    ) : (
-                      <Tip text="连续失败后暂时不派请求过去，冷却之后自动恢复">
-                        <span className="text-amber-600 dark:text-amber-400">熔断中</span>
-                      </Tip>
-                    )}
-                  </TableCell>
-                )}
-                <TableCell className="text-right">
-                  <Button
-                    variant="link"
-                    size="xs"
-                    onClick={() => test(p.name)}
-                    disabled={testing !== null}
-                  >
-                    {testing === p.name && <Spinner />}
-              测试
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        )}
-        {/* 结果放在表下面而不是挤进单元格：分段有三到四行，塞进表格会把
-            每一行都撑高，而大多数时候它们并不存在 */}
-        {ov.providers.map((p) => {
-          const r = speed[p.name];
-          if (!r) return null;
-          return (
-            <div
-              key={p.name}
-              className="mt-3 rounded-md border border-border px-3 py-2"
-            >
-              <div className="flex items-baseline gap-2 tw-body">
-                <span>{r.ok ? "✅" : "❌"}</span>
-                <span className="font-medium">{p.name}</span>
-                {r.via && <span className="text-muted-foreground">经 {r.via}</span>}
-              </div>
-              <SpeedRows r={r} />
-            </div>
-          );
-        })}
-        {speed["*"]?.error && (
-          <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">{speed["*"].error}</p>
-        )}
-      </section>
-      )}
-
-      {/* L3 测速。**放在 L1 下面，两句成本说明并排** —— 用户要能一眼
-          看出「那个不花钱、这个花钱」 */}
-      <SpeedTest models={[]} />
-
       {section === "routing" && <DryRun models={[]} />}
 
       {/* 分组这个概念只在真的有组的时候出现 */}
@@ -1091,10 +653,7 @@ export default function Config({
                   <Button
                     variant="ghost"
                     size="xs"
-                    onClick={() => {
-                      setFocus(g.name);
-                      setMode("text");
-                    }}
+                    onClick={() => onOpenConfigFile(g.name)}
                   >
                     ↗
                   </Button>
@@ -1137,7 +696,7 @@ export default function Config({
                       onChange={async (ev) => {
                         const v = ev.target.value;
                         if (!cfg?.version) {
-                          toast.error("还没读到配置版本，稍等一下再试");
+                          toast.error("配置版本尚未读取，请稍后重试");
                           return;
                         }
                         try {
@@ -1180,7 +739,7 @@ export default function Config({
                       checked={g.session_affinity ?? true}
                       onCheckedChange={async (checked) => {
                         if (!cfg?.version) {
-                          toast.error("还没读到配置版本，稍等一下再试");
+                          toast.error("配置版本尚未读取，请稍后重试");
                           return;
                         }
                         try {
@@ -1265,10 +824,6 @@ export default function Config({
 
       {section === "settings" && <Update />}
 
-      {section === "upstreams" && (
-        <Proxies ov={ov} configVersion={configVersion} onChanged={onProviderAdded} />
-      )}
-
       {section === "gateway" && (
         <ListenSection ov={ov} configVersion={configVersion} />
       )}
@@ -1281,12 +836,7 @@ export default function Config({
         <LimitsSection ov={ov} configVersion={configVersion} />
       )}
 
-      {/*
-        价格是 config.yaml 旁边那份 pricing.yaml —— 属于网关配置。
-        诊断包和卸载改的是这个应用本身，归「设置」。
-      */}
-      {section === "gateway" && <Pricing />}
-
+      {/* 诊断包和卸载改的是这个应用本身，归「设置」 */}
       {section === "settings" && <About />}
 
       {section === "settings" && <Diagnostics />}

@@ -101,7 +101,7 @@ export default function Guard({
 
   async function set(path: string, mode: Mode) {
     if (!configVersion) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       return;
     }
     setBusy(path);
