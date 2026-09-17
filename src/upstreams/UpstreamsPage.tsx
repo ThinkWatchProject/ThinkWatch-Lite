@@ -19,7 +19,6 @@ import { api, type UpstreamStats } from "./api";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { when } from "@/format";
 import { errorText } from "./labels";
-import { PRESETS } from "./presets";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
 import { PriceSheetTable } from "./PriceSheetTable";
 import { ProxyDialog, type ProxyDialogMode } from "./ProxyDialog";
@@ -264,23 +263,11 @@ export default function UpstreamsPage({
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
+                {/* 服务类型在新建对话框的第一栏里选，这里不再平铺一排预设 */}
                 <Button size="sm" onClick={() => setDialog({ kind: "upstream", mode: { kind: "create" } })}>
                   <PlusIcon />
                   新建上游
                 </Button>
-                <span className="mt-2 tw-label text-muted-foreground">常用服务</span>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {PRESETS.map((p) => (
-                    <Button
-                      key={p.id}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDialog({ kind: "upstream", mode: { kind: "create", preset: p.id } })}
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
-                </div>
               </EmptyContent>
             </Empty>
           ) : (

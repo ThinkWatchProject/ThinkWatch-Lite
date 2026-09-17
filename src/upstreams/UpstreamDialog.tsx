@@ -47,7 +47,7 @@ const SECTIONS: { id: Section; label: string }[] = [
 ];
 
 export type UpstreamDialogMode =
-  | { kind: "create"; preset?: string }
+  | { kind: "create" }
   | { kind: "edit"; name: string; section?: Section };
 
 /**
@@ -82,7 +82,7 @@ export function UpstreamDialog({
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
   const taken = ov.providers.map((p) => p.name);
   const [form, setForm] = useState<UpstreamForm>(() =>
-    editing ? formFromView(editing) : blankForm(mode.kind === "create" ? mode.preset : undefined, taken),
+    editing ? formFromView(editing) : blankForm(),
   );
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
   const [section, setSection] = useState<Section>(

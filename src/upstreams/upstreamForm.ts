@@ -5,7 +5,7 @@
  * 码，原样写回去会把码写进配置 —— 所以没点「更换」、没改地址时，这两样不发。
  */
 import type { CredentialInput, ModelList, ProviderInput, ProviderView } from "@/types";
-import { presetById } from "./presets";
+import { CUSTOM } from "./presets";
 
 export type CredKind = "key" | "env" | "oauth";
 
@@ -57,17 +57,17 @@ export function freeName(base: string, taken: string[]): string {
   }
 }
 
-export function blankForm(presetId: string | undefined, taken: string[]): UpstreamForm {
-  const p = presetById(presetId ?? "custom");
+/** 新建时的空表单。服务类型从「自定义」开始，在对话框里选 */
+export function blankForm(): UpstreamForm {
   return {
-    preset: p.id,
-    name: freeName(p.name, taken),
-    baseUrl: p.baseUrl,
+    preset: CUSTOM.id,
+    name: "",
+    baseUrl: "",
     baseUrlTouched: true,
-    protocol: p.protocol,
+    protocol: "",
     credKind: "key",
     credTouched: true,
-    key: p.keyPlaceholder ?? "",
+    key: "",
     envVar: "",
     oauthRefresh: "",
     oauthEndpoint: "",
@@ -79,7 +79,7 @@ export function blankForm(presetId: string | undefined, taken: string[]): Upstre
     manualModels: [],
     scope: "all",
     scopeList: [],
-    billing: p.billing ?? "",
+    billing: "",
     pricing: "",
     trust: "",
     redactMode: "auto",
