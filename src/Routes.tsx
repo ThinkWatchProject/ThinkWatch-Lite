@@ -61,7 +61,7 @@ export default function Routes({
 
   async function patch(ops: PatchOp[], tag: string) {
     if (!configVersion) {
-      toast.error("还没读到配置版本，稍等一下再试");
+      toast.error("配置版本尚未读取，请稍后重试");
       return false;
     }
     setBusy(tag);

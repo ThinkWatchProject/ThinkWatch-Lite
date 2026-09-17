@@ -7,14 +7,27 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
 
+/** 配置文件里各段在界面上叫什么 */
+const SECTION_LABELS: Record<string, string> = {
+  providers: "上游",
+  proxies: "代理",
+  pricing: "价目表",
+  clients: "密钥",
+  routes: "路由",
+  groups: "策略组",
+  default_route: "默认路由",
+  listen: "监听",
+  limits: "并发限制",
+  client_probes: "客户端探测请求",
+  security: "防护",
+};
+
 /**
- * 文本模式：直接改 config.yaml。
+ * 直接编辑 config.yaml。
  *
- * **它是表单模式的退路，也是它的上限**。表单能改的只有标量值，
- * 而加一个 provider、删一条规则、写一段注释，都只能在这里做。
- *
- * 语法高亮没有做。Monaco 是几 MB 的依赖，而这一层真正解决的问题是
- * 「改完之后会不会覆盖掉别人的改动」—— 那是版本号的事，不是编辑器的事。
+ * **它是各配置页的退路，也是它们的上限**。表单覆盖不到的写法（注释、
+ * 手写的顺序）只能在这里做。真正要解决的问题是「改完之后会不会覆盖掉
+ * 别人的改动」—— 那是版本号的事，不是编辑器的事。
  */
 export default function ConfigTextMode({
   doc,
@@ -36,8 +49,8 @@ export default function ConfigTextMode({
   focus?: string | null;
   /** 最近一次校验失败指到的行号。**没有就是 null**，不是 0 */
   rejectedLine?: number | null;
-  /** 点「在表单里看」时回到表单并定位（反向那条） */
-  onJumpToForm?: (name: string) => void;
+  /** 点「在界面中查看」时跳到管理这一段的页面（反向那条） */
+  onJumpToForm?: (at: { name: string; section: string | null }) => void;
 }) {
   const [draft, setDraft] = useState(doc.text);
   const [busy, setBusy] = useState(false);
@@ -125,7 +138,7 @@ export default function ConfigTextMode({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {/* 文件在你编辑期间被改过了。**给选择，不替他做决定** ——
           两边都是真实的改动，只有他知道哪个该留 */}
       {stale && (
@@ -144,7 +157,7 @@ export default function ConfigTextMode({
                 base.current = doc.version;
               }}
             >
-              丢掉放弃本地改动，用文件里的
+              放弃本地修改，使用文件中的版本
             </Button>
             <Button
               variant="ghost"
@@ -153,20 +166,22 @@ export default function ConfigTextMode({
                 base.current = doc.version;
               }}
             >
-              保留本地改动，覆盖文件
+              保留本地修改并覆盖文件
             </Button>
           </div>
         </AlertDescription>
         </Alert>
       )}
 
-      <YamlEditor
-        value={draft}
-        onChange={setDraft}
-        onCursor={setCursor}
-        focusRange={range}
-        errorLine={errorLine}
-      />
+      <div className="min-h-0 flex-1">
+        <YamlEditor
+          value={draft}
+          onChange={setDraft}
+          onCursor={setCursor}
+          focusRange={range}
+          errorLine={errorLine}
+        />
+      </div>
 
       {/*
         反向联动：光标停在哪儿，就说它是哪一段。
@@ -175,38 +190,32 @@ export default function ConfigTextMode({
       */}
       {at?.name && (
         <p className="tw-body text-muted-foreground">
-          光标在 <span className="font-medium text-neutral-700 dark:text-neutral-300">{at.name}</span>
-          {at.section ? `（${at.section}）` : ""} 这一段里
+          光标位于{at.section ? (SECTION_LABELS[at.section] ?? at.section) : ""}{" "}
+          <span className="font-medium text-foreground">{at.name}</span>
           {onJumpToForm && (
             <Button
               variant="link"
               size="xs"
               className="ml-1"
-              onClick={() => onJumpToForm(at.name!)}
+              onClick={() => onJumpToForm({ name: at.name!, section: at.section ?? null })}
             >
-              在表单里看
+              在界面中查看
             </Button>
           )}
         </p>
       )}
 
-      <div className="flex items-center gap-3 tw-body">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={busy || !dirty}
-        >
-          {busy && <Spinner />}
-              保存
-        </Button>
-        {dirty && !busy && <span className="text-amber-600 dark:text-amber-400">有未保存的改动</span>}
-        <span className="ml-auto font-mono text-neutral-400">{doc.version}</span>
-        <span className="text-neutral-400">{doc.path}</span>
-      </div>
-
       {/* 保存失败最常见的两种：写错了（语法/字段/语义），和有人抢先改了。
-          两者的下一步完全不同，所以原样把 core 那句话显示出来 */}
-      
+          两者的下一步完全不同，所以保存失败时原样显示 core 那句话 */}
+      <div className="flex items-center gap-3 tw-body">
+        <span className="min-w-0 truncate font-mono tw-label text-muted-foreground">{doc.path}</span>
+        <div className="flex-1" />
+        {dirty && !busy && <span className="text-warning">有未保存的修改</span>}
+        <Button size="sm" onClick={save} disabled={busy || !dirty}>
+          {busy && <Spinner />}
+          保存
+        </Button>
+      </div>
     </div>
   );
 }

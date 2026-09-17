@@ -5,7 +5,9 @@ import { Field, FieldLabel } from "@/ui/field";
 import type { DryRunResult } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
+import { skipLabel } from "./upstreams/labels";
 import {
   Combobox,
   ComboboxContent,
@@ -88,7 +90,7 @@ export default function DryRun({ models }: { models: string[] }) {
             <ComboboxInput placeholder="模型名" />
           </ComboboxTrigger>
           <ComboboxContent>
-            <ComboboxEmpty>没有匹配的,直接敲全名也行</ComboboxEmpty>
+            <ComboboxEmpty>无匹配项，可直接输入完整模型名</ComboboxEmpty>
             <ComboboxList>
               {(m: string) => (
                 <ComboboxItem key={m} value={m}>
@@ -137,31 +139,64 @@ export default function DryRun({ models }: { models: string[] }) {
           onClick={() => void run()}
           disabled={busy}
         >
-          {busy ? "算…" : "试算"}
+          {busy && <Spinner />}
+          试算
         </Button>
       </div>
 
-            {r && <Result r={r} />}
+      {r && <Result r={r} />}
     </section>
   );
 }
 
+/** 规则选中了、但服务不了这个请求的上游。**要列出来** —— 「规则明明写的是 A」正是来试算的原因 */
+function Skipped({ r }: { r: DryRunResult }) {
+  if (r.skipped.length === 0) return null;
+  return (
+    <div className="mt-1 text-muted-foreground">
+      已跳过：
+      {r.skipped.map((s, i) => (
+        <span key={s.provider}>
+          {i > 0 && "、"}
+          <span className="text-foreground">{s.provider}</span>（{skipLabel(s.reason)}）
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function Result({ r }: { r: DryRunResult }) {
+  const matched = (
+    <>
+      命中规则「<span className="font-medium">{r.rule}</span>」
+      {r.via_group && (
+        <>
+          {" "}
+          · 策略组「{r.via_group}」{r.strategy && `（${r.strategy}）`}
+        </>
+      )}
+    </>
+  );
   return (
     <div className="mt-3 rounded-md border border-border p-3 tw-body">
       {r.outcome === "deny" ? (
         <div>
-          <span className="text-red-600 dark:text-red-400">会被拒绝</span> —— 规则「{r.rule}」：
-          {r.reason}
+          <span className="text-destructive">拒绝</span> · 规则「{r.rule}」：{r.reason}
         </div>
       ) : r.outcome === "no_match" ? (
-        <div className="text-amber-600 dark:text-amber-400">{r.reason}</div>
+        <div className="text-warning">{r.reason}</div>
+      ) : r.outcome === "unavailable" ? (
+        <div>
+          {matched}
+          {/* core 的 reason 是把下面这份清单拼成的一句话，这里直接列清单 */}
+          <div className="mt-1 text-warning">选中的上游均无法服务此请求，请求将返回错误。</div>
+          <Skipped r={r} />
+        </div>
       ) : (
         <div>
-          命中「<span className="font-medium">{r.rule}</span>」
-          {r.via_group && <> · 经过组「{r.via_group}」</>}
+          {matched}
           <div className="mt-1">
-            会依次试：
+            尝试顺序：
             {r.candidates.map((c, i) => (
               <span key={c}>
                 {i > 0 && " → "}
@@ -169,7 +204,7 @@ function Result({ r }: { r: DryRunResult }) {
                   className={
                     // **熔断是当下的事实，不是静态结论。**不说出来的话，
                     // 用户会拿着一个对的答案去查一个错的现象
-                    r.circuit_open.includes(c) ? "text-amber-600 line-through dark:text-amber-400" : ""
+                    r.circuit_open.includes(c) ? "text-warning line-through" : ""
                   }
                 >
                   {c}
@@ -177,20 +212,19 @@ function Result({ r }: { r: DryRunResult }) {
               </span>
             ))}
             {r.circuit_open.length > 0 && (
-              <span className="ml-1 text-amber-600 dark:text-amber-400">
-                （划掉的现在正熔断着，这一刻会被跳过）
-              </span>
+              <span className="ml-1 text-warning">（划线的上游当前处于熔断状态，将被跳过）</span>
             )}
           </div>
+          <Skipped r={r} />
           {r.hurts_cache && (
             // 要直说 —— 它决定账单
-            <div className="mt-1 text-amber-600 dark:text-amber-400">
-              这个组是负载均衡，会让 prompt cache 不稳定。
+            <div className="mt-1 text-warning">
+              该策略组在上游之间分配请求，prompt cache 命中率会下降。
             </div>
           )}
           {r.set.length > 0 && (
             <div className="mt-1">
-              还会改写：
+              参数改写：
               {r.set.map((s) => (
                 <div key={s} className="ml-2">
                   {s}
@@ -203,15 +237,13 @@ function Result({ r }: { r: DryRunResult }) {
 
       {/* **「为什么没走我以为的那条」才是用户在问的问题。** */}
       <details className="mt-2">
-        <summary className="cursor-pointer text-muted-foreground">逐条看规则怎么判的</summary>
+        <summary className="cursor-pointer text-muted-foreground">规则匹配明细</summary>
         <ul className="mt-1 space-y-0.5">
           {r.trace.map((t) => (
             <li key={t.name} className="flex gap-2">
               <span
                 className={
-                  t.verdict === "matched"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-neutral-400"
+                  t.verdict === "matched" ? "text-success" : "text-muted-foreground"
                 }
               >
                 {t.verdict === "matched" ? "✓" : t.verdict === "phase_two" ? "…" : "·"}

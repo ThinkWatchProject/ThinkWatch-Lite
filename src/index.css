@@ -171,6 +171,11 @@
   --cache-hit: oklch(0.62 0.115 174);
   --cache-plain: oklch(0.68 0 none);
   --cache-write: oklch(0.68 0.1 74);
+  /* 配置文件编辑器的语法色。**键用正文色，值用两档低饱和的颜色** —— 一份
+   * 配置读的是值，键只是标签；四五种撞色会让一个缩进错误淹没在颜色里 */
+  --code-key: oklch(20.5% 0 none);
+  --code-string: oklch(0.5 0.11 160);
+  --code-atom: oklch(0.52 0.12 258);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -212,6 +217,9 @@
     --chart-4: oklch(0.42 0.045 247);
     --chart-5: oklch(0.35 0.03 244);
     --cache-hit: oklch(0.76 0.12 174);
+    --code-key: oklch(97% 0 none);
+    --code-string: oklch(0.78 0.11 160);
+    --code-atom: oklch(0.8 0.1 262);
     --cache-plain: oklch(0.63 0 none);
     --cache-write: oklch(0.72 0.1 74);
     --sidebar: oklch(0.205 0 0);

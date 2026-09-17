@@ -2,8 +2,23 @@ import { useEffect, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { yaml } from "@codemirror/lang-yaml";
+import { tags as t } from "@lezer/highlight";
+
+/**
+ * 语法色走 CSS 变量，跟着系统的深浅色切换。
+ *
+ * **不用 `defaultHighlightStyle`。**它的颜色是为白底写死的，深色下键名是
+ * 一片深蓝，几乎读不出来。
+ */
+const highlight = HighlightStyle.define([
+  { tag: [t.propertyName, t.definition(t.propertyName)], color: "var(--code-key)" },
+  { tag: [t.string, t.special(t.string), t.content], color: "var(--code-string)" },
+  { tag: [t.number, t.bool, t.null, t.atom, t.keyword], color: "var(--code-atom)" },
+  { tag: [t.comment, t.lineComment], color: "var(--muted-foreground)", fontStyle: "italic" },
+  { tag: [t.punctuation, t.separator, t.squareBracket, t.brace, t.meta], color: "var(--muted-foreground)" },
+]);
 
 /**
  * 配置文件的编辑器。
@@ -56,7 +71,7 @@ export default function YamlEditor({
         history(),
         highlightActiveLine(),
         yaml(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(highlight),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         EditorView.updateListener.of((u) => {
@@ -70,8 +85,21 @@ export default function YamlEditor({
           }
         }),
         EditorView.theme({
-          "&": { fontSize: "12px", height: "52vh" },
+          // 高度由外面的容器决定：对话框里撑满，别处给一个固定高度
+          "&": { fontSize: "12px", height: "100%", backgroundColor: "transparent", color: "var(--foreground)" },
           ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+          ".cm-gutters": {
+            backgroundColor: "transparent",
+            color: "var(--muted-foreground)",
+            borderRight: "1px solid var(--border)",
+          },
+          ".cm-activeLine": { backgroundColor: "color-mix(in oklab, var(--muted) 60%, transparent)" },
+          ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--foreground)" },
+          ".cm-cursor": { borderLeftColor: "var(--foreground)" },
+          "&.cm-focused": { outline: "none" },
+          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+            backgroundColor: "color-mix(in oklab, var(--chart-2) 35%, transparent)",
+          },
         }),
       ],
     });
@@ -126,7 +154,7 @@ export default function YamlEditor({
   return (
     <div
       ref={host}
-      className="overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900"
+      className="h-full min-h-0 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900"
     />
   );
 }

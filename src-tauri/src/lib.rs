@@ -17,6 +17,7 @@ pub mod memcheck;
 pub mod menubar;
 pub mod supervisor;
 pub mod update;
+pub mod upstreams;
 
 use control::ControlClient;
 use supervisor::{CoreState, Supervisor};
@@ -235,33 +236,15 @@ async fn overview(state: tauri::State<'_, AppState>) -> Result<tw_api::Overview,
     state.control.overview().await.map_err(|e| format!("{e:#}"))
 }
 
-#[tauri::command]
-async fn probe_upstream(
-    state: tauri::State<'_, AppState>,
-    base_url: String,
-    key: String,
-) -> Result<tw_api::ProbeResponse, String> {
-    state
-        .control
-        .probe(&base_url, &key)
-        .await
-        .map_err(|e| format!("{e:#}"))
-}
-
 /// L1 测速。零成本，所以不需要任何确认 —— L3 才需要。
 #[tauri::command]
 async fn speed_test(
     state: tauri::State<'_, AppState>,
     provider: Option<String>,
-    proxy: Option<String>,
 ) -> Result<Vec<tw_api::L1Result>, String> {
     state
         .control
-        .l1(tw_api::L1Request {
-            provider,
-            proxy,
-            base_url: None,
-        })
+        .l1(tw_api::L1Request { provider })
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -298,7 +281,7 @@ async fn dashboard(
     Ok(Dashboard {
         summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
-        latency_by_provider: c.latency_by_provider().await.unwrap_or_default(),
+        latency_by_provider: c.latency_by_provider(None).await.unwrap_or_default(),
         history: c.history(200).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
@@ -358,10 +341,11 @@ async fn request_detail(
 async fn speed_quote(
     state: tauri::State<'_, AppState>,
     model: String,
+    providers: Vec<String>,
 ) -> Result<tw_api::SpeedQuote, String> {
     state
         .control
-        .speed_quote(model)
+        .speed_quote(model, providers)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -371,10 +355,11 @@ async fn speed_quote(
 async fn speed_run(
     state: tauri::State<'_, AppState>,
     model: String,
+    providers: Vec<String>,
 ) -> Result<Vec<tw_api::SpeedResult>, String> {
     state
         .control
-        .speed_run(model)
+        .speed_run(model, providers)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -427,57 +412,6 @@ async fn put_config(
 }
 
 /// 光标落在配置的哪一段上。
-/// 用户自己写的那份价格（第三层）。
-#[tauri::command]
-async fn pricing(state: tauri::State<'_, AppState>) -> Result<tw_api::PricingView, String> {
-    state.control.pricing().await.map_err(|e| format!("{e:#}"))
-}
-
-#[tauri::command]
-async fn save_pricing(
-    state: tauri::State<'_, AppState>,
-    rows: Vec<tw_api::PriceRow>,
-) -> Result<tw_api::PricingView, String> {
-    state
-        .control
-        .save_pricing(rows)
-        .await
-        .map_err(|e| format!("{e:#}"))
-}
-
-/// 「检查价格更新」三步走。**三个命令，不是一个** ——
-/// 一个命令意味着「检查」和「写入」是同一次调用，而那正是「静默下载」
-/// 的定义。
-#[tauri::command]
-async fn update_offer(state: tauri::State<'_, AppState>) -> Result<tw_api::UpdateOffer, String> {
-    state
-        .control
-        .update_offer()
-        .await
-        .map_err(|e| format!("{e:#}"))
-}
-
-#[tauri::command]
-async fn update_fetch(state: tauri::State<'_, AppState>) -> Result<tw_api::UpdatePreview, String> {
-    state
-        .control
-        .update_fetch()
-        .await
-        .map_err(|e| format!("{e:#}"))
-}
-
-#[tauri::command]
-async fn update_apply(
-    state: tauri::State<'_, AppState>,
-    token: String,
-) -> Result<tw_api::PricingView, String> {
-    state
-        .control
-        .update_apply(&token)
-        .await
-        .map_err(|e| format!("{e:#}"))
-}
-
 #[tauri::command]
 async fn config_at(
     state: tauri::State<'_, AppState>,
@@ -1265,24 +1199,6 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
     Ok(matches!(mgr.is_enabled(), Ok(true)))
 }
 
-#[tauri::command]
-async fn setup_first_provider(
-    state: tauri::State<'_, AppState>,
-    name: String,
-    base_url: String,
-    key: String,
-) -> Result<tw_api::SetupResponse, String> {
-    let r = state
-        .control
-        .setup(&name, &base_url, &key)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    // **不再重启 core。**M2 的热重载让这一步变成了纯粹的浪费 ——
-    // 一次重启是两秒的断线，而配置在 `/setup` 返回之前就已经生效了
-    // （它走的是和别的改动同一扇门）。
-    Ok(r)
-}
-
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -1304,7 +1220,6 @@ pub fn run() {
             core_state,
             restart_core,
             overview,
-            probe_upstream,
             speed_test,
             dashboard,
             recent_requests,
@@ -1316,13 +1231,27 @@ pub fn run() {
             put_config,
             config_history,
             config_at,
-            pricing,
-            update_offer,
-            update_fetch,
-            update_apply,
-            save_pricing,
             rollback_config,
-            setup_first_provider,
+            upstreams::create_provider,
+            upstreams::update_provider,
+            upstreams::delete_provider,
+            upstreams::test_provider,
+            upstreams::preview_provider,
+            upstreams::provider_models,
+            upstreams::refresh_provider_models,
+            upstreams::upstream_stats,
+            upstreams::create_proxy,
+            upstreams::update_proxy,
+            upstreams::delete_proxy,
+            upstreams::test_proxy,
+            upstreams::pricing_status,
+            upstreams::refresh_pricing,
+            upstreams::set_price_auto_update,
+            upstreams::query_prices,
+            upstreams::price_sheet,
+            upstreams::create_price_sheet,
+            upstreams::update_price_sheet,
+            upstreams::delete_price_sheet,
             app_info,
             update_state,
             set_update_check,
