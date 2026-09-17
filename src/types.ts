@@ -46,9 +46,10 @@ export type CoreEvent =
    * **它不进请求列表。**成本 0、延迟 0 的东西混进请求总数和延迟统计里，
    * 会让那两个数字都变得没意义。它单独计数。
    */
+  /** `probe` 和 `ProbeView.id` 是同一个词表 */
   | { kind: "locally_answered"; id: number; client: string; probe: string; at_ms: number }
   /** 配置换了一份新的进去，已经生效。界面靠它知道自己手里那份过期了。 */
-  | { kind: "config_reloaded"; id: number; version: string; origin: string; at_ms: number }
+  | { kind: "config_reloaded"; id: number; version: string; origin: ConfigOrigin; at_ms: number }
   /**
    * 新配置没过关，**旧的还在服务**。
    *
@@ -58,7 +59,8 @@ export type CoreEvent =
   | {
       kind: "config_rejected";
       id: number;
-      stage: string;
+      /** `syntax`：YAML 写坏了；`schema`：字段名或取值不对；`semantics`：字段各自正确，合起来不成立 */
+      stage: "syntax" | "schema" | "semantics";
       message: string;
       line: number | null;
       excerpt: string | null;
@@ -114,25 +116,16 @@ export type CoreEvent =
       kind: "redacted";
       id: number;
       provider: string;
-      items: { kind: string; what: string; count: number }[];
+      items: RedactedItem[];
       at_ms: number;
     }
   /**
-   * 这次请求做了方言互转。
+   * 这次请求做了格式转换。
    *
-   * **`dropped` 非空时必须让用户看见**：`thinking` 在 OpenAI chat 方言里
-   * 没有对应物，我们只能丢 —— 但悄悄丢掉的话，用户会发现「扩展思考开了
-   * 却没生效」而完全不知道从哪儿查起。
+   * **`dropped` 非空时必须让用户看见**：目标格式没有对应物的字段只能丢 ——
+   * 悄悄丢掉的话，用户会发现「扩展思考开了却没生效」而完全不知道从哪儿查起。
    */
-  | {
-      kind: "translated";
-      id: number;
-      provider: string;
-      from: string;
-      to: string;
-      dropped: string[];
-      at_ms: number;
-    }
+  | ({ kind: "translated"; id: number; provider: string; at_ms: number } & TranslatedView)
   /**
    * token 端点换发了新的 refresh token。
    *
@@ -231,9 +224,9 @@ export interface RequestRow {
   costEstimated?: boolean;
   error?: string;
   /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
-  redacted?: { kind: string; what: string; count: number }[];
-  /** 做过方言互转的话，转成了什么、丢了什么 */
-  translated?: { from: string; to: string; dropped: string[] };
+  redacted?: RedactedItem[];
+  /** 做过格式转换的话，转成了什么、丢了什么 */
+  translated?: TranslatedView;
   /** 上游返回的可疑工具调用 */
   flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
 }
@@ -367,25 +360,41 @@ export interface ProviderTestResult {
   error: string | null;
 }
 
+/** 建连的哪一步、对着谁 */
+export interface L1Stage {
+  /** `config`：地址或代理配置不可用，没有开始建连；`handshake`：代理协议的握手，含认证 */
+  step: "config" | "dns" | "tcp" | "tls" | "handshake";
+  peer: "upstream" | "proxy";
+}
+
 /**
  * L1 测速的一段。**分段是个列表而不是固定的 DNS/TCP/TLS 三段** ——
- * 走代理时形状本来就不同：多出「代理握手」，而 socks5h 下根本没有本地
+ * 走代理时形状本来就不同：多出代理握手，而 socks5h 下根本没有本地
  * DNS 那一段。
  */
 export interface L1Segment {
-  name: string;
+  stage: L1Stage;
   ms: number;
 }
 
+/** 没有出现在分段里的一步。**不说的话，缺一段看起来就像 bug** */
+export interface L1Skip {
+  stage: L1Stage;
+  /** `plain_http`：`http://` 地址没有 TLS；`ip_address`：地址已是 IP；`proxy_resolves`：域名由代理解析 */
+  reason: "plain_http" | "ip_address" | "proxy_resolves";
+}
+
 export interface L1Result {
-  /** 实际测的是什么。回显出来，别让用户猜点的那一下测了谁 */
+  /** 测的是哪个上游或代理的名字。回显出来，别让用户猜点的那一下测了谁 */
   target: string;
   via?: string | null;
   ok: boolean;
   segments: L1Segment[];
   total_ms: number;
-  /** 解释为什么某一段不在上面。**没有这句话，缺一段看起来就像 bug** */
-  notes?: string[];
+  skipped?: L1Skip[];
+  /** 失败在哪一步 */
+  failed?: L1Stage | null;
+  /** 失败的原因，不带步骤前缀 */
   error?: string | null;
 }
 
@@ -456,11 +465,20 @@ export interface LatencyView {
   samples: number;
 }
 
-/** 尝试链里的一跳。 */
+/** 尝试链里的一跳。**失败的原因要留着** */
 export interface AttemptView {
   provider: string;
-  /** 「成功」「429」「连不上上游」这类人话。**失败的原因要留着** */
+  /**
+   * `served`：这一跳接下了请求（上游回 4xx 也算）；`status`：上游返回 5xx
+   * 或 429，换下一个；`error`：没有收到响应。
+   *
+   * core 0.4 之前的记录里是中文句子，原样显示。
+   */
   outcome: string;
+  /** 上游返回的状态码。`error` 时没有 */
+  status?: number | null;
+  /** `error` 时的说明 */
+  error?: string | null;
   ms: number;
 }
 
@@ -504,10 +522,32 @@ export interface HistoryRow {
   cache_saved_micros: number | null;
   /** 按什么价格算的。没算出金额的、老记录没有它 */
   price_source?: PriceSourceView | null;
+  /** 服务它的那一跳做过的格式转换。直通的、老记录没有它 */
+  translated?: TranslatedView | null;
+}
+
+/** 一次请求做过的格式转换 */
+export interface TranslatedView {
+  /** 客户端的格式，和上游协议同一个词表 */
+  from: string;
+  /** 服务它的上游的格式 */
+  to: string;
+  /** 转不过去、被丢掉的字段，按它在请求体里的位置写：`thinking`、`messages.content.thinking` */
+  dropped: string[];
+}
+
+/** 出站脱敏换掉的一类。**只有类别和计数，没有原值** */
+export interface RedactedItem {
+  /** 类别：`api-keys` / `private-keys` / `jwt` / `conn-strings` / `internal` */
+  kind: string;
+  /** 具体是哪种凭据，见 `secretLabel` */
+  secret: string;
+  count: number;
 }
 
 export interface StorageStatus {
-  level: string;
+  /** `ok` / `metadata_only`：只记摘要 / `stopped`：停止记录 / `unavailable`：请求记录没有启动 */
+  level: "ok" | "metadata_only" | "stopped" | "unavailable";
   rows: number;
   blob_bytes: number;
   /** **永远是 false** —— 观测挂了，代理照跑 */
@@ -535,7 +575,8 @@ export interface RequestDetail {
  */
 export interface LeakGroup {
   provider: string;
-  kind: string;
+  /** 哪种凭据，见 `secretLabel`。core 0.4 之前的记录里是英文名称，原样显示 */
+  secret: string;
   requests: number;
   last_at_ms: number;
   /** 涉及哪几把，**都已打码** */
@@ -618,7 +659,6 @@ export interface SpeedEstimate {
   cost_micros?: number | null;
   /** `per-token` / `subscription` / `free` / `unknown` */
   billing: string;
-  note: string;
   /** 服务不了这个模型：`out_of_scope` / `not_offered`。不进合计，也不会被测 */
   skipped?: string | null;
 }
@@ -657,9 +697,8 @@ export interface ProxyView {
 
 /** 一类客户端辅助请求的处置 */
 export interface ProbeView {
+  /** `health_check` / `warmup` / `titling` / `topic_detect` / `suggestion` */
   id: string;
-  label: string;
-  what: string;
   /** `intercept` / `route` / `passthrough` */
   mode: string;
 }
@@ -674,9 +713,20 @@ export interface LimitsView {
 /** 一条规则 */
 export interface RuleView {
   name: string;
-  to: string;
-  /** `when` 的人话摘要。空 = 兜底 */
-  conditions: string[];
+  /** 去向：上游名或组名。拒绝的规则和只改参数的规则没有 */
+  to?: string | null;
+  /** 命中就拒绝 */
+  deny?: boolean;
+  /** `when` 里写了的条件，按固定顺序。空 = 兜底 */
+  conditions: ConditionView[];
+}
+
+/** 规则里的一个条件 */
+export interface ConditionView {
+  /** `when` 里的键，见 `conditionText` */
+  field: string;
+  /** 写的值。`intent` 和 `provider_would_be` 可以有多个；布尔条件是 `true` / `false`；数量条件是比较式（`>200k`） */
+  values: string[];
 }
 
 /** 这台机器上的一张网卡（`GET /interfaces`）。同一张网卡可以有多个地址 */
@@ -717,10 +767,13 @@ export type PatchOp =
    */
   | { op: "clear"; path: string };
 
+/** 一版配置是谁写的 */
+export type ConfigOrigin = "ui" | "cli" | "external" | "rollback" | "rotation";
+
 export interface ConfigVersion {
   version: string;
   at_ms: number;
-  origin: string;
+  origin: ConfigOrigin;
   bytes: number;
   /** 历史里包括当前版本，不标出来用户会回滚到自己身上 */
   current: boolean;
@@ -777,7 +830,7 @@ export interface ProviderView {
 
 /** 一个可能是密钥的值给界面看的样子 */
 export interface SecretView {
-  /** 打过码的值，或者 `环境变量 ${NAME}` */
+  /** 打过码的值。带 `${NAME}` 的值原样给 */
   display: string;
   /** 整个值恰好是一个 `${NAME}` 时的变量名 */
   env?: string | null;
@@ -823,9 +876,12 @@ export interface RouteView {
   rules: RuleView[];
 }
 
+/** 策略组按什么排候选，配置里 `type` 写的那个词 */
+export type GroupKind = "fallback" | "select" | "load-balance" | "url-test" | "cheapest";
+
 export interface GroupView {
   name: string;
-  kind: string;
+  kind: GroupKind;
   /** 同一次会话固定走同一家。**这一项直接决定账单** */
   session_affinity?: boolean;
   /** `select` 组当前选中谁。界面要能切它 —— 那是这个策略的全部意义 */
@@ -910,19 +966,23 @@ export interface DetectedClient {
   /** 配置里此刻的端点，**读出来的** */
   endpoint: string | null;
   shadows: string[];
-  takes_effect: "immediately" | "on_restart";
-  takes_effect_note: string;
+  takes_effect: TakesEffect;
   /** 需要重开终端的客户端不提示「一直没收到请求」—— 那是狼来了 */
   warns_when_silent: boolean;
+  /** `measured`：在本机实际运行验证过；`fields_only`：只查证过字段名 */
   verified: "measured" | "fields_only";
-  verified_note: string;
+  /** 接管之后会失去或改变的功能 */
   costs: string[];
   /** 最后一次收到它的请求。**接管有没有生效，只有它能证明** */
   last_seen_ms: number | null;
 }
 
+/** 改动什么时候生效：`immediately` 下一个请求；`on_restart` 客户端重新启动后 */
+export type TakesEffect = "immediately" | "on_restart";
+
 export interface ManualClient {
   name: string;
+  /** 手动配置的步骤，网关地址已经填在里面 */
   how: string;
   caveat: string;
 }
@@ -943,7 +1003,17 @@ export interface PlanView {
   shadows: string[];
   noop: boolean;
   carries_secret: boolean;
-  fields: string[];
+  /** 这次会改哪些字段。diff 之外再给一份摘要 */
+  fields: FieldChange[];
+}
+
+/** 配置文件里的一处改动 */
+export interface FieldChange {
+  op: "set" | "remove";
+  /** 按层级用 `.` 连起来：`env.ANTHROPIC_BASE_URL` */
+  path: string;
+  /** 要写入的值。写的是网关密钥或者一整段结构时没有 */
+  value?: string | null;
 }
 
 export interface AdoptResponse {
@@ -951,7 +1021,7 @@ export interface AdoptResponse {
   backup: string;
   created: boolean;
   warnings: string[];
-  takes_effect_note: string;
+  takes_effect: TakesEffect;
 }
 
 export interface FindingView {
@@ -968,7 +1038,6 @@ export interface ScanFinding {
   level: "high" | "medium" | "low";
   rule: string;
   kind: "hooks" | "mcp" | "skill" | "command" | "agent" | "instructions";
-  kind_label: string;
   client: string;
   path: string;
   line: number;
@@ -1014,7 +1083,13 @@ export interface ScanResponse {
   conflicting: string[];
   unreadable: string[];
   scanned: number;
-  rules_origin: string;
+  /** 这次生效的规则数，内置的加上自定义的 */
+  rules_active: number;
+  /** 其中自定义的 */
+  rules_custom: number;
+  /** 停用了几条内置规则 */
+  rules_disabled: number;
+  /** 有规则没能生效时的说明 */
   rules_warning: string | null;
   projects: string[];
 }
@@ -1075,21 +1150,43 @@ export interface SessionDetail {
 
 export interface RuleTrace {
   name: string;
+  /** `phase_two`：条件要等选定上游之后才能求值，静态试算给不了结论 */
   verdict: "matched" | "skipped" | "phase_two";
-  /** 没命中时，是哪个条件没对上 */
-  why: string | null;
+  /** 没命中时，第一个没对上的条件 */
+  mismatch?: MismatchView | null;
+  /** 条件本身写错了、没法求值时的说明 */
+  error?: string | null;
+}
+
+/** 一个没对上的条件 */
+export interface MismatchView {
+  /** 和 `ConditionView.field` 同一个词表 */
+  field: string;
+  /** 规则里写的值 */
+  want: string[];
+  /** 这个请求实际的值。`intent` 为空表示真实的用户请求 */
+  got: string;
+}
+
+/** 一项参数改写 */
+export interface SetView {
+  /** `model`（换模型，整个 prompt cache 作废）/ `max_tokens` / `thinking` / `only_at_session_start` */
+  field: string;
+  value: string;
 }
 
 export interface DryRunResult {
-  /** `unavailable`：规则选中的上游都服务不了这个请求 */
+  /** `unavailable`：规则选中的上游都服务不了这个请求，原因见 `skipped` */
   outcome: "route" | "deny" | "no_match" | "unavailable";
-  /** 经过的策略组按什么排序候选（「按顺序」「选最快」…）。直指上游时没有 */
-  strategy?: string | null;
+  /** 经过的策略组按什么排序候选。直指上游时没有 */
+  strategy?: GroupKind | null;
   rule: string | null;
+  /** `deny` 时规则里写的拒绝理由 */
   reason: string | null;
   candidates: string[];
   via_group: string | null;
-  set: string[];
+  /** 累积起来的参数改写 */
+  set: SetView[];
   trace: RuleTrace[];
   /** 这条路会不会伤到 prompt cache。**要直说 —— 它决定账单** */
   hurts_cache: boolean;
@@ -1097,6 +1194,17 @@ export interface DryRunResult {
   circuit_open: string[];
   /** 规则选中、但服务不了这个请求而被跳过的上游 */
   skipped: SkippedView[];
+  /** 候选链里要转换格式的上游 */
+  converted: ConvertedView[];
+}
+
+/** 一个要转换格式的候选上游 */
+export interface ConvertedView {
+  provider: string;
+  /** 客户端的格式 */
+  from: string;
+  /** 这个上游的格式 */
+  to: string;
 }
 
 export interface SkippedView {
@@ -1125,8 +1233,8 @@ export interface McpTargetView {
 // ---------------------------------------------------------- 上游行为基线
 
 export interface DriftView {
+  /** `flagged`：命中高危规则的响应；`tool_calls`：带工具调用的响应；`errors`：失败的请求 */
   metric: "tool_calls" | "flagged" | "errors";
-  label: string;
   /** 比率，0..1 */
   recent: number;
   baseline: number;
@@ -1165,7 +1273,6 @@ export interface ReplayQuote {
   cost_micros: number | null;
   /** 要重放到的那家的计费方式 */
   billing: string;
-  note: string;
   /** 发出去之前会不会脱敏 */
   will_redact: boolean;
   pricing_date: string;
@@ -1422,7 +1529,8 @@ export interface ProviderQuota {
 }
 
 export interface QuotaWindow {
-  label: string;
+  /** `5h` / `7d`（Anthropic）/ `weekly`（Codex） */
+  window: string;
   used_percent: number;
   reset_in_secs: number | null;
   status: string | null;

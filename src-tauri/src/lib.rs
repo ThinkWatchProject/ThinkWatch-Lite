@@ -1818,7 +1818,7 @@ async fn collect_tray_facts(
                 .into_iter()
                 // 只有 `select` 组能在托盘里切 —— 别的策略是自动决定的，
                 // 给个下拉会让人以为自己在指挥它
-                .filter(|g| g.kind == "手动选")
+                .filter(|g| g.kind == "select")
                 .map(|g| (g.name, g.providers, g.selected))
                 .collect()
         })
@@ -1876,13 +1876,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     let money = MenuItem::with_id(
         app,
         "money",
-        match (f.quota, f.cost) {
-            // 订阅账号优先显示额度：「今天花了 $0.00」对他是句废话
-            (Some(q), _) => format!("额度  已用 {:.0}%", q * 100.0),
-            (None, Some(c)) => format!("今日  ${c:.2}"),
-            // **破折号不是 0。**画一个 $0.00 是在断言「今天没花钱」
-            (None, None) => "今日  —".to_string(),
-        },
+        menubar::menu_line(f.quota, f.cost),
         false,
         None::<&str>,
     )?;

@@ -12,12 +12,19 @@ import { describe, expect, it } from "vitest";
 
 const SRC = "src";
 
-function tsxFiles(dir: string): string[] {
+/**
+ * 界面文案所在的文件：组件，加上名称表。
+ *
+ * **名称表也要查。**core 0.4 起固定集合的字段只发标识符，「手动选择」
+ * 「磁盘空间不足」这些显示文字搬进了 `labels.ts`，不查的话它们就在这条
+ * 检查的视线之外。
+ */
+function copyFiles(dir: string): string[] {
   const out: string[] = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) out.push(...tsxFiles(p));
-    else if (e.name.endsWith(".tsx")) out.push(p);
+    if (e.isDirectory()) out.push(...copyFiles(p));
+    else if (e.name.endsWith(".tsx") || e.name === "labels.ts") out.push(p);
   }
   return out;
 }
@@ -29,7 +36,7 @@ function visible(src: string): string {
     .replace(/^\s*\/\/.*$/gm, "");
 }
 
-const files = tsxFiles(SRC).map((f) => ({
+const files = copyFiles(SRC).map((f) => ({
   path: f,
   text: visible(readFileSync(f, "utf8")),
 }));
@@ -211,10 +218,14 @@ describe("界面文案", () => {
       "调试",
       "堆栈",
     ];
+    // 英文词按整词匹配：名称表里的 `github-oauth-token`、`digitalocean-token`
+    // 是标识符，不是在说 git
+    const found = (text: string, w: string) =>
+      /^[a-z]+$/.test(w) ? new RegExp(`\\b${w}\\b`).test(text) : text.includes(w);
     const bad: string[] = [];
     for (const f of files) {
       for (const w of words) {
-        if (f.text.includes(w)) bad.push(`${f.path}: 「${w}」`);
+        if (found(f.text, w)) bad.push(`${f.path}: 「${w}」`);
       }
     }
     expect(bad).toEqual([]);

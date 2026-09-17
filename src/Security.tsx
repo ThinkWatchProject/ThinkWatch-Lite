@@ -11,6 +11,7 @@ import type {
   ScanFinding,
   ScanResponse,
 } from "./types";
+import { driftLabel, scanRulesText } from "./labels";
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
@@ -125,7 +126,7 @@ export default function Security({
 
       <div className="flex items-center gap-2 tw-body text-muted-foreground">
         <span>
-          已扫描 {data.scanned} 个文件，扫描规则：{data.rules_origin}。
+          已扫描 {data.scanned} 个文件，{scanRulesText(data)}。
         </span>
         <Button
           variant="outline"
@@ -652,7 +653,7 @@ function Baseline({ b }: { b: BaselineResponse }) {
               <div className="font-medium">{p.provider} 的行为发生变化</div>
               {p.drifts.map((d) => (
                 <div key={d.metric} className="mt-1">
-                  {d.label}：<span className="font-medium">{pct(d.recent)}</span>
+                  {driftLabel(d.metric)}：<span className="font-medium">{pct(d.recent)}</span>
                   <span className="text-muted-foreground">
                     ，此前为 {pct(d.baseline)}
                     {/* **样本量必须一起给** —— 没有它，比率是个没法判断

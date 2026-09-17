@@ -14,6 +14,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
 import { useCoreEvent } from "./useCoreEvent";
 import { patchConfig } from "./patch";
+import { FIELDS_ONLY_TEXT, takesEffectText } from "./labels";
 import {
   Dialog,
   DialogContent,
@@ -195,13 +196,15 @@ export default function Clients({
                       "restore_all",
                     );
                     const bad = rs.filter((r) => !r.ok);
-                    // **一家失败不影响别家**，所以逐条报，不能只说「失败了」
-                    toast.error(
-                      bad.length === 0
-                        ? null
-                        : `${bad.length} 个客户端还原失败：` +
-                            bad.map((r) => `${r.client}（${r.detail}）`).join("；"),
-                    );
+                    // **一个失败不影响其余的**，所以逐条报，不能只说「失败了」
+                    if (bad.length === 0) {
+                      toast.success(`已还原 ${rs.length} 个客户端`);
+                    } else {
+                      toast.error(
+                        `${bad.length} 个客户端还原失败：` +
+                          bad.map((r) => `${r.client}（${r.detail}）`).join("；"),
+                      );
+                    }
                     await load();
                   } catch (e) {
                     toast.error(typeof e === "string" ? e : String(e));
@@ -280,7 +283,7 @@ export default function Clients({
           {data.manual.map((m) => (
             <li key={m.name}>
               <span className="font-medium text-foreground">{m.name}</span>
-              <div>{m.how.replace("网关地址", data.gateway_base)}</div>
+              <div>{m.how}</div>
               <div className="text-muted-foreground">{m.caveat}</div>
             </li>
           ))}
@@ -356,8 +359,8 @@ function Card({
           {c.real !== c.path && <span className="ml-1">（{c.path} 是符号链接）</span>}
         </div>
         {c.endpoint && <div>当前指向 {c.endpoint}</div>}
-        {c.takes_effect === "on_restart" && <div>{c.takes_effect_note}</div>}
-        {c.verified === "fields_only" && <div>ⓘ {c.verified_note}</div>}
+        {c.takes_effect === "on_restart" && <div>{takesEffectText(c.takes_effect)}</div>}
+        {c.verified === "fields_only" && <div>ⓘ {FIELDS_ONLY_TEXT}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
             ⚠ {s} 优先级更高，可能覆盖此处的设置
@@ -435,8 +438,16 @@ function PlanDialog({
           {p.fields.length > 0 && (
             <ul className="mt-3 space-y-0.5 tw-body">
               {p.fields.map((f) => (
-                <li key={f}>
-                  <code>{f}</code>
+                <li key={`${f.op} ${f.path}`}>
+                  {f.op === "remove" ? "删除 " : "设置 "}
+                  <code>{f.path}</code>
+                  {/* 没有值的是网关密钥或一整段结构，摘要里不展开 */}
+                  {f.value != null && (
+                    <>
+                      {" = "}
+                      <code>{f.value}</code>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -553,7 +564,7 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
   return (
     <Shell onClose={onClose} title="已写入配置">
       <div className="mt-2 space-y-1 tw-body text-muted-foreground">
-        <div>{r.takes_effect_note}</div>
+        <div>{takesEffectText(r.takes_effect)}</div>
         <div>
           已修改 <code>{r.real}</code>
         </div>

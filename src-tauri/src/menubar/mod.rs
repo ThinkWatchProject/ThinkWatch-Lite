@@ -125,6 +125,20 @@ impl MenuBarState {
     }
 }
 
+/// 托盘菜单里费用或额度那一行。
+///
+/// **和菜单栏第一行同一个口径**：`used_percent` 已经是 0–100。菜单这一行
+/// 曾经又乘了一次 100，菜单栏写着 62%，点开却是「已用 6200%」。
+pub fn menu_line(quota_percent: Option<f64>, cost_today: Option<f64>) -> String {
+    match (quota_percent, cost_today) {
+        // 订阅账号优先显示额度：「今天花了 $0.00」对他是句废话
+        (Some(p), _) => format!("额度  已用 {}%", p.round() as i64),
+        (None, Some(c)) => format!("今日  ${c:.2}"),
+        // **破折号不是 0。**画一个 $0.00 是在断言「今天没花钱」
+        (None, None) => "今日  —".to_string(),
+    }
+}
+
 /// 「2h」「45m」「3d」。**宽度要稳**（宽度抖动）：一个在
 /// 「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动。
 fn reset_label(secs: u64) -> String {
@@ -261,6 +275,15 @@ mod quota_tests {
         let s = sub(62.0, Some(7200), false);
         assert_eq!(s.line1(), "62%");
         assert_eq!(s.line2(), "2h");
+    }
+
+    #[test]
+    fn the_menu_shows_the_same_percentage_as_the_bar() {
+        let s = sub(62.0, Some(7200), false);
+        assert_eq!(s.line1(), "62%");
+        assert_eq!(menu_line(s.quota_percent, s.cost_today), "额度  已用 62%");
+        assert_eq!(menu_line(None, Some(3.4)), "今日  $3.40");
+        assert_eq!(menu_line(None, None), "今日  —");
     }
 
     #[test]

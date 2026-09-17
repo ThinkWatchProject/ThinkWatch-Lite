@@ -13,6 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
+import { secretLabel, storageText } from "./labels";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -897,10 +898,10 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           </h2>
           <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
             {d.leaks.map((l) => (
-              <li key={`${l.provider}/${l.kind}`}>
+              <li key={`${l.provider}/${l.secret}`}>
                 <span className="font-medium">{l.requests}</span> 个请求向{" "}
                 <span className="font-medium">{l.provider || "上游"}</span> 发送了{" "}
-                <span className="font-medium">{l.kind}</span>
+                <span className="font-medium">{secretLabel(l.secret)}</span>
                 {l.masked.length > 0 && (
                   // **打码之后才显示。**把发现的密钥原样贴出来，等于
                   // 把泄漏搬了个家
@@ -926,10 +927,10 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
 
       {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
-      {d.storage && d.storage.level !== "正常" && (
+      {d.storage && d.storage.level !== "ok" && (
         <Alert variant="warning" className="mt-5">
           <AlertDescription>
-            {d.storage.level}
+            {storageText(d.storage.level)}
             {!d.storage.forwarding_affected && "。转发不受影响。"}
           </AlertDescription>
         </Alert>

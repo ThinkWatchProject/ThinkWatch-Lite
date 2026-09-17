@@ -18,6 +18,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { XIcon } from "lucide-react";
 import { priceSourceDetail } from "./upstreams/labels";
+import { attemptText, formatLabel, quoteText } from "./labels";
 import {
   Table,
   TableBody,
@@ -221,6 +222,42 @@ export default function RequestDrawer({
                 <Row label="上游" value={r.local ? "本地应答" : r.provider} />
                 <Row label="客户端" value={r.client} />
                 <Row label="路径" value={<span className="font-mono">{r.path}</span>} />
+                {/* **转了就要看得见，丢了字段更要看得见** —— 「扩展思考开了却没
+                    生效」在客户端那头无从查起 */}
+                {r.translated && (
+                  <>
+                    <Row
+                      label="格式转换"
+                      value={
+                        // 格式名整体换行，不从单词中间断开
+                        <>
+                          <span className="whitespace-nowrap">{formatLabel(r.translated.from)}</span>
+                          {" → "}
+                          <span className="whitespace-nowrap">{formatLabel(r.translated.to)}</span>
+                        </>
+                      }
+                    />
+                    {r.translated.dropped.length > 0 && (
+                      <Row
+                        label="丢弃字段"
+                        value={
+                          <span className="text-amber-700 dark:text-amber-400">
+                            {/* 一个字段整体换行，不从路径中间断开 */}
+                            {r.translated.dropped.map((f, i) => (
+                              <span key={f}>
+                                {i > 0 && "、"}
+                                <span className="font-mono whitespace-nowrap">{f}</span>
+                              </span>
+                            ))}
+                            <Tip text="目标格式不支持这些字段，发送前已移除。">
+                              <span className="ml-1 whitespace-nowrap underline decoration-dotted underline-offset-2">说明</span>
+                            </Tip>
+                          </span>
+                        }
+                      />
+                    )}
+                  </>
+                )}
                 <Row
                   label="状态"
                   value={
@@ -250,7 +287,9 @@ export default function RequestDrawer({
                   <div>
                     <div className="tw-body font-medium">尝试链</div>
                     <ol className="mt-1 space-y-1">
-                      {r.routing.attempts.map((a, i) => (
+                      {r.routing.attempts.map((a, i) => {
+                        const outcome = attemptText(a);
+                        return (
                         <li
                           key={`${a.provider}-${i}`}
                           className="flex items-baseline gap-3 rounded border border-border px-2 py-1"
@@ -262,16 +301,17 @@ export default function RequestDrawer({
                               排查价值差得远 */}
                           <span
                             className={
-                              a.outcome === "成功"
+                              outcome.ok
                                 ? "text-emerald-600 dark:text-emerald-400"
                                 : "text-amber-700 dark:text-amber-400"
                             }
                           >
-                            {a.outcome}
+                            {outcome.text}
                           </span>
                           <span className="ml-auto text-muted-foreground">{a.ms}ms</span>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ol>
                     {r.routing.attempts.length > 1 && (
                       // **用户能看见故障转移在替他工作，这是信任的来源**。
@@ -501,7 +541,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             将向 <span className="font-medium">{quote.provider}</span> 发送 {quote.body_bytes} 字节，约{" "}
             {quote.input_tokens} 个输入 token。
           </div>
-          <div className="mt-1">{quote.note}</div>
+          <div className="mt-1">{quoteText(quote)}</div>
           {quote.will_redact && (
             <div className="mt-1 text-muted-foreground">
               发送前将按此上游的规则脱敏，回显内容将自动还原。

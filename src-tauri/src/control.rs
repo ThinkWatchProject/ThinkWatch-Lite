@@ -86,10 +86,18 @@ impl ControlClient {
             .header(hyper::header::HOST, "localhost")
             .body(String::new())?;
         let resp = sender.send_request(req).await?;
-        if !resp.status().is_success() {
-            anyhow::bail!("控制面返回 {}", resp.status());
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await?.to_bytes();
+        if !status.is_success() {
+            // 和 `send_json` 一样把控制面的说明原样带出去（「没有这条请求」之类），
+            // 只剩状态码的话，界面上只能显示一个 404
+            let text = String::from_utf8_lossy(&bytes);
+            if text.trim().is_empty() {
+                anyhow::bail!("控制面返回 {status}");
+            }
+            anyhow::bail!("{text}");
         }
-        Ok(resp.into_body().collect().await?.to_bytes().to_vec())
+        Ok(bytes.to_vec())
     }
 
     /// 带超时的心跳探测。
