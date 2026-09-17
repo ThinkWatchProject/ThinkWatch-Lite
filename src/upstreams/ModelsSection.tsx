@@ -71,7 +71,8 @@ export function ModelsSection({
     () => models.filter((m) => m.toLowerCase().includes(filter.trim().toLowerCase())),
     [models, filter],
   );
-  const patterns = form.scopeList.filter((p) => p.includes("*"));
+  // 切回「全部模型」时清单还留着（再切回来不丢），但那时通配规则不生效
+  const patterns = form.scope === "some" ? form.scopeList.filter((p) => p.includes("*")) : [];
   const enabled = models.filter((m) => inScope(form, m));
   const unpriced = perToken ? enabled.filter((m) => prices[m] && !prices[m].price) : [];
 
