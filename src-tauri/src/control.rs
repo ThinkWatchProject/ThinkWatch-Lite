@@ -259,8 +259,11 @@ impl ControlClient {
         model: String,
         providers: Vec<String>,
     ) -> Result<tw_api::SpeedQuote> {
-        self.post_json("/speed/quote", &tw_api::SpeedRunRequest { providers, model })
-            .await
+        self.post_json(
+            "/speed/quote",
+            &tw_api::SpeedRunRequest { providers, model },
+        )
+        .await
     }
 
     /// 真的跑。**这一步花钱。**
@@ -291,7 +294,10 @@ impl ControlClient {
     }
 
     /// 按上游分的延迟。**「哪家 TTFT 最差」问的是这个。**
-    pub async fn latency_by_provider(&self, from_ms: Option<i64>) -> Result<Vec<tw_api::LatencyView>> {
+    pub async fn latency_by_provider(
+        &self,
+        from_ms: Option<i64>,
+    ) -> Result<Vec<tw_api::LatencyView>> {
         let path = match from_ms {
             Some(f) => format!("/latency/provider?from_ms={f}"),
             None => "/latency/provider".to_string(),
@@ -496,7 +502,10 @@ impl ControlClient {
 
     // ───────────────────────────────────────── 上游
 
-    pub async fn create_provider(&self, req: &tw_api::ProviderSave) -> Result<tw_api::ConfigWritten> {
+    pub async fn create_provider(
+        &self,
+        req: &tw_api::ProviderSave,
+    ) -> Result<tw_api::ConfigWritten> {
         self.post_json("/providers", req).await
     }
 
@@ -505,8 +514,12 @@ impl ControlClient {
         name: &str,
         req: &tw_api::ProviderSave,
     ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, &format!("/providers/{}", segment(name)), req)
-            .await
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/providers/{}", segment(name)),
+            req,
+        )
+        .await
     }
 
     pub async fn delete_provider(
@@ -559,8 +572,12 @@ impl ControlClient {
         name: &str,
         req: &tw_api::ProxySave,
     ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, &format!("/proxies/{}", segment(name)), req)
-            .await
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/proxies/{}", segment(name)),
+            req,
+        )
+        .await
     }
 
     pub async fn delete_proxy(

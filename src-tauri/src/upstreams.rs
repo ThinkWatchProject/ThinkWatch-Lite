@@ -28,7 +28,11 @@ pub async fn update_provider(
     name: String,
     save: tw_api::ProviderSave,
 ) -> Out<tw_api::ConfigWritten> {
-    state.control.update_provider(&name, &save).await.map_err(text)
+    state
+        .control
+        .update_provider(&name, &save)
+        .await
+        .map_err(text)
 }
 
 #[tauri::command]
@@ -74,7 +78,11 @@ pub async fn refresh_provider_models(
     state: tauri::State<'_, AppState>,
     name: String,
 ) -> Out<tw_api::ProviderModelsView> {
-    state.control.refresh_provider_models(&name).await.map_err(text)
+    state
+        .control
+        .refresh_provider_models(&name)
+        .await
+        .map_err(text)
 }
 
 /// 上游列表那几列统计：24 小时的请求与费用、首字节耗时、订阅额度。
@@ -96,7 +104,10 @@ pub async fn upstream_stats(
     let c = &state.control;
     Ok(UpstreamStats {
         costs: c.cost_by("provider", since_ms).await.unwrap_or_default(),
-        latency: c.latency_by_provider(Some(since_ms)).await.unwrap_or_default(),
+        latency: c
+            .latency_by_provider(Some(since_ms))
+            .await
+            .unwrap_or_default(),
         quotas: c.quota().await.unwrap_or_default(),
     })
 }
