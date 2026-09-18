@@ -1258,6 +1258,7 @@ pub fn run() {
             dismiss_notice,
             notice_prefs,
             set_notice_pref,
+            take_pending_view,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
             chatgpt::chatgpt_login_status,
@@ -1323,10 +1324,21 @@ pub fn run() {
             announce_update(&handle);
 
             // 通知总线。**判定在这里，不在界面** —— 关窗即销毁 webview
+            // 系统通知：装好的应用用原生的（能原地更新、撤回、点开落到对应页面），
+            // `tauri dev` 这种不在应用包里的退回插件
+            #[cfg(target_os = "macos")]
+            let system: Box<dyn notices::Sink> = if notices::macos::available() {
+                notices::macos::install(handle.clone());
+                Box::new(notices::macos::NativeSink)
+            } else {
+                Box::new(notices::SystemSink::new(handle.clone()))
+            };
+            #[cfg(not(target_os = "macos"))]
+            let system: Box<dyn notices::Sink> = Box::new(notices::SystemSink::new(handle.clone()));
             let notices = notices::Notices::new(
                 vec![
                     Box::new(notices::sink::AppSink::new(handle.clone())),
-                    Box::new(notices::SystemSink::new(handle.clone())),
+                    system,
                 ],
                 Some(data_dir()),
             );
@@ -1632,6 +1644,12 @@ fn notices_list(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<notices
 #[tauri::command]
 fn dismiss_notice(notices: tauri::State<'_, Arc<notices::Notices>>, key: String) {
     notices.dismiss(&key);
+}
+
+/// 点通知新建的窗口挂上之后，来取要落的那一页
+#[tauri::command]
+fn take_pending_view() -> Option<String> {
+    notices::take_pending_view()
 }
 
 /// 设置页上的一行：一类提醒，和它现在怎么对待

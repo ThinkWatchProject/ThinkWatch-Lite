@@ -500,6 +500,25 @@ export default function App() {
     };
   }, []);
 
+  /*
+    点了系统通知：落到能处理那件事的那一页。**窗口可能是为这一下新建的** ——
+    那时事件已经错过了，所以挂上时先去取一次；已经开着的窗口收事件。
+    两条路都会把 Rust 那边存的清掉，下次开窗不会又跳过去。
+  */
+  useEffect(() => {
+    const go = (view: string | null) => {
+      if (view) setTab(view as Surface);
+    };
+    void invoke<string | null>("take_pending_view").then(go).catch(() => {});
+    const un = listen<string>("open-view", (e) => {
+      go(e.payload);
+      void invoke("take_pending_view").catch(() => {});
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
   /**
    * 列表的键盘导航。
    *
