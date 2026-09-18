@@ -1,10 +1,12 @@
 //! ChatGPT 账号的命令：登录、用量、额度重置卡。
 //!
-//! 登录本身在 core：它给出授权地址、在本机等浏览器回调、把凭据写进配置。这一层做
+//! 登录本身在 core：它给出授权地址或者设备码、等授权完成、把凭据写进配置。这一层做
 //! core 做不到的两件事 —— **打开浏览器**，以及授权完成后**把应用带回前台**。
 //!
-//! 授权地址存在这里而不是交给界面：界面拿着它，就等于多了一条「界面传来一个地址、
-//! 应用去打开它」的路径。重新打开授权页只按登录 ID 找。
+//! 授权地址和登录码存在这里而不是交给界面：界面拿着地址，就等于多了一条「界面传来
+//! 一个地址、应用去打开它」的路径；拿着码，就等于多了一个往剪贴板里写任意内容的口子。
+//! 重新打开授权页、复制登录码都只按登录 ID 找。**只有设备码要给界面看**，因为用户
+//! 得把它念出来或者抄到另一台设备上。
 
 use std::sync::Mutex;
 
@@ -21,43 +23,92 @@ fn text(e: anyhow::Error) -> String {
 /// 授权完成后回到应用的地址。core 只接受应用自己的协议
 const RETURN_TO: &str = "thinkwatch://chatgpt/login";
 
-/// 正在等的那次登录：(登录 ID, 授权地址)。**同一时刻只有一次**，core 那边也是
-static PENDING: Mutex<Option<(String, String)>> = Mutex::new(None);
+/// 正在等的那次登录。**同一时刻只有一次**，core 那边也是
+static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
+struct Pending {
+    id: String,
+    /// 在这台电脑上登录：要打开的授权地址
+    url: Option<String>,
+    /// 在其他设备上登录：要输的那个码
+    code: Option<String>,
+}
+
+/// 一次登录里界面该知道的部分。**授权地址不在其中**
+#[derive(serde::Serialize)]
+pub struct Login {
+    id: String,
+    user_code: Option<String>,
+    verification_url: Option<String>,
+    expires_in_secs: u64,
+}
+
+/// `mode`：`browser` 在这台电脑上开浏览器，`device` 拿一个码去别处输。
+///
+/// **浏览器那条路在这里就把页面打开**：让用户再点一次「打开授权页」，中间那一步
+/// 没有任何意义。
 #[tauri::command]
 pub async fn start_chatgpt_login(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     name: Option<String>,
     proxy: Option<String>,
-) -> Out<tw_api::ChatgptLogin> {
+    mode: Option<String>,
+) -> Out<Login> {
     let login = state
         .control
         .start_chatgpt_login(&tw_api::ChatgptLoginStart {
             name,
             proxy,
             return_to: Some(RETURN_TO.to_string()),
+            mode,
         })
         .await
         .map_err(text)?;
     if let Ok(mut g) = PENDING.lock() {
-        *g = Some((login.id.clone(), login.authorize_url.clone()));
+        *g = Some(Pending {
+            id: login.id.clone(),
+            url: login.authorize_url.clone(),
+            code: login.user_code.clone(),
+        });
     }
-    open_page(&app, &login.authorize_url)?;
-    Ok(login)
+    if let Some(url) = &login.authorize_url {
+        open_page(&app, url)?;
+    }
+    Ok(Login {
+        id: login.id,
+        user_code: login.user_code,
+        verification_url: login.verification_url,
+        expires_in_secs: login.expires_in_secs,
+    })
 }
 
 /// 浏览器被关掉、或者授权页打不开时再打开一次。**只认还在等的那一次**
 #[tauri::command]
 pub async fn reopen_chatgpt_login(app: tauri::AppHandle, id: String) -> Out<()> {
-    let url = PENDING
+    let url = pending(&id, |p| p.url.clone())?;
+    open_page(&app, &url)
+}
+
+/// 把登录码放进剪贴板。
+///
+/// **码由这里给出，不从界面传进来**：那样等于给 webview 开一个往剪贴板里写任意内容
+/// 的口子。在 Rust 这边写也不用看 webview 给不给剪贴板权限 —— 一个「复制」按钮
+/// 唯一不能有的表现就是点了没反应。
+#[tauri::command]
+pub fn copy_chatgpt_code(app: tauri::AppHandle, id: String) -> Out<()> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let code = pending(&id, |p| p.code.clone())?;
+    app.clipboard().write_text(code).map_err(|e| e.to_string())
+}
+
+/// 还在等的那次登录里的某一项。**只认还在等的那一次**
+fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Out<String> {
+    PENDING
         .lock()
         .ok()
-        .and_then(|g| g.clone())
-        .filter(|(pending, _)| *pending == id)
-        .map(|(_, url)| url)
-        .ok_or_else(|| "这次登录已经结束，请重新发起".to_string())?;
-    open_page(&app, &url)
+        .and_then(|g| g.as_ref().filter(|p| p.id == id).and_then(&get))
+        .ok_or_else(|| "这次登录已经结束，请重新发起".to_string())
 }
 
 fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
@@ -85,7 +136,7 @@ pub async fn cancel_chatgpt_login(
 
 pub fn forget(id: &str) {
     if let Ok(mut g) = PENDING.lock()
-        && g.as_ref().is_some_and(|(pending, _)| pending == id)
+        && g.as_ref().is_some_and(|p| p.id == id)
     {
         *g = None;
     }

@@ -20,6 +20,7 @@ import type {
 } from "@/types";
 import { api } from "./api";
 import { BillingSection } from "./BillingSection";
+import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { errorText, protocolLabel, shortUrl } from "./labels";
 import { ModelsSection, inScope, type ModelCatalog } from "./ModelsSection";
@@ -38,12 +39,24 @@ import {
   type UpstreamForm,
 } from "./upstreamForm";
 
-export type Section = "connection" | "models" | "billing" | "security";
+export type Section = "connection" | "account" | "models" | "billing" | "security";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "connection", label: "连接" },
   { id: "models", label: "模型" },
   { id: "billing", label: "计费" },
+  { id: "security", label: "安全" },
+];
+
+/**
+ * ChatGPT 账号上游的分节。
+ *
+ * **没有「连接」也没有「计费」**：地址、协议、凭据由登录决定，计费方式是订阅制 ——
+ * 把这些摆成可填的表单，等于邀请用户去改一个改了就坏的东西。
+ */
+const ACCOUNT_SECTIONS: { id: Section; label: string }[] = [
+  { id: "account", label: "账号" },
+  { id: "models", label: "模型" },
   { id: "security", label: "安全" },
 ];
 
@@ -79,8 +92,8 @@ export function UpstreamDialog({
   /** 对话框里新建了代理或价目表：外面要重新读概览 */
   onChanged: () => void;
   onGoToGuard: () => void;
-  /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框 */
-  onChatgptLogin: () => void;
+  /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框。带上名字就是给它换一次凭据 */
+  onChatgptLogin: (relogin?: { name: string; proxy: string }) => void;
 }) {
   const editing: ProviderView | null =
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
@@ -89,8 +102,13 @@ export function UpstreamDialog({
     editing ? formFromView(editing) : blankForm(),
   );
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
+  // ChatGPT 账号是登录来的，编辑它的那一套分节也不一样
+  const account = editing?.protocol === "chatgpt";
+  const sections = account ? ACCOUNT_SECTIONS : SECTIONS;
   const [section, setSection] = useState<Section>(
-    mode.kind === "edit" ? (mode.section ?? "connection") : "connection",
+    mode.kind === "edit"
+      ? (mode.section ?? (account ? "account" : "connection"))
+      : "connection",
   );
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(["connection"]));
 
@@ -274,7 +292,7 @@ export function UpstreamDialog({
     // 新建时没检测过就到了模型这一步：替用户检测一次，这一步才有内容可选。检测不产生费用
     if (to === "models" && !editing && catalog == null && !testing) void runTest();
   }
-  const index = SECTIONS.findIndex((s) => s.id === section);
+  const index = sections.findIndex((s) => s.id === section);
 
   const autoBilling =
     editing && !editing.billing
@@ -297,7 +315,9 @@ export function UpstreamDialog({
           {editing ? (
             <DialogDescription>
               <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
-              {protocolLabel(editing.protocol)} · {shortUrl(editing.base_url)}
+              {protocolLabel(editing.protocol)}
+              {/* 账号上游的地址是登录给的，改不了，写出来只是噪声 */}
+              {!account && ` · ${shortUrl(editing.base_url)}`}
             </DialogDescription>
           ) : (
             <DialogDescription className="sr-only">
@@ -307,13 +327,22 @@ export function UpstreamDialog({
         </DialogHeader>
 
         <StepNav
-          steps={SECTIONS}
+          steps={sections}
           current={section}
           done={editing ? undefined : visited}
           onPick={go}
         />
 
         <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 pb-1">
+          {section === "account" && editing && (
+            <ChatgptAccountSection
+              form={form}
+              set={set}
+              editing={editing}
+              ov={ov}
+              onRelogin={() => onChatgptLogin({ name: editing.name, proxy: editing.proxy })}
+            />
+          )}
           {section === "connection" && (
             <ConnectionSection
               form={form}
@@ -393,12 +422,12 @@ export function UpstreamDialog({
               </Button>
               {missing && <span className="tw-label text-muted-foreground">{missing}</span>}
               {index > 0 && (
-                <Button variant="outline" onClick={() => go(SECTIONS[index - 1]!.id)}>
+                <Button variant="outline" onClick={() => go(sections[index - 1]!.id)}>
                   上一步
                 </Button>
               )}
-              {index < SECTIONS.length - 1 ? (
-                <Button onClick={() => go(SECTIONS[index + 1]!.id)} disabled={missing != null}>
+              {index < sections.length - 1 ? (
+                <Button onClick={() => go(sections[index + 1]!.id)} disabled={missing != null}>
                   下一步
                 </Button>
               ) : (

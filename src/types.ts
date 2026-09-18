@@ -876,10 +876,16 @@ export interface OAuthView {
 
 // —— ChatGPT 账号 ——
 
-/** 一次登录。地址要在浏览器里打开，core 在本机等回调 */
+/** 在哪台设备上授权：这台机器的浏览器，还是把码输到另一台设备上 */
+export type ChatgptLoginMode = "browser" | "device";
+
+/** 一次登录。授权地址留在 Rust 侧，界面拿到的是码和输码的地址 */
 export interface ChatgptLogin {
   id: string;
-  authorize_url: string;
+  /** 要用户输进去的登录码。设备码登录才有 */
+  user_code?: string | null;
+  /** 让用户在另一台设备上打开的地址。设备码登录才有 */
+  verification_url?: string | null;
   expires_in_secs: number;
 }
 

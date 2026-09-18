@@ -5,6 +5,7 @@ import {
   latency,
   money,
   repeated,
+  resetIn,
   statusTone,
   tokens,
   when,
@@ -194,5 +195,26 @@ describe("金额", () => {
   });
   it("大额两位小数", () => {
     expect(usd(2_500_000)).toBe("$2.50");
+  });
+});
+
+describe("额度重置时间", () => {
+  it("按量级说，不精确到分", () => {
+    expect(resetIn(90)).toBe("2 分钟后");
+    expect(resetIn(3 * 3600)).toBe("3 小时后");
+    expect(resetIn(4 * 86400)).toBe("4 天后");
+  });
+  /** 59 分 30 秒说成「60 分钟后」是错的量级 */
+  it("进位之后换下一个量级", () => {
+    expect(resetIn(3570)).toBe("1 小时后");
+    expect(resetIn(86_000)).toBe("1 天后");
+  });
+  /** 「0 分钟后」读起来像已经重置了，而那时额度还是满的 */
+  it("不足一分钟不说成零", () => {
+    expect(resetIn(20)).toBe("1 分钟内");
+  });
+  it("上游没给就是不知道，不猜", () => {
+    expect(resetIn(null)).toBeNull();
+    expect(resetIn(undefined)).toBeNull();
   });
 });

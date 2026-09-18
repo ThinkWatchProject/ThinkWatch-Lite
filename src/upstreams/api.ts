@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChatgptLogin,
+  ChatgptLoginMode,
   ChatgptLoginStatus,
   ChatgptUsage,
   ConfigWritten,
@@ -65,10 +66,12 @@ export const api = {
     invoke<ConfigWritten>("delete_proxy", { name, baseVersion }),
   testProxy: (test: ProxyTest) => invoke<L1Result>("test_proxy", { test }),
 
-  /** 开始登录并打开授权页。授权地址留在 Rust 侧，界面不经手 */
-  startChatgptLogin: (name: string, proxy: string) =>
-    invoke<ChatgptLogin>("start_chatgpt_login", { name, proxy }),
+  /** 开始登录。浏览器登录会顺手打开授权页 —— 授权地址留在 Rust 侧，界面不经手 */
+  startChatgptLogin: (name: string, proxy: string, mode: ChatgptLoginMode) =>
+    invoke<ChatgptLogin>("start_chatgpt_login", { name, proxy, mode }),
   reopenChatgptLogin: (id: string) => invoke<void>("reopen_chatgpt_login", { id }),
+  /** 把登录码放进剪贴板。码也留在 Rust 侧：界面拿不到一个写剪贴板的口子 */
+  copyChatgptCode: (id: string) => invoke<void>("copy_chatgpt_code", { id }),
   chatgptLoginStatus: (id: string) => invoke<ChatgptLoginStatus>("chatgpt_login_status", { id }),
   cancelChatgptLogin: (id: string) => invoke<ChatgptLoginStatus>("cancel_chatgpt_login", { id }),
   chatgptUsage: (name: string) => invoke<ChatgptUsage>("chatgpt_usage", { name }),
