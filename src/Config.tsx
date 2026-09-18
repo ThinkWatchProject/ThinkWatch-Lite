@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import DryRun from "./DryRun";
 import Update from "./Update";
+import NoticeSettings from "./NoticeSettings";
 import type { ConfigText, NicView, Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -816,6 +817,7 @@ export default function Config({
       )}
 
       {section === "settings" && <Update />}
+      {section === "settings" && <NoticeSettings />}
 
       {section === "gateway" && (
         <ListenSection ov={ov} configVersion={configVersion} />
