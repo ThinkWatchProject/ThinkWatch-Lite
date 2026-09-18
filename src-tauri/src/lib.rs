@@ -1261,6 +1261,7 @@ pub fn run() {
             take_pending_view,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
+            chatgpt::copy_chatgpt_code,
             chatgpt::chatgpt_login_status,
             chatgpt::cancel_chatgpt_login,
             chatgpt::chatgpt_usage,

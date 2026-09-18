@@ -16,7 +16,6 @@ import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import type { Overview, PricingStatus } from "@/types";
 import { api, type UpstreamStats } from "./api";
-import { ChatgptAccountDialog } from "./ChatgptAccountDialog";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { when } from "@/format";
@@ -35,8 +34,8 @@ export type UpstreamTab = "upstreams" | "proxies" | "pricing";
 type DialogState =
   | null
   | { kind: "upstream"; mode: UpstreamDialogMode }
-  | { kind: "chatgpt-login" }
-  | { kind: "chatgpt-account"; name: string }
+  /** `relogin`：给已有的 ChatGPT 账号换一次凭据，名称和出站方式沿用它的 */
+  | { kind: "chatgpt-login"; relogin?: { name: string; proxy: string } }
   | { kind: "delete-upstream"; name: string }
   | { kind: "test"; name: string }
   | { kind: "link"; provider: string | null }
@@ -284,7 +283,8 @@ export default function UpstreamsPage({
                 linkTest: (name) => setDialog({ kind: "link", provider: name }),
                 speedTest: (name) => setDialog({ kind: "speed", provider: name }),
                 refreshModels: (name) => void refreshModels(name),
-                account: (name) => setDialog({ kind: "chatgpt-account", name }),
+                account: (name) =>
+                  setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
                 toggle: (p) => void toggle(p.name),
                 locate: (name) => onOpenConfigFile(name),
                 remove: (name) => setDialog({ kind: "delete-upstream", name }),
@@ -390,7 +390,7 @@ export default function UpstreamsPage({
             setDialog(null);
             onNavigate("guard");
           }}
-          onChatgptLogin={() => setDialog({ kind: "chatgpt-login" })}
+          onChatgptLogin={(relogin) => setDialog({ kind: "chatgpt-login", relogin })}
         />
       )}
       {dialog?.kind === "delete-upstream" && (
@@ -417,12 +417,10 @@ export default function UpstreamsPage({
       {dialog?.kind === "chatgpt-login" && (
         <ChatgptLoginDialog
           ov={ov}
+          relogin={dialog.relogin}
           onClose={() => setDialog(null)}
           onSaved={() => changed()}
         />
-      )}
-      {dialog?.kind === "chatgpt-account" && (
-        <ChatgptAccountDialog name={dialog.name} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === "test" && (
         <TestConnectionDialog ov={ov} name={dialog.name} onClose={() => setDialog(null)} />

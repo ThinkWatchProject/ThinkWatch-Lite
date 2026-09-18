@@ -202,3 +202,21 @@ export function densify(
   }
   return out;
 }
+
+/**
+ * 额度还有多久重置。
+ *
+ * **只给一个量级。**这句话贴在进度条旁边，读它是为了知道「今天还够不够用」，
+ * 不是为了对表 —— 精确到分钟反而要多读一眼。
+ *
+ * 不足一分钟不说「0 分钟后」：那读起来像已经重置了，而那时额度还是满的。
+ */
+export function resetIn(secs: number | null | undefined): string | null {
+  if (secs == null || secs < 0) return null;
+  if (secs < 60) return "1 分钟内";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} 分钟后`;
+  const hours = Math.round(secs / 3600);
+  if (hours < 24) return `${hours} 小时后`;
+  return `${Math.round(secs / 86400)} 天后`;
+}
