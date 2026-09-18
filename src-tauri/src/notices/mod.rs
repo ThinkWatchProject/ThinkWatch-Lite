@@ -26,10 +26,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+pub mod prefs;
 pub mod rules;
 pub mod sink;
 mod store;
 
+pub use prefs::{Category, Mode};
 pub use sink::{Sink, SystemSink};
 
 /// 去抖：故障类要持续这么久才说。用户已经在等结果的那几件事不等（见 [`Signal::hold`]）
@@ -142,6 +144,8 @@ impl Signal {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Notice {
     pub key: String,
+    /// 属于哪一类。「不再通知此类」按它来
+    pub category: Category,
     pub level: Level,
     pub title: String,
     pub body: String,
@@ -184,14 +188,26 @@ struct State {
 pub struct Notices {
     state: Mutex<State>,
     sinks: Vec<Box<dyn Sink>>,
-    /// 落盘的位置。关窗期间发生的事要留得住
-    file: Option<std::path::PathBuf>,
+    /// 每一类怎么对待
+    prefs: Mutex<prefs::Prefs>,
+    /// 落盘的目录。关窗期间发生的事要留得住，设置也在这里
+    dir: Option<std::path::PathBuf>,
 }
 
+const OPEN_FILE: &str = "notices.json";
+const PREFS_FILE: &str = "notice-prefs.json";
+
 impl Notices {
-    /// `file` 是留存的位置；`None` 表示只在内存里（测试用）
-    pub fn new(sinks: Vec<Box<dyn Sink>>, file: Option<std::path::PathBuf>) -> Arc<Self> {
-        let open = file.as_deref().map(store::load).unwrap_or_default();
+    /// `dir` 是留存的目录；`None` 表示只在内存里（测试用）
+    pub fn new(sinks: Vec<Box<dyn Sink>>, dir: Option<std::path::PathBuf>) -> Arc<Self> {
+        let open = dir
+            .as_deref()
+            .map(|d| store::load(&d.join(OPEN_FILE)))
+            .unwrap_or_default();
+        let prefs = dir
+            .as_deref()
+            .map(|d| prefs::load(&d.join(PREFS_FILE)))
+            .unwrap_or_default();
         Arc::new(Self {
             state: Mutex::new(State {
                 open: open
@@ -211,8 +227,51 @@ impl Notices {
                 ..Default::default()
             }),
             sinks,
-            file,
+            prefs: Mutex::new(prefs),
+            dir,
         })
+    }
+
+    /// 每一类现在怎么对待，按设置页的顺序
+    pub fn modes(&self) -> Vec<(Category, Mode)> {
+        let p = self.prefs.lock().expect("锁未中毒");
+        Category::ALL.iter().map(|c| (*c, p.mode(*c))).collect()
+    }
+
+    /// 改一类的对待方式。**改成「关闭」时，这一类挂着的也一并撤掉** —— 用户说的是
+    /// 「这类事别再出现」，留着一条旧的等于没听见
+    pub fn set_mode(&self, category: Category, mode: Mode) -> std::io::Result<()> {
+        let saved = {
+            let mut p = self.prefs.lock().expect("锁未中毒");
+            p.set(category, mode);
+            p.clone()
+        };
+        if let Some(dir) = &self.dir {
+            prefs::save(&dir.join(PREFS_FILE), &saved)?;
+        }
+        if mode == Mode::Off {
+            let gone: Vec<String> = {
+                let mut g = self.state.lock().expect("锁未中毒");
+                let keys: Vec<String> = g
+                    .open
+                    .values()
+                    .filter(|o| o.notice.category == category)
+                    .map(|o| o.notice.key.clone())
+                    .collect();
+                for k in &keys {
+                    g.open.remove(k);
+                }
+                keys
+            };
+            for k in &gone {
+                for s in &self.sinks {
+                    s.withdraw(k);
+                }
+            }
+            self.persist();
+            self.changed();
+        }
+        Ok(())
     }
 
     /// 界面要显示的那一份，最近的在前
@@ -263,6 +322,11 @@ impl Notices {
     }
 
     fn raise(self: &Arc<Self>, signal: Signal, at_ms: u64) {
+        let category = Category::of(&signal.key);
+        let mode = self.prefs.lock().expect("锁未中毒").mode(category);
+        if mode == Mode::Off {
+            return;
+        }
         let now = Instant::now();
         let (notice, deliver, due) = {
             let mut g = self.state.lock().expect("锁未中毒");
@@ -285,6 +349,7 @@ impl Notices {
                 },
                 None => Notice {
                     key: signal.key.clone(),
+                    category,
                     level: signal.level,
                     title: signal.title.clone(),
                     body: signal.body.clone(),
@@ -297,7 +362,8 @@ impl Notices {
             };
             // 抖动中、被抑制、或者已经弹过：只留记号
             let quiet = muted.is_some_and(|until| now < until) || suppressed || notice.notified;
-            let wants = signal.level.interrupts() && !quiet;
+            // 用户说了「只进应用内」的，级别再高也不打断
+            let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
             let deliver = wants && !signal.hold && take_token(&mut g, signal.level);
             g.open.insert(
@@ -416,6 +482,7 @@ impl Notices {
             for s in &self.sinks {
                 s.show(&Notice {
                     key: format!("{key}:recovered"),
+                    category: was.notice.category,
                     level: Level::Info,
                     title: format!("{}已恢复", was.notice.title),
                     body: String::new(),
@@ -432,9 +499,9 @@ impl Notices {
     }
 
     fn persist(&self) {
-        let Some(file) = &self.file else { return };
+        let Some(dir) = &self.dir else { return };
         let list = self.list();
-        store::save(file, &list);
+        store::save(&dir.join(OPEN_FILE), &list);
     }
 
     /// 界面在开着的话，让它重画

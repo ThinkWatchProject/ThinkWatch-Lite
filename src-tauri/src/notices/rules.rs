@@ -21,6 +21,7 @@ const CONFIG: &str = "config";
 pub fn suppresses(key: &str) -> &'static [&'static str] {
     match key {
         "gateway" => &[
+            "upstream:",
             "quota:",
             "credential:",
             "auth:",
@@ -68,6 +69,25 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             .iter()
             .filter(|w| w.status.as_deref() != Some("rejected"))
             .map(|w| Signal::cleared(format!("quota:{provider}:{}", w.window)))
+            .collect(),
+        // **熔断打开才算出事。**冷却到点的那条 `closed` 只是「可以再试」，不是恢复了 ——
+        // 当成恢复的话，一家一直不通的上游每分钟开合一次，去抖永远等不满
+        Event::HealthChanged {
+            provider, state, ..
+        } if state == "open" => vec![
+            Signal::raised(
+                format!("upstream:{provider}"),
+                Level::Warning,
+                format!("上游「{provider}」无法连接"),
+            )
+            .body("连续多次请求失败，暂停向其转发。".to_string())
+            .view(UPSTREAMS),
+        ],
+        // 恢复要有证据：这家真的又接下了一个请求
+        Event::RequestRouted { attempts, .. } => attempts
+            .iter()
+            .filter(|a| a.outcome == "served")
+            .map(|a| Signal::cleared(format!("upstream:{}", a.provider)))
             .collect(),
         Event::CredentialExpired {
             provider, detail, ..

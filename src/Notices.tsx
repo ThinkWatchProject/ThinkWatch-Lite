@@ -4,12 +4,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { toast } from "sonner";
 import { when } from "@/format";
 import { cn } from "@/lib/utils";
 
 /** 一条提醒。判定在 Rust 侧，这里只负责显示 */
 export interface Notice {
   key: string;
+  /** 属于哪一类。「不再弹出此类」按它来 */
+  category: string;
   level: "info" | "warning" | "critical";
   title: string;
   body: string;
@@ -50,6 +53,13 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
   function dismiss(key: string) {
     setList((l) => l.filter((n) => n.key !== key));
     void invoke("dismiss_notice", { key });
+  }
+
+  /** 这一类以后只记录、不弹出。**按类**：同一类事明天还会再发生 */
+  function quiet(category: string) {
+    invoke("set_notice_pref", { category, mode: "app" })
+      .then(() => toast.success("此类提醒今后仅在应用内显示，可在设置中更改"))
+      .catch((e) => toast.error(typeof e === "string" ? e : String(e)));
   }
 
   const urgent = list.filter((n) => n.level !== "info").length;
@@ -108,7 +118,24 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
                     )}
                   </p>
                   {n.body && <p className="tw-label text-muted-foreground">{n.body}</p>}
-                  <p className="tw-label text-muted-foreground">{when(n.at_ms)}</p>
+                  <p className="tw-label text-muted-foreground">
+                    {when(n.at_ms)}
+                    {n.notified && (
+                      <>
+                        {" · "}
+                        <button
+                          type="button"
+                          className="underline-offset-2 hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            quiet(n.category);
+                          }}
+                        >
+                          不再弹出此类
+                        </button>
+                      </>
+                    )}
+                  </p>
                 </div>
                 <Button
                   variant="ghost"

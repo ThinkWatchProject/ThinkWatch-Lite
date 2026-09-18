@@ -204,6 +204,99 @@ async fn what_is_dismissed_stays_dismissed_until_it_happens_again() {
     assert_eq!(b.titles().len(), 2, "划掉之后再次发生要重新说");
 }
 
+// ---------------------------------------------------------------- 每一类的设置
+
+#[tokio::test]
+async fn a_category_turned_off_is_not_even_recorded() {
+    let b = bed();
+    b.bus.set_mode(Category::Quota, Mode::Off).unwrap();
+    b.bus.ingest(quota("relay"), T0);
+    assert!(b.titles().is_empty());
+    assert!(b.bus.list().is_empty(), "关闭的一类不该留在列表里");
+}
+
+#[tokio::test]
+async fn a_category_kept_in_the_app_is_listed_but_never_interrupts() {
+    let b = bed();
+    b.bus.set_mode(Category::Quota, Mode::App).unwrap();
+    b.bus.ingest(quota("relay"), T0);
+    assert!(b.titles().is_empty(), "只进应用内的不该弹");
+    assert_eq!(b.bus.list().len(), 1);
+    assert_eq!(b.bus.list()[0].category, Category::Quota);
+}
+
+#[tokio::test]
+async fn turning_a_category_off_takes_what_is_open_with_it() {
+    let b = bed();
+    b.bus.ingest(quota("relay"), T0);
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通").now(),
+        T0 + 1,
+    );
+    b.bus.set_mode(Category::Quota, Mode::Off).unwrap();
+    let keys: Vec<String> = b.bus.list().into_iter().map(|n| n.key).collect();
+    assert_eq!(keys, ["proxy:hk"]);
+    assert!(
+        b.withdrawn
+            .lock()
+            .unwrap()
+            .contains(&"quota:relay:weekly".to_string())
+    );
+}
+
+#[test]
+fn every_key_belongs_to_the_category_its_setting_is_shown_under() {
+    for (key, c) in [
+        ("gateway", Category::Gateway),
+        ("upstream:relay", Category::Upstream),
+        ("quota:chatgpt:5h", Category::Quota),
+        ("credential:chatgpt", Category::Credential),
+        ("auth:relay", Category::Credential),
+        ("writeback:claude-max", Category::Credential),
+        ("proxy:hk", Category::Proxy),
+        ("toolwall:relay", Category::Security),
+        ("scan", Category::Security),
+        ("config", Category::Config),
+        ("storage", Category::Storage),
+    ] {
+        assert_eq!(Category::of(key), c, "{key}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unreachable_upstream_stays_in_the_app_by_default_and_needs_real_evidence_to_clear() {
+    let b = bed();
+    let health = |state: &str| tw_api::Event::HealthChanged {
+        id: 1,
+        provider: "relay".into(),
+        state: state.into(),
+        at_ms: T0,
+    };
+    b.bus.on_event(&health("open"));
+    // 冷却到点的那条「关闭」只是可以再试，**不是恢复**
+    b.bus.on_event(&health("closed"));
+    tokio::time::advance(Duration::from_secs(90)).await;
+    tokio::task::yield_now().await;
+    assert!(b.titles().is_empty(), "多数人配了回退，默认不打断");
+    assert_eq!(b.bus.list().len(), 1, "冷却结束不该把它撤掉");
+
+    // 这家真的又接下了一个请求
+    b.bus.on_event(&tw_api::Event::RequestRouted {
+        id: 2,
+        rule: "兜底".into(),
+        group: None,
+        attempts: vec![tw_api::AttemptView {
+            provider: "relay".into(),
+            outcome: "served".into(),
+            status: Some(200),
+            error: None,
+            ms: 800,
+        }],
+        billing: "per-token".into(),
+    });
+    assert!(b.bus.list().is_empty());
+}
+
 // ---------------------------------------------------------------- 规则
 
 #[test]

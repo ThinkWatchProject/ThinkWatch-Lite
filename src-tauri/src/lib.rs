@@ -1256,6 +1256,8 @@ pub fn run() {
             upstreams::test_proxy,
             notices_list,
             dismiss_notice,
+            notice_prefs,
+            set_notice_pref,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
             chatgpt::chatgpt_login_status,
@@ -1326,7 +1328,7 @@ pub fn run() {
                     Box::new(notices::sink::AppSink::new(handle.clone())),
                     Box::new(notices::SystemSink::new(handle.clone())),
                 ],
-                Some(data_dir().join("notices.json")),
+                Some(data_dir()),
             );
             app.manage(notices.clone());
             app.manage(AppState {
@@ -1630,6 +1632,43 @@ fn notices_list(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<notices
 #[tauri::command]
 fn dismiss_notice(notices: tauri::State<'_, Arc<notices::Notices>>, key: String) {
     notices.dismiss(&key);
+}
+
+/// 设置页上的一行：一类提醒，和它现在怎么对待
+#[derive(serde::Serialize)]
+struct NoticePref {
+    category: notices::Category,
+    label: &'static str,
+    mode: notices::Mode,
+}
+
+fn notice_prefs_view(n: &notices::Notices) -> Vec<NoticePref> {
+    n.modes()
+        .into_iter()
+        .map(|(category, mode)| NoticePref {
+            category,
+            label: category.label(),
+            mode,
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn notice_prefs(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<NoticePref> {
+    notice_prefs_view(&notices)
+}
+
+/// 改一类提醒的对待方式。**返回改完之后的全部**，界面以它为准
+#[tauri::command]
+fn set_notice_pref(
+    notices: tauri::State<'_, Arc<notices::Notices>>,
+    category: notices::Category,
+    mode: notices::Mode,
+) -> Result<Vec<NoticePref>, String> {
+    notices
+        .set_mode(category, mode)
+        .map_err(|e| format!("无法保存设置：{e}"))?;
+    Ok(notice_prefs_view(&notices))
 }
 
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。
