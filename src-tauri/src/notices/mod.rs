@@ -26,6 +26,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod prefs;
 pub mod rules;
 pub mod sink;
@@ -272,6 +274,15 @@ impl Notices {
             self.changed();
         }
         Ok(())
+    }
+
+    /// 这一条点开之后落在哪一页。**已经不在列表里的**（恢复了、被划掉了）按类别给
+    pub fn view_of(&self, key: &str) -> String {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|g| g.open.get(key).and_then(|o| o.notice.view.clone()))
+            .unwrap_or_else(|| rules::default_view(Category::of(key)).to_string())
     }
 
     /// 界面要显示的那一份，最近的在前
@@ -546,6 +557,32 @@ fn take_token(state: &mut State, level: Level) -> bool {
     }
     state.tokens -= 1;
     true
+}
+
+/// 点通知之后要落到的那一页。**窗口这时可能根本不存在** —— 新建的界面挂上之后自己来取
+static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
+
+/// 点了系统通知：把窗口带回来，落到能处理这件事的那一页
+pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
+    use tauri::{Emitter, Manager};
+    let view = app
+        .try_state::<Arc<Notices>>()
+        .map(|n| n.view_of(key))
+        .unwrap_or_else(|| rules::default_view(Category::of(key)).to_string());
+    if let Ok(mut g) = PENDING_VIEW.lock() {
+        *g = Some(view.clone());
+    }
+    // 通知的回调不在主线程上，建窗口要回到主线程
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = crate::show_main_window(&a);
+        let _ = a.emit("open-view", &view);
+    });
+}
+
+/// 取走待落的那一页。取一次就没了：下次开窗不该又跳过去
+pub fn take_pending_view() -> Option<String> {
+    PENDING_VIEW.lock().ok().and_then(|mut g| g.take())
 }
 
 fn now_ms() -> u64 {

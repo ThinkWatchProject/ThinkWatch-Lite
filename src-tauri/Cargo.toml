@@ -63,6 +63,14 @@ strip = "symbols"
 # panic，而 abort 会让那层防护失效。
 panic = "unwind"
 
+# 系统通知走 UNUserNotificationCenter：能原地更新、撤回、点开落到对应页面（见
+# `notices/macos.rs`）。版本跟着 Tauri 自己用的那一套
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"
+
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

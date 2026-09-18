@@ -15,6 +15,16 @@ const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const CONFIG: &str = "config";
 
+/// 一类提醒默认落在哪一页（那一条已经不在列表里时用）
+pub fn default_view(c: super::Category) -> &'static str {
+    use super::Category;
+    match c {
+        Category::Gateway | Category::Config | Category::Storage => CONFIG,
+        Category::Security => SECURITY,
+        Category::Upstream | Category::Quota | Category::Credential | Category::Proxy => UPSTREAMS,
+    }
+}
+
 /// 这个键开着的时候，压下哪些键（前缀匹配）。
 ///
 /// **网关不在服务时不必再说它下面每一家怎么了** —— 那时用户要做的只有一件事。

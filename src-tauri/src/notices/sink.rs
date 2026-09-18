@@ -39,12 +39,12 @@ impl Sink for AppSink {
     }
 }
 
-/// 系统通知。
+/// 系统通知的退路：`tauri-plugin-notification`。
 ///
-/// **目前用的是 `tauri-plugin-notification`，它在桌面端只能「发出即不管」** ——
-/// 不能按 id 原地更新、不能撤回、点了没有回调（2026-09-18 查过插件源码和上游
-/// issue）。所以这里的 `update` 和 `withdraw` 是空的：原地更新和恢复时撤回要等
-/// macOS 的原生实现（`UNUserNotificationCenter`），那时换掉这一个类型即可。
+/// **装好的 macOS 应用不走这里**，走 `macos::NativeSink`。这个插件在桌面端只能「发出即
+/// 不管」—— 不能按 id 原地更新、不能撤回、点了没有回调，所以 `update` 和 `withdraw`
+/// 是空的。留着它是给 `tauri dev`（不在应用包里，原生通知中心拿不到）和还没有原生
+/// 实现的平台用。
 pub struct SystemSink {
     app: tauri::AppHandle,
 }
