@@ -303,5 +303,5 @@ export function takesEffectText(t: TakesEffect): string {
     : "重新启动客户端后生效；通过环境变量读取配置的客户端需重新打开终端。";
 }
 
-/** 只查证过字段名的客户端要说出来。实测过的不用说 */
+/** 只查证过字段名的客户端要说出来。实测过的不用说，接管后在本机收到过请求的也不用说 */
 export const FIELDS_ONLY_TEXT = "字段名已查证，尚未在本机实际运行验证。";
