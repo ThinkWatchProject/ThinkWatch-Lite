@@ -14,6 +14,8 @@ import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
 import { secretLabel, storageText } from "./labels";
+import { useText } from "@/i18n";
+import { dashboardText } from "./Dashboard.i18n";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -93,6 +95,7 @@ function Block({ name, children }: { name: string; children: React.ReactNode }) 
  * 用分位数不用平均值：AI 延迟是长尾分布，平均值会被极端值拉偏。
  */
 function Spread({ rows, max }: { rows: LatencyView[]; max: number }) {
+  const t = useText(dashboardText);
   const shown = [...rows].sort((a, b) => b.samples - a.samples).slice(0, ROWS);
   return (
     <>
@@ -128,13 +131,13 @@ function Spread({ rows, max }: { rows: LatencyView[]; max: number }) {
               (l.samples < 10 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")
             }
           >
-            {l.samples} 次
+            {t.times(l.samples)}
           </span>
         </div>
       ))}
       {rows.length > shown.length && (
         <p className="tw-label text-muted-foreground">
-          另有 {rows.length - shown.length} 项未列出
+          {t.moreNotListed(rows.length - shown.length)}
         </p>
       )}
     </>
@@ -185,18 +188,20 @@ function Stat({
  * 一些 token 不是问题，少用也不是成绩。
  */
 function Delta({ v, more, good }: { v: number; more: string; good?: "down" }) {
+  const t = useText(dashboardText);
   const better = good === "down" && v < 0;
   return (
     <span className={"tw-label " + (better ? "text-cache-hit" : "text-muted-foreground")}>
-      较上一个{more} {v < 0 ? "↓" : "↑"} {Math.abs(v * 100).toFixed(0)}%
+      {t.delta(more, v < 0 ? "↓" : "↑", Math.abs(v * 100).toFixed(0))}
     </span>
   );
 }
 
 /** 缓存构成条上的一段。 */
 function Swatch({ color, name, n }: { color: string; name: string; n: number }) {
+  const t = useText(dashboardText);
   return (
-    <Tip text={`${n.toLocaleString()} token`}>
+    <Tip text={t.tokens(n.toLocaleString(), n)}>
       <span className="flex items-center gap-1.5">
         <span className={"inline-block size-2 shrink-0 rounded-[2px] " + color} />
         {name} {compact(n)}
@@ -216,6 +221,7 @@ function Swatch({ color, name, n }: { color: string; name: string; n: number }) 
  * 后台**。圆角卡片的网格恰恰是最像后台的做法。
  */
 export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | null }) {
+  const t = useText(dashboardText);
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);
   /**
    * 图按哪个口径画。
@@ -238,7 +244,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
    * 直接 setState 会让整页重画一遍，而这一切发生在什么都没发生的时候。
    */
   const [d, setD] = useStableState<Data | null>(null);
-  const gatewayHint = "本机网关地址";
+  const gatewayHint = t.gatewayHint;
   const [error, setError] = useState<string | null>(null);
   /** 点开的那一条。**抽屉是右侧覆盖的，不是跳页** */
   const [open, setOpen] = useState<number | null>(null);
@@ -311,7 +317,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   */
   const header = (
     <div className="flex flex-wrap items-center gap-3">
-      <h2 className="tw-title font-semibold">用量概览</h2>
+      <h2 className="tw-title font-semibold">{t.title}</h2>
       <div className="ml-auto">
         <RangePicker value={range} onChange={setRange} />
       </div>
@@ -330,8 +336,8 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       value={by}
       onValueChange={(v) => v && setBy(v as "token" | "cost")}
     >
-      <ToggleGroupItem value="token">token</ToggleGroupItem>
-      <ToggleGroupItem value="cost">费用</ToggleGroupItem>
+      <ToggleGroupItem value="token">{t.byTokens}</ToggleGroupItem>
+      <ToggleGroupItem value="cost">{t.byCost}</ToggleGroupItem>
     </ToggleGroup>
   );
 
@@ -356,9 +362,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   }
 
   const s = d.summary;
-  const t = triggers(null, d);
+  const has = triggers(null, d);
   const spent = s.cost_micros_exact + s.cost_micros_estimated;
-  const nothingYet = !t.cost;
+  const nothingYet = !has.cost;
 
   /*
     **「输入」是送往上游的全部上下文，包含命中缓存的那部分。**
@@ -405,7 +411,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     }
   } else {
     for (const b of d.buckets_by_model ?? []) {
-      const name = b.name || "未知模型";
+      const name = b.name || t.unknownModel;
       const cost = b.cost_micros_exact + b.cost_micros_estimated;
       const tok = b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens;
       money.set(name, (money.get(name) ?? 0) + cost);
@@ -421,7 +427,8 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   const rest = ranked.slice(5);
   // 画的顺序是从下往上：**占得少的垫底、占得多的在上**，最重的那一层
   // 在视觉上也该最重。颜色跟着走，chart-1 最亮给最多的那个。
-  const keys = rest.length > 0 ? ["其他", ...[...top].reverse()] : [...top].reverse();
+  const otherKey = t.other;
+  const keys = rest.length > 0 ? [otherKey, ...[...top].reverse()] : [...top].reverse();
   const shade = [
     "var(--chart-5)",
     "var(--chart-4)",
@@ -471,12 +478,18 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     const sum = [...(slot?.values() ?? [])].reduce((a, v) => a + v, 0);
     const row: Record<string, number | string> = {
       label: live
-        ? `${fmtBucket(g.at_ms, bucketMs)}　${useTokens ? `${compact(sum)} token` : usd(sum)}`
-        : `${fmtBucket(g.at_ms, bucketMs)}　${
+        ? t.liveBucket(
+            fmtBucket(g.at_ms, bucketMs),
+            useTokens ? t.tokens(compact(sum), sum) : usd(sum),
+          )
+        : t.bucket(
+            fmtBucket(g.at_ms, bucketMs),
             useTokens
-              ? `${compact(sum)} token`
-              : usd(g.cost_micros_exact + g.cost_micros_estimated)
-          }　${g.requests} 次${g.failed ? `（${g.failed} 次失败）` : ""}`,
+              ? t.tokens(compact(sum), sum)
+              : usd(g.cost_micros_exact + g.cost_micros_estimated),
+            g.requests,
+            g.failed,
+          ),
     };
     let other = 0;
     for (const [name, v] of slot ?? []) {
@@ -487,7 +500,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     }
     // 没有值的那几层要显式给 0，否则 recharts 会把这一格整条断开
     for (const k of top) row[k] ??= 0;
-    if (rest.length > 0) row["其他"] = other;
+    if (rest.length > 0) row[otherKey] = other;
     return row;
   });
 
@@ -501,13 +514,14 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     空话；只说档位的话，用户不知道它到底拦下过什么。
   */
   const sec = ov?.security;
-  const label = (m: string) => (m === "enforce" ? "拦截" : m === "off" ? "关闭" : "观察");
+  const label = (m: string) =>
+    m === "enforce" ? t.modeEnforce : m === "off" ? t.modeOff : t.modeObserve;
   const leaked = d.leaks.reduce((a, l) => a + l.requests, 0);
   const guards = sec
     ? [
         {
           key: "redact",
-          name: "出站脱敏",
+          name: t.redact,
           mode: sec.redact,
           /*
             两档留下的痕迹不是同一种：观察档记的是「检测到的外泄」，
@@ -517,39 +531,35 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           hits: sec.redact === "enforce" ? s.redacted_requests : leaked,
           saw:
             sec.redact === "off"
-              ? "未启用，出站内容不做检查"
+              ? t.redactOff
               : sec.redact === "enforce"
                 ? s.redacted_requests > 0
-                  ? `已替换 ${s.redacted_requests} 个请求中的凭据`
-                  : "未发现需要替换的内容"
+                  ? t.redacted(s.redacted_requests)
+                  : t.nothingToReplace
                 : leaked > 0
-                  ? `检测到 ${leaked} 次凭据外泄，未做替换`
-                  : "未检测到凭据外泄",
+                  ? t.leaksDetected(leaked)
+                  : t.noLeaks,
         },
         {
           key: "inspect",
-          name: "工具调用审查",
+          name: t.inspect,
           mode: sec.inspect_tools,
           hits: s.flagged_requests,
           saw:
             sec.inspect_tools === "off"
-              ? "未启用，上游返回的工具调用不做检查"
+              ? t.inspectOff
               : s.flagged_requests > 0
-                ? `${s.flagged_requests} 个请求返回了可疑工具调用` +
-                  (sec.inspect_tools === "enforce" ? "，已切断" : "")
-                : "未发现可疑工具调用",
+                ? t.flagged(s.flagged_requests, sec.inspect_tools === "enforce")
+                : t.noFlagged,
         },
         {
           key: "scan",
-          name: "配置面扫描",
+          name: t.scan,
           mode: sec.scan_configs,
           // **这一行不跟着时间区间变。**它说的是此刻磁盘上的状态，而
           // 文件现在什么样和你选了看几天没有关系。
           hits: 0,
-          saw:
-            sec.scan_configs === "off"
-              ? "未启用，客户端配置文件不做监控"
-              : "持续监控客户端配置文件，新增可疑内容会立即提示",
+          saw: sec.scan_configs === "off" ? t.scanOff : t.scanOn,
         },
       ]
     : [];
@@ -569,16 +579,14 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
         <Stat
           n={compact(tokensAt)}
-          unit="token"
+          unit={t.tokenUnit(tokensAt)}
           note={
             <>
               {beforeTokens > 0 && (
                 <Delta v={(tokensTotal - beforeTokens) / beforeTokens} more={range.compare} />
               )}
-              <Tip text={`${tokensTotal.toLocaleString()} token`}>
-                <span>
-                  输入 {compact(ctx)} · 输出 {compact(s.output_tokens)}
-                </span>
+              <Tip text={t.tokens(tokensTotal.toLocaleString(), tokensTotal)}>
+                <span>{t.inputOutput(compact(ctx), compact(s.output_tokens))}</span>
               </Tip>
             </>
           }
@@ -592,49 +600,51 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 <Delta v={(spent - beforeCost) / beforeCost} more={range.compare} good="down" />
               )}
               {s.cost_micros_estimated > 0 && (
-                <Tip text="此部分金额为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或该模型的单价取自其他平台。">
+                <Tip text={t.estimatedTip}>
                   <span className="underline decoration-dotted underline-offset-2">
-                    含估算 {usd(s.cost_micros_estimated)}
+                    {t.estimated(usd(s.cost_micros_estimated))}
                   </span>
                 </Tip>
               )}
               {s.unpriced_requests > 0 && (
-                <Tip text="这些请求所用的模型未定价，费用未计入上方金额。在「上游 › 价目表」中设置价格后，之后的请求将按该价格计入。">
+                <Tip text={t.unpricedTip}>
                   <span className="underline decoration-dotted underline-offset-2">
-                    {s.unpriced_requests} 条无法计价
+                    {t.unpriced(s.unpriced_requests)}
                   </span>
                 </Tip>
               )}
               {(s.no_usage_requests ?? 0) > 0 && (
-                <Tip text="这些请求没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入上方金额。">
+                <Tip text={t.noUsageTip}>
                   <span className="underline decoration-dotted underline-offset-2">
-                    {s.no_usage_requests} 条无用量
+                    {t.noUsage(s.no_usage_requests ?? 0)}
                   </span>
                 </Tip>
               )}
               {s.subscription_requests > 0 && (
-                <Tip text="订阅制上游不按用量产生费用，按 API 价目表折算的金额不代表实际费用，因此不计入。">
+                <Tip text={t.subscriptionTip}>
                   <span className="underline decoration-dotted underline-offset-2">
-                    订阅额度 {s.subscription_requests} 次
+                    {t.subscription(s.subscription_requests)}
                   </span>
                 </Tip>
               )}
               {s.cost_micros_estimated === 0 &&
                 s.unpriced_requests === 0 &&
                 (s.no_usage_requests ?? 0) === 0 &&
-                s.subscription_requests === 0 && <span>全部按价目表实测</span>}
+                s.subscription_requests === 0 && <span>{t.allMeasured}</span>}
             </>
           }
         />
 
         <Stat
           n={Math.round(requestsAt).toLocaleString()}
-          unit="次请求"
-          after={s.failed > 0 && <span className="tw-label text-destructive">{s.failed} 次失败</span>}
+          unit={t.requestUnit(Math.round(requestsAt))}
+          after={
+            s.failed > 0 && <span className="tw-label text-destructive">{t.failed(s.failed)}</span>
+          }
           note={
             <>
-              <span>失败率 {((s.failed / Math.max(1, s.requests)) * 100).toFixed(1)}%</span>
-              {live && <span>{inFlight > 0 ? `${inFlight} 个进行中` : "当前空闲"}</span>}
+              <span>{t.failureRate(((s.failed / Math.max(1, s.requests)) * 100).toFixed(1))}</span>
+              {live && <span>{inFlight > 0 ? t.inFlight(inFlight) : t.idle}</span>}
             </>
           }
         />
@@ -647,7 +657,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           keys={keys}
           colors={colors}
           height={200}
-          empty={live ? "等待请求。" : "所选区间内无请求记录。"}
+          empty={live ? t.waiting : t.noRequests}
         />
         {/*
           有失败的时段画在基线上。**不往高度里加** —— 加一格固定高度的
@@ -661,12 +671,12 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         </div>
         <div className="mt-1.5 flex justify-between tw-label text-muted-foreground">
           {(live
-            ? ["2 分钟前", "90 秒", "60 秒", "30 秒"]
+            ? t.liveTicks
             : [fmtBucket(d.since_ms ?? 0, bucketMs)]
           ).map((x) => (
             <span key={x}>{x}</span>
           ))}
-          <span className={live ? "text-foreground" : ""}>现在</span>
+          <span className={live ? "text-foreground" : ""}>{t.now}</span>
         </div>
         {/* 这一行有没有话说都占一行高：少一句就把下面整块往上提，
             正是切换时的那种来回动 */}
@@ -674,7 +684,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           {grid.some((g) => g.failed > 0) && (
             <>
               <span className="inline-block h-0.5 w-3.5 bg-destructive" />
-              <span>基线上的红色标出存在失败的时段</span>
+              <span>{t.failureMarks}</span>
             </>
           )}
           {/*
@@ -683,17 +693,14 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
             走；而两分钟里算不出分位延迟和命中率，那些连同顶部的数字
             一起按 24 小时算。
           */}
-          {live && (
-            <span>顶部数字与缓存、延迟、安全按最近 24 小时统计；模型排行跟随上图</span>
-          )}
+          {live && <span>{t.liveScope}</span>}
         </p>
       </div>
 
       {nothingYet && (
         <p className="mt-4 tw-body text-muted-foreground">
-          将客户端指向{gatewayHint}后，用量与费用将在此处显示。
-          {s.locally_answered > 0 &&
-            `已本地应答 ${s.locally_answered} 次客户端探测。客户端已连接网关，这些探测未产生费用。`}
+          {t.pointClients(gatewayHint)}
+          {s.locally_answered > 0 && t.probesAnswered(s.locally_answered)}
         </p>
       )}
 
@@ -707,16 +714,16 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           **这一块永远在。**它在「有数据」和「没数据」之间消失的话，
           切一次时间范围整页就上下弹一次。没有数据时留一行字占住。
         */}
-        <Block name="模型">
+        <Block name={t.models}>
           {keys.length === 0 && (
             <p className="tw-body text-muted-foreground">
-              {live ? "等待请求。" : "所选区间内无请求记录。"}
+              {live ? t.waiting : t.noRequests}
             </p>
           )}
           {[...keys].reverse().map((k, i) => {
-              const c = k === "其他" ? restMoney : (money.get(k) ?? 0);
-              const v = k === "其他" ? restVolume : (volume.get(k) ?? 0);
-              const n = k === "其他" ? restCount : (count.get(k) ?? 0);
+              const c = k === otherKey ? restMoney : (money.get(k) ?? 0);
+              const v = k === otherKey ? restVolume : (volume.get(k) ?? 0);
+              const n = k === otherKey ? restCount : (count.get(k) ?? 0);
               const color = colors[keys.length - 1 - i];
               return (
                 <div key={k} className="flex items-center gap-2.5 tw-body">
@@ -725,7 +732,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                     style={{ background: color }}
                   />
                   <span className="w-40 shrink-0 truncate" title={k}>
-                    {k === "其他" ? `其他 ${rest.length} 项` : k}
+                    {k === otherKey ? t.otherCount(rest.length) : k}
                   </span>
                   <span className="h-2.5 flex-1 rounded-sm bg-muted">
                     <span
@@ -736,7 +743,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                       }}
                     />
                   </span>
-                  <Tip text={`${v.toLocaleString()} token`}>
+                  <Tip text={t.tokens(v.toLocaleString(), v)}>
                     <span
                       className={
                         "w-16 shrink-0 text-right tw-num " +
@@ -755,7 +762,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                     {usd(c)}
                   </span>
                   <span className="w-11 shrink-0 text-right tw-label text-muted-foreground">
-                    {n} 次
+                    {t.times(n)}
                   </span>
                 </div>
               );
@@ -766,16 +773,16 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           缓存。**要的是率，不是累计量** —— 「省了多少」在一个长会话里
           只会一路涨，它回答不了「缓存到底有没有在起作用」。
         */}
-        <Block name="缓存">
+        <Block name={t.cache}>
           {ctx === 0 ? (
-            <p className="tw-body text-muted-foreground">所选区间内无 token 记录。</p>
+            <p className="tw-body text-muted-foreground">{t.noTokens}</p>
           ) : (
             <>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 tw-body">
               <span className="tw-num tw-title leading-none font-medium">
                 {hit == null ? "—" : `${Math.round(hit * 100)}%`}
               </span>
-              <span className="text-muted-foreground">命中</span>
+              <span className="text-muted-foreground">{t.hitRate}</span>
               {/* 这根条**就是命中率的公式本身**：三段按单价排，亮的越长越省 */}
               <span className="flex h-2.5 min-w-32 flex-1 overflow-hidden rounded-sm">
                 <span
@@ -798,7 +805,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 缓存。倍率各家不同，这个数是按每个模型自己的价目算的。
               */}
               <span className="text-muted-foreground">
-                {s.cache_saved_micros < 0 ? "净增费用" : "净节省"}{" "}
+                {s.cache_saved_micros < 0 ? t.netCost : t.netSavings}{" "}
                 <span
                   className={
                     "tw-num font-medium " +
@@ -819,15 +826,15 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               */}
               {ratio != null && (
                 <span className="text-muted-foreground">
-                  读写比 <span className="tw-num font-medium">{ratio.toFixed(1)} : 1</span>
+                  {t.readWrite} <span className="tw-num font-medium">{ratio.toFixed(1)} : 1</span>
                 </span>
               )}
             </div>
             {/* 同上：不标倍率。三段的顺序本身就是从便宜到贵 */}
             <div className="flex flex-wrap gap-x-5 gap-y-1 tw-body">
-              <Swatch color="bg-cache-hit" name="缓存读取" n={s.cache_read_tokens} />
-              <Swatch color="bg-cache-plain" name="新输入" n={s.input_tokens} />
-              <Swatch color="bg-cache-write" name="缓存写入" n={s.cache_write_tokens} />
+              <Swatch color="bg-cache-hit" name={t.cacheReads} n={s.cache_read_tokens} />
+              <Swatch color="bg-cache-plain" name={t.uncachedInput} n={s.input_tokens} />
+              <Swatch color="bg-cache-write" name={t.cacheWrites} n={s.cache_write_tokens} />
             </div>
             </>
           )}
@@ -838,18 +845,18 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           「哪家上游慢」的下一步是换上游 —— 两个问题各占一栏。排成一行
           的话，上游一多就横向挤爆了。
         */}
-        <Block name="延迟">
+        <Block name={t.latency}>
           {d.latency.length === 0 ? (
-            <p className="tw-body text-muted-foreground">所选区间内样本不足，暂无分位数据。</p>
+            <p className="tw-body text-muted-foreground">{t.notEnoughSamples}</p>
           ) : (
             <div className="grid gap-x-7 gap-y-3 lg:grid-cols-2">
               <div className="min-w-0 space-y-1.5">
-                <p className="tw-label text-muted-foreground">按模型 · 首字节 P50 至 P95</p>
+                <p className="tw-label text-muted-foreground">{t.byModel}</p>
                 <Spread rows={d.latency} max={latMax} />
               </div>
-              {t.comparison && d.latency_by_provider.length > 0 && (
+              {has.comparison && d.latency_by_provider.length > 0 && (
                 <div className="min-w-0 space-y-1.5">
-                  <p className="tw-label text-muted-foreground">按上游 · 同上</p>
+                  <p className="tw-label text-muted-foreground">{t.byUpstream}</p>
                   <Spread rows={d.latency_by_provider} max={latMax} />
                 </div>
               )}
@@ -863,7 +870,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           安心。但安全是反过来的：**看不见的防护会被当成没开**。
         */}
         {guards.length > 0 && (
-          <Block name="安全">
+          <Block name={t.security}>
             {guards.map((g) => (
               <div key={g.key} className="flex items-baseline gap-2.5 tw-body">
                 <span
@@ -894,30 +901,33 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       {d.leaks.length > 0 && (
         <section className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
           <h2 className="tw-title font-semibold text-amber-900 dark:text-amber-200">
-            凭据外泄检测
+            {t.leaksTitle}
           </h2>
           <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
             {d.leaks.map((l) => (
               <li key={`${l.provider}/${l.secret}`}>
-                <span className="font-medium">{l.requests}</span> 个请求向{" "}
-                <span className="font-medium">{l.provider || "上游"}</span> 发送了{" "}
-                <span className="font-medium">{secretLabel(l.secret)}</span>
+                {t.leak(
+                  l.requests,
+                  l.provider || t.someUpstream,
+                  secretLabel(l.secret),
+                  (x) => <span className="font-medium">{x}</span>,
+                )}
                 {l.masked.length > 0 && (
                   // **打码之后才显示。**把发现的密钥原样贴出来，等于
                   // 把泄漏搬了个家
                   <span className="text-amber-700 dark:text-amber-400">
                     {" "}
-                    · 涉及 {l.masked.join("、")}
+                    · {t.involving(l.masked)}
                   </span>
                 )}
               </li>
             ))}
           </ul>
           <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
-            观察模式：仅记录，未改变任何请求。
-            <Tip text="如需替换为占位符，请在「安全 › 防护」中将出站脱敏切换到「拦截」。">
+            {t.observeOnly}
+            <Tip text={t.enforceTip}>
               <span className="ml-1 underline decoration-dotted underline-offset-2">
-                启用拦截
+                {t.enforce}
               </span>
             </Tip>
           </p>
@@ -931,7 +941,7 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
         <Alert variant="warning" className="mt-5">
           <AlertDescription>
             {storageText(d.storage.level)}
-            {!d.storage.forwarding_affected && "。转发不受影响。"}
+            {!d.storage.forwarding_affected && t.forwardingUnaffected}
           </AlertDescription>
         </Alert>
       )}

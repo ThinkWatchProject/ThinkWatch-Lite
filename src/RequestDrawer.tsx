@@ -19,6 +19,9 @@ import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { XIcon } from "lucide-react";
 import { priceSourceDetail } from "./upstreams/labels";
 import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
+import { requestDrawerText } from "./RequestDrawer.i18n";
 import {
   Table,
   TableBody,
@@ -47,15 +50,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
  * （详情抽屉）。
  */
 function Body({ b, title }: { b: BodyView | null; title: string }) {
+  const t = useText(requestDrawerText);
   const [open, setOpen] = useState(false);
   if (!b) {
     return (
       <div>
         <div className="tw-body font-medium">{title}</div>
         <p className="mt-1 tw-body text-muted-foreground">
-          未保存
-          <Tip text="磁盘空间不足时仅记录摘要，或此记录已超过保留期限。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">说明</span>
+          {t.notSaved}
+          <Tip text={t.notSavedTip}>
+            <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
           </Tip>
         </p>
       </div>
@@ -73,14 +77,14 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
       <div className="flex items-baseline gap-2">
         <span className="tw-body font-medium">{title}</span>
         <span className="tw-body text-neutral-400">
-          {b.original_len.toLocaleString()} 字节
+          {t.size(b.original_len)}
           {/* **截断了要说出来。**不说的话用户会以为请求本身就这么长 */}
-          {b.truncated && " · 仅保存开头部分"}
+          {b.truncated && ` · ${t.truncated}`}
         </span>
         {big && (
           <CollapsibleTrigger asChild>
             <Button variant="link" size="xs" className="ml-auto">
-              {open ? "折叠" : "展开全部"}
+              {open ? t.collapse : t.showAll}
             </Button>
           </CollapsibleTrigger>
         )}
@@ -112,6 +116,8 @@ export default function RequestDrawer({
   onClose: () => void;
   inline?: boolean;
 }) {
+  const t = useText(requestDrawerText);
+  const common = useText(commonText);
   const [d, setD] = useState<RequestDetail | null>(null);
   const [tab, setTab] = useState<Tab>("timeline");
 
@@ -151,7 +157,7 @@ export default function RequestDrawer({
         标题截断、按钮 shrink-0 + nowrap，两条缺一不可。
       */}
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <span className="truncate tw-head font-semibold">{r?.model || `第 ${id} 号请求`}</span>
+        <span className="truncate tw-head font-semibold">{r?.model || t.requestNo(id)}</span>
         {r && (
           <span className="shrink-0 whitespace-nowrap tw-label text-muted-foreground">
             {new Date(r.at_ms).toLocaleTimeString()}
@@ -168,7 +174,7 @@ export default function RequestDrawer({
           variant="ghost"
           size="icon-sm"
           className="shrink-0"
-          aria-label="关闭"
+          aria-label={common.close}
           onClick={onClose}
         >
           <XIcon />
@@ -185,11 +191,11 @@ export default function RequestDrawer({
         >
           {/* 换成 Tabs 之后左右方向键能在标签间走 —— 这是手写那版没有的 */}
           <TabsList className="mx-4 my-2">
-            <TabsTrigger value="timeline">时间线</TabsTrigger>
-            <TabsTrigger value="routing">路由</TabsTrigger>
-            <TabsTrigger value="payload">内容</TabsTrigger>
-            <TabsTrigger value="usage">用量</TabsTrigger>
-            <TabsTrigger value="replay">重放</TabsTrigger>
+            <TabsTrigger value="timeline">{t.tabTimeline}</TabsTrigger>
+            <TabsTrigger value="routing">{t.tabRouting}</TabsTrigger>
+            <TabsTrigger value="payload">{t.tabPayload}</TabsTrigger>
+            <TabsTrigger value="usage">{t.tabUsage}</TabsTrigger>
+            <TabsTrigger value="replay">{t.tabReplay}</TabsTrigger>
           </TabsList>
 
           <div className="min-h-0 flex-1 overflow-auto p-4 tw-body">
@@ -201,7 +207,7 @@ export default function RequestDrawer({
                 {/* **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的
                     一切 —— 一眼看出慢在网络还是慢在模型 */}
                 <Row
-                  label="首字节"
+                  label={t.ttfb}
                   value={
                     r.ttfb_ms != null ? (
                       <span className="tw-head">{r.ttfb_ms}ms</span>
@@ -210,24 +216,24 @@ export default function RequestDrawer({
                     )
                   }
                 />
-                <Row label="总耗时" value={r.duration_ms != null ? `${r.duration_ms}ms` : "—"} />
+                <Row label={t.totalTime} value={r.duration_ms != null ? `${r.duration_ms}ms` : "—"} />
                 <Row
-                  label="生成用时"
+                  label={t.generationTime}
                   value={
                     r.duration_ms != null && r.ttfb_ms != null
                       ? `${r.duration_ms - r.ttfb_ms}ms`
                       : "—"
                   }
                 />
-                <Row label="上游" value={r.local ? "本地应答" : r.provider} />
-                <Row label="客户端" value={r.client} />
-                <Row label="路径" value={<span className="font-mono">{r.path}</span>} />
+                <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider} />
+                <Row label={t.client} value={r.client} />
+                <Row label={t.path} value={<span className="font-mono">{r.path}</span>} />
                 {/* **转了就要看得见，丢了字段更要看得见** —— 「扩展思考开了却没
                     生效」在客户端那头无从查起 */}
                 {r.translated && (
                   <>
                     <Row
-                      label="格式转换"
+                      label={t.conversion}
                       value={
                         // 格式名整体换行，不从单词中间断开
                         <>
@@ -239,18 +245,18 @@ export default function RequestDrawer({
                     />
                     {r.translated.dropped.length > 0 && (
                       <Row
-                        label="丢弃字段"
+                        label={t.dropped}
                         value={
                           <span className="text-amber-700 dark:text-amber-400">
                             {/* 一个字段整体换行，不从路径中间断开 */}
                             {r.translated.dropped.map((f, i) => (
                               <span key={f}>
-                                {i > 0 && "、"}
+                                {i > 0 && t.listSep}
                                 <span className="font-mono whitespace-nowrap">{f}</span>
                               </span>
                             ))}
-                            <Tip text="目标格式不支持这些字段，发送前已移除。">
-                              <span className="ml-1 whitespace-nowrap underline decoration-dotted underline-offset-2">说明</span>
+                            <Tip text={t.droppedTip}>
+                              <span className="ml-1 whitespace-nowrap underline decoration-dotted underline-offset-2">{t.details}</span>
                             </Tip>
                           </span>
                         }
@@ -259,19 +265,19 @@ export default function RequestDrawer({
                   </>
                 )}
                 <Row
-                  label="状态"
+                  label={t.status}
                   value={
                     r.error ? (
                       <span className="text-red-600 dark:text-red-400">{r.error}</span>
                     ) : r.cancelled ? (
                       // 不是失败，不标红：上游没有出错，是客户端先断开了
-                      <span>{r.status ?? "—"} · 已取消：客户端在响应结束前断开连接</span>
+                      <span>{r.status ?? "—"} · {t.cancelled}</span>
                     ) : (
                       (r.status ?? "—")
                     )
                   }
                 />
-                <Row label="字节" value={r.bytes?.toLocaleString() ?? "—"} />
+                <Row label={t.bytes} value={r.bytes?.toLocaleString() ?? "—"} />
               </div>
             </TabsContent>
 
@@ -281,11 +287,11 @@ export default function RequestDrawer({
                   {/* **「命中第 4 条」远不如「命中『带缓存的必须走官方』」
                       有用** */}
                   <div className="space-y-1">
-                    <Row label="命中规则" value={r.routing.rule} />
-                    {r.routing.group && <Row label="经过策略组" value={targetLabel(r.routing.group)} />}
+                    <Row label={t.matchedRule} value={r.routing.rule} />
+                    {r.routing.group && <Row label={t.viaGroup} value={targetLabel(r.routing.group)} />}
                   </div>
                   <div>
-                    <div className="tw-body font-medium">尝试链</div>
+                    <div className="tw-body font-medium">{t.attempts}</div>
                     <ol className="mt-1 space-y-1">
                       {r.routing.attempts.map((a, i) => {
                         const outcome = attemptText(a);
@@ -318,16 +324,16 @@ export default function RequestDrawer({
                       // 一个静默切换过的请求和一个一次就成的
                       // 请求，在他眼里应该是不同的。
                       <p className="mt-1.5 text-muted-foreground">
-                        已发生故障转移：前 {r.routing.attempts.length - 1} 个上游失败，已自动切换至下一个上游。
+                        {t.failover(r.routing.attempts.length - 1)}
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
                 <p className="text-muted-foreground">
-                  此请求没有路由信息
-                  <Tip text="此请求由网关本地应答，未发送到上游；或记录于路由信息功能上线之前。">
-                    <span className="ml-1 underline decoration-dotted underline-offset-2">可能原因</span>
+                  {t.noRouting}
+                  <Tip text={t.noRoutingTip}>
+                    <span className="ml-1 underline decoration-dotted underline-offset-2">{t.possibleCauses}</span>
                   </Tip>
                 </p>
               )}
@@ -335,10 +341,10 @@ export default function RequestDrawer({
 
             <TabsContent value="payload">
               <div className="space-y-4">
-                <Body b={d.request_body} title="请求" />
-                <Body b={d.response_body} title="响应" />
+                <Body b={d.request_body} title={t.request} />
+                <Body b={d.response_body} title={t.response} />
                 <p className="text-neutral-400">
-                  请求与响应内容已脱敏，疑似密钥的内容已遮盖。
+                  {t.redactedNote}
                 </p>
               </div>
             </TabsContent>
@@ -347,48 +353,48 @@ export default function RequestDrawer({
               <div className="space-y-1">
                 {r.input_tokens == null && r.cancelled ? (
                   // 这时候不能说「上游没有报用量」—— 它还没来得及报，客户端就走了
-                  <p className="text-muted-foreground">客户端在上游报告用量前断开连接</p>
+                  <p className="text-muted-foreground">{t.cancelledBeforeUsage}</p>
                 ) : r.input_tokens == null && r.error ? (
                   // 失败的请求没有用量，**不是上游吞掉了它** —— 请求没走到那一步
-                  <p className="text-muted-foreground">请求在上游报告用量前失败</p>
+                  <p className="text-muted-foreground">{t.failedBeforeUsage}</p>
                 ) : r.input_tokens == null ? (
                   // **没有 usage 不是「用了 0」**
                   <p className="text-muted-foreground">
-                    上游未报告用量
-                    <Tip text="部分上游的响应不含用量字段。缺少用量时，无法得知此次调用的消耗，也无法计算费用。">
-                      <span className="ml-1 underline decoration-dotted underline-offset-2">说明</span>
+                    {t.noUsage}
+                    <Tip text={t.noUsageTip}>
+                      <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
                     </Tip>
                   </p>
                 ) : (
                   <>
-                    <Row label="输入" value={r.input_tokens.toLocaleString()} />
-                    <Row label="输出" value={(r.output_tokens ?? 0).toLocaleString()} />
-                    <Row label="缓存读取" value={(r.cache_read_tokens ?? 0).toLocaleString()} />
-                    <Row label="缓存写入" value={(r.cache_write_tokens ?? 0).toLocaleString()} />
+                    <Row label={t.input} value={r.input_tokens.toLocaleString()} />
+                    <Row label={t.output} value={(r.output_tokens ?? 0).toLocaleString()} />
+                    <Row label={t.cacheReads} value={(r.cache_read_tokens ?? 0).toLocaleString()} />
+                    <Row label={t.cacheWrites} value={(r.cache_write_tokens ?? 0).toLocaleString()} />
                     <Row
-                      label="费用"
+                      label={t.cost}
                       value={
                         r.billing === "subscription" ? (
                           // 「订阅制」而不是 $0.00 —— 消耗的是额度，不是金额
-                          <span className="text-muted-foreground">订阅制，计入订阅额度</span>
+                          <span className="text-muted-foreground">{t.subscription}</span>
                         ) : r.billing === "free" ? (
-                          <span className="text-muted-foreground">{usd(0)} · 不计费</span>
+                          <span className="text-muted-foreground">{usd(0)} · {t.free}</span>
                         ) : r.billing === "unknown" ? (
-                          <span className="text-muted-foreground">计费方式未知</span>
+                          <span className="text-muted-foreground">{t.billingUnknown}</span>
                         ) : r.cost_micros == null ? (
                           // 「没有价格」和「费用为 0」是两件事
-                          <span className="text-muted-foreground">无法计价：该模型未定价</span>
+                          <span className="text-muted-foreground">{t.unpriced}</span>
                         ) : r.cost_estimated && r.cancelled ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算值，输出用量计至客户端断开
+                            ~{usd(r.cost_micros)} · {t.estimatedCancelled}
                           </span>
                         ) : r.cost_estimated && r.error ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算值，输出用量计至响应中断
+                            ~{usd(r.cost_micros)} · {t.estimatedInterrupted}
                           </span>
                         ) : r.cost_estimated ? (
                           <span className="text-amber-700 dark:text-amber-400">
-                            ~{usd(r.cost_micros)} · 估算值
+                            ~{usd(r.cost_micros)} · {t.estimated}
                           </span>
                         ) : (
                           usd(r.cost_micros)
@@ -396,7 +402,7 @@ export default function RequestDrawer({
                       }
                     />
                     {r.price_source && (
-                      <Row label="价格来源" value={priceSourceDetail(r.price_source)} />
+                      <Row label={t.priceSource} value={priceSourceDetail(r.price_source)} />
                     )}
                   </>
                 )}
@@ -434,7 +440,7 @@ export default function RequestDrawer({
       >
         {/* 标题在上面那个 header 里,这里只是读屏软件要的那一句 */}
         <SheetHeader className="sr-only">
-          <SheetTitle>请求详情</SheetTitle>
+          <SheetTitle>{t.title}</SheetTitle>
         </SheetHeader>
         {body}
       </SheetContent>
@@ -455,6 +461,7 @@ export default function RequestDrawer({
  * 中间那一步不能省 —— 触发前必须显示预估消耗，而不是点了才知道。
  */
 function Replay({ id, originalProvider }: { id: number; originalProvider: string }) {
+  const t = useText(requestDrawerText);
   const [ov, setOv] = useState<Overview | null>(null);
   const [provider, setProvider] = useState("");
   const [quote, setQuote] = useState<ReplayQuote | null>(null);
@@ -503,9 +510,9 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground">
-        将此请求<span className="font-medium">原样</span>发送至另一个上游，并排对比结果
-        <Tip text="使用记录中保存的原始请求体，内容与原请求完全一致。">
-          <span className="ml-1 underline decoration-dotted underline-offset-2">「原样」的含义</span>
+        {t.replayIntro((x) => <span className="font-medium">{x}</span>)}
+        <Tip text={t.asIsTip}>
+          <span className="ml-1 underline decoration-dotted underline-offset-2">{t.asIs}</span>
         </Tip>
       </p>
       <div className="flex items-center gap-2">
@@ -520,7 +527,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           {ov?.providers.map((p) => (
             <NativeSelectOption key={p.name} value={p.name}>
               {p.name}
-              {p.name === originalProvider ? "（原上游）" : ""}
+              {p.name === originalProvider ? t.originalUpstream : ""}
             </NativeSelectOption>
           ))}
         </NativeSelect>
@@ -530,7 +537,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           onClick={() => void ask()}
           disabled={busy || !provider}
         >
-          预估费用
+          {t.estimateCost}
         </Button>
       </div>
 
@@ -538,16 +545,19 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         <div className="rounded border border-border p-3">
           {/* **触发前必须显示预估消耗**，而不是点了才知道 */}
           <div>
-            将向 <span className="font-medium">{quote.provider}</span> 发送 {quote.body_bytes} 字节，约{" "}
-            {quote.input_tokens} 个输入 token。
+            {t.quote(
+              <span className="font-medium">{quote.provider}</span>,
+              quote.body_bytes,
+              quote.input_tokens,
+            )}
           </div>
           <div className="mt-1">{quoteText(quote)}</div>
           {quote.will_redact && (
             <div className="mt-1 text-muted-foreground">
-              发送前将按此上游的规则脱敏，回显内容将自动还原。
+              {t.willRedact}
             </div>
           )}
-          <div className="mt-1 text-muted-foreground">价目表日期 {quote.pricing_date}。</div>
+          <div className="mt-1 text-muted-foreground">{t.pricingDate(quote.pricing_date)}</div>
           <Button
             size="sm"
             className="mt-2"
@@ -555,7 +565,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             disabled={busy}
           >
             {busy && <Spinner />}
-              确认发送
+              {t.confirmSend}
           </Button>
         </div>
       )}
@@ -566,15 +576,15 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
             <TableHeader>
               <TableRow>
                 <TableHead className="font-normal"></TableHead>
-                <TableHead className="text-right font-normal">{result.original.provider}（原请求）</TableHead>
-                <TableHead className="text-right font-normal">{result.provider}（重放）</TableHead>
+                <TableHead className="text-right font-normal">{t.originalColumn(result.original.provider)}</TableHead>
+                <TableHead className="text-right font-normal">{t.replayColumn(result.provider)}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <Cmp label="状态" a={result.original.status} b={result.status} />
-              <Cmp label="首字节" a={result.original.ttfb_ms} b={result.ttfb_ms} unit="ms" />
-              <Cmp label="耗时" a={result.original.duration_ms} b={result.duration_ms} unit="ms" />
-              <Cmp label="字节" a={result.original.bytes} b={result.bytes} />
+              <Cmp label={t.status} a={result.original.status} b={result.status} />
+              <Cmp label={t.ttfb} a={result.original.ttfb_ms} b={result.ttfb_ms} unit="ms" />
+              <Cmp label={t.duration} a={result.original.duration_ms} b={result.duration_ms} unit="ms" />
+              <Cmp label={t.bytes} a={result.original.bytes} b={result.bytes} />
             </TableBody>
           </Table>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 tw-label dark:bg-neutral-950">
