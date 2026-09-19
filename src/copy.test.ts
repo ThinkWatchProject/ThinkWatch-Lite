@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 const SRC = "src";
 
 /**
- * 界面文案所在的文件：组件，加上名称表。
+ * 界面文案所在的文件：组件、名称表，以及迁出来的词表（`*.i18n.ts(x)`）。
  *
  * **名称表也要查。**core 0.4 起固定集合的字段只发标识符，「手动选择」
  * 「磁盘空间不足」这些显示文字搬进了 `labels.ts`，不查的话它们就在这条
@@ -24,7 +24,7 @@ function copyFiles(dir: string): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     if (e.isDirectory()) out.push(...copyFiles(p));
-    else if (e.name.endsWith(".tsx") || e.name === "labels.ts") out.push(p);
+    else if (e.name.endsWith(".tsx") || e.name === "labels.ts" || e.name.endsWith(".i18n.ts")) out.push(p);
   }
   return out;
 }

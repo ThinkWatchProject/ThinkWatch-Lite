@@ -11,6 +11,9 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
+// 第一个声明：`tr!` 要在后面每个模块里都能用
+#[macro_use]
+pub mod i18n;
 pub mod autostart;
 pub mod chatgpt;
 pub mod control;
@@ -18,6 +21,7 @@ pub mod keys;
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
+pub mod prefs;
 pub mod routing;
 pub mod supervisor;
 pub mod update;
@@ -787,7 +791,7 @@ fn update_view(app: &tauri::AppHandle) -> UpdateView {
     UpdateView {
         version: app.package_info().version.to_string(),
         install: update::kind(),
-        check_updates: update::load_prefs(&data_dir()).check_updates,
+        check_updates: prefs::load(&data_dir()).check_updates,
         offer: app.state::<Updates>().offer.lock().unwrap().clone(),
     }
 }
@@ -799,9 +803,59 @@ fn update_state(app: tauri::AppHandle) -> UpdateView {
 
 #[tauri::command]
 fn set_update_check(app: tauri::AppHandle, on: bool) -> Result<UpdateView, String> {
-    update::save_prefs(&data_dir(), &update::Prefs { check_updates: on })
-        .map_err(|e| format!("无法保存设置：{e:#}"))?;
+    prefs::update(&data_dir(), |p| p.check_updates = on).map_err(|e| {
+        tr!(
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
+        )
+    })?;
     Ok(update_view(&app))
+}
+
+/// 界面语言：现在用的、设置里选的、系统的。
+///
+/// 三个一起给：设置页要写成「跟随系统（简体中文）」，光有现在用的那一种
+/// 说不出括号里那半句。
+#[derive(serde::Serialize)]
+struct LanguageView {
+    current: i18n::Lang,
+    /// `None` 是跟随系统
+    setting: Option<i18n::Lang>,
+    system: i18n::Lang,
+}
+
+fn language_view() -> LanguageView {
+    LanguageView {
+        current: i18n::current(),
+        setting: prefs::load(&data_dir()).language,
+        system: i18n::system(),
+    }
+}
+
+#[tauri::command]
+fn app_language() -> LanguageView {
+    language_view()
+}
+
+/// 换语言。**开着的窗口当场换，托盘菜单跟着重建**，不用重启应用。
+#[tauri::command]
+fn set_language(
+    app: tauri::AppHandle,
+    setting: Option<i18n::Lang>,
+) -> Result<LanguageView, String> {
+    prefs::update(&data_dir(), |p| p.language = setting).map_err(|e| {
+        tr!(
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
+        )
+    })?;
+    i18n::set(i18n::effective(setting));
+    // 托盘菜单比较的是 TrayFacts，语言在里面 —— 叫醒一次就会重建
+    if let Some(state) = app.try_state::<AppState>() {
+        state.menubar.notify_one();
+    }
+    let _ = app.emit("language-changed", i18n::current());
+    Ok(language_view())
 }
 
 /// 找到的新版本。
@@ -917,7 +971,8 @@ fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
-        .title("软件更新")
+        .title(tr!("软件更新", "Software Update"))
+        .initialization_script(i18n::init_script())
         // 宽度和前端 UpdateWindow.tsx 里的 WIDTH 是同一个数；高度由前端量完内容再定
         .inner_size(480.0, 220.0)
         .resizable(false)
@@ -1293,6 +1348,8 @@ pub fn run() {
             app_info,
             update_state,
             set_update_check,
+            app_language,
+            set_language,
             update_check,
             update_pending,
             update_copy_command,
@@ -1322,6 +1379,8 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            // **语言最先定。**托盘、通知、窗口都要用它，而它们在下面陆续出现
+            i18n::set(i18n::effective(prefs::load(&data_dir()).language));
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);
@@ -1637,7 +1696,7 @@ async fn update_loop(app: tauri::AppHandle) {
     loop {
         // 每一轮都重读设置 —— 用户可能在跑着的时候把它关了，那时这个
         // 循环要立刻听话，而不是等到下次启动。
-        if update::kind() != update::Install::Dev && update::load_prefs(&data_dir()).check_updates {
+        if update::kind() != update::Install::Dev && prefs::load(&data_dir()).check_updates {
             match find(&app).await {
                 Ok(Some(f)) => present(&app, f),
                 Ok(None) => {}
@@ -1771,6 +1830,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
+        .initialization_script(i18n::init_script())
         .inner_size(1100.0, 720.0)
         .min_inner_size(820.0, 560.0)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
@@ -1885,6 +1945,7 @@ async fn collect_tray_facts(
     if !running {
         return TrayFacts {
             running: false,
+            lang: i18n::current(),
             ..Default::default()
         };
     }
@@ -1914,6 +1975,7 @@ async fn collect_tray_facts(
         quota: bar.quota_percent,
         groups,
         can_undo,
+        lang: i18n::current(),
     }
 }
 
@@ -1932,6 +1994,9 @@ struct TrayFacts {
     groups: Vec<(String, Vec<String>, Option<String>)>,
     /// 有没有上一版可以撤销
     can_undo: bool,
+    /// 菜单用哪种语言。**换了语言，菜单要重建** —— 它不进这里的话，别的
+    /// 几项都没变，菜单就一直停在旧语言上
+    lang: i18n::Lang,
 }
 
 /// 建托盘菜单。
@@ -1944,9 +2009,9 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
         app,
         "head",
         if f.running {
-            "ThinkWatch  ● 运行中"
+            tr!("ThinkWatch  ● 运行中", "ThinkWatch  ● Running")
         } else {
-            "ThinkWatch  ○ 未运行"
+            tr!("ThinkWatch  ○ 未运行", "ThinkWatch  ○ Not Running")
         },
         // **点不动。**它是状态不是操作
         false,
@@ -1987,7 +2052,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     items.push(Box::new(MenuItem::with_id(
         app,
         "undo",
-        "撤销上一次配置修改",
+        tr!("撤销上一次配置修改", "Undo Last Configuration Change"),
         // **没得撤就是灰的，不是不显示。**一个时有时无的菜单项，用户
         // 每次都要重新找它在哪儿
         f.can_undo,
@@ -1997,7 +2062,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     items.push(Box::new(MenuItem::with_id(
         app,
         "open",
-        "打开主界面",
+        tr!("打开主界面", "Open ThinkWatch Lite"),
         true,
         None::<&str>,
     )?));
@@ -2005,7 +2070,7 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
     items.push(Box::new(MenuItem::with_id(
         app,
         "quit",
-        "退出 ThinkWatch Lite…",
+        tr!("退出 ThinkWatch Lite…", "Quit ThinkWatch Lite…"),
         true,
         None::<&str>,
     )?));

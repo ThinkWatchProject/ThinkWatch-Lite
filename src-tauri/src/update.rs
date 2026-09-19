@@ -35,12 +35,6 @@ pub const CASK_URL: &str = "https://raw.githubusercontent.com/ThinkWatchProject/
 /// 之前本地的 tap 还是旧的，它一样会回「已经是最新」。
 pub const BREW_UPGRADE: &str = "brew update && brew upgrade --cask thinkwatch-lite";
 
-/// 应用自己的设置文件，放在数据目录里。
-///
-/// **不是网关的配置。**`config.yaml` 有版本、有历史、能回滚，因为改错一行
-/// 会让所有客户端断流；这里只有几个开关，改了就生效，回滚没有意义。
-const PREFS_FILE: &str = "app.json";
-
 /// 这一份是怎么装上来的。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,30 +121,6 @@ pub fn kind() -> Install {
     kind_at(&exe, &BREW_PREFIXES.map(PathBuf::from))
 }
 
-/// 应用自己的设置。
-///
-/// 缺字段时取 [`Prefs::default`] 里的值，不是类型的零值 —— 对一个布尔来说
-/// 两者恰好相反。
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-pub struct Prefs {
-    /// 启动之后以及此后每隔一段时间，去看有没有新版本。
-    ///
-    /// **出厂是开的。**这个应用坐在每一个 AI 请求的必经之路上：脱敏规则、
-    /// 工具调用的检查、对上游的兼容，修好一处都要用户换到那一版才生效，而
-    /// 一个停在旧版本上的网关，用户自己是看不出来的。检查本身只读一份版本
-    /// 清单，不带任何本机的内容；不需要的话在「设置」里关掉。
-    pub check_updates: bool,
-}
-
-impl Default for Prefs {
-    fn default() -> Self {
-        Self {
-            check_updates: true,
-        }
-    }
-}
-
 /// 从 cask 文件里读出版本号。
 ///
 /// 只认 `version "x"` 这一种写法。`version :latest` 之类不带具体版本的
@@ -174,29 +144,6 @@ pub fn newer(candidate: &str, current: &str) -> bool {
         (Ok(a), Ok(b)) => a > b,
         _ => false,
     }
-}
-
-fn prefs_path(dir: &Path) -> PathBuf {
-    dir.join(PREFS_FILE)
-}
-
-/// 读设置。
-///
-/// **读不出来就按出厂设置。**文件不在（第一次运行）和文件坏了，对用户的
-/// 意义是一样的；为一个开关让应用起不来，代价不对。
-pub fn load_prefs(dir: &Path) -> Prefs {
-    std::fs::read(prefs_path(dir))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
-}
-
-pub fn save_prefs(dir: &Path, p: &Prefs) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let mut text = serde_json::to_vec_pretty(p)?;
-    text.push(b'\n');
-    std::fs::write(prefs_path(dir), text)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -287,52 +234,6 @@ mod tests {
             Install::Standalone
         );
         std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn with_no_settings_file_the_check_is_on() {
-        let dir = tmp();
-        assert!(load_prefs(&dir).check_updates);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// 关掉之后存得住。**这一条防的是 `#[serde(default)]` 的一个坑**：
-    /// 默认值改成开之后，缺字段时取的是 `Default` 而不是布尔的零值，而
-    /// 用户写下的 `false` 必须照样被读成 `false`。
-    #[test]
-    fn turning_the_check_off_is_remembered() {
-        let dir = tmp();
-        save_prefs(
-            &dir,
-            &Prefs {
-                check_updates: false,
-            },
-        )
-        .unwrap();
-        assert!(!load_prefs(&dir).check_updates);
-        std::fs::write(prefs_path(&dir), b"{}").unwrap();
-        assert!(load_prefs(&dir).check_updates, "缺字段取默认值，也就是开");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn settings_survive_a_round_trip() {
-        let dir = tmp();
-        let want = Prefs {
-            check_updates: true,
-        };
-        save_prefs(&dir, &want).unwrap();
-        assert_eq!(load_prefs(&dir), want);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// 文件坏了按出厂设置。
-    #[test]
-    fn a_corrupt_settings_file_falls_back_to_the_default() {
-        let dir = tmp();
-        std::fs::write(prefs_path(&dir), b"{ not json").unwrap();
-        assert_eq!(load_prefs(&dir), Prefs::default());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 读的是 tap 里真实的那份 cask —— 格式变了，这条先红。
