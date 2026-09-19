@@ -10,6 +10,8 @@ import { Button } from "@/ui/button"
 // 右边的面板上，看到的就是左缘一道蓝线。`DialogContent` 里有这一条，
 // `SheetContent` 漏了。焦点还在（Tab 走不出去、Esc 照样关），只是不画。
 import { XIcon } from "lucide-react"
+import { useText } from "@/i18n"
+import { commonText } from "@/i18n/common.i18n"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -59,6 +61,7 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  const t = useText(commonText)
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -80,7 +83,7 @@ function SheetContent({
               size="icon-sm"
             >
               <XIcon />
-              <span className="sr-only">关闭</span>
+              <span className="sr-only">{t.close}</span>
             </Button>
           </SheetPrimitive.Close>
         )}

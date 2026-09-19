@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { canInstall, describeStep } from "./updateFlow";
 
 describe("谁能在窗口里直接装", () => {
@@ -40,6 +41,19 @@ describe("安装进行到哪一步", () => {
   it("等待时说清在等几个请求", () => {
     expect(describeStep({ step: "waiting", in_flight: 2 }, 0, null)).toBe(
       "等待 2 个进行中的请求结束",
+    );
+  });
+
+  it("英文按调用那一刻的语言说，请求数分单复数", () => {
+    setLang("en");
+    expect(describeStep({ step: "downloading" }, 7_550_000, 13_000_000)).toBe(
+      "Downloading 7.2 / 12.4 MB",
+    );
+    expect(describeStep({ step: "waiting", in_flight: 1 }, 0, null)).toBe(
+      "Waiting for 1 request in progress to finish",
+    );
+    expect(describeStep({ step: "waiting", in_flight: 2 }, 0, null)).toBe(
+      "Waiting for 2 requests in progress to finish",
     );
   });
 });

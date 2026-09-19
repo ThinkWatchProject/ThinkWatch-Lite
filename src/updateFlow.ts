@@ -4,6 +4,8 @@
  * 更新窗口和设置页都用它们。**判断在 Rust 里**（这一份怎么装上来的、
  * 能不能自己装、该不该弹窗），这里只负责把 Rust 给的状态说成一句话。
  */
+import { textOf } from "@/i18n";
+import { updateText } from "./Update.i18n";
 
 /** 这一份是怎么装上来的。决定更新由谁做。 */
 export type Install = "homebrew" | "standalone" | "dev";
@@ -64,14 +66,15 @@ function mb(bytes: number): string {
  * 「7.2 / 0.0 MB」是在编一个数。
  */
 export function describeStep(step: Step, done: number, total: number | null): string {
+  const t = textOf(updateText);
   switch (step.step) {
     case "downloading":
-      return total ? `正在下载 ${mb(done)} / ${mb(total)} MB` : `正在下载 ${mb(done)} MB`;
+      return total ? t.downloadingOf(mb(done), mb(total)) : t.downloading(mb(done));
     case "waiting":
-      return `等待 ${step.in_flight} 个进行中的请求结束`;
+      return t.waiting(step.in_flight);
     case "installing":
-      return "正在安装";
+      return t.installing;
     case "restarting":
-      return "正在重新启动";
+      return t.restarting;
   }
 }

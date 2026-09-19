@@ -7,7 +7,10 @@ import { Input } from "@/ui/input";
 import { Progress } from "@/ui/progress";
 import { Spinner } from "@/ui/spinner";
 import { IconCopied, IconCopy } from "@/ui/icons";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { canInstall, describeStep, type Offer, type Step } from "./updateFlow";
+import { updateText } from "./Update.i18n";
 
 /**
  * 窗口宽度。**高度跟着内容走** —— 发布说明有长有短，固定高度要么留白要么
@@ -39,6 +42,8 @@ const COPIED_MS = 2_000;
  * 他在终端里按下的回车，不该变成一次「下载并安装」。
  */
 export default function UpdateWindow() {
+  const t = useText(updateText);
+  const common = useText(commonText);
   const [offer, setOffer] = useState<Offer | null>(null);
   const [step, setStep] = useState<Step | null>(null);
   const [progress, setProgress] = useState<[number, number | null]>([0, null]);
@@ -141,8 +146,8 @@ export default function UpdateWindow() {
     <div className="min-h-screen bg-background text-foreground">
       <div ref={body} className="flex flex-col gap-4 p-5">
         <div className="space-y-0.5">
-          <h1 className="tw-title font-semibold">ThinkWatch Lite {offer.version} 可用</h1>
-          <p className="tw-body text-muted-foreground">当前版本 {offer.current}</p>
+          <h1 className="tw-title font-semibold">{t.available(offer.version)}</h1>
+          <p className="tw-body text-muted-foreground">{t.current(offer.current)}</p>
         </div>
 
         {offer.notes && (
@@ -166,23 +171,23 @@ export default function UpdateWindow() {
                 {/* 这一步可能要几分钟，而且长短取决于用户自己的请求 */}
                 {step?.step === "waiting" && (
                   <p className="tw-label text-muted-foreground">
-                    关闭此窗口不影响更新，更新完成后将发送通知。
+                    {t.closeWhileWaiting}
                   </p>
                 )}
               </div>
             ) : (
               <p className="tw-body text-muted-foreground">
-                下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。
+                {t.standalone}
               </p>
             )}
             {failed && <p className="tw-body text-destructive">{failed}</p>}
             {!busy && (
               <div className="flex justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={close}>
-                  稍后
+                  {t.later}
                 </Button>
                 <Button size="sm" onClick={() => void install()}>
-                  {failed ? "重试" : "下载并安装"}
+                  {failed ? common.retry : t.install}
                 </Button>
               </div>
             )}
@@ -190,7 +195,7 @@ export default function UpdateWindow() {
         ) : offer.install === "homebrew" && offer.command ? (
           <>
             <p className="tw-body text-muted-foreground">
-              此应用由 Homebrew 管理，请在终端中执行以下命令完成更新：
+              {t.homebrew}
             </p>
             {/*
               命令占满整行，复制放进底下那排按钮里当主操作 —— 和另一档的
@@ -201,29 +206,29 @@ export default function UpdateWindow() {
               ref={command}
               readOnly
               value={offer.command}
-              aria-label="更新命令"
+              aria-label={t.command}
               className="font-mono"
               onFocus={(e) => e.currentTarget.select()}
             />
             {copyFailed && (
-              <p className="tw-label text-destructive">未能写入剪贴板。命令已选中，请按 ⌘C 复制。</p>
+              <p className="tw-label text-destructive">{t.copyFailed}</p>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={close}>
-                关闭
+                {common.close}
               </Button>
               <Button size="sm" onClick={() => void copy()}>
                 {copied ? <IconCopied /> : <IconCopy />}
-                {copied ? "已复制" : "复制命令"}
+                {copied ? common.copied : t.copyCommand}
               </Button>
             </div>
           </>
         ) : (
           <>
-            <p className="tw-body text-muted-foreground">当前运行的是开发构建，不执行自动更新。</p>
+            <p className="tw-body text-muted-foreground">{t.dev}</p>
             <div className="flex justify-end">
               <Button variant="outline" size="sm" onClick={close}>
-                关闭
+                {common.close}
               </Button>
             </div>
           </>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { textOf } from "@/i18n";
 import {
   applyEvent,
   type CoreEvent,
@@ -8,6 +9,7 @@ import {
   type RequestRow,
   type ScanFinding,
 } from "./types";
+import { requestsText } from "./useRequests.i18n";
 
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
 const MAX_ROWS = 500;
@@ -156,7 +158,7 @@ export function useRequests() {
       store.current.set(h.id, {
         id: h.id,
         client: h.client,
-        provider: h.local ? "本地应答" : h.provider,
+        provider: h.local ? textOf(requestsText).answeredLocally : h.provider,
         model: h.model || undefined,
         path: h.path,
         atMs: h.at_ms,

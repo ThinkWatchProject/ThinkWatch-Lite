@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { textOf } from "@/i18n";
 import type { CoreEvent } from "./types";
+import { liveText } from "./useLive.i18n";
 
 /** 实时曲线一格多宽。一秒 —— 再粗就看不出「刚才那一下」了。 */
 export const LIVE_BUCKET_MS = 1_000;
@@ -50,7 +52,7 @@ export function useLive(active: boolean, windowMs: number) {
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") {
-        model.current.set(ev.id, ev.model || "未知模型");
+        model.current.set(ev.id, ev.model || textOf(liveText).unknownModel);
         flying.current.add(ev.id);
       } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
@@ -60,7 +62,7 @@ export function useLive(active: boolean, windowMs: number) {
           samples.current.push({
             id: ev.id,
             at: Date.now(),
-            model: model.current.get(ev.id) ?? "未知模型",
+            model: model.current.get(ev.id) ?? textOf(liveText).unknownModel,
             tokens: u.input + u.output + u.cache_read + u.cache_write,
           });
         }
@@ -84,7 +86,7 @@ export function useLive(active: boolean, windowMs: number) {
           samples.current.push({
             id: ev.id,
             at: Date.now(),
-            model: model.current.get(ev.id) ?? "未知模型",
+            model: model.current.get(ev.id) ?? textOf(liveText).unknownModel,
             tokens: u.input + u.output + u.cache_read + u.cache_write,
           });
         }

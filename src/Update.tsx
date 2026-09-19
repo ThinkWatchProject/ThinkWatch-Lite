@@ -6,7 +6,9 @@ import { Field, FieldContent, FieldLabel } from "@/ui/field";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
+import { useText } from "@/i18n";
 import type { Found, UpdateView } from "./updateFlow";
+import { updateText } from "./Update.i18n";
 
 /**
  * 设置里的「更新」。
@@ -16,6 +18,7 @@ import type { Found, UpdateView } from "./updateFlow";
  * 的话，其中一套迟早会和另一套说不一样的话。
  */
 export default function Update() {
+  const t = useText(updateText);
   const [view, setView] = useState<UpdateView | null>(null);
   /** 这次打开设置页之后查过没有 —— 「已是最新版本」只有在真查过之后才该说 */
   const [looked, setLooked] = useState(false);
@@ -45,7 +48,7 @@ export default function Update() {
       setView((v) => (v ? { ...v, offer: found } : v));
       setLooked(true);
     } catch (e) {
-      toast.error("检查更新失败：" + (typeof e === "string" ? e : String(e)));
+      toast.error(t.checkFailed(typeof e === "string" ? e : String(e)));
     } finally {
       setBusy(false);
     }
@@ -53,7 +56,7 @@ export default function Update() {
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">更新</h2>
+      <h2 className="tw-title font-semibold">{t.title}</h2>
 
       <Field orientation="horizontal" className="mt-2">
         <Switch
@@ -74,21 +77,21 @@ export default function Update() {
           }}
         />
         <FieldContent>
-          <FieldLabel htmlFor="check-updates">自动检查新版本</FieldLabel>
+          <FieldLabel htmlFor="check-updates">{t.autoCheck}</FieldLabel>
         </FieldContent>
       </Field>
 
       <div className="mt-3 flex items-center gap-3">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void look()}>
           {busy && <Spinner />}
-          立即检查
+          {t.checkNow}
         </Button>
         <span className="tw-body text-muted-foreground">
           {view.offer
-            ? `新版本 ${view.offer.version} 可用，当前 ${view.version}`
+            ? t.newer(view.offer.version, view.version)
             : looked
-              ? `已是最新版本 ${view.version}`
-              : `当前版本 ${view.version}`}
+              ? t.latest(view.version)
+              : t.current(view.version)}
         </span>
       </div>
     </section>
