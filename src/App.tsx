@@ -1477,61 +1477,72 @@ export default function App() {
                     </div>
                   </TableCell>
                   <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
-                    {r.provider}
-                    {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
-                        是脱敏搞坏了功能。所以脱敏发生了就要在
-                        列表这一层看得见，而不是藏在详情里 */}
-                    {r.redacted && r.redacted.length > 0 && (
-                      <span
-                        className="ml-1 rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                        title={
-                          "发送前已替换：" +
-                          r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`).join("、") +
-                          "\n模型回显的内容将自动还原。"
-                        }
-                      >
-                        已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
-                      </span>
-                    )}
-                    {/* 格式转换。**转了就要看得见，丢了字段
-                        更要看得见** —— 「扩展思考开了却没生效」这个症状
-                        在客户端那头完全无从下手，只有这里知道原因 */}
-                    {r.translated && (
-                      <span
-                        className={
-                          "ml-1 rounded px-1 tw-label " +
-                          (r.translated.dropped.length > 0
-                            ? "bg-amber-500 text-white"
-                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
-                        }
-                        title={
-                          `请求已转换格式后发送：${translatedText(r.translated)}。` +
-                          (r.translated.dropped.length > 0
-                            ? `\n\n目标格式不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
-                            : "\n未丢弃任何字段。")
-                        }
-                      >
-                        {r.translated.dropped.length > 0
-                          ? `已转换 · 丢弃 ${r.translated.dropped.length} 项`
-                          : "已转换"}
-                      </span>
-                    )}
-                    {r.flagged?.some((f) => f.high) && (
-                      <span
-                        className={
-                          "ml-1 rounded px-1 tw-label " +
-                          (r.flagged.some((f) => f.blocked)
-                            ? "bg-red-600 text-white"
-                            : "bg-amber-500 text-white")
-                        }
-                        title={r.flagged
-                          .filter((f) => f.high)
-                          .map((f) => `${f.tool}：${f.why}\n${f.excerpt}`)
-                          .join("\n\n")}
-                      >
-                        {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
-                      </span>
-                    )}
+                    {/*
+                      **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行
+                      的话，一行同时带「已脱敏」和「已转换 · 丢弃 n 项」，
+                      这一格就有 240px，默认窗口下表比容器宽出 40px —— 被挤
+                      出视野的是最后一列费用，而那是这张表里最要紧的一列。
+                      其余各列都不换行，表格变窄时只有这一列收得动。只在
+                      徽标之间折，徽标自身不断开：窄了是这一行变高，不是
+                      哪一列看不见。
+                    */}
+                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                      <span>{r.provider}</span>
+                      {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
+                          是脱敏搞坏了功能。所以脱敏发生了就要在
+                          列表这一层看得见，而不是藏在详情里 */}
+                      {r.redacted && r.redacted.length > 0 && (
+                        <span
+                          className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                          title={
+                            "发送前已替换：" +
+                            r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`).join("、") +
+                            "\n模型回显的内容将自动还原。"
+                          }
+                        >
+                          已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
+                        </span>
+                      )}
+                      {/* 格式转换。**转了就要看得见，丢了字段
+                          更要看得见** —— 「扩展思考开了却没生效」这个症状
+                          在客户端那头完全无从下手，只有这里知道原因 */}
+                      {r.translated && (
+                        <span
+                          className={
+                            "rounded px-1 tw-label " +
+                            (r.translated.dropped.length > 0
+                              ? "bg-amber-500 text-white"
+                              : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
+                          }
+                          title={
+                            `请求已转换格式后发送：${translatedText(r.translated)}。` +
+                            (r.translated.dropped.length > 0
+                              ? `\n\n目标格式不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
+                              : "\n未丢弃任何字段。")
+                          }
+                        >
+                          {r.translated.dropped.length > 0
+                            ? `已转换 · 丢弃 ${r.translated.dropped.length} 项`
+                            : "已转换"}
+                        </span>
+                      )}
+                      {r.flagged?.some((f) => f.high) && (
+                        <span
+                          className={
+                            "rounded px-1 tw-label " +
+                            (r.flagged.some((f) => f.blocked)
+                              ? "bg-red-600 text-white"
+                              : "bg-amber-500 text-white")
+                          }
+                          title={r.flagged
+                            .filter((f) => f.high)
+                            .map((f) => `${f.tool}：${f.why}\n${f.excerpt}`)
+                            .join("\n\n")}
+                        >
+                          {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   {/*
                     数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，

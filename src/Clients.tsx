@@ -334,7 +334,10 @@ function Card({
         </div>
         {c.endpoint && <div>当前指向 {c.endpoint}</div>}
         {c.takes_effect === "on_restart" && <div>{takesEffectText(c.takes_effect)}</div>}
-        {c.verified === "fields_only" && <div>ⓘ {FIELDS_ONLY_TEXT}</div>}
+        {/* 「只查证过字段名」说的是这些字段还没在本机跑过。**接管之后
+            收到了请求，就是在本机跑通了** —— 这时再说「尚未验证」，
+            和上面那个「已验证」自相矛盾 */}
+        {c.verified === "fields_only" && !verified && <div>ⓘ {FIELDS_ONLY_TEXT}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
             ⚠ {s} 优先级更高，可能覆盖此处的设置
