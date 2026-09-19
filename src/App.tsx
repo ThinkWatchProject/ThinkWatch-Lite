@@ -42,6 +42,9 @@ import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview } from "./types";
 import { secretLabel, stageLabel, translatedText } from "./labels";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
+import { appText } from "./App.i18n";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -152,17 +155,17 @@ function surfaceOf(section: string | null): Surface {
 type SourceIcon = LucideIcon;
 const SOURCES: {
   group: string;
-  items: { id: Surface; label: string; icon: SourceIcon }[];
+  items: { id: Surface; icon: SourceIcon }[];
 }[] = [
   {
-    group: "监控",
+    group: "monitor",
     items: [
       // **概览在最上面。**它回答的是「现在什么情况」，而流量和会话回答
       // 的是「刚才那一条发生了什么」—— 前者是打开这个应用的默认意图，
       // 后者是带着问题来的时候才点。
-      { id: "dashboard", label: "概览" , icon: IconDashboard },
-      { id: "requests", label: "流量" , icon: IconFlow },
-      { id: "sessions", label: "会话" , icon: IconSession },
+      { id: "dashboard", icon: IconDashboard },
+      { id: "requests", icon: IconFlow },
+      { id: "sessions", icon: IconSession },
     ],
   },
   {
@@ -174,22 +177,22 @@ const SOURCES: {
     // 去动那几个开关**。
     //
     // 所以拆成两项：发现（看证据）和防护（配策略）。
-    group: "安全",
+    group: "security",
     items: [
-      { id: "security", label: "发现" , icon: IconFindings },
-      { id: "guard", label: "防护" , icon: IconGuard },
+      { id: "security", icon: IconFindings },
+      { id: "guard", icon: IconGuard },
     ],
   },
   {
-    group: "配置",
+    group: "config",
     items: [
       // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
-      { id: "upstreams", label: "上游" , icon: IconServer },
-      { id: "keys", label: "密钥" , icon: IconKey },
-      { id: "routing", label: "路由" , icon: IconRoute },
-      { id: "config", label: "网关" , icon: IconGateway },
-      { id: "clients", label: "客户端" , icon: IconClient },
+      { id: "upstreams", icon: IconServer },
+      { id: "keys", icon: IconKey },
+      { id: "routing", icon: IconRoute },
+      { id: "config", icon: IconGateway },
+      { id: "clients", icon: IconClient },
     ],
   },
   {
@@ -198,8 +201,8 @@ const SOURCES: {
     // 开机自启原来挂在「网关」下面，和「上游地址」「监听端口」并列 ——
     // 那是两类完全不同的东西：一个写进系统的登录项，一个写进 config.yaml。
     // 分界线就是这个：改的是这个 macOS 应用，还是改网关的配置文件。
-    group: "应用",
-    items: [{ id: "settings", label: "设置" , icon: IconSettings }],
+    group: "app",
+    items: [{ id: "settings", icon: IconSettings }],
   },
 ];
 
@@ -216,16 +219,17 @@ function describeCore(raw: string): {
   short: string;
   tone: "ok" | "warn" | "bad";
 } {
-  if (raw.startsWith("running:")) return { text: "运行中", short: "运行中", tone: "ok" };
-  if (raw === "starting") return { text: "启动中", short: "启动中", tone: "warn" };
+  const t = textOf(appText);
+  if (raw.startsWith("running:")) return { text: t.running, short: t.running, tone: "ok" };
+  if (raw === "starting") return { text: t.starting, short: t.starting, tone: "warn" };
   if (raw.startsWith("restarting:")) {
     const [, attempt] = raw.split(":");
-    return { text: `重启中（第 ${attempt} 次）`, short: "重启中", tone: "warn" };
+    return { text: t.restarting(`${attempt}`), short: t.restartingShort, tone: "warn" };
   }
   // 安全模式必须显眼：这时候网关不转发了，用户所有的 AI 客户端都在瞎。
   if (raw === "safe_mode")
-    return { text: "安全模式 · 网关未运行", short: "安全模式", tone: "bad" };
-  return { text: "已停止", short: "已停止", tone: "bad" };
+    return { text: t.safeMode, short: t.safeModeShort, tone: "bad" };
+  return { text: t.stopped, short: t.stopped, tone: "bad" };
 }
 
 /** 可排序表头。箭头只出现在当前排序列上 —— 每列都挂一个等于没挂。 */
@@ -290,6 +294,8 @@ function BodySkeleton({ widths }: { widths: string[] }) {
 }
 
 export default function App() {
+  const t = useText(appText);
+  const common = useText(commonText);
   const {
     rows: allRows,
     seeded,
@@ -774,6 +780,7 @@ export default function App() {
                     // 配置面上出现了新东西 —— 挂个角标,直到他去看过
                     const badge = it.id === "security" ? alerts.length : 0;
                     const Icon = it.icon;
+                    const label = t.surfaces[it.id];
                     return (
                       <SidebarMenuItem key={it.id}>
                         <SidebarMenuButton
@@ -781,11 +788,11 @@ export default function App() {
                           onClick={() => setTab(it.id)}
                           aria-current={on ? "page" : undefined}
                           tooltip={
-                            badge > 0 ? `${it.label} · ${badge} 项新发现` : it.label
+                            badge > 0 ? t.newFindings(label, badge) : label
                           }
                         >
                           <Icon size={16} />
-                          <span className="truncate">{it.label}</span>
+                          <span className="truncate">{label}</span>
                         </SidebarMenuButton>
                         {badge > 0 && (
                           <SidebarMenuBadge className="bg-red-500 text-white group-data-[collapsible=icon]:hidden">
@@ -878,7 +885,7 @@ export default function App() {
             side="bottom"
             text={
               <>
-                {railOpen ? "收起源列表" : "展开源列表"}
+                {railOpen ? t.collapseRail : t.expandRail}
                 <KbdGroup>
                   <Kbd>⌘</Kbd>
                   <Kbd>⌥</Kbd>
@@ -895,7 +902,7 @@ export default function App() {
               反而比不碰暗。`SidebarTrigger` 不设这个属性。
             */}
             <SidebarTrigger
-              aria-label={railOpen ? "收起源列表" : "展开源列表"}
+              aria-label={railOpen ? t.collapseRail : t.expandRail}
               style={{ color: "var(--chrome-dim)" }}
             />
           </Tip>
@@ -913,7 +920,7 @@ export default function App() {
             style={{ color: "var(--chrome-text)" }}
             data-tauri-drag-region
           >
-            {SOURCES.flatMap((g) => g.items).find((i) => i.id === tab)?.label}
+            {t.surfaces[tab]}
           </span>
           {/*
             配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
@@ -923,10 +930,10 @@ export default function App() {
             {linked && CONFIG_PAGES.has(tab) && (
               <>
                 <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
-                  配置文件
+                  {t.configFile}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                  版本历史
+                  {t.versionHistory}
                 </Button>
               </>
             )}
@@ -955,11 +962,10 @@ export default function App() {
       */}
       {rejected && (
         <Alert variant="warning" className="border-b px-5 py-2.5">
-          <AlertTitle>配置校验未通过，仍在使用上一版本</AlertTitle>
+          <AlertTitle>{t.rejectedTitle}</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            {stageLabel(rejected.stage)}错误
-            {rejected.line != null && `（第 ${rejected.line} 行）`}：{rejected.message}
+            {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}{rejected.message}
           </p>
           {rejected.excerpt && (
             <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 px-2 py-1 font-mono tw-label text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
@@ -985,12 +991,13 @@ export default function App() {
             className="flex items-start justify-between gap-4 border-b border-border bg-neutral-50 px-5 py-2 tw-body dark:bg-neutral-900"
           >
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {r.provider}
-              </span>{" "}
-              的 token 端点已换发新凭据，并已写回 config.yaml。
-              <Tip text="如果编辑器中打开了 config.yaml，编辑器可能提示「文件已在磁盘上更改」，需重新加载。">
-                <span className="ml-1 underline decoration-dotted underline-offset-2">编辑器需重新加载</span>
+              {t.rotatedSaved(
+                <span className="font-medium text-foreground">
+                  {r.provider}
+                </span>,
+              )}
+              <Tip text={t.reloadTip}>
+                <span className="ml-1 underline decoration-dotted underline-offset-2">{t.reload}</span>
               </Tip>
             </p>
             <Button
@@ -999,7 +1006,7 @@ export default function App() {
               className="shrink-0"
               onClick={clearRotated}
             >
-              关闭
+              {common.close}
             </Button>
           </div>
         ) : (
@@ -1010,14 +1017,13 @@ export default function App() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-medium text-amber-900 dark:text-amber-200">
-                  {r.provider} 已换发新凭据，但未能写回 config.yaml。当前转发正常。
+                  {t.rotatedUnsaved(r.provider)}
                 </p>
                 <p className="mt-1 text-amber-800 dark:text-amber-300">
                   {r.detail}
                 </p>
                 <p className="mt-1 text-amber-800 dark:text-amber-300">
-                  原凭据已在服务端失效。
-                  <span className="font-medium">重启前如未处理，该上游的请求将持续返回 401</span>。
+                  {t.oldRevoked((s) => <span className="font-medium">{s}</span>)}
                 </p>
               </div>
               <Button
@@ -1026,7 +1032,7 @@ export default function App() {
                 className="shrink-0"
                 onClick={clearRotated}
               >
-                关闭
+                {common.close}
               </Button>
             </div>
           </div>
@@ -1044,7 +1050,7 @@ export default function App() {
       {linked && tries > 0 && lost && (
         <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
           <span className="font-medium text-amber-900 dark:text-amber-200">
-            {lost.what} · 以下数据截至连接断开时
+            {t.staleData(lost.what)}
           </span>
           <span className="text-amber-800 dark:text-amber-300">{lost.next}</span>
           {lost.retry && (
@@ -1054,7 +1060,7 @@ export default function App() {
               className="ml-auto shrink-0"
               onClick={() => void invoke("restart_core").catch(() => setNudge((n) => n + 1))}
             >
-              重新启动
+              {t.restart}
             </Button>
           )}
         </div>
@@ -1098,7 +1104,7 @@ export default function App() {
             onChanged={() => setNudge((n) => n + 1)}
           />
         ) : (
-          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
       ) : tab === "keys" ? (
         ov ? (
@@ -1110,7 +1116,7 @@ export default function App() {
             onNavigate={(to) => setTab(to as Surface)}
           />
         ) : (
-          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
       ) : tab === "routing" ? (
         ov ? (
@@ -1122,7 +1128,7 @@ export default function App() {
             onNavigate={(to) => setTab(to as Surface)}
           />
         ) : (
-          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
       ) : tab === "upstreams" ? (
         ov ? (
@@ -1134,7 +1140,7 @@ export default function App() {
             onNavigate={(to) => setTab(to as Surface)}
           />
         ) : (
-          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
       ) : tab === "config" || tab === "settings" ? (
         ov ? (
@@ -1145,7 +1151,7 @@ export default function App() {
             configVersion={configVersion}
           />
         ) : (
-          <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
+          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
       ) : (
       <Split
@@ -1175,7 +1181,7 @@ export default function App() {
               ref={searchRef}
               value={filter.q}
               onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-              placeholder="搜索路径、客户端、上游、错误…  ⌘F"
+              placeholder={t.search}
               spellCheck={false}
             />
             {/* 这是个开关,不是按钮 —— 按下去它要一直保持按下的样子 */}
@@ -1185,7 +1191,7 @@ export default function App() {
               pressed={filter.failedOnly}
               onPressedChange={(v) => setFilter((f) => ({ ...f, failedOnly: v }))}
             >
-              仅显示失败
+              {t.failedOnly}
             </Toggle>
             {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
@@ -1198,7 +1204,7 @@ export default function App() {
                 }
               >
                 {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">全部客户端</NativeSelectOption>
+                <NativeSelectOption value="">{t.allClients}</NativeSelectOption>
                 {facet.clients.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -1215,7 +1221,7 @@ export default function App() {
                 }
               >
                 {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">全部上游</NativeSelectOption>
+                <NativeSelectOption value="">{t.allUpstreams}</NativeSelectOption>
                 {facet.providers.map((c) => (
                   <NativeSelectOption key={c} value={c}>
                     {c}
@@ -1229,8 +1235,8 @@ export default function App() {
             */}
             <span className="ml-auto tw-label text-muted-foreground">
               {hasAnyFilter(filter)
-                ? `${rows.length} / ${allRows.length} 条`
-                : `${allRows.length} 条`}
+                ? t.shownOf(rows.length, allRows.length)
+                : t.total(allRows.length)}
             </span>
             {hasAnyFilter(filter) && (
               <Button
@@ -1238,7 +1244,7 @@ export default function App() {
                 size="xs"
                 onClick={() => setFilter(EMPTY_FILTER)}
               >
-                清空
+                {t.clear}
               </Button>
             )}
           </div>
@@ -1251,16 +1257,16 @@ export default function App() {
         */}
         {status?.providers === 0 && (
           <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
-            <p className="tw-head font-medium">尚未配置上游</p>
+            <p className="tw-head font-medium">{t.noUpstreams}</p>
             <p className="mt-1 tw-body text-muted-foreground">
-              网关正在{" "}
-              <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
-                http://{status.gateway_addr}
-              </code>{" "}
-              监听。配置上游后，请求才能转发。
+              {t.listening(
+                <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
+                  http://{status.gateway_addr}
+                </code>,
+              )}
             </p>
             <Button size="sm" className="mt-3" onClick={() => setTab("upstreams")}>
-              前往上游
+              {t.goToUpstreams}
             </Button>
           </div>
         )}
@@ -1272,14 +1278,14 @@ export default function App() {
             */
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>没有符合条件的请求</EmptyTitle>
+                <EmptyTitle>{t.noMatchTitle}</EmptyTitle>
                 <EmptyDescription>
-                  共 {allRows.length} 条记录，当前筛选条件下没有匹配项。
+                  {t.noMatch(allRows.length)}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
-                  清除筛选条件
+                  {t.clearFilters}
                 </Button>
               </EmptyContent>
             </Empty>
@@ -1287,21 +1293,21 @@ export default function App() {
             // 空状态永远在回答「接下来该做什么」。
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>暂无请求记录</EmptyTitle>
+                <EmptyTitle>{t.emptyTitle}</EmptyTitle>
                 <EmptyDescription>
-                  将客户端的端点设为{" "}
-                  <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
-                    http://{status?.gateway_addr ?? "127.0.0.1:8788"}
-                  </code>
-                  ，并使用以 tw- 开头的客户端密钥。
+                  {t.pointClients(
+                    <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+                      http://{status?.gateway_addr ?? "127.0.0.1:8788"}
+                    </code>,
+                  )}
                   <br />
-                  收到请求后，请求记录将显示在此处。
+                  {t.appearHere}
                 </EmptyDescription>
                 {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
                     拿一个零冒充证据 */}
                 {locallyAnswered > 0 && (
                   <EmptyDescription>
-                    已本地应答 {locallyAnswered} 次客户端探测。客户端已连接网关，这些探测未产生费用。
+                    {t.probesAnswered(locallyAnswered)}
                   </EmptyDescription>
                 )}
               </EmptyHeader>
@@ -1316,16 +1322,16 @@ export default function App() {
             */}
             <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
               <TableRow>
-                <Th k="status" label="状态" sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
-                <Th k="time" label="时间" sort={sortKey} dir={sortDir} on={toggleSort} />
+                <Th k="status" label={t.status} sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
+                <Th k="time" label={t.time} sort={sortKey} dir={sortDir} on={toggleSort} />
                 {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
-                {showClient && <TableHead>客户端</TableHead>}
-                <TableHead>模型</TableHead>
-                <TableHead>上游</TableHead>
+                {showClient && <TableHead>{t.client}</TableHead>}
+                <TableHead>{t.model}</TableHead>
+                <TableHead>{t.upstream}</TableHead>
                 {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
-                <Th k="duration" label="延迟" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="tokens" label="token" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="cost" label="费用" sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
+                <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
               </TableRow>
             </TableHeader>
             {/*
@@ -1352,21 +1358,21 @@ export default function App() {
                 <RowMenu
                   key={r.id}
                   items={[
-                    { kind: "item", label: "打开详情", onSelect: () => setOpen(r.id) },
+                    { kind: "item", label: t.openDetails, onSelect: () => setOpen(r.id) },
                     { kind: "sep" },
                     // **按这一行的值筛，不是打开一个筛选器。**排查时的
                     // 动作是「只看这家」「只看这个客户端」，而手打名字
                     // 会打错，打错的表现是「筛出来空的」。
                     {
                       kind: "item",
-                      label: `仅显示上游 ${r.provider}`,
+                      label: t.onlyUpstream(r.provider),
                       onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
                     },
                     ...(showClient
                       ? ([
                           {
                             kind: "item",
-                            label: `仅显示客户端 ${r.client}`,
+                            label: t.onlyClient(r.client),
                             onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
                           },
                         ] as const)
@@ -1374,12 +1380,12 @@ export default function App() {
                     { kind: "sep" },
                     {
                       kind: "item",
-                      label: "复制请求 ID",
+                      label: t.copyId,
                       onSelect: () => void navigator.clipboard.writeText(String(r.id)),
                     },
                     {
                       kind: "item",
-                      label: "复制此行",
+                      label: t.copyRow,
                       onSelect: () =>
                         void navigator.clipboard.writeText(
                           [
@@ -1438,9 +1444,9 @@ export default function App() {
                             {r.state === "in_flight"
                               ? "…"
                               : r.state === "failed"
-                                ? "失败"
+                                ? t.failed
                                 : r.state === "cancelled"
-                                  ? "已取消"
+                                  ? t.cancelled
                                   : r.status}
                           </span>
                         </span>
@@ -1494,13 +1500,11 @@ export default function App() {
                       {r.redacted && r.redacted.length > 0 && (
                         <span
                           className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                          title={
-                            "发送前已替换：" +
-                            r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`).join("、") +
-                            "\n模型回显的内容将自动还原。"
-                          }
+                          title={t.redactedTip(
+                            r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`),
+                          )}
                         >
-                          已脱敏 {r.redacted.reduce((a, x) => a + x.count, 0)}
+                          {t.redacted(r.redacted.reduce((a, x) => a + x.count, 0))}
                         </span>
                       )}
                       {/* 格式转换。**转了就要看得见，丢了字段
@@ -1515,15 +1519,15 @@ export default function App() {
                               : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
                           }
                           title={
-                            `请求已转换格式后发送：${translatedText(r.translated)}。` +
+                            t.sentConverted(translatedText(r.translated)) +
                             (r.translated.dropped.length > 0
-                              ? `\n\n目标格式不支持、已丢弃的字段：${r.translated.dropped.join("、")}`
-                              : "\n未丢弃任何字段。")
+                              ? t.droppedFields(r.translated.dropped)
+                              : t.noneDropped)
                           }
                         >
                           {r.translated.dropped.length > 0
-                            ? `已转换 · 丢弃 ${r.translated.dropped.length} 项`
-                            : "已转换"}
+                            ? t.convertedDropped(r.translated.dropped.length)
+                            : t.converted}
                         </span>
                       )}
                       {r.flagged?.some((f) => f.high) && (
@@ -1536,10 +1540,10 @@ export default function App() {
                           }
                           title={r.flagged
                             .filter((f) => f.high)
-                            .map((f) => `${f.tool}：${f.why}\n${f.excerpt}`)
+                            .map((f) => t.flaggedTip(f.tool, f.why, f.excerpt))
                             .join("\n\n")}
                         >
-                          {r.flagged.some((f) => f.blocked) ? "已拦截" : "可疑调用"}
+                          {r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious}
                         </span>
                       )}
                     </div>
@@ -1567,10 +1571,10 @@ export default function App() {
                       <Tip
                         text={
                           r.state === "cancelled"
-                            ? "客户端在响应结束前断开，输出用量计至断开时，实际费用可能更高。"
+                            ? t.estimatedCancelled
                             : r.state === "failed"
-                              ? "响应在结束前中断，输出用量计至中断时，实际费用可能更高。"
-                              : "价目表中没有此上游的单价，该金额按同一模型在其他平台的单价估算。"
+                              ? t.estimatedFailed
+                              : t.estimatedBorrowed
                         }
                       >
                         <span className="underline decoration-dotted underline-offset-2">
@@ -1592,7 +1596,7 @@ export default function App() {
         )}
         {locallyAnswered > 0 && rows.length > 0 && (
           <p className="mt-3 tw-body text-muted-foreground">
-            另有 {locallyAnswered} 次客户端探测由网关本地应答，未发送到上游。
+            {t.probesElsewhere(locallyAnswered)}
           </p>
         )}
       </Split>
@@ -1607,20 +1611,20 @@ export default function App() {
       <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
         <AlertDialogContent className="sm:max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>退出 ThinkWatch Lite</AlertDialogTitle>
+            <AlertDialogTitle>{t.quitTitle}</AlertDialogTitle>
             <AlertDialogDescription>
-              退出后网关将停止监听，所有已接管的客户端将立即无法连接。
+              {t.quitDescription}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <p className="tw-body text-muted-foreground">
-            仅关闭窗口请按 ⌘W，进程将保留在菜单栏。
+            {t.quitHint}
           </p>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
             <AlertDialogAction variant="destructive"
               onClick={() => void invoke("quit_app")}
             >
-              退出
+              {t.quit}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

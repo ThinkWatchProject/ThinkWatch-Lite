@@ -13,7 +13,10 @@ import { Badge } from "@/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
 import { useCoreEvent } from "./useCoreEvent";
-import { FIELDS_ONLY_TEXT, takesEffectText } from "./labels";
+import { fieldsOnlyText, takesEffectText } from "./labels";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
+import { clientsText } from "./Clients.i18n";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +38,8 @@ import {
  *   我们改了一个文件，但那个文件有没有被读到，只有请求能证明。
  */
 export default function Clients() {
+  const t = useText(clientsText);
+  const common = useText(commonText);
   const [data, setData] = useState<ClientsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ p: PlanView; c: DetectedClient; restore: boolean } | null>(
@@ -132,7 +137,7 @@ export default function Clients() {
   }
 
   if (!data) {
-    return <div className="p-5 tw-head text-muted-foreground">{error ?? "扫描中…"}</div>;
+    return <div className="p-5 tw-head text-muted-foreground">{error ?? t.scanning}</div>;
   }
 
   const here = data.clients.filter((c) => c.installed);
@@ -144,7 +149,7 @@ export default function Clients() {
 
       <div className="flex items-start justify-between gap-4">
         <div className="tw-body text-muted-foreground">
-          接管后，这些客户端将指向 <code>{data.gateway_base}</code>。仅修改端点与密钥两个字段，其余配置保持不变，可随时还原。
+          {t.intro(<code>{data.gateway_base}</code>)}
         </div>
         {/*
           **退路要一直看得见**。用户敢按下「接管」的前提，就是
@@ -155,8 +160,7 @@ export default function Clients() {
           (confirmAll ? (
             <div className="flex shrink-0 items-center gap-2 tw-body">
               <span className="text-amber-700 dark:text-amber-400">
-                {data.clients.filter((c) => c.adopted_at_ms !== null).length}{" "}
-                个客户端将还原，其请求将立即不再经过 ThinkWatch。
+                {t.restoreAllWarning(data.clients.filter((c) => c.adopted_at_ms !== null).length)}
               </span>
               <Button
                 variant="default"
@@ -172,12 +176,9 @@ export default function Clients() {
                     const bad = rs.filter((r) => !r.ok);
                     // **一个失败不影响其余的**，所以逐条报，不能只说「失败了」
                     if (bad.length === 0) {
-                      toast.success(`已还原 ${rs.length} 个客户端`);
+                      toast.success(t.restoredAll(rs.length));
                     } else {
-                      toast.error(
-                        `${bad.length} 个客户端还原失败：` +
-                          bad.map((r) => `${r.client}（${r.detail}）`).join("；"),
-                      );
+                      toast.error(t.restoreFailed(bad));
                     }
                     await load();
                   } catch (e) {
@@ -187,14 +188,14 @@ export default function Clients() {
                   }
                 }}
               >
-                确认全部还原
+                {t.confirmRestoreAll}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmAll(false)}
               >
-                取消
+                {common.cancel}
               </Button>
             </div>
           ) : (
@@ -205,7 +206,7 @@ export default function Clients() {
               disabled={busy}
               onClick={() => setConfirmAll(true)}
             >
-              全部还原
+              {t.restoreAll}
             </Button>
           ))}
       </div>
@@ -218,17 +219,20 @@ export default function Clients() {
       {here.length === 0 && (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>未检测到已支持的客户端</EmptyTitle>
-            <EmptyDescription>如已安装 Claude Code、Codex 或 Gemini CLI，
-            <Tip text="需先运行一次以生成其配置文件，之后返回此页。未生成配置文件时无法判断其指向。">
-              <span className="underline decoration-dotted underline-offset-2">请先运行一次</span>
-            </Tip>。
-            <br />
-            也可手动将客户端的端点设为{" "}
-            <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
-              {data.gateway_base}
-            </code>
-            。</EmptyDescription>
+            <EmptyTitle>{t.noneTitle}</EmptyTitle>
+            <EmptyDescription>
+              {t.runOnce((s) => (
+                <Tip text={t.runOnceTip}>
+                  <span className="underline decoration-dotted underline-offset-2">{s}</span>
+                </Tip>
+              ))}
+              <br />
+              {t.manualEndpoint(
+                <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+                  {data.gateway_base}
+                </code>,
+              )}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}
@@ -239,11 +243,11 @@ export default function Clients() {
 
       {gone.length > 0 && (
         <details className="tw-body text-muted-foreground">
-          <summary className="cursor-pointer">未检测到的客户端（{gone.length}）</summary>
+          <summary className="cursor-pointer">{t.notDetected(gone.length)}</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {gone.map((c) => (
               <li key={c.id}>
-                {c.name}：未找到 <code>{c.path}</code>
+                {t.notFound(c.name, <code>{c.path}</code>)}
               </li>
             ))}
           </ul>
@@ -252,7 +256,7 @@ export default function Clients() {
 
       {/* **不假装能接管。**显示成「已接管」会让用户以为所有流量都在我们这儿 */}
       <div className="rounded border border-border p-3">
-        <div className="mb-2 tw-body font-medium">需手动配置的客户端</div>
+        <div className="mb-2 tw-body font-medium">{t.manual}</div>
         <ul className="space-y-2 tw-body text-muted-foreground">
           {data.manual.map((m) => (
             <li key={m.name}>
@@ -282,6 +286,7 @@ function Card({
   onAsk: (c: DetectedClient, restore: boolean) => void;
   onWhy: (id: string) => void;
 }) {
+  const t = useText(clientsText);
   const adopted = c.adopted_at_ms != null;
   // **「已接管」和「已生效」是两回事。**只有请求能证明后者
   const verified = adopted && c.last_seen_ms != null && c.last_seen_ms > (c.adopted_at_ms ?? 0);
@@ -295,11 +300,11 @@ function Card({
       <div className="flex items-center gap-2">
         <span className="tw-head font-medium">{c.name}</span>
         {verified ? (
-          <Badge variant="success">已验证 · 已收到请求</Badge>
+          <Badge variant="success">{t.verified}</Badge>
         ) : adopted ? (
-          <Badge variant="warning">已接管 · 等待首个请求</Badge>
+          <Badge variant="warning">{t.waiting}</Badge>
         ) : (
-          <Badge variant="secondary">未接管</Badge>
+          <Badge variant="secondary">{t.notConnected}</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {adopted && (
@@ -311,7 +316,7 @@ function Card({
             >
               {/* 已经收到过它的请求了还问「为什么没生效」，读起来像是我们
                   自己都不信刚才那个「已验证」 */}
-              {verified ? "检查配置链" : "诊断未生效原因"}
+              {verified ? t.checkChain : t.diagnose}
             </Button>
           )}
           <Button
@@ -320,7 +325,7 @@ function Card({
             onClick={() => onAsk(c, adopted)}
             disabled={busy}
           >
-            {adopted ? "还原" : "接管…"}
+            {adopted ? t.restore : t.connectMenu}
           </Button>
         </div>
       </div>
@@ -330,22 +335,22 @@ function Card({
           <code>{c.real}</code>
           {/* 用户以为在改 ~/.claude/settings.json，实际写的可能是他
               dotfiles 仓库里的那份 —— 而那是个会被 git 提交的地方 */}
-          {c.real !== c.path && <span className="ml-1">（{c.path} 是符号链接）</span>}
+          {c.real !== c.path && <span className="ml-1">{t.symlink(c.path)}</span>}
         </div>
-        {c.endpoint && <div>当前指向 {c.endpoint}</div>}
+        {c.endpoint && <div>{t.pointsTo(c.endpoint)}</div>}
         {c.takes_effect === "on_restart" && <div>{takesEffectText(c.takes_effect)}</div>}
         {/* 「只查证过字段名」说的是这些字段还没在本机跑过。**接管之后
             收到了请求，就是在本机跑通了** —— 这时再说「尚未验证」，
             和上面那个「已验证」自相矛盾 */}
-        {c.verified === "fields_only" && !verified && <div>ⓘ {FIELDS_ONLY_TEXT}</div>}
+        {c.verified === "fields_only" && !verified && <div>ⓘ {fieldsOnlyText()}</div>}
         {c.shadows.map((s) => (
           <div key={s} className="text-amber-600 dark:text-amber-400">
-            ⚠ {s} 优先级更高，可能覆盖此处的设置
+            ⚠ {t.shadowed(s)}
           </div>
         ))}
         {nagging && (
           <div className="text-amber-600 dark:text-amber-400">
-            接管已超过五分钟，仍未收到请求。可点击「诊断未生效原因」进行检查。
+            {t.silent}
           </div>
         )}
       </div>
@@ -402,21 +407,23 @@ function PlanDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useText(clientsText);
+  const common = useText(commonText);
   return (
-    <Shell onClose={onCancel} title={`${restore ? "还原" : "接管"} ${c.name}`}>
+    <Shell onClose={onCancel} title={t.planTitle(restore, c.name)}>
       <div className="mt-1 tw-body text-muted-foreground">
-        将修改 <code>{p.path}</code>
+        {t.modifies(<code>{p.path}</code>)}
       </div>
 
       {p.noop ? (
-        <div className="mt-3 tw-body">配置已是目标状态，无需修改。</div>
+        <div className="mt-3 tw-body">{t.noop}</div>
       ) : (
         <>
           {p.fields.length > 0 && (
             <ul className="mt-3 space-y-0.5 tw-body">
               {p.fields.map((f) => (
                 <li key={`${f.op} ${f.path}`}>
-                  {f.op === "remove" ? "删除 " : "设置 "}
+                  {f.op === "remove" ? t.removeField : t.setField}
                   <code>{f.path}</code>
                   {/* 没有值的是网关密钥或一整段结构，摘要里不展开 */}
                   {f.value != null && (
@@ -442,15 +449,15 @@ function PlanDialog({
           <Diff before={p.before} after={p.after} />
 
           <div className="mt-3 tw-body text-muted-foreground">
-            写入前将完整备份原文件，除上述字段外不做任何改动。
-            {p.carries_secret && "（差异中的密钥已遮盖，实际写入的是 config.yaml 中的密钥原文。）"}
+            {t.backup}
+            {p.carries_secret && t.secretMasked}
           </div>
         </>
       )}
 
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          取消
+          {common.cancel}
         </Button>
         {!p.noop && (
           <Button
@@ -458,7 +465,7 @@ function PlanDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {restore ? "还原" : "确认接管"}
+            {restore ? t.restore : t.confirmConnect}
           </Button>
         )}
       </div>
@@ -538,15 +545,17 @@ function Diff({ before, after }: { before: string | null; after: string }) {
 
 /** 接管完成。**不说「成功」** —— 只有请求能证明它真的生效了。 */
 function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
+  const t = useText(clientsText);
+  const common = useText(commonText);
   return (
-    <Shell onClose={onClose} title="已写入配置">
+    <Shell onClose={onClose} title={t.doneTitle}>
       <div className="mt-2 space-y-1 tw-body text-muted-foreground">
         <div>{takesEffectText(r.takes_effect)}</div>
         <div>
-          已修改 <code>{r.real}</code>
+          {t.modified(<code>{r.real}</code>)}
         </div>
         <div>
-          原文件已备份至 <code>{r.backup}</code>
+          {t.backedUp(<code>{r.backup}</code>)}
         </div>
         {r.warnings.map((w) => (
           <div key={w} className="text-amber-600 dark:text-amber-400">
@@ -554,12 +563,12 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
           </div>
         ))}
         <div className="pt-1">
-          收到真实请求后，方可确认配置已生效。
+          {t.provenByRequest}
         </div>
       </div>
       <div className="mt-4 flex justify-end">
         <Button variant="ghost" size="sm" onClick={onClose}>
-          关闭
+          {common.close}
         </Button>
       </div>
     </Shell>
@@ -568,8 +577,10 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
 
 /** 优先级链的诊断结果。**查干净的也要说出来**，而不是让那一项消失。 */
 function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => void }) {
+  const t = useText(clientsText);
+  const common = useText(commonText);
   return (
-    <Shell onClose={onClose} title="配置链诊断">
+    <Shell onClose={onClose} title={t.whyTitle}>
       <ul className="mt-3 space-y-2 tw-body">
         {found.map((f, i) => (
           <li key={i} className="flex gap-2">
@@ -599,7 +610,7 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
       </ul>
       <div className="mt-4 flex justify-end">
         <Button variant="ghost" size="sm" onClick={onClose}>
-          关闭
+          {common.close}
         </Button>
       </div>
     </Shell>

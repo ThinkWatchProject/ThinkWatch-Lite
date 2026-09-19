@@ -35,9 +35,6 @@ const CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
  * 检查会在「已经迁完却还留在清单上」时报错。新文件一律不许进这个清单。
  */
 const PENDING = new Set<string>([
-  "src/App.tsx",
-  "src/Clients.tsx",
-  "src/labels.ts",
   "src/Sessions.tsx",
 ]);
 

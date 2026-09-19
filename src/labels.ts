@@ -9,6 +9,7 @@
  * **认不出的值原样显示。**core 0.4 之前写进数据库的记录里是当时的文字，
  * 没有迁移。
  */
+import { textOf } from "@/i18n";
 import {
   usd,
   type AttemptView,
@@ -23,16 +24,25 @@ import {
   type TranslatedView,
 } from "./types";
 import { PROTOCOLS } from "./upstreams/labels";
+import { LEGACY_SERVED, labelsText } from "./labels.i18n";
+
+/*
+ * 显示文字都在 `labels.i18n.ts`，每次调用都按当时的语言取（`textOf`）。
+ * 导出的两张表（`GROUP_KINDS`、`PROBES`）把文字写成 getter：表留在模块级，
+ * 引用它的地方照旧读 `.label`、`.what` —— 读取都发生在渲染里，换了语言，
+ * 下一次渲染就是新的文字。
+ */
 
 // ---------------------------------------------------------------- 路由
 
-export const GROUP_KINDS: { id: string; label: string }[] = [
-  { id: "fallback", label: "按顺序" },
-  { id: "select", label: "手动选择" },
-  { id: "load-balance", label: "轮询" },
-  { id: "url-test", label: "延迟最低" },
-  { id: "cheapest", label: "费用最低" },
-];
+export const GROUP_KINDS: { id: string; label: string }[] = (
+  ["fallback", "select", "load-balance", "url-test", "cheapest"] as const
+).map((id) => ({
+  id,
+  get label() {
+    return textOf(labelsText).groupKinds[id];
+  },
+}));
 
 export function groupKindLabel(kind: string): string {
   return GROUP_KINDS.find((k) => k.id === kind)?.label ?? kind;
@@ -43,7 +53,7 @@ export const ALL_UPSTREAMS = "__all__";
 
 /** 规则去向、策略组、流量详情里的一个策略组或上游名 */
 export function targetLabel(name: string): string {
-  return name === ALL_UPSTREAMS ? "全部上游" : name;
+  return name === ALL_UPSTREAMS ? textOf(labelsText).allUpstreams : name;
 }
 
 /** 客户端和上游的格式。和上游协议同一个词表，认不出时原样显示 */
@@ -52,49 +62,36 @@ export function formatLabel(id: string): string {
 }
 
 /** 客户端辅助请求的类别，和路由条件 `intent` 同一个词表 */
-export const PROBES: { id: string; label: string; what: string }[] = [
-  {
-    id: "health_check",
-    label: "连通性检查",
-    what: "客户端启动时发送的空请求，用于确认网关可达。",
+export const PROBES: { id: string; label: string; what: string }[] = (
+  ["health_check", "warmup", "titling", "topic_detect", "suggestion"] as const
+).map((id) => ({
+  id,
+  get label() {
+    return textOf(labelsText).probes[id].label;
   },
-  { id: "warmup", label: "预热", what: "正文为 Warmup 的请求，用于预热连接与缓存。" },
-  { id: "titling", label: "生成标题", what: "为会话生成标题。设为本地应答时，所有会话使用同一标题。" },
-  {
-    id: "topic_detect",
-    label: "话题识别",
-    what: "判断本轮对话的话题，客户端据此决定是否切换上下文。",
+  get what() {
+    return textOf(labelsText).probes[id].what;
   },
-  { id: "suggestion", label: "输入建议", what: "输入框中显示的补全建议。" },
-];
+}));
 
 export function probeLabel(id: string): string {
   return PROBES.find((p) => p.id === id)?.label ?? id;
 }
 
 /** 布尔条件满足和不满足时的说法 */
-const FLAGS: Record<string, [yes: string, no: string]> = {
-  cache: ["带缓存", "不带缓存"],
-  tools: ["带工具", "不带工具"],
-  image: ["带图片", "不带图片"],
-  thinking: ["开启扩展思考", "未开启扩展思考"],
-  stream: ["流式", "非流式"],
-};
+function flagOf(field: string): { yes: string; no: string } | undefined {
+  const flags: Record<string, { yes: string; no: string }> = textOf(labelsText).flags;
+  return flags[field];
+}
 
-const CONDITION_NAMES: Record<string, string> = {
-  model: "模型",
-  client: "密钥",
-  dialect: "客户端格式",
-  input_tokens: "输入 token",
-  max_tokens: "max_tokens",
-  tool_count: "工具数",
-  intent: "辅助请求",
-  provider_would_be: "选定上游",
-};
+function nameOf(field: string): string | undefined {
+  const names: Record<string, string> = textOf(labelsText).conditionNames;
+  return names[field];
+}
 
 /** 条件的名称。是否类条件用「满足」时的说法 */
 export function conditionName(field: string): string {
-  return FLAGS[field]?.[0] ?? CONDITION_NAMES[field] ?? field;
+  return flagOf(field)?.yes ?? nameOf(field) ?? field;
 }
 
 /** 值是比较式的条件 */
@@ -102,68 +99,71 @@ const COUNTS = new Set(["input_tokens", "max_tokens", "tool_count"]);
 
 /** 条件里写的值怎么念：辅助请求和格式换成名称，其余原样 */
 function conditionValue(field: string, value: string): string {
-  if (field === "intent") return value === "assistant_internal" ? "任一辅助请求" : probeLabel(value);
+  if (field === "intent") return value === "assistant_internal" ? textOf(labelsText).anyProbe : probeLabel(value);
   if (field === "dialect") return formatLabel(value);
   return value;
 }
 
 /** 规则列表里的一个条件：`模型 claude-*`、`带缓存` */
 export function conditionText(c: ConditionView): string {
-  const flag = FLAGS[c.field];
-  if (flag) return c.values[0] === "false" ? flag[1] : flag[0];
-  const values = c.values.map((v) => conditionValue(c.field, v)).join(" 或 ");
-  return `${CONDITION_NAMES[c.field] ?? c.field} ${values}`;
+  const flag = flagOf(c.field);
+  if (flag) return c.values[0] === "false" ? flag.no : flag.yes;
+  const values = c.values.map((v) => conditionValue(c.field, v)).join(textOf(labelsText).or);
+  return `${nameOf(c.field) ?? c.field} ${values}`;
 }
 
 /** 试算明细里一条规则没命中的原因 */
 export function mismatchText(m: MismatchView): string {
-  const flag = FLAGS[m.field];
+  const t = textOf(labelsText);
+  const flag = flagOf(m.field);
   if (flag) {
-    const want = m.want[0] === "false" ? flag[1] : flag[0];
-    const got = m.got === "false" ? flag[1] : flag[0];
-    return `要求${want}，实际为${got}`;
+    const want = m.want[0] === "false" ? flag.no : flag.yes;
+    const got = m.got === "false" ? flag.no : flag.yes;
+    return t.flagMismatch(want, got);
   }
-  const name = CONDITION_NAMES[m.field] ?? m.field;
-  const want = m.want.map((v) => conditionValue(m.field, v)).join(" 或 ");
+  const name = nameOf(m.field) ?? m.field;
+  const want = m.want.map((v) => conditionValue(m.field, v)).join(t.or);
   // 辅助请求为空说的是「这是用户自己发的请求」；max_tokens 为空是请求里没写
   const got =
     m.field === "intent" && m.got === ""
-      ? "用户请求"
+      ? t.userRequest
       : m.field === "max_tokens" && m.got === ""
-        ? "未设置"
+        ? t.notSet
         : conditionValue(m.field, m.got);
   // 数量条件写的是比较式（`>200k`），前面不加「为」
   return COUNTS.has(m.field)
-    ? `要求${name} ${want}，实际为 ${got}`
-    : `要求${name}为 ${want}，实际为 ${got}`;
+    ? t.countMismatch(name, want, got)
+    : t.valueMismatch(name, want, got);
 }
 
 /** 规则命中后的一项参数改写 */
 export function setText(s: SetView): string {
+  const t = textOf(labelsText);
   switch (s.field) {
     case "model":
-      return `模型改为 ${s.value}，prompt cache 整体失效`;
+      return t.setModel(s.value);
     case "only_at_session_start":
-      return "以上改写仅在新会话开始时应用";
+      return t.onlyAtSessionStart;
     default:
-      return `${s.field} 改为 ${s.value}`;
+      return t.setField(s.field, s.value);
   }
 }
 
 /** 尝试链里的一跳。`ok` 决定颜色 */
 export function attemptText(a: AttemptView): { text: string; ok: boolean } {
+  const t = textOf(labelsText);
   switch (a.outcome) {
     case "served":
       if (a.status == null || a.status < 400) {
-        return { text: a.status == null ? "成功" : `成功 · ${a.status}`, ok: true };
+        return { text: a.status == null ? t.served : t.servedStatus(a.status), ok: true };
       }
-      return { text: `${a.status} · 请求被上游拒绝`, ok: false };
+      return { text: t.rejected(a.status), ok: false };
     case "status":
-      return { text: a.status === 429 ? "429 · 限流" : `${a.status ?? "—"} · 上游错误`, ok: false };
+      return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
     case "error":
-      return { text: a.error ?? "未收到响应", ok: false };
+      return { text: a.error ?? t.noResponse, ok: false };
     default:
-      return { text: a.outcome, ok: a.outcome === "成功" };
+      return { text: a.outcome, ok: a.outcome === LEGACY_SERVED };
   }
 }
 
@@ -176,30 +176,32 @@ export function translatedText(t: Pick<TranslatedView, "from" | "to">): string {
 
 /** 重放前的费用预估 */
 export function quoteText(q: ReplayQuote): string {
+  const t = textOf(labelsText).quote;
   switch (q.billing) {
     case "subscription":
-      return "计入订阅额度，不计算费用。";
+      return t.subscription;
     case "free":
-      return "不计费。";
+      return t.free;
     case "unknown":
-      return "计费方式未知，无法预估费用。";
+      return t.unknown;
     default:
       return q.cost_micros != null
-        ? `预估费用约 ${usd(q.cost_micros)}。`
-        : `无法计价：${q.model} 不在价目表中。`;
+        ? t.estimate(usd(q.cost_micros))
+        : t.unpriced(q.model);
   }
 }
 
 export function storageText(level: StorageStatus["level"]): string {
+  const t = textOf(labelsText).storage;
   switch (level) {
     case "ok":
-      return "正常";
+      return t.ok;
     case "metadata_only":
-      return "磁盘空间不足，仅记录请求摘要，不保存请求体与响应体";
+      return t.metadata_only;
     case "stopped":
-      return "磁盘空间严重不足，已停止记录";
+      return t.stopped;
     case "unavailable":
-      return "请求记录未能启动";
+      return t.unavailable;
     default:
       return level;
   }
@@ -208,17 +210,18 @@ export function storageText(level: StorageStatus["level"]): string {
 // ---------------------------------------------------------------- 配置
 
 export function originLabel(origin: string): string {
+  const t = textOf(labelsText).origins;
   switch (origin) {
     case "ui":
-      return "界面";
+      return t.ui;
     case "cli":
-      return "命令行";
+      return t.cli;
     case "external":
-      return "外部编辑";
+      return t.external;
     case "rollback":
-      return "回滚";
+      return t.rollback;
     case "rotation":
-      return "凭据轮换";
+      return t.rotation;
     default:
       return origin;
   }
@@ -226,13 +229,14 @@ export function originLabel(origin: string): string {
 
 /** 配置在哪一层没通过，后面接「错误」 */
 export function stageLabel(stage: string): string {
+  const t = textOf(labelsText).stages;
   switch (stage) {
     case "syntax":
-      return "语法";
+      return t.syntax;
     case "schema":
-      return "字段";
+      return t.schema;
     case "semantics":
-      return "语义";
+      return t.semantics;
     default:
       return stage;
   }
@@ -241,47 +245,20 @@ export function stageLabel(stage: string): string {
 // ---------------------------------------------------------------- 安全
 
 /** 出站检测和脱敏识别出的凭据种类 */
-const SECRETS: Record<string, string> = {
-  "anthropic-api-key": "Anthropic API 密钥",
-  "openai-api-key": "OpenAI API 密钥",
-  "openai-project-key": "OpenAI 项目密钥",
-  "github-personal-token": "GitHub 个人令牌",
-  "github-oauth-token": "GitHub OAuth 令牌",
-  "github-server-token": "GitHub 服务器令牌",
-  "github-user-token": "GitHub 用户令牌",
-  "github-fine-grained-token": "GitHub 细粒度令牌",
-  "slack-bot-token": "Slack 机器人令牌",
-  "slack-user-token": "Slack 用户令牌",
-  "slack-app-token": "Slack 应用令牌",
-  "aws-access-key-id": "AWS 访问密钥 ID",
-  "aws-temporary-key-id": "AWS 临时访问密钥 ID",
-  "google-api-key": "Google API 密钥",
-  "google-oauth-token": "Google OAuth 令牌",
-  "gitlab-token": "GitLab 令牌",
-  "stripe-live-key": "Stripe 生产密钥",
-  "stripe-restricted-key": "Stripe 受限密钥",
-  "npm-token": "npm 令牌",
-  "digitalocean-token": "DigitalOcean 令牌",
-  "sendgrid-key": "SendGrid 密钥",
-  "private-key": "私钥",
-  jwt: "JWT",
-  "conn-string-password": "连接串口令",
-  "internal-ip": "内网地址",
-  "internal-domain": "内部域名",
-};
-
 export function secretLabel(secret: string): string {
-  return SECRETS[secret] ?? secret;
+  const secrets: Record<string, string> = textOf(labelsText).secrets;
+  return secrets[secret] ?? secret;
 }
 
 export function driftLabel(metric: DriftView["metric"]): string {
+  const t = textOf(labelsText).drift;
   switch (metric) {
     case "flagged":
-      return "命中高危规则的响应";
+      return t.flagged;
     case "tool_calls":
-      return "带工具调用的响应";
+      return t.tool_calls;
     case "errors":
-      return "失败的请求";
+      return t.errors;
     default:
       return metric;
   }
@@ -289,19 +266,23 @@ export function driftLabel(metric: DriftView["metric"]): string {
 
 /** 扫描用了哪些规则：`生效扫描规则 42 条（其中自定义 2 条），已停用内置规则 1 条` */
 export function scanRulesText(s: ScanResponse): string {
-  let text = `生效扫描规则 ${s.rules_active} 条`;
-  if (s.rules_custom > 0) text += `（其中自定义 ${s.rules_custom} 条）`;
-  if (s.rules_disabled > 0) text += `，已停用内置规则 ${s.rules_disabled} 条`;
+  const t = textOf(labelsText);
+  let text = t.scanRules(s.rules_active);
+  if (s.rules_custom > 0) text += t.scanCustom(s.rules_custom);
+  if (s.rules_disabled > 0) text += t.scanDisabled(s.rules_disabled);
   return text;
 }
 
 // ---------------------------------------------------------------- 客户端接管
 
 export function takesEffectText(t: TakesEffect): string {
+  const x = textOf(labelsText).takesEffect;
   return t === "immediately"
-    ? "下一个请求即使用新配置。"
-    : "重新启动客户端后生效；通过环境变量读取配置的客户端需重新打开终端。";
+    ? x.immediately
+    : x.onRestart;
 }
 
 /** 只查证过字段名的客户端要说出来。实测过的不用说，接管后在本机收到过请求的也不用说 */
-export const FIELDS_ONLY_TEXT = "字段名已查证，尚未在本机实际运行验证。";
+export function fieldsOnlyText(): string {
+  return textOf(labelsText).fieldsOnly;
+}
