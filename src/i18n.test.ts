@@ -73,13 +73,6 @@ const PENDING = new Set<string>([
   "src/Update.tsx",
   "src/updateFlow.ts",
   "src/UpdateWindow.tsx",
-  "src/upstreams/ChatgptAccountSection.tsx",
-  "src/upstreams/ChatgptLoginDialog.tsx",
-  "src/upstreams/PriceSheetDialog.tsx",
-  "src/upstreams/PriceSheetTable.tsx",
-  "src/upstreams/ProxyDialog.tsx",
-  "src/upstreams/ProxyTable.tsx",
-  "src/upstreams/TestDialogs.tsx",
   "src/useLive.ts",
   "src/useRequests.ts",
 ]);

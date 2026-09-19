@@ -1,0 +1,38 @@
+import { messages } from "@/i18n";
+
+export const proxyTableText = messages(
+  {
+    name: "名称",
+    kind: "类型",
+    address: "地址",
+    auth: "认证",
+    usedBy: "使用上游",
+    connectivity: "连通性",
+    edit: "编辑…",
+    check: "检测代理",
+    delete: "删除…",
+    userPass: "用户名与密码",
+    notUsed: "未被使用",
+    actions: (name: string) => `${name} 的操作`,
+    notChecked: "未检测",
+    checking: "检测中",
+    unreachable: "无法连接",
+  },
+  {
+    name: "Name",
+    kind: "Type",
+    address: "Address",
+    auth: "Authentication",
+    usedBy: "Used by",
+    connectivity: "Connectivity",
+    edit: "Edit…",
+    check: "Check proxy",
+    delete: "Delete…",
+    userPass: "Username and password",
+    notUsed: "Not in use",
+    actions: (name: string) => `Actions for ${name}`,
+    notChecked: "Not checked",
+    checking: "Checking",
+    unreachable: "Unreachable",
+  },
+);

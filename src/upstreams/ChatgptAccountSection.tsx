@@ -18,29 +18,16 @@ import { Progress } from "@/ui/progress";
 import { Spinner } from "@/ui/spinner";
 import { resetIn } from "@/format";
 import type { ChatgptUsage, Overview, ProviderView, ResetCredits, ResetCreditView } from "@/types";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
+import { chatgptAccountText } from "./ChatgptAccountSection.i18n";
 import { errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
 import { FormItem } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
 /** 卡的状态词表由上游给，只有这一个能用 */
 const AVAILABLE = "available";
-
-/** 上游的状态词。认不出来的原样显示 —— 编不出来的说法比一个陌生的词更糟 */
-const STATUS: Record<string, string> = {
-  available: "可用",
-  redeemed: "已使用",
-  expired: "已过期",
-  revoked: "已作废",
-};
-
-/** 用一张卡的结果 */
-const CODES: Record<string, string> = {
-  reset: "额度已重置",
-  nothing_to_reset: "额度尚未用完，未使用重置卡",
-  no_credit: "没有可用的重置卡",
-  already_redeemed: "这次操作此前已经完成，额度已在那一次重置",
-};
 
 /**
  * ChatGPT 账号上游的「账号」一节：叫什么、从哪出去、登录状态、还剩多少额度。
@@ -64,6 +51,12 @@ export function ChatgptAccountSection({
   ov: Overview;
   onRelogin: () => void;
 }) {
+  const t = useText(chatgptAccountText);
+  const common = useText(commonText);
+  /** 上游的状态词。认不出来的原样显示 —— 编不出来的说法比一个陌生的词更糟 */
+  const status: Record<string, string> = t.status;
+  /** 用一张卡的结果 */
+  const codes: Record<string, string> = t.codes;
   const name = editing.name;
   const [usage, setUsage] = useState<ChatgptUsage | null>(null);
   const [credits, setCredits] = useState<ResetCredits | null>(null);
@@ -99,7 +92,7 @@ export function ChatgptAccountSection({
       // 幂等键按这一次操作生成：重试时不会再扣一张
       const key = `${name}:${credit.id}:${Date.now()}`;
       const r = await api.useChatgptReset(name, credit.id, key);
-      setOutcome(CODES[r.code] ?? r.code);
+      setOutcome(r.code);
       await load();
     } catch (e) {
       setError(errorText(e));
@@ -115,7 +108,7 @@ export function ChatgptAccountSection({
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-4">
-        <FormItem label="名称" htmlFor="cg-name" desc="配置中这个上游的名称">
+        <FormItem label={t.name} htmlFor="cg-name" desc={t.nameDesc}>
           <Input
             id="cg-name"
             className="font-mono"
@@ -123,14 +116,14 @@ export function ChatgptAccountSection({
             onChange={(e) => set({ name: e.target.value })}
           />
         </FormItem>
-        <FormItem label="出站方式" htmlFor="cg-proxy" desc="登录与后续请求都经此发出">
+        <FormItem label={t.egress} htmlFor="cg-proxy" desc={t.egressDesc}>
           <NativeSelect
             id="cg-proxy"
             value={form.proxy}
             onChange={(e) => set({ proxy: e.target.value })}
           >
-            <NativeSelectOption value="direct">直连</NativeSelectOption>
-            <NativeSelectOption value="system">系统代理</NativeSelectOption>
+            <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
+            <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
             {(ov.proxies ?? []).map((x) => (
               <NativeSelectOption key={x.name} value={x.name}>
                 {x.name} · {proxyKindLabel(x.kind)} {x.addr}
@@ -149,14 +142,14 @@ export function ChatgptAccountSection({
 
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="tw-head font-medium">订阅额度</h3>
+          <h3 className="tw-head font-medium">{t.quota}</h3>
           <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
             {loading ? <Spinner /> : <RefreshCwIcon />}
-            重新读取
+            {t.reload}
           </Button>
         </div>
         {loading && !usage ? (
-          <p className="tw-body text-muted-foreground">正在读取</p>
+          <p className="tw-body text-muted-foreground">{t.loading}</p>
         ) : usage && usage.windows.length > 0 ? (
           <div className="flex flex-col gap-2.5">
             {usage.windows.map((w) => {
@@ -164,9 +157,10 @@ export function ChatgptAccountSection({
               return (
                 <div key={w.window} className="flex flex-col gap-1">
                   <div className="flex items-baseline justify-between tw-body">
-                    <span>{quotaWindowLabel(w.window)}窗口</span>
+                    <span>{t.window(quotaWindowLabel(w.window))}</span>
                     <span className="tabular-nums text-muted-foreground">
-                      已用 {Math.round(w.used_percent)}%{reset && ` · ${reset}重置`}
+                      {t.used(Math.round(w.used_percent))}
+                      {reset && ` · ${t.resets(reset)}`}
                     </span>
                   </div>
                   <Progress value={Math.min(100, w.used_percent)} />
@@ -175,21 +169,20 @@ export function ChatgptAccountSection({
             })}
           </div>
         ) : (
-          <p className="tw-body text-muted-foreground">上游未报告额度。</p>
+          <p className="tw-body text-muted-foreground">{t.noQuota}</p>
         )}
       </section>
 
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="tw-head font-medium">
-            额度重置卡{credits && ` · 可用 ${available.length} 张`}
+            {t.credits}
+            {credits && ` · ${t.available(available.length)}`}
           </h3>
         </div>
-        <p className="tw-label text-muted-foreground">
-          一张重置卡把已用完的额度窗口重置一次。使用之后无法撤回，网关不会自动使用。
-        </p>
+        <p className="tw-label text-muted-foreground">{t.creditsNote}</p>
         {list.length === 0 ? (
-          <p className="tw-body text-muted-foreground">账号上没有重置卡。</p>
+          <p className="tw-body text-muted-foreground">{t.noCredits}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {list.map((c) => (
@@ -198,11 +191,11 @@ export function ChatgptAccountSection({
                 className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="tw-body">{c.title ?? "额度重置卡"}</p>
+                  <p className="tw-body">{c.title ?? t.credit}</p>
                   <p className="tw-label text-muted-foreground">
-                    {STATUS[c.status] ?? c.status}
+                    {status[c.status] ?? c.status}
                     {/* 到期日只对还能用的卡有意义 */}
-                    {c.status === AVAILABLE && c.expires_at && ` · ${c.expires_at.slice(0, 10)} 到期`}
+                    {c.status === AVAILABLE && c.expires_at && ` · ${t.expires(c.expires_at.slice(0, 10))}`}
                   </p>
                 </div>
                 <Button
@@ -211,7 +204,7 @@ export function ChatgptAccountSection({
                   disabled={c.status !== AVAILABLE || using}
                   onClick={() => setConfirming(c)}
                 >
-                  使用…
+                  {t.useEllipsis}
                 </Button>
               </li>
             ))}
@@ -219,28 +212,24 @@ export function ChatgptAccountSection({
         )}
       </section>
 
-      {outcome && <p className="tw-body">{outcome}</p>}
+      {outcome && <p className="tw-body">{codes[outcome] ?? outcome}</p>}
       {error && <p className="tw-body text-destructive">{error}</p>}
 
       <AlertDialog open={confirming != null} onOpenChange={(o) => !o && setConfirming(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>使用一张额度重置卡</AlertDialogTitle>
-            <AlertDialogDescription>
-              这张卡将被立即使用，用于重置已经用完的额度窗口。使用之后无法撤回。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t.confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{t.confirmDesc}</AlertDialogDescription>
           </AlertDialogHeader>
           <Alert variant="warning">
             <CircleAlertIcon />
-            <AlertTitle>额度尚未用完时不会消耗</AlertTitle>
-            <AlertDescription>
-              上游在没有需要重置的窗口时直接返回，不扣除这张卡。
-            </AlertDescription>
+            <AlertTitle>{t.notConsumedTitle}</AlertTitle>
+            <AlertDescription>{t.notConsumedDesc}</AlertDescription>
           </Alert>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
             <AlertDialogAction onClick={() => confirming && void use(confirming)} disabled={using}>
-              使用
+              {t.use}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -266,6 +255,7 @@ function LoginBox({
   plan: string | null;
   onRelogin: () => void;
 }) {
+  const t = useText(chatgptAccountText);
   const oauth = editing.oauth;
   const broken = oauth?.needs_login === true;
   const expires = oauth?.expires_at ? Date.parse(oauth.expires_at) : NaN;
@@ -275,17 +265,17 @@ function LoginBox({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="truncate tw-body font-medium" title={email ?? undefined}>
-            {broken ? "登录已失效" : (email ?? "已登录")}
+            {broken ? t.loginInvalid : (email ?? t.signedIn)}
             {planLabel(plan) && !broken && ` · ${planLabel(plan)}`}
           </p>
           <p className="tw-label text-muted-foreground">
             {broken
-              ? (oauth?.failure ?? "需要重新登录才能继续使用这个上游。")
-              : `${left ? `凭据 ${left}过期，到期前自动续期 · ` : ""}请求计入订阅额度，不计算费用`}
+              ? (oauth?.failure ?? t.needsLogin)
+              : `${left ? `${t.credentialExpires(left)} · ` : ""}${t.countsTowardQuota}`}
           </p>
         </div>
         <Button variant="outline" size="sm" className="shrink-0" onClick={onRelogin}>
-          重新登录
+          {t.relogin}
         </Button>
       </div>
     </div>

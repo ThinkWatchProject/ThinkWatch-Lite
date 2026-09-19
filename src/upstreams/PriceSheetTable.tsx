@@ -8,8 +8,10 @@ import {
   TableRow,
 } from "@/ui/table";
 import type { Overview, PricingStatus } from "@/types";
+import { useText } from "@/i18n";
 import { formatMultiplier } from "./labels";
 import { NameChips } from "./parts";
+import { priceSheetTableText } from "./PriceSheetTable.i18n";
 
 /** 按默认价目表计价的上游：没选价目表、而且按量计费 */
 export function defaultSheetUsers(ov: Overview): string[] {
@@ -33,18 +35,19 @@ export function PriceSheetTable({
   onDuplicate: (name: string) => void;
   onRemove: (name: string) => void;
 }) {
+  const t = useText(priceSheetTableText);
   const defaultItems: MenuItems = [
-    { kind: "item", label: "查看价格…", onSelect: onViewDefault },
+    { kind: "item", label: t.viewPrices, onSelect: onViewDefault },
   ];
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>名称</TableHead>
-          <TableHead>定价依据</TableHead>
-          <TableHead>倍率</TableHead>
-          <TableHead>模型覆盖</TableHead>
-          <TableHead>使用上游</TableHead>
+          <TableHead>{t.name}</TableHead>
+          <TableHead>{t.basis}</TableHead>
+          <TableHead>{t.multiplier}</TableHead>
+          <TableHead>{t.overrides}</TableHead>
+          <TableHead>{t.usedBy}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
@@ -52,36 +55,34 @@ export function PriceSheetTable({
         <RowMenu items={defaultItems}>
           <TableRow onDoubleClick={onViewDefault} className="cursor-default">
             <TableCell className="py-2">
-              <span className="font-medium">默认价目表</span>
+              <span className="font-medium">{t.defaultSheet}</span>
             </TableCell>
             <TableCell className="py-2">
-              LiteLLM 公开价格
+              {t.litellm}
               {status && (
                 <div className="tw-label tabular-nums text-muted-foreground">
-                  {status.source === "empty"
-                    ? "未加载"
-                    : `数据日期 ${status.date} · ${status.models.toLocaleString()} 个模型`}
+                  {status.source === "empty" ? t.notLoaded : t.dataInfo(status.date, status.models)}
                 </div>
               )}
             </TableCell>
             <TableCell className="text-muted-foreground">—</TableCell>
             <TableCell className="text-muted-foreground">—</TableCell>
             <TableCell>
-              <NameChips names={defaultSheetUsers(ov)} empty="未被使用" />
+              <NameChips names={defaultSheetUsers(ov)} empty={t.notUsed} />
             </TableCell>
             <TableCell className="text-right">
-              <RowMenuButton items={defaultItems} label="默认价目表的操作" />
+              <RowMenuButton items={defaultItems} label={t.defaultActions} />
             </TableCell>
           </TableRow>
         </RowMenu>
         {ov.price_sheets.map((s) => {
           const items: MenuItems = [
-            { kind: "item", label: "编辑…", onSelect: () => onEdit(s.name) },
-            { kind: "item", label: "复制…", onSelect: () => onDuplicate(s.name) },
+            { kind: "item", label: t.edit, onSelect: () => onEdit(s.name) },
+            { kind: "item", label: t.duplicate, onSelect: () => onDuplicate(s.name) },
             { kind: "sep" },
             {
               kind: "item",
-              label: "删除…",
+              label: t.delete,
               onSelect: () => onRemove(s.name),
               danger: true,
             },
@@ -90,14 +91,14 @@ export function PriceSheetTable({
             <RowMenu key={s.name} items={items}>
               <TableRow onDoubleClick={() => onEdit(s.name)} className="cursor-default">
                 <TableCell className="font-medium">{s.name}</TableCell>
-                <TableCell>默认价目表</TableCell>
+                <TableCell>{t.defaultSheet}</TableCell>
                 <TableCell className="tabular-nums">× {formatMultiplier(s.multiplier)}</TableCell>
-                <TableCell className="tabular-nums">{s.overrides} 项</TableCell>
+                <TableCell className="tabular-nums">{t.overrideCount(s.overrides)}</TableCell>
                 <TableCell>
-                  <NameChips names={s.used_by} empty="未被使用" />
+                  <NameChips names={s.used_by} empty={t.notUsed} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${s.name} 的操作`} />
+                  <RowMenuButton items={items} label={t.actions(s.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>

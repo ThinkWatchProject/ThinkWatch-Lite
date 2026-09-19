@@ -14,9 +14,12 @@ import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import type { L1Result, Overview, ProxyAuthInput, ProxyInput, ProxyView } from "@/types";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { PROXY_KINDS, errorText, l1ErrorText } from "./labels";
 import { FormItem, Segmented, StatusDot } from "./parts";
+import { proxyDialogText } from "./ProxyDialog.i18n";
 
 export type ProxyDialogMode = { kind: "create" } | { kind: "edit"; name: string };
 
@@ -39,6 +42,8 @@ export function ProxyDialog({
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
+  const t = useText(proxyDialogText);
+  const common = useText(commonText);
   const editing: ProxyView | null =
     mode.kind === "edit" ? ((ov.proxies ?? []).find((x) => x.name === mode.name) ?? null) : null;
   const [host0, port0] = splitAddr(editing?.addr ?? "");
@@ -66,11 +71,11 @@ export function ProxyDialog({
 
   const missing =
     name.trim() === ""
-      ? "填写名称"
+      ? t.enterName
       : host.trim() === "" || port.trim() === ""
-        ? "填写地址与端口"
+        ? t.enterAddress
         : auth && (!editing?.has_auth || replacing) && user.trim() === ""
-          ? "填写用户名"
+          ? t.enterUser
           : null;
 
   async function runTest() {
@@ -106,43 +111,39 @@ export function ProxyDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex flex-col gap-4 sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">{editing ? "编辑代理" : "新建代理"}</DialogTitle>
+          <DialogTitle className="tw-title">{editing ? t.editTitle : t.createTitle}</DialogTitle>
           <DialogDescription>
-            {editing && editing.used_by.length > 0 ? (
-              <>
-                被{" "}
-                {editing.used_by.map((u, i) => (
-                  <span key={u}>
-                    {i > 0 && "、"}
-                    <span className="font-mono text-foreground">{u}</span>
-                  </span>
-                ))}{" "}
-                使用
-              </>
-            ) : (
-              "上游通过代理连接时，检测连接、链路测速与转发经过同一代理。"
-            )}
+            {editing && editing.used_by.length > 0
+              ? t.usedBy(
+                  editing.used_by.map((u, i) => (
+                    <span key={u}>
+                      {i > 0 && t.sep}
+                      <span className="font-mono text-foreground">{u}</span>
+                    </span>
+                  )),
+                )
+              : t.desc}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <FormItem label="名称" htmlFor="px-name">
+          <FormItem label={t.name} htmlFor="px-name">
             <Input
               id="px-name"
               className="font-mono"
               value={name}
-              placeholder="例如 hk-socks"
+              placeholder={t.namePlaceholder}
               onChange={(e) => setName(e.target.value)}
             />
           </FormItem>
-          <FormItem label="类型" desc={PROXY_KINDS.find((k) => k.id === kind)?.desc}>
+          <FormItem label={t.kind} desc={PROXY_KINDS.find((k) => k.id === kind)?.desc}>
             <Segmented
               value={kind}
               options={PROXY_KINDS.map((k) => ({ id: k.id, label: k.label }))}
               onChange={setKind}
             />
           </FormItem>
-          <FormItem label="地址" htmlFor="px-host">
+          <FormItem label={t.address} htmlFor="px-host">
             <div className="flex items-center gap-2">
               <Input
                 id="px-host"
@@ -153,7 +154,7 @@ export function ProxyDialog({
               />
               <span className="text-muted-foreground">:</span>
               <Input
-                aria-label="端口"
+                aria-label={t.port}
                 className="w-24 flex-none font-mono"
                 inputMode="numeric"
                 value={port}
@@ -164,21 +165,21 @@ export function ProxyDialog({
           </FormItem>
           <label className="flex items-center gap-2.5 tw-body font-medium">
             <Switch checked={auth} onCheckedChange={setAuth} />
-            需要认证
+            {t.needsAuth}
           </label>
           {auth &&
             (editing?.has_auth && !replacing ? (
-              <FormItem label="用户名与密码" desc="认证信息不回显。更换后原认证信息将被替换。">
+              <FormItem label={t.credentials} desc={t.credentialsDesc}>
                 <div className="flex items-center gap-2">
-                  <Input readOnly value="已设置" className="text-muted-foreground" />
+                  <Input readOnly value={t.credentialsSet} className="text-muted-foreground" />
                   <Button variant="outline" onClick={() => setReplacing(true)}>
-                    更换
+                    {t.replace}
                   </Button>
                 </div>
               </FormItem>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <FormItem label="用户名" htmlFor="px-user">
+                <FormItem label={t.user} htmlFor="px-user">
                   <Input
                     id="px-user"
                     autoComplete="off"
@@ -187,7 +188,7 @@ export function ProxyDialog({
                     onChange={(e) => setUser(e.target.value)}
                   />
                 </FormItem>
-                <FormItem label="密码" htmlFor="px-pass">
+                <FormItem label={t.pass} htmlFor="px-pass">
                   <Input
                     id="px-pass"
                     type="password"
@@ -202,20 +203,16 @@ export function ProxyDialog({
           <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border p-3">
             <Button variant="outline" size="sm" onClick={runTest} disabled={testing || missing != null}>
               {testing ? <Spinner /> : <ActivityIcon />}
-              检测代理
+              {t.check}
             </Button>
             {result ? (
               result.ok ? (
-                <StatusDot tone="ok">
-                  连接正常 · {auth ? "认证通过 · " : ""}响应 {result.total_ms.toLocaleString()} ms
-                </StatusDot>
+                <StatusDot tone="ok">{t.ok(auth, result.total_ms)}</StatusDot>
               ) : (
                 <StatusDot tone="bad">{l1ErrorText(result)}</StatusDot>
               )
             ) : (
-              <span className="tw-label text-muted-foreground">
-                完成代理握手与认证。不产生费用。
-              </span>
+              <span className="tw-label text-muted-foreground">{t.checkHint}</span>
             )}
           </div>
         </div>
@@ -229,11 +226,11 @@ export function ProxyDialog({
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
-            取消
+            {common.cancel}
           </Button>
           <Button onClick={save} disabled={saving || missing != null}>
             {saving && <Spinner />}
-            {editing ? "保存" : "创建"}
+            {editing ? common.save : t.create}
           </Button>
         </DialogFooter>
       </DialogContent>

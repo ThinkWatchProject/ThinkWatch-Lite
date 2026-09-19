@@ -9,8 +9,11 @@ import {
   TableRow,
 } from "@/ui/table";
 import type { L1Result, ProxyView } from "@/types";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { l1ErrorText, proxyKindLabel } from "./labels";
 import { NameChips, StatusDot } from "./parts";
+import { proxyTableText } from "./ProxyTable.i18n";
 
 /** 一个代理最近一次检测的结果。`running` = 正在检测 */
 export type ProxyCheck = { running: true } | { running: false; result: L1Result };
@@ -28,26 +31,28 @@ export function ProxyTable({
   onTest: (name: string) => void;
   onRemove: (name: string) => void;
 }) {
+  const t = useText(proxyTableText);
+  const common = useText(commonText);
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>名称</TableHead>
-          <TableHead>类型</TableHead>
-          <TableHead>地址</TableHead>
-          <TableHead>认证</TableHead>
-          <TableHead>使用上游</TableHead>
-          <TableHead>连通性</TableHead>
+          <TableHead>{t.name}</TableHead>
+          <TableHead>{t.kind}</TableHead>
+          <TableHead>{t.address}</TableHead>
+          <TableHead>{t.auth}</TableHead>
+          <TableHead>{t.usedBy}</TableHead>
+          <TableHead>{t.connectivity}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
       <TableBody>
         {proxies.map((x) => {
           const items: MenuItems = [
-            { kind: "item", label: "编辑…", onSelect: () => onEdit(x.name) },
-            { kind: "item", label: "检测代理", onSelect: () => onTest(x.name) },
+            { kind: "item", label: t.edit, onSelect: () => onEdit(x.name) },
+            { kind: "item", label: t.check, onSelect: () => onTest(x.name) },
             { kind: "sep" },
-            { kind: "item", label: "删除…", onSelect: () => onRemove(x.name), danger: true },
+            { kind: "item", label: t.delete, onSelect: () => onRemove(x.name), danger: true },
           ];
           return (
             <RowMenu key={x.name} items={items}>
@@ -56,16 +61,16 @@ export function ProxyTable({
                 <TableCell>{proxyKindLabel(x.kind)}</TableCell>
                 <TableCell className="font-mono text-muted-foreground">{x.addr}</TableCell>
                 <TableCell className={x.has_auth ? "" : "text-muted-foreground"}>
-                  {x.has_auth ? "用户名与密码" : "无"}
+                  {x.has_auth ? t.userPass : common.none}
                 </TableCell>
                 <TableCell>
-                  <NameChips names={x.used_by} empty="未被使用" />
+                  <NameChips names={x.used_by} empty={t.notUsed} />
                 </TableCell>
                 <TableCell>
                   <Connectivity check={checks[x.name]} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${x.name} 的操作`} />
+                  <RowMenuButton items={items} label={t.actions(x.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>
@@ -77,12 +82,13 @@ export function ProxyTable({
 }
 
 function Connectivity({ check }: { check: ProxyCheck | undefined }) {
-  if (!check) return <span className="text-muted-foreground">未检测</span>;
+  const t = useText(proxyTableText);
+  if (!check) return <span className="text-muted-foreground">{t.notChecked}</span>;
   if (check.running) {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground">
         <Spinner />
-        检测中
+        {t.checking}
       </span>
     );
   }
@@ -90,7 +96,7 @@ function Connectivity({ check }: { check: ProxyCheck | undefined }) {
   if (!r.ok) {
     return (
       <span title={l1ErrorText(r)}>
-        <StatusDot tone="bad">无法连接</StatusDot>
+        <StatusDot tone="bad">{t.unreachable}</StatusDot>
       </span>
     );
   }
