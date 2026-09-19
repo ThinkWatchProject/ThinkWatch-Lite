@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Progress } from "@/ui/progress";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import {
@@ -10,9 +12,17 @@ import {
   TableRow,
 } from "@/ui/table";
 import { resetIn } from "@/format";
-import { usd, type Overview, type ProviderView } from "@/types";
-import type { UpstreamStats } from "./api";
-import { billingLabel, egressLabel, protocolLabel, quotaWindowLabel, shortUrl } from "./labels";
+import { usd, type ChatgptUsage, type Overview, type ProviderModelsView, type ProviderView } from "@/types";
+import { api, type UpstreamStats } from "./api";
+import {
+  billingLabel,
+  egressLabel,
+  modelSourceNote,
+  planLabel,
+  protocolLabel,
+  quotaWindowLabel,
+  shortUrl,
+} from "./labels";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -35,10 +45,13 @@ export interface UpstreamActions {
 export function UpstreamTable({
   ov,
   stats,
+  accounts,
   actions,
 }: {
   ov: Overview;
   stats: UpstreamStats | null;
+  /** 账号类上游问来的账号信息，按上游名。还没问到的就没有 */
+  accounts: Record<string, ChatgptUsage>;
   actions: UpstreamActions;
 }) {
   return (
@@ -74,6 +87,10 @@ export function UpstreamTable({
                       {p.name}
                     </span>
                     {p.trust === "official" && <Badge variant="secondary">官方端点</Badge>}
+                    {/* 订阅类账号：套餐决定了额度有多大，和名字放在一起看 */}
+                    {planLabel(accounts[p.name]?.plan) && (
+                      <Badge variant="outline">{planLabel(accounts[p.name]?.plan)}</Badge>
+                    )}
                     {p.disabled ? (
                       <Badge variant="outline">已停用</Badge>
                     ) : p.health === "open" ? (
@@ -84,16 +101,7 @@ export function UpstreamTable({
                     协议、地址、出站方式是同一件事的三个部分：这一家在哪、怎么连。
                     地址可能很长（带路径的中转）：截断，悬停看全
                   */}
-                  <div
-                    className="max-w-96 truncate tw-label text-muted-foreground"
-                    title={`${protocolLabel(p.protocol)} · ${p.base_url}${
-                      p.proxy === "direct" ? "" : ` · 经 ${egressLabel(p.proxy)}`
-                    }`}
-                  >
-                    {protocolLabel(p.protocol)} · {shortUrl(p.base_url)}
-                    {/* 直连是默认，不用说 */}
-                    {p.proxy !== "direct" && ` · 经 ${egressLabel(p.proxy)}`}
-                  </div>
+                  <Where p={p} account={accounts[p.name]} />
                 </TableCell>
                 <ModelsCell p={p} />
                 <QuotaCell p={p} stats={stats} />
@@ -129,19 +137,107 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
   ];
 }
 
+/**
+ * 这一家在哪、怎么连。
+ *
+ * 账号类上游的地址永远是同一个，**写出来一行废话** —— 那一格
+ * 留给邮箱：登了两个账号时，它是唯一能分辨哪行是哪个的东西。
+ */
+function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
+  // 账号类上游的地址永远是同一个，名字后面的「官方端点」已经说了它在哪
+  const isAccount = p.protocol === "chatgpt";
+  const where = isAccount ? (account?.email ?? null) : shortUrl(p.base_url);
+  const egress = p.proxy === "direct" ? "" : ` · 经 ${egressLabel(p.proxy)}`;
+  const full = [protocolLabel(p.protocol), isAccount ? account?.email : p.base_url]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="max-w-96 truncate tw-label text-muted-foreground" title={`${full}${egress}`}>
+      {protocolLabel(p.protocol)}
+      {where && ` · ${where}`}
+      {/* 直连是默认，不用说 */}
+      {egress}
+    </div>
+  );
+}
+
+/**
+ * 有多少个模型，以及都有哪些。
+ *
+ * 数目单独回答不了「我要的那个模型在不在里面」，而一个二十几项的清单
+ * 又放不进一格。**点数字就展开**，不用为了看一眼进编辑对话框。
+ */
 function ModelsCell({ p }: { p: ProviderView }) {
-  const sub =
-    p.model_source === "manual"
-      ? "手动清单"
-      : p.model_source === "none"
-        ? "未获取"
-        : p.models_only
-          ? "指定范围"
-          : null;
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<ProviderModelsView | null>(null);
+  const [failed, setFailed] = useState(false);
+  const none = p.disabled || p.model_source === "none";
+  const sub = modelSourceNote(p);
+
+  // 展开才去读：一页上十几家上游，没人看的清单不该占着一次调用
+  useEffect(() => {
+    if (!open || list || failed) return;
+    let alive = true;
+    api
+      .providerModels(p.name)
+      .then((v) => alive && setList(v))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, [open, list, failed, p.name]);
+
+  if (none) {
+    return (
+      <TableCell className="text-right tabular-nums">
+        {/* 停用时 core 报 0 —— 那不是「没有模型」，状态一栏已经说了停用 */}
+        —{sub && <div className="tw-label text-muted-foreground">{sub}</div>}
+      </TableCell>
+    );
+  }
+
+  const models = list?.models ?? [];
+  const shown = models.filter((m) => m.enabled);
+  const hidden = models.length - shown.length;
   return (
     <TableCell className="text-right tabular-nums">
-      {/* 停用时 core 报 0 —— 那不是「没有模型」，状态一栏已经说了停用 */}
-      {p.disabled || p.model_source === "none" ? "—" : p.model_count}
+      <Popover open={open} onOpenChange={setOpen}>
+        {/*
+          悬停时变成一个块，不画下划线 —— 鼠标正好压在字的下方，
+          一条紧贴基线的线它自己就把它挡了
+        */}
+        <PopoverTrigger className="-mr-1.5 rounded px-1.5 py-0.5 tabular-nums transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
+          {p.model_count}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-64">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="tw-body font-medium">模型清单</span>
+            {sub && <span className="tw-label text-muted-foreground">{sub}</span>}
+          </div>
+          {failed ? (
+            <p className="tw-label text-muted-foreground">暂时读不到模型清单。</p>
+          ) : !list ? (
+            <p className="tw-label text-muted-foreground">正在读取</p>
+          ) : (
+            <>
+              <ul className="max-h-64 overflow-y-auto text-left font-mono tw-label">
+                {shown.map((m) => (
+                  <li key={m.id} className="truncate py-0.5" title={m.id}>
+                    {m.id}
+                  </li>
+                ))}
+              </ul>
+              {/* 范围外的不列，但要说有——否则这份清单看起来就是它全部的模型 */}
+              {hidden > 0 && (
+                <p className="tw-label text-muted-foreground">
+                  另有 {hidden} 个不在启用范围内
+                </p>
+              )}
+              {list.error && <p className="tw-label text-warning">{list.error}</p>}
+            </>
+          )}
+        </PopoverContent>
+      </Popover>
       {sub && <div className="tw-label text-muted-foreground">{sub}</div>}
     </TableCell>
   );
@@ -166,7 +262,8 @@ function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null 
     return (
       <TableCell>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="tabular-nums">{Math.round(tight.used_percent)}%</span>
+          {/* **要说清楚这个数是用掉的还是剩下的**：一根填了一半的条，两种读法都成立 */}
+          <span className="tabular-nums">已用 {Math.round(tight.used_percent)}%</span>
           <span className="tw-label text-muted-foreground">
             {reset ? `${quotaWindowLabel(tight.window)} · ${reset}` : quotaWindowLabel(tight.window)}
           </span>

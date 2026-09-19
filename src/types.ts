@@ -901,6 +901,8 @@ export interface ChatgptLoginStatus {
 
 /** 账号的订阅额度 */
 export interface ChatgptUsage {
+  /** 登的是哪个账号。core 只给邮箱，用户 ID 和账户 ID 不往外带 */
+  email?: string | null;
   plan?: string | null;
   windows: QuotaWindow[];
   /** 可用的额度重置卡张数。账号没有这一项时没有 */
