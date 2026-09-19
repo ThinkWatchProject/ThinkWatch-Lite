@@ -16,13 +16,17 @@ import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { groupKindLabel } from "@/labels";
 import type { GroupKind, Overview } from "@/types";
 import { billingLabel, errorText, protocolLabel } from "@/upstreams/labels";
 import { Boxed, FormItem, Note, RadioRow } from "@/upstreams/parts";
 import { api } from "./api";
+import { groupDialogText } from "./GroupDialog.i18n";
 import { groupRefs } from "./GroupTable";
-import { STRATEGIES, move } from "./model";
+import { move, strategies } from "./model";
+import { routingText } from "./routing.i18n";
 import { useReorder } from "./useReorder";
 
 export type GroupDialogMode =
@@ -49,6 +53,9 @@ export function GroupDialog({
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
+  const t = useText(groupDialogText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const source =
     mode.kind === "edit"
       ? ov.groups.find((g) => g.name === mode.name)
@@ -56,7 +63,7 @@ export function GroupDialog({
         ? ov.groups.find((g) => g.name === mode.from)
         : undefined;
   const [name, setName] = useState(
-    mode.kind === "edit" ? mode.name : mode.kind === "duplicate" ? `${mode.from} 副本` : "",
+    mode.kind === "edit" ? mode.name : mode.kind === "duplicate" ? rt.copyName(mode.from) : "",
   );
   const [kind, setKind] = useState<GroupKind>(source?.kind ?? "fallback");
   const [order, setOrder] = useState<string[]>(() => {
@@ -79,13 +86,13 @@ export function GroupDialog({
     ov.groups.some((g) => g.name === trimmed && !(mode.kind === "edit" && g.name === mode.name)) ||
     ov.providers.some((p) => p.name === trimmed);
   const missing = !trimmed
-    ? "填写名称"
+    ? rt.nameMissing
     : trimmed.startsWith("__")
-      ? "名称不能以 __ 开头"
+      ? rt.nameReserved
       : taken
-        ? `名称「${trimmed}」已被使用`
+        ? rt.nameTaken(trimmed)
         : chosen.length === 0
-          ? "至少选择一个上游"
+          ? t.noMembers
           : null;
 
   async function save() {
@@ -112,29 +119,25 @@ export function GroupDialog({
   }
 
   const title =
-    mode.kind === "edit" ? `编辑策略组「${mode.name}」` : mode.kind === "duplicate" ? "复制策略组" : "新建策略组";
+    mode.kind === "edit" ? t.editTitle(mode.name) : mode.kind === "duplicate" ? t.duplicateTitle : rt.newGroup;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[820px]">
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
-          <DialogDescription>
-            {refs.length > 0
-              ? `被${refs.map((r) => `「${r.route} · ${r.rule}」`).join("、")}引用。`
-              : "规则可以转发至策略组，由策略决定使用其中哪个上游。"}
-          </DialogDescription>
+          <DialogDescription>{refs.length > 0 ? t.referencedBy(refs) : t.intro}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] items-start gap-6 overflow-y-auto px-4 pb-1">
           <div className="flex flex-col gap-4">
-            <FormItem label="名称" htmlFor="group-name">
+            <FormItem label={rt.name} htmlFor="group-name">
               <Input id="group-name" autoFocus={mode.kind !== "edit"} value={name} onChange={(e) => setName(e.target.value)} />
             </FormItem>
             <div className="flex flex-col gap-1.5">
-              <span className="tw-body font-medium">策略</span>
-              <div role="radiogroup" aria-label="策略" className="flex flex-col gap-3">
-                {STRATEGIES.map((s) => (
+              <span className="tw-body font-medium">{rt.strategy}</span>
+              <div role="radiogroup" aria-label={rt.strategy} className="flex flex-col gap-3">
+                {strategies().map((s) => (
                   <RadioRow
                     key={s.id}
                     checked={kind === s.id}
@@ -144,7 +147,7 @@ export function GroupDialog({
                         <>
                           {s.desc}
                           <Badge variant="warning" className="ml-1.5 align-middle">
-                            影响 prompt cache
+                            {rt.affectsCache}
                           </Badge>
                         </>
                       ) : (
@@ -160,24 +163,20 @@ export function GroupDialog({
               <div className="flex flex-col gap-1.5">
                 <label className="flex items-center gap-2 tw-body">
                   <Switch checked={sticky} onCheckedChange={setSticky} />
-                  会话粘滞
+                  {t.sticky}
                 </label>
-                <Note tone={sticky ? "muted" : "warning"}>
-                  {sticky
-                    ? "同一会话固定使用同一上游，prompt cache 保持命中。"
-                    : "长会话的 prompt cache 将频繁失效，费用上升。"}
-                </Note>
+                <Note tone={sticky ? "muted" : "warning"}>{sticky ? t.stickyOn : t.stickyOff}</Note>
               </div>
             )}
           </div>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-baseline gap-2">
-              <span className="tw-body font-medium">成员</span>
-              <span className="tw-label text-muted-foreground">已选 {chosen.length} 个</span>
+              <span className="tw-body font-medium">{rt.members}</span>
+              <span className="tw-label text-muted-foreground">{t.selectedCount(chosen.length)}</span>
             </div>
             {ov.providers.length === 0 ? (
-              <Note>尚无上游。</Note>
+              <Note>{t.noUpstreams}</Note>
             ) : (
               <Boxed>
                 <table className="w-full tw-body">
@@ -185,8 +184,8 @@ export function GroupDialog({
                     <tr className="border-b border-border text-left text-muted-foreground">
                       <th className="w-7" />
                       <th className="w-7" />
-                      <th className="py-2 font-medium">上游</th>
-                      {kind === "select" && <th className="w-20 pr-3 text-center font-medium">优先使用</th>}
+                      <th className="py-2 font-medium">{t.upstream}</th>
+                      {kind === "select" && <th className="w-20 pr-3 text-center font-medium">{t.preferred}</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -205,12 +204,12 @@ export function GroupDialog({
                             mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
                           )}
                         >
-                          <td className="pl-2 text-muted-foreground/60" aria-label={`拖动调整 ${n} 的位置`} {...reorder.handle(i)}>
+                          <td className="pl-2 text-muted-foreground/60" aria-label={t.dragMember(n)} {...reorder.handle(i)}>
                             <GripVerticalIcon className="size-3.5" />
                           </td>
                           <td>
                             <Checkbox
-                              aria-label={`${on ? "移出" : "加入"} ${n}`}
+                              aria-label={t.toggleMember(on, n)}
                               checked={on}
                               onCheckedChange={(v) =>
                                 setMembers((m) => (v === true ? [...m, n] : m.filter((x) => x !== n)))
@@ -222,7 +221,7 @@ export function GroupDialog({
                             {p && (
                               <div className="tw-label text-muted-foreground">
                                 {protocolLabel(p.protocol)} · {billingLabel(p.billing ?? p.billing_effective)}
-                                {p.disabled && " · 已停用"}
+                                {p.disabled && t.disabledSuffix}
                               </div>
                             )}
                           </td>
@@ -232,7 +231,7 @@ export function GroupDialog({
                                 <input
                                   type="radio"
                                   name="group-preferred"
-                                  aria-label={`优先使用 ${n}`}
+                                  aria-label={t.prefer(n)}
                                   className="size-3.5 accent-foreground"
                                   checked={preferred === n}
                                   onChange={() => setSelected(n)}
@@ -249,10 +248,10 @@ export function GroupDialog({
             )}
             <Note>
               {kind === "select"
-                ? "拖动调整顺序。选定的上游不可用时，按顺序使用其余成员。"
+                ? t.orderSelect
                 : kind === "fallback"
-                  ? "拖动调整顺序：依次使用，前一个不可用时使用下一个。"
-                  : "拖动调整顺序。排序依据相同时按此顺序。"}
+                  ? t.orderFallback
+                  : t.orderOther}
             </Note>
           </div>
         </div>
@@ -266,11 +265,11 @@ export function GroupDialog({
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
-            取消
+            {ct.cancel}
           </Button>
           <Button onClick={() => void save()} disabled={saving || missing != null}>
             {saving && <Spinner />}
-            {mode.kind === "edit" ? "保存" : "创建"}
+            {mode.kind === "edit" ? ct.save : rt.create}
           </Button>
         </DialogFooter>
       </DialogContent>

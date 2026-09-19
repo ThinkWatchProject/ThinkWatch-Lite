@@ -8,9 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { textOf, useText } from "@/i18n";
 import type { Overview, RouteView } from "@/types";
 import { NameChips } from "@/upstreams/parts";
 import { flowOf, routeSummary, usersOf } from "./model";
+import { routeTableText } from "./RouteTable.i18n";
+import { routingText } from "./routing.i18n";
 
 export interface RouteActions {
   edit: (name: string) => void;
@@ -28,14 +31,16 @@ export interface RouteActions {
  * 「规则」一栏按顺序写出决定去向的规则，不打开对话框也能看出一条路由做什么。
  */
 export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteActions }) {
+  const t = useText(routeTableText);
+  const rt = useText(routingText);
   const routes = [...ov.routes].sort((a, b) => Number(b.default) - Number(a.default));
   return (
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-36">路由</TableHead>
-          <TableHead className="w-56">使用密钥</TableHead>
-          <TableHead>规则</TableHead>
+          <TableHead className="w-36">{t.route}</TableHead>
+          <TableHead className="w-56">{t.keys}</TableHead>
+          <TableHead>{t.rules}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
@@ -54,11 +59,11 @@ export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteAction
                 <TableCell className="py-2.5">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate font-medium">{r.name}</span>
-                    {r.default && <Badge variant="secondary">默认</Badge>}
+                    {r.default && <Badge variant="secondary">{t.defaultBadge}</Badge>}
                   </div>
                 </TableCell>
                 <TableCell className="whitespace-normal">
-                  <NameChips names={users} empty="未被密钥使用" />
+                  <NameChips names={users} empty={t.unused} />
                 </TableCell>
                 <TableCell className="overflow-hidden">
                   <Flow route={r} />
@@ -67,7 +72,7 @@ export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteAction
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${r.name} 的操作`} />
+                  <RowMenuButton items={items} label={rt.actionsFor(r.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>
@@ -80,11 +85,13 @@ export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteAction
 
 /** 「长上下文 → 长上下文池 · 兜底 → 主力」。截断，悬停看全 */
 function Flow({ route }: { route: RouteView }) {
+  const t = useText(routeTableText);
+  const rt = useText(routingText);
   const flow = flowOf(route);
   if (flow.length === 0) {
-    return <div className="text-muted-foreground">无决定去向的规则</div>;
+    return <div className="text-muted-foreground">{t.noDecidingRule}</div>;
   }
-  const title = flow.map((f) => `${f.rule} → ${f.target ?? "拒绝"}`).join(" · ");
+  const title = flow.map((f) => `${f.rule} → ${f.target ?? rt.deny}`).join(" · ");
   return (
     <div className="truncate" title={title}>
       {flow.map((f, i) => (
@@ -95,7 +102,7 @@ function Flow({ route }: { route: RouteView }) {
           {f.target ? (
             <span className="font-medium">{f.target}</span>
           ) : (
-            <span className="text-destructive">拒绝</span>
+            <span className="text-destructive">{rt.deny}</span>
           )}
         </span>
       ))}
@@ -104,22 +111,24 @@ function Flow({ route }: { route: RouteView }) {
 }
 
 function menu(r: RouteView, a: RouteActions): MenuItems {
+  const t = textOf(routeTableText);
+  const rt = textOf(routingText);
   return [
-    { kind: "item", label: "编辑…", onSelect: () => a.edit(r.name) },
-    { kind: "item", label: "试算…", onSelect: () => a.dryRun(r.name) },
-    { kind: "item", label: "复制…", onSelect: () => a.duplicate(r.name) },
+    { kind: "item", label: rt.editMenu, onSelect: () => a.edit(r.name) },
+    { kind: "item", label: t.dryRunMenu, onSelect: () => a.dryRun(r.name) },
+    { kind: "item", label: rt.duplicateMenu, onSelect: () => a.duplicate(r.name) },
     { kind: "sep" },
     ...(r.default
       ? []
-      : ([{ kind: "item", label: "设为默认路由", onSelect: () => a.setDefault(r.name) }] as MenuItems)),
+      : ([{ kind: "item", label: rt.setDefault, onSelect: () => a.setDefault(r.name) }] as MenuItems)),
     // 网关补出来的默认路由不在配置文件里，定位不到
     ...(r.builtin
       ? []
-      : ([{ kind: "item", label: "在配置文件中定位", onSelect: () => a.locate(r.name) }] as MenuItems)),
+      : ([{ kind: "item", label: rt.locate, onSelect: () => a.locate(r.name) }] as MenuItems)),
     ...(r.default && r.builtin ? [] : ([{ kind: "sep" }] as MenuItems)),
     {
       kind: "item",
-      label: "删除…",
+      label: rt.deleteMenu,
       onSelect: () => a.remove(r.name),
       danger: true,
       // 默认路由不能删：没指定路由的密钥要有地方去

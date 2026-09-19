@@ -15,6 +15,8 @@ import { Input } from "@/ui/input";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Spinner } from "@/ui/spinner";
 import { cn } from "@/lib/utils";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { ALL_UPSTREAMS, conditionText, targetLabel } from "@/labels";
 import type { KnownModel, Overview, RouteInput } from "@/types";
 import { errorText } from "@/upstreams/labels";
@@ -36,6 +38,8 @@ import {
   usersOf,
   type RuleDraft,
 } from "./model";
+import { routeDialogText } from "./RouteDialog.i18n";
+import { routingText } from "./routing.i18n";
 import { RuleDialog } from "./RuleDialog";
 import { useReorder } from "./useReorder";
 
@@ -74,6 +78,9 @@ export function RouteDialog({
   /** 按对话框里还没保存的内容试算 */
   onDryRun: (draft: RouteInput, keys: string[]) => void;
 }) {
+  const t = useText(routeDialogText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const source =
     mode.kind === "edit"
       ? ov.routes.find((r) => r.name === mode.name)
@@ -84,13 +91,13 @@ export function RouteDialog({
   const original = mode.kind === "edit" && source ? usersOf(source, ov.clients) : [];
 
   const [name, setName] = useState(
-    mode.kind === "edit" ? mode.name : mode.kind === "duplicate" ? `${mode.from} 副本` : "",
+    mode.kind === "edit" ? mode.name : mode.kind === "duplicate" ? rt.copyName(mode.from) : "",
   );
   const [keys, setKeys] = useState<string[]>(
     mode.kind === "edit" && source ? ov.clients.filter((c) => c.route === source.name).map((c) => c.name) : [],
   );
   const [rules, setRules] = useState<RuleDraft[]>(() =>
-    source ? source.rules.map(draftFromView) : [{ ...blankRule(ALL_UPSTREAMS), name: "兜底" }],
+    source ? source.rules.map(draftFromView) : [{ ...blankRule(ALL_UPSTREAMS), name: t.catchAllName }],
   );
   const [probes, setProbes] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing>(null);
@@ -105,11 +112,11 @@ export function RouteDialog({
     (r) => r.name === trimmed && !(mode.kind === "edit" && r.name === mode.name),
   );
   const missing = !trimmed
-    ? "填写名称"
+    ? rt.nameMissing
     : trimmed.startsWith("__")
-      ? "名称不能以 __ 开头"
+      ? rt.nameReserved
       : takenByOther
-        ? `名称「${trimmed}」已被使用`
+        ? rt.nameTaken(trimmed)
         : null;
 
   // 保存之后密钥的去向变化，说在字段下面
@@ -149,44 +156,44 @@ export function RouteDialog({
 
   function rowMenu(i: number): MenuItems {
     return [
-      { kind: "item", label: "编辑…", onSelect: () => setEditing({ index: i, at: i, draft: rules[i]! }) },
-      { kind: "item", label: "在上方插入…", onSelect: () => add(i) },
+      { kind: "item", label: rt.editMenu, onSelect: () => setEditing({ index: i, at: i, draft: rules[i]! }) },
+      { kind: "item", label: t.insertAbove, onSelect: () => add(i) },
       {
         kind: "item",
-        label: "复制",
+        label: t.duplicate,
         onSelect: () =>
           setRules((r) => {
-            const c = { ...copyDraft(r[i]!), name: uniqueName(`${r[i]!.name} 副本`, r) };
+            const c = { ...copyDraft(r[i]!), name: uniqueName(rt.copyName(r[i]!.name), r) };
             return [...r.slice(0, i + 1), c, ...r.slice(i + 1)];
           }),
       },
       { kind: "sep" },
-      { kind: "item", label: "上移", disabled: i === 0, onSelect: () => setRules((r) => move(r, i, i - 1)) },
+      { kind: "item", label: t.moveUp, disabled: i === 0, onSelect: () => setRules((r) => move(r, i, i - 1)) },
       {
         kind: "item",
-        label: "下移",
+        label: t.moveDown,
         disabled: i === rules.length - 1,
         onSelect: () => setRules((r) => move(r, i, i + 1)),
       },
       { kind: "sep" },
-      { kind: "item", label: "删除", danger: true, onSelect: () => setRules((r) => r.filter((_, j) => j !== i)) },
+      { kind: "item", label: ct.delete, danger: true, onSelect: () => setRules((r) => r.filter((_, j) => j !== i)) },
     ];
   }
 
   const title =
-    mode.kind === "edit" ? `编辑路由「${mode.name}」` : mode.kind === "duplicate" ? "复制路由" : "新建路由";
+    mode.kind === "edit" ? t.editTitle(mode.name) : mode.kind === "duplicate" ? t.duplicateTitle : rt.newRoute;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[860px]">
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
-          <DialogDescription>请求自上而下逐条匹配，第一条命中的转发或拒绝规则决定去向。</DialogDescription>
+          <DialogDescription>{t.intro}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-1">
           <div className="grid grid-cols-[220px_minmax(0,1fr)] items-start gap-4">
-            <FormItem label="名称" htmlFor="route-name">
+            <FormItem label={rt.name} htmlFor="route-name">
               <Input
                 id="route-name"
                 autoFocus={mode.kind !== "edit"}
@@ -195,24 +202,15 @@ export function RouteDialog({
               />
             </FormItem>
             {isDefault ? (
-              <FormItem label="使用此路由的密钥" desc="未指定路由的密钥使用默认路由。">
+              <FormItem label={t.keys} desc={t.defaultKeys}>
                 <div className="flex min-h-8 items-center">
-                  <NameChips names={original} empty="所有密钥均已指定其他路由" />
+                  <NameChips names={original} empty={t.allAssigned} />
                 </div>
               </FormItem>
             ) : (
               <FormItem
-                label="使用此路由的密钥"
-                desc={
-                  joining.length || leaving.length
-                    ? [
-                        joining.length ? `${joining.join("、")} 将改用此路由` : "",
-                        leaving.length ? `${leaving.join("、")} 将改用默认路由` : "",
-                      ]
-                        .filter(Boolean)
-                        .join("；") + "。"
-                    : undefined
-                }
+                label={t.keys}
+                desc={joining.length || leaving.length ? t.keyMoves(joining, leaving) : undefined}
               >
                 <div className="flex min-h-8 items-center">
                   <ToggleChips
@@ -220,9 +218,9 @@ export function RouteDialog({
                       id: c.name,
                       title:
                         c.route && c.route !== source?.name
-                          ? `当前使用路由「${c.route}」`
+                          ? t.usesRoute(c.route)
                           : !c.route
-                            ? "当前使用默认路由"
+                            ? t.usesDefault
                             : undefined,
                     }))}
                     value={keys}
@@ -235,7 +233,7 @@ export function RouteDialog({
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="tw-body font-medium">规则</span>
+              <span className="tw-body font-medium">{t.rules}</span>
               <span className="tw-label tabular-nums text-muted-foreground">{rules.length}</span>
               <div className="flex-1" />
               <Button
@@ -244,11 +242,11 @@ export function RouteDialog({
                 onClick={() => onDryRun(input(), isDefault ? original : keys)}
               >
                 <FlaskConicalIcon />
-                试算
+                {rt.dryRun}
               </Button>
               <Button variant="outline" size="sm" onClick={() => add(insertIndex(rules))}>
                 <PlusIcon />
-                添加规则
+                {rt.addRule}
               </Button>
             </div>
 
@@ -258,9 +256,9 @@ export function RouteDialog({
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="w-7" />
                     <th className="w-6 font-medium">#</th>
-                    <th className="w-40 py-2 font-medium">规则</th>
-                    <th className="font-medium">条件</th>
-                    <th className="w-60 font-medium">命中后</th>
+                    <th className="w-40 py-2 font-medium">{t.rule}</th>
+                    <th className="font-medium">{t.conditions}</th>
+                    <th className="w-60 font-medium">{t.onMatch}</th>
                     <th className="w-9" />
                   </tr>
                 </thead>
@@ -283,7 +281,7 @@ export function RouteDialog({
                         >
                           <td
                             className="pl-2 text-muted-foreground/60"
-                            aria-label={`拖动调整规则「${r.name}」的位置`}
+                            aria-label={t.dragRule(r.name)}
                             {...reorder.handle(i)}
                           >
                             <GripVerticalIcon className="size-3.5" />
@@ -292,13 +290,13 @@ export function RouteDialog({
                           <td className="py-2">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span className="truncate font-medium">{r.name}</span>
-                              {n.shadowed && <Badge variant="warning">不会生效</Badge>}
-                              {n.phaseTwo && <Badge variant="outline">选定上游后</Badge>}
+                              {n.shadowed && <Badge variant="warning">{t.noEffect}</Badge>}
+                              {n.phaseTwo && <Badge variant="outline">{t.phaseTwo}</Badge>}
                             </div>
                           </td>
                           <td className="truncate pr-3" title={conditionsText(r)}>
                             {r.conditions.length === 0 ? (
-                              <span className="text-muted-foreground">全部请求（兜底）</span>
+                              <span className="text-muted-foreground">{rt.allRequests}</span>
                             ) : (
                               conditionsText(r)
                             )}
@@ -307,7 +305,7 @@ export function RouteDialog({
                             <Action r={r} ov={ov} />
                           </td>
                           <td className="text-right">
-                            <RowMenuButton items={items} label={`规则「${r.name}」的操作`} />
+                            <RowMenuButton items={items} label={t.ruleActions(r.name)} />
                           </td>
                         </tr>
                       </RowMenu>
@@ -316,7 +314,7 @@ export function RouteDialog({
                   {rules.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-3 py-3 text-muted-foreground">
-                        尚无规则。
+                        {t.noRules}
                       </td>
                     </tr>
                   )}
@@ -327,25 +325,23 @@ export function RouteDialog({
             {shadowed.length > 0 && (
               <div className="flex items-center gap-2 tw-label text-warning">
                 <CircleAlertIcon className="size-3.5 shrink-0" />
-                <span>
-                  {shadowed.map((r) => `「${r.name}」`).join("、")}位于兜底规则之后，转发与拒绝不会生效。
-                </span>
+                <span>{t.shadowed(shadowed.map((r) => r.name))}</span>
                 <Button variant="link" size="xs" className="h-auto p-0" onClick={() => setRules(liftShadowed)}>
-                  移至兜底规则之前
+                  {t.liftShadowed}
                 </Button>
               </div>
             )}
             {!hasCatchAll(rules) && (
               <div className="flex items-center gap-2 tw-label text-warning">
                 <CircleAlertIcon className="size-3.5 shrink-0" />
-                <span>尚无兜底规则。未命中任何规则的请求将返回错误。</span>
+                <span>{t.noCatchAll}</span>
                 <Button
                   variant="link"
                   size="xs"
                   className="h-auto p-0"
-                  onClick={() => add(rules.length, { name: uniqueName("兜底", rules) })}
+                  onClick={() => add(rules.length, { name: uniqueName(t.catchAllName, rules) })}
                 >
-                  添加兜底规则
+                  {t.addCatchAll}
                 </Button>
               </div>
             )}
@@ -361,11 +357,11 @@ export function RouteDialog({
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
-            取消
+            {ct.cancel}
           </Button>
           <Button onClick={() => void save()} disabled={saving || missing != null}>
             {saving && <Spinner />}
-            {mode.kind === "edit" ? "保存" : "创建"}
+            {mode.kind === "edit" ? ct.save : rt.create}
           </Button>
         </DialogFooter>
 
@@ -373,7 +369,7 @@ export function RouteDialog({
           <RuleDialog
             initial={editing.draft}
             create={editing.index == null}
-            routeName={trimmed || "新路由"}
+            routeName={trimmed || t.untitled}
             position={editing.at + 1}
             takenNames={rules.filter((_, j) => j !== editing.index).map((x) => x.name.trim())}
             ov={ov}
@@ -398,16 +394,17 @@ export function RouteDialog({
 }
 
 function conditionsText(r: RuleDraft): string {
-  return r.conditions.map(conditionText).join(" 且 ");
+  return r.conditions.map(conditionText).join(textOf(routeDialogText).conditionJoin);
 }
 
 /** 「命中后」一栏：去向（或拒绝、继续匹配），次行是去向的说明或附加项 */
 function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
+  const rt = useText(routingText);
   const addOns = addOnsText(r);
   if (r.action === "deny") {
     return (
       <div className="min-w-0">
-        <div className="text-destructive">拒绝</div>
+        <div className="text-destructive">{rt.deny}</div>
         <div className="truncate tw-label text-muted-foreground" title={r.deny}>
           {r.deny}
         </div>
@@ -417,7 +414,7 @@ function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
   if (r.action === "continue") {
     return (
       <div className="min-w-0">
-        <div className="text-muted-foreground">继续匹配</div>
+        <div className="text-muted-foreground">{rt.continueMatching}</div>
         <div className="truncate tw-label text-muted-foreground" title={addOns}>
           {addOns}
         </div>

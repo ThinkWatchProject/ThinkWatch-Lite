@@ -15,48 +15,61 @@ import type {
   RuleInput,
   RuleView,
 } from "@/types";
+import { textOf } from "@/i18n";
 import { ALL_UPSTREAMS, conditionName, groupKindLabel, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
+import { modelText } from "./model.i18n";
+import { routingText } from "./routing.i18n";
 
 // ---------------------------------------------------------------- 条件
 
 export type CondKind = "glob" | "compare" | "flag" | "one" | "many";
 
+/** 「添加条件」菜单里的分组。显示的名字见 `condGroupLabel` */
+export type CondGroup = "request" | "features" | "source" | "upstream";
+
 export interface CondField {
   id: string;
   kind: CondKind;
-  group: "请求" | "特征" | "来源" | "上游";
+  group: CondGroup;
 }
 
 /** 能写的条件，按「添加条件」菜单里的分组和顺序 */
 export const COND_FIELDS: CondField[] = [
-  { id: "model", kind: "glob", group: "请求" },
-  { id: "input_tokens", kind: "compare", group: "请求" },
-  { id: "max_tokens", kind: "compare", group: "请求" },
-  { id: "tool_count", kind: "compare", group: "请求" },
-  { id: "cache", kind: "flag", group: "特征" },
-  { id: "tools", kind: "flag", group: "特征" },
-  { id: "image", kind: "flag", group: "特征" },
-  { id: "thinking", kind: "flag", group: "特征" },
-  { id: "stream", kind: "flag", group: "特征" },
-  { id: "dialect", kind: "one", group: "来源" },
-  { id: "intent", kind: "many", group: "来源" },
-  { id: "client", kind: "one", group: "来源" },
-  { id: "provider_would_be", kind: "many", group: "上游" },
+  { id: "model", kind: "glob", group: "request" },
+  { id: "input_tokens", kind: "compare", group: "request" },
+  { id: "max_tokens", kind: "compare", group: "request" },
+  { id: "tool_count", kind: "compare", group: "request" },
+  { id: "cache", kind: "flag", group: "features" },
+  { id: "tools", kind: "flag", group: "features" },
+  { id: "image", kind: "flag", group: "features" },
+  { id: "thinking", kind: "flag", group: "features" },
+  { id: "stream", kind: "flag", group: "features" },
+  { id: "dialect", kind: "one", group: "source" },
+  { id: "intent", kind: "many", group: "source" },
+  { id: "client", kind: "one", group: "source" },
+  { id: "provider_would_be", kind: "many", group: "upstream" },
 ];
 
 export function condField(id: string): CondField {
-  return COND_FIELDS.find((f) => f.id === id) ?? { id, kind: "one", group: "请求" };
+  return COND_FIELDS.find((f) => f.id === id) ?? { id, kind: "one", group: "request" };
+}
+
+export function condGroupLabel(group: CondGroup): string {
+  return textOf(modelText).condGroups[group];
 }
 
 /** 比较符。配置里写的是符号，界面上是词 */
-export const COMPARE_OPS: { id: string; label: string }[] = [
-  { id: ">", label: "大于" },
-  { id: ">=", label: "不小于" },
-  { id: "<", label: "小于" },
-  { id: "<=", label: "不大于" },
-  { id: "=", label: "等于" },
-];
+export function compareOps(): { id: string; label: string }[] {
+  const t = textOf(modelText).compareOps;
+  return [
+    { id: ">", label: t.gt },
+    { id: ">=", label: t.ge },
+    { id: "<", label: t.lt },
+    { id: "<=", label: t.le },
+    { id: "=", label: t.eq },
+  ];
+}
 
 /** `>200k` → `[">", "200k"]`。写不出比较符的原样放进数值里，让校验说话 */
 export function splitCompare(v: string): [string, string] {
@@ -86,18 +99,19 @@ export function blankCondition(id: string): ConditionView {
 
 /** 条件缺什么。没问题时为空 */
 export function conditionProblem(c: ConditionView): string | null {
+  const t = textOf(modelText);
   const name = conditionName(c.field);
   const values = c.values.map((v) => v.trim()).filter(Boolean);
   switch (condField(c.field).kind) {
     case "compare": {
       const [, amount] = splitCompare(values[0] ?? "");
-      if (!amount) return `填写条件「${name}」的数值`;
-      return validAmount(amount) ? null : `条件「${name}」的数值有误，示例：200k`;
+      if (!amount) return t.amountMissing(name);
+      return validAmount(amount) ? null : t.amountInvalid(name);
     }
     case "flag":
       return null;
     default:
-      return values.length ? null : `填写条件「${name}」的取值`;
+      return values.length ? null : t.valueMissing(name);
   }
 }
 
@@ -209,21 +223,22 @@ export function draftToInput(d: RuleDraft): RuleInput {
 
 /** 规则对话框里保存按钮旁边要说的：还缺什么。没问题时为空 */
 export function ruleProblem(d: RuleDraft, takenNames: string[]): string | null {
+  const t = textOf(modelText);
   const name = d.name.trim();
-  if (!name) return "填写规则名称";
-  if (takenNames.includes(name)) return `规则名称「${name}」已存在`;
+  if (!name) return t.ruleNameMissing;
+  if (takenNames.includes(name)) return t.ruleNameTaken(name);
   for (const c of d.conditions) {
     const p = conditionProblem(c);
     if (p) return p;
   }
   if (d.action === "forward") {
-    if (isPhaseTwo(d)) return "含「选定上游」条件的规则不能转发";
-    if (!d.to) return "选择转发去向";
+    if (isPhaseTwo(d)) return t.phaseTwoForward;
+    if (!d.to) return t.targetMissing;
   }
-  if (d.action === "deny" && !d.deny.trim()) return "填写拒绝原因";
-  if (d.action === "continue" && !hasAddOns(d)) return "继续匹配的规则须设置改写参数或安全要求";
+  if (d.action === "deny" && !d.deny.trim()) return t.denyReasonMissing;
+  if (d.action === "continue" && !hasAddOns(d)) return t.continueNeedsAddOns;
   const mt = d.maxTokens.trim();
-  if (mt && !/^\d+$/.test(mt)) return "max_tokens 须为正整数";
+  if (mt && !/^\d+$/.test(mt)) return t.maxTokensInvalid;
   return null;
 }
 
@@ -299,10 +314,11 @@ export function flowOf(route: RouteView): { rule: string; target: string | null 
 
 /** 列表「规则」一栏的次行：规则数，以及需要留意的事 */
 export function routeSummary(route: RouteView): { text: string; warn: boolean } {
-  const parts = [`${route.rules.length} 条规则`];
+  const t = textOf(modelText);
+  const parts = [t.ruleCount(route.rules.length)];
   const shadowed = route.rules.filter((r) => r.shadowed).length;
-  if (shadowed > 0) parts.push(`${shadowed} 条位于兜底规则之后，不会生效`);
-  if (!route.has_catch_all) parts.push("尚无兜底规则");
+  if (shadowed > 0) parts.push(t.shadowedCount(shadowed));
+  if (!route.has_catch_all) parts.push(t.noCatchAll);
   return { text: parts.join(" · "), warn: shadowed > 0 || !route.has_catch_all };
 }
 
@@ -312,15 +328,16 @@ export function describeTarget(
   groups: GroupView[],
   providers: ProviderView[],
 ): string {
+  const t = textOf(modelText);
   const g = groups.find((x) => x.name === name);
   if (g) {
-    if (g.builtin) return "内置策略组 · 按上游列表顺序";
+    if (g.builtin) return t.builtinGroup;
     const members = membersText(g);
-    return `策略组 · ${groupKindLabel(g.kind)}${members ? `：${members}` : ""}`;
+    return t.groupTarget(groupKindLabel(g.kind), members);
   }
   const p = providers.find((x) => x.name === name);
-  if (p) return `上游 · ${protocolLabel(p.protocol)}${p.disabled ? " · 已停用" : ""}`;
-  return "不存在的去向";
+  if (p) return t.upstreamTarget(protocolLabel(p.protocol), p.disabled);
+  return t.unknownTarget;
 }
 
 /** 成员怎么写：有先后的用「→」连，其余用顿号 */
@@ -330,28 +347,32 @@ export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected"
     const rest = g.providers.filter((p) => p !== g.selected);
     return [g.selected, ...rest].join(" → ");
   }
-  return g.providers.join(ordered ? " → " : "、");
+  return g.providers.join(ordered ? " → " : textOf(routingText).listSep);
 }
 
 /** 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · 额外脱敏 2 类` */
 export function addOnsText(d: RuleDraft): string {
+  const t = textOf(modelText);
   const parts: string[] = [];
-  if (d.model.trim()) parts.push(`模型改为 ${d.model.trim()}`);
-  if (d.maxTokens.trim()) parts.push(`max_tokens 改为 ${d.maxTokens.trim()}`);
-  if (d.thinking !== "keep") parts.push(d.thinking === "on" ? "开启扩展思考" : "关闭扩展思考");
-  if (d.redact.length) parts.push(`额外脱敏 ${d.redact.length} 类`);
-  if (d.untrusted) parts.push("按非官方端点处理");
+  if (d.model.trim()) parts.push(t.setModel(d.model.trim()));
+  if (d.maxTokens.trim()) parts.push(t.setMaxTokens(d.maxTokens.trim()));
+  if (d.thinking !== "keep") parts.push(d.thinking === "on" ? t.thinkingOn : t.thinkingOff);
+  if (d.redact.length) parts.push(t.redactKinds(d.redact.length));
+  if (d.untrusted) parts.push(t.untrusted);
   return parts.join(" · ");
 }
 
 /** 策略组的策略，附一句会影响用户决定的说明 */
-export const STRATEGIES: { id: GroupKind; desc: string }[] = [
-  { id: "fallback", desc: "依次使用成员，前一个不可用时使用下一个。" },
-  { id: "select", desc: "使用选定的上游；它不可用时，按顺序使用其余成员。" },
-  { id: "load-balance", desc: "在成员之间轮流分配请求。" },
-  { id: "url-test", desc: "优先使用首字节时间最短的上游。" },
-  { id: "cheapest", desc: "优先使用输入单价最低的上游。" },
-];
+export function strategies(): { id: GroupKind; desc: string }[] {
+  const t = textOf(modelText).strategies;
+  return [
+    { id: "fallback", desc: t.fallback },
+    { id: "select", desc: t.select },
+    { id: "load-balance", desc: t.loadBalance },
+    { id: "url-test", desc: t.urlTest },
+    { id: "cheapest", desc: t.cheapest },
+  ];
+}
 
 /** 客户端格式：规则条件和试算里可选的几种 */
 export const DIALECTS = ["anthropic", "openai-chat", "openai-responses", "gemini"];

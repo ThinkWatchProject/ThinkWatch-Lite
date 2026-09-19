@@ -12,6 +12,7 @@ import {
 } from "@/ui/empty";
 import { IconRoute } from "@/ui/icons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { useText } from "@/i18n";
 import type { GroupView, KnownModel, Overview, RouteInput } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
 import { errorText } from "@/upstreams/labels";
@@ -22,6 +23,8 @@ import { GroupTable, groupRefs } from "./GroupTable";
 import { DeleteRouteDialog, SetDefaultDialog } from "./RouteConfirmDialogs";
 import { RouteDialog, type RouteDialogMode } from "./RouteDialog";
 import { RouteTable } from "./RouteTable";
+import { routingText } from "./routing.i18n";
+import { routingPageText } from "./RoutingPage.i18n";
 
 export type RoutingTab = "routes" | "groups";
 
@@ -54,6 +57,8 @@ export default function RoutingPage({
   onOpenConfigFile: (focus: string | null) => void;
   onNavigate: (tab: string) => void;
 }) {
+  const t = useText(routingPageText);
+  const rt = useText(routingText);
   const [tab, setTab] = useState<RoutingTab>("routes");
   const [dialog, setDialog] = useState<DialogState>(null);
   // 试算叠在路由对话框上面时，两个要同时开着 —— 单独一份状态
@@ -101,14 +106,12 @@ export default function RoutingPage({
             <EmptyMedia variant="icon">
               <IconRoute />
             </EmptyMedia>
-            <EmptyTitle>尚无上游</EmptyTitle>
-            <EmptyDescription>
-              路由规则将请求转发至上游或策略组。新建上游后，默认路由将请求依次转发至全部上游。
-            </EmptyDescription>
+            <EmptyTitle>{t.noUpstreams}</EmptyTitle>
+            <EmptyDescription>{t.noUpstreamsDesc}</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button size="sm" onClick={() => onNavigate("upstreams")}>
-              前往上游页
+              {rt.showUpstreams}
             </Button>
           </EmptyContent>
         </Empty>
@@ -122,10 +125,10 @@ export default function RoutingPage({
         <div className="flex flex-wrap items-center gap-2">
           <TabsList>
             <TabsTrigger value="routes">
-              路由 <Count n={ov.routes.length} />
+              {t.routes} <Count n={ov.routes.length} />
             </TabsTrigger>
             <TabsTrigger value="groups">
-              策略组 <Count n={ov.groups.length} />
+              {t.groups} <Count n={ov.groups.length} />
             </TabsTrigger>
           </TabsList>
           <div className="flex-1" />
@@ -133,17 +136,17 @@ export default function RoutingPage({
             <>
               <Button variant="outline" size="sm" onClick={() => setDryRun({ kind: "key" })}>
                 <FlaskConicalIcon />
-                试算
+                {rt.dryRun}
               </Button>
               <Button size="sm" onClick={() => setDialog({ kind: "route", mode: { kind: "create" } })}>
                 <PlusIcon />
-                新建路由
+                {rt.newRoute}
               </Button>
             </>
           ) : (
             <Button size="sm" onClick={() => setDialog({ kind: "group", mode: { kind: "create" } })}>
               <PlusIcon />
-              新建策略组
+              {rt.newGroup}
             </Button>
           )}
         </div>
@@ -222,13 +225,13 @@ export default function RoutingPage({
       )}
       {dialog?.kind === "delete-group" && (
         <DeleteDialog
-          what="策略组"
+          what={t.group}
           name={dialog.name}
           referrers={groupRefs(ov, dialog.name).map((r) => ({
             kind: "reference" as const,
             ref: { kind: "rule_target" as const, route: r.route, rule: r.rule },
           }))}
-          consequence="删除后，此策略组将从配置文件中移除，可在版本历史中恢复。"
+          consequence={t.deleteGroupConsequence}
           onDelete={async () => {
             await api.deleteGroup(dialog.name, configVersion);
             done();

@@ -21,6 +21,8 @@ import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/ui/native-select";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
 import type { ConditionView, KnownModel, Overview } from "@/types";
 import { globMatch } from "@/upstreams/glob";
@@ -29,13 +31,14 @@ import { FormItem, Note, Segmented } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
 import { ModelInput, ToggleChips } from "./fields";
 import {
-  COMPARE_OPS,
   COND_FIELDS,
   DIALECTS,
   PROBE_IDS,
   addOnsText,
   blankCondition,
+  compareOps,
   condField,
+  condGroupLabel,
   describeTarget,
   isPhaseTwo,
   ruleProblem,
@@ -43,6 +46,8 @@ import {
   type Action,
   type RuleDraft,
 } from "./model";
+import { routingText } from "./routing.i18n";
+import { ruleDialogText } from "./RuleDialog.i18n";
 
 /** 目标下拉里「新建策略组…」那一项的值。只活在这个下拉里，不会写进配置 */
 const NEW_GROUP = "::new-group";
@@ -83,6 +88,9 @@ export function RuleDialog({
   /** `routeProbes`：保存路由时一并设为「交给路由」的辅助请求类别 */
   onSave: (rule: RuleDraft, routeProbes: string[]) => void;
 }) {
+  const t = useText(ruleDialogText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const [d, setD] = useState<RuleDraft>(initial);
   const set = (patch: Partial<RuleDraft>) => setD((x) => ({ ...x, ...patch }));
   const [rewriteOpen, setRewriteOpen] = useState(
@@ -112,33 +120,31 @@ export function RuleDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">{create ? "添加规则" : `编辑规则「${initial.name}」`}</DialogTitle>
-          <DialogDescription>
-            路由「{routeName}」· 第 {position} 条
-          </DialogDescription>
+          <DialogTitle className="tw-title">{create ? rt.addRule : t.editTitle(initial.name)}</DialogTitle>
+          <DialogDescription>{t.position(routeName, position)}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-1">
-          <FormItem label="名称" htmlFor="rule-name">
+          <FormItem label={rt.name} htmlFor="rule-name">
             <Input
               id="rule-name"
               autoFocus={create}
               value={d.name}
-              placeholder="例如 长上下文"
+              placeholder={t.namePlaceholder}
               onChange={(e) => set({ name: e.target.value })}
             />
           </FormItem>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-baseline gap-2">
-              <span className="tw-body font-medium">条件</span>
+              <span className="tw-body font-medium">{t.conditions}</span>
               {d.conditions.length > 1 && (
-                <span className="tw-label text-muted-foreground">同时满足以下条件</span>
+                <span className="tw-label text-muted-foreground">{t.allOf}</span>
               )}
             </div>
             <div className="flex flex-col gap-2.5 rounded-lg border border-border p-2.5">
               {d.conditions.length === 0 && (
-                <p className="tw-body text-muted-foreground">全部请求（兜底）</p>
+                <p className="tw-body text-muted-foreground">{rt.allRequests}</p>
               )}
               {d.conditions.map((c, i) => (
                 <ConditionRow
@@ -152,16 +158,14 @@ export function RuleDialog({
               ))}
               {unrouted.length > 0 && (
                 <div className="flex flex-col gap-2 rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2">
-                  <Note tone="warning">
-                    {unrouted.map(probeLabel).join("、")}当前未设为交给路由，此条件不会满足。
-                  </Note>
+                  <Note tone="warning">{t.unrouted(unrouted.map(probeLabel))}</Note>
                   <Field orientation="horizontal" className="w-auto">
                     <Checkbox
                       id="rule-route-probes"
                       checked={routing}
                       onCheckedChange={(v) => setRouteProbes(v === true)}
                     />
-                    <FieldLabel htmlFor="rule-route-probes">保存时将这些类别改为交给路由</FieldLabel>
+                    <FieldLabel htmlFor="rule-route-probes">{t.routeProbes}</FieldLabel>
                   </Field>
                 </div>
               )}
@@ -173,20 +177,20 @@ export function RuleDialog({
           </div>
 
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4">
-            <FormItem label="命中后">
+            <FormItem label={t.onMatch}>
               <Segmented<Action>
                 value={d.action}
                 onChange={(a) => set({ action: a })}
                 options={[
-                  { id: "forward", label: "转发", disabled: phaseTwo },
-                  { id: "deny", label: "拒绝" },
-                  { id: "continue", label: "继续匹配" },
+                  { id: "forward", label: t.forward, disabled: phaseTwo },
+                  { id: "deny", label: rt.deny },
+                  { id: "continue", label: rt.continueMatching },
                 ]}
               />
             </FormItem>
             {d.action === "forward" && (
               <FormItem
-                label="转发至"
+                label={t.forwardTo}
                 htmlFor="rule-to"
                 desc={d.to ? describeTarget(d.to, ov.groups, ov.providers) : undefined}
               >
@@ -198,16 +202,16 @@ export function RuleDialog({
                     e.target.value === NEW_GROUP ? setNewGroup(true) : set({ to: e.target.value })
                   }
                 >
-                  {!d.to && <NativeSelectOption value="">选择去向</NativeSelectOption>}
-                  <NativeSelectOptGroup label="策略组">
+                  {!d.to && <NativeSelectOption value="">{t.chooseTarget}</NativeSelectOption>}
+                  <NativeSelectOptGroup label={t.groups}>
                     {ov.groups.map((g) => (
                       <NativeSelectOption key={g.name} value={g.name}>
                         {targetLabel(g.name)}
                       </NativeSelectOption>
                     ))}
-                    <NativeSelectOption value={NEW_GROUP}>新建策略组…</NativeSelectOption>
+                    <NativeSelectOption value={NEW_GROUP}>{t.newGroupMenu}</NativeSelectOption>
                   </NativeSelectOptGroup>
-                  <NativeSelectOptGroup label="上游">
+                  <NativeSelectOptGroup label={t.upstreams}>
                     {ov.providers.map((p) => (
                       <NativeSelectOption key={p.name} value={p.name}>
                         {p.name}
@@ -218,41 +222,37 @@ export function RuleDialog({
               </FormItem>
             )}
             {d.action === "deny" && (
-              <FormItem label="拒绝原因" htmlFor="rule-deny" desc="返回给客户端。">
+              <FormItem label={t.denyReason} htmlFor="rule-deny" desc={t.denyReasonDesc}>
                 <Input
                   id="rule-deny"
                   value={d.deny}
-                  placeholder="例如 此密钥不提供 Opus 模型"
+                  placeholder={t.denyPlaceholder}
                   onChange={(e) => set({ deny: e.target.value })}
                 />
               </FormItem>
             )}
             {d.action === "continue" && (
-              <p className="self-end pb-1.5 tw-label text-muted-foreground">
-                应用下方的改写参数与安全要求，然后继续匹配后续规则。
-              </p>
+              <p className="self-end pb-1.5 tw-label text-muted-foreground">{t.continueDesc}</p>
             )}
           </div>
-          {phaseTwo && (
-            <Note>含「选定上游」条件的规则在选定上游之后判断，只能拒绝或继续匹配。</Note>
-          )}
+          {phaseTwo && <Note>{t.phaseTwo}</Note>}
 
           {d.action !== "deny" && (
             <div className="flex flex-col">
               <Section
-                title="改写参数"
-                summary={rewriteSummary || "未设置"}
+                title={t.rewrite}
+                summary={rewriteSummary || t.notSet}
                 open={rewriteOpen}
                 onToggle={() => setRewriteOpen((o) => !o)}
               >
                 <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] items-start gap-3">
-                  <FormItem label="模型改为" htmlFor="rw-model">
+                  <FormItem label={t.setModel} htmlFor="rw-model">
                     <ModelInput
                       id="rw-model"
                       value={d.model}
                       onChange={(v) => set({ model: v })}
                       models={modelIds}
-                      placeholder="不改变"
+                      placeholder={t.unchanged}
                     />
                   </FormItem>
                   <FormItem label="max_tokens" htmlFor="rw-max">
@@ -260,32 +260,32 @@ export function RuleDialog({
                       id="rw-max"
                       className="font-mono"
                       inputMode="numeric"
-                      placeholder="不改变"
+                      placeholder={t.unchanged}
                       value={d.maxTokens}
                       onChange={(e) => set({ maxTokens: e.target.value })}
                     />
                   </FormItem>
-                  <FormItem label="扩展思考">
+                  <FormItem label={t.thinking}>
                     <Segmented<RuleDraft["thinking"]>
                       value={d.thinking}
                       onChange={(v) => set({ thinking: v })}
                       options={[
-                        { id: "keep", label: "不改变" },
-                        { id: "on", label: "开启" },
-                        { id: "off", label: "关闭" },
+                        { id: "keep", label: t.unchanged },
+                        { id: "on", label: t.on },
+                        { id: "off", label: t.off },
                       ]}
                     />
                   </FormItem>
                 </div>
-                {d.model.trim() && <Note>更换模型后，已缓存的 prompt 不再命中。</Note>}
+                {d.model.trim() && <Note>{t.modelChangeNote}</Note>}
               </Section>
               <Section
-                title="安全要求"
-                summary={guardSummary || "未设置"}
+                title={t.guard}
+                summary={guardSummary || t.notSet}
                 open={guardOpen}
                 onToggle={() => setGuardOpen((o) => !o)}
               >
-                <FormItem label="额外脱敏" desc="与上游自身的设置合并，只增加保护。">
+                <FormItem label={t.redact} desc={t.redactDesc}>
                   <ToggleChips
                     mono={false}
                     options={REDACT_KINDS.map((k) => ({ id: k.id, label: k.label }))}
@@ -299,7 +299,7 @@ export function RuleDialog({
                     checked={d.untrusted}
                     onCheckedChange={(v) => set({ untrusted: v === true })}
                   />
-                  <FieldLabel htmlFor="rule-untrusted">按非官方端点处理</FieldLabel>
+                  <FieldLabel htmlFor="rule-untrusted">{t.untrusted}</FieldLabel>
                 </Field>
               </Section>
             </div>
@@ -309,10 +309,10 @@ export function RuleDialog({
         <DialogFooter className="items-center">
           {problem && <span className="mr-auto tw-label text-muted-foreground">{problem}</span>}
           <Button variant="outline" onClick={onClose}>
-            取消
+            {ct.cancel}
           </Button>
           <Button disabled={problem != null} onClick={() => onSave(d, routing ? unrouted : [])}>
-            {create ? "添加" : "保存"}
+            {create ? t.add : ct.save}
           </Button>
         </DialogFooter>
 
@@ -372,6 +372,7 @@ function Section({
 
 /** 「添加条件」：按请求、特征、来源、上游分组，已有的不再列出 */
 function AddCondition({ used, onAdd }: { used: string[]; onAdd: (field: string) => void }) {
+  const t = useText(ruleDialogText);
   const left = COND_FIELDS.filter((f) => !used.includes(f.id));
   if (left.length === 0) return null;
   const groups = [...new Set(left.map((f) => f.group))];
@@ -380,14 +381,14 @@ function AddCondition({ used, onAdd }: { used: string[]; onAdd: (field: string) 
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="self-start text-muted-foreground">
           <PlusIcon />
-          添加条件
+          {t.addCondition}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-44">
         {groups.map((g, i) => (
           <div key={g}>
             {i > 0 && <DropdownMenuSeparator />}
-            <div className="px-1.5 pt-1 pb-0.5 tw-label text-muted-foreground">{g}</div>
+            <div className="px-1.5 pt-1 pb-0.5 tw-label text-muted-foreground">{condGroupLabel(g)}</div>
             {left
               .filter((f) => f.group === g)
               .map((f) => (
@@ -416,6 +417,7 @@ function ConditionRow({
   onChange: (c: ConditionView) => void;
   onRemove: () => void;
 }) {
+  const t = useText(ruleDialogText);
   const f = condField(c.field);
   const name = conditionName(c.field);
   const v0 = c.values[0] ?? "";
@@ -428,12 +430,12 @@ function ConditionRow({
           value={v0}
           onChange={(v) => onChange({ ...c, values: [v] })}
           models={models}
-          placeholder="例如 claude-opus-*"
+          placeholder={t.globPlaceholder}
         />
       );
       if (v0.trim() && models.length > 0) {
         const n = models.filter((m) => globMatch(v0.trim(), m)).length;
-        hint = n > 0 ? `匹配 ${n} 个已知模型` : "不匹配任何已知模型";
+        hint = n > 0 ? t.globMatches(n) : t.globNone;
       }
       break;
     }
@@ -442,18 +444,18 @@ function ConditionRow({
       control = (
         <>
           <NativeSelect
-            aria-label={`${name}的比较方式`}
+            aria-label={t.compareOp(name)}
             value={op}
             onChange={(e) => onChange({ ...c, values: [`${e.target.value}${amount}`] })}
           >
-            {COMPARE_OPS.map((o) => (
+            {compareOps().map((o) => (
               <NativeSelectOption key={o.id} value={o.id}>
                 {o.label}
               </NativeSelectOption>
             ))}
           </NativeSelect>
           <Input
-            aria-label={`${name}的数值`}
+            aria-label={t.compareAmount(name)}
             className="w-28 font-mono"
             placeholder="200k"
             value={amount}
@@ -469,8 +471,8 @@ function ConditionRow({
           value={v0 === "false" ? "false" : "true"}
           onChange={(v) => onChange({ ...c, values: [v] })}
           options={[
-            { id: "true", label: "是" },
-            { id: "false", label: "否" },
+            { id: "true", label: t.yes },
+            { id: "false", label: t.no },
           ]}
         />
       );
@@ -487,7 +489,7 @@ function ConditionRow({
           </NativeSelect>
         ) : (
           <NativeSelect aria-label={name} value={v0} onChange={(e) => onChange({ ...c, values: [e.target.value] })}>
-            {!v0 && <NativeSelectOption value="">选择密钥</NativeSelectOption>}
+            {!v0 && <NativeSelectOption value="">{t.chooseKey}</NativeSelectOption>}
             {ov.clients.map((k) => (
               <NativeSelectOption key={k.name} value={k.name}>
                 {k.name}
@@ -502,7 +504,7 @@ function ConditionRow({
           <ToggleChips
             mono={false}
             options={[
-              { id: "assistant_internal", label: "任一辅助请求" },
+              { id: "assistant_internal", label: t.anyProbe },
               ...PROBES.map((p) => ({ id: p.id, label: p.label })),
             ]}
             value={c.values}
@@ -528,7 +530,7 @@ function ConditionRow({
           variant="ghost"
           size="icon-sm"
           className="text-muted-foreground"
-          aria-label={`删除条件 ${name}`}
+          aria-label={t.removeCondition(name)}
           onClick={onRemove}
         >
           <XIcon />

@@ -10,8 +10,11 @@ import {
   TableRow,
 } from "@/ui/table";
 import { cn } from "@/lib/utils";
+import { textOf, useText } from "@/i18n";
 import { groupKindLabel } from "@/labels";
 import type { GroupView, Overview } from "@/types";
+import { groupTableText } from "./GroupTable.i18n";
+import { routingText } from "./routing.i18n";
 
 export interface GroupActions {
   edit: (name: string) => void;
@@ -33,15 +36,17 @@ export function groupRefs(ov: Overview, name: string): { route: string; rule: st
  * 策略组列表。「全部上游」是内置的，排第一行：成员随上游列表更新，不能编辑。
  */
 export function GroupTable({ ov, actions }: { ov: Overview; actions: GroupActions }) {
+  const t = useText(groupTableText);
+  const rt = useText(routingText);
   const groups = [...ov.groups].sort((a, b) => Number(b.builtin) - Number(a.builtin));
   return (
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-36">名称</TableHead>
-          <TableHead className="w-28">策略</TableHead>
-          <TableHead>成员</TableHead>
-          <TableHead className="w-48">引用</TableHead>
+          <TableHead className="w-36">{rt.name}</TableHead>
+          <TableHead className="w-28">{rt.strategy}</TableHead>
+          <TableHead>{rt.members}</TableHead>
+          <TableHead className="w-48">{t.references}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
@@ -58,30 +63,30 @@ export function GroupTable({ ov, actions }: { ov: Overview; actions: GroupAction
               >
                 <TableCell className="py-2.5">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate font-medium">{g.builtin ? "全部上游" : g.name}</span>
-                    {g.builtin && <Badge variant="outline">内置</Badge>}
+                    <span className="truncate font-medium">{g.builtin ? t.allUpstreams : g.name}</span>
+                    {g.builtin && <Badge variant="outline">{t.builtin}</Badge>}
                   </div>
                 </TableCell>
                 <TableCell>
                   <div>{groupKindLabel(g.kind)}</div>
-                  {g.hurts_cache && <div className="tw-label text-warning">影响 prompt cache</div>}
+                  {g.hurts_cache && <div className="tw-label text-warning">{rt.affectsCache}</div>}
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   <Members g={g} />
                   {g.builtin ? (
-                    <div className="tw-label text-muted-foreground">按上游列表顺序</div>
+                    <div className="tw-label text-muted-foreground">{t.listOrder}</div>
                   ) : g.kind === "select" && g.selected ? (
-                    <div className="tw-label text-muted-foreground">优先使用 {g.selected}</div>
+                    <div className="tw-label text-muted-foreground">{t.preferredIs(g.selected)}</div>
                   ) : null}
                 </TableCell>
                 <TableCell className="overflow-hidden">
                   {refs.length === 0 ? (
-                    <span className="text-muted-foreground">未被引用</span>
+                    <span className="text-muted-foreground">{t.unreferenced}</span>
                   ) : (
-                    <div className="truncate" title={refs.map((r) => `${r.route} · ${r.rule}`).join("；")}>
+                    <div className="truncate" title={refs.map((r) => `${r.route} · ${r.rule}`).join(t.refSep)}>
                       {refs.map((r, i) => (
                         <Fragment key={`${r.route}/${r.rule}`}>
-                          {i > 0 && "；"}
+                          {i > 0 && t.refSep}
                           {r.route} · {r.rule}
                         </Fragment>
                       ))}
@@ -89,7 +94,7 @@ export function GroupTable({ ov, actions }: { ov: Overview; actions: GroupAction
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${g.builtin ? "全部上游" : g.name} 的操作`} />
+                  <RowMenuButton items={items} label={rt.actionsFor(g.builtin ? t.allUpstreams : g.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>
@@ -136,16 +141,18 @@ function Members({ g }: { g: GroupView }) {
 }
 
 function menu(g: GroupView, a: GroupActions): MenuItems {
+  const t = textOf(groupTableText);
+  const rt = textOf(routingText);
   if (g.builtin) {
-    return [{ kind: "item", label: "前往上游页", onSelect: a.showUpstreams }];
+    return [{ kind: "item", label: rt.showUpstreams, onSelect: a.showUpstreams }];
   }
   return [
-    { kind: "item", label: "编辑…", onSelect: () => a.edit(g.name) },
+    { kind: "item", label: rt.editMenu, onSelect: () => a.edit(g.name) },
     ...(g.kind === "select"
       ? ([
           {
             kind: "sub",
-            label: "优先使用",
+            label: t.prefer,
             choices: g.providers.map((p) => ({
               label: p,
               checked: p === g.selected,
@@ -154,10 +161,10 @@ function menu(g: GroupView, a: GroupActions): MenuItems {
           },
         ] as MenuItems)
       : []),
-    { kind: "item", label: "复制…", onSelect: () => a.duplicate(g.name) },
+    { kind: "item", label: rt.duplicateMenu, onSelect: () => a.duplicate(g.name) },
     { kind: "sep" },
-    { kind: "item", label: "在配置文件中定位", onSelect: () => a.locate(g.name) },
+    { kind: "item", label: rt.locate, onSelect: () => a.locate(g.name) },
     { kind: "sep" },
-    { kind: "item", label: "删除…", onSelect: () => a.remove(g.name), danger: true },
+    { kind: "item", label: rt.deleteMenu, onSelect: () => a.remove(g.name), danger: true },
   ];
 }

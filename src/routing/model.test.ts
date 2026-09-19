@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLang } from "@/i18n";
 import type { RouteView, RuleView } from "@/types";
 import {
   blankRule,
@@ -144,5 +145,14 @@ describe("路由列表", () => {
     ]);
     expect(routeSummary(r)).toEqual({ text: "4 条规则 · 1 条位于兜底规则之后，不会生效", warn: true });
     expect(routeSummary(route({ has_catch_all: false, rules: [] })).text).toBe("0 条规则 · 尚无兜底规则");
+  });
+
+  it("英文的规则数分单复数", () => {
+    setLang("en");
+    expect(routeSummary(route({ rules: [view({ name: "a", to: "x", catch_all: true })] })).text).toBe("1 rule");
+    const shadowed = [view({ name: "a", shadowed: true }), view({ name: "b", shadowed: true })];
+    expect(routeSummary(route({ has_catch_all: false, rules: shadowed })).text).toBe(
+      "2 rules · 2 are after the catch-all rule and have no effect · No catch-all rule yet",
+    );
   });
 });
