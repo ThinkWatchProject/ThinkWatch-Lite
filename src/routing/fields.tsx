@@ -3,6 +3,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
 import {
   Combobox,
   ComboboxContent,
@@ -11,6 +12,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/ui/combobox";
+import { fieldsText } from "./fields.i18n";
 
 /**
  * 模型名：**自由输入 + 建议**。模型可能是刚发布的、也可能是中转自己起的，
@@ -20,7 +22,7 @@ export function ModelInput({
   value,
   onChange,
   models,
-  placeholder = "模型名",
+  placeholder,
   id,
   className,
 }: {
@@ -31,6 +33,7 @@ export function ModelInput({
   id?: string;
   className?: string;
 }) {
+  const t = useText(fieldsText);
   // **建议列表挂进所在的对话框，不挂在 body 上。**Radix 的模态对话框把 body
   // 设成 pointer-events: none，并把对话框外的点击当成「点在外面」，滚轮也
   // 只放行对话框内部 —— 挂在 body 上的列表看得见、点不中也滚不动
@@ -61,9 +64,9 @@ export function ModelInput({
         open={open}
         onOpenChange={(next) => setOpen(next)}
       >
-        <ComboboxInput id={id} placeholder={placeholder} className={cn("w-full font-mono", className)} />
+        <ComboboxInput id={id} placeholder={placeholder ?? t.modelName} className={cn("w-full font-mono", className)} />
         <ComboboxContent container={container ?? undefined}>
-          <ComboboxEmpty>无匹配项，可直接输入完整模型名</ComboboxEmpty>
+          <ComboboxEmpty>{t.noMatch}</ComboboxEmpty>
           <ComboboxList>
             {(m: string) => (
               <ComboboxItem key={m} value={m}>

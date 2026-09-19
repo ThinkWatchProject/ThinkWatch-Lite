@@ -12,10 +12,14 @@ import {
 import { Button } from "@/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Spinner } from "@/ui/spinner";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { Overview } from "@/types";
 import { errorText } from "@/upstreams/labels";
 import { FormItem, Note } from "@/upstreams/parts";
 import { usersOf } from "./model";
+import { routeConfirmText } from "./RouteConfirmDialogs.i18n";
+import { routingText } from "./routing.i18n";
 
 /** 一列密钥，右边可以附一句说明 */
 function KeyList({ rows }: { rows: { name: string; note?: string }[] }) {
@@ -50,6 +54,9 @@ export function SetDefaultDialog({
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useText(routeConfirmText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = ov.routes.find((r) => r.default);
@@ -70,21 +77,19 @@ export function SetDefaultDialog({
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogTitle>将「{name}」设为默认路由</AlertDialogTitle>
-          <AlertDialogDescription>
-            {moving.length > 0 ? "未指定路由的密钥将改用此路由。" : "当前所有密钥均已指定路由，更换默认路由不影响现有密钥。"}
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t.setDefaultTitle(name)}</AlertDialogTitle>
+          <AlertDialogDescription>{moving.length > 0 ? t.keysWillMove : t.noKeysMove}</AlertDialogDescription>
         </AlertDialogHeader>
         {moving.length > 0 && (
-          <KeyList rows={moving.map((k) => ({ name: k, note: `${current?.name ?? "默认"} → ${name}` }))} />
+          <KeyList rows={moving.map((k) => ({ name: k, note: `${current?.name ?? t.previousDefault} → ${name}` }))} />
         )}
-        {current && <Note>「{current.name}」保留为普通路由，可继续指定给密钥。</Note>}
+        {current && <Note>{t.keepsRoute(current.name)}</Note>}
         {error && <Note tone="error">{error}</Note>}
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel>{ct.cancel}</AlertDialogCancel>
           <Button onClick={() => void run()} disabled={busy}>
             {busy && <Spinner />}
-            设为默认路由
+            {rt.setDefault}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -108,6 +113,8 @@ export function DeleteRouteDialog({
   onConfirm: (reassignTo: string | null) => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useText(routeConfirmText);
+  const ct = useText(commonText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState("");
@@ -131,17 +138,13 @@ export function DeleteRouteDialog({
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogTitle>删除路由「{name}」</AlertDialogTitle>
-          <AlertDialogDescription>
-            {users.length > 0
-              ? "以下密钥使用此路由，删除后改用所选路由。可在版本历史中恢复。"
-              : "此路由未被密钥使用。删除后可在版本历史中恢复。"}
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t.deleteTitle(name)}</AlertDialogTitle>
+          <AlertDialogDescription>{users.length > 0 ? t.usersMove : t.unused}</AlertDialogDescription>
         </AlertDialogHeader>
         {users.length > 0 && (
           <>
             <KeyList rows={users.map((k) => ({ name: k }))} />
-            <FormItem label="改用路由" htmlFor="reassign-to">
+            <FormItem label={t.reassignTo} htmlFor="reassign-to">
               <NativeSelect
                 id="reassign-to"
                 className="w-full"
@@ -149,7 +152,7 @@ export function DeleteRouteDialog({
                 onChange={(e) => setTarget(e.target.value)}
               >
                 <NativeSelectOption value="">
-                  {fallback ? `${fallback.name}（默认路由）` : "默认路由"}
+                  {fallback ? t.defaultOption(fallback.name) : t.defaultRoute}
                 </NativeSelectOption>
                 {others.map((r) => (
                   <NativeSelectOption key={r.name} value={r.name}>
@@ -162,10 +165,10 @@ export function DeleteRouteDialog({
         )}
         {error && <Note tone="error">{error}</Note>}
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel>{ct.cancel}</AlertDialogCancel>
           <Button variant="destructive" onClick={() => void run()} disabled={busy}>
             {busy && <Spinner />}
-            删除
+            {ct.delete}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

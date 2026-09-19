@@ -17,6 +17,8 @@ import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Spinner } from "@/ui/spinner";
 import { cn } from "@/lib/utils";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import {
   PROBES,
   formatLabel,
@@ -30,8 +32,10 @@ import type { DryRunResult, KnownModel, Overview, RouteInput, RuleTrace } from "
 import { errorText, skipLabel } from "@/upstreams/labels";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
+import { dryRunText } from "./DryRunDialog.i18n";
 import { ModelInput } from "./fields";
 import { DIALECTS, usersOf } from "./model";
+import { routingText } from "./routing.i18n";
 
 /** 按什么求值：密钥使用的路由、指定的路由、路由对话框里还没保存的草稿 */
 export type DryRunTarget =
@@ -54,6 +58,9 @@ export function DryRunDialog({
   models: KnownModel[];
   onClose: () => void;
 }) {
+  const t = useText(dryRunText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const uid = useId();
   const firstKey =
     target.kind === "key"
@@ -127,28 +134,24 @@ export function DryRunDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[880px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">试算</DialogTitle>
-          <DialogDescription>按给定请求计算匹配结果。不发出请求，不产生费用。</DialogDescription>
+          <DialogTitle className="tw-title">{rt.dryRun}</DialogTitle>
+          <DialogDescription>{t.description}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-y-auto border-t border-border">
           <div className="flex flex-col gap-3.5 border-r border-border p-4">
             {target.kind !== "key" && (
-              <FormItem label="路由">
+              <FormItem label={t.route}>
                 <div className="flex h-8 items-center gap-1.5">
                   <span className="font-medium">{routeName}</span>
-                  {target.kind === "draft" && <Badge variant="outline">未保存</Badge>}
+                  {target.kind === "draft" && <Badge variant="outline">{t.unsaved}</Badge>}
                 </div>
               </FormItem>
             )}
             <FormItem
-              label="密钥"
+              label={t.key}
               htmlFor={`${uid}-key`}
-              desc={
-                target.kind === "key"
-                  ? `使用路由「${routeName}」`
-                  : "规则中的密钥条件按此密钥判断。"
-              }
+              desc={target.kind === "key" ? t.usesRoute(routeName) : t.keyConditions}
             >
               <NativeSelect
                 id={`${uid}-key`}
@@ -156,7 +159,7 @@ export function DryRunDialog({
                 value={client}
                 onChange={(e) => setClient(e.target.value)}
               >
-                {target.kind !== "key" && <NativeSelectOption value="">不指定</NativeSelectOption>}
+                {target.kind !== "key" && <NativeSelectOption value="">{t.noKey}</NativeSelectOption>}
                 {ov.clients.map((c) => (
                   <NativeSelectOption key={c.name} value={c.name}>
                     {c.name}
@@ -164,10 +167,10 @@ export function DryRunDialog({
                 ))}
               </NativeSelect>
             </FormItem>
-            <FormItem label="模型" htmlFor={`${uid}-model`}>
+            <FormItem label={t.model} htmlFor={`${uid}-model`}>
               <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models.map((m) => m.id)} />
             </FormItem>
-            <FormItem label="客户端格式" htmlFor={`${uid}-dialect`}>
+            <FormItem label={t.dialect} htmlFor={`${uid}-dialect`}>
               <NativeSelect
                 id={`${uid}-dialect`}
                 className="w-full"
@@ -182,7 +185,7 @@ export function DryRunDialog({
               </NativeSelect>
             </FormItem>
             <div className="grid grid-cols-2 gap-3">
-              <FormItem label="输入 token" htmlFor={`${uid}-tokens`}>
+              <FormItem label={t.inputTokens} htmlFor={`${uid}-tokens`}>
                 <div className="flex items-center gap-1.5">
                   <Input
                     id={`${uid}-tokens`}
@@ -199,34 +202,26 @@ export function DryRunDialog({
                   id={`${uid}-max`}
                   className="font-mono"
                   inputMode="numeric"
-                  placeholder="不设置"
+                  placeholder={t.notSet}
                   value={maxTokens}
                   onChange={(e) => setMaxTokens(e.target.value)}
                 />
               </FormItem>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              {(
-                [
-                  ["cache", "带缓存"],
-                  ["tools", "带工具"],
-                  ["image", "带图片"],
-                  ["thinking", "扩展思考"],
-                  ["stream", "流式"],
-                ] as const
-              ).map(([k, label]) => (
+              {(["cache", "tools", "image", "thinking", "stream"] as const).map((k) => (
                 <Field key={k} orientation="horizontal" className="w-auto">
                   <Checkbox
                     id={`${uid}-${k}`}
                     checked={flags[k]}
                     onCheckedChange={(v) => setFlags((f) => ({ ...f, [k]: v === true }))}
                   />
-                  <FieldLabel htmlFor={`${uid}-${k}`}>{label}</FieldLabel>
+                  <FieldLabel htmlFor={`${uid}-${k}`}>{t.flags[k]}</FieldLabel>
                 </Field>
               ))}
             </div>
             {flags.tools && (
-              <FormItem label="工具数" htmlFor={`${uid}-toolcount`}>
+              <FormItem label={t.toolCount} htmlFor={`${uid}-toolcount`}>
                 <Input
                   id={`${uid}-toolcount`}
                   className="w-24 font-mono"
@@ -236,14 +231,14 @@ export function DryRunDialog({
                 />
               </FormItem>
             )}
-            <FormItem label="辅助请求" htmlFor={`${uid}-intent`}>
+            <FormItem label={t.intent} htmlFor={`${uid}-intent`}>
               <NativeSelect
                 id={`${uid}-intent`}
                 className="w-full"
                 value={intent}
                 onChange={(e) => setIntent(e.target.value)}
               >
-                <NativeSelectOption value="">无（用户请求）</NativeSelectOption>
+                <NativeSelectOption value="">{t.userRequest}</NativeSelectOption>
                 {PROBES.map((p) => (
                   <NativeSelectOption key={p.id} value={p.id}>
                     {p.label}
@@ -263,7 +258,7 @@ export function DryRunDialog({
             ) : (
               <p className="flex items-center gap-2 tw-body text-muted-foreground">
                 <Spinner />
-                正在计算
+                {t.computing}
               </p>
             )}
           </div>
@@ -272,7 +267,7 @@ export function DryRunDialog({
         <DialogFooter className="items-center">
           {busy && r && <Spinner className="mr-auto text-muted-foreground" />}
           <Button variant="outline" onClick={onClose}>
-            关闭
+            {ct.close}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -281,6 +276,9 @@ export function DryRunDialog({
 }
 
 function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolean }) {
+  const t = useText(dryRunText);
+  const rt = useText(routingText);
+  const ct = useText(commonText);
   const decided = r.trace.findIndex((t) => t.effect === "decide");
   const route = ov.routes.find((x) => x.name === r.route);
   return (
@@ -289,27 +287,27 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
         <span className="tw-title">{headline(r)}</span>
         {r.outcome === "route" && r.strategy && <Badge variant="outline">{groupKindLabel(r.strategy)}</Badge>}
       </div>
-      {r.outcome === "deny" && r.reason && <p className="tw-body text-muted-foreground">原因：{r.reason}</p>}
+      {r.outcome === "deny" && r.reason && <p className="tw-body text-muted-foreground">{t.reason(r.reason)}</p>}
 
       <dl className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5 tw-body">
-        <dt className="text-muted-foreground">路由</dt>
+        <dt className="text-muted-foreground">{t.route}</dt>
         <dd>
           {r.route}
-          {!draft && route?.default && <span className="text-muted-foreground"> · 默认路由</span>}
-          {draft && <span className="text-muted-foreground"> · 未保存的修改</span>}
+          {!draft && route?.default && <span className="text-muted-foreground">{t.defaultRoute}</span>}
+          {draft && <span className="text-muted-foreground">{t.unsavedChanges}</span>}
         </dd>
         {r.rule && (
           <>
-            <dt className="text-muted-foreground">命中规则</dt>
+            <dt className="text-muted-foreground">{t.matchedRule}</dt>
             <dd>
               {r.rule}
-              {decided >= 0 && <span className="text-muted-foreground"> · 第 {decided + 1} 条</span>}
+              {decided >= 0 && <span className="text-muted-foreground">{t.position(decided + 1)}</span>}
             </dd>
           </>
         )}
         {r.outcome === "route" && (
           <>
-            <dt className="text-muted-foreground">尝试顺序</dt>
+            <dt className="text-muted-foreground">{t.attempts}</dt>
             <dd className="flex flex-col gap-1">
               {r.candidates.map((c, i) => {
                 const open = r.circuit_open.includes(c);
@@ -318,8 +316,8 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
                   <div key={c} className="flex flex-wrap items-baseline gap-x-2">
                     <span className="tabular-nums text-muted-foreground">{i + 1}</span>
                     <span className={cn("font-medium", open && "text-warning line-through")}>{c}</span>
-                    {open && <span className="tw-label text-warning">熔断中，将跳过</span>}
-                    {conv && <span className="tw-label text-muted-foreground">需转换格式：{translatedText(conv)}</span>}
+                    {open && <span className="tw-label text-warning">{t.circuitOpen}</span>}
+                    {conv && <span className="tw-label text-muted-foreground">{t.converted(translatedText(conv))}</span>}
                   </div>
                 );
               })}
@@ -328,13 +326,13 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
         )}
         {r.skipped.length > 0 && (
           <>
-            <dt className="text-muted-foreground">已跳过</dt>
+            <dt className="text-muted-foreground">{t.skipped}</dt>
             <dd>
               {r.skipped.map((s, i) => (
                 <span key={s.provider}>
-                  {i > 0 && "、"}
+                  {i > 0 && rt.listSep}
                   {s.provider}
-                  <span className="text-muted-foreground">（{skipLabel(s.reason)}）</span>
+                  <span className="text-muted-foreground">{t.skipReason(skipLabel(s.reason))}</span>
                 </span>
               ))}
             </dd>
@@ -342,10 +340,10 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
         )}
         {r.outcome === "route" && (
           <>
-            <dt className="text-muted-foreground">参数改写</dt>
+            <dt className="text-muted-foreground">{t.rewrites}</dt>
             <dd className="flex flex-col gap-0.5">
               {r.set.length === 0 ? (
-                <span className="text-muted-foreground">无</span>
+                <span className="text-muted-foreground">{ct.none}</span>
               ) : (
                 r.set.map((s) => <span key={s.field}>{setText(s)}</span>)
               )}
@@ -353,12 +351,10 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
           </>
         )}
       </dl>
-      {r.hurts_cache && (
-        <p className="tw-label text-warning">该策略组在上游之间分配请求，prompt cache 命中率会下降。</p>
-      )}
+      {r.hurts_cache && <p className="tw-label text-warning">{t.hurtsCache}</p>}
 
       <div className="overflow-hidden rounded-lg border border-border">
-        <div className="border-b border-border bg-muted/40 px-3 py-1.5 tw-body font-medium">规则匹配明细</div>
+        <div className="border-b border-border bg-muted/40 px-3 py-1.5 tw-body font-medium">{t.trace}</div>
         <ul>
           {r.trace.map((t, i) => {
             const v = traceView(t, decided);
@@ -390,17 +386,18 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
 }
 
 function headline(r: DryRunResult): string {
+  const m = textOf(dryRunText);
   switch (r.outcome) {
     case "route":
       return r.via_group
-        ? `转发至策略组「${targetLabel(r.via_group)}」`
-        : `转发至上游「${r.candidates[0] ?? ""}」`;
+        ? m.viaGroup(targetLabel(r.via_group))
+        : m.toUpstream(r.candidates[0] ?? "");
     case "deny":
-      return "拒绝";
+      return m.denied;
     case "unavailable":
-      return "选中的上游均无法服务此请求，请求将返回错误";
+      return m.unavailable;
     default:
-      return "无规则命中，请求将返回错误";
+      return m.noMatch;
   }
 }
 
@@ -409,16 +406,17 @@ function traceView(
   t: RuleTrace,
   decided: number,
 ): { text: string; tone: "ok" | "muted" | "warn"; icon: "hit" | "later" | "miss" } {
+  const m = textOf(dryRunText);
   if (t.verdict === "matched") {
-    if (t.effect === "decide") return { text: "命中 · 决定去向", tone: "ok", icon: "hit" };
-    if (t.effect === "apply") return { text: "命中 · 应用改写参数或安全要求", tone: "ok", icon: "hit" };
+    if (t.effect === "decide") return { text: m.decides, tone: "ok", icon: "hit" };
+    if (t.effect === "apply") return { text: m.applies, tone: "ok", icon: "hit" };
     return {
-      text: decided >= 0 ? `命中 · 去向已由第 ${decided + 1} 条决定` : "命中",
+      text: decided >= 0 ? m.decidedBy(decided + 1) : m.matched,
       tone: "muted",
       icon: "hit",
     };
   }
-  if (t.verdict === "phase_two") return { text: "选定上游后判断，试算不计算此条", tone: "muted", icon: "later" };
+  if (t.verdict === "phase_two") return { text: m.phaseTwo, tone: "muted", icon: "later" };
   if (t.error) return { text: t.error, tone: "warn", icon: "miss" };
-  return { text: t.mismatch ? `未命中：${mismatchText(t.mismatch)}` : "未命中", tone: "muted", icon: "miss" };
+  return { text: t.mismatch ? m.missedBecause(mismatchText(t.mismatch)) : m.missed, tone: "muted", icon: "miss" };
 }
