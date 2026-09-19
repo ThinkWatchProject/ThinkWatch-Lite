@@ -805,14 +805,71 @@ impl ControlClient {
             .await
     }
 
-    /// 生成一把新的网关密钥。**不写进配置** —— 只是拿一个值去填。
-    ///
-    /// 在 core 里生成，不在界面里：字母表和长度是安全决定，两处各写
-    /// 一份的话迟早只有一处被改。
-    pub async fn new_key(&self) -> Result<String> {
-        let body = self.get("/keys/new").await?;
-        let k: tw_api::NewKey = serde_json::from_slice(&body)?;
-        Ok(k.key)
+    // ── 网关密钥。**规则全在 core**：默认密钥删不得、接管中的删不得、
+    // 改名带着规则一起改、更换同步给被接管的客户端
+
+    pub async fn keys(&self) -> Result<Vec<tw_api::ClientView>> {
+        Ok(serde_json::from_slice(&self.get("/keys").await?)?)
+    }
+
+    /// 一把密钥的明文。**只在用户点「复制」那一刻问**
+    pub async fn key_value(&self, name: &str) -> Result<tw_api::KeyValue> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/keys/{}/value", segment(name))).await?,
+        )?)
+    }
+
+    pub async fn create_key(&self, req: &tw_api::KeySave) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/keys", req).await
+    }
+
+    pub async fn update_key(
+        &self,
+        name: &str,
+        req: &tw_api::KeySave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(hyper::Method::PUT, &format!("/keys/{}", segment(name)), req)
+            .await
+    }
+
+    pub async fn delete_key(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(format!("/keys/{}", segment(name)), base_version);
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    /// 换一把新的，并同步给正在用它的客户端。**一次调用做完两件事**
+    pub async fn rotate_key(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::KeyRotated> {
+        self.post_json(
+            &format!("/keys/{}/rotate", segment(name)),
+            &tw_api::KeyRotate {
+                base_version: base_version.map(str::to_string),
+            },
+        )
+        .await
+    }
+
+    pub async fn set_default_key(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            "/default_key",
+            &tw_api::DefaultKeySave {
+                name: name.to_string(),
+                base_version: base_version.map(str::to_string),
+            },
+        )
+        .await
     }
 
     /// 这台机器上有哪些网卡。

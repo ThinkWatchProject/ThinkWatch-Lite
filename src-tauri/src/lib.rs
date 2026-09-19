@@ -14,6 +14,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 pub mod autostart;
 pub mod chatgpt;
 pub mod control;
+pub mod keys;
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
@@ -157,11 +158,6 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
             .collect::<Vec<_>>()
             .join("\n")
     )
-}
-
-#[tauri::command]
-async fn new_key(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state.control.new_key().await.map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -1227,7 +1223,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             core_status,
             interfaces,
-            new_key,
             core_state,
             restart_core,
             overview,
@@ -1269,6 +1264,16 @@ pub fn run() {
             notice_prefs,
             set_notice_pref,
             take_pending_view,
+            keys::list_keys,
+            keys::create_key,
+            keys::update_key,
+            keys::delete_key,
+            keys::rotate_key,
+            keys::set_default_key,
+            keys::copy_key,
+            keys::gateway_base,
+            keys::copy_gateway_base,
+            keys::key_usage,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
             chatgpt::copy_chatgpt_code,
