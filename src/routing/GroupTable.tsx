@@ -66,7 +66,7 @@ export function GroupTable({ ov, actions }: { ov: Overview; actions: GroupAction
                   <div>{groupKindLabel(g.kind)}</div>
                   {g.hurts_cache && <div className="tw-label text-warning">影响 prompt cache</div>}
                 </TableCell>
-                <TableCell className="overflow-hidden">
+                <TableCell className="whitespace-normal">
                   <Members g={g} />
                   {g.builtin ? (
                     <div className="tw-label text-muted-foreground">按上游列表顺序</div>
@@ -111,9 +111,10 @@ function Members({ g }: { g: GroupView }) {
       ? [g.selected, ...g.providers.filter((p) => p !== g.selected)]
       : g.providers;
   return (
-    <div className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap" title={list.join(ordered ? " → " : "、")}>
+    <div className="flex flex-wrap items-center gap-1">
       {list.map((p, i) => (
-        <Fragment key={p}>
+        // 箭头和它后面的成员放在一起换行，续行以「→」开头，读得出是接着上一行
+        <span key={p} className="inline-flex items-center gap-1">
           {i > 0 && ordered && <span className="text-muted-foreground">→</span>}
           <span
             className={cn(
@@ -128,7 +129,7 @@ function Members({ g }: { g: GroupView }) {
             )}
             {p}
           </span>
-        </Fragment>
+        </span>
       ))}
     </div>
   );

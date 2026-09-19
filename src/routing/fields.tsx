@@ -1,6 +1,7 @@
 /**
  * 路由页几个对话框共用的小件：带建议的模型输入、一排可切换的名称标签。
  */
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Combobox,
@@ -30,20 +31,49 @@ export function ModelInput({
   id?: string;
   className?: string;
 }) {
+  // **建议列表挂进所在的对话框，不挂在 body 上。**Radix 的模态对话框把 body
+  // 设成 pointer-events: none，并把对话框外的点击当成「点在外面」，滚轮也
+  // 只放行对话框内部 —— 挂在 body 上的列表看得见、点不中也滚不动
+  const anchor = useRef<HTMLDivElement>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setContainer(anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null);
+  }, []);
+  // **Esc 只收起列表。**对话框的 Esc 监听在 document 的捕获阶段，比输入框先
+  // 拿到这一下；不在 window 上先截住，就连对话框带没保存的编辑一起关掉了
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open]);
   return (
-    <Combobox items={models} inputValue={value} onInputValueChange={onChange}>
-      <ComboboxInput id={id} placeholder={placeholder} className={cn("w-full font-mono", className)} />
-      <ComboboxContent>
-        <ComboboxEmpty>无匹配项，可直接输入完整模型名</ComboboxEmpty>
-        <ComboboxList>
-          {(m: string) => (
-            <ComboboxItem key={m} value={m}>
-              {m}
-            </ComboboxItem>
-          )}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
+    <div ref={anchor} className="contents">
+      <Combobox
+        items={models}
+        inputValue={value}
+        onInputValueChange={onChange}
+        open={open}
+        onOpenChange={(next) => setOpen(next)}
+      >
+        <ComboboxInput id={id} placeholder={placeholder} className={cn("w-full font-mono", className)} />
+        <ComboboxContent container={container ?? undefined}>
+          <ComboboxEmpty>无匹配项，可直接输入完整模型名</ComboboxEmpty>
+          <ComboboxList>
+            {(m: string) => (
+              <ComboboxItem key={m} value={m}>
+                {m}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+    </div>
   );
 }
 

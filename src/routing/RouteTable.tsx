@@ -43,15 +43,6 @@ export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteAction
         {routes.map((r) => {
           const items = menu(r, actions);
           const users = usersOf(r, ov.clients);
-          // 默认路由的使用者里，没指定路由的那几把要点出来：它们跟着默认路由走，
-          // 默认路由换了它们也换；指定了这条路由名的不会
-          const implicit = r.default ? ov.clients.filter((c) => !c.route).map((c) => c.name) : [];
-          const note =
-            implicit.length === 0
-              ? null
-              : implicit.length === users.length
-                ? "未指定路由的密钥"
-                : `其中 ${implicit.join("、")} 未指定路由`;
           const summary = routeSummary(r);
           return (
             <RowMenu key={r.name} items={items}>
@@ -68,7 +59,6 @@ export function RouteTable({ ov, actions }: { ov: Overview; actions: RouteAction
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   <NameChips names={users} empty="未被密钥使用" />
-                  {note && <div className="mt-1 tw-label text-muted-foreground">{note}</div>}
                 </TableCell>
                 <TableCell className="overflow-hidden">
                   <Flow route={r} />
