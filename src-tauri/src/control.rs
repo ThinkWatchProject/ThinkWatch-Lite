@@ -712,6 +712,79 @@ impl ControlClient {
         self.send_json(hyper::Method::DELETE, &path, &()).await
     }
 
+    // ───────────────────────────────────────── 路由与策略组
+
+    pub async fn create_route(&self, req: &tw_api::RouteSave) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/routes", req).await
+    }
+
+    pub async fn update_route(
+        &self,
+        name: &str,
+        req: &tw_api::RouteSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/routes/{}", segment(name)),
+            req,
+        )
+        .await
+    }
+
+    /// 删除一条路由。使用它的密钥改用 `reassign_to`；不给就改用默认路由
+    pub async fn delete_route(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+        reassign_to: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let mut path = with_base(format!("/routes/{}", segment(name)), base_version);
+        if let Some(t) = reassign_to {
+            path.push(if path.contains('?') { '&' } else { '?' });
+            path.push_str(&format!("reassign_to={}", urlencode(t)));
+        }
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    pub async fn set_default_route(
+        &self,
+        req: &tw_api::DefaultRouteSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(hyper::Method::PUT, "/default_route", req)
+            .await
+    }
+
+    pub async fn create_group(&self, req: &tw_api::GroupSave) -> Result<tw_api::ConfigWritten> {
+        self.post_json("/groups", req).await
+    }
+
+    pub async fn update_group(
+        &self,
+        name: &str,
+        req: &tw_api::GroupSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/groups/{}", segment(name)),
+            req,
+        )
+        .await
+    }
+
+    pub async fn delete_group(
+        &self,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(format!("/groups/{}", segment(name)), base_version);
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    /// 网关知道的全部模型，以及能提供它们的上游
+    pub async fn known_models(&self) -> Result<Vec<tw_api::KnownModel>> {
+        Ok(serde_json::from_slice(&self.get("/models").await?)?)
+    }
+
     pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
         let body = self.get(&format!("/config/at?offset={offset}")).await?;
         Ok(serde_json::from_slice(&body)?)

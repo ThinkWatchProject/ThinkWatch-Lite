@@ -84,7 +84,7 @@ export function Segmented<T extends string>({
   disabled,
 }: {
   value: T;
-  options: { id: T; label: ReactNode }[];
+  options: { id: T; label: ReactNode; disabled?: boolean }[];
   onChange: (v: T) => void;
   disabled?: boolean;
 }) {
@@ -99,7 +99,7 @@ export function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={value === o.id}
-          disabled={disabled}
+          disabled={disabled || o.disabled}
           onClick={() => onChange(o.id)}
           className={cn(
             "inline-flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2.5 tw-body font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50",

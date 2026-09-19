@@ -3,25 +3,41 @@ import { MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/ui/context-menu";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 
-/** 一份菜单：条目或分隔线。**右键和行尾按钮共用同一份** */
+/** 子菜单里的一项：单选的那种，当前选中的打勾 */
+export interface MenuChoice {
+  label: string;
+  checked: boolean;
+  onSelect: () => void;
+}
+
+/** 一份菜单：条目、子菜单或分隔线。**右键和行尾按钮共用同一份** */
 export type MenuItems = (
   | { kind: "sep" }
   | { kind: "item"; label: string; onSelect: () => void; danger?: boolean; disabled?: boolean }
+  | { kind: "sub"; label: string; choices: MenuChoice[] }
 )[];
 
 /**
@@ -44,6 +60,17 @@ export function RowMenu({ children, items }: { children: ReactNode; items: MenuI
           {items.map((it, i) =>
             it.kind === "sep" ? (
               <ContextMenuSeparator key={i} />
+            ) : it.kind === "sub" ? (
+              <ContextMenuSub key={i}>
+                <ContextMenuSubTrigger>{it.label}</ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {it.choices.map((c) => (
+                    <ContextMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
+                      {c.label}
+                    </ContextMenuCheckboxItem>
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
             ) : (
               <ContextMenuItem
                 key={i}
@@ -85,6 +112,17 @@ export function RowMenuButton({ items, label }: { items: MenuItems; label: strin
           {items.map((it, i) =>
             it.kind === "sep" ? (
               <DropdownMenuSeparator key={i} />
+            ) : it.kind === "sub" ? (
+              <DropdownMenuSub key={i}>
+                <DropdownMenuSubTrigger>{it.label}</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {it.choices.map((c) => (
+                    <DropdownMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
+                      {c.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             ) : (
               <DropdownMenuItem
                 key={i}
