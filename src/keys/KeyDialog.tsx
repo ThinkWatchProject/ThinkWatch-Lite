@@ -14,8 +14,11 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { when } from "@/format";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { ClientView, CostGroup, DetectedClient, RouteView } from "@/types";
 import { api } from "./api";
+import { keyDialogText } from "./KeyDialog.i18n";
 import { errorText, routeLabel, useLabel } from "./labels";
 
 /** 可见模型的三态。第三态是「一个都不给」——「临时停掉」的正当用法 */
@@ -56,6 +59,8 @@ export function KeyDialog({
   onSaved: (name: string) => void;
   onRotate: (name: string) => void;
 }) {
+  const t = useText(keyDialogText);
+  const common = useText(commonText);
   const [name, setName] = useState(editing?.name ?? "");
   const [route, setRoute] = useState(editing?.route ?? "");
   const [scope, setScope] = useState<Scope>(scopeOf(editing?.allow));
@@ -72,11 +77,11 @@ export function KeyDialog({
   const taken = keys.some((k) => k.name === name.trim() && k.name !== editing?.name);
   const missing =
     name.trim().length === 0
-      ? "请填写名称"
+      ? t.nameRequired
       : taken
-        ? "这个名称已被占用"
+        ? t.nameTaken
         : scope === "some" && globs.trim().length === 0
-          ? "请至少填写一条模型范围"
+          ? t.patternsRequired
           : null;
 
   async function save() {
@@ -116,7 +121,7 @@ export function KeyDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? "编辑密钥" : "新建密钥"}</DialogTitle>
+          <DialogTitle>{editing ? t.editTitle : t.newTitle}</DialogTitle>
           <DialogDescription>
             {editing ? (
               <>
@@ -124,7 +129,7 @@ export function KeyDialog({
                 {useLabel(editing, clients)}
               </>
             ) : (
-              "新密钥立即可用。客户端把它填进请求头即可连接网关。"
+              t.newDescription
             )}
           </DialogDescription>
         </DialogHeader>
@@ -135,8 +140,8 @@ export function KeyDialog({
               <div className="min-w-0">
                 <p className="truncate font-mono tw-body">{editing.key}</p>
                 <p className="tw-label text-muted-foreground">
-                  {editing.last_seen_ms ? `最后使用 ${when(editing.last_seen_ms)}` : "从未使用"}
-                  {used && used.requests > 0 && ` · 24 小时 ${used.requests.toLocaleString()} 次`}
+                  {editing.last_seen_ms ? t.lastUsed(when(editing.last_seen_ms)) : t.neverUsed}
+                  {used && used.requests > 0 && ` · ${t.usage(used.requests)}`}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -152,11 +157,11 @@ export function KeyDialog({
                   }}
                 >
                   <CopyIcon />
-                  {copied ? "已复制" : "复制"}
+                  {copied ? common.copied : common.copy}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => onRotate(editing.name)}>
                   <RotateCwIcon />
-                  更换…
+                  {t.rotate}
                 </Button>
               </div>
             </div>
@@ -165,21 +170,21 @@ export function KeyDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="flex min-w-0 flex-col gap-1.5">
               <label className="tw-body font-medium" htmlFor="k-name">
-                名称
+                {t.name}
               </label>
               <Input
                 id="k-name"
                 className="font-mono"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="例如 codex"
+                placeholder={t.namePlaceholder}
                 aria-invalid={taken}
               />
-              <p className="tw-label text-muted-foreground">流量与会话里按它区分客户端</p>
+              <p className="tw-label text-muted-foreground">{t.nameHint}</p>
             </div>
             <div className="flex min-w-0 flex-col gap-1.5">
               <label className="tw-body font-medium" htmlFor="k-route">
-                路由
+                {t.route}
               </label>
               <NativeSelect id="k-route" value={route} onChange={(e) => setRoute(e.target.value)}>
                 {/* 不绑就是走默认路由 —— 写出来，而不是留一个空白 */}
@@ -192,34 +197,34 @@ export function KeyDialog({
                     </NativeSelectOption>
                   ))}
               </NativeSelect>
-              <p className="tw-label text-muted-foreground">决定这把密钥的请求发往哪些上游</p>
+              <p className="tw-label text-muted-foreground">{t.routeHint}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex min-w-0 flex-col gap-1.5">
               <label className="tw-body font-medium" htmlFor="k-scope">
-                可见模型
+                {t.scope}
               </label>
               <NativeSelect
                 id="k-scope"
                 value={scope}
                 onChange={(e) => setScope(e.target.value as Scope)}
               >
-                <NativeSelectOption value="all">不限</NativeSelectOption>
-                <NativeSelectOption value="some">指定范围</NativeSelectOption>
-                <NativeSelectOption value="none">一个都不给</NativeSelectOption>
+                <NativeSelectOption value="all">{t.scopeAll}</NativeSelectOption>
+                <NativeSelectOption value="some">{t.scopeSome}</NativeSelectOption>
+                <NativeSelectOption value="none">{t.scopeNone}</NativeSelectOption>
               </NativeSelect>
             </div>
             <div className="flex min-w-0 flex-col gap-1.5">
               <label className="tw-body font-medium" htmlFor="k-limit">
-                并发上限
+                {t.limit}
               </label>
               <Input
                 id="k-limit"
                 className="font-mono"
                 value={limit}
-                placeholder="不限"
+                placeholder={t.noLimit}
                 onChange={(e) => setLimit(e.target.value.replace(/[^0-9]/g, ""))}
               />
             </div>
@@ -228,7 +233,7 @@ export function KeyDialog({
           {scope === "some" && (
             <div className="flex flex-col gap-1.5">
               <label className="tw-body font-medium" htmlFor="k-globs">
-                模型范围
+                {t.patterns}
               </label>
               <textarea
                 id="k-globs"
@@ -237,17 +242,15 @@ export function KeyDialog({
                 onChange={(e) => setGlobs(e.target.value)}
                 placeholder={"claude-*\ngpt-5*"}
               />
-              <p className="tw-label text-muted-foreground">一行一条，支持 * 通配</p>
+              <p className="tw-label text-muted-foreground">{t.patternsHint}</p>
             </div>
           )}
 
           <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
             <div>
-              <p className="tw-body font-medium">启用</p>
+              <p className="tw-body font-medium">{t.enabled}</p>
               <p className="tw-label text-muted-foreground">
-                {editing?.default
-                  ? "默认密钥不能停用：未接管的客户端均使用它"
-                  : "停用后，使用这把密钥的请求一律拒绝"}
+                {editing?.default ? t.defaultAlwaysOn : t.disabledRejects}
               </p>
             </div>
             <Switch
@@ -263,11 +266,11 @@ export function KeyDialog({
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
-            取消
+            {common.cancel}
           </Button>
           <Button onClick={() => void save()} disabled={saving || missing != null}>
             {saving && <Spinner />}
-            {editing ? "保存" : "创建"}
+            {editing ? common.save : t.create}
           </Button>
         </DialogFooter>
       </DialogContent>

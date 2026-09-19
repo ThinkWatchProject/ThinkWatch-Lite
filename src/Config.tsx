@@ -20,6 +20,9 @@ import { patchConfig } from "./patch";
 import { PROBES } from "./labels";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { ButtonGroup } from "@/ui/button-group";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
+import { configText } from "./Config.i18n";
 
 /**
  * 一个能改的字段。
@@ -41,6 +44,7 @@ function EditableCell({
   version: string | null;
   mono?: boolean;
 }) {
+  const t = useText(configText);
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
   /**
@@ -63,7 +67,7 @@ function EditableCell({
     // 组字中不提交 —— 中间态提交上去的是一段还没成形的文本
     if (composing.current || draft === value || busy) return;
     if (!version) {
-      toast.error("配置版本尚未读取，请稍后重试");
+      toast.error(t.versionNotLoaded);
       setDraft(value);
       return;
     }
@@ -145,23 +149,14 @@ function kindOf(bind: string): BindKind {
   return "nic";
 }
 
-const KINDS: { id: BindKind; label: string; what: string }[] = [
-  {
-    id: "loopback",
-    label: "仅本机",
-    what: "绑定 127.0.0.1。仅本机程序可连接，同网络的其他设备无法访问。",
-  },
-  {
-    id: "nic",
-    label: "指定网卡",
-    what: "绑定所选网卡的地址。仅该网卡所在网络中的设备可连接，密钥校验强制开启。",
-  },
-  {
-    id: "all",
-    label: "所有网卡",
-    what: "绑定 0.0.0.0，在所有网卡上监听，包括连接公网的网卡。密钥校验强制开启。",
-  },
-];
+function kinds(): { id: BindKind; label: string; what: string }[] {
+  const t = textOf(configText);
+  return [
+    { id: "loopback", label: t.loopback, what: t.loopbackWhat },
+    { id: "nic", label: t.nic, what: t.nicWhat },
+    { id: "all", label: t.all, what: t.allWhat },
+  ];
+}
 
 /**
  * 来源白名单（CIDR）。
@@ -177,12 +172,13 @@ function CidrList({
   items: string[];
   configVersion: string | null;
 }) {
+  const t = useText(configText);
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function run(ops: PatchOp[]) {
     if (!configVersion) {
-      toast.error("配置版本尚未读取，请稍后重试");
+      toast.error(t.versionNotLoaded);
       return;
     }
     setBusy(true);
@@ -198,7 +194,7 @@ function CidrList({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {items.length === 0 && <span className="text-muted-foreground">（允许所有来源）</span>}
+      {items.length === 0 && <span className="text-muted-foreground">{t.anySource}</span>}
       {items.map((c, i) => (
         <span
           key={c}
@@ -210,7 +206,7 @@ function CidrList({
             size="icon-xs"
             disabled={busy}
             onClick={() => void run([{ op: "remove", path: `/listen/gateway/allow_from/${i}` }])}
-            aria-label={`删除 ${c}`}
+            aria-label={t.removeSource(c)}
           >
             ×
           </Button>
@@ -220,7 +216,7 @@ function CidrList({
         className="w-44 font-mono"
         value={adding}
         disabled={busy}
-        placeholder="例如 192.168.1.0/24"
+        placeholder={t.sourcePlaceholder}
         onChange={(e) => setAdding(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && adding.trim()) {
@@ -234,11 +230,14 @@ function CidrList({
   );
 }
 
-const PROBE_MODES: { id: string; label: string; what: string }[] = [
-  { id: "intercept", label: "本地应答", what: "由网关直接应答，不发送到上游，不产生费用。" },
-  { id: "passthrough", label: "原样放行", what: "作为普通请求转发，按上游计费方式产生费用。" },
-  { id: "route", label: "交给路由", what: "按路由规则转发，可分流至费用更低的上游。" },
-];
+function probeModes(): { id: string; label: string; what: string }[] {
+  const t = textOf(configText);
+  return [
+    { id: "intercept", label: t.intercept, what: t.interceptWhat },
+    { id: "passthrough", label: t.passthrough, what: t.passthroughWhat },
+    { id: "route", label: t.routed, what: t.routedWhat },
+  ];
+}
 
 /**
  * 客户端自己发的辅助请求。
@@ -254,13 +253,15 @@ function ProbesSection({
   ov: Overview;
   configVersion: string | null;
 }) {
+  const t = useText(configText);
   const [busy, setBusy] = useState<string | null>(null);
   const probes = ov.client_probes ?? [];
   if (probes.length === 0) return null;
+  const modes = probeModes();
 
   async function set(id: string, mode: string) {
     if (!configVersion) {
-      toast.error("配置版本尚未读取，请稍后重试");
+      toast.error(t.versionNotLoaded);
       return;
     }
     setBusy(id);
@@ -275,9 +276,9 @@ function ProbesSection({
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">客户端探测请求</h2>
+      <h2 className="tw-title font-semibold">{t.probesTitle}</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        客户端自动发起的辅助请求，不由用户操作触发，同样产生费用。
+        {t.probesIntro}
       </p>
       <ul className="mt-2 space-y-1.5">
         {probes.map((p) => {
@@ -299,7 +300,7 @@ function ProbesSection({
                 /* 择一,不许择空 —— 空了等于没有模式 */
                 onValueChange={(v) => v && void set(p.id, v)}
               >
-                {PROBE_MODES.map((m) => (
+                {modes.map((m) => (
                   <ToggleGroupItem key={m.id} value={m.id}>
                     {m.label}
                   </ToggleGroupItem>
@@ -308,14 +309,14 @@ function ProbesSection({
             </div>
             {kind && <p className="mt-1 tw-body text-muted-foreground">{kind.what}</p>}
             <p className="mt-0.5 tw-label text-muted-foreground">
-              {PROBE_MODES.find((m) => m.id === p.mode)?.what}
+              {modes.find((m) => m.id === p.mode)?.what}
             </p>
           </li>
           );
         })}
       </ul>
       <p className="mt-2 tw-label text-muted-foreground">
-        仅当对应类别设为「交给路由」时，路由规则中的「辅助请求」条件才会命中。
+        {t.probesNote}
       </p>
     </section>
   );
@@ -329,17 +330,18 @@ function LimitsSection({
   ov: Overview;
   configVersion: string | null;
 }) {
+  const t = useText(configText);
   const l = ov.limits;
   if (!l) return null;
   const rows: [string, keyof typeof l, string][] = [
-    ["全局并发", "max_concurrent", "同时处理的请求数上限，超出后进入队列。"],
-    ["单个上游", "per_provider", "单个上游同时处理的请求数上限，避免个别上游变慢时占满全局并发。"],
-    ["队列上限", "queue_depth", "队列达到此长度后拒绝新请求。"],
-    ["排队超时", "queue_timeout_secs", "排队超过此时长后放弃（秒）。"],
+    [t.maxConcurrent, "max_concurrent", t.maxConcurrentWhat],
+    [t.perProvider, "per_provider", t.perProviderWhat],
+    [t.queueDepth, "queue_depth", t.queueDepthWhat],
+    [t.queueTimeout, "queue_timeout_secs", t.queueTimeoutWhat],
   ];
   return (
     <section>
-      <h2 className="tw-title font-semibold">并发</h2>
+      <h2 className="tw-title font-semibold">{t.limitsTitle}</h2>
       <dl className="mt-2 grid grid-cols-[auto_auto_1fr] items-baseline gap-x-4 gap-y-1 tw-body">
         {rows.map(([label, key, what]) => (
           <Fragment key={key}>
@@ -366,6 +368,7 @@ function ListenSection({
   ov: Overview;
   configVersion: string | null;
 }) {
+  const t = useText(configText);
   const [busy, setBusy] = useState(false);
   const [nics, setNics] = useState<NicView[] | null>(null);
   const cur = ov.listen.bind;
@@ -390,7 +393,7 @@ function ListenSection({
   async function write(value: string) {
     if (value === cur || busy) return;
     if (!configVersion) {
-      toast.error("配置版本尚未读取，请稍后重试");
+      toast.error(t.versionNotLoaded);
       return;
     }
     setBusy(true);
@@ -409,18 +412,19 @@ function ListenSection({
     // 选「指定网卡」时先落到第一张，用户再从选单里换
     const first = nics?.[0];
     if (!first) {
-      toast.error("未找到可绑定的网卡，请检查网线或 Wi-Fi 连接。");
+      toast.error(t.noNic);
       return;
     }
     void write(first.addr);
   }
 
-  const picked = KINDS.find((k) => k.id === kind);
+  const options = kinds();
+  const picked = options.find((k) => k.id === kind);
 
   return (
     <section>
       <div className="flex items-baseline gap-3">
-        <h2 className="tw-title font-semibold">监听与访问</h2>
+        <h2 className="tw-title font-semibold">{t.listenTitle}</h2>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -429,7 +433,7 @@ function ListenSection({
           value={kind}
           onValueChange={(v) => v && pickKind(v as BindKind)}
         >
-          {KINDS.map((k) => (
+          {options.map((k) => (
             <ToggleGroupItem
               key={k.id}
               value={k.id}
@@ -453,12 +457,12 @@ function ListenSection({
       */}
       {ov.listen.exposed && (
         <Alert variant="warning" className="mt-2">
-          <AlertTitle>网关已暴露在局域网</AlertTitle>
+          <AlertTitle>{t.exposedTitle}</AlertTitle>
           <AlertDescription>
-            同一网络中的设备均可连接网关。来源白名单仅按 IP 地址限制访问。
-            <Tip text="网关暴露在局域网时，密钥校验强制开启且无法关闭，以防同一网段的其他设备使用上游额度。">
+            {t.exposedBody}
+            <Tip text={t.enforcedTip}>
               <span className="ml-1 underline decoration-dotted underline-offset-2">
-                密钥强制校验
+                {t.enforced}
               </span>
             </Tip>
           </AlertDescription>
@@ -478,25 +482,25 @@ function ListenSection({
                 **必须列出来**，否则选单会显示成别的地址，看起来像是它变了 */}
             {!nics?.some((n) => n.addr === cur) && (
               <NativeSelectOption value={cur}>
-                {cur}（未找到此网卡）
+                {t.nicMissing(cur)}
               </NativeSelectOption>
             )}
             {nics?.map((n) => (
               <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.addr}>
-                {n.name}　{n.addr}
+                {t.nicOption(n.name, n.addr)}
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <Tip text="此为该网卡当前的地址。DHCP 续租、切换网络或 VPN 连接变化都可能改变该地址，地址变化后网关将无法启动。如需在地址变化后保持可用，请选择「所有网卡」并配置来源白名单。">
+          <Tip text={t.addressTip}>
             <span className="tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
-              地址可能变化
+              {t.addressMayChange}
             </span>
           </Tip>
         </div>
       )}
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tw-body">
-        <dt className="text-muted-foreground">正在监听</dt>
+        <dt className="text-muted-foreground">{t.listening}</dt>
         <dd className="flex items-baseline gap-1 font-mono">
           {ov.listen.bind} :
           <EditableCell
@@ -505,13 +509,13 @@ function ListenSection({
             version={configVersion}
           />
         </dd>
-        <dt className="text-muted-foreground">客户端密钥</dt>
+        <dt className="text-muted-foreground">{t.clientKeys}</dt>
         <dd className="font-mono">
-          {ov.clients.map((c) => `${c.name} ${c.key}`).join("，")}
+          {t.keyList(ov.clients.map((c) => `${c.name} ${c.key}`))}
         </dd>
         {ov.listen.exposed && (
           <>
-            <dt className="text-muted-foreground">来源白名单</dt>
+            <dt className="text-muted-foreground">{t.allowlist}</dt>
             <dd>
               <CidrList
                 items={ov.listen.allow_from}
@@ -545,6 +549,7 @@ export default function Config({
   ov: Overview;
   configVersion: string | null;
 }) {
+  const t = useText(configText);
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
       .then(setAutostart)
@@ -559,7 +564,7 @@ export default function Config({
 
       {section === "settings" && (
         <section>
-          <h2 className="tw-title font-semibold">开机启动</h2>
+          <h2 className="tw-title font-semibold">{t.autostartTitle}</h2>
           <Field orientation="horizontal" className="mt-2">
             {/*
               **开关而不是复选框。**复选框是「在一组里挑几个」，而这是
@@ -585,7 +590,7 @@ export default function Config({
               }}
             />
             <FieldContent>
-              <FieldLabel htmlFor="autostart">开机时自动启动</FieldLabel>
+              <FieldLabel htmlFor="autostart">{t.autostartLabel}</FieldLabel>
               <FieldDescription>
                 {/*
                   说清「默认是关的」和「勾了会发生什么」。一个装完就往
@@ -593,10 +598,11 @@ export default function Config({
                   看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
                   要讲清勾上之后系统设置里会多出什么。
                 */}
-                默认关闭。
-                <Tip text="开启后将在「系统设置 › 通用 › 登录项」中添加一项。开机后应用仅在菜单栏显示图标，不打开窗口。">
-                  <span className="underline decoration-dotted underline-offset-2">开启后的效果</span>
-                </Tip>
+                {t.autostartNote((label) => (
+                  <Tip text={t.autostartTip}>
+                    <span className="underline decoration-dotted underline-offset-2">{label}</span>
+                  </Tip>
+                ))}
               </FieldDescription>
             </FieldContent>
           </Field>
@@ -635,19 +641,20 @@ export default function Config({
  * 之前它们只在日志里，而用户在交出诊断包之前根本看不到自己要交什么。
  */
 function About() {
+  const t = useText(configText);
   const [info, setInfo] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     void invoke<Record<string, string>>("app_info").then(setInfo).catch(() => {});
   }, []);
   if (!info) return null;
   const rows: [string, string][] = [
-    ["版本", info.version ?? "—"],
-    ["数据目录", info.data_dir ?? "—"],
-    ["core 二进制", info.core_bin ?? "—"],
+    [t.version, info.version ?? "—"],
+    [t.dataDir, info.data_dir ?? "—"],
+    [t.coreBin, info.core_bin ?? "—"],
   ];
   return (
     <section>
-      <h2 className="tw-title font-semibold">关于</h2>
+      <h2 className="tw-title font-semibold">{t.aboutTitle}</h2>
       <dl className="mt-2 space-y-0.5 tw-body">
         {rows.map(([k, v]) => (
           <div key={k} className="flex gap-3">
@@ -672,17 +679,19 @@ function About() {
  * 看得见所有 API key 的网关，这一步值得多花十秒。
  */
 function Diagnostics() {
+  const t = useText(configText);
   const [path, setPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">诊断包</h2>
+      <h2 className="tw-title font-semibold">{t.diagnosticsTitle}</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        包含版本、上游、熔断状态、近期失败记录与脱敏后的配置文件。
-        <Tip text="不包含请求体与响应体，其中可能含有用户粘贴的内容。">
-          <span className="underline decoration-dotted underline-offset-2">不含请求与响应正文</span>
-        </Tip>。
+        {t.diagnosticsBody((label) => (
+          <Tip text={t.diagnosticsTip}>
+            <span className="underline decoration-dotted underline-offset-2">{label}</span>
+          </Tip>
+        ))}
       </p>
       <Button
         variant="outline"
@@ -702,13 +711,13 @@ function Diagnostics() {
         }}
       >
         {busy && <Spinner />}
-          生成
+          {t.generate}
       </Button>
       {path && (
         <div className="mt-2 tw-body">
-          已生成：<code className="break-all">{path}</code>
+          {t.saved(<code className="break-all">{path}</code>)}
           <div className="mt-1 text-muted-foreground">
-            其中的密钥与地址已脱敏，<span className="font-medium">提交前请自行核对</span>。
+            {t.review((text) => <span className="font-medium">{text}</span>)}
           </div>
         </div>
       )}
@@ -730,6 +739,8 @@ function Diagnostics() {
  * 防的事。
  */
 function Uninstall() {
+  const t = useText(configText);
+  const common = useText(commonText);
   const [step, setStep] = useState<"idle" | "ask" | "done">("idle");
   const [drop, setDrop] = useState(false);
   const [log, setLog] = useState<string[]>([]);
@@ -738,7 +749,7 @@ function Uninstall() {
   if (step === "done") {
     return (
       <section className="rounded-md border border-border p-3 tw-body">
-        <h2 className="tw-title font-semibold">卸载完成</h2>
+        <h2 className="tw-title font-semibold">{t.uninstalled}</h2>
         <ul className="mt-2 space-y-0.5 text-muted-foreground">
           {log.map((l, i) => (
             <li key={i}>· {l}</li>
@@ -750,13 +761,11 @@ function Uninstall() {
 
   return (
     <section className="rounded-md border border-border p-3 tw-body">
-      <h2 className="tw-title font-semibold">完全卸载</h2>
+      <h2 className="tw-title font-semibold">{t.uninstallTitle}</h2>
       {step === "idle" ? (
         <div className="mt-1.5 flex items-start justify-between gap-4">
           <p className="text-muted-foreground">
-            还原所有已接管的客户端，并取消开机启动。
-            <span className="font-medium">直接将应用移到废纸篓不会执行这些操作</span>
-            ，已接管的客户端将指向一个无人监听的端口。
+            {t.uninstallIntro((text) => <span className="font-medium">{text}</span>)}
           </p>
           <Button
             variant="outline"
@@ -764,15 +773,15 @@ function Uninstall() {
             className="shrink-0"
             onClick={() => setStep("ask")}
           >
-            卸载…
+            {t.uninstall}
           </Button>
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
-          <p className="text-muted-foreground">将执行以下操作：</p>
+          <p className="text-muted-foreground">{t.willDo}</p>
           <ul className="space-y-0.5 text-muted-foreground">
-            <li>· 将所有已接管的客户端还原为接管前的配置</li>
-            <li>· 取消开机启动</li>
+            <li>· {t.restoreClients}</li>
+            <li>· {t.stopAutostart}</li>
           </ul>
           <Field
             orientation="horizontal"
@@ -786,7 +795,7 @@ function Uninstall() {
             {/* **默认不删。**请求历史和成本记录是用户自己的东西，而
                 「删了才发现还想看」是不可逆的 */}
             <FieldLabel htmlFor="drop-data">
-              同时删除数据目录（请求历史、费用记录、配置备份）
+              {t.dropData}
             </FieldLabel>
           </Field>
           <ButtonGroup>
@@ -807,14 +816,14 @@ function Uninstall() {
                 }
               }}
             >
-              确认卸载
+              {t.confirmUninstall}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setStep("idle")}
             >
-              取消
+              {common.cancel}
             </Button>
                     </ButtonGroup>
         </div>

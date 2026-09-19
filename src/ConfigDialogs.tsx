@@ -19,7 +19,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { useText } from "@/i18n";
 import ConfigTextMode from "./ConfigText";
+import { configDialogsText } from "./ConfigDialogs.i18n";
 import { when } from "./format";
 import type { ConfigText, ConfigVersion } from "./types";
 import { originLabel } from "./labels";
@@ -47,6 +49,7 @@ export function ConfigFileDialog({
   /** 光标所在那一段由哪个页面管理，跳过去 */
   onJump: (section: string | null, name: string) => void;
 }) {
+  const t = useText(configDialogsText);
   const [doc, setDoc] = useState<ConfigText | null>(null);
 
   useEffect(() => {
@@ -63,9 +66,9 @@ export function ConfigFileDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex h-[86vh] flex-col gap-3 sm:max-w-[1040px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">配置文件</DialogTitle>
+          <DialogTitle className="tw-title">{t.fileTitle}</DialogTitle>
           <DialogDescription>
-            保存前会校验；校验未通过时仍使用上一版本，并在版本历史中保留每一次保存。
+            {t.fileDescription}
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1">
@@ -82,7 +85,7 @@ export function ConfigFileDialog({
           ) : (
             <p className="flex items-center gap-2 tw-body text-muted-foreground">
               <Spinner />
-              正在读取配置文件
+              {t.readingFile}
             </p>
           )}
         </div>
@@ -99,6 +102,7 @@ export function VersionHistoryDialog({
   configVersion: string | null;
   onClose: () => void;
 }) {
+  const t = useText(configDialogsText);
   const [versions, setVersions] = useState<ConfigVersion[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -127,24 +131,24 @@ export function VersionHistoryDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[80vh] flex-col gap-3 sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">版本历史</DialogTitle>
-          <DialogDescription>恢复某个版本会生成一个新版本，当前版本保留在历史中。</DialogDescription>
+          <DialogTitle className="tw-title">{t.historyTitle}</DialogTitle>
+          <DialogDescription>{t.historyDescription}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {versions == null ? (
             <p className="flex items-center gap-2 tw-body text-muted-foreground">
               <Spinner />
-              正在读取版本历史
+              {t.readingHistory}
             </p>
           ) : versions.length === 0 ? (
-            <p className="tw-body text-muted-foreground">暂无历史版本</p>
+            <p className="tw-body text-muted-foreground">{t.noVersions}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>时间</TableHead>
-                  <TableHead>来源</TableHead>
-                  <TableHead>版本</TableHead>
+                  <TableHead>{t.time}</TableHead>
+                  <TableHead>{t.origin}</TableHead>
+                  <TableHead>{t.version}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -156,7 +160,7 @@ export function VersionHistoryDialog({
                     <TableCell className="font-mono text-muted-foreground">{v.version.slice(7, 19)}</TableCell>
                     <TableCell className="text-right">
                       {v.current ? (
-                        <Badge variant="success">当前版本</Badge>
+                        <Badge variant="success">{t.current}</Badge>
                       ) : (
                         <Button
                           variant="outline"
@@ -165,7 +169,7 @@ export function VersionHistoryDialog({
                           onClick={() => restore(v.version)}
                         >
                           {busy === v.version && <Spinner />}
-                          恢复此版本
+                          {t.restore}
                         </Button>
                       )}
                     </TableCell>
