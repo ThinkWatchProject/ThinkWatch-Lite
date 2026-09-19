@@ -1,0 +1,43 @@
+import { messages } from "@/i18n";
+
+export const priceSheetTableText = messages(
+  {
+    viewPrices: "查看价格…",
+    name: "名称",
+    basis: "定价依据",
+    multiplier: "倍率",
+    overrides: "模型覆盖",
+    usedBy: "使用上游",
+    defaultSheet: "默认价目表",
+    litellm: "LiteLLM 公开价格",
+    notLoaded: "未加载",
+    dataInfo: (date: string, models: number) => `数据日期 ${date} · ${models.toLocaleString()} 个模型`,
+    notUsed: "未被使用",
+    defaultActions: "默认价目表的操作",
+    actions: (name: string) => `${name} 的操作`,
+    edit: "编辑…",
+    duplicate: "复制…",
+    delete: "删除…",
+    overrideCount: (n: number) => `${n} 项`,
+  },
+  {
+    viewPrices: "View prices…",
+    name: "Name",
+    basis: "Based on",
+    multiplier: "Multiplier",
+    overrides: "Model overrides",
+    usedBy: "Used by",
+    defaultSheet: "Default price sheet",
+    litellm: "LiteLLM public prices",
+    notLoaded: "Not loaded",
+    dataInfo: (date: string, models: number) =>
+      `Data as of ${date} · ${models.toLocaleString()} ${models === 1 ? "model" : "models"}`,
+    notUsed: "Not in use",
+    defaultActions: "Actions for the default price sheet",
+    actions: (name: string) => `Actions for ${name}`,
+    edit: "Edit…",
+    duplicate: "Duplicate…",
+    delete: "Delete…",
+    overrideCount: (n: number) => (n === 1 ? "1 model" : `${n} models`),
+  },
+);

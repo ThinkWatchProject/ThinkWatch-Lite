@@ -34,9 +34,12 @@ import {
 } from "@/ui/table";
 import type { Overview, PriceFields, PriceSheetInput, ResolvedPrice, SheetRef } from "@/types";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { PRICE_COLUMNS, errorText, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, FormItem, Note, Segmented } from "./parts";
+import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
 import { defaultSheetUsers } from "./PriceSheetTable";
 
 export type PriceSheetDialogMode =
@@ -53,10 +56,7 @@ type Filter = "related" | "overridden" | "all";
 /** 缓存与长上下文单价相对输入、输出单价的比例。**填了新的覆盖价之后跟着联动** */
 type Ratios = Partial<Record<keyof PriceFields, number>>;
 
-const LONG_KEYS: { key: "input_above_200k" | "output_above_200k"; label: string }[] = [
-  { key: "input_above_200k", label: "长上下文输入" },
-  { key: "output_above_200k", label: "长上下文输出" },
-];
+const LONG_KEYS = ["input_above_200k", "output_above_200k"] as const;
 
 /** 模型不在默认价目表里时，按上游的接口协议给一组常见比例 */
 function protocolRatios(protocol: string | null | undefined): Ratios {
@@ -92,6 +92,8 @@ export function PriceSheetDialog({
   onSaved: (name: string) => void;
   onDeleted?: () => void;
 }) {
+  const t = useText(priceSheetDialogText);
+  const common = useText(commonText);
   const readOnly = mode.kind === "default";
   const original =
     mode.kind === "edit" ? (ov.price_sheets.find((s) => s.name === mode.name) ?? null) : null;
@@ -131,7 +133,7 @@ export function PriceSheetDialog({
       .priceSheet(from)
       .then((s) => {
         if (!alive) return;
-        setName(mode.kind === "edit" ? s.name : `${s.name} 副本`);
+        setName(mode.kind === "edit" ? s.name : t.copyName(s.name));
         setMultiplier(s.multiplier.toFixed(2));
         setOverrides(s.models);
         if (mode.kind === "edit" && mode.add?.length) {
@@ -178,8 +180,8 @@ export function PriceSheetDialog({
 
   const mult = Number(multiplier);
   const draft: PriceSheetInput = useMemo(
-    () => ({ name: name.trim() || "草稿", multiplier: mult, models: overrides }),
-    [name, mult, overrides],
+    () => ({ name: name.trim() || t.draftName, multiplier: mult, models: overrides }),
+    [name, mult, overrides, t.draftName],
   );
 
   // 当前视图里每一行的生效单价，拿草稿去问
@@ -191,11 +193,11 @@ export function PriceSheetDialog({
   useEffect(() => {
     const sheet: SheetRef = readOnly ? { kind: "default" } : { kind: "draft", sheet: draft };
     if (!readOnly && !(Number.isFinite(mult) && mult > 0)) {
-      setDraftError("倍率须大于 0");
+      setDraftError(t.multiplierPositive);
       return;
     }
     let alive = true;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const query =
         filter === "all"
           ? { sheet, search: q, limit: 200 }
@@ -212,7 +214,7 @@ export function PriceSheetDialog({
     }, 200);
     return () => {
       alive = false;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, listKey, draft, readOnly]);
@@ -295,9 +297,9 @@ export function PriceSheetDialog({
   const missing = readOnly
     ? null
     : name.trim() === ""
-      ? "填写名称"
+      ? t.enterName
       : !(Number.isFinite(mult) && mult > 0)
-        ? "倍率须大于 0"
+        ? t.multiplierPositive
         : null;
 
   async function save() {
@@ -336,41 +338,37 @@ export function PriceSheetDialog({
   const perTokenProviders = ov.providers.filter((p) => (p.billing ?? p.billing_effective) === "per-token");
   const title =
     mode.kind === "default"
-      ? "默认价目表"
+      ? t.defaultSheet
       : mode.kind === "edit"
-        ? "编辑价目表"
+        ? t.editTitle
         : mode.kind === "duplicate"
-          ? "复制价目表"
-          : "新建价目表";
+          ? t.duplicateTitle
+          : t.createTitle;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[980px]">
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
-          <DialogDescription>
-            {readOnly
-              ? "LiteLLM 公开价格。自定义价目表在此基础上设置倍率与模型覆盖。"
-              : "倍率作用于默认价目表中的全部单价，包括缓存与长上下文单价；模型覆盖不受倍率影响。"}
-          </DialogDescription>
+          <DialogDescription>{readOnly ? t.descDefault : t.descCustom}</DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <p className="flex items-center gap-2 tw-body text-muted-foreground">
             <Spinner />
-            正在读取价目表
+            {t.loading}
           </p>
         ) : (
           <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
             {!readOnly && (
               <div className="grid grid-cols-3 gap-4">
-                <FormItem label="名称" htmlFor="ps-name">
+                <FormItem label={t.name} htmlFor="ps-name">
                   <Input id="ps-name" value={name} onChange={(e) => setName(e.target.value)} />
                 </FormItem>
-                <FormItem label="定价依据">
-                  <Input readOnly value="默认价目表" className="text-muted-foreground" />
+                <FormItem label={t.basis}>
+                  <Input readOnly value={t.defaultSheet} className="text-muted-foreground" />
                 </FormItem>
-                <FormItem label="倍率" htmlFor="ps-mult">
+                <FormItem label={t.multiplier} htmlFor="ps-mult">
                   <Input
                     id="ps-mult"
                     className="font-mono tabular-nums"
@@ -384,16 +382,16 @@ export function PriceSheetDialog({
 
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="tw-body font-medium">模型单价</span>
+                <span className="tw-body font-medium">{t.modelPrices}</span>
                 <Segmented<Filter>
                   value={filter}
                   onChange={setFilter}
                   options={[
-                    { id: "related", label: <>相关模型 <Count n={new Set([...related, ...overriddenList]).size} /></> },
+                    { id: "related", label: <>{t.related} <Count n={new Set([...related, ...overriddenList]).size} /></> },
                     ...(readOnly
                       ? []
-                      : [{ id: "overridden" as Filter, label: <>已覆盖 <Count n={overriddenList.length} /></> }]),
-                    { id: "all", label: "全部" },
+                      : [{ id: "overridden" as Filter, label: <>{t.overridden} <Count n={overriddenList.length} /></> }]),
+                    { id: "all", label: t.all },
                   ]}
                 />
                 <div className="flex-1" />
@@ -402,7 +400,7 @@ export function PriceSheetDialog({
                     <SearchIcon />
                   </InputGroupAddon>
                   <InputGroupInput
-                    placeholder="筛选模型"
+                    placeholder={t.filterPlaceholder}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -410,7 +408,7 @@ export function PriceSheetDialog({
                 {!readOnly && (
                   <Button variant="outline" size="sm" onClick={() => setAdding("")}>
                     <PlusIcon />
-                    添加覆盖
+                    {t.addOverride}
                   </Button>
                 )}
               </div>
@@ -420,7 +418,7 @@ export function PriceSheetDialog({
                   <Input
                     autoFocus
                     className="w-80 font-mono"
-                    placeholder="模型 ID"
+                    placeholder={t.modelIdPlaceholder}
                     value={adding}
                     onChange={(e) => setAdding(e.target.value)}
                     onKeyDown={(e) => {
@@ -441,10 +439,10 @@ export function PriceSheetDialog({
                       setFilter("overridden");
                     }}
                   >
-                    添加
+                    {t.add}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setAdding(null)}>
-                    取消
+                    {common.cancel}
                   </Button>
                 </div>
               )}
@@ -455,14 +453,14 @@ export function PriceSheetDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>模型</TableHead>
+                      <TableHead>{t.model}</TableHead>
                       {PRICE_COLUMNS.map((c) => (
                         <TableHead key={c.key} className="text-right">
                           {c.label}
                         </TableHead>
                       ))}
                       {/* 默认价目表里每一行的来源都是它自己，不必逐行重复 */}
-                      {!readOnly && <TableHead>来源</TableHead>}
+                      {!readOnly && <TableHead>{t.source}</TableHead>}
                       {!readOnly && <TableHead className="w-9" />}
                     </TableRow>
                   </TableHeader>
@@ -480,7 +478,7 @@ export function PriceSheetDialog({
                                   className="inline-flex items-center gap-1"
                                   onClick={() => toggleLong(r.model)}
                                   aria-expanded={open}
-                                  aria-label="长上下文单价"
+                                  aria-label={t.longContextPrices}
                                 >
                                   <ChevronRightIcon
                                     className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-90")}
@@ -492,7 +490,7 @@ export function PriceSheetDialog({
                                   {r.model}
                                   {readOnly && !r.price && (
                                     <Badge variant="warning" className="ml-2 font-sans">
-                                      未定价
+                                      {t.unpriced}
                                     </Badge>
                                   )}
                                 </span>
@@ -513,8 +511,8 @@ export function PriceSheetDialog({
                             ))}
                             {!readOnly && (
                               <TableCell className={r.price ? "text-muted-foreground" : "text-warning"}>
-                                {o ? "价目表覆盖" : priceSourceLabel(r.source)}
-                                {r.estimated && !o && "（估算）"}
+                                {o ? t.sheetOverride : priceSourceLabel(r.source)}
+                                {r.estimated && !o && t.estimated}
                               </TableCell>
                             )}
                             {!readOnly && (
@@ -523,7 +521,7 @@ export function PriceSheetDialog({
                                   <Button
                                     variant="ghost"
                                     size="icon-xs"
-                                    aria-label={`移除 ${r.model} 的覆盖`}
+                                    aria-label={t.removeOverride(r.model)}
                                     onClick={() =>
                                       setOverrides((all) => {
                                         const next = { ...all };
@@ -538,7 +536,7 @@ export function PriceSheetDialog({
                                   <Button
                                     variant="ghost"
                                     size="icon-xs"
-                                    aria-label={`覆盖 ${r.model} 的价格`}
+                                    aria-label={t.overridePrice(r.model)}
                                     onClick={() => void addOverride(r.model, r.price ?? null)}
                                   >
                                     <PencilIcon />
@@ -551,27 +549,25 @@ export function PriceSheetDialog({
                             <TableRow className="bg-muted/30">
                               <TableCell colSpan={PRICE_COLUMNS.length + 3}>
                                 <div className="flex flex-wrap items-center gap-4 pl-[18px]">
-                                  <span className="tw-label text-muted-foreground">
-                                    单次请求输入超过 200K tokens 之后的单价
-                                  </span>
+                                  <span className="tw-label text-muted-foreground">{t.longContextNote}</span>
                                   {o.input_above_200k == null ? (
                                     <Button variant="outline" size="xs" onClick={() => setLongTier(r.model, true)}>
-                                      设置长上下文单价
+                                      {t.setLongContext}
                                     </Button>
                                   ) : (
                                     <>
-                                      {LONG_KEYS.map((k) => (
-                                        <label key={k.key} className="flex items-center gap-2 tw-label">
-                                          {k.label}
+                                      {LONG_KEYS.map((key) => (
+                                        <label key={key} className="flex items-center gap-2 tw-label">
+                                          {t.long[key]}
                                           <PriceInput
-                                            value={o[k.key] ?? 0}
-                                            onChange={(v) => editPrice(r.model, k.key, v)}
-                                            label={`${r.model} ${k.label}`}
+                                            value={o[key] ?? 0}
+                                            onChange={(v) => editPrice(r.model, key, v)}
+                                            label={`${r.model} ${t.long[key]}`}
                                           />
                                         </label>
                                       ))}
                                       <Button variant="ghost" size="xs" onClick={() => setLongTier(r.model, false)}>
-                                        不分档
+                                        {t.noTiers}
                                       </Button>
                                     </>
                                   )}
@@ -587,32 +583,32 @@ export function PriceSheetDialog({
                 {rows.length === 0 && (
                   <p className="px-3 py-6 text-center tw-body text-muted-foreground">
                     {filter === "overridden"
-                      ? "尚无模型覆盖"
+                      ? t.emptyOverridden
                       : filter === "related"
-                        ? "使用此价目表的上游尚无模型"
-                        : "没有匹配的模型"}
+                        ? t.emptyRelated
+                        : t.emptyAll}
                   </p>
                 )}
               </Boxed>
               <div className="flex items-center gap-2">
-                <span className="tw-label text-muted-foreground">单位：美元 / 百万 tokens</span>
+                <span className="tw-label text-muted-foreground">{t.unit}</span>
                 <div className="flex-1" />
                 {filter === "all" && matched > rows.length && (
                   <span className="tw-label tabular-nums text-muted-foreground">
-                    显示前 {rows.length} 个，共 {matched.toLocaleString()} 个匹配。输入模型名称缩小范围。
+                    {t.truncated(rows.length, matched)}
                   </span>
                 )}
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
-              <span className="tw-body font-medium">使用此价目表的上游</span>
+              <span className="tw-body font-medium">{t.usedByTitle}</span>
               {readOnly ? (
                 <span className="tw-body">
-                  {usedBy.length ? usedBy.join("、") : <span className="text-muted-foreground">未被使用</span>}
+                  {usedBy.length ? t.names(usedBy) : <span className="text-muted-foreground">{t.notUsed}</span>}
                 </span>
               ) : perTokenProviders.length === 0 ? (
-                <Note>尚无按量计费的上游。</Note>
+                <Note>{t.noPerToken}</Note>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {perTokenProviders.map((p) => {
@@ -623,7 +619,7 @@ export function PriceSheetDialog({
                         key={p.name}
                         type="button"
                         aria-pressed={on}
-                        title={elsewhere ? `当前使用价目表「${p.pricing}」，选中后改用此价目表` : undefined}
+                        title={elsewhere ? t.switchHint(p.pricing!) : undefined}
                         onClick={() => {
                           setUsedByTouched(true);
                           setUsedBy((u) => (on ? u.filter((x) => x !== p.name) : [...u, p.name]));
@@ -661,11 +657,11 @@ export function PriceSheetDialog({
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2Icon />
-                删除价目表
+                {t.deleteSheet}
               </Button>
               {(original?.used_by.length ?? 0) > 0 && (
                 <span className="tw-label text-muted-foreground">
-                  正在被 {original?.used_by.length} 个上游使用
+                  {t.inUse(original?.used_by.length ?? 0)}
                 </span>
               )}
             </>
@@ -674,16 +670,16 @@ export function PriceSheetDialog({
           {missing && <span className="tw-label text-muted-foreground">{missing}</span>}
           {readOnly ? (
             <Button variant="outline" onClick={onClose}>
-              关闭
+              {common.close}
             </Button>
           ) : (
             <>
               <Button variant="outline" onClick={onClose}>
-                取消
+                {common.cancel}
               </Button>
               <Button onClick={save} disabled={saving || missing != null}>
                 {saving && <Spinner />}
-                {mode.kind === "edit" ? "保存" : "创建"}
+                {mode.kind === "edit" ? common.save : t.create}
               </Button>
             </>
           )}
@@ -692,15 +688,13 @@ export function PriceSheetDialog({
         <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
           <AlertDialogContent className="sm:max-w-md">
             <AlertDialogHeader>
-              <AlertDialogTitle>删除价目表「{mode.kind === "edit" ? mode.name : ""}」</AlertDialogTitle>
-              <AlertDialogDescription>
-                删除后此价目表的倍率与模型覆盖将从配置文件中移除，可在版本历史中恢复。
-              </AlertDialogDescription>
+              <AlertDialogTitle>{t.deleteTitle(mode.kind === "edit" ? mode.name : "")}</AlertDialogTitle>
+              <AlertDialogDescription>{t.deleteDesc}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
               <AlertDialogAction variant="destructive" onClick={remove}>
-                删除
+                {common.delete}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -29,10 +29,13 @@ import {
   type SpeedQuote,
   type SpeedResult,
 } from "@/types";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { TestLine } from "./ConnectionSection";
 import { billingSummary, egressLabel, errorText, l1ErrorText, l1SkipText, l1StageLabel, skipLabel } from "./labels";
 import { Boxed, FormItem, Note } from "./parts";
+import { testDialogsText } from "./TestDialogs.i18n";
 import { formFromView, toInput } from "./upstreamForm";
 
 /** 行菜单里的「检测连接」：用已保存的配置检测一次 */
@@ -45,6 +48,8 @@ export function TestConnectionDialog({
   name: string;
   onClose: () => void;
 }) {
+  const t = useText(testDialogsText);
+  const common = useText(commonText);
   const p = ov.providers.find((x) => x.name === name);
   const [result, setResult] = useState<ProviderTestResult | null>(null);
 
@@ -69,9 +74,9 @@ export function TestConnectionDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">检测连接</DialogTitle>
+          <DialogTitle className="tw-title">{t.connection.title}</DialogTitle>
           <DialogDescription>
-            <span className="font-mono text-foreground">{name}</span> · 验证地址与凭据，并获取模型列表。不产生费用。
+            <span className="font-mono text-foreground">{name}</span> · {t.connection.desc}
           </DialogDescription>
         </DialogHeader>
         {result ? (
@@ -79,12 +84,12 @@ export function TestConnectionDialog({
         ) : (
           <p className="flex items-center gap-2 tw-body text-muted-foreground">
             <Spinner />
-            正在检测
+            {t.connection.checking}
           </p>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            关闭
+            {common.close}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -101,6 +106,8 @@ export function LinkTestDialog({
   provider: string | null;
   onClose: () => void;
 }) {
+  const t = useText(testDialogsText);
+  const common = useText(commonText);
   const [results, setResults] = useState<L1Result[] | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,16 +133,16 @@ export function LinkTestDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col sm:max-w-[760px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">链路测速</DialogTitle>
+          <DialogTitle className="tw-title">{t.link.title}</DialogTitle>
           <DialogDescription>
             {provider ? (
               <>
                 <span className="font-mono text-foreground">{provider}</span> ·{" "}
               </>
             ) : (
-              "全部上游 · "
+              `${t.link.allUpstreams} · `
             )}
-            测量 DNS 解析、TCP 握手、TLS 握手各阶段耗时；经代理时包含代理握手。不产生费用。
+            {t.link.desc}
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -147,19 +154,19 @@ export function LinkTestDialog({
           {results == null ? (
             <p className="flex items-center gap-2 tw-body text-muted-foreground">
               <Spinner />
-              正在测速
+              {t.link.testing}
             </p>
           ) : results.length === 0 ? (
-            <Note>尚无上游。</Note>
+            <Note>{t.link.empty}</Note>
           ) : (
             <Boxed>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>上游</TableHead>
-                    <TableHead>经由</TableHead>
-                    <TableHead>各阶段</TableHead>
-                    <TableHead className="text-right">合计</TableHead>
+                    <TableHead>{t.upstream}</TableHead>
+                    <TableHead>{t.link.via}</TableHead>
+                    <TableHead>{t.link.stages}</TableHead>
+                    <TableHead className="text-right">{t.total}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -167,7 +174,7 @@ export function LinkTestDialog({
                     <TableRow key={r.target}>
                       <TableCell className="align-top font-mono">{r.target}</TableCell>
                       <TableCell className="align-top text-muted-foreground">
-                        {r.via ? egressLabel(r.via) : "直连"}
+                        {r.via ? egressLabel(r.via) : t.link.direct}
                       </TableCell>
                       <TableCell className="align-top whitespace-normal">
                         {r.ok ? (
@@ -195,11 +202,11 @@ export function LinkTestDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            关闭
+            {common.close}
           </Button>
           <Button onClick={run} disabled={running}>
             {running ? <Spinner /> : <ActivityIcon />}
-            重新测速
+            {t.link.again}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -223,6 +230,8 @@ export function SpeedTestDialog({
   preselect: string | null;
   onClose: () => void;
 }) {
+  const t = useText(testDialogsText);
+  const common = useText(commonText);
   const [models, setModels] = useState<string[] | null>(null);
   const [model, setModel] = useState("");
   const [chosen, setChosen] = useState<Set<string>>(
@@ -316,21 +325,19 @@ export function SpeedTestDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">推理测速</DialogTitle>
-          <DialogDescription>
-            向所选上游各发送一次推理请求，测量首 token 时间。此操作按量计费。
-          </DialogDescription>
+          <DialogTitle className="tw-title">{t.speed.title}</DialogTitle>
+          <DialogDescription>{t.speed.desc}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
-          <FormItem label="模型" htmlFor="speed-model">
+          <FormItem label={t.speed.model} htmlFor="speed-model">
             {models == null ? (
               <p className="flex items-center gap-2 tw-body text-muted-foreground">
                 <Spinner />
-                正在读取模型列表
+                {t.speed.loadingModels}
               </p>
             ) : models.length === 0 ? (
-              <Note>尚无可用模型。先为上游获取模型列表或填写手动清单。</Note>
+              <Note>{t.speed.noModels}</Note>
             ) : (
               <NativeSelect
                 id="speed-model"
@@ -350,7 +357,7 @@ export function SpeedTestDialog({
             )}
           </FormItem>
 
-          <FormItem label="上游">
+          <FormItem label={t.speed.upstreams}>
             <Boxed>
               {ov.providers.map((p) => {
                 const item = items.find((i) => i.provider === p.name);
@@ -385,19 +392,19 @@ export function SpeedTestDialog({
 
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline gap-2">
-              <span className="tw-body font-medium">费用预估</span>
+              <span className="tw-body font-medium">{t.speed.estimate}</span>
               {quoting && <Spinner />}
               <div className="flex-1" />
-              {quote && <span className="tw-label text-muted-foreground">价格数据 {quote.pricing_date}</span>}
+              {quote && <span className="tw-label text-muted-foreground">{t.speed.pricingDate(quote.pricing_date)}</span>}
             </div>
             <Boxed>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>上游</TableHead>
-                    <TableHead className="text-right">输入 tokens</TableHead>
-                    <TableHead className="text-right">输出上限</TableHead>
-                    <TableHead className="text-right">预估费用</TableHead>
+                    <TableHead>{t.upstream}</TableHead>
+                    <TableHead className="text-right">{t.speed.inputTokens}</TableHead>
+                    <TableHead className="text-right">{t.speed.maxOutput}</TableHead>
+                    <TableHead className="text-right">{t.speed.estimatedCost}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -411,7 +418,7 @@ export function SpeedTestDialog({
                           usd(i.cost_micros)
                         ) : (
                           <span className="text-muted-foreground">
-                            {i.billing === "subscription" ? "计入订阅额度" : "无法计算"}
+                            {i.billing === "subscription" ? t.speed.subscription : t.speed.uncalculable}
                           </span>
                         )}
                       </TableCell>
@@ -420,36 +427,36 @@ export function SpeedTestDialog({
                   {runnable.length > 0 && (
                     <TableRow>
                       <TableCell className="font-medium">
-                        合计 <span className="tw-label font-normal text-muted-foreground">不含订阅额度</span>
+                        {t.total} <span className="tw-label font-normal text-muted-foreground">{t.speed.excludesSubscription}</span>
                       </TableCell>
                       <TableCell />
                       <TableCell />
                       <TableCell className="text-right font-medium tabular-nums">
                         {selectedQuote?.total_micros != null
                           ? usd(selectedQuote.total_micros)
-                          : "无法计算：部分模型未定价"}
+                          : t.speed.totalUncalculable}
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
               {runnable.length === 0 && (
-                <p className="px-3 py-4 text-center tw-body text-muted-foreground">未选择上游</p>
+                <p className="px-3 py-4 text-center tw-body text-muted-foreground">{t.speed.noneSelected}</p>
               )}
             </Boxed>
           </div>
 
           {results && (
             <div className="flex flex-col gap-2">
-              <span className="tw-body font-medium">测速结果</span>
+              <span className="tw-body font-medium">{t.speed.results}</span>
               <Boxed>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>上游</TableHead>
-                      <TableHead className="text-right">首 token</TableHead>
-                      <TableHead className="text-right">总耗时</TableHead>
-                      <TableHead className="text-right">输入 → 输出 tokens</TableHead>
+                      <TableHead>{t.upstream}</TableHead>
+                      <TableHead className="text-right">{t.speed.firstToken}</TableHead>
+                      <TableHead className="text-right">{t.speed.totalTime}</TableHead>
+                      <TableHead className="text-right">{t.speed.tokens}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -489,11 +496,11 @@ export function SpeedTestDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            {results ? "关闭" : "取消"}
+            {results ? common.close : common.cancel}
           </Button>
           <Button onClick={run} disabled={running || runnable.length === 0 || !model}>
             {running ? <Spinner /> : <ZapIcon />}
-            {results ? "再次测速" : "开始测速"}
+            {results ? t.speed.again : t.speed.start}
           </Button>
         </DialogFooter>
       </DialogContent>

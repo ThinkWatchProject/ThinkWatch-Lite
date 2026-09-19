@@ -17,7 +17,10 @@ import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Spinner } from "@/ui/spinner";
 import type { ChatgptLoginMode, ChatgptLoginStatus, CoreEvent, Overview } from "@/types";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
+import { chatgptLoginText } from "./ChatgptLoginDialog.i18n";
 import { errorText, proxyKindLabel, shortUrl } from "./labels";
 import { FormItem } from "./parts";
 import { freeName } from "./upstreamForm";
@@ -52,6 +55,8 @@ export function ChatgptLoginDialog({
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
+  const t = useText(chatgptLoginText);
+  const common = useText(commonText);
   const proxies = ov.proxies ?? [];
   const taken = ov.providers.map((p) => p.name);
   const [name, setName] = useState(() => relogin?.name ?? freeName("chatgpt", taken));
@@ -83,10 +88,8 @@ export function ChatgptLoginDialog({
       return;
     }
     setPhase({ at: "form" });
-    setError(
-      s.error ??
-        (s.status === "expired" ? "授权未在有效期内完成" : "登录已取消"),
-    );
+    const text = textOf(chatgptLoginText);
+    setError(s.error ?? (s.status === "expired" ? text.expired : text.cancelled));
   }
 
   // 结果由 core 发事件，不必一直问；问一遍是为了事件漏掉时也能收尾
@@ -159,16 +162,9 @@ export function ChatgptLoginDialog({
     <Dialog open onOpenChange={(o) => !o && void cancel()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{relogin ? "重新登录 ChatGPT 账号" : "使用 ChatGPT 账号"}</DialogTitle>
+          <DialogTitle>{relogin ? t.reloginTitle : t.title}</DialogTitle>
           <DialogDescription>
-            {relogin ? (
-              <>
-                为上游 <span className="font-mono">{relogin.name}</span> 换一次登录凭据。
-                模型范围、计费方式等设置保持不变。
-              </>
-            ) : (
-              "登录 OpenAI 账号，把 ChatGPT 订阅额度作为一个上游使用。"
-            )}
+            {relogin ? t.reloginDesc(<span className="font-mono">{relogin.name}</span>) : t.desc}
           </DialogDescription>
         </DialogHeader>
 
@@ -177,25 +173,20 @@ export function ChatgptLoginDialog({
             {!relogin && (
             <Alert variant="warning">
               <CircleAlertIcon />
-              <AlertTitle>登录之前请确认以下几点</AlertTitle>
+              <AlertTitle>{t.noticeTitle}</AlertTitle>
               <AlertDescription>
                 <ul className="list-disc pl-4 [&>li]:mt-1">
-                  <li>
-                    ChatGPT 订阅的用途是在 OpenAI 的官方客户端中对话。把订阅额度用于其他客户端不受
-                    OpenAI 支持，账号可能因此受限。
-                  </li>
-                  <li>
-                    请求会如实说明来自 ThinkWatch，不伪装成其他客户端。
-                  </li>
-                  <li>登录得到的凭据保存在本机的配置文件中，与其他上游一同管理。</li>
-                  <li>删除该上游时，登录凭据会一并吊销。</li>
+                  <li>{t.noticeOfficial}</li>
+                  <li>{t.noticeHonest}</li>
+                  <li>{t.noticeStorage}</li>
+                  <li>{t.noticeRevoke}</li>
                 </ul>
               </AlertDescription>
             </Alert>
             )}
 
             <div className="grid grid-cols-2 gap-4">
-              <FormItem label="名称" htmlFor="cg-name" desc="配置中这个上游的名称">
+              <FormItem label={t.name} htmlFor="cg-name" desc={t.nameDesc}>
                 <Input
                   id="cg-name"
                   className="font-mono"
@@ -204,17 +195,17 @@ export function ChatgptLoginDialog({
                   disabled={relogin != null}
                   aria-invalid={nameTaken}
                 />
-                {nameTaken && <p className="tw-label text-destructive">这个名称已被占用</p>}
+                {nameTaken && <p className="tw-label text-destructive">{t.nameTaken}</p>}
               </FormItem>
-              <FormItem label="出站代理" htmlFor="cg-proxy" desc="登录与后续请求都经此发出">
+              <FormItem label={t.proxy} htmlFor="cg-proxy" desc={t.proxyDesc}>
                 <NativeSelect
                   id="cg-proxy"
                   className="w-full"
                   value={proxy}
                   onChange={(e) => setProxy(e.target.value)}
                 >
-                  <NativeSelectOption value="direct">直连</NativeSelectOption>
-                  <NativeSelectOption value="system">系统代理</NativeSelectOption>
+                  <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
+                  <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
                   {proxies.map((x) => (
                     <NativeSelectOption key={x.name} value={x.name}>
                       {x.name} · {proxyKindLabel(x.kind)} {x.addr}
@@ -233,7 +224,7 @@ export function ChatgptLoginDialog({
                 onCheckedChange={(v) => setUnderstood(v === true)}
               />
               <FieldLabel htmlFor="cg-understood" className="font-normal">
-                已阅读上述说明，继续登录
+                {t.understood}
               </FieldLabel>
             </Field>
             )}
@@ -244,11 +235,9 @@ export function ChatgptLoginDialog({
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 tw-body">
               <Spinner />
-              授权页已在浏览器中打开，完成授权后此处会自动继续。
+              {t.browserWaiting}
             </div>
-            <p className="tw-label text-muted-foreground">
-              授权有效期 15 分钟。浏览器未打开时可再打开一次。
-            </p>
+            <p className="tw-label text-muted-foreground">{t.browserHint}</p>
             <div>
               <Button
                 variant="outline"
@@ -258,7 +247,7 @@ export function ChatgptLoginDialog({
                 }}
               >
                 <ExternalLinkIcon />
-                重新打开授权页
+                {t.reopen}
               </Button>
             </div>
           </div>
@@ -267,9 +256,7 @@ export function ChatgptLoginDialog({
         {phase.at === "device" && (
           <div className="flex flex-col gap-3">
             <p className="tw-body">
-              在另一台已登录 ChatGPT 的设备上打开{" "}
-              <span className="font-mono text-foreground">{shortUrl(phase.url)}</span>
-              ，输入下面的登录码。
+              {t.deviceStep(<span className="font-mono text-foreground">{shortUrl(phase.url)}</span>)}
             </p>
             <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3">
               {/* 码要能一眼读准也能选中：字距拉开，等宽字体 */}
@@ -288,29 +275,25 @@ export function ChatgptLoginDialog({
                 }}
               >
                 <CopyIcon />
-                {copied ? "已复制" : "复制"}
+                {copied ? common.copied : common.copy}
               </Button>
             </div>
             <div className="flex items-center gap-2 tw-body">
               <Spinner />
-              输入完成后此处会自动继续。
+              {t.deviceWaiting}
             </div>
             {/* Codex 也有这一句：拿着别人给的码去输，等于把自己的账号授权给对方 */}
-            <p className="tw-label text-muted-foreground">
-              登录码有效期 15 分钟。只输入这里显示的这一个；由他人提供的登录码请勿输入。
-            </p>
+            <p className="tw-label text-muted-foreground">{t.deviceWarning}</p>
           </div>
         )}
 
         {phase.at === "done" && (
           <div className="flex flex-col gap-2 tw-body">
             <p>
-              已登录，上游 <span className="font-mono">{phase.provider}</span> 已写入配置。
-              {phase.plan && ` 订阅类型 ${phase.plan}。`}
+              {t.done(<span className="font-mono">{phase.provider}</span>)}
+              {phase.plan && ` ${t.plan(phase.plan)}`}
             </p>
-            <p className="tw-label text-muted-foreground">
-              模型范围、计费方式等可在该上游的编辑对话框中调整。
-            </p>
+            <p className="tw-label text-muted-foreground">{t.doneHint}</p>
           </div>
         )}
 
@@ -318,11 +301,11 @@ export function ChatgptLoginDialog({
 
         <DialogFooter>
           {phase.at === "done" ? (
-            <Button onClick={onClose}>完成</Button>
+            <Button onClick={onClose}>{t.finish}</Button>
           ) : (
             <>
               <Button variant="outline" onClick={() => void cancel()}>
-                取消
+                {common.cancel}
               </Button>
               {phase.at === "form" && (
                 <>
@@ -333,11 +316,11 @@ export function ChatgptLoginDialog({
                     disabled={!canStart}
                   >
                     <SmartphoneIcon />
-                    在其他设备上登录
+                    {t.otherDevice}
                   </Button>
                   <Button onClick={() => void start("browser")} disabled={!canStart}>
                     {busy ? <Spinner /> : <ExternalLinkIcon />}
-                    在这台电脑上登录
+                    {t.thisComputer}
                   </Button>
                 </>
               )}
