@@ -141,9 +141,17 @@ pub fn menu_line(quota_percent: Option<f64>, cost_today: Option<f64>) -> String 
 
 /// 「2h」「45m」「3d」。**宽度要稳**（宽度抖动）：一个在
 /// 「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动。
+///
+/// **只用点阵字形表里有的字符**：画不出来的字会被跳过、只留空位 ——
+/// 「2h」曾经就这样画成了「2」，「已重置」画成了一片空白。
 fn reset_label(secs: u64) -> String {
     match secs {
-        0 => "已重置".to_string(),
+        // 上游说还剩 0 秒：窗口刚重置。**写成倒计时走到零，不换成一个词。**
+        // 各档都向上取整（最后一分钟仍是「1m」），所以「0m」只留给这一刻；
+        // 它和前面的「1m」、下一个窗口的「5h」「7d」同宽；它也只说重置的时刻
+        // 到了 —— 第一行仍是上游上次报的百分比，下面写个「new」会和「100%」
+        // 自相矛盾。
+        0 => "0m".to_string(),
         s if s < 3600 => format!("{}m", s.div_ceil(60)),
         s if s < 86_400 => format!("{}h", s.div_ceil(3600)),
         s => format!("{}d", s.div_ceil(86_400)),
@@ -235,19 +243,102 @@ mod tests {
         assert!(!a.needs_redraw(&b));
     }
 
+    /// 把一个字段铺开：已有的每个状态 × 这个字段的每个取值。
+    fn vary<T: Copy>(
+        states: Vec<MenuBarState>,
+        values: &[T],
+        set: impl Fn(&mut MenuBarState, T),
+    ) -> Vec<MenuBarState> {
+        let mut out = Vec::with_capacity(states.len() * values.len());
+        for s in &states {
+            for &v in values {
+                let mut next = s.clone();
+                set(&mut next, v);
+                out.push(next);
+            }
+        }
+        out
+    }
+
     #[test]
     fn everything_we_can_produce_is_renderable() {
         // 画不出来的字符会被静默跳过，而那在数字里就是一个错误的读数。
-        for s in [
-            st(Some(1234.56), Some(9999), 5, Status::Normal),
-            st(None, None, 0, Status::Starting),
-            st(Some(0.0), Some(0), 0, Status::Disconnected),
-            st(Some(3.42), Some(47), 2, Status::Blocked),
+        //
+        // **按字段铺满，不挑样例。**上一版挑了四个状态，恰好都不带额度，
+        // 订阅账号的第二行从没被检查过 —— 「2h」画成了「2」，「已重置」
+        // 画成了一片空白。
+        let mut states = vec![MenuBarState::default()];
+        states = vary(
+            states,
+            &[
+                Status::Starting,
+                Status::Normal,
+                Status::Blocked,
+                Status::Disconnected,
+            ],
+            |s, v| s.status = v,
+        );
+        states = vary(
+            states,
+            &[None, Some(0.0), Some(34.4), Some(100.0)],
+            |s, v| s.quota_percent = v,
+        );
+        states = vary(
+            states,
+            &[
+                None,
+                Some(0),
+                Some(1),
+                Some(59),
+                Some(60),
+                Some(61),
+                Some(3599),
+                Some(3600),
+                Some(3601),
+                Some(86_399),
+                Some(86_400),
+                Some(86_401),
+                Some(3 * 86_400),
+                Some(7 * 86_400),
+                Some(30 * 86_400),
+                Some(u64::MAX),
+            ],
+            |s, v| s.quota_reset_in_secs = v,
+        );
+        states = vary(
+            states,
+            &[None, Some(0.0), Some(3.42), Some(1234.567)],
+            |s, v| s.cost_today = v,
+        );
+        states = vary(
+            states,
+            &[None, Some(0), Some(47), Some(u32::MAX)],
+            |s, v| s.tokens_per_sec = v,
+        );
+        states = vary(states, &[0, 1, u32::MAX], |s, v| s.active = v);
+        states = vary(states, &[false, true], |s, v| s.quota_warning = v);
+
+        let lines: std::collections::BTreeSet<String> =
+            states.iter().flat_map(|s| [s.line1(), s.line2()]).collect();
+        // 先确认每条分支都铺到了 —— 上一版漏掉的正是一整条分支
+        for want in [
+            "—",
+            "!",
+            "34%",
+            "$3.42",
+            "0m",
+            "1m",
+            "1h",
+            "1d",
+            "47 t/s",
+            "47 t/s ·",
+            "1 ▶",
         ] {
-            for line in [s.line1(), s.line2()] {
-                for c in line.chars() {
-                    assert!(font::can_render(c), "{line:?} 里的 {c:?} 画不出来");
-                }
+            assert!(lines.contains(want), "没有铺到「{want}」");
+        }
+        for line in &lines {
+            for c in line.chars() {
+                assert!(font::can_render(c), "{line:?} 里的 {c:?} 画不出来");
             }
         }
     }
@@ -306,14 +397,23 @@ mod quota_tests {
     #[test]
     fn the_reset_label_keeps_a_stable_width() {
         // 一个在「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动
-        // （宽度抖动）。
-        assert_eq!(reset_label(0), "已重置");
-        assert_eq!(reset_label(59), "1m");
-        assert_eq!(reset_label(3599), "60m");
-        assert_eq!(reset_label(3600), "1h");
-        assert_eq!(reset_label(7200), "2h");
-        assert_eq!(reset_label(86_400), "1d");
-        assert_eq!(reset_label(86_401), "2d");
+        // （宽度抖动）。刚重置的那一刻是「0m」：和前一刻的「1m」同宽。
+        for (secs, want) in [
+            (0, "0m"),
+            (1, "1m"),
+            (59, "1m"),
+            (60, "1m"),
+            (61, "2m"),
+            (3599, "60m"),
+            (3600, "1h"),
+            (7200, "2h"),
+            (86_399, "24h"),
+            (86_400, "1d"),
+            (86_401, "2d"),
+            (7 * 86_400, "7d"),
+        ] {
+            assert_eq!(reset_label(secs), want, "{secs} 秒");
+        }
     }
 
     #[test]
