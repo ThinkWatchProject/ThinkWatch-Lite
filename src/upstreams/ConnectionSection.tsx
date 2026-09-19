@@ -3,11 +3,20 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Spinner } from "@/ui/spinner";
+import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
+import { connectionSectionText } from "./ConnectionSection.i18n";
 import { HeaderEditor } from "./HeaderEditor";
-import { AUTH_MODES, PROTOCOLS, authHeaderLabel, protocolLabel, proxyKindLabel } from "./labels";
+import {
+  AUTH_MODES,
+  PROTOCOLS,
+  authHeaderLabel,
+  egressLabel,
+  protocolLabel,
+  proxyKindLabel,
+} from "./labels";
 import { FormItem, Note, Segmented } from "./parts";
-import { CHATGPT, PRESETS, nameFromUrl, presetById } from "./presets";
+import { CHATGPT, CUSTOM, PRESETS, nameFromUrl, presetById } from "./presets";
 import { describeModelList, freeName, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
@@ -38,13 +47,14 @@ export function ConnectionSection({
   /** 服务类型选了 ChatGPT 账号：那一条走登录，不走这张表单 */
   onChatgptLogin: () => void;
 }) {
+  const t = useText(connectionSectionText);
   const proxies = ov.proxies ?? [];
   const taken = ov.providers.map((p) => p.name);
   const autoProtocol = !form.baseUrl.trim()
-    ? "自动识别"
+    ? t.auto
     : preview?.protocol
-      ? `自动识别（${protocolLabel(preview.protocol)}）`
-      : "自动识别（未识别，按原格式转发）";
+      ? t.autoDetected(protocolLabel(preview.protocol))
+      : t.autoUndetected;
 
   function pickPreset(id: string) {
     if (id === CHATGPT) {
@@ -70,19 +80,19 @@ export function ConnectionSection({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-4">
         {editing ? (
-          <FormItem label="接口协议" htmlFor="up-protocol">
+          <FormItem label={t.protocol} htmlFor="up-protocol">
             <ProtocolSelect form={form} set={set} auto={autoProtocol} />
           </FormItem>
         ) : (
-          <FormItem label="服务类型" htmlFor="up-preset">
+          <FormItem label={t.service} htmlFor="up-preset">
             <NativeSelect
               id="up-preset"
               className="w-full"
               value={form.preset}
               onChange={(e) => pickPreset(e.target.value)}
             >
-              <NativeSelectOption value="custom">自定义</NativeSelectOption>
-              <NativeSelectOption value={CHATGPT}>ChatGPT 账号（登录）</NativeSelectOption>
+              <NativeSelectOption value="custom">{CUSTOM.label}</NativeSelectOption>
+              <NativeSelectOption value={CHATGPT}>{t.chatgpt}</NativeSelectOption>
               {PRESETS.map((p) => (
                 <NativeSelectOption key={p.id} value={p.id}>
                   {p.label}
@@ -91,25 +101,21 @@ export function ConnectionSection({
             </NativeSelect>
           </FormItem>
         )}
-        <FormItem label="名称" htmlFor="up-name">
+        <FormItem label={t.name} htmlFor="up-name">
           <Input
             id="up-name"
             className="font-mono"
             value={form.name}
-            placeholder={nameFromUrl(form.baseUrl) || "例如 relay-hk"}
+            placeholder={nameFromUrl(form.baseUrl) || t.namePlaceholder}
             onChange={(e) => set({ name: e.target.value })}
           />
         </FormItem>
       </div>
 
       <FormItem
-        label="接口地址"
+        label={t.baseUrl}
         htmlFor="up-url"
-        desc={
-          editing?.base_url_masked && !form.baseUrlTouched
-            ? "地址中的凭据部分已隐去。修改地址时请填写完整地址。"
-            : "不含 /v1 等路径前缀，网关按客户端请求的路径转发。"
-        }
+        desc={editing?.base_url_masked && !form.baseUrlTouched ? t.baseUrlMasked : t.baseUrlDesc}
       >
         <Input
           id="up-url"
@@ -132,11 +138,11 @@ export function ConnectionSection({
 
       <div className="grid grid-cols-2 gap-4">
         {!editing && (
-          <FormItem label="接口协议" htmlFor="up-protocol">
+          <FormItem label={t.protocol} htmlFor="up-protocol">
             <ProtocolSelect form={form} set={set} auto={autoProtocol} />
           </FormItem>
         )}
-        <FormItem label="认证方式">
+        <FormItem label={t.auth}>
           {/* 和旁边的下拉框等高 */}
           <div className="flex h-8 items-center">
             <Segmented
@@ -154,19 +160,12 @@ export function ConnectionSection({
         <OAuth form={form} set={set} />
       )}
 
-      <FormItem
-        label="请求头"
-        desc={
-          form.authMode === "oauth"
-            ? "随每个请求发送。值中可使用 ${变量名} 引用环境变量，{{client}} 代入网关密钥名称，{{access_token}} 代入当前 Access Token。"
-            : "随每个请求发送。值中可使用 ${变量名} 引用环境变量，{{client}} 代入网关密钥名称。"
-        }
-      >
+      <FormItem label={t.headers} desc={form.authMode === "oauth" ? t.headersOauth : t.headersKey}>
         <HeaderEditor form={form} set={set} />
       </FormItem>
 
       <div className="grid grid-cols-2 gap-4">
-        <FormItem label="出站代理" htmlFor="up-proxy">
+        <FormItem label={t.proxy} htmlFor="up-proxy">
           <NativeSelect
             id="up-proxy"
             className="w-full"
@@ -175,8 +174,8 @@ export function ConnectionSection({
               e.target.value === NEW_PROXY ? onNewProxy() : set({ proxy: e.target.value })
             }
           >
-            <NativeSelectOption value="direct">直连</NativeSelectOption>
-            <NativeSelectOption value="system">系统代理</NativeSelectOption>
+            <NativeSelectOption value="direct">{egressLabel("direct")}</NativeSelectOption>
+            <NativeSelectOption value="system">{egressLabel("system")}</NativeSelectOption>
             {proxies.map((x) => (
               <NativeSelectOption key={x.name} value={x.name}>
                 {x.name} · {proxyKindLabel(x.kind)} {x.addr}
@@ -187,10 +186,10 @@ export function ConnectionSection({
               !proxies.some((x) => x.name === form.proxy) && (
                 <NativeSelectOption value={form.proxy}>{form.proxy}</NativeSelectOption>
               )}
-            <NativeSelectOption value={NEW_PROXY}>新建代理…</NativeSelectOption>
+            <NativeSelectOption value={NEW_PROXY}>{t.newProxy}</NativeSelectOption>
           </NativeSelect>
         </FormItem>
-        <FormItem label="代理不可用时" htmlFor="up-proxy-fail">
+        <FormItem label={t.onProxyFail} htmlFor="up-proxy-fail">
           <NativeSelect
             id="up-proxy-fail"
             className="w-full"
@@ -198,8 +197,8 @@ export function ConnectionSection({
             disabled={form.proxy === "direct"}
             onChange={(e) => set({ onProxyFail: e.target.value })}
           >
-            <NativeSelectOption value="fail">返回错误</NativeSelectOption>
-            <NativeSelectOption value="direct">改为直连</NativeSelectOption>
+            <NativeSelectOption value="fail">{t.failWithError}</NativeSelectOption>
+            <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
           </NativeSelect>
         </FormItem>
       </div>
@@ -208,9 +207,9 @@ export function ConnectionSection({
         <div className="flex items-center gap-2.5">
           <Button variant="outline" size="sm" onClick={onTest} disabled={testing}>
             {testing ? <Spinner /> : <PlugIcon />}
-            检测连接
+            {t.check}
           </Button>
-          <Note>验证地址与凭据，并获取模型列表。不产生费用。</Note>
+          <Note>{t.checkNote}</Note>
         </div>
         {test && <TestLine result={test} />}
       </div>
@@ -259,12 +258,12 @@ function ApiKey({
   /** 按选定或识别出的协议，密钥放在哪个请求头里。地址还没填时不知道 */
   authHeader: string | null;
 }) {
-  const env = "可使用 ${变量名} 引用环境变量。";
+  const t = useText(connectionSectionText);
   return (
     <FormItem
-      label="API 密钥"
+      label={t.apiKey}
       htmlFor="up-key"
-      desc={authHeader ? `通过 ${authHeaderLabel(authHeader)} 请求头发送。${env}` : env}
+      desc={authHeader ? t.sentIn(authHeaderLabel(authHeader), t.env) : t.env}
     >
       <div className="flex items-center gap-2">
         <Input
@@ -276,16 +275,16 @@ function ApiKey({
           value={form.key}
           placeholder={
             form.keySaved
-              ? "已保存，留空即保持不变"
+              ? t.keySaved
               : editing?.key
-                ? "保存后将移除原密钥"
+                ? t.keyRemoved
                 : undefined
           }
           onChange={(e) => set({ key: e.target.value })}
         />
         {form.keySaved && form.key.trim() === "" && (
           <Button variant="outline" onClick={() => set({ keySaved: false })}>
-            移除
+            {t.remove}
           </Button>
         )}
       </div>
@@ -300,10 +299,11 @@ function OAuth({
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
 }) {
+  const t = useText(connectionSectionText);
   // 已保存的 OAuth 凭据整份沿用：Refresh Token 与 Client Secret 不回显，点「更换」重新填写
   if (form.oauthSaved) {
     return (
-      <FormItem label="Token 端点" desc="凭据不回显。更换后原凭据将被替换。">
+      <FormItem label={t.tokenEndpoint} desc={t.oauthSaved}>
         <div className="flex items-center gap-2">
           <Input readOnly value={form.oauthEndpoint} className="font-mono text-muted-foreground" />
           <Button
@@ -312,7 +312,7 @@ function OAuth({
               set({ oauthSaved: false, oauthRefresh: "", oauthClientSecret: "", oauthAccess: "" })
             }
           >
-            更换
+            {t.replace}
           </Button>
         </div>
       </FormItem>
@@ -320,7 +320,7 @@ function OAuth({
   }
   return (
     <div className="grid grid-cols-2 gap-4">
-      <FormItem label="Token 端点" htmlFor="up-endpoint">
+      <FormItem label={t.tokenEndpoint} htmlFor="up-endpoint">
         <Input
           id="up-endpoint"
           className="font-mono"
@@ -329,7 +329,7 @@ function OAuth({
           onChange={(e) => set({ oauthEndpoint: e.target.value })}
         />
       </FormItem>
-      <FormItem label="Refresh Token" htmlFor="up-refresh">
+      <FormItem label={t.refreshToken} htmlFor="up-refresh">
         <Input
           id="up-refresh"
           type="password"
@@ -339,7 +339,7 @@ function OAuth({
           onChange={(e) => set({ oauthRefresh: e.target.value })}
         />
       </FormItem>
-      <FormItem label="Client ID（可选）" htmlFor="up-client-id">
+      <FormItem label={t.clientId} htmlFor="up-client-id">
         <Input
           id="up-client-id"
           className="font-mono"
@@ -347,7 +347,7 @@ function OAuth({
           onChange={(e) => set({ oauthClientId: e.target.value })}
         />
       </FormItem>
-      <FormItem label="Client Secret（可选）" htmlFor="up-client-secret">
+      <FormItem label={t.clientSecret} htmlFor="up-client-secret">
         <Input
           id="up-client-secret"
           type="password"
@@ -358,10 +358,10 @@ function OAuth({
         />
       </FormItem>
       <FormItem
-        label="Access Token（检测用，可选）"
+        label={t.accessToken}
         htmlFor="up-access"
         className="col-span-2"
-        desc="保存前检测连接需要现有的 Access Token；保存后网关使用 Refresh Token 自动换发。"
+        desc={t.accessTokenDesc}
       >
         <Input
           id="up-access"
@@ -378,27 +378,28 @@ function OAuth({
 
 /** 「连接正常 · 认证通过 · 响应 312 ms · 经由 hk-socks · 发现 6 个模型」 */
 export function TestLine({ result }: { result: ProviderTestResult }) {
+  const t = useText(connectionSectionText);
   if (!result.ok) {
     return (
       <div className="flex items-start gap-2 border-t border-border pt-2.5">
         <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="tw-body font-medium">连接失败</span>
+          <span className="tw-body font-medium">{t.failed}</span>
           {result.error && <Note>{result.error}</Note>}
         </div>
       </div>
     );
   }
   const parts = [
-    "认证通过",
-    `响应 ${result.latency_ms.toLocaleString()} ms`,
-    result.via ? `经由 ${result.via}` : null,
+    t.authenticated,
+    t.responded(result.latency_ms),
+    result.via ? t.via(result.via) : null,
     describeModelList(result.models),
   ].filter(Boolean);
   return (
     <div className="flex items-center gap-2 border-t border-border pt-2.5">
       <CircleCheckIcon className="size-4 shrink-0 text-success" />
-      <span className="tw-body font-medium">连接正常</span>
+      <span className="tw-body font-medium">{t.ok}</span>
       <span className="tw-label tabular-nums text-muted-foreground">{parts.join(" · ")}</span>
     </div>
   );

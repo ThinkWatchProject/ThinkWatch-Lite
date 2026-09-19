@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
 import {
   blankForm,
@@ -9,6 +10,9 @@ import {
   toInput,
   type UpstreamForm,
 } from "./upstreamForm";
+
+// 断言按中文写：不随跑测试那台机器的系统语言变
+beforeAll(() => setLang("zh"));
 
 function view(patch: Partial<ProviderView> = {}): ProviderView {
   return {

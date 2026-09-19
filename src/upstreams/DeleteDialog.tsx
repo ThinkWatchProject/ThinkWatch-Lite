@@ -11,7 +11,10 @@ import {
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { ReferenceView } from "@/types";
+import { deleteDialogText } from "./DeleteDialog.i18n";
 import { errorText } from "./labels";
 import { Note } from "./parts";
 
@@ -45,6 +48,8 @@ export function DeleteDialog({
   /** 跳到那一处 */
   onShow: (r: Referrer) => void;
 }) {
+  const t = useText(deleteDialogText);
+  const c = useText(commonText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const blocked = referrers.length > 0;
@@ -64,13 +69,8 @@ export function DeleteDialog({
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            {blocked ? "无法删除" : "删除"}
-            {what}「{name}」
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {blocked ? `以下配置引用了此${what}，解除引用后才能删除。` : consequence}
-          </AlertDialogDescription>
+          <AlertDialogTitle>{blocked ? t.blockedTitle(what, name) : t.title(what, name)}</AlertDialogTitle>
+          <AlertDialogDescription>{blocked ? t.blocked(what) : consequence}</AlertDialogDescription>
         </AlertDialogHeader>
         {blocked && (
           <div className="overflow-hidden rounded-lg border border-border">
@@ -87,7 +87,7 @@ export function DeleteDialog({
                 <span className="min-w-0 truncate">{describe(r)}</span>
                 <div className="flex-1" />
                 <Button variant="ghost" size="xs" onClick={() => onShow(r)}>
-                  查看
+                  {t.show}
                   <ArrowRightIcon />
                 </Button>
               </div>
@@ -96,11 +96,11 @@ export function DeleteDialog({
         )}
         {error && <Note tone="error">{error}</Note>}
         <AlertDialogFooter>
-          <AlertDialogCancel>{blocked ? "关闭" : "取消"}</AlertDialogCancel>
+          <AlertDialogCancel>{blocked ? c.close : c.cancel}</AlertDialogCancel>
           {!blocked && (
             <Button variant="destructive" onClick={run} disabled={busy}>
               {busy && <Spinner />}
-              删除
+              {c.delete}
             </Button>
           )}
         </AlertDialogFooter>
@@ -110,13 +110,14 @@ export function DeleteDialog({
 }
 
 function describe(r: Referrer): string {
-  if (r.kind === "upstream") return `上游「${r.name}」`;
+  const t = textOf(deleteDialogText);
+  if (r.kind === "upstream") return t.upstream(r.name);
   switch (r.ref.kind) {
     case "rule_target":
-      return `路由「${r.ref.route}」· 规则「${r.ref.rule}」`;
+      return t.rule(r.ref.route, r.ref.rule);
     case "rule_condition":
-      return `路由「${r.ref.route}」· 规则「${r.ref.rule}」的条件`;
+      return t.condition(r.ref.route, r.ref.rule);
     case "group":
-      return `策略组「${r.ref.group}」`;
+      return t.group(r.ref.group);
   }
 }

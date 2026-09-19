@@ -14,9 +14,11 @@ import {
   TableRow,
 } from "@/ui/table";
 import { Textarea } from "@/ui/textarea";
+import { useText } from "@/i18n";
 import type { ModelStatus, ProviderModelsView, ResolvedPrice } from "@/types";
 import { globMatch } from "./glob";
 import { contextWindow, modelSourceLabel } from "./labels";
+import { modelsSectionText } from "./ModelsSection.i18n";
 import { Boxed, FormItem, Note, Segmented } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
@@ -75,6 +77,7 @@ export function ModelsSection({
   refreshing: boolean;
   onRefresh: () => void;
 }) {
+  const t = useText(modelsSectionText);
   const [filter, setFilter] = useState("");
   /**
    * 手动清单的原文。**不能直接用 `manualModels.join("\n")` 当值** —— 按行拆
@@ -118,7 +121,7 @@ export function ModelsSection({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="tw-body font-medium">模型列表</span>
+        <span className="tw-body font-medium">{t.title}</span>
         {catalog && !waiting && (
           <Badge variant={catalog.source === "none" && catalog.status === "failed" ? "warning" : "secondary"}>
             {modelSourceLabel(catalog.source, catalog.status)}
@@ -126,36 +129,28 @@ export function ModelsSection({
         )}
         {catalog && (listed || models.length > 0) && (
           <span className="tw-label tabular-nums text-muted-foreground">
-            {models.length} 个
-            {listed && catalog.checkedAtMs ? ` · 获取于 ${clock(catalog.checkedAtMs)}` : ""}
+            {t.count(models.length)}
+            {listed && catalog.checkedAtMs ? ` · ${t.fetchedAt(clock(catalog.checkedAtMs))}` : ""}
           </span>
         )}
         <div className="flex-1" />
         <Button variant="ghost" size="xs" onClick={onRefresh} disabled={busy}>
           {busy ? <Spinner /> : <RefreshCwIcon />}
-          刷新模型列表
+          {t.refresh}
         </Button>
       </div>
 
       {loading || waiting ? (
         <p className="flex items-center gap-2 tw-body text-muted-foreground">
           <Spinner />
-          正在获取模型列表
+          {t.fetching}
         </p>
       ) : !catalog ? (
-        <Note>尚未获取模型列表。</Note>
+        <Note>{t.notFetched}</Note>
       ) : (
         <>
           {!listed && (
-            <FormItem
-              label="手动清单"
-              desc={
-                <>
-                  {catalog.error ? `${catalog.error}。` : "未获取到模型列表。"}
-                  每行填写一个模型 ID，这些模型会出现在客户端的模型列表中。
-                </>
-              }
-            >
+            <FormItem label={t.manual} desc={t.manualDesc(catalog.error)}>
               <Textarea
                 className="min-h-24 font-mono"
                 value={manualText}
@@ -176,12 +171,12 @@ export function ModelsSection({
             </FormItem>
           )}
 
-          <FormItem label="启用范围">
+          <FormItem label={t.scope}>
             <Segmented
               value={form.scope}
               options={[
-                { id: "all", label: "全部模型" },
-                { id: "some", label: "指定模型" },
+                { id: "all", label: t.all },
+                { id: "some", label: t.some },
               ]}
               onChange={(v) =>
                 set({
@@ -193,11 +188,7 @@ export function ModelsSection({
             />
           </FormItem>
 
-          {patterns.length > 0 && (
-            <Note>
-              启用范围包含通配规则 {patterns.join("、")}。勾选或取消勾选后，范围改为所勾选的模型。
-            </Note>
-          )}
+          {patterns.length > 0 && <Note>{t.patterns(patterns)}</Note>}
 
           {models.length > 0 && (
             <>
@@ -207,14 +198,14 @@ export function ModelsSection({
                     <SearchIcon />
                   </InputGroupAddon>
                   <InputGroupInput
-                    placeholder="筛选模型"
+                    placeholder={t.filter}
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                   />
                 </InputGroup>
                 <div className="flex-1" />
                 <span className="tw-label tabular-nums text-muted-foreground">
-                  已启用 {enabled.length} / {models.length}
+                  {t.enabled(enabled.length, models.length)}
                 </span>
               </div>
               <Boxed className="max-h-72 overflow-y-auto">
@@ -223,14 +214,14 @@ export function ModelsSection({
                     <TableRow>
                       <TableHead className="w-9">
                         <Checkbox
-                          aria-label="全选"
+                          aria-label={t.selectAll}
                           checked={allShownOn ? true : someShownOn ? "indeterminate" : false}
                           onCheckedChange={(v) => toggleAll(v === true)}
                         />
                       </TableHead>
-                      <TableHead>模型 ID</TableHead>
-                      <TableHead>上下文窗口</TableHead>
-                      {perToken && <TableHead>定价</TableHead>}
+                      <TableHead>{t.modelId}</TableHead>
+                      <TableHead>{t.context}</TableHead>
+                      {perToken && <TableHead>{t.pricing}</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -258,10 +249,10 @@ export function ModelsSection({
                                 <span className="text-muted-foreground">—</span>
                               ) : price.price ? (
                                 <span className="text-muted-foreground">
-                                  {price.estimated ? "已定价（估算）" : "已定价"}
+                                  {price.estimated ? t.pricedEstimated : t.priced}
                                 </span>
                               ) : (
-                                <Badge variant="warning">未定价</Badge>
+                                <Badge variant="warning">{t.unpriced}</Badge>
                               )}
                             </TableCell>
                           )}
@@ -277,9 +268,7 @@ export function ModelsSection({
           {unpriced.length > 0 && (
             <p className="flex items-start gap-2 tw-label text-warning">
               <CircleAlertIcon className="mt-px size-3.5 shrink-0" />
-              <span>
-                {unpriced.length} 个已启用的模型在{sheetLabel}中未定价，这些模型的请求无法计算费用。可在「计费」中为其设置价格。
-              </span>
+              <span>{t.unpricedNote(unpriced.length, sheetLabel)}</span>
             </p>
           )}
         </>

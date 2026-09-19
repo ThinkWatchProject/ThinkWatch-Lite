@@ -5,8 +5,10 @@
  * 地址也可能打了码，原样写回去会把码写进配置 —— 所以没改地址时地址不发，
  * 密钥和请求头的值留空表示沿用已保存的，OAuth 没点「更换」时沿用。
  */
+import { textOf } from "@/i18n";
 import type { HeaderInput, ModelList, OAuthChange, ProviderInput, ProviderView, SecretChange } from "@/types";
 import { CUSTOM } from "./presets";
+import { upstreamFormText } from "./upstreamForm.i18n";
 
 export type AuthMode = "key" | "oauth";
 
@@ -218,41 +220,43 @@ export function connectionMissing(
   original: string | null,
   taken: string[],
 ): string | null {
+  const t = textOf(upstreamFormText);
   const editing = original != null;
   const name = f.name.trim();
-  if (name === "") return "填写名称";
-  if (name !== original && taken.includes(name)) return `名称「${name}」已被其他上游使用`;
-  if ((!editing || f.baseUrlTouched) && f.baseUrl.trim() === "") return "填写接口地址";
+  if (name === "") return t.name;
+  if (name !== original && taken.includes(name)) return t.nameTaken(name);
+  if ((!editing || f.baseUrlTouched) && f.baseUrl.trim() === "") return t.baseUrl;
   if (
     f.authMode === "oauth" &&
     !f.oauthSaved &&
     (f.oauthRefresh.trim() === "" || f.oauthEndpoint.trim() === "")
   )
-    return "填写 Refresh Token 与 Token 端点";
+    return t.oauth;
   for (const r of f.headers) {
     const header = r.name.trim();
     if (header === "" && r.value.trim() === "") continue;
-    if (header === "") return "填写请求头名称";
-    if (r.value.trim() === "" && !keepsSavedValue(f, r)) return `填写请求头「${header}」的值`;
+    if (header === "") return t.headerName;
+    if (r.value.trim() === "" && !keepsSavedValue(f, r)) return t.headerValue(header);
   }
   return null;
 }
 
 export function modelsMissing(f: UpstreamForm): string | null {
-  if (f.scope === "some" && f.scopeList.length === 0) return "至少选择一个模型";
+  if (f.scope === "some" && f.scopeList.length === 0) return textOf(upstreamFormText).pickModel;
   return null;
 }
 
 /** 检测结果里模型列表那一段怎么说 */
 export function describeModelList(m: ModelList): string {
+  const t = textOf(upstreamFormText);
   switch (m.kind) {
     case "listed":
-      return `发现 ${m.models.length} 个模型`;
+      return t.found(m.models.length);
     case "not_implemented":
-      return `上游未提供模型列表接口（HTTP ${m.status}）`;
+      return t.notImplemented(m.status);
     case "unrecognized":
-      return "模型列表格式无法识别";
+      return t.unrecognized;
     case "empty":
-      return "模型列表为空";
+      return t.empty;
   }
 }

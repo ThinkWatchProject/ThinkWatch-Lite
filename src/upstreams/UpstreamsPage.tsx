@@ -14,6 +14,7 @@ import {
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { useText } from "@/i18n";
 import type { ChatgptUsage, Overview, PricingStatus } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
@@ -27,6 +28,7 @@ import { ProxyTable, type ProxyCheck } from "./ProxyTable";
 import { LinkTestDialog, SpeedTestDialog, TestConnectionDialog } from "./TestDialogs";
 import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
+import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { UpstreamTable } from "./UpstreamTable";
 
 export type UpstreamTab = "upstreams" | "proxies" | "pricing";
@@ -72,6 +74,7 @@ export default function UpstreamsPage({
   /** 跳到别的页（路由、防护） */
   onNavigate: (tab: string) => void;
 }) {
+  const t = useText(upstreamsPageText);
   const [tab, setTab] = useState<UpstreamTab>(initialTab);
   const [stats, setStats] = useState<UpstreamStats | null>(null);
   const [status, setStatus] = useState<PricingStatus | null>(null);
@@ -173,7 +176,7 @@ export default function UpstreamsPage({
   async function refreshModels(name: string) {
     try {
       const v = await api.refreshProviderModels(name);
-      if (v.error) toast.error(`${name}：${v.error}`);
+      if (v.error) toast.error(t.modelsError(name, v.error));
       changed();
     } catch (e) {
       toast.error(errorText(e));
@@ -211,7 +214,7 @@ export default function UpstreamsPage({
     try {
       const r = await api.refreshPricing();
       setStatus(r.status);
-      toast.success(r.changed > 0 ? `默认价目表已更新，${r.changed} 个模型的价格有变化` : "默认价目表已是最新");
+      toast.success(r.changed > 0 ? t.pricesUpdated(r.changed) : t.pricesCurrent);
     } catch (e) {
       toast.error(errorText(e));
       loadStatus();
@@ -238,13 +241,13 @@ export default function UpstreamsPage({
         <div className="flex flex-wrap items-center gap-2">
           <TabsList>
             <TabsTrigger value="upstreams">
-              上游 <Count n={ov.providers.length} />
+              {t.tabs.upstreams} <Count n={ov.providers.length} />
             </TabsTrigger>
             <TabsTrigger value="proxies">
-              代理 <Count n={proxies.length} />
+              {t.tabs.proxies} <Count n={proxies.length} />
             </TabsTrigger>
             <TabsTrigger value="pricing">
-              价目表 <Count n={ov.price_sheets.length + 1} />
+              {t.tabs.pricing} <Count n={ov.price_sheets.length + 1} />
             </TabsTrigger>
           </TabsList>
           <div className="flex-1" />
@@ -252,15 +255,15 @@ export default function UpstreamsPage({
             <>
               <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "link", provider: null })}>
                 <ActivityIcon />
-                链路测速
+                {t.linkTest}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "speed", provider: null })}>
                 <ZapIcon />
-                推理测速
+                {t.speedTest}
               </Button>
               <Button size="sm" onClick={() => setDialog({ kind: "upstream", mode: { kind: "create" } })}>
                 <PlusIcon />
-                新建上游
+                {t.newUpstream}
               </Button>
             </>
           )}
@@ -269,12 +272,12 @@ export default function UpstreamsPage({
               {proxies.length > 0 && (
                 <Button variant="outline" size="sm" onClick={testAllProxies}>
                   <ActivityIcon />
-                  检测全部
+                  {t.checkAll}
                 </Button>
               )}
               <Button size="sm" onClick={() => setDialog({ kind: "proxy", mode: { kind: "create" } })}>
                 <PlusIcon />
-                新建代理
+                {t.newProxy}
               </Button>
             </>
           )}
@@ -286,15 +289,15 @@ export default function UpstreamsPage({
                   disabled={!status}
                   onCheckedChange={setAutoUpdate}
                 />
-                自动更新
+                {t.autoUpdate}
               </label>
               <Button variant="outline" size="sm" onClick={refreshPrices} disabled={refreshingPrices}>
                 {refreshingPrices ? <Spinner /> : <RefreshCwIcon />}
-                立即更新
+                {t.updateNow}
               </Button>
               <Button size="sm" onClick={() => setDialog({ kind: "sheet", mode: { kind: "create" } })}>
                 <PlusIcon />
-                新建价目表
+                {t.newSheet}
               </Button>
             </>
           )}
@@ -307,16 +310,14 @@ export default function UpstreamsPage({
                 <EmptyMedia variant="icon">
                   <ServerIcon />
                 </EmptyMedia>
-                <EmptyTitle>尚无上游</EmptyTitle>
-                <EmptyDescription>
-                  上游是网关转发请求的目标服务。新建上游并填写接口地址与凭据后，客户端请求即可经网关发出。
-                </EmptyDescription>
+                <EmptyTitle>{t.noUpstreams}</EmptyTitle>
+                <EmptyDescription>{t.noUpstreamsDesc}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 {/* 服务类型在新建对话框的第一栏里选，这里不再平铺一排预设 */}
                 <Button size="sm" onClick={() => setDialog({ kind: "upstream", mode: { kind: "create" } })}>
                   <PlusIcon />
-                  新建上游
+                  {t.newUpstream}
                 </Button>
               </EmptyContent>
             </Empty>
@@ -347,10 +348,8 @@ export default function UpstreamsPage({
           {proxies.length === 0 ? (
             <Empty className="border border-dashed">
               <EmptyHeader>
-                <EmptyTitle>尚无代理</EmptyTitle>
-                <EmptyDescription>
-                  上游默认直连。需要经代理访问的上游，先新建代理，再在上游的连接设置中选择它。
-                </EmptyDescription>
+                <EmptyTitle>{t.noProxies}</EmptyTitle>
+                <EmptyDescription>{t.noProxiesDesc}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
@@ -367,25 +366,26 @@ export default function UpstreamsPage({
         <TabsContent value="pricing" className="mt-2 flex flex-col gap-3">
           {status && (
             <p className="tw-label text-muted-foreground">
-              默认价目表数据日期 {status.date || "—"}
-              {status.checked_at_ms != null && ` · 最近检查 ${when(status.checked_at_ms)}`}
-              {status.error && <span className="text-destructive"> · 更新失败：{status.error}</span>}
+              {t.dataDate(status.date || "—")}
+              {status.checked_at_ms != null && ` · ${t.lastChecked(when(status.checked_at_ms))}`}
+              {status.error && <span className="text-destructive"> · {t.updateFailed(status.error)}</span>}
             </p>
           )}
           {status && status.unpriced_recent > 0 && (
             <Alert variant="warning">
               <CircleAlertIcon />
-              <AlertTitle>最近 7 天有 {status.unpriced_recent.toLocaleString()} 次请求无法计价</AlertTitle>
+              <AlertTitle>{t.unpricedTitle(status.unpriced_recent)}</AlertTitle>
               <AlertDescription>
-                涉及模型{" "}
+                {t.unpricedModels}{" "}
                 {status.unpriced_models.slice(0, 4).map((u, i) => (
                   <span key={`${u.provider}/${u.model}`}>
-                    {i > 0 && "、"}
-                    <span className="font-mono">{u.model}</span>（{u.provider}）
+                    {i > 0 && t.listSep}
+                    <span className="font-mono">{u.model}</span>
+                    {t.provider(u.provider)}
                   </span>
                 ))}
-                {status.unpriced_models.length > 4 && ` 等 ${status.unpriced_models.length} 项`}
-                ，相关费用未计入统计。
+                {status.unpriced_models.length > 4 && t.more(status.unpriced_models.length, 4)}
+                {t.unpricedEnd}
               </AlertDescription>
               <AlertAction>
                 <Button
@@ -408,7 +408,7 @@ export default function UpstreamsPage({
                     })
                   }
                 >
-                  设置价格
+                  {t.setPrices}
                 </Button>
               </AlertAction>
             </Alert>
@@ -445,13 +445,13 @@ export default function UpstreamsPage({
       )}
       {dialog?.kind === "delete-upstream" && (
         <DeleteDialog
-          what="上游"
+          what={t.what.upstream}
           name={dialog.name}
           referrers={(ov.providers.find((p) => p.name === dialog.name)?.references ?? []).map((ref) => ({
             kind: "reference" as const,
             ref,
           }))}
-          consequence="删除后，此上游的地址、凭据与设置将从配置文件中移除，可在版本历史中恢复。"
+          consequence={t.upstreamGone}
           onDelete={async () => {
             await api.deleteProvider(dialog.name, configVersion);
             setDialog(null);
@@ -495,13 +495,13 @@ export default function UpstreamsPage({
       )}
       {dialog?.kind === "delete-proxy" && (
         <DeleteDialog
-          what="代理"
+          what={t.what.proxy}
           name={dialog.name}
           referrers={(proxies.find((x) => x.name === dialog.name)?.used_by ?? []).map((name) => ({
             kind: "upstream" as const,
             name,
           }))}
-          consequence="删除后，此代理的地址与认证信息将从配置文件中移除，可在版本历史中恢复。"
+          consequence={t.proxyGone}
           onDelete={async () => {
             await api.deleteProxy(dialog.name, configVersion);
             setDialog(null);
@@ -530,13 +530,13 @@ export default function UpstreamsPage({
       )}
       {dialog?.kind === "delete-sheet" && (
         <DeleteDialog
-          what="价目表"
+          what={t.what.sheet}
           name={dialog.name}
           referrers={(ov.price_sheets.find((s) => s.name === dialog.name)?.used_by ?? []).map((name) => ({
             kind: "upstream" as const,
             name,
           }))}
-          consequence="删除后，此价目表的倍率与模型覆盖将从配置文件中移除，可在版本历史中恢复。"
+          consequence={t.sheetGone}
           onDelete={async () => {
             await api.deletePriceSheet(dialog.name, configVersion);
             setDialog(null);

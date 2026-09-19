@@ -14,6 +14,8 @@ import {
 } from "@/ui/table";
 import { resetIn } from "@/format";
 import { Spinner } from "@/ui/spinner";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { usd, type ChatgptUsage, type Overview, type ProviderView } from "@/types";
 import type { UpstreamStats } from "./api";
 import {
@@ -25,7 +27,9 @@ import {
   quotaWindowLabel,
   shortUrl,
 } from "./labels";
+import { labelsText } from "./labels.i18n";
 import { ModelsPanel } from "./ModelsPanel";
+import { upstreamTableText } from "./UpstreamTable.i18n";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -59,16 +63,17 @@ export function UpstreamTable({
   accounts: Record<string, ChatgptUsage>;
   actions: UpstreamActions;
 }) {
+  const t = useText(upstreamTableText);
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>上游</TableHead>
-          <TableHead className="text-right">模型</TableHead>
+          <TableHead>{t.upstream}</TableHead>
+          <TableHead className="text-right">{t.models}</TableHead>
           {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
-          <TableHead className="w-40">额度 / 计费</TableHead>
-          <TableHead className="text-right">24 小时</TableHead>
-          <TableHead className="text-right">首字节 P50</TableHead>
+          <TableHead className="w-40">{t.quota}</TableHead>
+          <TableHead className="text-right">{t.day}</TableHead>
+          <TableHead className="text-right">{t.ttfb}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
@@ -91,15 +96,15 @@ export function UpstreamTable({
                     <span className={p.disabled ? "font-medium text-muted-foreground" : "font-medium"}>
                       {p.name}
                     </span>
-                    {p.trust === "official" && <Badge variant="secondary">官方端点</Badge>}
+                    {p.trust === "official" && <Badge variant="secondary">{t.official}</Badge>}
                     {/* 订阅类账号：套餐决定了额度有多大，和名字放在一起看 */}
                     {planLabel(accounts[p.name]?.plan) && (
                       <Badge variant="outline">{planLabel(accounts[p.name]?.plan)}</Badge>
                     )}
                     {p.disabled ? (
-                      <Badge variant="outline">已停用</Badge>
+                      <Badge variant="outline">{t.disabled}</Badge>
                     ) : p.health === "open" ? (
-                      <Badge variant="warning">熔断中</Badge>
+                      <Badge variant="warning">{t.circuitOpen}</Badge>
                     ) : null}
                   </div>
                   {/*
@@ -113,7 +118,7 @@ export function UpstreamTable({
                 <DayCell p={p} stats={stats} />
                 <LatencyCell p={p} stats={stats} />
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${p.name} 的操作`} />
+                  <RowMenuButton items={items} label={t.actions(p.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>
@@ -125,20 +130,22 @@ export function UpstreamTable({
 }
 
 function menu(p: ProviderView, a: UpstreamActions): MenuItems {
+  const t = textOf(upstreamTableText);
+  const c = textOf(commonText);
   return [
-    { kind: "item", label: "编辑…", onSelect: () => a.edit(p.name) },
-    { kind: "item", label: "检测连接", onSelect: () => a.test(p.name) },
-    { kind: "item", label: "链路测速", onSelect: () => a.linkTest(p.name) },
-    { kind: "item", label: "推理测速…", onSelect: () => a.speedTest(p.name) },
-    { kind: "item", label: "刷新模型列表", onSelect: () => a.refreshModels(p.name) },
+    { kind: "item", label: `${c.edit}…`, onSelect: () => a.edit(p.name) },
+    { kind: "item", label: t.check, onSelect: () => a.test(p.name) },
+    { kind: "item", label: t.linkTest, onSelect: () => a.linkTest(p.name) },
+    { kind: "item", label: t.speedTest, onSelect: () => a.speedTest(p.name) },
+    { kind: "item", label: t.refreshModels, onSelect: () => a.refreshModels(p.name) },
     ...(p.protocol === "chatgpt"
-      ? ([{ kind: "item", label: "额度与重置卡…", onSelect: () => a.account(p.name) }] as MenuItems)
+      ? ([{ kind: "item", label: t.account, onSelect: () => a.account(p.name) }] as MenuItems)
       : []),
     { kind: "sep" },
-    { kind: "item", label: p.disabled ? "启用" : "停用", onSelect: () => a.toggle(p) },
-    { kind: "item", label: "在配置文件中定位", onSelect: () => a.locate(p.name) },
+    { kind: "item", label: p.disabled ? t.enable : t.disable, onSelect: () => a.toggle(p) },
+    { kind: "item", label: t.locate, onSelect: () => a.locate(p.name) },
     { kind: "sep" },
-    { kind: "item", label: "删除…", onSelect: () => a.remove(p.name), danger: true },
+    { kind: "item", label: `${c.delete}…`, onSelect: () => a.remove(p.name), danger: true },
   ];
 }
 
@@ -149,10 +156,11 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
  * 留给邮箱：登了两个账号时，它是唯一能分辨哪行是哪个的东西。
  */
 function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
+  const t = useText(upstreamTableText);
   // 账号类上游的地址永远是同一个，名字后面的「官方端点」已经说了它在哪
   const isAccount = p.protocol === "chatgpt";
   const where = isAccount ? (account?.email ?? null) : shortUrl(p.base_url);
-  const egress = p.proxy === "direct" ? "" : ` · 经 ${egressLabel(p.proxy)}`;
+  const egress = p.proxy === "direct" ? "" : ` · ${t.via(egressLabel(p.proxy))}`;
   const full = [protocolLabel(p.protocol), isAccount ? account?.email : p.base_url]
     .filter(Boolean)
     .join(" · ");
@@ -174,12 +182,14 @@ function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
  * 为了看一眼进编辑对话框再点刷新。停用的上游不提供模型，状态一栏已经说了。
  */
 function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
+  const t = useText(upstreamTableText);
+  const l = useText(labelsText);
   const [open, setOpen] = useState(false);
   if (p.disabled) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
   const face = modelFace(p);
-  const busy = p.model_fetching || face.note === "获取中";
+  const busy = p.model_fetching || face.note === l.models.fetching;
   return (
     <TableCell className="text-right">
       <Popover open={open} onOpenChange={setOpen}>
@@ -188,7 +198,7 @@ function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
           基线的线它自己就把它挡了
         */}
         <PopoverTrigger
-          aria-label={`${p.name} 的模型`}
+          aria-label={t.modelsOf(p.name)}
           className="-my-1 -mr-2 inline-flex min-w-12 flex-col items-end rounded-md px-2 py-1 transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none aria-expanded:bg-muted"
         >
           <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -224,6 +234,7 @@ function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
  * 退回说计费方式**：画一根 0% 的空条等于说「一点没用」，而事实是不知道。
  */
 function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null }) {
+  const t = useText(upstreamTableText);
   const windows = stats?.quotas.find((q) => q.provider === p.name)?.windows ?? [];
   // 最紧张的那个窗口：先到的那条线决定什么时候用完
   const tight = windows.reduce<(typeof windows)[number] | null>(
@@ -236,7 +247,7 @@ function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null 
       <TableCell>
         <div className="flex items-baseline justify-between gap-2">
           {/* **要说清楚这个数是用掉的还是剩下的**：一根填了一半的条，两种读法都成立 */}
-          <span className="tabular-nums">已用 {Math.round(tight.used_percent)}%</span>
+          <span className="tabular-nums">{t.used(Math.round(tight.used_percent))}</span>
           <span className="tw-label text-muted-foreground">
             {reset ? `${quotaWindowLabel(tight.window)} · ${reset}` : quotaWindowLabel(tight.window)}
           </span>
@@ -244,7 +255,7 @@ function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null 
         <Progress
           value={tight.used_percent}
           className="mt-1"
-          aria-label={`${quotaWindowLabel(tight.window)}额度`}
+          aria-label={t.quotaOf(quotaWindowLabel(tight.window))}
         />
       </TableCell>
     );
@@ -258,7 +269,7 @@ function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null 
         {billingLabel(billing)}
       </div>
       {billing === "per-token" && (
-        <div className="tw-label text-muted-foreground">价目表 {p.pricing ?? "默认"}</div>
+        <div className="tw-label text-muted-foreground">{t.sheet(p.pricing ?? t.defaultSheet)}</div>
       )}
     </TableCell>
   );
@@ -271,6 +282,7 @@ function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null 
  * 两个数只有放在一起才有意义。
  */
 function DayCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null }) {
+  const t = useText(upstreamTableText);
   const cost = stats?.costs.find((c) => c.name === p.name);
   if (!cost || cost.requests === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
@@ -278,17 +290,17 @@ function DayCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null })
   const billing = p.billing ?? p.billing_effective;
   return (
     <TableCell className="text-right tabular-nums">
-      <div>{cost.requests.toLocaleString()} 次</div>
+      <div>{t.requests(cost.requests)}</div>
       <div className="tw-label text-muted-foreground">
         {billing === "subscription" ? (
-          "订阅内"
+          t.inSubscription
         ) : billing === "unknown" ? (
-          "费用未知"
+          t.costUnknown
         ) : (
           <>
             {usd(cost.cost_micros)}
             {cost.unpriced_requests > 0 && (
-              <span className="text-warning"> · {cost.unpriced_requests} 次无法计价</span>
+              <span className="text-warning"> · {t.unpriced(cost.unpriced_requests)}</span>
             )}
           </>
         )}
