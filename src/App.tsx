@@ -17,7 +17,7 @@ import Config from "./Config";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
-import Keys from "./Keys";
+import KeysPage from "./keys/KeysPage";
 import RoutingPage from "./routing/RoutingPage";
 import Security from "./Security";
 import Guard from "./Guard";
@@ -1087,10 +1087,7 @@ export default function App() {
       ) : tab === "dashboard" ? (
         <Dashboard tick={dashTick} ov={ov} />
       ) : tab === "clients" ? (
-        <Clients
-          clientKeys={(ov?.clients ?? []).map((c) => c.name)}
-          configVersion={configVersion}
-        />
+        <Clients />
       ) : tab === "security" ? (
         <Security alerts={alerts} onSeen={clearAlerts} />
       ) : tab === "guard" ? (
@@ -1105,10 +1102,12 @@ export default function App() {
         )
       ) : tab === "keys" ? (
         ov ? (
-          <Keys
+          <KeysPage
             ov={ov}
             configVersion={configVersion}
             onChanged={() => setNudge((n) => n + 1)}
+            onOpenConfigFile={(focus) => setConfigFile({ focus })}
+            onNavigate={(to) => setTab(to as Surface)}
           />
         ) : (
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>

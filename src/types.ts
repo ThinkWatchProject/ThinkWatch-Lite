@@ -1070,12 +1070,59 @@ export interface GroupView {
 
 export interface ClientView {
   name: string;
+  /** 已脱敏。要明文走 `copy_key` */
   key: string;
   max_concurrent: number | null;
   /** 绑的那条路由。`null` = 走默认路由 */
   route?: string | null;
   /** 能看到哪些模型。三态：不写 / 写非空 / 写 `[]`（一个都不给） */
   allow?: string[] | null;
+  /** 为哪个客户端生成的（`claude-code` / `codex` …）。取消接管后仍然记着 */
+  client?: string | null;
+  /** 停用之后，用这把密钥的请求一律拒绝 */
+  disabled?: boolean;
+  /** 没有为自己生成密钥的客户端用的就是它。**删不得** */
+  default?: boolean;
+  /** 最后一次被用在什么时候。按密钥算，从来没用过时没有 */
+  last_seen_ms?: number | null;
+}
+
+/** 一把密钥上用户能改的东西。**密钥的值不在里面** —— 要换走更换 */
+export interface KeyInput {
+  name: string;
+  max_concurrent?: number | null;
+  route?: string | null;
+  allow?: string[] | null;
+  disabled?: boolean;
+}
+
+export interface KeySave {
+  key: KeyInput;
+  base_version?: string | null;
+}
+
+/** 更换之后的结果 */
+export interface KeyRotated {
+  version: string;
+  /** 新的密钥值。**只在这里给一次** */
+  key: string;
+  /** 跟着改好的客户端 */
+  synced: KeySynced[];
+  /** 同步不上的。**密钥已经换了**，这些要用户自己去改 */
+  failed: KeySyncFailed[];
+}
+
+export interface KeySynced {
+  client: string;
+  name: string;
+  takes_effect: TakesEffect;
+  backup: string;
+}
+
+export interface KeySyncFailed {
+  client: string;
+  name: string;
+  error: string;
 }
 
 export interface ListenView {
