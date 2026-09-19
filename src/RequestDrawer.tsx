@@ -18,7 +18,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { XIcon } from "lucide-react";
 import { priceSourceDetail } from "./upstreams/labels";
-import { attemptText, formatLabel, quoteText } from "./labels";
+import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
 import {
   Table,
   TableBody,
@@ -282,7 +282,7 @@ export default function RequestDrawer({
                       有用** */}
                   <div className="space-y-1">
                     <Row label="命中规则" value={r.routing.rule} />
-                    {r.routing.group && <Row label="经过策略组" value={r.routing.group} />}
+                    {r.routing.group && <Row label="经过策略组" value={targetLabel(r.routing.group)} />}
                   </div>
                   <div>
                     <div className="tw-body font-medium">尝试链</div>

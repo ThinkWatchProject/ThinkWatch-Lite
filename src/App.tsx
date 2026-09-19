@@ -18,7 +18,7 @@ import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
 import Keys from "./Keys";
-import Routes from "./Routes";
+import RoutingPage from "./routing/RoutingPage";
 import Security from "./Security";
 import Guard from "./Guard";
 import { Notices } from "./Notices";
@@ -1113,20 +1113,13 @@ export default function App() {
         )
       ) : tab === "routing" ? (
         ov ? (
-          <>
-            <Routes
-              ov={ov}
-              configVersion={configVersion}
-              onChanged={() => setNudge((n) => n + 1)}
-            />
-            {/* 试算和策略组还在 Config 里 —— 它俩和文本模式那条路缠着 */}
-            <Config
-              section="routing"
-              ov={ov}
-              configVersion={configVersion}
-              onOpenConfigFile={(focus) => setConfigFile({ focus })}
-            />
-          </>
+          <RoutingPage
+            ov={ov}
+            configVersion={configVersion}
+            onChanged={() => setNudge((n) => n + 1)}
+            onOpenConfigFile={(focus) => setConfigFile({ focus })}
+            onNavigate={(to) => setTab(to as Surface)}
+          />
         ) : (
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>
         )
@@ -1149,7 +1142,6 @@ export default function App() {
             section={tab === "settings" ? "settings" : "gateway"}
             ov={ov}
             configVersion={configVersion}
-            onOpenConfigFile={(focus) => setConfigFile({ focus })}
           />
         ) : (
           <p className="p-5 tw-body text-muted-foreground">读取配置中…</p>

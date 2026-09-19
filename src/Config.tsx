@@ -4,10 +4,9 @@ import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
-import DryRun from "./DryRun";
 import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
-import type { ConfigText, NicView, Overview, PatchOp } from "./types";
+import type { NicView, Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -17,7 +16,7 @@ import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
-import { GROUP_KINDS, PROBES } from "./labels";
+import { PROBES } from "./labels";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { ButtonGroup } from "@/ui/button-group";
 
@@ -115,64 +114,6 @@ function EditableCell({
       variant="inline"
       className={cn(mono && "font-mono")}
     />
-  );
-}
-
-/**
- * 一个下拉改一个标量字段。
- *
- * **和 `EditableCell` 走同一条路**（`patch_config` + 乐观并发），只是
- * 输入形状不同 —— 枚举字段让用户手打，打错一个字母就是一次静默的
- * 「配了没生效」。
- */
-function SelectCell({
-  value,
-  options,
-  path,
-  version,
-  onDone,
-}: {
-  value: string;
-  /** `[写进 YAML 的值, 显示给人看的字]` */
-  options: [string, string][];
-  path: string;
-  version: string | null;
-  onDone?: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <NativeSelect
-      size="inline"
-      value={value}
-      disabled={busy}
-      onChange={async (ev) => {
-        if (!version) {
-          toast.error("配置版本尚未读取，请稍后重试");
-          return;
-        }
-        const v = ev.target.value;
-        setBusy(true);
-        try {
-          await patchConfig(
-            // 空串写成 null —— 「没写这个字段」和「写了个空值」是两回事，
-            // 而前者才是「按默认/自动判」的意思
-            [{ op: "replace", path, value: v === "" ? null : v }],
-            version,
-          );
-          onDone?.();
-        } catch (err) {
-          toast.error(typeof err === "string" ? err : String(err));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {options.map(([v, label]) => (
-        <NativeSelectOption key={v} value={v}>
-          {label}
-        </NativeSelectOption>
-      ))}
-    </NativeSelect>
   );
 }
 
@@ -594,182 +535,25 @@ export default function Config({
   section = "gateway",
   ov,
   configVersion,
-  onOpenConfigFile,
 }: {
   /**
-   * 这一次渲染哪一域。
-   *
-   * `routing` 这一域现在只剩「试算」和「策略组」—— 路由本身在
-   * `Routes.tsx`，上游、代理与价目表在 `upstreams/`。路由页把两个组件叠起来
-   * 渲染，对用户是一页。
+   * 这一次渲染哪一域。路由与策略组在 `routing/`，上游、代理与价目表在
+   * `upstreams/`。
    */
-  section?: "gateway" | "routing" | "settings";
+  section?: "gateway" | "settings";
   ov: Overview;
   configVersion: string | null;
-  /** 打开配置文件并定位到这个名字 */
-  onOpenConfigFile: (focus: string | null) => void;
 }) {
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
       .then(setAutostart)
       .catch(() => setAutostart(false));
   }, []);
-  const [cfg, setCfg] = useState<ConfigText | null>(null);
   // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
   // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
   const [autostart, setAutostart] = useState<boolean | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  // 每次配置换了版本就重新拉一遍 —— 手里那份的 version 过期之后，
-  // 下一次编辑会撞 409，而用户看不出为什么
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const c = await invoke<ConfigText>("get_config");
-        if (alive) setCfg(c);
-      } catch (e) {
-        if (alive) toast.error(typeof e === "string" ? e : String(e));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [configVersion, reloadKey]);
   return (
     <div className="space-y-8 p-5">
-      {section === "routing" && <DryRun models={[]} />}
-
-      {/* 分组这个概念只在真的有组的时候出现 */}
-      {section === "routing" && ov.groups.length > 0 && (
-        <section>
-          <h2 className="tw-title font-semibold">策略组</h2>
-          <ul className="mt-2 space-y-1.5">
-            {ov.groups.map((g) => (
-              <li
-                key={g.name}
-                data-row={g.name}
-                className="rounded-md border border-border px-3 py-2 tw-body"
-              >
-                <div className="flex items-baseline gap-2">
-                  <span className="font-medium">{g.name}</span>
-                  <Tip text="在配置文件中定位此段">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => onOpenConfigFile(g.name)}
-                  >
-                    ↗
-                  </Button>
-                  </Tip>
-                  <SelectCell
-                    value={g.kind}
-                    options={GROUP_KINDS.map((k) => [k.id, k.label])}
-                    path={`/groups/${g.name}/type`}
-                    version={cfg?.version ?? null}
-                    onDone={() => setReloadKey((k) => k + 1)}
-                  />
-                  <span className="ml-auto font-mono text-muted-foreground">
-                    {g.providers.join(" → ")}
-                  </span>
-                </div>
-                {/*
-                  **`select` 组要能在这儿切。**这个策略本身就是
-                  「UI 上点选」，而切不了的话它等于一个只能改 YAML
-                  才能用的功能。
-
-                  选中之后其余的仍然留着做故障转移 —— 手动选择一个上游不等于
-                  放弃容错，所以这里说的是「优先」而不是「只用」。
-                */}
-                {g.kind === "select" && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-muted-foreground">优先使用</span>
-                    <NativeSelect
-                      size="inline"
-                      value={g.selected ?? ""}
-                      onChange={async (ev) => {
-                        const v = ev.target.value;
-                        if (!cfg?.version) {
-                          toast.error("配置版本尚未读取，请稍后重试");
-                          return;
-                        }
-                        try {
-                          await patchConfig([
-                              {
-                                op: "replace",
-                                path: `/groups/${g.name}/selected`,
-                                value: v,
-                              },
-                            ], cfg.version);
-                          setReloadKey((k) => k + 1);
-                        } catch (err) {
-                          toast.error(typeof err === "string" ? err : String(err));
-                        }
-                      }}
-                    >
-                      {g.providers.map((p) => (
-                        <NativeSelectOption key={p} value={p}>
-                          {p}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                    <span className="text-muted-foreground">
-                      其余上游作为故障转移备选
-                    </span>
-                  </div>
-                )}
-                {/*
-                  **会话粘滞要摆在明面上，因为它直接决定账单。**
-                  关掉它，一次长会话每轮跳一家，prompt cache 全部失效，
-                  而缓存命中与否成本差 5 到 10 倍。
-                */}
-                {g.kind === "load-balance" && (
-                  <Field
-                    orientation="horizontal"
-                    className="mt-1.5 w-auto text-muted-foreground"
-                  >
-                    <Checkbox
-                      id={`sticky-${g.name}`}
-                      checked={g.session_affinity ?? true}
-                      onCheckedChange={async (checked) => {
-                        if (!cfg?.version) {
-                          toast.error("配置版本尚未读取，请稍后重试");
-                          return;
-                        }
-                        try {
-                          await patchConfig([
-                              {
-                                op: "replace",
-                                path: `/groups/${g.name}/session_affinity`,
-                                value: checked === true,
-                              },
-                            ], cfg.version);
-                          setReloadKey((k) => k + 1);
-                        } catch (err) {
-                          toast.error(typeof err === "string" ? err : String(err));
-                        }
-                      }}
-                    />
-                    <FieldLabel htmlFor={`sticky-${g.name}`}>
-                      会话粘滞（同一会话固定使用同一上游）
-                    </FieldLabel>
-                  </Field>
-                )}
-                {g.hurts_cache && (
-                  // 这句必须在界面上直说：它决定了用户的账单。
-                  // 缓存命中与否成本差 5 到 10 倍，而为了省 20% 的单价
-                  // 丢掉 90% 的缓存折扣，是一笔怎么算都不划算的账。
-                  <p className="mt-1.5 text-amber-700 dark:text-amber-400">
-                    ⚠ 此策略会使 prompt cache 失效，长会话的费用将明显上升。
-                    {g.kind === "load-balance" ? "开启会话粘滞可避免此问题。" : ""}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {section === "settings" && (
         <section>
           <h2 className="tw-title font-semibold">开机启动</h2>

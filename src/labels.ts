@@ -38,6 +38,14 @@ export function groupKindLabel(kind: string): string {
   return GROUP_KINDS.find((k) => k.id === kind)?.label ?? kind;
 }
 
+/** 内置策略组在配置里的名字。**界面上不出现它**，显示为「全部上游」 */
+export const ALL_UPSTREAMS = "__all__";
+
+/** 规则去向、策略组、流量详情里的一个策略组或上游名 */
+export function targetLabel(name: string): string {
+  return name === ALL_UPSTREAMS ? "全部上游" : name;
+}
+
 /** 客户端和上游的格式。和上游协议同一个词表，认不出时原样显示 */
 export function formatLabel(id: string): string {
   return PROTOCOLS.find((p) => p.id === id)?.label ?? id;
@@ -81,15 +89,20 @@ const CONDITION_NAMES: Record<string, string> = {
   max_tokens: "max_tokens",
   tool_count: "工具数",
   intent: "辅助请求",
-  provider_would_be: "预定上游",
+  provider_would_be: "选定上游",
 };
+
+/** 条件的名称。是否类条件用「满足」时的说法 */
+export function conditionName(field: string): string {
+  return FLAGS[field]?.[0] ?? CONDITION_NAMES[field] ?? field;
+}
 
 /** 值是比较式的条件 */
 const COUNTS = new Set(["input_tokens", "max_tokens", "tool_count"]);
 
 /** 条件里写的值怎么念：辅助请求和格式换成名称，其余原样 */
 function conditionValue(field: string, value: string): string {
-  if (field === "intent") return probeLabel(value);
+  if (field === "intent") return value === "assistant_internal" ? "任一辅助请求" : probeLabel(value);
   if (field === "dialect") return formatLabel(value);
   return value;
 }
@@ -112,8 +125,13 @@ export function mismatchText(m: MismatchView): string {
   }
   const name = CONDITION_NAMES[m.field] ?? m.field;
   const want = m.want.map((v) => conditionValue(m.field, v)).join(" 或 ");
-  // 辅助请求为空说的是「这是用户自己发的请求」
-  const got = m.field === "intent" && m.got === "" ? "用户请求" : conditionValue(m.field, m.got);
+  // 辅助请求为空说的是「这是用户自己发的请求」；max_tokens 为空是请求里没写
+  const got =
+    m.field === "intent" && m.got === ""
+      ? "用户请求"
+      : m.field === "max_tokens" && m.got === ""
+        ? "未设置"
+        : conditionValue(m.field, m.got);
   // 数量条件写的是比较式（`>200k`），前面不加「为」
   return COUNTS.has(m.field)
     ? `要求${name} ${want}，实际为 ${got}`

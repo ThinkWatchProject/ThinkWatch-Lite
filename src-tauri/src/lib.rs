@@ -17,6 +17,7 @@ pub mod control;
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
+pub mod routing;
 pub mod supervisor;
 pub mod update;
 pub mod upstreams;
@@ -1242,6 +1243,14 @@ pub fn run() {
             config_history,
             config_at,
             rollback_config,
+            routing::create_route,
+            routing::update_route,
+            routing::delete_route,
+            routing::set_default_route,
+            routing::create_group,
+            routing::update_group,
+            routing::delete_group,
+            routing::known_models,
             upstreams::create_provider,
             upstreams::update_provider,
             upstreams::delete_provider,

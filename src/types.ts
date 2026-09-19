@@ -728,15 +728,83 @@ export interface LimitsView {
   queue_timeout_secs: number;
 }
 
-/** 一条规则 */
+/** 一条规则。**全文**：编辑对话框靠它回填，交回去的 `RuleInput` 是同一套写法 */
 export interface RuleView {
   name: string;
-  /** 去向：上游名或组名。拒绝的规则和只改参数的规则没有 */
-  to?: string | null;
-  /** 命中就拒绝 */
-  deny?: boolean;
   /** `when` 里写了的条件，按固定顺序。空 = 兜底 */
   conditions: ConditionView[];
+  /** 去向：上游名或组名。拒绝的规则和只附加改写、安全要求的规则没有 */
+  to?: string | null;
+  /** 命中就拒绝，值是返回给客户端的原因 */
+  deny?: string | null;
+  set?: RuleRewrite | null;
+  guard?: RuleGuard | null;
+  /** 没有条件，匹配全部请求 */
+  catch_all: boolean;
+  /** 在选定上游之后才判断 */
+  phase_two: boolean;
+  /** 转发或拒绝不会被采用：前面已有一条匹配全部请求的转发或拒绝。附加项照常生效 */
+  shadowed: boolean;
+}
+
+/** 规则里的参数改写。不写就是不改 */
+export interface RuleRewrite {
+  model?: string | null;
+  max_tokens?: number | null;
+  thinking?: boolean | null;
+}
+
+/** 规则里的安全要求。只能收紧 */
+export interface RuleGuard {
+  /** 额外脱敏的类别，和上游的脱敏类别同一套标识符 */
+  redact?: string[];
+  /** 按非官方端点处理 */
+  untrusted?: boolean;
+}
+
+/** 新建或修改路由时交过去的一条规则 */
+export interface RuleInput {
+  name: string;
+  /** 空 = 兜底 */
+  conditions: ConditionView[];
+  to?: string | null;
+  deny?: string | null;
+  set?: RuleRewrite | null;
+  guard?: RuleGuard | null;
+}
+
+/** 新建或修改路由时交过去的定义。**规则的顺序就是数组的顺序** */
+export interface RouteInput {
+  name: string;
+  rules: RuleInput[];
+}
+
+export interface RouteSave {
+  route: RouteInput;
+  base_version?: string;
+  /** 保存之后恰好使用这条路由的密钥。不给就不动 */
+  keys?: string[];
+  /** 一并设为「交给路由」的辅助请求类别：规则里的辅助请求条件只对它们生效 */
+  route_probes?: string[];
+}
+
+export interface GroupInput {
+  name: string;
+  kind: GroupKind;
+  providers: string[];
+  selected?: string | null;
+  session_affinity: boolean;
+}
+
+export interface GroupSave {
+  group: GroupInput;
+  base_version?: string;
+}
+
+/** 网关知道的一个模型，以及能提供它的上游 */
+export interface KnownModel {
+  id: string;
+  providers: string[];
 }
 
 /** 规则里的一个条件 */
@@ -956,11 +1024,15 @@ export interface PriceSheetView {
   used_by: string[];
 }
 
-/** 一条路由 —— 一组规则，加上绑了它的密钥 */
+/** 一条路由 —— 一组规则，加上指定了它的密钥 */
 export interface RouteView {
   name: string;
-  /** 没绑路由的密钥走的就是这条 */
+  /** 没指定路由的密钥使用的就是这条 */
   default: boolean;
+  /** 网关按配置补出来的默认路由：配置文件里没有它，编辑并保存即写入 */
+  builtin: boolean;
+  /** 有一条匹配全部请求的转发或拒绝 */
+  has_catch_all: boolean;
   /** **显式绑了这条的密钥。**默认路由这里通常是空的 —— 走它的人是「没绑」 */
   clients: string[];
   rules: RuleView[];
@@ -971,6 +1043,8 @@ export type GroupKind = "fallback" | "select" | "load-balance" | "url-test" | "c
 
 export interface GroupView {
   name: string;
+  /** 内置的「全部上游」：成员是全部上游，按上游列表的顺序。不能编辑、不能删除 */
+  builtin: boolean;
   kind: GroupKind;
   /** 同一次会话固定走同一家。**这一项直接决定账单** */
   session_affinity?: boolean;
@@ -1242,6 +1316,8 @@ export interface RuleTrace {
   name: string;
   /** `phase_two`：条件要等选定上游之后才能求值，静态试算给不了结论 */
   verdict: "matched" | "skipped" | "phase_two";
+  /** 命中时它起了什么作用 */
+  effect?: "decide" | "apply" | "none" | null;
   /** 没命中时，第一个没对上的条件 */
   mismatch?: MismatchView | null;
   /** 条件本身写错了、没法求值时的说明 */
@@ -1265,7 +1341,29 @@ export interface SetView {
   value: string;
 }
 
+/** 试算的请求。求值对象三选一：草稿 > 路由 > 密钥使用的路由 */
+export interface DryRunRequest {
+  model: string;
+  /** 发出请求的密钥。规则里的密钥条件也按它判断 */
+  client: string;
+  route?: string | null;
+  draft?: RouteInput | null;
+  dialect: string;
+  input_tokens: number;
+  max_tokens: number | null;
+  cache: boolean;
+  tools: boolean;
+  tool_count: number;
+  image: boolean;
+  thinking: boolean;
+  stream: boolean;
+  /** 辅助请求的类别。空 = 用户请求 */
+  intent: string;
+}
+
 export interface DryRunResult {
+  /** 按哪条路由求的值。草稿是草稿的名字 */
+  route: string;
   /** `unavailable`：规则选中的上游都服务不了这个请求，原因见 `skipped` */
   outcome: "route" | "deny" | "no_match" | "unavailable";
   /** 经过的策略组按什么排序候选。直指上游时没有 */
