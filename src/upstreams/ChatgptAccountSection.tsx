@@ -19,7 +19,7 @@ import { Spinner } from "@/ui/spinner";
 import { resetIn } from "@/format";
 import type { ChatgptUsage, Overview, ProviderView, ResetCredits, ResetCreditView } from "@/types";
 import { api } from "./api";
-import { errorText, proxyKindLabel, quotaWindowLabel } from "./labels";
+import { errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
 import { FormItem } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
@@ -140,7 +140,12 @@ export function ChatgptAccountSection({
         </FormItem>
       </div>
 
-      <LoginBox editing={editing} plan={usage?.plan ?? null} onRelogin={onRelogin} />
+      <LoginBox
+        editing={editing}
+        email={usage?.email ?? null}
+        plan={usage?.plan ?? null}
+        onRelogin={onRelogin}
+      />
 
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
@@ -161,7 +166,7 @@ export function ChatgptAccountSection({
                   <div className="flex items-baseline justify-between tw-body">
                     <span>{quotaWindowLabel(w.window)}窗口</span>
                     <span className="tabular-nums text-muted-foreground">
-                      {Math.round(w.used_percent)}%{reset && ` · ${reset}重置`}
+                      已用 {Math.round(w.used_percent)}%{reset && ` · ${reset}重置`}
                     </span>
                   </div>
                   <Progress value={Math.min(100, w.used_percent)} />
@@ -244,13 +249,20 @@ export function ChatgptAccountSection({
   );
 }
 
-/** 登录状态：**凭据失效时这里是唯一的出路**，所以它自己就带着重新登录 */
+/**
+ * 登录状态。
+ *
+ * 先说**登的是哪个账号** —— 上游的名字是用户自己取的，说明不了这一条。
+ * **凭据失效时这里是唯一的出路**，所以它自己就带着重新登录。
+ */
 function LoginBox({
   editing,
+  email,
   plan,
   onRelogin,
 }: {
   editing: ProviderView;
+  email: string | null;
   plan: string | null;
   onRelogin: () => void;
 }) {
@@ -262,9 +274,9 @@ function LoginBox({
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="tw-body font-medium">
-            {broken ? "登录已失效" : "已登录"}
-            {plan && !broken && ` · ${plan}`}
+          <p className="truncate tw-body font-medium" title={email ?? undefined}>
+            {broken ? "登录已失效" : (email ?? "已登录")}
+            {planLabel(plan) && !broken && ` · ${planLabel(plan)}`}
           </p>
           <p className="tw-label text-muted-foreground">
             {broken

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIcon, CircleAlertIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -14,7 +14,7 @@ import {
 import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import type { Overview, PricingStatus } from "@/types";
+import type { ChatgptUsage, Overview, PricingStatus } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
@@ -100,6 +100,40 @@ export default function UpstreamsPage({
     const t = setInterval(loadStats, 30_000);
     return () => clearInterval(t);
   }, [loadStats]);
+
+  /**
+   * 账号类上游：**打开这一页时问一次它自己。**
+   *
+   * 一次问答同时回答三件事：登的是哪个账号、什么套餐、额度还剩多少。
+   * 这三件都不在配置里 —— 额度平时是跟着真实流量白捡的，所以刚启动、
+   * 或者这个账号今天还没被用过时，不问就什么都没有。
+   *
+   * **每个上游只问一次。**问一次是一次真实调用；失败了也不再问 —— 连不上时
+   * 三十秒重试一轮，只会把错误刷满日志。
+   */
+  const [accounts, setAccounts] = useState<Record<string, ChatgptUsage>>({});
+  const askedUsage = useRef(new Set<string>());
+  useEffect(() => {
+    const fresh = ov.providers.filter(
+      (p) => p.protocol === "chatgpt" && !p.disabled && !askedUsage.current.has(p.name),
+    );
+    if (fresh.length === 0) return;
+    fresh.forEach((p) => askedUsage.current.add(p.name));
+    void Promise.all(
+      fresh.map((p) =>
+        api
+          .chatgptUsage(p.name)
+          .then((u) => [p.name, u] as const)
+          .catch(() => null),
+      ),
+    ).then((rs) => {
+      const got = rs.filter((r) => r !== null);
+      if (got.length === 0) return;
+      setAccounts((a) => ({ ...a, ...Object.fromEntries(got) }));
+      // 额度 core 那边也记下了，从它再读一遍，免得这里和它各存一份
+      loadStats();
+    });
+  }, [ov.providers, loadStats]);
   useEffect(() => {
     loadStatus();
   }, [loadStatus, configVersion]);
@@ -277,6 +311,7 @@ export default function UpstreamsPage({
             <UpstreamTable
               ov={ov}
               stats={stats}
+              accounts={accounts}
               actions={{
                 edit: (name) => setDialog({ kind: "upstream", mode: { kind: "edit", name } }),
                 test: (name) => setDialog({ kind: "test", name }),

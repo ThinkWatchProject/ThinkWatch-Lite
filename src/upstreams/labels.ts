@@ -89,6 +89,31 @@ export function modelSourceLabel(source: string): string {
 }
 
 /** 订阅额度窗口：`5h` / `7d` / `weekly` */
+/** 模型清单是怎么来的。自动获取、范围也没限制时不用说 */
+export function modelSourceNote(p: ProviderView): string | null {
+  if (p.model_source === "manual") return "手动清单";
+  if (p.model_source === "none") return "未获取";
+  return p.models_only ? "指定范围" : null;
+}
+
+/**
+ * 订阅类型。**认不出来的原样显示** —— OpenAI 随时会多出一个
+ * 新名字，把它显示成「未知」比直接写出那个词更差。
+ */
+export function planLabel(plan: string | null | undefined): string | null {
+  if (!plan) return null;
+  const known: Record<string, string> = {
+    free: "Free",
+    plus: "Plus",
+    pro: "Pro",
+    team: "Team",
+    business: "Business",
+    enterprise: "Enterprise",
+    edu: "Edu",
+  };
+  return known[plan.toLowerCase()] ?? plan;
+}
+
 export function quotaWindowLabel(window: string): string {
   switch (window) {
     case "5h":
