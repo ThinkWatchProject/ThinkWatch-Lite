@@ -37,9 +37,7 @@ const CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
 const PENDING = new Set<string>([
   "src/App.tsx",
   "src/Clients.tsx",
-  "src/Dashboard.tsx",
   "src/labels.ts",
-  "src/RequestDrawer.tsx",
   "src/Sessions.tsx",
 ]);
 
