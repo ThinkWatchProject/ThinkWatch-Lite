@@ -85,6 +85,14 @@ pub async fn refresh_provider_models(
         .map_err(text)
 }
 
+/// 打开上游页时补问模型清单：还没有的、没问到的、过期的。不等上游回话。
+#[tauri::command]
+pub async fn refresh_stale_models(
+    state: tauri::State<'_, AppState>,
+) -> Out<tw_api::ModelsRefreshing> {
+    state.control.refresh_stale_models().await.map_err(text)
+}
+
 /// 上游列表那几列统计：24 小时的请求与费用、首字节耗时、订阅额度。
 ///
 /// **一起取。**列表上它们是同一行的几格，分几次 invoke 会让一行数字分几次

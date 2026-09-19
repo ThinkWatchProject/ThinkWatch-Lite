@@ -23,7 +23,7 @@ import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { errorText, protocolLabel, shortUrl } from "./labels";
-import { ModelsSection, inScope, type ModelCatalog } from "./ModelsSection";
+import { ModelsSection, catalogOf, inScope, type ModelCatalog } from "./ModelsSection";
 import { StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
@@ -163,23 +163,25 @@ export function UpstreamDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionKey]);
 
-  // 编辑：读已保存的模型清单
+  // 编辑：读已保存的模型清单。**跟着概览里这一家的获取状态重读** —— 打开对话框
+  // 时后台可能正在问，问完了这里要跟着变，不该再让人点一次刷新。
+  // 连接信息改过时不读：那时的清单对应表单里的新值，是「检测连接」带进来的
+  const modelsTick = editing ? `${editing.model_checked_at_ms ?? ""}|${editing.model_fetching}` : "";
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || connectionChanged(form, editing)) return;
     let alive = true;
     api
       .providerModels(editing.name)
       .then((v) => {
-        if (alive) setCatalog({ source: v.source, models: v.models.map((m) => m.id), checkedAtMs: v.checked_at_ms, error: v.error });
+        if (alive) setCatalog(catalogOf(v));
       })
       .catch((e) => alive && setError(errorText(e)))
       .finally(() => alive && setCatalogLoading(false));
     return () => {
       alive = false;
     };
-    // 只在打开时读一次；之后的变化由「刷新模型列表」和「检测连接」带进来
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [modelsTick]);
 
   const models = catalog?.source === "discovered" ? catalog.models : form.manualModels;
   const enabledModels = useMemo(() => models.filter((m) => inScope(form, m)), [models, form]);
@@ -220,10 +222,11 @@ export function UpstreamDialog({
       setTest(r);
       setCatalog(
         r.ok && r.models.kind === "listed"
-          ? { source: "discovered", models: r.models.models, checkedAtMs: Date.now() }
+          ? { source: "discovered", status: "listed", models: r.models.models, checkedAtMs: Date.now() }
           : {
               // 没拿到清单（连接失败，或上游不提供列表接口）：手动清单兜底
               source: form.manualModels.length > 0 ? "manual" : "none",
+              status: r.ok ? "no_list" : "failed",
               models: [],
               checkedAtMs: Date.now(),
               error: r.ok ? describeModelList(r.models) : `连接失败：${r.error ?? "未知错误"}`,
@@ -234,6 +237,7 @@ export function UpstreamDialog({
       setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error });
       setCatalog({
         source: form.manualModels.length > 0 ? "manual" : "none",
+        status: "failed",
         models: [],
         checkedAtMs: Date.now(),
         error: `连接失败：${error}`,
@@ -251,8 +255,7 @@ export function UpstreamDialog({
     }
     setRefreshing(true);
     try {
-      const v = await api.refreshProviderModels(editing.name);
-      setCatalog({ source: v.source, models: v.models.map((m) => m.id), checkedAtMs: v.checked_at_ms, error: v.error });
+      setCatalog(catalogOf(await api.refreshProviderModels(editing.name)));
     } catch (e) {
       setError(errorText(e));
     } finally {

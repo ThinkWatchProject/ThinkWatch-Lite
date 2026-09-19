@@ -21,6 +21,7 @@ import type {
   PriceSheetSave,
   PricingRefreshed,
   PricingStatus,
+  ModelsRefreshing,
   ProviderModelsView,
   ProviderPreview,
   ProviderQuota,
@@ -57,6 +58,8 @@ export const api = {
   providerModels: (name: string) => invoke<ProviderModelsView>("provider_models", { name }),
   refreshProviderModels: (name: string) =>
     invoke<ProviderModelsView>("refresh_provider_models", { name }),
+  /** 补问缺失、失败、过期的清单。**立刻回**，答案随 `models_changed` 到 */
+  refreshStaleModels: () => invoke<ModelsRefreshing>("refresh_stale_models"),
   upstreamStats: (sinceMs: number) => invoke<UpstreamStats>("upstream_stats", { sinceMs }),
 
   createProxy: (save: ProxySave) => invoke<ConfigWritten>("create_proxy", { save }),

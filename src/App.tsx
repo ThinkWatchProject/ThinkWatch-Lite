@@ -295,6 +295,7 @@ export default function App() {
     seeded,
     settled,
     health,
+    models,
     locallyAnswered,
     rejected,
     configVersion,
@@ -644,6 +645,7 @@ export default function App() {
    *
    * · 配置换了一份（`configVersion` 跟着 `config_reloaded` 走）
    * · 某家上游熔断了或恢复了（`health`，core 现在会报）
+   * · 某家上游的模型清单开始获取或获取完了（`models`）
    * · 守护状态变了 —— 重启之后监听地址和 pid 都可能不一样
    * · 用户自己刚改完东西（`nudge`）
    */
@@ -691,7 +693,7 @@ export default function App() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [configVersion, nudge, health, core, setStatus, setOv]);
+  }, [configVersion, nudge, health, models, core, setStatus, setOv]);
 
   const c = describeCore(core);
   /** 连上过、又断了。**只在这时候挂那条带子** */

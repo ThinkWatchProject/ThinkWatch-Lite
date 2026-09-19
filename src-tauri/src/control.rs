@@ -568,6 +568,11 @@ impl ControlClient {
             .await
     }
 
+    /// 补问缺失、失败、过期的模型清单。**立刻回**：答案随 `models_changed` 到
+    pub async fn refresh_stale_models(&self) -> Result<tw_api::ModelsRefreshing> {
+        self.post_json("/models/refresh", &()).await
+    }
+
     // ───────────────────────────────────────── ChatGPT 账号
 
     /// 开始一次登录。回来的地址要在浏览器里打开，core 在本机等回调
