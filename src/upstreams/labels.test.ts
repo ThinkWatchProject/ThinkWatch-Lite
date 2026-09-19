@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
 import { modelFace } from "./labels";
+
+// 断言按中文写：不随跑测试那台机器的系统语言变
+beforeAll(() => setLang("zh"));
 
 function p(patch: Partial<ProviderView>): ProviderView {
   return {

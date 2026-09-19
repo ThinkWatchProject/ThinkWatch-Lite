@@ -4,9 +4,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Spinner } from "@/ui/spinner";
+import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
 import { contextWindow, errorText, perMillion } from "./labels";
+import { modelsPanelText } from "./ModelsPanel.i18n";
 
 /** 列表长过这个数才给筛选框。十来个一眼就扫完了 */
 const FILTER_FROM = 10;
@@ -29,6 +32,8 @@ export function ModelsPanel({
   /** 打开编辑对话框的「模型」一节 */
   onEdit: () => void;
 }) {
+  const t = useText(modelsPanelText);
+  const c = useText(commonText);
   const [view, setView] = useState<ProviderModelsView | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,14 +86,14 @@ export function ModelsPanel({
     <div className="flex max-h-[min(30rem,var(--radix-popover-content-available-height))] flex-col">
       <div className="flex items-start gap-2 border-b px-3 py-2.5">
         <div className="min-w-0 flex-1">
-          <div className="tw-body font-medium">模型</div>
+          <div className="tw-body font-medium">{t.title}</div>
           <div className="tw-label text-muted-foreground">{summary(source, models.length, on.length, view)}</div>
         </div>
         <Button
           variant="ghost"
           size="icon-xs"
-          aria-label="重新获取模型列表"
-          title="重新获取模型列表"
+          aria-label={t.refetch}
+          title={t.refetch}
           disabled={fetching}
           onClick={() => void refresh()}
         >
@@ -99,36 +104,36 @@ export function ModelsPanel({
       {failed ? (
         <Problem text={failed} />
       ) : !view ? (
-        <Waiting text="正在读取" />
+        <Waiting text={t.loading} />
       ) : source === "none" && (status === "pending" || fetching) ? (
-        <Waiting text="正在获取模型列表" />
+        <Waiting text={t.fetching} />
       ) : (
         <>
           {/* 没从上游拿到清单：说为什么，指出该做什么。手动清单顶上时照样说 */}
           {status === "failed" && (
             <Problem
-              title="获取失败"
-              text={error ?? "未能连接上游。"}
+              title={t.failed}
+              text={error ?? t.unreachable}
               action={
                 <>
                   <Button size="xs" variant="outline" disabled={fetching} onClick={() => void refresh()}>
-                    重试
+                    {c.retry}
                   </Button>
                   <Button size="xs" variant="ghost" onClick={onEdit}>
-                    编辑上游…
+                    {t.editUpstream}
                   </Button>
                 </>
               }
-              after={source === "manual" ? `暂用手动清单中的 ${models.length} 个模型。` : null}
+              after={source === "manual" ? t.usingManual(models.length) : null}
             />
           )}
           {status === "no_list" && source === "none" && (
             <Problem
-              text={`${error ?? "上游未提供模型列表"}。可填写手动清单，列出此上游提供的模型。`}
+              text={t.noList(error ?? t.noListReason)}
               muted
               action={
                 <Button size="xs" variant="outline" onClick={onEdit}>
-                  填写手动清单…
+                  {t.fillManual}
                 </Button>
               }
             />
@@ -143,7 +148,7 @@ export function ModelsPanel({
                       <SearchIcon />
                     </InputGroupAddon>
                     <InputGroupInput
-                      placeholder="筛选模型"
+                      placeholder={t.filter}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                     />
@@ -165,19 +170,19 @@ export function ModelsPanel({
                       <ChevronRightIcon
                         className={cn("size-3.5 transition-transform", (showOff || q !== "") && "rotate-90")}
                       />
-                      不在启用范围内 {off.length} 个
+                      {t.notEnabled(off.length)}
                     </button>
                     {(showOff || q !== "") &&
                       shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} />)}
                   </>
                 )}
                 {q !== "" && shownOn.length + shownOff.length === 0 && (
-                  <p className="px-1.5 py-2 tw-label text-muted-foreground">无匹配的模型</p>
+                  <p className="px-1.5 py-2 tw-label text-muted-foreground">{t.noMatch}</p>
                 )}
               </div>
               <div className="border-t px-1.5 py-1.5">
                 <Button size="xs" variant="ghost" className="w-full justify-start" onClick={onEdit}>
-                  {source === "manual" ? "编辑手动清单与启用范围…" : "调整启用范围…"}
+                  {source === "manual" ? t.editManual : t.editScope}
                 </Button>
               </div>
             </>
@@ -191,19 +196,21 @@ export function ModelsPanel({
 /** 标题下那一行：多少个、从哪儿来、什么时候问的 */
 function summary(source: string, total: number, enabled: number, view: ProviderModelsView | null): string {
   if (!view) return "";
-  const count = enabled === total ? `${total} 个` : `${total} 个，已启用 ${enabled} 个`;
+  const t = textOf(modelsPanelText);
+  const count = enabled === total ? t.countAll(total) : t.countSome(total, enabled);
   if (source === "discovered") {
-    return view.checked_at_ms ? `上游列出 ${count} · ${clock(view.checked_at_ms)} 获取` : `上游列出 ${count}`;
+    return view.checked_at_ms ? t.listedAt(count, clock(view.checked_at_ms)) : t.listed(count);
   }
-  if (source === "manual") return `手动清单 ${count}`;
+  if (source === "manual") return t.manual(count);
   // 没拿到清单：那个时间是问的时间，不是拿到的时间
-  return view.checked_at_ms ? `最近一次尝试 ${clock(view.checked_at_ms)}` : "尚未获取";
+  return view.checked_at_ms ? t.lastTry(clock(view.checked_at_ms)) : t.notFetched;
 }
 
 function Row({ m, perToken }: { m: ModelRow; perToken: boolean }) {
+  const t = useText(modelsPanelText);
   const price =
     perToken && m.price
-      ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? "（估）" : ""}`
+      ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
   return (
     <div
@@ -218,12 +225,12 @@ function Row({ m, perToken }: { m: ModelRow; perToken: boolean }) {
       {price && (
         <span
           className="shrink-0 tabular-nums tw-label text-muted-foreground"
-          title="输入 / 输出，美元每百万 tokens"
+          title={t.priceTitle}
         >
           {price}
         </span>
       )}
-      <span className="w-10 shrink-0 text-right tabular-nums tw-label text-muted-foreground" title="上下文窗口">
+      <span className="w-10 shrink-0 text-right tabular-nums tw-label text-muted-foreground" title={t.context}>
         {m.context_window ? contextWindow(m.context_window) : ""}
       </span>
     </div>

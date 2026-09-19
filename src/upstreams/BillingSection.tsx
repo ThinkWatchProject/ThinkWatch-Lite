@@ -9,7 +9,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { useText } from "@/i18n";
 import type { Overview, ResolvedPrice } from "@/types";
+import { billingSectionText } from "./BillingSection.i18n";
 import { BILLINGS, PRICE_COLUMNS, billingLabel, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, FormItem, NameChips, Note } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
@@ -44,6 +46,7 @@ export function BillingSection({
   /** 为无法计价的模型设置价格：已选自定义价目表就在其中覆盖，否则新建一张 */
   onPriceModels: (models: string[]) => void;
 }) {
+  const t = useText(billingSectionText);
   const effective = form.billing || autoBilling;
   const perToken = effective === "per-token";
   const unpriced = models.filter((m) => prices[m] && !prices[m].price);
@@ -52,7 +55,7 @@ export function BillingSection({
     ? [
         ...new Set([
           ...sheet.used_by.filter((u) => u !== originalName),
-          form.name || "（新建的上游）",
+          form.name || t.newUpstream,
         ]),
       ]
     : [];
@@ -61,7 +64,7 @@ export function BillingSection({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-4">
         <FormItem
-          label="计费方式"
+          label={t.billing}
           htmlFor="up-billing"
           desc={BILLINGS.find((b) => b.id === effective)?.desc}
         >
@@ -71,9 +74,7 @@ export function BillingSection({
             value={form.billing}
             onChange={(e) => set({ billing: e.target.value })}
           >
-            <NativeSelectOption value="">
-              自动识别（{billingLabel(autoBilling)}）
-            </NativeSelectOption>
+            <NativeSelectOption value="">{t.auto(billingLabel(autoBilling))}</NativeSelectOption>
             {BILLINGS.map((b) => (
               <NativeSelectOption key={b.id} value={b.id}>
                 {b.label}
@@ -82,9 +83,9 @@ export function BillingSection({
           </NativeSelect>
         </FormItem>
         <FormItem
-          label="价目表"
+          label={t.sheet}
           htmlFor="up-sheet"
-          desc={perToken ? undefined : `计费方式为${billingLabel(effective)}时不按价目表计算费用。`}
+          desc={perToken ? undefined : t.noSheet(billingLabel(effective))}
         >
           <NativeSelect
             id="up-sheet"
@@ -95,7 +96,7 @@ export function BillingSection({
               e.target.value === NEW_SHEET ? onNewSheet() : set({ pricing: e.target.value })
             }
           >
-            <NativeSelectOption value="">默认价目表</NativeSelectOption>
+            <NativeSelectOption value="">{t.defaultSheet}</NativeSelectOption>
             {ov.price_sheets.map((s) => (
               <NativeSelectOption key={s.name} value={s.name}>
                 {s.name}
@@ -104,19 +105,19 @@ export function BillingSection({
             {form.pricing && !sheet && (
               <NativeSelectOption value={form.pricing}>{form.pricing}</NativeSelectOption>
             )}
-            <NativeSelectOption value={NEW_SHEET}>新建价目表…</NativeSelectOption>
+            <NativeSelectOption value={NEW_SHEET}>{t.newSheet}</NativeSelectOption>
           </NativeSelect>
         </FormItem>
       </div>
 
       {perToken && sheet && (
         <div className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
-          <span className="shrink-0 tw-label text-muted-foreground">使用此价目表的上游</span>
+          <span className="shrink-0 tw-label text-muted-foreground">{t.usedBy}</span>
           <NameChips names={users} empty="" />
           <div className="flex-1" />
           <Button variant="outline" size="sm" onClick={() => onEditSheet(sheet.name)}>
             <PencilIcon />
-            编辑价目表
+            {t.editSheet}
           </Button>
         </div>
       )}
@@ -124,24 +125,24 @@ export function BillingSection({
       {perToken && (
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline gap-2">
-            <span className="tw-body font-medium">生效价格</span>
+            <span className="tw-body font-medium">{t.effective}</span>
             <div className="flex-1" />
-            <span className="tw-label text-muted-foreground">美元 / 百万 tokens</span>
+            <span className="tw-label text-muted-foreground">{t.unit}</span>
           </div>
           {models.length === 0 ? (
-            <Note>模型列表为空。获取模型列表后显示各模型的生效价格。</Note>
+            <Note>{t.empty}</Note>
           ) : (
             <Boxed className="max-h-72 overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>模型</TableHead>
+                    <TableHead>{t.model}</TableHead>
                     {PRICE_COLUMNS.map((c) => (
                       <TableHead key={c.key} className="text-right">
                         {c.label}
                       </TableHead>
                     ))}
-                    <TableHead>来源</TableHead>
+                    <TableHead>{t.source}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -157,7 +158,7 @@ export function BillingSection({
                         ))}
                         <TableCell className={r?.price ? "text-muted-foreground" : "text-warning"}>
                           {r ? priceSourceLabel(r.source) : "—"}
-                          {r?.estimated && "（估算）"}
+                          {r?.estimated && t.estimated}
                         </TableCell>
                       </TableRow>
                     );
@@ -169,10 +170,10 @@ export function BillingSection({
           {unpriced.length > 0 && (
             <div className="flex items-center gap-2 tw-label text-warning">
               <CircleAlertIcon className="size-3.5 shrink-0" />
-              <span>{unpriced.length} 个模型无法计价，这些模型的请求无法计算费用。</span>
+              <span>{t.unpriced(unpriced.length)}</span>
               <div className="flex-1" />
               <Button variant="outline" size="xs" onClick={() => onPriceModels(unpriced)}>
-                设置价格…
+                {t.setPrices}
               </Button>
             </div>
           )}

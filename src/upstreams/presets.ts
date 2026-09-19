@@ -1,3 +1,6 @@
+import { textOf } from "@/i18n";
+import { presetsText } from "./presets.i18n";
+
 /**
  * 新建上游时的「服务类型」。
  *
@@ -15,9 +18,12 @@ export interface Preset {
   billing?: string;
 }
 
+/** 要翻译的名称写成 getter：每次读取都按当时的语言取 */
 export const CUSTOM: Preset = {
   id: "custom",
-  label: "自定义",
+  get label() {
+    return textOf(presetsText).custom;
+  },
   name: "",
   baseUrl: "",
   protocol: "",
@@ -60,7 +66,9 @@ export const PRESETS: Preset[] = [
   },
   {
     id: "ollama",
-    label: "Ollama（本地）",
+    get label() {
+      return textOf(presetsText).ollama;
+    },
     name: "ollama",
     baseUrl: "http://127.0.0.1:11434",
     protocol: "openai-chat",

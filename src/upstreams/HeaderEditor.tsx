@@ -2,6 +2,8 @@ import { useState } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { useText } from "@/i18n";
+import { headerEditorText } from "./HeaderEditor.i18n";
 import { headerRow, keepsSavedValue, type HeaderRow, type UpstreamForm } from "./upstreamForm";
 
 /**
@@ -17,6 +19,7 @@ export function HeaderEditor({
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
 }) {
+  const t = useText(headerEditorText);
   // 新加的那一行自动聚焦到名称
   const [focus, setFocus] = useState<number | null>(null);
   const rows = form.headers;
@@ -36,28 +39,28 @@ export function HeaderEditor({
       {rows.map((r) => (
         <div key={r.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-2">
           <Input
-            aria-label="请求头名称"
+            aria-label={t.name}
             autoFocus={r.id === focus}
             autoComplete="off"
             spellCheck={false}
             className="font-mono"
-            placeholder="名称"
+            placeholder={t.namePlaceholder}
             value={r.name}
             onChange={(e) => update(r.id, { name: e.target.value })}
           />
           <Input
-            aria-label={r.name.trim() ? `请求头「${r.name.trim()}」的值` : "请求头的值"}
+            aria-label={r.name.trim() ? t.valueOf(r.name.trim()) : t.value}
             autoComplete="off"
             spellCheck={false}
             className="font-mono"
-            placeholder={keepsSavedValue(form, r) ? "已保存，留空即保持不变" : "值"}
+            placeholder={keepsSavedValue(form, r) ? t.keepSaved : t.valuePlaceholder}
             value={r.value}
             onChange={(e) => update(r.id, { value: e.target.value })}
           />
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="删除此请求头"
+            aria-label={t.remove}
             onClick={() => set({ headers: rows.filter((x) => x.id !== r.id) })}
           >
             <XIcon />
@@ -66,7 +69,7 @@ export function HeaderEditor({
       ))}
       <Button variant="outline" size="sm" className="w-fit" onClick={add}>
         <PlusIcon />
-        添加请求头
+        {t.add}
       </Button>
     </div>
   );

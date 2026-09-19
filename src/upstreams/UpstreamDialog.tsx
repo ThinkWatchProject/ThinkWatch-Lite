@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Spinner } from "@/ui/spinner";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type {
   Overview,
   ProviderPreview,
@@ -28,6 +30,7 @@ import { StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
 import { SecuritySection } from "./SecuritySection";
+import { upstreamDialogText } from "./UpstreamDialog.i18n";
 import {
   blankForm,
   connectionChanged,
@@ -41,12 +44,7 @@ import {
 
 export type Section = "connection" | "account" | "models" | "billing" | "security";
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: "connection", label: "连接" },
-  { id: "models", label: "模型" },
-  { id: "billing", label: "计费" },
-  { id: "security", label: "安全" },
-];
+const SECTIONS: Section[] = ["connection", "models", "billing", "security"];
 
 /**
  * ChatGPT 账号上游的分节。
@@ -54,11 +52,7 @@ const SECTIONS: { id: Section; label: string }[] = [
  * **没有「连接」也没有「计费」**：地址、协议、凭据由登录决定，计费方式是订阅制 ——
  * 把这些摆成可填的表单，等于邀请用户去改一个改了就坏的东西。
  */
-const ACCOUNT_SECTIONS: { id: Section; label: string }[] = [
-  { id: "account", label: "账号" },
-  { id: "models", label: "模型" },
-  { id: "security", label: "安全" },
-];
+const ACCOUNT_SECTIONS: Section[] = ["account", "models", "security"];
 
 export type UpstreamDialogMode =
   | { kind: "create" }
@@ -95,6 +89,8 @@ export function UpstreamDialog({
   /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框。带上名字就是给它换一次凭据 */
   onChatgptLogin: (relogin?: { name: string; proxy: string }) => void;
 }) {
+  const t = useText(upstreamDialogText);
+  const c = useText(commonText);
   const editing: ProviderView | null =
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
   const taken = ov.providers.map((p) => p.name);
@@ -104,7 +100,7 @@ export function UpstreamDialog({
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
   // ChatGPT 账号是登录来的，编辑它的那一套分节也不一样
   const account = editing?.protocol === "chatgpt";
-  const sections = account ? ACCOUNT_SECTIONS : SECTIONS;
+  const sections = (account ? ACCOUNT_SECTIONS : SECTIONS).map((id) => ({ id, label: t.sections[id] }));
   const [section, setSection] = useState<Section>(
     mode.kind === "edit"
       ? (mode.section ?? (account ? "account" : "connection"))
@@ -229,7 +225,7 @@ export function UpstreamDialog({
               status: r.ok ? "no_list" : "failed",
               models: [],
               checkedAtMs: Date.now(),
-              error: r.ok ? describeModelList(r.models) : `连接失败：${r.error ?? "未知错误"}`,
+              error: r.ok ? describeModelList(r.models) : t.connectionFailed(r.error ?? t.unknownError),
             },
       );
     } catch (e) {
@@ -240,7 +236,7 @@ export function UpstreamDialog({
         status: "failed",
         models: [],
         checkedAtMs: Date.now(),
-        error: `连接失败：${error}`,
+        error: t.connectionFailed(error),
       });
     } finally {
       setTesting(false);
@@ -314,7 +310,7 @@ export function UpstreamDialog({
       {/* 固定高度：切换分节时对话框不跳动，内容在中间滚动 */}
       <DialogContent className="flex h-[min(88vh,680px)] flex-col gap-4 sm:max-w-[900px]">
         <DialogHeader>
-          <DialogTitle className="tw-title">{editing ? "编辑上游" : "新建上游"}</DialogTitle>
+          <DialogTitle className="tw-title">{editing ? t.titleEdit : t.titleNew}</DialogTitle>
           {editing ? (
             <DialogDescription>
               <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
@@ -323,9 +319,7 @@ export function UpstreamDialog({
               {!account && ` · ${shortUrl(editing.base_url)}`}
             </DialogDescription>
           ) : (
-            <DialogDescription className="sr-only">
-              填写连接信息，选择模型范围、计费方式与安全策略。
-            </DialogDescription>
+            <DialogDescription className="sr-only">{t.desc}</DialogDescription>
           )}
         </DialogHeader>
 
@@ -367,7 +361,7 @@ export function UpstreamDialog({
               catalog={catalog}
               prices={prices}
               perToken={(form.billing || autoBilling) === "per-token"}
-              sheetLabel={form.pricing ? `价目表「${form.pricing}」` : "默认价目表"}
+              sheetLabel={form.pricing ? t.namedSheet(form.pricing) : t.defaultSheet}
               loading={catalogLoading || (testing && catalog == null)}
               refreshing={refreshing || testing}
               onRefresh={refreshModels}
@@ -411,32 +405,32 @@ export function UpstreamDialog({
             <>
               {blocking && <span className="mr-auto tw-label text-muted-foreground">{blocking}</span>}
               <Button variant="outline" onClick={onClose}>
-                取消
+                {c.cancel}
               </Button>
               <Button onClick={save} disabled={saving || blocking != null}>
                 {saving && <Spinner />}
-                保存
+                {c.save}
               </Button>
             </>
           ) : (
             <>
               <Button variant="ghost" className="mr-auto" onClick={onClose}>
-                取消
+                {c.cancel}
               </Button>
               {missing && <span className="tw-label text-muted-foreground">{missing}</span>}
               {index > 0 && (
                 <Button variant="outline" onClick={() => go(sections[index - 1]!.id)}>
-                  上一步
+                  {t.back}
                 </Button>
               )}
               {index < sections.length - 1 ? (
                 <Button onClick={() => go(sections[index + 1]!.id)} disabled={missing != null}>
-                  下一步
+                  {t.next}
                 </Button>
               ) : (
                 <Button onClick={save} disabled={saving || blocking != null}>
                   {saving && <Spinner />}
-                  创建
+                  {t.create}
                 </Button>
               )}
             </>

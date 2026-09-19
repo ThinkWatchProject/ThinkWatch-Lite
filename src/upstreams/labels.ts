@@ -4,6 +4,7 @@
  * **同一个概念只有一个叫法**，所以集中在这里：列表、对话框、测速结果里
  * 说的「按量计费」「默认价目表」「自动识别」必须是同一个词。
  */
+import { textOf } from "@/i18n";
 import type {
   L1Result,
   L1Skip,
@@ -13,6 +14,13 @@ import type {
   PriceSourceView,
   ProviderView,
 } from "@/types";
+import { labelsText } from "./labels.i18n";
+
+/*
+ * 下面几张表的显示文字写成 getter：每次读取都按当时的语言取（`textOf`）。
+ * 表本身留在模块级，引用它的地方照旧读 `.label`、`.desc` —— 读取都发生在
+ * 渲染里，换了语言，下一次渲染就是新的文字。
+ */
 
 export const PROTOCOLS: { id: string; label: string }[] = [
   { id: "anthropic", label: "Anthropic Messages" },
@@ -22,35 +30,49 @@ export const PROTOCOLS: { id: string; label: string }[] = [
 ];
 
 /** 登录得来的上游，协议不在上面那张表里：它不能在新建表单里选 */
-export const CHATGPT_PROTOCOL = { id: "chatgpt", label: "ChatGPT 账号" };
+export const CHATGPT_PROTOCOL = {
+  id: "chatgpt",
+  get label() {
+    return textOf(labelsText).chatgptAccount;
+  },
+};
 
 /** 地址认不出协议、配置里也没写时，请求按客户端发来的格式原样转发 */
 export function protocolLabel(id: string | null | undefined): string {
   if (id === CHATGPT_PROTOCOL.id) return CHATGPT_PROTOCOL.label;
-  return PROTOCOLS.find((p) => p.id === id)?.label ?? "协议未识别";
+  return PROTOCOLS.find((p) => p.id === id)?.label ?? textOf(labelsText).protocolUnknown;
 }
 
-export const BILLINGS: { id: string; label: string; desc: string }[] = [
-  { id: "per-token", label: "按量计费", desc: "按价目表的单价与用量计算费用。" },
-  { id: "subscription", label: "订阅制", desc: "请求计入订阅额度，不计算费用。" },
-  { id: "free", label: "不计费", desc: "费用记为 $0，例如本地模型。" },
-  { id: "unknown", label: "计费方式未知", desc: "不计算费用，也不计入合计。" },
-];
+export const BILLINGS: { id: string; label: string; desc: string }[] = (
+  ["per-token", "subscription", "free", "unknown"] as const
+).map((id) => ({
+  id,
+  get label() {
+    return textOf(labelsText).billings[id].label;
+  },
+  get desc() {
+    return textOf(labelsText).billings[id].desc;
+  },
+}));
 
 export function billingLabel(id: string | null | undefined): string {
-  return BILLINGS.find((b) => b.id === id)?.label ?? "按量计费";
+  return BILLINGS.find((b) => b.id === id)?.label ?? textOf(labelsText).billings["per-token"].label;
 }
 
-export const PROXY_KINDS: { id: string; label: string; desc: string }[] = [
-  {
-    id: "socks5h",
-    label: "SOCKS5h",
-    desc: "域名由代理解析，本机不发出 DNS 查询。",
+export const PROXY_KINDS: { id: string; label: string; desc: string }[] = (
+  [
+    ["socks5h", "SOCKS5h"],
+    ["socks5", "SOCKS5"],
+    ["http", "HTTP"],
+    ["https", "HTTPS"],
+  ] as const
+).map(([id, label]) => ({
+  id,
+  label,
+  get desc() {
+    return textOf(labelsText).proxyKinds[id];
   },
-  { id: "socks5", label: "SOCKS5", desc: "域名在本机解析后，经代理连接目标地址。" },
-  { id: "http", label: "HTTP", desc: "通过 HTTP CONNECT 建立隧道。" },
-  { id: "https", label: "HTTPS", desc: "与代理之间使用 TLS，再通过 CONNECT 建立隧道。" },
-];
+}));
 
 export function proxyKindLabel(id: string): string {
   return PROXY_KINDS.find((k) => k.id === id)?.label ?? id;
@@ -58,25 +80,32 @@ export function proxyKindLabel(id: string): string {
 
 /** 出站怎么走。`direct` / `system` 是内置的两个选项，其余是代理名称 */
 export function egressLabel(proxy: string): string {
-  if (proxy === "direct") return "直连";
-  if (proxy === "system") return "系统代理";
+  const t = textOf(labelsText);
+  if (proxy === "direct") return t.direct;
+  if (proxy === "system") return t.systemProxy;
   return proxy;
 }
 
-export const REDACT_KINDS: { id: string; label: string }[] = [
-  { id: "api-keys", label: "API 密钥" },
-  { id: "private-keys", label: "私钥" },
-  { id: "jwt", label: "JWT" },
-  { id: "conn-strings", label: "连接串口令" },
-  { id: "internal", label: "内网标识" },
-];
+export const REDACT_KINDS: { id: string; label: string }[] = (
+  ["api-keys", "private-keys", "jwt", "conn-strings", "internal"] as const
+).map((id) => ({
+  id,
+  get label() {
+    return textOf(labelsText).redactKinds[id];
+  },
+}));
 
 export function redactLabel(id: string): string {
   return REDACT_KINDS.find((k) => k.id === id)?.label ?? id;
 }
 
 export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
-  { id: "key", label: "API 密钥" },
+  {
+    id: "key",
+    get label() {
+      return textOf(labelsText).apiKey;
+    },
+  },
   { id: "oauth", label: "OAuth" },
 ];
 
@@ -90,13 +119,14 @@ export function authHeaderLabel(header: string): string {
  * 没问到 —— 三种情况要做的事不一样，不能都叫「未获取」。
  */
 export function modelSourceLabel(source: string, status?: ModelStatus): string {
+  const t = textOf(labelsText).models;
   switch (source) {
     case "discovered":
-      return "自动发现";
+      return t.discovered;
     case "manual":
-      return "手动清单";
+      return t.manual;
     default:
-      return status === "failed" ? "获取失败" : status === "no_list" ? "未提供清单" : "未获取";
+      return status === "failed" ? t.failed : status === "no_list" ? t.noList : t.notFetched;
   }
 }
 
@@ -112,19 +142,20 @@ export function modelFace(p: ProviderView): {
   note: string | null;
   warn: boolean;
 } {
+  const t = textOf(labelsText).models;
   const manual = p.model_source === "manual";
   const known = p.model_source !== "none";
   // 还没问过：打开这一页时已经去问了，马上就有
-  if (p.model_status === "pending" && !known) return { count: null, note: "获取中", warn: false };
-  if (p.model_fetching && !known) return { count: null, note: "获取中", warn: false };
+  if (p.model_status === "pending" && !known) return { count: null, note: t.fetching, warn: false };
+  if (p.model_fetching && !known) return { count: null, note: t.fetching, warn: false };
   if (!known) {
     return p.model_status === "no_list"
-      ? { count: null, note: "未提供清单", warn: false }
-      : { count: null, note: "获取失败", warn: true };
+      ? { count: null, note: t.noList, warn: false }
+      : { count: null, note: t.failed, warn: true };
   }
   return {
     count: p.model_count,
-    note: manual ? "手动清单" : p.models_only ? "指定范围" : null,
+    note: manual ? t.manual : p.models_only ? t.scoped : null,
     warn: false,
   };
 }
@@ -148,41 +179,36 @@ export function planLabel(plan: string | null | undefined): string | null {
 }
 
 export function quotaWindowLabel(window: string): string {
+  const t = textOf(labelsText).quotaWindows;
   switch (window) {
     case "5h":
-      return "5 小时";
+      return t["5h"];
     case "7d":
-      return "7 天";
+      return t["7d"];
     case "weekly":
-      return "每周";
+      return t.weekly;
     default:
       return window;
   }
 }
 
-const L1_STEPS: Record<L1Stage["step"], string> = {
-  config: "配置",
-  dns: "DNS 解析",
-  tcp: "TCP 握手",
-  tls: "TLS 握手",
-  handshake: "代理握手",
-};
-
 /** 建连的一步。对着代理的那几步带上「代理」，代理握手本身不用 */
 export function l1StageLabel(s: L1Stage): string {
-  const step = L1_STEPS[s.step] ?? s.step;
-  return s.peer === "proxy" && s.step !== "handshake" ? `${step} · 代理` : step;
+  const t = textOf(labelsText);
+  const step = t.l1Steps[s.step] ?? s.step;
+  return s.peer === "proxy" && s.step !== "handshake" ? t.l1ToProxy(step) : step;
 }
 
 /** 某一步不在分段里的原因 */
 export function l1SkipText(s: L1Skip): string {
+  const t = textOf(labelsText).l1Skips;
   switch (s.reason) {
     case "plain_http":
-      return "http:// 地址不进行 TLS 握手";
+      return t.plain_http;
     case "ip_address":
-      return "地址已是 IP，无需 DNS 解析";
+      return t.ip_address;
     case "proxy_resolves":
-      return "域名由代理解析，本机不进行 DNS 解析";
+      return t.proxy_resolves;
     default:
       return s.reason;
   }
@@ -190,19 +216,21 @@ export function l1SkipText(s: L1Skip): string {
 
 /** 测速失败时的那一句：失败在哪一步，加上原因 */
 export function l1ErrorText(r: L1Result): string {
-  const error = r.error ?? "无法连接";
-  return r.failed ? `${l1StageLabel(r.failed)}：${error}` : error;
+  const t = textOf(labelsText);
+  const error = r.error ?? t.cannotConnect;
+  return r.failed ? t.stageError(l1StageLabel(r.failed), error) : error;
 }
 
 /** 候选上游被跳过的原因 */
 export function skipLabel(reason: string): string {
+  const t = textOf(labelsText).skips;
   switch (reason) {
     case "disabled":
-      return "已停用";
+      return t.disabled;
     case "out_of_scope":
-      return "不在启用范围内";
+      return t.out_of_scope;
     case "not_offered":
-      return "未提供此模型";
+      return t.not_offered;
     default:
       return reason;
   }
@@ -217,7 +245,7 @@ export function shortUrl(url: string): string {
 export function billingSummary(p: ProviderView): string {
   const b = p.billing ?? p.billing_effective;
   if (b !== "per-token") return billingLabel(b);
-  return p.pricing ?? "默认价目表";
+  return p.pricing ?? textOf(labelsText).defaultSheet;
 }
 
 /** 单价，美元 / 百万 tokens。**不截成两位** —— 0.075 和 0.08 是两个价 */
@@ -230,26 +258,28 @@ export function perMillion(v: number | null | undefined): string {
 }
 
 export function priceSourceLabel(s: PriceSourceView | null | undefined): string {
-  if (!s) return "无法计价";
+  const t = textOf(labelsText);
+  if (!s) return t.unpriced;
   switch (s.kind) {
     case "default":
-      return "默认价目表";
+      return t.defaultSheet;
     case "scaled":
-      return `默认价目表 × ${formatMultiplier(s.multiplier)}`;
+      return t.scaled(formatMultiplier(s.multiplier));
     case "override":
-      return "价目表覆盖";
+      return t.override;
   }
 }
 
 /** 一笔费用按哪个价格算出，带价目表名与数据日期 */
 export function priceSourceDetail(s: PriceSourceView): string {
+  const t = textOf(labelsText);
   switch (s.kind) {
     case "default":
-      return `默认价目表 · 数据日期 ${s.date}`;
+      return t.detailDefault(s.date);
     case "scaled":
-      return `价目表「${s.sheet}」· 默认价目表 × ${formatMultiplier(s.multiplier)} · 数据日期 ${s.date}`;
+      return t.detailScaled(s.sheet, formatMultiplier(s.multiplier), s.date);
     case "override":
-      return `价目表「${s.sheet}」· 覆盖价格`;
+      return t.detailOverride(s.sheet);
   }
 }
 
@@ -264,13 +294,14 @@ export function contextWindow(n: number | null | undefined): string {
   return `${Math.round(n / 1000)}K`;
 }
 
-export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = [
-  { key: "input", label: "输入" },
-  { key: "output", label: "输出" },
-  { key: "cache_read", label: "缓存读取" },
-  { key: "cache_write_5m", label: "缓存写入 5 分钟" },
-  { key: "cache_write_1h", label: "缓存写入 1 小时" },
-];
+export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = (
+  ["input", "output", "cache_read", "cache_write_5m", "cache_write_1h"] as const
+).map((key) => ({
+  key,
+  get label() {
+    return textOf(labelsText).priceColumns[key];
+  },
+}));
 
 /** Tauri 的 invoke 用字符串 reject，不是 Error */
 export function errorText(e: unknown): string {
