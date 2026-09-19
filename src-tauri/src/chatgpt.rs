@@ -108,13 +108,22 @@ fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Out<String> {
         .lock()
         .ok()
         .and_then(|g| g.as_ref().filter(|p| p.id == id).and_then(&get))
-        .ok_or_else(|| "这次登录已经结束，请重新发起".to_string())
+        .ok_or_else(|| {
+            tr!(
+                "这次登录已经结束，请重新发起",
+                "This sign-in has ended; start a new one"
+            )
+            .to_string()
+        })
 }
 
 fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
-    app.opener()
-        .open_url(url, None::<&str>)
-        .map_err(|e| format!("无法打开浏览器：{e}"))
+    app.opener().open_url(url, None::<&str>).map_err(|e| {
+        tr!(
+            format!("无法打开浏览器：{e}"),
+            format!("The browser could not be opened: {e}")
+        )
+    })
 }
 
 #[tauri::command]

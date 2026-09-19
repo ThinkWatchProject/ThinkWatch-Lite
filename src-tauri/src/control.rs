@@ -68,9 +68,15 @@ impl ControlClient {
         let stream = tokio::net::UnixStream::connect(&self.socket)
             .await
             .with_context(|| {
-                format!(
-                    "无法连接控制面 {}，core 可能尚未启动或已退出",
-                    self.socket.display()
+                tr!(
+                    format!(
+                        "无法连接控制面 {}，core 可能尚未启动或已退出",
+                        self.socket.display()
+                    ),
+                    format!(
+                        "The control plane at {} could not be reached; core may not have started yet or may have exited",
+                        self.socket.display()
+                    )
                 )
             })?;
         let io = TokioIo::new(stream);
@@ -93,7 +99,10 @@ impl ControlClient {
             // 只剩状态码的话，界面上只能显示一个 404
             let text = String::from_utf8_lossy(&bytes);
             if text.trim().is_empty() {
-                anyhow::bail!("控制面返回 {status}");
+                anyhow::bail!(tr!(
+                    format!("控制面返回 {status}"),
+                    format!("The control plane returned {status}")
+                ));
             }
             anyhow::bail!("{text}");
         }
@@ -120,11 +129,18 @@ impl ControlClient {
         // 但开发时会（一边改 core 一边跑旧 UI），而那正是最需要一句
         // 人话的时候。
         if s.api_version != tw_api::CONTROL_API_VERSION {
-            anyhow::bail!(
-                "控制面协议版本不一致：core 为 {}，界面为 {}。请重新构建。",
-                s.api_version,
-                tw_api::CONTROL_API_VERSION
-            );
+            anyhow::bail!(tr!(
+                format!(
+                    "控制面协议版本不一致：core 为 {}，界面为 {}。请重新构建。",
+                    s.api_version,
+                    tw_api::CONTROL_API_VERSION
+                ),
+                format!(
+                    "Control plane protocol versions differ: core uses {}, the interface uses {}. Rebuild the app.",
+                    s.api_version,
+                    tw_api::CONTROL_API_VERSION
+                )
+            ));
         }
         Ok(s)
     }
@@ -149,9 +165,15 @@ impl ControlClient {
         let stream = tokio::net::UnixStream::connect(&self.socket)
             .await
             .with_context(|| {
-                format!(
-                    "无法连接控制面 {}，core 可能尚未启动或已退出",
-                    self.socket.display()
+                tr!(
+                    format!(
+                        "无法连接控制面 {}，core 可能尚未启动或已退出",
+                        self.socket.display()
+                    ),
+                    format!(
+                        "The control plane at {} could not be reached; core may not have started yet or may have exited",
+                        self.socket.display()
+                    )
                 )
             })?;
         let io = TokioIo::new(stream);
@@ -968,6 +990,38 @@ mod tests {
         let e = c.status().await.unwrap_err();
         let msg = format!("{e:#}");
         assert!(msg.contains("core"), "{msg}");
+    }
+
+    /// 同一句话按界面语言说。core 没起来的时候，几乎每个命令回给界面的都是它
+    #[test]
+    fn the_unreachable_message_follows_the_interface_language() {
+        use crate::i18n::{Lang, with_lang};
+        let c = ControlClient::new(PathBuf::from("/tmp/definitely-not-a-socket-xyz"));
+        // 跑在当前线程上：`with_lang` 只改这一个线程看到的语言
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let said = |lang| {
+            with_lang(lang, || {
+                format!("{:#}", rt.block_on(c.status()).unwrap_err())
+            })
+        };
+        let en = said(Lang::En);
+        assert!(
+            en.starts_with(
+                "The control plane at /tmp/definitely-not-a-socket-xyz could not be reached; \
+                 core may not have started yet or may have exited: "
+            ),
+            "{en}"
+        );
+        let zh = said(Lang::Zh);
+        assert!(
+            zh.starts_with(
+                "无法连接控制面 /tmp/definitely-not-a-socket-xyz，core 可能尚未启动或已退出"
+            ),
+            "{zh}"
+        );
     }
 
     #[test]
