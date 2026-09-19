@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
+import { LanguageSection } from "./Language";
 import type { NicView, Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -554,6 +555,8 @@ export default function Config({
   const [autostart, setAutostart] = useState<boolean | null>(null);
   return (
     <div className="space-y-8 p-5">
+      {section === "settings" && <LanguageSection />}
+
       {section === "settings" && (
         <section>
           <h2 className="tw-title font-semibold">开机启动</h2>
