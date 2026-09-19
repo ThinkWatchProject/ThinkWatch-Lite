@@ -2,7 +2,9 @@ import { Badge } from "@/ui/badge";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { when } from "@/format";
+import { textOf, useText } from "@/i18n";
 import type { ClientView, CostGroup, DetectedClient } from "@/types";
+import { keysTableText } from "./KeysTable.i18n";
 import { routeLabel, scopeLabel, useLabel } from "./labels";
 
 export interface KeyActions {
@@ -35,14 +37,15 @@ export function KeysTable({
   defaultRoute: string;
   actions: KeyActions;
 }) {
+  const t = useText(keysTableText);
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>密钥</TableHead>
-          <TableHead>路由</TableHead>
-          <TableHead>可见模型</TableHead>
-          <TableHead className="text-right">24 小时</TableHead>
+          <TableHead>{t.key}</TableHead>
+          <TableHead>{t.route}</TableHead>
+          <TableHead>{t.models}</TableHead>
+          <TableHead className="text-right">{t.last24h}</TableHead>
           <TableHead className="w-9" />
         </TableRow>
       </TableHeader>
@@ -64,8 +67,8 @@ export function KeysTable({
                     <span className={k.disabled ? "font-medium text-muted-foreground" : "font-medium"}>
                       {k.name}
                     </span>
-                    {k.default && <Badge variant="secondary">默认</Badge>}
-                    {k.disabled && <Badge variant="outline">已停用</Badge>}
+                    {k.default && <Badge variant="secondary">{t.default}</Badge>}
+                    {k.disabled && <Badge variant="outline">{t.disabled}</Badge>}
                   </div>
                   {/* 密钥值只剩头尾：一张截图就能把它带出去 */}
                   <div className="tw-label text-muted-foreground">
@@ -79,7 +82,7 @@ export function KeysTable({
                 <TableCell className="text-right tabular-nums">
                   {used && used.requests > 0 ? (
                     <>
-                      <div>{used.requests.toLocaleString()} 次</div>
+                      <div>{t.requests(used.requests)}</div>
                       <div className="tw-label text-muted-foreground">
                         {k.last_seen_ms ? when(k.last_seen_ms) : "—"}
                       </div>
@@ -89,13 +92,13 @@ export function KeysTable({
                       <div className="text-muted-foreground">—</div>
                       {/* 「从来没用过」和「今天没用过」是两句话 */}
                       <div className="tw-label text-muted-foreground">
-                        {k.last_seen_ms ? when(k.last_seen_ms) : "从未使用"}
+                        {k.last_seen_ms ? when(k.last_seen_ms) : t.neverUsed}
                       </div>
                     </>
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowMenuButton items={items} label={`${k.name} 的操作`} />
+                  <RowMenuButton items={items} label={t.actionsFor(k.name)} />
                 </TableCell>
               </TableRow>
             </RowMenu>
@@ -114,32 +117,33 @@ export function KeysTable({
  */
 function menu(k: ClientView, clients: DetectedClient[], a: KeyActions): MenuItems {
   const adopted = !!clients.find((c) => c.id === k.client)?.adopted_at_ms;
+  const t = textOf(keysTableText);
   return [
-    { kind: "item", label: "复制密钥", onSelect: () => a.copy(k.name) },
-    { kind: "item", label: "编辑…", onSelect: () => a.edit(k.name) },
-    { kind: "item", label: "更换密钥…", onSelect: () => a.rotate(k.name) },
+    { kind: "item", label: t.copyKey, onSelect: () => a.copy(k.name) },
+    { kind: "item", label: t.edit, onSelect: () => a.edit(k.name) },
+    { kind: "item", label: t.rotate, onSelect: () => a.rotate(k.name) },
     { kind: "sep" },
     {
       kind: "item",
-      label: "设为默认密钥",
+      label: t.makeDefault,
       onSelect: () => a.makeDefault(k.name),
       disabled: k.default || k.disabled,
     },
     {
       kind: "item",
-      label: k.disabled ? "启用" : "停用",
+      label: k.disabled ? t.enable : t.disable,
       onSelect: () => a.toggle(k),
       disabled: k.default,
     },
-    { kind: "item", label: "在配置文件中定位", onSelect: () => a.locate(k.name) },
+    { kind: "item", label: t.locate, onSelect: () => a.locate(k.name) },
     { kind: "sep" },
     {
       kind: "item",
       label: k.default
-        ? "删除…（默认密钥不能删除）"
+        ? t.removeDefault
         : adopted
-          ? "删除…（取消接管后可删除）"
-          : "删除…",
+          ? t.removeConnected
+          : t.remove,
       onSelect: () => a.remove(k.name),
       danger: true,
       disabled: k.default || adopted,

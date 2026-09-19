@@ -20,9 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { ClientView, DetectedClient, KeyRotated } from "@/types";
 import { api } from "./api";
 import { errorText } from "./labels";
+import { rotateDialogText } from "./RotateDialog.i18n";
 
 /**
  * 更换一把密钥。
@@ -44,6 +47,8 @@ export function RotateDialog({
   onClose: () => void;
   onRotated: () => void;
 }) {
+  const t = useText(rotateDialogText);
+  const common = useText(commonText);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<KeyRotated | null>(null);
   const [copied, setCopied] = useState(false);
@@ -68,22 +73,22 @@ export function RotateDialog({
   }
 
   if (done) {
+    const name = <span className="font-mono text-foreground">{target.name}</span>;
     return (
       <Dialog open onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>密钥已更换</DialogTitle>
+            <DialogTitle>{t.doneTitle}</DialogTitle>
             <DialogDescription>
-              <span className="font-mono text-foreground">{target.name}</span>
               {done.synced.length > 0
-                ? ` 的新密钥已写入 ${done.synced.map((s) => s.name).join("、")} 的配置文件。`
-                : " 的新密钥如下。"}
+                ? t.synced(name, done.synced.map((s) => s.name))
+                : t.shown(name)}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
               <div className="min-w-0">
-                <p className="tw-label text-muted-foreground">新密钥</p>
+                <p className="tw-label text-muted-foreground">{t.newKey}</p>
                 <p className="truncate font-mono tw-body">{done.key}</p>
               </div>
               <Button
@@ -98,7 +103,7 @@ export function RotateDialog({
                 }}
               >
                 <CopyIcon />
-                {copied ? "已复制" : "复制"}
+                {copied ? common.copied : common.copy}
               </Button>
             </div>
             {/* 做完之后再说一遍该做什么：前一屏是决定要不要做 */}
@@ -107,28 +112,28 @@ export function RotateDialog({
               .map((s) => (
                 <Alert key={s.client} variant="warning">
                   <CircleAlertIcon />
-                  <AlertTitle>请重新启动 {s.name}</AlertTitle>
-                  <AlertDescription>正在运行的窗口仍在使用原密钥，重启后恢复。</AlertDescription>
+                  <AlertTitle>{t.restart(s.name)}</AlertTitle>
+                  <AlertDescription>{t.stillOld}</AlertDescription>
                 </Alert>
               ))}
             {done.failed.map((f) => (
               <Alert key={f.client} variant="destructive">
                 <CircleAlertIcon />
-                <AlertTitle>未能写入 {f.name} 的配置</AlertTitle>
+                <AlertTitle>{t.writeFailed(f.name)}</AlertTitle>
                 <AlertDescription>
-                  {f.error}。密钥已经更换，请手动把新密钥填进 {f.name}。
+                  {t.enterManually(f.error, f.name)}
                 </AlertDescription>
               </Alert>
             ))}
             {done.synced.length === 0 && done.failed.length === 0 && (
               <p className="tw-label text-muted-foreground">
-                使用原密钥的地方需要改成新密钥，否则将无法连接。
+                {t.updateElsewhere}
               </p>
             )}
             {error && <p className="tw-body text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <Button onClick={onClose}>完成</Button>
+            <Button onClick={onClose}>{t.done}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -139,35 +144,32 @@ export function RotateDialog({
     <AlertDialog open onOpenChange={(o) => !o && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>更换密钥「{target.name}」</AlertDialogTitle>
+          <AlertDialogTitle>{t.title(target.name)}</AlertDialogTitle>
           <AlertDialogDescription>
-            原密钥立即失效。
-            {adopted && owner
-              ? `新密钥会同时写入 ${owner.name} 的配置文件。`
-              : "使用原密钥的地方需要改成新密钥。"}
+            {t.description(adopted && owner ? owner.name : null)}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {adopted && owner && needsRestart && (
           <Alert variant="warning">
             <CircleAlertIcon />
-            <AlertTitle>{owner.name} 需要重新启动</AlertTitle>
+            <AlertTitle>{t.needsRestart(owner.name)}</AlertTitle>
             <AlertDescription>
-              {owner.name} 在启动时读取配置，更换后正在运行的窗口会无法连接，需要重新启动它。
+              {t.readsAtStart(owner.name)}
             </AlertDescription>
           </Alert>
         )}
         {target.default && (
           <Alert variant="warning">
             <CircleAlertIcon />
-            <AlertTitle>这是默认密钥</AlertTitle>
+            <AlertTitle>{t.isDefault}</AlertTitle>
             <AlertDescription>
-              手动配置了这把密钥的客户端都会无法连接，需要逐个改成新密钥。
+              {t.defaultClients}
             </AlertDescription>
           </Alert>
         )}
         {error && <p className="tw-body text-destructive">{error}</p>}
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               // 结果要留在这张对话框里给出来，所以不让它自己关掉
@@ -176,7 +178,7 @@ export function RotateDialog({
             }}
             disabled={busy}
           >
-            {adopted ? "更换并同步" : "更换"}
+            {adopted ? t.rotateAndSync : t.rotate}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

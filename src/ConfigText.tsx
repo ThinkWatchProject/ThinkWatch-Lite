@@ -6,21 +6,9 @@ import { Button } from "@/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
-
-/** 配置文件里各段在界面上叫什么 */
-const SECTION_LABELS: Record<string, string> = {
-  providers: "上游",
-  proxies: "代理",
-  pricing: "价目表",
-  clients: "密钥",
-  routes: "路由",
-  groups: "策略组",
-  default_route: "默认路由",
-  listen: "监听",
-  limits: "并发限制",
-  client_probes: "客户端探测请求",
-  security: "防护",
-};
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
+import { configTextText } from "./ConfigText.i18n";
 
 /**
  * 直接编辑 config.yaml。
@@ -52,6 +40,9 @@ export default function ConfigTextMode({
   /** 点「在界面中查看」时跳到管理这一段的页面（反向那条） */
   onJumpToForm?: (at: { name: string; section: string | null }) => void;
 }) {
+  const t = useText(configTextText);
+  const common = useText(commonText);
+  const sections: Record<string, string | undefined> = t.sections;
   const [draft, setDraft] = useState(doc.text);
   const [busy, setBusy] = useState(false);
   /** 打开这一版时文件是什么样。**保存时带的就是它** */
@@ -143,10 +134,10 @@ export default function ConfigTextMode({
           两边都是真实的改动，只有他知道哪个该留 */}
       {stale && (
         <Alert variant="warning" className="px-3 py-2">
-          <AlertTitle>文件已被其他进程修改</AlertTitle>
+          <AlertTitle>{t.staleTitle}</AlertTitle>
           <AlertDescription>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            此时保存将覆盖该进程所做的修改。
+            {t.staleBody}
           </p>
           <div className="mt-2 flex gap-2">
             <Button
@@ -157,7 +148,7 @@ export default function ConfigTextMode({
                 base.current = doc.version;
               }}
             >
-              放弃本地修改，使用文件中的版本
+              {t.useFile}
             </Button>
             <Button
               variant="ghost"
@@ -166,7 +157,7 @@ export default function ConfigTextMode({
                 base.current = doc.version;
               }}
             >
-              保留本地修改并覆盖文件
+              {t.keepMine}
             </Button>
           </div>
         </AlertDescription>
@@ -190,7 +181,7 @@ export default function ConfigTextMode({
       */}
       {at?.name && (
         <p className="tw-body text-muted-foreground">
-          光标位于{at.section ? (SECTION_LABELS[at.section] ?? at.section) : ""}{" "}
+          {t.cursorAt(at.section ? (sections[at.section] ?? at.section) : "")}{" "}
           <span className="font-medium text-foreground">{at.name}</span>
           {onJumpToForm && (
             <Button
@@ -199,7 +190,7 @@ export default function ConfigTextMode({
               className="ml-1"
               onClick={() => onJumpToForm({ name: at.name!, section: at.section ?? null })}
             >
-              在界面中查看
+              {t.showInApp}
             </Button>
           )}
         </p>
@@ -210,10 +201,10 @@ export default function ConfigTextMode({
       <div className="flex items-center gap-3 tw-body">
         <span className="min-w-0 truncate font-mono tw-label text-muted-foreground">{doc.path}</span>
         <div className="flex-1" />
-        {dirty && !busy && <span className="text-warning">有未保存的修改</span>}
+        {dirty && !busy && <span className="text-warning">{t.unsaved}</span>}
         <Button size="sm" onClick={save} disabled={busy || !dirty}>
           {busy && <Spinner />}
-          保存
+          {common.save}
         </Button>
       </div>
     </div>

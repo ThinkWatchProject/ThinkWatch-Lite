@@ -25,10 +25,14 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { CopyIcon } from "lucide-react";
 import type { ClientView, CostGroup, DetectedClient, Overview } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { KeyDialog } from "./KeyDialog";
 import { KeysTable } from "./KeysTable";
+import { keysPageText } from "./KeysPage.i18n";
 import { errorText } from "./labels";
+import { labelsText } from "./labels.i18n";
 import { RotateDialog } from "./RotateDialog";
 
 const DAY_MS = 24 * 3_600_000;
@@ -62,6 +66,9 @@ export default function KeysPage({
   onOpenConfigFile: (focus: string | null) => void;
   onNavigate: (tab: string) => void;
 }) {
+  const t = useText(keysPageText);
+  const common = useText(commonText);
+  const labels = useText(labelsText);
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [clients, setClients] = useState<DetectedClient[]>([]);
   const [usage, setUsage] = useState<CostGroup[]>([]);
@@ -111,7 +118,7 @@ export default function KeysPage({
 
   const editing = dialog?.kind === "edit" && dialog.name ? keys.find((k) => k.name === dialog.name) : null;
   const target = (name: string) => keys.find((k) => k.name === name);
-  const defaultRoute = ov.default_route ?? "默认";
+  const defaultRoute = ov.default_route ?? labels.defaultRoute;
   // 只有一把默认密钥时，这一页要回答的是「接下来做什么」
   const onlyDefault = keys.length === 1 && keys[0]?.default;
 
@@ -119,14 +126,14 @@ export default function KeysPage({
     <div className="flex flex-col gap-4 p-5">
       <div className="flex items-center gap-3">
         <p className="tw-body text-muted-foreground">
-          客户端须使用密钥连接网关，本机连接也不例外。
+          {t.intro}
         </p>
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" onClick={() => onNavigate("clients")}>
-            接管客户端…
+            {t.connectClient}
           </Button>
           <Button size="sm" onClick={() => setDialog({ kind: "edit", name: null })}>
-            新建密钥
+            {t.newKey}
           </Button>
         </div>
       </div>
@@ -143,7 +150,7 @@ export default function KeysPage({
           copy: (name) =>
             void api
               .copyKey(name)
-              .then(() => toast.success(`已复制密钥「${name}」`))
+              .then(() => toast.success(t.copied(name)))
               .catch((e) => toast.error(errorText(e))),
           toggle: (k) =>
             void write(() =>
@@ -159,7 +166,7 @@ export default function KeysPage({
               }),
             ),
           makeDefault: (name) =>
-            void write(() => api.setDefaultKey(name, configVersion), `「${name}」已设为默认密钥`),
+            void write(() => api.setDefaultKey(name, configVersion), t.madeDefault(name)),
           locate: (name) => onOpenConfigFile(name),
         }}
       />
@@ -170,14 +177,14 @@ export default function KeysPage({
             <EmptyMedia variant="icon">
               <KeyRoundIcon />
             </EmptyMedia>
-            <EmptyTitle>每个客户端一把密钥</EmptyTitle>
+            <EmptyTitle>{t.emptyTitle}</EmptyTitle>
             <EmptyDescription>
-              接管一个客户端时会为它单独生成密钥，流量、路由和并发上限才能分得清是谁的。
+              {t.emptyDescription}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button size="sm" onClick={() => onNavigate("clients")}>
-              接管客户端…
+              {t.connectClient}
             </Button>
           </EmptyContent>
         </Empty>
@@ -231,26 +238,28 @@ export default function KeysPage({
         <AlertDialog open onOpenChange={(o) => !o && setDialog(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>删除密钥「{dialog.name}」</AlertDialogTitle>
+              <AlertDialogTitle>{t.deleteTitle(dialog.name)}</AlertDialogTitle>
               <AlertDialogDescription>
-                删除后，使用这把密钥的客户端将立即无法连接。可在版本历史中恢复。
+                {t.deleteDescription}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {/* 这一步随手就做了，而代价要到下次接管才显出来 */}
             {target(dialog.name)?.client && (
               <Alert>
                 <AlertTitle>
-                  {clients.find((c) => c.id === target(dialog.name)?.client)?.name ??
-                    target(dialog.name)?.client}{" "}
-                  再次接管时会重新生成一把
+                  {t.regenerated(
+                    clients.find((c) => c.id === target(dialog.name)?.client)?.name ??
+                      target(dialog.name)?.client ??
+                      "",
+                  )}
                 </AlertTitle>
                 <AlertDescription>
-                  这把密钥是接管时生成的。保留它，下次接管可以直接复用，不必重新配置。
+                  {t.keepIt}
                 </AlertDescription>
               </Alert>
             )}
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 disabled={busy}
@@ -260,7 +269,7 @@ export default function KeysPage({
                   void write(() => api.deleteKey(name, configVersion));
                 }}
               >
-                删除
+                {common.delete}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -284,21 +293,23 @@ function CreatedDialog({
   onCopy: (what: string, run: () => Promise<void>) => void;
   onClose: () => void;
 }) {
+  const t = useText(keysPageText);
+  const common = useText(commonText);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>密钥已创建</DialogTitle>
+          <DialogTitle>{t.createdTitle}</DialogTitle>
           <DialogDescription>
-            <span className="font-mono text-foreground">{name}</span> 现在可以连接网关。
+            <span className="font-mono text-foreground">{name}</span> {t.canConnect}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="rounded-md border border-border px-3 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="tw-label text-muted-foreground">网关地址</p>
-                <p className="truncate font-mono tw-body">{gateway || "读取中…"}</p>
+                <p className="tw-label text-muted-foreground">{t.gatewayAddress}</p>
+                <p className="truncate font-mono tw-body">{gateway || t.loading}</p>
               </div>
               <Button
                 variant="outline"
@@ -306,26 +317,26 @@ function CreatedDialog({
                 onClick={() => onCopy("base", api.copyGatewayBase)}
               >
                 <CopyIcon />
-                {copied === "base" ? "已复制" : "复制"}
+                {copied === "base" ? common.copied : common.copy}
               </Button>
             </div>
             <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-border pt-2.5">
               <div className="min-w-0">
-                <p className="tw-label text-muted-foreground">密钥</p>
-                <p className="truncate font-mono tw-body">点「复制」取得完整密钥</p>
+                <p className="tw-label text-muted-foreground">{t.key}</p>
+                <p className="truncate font-mono tw-body">{t.copyHint}</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => onCopy("key", () => api.copyKey(name))}>
                 <CopyIcon />
-                {copied === "key" ? "已复制" : "复制"}
+                {copied === "key" ? common.copied : common.copy}
               </Button>
             </div>
           </div>
           <p className="tw-label text-muted-foreground">
-            密钥在列表里只显示前后几位。忘了可以随时更换一把新的。
+            {t.masked}
           </p>
         </div>
         <DialogFooter>
-          <Button onClick={onClose}>完成</Button>
+          <Button onClick={onClose}>{t.done}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
