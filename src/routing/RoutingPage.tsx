@@ -60,13 +60,15 @@ export default function RoutingPage({
   const [dryRun, setDryRun] = useState<DryRunTarget | null>(null);
   const [models, setModels] = useState<KnownModel[]>([]);
 
-  // 模型建议（规则条件、改写参数、试算）。拿不到不影响任何功能，照常可以手写
+  // 模型建议（规则条件、改写参数、试算）。拿不到不影响任何功能，照常可以手写。
+  // **跟着各上游的模型清单重读**，不只是配置版本：后台问完一家，建议里就该有它的模型
+  const catalogKey = ov.providers.map((p) => `${p.name}:${p.model_source}:${p.model_count}`).join("|");
   useEffect(() => {
     api
       .knownModels()
       .then(setModels)
       .catch(() => {});
-  }, [configVersion]);
+  }, [configVersion, catalogKey]);
 
   const done = () => {
     setDialog(null);
