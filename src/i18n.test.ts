@@ -37,26 +37,10 @@ const CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
 const PENDING = new Set<string>([
   "src/App.tsx",
   "src/Clients.tsx",
-  "src/Connect.tsx",
   "src/Dashboard.tsx",
-  "src/format.ts",
-  "src/Guard.tsx",
   "src/labels.ts",
-  "src/Notices.tsx",
-  "src/NoticeSettings.tsx",
   "src/RequestDrawer.tsx",
-  "src/Security.tsx",
   "src/Sessions.tsx",
-  "src/triggers.ts",
-  "src/ui/charts.tsx",
-  "src/ui/dialog.tsx",
-  "src/ui/range.tsx",
-  "src/ui/sheet.tsx",
-  "src/Update.tsx",
-  "src/updateFlow.ts",
-  "src/UpdateWindow.tsx",
-  "src/useLive.ts",
-  "src/useRequests.ts",
 ]);
 
 function files(dir: string): string[] {

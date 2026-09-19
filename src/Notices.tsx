@@ -7,6 +7,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { toast } from "sonner";
 import { when } from "@/format";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
+import { noticesText } from "./Notices.i18n";
 
 /** 一条提醒。判定在 Rust 侧，这里只负责显示 */
 export interface Notice {
@@ -33,6 +35,7 @@ export interface Notice {
  * 就永远看不到了。
  */
 export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) {
+  const t = useText(noticesText);
   const [list, setList] = useState<Notice[]>([]);
   const [open, setOpen] = useState(false);
 
@@ -58,7 +61,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
   /** 这一类以后只记录、不弹出。**按类**：同一类事明天还会再发生 */
   function quiet(category: string) {
     invoke("set_notice_pref", { category, mode: "app" })
-      .then(() => toast.success("此类提醒今后仅在应用内显示，可在设置中更改"))
+      .then(() => toast.success(t.quieted))
       .catch((e) => toast.error(typeof e === "string" ? e : String(e)));
   }
 
@@ -70,7 +73,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
         <Button
           variant="ghost"
           size="sm"
-          aria-label={list.length > 0 ? `提醒，${list.length} 项` : "提醒"}
+          aria-label={t.bell(list.length)}
         >
           <BellIcon />
           {list.length > 0 && (
@@ -89,7 +92,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
         {list.length === 0 ? (
-          <p className="px-3 py-6 text-center tw-body text-muted-foreground">暂无提醒</p>
+          <p className="px-3 py-6 text-center tw-body text-muted-foreground">{t.empty}</p>
         ) : (
           <ul className="max-h-96 divide-y divide-border overflow-y-auto">
             {list.map((n) => (
@@ -131,7 +134,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
                             quiet(n.category);
                           }}
                         >
-                          不再弹出此类
+                          {t.quiet}
                         </button>
                       </>
                     )}
@@ -140,7 +143,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={`忽略「${n.title}」`}
+                  aria-label={t.dismiss(n.title)}
                   onClick={() => dismiss(n.key)}
                 >
                   <XIcon />

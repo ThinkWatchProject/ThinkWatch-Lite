@@ -5,6 +5,8 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/ui/chart";
+import { useText } from "@/i18n";
+import { chartsText } from "./charts.i18n";
 
 /**
  * 概览上的那张图。
@@ -56,6 +58,7 @@ export function StackedArea({
   height?: number;
   empty?: string;
 }) {
+  const t = useText(chartsText);
   /*
     **没数据时也要占住这块地方。**塌成一行字的话，数据一来整页往下弹
     一百多像素；而切换时间范围时，这一弹是每次都会发生的 —— 页面在
@@ -67,7 +70,7 @@ export function StackedArea({
         className="flex w-full items-center justify-center rounded-sm border border-dashed border-border/60"
         style={{ height }}
       >
-        <p className="tw-label text-muted-foreground">{empty ?? "暂无数据"}</p>
+        <p className="tw-label text-muted-foreground">{empty ?? t.noData}</p>
       </div>
     );
   }

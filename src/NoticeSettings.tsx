@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { useText } from "@/i18n";
+import { noticeSettingsText } from "./NoticeSettings.i18n";
 
 export type NoticeMode = "system" | "app" | "off";
 
@@ -11,10 +13,10 @@ export interface NoticePref {
   mode: NoticeMode;
 }
 
-export const MODES: { id: NoticeMode; label: string }[] = [
-  { id: "system", label: "系统通知" },
-  { id: "app", label: "仅在应用内" },
-  { id: "off", label: "关闭" },
+export const modes = (t: typeof noticeSettingsText.zh): { id: NoticeMode; label: string }[] => [
+  { id: "system", label: t.system },
+  { id: "app", label: t.app },
+  { id: "off", label: t.off },
 ];
 
 /**
@@ -23,6 +25,7 @@ export const MODES: { id: NoticeMode; label: string }[] = [
  * **按类，不按条** —— 「不再提醒这一条」对明天还会再发生的事没有意义。
  */
 export default function NoticeSettings() {
+  const t = useText(noticeSettingsText);
   const [prefs, setPrefs] = useState<NoticePref[] | null>(null);
 
   useEffect(() => {
@@ -47,9 +50,9 @@ export default function NoticeSettings() {
 
   return (
     <section>
-      <h2 className="tw-title font-semibold">提醒</h2>
+      <h2 className="tw-title font-semibold">{t.title}</h2>
       <p className="mt-1 tw-body text-muted-foreground">
-        选择「系统通知」的类别在需要处理时弹出系统通知，其余只记录在工具栏的提醒列表中。
+        {t.note}
       </p>
       <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2">
         {prefs.map((p) => (
@@ -62,7 +65,7 @@ export default function NoticeSettings() {
               value={p.mode}
               onChange={(e) => void set(p.category, e.target.value as NoticeMode)}
             >
-              {MODES.map((m) => (
+              {modes(t).map((m) => (
                 <NativeSelectOption key={m.id} value={m.id}>
                   {m.label}
                 </NativeSelectOption>

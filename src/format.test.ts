@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import {
   bucketStart,
   densify,
@@ -222,5 +223,18 @@ describe("额度重置时间", () => {
   it("上游没给就是不知道，不猜", () => {
     expect(resetIn(null)).toBeNull();
     expect(resetIn(undefined)).toBeNull();
+  });
+
+  /** 英文跟在动词后面（resets in 3 h），单位和中文一样短，天数分单复数 */
+  it("英文按调用那一刻的语言说", () => {
+    setLang("en");
+    expect(resetIn(0)).toBe("now");
+    expect(resetIn(20)).toBe("within 1 min");
+    expect(resetIn(90)).toBe("in 2 min");
+    expect(resetIn(3 * 3600)).toBe("in 3 h");
+    expect(resetIn(86_000)).toBe("in 1 day");
+    expect(resetIn(4 * 86400)).toBe("in 4 days");
+    setLang("zh");
+    expect(resetIn(90)).toBe("2 分钟后");
   });
 });

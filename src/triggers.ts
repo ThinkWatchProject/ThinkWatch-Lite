@@ -68,9 +68,9 @@ export function triggers(ov: Overview | null, d: Dashboard | null): Triggers {
 }
 
 function hasTwoOfAKind(ov: Overview | null): boolean {
-  const byProtocol = new Map<string, number>();
+  const byProtocol = new Map<string | null, number>();
   for (const p of ov?.providers ?? []) {
-    const k = p.protocol ?? "未知";
+    const k = p.protocol ?? null;
     byProtocol.set(k, (byProtocol.get(k) ?? 0) + 1);
   }
   return [...byProtocol.values()].some((n) => n >= 2);

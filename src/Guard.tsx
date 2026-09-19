@@ -5,6 +5,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
 import { redactLabel } from "./upstreams/labels";
+import { useText } from "@/i18n";
+import { guardText } from "./Guard.i18n";
 import {
   Item,
   ItemActions,
@@ -45,8 +47,10 @@ import {
 
 type Mode = "off" | "observe" | "enforce";
 
+type GuardText = typeof guardText.zh;
+
 /** 一条防线的全部描述。动词和代价都从这里来，不散在 JSX 里。 */
-const LINES: {
+const lines = (t: GuardText): {
   key: "redact" | "inspect_tools" | "scan_configs";
   path: string;
   title: string;
@@ -55,37 +59,28 @@ const LINES: {
   verb: string;
   /** 切到拦截之后，会有什么变化。写在用户点之前 */
   cost: string;
-}[] = [
+}[] => [
   {
     key: "redact",
     path: "/security/redact",
-    title: "出站脱敏",
-    what: "请求发送前，检查其中是否含有密钥、私钥或连接串。",
-    verb: "将检出的内容替换为占位符后发送，并在响应中还原为原值",
-    cost: "请求体将被改写，相同上下文可能无法命中上游缓存。",
+    ...t.redact,
   },
   {
     key: "inspect_tools",
     path: "/security/inspect_tools",
-    title: "工具调用审查",
-    what: "检查上游返回的工具调用中是否含有可直接获得执行权限的命令。",
-    verb: "切断响应流，客户端收到的工具调用不完整，无法构成有效参数",
-    cost: "仅对不受信任的上游生效。发生误判时，回答将在中途中断。",
+    ...t.inspectTools,
   },
   {
     key: "scan_configs",
     path: "/security/scan_configs",
-    title: "配置面扫描",
-    what: "检查客户端配置文件中是否含有隐藏字符、注入内容、危险命令或过宽权限。",
-    verb: "在界面中发出告警",
-    cost: "扫描不会删除任何内容，「拦截」仅在界面中发出告警。",
+    ...t.scanConfigs,
   },
 ];
 
-const MODES: { id: Mode; label: string }[] = [
-  { id: "off", label: "关闭" },
-  { id: "observe", label: "观察" },
-  { id: "enforce", label: "拦截" },
+const modes = (t: GuardText): { id: Mode; label: string }[] => [
+  { id: "off", label: t.off },
+  { id: "observe", label: t.observe },
+  { id: "enforce", label: t.enforce },
 ];
 
 export default function Guard({
@@ -97,12 +92,13 @@ export default function Guard({
   configVersion: string | null;
   onChanged: () => void;
 }) {
+  const t = useText(guardText);
   const [busy, setBusy] = useState<string | null>(null);
   const sec = ov.security;
 
   async function set(path: string, mode: Mode) {
     if (!configVersion) {
-      toast.error("配置版本尚未读取，请稍后重试");
+      toast.error(t.noVersion);
       return;
     }
     setBusy(path);
@@ -123,25 +119,25 @@ export default function Guard({
     <div className="space-y-6 p-5">
       <div>
         <p className="tw-body text-muted-foreground">
-          三项防护各有三档，默认均为「观察」。
+          {t.intro}
           {/*
             「我现在到底有没有被保护」是用户在这一页的第一个判断，而
             「观察」这个词本身回答不了它 —— 所以展开说一句。
           */}
-          <Tip text="「观察」照常检测并记录，但不改变任何请求。可根据记录结果决定是否切换到「拦截」。">
-            <span className="ml-1 underline decoration-dotted underline-offset-2">「观察」的含义</span>
+          <Tip text={t.observeTip}>
+            <span className="ml-1 underline decoration-dotted underline-offset-2">{t.observeMeaning}</span>
           </Tip>
         </p>
       </div>
 
       {!sec && (
         <p className="tw-body text-amber-700 dark:text-amber-300">
-          core 版本较旧，未提供防护状态。升级后可使用此页面。
+          {t.oldCore}
         </p>
       )}
 
       {sec &&
-        LINES.map((l) => {
+        lines(t).map((l) => {
           const cur = (sec[l.key] as Mode) ?? "observe";
           return (
             /*
@@ -162,7 +158,7 @@ export default function Guard({
                   disabled={busy === l.path}
                   onValueChange={(v) => v && void set(l.path, v as Mode)}
                 >
-                  {MODES.map((m) => (
+                  {modes(t).map((m) => (
                     <ToggleGroupItem key={m.id} value={m.id}>
                       {m.label}
                     </ToggleGroupItem>
@@ -179,16 +175,16 @@ export default function Guard({
               */}
               <p className="mt-1.5 tw-body">
                 {cur === "off" && (
-                  <span className="text-muted-foreground">当前：不检测，不记录。</span>
+                  <span className="text-muted-foreground">{t.nowOff}</span>
                 )}
                 {cur === "observe" && (
                   <span className="text-muted-foreground">
-                    当前：检测并记录，<span className="font-medium">不改变任何请求</span>。检测结果显示在「安全 › 发现」中。
+                    {t.nowObserve((s) => <span className="font-medium">{s}</span>)}
                   </span>
                 )}
                 {cur === "enforce" && (
                   <span className="text-foreground">
-                    当前：{l.verb}。
+                    {t.nowEnforce(l.verb)}
                   </span>
                 )}
               </p>
@@ -196,7 +192,7 @@ export default function Guard({
               {/* 代价写在切之前，不是切完之后 */}
               {cur !== "enforce" && (
                 <p className="mt-1 tw-label text-neutral-400">
-                  切换到「拦截」后：{l.cost}
+                  {t.ifEnforced(l.cost)}
                 </p>
               )}
             </Item>
@@ -206,20 +202,19 @@ export default function Guard({
       {sec && (
         <Item variant="outline" className="flex-col items-stretch">
           <ItemHeader>
-            <ItemTitle>扫描规则</ItemTitle>
+            <ItemTitle>{t.rules}</ItemTitle>
           </ItemHeader>
           <p className="mt-1.5 tw-body text-muted-foreground">
-            扫描规则由内置规则与自定义规则组成。
+            {t.rulesMadeOf}
             {/*
               语义是「加法加停用」而不是「整份替换」（core 那边改过一次）。
               这里要说清，否则用户以为自己那份是全集，而我们后来加的新
               攻击模式他一条都收不到。
             */}
-            自定义规则<span className="font-medium">追加</span>在内置规则之后，不替换内置规则，新版本增加的内置规则同样生效。
+            {t.rulesAppended((s) => <span className="font-medium">{s}</span>)}
           </p>
           <p className="mt-2 tw-body text-muted-foreground">
-            已添加 {sec.scan_rules_added} 条自定义规则，停用 {sec.scan_rules_disabled} 条内置规则。增删规则需编辑
-            config.yaml。
+            {t.rulesCount(sec.scan_rules_added, sec.scan_rules_disabled)}
           </p>
         </Item>
       )}
@@ -227,21 +222,20 @@ export default function Guard({
       {sec && (
         <Item variant="outline" className="flex-col items-stretch">
           <ItemHeader>
-            <ItemTitle>按上游配置脱敏范围</ItemTitle>
+            <ItemTitle>{t.scope}</ItemTitle>
           </ItemHeader>
           <ItemDescription>
-            「出站脱敏」决定是否脱敏，此处列出
-            <span className="font-medium">各上游的脱敏类别</span>。官方端点默认不脱敏。
-            <Tip text="在「上游」中编辑该上游，于「安全」一节设置发送前脱敏。">
-              <span className="ml-1 underline decoration-dotted underline-offset-2">修改方式</span>
+            {t.scopeNote((s) => <span className="font-medium">{s}</span>)}
+            <Tip text={t.howToChangeTip}>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">{t.howToChange}</span>
             </Tip>
           </ItemDescription>
           <Table className="mt-3">
             <TableHeader>
               <TableRow>
-                <TableHead>上游</TableHead>
-                <TableHead>信任</TableHead>
-                <TableHead>脱敏类别</TableHead>
+                <TableHead>{t.upstream}</TableHead>
+                <TableHead>{t.trust}</TableHead>
+                <TableHead>{t.categories}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -252,9 +246,9 @@ export default function Guard({
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {/* core 给的是 slug（`official` / `untrusted`），不能原样显示 */}
-                    {p.trust === "official" ? "官方端点" : "非官方端点"}
+                    {p.trust === "official" ? t.official : t.unofficial}
                     {!p.trust_explicit && (
-                      <span className="ml-1 text-neutral-400">（自动识别）</span>
+                      <span className="ml-1 text-neutral-400">{t.autoDetected}</span>
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -262,7 +256,7 @@ export default function Guard({
                       p.redact.map(redactLabel).join(" · ")
                     ) : (
                       <span className="text-neutral-400">
-                        {p.redact_explicit ? "已设置为不脱敏" : "不脱敏（官方端点）"}
+                        {p.redact_explicit ? t.noRedactSet : t.noRedactOfficial}
                       </span>
                     )}
                   </TableCell>

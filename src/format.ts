@@ -4,6 +4,8 @@
  * 抽出来是因为这几条都有「边界看起来对、其实不对」的地方，而它们错了
  * 不会报错，只会让一列数字读起来是错的。
  */
+import { textOf } from "@/i18n";
+import { formatText } from "./format.i18n";
 import { usd } from "./types";
 
 /**
@@ -215,11 +217,12 @@ export function densify(
  */
 export function resetIn(secs: number | null | undefined): string | null {
   if (secs == null || secs < 0) return null;
-  if (secs === 0) return "刚刚";
-  if (secs < 60) return "1 分钟内";
+  const t = textOf(formatText).resetIn;
+  if (secs === 0) return t.now;
+  if (secs < 60) return t.underMinute;
   const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins} 分钟后`;
+  if (mins < 60) return t.minutes(mins);
   const hours = Math.round(secs / 3600);
-  if (hours < 24) return `${hours} 小时后`;
-  return `${Math.round(secs / 86400)} 天后`;
+  if (hours < 24) return t.hours(hours);
+  return t.days(Math.round(secs / 86400));
 }
