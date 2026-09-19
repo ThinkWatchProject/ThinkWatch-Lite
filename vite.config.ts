@@ -27,5 +27,7 @@ export default defineConfig({
      * 那天，既可能掩盖真文件的失败，也可能报出一个早已修好的失败。
      */
     exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
+    // 界面语言按中文起步，见 src/test-setup.ts
+    setupFiles: ["src/test-setup.ts"],
   },
 });
