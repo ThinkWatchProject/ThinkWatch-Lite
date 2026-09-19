@@ -134,9 +134,15 @@ impl Supervisor {
         let pid = match self.state() {
             CoreState::Running { pid } => pid,
             CoreState::Starting | CoreState::Restarting { .. } => {
-                anyhow::bail!("core 正在启动，请稍后再试")
+                anyhow::bail!(tr!(
+                    "core 正在启动，请稍后再试",
+                    "Core is starting; try again in a moment"
+                ))
             }
-            CoreState::SafeMode | CoreState::Stopped => anyhow::bail!("core 未运行，无法重启"),
+            CoreState::SafeMode | CoreState::Stopped => anyhow::bail!(tr!(
+                "core 未运行，无法重启",
+                "Core is not running and cannot be restarted"
+            )),
         };
         self.intentional.store(true, Ordering::SeqCst);
         // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉。

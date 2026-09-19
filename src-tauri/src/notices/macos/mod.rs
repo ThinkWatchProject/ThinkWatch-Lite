@@ -47,7 +47,10 @@ impl Sink for NativeSink {
             return;
         }
         let title = if notice.count > 1 {
-            format!("{}（{} 次）", notice.title, notice.count)
+            tr!(
+                format!("{}（{} 次）", notice.title, notice.count),
+                format!("{} ({} Times)", notice.title, notice.count)
+            )
         } else {
             notice.title.clone()
         };

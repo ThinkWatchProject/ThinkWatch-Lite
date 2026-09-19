@@ -132,10 +132,13 @@ impl MenuBarState {
 pub fn menu_line(quota_percent: Option<f64>, cost_today: Option<f64>) -> String {
     match (quota_percent, cost_today) {
         // 订阅账号优先显示额度：「今天花了 $0.00」对他是句废话
-        (Some(p), _) => format!("额度  已用 {}%", p.round() as i64),
-        (None, Some(c)) => format!("今日  ${c:.2}"),
+        (Some(p), _) => {
+            let p = p.round() as i64;
+            tr!(format!("额度  已用 {p}%"), format!("Quota  {p}% Used"))
+        }
+        (None, Some(c)) => tr!(format!("今日  ${c:.2}"), format!("Today  ${c:.2}")),
         // **破折号不是 0。**画一个 $0.00 是在断言「今天没花钱」
-        (None, None) => "今日  —".to_string(),
+        (None, None) => tr!("今日  —", "Today  —").to_string(),
     }
 }
 
@@ -375,6 +378,20 @@ mod quota_tests {
         assert_eq!(menu_line(s.quota_percent, s.cost_today), "额度  已用 62%");
         assert_eq!(menu_line(None, Some(3.4)), "今日  $3.40");
         assert_eq!(menu_line(None, None), "今日  —");
+    }
+
+    #[test]
+    fn the_menu_line_follows_the_interface_language() {
+        use crate::i18n::{Lang, with_lang};
+        let s = sub(62.0, Some(7200), false);
+        with_lang(Lang::En, || {
+            assert_eq!(menu_line(s.quota_percent, s.cost_today), "Quota  62% Used");
+            assert_eq!(menu_line(None, Some(3.4)), "Today  $3.40");
+            assert_eq!(menu_line(None, None), "Today  —");
+            // 菜单栏上那两行是点阵字，不跟语言走
+            assert_eq!(s.line1(), "62%");
+            assert_eq!(s.line2(), "2h");
+        });
     }
 
     #[test]

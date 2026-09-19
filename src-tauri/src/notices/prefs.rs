@@ -59,16 +59,20 @@ impl Category {
         }
     }
 
+    /// 设置页上的名字。**那是网页里的一行**，英文按网页的规矩用句首大写
     pub fn label(self) -> &'static str {
         match self {
-            Category::Gateway => "网关停止转发",
-            Category::Upstream => "上游无法连接",
-            Category::Quota => "订阅额度用完",
-            Category::Credential => "凭据失效或被拒绝",
-            Category::Proxy => "代理不通",
-            Category::Security => "可疑的工具调用与客户端配置",
-            Category::Config => "配置文件未通过校验",
-            Category::Storage => "磁盘空间不足",
+            Category::Gateway => tr!("网关停止转发", "Gateway stops forwarding"),
+            Category::Upstream => tr!("上游无法连接", "Upstream unreachable"),
+            Category::Quota => tr!("订阅额度用完", "Subscription quota used up"),
+            Category::Credential => tr!("凭据失效或被拒绝", "Credential expired or rejected"),
+            Category::Proxy => tr!("代理不通", "Proxy unreachable"),
+            Category::Security => tr!(
+                "可疑的工具调用与客户端配置",
+                "Suspicious tool calls and client configuration"
+            ),
+            Category::Config => tr!("配置文件未通过校验", "Config file failed validation"),
+            Category::Storage => tr!("磁盘空间不足", "Low disk space"),
         }
     }
 
