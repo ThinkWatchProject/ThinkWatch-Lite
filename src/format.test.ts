@@ -212,6 +212,12 @@ describe("额度重置时间", () => {
   /** 「0 分钟后」读起来像已经重置了，而那时额度还是满的 */
   it("不足一分钟不说成零", () => {
     expect(resetIn(20)).toBe("1 分钟内");
+    expect(resetIn(1)).toBe("1 分钟内");
+    expect(resetIn(0.5)).toBe("1 分钟内");
+  });
+  /** 上游说还剩 0 秒就是刚重置了，菜单栏同一刻画的是「0m」 */
+  it("正好是零才说刚刚", () => {
+    expect(resetIn(0)).toBe("刚刚");
   });
   it("上游没给就是不知道，不猜", () => {
     expect(resetIn(null)).toBeNull();

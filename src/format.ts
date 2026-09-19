@@ -210,9 +210,12 @@ export function densify(
  * 不是为了对表 —— 精确到分钟反而要多读一眼。
  *
  * 不足一分钟不说「0 分钟后」：那读起来像已经重置了，而那时额度还是满的。
+ * **正好是 0 才是真的重置了**：上游说还剩 0 秒，窗口刚重置，这时说「刚刚」
+ * —— 菜单栏同一刻画的是「0m」。它接在「重置」「过期」前面和单独放都读得通。
  */
 export function resetIn(secs: number | null | undefined): string | null {
   if (secs == null || secs < 0) return null;
+  if (secs === 0) return "刚刚";
   if (secs < 60) return "1 分钟内";
   const mins = Math.round(secs / 60);
   if (mins < 60) return `${mins} 分钟后`;
