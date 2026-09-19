@@ -107,6 +107,11 @@ export type CoreEvent =
    */
   | { kind: "health_changed"; id: number; provider: string; state: "open" | "closed"; at_ms: number }
   /**
+   * 某家上游的模型清单开始获取了，或者获取完了。后台获取（启动时、每天、
+   * 改了地址或凭据之后）不挂在任何一次调用上，界面靠它知道要重读概览。
+   */
+  | { kind: "models_changed"; id: number; provider: string; at_ms: number }
+  /**
    * 出站脱敏动手了。
    *
    * **界面上必须能看到脱敏发生了什么** —— 看不见的安全功能会被用户关掉，
@@ -308,6 +313,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "scan_alert":
     case "clients_changed":
     case "health_changed":
+    case "models_changed":
       // 都不进请求列表。配置事件、扫描告警、熔断状态说的都是「现在
       // 什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
@@ -894,6 +900,13 @@ export interface ProviderView {
   models_only?: string[] | null;
   /** `discovered` / `manual` / `none` */
   model_source: string;
+  /** 最近一次向上游获取清单的结果。停用的上游不去获取，一直是 `pending` */
+  model_status: ModelStatus;
+  /** 正在获取。上一次的结果照常有效 */
+  model_fetching: boolean;
+  model_checked_at_ms?: number | null;
+  /** `no_list` / `failed` 的原因 */
+  model_error?: string | null;
   /** 现在能服务的模型数，已按启用范围过滤。停用时是 0 */
   model_count: number;
   disabled: boolean;
@@ -1564,10 +1577,23 @@ export interface ProviderPreview {
 }
 
 /** 一个上游的模型清单 */
+/**
+ * 获取模型清单的结果：还没获取、上游列出了、上游不提供清单、没问到。
+ * **和清单来源不是一回事** —— 没问到时清单可能来自手动清单。
+ */
+export type ModelStatus = "pending" | "listed" | "no_list" | "failed";
+
+/** 打开上游页时补问：开始获取的是哪几家 */
+export interface ModelsRefreshing {
+  providers: string[];
+}
+
 export interface ProviderModelsView {
   provider: string;
   /** `discovered` / `manual` / `none` */
   source: string;
+  status: ModelStatus;
+  fetching: boolean;
   checked_at_ms?: number | null;
   error?: string | null;
   models: ModelRow[];

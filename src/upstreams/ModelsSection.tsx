@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/ui/table";
 import { Textarea } from "@/ui/textarea";
-import type { ResolvedPrice } from "@/types";
+import type { ModelStatus, ProviderModelsView, ResolvedPrice } from "@/types";
 import { globMatch } from "./glob";
 import { contextWindow, modelSourceLabel } from "./labels";
 import { Boxed, FormItem, Note, Segmented } from "./parts";
@@ -28,6 +28,22 @@ export interface ModelCatalog {
   checkedAtMs?: number | null;
   /** 没拿到清单的原因 */
   error?: string | null;
+  /** 获取的结果：拿到了、上游不提供、没问到 */
+  status?: ModelStatus;
+  /** core 正在向上游问 */
+  fetching?: boolean;
+}
+
+/** core 记下的那一份 */
+export function catalogOf(v: ProviderModelsView): ModelCatalog {
+  return {
+    source: v.source,
+    models: v.models.map((m) => m.id),
+    checkedAtMs: v.checked_at_ms,
+    error: v.error,
+    status: v.status,
+    fetching: v.fetching,
+  };
 }
 
 /** 这个模型在不在启用范围里。和 core 同一套通配规则 */
@@ -66,6 +82,9 @@ export function ModelsSection({
    */
   const [manualText, setManualText] = useState(() => form.manualModels.join("\n"));
   const listed = catalog?.source === "discovered";
+  // 后台正在问、手里还什么都没有：等它，别先让人去填手动清单
+  const waiting = !!catalog?.fetching && catalog.source === "none";
+  const busy = refreshing || !!catalog?.fetching;
   const models = listed ? catalog.models : form.manualModels;
   const shown = useMemo(
     () => models.filter((m) => m.toLowerCase().includes(filter.trim().toLowerCase())),
@@ -100,7 +119,11 @@ export function ModelsSection({
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <span className="tw-body font-medium">模型列表</span>
-        {catalog && <Badge variant="secondary">{modelSourceLabel(catalog.source)}</Badge>}
+        {catalog && !waiting && (
+          <Badge variant={catalog.source === "none" && catalog.status === "failed" ? "warning" : "secondary"}>
+            {modelSourceLabel(catalog.source, catalog.status)}
+          </Badge>
+        )}
         {catalog && (listed || models.length > 0) && (
           <span className="tw-label tabular-nums text-muted-foreground">
             {models.length} 个
@@ -108,13 +131,13 @@ export function ModelsSection({
           </span>
         )}
         <div className="flex-1" />
-        <Button variant="ghost" size="xs" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? <Spinner /> : <RefreshCwIcon />}
+        <Button variant="ghost" size="xs" onClick={onRefresh} disabled={busy}>
+          {busy ? <Spinner /> : <RefreshCwIcon />}
           刷新模型列表
         </Button>
       </div>
 
-      {loading ? (
+      {loading || waiting ? (
         <p className="flex items-center gap-2 tw-body text-muted-foreground">
           <Spinner />
           正在获取模型列表

@@ -138,6 +138,19 @@ export default function UpstreamsPage({
     loadStatus();
   }, [loadStatus, configVersion]);
 
+  /**
+   * **打开这一页时补问模型清单**：还没有的、没问到的、过期的。
+   *
+   * 不等、不管结果 —— core 立刻回话，答案随 `models_changed` 一家一家地到，
+   * 概览跟着重读。一分钟内问过的它自己会跳过，来回切页面不会每次都打网络。
+   * 以前要「编辑 → 模型 → 刷新」才看得到的东西，现在进页面就有。
+   */
+  useEffect(() => {
+    api.refreshStaleModels().catch(() => {
+      // 问不了（core 正在重启）就等后台那一轮，列表照常可用
+    });
+  }, []);
+
   const changed = () => {
     onChanged();
     loadStats();
@@ -318,6 +331,8 @@ export default function UpstreamsPage({
                 linkTest: (name) => setDialog({ kind: "link", provider: name }),
                 speedTest: (name) => setDialog({ kind: "speed", provider: name }),
                 refreshModels: (name) => void refreshModels(name),
+                editModels: (name) =>
+                  setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "models" } }),
                 account: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
                 toggle: (p) => void toggle(p.name),

@@ -29,6 +29,8 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     models: [],
     models_only: null,
     model_source: "discovered",
+    model_status: "listed",
+    model_fetching: false,
     model_count: 3,
     disabled: false,
     health: "ok",

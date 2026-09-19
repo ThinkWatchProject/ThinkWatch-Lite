@@ -1258,6 +1258,7 @@ pub fn run() {
             upstreams::preview_provider,
             upstreams::provider_models,
             upstreams::refresh_provider_models,
+            upstreams::refresh_stale_models,
             upstreams::upstream_stats,
             upstreams::create_proxy,
             upstreams::update_proxy,

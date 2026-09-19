@@ -121,6 +121,11 @@ export function useRequests() {
    * 不再每两秒问一次同样的问题。
    */
   const [health, setHealth] = useState(0);
+  /**
+   * 模型清单变了几次：某家开始获取了、获取完了。**同样不属于任何一次请求** ——
+   * 启动时、每天、改了地址或凭据之后，core 自己在后台问。
+   */
+  const [models, setModels] = useState(0);
 
 
   /**
@@ -208,6 +213,7 @@ export function useRequests() {
           landed = true;
         }
         if (ev.kind === "health_changed") setHealth((n) => n + 1);
+        if (ev.kind === "models_changed") setModels((n) => n + 1);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
@@ -262,6 +268,7 @@ export function useRequests() {
     seeded,
     settled,
     health,
+    models,
     locallyAnswered,
     rejected,
     configVersion,

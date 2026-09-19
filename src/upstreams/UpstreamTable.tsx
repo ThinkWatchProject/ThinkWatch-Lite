@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Progress } from "@/ui/progress";
@@ -12,17 +13,19 @@ import {
   TableRow,
 } from "@/ui/table";
 import { resetIn } from "@/format";
-import { usd, type ChatgptUsage, type Overview, type ProviderModelsView, type ProviderView } from "@/types";
-import { api, type UpstreamStats } from "./api";
+import { Spinner } from "@/ui/spinner";
+import { usd, type ChatgptUsage, type Overview, type ProviderView } from "@/types";
+import type { UpstreamStats } from "./api";
 import {
   billingLabel,
   egressLabel,
-  modelSourceNote,
+  modelFace,
   planLabel,
   protocolLabel,
   quotaWindowLabel,
   shortUrl,
 } from "./labels";
+import { ModelsPanel } from "./ModelsPanel";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -30,6 +33,8 @@ export interface UpstreamActions {
   linkTest: (name: string) => void;
   speedTest: (name: string) => void;
   refreshModels: (name: string) => void;
+  /** 打开编辑对话框的「模型」一节：启用范围、手动清单 */
+  editModels: (name: string) => void;
   /** ChatGPT 账号上游：额度与重置卡 */
   account: (name: string) => void;
   toggle: (p: ProviderView) => void;
@@ -103,7 +108,7 @@ export function UpstreamTable({
                   */}
                   <Where p={p} account={accounts[p.name]} />
                 </TableCell>
-                <ModelsCell p={p} />
+                <ModelsCell p={p} onEdit={() => actions.editModels(p.name)} />
                 <QuotaCell p={p} stats={stats} />
                 <DayCell p={p} stats={stats} />
                 <LatencyCell p={p} stats={stats} />
@@ -164,81 +169,49 @@ function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
 /**
  * 有多少个模型，以及都有哪些。
  *
- * 数目单独回答不了「我要的那个模型在不在里面」，而一个二十几项的清单
- * 又放不进一格。**点数字就展开**，不用为了看一眼进编辑对话框。
+ * **整格是一个按钮，什么状态都能点开** —— 数目单独回答不了「我要的那个
+ * 模型在不在里面」，而没拿到清单时，点开要能看到为什么、该做什么。不用
+ * 为了看一眼进编辑对话框再点刷新。停用的上游不提供模型，状态一栏已经说了。
  */
-function ModelsCell({ p }: { p: ProviderView }) {
+function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
   const [open, setOpen] = useState(false);
-  const [list, setList] = useState<ProviderModelsView | null>(null);
-  const [failed, setFailed] = useState(false);
-  const none = p.disabled || p.model_source === "none";
-  const sub = modelSourceNote(p);
-
-  // 展开才去读：一页上十几家上游，没人看的清单不该占着一次调用
-  useEffect(() => {
-    if (!open || list || failed) return;
-    let alive = true;
-    api
-      .providerModels(p.name)
-      .then((v) => alive && setList(v))
-      .catch(() => alive && setFailed(true));
-    return () => {
-      alive = false;
-    };
-  }, [open, list, failed, p.name]);
-
-  if (none) {
-    return (
-      <TableCell className="text-right tabular-nums">
-        {/* 停用时 core 报 0 —— 那不是「没有模型」，状态一栏已经说了停用 */}
-        —{sub && <div className="tw-label text-muted-foreground">{sub}</div>}
-      </TableCell>
-    );
+  if (p.disabled) {
+    return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
-
-  const models = list?.models ?? [];
-  const shown = models.filter((m) => m.enabled);
-  const hidden = models.length - shown.length;
+  const face = modelFace(p);
+  const busy = p.model_fetching || face.note === "获取中";
   return (
-    <TableCell className="text-right tabular-nums">
+    <TableCell className="text-right">
       <Popover open={open} onOpenChange={setOpen}>
         {/*
-          悬停时变成一个块，不画下划线 —— 鼠标正好压在字的下方，
-          一条紧贴基线的线它自己就把它挡了
+          悬停时整块变底色，不画下划线 —— 鼠标正好压在字的下方，一条紧贴
+          基线的线它自己就把它挡了
         */}
-        <PopoverTrigger className="-mr-1.5 rounded px-1.5 py-0.5 tabular-nums transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
-          {p.model_count}
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-64">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="tw-body font-medium">模型清单</span>
-            {sub && <span className="tw-label text-muted-foreground">{sub}</span>}
-          </div>
-          {failed ? (
-            <p className="tw-label text-muted-foreground">暂时读不到模型清单。</p>
-          ) : !list ? (
-            <p className="tw-label text-muted-foreground">正在读取</p>
-          ) : (
-            <>
-              <ul className="max-h-64 overflow-y-auto text-left font-mono tw-label">
-                {shown.map((m) => (
-                  <li key={m.id} className="truncate py-0.5" title={m.id}>
-                    {m.id}
-                  </li>
-                ))}
-              </ul>
-              {/* 范围外的不列，但要说有——否则这份清单看起来就是它全部的模型 */}
-              {hidden > 0 && (
-                <p className="tw-label text-muted-foreground">
-                  另有 {hidden} 个不在启用范围内
-                </p>
-              )}
-              {list.error && <p className="tw-label text-warning">{list.error}</p>}
-            </>
+        <PopoverTrigger
+          aria-label={`${p.name} 的模型`}
+          className="-my-1 -mr-2 inline-flex min-w-12 flex-col items-end rounded-md px-2 py-1 transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none aria-expanded:bg-muted"
+        >
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            {busy && <Spinner className="size-3 text-muted-foreground" />}
+            {face.count ?? "—"}
+          </span>
+          {face.note && (
+            <span className={cn("tw-label", face.warn ? "text-warning" : "text-muted-foreground")}>
+              {face.note}
+            </span>
           )}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-96 gap-0 p-0">
+          <ModelsPanel
+            p={p}
+            perToken={p.billing_effective === "per-token"}
+            onEdit={() => {
+              setOpen(false);
+              onEdit();
+            }}
+          />
         </PopoverContent>
       </Popover>
-      {sub && <div className="tw-label text-muted-foreground">{sub}</div>}
     </TableCell>
   );
 }

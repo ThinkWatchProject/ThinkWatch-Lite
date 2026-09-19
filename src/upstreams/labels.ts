@@ -4,7 +4,15 @@
  * **同一个概念只有一个叫法**，所以集中在这里：列表、对话框、测速结果里
  * 说的「按量计费」「默认价目表」「自动识别」必须是同一个词。
  */
-import type { L1Result, L1Skip, L1Stage, PriceFields, PriceSourceView, ProviderView } from "@/types";
+import type {
+  L1Result,
+  L1Skip,
+  L1Stage,
+  ModelStatus,
+  PriceFields,
+  PriceSourceView,
+  ProviderView,
+} from "@/types";
 
 export const PROTOCOLS: { id: string; label: string }[] = [
   { id: "anthropic", label: "Anthropic Messages" },
@@ -77,23 +85,48 @@ export function authHeaderLabel(header: string): string {
   return header === "authorization" ? "Authorization: Bearer" : header;
 }
 
-export function modelSourceLabel(source: string): string {
+/**
+ * 模型清单从哪儿来。**没拿到清单时说为什么**：还在获取、上游不提供、
+ * 没问到 —— 三种情况要做的事不一样，不能都叫「未获取」。
+ */
+export function modelSourceLabel(source: string, status?: ModelStatus): string {
   switch (source) {
     case "discovered":
       return "自动发现";
     case "manual":
       return "手动清单";
     default:
-      return "未获取";
+      return status === "failed" ? "获取失败" : status === "no_list" ? "未提供清单" : "未获取";
   }
 }
 
 /** 订阅额度窗口：`5h` / `7d` / `weekly` */
-/** 模型清单是怎么来的。自动获取、范围也没限制时不用说 */
-export function modelSourceNote(p: ProviderView): string | null {
-  if (p.model_source === "manual") return "手动清单";
-  if (p.model_source === "none") return "未获取";
-  return p.models_only ? "指定范围" : null;
+/**
+ * 上游表「模型」一格的样子：主数字，和下面那一行小字。
+ *
+ * **每种状态都说得出是什么**：以前「还没问」「密钥被拒」「上游不给清单」
+ * 都显示成「未获取」，而用户该做的事完全不同 —— 等一下、改密钥、填手动清单。
+ */
+export function modelFace(p: ProviderView): {
+  count: number | null;
+  note: string | null;
+  warn: boolean;
+} {
+  const manual = p.model_source === "manual";
+  const known = p.model_source !== "none";
+  // 还没问过：打开这一页时已经去问了，马上就有
+  if (p.model_status === "pending" && !known) return { count: null, note: "获取中", warn: false };
+  if (p.model_fetching && !known) return { count: null, note: "获取中", warn: false };
+  if (!known) {
+    return p.model_status === "no_list"
+      ? { count: null, note: "未提供清单", warn: false }
+      : { count: null, note: "获取失败", warn: true };
+  }
+  return {
+    count: p.model_count,
+    note: manual ? "手动清单" : p.models_only ? "指定范围" : null,
+    warn: false,
+  };
 }
 
 /**
