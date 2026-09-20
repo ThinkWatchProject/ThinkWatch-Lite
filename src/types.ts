@@ -1217,7 +1217,7 @@ export interface DetectedClient {
   /** `measured`：在本机实际运行验证过；`fields_only`：只查证过字段名 */
   verified: "measured" | "fields_only";
   /** 接管之后会失去或改变的功能 */
-  costs: string[];
+  costs: Msg[];
   /** 最后一次收到它的请求。**接管有没有生效，只有它能证明** */
   last_seen_ms: number | null;
 }
@@ -1228,8 +1228,8 @@ export type TakesEffect = "immediately" | "on_restart";
 export interface ManualClient {
   name: string;
   /** 手动配置的步骤，网关地址已经填在里面 */
-  how: string;
-  caveat: string;
+  how: Msg;
+  caveat: Msg;
 }
 
 export interface ClientsResponse {
@@ -1244,7 +1244,7 @@ export interface PlanView {
   path: string;
   before: string | null;
   after: string;
-  notes: string[];
+  notes: Msg[];
   shadows: string[];
   noop: boolean;
   carries_secret: boolean;
@@ -1265,16 +1265,16 @@ export interface AdoptResponse {
   real: string;
   backup: string;
   created: boolean;
-  warnings: string[];
+  warnings: Msg[];
   takes_effect: TakesEffect;
 }
 
 export interface FindingView {
   level: "blocking" | "suspect" | "clear";
-  title: string;
-  detail: string;
+  title: Msg;
+  detail: Msg;
   /** 用户可以自己执行的下一步。**我们不替他执行。** */
-  fix: string | null;
+  fix: Msg | null;
 }
 
 // ---------------------------------------------------------------- 静态扫描
@@ -1286,8 +1286,8 @@ export interface ScanFinding {
   client: string;
   path: string;
   line: number;
-  title: string;
-  detail: string;
+  title: Msg;
+  detail: Msg;
   /** 命中的那一行，**不可见字符已经换成可见记号** */
   excerpt: string;
 }
@@ -1506,7 +1506,8 @@ export interface McpTargetView {
   path: string;
   /** 能不能往里写。**不能写的照样在清单里** —— 看得见是第一目标 */
   copyable: boolean;
-  why_not: string;
+  /** 不能写的话，为什么。能写的没有理由可给 */
+  why_not: Msg | null;
 }
 
 // ---------------------------------------------------------- 上游行为基线

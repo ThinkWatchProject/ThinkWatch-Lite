@@ -18,7 +18,91 @@ import { getLang } from "./index";
  */
 type Args = Record<string, string>;
 
-const ZH: Record<string, (a: Args) => string> = {
+/**
+ * 扫描发现里的「哪一类文件」。
+ *
+ * **core 给的参数是词，不是句子** —— 它传 `kind=hooks`，句子在这边拼。
+ * 传一句拼好的英文过来的话，这边就只剩把它照抄出去一条路了。
+ */
+const SOURCE_KIND: Record<string, { label: string; why: string }> = {
+  hooks: {
+    label: "hook",
+    why: "hook 在工具调用前后直接执行 shell 命令，无需模型参与即可获得执行权限。",
+  },
+  mcp: {
+    label: "MCP server",
+    why: "MCP server 配置指定了可执行程序及其参数，相当于直接运行该程序。",
+  },
+  skill: { label: "skill", why: "SKILL.md 的内容会被注入模型上下文，成为指令。" },
+  command: { label: "斜杠命令", why: "斜杠命令的内容会被注入模型上下文，成为指令。" },
+  agent: {
+    label: "subagent",
+    why: "subagent 定义会被注入模型上下文，并可能声明宽松的工具权限。",
+  },
+  instructions: { label: "项目指令", why: "该文件会被自动读入模型上下文。" },
+};
+
+/**
+ * 藏起来的那五类字符。**说清「它能干什么」，不是「它是什么」** ——
+ * 「U+200B ZWSP」对绝大多数人不构成信息。
+ *
+ * 标题只取冒号前的那个名字，和 core 拼英文时的做法一致。
+ */
+const HIDDEN_KIND: Record<string, string> = {
+  zero_width: "零宽字符：在编辑器中不可见，但会被模型读取。",
+  tag: "Unicode 标签字符：在编辑器中完全不可见，但会原样进入模型上下文，可用于隐藏整段指令。",
+  bidi: "双向控制符：可使屏幕上的显示顺序与实际字符顺序不一致。",
+  homoglyph: "同形字符：外观与拉丁字母相同，实际是其他字符，常用于伪装命令和域名。",
+  private_use: "私用区码位：没有标准含义，出现在指令文件中即属可疑。",
+};
+
+/**
+ * 内置规则命中之后那一句「为什么」。
+ *
+ * **只有内置的这些。**用户自己在 `~/.thinkwatch/scan-rules.yaml` 里写的
+ * 规则不在这里，它们的 `why` 是用户自己写的一句话 —— 那句话原样显示才对。
+ */
+const RULE_WHY: Record<string, string> = {
+  "ignore-previous": "典型的提示注入开头",
+  disregard: "典型的提示注入开头，使用 disregard 一类的动词",
+  "you-are-now": "试图重新设定模型的身份",
+  "ignore-previous-zh": "中文提示注入，要求忽略先前的指令",
+  "new-instructions-zh": "中文提示注入，声明新的指令",
+  "you-are-now-zh": "试图重新设定模型的身份",
+  "chat-marker": "伪造对话标记，试图让模型将正文当作系统消息",
+  "fake-system": "伪装成系统或助手的发言",
+  "curl-pipe-sh": "下载后直接执行，执行的内容由远端决定且无法预先查看",
+  "rm-rf-root": "删除整个主目录或根目录",
+  "chmod-777": "将文件权限设为所有人可写",
+  "base64-decode-exec": "将要执行的内容隐藏在 base64 编码中",
+  "exfil-env": "将环境变量（通常包含密钥）发送到外部",
+  "exfil-credentials": "要求模型将凭据文件的内容发送出去",
+  "exfil-credentials-reversed": "要求模型将凭据文件的内容发送出去",
+  "write-startup-item": "写入开机或打开终端时自动执行的位置",
+  "crontab-install": "安装定时任务，或删除全部现有定时任务",
+  "ssh-key-read": "读取私钥或云服务凭据",
+};
+
+/** 接管什么时候生效。core 也把这个词当参数发过来 */
+const TAKES_EFFECT: Record<string, string> = {
+  immediately: "下一个请求即使用新配置。",
+  on_restart: "重新打开终端后生效，在此之前网关不会收到该客户端的请求。",
+};
+
+/** 词表里查一个词。**查不到就是「这句说不出来」**，交给调用处退回英文 */
+const word = <T,>(table: Record<string, T>, key: string | undefined): T | undefined =>
+  key === undefined ? undefined : table[key];
+
+/**
+ * 一条码怎么说成中文。
+ *
+ * **返回 `undefined` 就是「这句我说不出来」**，整句退回 core 给的英文。
+ * 句子是用词拼出来的那几条（扫描发现）靠它：参数里的词不在词表里 ——
+ * 用户自己写的扫描规则就是这种 —— 拼出来会是一句缺了半截的中文。
+ */
+type Say = (a: Args) => string | undefined;
+
+const ZH: Record<string, Say> = {
   // ── l1：链路测速 ────────────────────────────────────────────────
   "l1.timeout": (a) => `${a.seconds} 秒内未完成`,
   "l1.unreachable": () => "无法连接该代理。",
@@ -181,7 +265,151 @@ const ZH: Record<string, (a: Args) => string> = {
   "control.reset_cards_unreadable": (a) => `无法识别重置卡清单：${a.detail}`,
   "control.reset_card_result_unreadable": () => "无法识别使用重置卡的结果。",
   "control.bad_idempotency_key": () => "幂等键不能为空，且不超过 128 个字符。",
+
+  // ── scan：静态扫描发现了什么 ────────────────────────────────────
+  //
+  // 句子由「哪一类文件」和「命中了什么」两个词拼出来，两张词表在上面。
+  // 词表里没有那个词就整句退回英文 —— 用户自定义的规则走的正是这条路。
+  "scan.hidden": (a) => {
+    const src = word(SOURCE_KIND, a.kind);
+    const what = word(HIDDEN_KIND, a.what);
+    if (!src || !what) return undefined;
+    return `${src.label} 中含有${what.split("：")[0]}`;
+  },
+  "scan.hidden.detail": (a) => {
+    const src = word(SOURCE_KIND, a.kind);
+    const what = word(HIDDEN_KIND, a.what);
+    if (!src || !what) return undefined;
+    return `${what}${src.why}`;
+  },
+  "scan.mcp.remote": (a) => `MCP server「${a.name}」位于远端`,
+  "scan.mcp.remote.detail": (a) =>
+    `该 server 的地址为 ${a.url}，使用时相关上下文会发送到该服务器。`,
+  "scan.rule": (a) => {
+    const src = word(SOURCE_KIND, a.kind);
+    if (!src) return undefined;
+    return `${src.label} 中命中规则「${a.rule}」`;
+  },
+  "scan.rule.detail": (a) => {
+    const src = word(SOURCE_KIND, a.kind);
+    const why = word(RULE_WHY, a.rule);
+    if (!src || !why) return undefined;
+    return `${why}。${src.why}`;
+  },
+  "scan.skill.all_tools": (a) => `skill「${a.name}」声明了 allowed-tools: ["*"]`,
+  "scan.skill.all_tools.detail": () =>
+    "该 skill 可以使用任何工具。这可能是正常需要，建议确认是否确实需要此权限。",
+
+  // ── adopt.cost：接管这个客户端要付出什么 ────────────────────────
+  "adopt.cost.claude_code.remote_control": () =>
+    "接口地址不是官方域名时，Remote Control 和语音输入不可用。",
+  "adopt.cost.claude_code.mcp_tool_search": () => "MCP tool search 将默认关闭。",
+  "adopt.cost.claude_code.welcome_screen": () =>
+    "Claude Code 可能会显示一次欢迎页，关闭即可。",
+  "adopt.cost.codex.model_list": () =>
+    "Codex CLI 不从网关获取模型列表，自定义模型名无效，模型列表以本地的模型目录文件为准。",
+  "adopt.cost.codex.reopen_terminal": () => "修改后需要重新打开终端。",
+  "adopt.cost.opencode.restart": () => "修改后需要重新启动 opencode。",
+  "adopt.cost.zed.key_store": () =>
+    "Zed 的密钥不保存在配置文件中，需要在 Zed 的设置界面中手动填写一次。",
+  "adopt.cost.aider.lookup_order": () =>
+    "Aider 依次读取主目录、Git 项目根目录和当前目录中的配置，后读取的会覆盖先读取的，接管只修改主目录中的配置。",
+  "adopt.cost.aider.restart": () => "修改后需要重新启动 Aider。",
+
+  // ── adopt.diag：接管为什么没生效 ────────────────────────────────
+  "adopt.diag.not_running": (a) => `${a.client} 当前未运行`,
+  "adopt.diag.not_running.detail": () => "下次启动时将读取新配置。",
+  "adopt.diag.started_before": (a) => `${a.client} 的进程启动于接管之前`,
+  "adopt.diag.started_before.detail": (a) => {
+    const note = word(TAKES_EFFECT, a.takes_effect);
+    if (!note) return undefined;
+    return `有 ${a.count} 个进程在接管之前启动，仍在使用旧配置。${note}`;
+  },
+  "adopt.diag.restart": (a) => `退出 ${a.client} 后重新打开`,
+  "adopt.diag.started_after": (a) => `${a.client} 在接管之后启动`,
+  "adopt.diag.started_after.detail": () => "已读取新配置。",
+  "adopt.diag.not_adopted": () => "尚未接管该客户端",
+  "adopt.diag.not_adopted.detail": (a) => `${a.path} 中没有接管记录。`,
+  "adopt.diag.no_shadow": () => "没有优先级更高的配置文件",
+  "adopt.diag.no_shadow.none": () => "该客户端没有优先级更高的配置文件。",
+  "adopt.diag.no_shadow.absent": (a) => `${a.files} 不存在。`,
+  "adopt.diag.shadowed": (a) => `${a.path} 的优先级高于接管写入的配置`,
+  "adopt.diag.shadowed.no_fields": () => "该文件存在，但不包含相关字段。",
+  "adopt.diag.shadowed.fields": (a) => `该文件中包含 ${a.fields}，会覆盖接管写入的设置。`,
+  "adopt.diag.look_at_fields": (a) => `检查 ${a.path} 中的相关字段`,
+  "adopt.diag.project_config": () => "当前项目中有同名配置文件",
+  "adopt.diag.project_config.detail": (a) => `${a.path} 会覆盖用户级配置。`,
+  "adopt.diag.look_at": (a) => `检查 ${a.path}`,
+  "adopt.diag.managed": () => "本机存在管理策略文件",
+  "adopt.diag.managed.detail": (a) =>
+    `${a.path} 的优先级高于其他所有配置，包括用户配置。`,
+  "adopt.diag.no_managed": () => "本机没有管理策略文件",
+  "adopt.diag.no_managed.detail": () => "不存在优先级高于其他所有配置的管理策略文件。",
+  "adopt.diag.no_exports": () => "shell 配置中没有同名环境变量",
+  "adopt.diag.no_exports.detail": () => "已检查 .zshrc、.zprofile、.bashrc 等文件。",
+  "adopt.diag.shell_export": (a) => `${a.path} 第 ${a.line} 行导出了 ${a.name}`,
+  "adopt.diag.shell_export.harmless": (a) =>
+    `不影响 ${a.client}（其配置文件优先级更高），但会影响读取环境变量的其他客户端。`,
+  "adopt.diag.shell_export.overrides": (a) =>
+    `${a.client} 读取环境变量，该行会覆盖接管写入的配置。`,
+  // 一条命令，两种语言里是同一串字符
+  "adopt.diag.delete_line": (a) => `sed -i '' '${a.line}d' ${a.path}`,
+  "adopt.diag.fields_gone": () => "接管写入的字段已不在配置中",
+  "adopt.diag.fields_gone.detail": (a) =>
+    `${a.path} 中未找到接管写入的接口地址，可能已被其他工具修改。`,
+  "adopt.diag.adopt_again": () => "重新接管该客户端",
+  "adopt.diag.endpoint_ok": () => "配置中的接口地址与接管时一致",
+  "adopt.diag.endpoint_ok.detail": (a) => `当前指向 ${a.endpoint}。`,
+  "adopt.diag.static_only": () => "以上均为静态检查",
+  "adopt.diag.static_only.detail": () =>
+    "静态检查无法确认配置已实际生效。收到该客户端的真实请求后，才能确认接管已生效。",
+
+  // ── adopt.manual：接管不了，只能给指引的那几个 ──────────────────
+  "adopt.manual.cursor.how": (a) =>
+    `在 Cursor 的「Settings → Models」中开启 Override OpenAI Base URL，填写 ${a.v1}。`,
+  "adopt.manual.cursor.caveat": () =>
+    "Tab 补全与 inline edit 仍由 Cursor 自身的服务处理，不经过网关，因此只能部分接管。",
+  "adopt.manual.continue.how": (a) =>
+    `在 ~/.continue/config.yaml 的 models 列表中添加一项，将 apiBase 设为 ${a.v1}。`,
+  "adopt.manual.continue.caveat": () =>
+    "接入需要在 models 列表中新增条目，不提供自动接管，请按上述步骤手动配置。",
+  "adopt.manual.gemini_cli.how": (a) =>
+    `在 shell 配置文件中添加 export GOOGLE_GEMINI_BASE_URL=${a.base}，然后重新打开终端。`,
+  "adopt.manual.gemini_cli.caveat": () =>
+    "Gemini CLI 只从环境变量读取接口地址。ThinkWatch 不修改 shell 配置文件，请手动添加。",
+
+  // ── adopt.mcp：这份 MCP 配置为什么写不了 ────────────────────────
+  "adopt.mcp.unverified_format": () =>
+    "该客户端的 MCP 配置格式尚未验证，写入可能导致客户端无法读取配置",
+  "adopt.mcp.zed_structure": () =>
+    "Zed 的 context server 使用不同的配置结构，不支持 command/args 形式",
+
+  // ── adopt：接管和还原的说明 ─────────────────────────────────────
+  "adopt.takes_effect": (a) => word(TAKES_EFFECT, a.takes_effect),
+  "adopt.plan.fields_only": () =>
+    "字段名已查证，尚未在本机实际运行验证。收到第一个请求之前，请勿视为已生效。",
+  "adopt.plan.shadowed": (a) =>
+    `检测到 ${a.paths}，其优先级高于接管写入的配置，其中的同名设置会覆盖接管的设置。`,
+  "adopt.restore.config_gone": () => "配置文件已不存在，仅删除接管记录。",
+  "adopt.restore.secret_lost": (a) =>
+    `${a.field} 的原值是密钥，仅保存在全文备份中，而 ${a.backup} 已不存在。该字段已删除，需要手动重新填写。`,
+  "adopt.restore.file_removed": () => "该文件在接管时新建，还原后内容为空，已一并删除。",
+  "adopt.warn.symlink": (a) => `${a.path} 是符号链接，实际写入的文件为 ${a.real}。`,
+  "adopt.warn.world_readable": (a) =>
+    `${a.path} 的权限为 ${a.mode}，本机其他用户可以读取写入的密钥。可执行 chmod 600 ${a.path} 收紧权限。`,
 };
+
+/**
+ * 内置扫描规则命中之后那一句「为什么」。
+ *
+ * **它不是 `Msg`，是一个规则 id 加一句话** —— 工具调用防火墙的事件里带
+ * 的就是这两样。内置规则查表说中文；用户自己在 `scan-rules.yaml` 里写的
+ * 规则查不到，那句话本来就是他自己写的，原样显示。
+ */
+export function ruleWhy(rule: string, text: string): string {
+  if (getLang() === "en") return text;
+  return word(RULE_WHY, rule) ?? text;
+}
 
 /**
  * 一句没有码的话，包成 [`Msg`]。
@@ -218,7 +446,7 @@ export function coreText(m: Msg | string | null | undefined): string {
     },
   });
   const zh = say(seen);
-  return missing ? m.text : zh;
+  return missing || zh === undefined ? m.text : zh;
 }
 
 /**

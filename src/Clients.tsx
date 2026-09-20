@@ -17,7 +17,7 @@ import { fieldsOnlyText, takesEffectText } from "./labels";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { clientsText } from "./Clients.i18n";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 import {
   Dialog,
   DialogContent,
@@ -262,8 +262,8 @@ export default function Clients() {
           {data.manual.map((m) => (
             <li key={m.name}>
               <span className="font-medium text-foreground">{m.name}</span>
-              <div>{m.how}</div>
-              <div className="text-muted-foreground">{m.caveat}</div>
+              <div>{coreText(m.how)}</div>
+              <div className="text-muted-foreground">{coreText(m.caveat)}</div>
             </li>
           ))}
         </ul>
@@ -441,8 +441,8 @@ function PlanDialog({
           {/* 接管的代价要在这里列出来，不能等用户自己发现 */}
           {p.notes.length > 0 && (
             <ul className="mt-3 list-disc space-y-1 pl-4 tw-body text-muted-foreground">
-              {p.notes.map((n) => (
-                <li key={n}>{n}</li>
+              {p.notes.map((n, i) => (
+                <li key={i}>{coreText(n)}</li>
               ))}
             </ul>
           )}
@@ -558,9 +558,9 @@ function DoneDialog({ r, onClose }: { r: AdoptResponse; onClose: () => void }) {
         <div>
           {t.backedUp(<code>{r.backup}</code>)}
         </div>
-        {r.warnings.map((w) => (
-          <div key={w} className="text-amber-600 dark:text-amber-400">
-            ⚠ {w}
+        {r.warnings.map((w, i) => (
+          <div key={i} className="text-amber-600 dark:text-amber-400">
+            ⚠ {coreText(w)}
           </div>
         ))}
         <div className="pt-1">
@@ -597,12 +597,12 @@ function WhyDialog({ found, onClose }: { found: FindingView[]; onClose: () => vo
               {f.level === "blocking" ? "✗" : f.level === "suspect" ? "?" : "✓"}
             </span>
             <div>
-              <div className="font-medium">{f.title}</div>
-              <div className="text-muted-foreground">{f.detail}</div>
+              <div className="font-medium">{coreText(f.title)}</div>
+              <div className="text-muted-foreground">{coreText(f.detail)}</div>
               {/* 命令给出来，执行与否是他的事 */}
               {f.fix && (
                 <code className="mt-1 block rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                  {f.fix}
+                  {coreText(f.fix)}
                 </code>
               )}
             </div>

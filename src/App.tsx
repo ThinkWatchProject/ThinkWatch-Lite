@@ -58,7 +58,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
 import Connect, { trouble } from "./Connect";
 import { Skeleton } from "@/ui/skeleton";
-import { coreText } from "@/i18n/core.i18n";
+import { coreText, ruleWhy } from "@/i18n/core.i18n";
 import {
   Sidebar,
   SidebarContent,
@@ -1541,7 +1541,7 @@ export default function App() {
                           }
                           title={r.flagged
                             .filter((f) => f.high)
-                            .map((f) => t.flaggedTip(f.tool, f.why, f.excerpt))
+                            .map((f) => t.flaggedTip(f.tool, ruleWhy(f.rule, f.why), f.excerpt))
                             .join("\n\n")}
                         >
                           {r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious}
