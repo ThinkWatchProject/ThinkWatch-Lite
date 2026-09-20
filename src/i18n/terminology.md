@@ -55,6 +55,9 @@ known colloquialisms.
 | 概览 | Overview | sidebar |
 | 流量 | Traffic | sidebar; the list of requests |
 | 会话 | Sessions / session | |
+| 轮次 / 轮 | turns / turn | one request within a session |
+| 上下文峰值 | peak context | |
+| 缓存节省 | cache savings | |
 | 发现 | Findings | sidebar |
 | 防护 | Protection | sidebar |
 | 上游 | Upstreams / upstream | |

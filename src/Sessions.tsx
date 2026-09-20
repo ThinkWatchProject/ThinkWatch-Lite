@@ -5,6 +5,8 @@ import { usd, type SessionDetail, type SessionView, type TurnView } from "./type
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
 import { toast } from "sonner";
 import { useCoreEvent } from "./useCoreEvent";
+import { textOf, useText } from "@/i18n";
+import { sessionsText } from "./Sessions.i18n";
 import {
   Table,
   TableBody,
@@ -31,6 +33,7 @@ import {
  * 总额**。一个会撒谎的成本面板不如没有。
  */
 export default function Sessions() {
+  const t = useText(sessionsText);
   const [rows, setRows] = useState<SessionView[] | null>(null);
   const [open, setOpen] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export default function Sessions() {
   // 原来每 10 秒重算一遍，空闲时每一遍都算出同一个答案。
   useCoreEvent(["request_finished", "request_failed", "request_cancelled"], () => void load());
 
-  if (!rows) return <div className="p-5 tw-head text-muted-foreground">{error ?? "读取中…"}</div>;
+  if (!rows) return <div className="p-5 tw-head text-muted-foreground">{error ?? t.loading}</div>;
 
   if (rows.length === 0) {
     // 空状态永远在回答「接下来该做什么」
@@ -61,8 +64,8 @@ export default function Sessions() {
       <div className="p-5">
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>暂无会话记录</EmptyTitle>
-            <EmptyDescription>同一对话中的请求将聚合为会话，并显示在此处。</EmptyDescription>
+            <EmptyTitle>{t.emptyTitle}</EmptyTitle>
+            <EmptyDescription>{t.emptyBody}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       </div>
@@ -74,13 +77,13 @@ export default function Sessions() {
             <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="font-normal">开始</TableHead>
-            <TableHead className="font-normal">客户端</TableHead>
-            <TableHead className="text-right font-normal">轮次</TableHead>
-            <TableHead className="text-right font-normal">时长</TableHead>
-            <TableHead className="text-right font-normal">上下文峰值</TableHead>
-            <TableHead className="text-right font-normal">缓存节省</TableHead>
-            <TableHead className="text-right font-normal">费用</TableHead>
+            <TableHead className="font-normal">{t.started}</TableHead>
+            <TableHead className="font-normal">{t.client}</TableHead>
+            <TableHead className="text-right font-normal">{t.turns}</TableHead>
+            <TableHead className="text-right font-normal">{t.duration}</TableHead>
+            <TableHead className="text-right font-normal">{t.peakContext}</TableHead>
+            <TableHead className="text-right font-normal">{t.cacheSavings}</TableHead>
+            <TableHead className="text-right font-normal">{t.cost}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -101,7 +104,7 @@ export default function Sessions() {
                 {/* 轮次和失败数之间要有间隔 —— 挨着写会读成「181 失败」 */}
                 <span>{s.turns}</span>
                 {s.errors > 0 && (
-                  <span className="ml-2 text-red-600 dark:text-red-400">{s.errors} 失败</span>
+                  <span className="ml-2 text-red-600 dark:text-red-400">{t.failedTurns(s.errors)}</span>
                 )}
               </TableCell>
               <TableCell className="text-right">{dur(s.ended_ms - s.started_ms)}</TableCell>
@@ -132,9 +135,10 @@ export default function Sessions() {
  * N 次」，这里用同一个说法。
  */
 function Cost({ s }: { s: SessionView }) {
+  const t = useText(sessionsText);
   const subscription = s.subscription_turns > 0 && (
-    <Tip text="这些轮次由订阅制上游服务，计入订阅额度，不按用量产生费用">
-      <span className="text-muted-foreground">订阅额度 {s.subscription_turns} 轮</span>
+    <Tip text={t.subscriptionTip}>
+      <span className="text-muted-foreground">{t.subscriptionTurns(s.subscription_turns)}</span>
     </Tip>
   );
   if (s.priced_turns === 0) {
@@ -142,7 +146,7 @@ function Cost({ s }: { s: SessionView }) {
     if (subscription && s.unpriced_turns === 0 && s.no_usage_turns === 0) return subscription;
     return (
       <>
-        <Tip text="此会话中没有可计价的轮次"><span className="text-muted-foreground">无法计价</span></Tip>
+        <Tip text={t.noPricedTurnsTip}><span className="text-muted-foreground">{t.unpriced}</span></Tip>
         {subscription && <Also>{subscription}</Also>}
       </>
     );
@@ -151,20 +155,20 @@ function Cost({ s }: { s: SessionView }) {
     <>
       {s.cost_micros_estimated > 0 ? (
         // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
-        <Tip text={`其中 ${usd(s.cost_micros_estimated)} 为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或模型的单价取自其他平台。`}>
+        <Tip text={t.estimatedTip(usd(s.cost_micros_estimated))}>
           <span className="underline decoration-dotted underline-offset-2">~{usd(s.cost_micros)}</span>
         </Tip>
       ) : (
         usd(s.cost_micros)
       )}
       {s.unpriced_turns > 0 && (
-        <Tip text="这些轮次所用的模型未定价，费用未计入合计">
-          <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无法计价</span>
+        <Tip text={t.unpricedTurnsTip}>
+          <span className="ml-1 text-muted-foreground">{t.unpricedTurns(s.unpriced_turns)}</span>
         </Tip>
       )}
       {s.no_usage_turns > 0 && (
-        <Tip text="这些轮次没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计">
-          <span className="ml-1 text-muted-foreground">+{s.no_usage_turns} 轮无用量</span>
+        <Tip text={t.noUsageTurnsTip}>
+          <span className="ml-1 text-muted-foreground">{t.noUsageTurns(s.no_usage_turns)}</span>
         </Tip>
       )}
       {subscription && <Also>{subscription}</Also>}
@@ -193,9 +197,11 @@ function when(ms: number) {
 }
 
 function dur(ms: number) {
-  if (ms < 60_000) return `${Math.round(ms / 1000)} 秒`;
-  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} 分`;
-  return `${(ms / 3_600_000).toFixed(1)} 小时`;
+  // 取文案要在调用的那一刻，不能提到模块级 —— 换了语言它不会跟着换
+  const t = textOf(sessionsText);
+  if (ms < 60_000) return t.seconds(Math.round(ms / 1000));
+  if (ms < 3_600_000) return t.minutes(Math.round(ms / 60_000));
+  return t.hours((ms / 3_600_000).toFixed(1));
 }
 
 function tokens(n: number) {
@@ -205,18 +211,23 @@ function tokens(n: number) {
 
 /** 一次会话的细节：上下文增长曲线 + 每轮的成本瀑布。 */
 function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
+  const t = useText(sessionsText);
   const { session: s, turns } = d;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {when(s.started_ms)} 的会话 · {s.turns} 轮 · {dur(s.ended_ms - s.started_ms)}
+            {t.detailTitle(when(s.started_ms), s.turns, dur(s.ended_ms - s.started_ms))}
           </DialogTitle>
         </DialogHeader>
         <div className="mt-1 tw-body text-muted-foreground">
-          {s.models.join("、")} · 输入 {tokens(s.input_tokens)} / 输出 {tokens(s.output_tokens)} ·
-          缓存读取 {tokens(s.cache_read_tokens)}
+          {t.detailUsage(
+            s.models.join(t.modelSep),
+            tokens(s.input_tokens),
+            tokens(s.output_tokens),
+            tokens(s.cache_read_tokens),
+          )}
         </div>
 
         <Growth turns={turns} />
@@ -233,10 +244,11 @@ function Detail({ d, onClose }: { d: SessionDetail; onClose: () => void }) {
  * 那个东西 —— 折线会把那一跳平滑掉一部分。
  */
 function Growth({ turns }: { turns: TurnView[] }) {
+  const text = useText(sessionsText);
   const max = Math.max(1, ...turns.map((t) => t.input_tokens ?? 0));
   return (
     <section className="mt-4">
-      <div className="tw-body text-muted-foreground">上下文增长（每轮的输入 token）</div>
+      <div className="tw-body text-muted-foreground">{text.growthTitle}</div>
       <div className="mt-1 flex h-16 items-end gap-px">
         {turns.map((t) => {
           const v = t.input_tokens ?? 0;
@@ -246,7 +258,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
               key={t.id}
               className="flex-1 bg-neutral-200 dark:bg-neutral-700"
               style={{ height: `${Math.max(2, (v / max) * 100)}%` }}
-              title={`${tokens(v)} token${cached > 0 ? `，其中 ${tokens(cached)} 为缓存命中` : ""}`}
+              title={text.growthBar(tokens(v), v, cached > 0 ? tokens(cached) : null)}
             >
               {/* 缓存命中的那一段单独染色 —— 看出哪一轮打断了缓存 */}
               <div
@@ -257,19 +269,18 @@ function Growth({ turns }: { turns: TurnView[] }) {
           );
         })}
       </div>
-      <div className="mt-1 tw-label text-neutral-400">
-        绿色为缓存命中部分。峰值 {tokens(max)} token。
-      </div>
+      <div className="mt-1 tw-label text-neutral-400">{text.growthLegend(tokens(max))}</div>
     </section>
   );
 }
 
 /** 每轮的成本瀑布 —— 找出那个 8 万 token 的文件读取。 */
 function Waterfall({ turns }: { turns: TurnView[] }) {
+  const text = useText(sessionsText);
   const max = Math.max(1, ...turns.map((t) => t.cost_micros ?? 0));
   return (
     <section className="mt-4">
-      <div className="tw-body text-muted-foreground">每轮费用</div>
+      <div className="tw-body text-muted-foreground">{text.waterfallTitle}</div>
       <ul className="mt-1 space-y-0.5">
         {turns.map((t, i) => (
           <li key={t.id} className="flex items-center gap-2 tw-label">
@@ -284,16 +295,16 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
             <span className="w-16 text-right">
               {/* **没有价格就说没有价格，不写 $0**；订阅那一轮也没有金额，但它不是没有价格 */}
               {t.billing === "subscription" ? (
-                <span className="text-neutral-400">订阅额度</span>
+                <span className="text-neutral-400">{text.turnSubscription}</span>
               ) : t.cost_micros == null ? (
-                <span className="text-neutral-400">无法计价</span>
+                <span className="text-neutral-400">{text.unpriced}</span>
               ) : (
                 // 估算的金额要带记号：取消、断在中间的那几轮输出只计到断开时
                 (t.cost_estimated ? "~" : "") + usd(t.cost_micros)
               )}
             </span>
-            {t.error && <span className="text-red-600 dark:text-red-400">失败</span>}
-            {t.cancelled && <span className="text-neutral-400">已取消</span>}
+            {t.error && <span className="text-red-600 dark:text-red-400">{text.turnFailed}</span>}
+            {t.cancelled && <span className="text-neutral-400">{text.turnCancelled}</span>}
           </li>
         ))}
       </ul>

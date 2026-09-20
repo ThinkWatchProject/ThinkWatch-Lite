@@ -31,12 +31,10 @@ describe("界面语言", () => {
 const CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
 
 /**
- * 还没迁到词表里的文件。**只减不增**：迁完一个就从这里删掉，下面有一条
- * 检查会在「已经迁完却还留在清单上」时报错。新文件一律不许进这个清单。
+ * 还没迁到词表里的文件。**现在是空的 —— 全都迁完了。**清单留着当守卫：
+ * 新写的文件一律不许进来，下面第一条检查就是那道门。
  */
-const PENDING = new Set<string>([
-  "src/Sessions.tsx",
-]);
+const PENDING = new Set<string>([]);
 
 function files(dir: string): string[] {
   const out: string[] = [];
