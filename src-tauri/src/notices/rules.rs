@@ -14,6 +14,29 @@ use tw_api::Event;
 
 use super::{Level, Signal};
 
+/// 建连卡在哪一步，一句话。
+///
+/// **只翻步骤，不翻原因。**原因是 core 发来的一整句英文，翻它要在这里
+/// 再抄一份 core 的码表；而步骤是个封闭集合，几个词就够，指向的又正是
+/// 一眼要看的那件事。完整的原因在上游页上。
+fn l1_step(s: &tw_api::L1Stage) -> String {
+    let step: &str = match s.step.as_str() {
+        "config" => tr!("配置", "configuration"),
+        "dns" => tr!("DNS 解析", "DNS lookup"),
+        "tcp" => tr!("TCP 握手", "TCP handshake"),
+        "tls" => tr!("TLS 握手", "TLS handshake"),
+        "handshake" => tr!("代理握手", "proxy handshake"),
+        // core 加了一步而这一版还不认识：照着码说，总好过不说
+        other => other,
+    };
+    // 代理握手本来就只对着代理，再加一句「到代理」是废话
+    if s.peer == "proxy" && s.step != "handshake" {
+        tr!(format!("到代理的{step}"), format!("{step} to the proxy"))
+    } else {
+        step.to_string()
+    }
+}
+
 /// 界面上的落点。和 `App.tsx` 里的页面标识是同一套词
 const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
@@ -185,15 +208,22 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
         Event::ProxyChanged {
             proxy,
             state,
-            detail,
+            failed,
             ..
         } => {
             if state == "reachable" {
                 return vec![Signal::cleared(format!("proxy:{proxy}"))];
             }
-            let why = detail
-                .as_deref()
-                .map(|d| tr!(format!("{d}。"), format!("{d}. ")))
+            // **说的是卡在哪一步，不是 core 那句原因。**原因是 core 发来的
+            // 英文，而这条通知在中文界面里也要读得通；步骤是个封闭集合，
+            // 翻得了，而且它正是一眼要看的那件事 —— 卡在代理握手多半是
+            // 密码错了，卡在 TCP 多半是代理没起来。完整的原因在上游页上。
+            let why = failed
+                .as_ref()
+                .map(|s| {
+                    let step = l1_step(s);
+                    tr!(format!("卡在{step}。"), format!("It got stuck at the {step}. "))
+                })
                 .unwrap_or_default();
             vec![
                 Signal::raised(

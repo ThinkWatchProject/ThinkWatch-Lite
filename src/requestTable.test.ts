@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_FILTER, facets, filterRows, sortRows } from "./requestTable";
 import type { RequestRow } from "./types";
+import { plain } from "@/i18n/core.i18n";
 
 function row(p: Partial<RequestRow> & { id: number }): RequestRow {
   return {
@@ -78,7 +79,7 @@ describe("排序", () => {
 
 describe("过滤", () => {
   const rows = [
-    row({ id: 1, client: "claude-code", provider: "relay", state: "failed", error: "上游超时" }),
+    row({ id: 1, client: "claude-code", provider: "relay", state: "failed", error: plain("上游超时") }),
     row({ id: 2, client: "codex", provider: "official", path: "/v1/models" }),
   ];
 

@@ -33,6 +33,7 @@ import {
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { securityText } from "./Security.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 客户端配置面。
@@ -80,7 +81,7 @@ export default function Security({
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -93,7 +94,7 @@ export default function Security({
     try {
       setPending({ req, plan: await invoke<PlanView>("mcp_plan", { req }) });
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -107,7 +108,7 @@ export default function Security({
       setPending(null);
       await load();
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
       setPending(null);
     } finally {
       setBusy(false);

@@ -30,6 +30,7 @@ import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { UpstreamTable } from "./UpstreamTable";
+import { plain } from "@/i18n/core.i18n";
 
 export type UpstreamTab = "upstreams" | "proxies" | "pricing";
 
@@ -198,7 +199,7 @@ export default function UpstreamsPage({
         ...c,
         [name]: {
           running: false,
-          result: { target: name, ok: false, segments: [], total_ms: 0, error: errorText(e) },
+          result: { target: name, ok: false, segments: [], total_ms: 0, error: plain(errorText(e)) },
         },
       }));
     }

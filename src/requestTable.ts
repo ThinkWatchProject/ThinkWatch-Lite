@@ -1,4 +1,5 @@
 import type { RequestRow } from "./types";
+import { coreText } from "@/i18n/core.i18n";
 
 /**
  * 请求表的排序与过滤。
@@ -93,7 +94,7 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
       r.client.toLowerCase().includes(q) ||
       r.provider.toLowerCase().includes(q) ||
       (r.model ?? "").toLowerCase().includes(q) ||
-      (r.error ?? "").toLowerCase().includes(q)
+      coreText(r.error).toLowerCase().includes(q)
     );
   });
 }

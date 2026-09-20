@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { errorText } from "@/i18n/core.i18n";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +45,7 @@ export default function Sessions() {
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     }
   }, []);
 
@@ -94,7 +95,7 @@ export default function Sessions() {
                 try {
                   setOpen(await invoke<SessionDetail>("session_detail", { id: s.id }));
                 } catch (e) {
-                  toast.error(typeof e === "string" ? e : String(e));
+                  toast.error(errorText(e));
                 }
               }}
             >

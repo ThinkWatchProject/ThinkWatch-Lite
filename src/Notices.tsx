@@ -9,6 +9,7 @@ import { when } from "@/format";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { noticesText } from "./Notices.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /** 一条提醒。判定在 Rust 侧，这里只负责显示 */
 export interface Notice {
@@ -62,7 +63,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
   function quiet(category: string) {
     invoke("set_notice_pref", { category, mode: "app" })
       .then(() => toast.success(t.quieted))
-      .catch((e) => toast.error(typeof e === "string" ? e : String(e)));
+      .catch((e) => toast.error(errorText(e)));
   }
 
   const urgent = list.filter((n) => n.level !== "info").length;

@@ -58,6 +58,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
 import Connect, { trouble } from "./Connect";
 import { Skeleton } from "@/ui/skeleton";
+import { coreText } from "@/i18n/core.i18n";
 import {
   Sidebar,
   SidebarContent,
@@ -1398,7 +1399,7 @@ export default function App() {
                             r.durationMs != null ? `${r.durationMs}ms` : "",
                             tokens(r.inputTokens, r.outputTokens),
                             money(r.costMicros, r.costEstimated),
-                            r.error ?? "",
+                            coreText(r.error),
                           ]
                             .filter(Boolean)
                             .join("\t"),

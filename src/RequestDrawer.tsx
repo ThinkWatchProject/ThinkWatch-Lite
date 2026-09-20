@@ -22,6 +22,8 @@ import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { requestDrawerText } from "./RequestDrawer.i18n";
+import { coreText } from "@/i18n/core.i18n";
+import { errorText } from "@/i18n/core.i18n";
 import {
   Table,
   TableBody,
@@ -131,7 +133,7 @@ export default function RequestDrawer({
           setD(x);
         }
       } catch (e) {
-        if (alive) toast.error(typeof e === "string" ? e : String(e));
+        if (alive) toast.error(errorText(e));
       }
     })();
     return () => {
@@ -268,7 +270,7 @@ export default function RequestDrawer({
                   label={t.status}
                   value={
                     r.error ? (
-                      <span className="text-red-600 dark:text-red-400">{r.error}</span>
+                      <span className="text-red-600 dark:text-red-400">{coreText(r.error)}</span>
                     ) : r.cancelled ? (
                       // 不是失败，不标红：上游没有出错，是客户端先断开了
                       <span>{r.status ?? "—"} · {t.cancelled}</span>
@@ -476,7 +478,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         // 默认选一个**和原来那次不同的**上游 —— 重放的价值在对比
         setProvider(o.providers.find((p) => p.name !== originalProvider)?.name ?? o.providers[0]?.name ?? "");
       } catch (e) {
-        toast.error(typeof e === "string" ? e : String(e));
+        toast.error(errorText(e));
       }
     })();
   }, [originalProvider]);
@@ -488,7 +490,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
       setQuote(null);
     } finally {
       setBusy(false);
@@ -501,7 +503,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       setResult(await invoke<ReplayResult>("replay_run", { id, provider }));
       setQuote(null);
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }

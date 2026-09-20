@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useText } from "@/i18n";
 import type { Found, UpdateView } from "./updateFlow";
 import { updateText } from "./Update.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 设置里的「更新」。
@@ -48,7 +49,7 @@ export default function Update() {
       setView((v) => (v ? { ...v, offer: found } : v));
       setLooked(true);
     } catch (e) {
-      toast.error(t.checkFailed(typeof e === "string" ? e : String(e)));
+      toast.error(t.checkFailed(errorText(e)));
     } finally {
       setBusy(false);
     }

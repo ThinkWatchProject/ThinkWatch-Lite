@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyEvent, type CoreEvent, type RequestRow } from "./types";
+import { plain } from "@/i18n/core.i18n";
 
 /**
  * 事件流缝出来的那一行。
@@ -150,14 +151,14 @@ describe("从事件缝出一行", () => {
       kind: "request_failed",
       id: 1,
       source: "denied",
-      message: "流中断：已切断",
+      message: plain("流中断：已切断"),
       bytes: 480,
       duration_ms: 3_100,
       usage: { input: 5_000, output: 1, cache_read: 0, cache_write: 0 },
     });
     const r = rows.get(1);
     expect(r?.state).toBe("failed");
-    expect(r?.error).toBe("流中断：已切断");
+    expect(r?.error?.text).toBe("流中断：已切断");
     expect(r?.inputTokens).toBe(5_000);
     expect(r?.durationMs).toBe(3_100);
     expect(r?.bytes).toBe(480);
@@ -171,7 +172,7 @@ describe("从事件缝出一行", () => {
       kind: "request_failed",
       id: 1,
       source: "rate_limited",
-      message: "`relay` 限流了",
+      message: plain("`relay` 限流了"),
       duration_ms: 20_000,
     });
     const r = rows.get(1);

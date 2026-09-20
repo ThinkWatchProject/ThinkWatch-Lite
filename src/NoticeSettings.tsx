@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { useText } from "@/i18n";
 import { noticeSettingsText } from "./NoticeSettings.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 export type NoticeMode = "system" | "app" | "off";
 
@@ -44,7 +45,7 @@ export default function NoticeSettings() {
       setPrefs(await invoke<NoticePref[]>("set_notice_pref", { category, mode }));
     } catch (e) {
       setPrefs(before);
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     }
   }
 

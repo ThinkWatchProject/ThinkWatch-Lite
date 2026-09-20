@@ -461,7 +461,13 @@ fn in_english_no_rule_writes_a_chinese_word() {
             id: 1,
             proxy: "hk".into(),
             state: "unreachable".into(),
-            detail: Some("Connection refused".into()),
+            failed: Some(tw_api::L1Stage {
+                step: "handshake".into(),
+                peer: "proxy".into(),
+            }),
+            detail: Some(tw_api::Msg::plain(
+                "The proxy rejected the user name and password.",
+            )),
             at_ms: T0,
         },
         tw_api::Event::StorageChanged {
