@@ -33,7 +33,7 @@ import {
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { securityText } from "./Security.i18n";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 
 /**
  * 客户端配置面。
@@ -187,7 +187,7 @@ export default function Security({
                   size="xs"
                   className="text-left" onClick={() => setOpen(f)}
                 >
-                  {f.title}
+                  {coreText(f.title)}
                   <span className="ml-2 text-red-700 dark:text-red-400">
                     {f.path.replace(/^.*\//, "")}:{f.line}
                   </span>
@@ -235,7 +235,7 @@ export default function Security({
                     {f.level === "high" ? "✗" : f.level === "medium" ? "?" : "·"}
                   </span>
                   <span className="flex-1">
-                    <span className="font-medium">{f.title}</span>
+                    <span className="font-medium">{coreText(f.title)}</span>
                     <span className="ml-2 text-muted-foreground">
                       {f.path.replace(/^.*\//, "")}:{f.line}
                     </span>
@@ -343,7 +343,8 @@ function Matrix({
    */
   const [compare, setCompare] = useState<string | null>(null);
   const canWrite = (c: string) => targets.find((t) => t.client === c)?.copyable ?? false;
-  const whyNot = (c: string) => targets.find((x) => x.client === c)?.why_not ?? t.cannotWrite;
+  const whyNot = (c: string) =>
+    coreText(targets.find((x) => x.client === c)?.why_not) || t.cannotWrite;
   const names = [...new Set(mcp.map((m) => m.name))].sort();
   if (names.length === 0) {
     return (
@@ -716,10 +717,10 @@ function Detail({ f, onClose }: { f: ScanFinding; onClose: () => void }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[80vh] overflow-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{f.title}</DialogTitle>
+          <DialogTitle>{coreText(f.title)}</DialogTitle>
         </DialogHeader>
         <div className="mt-2 space-y-2 tw-body text-muted-foreground">
-          <div>{f.detail}</div>
+          <div>{coreText(f.detail)}</div>
           <div>
             <code>
               {f.path}:{f.line}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { setLang } from "./index";
-import { coreText, errorText, plain } from "./core.i18n";
+import { coreText, errorText, plain, ruleWhy } from "./core.i18n";
 
 /** 每条用例自己说用哪种语言 —— 全局的那个在测试之间是共享的 */
 function inLang<T>(lang: "zh" | "en", f: () => T): T {
@@ -49,6 +49,57 @@ describe("core 发来的消息", () => {
   it("没有消息就是空串，不是「null」", () => {
     expect(coreText(null)).toBe("");
     expect(coreText(undefined)).toBe("");
+  });
+});
+
+describe("扫描发现：句子由词拼出来", () => {
+  it("按 kind 和 rule 拼出中文", () => {
+    const m = {
+      code: "scan.rule.detail",
+      args: { kind: "hooks", rule: "curl-pipe-sh" },
+      text: "Downloads and runs it straight away; what runs is decided remotely and cannot be read first. A hook runs a shell command before or after a tool call, which is execution without the model taking part.",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(
+      "下载后直接执行，执行的内容由远端决定且无法预先查看。hook 在工具调用前后直接执行 shell 命令，无需模型参与即可获得执行权限。",
+    );
+  });
+
+  it("标题只取隐藏字符那句话的名字", () => {
+    const m = {
+      code: "scan.hidden",
+      args: { kind: "skill", what: "zero_width" },
+      text: "skill contains Zero-width characters",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe("skill 中含有零宽字符");
+  });
+
+  it("不认识的规则 id 整句退回英文", () => {
+    // 用户自己在 scan-rules.yaml 里写的规则走的就是这条路：那条 `why`
+    // 是他自己写的一句话，**原样显示才对**，拼一句缺了半截的中文不对
+    const m = {
+      code: "scan.rule.detail",
+      args: { kind: "hooks", rule: "我自己加的规则" },
+      text: "Something I wrote myself. A hook runs a shell command before or after a tool call, which is execution without the model taking part.",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(m.text);
+  });
+});
+
+describe("工具调用防火墙命中的规则", () => {
+  it("内置规则说中文", () => {
+    expect(
+      inLang("zh", () => ruleWhy("curl-pipe-sh", "Downloads and runs it straight away")),
+    ).toBe("下载后直接执行，执行的内容由远端决定且无法预先查看");
+  });
+
+  it("用户自己写的规则原样显示", () => {
+    expect(inLang("zh", () => ruleWhy("我的规则", "我自己写的理由"))).toBe("我自己写的理由");
+  });
+
+  it("英文界面用 core 给的那句", () => {
+    expect(inLang("en", () => ruleWhy("curl-pipe-sh", "Downloads and runs it"))).toBe(
+      "Downloads and runs it",
+    );
   });
 });
 
