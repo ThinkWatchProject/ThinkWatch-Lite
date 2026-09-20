@@ -96,7 +96,7 @@ Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之�
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/findings-dark.png">
-  <img src="docs/screenshots/findings-light.png" alt="发现页：skill 中隐藏的零宽字符、hook 中下载并执行远程脚本的命令、某上游命中高危规则的比例上升，以及各客户端的 MCP server 配置">
+  <img src="docs/screenshots/findings-light.png" alt="发现页：hook 中下载并执行远程脚本的命令、skill 中隐藏的零宽字符、某上游命中高危规则的比例上升，以及各客户端的 MCP server 配置">
 </picture>
 
 ### 客户端接管
