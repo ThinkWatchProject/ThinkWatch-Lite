@@ -15,8 +15,7 @@ APIs send their requests to the gateway, and Lite shows what each request
 cost, which upstream served it and why, and what was sent along with it.
 
 It runs on macOS 12 or later on Apple Silicon. Other platforms follow once the
-macOS version is complete. The interface is currently in Simplified Chinese;
-an English interface is in development.
+macOS version is complete.
 
 ## Install
 
@@ -55,13 +54,30 @@ and never added together; usage served by subscription upstreams is counted
 apart from billed usage; every request records the price sheet and the date of
 the prices it was costed with.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-en-dark.png">
+  <img src="docs/screenshots/overview-en-light.png" alt="The usage overview: tokens, cost and requests, a 24-hour trend stacked by model, the leaderboard by model and the cache hit rate">
+</picture>
+
 ### Routing and failover
 
 Routing rules send requests to an upstream or a group of upstreams by model,
 key, token count, tools, images and other properties. Every request records
 the rule it matched, the group it went through and each attempt with its
-status and duration. A dry run evaluates the rules for a given request and
-shows where it would go and why, without sending anything.
+status and duration.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/requests-en-dark.png">
+  <img src="docs/screenshots/requests-en-light.png" alt="The traffic page with a request open: the primary upstream answered 529, the request moved to openrouter, and Anthropic Messages was converted to OpenAI Chat Completions">
+</picture>
+
+A dry run evaluates the rules for a given request and shows where it would go
+and why, without sending anything and without incurring any cost.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dry-run-en-dark.png">
+  <img src="docs/screenshots/dry-run-en-light.png" alt="A routing dry run: the first two rules did not match and say why, the third one did, and the request goes to a group that tries two upstreams in order">
+</picture>
 
 ### Upstreams
 
@@ -71,6 +87,11 @@ upstream speak different API formats, requests are converted between Anthropic
 Messages, OpenAI Chat Completions, OpenAI Responses and Gemini, and the fields
 that cannot be carried over are listed. Upstreams can be reached through an
 outbound proxy and priced with a custom price sheet.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/upstreams-en-dark.png">
+  <img src="docs/screenshots/upstreams-en-light.png" alt="The upstream list: API-key upstreams, a ChatGPT account on Plus with 34% of its 5-hour quota used, OpenRouter through a proxy, DeepSeek, Gemini and a local Ollama, each with its 24-hour requests, cost and time to first byte">
+</picture>
 
 ### Security
 
@@ -86,6 +107,11 @@ Each runs in Off, Observe or Enforce mode, and all three start in Observe. The
 Findings page collects the scan results and compares each upstream's last 24
 hours with the 30 days before.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/findings-en-dark.png">
+  <img src="docs/screenshots/findings-en-light.png" alt="The findings page: a hook that downloads and runs a remote script, zero-width characters hidden in a skill, an upstream whose share of high-risk responses is rising, and the MCP servers each client has configured">
+</picture>
+
 ### Client setup
 
 Claude Code, Codex CLI, opencode, Zed and Aider can be pointed at the gateway
@@ -93,6 +119,11 @@ from the app. The change is shown as a diff before anything is written, the
 original file is backed up, only the endpoint and key fields change, and the
 change can be restored at any time. Cursor, Continue and Gemini CLI come with
 step-by-step instructions.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/clients-en-dark.png">
+  <img src="docs/screenshots/clients-en-light.png" alt="The clients page: Claude Code and Codex CLI pointed at the gateway and already serving requests, opencode not yet pointed at it, and the clients that have to be set up by hand">
+</picture>
 
 ### Menu bar and notifications
 
