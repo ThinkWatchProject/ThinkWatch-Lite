@@ -24,6 +24,7 @@ pub mod notices;
 pub mod prefs;
 pub mod routing;
 pub mod supervisor;
+pub mod theme;
 pub mod update;
 pub mod upstreams;
 
@@ -923,6 +924,44 @@ fn set_language(
     Ok(language_view())
 }
 
+/// 界面外观：现在用的、设置里选的、系统的。三个一起给，理由同
+/// [`LanguageView`]。
+#[derive(serde::Serialize)]
+struct ThemeView {
+    current: theme::Theme,
+    /// `None` 是跟随系统
+    setting: Option<theme::Theme>,
+    system: theme::Theme,
+}
+
+fn theme_view() -> ThemeView {
+    let setting = prefs::load(&data_dir()).theme;
+    ThemeView {
+        current: theme::effective(setting),
+        setting,
+        system: theme::system(),
+    }
+}
+
+#[tauri::command]
+fn app_theme() -> ThemeView {
+    theme_view()
+}
+
+/// 换外观。**当场生效** —— 换的是窗口的外观，网页里的
+/// `prefers-color-scheme` 跟着翻，不用重启也不用重画。
+#[tauri::command]
+fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Result<ThemeView, String> {
+    prefs::update(&data_dir(), |p| p.theme = setting).map_err(|e| {
+        tr!(
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
+        )
+    })?;
+    theme::apply(&app, setting);
+    Ok(theme_view())
+}
+
 /// 找到的新版本。
 #[derive(Clone, serde::Serialize)]
 struct Found {
@@ -1444,6 +1483,8 @@ pub fn run() {
             set_update_check,
             app_language,
             set_language,
+            app_theme,
+            set_theme,
             update_check,
             update_pending,
             update_copy_command,
@@ -1474,7 +1515,13 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             // **语言最先定。**托盘、通知、窗口都要用它，而它们在下面陆续出现
-            i18n::set(i18n::effective(prefs::load(&data_dir()).language));
+            let saved = prefs::load(&data_dir());
+            i18n::set(i18n::effective(saved.language));
+            // 外观在窗口出现之前就设好，不然会先画一帧系统那一档的颜色。
+            // 跟随系统（`None`）时什么都不做：那本来就是默认行为
+            if saved.theme.is_some() {
+                theme::apply(&handle, saved.theme);
+            }
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);

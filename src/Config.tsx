@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
 import { LanguageSection } from "./Language";
+import { AppearanceSection } from "./Appearance";
 import type { NicView, Overview, PatchOp } from "./types";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -562,6 +563,8 @@ export default function Config({
   return (
     <div className="space-y-8 p-5">
       {section === "settings" && <LanguageSection />}
+
+      {section === "settings" && <AppearanceSection />}
 
       {section === "settings" && (
         <section>
