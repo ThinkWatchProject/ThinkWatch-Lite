@@ -658,7 +658,8 @@ function About() {
       <dl className="mt-2 space-y-0.5 tw-body">
         {rows.map(([k, v]) => (
           <div key={k} className="flex gap-3">
-            <dt className="w-20 shrink-0 text-muted-foreground">{k}</dt>
+            {/* 96px：中文的标签只要 80，英文的 Data directory 要 86 —— 窄了会折成两行 */}
+            <dt className="w-24 shrink-0 text-muted-foreground">{k}</dt>
             <dd className="min-w-0 break-all font-mono tw-label text-muted-foreground">
               {v}
             </dd>

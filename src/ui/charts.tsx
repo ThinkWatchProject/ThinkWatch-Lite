@@ -82,9 +82,19 @@ export function StackedArea({
       <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="2 4" />
         <XAxis dataKey="label" hide />
+        {/*
+          **标题行（时间 · 金额 · 次数）靠 `XAxis dataKey` 传进来，不能给
+          `labelKey`。**shadcn 的 `ChartTooltipContent` 把 `labelKey` 当成
+          「去 config 里查哪一条」的键：给了 "label"，它先从数据里取出
+          `label` 的值（也就是那一整句话），再拿这句话去 config 里找 ——
+          config 里只有模型名，找不到，于是 `value` 是 undefined，整个标题
+          行 return null。悬停时只剩下面几行模型名和数字，没有时间。
+          不给 `labelKey` 走的是另一条：recharts 传进来的 `label` 就是
+          `XAxis dataKey="label"` 那一格的值，直接显示。
+        */}
         <ChartTooltip
           cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
-          content={<ChartTooltipContent labelKey="label" indicator="line" />}
+          content={<ChartTooltipContent indicator="line" />}
         />
         {/* 先声明的在下面。**便宜的垫底、贵的在上**：贵的那层在视觉上
             也该是最重的一层 */}

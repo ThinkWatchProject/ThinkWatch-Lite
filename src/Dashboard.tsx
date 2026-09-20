@@ -884,7 +884,8 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                   }
                 />
                 <span className="w-40 shrink-0">{g.name}</span>
-                <span className="w-11 shrink-0 text-muted-foreground">{label(g.mode)}</span>
+                {/* 56px：Observe 要 51，44 的话会压到后面那一列上 */}
+                <span className="w-14 shrink-0 text-muted-foreground">{label(g.mode)}</span>
                 <span className={g.hits > 0 ? "text-destructive" : "text-muted-foreground"}>
                   {g.saw}
                 </span>

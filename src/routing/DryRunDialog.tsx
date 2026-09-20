@@ -289,7 +289,8 @@ function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolea
       </div>
       {r.outcome === "deny" && r.reason && <p className="tw-body text-muted-foreground">{t.reason(r.reason)}</p>}
 
-      <dl className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5 tw-body">
+      {/* 标签列 80px：中文的四个字只要 64，英文的 Matched rule 要 79 */}
+      <dl className="grid grid-cols-[80px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5 tw-body">
         <dt className="text-muted-foreground">{t.route}</dt>
         <dd>
           {r.route}
