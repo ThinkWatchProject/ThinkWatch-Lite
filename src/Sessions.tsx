@@ -126,20 +126,32 @@ export default function Sessions() {
  *
  * **三态**：有价格的加起来，没价格的单独说，一轮都没有价格时
  * 不显示 $0 —— 那是在撒谎。
+ *
+ * 订阅制上游服务的轮次**不在这三态里**：它们计入订阅额度，不按用量产生
+ * 费用，既不加进合计，也不是「无法计价」。概览上同一批请求写的是「订阅额度
+ * N 次」，这里用同一个说法。
  */
 function Cost({ s }: { s: SessionView }) {
-  // 旧版本的 core 不给 `priced_turns`，那时只能按老办法减出来
-  const priced = s.priced_turns ?? s.turns - s.unpriced_turns;
-  if (priced === 0) {
-    return <Tip text="此会话中没有可计价的轮次"><span className="text-muted-foreground">无法计价</span></Tip>;
+  const subscription = s.subscription_turns > 0 && (
+    <Tip text="这些轮次由订阅制上游服务，计入订阅额度，不按用量产生费用">
+      <span className="text-muted-foreground">订阅额度 {s.subscription_turns} 轮</span>
+    </Tip>
+  );
+  if (s.priced_turns === 0) {
+    // 全走订阅的会话没有金额可写，但也没有缺什么
+    if (subscription && s.unpriced_turns === 0 && s.no_usage_turns === 0) return subscription;
+    return (
+      <>
+        <Tip text="此会话中没有可计价的轮次"><span className="text-muted-foreground">无法计价</span></Tip>
+        {subscription && <Also>{subscription}</Also>}
+      </>
+    );
   }
-  const estimated = s.cost_micros_estimated ?? 0;
-  const noUsage = s.no_usage_turns ?? 0;
   return (
     <>
-      {estimated > 0 ? (
+      {s.cost_micros_estimated > 0 ? (
         // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
-        <Tip text={`其中 ${usd(estimated)} 为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或模型的单价取自其他平台。`}>
+        <Tip text={`其中 ${usd(s.cost_micros_estimated)} 为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或模型的单价取自其他平台。`}>
           <span className="underline decoration-dotted underline-offset-2">~{usd(s.cost_micros)}</span>
         </Tip>
       ) : (
@@ -150,11 +162,25 @@ function Cost({ s }: { s: SessionView }) {
           <span className="ml-1 text-muted-foreground">+{s.unpriced_turns} 轮无法计价</span>
         </Tip>
       )}
-      {noUsage > 0 && (
+      {s.no_usage_turns > 0 && (
         <Tip text="这些轮次没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计">
-          <span className="ml-1 text-muted-foreground">+{noUsage} 轮无用量</span>
+          <span className="ml-1 text-muted-foreground">+{s.no_usage_turns} 轮无用量</span>
         </Tip>
       )}
+      {subscription && <Also>{subscription}</Also>}
+    </>
+  );
+}
+
+/**
+ * 订阅额度跟在金额后面时用「·」隔开，不用「+」：「+N 轮无法计价」说的是
+ * 合计之外还有没算进来的费用，订阅那几轮没有这样的费用。
+ */
+function Also({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <span className="mx-1 text-muted-foreground">·</span>
+      {children}
     </>
   );
 }
@@ -256,8 +282,10 @@ function Waterfall({ turns }: { turns: TurnView[] }) {
               />
             </span>
             <span className="w-16 text-right">
-              {/* **没有价格就说没有价格，不写 $0** */}
-              {t.cost_micros == null ? (
+              {/* **没有价格就说没有价格，不写 $0**；订阅那一轮也没有金额，但它不是没有价格 */}
+              {t.billing === "subscription" ? (
+                <span className="text-neutral-400">订阅额度</span>
+              ) : t.cost_micros == null ? (
                 <span className="text-neutral-400">无法计价</span>
               ) : (
                 // 估算的金额要带记号：取消、断在中间的那几轮输出只计到断开时

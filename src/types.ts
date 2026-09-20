@@ -1328,14 +1328,19 @@ export interface SessionView {
   turns: number;
   /** 有价格的那些轮次加起来，单位是**微分** */
   cost_micros: number;
-  /** 其中估算的那部分。**不为 0 时合计要带记号**。旧版本的 core 不给 */
-  cost_micros_estimated?: number;
-  /** 算出了价格的轮数。旧版本的 core 不给 */
-  priced_turns?: number;
+  /** 其中估算的那部分。**不为 0 时合计要带记号** */
+  cost_micros_estimated: number;
+  /** 算出了价格的轮数 */
+  priced_turns: number;
   /** **模型不在价目表里的轮数。**「$1.23」和「$1.23，另有 4 轮没有价格」不是一个结论 */
   unpriced_turns: number;
-  /** 没有拿到用量、算不出花费的轮数。旧版本的 core 不给 */
-  no_usage_turns?: number;
+  /** 没有拿到用量、算不出花费的轮数 */
+  no_usage_turns: number;
+  /**
+   * 由订阅制上游服务的轮数：计入订阅额度，**没有金额，也不是「无法计价」**。
+   * 和上面三个数互不相交，和概览的 `subscription_requests` 数的是同一类请求
+   */
+  subscription_turns: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -1359,10 +1364,15 @@ export interface TurnView {
   cost_micros: number | null;
   duration_ms: number | null;
   error: string | null;
-  /** 客户端没等到这一轮结束就断开了。旧版本的 core 不给 */
-  cancelled?: boolean;
-  /** 这一轮的金额是估算。**瀑布图上要带记号**。旧版本的 core 不给 */
-  cost_estimated?: boolean;
+  /** 客户端没等到这一轮结束就断开了 */
+  cancelled: boolean;
+  /** 这一轮的金额是估算。**瀑布图上要带记号** */
+  cost_estimated: boolean;
+  /**
+   * 服务它的那家怎么收钱，和 `HistoryRow.billing` 同一套词。订阅制那一轮的
+   * `cost_micros` 也是 null，**只看金额分不出它和「无法计价」**
+   */
+  billing: string;
 }
 
 export interface SessionDetail {
