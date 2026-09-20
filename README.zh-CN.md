@@ -9,11 +9,16 @@
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-**本地 AI API 网关的桌面端。** 一个菜单栏应用，托管
-[ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)，
-把它的配置、流量和花费摆到你眼前。
+ThinkWatch Lite 是运行本地 AI API 网关的 macOS 菜单栏应用。Claude Code、Codex
+CLI 等使用 Anthropic、OpenAI、Gemini API 的客户端把请求发给这个网关，Lite
+展示每个请求的费用、由哪个上游处理及其原因，以及随请求发出的内容。
 
-**先做 macOS，Apple Silicon。** 其他系统等 macOS 版做完再适配。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+  <img src="docs/screenshots/overview-light.png" alt="ThinkWatch Lite 的用量概览：token、费用与请求数，按模型分层的 24 小时趋势，模型排行与缓存命中率">
+</picture>
+
+支持 macOS 12 及以上版本，仅限 Apple Silicon。其他系统将在 macOS 版本完成后适配。
 
 ## 安装
 
@@ -21,70 +26,137 @@
 brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
 
-网关在包里，没有第二样东西要装。
+网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)
+随应用一起安装，无需另行安装。
 
-也可以从
-[release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
-下载 `ThinkWatch-Lite-<版本>-arm64.dmg`，核对旁边那份 sha256，打开它，把
-ThinkWatch Lite 拖进「应用程序」。这样会多一步：这个包**没有经过 Apple 注册
-开发者签名**，macOS 会把它标记为隔离并拒绝打开，要去掉这个属性。
+也可以从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+下载 `ThinkWatch-Lite-<版本>-arm64.dmg`，与同页发布的 sha256 校验值核对后，将
+ThinkWatch Lite 拖入「应用程序」。应用**未经 Apple 注册开发者签名**，macOS 会
+为下载的副本添加隔离属性并拒绝打开，需先移除该属性：
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 ```
 
-不用终端的话：第一次打开被拒绝之后，在「系统设置 › 隐私与安全性」里点
-「仍要打开」。
+也可以在首次打开被拒绝后，前往「系统设置 › 隐私与安全性」点击「仍要打开」。
+[Homebrew cask](https://github.com/ThinkWatchProject/homebrew-tap) 在安装时会
+自动完成这一步，此外只是把应用从磁盘映像复制到「应用程序」。
 
-除了从磁盘映像里把应用拷出来，[cask](https://github.com/ThinkWatchProject/homebrew-tap)
-做的也就是去掉这个属性。
+## 功能
 
-### 更新
+### 用量与费用
 
-应用启动后不久检查一次有没有新版本，此后每天一次，只读取一份很小的版本
-清单。可以在「设置」里关闭。
+按任意时间范围统计 token、费用与请求数，按模型分层，并给出缓存命中率、缓存
+带来的净节省和各模型的延迟分位。实测费用、估算费用与无法计价的请求分别列出，
+从不相加；订阅制上游的用量单独统计，不计入费用；每个请求都注明计价所用的
+价目表及其数据日期。
 
-有新版本时会弹出一个小窗口，接下来怎么做取决于应用是怎么装上来的。
+### 路由与故障转移
 
-**从 release 页面下载安装的：**按一次安装按钮，剩下的全部自动完成 —— 下载
-更新包，用编译进应用里的公钥验签，等网关手上的请求结束（最多三分钟），然后
-替换并重新启动。正在输出的 Claude Code 任务不会为了更新被掐断在半截。
+路由规则按模型、密钥、token 数、工具、图片等条件把请求交给某个上游或策略组。
+每个请求都记录命中的规则、经过的策略组，以及每一次尝试的状态与耗时。
 
-**用 Homebrew 安装的：**窗口给出更新命令和复制按钮，应用不会替换自己。
-Homebrew 记着它放进 `/Applications` 的是哪一版，应用把它盖掉之后，下一次
-`brew upgrade` 会把旧的那版写回来。这个窗口只在 tap 已经有新版本时才弹出，
-所以给出的命令执行下去一定有东西可装：
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/requests-dark.png">
+  <img src="docs/screenshots/requests-light.png" alt="流量页与请求详情：主上游返回 529 后，请求自动转移到 openrouter，并完成 Anthropic Messages 到 OpenAI Chat Completions 的格式转换">
+</picture>
+
+试算按给定的请求条件逐条匹配规则，说明请求会交给哪个上游、为什么，不发出请求，
+也不产生费用。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dry-run-dark.png">
+  <img src="docs/screenshots/dry-run-light.png" alt="路由试算：前两条规则未命中及其原因，第三条规则命中，请求转发至策略组并按顺序尝试两个上游">
+</picture>
+
+### 上游
+
+支持 API 密钥、在应用内登录的 ChatGPT 账号（显示订阅额度与重置时间）、
+OpenRouter 等中转服务，以及本机模型。客户端与上游的 API 格式不同时，请求在
+Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之间
+自动转换，无法转换的字段会逐一列出。上游可以经出站代理访问，也可以按自定义
+价目表计价。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/upstreams-dark.png">
+  <img src="docs/screenshots/upstreams-light.png" alt="上游列表：API 密钥上游、ChatGPT 账号（Plus，5 小时额度已用 34%）、经代理访问的 OpenRouter、DeepSeek、Gemini 与本机 Ollama，以及各自 24 小时的请求数、费用与首字节延迟">
+</picture>
+
+### 安全
+
+- **出站脱敏**：请求发往不受信任的上游之前，替换其中的密钥、私钥与连接串，并在
+  响应中还原。
+- **工具调用审查**：上游返回的工具调用中出现可直接获得执行权限的命令时，在流中
+  切断。
+- **配置面扫描**：检查客户端配置文件（skill、hook、MCP server）中的隐藏字符、
+  注入内容与危险命令。
+
+三项防护各有「关闭 / 观察 / 拦截」三档，出厂均为「观察」。「发现」页汇总扫描结果，
+并对比各上游最近 24 小时与此前 30 天的行为。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/findings-dark.png">
+  <img src="docs/screenshots/findings-light.png" alt="发现页：skill 中隐藏的零宽字符、hook 中下载并执行远程脚本的命令、某上游命中高危规则的比例上升，以及各客户端的 MCP server 配置">
+</picture>
+
+### 客户端接管
+
+Claude Code、Codex CLI、opencode、Zed 与 Aider 可以在应用内一键指向网关。写入
+前先显示改动差异并完整备份原文件，只修改端点与密钥两个字段，随时可以还原。
+Cursor、Continue 与 Gemini CLI 提供逐步的手动配置说明。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/clients-dark.png">
+  <img src="docs/screenshots/clients-light.png" alt="客户端页：已接管并收到请求的 Claude Code 与 Codex CLI、尚未接管的 opencode，以及需手动配置的客户端">
+</picture>
+
+### 菜单栏与系统通知
+
+菜单栏常驻显示今日费用与输出速率；使用订阅账号时改为显示额度用量与重置倒计时。
+网关停止转发、上游无法连接、订阅额度用完、凭据失效等情况会发送系统通知，每一类
+都可以设为系统通知、仅在应用内显示或关闭。
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
+    <img src="docs/screenshots/menubar-cost-light.png" alt="菜单栏：今日费用 $24.72，输出速率 47 token/秒" width="210">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-quota-dark.png">
+    <img src="docs/screenshots/menubar-quota-light.png" alt="菜单栏：订阅额度已用 34%，2 小时后重置" width="210">
+  </picture>
+</p>
+
+## 更新
+
+应用启动后不久检查一次新版本，此后每天检查一次，只读取一份很小的版本清单。
+可以在「设置」中关闭。
+
+有新版本时会弹出一个小窗口，之后的处理方式取决于安装方式。
+
+**从 release 页面下载安装的**：点击一次安装按钮，其余步骤自动完成——下载更新包，
+用编译进应用的公钥验签，等待网关正在处理的请求结束（最多三分钟），然后替换并
+重新启动。正在输出的 Claude Code 任务不会因更新而中断。
+
+**用 Homebrew 安装的**：窗口给出更新命令和复制按钮，应用不会替换自身。Homebrew
+记录着它放入 `/Applications` 的版本，应用自行替换后，下一次 `brew upgrade` 会
+把旧版本写回。这个窗口只在 tap 已包含新版本时才会出现，因此给出的命令一定有
+可安装的内容：
 
 ```bash
 brew update && brew upgrade --cask thinkwatch-lite
 ```
 
-前面要先 `brew update`：`brew upgrade` 自己最多一天才刷新一次 tap。
+命令先执行 `brew update`，是因为 `brew upgrade` 自身最多每天刷新一次 tap。
 
-也可以从源码跑：
+## 从源码运行
 
 ```bash
 pnpm install
 pnpm tauri dev
 ```
 
-## 它解决什么
-
-把 Claude Code、Codex，或者任何说 Anthropic / OpenAI API 的东西指向一个
-本地端口，这就是看接下来发生了什么的那个窗口：
-
-- **一次会话花了多少，以及那个数字有多可信。** 实测、估算、算不出价钱是
-  三个分开的数字，绝不相加。价目表的快照日期就标在合计旁边 —— 一个两个月
-  前的价目表算出来的数，和昨天的不是一回事。
-- **每个请求去了哪儿、为什么。** 命中的规则按名字说，经过的策略组，以及
-  完整的故障转移链，每一跳带着原因和耗时。
-- **跟着它出去的还有什么。** 被抓到正发往不受信任上游的密钥、做过的脱敏、
-  看起来危险的工具调用 —— 请求体和响应体在上屏之前就已经打过码。
-- **配置有两种改法。** 改一个值用表单，结构性的改动用 CodeMirror 编辑器。
-  两条路走同一个 span 补丁层，所以改一个字段就只有那一行变，你的注释一字
-  不动。
-- **菜单栏那 50 像素。** 今日花费，或者订阅账号的剩余额度 —— 渲染成图片，
-  因为菜单栏放不下两行文字。
+提交代码前的检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 目录
 
@@ -93,9 +165,9 @@ src/              React 19 + Tailwind 4 前端
 src-tauri/        Tauri 2 外壳：托管 core、渲染菜单栏
 ```
 
-网关本体在 ThinkWatch Core 里；这个仓库不含任何路由、转发或计费逻辑，
-它通过一个 unix socket 和 core 说话。
+网关本体位于 ThinkWatch Core；本仓库不包含路由、转发或计费逻辑，通过 unix
+socket 与 core 通信。
 
-## 许可
+## 许可证
 
 MIT，见 [LICENSE](LICENSE)。

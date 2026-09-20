@@ -9,11 +9,14 @@
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-**The desktop app for a local AI API gateway.** A menu-bar app that supervises
-[ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) and puts
-its config, its traffic, and what it costs you in front of you.
+ThinkWatch Lite is a macOS menu-bar app that runs a local AI API gateway.
+Claude Code, Codex CLI and other clients of the Anthropic, OpenAI and Gemini
+APIs send their requests to the gateway, and Lite shows what each request
+cost, which upstream served it and why, and what was sent along with it.
 
-**macOS on Apple Silicon.** Other platforms come once the macOS version is done.
+It runs on macOS 12 or later on Apple Silicon. Other platforms follow once the
+macOS version is complete. The interface is currently in Simplified Chinese;
+an English interface is in development.
 
 ## Install
 
@@ -21,30 +24,99 @@ its config, its traffic, and what it costs you in front of you.
 brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
 
-The gateway ships inside the app — there is nothing else to install.
+The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
+ships inside the app; nothing else needs to be installed.
 
-Or download `ThinkWatch-Lite-<version>-arm64.dmg` from the
-[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases),
-check it against the sha256 published beside it, open it, and drag ThinkWatch
-Lite into Applications. One extra step then applies: the build is **not signed
-by a registered Apple developer**, so macOS quarantines it and refuses to open
-it until the attribute is gone.
+A disk image is also available from the
+[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases):
+download `ThinkWatch-Lite-<version>-arm64.dmg`, check it against the sha256
+published beside it, and drag ThinkWatch Lite into Applications. The app is
+**not signed by a registered Apple developer**, so macOS quarantines a
+downloaded copy and refuses to open it until the attribute is removed:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 ```
 
-Without a terminal, the same thing takes one click after the first refused
-launch: System Settings › Privacy & Security › Open Anyway.
-
-Removing that attribute is the only thing
+The same can be done without a terminal: after the first refused launch,
+choose Open Anyway in System Settings › Privacy & Security. Removing that
+attribute is the only thing
 [the cask](https://github.com/ThinkWatchProject/homebrew-tap) does beyond
 copying the app out of the disk image.
 
-### Updates
+## Features
+
+### Usage and cost
+
+Tokens, cost and requests over any period, broken down by model, with the cache
+hit rate, the net savings from caching and latency percentiles per model.
+Measured costs, estimated costs and unpriced requests are reported separately
+and never added together; usage served by subscription upstreams is counted
+apart from billed usage; every request records the price sheet and the date of
+the prices it was costed with.
+
+### Routing and failover
+
+Routing rules send requests to an upstream or a group of upstreams by model,
+key, token count, tools, images and other properties. Every request records
+the rule it matched, the group it went through and each attempt with its
+status and duration. A dry run evaluates the rules for a given request and
+shows where it would go and why, without sending anything.
+
+### Upstreams
+
+API keys, a ChatGPT account signed in from the app (with its usage limits and
+reset times), relays such as OpenRouter, and local models. When a client and an
+upstream speak different API formats, requests are converted between Anthropic
+Messages, OpenAI Chat Completions, OpenAI Responses and Gemini, and the fields
+that cannot be carried over are listed. Upstreams can be reached through an
+outbound proxy and priced with a custom price sheet.
+
+### Security
+
+- **Outbound redaction** replaces keys, private keys and connection strings
+  before a request leaves for an untrusted upstream, and restores them in the
+  response.
+- **Tool-call inspection** cuts off the response stream when an upstream returns
+  a tool call carrying a command that would grant code execution.
+- **Config scan** checks client configuration files (skills, hooks, MCP servers)
+  for hidden characters, injected instructions and dangerous commands.
+
+Each runs in Off, Observe or Enforce mode, and all three start in Observe. The
+Findings page collects the scan results and compares each upstream's last 24
+hours with the 30 days before.
+
+### Client setup
+
+Claude Code, Codex CLI, opencode, Zed and Aider can be pointed at the gateway
+from the app. The change is shown as a diff before anything is written, the
+original file is backed up, only the endpoint and key fields change, and the
+change can be restored at any time. Cursor, Continue and Gemini CLI come with
+step-by-step instructions.
+
+### Menu bar and notifications
+
+The menu bar shows today's cost and the output rate; for a subscription account
+it shows the quota used and the time until it resets instead. System
+notifications report when the gateway stops forwarding, an upstream becomes
+unreachable, a subscription quota runs out or a credential stops working; each
+kind can be set to a system notification, in-app only, or off.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
+    <img src="docs/screenshots/menubar-cost-light.png" alt="Menu bar item: today's cost $24.72, output at 47 tokens per second" width="210">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-quota-dark.png">
+    <img src="docs/screenshots/menubar-quota-light.png" alt="Menu bar item: 34% of the subscription quota used, resets in 2 hours" width="210">
+  </picture>
+</p>
+
+## Updates
 
 The app looks for a new version shortly after it starts and once a day after
-that, reading a small manifest and nothing else. It can be turned off under
+that, reading a small manifest and nothing else. It can be turned off in
 Settings.
 
 When there is one, a small window says so, and what happens next depends on how
@@ -57,10 +129,10 @@ minutes — then replaces itself and restarts. A Claude Code task in the middle
 of a response is not cut off to make room for the update.
 
 **Installed with Homebrew:** the window gives the command to copy, and the app
-never replaces itself. Homebrew records which version it put in `/Applications`;
-an app that overwrote it would be written back over by the next `brew upgrade`.
-The window only appears once the tap carries the new version, so the command
-always has something to install:
+never replaces itself. Homebrew records which version it put in
+`/Applications`; an app that overwrote it would be written back over by the
+next `brew upgrade`. The window only appears once the tap carries the new
+version, so the command always has something to install:
 
 ```bash
 brew update && brew upgrade --cask thinkwatch-lite
@@ -69,33 +141,15 @@ brew update && brew upgrade --cask thinkwatch-lite
 `brew update` comes first because `brew upgrade` refreshes taps at most once a
 day on its own.
 
-Or run it from source:
+## Build from source
 
 ```bash
 pnpm install
 pnpm tauri dev
 ```
 
-## What it's for
-
-Point Claude Code, Codex, or anything else that speaks the Anthropic or OpenAI
-API at a local port, and this is the window onto what happens next:
-
-- **What a session cost, and how much to trust that number.** Measured,
-  estimated, and unpriced are three separate figures, never added together. The
-  price list's snapshot date is stamped next to the total, because a number
-  computed from a two-month-old price list doesn't mean what yesterday's means.
-- **Where each request went and why.** The rule it matched by name, the policy
-  group, and the full failover chain with a reason and a duration on every hop.
-- **What went out with it.** Secrets caught heading for an untrusted upstream,
-  redactions applied, tool calls that looked dangerous — with the request and
-  response bodies masked before they ever reach the screen.
-- **Edit the config two ways.** A form for changing a value, a CodeMirror editor
-  for everything structural. Both write through the same span-patching layer, so
-  editing one field changes exactly one line and leaves your comments alone.
-- **50 pixels in the menu bar.** Spend today, or remaining subscription quota
-  for an account that has one — rendered as a bitmap, because the menu bar
-  can't fit two lines of text.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks to run before opening a
+pull request.
 
 ## Layout
 
