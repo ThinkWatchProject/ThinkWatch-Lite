@@ -23,7 +23,7 @@ import {
 } from "@/ui/dialog";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/ui/empty";
 import { CopyIcon } from "lucide-react";
-import type { ClientView, CostGroup, DetectedClient, Overview } from "@/types";
+import type { ClientView, CostGroup, DetectedClient, KnownModel, Overview } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -72,6 +72,7 @@ export default function KeysPage({
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [clients, setClients] = useState<DetectedClient[]>([]);
   const [usage, setUsage] = useState<CostGroup[]>([]);
+  const [catalog, setCatalog] = useState<KnownModel[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [gateway, setGateway] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -87,6 +88,11 @@ export default function KeysPage({
       .keyUsage(Date.now() - DAY_MS)
       .then(setUsage)
       .catch(() => setUsage([]));
+    // 取不到就当作还没有清单：那一栏退回说规则条数，选择器只留手填
+    api
+      .knownModels()
+      .then(setCatalog)
+      .catch(() => setCatalog([]));
   }, []);
 
   useEffect(() => {
@@ -143,6 +149,7 @@ export default function KeysPage({
         clients={clients}
         usage={usage}
         defaultRoute={defaultRoute}
+        catalog={catalog}
         actions={{
           edit: (name) => setDialog({ kind: "edit", name }),
           rotate: (name) => setDialog({ kind: "rotate", name }),
@@ -198,6 +205,7 @@ export default function KeysPage({
           usage={usage}
           routes={ov.routes ?? []}
           defaultRoute={defaultRoute}
+          catalog={catalog}
           configVersion={configVersion}
           onClose={() => setDialog(null)}
           onSaved={(name) => {

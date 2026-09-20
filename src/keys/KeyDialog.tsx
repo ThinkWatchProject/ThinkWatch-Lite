@@ -16,18 +16,12 @@ import { Switch } from "@/ui/switch";
 import { when } from "@/format";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { ClientView, CostGroup, DetectedClient, RouteView } from "@/types";
+import type { ClientView, CostGroup, DetectedClient, KnownModel, RouteView } from "@/types";
 import { api } from "./api";
 import { keyDialogText } from "./KeyDialog.i18n";
 import { errorText, routeLabel, useLabel } from "./labels";
-
-/** 可见模型的三态。第三态是「一个都不给」——「临时停掉」的正当用法 */
-type Scope = "all" | "some" | "none";
-
-function scopeOf(allow: string[] | null | undefined): Scope {
-  if (allow == null) return "all";
-  return allow.length === 0 ? "none" : "some";
-}
+import { ModelScope } from "./ModelScope";
+import { allowOf, scopeOf, type Scope } from "./scope";
 
 /**
  * 新建与编辑一把密钥。
@@ -42,6 +36,7 @@ export function KeyDialog({
   usage,
   routes,
   defaultRoute,
+  catalog,
   configVersion,
   onClose,
   onSaved,
@@ -54,6 +49,8 @@ export function KeyDialog({
   usage: CostGroup[];
   routes: RouteView[];
   defaultRoute: string;
+  /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
+  catalog: KnownModel[];
   configVersion: string | null;
   onClose: () => void;
   onSaved: (name: string) => void;
@@ -64,7 +61,7 @@ export function KeyDialog({
   const [name, setName] = useState(editing?.name ?? "");
   const [route, setRoute] = useState(editing?.route ?? "");
   const [scope, setScope] = useState<Scope>(scopeOf(editing?.allow));
-  const [globs, setGlobs] = useState((editing?.allow ?? []).join("\n"));
+  const [entries, setEntries] = useState<string[]>(editing?.allow ?? []);
   const [limit, setLimit] = useState(
     editing?.max_concurrent != null ? String(editing.max_concurrent) : "",
   );
@@ -80,27 +77,18 @@ export function KeyDialog({
       ? t.nameRequired
       : taken
         ? t.nameTaken
-        : scope === "some" && globs.trim().length === 0
+        : scope === "some" && entries.length === 0
           ? t.patternsRequired
           : null;
 
   async function save() {
     setSaving(true);
     setError(null);
-    const allow =
-      scope === "all"
-        ? null
-        : scope === "none"
-          ? []
-          : globs
-              .split("\n")
-              .map((g) => g.trim())
-              .filter(Boolean);
     const body = {
       key: {
         name: name.trim(),
         route: route || null,
-        allow,
+        allow: allowOf(scope, entries),
         max_concurrent: limit.trim() ? Number(limit.trim()) : null,
         disabled: !enabled,
       },
@@ -119,7 +107,7 @@ export function KeyDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editing ? t.editTitle : t.newTitle}</DialogTitle>
           <DialogDescription>
@@ -201,50 +189,26 @@ export function KeyDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <label className="tw-body font-medium" htmlFor="k-scope">
-                {t.scope}
-              </label>
-              <NativeSelect
-                id="k-scope"
-                value={scope}
-                onChange={(e) => setScope(e.target.value as Scope)}
-              >
-                <NativeSelectOption value="all">{t.scopeAll}</NativeSelectOption>
-                <NativeSelectOption value="some">{t.scopeSome}</NativeSelectOption>
-                <NativeSelectOption value="none">{t.scopeNone}</NativeSelectOption>
-              </NativeSelect>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <label className="tw-body font-medium" htmlFor="k-limit">
-                {t.limit}
-              </label>
-              <Input
-                id="k-limit"
-                className="font-mono"
-                value={limit}
-                placeholder={t.noLimit}
-                onChange={(e) => setLimit(e.target.value.replace(/[^0-9]/g, ""))}
-              />
-            </div>
+          <div className="flex min-w-0 flex-col gap-1.5 sm:w-1/2 sm:pr-2">
+            <label className="tw-body font-medium" htmlFor="k-limit">
+              {t.limit}
+            </label>
+            <Input
+              id="k-limit"
+              className="font-mono"
+              value={limit}
+              placeholder={t.noLimit}
+              onChange={(e) => setLimit(e.target.value.replace(/[^0-9]/g, ""))}
+            />
           </div>
 
-          {scope === "some" && (
-            <div className="flex flex-col gap-1.5">
-              <label className="tw-body font-medium" htmlFor="k-globs">
-                {t.patterns}
-              </label>
-              <textarea
-                id="k-globs"
-                className="min-h-20 rounded-md border border-input bg-transparent px-3 py-2 font-mono tw-body outline-none focus-visible:border-ring"
-                value={globs}
-                onChange={(e) => setGlobs(e.target.value)}
-                placeholder={"claude-*\ngpt-5*"}
-              />
-              <p className="tw-label text-muted-foreground">{t.patternsHint}</p>
-            </div>
-          )}
+          <ModelScope
+            scope={scope}
+            entries={entries}
+            catalog={catalog}
+            onScope={setScope}
+            onEntries={setEntries}
+          />
 
           <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
             <div>

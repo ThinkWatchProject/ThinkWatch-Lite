@@ -6,7 +6,7 @@
  * 和 core 说法不一致的可能。
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { ClientView, ConfigWritten, CostGroup, KeyRotated, KeySave } from "@/types";
+import type { ClientView, ConfigWritten, CostGroup, KeyRotated, KeySave, KnownModel } from "@/types";
 
 type Base = string | null;
 
@@ -27,4 +27,6 @@ export const api = {
   copyGatewayBase: () => invoke<void>("copy_gateway_base"),
   /** 每把密钥这段时间发了多少请求 */
   keyUsage: (sinceMs: number) => invoke<CostGroup[]>("key_usage", { sinceMs }),
+  /** 网关聚合出来的模型目录。可见模型那一栏和选择器都按它算 */
+  knownModels: () => invoke<KnownModel[]>("known_models"),
 };
