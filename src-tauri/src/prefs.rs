@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::i18n::Lang;
+use crate::theme::Theme;
 
 /// 设置文件，放在数据目录里。
 const PREFS_FILE: &str = "app.json";
@@ -27,6 +28,8 @@ pub struct Prefs {
     /// **只存用户明确选过的。**出厂不写进文件：系统语言改了，没选过的人
     /// 下次打开应该跟着变，而不是停在第一次启动时猜的那个。
     pub language: Option<Lang>,
+    /// 界面外观。`None` 是跟随系统，理由同上。
+    pub theme: Option<Theme>,
 }
 
 impl Default for Prefs {
@@ -34,6 +37,7 @@ impl Default for Prefs {
         Self {
             check_updates: true,
             language: None,
+            theme: None,
         }
     }
 }
@@ -88,11 +92,12 @@ mod tests {
     }
 
     #[test]
-    fn with_no_settings_file_the_check_is_on_and_the_language_follows_the_system() {
+    fn with_no_settings_file_the_check_is_on_and_the_language_and_theme_follow_the_system() {
         let dir = tmp();
         let p = load(&dir);
         assert!(p.check_updates);
         assert_eq!(p.language, None);
+        assert_eq!(p.theme, None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -127,6 +132,7 @@ mod tests {
         let want = Prefs {
             check_updates: true,
             language: Some(Lang::Zh),
+            theme: Some(Theme::Dark),
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);
