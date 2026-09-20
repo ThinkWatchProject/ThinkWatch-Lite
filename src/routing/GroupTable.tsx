@@ -43,7 +43,9 @@ export function GroupTable({ ov, actions }: { ov: Overview; actions: GroupAction
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-36">{rt.name}</TableHead>
+          {/* 176px：内置那一行是「全部上游 + 内置」，英文的 All upstreams 加 Built-in
+              徽标要 164，144 的话名字被截成 All upstream… */}
+          <TableHead className="w-44">{rt.name}</TableHead>
           <TableHead className="w-28">{rt.strategy}</TableHead>
           <TableHead>{rt.members}</TableHead>
           <TableHead className="w-48">{t.references}</TableHead>
