@@ -23,6 +23,7 @@ import { ButtonGroup } from "@/ui/button-group";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configText } from "./Config.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 一个能改的字段。
@@ -80,7 +81,7 @@ function EditableCell({
       // **失败时把草稿退回原值。**留着一个没保存成功的值，用户下次
       // 看这一行会以为它已经生效了。
       setDraft(value);
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -186,7 +187,7 @@ function CidrList({
       await patchConfig(ops, configVersion);
       setAdding("");
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -268,7 +269,7 @@ function ProbesSection({
     try {
       await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], configVersion);
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(null);
     }
@@ -400,7 +401,7 @@ function ListenSection({
     try {
       await patchConfig([{ op: "replace", path: "/listen/gateway/bind", value }], configVersion);
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -705,7 +706,7 @@ function Diagnostics() {
             setPath(await invoke<string>("save_diagnostics"));
           } catch (e) {
             // Tauri 的 invoke 用字符串 reject，不是 Error
-            toast.error(typeof e === "string" ? e : String(e));
+            toast.error(errorText(e));
           } finally {
             setBusy(false);
           }
@@ -810,7 +811,7 @@ function Uninstall() {
                   setLog(await invoke<string[]>("uninstall", { dropData: drop }));
                   setStep("done");
                 } catch (e) {
-                  setLog([typeof e === "string" ? e : String(e)]);
+                  setLog([errorText(e)]);
                   setStep("done");
                 } finally {
                   setBusy(false);

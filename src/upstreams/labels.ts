@@ -5,6 +5,7 @@
  * 说的「按量计费」「默认价目表」「自动识别」必须是同一个词。
  */
 import { textOf } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
 import type {
   L1Result,
   L1Skip,
@@ -217,7 +218,7 @@ export function l1SkipText(s: L1Skip): string {
 /** 测速失败时的那一句：失败在哪一步，加上原因 */
 export function l1ErrorText(r: L1Result): string {
   const t = textOf(labelsText);
-  const error = r.error ?? t.cannotConnect;
+  const error = r.error ? coreText(r.error) : t.cannotConnect;
   return r.failed ? t.stageError(l1StageLabel(r.failed), error) : error;
 }
 
@@ -303,7 +304,4 @@ export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = (
   },
 }));
 
-/** Tauri 的 invoke 用字符串 reject，不是 Error */
-export function errorText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
-}
+export { errorText } from "@/i18n/core.i18n";

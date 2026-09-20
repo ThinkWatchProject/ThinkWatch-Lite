@@ -17,6 +17,7 @@ import { fieldsOnlyText, takesEffectText } from "./labels";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { clientsText } from "./Clients.i18n";
+import { errorText } from "@/i18n/core.i18n";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +59,7 @@ export default function Clients() {
       setError(null);
     } catch (e) {
       // Tauri 的 invoke 用字符串 reject，不是 Error
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     }
   }, []);
 
@@ -92,7 +93,7 @@ export default function Clients() {
       });
       setPlan({ p, c, restore });
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -118,7 +119,7 @@ export default function Clients() {
       setDone(r);
       await load();
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
       setPlan(null);
     } finally {
       setBusy(false);
@@ -130,7 +131,7 @@ export default function Clients() {
     try {
       setWhy({ id, found: await invoke<FindingView[]>("diagnose_client", { client: id }) });
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -182,7 +183,7 @@ export default function Clients() {
                     }
                     await load();
                   } catch (e) {
-                    toast.error(typeof e === "string" ? e : String(e));
+                    toast.error(errorText(e));
                   } finally {
                     setBusy(false);
                   }

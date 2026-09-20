@@ -6,6 +6,24 @@ import type { CostBucket } from "./format";
 // 一份手抄的镜像，注释里自己承认了。等类型多起来要换成从 Rust 导出
 // （ts-rs 之类），现在还不值得。
 
+/**
+ * core 发来的一句给人看的话。
+ *
+ * **core 不翻译，只出英文。**它给的是一个稳定的码、填进句子的参数，以及
+ * 英文原句；界面拿 `code` 去自己的词表里找句子（见 `src/i18n/core.i18n.ts`），
+ * 找不到就显示 `text` —— core 比界面新、或者这条是加码之前落库的老记录时，
+ * 一句英文总好过一个码。
+ *
+ * **码是契约，句子不是。**core 改措辞不用动码，界面那边什么都不用做。
+ */
+export interface Msg {
+  code: string;
+  /** 填进句子里的参数，按名字取。值已经写成字符串 */
+  args?: Record<string, string>;
+  /** 英文原句，参数已经填好 */
+  text: string;
+}
+
 export type CoreEvent =
   | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
@@ -20,7 +38,7 @@ export type CoreEvent =
       kind: "request_failed";
       id: number;
       source: string;
-      message: string;
+      message: Msg;
       bytes?: number;
       duration_ms?: number;
       usage?: UsageView;
@@ -245,7 +263,9 @@ export interface RequestRow {
   costMicros?: number;
   /** 上游没给用量、只能按输入长度估的。显示时要带 `~` */
   costEstimated?: boolean;
-  error?: string;
+  /** 失败的原因。**存的是 core 发来的那条消息，不是一句话** —— 语言
+   * 是在画的时候才定的，存成句子的话换了语言它不会跟着换 */
+  error?: Msg;
   /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
   redacted?: RedactedItem[];
   /** 做过格式转换的话，转成了什么、丢了什么 */
@@ -419,7 +439,7 @@ export interface L1Result {
   /** 失败在哪一步 */
   failed?: L1Stage | null;
   /** 失败的原因，不带步骤前缀 */
-  error?: string | null;
+  error?: Msg | null;
 }
 
 // —— 观测 ——
@@ -530,7 +550,8 @@ export interface HistoryRow {
   cache_write_tokens: number | null;
   cost_micros: number | null;
   cost_estimated: boolean;
-  error: string | null;
+  /** 失败的原因。**加码之前落库的老记录 `code` 是空串**，那时只存了正文 */
+  error: Msg | null;
   local: boolean;
   /**
    * 客户端没等到响应结束就断开了。**不是失败**，`error` 为空。

@@ -25,10 +25,7 @@ import { configDialogsText } from "./ConfigDialogs.i18n";
 import { when } from "./format";
 import type { ConfigText, ConfigVersion } from "./types";
 import { originLabel } from "./labels";
-
-function errorText(e: unknown): string {
-  return typeof e === "string" ? e : String(e);
-}
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 配置文件。**各配置页共用这一个入口** —— 文件只有一份，表单是它的几种

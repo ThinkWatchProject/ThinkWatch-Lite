@@ -11,6 +11,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { canInstall, describeStep, type Offer, type Step } from "./updateFlow";
 import { updateText } from "./Update.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 窗口宽度。**高度跟着内容走** —— 发布说明有长有短，固定高度要么留白要么
@@ -124,7 +125,7 @@ export default function UpdateWindow() {
       await invoke("update_install");
     } catch (e) {
       setStep(null);
-      setFailed(typeof e === "string" ? e : String(e));
+      setFailed(errorText(e));
     }
   };
 

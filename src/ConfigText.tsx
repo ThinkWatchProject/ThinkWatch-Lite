@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configTextText } from "./ConfigText.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 直接编辑 config.yaml。
@@ -122,7 +123,7 @@ export default function ConfigTextMode({
       base.current = "";
       onSaved();
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(false);
     }

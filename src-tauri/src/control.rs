@@ -95,8 +95,9 @@ impl ControlClient {
         let status = resp.status();
         let bytes = resp.into_body().collect().await?.to_bytes();
         if !status.is_success() {
-            // 和 `send_json` 一样把控制面的说明原样带出去（「没有这条请求」之类），
-            // 只剩状态码的话，界面上只能显示一个 404
+            // 控制面的响应体是一条 JSON 的 `Msg`：**原样带出去，界面那边
+            // 按码翻**（见 `errorText`）。只剩状态码的话，界面上只能显示
+            // 一个 404
             let text = String::from_utf8_lossy(&bytes);
             if text.trim().is_empty() {
                 anyhow::bail!(tr!(
@@ -192,8 +193,9 @@ impl ControlClient {
         let status = resp.status();
         let bytes = resp.into_body().collect().await?.to_bytes();
         if !status.is_success() {
-            // 控制面对可预期的失败回的是人话（比如「已经配过上游了」），
-            // 原样带出去 —— 在这里重新包装一遍只会把它埋掉。
+            // 控制面对可预期的失败回的是一条 JSON 的 `Msg`（码 + 参数 +
+            // 英文原句）。**原样带出去**：翻译在界面那一侧，因为词表在
+            // 那儿；在这里重新包装一遍只会把码埋掉。
             anyhow::bail!("{}", String::from_utf8_lossy(&bytes));
         }
         Ok(serde_json::from_slice(&bytes)?)

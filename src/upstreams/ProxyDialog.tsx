@@ -20,6 +20,7 @@ import { api } from "./api";
 import { PROXY_KINDS, errorText, l1ErrorText } from "./labels";
 import { FormItem, Segmented, StatusDot } from "./parts";
 import { proxyDialogText } from "./ProxyDialog.i18n";
+import { plain } from "@/i18n/core.i18n";
 
 export type ProxyDialogMode = { kind: "create" } | { kind: "edit"; name: string };
 
@@ -84,7 +85,7 @@ export function ProxyDialog({
     try {
       setResult(await api.testProxy({ proxy: input(), current: editing?.name }));
     } catch (e) {
-      setResult({ target: name, ok: false, segments: [], total_ms: 0, error: errorText(e) });
+      setResult({ target: name, ok: false, segments: [], total_ms: 0, error: plain(errorText(e)) });
     } finally {
       setTesting(false);
     }

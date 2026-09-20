@@ -14,6 +14,7 @@ import {
   ItemHeader,
   ItemTitle,
 } from "@/ui/item";
+import { errorText } from "@/i18n/core.i18n";
 import {
   Table,
   TableBody,
@@ -109,7 +110,7 @@ export default function Guard({
       await patchConfig([{ op: "replace", path, value: mode }], configVersion);
       onChanged();
     } catch (e) {
-      toast.error(typeof e === "string" ? e : String(e));
+      toast.error(errorText(e));
     } finally {
       setBusy(null);
     }

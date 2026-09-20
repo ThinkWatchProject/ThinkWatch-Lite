@@ -5,6 +5,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { toast } from "sonner";
 import { textOf, useText } from "@/i18n";
 import { connectText } from "./Connect.i18n";
+import { errorText } from "@/i18n/core.i18n";
 
 /**
  * 沉默多久之后才开口。
@@ -136,7 +137,7 @@ export default function Connect({ state, tries }: { state: string; tries: number
               onClick={() => {
                 setBusy(true);
                 void invoke("restart_core")
-                  .catch((e) => toast.error(typeof e === "string" ? e : String(e)))
+                  .catch((e) => toast.error(errorText(e)))
                   .finally(() => setBusy(false));
               }}
             >

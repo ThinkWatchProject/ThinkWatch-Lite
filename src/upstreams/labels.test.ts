@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
-import { modelFace } from "./labels";
+import { l1ErrorText, modelFace } from "./labels";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -57,5 +57,36 @@ describe("modelFace", () => {
   it("keeps showing a manual list that stands in for a failed or missing one", () => {
     const face = modelFace(p({ model_source: "manual", model_status: "failed", model_count: 2 }));
     expect(face).toEqual({ count: 2, note: "手动清单", warn: false });
+  });
+});
+
+describe("链路测速失败的那句话", () => {
+  const base = { target: "hk", ok: false as const, segments: [], total_ms: 0 };
+
+  it("卡在哪一步 + 为什么，两样都说", () => {
+    // 「TCP 握手失败」说不出是地址错了还是代理没起来
+    const text = l1ErrorText({
+      ...base,
+      failed: { step: "tcp", peer: "proxy" },
+      error: {
+        code: "l1.tcp.refused",
+        args: { addr: "127.0.0.1:1080" },
+        text: "127.0.0.1:1080 refused the connection.",
+      },
+    });
+    expect(text).toContain("TCP 握手");
+    expect(text).toContain("127.0.0.1:1080 拒绝连接");
+  });
+
+  it("不认识的码退回 core 给的那句英文", () => {
+    const text = l1ErrorText({
+      ...base,
+      error: { code: "l1.something.new", text: "Something new." },
+    });
+    expect(text).toBe("Something new.");
+  });
+
+  it("连原因都没有时也要有一句话", () => {
+    expect(l1ErrorText(base)).not.toBe("");
   });
 });

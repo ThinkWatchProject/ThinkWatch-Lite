@@ -23,10 +23,7 @@ export function scopeLabel(allow: string[] | null | undefined): {
   return { text: t.models(allow.length), warn: false };
 }
 
-/** 错误文案：core 发来的字符串原样显示 */
-export function errorText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
-}
+export { errorText } from "@/i18n/core.i18n";
 
 /**
  * 没绑路由时那一格写什么。
