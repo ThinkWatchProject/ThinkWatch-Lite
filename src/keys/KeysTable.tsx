@@ -3,7 +3,7 @@ import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { when } from "@/format";
 import { textOf, useText } from "@/i18n";
-import type { ClientView, CostGroup, DetectedClient } from "@/types";
+import type { ClientView, CostGroup, DetectedClient, KnownModel } from "@/types";
 import { keysTableText } from "./KeysTable.i18n";
 import { routeLabel, scopeLabel, useLabel } from "./labels";
 
@@ -27,6 +27,7 @@ export function KeysTable({
   clients,
   usage,
   defaultRoute,
+  catalog,
   actions,
 }: {
   keys: ClientView[];
@@ -35,6 +36,8 @@ export function KeysTable({
   /** 24 小时内每把密钥发了多少请求 */
   usage: CostGroup[];
   defaultRoute: string;
+  /** 网关知道的全部模型，用来把规则换算成模型数 */
+  catalog: KnownModel[];
   actions: KeyActions;
 }) {
   const t = useText(keysTableText);
@@ -52,7 +55,7 @@ export function KeysTable({
       <TableBody>
         {keys.map((k) => {
           const items = menu(k, clients, actions);
-          const scope = scopeLabel(k.allow);
+          const scope = scopeLabel(k.allow, catalog);
           const used = usage.find((u) => u.name === k.name);
           return (
             <RowMenu key={k.name} items={items}>
