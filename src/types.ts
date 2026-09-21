@@ -25,7 +25,13 @@ export interface Msg {
 }
 
 export type CoreEvent =
-  | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number }
+  /**
+   * `session_fp` 是这一条属于哪次会话，和 `SessionView.id` 同一个值。
+   *
+   * **事件里就带着它，不用等落库。**否则刚到的那一行会先无主、过一会儿
+   * 再跳进它的组里 —— 而归组视图下那就是一行凭空换位置。
+   */
+  | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
   | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
   /**
@@ -272,6 +278,13 @@ export interface RequestRow {
   translated?: TranslatedView;
   /** 上游返回的可疑工具调用 */
   flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
+  /**
+   * 它属于哪次会话，和 `SessionView.id` 同一个值。
+   *
+   * 认不出会话的（拼不出指纹的、老记录）没有这个字段 —— **不能拿一个
+   * 假的把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
+   */
+  session?: string;
 }
 
 export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
@@ -286,6 +299,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         path: ev.path,
         atMs: ev.at_ms,
         state: "in_flight",
+        ...(ev.session_fp ? { session: ev.session_fp } : {}),
       });
       break;
     case "request_headers": {
@@ -569,6 +583,8 @@ export interface HistoryRow {
   price_source?: PriceSourceView | null;
   /** 服务它的那一跳做过的格式转换。直通的、老记录没有它 */
   translated?: TranslatedView | null;
+  /** 它属于哪次会话，和 `SessionView.id` 同一个值。认不出的没有 */
+  session?: string | null;
 }
 
 /** 一次请求做过的格式转换 */

@@ -297,7 +297,7 @@ async fn dashboard(
         summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
         latency: c.latency().await.unwrap_or_default(),
         latency_by_provider: c.latency_by_provider(None).await.unwrap_or_default(),
-        history: c.history(200).await.unwrap_or_default(),
+        history: c.history(200, None).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
         leaks: c.leaks().await.unwrap_or_default(),
         // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
@@ -385,12 +385,22 @@ async fn speed_run(
 async fn recent_requests(
     state: tauri::State<'_, AppState>,
     limit: usize,
+    from_ms: Option<i64>,
+    to_ms: Option<i64>,
 ) -> Result<Vec<tw_api::HistoryRow>, String> {
     state
         .control
-        .history(limit)
+        .history(limit, window(from_ms, to_ms))
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+/// 两端各自可缺；一个都没给就是不限时间。
+fn window(from_ms: Option<i64>, to_ms: Option<i64>) -> Option<(i64, i64)> {
+    match (from_ms, to_ms) {
+        (None, None) => None,
+        (f, t) => Some((f.unwrap_or(i64::MIN), t.unwrap_or(i64::MAX))),
+    }
 }
 
 #[tauri::command]
@@ -575,8 +585,16 @@ async fn baseline(state: tauri::State<'_, AppState>) -> Result<tw_api::BaselineR
 }
 
 #[tauri::command]
-async fn sessions(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::SessionView>, String> {
-    state.control.sessions().await.map_err(|e| format!("{e:#}"))
+async fn sessions(
+    state: tauri::State<'_, AppState>,
+    from_ms: Option<i64>,
+    to_ms: Option<i64>,
+) -> Result<Vec<tw_api::SessionView>, String> {
+    state
+        .control
+        .sessions(window(from_ms, to_ms))
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]

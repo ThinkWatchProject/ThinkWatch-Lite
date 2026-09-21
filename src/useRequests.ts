@@ -35,7 +35,7 @@ const SETTLE_MS = 2_500;
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
  * 而重渲染次数降了一到两个数量级。
  */
-export function useRequests() {
+export function useRequests(within: { fromMs: number; toMs: number } | null) {
   const [rows, setRows] = useState<RequestRow[]>([]);
   // 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
   // 连上了，又说明那些探测一分钱都没花。
@@ -141,7 +141,11 @@ export function useRequests() {
    */
   const pull = useCallback(async () => {
     // Tauri 的 invoke 用字符串 reject，不是 Error
-    const history = await invoke<HistoryRow[]>("recent_requests", { limit: 200 });
+    const history = await invoke<HistoryRow[]>("recent_requests", {
+      limit: 200,
+      fromMs: within?.fromMs ?? null,
+      toMs: within?.toMs ?? null,
+    });
     for (const h of history) {
       const cur = store.current.get(h.id);
       if (cur) {
@@ -153,6 +157,8 @@ export function useRequests() {
           cur.costEstimated = h.cost_estimated;
         }
         cur.translated ??= h.translated ?? undefined;
+        // 起始事件里已经带了，这里只补它缺的那种（老记录、重开窗口）
+        cur.session ??= h.session ?? undefined;
         continue;
       }
       store.current.set(h.id, {
@@ -173,10 +179,11 @@ export function useRequests() {
         costEstimated: h.cost_estimated,
         error: h.error ?? undefined,
         translated: h.translated ?? undefined,
+        session: h.session ?? undefined,
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-  }, []);
+  }, [within?.fromMs, within?.toMs]);
 
   // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是

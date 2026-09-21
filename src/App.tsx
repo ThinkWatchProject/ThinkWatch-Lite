@@ -3,15 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
-import {
-  bucketStart,
-  latency,
-  money,
-  repeated,
-  statusTone,
-  tokens,
-  when,
-} from "./format";
+import { bucketStart } from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -40,18 +32,20 @@ import {
   IconServer,
   IconSettings,
 } from "./ui/icons";
-import { RowMenu } from "@/ui/row-menu";
-import Sessions from "./Sessions";
+import { RangePicker, useRange } from "@/ui/range";
+import { RequestTable } from "./traffic/RequestTable";
+import { SessionPanel } from "./traffic/SessionPanel";
+import { useSessions } from "./traffic/useSessions";
+import { groupAt, groupBySession } from "./traffic/grouping";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
-import type { CoreStatus, Overview } from "./types";
-import { secretLabel, stageLabel, translatedText } from "./labels";
+import type { CoreStatus, Overview, SessionDetail } from "./types";
+import { stageLabel } from "./labels";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { appText } from "./App.i18n";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import type { LucideIcon } from "lucide-react";
@@ -63,13 +57,12 @@ import {
   EmptyTitle,
 } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Toaster } from "@/ui/sonner";
+import { toast } from "sonner";
+import { errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Split } from "@/ui/split";
-import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import Connect, { trouble } from "./Connect";
-import { Skeleton } from "@/ui/skeleton";
-import { coreText, ruleWhy } from "@/i18n/core.i18n";
 import {
   Sidebar,
   SidebarContent,
@@ -85,14 +78,6 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from "@/ui/sidebar";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -129,7 +114,6 @@ const MAX_TRIES = 8;
  */
 type Surface =
   | "requests"
-  | "sessions"
   | "dashboard"
   | "security"
   | "routing"
@@ -253,74 +237,25 @@ function describeCore(raw: string): {
 }
 
 /** 可排序表头。箭头只出现在当前排序列上 —— 每列都挂一个等于没挂。 */
-function Th({
-  k,
-  label,
-  sort,
-  dir,
-  on,
-  className = "",
-}: {
-  k: SortKey;
-  label: string;
-  sort: SortKey;
-  dir: SortDir;
-  on: (k: SortKey) => void;
-  className?: string;
-}) {
-  const active = sort === k;
-  return (
-    <TableHead className={className}>
-      <Button
-        variant="ghost"
-        size="xs"
-        className="-mx-1 px-1"
-        onClick={() => on(k)}
-        aria-sort={
-          active ? (dir === "asc" ? "ascending" : "descending") : "none"
-        }
-      >
-        <span className={cn(active && "text-foreground")}>{label}</span>
-        <span className="ml-0.5 inline-block w-2 tw-label">
-          {active ? (dir === "asc" ? "↑" : "↓") : ""}
-        </span>
-      </Button>
-    </TableHead>
-  );
-}
-
-/**
- * 表身的骨架。
- *
- * **开窗时这一页要先去库里读两百条记录。**读完之前画「暂无请求记录」，
- * 是在说一件当时还不知道真假的事 —— 而且记录一到，版面会先塌一次再弹
- * 回来。骨架把行的位置占住，内容落在原地。
- *
- * 六行：够说明这里将要出现一张表，又不至于在真的没有记录时留下一屏假
- * 内容 —— 那种情况下接上的是空状态，不是骨架。
- */
-function BodySkeleton({ widths }: { widths: string[] }) {
-  return (
-    <TableBody>
-      {Array.from({ length: 6 }, (_, row) => (
-        <TableRow
-          key={row}
-          className="border-b border-neutral-100 dark:border-neutral-900"
-        >
-          {widths.map((w, col) => (
-            <TableCell key={col}>
-              <Skeleton className={cn("h-3", w)} />
-            </TableCell>
-          ))}
-        </TableRow>
-      ))}
-    </TableBody>
-  );
-}
-
 export default function App() {
   const t = useText(appText);
   const common = useText(commonText);
+  /*
+    流量页自己的时间范围。**和概览各记各的** —— 概览看的是「今天花了
+    多少」，流量翻的是「上周二那阵子」；绑在一起的话，去流量里查一次
+    就会把概览也拨走。
+
+    默认 24 小时，不是实时：实时是两分钟，一张请求表开局只剩两分钟的
+    内容，看起来像什么都没有。
+  */
+  const [trafficRange, setTrafficRange] = useRange("tw-traffic-range", "1d");
+  const trafficWindow = useMemo(
+    () => ({ fromMs: Date.now() - trafficRange.ms, toMs: Date.now() }),
+    // 只随那一档变。**不能跟着 `Date.now()` 每次渲染都换** —— 那会让
+    // 历史每一帧都重拉一次
+    [trafficRange.ms],
+  );
+
   const {
     rows: allRows,
     seeded,
@@ -334,17 +269,51 @@ export default function App() {
     rotated,
     clearRotated,
     clearAlerts,
-  } = useRequests();
+  } = useRequests(trafficWindow);
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
   const [sortKey, setSortKey] = useState<SortKey>("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filter, setFilter] = useState(EMPTY_FILTER);
+  /*
+    **按会话归组。**请求和会话本来就是同一批记录的两个粒度 —— 原来它们
+    是两个标签，各有各的表、各有各的详情范式，而两者之间没有门。
+
+    开关记下来：这是「我习惯怎么看流量」，不是一次性的动作。
+  */
+  const [grouped, setGrouped] = useState(() => {
+    try {
+      return window.localStorage.getItem("tw-grouped") === "on";
+    } catch {
+      // 隐私模式之类。记不住而已
+      return false;
+    }
+  });
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  /** 右侧分栏里开着的那次会话。和 `open`（一条请求）互斥 */
+  const [openSession, setOpenSession] = useState<string | null>(null);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const sessions = useSessions(trafficWindow);
   const rows = useMemo(
     () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
     [allRows, filter, sortKey, sortDir],
   );
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /*
+    **过滤和排序先跑，归组后跑。**反过来的话，筛掉一半请求之后组头上的
+    汇总还是整次任务的数字，而用户会以为自己筛错了。
+
+    组与组之间沿用表头选的那个方向（按组里最新的一条比），组内永远
+    按时间正序 —— 见 `grouping.ts`。
+  */
+  const groups = useMemo(() => {
+    if (!grouped) return undefined;
+    const gs = groupBySession(rows, sessions);
+    const dir = sortDir === "asc" ? 1 : -1;
+    return sortKey === "time"
+      ? [...gs].sort((a, b) => (groupAt(a) - groupAt(b)) * dir)
+      : gs;
+  }, [grouped, rows, sessions, sortKey, sortDir]);
   /**
    * 客户端这一列只在真的分得开的时候才出现。
    *
@@ -354,6 +323,34 @@ export default function App() {
    */
   const showClient = facet.clients.length > 1;
   const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (openSession === null) {
+      setSessionDetail(null);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        // Tauri 的 invoke 用字符串 reject，不是 Error
+        const d = await invoke<SessionDetail>("session_detail", {
+          id: openSession,
+        });
+        if (alive) setSessionDetail(d);
+      } catch (e) {
+        toast.error(errorText(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [openSession]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("tw-grouped", grouped ? "on" : "off");
+    } catch {
+      // 记不住而已，不值得为它中断
+    }
+  }, [grouped]);
 
   /**
    * 点表头排序。
@@ -436,31 +433,13 @@ export default function App() {
     );
     return () => clearTimeout(h);
   }, [today]);
-  const [wide, setWide] = useState(() => window.innerWidth >= 1040);
-  useEffect(() => {
-    const on = () => setWide(window.innerWidth >= 1040);
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, []);
-  const split = wide && tab === "requests" && open != null;
   /*
-    分栏的宽度记在本地。**v4 的 react-resizable-panels 去掉了
-    `autoSaveId`**（那一版自己写 localStorage），所以这里自己接一下 ——
-    一共就是读一次、写一次。
+    **详情一律走浮层，不再拆栏。**
+
+    拆栏把这张表挤窄，而八列里最先塌的是模型和上游那两列 —— 排查时
+    要对着看的恰恰是它们。何况一次只看一条请求，剩下那半屏的表在这
+    时候没人读。
   */
-  const [splitLayout] = useState<Record<string, number> | undefined>(() => {
-    try {
-      const raw = window.localStorage.getItem("tw-split");
-      const v: unknown = raw ? JSON.parse(raw) : null;
-      if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-      const ok = Object.values(v as Record<string, unknown>).every(
-        (n) => typeof n === "number",
-      );
-      return ok ? (v as Record<string, number>) : undefined;
-    } catch {
-      return undefined;
-    }
-  });
   const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
@@ -1138,7 +1117,7 @@ export default function App() {
               className={
                 "flex min-h-0 flex-1 flex-col " +
                 // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
-                (tab === "requests" || tab === "sessions"
+                (tab === "requests"
                   ? "overflow-hidden"
                   : "overflow-y-auto")
               }
@@ -1154,13 +1133,6 @@ export default function App() {
       */}
               {!linked ? (
                 <Connect state={core} tries={tries} />
-              ) : tab === "sessions" ? (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <TrafficTabs value="sessions" onChange={setTab} />
-                  <div className="min-h-0 flex-1 overflow-y-auto">
-                    <Sessions />
-                  </div>
-                </div>
               ) : tab === "dashboard" ? (
                 <Dashboard tick={dashTick} ov={ov} />
               ) : tab === "clients" ? (
@@ -1225,30 +1197,14 @@ export default function App() {
                 <Config />
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <TrafficTabs value="requests" onChange={setTab} />
-                  <Split
-                    split={split}
-                    layout={splitLayout}
-                    onLayout={(l) => {
-                      try {
-                        window.localStorage.setItem(
-                          "tw-split",
-                          JSON.stringify(l),
-                        );
-                      } catch {
-                        // 隐私模式之类。记不住而已，不值得为它中断
-                      }
-                    }}
-                    detail={
-                      split && open != null ? (
-                        <RequestDrawer
-                          id={open}
-                          onClose={() => setOpen(null)}
-                          inline
-                        />
-                      ) : null
-                    }
-                  >
+                  {/*
+                    详情走**浮层**，不拆栏。
+
+                    拆栏的代价是这张表被挤窄：八列里最先塌的是模型和
+                    上游那两列，而排查时要对着看的恰恰是它们。而且一次
+                    只看一条请求，剩下那半屏的表在这时候是没人读的。
+                  */}
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
                     {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -1276,6 +1232,32 @@ export default function App() {
                         >
                           {t.failedOnly}
                         </Toggle>
+                        {/*
+                          **归组是个视角，不是一个筛子** —— 它不改变
+                          哪些行在表里，只改变它们怎么摆。所以和过滤器
+                          并排，但中间隔开一点。
+                        */}
+                        <Toggle
+                          variant="outline"
+                          size="sm"
+                          pressed={grouped}
+                          onPressedChange={setGrouped}
+                        >
+                          {t.groupBySession}
+                        </Toggle>
+                        {/*
+                          时间范围靠右。**它管的是这一页取哪一段**，和
+                          左边那几个「在取到的里面再挑」不是一回事 ——
+                          并排成一串同样的控件，读起来就是一排平级选项。
+                          不给实时档：两分钟的一张表说明不了什么。
+                        */}
+                        <div className="ml-auto">
+                          <RangePicker
+                            value={trafficRange}
+                            onChange={setTrafficRange}
+                            live={false}
+                          />
+                        </div>
                         {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
                         {facet.clients.length > 1 && (
@@ -1416,406 +1398,44 @@ export default function App() {
                         </Empty>
                       )
                     ) : (
-                      <Table className="tw-num">
-                        {/*
-              **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
-              两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
-              那恰恰是排查时唯一要看的区别。
-            */}
-                        <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
-                          <TableRow>
-                            <Th
-                              k="status"
-                              label={t.status}
-                              sort={sortKey}
-                              dir={sortDir}
-                              on={toggleSort}
-                              className="py-1.5"
-                            />
-                            <Th
-                              k="time"
-                              label={t.time}
-                              sort={sortKey}
-                              dir={sortDir}
-                              on={toggleSort}
-                            />
-                            {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
-                            {showClient && <TableHead>{t.client}</TableHead>}
-                            <TableHead>{t.model}</TableHead>
-                            <TableHead>{t.upstream}</TableHead>
-                            {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
-                            <Th
-                              k="duration"
-                              label={t.latency}
-                              sort={sortKey}
-                              dir={sortDir}
-                              on={toggleSort}
-                              className="text-right"
-                            />
-                            <Th
-                              k="tokens"
-                              label={t.tokens}
-                              sort={sortKey}
-                              dir={sortDir}
-                              on={toggleSort}
-                              className="text-right"
-                            />
-                            <Th
-                              k="cost"
-                              label={t.cost}
-                              sort={sortKey}
-                              dir={sortDir}
-                              on={toggleSort}
-                              className="text-right"
-                            />
-                          </TableRow>
-                        </TableHeader>
-                        {/*
-              走到这里还是空的，只可能是历史没读完 —— 「读完了，确实一条
-              都没有」在上面那一支里已经处理掉了。**事件流先到的行不能被
-              骨架盖住**：那时数据已经在手上了。
-            */}
-                        {rows.length === 0 ? (
-                          <BodySkeleton
-                            widths={[
-                              "w-10",
-                              "w-16",
-                              ...(showClient ? ["w-14"] : []),
-                              "w-32",
-                              "w-16",
-                              "w-16 ml-auto",
-                              "w-14 ml-auto",
-                              "w-12 ml-auto",
-                            ]}
-                          />
-                        ) : (
-                          <TableBody>
-                            {rows.map((r, i) => (
-                              <RowMenu
-                                key={r.id}
-                                items={[
-                                  {
-                                    kind: "item",
-                                    label: t.openDetails,
-                                    onSelect: () => setOpen(r.id),
-                                  },
-                                  { kind: "sep" },
-                                  // **按这一行的值筛，不是打开一个筛选器。**排查时的
-                                  // 动作是「只看这家」「只看这个客户端」，而手打名字
-                                  // 会打错，打错的表现是「筛出来空的」。
-                                  {
-                                    kind: "item",
-                                    label: t.onlyUpstream(r.provider),
-                                    onSelect: () =>
-                                      setFilter((f) => ({
-                                        ...f,
-                                        provider: r.provider,
-                                      })),
-                                  },
-                                  ...(showClient
-                                    ? ([
-                                        {
-                                          kind: "item",
-                                          label: t.onlyClient(r.client),
-                                          onSelect: () =>
-                                            setFilter((f) => ({
-                                              ...f,
-                                              client: r.client,
-                                            })),
-                                        },
-                                      ] as const)
-                                    : []),
-                                  { kind: "sep" },
-                                  {
-                                    kind: "item",
-                                    label: t.copyId,
-                                    onSelect: () =>
-                                      void navigator.clipboard.writeText(
-                                        String(r.id),
-                                      ),
-                                  },
-                                  {
-                                    kind: "item",
-                                    label: t.copyRow,
-                                    onSelect: () =>
-                                      void navigator.clipboard.writeText(
-                                        [
-                                          new Date(r.atMs).toLocaleString(),
-                                          r.client,
-                                          r.model ?? "",
-                                          r.provider,
-                                          r.path,
-                                          r.status ?? r.state,
-                                          r.durationMs != null
-                                            ? `${r.durationMs}ms`
-                                            : "",
-                                          tokens(r.inputTokens, r.outputTokens),
-                                          money(r.costMicros, r.costEstimated),
-                                          coreText(r.error),
-                                        ]
-                                          .filter(Boolean)
-                                          .join("\t"),
-                                      ),
-                                  },
-                                ]}
-                              >
-                                <TableRow
-                                  onClick={() => {
-                                    setCursor(rows.indexOf(r));
-                                    setOpen(r.id);
-                                  }}
-                                  className={
-                                    "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
-                                    (rows[cursor]?.id === r.id
-                                      ? "bg-neutral-100 dark:bg-neutral-800"
-                                      : fresh.has(r.id)
-                                        ? "bg-emerald-50 dark:bg-emerald-950"
-                                        : "")
-                                  }
-                                >
-                                  {/*
-                    状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
-                    眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
-                  */}
-                                  <TableCell className="whitespace-nowrap">
-                                    {(() => {
-                                      const tone = statusTone(
-                                        r.status,
-                                        r.state,
-                                      );
-                                      const dot =
-                                        tone === "bad"
-                                          ? "bg-red-500"
-                                          : tone === "warn"
-                                            ? "bg-amber-500"
-                                            : tone === "pending"
-                                              ? "bg-amber-400 animate-pulse"
-                                              : tone === "muted"
-                                                ? "bg-neutral-400"
-                                                : "bg-emerald-500/60";
-                                      return (
-                                        <span className="flex items-center gap-1.5">
-                                          <span
-                                            className={
-                                              "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
-                                              dot
-                                            }
-                                          />
-                                          <span
-                                            className={
-                                              tone === "ok" || tone === "muted"
-                                                ? "text-neutral-400"
-                                                : ""
-                                            }
-                                          >
-                                            {r.state === "in_flight"
-                                              ? "…"
-                                              : r.state === "failed"
-                                                ? t.failed
-                                                : r.state === "cancelled"
-                                                  ? t.cancelled
-                                                  : r.status}
-                                          </span>
-                                        </span>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                  {/*
-                    时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
-                    看昨天那次时，整列全是「1d」，而这一列的用途就是把
-                    某一行对上号。相对时间留给悬停。
-                  */}
-                                  <TableCell className="whitespace-nowrap text-neutral-400">
-                                    <Tip
-                                      text={new Date(r.atMs).toLocaleString()}
-                                    >
-                                      <span>{when(r.atMs, today)}</span>
-                                    </Tip>
-                                  </TableCell>
-                                  {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                                  {showClient && (
-                                    <TableCell
-                                      className={
-                                        repeated(rows, i, (x) => x.client)
-                                          ? "text-neutral-400/50"
-                                          : ""
-                                      }
-                                    >
-                                      {r.client}
-                                    </TableCell>
-                                  )}
-                                  {/*
-                    模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
-                    连着发的两次请求，差别往往只在这里。
-                  */}
-                                  <TableCell
-                                    className={
-                                      repeated(rows, i, (x) => x.model ?? "")
-                                        ? "text-neutral-400/50"
-                                        : ""
-                                    }
-                                  >
-                                    {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
-                        自己的列宽算法吃掉，长名字照样把这一列撑开 */}
-                                    <div
-                                      className="max-w-[13rem] truncate"
-                                      title={r.model}
-                                    >
-                                      {r.model ?? "—"}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell
-                                    className={
-                                      repeated(rows, i, (x) => x.provider)
-                                        ? "text-neutral-400/50"
-                                        : ""
-                                    }
-                                  >
-                                    {/*
-                      **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行
-                      的话，一行同时带「已脱敏」和「已转换 · 丢弃 n 项」，
-                      这一格就有 240px，默认窗口下表比容器宽出 40px —— 被挤
-                      出视野的是最后一列费用，而那是这张表里最要紧的一列。
-                      其余各列都不换行，表格变窄时只有这一列收得动。只在
-                      徽标之间折，徽标自身不断开：窄了是这一行变高，不是
-                      哪一列看不见。
-                    */}
-                                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
-                                      <span>{r.provider}</span>
-                                      {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
-                          是脱敏搞坏了功能。所以脱敏发生了就要在
-                          列表这一层看得见，而不是藏在详情里 */}
-                                      {r.redacted && r.redacted.length > 0 && (
-                                        <span
-                                          className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                                          title={t.redactedTip(
-                                            r.redacted.map(
-                                              (x) =>
-                                                `${secretLabel(x.secret)} ×${x.count}`,
-                                            ),
-                                          )}
-                                        >
-                                          {t.redacted(
-                                            r.redacted.reduce(
-                                              (a, x) => a + x.count,
-                                              0,
-                                            ),
-                                          )}
-                                        </span>
-                                      )}
-                                      {/* 格式转换。**转了就要看得见，丢了字段
-                          更要看得见** —— 「扩展思考开了却没生效」这个症状
-                          在客户端那头完全无从下手，只有这里知道原因 */}
-                                      {r.translated && (
-                                        <span
-                                          className={
-                                            "rounded px-1 tw-label " +
-                                            (r.translated.dropped.length > 0
-                                              ? "bg-amber-500 text-white"
-                                              : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
-                                          }
-                                          title={
-                                            t.sentConverted(
-                                              translatedText(r.translated),
-                                            ) +
-                                            (r.translated.dropped.length > 0
-                                              ? t.droppedFields(
-                                                  r.translated.dropped,
-                                                )
-                                              : t.noneDropped)
-                                          }
-                                        >
-                                          {r.translated.dropped.length > 0
-                                            ? t.convertedDropped(
-                                                r.translated.dropped.length,
-                                              )
-                                            : t.converted}
-                                        </span>
-                                      )}
-                                      {r.flagged?.some((f) => f.high) && (
-                                        <span
-                                          className={
-                                            "rounded px-1 tw-label " +
-                                            (r.flagged.some((f) => f.blocked)
-                                              ? "bg-red-600 text-white"
-                                              : "bg-amber-500 text-white")
-                                          }
-                                          title={r.flagged
-                                            .filter((f) => f.high)
-                                            .map((f) =>
-                                              t.flaggedTip(
-                                                f.tool,
-                                                ruleWhy(f.rule, f.why),
-                                                f.excerpt,
-                                              ),
-                                            )
-                                            .join("\n\n")}
-                                        >
-                                          {r.flagged.some((f) => f.blocked)
-                                            ? t.blocked
-                                            : t.suspicious}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </TableCell>
-                                  {/*
-                    数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
-                    扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
-                    扫出极值。
-                  */}
-                                  <TableCell className="whitespace-nowrap text-right">
-                                    {latency(r.ttfbMs, r.durationMs)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap text-right text-neutral-400">
-                                    {tokens(r.inputTokens, r.outputTokens)}
-                                  </TableCell>
-                                  {/*
-                    **估算值必须带记号。**猜出来的金额和账单上的数字在
-                    列表里长得一模一样，而它们不是一回事。
-                  */}
-                                  <TableCell className="whitespace-nowrap text-right">
-                                    {r.costEstimated ? (
-                                      // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
-                                      // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
-                                      // 平台借来的
-                                      <Tip
-                                        text={
-                                          r.state === "cancelled"
-                                            ? t.estimatedCancelled
-                                            : r.state === "failed"
-                                              ? t.estimatedFailed
-                                              : t.estimatedBorrowed
-                                        }
-                                      >
-                                        <span className="underline decoration-dotted underline-offset-2">
-                                          {money(r.costMicros, true)}
-                                        </span>
-                                      </Tip>
-                                    ) : (
-                                      <span
-                                        className={
-                                          r.costMicros == null
-                                            ? "text-neutral-400"
-                                            : ""
-                                        }
-                                      >
-                                        {money(r.costMicros, false)}
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              </RowMenu>
-                            ))}
-                          </TableBody>
-                        )}
-                      </Table>
+                      <RequestTable
+                        rows={rows}
+                        showClient={showClient}
+                        cursor={cursor}
+                        fresh={fresh}
+                        today={today}
+                        sortKey={sortKey}
+                        sortDir={sortDir}
+                        onSort={toggleSort}
+                        onCursor={setCursor}
+                        onOpen={(id) => {
+                          setOpenSession(null);
+                          setOpen(id);
+                        }}
+                        onFilter={setFilter}
+                        groups={groups}
+                        openGroups={openGroups}
+                        selectedSession={openSession}
+                        onToggleGroup={(id) =>
+                          setOpenGroups((prev) => {
+                            const next = new Set(prev);
+                            if (!next.delete(id)) next.add(id);
+                            return next;
+                          })
+                        }
+                        onOpenSession={(id) => {
+                          // 一次只开一样：请求详情和会话详情共用那一栏
+                          setOpen(null);
+                          setOpenSession(id);
+                        }}
+                      />
                     )}
                     {locallyAnswered > 0 && rows.length > 0 && (
                       <p className="mt-3 tw-body text-muted-foreground">
                         {t.probesElsewhere(locallyAnswered)}
                       </p>
                     )}
-                  </Split>
+                  </div>
                 </div>
               )}
               {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
@@ -1864,8 +1484,38 @@ export default function App() {
           />
         )}
         {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
-        {open != null && !split && (
+        {open != null && (
           <RequestDrawer id={open} onClose={() => setOpen(null)} />
+        )}
+        {/*
+          会话也要有这条窄窗口的退路。**少了它，窄窗口下点组头是没反应的**
+          —— 而「没反应」和「坏了」在用户眼里没有区别。
+        */}
+        {sessionDetail && (
+          /*
+            会话和请求走**同一种浮层**（右侧抽屉），不是一个居中对话框
+            加一个抽屉 —— 同一页上两套范式，学会一个不会用另一个。
+          */
+          <Sheet
+            open
+            onOpenChange={(o) => !o && setOpenSession(null)}
+          >
+            <SheetContent
+              side="right"
+              className="flex w-[min(38rem,90vw)] flex-col overflow-y-auto p-0 sm:max-w-none"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>{t.surfaces.sessions}</SheetTitle>
+              </SheetHeader>
+              <SessionPanel
+                d={sessionDetail}
+                onOpenTurn={(id) => {
+                  setOpenSession(null);
+                  setOpen(id);
+                }}
+              />
+            </SheetContent>
+          </Sheet>
         )}
         {/*
         **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，
@@ -1878,30 +1528,4 @@ export default function App() {
   );
 }
 
-/**
- * 「流量」的两种粒度：一条请求，和一次对话。
- *
- * **它们是同一批数据，所以是标签不是两个导航项。**分成两项时，用户得
- * 先决定「我要看请求还是会话」，而他想知道的其实是「刚才发生了什么」。
- */
-function TrafficTabs({
-  value,
-  onChange,
-}: {
-  value: "requests" | "sessions";
-  onChange: (v: Surface) => void;
-}) {
-  const t = useText(appText);
-  return (
-    <Tabs
-      value={value}
-      onValueChange={(v) => onChange(v as Surface)}
-      className="shrink-0 px-5 pt-5"
-    >
-      <TabsList>
-        <TabsTrigger value="requests">{t.surfaces.requests}</TabsTrigger>
-        <TabsTrigger value="sessions">{t.surfaces.sessions}</TabsTrigger>
-      </TabsList>
-    </Tabs>
-  );
-}
+
