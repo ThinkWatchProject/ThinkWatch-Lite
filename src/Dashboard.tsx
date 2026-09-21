@@ -833,6 +833,13 @@ export default function Dashboard({
             的图值是千分之一美元（见上面 `y`），刻度要换回微分再格式化。
           */
           tickFormat={(v) => (useTokens ? compact(v) : usd(v * 1000))}
+          /*
+            悬停里每个模型那一行**和刻度同一种写法**，先取整：实时档的
+            速率是摊出来的浮点，`compact` 在一千以下原样照写。
+          */
+          valueFormat={(v) =>
+            useTokens ? compact(Math.round(v)) : usd(Math.round(v * 1000))
+          }
           yMax={yMax}
           liveEdge={live}
         />
