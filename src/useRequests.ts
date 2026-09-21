@@ -153,6 +153,8 @@ export function useRequests() {
           cur.costEstimated = h.cost_estimated;
         }
         cur.translated ??= h.translated ?? undefined;
+        // 起始事件里已经带了，这里只补它缺的那种（老记录、重开窗口）
+        cur.session ??= h.session ?? undefined;
         continue;
       }
       store.current.set(h.id, {
@@ -173,6 +175,7 @@ export function useRequests() {
         costEstimated: h.cost_estimated,
         error: h.error ?? undefined,
         translated: h.translated ?? undefined,
+        session: h.session ?? undefined,
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
