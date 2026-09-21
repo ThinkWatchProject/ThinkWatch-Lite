@@ -41,6 +41,7 @@ export function Limits({
                 value={String(l[key])}
                 path={`/limits/${key}`}
                 version={configVersion}
+                numeric
               />
             </dd>
             <dd className="tw-label text-muted-foreground">{what}</dd>

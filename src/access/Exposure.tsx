@@ -166,6 +166,7 @@ export function Exposure({
             value={String(ov.listen.port)}
             path="/listen/gateway/port"
             version={configVersion}
+            numeric
           />
         </dd>
 
