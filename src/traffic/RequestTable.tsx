@@ -145,7 +145,11 @@ export function RequestTable({
                     ]}
                   />
                 ) : (
-                  <TableBody>
+                  /*
+                    **`RequestRows` 自己就是 `<tbody>`，这里不能再套一层。**
+                    套了的话 DOM 里是两个 tbody，外面那个空的 —— 而表头
+                    会按那个空的算列宽，于是表头和表体的列完全对不上。
+                  */
                   <RequestRows
                     rows={rows}
                     groups={groups}
@@ -161,7 +165,6 @@ export function RequestTable({
                     onToggleGroup={onToggleGroup}
                     onOpenSession={onOpenSession}
                   />
-                  </TableBody>
                 )}
               </Table>
   );

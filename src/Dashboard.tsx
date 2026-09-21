@@ -228,7 +228,16 @@ function Swatch({ color, name, n }: { color: string; name: string; n: number }) 
  * 一列标签把它们钉在同一条竖线上 —— **参照物是原生监控工具，不是网页
  * 后台**。圆角卡片的网格恰恰是最像后台的做法。
  */
-export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | null }) {
+export default function Dashboard({
+  tick,
+  ov,
+  onShowUnpriced,
+}: {
+  tick: number;
+  ov: Overview | null;
+  /** 「N 条无法计价」是个可以点进去的问题，不只是一个数字 */
+  onShowUnpriced: () => void;
+}) {
   const t = useText(dashboardText);
   const [range, setRange] = useRange();
   /**
@@ -751,10 +760,19 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
                 </Tip>
               )}
               {s.unpriced_requests > 0 && (
+                /*
+                  **这个数字要能点。**「533 条无法计价」说的是有一批请求
+                  没进账，却不说是哪些模型 —— 而「去哪儿补这个价」正是
+                  看到它之后唯一想做的事。点进去就是流量页筛好的那一批。
+                */
                 <Tip text={t.unpricedTip}>
-                  <span className="underline decoration-dotted underline-offset-2">
+                  <button
+                    type="button"
+                    onClick={onShowUnpriced}
+                    className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  >
                     {t.unpriced(s.unpriced_requests)}
-                  </span>
+                  </button>
                 </Tip>
               )}
               {(s.no_usage_requests ?? 0) > 0 && (
