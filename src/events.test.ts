@@ -43,6 +43,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_finished",
       id: 1,
+      model: "claude-sonnet-4-5",
       status: 200,
       bytes: 4_096,
       duration_ms: 1_827,
@@ -62,6 +63,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_finished",
       id: 1,
+      model: "claude-sonnet-4-5",
       status: 200,
       bytes: 4_096,
       duration_ms: 1_827,
@@ -80,6 +82,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_finished",
       id: 1,
+      model: "claude-sonnet-4-5",
       status: 200,
       bytes: 1,
       duration_ms: 1,
@@ -99,6 +102,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_cancelled",
       id: 1,
+      model: "claude-sonnet-4-5",
       status: 200,
       bytes: 312,
       duration_ms: 2_500,
@@ -120,6 +124,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_cancelled",
       id: 1,
+      model: "claude-sonnet-4-5",
       status: 200,
       bytes: 0,
       duration_ms: 400,
@@ -133,7 +138,13 @@ describe("从事件缝出一行", () => {
   it("响应头之前的取消没有状态码", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
-    applyEvent(rows, { kind: "request_cancelled", id: 1, bytes: 0, duration_ms: 12_000 });
+    applyEvent(rows, {
+      kind: "request_cancelled",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      bytes: 0,
+      duration_ms: 12_000,
+    });
     expect(rows.get(1)?.state).toBe("cancelled");
     expect(rows.get(1)?.status).toBeUndefined();
     expect(rows.get(1)?.durationMs).toBe(12_000);
@@ -150,6 +161,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_failed",
       id: 1,
+      model: "claude-sonnet-4-5",
       source: "denied",
       message: plain("流中断：已切断"),
       bytes: 480,
@@ -171,6 +183,7 @@ describe("从事件缝出一行", () => {
     applyEvent(rows, {
       kind: "request_failed",
       id: 1,
+      model: "claude-sonnet-4-5",
       source: "rate_limited",
       message: plain("`relay` 限流了"),
       duration_ms: 20_000,

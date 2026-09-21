@@ -35,7 +35,14 @@ export type CoreEvent =
    */
   | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
-  | { kind: "request_finished"; id: number; status: number; bytes: number; duration_ms: number; usage?: UsageView }
+  /**
+   * 三种结局（结束、失败、取消）都带着 `model`，和开始事件里的是同一个。
+   *
+   * **听的人不一定是从开始时就在听的。**实时曲线只在概览打开时挂着，而
+   * 用量是在结局里才到的 —— 模型名只在开始事件里的话，打开概览时正在跑
+   * 的那条请求，结束时就不知道该记在哪个模型上。WebSocket 那条路是空串。
+   */
+  | { kind: "request_finished"; id: number; model: string; status: number; bytes: number; duration_ms: number; usage?: UsageView }
   /**
    * 失败了。`source` 和响应头 `x-thinkwatch-error` 是同一个词表。
    *
@@ -45,6 +52,7 @@ export type CoreEvent =
   | {
       kind: "request_failed";
       id: number;
+      model: string;
       source: string;
       message: Msg;
       bytes?: number;
@@ -61,6 +69,7 @@ export type CoreEvent =
   | {
       kind: "request_cancelled";
       id: number;
+      model: string;
       status?: number;
       bytes: number;
       duration_ms: number;

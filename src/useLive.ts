@@ -91,8 +91,13 @@ export interface LiveFail {
  *
  * **不查库、不轮询。**概览别的部分问的是 SQLite，而那条路的最小延迟是
  * 「落库 + 下一次刷新」；实时档要的是请求到达的那一刻曲线就动，那只有
- * 事件流给得了。每条请求需要的三样东西事件里都有：`request_started`
- * 带模型，`request_finished` 带用量，两者靠 id 对上。
+ * 事件流给得了。每条请求要画的东西都在它的结局里：模型和用量一起到
+ * （`request_finished`、`request_failed`、`request_cancelled`）。
+ *
+ * **模型名从结局里拿，不从开始事件里记。**这个钩子只在概览开着时才挂
+ * 上，打开的那一刻正在跑的请求，它的开始事件早就过去了；以前按 id 去
+ * 找开始时记下的模型，这些请求就全落进了「未知模型」那一层。
+ * `request_started` 现在只用来数「进行中」。
  *
  * 金额比用量晚一拍：它是存储层落库时按价目表算的，core 算完会补一条
  * `request_priced`。所以实时档也画得出花费，只是那一格会在请求结束之后
@@ -109,8 +114,6 @@ export interface LiveFail {
 export function useLive(active: boolean, windowMs: number) {
   const samples = useRef<LiveSample[]>([]);
   const fails = useRef<LiveFail[]>([]);
-  /** id → 模型。`request_started` 知道，`request_finished` 不知道 */
-  const model = useRef(new Map<number, string>());
   const flying = useRef(new Set<number>());
   const [, frame] = useReducer((n: number) => n + 1, 0);
 
@@ -120,7 +123,6 @@ export function useLive(active: boolean, windowMs: number) {
       // —— 重新进来时按当下的时间补，比拿旧样本往左挪准。
       samples.current = [];
       fails.current = [];
-      model.current.clear();
       flying.current.clear();
       return;
     }
@@ -146,7 +148,6 @@ export function useLive(active: boolean, windowMs: number) {
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") {
-        model.current.set(ev.id, ev.model || textOf(liveText).unknownModel);
         flying.current.add(ev.id);
       } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
@@ -156,11 +157,10 @@ export function useLive(active: boolean, windowMs: number) {
           samples.current.push({
             id: ev.id,
             at: Date.now(),
-            model: model.current.get(ev.id) ?? textOf(liveText).unknownModel,
+            model: ev.model || textOf(liveText).unknownModel,
             tokens: u.input + u.output + u.cache_read + u.cache_write,
           });
         }
-        model.current.delete(ev.id);
       } else if (ev.kind === "request_priced") {
         // 价钱补在那一格原来的位置上，**不是补在「现在」** —— 它说的
         // 是那次请求花了多少，而那次请求发生在几十毫秒之前。
@@ -180,11 +180,10 @@ export function useLive(active: boolean, windowMs: number) {
           samples.current.push({
             id: ev.id,
             at: Date.now(),
-            model: model.current.get(ev.id) ?? textOf(liveText).unknownModel,
+            model: ev.model || textOf(liveText).unknownModel,
             tokens: u.input + u.output + u.cache_read + u.cache_write,
           });
         }
-        model.current.delete(ev.id);
         if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
       } else {
         return;
