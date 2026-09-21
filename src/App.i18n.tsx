@@ -25,6 +25,7 @@ export const appText = messages(
       routing: "路由",
       access: "接入",
       clients: "客户端",
+      mcp: "MCP",
       settings: "设置",
     },
     newFindings: (label: string, n: number) => `${label} · ${n} 项新发现`,
@@ -114,12 +115,14 @@ export const appText = messages(
     // 上游一列的徽标和它们的悬浮说明
     redactedTip: (items: string[]) => `发送前已替换：${items.join("、")}\n模型回显的内容将自动还原。`,
     redacted: (n: number) => `已脱敏 ${n}`,
+    secretsTip: (items: string[]) => `请求中含有凭据，已原样发出：${items.join("、")}`,
+    withSecrets: (n: number) => `含凭据 ${n}`,
     sentConverted: (formats: string) => `请求已转换格式后发送：${formats}。`,
     droppedFields: (fields: string[]) => `\n\n目标格式不支持、已丢弃的字段：${fields.join("、")}`,
     noneDropped: "\n未丢弃任何字段。",
     converted: "已转换",
     convertedDropped: (n: number) => `已转换 · 丢弃 ${n} 项`,
-    flaggedTip: (tool: string, why: string, excerpt: string) => `${tool}：${why}\n${excerpt}`,
+    flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
     blocked: "已拦截",
     suspicious: "可疑调用",
 
@@ -144,6 +147,7 @@ export const appText = messages(
       routing: "Routing",
       access: "Access",
       clients: "Clients",
+      mcp: "MCP",
       settings: "Settings",
     },
     newFindings: (label: string, n: number) => `${label} · ${count(n, "new finding", "new findings")}`,
@@ -247,13 +251,15 @@ export const appText = messages(
     redactedTip: (items: string[]) =>
       `Replaced before sending: ${items.join(", ")}\nContent echoed by the model is restored automatically.`,
     redacted: (n: number) => `Redacted ${n}`,
+    secretsTip: (items: string[]) => `Sent as is, with credentials in it: ${items.join(", ")}`,
+    withSecrets: (n: number) => `Credentials ${n}`,
     sentConverted: (formats: string) => `Sent after format conversion: ${formats}.`,
     droppedFields: (fields: string[]) =>
       `\n\nFields dropped because the target format does not support them: ${fields.join(", ")}`,
     noneDropped: "\nNo fields were dropped.",
     converted: "Converted",
     convertedDropped: (n: number) => `Converted · ${n} dropped`,
-    flaggedTip: (tool: string, why: string, excerpt: string) => `${tool}: ${why}\n${excerpt}`,
+    flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
     blocked: "Blocked",
     suspicious: "Suspicious call",
 

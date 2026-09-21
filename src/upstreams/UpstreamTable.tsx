@@ -96,7 +96,6 @@ export function UpstreamTable({
                     <span className={p.disabled ? "font-medium text-muted-foreground" : "font-medium"}>
                       {p.name}
                     </span>
-                    {p.trust === "official" && <Badge variant="secondary">{t.official}</Badge>}
                     {/* 订阅类账号：套餐决定了额度有多大，和名字放在一起看 */}
                     {planLabel(accounts[p.name]?.plan) && (
                       <Badge variant="outline">{planLabel(accounts[p.name]?.plan)}</Badge>
@@ -157,7 +156,7 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
  */
 function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
   const t = useText(upstreamTableText);
-  // 账号类上游的地址永远是同一个，名字后面的「官方端点」已经说了它在哪
+  // 账号类上游的地址永远是同一个，协议名已经说了它在哪
   const isAccount = p.protocol === "chatgpt";
   const where = isAccount ? (account?.email ?? null) : shortUrl(p.base_url);
   const egress = p.proxy === "direct" ? "" : ` · ${t.via(egressLabel(p.proxy))}`;

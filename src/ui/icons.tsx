@@ -23,6 +23,7 @@ export { ShieldCheck as IconGuard } from "lucide-react"; // 防护 —— 盾牌
 export { Split as IconRoute } from "lucide-react"; // 路由 —— 一条进来分叉出去
 export { Router as IconGateway } from "lucide-react"; // 网关 —— 一台路由器
 export { Laptop as IconClient } from "lucide-react"; // 客户端 —— 一台笔电
+export { Plug as IconMcp } from "lucide-react"; // MCP —— 给客户端接上的插头
 export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机器
 export { KeyRound as IconKey } from "lucide-react"; // 密钥 —— 钥匙，不是锁
 export { SlidersHorizontal as IconSettings } from "lucide-react"; // 设置 —— 推子，齿轮留给系统设置

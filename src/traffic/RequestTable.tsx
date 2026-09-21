@@ -1,11 +1,12 @@
 import { Fragment } from "react";
 import { useText } from "@/i18n";
 import { appText } from "@/App.i18n";
-import { coreText, ruleWhy } from "@/i18n/core.i18n";
+import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { latency, money, statusTone, tokens, when } from "@/format";
 import { Tip } from "@/ui/tip";
-import { secretLabel, translatedText } from "@/labels";
+import { translatedText } from "@/labels";
+import { ruleName } from "@/security/labels";
 import { Button } from "@/ui/button";
 import { RowMenu } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
@@ -554,21 +555,24 @@ function Row({
                         {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
             是脱敏搞坏了功能。所以脱敏发生了就要在
             列表这一层看得见，而不是藏在详情里 */}
-                        {r.redacted && r.redacted.length > 0 && (
+                        {r.secrets && r.secrets.items.length > 0 && (
                           <span
-                            className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                            title={t.redactedTip(
-                              r.redacted.map(
+                            className={
+                              "rounded px-1 tw-label " +
+                              // 换掉了是灰的；原样发出去的要看得出来
+                              (r.secrets.replaced
+                                ? "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                                : "bg-amber-500 text-white")
+                            }
+                            title={(r.secrets.replaced ? t.redactedTip : t.secretsTip)(
+                              r.secrets.items.map(
                                 (x) =>
-                                  `${secretLabel(x.secret)} ×${x.count}`,
+                                  `${ruleName("redact", x.rule, x.custom)} ×${x.count}`,
                               ),
                             )}
                           >
-                            {t.redacted(
-                              r.redacted.reduce(
-                                (a, x) => a + x.count,
-                                0,
-                              ),
+                            {(r.secrets.replaced ? t.redacted : t.withSecrets)(
+                              r.secrets.items.reduce((a, x) => a + x.count, 0),
                             )}
                           </span>
                         )}
@@ -601,7 +605,7 @@ function Row({
                               : t.converted}
                           </span>
                         )}
-                        {r.flagged?.some((f) => f.high) && (
+                        {r.flagged && r.flagged.length > 0 && (
                           <span
                             className={
                               "rounded px-1 tw-label " +
@@ -610,11 +614,10 @@ function Row({
                                 : "bg-amber-500 text-white")
                             }
                             title={r.flagged
-                              .filter((f) => f.high)
                               .map((f) =>
                                 t.flaggedTip(
                                   f.tool,
-                                  ruleWhy(f.rule, f.why),
+                                  ruleName("inspect_tools", f.rule, f.custom),
                                   f.excerpt,
                                 ),
                               )

@@ -1,4 +1,5 @@
 import type { Msg } from "@/types";
+import { securityLabelsText } from "@/security/labels.i18n";
 import { getLang } from "./index";
 
 /**
@@ -82,6 +83,27 @@ const RULE_WHY: Record<string, string> = {
   "crontab-install": "安装定时任务，或删除全部现有定时任务",
   "ssh-key-read": "读取私钥或云服务凭据",
 };
+
+/** 「hook 中」要空一格，「项目指令中」不要：只有西文词后面接中文时才空 */
+const spaced = (label: string) => (/[A-Za-z0-9]$/.test(label) ? `${label} ` : label);
+
+/** 内置扫描规则的中文名。和安全页、MCP 页用的是同一张表 */
+const ruleNameZh = (id: string | undefined): string | undefined =>
+  id === undefined ? undefined : securityLabelsText.zh.rules[id];
+
+/**
+ * 工具调用命中的那条规则，中文怎么说：名字，以及括号里的「为什么」。
+ *
+ * **自定义规则没有「为什么」**（core 发来的 `why` 是空的），名字是用户自己
+ * 起的，原样用，也不留一对空括号。内置规则两样都要查得到，查不到就整句
+ * 退回英文 —— 拼出半句中文比英文更难读。
+ */
+function toolRuleZh(a: Args, why: string | undefined): { name: string; why: string } | undefined {
+  if (!why) return { name: a.name ?? a.rule ?? "", why: "" };
+  const name = ruleNameZh(a.rule);
+  const reason = word(RULE_WHY, a.rule);
+  return name && reason ? { name, why: `（${reason}）` } : undefined;
+}
 
 /** 接管什么时候生效。core 也把这个词当参数发过来 */
 const TAKES_EFFECT: Record<string, string> = {
@@ -183,6 +205,7 @@ const ZH: Record<string, Say> = {
   "gw.config.proxy_unusable": (a) => `上游「${a.upstream}」的代理「${a.proxy}」不可用：${a.detail}`,
   "gw.config.http_client": (a) => `无法创建 HTTP 客户端：${a.detail}`,
   "gw.config.allow_from": (a) => `listen.gateway.allow_from：${a.detail}`,
+  "gw.config.security_rules": (a) => `安全规则无法使用：${a.detail}`,
   "gw.credentials.failed": (a) => `无法获取上游「${a.upstream}」的凭据：${a.detail}`,
   "gw.model.unknown": (a) => `不存在模型 ${a.model}，可用模型请参见 GET /v1/models。`,
   "gw.model.no_upstream": (a) => `没有上游提供模型 ${a.model}，可用模型请参见 GET /v1/models。`,
@@ -207,10 +230,14 @@ const ZH: Record<string, Say> = {
   "gw.upstream.forward_failed": (a) => `转发失败：${a.detail}`,
   "gw.upstream.rate_limited": (a) => `上游「${a.upstream}」触发限流。`,
   "gw.upstream.status": (a) => `上游「${a.upstream}」返回 ${a.status}。`,
-  "gw.toolcall.cut": (a) =>
-    `上游「${a.upstream}」（非官方端点）返回的 ${a.tool} 调用命中规则「${a.rule}」（${a.why}），已切断响应。`,
-  "gw.toolcall.blocked": (a) =>
-    `上游「${a.upstream}」（非官方端点）返回的 ${a.tool} 调用命中规则「${a.rule}」（${a.why}），整份响应已扣下。`,
+  "gw.toolcall.cut": (a) => {
+    const r = toolRuleZh(a, a.why);
+    return r && `上游「${a.upstream}」返回的 ${a.tool} 调用命中规则「${r.name}」${r.why}，已切断响应。`;
+  },
+  "gw.toolcall.blocked": (a) => {
+    const r = toolRuleZh(a, a.why);
+    return r && `上游「${a.upstream}」返回的 ${a.tool} 调用命中规则「${r.name}」${r.why}，整份响应已扣下。`;
+  },
   "gw.ws.bad_url": (a) => `上游地址不是合法的 WebSocket 地址：${a.detail}`,
   "gw.ws.bad_header": (a) => `上游的请求头「${a.header}」包含请求头中不允许的字符。`,
   "gw.ws.connect_failed": (a) => `无法连接上游的 WebSocket：${a.detail}`,
@@ -218,8 +245,10 @@ const ZH: Record<string, Say> = {
   "gw.ws.upstream_broke": (a) => `上游连接中断：${a.detail}`,
   "gw.ws.proxy_unsupported": (a) =>
     `上游「${a.upstream}」配置了代理（${a.proxy}），WebSocket 连接暂不支持经代理转发，仅支持直连的上游。`,
-  "gw.ws.toolcall_cut": (a) =>
-    `上游「${a.upstream}」（非官方端点）返回的 ${a.tool} 调用命中规则「${a.rule}」（${a.detail}），已切断连接。`,
+  "gw.ws.toolcall_cut": (a) => {
+    const r = toolRuleZh(a, a.detail);
+    return r && `上游「${a.upstream}」返回的 ${a.tool} 调用命中规则「${r.name}」${r.why}，已切断连接。`;
+  },
 
   // ── control：控制面的 HTTP 错误 ──────────────────────────────────
   "control.upstream_not_found": (a) => `未找到名为「${a.upstream}」的上游。`,
@@ -228,6 +257,14 @@ const ZH: Record<string, Say> = {
   "control.sheet_not_found": (a) => `未找到名为「${a.sheet}」的价目表。`,
   "control.key_not_found": (a) => `未找到名为「${a.key}」的网关密钥。`,
   "control.request_not_found": (a) => `未找到第 ${a.id} 号请求。`,
+
+  // ── security：安全页的规则与档位 ──────────────────────────────────
+  "security.unknown_guard": (a) => `「${a.guard}」不是一项防护，只能是 redact 或 inspect_tools。`,
+  "security.unknown_mode": (a) => `「${a.mode}」不是一个档位，只能是 off、observe 或 enforce。`,
+  "security.unknown_rule": (a) => `没有名为「${a.rule}」的内置规则。`,
+  "security.rule_name_empty": () => "规则需要一个名称。",
+  "security.bad_pattern": (a) => `正则表达式有误：${a.detail}`,
+  "security.unknown_action": (a) => `「${a.action}」不是一种处置，只能是 cut 或 record。`,
   "control.session_not_found": (a) => `未找到会话 ${a.id}。`,
   "control.client_unknown": (a) => `未知的客户端「${a.client}」。`,
   "control.store_off": () => "请求记录未启动。",
@@ -279,7 +316,7 @@ const ZH: Record<string, Say> = {
     const src = word(SOURCE_KIND, a.kind);
     const what = word(HIDDEN_KIND, a.what);
     if (!src || !what) return undefined;
-    return `${src.label} 中含有${what.split("：")[0]}`;
+    return `${spaced(src.label)}中含有${what.split("：")[0]}`;
   },
   "scan.hidden.detail": (a) => {
     const src = word(SOURCE_KIND, a.kind);
@@ -292,8 +329,9 @@ const ZH: Record<string, Say> = {
     `该 server 的地址为 ${a.url}，使用时相关上下文会发送到该服务器。`,
   "scan.rule": (a) => {
     const src = word(SOURCE_KIND, a.kind);
-    if (!src) return undefined;
-    return `${src.label} 中命中规则「${a.rule}」`;
+    const name = ruleNameZh(a.rule);
+    if (!src || !name) return undefined;
+    return `${spaced(src.label)}中命中规则「${name}」`;
   },
   "scan.rule.detail": (a) => {
     const src = word(SOURCE_KIND, a.kind);

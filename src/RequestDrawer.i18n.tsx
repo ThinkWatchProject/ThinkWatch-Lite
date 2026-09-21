@@ -37,6 +37,9 @@ export const requestDrawerText = messages(
     path: "路径",
     conversion: "格式转换",
     dropped: "丢弃字段",
+    /** 两项防护在这次请求上的全部命中 */
+    security: "安全",
+    times: (n: number) => `出现 ${n} 次`,
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     status: "状态",
     cancelled: "已取消：客户端在响应结束前断开连接",
@@ -94,7 +97,7 @@ export const requestDrawerText = messages(
     quote: (upstream: ReactNode, bytes: number, tokens: number) => (
       <>将向 {upstream} 发送 {bytes} 字节，约 {tokens} 个输入 token。</>
     ),
-    willRedact: "发送前将按此上游的规则脱敏，回显内容将自动还原。",
+    willRedact: "发送前将按出站脱敏的规则替换凭据，回显内容将自动还原。",
     pricingDate: (date: string) => `价目表日期 ${date}。`,
     confirmSend: "确认发送",
     originalColumn: (upstream: string) => `${upstream}（原请求）`,
@@ -124,6 +127,8 @@ export const requestDrawerText = messages(
     path: "Path",
     conversion: "Conversion",
     dropped: "Dropped",
+    security: "Security",
+    times: (n: number) => `${n} times`,
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     status: "Status",
     cancelled: "Canceled: the client disconnected before the response finished",
@@ -186,7 +191,7 @@ export const requestDrawerText = messages(
       </>
     ),
     willRedact:
-      "Content is redacted by this upstream's rules before sending; echoed content is restored automatically.",
+      "Credentials are replaced by the outbound redaction rules before sending; echoed content is restored automatically.",
     pricingDate: (date: string) => `Price sheet data as of ${date}.`,
     confirmSend: "Confirm and send",
     originalColumn: (upstream: string) => `${upstream} (original)`,

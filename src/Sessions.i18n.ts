@@ -4,7 +4,7 @@ import { messages } from "@/i18n";
  * 会话页的文案。
  *
  * 费用那一格的限定语和概览页说的是同一批事（估算、无法计价、无用量、
- * 订阅），措辞跟着 `Dashboard.i18n.tsx` 走 —— 同一件事在两页上不该有两种
+ * 订阅），措辞跟着 `Dashboard.i18n.ts` 走 —— 同一件事在两页上不该有两种
  * 说法。区别只在量词：概览按请求数，这里按轮次。
  */
 export const sessionsText = messages(

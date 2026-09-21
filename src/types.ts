@@ -147,16 +147,17 @@ export type CoreEvent =
    */
   | { kind: "models_changed"; id: number; provider: string; at_ms: number }
   /**
-   * 出站脱敏动手了。
+   * 一个请求发出前，出站脱敏找到了东西。
    *
-   * **界面上必须能看到脱敏发生了什么** —— 看不见的安全功能会被用户关掉，
-   * 因为他们会怀疑是脱敏搞坏了功能。事件里只有类别和计数，没有原值。
+   * **观察档和拦截档报的是同一条**，差别只在 `replaced`：观察档只记录，
+   * 请求原样发出；拦截档已经换成了占位符。事件里的值一律打码。
    */
   | {
-      kind: "redacted";
+      kind: "secrets_found";
       id: number;
       provider: string;
-      items: RedactedItem[];
+      replaced: boolean;
+      items: SecretItem[];
       at_ms: number;
     }
   /**
@@ -196,11 +197,15 @@ export type CoreEvent =
       id: number;
       provider: string;
       tool: string;
+      /** 内置规则的 id，或者自定义规则的名字 */
       rule: string;
+      custom?: boolean;
+      /** 为什么值得看一眼（英文）。自定义规则是空的 */
       why: string;
       excerpt: string;
-      high: boolean;
-      /** 真的切断了流吗。**高危 + 不受信任 + 拦截态**三者同时成立才会 */
+      /** 这条规则在拦截档下做什么：`cut` / `record` */
+      action: string;
+      /** 真的切断了流吗。**拦截档 + 规则是切断**两者同时成立才会 */
       blocked: boolean;
       at_ms: number;
     }
@@ -283,12 +288,12 @@ export interface RequestRow {
   /** 失败的原因。**存的是 core 发来的那条消息，不是一句话** —— 语言
    * 是在画的时候才定的，存成句子的话换了语言它不会跟着换 */
   error?: Msg;
-  /** 这次发出去之前换掉了什么。只有类别和计数，没有原值 */
-  redacted?: RedactedItem[];
+  /** 出站脱敏在这次请求里找到的东西（已打码），以及换没换 */
+  secrets?: { replaced: boolean; items: SecretItem[] };
   /** 做过格式转换的话，转成了什么、丢了什么 */
   translated?: TranslatedView;
-  /** 上游返回的可疑工具调用 */
-  flagged?: Extract<CoreEvent, { kind: "tool_call_flagged" }>[];
+  /** 命中了工具调用规则的调用 */
+  flagged?: FlaggedCall[];
   /**
    * 它属于哪次会话，和 `SessionView.id` 同一个值。
    *
@@ -365,14 +370,21 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       // 都不进请求列表。配置事件、扫描告警、熔断状态说的都是「现在
       // 什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
-    case "redacted": {
+    case "secrets_found": {
       const r = rows.get(ev.id);
-      if (r) r.redacted = ev.items;
+      if (r) r.secrets = { replaced: ev.replaced, items: ev.items };
       break;
     }
     case "tool_call_flagged": {
       const r = rows.get(ev.id);
-      if (r) (r.flagged ??= []).push(ev);
+      if (r)
+        (r.flagged ??= []).push({
+          tool: ev.tool,
+          rule: ev.rule,
+          custom: ev.custom === true,
+          excerpt: ev.excerpt,
+          blocked: ev.blocked,
+        });
       break;
     }
     case "translated": {
@@ -578,16 +590,11 @@ export interface Summary {
    * 具体倍率各家不同，由价目表按模型给出；界面上不写死任何一家的数字。
    */
   cache_saved_micros: number;
-  /** 本区间有多少个请求带回了可疑工具调用（防线三） */
-  flagged_requests: number;
   /**
-   * 本区间有多少个请求在出站时被脱敏换过内容（防线一的拦截档）。
-   *
-   * **观察档不产生这个数**，它产生的是外泄证据。两档各有各的痕迹，
-   * 界面上要分别说明 —— 否则切到拦截之后看起来像什么都没发生，而那
-   * 是防护更强的一档。
+   * 本区间两项防护各留下了几条记录。**和安全日志数的是同一批** —— 概览上
+   * 点开这个数，落到的日志就是这么多条。老 core 没有它
    */
-  redacted_requests: number;
+  security?: SecurityCounts;
   /** 价目表的快照日期 */
   pricing_date: string;
 }
@@ -662,6 +669,8 @@ export interface HistoryRow {
   translated?: TranslatedView | null;
   /** 它属于哪次会话，和 `SessionView.id` 同一个值。认不出的没有 */
   session?: string | null;
+  /** 两项防护在这条请求上留下的记录。没命中的没有 */
+  security?: SecurityEventView[];
 }
 
 /** 一次请求做过的格式转换 */
@@ -674,14 +683,6 @@ export interface TranslatedView {
   dropped: string[];
 }
 
-/** 出站脱敏换掉的一类。**只有类别和计数，没有原值** */
-export interface RedactedItem {
-  /** 类别：`api-keys` / `private-keys` / `jwt` / `conn-strings` / `internal` */
-  kind: string;
-  /** 具体是哪种凭据，见 `secretLabel` */
-  secret: string;
-  count: number;
-}
 
 export interface StorageStatus {
   /** 请求记录启动了没有。`false` 时这段时间的请求都不会留下 */
@@ -706,20 +707,6 @@ export interface RequestDetail {
   response_body: BodyView | null;
 }
 
-/**
- * 「过去 7 天，有 3 个请求把你的 API key 发给了 relay」。
- *
- * **这比任何功能介绍都有说服力**，因为它说的是已经发生在你身上的事。
- */
-export interface LeakGroup {
-  provider: string;
-  /** 哪种凭据，见 `secretLabel`。core 0.4 之前的记录里是英文名称，原样显示 */
-  secret: string;
-  requests: number;
-  last_at_ms: number;
-  /** 涉及哪几把，**都已打码** */
-  masked: string[];
-}
 
 export interface Dashboard {
   summary: Summary;
@@ -728,7 +715,6 @@ export interface Dashboard {
   latency_by_provider: LatencyView[];
   history: HistoryRow[];
   storage: StorageStatus | null;
-  leaks: LeakGroup[];
   /**
    * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
@@ -853,12 +839,11 @@ export interface RuleView {
   name: string;
   /** `when` 里写了的条件，按固定顺序。空 = 兜底 */
   conditions: ConditionView[];
-  /** 去向：上游名或组名。拒绝的规则和只附加改写、安全要求的规则没有 */
+  /** 去向：上游名或组名。拒绝的规则和只附加改写的规则没有 */
   to?: string | null;
   /** 命中就拒绝，值是返回给客户端的原因 */
   deny?: string | null;
   set?: RuleRewrite | null;
-  guard?: RuleGuard | null;
   /** 没有条件，匹配全部请求 */
   catch_all: boolean;
   /** 在选定上游之后才判断 */
@@ -874,13 +859,6 @@ export interface RuleRewrite {
   thinking?: boolean | null;
 }
 
-/** 规则里的安全要求。只能收紧 */
-export interface RuleGuard {
-  /** 额外脱敏的类别，和上游的脱敏类别同一套标识符 */
-  redact?: string[];
-  /** 按非官方端点处理 */
-  untrusted?: boolean;
-}
 
 /** 新建或修改路由时交过去的一条规则 */
 export interface RuleInput {
@@ -890,7 +868,6 @@ export interface RuleInput {
   to?: string | null;
   deny?: string | null;
   set?: RuleRewrite | null;
-  guard?: RuleGuard | null;
 }
 
 /** 新建或修改路由时交过去的定义。**规则的顺序就是数组的顺序** */
@@ -1029,12 +1006,6 @@ export interface ProviderView {
   billing?: string | null;
   /** 实际按什么计费 */
   billing_effective: string;
-  /** 判完的信任级别 */
-  trust: string;
-  trust_explicit: boolean;
-  /** 实际会脱敏的类别（判完的结果） */
-  redact: string[];
-  redact_explicit: boolean;
   /** 谁在引用它 */
   references: ReferenceView[];
   /** 选的价目表。null = 默认价目表 */
@@ -1272,7 +1243,7 @@ export interface Overview {
   groups: GroupView[];
   clients: ClientView[];
   listen: ListenView;
-  /** 三条防线各自的状态。界面要能配，不只是显示 */
+  /** 两项防护各在哪一档。规则在 `security_detail` 里 */
   security?: SecurityView;
   /** 没绑路由的密钥走哪条 */
   default_route?: string;
@@ -1286,17 +1257,127 @@ export interface Overview {
 }
 
 /**
- * 三条防线。
+ * 两项防护各在哪一档：`off` / `observe` / `enforce`。
  *
- * **「拦截」在每条上做的事不一样** —— 脱敏是替换、审查是切断、扫描只
- * 告警。界面上统一叫「拦截」的话，用户点下去并不知道会发生什么。
+ * **「拦截」在两项上做的事不一样** —— 脱敏是替换、审查是切断。界面上统一
+ * 叫「拦截」的话，用户点下去并不知道会发生什么。
  */
 export interface SecurityView {
   redact: string;
   inspect_tools: string;
-  scan_configs: string;
-  scan_rules_added: number;
-  scan_rules_disabled: number;
+}
+
+// ---------------------------------------------------------------- 安全
+
+/** 两项防护在配置里的键，也是接口路径里的那一段 */
+export type Guard = "redact" | "inspect_tools";
+
+/** 出站脱敏找到的一项。**已打码** */
+export interface SecretItem {
+  /** 内置规则的 id，或者自定义规则的名字 */
+  rule: string;
+  custom?: boolean;
+  /** 类别：`api-keys` / `private-keys` / `jwt` / `conn-strings` / `internal` / `custom` */
+  kind: string;
+  masked: string;
+  count: number;
+}
+
+/** 命中了工具调用规则的一个调用 */
+export interface FlaggedCall {
+  tool: string;
+  rule: string;
+  custom: boolean;
+  /** 命中的那一小段，**已截断** */
+  excerpt: string;
+  /** 真的切断了吗 */
+  blocked: boolean;
+}
+
+/** 一段时间里两项防护各留下了几条记录 */
+export interface SecurityCounts {
+  secrets: number;
+  secrets_replaced: number;
+  tool_calls: number;
+  tool_calls_cut: number;
+}
+
+/** 安全日志的一条：一次命中 */
+export interface SecurityEventView {
+  id: number;
+  at_ms: number;
+  request_id: number;
+  guard: Guard;
+  rule: string;
+  custom?: boolean;
+  /** `recorded` / `replaced` / `cut` */
+  action: "recorded" | "replaced" | "cut";
+  provider: string;
+  /** 哪把网关密钥 */
+  client: string;
+  model?: string;
+  tool?: string | null;
+  /** 出站脱敏是打码后的值；工具调用审查是命中的那一小段 */
+  excerpt: string;
+  count: number;
+}
+
+export interface SecurityEventsPage {
+  events: SecurityEventView[];
+  more: boolean;
+}
+
+/** 一条内置规则按什么认。界面按类型写成自己的话 */
+export type Matcher =
+  | { kind: "prefix"; prefix: string; min_tail: number }
+  | { kind: "openai-legacy"; min_len: number }
+  | { kind: "pem" }
+  | { kind: "jwt" }
+  | { kind: "conn-string" }
+  | { kind: "private-ip" }
+  | { kind: "domain-suffix"; suffixes: string[] }
+  | { kind: "regex"; pattern: string };
+
+export interface SecurityRuleView {
+  /** 内置规则的 id，或者自定义规则的名字 */
+  id: string;
+  custom?: boolean;
+  /** 英文名。界面按 id 查自己的名称表，查不到才用它 */
+  name: string;
+  /** 为什么值得看一眼（英文）。出站脱敏和自定义规则没有 */
+  why?: string;
+  kind: string;
+  matcher: Matcher;
+  enabled: boolean;
+  on_by_default: boolean;
+  /** 工具调用审查：拦截档下做什么 */
+  action?: "cut" | "record" | null;
+}
+
+export interface GuardDetail {
+  mode: string;
+  rules: SecurityRuleView[];
+  /** 配置里写了、但认不出的内置规则 id */
+  unknown?: string[];
+}
+
+export interface SecurityDetail {
+  redact: GuardDetail;
+  inspect_tools: GuardDetail;
+}
+
+export interface SecurityTestHit {
+  rule: string;
+  custom?: boolean;
+  /** 在样本里的位置，按 UTF-16 码元（JavaScript 的下标） */
+  start: number;
+  end: number;
+  excerpt: string;
+  action?: "cut" | "record" | null;
+}
+
+export interface SecurityTestResult {
+  hits: SecurityTestHit[];
 }
 
 // ---------------------------------------------------------- 客户端接管
@@ -1434,14 +1515,6 @@ export interface ScanResponse {
   conflicting: string[];
   unreadable: string[];
   scanned: number;
-  /** 这次生效的规则数，内置的加上自定义的 */
-  rules_active: number;
-  /** 其中自定义的 */
-  rules_custom: number;
-  /** 停用了几条内置规则 */
-  rules_disabled: number;
-  /** 有规则没能生效时的说明 */
-  rules_warning: string | null;
   projects: string[];
 }
 
@@ -1622,38 +1695,6 @@ export interface McpTargetView {
   why_not: Msg | null;
 }
 
-// ---------------------------------------------------------- 上游行为基线
-
-export interface DriftView {
-  /** `flagged`：命中高危规则的响应；`tool_calls`：带工具调用的响应；`errors`：失败的请求 */
-  metric: "tool_calls" | "flagged" | "errors";
-  /** 比率，0..1 */
-  recent: number;
-  baseline: number;
-  /** 两边各自的样本量。**必须一起显示** —— 没有它，比率是个没法判断可信度的数字 */
-  recent_n: number;
-  baseline_n: number;
-  notable: boolean;
-}
-
-export interface ProviderBaseline {
-  provider: string;
-  recent_total: number;
-  baseline_total: number;
-  /** 数过形状的有多少条。和总数不同时要说清楚 */
-  recent_inspected: number;
-  baseline_inspected: number;
-  drifts: DriftView[];
-}
-
-export interface BaselineResponse {
-  recent_hours: number;
-  baseline_days: number;
-  providers: ProviderBaseline[];
-  /** 观测层没起来。**不是没发现，是没看** */
-  unavailable: boolean;
-}
-
 // ---------------------------------------------------------------- 请求重放
 
 export interface ReplayQuote {
@@ -1738,10 +1779,6 @@ export interface ProviderInput {
   models_only?: string[];
   /** 不给就自动识别 */
   billing?: string;
-  /** 不给就按地址识别 */
-  trust?: string;
-  /** 不给就按地址识别；空数组是「不脱敏」 */
-  redact?: string[];
   /** 不给就是默认价目表 */
   pricing?: string;
   disabled: boolean;
@@ -1761,8 +1798,6 @@ export interface ProviderTest {
 /** 按接口地址自动识别的结果（不联网） */
 export interface ProviderPreview {
   protocol?: string | null;
-  official: boolean;
-  redact: string[];
   /** 按推断出的协议，API 密钥放在哪个请求头里 */
   auth_header: string;
 }

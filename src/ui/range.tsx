@@ -4,10 +4,12 @@ import { Button } from "@/ui/button";
 import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { bucketStart } from "@/format";
 import { textOf, useText } from "@/i18n";
 import { rangeText } from "./range.i18n";
 
-const DAY = 24 * 3_600_000;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 type Preset = { id: "1d" | "7d" | "30d"; ms: number };
 
@@ -44,7 +46,7 @@ export type Range = {
   `label` 和 `compare` 是界面上的字，**读的时候才按当前语言取**：Range 会被
   存进页面的 state 里，存下来的若是字符串，换了语言它还是原来那种。
 */
-function presetRange(p: Preset): Range {
+function fromPreset(p: Preset): Range {
   return {
     ms: p.ms,
     get label() {
@@ -54,6 +56,39 @@ function presetRange(p: Preset): Range {
       return textOf(rangeText).preset[p.id];
     },
   };
+}
+
+/** 一个预设区间。从别的页带着区间跳过来时用 */
+export function presetRange(id: Preset["id"]): Range {
+  return fromPreset(PRESETS.find((p) => p.id === id) ?? PRESETS[0]!);
+}
+
+/**
+ * 一格多宽。
+ *
+ * **比「一小时一格」细得多，这是故意的。**少而肥的格子只能看出「这段
+ * 时间有没有用过」；细到四五十格以上，图上开始能看出**作息** —— 白天
+ * 成片、夜里断开、周末矮一截。一张能看出作息的图才是仪表。
+ *
+ * 上限压在 120 格上下：再密就是把噪声当细节，而每一格还要再乘上模型
+ * 个数去查库。
+ */
+export function bucketFor(rangeMs: number): number {
+  if (rangeMs > 7 * DAY) return 6 * HOUR;
+  if (rangeMs > 2 * DAY) return 2 * HOUR;
+  return HOUR / 2;
+}
+
+/**
+ * 一个区间从哪一刻算起。
+ *
+ * **对齐到格子的边界**，和概览那张图的格子一致。安全日志也按它取：从概览
+ * 点进去时，日志的条数和概览上那个数是同一批，差一个格子的话两边就对不上。
+ *
+ * 实时档的汇总按 24 小时算（见 `LIVE_RANGE`），起点也按 24 小时取。
+ */
+export function windowStart(r: Range, now = Date.now()): number {
+  return r.live ? bucketStart(now - DAY, HOUR) : bucketStart(now - r.ms, bucketFor(r.ms));
 }
 
 /**
@@ -128,12 +163,12 @@ export function useRange(
       const start = () => {
         if (fallback === "live") return LIVE_RANGE;
         const p = PRESETS.find((x) => x.id === fallback);
-        return p ? presetRange(p) : LIVE_RANGE;
+        return p ? fromPreset(p) : LIVE_RANGE;
       };
       if (!raw) return start();
       if (raw === "live") return LIVE_RANGE;
       const p = PRESETS.find((x) => x.id === raw);
-      if (p) return presetRange(p);
+      if (p) return fromPreset(p);
       if (raw.startsWith("from:")) {
         const d = new Date(raw.slice(5));
         // 存坏了、或者那一天在将来（改过系统时间）：当没存过
@@ -143,7 +178,7 @@ export function useRange(
       // 读不到就用默认的。**不能因为存不了偏好就让这一页打不开**
     }
     const p = PRESETS.find((x) => x.id === fallback);
-    return fallback === "live" || !p ? LIVE_RANGE : presetRange(p);
+    return fallback === "live" || !p ? LIVE_RANGE : fromPreset(p);
   });
 
   const put = useCallback((r: Range) => {
@@ -196,7 +231,7 @@ export function RangePicker({
         onValueChange={(v) => {
           if (v === "live") return onChange(LIVE_RANGE);
           const p = PRESETS.find((x) => x.id === v);
-          if (p) onChange(presetRange(p));
+          if (p) onChange(fromPreset(p));
         }}
       >
         {live && (

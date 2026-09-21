@@ -87,19 +87,6 @@ export function egressLabel(proxy: string): string {
   return proxy;
 }
 
-export const REDACT_KINDS: { id: string; label: string }[] = (
-  ["api-keys", "private-keys", "jwt", "conn-strings", "internal"] as const
-).map((id) => ({
-  id,
-  get label() {
-    return textOf(labelsText).redactKinds[id];
-  },
-}));
-
-export function redactLabel(id: string): string {
-  return REDACT_KINDS.find((k) => k.id === id)?.label ?? id;
-}
-
 export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
   {
     id: "key",

@@ -1,13 +1,6 @@
-import type { ReactNode } from "react";
 import { messages } from "@/i18n";
 
-/**
- * 概览页的文案。
- *
- * `.tsx`：凭据外泄那一句里有加粗的片段，而中英文的语序不同 —— 片段的
- * 位置只能由句子自己决定，所以那条是一个返回 JSX 的函数，加粗的样式由
- * 调用方通过 `em` 传进来。
- */
+/** 概览页的文案。 */
 export const dashboardText = messages(
   {
     title: "用量概览",
@@ -95,38 +88,20 @@ export const dashboardText = messages(
     byModel: "按模型 · 首字节 P50 至 P95",
     byUpstream: "按上游 · 同上",
 
-    // 安全：三条防线的档位和这段时间各自看见了什么
+    // 安全：两项防护的档位和这段时间各自看见了什么。数的是安全日志里的条数
     modeOff: "关闭",
     modeObserve: "观察",
     modeEnforce: "拦截",
     redact: "出站脱敏",
-    redactOff: "未启用，出站内容不做检查",
-    redacted: (n: number) => `已替换 ${n} 个请求中的凭据`,
-    nothingToReplace: "未发现需要替换的内容",
-    leaksDetected: (n: number) => `检测到 ${n} 次凭据外泄，未做替换`,
-    noLeaks: "未检测到凭据外泄",
     inspect: "工具调用审查",
-    inspectOff: "未启用，上游返回的工具调用不做检查",
-    flagged: (n: number, cutOff: boolean) =>
-      `${n} 个请求返回了可疑工具调用` + (cutOff ? "，已切断" : ""),
-    noFlagged: "未发现可疑工具调用",
-    scan: "配置面扫描",
-    scanOff: "未启用，客户端配置文件不做监控",
-    scanOn: "持续监控客户端配置文件，新增可疑内容会立即提示",
-
-    // 凭据外泄
-    leaksTitle: "凭据外泄检测",
-    leak: (n: number, upstream: string, secret: string, em: (x: ReactNode) => ReactNode) => (
-      <>
-        {em(n)} 个请求向 {em(upstream)} 发送了 {em(secret)}
-      </>
-    ),
-    /** 外泄记录里没有上游名时 */
-    someUpstream: "上游",
-    involving: (masked: string[]) => `涉及 ${masked.join("、")}`,
-    observeOnly: "观察模式：仅记录，未改变任何请求。",
-    enforceTip: "如需替换为占位符，请在「安全 › 防护」中将出站脱敏切换到「拦截」。",
-    enforce: "启用拦截",
+    notChecked: "不检查，不记录",
+    secrets: (n: number, replaced: number) =>
+      `发现 ${n} 处凭据，` + (replaced === 0 ? "均未替换" : replaced === n ? "均已替换" : `已替换 ${replaced} 处`),
+    noSecrets: "未发现凭据",
+    toolCalls: (n: number, cut: number) =>
+      `发现 ${n} 个可疑工具调用，` + (cut === 0 ? "均未切断" : cut === n ? "均已切断" : `已切断 ${cut} 个`),
+    noToolCalls: "未发现可疑工具调用",
+    showLog: "在安全日志中查看",
 
     /** 后面可能接「。转发不受影响。」，所以不带句号 */
     recordingUnavailable: "请求记录未能启动",
@@ -216,38 +191,17 @@ export const dashboardText = messages(
     modeObserve: "Observe",
     modeEnforce: "Enforce",
     redact: "Outbound redaction",
-    redactOff: "Not enabled; outbound content is not checked",
-    redacted: (n: number) =>
-      n === 1 ? "Credentials replaced in 1 request" : `Credentials replaced in ${n} requests`,
-    nothingToReplace: "No content found that needed replacing",
-    leaksDetected: (n: number) =>
-      n === 1
-        ? "1 credential leak detected, not replaced"
-        : `${n} credential leaks detected, not replaced`,
-    noLeaks: "No credential leaks detected",
     inspect: "Tool-call inspection",
-    inspectOff: "Not enabled; tool calls returned by upstreams are not checked",
-    flagged: (n: number, cutOff: boolean) =>
-      n === 1
-        ? "1 request returned suspicious tool calls" + (cutOff ? "; its response was cut off" : "")
-        : `${n} requests returned suspicious tool calls` + (cutOff ? "; the responses were cut off" : ""),
-    noFlagged: "No suspicious tool calls found",
-    scan: "Config scan",
-    scanOff: "Not enabled; client config files are not monitored",
-    scanOn: "Client config files are monitored continuously; new suspicious content is reported at once",
-
-    leaksTitle: "Credential leak detection",
-    leak: (n: number, upstream: string, secret: string, em: (x: ReactNode) => ReactNode) => (
-      <>
-        {em(secret)} sent to {em(upstream)} in {em(n)} {n === 1 ? "request" : "requests"}
-      </>
-    ),
-    someUpstream: "an upstream",
-    involving: (masked: string[]) => `involving ${masked.join(", ")}`,
-    observeOnly: "Observe mode: recorded only; no request was changed.",
-    enforceTip:
-      "To replace them with placeholders, switch outbound redaction to Enforce in Security › Protection.",
-    enforce: "Switch to Enforce",
+    notChecked: "Not checked or recorded",
+    secrets: (n: number, replaced: number) =>
+      (n === 1 ? "1 credential found, " : `${n} credentials found, `) +
+      (replaced === 0 ? "none replaced" : replaced === n ? (n === 1 ? "replaced" : "all replaced") : `${replaced} replaced`),
+    noSecrets: "No credentials found",
+    toolCalls: (n: number, cut: number) =>
+      (n === 1 ? "1 suspicious tool call found, " : `${n} suspicious tool calls found, `) +
+      (cut === 0 ? "none cut off" : cut === n ? (n === 1 ? "cut off" : "all cut off") : `${cut} cut off`),
+    noToolCalls: "No suspicious tool calls found",
+    showLog: "View in the security log",
 
     recordingUnavailable: "Request recording could not start",
     forwardingUnaffected: ". Forwarding is not affected.",

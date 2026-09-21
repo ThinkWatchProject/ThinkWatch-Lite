@@ -29,7 +29,6 @@ import { ModelsSection, catalogOf, inScope, type ModelCatalog } from "./ModelsSe
 import { StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
-import { SecuritySection } from "./SecuritySection";
 import { upstreamDialogText } from "./UpstreamDialog.i18n";
 import {
   blankForm,
@@ -42,9 +41,9 @@ import {
   type UpstreamForm,
 } from "./upstreamForm";
 
-export type Section = "connection" | "account" | "models" | "billing" | "security";
+export type Section = "connection" | "account" | "models" | "billing";
 
-const SECTIONS: Section[] = ["connection", "models", "billing", "security"];
+const SECTIONS: Section[] = ["connection", "models", "billing"];
 
 /**
  * ChatGPT 账号上游的分节。
@@ -52,7 +51,7 @@ const SECTIONS: Section[] = ["connection", "models", "billing", "security"];
  * **没有「连接」也没有「计费」**：地址、协议、凭据由登录决定，计费方式是订阅制 ——
  * 把这些摆成可填的表单，等于邀请用户去改一个改了就坏的东西。
  */
-const ACCOUNT_SECTIONS: Section[] = ["account", "models", "security"];
+const ACCOUNT_SECTIONS: Section[] = ["account", "models"];
 
 export type UpstreamDialogMode =
   | { kind: "create" }
@@ -61,7 +60,7 @@ export type UpstreamDialogMode =
 /**
  * 新建与编辑上游。
  *
- * **新建分步走**（连接、模型、计费、安全，后三步都有默认值）；**编辑按节
+ * **新建分步走**（连接、模型、计费，后两步都有默认值）；**编辑按节
  * 随意切换**，「保存」一次提交所有分节的改动 —— core 那边是一次写入、一个
  * 配置版本。取消不写入任何东西。
  */
@@ -73,7 +72,6 @@ export function UpstreamDialog({
   onClose,
   onSaved,
   onChanged,
-  onGoToGuard,
   onChatgptLogin,
 }: {
   mode: UpstreamDialogMode;
@@ -85,7 +83,6 @@ export function UpstreamDialog({
   onSaved: (name: string) => void;
   /** 对话框里新建了代理或价目表：外面要重新读概览 */
   onChanged: () => void;
-  onGoToGuard: () => void;
   /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框。带上名字就是给它换一次凭据 */
   onChatgptLogin: (relogin?: { name: string; proxy: string }) => void;
 }) {
@@ -381,15 +378,6 @@ export function UpstreamDialog({
               onPriceModels={(models) =>
                 setNested({ kind: "sheet", name: form.pricing || null, add: models })
               }
-            />
-          )}
-          {section === "security" && (
-            <SecuritySection
-              form={form}
-              set={set}
-              ov={ov}
-              preview={preview}
-              onGoToGuard={onGoToGuard}
             />
           )}
         </div>

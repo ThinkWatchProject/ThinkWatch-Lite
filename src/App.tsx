@@ -19,7 +19,9 @@ import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
 import { AccessPage } from "./access/AccessPage";
 import RoutingPage from "./routing/RoutingPage";
-import Security from "./Security";
+import SecurityPage, { type LogFocus } from "./security/SecurityPage";
+import McpPage from "./mcp/McpPage";
+import { presetRange } from "@/ui/range";
 import { Notices } from "./Notices";
 import { Tip, TooltipRoot } from "@/ui/tip";
 import {
@@ -28,6 +30,7 @@ import {
   IconFlow,
   IconGateway,
   IconGuard,
+  IconMcp,
   IconRoute,
   IconServer,
   IconSettings,
@@ -119,10 +122,11 @@ type Surface =
   | "access"
   | "upstreams"
   | "settings"
-  | "clients";
+  | "clients"
+  | "mcp";
 
 /** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
-const CONFIG_PAGES = new Set<Surface>(["upstreams", "access", "routing"]);
+const CONFIG_PAGES = new Set<Surface>(["upstreams", "access", "routing", "security"]);
 
 /** 配置文件里的一段由哪一页管理 */
 function surfaceOf(section: string | null): Surface {
@@ -167,14 +171,13 @@ const SOURCES: {
   {
     // **安全自己一组，不挂在「监控」下面。**
     //
-    // 它不是一个看板：三条防线各自有三态、有规则集、有拦截动作，那是
+    // 它不是一个看板：两项防护各自有三档、有规则、有拦截动作，那是
     // 策略，不是观测。塞在监控里的后果不只是归类难看 —— 用户会把它当
     // 成一个只能看的页面，而整个设计前提是他看完证据之后**要
     // 去动那几个开关**。
     //
-    // 一项，不是两项：开关和它查出来的东西分在两页时，「我的机器安全
-    // 吗」这个问题要跑两个导航项才答得完，而两页之间没有一条线索说
-    // 它们是一件事。
+    // 日志和开关在同一页：开关和它查出来的东西分在两处时，「这项防护
+    // 查到过什么」要跑两个导航项才答得完。
     group: "security",
     items: [{ id: "security", icon: IconGuard }],
   },
@@ -190,6 +193,8 @@ const SOURCES: {
       // 指的其实是整个产品
       { id: "access", icon: IconGateway },
       { id: "clients", icon: IconClient },
+      // **MCP 挨着客户端**：两者管的都是各客户端自己的配置文件，不经过网关
+      { id: "mcp", icon: IconMcp },
     ],
   },
   {
@@ -432,6 +437,14 @@ export default function App() {
     null,
   );
   const [historyOpen, setHistoryOpen] = useState(false);
+  /**
+   * 从概览的安全计数点进日志时带的筛选。**离开安全页就清掉** —— 过一阵再
+   * 回来，不该又被拨回当时那一类、那一段时间。
+   */
+  const [securityFocus, setSecurityFocus] = useState<LogFocus | null>(null);
+  useEffect(() => {
+    if (tab !== "security") setSecurityFocus(null);
+  }, [tab]);
 
   /**
    * 概览页什么时候重新拉数。
@@ -774,8 +787,8 @@ export default function App() {
                   <SidebarMenu>
                     {g.items.map((it) => {
                       const on = tab === it.id;
-                      // 配置面上出现了新东西 —— 挂个角标,直到他去看过
-                      const badge = it.id === "security" ? alerts.length : 0;
+                      // 客户端配置里出现了新东西 —— 挂个角标,直到他去看过
+                      const badge = it.id === "mcp" ? alerts.length : 0;
                       const Icon = it.icon;
                       const label = t.surfaces[it.id];
                       return (
@@ -1120,6 +1133,15 @@ export default function App() {
                 <Dashboard
                   tick={dashTick}
                   ov={ov}
+                  onShowSecurity={(guard, range) => {
+                    // 实时档的计数按 24 小时算（见 `windowStart`），日志也按 24 小时看
+                    setSecurityFocus({
+                      guard,
+                      range: range.live ? presetRange("1d") : range,
+                      at: Date.now(),
+                    });
+                    setTab("security");
+                  }}
                   onShowUnpriced={() => {
                     // 归组态下「哪些模型没定价」看不出来 —— 那是一行一行
                     // 的问题，不是一次任务的问题
@@ -1130,20 +1152,15 @@ export default function App() {
                 />
               ) : tab === "clients" ? (
                 <Clients />
+              ) : tab === "mcp" ? (
+                <McpPage alerts={alerts} onSeen={clearAlerts} />
               ) : tab === "security" ? (
-                ov ? (
-                  <Security
-                    ov={ov}
-                    configVersion={configVersion}
-                    onChanged={() => setNudge((n) => n + 1)}
-                    alerts={alerts}
-                    onSeen={clearAlerts}
-                  />
-                ) : (
-                  <p className="p-5 tw-body text-muted-foreground">
-                    {t.loadingConfig}
-                  </p>
-                )
+                <SecurityPage
+                  configVersion={configVersion}
+                  tick={dashTick}
+                  focus={securityFocus}
+                  onChanged={() => setNudge((n) => n + 1)}
+                />
               ) : tab === "access" ? (
                 ov ? (
                   <AccessPage

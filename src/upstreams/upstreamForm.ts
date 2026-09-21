@@ -60,10 +60,6 @@ export interface UpstreamForm {
   billing: string;
   /** 空 = 默认价目表 */
   pricing: string;
-  /** 空 = 自动识别 */
-  trust: string;
-  redactMode: "auto" | "custom";
-  redact: string[];
   disabled: boolean;
 }
 
@@ -105,9 +101,6 @@ export function blankForm(): UpstreamForm {
     scopeList: [],
     billing: "",
     pricing: "",
-    trust: "",
-    redactMode: "auto",
-    redact: [],
     disabled: false,
   };
 }
@@ -138,9 +131,6 @@ export function formFromView(p: ProviderView): UpstreamForm {
     scopeList: p.models_only ?? [],
     billing: p.billing ?? "",
     pricing: p.pricing ?? "",
-    trust: p.trust_explicit ? p.trust : "",
-    redactMode: p.redact_explicit ? "custom" : "auto",
-    redact: p.redact,
     disabled: p.disabled,
   };
 }
@@ -193,8 +183,6 @@ export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
     models: f.manualModels,
     models_only: f.scope === "some" ? f.scopeList : undefined,
     billing: f.billing || undefined,
-    trust: f.trust || undefined,
-    redact: f.redactMode === "custom" ? f.redact : undefined,
     pricing: f.pricing || undefined,
     disabled: f.disabled,
   };

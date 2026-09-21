@@ -25,8 +25,6 @@ export const modelText = messages(
     setMaxTokens: (value: string) => `max_tokens 改为 ${value}`,
     thinkingOn: "开启扩展思考",
     thinkingOff: "关闭扩展思考",
-    redactKinds: (n: number) => `额外脱敏 ${n} 类`,
-    untrusted: "按非官方端点处理",
     strategies: {
       fallback: "依次使用成员，前一个不可用时使用下一个。",
       select: "使用选定的上游；它不可用时，按顺序使用其余成员。",
@@ -62,8 +60,6 @@ export const modelText = messages(
     setMaxTokens: (value: string) => `max_tokens set to ${value}`,
     thinkingOn: "Extended thinking on",
     thinkingOff: "Extended thinking off",
-    redactKinds: (n: number) => `Extra redaction: ${n} ${n === 1 ? "type" : "types"}`,
-    untrusted: "Treated as an unofficial endpoint",
     strategies: {
       fallback: "Uses the members in order, moving to the next when one is unavailable.",
       select: "Uses the selected upstream; when it is unavailable, uses the other members in order.",
