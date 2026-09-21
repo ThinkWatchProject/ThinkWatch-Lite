@@ -437,10 +437,6 @@ export default function UpstreamsPage({
             changed();
           }}
           onChanged={changed}
-          onGoToGuard={() => {
-            setDialog(null);
-            onNavigate("guard");
-          }}
           onChatgptLogin={(relogin) => setDialog({ kind: "chatgpt-login", relogin })}
         />
       )}

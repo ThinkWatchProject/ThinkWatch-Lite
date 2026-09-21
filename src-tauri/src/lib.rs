@@ -23,6 +23,7 @@ pub mod menubar;
 pub mod notices;
 pub mod prefs;
 pub mod routing;
+pub mod security;
 pub mod supervisor;
 pub mod theme;
 pub mod update;
@@ -299,7 +300,6 @@ async fn dashboard(
         latency_by_provider: c.latency_by_provider(None).await.unwrap_or_default(),
         history: c.history(200, None).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
-        leaks: c.leaks().await.unwrap_or_default(),
         // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
         // 没有这两个端点，而这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。
@@ -325,8 +325,6 @@ pub struct Dashboard {
     history: Vec<tw_api::HistoryRow>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑
     storage: Option<tw_api::StorageStatus>,
-    /// 出站密钥检测攒下的证据（观察态）
-    leaks: Vec<tw_api::LeakGroup>,
     /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补
     buckets: Vec<tw_api::CostBucket>,
     /// 同样的格子，再按模型分层。趋势图靠它把「什么时候花的」和
@@ -593,11 +591,6 @@ async fn replay_run(
         .replay_run(id, provider)
         .await
         .map_err(|e| format!("{e:#}"))
-}
-
-#[tauri::command]
-async fn baseline(state: tauri::State<'_, AppState>) -> Result<tw_api::BaselineResponse, String> {
-    state.control.baseline().await.map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -1542,7 +1535,14 @@ pub fn run() {
             mcp_targets,
             mcp_plan,
             mcp_apply,
-            baseline,
+            security::security_detail,
+            security::security_events,
+            security::set_security_mode,
+            security::toggle_security_rule,
+            security::create_security_rule,
+            security::update_security_rule,
+            security::delete_security_rule,
+            security::test_security,
             replay_quote,
             replay_run,
             save_diagnostics,

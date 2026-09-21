@@ -130,8 +130,6 @@ export interface RuleDraft {
   model: string;
   maxTokens: string;
   thinking: "keep" | "on" | "off";
-  redact: string[];
-  untrusted: boolean;
 }
 
 let seq = 0;
@@ -151,8 +149,6 @@ export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
     model: "",
     maxTokens: "",
     thinking: "keep",
-    redact: [],
-    untrusted: false,
   };
 }
 
@@ -167,8 +163,6 @@ export function draftFromView(r: RuleView): RuleDraft {
     model: r.set?.model ?? "",
     maxTokens: r.set?.max_tokens != null ? String(r.set.max_tokens) : "",
     thinking: r.set?.thinking == null ? "keep" : r.set.thinking ? "on" : "off",
-    redact: [...(r.guard?.redact ?? [])],
-    untrusted: r.guard?.untrusted ?? false,
   };
 }
 
@@ -176,15 +170,9 @@ export function copyDraft(d: RuleDraft): RuleDraft {
   return { ...d, key: nextKey(), conditions: d.conditions.map((c) => ({ ...c, values: [...c.values] })) };
 }
 
-/** 附加了改写或安全要求 */
+/** 附加了改写 */
 export function hasAddOns(d: RuleDraft): boolean {
-  return (
-    d.model.trim() !== "" ||
-    d.maxTokens.trim() !== "" ||
-    d.thinking !== "keep" ||
-    d.redact.length > 0 ||
-    d.untrusted
-  );
+  return d.model.trim() !== "" || d.maxTokens.trim() !== "" || d.thinking !== "keep";
 }
 
 /** 在选定上游之后才判断：条件里有「选定上游」 */
@@ -209,7 +197,6 @@ export function draftToInput(d: RuleDraft): RuleInput {
     max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : null,
     thinking: d.thinking === "keep" ? null : d.thinking === "on",
   };
-  const guard = { redact: d.redact, untrusted: d.untrusted };
   return {
     name: d.name.trim(),
     conditions,
@@ -217,7 +204,6 @@ export function draftToInput(d: RuleDraft): RuleInput {
     deny: deny ? d.deny.trim() : null,
     // 拒绝时附加项不起作用：不写进去
     set: !deny && (set.model || set.max_tokens || set.thinking != null) ? set : null,
-    guard: !deny && (guard.redact.length || guard.untrusted) ? guard : null,
   };
 }
 
@@ -350,15 +336,13 @@ export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected"
   return g.providers.join(ordered ? " → " : textOf(routingText).listSep);
 }
 
-/** 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · 额外脱敏 2 类` */
+/** 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · max_tokens 4096` */
 export function addOnsText(d: RuleDraft): string {
   const t = textOf(modelText);
   const parts: string[] = [];
   if (d.model.trim()) parts.push(t.setModel(d.model.trim()));
   if (d.maxTokens.trim()) parts.push(t.setMaxTokens(d.maxTokens.trim()));
   if (d.thinking !== "keep") parts.push(d.thinking === "on" ? t.thinkingOn : t.thinkingOff);
-  if (d.redact.length) parts.push(t.redactKinds(d.redact.length));
-  if (d.untrusted) parts.push(t.untrusted);
   return parts.join(" · ");
 }
 

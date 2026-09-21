@@ -324,11 +324,6 @@ impl ControlClient {
             .await
     }
 
-    /// 出站密钥检测攒下的证据。
-    pub async fn leaks(&self) -> Result<Vec<tw_api::LeakGroup>> {
-        Ok(serde_json::from_slice(&self.get("/leaks").await?)?)
-    }
-
     /// 一条请求的全部细节，含 body。
     pub async fn request_detail(&self, id: i64) -> Result<tw_api::RequestDetail> {
         Ok(serde_json::from_slice(
@@ -393,9 +388,103 @@ impl ControlClient {
         .await
     }
 
-    /// 每个上游最近是不是变了（防线三）。
-    pub async fn baseline(&self) -> Result<tw_api::BaselineResponse> {
-        Ok(serde_json::from_slice(&self.get("/baseline").await?)?)
+    // ---------------------------------------------------------------- 安全
+
+    /// 两项防护的档位和全部规则。
+    pub async fn security(&self) -> Result<tw_api::SecurityDetail> {
+        Ok(serde_json::from_slice(&self.get("/security").await?)?)
+    }
+
+    /// 安全日志的一页，按时间倒序。
+    pub async fn security_events(
+        &self,
+        guard: Option<&str>,
+        within: Option<(i64, i64)>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<tw_api::SecurityEventsPage> {
+        let mut path = format!("/security/events?limit={limit}{}", window_q(within));
+        if let Some(g) = guard {
+            path.push_str(&format!("&guard={}", urlencode(g)));
+        }
+        if let Some(b) = before {
+            path.push_str(&format!("&before={b}"));
+        }
+        Ok(serde_json::from_slice(&self.get(&path).await?)?)
+    }
+
+    pub async fn set_security_mode(
+        &self,
+        guard: &str,
+        req: &tw_api::ModeSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/security/{}/mode", segment(guard)),
+            req,
+        )
+        .await
+    }
+
+    /// 启用或停用一条内置规则。
+    pub async fn toggle_security_rule(
+        &self,
+        guard: &str,
+        id: &str,
+        req: &tw_api::RuleToggle,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/security/{}/builtin/{}", segment(guard), segment(id)),
+            req,
+        )
+        .await
+    }
+
+    pub async fn create_security_rule(
+        &self,
+        guard: &str,
+        req: &tw_api::CustomRuleSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.post_json(&format!("/security/{}/custom", segment(guard)), req)
+            .await
+    }
+
+    pub async fn update_security_rule(
+        &self,
+        guard: &str,
+        name: &str,
+        req: &tw_api::CustomRuleSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!("/security/{}/custom/{}", segment(guard), segment(name)),
+            req,
+        )
+        .await
+    }
+
+    pub async fn delete_security_rule(
+        &self,
+        guard: &str,
+        name: &str,
+        base_version: Option<&str>,
+    ) -> Result<tw_api::ConfigWritten> {
+        let path = with_base(
+            format!("/security/{}/custom/{}", segment(guard), segment(name)),
+            base_version,
+        );
+        self.send_json(hyper::Method::DELETE, &path, &()).await
+    }
+
+    /// 拿一段文本试一试规则。**不发出任何请求**
+    pub async fn test_security(
+        &self,
+        guard: &str,
+        req: &tw_api::SecurityTestRequest,
+    ) -> Result<tw_api::SecurityTestResult> {
+        self.post_json(&format!("/security/{}/test", segment(guard)), req)
+            .await
     }
 
     /// 会话列表。

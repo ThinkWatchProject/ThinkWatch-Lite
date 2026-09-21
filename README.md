@@ -96,16 +96,22 @@ outbound proxy and priced with a custom price sheet.
 ### Security
 
 - **Outbound redaction** replaces keys, private keys and connection strings
-  before a request leaves for an untrusted upstream, and restores them in the
-  response.
+  before a request leaves, and restores them in the response.
 - **Tool-call inspection** cuts off the response stream when an upstream returns
   a tool call carrying a command that would grant code execution.
-- **Config scan** checks client configuration files (skills, hooks, MCP servers)
-  for hidden characters, injected instructions and dangerous commands.
 
-Each runs in Off, Observe or Enforce mode, and all three start in Observe. The
-Findings page collects the scan results and compares each upstream's last 24
-hours with the 30 days before.
+Both apply to every upstream and run in Off, Observe or Enforce mode, starting
+in Observe. The Security page lists every rule: built-in rules can be turned off
+one at a time, custom rules are regular expressions, and any rule can be tried
+on a sample first. Everything the two protections catch is kept in a log.
+
+### MCP
+
+The MCP page shows the MCP servers each client has configured side by side, and
+copies a server to another client or removes it, showing the change before
+anything is written. It also lists skills and hooks, and scans client
+configuration files for hidden characters, injected instructions and dangerous
+commands.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/findings-en-dark.png">

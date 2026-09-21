@@ -18,13 +18,6 @@ export const labelsText = messages(
     },
     direct: "直连",
     systemProxy: "系统代理",
-    redactKinds: {
-      "api-keys": "API 密钥",
-      "private-keys": "私钥",
-      jwt: "JWT",
-      "conn-strings": "连接串口令",
-      internal: "内网标识",
-    },
     apiKey: "API 密钥",
     models: {
       discovered: "自动发现",
@@ -95,13 +88,6 @@ export const labelsText = messages(
     },
     direct: "Direct",
     systemProxy: "System proxy",
-    redactKinds: {
-      "api-keys": "API keys",
-      "private-keys": "Private keys",
-      jwt: "JWTs",
-      "conn-strings": "Connection string passwords",
-      internal: "Internal addresses",
-    },
     apiKey: "API key",
     models: {
       discovered: "Discovered",

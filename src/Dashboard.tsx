@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import { useStableState } from "./useStable";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
 import { StackedArea, Y_AXIS_WIDTH } from "@/ui/charts";
-import { bucketStart, compact, densify } from "./format";
-import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
+import { compact, densify } from "./format";
+import { usd, type Dashboard as Data, type Guard, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { RangePicker, useRange } from "@/ui/range";
+import { RangePicker, bucketFor, useRange, windowStart, type Range } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
-import { secretLabel } from "./labels";
 import { useText } from "@/i18n";
 import { dashboardText } from "./Dashboard.i18n";
 
@@ -22,22 +22,6 @@ const DAY = 24 * HOUR;
 
 /** 每一栏最多列几项。超出的写出来有几项，**不静默丢掉**。 */
 const ROWS = 6;
-
-/**
- * 一格多宽。
- *
- * **比「一小时一格」细得多，这是故意的。**少而肥的格子只能看出「这段
- * 时间有没有用过」；细到四五十格以上，图上开始能看出**作息** —— 白天
- * 成片、夜里断开、周末矮一截。一张能看出作息的图才是仪表。
- *
- * 上限压在 120 格上下：再密就是把噪声当细节，而每一格还要再乘上模型
- * 个数去查库。
- */
-function bucketFor(rangeMs: number): number {
-  if (rangeMs > 7 * DAY) return 6 * HOUR;
-  if (rangeMs > 2 * DAY) return 2 * HOUR;
-  return HOUR / 2;
-}
 
 /** 往上取到最近的 1/2/5 × 10ⁿ。纵轴上界用它，刻度才落在整数上。 */
 function niceCeil(v: number): number {
@@ -237,10 +221,13 @@ function Swatch({ color, name, n }: { color: string; name: string; n: number }) 
 export default function Dashboard({
   tick,
   ov,
+  onShowSecurity,
   onShowUnpriced,
 }: {
   tick: number;
   ov: Overview | null;
+  /** 安全计数不为零时可以点：打开安全日志，带上这一类和这段时间 */
+  onShowSecurity: (guard: Guard, range: Range) => void;
   /** 「N 条无法计价」是个可以点进去的问题，不只是一个数字 */
   onShowUnpriced: () => void;
 }) {
@@ -277,9 +264,8 @@ export default function Dashboard({
   /*
     **实时档只有图是实时的。**十分钟里的样本撑不起有意义的延迟分位，也
     统计不出像样的缓存命中率；那些仍然按 24 小时算，图下面有一行小字说明。
-    所以这里查的窗口和图的窗口是两回事。
+    所以这里查的窗口（`windowStart`）和图的窗口是两回事。
   */
-  const queryMs = live ? DAY : range.ms;
   const bucketMs = live ? LIVE_BUCKET_MS : bucketFor(range.ms);
   /*
     **多留一个核宽的样本。**最左边那一格的鼓包有一半来自图外的那几秒；
@@ -331,7 +317,7 @@ export default function Dashboard({
         // 实时档下这次查询要的是 24 小时的汇总，图另有来路，所以格宽
         // 取一小时就够 —— 五秒一格去查二十四小时是一万七千多个分组。
         const q = live ? HOUR : bucketMs;
-        const sinceMs = bucketStart(Date.now() - queryMs, q);
+        const sinceMs = windowStart(range);
         // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<Data>("dashboard", { sinceMs, bucketMs: q });
         if (alive) {
@@ -352,7 +338,7 @@ export default function Dashboard({
     return () => {
       alive = false;
     };
-  }, [tick, queryMs, bucketMs, live, setD]);
+  }, [tick, range, bucketMs, live, setD]);
 
   /*
     **两组控件不放在一起。**时间范围管的是整页（下面每一块都跟着它
@@ -669,58 +655,53 @@ export default function Dashboard({
     Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
 
   /*
-    三条防线现在各在哪一档，以及这段时间各自看见了什么。
+    两项防护现在各在哪一档，以及这段时间各自看见了什么。
 
     **档位和所见要一起说。**只说所见的话，「未发现」在关闭档下是句
     空话；只说档位的话，用户不知道它到底拦下过什么。
+
+    **数的是安全日志里的条数**，和从这里点进去看到的是同一批（起点都按
+    `windowStart` 算）。数不为零时整句可点。
   */
   const sec = ov?.security;
   const label = (m: string) =>
     m === "enforce" ? t.modeEnforce : m === "off" ? t.modeOff : t.modeObserve;
-  const leaked = d.leaks.reduce((a, l) => a + l.requests, 0);
-  const guards = sec
+  const counts = s.security ?? { secrets: 0, secrets_replaced: 0, tool_calls: 0, tool_calls_cut: 0 };
+  const guards: {
+    key: Guard;
+    name: string;
+    mode: string;
+    hits: number;
+    /** 没被处置的那几处。**有它才标红** —— 全换掉了、全切断了，说明防护在起作用 */
+    open: number;
+    saw: string;
+  }[] = sec
     ? [
         {
           key: "redact",
           name: t.redact,
           mode: sec.redact,
-          /*
-            两档留下的痕迹不是同一种：观察档记的是「检测到的外泄」，
-            拦截档记的是「换掉了几处」。**分别说明** —— 用同一句话套
-            两档的话，切到拦截之后会显示成「未发现」。
-          */
-          hits: sec.redact === "enforce" ? s.redacted_requests : leaked,
+          hits: counts.secrets,
+          open: counts.secrets - counts.secrets_replaced,
           saw:
-            sec.redact === "off"
-              ? t.redactOff
-              : sec.redact === "enforce"
-                ? s.redacted_requests > 0
-                  ? t.redacted(s.redacted_requests)
-                  : t.nothingToReplace
-                : leaked > 0
-                  ? t.leaksDetected(leaked)
-                  : t.noLeaks,
+            counts.secrets > 0
+              ? t.secrets(counts.secrets, counts.secrets_replaced)
+              : sec.redact === "off"
+                ? t.notChecked
+                : t.noSecrets,
         },
         {
-          key: "inspect",
+          key: "inspect_tools",
           name: t.inspect,
           mode: sec.inspect_tools,
-          hits: s.flagged_requests,
+          hits: counts.tool_calls,
+          open: counts.tool_calls - counts.tool_calls_cut,
           saw:
-            sec.inspect_tools === "off"
-              ? t.inspectOff
-              : s.flagged_requests > 0
-                ? t.flagged(s.flagged_requests, sec.inspect_tools === "enforce")
-                : t.noFlagged,
-        },
-        {
-          key: "scan",
-          name: t.scan,
-          mode: sec.scan_configs,
-          // **这一行不跟着时间区间变。**它说的是此刻磁盘上的状态，而
-          // 文件现在什么样和你选了看几天没有关系。
-          hits: 0,
-          saw: sec.scan_configs === "off" ? t.scanOff : t.scanOn,
+            counts.tool_calls > 0
+              ? t.toolCalls(counts.tool_calls, counts.tool_calls_cut)
+              : sec.inspect_tools === "off"
+                ? t.notChecked
+                : t.noToolCalls,
         },
       ]
     : [];
@@ -1085,9 +1066,9 @@ export default function Dashboard({
                 <span
                   className={
                     "inline-block size-2 shrink-0 translate-y-px rounded-full " +
-                    (g.mode === "off"
+                    (g.mode === "off" && g.hits === 0
                       ? "bg-muted-foreground/40"
-                      : g.hits > 0
+                      : g.open > 0
                         ? "bg-destructive"
                         : "bg-cache-hit")
                   }
@@ -1095,54 +1076,28 @@ export default function Dashboard({
                 <span className="w-40 shrink-0">{g.name}</span>
                 {/* 56px：Observe 要 51，44 的话会压到后面那一列上 */}
                 <span className="w-14 shrink-0 text-muted-foreground">{label(g.mode)}</span>
-                <span className={g.hits > 0 ? "text-destructive" : "text-muted-foreground"}>
-                  {g.saw}
-                </span>
+                {g.hits > 0 ? (
+                  <Tip text={t.showLog}>
+                    <button
+                      type="button"
+                      className={
+                        "inline-flex items-center gap-0.5 text-left hover:underline hover:underline-offset-2 " +
+                        (g.open > 0 ? "text-destructive" : "text-foreground")
+                      }
+                      onClick={() => onShowSecurity(g.key, range)}
+                    >
+                      {g.saw}
+                      <ChevronRightIcon className="size-3.5 shrink-0 translate-y-px" />
+                    </button>
+                  </Tip>
+                ) : (
+                  <span className="text-muted-foreground">{g.saw}</span>
+                )}
               </div>
             ))}
           </Block>
         )}
       </div>
-
-      {/*
-        出站密钥检测攒下的证据。**只在真的发现过东西时出现** —— 这一块
-        的全部说服力来自「它说的是已经发生在你身上的事」。
-      */}
-      {d.leaks.length > 0 && (
-        <section className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-          <h2 className="tw-title font-semibold text-amber-900 dark:text-amber-200">
-            {t.leaksTitle}
-          </h2>
-          <ul className="mt-2 space-y-1.5 tw-body text-amber-900 dark:text-amber-200">
-            {d.leaks.map((l) => (
-              <li key={`${l.provider}/${l.secret}`}>
-                {t.leak(
-                  l.requests,
-                  l.provider || t.someUpstream,
-                  secretLabel(l.secret),
-                  (x) => <span className="font-medium">{x}</span>,
-                )}
-                {l.masked.length > 0 && (
-                  // **打码之后才显示。**把发现的密钥原样贴出来，等于
-                  // 把泄漏搬了个家
-                  <span className="text-amber-700 dark:text-amber-400">
-                    {" "}
-                    · {t.involving(l.masked)}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 tw-body text-amber-700 dark:text-amber-400">
-            {t.observeOnly}
-            <Tip text={t.enforceTip}>
-              <span className="ml-1 underline decoration-dotted underline-offset-2">
-                {t.enforce}
-              </span>
-            </Tip>
-          </p>
-        </section>
-      )}
 
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
 

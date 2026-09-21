@@ -6,15 +6,9 @@ import {
   conditionName,
   conditionText,
   mismatchText,
-  scanRulesText,
   setText,
   targetLabel,
 } from "./labels";
-import type { ScanResponse } from "./types";
-
-const scan = (rules_active: number, rules_custom: number, rules_disabled: number) =>
-  ({ rules_active, rules_custom, rules_disabled }) as ScanResponse;
-
 describe("名称表跟着语言走", () => {
   /** 表是模块级的常量，文字是 getter：换了语言，同一张表读出来就是另一种 */
   it("同一张表换了语言读出来的字跟着换", () => {
@@ -26,19 +20,6 @@ describe("名称表跟着语言走", () => {
     expect(PROBES.find((p) => p.id === "titling")?.label).toBe("Title generation");
     expect(targetLabel("__all__")).toBe("All upstreams");
     expect(targetLabel("openrouter")).toBe("openrouter");
-  });
-});
-
-describe("扫描规则的说法", () => {
-  it("中文三段接起来，没有的那段不说", () => {
-    expect(scanRulesText(scan(42, 2, 1))).toBe("生效扫描规则 42 条（其中自定义 2 条），已停用内置规则 1 条");
-    expect(scanRulesText(scan(42, 0, 0))).toBe("生效扫描规则 42 条");
-  });
-
-  it("英文分单复数", () => {
-    setLang("en");
-    expect(scanRulesText(scan(42, 2, 1))).toBe("42 scan rules active (2 custom), 1 built-in rule disabled");
-    expect(scanRulesText(scan(1, 0, 3))).toBe("1 scan rule active, 3 built-in rules disabled");
   });
 });
 

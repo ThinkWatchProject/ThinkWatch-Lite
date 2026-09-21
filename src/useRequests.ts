@@ -12,6 +12,7 @@ import {
   type ScanFinding,
   type SeenSince,
 } from "./types";
+import { marksFromEvents } from "./security/marks";
 import { requestsText } from "./useRequests.i18n";
 
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
@@ -167,6 +168,9 @@ export function useRequests() {
         cur.translated ??= h.translated ?? undefined;
         // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
         cur.session = h.session ?? cur.session;
+        const marks = marksFromEvents(h.security);
+        cur.secrets ??= marks.secrets;
+        cur.flagged ??= marks.flagged;
         continue;
       }
       store.current.set(h.id, {
@@ -188,6 +192,7 @@ export function useRequests() {
         error: h.error ?? undefined,
         translated: h.translated ?? undefined,
         session: h.session ?? undefined,
+        ...marksFromEvents(h.security),
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));

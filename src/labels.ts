@@ -14,10 +14,8 @@ import {
   usd,
   type AttemptView,
   type ConditionView,
-  type DriftView,
   type MismatchView,
   type ReplayQuote,
-  type ScanResponse,
   type SetView,
   type TakesEffect,
   type TranslatedView,
@@ -231,29 +229,6 @@ export function stageLabel(stage: string): string {
 export function secretLabel(secret: string): string {
   const secrets: Record<string, string> = textOf(labelsText).secrets;
   return secrets[secret] ?? secret;
-}
-
-export function driftLabel(metric: DriftView["metric"]): string {
-  const t = textOf(labelsText).drift;
-  switch (metric) {
-    case "flagged":
-      return t.flagged;
-    case "tool_calls":
-      return t.tool_calls;
-    case "errors":
-      return t.errors;
-    default:
-      return metric;
-  }
-}
-
-/** 扫描用了哪些规则：`生效扫描规则 42 条（其中自定义 2 条），已停用内置规则 1 条` */
-export function scanRulesText(s: ScanResponse): string {
-  const t = textOf(labelsText);
-  let text = t.scanRules(s.rules_active);
-  if (s.rules_custom > 0) text += t.scanCustom(s.rules_custom);
-  if (s.rules_disabled > 0) text += t.scanDisabled(s.rules_disabled);
-  return text;
 }
 
 // ---------------------------------------------------------------- 客户端接管

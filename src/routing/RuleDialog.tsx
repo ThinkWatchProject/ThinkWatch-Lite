@@ -26,7 +26,6 @@ import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
 import type { ConditionView, KnownModel, Overview } from "@/types";
 import { globMatch } from "@/upstreams/glob";
-import { REDACT_KINDS } from "@/upstreams/labels";
 import { FormItem, Note, Segmented } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
 import { ModelInput, ToggleChips } from "./fields";
@@ -96,7 +95,6 @@ export function RuleDialog({
   const [rewriteOpen, setRewriteOpen] = useState(
     () => initial.model !== "" || initial.maxTokens !== "" || initial.thinking !== "keep",
   );
-  const [guardOpen, setGuardOpen] = useState(() => initial.redact.length > 0 || initial.untrusted);
   const [routeProbes, setRouteProbes] = useState<boolean | null>(null);
   const [newGroup, setNewGroup] = useState(false);
 
@@ -113,8 +111,7 @@ export function RuleDialog({
   // 「任一辅助请求」时不默认勾选：连通性检查和预热原本由网关本地应答，改为交给路由会产生费用
   const routing = routeProbes ?? !anyProbe;
 
-  const rewriteSummary = addOnsText({ ...d, redact: [], untrusted: false });
-  const guardSummary = addOnsText({ ...d, model: "", maxTokens: "", thinking: "keep" });
+  const rewriteSummary = addOnsText(d);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -278,29 +275,6 @@ export function RuleDialog({
                   </FormItem>
                 </div>
                 {d.model.trim() && <Note>{t.modelChangeNote}</Note>}
-              </Section>
-              <Section
-                title={t.guard}
-                summary={guardSummary || t.notSet}
-                open={guardOpen}
-                onToggle={() => setGuardOpen((o) => !o)}
-              >
-                <FormItem label={t.redact} desc={t.redactDesc}>
-                  <ToggleChips
-                    mono={false}
-                    options={REDACT_KINDS.map((k) => ({ id: k.id, label: k.label }))}
-                    value={d.redact}
-                    onChange={(u) => setD((x) => ({ ...x, redact: u(x.redact) }))}
-                  />
-                </FormItem>
-                <Field orientation="horizontal" className="w-auto">
-                  <Checkbox
-                    id="rule-untrusted"
-                    checked={d.untrusted}
-                    onCheckedChange={(v) => set({ untrusted: v === true })}
-                  />
-                  <FieldLabel htmlFor="rule-untrusted">{t.untrusted}</FieldLabel>
-                </Field>
               </Section>
             </div>
           )}

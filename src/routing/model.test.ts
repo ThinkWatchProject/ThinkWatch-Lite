@@ -41,7 +41,6 @@ describe("规则草稿", () => {
       to: "长上下文池",
       deny: null,
       set: null,
-      guard: null,
     });
   });
 

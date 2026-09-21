@@ -1,8 +1,5 @@
 import { messages } from "@/i18n";
 
-/** 英文的单复数：`count(3, "rule", "rules")` 是 `3 rules` */
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /**
  * core 0.4 之前写进数据库的尝试结果是中文句子，成功的那一种就是这两个字。
  * **这是数据，不是文案**：只拿来比较，不显示，也不随界面语言变。
@@ -126,15 +123,6 @@ export const labelsText = messages(
       "internal-ip": "内网地址",
       "internal-domain": "内部域名",
     },
-    drift: {
-      flagged: "命中高危规则的响应",
-      tool_calls: "带工具调用的响应",
-      errors: "失败的请求",
-    },
-    /** 扫描用了哪些规则，三段接起来 */
-    scanRules: (active: number) => `生效扫描规则 ${active} 条`,
-    scanCustom: (n: number) => `（其中自定义 ${n} 条）`,
-    scanDisabled: (n: number) => `，已停用内置规则 ${n} 条`,
 
     // ------------------------------------------------------------ 客户端接管
     takesEffect: {
@@ -255,15 +243,6 @@ export const labelsText = messages(
       "internal-ip": "Internal IP address",
       "internal-domain": "Internal domain",
     },
-    drift: {
-      flagged: "Responses matching high-risk rules",
-      tool_calls: "Responses with tool calls",
-      errors: "Failed requests",
-    },
-    // 「Scanned 3 files. 42 scan rules active (2 custom), 1 built-in rule disabled.」
-    scanRules: (active: number) => `${count(active, "scan rule", "scan rules")} active`,
-    scanCustom: (n: number) => ` (${n} custom)`,
-    scanDisabled: (n: number) => `, ${count(n, "built-in rule", "built-in rules")} disabled`,
 
     takesEffect: {
       immediately: "The next request uses the new configuration.",

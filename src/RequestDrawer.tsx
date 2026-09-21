@@ -23,6 +23,7 @@ import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { requestDrawerText } from "./RequestDrawer.i18n";
+import { ActionBadge, ruleName } from "./security/labels";
 import { prettyJson } from "./prettyJson";
 import { coreText } from "@/i18n/core.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -320,6 +321,25 @@ export default function RequestDrawer({
                       />
                     )}
                   </>
+                )}
+                {/* 这次请求在两项防护上的全部命中：哪条规则、什么值、做了什么 */}
+                {r.security && r.security.length > 0 && (
+                  <Row
+                    label={t.security}
+                    value={
+                      <span className="flex flex-col gap-1">
+                        {r.security.map((e) => (
+                          <span key={e.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span>{ruleName(e.guard, e.rule, e.custom)}</span>
+                            {e.tool && <span className="text-muted-foreground">· {e.tool}</span>}
+                            <span className="font-mono tw-label text-muted-foreground">{e.excerpt}</span>
+                            {e.count > 1 && <span className="tw-label text-muted-foreground">{t.times(e.count)}</span>}
+                            <ActionBadge action={e.action} />
+                          </span>
+                        ))}
+                      </span>
+                    }
+                  />
                 )}
                 <Row
                   label={t.status}

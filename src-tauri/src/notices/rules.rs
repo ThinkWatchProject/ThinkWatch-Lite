@@ -40,13 +40,16 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
 /// 界面上的落点。和 `App.tsx` 里的页面标识是同一套词
 const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
+const MCP: &str = "mcp";
 const CONFIG: &str = "config";
 
 /// 一个键默认落在哪一页（那一条已经不在列表里时用）。按键的种类，也就是冒号前那段
 pub fn default_view(key: &str) -> &'static str {
     match key.split(':').next().unwrap_or(key) {
         "upstream" | "quota" | "credential" | "auth" | "writeback" | "proxy" => UPSTREAMS,
-        "toolwall" | "scan" => SECURITY,
+        "toolwall" => SECURITY,
+        // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
+        "scan" => MCP,
         // 网关、配置文件，以及认不出来的：设置页至少能看到网关在不在跑
         _ => CONFIG,
     }
@@ -297,15 +300,16 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 .now(),
             ]
         }
-        // 客户端此刻正在弹批准提示，**这一条要立刻说**
+        // 客户端此刻正在弹批准提示，**这一条要立刻说**。只说处置为「切断」的
+        // 那些规则：「仅记录」的那一类本来就是用户说了不必打断的
         Event::ToolCallFlagged {
             provider,
             tool,
-            why,
-            high,
+            rule,
+            action,
             blocked,
             ..
-        } if *high => {
+        } if action == "cut" => {
             let title = if *blocked {
                 tr!(
                     format!("已拦截 {provider} 返回的 {tool} 调用"),
@@ -317,26 +321,27 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     format!("Suspicious {tool} Call from “{provider}”")
                 )
             };
-            let tail = if *blocked {
+            let name = tool_rule_name(rule);
+            let body = if *blocked {
                 tr!(
-                    "此上游标记为不受信任，响应流已切断。",
-                    "This upstream is marked untrusted; the response stream was cut off."
+                    format!("命中规则「{name}」，响应已切断。"),
+                    format!("It matched the rule “{name}”, so the response was cut off.")
                 )
             } else {
                 tr!(
-                    "建议在客户端拒绝此调用。",
-                    "Rejecting this call in the client is recommended."
+                    format!("命中规则「{name}」。建议在客户端拒绝此调用。"),
+                    format!("It matched the rule “{name}”. Rejecting this call in the client is recommended.")
                 )
             };
             // **正文不带调用内容**：系统通知在锁屏上也看得见
             vec![
                 Signal::raised(format!("toolwall:{provider}"), Level::Warning, title)
-                    .body(tr!(format!("{why}。{tail}"), format!("{why}. {tail}")))
+                    .body(body)
                     .view(SECURITY)
                     .now(),
             ]
         }
-        // 英文写页面现在的名字「Findings」：点开这一条落到的就是那一页
+        // 英文写页面现在的名字「MCP」：点开这一条落到的就是那一页
         Event::ScanAlert { alerts, .. } if !alerts.is_empty() => vec![
             Signal::raised(
                 "scan",
@@ -347,17 +352,39 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 ),
             )
             .body(tr!(
-                format!("新增 {} 项，详见安全页。", alerts.len()),
+                format!("新增 {} 项，详见 MCP 页。", alerts.len()),
                 match alerts.len() {
-                    1 => "1 new item. Details are on the Findings page.".to_string(),
-                    n => format!("{n} new items. Details are on the Findings page."),
+                    1 => "1 new item. Details are on the MCP page.".to_string(),
+                    n => format!("{n} new items. Details are on the MCP page."),
                 }
             ))
-            .view(SECURITY)
+            .view(MCP)
             .now(),
         ],
         _ => Vec::new(),
     }
+}
+
+/// 工具调用规则的名字，和安全页上的一样。**只有内置的这些**：自定义规则的
+/// id 就是用户起的名字，原样用；core 以后加的规则这里还不认识，也原样用 id。
+fn tool_rule_name(rule: &str) -> String {
+    let (zh, en) = match rule {
+        "curl-pipe-sh" => ("下载即执行", "Download and run"),
+        "base64-decode-exec" => ("解码后执行", "Decode and run"),
+        "exfil-env" => ("外发环境变量", "Send out environment variables"),
+        "exfil-credentials" => ("外发凭据文件", "Send out a credential file"),
+        "exfil-credentials-reversed" => (
+            "外发凭据文件（动词在前）",
+            "Send out a credential file (verb first)",
+        ),
+        "ssh-key-read" => ("读取私钥或云凭据", "Read a private key or cloud credential"),
+        "write-startup-item" => ("写入启动项", "Write a startup item"),
+        "crontab-install" => ("安装定时任务", "Install a scheduled job"),
+        "rm-rf-root" => ("删除主目录或根目录", "Delete home or root"),
+        "chmod-777" => ("开放全部写权限", "World-writable permissions"),
+        other => return other.to_string(),
+    };
+    tr!(zh, en).to_string()
 }
 
 /// 网关本身的状态。**这是唯一的 critical** —— 它一停，所有客户端都在瞎
