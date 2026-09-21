@@ -129,9 +129,10 @@ step-by-step instructions.
 
 The menu bar shows today's cost and the output rate; for a subscription account
 it shows the quota used and the time until it resets instead. System
-notifications report when the gateway stops forwarding, an upstream becomes
-unreachable, a subscription quota runs out or a credential stops working; each
-kind can be set to a system notification, in-app only, or off.
+notifications report when the gateway stops forwarding, a subscription quota
+runs out or a credential stops working; an unreachable upstream, which a
+fallback usually covers, is only listed in the app. Notices as a whole can be
+set to system notifications, in-app only, or off.
 
 <p>
   <picture>

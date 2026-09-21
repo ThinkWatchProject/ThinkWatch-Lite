@@ -42,13 +42,13 @@ const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const CONFIG: &str = "config";
 
-/// 一类提醒默认落在哪一页（那一条已经不在列表里时用）
-pub fn default_view(c: super::Category) -> &'static str {
-    use super::Category;
-    match c {
-        Category::Gateway | Category::Config | Category::Storage => CONFIG,
-        Category::Security => SECURITY,
-        Category::Upstream | Category::Quota | Category::Credential | Category::Proxy => UPSTREAMS,
+/// 一个键默认落在哪一页（那一条已经不在列表里时用）。按键的种类，也就是冒号前那段
+pub fn default_view(key: &str) -> &'static str {
+    match key.split(':').next().unwrap_or(key) {
+        "upstream" | "quota" | "credential" | "auth" | "writeback" | "proxy" => UPSTREAMS,
+        "toolwall" | "scan" => SECURITY,
+        // 网关、配置文件，以及认不出来的：设置页至少能看到网关在不在跑
+        _ => CONFIG,
     }
 }
 
@@ -118,13 +118,16 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             .map(|w| Signal::cleared(format!("quota:{provider}:{}", w.window)))
             .collect(),
         // **熔断打开才算出事。**冷却到点的那条 `closed` 只是「可以再试」，不是恢复了 ——
-        // 当成恢复的话，一家一直不通的上游每分钟开合一次，去抖永远等不满
+        // 当成恢复的话，一家一直不通的上游每分钟开合一次，去抖永远等不满。
+        //
+        // **只进应用内**：多数人配了回退，一家上游挂了请求照样有人接，为一次被接住的
+        // 故障打断用户不值得；而熔断信号本身就会随流量开开合合
         Event::HealthChanged {
             provider, state, ..
         } if state == "open" => vec![
             Signal::raised(
                 format!("upstream:{provider}"),
-                Level::Warning,
+                Level::Info,
                 tr!(
                     format!("上游「{provider}」无法连接"),
                     format!("Upstream “{provider}” Unreachable")
@@ -239,32 +242,6 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     format!("{why}Upstreams that use this proxy cannot be reached.")
                 ))
                 .view(UPSTREAMS),
-            ]
-        }
-        Event::StorageChanged {
-            level, free_bytes, ..
-        } => {
-            if level == "ok" {
-                return vec![Signal::cleared("storage")];
-            }
-            let title = if level == "stopped" {
-                tr!(
-                    "磁盘空间严重不足，已停止记录",
-                    "Disk Space Critically Low, Recording Stopped"
-                )
-            } else {
-                tr!(
-                    "磁盘空间不足，已停止保存请求正文",
-                    "Disk Space Low, Request Bodies No Longer Saved"
-                )
-            };
-            vec![
-                Signal::raised("storage", Level::Warning, title)
-                    .body(tr!(
-                        format!("剩余 {}。转发不受影响。", size(*free_bytes)),
-                        format!("{} free. Forwarding is not affected.", size(*free_bytes))
-                    ))
-                    .view(CONFIG),
             ]
         }
         // **界面自己写坏的不报**：那是一次保存失败，保存那条路自己会说
@@ -456,15 +433,4 @@ fn after(secs: u64) -> String {
         format!("，约 {n} {unit}后重置"),
         format!(" and resets in about {n} {unit_en}{plural}")
     )
-}
-
-/// 「1.2 GB」
-fn size(bytes: u64) -> String {
-    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
-    let gb = bytes as f64 / GB;
-    if gb >= 1.0 {
-        format!("{gb:.1} GB")
-    } else {
-        format!("{} MB", bytes / 1024 / 1024)
-    }
 }

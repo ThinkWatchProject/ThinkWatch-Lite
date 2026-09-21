@@ -1467,8 +1467,8 @@ pub fn run() {
             upstreams::test_proxy,
             notices_list,
             dismiss_notice,
-            notice_prefs,
-            set_notice_pref,
+            notice_mode,
+            set_notice_mode,
             take_pending_view,
             keys::list_keys,
             keys::create_key,
@@ -1575,6 +1575,7 @@ pub fn run() {
                     system,
                 ],
                 Some(data_dir()),
+                saved.notices,
             );
             app.manage(notices.clone());
             app.manage(AppState {
@@ -1886,44 +1887,29 @@ fn take_pending_view() -> Option<String> {
     notices::take_pending_view()
 }
 
-/// 设置页上的一行：一类提醒，和它现在怎么对待
-#[derive(serde::Serialize)]
-struct NoticePref {
-    category: notices::Category,
-    label: &'static str,
-    mode: notices::Mode,
-}
-
-fn notice_prefs_view(n: &notices::Notices) -> Vec<NoticePref> {
-    n.modes()
-        .into_iter()
-        .map(|(category, mode)| NoticePref {
-            category,
-            label: category.label(),
-            mode,
-        })
-        .collect()
-}
-
+/// 提醒现在是哪一档
 #[tauri::command]
-fn notice_prefs(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<NoticePref> {
-    notice_prefs_view(&notices)
+fn notice_mode(notices: tauri::State<'_, Arc<notices::Notices>>) -> notices::Mode {
+    notices.mode()
 }
 
-/// 改一类提醒的对待方式。**返回改完之后的全部**，界面以它为准
+/// 换一档。**先存盘再生效**：存不进去的话，界面弹回去，总线也还是原来那一档。
+/// 工具栏的铃铛听 `notice-mode-changed` —— 关掉之后它不该还在那儿
 #[tauri::command]
-fn set_notice_pref(
+fn set_notice_mode(
+    app: tauri::AppHandle,
     notices: tauri::State<'_, Arc<notices::Notices>>,
-    category: notices::Category,
     mode: notices::Mode,
-) -> Result<Vec<NoticePref>, String> {
-    notices.set_mode(category, mode).map_err(|e| {
+) -> Result<notices::Mode, String> {
+    prefs::update(&data_dir(), |p| p.notices = mode).map_err(|e| {
         tr!(
-            format!("无法保存设置：{e}"),
-            format!("The setting could not be saved: {e}")
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
         )
     })?;
-    Ok(notice_prefs_view(&notices))
+    notices.set_mode(mode);
+    let _ = app.emit("notice-mode-changed", mode);
+    Ok(mode)
 }
 
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。

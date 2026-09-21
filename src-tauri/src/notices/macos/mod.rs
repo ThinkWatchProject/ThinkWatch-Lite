@@ -36,7 +36,7 @@ impl Sink for NativeSink {
             notice.key.clone(),
             notice.title.clone(),
             notice.body.clone(),
-            thread_of(notice),
+            thread_of(&notice.key),
             false,
         );
     }
@@ -58,7 +58,7 @@ impl Sink for NativeSink {
             notice.key.clone(),
             title,
             notice.body.clone(),
-            thread_of(notice),
+            thread_of(&notice.key),
             true,
         );
     }
@@ -68,10 +68,7 @@ impl Sink for NativeSink {
     }
 }
 
-/// 同一类的归在一起：用类别的标识做 thread
-fn thread_of(notice: &Notice) -> String {
-    serde_json::to_value(notice.category)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_default()
+/// 同一种的归在一起：用键的种类（冒号前那段）做 thread
+fn thread_of(key: &str) -> String {
+    key.split(':').next().unwrap_or(key).to_string()
 }

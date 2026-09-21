@@ -19,7 +19,6 @@ import {
   type ReplayQuote,
   type ScanResponse,
   type SetView,
-  type StorageStatus,
   type TakesEffect,
   type TranslatedView,
 } from "./types";
@@ -188,22 +187,6 @@ export function quoteText(q: ReplayQuote): string {
       return q.cost_micros != null
         ? t.estimate(usd(q.cost_micros))
         : t.unpriced(q.model);
-  }
-}
-
-export function storageText(level: StorageStatus["level"]): string {
-  const t = textOf(labelsText).storage;
-  switch (level) {
-    case "ok":
-      return t.ok;
-    case "metadata_only":
-      return t.metadata_only;
-    case "stopped":
-      return t.stopped;
-    case "unavailable":
-      return t.unavailable;
-    default:
-      return level;
   }
 }
 

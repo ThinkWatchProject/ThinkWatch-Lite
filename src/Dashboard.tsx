@@ -13,7 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, LIVE_SIGMA_MS, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
-import { secretLabel, storageText } from "./labels";
+import { secretLabel } from "./labels";
 import { useText } from "@/i18n";
 import { dashboardText } from "./Dashboard.i18n";
 
@@ -1107,10 +1107,10 @@ export default function Dashboard({
       {open != null && <RequestDrawer id={open} onClose={() => setOpen(null)} />}
 
       {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
-      {d.storage && d.storage.level !== "ok" && (
+      {d.storage && !d.storage.recording && (
         <Alert variant="warning" className="mt-5">
           <AlertDescription>
-            {storageText(d.storage.level)}
+            {t.recordingUnavailable}
             {!d.storage.forwarding_affected && t.forwardingUnaffected}
           </AlertDescription>
         </Alert>

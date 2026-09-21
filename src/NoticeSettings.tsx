@@ -1,50 +1,40 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Segmented } from "@/upstreams/parts";
 import { useText } from "@/i18n";
 import { noticeSettingsText } from "./NoticeSettings.i18n";
 import { errorText } from "@/i18n/core.i18n";
 
 export type NoticeMode = "system" | "app" | "off";
 
-export interface NoticePref {
-  category: string;
-  label: string;
-  mode: NoticeMode;
-}
-
-export const modes = (t: typeof noticeSettingsText.zh): { id: NoticeMode; label: string }[] => [
-  { id: "system", label: t.system },
-  { id: "app", label: t.app },
-  { id: "off", label: t.off },
-];
-
 /**
- * 设置里的「提醒」：每一类怎么对待。
+ * 设置里的「提醒」：系统通知 / 仅在应用内 / 关闭。
  *
- * **按类，不按条** —— 「不再提醒这一条」对明天还会再发生的事没有意义。
+ * **只有一个开关，不分类。**哪件事该打断人是通知总线的判断（见
+ * `src-tauri/src/notices`），不该变成设置页上的一长串下拉。三档固定，
+ * 所以和外观一样摆成三个按钮。
  */
 export default function NoticeSettings() {
   const t = useText(noticeSettingsText);
-  const [prefs, setPrefs] = useState<NoticePref[] | null>(null);
+  const [mode, setMode] = useState<NoticeMode | null>(null);
 
   useEffect(() => {
-    void invoke<NoticePref[]>("notice_prefs")
-      .then(setPrefs)
+    void invoke<NoticeMode>("notice_mode")
+      .then(setMode)
       .catch(() => {});
   }, []);
 
-  if (!prefs) return null;
+  if (!mode) return null;
 
-  async function set(category: string, mode: NoticeMode) {
-    const before = prefs;
-    // 先画上，以后端返回的为准 —— 写不进去的时候要弹回去
-    setPrefs((p) => p?.map((x) => (x.category === category ? { ...x, mode } : x)) ?? p);
+  async function choose(next: NoticeMode) {
+    const before = mode;
+    // 先画上，以后端返回的为准 —— 存不进去的时候要弹回去
+    setMode(next);
     try {
-      setPrefs(await invoke<NoticePref[]>("set_notice_pref", { category, mode }));
+      setMode(await invoke<NoticeMode>("set_notice_mode", { mode: next }));
     } catch (e) {
-      setPrefs(before);
+      setMode(before);
       toast.error(errorText(e));
     }
   }
@@ -52,28 +42,16 @@ export default function NoticeSettings() {
   return (
     <section>
       <h2 className="tw-title font-semibold">{t.title}</h2>
-      <p className="mt-1 tw-body text-muted-foreground">
-        {t.note}
-      </p>
-      <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2">
-        {prefs.map((p) => (
-          <div key={p.category} className="contents">
-            <label htmlFor={`notice-${p.category}`} className="tw-body">
-              {p.label}
-            </label>
-            <NativeSelect
-              id={`notice-${p.category}`}
-              value={p.mode}
-              onChange={(e) => void set(p.category, e.target.value as NoticeMode)}
-            >
-              {modes(t).map((m) => (
-                <NativeSelectOption key={m.id} value={m.id}>
-                  {m.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-        ))}
+      <div className="mt-2">
+        <Segmented<NoticeMode>
+          value={mode}
+          options={[
+            { id: "system", label: t.system },
+            { id: "app", label: t.app },
+            { id: "off", label: t.off },
+          ]}
+          onChange={(v) => void choose(v)}
+        />
       </div>
     </section>
   );

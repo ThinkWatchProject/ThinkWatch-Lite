@@ -17,6 +17,12 @@
 //!
 //! 恢复默认**静默撤回**：一条撤不回来的通知，代价是用户把整个应用的通知关掉。
 //!
+//! # 用户能调的只有一个开关
+//!
+//! 系统通知 / 仅在应用内 / 关闭（[`Mode`]），**不分类**。哪一类该不该打断人，
+//! 由上面这几关和每条规则给的级别决定 —— 那是这里的判断，不该变成设置页上的
+//! 一长串下拉。
+//!
 //! # 平台
 //!
 //! 投递是 [`Sink`]，系统通知只是其中一个实现。Windows 要加的是一个 sink，
@@ -28,12 +34,10 @@ use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
 pub mod macos;
-pub mod prefs;
 pub mod rules;
 pub mod sink;
 mod store;
 
-pub use prefs::{Category, Mode};
 pub use sink::{Sink, SystemSink};
 
 /// 去抖：故障类要持续这么久才说。用户已经在等结果的那几件事不等（见 [`Signal::hold`]）
@@ -68,6 +72,18 @@ impl Level {
     fn interrupts(self) -> bool {
         self >= Level::Warning
     }
+}
+
+/// 提醒怎么对待。存在应用设置里（`app.json`），出厂是系统通知
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// 级别够的弹系统通知，全部进应用内的提醒列表
+    System,
+    /// 只进应用内的提醒列表
+    App,
+    /// 不记录，工具栏也不放铃铛
+    Off,
 }
 
 /// 出事了，还是恢复了
@@ -146,8 +162,6 @@ impl Signal {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Notice {
     pub key: String,
-    /// 属于哪一类。「不再通知此类」按它来
-    pub category: Category,
     pub level: Level,
     pub title: String,
     pub body: String,
@@ -190,25 +204,24 @@ struct State {
 pub struct Notices {
     state: Mutex<State>,
     sinks: Vec<Box<dyn Sink>>,
-    /// 每一类怎么对待
-    prefs: Mutex<prefs::Prefs>,
-    /// 落盘的目录。关窗期间发生的事要留得住，设置也在这里
+    /// 用户选的那一档。**存盘不归这里管**：它和其他应用设置在同一个文件里
+    mode: Mutex<Mode>,
+    /// 落盘的目录。关窗期间发生的事要留得住
     dir: Option<std::path::PathBuf>,
 }
 
 const OPEN_FILE: &str = "notices.json";
-const PREFS_FILE: &str = "notice-prefs.json";
 
 impl Notices {
     /// `dir` 是留存的目录；`None` 表示只在内存里（测试用）
-    pub fn new(sinks: Vec<Box<dyn Sink>>, dir: Option<std::path::PathBuf>) -> Arc<Self> {
+    pub fn new(
+        sinks: Vec<Box<dyn Sink>>,
+        dir: Option<std::path::PathBuf>,
+        mode: Mode,
+    ) -> Arc<Self> {
         let open = dir
             .as_deref()
             .map(|d| store::load(&d.join(OPEN_FILE)))
-            .unwrap_or_default();
-        let prefs = dir
-            .as_deref()
-            .map(|d| prefs::load(&d.join(PREFS_FILE)))
             .unwrap_or_default();
         Arc::new(Self {
             state: Mutex::new(State {
@@ -229,60 +242,46 @@ impl Notices {
                 ..Default::default()
             }),
             sinks,
-            prefs: Mutex::new(prefs),
+            mode: Mutex::new(mode),
             dir,
         })
     }
 
-    /// 每一类现在怎么对待，按设置页的顺序
-    pub fn modes(&self) -> Vec<(Category, Mode)> {
-        let p = self.prefs.lock().expect("锁未中毒");
-        Category::ALL.iter().map(|c| (*c, p.mode(*c))).collect()
+    pub fn mode(&self) -> Mode {
+        *self.mode.lock().expect("锁未中毒")
     }
 
-    /// 改一类的对待方式。**改成「关闭」时，这一类挂着的也一并撤掉** —— 用户说的是
-    /// 「这类事别再出现」，留着一条旧的等于没听见
-    pub fn set_mode(&self, category: Category, mode: Mode) -> std::io::Result<()> {
-        let saved = {
-            let mut p = self.prefs.lock().expect("锁未中毒");
-            p.set(category, mode);
-            p.clone()
+    /// 换一档。**只动内存**，存盘由调用方和其他应用设置一起做。
+    ///
+    /// 换成「关闭」时，挂着的也一并撤掉 —— 用户说的是「别再出现」，留着一条旧的
+    /// 等于没听见。换成「仅在应用内」不撤：已经弹出去的那几条是事实，还在去抖的
+    /// 那些到点时会看到新的一档，不再弹。
+    pub fn set_mode(&self, mode: Mode) {
+        *self.mode.lock().expect("锁未中毒") = mode;
+        if mode != Mode::Off {
+            return;
+        }
+        let gone: Vec<String> = {
+            let mut g = self.state.lock().expect("锁未中毒");
+            g.held_back = 0;
+            g.open.drain().map(|(k, _)| k).collect()
         };
-        if let Some(dir) = &self.dir {
-            prefs::save(&dir.join(PREFS_FILE), &saved)?;
-        }
-        if mode == Mode::Off {
-            let gone: Vec<String> = {
-                let mut g = self.state.lock().expect("锁未中毒");
-                let keys: Vec<String> = g
-                    .open
-                    .values()
-                    .filter(|o| o.notice.category == category)
-                    .map(|o| o.notice.key.clone())
-                    .collect();
-                for k in &keys {
-                    g.open.remove(k);
-                }
-                keys
-            };
-            for k in &gone {
-                for s in &self.sinks {
-                    s.withdraw(k);
-                }
+        for k in &gone {
+            for s in &self.sinks {
+                s.withdraw(k);
             }
-            self.persist();
-            self.changed();
         }
-        Ok(())
+        self.persist();
+        self.changed();
     }
 
-    /// 这一条点开之后落在哪一页。**已经不在列表里的**（恢复了、被划掉了）按类别给
+    /// 这一条点开之后落在哪一页。**已经不在列表里的**（恢复了、被划掉了）按键的种类给
     pub fn view_of(&self, key: &str) -> String {
         self.state
             .lock()
             .ok()
             .and_then(|g| g.open.get(key).and_then(|o| o.notice.view.clone()))
-            .unwrap_or_else(|| rules::default_view(Category::of(key)).to_string())
+            .unwrap_or_else(|| rules::default_view(key).to_string())
     }
 
     /// 界面要显示的那一份，最近的在前
@@ -333,8 +332,7 @@ impl Notices {
     }
 
     fn raise(self: &Arc<Self>, signal: Signal, at_ms: u64) {
-        let category = Category::of(&signal.key);
-        let mode = self.prefs.lock().expect("锁未中毒").mode(category);
+        let mode = self.mode();
         if mode == Mode::Off {
             return;
         }
@@ -360,7 +358,6 @@ impl Notices {
                 },
                 None => Notice {
                     key: signal.key.clone(),
-                    category,
                     level: signal.level,
                     title: signal.title.clone(),
                     body: signal.body.clone(),
@@ -373,7 +370,7 @@ impl Notices {
             };
             // 抖动中、被抑制、或者已经弹过：只留记号
             let quiet = muted.is_some_and(|until| now < until) || suppressed || notice.notified;
-            // 用户说了「只进应用内」的，级别再高也不打断
+            // 用户选了「仅在应用内」的，级别再高也不打断
             let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
             let deliver = wants && !signal.hold && take_token(&mut g, signal.level);
@@ -406,6 +403,8 @@ impl Notices {
         let me = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep_until(at.into()).await;
+            // 等的这一分钟里用户可能换了一档
+            let wants = me.mode() == Mode::System;
             let notice = {
                 let mut g = me.state.lock().expect("锁未中毒");
                 match g.open.get_mut(&key) {
@@ -413,7 +412,7 @@ impl Notices {
                     Some(o) if o.due == Some(at) && !o.notice.notified => {
                         let level = o.notice.level;
                         o.due = None;
-                        if !take_token(&mut g, level) {
+                        if !wants || !take_token(&mut g, level) {
                             None
                         } else {
                             g.open.get(&key).map(|o| o.notice.clone())
@@ -503,7 +502,6 @@ impl Notices {
             for s in &self.sinks {
                 s.show(&Notice {
                     key: format!("{key}:recovered"),
-                    category: was.notice.category,
                     level: Level::Info,
                     title: tr!(
                         format!("{}已恢复", was.notice.title),
@@ -581,7 +579,7 @@ pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     let view = app
         .try_state::<Arc<Notices>>()
         .map(|n| n.view_of(key))
-        .unwrap_or_else(|| rules::default_view(Category::of(key)).to_string());
+        .unwrap_or_else(|| rules::default_view(key).to_string());
     if let Ok(mut g) = PENDING_VIEW.lock() {
         *g = Some(view.clone());
     }
