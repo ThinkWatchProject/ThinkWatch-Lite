@@ -57,17 +57,11 @@ import {
   EmptyTitle,
 } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
 import { errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Split } from "@/ui/split";
 import Connect, { trouble } from "./Connect";
 import {
   Sidebar,
@@ -439,32 +433,13 @@ export default function App() {
     );
     return () => clearTimeout(h);
   }, [today]);
-  const [wide, setWide] = useState(() => window.innerWidth >= 1040);
-  useEffect(() => {
-    const on = () => setWide(window.innerWidth >= 1040);
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, []);
-  // 分栏：请求详情和会话详情共用那一栏，开着任一个就分
-  const split = wide && tab === "requests" && (open != null || openSession != null);
   /*
-    分栏的宽度记在本地。**v4 的 react-resizable-panels 去掉了
-    `autoSaveId`**（那一版自己写 localStorage），所以这里自己接一下 ——
-    一共就是读一次、写一次。
+    **详情一律走浮层，不再拆栏。**
+
+    拆栏把这张表挤窄，而八列里最先塌的是模型和上游那两列 —— 排查时
+    要对着看的恰恰是它们。何况一次只看一条请求，剩下那半屏的表在这
+    时候没人读。
   */
-  const [splitLayout] = useState<Record<string, number> | undefined>(() => {
-    try {
-      const raw = window.localStorage.getItem("tw-split");
-      const v: unknown = raw ? JSON.parse(raw) : null;
-      if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-      const ok = Object.values(v as Record<string, unknown>).every(
-        (n) => typeof n === "number",
-      );
-      return ok ? (v as Record<string, number>) : undefined;
-    } catch {
-      return undefined;
-    }
-  });
   const [ov, setOv] = useStableState<Overview | null>(null);
   // 加完第一个上游之后立刻重拉一次。等那两秒的轮询的话，用户刚点完
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
@@ -1222,42 +1197,14 @@ export default function App() {
                 <Config />
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <Split
-                    split={split}
-                    layout={splitLayout}
-                    onLayout={(l) => {
-                      try {
-                        window.localStorage.setItem(
-                          "tw-split",
-                          JSON.stringify(l),
-                        );
-                      } catch {
-                        // 隐私模式之类。记不住而已，不值得为它中断
-                      }
-                    }}
-                    detail={
-                      split && open != null ? (
-                        <RequestDrawer
-                          id={open}
-                          onClose={() => setOpen(null)}
-                          inline
-                        />
-                      ) : split && sessionDetail ? (
-                        /*
-                          会话也走这一栏。**原来它是个模态框** —— 同一页
-                          上两套详情范式，而模态框还挡着它下面那张表，
-                          「这次任务的第 12 轮」和表里那一行没法对着看。
-                        */
-                        <SessionPanel
-                          d={sessionDetail}
-                          onOpenTurn={(id) => {
-                            setOpenSession(null);
-                            setOpen(id);
-                          }}
-                        />
-                      ) : null
-                    }
-                  >
+                  {/*
+                    详情走**浮层**，不拆栏。
+
+                    拆栏的代价是这张表被挤窄：八列里最先塌的是模型和
+                    上游那两列，而排查时要对着看的恰恰是它们。而且一次
+                    只看一条请求，剩下那半屏的表在这时候是没人读的。
+                  */}
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
                     {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -1488,7 +1435,7 @@ export default function App() {
                         {t.probesElsewhere(locallyAnswered)}
                       </p>
                     )}
-                  </Split>
+                  </div>
                 </div>
               )}
               {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
@@ -1537,19 +1484,29 @@ export default function App() {
           />
         )}
         {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
-        {open != null && !split && (
+        {open != null && (
           <RequestDrawer id={open} onClose={() => setOpen(null)} />
         )}
         {/*
           会话也要有这条窄窗口的退路。**少了它，窄窗口下点组头是没反应的**
           —— 而「没反应」和「坏了」在用户眼里没有区别。
         */}
-        {sessionDetail && !split && (
-          <Dialog open onOpenChange={(o) => !o && setOpenSession(null)}>
-            <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-3xl">
-              <DialogHeader className="sr-only">
-                <DialogTitle>{t.surfaces.sessions}</DialogTitle>
-              </DialogHeader>
+        {sessionDetail && (
+          /*
+            会话和请求走**同一种浮层**（右侧抽屉），不是一个居中对话框
+            加一个抽屉 —— 同一页上两套范式，学会一个不会用另一个。
+          */
+          <Sheet
+            open
+            onOpenChange={(o) => !o && setOpenSession(null)}
+          >
+            <SheetContent
+              side="right"
+              className="flex w-[min(38rem,90vw)] flex-col overflow-y-auto p-0 sm:max-w-none"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>{t.surfaces.sessions}</SheetTitle>
+              </SheetHeader>
               <SessionPanel
                 d={sessionDetail}
                 onOpenTurn={(id) => {
@@ -1557,8 +1514,8 @@ export default function App() {
                   setOpen(id);
                 }}
               />
-            </DialogContent>
-          </Dialog>
+            </SheetContent>
+          </Sheet>
         )}
         {/*
         **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，

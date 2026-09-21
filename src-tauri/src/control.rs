@@ -973,6 +973,14 @@ impl ControlClient {
     }
 }
 
+/// 时间窗拼成 query。**两端都可缺** —— 只给起点就是「从那时起到现在」。
+fn window_q(within: Option<(i64, i64)>) -> String {
+    match within {
+        None => String::new(),
+        Some((from, to)) => format!("&from_ms={from}&to_ms={to}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1066,13 +1074,5 @@ mod tests {
         }
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id(), 1);
-    }
-}
-
-/// 时间窗拼成 query。**两端都可缺** —— 只给起点就是「从那时起到现在」。
-fn window_q(within: Option<(i64, i64)>) -> String {
-    match within {
-        None => String::new(),
-        Some((from, to)) => format!("&from_ms={from}&to_ms={to}"),
     }
 }
