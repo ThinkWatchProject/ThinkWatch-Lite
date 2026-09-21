@@ -54,6 +54,7 @@ export const accessText = messages(
     perKeyNote: "上方表格里的「并发」一列是每把密钥自己的上限。",
 
     versionNotLoaded: "配置版本尚未读取，请稍后重试",
+    notANumber: "这一项要填一个整数",
   },
   {
     title: "Who can reach this gateway",
@@ -108,5 +109,6 @@ export const accessText = messages(
 
     versionNotLoaded:
       "The config version has not been loaded yet. Try again in a moment.",
+    notANumber: "This one takes a whole number",
   },
 );

@@ -1187,7 +1187,7 @@ export default function App() {
                   </p>
                 )
               ) : tab === "settings" ? (
-                <Config />
+                <Config ov={ov} configVersion={configVersion} />
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">
                   {/*

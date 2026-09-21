@@ -5,6 +5,8 @@ import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
 import { LanguageSection } from "./Language";
 import { AppearanceSection } from "./Appearance";
+import { RetentionSection } from "./Retention";
+import type { Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
@@ -19,7 +21,13 @@ import { configText } from "./Config.i18n";
 import { errorText } from "@/i18n/core.i18n";
 
 /** 应用自己的设置。网关的配置在「接入」「上游」「路由」几页 */
-export default function Config() {
+export default function Config({
+  ov,
+  configVersion,
+}: {
+  ov: Overview | null;
+  configVersion: string | null;
+}) {
   const t = useText(configText);
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
@@ -83,6 +91,13 @@ export default function Config() {
           </FieldContent>
         </Field>
       </section>
+
+      {/*
+        日志保留归设置，不归流量页。**它管的是「留多久」，不是「看哪一段」**
+        —— 那一页上曾经有个时间范围选择器，而让人先选一段才能开始搜，
+        等于在一个本来就不大的集合前面加一道门。
+      */}
+      {ov && <RetentionSection ov={ov} configVersion={configVersion} />}
 
       <Update />
       <NoticeSettings />

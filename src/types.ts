@@ -977,6 +977,17 @@ export interface SecretView {
   env?: string | null;
 }
 
+/**
+ * 日志留多久。**两个期限分开** —— 一条报文几十 KB，一行记录几百字节。
+ */
+export interface RetentionView {
+  body_days: number;
+  row_days: number;
+  body_max_bytes: number;
+  /** 报文现在实际占了多少。**不是配置，是现状** */
+  body_bytes_now: number;
+}
+
 /** 一行请求头 */
 export interface HeaderView {
   name: string;
@@ -1198,6 +1209,8 @@ export interface Overview {
   limits?: LimitsView;
   /** 自定义价目表。默认价目表的状态看 `pricing_status` */
   price_sheets: PriceSheetView[];
+  /** 日志留多久。老 core 没有这一段 */
+  retention?: RetentionView;
 }
 
 /**

@@ -22,11 +22,21 @@ export function EditableCell({
   path,
   version,
   mono,
+  numeric,
 }: {
   value: string;
   path: string;
   version: string | null;
   mono?: boolean;
+  /**
+   * 这一格是个数。
+   *
+   * **配置里的数字字段必须发数字。**发字符串的话 core 直接拒
+   * （`invalid type: string "21", expected usize`）—— 而拒绝发生在
+   * 失焦之后，用户看到的是一个弹出来的报错和一个弹回原值的格子，
+   * 完全不知道自己做错了什么。并发上限和网关端口一直就是这样。
+   */
+  numeric?: boolean;
 }) {
   const t = useText(accessText);
   const [draft, setDraft] = useState(value);
@@ -55,9 +65,19 @@ export function EditableCell({
       setDraft(value);
       return;
     }
+    // 数字格子里打了不是数的东西：**不发出去**。让它退回原值，
+    // 比发一个注定被拒的 patch 再报一次错干脆
+    const trimmed = draft.trim();
+    if (numeric && !/^\d+$/.test(trimmed)) {
+      setDraft(value);
+      toast.error(t.notANumber);
+      return;
+    }
     setBusy(true);
     try {
-      const ops: PatchOp[] = [{ op: "replace", path, value: draft }];
+      const ops: PatchOp[] = [
+        { op: "replace", path, value: numeric ? Number(trimmed) : draft },
+      ];
       // Tauri 的 invoke 用字符串 reject，不是 Error
       await patchConfig(ops, version);
     } catch (e) {
