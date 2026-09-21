@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, type CoreEvent, type RequestRow } from "./types";
-import { plain } from "@/i18n/core.i18n";
+import {
+  applyEvent,
+  applyInFlight,
+  interruptInFlight,
+  type CoreEvent,
+  type RequestRow,
+} from "./types";
+import { coreText, plain } from "@/i18n/core.i18n";
+import { setLang } from "@/i18n";
 
 /**
  * 事件流缝出来的那一行。
@@ -193,5 +200,95 @@ describe("从事件缝出一行", () => {
     expect(r?.durationMs).toBe(20_000);
     expect(r?.inputTokens).toBeUndefined();
     expect(r?.bytes).toBeUndefined();
+  });
+});
+
+/**
+ * 开窗之前就在跑的请求：从 core 的快照补成「进行中」的行。
+ *
+ * **快照到这边时已经晚了一截。**这几条盯的是合的方向：中途结束的不能补
+ * （补进去就永远等不到结局），中途开始的不能再套一遍（会把已经到了的响应
+ * 头冲掉）。
+ */
+describe("用快照补上进行中的行", () => {
+  const seen = (started: number[] = [], ended: number[] = []) => ({
+    started: new Set(started),
+    ended: new Set(ended),
+  });
+
+  it("没见过开始事件的请求补成进行中", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(applyInFlight(rows, [started({ id: 7 })], seen())).toBe(true);
+    expect(rows.get(7)?.state).toBe("in_flight");
+    expect(rows.get(7)?.model).toBe("claude-sonnet-4-5");
+  });
+
+  it("快照在路上时结束了的不补", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(applyInFlight(rows, [started({ id: 7 })], seen([], [7]))).toBe(false);
+    expect(rows.has(7)).toBe(false);
+  });
+
+  /** 事件流已经建了这一行，响应头也到了。再套一遍开始事件，状态码就没了 */
+  it("事件流已经在跑的那一行不动", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ id: 7 }));
+    applyEvent(rows, { kind: "request_headers", id: 7, status: 200, ttfb_ms: 812 });
+    expect(applyInFlight(rows, [started({ id: 7 })], seen([7]))).toBe(false);
+    expect(rows.get(7)?.status).toBe(200);
+    // 开始事件还在缓冲里、这一行还没建出来的，同样不补 —— 缓冲落地时会建
+    expect(applyInFlight(new Map(), [started({ id: 8 })], seen([8]))).toBe(false);
+  });
+
+  /**
+   * core 重启后接着库里最大的号往下发，没落库的号会被重新用上。**新请求
+   * 顶掉上一次 core 留下的那行**，而不是因为「这个 id 已经有一行」被跳过。
+   */
+  it("同号的旧行不在跑，就被新请求顶掉", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ id: 7, model: "gpt-5.5" }));
+    interruptInFlight(rows);
+    expect(applyInFlight(rows, [started({ id: 7 })], seen())).toBe(true);
+    expect(rows.get(7)?.state).toBe("in_flight");
+    expect(rows.get(7)?.model).toBe("claude-sonnet-4-5");
+    expect(rows.get(7)?.error).toBeUndefined();
+  });
+});
+
+/**
+ * core 停了：还在跑的行再也等不到结局。**记成失败并写明原因**，结束了的
+ * 行一个字都不动。
+ */
+describe("core 停下时还在跑的行", () => {
+  it("只有进行中的行记成中断", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ id: 1 }));
+    applyEvent(rows, started({ id: 2 }));
+    applyEvent(rows, {
+      kind: "request_finished",
+      id: 2,
+      model: "claude-sonnet-4-5",
+      status: 200,
+      bytes: 10,
+      duration_ms: 900,
+    });
+    expect(interruptInFlight(rows)).toBe(true);
+    expect(rows.get(1)?.state).toBe("failed");
+    expect(rows.get(2)?.state).toBe("done");
+    expect(rows.get(2)?.error).toBeUndefined();
+    // 没有在跑的了，再来一次什么都不改
+    expect(interruptInFlight(rows)).toBe(false);
+  });
+
+  it("原因按界面语言说", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ id: 1 }));
+    interruptInFlight(rows);
+    const why = rows.get(1)?.error;
+    expect(coreText(why)).toBe("core 在请求完成前停止运行，请求已中断。");
+    setLang("en");
+    expect(coreText(why)).toBe(
+      "The core stopped before the request finished, so the request was cut off.",
+    );
   });
 });
