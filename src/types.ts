@@ -1455,8 +1455,14 @@ export interface DryRunRequest {
 export interface DryRunResult {
   /** 按哪条路由求的值。草稿是草稿的名字 */
   route: string;
-  /** `unavailable`：规则选中的上游都服务不了这个请求，原因见 `skipped` */
-  outcome: "route" | "deny" | "no_match" | "unavailable";
+  /**
+   * `unavailable`：规则选中的上游都服务不了这个请求，原因见 `skipped`。
+   *
+   * **`intercepted` 和 `passthrough` 说的是这个请求压根没到规则那一层** ——
+   * 客户端自己发的辅助请求先过「辅助请求」那一档。两种情况下 `trace`
+   * 都是空的，因为确实一条规则都没求值。
+   */
+  outcome: "route" | "deny" | "no_match" | "unavailable" | "intercepted" | "passthrough";
   /** 经过的策略组按什么排序候选。直指上游时没有 */
   strategy?: GroupKind | null;
   rule: string | null;
