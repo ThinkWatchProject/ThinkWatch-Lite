@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tip } from "@/ui/tip";
+import { cn } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
 import {
   usd,
@@ -22,6 +23,7 @@ import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { requestDrawerText } from "./RequestDrawer.i18n";
+import { prettyJson } from "./prettyJson";
 import { coreText } from "@/i18n/core.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import {
@@ -54,6 +56,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 function Body({ b, title }: { b: BodyView | null; title: string }) {
   const t = useText(requestDrawerText);
   const [open, setOpen] = useState(false);
+  const pretty = useMemo(() => (b ? prettyJson(b.text, b.truncated) : null), [b]);
   if (!b) {
     return (
       <div>
@@ -67,8 +70,10 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
       </div>
     );
   }
+  // 折不折按原文算：排版加进来的空白不算内容
   const big = b.text.length > 2000;
-  const shown = open || !big ? b.text : b.text.slice(0, 2000);
+  const text = pretty ?? b.text;
+  const shown = open || !big ? text : text.slice(0, 2000);
   /*
     **`Collapsible` 而不是 `Accordion`。**请求和响应两段是各自独立的,
     要能同时展开对着看;Accordion 是「一组里只开一个」,那正好是这里
@@ -91,11 +96,61 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
           </CollapsibleTrigger>
         )}
       </div>
-      <pre className="mt-1 max-h-80 overflow-auto rounded-md bg-neutral-100 p-2 font-mono tw-label leading-relaxed break-all whitespace-pre-wrap dark:bg-neutral-900">
-        {shown}
-        {big && !open && "\n…"}
-      </pre>
+      <BodyText
+        text={shown}
+        json={pretty != null}
+        more={big && !open}
+        className="mt-1 max-h-80 rounded-md bg-neutral-100 p-2 dark:bg-neutral-900"
+      />
     </Collapsible>
+  );
+}
+
+/**
+ * 一段等宽的 body 正文。JSON 在 `prettyJson` 里排好，这里管折行。
+ *
+ * **折行对齐到本行的缩进。**长字符串（system prompt、工具说明）一折行就
+ * 回到最左边，缩进表达的层级就被冲散了。所以一行一个块，用 padding 加
+ * 负的 text-indent 做悬挂缩进 —— 行首的空格还是文字，复制出去缩进不丢。
+ *
+ * **JSON 按词折，原文见字就断。**SSE 那种 `data: {…}` 按词折会在冒号后面
+ * 断开，第一行只剩一个 `data:`。
+ */
+function BodyText({
+  text,
+  json,
+  more = false,
+  className,
+}: {
+  text: string;
+  json: boolean;
+  /** 折叠着，后面还有 */
+  more?: boolean;
+  className?: string;
+}) {
+  const lines = useMemo(() => text.split("\n"), [text]);
+  return (
+    <pre
+      className={cn(
+        "overflow-auto font-mono tw-label leading-relaxed whitespace-pre-wrap",
+        json ? "wrap-anywhere" : "break-all",
+        className,
+      )}
+    >
+      {lines.map((line, i) => {
+        const indent = Math.max(0, line.search(/[^ ]/));
+        return (
+          <span
+            key={i}
+            className="block"
+            style={indent ? { paddingLeft: `${indent}ch`, textIndent: `-${indent}ch` } : undefined}
+          >
+            {i < lines.length - 1 ? line + "\n" : line}
+          </span>
+        );
+      })}
+      {more && <span className="block">…</span>}
+    </pre>
   );
 }
 
@@ -345,9 +400,6 @@ export default function RequestDrawer({
               <div className="space-y-4">
                 <Body b={d.request_body} title={t.request} />
                 <Body b={d.response_body} title={t.response} />
-                <p className="text-neutral-400">
-                  {t.redactedNote}
-                </p>
               </div>
             </TabsContent>
 
@@ -474,6 +526,8 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   const [quote, setQuote] = useState<ReplayQuote | null>(null);
   const [result, setResult] = useState<ReplayResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // 重放的响应体只留开头两万字，截了也不说；截断的 parse 不了，就原样显示
+  const pretty = useMemo(() => (result ? prettyJson(result.body, false) : null), [result]);
 
   useEffect(() => {
     void (async () => {
@@ -594,9 +648,11 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
               <Cmp label={t.bytes} a={result.original.bytes} b={result.bytes} />
             </TableBody>
           </Table>
-          <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-50 p-2 tw-label dark:bg-neutral-950">
-            {result.body}
-          </pre>
+          <BodyText
+            text={pretty ?? result.body}
+            json={pretty != null}
+            className="mt-2 max-h-64 rounded bg-neutral-50 p-2 dark:bg-neutral-950"
+          />
         </div>
       )}
     </div>
