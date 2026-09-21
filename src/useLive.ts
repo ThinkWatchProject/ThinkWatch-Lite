@@ -5,42 +5,74 @@ import { textOf } from "@/i18n";
 import type { CoreEvent, HistoryRow } from "./types";
 import { liveText } from "./useLive.i18n";
 
-/** 实时曲线一格多宽。一秒 —— 再粗就看不出「刚才那一下」了。 */
-export const LIVE_BUCKET_MS = 1_000;
+/**
+ * 实时曲线一格多宽。五秒：十分钟铺一百二十格。
+ *
+ * **格宽跟着窗口走，不跟着「想看多细」走。**图就那么宽，一百二十格时
+ * 一格六七个像素；再细下去，多出来的格子在屏幕上分不出来，只是多算。
+ * 历史档把格数压在 120 上下也是这个道理（见 `bucketFor`）。
+ */
+export const LIVE_BUCKET_MS = 5_000;
 
 /**
- * 实时曲线的平滑尺度（高斯核的 σ）。
+ * 实时曲线的平滑尺度（高斯核的 σ）：三格。
  *
- * **一格只数它自己那一秒的话，画出来是一排针。**两分钟一百二十格，
- * 而请求是一个一个落下来的：落到的那一格冲到几万，左右两格都是 0。
- * 加宽格子救不了它 —— 只要到达是离散的，多宽的桶都是梳子。
+ * **一格只数它自己那几秒的话，画出来是一排针。**请求是一个一个落下来
+ * 的：落到的那一格冲到几万，左右两格都是 0。加宽格子救不了它 —— 只要
+ * 到达是离散的，多宽的桶都是梳子。
  *
  * 换成方形滑窗也不行：一条请求进窗口是一个台阶、出窗口又是一个台阶，
  * 针于是变成城墙。**要平滑，核本身必须是平滑的。**高斯核把一条请求摊
  * 成一个鼓包，叠起来天然连续。
  *
- * 核归一到总权重 1，所以纵轴读作**速率**：一格 = 那一秒的 token/秒。
- * 这也是实时档该问的问题 —— 此刻跑多快，而不是某一秒恰好落了多少。
+ * **σ 按格数定，不按秒数定。**要抹平的是屏幕上的针，针有多细取决于一格
+ * 占几个像素。窗口拉长、格子放宽，σ 跟着放宽，一条请求在图上还是差不多
+ * 宽的一个鼓包。
+ *
+ * 核归一到总权重 1，所以纵轴读作**速率**（见 `liveRate`）。这也是实时档
+ * 该问的问题 —— 此刻跑多快，而不是某几秒恰好落了多少。
  */
-export const LIVE_SIGMA_MS = 3_000;
+export const LIVE_SIGMA_MS = 3 * LIVE_BUCKET_MS;
 
 /** 核铺多宽。三个 σ 之外的权重不到千分之五，铺了也是白铺。 */
 export const LIVE_REACH_MS = 3 * LIVE_SIGMA_MS;
 
 /**
- * 曲线多久往前走一步。
+ * 曲线多久往前走一步：十分之一格。
  *
- * **不等于格宽。**按格宽（一秒）重画的话，整条曲线每秒向左跳一格 ——
- * 七百多像素宽的图上是六个像素，那不是在滑，是掉到 1fps 的动画。
+ * **不等于格宽。**按格宽重画的话，整条曲线每五秒向左跳一格 —— 八百像素
+ * 宽的图上是六七个像素，那不是在滑，是在跳。
+ *
+ * 也**不必更密**：一步十分之一格，屏幕上不到一个像素，看起来已经是连续
+ * 的了；再密只是把同一张图更频繁地重画一遍。
  *
  * 能这么做的前提是核是连续的：高斯在任意时刻都求得出值，格子不必卡在
- * 整秒上。所以每一帧把格子按当下的时间重铺一遍，曲线就是平移过去的，
- * 不会因为重新分桶而闪。
+ * 格宽的整数倍上。所以每一步把格子按当下的时间重铺一遍，曲线就是平移
+ * 过去的，不会因为重新分桶而闪。
+ *
+ * 这个节拍**只管往左走**。请求开始、落地、价钱补到，都当场重画 —— 不然
+ * 一条请求要等到下一步才冒出来。
  */
-export const LIVE_FRAME_MS = 100;
+export const LIVE_FRAME_MS = LIVE_BUCKET_MS / 10;
+
+/** 连续高斯的积分是 σ√2π。除掉它、再换算到秒，核就读作「每秒多少」 */
+const PER_SECOND = 1_000 / (LIVE_SIGMA_MS * Math.sqrt(2 * Math.PI));
+const TWO_SIGMA_SQ = 2 * LIVE_SIGMA_MS * LIVE_SIGMA_MS;
+
+/**
+ * 量为 `amount` 的一条请求，在离它 `d` 毫秒的时刻贡献多少速率（每秒）。
+ *
+ * **归一到秒，不归一到格。**沿时间积分回来正好是 `amount`，和格子多宽、
+ * 落在哪儿都无关。按格归一的话，一格一秒时碰巧读作「每秒」，格子一放宽，
+ * 纵轴就悄悄变成了「每五秒」，而刻度上写的还是 token/秒。
+ */
+export function liveRate(amount: number, d: number): number {
+  return amount * PER_SECOND * Math.exp(-(d * d) / TWO_SIGMA_SQ);
+}
 
 export interface LiveSample {
   id: number;
+  /** 用量落地的时刻：请求**结束**的时候。事件流只在那时才知道用量 */
   at: number;
   model: string;
   tokens: number;
@@ -48,8 +80,14 @@ export interface LiveSample {
   cost?: number;
 }
 
+/** 一次失败。**带着 id**：事件流和补回来的历史会说到同一次，要能去重 */
+export interface LiveFail {
+  id: number;
+  at: number;
+}
+
 /**
- * 最近这两分钟，直接从事件流上攒出来。
+ * 最近这十分钟，直接从事件流上攒出来。
  *
  * **不查库、不轮询。**概览别的部分问的是 SQLite，而那条路的最小延迟是
  * 「落库 + 下一次刷新」；实时档要的是请求到达的那一刻曲线就动，那只有
@@ -63,14 +101,14 @@ export interface LiveSample {
  * 那个定时器**不是轮询**：它什么都不查，只是让曲线往左走。不走的话，
  * 一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
  *
- * **进这一档先把已经发生过的那两分钟补上。**只挂事件流的话，曲线永远
+ * **进这一档先把已经发生过的那十分钟补上。**只挂事件流的话，曲线永远
  * 从切进来的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图加
  * 一句「等待请求」，而顶上的数字说有几十次。请求发生过，没人看着不
  * 等于没发生；流量列表早就是这么填的（见 `recent_requests`）。
  */
 export function useLive(active: boolean, windowMs: number) {
   const samples = useRef<LiveSample[]>([]);
-  const fails = useRef<number[]>([]);
+  const fails = useRef<LiveFail[]>([]);
   /** id → 模型。`request_started` 知道，`request_finished` 不知道 */
   const model = useRef(new Map<number, string>());
   const flying = useRef(new Set<number>());
@@ -87,6 +125,24 @@ export function useLive(active: boolean, windowMs: number) {
       return;
     }
     let alive = true;
+    /*
+      事件当场重画，**按帧合并**：一阵并发的请求一起落地时，一帧里只画
+      一次。
+    */
+    let raf: number | null = null;
+    const soon = () => {
+      if (raf === null)
+        raf = requestAnimationFrame(() => {
+          raf = null;
+          frame();
+        });
+    };
+    /*
+      事件流和补回来的历史会说到同一次请求，而且**谁先到都有可能**：落库
+      和事件是两条路。所以两边落样本之前都要看一眼对方记过没有。
+    */
+    const counted = (id: number) => samples.current.some((s) => s.id === id);
+    const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") {
@@ -95,7 +151,7 @@ export function useLive(active: boolean, windowMs: number) {
       } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
         flying.current.delete(ev.id);
-        if (ev.usage) {
+        if (ev.usage && !counted(ev.id)) {
           const u = ev.usage;
           samples.current.push({
             id: ev.id,
@@ -119,7 +175,7 @@ export function useLive(active: boolean, windowMs: number) {
       } else if (ev.kind === "request_failed") {
         flying.current.delete(ev.id);
         // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
-        if (ev.usage) {
+        if (ev.usage && !counted(ev.id)) {
           const u = ev.usage;
           samples.current.push({
             id: ev.id,
@@ -129,25 +185,40 @@ export function useLive(active: boolean, windowMs: number) {
           });
         }
         model.current.delete(ev.id);
-        fails.current.push(Date.now());
+        if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
+      } else {
+        return;
       }
+      soon();
     });
     /*
       先挂事件流再补历史：反过来的话，这两者之间结束的请求谁都不记。
-      两边都记到的按 id 去重 —— 落库和事件是同一次请求的两条路。
     */
     void (async () => {
       try {
+        /*
+          **按时间取，不按条数取。**十分钟里有多少条请求说不准：取固定的
+          条数，忙的时候补不满一个窗口，闲的时候又白拿一堆窗口外的。
+
+          起点再往前让一个窗口。库里记的是请求**开始**的时刻，曲线上画的
+          是**结束**的时刻；带长思考的请求跑上一两分钟是常事，它开始于
+          窗口之外、结束在窗口之内，也该补上。
+        */
         // Tauri 的 invoke 用字符串 reject，不是 Error
         const rows = await invoke<HistoryRow[]>("recent_requests", {
-          limit: 200,
+          limit: 2000,
+          fromMs: Date.now() - 2 * windowMs,
         });
         if (!alive) return;
         const cut = Date.now() - windowMs;
-        const seen = new Set(samples.current.map((s) => s.id));
         const seeded: LiveSample[] = [];
+        const seededFails: LiveFail[] = [];
         for (const r of rows) {
-          if (r.at_ms < cut || seen.has(r.id)) continue;
+          // 和事件流同一个口径：落在结束的那一刻
+          const at = r.at_ms + (r.duration_ms ?? 0);
+          if (at < cut) continue;
+          if (r.error && !failedAlready(r.id)) seededFails.push({ id: r.id, at });
+          if (counted(r.id)) continue;
           const tokens =
             (r.input_tokens ?? 0) +
             (r.output_tokens ?? 0) +
@@ -157,7 +228,7 @@ export function useLive(active: boolean, windowMs: number) {
           if (tokens === 0) continue;
           seeded.push({
             id: r.id,
-            at: r.at_ms,
+            at,
             model: r.model || textOf(liveText).unknownModel,
             tokens,
             ...(r.cost_micros != null ? { cost: r.cost_micros } : {}),
@@ -167,6 +238,7 @@ export function useLive(active: boolean, windowMs: number) {
         samples.current = [...seeded, ...samples.current].sort(
           (a, b) => a.at - b.at,
         );
+        fails.current = [...seededFails, ...fails.current];
         frame();
       } catch {
         // 读不到就只画事件流那一半，和补这一段之前一样
@@ -176,13 +248,14 @@ export function useLive(active: boolean, windowMs: number) {
     const h = setInterval(() => {
       const cut = Date.now() - windowMs;
       samples.current = samples.current.filter((s) => s.at >= cut);
-      fails.current = fails.current.filter((t) => t >= cut);
+      fails.current = fails.current.filter((f) => f.at >= cut);
       frame();
     }, LIVE_FRAME_MS);
     return () => {
       alive = false;
       void un.then((f) => f());
       clearInterval(h);
+      if (raf !== null) cancelAnimationFrame(raf);
     };
   }, [active, windowMs]);
 

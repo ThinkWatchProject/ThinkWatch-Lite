@@ -63,7 +63,7 @@ export const dashboardText = messages(
       `${at}　${amount}　${requests} 次${failed ? `（${failed} 次失败）` : ""}`,
     waiting: "等待请求。",
     noRequests: "所选区间内无请求记录。",
-    liveTicks: ["2 分钟前", "90 秒", "60 秒", "30 秒"],
+    liveTicks: ["10 分钟前", "8 分钟", "6 分钟", "4 分钟", "2 分钟"],
     now: "现在",
     failureMarks: "基线上的红色标出存在失败的时段",
     liveScope: "顶部数字与缓存、延迟、安全按最近 24 小时统计；模型排行跟随上图",
@@ -180,7 +180,7 @@ export const dashboardText = messages(
       }`,
     waiting: "Waiting for requests.",
     noRequests: "No requests recorded in the selected range.",
-    liveTicks: ["2 min ago", "90 s", "60 s", "30 s"],
+    liveTicks: ["10 min ago", "8 min", "6 min", "4 min", "2 min"],
     now: "Now",
     failureMarks: "Red on the baseline marks periods with failures",
     liveScope:

@@ -40,6 +40,15 @@ import { chartsText } from "./charts.i18n";
  */
 
 /**
+ * 纵轴那一栏多宽。它在图的右边，**画图的区域到它左边为止**。
+ *
+ * 图下面跟着时间走的东西（基线上的失败标记、时间刻度）要让出这一栏。
+ * 铺满整行的话越往右越对不上：十分钟的实时档上差出半分钟，「2 分钟」
+ * 那个刻度会落在一分半的位置。
+ */
+export const Y_AXIS_WIDTH = 46;
+
+/**
  * 按模型分层的花费走势。
  *
  * **一张图回答两个问题**：支出发生在什么时候，以及落在哪个模型上。
@@ -162,7 +171,7 @@ export function StackedArea({
         {tickFormat && (
           <YAxis
             orientation="right"
-            width={46}
+            width={Y_AXIS_WIDTH}
             tickCount={3}
             axisLine={false}
             tickLine={false}
