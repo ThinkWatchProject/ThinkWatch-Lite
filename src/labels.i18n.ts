@@ -82,13 +82,6 @@ export const labelsText = messages(
       estimate: (amount: string) => `预估费用约 ${amount}。`,
       unpriced: (model: string) => `无法计价：${model} 不在价目表中。`,
     },
-    storage: {
-      ok: "正常",
-      metadata_only: "磁盘空间不足，仅记录请求摘要，不保存请求体与响应体",
-      stopped: "磁盘空间严重不足，已停止记录",
-      unavailable: "请求记录未能启动",
-    },
-
     // ------------------------------------------------------------ 配置
     origins: {
       ui: "界面",
@@ -221,14 +214,6 @@ export const labelsText = messages(
       estimate: (amount: string) => `Estimated cost: about ${amount}.`,
       unpriced: (model: string) => `Unpriced: ${model} is not in the price sheet.`,
     },
-    // 后面可能接「. Forwarding is not affected.」，所以不带句号
-    storage: {
-      ok: "Normal",
-      metadata_only: "Low disk space: only request summaries are recorded; request and response bodies are not saved",
-      stopped: "Disk space critically low; recording has stopped",
-      unavailable: "Request recording could not start",
-    },
-
     origins: {
       ui: "App",
       cli: "Command line",

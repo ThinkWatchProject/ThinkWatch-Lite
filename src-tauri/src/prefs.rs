@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::i18n::Lang;
+use crate::notices::Mode;
 use crate::theme::Theme;
 
 /// 设置文件，放在数据目录里。
@@ -30,6 +31,8 @@ pub struct Prefs {
     pub language: Option<Lang>,
     /// 界面外观。`None` 是跟随系统，理由同上。
     pub theme: Option<Theme>,
+    /// 提醒：系统通知 / 仅在应用内 / 关闭。**只有这一个，不分类。**
+    pub notices: Mode,
 }
 
 impl Default for Prefs {
@@ -38,6 +41,7 @@ impl Default for Prefs {
             check_updates: true,
             language: None,
             theme: None,
+            notices: Mode::System,
         }
     }
 }
@@ -98,6 +102,7 @@ mod tests {
         assert!(p.check_updates);
         assert_eq!(p.language, None);
         assert_eq!(p.theme, None);
+        assert_eq!(p.notices, Mode::System);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -120,9 +125,11 @@ mod tests {
         let dir = tmp();
         update(&dir, |p| p.language = Some(Lang::En)).unwrap();
         update(&dir, |p| p.check_updates = false).unwrap();
+        update(&dir, |p| p.notices = Mode::Off).unwrap();
         let p = load(&dir);
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
+        assert_eq!(p.notices, Mode::Off);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -133,6 +140,7 @@ mod tests {
             check_updates: true,
             language: Some(Lang::Zh),
             theme: Some(Theme::Dark),
+            notices: Mode::App,
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);

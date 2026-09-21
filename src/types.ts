@@ -612,8 +612,8 @@ export interface RedactedItem {
 }
 
 export interface StorageStatus {
-  /** `ok` / `metadata_only`：只记摘要 / `stopped`：停止记录 / `unavailable`：请求记录没有启动 */
-  level: "ok" | "metadata_only" | "stopped" | "unavailable";
+  /** 请求记录启动了没有。`false` 时这段时间的请求都不会留下 */
+  recording: boolean;
   rows: number;
   blob_bytes: number;
   /** **永远是 false** —— 观测挂了，代理照跑 */

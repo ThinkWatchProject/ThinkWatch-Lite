@@ -56,7 +56,7 @@ export const requestDrawerText = messages(
     request: "请求",
     response: "响应",
     notSaved: "未保存",
-    notSavedTip: "磁盘空间不足时仅记录摘要，或此记录已超过保留期限。",
+    notSavedTip: "此记录已超过保留期限。",
     size: (n: number) => `${n.toLocaleString()} 字节`,
     truncated: "仅保存开头部分",
     collapse: "折叠",
@@ -145,8 +145,7 @@ export const requestDrawerText = messages(
     request: "Request",
     response: "Response",
     notSaved: "Not saved",
-    notSavedTip:
-      "Only a summary is recorded when disk space is low, or this record is past its retention period.",
+    notSavedTip: "This record is past its retention period.",
     size: (n: number) => (n === 1 ? "1 byte" : `${n.toLocaleString()} bytes`),
     truncated: "only the beginning was saved",
     collapse: "Collapse",

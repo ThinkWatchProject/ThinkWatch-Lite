@@ -128,7 +128,8 @@ export const dashboardText = messages(
     enforceTip: "如需替换为占位符，请在「安全 › 防护」中将出站脱敏切换到「拦截」。",
     enforce: "启用拦截",
 
-    /** 接在存储状态那句后面 */
+    /** 后面可能接「。转发不受影响。」，所以不带句号 */
+    recordingUnavailable: "请求记录未能启动",
     forwardingUnaffected: "。转发不受影响。",
   },
   {
@@ -248,6 +249,7 @@ export const dashboardText = messages(
       "To replace them with placeholders, switch outbound redaction to Enforce in Security › Protection.",
     enforce: "Switch to Enforce",
 
+    recordingUnavailable: "Request recording could not start",
     forwardingUnaffected: ". Forwarding is not affected.",
   },
 );

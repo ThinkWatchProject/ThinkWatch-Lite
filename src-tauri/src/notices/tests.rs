@@ -35,7 +35,7 @@ fn bed() -> Bed {
     let shown = rec.shown.clone();
     let withdrawn = rec.withdrawn.clone();
     Bed {
-        bus: Notices::new(vec![Box::new(rec)], None),
+        bus: Notices::new(vec![Box::new(rec)], None, Mode::System),
         shown,
         withdrawn,
     }
@@ -205,67 +205,86 @@ async fn what_is_dismissed_stays_dismissed_until_it_happens_again() {
     assert_eq!(b.titles().len(), 2, "划掉之后再次发生要重新说");
 }
 
-// ---------------------------------------------------------------- 每一类的设置
+// ---------------------------------------------------------------- 开关
 
 #[tokio::test]
-async fn a_category_turned_off_is_not_even_recorded() {
+async fn turned_off_nothing_is_even_recorded() {
     let b = bed();
-    b.bus.set_mode(Category::Quota, Mode::Off).unwrap();
+    b.bus.set_mode(Mode::Off);
     b.bus.ingest(quota("relay"), T0);
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发").now(),
+        T0 + 1,
+    );
     assert!(b.titles().is_empty());
-    assert!(b.bus.list().is_empty(), "关闭的一类不该留在列表里");
+    assert!(b.bus.list().is_empty(), "关闭之后不该留在列表里");
 }
 
 #[tokio::test]
-async fn a_category_kept_in_the_app_is_listed_but_never_interrupts() {
+async fn in_the_app_only_it_is_listed_but_never_interrupts() {
     let b = bed();
-    b.bus.set_mode(Category::Quota, Mode::App).unwrap();
+    b.bus.set_mode(Mode::App);
     b.bus.ingest(quota("relay"), T0);
-    assert!(b.titles().is_empty(), "只进应用内的不该弹");
-    assert_eq!(b.bus.list().len(), 1);
-    assert_eq!(b.bus.list()[0].category, Category::Quota);
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发").now(),
+        T0 + 1,
+    );
+    assert!(b.titles().is_empty(), "仅在应用内的，级别再高也不弹");
+    assert_eq!(b.bus.list().len(), 2);
 }
 
 #[tokio::test]
-async fn turning_a_category_off_takes_what_is_open_with_it() {
+async fn turning_notices_off_takes_everything_open_with_it() {
     let b = bed();
     b.bus.ingest(quota("relay"), T0);
     b.bus.ingest(
         Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通").now(),
         T0 + 1,
     );
-    b.bus.set_mode(Category::Quota, Mode::Off).unwrap();
-    let keys: Vec<String> = b.bus.list().into_iter().map(|n| n.key).collect();
-    assert_eq!(keys, ["proxy:hk"]);
-    assert!(
-        b.withdrawn
-            .lock()
-            .unwrap()
-            .contains(&"quota:relay:weekly".to_string())
-    );
+    b.bus.set_mode(Mode::Off);
+    assert!(b.bus.list().is_empty());
+    let mut withdrawn = b.withdrawn.lock().unwrap().clone();
+    withdrawn.sort();
+    assert_eq!(withdrawn, ["proxy:hk", "quota:relay:weekly"]);
 }
 
+/// 去抖的那一分钟里换成了「仅在应用内」：到点时照新的一档办
+#[tokio::test(start_paused = true)]
+async fn a_notice_still_on_hold_does_not_pop_after_switching_to_the_app() {
+    let b = bed();
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通"),
+        T0,
+    );
+    tokio::time::advance(Duration::from_secs(20)).await;
+    b.bus.set_mode(Mode::App);
+    tokio::time::advance(Duration::from_secs(90)).await;
+    tokio::task::yield_now().await;
+    assert!(b.titles().is_empty(), "{:?}", b.titles());
+    assert_eq!(b.bus.list().len(), 1, "列表里照样留着");
+}
+
+/// 点开一条已经不在列表里的通知，落到能处理它的那一页
 #[test]
-fn every_key_belongs_to_the_category_its_setting_is_shown_under() {
-    for (key, c) in [
-        ("gateway", Category::Gateway),
-        ("upstream:relay", Category::Upstream),
-        ("quota:chatgpt:5h", Category::Quota),
-        ("credential:chatgpt", Category::Credential),
-        ("auth:relay", Category::Credential),
-        ("writeback:claude-max", Category::Credential),
-        ("proxy:hk", Category::Proxy),
-        ("toolwall:relay", Category::Security),
-        ("scan", Category::Security),
-        ("config", Category::Config),
-        ("storage", Category::Storage),
+fn every_key_lands_on_the_page_that_handles_it() {
+    for (key, view) in [
+        ("gateway", "config"),
+        ("config", "config"),
+        ("upstream:relay", "upstreams"),
+        ("quota:chatgpt:5h", "upstreams"),
+        ("credential:chatgpt", "upstreams"),
+        ("auth:relay", "upstreams"),
+        ("writeback:claude-max", "upstreams"),
+        ("proxy:hk", "upstreams"),
+        ("toolwall:relay", "security"),
+        ("scan", "security"),
     ] {
-        assert_eq!(Category::of(key), c, "{key}");
+        assert_eq!(rules::default_view(key), view, "{key}");
     }
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_unreachable_upstream_stays_in_the_app_by_default_and_needs_real_evidence_to_clear() {
+async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear() {
     let b = bed();
     let health = |state: &str| tw_api::Event::HealthChanged {
         id: 1,
@@ -278,7 +297,7 @@ async fn an_unreachable_upstream_stays_in_the_app_by_default_and_needs_real_evid
     b.bus.on_event(&health("closed"));
     tokio::time::advance(Duration::from_secs(90)).await;
     tokio::task::yield_now().await;
-    assert!(b.titles().is_empty(), "多数人配了回退，默认不打断");
+    assert!(b.titles().is_empty(), "多数人配了回退，不打断");
     assert_eq!(b.bus.list().len(), 1, "冷却结束不该把它撤掉");
 
     // 这家真的又接下了一个请求
@@ -470,18 +489,6 @@ fn in_english_no_rule_writes_a_chinese_word() {
             )),
             at_ms: T0,
         },
-        tw_api::Event::StorageChanged {
-            id: 1,
-            level: "stopped".into(),
-            free_bytes: 200 * 1024 * 1024,
-            at_ms: T0,
-        },
-        tw_api::Event::StorageChanged {
-            id: 1,
-            level: "metadata_only".into(),
-            free_bytes: 3 * 1024 * 1024 * 1024,
-            at_ms: T0,
-        },
         tw_api::Event::ConfigRejected {
             id: 1,
             stage: "schema".into(),
@@ -531,9 +538,6 @@ fn in_english_no_rule_writes_a_chinese_word() {
             // macOS 的通知标题不带句末标点；正文是完整的句子
             assert!(!s.title.ends_with('.'), "{}", s.title);
             assert!(s.body.ends_with('.'), "{}", s.body);
-        }
-        for c in Category::ALL {
-            assert!(!has_chinese(c.label()), "{c:?}: {}", c.label());
         }
     });
 }

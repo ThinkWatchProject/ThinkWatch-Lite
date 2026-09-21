@@ -4,19 +4,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { toast } from "sonner";
 import { when } from "@/format";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { noticesText } from "./Notices.i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { errorText } from "@/i18n/core.i18n";
+import type { NoticeMode } from "./NoticeSettings";
 
 /** 一条提醒。判定在 Rust 侧，这里只负责显示 */
 export interface Notice {
   key: string;
-  /** 属于哪一类。「不再弹出此类」按它来 */
-  category: string;
   level: "info" | "warning" | "critical";
   title: string;
   body: string;
@@ -43,6 +40,8 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
   const [open, setOpen] = useState(false);
   /** 这一次是不是用鼠标点开的。决定打开时焦点进不进面板，见 onOpenAutoFocus */
   const byMouse = useRef(false);
+  // 提醒关掉了就不放铃铛：列表永远是空的，留着它只是占地方
+  const [mode, setMode] = useState<NoticeMode | null>(null);
 
   const load = useCallback(() => {
     invoke<Notice[]>("notices_list")
@@ -58,19 +57,22 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
     return () => void un.then((f) => f());
   }, [load]);
 
+  useEffect(() => {
+    invoke<NoticeMode>("notice_mode")
+      .then(setMode)
+      .catch(() => setMode("system"));
+    const un = listen<NoticeMode>("notice-mode-changed", (e) => setMode(e.payload));
+    return () => void un.then((f) => f());
+  }, []);
+
   function dismiss(key: string) {
     setList((l) => l.filter((n) => n.key !== key));
     void invoke("dismiss_notice", { key });
   }
 
-  /** 这一类以后只记录、不弹出。**按类**：同一类事明天还会再发生 */
-  function quiet(category: string) {
-    invoke("set_notice_pref", { category, mode: "app" })
-      .then(() => toast.success(t.quieted))
-      .catch((e) => toast.error(errorText(e)));
-  }
-
   const urgent = list.filter((n) => n.level !== "info").length;
+
+  if (mode === "off") return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -158,24 +160,7 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
                     )}
                   </p>
                   {n.body && <p className="tw-label text-muted-foreground">{n.body}</p>}
-                  <p className="tw-label text-muted-foreground">
-                    {when(n.at_ms)}
-                    {n.notified && (
-                      <>
-                        {" · "}
-                        <button
-                          type="button"
-                          className="underline-offset-2 hover:underline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            quiet(n.category);
-                          }}
-                        >
-                          {t.quiet}
-                        </button>
-                      </>
-                    )}
-                  </p>
+                  <p className="tw-label text-muted-foreground">{when(n.at_ms)}</p>
                 </div>
                 <Button
                   variant="ghost"
