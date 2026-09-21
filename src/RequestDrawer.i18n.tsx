@@ -61,7 +61,6 @@ export const requestDrawerText = messages(
     truncated: "仅保存开头部分",
     collapse: "折叠",
     showAll: "展开全部",
-    redactedNote: "请求与响应内容已脱敏，疑似密钥的内容已遮盖。",
 
     // 用量。**没有用量、没有价格、估算，各说各的**
     cancelledBeforeUsage: "客户端在上游报告用量前断开连接",
@@ -150,7 +149,6 @@ export const requestDrawerText = messages(
     truncated: "only the beginning was saved",
     collapse: "Collapse",
     showAll: "Show all",
-    redactedNote: "Request and response content is redacted; anything resembling a key is masked.",
 
     cancelledBeforeUsage: "The client disconnected before the upstream reported usage",
     failedBeforeUsage: "The request failed before the upstream reported usage",
