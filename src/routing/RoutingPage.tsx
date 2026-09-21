@@ -22,11 +22,12 @@ import { GroupDialog, type GroupDialogMode } from "./GroupDialog";
 import { GroupTable, groupRefs } from "./GroupTable";
 import { DeleteRouteDialog, SetDefaultDialog } from "./RouteConfirmDialogs";
 import { RouteDialog, type RouteDialogMode } from "./RouteDialog";
+import { ProbesTab } from "./ProbesTab";
 import { RouteTable } from "./RouteTable";
 import { routingText } from "./routing.i18n";
 import { routingPageText } from "./RoutingPage.i18n";
 
-export type RoutingTab = "routes" | "groups";
+export type RoutingTab = "routes" | "groups" | "probes";
 
 type DialogState =
   | null
@@ -130,9 +131,11 @@ export default function RoutingPage({
             <TabsTrigger value="groups">
               {t.groups} <Count n={ov.groups.length} />
             </TabsTrigger>
+            {/* 请求先过这一层，剩下的才轮到规则 —— 所以它和规则同页 */}
+            <TabsTrigger value="probes">{t.probes}</TabsTrigger>
           </TabsList>
           <div className="flex-1" />
-          {tab === "routes" ? (
+          {tab === "routes" && (
             <>
               <Button variant="outline" size="sm" onClick={() => setDryRun({ kind: "key" })}>
                 <FlaskConicalIcon />
@@ -143,7 +146,8 @@ export default function RoutingPage({
                 {rt.newRoute}
               </Button>
             </>
-          ) : (
+          )}
+          {tab === "groups" && (
             <Button size="sm" onClick={() => setDialog({ kind: "group", mode: { kind: "create" } })}>
               <PlusIcon />
               {rt.newGroup}
@@ -177,6 +181,10 @@ export default function RoutingPage({
               showUpstreams: () => onNavigate("upstreams"),
             }}
           />
+        </TabsContent>
+
+        <TabsContent value="probes" className="mt-2">
+          <ProbesTab ov={ov} configVersion={configVersion} />
         </TabsContent>
       </Tabs>
 

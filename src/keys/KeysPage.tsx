@@ -27,6 +27,7 @@ import type { ClientView, CostGroup, DetectedClient, KnownModel, Overview } from
 import { invoke } from "@tauri-apps/api/core";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { accessText } from "@/access/Access.i18n";
 import { api } from "./api";
 import { KeyDialog } from "./KeyDialog";
 import { KeysTable } from "./KeysTable";
@@ -47,13 +48,13 @@ type DialogState =
 /**
  * 网关密钥。
  *
- * **这是访问控制的唯一入口**：端口决定谁能敲门，密钥决定谁能进来 ——
- * 没有密钥，即使从 127.0.0.1 也连不上。
+ * **谁能连是两道，这是第二道**：监听范围决定谁能敲门，密钥决定谁能进来 ——
+ * 没有密钥，即使从 127.0.0.1 也连不上。所以它和监听范围同页（「接入」）。
  *
- * 页面只读，改任何东西都在对话框里完成；能不能删、改名要不要带着规则一起改、
+ * 只读，改任何东西都在对话框里完成；能不能删、改名要不要带着规则一起改、
  * 更换要同步给谁，都由 core 判断 —— 界面只负责把话说清楚。
  */
-export default function KeysPage({
+export function KeysSection({
   ov,
   configVersion,
   onChanged,
@@ -69,6 +70,7 @@ export default function KeysPage({
   const t = useText(keysPageText);
   const common = useText(commonText);
   const labels = useText(labelsText);
+  const access = useText(accessText);
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [clients, setClients] = useState<DetectedClient[]>([]);
   const [usage, setUsage] = useState<CostGroup[]>([]);
@@ -129,8 +131,9 @@ export default function KeysPage({
   const onlyDefault = keys.length === 1 && keys[0]?.default;
 
   return (
-    <div className="flex flex-col gap-4 p-5">
-      <div className="flex items-center gap-3">
+    <section className="flex flex-col gap-4">
+      <div className="flex items-baseline gap-3">
+        <h2 className="tw-title font-semibold">{access.keysTitle}</h2>
         <p className="tw-body text-muted-foreground">
           {t.intro}
         </p>
@@ -283,7 +286,7 @@ export default function KeysPage({
           </AlertDialogContent>
         </AlertDialog>
       )}
-    </div>
+    </section>
   );
 }
 

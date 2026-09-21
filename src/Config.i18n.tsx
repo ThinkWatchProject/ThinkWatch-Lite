@@ -22,15 +22,6 @@ export const configText = messages(
     sourcePlaceholder: "例如 192.168.1.0/24",
 
     // 客户端探测请求
-    intercept: "本地应答",
-    interceptWhat: "由网关直接应答，不发送到上游，不产生费用。",
-    passthrough: "原样放行",
-    passthroughWhat: "作为普通请求转发，按上游计费方式产生费用。",
-    routed: "交给路由",
-    routedWhat: "按路由规则转发，可分流至费用更低的上游。",
-    probesTitle: "客户端探测请求",
-    probesIntro: "客户端自动发起的辅助请求，不由用户操作触发，同样产生费用。",
-    probesNote: "仅当对应类别设为「交给路由」时，路由规则中的「辅助请求」条件才会命中。",
 
     // 并发
     limitsTitle: "并发",
@@ -115,18 +106,6 @@ export const configText = messages(
     anySource: "(All sources allowed)",
     removeSource: (cidr: string) => `Remove ${cidr}`,
     sourcePlaceholder: "e.g. 192.168.1.0/24",
-
-    intercept: "Answer locally",
-    interceptWhat: "The gateway answers directly. Nothing is sent upstream and no cost is incurred.",
-    passthrough: "Pass through",
-    passthroughWhat: "Forwarded as an ordinary request, with costs according to the upstream's billing.",
-    routed: "Use routing",
-    routedWhat: "Forwarded by the routing rules, which can send it to a lower-cost upstream.",
-    probesTitle: "Client probes",
-    probesIntro:
-      "Auxiliary requests that clients send on their own, without any user action. They incur costs as well.",
-    probesNote:
-      "The “Auxiliary request” condition in routing rules only matches when its category is set to “Use routing”.",
 
     limitsTitle: "Concurrency",
     maxConcurrent: "Global concurrency",
