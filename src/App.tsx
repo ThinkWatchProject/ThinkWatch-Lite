@@ -17,7 +17,7 @@ import Config from "./Config";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
-import KeysPage from "./keys/KeysPage";
+import { AccessPage } from "./access/AccessPage";
 import RoutingPage from "./routing/RoutingPage";
 import Security from "./Security";
 import Guard from "./Guard";
@@ -32,7 +32,6 @@ import {
   IconGuard,
   IconRoute,
   IconSession,
-  IconKey,
   IconServer,
   IconSettings,
 } from "./ui/icons";
@@ -123,14 +122,13 @@ type Surface =
   | "security"
   | "guard"
   | "routing"
-  | "keys"
+  | "access"
   | "upstreams"
-  | "config"
   | "settings"
   | "clients";
 
 /** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
-const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "config"]);
+const CONFIG_PAGES = new Set<Surface>(["upstreams", "access", "routing"]);
 
 /** 配置文件里的一段由哪一页管理 */
 function surfaceOf(section: string | null): Surface {
@@ -140,7 +138,7 @@ function surfaceOf(section: string | null): Surface {
     case "pricing":
       return "upstreams";
     case "clients":
-      return "keys";
+      return "access";
     case "routes":
     case "groups":
     case "default_route":
@@ -148,7 +146,8 @@ function surfaceOf(section: string | null): Surface {
     case "security":
       return "guard";
     default:
-      return "config";
+      // 监听、并发都在接入页；辅助请求在路由页，但它没有自己的段名
+      return "access";
   }
 }
 
@@ -190,9 +189,11 @@ const SOURCES: {
       // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
       { id: "upstreams", icon: IconServer },
-      { id: "keys", icon: IconKey },
       { id: "routing", icon: IconRoute },
-      { id: "config", icon: IconGateway },
+      // **接入 = 监听范围 + 密钥 + 并发。**三者回答同一个问题：别人
+      // 怎么连进来、谁能连。原来「网关」和「密钥」是两项，而「网关」
+      // 指的其实是整个产品
+      { id: "access", icon: IconGateway },
       { id: "clients", icon: IconClient },
     ],
   },
@@ -561,7 +562,7 @@ export default function App() {
         }
         if (k === ",") {
           e.preventDefault();
-          setTab("config");
+          setTab("settings");
           return;
         }
         if (k === "r") {
@@ -1107,9 +1108,9 @@ export default function App() {
         ) : (
           <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
-      ) : tab === "keys" ? (
+      ) : tab === "access" ? (
         ov ? (
-          <KeysPage
+          <AccessPage
             ov={ov}
             configVersion={configVersion}
             onChanged={() => setNudge((n) => n + 1)}
@@ -1143,17 +1144,8 @@ export default function App() {
         ) : (
           <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
         )
-      ) : tab === "config" || tab === "settings" ? (
-        ov ? (
-          <Config
-            key={tab}
-            section={tab === "settings" ? "settings" : "gateway"}
-            ov={ov}
-            configVersion={configVersion}
-          />
-        ) : (
-          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
-        )
+      ) : tab === "settings" ? (
+        <Config />
       ) : (
       <Split
         split={split}
