@@ -74,45 +74,8 @@ export function FormItem({
   );
 }
 
-/**
- * 几个互斥选项排成一段。**不是标签页** —— 它改的是一个值，不切换视图。
- */
-export function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  disabled,
-}: {
-  value: T;
-  options: { id: T; label: ReactNode; disabled?: boolean }[];
-  onChange: (v: T) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      className="inline-flex h-7 w-fit items-center rounded-lg bg-muted p-0.5"
-    >
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          role="radio"
-          aria-checked={value === o.id}
-          disabled={disabled || o.disabled}
-          onClick={() => onChange(o.id)}
-          className={cn(
-            "inline-flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2.5 tw-body font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
-            value === o.id &&
-              "border-input bg-background text-foreground shadow-sm dark:bg-input/30",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+// 挪到了 `@/ui/segmented`：全应用的单选都用它，不只是上游页
+export { Segmented } from "@/ui/segmented";
 
 /** 单选的一行：圆点 + 标题 + 说明 */
 export function RadioRow({

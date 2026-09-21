@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { PROBES, probeLabel } from "@/labels";
@@ -65,22 +65,15 @@ export function ProbesTab({
             <li key={p.id} className="rounded-md border border-border px-3 py-2">
               <div className="flex items-baseline gap-3">
                 <span className="tw-body font-medium">{kind?.label ?? probeLabel(p.id)}</span>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto"
-                  value={p.mode}
-                  disabled={busy === p.id}
-                  /* 择一，不许择空 —— 空了等于没有模式 */
-                  onValueChange={(v) => v && void set(p.id, v)}
-                >
-                  {modes.map((m) => (
-                    <ToggleGroupItem key={m.id} value={m.id}>
-                      {m.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
+                <div className="ml-auto">
+                  <Segmented<string>
+                    label={kind?.label ?? probeLabel(p.id)}
+                    value={p.mode}
+                    disabled={busy === p.id}
+                    options={modes.map((m) => ({ id: m.id, label: m.label }))}
+                    onChange={(v) => v !== p.mode && void set(p.id, v)}
+                  />
+                </div>
               </div>
               {kind && <p className="mt-1 tw-body text-muted-foreground">{kind.what}</p>}
               <p className="mt-0.5 tw-label text-muted-foreground">

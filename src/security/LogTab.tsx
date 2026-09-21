@@ -7,7 +7,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Segmented } from "@/ui/segmented";
 import { windowStart, type Range } from "@/ui/range";
 import { when } from "@/format";
 import { useText } from "@/i18n";
@@ -153,17 +153,16 @@ export function LogTab({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
+        <Segmented<LogGuard>
+          label={t.type}
           value={guard}
-          onValueChange={(v) => v && onGuard(v as LogGuard)}
-        >
-          <ToggleGroupItem value="all">{t.all}</ToggleGroupItem>
-          <ToggleGroupItem value="redact">{lt.guardShort.redact}</ToggleGroupItem>
-          <ToggleGroupItem value="inspect_tools">{lt.guardShort.inspect_tools}</ToggleGroupItem>
-        </ToggleGroup>
+          options={[
+            { id: "all", label: t.all },
+            { id: "redact", label: lt.guardShort.redact },
+            { id: "inspect_tools", label: lt.guardShort.inspect_tools },
+          ]}
+          onChange={onGuard}
+        />
         <div className="flex-1" />
         {rows && rows.length > 0 && (
           <span className="tw-label tabular-nums text-muted-foreground">{t.count(rows.length, more)}</span>

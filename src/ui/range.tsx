@@ -3,7 +3,7 @@ import { CalendarIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Segmented } from "@/ui/segmented";
 import { bucketStart } from "@/format";
 import { textOf, useText } from "@/i18n";
 import { rangeText } from "./range.i18n";
@@ -223,31 +223,33 @@ export function RangePicker({
 
   return (
     <div className="flex items-center gap-2">
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
+      <Segmented<string>
+        label={t.label}
         value={value.live ? "live" : (preset?.id ?? "")}
-        onValueChange={(v) => {
+        options={[
+          ...(live
+            ? [
+                {
+                  id: "live",
+                  label: (
+                    <>
+                      {/* 会呼吸的点。**它是这一档唯一的装饰**，而它说的是真的：
+                          那条曲线确实在动 */}
+                      <span className="inline-block size-1.5 animate-pulse rounded-full bg-cache-hit" />
+                      {t.live}
+                    </>
+                  ),
+                },
+              ]
+            : []),
+          ...PRESETS.map((p) => ({ id: p.id, label: t.preset[p.id] })),
+        ]}
+        onChange={(v) => {
           if (v === "live") return onChange(LIVE_RANGE);
           const p = PRESETS.find((x) => x.id === v);
           if (p) onChange(fromPreset(p));
         }}
-      >
-        {live && (
-        <ToggleGroupItem value="live">
-          {/* 会呼吸的点。**它是这一档唯一的装饰**，而它说的是真的：
-              那条曲线确实在动 */}
-          <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-cache-hit" />
-          {t.live}
-        </ToggleGroupItem>
-        )}
-        {PRESETS.map((p) => (
-          <ToggleGroupItem key={p.id} value={p.id}>
-            {t.preset[p.id]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      />
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

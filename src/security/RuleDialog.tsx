@@ -13,6 +13,7 @@ import {
 import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { Segmented } from "@/ui/segmented";
 import { Textarea } from "@/ui/textarea";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -58,6 +59,40 @@ function Field({
       {children}
       {hint && <p className="tw-label text-muted-foreground">{hint}</p>}
     </div>
+  );
+}
+
+/**
+ * 拦截档下做什么：切断，还是只记录。**自定义规则和内置规则用同一个** ——
+ * 内置规则提供的只是一条正则，命中之后怎么处置和自定义规则一样由用户定。
+ */
+function ActionField({
+  value,
+  onChange,
+  factory,
+}: {
+  value: Action;
+  onChange: (a: Action) => void;
+  /** 内置规则出厂时的处置。改过的话在下面说一句 */
+  factory?: Action | null;
+}) {
+  const t = useText(ruleDialogText);
+  const what = value === "cut" ? t.cutWhat : t.recordWhat;
+  return (
+    <Field
+      label={t.whenEnforced}
+      hint={factory && factory !== value ? what + t.factory(factory === "cut" ? t.cut : t.record) : what}
+    >
+      <Segmented<Action>
+        label={t.whenEnforced}
+        value={value}
+        options={[
+          { id: "cut", label: t.cut },
+          { id: "record", label: t.record },
+        ]}
+        onChange={onChange}
+      />
+    </Field>
   );
 }
 
@@ -209,24 +244,7 @@ export function RuleDialog({
             />
           </Field>
 
-          {guard === "inspect_tools" && (
-            <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t.whenEnforced}>
-              <span className="tw-body font-medium">{t.whenEnforced}</span>
-              {(["cut", "record"] as const).map((a) => (
-                <label key={a} className="flex items-center gap-2 tw-body">
-                  <input
-                    type="radio"
-                    name="rule-action"
-                    className="size-3.5 accent-foreground"
-                    checked={action === a}
-                    onChange={() => setAction(a)}
-                  />
-                  <span>{a === "cut" ? t.cut : t.record}</span>
-                  <span className="text-muted-foreground">{a === "cut" ? t.cutHint : t.recordHint}</span>
-                </label>
-              ))}
-            </div>
-          )}
+          {guard === "inspect_tools" && <ActionField value={action} onChange={setAction} />}
 
           <Field label={t.sample} htmlFor="rule-sample">
             <Textarea
@@ -269,19 +287,38 @@ export function BuiltinRuleDialog({
   rule,
   onClose,
   onCopy,
+  onSaveAction,
 }: {
   guard: Guard;
   rule: SecurityRuleView;
   onClose: () => void;
   onCopy: () => void;
+  /** 改拦截时的处置。只有工具调用审查的规则有 */
+  onSaveAction: (a: Action) => Promise<void>;
 }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
   const common = useText(commonText);
   const [sample, setSample] = useState("");
+  const [action, setAction] = useState<Action>((rule.action as Action | null | undefined) ?? "record");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const trial = useTrial(guard, sample, { rule: rule.id });
   const why = ruleWhy(rule);
   const regex = rule.matcher.kind === "regex" ? rule.matcher.pattern : null;
+  const tools = guard === "inspect_tools";
+  const changed = tools && action !== (rule.action ?? "record");
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSaveAction(action);
+    } catch (e) {
+      setError(errorText(e));
+      setSaving(false);
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -307,15 +344,11 @@ export function BuiltinRuleDialog({
             </div>
           </Field>
 
+          {tools && (
+            <ActionField value={action} onChange={setAction} factory={rule.default_action ?? null} />
+          )}
+
           <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-y-1 tw-body">
-            {guard === "inspect_tools" && (
-              <>
-                <dt className="text-muted-foreground">{t.whenEnforced}</dt>
-                <dd className={rule.action === "cut" ? "text-destructive" : undefined}>
-                  {lt.ruleActions[rule.action ?? "record"]}
-                </dd>
-              </>
-            )}
             <dt className="text-muted-foreground">{t.state}</dt>
             <dd>{rule.enabled ? t.on : t.off}</dd>
           </dl>
@@ -329,9 +362,11 @@ export function BuiltinRuleDialog({
               placeholder={t.samplePlaceholder[guard]}
               onChange={(e) => setSample(e.target.value)}
             />
-            <TrialBox trial={trial} sample={sample} guard={guard} />
+            <TrialBox trial={trial} sample={sample} guard={guard} action={tools ? action : undefined} />
           </Field>
         </div>
+
+        {error && <p className="tw-body text-destructive">{error}</p>}
 
         <DialogFooter className="items-center sm:justify-between">
           {regex != null ? (
@@ -342,7 +377,19 @@ export function BuiltinRuleDialog({
           ) : (
             <span />
           )}
-          <Button onClick={onClose}>{common.close}</Button>
+          {tools ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose}>
+                {common.cancel}
+              </Button>
+              <Button onClick={() => void save()} disabled={saving || !changed}>
+                {saving && <Spinner />}
+                {common.save}
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={onClose}>{common.close}</Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

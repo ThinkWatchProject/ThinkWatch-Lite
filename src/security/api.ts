@@ -47,6 +47,13 @@ export const api = {
       id,
       save: { enabled, base_version: baseVersion ?? undefined },
     }),
+  /** 一条内置规则在拦截档下做什么。只有工具调用审查的规则有这一项 */
+  setAction: (id: string, action: "cut" | "record", baseVersion: Base) =>
+    invoke<ConfigWritten>("set_security_rule_action", {
+      guard: "inspect_tools",
+      id,
+      save: { action, base_version: baseVersion ?? undefined },
+    }),
   createRule: (guard: Guard, save: CustomRuleSave) =>
     invoke<ConfigWritten>("create_security_rule", { guard, save }),
   updateRule: (guard: Guard, name: string, save: CustomRuleSave) =>

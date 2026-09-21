@@ -1539,6 +1539,7 @@ pub fn run() {
             security::security_events,
             security::set_security_mode,
             security::toggle_security_rule,
+            security::set_security_rule_action,
             security::create_security_rule,
             security::update_security_rule,
             security::delete_security_rule,

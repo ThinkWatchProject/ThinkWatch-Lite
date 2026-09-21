@@ -10,7 +10,7 @@ import { compact, densify } from "./format";
 import { usd, type Dashboard as Data, type Guard, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { RangePicker, bucketFor, useRange, windowStart, type Range } from "@/ui/range";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
@@ -362,16 +362,14 @@ export default function Dashboard({
    * 补一条 `request_priced`，所以金额也是推过来的，只比用量晚一拍。
    */
   const metric = (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
+    <Segmented<"token" | "cost">
       value={by}
-      onValueChange={(v) => v && setBy(v as "token" | "cost")}
-    >
-      <ToggleGroupItem value="token">{t.byTokens}</ToggleGroupItem>
-      <ToggleGroupItem value="cost">{t.byCost}</ToggleGroupItem>
-    </ToggleGroup>
+      options={[
+        { id: "token", label: t.byTokens },
+        { id: "cost", label: t.byCost },
+      ]}
+      onChange={setBy}
+    />
   );
 
   if (error) {

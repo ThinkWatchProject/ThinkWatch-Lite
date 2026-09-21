@@ -1352,6 +1352,8 @@ export interface SecurityRuleView {
   on_by_default: boolean;
   /** 工具调用审查：拦截档下做什么 */
   action?: "cut" | "record" | null;
+  /** 内置的工具调用规则出厂时拦截档下做什么。和 `action` 不一样就是改过 */
+  default_action?: "cut" | "record" | null;
 }
 
 export interface GuardDetail {

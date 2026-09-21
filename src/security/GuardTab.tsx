@@ -5,7 +5,7 @@ import { Button } from "@/ui/button";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Switch } from "@/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { Guard, GuardDetail, SecurityRuleView } from "@/types";
@@ -61,21 +61,13 @@ export function GuardTab({
         <div className="flex flex-wrap items-center gap-3">
           <p className="tw-body font-medium">{copy.lead}</p>
           <div className="flex-1" />
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
+          <Segmented<Mode>
+            label={t.modeFor(lt.guards[guard])}
             value={mode}
             disabled={busy}
-            aria-label={t.modeFor(lt.guards[guard])}
-            onValueChange={(v) => v && v !== mode && actions.mode(v as Mode)}
-          >
-            {MODES.map((m) => (
-              <ToggleGroupItem key={m} value={m}>
-                {lt.modes[m]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            options={MODES.map((m) => ({ id: m, label: lt.modes[m] }))}
+            onChange={(v) => v !== mode && actions.mode(v)}
+          />
         </div>
         <p className="mt-2 tw-body">{copy.now[mode]}</p>
         <p className="mt-0.5 tw-label text-muted-foreground">
@@ -136,13 +128,14 @@ function useMenu(guard: Guard, actions: RuleActions) {
           { kind: "sep" },
           { kind: "item", label: common.delete, onSelect: () => actions.remove(r), danger: true },
         ]
-      : [
-          { kind: "item", label: t.view, onSelect: () => actions.open(r) },
-          // 出站脱敏的内置规则不是一条正则，复制过去写不出等价的写法
-          ...(guard === "inspect_tools"
-            ? [{ kind: "item" as const, label: t.copyAsCustom, onSelect: () => actions.copy(r) }]
-            : []),
-        ];
+      : guard === "inspect_tools"
+        ? [
+            // 内置的工具调用规则能改拦截时的处置，所以是「编辑」不是「查看」
+            { kind: "item", label: common.edit, onSelect: () => actions.open(r) },
+            { kind: "item", label: t.copyAsCustom, onSelect: () => actions.copy(r) },
+          ]
+        : // 出站脱敏的内置规则只能启停，也不是一条正则，复制不出等价的写法
+          [{ kind: "item", label: t.view, onSelect: () => actions.open(r) }];
 }
 
 /** 按顺序把规则分成几段，每段一个标题。core 给的顺序就是界面的顺序 */
