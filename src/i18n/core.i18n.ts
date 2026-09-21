@@ -162,6 +162,9 @@ const ZH: Record<string, Say> = {
   "l1.http_proxy.connect_rejected": (a) =>
     `代理拒绝了 CONNECT 请求（HTTP ${a.status}）：${a.line}`,
 
+  // ── lite：桌面版自己说的。core 停了，没法再替那些请求说话 ─────────
+  "lite.core_stopped": () => "core 在请求完成前停止运行，请求已中断。",
+
   // ── gw：网关的数据面。这些话同时发给 AI 客户端和界面 ──────────────
   "gw.internal": () => "请求被网关内部的错误中断。",
   "gw.overloaded": (a) => a.detail ?? "",

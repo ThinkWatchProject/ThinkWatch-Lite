@@ -4,10 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { textOf } from "@/i18n";
 import {
   applyEvent,
+  applyInFlight,
+  interruptInFlight,
   type CoreEvent,
   type HistoryRow,
   type RequestRow,
   type ScanFinding,
+  type SeenSince,
 } from "./types";
 import { requestsText } from "./useRequests.i18n";
 
@@ -226,6 +229,17 @@ export function useRequests() {
   }, [settled, pull]);
 
   useEffect(() => {
+    /** 超出上限时按 id 顺序丢最老的，再交给界面 */
+    const publish = () => {
+      if (store.current.size > MAX_ROWS) {
+        const ids = [...store.current.keys()].sort((a, b) => a - b);
+        for (const id of ids.slice(0, store.current.size - MAX_ROWS)) {
+          store.current.delete(id);
+        }
+      }
+      setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+    };
+
     const flush = () => {
       frame.current = null;
       if (pending.current.length === 0) return;
@@ -257,14 +271,7 @@ export function useRequests() {
         applyEvent(store.current, ev);
       }
       if (local > 0) setLocallyAnswered((n) => n + local);
-      // 超出上限时按 id 顺序丢最老的
-      if (store.current.size > MAX_ROWS) {
-        const ids = [...store.current.keys()].sort((a, b) => a - b);
-        for (const id of ids.slice(0, store.current.size - MAX_ROWS)) {
-          store.current.delete(id);
-        }
-      }
-      setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+      publish();
       // 落地一批就发一次「可以重算聚合了」。**已经排上的不再往后推**
       if (landed && !settle.current) {
         settle.current = setTimeout(() => {
@@ -278,15 +285,73 @@ export function useRequests() {
       if (frame.current === null) frame.current = requestAnimationFrame(flush);
     };
 
+    /*
+      **开窗之前就开始了的请求，事件流不会再说一遍。**关窗时窗口是被销毁的，
+      重开时这个 hook 是全新的：那时正在跑的请求既不在库里（还没结束），也
+      没有开始事件可听，要等它结束、落库、对账之后才以「已完成」出现 ——
+      跑着的那段时间，列表上没有它。
+
+      所以挂上之后问 core 要一份「此刻还在跑的」（`resync`），补成「进行中」
+      的行；core 重启回来再问一次。快照在路上时事件流上见到的开始和结局记
+      在 `since` 里，快照到了再合（见 `applyInFlight`）。**按到达的顺序记**，
+      不等下一帧落地：排在缓冲里的那条结局也算「已经见到了」。
+    */
+    let alive = true;
+    let since: SeenSince | null = null;
     const un = listen<CoreEvent>("core-event", (e) => {
-      pending.current.push(e.payload);
+      const ev = e.payload;
+      if (since) {
+        if (ev.kind === "request_started") since.started.add(ev.id);
+        else if (
+          ev.kind === "request_finished" ||
+          ev.kind === "request_failed" ||
+          ev.kind === "request_cancelled"
+        )
+          since.ended.add(ev.id);
+      }
+      pending.current.push(ev);
       schedule();
+    });
+    const resync = async () => {
+      const mark: SeenSince = { started: new Set(), ended: new Set() };
+      since = mark;
+      try {
+        // **等订阅真的挂上再问**：`listen` 是异步注册的，先问的话，快照和
+        // 订阅之间结束的请求，结局谁都没收到
+        await un;
+        const open = await invoke<CoreEvent[]>("in_flight_requests");
+        // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
+        if (!alive || since !== mark) return;
+        if (applyInFlight(store.current, open, mark)) publish();
+      } catch {
+        // 问不到就和以前一样：等它们结束、落库之后对账时出现
+      } finally {
+        if (since === mark) since = null;
+      }
+    };
+    void resync();
+    /*
+      **core 不在跑，就没有请求在跑。**它一停，正在跑的那些就断了，而且
+      再也等不到结局（见 `interruptInFlight`）。回来的时候（`running:<pid>`）
+      再对一次账，补上重连之前就开始了的。
+    */
+    const unState = listen<string>("core-state", (e) => {
+      if (e.payload.startsWith("running")) {
+        void resync();
+        return;
+      }
+      since = null;
+      // 先把缓冲里的事件落下去：结局已经到了的，别被记成中断
+      flush();
+      if (interruptInFlight(store.current)) publish();
     });
 
     // 窗口不可见时不必再排帧 —— 后台标签页的 rAF 本来就会被节流，
     // 但显式断掉能省下事件堆积。
     return () => {
+      alive = false;
       un.then((f) => f());
+      void unState.then((f) => f());
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (settle.current) clearTimeout(settle.current);
     };

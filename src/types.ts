@@ -410,6 +410,69 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
   }
 }
 
+/**
+ * 快照在路上的时候，事件流上见到了什么。
+ *
+ * core 的快照是某一刻拍下的，到这边时已经晚了一截：这中间开始的它没有，
+ * 这中间结束的它还有。从问出去的那一刻起把两样都记下，快照到了才合得对。
+ */
+export interface SeenSince {
+  started: Set<number>;
+  ended: Set<number>;
+}
+
+/**
+ * 把 core 的「此刻还在跑的」快照（`in_flight_requests`）补成「进行中」的行。
+ * 返回有没有改动。
+ *
+ * **只补事件流没给的。**中途结束的不补 —— 补进去就是一行永远等不到结局的
+ * 「进行中」；中途开始的、已经在跑的也不补 —— 那一行事件流已经建了，开始
+ * 事件再套一遍会把已经到了的响应头冲掉。
+ *
+ * 同一个 id 已经有一行、但它不在跑：那是上一次 core 留下的（见
+ * `interruptInFlight`）。core 重启后接着库里最大的号往下发，而没落库的
+ * 那些号会被重新用上 —— 新的请求顶掉旧的那行。
+ */
+export function applyInFlight(
+  rows: Map<number, RequestRow>,
+  open: CoreEvent[],
+  seen: SeenSince,
+): boolean {
+  let changed = false;
+  for (const ev of open) {
+    if (ev.kind !== "request_started") continue;
+    if (seen.ended.has(ev.id) || seen.started.has(ev.id)) continue;
+    if (rows.get(ev.id)?.state === "in_flight") continue;
+    applyEvent(rows, ev);
+    changed = true;
+  }
+  return changed;
+}
+
+/** core 停下时还没结束的请求，那一行上写的话。中文见 `core.i18n.ts` */
+export const CORE_STOPPED: Msg = {
+  code: "lite.core_stopped",
+  text: "The core stopped before the request finished, so the request was cut off.",
+};
+
+/**
+ * core 停了：还在「进行中」的行再也等不到结局。返回有没有改动。
+ *
+ * **记成失败，写明原因。**core 一停，这些连接就断了，客户端那边收到的也
+ * 是一个错误；而它们不会落库 —— 结局没来，存储层那一行永远不写。留着
+ * 「进行中」的话，它们会一直转下去。
+ */
+export function interruptInFlight(rows: Map<number, RequestRow>): boolean {
+  let changed = false;
+  for (const r of rows.values()) {
+    if (r.state !== "in_flight") continue;
+    r.state = "failed";
+    r.error = CORE_STOPPED;
+    changed = true;
+  }
+  return changed;
+}
+
 /** 模型清单的结果。空列表不足以表达三种不同的情况 —— 见 Rust 侧的注释。 */
 export type ModelList =
   | { kind: "listed"; models: string[] }
