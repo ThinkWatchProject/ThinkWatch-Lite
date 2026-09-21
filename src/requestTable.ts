@@ -21,6 +21,13 @@ export interface Filter {
   client: string;
   /** 限定某个上游。空串 = 不限 */
   provider: string;
+  /**
+   * 只看没算出金额的。
+   *
+   * **「无法计价」在概览上是一个数字，而它该是一个可以点进来的问题** ——
+   * 「533 条无法计价」告诉你有一批请求没进账，却不告诉你是哪些模型。
+   */
+  unpricedOnly: boolean;
 }
 
 export const EMPTY_FILTER: Filter = {
@@ -28,10 +35,17 @@ export const EMPTY_FILTER: Filter = {
   failedOnly: false,
   client: "",
   provider: "",
+  unpricedOnly: false,
 };
 
 export function hasAnyFilter(f: Filter): boolean {
-  return f.q !== "" || f.failedOnly || f.client !== "" || f.provider !== "";
+  return (
+    f.q !== "" ||
+    f.failedOnly ||
+    f.unpricedOnly ||
+    f.client !== "" ||
+    f.provider !== ""
+  );
 }
 
 function valueOf(r: RequestRow, key: SortKey): number | null {
@@ -84,6 +98,13 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
   const q = f.q.trim().toLowerCase();
   return rows.filter((r) => {
     if (f.failedOnly && r.state !== "failed") return false;
+    /*
+      **没算出金额，不等于金额是零。**跑完了、也报了用量，却没有单价
+      的那些才是「无法计价」；还在跑的和失败的没有金额是另一回事，
+      混进来会让「哪些模型该补价」这个问题答不出来。
+    */
+    if (f.unpricedOnly && (r.costMicros != null || r.state !== "done"))
+      return false;
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;
     if (!q) return true;
