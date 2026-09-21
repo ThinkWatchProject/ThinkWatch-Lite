@@ -275,9 +275,18 @@ impl ControlClient {
         )?)
     }
 
-    pub async fn history(&self, limit: usize) -> Result<Vec<tw_api::HistoryRow>> {
+    /// 最近的请求。`within` 给了就只看那一段。
+    ///
+    /// **不给不等于「今天」** —— 列表的默认答案是「最近 N 条」，缺省成
+    /// 今天的话过了零点这张表会空掉（core 那边同一条理由）。
+    pub async fn history(
+        &self,
+        limit: usize,
+        within: Option<(i64, i64)>,
+    ) -> Result<Vec<tw_api::HistoryRow>> {
         Ok(serde_json::from_slice(
-            &self.get(&format!("/history?limit={limit}")).await?,
+            &self.get(&format!("/history?limit={limit}{}", window_q(within)))
+                .await?,
         )?)
     }
 
@@ -383,8 +392,12 @@ impl ControlClient {
     }
 
     /// 会话列表。
-    pub async fn sessions(&self) -> Result<Vec<tw_api::SessionView>> {
-        Ok(serde_json::from_slice(&self.get("/sessions").await?)?)
+    pub async fn sessions(&self, within: Option<(i64, i64)>) -> Result<Vec<tw_api::SessionView>> {
+        Ok(serde_json::from_slice(
+            &self
+                .get(&format!("/sessions?limit=200{}", window_q(within)))
+                .await?,
+        )?)
     }
 
     /// 一次会话里的每一轮。
@@ -1052,5 +1065,13 @@ mod tests {
         }
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id(), 1);
+    }
+}
+
+/// 时间窗拼成 query。**两端都可缺** —— 只给起点就是「从那时起到现在」。
+fn window_q(within: Option<(i64, i64)>) -> String {
+    match within {
+        None => String::new(),
+        Some((from, to)) => format!("&from_ms={from}&to_ms={to}"),
     }
 }

@@ -102,14 +102,29 @@ export const LIVE_RANGE: Range = {
  *
  * 出厂停在实时档 —— 第一次打开时，「现在有没有在跑」比「过去一天用了
  * 多少」更是个问题。
+ *
+ * `key` 让每一页各记各的：概览看的是「今天花了多少」，流量翻的是
+ * 「上周二那阵子」—— 把两者绑在一起，去流量里查一次就会把概览也拨走。
  */
-const RANGE_KEY = "tw-range";
-
-export function useRange(): [Range, (r: Range) => void] {
+export function useRange(
+  key = "tw-range",
+  /**
+   * 没存过的时候停在哪一档。
+   *
+   * **概览停实时，流量不行** —— 实时是两分钟，一张请求表开局只剩两分钟
+   * 的内容，看起来像什么都没有。翻历史的页面该从一天起步。
+   */
+  fallback: "live" | "1d" | "7d" | "30d" = "live",
+): [Range, (r: Range) => void] {
   const [range, set] = useState<Range>(() => {
     try {
-      const raw = window.localStorage.getItem(RANGE_KEY);
-      if (!raw) return LIVE_RANGE;
+      const raw = window.localStorage.getItem(key);
+      const start = () => {
+        if (fallback === "live") return LIVE_RANGE;
+        const p = PRESETS.find((x) => x.id === fallback);
+        return p ? presetRange(p) : LIVE_RANGE;
+      };
+      if (!raw) return start();
       if (raw === "live") return LIVE_RANGE;
       const p = PRESETS.find((x) => x.id === raw);
       if (p) return presetRange(p);
@@ -121,7 +136,8 @@ export function useRange(): [Range, (r: Range) => void] {
     } catch {
       // 读不到就用默认的。**不能因为存不了偏好就让这一页打不开**
     }
-    return LIVE_RANGE;
+    const p = PRESETS.find((x) => x.id === fallback);
+    return fallback === "live" || !p ? LIVE_RANGE : presetRange(p);
   });
 
   const put = useCallback((r: Range) => {
@@ -132,11 +148,11 @@ export function useRange(): [Range, (r: Range) => void] {
         : r.custom
           ? `from:${new Date(Date.now() - r.ms).toISOString()}`
           : (PRESETS.find((x) => x.ms === r.ms)?.id ?? "");
-      if (id) window.localStorage.setItem(RANGE_KEY, id);
+      if (id) window.localStorage.setItem(key, id);
     } catch {
       // 存不下就只在这一程里记着
     }
-  }, []);
+  }, [key]);
 
   return [range, put];
 }
@@ -150,9 +166,12 @@ export function useRange(): [Range, (r: Range) => void] {
 export function RangePicker({
   value,
   onChange,
+  live = true,
 }: {
   value: Range;
   onChange: (r: Range) => void;
+  /** 显不显示实时档。**流量页不显示** —— 两分钟的一张表说明不了什么 */
+  live?: boolean;
 }) {
   const t = useText(rangeText);
   const [open, setOpen] = useState(false);
@@ -174,12 +193,14 @@ export function RangePicker({
           if (p) onChange(presetRange(p));
         }}
       >
+        {live && (
         <ToggleGroupItem value="live">
           {/* 会呼吸的点。**它是这一档唯一的装饰**，而它说的是真的：
               那条曲线确实在动 */}
           <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-cache-hit" />
           {t.live}
         </ToggleGroupItem>
+        )}
         {PRESETS.map((p) => (
           <ToggleGroupItem key={p.id} value={p.id}>
             {t.preset[p.id]}

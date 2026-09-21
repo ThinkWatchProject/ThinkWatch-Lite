@@ -32,6 +32,7 @@ import {
   IconServer,
   IconSettings,
 } from "./ui/icons";
+import { RangePicker, useRange } from "@/ui/range";
 import { RequestTable } from "./traffic/RequestTable";
 import { SessionPanel } from "./traffic/SessionPanel";
 import { useSessions } from "./traffic/useSessions";
@@ -245,6 +246,22 @@ function describeCore(raw: string): {
 export default function App() {
   const t = useText(appText);
   const common = useText(commonText);
+  /*
+    流量页自己的时间范围。**和概览各记各的** —— 概览看的是「今天花了
+    多少」，流量翻的是「上周二那阵子」；绑在一起的话，去流量里查一次
+    就会把概览也拨走。
+
+    默认 24 小时，不是实时：实时是两分钟，一张请求表开局只剩两分钟的
+    内容，看起来像什么都没有。
+  */
+  const [trafficRange, setTrafficRange] = useRange("tw-traffic-range", "1d");
+  const trafficWindow = useMemo(
+    () => ({ fromMs: Date.now() - trafficRange.ms, toMs: Date.now() }),
+    // 只随那一档变。**不能跟着 `Date.now()` 每次渲染都换** —— 那会让
+    // 历史每一帧都重拉一次
+    [trafficRange.ms],
+  );
+
   const {
     rows: allRows,
     seeded,
@@ -258,7 +275,7 @@ export default function App() {
     rotated,
     clearRotated,
     clearAlerts,
-  } = useRequests();
+  } = useRequests(trafficWindow);
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
   const [sortKey, setSortKey] = useState<SortKey>("time");
@@ -282,7 +299,7 @@ export default function App() {
   /** 右侧分栏里开着的那次会话。和 `open`（一条请求）互斥 */
   const [openSession, setOpenSession] = useState<string | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
-  const sessions = useSessions();
+  const sessions = useSessions(trafficWindow);
   const rows = useMemo(
     () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
     [allRows, filter, sortKey, sortDir],
@@ -1281,6 +1298,19 @@ export default function App() {
                         >
                           {t.groupBySession}
                         </Toggle>
+                        {/*
+                          时间范围靠右。**它管的是这一页取哪一段**，和
+                          左边那几个「在取到的里面再挑」不是一回事 ——
+                          并排成一串同样的控件，读起来就是一排平级选项。
+                          不给实时档：两分钟的一张表说明不了什么。
+                        */}
+                        <div className="ml-auto">
+                          <RangePicker
+                            value={trafficRange}
+                            onChange={setTrafficRange}
+                            live={false}
+                          />
+                        </div>
                         {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
                         {facet.clients.length > 1 && (
