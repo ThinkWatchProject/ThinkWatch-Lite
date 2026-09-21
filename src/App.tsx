@@ -3,7 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
-import { bucketStart, latency, money, repeated, statusTone, tokens, when } from "./format";
+import {
+  bucketStart,
+  latency,
+  money,
+  repeated,
+  statusTone,
+  tokens,
+  when,
+} from "./format";
 import {
   EMPTY_FILTER,
   facets,
@@ -29,7 +37,6 @@ import {
   IconGateway,
   IconGuard,
   IconRoute,
-  IconSession,
   IconServer,
   IconSettings,
 } from "./ui/icons";
@@ -48,11 +55,18 @@ import { cn } from "@/lib/utils";
 import { Toggle } from "@/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import type { LucideIcon } from "lucide-react";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import Connect, { trouble } from "./Connect";
 import { Skeleton } from "@/ui/skeleton";
 import { coreText, ruleWhy } from "@/i18n/core.i18n";
@@ -161,8 +175,10 @@ const SOURCES: {
       // 的是「刚才那一条发生了什么」—— 前者是打开这个应用的默认意图，
       // 后者是带着问题来的时候才点。
       { id: "dashboard", icon: IconDashboard },
+      // **会话不是第三项，是「流量」的第二种粒度。**同一批数据，一个
+      // 按请求看，一个按一次对话看 —— 分成两个导航项时，用户得先决定
+      // 「我要看的是请求还是会话」，而他想知道的其实是「刚才发生了什么」
       { id: "requests", icon: IconFlow },
-      { id: "sessions", icon: IconSession },
     ],
   },
   {
@@ -218,11 +234,17 @@ function describeCore(raw: string): {
   tone: "ok" | "warn" | "bad";
 } {
   const t = textOf(appText);
-  if (raw.startsWith("running:")) return { text: t.running, short: t.running, tone: "ok" };
-  if (raw === "starting") return { text: t.starting, short: t.starting, tone: "warn" };
+  if (raw.startsWith("running:"))
+    return { text: t.running, short: t.running, tone: "ok" };
+  if (raw === "starting")
+    return { text: t.starting, short: t.starting, tone: "warn" };
   if (raw.startsWith("restarting:")) {
     const [, attempt] = raw.split(":");
-    return { text: t.restarting(`${attempt}`), short: t.restartingShort, tone: "warn" };
+    return {
+      text: t.restarting(`${attempt}`),
+      short: t.restartingShort,
+      tone: "warn",
+    };
   }
   // 安全模式必须显眼：这时候网关不转发了，用户所有的 AI 客户端都在瞎。
   if (raw === "safe_mode")
@@ -254,7 +276,9 @@ function Th({
         size="xs"
         className="-mx-1 px-1"
         onClick={() => on(k)}
-        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+        aria-sort={
+          active ? (dir === "asc" ? "ascending" : "descending") : "none"
+        }
       >
         <span className={cn(active && "text-foreground")}>{label}</span>
         <span className="ml-0.5 inline-block w-2 tw-label">
@@ -279,7 +303,10 @@ function BodySkeleton({ widths }: { widths: string[] }) {
   return (
     <TableBody>
       {Array.from({ length: 6 }, (_, row) => (
-        <TableRow key={row} className="border-b border-neutral-100 dark:border-neutral-900">
+        <TableRow
+          key={row}
+          className="border-b border-neutral-100 dark:border-neutral-900"
+        >
           {widths.map((w, col) => (
             <TableCell key={col}>
               <Skeleton className={cn("h-3", w)} />
@@ -439,7 +466,9 @@ export default function App() {
   // 「保存」还看着「还没有上游」，会以为没生效（和那条一样的理由）。
   const [nudge, setNudge] = useState(0);
   /** 配置文件对话框。`focus`：打开时选中的名字 */
-  const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(null);
+  const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(
+    null,
+  );
   const [historyOpen, setHistoryOpen] = useState(false);
 
   /**
@@ -514,7 +543,9 @@ export default function App() {
     const go = (view: string | null) => {
       if (view) setTab(view as Surface);
     };
-    void invoke<string | null>("take_pending_view").then(go).catch(() => {});
+    void invoke<string | null>("take_pending_view")
+      .then(go)
+      .catch(() => {});
     const un = listen<string>("open-view", (e) => {
       go(e.payload);
       void invoke("take_pending_view").catch(() => {});
@@ -679,7 +710,10 @@ export default function App() {
         n += 1;
         setTries(n);
         if (n <= MAX_TRIES) {
-          timer = setTimeout(() => void read(), Math.min(1600, 200 * 2 ** Math.min(n - 1, 3)));
+          timer = setTimeout(
+            () => void read(),
+            Math.min(1600, 200 * 2 ** Math.min(n - 1, 3)),
+          );
         }
         // 到上限就停手，**不再重试** —— 再试下去就是轮询了。守护状态
         // 一变这个 effect 会重跑，那才是它该被叫醒的时机。
@@ -717,22 +751,22 @@ export default function App() {
 
   return (
     <TooltipRoot>
-    <SidebarProvider
-      open={railOpen}
-      onOpenChange={setRailOpen}
-      className="h-screen min-h-0 text-foreground"
-      style={
-        {
-          background: "var(--chrome-ground)",
-          // 覆盖掉 shadcn 的 16rem / 3rem，理由见下面那段注释
-          "--sidebar-width": "196px",
-          "--sidebar-width-icon": "80px",
-          "--sidebar": "var(--chrome-rail)",
-          "--sidebar-border": "var(--chrome-hair)",
-        } as React.CSSProperties
-      }
-    >
-      {/*
+      <SidebarProvider
+        open={railOpen}
+        onOpenChange={setRailOpen}
+        className="h-screen min-h-0 text-foreground"
+        style={
+          {
+            background: "var(--chrome-ground)",
+            // 覆盖掉 shadcn 的 16rem / 3rem，理由见下面那段注释
+            "--sidebar-width": "196px",
+            "--sidebar-width-icon": "80px",
+            "--sidebar": "var(--chrome-rail)",
+            "--sidebar-border": "var(--chrome-hair)",
+          } as React.CSSProperties
+        }
+      >
+        {/*
         源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
         内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。所以
         `data-tauri-drag-region` 要一路传到 `Sidebar` 上。
@@ -751,117 +785,131 @@ export default function App() {
         开合状态仍然自己管(localStorage),没用 `SidebarProvider` 默认的
         cookie —— 这是个本地应用,没有服务端要读它。
       */}
-      <Sidebar
-        collapsible="icon"
-        /* 线用源列表自己那支（带一点冷调），不是内容区的通用 --border */
-        className="border-r border-sidebar-border"
-        style={{ background: "var(--chrome-rail)", color: "var(--chrome-text)" }}
-        data-tauri-drag-region
-      >
-        {/* 红绿灯占掉左上角,内容从它下面开始 */}
-        <SidebarHeader className="h-[38px] p-0" data-tauri-drag-region />
+        <Sidebar
+          collapsible="icon"
+          /* 线用源列表自己那支（带一点冷调），不是内容区的通用 --border */
+          className="border-r border-sidebar-border"
+          style={{
+            background: "var(--chrome-rail)",
+            color: "var(--chrome-text)",
+          }}
+          data-tauri-drag-region
+        >
+          {/* 红绿灯占掉左上角,内容从它下面开始 */}
+          <SidebarHeader className="h-[38px] p-0" data-tauri-drag-region />
 
-        <SidebarContent>
-          {SOURCES.map((g, gi) => (
-            <SidebarGroup key={g.group} className="py-0">
-              {/*
+          <SidebarContent>
+            {SOURCES.map((g, gi) => (
+              <SidebarGroup key={g.group} className="py-0">
+                {/*
                 **没有分组标题,只有细分隔线。**四个标题原本吃掉列表约三分
                 之一的高度,而它们说的事情分隔线也说得出:这两项和上面那两
                 项不一样。代价是分组的**名字**没了 —— 认下这笔,换来整列读
                 起来是一个对象,而不是四个小区块。
               */}
-              {gi > 0 && <SidebarSeparator className="my-[11px]" />}
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {g.items.map((it) => {
-                    const on = tab === it.id;
-                    // 配置面上出现了新东西 —— 挂个角标,直到他去看过
-                    const badge = it.id === "security" ? alerts.length : 0;
-                    const Icon = it.icon;
-                    const label = t.surfaces[it.id];
-                    return (
-                      <SidebarMenuItem key={it.id}>
-                        <SidebarMenuButton
-                          isActive={on}
-                          onClick={() => setTab(it.id)}
-                          aria-current={on ? "page" : undefined}
-                          tooltip={
-                            badge > 0 ? t.newFindings(label, badge) : label
-                          }
-                        >
-                          <Icon size={16} />
-                          <span className="truncate">{label}</span>
-                        </SidebarMenuButton>
-                        {badge > 0 && (
-                          <SidebarMenuBadge className="bg-red-500 text-white group-data-[collapsible=icon]:hidden">
-                            {badge}
-                          </SidebarMenuBadge>
-                        )}
-                        {/*
+                {gi > 0 && <SidebarSeparator className="my-[11px]" />}
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {g.items.map((it) => {
+                      const on = tab === it.id;
+                      // 配置面上出现了新东西 —— 挂个角标,直到他去看过
+                      const badge = it.id === "security" ? alerts.length : 0;
+                      const Icon = it.icon;
+                      const label = t.surfaces[it.id];
+                      return (
+                        <SidebarMenuItem key={it.id}>
+                          <SidebarMenuButton
+                            isActive={on}
+                            onClick={() => setTab(it.id)}
+                            aria-current={on ? "page" : undefined}
+                            tooltip={
+                              badge > 0 ? t.newFindings(label, badge) : label
+                            }
+                          >
+                            <Icon size={16} />
+                            <span className="truncate">{label}</span>
+                          </SidebarMenuButton>
+                          {badge > 0 && (
+                            <SidebarMenuBadge className="bg-red-500 text-white group-data-[collapsible=icon]:hidden">
+                              {badge}
+                            </SidebarMenuBadge>
+                          )}
+                          {/*
                           收起时数字塞不下,只留一个点 —— 它要回答的是
                           「那边有没有新东西」,几条可以点进去再看。
                         */}
-                        {badge > 0 && (
-                          <span
-                            className="pointer-events-none absolute right-[7px] top-[7px] hidden h-[7px] w-[7px] rounded-full bg-red-500 group-data-[collapsible=icon]:block"
-                            style={{ boxShadow: "0 0 0 2px var(--chrome-rail)" }}
-                          />
-                        )}
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
-        </SidebarContent>
+                          {badge > 0 && (
+                            <span
+                              className="pointer-events-none absolute right-[7px] top-[7px] hidden h-[7px] w-[7px] rounded-full bg-red-500 group-data-[collapsible=icon]:block"
+                              style={{
+                                boxShadow: "0 0 0 2px var(--chrome-rail)",
+                              }}
+                            />
+                          )}
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
+          </SidebarContent>
 
-        {/*
+          {/*
           状态钉在源列表底部,不在标题栏。
           **它要一直看得见** —— core 挂了是这个应用唯一「什么都不工作」
           的状态,而标题栏那一行会被内容顶掉。
         */}
-        <SidebarFooter className="border-t" style={{ borderColor: "var(--chrome-hair)" }}>
-          <Tip
-            side="right"
-            text={status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text}
+          <SidebarFooter
+            className="border-t"
+            style={{ borderColor: "var(--chrome-hair)" }}
           >
-            <div
-              className={
-                "flex items-center gap-1.5 tw-label " +
-                (c.tone === "ok"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : c.tone === "warn"
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-red-600 dark:text-red-400")
+            <Tip
+              side="right"
+              text={
+                status?.gateway_addr
+                  ? `${c.text} · ${status.gateway_addr}`
+                  : c.text
               }
             >
-              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-              {/* 展开时写全,收起时 80px 也放得下「运行中」四个字 */}
-              <span className="group-data-[collapsible=icon]:hidden">{c.text}</span>
-              <span className="hidden group-data-[collapsible=icon]:inline">
-                {c.short}
-              </span>
-            </div>
-          </Tip>
-          {status?.gateway_addr && (
-            <code
-              className="block font-mono tw-label group-data-[collapsible=icon]:hidden"
-              style={{ color: "var(--chrome-dim)" }}
-            >
-              {status.gateway_addr}
-            </code>
-          )}
-        </SidebarFooter>
-      </Sidebar>
+              <div
+                className={
+                  "flex items-center gap-1.5 tw-label " +
+                  (c.tone === "ok"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : c.tone === "warn"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400")
+                }
+              >
+                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                {/* 展开时写全,收起时 80px 也放得下「运行中」四个字 */}
+                <span className="group-data-[collapsible=icon]:hidden">
+                  {c.text}
+                </span>
+                <span className="hidden group-data-[collapsible=icon]:inline">
+                  {c.short}
+                </span>
+              </div>
+            </Tip>
+            {status?.gateway_addr && (
+              <code
+                className="block font-mono tw-label group-data-[collapsible=icon]:hidden"
+                style={{ color: "var(--chrome-dim)" }}
+              >
+                {status.gateway_addr}
+              </code>
+            )}
+          </SidebarFooter>
+        </Sidebar>
 
-      {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
-      {/*
+        {/* 右侧:横幅 + 内容。只有这一列滚动,源列表不跟着滚 */}
+        {/*
         分栏时滚动交给两栏各自管，外层不能再滚 —— 否则是两层滚动条，
         而外面那层会把整个分栏一起推走。
       */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/*
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/*
           工具栏。整条是拖拽区,按钮不是 —— 拖拽区只作用在带那个属性的
           元素上,不带的子元素照常可点。
 
@@ -874,38 +922,38 @@ export default function App() {
           而放在内容这一侧,它在两种状态下都在同一个位置。系统应用
           （访达、邮件)也是这么放的。
         */}
-        <div
-          className="flex h-[38px] shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
-          data-tauri-drag-region
-        >
-          {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
-          <Tip
-            side="bottom"
-            text={
-              <>
-                {railOpen ? t.collapseRail : t.expandRail}
-                <KbdGroup>
-                  <Kbd>⌘</Kbd>
-                  <Kbd>⌥</Kbd>
-                  <Kbd>S</Kbd>
-                </KbdGroup>
-              </>
-            }
+          <div
+            className="flex h-[38px] shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
+            data-tauri-drag-region
           >
-            {/*
+            {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
+            <Tip
+              side="bottom"
+              text={
+                <>
+                  {railOpen ? t.collapseRail : t.expandRail}
+                  <KbdGroup>
+                    <Kbd>⌘</Kbd>
+                    <Kbd>⌥</Kbd>
+                    <Kbd>S</Kbd>
+                  </KbdGroup>
+                </>
+              }
+            >
+              {/*
               **不要给它 `aria-expanded`。**`ghost` 变体里有一条
               `aria-expanded:bg-muted` —— 那是给「下拉菜单正开着」用的。
               挂上去之后,源列表展开时这个按钮常驻一块底色,而悬停是
               `hover:bg-muted/50`,只有一半浓度:**看起来是反的**,碰上去
               反而比不碰暗。`SidebarTrigger` 不设这个属性。
             */}
-            <SidebarTrigger
-              aria-label={railOpen ? t.collapseRail : t.expandRail}
-              style={{ color: "var(--chrome-dim)" }}
-            />
-          </Tip>
+              <SidebarTrigger
+                aria-label={railOpen ? t.collapseRail : t.expandRail}
+                style={{ color: "var(--chrome-dim)" }}
+              />
+            </Tip>
 
-          {/*
+            {/*
             当前在哪一页。**收起源列表之后这是唯一的答案** —— 那时候
             列表里只剩图标,「我在哪」只能靠认图形。展开时它和列表里的
             高亮互相印证。
@@ -913,68 +961,76 @@ export default function App() {
             用 `tw-head` 不是 `tw-title`:它是位置指示,不是页面大标题,
             抢戏就变成两个标题打架。
           */}
-          <span
-            className="truncate tw-head"
-            style={{ color: "var(--chrome-text)" }}
-            data-tauri-drag-region
-          >
-            {t.surfaces[tab]}
-          </span>
-          {/*
+            <span
+              className="truncate tw-head"
+              style={{ color: "var(--chrome-text)" }}
+              data-tauri-drag-region
+            >
+              {t.surfaces[tab]}
+            </span>
+            {/*
             配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
             所以入口放在工具栏，而不是每页各放一套。
           */}
-          <div className="ml-auto flex items-center gap-1">
-            {linked && CONFIG_PAGES.has(tab) && (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
-                  {t.configFile}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                  {t.versionHistory}
-                </Button>
-              </>
-            )}
-            {/* 提醒在每一页都在：它说的事不属于任何一页 */}
-            <Notices onNavigate={(v) => setTab(v as Surface)} />
+            <div className="ml-auto flex items-center gap-1">
+              {linked && CONFIG_PAGES.has(tab) && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfigFile({ focus: null })}
+                  >
+                    {t.configFile}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setHistoryOpen(true)}
+                  >
+                    {t.versionHistory}
+                  </Button>
+                </>
+              )}
+              {/* 提醒在每一页都在：它说的事不属于任何一页 */}
+              <Notices onNavigate={(v) => setTab(v as Surface)} />
+            </div>
           </div>
-        </div>
 
-        {/*
+          {/*
           只有这一层滚。工具栏在它上面，钉住不动。
           分栏时滚动交给两栏各自管，这一层就不能再滚 —— 否则是两层
           滚动条，而外面那层会把整个分栏一起推走。
         */}
-        {/*
+          {/*
           工具栏之下这一层。**滚动不在这儿** —— 请求页交给 `Split`
           （分栏时两栏各滚各的），其余页面各自在自己的容器里滚。
           在这儿再加一层滚动就是两层滚动条。
         */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-
-      {/*
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/*
         配置没通过校验。**这条要一直挂着，直到下一次成功换入** ——
         一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
 
         第一句先说「还在按旧配置转发」，因为那是他最想知道的：会不会断。
       */}
-      {rejected && (
-        <Alert variant="warning" className="border-b px-5 py-2.5">
-          <AlertTitle>{t.rejectedTitle}</AlertTitle>
-          <AlertDescription>
-          <p className="mt-1 text-amber-800 dark:text-amber-300">
-            {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}{rejected.message}
-          </p>
-          {rejected.excerpt && (
-            <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 px-2 py-1 font-mono tw-label text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-              {rejected.line}│ {rejected.excerpt}
-            </pre>
-          )}
-        </AlertDescription>
-        </Alert>
-      )}
+            {rejected && (
+              <Alert variant="warning" className="border-b px-5 py-2.5">
+                <AlertTitle>{t.rejectedTitle}</AlertTitle>
+                <AlertDescription>
+                  <p className="mt-1 text-amber-800 dark:text-amber-300">
+                    {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}
+                    {rejected.message}
+                  </p>
+                  {rejected.excerpt && (
+                    <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 px-2 py-1 font-mono tw-label text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                      {rejected.line}│ {rejected.excerpt}
+                    </pre>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
 
-      {/*
+            {/*
         token 端点换发了新的 refresh token。
 
         **两种完全不同的话，长得也要不一样。**写回成功只是告知 ——
@@ -982,62 +1038,66 @@ export default function App() {
         他该知道是谁干的；写回失败是个必须处理的问题：重启之前不解决，
         那家上游就废了。
       */}
-      {rotated.map((r) =>
-        r.persisted ? (
-          <div
-            key={r.provider}
-            className="flex items-start justify-between gap-4 border-b border-border bg-neutral-50 px-5 py-2 tw-body dark:bg-neutral-900"
-          >
-            <p className="text-muted-foreground">
-              {t.rotatedSaved(
-                <span className="font-medium text-foreground">
-                  {r.provider}
-                </span>,
-              )}
-              <Tip text={t.reloadTip}>
-                <span className="ml-1 underline decoration-dotted underline-offset-2">{t.reload}</span>
-              </Tip>
-            </p>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="shrink-0"
-              onClick={clearRotated}
-            >
-              {common.close}
-            </Button>
-          </div>
-        ) : (
-          <div
-            key={r.provider}
-            className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 tw-body dark:border-amber-800 dark:bg-amber-950"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-medium text-amber-900 dark:text-amber-200">
-                  {t.rotatedUnsaved(r.provider)}
-                </p>
-                <p className="mt-1 text-amber-800 dark:text-amber-300">
-                  {r.detail}
-                </p>
-                <p className="mt-1 text-amber-800 dark:text-amber-300">
-                  {t.oldRevoked((s) => <span className="font-medium">{s}</span>)}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={clearRotated}
-              >
-                {common.close}
-              </Button>
-            </div>
-          </div>
-        ),
-      )}
+            {rotated.map((r) =>
+              r.persisted ? (
+                <div
+                  key={r.provider}
+                  className="flex items-start justify-between gap-4 border-b border-border bg-neutral-50 px-5 py-2 tw-body dark:bg-neutral-900"
+                >
+                  <p className="text-muted-foreground">
+                    {t.rotatedSaved(
+                      <span className="font-medium text-foreground">
+                        {r.provider}
+                      </span>,
+                    )}
+                    <Tip text={t.reloadTip}>
+                      <span className="ml-1 underline decoration-dotted underline-offset-2">
+                        {t.reload}
+                      </span>
+                    </Tip>
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="shrink-0"
+                    onClick={clearRotated}
+                  >
+                    {common.close}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  key={r.provider}
+                  className="border-b border-amber-300 bg-amber-50 px-5 py-2.5 tw-body dark:border-amber-800 dark:bg-amber-950"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-amber-900 dark:text-amber-200">
+                        {t.rotatedUnsaved(r.provider)}
+                      </p>
+                      <p className="mt-1 text-amber-800 dark:text-amber-300">
+                        {r.detail}
+                      </p>
+                      <p className="mt-1 text-amber-800 dark:text-amber-300">
+                        {t.oldRevoked((s) => (
+                          <span className="font-medium">{s}</span>
+                        ))}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={clearRotated}
+                    >
+                      {common.close}
+                    </Button>
+                  </div>
+                </div>
+              ),
+            )}
 
-      {/*
+            {/*
         断线重连。**不是 toast，也不清空页面。**
 
         用户本来在看数据，清空之后连「刚才是什么样」都没了；而 toast
@@ -1045,37 +1105,45 @@ export default function App() {
         起来还是新鲜的。一条常驻的带子两件事都解决：数字留着，旁边写着
         它们为什么不动了。
       */}
-      {linked && tries > 0 && lost && (
-        <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
-          <span className="font-medium text-amber-900 dark:text-amber-200">
-            {t.staleData(lost.what)}
-          </span>
-          <span className="text-amber-800 dark:text-amber-300">{lost.next}</span>
-          {lost.retry && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto shrink-0"
-              onClick={() => void invoke("restart_core").catch(() => setNudge((n) => n + 1))}
-            >
-              {t.restart}
-            </Button>
-          )}
-        </div>
-      )}
+            {linked && tries > 0 && lost && (
+              <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
+                <span className="font-medium text-amber-900 dark:text-amber-200">
+                  {t.staleData(lost.what)}
+                </span>
+                <span className="text-amber-800 dark:text-amber-300">
+                  {lost.next}
+                </span>
+                {lost.retry && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto shrink-0"
+                    onClick={() =>
+                      void invoke("restart_core").catch(() =>
+                        setNudge((n) => n + 1),
+                      )
+                    }
+                  >
+                    {t.restart}
+                  </Button>
+                )}
+              </div>
+            )}
 
-      {/*
+            {/*
         **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
         真正滚的是下面这个容器（请求页是 `Split` 里的两栏各滚各的）。
       */}
-      <div
-        className={
-          "flex min-h-0 flex-1 flex-col " +
-          // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
-          (tab === "requests" ? "overflow-hidden" : "overflow-y-auto")
-        }
-      >
-      {/*
+            <div
+              className={
+                "flex min-h-0 flex-1 flex-col " +
+                // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
+                (tab === "requests" || tab === "sessions"
+                  ? "overflow-hidden"
+                  : "overflow-y-auto")
+              }
+            >
+              {/*
         **这次会话还没连上过控制面 —— 整窗让给初始化面。**
         每一页的数据都来自那条 socket，连不上的时候后面确实没东西。
 
@@ -1084,395 +1152,526 @@ export default function App() {
         连接状态。**控制面一答应就立刻让开** —— 哪怕网关还没起来（安全
         模式下配置、回滚、还原接管都能用，那时绝不能再挡）。
       */}
-      {!linked ? (
-        <Connect state={core} tries={tries} />
-      ) : tab === "sessions" ? (
-        <Sessions />
-      ) : tab === "dashboard" ? (
-        <Dashboard tick={dashTick} ov={ov} />
-      ) : tab === "clients" ? (
-        <Clients />
-      ) : tab === "security" ? (
-        ov ? (
-          <Security
-            ov={ov}
-            configVersion={configVersion}
-            onChanged={() => setNudge((n) => n + 1)}
-            alerts={alerts}
-            onSeen={clearAlerts}
-          />
-        ) : (
-          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
-        )
-      ) : tab === "access" ? (
-        ov ? (
-          <AccessPage
-            ov={ov}
-            configVersion={configVersion}
-            onChanged={() => setNudge((n) => n + 1)}
-            onOpenConfigFile={(focus) => setConfigFile({ focus })}
-            onNavigate={(to) => setTab(to as Surface)}
-          />
-        ) : (
-          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
-        )
-      ) : tab === "routing" ? (
-        ov ? (
-          <RoutingPage
-            ov={ov}
-            configVersion={configVersion}
-            onChanged={() => setNudge((n) => n + 1)}
-            onOpenConfigFile={(focus) => setConfigFile({ focus })}
-            onNavigate={(to) => setTab(to as Surface)}
-          />
-        ) : (
-          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
-        )
-      ) : tab === "upstreams" ? (
-        ov ? (
-          <UpstreamsPage
-            ov={ov}
-            configVersion={configVersion}
-            onChanged={() => setNudge((n) => n + 1)}
-            onOpenConfigFile={(focus) => setConfigFile({ focus })}
-            onNavigate={(to) => setTab(to as Surface)}
-          />
-        ) : (
-          <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
-        )
-      ) : tab === "settings" ? (
-        <Config />
-      ) : (
-      <Split
-        split={split}
-        layout={splitLayout}
-        onLayout={(l) => {
-          try {
-            window.localStorage.setItem("tw-split", JSON.stringify(l));
-          } catch {
-            // 隐私模式之类。记不住而已，不值得为它中断
-          }
-        }}
-        detail={
-          split && open != null ? (
-            <RequestDrawer id={open} onClose={() => setOpen(null)} inline />
-          ) : null
-        }
-      >
-        {/*
+              {!linked ? (
+                <Connect state={core} tries={tries} />
+              ) : tab === "sessions" ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <TrafficTabs value="sessions" onChange={setTab} />
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    <Sessions />
+                  </div>
+                </div>
+              ) : tab === "dashboard" ? (
+                <Dashboard tick={dashTick} ov={ov} />
+              ) : tab === "clients" ? (
+                <Clients />
+              ) : tab === "security" ? (
+                ov ? (
+                  <Security
+                    ov={ov}
+                    configVersion={configVersion}
+                    onChanged={() => setNudge((n) => n + 1)}
+                    alerts={alerts}
+                    onSeen={clearAlerts}
+                  />
+                ) : (
+                  <p className="p-5 tw-body text-muted-foreground">
+                    {t.loadingConfig}
+                  </p>
+                )
+              ) : tab === "access" ? (
+                ov ? (
+                  <AccessPage
+                    ov={ov}
+                    configVersion={configVersion}
+                    onChanged={() => setNudge((n) => n + 1)}
+                    onOpenConfigFile={(focus) => setConfigFile({ focus })}
+                    onNavigate={(to) => setTab(to as Surface)}
+                  />
+                ) : (
+                  <p className="p-5 tw-body text-muted-foreground">
+                    {t.loadingConfig}
+                  </p>
+                )
+              ) : tab === "routing" ? (
+                ov ? (
+                  <RoutingPage
+                    ov={ov}
+                    configVersion={configVersion}
+                    onChanged={() => setNudge((n) => n + 1)}
+                    onOpenConfigFile={(focus) => setConfigFile({ focus })}
+                    onNavigate={(to) => setTab(to as Surface)}
+                  />
+                ) : (
+                  <p className="p-5 tw-body text-muted-foreground">
+                    {t.loadingConfig}
+                  </p>
+                )
+              ) : tab === "upstreams" ? (
+                ov ? (
+                  <UpstreamsPage
+                    ov={ov}
+                    configVersion={configVersion}
+                    onChanged={() => setNudge((n) => n + 1)}
+                    onOpenConfigFile={(focus) => setConfigFile({ focus })}
+                    onNavigate={(to) => setTab(to as Surface)}
+                  />
+                ) : (
+                  <p className="p-5 tw-body text-muted-foreground">
+                    {t.loadingConfig}
+                  </p>
+                )
+              ) : tab === "settings" ? (
+                <Config />
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <TrafficTabs value="requests" onChange={setTab} />
+                  <Split
+                    split={split}
+                    layout={splitLayout}
+                    onLayout={(l) => {
+                      try {
+                        window.localStorage.setItem(
+                          "tw-split",
+                          JSON.stringify(l),
+                        );
+                      } catch {
+                        // 隐私模式之类。记不住而已，不值得为它中断
+                      }
+                    }}
+                    detail={
+                      split && open != null ? (
+                        <RequestDrawer
+                          id={open}
+                          onClose={() => setOpen(null)}
+                          inline
+                        />
+                      ) : null
+                    }
+                  >
+                    {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
         */}
-        {allRows.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Input
-              className="w-64"
-              ref={searchRef}
-              value={filter.q}
-              onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-              placeholder={t.search}
-              spellCheck={false}
-            />
-            {/* 这是个开关,不是按钮 —— 按下去它要一直保持按下的样子 */}
-            <Toggle
-              variant="outline"
-              size="sm"
-              pressed={filter.failedOnly}
-              onPressedChange={(v) => setFilter((f) => ({ ...f, failedOnly: v }))}
-            >
-              {t.failedOnly}
-            </Toggle>
-            {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
+                    {allRows.length > 0 && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <Input
+                          className="w-64"
+                          ref={searchRef}
+                          value={filter.q}
+                          onChange={(e) =>
+                            setFilter((f) => ({ ...f, q: e.target.value }))
+                          }
+                          placeholder={t.search}
+                          spellCheck={false}
+                        />
+                        {/* 这是个开关,不是按钮 —— 按下去它要一直保持按下的样子 */}
+                        <Toggle
+                          variant="outline"
+                          size="sm"
+                          pressed={filter.failedOnly}
+                          onPressedChange={(v) =>
+                            setFilter((f) => ({ ...f, failedOnly: v }))
+                          }
+                        >
+                          {t.failedOnly}
+                        </Toggle>
+                        {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
-            {facet.clients.length > 1 && (
-              <NativeSelect
-                size="sm"
-                value={filter.client}
-                onChange={(e) =>
-                  setFilter((f) => ({ ...f, client: e.target.value }))
-                }
-              >
-                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">{t.allClients}</NativeSelectOption>
-                {facet.clients.map((c) => (
-                  <NativeSelectOption key={c} value={c}>
-                    {c}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            )}
-            {facet.providers.length > 1 && (
-              <NativeSelect
-                size="sm"
-                value={filter.provider}
-                onChange={(e) =>
-                  setFilter((f) => ({ ...f, provider: e.target.value }))
-                }
-              >
-                {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
-                <NativeSelectOption value="">{t.allUpstreams}</NativeSelectOption>
-                {facet.providers.map((c) => (
-                  <NativeSelectOption key={c} value={c}>
-                    {c}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            )}
-            {/*
+                        {facet.clients.length > 1 && (
+                          <NativeSelect
+                            size="sm"
+                            value={filter.client}
+                            onChange={(e) =>
+                              setFilter((f) => ({
+                                ...f,
+                                client: e.target.value,
+                              }))
+                            }
+                          >
+                            {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                            <NativeSelectOption value="">
+                              {t.allClients}
+                            </NativeSelectOption>
+                            {facet.clients.map((c) => (
+                              <NativeSelectOption key={c} value={c}>
+                                {c}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        )}
+                        {facet.providers.length > 1 && (
+                          <NativeSelect
+                            size="sm"
+                            value={filter.provider}
+                            onChange={(e) =>
+                              setFilter((f) => ({
+                                ...f,
+                                provider: e.target.value,
+                              }))
+                            }
+                          >
+                            {/* 原生 option 收空串，所以「全部」不用再借哨兵 */}
+                            <NativeSelectOption value="">
+                              {t.allUpstreams}
+                            </NativeSelectOption>
+                            {facet.providers.map((c) => (
+                              <NativeSelectOption key={c} value={c}>
+                                {c}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        )}
+                        {/*
               **筛掉了多少要说出来。**只显示「12 条」而不说「共 340 条」
               的话，用户会以为总共就这么多 —— 这是过滤器最常见的骗人方式。
             */}
-            <span className="ml-auto tw-label text-muted-foreground">
-              {hasAnyFilter(filter)
-                ? t.shownOf(rows.length, allRows.length)
-                : t.total(allRows.length)}
-            </span>
-            {hasAnyFilter(filter) && (
-              <Button
-                variant="link"
-                size="xs"
-                onClick={() => setFilter(EMPTY_FILTER)}
-              >
-                {t.clear}
-              </Button>
-            )}
-          </div>
-        )}
+                        <span className="ml-auto tw-label text-muted-foreground">
+                          {hasAnyFilter(filter)
+                            ? t.shownOf(rows.length, allRows.length)
+                            : t.total(allRows.length)}
+                        </span>
+                        {hasAnyFilter(filter) && (
+                          <Button
+                            variant="link"
+                            size="xs"
+                            onClick={() => setFilter(EMPTY_FILTER)}
+                          >
+                            {t.clear}
+                          </Button>
+                        )}
+                      </div>
+                    )}
 
-        {/*
+                    {/*
           还没有上游 —— 引导，不是拦路。
           说清三件事：网关已在运行（所以这不是故障）、缺的是什么、
           以及在哪里配置。最后一件给一个能点的入口。
         */}
-        {status?.providers === 0 && (
-          <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
-            <p className="tw-head font-medium">{t.noUpstreams}</p>
-            <p className="mt-1 tw-body text-muted-foreground">
-              {t.listening(
-                <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
-                  http://{status.gateway_addr}
-                </code>,
-              )}
-            </p>
-            <Button size="sm" className="mt-3" onClick={() => setTab("upstreams")}>
-              {t.goToUpstreams}
-            </Button>
-          </div>
-        )}
-        {seeded && rows.length === 0 ? (
-          allRows.length > 0 ? (
-            /*
+                    {status?.providers === 0 && (
+                      <div className="mb-4 rounded-lg border border-input bg-neutral-100 p-4 dark:bg-neutral-900">
+                        <p className="tw-head font-medium">{t.noUpstreams}</p>
+                        <p className="mt-1 tw-body text-muted-foreground">
+                          {t.listening(
+                            <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono dark:bg-neutral-800">
+                              http://{status.gateway_addr}
+                            </code>,
+                          )}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => setTab("upstreams")}
+                        >
+                          {t.goToUpstreams}
+                        </Button>
+                      </div>
+                    )}
+                    {seeded && rows.length === 0 ? (
+                      allRows.length > 0 ? (
+                        /*
               有记录，只是全被筛掉了。**这时候说「暂无请求记录」是错的**
               —— 用户会以为网关断了，而实际上清掉条件就看得见。
             */
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>{t.noMatchTitle}</EmptyTitle>
-                <EmptyDescription>
-                  {t.noMatch(allRows.length)}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
-                  {t.clearFilters}
-                </Button>
-              </EmptyContent>
-            </Empty>
-          ) : (
-            // 空状态永远在回答「接下来该做什么」。
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>{t.emptyTitle}</EmptyTitle>
-                <EmptyDescription>
-                  {t.pointClients(
-                    <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
-                      http://{status?.gateway_addr ?? "127.0.0.1:8788"}
-                    </code>,
-                  )}
-                  <br />
-                  {t.appearHere}
-                </EmptyDescription>
-                {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
+                        <Empty>
+                          <EmptyHeader>
+                            <EmptyTitle>{t.noMatchTitle}</EmptyTitle>
+                            <EmptyDescription>
+                              {t.noMatch(allRows.length)}
+                            </EmptyDescription>
+                          </EmptyHeader>
+                          <EmptyContent>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setFilter(EMPTY_FILTER)}
+                            >
+                              {t.clearFilters}
+                            </Button>
+                          </EmptyContent>
+                        </Empty>
+                      ) : (
+                        // 空状态永远在回答「接下来该做什么」。
+                        <Empty>
+                          <EmptyHeader>
+                            <EmptyTitle>{t.emptyTitle}</EmptyTitle>
+                            <EmptyDescription>
+                              {t.pointClients(
+                                <code className="rounded bg-neutral-200 px-1 py-0.5 dark:bg-neutral-800">
+                                  http://
+                                  {status?.gateway_addr ?? "127.0.0.1:8788"}
+                                </code>,
+                              )}
+                              <br />
+                              {t.appearHere}
+                            </EmptyDescription>
+                            {/* 一次都没有的时候不说这句 —— 「已经本地应答了 0 次」是在
                     拿一个零冒充证据 */}
-                {locallyAnswered > 0 && (
-                  <EmptyDescription>
-                    {t.probesAnswered(locallyAnswered)}
-                  </EmptyDescription>
-                )}
-              </EmptyHeader>
-            </Empty>
-          )
-        ) : (
-          <Table className="tw-num">
-            {/*
+                            {locallyAnswered > 0 && (
+                              <EmptyDescription>
+                                {t.probesAnswered(locallyAnswered)}
+                              </EmptyDescription>
+                            )}
+                          </EmptyHeader>
+                        </Empty>
+                      )
+                    ) : (
+                      <Table className="tw-num">
+                        {/*
               **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
               两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
               那恰恰是排查时唯一要看的区别。
             */}
-            <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
-              <TableRow>
-                <Th k="status" label={t.status} sort={sortKey} dir={sortDir} on={toggleSort} className="py-1.5" />
-                <Th k="time" label={t.time} sort={sortKey} dir={sortDir} on={toggleSort} />
-                {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
-                {showClient && <TableHead>{t.client}</TableHead>}
-                <TableHead>{t.model}</TableHead>
-                <TableHead>{t.upstream}</TableHead>
-                {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
-                <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-                <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={toggleSort} className="text-right" />
-              </TableRow>
-            </TableHeader>
-            {/*
+                        <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
+                          <TableRow>
+                            <Th
+                              k="status"
+                              label={t.status}
+                              sort={sortKey}
+                              dir={sortDir}
+                              on={toggleSort}
+                              className="py-1.5"
+                            />
+                            <Th
+                              k="time"
+                              label={t.time}
+                              sort={sortKey}
+                              dir={sortDir}
+                              on={toggleSort}
+                            />
+                            {/* 只有一个客户端时这一列每行都一样 —— 那是零信息 */}
+                            {showClient && <TableHead>{t.client}</TableHead>}
+                            <TableHead>{t.model}</TableHead>
+                            <TableHead>{t.upstream}</TableHead>
+                            {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
+                            <Th
+                              k="duration"
+                              label={t.latency}
+                              sort={sortKey}
+                              dir={sortDir}
+                              on={toggleSort}
+                              className="text-right"
+                            />
+                            <Th
+                              k="tokens"
+                              label={t.tokens}
+                              sort={sortKey}
+                              dir={sortDir}
+                              on={toggleSort}
+                              className="text-right"
+                            />
+                            <Th
+                              k="cost"
+                              label={t.cost}
+                              sort={sortKey}
+                              dir={sortDir}
+                              on={toggleSort}
+                              className="text-right"
+                            />
+                          </TableRow>
+                        </TableHeader>
+                        {/*
               走到这里还是空的，只可能是历史没读完 —— 「读完了，确实一条
               都没有」在上面那一支里已经处理掉了。**事件流先到的行不能被
               骨架盖住**：那时数据已经在手上了。
             */}
-            {rows.length === 0 ? (
-              <BodySkeleton
-                widths={[
-                  "w-10",
-                  "w-16",
-                  ...(showClient ? ["w-14"] : []),
-                  "w-32",
-                  "w-16",
-                  "w-16 ml-auto",
-                  "w-14 ml-auto",
-                  "w-12 ml-auto",
-                ]}
-              />
-            ) : (
-            <TableBody>
-              {rows.map((r, i) => (
-                <RowMenu
-                  key={r.id}
-                  items={[
-                    { kind: "item", label: t.openDetails, onSelect: () => setOpen(r.id) },
-                    { kind: "sep" },
-                    // **按这一行的值筛，不是打开一个筛选器。**排查时的
-                    // 动作是「只看这家」「只看这个客户端」，而手打名字
-                    // 会打错，打错的表现是「筛出来空的」。
-                    {
-                      kind: "item",
-                      label: t.onlyUpstream(r.provider),
-                      onSelect: () => setFilter((f) => ({ ...f, provider: r.provider })),
-                    },
-                    ...(showClient
-                      ? ([
-                          {
-                            kind: "item",
-                            label: t.onlyClient(r.client),
-                            onSelect: () => setFilter((f) => ({ ...f, client: r.client })),
-                          },
-                        ] as const)
-                      : []),
-                    { kind: "sep" },
-                    {
-                      kind: "item",
-                      label: t.copyId,
-                      onSelect: () => void navigator.clipboard.writeText(String(r.id)),
-                    },
-                    {
-                      kind: "item",
-                      label: t.copyRow,
-                      onSelect: () =>
-                        void navigator.clipboard.writeText(
-                          [
-                            new Date(r.atMs).toLocaleString(),
-                            r.client,
-                            r.model ?? "",
-                            r.provider,
-                            r.path,
-                            r.status ?? r.state,
-                            r.durationMs != null ? `${r.durationMs}ms` : "",
-                            tokens(r.inputTokens, r.outputTokens),
-                            money(r.costMicros, r.costEstimated),
-                            coreText(r.error),
-                          ]
-                            .filter(Boolean)
-                            .join("\t"),
-                        ),
-                    },
-                  ]}
-                >
-                <TableRow
-                  onClick={() => {
-                    setCursor(rows.indexOf(r));
-                    setOpen(r.id);
-                  }}
-                  className={
-                    "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
-                    (rows[cursor]?.id === r.id
-                      ? "bg-neutral-100 dark:bg-neutral-800"
-                      : fresh.has(r.id)
-                        ? "bg-emerald-50 dark:bg-emerald-950"
-                        : "")
-                  }
-                >
-                  {/*
+                        {rows.length === 0 ? (
+                          <BodySkeleton
+                            widths={[
+                              "w-10",
+                              "w-16",
+                              ...(showClient ? ["w-14"] : []),
+                              "w-32",
+                              "w-16",
+                              "w-16 ml-auto",
+                              "w-14 ml-auto",
+                              "w-12 ml-auto",
+                            ]}
+                          />
+                        ) : (
+                          <TableBody>
+                            {rows.map((r, i) => (
+                              <RowMenu
+                                key={r.id}
+                                items={[
+                                  {
+                                    kind: "item",
+                                    label: t.openDetails,
+                                    onSelect: () => setOpen(r.id),
+                                  },
+                                  { kind: "sep" },
+                                  // **按这一行的值筛，不是打开一个筛选器。**排查时的
+                                  // 动作是「只看这家」「只看这个客户端」，而手打名字
+                                  // 会打错，打错的表现是「筛出来空的」。
+                                  {
+                                    kind: "item",
+                                    label: t.onlyUpstream(r.provider),
+                                    onSelect: () =>
+                                      setFilter((f) => ({
+                                        ...f,
+                                        provider: r.provider,
+                                      })),
+                                  },
+                                  ...(showClient
+                                    ? ([
+                                        {
+                                          kind: "item",
+                                          label: t.onlyClient(r.client),
+                                          onSelect: () =>
+                                            setFilter((f) => ({
+                                              ...f,
+                                              client: r.client,
+                                            })),
+                                        },
+                                      ] as const)
+                                    : []),
+                                  { kind: "sep" },
+                                  {
+                                    kind: "item",
+                                    label: t.copyId,
+                                    onSelect: () =>
+                                      void navigator.clipboard.writeText(
+                                        String(r.id),
+                                      ),
+                                  },
+                                  {
+                                    kind: "item",
+                                    label: t.copyRow,
+                                    onSelect: () =>
+                                      void navigator.clipboard.writeText(
+                                        [
+                                          new Date(r.atMs).toLocaleString(),
+                                          r.client,
+                                          r.model ?? "",
+                                          r.provider,
+                                          r.path,
+                                          r.status ?? r.state,
+                                          r.durationMs != null
+                                            ? `${r.durationMs}ms`
+                                            : "",
+                                          tokens(r.inputTokens, r.outputTokens),
+                                          money(r.costMicros, r.costEstimated),
+                                          coreText(r.error),
+                                        ]
+                                          .filter(Boolean)
+                                          .join("\t"),
+                                      ),
+                                  },
+                                ]}
+                              >
+                                <TableRow
+                                  onClick={() => {
+                                    setCursor(rows.indexOf(r));
+                                    setOpen(r.id);
+                                  }}
+                                  className={
+                                    "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
+                                    (rows[cursor]?.id === r.id
+                                      ? "bg-neutral-100 dark:bg-neutral-800"
+                                      : fresh.has(r.id)
+                                        ? "bg-emerald-50 dark:bg-emerald-950"
+                                        : "")
+                                  }
+                                >
+                                  {/*
                     状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
                     眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
                   */}
-                  <TableCell className="whitespace-nowrap">
-                    {(() => {
-                      const tone = statusTone(r.status, r.state);
-                      const dot =
-                        tone === "bad"
-                          ? "bg-red-500"
-                          : tone === "warn"
-                            ? "bg-amber-500"
-                            : tone === "pending"
-                              ? "bg-amber-400 animate-pulse"
-                              : tone === "muted"
-                                ? "bg-neutral-400"
-                                : "bg-emerald-500/60";
-                      return (
-                        <span className="flex items-center gap-1.5">
-                          <span className={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " + dot} />
-                          <span className={tone === "ok" || tone === "muted" ? "text-neutral-400" : ""}>
-                            {r.state === "in_flight"
-                              ? "…"
-                              : r.state === "failed"
-                                ? t.failed
-                                : r.state === "cancelled"
-                                  ? t.cancelled
-                                  : r.status}
-                          </span>
-                        </span>
-                      );
-                    })()}
-                  </TableCell>
-                  {/*
+                                  <TableCell className="whitespace-nowrap">
+                                    {(() => {
+                                      const tone = statusTone(
+                                        r.status,
+                                        r.state,
+                                      );
+                                      const dot =
+                                        tone === "bad"
+                                          ? "bg-red-500"
+                                          : tone === "warn"
+                                            ? "bg-amber-500"
+                                            : tone === "pending"
+                                              ? "bg-amber-400 animate-pulse"
+                                              : tone === "muted"
+                                                ? "bg-neutral-400"
+                                                : "bg-emerald-500/60";
+                                      return (
+                                        <span className="flex items-center gap-1.5">
+                                          <span
+                                            className={
+                                              "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
+                                              dot
+                                            }
+                                          />
+                                          <span
+                                            className={
+                                              tone === "ok" || tone === "muted"
+                                                ? "text-neutral-400"
+                                                : ""
+                                            }
+                                          >
+                                            {r.state === "in_flight"
+                                              ? "…"
+                                              : r.state === "failed"
+                                                ? t.failed
+                                                : r.state === "cancelled"
+                                                  ? t.cancelled
+                                                  : r.status}
+                                          </span>
+                                        </span>
+                                      );
+                                    })()}
+                                  </TableCell>
+                                  {/*
                     时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
                     看昨天那次时，整列全是「1d」，而这一列的用途就是把
                     某一行对上号。相对时间留给悬停。
                   */}
-                  <TableCell className="whitespace-nowrap text-neutral-400">
-                    <Tip text={new Date(r.atMs).toLocaleString()}>
-                      <span>{when(r.atMs, today)}</span>
-                    </Tip>
-                  </TableCell>
-                  {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                  {showClient && (
-                    <TableCell className={repeated(rows, i, (x) => x.client) ? "text-neutral-400/50" : ""}>
-                      {r.client}
-                    </TableCell>
-                  )}
-                  {/*
+                                  <TableCell className="whitespace-nowrap text-neutral-400">
+                                    <Tip
+                                      text={new Date(r.atMs).toLocaleString()}
+                                    >
+                                      <span>{when(r.atMs, today)}</span>
+                                    </Tip>
+                                  </TableCell>
+                                  {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
+                                  {showClient && (
+                                    <TableCell
+                                      className={
+                                        repeated(rows, i, (x) => x.client)
+                                          ? "text-neutral-400/50"
+                                          : ""
+                                      }
+                                    >
+                                      {r.client}
+                                    </TableCell>
+                                  )}
+                                  {/*
                     模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
                     连着发的两次请求，差别往往只在这里。
                   */}
-                  <TableCell
-                    className={repeated(rows, i, (x) => x.model ?? "") ? "text-neutral-400/50" : ""}
-                  >
-                    {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
+                                  <TableCell
+                                    className={
+                                      repeated(rows, i, (x) => x.model ?? "")
+                                        ? "text-neutral-400/50"
+                                        : ""
+                                    }
+                                  >
+                                    {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
                         自己的列宽算法吃掉，长名字照样把这一列撑开 */}
-                    <div className="max-w-[13rem] truncate" title={r.model}>
-                      {r.model ?? "—"}
-                    </div>
-                  </TableCell>
-                  <TableCell className={repeated(rows, i, (x) => x.provider) ? "text-neutral-400/50" : ""}>
-                    {/*
+                                    <div
+                                      className="max-w-[13rem] truncate"
+                                      title={r.model}
+                                    >
+                                      {r.model ?? "—"}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell
+                                    className={
+                                      repeated(rows, i, (x) => x.provider)
+                                        ? "text-neutral-400/50"
+                                        : ""
+                                    }
+                                  >
+                                    {/*
                       **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行
                       的话，一行同时带「已脱敏」和「已转换 · 丢弃 n 项」，
                       这一格就有 240px，默认窗口下表比容器宽出 40px —— 被挤
@@ -1481,169 +1680,228 @@ export default function App() {
                       徽标之间折，徽标自身不断开：窄了是这一行变高，不是
                       哪一列看不见。
                     */}
-                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
-                      <span>{r.provider}</span>
-                      {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
+                                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                                      <span>{r.provider}</span>
+                                      {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
                           是脱敏搞坏了功能。所以脱敏发生了就要在
                           列表这一层看得见，而不是藏在详情里 */}
-                      {r.redacted && r.redacted.length > 0 && (
-                        <span
-                          className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                          title={t.redactedTip(
-                            r.redacted.map((x) => `${secretLabel(x.secret)} ×${x.count}`),
-                          )}
-                        >
-                          {t.redacted(r.redacted.reduce((a, x) => a + x.count, 0))}
-                        </span>
-                      )}
-                      {/* 格式转换。**转了就要看得见，丢了字段
+                                      {r.redacted && r.redacted.length > 0 && (
+                                        <span
+                                          className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                                          title={t.redactedTip(
+                                            r.redacted.map(
+                                              (x) =>
+                                                `${secretLabel(x.secret)} ×${x.count}`,
+                                            ),
+                                          )}
+                                        >
+                                          {t.redacted(
+                                            r.redacted.reduce(
+                                              (a, x) => a + x.count,
+                                              0,
+                                            ),
+                                          )}
+                                        </span>
+                                      )}
+                                      {/* 格式转换。**转了就要看得见，丢了字段
                           更要看得见** —— 「扩展思考开了却没生效」这个症状
                           在客户端那头完全无从下手，只有这里知道原因 */}
-                      {r.translated && (
-                        <span
-                          className={
-                            "rounded px-1 tw-label " +
-                            (r.translated.dropped.length > 0
-                              ? "bg-amber-500 text-white"
-                              : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
-                          }
-                          title={
-                            t.sentConverted(translatedText(r.translated)) +
-                            (r.translated.dropped.length > 0
-                              ? t.droppedFields(r.translated.dropped)
-                              : t.noneDropped)
-                          }
-                        >
-                          {r.translated.dropped.length > 0
-                            ? t.convertedDropped(r.translated.dropped.length)
-                            : t.converted}
-                        </span>
-                      )}
-                      {r.flagged?.some((f) => f.high) && (
-                        <span
-                          className={
-                            "rounded px-1 tw-label " +
-                            (r.flagged.some((f) => f.blocked)
-                              ? "bg-red-600 text-white"
-                              : "bg-amber-500 text-white")
-                          }
-                          title={r.flagged
-                            .filter((f) => f.high)
-                            .map((f) => t.flaggedTip(f.tool, ruleWhy(f.rule, f.why), f.excerpt))
-                            .join("\n\n")}
-                        >
-                          {r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  {/*
+                                      {r.translated && (
+                                        <span
+                                          className={
+                                            "rounded px-1 tw-label " +
+                                            (r.translated.dropped.length > 0
+                                              ? "bg-amber-500 text-white"
+                                              : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
+                                          }
+                                          title={
+                                            t.sentConverted(
+                                              translatedText(r.translated),
+                                            ) +
+                                            (r.translated.dropped.length > 0
+                                              ? t.droppedFields(
+                                                  r.translated.dropped,
+                                                )
+                                              : t.noneDropped)
+                                          }
+                                        >
+                                          {r.translated.dropped.length > 0
+                                            ? t.convertedDropped(
+                                                r.translated.dropped.length,
+                                              )
+                                            : t.converted}
+                                        </span>
+                                      )}
+                                      {r.flagged?.some((f) => f.high) && (
+                                        <span
+                                          className={
+                                            "rounded px-1 tw-label " +
+                                            (r.flagged.some((f) => f.blocked)
+                                              ? "bg-red-600 text-white"
+                                              : "bg-amber-500 text-white")
+                                          }
+                                          title={r.flagged
+                                            .filter((f) => f.high)
+                                            .map((f) =>
+                                              t.flaggedTip(
+                                                f.tool,
+                                                ruleWhy(f.rule, f.why),
+                                                f.excerpt,
+                                              ),
+                                            )
+                                            .join("\n\n")}
+                                        >
+                                          {r.flagged.some((f) => f.blocked)
+                                            ? t.blocked
+                                            : t.suspicious}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  {/*
                     数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
                     扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
                     扫出极值。
                   */}
-                  <TableCell className="whitespace-nowrap text-right">
-                    {latency(r.ttfbMs, r.durationMs)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-right text-neutral-400">
-                    {tokens(r.inputTokens, r.outputTokens)}
-                  </TableCell>
-                  {/*
+                                  <TableCell className="whitespace-nowrap text-right">
+                                    {latency(r.ttfbMs, r.durationMs)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap text-right text-neutral-400">
+                                    {tokens(r.inputTokens, r.outputTokens)}
+                                  </TableCell>
+                                  {/*
                     **估算值必须带记号。**猜出来的金额和账单上的数字在
                     列表里长得一模一样，而它们不是一回事。
                   */}
-                  <TableCell className="whitespace-nowrap text-right">
-                    {r.costEstimated ? (
-                      // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
-                      // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
-                      // 平台借来的
-                      <Tip
-                        text={
-                          r.state === "cancelled"
-                            ? t.estimatedCancelled
-                            : r.state === "failed"
-                              ? t.estimatedFailed
-                              : t.estimatedBorrowed
-                        }
-                      >
-                        <span className="underline decoration-dotted underline-offset-2">
-                          {money(r.costMicros, true)}
-                        </span>
-                      </Tip>
-                    ) : (
-                      <span className={r.costMicros == null ? "text-neutral-400" : ""}>
-                        {money(r.costMicros, false)}
-                      </span>
+                                  <TableCell className="whitespace-nowrap text-right">
+                                    {r.costEstimated ? (
+                                      // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
+                                      // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
+                                      // 平台借来的
+                                      <Tip
+                                        text={
+                                          r.state === "cancelled"
+                                            ? t.estimatedCancelled
+                                            : r.state === "failed"
+                                              ? t.estimatedFailed
+                                              : t.estimatedBorrowed
+                                        }
+                                      >
+                                        <span className="underline decoration-dotted underline-offset-2">
+                                          {money(r.costMicros, true)}
+                                        </span>
+                                      </Tip>
+                                    ) : (
+                                      <span
+                                        className={
+                                          r.costMicros == null
+                                            ? "text-neutral-400"
+                                            : ""
+                                        }
+                                      >
+                                        {money(r.costMicros, false)}
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              </RowMenu>
+                            ))}
+                          </TableBody>
+                        )}
+                      </Table>
                     )}
-                  </TableCell>
-                </TableRow>
-                </RowMenu>
-              ))}
-            </TableBody>
-            )}
-          </Table>
-        )}
-        {locallyAnswered > 0 && rows.length > 0 && (
-          <p className="mt-3 tw-body text-muted-foreground">
-            {t.probesElsewhere(locallyAnswered)}
-          </p>
-        )}
-      </Split>
-      )}
-      {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
+                    {locallyAnswered > 0 && rows.length > 0 && (
+                      <p className="mt-3 tw-body text-muted-foreground">
+                        {t.probesElsewhere(locallyAnswered)}
+                      </p>
+                    )}
+                  </Split>
+                </div>
+              )}
+              {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
 
-      {/* 浮层挂在最外层，不跟着右列滚动 */}
-      <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
-        <AlertDialogContent className="sm:max-w-sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.quitTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t.quitDescription}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <p className="tw-body text-muted-foreground">
-            {t.quitHint}
-          </p>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-            <AlertDialogAction variant="destructive"
-              onClick={() => void invoke("quit_app")}
-            >
-              {t.quit}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {configFile && (
-        <ConfigFileDialog
-          configVersion={configVersion}
-          focus={configFile.focus}
-          rejectedLine={rejected?.line ?? null}
-          onClose={() => setConfigFile(null)}
-          onJump={(section) => {
-            setConfigFile(null);
-            setTab(surfaceOf(section));
-          }}
-        />
-      )}
-      {historyOpen && (
-        <VersionHistoryDialog configVersion={configVersion} onClose={() => setHistoryOpen(false)} />
-      )}
-      {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
-      {open != null && !split && (
-        <RequestDrawer id={open} onClose={() => setOpen(null)} />
-      )}
-      {/*
+        {/* 浮层挂在最外层，不跟着右列滚动 */}
+        <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
+          <AlertDialogContent className="sm:max-w-sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t.quitTitle}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t.quitDescription}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <p className="tw-body text-muted-foreground">{t.quitHint}</p>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => void invoke("quit_app")}
+              >
+                {t.quit}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {configFile && (
+          <ConfigFileDialog
+            configVersion={configVersion}
+            focus={configFile.focus}
+            rejectedLine={rejected?.line ?? null}
+            onClose={() => setConfigFile(null)}
+            onJump={(section) => {
+              setConfigFile(null);
+              setTab(surfaceOf(section));
+            }}
+          />
+        )}
+        {historyOpen && (
+          <VersionHistoryDialog
+            configVersion={configVersion}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+        {/* 窄窗口回退到浮层 —— 拆两栏会让列表窄到没法看 */}
+        {open != null && !split && (
+          <RequestDrawer id={open} onClose={() => setOpen(null)} />
+        )}
+        {/*
         **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，
         于是同一句「还没读到配置版本」有六份实现，而滚出视野的那几份用户
         根本看不到。吐司统一在右下角，谁触发的都一样。
       */}
-      <Toaster position="bottom-right" closeButton />
-    </SidebarProvider>
+        <Toaster position="bottom-right" closeButton />
+      </SidebarProvider>
     </TooltipRoot>
+  );
+}
+
+/**
+ * 「流量」的两种粒度：一条请求，和一次对话。
+ *
+ * **它们是同一批数据，所以是标签不是两个导航项。**分成两项时，用户得
+ * 先决定「我要看请求还是会话」，而他想知道的其实是「刚才发生了什么」。
+ */
+function TrafficTabs({
+  value,
+  onChange,
+}: {
+  value: "requests" | "sessions";
+  onChange: (v: Surface) => void;
+}) {
+  const t = useText(appText);
+  return (
+    <Tabs
+      value={value}
+      onValueChange={(v) => onChange(v as Surface)}
+      className="shrink-0 px-5 pt-5"
+    >
+      <TabsList>
+        <TabsTrigger value="requests">{t.surfaces.requests}</TabsTrigger>
+        <TabsTrigger value="sessions">{t.surfaces.sessions}</TabsTrigger>
+      </TabsList>
+    </Tabs>
   );
 }
