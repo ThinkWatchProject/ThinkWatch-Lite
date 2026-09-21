@@ -395,6 +395,22 @@ async fn recent_requests(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// 此刻还在跑的请求（它们的开始事件）。
+///
+/// **概览的实时档一挂上就问一次，core 重启回来再问一次。**它只从挂上那一刻
+/// 起听事件：之前就开始了的请求不问就漏掉，「进行中」少数；core 重启时正在
+/// 跑的请求再也不会有结局，不重新对一遍就一直挂在「进行中」里。
+#[tauri::command]
+async fn in_flight_requests(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<tw_api::Event>, String> {
+    state
+        .control
+        .in_flight()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 /// 两端各自可缺；一个都没给就是不限时间。
 fn window(from_ms: Option<i64>, to_ms: Option<i64>) -> Option<(i64, i64)> {
     match (from_ms, to_ms) {
@@ -1435,6 +1451,7 @@ pub fn run() {
             speed_test,
             dashboard,
             recent_requests,
+            in_flight_requests,
             speed_quote,
             speed_run,
             request_detail,

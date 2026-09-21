@@ -97,7 +97,7 @@ export interface LiveFail {
  * **模型名从结局里拿，不从开始事件里记。**这个钩子只在概览开着时才挂
  * 上，打开的那一刻正在跑的请求，它的开始事件早就过去了；以前按 id 去
  * 找开始时记下的模型，这些请求就全落进了「未知模型」那一层。
- * `request_started` 现在只用来数「进行中」。
+ * `request_started` 现在只用来数「进行中」（怎么数见 `resync`）。
  *
  * 金额比用量晚一拍：它是存储层落库时按价目表算的，core 算完会补一条
  * `request_priced`。所以实时档也画得出花费，只是那一格会在请求结束之后
@@ -145,13 +145,35 @@ export function useLive(active: boolean, windowMs: number) {
     */
     const counted = (id: number) => samples.current.some((s) => s.id === id);
     const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
+    /*
+      **「进行中」从 core 的快照起步，之后跟着事件流加减。**
+
+      只靠事件流数有两处数不对：挂上之前就开始了的请求，开始事件早就过去
+      了，一直少数到它结束；core 重启时正在跑的请求再也不会有结局，一直挂在
+      「进行中」里。所以挂上时问一次「此刻还在跑的」，core 重启回来再问一次
+      （`resync`），平时照旧按事件加减。
+
+      **快照在路上的时候事件照样在来。**它是 core 在某一刻拍下的，到这边时
+      已经晚了一截：这中间开始的它没有，这中间结束的它还有。所以从问出去的
+      那一刻起，把事件流上见到的开始和结局都记下来（`since`），快照到了再
+      合在一起：快照里的，加上中途开始的，减去中途结束的。
+    */
+    let since: { started: Set<number>; ended: Set<number> } | null = null;
+    const start = (id: number) => {
+      flying.current.add(id);
+      since?.started.add(id);
+    };
+    const end = (id: number) => {
+      flying.current.delete(id);
+      since?.ended.add(id);
+    };
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") {
-        flying.current.add(ev.id);
+        start(ev.id);
       } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
-        flying.current.delete(ev.id);
+        end(ev.id);
         if (ev.usage && !counted(ev.id)) {
           const u = ev.usage;
           samples.current.push({
@@ -173,7 +195,7 @@ export function useLive(active: boolean, windowMs: number) {
           }
         }
       } else if (ev.kind === "request_failed") {
-        flying.current.delete(ev.id);
+        end(ev.id);
         // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
         if (ev.usage && !counted(ev.id)) {
           const u = ev.usage;
@@ -190,11 +212,48 @@ export function useLive(active: boolean, windowMs: number) {
       }
       soon();
     });
+    const resync = async () => {
+      const mark = { started: new Set<number>(), ended: new Set<number>() };
+      since = mark;
+      try {
+        // **等订阅真的挂上再问。**`listen` 是异步注册的：先问的话，快照和
+        // 订阅之间结束的请求，它的结局谁都没收到，就一直挂在「进行中」
+        await un;
+        const open = await invoke<CoreEvent[]>("in_flight_requests");
+        // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
+        if (!alive || since !== mark) return;
+        const next = new Set(mark.started);
+        for (const ev of open) if (ev.kind === "request_started") next.add(ev.id);
+        for (const id of mark.ended) next.delete(id);
+        flying.current = next;
+        soon();
+      } catch {
+        // 问不到就接着按事件流数，和有这份快照之前一样
+      } finally {
+        if (since === mark) since = null;
+      }
+    };
+    void resync();
+    /*
+      **core 不在跑的时候，谁都不在「进行中」。**它一停，正在跑的请求就断
+      了，而它们再也不会有结局；回来的时候（`running:<pid>`）重新对一遍。
+    */
+    const unState = listen<string>("core-state", (e) => {
+      if (e.payload.startsWith("running")) {
+        void resync();
+      } else {
+        since = null;
+        flying.current.clear();
+        soon();
+      }
+    });
     /*
       先挂事件流再补历史：反过来的话，这两者之间结束的请求谁都不记。
     */
     void (async () => {
       try {
+        // 挂上了再补 —— `listen` 是异步注册的，理由同上
+        await un;
         /*
           **按时间取，不按条数取。**十分钟里有多少条请求说不准：取固定的
           条数，忙的时候补不满一个窗口，闲的时候又白拿一堆窗口外的。
@@ -253,6 +312,7 @@ export function useLive(active: boolean, windowMs: number) {
     return () => {
       alive = false;
       void un.then((f) => f());
+      void unState.then((f) => f());
       clearInterval(h);
       if (raf !== null) cancelAnimationFrame(raf);
     };
