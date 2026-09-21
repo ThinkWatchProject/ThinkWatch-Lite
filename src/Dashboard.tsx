@@ -8,7 +8,7 @@ import { StackedArea } from "@/ui/charts";
 import { bucketStart, compact, densify } from "./format";
 import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
+import { RangePicker, useRange } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, LIVE_SIGMA_MS, useLive } from "./useLive";
@@ -230,7 +230,7 @@ function Swatch({ color, name, n }: { color: string; name: string; n: number }) 
  */
 export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | null }) {
   const t = useText(dashboardText);
-  const [range, setRange] = useState<Range>(DEFAULT_RANGE);
+  const [range, setRange] = useRange();
   /**
    * 图按哪个口径画。
    *

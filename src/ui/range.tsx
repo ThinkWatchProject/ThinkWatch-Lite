@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Calendar } from "@/ui/calendar";
@@ -56,7 +56,25 @@ function presetRange(p: Preset): Range {
   };
 }
 
-export const DEFAULT_RANGE: Range = presetRange({ id: "1d", ms: DAY });
+/**
+ * 自定义区间：**从那一天到现在**。
+ *
+ * 它由起始的那一天完全决定 —— 跨度是算出来的，不是存下来的。这也是
+ * 记住它时只记那一天的原因：隔了一小时再回来，「9 月 8 日至今」该多
+ * 出那一小时，而不是原封不动地把当时的跨度搬过来。
+ */
+export function customRange(d: Date): Range {
+  return {
+    ms: Math.max(60_000, Date.now() - d.getTime()),
+    get label() {
+      return textOf(rangeText).since(d.toLocaleDateString());
+    },
+    get compare() {
+      return textOf(rangeText).sameLength;
+    },
+    custom: true,
+  };
+}
 
 /** 实时档的窗口：两分钟、一秒一格。 */
 export const LIVE_RANGE: Range = {
@@ -69,6 +87,59 @@ export const LIVE_RANGE: Range = {
   },
   live: true,
 };
+
+/**
+ * 记住上次看的是哪一档。
+ *
+ * **换个页面再回来，看到的该还是刚才那一档。**概览是会被离开又回来
+ * 的页面（去流量里翻一条请求，再回来看整体），而每回来一次就把范围
+ * 弹回默认值，等于要求人记住自己刚才选了什么，然后重选一遍。
+ *
+ * 存的是**哪一档**，不是那个 `Range` 对象：`label` 和 `compare` 是按
+ * 当前语言现取的 getter，序列化会把它们冻成当时那种语言；自定义区间
+ * 的跨度也是按「到现在」算出来的，存下来隔一阵就不对了。所以只存一个
+ * 标识，回来时重新构造。
+ *
+ * 出厂停在实时档 —— 第一次打开时，「现在有没有在跑」比「过去一天用了
+ * 多少」更是个问题。
+ */
+const RANGE_KEY = "tw-range";
+
+export function useRange(): [Range, (r: Range) => void] {
+  const [range, set] = useState<Range>(() => {
+    try {
+      const raw = window.localStorage.getItem(RANGE_KEY);
+      if (!raw) return LIVE_RANGE;
+      if (raw === "live") return LIVE_RANGE;
+      const p = PRESETS.find((x) => x.id === raw);
+      if (p) return presetRange(p);
+      if (raw.startsWith("from:")) {
+        const d = new Date(raw.slice(5));
+        // 存坏了、或者那一天在将来（改过系统时间）：当没存过
+        if (!Number.isNaN(d.getTime()) && d.getTime() < Date.now()) return customRange(d);
+      }
+    } catch {
+      // 读不到就用默认的。**不能因为存不了偏好就让这一页打不开**
+    }
+    return LIVE_RANGE;
+  });
+
+  const put = useCallback((r: Range) => {
+    set(r);
+    try {
+      const id = r.live
+        ? "live"
+        : r.custom
+          ? `from:${new Date(Date.now() - r.ms).toISOString()}`
+          : (PRESETS.find((x) => x.ms === r.ms)?.id ?? "");
+      if (id) window.localStorage.setItem(RANGE_KEY, id);
+    } catch {
+      // 存不下就只在这一程里记着
+    }
+  }, []);
+
+  return [range, put];
+}
 
 /**
  * 统计口径的时间范围。
@@ -131,17 +202,7 @@ export function RangePicker({
             onSelect={(d) => {
               if (!d) return;
               setFrom(d);
-              const ms = Date.now() - d.getTime();
-              onChange({
-                ms: Math.max(60_000, ms),
-                get label() {
-                  return textOf(rangeText).since(d.toLocaleDateString());
-                },
-                get compare() {
-                  return textOf(rangeText).sameLength;
-                },
-                custom: true,
-              });
+              onChange(customRange(d));
               setOpen(false);
             }}
           />
