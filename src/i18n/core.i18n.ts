@@ -206,6 +206,8 @@ const ZH: Record<string, Say> = {
   "gw.upstream.status": (a) => `上游「${a.upstream}」返回 ${a.status}。`,
   "gw.toolcall.cut": (a) =>
     `上游「${a.upstream}」（非官方端点）返回的 ${a.tool} 调用命中规则「${a.rule}」（${a.why}），已切断响应。`,
+  "gw.toolcall.blocked": (a) =>
+    `上游「${a.upstream}」（非官方端点）返回的 ${a.tool} 调用命中规则「${a.rule}」（${a.why}），整份响应已扣下。`,
   "gw.ws.bad_url": (a) => `上游地址不是合法的 WebSocket 地址：${a.detail}`,
   "gw.ws.bad_header": (a) => `上游的请求头「${a.header}」包含请求头中不允许的字符。`,
   "gw.ws.connect_failed": (a) => `无法连接上游的 WebSocket：${a.detail}`,
