@@ -127,6 +127,7 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
+  valueFormatter,
 }: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
   React.ComponentProps<"div"> & {
     hideLabel?: boolean
@@ -134,6 +135,13 @@ function ChartTooltipContent({
     indicator?: "line" | "dot" | "dashed"
     nameKey?: string
     labelKey?: string
+    /**
+     * 每一行的数值怎么写。**shadcn 原版没有这一项**，只会 `toLocaleString()`：
+     * 实时档的速率是浮点，会写成 1,326.925；费用口径的图值是千分之一美元，
+     * 会写成一个没有单位的 38.5。它自带的 `formatter` 要把整行（色条、名字、
+     * 数值）都接过去重画，只想换数值的写法时用不上。
+     */
+    valueFormatter?: (value: number) => React.ReactNode
   } & Omit<
     RechartsPrimitive.DefaultTooltipContentProps<
       TooltipValueType,
@@ -252,7 +260,9 @@ function ChartTooltipContent({
                       {item.value != null && (
                         <span className="font-mono font-medium text-foreground tabular-nums">
                           {typeof item.value === "number"
-                            ? item.value.toLocaleString()
+                            ? valueFormatter
+                              ? valueFormatter(item.value)
+                              : item.value.toLocaleString()
                             : String(item.value)}
                         </span>
                       )}

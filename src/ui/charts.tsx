@@ -86,6 +86,7 @@ export function StackedArea({
   height = 96,
   empty,
   tickFormat,
+  valueFormat,
   yMax,
   liveEdge = false,
 }: {
@@ -96,6 +97,11 @@ export function StackedArea({
   empty?: string;
   /** 纵轴刻度怎么写。不给就不画纵轴 —— 光秃秃的数字比没有更难读 */
   tickFormat?: (v: number) => string;
+  /**
+   * 悬停时每一层的数值怎么写。**和刻度分开给**：刻度是 0、0.5、1 这种整齐
+   * 的数，取整会把 0.5 写成 1；而图值可以是任意的浮点，要先取整再写。
+   */
+  valueFormat?: (v: number) => string;
   /** 纵轴上界。由调用方钉住，**不让它每帧跟着峰值跑**（见 `yHold`） */
   yMax?: number;
   /** 最右端是「现在」：给它一个点，标出活的那一头 */
@@ -194,7 +200,7 @@ export function StackedArea({
           // `false` = 一定不显示，`undefined` = 照常交给 recharts 判断
           active={over ? undefined : false}
           cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
-          content={<ChartTooltipContent indicator="line" />}
+          content={<ChartTooltipContent indicator="line" valueFormatter={valueFormat} />}
         />
         {/* 先声明的在下面。**便宜的垫底、贵的在上**：贵的那层在视觉上
             也该是最重的一层 */}
