@@ -8,6 +8,10 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 export const securityText = messages(
   {
+    tabGuards: "三道防线",
+    tabFindings: "发现",
+    tabSurface: "配置面",
+    tabBehaviour: "上游行为",
     scanning: "扫描中…",
     scanned: (files: number, rules: string) => `已扫描 ${files} 个文件，${rules}。`,
     rescan: "重新扫描",
@@ -87,6 +91,10 @@ export const securityText = messages(
     reportOnly: "仅报告，不修改任何文件。请打开上述路径查看后再做处理。",
   },
   {
+    tabGuards: "Defences",
+    tabFindings: "Findings",
+    tabSurface: "Config surface",
+    tabBehaviour: "Upstream behaviour",
     scanning: "Scanning…",
     scanned: (files: number, rules: string) => `Scanned ${plural(files, "file", "files")}. ${rules}.`,
     rescan: "Rescan",

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Tip } from "@/ui/tip";
-import type { Overview } from "./types";
+import type { Overview } from "@/types";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { toast } from "sonner";
-import { patchConfig } from "./patch";
-import { redactLabel } from "./upstreams/labels";
+import { patchConfig } from "@/patch";
+import { redactLabel } from "@/upstreams/labels";
 import { useText } from "@/i18n";
-import { guardText } from "./Guard.i18n";
+import { guardText } from "./Defences.i18n";
 import {
   Item,
   ItemActions,
@@ -51,7 +51,9 @@ type Mode = "off" | "observe" | "enforce";
 type GuardText = typeof guardText.zh;
 
 /** 一条防线的全部描述。动词和代价都从这里来，不散在 JSX 里。 */
-const lines = (t: GuardText): {
+const lines = (
+  t: GuardText,
+): {
   key: "redact" | "inspect_tools" | "scan_configs";
   path: string;
   title: string;
@@ -60,6 +62,8 @@ const lines = (t: GuardText): {
   verb: string;
   /** 切到拦截之后，会有什么变化。写在用户点之前 */
   cost: string;
+  /** 它查到的东西留在哪一页 —— 三条各不相同 */
+  where: string;
 }[] => [
   {
     key: "redact",
@@ -84,7 +88,7 @@ const modes = (t: GuardText): { id: Mode; label: string }[] => [
   { id: "enforce", label: t.enforce },
 ];
 
-export default function Guard({
+export function Defences({
   ov,
   configVersion,
   onChanged,
@@ -117,7 +121,7 @@ export default function Guard({
   }
 
   return (
-    <div className="space-y-6 p-5">
+    <div className="space-y-6">
       <div>
         <p className="tw-body text-muted-foreground">
           {t.intro}
@@ -126,7 +130,9 @@ export default function Guard({
             「观察」这个词本身回答不了它 —— 所以展开说一句。
           */}
           <Tip text={t.observeTip}>
-            <span className="ml-1 underline decoration-dotted underline-offset-2">{t.observeMeaning}</span>
+            <span className="ml-1 underline decoration-dotted underline-offset-2">
+              {t.observeMeaning}
+            </span>
           </Tip>
         </p>
       </div>
@@ -146,25 +152,29 @@ export default function Guard({
               原来是 `section` 里手拼 `flex items-baseline ml-auto`，而
               「操作靠右、标题截断、说明换行」这几件事每次都得重写一遍。
             */
-            <Item key={l.key} variant="outline" className="flex-col items-stretch">
+            <Item
+              key={l.key}
+              variant="outline"
+              className="flex-col items-stretch"
+            >
               <ItemHeader>
                 <ItemTitle>{l.title}</ItemTitle>
                 <ItemActions>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto"
-                  value={cur}
-                  disabled={busy === l.path}
-                  onValueChange={(v) => v && void set(l.path, v as Mode)}
-                >
-                  {modes(t).map((m) => (
-                    <ToggleGroupItem key={m.id} value={m.id}>
-                      {m.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    value={cur}
+                    disabled={busy === l.path}
+                    onValueChange={(v) => v && void set(l.path, v as Mode)}
+                  >
+                    {modes(t).map((m) => (
+                      <ToggleGroupItem key={m.id} value={m.id}>
+                        {m.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
                 </ItemActions>
               </ItemHeader>
 
@@ -180,7 +190,9 @@ export default function Guard({
                 )}
                 {cur === "observe" && (
                   <span className="text-muted-foreground">
-                    {t.nowObserve((s) => <span className="font-medium">{s}</span>)}
+                    {t.nowObserve((s) => (
+                      <span className="font-medium">{s}</span>
+                    ))}
                   </span>
                 )}
                 {cur === "enforce" && (
@@ -195,6 +207,15 @@ export default function Guard({
                 <p className="mt-1 tw-label text-neutral-400">
                   {t.ifEnforced(l.cost)}
                 </p>
+              )}
+
+              {/*
+                **三条防线的证据不在同一个地方。**脱敏和工具审查留在
+                单个请求上（流量页），扫描留在旁边的「发现」里。开着一道
+                防线却不知道去哪儿看它查到了什么，等于没开。
+              */}
+              {cur !== "off" && (
+                <p className="mt-1 tw-label text-muted-foreground">{l.where}</p>
               )}
             </Item>
           );
@@ -212,7 +233,9 @@ export default function Guard({
               这里要说清，否则用户以为自己那份是全集，而我们后来加的新
               攻击模式他一条都收不到。
             */}
-            {t.rulesAppended((s) => <span className="font-medium">{s}</span>)}
+            {t.rulesAppended((s) => (
+              <span className="font-medium">{s}</span>
+            ))}
           </p>
           <p className="mt-2 tw-body text-muted-foreground">
             {t.rulesCount(sec.scan_rules_added, sec.scan_rules_disabled)}
@@ -226,9 +249,13 @@ export default function Guard({
             <ItemTitle>{t.scope}</ItemTitle>
           </ItemHeader>
           <ItemDescription>
-            {t.scopeNote((s) => <span className="font-medium">{s}</span>)}
+            {t.scopeNote((s) => (
+              <span className="font-medium">{s}</span>
+            ))}
             <Tip text={t.howToChangeTip}>
-              <span className="ml-1 underline decoration-dotted underline-offset-2">{t.howToChange}</span>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">
+                {t.howToChange}
+              </span>
             </Tip>
           </ItemDescription>
           <Table className="mt-3">
@@ -241,15 +268,15 @@ export default function Guard({
             </TableHeader>
             <TableBody>
               {ov.providers.map((p) => (
-                <TableRow
-                  key={p.name}
-                >
+                <TableRow key={p.name}>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {/* core 给的是 slug（`official` / `untrusted`），不能原样显示 */}
                     {p.trust === "official" ? t.official : t.unofficial}
                     {!p.trust_explicit && (
-                      <span className="ml-1 text-neutral-400">{t.autoDetected}</span>
+                      <span className="ml-1 text-neutral-400">
+                        {t.autoDetected}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -267,7 +294,6 @@ export default function Guard({
           </Table>
         </Item>
       )}
-
-          </div>
+    </div>
   );
 }

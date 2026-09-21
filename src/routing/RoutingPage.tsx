@@ -12,6 +12,7 @@ import {
 } from "@/ui/empty";
 import { IconRoute } from "@/ui/icons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Count } from "@/ui/count";
 import { useText } from "@/i18n";
 import type { GroupView, KnownModel, Overview, RouteInput } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
@@ -257,6 +258,3 @@ export default function RoutingPage({
   );
 }
 
-function Count({ n }: { n: number }) {
-  return <span className="tw-label tabular-nums text-muted-foreground">{n}</span>;
-}

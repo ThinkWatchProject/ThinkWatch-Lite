@@ -20,13 +20,11 @@ import Clients from "./Clients";
 import { AccessPage } from "./access/AccessPage";
 import RoutingPage from "./routing/RoutingPage";
 import Security from "./Security";
-import Guard from "./Guard";
 import { Notices } from "./Notices";
 import { Tip, TooltipRoot } from "@/ui/tip";
 import {
   IconClient,
   IconDashboard,
-  IconFindings,
   IconFlow,
   IconGateway,
   IconGuard,
@@ -120,7 +118,6 @@ type Surface =
   | "sessions"
   | "dashboard"
   | "security"
-  | "guard"
   | "routing"
   | "access"
   | "upstreams"
@@ -144,7 +141,7 @@ function surfaceOf(section: string | null): Surface {
     case "default_route":
       return "routing";
     case "security":
-      return "guard";
+      return "security";
     default:
       // 监听、并发都在接入页；辅助请求在路由页，但它没有自己的段名
       return "access";
@@ -176,12 +173,11 @@ const SOURCES: {
     // 成一个只能看的页面，而整个设计前提是他看完证据之后**要
     // 去动那几个开关**。
     //
-    // 所以拆成两项：发现（看证据）和防护（配策略）。
+    // 一项，不是两项：开关和它查出来的东西分在两页时，「我的机器安全
+    // 吗」这个问题要跑两个导航项才答得完，而两页之间没有一条线索说
+    // 它们是一件事。
     group: "security",
-    items: [
-      { id: "security", icon: IconFindings },
-      { id: "guard", icon: IconGuard },
-    ],
+    items: [{ id: "security", icon: IconGuard }],
   },
   {
     group: "config",
@@ -1097,13 +1093,13 @@ export default function App() {
       ) : tab === "clients" ? (
         <Clients />
       ) : tab === "security" ? (
-        <Security alerts={alerts} onSeen={clearAlerts} />
-      ) : tab === "guard" ? (
         ov ? (
-          <Guard
+          <Security
             ov={ov}
             configVersion={configVersion}
             onChanged={() => setNudge((n) => n + 1)}
+            alerts={alerts}
+            onSeen={clearAlerts}
           />
         ) : (
           <p className="p-5 tw-body text-muted-foreground">{t.loadingConfig}</p>
