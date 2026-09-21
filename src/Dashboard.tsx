@@ -4,14 +4,14 @@ import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
 import RequestDrawer from "./RequestDrawer";
 import { triggers } from "./triggers";
-import { StackedArea } from "@/ui/charts";
+import { StackedArea, Y_AXIS_WIDTH } from "@/ui/charts";
 import { bucketStart, compact, densify } from "./format";
 import { usd, type Dashboard as Data, type LatencyView, type Overview } from "./types";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { RangePicker, useRange } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
-import { LIVE_BUCKET_MS, LIVE_REACH_MS, LIVE_SIGMA_MS, useLive } from "./useLive";
+import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
 import { secretLabel } from "./labels";
 import { useText } from "@/i18n";
@@ -39,7 +39,6 @@ function bucketFor(rangeMs: number): number {
   return HOUR / 2;
 }
 
-/** 一格的时间标签。跨度大到按天分格时就只写日期。 */
 /** 往上取到最近的 1/2/5 × 10ⁿ。纵轴上界用它，刻度才落在整数上。 */
 function niceCeil(v: number): number {
   if (!(v > 0)) return 1;
@@ -48,11 +47,18 @@ function niceCeil(v: number): number {
   return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e;
 }
 
+/**
+ * 一格的时间标签。跨度大到按天分格时就只写日期。
+ *
+ * 不到一分钟的格子（实时档）**写到秒，也带上小时**：只写「07:12」读起来
+ * 像七点十二分，而十分钟的窗口随时会跨过整点。
+ */
 function fmtBucket(atMs: number, bucketMs: number): string {
   const t = new Date(atMs);
   const p = (n: number) => String(n).padStart(2, "0");
   if (bucketMs >= DAY) return `${t.getMonth() + 1}/${t.getDate()}`;
-  if (bucketMs < 60_000) return `${p(t.getMinutes())}:${p(t.getSeconds())}`;
+  if (bucketMs < 60_000)
+    return `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
   return `${t.getMonth() + 1}/${t.getDate()} ${p(t.getHours())}:${p(t.getMinutes())}`;
 }
 
@@ -263,14 +269,14 @@ export default function Dashboard({
 
     两个模型量级接近时，没有滞回就会在名次边界上来回过线，而每过一次
     线，整条带子在纵向跳过另一条、颜色还跟着换（颜色是按名次给的）。
-    实测这个演示实例的流量：按两分钟窗口排，十分钟里换位 145 次；改按
-    24 小时排降到 14 次；要到零得让换位本身有门槛。
+    实测这个演示实例的流量：按实时窗口（当时是两分钟）排，十分钟里换位
+    145 次；改按 24 小时排降到 14 次；要到零得让换位本身有门槛。
   */
   const stack = useRef<string[]>([]);
   const live = range.live === true;
   /*
-    **实时档只有图是实时的。**两分钟窗口里算不出有意义的延迟分位，也
-    统计不出缓存命中率；那些仍然按 24 小时算，图下面有一行小字说明。
+    **实时档只有图是实时的。**十分钟里的样本撑不起有意义的延迟分位，也
+    统计不出像样的缓存命中率；那些仍然按 24 小时算，图下面有一行小字说明。
     所以这里查的窗口和图的窗口是两回事。
   */
   const queryMs = live ? DAY : range.ms;
@@ -323,7 +329,7 @@ export default function Dashboard({
         // 补空桶时格子对不上，整张图会是零。见 bucketStart 的注释。
         //
         // 实时档下这次查询要的是 24 小时的汇总，图另有来路，所以格宽
-        // 取一小时就够 —— 一秒一格去查二十四小时是八万多个分组。
+        // 取一小时就够 —— 五秒一格去查二十四小时是一万七千多个分组。
         const q = live ? HOUR : bucketMs;
         const sinceMs = bucketStart(Date.now() - queryMs, q);
         // Tauri 的 invoke 用字符串 reject，不是 Error
@@ -431,12 +437,16 @@ export default function Dashboard({
     的那些合计往往不到百分之一。
   */
   /*
-    实时档的格子**不对齐整秒**：最右边那一格就是此刻，往左每格一秒。
-    对齐到整秒的话，格子只在跨秒的那一帧整体挪一格，曲线于是每秒跳
-    一次；而高斯核在任意时刻都求得出值，格子没有必须落在整秒上的理由。
+    实时档的格子**不对齐格宽的整数倍**：最右边那一格就是此刻，往左每格
+    五秒。对齐的话，格子只在跨过边界的那一帧整体挪一格，曲线于是每五秒
+    跳一次；而高斯核在任意时刻都求得出值，格子没有必须落在边界上的理由。
+
+    **两头都算**：十分钟是一百二十段、一百二十一个点，最左边那个点正好是
+    十分钟前。少一个点的话，整张图只铺了九分五十五秒，底下的刻度按十分钟
+    标，就差出几个像素。
   */
   const nowMs = Date.now();
-  const liveSpan = Math.round(range.ms / LIVE_BUCKET_MS);
+  const liveSpan = Math.round(range.ms / LIVE_BUCKET_MS) + 1;
   const liveAt = live
     ? Array.from(
         { length: liveSpan },
@@ -459,23 +469,18 @@ export default function Dashboard({
       token/秒，费用口径乘 3600 换成每小时 —— 实时看网关，想知道的
       是此刻烧钱多快，而「这一秒花了 $0.0003」没有人读得出大小。
 
-      排行和总量不走这条路：它们数的是这两分钟里实际发生的量，
+      排行和总量不走这条路：它们数的是这十分钟里实际发生的量，
       一条请求只算一次，在上面。
     */
     /*
       核在**格子的时刻**上求值，不在「第几格」上求值 —— 这样格子挪到
       哪儿都对得上，曲线是平移的，不会因为重新分桶而抖。
-
-      归一化除的是连续高斯的积分（σ√2π）再折算成每格一秒，所以摊完
-      之后一格读作速率。
     */
-    const norm = (LIVE_SIGMA_MS * Math.SQRT2 * Math.sqrt(Math.PI)) / LIVE_BUCKET_MS;
-    const twoSigmaSq = 2 * LIVE_SIGMA_MS * LIVE_SIGMA_MS;
     for (const x of samples) {
       volume.set(x.model, (volume.get(x.model) ?? 0) + x.tokens);
       money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
-      const rate = (by === "token" ? x.tokens : (x.cost ?? 0) * 3600) / norm;
+      const amount = by === "token" ? x.tokens : (x.cost ?? 0) * 3600;
       // 只碰核够得着的那几格
       const lo = Math.max(
         0,
@@ -488,8 +493,7 @@ export default function Dashboard({
       for (let i = lo; i <= hi; i++) {
         const t = liveAt[i];
         if (t === undefined) continue;
-        const d = t - x.at;
-        add(t, x.model, rate * Math.exp(-(d * d) / twoSigmaSq));
+        add(t, x.model, liveRate(amount, t - x.at));
       }
     }
   } else {
@@ -587,7 +591,7 @@ export default function Dashboard({
   );
 
   /*
-    实时档的格子自己铺：两分钟、一秒一格，一路铺到「现在」。
+    实时档的格子自己铺：十分钟、五秒一格，一路铺到「现在」。
     历史档沿用后端给的桶 —— 空桶由 `densify` 补成 0，这是面积图不会把
     空档画成「连续在用」的前提。
   */
@@ -605,8 +609,8 @@ export default function Dashboard({
     : densify(d.buckets ?? [], d.since_ms ?? 0, now, bucketMs);
   if (live) {
     const from = liveAt[0] ?? 0;
-    for (const at of fails) {
-      const g = grid[Math.round((at - from) / LIVE_BUCKET_MS)];
+    for (const f of fails) {
+      const g = grid[Math.round((f.at - from) / LIVE_BUCKET_MS)];
       if (g) g.failed += 1;
     }
   }
@@ -656,6 +660,10 @@ export default function Dashboard({
   if (peak > yHold.current.v || peak < yHold.current.v * 0.5)
     yHold.current = { key: yKey, v: niceCeil(peak * 1.08) };
   const yMax = yHold.current.v || undefined;
+  /** 图下面那排刻度。实时档按固定间隔写，历史档只写起点和「现在」 */
+  const ticks = [...(live ? t.liveTicks : [fmtBucket(d.since_ms ?? 0, bucketMs)]), t.now];
+  /** 图画出来了才有纵轴那一栏（见 `StackedArea` 的空态） */
+  const axis = keys.length > 0 && area.length > 0 ? Y_AXIS_WIDTH : 0;
 
   const latMax =
     Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
@@ -829,23 +837,48 @@ export default function Dashboard({
           liveEdge={live}
         />
         {/*
-          有失败的时段画在基线上。**不往高度里加** —— 加一格固定高度的
-          话，那一格在大桶上看不见、在小桶上直接翻倍，而它本来就不代表
-          任何数量。
+          基线和刻度**只铺到画图区域的右边界**，右边那一栏是纵轴的刻度
+          （见 `Y_AXIS_WIDTH`）。图空着的时候没有纵轴，就铺满。
         */}
-        <div className="flex h-0.5 gap-px bg-muted">
-          {grid.map((g) => (
-            <span key={g.at_ms} className={"flex-1 " + (g.failed > 0 ? "bg-destructive" : "")} />
-          ))}
-        </div>
-        <div className="mt-1.5 flex justify-between tw-label text-muted-foreground">
-          {(live
-            ? t.liveTicks
-            : [fmtBucket(d.since_ms ?? 0, bucketMs)]
-          ).map((x) => (
-            <span key={x}>{x}</span>
-          ))}
-          <span className={live ? "text-foreground" : ""}>{t.now}</span>
+        <div style={{ marginRight: axis }}>
+          {/*
+            有失败的时段画在基线上。**不往高度里加** —— 加一格固定高度的
+            话，那一格在大桶上看不见、在小桶上直接翻倍，而它本来就不代表
+            任何数量。
+          */}
+          <div className="flex h-0.5 gap-px bg-muted">
+            {grid.map((g) => (
+              <span key={g.at_ms} className={"flex-1 " + (g.failed > 0 ? "bg-destructive" : "")} />
+            ))}
+          </div>
+          {/*
+            刻度**标在它说的那个时刻的正下方**。用 `justify-between` 排开的
+            话，每个字落在哪儿取决于前后几个字有多宽，而不是它说的是几点。
+            第一个靠左对齐，免得伸出图外；最后一个压在「现在」那一点下面，
+            右边有纵轴那一栏让它伸过去。
+          */}
+          <div className="relative mt-1.5 h-4 tw-label text-muted-foreground">
+            {ticks.map((x, i) => {
+              const last = i === ticks.length - 1;
+              return (
+                <span
+                  key={x}
+                  className={"absolute top-0 whitespace-nowrap" + (last && live ? " text-foreground" : "")}
+                  style={{
+                    left: `${(i / (ticks.length - 1)) * 100}%`,
+                    transform:
+                      i === 0
+                        ? undefined
+                        : last && axis === 0
+                          ? "translateX(-100%)"
+                          : "translateX(-50%)",
+                  }}
+                >
+                  {x}
+                </span>
+              );
+            })}
+          </div>
         </div>
         {/* 这一行有没有话说都占一行高：少一句就把下面整块往上提，
             正是切换时的那种来回动 */}
@@ -859,7 +892,7 @@ export default function Dashboard({
           {/*
             实时档下这一页有两个口径，必须说清哪个是哪个：**模型排行
             是这张图的图例**（色块要对得上曲线里那一层），所以跟着图
-            走；而两分钟里算不出分位延迟和命中率，那些连同顶部的数字
+            走；而十分钟里算不出像样的分位延迟和命中率，那些连同顶部的数字
             一起按 24 小时算。
           */}
           {live && <span>{t.liveScope}</span>}
