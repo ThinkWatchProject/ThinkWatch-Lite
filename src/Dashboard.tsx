@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStableState } from "./useStable";
 import { Tip } from "@/ui/tip";
 import { invoke } from "@tauri-apps/api/core";
@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { DEFAULT_RANGE, RangePicker, type Range } from "@/ui/range";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { Skeleton } from "@/ui/skeleton";
-import { LIVE_BUCKET_MS, useLive } from "./useLive";
+import { LIVE_BUCKET_MS, LIVE_REACH_MS, LIVE_SIGMA_MS, useLive } from "./useLive";
 import { useCountUp } from "./useCountUp";
 import { secretLabel, storageText } from "./labels";
 import { useText } from "@/i18n";
@@ -40,6 +40,14 @@ function bucketFor(rangeMs: number): number {
 }
 
 /** 一格的时间标签。跨度大到按天分格时就只写日期。 */
+/** 往上取到最近的 1/2/5 × 10ⁿ。纵轴上界用它，刻度才落在整数上。 */
+function niceCeil(v: number): number {
+  if (!(v > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(v)));
+  const m = v / e;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e;
+}
+
 function fmtBucket(atMs: number, bucketMs: number): string {
   const t = new Date(atMs);
   const p = (n: number) => String(n).padStart(2, "0");
@@ -230,6 +238,17 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
    * 前后一周压平 —— 那张图好看，但除了「opus 贵」说不出别的。
    */
   const [by, setBy] = useState<"token" | "cost">("token");
+  /*
+    纵轴的上界**不跟着每一帧的峰值走**。
+
+    自动域下，一个大请求进出窗口就让整条曲线连同刻度一起上下弹 ——
+    看起来像图在抖，其实抖的是尺子。所以上界取一个整齐的数（1/2/5
+    档），而且只在实际峰值掉到它一半以下时才降档：在档位边界上来回
+    过线的话，抖得比不取整还厉害。
+
+    口径和区间一换，量级差几个数量级，得重新起。
+  */
+  const yHold = useRef({ key: "", v: 0 });
   const live = range.live === true;
   /*
     **实时档只有图是实时的。**两分钟窗口里算不出有意义的延迟分位，也
@@ -238,7 +257,11 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   */
   const queryMs = live ? DAY : range.ms;
   const bucketMs = live ? LIVE_BUCKET_MS : bucketFor(range.ms);
-  const { samples, fails, inFlight } = useLive(live, range.ms);
+  /*
+    **多留一个核宽的样本。**最左边那一格的鼓包有一半来自图外的那几秒；
+    按图的宽度留样本的话，左端会凭空塌下去一个口子。
+  */
+  const { samples, fails, inFlight } = useLive(live, range.ms + LIVE_REACH_MS);
   /**
    * **只在内容真的变了的时候才换。**每次 `invoke` 回来都是一个新对象，
    * 直接 setState 会让整页重画一遍，而这一切发生在什么都没发生的时候。
@@ -389,6 +412,19 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     可能报出十几个模型名，十几层叠在两百像素里已经分辨不出，而排在后面
     的那些合计往往不到百分之一。
   */
+  /*
+    实时档的格子**不对齐整秒**：最右边那一格就是此刻，往左每格一秒。
+    对齐到整秒的话，格子只在跨秒的那一帧整体挪一格，曲线于是每秒跳
+    一次；而高斯核在任意时刻都求得出值，格子没有必须落在整秒上的理由。
+  */
+  const nowMs = Date.now();
+  const liveSpan = Math.round(range.ms / LIVE_BUCKET_MS);
+  const liveAt = live
+    ? Array.from(
+        { length: liveSpan },
+        (_, i) => nowMs - (liveSpan - 1 - i) * LIVE_BUCKET_MS,
+      )
+    : [];
   const byBucket = new Map<number, Map<string, number>>();
   const money = new Map<string, number>();
   const volume = new Map<string, number>();
@@ -399,15 +435,44 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     byBucket.set(at, slot);
   };
   if (live) {
+    /*
+      **一条请求摊成一个高斯鼓包，不是一根针也不是一个方块。**
+      核归一到总权重 1，所以摊完之后每一格读作速率：token 口径是
+      token/秒，费用口径乘 3600 换成每小时 —— 实时看网关，想知道的
+      是此刻烧钱多快，而「这一秒花了 $0.0003」没有人读得出大小。
+
+      排行和总量不走这条路：它们数的是这两分钟里实际发生的量，
+      一条请求只算一次，在上面。
+    */
+    /*
+      核在**格子的时刻**上求值，不在「第几格」上求值 —— 这样格子挪到
+      哪儿都对得上，曲线是平移的，不会因为重新分桶而抖。
+
+      归一化除的是连续高斯的积分（σ√2π）再折算成每格一秒，所以摊完
+      之后一格读作速率。
+    */
+    const norm = (LIVE_SIGMA_MS * Math.SQRT2 * Math.sqrt(Math.PI)) / LIVE_BUCKET_MS;
+    const twoSigmaSq = 2 * LIVE_SIGMA_MS * LIVE_SIGMA_MS;
     for (const x of samples) {
       volume.set(x.model, (volume.get(x.model) ?? 0) + x.tokens);
       money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
-      add(
-        Math.floor(x.at / LIVE_BUCKET_MS) * LIVE_BUCKET_MS,
-        x.model,
-        by === "token" ? x.tokens : (x.cost ?? 0),
+      const rate = (by === "token" ? x.tokens : (x.cost ?? 0) * 3600) / norm;
+      // 只碰核够得着的那几格
+      const lo = Math.max(
+        0,
+        Math.ceil((x.at - LIVE_REACH_MS - (liveAt[0] ?? 0)) / LIVE_BUCKET_MS),
       );
+      const hi = Math.min(
+        liveAt.length - 1,
+        Math.floor((x.at + LIVE_REACH_MS - (liveAt[0] ?? 0)) / LIVE_BUCKET_MS),
+      );
+      for (let i = lo; i <= hi; i++) {
+        const t = liveAt[i];
+        if (t === undefined) continue;
+        const d = t - x.at;
+        add(t, x.model, rate * Math.exp(-(d * d) / twoSigmaSq));
+      }
     }
   } else {
     for (const b of d.buckets_by_model ?? []) {
@@ -454,11 +519,10 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     历史档沿用后端给的桶 —— 空桶由 `densify` 补成 0，这是面积图不会把
     空档画成「连续在用」的前提。
   */
-  const now = Date.now();
-  const liveStart = Math.floor((now - range.ms) / LIVE_BUCKET_MS) * LIVE_BUCKET_MS;
+  const now = nowMs;
   const grid = live
-    ? Array.from({ length: Math.round(range.ms / LIVE_BUCKET_MS) }, (_, i) => ({
-        at_ms: liveStart + i * LIVE_BUCKET_MS,
+    ? liveAt.map((at_ms) => ({
+        at_ms,
         requests: 0,
         failed: 0,
         cost_micros_exact: 0,
@@ -468,8 +532,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       }))
     : densify(d.buckets ?? [], d.since_ms ?? 0, now, bucketMs);
   if (live) {
+    const from = liveAt[0] ?? 0;
     for (const at of fails) {
-      const g = grid[Math.round((at - liveStart) / LIVE_BUCKET_MS)];
+      const g = grid[Math.round((at - from) / LIVE_BUCKET_MS)];
       if (g) g.failed += 1;
     }
   }
@@ -480,7 +545,9 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
       label: live
         ? t.liveBucket(
             fmtBucket(g.at_ms, bucketMs),
-            useTokens ? t.tokens(compact(sum), sum) : usd(sum),
+            useTokens
+              ? t.tokenRate(compact(Math.round(sum)))
+              : t.costRate(usd(sum)),
           )
         : t.bucket(
             fmtBucket(g.at_ms, bucketMs),
@@ -503,6 +570,20 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     if (rest.length > 0) row[otherKey] = other;
     return row;
   });
+
+  const peak = area.reduce((hi, row) => {
+    let sum = 0;
+    for (const k of keys) {
+      const v = row[k];
+      if (typeof v === "number") sum += v;
+    }
+    return Math.max(hi, sum);
+  }, 0);
+  const yKey = `${by}/${range.label}`;
+  if (yHold.current.key !== yKey) yHold.current = { key: yKey, v: 0 };
+  if (peak > yHold.current.v || peak < yHold.current.v * 0.5)
+    yHold.current = { key: yKey, v: niceCeil(peak * 1.08) };
+  const yMax = yHold.current.v || undefined;
 
   const latMax =
     Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
@@ -658,6 +739,13 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
           colors={colors}
           height={200}
           empty={live ? t.waiting : t.noRequests}
+          /*
+            **纵轴的单位跟着口径走，和悬停里那句一致。**费用那一路
+            的图值是千分之一美元（见上面 `y`），刻度要换回微分再格式化。
+          */
+          tickFormat={(v) => (useTokens ? compact(v) : usd(v * 1000))}
+          yMax={yMax}
+          liveEdge={live}
         />
         {/*
           有失败的时段画在基线上。**不往高度里加** —— 加一格固定高度的

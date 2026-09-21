@@ -55,8 +55,10 @@ export const dashboardText = messages(
     /** 前五项以外合并成的那一层。**它同时是图里那一层的名字** */
     other: "其他",
     otherCount: (n: number) => `其他 ${n} 项`,
-    /** 图里每一格的 `label` */
-    liveBucket: (at: string, amount: string) => `${at}　${amount}`,
+    /** 图里每一格的 `label`。**实时档读的是速率，不是那一格的量** */
+    liveBucket: (at: string, rate: string) => `${at}　${rate}`,
+    tokenRate: (shown: string) => `${shown} token/秒`,
+    costRate: (amount: string) => `${amount}/小时`,
     bucket: (at: string, amount: string, requests: number, failed: number) =>
       `${at}　${amount}　${requests} 次${failed ? `（${failed} 次失败）` : ""}`,
     waiting: "等待请求。",
@@ -168,7 +170,9 @@ export const dashboardText = messages(
     unknownModel: "Unknown model",
     other: "Other",
     otherCount: (n: number) => (n === 1 ? "1 other" : `${n} others`),
-    liveBucket: (at: string, amount: string) => `${at} · ${amount}`,
+    liveBucket: (at: string, rate: string) => `${at} · ${rate}`,
+    tokenRate: (shown: string) => `${shown} tokens/s`,
+    costRate: (amount: string) => `${amount}/hour`,
     bucket: (at: string, amount: string, requests: number, failed: number) =>
       `${at} · ${amount} · ${requests === 1 ? "1 request" : `${requests} requests`}${
         failed ? ` (${failed} failed)` : ""
