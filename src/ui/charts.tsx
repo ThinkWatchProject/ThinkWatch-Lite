@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -53,13 +53,22 @@ import { chartsText } from "./charts.i18n";
  *
  * 每层顶部再描一条同色实线：三层相近的蓝叠在一起会失去分界。
  *
- * **填充是渐变不是平涂。**同一条蓝的五档明度叠三层，平涂出来是一片
- * 噪点 —— 每层各自从本色渐隐到透明之后，三层才读得出是三条带子。
- * 渐变走 `userSpaceOnUse`、跨整张图的高度：按图形自己的包围盒渐变的
- * 话，最上面那条薄带子会被拉成一整条完整的渐变，比它下面那层还重。
+ * **填充是渐变不是平涂**，按 shadcn 那张堆叠面积图的写法：每层一条
+ * 自己的纵向渐变（0.8 → 0.1）再乘 `fillOpacity`。
+ *
+ * 一度改成过 `userSpaceOnUse`、跨整张图的高度，**那是错的**：同一层
+ * 在图的高处几乎不透明、在低处几乎全透，一层的浓淡随它在纵轴上的位置
+ * 变。堆叠图的层是不可能交叉的，而那样画出来层与层看着在互相穿过，
+ * 整张图读成了几条飘着的波。
  *
  * **纵轴要有刻度。**没有刻度的曲线只是纹理 —— 峰高一倍还是十倍读不
  * 出来，而这正是看这张图的原因。三个刻度、细体弱色，不抢形状。
+ *
+ * **悬停的显隐由这一层说了算，不全交给 recharts。**recharts 只认送到
+ * 它自己那个 wrapper 上的 `mouseleave`，而这个事件是会丢的：切走应用、
+ * 截图工具接管指针、指针从窗口边缘快速离开 —— 都可能让它收不到，于是
+ * 那条竖线和那个浮层就永远停在原地。实时档上这尤其明显：线不动，曲线
+ * 从它下面走过去，框里的数字已经不描述屏幕上的任何东西了。
  */
 export function StackedArea({
   data,
@@ -87,6 +96,21 @@ export function StackedArea({
   // 同一页上可能有几张图，渐变的 id 不能撞。**在提前 return 之前取** ——
   // 空态那一支不走下面的代码，hook 数对不上整棵树就崩了
   const gid = useId().replace(/:/g, "");
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    if (!over) return;
+    // 指针离开的方式不止「移到旁边去」一种，而只有那一种会让 recharts
+    // 收到 mouseleave。这几个是它收不到的那些。
+    const off = () => setOver(false);
+    window.addEventListener("blur", off);
+    document.addEventListener("mouseleave", off);
+    document.addEventListener("visibilitychange", off);
+    return () => {
+      window.removeEventListener("blur", off);
+      document.removeEventListener("mouseleave", off);
+      document.removeEventListener("visibilitychange", off);
+    };
+  }, [over]);
   /*
     **没数据时也要占住这块地方。**塌成一行字的话，数据一来整页往下弹
     一百多像素；而切换时间范围时，这一弹是每次都会发生的 —— 页面在
@@ -111,21 +135,25 @@ export function StackedArea({
     ? keys.reduce((a, k) => a + (typeof last[k] === "number" ? last[k] : 0), 0)
     : 0;
   return (
-    <ChartContainer config={cfg} className="w-full" style={{ height }}>
+    <ChartContainer
+      config={cfg}
+      className="w-full"
+      style={{ height }}
+      onMouseEnter={() => setOver(true)}
+      /*
+        **`mouseenter` 只在跨边界时发一次。**下面那几个补救把 `over` 关掉
+        的时候，指针往往还停在图上（切走应用再切回来就是这样）——只靠
+        `mouseenter` 的话，它要等用户把鼠标移出去再移回来才肯再亮。
+      */
+      onMouseMove={() => !over && setOver(true)}
+      onMouseLeave={() => setOver(false)}
+    >
       <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
         <defs>
           {keys.map((k, i) => (
-            <linearGradient
-              key={k}
-              id={`${gid}-${i}`}
-              gradientUnits="userSpaceOnUse"
-              x1={0}
-              y1={0}
-              x2={0}
-              y2={height}
-            >
-              <stop offset="0%" stopColor={colors[i]} stopOpacity={0.95} />
-              <stop offset="100%" stopColor={colors[i]} stopOpacity={0.12} />
+            <linearGradient key={k} id={`${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={colors[i]} stopOpacity={0.8} />
+              <stop offset="95%" stopColor={colors[i]} stopOpacity={0.1} />
             </linearGradient>
           ))}
         </defs>
@@ -154,6 +182,8 @@ export function StackedArea({
           `XAxis dataKey="label"` 那一格的值，直接显示。
         */}
         <ChartTooltip
+          // `false` = 一定不显示，`undefined` = 照常交给 recharts 判断
+          active={over ? undefined : false}
           cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
           content={<ChartTooltipContent indicator="line" />}
         />
@@ -166,7 +196,7 @@ export function StackedArea({
             stackId="a"
             type="monotone"
             fill={`url(#${gid}-${i})`}
-            fillOpacity={1}
+            fillOpacity={0.4}
             stroke={colors[i]}
             strokeWidth={1.6}
             dot={false}

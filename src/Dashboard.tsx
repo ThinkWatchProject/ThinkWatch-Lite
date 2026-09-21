@@ -249,6 +249,15 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     口径和区间一换，量级差几个数量级，得重新起。
   */
   const yHold = useRef({ key: "", v: 0 });
+  /*
+    上一次的堆叠次序。**名次要有滞回。**
+
+    两个模型量级接近时，没有滞回就会在名次边界上来回过线，而每过一次
+    线，整条带子在纵向跳过另一条、颜色还跟着换（颜色是按名次给的）。
+    实测这个演示实例的流量：按两分钟窗口排，十分钟里换位 145 次；改按
+    24 小时排降到 14 次；要到零得让换位本身有门槛。
+  */
+  const stack = useRef<string[]>([]);
   const live = range.live === true;
   /*
     **实时档只有图是实时的。**两分钟窗口里算不出有意义的延迟分位，也
@@ -486,14 +495,66 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
     }
   }
   const useTokens = by === "token";
+  /*
+    **堆叠的次序不跟着实时窗口走。**
+
+    按窗口内的用量排的话，几个模型量级接近时排名一两秒就翻一次 ——
+    一翻，整条带子在纵向跳过另一条，颜色还跟着换（颜色是按名次给的）。
+    那比曲线自己的移动剧烈得多，看起来就是图在抽。
+
+    所以实时档按**最近 24 小时**的用量定次序：那份数据本来就在手上
+    （见上面查询里的 `q`），而且只随慢刷新变。历史档按它自己那段排，
+    那段本来就不会在两帧之间变。量相同时按名字定，免得 Map 的插入
+    顺序泄漏进来。
+  */
+  const steady = new Map<string, number>();
+  if (live) {
+    for (const b of d.buckets_by_model ?? []) {
+      const name = b.name || t.unknownModel;
+      const v = useTokens
+        ? b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens
+        : b.cost_micros_exact + b.cost_micros_estimated;
+      steady.set(name, (steady.get(name) ?? 0) + v);
+    }
+  }
   // 排行按当前口径排 —— 切到 token 之后，最贵的那个未必是用得最多的
-  const ranked = [...(useTokens ? volume : money).entries()].sort((a, b) => b[1] - a[1]);
+  const here = useTokens ? volume : money;
+  // 排行按当前口径排 —— 切到 token 之后，最贵的那个未必是用得最多的。
+  // **这是给人读的列表，它就该从大到小**，和图的堆叠次序不是一回事。
+  const ranked = [...here.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const top = ranked.slice(0, 5).map(([name]) => name);
   const rest = ranked.slice(5);
-  // 画的顺序是从下往上：**占得少的垫底、占得多的在上**，最重的那一层
-  // 在视觉上也该最重。颜色跟着走，chart-1 最亮给最多的那个。
+
+  /*
+    图里的堆叠次序另算。画的顺序是从下往上：**占得少的垫底、占得多的
+    在上**，最重的那一层在视觉上也该最重；颜色跟着走，chart-1 最亮给
+    最多的那个。要紧的是这个次序**不能每帧都重算一遍**。
+
+    记住的次序里还在的那些保持相对位置，新出现的按量插进去；之后只在
+    一个模型**明显**超过它上一名（两成）时才换位。历史档不需要这一层
+    —— 那段数据两帧之间本来就不变。
+  */
+  const val = (m: string) => (live ? steady : here).get(m) ?? 0;
+  const byVolume = [...top].sort((a, b) => val(b) - val(a) || a.localeCompare(b));
+  let stacked = byVolume;
+  if (live) {
+    const kept = stack.current.filter((m) => top.includes(m));
+    for (const m of byVolume) if (!kept.includes(m)) kept.splice(byVolume.indexOf(m), 0, m);
+    for (let i = kept.length - 1; i > 0; i--) {
+      const up = kept[i - 1];
+      const down = kept[i];
+      if (up === undefined || down === undefined) continue;
+      if (val(down) > val(up) * 1.2) {
+        kept[i - 1] = down;
+        kept[i] = up;
+      }
+    }
+    stack.current = kept;
+    stacked = kept;
+  }
   const otherKey = t.other;
-  const keys = rest.length > 0 ? [otherKey, ...[...top].reverse()] : [...top].reverse();
+  const keys =
+    rest.length > 0 ? [otherKey, ...[...stacked].reverse()] : [...stacked].reverse();
   const shade = [
     "var(--chart-5)",
     "var(--chart-4)",
@@ -504,6 +565,8 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
   const colors = keys.map(
     (_, i) => shade[Math.max(0, shade.length - keys.length + i)] ?? "var(--chart-1)",
   );
+  // **色块按名字查。**列表按用量排、图按堆叠次序排，两边要对得上同一个色
+  const colorOf = new Map(keys.map((k, i) => [k, colors[i] ?? "var(--chart-1)"]));
   const restMoney = rest.reduce((a, x) => a + (money.get(x[0]) ?? 0), 0);
   const restVolume = rest.reduce((a, x) => a + (volume.get(x[0]) ?? 0), 0);
   const restCount = rest.reduce((a, x) => a + (count.get(x[0]) ?? 0), 0);
@@ -808,11 +871,11 @@ export default function Dashboard({ tick, ov }: { tick: number; ov: Overview | n
               {live ? t.waiting : t.noRequests}
             </p>
           )}
-          {[...keys].reverse().map((k, i) => {
+          {[...top, ...(rest.length > 0 ? [otherKey] : [])].map((k) => {
               const c = k === otherKey ? restMoney : (money.get(k) ?? 0);
               const v = k === otherKey ? restVolume : (volume.get(k) ?? 0);
               const n = k === otherKey ? restCount : (count.get(k) ?? 0);
-              const color = colors[keys.length - 1 - i];
+              const color = colorOf.get(k);
               return (
                 <div key={k} className="flex items-center gap-2.5 tw-body">
                   <span
