@@ -28,7 +28,13 @@ import {
   targetLabel,
   translatedText,
 } from "@/labels";
-import type { DryRunResult, KnownModel, Overview, RouteInput, RuleTrace } from "@/types";
+import type {
+  DryRunResult,
+  KnownModel,
+  Overview,
+  RouteInput,
+  RuleTrace,
+} from "@/types";
 import { errorText, skipLabel } from "@/upstreams/labels";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
@@ -76,7 +82,13 @@ export function DryRunDialog({
   const [dialect, setDialect] = useState("anthropic");
   const [kTokens, setKTokens] = useState("8");
   const [maxTokens, setMaxTokens] = useState("");
-  const [flags, setFlags] = useState({ cache: false, tools: false, image: false, thinking: false, stream: true });
+  const [flags, setFlags] = useState({
+    cache: false,
+    tools: false,
+    image: false,
+    thinking: false,
+    stream: true,
+  });
   const [toolCount, setToolCount] = useState("5");
   const [intent, setIntent] = useState("");
   const [r, setR] = useState<DryRunResult | null>(null);
@@ -84,7 +96,9 @@ export function DryRunDialog({
   const [error, setError] = useState<string | null>(null);
 
   const keyRoute = (name: string) =>
-    ov.clients.find((c) => c.name === name)?.route ?? ov.routes.find((x) => x.default)?.name ?? "";
+    ov.clients.find((c) => c.name === name)?.route ??
+    ov.routes.find((x) => x.default)?.name ??
+    "";
 
   const req = useMemo(
     () => ({
@@ -94,7 +108,9 @@ export function DryRunDialog({
       draft: target.kind === "draft" ? target.route : null,
       dialect,
       input_tokens: Math.round((Number.parseFloat(kTokens) || 0) * 1000),
-      max_tokens: /^\d+$/.test(maxTokens.trim()) ? Number(maxTokens.trim()) : null,
+      max_tokens: /^\d+$/.test(maxTokens.trim())
+        ? Number(maxTokens.trim())
+        : null,
       cache: flags.cache,
       tools: flags.tools,
       tool_count: flags.tools ? Number.parseInt(toolCount, 10) || 0 : 0,
@@ -103,7 +119,17 @@ export function DryRunDialog({
       stream: flags.stream,
       intent,
     }),
-    [model, client, target, dialect, kTokens, maxTokens, flags, toolCount, intent],
+    [
+      model,
+      client,
+      target,
+      dialect,
+      kTokens,
+      maxTokens,
+      flags,
+      toolCount,
+      intent,
+    ],
   );
 
   // 输入一变就重算：只计算，不发请求，没有必要等一个按钮
@@ -128,7 +154,12 @@ export function DryRunDialog({
     };
   }, [req]);
 
-  const routeName = target.kind === "key" ? keyRoute(client) : target.kind === "route" ? target.name : target.route.name;
+  const routeName =
+    target.kind === "key"
+      ? keyRoute(client)
+      : target.kind === "route"
+        ? target.name
+        : target.route.name;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -144,14 +175,18 @@ export function DryRunDialog({
               <FormItem label={t.route}>
                 <div className="flex h-8 items-center gap-1.5">
                   <span className="font-medium">{routeName}</span>
-                  {target.kind === "draft" && <Badge variant="outline">{t.unsaved}</Badge>}
+                  {target.kind === "draft" && (
+                    <Badge variant="outline">{t.unsaved}</Badge>
+                  )}
                 </div>
               </FormItem>
             )}
             <FormItem
               label={t.key}
               htmlFor={`${uid}-key`}
-              desc={target.kind === "key" ? t.usesRoute(routeName) : t.keyConditions}
+              desc={
+                target.kind === "key" ? t.usesRoute(routeName) : t.keyConditions
+              }
             >
               <NativeSelect
                 id={`${uid}-key`}
@@ -159,7 +194,9 @@ export function DryRunDialog({
                 value={client}
                 onChange={(e) => setClient(e.target.value)}
               >
-                {target.kind !== "key" && <NativeSelectOption value="">{t.noKey}</NativeSelectOption>}
+                {target.kind !== "key" && (
+                  <NativeSelectOption value="">{t.noKey}</NativeSelectOption>
+                )}
                 {ov.clients.map((c) => (
                   <NativeSelectOption key={c.name} value={c.name}>
                     {c.name}
@@ -168,7 +205,12 @@ export function DryRunDialog({
               </NativeSelect>
             </FormItem>
             <FormItem label={t.model} htmlFor={`${uid}-model`}>
-              <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models.map((m) => m.id)} />
+              <ModelInput
+                id={`${uid}-model`}
+                value={model}
+                onChange={setModel}
+                models={models.map((m) => m.id)}
+              />
             </FormItem>
             <FormItem label={t.dialect} htmlFor={`${uid}-dialect`}>
               <NativeSelect
@@ -209,16 +251,22 @@ export function DryRunDialog({
               </FormItem>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              {(["cache", "tools", "image", "thinking", "stream"] as const).map((k) => (
-                <Field key={k} orientation="horizontal" className="w-auto">
-                  <Checkbox
-                    id={`${uid}-${k}`}
-                    checked={flags[k]}
-                    onCheckedChange={(v) => setFlags((f) => ({ ...f, [k]: v === true }))}
-                  />
-                  <FieldLabel htmlFor={`${uid}-${k}`}>{t.flags[k]}</FieldLabel>
-                </Field>
-              ))}
+              {(["cache", "tools", "image", "thinking", "stream"] as const).map(
+                (k) => (
+                  <Field key={k} orientation="horizontal" className="w-auto">
+                    <Checkbox
+                      id={`${uid}-${k}`}
+                      checked={flags[k]}
+                      onCheckedChange={(v) =>
+                        setFlags((f) => ({ ...f, [k]: v === true }))
+                      }
+                    />
+                    <FieldLabel htmlFor={`${uid}-${k}`}>
+                      {t.flags[k]}
+                    </FieldLabel>
+                  </Field>
+                ),
+              )}
             </div>
             {flags.tools && (
               <FormItem label={t.toolCount} htmlFor={`${uid}-toolcount`}>
@@ -238,7 +286,9 @@ export function DryRunDialog({
                 value={intent}
                 onChange={(e) => setIntent(e.target.value)}
               >
-                <NativeSelectOption value="">{t.userRequest}</NativeSelectOption>
+                <NativeSelectOption value="">
+                  {t.userRequest}
+                </NativeSelectOption>
                 {PROBES.map((p) => (
                   <NativeSelectOption key={p.id} value={p.id}>
                     {p.label}
@@ -275,113 +325,204 @@ export function DryRunDialog({
   );
 }
 
-function Result({ r, ov, draft }: { r: DryRunResult; ov: Overview; draft: boolean }) {
+function Result({
+  r,
+  ov,
+  draft,
+}: {
+  r: DryRunResult;
+  ov: Overview;
+  draft: boolean;
+}) {
   const t = useText(dryRunText);
   const rt = useText(routingText);
   const ct = useText(commonText);
   const decided = r.trace.findIndex((t) => t.effect === "decide");
   const route = ov.routes.find((x) => x.name === r.route);
+  /**
+   * 这个请求在规则之前就有了去向。
+   *
+   * **那时下面每一格都不适用** —— 路由、候选、改写说的都是规则走完之后
+   * 的事，而一条规则都没走。留着它们只会让人以为它真的去了那儿。
+   */
+  const short = r.outcome === "intercepted" || r.outcome === "passthrough";
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
         <span className="tw-title">{headline(r)}</span>
-        {r.outcome === "route" && r.strategy && <Badge variant="outline">{groupKindLabel(r.strategy)}</Badge>}
+        {r.outcome === "route" && r.strategy && (
+          <Badge variant="outline">{groupKindLabel(r.strategy)}</Badge>
+        )}
       </div>
-      {r.outcome === "deny" && r.reason && <p className="tw-body text-muted-foreground">{t.reason(r.reason)}</p>}
+      {r.outcome === "deny" && r.reason && (
+        <p className="tw-body text-muted-foreground">{t.reason(r.reason)}</p>
+      )}
+
+      {short && (
+        <div className="flex flex-col gap-1 tw-body text-muted-foreground">
+          <span>
+            {r.outcome === "intercepted"
+              ? t.interceptedWhat
+              : t.passedThroughWhat}
+          </span>
+          <span>{t.howToRoute}</span>
+        </div>
+      )}
 
       {/* 标签列 80px：中文的四个字只要 64，英文的 Matched rule 要 79 */}
-      <dl className="grid grid-cols-[80px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5 tw-body">
-        <dt className="text-muted-foreground">{t.route}</dt>
-        <dd>
-          {r.route}
-          {!draft && route?.default && <span className="text-muted-foreground">{t.defaultRoute}</span>}
-          {draft && <span className="text-muted-foreground">{t.unsavedChanges}</span>}
-        </dd>
-        {r.rule && (
-          <>
-            <dt className="text-muted-foreground">{t.matchedRule}</dt>
-            <dd>
-              {r.rule}
-              {decided >= 0 && <span className="text-muted-foreground">{t.position(decided + 1)}</span>}
-            </dd>
-          </>
-        )}
-        {r.outcome === "route" && (
-          <>
-            <dt className="text-muted-foreground">{t.attempts}</dt>
-            <dd className="flex flex-col gap-1">
-              {r.candidates.map((c, i) => {
-                const open = r.circuit_open.includes(c);
-                const conv = r.converted.find((x) => x.provider === c);
-                return (
-                  <div key={c} className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="tabular-nums text-muted-foreground">{i + 1}</span>
-                    <span className={cn("font-medium", open && "text-warning line-through")}>{c}</span>
-                    {open && <span className="tw-label text-warning">{t.circuitOpen}</span>}
-                    {conv && <span className="tw-label text-muted-foreground">{t.converted(translatedText(conv))}</span>}
-                  </div>
-                );
-              })}
-            </dd>
-          </>
-        )}
-        {r.skipped.length > 0 && (
-          <>
-            <dt className="text-muted-foreground">{t.skipped}</dt>
-            <dd>
-              {r.skipped.map((s, i) => (
-                <span key={s.provider}>
-                  {i > 0 && rt.listSep}
-                  {s.provider}
-                  <span className="text-muted-foreground">{t.skipReason(skipLabel(s.reason))}</span>
-                </span>
-              ))}
-            </dd>
-          </>
-        )}
-        {r.outcome === "route" && (
-          <>
-            <dt className="text-muted-foreground">{t.rewrites}</dt>
-            <dd className="flex flex-col gap-0.5">
-              {r.set.length === 0 ? (
-                <span className="text-muted-foreground">{ct.none}</span>
-              ) : (
-                r.set.map((s) => <span key={s.field}>{setText(s)}</span>)
-              )}
-            </dd>
-          </>
-        )}
-      </dl>
+      {!short && (
+        <dl className="grid grid-cols-[80px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5 tw-body">
+          <dt className="text-muted-foreground">{t.route}</dt>
+          <dd>
+            {r.route}
+            {!draft && route?.default && (
+              <span className="text-muted-foreground">{t.defaultRoute}</span>
+            )}
+            {draft && (
+              <span className="text-muted-foreground">{t.unsavedChanges}</span>
+            )}
+          </dd>
+          {r.rule && (
+            <>
+              <dt className="text-muted-foreground">{t.matchedRule}</dt>
+              <dd>
+                {r.rule}
+                {decided >= 0 && (
+                  <span className="text-muted-foreground">
+                    {t.position(decided + 1)}
+                  </span>
+                )}
+              </dd>
+            </>
+          )}
+          {r.outcome === "route" && (
+            <>
+              <dt className="text-muted-foreground">{t.attempts}</dt>
+              <dd className="flex flex-col gap-1">
+                {r.candidates.map((c, i) => {
+                  const open = r.circuit_open.includes(c);
+                  const conv = r.converted.find((x) => x.provider === c);
+                  return (
+                    <div
+                      key={c}
+                      className="flex flex-wrap items-baseline gap-x-2"
+                    >
+                      <span className="tabular-nums text-muted-foreground">
+                        {i + 1}
+                      </span>
+                      <span
+                        className={cn(
+                          "font-medium",
+                          open && "text-warning line-through",
+                        )}
+                      >
+                        {c}
+                      </span>
+                      {open && (
+                        <span className="tw-label text-warning">
+                          {t.circuitOpen}
+                        </span>
+                      )}
+                      {conv && (
+                        <span className="tw-label text-muted-foreground">
+                          {t.converted(translatedText(conv))}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </dd>
+            </>
+          )}
+          {r.skipped.length > 0 && (
+            <>
+              <dt className="text-muted-foreground">{t.skipped}</dt>
+              <dd>
+                {r.skipped.map((s, i) => (
+                  <span key={s.provider}>
+                    {i > 0 && rt.listSep}
+                    {s.provider}
+                    <span className="text-muted-foreground">
+                      {t.skipReason(skipLabel(s.reason))}
+                    </span>
+                  </span>
+                ))}
+              </dd>
+            </>
+          )}
+          {r.outcome === "route" && (
+            <>
+              <dt className="text-muted-foreground">{t.rewrites}</dt>
+              <dd className="flex flex-col gap-0.5">
+                {r.set.length === 0 ? (
+                  <span className="text-muted-foreground">{ct.none}</span>
+                ) : (
+                  r.set.map((s) => <span key={s.field}>{setText(s)}</span>)
+                )}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
       {r.hurts_cache && <p className="tw-label text-warning">{t.hurtsCache}</p>}
 
-      <div className="overflow-hidden rounded-lg border border-border">
-        <div className="border-b border-border bg-muted/40 px-3 py-1.5 tw-body font-medium">{t.trace}</div>
-        <ul>
-          {r.trace.map((t, i) => {
-            const v = traceView(t, decided);
-            return (
-              <li key={t.name} className="flex items-start gap-2 border-b border-border px-3 py-1.5 tw-body last:border-b-0">
-                <span className={cn("mt-0.5", v.tone === "ok" ? "text-success" : "text-muted-foreground")}>
-                  {v.icon === "hit" ? (
-                    <CircleCheckIcon className="size-3.5" />
-                  ) : v.icon === "later" ? (
-                    <CircleDotIcon className="size-3.5" />
-                  ) : (
-                    <CircleMinusIcon className="size-3.5" />
-                  )}
-                </span>
-                <span className="w-5 shrink-0 tabular-nums text-muted-foreground">{i + 1}</span>
-                <span className="w-28 shrink-0 truncate font-medium" title={t.name}>
-                  {t.name}
-                </span>
-                <span className={cn("min-w-0", v.tone === "warn" ? "text-warning" : v.tone === "ok" ? "" : "text-muted-foreground")}>
-                  {v.text}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      {/* 一条规则都没求值时不画这个框 —— 空框比不画更像出了错 */}
+      {r.trace.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="border-b border-border bg-muted/40 px-3 py-1.5 tw-body font-medium">
+            {t.trace}
+          </div>
+          <ul>
+            {r.trace.map((t, i) => {
+              const v = traceView(t, decided);
+              return (
+                <li
+                  key={t.name}
+                  className="flex items-start gap-2 border-b border-border px-3 py-1.5 tw-body last:border-b-0"
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5",
+                      v.tone === "ok"
+                        ? "text-success"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {v.icon === "hit" ? (
+                      <CircleCheckIcon className="size-3.5" />
+                    ) : v.icon === "later" ? (
+                      <CircleDotIcon className="size-3.5" />
+                    ) : (
+                      <CircleMinusIcon className="size-3.5" />
+                    )}
+                  </span>
+                  <span className="w-5 shrink-0 tabular-nums text-muted-foreground">
+                    {i + 1}
+                  </span>
+                  <span
+                    className="w-28 shrink-0 truncate font-medium"
+                    title={t.name}
+                  >
+                    {t.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "min-w-0",
+                      v.tone === "warn"
+                        ? "text-warning"
+                        : v.tone === "ok"
+                          ? ""
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {v.text}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </>
   );
 }
@@ -397,6 +538,10 @@ function headline(r: DryRunResult): string {
       return m.denied;
     case "unavailable":
       return m.unavailable;
+    case "intercepted":
+      return m.intercepted;
+    case "passthrough":
+      return m.passedThrough;
     default:
       return m.noMatch;
   }
@@ -406,18 +551,29 @@ function headline(r: DryRunResult): string {
 function traceView(
   t: RuleTrace,
   decided: number,
-): { text: string; tone: "ok" | "muted" | "warn"; icon: "hit" | "later" | "miss" } {
+): {
+  text: string;
+  tone: "ok" | "muted" | "warn";
+  icon: "hit" | "later" | "miss";
+} {
   const m = textOf(dryRunText);
   if (t.verdict === "matched") {
-    if (t.effect === "decide") return { text: m.decides, tone: "ok", icon: "hit" };
-    if (t.effect === "apply") return { text: m.applies, tone: "ok", icon: "hit" };
+    if (t.effect === "decide")
+      return { text: m.decides, tone: "ok", icon: "hit" };
+    if (t.effect === "apply")
+      return { text: m.applies, tone: "ok", icon: "hit" };
     return {
       text: decided >= 0 ? m.decidedBy(decided + 1) : m.matched,
       tone: "muted",
       icon: "hit",
     };
   }
-  if (t.verdict === "phase_two") return { text: m.phaseTwo, tone: "muted", icon: "later" };
+  if (t.verdict === "phase_two")
+    return { text: m.phaseTwo, tone: "muted", icon: "later" };
   if (t.error) return { text: t.error, tone: "warn", icon: "miss" };
-  return { text: t.mismatch ? m.missedBecause(mismatchText(t.mismatch)) : m.missed, tone: "muted", icon: "miss" };
+  return {
+    text: t.mismatch ? m.missedBecause(mismatchText(t.mismatch)) : m.missed,
+    tone: "muted",
+    icon: "miss",
+  };
 }
