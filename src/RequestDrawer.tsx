@@ -428,7 +428,12 @@ export default function RequestDrawer({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="flex w-[min(38rem,90vw)] flex-col p-0 sm:max-w-none"
+        /*
+          **宽度要带 `data-[side=right]:` 前缀。**组件自己那条
+          `data-[side=right]:w-3/4 sm:max-w-sm` 是属性选择器，普通的
+          `w-[…]` 压不过它 —— 这个抽屉一直是 384px，而不是写着的 38rem。
+        */
+        className="flex flex-col p-0 data-[side=right]:w-[min(38rem,90vw)] data-[side=right]:sm:max-w-none"
         /*
           **打开时别把焦点放在关闭按钮上。**Radix 默认聚焦第一个可聚焦
           元素，也就是那个 ×，于是一打开就有个高亮方框套在「关闭」上 ——

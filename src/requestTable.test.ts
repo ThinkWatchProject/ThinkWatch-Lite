@@ -148,3 +148,43 @@ describe("过滤下拉的取值", () => {
     expect(f.providers).toEqual(["relay"]);
   });
 });
+
+describe("只看无法计价的", () => {
+  const row = (x: Partial<RequestRow>): RequestRow => ({
+    id: 1,
+    client: "c",
+    provider: "p",
+    path: "/v1/messages",
+    atMs: 1,
+    state: "done",
+    ...x,
+  });
+
+  it("留下跑完了却没有金额的那些", () => {
+    const rows = [
+      row({ id: 1, costMicros: 120 }),
+      row({ id: 2 }),
+      row({ id: 3, costMicros: 0 }),
+    ];
+    const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
+    expect(got.map((r) => r.id)).toEqual([2]);
+  });
+
+  it("进行中和失败的不算无法计价", () => {
+    // **没算出金额和「还没有金额」不是一回事** —— 混进来会让
+    // 「哪些模型该补价」这个问题答不出来
+    const rows = [
+      row({ id: 1, state: "in_flight" }),
+      row({ id: 2, state: "failed" }),
+      row({ id: 3, state: "cancelled" }),
+      row({ id: 4 }),
+    ];
+    const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
+    expect(got.map((r) => r.id)).toEqual([4]);
+  });
+
+  it("不开这一项时什么都不筛", () => {
+    const rows = [row({ id: 1 }), row({ id: 2, costMicros: 5 })];
+    expect(filterRows(rows, EMPTY_FILTER)).toHaveLength(2);
+  });
+});

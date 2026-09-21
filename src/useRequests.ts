@@ -35,7 +35,7 @@ const SETTLE_MS = 2_500;
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
  * 而重渲染次数降了一到两个数量级。
  */
-export function useRequests(within: { fromMs: number; toMs: number } | null) {
+export function useRequests() {
   const [rows, setRows] = useState<RequestRow[]>([]);
   // 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
   // 连上了，又说明那些探测一分钱都没花。
@@ -141,10 +141,15 @@ export function useRequests(within: { fromMs: number; toMs: number } | null) {
    */
   const pull = useCallback(async () => {
     // Tauri 的 invoke 用字符串 reject，不是 Error
+    /*
+      **整份日志，不分段。**日志留多久是设置里的事（保留期），而这一页
+      要回答的是「翻一翻最近发生过什么」—— 让人先选一个时间范围才能
+      开始搜，等于在一个本来就不大的集合上加一道门。
+
+      2000 是控制面的上限。
+    */
     const history = await invoke<HistoryRow[]>("recent_requests", {
-      limit: 200,
-      fromMs: within?.fromMs ?? null,
-      toMs: within?.toMs ?? null,
+      limit: 2000,
     });
     for (const h of history) {
       const cur = store.current.get(h.id);
@@ -157,8 +162,8 @@ export function useRequests(within: { fromMs: number; toMs: number } | null) {
           cur.costEstimated = h.cost_estimated;
         }
         cur.translated ??= h.translated ?? undefined;
-        // 起始事件里已经带了，这里只补它缺的那种（老记录、重开窗口）
-        cur.session ??= h.session ?? undefined;
+        // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
+        cur.session = h.session ?? cur.session;
         continue;
       }
       store.current.set(h.id, {
@@ -183,7 +188,7 @@ export function useRequests(within: { fromMs: number; toMs: number } | null) {
       });
     }
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-  }, [within?.fromMs, within?.toMs]);
+  }, []);
 
   // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
@@ -204,6 +209,21 @@ export function useRequests(within: { fromMs: number; toMs: number } | null) {
       alive = false;
     };
   }, [pull]);
+
+  /*
+    **落库之后再对一次账。**会话 id 是存储层给的，而事件里只有指纹 ——
+    所以一条请求要等它写进库、再被读回来，才知道自己属于哪次任务。
+
+    `settled` 正是「刚落地的那几行已经在库里了」这个信号，本来就有，
+    只是一直只用来重算概览的聚合。不挂上它的话，这一程里跑出来的请求
+    永远归不了组，得等重开窗口。
+  */
+  useEffect(() => {
+    if (settled === 0) return;
+    void pull().catch(() => {
+      // 对不上就保持原样。下一批落地还会再试
+    });
+  }, [settled, pull]);
 
   useEffect(() => {
     const flush = () => {

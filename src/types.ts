@@ -26,10 +26,12 @@ export interface Msg {
 
 export type CoreEvent =
   /**
-   * `session_fp` 是这一条属于哪次会话，和 `SessionView.id` 同一个值。
+   * `session_fp` 是这段对话的**指纹**，不是会话 id。
    *
-   * **事件里就带着它，不用等落库。**否则刚到的那一行会先无主、过一会儿
-   * 再跳进它的组里 —— 而归组视图下那就是一行凭空换位置。
+   * **两者差一截。**会话 id 是存储层拼的 `{指纹}-{首次时刻}` —— 时刻在
+   * 里面，所以同一段对话隔天再聊算两次任务。拿指纹去当 id 用，会凭空
+   * 长出一批对不上任何会话的影子组。界面因此不读它：归组只认落库之后
+   * 的 `session`。
    */
   | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
@@ -281,8 +283,12 @@ export interface RequestRow {
   /**
    * 它属于哪次会话，和 `SessionView.id` 同一个值。
    *
-   * 认不出会话的（拼不出指纹的、老记录）没有这个字段 —— **不能拿一个
-   * 假的把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
+   * **只有落库之后才有。**会话 id 是存储层给的，事件里那个 `session_fp`
+   * 只是指纹，差着起始时刻那一截。所以正在跑的那一条是没有会话的 ——
+   * 它确实还没被记下来，归组时独立成行，落库之后自然归位。
+   *
+   * 认不出会话的（拼不出指纹的、老记录）也没有 —— **不能拿一个假的
+   * 把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
    */
   session?: string;
 }
@@ -299,7 +305,6 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         path: ev.path,
         atMs: ev.at_ms,
         state: "in_flight",
-        ...(ev.session_fp ? { session: ev.session_fp } : {}),
       });
       break;
     case "request_headers": {
