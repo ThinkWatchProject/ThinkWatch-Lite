@@ -291,6 +291,12 @@ impl ControlClient {
         )?)
     }
 
+    /// 此刻还在跑的请求：它们的开始事件，原样。**半路才开始听事件流的一方
+    /// 先问这个**，把订阅之前就开始了的补上（core 的 `/in-flight`）。
+    pub async fn in_flight(&self) -> Result<Vec<tw_api::Event>> {
+        Ok(serde_json::from_slice(&self.get("/in-flight").await?)?)
+    }
+
     pub async fn latency(&self) -> Result<Vec<tw_api::LatencyView>> {
         Ok(serde_json::from_slice(&self.get("/latency").await?)?)
     }
