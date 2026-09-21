@@ -117,12 +117,26 @@ export function StackedArea({
     // 指针离开的方式不止「移到旁边去」一种，而只有那一种会让 recharts
     // 收到 mouseleave。这几个是它收不到的那些。
     const off = () => setOver(false);
+    /*
+      **指针移出窗口、而焦点没变**，是第四种走法：用户把鼠标甩到另一块
+      屏幕或另一个应用上，但没点它。那时 `blur` 不发（窗口还是焦点）、
+      `visibilitychange` 不发（窗口还看得见），WKWebView 也不保证把
+      `mouseleave` 送到容器上 —— 前三张网全漏，于是那条竖线留在图上，
+      而图还在往左走。
+
+      `mouseout` 且 `relatedTarget` 为空，说的正是「指针去了文档外面」。
+    */
+    const out = (e: MouseEvent) => {
+      if (!e.relatedTarget) setOver(false);
+    };
     window.addEventListener("blur", off);
     document.addEventListener("mouseleave", off);
+    document.addEventListener("mouseout", out);
     document.addEventListener("visibilitychange", off);
     return () => {
       window.removeEventListener("blur", off);
       document.removeEventListener("mouseleave", off);
+      document.removeEventListener("mouseout", out);
       document.removeEventListener("visibilitychange", off);
     };
   }, [over]);
