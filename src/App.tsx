@@ -1497,17 +1497,25 @@ export default function App() {
           >
             <SheetContent
               side="right"
-              className="flex w-[min(38rem,90vw)] flex-col overflow-y-auto p-0 sm:max-w-none"
+              /*
+                **比它上面那一层宽。**叠起来的时候左边露出一截，那一截
+                就是「下面还有一层」这件事唯一的说明；等宽的话看起来
+                就是原地换了内容。
+              */
+              className="flex flex-col overflow-y-auto p-0 data-[side=right]:w-[min(46rem,94vw)] data-[side=right]:sm:max-w-none"
             >
               <SheetHeader className="sr-only">
                 <SheetTitle>{t.surfaces.sessions}</SheetTitle>
               </SheetHeader>
               <SessionPanel
                 d={sessionDetail}
-                onOpenTurn={(id) => {
-                  setOpenSession(null);
-                  setOpen(id);
-                }}
+                /*
+                  **在会话这一层之上再叠一层，不是把它换掉。**
+                  一轮是那次任务里的一条请求 —— 看完这一条要退回任务
+                  继续看下一轮，而换掉的话每看一轮都得从表里重新点开
+                  那次会话。
+                */
+                onOpenTurn={setOpen}
               />
             </SheetContent>
           </Sheet>
