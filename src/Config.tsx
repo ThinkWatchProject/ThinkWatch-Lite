@@ -18,7 +18,7 @@ import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { toast } from "sonner";
 import { patchConfig } from "./patch";
-import { PROBES } from "./labels";
+
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { ButtonGroup } from "@/ui/button-group";
 import { textOf, useText } from "@/i18n";
@@ -232,98 +232,6 @@ function CidrList({
   );
 }
 
-function probeModes(): { id: string; label: string; what: string }[] {
-  const t = textOf(configText);
-  return [
-    { id: "intercept", label: t.intercept, what: t.interceptWhat },
-    { id: "passthrough", label: t.passthrough, what: t.passthroughWhat },
-    { id: "route", label: t.routed, what: t.routedWhat },
-  ];
-}
-
-/**
- * 客户端自己发的辅助请求。
- *
- * **这一段以前在界面上完全不存在,而它的缺席是连锁的**:路由条件
- * `when.intent` 只有在对应那一类被配成「交给路由」时才可能命中 ——
- * 所以任何写了 `intent` 的规则都是死的,而用户无从知道为什么。
- */
-function ProbesSection({
-  ov,
-  configVersion,
-}: {
-  ov: Overview;
-  configVersion: string | null;
-}) {
-  const t = useText(configText);
-  const [busy, setBusy] = useState<string | null>(null);
-  const probes = ov.client_probes ?? [];
-  if (probes.length === 0) return null;
-  const modes = probeModes();
-
-  async function set(id: string, mode: string) {
-    if (!configVersion) {
-      toast.error(t.versionNotLoaded);
-      return;
-    }
-    setBusy(id);
-    try {
-      await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], configVersion);
-    } catch (e) {
-      toast.error(errorText(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <section>
-      <h2 className="tw-title font-semibold">{t.probesTitle}</h2>
-      <p className="mt-1 tw-body text-muted-foreground">
-        {t.probesIntro}
-      </p>
-      <ul className="mt-2 space-y-1.5">
-        {probes.map((p) => {
-          const kind = PROBES.find((x) => x.id === p.id);
-          return (
-          <li
-            key={p.id}
-            className="rounded-md border border-border px-3 py-2"
-          >
-            <div className="flex items-baseline gap-3">
-              <span className="tw-body font-medium">{kind?.label ?? p.id}</span>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                className="ml-auto"
-                value={p.mode}
-                disabled={busy === p.id}
-                /* 择一,不许择空 —— 空了等于没有模式 */
-                onValueChange={(v) => v && void set(p.id, v)}
-              >
-                {modes.map((m) => (
-                  <ToggleGroupItem key={m.id} value={m.id}>
-                    {m.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </div>
-            {kind && <p className="mt-1 tw-body text-muted-foreground">{kind.what}</p>}
-            <p className="mt-0.5 tw-label text-muted-foreground">
-              {modes.find((m) => m.id === p.mode)?.what}
-            </p>
-          </li>
-          );
-        })}
-      </ul>
-      <p className="mt-2 tw-label text-muted-foreground">
-        {t.probesNote}
-      </p>
-    </section>
-  );
-}
-
 /** 并发上限。以前这一整段也没有界面。 */
 function LimitsSection({
   ov,
@@ -528,7 +436,6 @@ function ListenSection({
         )}
       </dl>
 
-
       {/*
         白名单还只能读不能改：`PatchOp::Replace` 只吃标量，而 `allow_from`
         是一个列表。要在界面上编辑它，得先给补丁协议加一个列表操作 ——
@@ -618,10 +525,6 @@ export default function Config({
 
       {section === "gateway" && (
         <ListenSection ov={ov} configVersion={configVersion} />
-      )}
-
-      {section === "gateway" && (
-        <ProbesSection ov={ov} configVersion={configVersion} />
       )}
 
       {section === "gateway" && (
