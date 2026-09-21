@@ -285,7 +285,8 @@ impl ControlClient {
         within: Option<(i64, i64)>,
     ) -> Result<Vec<tw_api::HistoryRow>> {
         Ok(serde_json::from_slice(
-            &self.get(&format!("/history?limit={limit}{}", window_q(within)))
+            &self
+                .get(&format!("/history?limit={limit}{}", window_q(within)))
                 .await?,
         )?)
     }
