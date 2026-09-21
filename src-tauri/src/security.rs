@@ -65,6 +65,20 @@ pub async fn toggle_security_rule(
 }
 
 #[tauri::command]
+pub async fn set_security_rule_action(
+    state: tauri::State<'_, AppState>,
+    guard: String,
+    id: String,
+    save: tw_api::ActionSave,
+) -> Out<tw_api::ConfigWritten> {
+    state
+        .control
+        .set_security_rule_action(&guard, &id, &save)
+        .await
+        .map_err(text)
+}
+
+#[tauri::command]
 pub async fn create_security_rule(
     state: tauri::State<'_, AppState>,
     guard: String,

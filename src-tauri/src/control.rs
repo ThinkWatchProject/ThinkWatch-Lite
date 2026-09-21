@@ -441,6 +441,25 @@ impl ControlClient {
         .await
     }
 
+    /// 一条内置规则在拦截档下做什么。只有工具调用审查的规则有这一项
+    pub async fn set_security_rule_action(
+        &self,
+        guard: &str,
+        id: &str,
+        req: &tw_api::ActionSave,
+    ) -> Result<tw_api::ConfigWritten> {
+        self.send_json(
+            hyper::Method::PUT,
+            &format!(
+                "/security/{}/builtin/{}/action",
+                segment(guard),
+                segment(id)
+            ),
+            req,
+        )
+        .await
+    }
+
     pub async fn create_security_rule(
         &self,
         guard: &str,

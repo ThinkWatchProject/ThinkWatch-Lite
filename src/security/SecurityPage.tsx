@@ -246,6 +246,13 @@ export default function SecurityPage({
           rule={dialog.rule}
           onClose={() => setDialog(null)}
           onCopy={() => actions(dialog.guard).copy(dialog.rule)}
+          onSaveAction={async (a) => {
+            const w = await api.setAction(dialog.rule.id, a, version.current ?? null);
+            version.current = w.version;
+            setDialog(null);
+            onChanged();
+            await reload();
+          }}
         />
       )}
       {dialog?.kind === "test" && <TestDialog guard={dialog.guard} onClose={() => setDialog(null)} />}
