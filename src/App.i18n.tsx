@@ -64,6 +64,10 @@ export const appText = messages(
     // 过滤条
     search: "搜索路径、客户端、上游、错误…  ⌘F",
     failedOnly: "仅显示失败",
+    groupBySession: "按会话归组",
+    expandSession: "展开这次会话",
+    collapseSession: "收起这次会话",
+    turnCount: (n: number) => `${n} 轮`,
     allClients: "全部客户端",
     allUpstreams: "全部上游",
     shownOf: (shown: number, total: number) => `${shown} / ${total} 条`,
@@ -184,6 +188,10 @@ export const appText = messages(
     // 输入框 256px 宽，放得下的文字约 234px；带上「Search」就放不下 ⌘F 了
     search: "Path, client, upstream, error…  ⌘F",
     failedOnly: "Failed only",
+    groupBySession: "Group by session",
+    expandSession: "Expand this session",
+    collapseSession: "Collapse this session",
+    turnCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
     allClients: "All clients",
     allUpstreams: "All upstreams",
     shownOf: (shown: number, total: number) => `${shown} / ${count(total, "request", "requests")}`,

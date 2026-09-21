@@ -33,10 +33,12 @@ import {
   IconSettings,
 } from "./ui/icons";
 import { RequestTable } from "./traffic/RequestTable";
-import Sessions from "./Sessions";
+import { SessionPanel } from "./traffic/SessionPanel";
+import { useSessions } from "./traffic/useSessions";
+import { groupAt, groupBySession } from "./traffic/grouping";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
-import type { CoreStatus, Overview } from "./types";
+import type { CoreStatus, Overview, SessionDetail } from "./types";
 import { stageLabel } from "./labels";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -54,10 +56,17 @@ import {
   EmptyTitle,
 } from "@/ui/empty";
 import { Kbd, KbdGroup } from "@/ui/kbd";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { Toaster } from "@/ui/sonner";
+import { toast } from "sonner";
+import { errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Split } from "@/ui/split";
-import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import Connect, { trouble } from "./Connect";
 import {
   Sidebar,
@@ -110,7 +119,6 @@ const MAX_TRIES = 8;
  */
 type Surface =
   | "requests"
-  | "sessions"
   | "dashboard"
   | "security"
   | "routing"
@@ -256,11 +264,45 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filter, setFilter] = useState(EMPTY_FILTER);
+  /*
+    **按会话归组。**请求和会话本来就是同一批记录的两个粒度 —— 原来它们
+    是两个标签，各有各的表、各有各的详情范式，而两者之间没有门。
+
+    开关记下来：这是「我习惯怎么看流量」，不是一次性的动作。
+  */
+  const [grouped, setGrouped] = useState(() => {
+    try {
+      return window.localStorage.getItem("tw-grouped") === "on";
+    } catch {
+      // 隐私模式之类。记不住而已
+      return false;
+    }
+  });
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  /** 右侧分栏里开着的那次会话。和 `open`（一条请求）互斥 */
+  const [openSession, setOpenSession] = useState<string | null>(null);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const sessions = useSessions();
   const rows = useMemo(
     () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
     [allRows, filter, sortKey, sortDir],
   );
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /*
+    **过滤和排序先跑，归组后跑。**反过来的话，筛掉一半请求之后组头上的
+    汇总还是整次任务的数字，而用户会以为自己筛错了。
+
+    组与组之间沿用表头选的那个方向（按组里最新的一条比），组内永远
+    按时间正序 —— 见 `grouping.ts`。
+  */
+  const groups = useMemo(() => {
+    if (!grouped) return undefined;
+    const gs = groupBySession(rows, sessions);
+    const dir = sortDir === "asc" ? 1 : -1;
+    return sortKey === "time"
+      ? [...gs].sort((a, b) => (groupAt(a) - groupAt(b)) * dir)
+      : gs;
+  }, [grouped, rows, sessions, sortKey, sortDir]);
   /**
    * 客户端这一列只在真的分得开的时候才出现。
    *
@@ -270,6 +312,34 @@ export default function App() {
    */
   const showClient = facet.clients.length > 1;
   const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (openSession === null) {
+      setSessionDetail(null);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        // Tauri 的 invoke 用字符串 reject，不是 Error
+        const d = await invoke<SessionDetail>("session_detail", {
+          id: openSession,
+        });
+        if (alive) setSessionDetail(d);
+      } catch (e) {
+        toast.error(errorText(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [openSession]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("tw-grouped", grouped ? "on" : "off");
+    } catch {
+      // 记不住而已，不值得为它中断
+    }
+  }, [grouped]);
 
   /**
    * 点表头排序。
@@ -358,7 +428,8 @@ export default function App() {
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
-  const split = wide && tab === "requests" && open != null;
+  // 分栏：请求详情和会话详情共用那一栏，开着任一个就分
+  const split = wide && tab === "requests" && (open != null || openSession != null);
   /*
     分栏的宽度记在本地。**v4 的 react-resizable-panels 去掉了
     `autoSaveId`**（那一版自己写 localStorage），所以这里自己接一下 ——
@@ -1054,7 +1125,7 @@ export default function App() {
               className={
                 "flex min-h-0 flex-1 flex-col " +
                 // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
-                (tab === "requests" || tab === "sessions"
+                (tab === "requests"
                   ? "overflow-hidden"
                   : "overflow-y-auto")
               }
@@ -1070,13 +1141,6 @@ export default function App() {
       */}
               {!linked ? (
                 <Connect state={core} tries={tries} />
-              ) : tab === "sessions" ? (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <TrafficTabs value="sessions" onChange={setTab} />
-                  <div className="min-h-0 flex-1 overflow-y-auto">
-                    <Sessions />
-                  </div>
-                </div>
               ) : tab === "dashboard" ? (
                 <Dashboard tick={dashTick} ov={ov} />
               ) : tab === "clients" ? (
@@ -1141,7 +1205,6 @@ export default function App() {
                 <Config />
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <TrafficTabs value="requests" onChange={setTab} />
                   <Split
                     split={split}
                     layout={splitLayout}
@@ -1161,6 +1224,19 @@ export default function App() {
                           id={open}
                           onClose={() => setOpen(null)}
                           inline
+                        />
+                      ) : split && sessionDetail ? (
+                        /*
+                          会话也走这一栏。**原来它是个模态框** —— 同一页
+                          上两套详情范式，而模态框还挡着它下面那张表，
+                          「这次任务的第 12 轮」和表里那一行没法对着看。
+                        */
+                        <SessionPanel
+                          d={sessionDetail}
+                          onOpenTurn={(id) => {
+                            setOpenSession(null);
+                            setOpen(id);
+                          }}
                         />
                       ) : null
                     }
@@ -1191,6 +1267,19 @@ export default function App() {
                           }
                         >
                           {t.failedOnly}
+                        </Toggle>
+                        {/*
+                          **归组是个视角，不是一个筛子** —— 它不改变
+                          哪些行在表里，只改变它们怎么摆。所以和过滤器
+                          并排，但中间隔开一点。
+                        */}
+                        <Toggle
+                          variant="outline"
+                          size="sm"
+                          pressed={grouped}
+                          onPressedChange={setGrouped}
+                        >
+                          {t.groupBySession}
                         </Toggle>
                         {/* 下拉里只列**出现过的** —— 配了三家而只有一家在收流量时，
                 另外两家出现在这里只会让人以为自己筛错了 */}
@@ -1342,8 +1431,26 @@ export default function App() {
                         sortDir={sortDir}
                         onSort={toggleSort}
                         onCursor={setCursor}
-                        onOpen={setOpen}
+                        onOpen={(id) => {
+                          setOpenSession(null);
+                          setOpen(id);
+                        }}
                         onFilter={setFilter}
+                        groups={groups}
+                        openGroups={openGroups}
+                        selectedSession={openSession}
+                        onToggleGroup={(id) =>
+                          setOpenGroups((prev) => {
+                            const next = new Set(prev);
+                            if (!next.delete(id)) next.add(id);
+                            return next;
+                          })
+                        }
+                        onOpenSession={(id) => {
+                          // 一次只开一样：请求详情和会话详情共用那一栏
+                          setOpen(null);
+                          setOpenSession(id);
+                        }}
                       />
                     )}
                     {locallyAnswered > 0 && rows.length > 0 && (
@@ -1404,6 +1511,26 @@ export default function App() {
           <RequestDrawer id={open} onClose={() => setOpen(null)} />
         )}
         {/*
+          会话也要有这条窄窗口的退路。**少了它，窄窗口下点组头是没反应的**
+          —— 而「没反应」和「坏了」在用户眼里没有区别。
+        */}
+        {sessionDetail && !split && (
+          <Dialog open onOpenChange={(o) => !o && setOpenSession(null)}>
+            <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-3xl">
+              <DialogHeader className="sr-only">
+                <DialogTitle>{t.surfaces.sessions}</DialogTitle>
+              </DialogHeader>
+              <SessionPanel
+                d={sessionDetail}
+                onOpenTurn={(id) => {
+                  setOpenSession(null);
+                  setOpen(id);
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
+        {/*
         **所有出错都走这里。**在此之前每个页面各自在表单旁边挂一条错误，
         于是同一句「还没读到配置版本」有六份实现，而滚出视野的那几份用户
         根本看不到。吐司统一在右下角，谁触发的都一样。
@@ -1414,30 +1541,4 @@ export default function App() {
   );
 }
 
-/**
- * 「流量」的两种粒度：一条请求，和一次对话。
- *
- * **它们是同一批数据，所以是标签不是两个导航项。**分成两项时，用户得
- * 先决定「我要看请求还是会话」，而他想知道的其实是「刚才发生了什么」。
- */
-function TrafficTabs({
-  value,
-  onChange,
-}: {
-  value: "requests" | "sessions";
-  onChange: (v: Surface) => void;
-}) {
-  const t = useText(appText);
-  return (
-    <Tabs
-      value={value}
-      onValueChange={(v) => onChange(v as Surface)}
-      className="shrink-0 px-5 pt-5"
-    >
-      <TabsList>
-        <TabsTrigger value="requests">{t.surfaces.requests}</TabsTrigger>
-        <TabsTrigger value="sessions">{t.surfaces.sessions}</TabsTrigger>
-      </TabsList>
-    </Tabs>
-  );
-}
+

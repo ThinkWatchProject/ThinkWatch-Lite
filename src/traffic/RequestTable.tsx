@@ -1,8 +1,9 @@
+import { Fragment } from "react";
 import { useText } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { coreText, ruleWhy } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
-import { latency, money, repeated, statusTone, tokens, when } from "@/format";
+import { latency, money, statusTone, tokens, when } from "@/format";
 import { Tip } from "@/ui/tip";
 import { secretLabel, translatedText } from "@/labels";
 import { Button } from "@/ui/button";
@@ -18,6 +19,8 @@ import {
 } from "@/ui/table";
 import type { RequestRow } from "@/types";
 import type { Filter, SortDir, SortKey } from "@/requestTable";
+import { sortWithin, type Group } from "./grouping";
+import { SessionRow } from "./SessionRow";
 
 /**
  * 流量页那张请求表。
@@ -28,6 +31,11 @@ import type { Filter, SortDir, SortKey } from "@/requestTable";
  */
 export function RequestTable({
   rows,
+  groups,
+  openGroups,
+  selectedSession,
+  onToggleGroup,
+  onOpenSession,
   showClient,
   cursor,
   fresh,
@@ -40,6 +48,14 @@ export function RequestTable({
   onFilter,
 }: {
   rows: RequestRow[];
+  /** 给了就是归组形态。不给就是今天那张平表 */
+  groups?: Group[];
+  /** 展开着的那几个会话 */
+  openGroups: Set<string>;
+  /** 右侧分栏里开着的那次会话 */
+  selectedSession: string | null;
+  onToggleGroup: (id: string) => void;
+  onOpenSession: (id: string) => void;
   showClient: boolean;
   /** 键盘选中的那一行在 `rows` 里的下标 */
   cursor: number;
@@ -130,322 +146,21 @@ export function RequestTable({
                   />
                 ) : (
                   <TableBody>
-                    {rows.map((r, i) => (
-                      <RowMenu
-                        key={r.id}
-                        items={[
-                          {
-                            kind: "item",
-                            label: t.openDetails,
-                            onSelect: () => onOpen(r.id),
-                          },
-                          { kind: "sep" },
-                          // **按这一行的值筛，不是打开一个筛选器。**排查时的
-                          // 动作是「只看这家」「只看这个客户端」，而手打名字
-                          // 会打错，打错的表现是「筛出来空的」。
-                          {
-                            kind: "item",
-                            label: t.onlyUpstream(r.provider),
-                            onSelect: () =>
-                              onFilter((f) => ({
-                                ...f,
-                                provider: r.provider,
-                              })),
-                          },
-                          ...(showClient
-                            ? ([
-                                {
-                                  kind: "item",
-                                  label: t.onlyClient(r.client),
-                                  onSelect: () =>
-                                    onFilter((f) => ({
-                                      ...f,
-                                      client: r.client,
-                                    })),
-                                },
-                              ] as const)
-                            : []),
-                          { kind: "sep" },
-                          {
-                            kind: "item",
-                            label: t.copyId,
-                            onSelect: () =>
-                              void navigator.clipboard.writeText(
-                                String(r.id),
-                              ),
-                          },
-                          {
-                            kind: "item",
-                            label: t.copyRow,
-                            onSelect: () =>
-                              void navigator.clipboard.writeText(
-                                [
-                                  new Date(r.atMs).toLocaleString(),
-                                  r.client,
-                                  r.model ?? "",
-                                  r.provider,
-                                  r.path,
-                                  r.status ?? r.state,
-                                  r.durationMs != null
-                                    ? `${r.durationMs}ms`
-                                    : "",
-                                  tokens(r.inputTokens, r.outputTokens),
-                                  money(r.costMicros, r.costEstimated),
-                                  coreText(r.error),
-                                ]
-                                  .filter(Boolean)
-                                  .join("\t"),
-                              ),
-                          },
-                        ]}
-                      >
-                        <TableRow
-                          onClick={() => {
-                            onCursor(rows.indexOf(r));
-                            onOpen(r.id);
-                          }}
-                          className={
-                            "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
-                            (rows[cursor]?.id === r.id
-                              ? "bg-neutral-100 dark:bg-neutral-800"
-                              : fresh.has(r.id)
-                                ? "bg-emerald-50 dark:bg-emerald-950"
-                                : "")
-                          }
-                        >
-                          {/*
-            状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
-            眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
-          */}
-                          <TableCell className="whitespace-nowrap">
-                            {(() => {
-                              const tone = statusTone(
-                                r.status,
-                                r.state,
-                              );
-                              const dot =
-                                tone === "bad"
-                                  ? "bg-red-500"
-                                  : tone === "warn"
-                                    ? "bg-amber-500"
-                                    : tone === "pending"
-                                      ? "bg-amber-400 animate-pulse"
-                                      : tone === "muted"
-                                        ? "bg-neutral-400"
-                                        : "bg-emerald-500/60";
-                              return (
-                                <span className="flex items-center gap-1.5">
-                                  <span
-                                    className={
-                                      "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
-                                      dot
-                                    }
-                                  />
-                                  <span
-                                    className={
-                                      tone === "ok" || tone === "muted"
-                                        ? "text-neutral-400"
-                                        : ""
-                                    }
-                                  >
-                                    {r.state === "in_flight"
-                                      ? "…"
-                                      : r.state === "failed"
-                                        ? t.failed
-                                        : r.state === "cancelled"
-                                          ? t.cancelled
-                                          : r.status}
-                                  </span>
-                                </span>
-                              );
-                            })()}
-                          </TableCell>
-                          {/*
-            时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
-            看昨天那次时，整列全是「1d」，而这一列的用途就是把
-            某一行对上号。相对时间留给悬停。
-          */}
-                          <TableCell className="whitespace-nowrap text-neutral-400">
-                            <Tip
-                              text={new Date(r.atMs).toLocaleString()}
-                            >
-                              <span>{when(r.atMs, today)}</span>
-                            </Tip>
-                          </TableCell>
-                          {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
-                          {showClient && (
-                            <TableCell
-                              className={
-                                repeated(rows, i, (x) => x.client)
-                                  ? "text-neutral-400/50"
-                                  : ""
-                              }
-                            >
-                              {r.client}
-                            </TableCell>
-                          )}
-                          {/*
-            模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
-            连着发的两次请求，差别往往只在这里。
-          */}
-                          <TableCell
-                            className={
-                              repeated(rows, i, (x) => x.model ?? "")
-                                ? "text-neutral-400/50"
-                                : ""
-                            }
-                          >
-                            {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
-                自己的列宽算法吃掉，长名字照样把这一列撑开 */}
-                            <div
-                              className="max-w-[13rem] truncate"
-                              title={r.model}
-                            >
-                              {r.model ?? "—"}
-                            </div>
-                          </TableCell>
-                          <TableCell
-                            className={
-                              repeated(rows, i, (x) => x.provider)
-                                ? "text-neutral-400/50"
-                                : ""
-                            }
-                          >
-                            {/*
-              **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行
-              的话，一行同时带「已脱敏」和「已转换 · 丢弃 n 项」，
-              这一格就有 240px，默认窗口下表比容器宽出 40px —— 被挤
-              出视野的是最后一列费用，而那是这张表里最要紧的一列。
-              其余各列都不换行，表格变窄时只有这一列收得动。只在
-              徽标之间折，徽标自身不断开：窄了是这一行变高，不是
-              哪一列看不见。
-            */}
-                            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
-                              <span>{r.provider}</span>
-                              {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
-                  是脱敏搞坏了功能。所以脱敏发生了就要在
-                  列表这一层看得见，而不是藏在详情里 */}
-                              {r.redacted && r.redacted.length > 0 && (
-                                <span
-                                  className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                                  title={t.redactedTip(
-                                    r.redacted.map(
-                                      (x) =>
-                                        `${secretLabel(x.secret)} ×${x.count}`,
-                                    ),
-                                  )}
-                                >
-                                  {t.redacted(
-                                    r.redacted.reduce(
-                                      (a, x) => a + x.count,
-                                      0,
-                                    ),
-                                  )}
-                                </span>
-                              )}
-                              {/* 格式转换。**转了就要看得见，丢了字段
-                  更要看得见** —— 「扩展思考开了却没生效」这个症状
-                  在客户端那头完全无从下手，只有这里知道原因 */}
-                              {r.translated && (
-                                <span
-                                  className={
-                                    "rounded px-1 tw-label " +
-                                    (r.translated.dropped.length > 0
-                                      ? "bg-amber-500 text-white"
-                                      : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
-                                  }
-                                  title={
-                                    t.sentConverted(
-                                      translatedText(r.translated),
-                                    ) +
-                                    (r.translated.dropped.length > 0
-                                      ? t.droppedFields(
-                                          r.translated.dropped,
-                                        )
-                                      : t.noneDropped)
-                                  }
-                                >
-                                  {r.translated.dropped.length > 0
-                                    ? t.convertedDropped(
-                                        r.translated.dropped.length,
-                                      )
-                                    : t.converted}
-                                </span>
-                              )}
-                              {r.flagged?.some((f) => f.high) && (
-                                <span
-                                  className={
-                                    "rounded px-1 tw-label " +
-                                    (r.flagged.some((f) => f.blocked)
-                                      ? "bg-red-600 text-white"
-                                      : "bg-amber-500 text-white")
-                                  }
-                                  title={r.flagged
-                                    .filter((f) => f.high)
-                                    .map((f) =>
-                                      t.flaggedTip(
-                                        f.tool,
-                                        ruleWhy(f.rule, f.why),
-                                        f.excerpt,
-                                      ),
-                                    )
-                                    .join("\n\n")}
-                                >
-                                  {r.flagged.some((f) => f.blocked)
-                                    ? t.blocked
-                                    : t.suspicious}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          {/*
-            数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
-            扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
-            扫出极值。
-          */}
-                          <TableCell className="whitespace-nowrap text-right">
-                            {latency(r.ttfbMs, r.durationMs)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-neutral-400">
-                            {tokens(r.inputTokens, r.outputTokens)}
-                          </TableCell>
-                          {/*
-            **估算值必须带记号。**猜出来的金额和账单上的数字在
-            列表里长得一模一样，而它们不是一回事。
-          */}
-                          <TableCell className="whitespace-nowrap text-right">
-                            {r.costEstimated ? (
-                              // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
-                              // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
-                              // 平台借来的
-                              <Tip
-                                text={
-                                  r.state === "cancelled"
-                                    ? t.estimatedCancelled
-                                    : r.state === "failed"
-                                      ? t.estimatedFailed
-                                      : t.estimatedBorrowed
-                                }
-                              >
-                                <span className="underline decoration-dotted underline-offset-2">
-                                  {money(r.costMicros, true)}
-                                </span>
-                              </Tip>
-                            ) : (
-                              <span
-                                className={
-                                  r.costMicros == null
-                                    ? "text-neutral-400"
-                                    : ""
-                                }
-                              >
-                                {money(r.costMicros, false)}
-                              </span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      </RowMenu>
-                    ))}
+                  <RequestRows
+                    rows={rows}
+                    groups={groups}
+                    openGroups={openGroups}
+                    showClient={showClient}
+                    today={today}
+                    cursor={cursor}
+                    fresh={fresh}
+                    selectedSession={selectedSession}
+                    onOpen={onOpen}
+                    onCursor={onCursor}
+                    onFilter={onFilter}
+                    onToggleGroup={onToggleGroup}
+                    onOpenSession={onOpenSession}
+                  />
                   </TableBody>
                 )}
               </Table>
@@ -514,5 +229,447 @@ function BodySkeleton({ widths }: { widths: string[] }) {
         </TableRow>
       ))}
     </TableBody>
+  );
+}
+
+/**
+ * 表体。**平铺和归组是同一张表的两个形态，不是两张表。**
+ *
+ * 归组打开时，每个会话出一行组头，展开之后它的请求跟在下面；认不出
+ * 会话的那些没有组头，直接就是一行请求 —— 见 `groupBySession`。
+ *
+ * 过滤和排序在两个形态下都照常生效：它们作用在进到这里之前的 `rows`
+ * 上，归组只是把同一批行重新摆一遍。**组与组之间沿用表头的排序，组内
+ * 永远按时间正序** —— 一次任务的第 1 轮到第 47 轮是有顺序的。
+ */
+function RequestRows({
+  rows,
+  groups,
+  openGroups,
+  showClient,
+  today,
+  cursor,
+  fresh,
+  selectedSession,
+  onOpen,
+  onCursor,
+  onFilter,
+  onToggleGroup,
+  onOpenSession,
+}: {
+  rows: RequestRow[];
+  /** 给了就是归组形态 */
+  groups?: Group[];
+  openGroups: Set<string>;
+  showClient: boolean;
+  today: number;
+  cursor: number;
+  fresh: Set<number>;
+  selectedSession: string | null;
+  onOpen: (id: number) => void;
+  onCursor: (i: number) => void;
+  onFilter: (f: (prev: Filter) => Filter) => void;
+  onToggleGroup: (id: string) => void;
+  onOpenSession: (id: string) => void;
+}) {
+  const at = rows[cursor]?.id;
+  const one = (r: RequestRow, prev: RequestRow | undefined, indent: boolean) => (
+    <Row
+      key={r.id}
+      r={r}
+      prev={prev}
+      showClient={showClient}
+      today={today}
+      selected={at === r.id}
+      fresh={fresh.has(r.id)}
+      indent={indent}
+      onOpen={onOpen}
+      onSelect={() => onCursor(rows.indexOf(r))}
+      onFilter={onFilter}
+    />
+  );
+
+  if (!groups) {
+    return <TableBody>{rows.map((r, i) => one(r, rows[i - 1], false))}</TableBody>;
+  }
+
+  return (
+    <TableBody>
+      {groups.map((g) => {
+        // 无主的请求没有组头 —— 把它们凑成一组等于声称它们属于同一次任务
+        if (g.id === null) {
+          const r = g.rows[0];
+          return r ? one(r, undefined, false) : null;
+        }
+        const open = openGroups.has(g.id);
+        const inside = sortWithin(g);
+        return (
+          <Fragment key={g.id}>
+            <SessionRow
+              g={g}
+              open={open}
+              showClient={showClient}
+              selected={selectedSession === g.id}
+              onToggle={() => onToggleGroup(g.id!)}
+              onOpen={() => onOpenSession(g.id!)}
+            />
+            {open && inside.map((r, i) => one(r, inside[i - 1], true))}
+          </Fragment>
+        );
+      })}
+    </TableBody>
+  );
+}
+
+/**
+ * 一条请求，一行。
+ *
+ * **`prev` 是上一行，不是下标。**归组之后「上一行」可能是组头，也可能
+ * 是另一个会话的最后一条 —— 拿下标去原数组里回看会把相邻的两组连起来，
+ * 而那几列（客户端、模型、上游）正是靠「和上一行相同就压暗」来减噪的。
+ */
+function Row({
+  r,
+  prev,
+  showClient,
+  today,
+  selected,
+  fresh,
+  indent,
+  onOpen,
+  onSelect,
+  onFilter,
+}: {
+  r: RequestRow;
+  prev: RequestRow | undefined;
+  showClient: boolean;
+  today: number;
+  selected: boolean;
+  fresh: boolean;
+  /** 组里的行往里缩一格 —— 它属于上面那个组头 */
+  indent: boolean;
+  onOpen: (id: number) => void;
+  onSelect: () => void;
+  onFilter: (f: (prev: Filter) => Filter) => void;
+}) {
+  const t = useText(appText);
+  const same = (get: (x: RequestRow) => string) =>
+    prev !== undefined && get(prev) === get(r);
+  return (
+                <RowMenu
+                  key={r.id}
+                  items={[
+                    {
+                      kind: "item",
+                      label: t.openDetails,
+                      onSelect: () => onOpen(r.id),
+                    },
+                    { kind: "sep" },
+                    // **按这一行的值筛，不是打开一个筛选器。**排查时的
+                    // 动作是「只看这家」「只看这个客户端」，而手打名字
+                    // 会打错，打错的表现是「筛出来空的」。
+                    {
+                      kind: "item",
+                      label: t.onlyUpstream(r.provider),
+                      onSelect: () =>
+                        onFilter((f) => ({
+                          ...f,
+                          provider: r.provider,
+                        })),
+                    },
+                    ...(showClient
+                      ? ([
+                          {
+                            kind: "item",
+                            label: t.onlyClient(r.client),
+                            onSelect: () =>
+                              onFilter((f) => ({
+                                ...f,
+                                client: r.client,
+                              })),
+                          },
+                        ] as const)
+                      : []),
+                    { kind: "sep" },
+                    {
+                      kind: "item",
+                      label: t.copyId,
+                      onSelect: () =>
+                        void navigator.clipboard.writeText(
+                          String(r.id),
+                        ),
+                    },
+                    {
+                      kind: "item",
+                      label: t.copyRow,
+                      onSelect: () =>
+                        void navigator.clipboard.writeText(
+                          [
+                            new Date(r.atMs).toLocaleString(),
+                            r.client,
+                            r.model ?? "",
+                            r.provider,
+                            r.path,
+                            r.status ?? r.state,
+                            r.durationMs != null
+                              ? `${r.durationMs}ms`
+                              : "",
+                            tokens(r.inputTokens, r.outputTokens),
+                            money(r.costMicros, r.costEstimated),
+                            coreText(r.error),
+                          ]
+                            .filter(Boolean)
+                            .join("\t"),
+                        ),
+                    },
+                  ]}
+                >
+                  <TableRow
+                    onClick={() => {
+                      onSelect();
+                      onOpen(r.id);
+                    }}
+                    className={
+                      "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
+                      (selected
+                        ? "bg-neutral-100 dark:bg-neutral-800"
+                        : fresh
+                          ? "bg-emerald-50 dark:bg-emerald-950"
+                          : "") +
+                      (indent ? " [&>td:first-child]:pl-7" : "")
+                    }
+                  >
+                    {/*
+      状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
+      眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
+    */}
+                    <TableCell className="whitespace-nowrap">
+                      {(() => {
+                        const tone = statusTone(
+                          r.status,
+                          r.state,
+                        );
+                        const dot =
+                          tone === "bad"
+                            ? "bg-red-500"
+                            : tone === "warn"
+                              ? "bg-amber-500"
+                              : tone === "pending"
+                                ? "bg-amber-400 animate-pulse"
+                                : tone === "muted"
+                                  ? "bg-neutral-400"
+                                  : "bg-emerald-500/60";
+                        return (
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              className={
+                                "inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
+                                dot
+                              }
+                            />
+                            <span
+                              className={
+                                tone === "ok" || tone === "muted"
+                                  ? "text-neutral-400"
+                                  : ""
+                              }
+                            >
+                              {r.state === "in_flight"
+                                ? "…"
+                                : r.state === "failed"
+                                  ? t.failed
+                                  : r.state === "cancelled"
+                                    ? t.cancelled
+                                    : r.status}
+                            </span>
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    {/*
+      时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
+      看昨天那次时，整列全是「1d」，而这一列的用途就是把
+      某一行对上号。相对时间留给悬停。
+    */}
+                    <TableCell className="whitespace-nowrap text-neutral-400">
+                      <Tip
+                        text={new Date(r.atMs).toLocaleString()}
+                      >
+                        <span>{when(r.atMs, today)}</span>
+                      </Tip>
+                    </TableCell>
+                    {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
+                    {showClient && (
+                      <TableCell
+                        className={
+                          same((x) => x.client)
+                            ? "text-neutral-400/50"
+                            : ""
+                        }
+                      >
+                        {r.client}
+                      </TableCell>
+                    )}
+                    {/*
+      模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
+      连着发的两次请求，差别往往只在这里。
+    */}
+                    <TableCell
+                      className={
+                        same((x) => x.model ?? "")
+                          ? "text-neutral-400/50"
+                          : ""
+                      }
+                    >
+                      {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
+          自己的列宽算法吃掉，长名字照样把这一列撑开 */}
+                      <div
+                        className="max-w-[13rem] truncate"
+                        title={r.model}
+                      >
+                        {r.model ?? "—"}
+                      </div>
+                    </TableCell>
+                    <TableCell
+                      className={
+                        same((x) => x.provider)
+                          ? "text-neutral-400/50"
+                          : ""
+                      }
+                    >
+                      {/*
+        **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行
+        的话，一行同时带「已脱敏」和「已转换 · 丢弃 n 项」，
+        这一格就有 240px，默认窗口下表比容器宽出 40px —— 被挤
+        出视野的是最后一列费用，而那是这张表里最要紧的一列。
+        其余各列都不换行，表格变窄时只有这一列收得动。只在
+        徽标之间折，徽标自身不断开：窄了是这一行变高，不是
+        哪一列看不见。
+      */}
+                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                        <span>{r.provider}</span>
+                        {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑
+            是脱敏搞坏了功能。所以脱敏发生了就要在
+            列表这一层看得见，而不是藏在详情里 */}
+                        {r.redacted && r.redacted.length > 0 && (
+                          <span
+                            className="rounded bg-neutral-200 px-1 tw-label text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                            title={t.redactedTip(
+                              r.redacted.map(
+                                (x) =>
+                                  `${secretLabel(x.secret)} ×${x.count}`,
+                              ),
+                            )}
+                          >
+                            {t.redacted(
+                              r.redacted.reduce(
+                                (a, x) => a + x.count,
+                                0,
+                              ),
+                            )}
+                          </span>
+                        )}
+                        {/* 格式转换。**转了就要看得见，丢了字段
+            更要看得见** —— 「扩展思考开了却没生效」这个症状
+            在客户端那头完全无从下手，只有这里知道原因 */}
+                        {r.translated && (
+                          <span
+                            className={
+                              "rounded px-1 tw-label " +
+                              (r.translated.dropped.length > 0
+                                ? "bg-amber-500 text-white"
+                                : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")
+                            }
+                            title={
+                              t.sentConverted(
+                                translatedText(r.translated),
+                              ) +
+                              (r.translated.dropped.length > 0
+                                ? t.droppedFields(
+                                    r.translated.dropped,
+                                  )
+                                : t.noneDropped)
+                            }
+                          >
+                            {r.translated.dropped.length > 0
+                              ? t.convertedDropped(
+                                  r.translated.dropped.length,
+                                )
+                              : t.converted}
+                          </span>
+                        )}
+                        {r.flagged?.some((f) => f.high) && (
+                          <span
+                            className={
+                              "rounded px-1 tw-label " +
+                              (r.flagged.some((f) => f.blocked)
+                                ? "bg-red-600 text-white"
+                                : "bg-amber-500 text-white")
+                            }
+                            title={r.flagged
+                              .filter((f) => f.high)
+                              .map((f) =>
+                                t.flaggedTip(
+                                  f.tool,
+                                  ruleWhy(f.rule, f.why),
+                                  f.excerpt,
+                                ),
+                              )
+                              .join("\n\n")}
+                          >
+                            {r.flagged.some((f) => f.blocked)
+                              ? t.blocked
+                              : t.suspicious}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    {/*
+      数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
+      扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
+      扫出极值。
+    */}
+                    <TableCell className="whitespace-nowrap text-right">
+                      {latency(r.ttfbMs, r.durationMs)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right text-neutral-400">
+                      {tokens(r.inputTokens, r.outputTokens)}
+                    </TableCell>
+                    {/*
+      **估算值必须带记号。**猜出来的金额和账单上的数字在
+      列表里长得一模一样，而它们不是一回事。
+    */}
+                    <TableCell className="whitespace-nowrap text-right">
+                      {r.costEstimated ? (
+                        // 估算的理由要说对：取消和中断的那些，是输出只数到了断开
+                        // 那一刻；别的估算来自价目表 —— 这个模型的单价是从其他
+                        // 平台借来的
+                        <Tip
+                          text={
+                            r.state === "cancelled"
+                              ? t.estimatedCancelled
+                              : r.state === "failed"
+                                ? t.estimatedFailed
+                                : t.estimatedBorrowed
+                          }
+                        >
+                          <span className="underline decoration-dotted underline-offset-2">
+                            {money(r.costMicros, true)}
+                          </span>
+                        </Tip>
+                      ) : (
+                        <span
+                          className={
+                            r.costMicros == null
+                              ? "text-neutral-400"
+                              : ""
+                          }
+                        >
+                          {money(r.costMicros, false)}
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                </RowMenu>
   );
 }
