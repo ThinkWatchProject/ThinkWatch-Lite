@@ -412,6 +412,8 @@ export default function App() {
    * 那一行有什么特别。
    */
   const [cursor, setCursor] = useState(-1);
+  /** 流量页的滚动层。键盘选中一行之后，在它里面找到那一行滚进视野 */
+  const listRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Surface>("dashboard");
   /** 从客户端页点了某把密钥：密钥页打开时定位到那一行 */
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -559,7 +561,8 @@ export default function App() {
    * **「用鼠标一行行点太慢」**，而 Requests 是主战场。
    *
    * 两个边界：在输入框里打字时不接管方向键（否则光标动不了）；
-   * 抽屉开着时 `↑↓` 也不动，那时用户在看详情而不是挑行。
+   * 抽屉开着时 `↑↓` 也不动，那时用户在看详情而不是挑行。请求和会话的
+   * 抽屉都算：选中的行会滚进视野，漏掉一个，背后的列表就跟着光标滚走了。
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -611,15 +614,29 @@ export default function App() {
         setOpen(null);
         return;
       }
-      if (open !== null) return;
+      if (open !== null || openSession !== null) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        setCursor((c) => {
-          const next = e.key === "ArrowDown" ? c + 1 : c - 1;
-          // 第一次按方向键从第一行开始，而不是从「上一行」跳到末尾
-          if (c < 0) return e.key === "ArrowDown" ? 0 : 0;
-          return Math.max(0, Math.min(rows.length - 1, next));
-        });
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        // 第一次按方向键从第一行开始，而不是从「上一行」跳到末尾
+        const next =
+          cursor < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, cursor + step));
+        setCursor(next);
+        /*
+          **选中的那一行要一直看得见。**方向键自带的滚动上面拦掉了，不补的话
+          按过可视区的下沿，高亮就跑到屏幕外面去了。只滚刚好够的距离
+          （`nearest`）；让开吸顶的表头、不横着滚，靠的是行上的 scroll-margin，
+          见 `Row`。光标到了头、没动，也照样滚：用滚轮翻走之后，按一下方向键
+          就回到选中的那一行。
+
+          **按 id 找行，不按下标。**归组时表里的顺序不是 `rows` 的顺序，折起来
+          的组里的行也不在表里 —— 那时找不到，就不滚。
+        */
+        const id = rows[next]?.id;
+        if (id !== undefined)
+          listRef.current
+            ?.querySelector(`[data-row="${id}"]`)
+            ?.scrollIntoView({ block: "nearest" });
       } else if (e.key === "Enter" && cursor >= 0 && rows[cursor]) {
         e.preventDefault();
         setOpen(rows[cursor].id);
@@ -627,7 +644,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, rows, cursor, open]);
+  }, [tab, rows, cursor, open, openSession]);
 
   // 换页时把抽屉关掉 —— 它是请求页的东西，留在别的页上没有意义，
   // 而那时 Esc 也不接管了（键盘那个 effect 只在请求页挂）
@@ -1261,7 +1278,7 @@ export default function App() {
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (
-                <div className="min-h-0 flex-1 overflow-auto">
+                <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
                   {/*
                     详情走**浮层**，不拆栏。
 

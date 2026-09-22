@@ -438,12 +438,28 @@ function Row({
                   ]}
                 >
                   <TableRow
+                    data-row={r.id}
                     onClick={() => {
                       onSelect();
                       onOpen(r.id);
                     }}
                     className={
                       "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
+                      /*
+                        这两样是给键盘导航的 `scrollIntoView` 用的（见 App）。
+
+                        **上边让出吸顶的表头**，不然往上翻时这一行停在表头
+                        底下。36px 是表头的高：排序钮 24px，加「状态」那一格
+                        的 `py-1.5`。
+
+                        **左右各放出一整屏宽，横向就不会滚。**窗口窄、表横着
+                        滚的时候，一行横跨整张表，总有一截在视野外，`nearest`
+                        会为它横着滚：Chromium 把表推开 20px，左右边距没了；
+                        WebKit 从最右一下跳回最左。只放出外面那块的 `px-5`
+                        在 WebKit 里不够 —— 它把滚动宽度向上取整，滚到最右时
+                        行边差零点几像素够不着可视区的右沿。
+                      */
+                      "scroll-mt-9 scroll-mx-[100vw] " +
                       (selected
                         ? "bg-neutral-100 dark:bg-neutral-800"
                         : fresh
