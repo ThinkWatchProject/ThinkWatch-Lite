@@ -33,7 +33,13 @@ export const requestDrawerText = messages(
     generationTime: "生成用时",
     upstream: "上游",
     answeredLocally: "本地应答",
-    client: "客户端",
+    /** 请求带的是哪把网关密钥 —— 身份 */
+    client: "密钥",
+    /** 按请求头推测的应用 —— 旁证 */
+    app: "应用",
+    guessed: "（按请求头推测）",
+    /** 非本机来的请求从哪台机器来 */
+    peer: "来源",
     path: "路径",
     conversion: "格式转换",
     dropped: "丢弃字段",
@@ -123,7 +129,10 @@ export const requestDrawerText = messages(
     generationTime: "Generation",
     upstream: "Upstream",
     answeredLocally: "Answered locally",
-    client: "Client",
+    client: "Key",
+    app: "App",
+    guessed: " (guessed from the request headers)",
+    peer: "Source",
     path: "Path",
     conversion: "Conversion",
     dropped: "Dropped",

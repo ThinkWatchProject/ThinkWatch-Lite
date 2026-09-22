@@ -19,7 +19,8 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { XIcon } from "lucide-react";
 import { priceSourceDetail } from "./upstreams/labels";
-import { attemptText, formatLabel, quoteText, targetLabel } from "./labels";
+import { appLabel, attemptText, formatLabel, quoteText, targetLabel } from "./labels";
+import { KeyLabel } from "./KeyLabel";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { requestDrawerText } from "./RequestDrawer.i18n";
@@ -284,7 +285,21 @@ export default function RequestDrawer({
                   }
                 />
                 <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider} />
-                <Row label={t.client} value={r.client} />
+                {/* 密钥是身份；应用是按请求头推测的，能伪造；来源是这条连接对面的
+                    地址，只有非本机来的才有 */}
+                <Row label={t.client} value={<KeyLabel name={r.client} masked={r.key_masked} />} />
+                {r.client_hint && (
+                  <Row
+                    label={t.app}
+                    value={
+                      <>
+                        {appLabel(r.client_hint)}
+                        <span className="text-muted-foreground">{t.guessed}</span>
+                      </>
+                    }
+                  />
+                )}
+                {r.peer && <Row label={t.peer} value={<span className="font-mono">{r.peer}</span>} />}
                 <Row label={t.path} value={<span className="font-mono">{r.path}</span>} />
                 {/* **转了就要看得见，丢了字段更要看得见** —— 「扩展思考开了却没
                     生效」在客户端那头无从查起 */}

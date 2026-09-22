@@ -10,6 +10,8 @@ import { Tip } from "@/ui/tip";
 import { Segmented } from "@/ui/segmented";
 import { windowStart, type Range } from "@/ui/range";
 import { when } from "@/format";
+import { appLabel } from "@/labels";
+import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import RequestDrawer from "@/RequestDrawer";
@@ -184,13 +186,13 @@ export function LogTab({
       ) : (
         <>
           {/* 列宽是定死的：窗口再窄，「命中」一列也要留出能读的宽度，放不下就横向滚 */}
-          <Table className="table-fixed min-w-[680px]">
+          <Table className="table-fixed min-w-[710px]">
             <colgroup>
               <col className="w-[92px]" />
               <col className="w-[84px]" />
               <col />
               <col className="w-[84px]" />
-              <col className="w-[200px]" />
+              <col className="w-[230px]" />
               <col className="w-9" />
             </colgroup>
             <TableHeader>
@@ -232,12 +234,18 @@ export function LogTab({
                         <ActionBadge action={e.action} />
                       </TableCell>
                       <TableCell className="py-2">
+                        {/* 密钥是身份：打码的值加名字。名字是随便起的，不代表是哪个应用 */}
                         <div className="truncate">
-                          {e.client || "—"}
+                          <KeyLabel name={e.client || "—"} masked={e.key_masked} />
                           <span className="text-muted-foreground"> → </span>
                           {e.provider || "—"}
                         </div>
-                        {e.model && <div className="truncate tw-label text-muted-foreground">{e.model}</div>}
+                        {/* 模型、推测出的应用、非本机的来源 */}
+                        <div className="truncate tw-label text-muted-foreground">
+                          {[e.model, e.client_hint && appLabel(e.client_hint), e.peer && t.from(e.peer)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
                         <RowMenuButton items={items} label={t.actionsFor(name)} />

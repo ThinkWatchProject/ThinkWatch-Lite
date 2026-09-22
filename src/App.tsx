@@ -303,13 +303,20 @@ export default function App() {
       : gs;
   }, [grouped, rows, sessions, sortKey, sortDir]);
   /**
-   * 客户端这一列只在真的分得开的时候才出现。
+   * 「密钥」这一列只在真的分得开的时候才出现。
    *
    * 目标用户「一个 key 就够」，那时整列二十五行是同一个值 —— 占着宽度
    * 却零信息，而那点宽度给模型名用正好。**按实际出现过的算，不按配置里
    * 有几个算**：配了两个而只有一个在发请求时，这一列同样是常量。
+   *
+   * 格子里除了密钥还写推测出的应用和非本机的来源，所以**这两样分得开也
+   * 算**：一把密钥几个应用共用、或者局域网里另一台机器也在用，这一列就
+   * 有话可说。
    */
-  const showClient = facet.clients.length > 1;
+  const showClient =
+    facet.clients.length > 1 ||
+    new Set(allRows.map((r) => r.hint ?? "")).size > 1 ||
+    allRows.some((r) => r.peer);
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (openSession === null) {

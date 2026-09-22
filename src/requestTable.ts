@@ -108,11 +108,13 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;
     if (!q) return true;
-    // 路径、客户端、上游、模型、错误信息都算 —— 排查时你记得住的往往是
-    // 错误里的那半句话，而不是哪个字段装着它。
+    // 路径、密钥、应用、来源、上游、模型、错误信息都算 —— 排查时记得住的
+    // 往往是错误里的那半句话，而不是哪个字段装着它。
     return (
       r.path.toLowerCase().includes(q) ||
       r.client.toLowerCase().includes(q) ||
+      (r.hint ?? "").toLowerCase().includes(q) ||
+      (r.peer ?? "").includes(q) ||
       r.provider.toLowerCase().includes(q) ||
       (r.model ?? "").toLowerCase().includes(q) ||
       coreText(r.error).toLowerCase().includes(q)
