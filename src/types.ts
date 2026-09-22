@@ -33,7 +33,7 @@ export type CoreEvent =
    * 长出一批对不上任何会话的影子组。界面因此不读它：归组只认落库之后
    * 的 `session`。
    */
-  | { kind: "request_started"; id: number; client: string; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
+  | { kind: "request_started"; id: number; client: string; client_hint?: string | null; peer?: string | null; key_masked?: string | null; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
   /**
    * 三种结局（结束、失败、取消）都带着 `model`，和开始事件里的是同一个。
@@ -82,7 +82,7 @@ export type CoreEvent =
    * 会让那两个数字都变得没意义。它单独计数。
    */
   /** `probe` 和 `ProbeView.id` 是同一个词表 */
-  | { kind: "locally_answered"; id: number; client: string; probe: string; at_ms: number }
+  | { kind: "locally_answered"; id: number; client: string; client_hint?: string | null; peer?: string | null; probe: string; at_ms: number }
   /** 配置换了一份新的进去，已经生效。界面靠它知道自己手里那份过期了。 */
   | { kind: "config_reloaded"; id: number; version: string; origin: ConfigOrigin; at_ms: number }
   /**
@@ -256,7 +256,14 @@ export interface CoreStatus {
 /** 一行请求，由四类事件缝出来。 */
 export interface RequestRow {
   id: number;
+  /** 请求带的网关密钥叫什么。**是身份，不是应用** —— 一把密钥可以几个应用共用 */
   client: string;
+  /** 按请求头推测是哪个应用发的（`claude-code`、`codex`…）。可以伪造，只用来显示 */
+  hint?: string;
+  /** 非本机来的请求的来源地址。本机来的没有 */
+  peer?: string;
+  /** 请求带的那把密钥打码后的样子（`tw-re…wb4e`），请求那一刻的 */
+  keyMasked?: string;
   provider: string;
   /** 哪个模型。**决定这次多贵、多慢的就是它** */
   model?: string;
@@ -313,6 +320,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       rows.set(ev.id, {
         id: ev.id,
         client: ev.client,
+        hint: ev.client_hint ?? undefined,
+        peer: ev.peer ?? undefined,
+        keyMasked: ev.key_masked ?? undefined,
         provider: ev.provider,
         // 老记录里没有这个字段，空串当作「不知道」
         model: ev.model || undefined,
@@ -671,6 +681,12 @@ export interface HistoryRow {
   session?: string | null;
   /** 两项防护在这条请求上留下的记录。没命中的没有 */
   security?: SecurityEventView[];
+  /** 按请求头推测是哪个应用发的。可以伪造，只用来显示 */
+  client_hint?: string | null;
+  /** 非本机来的请求的来源地址。本机来的没有 */
+  peer?: string | null;
+  /** 请求带的那把密钥打码后的样子，请求那一刻的 */
+  key_masked?: string | null;
 }
 
 /** 一次请求做过的格式转换 */
@@ -1320,6 +1336,12 @@ export interface SecurityEventView {
   /** 出站脱敏是打码后的值；工具调用审查是命中的那一小段 */
   excerpt: string;
   count: number;
+  /** 按请求头推测是哪个应用发的 */
+  client_hint?: string | null;
+  /** 非本机来的请求的来源地址 */
+  peer?: string | null;
+  /** 请求带的那把密钥打码后的样子，请求那一刻的 */
+  key_masked?: string | null;
 }
 
 export interface SecurityEventsPage {

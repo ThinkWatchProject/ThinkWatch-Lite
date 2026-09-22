@@ -5,7 +5,8 @@ import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { latency, money, statusTone, tokens, when } from "@/format";
 import { Tip } from "@/ui/tip";
-import { translatedText } from "@/labels";
+import { appLabel, translatedText } from "@/labels";
+import { KeyLabel, keyText } from "@/KeyLabel";
 import { ruleName } from "@/security/labels";
 import { Button } from "@/ui/button";
 import { RowMenu } from "@/ui/row-menu";
@@ -503,15 +504,22 @@ function Row({
                       </Tip>
                     </TableCell>
                     {/* 和上一行相同就淡化 —— 眼睛要找的是变化的那一行 */}
+                    {/* 密钥是身份；后面是推测出的应用和非本机的来源，淡一档 */}
                     {showClient && (
                       <TableCell
                         className={
-                          same((x) => x.client)
+                          "max-w-56 truncate " +
+                          (same((x) => `${x.client}|${x.keyMasked ?? ""}|${x.hint ?? ""}|${x.peer ?? ""}`)
                             ? "text-neutral-400/50"
-                            : ""
+                            : "")
                         }
+                        title={[keyText(r.client, r.keyMasked), r.hint && appLabel(r.hint), r.peer && t.fromPeer(r.peer)]
+                          .filter(Boolean)
+                          .join(" · ")}
                       >
-                        {r.client}
+                        <KeyLabel name={r.client} masked={r.keyMasked} />
+                        {r.hint && <span className="text-muted-foreground"> · {appLabel(r.hint)}</span>}
+                        {r.peer && <span className="text-muted-foreground"> · {t.fromPeer(r.peer)}</span>}
                       </TableCell>
                     )}
                     {/*

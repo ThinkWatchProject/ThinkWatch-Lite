@@ -8,6 +8,7 @@ export const logTabText = messages(
     hit: "命中",
     action: "处置",
     request: "请求",
+    from: (ip: string) => `来自 ${ip}`,
     /** 还有更多没读进来时，说的是「前 N 条」 */
     count: (n: number, more: boolean) => (more ? `前 ${n} 条` : `${n} 条`),
     /** 同一个值在一个请求里出现了几次 */
@@ -28,6 +29,7 @@ export const logTabText = messages(
     hit: "Match",
     action: "Action",
     request: "Request",
+    from: (ip: string) => `from ${ip}`,
     count: (n: number, more: boolean) =>
       more ? `First ${n}` : n === 1 ? "1 entry" : `${n} entries`,
     times: (n: number) => `${n} times`,

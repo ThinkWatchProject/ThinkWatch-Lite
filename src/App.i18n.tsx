@@ -63,14 +63,14 @@ export const appText = messages(
     loadingConfig: "读取配置中…",
 
     // 过滤条
-    search: "搜索路径、客户端、上游、错误…  ⌘F",
+    search: "搜索路径、密钥、上游、错误…  ⌘F",
     failedOnly: "仅显示失败",
     groupBySession: "按会话归组",
     unpricedOnly: "仅显示无法计价",
     expandSession: "展开这次会话",
     collapseSession: "收起这次会话",
     turnCount: (n: number) => `${n} 轮`,
-    allClients: "全部客户端",
+    allClients: "全部密钥",
     allUpstreams: "全部上游",
     shownOf: (shown: number, total: number) => `${shown} / ${total} 条`,
     total: (n: number) => `${n} 条`,
@@ -94,7 +94,9 @@ export const appText = messages(
     // 表头
     status: "状态",
     time: "时间",
-    client: "客户端",
+    /** 请求带的是哪把网关密钥。**不是哪个应用** —— 应用写在后面，是按请求头推测的 */
+    client: "密钥",
+    fromPeer: (ip: string) => `来自 ${ip}`,
     model: "模型",
     upstream: "上游",
     latency: "延迟",
@@ -104,7 +106,7 @@ export const appText = messages(
     // 行的右键菜单
     openDetails: "打开详情",
     onlyUpstream: (name: string) => `仅显示上游 ${name}`,
-    onlyClient: (name: string) => `仅显示客户端 ${name}`,
+    onlyClient: (name: string) => `仅显示密钥 ${name}`,
     copyId: "复制请求 ID",
     copyRow: "复制此行",
 
@@ -191,14 +193,14 @@ export const appText = messages(
     loadingConfig: "Loading config…",
 
     // 输入框 256px 宽，放得下的文字约 234px；带上「Search」就放不下 ⌘F 了
-    search: "Path, client, upstream, error…  ⌘F",
+    search: "Path, key, upstream, error…  ⌘F",
     failedOnly: "Failed only",
     groupBySession: "Group by session",
     unpricedOnly: "Unpriced only",
     expandSession: "Expand this session",
     collapseSession: "Collapse this session",
     turnCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
-    allClients: "All clients",
+    allClients: "All keys",
     allUpstreams: "All upstreams",
     shownOf: (shown: number, total: number) => `${shown} / ${count(total, "request", "requests")}`,
     total: (n: number) => count(n, "request", "requests"),
@@ -232,7 +234,8 @@ export const appText = messages(
 
     status: "Status",
     time: "Time",
-    client: "Client",
+    client: "Key",
+    fromPeer: (ip: string) => `from ${ip}`,
     model: "Model",
     upstream: "Upstream",
     latency: "Latency",
@@ -241,7 +244,7 @@ export const appText = messages(
 
     openDetails: "Open details",
     onlyUpstream: (name: string) => `Show only upstream ${name}`,
-    onlyClient: (name: string) => `Show only client ${name}`,
+    onlyClient: (name: string) => `Show only key ${name}`,
     copyId: "Copy request ID",
     copyRow: "Copy row",
 

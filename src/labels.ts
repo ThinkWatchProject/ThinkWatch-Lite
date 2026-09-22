@@ -244,3 +244,25 @@ export function takesEffectText(t: TakesEffect): string {
 export function fieldsOnlyText(): string {
   return textOf(labelsText).fieldsOnly;
 }
+
+/**
+ * 按请求头认出来的应用叫什么。**这是旁证，不是身份** —— core 按
+ * User-Agent 之类猜的，能被伪造，只用来显示；身份是请求带的那把密钥。
+ *
+ * 名字是产品名，中英文一样。认不出的原样显示。
+ */
+const APPS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  "claude-desktop": "Claude Desktop",
+  codex: "Codex CLI",
+  cursor: "Cursor",
+  opencode: "opencode",
+  aider: "Aider",
+  zed: "Zed",
+  continue: "Continue",
+  "gemini-cli": "Gemini CLI",
+};
+
+export function appLabel(hint: string): string {
+  return APPS[hint] ?? hint;
+}

@@ -171,6 +171,9 @@ export function useRequests() {
         const marks = marksFromEvents(h.security);
         cur.secrets ??= marks.secrets;
         cur.flagged ??= marks.flagged;
+        cur.hint ??= h.client_hint ?? undefined;
+        cur.peer ??= h.peer ?? undefined;
+        cur.keyMasked ??= h.key_masked ?? undefined;
         continue;
       }
       store.current.set(h.id, {
@@ -192,6 +195,9 @@ export function useRequests() {
         error: h.error ?? undefined,
         translated: h.translated ?? undefined,
         session: h.session ?? undefined,
+        hint: h.client_hint ?? undefined,
+        peer: h.peer ?? undefined,
+        keyMasked: h.key_masked ?? undefined,
         ...marksFromEvents(h.security),
       });
     }
