@@ -74,13 +74,21 @@ export function RequestTable({
 }) {
   const t = useText(appText);
   return (
-              <Table className="tw-num">
+              <Table className="tw-num" scroll={false}>
                 {/*
       **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
       两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
       那恰恰是排查时唯一要看的区别。
+
+      钉在页面的滚动层上，所以上面的 `scroll={false}` 不能去掉：表外
+      那层一旦能横着滚，表头就钉在它身上，不会吸顶。底色要和窗口底
+      同色，吸顶之后行从它下面滚过，差一档灰就是一条色带。
+
+      **底线画在格子里，不用行的边框。**表格是合并边框，那条边框归
+      表格画，表头钉住之后它留在原处跟着行滚走，表头和第一行之间就
+      没有线了。格子内侧的阴影跟着格子走。
     */}
-                <TableHeader className="sticky top-0 z-10 bg-neutral-50 dark:bg-neutral-950">
+                <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
                   <TableRow>
                     <Th
                       k="status"
