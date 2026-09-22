@@ -7,7 +7,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { formText } from "./form.i18n";
 
 /**
- * 设置页里改网关配置的那几节（监听、并发、日志保留）共用的表单。
+ * 设置页里改网关配置的那几节（监听、日志保留）共用的表单。
  *
  * **改完点保存才生效。**这几项改的是 config.yaml，改错的代价是客户端连不上
  * 或者日志被删 —— 一个选项点下去立刻生效、一个格子失焦就写盘，用户没有
@@ -53,7 +53,8 @@ export function FormRow({
 }
 
 /**
- * 保存和放弃更改。**改过才亮**，存的时候两个都灰掉。
+ * 保存和放弃更改。**改过才出现**：没改的时候两个灰按钮摆在那儿，看起来
+ * 像是有什么没存。存的时候两个都灰掉，存完随改动一起消失。
  *
  * `invalid` 时保存灰着：哪一格不对，那一格下面自己会说。
  */
@@ -72,15 +73,16 @@ export function FormActions({
 }) {
   const t = useText(formText);
   const common = useText(commonText);
+  if (!dirty && !busy) return null;
   return (
     <>
       <dt />
       <dd className="flex items-center gap-2 pt-1">
-        <Button size="sm" disabled={!dirty || busy || invalid} onClick={onSave}>
+        <Button size="sm" disabled={busy || invalid} onClick={onSave}>
           {busy && <Spinner />}
           {common.save}
         </Button>
-        <Button size="sm" variant="ghost" disabled={!dirty || busy} onClick={onDiscard}>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onDiscard}>
           {t.discard}
         </Button>
       </dd>

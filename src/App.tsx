@@ -148,7 +148,7 @@ function surfaceOf(section: string | null): Surface {
     case "security":
       return "security";
     default:
-      // 监听、并发、日志保留在设置页；辅助请求在路由页，但它没有自己的段名
+      // 监听、日志保留在设置页；辅助请求在路由页，但它没有自己的段名
       return "settings";
   }
 }

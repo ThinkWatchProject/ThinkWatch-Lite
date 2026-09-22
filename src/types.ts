@@ -935,13 +935,6 @@ export interface ProbeView {
   mode: string;
 }
 
-/** 并发上限。**没有全局上限** —— 本机网关同时在跑的就是几个客户端各自的会话 */
-export interface LimitsView {
-  per_provider: number;
-  queue_depth: number;
-  queue_timeout_secs: number;
-}
-
 /** 一条规则。**全文**：编辑对话框靠它回填，交回去的 `RuleInput` 是同一套写法 */
 export interface RuleView {
   name: string;
@@ -1020,10 +1013,11 @@ export interface ConditionView {
   values: string[];
 }
 
-/** 这台机器上的一张网卡（`GET /interfaces`）。同一张网卡可以有多个地址 */
+/** 这台机器上的一张网卡（`GET /interfaces`），一张一行 */
 export interface NicView {
-  /** `en0`、`lo0`、`utun3` */
+  /** `en0`、`lo0`、`utun3`。配置里按它存 */
   name: string;
+  /** 绑这张网卡时真正监听的地址：有 IPv4 就是 IPv4 */
   addr: string;
   loopback: boolean;
 }
@@ -1334,7 +1328,10 @@ export interface KeySyncFailed {
 export interface ListenView {
   bind: string;
   port: number;
+  /** 放行网段，就是生效的那一份。空 = 除本机外谁都连不上；本机永远放行，不在名单里 */
   allow_from: string[];
+  /** 默认名单（私网段），「恢复默认」用 */
+  default_allow_from: string[];
   exposed: boolean;
 }
 
@@ -1373,7 +1370,6 @@ export interface Overview {
   default_route: string;
   /** 客户端自己发的辅助请求怎么处理 */
   client_probes: ProbeView[];
-  limits: LimitsView;
   /** 自定义价目表。默认价目表的状态看 `pricing_status` */
   price_sheets: PriceSheetView[];
   /** 日志留多久 */

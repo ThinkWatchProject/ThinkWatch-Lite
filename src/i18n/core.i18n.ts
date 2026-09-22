@@ -189,7 +189,6 @@ const ZH: Record<string, Say> = {
 
   // ── gw：网关的数据面。这些话同时发给 AI 客户端和界面 ──────────────
   "gw.internal": () => "请求被网关内部的错误中断。",
-  "gw.overloaded": (a) => a.detail ?? "",
   "gw.auth.no_key": () =>
     "请求未携带网关密钥。请将 config.yaml 的 clients 中的网关密钥配置到客户端。",
   "gw.auth.key_invalid": () => "网关密钥无效。请检查客户端配置中的密钥与 config.yaml 是否一致。",

@@ -6,7 +6,6 @@ import NoticeSettings from "./NoticeSettings";
 import { LanguageSection } from "./Language";
 import { AppearanceSection } from "./Appearance";
 import { ListenSection } from "./settings/ListenSection";
-import { LimitsSection } from "./settings/LimitsSection";
 import { RetentionSection } from "./settings/RetentionSection";
 import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
@@ -26,7 +25,7 @@ import { errorText } from "@/i18n/core.i18n";
  * 设置：这个应用自己的，和网关那几项配一次就不动的。
  *
  * **两类东西，两种改法。**语言、外观、开机启动、提醒改的是这个应用，点一下
- * 就换；监听、并发、日志保留改的是 config.yaml，改完点保存才生效 —— 它们
+ * 就换；监听、日志保留改的是 config.yaml，改完点保存才生效 —— 它们
  * 改错的代价是客户端连不上、或者日志被删。上游、路由、密钥这些要天天看、
  * 常常改的，各有自己的页。
  */
@@ -104,7 +103,7 @@ export default function Config({
         </Field>
       </section>
 
-      {/* 监听原来在「接入」页上，和密钥、并发同屏。它是配一次就不动的网关设置，
+      {/* 监听原来在「接入」页上，和密钥同屏。它是配一次就不动的网关设置，
           和密钥（要天天拿去填客户端）不是一类东西 */}
       {ov && (
         <ListenSection
@@ -114,8 +113,6 @@ export default function Config({
           onChanged={onChanged}
         />
       )}
-
-      {ov && <LimitsSection limits={ov.limits} configVersion={ov.config_version} />}
 
       {/*
         日志保留归设置，不归流量页。**它管的是「留多久」，不是「看哪一段」**
