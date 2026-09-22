@@ -480,7 +480,7 @@ export default function Dashboard({
       }
     }
   } else {
-    for (const b of d.buckets_by_model ?? []) {
+    for (const b of d.buckets_by_model) {
       const name = b.name || t.unknownModel;
       const cost = b.cost_micros_exact + b.cost_micros_estimated;
       const tok = b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens;
@@ -505,7 +505,7 @@ export default function Dashboard({
   */
   const steady = new Map<string, number>();
   if (live) {
-    for (const b of d.buckets_by_model ?? []) {
+    for (const b of d.buckets_by_model) {
       const name = b.name || t.unknownModel;
       const v = useTokens
         ? b.input_tokens + b.output_tokens + b.cache_read_tokens + b.cache_write_tokens
@@ -589,7 +589,7 @@ export default function Dashboard({
         unpriced_requests: 0,
         no_usage_requests: 0,
       }))
-    : densify(d.buckets ?? [], d.since_ms ?? 0, now, bucketMs);
+    : densify(d.buckets, d.since_ms, now, bucketMs);
   if (live) {
     const from = liveAt[0] ?? 0;
     for (const f of fails) {
@@ -644,7 +644,7 @@ export default function Dashboard({
     yHold.current = { key: yKey, v: niceCeil(peak * 1.08) };
   const yMax = yHold.current.v || undefined;
   /** 图下面那排刻度。实时档按固定间隔写，历史档只写起点和「现在」 */
-  const ticks = [...(live ? t.liveTicks : [fmtBucket(d.since_ms ?? 0, bucketMs)]), t.now];
+  const ticks = [...(live ? t.liveTicks : [fmtBucket(d.since_ms, bucketMs)]), t.now];
   /** 图画出来了才有纵轴那一栏（见 `StackedArea` 的空态） */
   const axis = keys.length > 0 && area.length > 0 ? Y_AXIS_WIDTH : 0;
 
@@ -663,7 +663,7 @@ export default function Dashboard({
   const sec = ov?.security;
   const label = (m: string) =>
     m === "enforce" ? t.modeEnforce : m === "off" ? t.modeOff : t.modeObserve;
-  const counts = s.security ?? { secrets: 0, secrets_replaced: 0, tool_calls: 0, tool_calls_cut: 0 };
+  const counts = s.security;
   const guards: {
     key: Guard;
     name: string;
@@ -761,10 +761,10 @@ export default function Dashboard({
                   </button>
                 </Tip>
               )}
-              {(s.no_usage_requests ?? 0) > 0 && (
+              {s.no_usage_requests > 0 && (
                 <Tip text={t.noUsageTip}>
                   <span className="underline decoration-dotted underline-offset-2">
-                    {t.noUsage(s.no_usage_requests ?? 0)}
+                    {t.noUsage(s.no_usage_requests)}
                   </span>
                 </Tip>
               )}
@@ -777,7 +777,7 @@ export default function Dashboard({
               )}
               {s.cost_micros_estimated === 0 &&
                 s.unpriced_requests === 0 &&
-                (s.no_usage_requests ?? 0) === 0 &&
+                s.no_usage_requests === 0 &&
                 s.subscription_requests === 0 && <span>{t.allMeasured}</span>}
             </>
           }

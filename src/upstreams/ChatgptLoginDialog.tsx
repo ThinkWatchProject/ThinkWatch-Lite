@@ -57,7 +57,7 @@ export function ChatgptLoginDialog({
 }) {
   const t = useText(chatgptLoginText);
   const common = useText(commonText);
-  const proxies = ov.proxies ?? [];
+  const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
   const [name, setName] = useState(() => relogin?.name ?? freeName("chatgpt", taken));
   const [proxy, setProxy] = useState(relogin?.proxy ?? "direct");

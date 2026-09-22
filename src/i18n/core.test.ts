@@ -33,10 +33,10 @@ describe("core 发来的消息", () => {
   });
 
   it("不认识的码退回英文原句", () => {
-    // core 比界面新、或者是加码之前落库的老记录。**一句英文好过一个码。**
+    // 词表里还没有这句。**一句英文好过一个码。**
     const m = { code: "gw.something.brand.new", text: "Something new happened." };
     expect(inLang("zh", () => coreText(m))).toBe("Something new happened.");
-    expect(inLang("zh", () => coreText(plain("加码之前落的库")))).toBe("加码之前落的库");
+    expect(inLang("zh", () => coreText(plain("界面自己拼的一句")))).toBe("界面自己拼的一句");
   });
 
   it("缺参数不会把 undefined 写进句子", () => {
@@ -74,8 +74,8 @@ describe("扫描发现：句子由词拼出来", () => {
   });
 
   it("不认识的规则 id 整句退回英文", () => {
-    // 用户自己在 scan-rules.yaml 里写的规则走的就是这条路：那条 `why`
-    // 是他自己写的一句话，**原样显示才对**，拼一句缺了半截的中文不对
+    // 用户自己加的规则走的就是这条路：那条 `why` 是他自己写的一句话，
+    // **原样显示才对**，拼一句缺了半截的中文不对
     const m = {
       code: "scan.rule.detail",
       args: { kind: "hooks", rule: "我自己加的规则" },

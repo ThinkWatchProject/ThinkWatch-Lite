@@ -15,7 +15,6 @@ export const retentionText = messages(
     badGb: "须为正数，最多一位小数。",
     saved: "日志保留设置已保存",
     saveFailed: "未能保存",
-    versionNotLoaded: "配置版本尚未读取，请稍后重试",
   },
   {
     title: "Log retention",
@@ -32,6 +31,5 @@ export const retentionText = messages(
     badGb: "A positive number with at most one decimal place.",
     saved: "Log retention settings saved",
     saveFailed: "Not saved",
-    versionNotLoaded: "The config version has not been loaded yet. Try again in a moment.",
   },
 );

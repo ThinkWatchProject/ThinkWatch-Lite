@@ -48,18 +48,17 @@ type DialogState =
  */
 export default function RoutingPage({
   ov,
-  configVersion,
   onChanged,
   onOpenConfigFile,
   onNavigate,
 }: {
   ov: Overview;
-  configVersion: string | null;
   onChanged: () => void;
   onOpenConfigFile: (focus: string | null) => void;
   onNavigate: (tab: string) => void;
 }) {
   const t = useText(routingPageText);
+  const configVersion = ov.config_version;
   const rt = useText(routingText);
   const [tab, setTab] = useState<RoutingTab>("routes");
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -92,7 +91,7 @@ export default function RoutingPage({
           selected: provider,
           session_affinity: g.session_affinity ?? true,
         },
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
       });
       onChanged();
     } catch (e) {

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { messages } from "@/i18n";
 
 /** 一项防护在三档下各做什么。**代价写在切换之前** */
@@ -49,8 +48,6 @@ export const guardTabText = messages(
     enabled: "启用",
     builtinGroup: "内置",
     /** 配置里启用或停用了认不出的规则。多半是拼错了 */
-    unknown: (ids: ReactNode) => <>配置中启用或停用的 {ids} 不是内置规则，已忽略。</>,
-    listSep: "、",
     view: "查看规则",
     copyAsCustom: "复制为自定义规则",
     actionsFor: (name: string) => `${name} 的操作`,
@@ -92,8 +89,6 @@ export const guardTabText = messages(
     whenEnforced: "On enforce",
     enabled: "On",
     builtinGroup: "Built-in",
-    unknown: (ids: ReactNode) => <>The configuration turns {ids} on or off, but no built-in rule has that name; it is ignored.</>,
-    listSep: ", ",
     view: "View rule",
     copyAsCustom: "Copy as a custom rule",
     actionsFor: (name: string) => `Actions for ${name}`,

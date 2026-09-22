@@ -20,11 +20,11 @@ export function ProbesTab({
   configVersion,
 }: {
   ov: Overview;
-  configVersion: string | null;
+  configVersion: string;
 }) {
   const t = useText(probesTabText);
   const [busy, setBusy] = useState<string | null>(null);
-  const probes = ov.client_probes ?? [];
+  const probes = ov.client_probes;
 
   const modes = [
     { id: "intercept", label: t.intercept, what: t.interceptWhat },
@@ -33,10 +33,6 @@ export function ProbesTab({
   ];
 
   async function set(id: string, mode: string) {
-    if (!configVersion) {
-      toast.error(t.versionNotLoaded);
-      return;
-    }
     setBusy(id);
     try {
       await patchConfig(
@@ -49,8 +45,6 @@ export function ProbesTab({
       setBusy(null);
     }
   }
-
-  if (probes.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3">

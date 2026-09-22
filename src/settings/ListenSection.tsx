@@ -74,7 +74,7 @@ export function ListenSection({
 }: {
   view: ListenView;
   status: CoreStatus | null;
-  configVersion: string | null;
+  configVersion: string;
   onChanged: () => void;
 }) {
   const t = useText(listenText);
@@ -148,7 +148,7 @@ export function ListenSection({
       bind,
       port: Number(draft.port),
       allow_from: draft.allow,
-      base_version: configVersion ?? undefined,
+      base_version: configVersion,
     };
     setBusy(true);
     setError(null);

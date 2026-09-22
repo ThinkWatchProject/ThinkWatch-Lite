@@ -11,8 +11,7 @@ import type { CostBucket } from "./format";
  *
  * **core 不翻译，只出英文。**它给的是一个稳定的码、填进句子的参数，以及
  * 英文原句；界面拿 `code` 去自己的词表里找句子（见 `src/i18n/core.i18n.ts`），
- * 找不到就显示 `text` —— core 比界面新、或者这条是加码之前落库的老记录时，
- * 一句英文总好过一个码。
+ * 找不到就显示 `text` —— 词表里还没有这句时，一句英文总好过一个码。
  *
  * **码是契约，句子不是。**core 改措辞不用动码，界面那边什么都不用做。
  */
@@ -320,7 +319,7 @@ export interface RequestRow {
    * 只是指纹，差着起始时刻那一截。所以正在跑的那一条是没有会话的 ——
    * 它确实还没被记下来，归组时独立成行，落库之后自然归位。
    *
-   * 认不出会话的（拼不出指纹的、老记录）也没有 —— **不能拿一个假的
+   * 认不出会话的（拼不出指纹的，比如 WebSocket）也没有 —— **不能拿一个假的
    * 把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
    */
   session?: string;
@@ -336,7 +335,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         peer: ev.peer ?? undefined,
         keyMasked: ev.key_masked ?? undefined,
         provider: ev.provider,
-        // 老记录里没有这个字段，空串当作「不知道」
+        // WebSocket 这类认不出模型的请求发的是空串，当作「不知道」
         model: ev.model || undefined,
         path: ev.path,
         atMs: ev.at_ms,
@@ -596,9 +595,9 @@ export interface Summary {
   unpriced_requests: number;
   /**
    * 有多少条请求**没有拿到用量**，所以同样算不出花费：上游没有报告，或者
-   * 连接在报告之前就结束了。配价格解决不了它。旧版本的 core 不给。
+   * 连接在报告之前就结束了。配价格解决不了它。
    */
-  no_usage_requests?: number;
+  no_usage_requests: number;
   /** 走订阅型上游的请求数。**不参与金额合计** */
   subscription_requests: number;
   /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
@@ -615,9 +614,9 @@ export interface Summary {
   cache_saved_micros: number;
   /**
    * 本区间两项防护各留下了几条记录。**和安全日志数的是同一批** —— 概览上
-   * 点开这个数，落到的日志就是这么多条。老 core 没有它
+   * 点开这个数，落到的日志就是这么多条
    */
-  security?: SecurityCounts;
+  security: SecurityCounts;
   /** 价目表的快照日期 */
   pricing_date: string;
 }
@@ -636,10 +635,8 @@ export interface AttemptView {
   /**
    * `served`：这一跳接下了请求（上游回 4xx 也算）；`status`：上游返回 5xx
    * 或 429，换下一个；`error`：没有收到响应。
-   *
-   * core 0.4 之前的记录里是中文句子，原样显示。
    */
-  outcome: string;
+  outcome: "served" | "status" | "error";
   /** 上游返回的状态码。`error` 时没有 */
   status?: number | null;
   /** `error` 时的说明 */
@@ -671,24 +668,20 @@ export interface HistoryRow {
   cache_write_tokens: number | null;
   cost_micros: number | null;
   cost_estimated: boolean;
-  /** 失败的原因。**加码之前落库的老记录 `code` 是空串**，那时只存了正文 */
+  /** 失败的原因 */
   error: Msg | null;
   local: boolean;
-  /**
-   * 客户端没等到响应结束就断开了。**不是失败**，`error` 为空。
-   *
-   * 可选：旧版本的 core 不给这个字段，那时它等同于 false。
-   */
-  cancelled?: boolean;
-  /** 路由决策与尝试链。老记录没有它 */
-  routing: RoutingView | null;
+  /** 客户端没等到响应结束就断开了。**不是失败**，`error` 为空 */
+  cancelled: boolean;
+  /** 路由决策与尝试链。没经过路由的（WebSocket、本地应答、被规则拒绝的）没有 */
+  routing?: RoutingView;
   /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
   billing: string;
-  /** 缓存命中省下了多少微分。null = 算不出来 */
-  cache_saved_micros: number | null;
-  /** 按什么价格算的。没算出金额的、老记录没有它 */
+  /** 缓存命中省下了多少微分。没有 = 算不出来 */
+  cache_saved_micros?: number;
+  /** 按什么价格算的。没算出金额的没有 */
   price_source?: PriceSourceView | null;
-  /** 服务它的那一跳做过的格式转换。直通的、老记录没有它 */
+  /** 服务它的那一跳做过的格式转换。直通的没有 */
   translated?: TranslatedView | null;
   /** 它属于哪次会话，和 `SessionView.id` 同一个值。认不出的没有 */
   session?: string | null;
@@ -748,18 +741,18 @@ export interface Dashboard {
    * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
-  buckets?: CostBucket[];
+  buckets: CostBucket[];
   /**
    * 同样的格子，再按模型分层。
    *
    * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
    * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
    */
-  buckets_by_model?: CostBucketGroup[];
+  buckets_by_model: CostBucketGroup[];
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
-  prev?: Summary | null;
+  prev: Summary | null;
   /** 上面几样的时间窗起点，补空桶要用 */
-  since_ms?: number;
+  since_ms: number;
 }
 
 /** 一个时间桶里，某一个模型的那部分。 */
@@ -907,7 +900,7 @@ export interface RouteInput {
 
 export interface RouteSave {
   route: RouteInput;
-  base_version?: string;
+  base_version: string;
   /** 保存之后恰好使用这条路由的密钥。不给就不动 */
   keys?: string[];
   /** 一并设为「交给路由」的辅助请求类别：规则里的辅助请求条件只对它们生效 */
@@ -924,7 +917,7 @@ export interface GroupInput {
 
 export interface GroupSave {
   group: GroupInput;
-  base_version?: string;
+  base_version: string;
 }
 
 /** 网关知道的一个模型，以及能提供它的上游 */
@@ -1223,7 +1216,7 @@ export interface KeyInput {
 
 export interface KeySave {
   key: KeyInput;
-  base_version?: string | null;
+  base_version: string;
 }
 
 /** 更换之后的结果 */
@@ -1263,7 +1256,7 @@ export interface ListenSave {
   bind: string;
   port: number;
   allow_from: string[];
-  base_version?: string;
+  base_version: string;
 }
 
 /** 光标落在配置的哪一段上 */
@@ -1274,24 +1267,29 @@ export interface ConfigAt {
 }
 
 export interface Overview {
+  /**
+   * 配置文件现在的版本号，改配置时带上它。**跟着概览一起来**：界面上能改
+   * 的每一格都画自这份概览，有概览就有版本号。
+   */
+  config_version: string;
   providers: ProviderView[];
   /** 配置里定义过的代理 —— 换代理要从这里选，手打会打错 */
-  proxies?: ProxyView[];
+  proxies: ProxyView[];
   routes: RouteView[];
   groups: GroupView[];
   clients: ClientView[];
   listen: ListenView;
   /** 两项防护各在哪一档。规则在 `security_detail` 里 */
-  security?: SecurityView;
+  security: SecurityView;
   /** 没绑路由的密钥走哪条 */
-  default_route?: string;
+  default_route: string;
   /** 客户端自己发的辅助请求怎么处理 */
-  client_probes?: ProbeView[];
-  limits?: LimitsView;
+  client_probes: ProbeView[];
+  limits: LimitsView;
   /** 自定义价目表。默认价目表的状态看 `pricing_status` */
   price_sheets: PriceSheetView[];
-  /** 日志留多久。老 core 没有这一段 */
-  retention?: RetentionView;
+  /** 日志留多久 */
+  retention: RetentionView;
 }
 
 /**
@@ -1403,8 +1401,6 @@ export interface SecurityRuleView {
 export interface GuardDetail {
   mode: string;
   rules: SecurityRuleView[];
-  /** 配置里写了、但认不出的内置规则 id */
-  unknown?: string[];
 }
 
 export interface SecurityDetail {
@@ -1832,7 +1828,7 @@ export interface ProviderInput {
 
 export interface ProviderSave {
   provider: ProviderInput;
-  base_version?: string;
+  base_version: string;
 }
 
 export interface ProviderTest {
@@ -1899,7 +1895,7 @@ export type ProxyAuthInput =
 
 export interface ProxySave {
   proxy: ProxyInput;
-  base_version?: string;
+  base_version: string;
 }
 
 export interface ProxyTest {
@@ -1962,7 +1958,7 @@ export interface PriceSheetInput {
 
 export interface PriceSheetSave {
   sheet: PriceSheetInput;
-  base_version?: string;
+  base_version: string;
   /** 保存之后使用这张价目表的上游。给了就恰好是这几家 */
   used_by?: string[];
 }
@@ -2005,7 +2001,7 @@ export interface CostGroup {
   input_tokens: number;
   output_tokens: number;
   /** 没有拿到用量的条数 */
-  no_usage_requests?: number;
+  no_usage_requests: number;
 }
 
 /** 一个上游最近一次报的订阅额度 */

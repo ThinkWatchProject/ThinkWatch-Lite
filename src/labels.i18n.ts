@@ -1,11 +1,5 @@
 import { messages } from "@/i18n";
 
-/**
- * core 0.4 之前写进数据库的尝试结果是中文句子，成功的那一种就是这两个字。
- * **这是数据，不是文案**：只拿来比较，不显示，也不随界面语言变。
- */
-export const LEGACY_SERVED = "成功";
-
 /** `labels.ts` 里那些名称表和说法 */
 export const labelsText = messages(
   {

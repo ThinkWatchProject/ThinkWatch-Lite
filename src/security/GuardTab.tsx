@@ -1,6 +1,5 @@
 import { Fragment } from "react";
 import { FlaskConicalIcon, PlusIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Switch } from "@/ui/switch";
@@ -9,7 +8,7 @@ import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { Guard, GuardDetail, SecurityRuleView } from "@/types";
-import { Code, MatcherText, ruleWhy, viewName } from "./labels";
+import { MatcherText, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText } from "./GuardTab.i18n";
 
@@ -91,21 +90,6 @@ export function GuardTab({
             {t.newRule}
           </Button>
         </div>
-
-        {detail.unknown && detail.unknown.length > 0 && (
-          <Alert variant="warning" className="px-3 py-2">
-            <AlertDescription>
-              {t.unknown(
-                detail.unknown.map((id, i) => (
-                  <Fragment key={id}>
-                    {i > 0 && t.listSep}
-                    <Code>{id}</Code>
-                  </Fragment>
-                )),
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
 
         {guard === "redact" ? (
           <RedactRules rules={detail.rules} busy={busy} actions={actions} />

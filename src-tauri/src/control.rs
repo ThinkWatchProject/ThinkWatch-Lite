@@ -1176,7 +1176,7 @@ mod tests {
         let mut got = Vec::new();
         for chunk in [
             "data: {\"kind\":\"request_",
-            "started\",\"id\":1,\"client\":\"c\",\"provider\":\"p\",\"method\":\"POST\",\"path\":\"/x\",\"at_ms\":0}\n\n",
+            "started\",\"id\":1,\"client\":\"c\",\"provider\":\"p\",\"model\":\"m\",\"method\":\"POST\",\"path\":\"/x\",\"at_ms\":0}\n\n",
         ] {
             buf.push_str(chunk);
             while let Some(idx) = buf.find("\n\n") {

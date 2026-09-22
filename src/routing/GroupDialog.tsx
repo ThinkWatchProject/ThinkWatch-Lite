@@ -49,7 +49,7 @@ export function GroupDialog({
 }: {
   mode: GroupDialogMode;
   ov: Overview;
-  configVersion: string | null;
+  configVersion: string;
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
@@ -107,7 +107,7 @@ export function GroupDialog({
           selected: preferred,
           session_affinity: kind === "load-balance" ? sticky : true,
         },
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
       };
       if (mode.kind === "edit") await api.updateGroup(mode.name, save);
       else await api.createGroup(save);

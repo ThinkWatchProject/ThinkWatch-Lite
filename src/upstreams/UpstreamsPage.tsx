@@ -59,14 +59,12 @@ const DAY_MS = 24 * 3_600_000;
  */
 export default function UpstreamsPage({
   ov,
-  configVersion,
   initialTab = "upstreams",
   onChanged,
   onOpenConfigFile,
   onNavigate,
 }: {
   ov: Overview;
-  configVersion: string | null;
   initialTab?: UpstreamTab;
   /** 写入之后让外面立刻重读概览 */
   onChanged: () => void;
@@ -76,13 +74,14 @@ export default function UpstreamsPage({
   onNavigate: (tab: string) => void;
 }) {
   const t = useText(upstreamsPageText);
+  const configVersion = ov.config_version;
   const [tab, setTab] = useState<UpstreamTab>(initialTab);
   const [stats, setStats] = useState<UpstreamStats | null>(null);
   const [status, setStatus] = useState<PricingStatus | null>(null);
   const [checks, setChecks] = useState<Record<string, ProxyCheck>>({});
   const [dialog, setDialog] = useState<DialogState>(null);
   const [refreshingPrices, setRefreshingPrices] = useState(false);
-  const proxies = ov.proxies ?? [];
+  const proxies = ov.proxies;
 
   const loadStats = useCallback(() => {
     api
@@ -166,7 +165,7 @@ export default function UpstreamsPage({
     try {
       await api.updateProvider(p.name, {
         provider: { ...toInput(formFromView(p), true), disabled: !p.disabled },
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
       });
       changed();
     } catch (e) {

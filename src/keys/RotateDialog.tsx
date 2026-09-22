@@ -43,7 +43,7 @@ export function RotateDialog({
 }: {
   target: ClientView;
   clients: DetectedClient[];
-  configVersion: string | null;
+  configVersion: string;
   onClose: () => void;
   onRotated: () => void;
 }) {

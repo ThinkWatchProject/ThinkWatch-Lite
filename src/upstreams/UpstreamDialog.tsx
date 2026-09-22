@@ -76,7 +76,7 @@ export function UpstreamDialog({
 }: {
   mode: UpstreamDialogMode;
   ov: Overview;
-  configVersion: string | null;
+  configVersion: string;
   /** 这一家报过订阅额度。「自动识别」的计费方式据此判成订阅制 */
   quotaSeen: boolean;
   onClose: () => void;
@@ -270,7 +270,7 @@ export function UpstreamDialog({
     try {
       const save = {
         provider: toInput(form, editing != null),
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
       };
       if (editing) await api.updateProvider(editing.name, save);
       else await api.createProvider(save);

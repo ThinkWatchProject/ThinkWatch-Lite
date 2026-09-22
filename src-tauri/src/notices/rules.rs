@@ -26,7 +26,7 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
         "tcp" => tr!("TCP 握手", "TCP handshake"),
         "tls" => tr!("TLS 握手", "TLS handshake"),
         "handshake" => tr!("代理握手", "proxy handshake"),
-        // core 加了一步而这一版还不认识：照着码说，总好过不说
+        // 不在这几个里的照着码说，总好过不说
         other => other,
     };
     // 代理握手本来就只对着代理，再加一句「到代理」是废话
@@ -413,7 +413,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
 }
 
 /// 工具调用规则的名字，和安全页上的一样。**只有内置的这些**：自定义规则的
-/// id 就是用户起的名字，原样用；core 以后加的规则这里还不认识，也原样用 id。
+/// id 就是用户起的名字，原样用。
 fn tool_rule_name(rule: &str) -> String {
     let (zh, en) = match rule {
         "curl-pipe-sh" => ("下载即执行", "Download and run"),

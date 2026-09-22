@@ -40,7 +40,7 @@ export function RetentionSection({
   configVersion,
 }: {
   retention: RetentionView;
-  configVersion: string | null;
+  configVersion: string;
 }) {
   const t = useText(retentionText);
   const [draft, setDraft] = useState(() => draftOf(retention));
@@ -69,10 +69,6 @@ export function RetentionSection({
   };
 
   async function save() {
-    if (!configVersion) {
-      setError(t.versionNotLoaded);
-      return;
-    }
     const ops: PatchOp[] = [];
     if (draft.body_days !== saved.body_days)
       ops.push({ op: "replace", path: "/retention/body_days", value: Number(draft.body_days) });

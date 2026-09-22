@@ -10,8 +10,8 @@ const or = (xs: ReactNode[], sep: ReactNode, last: ReactNode) =>
 /**
  * 两项防护共用的名称：档位、处置、类别、规则名，以及内置规则的匹配判据。
  *
- * **规则名只收内置的。**自定义规则的名字就是用户起的，原样显示；core 以后
- * 加的规则这里还不认识，退回 core 给的英文名或 id。
+ * **规则名只收内置的。**自定义规则的名字就是用户起的，原样显示；表里没有
+ * 的，退回 core 给的英文名或 id。
  */
 export const securityLabelsText = messages(
   {

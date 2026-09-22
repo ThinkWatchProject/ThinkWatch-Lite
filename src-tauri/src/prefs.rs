@@ -12,10 +12,7 @@ use crate::theme::Theme;
 /// 设置文件，放在数据目录里。
 const PREFS_FILE: &str = "app.json";
 
-/// 缺字段时取 [`Prefs::default`] 里的值，不是类型的零值 —— 对一个布尔来说
-/// 两者恰好相反。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
 pub struct Prefs {
     /// 启动之后以及此后每隔一段时间，去看有没有新版本。
     ///
@@ -106,16 +103,12 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 关掉之后存得住。**这一条防的是 `#[serde(default)]` 的一个坑**：
-    /// 默认值改成开之后，缺字段时取的是 `Default` 而不是布尔的零值，而
-    /// 用户写下的 `false` 必须照样被读成 `false`。
+    /// 关掉之后存得住：出厂是开的，用户写下的 `false` 必须照样被读成 `false`。
     #[test]
     fn turning_the_check_off_is_remembered() {
         let dir = tmp();
         update(&dir, |p| p.check_updates = false).unwrap();
         assert!(!load(&dir).check_updates);
-        std::fs::write(prefs_path(&dir), b"{}").unwrap();
-        assert!(load(&dir).check_updates, "缺字段取默认值，也就是开");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

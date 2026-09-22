@@ -8,18 +8,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ClientView, ConfigWritten, CostGroup, KeyRotated, KeySave, KnownModel } from "@/types";
 
-type Base = string | null;
 
 export const api = {
   listKeys: () => invoke<ClientView[]>("list_keys"),
   createKey: (save: KeySave) => invoke<ConfigWritten>("create_key", { save }),
   updateKey: (name: string, save: KeySave) => invoke<ConfigWritten>("update_key", { name, save }),
-  deleteKey: (name: string, baseVersion: Base) =>
+  deleteKey: (name: string, baseVersion: string) =>
     invoke<ConfigWritten>("delete_key", { name, baseVersion }),
   /** 换一把新的。core 会把新值同步给正在用它的客户端 */
-  rotateKey: (name: string, baseVersion: Base) =>
+  rotateKey: (name: string, baseVersion: string) =>
     invoke<KeyRotated>("rotate_key", { name, baseVersion }),
-  setDefaultKey: (name: string, baseVersion: Base) =>
+  setDefaultKey: (name: string, baseVersion: string) =>
     invoke<ConfigWritten>("set_default_key", { name, baseVersion }),
   /** 明文留在 Rust 侧：界面拿不到一个往剪贴板里写任意内容的口子 */
   copyKey: (name: string) => invoke<void>("copy_key", { name }),

@@ -52,7 +52,7 @@ export function KeyDialog({
   defaultRoute: string;
   /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
   catalog: KnownModel[];
-  configVersion: string | null;
+  configVersion: string;
   onClose: () => void;
   onSaved: (name: string) => void;
   onRotate: (name: string) => void;
@@ -94,7 +94,7 @@ export function KeyDialog({
         max_concurrent: limit.trim() ? Number(limit.trim()) : null,
         disabled: !enabled,
       },
-      base_version: configVersion ?? undefined,
+      base_version: configVersion,
     };
     try {
       if (editing) await api.updateKey(editing.name, body);
