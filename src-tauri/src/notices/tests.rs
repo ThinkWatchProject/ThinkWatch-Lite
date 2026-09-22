@@ -194,15 +194,108 @@ async fn only_a_long_critical_says_that_it_is_over() {
     );
 }
 
+// ---------------------------------------------------------------- 已读与清空
+
 #[tokio::test]
-async fn what_is_dismissed_stays_dismissed_until_it_happens_again() {
+async fn a_read_notice_stays_listed_until_it_recovers() {
     let b = bed();
     b.bus.ingest(quota("relay"), T0);
-    b.bus.dismiss("quota:relay:weekly");
+    b.bus.mark_read("quota:relay:weekly");
+    let l = b.bus.list();
+    assert_eq!(l.len(), 1, "看过不等于好了");
+    assert!(l[0].read);
+    // 在应用里看过了，通知中心里那一份不必留着
+    assert_eq!(*b.withdrawn.lock().unwrap(), ["quota:relay:weekly"]);
+
+    // 同一件事又发生了：还是看过的那一件，不再打断
+    b.bus.ingest(quota("relay"), T0 + 1_000);
+    assert_eq!(b.titles().len(), 1, "{:?}", b.titles());
+    assert!(b.bus.list()[0].read);
+    assert_eq!(b.bus.list()[0].count, 2);
+
+    // 好了就不在了；再用完是新的一件事
+    b.bus
+        .ingest(Signal::cleared("quota:relay:weekly"), T0 + 2_000);
+    assert!(b.bus.list().is_empty());
+    b.bus.ingest(quota("relay"), T0 + 3_000);
+    assert!(!b.bus.list()[0].read);
+    assert_eq!(b.titles().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_notice_read_while_on_hold_never_pops() {
+    let b = bed();
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通"),
+        T0,
+    );
+    tokio::time::advance(Duration::from_secs(20)).await;
+    b.bus.mark_read("proxy:hk");
+    tokio::time::advance(Duration::from_secs(90)).await;
+    tokio::task::yield_now().await;
+    assert!(b.titles().is_empty(), "看过的不该再弹：{:?}", b.titles());
+    assert_eq!(b.bus.list().len(), 1);
+}
+
+#[tokio::test]
+async fn getting_worse_makes_a_read_notice_unread_again() {
+    let b = bed();
+    b.bus.ingest(
+        Signal::raised("quota:relay:5h", Level::Info, "relay 的订阅额度已用完").now(),
+        T0,
+    );
+    b.bus.mark_read("quota:relay:5h");
+    b.bus.ingest(
+        Signal::raised("quota:relay:5h", Level::Warning, "relay 的订阅额度已用完").now(),
+        T0 + 1_000,
+    );
+    assert!(!b.bus.list()[0].read, "变得更要紧了，要重新数");
+    assert_eq!(b.titles().len(), 1, "{:?}", b.titles());
+}
+
+#[tokio::test]
+async fn reading_everything_withdraws_each_once() {
+    let b = bed();
+    b.bus.ingest(quota("relay"), T0);
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通").now(),
+        T0 + 1,
+    );
+    b.bus.mark_read("proxy:hk");
+    b.bus.mark_all_read();
+    b.bus.mark_all_read();
+    assert!(b.bus.list().iter().all(|n| n.read));
+    let mut withdrawn = b.withdrawn.lock().unwrap().clone();
+    withdrawn.sort();
+    assert_eq!(withdrawn, ["proxy:hk", "quota:relay:weekly"]);
+}
+
+#[tokio::test]
+async fn what_is_cleared_stays_cleared_until_it_happens_again() {
+    let b = bed();
+    b.bus.ingest(quota("relay"), T0);
+    b.bus.mark_read("quota:relay:weekly");
+    b.bus.clear_all();
     assert!(b.bus.list().is_empty());
     b.bus.ingest(quota("relay"), T0 + 1_000);
     assert_eq!(b.bus.list().len(), 1);
-    assert_eq!(b.titles().len(), 2, "划掉之后再次发生要重新说");
+    assert!(!b.bus.list()[0].read, "清掉之后再发生是新的一件事");
+    assert_eq!(b.titles().len(), 2, "清掉之后再次发生要重新说");
+}
+
+#[tokio::test]
+async fn what_was_held_back_is_not_mentioned_after_clearing() {
+    let b = bed();
+    for i in 0..5 {
+        b.bus.ingest(quota(&format!("relay-{i}")), T0 + i as u64);
+    }
+    b.bus.clear_all();
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发").now(),
+        T0 + 10,
+    );
+    let last = b.bodies().last().cloned().unwrap_or_default();
+    assert!(!last.contains("另有"), "清掉的不该再算进去：{last}");
 }
 
 // ---------------------------------------------------------------- 开关

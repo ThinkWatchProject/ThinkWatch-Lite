@@ -24,6 +24,8 @@ export interface Notice {
   /** 同一件事发生了几次 */
   count: number;
   notified: boolean;
+  /** 看过了。没好的照样在列表里，只是铃铛不再数它 */
+  read: boolean;
 }
 
 /**
@@ -65,12 +67,32 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
     return () => void un.then((f) => f());
   }, []);
 
-  function dismiss(key: string) {
-    setList((l) => l.filter((n) => n.key !== key));
-    void invoke("dismiss_notice", { key });
+  function markRead(key: string) {
+    setList((l) => l.map((n) => (n.key === key ? { ...n, read: true } : n)));
+    void invoke("mark_notice_read", { key });
   }
 
-  const urgent = list.filter((n) => n.level !== "info").length;
+  function markAllRead() {
+    setList((l) => l.map((n) => ({ ...n, read: true })));
+    void invoke("mark_all_notices_read");
+  }
+
+  function clearAll() {
+    setList([]);
+    void invoke("clear_notices");
+  }
+
+  /** 点开一条：落到能处理它的那一页。点开了就是看过了 */
+  function openNotice(n: Notice) {
+    if (!n.view) return;
+    if (!n.read) markRead(n.key);
+    onNavigate(n.view);
+    setOpen(false);
+  }
+
+  // 铃铛只数没看过的。看过的问题没好之前还留在列表里，但不该一直催
+  const unread = list.filter((n) => !n.read);
+  const urgent = unread.some((n) => n.level !== "info");
 
   if (mode === "off") return null;
 
@@ -80,21 +102,21 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
         <Button
           variant="ghost"
           size="sm"
-          aria-label={t.bell(list.length)}
+          aria-label={t.bell(unread.length)}
           // 键盘（Enter、空格）触发的 click，detail 是 0
           onClick={(e) => (byMouse.current = e.detail > 0)}
         >
           <BellIcon />
-          {list.length > 0 && (
+          {unread.length > 0 && (
             <span
               className={cn(
                 "rounded-full px-1.5 tabular-nums tw-label",
-                urgent > 0
+                urgent
                   ? "bg-destructive text-destructive-foreground"
                   : "bg-muted text-muted-foreground",
               )}
             >
-              {list.length}
+              {unread.length}
             </span>
           )}
         </Button>
@@ -117,9 +139,37 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
           if (!byMouse.current) (e.currentTarget as HTMLElement | null)?.focus();
         }}
       >
-        {/* × 和每条提醒右边的 × 在同一列：那一列是 px-3 之内的 icon-sm */}
-        <header className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        {/*
+          × 只管关掉面板，对条目的操作一律写成字：以前每条提醒右边也是一个 ×
+          （删除），和这个 × 叠在同一列，分不清哪个是关、哪个是删。
+
+          「全部清除」离 × 最远；「全部已读」没得读时变灰而不是藏起来 —— 藏起来的话
+          「全部清除」会挪到刚点过的位置上，连点两下就把列表清空了。
+        */}
+        <header className="flex items-center gap-1 border-b border-border px-3 py-1.5">
           <span className="flex-1 tw-head">{t.title}</span>
+          {list.length > 0 && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={clearAll}
+              >
+                {t.clearAll}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                disabled={unread.length === 0}
+                onClick={markAllRead}
+              >
+                {t.readAll}
+              </Button>
+              <span aria-hidden className="mx-1 h-4 w-px bg-border" />
+            </>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -147,29 +197,38 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
                 />
                 <div
                   className={cn("min-w-0 flex-1", n.view && "cursor-pointer")}
-                  onClick={() => {
-                    if (!n.view) return;
-                    onNavigate(n.view);
-                    setOpen(false);
-                  }}
+                  onClick={() => openNotice(n)}
                 >
-                  <p className="tw-body">
+                  <p className={cn("tw-body", n.read && "text-muted-foreground")}>
                     {n.title}
                     {n.count > 1 && (
                       <span className="ml-1 text-muted-foreground">×{n.count}</span>
                     )}
                   </p>
                   {n.body && <p className="tw-label text-muted-foreground">{n.body}</p>}
-                  <p className="tw-label text-muted-foreground">{when(n.at_ms)}</p>
+                  {/*
+                    「标为已读」在时间这一行的右端，不占标题和正文的宽度。按钮比这一行
+                    高，上下各让出 4px：看过和没看过的行一样高，点完不会把下面的行挪位
+                  */}
+                  <div className="flex h-4 items-center justify-between gap-2">
+                    <p className="tw-label text-muted-foreground">{when(n.at_ms)}</p>
+                    {!n.read && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="-my-1 -mr-2"
+                        aria-label={t.readOne(n.title)}
+                        onClick={(e) => {
+                          // 只标已读，不算点开这一条
+                          e.stopPropagation();
+                          markRead(n.key);
+                        }}
+                      >
+                        {t.read}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t.dismiss(n.title)}
-                  onClick={() => dismiss(n.key)}
-                >
-                  <XIcon />
-                </Button>
               </li>
             ))}
           </ul>
