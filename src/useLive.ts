@@ -55,6 +55,9 @@ export const LIVE_REACH_MS = 3 * LIVE_SIGMA_MS;
  */
 export const LIVE_FRAME_MS = LIVE_BUCKET_MS / 10;
 
+/** 事件流丢过事件之后，等这么久再从库里补：丢掉的那些结局落库要一点时间 */
+const REFILL_MS = 2_500;
+
 /** 连续高斯的积分是 σ√2π。除掉它、再换算到秒，核就读作「每秒多少」 */
 const PER_SECOND = 1_000 / (LIVE_SIGMA_MS * Math.sqrt(2 * Math.PI));
 const TWO_SIGMA_SQ = 2 * LIVE_SIGMA_MS * LIVE_SIGMA_MS;
@@ -207,6 +210,14 @@ export function useLive(active: boolean, windowMs: number) {
           });
         }
         if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
+      } else if (ev.kind === "events_dropped") {
+        /*
+          **丢过事件：进行中的重新对账，丢掉的结局从库里补进曲线。**落库要一点
+          时间，等一会儿再补；补的时候按 id 去重，事件流上已经画了的不会画两遍。
+        */
+        void resync();
+        setTimeout(() => void seed(), REFILL_MS);
+        return;
       } else {
         return;
       }
@@ -250,7 +261,7 @@ export function useLive(active: boolean, windowMs: number) {
     /*
       先挂事件流再补历史：反过来的话，这两者之间结束的请求谁都不记。
     */
-    void (async () => {
+    const seed = async () => {
       try {
         // 挂上了再补 —— `listen` 是异步注册的，理由同上
         await un;
@@ -301,7 +312,8 @@ export function useLive(active: boolean, windowMs: number) {
       } catch {
         // 读不到就只画事件流那一半，和补这一段之前一样
       }
-    })();
+    };
+    void seed();
 
     const h = setInterval(() => {
       const cut = Date.now() - windowMs;

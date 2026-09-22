@@ -383,6 +383,12 @@ fn only_an_edit_made_outside_the_app_is_reported() {
     assert!(s[0].body.contains("第 4 行"), "{}", s[0].body);
 }
 
+/// `secs` 秒之后重置的那个时刻。**多给半秒**：规则拿到事件时按那一刻的时钟数，
+/// 测试从造事件到读结果之间走掉的那几毫秒，不该让「2 小时」变成「1 小时 59 分」
+fn resets_in(secs: u64) -> Option<u64> {
+    Some(super::now_ms() + secs * 1000 + 500)
+}
+
 #[test]
 fn a_window_that_resets_in_a_moment_is_not_worth_interrupting() {
     let quota = |secs: u64| {
@@ -390,7 +396,7 @@ fn a_window_that_resets_in_a_moment_is_not_worth_interrupting() {
             id: 1,
             provider: "chatgpt".into(),
             window: "5h".into(),
-            reset_in_secs: Some(secs),
+            resets_at_ms: resets_in(secs),
             at_ms: T0,
         })[0]
             .clone()
@@ -413,13 +419,13 @@ fn a_quota_report_below_the_limit_clears_that_window() {
             tw_api::QuotaWindow {
                 window: "weekly".into(),
                 used_percent: 21.0,
-                reset_in_secs: None,
+                resets_at_ms: None,
                 status: None,
             },
             tw_api::QuotaWindow {
                 window: "5h".into(),
                 used_percent: 100.0,
-                reset_in_secs: Some(600),
+                resets_at_ms: resets_in(600),
                 status: Some("rejected".into()),
             },
         ],
@@ -455,7 +461,7 @@ fn quota_exhausted(window: &str, reset_in_secs: Option<u64>) -> tw_api::Event {
         id: 1,
         provider: "chatgpt".into(),
         window: window.into(),
-        reset_in_secs,
+        resets_at_ms: reset_in_secs.and_then(resets_in),
         at_ms: T0,
     }
 }
@@ -557,13 +563,17 @@ fn in_english_no_rule_writes_a_chinese_word() {
             attempt: 3,
             in_ms: 1_000,
         },
+        CoreState::Failed {
+            reason: "/Applications/ThinkWatch.app/twcore could not be run".into(),
+        },
     ];
     with_lang(Lang::En, || {
         let mut signals: Vec<Signal> = events.iter().flat_map(rules::from_event).collect();
         signals.extend(states.iter().flat_map(rules::from_core_state));
+        signals.push(rules::wedged());
         assert_eq!(
             signals.len(),
-            events.len() + states.len(),
+            events.len() + states.len() + 1,
             "每一件都该说一句"
         );
         for s in &signals {
@@ -721,4 +731,29 @@ fn a_listen_change_that_did_not_take_is_raised_and_one_that_did_clears_it() {
         matches!(ok[0].change, Change::Cleared),
         "换成了就收起来，不另发一条"
     );
+}
+
+/// core 程序本身运行不了：**不会自己好**，转发已经停了 —— 和安全模式一样要打断人
+#[test]
+fn a_core_that_cannot_start_interrupts() {
+    use crate::supervisor::CoreState;
+    let s = rules::from_core_state(&CoreState::Failed {
+        reason: "无法运行 /x/twcore：No such file or directory (os error 2)".into(),
+    });
+    assert_eq!(s.len(), 1);
+    assert_eq!(s[0].key, "gateway");
+    assert_eq!(s[0].level, Level::Critical);
+    // 连上之后撤掉：和别的网关状态共用一个键
+    assert_eq!(
+        rules::from_core_state(&CoreState::Running { pid: 1 })[0].key,
+        "gateway"
+    );
+}
+
+/// core 卡住被换掉：自己好了的一次卡顿不打断人，只在应用内留一条
+#[test]
+fn a_wedged_core_that_was_replaced_is_recorded_without_interrupting() {
+    let s = rules::wedged();
+    assert_eq!(s.level, Level::Info);
+    assert!(!s.body.is_empty());
 }

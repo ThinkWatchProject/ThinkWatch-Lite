@@ -26,6 +26,7 @@ pub mod prefs;
 pub mod routing;
 pub mod security;
 pub mod supervisor;
+pub mod tally;
 pub mod theme;
 pub mod update;
 pub mod upstreams;
@@ -59,6 +60,8 @@ pub struct AppState {
     /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
     /// 重收，不是一串。
     pub menubar: Arc<tokio::sync::Notify>,
+    /// 菜单栏第二行的两个数：正在跑几个请求、最近的输出速率。事件桥喂它
+    pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
 
 /// twcore 在哪。
@@ -245,6 +248,7 @@ fn describe_state(s: &CoreState) -> String {
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
         CoreState::SafeMode => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
+        CoreState::Failed { reason } => format!("failed:{reason}"),
     }
 }
 
@@ -1606,6 +1610,7 @@ pub fn run() {
                 core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
                 supervising: supervising.clone(),
                 menubar: Arc::new(tokio::sync::Notify::new()),
+                tally: Default::default(),
             });
 
             // **状态变化推给界面，不要让它来问。**「core 起来没、是不是
@@ -1760,7 +1765,6 @@ pub fn run() {
                     // core 是我们 spawn 的子进程，`kill_on_drop` 会带走它。
                     // 但显式说一句，因为这条是「一个程序」原则的另一半。
                     tracing::info!("退出，core 跟着走");
-                    let _ = app.emit("app-exiting", ());
                 }
             }
         });
@@ -1804,7 +1808,11 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
                 tracing::warn!(consecutive, "core 没回心跳");
             }
             Verdict::Wedged => {
-                let _ = app.emit("core-wedged", ());
+                // 自己好了的一次卡顿不打断人（和偶发崩溃一个待遇），但在提醒列表里
+                // 留一条：用户那几秒看到的失败，要有地方说得清是为什么
+                if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+                    n.ingest(notices::rules::wedged(), notices::now_ms());
+                }
                 if let Err(e) = sup.report_wedged().await {
                     tracing::debug!("换掉卡死的 core 失败：{e:#}");
                 }
@@ -1821,41 +1829,106 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
 /// 断线就重连，但**退避要克制**：core 重启期间 socket 必然连不上，这是
 /// 预期状态而不是故障。1 秒一次的重试既不会刷屏，也不会让用户在 core
 /// 恢复后还盯着一个空列表等太久。
+///
+/// **重新连上时补报一条「丢过事件」**（`EventsDropped`，条数记 0：丢了多少不知道）。
+/// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面和菜单栏要各自对一次账，
+/// 否则那段时间里结束的请求，会一直显示成进行中。
 async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
+    let mut connected_before = false;
     loop {
         let client = ControlClient::new(socket.clone());
-        let a = app.clone();
+        let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (a, b, o) = (app.clone(), app.clone(), opened.clone());
+        let resumed = connected_before;
         let r = client
-            .subscribe_events(move |ev| {
-                // **在客户端弹批准提示的同一瞬间弹一条通知**。
-                // 这是网关位置独有的能力：只有我们同时知道「这个调用长
-                // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
-                // 看到这条，判断质量完全不一样。
-                if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
-                    n.on_event(&ev);
-                }
-                // 菜单栏上那两个数只跟这几种事件有关：花了多少（请求
-                // 落地之后存储层才算得出来）、额度还剩多少。别的事件
-                // 叫醒它只是让它白跑一趟。
-                if matches!(
-                    ev,
-                    tw_api::Event::RequestFinished { .. }
-                        | tw_api::Event::RequestFailed { .. }
-                        | tw_api::Event::RequestCancelled { .. }
-                        | tw_api::Event::QuotaSeen { .. }
-                        | tw_api::Event::ConfigReloaded { .. }
-                ) && let Some(st) = a.try_state::<AppState>()
-                {
-                    st.menubar.notify_one();
-                }
-                let _ = a.emit("core-event", &ev);
-            })
+            .subscribe_events(
+                move || {
+                    o.store(true, std::sync::atomic::Ordering::SeqCst);
+                    if resumed {
+                        let lost = tw_api::Event::EventsDropped {
+                            id: 0,
+                            count: 0,
+                            at_ms: notices::now_ms(),
+                        };
+                        resync_tally(&b);
+                        let _ = b.emit("core-event", &lost);
+                    }
+                },
+                move |ev| {
+                    // **在客户端弹批准提示的同一瞬间弹一条通知**。
+                    // 这是网关位置独有的能力：只有我们同时知道「这个调用长
+                    // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
+                    // 看到这条，判断质量完全不一样。
+                    if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
+                        n.on_event(&ev);
+                    }
+                    if let Some(st) = a.try_state::<AppState>() {
+                        if let Ok(mut t) = st.tally.lock() {
+                            t.on_event(&ev, std::time::Instant::now());
+                        }
+                        // 菜单栏上那几个数只跟这几种事件有关：花了多少（请求
+                        // 落地之后存储层才算得出来）、额度还剩多少、进行中几个。
+                        // 别的事件叫醒它只是让它白跑一趟。
+                        if matches!(
+                            ev,
+                            tw_api::Event::RequestStarted { .. }
+                                | tw_api::Event::RequestFinished { .. }
+                                | tw_api::Event::RequestFailed { .. }
+                                | tw_api::Event::RequestCancelled { .. }
+                                | tw_api::Event::QuotaSeen { .. }
+                                | tw_api::Event::ConfigReloaded { .. }
+                        ) {
+                            st.menubar.notify_one();
+                        }
+                    }
+                    // core 说这个订阅者掉过队：进行中的那几个按快照重数
+                    if matches!(ev, tw_api::Event::EventsDropped { .. }) {
+                        resync_tally(&a);
+                    }
+                    let _ = a.emit("core-event", &ev);
+                },
+            )
             .await;
         if let Err(e) = r {
             tracing::debug!("事件流断开：{e:#}");
         }
+        // 接通过才算连上过：core 重启期间那几轮连不上的不算
+        connected_before |= opened.load(std::sync::atomic::Ordering::SeqCst);
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+}
+
+/// 菜单栏上「进行中几个」按 core 的快照重数一遍（`/in-flight`）。
+///
+/// **先开始记账再去问**：问的这会儿开始、结束的请求记在一边，快照到了一起合进去
+/// （见 `Tally::finish_resync`）。
+fn resync_tally(app: &tauri::AppHandle) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    if let Ok(mut t) = st.tally.lock() {
+        t.begin_resync();
+    }
+    let a = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(st) = a.try_state::<AppState>() else {
+            return;
+        };
+        let Ok(open) = st.control.in_flight().await else {
+            if let Ok(mut t) = st.tally.lock() {
+                t.abandon_resync();
+            }
+            return;
+        };
+        let ids = open.iter().filter_map(|e| match e {
+            tw_api::Event::RequestStarted { id, .. } => Some(*id),
+            _ => None,
+        });
+        if let Ok(mut t) = st.tally.lock() {
+            t.finish_resync(ids);
+        }
+        st.menubar.notify_one();
+    });
 }
 
 /// 第一次检查之前先等一会儿。
@@ -1950,7 +2023,17 @@ fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
     if std::fs::write(&marker, "1").is_err() {
         return;
     }
-    let _ = app.emit("first-autostart", ());
+    // 窗口这时没开：只有系统通知说得到
+    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+        n.announce(
+            "autostart",
+            tr!("ThinkWatch 已在菜单栏运行", "ThinkWatch Is Running in the Menu Bar"),
+            tr!(
+                "开机时已自动启动。窗口关闭后，应用仍在菜单栏中运行。",
+                "It started at login. When the window is closed, the app keeps running in the menu bar."
+            ),
+        );
+    }
     tracing::info!("首次开机自启，已提示一次");
 }
 
@@ -2255,6 +2338,10 @@ fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<
 /// 落库的时间 —— 花费是它算出来的，事件到的那一刻还没有。
 const MENUBAR_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// 显示着倒计时或输出速率时，隔多久自己重算一次。**两样都只随时间变**：用手上的
+/// 重置时刻和计数器现算，不为它们去问 core
+const MENUBAR_TICK: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// 菜单栏。**被事件叫醒，不是每秒醒一次。**
 ///
 /// 它原来一秒一轮：每轮走两趟控制面（额度、汇总），另外每五轮再走两趟
@@ -2285,7 +2372,7 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             return;
         };
-        let next = collect_menubar_state(&state).await;
+        let (next, resets_at) = collect_menubar_state(&state).await;
         // 托盘菜单跟着一起更。**只在内容真的变了的时候重建** —— 而且
         // macOS 上菜单正开着时重建会把它收起来，用户点到一半菜单没了。
         let facts = collect_tray_facts(&state, &next).await;
@@ -2306,9 +2393,32 @@ async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
 
         // 等一个理由。**两路都要等** —— 只等事件的话，core 挂了之后
         // 菜单栏会停在最后那个数字上，而那正是最该说实话的时候。
-        tokio::select! {
-            _ = wake.notified() => {}
-            _ = core_rx.changed() => {}
+        loop {
+            let ticking = prev.status == menubar::Status::Normal
+                && (resets_at.is_some() || prev.tokens_per_sec.is_some());
+            tokio::select! {
+                _ = wake.notified() => break,
+                _ = core_rx.changed() => break,
+                _ = tokio::time::sleep(MENUBAR_TICK), if ticking => {
+                    let now = notices::now_ms();
+                    // 重置的时刻到了：那份额度已经作废，整个重收一遍
+                    if resets_at.is_some_and(|at| at <= now) {
+                        break;
+                    }
+                    let mut tick = prev.clone();
+                    tick.quota_reset_in_secs = resets_at.map(|at| (at - now) / 1000);
+                    if let Some(st) = app.try_state::<AppState>()
+                        && let Ok(mut t) = st.tally.lock()
+                    {
+                        tick.tokens_per_sec = t.tokens_per_sec(std::time::Instant::now());
+                        tick.active = t.active();
+                    }
+                    if tick.needs_redraw(&prev) {
+                        draw_menubar(&tray, &tick);
+                        prev = tick;
+                    }
+                }
+            }
         }
         // 攒一下。`Notify` 只攒一个许可，所以这三秒里来多少条事件，
         // 醒来之后也只多跑一轮。
@@ -2331,28 +2441,40 @@ fn draw_menubar(tray: &tauri::tray::TrayIcon, next: &menubar::MenuBarState) {
     let _ = tray.set_icon_as_template(template);
 }
 
-async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::MenuBarState {
+/// 收一帧要画的数。另外交回额度的重置时刻：倒计时要靠它随时间往下走。
+async fn collect_menubar_state(
+    state: &tauri::State<'_, AppState>,
+) -> (menubar::MenuBarState, Option<u64>) {
     let core = state.supervisor.state();
     let status = match core {
         CoreState::Running { .. } => menubar::Status::Normal,
         CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,
-        CoreState::SafeMode | CoreState::Stopped => menubar::Status::Disconnected,
+        CoreState::SafeMode | CoreState::Stopped | CoreState::Failed { .. } => {
+            menubar::Status::Disconnected
+        }
     };
     if !matches!(status, menubar::Status::Normal) {
         // core 没在跑的时候，上一次的数字已经不代表现在了。**显示破折号
         // 而不是一个凝固的旧值** —— 后者会让人以为它还在更新。
-        return menubar::MenuBarState {
-            active: 0,
-            status,
-            ..Default::default()
-        };
+        return (
+            menubar::MenuBarState {
+                active: 0,
+                status,
+                ..Default::default()
+            },
+            None,
+        );
     }
     // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了 $0.00」
     // 是句废话。按量付费的账号根本没有那些响应头。
+    let now = notices::now_ms();
     let quota = state.control.quota().await.unwrap_or_default();
     let tightest = quota
         .iter()
         .flat_map(|p| p.windows.iter())
+        // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会
+        // 带来新的
+        .filter(|w| w.resets_at_ms.is_none_or(|at| at > now))
         .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent));
 
     // 花费从库里来。拿不到就是「不知道」——**画一个 $0.00 会是一个断言：
@@ -2370,20 +2492,30 @@ async fn collect_menubar_state(state: &tauri::State<'_, AppState>) -> menubar::M
             .map(|s| s.cost_micros_exact as f64 / 1e6)
     };
 
-    menubar::MenuBarState {
-        cost_today,
-        quota_percent: tightest.map(|w| w.used_percent),
-        quota_reset_in_secs: tightest.and_then(|w| w.reset_in_secs),
-        quota_warning: tightest.is_some_and(|w| {
-            matches!(
-                w.status.as_deref(),
-                Some("allowed_warning") | Some("rejected")
-            )
-        }),
-        tokens_per_sec: None,
-        active: 0,
-        status,
-    }
+    let resets_at = tightest.and_then(|w| w.resets_at_ms);
+    // 第二行：进行中几个、最近的输出速率。事件桥一直在数，这里读一下就有
+    let (active, tokens_per_sec) = state
+        .tally
+        .lock()
+        .map(|mut t| (t.active(), t.tokens_per_sec(std::time::Instant::now())))
+        .unwrap_or((0, None));
+    (
+        menubar::MenuBarState {
+            cost_today,
+            quota_percent: tightest.map(|w| w.used_percent),
+            quota_reset_in_secs: resets_at.map(|at| at.saturating_sub(now) / 1000),
+            quota_warning: tightest.is_some_and(|w| {
+                matches!(
+                    w.status.as_deref(),
+                    Some("allowed_warning") | Some("rejected")
+                )
+            }),
+            tokens_per_sec,
+            active,
+            status,
+        },
+        resets_at,
+    )
 }
 
 /// 数据目录。**只有这一处**决定它在哪 —— 写第二遍就会漂，而漂掉的那处
@@ -2403,17 +2535,14 @@ fn default_socket() -> PathBuf {
 async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
     let mut safe = false;
     loop {
+        // 每一次转换都随 `core-state` 推给界面（见 setup 里那一段），这里不再另发
         match sup.run_once(safe).await {
-            Ok(supervisor::Next::Again) => {
-                let _ = app.emit("core-restarting", ());
-                continue;
-            }
+            Ok(supervisor::Next::Again) => continue,
             Ok(supervisor::Next::Stop) => break,
             Ok(supervisor::Next::SafeMode) => {
                 // 进安全模式：**必须打断用户并自动开窗**。这时候网关
                 // 已经不转发了，他所有的 AI 客户端都在瞎。
                 safe = true;
-                let _ = app.emit("core-safe-mode", ());
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();
@@ -2422,9 +2551,9 @@ async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
             }
             Err(e) => {
                 // 起不来（多半是二进制路径不对）。这不是「core 在崩」，
-                // 别用重启循环去掩盖它。
+                // 别用重启循环去掩盖它：守护停下，状态是 `Failed`，界面上
+                // 说原因、给重试
                 tracing::error!("core 起不来：{e:#}");
-                let _ = app.emit("core-failed", format!("{e:#}"));
                 break;
             }
         }

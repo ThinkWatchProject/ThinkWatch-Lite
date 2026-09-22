@@ -12,7 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import { resetIn } from "@/format";
+import { resetAt } from "@/format";
+import { Tip } from "@/ui/tip";
+import { useNow } from "@/useNow";
 import { Spinner } from "@/ui/spinner";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -64,6 +66,8 @@ export function UpstreamTable({
   actions: UpstreamActions;
 }) {
   const t = useText(upstreamTableText);
+  // 额度的「多久后重置」随时间走：重画就行，不用再问 core
+  const now = useNow();
   return (
     <Table>
       <TableHeader>
@@ -102,9 +106,25 @@ export function UpstreamTable({
                     )}
                     {p.disabled ? (
                       <Badge variant="outline">{t.disabled}</Badge>
-                    ) : p.health === "open" ? (
-                      <Badge variant="warning">{t.circuitOpen}</Badge>
-                    ) : null}
+                    ) : (
+                      <>
+                        {/*
+                          熔断看不见凭据的问题：4xx 不算失败，凭据坏掉的上游永远不会熔断。
+                          这两个要自己说
+                        */}
+                        {p.oauth?.needs_login && (
+                          <Tip text={t.needsLoginTip}>
+                            <Badge variant="warning">{t.needsLogin}</Badge>
+                          </Tip>
+                        )}
+                        {p.auth_rejected != null && (
+                          <Tip text={t.authRejectedTip(p.auth_rejected)}>
+                            <Badge variant="warning">{t.authRejected}</Badge>
+                          </Tip>
+                        )}
+                        {p.health === "open" && <Badge variant="warning">{t.circuitOpen}</Badge>}
+                      </>
+                    )}
                   </div>
                   {/*
                     协议、地址、出站方式是同一件事的三个部分：这一家在哪、怎么连。
@@ -113,7 +133,7 @@ export function UpstreamTable({
                   <Where p={p} account={accounts[p.name]} />
                 </TableCell>
                 <ModelsCell p={p} onEdit={() => actions.editModels(p.name)} />
-                <QuotaCell p={p} stats={stats} />
+                <QuotaCell p={p} stats={stats} now={now} />
                 <DayCell p={p} stats={stats} />
                 <LatencyCell p={p} stats={stats} />
                 <TableCell className="text-right">
@@ -232,16 +252,28 @@ function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
  * 而计费方式（订阅制）在额度条出现的那一刻已经不言自明。**上游没报过额度就
  * 退回说计费方式**：画一根 0% 的空条等于说「一点没用」，而事实是不知道。
  */
-function QuotaCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null }) {
+function QuotaCell({
+  p,
+  stats,
+  now,
+}: {
+  p: ProviderView;
+  stats: UpstreamStats | null;
+  now: number;
+}) {
   const t = useText(upstreamTableText);
-  const windows = stats?.quotas.find((q) => q.provider === p.name)?.windows ?? [];
+  // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会带来
+  // 新的。拿它画一根满格的条，说的是一件已经不成立的事
+  const windows = (stats?.quotas.find((q) => q.provider === p.name)?.windows ?? []).filter(
+    (w) => w.resets_at_ms == null || w.resets_at_ms > now,
+  );
   // 最紧张的那个窗口：先到的那条线决定什么时候用完
   const tight = windows.reduce<(typeof windows)[number] | null>(
     (a, w) => (!a || w.used_percent > a.used_percent ? w : a),
     null,
   );
   if (tight && !p.disabled) {
-    const reset = resetIn(tight.reset_in_secs);
+    const reset = resetAt(tight.resets_at_ms, now);
     return (
       <TableCell>
         <div className="flex items-baseline justify-between gap-2">

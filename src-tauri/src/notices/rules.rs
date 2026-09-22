@@ -104,13 +104,15 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
         Event::QuotaExhausted {
             provider,
             window,
-            reset_in_secs,
+            resets_at_ms,
             ..
         } => {
-            let reset = reset_in_secs.map(after).unwrap_or_default();
+            // core 给的是重置的时刻：按现在去数还有多久
+            let secs = resets_at_ms.map(|at| at.saturating_sub(super::now_ms()) / 1000);
+            let reset = secs.map(after).unwrap_or_default();
             // 几分钟后就恢复的窗口不值得打断 —— 用户等一会儿就好了
-            let level = match reset_in_secs {
-                Some(s) if *s <= 300 => Level::Info,
+            let level = match secs {
+                Some(s) if s <= 300 => Level::Info,
                 _ => Level::Warning,
             };
             vec![
@@ -457,6 +459,24 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             .now()
             .suppressing(suppresses("gateway")),
         ],
+        // 程序本身运行不了：不会自己好，转发已经停了
+        CoreState::Failed { .. } => vec![
+            Signal::raised(
+                "gateway",
+                Level::Critical,
+                tr!("网关无法启动", "Gateway Cannot Start"),
+            )
+            .body(
+                tr!(
+                    "core 程序未能运行，转发已停止。打开窗口可以查看原因并重试。",
+                    "The core program could not run, so forwarding has stopped. Open the window to see why and try again."
+                )
+                .to_string(),
+            )
+            .view(SETTINGS)
+            .now()
+            .suppressing(suppresses("gateway")),
+        ],
         // 偶发崩溃自己好了就别打扰人；连着崩说明不是偶发
         CoreState::Restarting { attempt, .. } if *attempt >= 3 => vec![
             Signal::raised(
@@ -476,6 +496,27 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
         ],
         _ => Vec::new(),
     }
+}
+
+/// core 活着但不回心跳，被换掉了。
+///
+/// **只进应用内**：自己好了的一次卡顿和一次偶发崩溃一个待遇，不打断人。但那几秒里
+/// 用户看到的失败要有地方说得清，所以留一条。同一件事再发生只累计次数
+pub fn wedged() -> Signal {
+    Signal::raised(
+        "wedged",
+        Level::Info,
+        tr!("网关曾无响应，已重启", "Gateway Stopped Responding and Was Restarted"),
+    )
+    .body(
+        tr!(
+            "网关连续几次没有响应，已自动重启。重启期间的请求可能失败。",
+            "The gateway did not respond several times in a row and was restarted automatically. Requests during the restart may have failed."
+        )
+        .to_string(),
+    )
+    .view(SETTINGS)
+    .now()
 }
 
 /// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用

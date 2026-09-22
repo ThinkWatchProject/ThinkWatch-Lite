@@ -17,6 +17,9 @@ import type { CoreEvent } from "./types";
  *
  * 每个页面自己订阅，不从 App 一层层传下去：Tauri 的事件通道本来就支持
  * 多个监听者，而「这一页关心哪几种事件」写在这一页里才看得懂。
+ *
+ * **事件流丢过事件（`events_dropped`）也回调**：丢掉的那几条里可能正有这一页
+ * 关心的，当它们发生过，重读一次。
  */
 export function useCoreEvent(
   kinds: readonly CoreEvent["kind"][],
@@ -30,7 +33,7 @@ export function useCoreEvent(
   const want = kinds.join(",");
 
   useEffect(() => {
-    const set = new Set(want.split(","));
+    const set = new Set([...want.split(","), "events_dropped"]);
     let timer: ReturnType<typeof setTimeout> | null = null;
     const un = listen<CoreEvent>("core-event", (e) => {
       if (!set.has(e.payload.kind) || timer) return;

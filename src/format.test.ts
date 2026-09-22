@@ -6,6 +6,7 @@ import {
   latency,
   money,
   repeated,
+  resetAt,
   resetIn,
   statusTone,
   tokens,
@@ -224,6 +225,22 @@ describe("额度重置时间", () => {
   it("上游没给就是不知道，不猜", () => {
     expect(resetIn(null)).toBeNull();
     expect(resetIn(undefined)).toBeNull();
+  });
+
+  /**
+   * core 给的是重置的时刻。**按现在去数**：同一个时刻，过一会儿再看要少一截 ——
+   * 以前拿到的是「还有多少秒」，存下来就是一个不会走的倒计时。
+   */
+  it("从时刻数到现在", () => {
+    const at = 1_758_000_000_000 + 3 * 3600_000;
+    expect(resetAt(at, 1_758_000_000_000)).toBe("3 小时后");
+    expect(resetAt(at, 1_758_000_000_000 + 2 * 3600_000)).toBe("1 小时后");
+    expect(resetAt(at, at)).toBe("刚刚");
+  });
+  /** 时刻过去了，窗口已经重置过：手上的额度是重置之前的，不能再说「多久后」 */
+  it("过去的时刻不说", () => {
+    expect(resetAt(1_000, 2_000)).toBeNull();
+    expect(resetAt(null, 2_000)).toBeNull();
   });
 
   /** 英文跟在动词后面（resets in 3 h），单位和中文一样短，天数分单复数 */

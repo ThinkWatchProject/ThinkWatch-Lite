@@ -48,6 +48,7 @@ export const requestDrawerText = messages(
     times: (n: number) => `出现 ${n} 次`,
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     status: "状态",
+    inProgress: "进行中",
     cancelled: "已取消：客户端在响应结束前断开连接",
     bytes: "字节",
 
@@ -58,6 +59,7 @@ export const requestDrawerText = messages(
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
     noRouting: "此请求没有路由信息",
+    routingPending: "路由尚未完成",
     noRoutingTip: "网关本地应答的请求、被路由规则拒绝的请求，以及上游应答之前客户端就断开的请求，不记录路由信息。",
     possibleCauses: "可能原因",
 
@@ -65,6 +67,7 @@ export const requestDrawerText = messages(
     request: "请求",
     response: "响应",
     notSaved: "未保存",
+    afterEnd: "请求结束后可查看",
     notSavedTip: "此记录已超过保留期限。",
     size: (n: number) => `${n.toLocaleString()} 字节`,
     truncated: "仅保存开头部分",
@@ -72,6 +75,7 @@ export const requestDrawerText = messages(
     showAll: "展开全部",
 
     // 用量。**没有用量、没有价格、估算，各说各的**
+    usagePending: "请求结束后可查看用量和费用",
     cancelledBeforeUsage: "客户端在上游报告用量前断开连接",
     failedBeforeUsage: "请求在上游报告用量前失败",
     noUsage: "上游未报告用量",
@@ -109,6 +113,7 @@ export const requestDrawerText = messages(
     originalColumn: (upstream: string) => `${upstream}（原请求）`,
     replayColumn: (upstream: string) => `${upstream}（重放）`,
     duration: "耗时",
+    replayPending: "请求结束后可重放",
   },
   {
     title: "Request details",
@@ -140,6 +145,7 @@ export const requestDrawerText = messages(
     times: (n: number) => `${n} times`,
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     status: "Status",
+    inProgress: "In progress",
     cancelled: "Canceled: the client disconnected before the response finished",
     bytes: "Bytes",
 
@@ -151,6 +157,7 @@ export const requestDrawerText = messages(
         ? "Failover occurred: the first upstream failed, and the request was switched to the next upstream automatically."
         : `Failover occurred: the first ${failed} upstreams failed, and the request was switched to the next upstream automatically.`,
     noRouting: "No routing information for this request",
+    routingPending: "Routing has not finished yet",
     noRoutingTip:
       "Requests answered locally by the gateway, requests refused by a routing rule, and requests whose client disconnected before any upstream answered carry no routing information.",
     possibleCauses: "Possible causes",
@@ -158,12 +165,14 @@ export const requestDrawerText = messages(
     request: "Request",
     response: "Response",
     notSaved: "Not saved",
+    afterEnd: "Available when the request ends",
     notSavedTip: "This record is past its retention period.",
     size: (n: number) => (n === 1 ? "1 byte" : `${n.toLocaleString()} bytes`),
     truncated: "only the beginning was saved",
     collapse: "Collapse",
     showAll: "Show all",
 
+    usagePending: "Usage and cost are available when the request ends",
     cancelledBeforeUsage: "The client disconnected before the upstream reported usage",
     failedBeforeUsage: "The request failed before the upstream reported usage",
     noUsage: "The upstream did not report usage",
@@ -206,5 +215,6 @@ export const requestDrawerText = messages(
     originalColumn: (upstream: string) => `${upstream} (original)`,
     replayColumn: (upstream: string) => `${upstream} (replay)`,
     duration: "Total time",
+    replayPending: "Replay is available when the request ends",
   },
 );

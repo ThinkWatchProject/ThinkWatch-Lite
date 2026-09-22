@@ -1055,12 +1055,14 @@ impl ControlClient {
         Ok(serde_json::from_slice(&body)?)
     }
 
-    /// 订阅事件流，逐条交给回调。
+    /// 订阅事件流，逐条交给回调。`on_open` 在流接通的那一刻调一次：调用方据此
+    /// 分得清哪一次是重连 —— 断开的那一段里发生的事，流不会再说一遍。
     ///
     /// 断开就返回 —— **重连由调用方决定**。守护那边已经有退避逻辑了，
     /// 这里再来一套会变成两套互相不知道对方存在的重试。
-    pub async fn subscribe_events<F>(&self, mut on_event: F) -> Result<()>
+    pub async fn subscribe_events<O, F>(&self, on_open: O, mut on_event: F) -> Result<()>
     where
+        O: FnOnce() + Send,
         F: FnMut(tw_api::Event) + Send,
     {
         let stream = tokio::net::UnixStream::connect(&self.socket).await?;
@@ -1075,6 +1077,7 @@ impl ControlClient {
             .header(hyper::header::ACCEPT, "text/event-stream")
             .body(String::new())?;
         let mut resp = sender.send_request(req).await?;
+        on_open();
 
         let mut buf = String::new();
         while let Some(frame) = resp.frame().await {

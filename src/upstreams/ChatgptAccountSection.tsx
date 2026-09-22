@@ -16,7 +16,8 @@ import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Progress } from "@/ui/progress";
 import { Spinner } from "@/ui/spinner";
-import { resetIn } from "@/format";
+import { resetAt, resetIn } from "@/format";
+import { useNow } from "@/useNow";
 import type { ChatgptUsage, Overview, ProviderView, ResetCredits, ResetCreditView } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -53,6 +54,7 @@ export function ChatgptAccountSection({
 }) {
   const t = useText(chatgptAccountText);
   const common = useText(commonText);
+  const now = useNow();
   /** 上游的状态词。认不出来的原样显示 —— 编不出来的说法比一个陌生的词更糟 */
   const status: Record<string, string> = t.status;
   /** 用一张卡的结果 */
@@ -153,7 +155,7 @@ export function ChatgptAccountSection({
         ) : usage && usage.windows.length > 0 ? (
           <div className="flex flex-col gap-2.5">
             {usage.windows.map((w) => {
-              const reset = resetIn(w.reset_in_secs);
+              const reset = resetAt(w.resets_at_ms, now);
               return (
                 <div key={w.window} className="flex flex-col gap-1">
                   <div className="flex items-baseline justify-between tw-body">

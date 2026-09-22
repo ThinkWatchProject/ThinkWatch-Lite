@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { ActivityIcon, CircleAlertIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -15,7 +16,8 @@ import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
-import type { ChatgptUsage, Overview, PricingStatus } from "@/types";
+import type { ChatgptUsage, CoreEvent, Overview, PricingStatus } from "@/types";
+import { useCoreEvent } from "@/useCoreEvent";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
@@ -98,11 +100,41 @@ export default function UpstreamsPage({
       .catch((e) => toast.error(errorText(e)));
   }, []);
 
+  /**
+   * 24 小时的请求数、费用和首字节耗时。
+   *
+   * **请求落地之后重读**，不按时间轮询：这几个数只在请求落地时才变。随时间变的
+   * 只有 24 小时这个窗口本身在往前滑 —— 长时间没有请求时没有事件叫醒它，窗口
+   * 重新拿到焦点时补一次。
+   */
   useEffect(() => {
     loadStats();
-    const t = setInterval(loadStats, 30_000);
-    return () => clearInterval(t);
+    window.addEventListener("focus", loadStats);
+    return () => window.removeEventListener("focus", loadStats);
   }, [loadStats]);
+  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], loadStats);
+
+  /**
+   * 订阅额度。**事件里就是完整的数**（和 `/quota` 同一份），收到直接换上：
+   * 额度变的那一刻就是这条事件到的那一刻。
+   */
+  useEffect(() => {
+    const un = listen<CoreEvent>("core-event", (e) => {
+      const ev = e.payload;
+      if (ev.kind !== "quota_seen") return;
+      setStats(
+        (s) =>
+          s && {
+            ...s,
+            quotas: [
+              ...s.quotas.filter((q) => q.provider !== ev.provider),
+              { provider: ev.provider, windows: ev.windows },
+            ],
+          },
+      );
+    });
+    return () => void un.then((f) => f());
+  }, []);
 
   /**
    * 账号类上游：**打开这一页时问一次它自己。**
@@ -112,7 +144,7 @@ export default function UpstreamsPage({
    * 或者这个账号今天还没被用过时，不问就什么都没有。
    *
    * **每个上游只问一次。**问一次是一次真实调用；失败了也不再问 —— 连不上时
-   * 三十秒重试一轮，只会把错误刷满日志。
+   * 反复重试，只会把错误刷满日志。
    */
   const [accounts, setAccounts] = useState<Record<string, ChatgptUsage>>({});
   const askedUsage = useRef(new Set<string>());
@@ -192,13 +224,14 @@ export default function UpstreamsPage({
         proxy: { name: x.name, kind: x.kind, addr: x.addr, auth: { mode: "keep" } },
         current: x.name,
       });
-      setChecks((c) => ({ ...c, [name]: { running: false, result } }));
+      setChecks((c) => ({ ...c, [name]: { running: false, result, at: Date.now() } }));
     } catch (e) {
       setChecks((c) => ({
         ...c,
         [name]: {
           running: false,
           result: { target: name, ok: false, segments: [], total_ms: 0, error: plain(errorText(e)) },
+          at: Date.now(),
         },
       }));
     }

@@ -9,6 +9,11 @@ export const upstreamTableText = messages(
     ttfb: "首字节 P50",
     disabled: "已停用",
     circuitOpen: "熔断中",
+    authRejected: "凭据被拒",
+    authRejectedTip: (status: number) =>
+      `上游返回未授权（${status}），该上游的凭据可能已失效。`,
+    needsLogin: "需要重新登录",
+    needsLoginTip: "账号的登录已失效。重新登录之前，经此上游的请求都会失败。",
     actions: (name: string) => `${name} 的操作`,
     check: "检测连接",
     linkTest: "链路测速",
@@ -37,6 +42,12 @@ export const upstreamTableText = messages(
     ttfb: "TTFB P50",
     disabled: "Disabled",
     circuitOpen: "Circuit open",
+    authRejected: "Credential rejected",
+    authRejectedTip: (status: number) =>
+      `The upstream returned an unauthorized response (${status}). The credential for this upstream may no longer be valid.`,
+    needsLogin: "Sign in again",
+    needsLoginTip:
+      "The account's sign-in has expired. Until the account is signed in again, requests through this upstream will fail.",
     actions: (name: string) => `Actions for ${name}`,
     check: "Check connection",
     linkTest: "Connection test",

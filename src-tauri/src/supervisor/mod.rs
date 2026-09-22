@@ -36,6 +36,13 @@ pub enum CoreState {
     SafeMode,
     /// UI 主动停的，不再重启
     Stopped,
+    /// 拉不起来：程序运行不了（找不到、没有执行权限、不是这台机器能跑的）。
+    ///
+    /// **这不是「core 在崩」**，重启循环掩盖不了它，所以守护停下来等用户点重试。
+    /// 原因要带着：界面上只写「正在启动」的话，用户会一直等下去
+    Failed {
+        reason: String,
+    },
 }
 
 /// 一次 core 退出之后，守护循环下一步做什么。
@@ -139,10 +146,12 @@ impl Supervisor {
                     "Core is starting; try again in a moment"
                 ))
             }
-            CoreState::SafeMode | CoreState::Stopped => anyhow::bail!(tr!(
-                "core 未运行，无法重启",
-                "Core is not running and cannot be restarted"
-            )),
+            CoreState::SafeMode | CoreState::Stopped | CoreState::Failed { .. } => {
+                anyhow::bail!(tr!(
+                    "core 未运行，无法重启",
+                    "Core is not running and cannot be restarted"
+                ))
+            }
         };
         self.intentional.store(true, Ordering::SeqCst);
         // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉。
@@ -218,11 +227,24 @@ impl Supervisor {
         let args = self.command_args(safe);
         let started = Instant::now();
 
-        let mut child = tokio::process::Command::new(&self.binary)
+        let spawned = tokio::process::Command::new(&self.binary)
             .args(&args)
             // core 的日志走它自己的 stderr；UI 侧只需要知道它活着。
             .kill_on_drop(true)
-            .spawn()?;
+            .spawn();
+        let mut child = match spawned {
+            Ok(c) => c,
+            Err(e) => {
+                let path = self.binary.display();
+                self.set(CoreState::Failed {
+                    reason: tr!(
+                        format!("无法运行 {path}：{e}"),
+                        format!("{path} could not be run: {e}")
+                    ),
+                });
+                return Err(e.into());
+            }
+        };
 
         if let Some(pid) = child.id() {
             self.set(CoreState::Running { pid });
@@ -298,6 +320,20 @@ mod tests {
             PathBuf::from("/nonexistent/twcore"),
             Some(PathBuf::from("/tmp/c.yaml")),
         )
+    }
+
+    /// 程序运行不了：**停在「无法启动」、带着原因**，不是停在「正在启动」。以前停在
+    /// 后者，界面上一直说「请稍候」，而这件事等多久都不会好。
+    #[tokio::test]
+    async fn a_binary_that_cannot_run_leaves_the_reason_in_the_state() {
+        let s = sup();
+        assert!(s.run_once(false).await.is_err());
+        match s.state() {
+            CoreState::Failed { reason } => {
+                assert!(reason.contains("/nonexistent/twcore"), "{reason}");
+            }
+            other => panic!("该是无法启动，实际 {other:?}"),
+        }
     }
 
     #[test]
