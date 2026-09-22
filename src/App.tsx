@@ -1261,7 +1261,7 @@ export default function App() {
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (
-                <div className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 overflow-y-auto">
                   {/*
                     详情走**浮层**，不拆栏。
 
@@ -1269,7 +1269,13 @@ export default function App() {
                     上游那两列，而排查时要对着看的恰恰是它们。而且一次
                     只看一条请求，剩下那半屏的表在这时候是没人读的。
                   */}
-                  <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+                  {/*
+                    **滚的是外层，边距在里层**，和别的页一样。表头是
+                    `sticky top-0`，吸顶的位置从滚动容器的内边距以内算起
+                    —— 把上边距加在滚动容器上，往下翻时表头停在离顶
+                    20px 处，行从它上面那条缝里漏出来。
+                  */}
+                  <div className="p-5">
                     {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
