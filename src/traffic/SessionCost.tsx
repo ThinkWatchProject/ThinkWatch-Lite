@@ -1,43 +1,40 @@
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
-import { usd, type SessionView } from "@/types";
+import type { SessionView } from "@/types";
 import { sessionsText } from "@/Sessions.i18n";
+import { costCell } from "./costCell";
 
 /**
- * 一次会话的花费。
+ * 一次会话的费用，在组头上。**一行，一个数**：写什么见 `costCell`。
  *
- * **三态**：有价格的加起来，没价格的单独说，一轮都没有价格时
- * 不显示 $0 —— 那是在撒谎。
+ * 有说明的金额带虚线下划线，和请求行里估算的金额同一个记号；「无法计价」
+ * 本来就淡一档，悬停照样有说明。
  */
 export function SessionCost({ s }: { s: SessionView }) {
-  const t = useText(sessionsText);
-  if (s.priced_turns === 0) {
-    return (
-      <Tip text={t.noPricedTurnsTip}>
-        <span className="text-muted-foreground">{t.unpriced}</span>
-      </Tip>
-    );
-  }
+  const c = costCell(s, useText(sessionsText));
+  if (c.notes.length === 0) return <>{c.text}</>;
   return (
-    <>
-      {s.cost_micros_estimated > 0 ? (
-        // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
-        <Tip text={t.estimatedTip(usd(s.cost_micros_estimated))}>
-          <span className="underline decoration-dotted underline-offset-2">~{usd(s.cost_micros)}</span>
-        </Tip>
-      ) : (
-        usd(s.cost_micros)
-      )}
-      {s.unpriced_turns > 0 && (
-        <Tip text={t.unpricedTurnsTip}>
-          <span className="ml-1 text-muted-foreground">{t.unpricedTurns(s.unpriced_turns)}</span>
-        </Tip>
-      )}
-      {s.no_usage_turns > 0 && (
-        <Tip text={t.noUsageTurnsTip}>
-          <span className="ml-1 text-muted-foreground">{t.noUsageTurns(s.no_usage_turns)}</span>
-        </Tip>
-      )}
-    </>
+    <Tip text={<Lines lines={c.notes} />}>
+      <span
+        className={
+          c.muted
+            ? "text-muted-foreground"
+            : "underline decoration-dotted underline-offset-2"
+        }
+      >
+        {c.text}
+      </span>
+    </Tip>
+  );
+}
+
+/** 悬停里的几句话，一句一段。气泡本身是横排的 flex，要包成一块 */
+function Lines({ lines }: { lines: string[] }) {
+  return (
+    <div className="space-y-1">
+      {lines.map((l) => (
+        <p key={l}>{l}</p>
+      ))}
+    </div>
   );
 }
