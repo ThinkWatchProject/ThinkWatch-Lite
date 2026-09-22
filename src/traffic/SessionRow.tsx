@@ -57,6 +57,8 @@ export function SessionRow({
 
   return (
     <TableRow
+      // 键盘选中组头时 App 按它找到这一行、滚进视野
+      data-session={g.id ?? undefined}
       onClick={onOpen}
       className={
         "cursor-pointer border-b border-neutral-100 bg-neutral-50/60 font-medium dark:border-neutral-900 dark:bg-neutral-900/40 " +

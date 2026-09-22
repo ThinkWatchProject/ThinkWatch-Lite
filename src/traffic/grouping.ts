@@ -81,3 +81,80 @@ export function sortWithin(g: Group): RequestRow[] {
 export function failedIn(g: Group): number {
   return g.rows.filter((r) => r.state === "failed").length;
 }
+
+/** 键盘选中的那一行：一条请求，或者归组时的一个组头 */
+export type Cursor = { kind: "request"; id: number } | { kind: "session"; id: string };
+
+/**
+ * 表里的一行。`under` 是它挂在哪个组头下面（平表、无主的请求是 `null`）；
+ * `shown` 为假的是折起来的组里的请求 —— 它们不在表里。
+ */
+export type Line =
+  | { kind: "session"; id: string; open: boolean }
+  | { kind: "request"; id: number; under: string | null; shown: boolean };
+
+/**
+ * 表里从上到下有哪些行，和 `RequestRows` 摆的一样。
+ *
+ * **键盘按这个顺序走，不按 `rows`。**平表两者相同；归组之后不一样：组按最新
+ * 的一条排，组内按时间正序，折起来的组里的请求不在表里。按 `rows` 走的话，
+ * ↓ 在组内是往上跳的，会跳到别的组去，还会停在看不见的行上。
+ *
+ * 折起来的组里的请求也列出来（`shown: false`）：光标可能正停在那儿 —— 先选中，
+ * 再把组折起来 —— 那时要知道它在哪，才能从那儿接着走。
+ */
+export function lines(
+  rows: RequestRow[],
+  groups: Group[] | undefined,
+  open: Set<string>,
+): Line[] {
+  if (!groups)
+    return rows.map((r) => ({ kind: "request", id: r.id, under: null, shown: true }));
+  const out: Line[] = [];
+  for (const g of groups) {
+    if (g.id === null) {
+      const r = g.rows[0];
+      if (r) out.push({ kind: "request", id: r.id, under: null, shown: true });
+      continue;
+    }
+    const isOpen = open.has(g.id);
+    out.push({ kind: "session", id: g.id, open: isOpen });
+    for (const r of sortWithin(g))
+      out.push({ kind: "request", id: r.id, under: g.id, shown: isOpen });
+  }
+  return out;
+}
+
+/** 这一行是不是光标指着的那一行 */
+export const isAt = (l: Line, c: Cursor | null): boolean =>
+  c !== null && l.kind === c.kind && l.id === c.id;
+
+/** 看得见的行：组头，和不在折起来的组里的请求 */
+export const visible = (l: Line): boolean => l.kind === "session" || l.shown;
+
+const toCursor = (l: Line): Cursor =>
+  l.kind === "session" ? { kind: "session", id: l.id } : { kind: "request", id: l.id };
+
+/**
+ * 按一下 ↑（`-1`）或 ↓（`1`）之后，光标落在哪一行。
+ *
+ * **只落在看得见的行上。**还没用过键盘、或者选中的那一条已经不在表里了（被筛掉、
+ * 超了上限），从第一行开始 —— ↑ 也是，从「上一行」跳到末尾没有意义。到了头再
+ * 按，停在原地。
+ *
+ * 选中的那条被折进了组里时，从它所在的位置往那个方向接着找；那个方向上已经没有
+ * 了，就退回反方向最近的那一行。按了键，总得看见光标在哪。一行都看不见时是 `null`。
+ */
+export function step(ls: Line[], at: Cursor | null, dir: 1 | -1): Cursor | null {
+  const i = ls.findIndex((l) => isAt(l, at));
+  if (i < 0) {
+    const first = ls.find(visible);
+    return first ? toCursor(first) : null;
+  }
+  for (let j = i + dir; j >= 0 && j < ls.length; j += dir)
+    if (visible(ls[j]!)) return toCursor(ls[j]!);
+  if (visible(ls[i]!)) return toCursor(ls[i]!);
+  for (let j = i - dir; j >= 0 && j < ls.length; j -= dir)
+    if (visible(ls[j]!)) return toCursor(ls[j]!);
+  return null;
+}

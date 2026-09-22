@@ -39,7 +39,15 @@ import { RequestTable } from "./traffic/RequestTable";
 import { SessionPanel } from "./traffic/SessionPanel";
 import { useSessions } from "./traffic/useSessions";
 import { useCoreEvent } from "./useCoreEvent";
-import { groupAt, groupBySession } from "./traffic/grouping";
+import {
+  groupAt,
+  groupBySession,
+  isAt,
+  lines,
+  step,
+  visible,
+  type Cursor,
+} from "./traffic/grouping";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
 import type { CoreStatus, Overview, SessionDetail } from "./types";
@@ -142,6 +150,13 @@ function surfaceOf(section: string | null): Surface {
       // 监听、日志保留在设置页；辅助请求在路由页，但它没有自己的段名
       return "settings";
   }
+}
+
+/** 有就去掉，没有就加上。展开、收起一个组走它 */
+function toggled(s: Set<string>, id: string): Set<string> {
+  const next = new Set(s);
+  if (!next.delete(id)) next.add(id);
+  return next;
 }
 
 /** lucide 的图标类型。尺寸走 `size`，颜色走 `currentColor`。 */
@@ -406,12 +421,15 @@ export default function App() {
   /** 菜单栏里点了「全部提醒…」几次。每点一次，工具栏上的提醒就打开一次 */
   const [noticesAsked, setNoticesAsked] = useState(0);
   /**
-   * 键盘选中的那一行。
+   * 键盘选中的那一行：一条请求，或者归组时的一个组头。
    *
-   * **`-1` 表示还没用过键盘。**一进页面就高亮第一行，会让用户以为
+   * **`null` 表示还没用过键盘。**一进页面就高亮第一行，会让用户以为
    * 那一行有什么特别。
+   *
+   * **记的是哪一行，不是第几行。**新请求从顶上进来、换了排序、展开收起一个
+   * 组，行的位置都会变；记下标的话，高亮会跳到别的行上去。
    */
-  const [cursor, setCursor] = useState(-1);
+  const [cursor, setCursor] = useState<Cursor | null>(null);
   /** 流量页的滚动层。键盘选中一行之后，在它里面找到那一行滚进视野 */
   const listRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Surface>("dashboard");
@@ -562,6 +580,10 @@ export default function App() {
    *
    * **「用鼠标一行行点太慢」**，而 Requests 是主战场。
    *
+   * `↑↓` 按屏幕上的顺序一行一行走，`Enter` 打开。归组时组头也是一行：`Enter`
+   * 打开那次会话，`→` 展开、`←` 收起；在组里的请求上按 `←` 回到组头 —— 和访达
+   * 列表视图里的三角一样。
+   *
    * 两个边界：在输入框里打字时不接管方向键（否则光标动不了）；
    * 抽屉开着时 `↑↓` 也不动，那时用户在看详情而不是挑行。请求和会话的
    * 抽屉都算：选中的行会滚进视野，漏掉一个，背后的列表就跟着光标滚走了。
@@ -617,48 +639,61 @@ export default function App() {
         return;
       }
       if (open !== null || openSession !== null) return;
+      /*
+        **选中的那一行要一直看得见。**方向键自带的滚动上面拦掉了，不补的话
+        按过可视区的下沿，高亮就跑到屏幕外面去了。只滚刚好够的距离
+        （`nearest`）；让开吸顶的表头、不横着滚，靠的是行上的 scroll-margin，
+        见 `RequestTable`。光标到了头、没动，也照样滚：用滚轮翻走之后，按一下
+        方向键就回到选中的那一行。
+      */
+      const reveal = (c: Cursor) =>
+        listRef.current
+          ?.querySelector(
+            c.kind === "request"
+              ? `[data-row="${c.id}"]`
+              : `[data-session="${CSS.escape(c.id)}"]`,
+          )
+          ?.scrollIntoView({ block: "nearest" });
+      // 表里从上到下的每一行。**按它走，不按 `rows`**：归组之后两者不一样，见 `lines`
+      const ls = lines(rows, groups, openGroups);
+      const here = ls.find((l) => isAt(l, cursor));
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        const step = e.key === "ArrowDown" ? 1 : -1;
-        // 第一次按方向键从第一行开始，而不是从「上一行」跳到末尾
-        const next =
-          cursor < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, cursor + step));
+        const next = step(ls, cursor, e.key === "ArrowDown" ? 1 : -1);
         setCursor(next);
-        /*
-          **选中的那一行要一直看得见。**方向键自带的滚动上面拦掉了，不补的话
-          按过可视区的下沿，高亮就跑到屏幕外面去了。只滚刚好够的距离
-          （`nearest`）；让开吸顶的表头、不横着滚，靠的是行上的 scroll-margin，
-          见 `Row`。光标到了头、没动，也照样滚：用滚轮翻走之后，按一下方向键
-          就回到选中的那一行。
-
-          **按 id 找行，不按下标。**归组时表里的顺序不是 `rows` 的顺序，折起来
-          的组里的行也不在表里 —— 那时找不到，就不滚。
-        */
-        const id = rows[next]?.id;
-        if (id !== undefined)
-          listRef.current
-            ?.querySelector(`[data-row="${id}"]`)
-            ?.scrollIntoView({ block: "nearest" });
-      } else if (e.key === "Enter" && cursor >= 0 && rows[cursor]) {
+        if (next) reveal(next);
+      } else if (
+        here?.kind === "session" &&
+        ((e.key === "ArrowRight" && !here.open) || (e.key === "ArrowLeft" && here.open))
+      ) {
         e.preventDefault();
-        setOpen(rows[cursor].id);
+        const id = here.id;
+        setOpenGroups((prev) => toggled(prev, id));
+      } else if (
+        e.key === "ArrowLeft" &&
+        here?.kind === "request" &&
+        here.shown &&
+        here.under !== null
+      ) {
+        e.preventDefault();
+        const head: Cursor = { kind: "session", id: here.under };
+        setCursor(head);
+        reveal(head);
+      } else if (e.key === "Enter" && here && visible(here)) {
+        e.preventDefault();
+        if (here.kind === "request") setOpen(here.id);
+        else setOpenSession(here.id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, rows, cursor, open, openSession]);
+  }, [tab, rows, groups, openGroups, cursor, open, openSession]);
 
   // 换页时把抽屉关掉 —— 它是请求页的东西，留在别的页上没有意义，
   // 而那时 Esc 也不接管了（键盘那个 effect 只在请求页挂）
   useEffect(() => {
     if (tab !== "requests") setOpen(null);
   }, [tab]);
-
-  // 列表变短了（超上限丢老的）时把光标收回来 —— 指着一行不存在的
-  // 记录，`Enter` 会什么都不发生，而用户不知道为什么
-  useEffect(() => {
-    setCursor((c) => (c >= rows.length ? rows.length - 1 : c));
-  }, [rows.length]);
 
   /**
    * 守护状态。**推过来的，不是问出来的。**
@@ -1544,11 +1579,7 @@ export default function App() {
                         openGroups={openGroups}
                         selectedSession={openSession}
                         onToggleGroup={(id) =>
-                          setOpenGroups((prev) => {
-                            const next = new Set(prev);
-                            if (!next.delete(id)) next.add(id);
-                            return next;
-                          })
+                          setOpenGroups((prev) => toggled(prev, id))
                         }
                         onOpenSession={(id) => {
                           // 一次只开一样：请求详情和会话详情共用那一栏

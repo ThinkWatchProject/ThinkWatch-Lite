@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { failedIn, groupAt, groupBySession, sortWithin } from "./grouping";
+import {
+  failedIn,
+  groupAt,
+  groupBySession,
+  lines,
+  sortWithin,
+  step,
+  type Cursor,
+} from "./grouping";
 import type { RequestRow, SessionView } from "@/types";
 
 const row = (id: number, atMs: number, session?: string): RequestRow => ({
@@ -61,5 +69,79 @@ describe("按会话归组", () => {
 
   it("空输入给空结果，不是一个空组", () => {
     expect(groupBySession([], [])).toEqual([]);
+  });
+});
+
+describe("键盘在表里怎么走", () => {
+  // 时间倒序，和表默认的排序一样：a 组三条、b 组一条，还有一条无主的
+  const rows = [
+    row(5, 500, "a"),
+    row(4, 400, "b"),
+    row(3, 300, "a"),
+    row(2, 200),
+    row(1, 100, "a"),
+  ];
+  const groups = groupBySession(rows, []);
+  const req = (id: number): Cursor => ({ kind: "request", id });
+  const ses = (id: string): Cursor => ({ kind: "session", id });
+  /** 从 `at` 起按 `n` 下，每一下落在哪 */
+  const walk = (ls: ReturnType<typeof lines>, at: Cursor | null, dir: 1 | -1, n: number) => {
+    const out: (Cursor | null)[] = [];
+    for (let i = 0; i < n; i++) out.push((at = step(ls, at, dir)));
+    return out;
+  };
+
+  it("平表就是 rows 的顺序，每一行都看得见", () => {
+    const ls = lines(rows, undefined, new Set());
+    expect(ls.map((l) => l.id)).toEqual([5, 4, 3, 2, 1]);
+    expect(ls.every((l) => l.kind === "request" && l.shown && l.under === null)).toBe(true);
+  });
+
+  it("归组时和表里摆的一样：组头，组内按时间正序，折起来的组里的行不算看得见", () => {
+    const ls = lines(rows, groups, new Set(["a"]));
+    expect(ls.map((l) => `${l.kind === "session" ? "组" : ""}${l.id}`)).toEqual([
+      "组a", "1", "3", "5", "组b", "4", "2",
+    ]);
+    expect(ls.find((l) => l.id === 4)).toMatchObject({ shown: false, under: "b" });
+    expect(ls.find((l) => l.id === 2)).toMatchObject({ shown: true, under: null });
+  });
+
+  it("↓ 按屏幕上的顺序走，跳过折起来的组里的行，到了底停在原地", () => {
+    // 按 rows 走的话是 5 → 4 → 3：在 a 组里往上跳，再跳进折着的 b 组
+    const ls = lines(rows, groups, new Set(["a"]));
+    expect(walk(ls, null, 1, 7)).toEqual([
+      ses("a"), req(1), req(3), req(5), ses("b"), req(2), req(2),
+    ]);
+  });
+
+  it("↑ 反过来走，到了顶停在原地", () => {
+    const ls = lines(rows, groups, new Set(["a"]));
+    expect(walk(ls, req(2), -1, 6)).toEqual([
+      ses("b"), req(5), req(3), req(1), ses("a"), ses("a"),
+    ]);
+  });
+
+  it("还没用过键盘、或者选中的那条已经不在表里，从第一行开始，↑ 也是", () => {
+    const ls = lines(rows, groups, new Set());
+    expect(step(ls, null, 1)).toEqual(ses("a"));
+    expect(step(ls, null, -1)).toEqual(ses("a"));
+    expect(step(ls, req(99), 1)).toEqual(ses("a"));
+  });
+
+  it("选中的那条被折进了组里：从它的位置接着走", () => {
+    // 先选中 4，再把 b 折起来
+    const ls = lines(rows, groups, new Set());
+    expect(step(ls, req(4), 1)).toEqual(req(2));
+    expect(step(ls, req(4), -1)).toEqual(ses("b"));
+  });
+
+  it("折进最后一组、往下已经没有了，就退回反方向最近的那一行", () => {
+    const tail = [row(2, 200), row(1, 100, "a")];
+    const ls = lines(tail, groupBySession(tail, []), new Set());
+    expect(step(ls, req(1), 1)).toEqual(ses("a"));
+  });
+
+  it("一行都看不见时没有落点", () => {
+    expect(step(lines([], [], new Set()), null, 1)).toBeNull();
   });
 });
