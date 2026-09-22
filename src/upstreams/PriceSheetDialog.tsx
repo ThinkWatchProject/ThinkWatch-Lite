@@ -395,7 +395,8 @@ export function PriceSheetDialog({
                   ]}
                 />
                 <div className="flex-1" />
-                <InputGroup className="w-52">
+                {/* 和这一行的分段控件、按钮一样高 */}
+                <InputGroup className="h-7 w-52">
                   <InputGroupAddon>
                     <SearchIcon />
                   </InputGroupAddon>
@@ -417,6 +418,7 @@ export function PriceSheetDialog({
                 <div className="flex items-center gap-2">
                   <Input
                     autoFocus
+                    variant="sm"
                     className="w-80 font-mono"
                     placeholder={t.modelIdPlaceholder}
                     value={adding}
