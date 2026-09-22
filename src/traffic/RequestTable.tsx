@@ -21,7 +21,7 @@ import {
 } from "@/ui/table";
 import type { RequestRow } from "@/types";
 import type { Filter, SortDir, SortKey } from "@/requestTable";
-import { sortWithin, type Group } from "./grouping";
+import { sortWithin, type Cursor, type Group } from "./grouping";
 import { SessionRow } from "./SessionRow";
 
 /**
@@ -59,8 +59,8 @@ export function RequestTable({
   onToggleGroup: (id: string) => void;
   onOpenSession: (id: string) => void;
   showClient: boolean;
-  /** 键盘选中的那一行在 `rows` 里的下标 */
-  cursor: number;
+  /** 键盘选中的那一行：一条请求，或者一个组头 */
+  cursor: Cursor | null;
   /** 刚到的那几行，短暂高亮 */
   fresh: Set<number>;
   /** 「今天」是哪一天。**按日取整传进来**，否则每次重画都可能跨过零点 */
@@ -68,13 +68,29 @@ export function RequestTable({
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
-  onCursor: (i: number) => void;
+  onCursor: (c: Cursor) => void;
   onOpen: (id: number) => void;
   onFilter: (f: (prev: Filter) => Filter) => void;
 }) {
   const t = useText(appText);
   return (
-              <Table className="tw-num" scroll={false}>
+              <Table
+                /*
+                  表体的每一行都可能被键盘选中、`scrollIntoView` 进视野（见 App 的
+                  键盘导航）：请求行，和归组时的组头。
+
+                  **上边让出吸顶的表头**，不然往上翻时这一行停在表头底下。36px
+                  是表头的高：排序钮 24px，加「状态」那一格的 `py-1.5`。
+
+                  **左右各放出一整屏宽，横向就不会滚。**窗口窄、表横着滚的时候，
+                  一行横跨整张表，总有一截在视野外，`nearest` 会为它横着滚：
+                  Chromium 把表推开 20px，左右边距没了；WebKit 从最右一下跳回最左。
+                  只放出外面那块的 `px-5` 在 WebKit 里不够 —— 它把滚动宽度向上
+                  取整，滚到最右时行边差零点几像素够不着可视区的右沿。
+                */
+                className="tw-num [&_tbody_tr]:scroll-mt-9 [&_tbody_tr]:scroll-mx-[100vw]"
+                scroll={false}
+              >
                 {/*
       **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
       两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
@@ -254,6 +270,9 @@ function BodySkeleton({ widths }: { widths: string[] }) {
  * 过滤和排序在两个形态下都照常生效：它们作用在进到这里之前的 `rows`
  * 上，归组只是把同一批行重新摆一遍。**组与组之间沿用表头的排序，组内
  * 永远按时间正序** —— 一次任务的第 1 轮到第 47 轮是有顺序的。
+ *
+ * 键盘按 `lines`（grouping.ts）给出的顺序走，那是照着这里的摆法写的：这里
+ * 改了怎么摆，那边要跟着改。
  */
 function RequestRows({
   rows,
@@ -276,16 +295,17 @@ function RequestRows({
   openGroups: Set<string>;
   showClient: boolean;
   today: number;
-  cursor: number;
+  cursor: Cursor | null;
   fresh: Set<number>;
   selectedSession: string | null;
   onOpen: (id: number) => void;
-  onCursor: (i: number) => void;
+  onCursor: (c: Cursor) => void;
   onFilter: (f: (prev: Filter) => Filter) => void;
   onToggleGroup: (id: string) => void;
   onOpenSession: (id: string) => void;
 }) {
-  const at = rows[cursor]?.id;
+  const atRow = cursor?.kind === "request" ? cursor.id : null;
+  const atHead = cursor?.kind === "session" ? cursor.id : null;
   const one = (r: RequestRow, prev: RequestRow | undefined, indent: boolean) => (
     <Row
       key={r.id}
@@ -293,11 +313,11 @@ function RequestRows({
       prev={prev}
       showClient={showClient}
       today={today}
-      selected={at === r.id}
+      selected={atRow === r.id}
       fresh={fresh.has(r.id)}
       indent={indent}
       onOpen={onOpen}
-      onSelect={() => onCursor(rows.indexOf(r))}
+      onSelect={() => onCursor({ kind: "request", id: r.id })}
       onFilter={onFilter}
     />
   );
@@ -322,9 +342,14 @@ function RequestRows({
               g={g}
               open={open}
               showClient={showClient}
-              selected={selectedSession === g.id}
+              // 右边开着的那次会话，或者键盘停在这个组头上
+              selected={selectedSession === g.id || atHead === g.id}
               onToggle={() => onToggleGroup(g.id!)}
-              onOpen={() => onOpenSession(g.id!)}
+              onOpen={() => {
+                // 点组头和点请求行一样，键盘接着从这一行往下走
+                onCursor({ kind: "session", id: g.id! });
+                onOpenSession(g.id!);
+              }}
             />
             {open && inside.map((r, i) => one(r, inside[i - 1], true))}
           </Fragment>
@@ -445,21 +470,6 @@ function Row({
                     }}
                     className={
                       "cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900 " +
-                      /*
-                        这两样是给键盘导航的 `scrollIntoView` 用的（见 App）。
-
-                        **上边让出吸顶的表头**，不然往上翻时这一行停在表头
-                        底下。36px 是表头的高：排序钮 24px，加「状态」那一格
-                        的 `py-1.5`。
-
-                        **左右各放出一整屏宽，横向就不会滚。**窗口窄、表横着
-                        滚的时候，一行横跨整张表，总有一截在视野外，`nearest`
-                        会为它横着滚：Chromium 把表推开 20px，左右边距没了；
-                        WebKit 从最右一下跳回最左。只放出外面那块的 `px-5`
-                        在 WebKit 里不够 —— 它把滚动宽度向上取整，滚到最右时
-                        行边差零点几像素够不着可视区的右沿。
-                      */
-                      "scroll-mt-9 scroll-mx-[100vw] " +
                       (selected
                         ? "bg-neutral-100 dark:bg-neutral-800"
                         : fresh
