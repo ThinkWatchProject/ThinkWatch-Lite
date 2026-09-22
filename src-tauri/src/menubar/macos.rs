@@ -21,7 +21,7 @@ use objc2::{
     AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSApplication,
+    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSAppearanceCustomization, NSApplication,
     NSAttributedStringNSStringDrawing, NSAutoresizingMaskOptions, NSBezierPath, NSColor,
     NSControlStateValueOff, NSControlStateValueOn, NSEvent, NSEventModifierFlags, NSFont,
     NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold,
@@ -831,7 +831,13 @@ define_class!(
 
     unsafe impl NSMenuDelegate for Target {
         #[unsafe(method(menuWillOpen:))]
-        fn menu_will_open(&self, _menu: &NSMenu) {
+        fn menu_will_open(&self, menu: &NSMenu) {
+            // **菜单跟菜单栏的深浅走**，不跟应用内选的外观 —— 和系统其他菜单栏菜单一样
+            let mtm = MainThreadMarker::from(self);
+            let bar = UI.with(|ui| ui.borrow().as_ref().and_then(|ui| ui.item.button(mtm)));
+            if let Some(button) = bar {
+                menu.setAppearance(Some(&button.effectiveAppearance()));
+            }
             OPEN.with(|o| o.set(true));
             if let Some(f) = ON_OPEN.with(|o| o.borrow().clone()) {
                 f(true);
