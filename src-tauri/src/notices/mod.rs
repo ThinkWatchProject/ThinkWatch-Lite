@@ -176,6 +176,9 @@ pub struct Notice {
     /// 已经弹过系统通知
     #[serde(default)]
     pub notified: bool,
+    /// 用户看过了。**看过不等于好了**：还没好的照样留在列表里，只是铃铛不再数它，
+    /// 也不再为它打断用户
+    pub read: bool,
 }
 
 /// 一条还开着的通知，连同判定要用的状态
@@ -258,24 +261,12 @@ impl Notices {
     /// 那些到点时会看到新的一档，不再弹。
     pub fn set_mode(&self, mode: Mode) {
         *self.mode.lock().expect("锁未中毒") = mode;
-        if mode != Mode::Off {
-            return;
+        if mode == Mode::Off {
+            self.clear_all();
         }
-        let gone: Vec<String> = {
-            let mut g = self.state.lock().expect("锁未中毒");
-            g.held_back = 0;
-            g.open.drain().map(|(k, _)| k).collect()
-        };
-        for k in &gone {
-            for s in &self.sinks {
-                s.withdraw(k);
-            }
-        }
-        self.persist();
-        self.changed();
     }
 
-    /// 这一条点开之后落在哪一页。**已经不在列表里的**（恢复了、被划掉了）按键的种类给
+    /// 这一条点开之后落在哪一页。**已经不在列表里的**（恢复了、被清掉了）按键的种类给
     pub fn view_of(&self, key: &str) -> String {
         self.state
             .lock()
@@ -292,19 +283,56 @@ impl Notices {
         out
     }
 
-    /// 用户把一条划掉了。**只是从列表里去掉** —— 事情本身好没好由信号说了算
-    pub fn dismiss(&self, key: &str) {
-        let removed = {
+    /// 用户看过了这一条。**只是不再数它** —— 事情本身好没好由信号说了算，没好的
+    /// 照样留在列表里。通知中心里那一份一并撤掉：在一处看过，别处不必再看一遍
+    pub fn mark_read(&self, key: &str) {
+        self.mark_read_where(|k| k == key);
+    }
+
+    /// 全部看过了
+    pub fn mark_all_read(&self) {
+        self.mark_read_where(|_| true);
+    }
+
+    fn mark_read_where(&self, pick: impl Fn(&str) -> bool) {
+        let marked: Vec<String> = {
             let mut g = self.state.lock().expect("锁未中毒");
-            g.open.remove(key).is_some()
+            g.open
+                .values_mut()
+                .filter(|o| !o.notice.read && pick(&o.notice.key))
+                .map(|o| {
+                    o.notice.read = true;
+                    o.notice.key.clone()
+                })
+                .collect()
         };
-        if removed {
-            for s in &self.sinks {
-                s.withdraw(key);
-            }
-            self.persist();
-            self.changed();
+        if marked.is_empty() {
+            return;
         }
+        for k in &marked {
+            for s in &self.sinks {
+                s.withdraw(k);
+            }
+        }
+        self.persist();
+        self.changed();
+    }
+
+    /// 清空列表。**只是从列表里去掉** —— 没好的事再发生时，作为新的一件重新说
+    pub fn clear_all(&self) {
+        let gone: Vec<String> = {
+            let mut g = self.state.lock().expect("锁未中毒");
+            // 被限流压下去的那几条也不在了，下一条通知不该再说「另有 N 项」
+            g.held_back = 0;
+            g.open.drain().map(|(k, _)| k).collect()
+        };
+        for k in &gone {
+            for s in &self.sinks {
+                s.withdraw(k);
+            }
+        }
+        self.persist();
+        self.changed();
     }
 
     /// core 的一条事件。**不关心的事件在这里就落地了**，不进总线
@@ -367,6 +395,8 @@ impl Notices {
                     at_ms,
                     count: o.notice.count + 1,
                     notified: o.notice.notified && !escalated,
+                    // 看过的还是那一件事；变得更要紧了才重新算没看过
+                    read: o.notice.read && !escalated,
                     ..o.notice
                 },
                 None => Notice {
@@ -379,10 +409,14 @@ impl Notices {
                     at_ms,
                     count: 1,
                     notified: false,
+                    read: false,
                 },
             };
-            // 抖动中、被抑制、或者已经弹过：只留记号
-            let quiet = muted.is_some_and(|until| now < until) || suppressed || notice.notified;
+            // 抖动中、被抑制、已经弹过，或者用户已经看过：只留记号
+            let quiet = muted.is_some_and(|until| now < until)
+                || suppressed
+                || notice.notified
+                || notice.read;
             // 用户选了「仅在应用内」的，级别再高也不打断
             let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
@@ -399,7 +433,8 @@ impl Notices {
         };
         if deliver {
             self.deliver(&notice);
-        } else {
+        } else if !notice.read {
+            // 看过的那条已经从通知中心撤了，不借更新的名义放回去
             for s in &self.sinks {
                 s.update(&notice);
             }
@@ -421,8 +456,8 @@ impl Notices {
             let notice = {
                 let mut g = me.state.lock().expect("锁未中毒");
                 match g.open.get_mut(&key) {
-                    // 还开着、还没弹过、拿得到令牌
-                    Some(o) if o.due == Some(at) && !o.notice.notified => {
+                    // 还开着、还没弹过、用户还没看过、拿得到令牌
+                    Some(o) if o.due == Some(at) && !o.notice.notified && !o.notice.read => {
                         let level = o.notice.level;
                         o.due = None;
                         if !wants || !take_token(&mut g, level) {
@@ -526,6 +561,7 @@ impl Notices {
                     at_ms,
                     count: 1,
                     notified: true,
+                    read: false,
                 });
             }
         }
@@ -589,10 +625,15 @@ static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
 /// 点了系统通知：把窗口带回来，落到能处理这件事的那一页
 pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     use tauri::{Emitter, Manager};
-    let view = app
-        .try_state::<Arc<Notices>>()
+    let notices = app.try_state::<Arc<Notices>>();
+    let view = notices
+        .as_ref()
         .map(|n| n.view_of(key))
         .unwrap_or_else(|| rules::default_view(key).to_string());
+    // 点了通知就是看过了：应用里那一条不必再数
+    if let Some(n) = &notices {
+        n.mark_read(key);
+    }
     if let Ok(mut g) = PENDING_VIEW.lock() {
         *g = Some(view.clone());
     }

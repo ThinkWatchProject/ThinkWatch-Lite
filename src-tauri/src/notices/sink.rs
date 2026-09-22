@@ -13,7 +13,7 @@ pub trait Sink: Send + Sync {
     fn show(&self, notice: &Notice);
     /// 同一件事又发生了：只更新，不再打断
     fn update(&self, _notice: &Notice) {}
-    /// 事情好了，或者用户划掉了
+    /// 事情好了，或者用户看过了、清掉了
     fn withdraw(&self, _key: &str) {}
     /// 现在开着的全部。界面按这一份重画
     fn listed(&self, _all: &[Notice]) {}

@@ -1480,7 +1480,9 @@ pub fn run() {
             upstreams::delete_proxy,
             upstreams::test_proxy,
             notices_list,
-            dismiss_notice,
+            mark_notice_read,
+            mark_all_notices_read,
+            clear_notices,
             notice_mode,
             set_notice_mode,
             take_pending_view,
@@ -1970,10 +1972,22 @@ fn notices_list(notices: tauri::State<'_, Arc<notices::Notices>>) -> Vec<notices
     notices.list()
 }
 
-/// 用户把一条划掉了
+/// 用户看过了一条。**它还留在列表里**，只是铃铛不再数它
 #[tauri::command]
-fn dismiss_notice(notices: tauri::State<'_, Arc<notices::Notices>>, key: String) {
-    notices.dismiss(&key);
+fn mark_notice_read(notices: tauri::State<'_, Arc<notices::Notices>>, key: String) {
+    notices.mark_read(&key);
+}
+
+/// 全部看过了
+#[tauri::command]
+fn mark_all_notices_read(notices: tauri::State<'_, Arc<notices::Notices>>) {
+    notices.mark_all_read();
+}
+
+/// 清空提醒列表
+#[tauri::command]
+fn clear_notices(notices: tauri::State<'_, Arc<notices::Notices>>) {
+    notices.clear_all();
 }
 
 /// 点通知新建的窗口挂上之后，来取要落的那一页

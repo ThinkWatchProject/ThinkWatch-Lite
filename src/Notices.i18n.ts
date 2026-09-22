@@ -2,15 +2,21 @@ import { messages } from "@/i18n";
 
 export const noticesText = messages(
   {
-    bell: (n: number) => (n > 0 ? `提醒，${n} 项` : "提醒"),
+    bell: (unread: number) => (unread > 0 ? `提醒，${unread} 项未读` : "提醒"),
     title: "提醒",
     empty: "暂无提醒",
-    dismiss: (title: string) => `忽略「${title}」`,
+    clearAll: "全部清除",
+    readAll: "全部已读",
+    read: "标为已读",
+    readOne: (title: string) => `标为已读：${title}`,
   },
   {
-    bell: (n: number) => (n > 0 ? `Notices, ${n}` : "Notices"),
+    bell: (unread: number) => (unread > 0 ? `Notices, ${unread} unread` : "Notices"),
     title: "Notices",
     empty: "No notices",
-    dismiss: (title: string) => `Dismiss “${title}”`,
+    clearAll: "Clear all",
+    readAll: "Mark all as read",
+    read: "Mark as read",
+    readOne: (title: string) => `Mark as read: ${title}`,
   },
 );

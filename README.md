@@ -138,7 +138,9 @@ it shows the quota used and the time until it resets instead. System
 notifications report when the gateway stops forwarding, a subscription quota
 runs out or a credential stops working; an unreachable upstream, which a
 fallback usually covers, is only listed in the app. Notices as a whole can be
-set to system notifications, in-app only, or off.
+set to system notifications, in-app only, or off. Marking a notice as read stops
+the bell from counting it; the notice stays in the list until the problem behind
+it clears or the list is cleared.
 
 <p>
   <picture>
