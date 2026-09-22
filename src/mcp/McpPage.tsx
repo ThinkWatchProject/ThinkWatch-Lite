@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import type { AdoptResponse, McpOpRequest, McpTargetView, PlanView, ScanFinding, ScanResponse } from "@/types";
+import { useCoreEvent } from "@/useCoreEvent";
 import { Extensions } from "./Extensions";
 import { Findings } from "./Findings";
 import { Matrix, McpConfirm } from "./Matrix";
@@ -45,25 +46,37 @@ export default function McpPage({
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<{ req: McpOpRequest; plan: PlanView } | null>(null);
 
+  const fetchAll = useCallback(async () => {
+    const [scan, ts] = await Promise.all([
+      invoke<ScanResponse>("scan_configs", { projects: [] }),
+      invoke<McpTargetView[]>("mcp_targets"),
+    ]);
+    setData(scan);
+    setTargets(ts);
+  }, []);
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      const [scan, ts] = await Promise.all([
-        invoke<ScanResponse>("scan_configs", { projects: [] }),
-        invoke<McpTargetView[]>("mcp_targets"),
-      ]);
-      setData(scan);
-      setTargets(ts);
+      await fetchAll();
     } catch (e) {
       toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [fetchAll]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+    **配置文件变了就重扫。**扫描告警说的是磁盘上多了一个可疑的东西，客户端配置
+    变了说的是矩阵里某一格变了 —— 两件事发生时这一页可能正开着，而列表还是打开
+    那一刻扫的那一份。在后台重扫，不动「忙」的状态：用户可能正在确认一次改动。
+  */
+  useCoreEvent(["scan_alert", "clients_changed"], () => {
+    fetchAll().catch(() => {});
+  });
 
   /** 点了格子。**先算一份改动**，不直接写 —— 和接管同一条纪律 */
   async function ask(req: McpOpRequest) {

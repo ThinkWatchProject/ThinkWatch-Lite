@@ -66,6 +66,16 @@ impl Sink for NativeSink {
     fn withdraw(&self, key: &str) {
         un::withdraw(key);
     }
+
+    fn announce(&self, key: &str, title: &str, body: &str) {
+        un::post(
+            key.to_string(),
+            title.to_string(),
+            body.to_string(),
+            thread_of(key),
+            false,
+        );
+    }
 }
 
 /// 同一种的归在一起：用键的种类（冒号前那段）做 thread

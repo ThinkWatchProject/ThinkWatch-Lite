@@ -38,6 +38,7 @@ import {
 import { RequestTable } from "./traffic/RequestTable";
 import { SessionPanel } from "./traffic/SessionPanel";
 import { useSessions } from "./traffic/useSessions";
+import { useCoreEvent } from "./useCoreEvent";
 import { groupAt, groupBySession } from "./traffic/grouping";
 import Dashboard from "./Dashboard";
 import RequestDrawer from "./RequestDrawer";
@@ -101,6 +102,9 @@ const DAY_MS = 24 * 3_600_000;
  * 是它该被叫醒的时机。
  */
 const MAX_TRIES = 8;
+
+/** 概览的几个重读理由挨着到时，等这么久再读：一串只读一次 */
+const COALESCE_MS = 100;
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -235,6 +239,8 @@ function describeCore(raw: string): {
   // 安全模式必须显眼：这时候网关不转发了，用户所有的 AI 客户端都在瞎。
   if (raw === "safe_mode")
     return { text: t.safeMode, short: t.safeModeShort, tone: "bad" };
+  // 程序运行不了。原因在连接那一面上说（见 Connect 的 `trouble`）
+  if (raw.startsWith("failed:")) return { text: t.cannotStart, short: t.cannotStart, tone: "bad" };
   return { text: t.stopped, short: t.stopped, tone: "bad" };
 }
 
@@ -256,6 +262,7 @@ export default function App() {
     rotated,
     clearRotated,
     clearAlerts,
+    upstreamState,
   } = useRequests();
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
@@ -317,6 +324,14 @@ export default function App() {
     new Set(allRows.map((r) => r.hint ?? "")).size > 1 ||
     allRows.some((r) => r.peer);
   const searchRef = useRef<HTMLInputElement>(null);
+  /*
+    **任务还在进行的话，详情要跟得上。**打开一次会话多半是想看这次花了多少，而
+    那时它往往还在跑：有请求落地就重读（按事件节流，和会话列表同一个节奏）。
+  */
+  const [sessionTick, setSessionTick] = useState(0);
+  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], () => {
+    if (openSession !== null) setSessionTick((n) => n + 1);
+  });
   useEffect(() => {
     if (openSession === null) {
       setSessionDetail(null);
@@ -337,7 +352,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [openSession]);
+  }, [openSession, sessionTick]);
   useEffect(() => {
     try {
       window.localStorage.setItem("tw-grouped", grouped ? "on" : "off");
@@ -667,7 +682,12 @@ export default function App() {
    * · 网关换了监听地址，或者没换成（`listening`）—— 配置换进去之后监听器
    *   才开始换，只跟着配置版本重读，读到的是换之前的地址
    * · 守护状态变了 —— 重启之后监听地址和 pid 都可能不一样
+   * · 上游的现状变了（`upstreamState`）：凭据被拒或恢复、代理不通或恢复、要
+   *   重新登录、计费方式随第一次额度变成订阅制；事件流丢过事件也算
    * · 用户自己刚改完东西（`nudge`）
+   *
+   * **一串触发只读一次。**启动时每个上游会连着来两条模型事件，每条都立刻重读
+   * 的话，读到的是同一份概览；隔一小会儿再读，这一串就只剩最后一次。
    */
   useEffect(() => {
     let alive = true;
@@ -711,12 +731,13 @@ export default function App() {
         /* 概览拿不到不影响状态那一半 —— 连上了就是连上了 */
       }
     };
-    void read();
+    const kick = setTimeout(() => void read(), COALESCE_MS);
     return () => {
       alive = false;
+      clearTimeout(kick);
       if (timer) clearTimeout(timer);
     };
-  }, [reloads, nudge, health, models, listening, core, setStatus, setOv]);
+  }, [reloads, nudge, health, models, listening, upstreamState, core, setStatus, setOv]);
 
   const c = describeCore(core);
   /** 连上过、又断了。**只在这时候挂那条带子** */

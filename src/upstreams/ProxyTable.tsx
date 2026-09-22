@@ -8,15 +8,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import type { L1Result, ProxyView } from "@/types";
+import type { L1Result, ProxyFault, ProxyView } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { l1ErrorText, proxyKindLabel } from "./labels";
+import { l1ErrorText, proxyFaultText, proxyKindLabel } from "./labels";
 import { NameChips, StatusDot } from "./parts";
 import { proxyTableText } from "./ProxyTable.i18n";
 
-/** 一个代理最近一次检测的结果。`running` = 正在检测 */
-export type ProxyCheck = { running: true } | { running: false; result: L1Result };
+/** 一个代理最近一次手动检测的结果。`running` = 正在检测；`at` = 什么时候测完的 */
+export type ProxyCheck = { running: true } | { running: false; result: L1Result; at: number };
 
 export function ProxyTable({
   proxies,
@@ -67,7 +67,7 @@ export function ProxyTable({
                   <NameChips names={x.used_by} empty={t.notUsed} />
                 </TableCell>
                 <TableCell>
-                  <Connectivity check={checks[x.name]} />
+                  <Connectivity check={checks[x.name]} fault={x.unreachable} />
                 </TableCell>
                 <TableCell className="text-right">
                   <RowMenuButton items={items} label={t.actions(x.name)} />
@@ -81,10 +81,19 @@ export function ProxyTable({
   );
 }
 
-function Connectivity({ check }: { check: ProxyCheck | undefined }) {
+/**
+ * 通不通。**两个来源，哪个新用哪个**：用户手动测的，和网关转发失败之后自己检出来的。
+ * 网关检出不通的时候，列上不能还挂着一小时前手动测出的「通」。
+ */
+function Connectivity({
+  check,
+  fault,
+}: {
+  check: ProxyCheck | undefined;
+  fault: ProxyFault | null | undefined;
+}) {
   const t = useText(proxyTableText);
-  if (!check) return <span className="text-muted-foreground">{t.notChecked}</span>;
-  if (check.running) {
+  if (check?.running) {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground">
         <Spinner />
@@ -92,6 +101,14 @@ function Connectivity({ check }: { check: ProxyCheck | undefined }) {
       </span>
     );
   }
+  if (fault && (!check || fault.at_ms > check.at)) {
+    return (
+      <span title={proxyFaultText(fault)}>
+        <StatusDot tone="bad">{t.unreachable}</StatusDot>
+      </span>
+    );
+  }
+  if (!check) return <span className="text-muted-foreground">{t.notChecked}</span>;
   const r = check.result;
   if (!r.ok) {
     return (

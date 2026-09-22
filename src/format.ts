@@ -226,3 +226,15 @@ export function resetIn(secs: number | null | undefined): string | null {
   if (hours < 24) return t.hours(hours);
   return t.days(Math.round(secs / 86400));
 }
+
+/**
+ * 额度还有多久重置：`resetIn` 的时刻版。
+ *
+ * core 给的是重置的**时刻**。它已经过去的话返回 null：那个窗口已经重置过了，
+ * 手上这份额度是重置之前的，不能再拿来说「多久后」。
+ */
+export function resetAt(atMs: number | null | undefined, nowMs: number): string | null {
+  if (atMs == null) return null;
+  const secs = (atMs - nowMs) / 1000;
+  return secs < 0 ? null : resetIn(secs);
+}

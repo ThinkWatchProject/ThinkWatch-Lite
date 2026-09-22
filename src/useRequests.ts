@@ -15,6 +15,82 @@ import {
 import { marksFromEvents } from "./security/marks";
 import { requestsText } from "./useRequests.i18n";
 
+/**
+ * 库里读回来的记录并进当前列表。
+ *
+ * **只补，不覆盖。**实时那一行更全 —— 脱敏和可疑工具调用只在事件里有，库里没有。
+ * 合并的方向是「历史只添信息」，两个例外：还在「进行中」的行按库里记上结局，上游
+ * 以库里的为准（理由写在循环里）。
+ *
+ * `localLabel`：本地应答那几行的「上游」一栏写什么。
+ */
+export function mergeHistory(
+  rows: Map<number, RequestRow>,
+  history: HistoryRow[],
+  localLabel: string,
+): void {
+  for (const h of history) {
+    const cur = rows.get(h.id);
+    if (cur) {
+      /*
+        **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
+        确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
+        按库里的补上结局，不然这一行永远在跑。
+      */
+      if (cur.state === "in_flight") {
+        cur.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
+        if (h.status != null) cur.status = h.status;
+        cur.durationMs = h.duration_ms ?? undefined;
+        cur.bytes = h.bytes ?? undefined;
+        cur.error = h.error ?? undefined;
+      }
+      // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
+      if (!h.local) cur.provider = h.provider;
+      cur.model ??= h.model || undefined;
+      if (h.input_tokens != null) cur.inputTokens = h.input_tokens;
+      if (h.output_tokens != null) cur.outputTokens = h.output_tokens;
+      if (h.cost_micros != null) {
+        cur.costMicros = h.cost_micros;
+        cur.costEstimated = h.cost_estimated;
+      }
+      cur.translated ??= h.translated ?? undefined;
+      // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
+      cur.session = h.session ?? cur.session;
+      const marks = marksFromEvents(h.security);
+      cur.secrets ??= marks.secrets;
+      cur.flagged ??= marks.flagged;
+      cur.hint ??= h.client_hint ?? undefined;
+      cur.peer ??= h.peer ?? undefined;
+      cur.keyMasked ??= h.key_masked ?? undefined;
+      continue;
+    }
+    rows.set(h.id, {
+      id: h.id,
+      client: h.client,
+      provider: h.local ? localLabel : h.provider,
+      model: h.model || undefined,
+      path: h.path,
+      atMs: h.at_ms,
+      state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
+      status: h.status ?? undefined,
+      ttfbMs: h.ttfb_ms ?? undefined,
+      durationMs: h.duration_ms ?? undefined,
+      bytes: h.bytes ?? undefined,
+      inputTokens: h.input_tokens ?? undefined,
+      outputTokens: h.output_tokens ?? undefined,
+      costMicros: h.cost_micros ?? undefined,
+      costEstimated: h.cost_estimated,
+      error: h.error ?? undefined,
+      translated: h.translated ?? undefined,
+      session: h.session ?? undefined,
+      hint: h.client_hint ?? undefined,
+      peer: h.peer ?? undefined,
+      keyMasked: h.key_masked ?? undefined,
+      ...marksFromEvents(h.security),
+    });
+  }
+}
+
 /** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
 const MAX_ROWS = 500;
 
@@ -112,6 +188,14 @@ export function useRequests() {
    * 监听器才开始换，只跟着配置版本重读状态，读到的是换之前的地址。
    */
   const [listening, setListening] = useState(0);
+  /**
+   * 上游的现状变了几次：凭据被拒或者恢复、代理不通或者恢复、要重新登录、第一次
+   * 报额度（没写明计费方式的，从这一刻起按订阅制算）。**这些都在概览里**，App
+   * 据此重读。事件流丢过事件时也算一次：丢掉的里面可能就有它们。
+   */
+  const [upstreamState, setUpstreamState] = useState(0);
+  /** 这次开窗以来报过额度的上游。只有第一次会改变计费方式 */
+  const quotaSeen = useRef(new Set<string>());
 
 
   /**
@@ -120,8 +204,7 @@ export function useRequests() {
    * **只在开窗时用一次。**在此之前它还兼着「回库把价钱取回来」——
    * 因为价钱不在事件流里。core 现在会报 `request_priced`，那条路没了。
    *
-   * **只补，不覆盖。**实时那一行更全 —— 脱敏和可疑工具调用只在事件里有，
-   * 库里没有。合并的方向必须是「历史只添信息」。
+   * 怎么并见 `mergeHistory`：历史只添信息，结局没送到的行按库里补上。
    */
   const pull = useCallback(async () => {
     // Tauri 的 invoke 用字符串 reject，不是 Error
@@ -135,52 +218,7 @@ export function useRequests() {
     const history = await invoke<HistoryRow[]>("recent_requests", {
       limit: 2000,
     });
-    for (const h of history) {
-      const cur = store.current.get(h.id);
-      if (cur) {
-        cur.model ??= h.model || undefined;
-        if (h.input_tokens != null) cur.inputTokens = h.input_tokens;
-        if (h.output_tokens != null) cur.outputTokens = h.output_tokens;
-        if (h.cost_micros != null) {
-          cur.costMicros = h.cost_micros;
-          cur.costEstimated = h.cost_estimated;
-        }
-        cur.translated ??= h.translated ?? undefined;
-        // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
-        cur.session = h.session ?? cur.session;
-        const marks = marksFromEvents(h.security);
-        cur.secrets ??= marks.secrets;
-        cur.flagged ??= marks.flagged;
-        cur.hint ??= h.client_hint ?? undefined;
-        cur.peer ??= h.peer ?? undefined;
-        cur.keyMasked ??= h.key_masked ?? undefined;
-        continue;
-      }
-      store.current.set(h.id, {
-        id: h.id,
-        client: h.client,
-        provider: h.local ? textOf(requestsText).answeredLocally : h.provider,
-        model: h.model || undefined,
-        path: h.path,
-        atMs: h.at_ms,
-        state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
-        status: h.status ?? undefined,
-        ttfbMs: h.ttfb_ms ?? undefined,
-        durationMs: h.duration_ms ?? undefined,
-        bytes: h.bytes ?? undefined,
-        inputTokens: h.input_tokens ?? undefined,
-        outputTokens: h.output_tokens ?? undefined,
-        costMicros: h.cost_micros ?? undefined,
-        costEstimated: h.cost_estimated,
-        error: h.error ?? undefined,
-        translated: h.translated ?? undefined,
-        session: h.session ?? undefined,
-        hint: h.client_hint ?? undefined,
-        peer: h.peer ?? undefined,
-        keyMasked: h.key_masked ?? undefined,
-        ...marksFromEvents(h.security),
-      });
-    }
+    mergeHistory(store.current, history, textOf(requestsText).answeredLocally);
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
   }, []);
 
@@ -249,6 +287,16 @@ export function useRequests() {
         if (ev.kind === "health_changed") setHealth((n) => n + 1);
         if (ev.kind === "models_changed") setModels((n) => n + 1);
         if (ev.kind === "listen_changed") setListening((n) => n + 1);
+        if (
+          ev.kind === "auth_changed" ||
+          ev.kind === "proxy_changed" ||
+          ev.kind === "credential_expired" ||
+          ev.kind === "events_dropped" ||
+          (ev.kind === "quota_seen" && !quotaSeen.current.has(ev.provider))
+        ) {
+          setUpstreamState((n) => n + 1);
+        }
+        if (ev.kind === "quota_seen") quotaSeen.current.add(ev.provider);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
@@ -264,13 +312,17 @@ export function useRequests() {
       }
       if (local > 0) setLocallyAnswered((n) => n + local);
       publish();
-      // 落地一批就发一次「可以重算聚合了」。**已经排上的不再往后推**
-      if (landed && !settle.current) {
-        settle.current = setTimeout(() => {
-          settle.current = null;
-          setSettled((n) => n + 1);
-        }, SETTLE_MS);
-      }
+      // 落地一批就发一次「可以重算聚合了」
+      if (landed) settleSoon();
+    };
+
+    /** 过一会儿发一次「库里可以重算了」。**已经排上的不再往后推** */
+    const settleSoon = () => {
+      if (settle.current) return;
+      settle.current = setTimeout(() => {
+        settle.current = null;
+        setSettled((n) => n + 1);
+      }, SETTLE_MS);
     };
 
     const schedule = () => {
@@ -303,6 +355,15 @@ export function useRequests() {
       }
       pending.current.push(ev);
       schedule();
+      /*
+        **丢过事件，就整体对一次账。**进行中的问 core 要快照；丢掉的那些结局落库
+        要一点时间，到时候照「落地之后对账」的那条路从库里补 —— 补的时候还在
+        「进行中」的行会按库里的记上结局（见 `pull`）。
+      */
+      if (ev.kind === "events_dropped") {
+        void resync();
+        settleSoon();
+      }
     });
     const resync = async () => {
       const mark: SeenSince = { started: new Set(), ended: new Set() };
@@ -356,6 +417,7 @@ export function useRequests() {
     health,
     models,
     listening,
+    upstreamState,
     locallyAnswered,
     rejected,
     reloads,

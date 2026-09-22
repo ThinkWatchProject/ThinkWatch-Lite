@@ -33,6 +33,7 @@ import type {
   Overview,
 } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { useCoreEvent } from "@/useCoreEvent";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
@@ -119,6 +120,24 @@ export default function KeysPage({
   useEffect(() => {
     load();
   }, [load, ov]);
+
+  /*
+    **最近使用和 24 小时用量跟着请求走。**配好一个客户端之后来这一页，为的就是
+    看那把密钥有没有在用 —— 请求落地之后重读这两样。在后台重读，读不到就保持
+    原样，不弹错误。接管状态跟着客户端配置的变化重读。
+  */
+  const loadUse = useCallback(() => {
+    api
+      .listKeys()
+      .then(setKeys)
+      .catch(() => {});
+    api
+      .keyUsage(Date.now() - DAY_MS)
+      .then(setUsage)
+      .catch(() => {});
+  }, []);
+  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], loadUse);
+  useCoreEvent(["clients_changed"], load);
 
   // 从客户端页点过来：那一行出现了就滚过去、亮一下，然后把这个请求交还
   useEffect(() => {

@@ -323,6 +323,19 @@ impl Notices {
         }
     }
 
+    /// 告知一件事：**不是一个待处理的问题**，不进提醒列表，只弹一条系统通知。
+    ///
+    /// 给那种窗口没开、而用户该知道一下的时刻用（第一次开机自启）。用户选了「只在
+    /// 应用内」或者关掉提醒的，就不弹 —— 那是他说了不要被打断。
+    pub fn announce(&self, key: &str, title: &str, body: &str) {
+        if self.mode() != Mode::System {
+            return;
+        }
+        for s in &self.sinks {
+            s.announce(key, title, body);
+        }
+    }
+
     /// 走一遍那五关。
     pub fn ingest(self: &Arc<Self>, signal: Signal, at_ms: u64) {
         match signal.change {
@@ -596,7 +609,7 @@ pub fn take_pending_view() -> Option<String> {
     PENDING_VIEW.lock().ok().and_then(|mut g| g.take())
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

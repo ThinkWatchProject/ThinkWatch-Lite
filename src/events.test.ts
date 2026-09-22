@@ -4,8 +4,10 @@ import {
   applyInFlight,
   interruptInFlight,
   type CoreEvent,
+  type HistoryRow,
   type RequestRow,
 } from "./types";
+import { mergeHistory } from "./useRequests";
 import { coreText, plain } from "@/i18n/core.i18n";
 import { setLang } from "@/i18n";
 
@@ -291,5 +293,99 @@ describe("core 停下时还在跑的行", () => {
     expect(coreText(why)).toBe(
       "The core stopped before the request finished, so the request was cut off.",
     );
+  });
+});
+
+describe("故障转移之后的上游", () => {
+  /**
+   * 开始事件里写的是首选的候选。**服务它的是尝试链的最后一跳** —— 不改的话，
+   * 实时列表上这一行归给了失败的那一家，和落库之后的历史对不上。
+   */
+  it("以尝试链的最后一跳为准", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ provider: "relay" }));
+    applyEvent(rows, {
+      kind: "request_routed",
+      id: 1,
+      rule: "catch-all",
+      group: "__all__",
+      attempts: [
+        { provider: "relay", outcome: "status", status: 503, ms: 40 },
+        { provider: "official", outcome: "served", status: 200, ms: 900 },
+      ],
+      billing: "per-token",
+    });
+    expect(rows.get(1)?.provider).toBe("official");
+  });
+});
+
+/** 库里读回来的一行。默认是一次正常结束的请求 */
+function stored(over: Partial<HistoryRow> = {}): HistoryRow {
+  return {
+    id: 1,
+    at_ms: 1_000_000,
+    client: "claude-code",
+    provider: "official",
+    model: "claude-sonnet-4-5",
+    path: "/v1/messages",
+    status: 200,
+    ttfb_ms: 800,
+    duration_ms: 4_000,
+    bytes: 1_234,
+    input_tokens: 100,
+    output_tokens: 20,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_micros: 1_500,
+    cost_estimated: false,
+    error: null,
+    local: false,
+    cancelled: false,
+    billing: "per-token",
+    ...over,
+  };
+}
+
+describe("丢了结局的行，由库里补上", () => {
+  /**
+   * **记录只在结局到了才落库**，所以库里有它就说明它结束了。结局事件没送到
+   * （事件流丢过事件、或者重连的间隙里）的话，不按库里补上，这一行永远在跑。
+   */
+  it("还在进行中的行按库里记上结局", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ provider: "relay" }));
+    mergeHistory(rows, [stored()], "本地应答");
+    const r = rows.get(1);
+    expect(r?.state).toBe("done");
+    expect(r?.durationMs).toBe(4_000);
+    expect(r?.bytes).toBe(1_234);
+    // 上游以库里的为准：服务它的是 official，不是开始时首选的 relay
+    expect(r?.provider).toBe("official");
+    expect(r?.costMicros).toBe(1_500);
+  });
+
+  it("失败的记成失败，带着原因", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    const why = { code: "gw.upstream.status", args: {}, text: "Upstream `relay` answered 503." };
+    mergeHistory(rows, [stored({ status: null, error: why, input_tokens: null })], "本地应答");
+    expect(rows.get(1)?.state).toBe("failed");
+    expect(rows.get(1)?.error).toEqual(why);
+  });
+
+  /** 已经有结局的行不动它的结局：实时那一份和库里是同一个结局 */
+  it("已经结束的行不改结局", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, {
+      kind: "request_cancelled",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      bytes: 10,
+      duration_ms: 300,
+    });
+    mergeHistory(rows, [stored({ cancelled: true })], "本地应答");
+    expect(rows.get(1)?.state).toBe("cancelled");
+    expect(rows.get(1)?.durationMs).toBe(300);
   });
 });

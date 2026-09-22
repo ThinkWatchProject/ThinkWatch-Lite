@@ -227,7 +227,60 @@ export type CoreEvent =
       provider?: string;
       error?: string;
       at_ms: number;
-    };
+    }
+  /**
+   * 路由走完了：命中哪条规则、试过哪几家、最终服务的那家怎么收钱。
+   *
+   * 流量列表拿它改「上游」那一列：开始事件里的是首选的候选，故障转移之后服务它
+   * 的是尝试链的最后一跳。
+   */
+  | {
+      kind: "request_routed";
+      id: number;
+      rule: string;
+      group?: string | null;
+      attempts: AttemptView[];
+      billing: string;
+    }
+  /** 上游在响应头里报了订阅额度。**事件里就是完整的数**，不用回查 */
+  | { kind: "quota_seen"; id: number; provider: string; windows: QuotaWindow[]; at_ms: number }
+  /** 某个额度窗口用完了 */
+  | {
+      kind: "quota_exhausted";
+      id: number;
+      provider: string;
+      window: string;
+      resets_at_ms?: number | null;
+      at_ms: number;
+    }
+  /** 网关发现一个代理不通了，或者又通了。现状在概览的 `ProxyView.unreachable` 里 */
+  | {
+      kind: "proxy_changed";
+      id: number;
+      proxy: string;
+      state: "reachable" | "unreachable";
+      failed?: L1Stage | null;
+      detail?: Msg | null;
+      at_ms: number;
+    }
+  /** 上游拒绝了凭据，或者又接受了。现状在概览的 `ProviderView.auth_rejected` 里 */
+  | {
+      kind: "auth_changed";
+      id: number;
+      provider: string;
+      state: "accepted" | "rejected";
+      status?: number | null;
+      at_ms: number;
+    }
+  /** OAuth 凭据失效，要重新登录。现状在概览的 `oauth.needs_login` 里 */
+  | { kind: "credential_expired"; id: number; provider: string; detail: string; at_ms: number }
+  /**
+   * 事件流丢了 `count` 条事件：只靠事件维护的状态要整体对一次账。
+   *
+   * 两个来源：core 那边这个订阅者跟不上；或者桌面版和 core 之间的连接断过又
+   * 接上 —— 那时 `count` 是 0，丢了多少不知道。
+   */
+  | { kind: "events_dropped"; id: number; count: number; at_ms: number };
 
 /** `done` 之外都不会留下上游 */
 export type LoginStatus = "pending" | "done" | "failed" | "expired" | "cancelled";
@@ -381,6 +434,14 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       }
       break;
     }
+    case "request_routed": {
+      // 开始事件里的是首选的候选。**故障转移之后服务它的是另一家** —— 尝试链的
+      // 最后一跳，和落库那一行归的是同一家
+      const r = rows.get(ev.id);
+      const last = ev.attempts[ev.attempts.length - 1];
+      if (r && last) r.provider = last.provider;
+      break;
+    }
     case "locally_answered":
     case "config_reloaded":
     case "listen_changed":
@@ -389,8 +450,14 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "clients_changed":
     case "health_changed":
     case "models_changed":
-      // 都不进请求列表。配置事件、扫描告警、熔断状态说的都是「现在
-      // 什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
+    case "quota_seen":
+    case "quota_exhausted":
+    case "proxy_changed":
+    case "auth_changed":
+    case "credential_expired":
+    case "events_dropped":
+      // 都不进请求列表。配置事件、扫描告警、熔断、额度、凭据、代理说的都是
+      // 「现在什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "secrets_found": {
       const r = rows.get(ev.id);
@@ -727,6 +794,11 @@ export interface RequestDetail {
   row: HistoryRow;
   request_body: BodyView | null;
   response_body: BodyView | null;
+  /**
+   * 请求还在跑。记录要等结局才落库，这时的 `row` 是到目前为止知道的那些：耗时、
+   * 用量、费用、响应体都还没有。这个请求的计价事件到了再取一次，就是完整的
+   */
+  in_flight: boolean;
 }
 
 
@@ -839,6 +911,20 @@ export interface ProxyView {
   has_auth: boolean;
   /** 哪些上游在用它。删之前要知道，改名时它们会跟着改 */
   used_by: string[];
+  /**
+   * 网关发现它不通了：经它转发的请求连不上之后检过一次。之后经它的请求成功了、
+   * 或者再检一次通了，就又没有了。**网关不定时探测**，没有它不等于刚测过是通的
+   */
+  unreachable?: ProxyFault | null;
+}
+
+/** 网关发现一个代理不通时，检出来的样子 */
+export interface ProxyFault {
+  /** 卡在哪一步。说不出来的没有 */
+  failed?: L1Stage | null;
+  detail: Msg;
+  /** 什么时候检的 */
+  at_ms: number;
 }
 
 /** 一类客户端辅助请求的处置 */
@@ -1024,6 +1110,8 @@ export interface ProviderView {
   model_count: number;
   disabled: boolean;
   health: "ok" | "open";
+  /** 上游拒绝了凭据：最近一次得到答复的请求回的状态码（401 / 403）。没被拒是空的 */
+  auth_rejected?: number | null;
   /** 配置里写明的计费方式。null = 自动识别 */
   billing?: string | null;
   /** 实际按什么计费 */
@@ -2053,6 +2141,7 @@ export interface QuotaWindow {
   /** `5h` / `7d`（Anthropic）/ `weekly`（Codex） */
   window: string;
   used_percent: number;
-  reset_in_secs: number | null;
-  status: string | null;
+  /** 什么时候重置，Unix 毫秒。是时刻，不是「还有多少秒」。上游没说就没有 */
+  resets_at_ms?: number | null;
+  status?: string | null;
 }

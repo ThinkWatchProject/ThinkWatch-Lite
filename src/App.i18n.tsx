@@ -39,6 +39,7 @@ export const appText = messages(
     safeMode: "安全模式 · 网关未运行",
     safeModeShort: "安全模式",
     stopped: "已停止",
+    cannotStart: "无法启动",
 
     // 工具栏
     collapseRail: "收起源列表",
@@ -166,6 +167,7 @@ export const appText = messages(
     safeMode: "Safe mode · Gateway stopped",
     safeModeShort: "Safe\u00a0mode",
     stopped: "Stopped",
+    cannotStart: "Cannot start",
 
     collapseRail: "Collapse sidebar",
     expandRail: "Expand sidebar",

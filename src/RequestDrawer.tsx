@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
 import {
   usd,
   type BodyView,
+  type CoreEvent,
   type Overview,
   type ReplayQuote,
   type ReplayResult,
   type RequestDetail,
 } from "./types";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Spinner } from "@/ui/spinner";
@@ -55,7 +58,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
  * 展开会淹没一切 —— 而用户点开这个抽屉是为了看**这一次**发生了什么
  * （详情抽屉）。
  */
-function Body({ b, title }: { b: BodyView | null; title: string }) {
+function Body({
+  b,
+  title,
+  pending = false,
+}: {
+  b: BodyView | null;
+  title: string;
+  /** 请求还在跑：没有它是因为还没到，不是过了保留期 */
+  pending?: boolean;
+}) {
   const t = useText(requestDrawerText);
   const [open, setOpen] = useState(false);
   const pretty = useMemo(() => (b ? prettyJson(b.text, b.truncated) : null), [b]);
@@ -63,12 +75,16 @@ function Body({ b, title }: { b: BodyView | null; title: string }) {
     return (
       <div>
         <div className="tw-body font-medium">{title}</div>
-        <p className="mt-1 tw-body text-muted-foreground">
-          {t.notSaved}
-          <Tip text={t.notSavedTip}>
-            <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
-          </Tip>
-        </p>
+        {pending ? (
+          <p className="mt-1 tw-body text-muted-foreground">{t.afterEnd}</p>
+        ) : (
+          <p className="mt-1 tw-body text-muted-foreground">
+            {t.notSaved}
+            <Tip text={t.notSavedTip}>
+              <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
+            </Tip>
+          </p>
+        )}
       </div>
     );
   }
@@ -180,23 +196,52 @@ export default function RequestDrawer({
   const [d, setD] = useState<RequestDetail | null>(null);
   const [tab, setTab] = useState<Tab>("timeline");
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+  // 换了一条就清掉上一条：取回来之前不该还画着别的请求
+  useEffect(() => setD(null), [id]);
+  const load = useCallback(
+    async (alive: () => boolean) => {
       try {
         // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<RequestDetail>("request_detail", { id });
-        if (alive) {
-          setD(x);
-        }
+        if (alive()) setD(x);
       } catch (e) {
-        if (alive) toast.error(errorText(e));
+        if (alive()) toast.error(errorText(e));
       }
-    })();
+    },
+    [id],
+  );
+  useEffect(() => {
+    let alive = true;
+    void load(() => alive);
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [load]);
+
+  /*
+    **还在跑的请求，跟着它往下走。**点开的往往正是那个跑了很久的请求：响应头
+    到了有状态码，路由走完有尝试链，计价事件到了就是落库的那一刻 —— 那条事件
+    和写库在同一把锁里，这时再取，拿到的一定是完整的一份。
+  */
+  const running = d?.in_flight === true;
+  useEffect(() => {
+    if (!running) return;
+    let alive = true;
+    const un = listen<CoreEvent>("core-event", (e) => {
+      const ev = e.payload;
+      const mine =
+        (ev.kind === "request_headers" ||
+          ev.kind === "request_routed" ||
+          ev.kind === "request_priced") &&
+        ev.id === id;
+      // 事件流丢过事件的话，结局可能就在里面
+      if (mine || ev.kind === "events_dropped") void load(() => alive);
+    });
+    return () => {
+      alive = false;
+      void un.then((f) => f());
+    };
+  }, [running, id, load]);
 
   const r = d?.row;
 
@@ -222,6 +267,7 @@ export default function RequestDrawer({
             {new Date(r.at_ms).toLocaleTimeString()}
           </span>
         )}
+        {running && <Badge variant="outline">{t.inProgress}</Badge>}
         <span className="flex-1" />
         {/*
           **关闭按钮在 header 这一行里，不用 Sheet 自带的那个。**
@@ -259,7 +305,12 @@ export default function RequestDrawer({
 
           <div className="min-h-0 flex-1 overflow-auto p-4 tw-body">
             <TabsContent value="replay">
-              <Replay id={id} originalProvider={r.provider} />
+              {/* 重放要和原来那一次的结果并排比，而它还没有结果 */}
+              {running ? (
+                <p className="text-muted-foreground">{t.replayPending}</p>
+              ) : (
+                <Replay id={id} originalProvider={r.provider} />
+              )}
             </TabsContent>
             <TabsContent value="timeline">
               <div className="space-y-1">
@@ -275,13 +326,18 @@ export default function RequestDrawer({
                     )
                   }
                 />
-                <Row label={t.totalTime} value={r.duration_ms != null ? `${r.duration_ms}ms` : "—"} />
+                <Row
+                  label={t.totalTime}
+                  value={r.duration_ms != null ? `${r.duration_ms}ms` : running ? t.inProgress : "—"}
+                />
                 <Row
                   label={t.generationTime}
                   value={
                     r.duration_ms != null && r.ttfb_ms != null
                       ? `${r.duration_ms - r.ttfb_ms}ms`
-                      : "—"
+                      : running
+                        ? t.inProgress
+                        : "—"
                   }
                 />
                 <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider} />
@@ -364,6 +420,9 @@ export default function RequestDrawer({
                     ) : r.cancelled ? (
                       // 不是失败，不标红：上游没有出错，是客户端先断开了
                       <span>{r.status ?? "—"} · {t.cancelled}</span>
+                    ) : running ? (
+                      // 响应头到了就有状态码，流还在往下走
+                      r.status != null ? `${r.status} · ${t.inProgress}` : t.inProgress
                     ) : (
                       (r.status ?? "—")
                     )
@@ -421,6 +480,9 @@ export default function RequestDrawer({
                     )}
                   </div>
                 </div>
+              ) : running ? (
+                // 还没走完：尝试链在那一跳有了结果之后才有
+                <p className="text-muted-foreground">{t.routingPending}</p>
               ) : (
                 <p className="text-muted-foreground">
                   {t.noRouting}
@@ -434,13 +496,16 @@ export default function RequestDrawer({
             <TabsContent value="payload">
               <div className="space-y-4">
                 <Body b={d.request_body} title={t.request} />
-                <Body b={d.response_body} title={t.response} />
+                <Body b={d.response_body} title={t.response} pending={running} />
               </div>
             </TabsContent>
 
             <TabsContent value="usage">
               <div className="space-y-1">
-                {r.input_tokens == null && r.cancelled ? (
+                {running ? (
+                  // 用量在结局里才到，费用在落库时才算
+                  <p className="text-muted-foreground">{t.usagePending}</p>
+                ) : r.input_tokens == null && r.cancelled ? (
                   // 这时候不能说「上游没有报用量」—— 它还没来得及报，客户端就走了
                   <p className="text-muted-foreground">{t.cancelledBeforeUsage}</p>
                 ) : r.input_tokens == null && r.error ? (

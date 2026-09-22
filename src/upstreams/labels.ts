@@ -14,6 +14,7 @@ import type {
   PriceFields,
   PriceSourceView,
   ProviderView,
+  ProxyFault,
 } from "@/types";
 import { labelsText } from "./labels.i18n";
 
@@ -181,6 +182,12 @@ export function quotaWindowLabel(window: string): string {
 }
 
 /** 建连的一步。对着代理的那几步带上「代理」，代理握手本身不用 */
+/** 网关检出一个代理不通时的原因，写法和 `l1ErrorText` 一样：卡在哪一步，为什么 */
+export function proxyFaultText(f: ProxyFault): string {
+  const t = textOf(labelsText);
+  const error = coreText(f.detail);
+  return f.failed ? t.stageError(l1StageLabel(f.failed), error) : error;
+}
 export function l1StageLabel(s: L1Stage): string {
   const t = textOf(labelsText);
   const step = t.l1Steps[s.step] ?? s.step;

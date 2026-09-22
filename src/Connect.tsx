@@ -37,6 +37,15 @@ export interface Trouble {
  */
 export function trouble(raw: string, tries: number): Trouble | null {
   const t = textOf(connectText);
+  // core 程序运行不了：**原因要说出来**，等多久也不会自己好，所以给重试
+  if (raw.startsWith("failed:")) {
+    return {
+      what: t.failed,
+      next: raw.slice("failed:".length),
+      bad: true,
+      retry: true,
+    };
+  }
   if (raw.startsWith("missing:")) {
     return {
       what: t.missing,

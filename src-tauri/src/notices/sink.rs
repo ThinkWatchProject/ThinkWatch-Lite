@@ -17,6 +17,9 @@ pub trait Sink: Send + Sync {
     fn withdraw(&self, _key: &str) {}
     /// 现在开着的全部。界面按这一份重画
     fn listed(&self, _all: &[Notice]) {}
+    /// 告知一件事（见 `Notices::announce`）。**只有系统通知这一端要做什么**：
+    /// 它不是一个待处理的问题，界面里的列表不收它
+    fn announce(&self, _key: &str, _title: &str, _body: &str) {}
 }
 
 /// 界面里的通知中心。**窗口关着时照样调**：内容在 Rust 这边留着，
@@ -77,6 +80,17 @@ impl Sink for SystemSink {
             .builder()
             .title(&notice.title)
             .body(&notice.body)
+            .show();
+    }
+
+    fn announce(&self, _key: &str, title: &str, body: &str) {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = self
+            .app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
             .show();
     }
 }

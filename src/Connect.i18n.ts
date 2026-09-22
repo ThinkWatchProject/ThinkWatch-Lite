@@ -3,6 +3,7 @@ import { messages } from "@/i18n";
 export const connectText = messages(
   {
     missing: "未找到 core 程序",
+    failed: "core 程序无法运行",
     restarting: (attempt: string) => `core 已退出，正在进行第 ${attempt} 次重启`,
     retryIn: (secs: number) => `${secs} 秒后重试`,
     safeMode: "安全模式：网关未运行",
@@ -17,6 +18,7 @@ export const connectText = messages(
   },
   {
     missing: "The core program was not found",
+    failed: "The core program could not run",
     restarting: (attempt: string) => `core exited; restarting (attempt ${attempt})`,
     retryIn: (secs: number) => `Retrying in ${secs} s`,
     safeMode: "Safe mode: the gateway is not running",
