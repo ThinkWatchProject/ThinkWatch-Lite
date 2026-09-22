@@ -300,9 +300,8 @@ async fn dashboard(
         latency_by_provider: c.latency_by_provider(None).await.unwrap_or_default(),
         history: c.history(200, None).await.unwrap_or_default(),
         storage: c.storage().await.ok(),
-        // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 旧 core
-        // 没有这两个端点，而这一页别的部分照样有用（同一条：
-        // 观测层的缺失不该扩散）。
+        // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 这一页别的
+        // 部分照样有用（同一条：观测层的缺失不该扩散）。
         buckets: c.cost_buckets(since, bucket).await.unwrap_or_default(),
         buckets_by_model: c
             .cost_buckets_by("model", since, bucket)

@@ -71,7 +71,7 @@ export function RouteDialog({
   mode: RouteDialogMode;
   ov: Overview;
   models: KnownModel[];
-  configVersion: string | null;
+  configVersion: string;
   onChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
@@ -136,7 +136,7 @@ export function RouteDialog({
     try {
       const save = {
         route: input(),
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
         // 默认路由的使用者是「没指定路由的密钥」，这里不改
         keys: isDefault ? undefined : keys,
         route_probes: probes,

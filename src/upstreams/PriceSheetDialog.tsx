@@ -82,7 +82,7 @@ export function PriceSheetDialog({
 }: {
   mode: PriceSheetDialogMode;
   ov: Overview;
-  configVersion: string | null;
+  configVersion: string;
   /**
    * 从上游对话框里打开时，那一家（可能还没保存）的模型与协议。它的模型算作
    * 相关模型 —— 用户正是为了给它们设价格才打开的
@@ -308,7 +308,7 @@ export function PriceSheetDialog({
     try {
       const save = {
         sheet: { name, multiplier: mult, models: overrides },
-        base_version: configVersion ?? undefined,
+        base_version: configVersion,
         used_by: usedByTouched ? usedBy : undefined,
       };
       if (mode.kind === "edit") await api.updatePriceSheet(mode.name, save);

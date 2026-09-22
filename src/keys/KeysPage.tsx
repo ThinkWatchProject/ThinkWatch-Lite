@@ -32,7 +32,6 @@ import { KeyDialog } from "./KeyDialog";
 import { KeysTable } from "./KeysTable";
 import { keysPageText } from "./KeysPage.i18n";
 import { errorText } from "./labels";
-import { labelsText } from "./labels.i18n";
 import { RotateDialog } from "./RotateDialog";
 
 const DAY_MS = 24 * 3_600_000;
@@ -59,20 +58,18 @@ type DialogState =
  */
 export default function KeysPage({
   ov,
-  configVersion,
   onChanged,
   onOpenConfigFile,
   onNavigate,
 }: {
   ov: Overview;
-  configVersion: string | null;
   onChanged: () => void;
   onOpenConfigFile: (focus: string | null) => void;
   onNavigate: (tab: string) => void;
 }) {
   const t = useText(keysPageText);
+  const configVersion = ov.config_version;
   const common = useText(commonText);
-  const labels = useText(labelsText);
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [clients, setClients] = useState<DetectedClient[]>([]);
   const [usage, setUsage] = useState<CostGroup[]>([]);
@@ -138,7 +135,7 @@ export default function KeysPage({
 
   const editing = dialog?.kind === "edit" && dialog.name ? keys.find((k) => k.name === dialog.name) : null;
   const target = (name: string) => keys.find((k) => k.name === name);
-  const defaultRoute = ov.default_route ?? labels.defaultRoute;
+  const defaultRoute = ov.default_route;
   // 只有一把默认密钥时，这一页要回答的是「接下来做什么」
   const onlyDefault = keys.length === 1 && keys[0]?.default;
 
@@ -177,7 +174,7 @@ export default function KeysPage({
                   max_concurrent: k.max_concurrent,
                   disabled: !k.disabled,
                 },
-                base_version: configVersion ?? undefined,
+                base_version: configVersion,
               }),
             ),
           makeDefault: (name) =>
@@ -209,7 +206,7 @@ export default function KeysPage({
           keys={keys}
           clients={clients}
           usage={usage}
-          routes={ov.routes ?? []}
+          routes={ov.routes}
           defaultRoute={defaultRoute}
           catalog={catalog}
           configVersion={configVersion}

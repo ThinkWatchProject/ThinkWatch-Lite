@@ -140,8 +140,8 @@ export interface CostBucket {
   cost_micros_exact: number;
   cost_micros_estimated: number;
   unpriced_requests: number;
-  /** 没有拿到用量的条数。旧版本的 core 不给 */
-  no_usage_requests?: number;
+  /** 没有拿到用量的条数 */
+  no_usage_requests: number;
 }
 
 /**

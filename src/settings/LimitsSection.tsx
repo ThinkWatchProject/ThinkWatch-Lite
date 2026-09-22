@@ -34,7 +34,7 @@ export function LimitsSection({
   configVersion,
 }: {
   limits: LimitsView;
-  configVersion: string | null;
+  configVersion: string;
 }) {
   const t = useText(limitsText);
   const [draft, setDraft] = useState(() => draftOf(limits));
@@ -57,10 +57,6 @@ export function LimitsSection({
   };
 
   async function save() {
-    if (!configVersion) {
-      setError(t.versionNotLoaded);
-      return;
-    }
     // **配置里的数字字段必须发数字**：发字符串 core 直接拒
     const ops: PatchOp[] = KEYS.filter((k) => draft[k] !== saved[k]).map((k) => ({
       op: "replace",

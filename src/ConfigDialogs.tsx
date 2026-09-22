@@ -32,13 +32,14 @@ import { errorText } from "@/i18n/core.i18n";
  * 视图，而不是几个互不相干的东西。
  */
 export function ConfigFileDialog({
-  configVersion,
+  reloads,
   focus,
   rejectedLine,
   onClose,
   onJump,
 }: {
-  configVersion: string | null;
+  /** 配置换入过几次。换了就重读 */
+  reloads: number;
   /** 打开时选中这个名字所在的那一段 */
   focus: string | null;
   rejectedLine: number | null;
@@ -57,7 +58,7 @@ export function ConfigFileDialog({
     return () => {
       alive = false;
     };
-  }, [configVersion]);
+  }, [reloads]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -93,10 +94,11 @@ export function ConfigFileDialog({
 
 /** 版本历史。**每一次保存都在这里** —— 恢复也是一次保存，不会丢掉当前版本 */
 export function VersionHistoryDialog({
-  configVersion,
+  reloads,
   onClose,
 }: {
-  configVersion: string | null;
+  /** 配置换入过几次。换了就重读 */
+  reloads: number;
   onClose: () => void;
 }) {
   const t = useText(configDialogsText);
@@ -111,7 +113,7 @@ export function VersionHistoryDialog({
     return () => {
       alive = false;
     };
-  }, [configVersion]);
+  }, [reloads]);
 
   async function restore(version: string) {
     setBusy(version);

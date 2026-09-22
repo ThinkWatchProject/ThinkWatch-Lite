@@ -259,7 +259,7 @@ export default function App() {
     listening,
     locallyAnswered,
     rejected,
-    configVersion,
+    reloads,
     alerts,
     rotated,
     clearRotated,
@@ -667,7 +667,7 @@ export default function App() {
    * 原来这一段是每两秒一轮的轮询：两次 IPC 往返，而绝大多数轮得到的是
    * 一模一样的答案。它变化的时机是数得清的，而每一个现在都有事件：
    *
-   * · 配置换了一份（`configVersion` 跟着 `config_reloaded` 走）
+   * · 配置换了一份（`reloads` 跟着 `config_reloaded` 走）
    * · 某家上游熔断了或恢复了（`health`，core 现在会报）
    * · 某家上游的模型清单开始获取或获取完了（`models`）
    * · 网关换了监听地址，或者没换成（`listening`）—— 配置换进去之后监听器
@@ -722,7 +722,7 @@ export default function App() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [configVersion, nudge, health, models, listening, core, setStatus, setOv]);
+  }, [reloads, nudge, health, models, listening, core, setStatus, setOv]);
 
   const c = describeCore(core);
   /** 连上过、又断了。**只在这时候挂那条带子** */
@@ -1176,17 +1176,22 @@ export default function App() {
               ) : tab === "mcp" ? (
                 <McpPage alerts={alerts} onSeen={clearAlerts} />
               ) : tab === "security" ? (
-                <SecurityPage
-                  configVersion={configVersion}
-                  tick={dashTick}
-                  focus={securityFocus}
-                  onChanged={() => setNudge((n) => n + 1)}
-                />
+                ov ? (
+                  <SecurityPage
+                    configVersion={ov.config_version}
+                    tick={dashTick}
+                    focus={securityFocus}
+                    onChanged={() => setNudge((n) => n + 1)}
+                  />
+                ) : (
+                  <p className="p-5 tw-body text-muted-foreground">
+                    {t.loadingConfig}
+                  </p>
+                )
               ) : tab === "keys" ? (
                 ov ? (
                   <KeysPage
                     ov={ov}
-                    configVersion={configVersion}
                     onChanged={() => setNudge((n) => n + 1)}
                     onOpenConfigFile={(focus) => setConfigFile({ focus })}
                     onNavigate={(to) => setTab(to as Surface)}
@@ -1200,7 +1205,6 @@ export default function App() {
                 ov ? (
                   <RoutingPage
                     ov={ov}
-                    configVersion={configVersion}
                     onChanged={() => setNudge((n) => n + 1)}
                     onOpenConfigFile={(focus) => setConfigFile({ focus })}
                     onNavigate={(to) => setTab(to as Surface)}
@@ -1214,7 +1218,6 @@ export default function App() {
                 ov ? (
                   <UpstreamsPage
                     ov={ov}
-                    configVersion={configVersion}
                     onChanged={() => setNudge((n) => n + 1)}
                     onOpenConfigFile={(focus) => setConfigFile({ focus })}
                     onNavigate={(to) => setTab(to as Surface)}
@@ -1228,7 +1231,6 @@ export default function App() {
                 <Config
                   ov={ov}
                   status={status}
-                  configVersion={configVersion}
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (
@@ -1507,7 +1509,7 @@ export default function App() {
         </AlertDialog>
         {configFile && (
           <ConfigFileDialog
-            configVersion={configVersion}
+            reloads={reloads}
             focus={configFile.focus}
             rejectedLine={rejected?.line ?? null}
             onClose={() => setConfigFile(null)}
@@ -1519,7 +1521,7 @@ export default function App() {
         )}
         {historyOpen && (
           <VersionHistoryDialog
-            configVersion={configVersion}
+            reloads={reloads}
             onClose={() => setHistoryOpen(false)}
           />
         )}

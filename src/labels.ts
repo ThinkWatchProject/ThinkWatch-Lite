@@ -5,9 +5,6 @@
  * 发的是中文标签，界面只能拿显示文字做判断，core 改一个措辞，这边的判断
  * 就悄悄失效了。同一个标识符在概览、详情、试运行里必须是同一个词，所以
  * 集中在这里。上游页自己的那些在 `upstreams/labels.ts`。
- *
- * **认不出的值原样显示。**core 0.4 之前写进数据库的记录里是当时的文字，
- * 没有迁移。
  */
 import { textOf } from "@/i18n";
 import {
@@ -21,7 +18,7 @@ import {
   type TranslatedView,
 } from "./types";
 import { PROTOCOLS } from "./upstreams/labels";
-import { LEGACY_SERVED, labelsText } from "./labels.i18n";
+import { labelsText } from "./labels.i18n";
 
 /*
  * 显示文字都在 `labels.i18n.ts`，每次调用都按当时的语言取（`textOf`）。
@@ -159,8 +156,6 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean } {
       return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
     case "error":
       return { text: a.error ?? t.noResponse, ok: false };
-    default:
-      return { text: a.outcome, ok: a.outcome === LEGACY_SERVED };
   }
 }
 

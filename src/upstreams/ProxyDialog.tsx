@@ -39,14 +39,14 @@ export function ProxyDialog({
 }: {
   mode: ProxyDialogMode;
   ov: Overview;
-  configVersion: string | null;
+  configVersion: string;
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
   const t = useText(proxyDialogText);
   const common = useText(commonText);
   const editing: ProxyView | null =
-    mode.kind === "edit" ? ((ov.proxies ?? []).find((x) => x.name === mode.name) ?? null) : null;
+    mode.kind === "edit" ? (ov.proxies.find((x) => x.name === mode.name) ?? null) : null;
   const [host0, port0] = splitAddr(editing?.addr ?? "");
   const [name, setName] = useState(editing?.name ?? "");
   const [kind, setKind] = useState(editing?.kind ?? "socks5h");
@@ -95,7 +95,7 @@ export function ProxyDialog({
     setSaving(true);
     setError(null);
     try {
-      const save = { proxy: input(), base_version: configVersion ?? undefined };
+      const save = { proxy: input(), base_version: configVersion };
       if (editing) await api.updateProxy(editing.name, save);
       else await api.createProxy(save);
       onSaved(name);

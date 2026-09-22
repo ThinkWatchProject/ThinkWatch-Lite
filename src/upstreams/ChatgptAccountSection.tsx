@@ -124,7 +124,7 @@ export function ChatgptAccountSection({
           >
             <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
             <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
-            {(ov.proxies ?? []).map((x) => (
+            {ov.proxies.map((x) => (
               <NativeSelectOption key={x.name} value={x.name}>
                 {x.name} · {proxyKindLabel(x.kind)} {x.addr}
               </NativeSelectOption>

@@ -152,6 +152,7 @@ describe("补空桶", () => {
     cost_micros_exact: 0,
     cost_micros_estimated: 0,
     unpriced_requests: 0,
+    no_usage_requests: 0,
   });
 
   /**

@@ -80,7 +80,7 @@ export function RuleDialog({
   takenNames: string[];
   ov: Overview;
   models: KnownModel[];
-  configVersion: string | null;
+  configVersion: string;
   /** 在这里新建了策略组：外面要重读概览 */
   onChanged: () => void;
   onClose: () => void;
@@ -106,7 +106,7 @@ export function RuleDialog({
   const intent = d.conditions.find((c) => c.field === "intent");
   const anyProbe = intent?.values.includes("assistant_internal") ?? false;
   const unrouted = (anyProbe ? PROBE_IDS : (intent?.values ?? [])).filter(
-    (id) => (ov.client_probes ?? []).find((p) => p.id === id)?.mode !== "route",
+    (id) => ov.client_probes.find((p) => p.id === id)?.mode !== "route",
   );
   // 「任一辅助请求」时不默认勾选：连通性检查和预热原本由网关本地应答，改为交给路由会产生费用
   const routing = routeProbes ?? !anyProbe;

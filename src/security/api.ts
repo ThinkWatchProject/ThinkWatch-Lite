@@ -13,7 +13,6 @@ import type {
   SecurityTestResult,
 } from "@/types";
 
-type Base = string | null;
 
 /** 新建或修改一条自定义规则时交过去的 */
 export interface CustomRuleSave {
@@ -22,7 +21,7 @@ export interface CustomRuleSave {
   /** 工具调用审查才有：`cut` / `record` */
   action?: "cut" | "record";
   enabled: boolean;
-  base_version?: string;
+  base_version: string;
 }
 
 export const api = {
@@ -35,30 +34,30 @@ export const api = {
     before?: number;
     limit?: number;
   }) => invoke<SecurityEventsPage>("security_events", q),
-  setMode: (guard: Guard, mode: string, baseVersion: Base) =>
+  setMode: (guard: Guard, mode: string, baseVersion: string) =>
     invoke<ConfigWritten>("set_security_mode", {
       guard,
-      save: { mode, base_version: baseVersion ?? undefined },
+      save: { mode, base_version: baseVersion },
     }),
   /** 启用或停用一条内置规则 */
-  toggleBuiltin: (guard: Guard, id: string, enabled: boolean, baseVersion: Base) =>
+  toggleBuiltin: (guard: Guard, id: string, enabled: boolean, baseVersion: string) =>
     invoke<ConfigWritten>("toggle_security_rule", {
       guard,
       id,
-      save: { enabled, base_version: baseVersion ?? undefined },
+      save: { enabled, base_version: baseVersion },
     }),
   /** 一条内置规则在拦截档下做什么。只有工具调用审查的规则有这一项 */
-  setAction: (id: string, action: "cut" | "record", baseVersion: Base) =>
+  setAction: (id: string, action: "cut" | "record", baseVersion: string) =>
     invoke<ConfigWritten>("set_security_rule_action", {
       guard: "inspect_tools",
       id,
-      save: { action, base_version: baseVersion ?? undefined },
+      save: { action, base_version: baseVersion },
     }),
   createRule: (guard: Guard, save: CustomRuleSave) =>
     invoke<ConfigWritten>("create_security_rule", { guard, save }),
   updateRule: (guard: Guard, name: string, save: CustomRuleSave) =>
     invoke<ConfigWritten>("update_security_rule", { guard, name, save }),
-  deleteRule: (guard: Guard, name: string, baseVersion: Base) =>
+  deleteRule: (guard: Guard, name: string, baseVersion: string) =>
     invoke<ConfigWritten>("delete_security_rule", { guard, name, baseVersion }),
   /**
    * 拿一段文本试一试。给了 `pattern` 就只试这一条正则，给了 `rule` 就只试这

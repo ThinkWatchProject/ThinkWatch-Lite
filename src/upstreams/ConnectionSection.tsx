@@ -48,7 +48,7 @@ export function ConnectionSection({
   onChatgptLogin: () => void;
 }) {
   const t = useText(connectionSectionText);
-  const proxies = ov.proxies ?? [];
+  const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
   const autoProtocol = !form.baseUrl.trim()
     ? t.auto

@@ -33,12 +33,10 @@ import { errorText } from "@/i18n/core.i18n";
 export default function Config({
   ov,
   status,
-  configVersion,
   onChanged,
 }: {
   ov: Overview | null;
   status: CoreStatus | null;
-  configVersion: string | null;
   /** 存完监听设置之后叫一声，状态和概览跟着重读 */
   onChanged: () => void;
 }) {
@@ -112,20 +110,20 @@ export default function Config({
         <ListenSection
           view={ov.listen}
           status={status}
-          configVersion={configVersion}
+          configVersion={ov.config_version}
           onChanged={onChanged}
         />
       )}
 
-      {ov?.limits && <LimitsSection limits={ov.limits} configVersion={configVersion} />}
+      {ov && <LimitsSection limits={ov.limits} configVersion={ov.config_version} />}
 
       {/*
         日志保留归设置，不归流量页。**它管的是「留多久」，不是「看哪一段」**
         —— 那一页上曾经有个时间范围选择器，而让人先选一段才能开始搜，
         等于在一个本来就不大的集合前面加一道门。
       */}
-      {ov?.retention && (
-        <RetentionSection retention={ov.retention} configVersion={configVersion} />
+      {ov && (
+        <RetentionSection retention={ov.retention} configVersion={ov.config_version} />
       )}
 
       <Update />

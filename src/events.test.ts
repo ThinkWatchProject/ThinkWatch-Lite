@@ -37,7 +37,7 @@ describe("从事件缝出一行", () => {
     expect(rows.get(1)?.model).toBe("claude-sonnet-4-5");
   });
 
-  /** 老记录没有这个字段，core 补的是空串 —— 空串不是一个模型名 */
+  /** WebSocket 这类认不出模型的请求，core 发的是空串 —— 空串不是一个模型名 */
   it("模型是空串时当作不知道", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ model: "" }));

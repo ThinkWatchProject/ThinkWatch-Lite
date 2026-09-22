@@ -14,7 +14,6 @@ export const limitsText = messages(
     bad: "须为正整数。",
     saved: "并发设置已保存",
     saveFailed: "未能保存",
-    versionNotLoaded: "配置版本尚未读取，请稍后重试",
   },
   {
     title: "Concurrency",
@@ -30,6 +29,5 @@ export const limitsText = messages(
     bad: "A positive whole number.",
     saved: "Concurrency settings saved",
     saveFailed: "Not saved",
-    versionNotLoaded: "The config version has not been loaded yet. Try again in a moment.",
   },
 );

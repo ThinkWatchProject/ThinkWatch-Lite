@@ -10,8 +10,8 @@ import { securityLabelsText } from "./labels.i18n";
  *
  * 出站脱敏的内置规则 id 就是凭据种类（`anthropic-api-key` …），和流量页上
  * 那张名称表是同一张；工具调用审查的查这里的表。**自定义规则的 id 就是用户
- * 起的名字**，原样显示。两张表里都没有的（core 以后加的），退回 core 给的
- * 英文名，再没有就是 id。
+ * 起的名字**，原样显示。两张表里都没有的，退回 core 给的英文名，再没有就是
+ * id。
  */
 export function ruleName(guard: Guard, id: string, custom?: boolean, fallback?: string): string {
   if (custom) return id;

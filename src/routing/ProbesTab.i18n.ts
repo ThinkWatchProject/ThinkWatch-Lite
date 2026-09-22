@@ -13,7 +13,6 @@ export const probesTabText = messages(
     /** 从「本地应答」改成「交给路由」时说清代价 */
     nowCosts: "改为交给路由后，这一类请求将发送到上游并产生费用。",
     ruleHint: "规则里的「辅助请求」条件只对设为「交给路由」的类别成立。",
-    versionNotLoaded: "配置版本尚未读取，请稍后重试",
   },
   {
     intro:
@@ -29,6 +28,5 @@ export const probesTabText = messages(
       "Once it uses routing, this kind of request goes upstream and costs what the upstream charges.",
     ruleHint:
       "The “Auxiliary request” condition in a rule only holds for the kinds set to “Use routing”.",
-    versionNotLoaded: "The config version has not been loaded yet. Try again in a moment.",
   },
 );

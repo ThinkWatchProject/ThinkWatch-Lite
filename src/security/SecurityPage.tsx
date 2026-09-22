@@ -58,7 +58,7 @@ export default function SecurityPage({
   focus,
   onChanged,
 }: {
-  configVersion: string | null;
+  configVersion: string;
   /** 库里多了请求就涨一次。日志跟着重读 */
   tick: number;
   /** 从概览点进来时带的筛选 */
@@ -109,10 +109,10 @@ export default function SecurityPage({
     version.current = configVersion;
   }, [configVersion]);
 
-  async function write(run: (base: string | undefined) => Promise<ConfigWritten>) {
+  async function write(run: (base: string) => Promise<ConfigWritten>) {
     setBusy(true);
     try {
-      const w = await run(version.current ?? undefined);
+      const w = await run(version.current);
       version.current = w.version;
       onChanged();
     } catch (e) {
@@ -169,7 +169,7 @@ export default function SecurityPage({
 
   /** 自定义规则保存。**失败时对话框留着**，把 core 的话显示在里面 */
   async function saveRule(guard: Guard, editing: SecurityRuleView | null, save: Omit<CustomRuleSave, "base_version">) {
-    const body = { ...save, base_version: version.current ?? undefined };
+    const body = { ...save, base_version: version.current };
     const w = editing ? await api.updateRule(guard, editing.id, body) : await api.createRule(guard, body);
     version.current = w.version;
     setDialog(null);
@@ -248,7 +248,7 @@ export default function SecurityPage({
           onClose={() => setDialog(null)}
           onCopy={() => actions(dialog.guard).copy(dialog.rule)}
           onSaveAction={async (a) => {
-            const w = await api.setAction(dialog.rule.id, a, version.current ?? null);
+            const w = await api.setAction(dialog.rule.id, a, version.current);
             version.current = w.version;
             setDialog(null);
             onChanged();
@@ -264,7 +264,7 @@ export default function SecurityPage({
           referrers={[]}
           consequence={rt.deleteDesc}
           onDelete={async () => {
-            const w = await api.deleteRule(dialog.guard, dialog.rule.id, version.current ?? null);
+            const w = await api.deleteRule(dialog.guard, dialog.rule.id, version.current);
             version.current = w.version;
             setDialog(null);
             onChanged();

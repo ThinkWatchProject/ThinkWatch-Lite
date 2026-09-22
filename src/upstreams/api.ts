@@ -43,13 +43,12 @@ export interface UpstreamStats {
 }
 
 /** 删除、开关这类不带正文的写入，要带上基于哪一版 */
-type Base = string | null;
 
 export const api = {
   createProvider: (save: ProviderSave) => invoke<ConfigWritten>("create_provider", { save }),
   updateProvider: (name: string, save: ProviderSave) =>
     invoke<ConfigWritten>("update_provider", { name, save }),
-  deleteProvider: (name: string, baseVersion: Base) =>
+  deleteProvider: (name: string, baseVersion: string) =>
     invoke<ConfigWritten>("delete_provider", { name, baseVersion }),
   testProvider: (test: ProviderTest) => invoke<ProviderTestResult>("test_provider", { test }),
   /** `protocol`：表单里选定的协议，不给就是自动识别 */
@@ -65,7 +64,7 @@ export const api = {
   createProxy: (save: ProxySave) => invoke<ConfigWritten>("create_proxy", { save }),
   updateProxy: (name: string, save: ProxySave) =>
     invoke<ConfigWritten>("update_proxy", { name, save }),
-  deleteProxy: (name: string, baseVersion: Base) =>
+  deleteProxy: (name: string, baseVersion: string) =>
     invoke<ConfigWritten>("delete_proxy", { name, baseVersion }),
   testProxy: (test: ProxyTest) => invoke<L1Result>("test_proxy", { test }),
 
@@ -85,7 +84,7 @@ export const api = {
 
   pricingStatus: () => invoke<PricingStatus>("pricing_status"),
   refreshPricing: () => invoke<PricingRefreshed>("refresh_pricing"),
-  setPriceAutoUpdate: (on: boolean, baseVersion: Base) =>
+  setPriceAutoUpdate: (on: boolean, baseVersion: string) =>
     invoke<ConfigWritten>("set_price_auto_update", { on, baseVersion }),
   queryPrices: (query: PriceQuery) => invoke<PriceQueryResult>("query_prices", { query }),
   priceSheet: (name: string) => invoke<PriceSheetInput>("price_sheet", { name }),
@@ -93,7 +92,7 @@ export const api = {
     invoke<ConfigWritten>("create_price_sheet", { save }),
   updatePriceSheet: (name: string, save: PriceSheetSave) =>
     invoke<ConfigWritten>("update_price_sheet", { name, save }),
-  deletePriceSheet: (name: string, baseVersion: Base) =>
+  deletePriceSheet: (name: string, baseVersion: string) =>
     invoke<ConfigWritten>("delete_price_sheet", { name, baseVersion }),
 
   /** 链路测速。不给名字就测全部上游 */

@@ -69,35 +69,10 @@ export function useRequests() {
    */
   const [rotated, setRotated] = useState<Extract<CoreEvent, { kind: "credential_rotated" }>[]>([]);
   /**
-   * 当前配置的版本号。改配置时必须带上它（乐观并发的凭据），App 也用它
-   * 决定要不要重新拉概览。
-   *
-   * **不能只从事件流里拿。**`config_reloaded` 报的是「变化」，而这里要
-   * 的是「现在是什么」—— 全新启动、谁也没改过配置时那个事件永远不来，
-   * 于是它一直是 `null`，而所有写配置的入口都卡在「还没读到配置版本」
-   * 上：防护页的三态、监听方式、上游字段、策略组，一个都写不进去。
-   * 表现是应用看起来是只读的，而错误提示说「稍等一下再试」—— 等多久都
-   * 不会好。
-   *
-   * 所以挂载时主动读一次当前值，之后再由事件流跟进。
+   * 配置换入过几次。**App 据此重读概览** —— 版本号跟着概览来（见
+   * `Overview.config_version`），这里只报「换了」。
    */
-  const [configVersion, setConfigVersion] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const c = await invoke<{ version: string }>("get_config");
-        // 事件先到就听事件的 —— 它比这次读取更新
-        if (alive) setConfigVersion((v) => v ?? c.version);
-      } catch {
-        // core 还没起来。事件流起来之后第一次配置变更会补上，而在那
-        // 之前写配置本来也做不了。
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const [reloads, setReloads] = useState(0);
   const store = useRef(new Map<number, RequestRow>());
   const pending = useRef<CoreEvent[]>([]);
   const frame = useRef<number | null>(null);
@@ -283,7 +258,7 @@ export function useRequests() {
         if (ev.kind === "config_reloaded") {
           // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好
           setRejected(null);
-          setConfigVersion(ev.version);
+          setReloads((n) => n + 1);
         }
         applyEvent(store.current, ev);
       }
@@ -383,7 +358,7 @@ export function useRequests() {
     listening,
     locallyAnswered,
     rejected,
-    configVersion,
+    reloads,
     alerts,
     rotated,
     clearAlerts: () => setAlerts([]),
