@@ -18,8 +18,6 @@ export const keysPageText = messages(
     gatewayAddress: "网关地址",
     loading: "读取中…",
     key: "密钥",
-    copyHint: "点「复制」取得完整密钥",
-    masked: "密钥在列表里只显示前后几位。忘了可以随时更换一把新的。",
     done: "完成",
   },
   {
@@ -42,9 +40,6 @@ export const keysPageText = messages(
     gatewayAddress: "Gateway address",
     loading: "Loading…",
     key: "Key",
-    copyHint: "“Copy” puts the full key on the clipboard",
-    masked:
-      "The list shows only the first and last few characters of a key. A lost key can be rotated at any time.",
     done: "Done",
   },
 );

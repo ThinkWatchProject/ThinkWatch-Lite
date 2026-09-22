@@ -17,7 +17,7 @@ import Config from "./Config";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import Clients from "./Clients";
-import { AccessPage } from "./access/AccessPage";
+import KeysPage from "./keys/KeysPage";
 import RoutingPage from "./routing/RoutingPage";
 import SecurityPage, { type LogFocus } from "./security/SecurityPage";
 import McpPage from "./mcp/McpPage";
@@ -28,8 +28,8 @@ import {
   IconClient,
   IconDashboard,
   IconFlow,
-  IconGateway,
   IconGuard,
+  IconKey,
   IconMcp,
   IconRoute,
   IconServer,
@@ -62,7 +62,7 @@ import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import Connect, { trouble } from "./Connect";
 import {
@@ -119,14 +119,14 @@ type Surface =
   | "dashboard"
   | "security"
   | "routing"
-  | "access"
+  | "keys"
   | "upstreams"
   | "settings"
   | "clients"
   | "mcp";
 
 /** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
-const CONFIG_PAGES = new Set<Surface>(["upstreams", "access", "routing", "security"]);
+const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "security"]);
 
 /** 配置文件里的一段由哪一页管理 */
 function surfaceOf(section: string | null): Surface {
@@ -136,7 +136,7 @@ function surfaceOf(section: string | null): Surface {
     case "pricing":
       return "upstreams";
     case "clients":
-      return "access";
+      return "keys";
     case "routes":
     case "groups":
     case "default_route":
@@ -144,8 +144,8 @@ function surfaceOf(section: string | null): Surface {
     case "security":
       return "security";
     default:
-      // 监听、并发都在接入页；辅助请求在路由页，但它没有自己的段名
-      return "access";
+      // 监听、并发、日志保留在设置页；辅助请求在路由页，但它没有自己的段名
+      return "settings";
   }
 }
 
@@ -182,18 +182,24 @@ const SOURCES: {
     items: [{ id: "security", icon: IconGuard }],
   },
   {
+    // **谁在用这个网关，拿什么连进来。**客户端和密钥是同一件事的两面：
+    // 接管一个客户端就为它生成一把密钥，而密钥页上的每一把也都说得出
+    // 是给哪个客户端的。两者挨着，从一边到另一边不用跨过配置那一组。
+    group: "access",
+    items: [
+      { id: "clients", icon: IconClient },
+      { id: "keys", icon: IconKey },
+    ],
+  },
+  {
     group: "config",
     items: [
       // 路由原来埋在配置页中段,和「监听与访问」「诊断包」并列 ——
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
       { id: "upstreams", icon: IconServer },
       { id: "routing", icon: IconRoute },
-      // **接入 = 监听范围 + 密钥 + 并发。**三者回答同一个问题：别人
-      // 怎么连进来、谁能连。原来「网关」和「密钥」是两项，而「网关」
-      // 指的其实是整个产品
-      { id: "access", icon: IconGateway },
-      { id: "clients", icon: IconClient },
-      // **MCP 挨着客户端**：两者管的都是各客户端自己的配置文件，不经过网关
+      // **MCP 和上游、路由同组**：它管的是客户端能调用哪些工具，和上游、路由
+      // 一样是配一次就不常动的东西
       { id: "mcp", icon: IconMcp },
     ],
   },
@@ -250,6 +256,7 @@ export default function App() {
     settled,
     health,
     models,
+    listening,
     locallyAnswered,
     rejected,
     configVersion,
@@ -663,6 +670,8 @@ export default function App() {
    * · 配置换了一份（`configVersion` 跟着 `config_reloaded` 走）
    * · 某家上游熔断了或恢复了（`health`，core 现在会报）
    * · 某家上游的模型清单开始获取或获取完了（`models`）
+   * · 网关换了监听地址，或者没换成（`listening`）—— 配置换进去之后监听器
+   *   才开始换，只跟着配置版本重读，读到的是换之前的地址
    * · 守护状态变了 —— 重启之后监听地址和 pid 都可能不一样
    * · 用户自己刚改完东西（`nudge`）
    */
@@ -713,7 +722,7 @@ export default function App() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [configVersion, nudge, health, models, core, setStatus, setOv]);
+  }, [configVersion, nudge, health, models, listening, core, setStatus, setOv]);
 
   const c = describeCore(core);
   /** 连上过、又断了。**只在这时候挂那条带子** */
@@ -849,9 +858,15 @@ export default function App() {
             <Tip
               side="right"
               text={
-                status?.gateway_addr
-                  ? `${c.text} · ${status.gateway_addr}`
-                  : c.text
+                <>
+                  {status?.gateway_addr
+                    ? `${c.text} · ${status.gateway_addr}`
+                    : c.text}
+                  {/* 监听设置没换成：上面的地址是还在服务的旧地址，原因写在这里 */}
+                  {status?.listen_error && (
+                    <div>{t.listenStale(coreText(status.listen_error))}</div>
+                  )}
+                </>
               }
             >
               <div
@@ -1168,9 +1183,9 @@ export default function App() {
                   focus={securityFocus}
                   onChanged={() => setNudge((n) => n + 1)}
                 />
-              ) : tab === "access" ? (
+              ) : tab === "keys" ? (
                 ov ? (
-                  <AccessPage
+                  <KeysPage
                     ov={ov}
                     configVersion={configVersion}
                     onChanged={() => setNudge((n) => n + 1)}
@@ -1211,7 +1226,12 @@ export default function App() {
                   </p>
                 )
               ) : tab === "settings" ? (
-                <Config ov={ov} configVersion={configVersion} />
+                <Config
+                  ov={ov}
+                  status={status}
+                  configVersion={configVersion}
+                  onChanged={() => setNudge((n) => n + 1)}
+                />
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">
                   {/*

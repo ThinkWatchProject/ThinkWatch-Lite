@@ -86,6 +86,11 @@ export type CoreEvent =
   /** 配置换了一份新的进去，已经生效。界面靠它知道自己手里那份过期了。 */
   | { kind: "config_reloaded"; id: number; version: string; origin: ConfigOrigin; at_ms: number }
   /**
+   * 网关换了监听地址，或者没换成（旧的还在服务）。**和 `config_reloaded` 是两件
+   * 事**：配置换进去之后监听器才开始换，只听那一条读到的是换之前的地址。
+   */
+  | { kind: "listen_changed"; id: number; addr?: string; error?: Msg; at_ms: number }
+  /**
    * 新配置没过关，**旧的还在服务**。
    *
    * 这不是崩溃，是一条要展示给人看的信息 —— 桌面工具不能因为一个笔误
@@ -246,7 +251,14 @@ export interface CoreStatus {
   api_version: number;
   version: string;
   pid: number;
+  /**
+   * 网关**此刻**在听的地址（配置里写的那个，不含顺带开着的回环）。跟着真实的
+   * 监听器走：换了端口之后就是新的，没换成时仍是旧的，原因在 `listen_error`。
+   * 安全模式下是 null
+   */
   gateway_addr: string | null;
+  /** 配置里的地址没能换上的原因。**这时旧地址还在服务** */
+  listen_error?: Msg | null;
   config_path: string;
   clients: number;
   providers: number;
@@ -372,6 +384,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     }
     case "locally_answered":
     case "config_reloaded":
+    case "listen_changed":
     case "config_rejected":
     case "scan_alert":
     case "clients_changed":
@@ -843,8 +856,8 @@ export interface ProbeView {
   mode: string;
 }
 
+/** 并发上限。**没有全局上限** —— 本机网关同时在跑的就是几个客户端各自的会话 */
 export interface LimitsView {
-  max_concurrent: number;
   per_provider: number;
   queue_depth: number;
   queue_timeout_secs: number;
@@ -1182,7 +1195,7 @@ export interface GroupView {
 
 export interface ClientView {
   name: string;
-  /** 已脱敏。要明文走 `copy_key` */
+  /** `list_keys` 给明文（密钥页原样显示）；概览里的是脱敏的 */
   key: string;
   max_concurrent: number | null;
   /** 绑的那条路由。`null` = 走默认路由 */
@@ -1242,6 +1255,15 @@ export interface ListenView {
   port: number;
   allow_from: string[];
   exposed: boolean;
+}
+
+/** 保存监听设置。**三项一起存** —— 换档时网卡和端口常常一起改 */
+export interface ListenSave {
+  /** `loopback` / `all` / 网卡名 / 地址，和配置文件同一套写法 */
+  bind: string;
+  port: number;
+  allow_from: string[];
+  base_version?: string;
 }
 
 /** 光标落在配置的哪一段上 */

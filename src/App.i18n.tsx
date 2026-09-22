@@ -23,12 +23,13 @@ export const appText = messages(
       security: "安全",
       upstreams: "上游",
       routing: "路由",
-      access: "接入",
       clients: "客户端",
+      keys: "密钥",
       mcp: "MCP",
       settings: "设置",
     },
     newFindings: (label: string, n: number) => `${label} · ${n} 项新发现`,
+    listenStale: (why: string) => `监听设置未生效：${why}`,
 
     // core 的状态。`…Short` 给收起的源列表用，那里只有 80px
     running: "运行中",
@@ -147,12 +148,13 @@ export const appText = messages(
       security: "Security",
       upstreams: "Upstreams",
       routing: "Routing",
-      access: "Access",
       clients: "Clients",
+      keys: "Keys",
       mcp: "MCP",
       settings: "Settings",
     },
     newFindings: (label: string, n: number) => `${label} · ${count(n, "new finding", "new findings")}`,
+    listenStale: (why: string) => `The listen settings did not take effect: ${why}`,
 
     // 展开的源列表里这一行约 167px，收起时约 51px：「Gateway stopped」比
     // 「Gateway not running」短一截才放得下；「Safe mode」中间是不换行空格，

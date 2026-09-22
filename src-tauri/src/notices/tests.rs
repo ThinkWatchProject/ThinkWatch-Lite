@@ -268,8 +268,9 @@ async fn a_notice_still_on_hold_does_not_pop_after_switching_to_the_app() {
 #[test]
 fn every_key_lands_on_the_page_that_handles_it() {
     for (key, view) in [
-        ("gateway", "config"),
-        ("config", "config"),
+        ("gateway", "settings"),
+        ("config", "settings"),
+        ("listen", "settings"),
         ("upstream:relay", "upstreams"),
         ("quota:chatgpt:5h", "upstreams"),
         ("credential:chatgpt", "upstreams"),
@@ -531,6 +532,7 @@ fn in_english_no_rule_writes_a_chinese_word() {
             detail: "config.yaml is read-only".into(),
             at_ms: T0,
         },
+        listen_failed(),
         flagged(true),
         flagged(false),
         tw_api::Event::ScanAlert {
@@ -667,4 +669,46 @@ fn the_bus_adds_its_own_words_in_english_too() {
             "Resolved: Gateway Not Forwarding"
         );
     });
+}
+
+fn listen_failed() -> tw_api::Event {
+    let mut args = std::collections::BTreeMap::new();
+    args.insert("addr".to_string(), "127.0.0.1:8080".to_string());
+    tw_api::Event::ListenChanged {
+        id: 1,
+        addr: Some("127.0.0.1:18790".into()),
+        error: Some(tw_api::Msg {
+            code: "gw.listen.port_taken".into(),
+            args,
+            text: "127.0.0.1:8080 is already in use by another program.".into(),
+        }),
+        at_ms: T0,
+    }
+}
+
+/// 监听没换成要说，而且说清旧地址还在服务；换成了就把那一条收起来
+#[test]
+fn a_listen_change_that_did_not_take_is_raised_and_one_that_did_clears_it() {
+    with_lang(Lang::Zh, || {
+        let s = &rules::from_event(&listen_failed())[0];
+        assert_eq!(s.key, "listen");
+        assert_eq!(s.title, "监听设置未生效");
+        assert_eq!(
+            s.body,
+            "127.0.0.1:8080 已被其他程序占用。网关仍在 127.0.0.1:18790 上监听。"
+        );
+        assert_eq!(s.view, Some("settings"));
+    });
+    let ok = rules::from_event(&tw_api::Event::ListenChanged {
+        id: 2,
+        addr: Some("127.0.0.1:8080".into()),
+        error: None,
+        at_ms: T0,
+    });
+    assert_eq!(ok.len(), 1);
+    assert_eq!(ok[0].key, "listen");
+    assert!(
+        matches!(ok[0].change, Change::Cleared),
+        "换成了就收起来，不另发一条"
+    );
 }

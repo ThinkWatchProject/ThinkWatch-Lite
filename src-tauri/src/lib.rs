@@ -1486,6 +1486,7 @@ pub fn run() {
             keys::delete_key,
             keys::rotate_key,
             keys::set_default_key,
+            keys::save_listen,
             keys::copy_key,
             keys::gateway_base,
             keys::copy_gateway_base,

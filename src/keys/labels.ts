@@ -3,14 +3,20 @@ import type { ClientView, DetectedClient, KnownModel } from "@/types";
 import { labelsText } from "./labels.i18n";
 import { splitEntries, visibleCount } from "./scope";
 
-/** 这把密钥是给谁用的。**接管过的说出客户端的名字**，其余的说「手动配置」 */
-export function useLabel(k: ClientView, clients: DetectedClient[]): string {
-  const t = textOf(labelsText);
-  if (!k.client) return t.manual;
+/**
+ * 这把密钥是接管哪个客户端时生成的。
+ *
+ * **手动创建的返回 null** —— 那是常态，每行都写一句「手动」是噪声；要单独
+ * 标出来的是接管生成的那几把。取消接管之后密钥留着、下次接管直接复用，
+ * 所以还要说清那个客户端此刻是不是正被接管着（决定了能不能删）。
+ */
+export function takeoverOf(
+  k: ClientView,
+  clients: DetectedClient[],
+): { client: string; adopted: boolean } | null {
+  if (!k.client) return null;
   const c = clients.find((x) => x.id === k.client);
-  const name = c?.name ?? k.client;
-  // 取消接管之后密钥留着，下次接管直接复用 —— 行里要看得出它是留给谁的
-  return c?.adopted_at_ms ? `${name} · ${t.connected}` : `${name} · ${t.notConnected}`;
+  return { client: c?.name ?? k.client, adopted: !!c?.adopted_at_ms };
 }
 
 /**

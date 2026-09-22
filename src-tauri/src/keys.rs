@@ -93,6 +93,18 @@ pub async fn copy_key(
     app.clipboard().write_text(v.key).map_err(|e| e.to_string())
 }
 
+/// 保存监听设置（设置页「网关监听」那一节）。
+///
+/// 放在这里而不是 `lib.rs`：它和密钥是同一件事的两道 —— 地址决定谁能敲门，
+/// 密钥决定谁能进来。
+#[tauri::command]
+pub async fn save_listen(
+    state: tauri::State<'_, AppState>,
+    save: tw_api::ListenSave,
+) -> Out<tw_api::ConfigWritten> {
+    state.control.save_listen(&save).await.map_err(text)
+}
+
 /// 客户端该连的网关地址。新建密钥之后那一屏要和密钥一起给出来。
 #[tauri::command]
 pub async fn gateway_base(state: tauri::State<'_, AppState>) -> Out<String> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { levelOf } from "./Exposure";
+import { levelOf } from "./ListenSection";
 
 describe("监听范围的三档", () => {
   it("两个关键字各归各的", () => {
@@ -25,5 +25,11 @@ describe("监听范围的三档", () => {
     expect(levelOf("127.0.0.1")).toBe("local");
     expect(levelOf("127.0.0.53")).toBe("local");
     expect(levelOf("::1")).toBe("local");
+  });
+
+  it("写死的全零地址是所有网卡", () => {
+    // `bind: 0.0.0.0` 和 `all` 是同一件事，不该显示成「局域网」再让人去选一张网卡
+    expect(levelOf("0.0.0.0")).toBe("all");
+    expect(levelOf("::")).toBe("all");
   });
 });

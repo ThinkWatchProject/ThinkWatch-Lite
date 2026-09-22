@@ -1008,6 +1008,11 @@ impl ControlClient {
         .await
     }
 
+    /// 保存监听设置。**core 先试着绑一下新地址**，绑不上就不写配置、说清为什么。
+    pub async fn save_listen(&self, save: &tw_api::ListenSave) -> Result<tw_api::ConfigWritten> {
+        self.send_json(hyper::Method::PUT, "/listen", save).await
+    }
+
     pub async fn set_default_key(
         &self,
         name: &str,

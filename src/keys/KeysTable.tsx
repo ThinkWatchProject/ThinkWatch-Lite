@@ -1,15 +1,26 @@
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Button } from "@/ui/button";
+import { IconClient, IconCopied, IconCopy } from "@/ui/icons";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { Tip } from "@/ui/tip";
+import { cn } from "@/lib/utils";
 import { when } from "@/format";
 import { textOf, useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import type { ClientView, CostGroup, DetectedClient, KnownModel } from "@/types";
 import { keysTableText } from "./KeysTable.i18n";
-import { routeLabel, scopeLabel, useLabel } from "./labels";
+import { labelsText } from "./labels.i18n";
+import { routeLabel, scopeLabel, takeoverOf } from "./labels";
 
 export interface KeyActions {
   edit: (name: string) => void;
-  copy: (name: string) => void;
+  /**
+   * 放进剪贴板。失败由调用方说；`quiet` 时成功也不弹提示 —— 值旁边那个按钮
+   * 自己会换成一个勾，再弹一条就是两遍
+   */
+  copy: (name: string, quiet?: boolean) => Promise<void>;
   rotate: (name: string) => void;
   toggle: (k: ClientView) => void;
   makeDefault: (name: string) => void;
@@ -20,7 +31,9 @@ export interface KeyActions {
 /**
  * 密钥列表。**只读** —— 改任何东西都走对话框，行上没有就地编辑的控件。
  *
- * 一行要回答三件事：这把是谁的、它能去哪、还有没有人在用。
+ * 一行要回答三件事：这把是谁的、它能去哪、还有没有人在用。**密钥的值原样
+ * 写出来**，旁边一个复制按钮：这把钥匙的用处就是被填进客户端配置，只给
+ * 头尾几位的话，用户还得另找地方看全。
  */
 export function KeysTable({
   keys,
@@ -31,7 +44,7 @@ export function KeysTable({
   actions,
 }: {
   keys: ClientView[];
-  /** 本机上装着的客户端，用来说清一把密钥是给谁的 */
+  /** 本机上装着的客户端，用来说清一把密钥是接管谁时生成的 */
   clients: DetectedClient[];
   /** 24 小时内每把密钥发了多少请求 */
   usage: CostGroup[];
@@ -57,6 +70,7 @@ export function KeysTable({
           const items = menu(k, clients, actions);
           const scope = scopeLabel(k.allow, catalog);
           const used = usage.find((u) => u.name === k.name);
+          const owner = takeoverOf(k, clients);
           return (
             <RowMenu key={k.name} items={items}>
               <TableRow
@@ -64,19 +78,27 @@ export function KeysTable({
                 onDoubleClick={() => actions.edit(k.name)}
                 className="cursor-default"
               >
-                <TableCell className="py-2">
+                {/*
+                  **这一列吃掉剩下的宽度**（`w-full max-w-0`）：完整的密钥有三十多位，
+                  按内容撑开的话最小窗口下整张表要横着滚。放不下时密钥尾部省略，
+                  复制的仍是完整的值。
+                */}
+                <TableCell className="w-full max-w-0 py-2">
                   {/* 状态只在异常时出现：每行都写一遍「正常」是噪声 */}
-                  <div className="flex items-center gap-1.5">
-                    <span className={k.disabled ? "font-medium text-muted-foreground" : "font-medium"}>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "min-w-0 truncate font-medium",
+                        k.disabled && "text-muted-foreground",
+                      )}
+                    >
                       {k.name}
                     </span>
                     {k.default && <Badge variant="secondary">{t.default}</Badge>}
                     {k.disabled && <Badge variant="outline">{t.disabled}</Badge>}
+                    {owner && <TakeoverBadge client={owner.client} adopted={owner.adopted} />}
                   </div>
-                  {/* 密钥值只剩头尾：一张截图就能把它带出去 */}
-                  <div className="tw-label text-muted-foreground">
-                    <span className="font-mono">{k.key}</span> · {useLabel(k, clients)}
-                  </div>
+                  <KeyValue value={k.key} onCopy={() => actions.copy(k.name, true)} />
                 </TableCell>
                 <TableCell>{routeLabel(k.route, defaultRoute)}</TableCell>
                 <TableCell className={scope.warn ? "text-warning" : undefined}>
@@ -113,16 +135,80 @@ export function KeysTable({
 }
 
 /**
+ * 接管生成的那几把，**单独一个标记**：带客户端图标，写出是接管谁时生成的。
+ *
+ * 那个客户端已经还原时标记变淡 —— 密钥还留着，下次接管直接用，但此刻没有
+ * 客户端的配置里写着它，所以可以删。
+ */
+export function TakeoverBadge({ client, adopted }: { client: string; adopted: boolean }) {
+  const t = useText(labelsText);
+  return (
+    <Tip text={adopted ? t.takeoverOn(client) : t.takeoverOff(client)}>
+      <Badge variant="outline" className={cn(!adopted && "text-muted-foreground")}>
+        <IconClient />
+        {t.takeover(client)}
+      </Badge>
+    </Tip>
+  );
+}
+
+/**
+ * 密钥的值和它的复制按钮。
+ *
+ * **双击选中文字，不打开对话框** —— 行上的双击是「编辑」，而在值上双击的人
+ * 想要的是选中它。复制成功后按钮上换成一个勾，一秒半后换回来。
+ */
+function KeyValue({ value, onCopy }: { value: string; onCopy: () => Promise<void> }) {
+  const t = useText(keysTableText);
+  const common = useText(commonText);
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <span
+        className="min-w-0 truncate font-mono tw-label text-muted-foreground select-text"
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        {value}
+      </span>
+      <Tip text={copied ? common.copied : t.copyKey}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t.copyKey}
+          className="shrink-0 text-muted-foreground"
+          onClick={() =>
+            void onCopy().then(() => {
+              setCopied(true);
+              if (timer.current) clearTimeout(timer.current);
+              timer.current = setTimeout(() => setCopied(false), 1500);
+            })
+          }
+        >
+          {copied ? <IconCopied /> : <IconCopy />}
+        </Button>
+      </Tip>
+    </div>
+  );
+}
+
+/**
  * 行菜单。
  *
  * **删不掉的那一项灰着，不消失。**灰着的话用户会问一次为什么，而答案
  * （默认密钥、或者那个客户端正被接管）正是他该知道的。
  */
 function menu(k: ClientView, clients: DetectedClient[], a: KeyActions): MenuItems {
-  const adopted = !!clients.find((c) => c.id === k.client)?.adopted_at_ms;
+  const adopted = takeoverOf(k, clients)?.adopted === true;
   const t = textOf(keysTableText);
   return [
-    { kind: "item", label: t.copyKey, onSelect: () => a.copy(k.name) },
+    { kind: "item", label: t.copyKey, onSelect: () => void a.copy(k.name) },
     { kind: "item", label: t.edit, onSelect: () => a.edit(k.name) },
     { kind: "item", label: t.rotate, onSelect: () => a.rotate(k.name) },
     { kind: "sep" },
