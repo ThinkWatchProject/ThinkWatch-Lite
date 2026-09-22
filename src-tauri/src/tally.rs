@@ -1,6 +1,6 @@
-//! 菜单栏第二行的两个数：正在跑几个请求、最近的输出速率。
+//! 菜单栏要的几件实时的事：哪些请求在跑、最近的输出速率。
 //!
-//! **事件桥喂它，菜单栏读它。**两个数只靠事件就数得出来，不必为它们去问 core：
+//! **事件桥喂它，菜单栏读它。**这些只靠事件就数得出来，不必为它们去问 core：
 //! 开始和结局记进行中的，响应头带着首字节用了多久，结束事件里有总耗时和用量。
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -11,10 +11,46 @@ use tw_api::Event;
 /// 输出速率看最近这么久里跑完的请求
 pub const RATE_WINDOW: Duration = Duration::from_secs(60);
 
+/// 一个在跑的请求。菜单的「进行中」一节画的就是它
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Running {
+    /// 请求头认出来的应用。可以伪造，只用来显示
+    pub app: Option<String>,
+    /// 网关密钥的名字
+    pub key: String,
+    pub model: String,
+    pub at_ms: u64,
+}
+
+impl Running {
+    /// 从开始事件里取。不是开始事件就是 None
+    pub fn of(ev: &Event) -> Option<(u64, Running)> {
+        match ev {
+            Event::RequestStarted {
+                id,
+                client,
+                client_hint,
+                model,
+                at_ms,
+                ..
+            } => Some((
+                *id,
+                Running {
+                    app: client_hint.clone(),
+                    key: client.clone(),
+                    model: model.clone(),
+                    at_ms: *at_ms,
+                },
+            )),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Tally {
     /// 开始了、还没有结局的
-    open: HashSet<u64>,
+    open: HashMap<u64, Running>,
     /// 首字节用了多久，毫秒。生成用时要从总耗时里减掉它
     ttfb: HashMap<u64, u64>,
     /// 最近跑完的：（什么时候结束的，输出了多少 token，生成用了多少毫秒）
@@ -25,18 +61,21 @@ pub struct Tally {
 
 #[derive(Default)]
 struct Seen {
-    started: HashSet<u64>,
+    started: HashMap<u64, Running>,
     ended: HashSet<u64>,
 }
 
 impl Tally {
     pub fn on_event(&mut self, ev: &Event, now: Instant) {
         match ev {
-            Event::RequestStarted { id, .. } => {
-                self.open.insert(*id);
+            Event::RequestStarted { .. } => {
+                let Some((id, run)) = Running::of(ev) else {
+                    return;
+                };
                 if let Some(s) = &mut self.since {
-                    s.started.insert(*id);
+                    s.started.insert(id, run.clone());
                 }
+                self.open.insert(id, run);
             }
             Event::RequestHeaders { id, ttfb_ms, .. } => {
                 self.ttfb.insert(*id, *ttfb_ms);
@@ -86,20 +125,28 @@ impl Tally {
 
     /// 快照到了：此刻还在跑的那些（`/in-flight` 的开始事件），加上等快照这会儿
     /// 开始的，减去这会儿结束的
-    pub fn finish_resync(&mut self, snapshot: impl IntoIterator<Item = u64>) {
+    pub fn finish_resync(&mut self, snapshot: impl IntoIterator<Item = (u64, Running)>) {
         let seen = self.since.take().unwrap_or_default();
-        let mut open: HashSet<u64> = snapshot.into_iter().collect();
+        let mut open: HashMap<u64, Running> = snapshot.into_iter().collect();
         open.extend(seen.started);
         for id in &seen.ended {
             open.remove(id);
         }
-        self.ttfb.retain(|id, _| open.contains(id));
+        self.ttfb.retain(|id, _| open.contains_key(id));
         self.open = open;
     }
 
     /// 进行中的请求数
     pub fn active(&self) -> u32 {
         self.open.len() as u32
+    }
+
+    /// 进行中的请求，开始得早的在前
+    pub fn running(&self) -> Vec<(u64, Running)> {
+        let mut out: Vec<(u64, Running)> =
+            self.open.iter().map(|(id, r)| (*id, r.clone())).collect();
+        out.sort_by_key(|(id, r)| (r.at_ms, *id));
+        out
     }
 
     /// 最近一分钟跑完的请求，平均每秒生成多少 token。
@@ -251,10 +298,41 @@ mod tests {
         t.on_event(&started(3), now);
         t.on_event(&finished(2, 10, 0), now);
         // 快照里是 2 号（问的时候还在跑）和 4 号（订阅之前就开始了）
-        t.finish_resync([2, 4]);
-        let mut open: Vec<_> = t.open.iter().copied().collect();
+        let snapshot = [2, 4].map(|id| Running::of(&started(id)).unwrap());
+        t.finish_resync(snapshot);
+        let mut open: Vec<_> = t.open.keys().copied().collect();
         open.sort();
         assert_eq!(open, [3, 4], "1 号早结束了、2 号刚结束");
         assert_eq!(t.active(), 2);
+    }
+
+    /// 菜单的「进行中」要知道是谁、用什么模型、跑了多久
+    #[test]
+    fn a_running_request_keeps_who_sent_it_and_when() {
+        let mut t = Tally::default();
+        let now = Instant::now();
+        let mut ev = started(7);
+        if let Event::RequestStarted {
+            client_hint, at_ms, ..
+        } = &mut ev
+        {
+            *client_hint = Some("codex".into());
+            *at_ms = 1_000;
+        }
+        t.on_event(&ev, now);
+        t.on_event(&started(8), now);
+        let running = t.running();
+        assert_eq!(running.len(), 2);
+        // 开始得早的在前（8 号的 at_ms 是 0）
+        assert_eq!(running[0].0, 8);
+        assert_eq!(
+            running[1].1,
+            Running {
+                app: Some("codex".into()),
+                key: "c".into(),
+                model: "m".into(),
+                at_ms: 1_000
+            }
+        );
     }
 }

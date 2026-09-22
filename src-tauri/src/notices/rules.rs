@@ -39,7 +39,7 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
 
 /// 监听没换成的原因，中文怎么说。**码是个封闭的小集合**，和界面那张表同一套
 /// 说法；认不出的码照搬 core 的英文原句。
-fn listen_why(e: &tw_api::Msg) -> String {
+pub(crate) fn listen_why(e: &tw_api::Msg) -> String {
     let addr = e.arg("addr");
     match e.code.as_str() {
         "gw.listen.port_taken" => format!("{addr} 已被其他程序占用。"),

@@ -134,14 +134,19 @@ step-by-step instructions.
 
 ### Menu bar and notifications
 
-The menu bar shows today's cost and the output rate; for a subscription account
-it shows the quota used and the time until it resets instead. System
-notifications report when the gateway stops forwarding, a subscription quota
-runs out or a credential stops working; an unreachable upstream, which a
-fallback usually covers, is only listed in the app. Notices as a whole can be
-set to system notifications, in-app only, or off. Marking a notice as read stops
-the bell from counting it; the notice stays in the list until the problem behind
-it clears or the list is cleared.
+The menu bar shows today's tokens over today's cost; the numbers turn orange
+when a quota is nearly used up and red when it is. Settings can reduce it to the
+icon or to the numbers. Clicking it opens a native menu with the gateway's
+state, unread notices, each subscription account's quota and reset time, today's
+usage and the requests in progress, plus common actions: switching a manually
+selected upstream, copying the gateway address or the default key, undoing the
+last configuration change and checking for updates, all without opening the main
+window. System notifications report when the gateway stops forwarding, a
+subscription quota runs out or a credential stops working; an unreachable
+upstream, which a fallback usually covers, is only listed in the app. Notices as
+a whole can be set to system notifications, in-app only, or off. Marking a
+notice as read stops the bell from counting it; the notice stays in the list
+until the problem behind it clears or the list is cleared.
 
 <p>
   <picture>

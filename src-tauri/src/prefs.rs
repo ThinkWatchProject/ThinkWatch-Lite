@@ -30,6 +30,12 @@ pub struct Prefs {
     pub theme: Option<Theme>,
     /// 提醒：系统通知 / 仅在应用内 / 关闭。**只有这一个，不分类。**
     pub notices: Mode,
+    /// 菜单栏上显示什么：标识和数值（出厂）/ 仅标识 / 仅数值。
+    ///
+    /// **没写就是出厂那一档**，而不是整个设置文件读不出来、连语言和外观一起被冲回
+    /// 出厂值
+    #[serde(default)]
+    pub menubar: crate::menubar::Style,
 }
 
 impl Default for Prefs {
@@ -39,6 +45,7 @@ impl Default for Prefs {
             language: None,
             theme: None,
             notices: Mode::System,
+            menubar: crate::menubar::Style::Full,
         }
     }
 }
@@ -134,9 +141,26 @@ mod tests {
             language: Some(Lang::Zh),
             theme: Some(Theme::Dark),
             notices: Mode::App,
+            menubar: crate::menubar::Style::Numbers,
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 旧的设置文件里没有菜单栏这一项：**别的设置照旧**，菜单栏按出厂那一档
+    #[test]
+    fn a_file_without_the_menubar_setting_keeps_everything_else() {
+        let dir = tmp();
+        std::fs::write(
+            prefs_path(&dir),
+            br#"{"check_updates":false,"language":"en","theme":null,"notices":"app"}"#,
+        )
+        .unwrap();
+        let p = load(&dir);
+        assert_eq!(p.language, Some(Lang::En));
+        assert!(!p.check_updates);
+        assert_eq!(p.menubar, crate::menubar::Style::Full);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

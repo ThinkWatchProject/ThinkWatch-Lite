@@ -622,9 +622,9 @@ fn take_token(state: &mut State, level: Level) -> bool {
 /// 点通知之后要落到的那一页。**窗口这时可能根本不存在** —— 新建的界面挂上之后自己来取
 static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
 
-/// 点了系统通知：把窗口带回来，落到能处理这件事的那一页
+/// 点了系统通知（或者菜单里的那一条提醒）：把窗口带回来，落到能处理这件事的那一页
 pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
     let notices = app.try_state::<Arc<Notices>>();
     let view = notices
         .as_ref()
@@ -634,6 +634,13 @@ pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     if let Some(n) = &notices {
         n.mark_read(key);
     }
+    open_view(app, view);
+}
+
+/// 打开主界面，落到这一页（`upstreams`、`requests:42`…）。**窗口可能是为这一下新建
+/// 的**：先把要落的那一页存下来，新建的界面挂上之后自己来取；开着的窗口收事件
+pub fn open_view(app: &tauri::AppHandle, view: String) {
+    use tauri::Emitter;
     if let Ok(mut g) = PENDING_VIEW.lock() {
         *g = Some(view.clone());
     }

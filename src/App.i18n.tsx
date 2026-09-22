@@ -134,12 +134,6 @@ export const appText = messages(
     estimatedCancelled: "客户端在响应结束前断开，输出用量计至断开时，实际费用可能更高。",
     estimatedFailed: "响应在结束前中断，输出用量计至中断时，实际费用可能更高。",
     estimatedBorrowed: "价目表中没有此上游的单价，该金额按同一模型在其他平台的单价估算。",
-
-    // 退出确认
-    quitTitle: "退出 ThinkWatch Lite",
-    quitDescription: "退出后网关将停止监听，所有已接管的客户端将立即无法连接。",
-    quitHint: "仅关闭窗口请按 ⌘W，进程将保留在菜单栏。",
-    quit: "退出",
   },
   {
     surfaces: {
@@ -276,11 +270,5 @@ export const appText = messages(
       "The response was interrupted before it finished. Output usage is counted up to the interruption, so the actual cost may be higher.",
     estimatedBorrowed:
       "The price sheet has no price for this upstream; the amount is estimated from the same model's price on another platform.",
-
-    quitTitle: "Quit ThinkWatch Lite",
-    quitDescription:
-      "After quitting, the gateway stops listening, and every connected client immediately loses its connection.",
-    quitHint: "To close only the window, press ⌘W; the app keeps running in the menu bar.",
-    quit: "Quit",
   },
 );

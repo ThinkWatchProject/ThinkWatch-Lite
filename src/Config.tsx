@@ -5,6 +5,7 @@ import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
 import { LanguageSection } from "./Language";
 import { AppearanceSection } from "./Appearance";
+import MenubarSettings from "./MenubarSettings";
 import { ListenSection } from "./settings/ListenSection";
 import { RetentionSection } from "./settings/RetentionSection";
 import type { CoreStatus, Overview } from "./types";
@@ -53,6 +54,8 @@ export default function Config({
       <LanguageSection />
 
       <AppearanceSection />
+
+      <MenubarSettings />
 
       <section>
         <h2 className="tw-title font-semibold">{t.autostartTitle}</h2>

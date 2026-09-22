@@ -6,9 +6,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // 第一个声明：`tr!` 要在后面每个模块里都能用
@@ -60,7 +57,9 @@ pub struct AppState {
     /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
     /// 重收，不是一串。
     pub menubar: Arc<tokio::sync::Notify>,
-    /// 菜单栏第二行的两个数：正在跑几个请求、最近的输出速率。事件桥喂它
+    /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言
+    pub menubar_now: Arc<tokio::sync::Notify>,
+    /// 菜单栏要的实时数：哪些请求在跑、最近的输出速率。事件桥喂它
     pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
 
@@ -212,11 +211,14 @@ async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String>
 /// （安全模式下的 core 也退了、或者 core 根本起不来），那要把循环接
 /// 回来 —— 而**不能接出第二条**，所以用一个标志守着。
 #[tauri::command]
-async fn restart_core(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+async fn restart_core(app: tauri::AppHandle) -> Result<(), String> {
+    restart_gateway(&app).await
+}
+
+/// 界面上的「重新启动」和菜单栏里的「重新启动网关」走的都是这里
+pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Result<(), String> {
     use std::sync::atomic::Ordering;
+    let state = app.state::<AppState>();
     if let Some(why) = &state.core_missing {
         return Err(why.clone());
     }
@@ -229,6 +231,7 @@ async fn restart_core(
     }
     let sup = state.supervisor.clone();
     let flag = state.supervising.clone();
+    let app = app.clone();
     tauri::async_runtime::spawn(async move {
         supervise(sup, app).await;
         flag.store(false, Ordering::SeqCst);
@@ -695,16 +698,6 @@ async fn plan_restore(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// 真的退出。**只有确认过的界面能调它** ——托盘那一项只是把
-/// 窗口拉起来问一句。
-#[tauri::command]
-async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
-    // 不问「要不要保留后台代理」—— 那个问题本身就暴露了内部有两个
-    // 进程
-    app.exit(0);
-    Ok(())
-}
-
 /// 要还原哪几个，以及各自用什么去指代。返回 `(id, 名字)`。
 ///
 /// **对 core 说 id，对用户说名字。**core 的路由是 `/clients/{id}/restore`，
@@ -947,9 +940,9 @@ fn set_language(
         )
     })?;
     i18n::set(i18n::effective(setting));
-    // 托盘菜单比较的是 TrayFacts，语言在里面 —— 叫醒一次就会重建
+    // 菜单栏的文案跟着换，不等下一个事件
     if let Some(state) = app.try_state::<AppState>() {
-        state.menubar.notify_one();
+        state.menubar_now.notify_one();
     }
     let _ = app.emit("language-changed", i18n::current());
     Ok(language_view())
@@ -995,7 +988,7 @@ fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Result<The
 
 /// 找到的新版本。
 #[derive(Clone, serde::Serialize)]
-struct Found {
+pub(crate) struct Found {
     version: String,
     notes: Option<String>,
 }
@@ -1123,13 +1116,43 @@ fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 把查到的版本交给用户：记下来，然后把更新窗口拉起来。
+/// 把查到的版本交给用户：记下来，然后把更新窗口拉起来。菜单里的「检查更新」
+/// 跟着换成「安装新版本」
 fn present(app: &tauri::AppHandle, found: Found) {
     *app.state::<Updates>().offer.lock().unwrap() = Some(found.clone());
     let _ = app.emit("update-found", found);
     if let Err(e) = show_update_window(app) {
         tracing::error!("更新窗口打不开：{e}");
     }
+    if let Some(st) = app.try_state::<AppState>() {
+        st.menubar.notify_one();
+    }
+}
+
+/// 查到了、还没装的那一版（菜单里「安装新版本」要写版本号）
+pub(crate) fn pending_update(app: &tauri::AppHandle) -> Option<String> {
+    app.try_state::<Updates>()?
+        .offer
+        .lock()
+        .ok()?
+        .as_ref()
+        .map(|f| f.version.clone())
+}
+
+/// 菜单里点了「安装新版本」：把更新窗口再拉起来
+pub(crate) fn show_pending_update(app: &tauri::AppHandle) {
+    if let Err(e) = show_update_window(app) {
+        tracing::error!("更新窗口打不开：{e}");
+    }
+}
+
+/// 菜单里的「检查更新…」和设置页的「立即检查」查的是同一处
+pub(crate) async fn find_update(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
+    find(app).await
+}
+
+pub(crate) fn present_update(app: &tauri::AppHandle, found: Found) {
+    present(app, found);
 }
 
 /// 「立即检查」。查到了就把更新窗口拉起来。
@@ -1485,6 +1508,8 @@ pub fn run() {
             clear_notices,
             notice_mode,
             set_notice_mode,
+            menubar_style,
+            set_menubar_style,
             take_pending_view,
             keys::list_keys,
             keys::create_key,
@@ -1532,7 +1557,6 @@ pub fn run() {
             plan_restore,
             restore_client,
             restore_all,
-            quit_app,
             uninstall,
             diagnose_client,
             clients::prepare_client_key,
@@ -1612,9 +1636,12 @@ pub fn run() {
             };
             #[cfg(not(target_os = "macos"))]
             let system: Box<dyn notices::Sink> = Box::new(notices::SystemSink::new(handle.clone()));
+            // 菜单栏在通知列表一变时要重画：它也是通知总线的一个投递端
+            let menubar_wake = Arc::new(tokio::sync::Notify::new());
             let notices = notices::Notices::new(
                 vec![
                     Box::new(notices::sink::AppSink::new(handle.clone())),
+                    Box::new(menubar::Wake(menubar_wake.clone())),
                     system,
                 ],
                 Some(data_dir()),
@@ -1626,7 +1653,8 @@ pub fn run() {
                 supervisor: sup.clone(),
                 core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
                 supervising: supervising.clone(),
-                menubar: Arc::new(tokio::sync::Notify::new()),
+                menubar: menubar_wake,
+                menubar_now: Arc::new(tokio::sync::Notify::new()),
                 tally: Default::default(),
             });
 
@@ -1671,11 +1699,7 @@ pub fn run() {
 
             // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
             // 用户就已经看到它了 —— 开机自启时尤其重要。
-            let tray = build_tray(&handle)?;
-            let h = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                menubar_loop(tray, h).await;
-            });
+            menubar::install(&handle)?;
 
             // 心跳。三信号里最慢的那条，但**唯一能抓到「活着但卡死」**
             // —— 一个死锁的进程既不退出也不关 socket，前两条信号都看
@@ -1928,12 +1952,9 @@ fn resync_tally(app: &tauri::AppHandle) {
             }
             return;
         };
-        let ids = open.iter().filter_map(|e| match e {
-            tw_api::Event::RequestStarted { id, .. } => Some(*id),
-            _ => None,
-        });
+        let running = open.iter().filter_map(tally::Running::of);
         if let Ok(mut t) = st.tally.lock() {
-            t.finish_resync(ids);
+            t.finish_resync(running);
         }
         st.menubar.notify_one();
     });
@@ -2025,6 +2046,31 @@ fn set_notice_mode(
     notices.set_mode(mode);
     let _ = app.emit("notice-mode-changed", mode);
     Ok(mode)
+}
+
+/// 菜单栏上显示什么
+#[tauri::command]
+fn menubar_style() -> menubar::Style {
+    menubar::style()
+}
+
+/// 换一档。**先存盘再生效**，和提醒那一档一样；改完菜单栏立刻重画
+#[tauri::command]
+fn set_menubar_style(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    style: menubar::Style,
+) -> Result<menubar::Style, String> {
+    prefs::update(&data_dir(), |p| p.menubar = style).map_err(|e| {
+        tr!(
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
+        )
+    })?;
+    menubar::set_style(style);
+    state.menubar_now.notify_one();
+    let _ = app.emit("menubar-style-changed", style);
+    Ok(style)
 }
 
 /// 第一次开机自启之后提示一次「我在菜单栏这儿」，之后永不再弹。
@@ -2122,425 +2168,9 @@ fn become_accessory(app: &tauri::AppHandle) {
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
-/// 建托盘。图标先画一个「启动中」的状态。
-///
-/// **不在 tauri.conf.json 里配 `trayIcon`** —— 配了的话 Tauri 会自己再
-/// 建一个，菜单栏上就出现两个图标。图标是运行时画出来的（两行
-/// 必须自己渲染成图片），配置里那份静态图没有意义。
-fn build_tray(app: &tauri::AppHandle) -> anyhow::Result<tauri::tray::TrayIcon> {
-    let s = menubar::MenuBarState::default();
-    let (rgba, w, h) = menubar::render_rgba(
-        &s.line1(),
-        &s.line2(),
-        s.is_template(),
-        menubar::Appearance::Dark,
-    );
-    // 托盘菜单。**「退出」在这里，而 ⌘Q 只隐藏窗口** —— 这个
-    // 应用退出的代价很高（所有 AI 客户端立刻失联），一个手滑的 ⌘Q 不
-    // 该造成那个后果。
-    let menu = build_tray_menu(app, &TrayFacts::default())?;
-
-    let tray = TrayIconBuilder::new()
-        .icon(Image::new_owned(rgba, w, h))
-        // 模板图靠 alpha 自动跟随菜单栏亮暗反色
-        .icon_as_template(true)
-        .menu(&menu)
-        .on_menu_event(|app, event| {
-            let id = event.id().as_ref().to_string();
-            match id.as_str() {
-                "open" => {
-                    if let Err(e) = show_main_window(app) {
-                        tracing::error!("开窗口失败：{e}");
-                    }
-                }
-                "quit" => {
-                    // **退出要确认**：代价是所有 AI 客户端立刻
-                    // 失联，不该由一次手滑造成。托盘里没法弹对话框，
-                    // 所以把窗口拉起来让他在里面确认。
-                    if let Err(e) = show_main_window(app) {
-                        tracing::error!("开窗口失败：{e}");
-                    }
-                    let _ = app.emit("ask-quit", ());
-                }
-                "undo" => {
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let Some(state) = app.try_state::<AppState>() else {
-                            return;
-                        };
-                        // 「上一版」= 历史里的第二条（第一条是现在跑着的）
-                        let hist = state.control.config_history().await;
-                        let target = hist
-                            .ok()
-                            .and_then(|h| h.into_iter().rev().nth(1).map(|v| v.version));
-                        match target {
-                            Some(v) => match state.control.rollback(v.clone()).await {
-                                Ok(_) => tracing::info!(%v, "从托盘撤销了上一次配置修改"),
-                                Err(e) => tracing::warn!("撤销失败：{e:#}"),
-                            },
-                            None => tracing::info!("历史里没有上一版，没什么可撤销的"),
-                        }
-                    });
-                }
-                _ => {
-                    // `组::<组名>::<provider>` —— 托盘里切 select 组
-                    if let Some(rest) = id.strip_prefix("组::") {
-                        let Some((g, p)) = rest.split_once("::") else {
-                            return;
-                        };
-                        let (g, p) = (g.to_string(), p.to_string());
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let Some(state) = app.try_state::<AppState>() else {
-                                return;
-                            };
-                            if let Err(e) = state.control.select_group(&g, &p).await {
-                                tracing::warn!("切换 `{g}` 失败：{e:#}");
-                            }
-                        });
-                    }
-                }
-            }
-        })
-        .build(app)?;
-    Ok(tray)
-}
-
-/// 收一份托盘菜单要的数据。
-///
-/// **只在这一处读，一秒一次。**菜单事件里去读的话，用户点开菜单那一下
-/// 要等一次控制面往返 —— 而菜单是要立刻弹出来的东西。
-async fn collect_tray_facts(
-    state: &tauri::State<'_, AppState>,
-    bar: &menubar::MenuBarState,
-) -> TrayFacts {
-    let running = matches!(bar.status, menubar::Status::Normal);
-    if !running {
-        return TrayFacts {
-            running: false,
-            lang: i18n::current(),
-            ..Default::default()
-        };
-    }
-    let groups = state
-        .control
-        .overview()
-        .await
-        .map(|o| {
-            o.groups
-                .into_iter()
-                // 只有 `select` 组能在托盘里切 —— 别的策略是自动决定的，
-                // 给个下拉会让人以为自己在指挥它
-                .filter(|g| g.kind == "select")
-                .map(|g| (g.name, g.providers, g.selected))
-                .collect()
-        })
-        .unwrap_or_default();
-    let can_undo = state
-        .control
-        .config_history()
-        .await
-        .map(|h| h.len() >= 2)
-        .unwrap_or(false);
-    TrayFacts {
-        running,
-        cost: bar.cost_today,
-        quota: bar.quota_percent,
-        groups,
-        can_undo,
-        lang: i18n::current(),
-    }
-}
-
-/// 托盘菜单要显示的东西。
-///
-/// **只留会影响菜单长相的那几项。**每秒重建一次菜单是浪费，而且 macOS
-/// 上菜单正开着时重建会把它收起来 —— 用户点到一半菜单没了。
-#[derive(Default, PartialEq, Clone)]
-struct TrayFacts {
-    running: bool,
-    /// 今日花费。`None` = 不知道，画破折号而不是 `$0.00`
-    cost: Option<f64>,
-    /// 最紧张那个额度窗口用了多少（订阅账号才有）
-    quota: Option<f64>,
-    /// `select` 组：`(组名, 成员, 当前选中)`
-    groups: Vec<(String, Vec<String>, Option<String>)>,
-    /// 有没有上一版可以撤销
-    can_undo: bool,
-    /// 菜单用哪种语言。**换了语言，菜单要重建** —— 它不进这里的话，别的
-    /// 几项都没变，菜单就一直停在旧语言上
-    lang: i18n::Lang,
-}
-
-/// 建托盘菜单。
-///
-/// 菜单栏显示的是**状态**，点开才是**操作面板** —— 所以上半截是几行
-/// 读不了的状态，下半截才是能点的东西。
-fn build_tray_menu(app: &tauri::AppHandle, f: &TrayFacts) -> tauri::Result<Menu<tauri::Wry>> {
-    use tauri::menu::{PredefinedMenuItem, Submenu};
-    let head = MenuItem::with_id(
-        app,
-        "head",
-        if f.running {
-            tr!("ThinkWatch  ● 运行中", "ThinkWatch  ● Running")
-        } else {
-            tr!("ThinkWatch  ○ 未运行", "ThinkWatch  ○ Not Running")
-        },
-        // **点不动。**它是状态不是操作
-        false,
-        None::<&str>,
-    )?;
-    let money = MenuItem::with_id(
-        app,
-        "money",
-        menubar::menu_line(f.quota, f.cost),
-        false,
-        None::<&str>,
-    )?;
-    let sep = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> =
-        vec![Box::new(head), Box::new(money), Box::new(sep)];
-
-    // `select` 组：一个子菜单一组，选中的打勾（这就是「托盘里切」）
-    for (name, members, selected) in &f.groups {
-        let mut subs: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
-        for m in members {
-            subs.push(Box::new(tauri::menu::CheckMenuItem::with_id(
-                app,
-                format!("组::{name}::{m}"),
-                m,
-                true,
-                Some(m) == selected.as_ref(),
-                None::<&str>,
-            )?));
-        }
-        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-            subs.iter().map(|b| b.as_ref()).collect();
-        items.push(Box::new(Submenu::with_items(app, name, true, &refs)?));
-    }
-    if !f.groups.is_empty() {
-        items.push(Box::new(PredefinedMenuItem::separator(app)?));
-    }
-
-    items.push(Box::new(MenuItem::with_id(
-        app,
-        "undo",
-        tr!("撤销上一次配置修改", "Undo Last Configuration Change"),
-        // **没得撤就是灰的，不是不显示。**一个时有时无的菜单项，用户
-        // 每次都要重新找它在哪儿
-        f.can_undo,
-        None::<&str>,
-    )?));
-    items.push(Box::new(PredefinedMenuItem::separator(app)?));
-    items.push(Box::new(MenuItem::with_id(
-        app,
-        "open",
-        tr!("打开主界面", "Open ThinkWatch Lite"),
-        true,
-        None::<&str>,
-    )?));
-    items.push(Box::new(PredefinedMenuItem::separator(app)?));
-    items.push(Box::new(MenuItem::with_id(
-        app,
-        "quit",
-        tr!("退出 ThinkWatch Lite…", "Quit ThinkWatch Lite…"),
-        true,
-        None::<&str>,
-    )?));
-    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-        items.iter().map(|b| b.as_ref()).collect();
-    Menu::with_items(app, &refs)
-}
-
-/// 攒多久再收一次数。
-///
-/// 一串请求只换来一次重收，而不是一条一次。顺便给存储层留出把这一条
-/// 落库的时间 —— 花费是它算出来的，事件到的那一刻还没有。
-const MENUBAR_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
-
-/// 显示着倒计时或输出速率时，隔多久自己重算一次。**两样都只随时间变**：用手上的
-/// 重置时刻和计数器现算，不为它们去问 core
-const MENUBAR_TICK: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// 菜单栏。**被事件叫醒，不是每秒醒一次。**
-///
-/// 它原来一秒一轮：每轮走两趟控制面（额度、汇总），另外每五轮再走两趟
-/// 建托盘菜单。渲染那一层一直有「文字没变就不重画」的保护，但**收数据
-/// 那一层没有** —— 于是一台整天闲着的机器每秒钟都在问两个几小时才会变
-/// 一次的问题。菜单栏是这个应用唯一常驻的东西，它自己耗电就直接违反了
-/// 「空闲时约等于不存在」。
-///
-/// 现在三个理由会叫醒它：请求落地、额度头出现、守护状态变了。都没发生
-/// 的时候，它一次都不醒。
-async fn menubar_loop(tray: tauri::tray::TrayIcon, app: tauri::AppHandle) {
-    // 两路唤醒信号，在循环外拿一次就够 —— 它们和 AppState 同寿。
-    let Some(wake) = app.try_state::<AppState>().map(|s| s.menubar.clone()) else {
-        return;
-    };
-    // 守护状态自己是一路：core 起来、重启、进安全模式都要立刻反映到
-    // 菜单栏上，而那和请求流没有关系。
-    let Some(mut core_rx) = app.try_state::<AppState>().map(|s| s.supervisor.watch()) else {
-        return;
-    };
-
-    let mut prev = menubar::MenuBarState::default();
-    let mut prev_tray = TrayFacts::default();
-    // 第一帧无条件画，之后靠 needs_redraw
-    let mut first = true;
-    loop {
-        // 应用正在退出，状态已经撤了 —— 收摊，别再画了
-        let Some(state) = app.try_state::<AppState>() else {
-            return;
-        };
-        let (next, resets_at) = collect_menubar_state(&state).await;
-        // 托盘菜单跟着一起更。**只在内容真的变了的时候重建** —— 而且
-        // macOS 上菜单正开着时重建会把它收起来，用户点到一半菜单没了。
-        let facts = collect_tray_facts(&state, &next).await;
-        if first || facts != prev_tray {
-            match build_tray_menu(&app, &facts) {
-                Ok(m) => {
-                    let _ = tray.set_menu(Some(m));
-                    prev_tray = facts;
-                }
-                Err(e) => tracing::debug!("托盘菜单没建起来：{e}"),
-            }
-        }
-        if first || next.needs_redraw(&prev) {
-            first = false;
-            draw_menubar(&tray, &next);
-            prev = next;
-        }
-
-        // 等一个理由。**两路都要等** —— 只等事件的话，core 挂了之后
-        // 菜单栏会停在最后那个数字上，而那正是最该说实话的时候。
-        loop {
-            let ticking = prev.status == menubar::Status::Normal
-                && (resets_at.is_some() || prev.tokens_per_sec.is_some());
-            tokio::select! {
-                _ = wake.notified() => break,
-                _ = core_rx.changed() => break,
-                _ = tokio::time::sleep(MENUBAR_TICK), if ticking => {
-                    let now = notices::now_ms();
-                    // 重置的时刻到了：那份额度已经作废，整个重收一遍
-                    if resets_at.is_some_and(|at| at <= now) {
-                        break;
-                    }
-                    let mut tick = prev.clone();
-                    tick.quota_reset_in_secs = resets_at.map(|at| (at - now) / 1000);
-                    if let Some(st) = app.try_state::<AppState>()
-                        && let Ok(mut t) = st.tally.lock()
-                    {
-                        tick.tokens_per_sec = t.tokens_per_sec(std::time::Instant::now());
-                        tick.active = t.active();
-                    }
-                    if tick.needs_redraw(&prev) {
-                        draw_menubar(&tray, &tick);
-                        prev = tick;
-                    }
-                }
-            }
-        }
-        // 攒一下。`Notify` 只攒一个许可，所以这三秒里来多少条事件，
-        // 醒来之后也只多跑一轮。
-        tokio::time::sleep(MENUBAR_SETTLE).await;
-    }
-}
-
-/// 把一帧画到菜单栏上。
-fn draw_menubar(tray: &tauri::tray::TrayIcon, next: &menubar::MenuBarState) {
-    let template = next.is_template();
-    let (rgba, w, h) = menubar::render_rgba(
-        &next.line1(),
-        &next.line2(),
-        template,
-        menubar::Appearance::Dark,
-    );
-    let _ = tray.set_icon(Some(Image::new_owned(rgba, w, h)));
-    // **模板标志要跟着状态一起切**：告警时关掉它才能上色，
-    // 恢复时再打开才能重新自动适配亮暗。
-    let _ = tray.set_icon_as_template(template);
-}
-
-/// 收一帧要画的数。另外交回额度的重置时刻：倒计时要靠它随时间往下走。
-async fn collect_menubar_state(
-    state: &tauri::State<'_, AppState>,
-) -> (menubar::MenuBarState, Option<u64>) {
-    let core = state.supervisor.state();
-    let status = match core {
-        CoreState::Running { .. } => menubar::Status::Normal,
-        CoreState::Starting | CoreState::Restarting { .. } => menubar::Status::Starting,
-        CoreState::SafeMode | CoreState::Stopped | CoreState::Failed { .. } => {
-            menubar::Status::Disconnected
-        }
-    };
-    if !matches!(status, menubar::Status::Normal) {
-        // core 没在跑的时候，上一次的数字已经不代表现在了。**显示破折号
-        // 而不是一个凝固的旧值** —— 后者会让人以为它还在更新。
-        return (
-            menubar::MenuBarState {
-                active: 0,
-                status,
-                ..Default::default()
-            },
-            None,
-        );
-    }
-    // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了 $0.00」
-    // 是句废话。按量付费的账号根本没有那些响应头。
-    let now = notices::now_ms();
-    let quota = state.control.quota().await.unwrap_or_default();
-    let tightest = quota
-        .iter()
-        .flat_map(|p| p.windows.iter())
-        // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会
-        // 带来新的
-        .filter(|w| w.resets_at_ms.is_none_or(|at| at > now))
-        .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent));
-
-    // 花费从库里来。拿不到就是「不知道」——**画一个 $0.00 会是一个断言：
-    // 今天没花钱**，而那不是我们知道的事。
-    let cost_today = if tightest.is_some() {
-        None
-    } else {
-        state
-            .control
-            .summary(None)
-            .await
-            .ok()
-            // **只用实测的那部分。**把估算混进这个数字里，就是在一块
-            // 用户每天扫一眼的地方假装精确。
-            .map(|s| s.cost_micros_exact as f64 / 1e6)
-    };
-
-    let resets_at = tightest.and_then(|w| w.resets_at_ms);
-    // 第二行：进行中几个、最近的输出速率。事件桥一直在数，这里读一下就有
-    let (active, tokens_per_sec) = state
-        .tally
-        .lock()
-        .map(|mut t| (t.active(), t.tokens_per_sec(std::time::Instant::now())))
-        .unwrap_or((0, None));
-    (
-        menubar::MenuBarState {
-            cost_today,
-            quota_percent: tightest.map(|w| w.used_percent),
-            quota_reset_in_secs: resets_at.map(|at| at.saturating_sub(now) / 1000),
-            quota_warning: tightest.is_some_and(|w| {
-                matches!(
-                    w.status.as_deref(),
-                    Some("allowed_warning") | Some("rejected")
-                )
-            }),
-            tokens_per_sec,
-            active,
-            status,
-        },
-        resets_at,
-    )
-}
-
 /// 数据目录。**只有这一处**决定它在哪 —— 写第二遍就会漂，而漂掉的那处
 /// 大概率是忘了看 `THINKWATCH_HOME` 的那处（测试就是靠它隔离的）。
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     std::env::var_os("THINKWATCH_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".thinkwatch")))

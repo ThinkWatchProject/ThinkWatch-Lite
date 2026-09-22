@@ -35,7 +35,14 @@ export interface Notice {
  * 从那里取 —— 以前配置被拒、凭据写回失败这类提示只活在 React state 里，关一次窗
  * 就永远看不到了。
  */
-export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) {
+export function Notices({
+  onNavigate,
+  asked = 0,
+}: {
+  onNavigate: (view: string) => void;
+  /** 菜单栏里点了「全部提醒…」：数一变就打开 */
+  asked?: number;
+}) {
   const t = useText(noticesText);
   const c = useText(commonText);
   const [list, setList] = useState<Notice[]>([]);
@@ -58,6 +65,10 @@ export function Notices({ onNavigate }: { onNavigate: (view: string) => void }) 
     const un = listen<Notice[]>("notices-changed", (e) => setList(e.payload));
     return () => void un.then((f) => f());
   }, [load]);
+
+  useEffect(() => {
+    if (asked > 0) setOpen(true);
+  }, [asked]);
 
   useEffect(() => {
     invoke<NoticeMode>("notice_mode")

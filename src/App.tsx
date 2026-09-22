@@ -82,16 +82,6 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from "@/ui/sidebar";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/ui/alert-dialog";
 
 const DAY_MS = 24 * 3_600_000;
 
@@ -404,13 +394,6 @@ export default function App() {
   /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */
   const [waited, setWaited] = useState(false);
   /**
-   * 托盘按了「退出」，等确认。
-   *
-   * **退出的代价是所有 AI 客户端立刻失联**，不该由一次手滑造成 ——
-   * 所以托盘那一项只是把窗口拉起来问一句，真正的 `exit` 在这里。
-   */
-  const [askQuit, setAskQuit] = useState(false);
-  /**
    * 刚出现的那几行。
    *
    * **第一个请求进来时那一行要跳出来** —— 它是「它真的在工作」的证明，
@@ -420,6 +403,8 @@ export default function App() {
   const seenIds = useRef<Set<number>>(new Set());
   /** 打开的那条请求（右侧抽屉） */
   const [open, setOpen] = useState<number | null>(null);
+  /** 菜单栏里点了「全部提醒…」几次。每点一次，工具栏上的提醒就打开一次 */
+  const [noticesAsked, setNoticesAsked] = useState(0);
   /**
    * 键盘选中的那一行。
    *
@@ -540,21 +525,23 @@ export default function App() {
     return () => clearTimeout(t);
   }, [rows]);
 
-  useEffect(() => {
-    const un = listen("ask-quit", () => setAskQuit(true));
-    return () => {
-      un.then((f) => f());
-    };
-  }, []);
-
   /*
-    点了系统通知：落到能处理那件事的那一页。**窗口可能是为这一下新建的** ——
-    那时事件已经错过了，所以挂上时先去取一次；已经开着的窗口收事件。
-    两条路都会把 Rust 那边存的清掉，下次开窗不会又跳过去。
+    点了系统通知、或者菜单栏里的一行：落到能处理那件事的那一页。**窗口可能是为
+    这一下新建的** —— 那时事件已经错过了，所以挂上时先去取一次；已经开着的窗口
+    收事件。两条路都会把 Rust 那边存的清掉，下次开窗不会又跳过去。
   */
   useEffect(() => {
     const go = (view: string | null) => {
-      if (view) setTab(view as Surface);
+      if (!view) return;
+      // `notices`：打开工具栏上的提醒（菜单栏里的「全部提醒…」）
+      if (view === "notices") {
+        setNoticesAsked((n) => n + 1);
+        return;
+      }
+      // `requests:42`：打开流量页并展开那一条（菜单栏里点了一个进行中的请求）
+      const [page, id] = view.split(":");
+      setTab(page as Surface);
+      if (page === "requests" && id) setOpen(Number(id));
     };
     void invoke<string | null>("take_pending_view")
       .then(go)
@@ -1041,7 +1028,7 @@ export default function App() {
                 </>
               )}
               {/* 提醒在每一页都在：它说的事不属于任何一页 */}
-              <Notices onNavigate={(v) => setTab(v as Surface)} />
+              <Notices onNavigate={(v) => setTab(v as Surface)} asked={noticesAsked} />
             </div>
           </div>
 
@@ -1570,26 +1557,6 @@ export default function App() {
         </div>
 
         {/* 浮层挂在最外层，不跟着右列滚动 */}
-        <AlertDialog open={askQuit} onOpenChange={setAskQuit}>
-          <AlertDialogContent className="sm:max-w-sm">
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t.quitTitle}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t.quitDescription}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <p className="tw-body text-muted-foreground">{t.quitHint}</p>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={() => void invoke("quit_app")}
-              >
-                {t.quit}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
         {configFile && (
           <ConfigFileDialog
             reloads={reloads}

@@ -1,163 +1,517 @@
-//! 菜单栏那 50 像素。
+//! 菜单栏：常驻的那一小块，和点开的那份菜单。
 //!
-//! 这类工具用户九成时间不开主窗口，所以这一小块常驻显示才是它每天真正
-//! 被看到的界面。Surge 在那里放速率，因为流量是网络
-//! 代理的核心指标；对一个 AI 网关，**钱才是**。
+//! 这类工具用户九成时间不开主窗口，所以这一小块和它的菜单才是每天真正被看到的
+//! 界面。**一天要点很多次**，所以打开必须零延迟、不多占内存：macOS 上是原生的
+//! `NSMenu`（见 [`macos`]），不是一个网页弹窗。
+//!
+//! 分三层：[`model`] 定显示什么（纯函数，全测）；[`macos`] 照着画；这里负责收数、
+//! 把模型交过去、处理点了之后的事。
 
-pub mod font;
-pub mod render;
+pub mod model;
 
-pub use render::{Appearance, render_rgba};
+#[cfg(target_os = "macos")]
+pub mod macos;
+#[cfg(not(target_os = "macos"))]
+mod tray;
 
-/// 菜单栏要显示的东西。
-#[derive(Debug, Clone, PartialEq)]
-pub struct MenuBarState {
-    /// 第一行：今日花费。`None` 表示还不知道 —— 画成破折号而不是 `$0.00`，
-    /// **0 是一个值，破折号不是**。
-    pub cost_today: Option<f64>,
-    /// 订阅额度：最紧张那个窗口用了百分之多少。
-    ///
-    /// **有它就显示它，而不是金额。**订阅用户的账单是固定的，「今天花了
-    /// $0.00」对他没有任何信息量；他想知道的是「还能用多久」。同一块
-    /// 50 像素，两种人格。
-    ///
-    /// 按量付费的账号根本没有这些响应头，那时它是 None ——
-    /// **不是 0%**，那会画出一个假的空进度条。
-    pub quota_percent: Option<f64>,
-    /// 那个窗口还有多少秒重置。**上游没给就是 None** —— 编一个倒计时
-    /// 出来，用户会照着它安排自己的活
-    pub quota_reset_in_secs: Option<u64>,
-    /// 上游说快到额度了（`allowed_warning` / `rejected`）。
-    ///
-    /// **限流不再是突然发生的**：菜单栏在撞上 429 之前就变色。
-    pub quota_warning: bool,
-    /// 第二行：输出速率
-    pub tokens_per_sec: Option<u32>,
-    /// 有没有正在跑的流。有的话数字旁加一个点
-    pub active: u32,
-    pub status: Status,
-}
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Status {
-    /// 还没起来。**开机自启时第一时间就要是这个状态**，不能等 core 就绪
-    /// —— 否则菜单栏上什么都没有，用户以为应用没启动。
-    Starting,
-    Normal,
-    /// 安全拦截。**这是那套防线真正落地的地方** —— 拦截发生时你可能
-    /// 正埋头在别的窗口，系统通知一闪而过很容易错过，但菜单栏一直在。
-    Blocked,
-    /// core 断开
-    Disconnected,
-}
+use tauri::Manager;
 
-impl Default for MenuBarState {
-    fn default() -> Self {
-        Self {
-            cost_today: None,
-            quota_percent: None,
-            quota_reset_in_secs: None,
-            quota_warning: false,
-            tokens_per_sec: None,
-            active: 0,
-            status: Status::Starting,
-        }
+pub use model::Style;
+use model::{Action, Gateway, Snapshot};
+
+use crate::{AppState, notices, supervisor::CoreState};
+
+/// 攒多久再收一次数。一串请求只换来一次重收，而不是一条一次；也给存储层留出
+/// 把这一条落库、算出费用的时间
+const SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// 菜单开着时隔多久走一次秒数和倒计时。**只在开着时走**，关上就停
+const TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 设置里选的那一档。**改了立刻生效**：不重启，也不等下一次收数
+static STYLE: AtomicU8 = AtomicU8::new(0);
+/// 菜单开着吗（delegate 报的）
+static OPEN: AtomicBool = AtomicBool::new(false);
+
+pub fn style() -> Style {
+    match STYLE.load(Ordering::Relaxed) {
+        1 => Style::Icon,
+        2 => Style::Numbers,
+        _ => Style::Full,
     }
 }
 
-impl MenuBarState {
-    /// 第一行文字。
-    pub fn line1(&self) -> String {
-        match self.status {
-            Status::Starting | Status::Disconnected => "—".to_string(),
-            // **订阅额度优先。**有它说明这是个订阅账号，而对他「今天花了
-            // $0.00」是句废话 —— 他想知道的是还能用多久。
-            _ => match (self.quota_percent, self.cost_today) {
-                (Some(p), _) => format!("{}%", p.round() as i64),
-                // 两位小数固定，宽度才稳（「宽度抖动」）
-                (None, Some(c)) => format!("${c:.2}"),
-                (None, None) => "—".to_string(),
+pub fn set_style(style: Style) {
+    STYLE.store(
+        match style {
+            Style::Full => 0,
+            Style::Icon => 1,
+            Style::Numbers => 2,
+        },
+        Ordering::Relaxed,
+    );
+}
+
+/// 通知总线的一个投递端：**列表一变就叫醒菜单栏**。菜单里的提醒一节和主界面的
+/// 铃铛读的是同一份
+pub struct Wake(pub Arc<tokio::sync::Notify>);
+
+impl notices::Sink for Wake {
+    fn show(&self, _notice: &notices::Notice) {}
+    fn listed(&self, _all: &[notices::Notice]) {
+        self.0.notify_one();
+    }
+}
+
+/// 挂到菜单栏上，开始收数。**在守护之前调**：core 还没起来的那几秒里，菜单栏上
+/// 就已经有东西了 —— 开机自启时尤其重要
+pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
+    set_style(crate::prefs::load(&crate::data_dir()).menubar);
+    #[cfg(target_os = "macos")]
+    {
+        let mtm = objc2::MainThreadMarker::new()
+            .ok_or_else(|| anyhow::anyhow!("菜单栏要在主线程上建"))?;
+        let (a, b) = (app.clone(), app.clone());
+        macos::install(
+            mtm,
+            move |action| handle(&a, action),
+            move |open| {
+                OPEN.store(open, Ordering::Relaxed);
+                if open && let Some(st) = b.try_state::<AppState>() {
+                    st.menubar_now.notify_one();
+                }
             },
-        }
+        );
+        // 第一帧：还没收到任何数，但菜单栏上不能是空的
+        let (bar, rows) = model::build(&Snapshot::default(), style());
+        macos::apply(mtm, &bar, &rows);
     }
+    #[cfg(not(target_os = "macos"))]
+    tray::install(app)?;
 
-    /// 第二行文字。
-    pub fn line2(&self) -> String {
-        match self.status {
-            Status::Starting => "—".to_string(),
-            Status::Disconnected => "!".to_string(),
-            // 订阅用户的第二行是「多久重置」。**没有 reset 头就不画** ——
-            // 那时退回速率，而不是编一个时间
-            _ => match (
-                self.quota_percent,
-                self.quota_reset_in_secs,
-                self.tokens_per_sec,
-            ) {
-                (Some(_), Some(secs), _) => reset_label(secs),
-                (_, _, Some(t)) if self.active > 0 => format!("{t} t/s ·"),
-                (_, _, Some(t)) => format!("{t} t/s"),
-                _ if self.active > 0 => format!("{} ▶", self.active),
-                _ => "—".to_string(),
-            },
-        }
-    }
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move { run(h).await });
+    Ok(())
+}
 
-    /// 用模板图吗（macOS 自动跟随亮暗反色）。
-    ///
-    /// **模板图只能是单色**，所以告警状态必须关掉它自己上色 —— 那正是
-    /// 那个折中：正常状态享受自动适配，告警状态换彩色。
-    pub fn is_template(&self) -> bool {
-        // 额度告警也要上色：**限流是「你马上要撞墙了」，那和一次安全
-        // 拦截同等重要** —— 而单色的模板图说不出「注意」这件事。
-        !matches!(self.status, Status::Blocked) && !self.quota_warning
-    }
-
-    /// 这一帧要不要重画。
-    ///
-    /// **空闲时跳过渲染**。没有活跃请求、文字也没变的时候不做
-    /// 无谓的重绘 —— 这直接关系到那条「空闲 CPU 约等于零」。
-    pub fn needs_redraw(&self, prev: &MenuBarState) -> bool {
-        self.line1() != prev.line1()
-            || self.line2() != prev.line2()
-            || self.status != prev.status
-            // 颜色变了也要重画，哪怕字一模一样
-            || self.quota_warning != prev.quota_warning
+/// 收数、画、等下一个理由。**被事件叫醒，不是定时醒**：空闲时一次都不醒
+async fn run(app: tauri::AppHandle) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    let (wake, now) = (st.menubar.clone(), st.menubar_now.clone());
+    let mut core_rx = st.supervisor.watch();
+    let mut credits = Credits::default();
+    let mut tick = tokio::time::interval(TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let mut snap = collect(&app, &state, &mut credits).await;
+        present(&snap);
+        let reset = next_reset_in(&snap).map(|d| tokio::time::Instant::now() + d);
+        // 秒数和倒计时只用手上的数和计数器现算，不为它去问 core
+        let on_tick = || {
+            refresh_live(&app, &mut snap);
+            present(&snap);
+        };
+        let open = || OPEN.load(Ordering::Relaxed);
+        wait(&wake, &now, &mut core_rx, reset, &mut tick, open, on_tick).await;
     }
 }
 
-/// 托盘菜单里费用或额度那一行。
-///
-/// **和菜单栏第一行同一个口径**：`used_percent` 已经是 0–100。菜单这一行
-/// 曾经又乘了一次 100，菜单栏写着 62%，点开却是「已用 6200%」。
-pub fn menu_line(quota_percent: Option<f64>, cost_today: Option<f64>) -> String {
-    match (quota_percent, cost_today) {
-        // 订阅账号优先显示额度：「今天花了 $0.00」对他是句废话
-        (Some(p), _) => {
-            let p = p.round() as i64;
-            tr!(format!("额度  已用 {p}%"), format!("Quota  {p}% Used"))
+/// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
+/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒
+/// `on_tick` 一次，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里
+/// 秒数会一卡几秒
+async fn wait(
+    wake: &tokio::sync::Notify,
+    now: &tokio::sync::Notify,
+    core_rx: &mut tokio::sync::watch::Receiver<CoreState>,
+    reset: Option<tokio::time::Instant>,
+    tick: &mut tokio::time::Interval,
+    open: impl Fn() -> bool,
+    mut on_tick: impl FnMut(),
+) {
+    let mut due = None;
+    loop {
+        tokio::select! {
+            _ = wake.notified(), if due.is_none() => {
+                due = Some(tokio::time::Instant::now() + SETTLE);
+            }
+            _ = sleep_until(due), if due.is_some() => return,
+            _ = now.notified() => return,
+            _ = core_rx.changed() => return,
+            _ = sleep_until(reset), if reset.is_some() => return,
+            _ = tick.tick(), if open() => on_tick(),
         }
-        (None, Some(c)) => tr!(format!("今日  ${c:.2}"), format!("Today  ${c:.2}")),
-        // **破折号不是 0。**画一个 $0.00 是在断言「今天没花钱」
-        (None, None) => tr!("今日  —", "Today  —").to_string(),
     }
 }
 
-/// 「2h」「45m」「3d」。**宽度要稳**（宽度抖动）：一个在
-/// 「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动。
-///
-/// **只用点阵字形表里有的字符**：画不出来的字会被跳过、只留空位 ——
-/// 「2h」曾经就这样画成了「2」，「已重置」画成了一片空白。
-fn reset_label(secs: u64) -> String {
-    match secs {
-        // 上游说还剩 0 秒：窗口刚重置。**写成倒计时走到零，不换成一个词。**
-        // 各档都向上取整（最后一分钟仍是「1m」），所以「0m」只留给这一刻；
-        // 它和前面的「1m」、下一个窗口的「5h」「7d」同宽；它也只说重置的时刻
-        // 到了 —— 第一行仍是上游上次报的百分比，下面写个「new」会和「100%」
-        // 自相矛盾。
-        0 => "0m".to_string(),
-        s if s < 3600 => format!("{}m", s.div_ceil(60)),
-        s if s < 86_400 => format!("{}h", s.div_ceil(3600)),
-        s => format!("{}d", s.div_ceil(86_400)),
+/// `select!` 里关掉的分支也会建出 future，所以 `None` 也得给个时刻
+fn sleep_until(at: Option<tokio::time::Instant>) -> tokio::time::Sleep {
+    tokio::time::sleep_until(at.unwrap_or_else(tokio::time::Instant::now))
+}
+
+/// 把快照交给画的那一层
+fn present(snap: &Snapshot) {
+    let (bar, rows) = model::build(snap, style());
+    #[cfg(target_os = "macos")]
+    macos::on_main(move |mtm| macos::apply(mtm, &bar, &rows));
+    #[cfg(not(target_os = "macos"))]
+    tray::apply(&bar, &rows);
+}
+
+/// 只更新随时间走的那几样：现在几点、谁在跑、速率
+fn refresh_live(app: &tauri::AppHandle, snap: &mut Snapshot) {
+    snap.now_ms = notices::now_ms();
+    if let Some(st) = app.try_state::<AppState>()
+        && let Ok(mut t) = st.tally.lock()
+    {
+        snap.live = live_of(&t.running());
+        snap.rate = t.tokens_per_sec(std::time::Instant::now());
+    }
+}
+
+fn live_of(running: &[(u64, crate::tally::Running)]) -> Vec<model::Live> {
+    running
+        .iter()
+        .map(|(id, r)| model::Live {
+            id: *id,
+            app: r.app.clone(),
+            key: r.key.clone(),
+            model: r.model.clone(),
+            started_ms: r.at_ms,
+        })
+        .collect()
+}
+
+/// 最近的一个额度重置时刻还有多久
+fn next_reset_in(snap: &Snapshot) -> Option<std::time::Duration> {
+    snap.quotas
+        .iter()
+        .flat_map(|q| q.windows.iter())
+        .filter_map(|w| w.resets_at_ms)
+        .filter(|at| *at > snap.now_ms)
+        .min()
+        .map(|at| std::time::Duration::from_millis(at - snap.now_ms))
+}
+
+/// 额度用完之后问到的重置卡张数。**每次用完只问一次**：问的是 ChatGPT 的后端
+#[derive(Default)]
+struct Credits {
+    /// 上游 → (问的时候那个窗口的重置时刻, 张数)
+    seen: std::collections::HashMap<String, (Option<u64>, Option<i64>)>,
+}
+
+async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits) -> Snapshot {
+    let now_ms = notices::now_ms();
+    let gateway = match state.supervisor.state() {
+        _ if state.core_missing.is_some() => Gateway::Failed,
+        CoreState::Running { .. } => Gateway::Running,
+        CoreState::Starting | CoreState::Restarting { .. } => Gateway::Starting,
+        CoreState::SafeMode => Gateway::SafeMode,
+        CoreState::Failed { .. } => Gateway::Failed,
+        CoreState::Stopped => Gateway::Stopped,
+    };
+    let notices = app.try_state::<Arc<notices::Notices>>();
+    let mut snap = Snapshot {
+        notices_on: notices
+            .as_ref()
+            .is_some_and(|n| n.mode() != notices::Mode::Off),
+        notices: notices.map(|n| unread(&n.list())).unwrap_or_default(),
+        update: crate::pending_update(app),
+        now_ms,
+        gateway,
+        ..Default::default()
+    };
+    if snap.gateway != Gateway::Running {
+        return snap;
+    }
+    let c = &state.control;
+    let (status, quota, summary, overview, history) = tokio::join!(
+        c.status(),
+        c.quota(),
+        c.summary(None),
+        c.overview(),
+        c.config_history()
+    );
+    if let Ok(s) = status {
+        snap.addr = s.gateway_addr;
+        snap.listen_error = s
+            .listen_error
+            .map(|e| tr!(notices::rules::listen_why(&e), e.text.clone()));
+    }
+    if let Ok(s) = summary {
+        snap.today = Some(model::Today {
+            requests: s.requests,
+            failed: s.failed,
+            tokens: s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens,
+            cost_micros: s.cost_micros_exact + s.cost_micros_estimated,
+        });
+    }
+    let accounts: Vec<String> = overview
+        .as_ref()
+        .map(|o| {
+            o.providers
+                .iter()
+                .filter(|p| p.protocol.as_deref() == Some("chatgpt"))
+                .map(|p| p.name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Ok(o) = overview {
+        snap.groups = o
+            .groups
+            .into_iter()
+            // 只有手动选择的组能在菜单里切 —— 别的策略是自动决定的
+            .filter(|g| g.kind == "select")
+            .map(|g| model::Group {
+                name: g.name,
+                members: g.providers,
+                selected: g.selected,
+            })
+            .collect();
+    }
+    if let Ok(h) = history {
+        // 历史里包括现在跑着的这一版：「上一版」是倒数第二条
+        snap.undo_at_ms = h.iter().rev().nth(1).map(|v| v.at_ms);
+    }
+    for q in quota.unwrap_or_default() {
+        let windows: Vec<model::Window> = q
+            .windows
+            .iter()
+            .map(|w| model::Window {
+                window: w.window.clone(),
+                used_percent: w.used_percent,
+                resets_at_ms: w.resets_at_ms,
+                status: w.status.clone(),
+            })
+            .collect();
+        let used_up = windows.iter().find(|w| {
+            w.resets_at_ms.is_none_or(|at| at > now_ms)
+                && (w.status.as_deref() == Some("rejected") || w.used_percent >= 100.0)
+        });
+        let reset_credits = match used_up {
+            Some(w) if accounts.contains(&q.provider) => {
+                let known = credits.seen.get(&q.provider);
+                match known {
+                    Some((at, n)) if *at == w.resets_at_ms => *n,
+                    _ => {
+                        let n = c
+                            .chatgpt_usage(&q.provider)
+                            .await
+                            .ok()
+                            .and_then(|u| u.reset_credits);
+                        credits.seen.insert(q.provider.clone(), (w.resets_at_ms, n));
+                        n
+                    }
+                }
+            }
+            _ => None,
+        };
+        snap.quotas.push(model::Quota {
+            provider: q.provider,
+            windows,
+            reset_credits,
+        });
+    }
+    refresh_live(app, &mut snap);
+    snap
+}
+
+/// 未读的提醒，要紧的在前，同样要紧的新的在前
+fn unread(list: &[notices::Notice]) -> Vec<model::NoticeLine> {
+    let mut out: Vec<(model::NoticeLine, u64)> = list
+        .iter()
+        .filter(|n| !n.read)
+        .map(|n| {
+            (
+                model::NoticeLine {
+                    key: n.key.clone(),
+                    level: match n.level {
+                        notices::Level::Info => model::Level::Info,
+                        notices::Level::Warning => model::Level::Warning,
+                        notices::Level::Critical => model::Level::Critical,
+                    },
+                    title: n.title.clone(),
+                    body: n.body.clone(),
+                },
+                n.at_ms,
+            )
+        })
+        .collect();
+    out.sort_by(|a, b| b.0.level.cmp(&a.0.level).then(b.1.cmp(&a.1)));
+    out.into_iter().map(|(n, _)| n).collect()
+}
+
+/// 点了之后做什么。**在主线程上调**（菜单的回调）；要等 core 的活扔到后台去
+fn handle(app: &tauri::AppHandle, action: Action) {
+    let app = app.clone();
+    match action {
+        Action::OpenMain => open_main(&app),
+        Action::Open(view) => notices::open_view(&app, view.to_string()),
+        Action::Settings => notices::open_view(&app, "settings".to_string()),
+        Action::OpenRequest(id) => notices::open_view(&app, format!("requests:{id}")),
+        // 和点系统通知走同一条路：落到能处理它的那一页，并标为已读
+        Action::OpenNotice(key) => notices::open_from_notification(&app, &key),
+        // 窗口可能是为这一下新建的，事件会错过：和落页一样存下来，界面挂上之后自己取
+        Action::AllNotices => notices::open_view(&app, "notices".to_string()),
+        Action::InstallUpdate => crate::show_pending_update(&app),
+        Action::Quit => quit(&app),
+        other => {
+            tauri::async_runtime::spawn(async move { background(&app, other).await });
+        }
+    }
+}
+
+fn open_main(app: &tauri::AppHandle) {
+    if let Err(e) = crate::show_main_window(app) {
+        tracing::error!("开窗口失败：{e}");
+    }
+}
+
+async fn background(app: &tauri::AppHandle, action: Action) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    let result: Result<(), String> = match action {
+        Action::CopyAddress => copy_address(app, &st).await,
+        Action::CopyKey => copy_default_key(app, &st).await,
+        Action::Undo => undo(app, &st).await,
+        Action::SelectGroup { group, provider } => st
+            .control
+            .select_group(&group, &provider)
+            .await
+            .map_err(|e| format!("{e:#}")),
+        Action::RestartGateway => crate::restart_gateway(app).await,
+        Action::CheckUpdates => {
+            check_updates(app).await;
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+    if let Err(e) = result {
+        tracing::warn!("菜单里的操作没做成：{e}");
+        say(app, tr!("操作未完成", "The Action Did Not Complete"), &e);
+    }
+    st.menubar.notify_one();
+}
+
+async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let clients = st.control.clients().await.map_err(|e| format!("{e:#}"))?;
+    app.clipboard()
+        .write_text(clients.gateway_base)
+        .map_err(|e| e.to_string())
+}
+
+/// **明文不经过界面**：和密钥页的「复制」同一条路，在 Rust 这边直接写剪贴板
+async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let keys = st.control.keys().await.map_err(|e| format!("{e:#}"))?;
+    let name = keys
+        .iter()
+        .find(|k| k.default)
+        .or_else(|| keys.first())
+        .map(|k| k.name.clone())
+        .ok_or_else(|| tr!("尚无网关密钥。", "There is no gateway key yet.").to_string())?;
+    let v = st
+        .control
+        .key_value(&name)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    app.clipboard().write_text(v.key).map_err(|e| e.to_string())
+}
+
+/// 撤销上一次配置修改：回到历史里的上一版。**撤完说一声撤到了哪一版**
+async fn undo(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+    let hist = st
+        .control
+        .config_history()
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let Some(prev) = hist.iter().rev().nth(1).cloned() else {
+        return Ok(());
+    };
+    st.control
+        .rollback(prev.version.clone())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+        let (_, _, _, h, m) = model::local(prev.at_ms);
+        n.announce(
+            "undo",
+            tr!("已撤销上一次配置修改", "Last Configuration Change Undone"),
+            &tr!(
+                format!("已恢复 {h:02}:{m:02} 的配置。"),
+                format!("The configuration from {h:02}:{m:02} is back in effect.")
+            ),
+        );
+    }
+    tracing::info!(version = %prev.version, "从菜单撤销了上一次配置修改");
+    Ok(())
+}
+
+/// 检查更新。查到了就拉起更新窗口；没查到要说一声 —— 用户点了，就该看到结果
+async fn check_updates(app: &tauri::AppHandle) {
+    match crate::find_update(app).await {
+        Ok(Some(found)) => crate::present_update(app, found),
+        Ok(None) => say(
+            app,
+            tr!("已是最新版本", "ThinkWatch Lite Is Up to Date"),
+            &tr!(
+                format!(
+                    "ThinkWatch Lite {} 是最新版本。",
+                    app.package_info().version
+                ),
+                format!(
+                    "ThinkWatch Lite {} is the latest version.",
+                    app.package_info().version
+                )
+            ),
+        ),
+        Err(e) => say(app, tr!("无法检查更新", "Updates Could Not Be Checked"), &e),
+    }
+}
+
+/// 退出前问一句。**原生的对话框**，不再拉起主窗口；有请求在跑时说清会中断几个
+fn quit(app: &tauri::AppHandle) {
+    let in_flight = app
+        .try_state::<AppState>()
+        .and_then(|st| st.tally.lock().ok().map(|t| t.active() as usize))
+        .unwrap_or(0);
+    #[cfg(target_os = "macos")]
+    {
+        let app = app.clone();
+        macos::on_main(move |mtm| {
+            if macos::confirm_quit(mtm, in_flight) {
+                app.exit(0);
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = in_flight;
+        app.exit(0);
+    }
+}
+
+/// 一句话的提示
+fn say(app: &tauri::AppHandle, title: &str, body: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let (title, body) = (title.to_string(), body.to_string());
+        let _ = app;
+        macos::on_main(move |mtm| macos::inform(mtm, &title, &body));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, title, body);
     }
 }
 
@@ -165,295 +519,115 @@ fn reset_label(secs: u64) -> String {
 mod tests {
     use super::*;
 
-    fn st(cost: Option<f64>, tps: Option<u32>, active: u32, status: Status) -> MenuBarState {
-        MenuBarState {
-            cost_today: cost,
-            tokens_per_sec: tps,
-            quota_percent: None,
-            quota_reset_in_secs: None,
-            quota_warning: false,
-            active,
-            status,
+    fn notice(key: &str, level: notices::Level, at_ms: u64, read: bool) -> notices::Notice {
+        notices::Notice {
+            key: key.into(),
+            level,
+            title: key.into(),
+            body: String::new(),
+            view: None,
+            first_at_ms: at_ms,
+            at_ms,
+            count: 1,
+            notified: false,
+            read,
         }
     }
 
     #[test]
-    fn unknown_cost_is_a_dash_not_zero() {
-        // $0.00 是一个断言：今天没花钱。破折号说的是「还不知道」。
-        // 启动的头几秒这两件事完全不同。
-        assert_eq!(st(None, None, 0, Status::Normal).line1(), "—");
-        assert_eq!(st(Some(0.0), None, 0, Status::Normal).line1(), "$0.00");
+    fn the_menu_lists_unread_notices_most_urgent_first() {
+        let list = [
+            notice("old-warning", notices::Level::Warning, 1, false),
+            notice("info", notices::Level::Info, 9, false),
+            notice("critical", notices::Level::Critical, 2, false),
+            notice("new-warning", notices::Level::Warning, 5, false),
+            notice("seen", notices::Level::Critical, 10, true),
+        ];
+        let keys: Vec<String> = unread(&list).into_iter().map(|n| n.key).collect();
+        assert_eq!(keys, ["critical", "new-warning", "old-warning", "info"]);
+    }
+
+    fn setup() -> (
+        tokio::sync::Notify,
+        tokio::sync::Notify,
+        tokio::sync::watch::Sender<CoreState>,
+        tokio::time::Interval,
+    ) {
+        let mut tick = tokio::time::interval(TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let (tx, _) = tokio::sync::watch::channel(CoreState::Starting);
+        (
+            tokio::sync::Notify::new(),
+            tokio::sync::Notify::new(),
+            tx,
+            tick,
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_open_menu_keeps_ticking_while_a_wake_settles() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        let mut ticks = 0;
+        wake.notify_one();
+        wait(
+            &wake,
+            &now,
+            &mut rx,
+            None,
+            &mut tick,
+            || true,
+            || ticks += 1,
+        )
+        .await;
+        assert_eq!(start.elapsed(), SETTLE);
+        // 0、1、2 秒各走一次；第 3 秒和收数同时到，谁先都行
+        assert!(ticks >= 3, "只走了 {ticks} 次");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_closed_menu_sleeps_until_the_quota_resets() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        let reset = Some(start + std::time::Duration::from_secs(600));
+        let mut ticks = 0;
+        wait(
+            &wake,
+            &now,
+            &mut rx,
+            reset,
+            &mut tick,
+            || false,
+            || ticks += 1,
+        )
+        .await;
+        assert_eq!(start.elapsed(), std::time::Duration::from_secs(600));
+        assert_eq!(ticks, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn opening_the_menu_or_a_core_change_collects_at_once() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        // 攒着的时候菜单被打开：不等攒够
+        wake.notify_one();
+        now.notify_one();
+        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        assert_eq!(start.elapsed(), std::time::Duration::ZERO);
+        tx.send_replace(CoreState::Stopped);
+        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        assert_eq!(start.elapsed(), std::time::Duration::ZERO);
     }
 
     #[test]
-    fn starting_shows_a_dash_immediately_rather_than_nothing() {
-        // 开机自启时菜单栏上必须**立刻**有东西，否则用户以为没启动。
-        let s = st(None, None, 0, Status::Starting);
-        assert_eq!(s.line1(), "—");
-        assert_eq!(s.line2(), "—");
-    }
-
-    #[test]
-    fn cost_keeps_two_decimals_so_the_width_does_not_jump() {
-        // 位数一变，菜单栏里右边的所有图标都会跟着左右跳。
-        assert_eq!(st(Some(3.4), None, 0, Status::Normal).line1(), "$3.40");
-        assert_eq!(st(Some(3.456), None, 0, Status::Normal).line1(), "$3.46");
-    }
-
-    #[test]
-    fn an_active_stream_adds_a_dot_next_to_the_rate() {
-        assert_eq!(st(None, Some(47), 1, Status::Normal).line2(), "47 t/s ·");
-        assert_eq!(st(None, Some(47), 0, Status::Normal).line2(), "47 t/s");
-    }
-
-    #[test]
-    fn with_no_rate_yet_the_active_count_takes_the_line() {
-        assert_eq!(st(None, None, 3, Status::Normal).line2(), "3 ▶");
-    }
-
-    #[test]
-    fn a_disconnected_core_is_visible_without_reading_numbers() {
-        // 菜单栏是余光扫的 —— 形状的变化比读数字快一个量级。
-        let s = st(Some(9.99), Some(50), 0, Status::Disconnected);
-        assert_eq!(s.line1(), "—", "断开时不该继续显示一个已经过时的数字");
-        assert_eq!(s.line2(), "!");
-    }
-
-    #[test]
-    fn only_the_blocked_state_gives_up_the_template_icon() {
-        // 模板图只能单色，所以告警才值得放弃自动亮暗适配。
-        for s in [Status::Starting, Status::Normal, Status::Disconnected] {
-            assert!(st(None, None, 0, s).is_template());
+    fn the_style_survives_a_round_trip() {
+        for s in [Style::Full, Style::Icon, Style::Numbers] {
+            set_style(s);
+            assert_eq!(style(), s);
         }
-        assert!(!st(None, None, 0, Status::Blocked).is_template());
-    }
-
-    #[test]
-    fn nothing_changing_means_nothing_to_redraw() {
-        // 「空闲 CPU 约等于零」直接依赖这条。
-        let a = st(Some(1.0), Some(10), 0, Status::Normal);
-        assert!(!a.needs_redraw(&a.clone()));
-        assert!(a.needs_redraw(&st(Some(1.01), Some(10), 0, Status::Normal)));
-        assert!(a.needs_redraw(&st(Some(1.0), Some(10), 0, Status::Blocked)));
-    }
-
-    #[test]
-    fn a_sub_cent_change_does_not_trigger_a_redraw() {
-        // 每个请求都动一点点花费，但显示只有两位小数。按显示文字比较
-        // 而不是按原始值，才真的省下重绘。
-        let a = st(Some(3.4200), Some(10), 0, Status::Normal);
-        let b = st(Some(3.4201), Some(10), 0, Status::Normal);
-        assert!(!a.needs_redraw(&b));
-    }
-
-    /// 把一个字段铺开：已有的每个状态 × 这个字段的每个取值。
-    fn vary<T: Copy>(
-        states: Vec<MenuBarState>,
-        values: &[T],
-        set: impl Fn(&mut MenuBarState, T),
-    ) -> Vec<MenuBarState> {
-        let mut out = Vec::with_capacity(states.len() * values.len());
-        for s in &states {
-            for &v in values {
-                let mut next = s.clone();
-                set(&mut next, v);
-                out.push(next);
-            }
-        }
-        out
-    }
-
-    #[test]
-    fn everything_we_can_produce_is_renderable() {
-        // 画不出来的字符会被静默跳过，而那在数字里就是一个错误的读数。
-        //
-        // **按字段铺满，不挑样例。**上一版挑了四个状态，恰好都不带额度，
-        // 订阅账号的第二行从没被检查过 —— 「2h」画成了「2」，「已重置」
-        // 画成了一片空白。
-        let mut states = vec![MenuBarState::default()];
-        states = vary(
-            states,
-            &[
-                Status::Starting,
-                Status::Normal,
-                Status::Blocked,
-                Status::Disconnected,
-            ],
-            |s, v| s.status = v,
-        );
-        states = vary(
-            states,
-            &[None, Some(0.0), Some(34.4), Some(100.0)],
-            |s, v| s.quota_percent = v,
-        );
-        states = vary(
-            states,
-            &[
-                None,
-                Some(0),
-                Some(1),
-                Some(59),
-                Some(60),
-                Some(61),
-                Some(3599),
-                Some(3600),
-                Some(3601),
-                Some(86_399),
-                Some(86_400),
-                Some(86_401),
-                Some(3 * 86_400),
-                Some(7 * 86_400),
-                Some(30 * 86_400),
-                Some(u64::MAX),
-            ],
-            |s, v| s.quota_reset_in_secs = v,
-        );
-        states = vary(
-            states,
-            &[None, Some(0.0), Some(3.42), Some(1234.567)],
-            |s, v| s.cost_today = v,
-        );
-        states = vary(
-            states,
-            &[None, Some(0), Some(47), Some(u32::MAX)],
-            |s, v| s.tokens_per_sec = v,
-        );
-        states = vary(states, &[0, 1, u32::MAX], |s, v| s.active = v);
-        states = vary(states, &[false, true], |s, v| s.quota_warning = v);
-
-        let lines: std::collections::BTreeSet<String> =
-            states.iter().flat_map(|s| [s.line1(), s.line2()]).collect();
-        // 先确认每条分支都铺到了 —— 上一版漏掉的正是一整条分支
-        for want in [
-            "—",
-            "!",
-            "34%",
-            "$3.42",
-            "0m",
-            "1m",
-            "1h",
-            "1d",
-            "47 t/s",
-            "47 t/s ·",
-            "1 ▶",
-        ] {
-            assert!(lines.contains(want), "没有铺到「{want}」");
-        }
-        for line in &lines {
-            for c in line.chars() {
-                assert!(font::can_render(c), "{line:?} 里的 {c:?} 画不出来");
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod quota_tests {
-    use super::*;
-
-    fn sub(percent: f64, reset: Option<u64>, warn: bool) -> MenuBarState {
-        MenuBarState {
-            cost_today: Some(0.0),
-            quota_percent: Some(percent),
-            quota_reset_in_secs: reset,
-            quota_warning: warn,
-            status: Status::Normal,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn a_subscription_account_sees_a_percentage_not_a_price() {
-        // **对订阅用户「今天花了 $0.00」是句废话** —— 他的账单是固定的，
-        // 想知道的是还能用多久。
-        let s = sub(62.0, Some(7200), false);
-        assert_eq!(s.line1(), "62%");
-        assert_eq!(s.line2(), "2h");
-    }
-
-    #[test]
-    fn the_menu_shows_the_same_percentage_as_the_bar() {
-        let s = sub(62.0, Some(7200), false);
-        assert_eq!(s.line1(), "62%");
-        assert_eq!(menu_line(s.quota_percent, s.cost_today), "额度  已用 62%");
-        assert_eq!(menu_line(None, Some(3.4)), "今日  $3.40");
-        assert_eq!(menu_line(None, None), "今日  —");
-    }
-
-    #[test]
-    fn the_menu_line_follows_the_interface_language() {
-        use crate::i18n::{Lang, with_lang};
-        let s = sub(62.0, Some(7200), false);
-        with_lang(Lang::En, || {
-            assert_eq!(menu_line(s.quota_percent, s.cost_today), "Quota  62% Used");
-            assert_eq!(menu_line(None, Some(3.4)), "Today  $3.40");
-            assert_eq!(menu_line(None, None), "Today  —");
-            // 菜单栏上那两行是点阵字，不跟语言走
-            assert_eq!(s.line1(), "62%");
-            assert_eq!(s.line2(), "2h");
-        });
-    }
-
-    #[test]
-    fn a_pay_as_you_go_account_still_sees_the_price() {
-        let s = MenuBarState {
-            cost_today: Some(3.42),
-            status: Status::Normal,
-            ..Default::default()
-        };
-        assert_eq!(s.line1(), "$3.42");
-    }
-
-    #[test]
-    fn no_reset_header_means_no_countdown_not_a_made_up_one() {
-        // **编一个倒计时出来，用户会照着它安排自己的活**。
-        let s = sub(62.0, None, false);
-        assert_eq!(s.line2(), "—", "上游没给重置时间，我们却画了一个");
-    }
-
-    #[test]
-    fn the_reset_label_keeps_a_stable_width() {
-        // 一个在「119m」和「2h」之间跳来跳去的标签会让右边的图标一直动
-        // （宽度抖动）。刚重置的那一刻是「0m」：和前一刻的「1m」同宽。
-        for (secs, want) in [
-            (0, "0m"),
-            (1, "1m"),
-            (59, "1m"),
-            (60, "1m"),
-            (61, "2m"),
-            (3599, "60m"),
-            (3600, "1h"),
-            (7200, "2h"),
-            (86_399, "24h"),
-            (86_400, "1d"),
-            (86_401, "2d"),
-            (7 * 86_400, "7d"),
-        ] {
-            assert_eq!(reset_label(secs), want, "{secs} 秒");
-        }
-    }
-
-    #[test]
-    fn a_quota_warning_switches_off_the_template_so_it_can_be_coloured() {
-        // **限流是「你马上要撞墙了」，那和一次安全拦截同等重要** ——
-        // 而单色的模板图说不出「注意」这件事。
-        assert!(!sub(95.0, None, true).is_template());
-        assert!(sub(95.0, None, false).is_template());
-    }
-
-    #[test]
-    fn a_colour_change_alone_still_triggers_a_redraw() {
-        // 字一模一样但颜色变了，不重画的话用户永远看不到那个告警。
-        let calm = sub(95.0, Some(60), false);
-        let warn = sub(95.0, Some(60), true);
-        assert_eq!(calm.line1(), warn.line1());
-        assert!(warn.needs_redraw(&calm));
-    }
-
-    #[test]
-    fn a_percentage_is_rounded_so_the_width_does_not_jitter() {
-        assert_eq!(sub(62.4, None, false).line1(), "62%");
-        assert_eq!(sub(62.6, None, false).line1(), "63%");
-        assert_eq!(sub(100.0, None, false).line1(), "100%");
+        set_style(Style::Full);
     }
 }
