@@ -23,7 +23,15 @@ import {
 } from "@/ui/dialog";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/ui/empty";
 import { IconCopied, IconCopy } from "@/ui/icons";
-import type { ClientView, CostGroup, DetectedClient, KnownModel, Overview } from "@/types";
+import type {
+  ClientsResponse,
+  ClientView,
+  CostGroup,
+  DetectedClient,
+  KnownModel,
+  ManualClient,
+  Overview,
+} from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -58,11 +66,16 @@ type DialogState =
  */
 export default function KeysPage({
   ov,
+  focus,
+  onFocused,
   onChanged,
   onOpenConfigFile,
   onNavigate,
 }: {
   ov: Overview;
+  /** 从客户端页点过来的那一把：打开时定位到它，底色亮一下 */
+  focus?: string | null;
+  onFocused?: () => void;
   onChanged: () => void;
   onOpenConfigFile: (focus: string | null) => void;
   onNavigate: (tab: string) => void;
@@ -72,6 +85,8 @@ export default function KeysPage({
   const common = useText(commonText);
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [clients, setClients] = useState<DetectedClient[]>([]);
+  const [manual, setManual] = useState<ManualClient[]>([]);
+  const [highlight, setHighlight] = useState<string | null>(null);
   const [usage, setUsage] = useState<CostGroup[]>([]);
   const [catalog, setCatalog] = useState<KnownModel[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -81,9 +96,15 @@ export default function KeysPage({
   const load = useCallback(() => {
     api.listKeys().then(setKeys).catch((e) => toast.error(errorText(e)));
     // 接管状态在客户端配置旁边的记录里，每次现扫；拿不到时少一个标记，页面照常用
-    invoke<{ clients: DetectedClient[] }>("list_clients")
-      .then((r) => setClients(r.clients))
-      .catch(() => setClients([]));
+    invoke<ClientsResponse>("list_clients")
+      .then((r) => {
+        setClients(r.clients);
+        setManual(r.manual);
+      })
+      .catch(() => {
+        setClients([]);
+        setManual([]);
+      });
     api
       .keyUsage(Date.now() - DAY_MS)
       .then(setUsage)
@@ -98,6 +119,19 @@ export default function KeysPage({
   useEffect(() => {
     load();
   }, [load, ov]);
+
+  // 从客户端页点过来：那一行出现了就滚过去、亮一下，然后把这个请求交还
+  useEffect(() => {
+    if (!focus || !keys.some((k) => k.name === focus)) return;
+    document.querySelector(`[data-row="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
+    setHighlight(focus);
+    onFocused?.();
+  }, [focus, keys, onFocused]);
+  useEffect(() => {
+    if (!highlight) return;
+    const timer = setTimeout(() => setHighlight(null), 1600);
+    return () => clearTimeout(timer);
+  }, [highlight]);
 
   // 换了监听端口，地址跟着变 —— 所以跟着概览重取，不是只取一次
   useEffect(() => {
@@ -156,6 +190,8 @@ export default function KeysPage({
       <KeysTable
         keys={keys}
         clients={clients}
+        manual={manual}
+        highlight={highlight}
         usage={usage}
         defaultRoute={defaultRoute}
         catalog={catalog}
@@ -205,6 +241,7 @@ export default function KeysPage({
           editing={editing ?? null}
           keys={keys}
           clients={clients}
+          manual={manual}
           usage={usage}
           routes={ov.routes}
           defaultRoute={defaultRoute}

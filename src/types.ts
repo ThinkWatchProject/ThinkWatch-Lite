@@ -1447,18 +1447,51 @@ export interface DetectedClient {
   verified: "measured" | "fields_only";
   /** 接管之后会失去或改变的功能 */
   costs: Msg[];
-  /** 最后一次收到它的请求。**接管有没有生效，只有它能证明** */
-  last_seen_ms: number | null;
+  /** 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就没有 */
+  key?: string | null;
+  /**
+   * 最后一次收到**那把密钥**的请求。**接管有没有生效，只有它能证明** ——
+   * 按密钥算，不按请求头里自报的客户端标识（那个可以伪造）
+   */
+  last_seen_ms?: number | null;
+  /** 手动配置的方法：没检测到它时照着做 */
+  manual: ManualSetup;
 }
 
 /** 改动什么时候生效：`immediately` 下一个请求；`on_restart` 客户端重新启动后 */
 export type TakesEffect = "immediately" | "on_restart";
 
 export interface ManualClient {
+  /** `cursor` / `continue` / `gemini-cli`。为它生成专用密钥时用 */
+  id: string;
   name: string;
-  /** 手动配置的步骤，网关地址已经填在里面 */
-  how: Msg;
+  /** 为它生成的那把网关密钥 */
+  key?: string | null;
+  /** 最后一次收到那把密钥的请求 */
+  last_seen_ms?: number | null;
+  setup: ManualSetup;
+  /** 配完还漏什么 */
   caveat: Msg;
+}
+
+/**
+ * 手动配置一个客户端的方法。**地址和密钥不在句子里** —— 界面各给一个复制按钮
+ */
+export interface ManualSetup {
+  /** 按顺序做的几步 */
+  steps: Msg[];
+  /** 要写进配置文件的字段（能接管的客户端才有）。密钥那一项 `secret`、不给值 */
+  fields: FieldChange[];
+  /** 要填的网关地址，这个客户端要的写法（有的带 `/v1`） */
+  endpoint: string;
+}
+
+/** 为某个客户端准备的那把网关密钥 */
+export interface ClientKey {
+  name: string;
+  key: string;
+  /** 这次新建的 */
+  created: boolean;
 }
 
 export interface ClientsResponse {
@@ -1479,6 +1512,10 @@ export interface PlanView {
   carries_secret: boolean;
   /** 这次会改哪些字段。diff 之外再给一份摘要 */
   fields: FieldChange[];
+  /** 写进去的是哪把网关密钥（还原时是留下来的那把） */
+  key?: string | null;
+  /** 那把密钥在接管的那一刻新建 */
+  key_created?: boolean;
 }
 
 /** 配置文件里的一处改动 */
@@ -1486,8 +1523,10 @@ export interface FieldChange {
   op: "set" | "remove";
   /** 按层级用 `.` 连起来：`env.ANTHROPIC_BASE_URL` */
   path: string;
-  /** 要写入的值。写的是网关密钥或者一整段结构时没有 */
+  /** 要写入的值。写的是网关密钥时没有 */
   value?: string | null;
+  /** 这一项是网关密钥：值不回显，界面写成「密钥 xxx」 */
+  secret?: boolean;
 }
 
 export interface AdoptResponse {

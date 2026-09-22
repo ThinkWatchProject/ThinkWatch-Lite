@@ -416,17 +416,23 @@ const ZH: Record<string, Say> = {
   "adopt.diag.static_only.detail": () =>
     "静态检查无法确认配置已实际生效。收到该客户端的真实请求后，才能确认接管已生效。",
 
-  // ── adopt.manual：接管不了，只能给指引的那几个 ──────────────────
-  "adopt.manual.cursor.how": (a) =>
-    `在 Cursor 的「Settings → Models」中开启 Override OpenAI Base URL，填写 ${a.v1}。`,
+  // ── adopt.manual：手动配置的步骤 ────────────────────────────────
+  // 地址和密钥不在句子里：界面各给一个复制按钮，句子只说填到哪儿
+  "adopt.manual.file": (a) => `打开 ${a.file}，写入下面几项。`,
+  "adopt.manual.zed.key": () => "然后在 Zed 的设置中，为 ThinkWatch 填入密钥。",
+  "adopt.manual.cursor.open": () => "在 Cursor 中打开 Settings → Models。",
+  "adopt.manual.cursor.base": () => "开启 Override OpenAI Base URL，填入网关地址。",
+  "adopt.manual.cursor.key": () => "在 OpenAI API Key 中填入密钥，然后点击 Verify。",
   "adopt.manual.cursor.caveat": () =>
     "Tab 补全与 inline edit 仍由 Cursor 自身的服务处理，不经过网关，因此只能部分接管。",
-  "adopt.manual.continue.how": (a) =>
-    `在 ~/.continue/config.yaml 的 models 列表中添加一项，将 apiBase 设为 ${a.v1}。`,
+  "adopt.manual.continue.open": () => "打开 ~/.continue/config.yaml。",
+  "adopt.manual.continue.entry": () =>
+    "在 models 列表中新增一项：provider 设为 openai，apiBase 设为网关地址，apiKey 设为密钥。",
   "adopt.manual.continue.caveat": () =>
     "接入需要在 models 列表中新增条目，不提供自动接管，请按上述步骤手动配置。",
-  "adopt.manual.gemini_cli.how": (a) =>
-    `在 shell 配置文件中添加 export GOOGLE_GEMINI_BASE_URL=${a.base}，然后重新打开终端。`,
+  "adopt.manual.gemini_cli.export": () =>
+    "在 shell 配置文件中导出 GOOGLE_GEMINI_BASE_URL（网关地址）和 GEMINI_API_KEY（密钥）。",
+  "adopt.manual.gemini_cli.reopen": () => "然后重新打开终端。",
   "adopt.manual.gemini_cli.caveat": () =>
     "Gemini CLI 只从环境变量读取接口地址。ThinkWatch 不修改 shell 配置文件，请手动添加。",
 

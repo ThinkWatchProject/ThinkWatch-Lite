@@ -9,10 +9,10 @@ import { cn } from "@/lib/utils";
 import { when } from "@/format";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { ClientView, CostGroup, DetectedClient, KnownModel } from "@/types";
+import type { ClientView, CostGroup, DetectedClient, KnownModel, ManualClient } from "@/types";
 import { keysTableText } from "./KeysTable.i18n";
 import { labelsText } from "./labels.i18n";
-import { routeLabel, scopeLabel, takeoverOf } from "./labels";
+import { routeLabel, scopeLabel, takeoverOf, type KeyOwner } from "./labels";
 
 export interface KeyActions {
   edit: (name: string) => void;
@@ -38,14 +38,20 @@ export interface KeyActions {
 export function KeysTable({
   keys,
   clients,
+  manual,
   usage,
   defaultRoute,
   catalog,
+  highlight,
   actions,
 }: {
   keys: ClientView[];
   /** 本机上装着的客户端，用来说清一把密钥是接管谁时生成的 */
   clients: DetectedClient[];
+  /** 接管不了、要手动配置的客户端。为它们生成的密钥标「手动配置」 */
+  manual: ManualClient[];
+  /** 从客户端页点过来的那一把：底色亮一下 */
+  highlight?: string | null;
   /** 24 小时内每把密钥发了多少请求 */
   usage: CostGroup[];
   defaultRoute: string;
@@ -67,16 +73,19 @@ export function KeysTable({
       </TableHeader>
       <TableBody>
         {keys.map((k) => {
-          const items = menu(k, clients, actions);
+          const owner = takeoverOf(k, clients, manual);
+          const items = menu(k, owner, actions);
           const scope = scopeLabel(k.allow, catalog);
           const used = usage.find((u) => u.name === k.name);
-          const owner = takeoverOf(k, clients);
           return (
             <RowMenu key={k.name} items={items}>
               <TableRow
                 data-row={k.name}
                 onDoubleClick={() => actions.edit(k.name)}
-                className="cursor-default"
+                className={cn(
+                  "cursor-default transition-colors duration-700",
+                  highlight === k.name && "bg-muted",
+                )}
               >
                 {/*
                   **这一列吃掉剩下的宽度**（`w-full max-w-0`）：完整的密钥有三十多位，
@@ -96,7 +105,7 @@ export function KeysTable({
                     </span>
                     {k.default && <Badge variant="secondary">{t.default}</Badge>}
                     {k.disabled && <Badge variant="outline">{t.disabled}</Badge>}
-                    {owner && <TakeoverBadge client={owner.client} adopted={owner.adopted} />}
+                    {owner && <TakeoverBadge owner={owner} />}
                   </div>
                   <KeyValue value={k.key} onCopy={() => actions.copy(k.name, true)} />
                 </TableCell>
@@ -135,18 +144,21 @@ export function KeysTable({
 }
 
 /**
- * 接管生成的那几把，**单独一个标记**：带客户端图标，写出是接管谁时生成的。
+ * 为某个客户端生成的那几把，**单独一个标记**：带客户端图标，写出是为谁生成的 ——
+ * 接管时生成的写「接管 · Claude Code」，手动配置时生成的写「手动配置 · Cursor」。
  *
- * 那个客户端已经还原时标记变淡 —— 密钥还留着，下次接管直接用，但此刻没有
+ * 能接管的客户端此刻没被接管时标记变淡：密钥还留着，接管时直接用，但此刻没有
  * 客户端的配置里写着它，所以可以删。
  */
-export function TakeoverBadge({ client, adopted }: { client: string; adopted: boolean }) {
+export function TakeoverBadge({ owner }: { owner: KeyOwner }) {
   const t = useText(labelsText);
+  const { client, kind } = owner;
+  const tip = kind === "manual" ? t.manualTip(client) : kind === "adopted" ? t.takeoverOn(client) : t.takeoverOff(client);
   return (
-    <Tip text={adopted ? t.takeoverOn(client) : t.takeoverOff(client)}>
-      <Badge variant="outline" className={cn(!adopted && "text-muted-foreground")}>
+    <Tip text={tip}>
+      <Badge variant="outline" className={cn(kind === "idle" && "text-muted-foreground")}>
         <IconClient />
-        {t.takeover(client)}
+        {kind === "manual" ? t.manualFor(client) : t.takeover(client)}
       </Badge>
     </Tip>
   );
@@ -204,8 +216,8 @@ function KeyValue({ value, onCopy }: { value: string; onCopy: () => Promise<void
  * **删不掉的那一项灰着，不消失。**灰着的话用户会问一次为什么，而答案
  * （默认密钥、或者那个客户端正被接管）正是他该知道的。
  */
-function menu(k: ClientView, clients: DetectedClient[], a: KeyActions): MenuItems {
-  const adopted = takeoverOf(k, clients)?.adopted === true;
+function menu(k: ClientView, owner: KeyOwner | null, a: KeyActions): MenuItems {
+  const adopted = owner?.kind === "adopted";
   const t = textOf(keysTableText);
   return [
     { kind: "item", label: t.copyKey, onSelect: () => void a.copy(k.name) },
