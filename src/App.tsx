@@ -1014,8 +1014,8 @@ export default function App() {
           滚动条，而外面那层会把整个分栏一起推走。
         */}
           {/*
-          工具栏之下这一层。**滚动不在这儿** —— 请求页交给 `Split`
-          （分栏时两栏各滚各的），其余页面各自在自己的容器里滚。
+          工具栏之下这一层。**滚动不在这儿** —— 请求页在自己那一层里
+          横竖都滚，其余页面各自在自己的容器里滚。
           在这儿再加一层滚动就是两层滚动条。
         */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1144,12 +1144,12 @@ export default function App() {
 
             {/*
         **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
-        真正滚的是下面这个容器（请求页是 `Split` 里的两栏各滚各的）。
+        真正滚的是下面这个容器（请求页是它自己的那一层，见下面）。
       */}
             <div
               className={
                 "flex min-h-0 flex-1 flex-col " +
-                // 请求页的滚动在 `Split` 里（分栏时两栏各滚各的），这一层不能再滚
+                // 请求页自己那一层横竖都滚（表头靠它吸顶），这一层不能再滚
                 (tab === "requests"
                   ? "overflow-hidden"
                   : "overflow-y-auto")
@@ -1261,7 +1261,7 @@ export default function App() {
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-auto">
                   {/*
                     详情走**浮层**，不拆栏。
 
@@ -1274,8 +1274,18 @@ export default function App() {
                     `sticky top-0`，吸顶的位置从滚动容器的内边距以内算起
                     —— 把上边距加在滚动容器上，往下翻时表头停在离顶
                     20px 处，行从它上面那条缝里漏出来。
+
+                    **横着滚的也是这一层。**最小窗口、侧栏展开时，表有
+                    808px，页面只有 584px。表外面那层自己横着滚的话，
+                    表头就钉在它身上、不再吸顶（见 `Table` 的 `scroll`）。
+
+                    所以分成三块。上面的过滤条、下面的脚注钉在左边
+                    （`sticky left-0`），表横着滚时它们不跟着走。它们
+                    必须直接挂在这一层下面：宽度才是看得见的那么宽，
+                    钉得住的范围也才是整个能滚的宽度。中间那块跟着表
+                    变宽（`w-fit`），滚到最右，表的右边距才露得出来。
                   */}
-                  <div className="p-5">
+                  <div className="sticky left-0 px-5 pt-5">
                     {/*
           过滤条。**一直在，不是「有数据才出现」** —— 一个时有时无的
           工具条，用户每次都要重新找它在哪儿。没有请求时它是禁用的。
@@ -1424,6 +1434,8 @@ export default function App() {
                         </Button>
                       </div>
                     )}
+                  </div>
+                  <div className="w-fit min-w-full px-5">
                     {seeded && rows.length === 0 ? (
                       allRows.length > 0 ? (
                         /*
@@ -1505,6 +1517,8 @@ export default function App() {
                         }}
                       />
                     )}
+                  </div>
+                  <div className="sticky left-0 px-5 pb-5">
                     {locallyAnswered > 0 && rows.length > 0 && (
                       <p className="mt-3 tw-body text-muted-foreground">
                         {t.probesElsewhere(locallyAnswered)}
