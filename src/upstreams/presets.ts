@@ -15,7 +15,7 @@ export interface Preset {
   baseUrl: string;
   /** 空字符串 = 自动识别 */
   protocol: string;
-  billing?: string;
+  billing?: "per-token" | "free";
 }
 
 /** 要翻译的名称写成 getter：每次读取都按当时的语言取 */

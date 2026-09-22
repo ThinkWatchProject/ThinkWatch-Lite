@@ -528,13 +528,8 @@ export default function RequestDrawer({
                     <Row
                       label={t.cost}
                       value={
-                        r.billing === "subscription" ? (
-                          // 「订阅制」而不是 $0.00 —— 消耗的是额度，不是金额
-                          <span className="text-muted-foreground">{t.subscription}</span>
-                        ) : r.billing === "free" ? (
+                        r.billing === "free" ? (
                           <span className="text-muted-foreground">{usd(0)} · {t.free}</span>
-                        ) : r.billing === "unknown" ? (
-                          <span className="text-muted-foreground">{t.billingUnknown}</span>
                         ) : r.cost_micros == null ? (
                           // 「没有价格」和「费用为 0」是两件事
                           <span className="text-muted-foreground">{t.unpriced}</span>

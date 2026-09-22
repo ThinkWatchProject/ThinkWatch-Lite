@@ -1,6 +1,7 @@
 import { CircleAlertIcon, PencilIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Segmented } from "@/ui/segmented";
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
 import { useText } from "@/i18n";
 import type { Overview, ResolvedPrice } from "@/types";
 import { billingSectionText } from "./BillingSection.i18n";
-import { BILLINGS, PRICE_COLUMNS, billingLabel, perMillion, priceSourceLabel } from "./labels";
+import { BILLINGS, PRICE_COLUMNS, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, FormItem, NameChips, Note } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
@@ -23,7 +24,6 @@ export function BillingSection({
   form,
   set,
   ov,
-  autoBilling,
   originalName,
   models,
   prices,
@@ -34,8 +34,6 @@ export function BillingSection({
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   ov: Overview;
-  /** 自动识别此刻判成什么 */
-  autoBilling: string;
   /** 编辑时原来的名称。算「使用此价目表的上游」要把它换成表单里的名字 */
   originalName: string | null;
   /** 启用范围内的模型 */
@@ -47,8 +45,7 @@ export function BillingSection({
   onPriceModels: (models: string[]) => void;
 }) {
   const t = useText(billingSectionText);
-  const effective = form.billing || autoBilling;
-  const perToken = effective === "per-token";
+  const perToken = form.billing === "per-token";
   const unpriced = models.filter((m) => prices[m] && !prices[m].price);
   const sheet = ov.price_sheets.find((s) => s.name === form.pricing);
   const users = sheet
@@ -63,51 +60,38 @@ export function BillingSection({
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-4">
-        <FormItem
-          label={t.billing}
-          htmlFor="up-billing"
-          desc={BILLINGS.find((b) => b.id === effective)?.desc}
-        >
-          <NativeSelect
-            id="up-billing"
-            className="w-full"
+        <FormItem label={t.billing} desc={BILLINGS.find((b) => b.id === form.billing)?.desc}>
+          <Segmented
+            label={t.billing}
             value={form.billing}
-            onChange={(e) => set({ billing: e.target.value })}
-          >
-            <NativeSelectOption value="">{t.auto(billingLabel(autoBilling))}</NativeSelectOption>
-            {BILLINGS.map((b) => (
-              <NativeSelectOption key={b.id} value={b.id}>
-                {b.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={BILLINGS.map((b) => ({ id: b.id, label: b.label }))}
+            onChange={(billing) => set({ billing })}
+          />
         </FormItem>
-        <FormItem
-          label={t.sheet}
-          htmlFor="up-sheet"
-          desc={perToken ? undefined : t.noSheet(billingLabel(effective))}
-        >
-          <NativeSelect
-            id="up-sheet"
-            className="w-full"
-            value={form.pricing}
-            disabled={!perToken}
-            onChange={(e) =>
-              e.target.value === NEW_SHEET ? onNewSheet() : set({ pricing: e.target.value })
-            }
-          >
-            <NativeSelectOption value="">{t.defaultSheet}</NativeSelectOption>
-            {ov.price_sheets.map((s) => (
-              <NativeSelectOption key={s.name} value={s.name}>
-                {s.name}
-              </NativeSelectOption>
-            ))}
-            {form.pricing && !sheet && (
-              <NativeSelectOption value={form.pricing}>{form.pricing}</NativeSelectOption>
-            )}
-            <NativeSelectOption value={NEW_SHEET}>{t.newSheet}</NativeSelectOption>
-          </NativeSelect>
-        </FormItem>
+        {/* 不计费时价目表用不上，整个藏起来，而不是摆一个灰掉的下拉 */}
+        {perToken && (
+          <FormItem label={t.sheet} htmlFor="up-sheet">
+            <NativeSelect
+              id="up-sheet"
+              className="w-full"
+              value={form.pricing}
+              onChange={(e) =>
+                e.target.value === NEW_SHEET ? onNewSheet() : set({ pricing: e.target.value })
+              }
+            >
+              <NativeSelectOption value="">{t.defaultSheet}</NativeSelectOption>
+              {ov.price_sheets.map((s) => (
+                <NativeSelectOption key={s.name} value={s.name}>
+                  {s.name}
+                </NativeSelectOption>
+              ))}
+              {form.pricing && !sheet && (
+                <NativeSelectOption value={form.pricing}>{form.pricing}</NativeSelectOption>
+              )}
+              <NativeSelectOption value={NEW_SHEET}>{t.newSheet}</NativeSelectOption>
+            </NativeSelect>
+          </FormItem>
+        )}
       </div>
 
       {perToken && sheet && (

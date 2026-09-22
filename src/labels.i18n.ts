@@ -67,9 +67,7 @@ export const labelsText = messages(
 
     // ------------------------------------------------------------ 请求与费用
     quote: {
-      subscription: "计入订阅额度，不计算费用。",
       free: "不计费。",
-      unknown: "计费方式未知，无法预估费用。",
       estimate: (amount: string) => `预估费用约 ${amount}。`,
       unpriced: (model: string) => `无法计价：${model} 不在价目表中。`,
     },
@@ -190,9 +188,7 @@ export const labelsText = messages(
     noResponse: "No response received",
 
     quote: {
-      subscription: "Counts toward the subscription quota; no cost is calculated.",
       free: "Free.",
-      unknown: "Billing unknown; the cost cannot be estimated.",
       estimate: (amount: string) => `Estimated cost: about ${amount}.`,
       unpriced: (model: string) => `Unpriced: ${model} is not in the price sheet.`,
     },

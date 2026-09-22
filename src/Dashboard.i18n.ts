@@ -30,9 +30,6 @@ export const dashboardText = messages(
     noUsage: (n: number) => `${n} 条无用量`,
     noUsageTip:
       "这些请求没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入上方金额。",
-    subscription: (n: number) => `订阅额度 ${n} 次`,
-    subscriptionTip:
-      "订阅制上游不按用量产生费用，按 API 价目表折算的金额不代表实际费用，因此不计入。",
     allMeasured: "全部按价目表实测",
 
     // 请求数那一栏
@@ -130,9 +127,6 @@ export const dashboardText = messages(
     noUsage: (n: number) => `${n} with no usage`,
     noUsageTip:
       "These requests have no usage data: the upstream did not report it, or the connection ended before it was reported. Their cost cannot be calculated and is not included in the amount above.",
-    subscription: (n: number) => `${n} on subscription`,
-    subscriptionTip:
-      "Subscription upstreams do not incur cost by usage. An amount converted at API price-sheet rates does not represent actual cost, so it is not included.",
     allMeasured: "All measured at price-sheet rates",
 
     requestUnit: (n: number) => (n === 1 ? "request" : "requests"),

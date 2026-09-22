@@ -665,10 +665,6 @@ export interface Summary {
    * 连接在报告之前就结束了。配价格解决不了它。
    */
   no_usage_requests: number;
-  /** 走订阅型上游的请求数。**不参与金额合计** */
-  subscription_requests: number;
-  /** 那些请求用掉的 token。**它才是订阅用户该看的量** */
-  subscription_tokens: number;
   /**
    * 用了缓存之后净省下多少微分。
    *
@@ -742,7 +738,7 @@ export interface HistoryRow {
   cancelled: boolean;
   /** 路由决策与尝试链。本地应答的、被规则拒绝的、上游应答之前客户端就断开的没有 */
   routing?: RoutingView;
-  /** 服务它的那家怎么收钱：`per-token` / `subscription` / `free` / `unknown`。本地应答是 `free` */
+  /** 服务它的那家怎么收钱：`per-token` / `free`。本地应答是 `free` */
   billing: string;
   /** 缓存命中省下了多少微分。没有 = 算不出来 */
   cache_saved_micros?: number;
@@ -873,9 +869,9 @@ export interface SpeedEstimate {
   /** 输入 token。**精确值** —— 请求是固定的 */
   input_tokens: number;
   max_output_tokens: number;
-  /** 按量计费算得出来时是那个数，不计费时是 0。订阅制、计费方式未知、无法计价时是 null */
+  /** 按量计费算得出来时是那个数，不计费时是 0，无法计价时是 null */
   cost_micros?: number | null;
-  /** `per-token` / `subscription` / `free` / `unknown` */
+  /** `per-token` / `free` */
   billing: string;
   /** 服务不了这个模型：`out_of_scope` / `not_offered`。不进合计，也不会被测 */
   skipped?: string | null;
@@ -1106,10 +1102,8 @@ export interface ProviderView {
   health: "ok" | "open";
   /** 上游拒绝了凭据：最近一次得到答复的请求回的状态码（401 / 403）。没被拒是空的 */
   auth_rejected?: number | null;
-  /** 配置里写明的计费方式。null = 自动识别 */
-  billing?: string | null;
-  /** 实际按什么计费 */
-  billing_effective: string;
+  /** 计费方式：`per-token`（按价目表算，订阅账号也是）/ `free`（记 $0） */
+  billing: string;
   /** 谁在引用它 */
   references: ReferenceView[];
   /** 选的价目表。null = 默认价目表 */
@@ -1701,11 +1695,6 @@ export interface SessionView {
   unpriced_turns: number;
   /** 没有拿到用量、算不出花费的轮数 */
   no_usage_turns: number;
-  /**
-   * 由订阅制上游服务的轮数：计入订阅额度，**没有金额，也不是「无法计价」**。
-   * 和上面三个数互不相交，和概览的 `subscription_requests` 数的是同一类请求
-   */
-  subscription_turns: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -1733,10 +1722,7 @@ export interface TurnView {
   cancelled: boolean;
   /** 这一轮的金额是估算。**瀑布图上要带记号** */
   cost_estimated: boolean;
-  /**
-   * 服务它的那家怎么收钱，和 `HistoryRow.billing` 同一套词。订阅制那一轮的
-   * `cost_micros` 也是 null，**只看金额分不出它和「无法计价」**
-   */
+  /** 服务它的那家怎么收钱，和 `HistoryRow.billing` 同一套词 */
   billing: string;
 }
 
@@ -1867,7 +1853,7 @@ export interface ReplayQuote {
   provider: string;
   body_bytes: number;
   input_tokens: number;
-  /** `null` = 订阅制、计费方式未知，或者这个模型无法计价。**不是 0** */
+  /** `null` = 这个模型无法计价。**不是 0** */
   cost_micros: number | null;
   /** 要重放到的那家的计费方式 */
   billing: string;
@@ -1942,7 +1928,7 @@ export interface ProviderInput {
   models: string[];
   /** 不给就是它提供的全部 */
   models_only?: string[];
-  /** 不给就自动识别 */
+  /** `per-token` / `free`。不给就是按量计费 */
   billing?: string;
   /** 不给就是默认价目表 */
   pricing?: string;

@@ -233,7 +233,7 @@ function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
         <PopoverContent align="end" className="w-96 gap-0 p-0">
           <ModelsPanel
             p={p}
-            perToken={p.billing_effective === "per-token"}
+            perToken={p.billing === "per-token"}
             onEdit={() => {
               setOpen(false);
               onEdit();
@@ -248,9 +248,9 @@ function ModelsCell({ p, onEdit }: { p: ProviderView; onEdit: () => void }) {
 /**
  * 还剩多少可用。
  *
- * 订阅制上游的答案是额度条 —— 那是这一家「今天还能不能接着用」的唯一答案，
- * 而计费方式（订阅制）在额度条出现的那一刻已经不言自明。**上游没报过额度就
- * 退回说计费方式**：画一根 0% 的空条等于说「一点没用」，而事实是不知道。
+ * 报过额度的上游，答案是额度条 —— 那是这一家「今天还能不能接着用」的唯一答案。
+ * **没报过额度就退回说计费方式**：画一根 0% 的空条等于说「一点没用」，而事实
+ * 是不知道。
  */
 function QuotaCell({
   p,
@@ -291,12 +291,10 @@ function QuotaCell({
       </TableCell>
     );
   }
-  const billing = p.billing ?? p.billing_effective;
+  const billing = p.billing;
   return (
     <TableCell>
-      <div
-        className={billing === "free" || billing === "unknown" ? "text-muted-foreground" : undefined}
-      >
+      <div className={billing === "free" ? "text-muted-foreground" : undefined}>
         {billingLabel(billing)}
       </div>
       {billing === "per-token" && (
@@ -318,22 +316,13 @@ function DayCell({ p, stats }: { p: ProviderView; stats: UpstreamStats | null })
   if (!cost || cost.requests === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
-  const billing = p.billing ?? p.billing_effective;
   return (
     <TableCell className="text-right tabular-nums">
       <div>{t.requests(cost.requests)}</div>
       <div className="tw-label text-muted-foreground">
-        {billing === "subscription" ? (
-          t.inSubscription
-        ) : billing === "unknown" ? (
-          t.costUnknown
-        ) : (
-          <>
-            {usd(cost.cost_micros)}
-            {cost.unpriced_requests > 0 && (
-              <span className="text-warning"> · {t.unpriced(cost.unpriced_requests)}</span>
-            )}
-          </>
+        {usd(cost.cost_micros)}
+        {cost.unpriced_requests > 0 && (
+          <span className="text-warning"> · {t.unpriced(cost.unpriced_requests)}</span>
         )}
       </div>
     </TableCell>

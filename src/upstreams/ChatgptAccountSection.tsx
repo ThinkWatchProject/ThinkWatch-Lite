@@ -270,11 +270,11 @@ function LoginBox({
             {broken ? t.loginInvalid : (email ?? t.signedIn)}
             {planLabel(plan) && !broken && ` · ${planLabel(plan)}`}
           </p>
-          <p className="tw-label text-muted-foreground">
-            {broken
-              ? (oauth?.failure ?? t.needsLogin)
-              : `${left ? `${t.credentialExpires(left)} · ` : ""}${t.countsTowardQuota}`}
-          </p>
+          {broken ? (
+            <p className="tw-label text-muted-foreground">{oauth?.failure ?? t.needsLogin}</p>
+          ) : (
+            left && <p className="tw-label text-muted-foreground">{t.credentialExpires(left)}</p>
+          )}
         </div>
         <Button variant="outline" size="sm" className="shrink-0" onClick={onRelogin}>
           {t.relogin}

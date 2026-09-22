@@ -193,13 +193,11 @@ export function useRequests(ready: boolean) {
    */
   const [listening, setListening] = useState(0);
   /**
-   * 上游的现状变了几次：凭据被拒或者恢复、代理不通或者恢复、要重新登录、第一次
-   * 报额度（没写明计费方式的，从这一刻起按订阅制算）。**这些都在概览里**，App
-   * 据此重读。事件流丢过事件时也算一次：丢掉的里面可能就有它们。
+   * 上游的现状变了几次：凭据被拒或者恢复、代理不通或者恢复、要重新登录。**这些
+   * 都在概览里**，App 据此重读。事件流丢过事件时也算一次：丢掉的里面可能就有
+   * 它们。
    */
   const [upstreamState, setUpstreamState] = useState(0);
-  /** 这次开窗以来报过额度的上游。只有第一次会改变计费方式 */
-  const quotaSeen = useRef(new Set<string>());
 
 
   /**
@@ -296,12 +294,10 @@ export function useRequests(ready: boolean) {
           ev.kind === "auth_changed" ||
           ev.kind === "proxy_changed" ||
           ev.kind === "credential_expired" ||
-          ev.kind === "events_dropped" ||
-          (ev.kind === "quota_seen" && !quotaSeen.current.has(ev.provider))
+          ev.kind === "events_dropped"
         ) {
           setUpstreamState((n) => n + 1);
         }
-        if (ev.kind === "quota_seen") quotaSeen.current.add(ev.provider);
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
         if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));

@@ -111,10 +111,8 @@ function Waterfall({
               />
             </span>
             <span className="w-16 text-right">
-              {/* **没有价格就说没有价格，不写 $0**；订阅那一轮也没有金额，但它不是没有价格 */}
-              {t.billing === "subscription" ? (
-                <span className="text-neutral-400">{text.turnSubscription}</span>
-              ) : t.cost_micros == null ? (
+              {/* **没有价格就说没有价格，不写 $0** */}
+              {t.cost_micros == null ? (
                 <span className="text-neutral-400">{text.unpriced}</span>
               ) : (
                 // 估算的金额要带记号：取消、断在中间的那几轮输出只计到断开时

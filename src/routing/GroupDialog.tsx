@@ -220,7 +220,7 @@ export function GroupDialog({
                             <div className={on ? "font-medium" : "text-muted-foreground"}>{n}</div>
                             {p && (
                               <div className="tw-label text-muted-foreground">
-                                {protocolLabel(p.protocol)} · {billingLabel(p.billing ?? p.billing_effective)}
+                                {protocolLabel(p.protocol)} · {billingLabel(p.billing)}
                                 {p.disabled && t.disabledSuffix}
                               </div>
                             )}

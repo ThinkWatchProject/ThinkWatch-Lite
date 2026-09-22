@@ -72,7 +72,7 @@ export function ConnectionSection({
           : form.name,
       baseUrl: next.baseUrl,
       protocol: next.protocol,
-      billing: next.billing ?? "",
+      billing: next.billing ?? "per-token",
     });
   }
 
