@@ -70,6 +70,10 @@ objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = "0.3"
 objc2-user-notifications = "0.3"
+# 菜单栏自己持有 NSStatusItem 和 NSMenu（见 `menubar/macos.rs`）。和 Tauri 用的是同一版
+objc2-app-kit = "0.3"
+# 菜单开着时主线程在事件跟踪模式，更新要走 GCD 的主队列才执行得到
+dispatch2 = "0.3"
 
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
