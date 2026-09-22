@@ -208,11 +208,14 @@ export function RangePicker({
   value,
   onChange,
   live = true,
+  align = "end",
 }: {
   value: Range;
   onChange: (r: Range) => void;
   /** 显不显示实时档。**流量页不显示** —— 十分钟的一张表说明不了什么 */
   live?: boolean;
+  /** 日历朝哪边展开。放在一行左端时要 `start`，否则日历会往左盖住那排档位 */
+  align?: "start" | "end";
 }) {
   const t = useText(rangeText);
   const [open, setOpen] = useState(false);
@@ -258,7 +261,7 @@ export function RangePicker({
             {preset || value.live ? t.custom : value.label}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
+        <PopoverContent className="w-auto p-0" align={align}>
           <Calendar
             mode="single"
             selected={from}
