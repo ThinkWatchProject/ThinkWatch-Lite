@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { TriangleAlertIcon, XIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
@@ -12,6 +10,7 @@ import { coreText, errorText } from "@/i18n/core.i18n";
 import type { ConfigWritten, CoreStatus, ListenSave, ListenView, NicView } from "@/types";
 import { FormActions, FormRow, FormRows, NumberInput, intIn } from "./form";
 import { listenText } from "./ListenSection.i18n";
+import { RangeList } from "./RangeList";
 
 /** 谁能连进来。三档答的是同一个问题，网卡和网段是它的实现 */
 export type Level = "local" | "lan" | "all";
@@ -52,9 +51,6 @@ function same(a: Draft, b: Draft): boolean {
   );
 }
 
-/** 看起来像一个地址或网段。**只挡明显的笔误** —— 真正的校验在 core */
-const CIDR = /^[0-9a-fA-F:.]+(\/\d{1,3})?$/;
-
 /**
  * 网关监听：谁能连、在哪个端口。
  *
@@ -80,7 +76,8 @@ export function ListenSection({
   const t = useText(listenText);
   const [draft, setDraft] = useState(() => draftOf(view));
   const [nics, setNics] = useState<NicView[] | null>(null);
-  const [adding, setAdding] = useState("");
+  // 放弃更改时连同名单里没加进去的那一行一起清掉：换一个 key 让它重来
+  const [epoch, setEpoch] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,17 +127,6 @@ export function ListenSection({
   const portOk = intIn(draft.port, 1, 65535);
   const nicOk = draft.level !== "lan" || !!draft.nic;
   const exposed = draft.level !== "local";
-
-  function add() {
-    const v = adding.trim();
-    if (!v) return;
-    if (!CIDR.test(v)) {
-      setError(t.badRange(v));
-      return;
-    }
-    if (!draft.allow.includes(v)) set({ allow: [...draft.allow, v] });
-    setAdding("");
-  }
 
   async function save() {
     const bind = draft.level === "local" ? "loopback" : draft.level === "all" ? "all" : nicName(draft.nic);
@@ -226,45 +212,15 @@ export function ListenSection({
         </FormRow>
 
         {exposed && (
-          <FormRow label={t.allowlist} htmlFor="listen-allow" hint={t.allowlistWhat}>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {draft.allow.map((c) => (
-                <span
-                  key={c}
-                  className="inline-flex h-7 items-center gap-0.5 rounded-md border border-input pr-0.5 pl-2 font-mono tw-body"
-                >
-                  {c}
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled={busy}
-                    aria-label={t.removeRange(c)}
-                    onClick={() => set({ allow: draft.allow.filter((x) => x !== c) })}
-                  >
-                    <XIcon />
-                  </Button>
-                </span>
-              ))}
-              <Input
-                id="listen-allow"
-                className="h-7 w-44 font-mono"
-                value={adding}
-                disabled={busy}
-                placeholder={t.rangePlaceholder}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                onChange={(e) => setAdding(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-                  e.preventDefault();
-                  add();
-                }}
-                // 输了没按回车就去点保存：这一条也算上，不让它悄悄丢掉
-                onBlur={add}
-              />
-            </div>
+          <FormRow label={t.allowlist} htmlFor="listen-allow">
+            <RangeList
+              key={epoch}
+              id="listen-allow"
+              value={draft.allow}
+              defaults={view.default_allow_from}
+              disabled={busy}
+              onChange={(allow) => set({ allow })}
+            />
           </FormRow>
         )}
 
@@ -275,7 +231,7 @@ export function ListenSection({
           onSave={() => void save()}
           onDiscard={() => {
             setError(null);
-            setAdding("");
+            setEpoch((n) => n + 1);
             setDraft(saved);
           }}
         />
