@@ -50,9 +50,10 @@ copying the app out of the disk image.
 Tokens, cost and requests over any period, broken down by model, with the cache
 hit rate, the net savings from caching and latency percentiles per model.
 Measured costs, estimated costs and unpriced requests are reported separately
-and never added together; usage served by subscription upstreams is counted
-apart from billed usage; every request records the price sheet and the date of
-the prices it was costed with.
+and never added together. Subscription accounts such as a ChatGPT sign-in are
+priced by the price sheet like any other upstream, and an upstream such as a
+local model can be set to free. Every request records the price sheet and the
+date of the prices it was costed with.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-en-dark.png">
