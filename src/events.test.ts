@@ -22,6 +22,7 @@ function started(over: Partial<Extract<CoreEvent, { kind: "request_started" }>> 
     id: 1,
     client: "claude-code",
     provider: "relay",
+    billing: "per-token",
     model: "claude-sonnet-4-5",
     method: "POST",
     path: "/v1/messages",

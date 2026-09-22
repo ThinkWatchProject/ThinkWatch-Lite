@@ -32,7 +32,7 @@ export type CoreEvent =
    * 长出一批对不上任何会话的影子组。界面因此不读它：归组只认落库之后
    * 的 `session`。
    */
-  | { kind: "request_started"; id: number; client: string; client_hint?: string | null; peer?: string | null; key_masked?: string | null; provider: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
+  | { kind: "request_started"; id: number; client: string; client_hint?: string | null; peer?: string | null; key_masked?: string | null; provider: string; billing: string; model: string; method: string; path: string; at_ms: number; session_fp?: string | null }
   | { kind: "request_headers"; id: number; status: number; ttfb_ms: number }
   /**
    * 三种结局（结束、失败、取消）都带着 `model`，和开始事件里的是同一个。
@@ -673,9 +673,9 @@ export interface HistoryRow {
   local: boolean;
   /** 客户端没等到响应结束就断开了。**不是失败**，`error` 为空 */
   cancelled: boolean;
-  /** 路由决策与尝试链。没经过路由的（WebSocket、本地应答、被规则拒绝的）没有 */
+  /** 路由决策与尝试链。本地应答的、被规则拒绝的、上游应答之前客户端就断开的没有 */
   routing?: RoutingView;
-  /** 服务它的那家怎么收钱：`per-token` / `subscription` / `unknown` */
+  /** 服务它的那家怎么收钱：`per-token` / `subscription` / `free` / `unknown`。本地应答是 `free` */
   billing: string;
   /** 缓存命中省下了多少微分。没有 = 算不出来 */
   cache_saved_micros?: number;
