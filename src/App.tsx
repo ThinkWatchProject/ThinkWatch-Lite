@@ -452,8 +452,8 @@ export default function App() {
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   /**
-   * 从概览的安全计数点进日志时带的筛选。**离开安全页就清掉** —— 过一阵再
-   * 回来，不该又被拨回当时那一类、那一段时间。
+   * 从概览的安全计数点进日志时带的区间。**离开安全页就清掉** —— 过一阵再
+   * 回来，不该又被拨回当时那一段时间。
    */
   const [securityFocus, setSecurityFocus] = useState<LogFocus | null>(null);
   useEffect(() => {
@@ -1155,10 +1155,9 @@ export default function App() {
                 <Dashboard
                   tick={dashTick}
                   ov={ov}
-                  onShowSecurity={(guard, range) => {
+                  onShowSecurity={(range) => {
                     // 实时档的计数按 24 小时算（见 `windowStart`），日志也按 24 小时看
                     setSecurityFocus({
-                      guard,
                       range: range.live ? presetRange("1d") : range,
                       at: Date.now(),
                     });
@@ -1248,7 +1247,9 @@ export default function App() {
         */}
                     {allRows.length > 0 && (
                       <div className="mb-3 flex flex-wrap items-center gap-2">
+                        {/* 和旁边的开关、下拉一样高：它们都是 sm 档 */}
                         <Input
+                          variant="sm"
                           className="w-64"
                           ref={searchRef}
                           value={filter.q}

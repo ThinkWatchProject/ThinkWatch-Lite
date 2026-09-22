@@ -10,16 +10,15 @@ import { api, type CustomRuleSave } from "./api";
 import { GuardTab, type RuleActions } from "./GuardTab";
 import { viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
-import { LogTab, type LogGuard } from "./LogTab";
+import { LogTab } from "./LogTab";
 import { BuiltinRuleDialog, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { securityPageText } from "./SecurityPage.i18n";
 
 export type SecurityTab = "log" | Guard;
 
-/** 从别处跳进日志时带着的：看哪一项、哪段时间 */
+/** 从别处跳进日志时带着的：看哪段时间 */
 export interface LogFocus {
-  guard: Guard | null;
   range: Range;
   /** 每跳一次都不一样 —— 同样的参数再点一次，也要把页面拨回日志 */
   at: number;
@@ -74,9 +73,9 @@ export default function SecurityPage({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
-  // 日志的筛选放在这一层：区间选择器在标签那一行上
-  const [logGuard, setLogGuard] = useState<LogGuard>("all");
+  // 日志的区间和条数放在这一层：它们都在标签那一行上
   const [range, setRange] = useRange("tw-security-range", "1d");
+  const [logCount, setLogCount] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -92,13 +91,12 @@ export default function SecurityPage({
   }, [reload, configVersion]);
 
   /*
-    从概览跳过来：落到日志，带上类型和区间。**`at` 每次都不同**，同一个
-    计数连点两次也会把页面拨回来。
+    从概览跳过来：落到日志，带上区间。**`at` 每次都不同**，同一个计数
+    连点两次也会把页面拨回来。
   */
   useEffect(() => {
     if (!focus) return;
     setTab("log");
-    setLogGuard(focus.guard ?? "all");
     setRange(focus.range);
   }, [focus, setRange]);
 
@@ -192,16 +190,19 @@ export default function SecurityPage({
             ))}
           </TabsList>
           <div className="flex-1" />
+          {/* 条数在区间左边：它的宽度随数变，放右边会把区间选择器推来推去 */}
+          {tab === "log" && logCount && (
+            <span className="tw-label tabular-nums text-muted-foreground">{logCount}</span>
+          )}
           {tab === "log" && <RangePicker value={range} onChange={setRange} live={false} />}
         </div>
 
         <TabsContent value="log" className="mt-2">
           <LogTab
             detail={detail}
-            guard={logGuard}
             range={range}
             tick={tick}
-            onGuard={setLogGuard}
+            onCount={setLogCount}
             actions={{
               viewRule: (guard, id, custom) => {
                 const r = find(guard, id, custom);

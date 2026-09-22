@@ -226,8 +226,8 @@ export default function Dashboard({
 }: {
   tick: number;
   ov: Overview | null;
-  /** 安全计数不为零时可以点：打开安全日志，带上这一类和这段时间 */
-  onShowSecurity: (guard: Guard, range: Range) => void;
+  /** 安全计数不为零时可以点：打开安全日志，带上这段时间 */
+  onShowSecurity: (range: Range) => void;
   /** 「N 条无法计价」是个可以点进去的问题，不只是一个数字 */
   onShowUnpriced: () => void;
 }) {
@@ -1080,7 +1080,7 @@ export default function Dashboard({
                         "inline-flex items-center gap-0.5 text-left hover:underline hover:underline-offset-2 " +
                         (g.open > 0 ? "text-destructive" : "text-foreground")
                       }
-                      onClick={() => onShowSecurity(g.key, range)}
+                      onClick={() => onShowSecurity(range)}
                     >
                       {g.saw}
                       <ChevronRightIcon className="size-3.5 shrink-0 translate-y-px" />

@@ -7,7 +7,6 @@ import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { Segmented } from "@/ui/segmented";
 import { windowStart, type Range } from "@/ui/range";
 import { when } from "@/format";
 import { appLabel } from "@/labels";
@@ -24,8 +23,6 @@ import { logTabText } from "./LogTab.i18n";
 /** 一次读多少条。**一屏半** —— 再多就是替用户翻他不会看的那几页 */
 const PAGE = 100;
 
-export type LogGuard = Guard | "all";
-
 /** 日志行上的菜单能做的两件事，由页面接住：它们要切标签、要写配置 */
 export interface LogActions {
   viewRule: (guard: Guard, id: string, custom: boolean) => void;
@@ -33,28 +30,27 @@ export interface LogActions {
 }
 
 /**
- * 安全日志：一行是一次命中。
+ * 安全日志：一行是一次命中，两项防护的都在一张表里，「类型」一列分得开。
  *
- * **和概览上那个数是同一批。**时间窗的起点用同一个函数算（`windowStart`），
- * 从概览点进来时条数对得上。
+ * **和概览上那两个数是同一批。**时间窗的起点用同一个函数算（`windowStart`），
+ * 从概览点进来时，条数是那两个数之和。
  *
  * 点一行打开那次请求的详情 —— 日志说的是「命中了什么」，请求详情说的是
  * 「那次请求本身」，排查时两样都要看。
  */
 export function LogTab({
   detail,
-  guard,
   range,
   tick,
-  onGuard,
+  onCount,
   actions,
 }: {
   detail: SecurityDetail | null;
-  guard: LogGuard;
   range: Range;
   /** 库里多了请求就涨一次。日志跟着重读，新命中不用手动刷新 */
   tick: number;
-  onGuard: (g: LogGuard) => void;
+  /** 读到了几条。页面把它放在标签那一行上，挨着区间；没有记录时是 null */
+  onCount: (count: string | null) => void;
   actions: LogActions;
 }) {
   const t = useText(logTabText);
@@ -67,11 +63,11 @@ export function LogTab({
   const [open, setOpen] = useState<number | null>(null);
 
   /*
-    **换了筛选从第一页读起；只是来了新记录，就把已经翻出来的几页一起重读。**
+    **换了区间从第一页读起；只是来了新记录，就把已经翻出来的几页一起重读。**
     用户往下翻了三页正看着，一条新命中进来就把列表弹回第一页，等于把他
     翻过的全扔了。
   */
-  const key = `${guard}|${range.ms}|${range.live ? 1 : 0}|${range.custom ? 1 : 0}`;
+  const key = `${range.ms}|${range.live ? 1 : 0}|${range.custom ? 1 : 0}`;
   const lastKey = useRef(key);
   const loaded = useRef(0);
   loaded.current = rows?.length ?? 0;
@@ -81,7 +77,7 @@ export function LogTab({
     const limit = same ? Math.max(PAGE, loaded.current) : PAGE;
     let alive = true;
     api
-      .events({ guard: guard === "all" ? undefined : guard, fromMs: windowStart(range), limit })
+      .events({ fromMs: windowStart(range), limit })
       .then((p) => {
         if (!alive) return;
         setRows(p.events);
@@ -102,7 +98,6 @@ export function LogTab({
     setLoadingMore(true);
     try {
       const p = await api.events({
-        guard: guard === "all" ? undefined : guard,
         fromMs: windowStart(range),
         before: last.id,
         limit: PAGE,
@@ -140,37 +135,18 @@ export function LogTab({
     ];
   }
 
+  const count = rows && rows.length > 0 ? t.count(rows.length, more) : null;
+  useEffect(() => {
+    onCount(count);
+    return () => onCount(null);
+  }, [count, onCount]);
+
   // 空的时候说清是「这段时间没有」还是「根本不会有」
-  const modes = detail ? { redact: detail.redact.mode, inspect_tools: detail.inspect_tools.mode } : null;
-  const emptyNote = !modes
-    ? t.empty
-    : guard === "all"
-      ? modes.redact === "off" && modes.inspect_tools === "off"
-        ? t.bothOff
-        : t.empty
-      : modes[guard] === "off"
-        ? t.oneOff(lt.guards[guard])
-        : t.empty;
+  const emptyNote =
+    detail?.redact.mode === "off" && detail.inspect_tools.mode === "off" ? t.bothOff : t.empty;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Segmented<LogGuard>
-          label={t.type}
-          value={guard}
-          options={[
-            { id: "all", label: t.all },
-            { id: "redact", label: lt.guardShort.redact },
-            { id: "inspect_tools", label: lt.guardShort.inspect_tools },
-          ]}
-          onChange={onGuard}
-        />
-        <div className="flex-1" />
-        {rows && rows.length > 0 && (
-          <span className="tw-label tabular-nums text-muted-foreground">{t.count(rows.length, more)}</span>
-        )}
-      </div>
-
       {error && !rows ? (
         <p className="tw-body text-destructive">{error}</p>
       ) : !rows ? (

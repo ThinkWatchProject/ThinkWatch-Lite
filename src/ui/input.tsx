@@ -3,12 +3,16 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * 加了一档 `inline`。
+ * 加了两档：`inline` 和 `sm`。
  *
  * 表格里有「就地改」的格子（每客户端并发上限、自定义价格）——它们平时
  * 不显边框，鼠标移上去才显，因为一列里十几个输入框各带一个框，读起来
  * 就不是一张表了。默认档是 32px 高、带边框的表单字段，套上去会让每一
  * 行都变高。
+ *
+ * `sm` 给工具条：过滤条上的开关、下拉、按钮都是 `sm` 档，28px 高，默认档
+ * 的输入框放在它们中间会高出一截。叫 `variant` 不叫 `size`，因为 `<input>`
+ * 自己有个 `size` 属性。
  *
  * **走 cva 而不是在调用点用 className 盖。**盖的话样式散在十几个页面
  * 里，而且和组件自己的 `focus-visible` / `aria-invalid` 打架；加一档是
@@ -20,6 +24,8 @@ const inputVariants = cva(
     variants: {
       variant: {
         default: "h-8 rounded-lg border-input bg-transparent px-2.5 py-1 dark:bg-input/30",
+        // 高度、圆角、上下留白照 `NativeSelect` 的 `sm` 档
+        sm: "h-7 rounded-[min(var(--radius-md),10px)] border-input bg-transparent px-2.5 py-0.5 dark:bg-input/30",
         inline:
           "h-6 rounded-md border-transparent bg-transparent px-1 hover:border-input focus-visible:border-ring",
       },

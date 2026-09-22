@@ -2,7 +2,6 @@ import { messages } from "@/i18n";
 
 export const logTabText = messages(
   {
-    all: "全部",
     time: "时间",
     type: "类型",
     hit: "命中",
@@ -19,11 +18,9 @@ export const logTabText = messages(
     actionsFor: (rule: string) => `${rule} 的操作`,
     empty: "所选区间内无记录。",
     bothOff: "两项防护均已关闭，不会产生记录。",
-    oneOff: (guard: string) => `${guard}已关闭，不会产生此类记录。`,
     loadMore: "加载更多",
   },
   {
-    all: "All",
     time: "Time",
     type: "Type",
     hit: "Match",
@@ -39,7 +36,6 @@ export const logTabText = messages(
     actionsFor: (rule: string) => `Actions for ${rule}`,
     empty: "No entries in the selected range.",
     bothOff: "Both protections are off, so nothing is recorded.",
-    oneOff: (guard: string) => `${guard} is off, so nothing of this type is recorded.`,
     loadMore: "Load more",
   },
 );
