@@ -102,8 +102,7 @@ export function repeated<T>(rows: T[], i: number, get: (r: T) => string): boolea
  * **估算值必须带记号。**一个 `$0.018` 和一个按输入长度猜出来的
  * `$0.018` 在列表里长得一模一样，而后者不该被当成账单上的数。
  *
- * 算不出来的显示「—」：订阅制上游的边际成本不在这个维度上，价目表里
- * 没有的模型也是 —— 两种都不是「零」。
+ * 算不出来的显示「—」：价目表里没有的模型、没有拿到用量的请求，都不是「零」。
  */
 export function money(
   micros: number | undefined,

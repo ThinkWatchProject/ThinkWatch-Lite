@@ -48,10 +48,11 @@ const SECTIONS: Section[] = ["connection", "models", "billing"];
 /**
  * ChatGPT 账号上游的分节。
  *
- * **没有「连接」也没有「计费」**：地址、协议、凭据由登录决定，计费方式是订阅制 ——
- * 把这些摆成可填的表单，等于邀请用户去改一个改了就坏的东西。
+ * **没有「连接」**：地址、协议、凭据由登录决定 —— 把这些摆成可填的表单，等于
+ * 邀请用户去改一个改了就坏的东西。**有「计费」**：订阅账号也按价目表算费用，
+ * 选哪张价目表、要不要记成不计费，和别的上游一样由用户定。
  */
-const ACCOUNT_SECTIONS: Section[] = ["account", "models"];
+const ACCOUNT_SECTIONS: Section[] = ["account", "models", "billing"];
 
 export type UpstreamDialogMode =
   | { kind: "create" }
@@ -68,7 +69,6 @@ export function UpstreamDialog({
   mode,
   ov,
   configVersion,
-  quotaSeen,
   onClose,
   onSaved,
   onChanged,
@@ -77,8 +77,6 @@ export function UpstreamDialog({
   mode: UpstreamDialogMode;
   ov: Overview;
   configVersion: string;
-  /** 这一家报过订阅额度。「自动识别」的计费方式据此判成订阅制 */
-  quotaSeen: boolean;
   onClose: () => void;
   onSaved: (name: string) => void;
   /** 对话框里新建了代理或价目表：外面要重新读概览 */
@@ -290,13 +288,6 @@ export function UpstreamDialog({
   }
   const index = sections.findIndex((s) => s.id === section);
 
-  const autoBilling =
-    editing && !editing.billing
-      ? editing.billing_effective
-      : quotaSeen
-        ? "subscription"
-        : "per-token";
-
   if (mode.kind === "edit" && !editing) {
     // 保存期间被别处删掉了
     return null;
@@ -357,7 +348,7 @@ export function UpstreamDialog({
               set={set}
               catalog={catalog}
               prices={prices}
-              perToken={(form.billing || autoBilling) === "per-token"}
+              perToken={form.billing === "per-token"}
               sheetLabel={form.pricing ? t.namedSheet(form.pricing) : t.defaultSheet}
               loading={catalogLoading || (testing && catalog == null)}
               refreshing={refreshing || testing}
@@ -369,7 +360,6 @@ export function UpstreamDialog({
               form={form}
               set={set}
               ov={ov}
-              autoBilling={autoBilling}
               originalName={editing?.name ?? null}
               models={enabledModels}
               prices={prices}

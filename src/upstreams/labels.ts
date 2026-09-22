@@ -45,8 +45,9 @@ export function protocolLabel(id: string | null | undefined): string {
   return PROTOCOLS.find((p) => p.id === id)?.label ?? textOf(labelsText).protocolUnknown;
 }
 
-export const BILLINGS: { id: string; label: string; desc: string }[] = (
-  ["per-token", "subscription", "free", "unknown"] as const
+/** 计费方式只有两档：按价目表算，或者记 $0。订阅账号也按价目表算 */
+export const BILLINGS: { id: "per-token" | "free"; label: string; desc: string }[] = (
+  ["per-token", "free"] as const
 ).map((id) => ({
   id,
   get label() {
@@ -236,10 +237,9 @@ export function shortUrl(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
 }
 
-/** 这一家的计费一栏：订阅制、不计费、未知直接说；按量计费说价目表 */
+/** 这一家的计费一栏：不计费直接说；按量计费说价目表 */
 export function billingSummary(p: ProviderView): string {
-  const b = p.billing ?? p.billing_effective;
-  if (b !== "per-token") return billingLabel(b);
+  if (p.billing !== "per-token") return billingLabel(p.billing);
   return p.pricing ?? textOf(labelsText).defaultSheet;
 }
 

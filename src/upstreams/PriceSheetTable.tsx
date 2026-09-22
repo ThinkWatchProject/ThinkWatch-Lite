@@ -16,7 +16,7 @@ import { priceSheetTableText } from "./PriceSheetTable.i18n";
 /** 按默认价目表计价的上游：没选价目表、而且按量计费 */
 export function defaultSheetUsers(ov: Overview): string[] {
   return ov.providers
-    .filter((p) => !p.pricing && (p.billing ?? p.billing_effective) === "per-token")
+    .filter((p) => !p.pricing && p.billing === "per-token")
     .map((p) => p.name);
 }
 

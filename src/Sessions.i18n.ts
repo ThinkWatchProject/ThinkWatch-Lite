@@ -40,8 +40,6 @@ export const sessionsText = messages(
     noUsageTurns: (n: number) => `+${n} 轮无用量`,
     noUsageTurnsTip:
       "这些轮次没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入合计",
-    subscriptionTurns: (n: number) => `订阅额度 ${n} 轮`,
-    subscriptionTip: "这些轮次由订阅制上游服务，计入订阅额度，不按用量产生费用",
 
     // 详情
     /** `at` 是开始时刻写出来的样子 */
@@ -60,7 +58,6 @@ export const sessionsText = messages(
 
     waterfallTitle: "每轮费用",
     /** 瀑布里单独一轮的标注 */
-    turnSubscription: "订阅额度",
     turnFailed: "失败",
     turnCancelled: "已取消",
   },
@@ -96,9 +93,6 @@ export const sessionsText = messages(
     noUsageTurns: (n: number) => `+${n} no usage`,
     noUsageTurnsTip:
       "These turns have no usage data: the upstream did not report it, or the connection ended before it was reported. Their cost cannot be calculated and is not included in the total.",
-    subscriptionTurns: (n: number) => `${n} on subscription`,
-    subscriptionTip:
-      "These turns were served by a subscription upstream. They count against the subscription quota and do not incur cost by usage.",
 
     detailTitle: (at: string, turns: number, duration: string) =>
       `Session at ${at} · ${turns === 1 ? "1 turn" : `${turns} turns`} · ${duration}`,
@@ -112,7 +106,6 @@ export const sessionsText = messages(
     growthLegend: (peak: string) => `Green marks the part served from cache. Peak ${peak} tokens.`,
 
     waterfallTitle: "Cost per turn",
-    turnSubscription: "Subscription",
     turnFailed: "Failed",
     turnCancelled: "Canceled",
   },

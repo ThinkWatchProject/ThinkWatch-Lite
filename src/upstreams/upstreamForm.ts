@@ -56,8 +56,8 @@ export interface UpstreamForm {
   scope: "all" | "some";
   /** 指定范围：模型 ID 或通配规则 */
   scopeList: string[];
-  /** 空 = 自动识别 */
-  billing: string;
+  /** 按量计费按价目表算（订阅账号也是），不计费记 $0 */
+  billing: "per-token" | "free";
   /** 空 = 默认价目表 */
   pricing: string;
   disabled: boolean;
@@ -99,7 +99,7 @@ export function blankForm(): UpstreamForm {
     manualModels: [],
     scope: "all",
     scopeList: [],
-    billing: "",
+    billing: "per-token",
     pricing: "",
     disabled: false,
   };
@@ -129,7 +129,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     manualModels: p.models,
     scope: p.models_only ? "some" : "all",
     scopeList: p.models_only ?? [],
-    billing: p.billing ?? "",
+    billing: p.billing === "free" ? "free" : "per-token",
     pricing: p.pricing ?? "",
     disabled: p.disabled,
   };
@@ -182,7 +182,7 @@ export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
     on_proxy_fail: f.onProxyFail,
     models: f.manualModels,
     models_only: f.scope === "some" ? f.scopeList : undefined,
-    billing: f.billing || undefined,
+    billing: f.billing,
     pricing: f.pricing || undefined,
     disabled: f.disabled,
   };

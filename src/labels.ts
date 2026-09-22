@@ -169,18 +169,8 @@ export function translatedText(t: Pick<TranslatedView, "from" | "to">): string {
 /** 重放前的费用预估 */
 export function quoteText(q: ReplayQuote): string {
   const t = textOf(labelsText).quote;
-  switch (q.billing) {
-    case "subscription":
-      return t.subscription;
-    case "free":
-      return t.free;
-    case "unknown":
-      return t.unknown;
-    default:
-      return q.cost_micros != null
-        ? t.estimate(usd(q.cost_micros))
-        : t.unpriced(q.model);
-  }
+  if (q.billing === "free") return t.free;
+  return q.cost_micros != null ? t.estimate(usd(q.cost_micros)) : t.unpriced(q.model);
 }
 
 // ---------------------------------------------------------------- 配置

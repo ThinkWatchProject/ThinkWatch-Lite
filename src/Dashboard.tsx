@@ -778,17 +778,9 @@ export default function Dashboard({
                   </span>
                 </Tip>
               )}
-              {s.subscription_requests > 0 && (
-                <Tip text={t.subscriptionTip}>
-                  <span className="underline decoration-dotted underline-offset-2">
-                    {t.subscription(s.subscription_requests)}
-                  </span>
-                </Tip>
-              )}
               {s.cost_micros_estimated === 0 &&
                 s.unpriced_requests === 0 &&
-                s.no_usage_requests === 0 &&
-                s.subscription_requests === 0 && <span>{t.allMeasured}</span>}
+                s.no_usage_requests === 0 && <span>{t.allMeasured}</span>}
             </>
           }
         />

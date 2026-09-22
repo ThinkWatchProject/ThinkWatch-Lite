@@ -335,7 +335,7 @@ export function PriceSheetDialog({
     }
   }
 
-  const perTokenProviders = ov.providers.filter((p) => (p.billing ?? p.billing_effective) === "per-token");
+  const perTokenProviders = ov.providers.filter((p) => p.billing === "per-token");
   const title =
     mode.kind === "default"
       ? t.defaultSheet

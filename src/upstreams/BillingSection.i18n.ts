@@ -4,9 +4,7 @@ export const billingSectionText = messages(
   {
     newUpstream: "（新建的上游）",
     billing: "计费方式",
-    auto: (billing: string) => `自动识别（${billing}）`,
     sheet: "价目表",
-    noSheet: (billing: string) => `计费方式为${billing}时不按价目表计算费用。`,
     defaultSheet: "默认价目表",
     newSheet: "新建价目表…",
     usedBy: "使用此价目表的上游",
@@ -23,9 +21,7 @@ export const billingSectionText = messages(
   {
     newUpstream: "(new upstream)",
     billing: "Billing",
-    auto: (billing: string) => `Auto-detect (${billing})`,
     sheet: "Price sheet",
-    noSheet: (billing: string) => `Price sheets are not used with this billing method (${billing}).`,
     defaultSheet: "Default price sheet",
     newSheet: "New price sheet…",
     usedBy: "Upstreams using this price sheet",

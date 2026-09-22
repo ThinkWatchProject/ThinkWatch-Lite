@@ -30,8 +30,6 @@ export const upstreamTableText = messages(
     sheet: (name: string) => `价目表 ${name}`,
     defaultSheet: "默认",
     requests: (n: number) => `${n.toLocaleString()} 次`,
-    inSubscription: "订阅内",
-    costUnknown: "费用未知",
     unpriced: (n: number) => `${n} 次无法计价`,
   },
   {
@@ -64,8 +62,6 @@ export const upstreamTableText = messages(
     sheet: (name: string) => `Price sheet: ${name}`,
     defaultSheet: "default",
     requests: (n: number) => (n === 1 ? "1 request" : `${n.toLocaleString()} requests`),
-    inSubscription: "In subscription",
-    costUnknown: "Cost unknown",
     unpriced: (n: number) => `${n} unpriced`,
   },
 );

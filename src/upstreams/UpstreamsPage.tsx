@@ -266,8 +266,6 @@ export default function UpstreamsPage({
     }
   }
 
-  const quotaSeen = (name: string) => !!stats?.quotas.some((q) => q.provider === name);
-
   return (
     <div className="flex flex-col gap-4 p-5">
       <Tabs value={tab} onValueChange={(v) => setTab(v as UpstreamTab)}>
@@ -462,7 +460,6 @@ export default function UpstreamsPage({
           mode={dialog.mode}
           ov={ov}
           configVersion={configVersion}
-          quotaSeen={dialog.mode.kind === "edit" && quotaSeen(dialog.mode.name)}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);

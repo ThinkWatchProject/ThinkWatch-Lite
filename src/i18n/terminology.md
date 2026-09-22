@@ -82,7 +82,7 @@ known colloquialisms.
 | 订阅 / 订阅额度 | subscription / subscription quota | |
 | 额度 | usage limit / quota | ChatGPT windows: "usage limit" |
 | 重置卡 | reset credit | |
-| 按量计费 / 订阅制 / 不计费 | Per token / Subscription / Free | billing |
+| 按量计费 / 不计费 | Per token / Free | billing: the only two modes; subscription accounts are billed per token |
 | 首字节 | time to first byte (TTFB) | column headers may use "TTFB" |
 | 延迟 / 总耗时 / 生成用时 | latency / total time / generation time | |
 | 故障转移 | failover | |

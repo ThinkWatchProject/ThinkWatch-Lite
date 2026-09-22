@@ -43,7 +43,6 @@ export const chatgptAccountText = messages(
     signedIn: "已登录",
     needsLogin: "需要重新登录才能继续使用这个上游。",
     credentialExpires: (when: string) => `凭据 ${when}过期，到期前自动续期`,
-    countsTowardQuota: "请求计入订阅额度，不计算费用",
     relogin: "重新登录",
   },
   {
@@ -88,7 +87,6 @@ export const chatgptAccountText = messages(
     signedIn: "Signed in",
     needsLogin: "Signing in again is required to keep using this upstream.",
     credentialExpires: (when: string) => `Credential expires ${when} and renews automatically before then`,
-    countsTowardQuota: "Requests count toward the subscription quota; costs are not calculated",
     relogin: "Sign in again",
   },
 );

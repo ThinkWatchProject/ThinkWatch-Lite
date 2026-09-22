@@ -417,9 +417,7 @@ export function SpeedTestDialog({
                         {i.cost_micros != null ? (
                           usd(i.cost_micros)
                         ) : (
-                          <span className="text-muted-foreground">
-                            {i.billing === "subscription" ? t.speed.subscription : t.speed.uncalculable}
-                          </span>
+                          <span className="text-muted-foreground">{t.speed.uncalculable}</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -427,7 +425,7 @@ export function SpeedTestDialog({
                   {runnable.length > 0 && (
                     <TableRow>
                       <TableCell className="font-medium">
-                        {t.total} <span className="tw-label font-normal text-muted-foreground">{t.speed.excludesSubscription}</span>
+                        {t.total}
                       </TableCell>
                       <TableCell />
                       <TableCell />

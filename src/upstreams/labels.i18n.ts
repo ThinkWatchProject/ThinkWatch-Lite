@@ -6,9 +6,7 @@ export const labelsText = messages(
     protocolUnknown: "协议未识别",
     billings: {
       "per-token": { label: "按量计费", desc: "按价目表的单价与用量计算费用。" },
-      subscription: { label: "订阅制", desc: "请求计入订阅额度，不计算费用。" },
       free: { label: "不计费", desc: "费用记为 $0，例如本地模型。" },
-      unknown: { label: "计费方式未知", desc: "不计算费用，也不计入合计。" },
     },
     proxyKinds: {
       socks5h: "域名由代理解析，本机不发出 DNS 查询。",
@@ -73,12 +71,7 @@ export const labelsText = messages(
         label: "Per token",
         desc: "Cost is calculated from the price sheet's unit prices and usage.",
       },
-      subscription: {
-        label: "Subscription",
-        desc: "Requests count toward the subscription quota; no cost is calculated.",
-      },
       free: { label: "Free", desc: "Cost is recorded as $0, e.g. for local models." },
-      unknown: { label: "Billing unknown", desc: "No cost is calculated or included in totals." },
     },
     proxyKinds: {
       socks5h: "The proxy resolves domain names; no DNS queries are sent from this computer.",
