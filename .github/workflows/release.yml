@@ -1,8 +1,9 @@
 # 发一版桌面端。
 #
-# **给人装的只有一个文件。**`ThinkWatch-Lite-<版本>-arm64.dmg` 加一份
-# sha256 —— 网页上下载的是它，Homebrew 的 cask 吃的也是它。另外两样
-# （更新包和它的清单）是给已经装上的应用自己读的。
+# **只发一个文件。**`ThinkWatch-Lite-<版本>-arm64.dmg`，外加它的 sha256
+# 和 latest.json —— 网页上下载的是它，Homebrew 的 cask 吃的是它，已经
+# 装上的应用自己更新下的也是它：latest.json 指向它，签名签的也是它
+# （应用怎么从 DMG 更新自己，见 `src-tauri/src/dmg.rs`）。
 #
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出 `.app` 并且
@@ -123,11 +124,7 @@ jobs:
       # 的架构走，哪天 runner 换了，后面每一行路径都得跟着猜。
       # 编译前 `beforeBuildCommand` 会把 twcore 取回来并核对校验和。
       - name: Build
-        # 签更新包用的私钥。**没有它构建照样成功** —— 只是不产出更新
-        # 包，于是 latest.json 这一步才会失败，而那正是要让它失败的地方。
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # 覆盖 tauri.conf.json 里的 `-`。配置里留着临时签名，是为了没有这张
           # 证书的机器上本地构建照样能打出一个能跑的包
           APPLE_SIGNING_IDENTITY: ${{ env.SIGNING_IDENTITY }}
@@ -182,15 +179,21 @@ jobs:
             -D dir=src-tauri/dmg -D icon=src-tauri/icons/icon.icns \
             "ThinkWatch Lite" "dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
 
+      # 签的是 DMG 本身：应用自己更新时下的就是它，验签验的是下载下来的
+      # 原始字节。**私钥没传进来这一步就失败** —— 那正是要让它失败的地方，
+      # 否则发出去的是一个没有签名、每台机器都会拒绝的更新。
       - name: Package
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          BUNDLE="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
           DMG="dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
           ( cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
           cat "$DMG.sha256"
 
-          python3 scripts/manifest.py "$VERSION" "$BUNDLE" dist notes.txt
+          pnpm tauri signer sign "$DMG"
+          python3 scripts/manifest.py "$VERSION" "$DMG" notes.txt
 
       # 挂上去再验一次。**打包这一步本身就可能是那个出错的环节** ——
       # 而它出错的样子恰恰是「下得下来、打开之后里面的应用起不来」。验的
@@ -222,7 +225,5 @@ jobs:
           files: |
             dist/ThinkWatch-Lite-*-arm64.dmg
             dist/ThinkWatch-Lite-*-arm64.dmg.sha256
-            dist/ThinkWatch-Lite-*-arm64.app.tar.gz
-            dist/ThinkWatch-Lite-*-arm64.app.tar.gz.sig
             dist/latest.json
           generate_release_notes: true

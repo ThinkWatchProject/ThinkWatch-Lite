@@ -34,7 +34,7 @@
     "resources": {
       "resources/twcore": "twcore"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": false
   },
   "plugins": {
     "updater": {

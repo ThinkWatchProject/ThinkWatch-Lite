@@ -15,6 +15,8 @@ pub mod autostart;
 pub mod chatgpt;
 pub mod clients;
 pub mod control;
+#[cfg(target_os = "macos")]
+pub mod dmg;
 pub mod keys;
 pub mod memcheck;
 pub mod menubar;
@@ -1333,6 +1335,18 @@ async fn update_install(
         )
         .await
         .map_err(|e| tr!(format!("下载失败：{e}"), format!("Download failed: {e}")))?;
+    // 发布页上只有 DMG，插件只装 `.app.tar.gz` —— 见 `dmg`。放在等请求之前：
+    // 包打不开的话，不该先让用户白等几分钟
+    #[cfg(target_os = "macos")]
+    let bytes = tauri::async_runtime::spawn_blocking(move || dmg::app_archive(&bytes))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            tr!(
+                format!("无法打开更新包：{e}"),
+                format!("The update could not be opened: {e}")
+            )
+        })?;
 
     wait_for_quiet(&app, &state.control).await;
 

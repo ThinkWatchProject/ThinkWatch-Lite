@@ -74,6 +74,11 @@ objc2-user-notifications = "0.3"
 objc2-app-kit = "0.3"
 # 菜单开着时主线程在事件跟踪模式，更新要走 GCD 的主队列才执行得到
 dispatch2 = "0.3"
+# 更新包是 DMG，而更新器插件只装 `.app.tar.gz`：挂上映像，把里面的 `.app`
+# 打成那样一个包（见 `dmg.rs`）。三个都是插件自己在用的，版本跟着它
+tar = "0.4"
+flate2 = "1"
+tempfile = "3.20"
 
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
