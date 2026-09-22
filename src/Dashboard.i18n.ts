@@ -3,9 +3,8 @@ import { messages } from "@/i18n";
 /** 概览页的文案。 */
 export const dashboardText = messages(
   {
-    title: "用量概览",
-
-    // 图的口径
+    // 图的口径。`metric` 是读屏读出来的这一组的名字
+    metric: "图表口径",
     byTokens: "token",
     byCost: "费用",
 
@@ -108,8 +107,7 @@ export const dashboardText = messages(
     forwardingUnaffected: "。转发不受影响。",
   },
   {
-    title: "Usage",
-
+    metric: "Chart measure",
     byTokens: "Tokens",
     byCost: "Cost",
 

@@ -236,7 +236,7 @@ export default function Dashboard({
   /**
    * 图按哪个口径画。
    *
-   * **默认 token。**这一页叫用量概览，而按金额画时一次 opus 突发会把
+   * **默认 token。**这一页看的是用量，而按金额画时一次 opus 突发会把
    * 前后一周压平 —— 那张图好看，但除了「opus 贵」说不出别的。
    */
   const [by, setBy] = useState<"token" | "cost">("token");
@@ -340,29 +340,13 @@ export default function Dashboard({
     };
   }, [tick, range, bucketMs, live, setD]);
 
-  /*
-    **两组控件不放在一起。**时间范围管的是整页（下面每一块都跟着它
-    走），口径只管那一张图 —— 两个不同维度的东西并排成一串同样的药丸，
-    读起来就是一排七个平级选项。
-
-    所以范围留在标题行右端（页面级），口径挪到图的正上方、左对齐
-    （图级），中间隔着整排大数字。
-  */
-  const header = (
-    <div className="flex flex-wrap items-center gap-3">
-      <h2 className="tw-title font-semibold">{t.title}</h2>
-      <div className="ml-auto">
-        <RangePicker value={range} onChange={setRange} />
-      </div>
-    </div>
-  );
-
   /**
    * 图按什么口径画。**两档都在实时下可用** —— core 会在算完价钱之后
    * 补一条 `request_priced`，所以金额也是推过来的，只比用量晚一拍。
    */
   const metric = (
     <Segmented<"token" | "cost">
+      label={t.metric}
       value={by}
       options={[
         { id: "token", label: t.byTokens },
@@ -370,6 +354,21 @@ export default function Dashboard({
       ]}
       onChange={setBy}
     />
+  );
+
+  /*
+    **页面顶上没有标题**，导航里选中的那一项已经说了这是哪一页。
+
+    两组控件分在这一行的两头：时间范围管的是整页（下面每一块都跟着它
+    走），靠左、第一眼就看到；口径只管图和模型排行，靠右。**不挨在
+    一起** —— 两个不同维度的东西并排成一串同样的药丸，读起来就是一排
+    七个平级选项。
+  */
+  const header = (
+    <div className="flex flex-wrap items-center gap-3">
+      <RangePicker value={range} onChange={setRange} align="start" />
+      <div className="ml-auto">{metric}</div>
+    </div>
   );
 
   if (error) {
@@ -800,7 +799,6 @@ export default function Dashboard({
       </div>
 
       <div className="mt-4">
-        <div className="mb-2 flex justify-end">{metric}</div>
         <StackedArea
           data={area}
           keys={keys}
