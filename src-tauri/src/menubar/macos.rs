@@ -12,6 +12,7 @@
 //! 的主队列：菜单展开时主线程处在事件跟踪模式，别的投递方式要等菜单关了才执行。
 
 use std::cell::{Cell, RefCell};
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use block2::RcBlock;
@@ -21,13 +22,13 @@ use objc2::{
     AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSAppearanceCustomization, NSApplication,
-    NSAttributedStringNSStringDrawing, NSAutoresizingMaskOptions, NSBezierPath, NSColor,
-    NSControlStateValueOff, NSControlStateValueOn, NSEvent, NSEventModifierFlags, NSFont,
-    NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold,
-    NSForegroundColorAttributeName, NSImage, NSImageSymbolConfiguration, NSLineCapStyle,
-    NSLineJoinStyle, NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem,
-    NSVariableStatusItemLength, NSView,
+    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
+    NSAppearanceCustomization, NSApplication, NSAttributedStringNSStringDrawing,
+    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSControlStateValueOff,
+    NSControlStateValueOn, NSEvent, NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName,
+    NSFontWeightMedium, NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName,
+    NSImage, NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle, NSMenu, NSMenuDelegate,
+    NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength, NSView,
 };
 use objc2_foundation::{
     NSAttributedString, NSDictionary, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -905,12 +906,33 @@ pub fn confirm_quit(mtm: MainThreadMarker, in_flight: usize) -> bool {
         ));
     }
     alert.setInformativeText(&NSString::from_str(&info));
-    // **取消是默认按钮**：回车不该变成一次退出
-    alert.addButtonWithTitle(&NSString::from_str(tr!("取消", "Cancel")));
+    // **取消是默认按钮**：回车不该变成一次退出。要明说 —— 标题恰好是英文「Cancel」时，
+    // AppKit 给它配的是 Esc，对话框里就没有默认按钮了
+    let cancel = alert.addButtonWithTitle(&NSString::from_str(tr!("取消", "Cancel")));
+    cancel.setKeyEquivalent(&NSString::from_str("\r"));
     let quit = alert.addButtonWithTitle(&NSString::from_str(tr!("退出", "Quit")));
     quit.setHasDestructiveAction(true);
-    alert.runModal() != NSAlertFirstButtonReturn
+    // Esc 也是取消。一个按钮只有一个快捷键，所以在对话框开着的这段时间里单独接住它
+    let esc = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        if unsafe { event.as_ref() }.keyCode() == KEY_ESCAPE {
+            NSApplication::sharedApplication(mtm).stopModalWithCode(NSAlertFirstButtonReturn);
+            return std::ptr::null_mut();
+        }
+        event.as_ptr()
+    });
+    let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &esc)
+    };
+    let answer = alert.runModal();
+    if let Some(monitor) = monitor {
+        unsafe { NSEvent::removeMonitor(&monitor) };
+    }
+    // 只有点了「退出」才退：模态被系统收掉之类别的返回值一律当没退
+    answer == NSAlertSecondButtonReturn
 }
+
+/// Esc 的键码
+const KEY_ESCAPE: u16 = 53;
 
 /// 一句话的提示框（检查更新之后「已是最新版本」这类）
 pub fn inform(mtm: MainThreadMarker, title: &str, body: &str) {
