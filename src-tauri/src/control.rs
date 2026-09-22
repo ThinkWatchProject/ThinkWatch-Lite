@@ -593,6 +593,16 @@ impl ControlClient {
     }
 
     /// 「我明明配了，为什么没生效」。
+    /// 为这个客户端准备它的专用密钥（为它留着的，或者新建一把绑给它）
+    pub async fn client_key(&self, client: &str) -> Result<tw_api::ClientKey> {
+        self.send_json(
+            hyper::Method::POST,
+            &format!("/clients/{client}/key"),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
     pub async fn why(&self, client: &str) -> Result<Vec<tw_api::FindingView>> {
         Ok(serde_json::from_slice(
             &self.get(&format!("/clients/{client}/why")).await?,

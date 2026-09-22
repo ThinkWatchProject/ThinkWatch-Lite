@@ -1,22 +1,28 @@
 import { textOf } from "@/i18n";
-import type { ClientView, DetectedClient, KnownModel } from "@/types";
+import type { ClientView, DetectedClient, KnownModel, ManualClient } from "@/types";
 import { labelsText } from "./labels.i18n";
 import { splitEntries, visibleCount } from "./scope";
 
+/** 这把密钥是为谁生成的：正被接管的、当前未接管的、手动配置的 */
+export type KeyOwner = { client: string; kind: "adopted" | "idle" | "manual" };
+
 /**
- * 这把密钥是接管哪个客户端时生成的。
+ * 这把密钥是为哪个客户端生成的。
  *
  * **手动创建的返回 null** —— 那是常态，每行都写一句「手动」是噪声；要单独
- * 标出来的是接管生成的那几把。取消接管之后密钥留着、下次接管直接复用，
- * 所以还要说清那个客户端此刻是不是正被接管着（决定了能不能删）。
+ * 标出来的是为某个客户端生成的那几把：接管时生成的，和手动配置 Cursor 这类
+ * 客户端时生成的。能接管的客户端还要说清此刻是不是正被接管着（决定了能不能删）。
  */
 export function takeoverOf(
   k: ClientView,
   clients: DetectedClient[],
-): { client: string; adopted: boolean } | null {
+  manual: ManualClient[] = [],
+): KeyOwner | null {
   if (!k.client) return null;
+  const m = manual.find((x) => x.id === k.client);
+  if (m) return { client: m.name, kind: "manual" };
   const c = clients.find((x) => x.id === k.client);
-  return { client: c?.name ?? k.client, adopted: !!c?.adopted_at_ms };
+  return { client: c?.name ?? k.client, kind: c?.adopted_at_ms ? "adopted" : "idle" };
 }
 
 /**

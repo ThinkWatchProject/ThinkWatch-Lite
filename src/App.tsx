@@ -16,7 +16,7 @@ import {
 import Config from "./Config";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
-import Clients from "./Clients";
+import ClientsPage from "./clients/ClientsPage";
 import KeysPage from "./keys/KeysPage";
 import RoutingPage from "./routing/RoutingPage";
 import SecurityPage, { type LogFocus } from "./security/SecurityPage";
@@ -169,19 +169,6 @@ const SOURCES: {
     ],
   },
   {
-    // **安全自己一组，不挂在「监控」下面。**
-    //
-    // 它不是一个看板：两项防护各自有三档、有规则、有拦截动作，那是
-    // 策略，不是观测。塞在监控里的后果不只是归类难看 —— 用户会把它当
-    // 成一个只能看的页面，而整个设计前提是他看完证据之后**要
-    // 去动那几个开关**。
-    //
-    // 日志和开关在同一页：开关和它查出来的东西分在两处时，「这项防护
-    // 查到过什么」要跑两个导航项才答得完。
-    group: "security",
-    items: [{ id: "security", icon: IconGuard }],
-  },
-  {
     // **谁在用这个网关，拿什么连进来。**客户端和密钥是同一件事的两面：
     // 接管一个客户端就为它生成一把密钥，而密钥页上的每一把也都说得出
     // 是给哪个客户端的。两者挨着，从一边到另一边不用跨过配置那一组。
@@ -198,6 +185,11 @@ const SOURCES: {
       // 而它是这个产品区别于一个普通代理的核心概念,不该要滚两屏才看见。
       { id: "upstreams", icon: IconServer },
       { id: "routing", icon: IconRoute },
+      // **安全和上游、路由同组，不挂在「监控」下面。**它不是一个看板：两项
+      // 防护各有三档、有规则、有拦截动作，那是配置，不是观测 —— 塞在监控里，
+      // 用户会把它当成一个只能看的页面，而整个设计前提是他看完日志之后要去动
+      // 那几个开关。日志和开关仍在同一页
+      { id: "security", icon: IconGuard },
       // **MCP 和上游、路由同组**：它管的是客户端能调用哪些工具，和上游、路由
       // 一样是配一次就不常动的东西
       { id: "mcp", icon: IconMcp },
@@ -406,6 +398,8 @@ export default function App() {
    */
   const [cursor, setCursor] = useState(-1);
   const [tab, setTab] = useState<Surface>("dashboard");
+  /** 从客户端页点了某把密钥：密钥页打开时定位到那一行 */
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   /**
    * 窗口够不够宽拆成两栏。
    *
@@ -1172,7 +1166,17 @@ export default function App() {
                   }}
                 />
               ) : tab === "clients" ? (
-                <Clients />
+                <ClientsPage
+                  onOpenKey={(name) => {
+                    setFocusKey(name);
+                    setTab("keys");
+                  }}
+                  onShowTraffic={(key) => {
+                    // 流量表的「客户端」一列就是密钥名
+                    setFilter({ ...EMPTY_FILTER, client: key });
+                    setTab("requests");
+                  }}
+                />
               ) : tab === "mcp" ? (
                 <McpPage alerts={alerts} onSeen={clearAlerts} />
               ) : tab === "security" ? (
@@ -1192,6 +1196,8 @@ export default function App() {
                 ov ? (
                   <KeysPage
                     ov={ov}
+                    focus={focusKey}
+                    onFocused={() => setFocusKey(null)}
                     onChanged={() => setNudge((n) => n + 1)}
                     onOpenConfigFile={(focus) => setConfigFile({ focus })}
                     onNavigate={(to) => setTab(to as Surface)}

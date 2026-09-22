@@ -16,6 +16,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 pub mod i18n;
 pub mod autostart;
 pub mod chatgpt;
+pub mod clients;
 pub mod control;
 pub mod keys;
 pub mod memcheck;
@@ -1528,6 +1529,9 @@ pub fn run() {
             quit_app,
             uninstall,
             diagnose_client,
+            clients::prepare_client_key,
+            clients::copy_client_endpoint,
+            clients::reveal_client_config,
             scan_configs,
             dry_run,
             sessions,
@@ -2483,7 +2487,8 @@ mod tests {
                         "warns_when_silent": true,
                         "verified": "measured",
                         "costs": [],
-                        "last_seen_ms": null
+                        "last_seen_ms": null,
+                        "manual": {{ "steps": [], "fields": [], "endpoint": "http://127.0.0.1:8080" }}
                     }}"#
                 )
             })
