@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 
@@ -59,26 +59,30 @@ impl ControlClient {
         &self.socket
     }
 
+    /// 连上控制面。
+    ///
+    /// **连不上时只说 core 现在不在。**socket 的路径和「No such file or
+    /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
+    /// 的时候回给界面的都是这一句。原话进日志
+    async fn connect(&self) -> Result<tokio::net::UnixStream> {
+        tokio::net::UnixStream::connect(&self.socket)
+            .await
+            .map_err(|e| {
+                tracing::debug!(socket = %self.socket.display(), "控制面连不上：{e}");
+                anyhow::anyhow!(tr!(
+                    "core 未在运行，或尚未启动完成",
+                    "core is not running, or has not finished starting"
+                ))
+            })
+    }
+
     /// 发一个 GET，把 body 整个读回来。
     ///
     /// 每次新建连接。控制面的调用频率是「用户点一下」的量级，连接复用
     /// 带来的复杂度（连接死了怎么办、什么时候重建）换不来任何东西。
     /// **事件流是例外**，它走 `stream` 那条路，本来就是长连接。
     async fn get(&self, path: &str) -> Result<Vec<u8>> {
-        let stream = tokio::net::UnixStream::connect(&self.socket)
-            .await
-            .with_context(|| {
-                tr!(
-                    format!(
-                        "无法连接控制面 {}，core 可能尚未启动或已退出",
-                        self.socket.display()
-                    ),
-                    format!(
-                        "The control plane at {} could not be reached; core may not have started yet or may have exited",
-                        self.socket.display()
-                    )
-                )
-            })?;
+        let stream = self.connect().await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
         tokio::spawn(async move {
@@ -163,20 +167,7 @@ impl ControlClient {
         path: &str,
         body: &Req,
     ) -> Result<Res> {
-        let stream = tokio::net::UnixStream::connect(&self.socket)
-            .await
-            .with_context(|| {
-                tr!(
-                    format!(
-                        "无法连接控制面 {}，core 可能尚未启动或已退出",
-                        self.socket.display()
-                    ),
-                    format!(
-                        "The control plane at {} could not be reached; core may not have started yet or may have exited",
-                        self.socket.display()
-                    )
-                )
-            })?;
+        let stream = self.connect().await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
         tokio::spawn(async move {
@@ -1138,17 +1129,18 @@ mod tests {
         assert_eq!(ops.len(), 6);
     }
 
+    /// 连不上时说 core 不在，**不带 socket 路径和系统原话**：几乎每个命令在
+    /// core 不在的时候回给界面的都是这一句
     #[tokio::test]
-    async fn connecting_to_a_missing_socket_says_core_might_be_down() {
-        // 「Connection refused」对用户毫无意义。这里要说的是「core 可能
-        // 还没起来」—— 那才是他能行动的信息。
+    async fn connecting_to_a_missing_socket_says_core_is_not_there() {
         let c = ControlClient::new(PathBuf::from("/tmp/definitely-not-a-socket-xyz"));
-        let e = c.status().await.unwrap_err();
-        let msg = format!("{e:#}");
+        let msg = format!("{:#}", c.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
+        assert!(!msg.contains("os error"), "{msg}");
+        assert!(!msg.contains("definitely-not-a-socket"), "{msg}");
     }
 
-    /// 同一句话按界面语言说。core 没起来的时候，几乎每个命令回给界面的都是它
+    /// 同一句话按界面语言说
     #[test]
     fn the_unreachable_message_follows_the_interface_language() {
         use crate::i18n::{Lang, with_lang};
@@ -1163,21 +1155,11 @@ mod tests {
                 format!("{:#}", rt.block_on(c.status()).unwrap_err())
             })
         };
-        let en = said(Lang::En);
-        assert!(
-            en.starts_with(
-                "The control plane at /tmp/definitely-not-a-socket-xyz could not be reached; \
-                 core may not have started yet or may have exited: "
-            ),
-            "{en}"
+        assert_eq!(
+            said(Lang::En),
+            "core is not running, or has not finished starting"
         );
-        let zh = said(Lang::Zh);
-        assert!(
-            zh.starts_with(
-                "无法连接控制面 /tmp/definitely-not-a-socket-xyz，core 可能尚未启动或已退出"
-            ),
-            "{zh}"
-        );
+        assert_eq!(said(Lang::Zh), "core 未在运行，或尚未启动完成");
     }
 
     #[test]

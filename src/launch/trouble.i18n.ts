@@ -1,6 +1,6 @@
 import { messages } from "@/i18n";
 
-export const connectText = messages(
+export const troubleText = messages(
   {
     missing: "未找到 core 程序",
     failed: "core 程序无法运行",
@@ -12,7 +12,7 @@ export const connectText = messages(
     stoppedNext: "点击「重新启动」以启动 core",
     starting: "正在启动 core",
     wait: "请稍候",
-    connecting: "正在连接控制面",
+    connecting: "正在重新连接 core",
     attempt: (n: number) => `第 ${n} 次尝试`,
     restart: "重新启动",
   },
@@ -28,7 +28,7 @@ export const connectText = messages(
     stoppedNext: "Click Restart to start core",
     starting: "Starting core",
     wait: "This takes a moment",
-    connecting: "Connecting to the control plane",
+    connecting: "Reconnecting to core",
     attempt: (n: number) => `Attempt ${n}`,
     restart: "Restart",
   },

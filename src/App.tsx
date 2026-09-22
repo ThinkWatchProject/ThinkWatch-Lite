@@ -65,7 +65,8 @@ import { Toaster } from "@/ui/sonner";
 import { toast } from "sonner";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import Connect, { trouble } from "./Connect";
+import { trouble } from "./launch/trouble";
+import { LaunchScreen } from "./launch/LaunchScreen";
 import {
   Sidebar,
   SidebarContent,
@@ -239,7 +240,7 @@ function describeCore(raw: string): {
   // 安全模式必须显眼：这时候网关不转发了，用户所有的 AI 客户端都在瞎。
   if (raw === "safe_mode")
     return { text: t.safeMode, short: t.safeModeShort, tone: "bad" };
-  // 程序运行不了。原因在连接那一面上说（见 Connect 的 `trouble`）
+  // 程序运行不了。原因在启动画面上说（见 launch/trouble.ts）
   if (raw.startsWith("failed:")) return { text: t.cannotStart, short: t.cannotStart, tone: "bad" };
   return { text: t.stopped, short: t.stopped, tone: "bad" };
 }
@@ -248,6 +249,25 @@ function describeCore(raw: string): {
 export default function App() {
   const t = useText(appText);
   const common = useText(commonText);
+  /**
+   * 守护状态。**先当它在起**：第一次读到之前画「已停止」的话，启动画面会先
+   * 闪一下「core 未运行」
+   */
+  const [core, setCore] = useState("starting");
+  /**
+   * 这次开窗连上过控制面吗。
+   *
+   * **取数的都等它。**连上之前去取，拿回来的只有一句「连不上」；而它们挂在
+   * App 顶层，一开窗就会去取。它也决定断线时的样子：连上过就保留页面、顶上
+   * 挂一条带子 —— 用户本来在看数据，清空比留着旧值加一句说明更糟。
+   */
+  const [linked, setLinked] = useState(false);
+  /** `linked` 的同一个值，给只在变化时才该重跑的 effect 读 */
+  const linkedRef = useRef(false);
+  /** 连了第几次了。只用来在界面上说清楚，不参与重试逻辑 */
+  const [tries, setTries] = useState(0);
+  /** 最近一次读状态失败的原因。启动画面上连着失败时说出来 */
+  const [linkError, setLinkError] = useState<string | null>(null);
   const {
     rows: allRows,
     seeded,
@@ -263,7 +283,7 @@ export default function App() {
     clearRotated,
     clearAlerts,
     upstreamState,
-  } = useRequests();
+  } = useRequests(linked);
   // 排序与过滤。默认按时间倒序 —— 那是「刚才发生了什么」，也是打开这
   // 一页最常见的意图。
   const [sortKey, setSortKey] = useState<SortKey>("time");
@@ -287,7 +307,7 @@ export default function App() {
   /** 右侧分栏里开着的那次会话。和 `open`（一条请求）互斥 */
   const [openSession, setOpenSession] = useState<string | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
-  const sessions = useSessions();
+  const sessions = useSessions(linked);
   const rows = useMemo(
     () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
     [allRows, filter, sortKey, sortDir],
@@ -377,17 +397,12 @@ export default function App() {
     }
   }
   const [status, setStatus] = useStableState<CoreStatus | null>(null);
-  const [core, setCore] = useState("stopped");
-  /**
-   * 这次会话连上过控制面吗。
-   *
-   * **决定的是「整窗初始化面」还是「保留页面 + 顶部状态带」。**冷启动
-   * 时后面确实没东西可看；而断线重连时用户本来在看数据，把它清空比留着
-   * 一个旧值更糟 —— 旧值加一句「已断开」至少还回答得了「刚才是什么样」。
-   */
-  const [linked, setLinked] = useState(false);
-  /** 连了第几次了。只用来在界面上说清楚，不参与重试逻辑 */
-  const [tries, setTries] = useState(0);
+  /** 启动画面还在。**只在这次开窗第一次交接之前**，见 `LaunchScreen` */
+  const [launching, setLaunching] = useState(true);
+  /** 概览那一页的第一份数据到了。启动画面等它，交接时数字已经是对的 */
+  const [landed, setLanded] = useState(false);
+  /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */
+  const [waited, setWaited] = useState(false);
   /**
    * 托盘按了「退出」，等确认。
    *
@@ -654,7 +669,14 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     const un = listen<string>("core-state", (e) => {
-      if (alive) setCore(e.payload);
+      if (!alive) return;
+      setCore(e.payload);
+      // 又起来了：之前读状态失败的次数和原因作废，这一回重新数。不清的话，
+      // 上一回的「读不到」会在它刚起来、还没来得及读的那一下冒出来
+      if (e.payload.startsWith("running:")) {
+        setTries(0);
+        setLinkError(null);
+      }
     });
     void un
       .then(() => invoke<string>("core_state"))
@@ -690,6 +712,9 @@ export default function App() {
    * 的话，读到的是同一份概览；隔一小会儿再读，这一串就只剩最后一次。
    */
   useEffect(() => {
+    // 头一次连上之前，core 不在跑就不去读：读回来的只有一句「连不上」，而启动
+    // 画面已经在说 core 怎么了。连上过之后照读 —— 断线那条带子要靠它数次数
+    if (!linkedRef.current && !core.startsWith("running:")) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let n = 0;
@@ -699,21 +724,21 @@ export default function App() {
         if (!alive) return;
         setStatus(s);
         setLinked(true);
+        linkedRef.current = true;
         setTries(0);
-      } catch {
+        setLinkError(null);
+      } catch (e) {
         /*
-          **连不上不是错误，是启动过程中的一段。**在此之前这里弹一条
-          toast，而它说的是 `Connection refused (os error 61)` —— 那是
-          给写代码的人看的，用户从中得不到任何该做什么的信息。而且这个
-          effect 跟着守护状态重跑（已停止 → 启动中 → 运行中），于是同样
-          的话会堆三条。
-
-          真正要处理的是一个很具体的窗口期：**core 进程起来了，控制面
-          socket 还没 bind**。退避重试几次就过去了，界面上说第几次。
+          **读不到不弹提示。**那句话只会是「core 未在运行」，而启动画面（还没
+          连上时）和顶上那条带子（连上过之后）已经在说 core 怎么了 —— 再弹一条
+          就是同一件事说两遍。守护要等控制面答应了才报「运行中」，所以这里还
+          失败，多半是 core 刚好又停了，或者两边的协议对不上：次数和原因记下来，
+          交给它们去说。
         */
         if (!alive) return;
         n += 1;
         setTries(n);
+        setLinkError(errorText(e));
         if (n <= MAX_TRIES) {
           timer = setTimeout(
             () => void read(),
@@ -742,6 +767,18 @@ export default function App() {
   const c = describeCore(core);
   /** 连上过、又断了。**只在这时候挂那条带子** */
   const lost = linked && tries > 0 ? trouble(core, tries) : null;
+
+  useEffect(() => {
+    if (!linked) return;
+    const h = setTimeout(() => setWaited(true), 2_500);
+    return () => clearTimeout(h);
+  }, [linked]);
+  /*
+    **首屏的数据取好了再交接。**启动画面下面主界面已经挂上了，它取数的这一会儿
+    被盖着；交接时概览（和落地页那一页的数据）已经在了，数字不会在眼前从零
+    跳成实际值。取不齐就不等了（`waited`），那一页有自己的骨架。
+  */
+  const handover = linked && ((ov !== null && (tab !== "dashboard" || landed)) || waited);
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
   // 一个填表向导，填完是一个「等第一个请求」的页面。两道都拆了。
@@ -1156,20 +1193,19 @@ export default function App() {
               }
             >
               {/*
-        **这次会话还没连上过控制面 —— 整窗让给初始化面。**
-        每一页的数据都来自那条 socket，连不上的时候后面确实没东西。
+        **还没连上时这里什么都不画**：整窗盖着启动画面。连上之后各页在它下面
+        挂上、开始取数，交接时数据已经在了（见 `handover`）。
 
         和「不再有独立初始化页面」那条决定不冲突：那两道门挡的是配置
         状态（还没配上游），而门后面的东西是存在、可用的；这一道挡的是
-        连接状态。**控制面一答应就立刻让开** —— 哪怕网关还没起来（安全
-        模式下配置、回滚、还原接管都能用，那时绝不能再挡）。
+        连接状态。**控制面一答应就交接** —— 哪怕网关还没起来（安全模式下
+        配置、回滚、还原接管都能用，那时绝不能再挡）。
       */}
-              {!linked ? (
-                <Connect state={core} tries={tries} />
-              ) : tab === "dashboard" ? (
+              {!linked ? null : tab === "dashboard" ? (
                 <Dashboard
                   tick={dashTick}
                   ov={ov}
+                  onLanded={() => setLanded(true)}
                   onShowSecurity={(range) => {
                     // 实时档的计数按 24 小时算（见 `windowStart`），日志也按 24 小时看
                     setSecurityFocus({
@@ -1621,6 +1657,16 @@ export default function App() {
       */}
         <Toaster position="bottom-right" closeButton />
       </SidebarProvider>
+      {launching && (
+        <LaunchScreen
+          state={core}
+          linked={linked}
+          tries={tries}
+          linkError={linkError}
+          ready={handover}
+          onGone={() => setLaunching(false)}
+        />
+      )}
     </TooltipRoot>
   );
 }
