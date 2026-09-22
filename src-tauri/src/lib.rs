@@ -57,8 +57,8 @@ pub struct AppState {
     /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
     /// 重收，不是一串。
     pub menubar: Arc<tokio::sync::Notify>,
-    /// 菜单刚打开：**立刻**重收一次，不等攒够三秒
-    pub menubar_open: Arc<tokio::sync::Notify>,
+    /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言
+    pub menubar_now: Arc<tokio::sync::Notify>,
     /// 菜单栏要的实时数：哪些请求在跑、最近的输出速率。事件桥喂它
     pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
@@ -940,9 +940,9 @@ fn set_language(
         )
     })?;
     i18n::set(i18n::effective(setting));
-    // 托盘菜单比较的是 TrayFacts，语言在里面 —— 叫醒一次就会重建
+    // 菜单栏的文案跟着换，不等下一个事件
     if let Some(state) = app.try_state::<AppState>() {
-        state.menubar.notify_one();
+        state.menubar_now.notify_one();
     }
     let _ = app.emit("language-changed", i18n::current());
     Ok(language_view())
@@ -1654,7 +1654,7 @@ pub fn run() {
                 core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
                 supervising: supervising.clone(),
                 menubar: menubar_wake,
-                menubar_open: Arc::new(tokio::sync::Notify::new()),
+                menubar_now: Arc::new(tokio::sync::Notify::new()),
                 tally: Default::default(),
             });
 
@@ -2068,7 +2068,7 @@ fn set_menubar_style(
         )
     })?;
     menubar::set_style(style);
-    state.menubar_open.notify_one();
+    state.menubar_now.notify_one();
     let _ = app.emit("menubar-style-changed", style);
     Ok(style)
 }

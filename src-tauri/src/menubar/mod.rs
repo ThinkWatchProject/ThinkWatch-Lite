@@ -81,7 +81,7 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
             move |open| {
                 OPEN.store(open, Ordering::Relaxed);
                 if open && let Some(st) = b.try_state::<AppState>() {
-                    st.menubar_open.notify_one();
+                    st.menubar_now.notify_one();
                 }
             },
         );
@@ -102,39 +102,59 @@ async fn run(app: tauri::AppHandle) {
     let Some(st) = app.try_state::<AppState>() else {
         return;
     };
-    let (wake, opened) = (st.menubar.clone(), st.menubar_open.clone());
+    let (wake, now) = (st.menubar.clone(), st.menubar_now.clone());
     let mut core_rx = st.supervisor.watch();
     let mut credits = Credits::default();
+    let mut tick = tokio::time::interval(TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         let Some(state) = app.try_state::<AppState>() else {
             return;
         };
         let mut snap = collect(&app, &state, &mut credits).await;
         present(&snap);
-
-        // 等一个理由。菜单开着时每秒走一次秒数和倒计时 —— 只用手上的数和计数器现算，
-        // 不为它去问 core
-        let immediate = loop {
-            let open = OPEN.load(Ordering::Relaxed);
-            let next_reset = next_reset_in(&snap);
-            tokio::select! {
-                _ = wake.notified() => break false,
-                _ = opened.notified() => break true,
-                _ = core_rx.changed() => break true,
-                _ = tokio::time::sleep(TICK), if open => {
-                    refresh_live(&app, &mut snap);
-                    present(&snap);
-                }
-                // 额度的重置时刻到了：那份额度作废，整个重收一遍
-                _ = tokio::time::sleep(next_reset.unwrap_or_default()), if next_reset.is_some() => {
-                    break true
-                }
-            }
+        let reset = next_reset_in(&snap).map(|d| tokio::time::Instant::now() + d);
+        // 秒数和倒计时只用手上的数和计数器现算，不为它去问 core
+        let on_tick = || {
+            refresh_live(&app, &mut snap);
+            present(&snap);
         };
-        if !immediate {
-            tokio::time::sleep(SETTLE).await;
+        let open = || OPEN.load(Ordering::Relaxed);
+        wait(&wake, &now, &mut core_rx, reset, &mut tick, open, on_tick).await;
+    }
+}
+
+/// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
+/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒
+/// `on_tick` 一次，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里
+/// 秒数会一卡几秒
+async fn wait(
+    wake: &tokio::sync::Notify,
+    now: &tokio::sync::Notify,
+    core_rx: &mut tokio::sync::watch::Receiver<CoreState>,
+    reset: Option<tokio::time::Instant>,
+    tick: &mut tokio::time::Interval,
+    open: impl Fn() -> bool,
+    mut on_tick: impl FnMut(),
+) {
+    let mut due = None;
+    loop {
+        tokio::select! {
+            _ = wake.notified(), if due.is_none() => {
+                due = Some(tokio::time::Instant::now() + SETTLE);
+            }
+            _ = sleep_until(due), if due.is_some() => return,
+            _ = now.notified() => return,
+            _ = core_rx.changed() => return,
+            _ = sleep_until(reset), if reset.is_some() => return,
+            _ = tick.tick(), if open() => on_tick(),
         }
     }
+}
+
+/// `select!` 里关掉的分支也会建出 future，所以 `None` 也得给个时刻
+fn sleep_until(at: Option<tokio::time::Instant>) -> tokio::time::Sleep {
+    tokio::time::sleep_until(at.unwrap_or_else(tokio::time::Instant::now))
 }
 
 /// 把快照交给画的那一层
@@ -525,6 +545,81 @@ mod tests {
         ];
         let keys: Vec<String> = unread(&list).into_iter().map(|n| n.key).collect();
         assert_eq!(keys, ["critical", "new-warning", "old-warning", "info"]);
+    }
+
+    fn setup() -> (
+        tokio::sync::Notify,
+        tokio::sync::Notify,
+        tokio::sync::watch::Sender<CoreState>,
+        tokio::time::Interval,
+    ) {
+        let mut tick = tokio::time::interval(TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let (tx, _) = tokio::sync::watch::channel(CoreState::Starting);
+        (
+            tokio::sync::Notify::new(),
+            tokio::sync::Notify::new(),
+            tx,
+            tick,
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_open_menu_keeps_ticking_while_a_wake_settles() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        let mut ticks = 0;
+        wake.notify_one();
+        wait(
+            &wake,
+            &now,
+            &mut rx,
+            None,
+            &mut tick,
+            || true,
+            || ticks += 1,
+        )
+        .await;
+        assert_eq!(start.elapsed(), SETTLE);
+        // 0、1、2 秒各走一次；第 3 秒和收数同时到，谁先都行
+        assert!(ticks >= 3, "只走了 {ticks} 次");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_closed_menu_sleeps_until_the_quota_resets() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        let reset = Some(start + std::time::Duration::from_secs(600));
+        let mut ticks = 0;
+        wait(
+            &wake,
+            &now,
+            &mut rx,
+            reset,
+            &mut tick,
+            || false,
+            || ticks += 1,
+        )
+        .await;
+        assert_eq!(start.elapsed(), std::time::Duration::from_secs(600));
+        assert_eq!(ticks, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn opening_the_menu_or_a_core_change_collects_at_once() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let start = tokio::time::Instant::now();
+        // 攒着的时候菜单被打开：不等攒够
+        wake.notify_one();
+        now.notify_one();
+        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        assert_eq!(start.elapsed(), std::time::Duration::ZERO);
+        tx.send_replace(CoreState::Stopped);
+        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        assert_eq!(start.elapsed(), std::time::Duration::ZERO);
     }
 
     #[test]
