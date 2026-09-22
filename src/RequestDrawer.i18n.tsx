@@ -58,7 +58,7 @@ export const requestDrawerText = messages(
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
     noRouting: "此请求没有路由信息",
-    noRoutingTip: "网关本地应答的请求、被路由规则拒绝的请求，以及 WebSocket 连接，不记录路由信息。",
+    noRoutingTip: "网关本地应答的请求、被路由规则拒绝的请求，以及上游应答之前客户端就断开的请求，不记录路由信息。",
     possibleCauses: "可能原因",
 
     // 内容
@@ -152,7 +152,7 @@ export const requestDrawerText = messages(
         : `Failover occurred: the first ${failed} upstreams failed, and the request was switched to the next upstream automatically.`,
     noRouting: "No routing information for this request",
     noRoutingTip:
-      "Requests answered locally by the gateway, requests refused by a routing rule, and WebSocket connections carry no routing information.",
+      "Requests answered locally by the gateway, requests refused by a routing rule, and requests whose client disconnected before any upstream answered carry no routing information.",
     possibleCauses: "Possible causes",
 
     request: "Request",
