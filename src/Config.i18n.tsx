@@ -6,51 +6,6 @@ type Wrap = (text: string) => ReactNode;
 
 export const configText = messages(
   {
-    versionNotLoaded: "配置版本尚未读取，请稍后重试",
-
-    // 监听方式
-    loopback: "仅本机",
-    loopbackWhat: "绑定 127.0.0.1。仅本机程序可连接，同网络的其他设备无法访问。",
-    nic: "指定网卡",
-    nicWhat: "绑定所选网卡的地址。仅该网卡所在网络中的设备可连接，密钥校验强制开启。",
-    all: "所有网卡",
-    allWhat: "绑定 0.0.0.0，在所有网卡上监听，包括连接公网的网卡。密钥校验强制开启。",
-
-    // 来源白名单
-    anySource: "（允许所有来源）",
-    removeSource: (cidr: string) => `删除 ${cidr}`,
-    sourcePlaceholder: "例如 192.168.1.0/24",
-
-    // 客户端探测请求
-
-    // 并发
-    limitsTitle: "并发",
-    maxConcurrent: "全局并发",
-    maxConcurrentWhat: "同时处理的请求数上限，超出后进入队列。",
-    perProvider: "单个上游",
-    perProviderWhat: "单个上游同时处理的请求数上限，避免个别上游变慢时占满全局并发。",
-    queueDepth: "队列上限",
-    queueDepthWhat: "队列达到此长度后拒绝新请求。",
-    queueTimeout: "排队超时",
-    queueTimeoutWhat: "排队超过此时长后放弃（秒）。",
-
-    // 监听与访问
-    noNic: "未找到可绑定的网卡，请检查网线或 Wi-Fi 连接。",
-    listenTitle: "监听与访问",
-    exposedTitle: "网关已暴露在局域网",
-    exposedBody: "同一网络中的设备均可连接网关。来源白名单仅按 IP 地址限制访问。",
-    enforcedTip: "网关暴露在局域网时，密钥校验强制开启且无法关闭，以防同一网段的其他设备使用上游额度。",
-    enforced: "密钥强制校验",
-    nicMissing: (addr: string) => `${addr}（未找到此网卡）`,
-    nicOption: (name: string, addr: string) => `${name}　${addr}`,
-    addressTip:
-      "此为该网卡当前的地址。DHCP 续租、切换网络或 VPN 连接变化都可能改变该地址，地址变化后网关将无法启动。如需在地址变化后保持可用，请选择「所有网卡」并配置来源白名单。",
-    addressMayChange: "地址可能变化",
-    listening: "正在监听",
-    clientKeys: "客户端密钥",
-    keyList: (items: string[]) => items.join("，"),
-    allowlist: "来源白名单",
-
     // 开机启动
     autostartTitle: "开机启动",
     autostartLabel: "开机时自动启动",
@@ -91,51 +46,6 @@ export const configText = messages(
     confirmUninstall: "确认卸载",
   },
   {
-    versionNotLoaded: "The config version has not been loaded yet. Try again in a moment.",
-
-    loopback: "Local only",
-    loopbackWhat:
-      "Binds to 127.0.0.1. Only programs on this computer can connect; other devices on the network cannot reach it.",
-    nic: "Specific interface",
-    nicWhat:
-      "Binds to the address of the selected interface. Only devices on that interface's network can connect, and key verification is always on.",
-    all: "All interfaces",
-    allWhat:
-      "Binds to 0.0.0.0 and listens on every interface, including any connected to the internet. Key verification is always on.",
-
-    anySource: "(All sources allowed)",
-    removeSource: (cidr: string) => `Remove ${cidr}`,
-    sourcePlaceholder: "e.g. 192.168.1.0/24",
-
-    limitsTitle: "Concurrency",
-    maxConcurrent: "Global concurrency",
-    maxConcurrentWhat: "The most requests handled at once. Requests beyond it wait in the queue.",
-    perProvider: "Per upstream",
-    perProviderWhat:
-      "The most requests one upstream handles at once, so a slow upstream cannot take up all global concurrency.",
-    queueDepth: "Queue limit",
-    queueDepthWhat: "New requests are rejected once the queue reaches this length.",
-    queueTimeout: "Queue timeout",
-    queueTimeoutWhat: "Requests that wait longer than this are dropped (seconds).",
-
-    noNic: "No network interface is available to bind to. Check the cable or Wi-Fi connection.",
-    listenTitle: "Listening and access",
-    exposedTitle: "Gateway exposed to the local network",
-    exposedBody:
-      "Any device on the same network can connect to the gateway. The source allowlist restricts access by IP address only.",
-    enforcedTip:
-      "While the gateway is exposed to the local network, key verification is always on and cannot be turned off, so other devices on the subnet cannot use upstream quota.",
-    enforced: "Key verification enforced",
-    nicMissing: (addr: string) => `${addr} (interface not found)`,
-    nicOption: (name: string, addr: string) => `${name} · ${addr}`,
-    addressTip:
-      "This is the interface's current address. A DHCP renewal, a network switch or a VPN change can alter it, and the gateway cannot start once it changes. To stay available when the address changes, choose “All interfaces” and set up a source allowlist.",
-    addressMayChange: "Address may change",
-    listening: "Listening on",
-    clientKeys: "Client keys",
-    keyList: (items: string[]) => items.join(", "),
-    allowlist: "Source allowlist",
-
     autostartTitle: "Launch at login",
     autostartLabel: "Launch automatically at login",
     autostartNote: (tip: Wrap) => <>Off by default. {tip("Effect of turning it on")}</>,

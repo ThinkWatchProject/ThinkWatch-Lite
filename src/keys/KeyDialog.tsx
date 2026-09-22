@@ -19,7 +19,8 @@ import { commonText } from "@/i18n/common.i18n";
 import type { ClientView, CostGroup, DetectedClient, KnownModel, RouteView } from "@/types";
 import { api } from "./api";
 import { keyDialogText } from "./KeyDialog.i18n";
-import { errorText, routeLabel, useLabel } from "./labels";
+import { errorText, routeLabel, takeoverOf } from "./labels";
+import { TakeoverBadge } from "./KeysTable";
 import { ModelScope } from "./ModelScope";
 import { allowOf, scopeOf, type Scope } from "./scope";
 
@@ -71,6 +72,7 @@ export function KeyDialog({
   const [error, setError] = useState<string | null>(null);
 
   const used = usage.find((u) => u.name === editing?.name);
+  const owner = editing ? takeoverOf(editing, clients) : null;
   const taken = keys.some((k) => k.name === name.trim() && k.name !== editing?.name);
   const missing =
     name.trim().length === 0
@@ -112,10 +114,10 @@ export function KeyDialog({
           <DialogTitle>{editing ? t.editTitle : t.newTitle}</DialogTitle>
           <DialogDescription>
             {editing ? (
-              <>
-                <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
-                {useLabel(editing, clients)}
-              </>
+              <span className="flex items-center gap-1.5">
+                <span className="font-mono text-foreground">{editing.name}</span>
+                {owner && <TakeoverBadge client={owner.client} adopted={owner.adopted} />}
+              </span>
             ) : (
               t.newDescription
             )}

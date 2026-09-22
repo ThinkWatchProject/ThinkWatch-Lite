@@ -5,8 +5,10 @@ import Update from "./Update";
 import NoticeSettings from "./NoticeSettings";
 import { LanguageSection } from "./Language";
 import { AppearanceSection } from "./Appearance";
-import { RetentionSection } from "./Retention";
-import type { Overview } from "./types";
+import { ListenSection } from "./settings/ListenSection";
+import { LimitsSection } from "./settings/LimitsSection";
+import { RetentionSection } from "./settings/RetentionSection";
+import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
@@ -20,13 +22,25 @@ import { commonText } from "@/i18n/common.i18n";
 import { configText } from "./Config.i18n";
 import { errorText } from "@/i18n/core.i18n";
 
-/** 应用自己的设置。网关的配置在「接入」「上游」「路由」几页 */
+/**
+ * 设置：这个应用自己的，和网关那几项配一次就不动的。
+ *
+ * **两类东西，两种改法。**语言、外观、开机启动、提醒改的是这个应用，点一下
+ * 就换；监听、并发、日志保留改的是 config.yaml，改完点保存才生效 —— 它们
+ * 改错的代价是客户端连不上、或者日志被删。上游、路由、密钥这些要天天看、
+ * 常常改的，各有自己的页。
+ */
 export default function Config({
   ov,
+  status,
   configVersion,
+  onChanged,
 }: {
   ov: Overview | null;
+  status: CoreStatus | null;
   configVersion: string | null;
+  /** 存完监听设置之后叫一声，状态和概览跟着重读 */
+  onChanged: () => void;
 }) {
   const t = useText(configText);
   useEffect(() => {
@@ -92,12 +106,27 @@ export default function Config({
         </Field>
       </section>
 
+      {/* 监听原来在「接入」页上，和密钥、并发同屏。它是配一次就不动的网关设置，
+          和密钥（要天天拿去填客户端）不是一类东西 */}
+      {ov && (
+        <ListenSection
+          view={ov.listen}
+          status={status}
+          configVersion={configVersion}
+          onChanged={onChanged}
+        />
+      )}
+
+      {ov?.limits && <LimitsSection limits={ov.limits} configVersion={configVersion} />}
+
       {/*
         日志保留归设置，不归流量页。**它管的是「留多久」，不是「看哪一段」**
         —— 那一页上曾经有个时间范围选择器，而让人先选一段才能开始搜，
         等于在一个本来就不大的集合前面加一道门。
       */}
-      {ov && <RetentionSection ov={ov} configVersion={configVersion} />}
+      {ov?.retention && (
+        <RetentionSection retention={ov.retention} configVersion={configVersion} />
+      )}
 
       <Update />
       <NoticeSettings />

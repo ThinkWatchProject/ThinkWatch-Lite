@@ -37,11 +37,36 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
     }
 }
 
-/// 界面上的落点。和 `App.tsx` 里的页面标识是同一套词
+/// 监听没换成的原因，中文怎么说。**码是个封闭的小集合**，和界面那张表同一套
+/// 说法；认不出的码照搬 core 的英文原句。
+fn listen_why(e: &tw_api::Msg) -> String {
+    let addr = e.arg("addr");
+    match e.code.as_str() {
+        "gw.listen.port_taken" => format!("{addr} 已被其他程序占用。"),
+        "gw.listen.addr_unavailable" => format!("{addr} 当前不是本机的地址。"),
+        "gw.listen.denied" => format!("系统不允许监听 {addr}，1024 以下的端口需要管理员权限。"),
+        "gw.listen.no_such_nic" => format!(
+            "本机没有名为 {} 的网卡，现有网卡：{}。",
+            e.arg("name"),
+            e.arg("available")
+        ),
+        "gw.listen.nic_no_addr" => {
+            format!(
+                "网卡 {} 当前没有地址，请检查网线或 Wi-Fi 连接。",
+                e.arg("name")
+            )
+        }
+        _ => e.text.clone(),
+    }
+}
+
+/// 界面上的落点。**和 `App.tsx` 里的页面标识是同一套词** —— 写成一个不存在的
+/// 标识，点通知就落到一页空白上（「设置」这一页曾经叫 `config`，改名时这里
+/// 没跟上）
 const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const MCP: &str = "mcp";
-const CONFIG: &str = "config";
+const SETTINGS: &str = "settings";
 
 /// 一个键默认落在哪一页（那一条已经不在列表里时用）。按键的种类，也就是冒号前那段
 pub fn default_view(key: &str) -> &'static str {
@@ -50,8 +75,8 @@ pub fn default_view(key: &str) -> &'static str {
         "toolwall" => SECURITY,
         // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
         "scan" => MCP,
-        // 网关、配置文件，以及认不出来的：设置页至少能看到网关在不在跑
-        _ => CONFIG,
+        // 网关、配置文件、监听，以及认不出来的：设置页至少能看到网关在不在跑
+        _ => SETTINGS,
     }
 }
 
@@ -267,10 +292,32 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     format!("{at}{message}。上一版配置仍在服务。"),
                     format!("{at}{message}. The previous configuration remains in effect.")
                 ))
-                .view(CONFIG),
+                .view(SETTINGS),
             ]
         }
         Event::ConfigReloaded { .. } => vec![Signal::cleared("config")],
+        // 配置里的监听地址没换上：网关还守着旧地址。**只在没换成时说**，换成了
+        // 就把那一条收起来 —— 换成功是用户刚按下保存时就知道的事
+        Event::ListenChanged { error: None, .. } => vec![Signal::cleared("listen")],
+        Event::ListenChanged {
+            error: Some(e),
+            addr,
+            ..
+        } => {
+            let at = addr.as_deref().unwrap_or("");
+            vec![
+                Signal::raised(
+                    "listen",
+                    Level::Warning,
+                    tr!("监听设置未生效", "Listen Settings Not in Effect"),
+                )
+                .body(tr!(
+                    format!("{}网关仍在 {at} 上监听。", listen_why(e)),
+                    format!("{} The gateway is still listening on {at}.", e.text)
+                ))
+                .view(SETTINGS),
+            ]
+        }
         Event::CredentialRotated {
             provider,
             persisted,
@@ -406,7 +453,7 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
                 )
                 .to_string(),
             )
-            .view(CONFIG)
+            .view(SETTINGS)
             .now()
             .suppressing(suppresses("gateway")),
         ],
@@ -423,7 +470,7 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
                     "The gateway restarted {attempt} times in a row. Forwarding may be intermittent."
                 )
             ))
-            .view(CONFIG)
+            .view(SETTINGS)
             .now()
             .suppressing(suppresses("gateway")),
         ],

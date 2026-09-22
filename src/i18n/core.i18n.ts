@@ -256,6 +256,15 @@ const ZH: Record<string, Say> = {
   "control.route_not_found": (a) => `未找到名为「${a.route}」的路由。`,
   "control.sheet_not_found": (a) => `未找到名为「${a.sheet}」的价目表。`,
   "control.key_not_found": (a) => `未找到名为「${a.key}」的网关密钥。`,
+  "control.listen.bad_port": () => "端口须在 1 到 65535 之间。",
+
+  // ── gw.listen：网关换监听地址 ────────────────────────────────────
+  "gw.listen.port_taken": (a) => `${a.addr} 已被其他程序占用。`,
+  "gw.listen.addr_unavailable": (a) => `${a.addr} 当前不是本机的地址。`,
+  "gw.listen.denied": (a) => `系统不允许监听 ${a.addr}，1024 以下的端口需要管理员权限。`,
+  "gw.listen.bind_failed": (a) => `无法监听 ${a.addr}：${a.detail}`,
+  "gw.listen.no_such_nic": (a) => `本机没有名为 ${a.name} 的网卡，现有网卡：${a.available}。`,
+  "gw.listen.nic_no_addr": (a) => `网卡 ${a.name} 当前没有地址，请检查网线或 Wi-Fi 连接。`,
   "control.request_not_found": (a) => `未找到第 ${a.id} 号请求。`,
 
   // ── security：安全页的规则与档位 ──────────────────────────────────
