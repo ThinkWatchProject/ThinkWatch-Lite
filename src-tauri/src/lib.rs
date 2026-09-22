@@ -1572,12 +1572,27 @@ pub fn run() {
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);
             let socket = default_socket();
+            // 起好了没有，问控制面：`/status` 答得上来才算。半秒答不上这一次就
+            // 算没答应，守护隔一会儿再问
+            let ready = {
+                let socket = socket.clone();
+                supervisor::probe(move || {
+                    let control = ControlClient::new(socket.clone());
+                    async move {
+                        control
+                            .ping(std::time::Duration::from_millis(500))
+                            .await
+                            .is_ok()
+                    }
+                })
+            };
             let sup = Arc::new(Supervisor::new(
                 located
                     .as_ref()
                     .cloned()
                     .unwrap_or_else(|_| PathBuf::from("twcore")),
                 None,
+                ready,
             ));
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -1777,23 +1792,15 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
     use supervisor::{HealthTracker, Verdict, health};
     let client = ControlClient::new(socket);
     let mut tracker = HealthTracker::new();
-    let mut was_running = false;
 
     loop {
         tokio::time::sleep(health::INTERVAL).await;
 
         // 只在 core 应该在跑的时候探。启动中、重启中、安全模式下探测
         // 失败是**预期的**，把它算进连续失败会让守护自己制造重启循环。
-        let running = matches!(sup.state(), CoreState::Running { .. });
-        if !running {
+        // 「运行中」是控制面答应了之后才报的，这时候探不到就是真的没回话
+        if !matches!(sup.state(), CoreState::Running { .. }) {
             tracker.reset();
-            was_running = false;
-            continue;
-        }
-        if !was_running {
-            // 刚起来。控制面 socket 可能还没建好，这一轮先不判。
-            tracker.reset();
-            was_running = true;
             continue;
         }
 
@@ -1820,7 +1827,6 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
                 }
                 // 杀完就清零，等它重起来再重新计数。
                 tracker.reset();
-                was_running = false;
             }
         }
     }

@@ -4,7 +4,9 @@
 //! UI 关它、它自己不注册开机自启。所以「core 挂了」不是一个用户该处理
 //! 的事件，而是这一层要悄悄修好的事。
 
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -21,9 +23,30 @@ pub use policy::{Decision, RestartPolicy, should_interrupt};
 /// 不该重置退避阶梯。
 const HEALTHY_AFTER: Duration = Duration::from_secs(30);
 
+/// 进程起来之后，控制面多久还不答应就算这次没起来：换掉它，按一次失败算。
+const READY_WITHIN: Duration = Duration::from_secs(15);
+
+/// 问一次控制面答不答应。
+///
+/// **守护不认识控制面**，由外面给（lib.rs 里是一次带超时的 `/status`）。这样
+/// 测试可以换成一个假的，不用真起一个会说 HTTP 的 core。
+pub type Probe = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
+
+/// 把一个返回 future 的闭包包成 [`Probe`]。
+pub fn probe<F, Fut>(f: F) -> Probe
+where
+    F: Fn() -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = bool> + Send + 'static,
+{
+    Arc::new(move || -> Pin<Box<dyn Future<Output = bool> + Send>> { Box::pin(f()) })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreState {
+    /// 进程在起，或者起来了但控制面还没答应。**这两段对界面是同一件事**：
+    /// 都还不能取数
     Starting,
+    /// 控制面答应了。界面见到它就可以开始取数
     Running {
         pid: u32,
     },
@@ -45,6 +68,31 @@ pub enum CoreState {
     },
 }
 
+/// 程序运行不了的原因，说成一句话。
+///
+/// **不带「(os error 13)」**：那是给写代码的人看的，启动画面上要的是「没有执行
+/// 权限」这种能照着去做的话。
+fn why_not(e: &std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => tr!("文件不存在", "the file does not exist").into(),
+        std::io::ErrorKind::PermissionDenied => {
+            tr!("没有执行权限", "it is not allowed to run").into()
+        }
+        _ if e.raw_os_error() == Some(libc::ENOEXEC) => tr!(
+            "不是这台电脑能运行的程序",
+            "it is not a program this computer can run"
+        )
+        .into(),
+        _ => {
+            let text = e.to_string();
+            match text.find(" (os error ") {
+                Some(i) => text[..i].to_string(),
+                None => text,
+            }
+        }
+    }
+}
+
 /// 一次 core 退出之后，守护循环下一步做什么。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Next {
@@ -59,6 +107,7 @@ pub enum Next {
 pub struct Supervisor {
     binary: PathBuf,
     config: Option<PathBuf>,
+    ready: Probe,
     policy: Mutex<RestartPolicy>,
     /// 当前状态。**用 watch 而不是 Mutex，是为了能被订阅** —— 界面
     /// 需要的是「变了就告诉我」，而拿一个 Mutex 只能反复去问。
@@ -77,10 +126,11 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn new(binary: PathBuf, config: Option<PathBuf>) -> Self {
+    pub fn new(binary: PathBuf, config: Option<PathBuf>, ready: Probe) -> Self {
         Self {
             binary,
             config,
+            ready,
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
@@ -221,6 +271,26 @@ impl Supervisor {
         &self.binary
     }
 
+    /// 等控制面答应，最多 [`READY_WITHIN`]。答应了是 true。
+    ///
+    /// 先密后疏：通常一两百毫秒就好了，那时候隔半秒才问一次，启动画面就平白
+    /// 多停半秒。
+    async fn until_ready(&self) -> bool {
+        // tokio 的时钟：测试里暂停时钟就能跑过这 15 秒
+        let deadline = tokio::time::Instant::now() + READY_WITHIN;
+        let mut gap = Duration::from_millis(25);
+        loop {
+            if (self.ready)().await {
+                return true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(gap).await;
+            gap = (gap * 2).min(Duration::from_millis(400));
+        }
+    }
+
     /// 一次「起、看着、它死了、决定下一步」的完整循环。
     pub async fn run_once(&self, safe: bool) -> anyhow::Result<Next> {
         self.set(CoreState::Starting);
@@ -236,24 +306,44 @@ impl Supervisor {
             Ok(c) => c,
             Err(e) => {
                 let path = self.binary.display();
+                let why = why_not(&e);
                 self.set(CoreState::Failed {
                     reason: tr!(
-                        format!("无法运行 {path}：{e}"),
-                        format!("{path} could not be run: {e}")
+                        format!("无法运行 {path}：{why}"),
+                        format!("{path} could not be run: {why}")
                     ),
                 });
                 return Err(e.into());
             }
         };
 
-        if let Some(pid) = child.id() {
-            self.set(CoreState::Running { pid });
-            tracing::info!(pid, safe, "core 已启动");
-        }
-
+        // **进程起来了还不算起好。**控制面的 socket 要再过一会儿才建好，这之前
+        // 报「运行中」的话，界面一见到就去取数，拿回来的是一句「连不上」。
+        // 所以控制面答应之前一直是「启动中」；等的这段时间里它要是退出了，
+        // 照崩溃算
+        let ready = tokio::select! {
+            status = child.wait() => Err(status),
+            ready = self.until_ready() => Ok(ready),
+        };
         // 信号一：子进程退出事件。**最快最准**，但只覆盖我们自己 spawn
         // 的那个 —— 所以另外两个信号（socket 断开、心跳）不是冗余。
-        let status = child.wait().await?;
+        let status = match ready {
+            Err(status) => status?,
+            Ok(ready) => {
+                match (ready, child.id()) {
+                    (true, Some(pid)) => {
+                        self.set(CoreState::Running { pid });
+                        tracing::info!(pid, safe, elapsed = ?started.elapsed(), "core 已就绪");
+                    }
+                    (true, None) => {}
+                    (false, _) => {
+                        tracing::error!(?READY_WITHIN, "core 的控制面一直没有答应，换掉它");
+                        let _ = child.start_kill();
+                    }
+                }
+                child.wait().await?
+            }
+        };
         let ran_for = started.elapsed();
 
         // **先看是不是为了退出而停的。**这一条必须排在最前面：落到下面任何
@@ -315,10 +405,16 @@ impl Supervisor {
 mod tests {
     use super::*;
 
+    /// 控制面一问就答应
+    fn always_ready() -> Probe {
+        probe(|| async { true })
+    }
+
     fn sup() -> Supervisor {
         Supervisor::new(
             PathBuf::from("/nonexistent/twcore"),
             Some(PathBuf::from("/tmp/c.yaml")),
+            always_ready(),
         )
     }
 
@@ -331,9 +427,27 @@ mod tests {
         match s.state() {
             CoreState::Failed { reason } => {
                 assert!(reason.contains("/nonexistent/twcore"), "{reason}");
+                assert!(!reason.contains("os error"), "{reason}");
             }
             other => panic!("该是无法启动，实际 {other:?}"),
         }
+    }
+
+    #[test]
+    fn why_a_program_cannot_run_is_said_without_os_error_codes() {
+        use crate::i18n::{Lang, with_lang};
+        let said = |e: std::io::Error| with_lang(Lang::Zh, || why_not(&e));
+        assert_eq!(
+            said(std::io::ErrorKind::PermissionDenied.into()),
+            "没有执行权限"
+        );
+        assert_eq!(said(std::io::ErrorKind::NotFound.into()), "文件不存在");
+        assert_eq!(
+            said(std::io::Error::from_raw_os_error(libc::ENOEXEC)),
+            "不是这台电脑能运行的程序"
+        );
+        let other = said(std::io::Error::from_raw_os_error(libc::EIO));
+        assert!(!other.contains("os error"), "{other}");
     }
 
     #[test]
@@ -363,7 +477,7 @@ mod tests {
     #[test]
     fn without_a_config_we_let_core_pick_the_default() {
         // 不要在这里重复一遍默认路径 —— 两处各写一遍就是两处会漂移。
-        let s = Supervisor::new(PathBuf::from("/x"), None);
+        let s = Supervisor::new(PathBuf::from("/x"), None, always_ready());
         assert!(!s.command_args(false).contains(&"--config".to_string()));
     }
 
@@ -416,7 +530,7 @@ mod tests {
     /// 要么进安全模式、把主窗口弹到正在重启的应用上。
     #[tokio::test]
     async fn a_core_stopped_for_exit_is_not_restarted() {
-        let s = Arc::new(Supervisor::new(long_runner("stop"), None));
+        let s = Arc::new(Supervisor::new(long_runner("stop"), None, always_ready()));
         let looped = {
             let s = s.clone();
             tokio::spawn(async move { s.run_once(false).await.unwrap() })
@@ -441,10 +555,64 @@ mod tests {
         assert!(t0.elapsed() < Duration::from_millis(100));
     }
 
+    /// **控制面答应之前是「启动中」，不是「运行中」。**界面见到「运行中」就去
+    /// 取数，而那时 socket 还没建好，拿回来的是一句「连不上」
+    #[tokio::test]
+    async fn a_core_is_starting_until_its_control_plane_answers() {
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let third_time = {
+            let asked = asked.clone();
+            probe(move || {
+                let n = asked.fetch_add(1, Ordering::SeqCst);
+                async move { n >= 3 }
+            })
+        };
+        let s = Arc::new(Supervisor::new(long_runner("ready"), None, third_time));
+        let mut rx = s.watch();
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await })
+        };
+        let mut seen = Vec::new();
+        loop {
+            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+                .await
+                .expect("迟迟没有就绪")
+                .unwrap();
+            let now = rx.borrow_and_update().clone();
+            if let CoreState::Running { .. } = now {
+                break;
+            }
+            seen.push(now);
+        }
+        assert_eq!(seen, vec![CoreState::Starting]);
+        assert!(asked.load(Ordering::SeqCst) >= 4, "问过几次才答应的");
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        looped.await.unwrap().unwrap();
+    }
+
+    /// 进程在、控制面一直不答应：**不能永远停在「启动中」**。按一次失败算，
+    /// 换掉它再起 —— 和启动就崩一个待遇，连着几次就进安全模式
+    #[tokio::test(start_paused = true)]
+    async fn a_core_that_never_answers_is_replaced() {
+        let s = Supervisor::new(long_runner("never"), None, probe(|| async { false }));
+        let next = s.run_once(false).await.unwrap();
+        assert_eq!(next, Next::Again);
+        assert!(
+            matches!(s.state(), CoreState::Restarting { attempt: 1, .. }),
+            "{:?}",
+            s.state()
+        );
+    }
+
     /// 对照组：改配置那种重启照旧立刻再起 —— 两个标志没有串。
     #[tokio::test]
     async fn a_requested_restart_still_comes_back() {
-        let s = Arc::new(Supervisor::new(long_runner("restart"), None));
+        let s = Arc::new(Supervisor::new(
+            long_runner("restart"),
+            None,
+            always_ready(),
+        ));
         let looped = {
             let s = s.clone();
             tokio::spawn(async move { s.run_once(false).await.unwrap() })

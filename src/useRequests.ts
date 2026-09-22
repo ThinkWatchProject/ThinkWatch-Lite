@@ -115,7 +115,11 @@ const SETTLE_MS = 2_500;
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
  * 而重渲染次数降了一到两个数量级。
  */
-export function useRequests() {
+/**
+ * `ready`：连上控制面了（App 的 `linked`）。**历史等它再读** —— 开窗那一刻 core
+ * 多半还在起，读回来的只有一句「连不上」，而这一份只读一次。
+ */
+export function useRequests(ready: boolean) {
   const [rows, setRows] = useState<RequestRow[]>([]);
   // 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
   // 连上了，又说明那些探测一分钱都没花。
@@ -222,10 +226,11 @@ export function useRequests() {
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
   }, []);
 
-  // **开窗就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
+  // **连上就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
   // 全新的 —— 不填的话，用户看到的是一片空白，而请求明明一直在跑。
   useEffect(() => {
+    if (!ready) return;
     let alive = true;
     void (async () => {
       try {
@@ -240,7 +245,7 @@ export function useRequests() {
     return () => {
       alive = false;
     };
-  }, [pull]);
+  }, [pull, ready]);
 
   /*
     **落库之后再对一次账。**会话 id 是存储层给的，而事件里只有指纹 ——

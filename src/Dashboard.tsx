@@ -223,6 +223,7 @@ export default function Dashboard({
   ov,
   onShowSecurity,
   onShowUnpriced,
+  onLanded,
 }: {
   tick: number;
   ov: Overview | null;
@@ -230,6 +231,8 @@ export default function Dashboard({
   onShowSecurity: (range: Range) => void;
   /** 「N 条无法计价」是个可以点进去的问题，不只是一个数字 */
   onShowUnpriced: () => void;
+  /** 第一份数据到了。启动画面等它再交接 */
+  onLanded?: () => void;
 }) {
   const t = useText(dashboardText);
   const [range, setRange] = useRange();
@@ -287,7 +290,8 @@ export default function Dashboard({
 
     **只在同一个口径里走**：换时间范围时那不是「涨了」，是换了一个东西
     在看 —— 从 251k 滚到 661k 看起来像用量突然翻了三倍，所以
-    `range.label` 一变就直接落值。
+    `range.label` 一变就直接落值。**第一份数据也直接落值**：从零走到实际值，
+    读起来是「用量刚刚涨上来」，而那只是刚读到。
 
     **这三个 hook 必须站在早返回之前。**下面有「还没读到数据」和
     「出错了」两条 return，而 React 要求每次渲染调用的 hook 数量一致
@@ -295,17 +299,23 @@ export default function Dashboard({
     `d?.` 取值，读不到就是 0。
   */
   const sum = d?.summary;
+  const scope = sum ? range.label : "";
   const tokensAt = useCountUp(
     sum
       ? sum.input_tokens + sum.cache_read_tokens + sum.cache_write_tokens + sum.output_tokens
       : 0,
-    range.label,
+    scope,
   );
   const spentAt = useCountUp(
     sum ? sum.cost_micros_exact + sum.cost_micros_estimated : 0,
-    range.label,
+    scope,
   );
-  const requestsAt = useCountUp(sum?.requests ?? 0, range.label);
+  const requestsAt = useCountUp(sum?.requests ?? 0, scope);
+  const landed = useRef(onLanded);
+  landed.current = onLanded;
+  useEffect(() => {
+    if (d) landed.current?.();
+  }, [d]);
 
   useEffect(() => {
     let alive = true;
