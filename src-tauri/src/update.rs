@@ -8,13 +8,22 @@
 //!
 //! 所以这里先回答「这一份是怎么装上来的」，再决定更新由谁做。判断放在
 //! Rust 而不是界面上：这是一条策略，不该由一个 `if` 写在 JSX 里守着。
+//!
+//! **Windows 上没有 Homebrew 那一档。**winget 装的和网页下载的是同一个安装
+//! 程序，已装版本记在「添加/删除程序」的注册表项里；自己更新时跑的是新版本
+//! 的安装程序，它会把那一项一起改掉，所以 winget 之后看到的就是新版本，不会
+//! 拿旧的盖回来。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(windows))]
+use std::path::PathBuf;
 
 /// cask 的名字，也是 Caskroom 下那个目录的名字。
+#[cfg(not(windows))]
 const CASK: &str = "thinkwatch-lite";
 
 /// Homebrew 装在哪。
+#[cfg(not(windows))]
 ///
 /// 只有这两个。cask 要求标准前缀 —— arm64 上是 `/opt/homebrew`，另一个是
 /// Intel 时代的位置；自定义前缀装不了 cask，也就不会出现在这里。
@@ -55,6 +64,7 @@ impl Install {
 }
 
 /// 自己所在的 `.app`。不在一个 `.app` 里就是 `None`。
+#[cfg(not(windows))]
 ///
 /// 只认 `…/Foo.app/Contents/MacOS/可执行文件` 这一种形状。**不往上找到
 /// 第一个 `.app` 为止** —— 那样一个放在 `/Applications/别的.app/` 里的
@@ -76,6 +86,7 @@ fn bundle_of(exe: &Path) -> Option<&Path> {
 }
 
 /// 这个 `.app` 是不是 Homebrew 放的。
+#[cfg(not(windows))]
 ///
 /// **比对的是 Caskroom 里那个符号链接。**brew 把 app 移进 `/Applications`，
 /// 再在 `Caskroom/<cask>/<版本>/` 留一个链接指回去；每次升级都会重写它，
@@ -103,6 +114,7 @@ fn from_homebrew(bundle: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// 给定可执行文件和 brew 的前缀，判断这是哪一种安装。
+#[cfg(not(windows))]
 pub fn kind_at(exe: &Path, roots: &[PathBuf]) -> Install {
     match bundle_of(exe) {
         None => Install::Dev,
@@ -111,14 +123,38 @@ pub fn kind_at(exe: &Path, roots: &[PathBuf]) -> Install {
     }
 }
 
+/// 安装程序装的，还是一个开发构建。
+///
+/// **看安装程序留下的卸载程序在不在旁边。**装好的那一份在安装目录里，
+/// 旁边一定有 `uninstall.exe`（Tauri 的 NSIS 模板写的就是这个名字）；
+/// `tauri dev` 和 `cargo build` 出来的在 `target\` 里，旁边没有。
+///
+/// 不看路径在不在 `Program Files` 下：用户可以把它装到任何地方，而一个
+/// 放在 `Program Files` 里的开发构建也不该去替换自己。
+// 判断本身和平台无关，所以在哪都测；只有 Windows 上真的拿它来用
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn nsis_installed(exe: &Path) -> Install {
+    match exe.parent() {
+        Some(dir) if dir.join("uninstall.exe").is_file() => Install::Standalone,
+        _ => Install::Dev,
+    }
+}
+
 /// 这一份是怎么装上来的。
 pub fn kind() -> Install {
     // 连自己在哪都答不上来时当作 `Dev` —— 那一档不自己更新。**不确定的
-    // 时候不要动用户的 `.app`。**
+    // 时候不要动用户装好的那一份。**
     let Ok(exe) = std::env::current_exe() else {
         return Install::Dev;
     };
-    kind_at(&exe, &BREW_PREFIXES.map(PathBuf::from))
+    #[cfg(windows)]
+    {
+        nsis_installed(&exe)
+    }
+    #[cfg(not(windows))]
+    {
+        kind_at(&exe, &BREW_PREFIXES.map(PathBuf::from))
+    }
 }
 
 /// 从 cask 文件里读出版本号。
@@ -164,6 +200,7 @@ mod tests {
         p
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn only_the_one_shape_counts_as_a_bundle() {
         assert_eq!(
@@ -241,6 +278,32 @@ mod tests {
             kind_at(&exe, std::slice::from_ref(&prefix)),
             Install::Standalone
         );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 装好的那一份旁边有卸载程序，开发构建旁边没有。
+    #[test]
+    fn an_installed_copy_sits_next_to_its_uninstaller() {
+        let root = std::env::temp_dir().join(format!(
+            "tw-nsis-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("ThinkWatch Lite");
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("thinkwatch-lite.exe");
+        std::fs::write(&exe, b"").unwrap();
+
+        assert_eq!(nsis_installed(&exe), Install::Dev);
+        std::fs::write(dir.join("uninstall.exe"), b"").unwrap();
+        assert_eq!(nsis_installed(&exe), Install::Standalone);
+        assert!(nsis_installed(&exe).can_self_update());
+        // 同名的目录不算：要的是安装程序写下的那个文件
+        let other = root.join("dev");
+        std::fs::create_dir_all(other.join("uninstall.exe")).unwrap();
+        assert_eq!(nsis_installed(&other.join("x.exe")), Install::Dev);
+
         std::fs::remove_dir_all(&root).unwrap();
     }
 

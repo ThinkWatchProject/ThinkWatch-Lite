@@ -18,14 +18,9 @@ use ::windows::core::{HSTRING, Result};
 ///
 /// 快捷方式是 AUMID 唯一的来处（NSIS 建它的时候写上去），没有它 toast 静默不出现。
 /// 只看快捷方式还不够：机器上装过一份、又在跑 `tauri dev` 的时候，快捷方式在，但点开
-/// 通知拉起的是装好的那一份。所以还要当前这个 exe 就在安装目录里 —— NSIS 把卸载程序
-/// 写在同一个目录，拿它认
-pub fn available(product_name: &str) -> bool {
-    let installed = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|d| d.join("uninstall.exe").is_file()))
-        .unwrap_or(false);
-    // 按机器装的在 ProgramData 那一份开始菜单里，按用户装的在 AppData 那一份
+/// 通知拉起的是装好的那一份。所以还要当前这个 exe 就是装好的那一份 —— 这个判断
+/// 自更新也要，由调用方用 `update::kind()` 回答后传进来，两处不各写一遍
+pub fn available(installed: bool, product_name: &str) -> bool {
     let lnk = format!("{product_name}.lnk");
     let shortcut = ["ProgramData", "APPDATA"]
         .into_iter()

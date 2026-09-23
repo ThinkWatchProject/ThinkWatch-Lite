@@ -302,6 +302,14 @@ impl Supervisor {
         }
     }
 
+    /// 撤回 `stop_and_wait` 留下的「按要求停止」。
+    ///
+    /// 守护循环每次开始时调。那个记号只对它停掉的那一个 core 有意义；带进
+    /// 下一轮的话，之后的崩溃全都会被当成按要求停止，不重启、不进安全模式。
+    pub fn resume(&self) {
+        self.stopping.store(false, Ordering::SeqCst);
+    }
+
     /// 等到它不再是这个 pid。等到了返回 true，超时返回 false。
     ///
     /// **先看当下再等变化**：状态可能在订阅之前就已经翻过去了。
@@ -731,6 +739,41 @@ mod tests {
             matches!(s.state(), CoreState::Restarting { attempt: 1, .. }),
             "{:?}",
             s.state()
+        );
+    }
+
+    /// 停过一次、又接回来之后，core 再死就是崩溃，**不是「按要求停止」**。
+    ///
+    /// Windows 上更新没装成（UAC 点了「否」）走的就是这条：为了装更新停了
+    /// core，没装成又接回来。记号要是留着，从那以后网关崩了不会再起。
+    #[tokio::test]
+    async fn after_resuming_a_crash_is_a_crash_again() {
+        let s = Arc::new(Supervisor::new(
+            long_runner("resume"),
+            None,
+            always_ready(),
+            test_endpoint(),
+            "t".into(),
+        ));
+        let first = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert_eq!(first.await.unwrap(), Next::Stop);
+
+        s.resume();
+        let second = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        let pid = until_running(&s).await;
+        s.kill_now(pid);
+        assert_ne!(
+            second.await.unwrap(),
+            Next::Stop,
+            "接回来之后的崩溃被当成了按要求停止"
         );
     }
 
