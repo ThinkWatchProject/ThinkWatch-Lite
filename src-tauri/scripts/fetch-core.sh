@@ -22,7 +22,31 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REPO="ThinkWatchProject/ThinkWatch-Core"
-ASSET="twcore-aarch64-apple-darwin"
+
+# 装进包里的是**这次构建的目标平台**那一份。
+#
+# 以前这里写死 `twcore-aarch64-apple-darwin`。在 macOS 上打包时它是对的，
+# 而在别处它会安静地把一个跑不了的二进制装进包里 —— 应用照样启动、照样出
+# 界面，然后停在连接页上，正是引入这套校验要挡的那个 bug 换了个样子。
+#
+# `--target` 由调用方给（发布流水线一定会写），没给就按本机。
+case "${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}" in
+  aarch64-apple-darwin)      ASSET="twcore-aarch64-apple-darwin" ;;
+  x86_64-pc-windows-msvc)    ASSET="twcore-x86_64-pc-windows-msvc.exe" ;;
+  aarch64-pc-windows-msvc)   ASSET="twcore-aarch64-pc-windows-msvc.exe" ;;
+  *)
+    echo "没有为 ${TARGET:-本机} 发布的 twcore —— 发版流水线里加一条，或者用 TARGET= 指一个有的" >&2
+    exit 1
+    ;;
+esac
+# **包里那个文件的名字还是 `twcore`，两个平台一样。**
+#
+# Windows 上这不够：`CreateProcess` 见到一个没有扩展名的路径会去找同名的
+# `.exe`，而我们这个文件就叫 `twcore`，于是找不到。那里要叫 `twcore.exe`，
+# 而 `tauri.conf.json` 里声明装什么的那一行是静态 JSON，改法是加一份
+# `tauri.windows.conf.json`，连同 `locate_core` 一起改。
+#
+# 那件事属于打包，不在这一笔里 —— 这里只负责取对文件。
 OUT="resources/twcore"
 
 TAG=$(

@@ -3,7 +3,7 @@
 //! 走 socket 而不是 TCP 的理由是权限：一个 `0700` 的
 //! socket 文件天然只有当前用户能连，不需要再发明一套 token。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use http_body_util::BodyExt;
@@ -46,17 +46,34 @@ fn with_base(path: String, base_version: Option<&str>) -> String {
     }
 }
 
+/// 一条连上控制面的流。
+///
+/// 两种传输各给一种，而**两种在所有平台上都编译**（只有 unix socket 那一支
+/// 本身是 unix 专有的）。装箱是为了让上面那些函数只写一遍 —— 拿到流之后的
+/// 每一件事，两边都该一模一样。
+trait Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Stream for T {}
+
+/// 控制面绑到了哪个端口。
+///
+/// **读不出来和「socket 文件还不存在」是同一种失败：core 还没起来。**core 是
+/// 绑成功之后才写这个文件的（先写后绑会在绑失败时留下一个指向别人的号码），
+/// 所以刚把它拉起来的那一小段里，文件可能不存在、也可能只写了一半。两种都
+/// 当作「还没好」，交给上面本来就有的重试。
+fn read_port(f: &Path) -> Result<u16> {
+    let text = std::fs::read_to_string(f)?;
+    Ok(text.trim().parse::<u16>()?)
+}
+
 pub struct ControlClient {
-    socket: PathBuf,
+    at: tw_api::control::Endpoint,
+    /// 这一次启动的凭据，见 `crate::token`。
+    token: String,
 }
 
 impl ControlClient {
-    pub fn new(socket: PathBuf) -> Self {
-        Self { socket }
-    }
-
-    pub fn socket_path(&self) -> &Path {
-        &self.socket
+    pub fn new(at: tw_api::control::Endpoint, token: String) -> Self {
+        Self { at, token }
     }
 
     /// 连上控制面。
@@ -64,16 +81,38 @@ impl ControlClient {
     /// **连不上时只说 core 现在不在。**socket 的路径和「No such file or
     /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
     /// 的时候回给界面的都是这一句。原话进日志
-    async fn connect(&self) -> Result<tokio::net::UnixStream> {
-        tokio::net::UnixStream::connect(&self.socket)
-            .await
-            .map_err(|e| {
-                tracing::debug!(socket = %self.socket.display(), "控制面连不上：{e}");
-                anyhow::anyhow!(tr!(
-                    "core 未在运行，或尚未启动完成",
-                    "core is not running, or has not finished starting"
+    async fn connect(&self) -> Result<Box<dyn Stream>> {
+        use tw_api::control::Endpoint;
+        let not_running = |e: &dyn std::fmt::Display| {
+            tracing::debug!("控制面连不上：{e}");
+            anyhow::anyhow!(tr!(
+                "core 未在运行，或尚未启动完成",
+                "core is not running, or has not finished starting"
+            ))
+        };
+        match &self.at {
+            #[cfg(unix)]
+            Endpoint::Socket(path) => Ok(Box::new(
+                tokio::net::UnixStream::connect(path)
+                    .await
+                    .map_err(|e| not_running(&e))?,
+            )),
+            #[cfg(not(unix))]
+            Endpoint::Socket(_) => Err(not_running(&"这个平台上没有 unix socket")),
+            Endpoint::Loopback { port_file } => {
+                let port = read_port(port_file).map_err(|e| not_running(&e))?;
+                Ok(Box::new(
+                    tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+                        .await
+                        .map_err(|e| not_running(&e))?,
                 ))
-            })
+            }
+        }
+    }
+
+    /// 每个请求都带上的那个头。
+    fn auth(&self) -> String {
+        format!("Bearer {}", self.token)
     }
 
     /// 发一个 GET，把 body 整个读回来。
@@ -94,6 +133,7 @@ impl ControlClient {
             .uri(path)
             // unix socket 上没有真正的 host，但 HTTP/1.1 要求这个头存在
             .header(hyper::header::HOST, "localhost")
+            .header(hyper::header::AUTHORIZATION, self.auth())
             .body(String::new())?;
         let resp = sender.send_request(req).await?;
         let status = resp.status();
@@ -1056,7 +1096,7 @@ impl ControlClient {
         O: FnOnce() + Send,
         F: FnMut(tw_api::Event) + Send,
     {
-        let stream = tokio::net::UnixStream::connect(&self.socket).await?;
+        let stream = self.connect().await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
         tokio::spawn(async move {
@@ -1065,9 +1105,26 @@ impl ControlClient {
         let req = hyper::Request::builder()
             .uri("/events")
             .header(hyper::header::HOST, "localhost")
+            .header(hyper::header::AUTHORIZATION, self.auth())
             .header(hyper::header::ACCEPT, "text/event-stream")
             .body(String::new())?;
         let mut resp = sender.send_request(req).await?;
+        // **先看状态码，再说「连上了」。**以前这里拿到响应就报连上 —— 而一个
+        // 401 也是响应。那时界面会先显示已连接，然后把空的流当成断线，接着
+        // 重连、再断，循环往复，而真正的原因（凭据不对）一次都没说出来。
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.collect().await?.to_bytes();
+            let text = String::from_utf8_lossy(&body);
+            anyhow::bail!(if text.trim().is_empty() {
+                tr!(
+                    format!("事件流被拒：{status}"),
+                    format!("The event stream was refused: {status}")
+                )
+            } else {
+                text.to_string()
+            });
+        }
         on_open();
 
         let mut buf = String::new();
@@ -1107,6 +1164,7 @@ fn window_q(within: Option<(i64, i64)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     /// 界面发出来的每一种补丁操作，这一层都要认得。
     ///
@@ -1129,22 +1187,74 @@ mod tests {
         assert_eq!(ops.len(), 6);
     }
 
-    /// 连不上时说 core 不在，**不带 socket 路径和系统原话**：几乎每个命令在
+    /// 一个一定连不上的客户端：这个平台默认的那种传输，指向一个不存在的地方。
+    fn unreachable() -> ControlClient {
+        ControlClient::new(
+            tw_api::control::Endpoint::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
+            "t".into(),
+        )
+    }
+
+    /// 连不上时说 core 不在，**不带地址和系统原话**：几乎每个命令在
     /// core 不在的时候回给界面的都是这一句
     #[tokio::test]
     async fn connecting_to_a_missing_socket_says_core_is_not_there() {
-        let c = ControlClient::new(PathBuf::from("/tmp/definitely-not-a-socket-xyz"));
+        let c = unreachable();
         let msg = format!("{:#}", c.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
         assert!(!msg.contains("os error"), "{msg}");
         assert!(!msg.contains("definitely-not-a-socket"), "{msg}");
     }
 
+    /// 端口文件不在时，回环那一档说的是同一句话。
+    ///
+    /// **这条在 macOS 上也跑。**回环是 Windows 专用的传输，而一条只在一个
+    /// 平台上被测到的错误处理等于没被测过 —— 何况它比 socket 那档多一步：
+    /// 先要把端口读出来，而「文件还没写」正是刚把 core 拉起来那一小段的常态。
+    #[tokio::test]
+    async fn a_missing_port_file_also_says_core_is_not_there() {
+        let c = ControlClient::new(
+            tw_api::control::Endpoint::Loopback {
+                port_file: PathBuf::from("/tmp/tw-no-such-port-file-xyz"),
+            },
+            "t".into(),
+        );
+        let msg = format!("{:#}", c.status().await.unwrap_err());
+        assert!(msg.contains("core"), "{msg}");
+        assert!(!msg.contains("os error"), "{msg}");
+        assert!(!msg.contains("tw-no-such-port-file"), "{msg}");
+    }
+
+    /// 写了一半的端口文件也算「还没好」，不是一个要报给用户的错。
+    #[tokio::test]
+    async fn a_half_written_port_file_counts_as_not_ready() {
+        let d = std::env::temp_dir().join(format!("tw-port-{}", std::process::id()));
+        std::fs::write(&d, "12").unwrap();
+        let c = ControlClient::new(
+            tw_api::control::Endpoint::Loopback {
+                port_file: d.clone(),
+            },
+            "t".into(),
+        );
+        // 12 是个能解析的端口号，但没人听 —— 连接失败，同一句话
+        let msg = format!("{:#}", c.status().await.unwrap_err());
+        assert!(msg.contains("core"), "{msg}");
+
+        std::fs::write(&d, "不是数字").unwrap();
+        let msg = format!("{:#}", c.status().await.unwrap_err());
+        assert!(msg.contains("core"), "{msg}");
+        assert!(
+            !msg.contains("invalid digit"),
+            "别把 parse 的原话给用户：{msg}"
+        );
+        let _ = std::fs::remove_file(&d);
+    }
+
     /// 同一句话按界面语言说
     #[test]
     fn the_unreachable_message_follows_the_interface_language() {
         use crate::i18n::{Lang, with_lang};
-        let c = ControlClient::new(PathBuf::from("/tmp/definitely-not-a-socket-xyz"));
+        let c = unreachable();
         // 跑在当前线程上：`with_lang` 只改这一个线程看到的语言
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

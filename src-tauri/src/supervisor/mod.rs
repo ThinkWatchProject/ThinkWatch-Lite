@@ -108,6 +108,8 @@ pub struct Supervisor {
     binary: PathBuf,
     config: Option<PathBuf>,
     ready: Probe,
+    /// 控制面的凭据，spawn 时通过环境变量交给 core。见 `crate::token`。
+    token: String,
     policy: Mutex<RestartPolicy>,
     /// 当前状态。**用 watch 而不是 Mutex，是为了能被订阅** —— 界面
     /// 需要的是「变了就告诉我」，而拿一个 Mutex 只能反复去问。
@@ -126,11 +128,12 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn new(binary: PathBuf, config: Option<PathBuf>, ready: Probe) -> Self {
+    pub fn new(binary: PathBuf, config: Option<PathBuf>, ready: Probe, token: String) -> Self {
         Self {
             binary,
             config,
             ready,
+            token,
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
@@ -299,6 +302,10 @@ impl Supervisor {
 
         let spawned = tokio::process::Command::new(&self.binary)
             .args(&args)
+            // 控制面的凭据**走环境变量交过去，不进 argv** —— Windows 上任意
+            // 同用户进程都看得见别人的命令行，而这串东西是那个平台上控制面
+            // 唯一的门。见 `crate::token`。
+            .env(tw_api::control::TOKEN_ENV, &self.token)
             // core 的日志走它自己的 stderr；UI 侧只需要知道它活着。
             .kill_on_drop(true)
             .spawn();
@@ -415,6 +422,7 @@ mod tests {
             PathBuf::from("/nonexistent/twcore"),
             Some(PathBuf::from("/tmp/c.yaml")),
             always_ready(),
+            "t".into(),
         )
     }
 
@@ -477,7 +485,7 @@ mod tests {
     #[test]
     fn without_a_config_we_let_core_pick_the_default() {
         // 不要在这里重复一遍默认路径 —— 两处各写一遍就是两处会漂移。
-        let s = Supervisor::new(PathBuf::from("/x"), None, always_ready());
+        let s = Supervisor::new(PathBuf::from("/x"), None, always_ready(), "t".into());
         assert!(!s.command_args(false).contains(&"--config".to_string()));
     }
 
@@ -530,7 +538,12 @@ mod tests {
     /// 要么进安全模式、把主窗口弹到正在重启的应用上。
     #[tokio::test]
     async fn a_core_stopped_for_exit_is_not_restarted() {
-        let s = Arc::new(Supervisor::new(long_runner("stop"), None, always_ready()));
+        let s = Arc::new(Supervisor::new(
+            long_runner("stop"),
+            None,
+            always_ready(),
+            "t".into(),
+        ));
         let looped = {
             let s = s.clone();
             tokio::spawn(async move { s.run_once(false).await.unwrap() })
@@ -567,7 +580,12 @@ mod tests {
                 async move { n >= 3 }
             })
         };
-        let s = Arc::new(Supervisor::new(long_runner("ready"), None, third_time));
+        let s = Arc::new(Supervisor::new(
+            long_runner("ready"),
+            None,
+            third_time,
+            "t".into(),
+        ));
         let mut rx = s.watch();
         let looped = {
             let s = s.clone();
@@ -595,7 +613,12 @@ mod tests {
     /// 换掉它再起 —— 和启动就崩一个待遇，连着几次就进安全模式
     #[tokio::test(start_paused = true)]
     async fn a_core_that_never_answers_is_replaced() {
-        let s = Supervisor::new(long_runner("never"), None, probe(|| async { false }));
+        let s = Supervisor::new(
+            long_runner("never"),
+            None,
+            probe(|| async { false }),
+            "t".into(),
+        );
         let next = s.run_once(false).await.unwrap();
         assert_eq!(next, Next::Again);
         assert!(
@@ -612,6 +635,7 @@ mod tests {
             long_runner("restart"),
             None,
             always_ready(),
+            "t".into(),
         ));
         let looped = {
             let s = s.clone();
