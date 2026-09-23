@@ -35,6 +35,7 @@ import {
   IconServer,
   IconSettings,
 } from "./ui/icons";
+import { isMac } from "@/platform";
 import { RequestTable } from "./traffic/RequestTable";
 import { SessionPanel } from "./traffic/SessionPanel";
 import { useSessions } from "./traffic/useSessions";
@@ -251,6 +252,17 @@ function describeCore(raw: string): {
 }
 
 /** 可排序表头。箭头只出现在当前排序列上 —— 每列都挂一个等于没挂。 */
+/**
+ * 标成拖拽区，**只在 macOS 上**。
+ *
+ * 那里窗口用的是 Overlay 标题栏（红绿灯浮在内容上），没有一条真的标题栏可以
+ * 抓，不给拖拽区窗口就挪不动。
+ *
+ * Windows 用系统标题栏（决策 10），本来就抓得住。再把内容标成拖拽区的话，
+ * 点一下侧栏空白就会把窗口拖走 —— 在那个平台上这是意外行为，不是便利。
+ */
+const drag = isMac ? { "data-tauri-drag-region": true } : {};
+
 export default function App() {
   const t = useText(appText);
   const common = useText(commonText);
@@ -849,9 +861,9 @@ export default function App() {
         }
       >
         {/*
-        源列表。整条都是拖拽区 —— 窗口用的是 Overlay 标题栏(红绿灯浮在
-        内容上),没有一条真的标题栏可以抓,不给拖拽区窗口就挪不动。所以
-        `data-tauri-drag-region` 要一路传到 `Sidebar` 上。
+        源列表。**在 macOS 上**整条都是拖拽区 —— 那里窗口用的是 Overlay
+        标题栏(红绿灯浮在内容上),没有一条真的标题栏可以抓,不给拖拽区
+        窗口就挪不动。所以那个属性要一路传到 `Sidebar` 上,见 `drag`。
 
         **可以收起。**收起之后只剩图标,内容区多出 116px —— 对一个开着
         不关、一直在看图表的应用,这是唯一真正改善主界面的方向。名字进
@@ -875,10 +887,16 @@ export default function App() {
             background: "var(--chrome-rail)",
             color: "var(--chrome-text)",
           }}
-          data-tauri-drag-region
+          {...drag}
         >
-          {/* 红绿灯占掉左上角,内容从它下面开始 */}
-          <SidebarHeader className="h-[38px] p-0" data-tauri-drag-region />
+          {/*
+          红绿灯占掉左上角,内容从它下面开始。
+
+          **Windows 上没有这一块。**那里是系统标题栏,三颗灯不在内容里,
+          这 38px 就成了顶上一条白占的空条 —— 留着不是「差不多」,是多出
+          一条谁也解释不了的留白。
+        */}
+          {isMac && <SidebarHeader className="h-[38px] p-0" {...drag} />}
 
           <SidebarContent>
             {SOURCES.map((g, gi) => (
@@ -1012,7 +1030,7 @@ export default function App() {
         */}
           <div
             className="flex h-[38px] shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
-            data-tauri-drag-region
+            {...drag}
           >
             {/* `TooltipContent` 的样式里写着 `has-data-[slot=kbd]` —— 这个位置本来就是给键帽留的 */}
             <Tip
@@ -1052,7 +1070,7 @@ export default function App() {
             <span
               className="truncate tw-head"
               style={{ color: "var(--chrome-text)" }}
-              data-tauri-drag-region
+              {...drag}
             >
               {t.surfaces[tab]}
             </span>
