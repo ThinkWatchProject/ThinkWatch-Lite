@@ -52,6 +52,59 @@ describe("core 发来的消息", () => {
   });
 });
 
+describe("core 的错误：码加参数", () => {
+  it("配置里一类东西的名字按词表说，查不到整句退回英文", () => {
+    const m = (what: string) => ({
+      code: "config.edit.name_taken",
+      args: { what, name: "hk" },
+      text: `there is already a ${what} named \`hk\``,
+    });
+    expect(inLang("zh", () => coreText(m("price sheet")))).toBe("已存在名为「hk」的价目表。");
+    expect(inLang("zh", () => coreText(m("widget")))).toBe("there is already a widget named `hk`");
+  });
+
+  it("凭据那一句带不带上游名都能说", () => {
+    // 编辑对话框里不带（就是正在改的那个），整份配置校验时带
+    const m = { code: "config.credential.empty_key", text: "the API key is empty" };
+    expect(inLang("zh", () => coreText(m))).toBe("API 密钥为空。");
+    const withUpstream = { ...m, args: { upstream: "官方" } };
+    expect(inLang("zh", () => coreText(withUpstream))).toBe("上游「官方」的凭据：API 密钥为空。");
+  });
+
+  it("比较式写错时带上规则名", () => {
+    const m = {
+      code: "engine.compare.empty",
+      args: { field: "input_tokens", rule: "长上下文" },
+      text: "rule `长上下文`: condition input_tokens is written wrongly: the comparison is empty",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(
+      "规则「长上下文」：条件 input_tokens 写法有误：比较式为空。",
+    );
+  });
+
+  it("serde 的原话翻不了，外面那一层翻", () => {
+    const m = {
+      code: "config.rejected_at",
+      args: { stage: "syntax", line: "3", detail: "found unexpected end of stream" },
+      text: "syntax error (line 3): found unexpected end of stream",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(
+      "配置第 3 行有语法错误：found unexpected end of stream",
+    );
+  });
+
+  it("只有名字的列表换成「」和顿号", () => {
+    const m = {
+      code: "control.proxy_in_use",
+      args: { proxy: "hk", upstreams: "`官方`, `中转`" },
+      text: "Proxy `hk` is still used by upstream `官方`, `中转`; unlink those before deleting it.",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(
+      "代理「hk」仍被上游「官方」、「中转」使用，请先解除关联再删除。",
+    );
+  });
+});
+
 describe("扫描发现：句子由词拼出来", () => {
   it("按 kind 和 rule 拼出中文", () => {
     const m = {
