@@ -20,6 +20,7 @@ import type { ChatgptUsage, CoreEvent, Overview, PricingStatus } from "@/types";
 import { useCoreEvent } from "@/useCoreEvent";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
+import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { when } from "@/format";
 import { errorText } from "./labels";
@@ -41,6 +42,7 @@ type DialogState =
   | { kind: "upstream"; mode: UpstreamDialogMode }
   /** `relogin`：给已有的 ChatGPT 账号换一次凭据，名称和出站方式沿用它的 */
   | { kind: "chatgpt-login"; relogin?: { name: string; proxy: string } }
+  | { kind: "zai-login" }
   | { kind: "delete-upstream"; name: string }
   | { kind: "test"; name: string }
   | { kind: "link"; provider: string | null }
@@ -467,6 +469,7 @@ export default function UpstreamsPage({
           }}
           onChanged={changed}
           onChatgptLogin={(relogin) => setDialog({ kind: "chatgpt-login", relogin })}
+          onZaiLogin={() => setDialog({ kind: "zai-login" })}
         />
       )}
       {dialog?.kind === "delete-upstream" && (
@@ -497,6 +500,9 @@ export default function UpstreamsPage({
           onClose={() => setDialog(null)}
           onSaved={() => changed()}
         />
+      )}
+      {dialog?.kind === "zai-login" && (
+        <ZaiLoginDialog ov={ov} onClose={() => setDialog(null)} onSaved={() => changed()} />
       )}
       {dialog?.kind === "test" && (
         <TestConnectionDialog ov={ov} name={dialog.name} onClose={() => setDialog(null)} />

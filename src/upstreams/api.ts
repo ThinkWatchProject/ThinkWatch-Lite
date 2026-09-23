@@ -34,6 +34,9 @@ import type {
   ResetCreditUsed,
   SpeedQuote,
   SpeedResult,
+  ZaiFamily,
+  ZaiLogin,
+  ZaiLoginStatus,
 } from "@/types";
 
 export interface UpstreamStats {
@@ -76,6 +79,13 @@ export const api = {
   copyChatgptCode: (id: string) => invoke<void>("copy_chatgpt_code", { id }),
   chatgptLoginStatus: (id: string) => invoke<ChatgptLoginStatus>("chatgpt_login_status", { id }),
   cancelChatgptLogin: (id: string) => invoke<ChatgptLoginStatus>("cancel_chatgpt_login", { id }),
+  /** 开始一次 Z.ai / BigModel 登录。顺手打开授权页 —— 地址留在 Rust 侧 */
+  startZaiLogin: (family: ZaiFamily, name: string, proxy: string) =>
+    invoke<ZaiLogin>("start_zai_login", { family, name, proxy }),
+  reopenZaiLogin: (id: string) => invoke<void>("reopen_zai_login", { id }),
+  zaiLoginStatus: (id: string) => invoke<ZaiLoginStatus>("zai_login_status", { id }),
+  cancelZaiLogin: (id: string) => invoke<ZaiLoginStatus>("cancel_zai_login", { id }),
+
   chatgptUsage: (name: string) => invoke<ChatgptUsage>("chatgpt_usage", { name }),
   chatgptResets: (name: string) => invoke<ResetCredits>("chatgpt_resets", { name }),
   /** 用掉一张卡。**用掉就回不来**，调用前必须让用户确认 */

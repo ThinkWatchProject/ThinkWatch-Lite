@@ -16,7 +16,7 @@ import {
   proxyKindLabel,
 } from "./labels";
 import { FormItem, Note, Segmented } from "./parts";
-import { CHATGPT, CUSTOM, PRESETS, nameFromUrl, presetById } from "./presets";
+import { CHATGPT, CUSTOM, PRESETS, ZAI, nameFromUrl, presetById } from "./presets";
 import { describeModelList, freeName, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
@@ -33,6 +33,7 @@ export function ConnectionSection({
   onTest,
   onNewProxy,
   onChatgptLogin,
+  onZaiLogin,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -46,6 +47,8 @@ export function ConnectionSection({
   onNewProxy: () => void;
   /** 服务类型选了 ChatGPT 账号：那一条走登录，不走这张表单 */
   onChatgptLogin: () => void;
+  /** 服务类型选了 Z.ai / BigModel 账号：同样走登录 */
+  onZaiLogin: () => void;
 }) {
   const t = useText(connectionSectionText);
   const proxies = ov.proxies;
@@ -59,6 +62,10 @@ export function ConnectionSection({
   function pickPreset(id: string) {
     if (id === CHATGPT) {
       onChatgptLogin();
+      return;
+    }
+    if (id === ZAI) {
+      onZaiLogin();
       return;
     }
     const prev = presetById(form.preset);
@@ -93,6 +100,7 @@ export function ConnectionSection({
             >
               <NativeSelectOption value="custom">{CUSTOM.label}</NativeSelectOption>
               <NativeSelectOption value={CHATGPT}>{t.chatgpt}</NativeSelectOption>
+              <NativeSelectOption value={ZAI}>{t.zai}</NativeSelectOption>
               {PRESETS.map((p) => (
                 <NativeSelectOption key={p.id} value={p.id}>
                   {p.label}

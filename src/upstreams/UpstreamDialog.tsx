@@ -73,6 +73,7 @@ export function UpstreamDialog({
   onSaved,
   onChanged,
   onChatgptLogin,
+  onZaiLogin,
 }: {
   mode: UpstreamDialogMode;
   ov: Overview;
@@ -83,6 +84,8 @@ export function UpstreamDialog({
   onChanged: () => void;
   /** 改用 ChatGPT 账号登录：这张表单让位给登录对话框。带上名字就是给它换一次凭据 */
   onChatgptLogin: (relogin?: { name: string; proxy: string }) => void;
+  /** 改用 Z.ai / BigModel 账号登录：同样让位给登录对话框 */
+  onZaiLogin: () => void;
 }) {
   const t = useText(upstreamDialogText);
   const c = useText(commonText);
@@ -340,6 +343,7 @@ export function UpstreamDialog({
               onTest={runTest}
               onNewProxy={() => setNested({ kind: "proxy" })}
               onChatgptLogin={onChatgptLogin}
+              onZaiLogin={onZaiLogin}
             />
           )}
           {section === "models" && (
