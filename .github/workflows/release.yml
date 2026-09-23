@@ -451,3 +451,30 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "thinkwatch-lite $VERSION"
           git push
+
+  # winget 的清单跟上这一版：往 microsoft/winget-pkgs 提一个更新的 PR，由那边的
+  # 机器人验证、合并。**和 tap 不同，合并不由我们决定** —— 这里只负责把 PR 提出去。
+  #
+  # 用的是 fylorn 名下的 winget-pkgs 分叉和一把只有 `public_repo` 权限的令牌
+  # （`WINGET_TOKEN`）。**没配令牌就整个跳过，提不出去也不让发版失败**：winget
+  # 晚几天跟上不影响任何已经装好的实例，它们自己会更新。
+  #
+  # 包要先在 winget 里有过一版（第一版是手工提交的），这个 action 只会做更新。
+  winget:
+    name: winget
+    needs: publish
+    if: github.ref_type == 'tag'
+    runs-on: windows-latest
+    continue-on-error: true
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - if: env.WINGET_TOKEN != ''
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: ThinkWatchProject.ThinkWatchLite
+          # 两个安装程序；`.sha256` 这些不算
+          installers-regex: '-setup\.exe$'
+          release-notes-url: https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/tag/${{ github.ref_name }}
+          fork-user: fylorn
+          token: ${{ secrets.WINGET_TOKEN }}
