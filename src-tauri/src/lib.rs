@@ -1760,7 +1760,15 @@ pub fn run() {
             } else {
                 Box::new(notices::SystemSink::new(handle.clone()))
             };
-            #[cfg(not(target_os = "macos"))]
+            // Windows 上「装好的」是指开始菜单里有带 AUMID 的快捷方式，见 `notices::windows`。
+            // 点开走协议激活（下面的 `on_open_url`），不用在这里接回调
+            #[cfg(windows)]
+            let system: Box<dyn notices::Sink> = if notices::windows::available(&handle) {
+                Box::new(notices::windows::NativeSink::new(handle.clone()))
+            } else {
+                Box::new(notices::SystemSink::new(handle.clone()))
+            };
+            #[cfg(not(any(target_os = "macos", windows)))]
             let system: Box<dyn notices::Sink> = Box::new(notices::SystemSink::new(handle.clone()));
             // 菜单栏在通知列表一变时要重画：它也是通知总线的一个投递端
             let menubar_wake = Arc::new(tokio::sync::Notify::new());
@@ -1856,15 +1864,23 @@ pub fn run() {
                 memcheck::run(handle.clone());
             }
 
-            // 浏览器里授权完成之后点「返回 ThinkWatch」：把应用带回前台。
+            // `thinkwatch://` 被点开：浏览器里授权完成之后的「返回 ThinkWatch」，
+            // 和 Windows 上点了一条 toast（`thinkwatch://notice/<键>`）。
             // **窗口这时可能根本不存在**（菜单栏模式下关窗即销毁）
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let h = handle.clone();
                 handle.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
-                    chatgpt::handle_return(&h, &urls);
+                    open_urls(&h, &urls);
                 });
+                // **被这个链接拉起来的那一次**：插件初始化时就把它发出去了，那时这里还
+                // 没在听，只剩 `get_current` 里存着的一份。点一条 toast 时应用没在跑，
+                // 就是这种情况。macOS 的链接在启动之后才到，这里取到的是空的
+                if let Ok(Some(urls)) = handle.deep_link().get_current() {
+                    let urls: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
+                    open_urls(&handle, &urls);
+                }
             }
 
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
@@ -2276,6 +2292,18 @@ fn check_autostart_path(app: &tauri::AppHandle) {
 ///
 /// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了
 /// 启动时间，而且窗口会有一帧闪烁 —— 开机的时候屏幕上什么都不该出现。
+/// 分拣一批 `thinkwatch://` 链接：点开通知的落到那一条的页面，其余的交给授权回调
+fn open_urls(app: &tauri::AppHandle, urls: &[String]) {
+    let mut rest = Vec::new();
+    for url in urls {
+        match notices::key_from_url(url) {
+            Some(key) => notices::open_from_notification(app, &key),
+            None => rest.push(url.clone()),
+        }
+    }
+    chatgpt::handle_return(app, &rest);
+}
+
 pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("main") {
         w.show()?;

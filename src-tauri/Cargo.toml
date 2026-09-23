@@ -98,6 +98,12 @@ windows-sys = { version = "0.61", features = [
     # 跟随系统的语言
     "Win32_Globalization",
 ] }
+# 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
+# `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套
+windows = { version = "0.61", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+] }
 
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟

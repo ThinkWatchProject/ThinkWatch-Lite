@@ -4628,6 +4628,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tw-api",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

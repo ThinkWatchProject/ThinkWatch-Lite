@@ -25,8 +25,8 @@
 //!
 //! # 平台
 //!
-//! 投递是 [`Sink`]，系统通知只是其中一个实现。Windows 要加的是一个 sink，
-//! 不是另一套判定。
+//! 投递是 [`Sink`]，系统通知只是其中一个实现。macOS 和 Windows 各有一个原生的
+//! sink，判定只有这一套。
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -37,6 +37,10 @@ pub mod macos;
 pub mod rules;
 pub mod sink;
 mod store;
+// **测试在哪个平台都编**：键怎么变成 tag、XML 怎么拼，这些纯函数不该只在 Windows
+// 那台 CI 上才有人看
+#[cfg(any(windows, test))]
+pub mod windows;
 
 pub use sink::{Sink, SystemSink};
 
@@ -635,6 +639,33 @@ pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
         n.mark_read(key);
     }
     open_view(app, view);
+}
+
+/// 点开一条通知的链接：`thinkwatch://notice/<百分号编码的键>`。
+///
+/// Windows 的 toast 点下去走的是**协议激活**：系统拉起 `thinkwatch://` 的处理程序，
+/// single-instance 把它转给已经在跑的那一个，最后落到 `on_open_url`。不用注册 COM
+/// 激活器，应用没在跑的时候也点得开
+pub const NOTICE_URL: &str = "thinkwatch://notice/";
+
+/// 从点开通知的链接里取回键。不是这种链接、或者解不出一个像样的键，就是 `None`
+pub fn key_from_url(url: &str) -> Option<String> {
+    let rest = url.strip_prefix(NOTICE_URL)?;
+    let bytes = rest.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hi = bytes.get(i + 1).and_then(|b| (*b as char).to_digit(16))?;
+            let lo = bytes.get(i + 2).and_then(|b| (*b as char).to_digit(16))?;
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok().filter(|k| !k.is_empty())
 }
 
 /// 打开主界面，落到这一页（`upstreams`、`requests:42`…）。**窗口可能是为这一下新建

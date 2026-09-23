@@ -16,6 +16,7 @@
 
 pub mod un;
 
+use super::sink::{counted_title, thread_of};
 use super::{Notice, Sink};
 
 pub use un::available;
@@ -46,17 +47,9 @@ impl Sink for NativeSink {
         if !notice.notified {
             return;
         }
-        let title = if notice.count > 1 {
-            tr!(
-                format!("{}（{} 次）", notice.title, notice.count),
-                format!("{} ({} Times)", notice.title, notice.count)
-            )
-        } else {
-            notice.title.clone()
-        };
         un::post(
             notice.key.clone(),
-            title,
+            counted_title(notice),
             notice.body.clone(),
             thread_of(&notice.key),
             true,
@@ -76,9 +69,4 @@ impl Sink for NativeSink {
             false,
         );
     }
-}
-
-/// 同一种的归在一起：用键的种类（冒号前那段）做 thread
-fn thread_of(key: &str) -> String {
-    key.split(':').next().unwrap_or(key).to_string()
 }
