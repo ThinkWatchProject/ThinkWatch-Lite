@@ -107,9 +107,35 @@ pub fn system() -> Lang {
             return from_tag(&first.to_string());
         }
     }
+    #[cfg(windows)]
+    if let Some(tag) = user_locale() {
+        return from_tag(&tag);
+    }
+    // **`LANG` 是 unix 的东西。**Windows 上它通常根本不存在，上面那一支答不
+    // 出来时落到这里，而那时英文是唯一诚实的默认。
     std::env::var("LANG")
         .map(|l| from_tag(&l))
         .unwrap_or(Lang::En)
+}
+
+/// 这个用户在 Windows 里选的语言，形如 `zh-CN`。
+///
+/// **问 `GetUserDefaultLocaleName`，不看 `LANG`。**后者在 Windows 上只有装了
+/// Git Bash 之类的机器才有，而它记的是那套工具的偏好，不是用户在系统设置里
+/// 选的那个 —— 照它走的话，一台中文系统会因为装过 Git 而说英文。
+#[cfg(windows)]
+fn user_locale() -> Option<String> {
+    use windows_sys::Win32::Globalization::GetUserDefaultLocaleName;
+
+    // `LOCALE_NAME_MAX_LENGTH` 是 85，连 NUL 在内。
+    let mut buf = [0u16; 85];
+    // SAFETY: 缓冲区是本地数组，长度如实告知。
+    let n = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
+    if n <= 0 {
+        return None;
+    }
+    // 返回的长度**含结尾的 NUL**，所以要去掉一个
+    Some(String::from_utf16_lossy(&buf[..(n as usize) - 1]))
 }
 
 /// 注进每个窗口的那一行：页面加载之前就知道用哪种语言。

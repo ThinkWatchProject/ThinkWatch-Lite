@@ -48,8 +48,50 @@ pub fn system() -> Theme {
             .is_some_and(|v| v.to_string().eq_ignore_ascii_case("dark"));
         if dark { Theme::Dark } else { Theme::Light }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        match apps_use_light_theme() {
+            Some(0) => Theme::Dark,
+            Some(_) => Theme::Light,
+            // 读不到就当浅色。**这一项在没有深色模式的那些 Windows 上根本
+            // 不存在**，所以「没有这个值」和「用户选了浅色」在这里是同一件事。
+            None => Theme::Light,
+        }
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
     Theme::Light
+}
+
+/// `HKCU\…\Themes\Personalize\AppsUseLightTheme`：0 是深色，1 是浅色。
+///
+/// **读 `AppsUseLightTheme`，不读旁边那个 `SystemUsesLightTheme`。**后者管的是
+/// 任务栏和开始菜单，而这两项是分开的 —— 用户完全可以让系统深、应用浅。我们
+/// 要跟的是应用那一档，因为这个应用就是一个应用。
+#[cfg(windows)]
+fn apps_use_light_theme() -> Option<u32> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    let sub = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("AppsUseLightTheme");
+    let mut val: u32 = 0;
+    let mut len = std::mem::size_of::<u32>() as u32;
+    // SAFETY: 两个字符串都以 NUL 结尾；出参是本地变量，`len` 一开始就是那块
+    // 内存的大小，函数不会写超过它。
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sub.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut val).cast(),
+            &mut len,
+        )
+    };
+    (rc == 0).then_some(val)
 }
 
 /// 设置里的选择落到实际用哪一种。
