@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
+import { isMac } from "@/platform";
 import { errorText } from "@/i18n/core.i18n";
 import { menubarSettingsText } from "./MenubarSettings.i18n";
 
@@ -18,11 +19,16 @@ export default function MenubarSettings() {
   const [style, setStyle] = useState<MenubarStyle | null>(null);
 
   useEffect(() => {
+    if (!isMac) return;
     void invoke<MenubarStyle>("menubar_style")
       .then(setStyle)
       .catch(() => {});
   }, []);
 
+  // **只有 macOS 有这三档。**别处的通知区只认一张正方形图标（100% DPI 下
+  // 16×16），塞不下两行数字 —— 那几行在右键菜单里给。留着一个点了没反应的
+  // 选择，比没有这一节糟。
+  if (!isMac) return null;
   if (!style) return null;
 
   async function choose(next: MenubarStyle) {

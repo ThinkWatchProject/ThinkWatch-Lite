@@ -143,8 +143,22 @@ pub fn init_script() -> String {
     script_for(current())
 }
 
+/// 界面按平台分叉的地方不多，但**有几处必须在首帧之前就知道**（比如设置页
+/// 里那一节该不该出现）。跟着语言一起注进去，理由也一样：一次异步查询会让
+/// 第一帧画错。
+pub const PLATFORM: &str = if cfg!(target_os = "macos") {
+    "macos"
+} else if cfg!(windows) {
+    "windows"
+} else {
+    "other"
+};
+
 fn script_for(lang: Lang) -> String {
-    format!("window.__TW_LANG__ = \"{}\";", lang.as_str())
+    format!(
+        "window.__TW_LANG__ = \"{}\"; window.__TW_PLATFORM__ = \"{PLATFORM}\";",
+        lang.as_str()
+    )
 }
 
 /// 按当前语言二选一。
@@ -188,10 +202,35 @@ mod tests {
         assert_eq!(effective(Some(Lang::Zh)), Lang::Zh);
     }
 
+    /// **断言的是「里面有什么」，不是「一字不差是什么」。**这一行还会再长
+    /// —— 每加一样首帧之前就要知道的东西就多一段 —— 而一条把整行写死的断言
+    /// 每次都要跟着改，改的时候没人会重新想一遍它到底在保证什么。
     #[test]
-    fn the_injected_line_names_the_language() {
-        assert_eq!(script_for(Lang::En), "window.__TW_LANG__ = \"en\";");
-        assert_eq!(script_for(Lang::Zh), "window.__TW_LANG__ = \"zh\";");
+    fn the_injected_line_names_the_language_and_the_platform() {
+        for (lang, tag) in [(Lang::En, "en"), (Lang::Zh, "zh")] {
+            let line = script_for(lang);
+            assert!(
+                line.contains(&format!("window.__TW_LANG__ = \"{tag}\"")),
+                "{line}"
+            );
+            assert!(
+                line.contains(&format!("window.__TW_PLATFORM__ = \"{PLATFORM}\"")),
+                "{line}"
+            );
+            // 注进去的是一段会被执行的 JS：每一句都要有分号收尾
+            assert!(line.trim_end().ends_with(';'), "{line}");
+        }
+    }
+
+    /// 这台机器编出来的那个值。写错了界面上按平台分叉的地方会全部走错支。
+    #[test]
+    fn the_platform_is_the_one_this_was_built_for() {
+        #[cfg(target_os = "macos")]
+        assert_eq!(PLATFORM, "macos");
+        #[cfg(windows)]
+        assert_eq!(PLATFORM, "windows");
+        #[cfg(not(any(target_os = "macos", windows)))]
+        assert_eq!(PLATFORM, "other");
     }
 
     #[test]

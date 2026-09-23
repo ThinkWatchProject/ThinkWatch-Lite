@@ -36,11 +36,33 @@ static STYLE: AtomicU8 = AtomicU8::new(0);
 /// 菜单开着吗（delegate 报的）
 static OPEN: AtomicBool = AtomicBool::new(false);
 
+/// 设置里存的是哪一档。**这是「存了什么」，不是「画成什么」** —— 后者见
+/// [`drawn_style`]。
 pub fn style() -> Style {
     match STYLE.load(Ordering::Relaxed) {
         1 => Style::Icon,
         2 => Style::Numbers,
         _ => Style::Full,
+    }
+}
+
+/// 实际画出来的那一档。
+///
+/// **macOS 才有三档可选。**别处的通知区只认一张正方形图标（100% DPI 下
+/// 16×16），两行数字塞不进去 —— 那几行在右键菜单里给，所以无论存的是什么，
+/// 画出来的都是图标。
+///
+/// 和 [`style`] 分开，因为它们回答的是两个问题：设置页问「存了什么」，
+/// 渲染问「画得出什么」。把它们合成一个，那条「存进去什么就读回什么」的
+/// 测试就会在别的平台上挂 —— 而它挂得有道理，是这里本来就不该混。
+fn drawn_style() -> Style {
+    #[cfg(target_os = "macos")]
+    {
+        style()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Style::Icon
     }
 }
 
@@ -86,7 +108,7 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
             },
         );
         // 第一帧：还没收到任何数，但菜单栏上不能是空的
-        let (bar, rows) = model::build(&Snapshot::default(), style());
+        let (bar, rows) = model::build(&Snapshot::default(), drawn_style());
         macos::apply(mtm, &bar, &rows);
     }
     #[cfg(not(target_os = "macos"))]
@@ -159,7 +181,7 @@ fn sleep_until(at: Option<tokio::time::Instant>) -> tokio::time::Sleep {
 
 /// 把快照交给画的那一层
 fn present(snap: &Snapshot) {
-    let (bar, rows) = model::build(snap, style());
+    let (bar, rows) = model::build(snap, drawn_style());
     #[cfg(target_os = "macos")]
     macos::on_main(move |mtm| macos::apply(mtm, &bar, &rows));
     #[cfg(not(target_os = "macos"))]
