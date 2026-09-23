@@ -771,15 +771,21 @@ const ZH: Record<string, Say> = {
   "adopt.manual.cursor.caveat": () =>
     "Tab 补全与 inline edit 仍由 Cursor 自身的服务处理，不经过网关，因此只能部分接管。",
   "adopt.manual.continue.open": () => "打开 ~/.continue/config.yaml。",
+  "adopt.manual.continue.open_windows": () => "打开 %USERPROFILE%\\.continue\\config.yaml。",
   "adopt.manual.continue.entry": () =>
     "在 models 列表中新增一项：provider 设为 openai，apiBase 设为网关地址，apiKey 设为密钥。",
   "adopt.manual.continue.caveat": () =>
     "接入需要在 models 列表中新增条目，不提供自动接管，请按上述步骤手动配置。",
   "adopt.manual.gemini_cli.export": () =>
     "在 shell 配置文件中导出 GOOGLE_GEMINI_BASE_URL（网关地址）和 GEMINI_API_KEY（密钥）。",
+  // Windows 上没有 shell 配置文件可 export，用户级环境变量用 setx 写
+  "adopt.manual.gemini_cli.setx": () =>
+    "在终端中运行 setx GOOGLE_GEMINI_BASE_URL，后接网关地址；再运行 setx GEMINI_API_KEY，后接密钥。",
   "adopt.manual.gemini_cli.reopen": () => "然后重新打开终端。",
   "adopt.manual.gemini_cli.caveat": () =>
     "Gemini CLI 只从环境变量读取接口地址。ThinkWatch 不修改 shell 配置文件，请手动添加。",
+  "adopt.manual.gemini_cli.caveat_windows": () =>
+    "Gemini CLI 只从环境变量读取接口地址。ThinkWatch 不修改环境变量，请手动添加。",
 
   // ── adopt.mcp：这份 MCP 配置为什么写不了 ────────────────────────
   "adopt.mcp.unverified_format": () =>
