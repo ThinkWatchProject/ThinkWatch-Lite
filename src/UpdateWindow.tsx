@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Progress } from "@/ui/progress";
@@ -12,16 +12,6 @@ import { commonText } from "@/i18n/common.i18n";
 import { canInstall, describeStep, type Offer, type Step } from "./updateFlow";
 import { updateText } from "./Update.i18n";
 import { errorText } from "@/i18n/core.i18n";
-
-/**
- * 窗口宽度。**高度跟着内容走** —— 发布说明有长有短，固定高度要么留白要么
- * 截断。
- *
- * 宽度是被 Homebrew 那条命令定下来的：它要在一行里完整显示出来。一条要
- * 粘进终端去执行的命令，显示成「…upgrade --cask thinkwatc」是不行的 ——
- * 用户看不全自己要执行的是什么。Rust 建窗口时用的是同一个数。
- */
-const WIDTH = 480;
 
 /** 「已复制」留多久 */
 const COPIED_MS = 2_000;
@@ -84,13 +74,17 @@ export default function UpdateWindow() {
 
   // 内容高度变了就跟着改窗口高度：出现进度条、出现错误、换了一版带着
   // 更长的说明。第一次量完才亮出窗口，不让人看见跳一下的那一帧。
+  //
+  // **窗口的尺寸由 Rust 那边设**，理由见 `update_fit`：窗口接口说的是整扇
+  // 窗户，标题栏算在里面，照着内容的高度设下去，网页会少一条标题栏。宽度
+  // 也一并在那边。
   useEffect(() => {
     const el = body.current;
     if (!offer || !el) return;
     const w = getCurrentWindow();
     const fit = () => {
-      const h = Math.ceil(el.getBoundingClientRect().height);
-      void w.setSize(new LogicalSize(WIDTH, h)).then(async () => {
+      const height = Math.ceil(el.getBoundingClientRect().height);
+      void invoke("update_fit", { height }).then(async () => {
         if (shown.current) return;
         shown.current = true;
         await w.show();
