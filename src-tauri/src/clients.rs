@@ -56,7 +56,8 @@ pub async fn copy_client_endpoint(
         .map_err(|e| e.to_string())
 }
 
-/// 在访达里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是真正会被改的。
+/// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
+/// 真正会被改的。
 #[tauri::command]
 pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String) -> Out<()> {
     let list = state.control.clients().await.map_err(text)?;
@@ -65,18 +66,57 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
         .iter()
         .find(|c| c.id == id)
         .ok_or_else(|| unknown(&id))?;
+    reveal(&c.real)
+}
+
+/// 把文件管理器打开到这个文件上，并且**选中它**。
+///
+/// 两个平台各有各的说法，而且**这段代码在 Windows 上编得过、只在运行时失败**
+/// —— `open` 那个命令在那里根本不存在，而类型系统对此无话可说。这类坏法 CI
+/// 也抓不到，它只会在用户点下那个按钮的时候出现。
+#[cfg(target_os = "macos")]
+fn reveal(path: &str) -> Out<()> {
     let st = std::process::Command::new("open")
         .arg("-R")
-        .arg(&c.real)
+        .arg(path)
         .status()
         .map_err(|e| e.to_string())?;
     if st.success() {
         Ok(())
     } else {
         Err(tr!(
-            format!("无法在访达中显示 {}", c.real),
-            format!("{} could not be shown in Finder", c.real)
+            format!("无法在访达中显示 {path}"),
+            format!("{path} could not be shown in Finder")
         )
         .to_string())
     }
+}
+
+#[cfg(windows)]
+fn reveal(path: &str) -> Out<()> {
+    // `/select,<路径>` 中间**没有空格**：explorer 把这一整串当成一个参数，
+    // 写成 `/select, path` 的话它只会打开「文档」。
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{path}"))
+        // **不看退出码。**explorer.exe 即使成功也常常返回 1 —— 照着它判断的话，
+        // 每一次都会告诉用户失败了，而窗口就在他眼前开着。起不来（`spawn`
+        // 本身出错）才是真的失败。
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| {
+            tr!(
+                format!("无法在文件资源管理器中显示 {path}：{e}"),
+                format!("{path} could not be shown in File Explorer: {e}")
+            )
+            .to_string()
+        })
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn reveal(path: &str) -> Out<()> {
+    Err(tr!(
+        format!("这个平台上还不能打开文件管理器：{path}"),
+        format!("Opening a file manager is not supported on this platform yet: {path}")
+    )
+    .to_string())
 }

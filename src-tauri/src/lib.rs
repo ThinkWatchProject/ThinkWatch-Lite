@@ -16,6 +16,9 @@ pub mod chatgpt;
 pub mod clients;
 pub mod control;
 #[cfg(target_os = "macos")]
+/// 从 DMG 里取出 `.app`，给更新器用。**只有 macOS 有** —— 它整个是 `hdiutil`，
+/// 而发布页上那个 DMG 本来就只给那个平台。Windows 上更新器直接装 NSIS 包。
+#[cfg(target_os = "macos")]
 pub mod dmg;
 pub mod keys;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
