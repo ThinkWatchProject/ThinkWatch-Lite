@@ -1176,6 +1176,25 @@ export interface ChatgptLoginStatus {
   error?: string | null;
 }
 
+/** 登哪一家的账号 */
+export type ZaiFamily = "zai" | "bigmodel";
+
+/** 一次 Z.ai 登录。授权地址留在 Rust 侧，界面只拿到 ID */
+export interface ZaiLogin {
+  id: string;
+  expires_in_secs: number;
+}
+
+export interface ZaiLoginStatus {
+  id: string;
+  status: LoginStatus;
+  /** 登录成功后写进配置的上游名 */
+  provider?: string | null;
+  /** 登的是哪个账号，邮箱或者昵称。对方没给就没有 */
+  account?: string | null;
+  error?: string | null;
+}
+
 /** 账号的订阅额度 */
 export interface ChatgptUsage {
   /** 登的是哪个账号。core 只给邮箱，用户 ID 和账户 ID 不往外带 */

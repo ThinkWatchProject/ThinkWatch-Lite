@@ -32,6 +32,7 @@ pub mod theme;
 mod token;
 pub mod update;
 pub mod upstreams;
+pub mod zai;
 
 use control::ControlClient;
 use supervisor::{CoreState, Supervisor};
@@ -1608,6 +1609,10 @@ pub fn run() {
             chatgpt::chatgpt_usage,
             chatgpt::chatgpt_resets,
             chatgpt::use_chatgpt_reset,
+            zai::start_zai_login,
+            zai::reopen_zai_login,
+            zai::zai_login_status,
+            zai::cancel_zai_login,
             upstreams::pricing_status,
             upstreams::refresh_pricing,
             upstreams::set_price_auto_update,

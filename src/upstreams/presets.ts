@@ -1,4 +1,5 @@
 import { textOf } from "@/i18n";
+import type { ZaiFamily } from "@/types";
 import { presetsText } from "./presets.i18n";
 
 /**
@@ -34,6 +35,24 @@ export const CUSTOM: Preset = {
  * 地址、协议和凭据都由 core 在登录成功时写入
  */
 export const CHATGPT = "chatgpt-login";
+
+/**
+ * 「Z.ai 账号」在服务类型里的取值。**它不是一份预设**：选中它之后走的是登录，
+ * 密钥由 core 在登录成功时写入
+ */
+export const ZAI = "zai-login";
+
+/**
+ * 两家账号登录后会用的接口地址。
+ *
+ * **地址由 core 决定**，这里的两份只用来在登录对话框里显示「请求会发往哪里」，
+ * 以及认出「这个名字上已有的上游正是这一家」——换句话说，它错了也只是显示错，
+ * 登录本身不受影响。
+ */
+export const ZAI_ENDPOINTS: Record<ZaiFamily, string> = {
+  zai: "https://api.z.ai/api/anthropic",
+  bigmodel: "https://open.bigmodel.cn/api/anthropic",
+};
 
 export const PRESETS: Preset[] = [
   {

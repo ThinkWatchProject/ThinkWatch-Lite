@@ -803,6 +803,28 @@ impl ControlClient {
         .await
     }
 
+    // ───────────────────────────────────────── Z.ai / BigModel 账号
+
+    /// 开始一次登录。回来的地址要在浏览器里打开，core 自己去问「授权了没有」
+    pub async fn start_zai_login(&self, req: &tw_api::ZaiLoginStart) -> Result<tw_api::ZaiLogin> {
+        self.post_json("/zai/login", req).await
+    }
+
+    pub async fn zai_login_status(&self, id: &str) -> Result<tw_api::ZaiLoginStatus> {
+        Ok(serde_json::from_slice(
+            &self.get(&format!("/zai/login/{}", segment(id))).await?,
+        )?)
+    }
+
+    pub async fn cancel_zai_login(&self, id: &str) -> Result<tw_api::ZaiLoginStatus> {
+        self.send_json(
+            hyper::Method::DELETE,
+            &format!("/zai/login/{}", segment(id)),
+            &(),
+        )
+        .await
+    }
+
     pub async fn chatgpt_usage(&self, name: &str) -> Result<tw_api::ChatgptUsage> {
         Ok(serde_json::from_slice(
             &self
