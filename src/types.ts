@@ -868,7 +868,9 @@ export interface SpeedEstimate {
   model: string;
   /** 输入 token。**精确值** —— 请求是固定的 */
   input_tokens: number;
-  max_output_tokens: number;
+  /** 输出上限。**null = 这家不接受输出上限**（ChatGPT 账号），那时
+      `cost_micros` 也是 null —— 回答有多长由模型决定 */
+  max_output_tokens: number | null;
   /** 按量计费算得出来时是那个数，不计费时是 0，无法计价时是 null */
   cost_micros?: number | null;
   /** `per-token` / `free` */
@@ -895,7 +897,7 @@ export interface SpeedResult {
   total_ms: number;
   input_tokens: number | null;
   output_tokens: number | null;
-  error: string | null;
+  error: Msg | null;
 }
 
 /** 一个出站代理。**用户名和密码都不在这里** —— 服务端只给「有没有认证」 */

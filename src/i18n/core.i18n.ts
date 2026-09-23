@@ -184,6 +184,11 @@ const ZH: Record<string, Say> = {
   "l1.http_proxy.connect_rejected": (a) =>
     `代理拒绝了 CONNECT 请求（HTTP ${a.status}）：${a.line}`,
 
+  // ── l3：推理测速 ────────────────────────────────────────────────
+  "l3.refused": (a) => `上游返回 ${a.status}：${a.detail}`,
+  "l3.stream_failed": (a) => `上游在回答过程中报错：${a.detail}`,
+  "l3.not_streamed": () => "上游没有以流式回答，无法测得首 token 时间。",
+
   // ── lite：桌面版自己说的。core 停了，没法再替那些请求说话 ─────────
   "lite.core_stopped": () => "core 在请求完成前停止运行，请求已中断。",
 

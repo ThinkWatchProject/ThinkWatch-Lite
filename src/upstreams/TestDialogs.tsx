@@ -31,6 +31,7 @@ import {
 } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { coreText } from "@/i18n/core.i18n";
 import { api } from "./api";
 import { TestLine } from "./ConnectionSection";
 import { billingSummary, egressLabel, errorText, l1ErrorText, l1SkipText, l1StageLabel, skipLabel } from "./labels";
@@ -412,12 +413,20 @@ export function SpeedTestDialog({
                     <TableRow key={i.provider}>
                       <TableCell className="font-mono">{i.provider}</TableCell>
                       <TableCell className="text-right tabular-nums">{i.input_tokens}</TableCell>
-                      <TableCell className="text-right tabular-nums">{i.max_output_tokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {i.max_output_tokens ?? (
+                          <span className="text-muted-foreground">{t.speed.noLimit}</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {i.cost_micros != null ? (
                           usd(i.cost_micros)
                         ) : (
-                          <span className="text-muted-foreground">{t.speed.uncalculable}</span>
+                          // 上限报不出来的那种上游（ChatGPT 账号）不是「未定价」，
+                          // 是回答有多长由模型决定
+                          <span className="text-muted-foreground">
+                            {i.max_output_tokens == null ? t.speed.byUsage : t.speed.uncalculable}
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -463,7 +472,9 @@ export function SpeedTestDialog({
                         <TableCell className="font-mono">
                           {r.provider}
                           {!r.ok && r.error && (
-                            <div className="font-sans tw-label whitespace-normal text-destructive">{r.error}</div>
+                            <div className="font-sans tw-label whitespace-normal text-destructive">
+                              {coreText(r.error)}
+                            </div>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
