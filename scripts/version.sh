@@ -13,8 +13,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Windows 上的 Python 多半叫 `python`，没有 `python3` 这个名字
+PY=$(command -v python3 || command -v python) || {
+  echo "找不到 Python（python3 或 python）" >&2
+  exit 1
+}
+
 read -r TAURI PKG <<EOS
-$(python3 -c '
+$("$PY" -c '
 import json
 print(json.load(open("src-tauri/tauri.conf.json"))["version"],
       json.load(open("package.json"))["version"])

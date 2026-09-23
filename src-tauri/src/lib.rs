@@ -1419,26 +1419,72 @@ async fn update_install(
     wait_for_quiet(&app, &state.control).await;
 
     let _ = app.emit("update-step", Step::Installing);
-    up.install(&bytes).map_err(|e| {
-        tr!(
-            format!("安装失败：{e}"),
-            format!("Installation failed: {e}")
-        )
-    })?;
-
     // 起来之后说一声换到了哪一版。写不进去不影响更新本身。
-    let _ = std::fs::write(
-        data_dir().join(UPDATED_FROM),
-        app.package_info().version.to_string(),
-    );
-    let _ = app.emit("update-step", Step::Restarting);
-    // 先停掉 core、等它真的退出，再重启应用 —— 否则新起来的应用会先撞上
-    // 旧 core 手里的锁。见 `Supervisor::stop_and_wait`。
-    state
-        .supervisor
-        .stop_and_wait(std::time::Duration::from_secs(5))
-        .await;
+    let marker = data_dir().join(UPDATED_FROM);
+    let from = app.package_info().version.to_string();
+
+    // **Windows 上 `install` 不回来。**插件拉起新版本的安装程序之后当场
+    // `exit(0)`，排在它后面的每一步都轮不到 —— 所以标记和停 core 都得挪到
+    // 它前面。停 core 在那边还是硬要求：`twcore.exe` 还在跑的话，安装程序
+    // 覆盖不了一个被占用的文件。
+    #[cfg(windows)]
+    {
+        let _ = std::fs::write(&marker, &from);
+        let _ = app.emit("update-step", Step::Restarting);
+        state
+            .supervisor
+            .stop_and_wait(std::time::Duration::from_secs(5))
+            .await;
+        if let Err(e) = up.install(&bytes) {
+            // 最常见的是 UAC 那一下点了「否」。**把刚才做的两件事都撤回来**：
+            // 不撤的话，网关就这么停着，而下次启动还会说一句没发生过的「已更新」。
+            let _ = std::fs::remove_file(&marker);
+            resume_after_failed_update(&app).await;
+            return Err(tr!(
+                format!("安装失败：{e}"),
+                format!("Installation failed: {e}")
+            ));
+        }
+        // 走到这里说明插件没有照它自己说的那样退出。那就和其他平台一样，自己重启
+    }
+    #[cfg(not(windows))]
+    {
+        up.install(&bytes).map_err(|e| {
+            tr!(
+                format!("安装失败：{e}"),
+                format!("Installation failed: {e}")
+            )
+        })?;
+        let _ = std::fs::write(&marker, &from);
+        let _ = app.emit("update-step", Step::Restarting);
+        // 先停掉 core、等它真的退出，再重启应用 —— 否则新起来的应用会先撞上
+        // 旧 core 手里的锁。见 `Supervisor::stop_and_wait`。
+        state
+            .supervisor
+            .stop_and_wait(std::time::Duration::from_secs(5))
+            .await;
+    }
     app.restart()
+}
+
+/// 更新没装成，把为它停掉的网关接回来。
+///
+/// **先等守护循环真的退干净。**`stop_and_wait` 在 core 翻成「已停止」时就
+/// 返回了，而循环要再走一步才把「正在守护」放下；这之间去拉，会被当成
+/// 「守护还在，重启一下」，然后因为 core 不在跑而什么也不做。
+#[cfg(windows)]
+async fn resume_after_failed_update(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    let state = app.state::<AppState>();
+    for _ in 0..40 {
+        if !state.supervising.load(Ordering::SeqCst) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    if let Err(e) = restart_gateway(app).await {
+        tracing::error!("更新没装成，网关也没能接回来：{e}");
+    }
 }
 
 /// 上一次是被更新重启的话，说一声换到了哪一版。
@@ -2358,6 +2404,10 @@ fn control_endpoint() -> tw_api::control::Endpoint {
 
 /// 起、看着、它死了、按策略决定下一步。
 async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
+    // 接起一条新的守护循环，意思就是要 core 跑着。之前为了退出（或者为了
+    // 一次没装成的更新）停过它的话，那个「按要求停止」的记号不能留到这一条
+    // 里来 —— 留着的话，这之后 core 每一次崩溃都会被当成按要求停止
+    sup.resume();
     let mut safe = false;
     loop {
         // 每一次转换都随 `core-state` 推给界面（见 setup 里那一段），这里不再另发

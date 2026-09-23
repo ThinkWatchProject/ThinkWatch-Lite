@@ -21,6 +21,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Windows 上的 Python 多半叫 `python`，没有 `python3` 这个名字
+PY=$(command -v python3 || command -v python) || {
+  echo "找不到 Python（python3 或 python）" >&2
+  exit 1
+}
+
 REPO="ThinkWatchProject/ThinkWatch-Core"
 
 # 装进包里的是**这次构建的目标平台**那一份。
@@ -29,8 +35,11 @@ REPO="ThinkWatchProject/ThinkWatch-Core"
 # 而在别处它会安静地把一个跑不了的二进制装进包里 —— 应用照样启动、照样出
 # 界面，然后停在连接页上，正是引入这套校验要挡的那个 bug 换了个样子。
 #
-# `--target` 由调用方给（发布流水线一定会写），没给就按本机。
-case "${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}" in
+# 目标平台先看 `TARGET`（手工指定），再看 Tauri 自己交给 `beforeBuildCommand`
+# 的 `TAURI_ENV_TARGET_TRIPLE`（`tauri build --target` 写了什么它就是什么），
+# 都没有才按本机。**不能只按本机**：发布流水线在 x64 的机器上也可能打别的
+# 架构的包，那时本机的答案就是错的那一个。
+case "${TARGET:-${TAURI_ENV_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/^host: //p')}}" in
   aarch64-apple-darwin)      ASSET="twcore-aarch64-apple-darwin" ;;
   x86_64-pc-windows-msvc)    ASSET="twcore-x86_64-pc-windows-msvc.exe" ;;
   aarch64-pc-windows-msvc)   ASSET="twcore-aarch64-pc-windows-msvc.exe" ;;
@@ -49,7 +58,7 @@ esac
 
 TAG=$(
   cargo metadata --format-version 1 --manifest-path Cargo.toml 2>/dev/null \
-    | python3 -c '
+    | "$PY" -c '
 import json, re, sys
 meta = json.load(sys.stdin)
 for p in meta["packages"]:
@@ -82,18 +91,6 @@ BASE="https://github.com/$REPO/releases/download/$TAG"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# 校验和先下（几十字节）。已经有一份对得上的就不再拉那十四兆 —— 本地
-# 反复构建和 CI 每一轮都会走到这儿。
-curl -fsSL "$BASE/$ASSET.sha256" -o "$TMP/sum"
-WANT_SUM=$(awk '{print $1}' "$TMP/sum")
-if [ -f "$OUT" ] && [ "$(shasum -a 256 "$OUT" | awk '{print $1}')" = "$WANT_SUM" ]; then
-  echo "已经是 ${TAG} 那一份，跳过下载"
-  exit 0
-fi
-
-echo "取 twcore ${TAG}"
-curl -fsSL "$BASE/$ASSET" -o "$TMP/twcore"
-
 # 算 sha256 的命令**两个平台不同名**：macOS 带的是 shasum（一个 Perl 脚本），
 # Git Bash 带的是 sha256sum。输出是同一种两列格式，有哪个用哪个。
 if command -v sha256sum >/dev/null 2>&1; then
@@ -101,6 +98,18 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   SHA256="shasum -a 256"
 fi
+
+# 校验和先下（几十字节）。已经有一份对得上的就不再拉那十四兆 —— 本地
+# 反复构建和 CI 每一轮都会走到这儿。
+curl -fsSL "$BASE/$ASSET.sha256" -o "$TMP/sum"
+WANT_SUM=$(awk '{print $1}' "$TMP/sum")
+if [ -f "$OUT" ] && [ "$($SHA256 "$OUT" | awk '{print $1}')" = "$WANT_SUM" ]; then
+  echo "已经是 ${TAG} 那一份，跳过下载"
+  exit 0
+fi
+
+echo "取 twcore ${TAG}"
+curl -fsSL "$BASE/$ASSET" -o "$TMP/twcore"
 
 # 校验和里记的是发布时那个文件名，换个名字就对不上 —— 在临时目录里
 # 按原名核对，核完再改名放过去。

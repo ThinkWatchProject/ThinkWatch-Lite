@@ -1,18 +1,37 @@
 # 发一版桌面端。
 #
-# **只发一个文件。**`ThinkWatch-Lite-<版本>-arm64.dmg`，外加它的 sha256
-# 和 latest.json —— 网页上下载的是它，Homebrew 的 cask 吃的是它，已经
-# 装上的应用自己更新下的也是它：latest.json 指向它，签名签的也是它
-# （应用怎么从 DMG 更新自己，见 `src-tauri/src/dmg.rs`）。
+# **每个平台只发一个文件**，外加它的 sha256，和一份三个平台共用的
+# latest.json：
+#
+#   macOS           ThinkWatch-Lite-<版本>-arm64.dmg
+#   Windows x64     ThinkWatch-Lite-<版本>-x64-setup.exe
+#   Windows arm64   ThinkWatch-Lite-<版本>-arm64-setup.exe
+#
+# 网页上下载的是它，Homebrew 的 cask / winget 的清单吃的是它，已经装上的
+# 应用自己更新下的也是它：latest.json 指向它，签名签的也是它（应用怎么从
+# DMG 更新自己，见 `src-tauri/src/dmg.rs`；Windows 上更新器直接跑新的安装
+# 程序）。
+#
+# **三个平台一起发，或者都不发。**各自构建、拆开看过，最后一个 job 才把
+# 它们一起挂上去 —— 只发出一部分的话，latest.json 要么缺平台，要么指向
+# 一个不存在的文件。
 #
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
-# 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出 `.app` 并且
+# 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出安装包并且
 # 在发出去之前拆开看一眼。
+#
+# **推到 `rehearse/` 开头的分支是演练**：全部照做，只是不发布 —— 三个安装
+# 包留在这次运行的产物里，可以下载下来装到真机上看。改了这条流水线，先演练
+# 一遍，不要拿一个 tag 去试。
+#
+# 不用手工触发（`workflow_dispatch`）：那只认默认分支上的这份文件，而改动
+# 要先进 dev、过很久才到 main —— 等于改完的流水线没法在合并之前演练。
 name: Release
 
 on:
   push:
     tags: ["v*"]
+    branches: ["rehearse/**"]
 
 permissions:
   contents: write
@@ -40,11 +59,6 @@ jobs:
     # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
     # 拿到的是一个能下载但打不开的文件，那比没有更糟。
     runs-on: macos-latest
-    # 发完把 cask 推给 tap 用的那把密钥（只对 homebrew-tap 一个仓库有推送权）。
-    # **写在 job 上，不写在步骤上** —— 步骤自己的 `env` 读不到它自己的 `if`，
-    # 而那一步要在没配密钥时整步跳过
-    env:
-      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,35 +69,15 @@ jobs:
         run: |
           set -euo pipefail
           GOT=$(bash scripts/version.sh)
-          WANT="${GITHUB_REF_NAME#v}"
-          if [ "$GOT" != "$WANT" ]; then
-            echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
-            exit 1
+          # 演练没有 tag，拿代码里的版本号照做一遍
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            WANT="${GITHUB_REF_NAME#v}"
+            if [ "$GOT" != "$WANT" ]; then
+              echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
+              exit 1
+            fi
           fi
           echo "VERSION=$GOT" >> "$GITHUB_ENV"
-
-      # tag 上那段话就是应用里显示的发布说明 —— 自动生成的提交清单在
-      # 那个位置对用户没有意义。
-      #
-      # **不从工作区的 git 里读。**`actions/checkout` 取 tag 时建的是一个
-      # 直接指向 commit 的轻量引用，注解对象根本不在这个克隆里；
-      # `%(contents:body)` 于是回答那个 commit 的正文，而 squash 合并的
-      # commit 正文是它的 trailer —— 2026.9.1 第一次就是这么把一行
-      # `Co-authored-by` 当作发布说明发出去的。这里问的是仓库本身。
-      - name: The notes are the tag's own message
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          : > notes.txt
-          REF="repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME"
-          # 轻量 tag 指向的是 commit，没有正文可取 —— 那就不写发布说明。
-          if [ "$(gh api "$REF" --jq .object.type)" = tag ]; then
-            SHA=$(gh api "$REF" --jq .object.sha)
-            gh api "repos/$GITHUB_REPOSITORY/git/tags/$SHA" --jq .message \
-              | awk 'BEGIN { body = 0 } body { print } /^$/ { body = 1 }' > notes.txt
-          fi
-          cat notes.txt
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -198,7 +192,6 @@ jobs:
           cat "$DMG.sha256"
 
           pnpm tauri signer sign "$DMG"
-          python3 scripts/manifest.py "$VERSION" "$DMG" notes.txt
 
       # 挂上去再验一次。**打包这一步本身就可能是那个出错的环节** ——
       # 而它出错的样子恰恰是「下得下来、打开之后里面的应用起不来」。验的
@@ -225,11 +218,203 @@ jobs:
           codesign -d -r- "$APP" 2>&1 | grep -q "certificate root = H\"$SIGNING_CERT_SHA1\""
           hdiutil detach "$MNT"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: |
+            dist/ThinkWatch-Lite-*-arm64.dmg
+            dist/ThinkWatch-Lite-*-arm64.dmg.sha256
+            dist/ThinkWatch-Lite-*-arm64.dmg.sig
+          if-no-files-found: error
+
+  windows:
+    name: ThinkWatch Lite (${{ matrix.target }})
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+            runner: windows-latest
+          # **在 arm64 的机器上打 arm64 的包，不交叉编译。**交叉编出来的包
+          # 在 x64 的机器上跑不起来，下面「拆开看一眼」里运行网关那一行就
+          # 只能跳过 —— 而那一行正是要挡住「装了一个跑不了的网关」的。
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      # 取版本号、取 twcore 的两个脚本要 Python。Windows 的机器上不一定有，
+      # 有也不一定叫 `python3` —— 脚本两个名字都认，这里保证至少有一个
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: The tag is the version in the tree
+        run: |
+          set -euo pipefail
+          GOT=$(bash scripts/version.sh)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            WANT="${GITHUB_REF_NAME#v}"
+            if [ "$GOT" != "$WANT" ]; then
+              echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
+              exit 1
+            fi
+          fi
+          echo "VERSION=$GOT" >> "$GITHUB_ENV"
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--target` 写出来，产物路径才是定死的。取哪一份 twcore 也跟着它走：
+      # Tauri 把它交给 `beforeBuildCommand`，见 `fetch-core.sh`。
+      - name: Build
+        run: pnpm tauri build --target ${{ matrix.target }}
+
+      # **拆开看一眼再发。**和 macOS 那边同一个理由：一个缺了网关、或者
+      # 网关是别的架构的包，从文件大小上看不出任何问题。
+      #
+      # 这里看的是**安装程序本身**，不是构建目录 —— 用 7-Zip 把它打开，
+      # 要装进去的每一样东西都在里面。
+      - name: Look inside before shipping it
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = "src-tauri\target\${{ matrix.target }}\release\bundle\nsis"
+          $built = @(Get-ChildItem "$bundle\*-setup.exe")
+          if ($built.Count -ne 1) { throw "要的是一个安装程序，打出来的是 $($built.Count) 个" }
+
+          # 发出去的名字**不带空格**，和 DMG 一个样子。Tauri 按产品名起的
+          # 名字里有空格，而 GitHub 会把资源名里的空格换成点，latest.json
+          # 里的地址就对不上了
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = "dist\ThinkWatch-Lite-$env:VERSION-${{ matrix.arch }}-setup.exe"
+          Copy-Item $built[0].FullName $exe
+
+          $x = "$env:RUNNER_TEMP\inside"
+          & 7z x -y "-o$x" $exe | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip 打不开这个安装程序" }
+          $app = Get-ChildItem -Recurse "$x\thinkwatch-lite.exe" | Select-Object -First 1
+          $core = Get-ChildItem -Recurse "$x\twcore.exe" | Select-Object -First 1
+          if (-not $app) { throw "安装程序里没有 thinkwatch-lite.exe" }
+          if (-not $core) { throw "安装程序里没有 twcore.exe" }
+
+          # 版本资源和 tag 对得上。「添加/删除程序」、winget、更新器看的都是它
+          $v = $app.VersionInfo.ProductVersion
+          if (-not $v.StartsWith($env:VERSION)) { throw "exe 里的版本是 $v，而这一版是 $env:VERSION" }
+
+          # 架构对得上：读 PE 头里的 machine 字段，比看文件名准
+          $want = @{ "x64" = 0x8664; "arm64" = 0xAA64 }["${{ matrix.arch }}"]
+          foreach ($f in @($app.FullName, $core.FullName)) {
+            $b = [IO.File]::ReadAllBytes($f)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $m = [BitConverter]::ToUInt16($b, $pe + 4)
+            if ($m -ne $want) { throw ("{0} 的架构是 0x{1:X4}，要的是 0x{2:X4}" -f $f, $m, $want) }
+          }
+          Write-Host "包里的网关：$(& $core.FullName --version)"
+          if ($LASTEXITCODE -ne 0) { throw "包里的网关跑不起来" }
+
+      # 签的是安装程序本身：更新器下载的就是它，验签验的是原始字节。
+      # **私钥没传进来这一步就失败** —— 理由和 macOS 那边一样。
+      - name: Package
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          EXE="dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}-setup.exe"
+          # Git Bash 带的是 sha256sum，输出和 shasum 是同一种两列格式
+          ( cd dist && sha256sum "$(basename "$EXE")" > "$(basename "$EXE").sha256" )
+          cat "$EXE.sha256"
+          pnpm tauri signer sign "$EXE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            dist/ThinkWatch-Lite-*-setup.exe
+            dist/ThinkWatch-Lite-*-setup.exe.sha256
+            dist/ThinkWatch-Lite-*-setup.exe.sig
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [app, windows]
+    # 演练到上面为止
+    if: github.ref_type == 'tag'
+    runs-on: macos-latest
+    # 发完把 cask 推给 tap 用的那把密钥（只对 homebrew-tap 一个仓库有推送权）。
+    # **写在 job 上，不写在步骤上** —— 步骤自己的 `env` 读不到它自己的 `if`，
+    # 而那一步要在没配密钥时整步跳过
+    env:
+      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      # tag 上那段话就是应用里显示的发布说明 —— 自动生成的提交清单在
+      # 那个位置对用户没有意义。
+      #
+      # **不从工作区的 git 里读。**`actions/checkout` 取 tag 时建的是一个
+      # 直接指向 commit 的轻量引用，注解对象根本不在这个克隆里；
+      # `%(contents:body)` 于是回答那个 commit 的正文，而 squash 合并的
+      # commit 正文是它的 trailer —— 2026.9.1 第一次就是这么把一行
+      # `Co-authored-by` 当作发布说明发出去的。这里问的是仓库本身。
+      - name: The notes are the tag's own message
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > notes.txt
+          REF="repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME"
+          # 轻量 tag 指向的是 commit，没有正文可取 —— 那就不写发布说明。
+          if [ "$(gh api "$REF" --jq .object.type)" = tag ]; then
+            SHA=$(gh api "$REF" --jq .object.sha)
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$SHA" --jq .message \
+              | awk 'BEGIN { body = 0 } body { print } /^$/ { body = 1 }' > notes.txt
+          fi
+          cat notes.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # 清单等三个平台都到齐了才写 —— 少一个它就不写，见 manifest.py。
+      - name: One manifest for all three
+        run: |
+          set -euo pipefail
+          python3 scripts/manifest.py "$VERSION" notes.txt \
+            "darwin-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64.dmg" \
+            "windows-x86_64=dist/ThinkWatch-Lite-$VERSION-x64-setup.exe" \
+            "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64-setup.exe"
+
       - uses: softprops/action-gh-release@v2
         with:
+          # `.sig` 不挂：签名已经写进 latest.json，挂上去只是多几个让人
+          # 不知道该下哪个的文件
           files: |
             dist/ThinkWatch-Lite-*-arm64.dmg
             dist/ThinkWatch-Lite-*-arm64.dmg.sha256
+            dist/ThinkWatch-Lite-*-setup.exe
+            dist/ThinkWatch-Lite-*-setup.exe.sha256
             dist/latest.json
           generate_release_notes: true
 
