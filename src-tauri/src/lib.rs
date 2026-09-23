@@ -1526,7 +1526,28 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // **单实例要第一个注册**，插件自己的文档如此要求：它得在别的插件把端口、
+    // socket、注册表项占上之前就判断出「已经有一个在跑」。
+    //
+    // macOS 不注册它：同一个 bundle 由系统保证只跑一份，点第二次 Dock 图标
+    // 发的是 `RunEvent::Reopen`。别处没有这个保证 ——
+    //
+    // - 托盘里开着，用户又去开始菜单点一下 → 第二个进程、两个托盘图标、
+    //   两个 core 抢同一把锁；
+    // - `thinkwatch://` 被 shell 拉起来时（授权回调，以后还有点开通知），
+    //   deep-link 要靠它把 URL 转给已经在跑的那个实例。没有它，每点一次
+    //   就新起一个进程，而那个进程起来之后发现锁被占着。
+    //
+    // `deep-link` 这个特性让插件把第二个实例 argv 里的 URL 交回
+    // `on_open_url` —— 和第一次启动走同一条路径，不是另开一条。
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // 已经有一个在跑：把它叫到前面来。**用户点第二次，想要的是看见它**，
+        // 不是被告知它已经开着。
+        let _ = show_main_window(app);
+    }));
+    builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
