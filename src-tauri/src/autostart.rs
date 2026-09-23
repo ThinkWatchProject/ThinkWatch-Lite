@@ -57,6 +57,70 @@ pub fn allowed_in_this_build() -> bool {
     !cfg!(debug_assertions)
 }
 
+/// 用户在「设置 → 应用 → 启动」里把它关掉了吗。
+///
+/// **这是 Windows 上那第三件插件给不了的事**（前两件见模块头）。在那个开关里
+/// 关掉之后，Windows 写的是 `StartupApproved\Run` 里的一个标志，而
+/// **我们在 `Run` 下的那一项原封不动** —— 于是插件的 `is_enabled()`（它只看
+/// `Run` 里那一项在不在）会说「开着呢」，而实际上开机时它不会被拉起来。
+/// 界面上那个勾选框因此在撒谎，和 macOS 那个 plist 路径漂移是完全同一类。
+///
+/// `None` = 这个开关没碰过它（多数情况），按插件说的算。
+#[cfg(windows)]
+pub fn disabled_by_windows(app_name: &str) -> Option<bool> {
+    use windows_sys::Win32::System::Registry::{
+        HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RegGetValueW,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    let sub = wide(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
+    let name = wide(app_name);
+    let mut buf = [0u8; 32];
+    let mut len = buf.len() as u32;
+    // SAFETY: 两个字符串都以 NUL 结尾；`len` 一开始是缓冲区的大小，函数不会
+    // 写超过它。
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sub.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_BINARY,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    approved_from_bytes(&buf[..len as usize]).map(|on| !on)
+}
+
+/// `StartupApproved\Run` 里那串字节说的是「开着」还是「被关掉了」。
+///
+/// 十二个字节，**只有第一个有意义**。已知的取值：`0x02` 开、`0x03` 关、
+/// `0x06` 开（从「启动」文件夹来的那一档）。判据取最低位 —— `0x03` 就是在
+/// `0x02` 上点亮了那一位，而 `0x06` 没点。**写成「等于 0x02 才算开」的话，
+/// `0x06` 会被判成关掉了。**
+///
+/// 这个格式微软没有写明，是观察出来的。所以拿不准的一律当成「开着」：这一条
+/// 只用来发现「用户在系统设置里关掉了它」，而把一个开着的说成关掉了，会让
+/// 界面上那个勾选框自己跳回去 —— 比不查还糟。
+///
+/// **两个平台都编译它，尽管只有 Windows 会调。**它是一段纯粹的字节判断，
+/// 而它要防的那个错（把 `0x06` 判成「关掉了」）在任何一台机器上都测得出来。
+/// 把它 cfg 掉就等于把那条测试也 cfg 掉，于是它只在没人日常跑测试的平台上跑
+/// —— 那和没有测试差不多。
+///
+/// （顺带：`clippy --all-targets` 看不出它在别处是死代码，因为测试目标用了
+/// 它。单独编 lib 才会报。）
+#[cfg_attr(not(windows), allow(dead_code))]
+fn approved_from_bytes(v: &[u8]) -> Option<bool> {
+    Some(v.first()? & 1 == 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +147,21 @@ mod tests {
             plist,
             "/Users/x/Downloads/ThinkWatch Lite.app/Contents/MacOS/thinkwatch-lite"
         ));
+    }
+
+    /// 已知的三个取值各是什么意思，以及**拿不准时当成开着**。
+    #[test]
+    fn the_startup_approved_flag_reads_the_low_bit() {
+        // 0x02 开、0x03 关、0x06 开（「启动」文件夹那一档）
+        assert_eq!(approved_from_bytes(&[0x02, 0, 0, 0]), Some(true));
+        assert_eq!(approved_from_bytes(&[0x03, 0, 0, 0]), Some(false));
+        assert_eq!(
+            approved_from_bytes(&[0x06, 0, 0, 0]),
+            Some(true),
+            "写成「等于 0x02 才算开」的话这一条会挂"
+        );
+        // 一个字节都没有：答不上来，交给上面按「插件说的算」处理
+        assert_eq!(approved_from_bytes(&[]), None);
     }
 
     #[test]
