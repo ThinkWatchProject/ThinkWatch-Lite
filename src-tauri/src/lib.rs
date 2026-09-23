@@ -2383,13 +2383,14 @@ fn become_accessory(app: &tauri::AppHandle) {
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
-/// 数据目录。**只有这一处**决定它在哪 —— 写第二遍就会漂，而漂掉的那处
-/// 大概率是忘了看 `THINKWATCH_HOME` 的那处（测试就是靠它隔离的）。
+/// 数据目录。
+///
+/// **问契约层要，不自己算。**core 和这里必须落到同一个目录 —— 端口文件、凭据、
+/// 配置都在里面。以前这里自己只看 `HOME`，Windows 上那个变量默认不存在，于是
+/// 落到当前目录下的 `.thinkwatch`，而 core 在 `%APPDATA%\ThinkWatch`：界面找不到
+/// 一个正在跑的网关。`THINKWATCH_HOME` 照旧最优先（测试靠它隔离）。
 pub(crate) fn data_dir() -> PathBuf {
-    std::env::var_os("THINKWATCH_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".thinkwatch")))
-        .unwrap_or_else(|| PathBuf::from(".thinkwatch"))
+    tw_api::data::dir()
 }
 
 /// 控制面听在哪。
