@@ -128,6 +128,23 @@ async fn the_desktop_side_gets_in_with_its_token_and_not_without() {
     assert!(wrong.is_err(), "凭据不对居然进去了");
 }
 
+/// 写请求也要带凭据。
+///
+/// **读和写是两条代码路径**（`get` 和 `send_json`），2026.9.10 就是只有读的
+/// 那条带了：界面照常显示数据，而保存、新建、接管全部被拒。这里用
+/// `/shutdown` 当那个写请求 —— 它走的正是 `send_json`，又不会改任何配置。
+#[tokio::test]
+async fn writes_carry_the_token_too() {
+    let core = Core::start();
+    core.wait_ready().await;
+
+    let wrong = core.client("not-the-token").shutdown().await;
+    assert!(wrong.is_err(), "凭据不对的写请求居然进去了");
+
+    let ok = core.client(&core.token).shutdown().await;
+    assert!(ok.is_ok(), "带着对的凭据写请求被拒：{:?}", ok.err());
+}
+
 /// 事件流也要带凭据。
 ///
 /// **它和别的请求不是同一条代码路径**（长连接那条自己拼请求），所以漏掉那个头
