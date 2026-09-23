@@ -18,6 +18,8 @@ pub mod control;
 #[cfg(target_os = "macos")]
 pub mod dmg;
 pub mod keys;
+/// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
+#[cfg(target_os = "macos")]
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
@@ -27,6 +29,7 @@ pub mod security;
 pub mod supervisor;
 pub mod tally;
 pub mod theme;
+mod token;
 pub mod update;
 pub mod upstreams;
 
@@ -65,6 +68,24 @@ pub struct AppState {
     pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
 
+/// 网关那个可执行文件叫什么。
+///
+/// **Windows 上带 `.exe`。**`CreateProcess` 见到一个没有扩展名的路径，会去找
+/// 同名的 `.exe`；所以一个就叫 `twcore` 的文件在那里根本起不来。而在那之前的
+/// 每一步 —— 打包放进去、构建期校验它在不在、`locate_core` 找到它 —— 都会说
+/// 一切正常，坏在最后一步，表现为界面永远停在连接页上。
+///
+/// 声明「包里装什么」的那份 JSON 不能分支，所以 Windows 另有一份
+/// `tauri.windows.conf.json`。**它是合并进来的，不是替换**（RFC 7386 的
+/// merge patch）—— 所以除了加上带 `.exe` 的那条，还要把基础配置里不带扩展名
+/// 的那条显式设成 `null`。不然两条同时生效，而其中一条指着一个在那个平台上
+/// 根本不存在的文件，构建期就停在「resource path doesn't exist」。
+pub const CORE_EXE: &str = if cfg!(windows) {
+    "twcore.exe"
+} else {
+    "twcore"
+};
+
 /// twcore 在哪。
 ///
 /// 开发时它在 core 仓库的 target 里；打包后它在 app bundle 的
@@ -79,7 +100,7 @@ fn bundled_core() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     if dir.ends_with("Contents/MacOS") {
-        return Some(dir.parent()?.join("Resources").join("twcore"));
+        return Some(dir.parent()?.join("Resources").join(CORE_EXE));
     }
     None
 }
@@ -114,7 +135,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     // 别的平台以后会有自己的打包形态，框架这条留着 —— 它在 macOS 的
     // `.app` 里实测返回 `unknown path`，所以上面那一段不能指望它。
     if let Ok(dir) = app.path().resource_dir() {
-        let p = dir.join("twcore");
+        let p = dir.join(CORE_EXE);
         if p.exists() {
             return Ok(p);
         }
@@ -141,7 +162,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
                     .join(up)
                     .join("thinkwatch-core/target")
                     .join(profile)
-                    .join("twcore");
+                    .join(CORE_EXE);
                 if p.exists() {
                     // 相对路径能用，但报错信息和日志里出现 `../..` 很难
                     // 读，所以归一化之后再交出去。
@@ -155,7 +176,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     // 最后：装在 PATH 上的那个。`cargo install -p twcore` 之后就是这条。
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
-            let p = dir.join("twcore");
+            let p = dir.join(CORE_EXE);
             if p.exists() {
                 return Ok(p);
             }
@@ -1653,13 +1674,16 @@ pub fn run() {
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);
-            let socket = default_socket();
+            // 控制面听在哪由平台决定，凭据这一次启动生成一个。**两样都只在
+            // 这里定一次**，守护拿它去 spawn core，客户端拿它去连。
+            let at = control_endpoint();
+            let token = token::generate();
             // 起好了没有，问控制面：`/status` 答得上来才算。半秒答不上这一次就
             // 算没答应，守护隔一会儿再问
             let ready = {
-                let socket = socket.clone();
+                let (at, token) = (at.clone(), token.clone());
                 supervisor::probe(move || {
-                    let control = ControlClient::new(socket.clone());
+                    let control = ControlClient::new(at.clone(), token.clone());
                     async move {
                         control
                             .ping(std::time::Duration::from_millis(500))
@@ -1672,9 +1696,11 @@ pub fn run() {
                 located
                     .as_ref()
                     .cloned()
-                    .unwrap_or_else(|_| PathBuf::from("twcore")),
+                    .unwrap_or_else(|_| PathBuf::from(CORE_EXE)),
                 None,
                 ready,
+                at.clone(),
+                token.clone(),
             ));
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -1707,7 +1733,7 @@ pub fn run() {
             );
             app.manage(notices.clone());
             app.manage(AppState {
-                control: ControlClient::new(socket),
+                control: ControlClient::new(at.clone(), token.clone()),
                 supervisor: sup.clone(),
                 core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
                 supervising: supervising.clone(),
@@ -1763,9 +1789,9 @@ pub fn run() {
             // —— 一个死锁的进程既不退出也不关 socket，前两条信号都看
             // 不见它，而它对用户的表现和挂了一模一样。
             let h = handle.clone();
-            let sock = default_socket();
+            let (at2, tok2) = (at.clone(), token.clone());
             tauri::async_runtime::spawn(async move {
-                heartbeat_loop(sock, sup, h).await;
+                heartbeat_loop(at2, tok2, sup, h).await;
             });
 
             // 静默启动：开机拉起来的时候屏幕上什么都不该出现，
@@ -1783,6 +1809,7 @@ pub fn run() {
             // 量 webview 占多少。**它不是一个功能，是一个回答
             // 不了就只能猜的问题的工具** —— 「关窗之后隐藏还是销毁」
             // 取决于隐藏到底放不放得掉那部分内存。
+            #[cfg(target_os = "macos")]
             if memcheck::requested(std::env::args()) {
                 memcheck::run(handle.clone());
             }
@@ -1800,9 +1827,9 @@ pub fn run() {
 
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();
-            let sock = default_socket();
+            let (at3, tok3) = (at.clone(), token.clone());
             tauri::async_runtime::spawn(async move {
-                bridge_events(sock, h).await;
+                bridge_events(at3, tok3, h).await;
             });
 
             // 有没有新版本。**循环无条件起，开关在循环里读** —— 用户在
@@ -1849,6 +1876,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 起不来")
         .run(|app, event| {
+            // Dock 和 ⌘Tab 是 macOS 的概念，下面那一段只在那里有事做。
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
             // 点 Dock 图标 / 从 ⌘Tab 回来时把窗口叫回来。没有这条，一个
             // 已经隐藏窗口的菜单栏应用在 Dock 上点了没反应。
             #[cfg(target_os = "macos")]
@@ -1870,9 +1900,14 @@ pub fn run() {
 }
 
 /// 心跳循环。
-async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHandle) {
+async fn heartbeat_loop(
+    at: tw_api::control::Endpoint,
+    token: String,
+    sup: Arc<Supervisor>,
+    app: tauri::AppHandle,
+) {
     use supervisor::{HealthTracker, Verdict, health};
-    let client = ControlClient::new(socket);
+    let client = ControlClient::new(at, token);
     let mut tracker = HealthTracker::new();
 
     loop {
@@ -1923,10 +1958,10 @@ async fn heartbeat_loop(socket: PathBuf, sup: Arc<Supervisor>, app: tauri::AppHa
 /// **重新连上时补报一条「丢过事件」**（`EventsDropped`，条数记 0：丢了多少不知道）。
 /// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面和菜单栏要各自对一次账，
 /// 否则那段时间里结束的请求，会一直显示成进行中。
-async fn bridge_events(socket: PathBuf, app: tauri::AppHandle) {
+async fn bridge_events(at: tw_api::control::Endpoint, token: String, app: tauri::AppHandle) {
     let mut connected_before = false;
     loop {
-        let client = ControlClient::new(socket.clone());
+        let client = ControlClient::new(at.clone(), token.clone());
         let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (a, b, o) = (app.clone(), app.clone(), opened.clone());
         let resumed = connected_before;
@@ -2205,14 +2240,20 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         w.set_focus()?;
         return Ok(());
     }
-    let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+    let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(i18n::init_script())
         .inner_size(1100.0, 720.0)
-        .min_inner_size(820.0, 560.0)
+        .min_inner_size(820.0, 560.0);
+    // 把内容顶到标题栏里、藏掉标题：**这两样只有 macOS 有**，那里红绿灯
+    // 浮在内容上，界面顶部那几处 `data-tauri-drag-region` 就是为它留的。
+    // Windows 上用系统标题栏（`.claude/windows.md` 的决策 10），所以那些
+    // 留白到时候要按平台调掉 —— 不调的话顶上会多出一条空的。
+    #[cfg(target_os = "macos")]
+    let b = b
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .build()?;
+        .hidden_title(true);
+    let w = b.build()?;
     w.set_focus()?;
     // 有窗口了就该出现在 Dock 和 ⌘Tab 里
     #[cfg(target_os = "macos")]
@@ -2235,8 +2276,14 @@ pub(crate) fn data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".thinkwatch"))
 }
 
-fn default_socket() -> PathBuf {
-    data_dir().join("twcore.sock")
+/// 控制面听在哪。
+///
+/// **问契约层要，不自己拼。**以前这里是 `data_dir().join("twcore.sock")`，
+/// 而 core 那边也拼一次 —— 两份能对上只是因为那一行短到不容易写错。
+/// Windows 上这个答案要分岔（那里没有 unix socket），两份各写一次就是两份
+/// 会漂，而漂掉的表现是界面连不上一个正在跑的网关。
+fn control_endpoint() -> tw_api::control::Endpoint {
+    tw_api::control::Endpoint::in_dir(&data_dir())
 }
 
 /// 起、看着、它死了、按策略决定下一步。

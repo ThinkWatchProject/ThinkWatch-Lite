@@ -1,0 +1,157 @@
+//! 起一个真的 core，真连上去。
+//!
+//! # 为什么这条不能只靠单元测试
+//!
+//! 单元测试能证明「连不上时说的是哪句话」，证明不了**连得上**。而这一侧新加的
+//! 那几样 —— 凭据从哪儿来、怎么交给 core、每个请求带不带得对、控制面的地址由
+//! 谁说了算 —— 只有在两个真进程之间才成立或者不成立。
+//!
+//! 它接的是包里那一份 `resources/twcore`，也就是**发出去的包里装的那一个**。
+//! 换句话说这条测试同时在问：桌面端钉的这一版 core，和桌面端自己编进去的那份
+//! 协议镜像，是不是同一版。答不上来的样子是应用起来之后停在连接页上。
+
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
+use std::time::{Duration, Instant};
+
+use thinkwatch_lite_lib::control::ControlClient;
+use tw_api::control::Endpoint;
+
+/// 包里那份 core。
+///
+/// **不在就失败，不跳过。**一条悄悄跳过的测试和一条不存在的测试没有区别，
+/// 而 CI 在跑测试之前就会把它取回来（见 `scripts/fetch-core.sh`）。
+fn core_binary() -> PathBuf {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(thinkwatch_lite_lib::CORE_EXE);
+    assert!(
+        p.exists(),
+        "{} 不在。先跑 bash src-tauri/scripts/fetch-core.sh",
+        p.display()
+    );
+    p
+}
+
+/// 起一个只有自己看得见的 core。
+///
+/// `THINKWATCH_HOME` 指到一个临时目录，端口挑一个不常用的 —— **不碰
+/// `~/.thinkwatch`，也不碰这台机器上正开着的那个实例。**
+struct Core {
+    child: Child,
+    home: PathBuf,
+    token: String,
+}
+
+/// 同一个测试二进制里的第几个 core。
+///
+/// **每个都要自己的目录和端口。**同一个进程里的测试是并行跑的，而两个 core
+/// 共用一个 `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来
+/// —— 表现为「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
+static NTH: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+
+impl Core {
+    fn start() -> Self {
+        let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // 短路径：unix socket 的 `sun_path` 只有一百来字节，而 macOS 的
+        // `TMPDIR` 本身就很长。
+        let home = std::env::temp_dir().join(format!("tw-ctl-{}-{nth}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let token = "test-token-not-a-real-one".to_string();
+        let child = Command::new(core_binary())
+            .args(["serve", "--config"])
+            .arg(home.join("config.yaml"))
+            // 这条测试不打数据面，端口只是不能撞上 —— 包括不能撞上同一个
+            // 测试二进制里的另一个 core
+            .args(["--port", &(18790 + nth).to_string()])
+            .env("THINKWATCH_HOME", &home)
+            .env(tw_api::control::TOKEN_ENV, &token)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("起不来 twcore");
+        Self { child, home, token }
+    }
+
+    fn endpoint(&self) -> Endpoint {
+        Endpoint::in_dir(&self.home)
+    }
+
+    fn client(&self, token: &str) -> ControlClient {
+        ControlClient::new(self.endpoint(), token.to_string())
+    }
+
+    /// 等到它答得上话。**等的是 `/status` 有应答，不是 socket 文件出现** ——
+    /// 后者在它还没把路由挂上去的时候就已经在了。
+    async fn wait_ready(&self) {
+        let c = self.client(&self.token);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if c.ping(Duration::from_millis(500)).await.is_ok() {
+                return;
+            }
+            assert!(Instant::now() < deadline, "core 三十秒都没答应");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.home);
+    }
+}
+
+/// 带着对的凭据连得上，带着错的连不上。
+///
+/// 后半条是这里真正要钉住的：**漏带凭据的样子是一切照常** —— 在 macOS 上
+/// socket 的权限本来就挡住了别人，于是「忘了加那个头」要到 Windows 上才发作，
+/// 而那时表现为界面连不上一个正在跑的网关。
+#[tokio::test]
+async fn the_desktop_side_gets_in_with_its_token_and_not_without() {
+    let core = Core::start();
+    core.wait_ready().await;
+
+    let ok = core.client(&core.token).status().await;
+    assert!(ok.is_ok(), "带着对的凭据反而连不上：{:?}", ok.err());
+    let status = ok.unwrap();
+    assert_eq!(
+        status.api_version,
+        tw_api::CONTROL_API_VERSION,
+        "桌面端编进去的协议版本和它钉的那版 core 对不上"
+    );
+
+    let wrong = core.client("not-the-token").status().await;
+    assert!(wrong.is_err(), "凭据不对居然进去了");
+}
+
+/// 事件流也要带凭据。
+///
+/// **它和别的请求不是同一条代码路径**（长连接那条自己拼请求），所以漏掉那个头
+/// 的话，界面上的表现是「什么都能点，但一切都不自己更新」—— 一种很难往凭据上
+/// 联想的坏法。
+#[tokio::test]
+async fn the_event_stream_carries_the_token_too() {
+    let core = Core::start();
+    core.wait_ready().await;
+
+    let opened = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let o = opened.clone();
+    let c = core.client(&core.token);
+    // 流是长连接，不会自己结束 —— 给它一点时间把头发出去、把响应收回来
+    let _ = tokio::time::timeout(
+        Duration::from_secs(10),
+        c.subscribe_events(
+            move || o.store(true, std::sync::atomic::Ordering::SeqCst),
+            |_| {},
+        ),
+    )
+    .await;
+    assert!(
+        opened.load(std::sync::atomic::Ordering::SeqCst),
+        "事件流没开起来 —— 多半是那个请求没带凭据"
+    );
+}

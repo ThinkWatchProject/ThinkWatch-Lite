@@ -150,6 +150,9 @@ pub fn newer(candidate: &str, current: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// 只有上面那两个 macOS 专有的测试用它 —— 跟着它们一起分平台，
+    /// 否则在别处是一段没人调的死代码。
+    #[cfg(target_os = "macos")]
     fn tmp() -> PathBuf {
         let p = std::env::temp_dir().join(format!(
             "tw-update-{}-{:?}",
@@ -182,6 +185,10 @@ mod tests {
     }
 
     /// 这条是这个模块存在的理由：认错了就会去替换一个 brew 管着的 `.app`。
+    /// **只在 macOS 上跑**：符号链接、`.app` 布局、Homebrew 的 Caskroom
+    /// 都是那个平台的东西。Windows 上怎么判断是不是 winget 装的，是另一套
+    /// （见 `.claude/windows.md` 的 4.2），到时候自己带测试。
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_caskroom_link_pointing_here_means_homebrew_put_it_here() {
         let root = tmp();
@@ -213,6 +220,7 @@ mod tests {
     }
 
     /// 别人的 cask 里有个同名链接，指向的却是另一个包 —— 不算。
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_link_to_a_different_bundle_does_not_count() {
         let root = tmp();

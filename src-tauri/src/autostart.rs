@@ -92,6 +92,11 @@ mod tests {
         assert_eq!(allowed_in_this_build(), !cfg!(debug_assertions));
     }
 
+    /// **只在 macOS 上**：LaunchAgent 和 plist 是那个平台的机制。Windows 上
+    /// 自启走 `HKCU\Run`，而那边对应的那道检查（用户在「设置 → 应用 → 启动」
+    /// 里关掉之后，Run 键还在、插件仍然说「开着」）还没做，见
+    /// `.claude/windows.md` 的 2.6。
+    #[cfg(target_os = "macos")]
     #[test]
     fn the_plist_lives_next_to_the_other_launch_agents() {
         let p = plist_path("app.thinkwatch.lite").unwrap();
