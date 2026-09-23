@@ -59,10 +59,17 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
+      {/*
+        `grid-cols-[minmax(0,1fr)]`：**那一列不许比对话框宽。**网格的那一列
+        默认至少有内容的最小宽度那么宽，而一段 `white-space: pre` 的代码
+        （`overflow-auto` 也不算数）最小宽度就是它最长那一行 —— 于是整块
+        内容被撑到对话框外面：表格右边那一列、底下那排按钮，全被框子边缘
+        切掉。`minmax(0,…)` 把这条下限去掉，超出的部分由那块内容自己滚。
+      */}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] grid-cols-[minmax(0,1fr)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
