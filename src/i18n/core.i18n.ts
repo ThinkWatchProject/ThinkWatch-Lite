@@ -278,6 +278,7 @@ const ZH: Record<string, Say> = {
   "security.rule_name_empty": () => "规则需要一个名称。",
   "security.bad_pattern": (a) => `正则表达式有误：${a.detail}`,
   "security.unknown_action": (a) => `「${a.action}」不是一种处置，只能是 cut 或 record。`,
+  "security.no_action": () => "出站脱敏规则不单独设处置，命中后的处理由档位决定。",
   "control.session_not_found": (a) => `未找到会话 ${a.id}。`,
   "control.client_unknown": (a) => `未知的客户端「${a.client}」。`,
   "control.store_off": () => "请求记录未启动。",
@@ -291,6 +292,7 @@ const ZH: Record<string, Say> = {
   "control.name_is_builtin": (a) => `「${a.name}」是内置选项的名称，请使用其他名称。`,
   "control.unsupported_value": (a) => `${a.kind}「${a.value}」不受支持。`,
   "control.unsupported_action": (a) => `不支持的操作「${a.action}」。`,
+  "control.shutdown": () => "网关正在关闭。",
   "control.base_url_empty": () => "接口地址不能为空。",
   "control.api_key_empty": () => "API 密钥不能为空。",
   "control.user_empty": () => "用户名不能为空。",
@@ -304,6 +306,8 @@ const ZH: Record<string, Say> = {
   "control.request_body_truncated": (a) =>
     `第 ${a.id} 号请求的请求体有 ${a.original} 字节，仅保存了 ${a.kept} 字节，无法原样重放。`,
   "control.unknown_signin_mode": (a) => `不支持的登录方式「${a.mode}」。`,
+  "control.unknown_account_family": (a) => `「${a.family}」不是可登录的账号类型。`,
+  "control.signin_response_unusable": (a) => `无法开始登录：${a.detail}`,
   "control.device_code_unavailable": () => "这个账号还不能用设备码登录，请改用在这台电脑上登录。",
   "control.device_code_failed": (a) => `换设备码时返回 ${a.status}：${a.detail}`,
   "control.callback_ports_busy": (a) =>
@@ -312,6 +316,8 @@ const ZH: Record<string, Say> = {
     "登录完成后的跳转地址只能使用应用自己的协议，不能是网页地址。",
   "control.name_taken_not_chatgpt": (a) =>
     `已有名为「${a.name}」的上游，且不是 ChatGPT 账号上游，请使用其他名称。`,
+  "control.name_taken_not_zai": (a) =>
+    `已有名为「${a.name}」的上游，且不是该服务的账号上游，请使用其他名称。`,
   "control.not_a_chatgpt_account": (a) => `上游「${a.upstream}」不是 ChatGPT 账号上游。`,
   "control.signin_gone": () => "没有这次登录，或者它已被新的登录替代。",
   "control.chatgpt_backend_status": (a) => `ChatGPT 后端返回 ${a.status}：${a.detail}`,
