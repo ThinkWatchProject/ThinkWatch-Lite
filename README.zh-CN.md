@@ -105,13 +105,13 @@ MCP 页并排列出各客户端配置的 MCP server，可以把一个 server 复
 
 ### 客户端接管
 
-Claude Code、Codex CLI、opencode、Zed 与 Aider 可以在应用内一键指向网关。写入
+Claude Code、Codex、opencode、Zed 与 Aider 可以在应用内一键指向网关。写入
 前先显示改动差异并完整备份原文件，只修改端点与密钥两个字段，随时可以还原。
 Cursor、Continue 与 Gemini CLI 提供逐步的手动配置说明。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/clients-dark.png">
-  <img src="docs/screenshots/clients-light.png" alt="客户端页：已接管并收到请求的 Claude Code 与 Codex CLI、尚未接管的 opencode，以及需手动配置的客户端">
+  <img src="docs/screenshots/clients-light.png" alt="客户端页：已接管并收到请求的 Claude Code 与 Codex、尚未接管的 opencode，以及需手动配置的客户端">
 </picture>
 
 ### 菜单栏与系统通知

@@ -10,7 +10,7 @@
 **[English](README.md) | [中文](README.zh-CN.md)**
 
 ThinkWatch Lite is a macOS menu-bar app that runs a local AI API gateway.
-Claude Code, Codex CLI and other clients of the Anthropic, OpenAI and Gemini
+Claude Code, Codex and other clients of the Anthropic, OpenAI and Gemini
 APIs send their requests to the gateway, and Lite shows what each request
 cost, which upstream served it and why, and what was sent along with it.
 
@@ -121,7 +121,7 @@ commands.
 
 ### Client setup
 
-Claude Code, Codex CLI, opencode, Zed and Aider can be pointed at the gateway
+Claude Code, Codex, opencode, Zed and Aider can be pointed at the gateway
 from the app. The change is shown as a diff before anything is written, the
 original file is backed up, only the endpoint and key fields change, and the
 change can be restored at any time. Cursor, Continue and Gemini CLI come with
@@ -129,7 +129,7 @@ step-by-step instructions.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/clients-en-dark.png">
-  <img src="docs/screenshots/clients-en-light.png" alt="The clients page: Claude Code and Codex CLI pointed at the gateway and already serving requests, opencode not yet pointed at it, and the clients that have to be set up by hand">
+  <img src="docs/screenshots/clients-en-light.png" alt="The clients page: Claude Code and Codex pointed at the gateway and already serving requests, opencode not yet pointed at it, and the clients that have to be set up by hand">
 </picture>
 
 ### Menu bar and notifications

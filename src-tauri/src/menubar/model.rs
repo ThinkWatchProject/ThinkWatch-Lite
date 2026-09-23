@@ -863,7 +863,7 @@ pub fn app_label(hint: &str) -> &str {
     match hint {
         "claude-code" => "Claude Code",
         "claude-desktop" => "Claude Desktop",
-        "codex" => "Codex CLI",
+        "codex" => "Codex",
         "cursor" => "Cursor",
         "opencode" => "opencode",
         "aider" => "Aider",
@@ -1114,7 +1114,7 @@ mod tests {
             })
             .collect();
         assert_eq!(live.len(), MAX_LIVE);
-        assert_eq!(live[0], ("Codex CLI", "1:42"));
+        assert_eq!(live[0], ("Codex", "1:42"));
         // 认不出应用的用密钥名
         assert_eq!(live[1].0, "default");
         assert_eq!(item(&rows, "live-more").unwrap().title, "另有 2 个");
