@@ -118,7 +118,8 @@ mod native {
 
     /// 能不能用：装过的才行（见模块说明里的 AUMID）
     pub fn available(app: &tauri::AppHandle) -> bool {
-        toast::available(&app.package_info().name)
+        let installed = crate::update::kind() == crate::update::Install::Standalone;
+        toast::available(installed, &app.package_info().name)
     }
 
     /// Windows 原生的系统通知
