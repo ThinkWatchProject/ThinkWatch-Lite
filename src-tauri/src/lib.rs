@@ -1090,6 +1090,13 @@ async fn find(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
 
 const UPDATE_WINDOW: &str = "update";
 
+/// 更新窗口有多宽。**高度跟着内容走**，宽度是定死的。
+///
+/// 这个数是被 Homebrew 那条命令定下来的：它要在一行里完整显示出来。一条
+/// 要粘进终端去执行的命令，显示成「…upgrade --cask thinkwatc」是不行的
+/// —— 用户看不全自己要执行的是什么。
+const UPDATE_WIDTH: f64 = 480.0;
+
 /// 更新窗口。
 ///
 /// **一个单独的小窗，不是主窗口里的一个对话框。**这是菜单栏应用：查到新
@@ -1107,8 +1114,8 @@ fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
         .title(tr!("软件更新", "Software Update"))
         .initialization_script(i18n::init_script())
-        // 宽度和前端 UpdateWindow.tsx 里的 WIDTH 是同一个数；高度由前端量完内容再定
-        .inner_size(480.0, 220.0)
+        // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来
+        .inner_size(UPDATE_WIDTH, 220.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -1116,6 +1123,42 @@ fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .visible(false)
         .build()?;
     Ok(())
+}
+
+/// 把更新窗口调成网页量出来的那么高。
+///
+/// **窗口有多高，不等于网页有多高。**Tauri 在 macOS 上建的是一扇
+/// `FullSizeContentView` 的窗：内容视图铺满整扇窗户，标题栏盖在它上面，
+/// webview 只摆在标题栏底下那一块。而 `set_size` 说的是整扇窗户
+/// （`inner_size()` 和 `outer_size()` 在这里报的也是同一个数，所以标题栏
+/// 有多高，从它们之间也减不出来）—— 照着网页量出来的高度设下去，网页拿到
+/// 的就少了一条标题栏，内容的最后一截被窗口下沿切掉：底部留白没了，那排
+/// 按钮只剩上半截。
+///
+/// 标题栏多高不写死 —— 各版本不一样（Tahoe 上是 32 点），没有标题栏的窗
+/// 是 0。`contentLayoutRect` 给的正是没被标题栏盖住的那一块，和整扇窗户
+/// 一减就是要补上的数。
+#[tauri::command]
+fn update_fit(window: tauri::Window, height: f64) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let w = window.clone();
+        // **走 Tauri 的主线程队列，不走 GCD。**紧跟在这之后网页会把窗口
+        // 亮出来，那一步排在同一条队列上；换一条队列，用户就会先看见一扇
+        // 大小还没调好的窗
+        window.run_on_main_thread(move || {
+            let Ok(ptr) = w.ns_window() else { return };
+            // SAFETY: `ns_window()` 给的是这扇窗的 NSWindow，这里在主线程上
+            let ns = unsafe { &*ptr.cast::<objc2_app_kit::NSWindow>() };
+            let titlebar = ns.frame().size.height - ns.contentLayoutRect().size.height;
+            ns.setContentSize(objc2_foundation::NSSize::new(
+                UPDATE_WIDTH,
+                height + titlebar,
+            ));
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    window.set_size(tauri::LogicalSize::new(UPDATE_WIDTH, height))
 }
 
 /// 把查到的版本交给用户：记下来，然后把更新窗口拉起来。菜单里的「检查更新」
@@ -1561,6 +1604,7 @@ pub fn run() {
             set_theme,
             update_check,
             update_pending,
+            update_fit,
             update_copy_command,
             update_install,
             autostart_enabled,
