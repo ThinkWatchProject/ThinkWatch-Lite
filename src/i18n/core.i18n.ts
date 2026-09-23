@@ -412,6 +412,16 @@ const ZH: Record<string, Say> = {
     `${a.client} 读取环境变量，该行会覆盖接管写入的配置。`,
   // 一条命令，两种语言里是同一串字符
   "adopt.diag.delete_line": (a) => `sed -i '' '${a.line}d' ${a.path}`,
+  // Windows 上同名变量在注册表里：没有文件，也没有行号
+  "adopt.diag.registry_env": (a) => `注册表 ${a.key} 中设置了 ${a.name}`,
+  "adopt.diag.registry_env.overrides": (a) =>
+    `${a.client} 读取环境变量，该变量会覆盖接管写入的配置。`,
+  "adopt.diag.no_registry_env": () => "没有同名的环境变量",
+  "adopt.diag.no_registry_env.detail": () => "已检查用户和系统两级环境变量。",
+  "adopt.diag.unset_env": (a) =>
+    `reg delete "${a.root}\\${a.key}" /v ${a.name} /f（执行后重新打开终端）`,
+  "adopt.diag.unset_env_machine": (a) =>
+    `reg delete "${a.root}\\${a.key}" /v ${a.name} /f（需要以管理员身份打开终端）`,
   "adopt.diag.fields_gone": () => "接管写入的字段已不在配置中",
   "adopt.diag.fields_gone.detail": (a) =>
     `${a.path} 中未找到接管写入的接口地址，可能已被其他工具修改。`,
