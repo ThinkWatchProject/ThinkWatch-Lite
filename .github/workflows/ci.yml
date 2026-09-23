@@ -75,3 +75,45 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # **这台机器上没有 unix socket。**控制面在那里落在回环端口上，凭据是唯一的
+  # 门，而在这个任务出现之前，那一半从来没有被编译过 —— 一个 `#[cfg(windows)]`
+  # 分支「检查通过」和「根本没人看过它」长得一模一样。
+  #
+  # 不重复跑 `cargo fmt`：格式和平台无关，跑两遍只是慢一倍。
+  #
+  # **还打不出安装包。**托盘、通知、自启这些还没有 Windows 的实现（见
+  # `.claude/windows.md` 的第 2 期）。这个任务先把「编得过、测得过、连得上」
+  # 钉住，那三样做一件进来一件。
+  rust-windows:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # **失败也存。**这个 action 默认只在任务成功时保存缓存，而一个刚
+          # 立起来、还在逐条修的任务恰恰一次都不会成功 —— 于是「红 → 不存
+          # 缓存 → 从零编译 → 还是红」自己维持住了。
+          cache-on-failure: true
+
+      # 理由同 macOS 那一档：`tauri.conf.json` 声明包里装着 twcore，而 Tauri
+      # 的 build script 在**编译期**就校验那个文件在不在。
+      #
+      # 取回来的是 Windows 那一份，名字带 `.exe` —— 见 `CORE_EXE`。
+      - name: Fetch the core binary the bundle declares
+        shell: bash
+        run: bash src-tauri/scripts/fetch-core.sh
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      # 这里的测试**包含那条接缝测试**：起一份真的 twcore.exe，让桌面端这一侧
+      # 的客户端在回环端口上真连上去。那条路在这个平台上没有替代品，而它是否
+      # 成立，只有这台机器答得出来。
+      - name: Test
+        run: cargo test --manifest-path src-tauri/Cargo.toml

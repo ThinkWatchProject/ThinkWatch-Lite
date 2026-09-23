@@ -22,7 +22,9 @@ use tw_api::control::Endpoint;
 /// **不在就失败，不跳过。**一条悄悄跳过的测试和一条不存在的测试没有区别，
 /// 而 CI 在跑测试之前就会把它取回来（见 `scripts/fetch-core.sh`）。
 fn core_binary() -> PathBuf {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/twcore");
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(thinkwatch_lite_lib::CORE_EXE);
     assert!(
         p.exists(),
         "{} 不在。先跑 bash src-tauri/scripts/fetch-core.sh",

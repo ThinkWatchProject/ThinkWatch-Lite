@@ -3,9 +3,10 @@
     python3 src-tauri/icons/render.py            # 重新生成并装进 icons/
     python3 src-tauri/icons/render.py <目录>     # 只导出各个尺寸，用来看效果
 
-第一种用法产出 tauri.conf.json 里列的那四个文件（32x32.png、128x128.png、
-128x128@2x.png、icon.icns）。**别手工改它们** —— 它们是这个脚本的输出，
-手改会和脚本悄悄分叉，下次谁重新生成一次就被覆盖了。
+第一种用法产出 tauri.conf.json 里列的那几个文件（32x32.png、128x128.png、
+128x128@2x.png、icon.icns），以及 Windows 构建要的 icon.ico。**别手工改
+它们** —— 它们是这个脚本的输出，手改会和脚本悄悄分叉，下次谁重新生成一次
+就被覆盖了。
 
 不依赖 SVG 光栅化工具，也不依赖图像库（只要 numpy，PNG 编码在下面）：
 每个形状用 SDF（有符号距离场）给出「到边界的距离」，再按一个像素的宽度
@@ -146,6 +147,63 @@ def write_png(path, arr):
     pathlib.Path(path).write_bytes(png)
 
 
+def png_bytes(arr):
+    """和 `write_png` 同一份编码，只是不落盘 —— ICO 里塞的就是这些字节。"""
+    import io as _io
+    buf = _io.BytesIO()
+    h, w, _ = arr.shape
+    raw = b"".join(b"\x00" + arr[y].tobytes() for y in range(h))
+
+    def chunk(tag, data):
+        c = struct.pack(">I", len(data)) + tag + data
+        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    buf.write(b"\x89PNG\r\n\x1a\n")
+    buf.write(chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)))
+    buf.write(chunk(b"IDAT", zlib.compress(raw, 9)))
+    buf.write(chunk(b"IEND", b""))
+    return buf.getvalue()
+
+
+def write_ico(path, cache):
+    """Windows 的 `.ico`：一个装着若干张图的壳子。
+
+    **每一张都是原生画的，不是把大图缩下来。**这正是这个脚本存在的理由在
+    Windows 上兑现的地方 —— 那里最常被看到的是任务栏通知区那个 16×16，
+    而一张 256 缩到 16 的霓虹笔画只会糊成一团。
+
+    里面塞的是 PNG（Vista 起支持），不是 BMP：省掉一份 AND 掩码，而这个
+    项目的最低系统是 Win10。
+    """
+    sizes = sorted(ICO_SIZES)
+    imgs = [png_bytes(cache[s]) for s in sizes]
+    # ICONDIR：保留位、类型 1 = 图标、张数
+    out = struct.pack("<HHH", 0, 1, len(sizes))
+    offset = 6 + 16 * len(sizes)
+    for size, data in zip(sizes, imgs):
+        # 宽高各一个字节，**256 写成 0** —— 一个字节放不下 256
+        out += struct.pack(
+            "<BBBBHHII",
+            size if size < 256 else 0,
+            size if size < 256 else 0,
+            0,  # 调色板张数，真彩色写 0
+            0,  # 保留位
+            1,  # 色彩平面
+            32,  # 每像素位数
+            len(data),
+            offset,
+        )
+        offset += len(data)
+    pathlib.Path(path).write_bytes(out + b"".join(imgs))
+
+
+# `.ico` 里放哪几个尺寸。
+#
+# 16 是通知区和标题栏，32 是 Alt-Tab 和高 DPI 下的通知区，48 是资源管理器的
+# 中图标，256 是大图标和属性对话框。48 以下每一个都真的会被单独拿出来用，
+# 所以每一个都单独画。
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
 # .iconset 里每个名字对应的像素数。@2x 是逻辑尺寸的两倍，所以
 # icon_16x16@2x 和 icon_32x32 都是 32 像素，只是系统在不同场合取不同的那个。
 ICONSET = {
@@ -178,7 +236,13 @@ def install(icons_dir):
         )
     for name, size in BUNDLE_PNGS.items():
         write_png(icons_dir / name, cache[size])
-    print(f"  icon.icns + {' + '.join(BUNDLE_PNGS)} → {icons_dir}")
+    # Windows 那一份。**和 icns 同一批渲染**，不是事后拿 png 转的 ——
+    # 两条路会在某次改完形状之后悄悄分叉。
+    for size in ICO_SIZES:
+        if size not in cache:
+            cache[size] = render(size)
+    write_ico(icons_dir / "icon.ico", cache)
+    print(f"  icon.icns + icon.ico + {' + '.join(BUNDLE_PNGS)} → {icons_dir}")
 
 
 if __name__ == "__main__":

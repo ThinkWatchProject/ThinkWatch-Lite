@@ -39,15 +39,13 @@ case "${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}" in
     exit 1
     ;;
 esac
-# **包里那个文件的名字还是 `twcore`，两个平台一样。**
-#
-# Windows 上这不够：`CreateProcess` 见到一个没有扩展名的路径会去找同名的
-# `.exe`，而我们这个文件就叫 `twcore`，于是找不到。那里要叫 `twcore.exe`，
-# 而 `tauri.conf.json` 里声明装什么的那一行是静态 JSON，改法是加一份
-# `tauri.windows.conf.json`，连同 `locate_core` 一起改。
-#
-# 那件事属于打包，不在这一笔里 —— 这里只负责取对文件。
-OUT="resources/twcore"
+# 放进去时的名字**跟着平台走**：Windows 上要 `.exe`，否则 `CreateProcess`
+# 见到没有扩展名的路径会去找同名的 `.exe` 而找不到这一个。声明装什么的那份
+# 静态 JSON 也要跟着分平台，见 `tauri.windows.conf.json`。
+case "$ASSET" in
+  *.exe) OUT="resources/twcore.exe" ;;
+  *)     OUT="resources/twcore" ;;
+esac
 
 TAG=$(
   cargo metadata --format-version 1 --manifest-path Cargo.toml 2>/dev/null \
@@ -96,16 +94,36 @@ fi
 echo "取 twcore ${TAG}"
 curl -fsSL "$BASE/$ASSET" -o "$TMP/twcore"
 
+# 算 sha256 的命令**两个平台不同名**：macOS 带的是 shasum（一个 Perl 脚本），
+# Git Bash 带的是 sha256sum。输出是同一种两列格式，有哪个用哪个。
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256="sha256sum"
+else
+  SHA256="shasum -a 256"
+fi
+
 # 校验和里记的是发布时那个文件名，换个名字就对不上 —— 在临时目录里
 # 按原名核对，核完再改名放过去。
-( cd "$TMP" && mv twcore "$ASSET" && shasum -a 256 -c sum && mv "$ASSET" twcore )
+( cd "$TMP" && mv twcore "$ASSET" && $SHA256 -c sum && mv "$ASSET" twcore )
 
-# **产物自检。**一个架构不对的二进制在文件列表上看不出任何问题，而它
-# 会一路装进 .app 发出去。
-file "$TMP/twcore" | grep -q 'arm64' || {
-  echo "下回来的不是 arm64 的二进制" >&2
-  exit 1
-}
+# **产物自检：它是不是这个架构的。**一个架构不对的二进制在文件列表上看不出
+# 任何问题，而它会一路装进包里发出去。
+#
+# 只在有 `file` 的地方做。Git Bash 不一定带它，而在那边这件事发布流水线
+# 已经做过了 —— 它读 PE 头里的 machine 字段，比字符串匹配还准（见 core 的
+# release.yml）。所以这里**不是悄悄跳过**：那一档的检查在上游。
+if command -v file >/dev/null 2>&1; then
+  case "$ASSET" in
+    *-apple-darwin)            EXPECT="arm64" ;;
+    twcore-x86_64-pc-windows*) EXPECT="x86-64" ;;
+    twcore-aarch64-pc-windows*) EXPECT="Aarch64" ;;
+    *)                         EXPECT="" ;;
+  esac
+  if [ -n "$EXPECT" ] && ! file "$TMP/twcore" | grep -q "$EXPECT"; then
+    echo "下回来的不是 ${EXPECT} 的二进制：$(file "$TMP/twcore")" >&2
+    exit 1
+  fi
+fi
 
 chmod +x "$TMP/twcore"
 mv "$TMP/twcore" "$OUT"

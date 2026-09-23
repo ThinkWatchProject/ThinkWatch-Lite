@@ -110,6 +110,8 @@ pub struct Supervisor {
     ready: Probe,
     /// 控制面的凭据，spawn 时通过环境变量交给 core。见 `crate::token`。
     token: String,
+    /// 请 core 退出要用到它。**Windows 上没有 SIGTERM**，那条路只能走控制面。
+    control: crate::control::ControlClient,
     policy: Mutex<RestartPolicy>,
     /// 当前状态。**用 watch 而不是 Mutex，是为了能被订阅** —— 界面
     /// 需要的是「变了就告诉我」，而拿一个 Mutex 只能反复去问。
@@ -127,12 +129,23 @@ pub struct Supervisor {
     stopping: AtomicBool,
 }
 
+/// 强杀之后再给它这么久把状态翻过来。**不是在等它死** —— 那一下已经发出去了
+/// —— 是在等守护循环收到子进程的退出。
+const KILL_GRACE: Duration = Duration::from_secs(3);
+
 impl Supervisor {
-    pub fn new(binary: PathBuf, config: Option<PathBuf>, ready: Probe, token: String) -> Self {
+    pub fn new(
+        binary: PathBuf,
+        config: Option<PathBuf>,
+        ready: Probe,
+        at: tw_api::control::Endpoint,
+        token: String,
+    ) -> Self {
         Self {
             binary,
             config,
             ready,
+            control: crate::control::ControlClient::new(at, token.clone()),
             token,
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
@@ -160,6 +173,60 @@ impl Supervisor {
         self.state.send_replace(next);
     }
 
+    /// 请这个 pid 退出。**温和的那一档。**
+    ///
+    /// **两个平台都先走控制面**（`POST /shutdown`）。它比信号多一样：有应答，
+    /// 所以这里知道对方收到了，而不是发完去猜。
+    ///
+    /// 更要紧的是 Windows 上它是**唯一**的温和办法 —— 那里没有 SIGTERM。
+    /// 让 macOS 也走同一条，那条路才会被日常使用，而不是只在另一个平台上
+    /// 偶尔跑一次。
+    ///
+    /// 控制面不应答时（core 卡死了、或者还没起好），unix 还有信号这条退路；
+    /// Windows 上就只能交给调用方那一步强杀了。
+    async fn ask_to_exit(&self, pid: u32) {
+        match self.control.shutdown().await {
+            Ok(()) => return,
+            Err(e) => tracing::debug!("控制面请不动 core，退回信号：{e:#}"),
+        }
+        #[cfg(unix)]
+        {
+            // SAFETY: kill 只是往一个 pid 上送信号；送给一个已经没了的 pid
+            // 是无害的。SIGTERM 而不是 SIGKILL —— 给它机会把 socket 和 lock
+            // 文件清掉，而下一个 core 要的正是那把锁。
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        }
+        #[cfg(not(unix))]
+        let _ = pid;
+    }
+
+    /// 强杀这个 pid。**不温和的那一档**，只在温和那一档等不到时用。
+    fn kill_now(&self, pid: u32) {
+        #[cfg(unix)]
+        {
+            // SAFETY: 同上。不先检查它死没死 —— 那会引入一个 TOCTOU 窗口，
+            // 而 kill 一个已经没了的 pid 本来就是无害的。
+            unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+        }
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Foundation::CloseHandle;
+            use windows_sys::Win32::System::Threading::{
+                OpenProcess, PROCESS_TERMINATE, TerminateProcess,
+            };
+            // SAFETY: 开一个只为了终止它的句柄，用完就关。打不开（它已经
+            // 没了、或者不归我们管）就什么都不做 —— 和 unix 那边 kill 一个
+            // 不存在的 pid 是同一种无害。
+            unsafe {
+                let h = OpenProcess(PROCESS_TERMINATE, 0, pid);
+                if !h.is_null() {
+                    TerminateProcess(h, 1);
+                    CloseHandle(h);
+                }
+            }
+        }
+    }
+
     /// core 活着但不响应了，把它换掉。
     ///
     /// **和 `request_restart` 的区别在于计不计入退避**：这是一次失败，
@@ -170,19 +237,11 @@ impl Supervisor {
             other => anyhow::bail!("core 现在是 {other:?}，不用管"),
         };
         tracing::error!(pid, "core 活着但不响应，换掉它");
-        // 卡死的进程可能连信号处理器都跑不了，所以先 TERM 后 KILL。
-        // 只发 TERM 的话，一个真的死锁住的进程会一直留着。
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
+        // 先请后杀。一个卡死的进程可能连信号处理器都跑不了，也可能连控制面
+        // 都不应答了 —— 只用温和那一档的话，它会一直留着。
+        self.ask_to_exit(pid).await;
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        // 还在的话强杀。这里不检查它死没死 —— kill 一个已经没了的 pid
-        // 是无害的，而多做一次检查会引入一个 TOCTOU 窗口。
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
-        }
+        self.kill_now(pid);
         Ok(())
     }
 
@@ -207,11 +266,8 @@ impl Supervisor {
             }
         };
         self.intentional.store(true, Ordering::SeqCst);
-        // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉。
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
+        // 温和那一档就够：它自己退干净，守护循环看见就把它拉回来。
+        self.ask_to_exit(pid).await;
         Ok(())
     }
 
@@ -228,13 +284,29 @@ impl Supervisor {
             return;
         };
         self.stopping.store(true, Ordering::SeqCst);
-        let mut rx = self.watch();
-        // SIGTERM 而不是 SIGKILL：给它机会把 socket 和 lock 文件清掉 ——
-        // 下一个 core 要的正是那把锁。
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
+        self.ask_to_exit(pid).await;
+        if self.wait_gone(pid, timeout).await {
+            return;
         }
+        tracing::warn!(pid, ?timeout, "core 没按时退出，强杀");
+        self.kill_now(pid);
+        // **强杀之后还要再等一次。**这个函数的名字里有「等它真的退出」，而
+        // 强杀只是把那一下发出去了 —— 守护循环还要收到子进程的退出、把状态
+        // 翻过来，才算真的没了。
+        //
+        // 以前这里发完就返回。unix 上看不出来：温和那一档从来都管用，这条路
+        // 走不到。Windows 上控制面连不上时它就是常规路径，而不等的后果正是
+        // 这个函数存在要防的那件事 —— 紧接着起的下一个 core 撞上还没释放的锁。
+        if !self.wait_gone(pid, KILL_GRACE).await {
+            tracing::error!(pid, "强杀之后它还在");
+        }
+    }
+
+    /// 等到它不再是这个 pid。等到了返回 true，超时返回 false。
+    ///
+    /// **先看当下再等变化**：状态可能在订阅之前就已经翻过去了。
+    async fn wait_gone(&self, pid: u32, timeout: Duration) -> bool {
+        let mut rx = self.watch();
         let gone = async {
             while matches!(*rx.borrow_and_update(), CoreState::Running { pid: p } if p == pid) {
                 if rx.changed().await.is_err() {
@@ -242,13 +314,7 @@ impl Supervisor {
                 }
             }
         };
-        if tokio::time::timeout(timeout, gone).await.is_err() {
-            tracing::warn!(pid, ?timeout, "core 没按时退出，强杀");
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(pid as i32, libc::SIGKILL);
-            }
-        }
+        tokio::time::timeout(timeout, gone).await.is_ok()
     }
 
     /// 拼命令行。
@@ -422,6 +488,7 @@ mod tests {
             PathBuf::from("/nonexistent/twcore"),
             Some(PathBuf::from("/tmp/c.yaml")),
             always_ready(),
+            test_endpoint(),
             "t".into(),
         )
     }
@@ -485,7 +552,13 @@ mod tests {
     #[test]
     fn without_a_config_we_let_core_pick_the_default() {
         // 不要在这里重复一遍默认路径 —— 两处各写一遍就是两处会漂移。
-        let s = Supervisor::new(PathBuf::from("/x"), None, always_ready(), "t".into());
+        let s = Supervisor::new(
+            PathBuf::from("/x"),
+            None,
+            always_ready(),
+            test_endpoint(),
+            "t".into(),
+        );
         assert!(!s.command_args(false).contains(&"--config".to_string()));
     }
 
@@ -509,15 +582,37 @@ mod tests {
         assert_eq!(sup().state(), CoreState::Stopped);
     }
 
-    /// 一个不管参数、一直跑到被信号杀掉的「core」。
+    /// 一个指向不存在之处的控制面。
+    ///
+    /// 这些测试从不真的起 core，所以连不上正是对的 —— 请它退出那一步在
+    /// unix 上走信号、根本不碰它，在 Windows 上会失败一次然后落到强杀，
+    /// 而强杀才是这些测试要看的那一步。
+    fn test_endpoint() -> tw_api::control::Endpoint {
+        tw_api::control::Endpoint::in_dir(std::path::Path::new("/tw-no-such-dir-xyz"))
+    }
+
+    /// 一个不管参数、一直跑到被杀掉的「core」。
+    ///
+    /// **两个平台各写一份。**shebang 和执行位是 unix 的东西；Windows 上
+    /// 写一个 `.cmd`，`std::process::Command` 认得它。
     fn long_runner(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("fake-core");
-        std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        bin
+        #[cfg(unix)]
+        {
+            let bin = dir.join("fake-core");
+            std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            bin
+        }
+        #[cfg(windows)]
+        {
+            let bin = dir.join("fake-core.cmd");
+            // `timeout` 要一个控制台，测试进程里没有；`ping` 不要。
+            std::fs::write(&bin, "@ping -n 30 127.0.0.1 >nul\r\n").unwrap();
+            bin
+        }
     }
 
     async fn until_running(s: &Supervisor) -> u32 {
@@ -542,6 +637,7 @@ mod tests {
             long_runner("stop"),
             None,
             always_ready(),
+            test_endpoint(),
             "t".into(),
         ));
         let looped = {
@@ -552,10 +648,18 @@ mod tests {
 
         let t0 = Instant::now();
         s.stop_and_wait(Duration::from_secs(5)).await;
+        // **温和那一档该管用，不用等到强杀** —— 但这句话只在 unix 上成立：
+        // 这里的假 core 是个脚本，没有控制面，所以温和那一档只能落到信号上，
+        // 而 Windows 没有信号。真的 core 在两个平台上都答应 `POST /shutdown`，
+        // 那条路由 tests/control_plane.rs 去证明。
+        #[cfg(unix)]
         assert!(
             t0.elapsed() < Duration::from_secs(5),
             "SIGTERM 就该让它退出，不用等到强杀"
         );
+        #[cfg(not(unix))]
+        let _ = t0;
+        // 两个平台都要成立的是这一条：它确实停了，而且没被再拉起来。
         assert_eq!(s.state(), CoreState::Stopped);
         assert_eq!(looped.await.unwrap(), Next::Stop, "停下之后不再起");
     }
@@ -584,6 +688,7 @@ mod tests {
             long_runner("ready"),
             None,
             third_time,
+            test_endpoint(),
             "t".into(),
         ));
         let mut rx = s.watch();
@@ -617,6 +722,7 @@ mod tests {
             long_runner("never"),
             None,
             probe(|| async { false }),
+            test_endpoint(),
             "t".into(),
         );
         let next = s.run_once(false).await.unwrap();
@@ -635,6 +741,7 @@ mod tests {
             long_runner("restart"),
             None,
             always_ready(),
+            test_endpoint(),
             "t".into(),
         ));
         let looped = {

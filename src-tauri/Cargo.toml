@@ -82,6 +82,10 @@ tar = "0.4"
 flate2 = "1"
 tempfile = "3.20"
 
+# 强杀 core 那一步：Windows 上没有 SIGKILL，用 TerminateProcess
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

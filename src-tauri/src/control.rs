@@ -191,6 +191,18 @@ impl ControlClient {
     }
 
     /// 发一个 POST，body 是 JSON。
+    /// 请网关自己退出。
+    ///
+    /// **Windows 上这是「停掉 core」唯一温和的办法** —— 那里没有 SIGTERM。
+    /// 它比信号还多一样：有应答，所以调用方知道对方收到了，而不是发完去猜。
+    ///
+    /// 两个平台都走它，理由同 core 那边：只在一个平台上生效的路径没人日常测。
+    pub async fn shutdown(&self) -> Result<()> {
+        // 202 的响应体是一条 `Msg`，这里不需要它 —— 要的是「收到了」。
+        let _: tw_api::Msg = self.post_json("/shutdown", &()).await?;
+        Ok(())
+    }
+
     async fn post_json<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
         &self,
         path: &str,

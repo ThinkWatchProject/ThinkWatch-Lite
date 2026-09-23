@@ -887,12 +887,33 @@ fn clock(at_ms: u64, now_ms: u64) -> String {
     }
 }
 
-/// 本地时间的（年, 月, 日, 时, 分）
-pub(crate) fn local(ms: u64) -> (i32, u32, u32, u32, u32) {
-    let secs = (ms / 1000) as libc::time_t;
+/// 一个时间戳在本地时区里的那个 `tm`。
+///
+/// **两个平台的名字和参数顺序都不一样**：POSIX 是 `localtime_r(&t, &mut tm)`，
+/// MSVC 是 `localtime_s(&mut tm, &t)` —— 参数反过来。写反了不会编译失败，
+/// 只会让日期错得离谱，所以两支各写一遍，谁也别去"复用"谁。
+#[cfg(unix)]
+fn to_local(secs: libc::time_t) -> libc::tm {
     // SAFETY: localtime_r 只写进我们给的那一块 tm
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&secs, &mut tm) };
+    tm
+}
+
+#[cfg(windows)]
+fn to_local(secs: libc::time_t) -> libc::tm {
+    // SAFETY: localtime_s 只写进我们给的那一块 tm。它失败时把 tm 清零，
+    // 那给出的是 1900-01-01 —— 一个一眼看得出不对的日期，而不是一个
+    // 错得像真的的日期。
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_s(&mut tm, &secs) };
+    tm
+}
+
+/// 本地时间的（年, 月, 日, 时, 分）
+pub(crate) fn local(ms: u64) -> (i32, u32, u32, u32, u32) {
+    let secs = (ms / 1000) as libc::time_t;
+    let tm = to_local(secs);
     (
         tm.tm_year + 1900,
         (tm.tm_mon + 1) as u32,

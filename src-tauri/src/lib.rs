@@ -18,6 +18,8 @@ pub mod control;
 #[cfg(target_os = "macos")]
 pub mod dmg;
 pub mod keys;
+/// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
+#[cfg(target_os = "macos")]
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
@@ -66,6 +68,24 @@ pub struct AppState {
     pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
 
+/// 网关那个可执行文件叫什么。
+///
+/// **Windows 上带 `.exe`。**`CreateProcess` 见到一个没有扩展名的路径，会去找
+/// 同名的 `.exe`；所以一个就叫 `twcore` 的文件在那里根本起不来。而在那之前的
+/// 每一步 —— 打包放进去、构建期校验它在不在、`locate_core` 找到它 —— 都会说
+/// 一切正常，坏在最后一步，表现为界面永远停在连接页上。
+///
+/// 声明「包里装什么」的那份 JSON 不能分支，所以 Windows 另有一份
+/// `tauri.windows.conf.json`。**它是合并进来的，不是替换**（RFC 7386 的
+/// merge patch）—— 所以除了加上带 `.exe` 的那条，还要把基础配置里不带扩展名
+/// 的那条显式设成 `null`。不然两条同时生效，而其中一条指着一个在那个平台上
+/// 根本不存在的文件，构建期就停在「resource path doesn't exist」。
+pub const CORE_EXE: &str = if cfg!(windows) {
+    "twcore.exe"
+} else {
+    "twcore"
+};
+
 /// twcore 在哪。
 ///
 /// 开发时它在 core 仓库的 target 里；打包后它在 app bundle 的
@@ -80,7 +100,7 @@ fn bundled_core() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     if dir.ends_with("Contents/MacOS") {
-        return Some(dir.parent()?.join("Resources").join("twcore"));
+        return Some(dir.parent()?.join("Resources").join(CORE_EXE));
     }
     None
 }
@@ -115,7 +135,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     // 别的平台以后会有自己的打包形态，框架这条留着 —— 它在 macOS 的
     // `.app` 里实测返回 `unknown path`，所以上面那一段不能指望它。
     if let Ok(dir) = app.path().resource_dir() {
-        let p = dir.join("twcore");
+        let p = dir.join(CORE_EXE);
         if p.exists() {
             return Ok(p);
         }
@@ -142,7 +162,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
                     .join(up)
                     .join("thinkwatch-core/target")
                     .join(profile)
-                    .join("twcore");
+                    .join(CORE_EXE);
                 if p.exists() {
                     // 相对路径能用，但报错信息和日志里出现 `../..` 很难
                     // 读，所以归一化之后再交出去。
@@ -156,7 +176,7 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     // 最后：装在 PATH 上的那个。`cargo install -p twcore` 之后就是这条。
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
-            let p = dir.join("twcore");
+            let p = dir.join(CORE_EXE);
             if p.exists() {
                 return Ok(p);
             }
@@ -1676,9 +1696,10 @@ pub fn run() {
                 located
                     .as_ref()
                     .cloned()
-                    .unwrap_or_else(|_| PathBuf::from("twcore")),
+                    .unwrap_or_else(|_| PathBuf::from(CORE_EXE)),
                 None,
                 ready,
+                at.clone(),
                 token.clone(),
             ));
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1788,6 +1809,7 @@ pub fn run() {
             // 量 webview 占多少。**它不是一个功能，是一个回答
             // 不了就只能猜的问题的工具** —— 「关窗之后隐藏还是销毁」
             // 取决于隐藏到底放不放得掉那部分内存。
+            #[cfg(target_os = "macos")]
             if memcheck::requested(std::env::args()) {
                 memcheck::run(handle.clone());
             }
@@ -1854,6 +1876,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 起不来")
         .run(|app, event| {
+            // Dock 和 ⌘Tab 是 macOS 的概念，下面那一段只在那里有事做。
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
             // 点 Dock 图标 / 从 ⌘Tab 回来时把窗口叫回来。没有这条，一个
             // 已经隐藏窗口的菜单栏应用在 Dock 上点了没反应。
             #[cfg(target_os = "macos")]
@@ -2215,14 +2240,20 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         w.set_focus()?;
         return Ok(());
     }
-    let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+    let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(i18n::init_script())
         .inner_size(1100.0, 720.0)
-        .min_inner_size(820.0, 560.0)
+        .min_inner_size(820.0, 560.0);
+    // 把内容顶到标题栏里、藏掉标题：**这两样只有 macOS 有**，那里红绿灯
+    // 浮在内容上，界面顶部那几处 `data-tauri-drag-region` 就是为它留的。
+    // Windows 上用系统标题栏（`.claude/windows.md` 的决策 10），所以那些
+    // 留白到时候要按平台调掉 —— 不调的话顶上会多出一条空的。
+    #[cfg(target_os = "macos")]
+    let b = b
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .build()?;
+        .hidden_title(true);
+    let w = b.build()?;
     w.set_focus()?;
     // 有窗口了就该出现在 Dock 和 ⌘Tab 里
     #[cfg(target_os = "macos")]
