@@ -239,7 +239,7 @@ export function fieldsOnlyText(): string {
 const APPS: Record<string, string> = {
   "claude-code": "Claude Code",
   "claude-desktop": "Claude Desktop",
-  codex: "Codex CLI",
+  codex: "Codex",
   cursor: "Cursor",
   opencode: "opencode",
   aider: "Aider",

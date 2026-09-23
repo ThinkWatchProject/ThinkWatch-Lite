@@ -363,7 +363,9 @@ const ZH: Record<string, Say> = {
   "adopt.cost.claude_code.welcome_screen": () =>
     "Claude Code 可能会显示一次欢迎页，关闭即可。",
   "adopt.cost.codex.model_list": () =>
-    "Codex CLI 不从网关获取模型列表，自定义模型名无效，模型列表以本地的模型目录文件为准。",
+    "Codex 不从网关获取模型列表，自定义模型名无效，模型列表以本地的模型目录文件为准。",
+  "adopt.cost.codex.chatgpt_desktop": () =>
+    "ChatGPT 桌面版读取同一份配置文件，其本地 Codex 会话也会一并接管，重新启动该应用后生效。",
   "adopt.cost.codex.reopen_terminal": () => "修改后需要重新打开终端。",
   "adopt.cost.opencode.restart": () => "修改后需要重新启动 opencode。",
   "adopt.cost.zed.key_store": () =>

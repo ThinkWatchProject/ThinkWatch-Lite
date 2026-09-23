@@ -2283,7 +2283,7 @@ mod tests {
     fn restore_addresses_a_client_by_id_and_reports_it_by_name() {
         let list = clients_json(&[
             (r#""claude-code""#, r#""Claude Code""#, "1700000000000"),
-            (r#""codex""#, r#""Codex CLI""#, "null"),
+            (r#""codex""#, r#""Codex""#, "null"),
             (r#""opencode""#, r#""opencode""#, "1700000000001"),
             (r#""zed""#, r#""Zed""#, "1700000000002"),
         ]);
