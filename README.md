@@ -205,7 +205,8 @@ src-tauri/        Tauri 2 shell: supervises core, renders the menu bar
 ```
 
 The gateway itself lives in ThinkWatch Core; this repository holds no routing,
-forwarding, or accounting logic. It talks to core over a unix socket.
+forwarding, or accounting logic. It talks to core over a unix socket on macOS,
+and over a loopback port on Windows; both carry a per-launch credential.
 
 ## License
 

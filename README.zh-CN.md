@@ -173,8 +173,9 @@ src/              React 19 + Tailwind 4 前端
 src-tauri/        Tauri 2 外壳：托管 core、渲染菜单栏
 ```
 
-网关本体位于 ThinkWatch Core；本仓库不包含路由、转发或计费逻辑，通过 unix
-socket 与 core 通信。
+网关本体位于 ThinkWatch Core；本仓库不包含路由、转发或计费逻辑。与 core 的
+通信在 macOS 上走 unix socket，在 Windows 上走回环端口，两者都带一个每次启动
+生成的凭据。
 
 ## 许可证
 
