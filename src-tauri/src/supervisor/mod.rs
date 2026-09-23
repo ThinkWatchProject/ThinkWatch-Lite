@@ -374,15 +374,21 @@ impl Supervisor {
         let args = self.command_args(safe);
         let started = Instant::now();
 
-        let spawned = tokio::process::Command::new(&self.binary)
-            .args(&args)
+        let mut cmd = tokio::process::Command::new(&self.binary);
+        cmd.args(&args)
             // 控制面的凭据**走环境变量交过去，不进 argv** —— Windows 上任意
             // 同用户进程都看得见别人的命令行，而这串东西是那个平台上控制面
             // 唯一的门。见 `crate::token`。
             .env(tw_api::control::TOKEN_ENV, &self.token)
             // core 的日志走它自己的 stderr；UI 侧只需要知道它活着。
-            .kill_on_drop(true)
-            .spawn();
+            .kill_on_drop(true);
+        // **不给它开控制台窗口。**twcore 是个命令行程序，Windows 上起一个控制台
+        // 子系统的程序、父进程自己又没有控制台时，系统会给它新开一个 —— 用户
+        // 就会看见一个标着 twcore.exe 路径、滚着日志的黑窗口，关掉它网关就没了。
+        // 真机上装好第一次打开就是这样。
+        #[cfg(windows)]
+        cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+        let spawned = cmd.spawn();
         let mut child = match spawned {
             Ok(c) => c,
             Err(e) => {
