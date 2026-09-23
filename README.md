@@ -3,28 +3,32 @@
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
   <img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
+  <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
 </p>
 
 # ThinkWatch Lite
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-ThinkWatch Lite is a macOS menu-bar app that runs a local AI API gateway.
-Claude Code, Codex and other clients of the Anthropic, OpenAI and Gemini
-APIs send their requests to the gateway, and Lite shows what each request
-cost, which upstream served it and why, and what was sent along with it.
+ThinkWatch Lite is a desktop app that runs a local AI API gateway from the
+macOS menu bar or the Windows notification area. Claude Code, Codex and other
+clients of the Anthropic, OpenAI and Gemini APIs send their requests to the
+gateway, and Lite shows what each request cost, which upstream served it and
+why, and what was sent along with it.
 
-It runs on macOS 12 or later on Apple Silicon. Other platforms follow once the
-macOS version is complete.
+It runs on macOS 12 or later on Apple Silicon, and on Windows 10 or later on
+x64 or ARM64.
 
 ## Install
+
+The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
+ships inside the app; nothing else needs to be installed.
+
+### macOS
 
 ```bash
 brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
-
-The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
-ships inside the app; nothing else needs to be installed.
 
 A disk image is also available from the
 [releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases):
@@ -42,6 +46,30 @@ choose Open Anyway in System Settings › Privacy & Security. Removing that
 attribute is the only thing
 [the cask](https://github.com/ThinkWatchProject/homebrew-tap) does beyond
 copying the app out of the disk image.
+
+### Windows
+
+Download the installer for the machine's architecture from the
+[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases):
+`ThinkWatch-Lite-<version>-x64-setup.exe` for most PCs, or
+`ThinkWatch-Lite-<version>-arm64-setup.exe` for a PC with an ARM processor.
+Check it against the sha256 published beside it:
+
+```powershell
+Get-FileHash .\ThinkWatch-Lite-<version>-x64-setup.exe
+```
+
+The installer sets the app up for all users in Program Files, so Windows asks
+for administrator permission. It requires Windows 10 or later; WebView2, which
+Windows 11 already includes, is downloaded during installation if it is
+missing.
+
+The installer is **not code-signed**, and no certificate will be bought.
+Running a downloaded copy brings up SmartScreen's full-screen warning,
+"Windows protected your PC". Choose **More info**, then **Run anyway**.
+
+Once installed, the app lives in the notification area. Data is kept in
+`%APPDATA%\ThinkWatch`.
 
 ## Features
 
@@ -148,6 +176,11 @@ a whole can be set to system notifications, in-app only, or off. Marking a
 notice as read stops the bell from counting it; the notice stays in the list
 until the problem behind it clears or the list is cleared.
 
+On Windows the icon sits in the notification area. Hovering over it shows the
+gateway's state and today's tokens and cost; a left click opens the main
+window, and a right click opens the same menu, with quota bars written out as
+text. Notices arrive as native Windows notifications.
+
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
@@ -168,11 +201,19 @@ Settings.
 When there is one, a small window says so, and what happens next depends on how
 the app was installed.
 
-**Downloaded from the releases page:** one press on the install button does the
-rest. The app downloads the update, verifies it against a key compiled into
-itself, waits for the requests the gateway is serving to finish — up to three
-minutes — then replaces itself and restarts. A Claude Code task in the middle
-of a response is not cut off to make room for the update.
+**Downloaded from the releases page on macOS:** one press on the install
+button does the rest. The app downloads the update, verifies it against a key
+compiled into itself, waits for the requests the gateway is serving to
+finish — up to three minutes — then replaces itself and restarts. A Claude
+Code task in the middle of a response is not cut off to make room for the
+update.
+
+**On Windows:** the same single press. The app downloads the new installer,
+verifies it against the key compiled into itself, waits for the requests in
+flight to finish in the same way, then runs the installer, and the new version
+starts once it is done. The app is installed for all users, so Windows asks for
+administrator permission at every update; declining leaves the current version
+running.
 
 **Installed with Homebrew:** the window gives the command to copy, and the app
 never replaces itself. Homebrew records which version it put in

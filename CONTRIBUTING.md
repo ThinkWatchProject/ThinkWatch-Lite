@@ -14,16 +14,15 @@ base — the commits and the discussion carry over. A bot will remind you.
 
 ## Scope, so you don't build something that gets declined
 
-Two decisions are settled and not up for a PR:
+These decisions are settled and not up for a PR:
 
-- **macOS first.** Windows and Linux come after the macOS version is
-  done, so PRs adding them won't be merged yet. The menu
-  bar is rendered as a macOS bitmap, the client-detection paths are
-  macOS paths, and the supervisor talks to launchd.
-- **Apple Silicon only, and not signed by Apple.** The release pipeline
-  produces one artifact for people to install: an arm64 `.app` in a disk
-  image, with the gateway inside it, signed with the project's own
-  self-signed certificate. That certificate does not satisfy Gatekeeper; it
+- **macOS and Windows, from one tag.** Every release tag produces three
+  files for people to install, each with the gateway inside it and a
+  sha256 beside it: an arm64 disk image for macOS, and an x64 and an
+  arm64 installer for Windows. There is no Linux build.
+- **macOS: Apple Silicon only, and not signed by Apple.** The macOS
+  artifact is an arm64 `.app` in a disk image, signed with the project's
+  own self-signed certificate. That certificate does not satisfy Gatekeeper; it
   exists so that every release has the same signer, which is what lets
   Homebrew upgrade the app without warning that the signer changed. A
   universal binary for Intel and a Developer ID signature are both ongoing
@@ -31,6 +30,10 @@ Two decisions are settled and not up for a PR:
   without the account behind it can't be merged, and neither can one that
   makes the build fall back to whatever architecture the machine happens to
   be, which ships a file some users can download and cannot open.
+- **Windows: not code-signed.** The installers carry no Authenticode
+  signature, and no certificate will be bought, so SmartScreen warns when
+  a downloaded installer is first run. Updates are verified against the
+  key compiled into the app, the same as on macOS.
 
 The gateway itself — routing, forwarding, cost accounting, redaction —
 lives in [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core).
@@ -89,8 +92,10 @@ tw-api`, rebuild.
 `pnpm tauri dev` does not run any of this and needs no network. There,
 `locate_core` finds a binary in a sibling `thinkwatch-core` checkout.
 
-Apple Silicon only, and the bundle is neither signed nor notarized. On
-macOS 15 and later a downloaded copy has to be cleared once:
+On Windows the same command produces an NSIS installer instead, and it
+is not code-signed. The macOS bundle is Apple Silicon only, and neither
+signed nor notarized. On macOS 15 and later a downloaded copy has to be
+cleared once:
 
     xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 
