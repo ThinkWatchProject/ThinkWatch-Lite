@@ -235,6 +235,10 @@ impl ControlClient {
             .method(method)
             .uri(path)
             .header(hyper::header::HOST, "localhost")
+            // **写请求也要带凭据。**这一处曾经漏了：读的请求都带着，于是界面
+            // 一切正常地显示，而每一次保存、新建、接管都被控制面拒掉 —— 两个
+            // 平台都是。见 tests/control_plane.rs 里走写请求的那一条
+            .header(hyper::header::AUTHORIZATION, self.auth())
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .body(payload)?;
         let resp = sender.send_request(req).await?;
