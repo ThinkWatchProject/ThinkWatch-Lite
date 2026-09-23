@@ -3,31 +3,36 @@
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
   <img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
+  <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
 </p>
 
 # ThinkWatch Lite
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-ThinkWatch Lite 是运行本地 AI API 网关的 macOS 菜单栏应用。Claude Code、Codex
-CLI 等使用 Anthropic、OpenAI、Gemini API 的客户端把请求发给这个网关，Lite
-展示每个请求的费用、由哪个上游处理及其原因，以及随请求发出的内容。
+ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜单栏或 Windows
+通知区域。Claude Code、Codex CLI 等使用 Anthropic、OpenAI、Gemini API 的客户端
+把请求发给这个网关，Lite 展示每个请求的费用、由哪个上游处理及其原因，以及随请求
+发出的内容。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
   <img src="docs/screenshots/overview-light.png" alt="ThinkWatch Lite 的用量概览：token、费用与请求数，按模型分层的 24 小时趋势，模型排行与缓存命中率">
 </picture>
 
-支持 macOS 12 及以上版本，仅限 Apple Silicon。其他系统将在 macOS 版本完成后适配。
+支持 macOS 12 及以上版本（仅限 Apple Silicon），以及 Windows 10 及以上版本（x64
+或 ARM64）。
 
 ## 安装
+
+网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)
+随应用一起安装，无需另行安装。
+
+### macOS
 
 ```bash
 brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
-
-网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)
-随应用一起安装，无需另行安装。
 
 也可以从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
 下载 `ThinkWatch-Lite-<版本>-arm64.dmg`，与同页发布的 sha256 校验值核对后，将
@@ -41,6 +46,27 @@ xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 也可以在首次打开被拒绝后，前往「系统设置 › 隐私与安全性」点击「仍要打开」。
 [Homebrew cask](https://github.com/ThinkWatchProject/homebrew-tap) 在安装时会
 自动完成这一步，此外只是把应用从磁盘映像复制到「应用程序」。
+
+### Windows
+
+从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+下载与本机架构对应的安装程序：大多数电脑用 `ThinkWatch-Lite-<版本>-x64-setup.exe`，
+ARM 处理器的电脑用 `ThinkWatch-Lite-<版本>-arm64-setup.exe`。下载后与同页发布的
+sha256 校验值核对：
+
+```powershell
+Get-FileHash .\ThinkWatch-Lite-<版本>-x64-setup.exe
+```
+
+安装程序为所有用户安装，装入 Program Files，因此 Windows 会请求管理员权限。
+需要 Windows 10 及以上版本；缺少 WebView2 时安装程序会自动下载（Windows 11
+已自带）。
+
+安装程序**未经代码签名**，项目也不会购买证书。运行下载的安装程序时，SmartScreen
+会显示全屏的蓝色警告「Windows 已保护你的电脑」，依次点击「更多信息」→「仍要运行」
+即可继续安装。
+
+安装后应用常驻通知区域，数据保存在 `%APPDATA%\ThinkWatch`。
 
 ## 功能
 
@@ -124,6 +150,9 @@ Cursor、Continue 与 Gemini CLI 提供逐步的手动配置说明。
 接住，只记录在应用内。提醒可以整体设为系统通知、仅在应用内显示或关闭。标为已读的
 提醒不再计入铃铛上的数字，但在问题解决或清空列表之前仍留在列表中。
 
+Windows 上图标位于通知区域：悬停显示网关状态与今日 token、费用；左键打开主界面，
+右键打开同一份菜单，其中的额度条改为文字。提醒以 Windows 原生通知发送。
+
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
@@ -142,9 +171,13 @@ Cursor、Continue 与 Gemini CLI 提供逐步的手动配置说明。
 
 有新版本时会弹出一个小窗口，之后的处理方式取决于安装方式。
 
-**从 release 页面下载安装的**：点击一次安装按钮，其余步骤自动完成——下载更新包，
-用编译进应用的公钥验签，等待网关正在处理的请求结束（最多三分钟），然后替换并
-重新启动。正在输出的 Claude Code 任务不会因更新而中断。
+**在 macOS 上从 release 页面下载安装的**：点击一次安装按钮，其余步骤自动完成——
+下载更新包，用编译进应用的公钥验签，等待网关正在处理的请求结束（最多三分钟），
+然后替换并重新启动。正在输出的 Claude Code 任务不会因更新而中断。
+
+**Windows 上**：同样点击一次即可。应用下载新版本的安装程序，用编译进应用的公钥
+验签，同样等待进行中的请求结束，然后运行安装程序，安装完成后新版本自动启动。应用
+为所有用户安装，因此每次更新 Windows 都会请求管理员权限；拒绝则继续运行当前版本。
 
 **用 Homebrew 安装的**：窗口给出更新命令和复制按钮，应用不会替换自身。Homebrew
 记录着它放入 `/Applications` 的版本，应用自行替换后，下一次 `brew upgrade` 会
