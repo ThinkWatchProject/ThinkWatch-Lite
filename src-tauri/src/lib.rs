@@ -2288,10 +2288,6 @@ fn check_autostart_path(app: &tauri::AppHandle) {
     }
 }
 
-/// 主窗口用时才建。
-///
-/// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了
-/// 启动时间，而且窗口会有一帧闪烁 —— 开机的时候屏幕上什么都不该出现。
 /// 分拣一批 `thinkwatch://` 链接：点开通知的落到那一条的页面，其余的交给授权回调
 fn open_urls(app: &tauri::AppHandle, urls: &[String]) {
     let mut rest = Vec::new();
@@ -2304,6 +2300,10 @@ fn open_urls(app: &tauri::AppHandle, urls: &[String]) {
     chatgpt::handle_return(app, &rest);
 }
 
+/// 主窗口用时才建。
+///
+/// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了
+/// 启动时间，而且窗口会有一帧闪烁 —— 开机的时候屏幕上什么都不该出现。
 pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("main") {
         w.show()?;
