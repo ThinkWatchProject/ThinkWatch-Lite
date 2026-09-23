@@ -82,6 +82,12 @@ tar = "0.4"
 flate2 = "1"
 tempfile = "3.20"
 
+# **只有这两个平台需要单实例。**macOS 由系统保证一个 bundle 只跑一份
+# （`RunEvent::Reopen` 就是这么来的）；别处没有这个保证，理由见 lib.rs 里
+# 注册它的地方。
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
 # 强杀 core 那一步：Windows 上没有 SIGKILL，用 TerminateProcess
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
