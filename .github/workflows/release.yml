@@ -230,6 +230,8 @@ jobs:
   windows:
     name: ThinkWatch Lite (${{ matrix.target }})
     strategy:
+      # 一个架构挂了不取消另一个：演练的时候两边的问题想一次看全
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-pc-windows-msvc

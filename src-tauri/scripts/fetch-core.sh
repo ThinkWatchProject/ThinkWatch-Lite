@@ -122,13 +122,15 @@ curl -fsSL "$BASE/$ASSET" -o "$TMP/twcore"
 # 已经做过了 —— 它读 PE 头里的 machine 字段，比字符串匹配还准（见 core 的
 # release.yml）。所以这里**不是悄悄跳过**：那一档的检查在上游。
 if command -v file >/dev/null 2>&1; then
+  # **`file` 的措辞随版本变**：同一个 Windows ARM64 的 exe，有的版本写
+  # `Aarch64`，有的写 `ARM64`。所以按一组写法、不分大小写地认。
   case "$ASSET" in
-    *-apple-darwin)            EXPECT="arm64" ;;
-    twcore-x86_64-pc-windows*) EXPECT="x86-64" ;;
-    twcore-aarch64-pc-windows*) EXPECT="Aarch64" ;;
-    *)                         EXPECT="" ;;
+    *-apple-darwin)             EXPECT="arm64" ;;
+    twcore-x86_64-pc-windows*)  EXPECT="x86-64" ;;
+    twcore-aarch64-pc-windows*) EXPECT="aarch64|arm64" ;;
+    *)                          EXPECT="" ;;
   esac
-  if [ -n "$EXPECT" ] && ! file "$TMP/twcore" | grep -q "$EXPECT"; then
+  if [ -n "$EXPECT" ] && ! file "$TMP/twcore" | grep -Eqi "$EXPECT"; then
     echo "下回来的不是 ${EXPECT} 的二进制：$(file "$TMP/twcore")" >&2
     exit 1
   fi

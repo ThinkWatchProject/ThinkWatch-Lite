@@ -19,6 +19,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 /// cask 的名字，也是 Caskroom 下那个目录的名字。
+#[cfg(not(windows))]
 const CASK: &str = "thinkwatch-lite";
 
 /// Homebrew 装在哪。
