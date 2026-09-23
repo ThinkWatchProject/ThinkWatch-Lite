@@ -6,7 +6,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{TrayIcon, TrayIconBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 use super::model::{Action, Bar, Row};
 
@@ -19,20 +19,38 @@ static LAST: Mutex<Option<(Bar, Vec<Row>)>> = Mutex::new(None);
 
 pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
     let _ = APP.set(app.clone());
-    let mut builder = TrayIconBuilder::new().on_menu_event(|app, event| {
-        let Some(i) = event
-            .id()
-            .as_ref()
-            .strip_prefix("a:")
-            .and_then(|i| i.parse::<usize>().ok())
-        else {
-            return;
-        };
-        let action = ACTIONS.lock().ok().and_then(|a| a.get(i).cloned());
-        if let Some(action) = action {
-            super::handle(app, action);
-        }
-    });
+    let mut builder = TrayIconBuilder::new()
+        // **左键打开主窗口，菜单只给右键。**这是 Windows 的惯例，和 macOS
+        // 那边「点一下就出菜单」故意不一致 —— 各随各的。
+        //
+        // Tauri 默认把菜单挂在左键上，所以这一行必须写出来。
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|app, event| {
+            // **认「松开」不认「按下」**：按下就动作的话，用户按住想拖一下
+            // 图标的位置也会把窗口叫出来。
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let _ = crate::show_main_window(app.app_handle());
+            }
+        })
+        .on_menu_event(|app, event| {
+            let Some(i) = event
+                .id()
+                .as_ref()
+                .strip_prefix("a:")
+                .and_then(|i| i.parse::<usize>().ok())
+            else {
+                return;
+            };
+            let action = ACTIONS.lock().ok().and_then(|a| a.get(i).cloned());
+            if let Some(action) = action {
+                super::handle(app, action);
+            }
+        });
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
