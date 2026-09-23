@@ -40,6 +40,11 @@ jobs:
     # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
     # 拿到的是一个能下载但打不开的文件，那比没有更糟。
     runs-on: macos-latest
+    # 发完把 cask 推给 tap 用的那把密钥（只对 homebrew-tap 一个仓库有推送权）。
+    # **写在 job 上，不写在步骤上** —— 步骤自己的 `env` 读不到它自己的 `if`，
+    # 而那一步要在没配密钥时整步跳过
+    env:
+      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -227,3 +232,35 @@ jobs:
             dist/ThinkWatch-Lite-*-arm64.dmg.sha256
             dist/latest.json
           generate_release_notes: true
+
+      # Homebrew 装的应用读的是 tap 里的 cask：**cask 没跟上之前，
+      # `brew upgrade` 什么也装不到**，那部分用户就一直停在上一版。所以发布
+      # 一完成就把 cask 推过去，而不是等 tap 每小时那一轮。
+      #
+      # 改 cask 的仍然是 tap 自己的脚本（`scripts/bump.sh`）：它照着刚发出去的
+      # release 取文件、亲手算校验值，和定时跑的是同一段代码。
+      #
+      # **推不动也不让发版失败**：密钥没配、被撤销、tap 一时连不上，最多是晚
+      # 一个小时 —— 那边的定时还在。
+      - name: The tap follows this release
+        if: env.TAP_DEPLOY_KEY != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/tap_key"
+          install -m 600 /dev/null "$KEY"
+          printf '%s\n' "$TAP_DEPLOY_KEY" >"$KEY"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:ThinkWatchProject/homebrew-tap.git "$RUNNER_TEMP/tap"
+          cd "$RUNNER_TEMP/tap"
+          bash scripts/bump.sh
+          if git diff --quiet; then
+            echo "cask 已经指着这一版了。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "thinkwatch-lite $VERSION"
+          git push
