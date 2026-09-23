@@ -116,6 +116,60 @@ const word = <T,>(table: Record<string, T>, key: string | undefined): T | undefi
   key === undefined ? undefined : table[key];
 
 /**
+ * 配置里一类东西的名字。core 发的是英文词（`upstream`、`price sheet`），
+ * 同一个词既进它的英文句子，也进 `args` 给这边挑中文。
+ */
+const KIND: Record<string, string> = {
+  upstream: "上游",
+  proxy: "代理",
+  "price sheet": "价目表",
+  route: "路由",
+  rule: "规则",
+  group: "策略组",
+  "gateway key": "网关密钥",
+  "redaction rule": "出站脱敏规则",
+  "tool-call rule": "工具调用审查规则",
+};
+
+/** 自定义规则属于哪一道防护（`config.rule_*` 的 `what`） */
+const RULE_LINE: Record<string, string> = {
+  redaction: "出站脱敏",
+  "tool-call": "工具调用审查",
+};
+
+/** 配置卡在哪一关（`config.rejected*` 的 `stage`） */
+const STAGE: Record<string, string> = {
+  syntax: "语法",
+  schema: "字段",
+  semantics: "语义",
+};
+
+/** 价目表里的哪一项价格（`pricing.sheet.bad_price` 的 `field`） */
+const PRICE_FIELD: Record<string, string> = {
+  "input price": "输入价格",
+  "output price": "输出价格",
+  "cache-read price": "缓存读取价格",
+  "cache-write price (5 minutes)": "缓存写入价格（5 分钟）",
+  "cache-write price (1 hour)": "缓存写入价格（1 小时）",
+  "long-context input price": "长上下文输入价格",
+  "long-context output price": "长上下文输出价格",
+};
+
+/**
+ * core 用反引号括名字（`` `官方`, `中转` ``），中文界面里名字用「」、并列用顿号。
+ * 只有名字的列表才这样换；夹着英文说明的引用列表（「rule `x` of route `y`」）原样显示。
+ */
+const names = (list: string | undefined): string => (list ?? "").replace(/`([^`]*)`/g, "「$1」").replace(/, /g, "、");
+
+/**
+ * 可选的前缀参数。**用 `in` 判断，不直接取值** —— 取一个不存在的参数会让整句
+ * 退回英文，而这两个参数本来就可有可无：同一个码，有时带着上游名或规则名，
+ * 有时不带（编辑对话框里就是正在改的那一个）。
+ */
+const inUpstream = (a: Args, s: string) => ("upstream" in a ? `上游「${a.upstream}」的凭据：${s}` : s);
+const inRule = (a: Args, s: string) => ("rule" in a ? `规则「${a.rule}」：${s}` : s);
+
+/**
  * 一条码怎么说成中文。
  *
  * **返回 `undefined` 就是「这句我说不出来」**，整句退回 core 给的英文。
@@ -151,6 +205,18 @@ const ZH: Record<string, Say> = {
     `连接 ${a.addr} 没有响应。请检查网络，或确认该地址是否需要经代理访问。`,
   "l1.tcp.unreachable": (a) => `无法访问 ${a.addr} 所在的网络，请检查本机网络。`,
   "l1.tcp.failed": (a) => `无法连接 ${a.addr}：${a.detail}`,
+  // 读写失败按系统给的种类说；其余种类（`l1.io`）只有系统原话，不在表里
+  "l1.io.refused": () => "连接被拒绝。",
+  "l1.io.reset": () => "连接被对端重置。",
+  "l1.io.aborted": () => "连接被中止。",
+  "l1.io.timed_out": () => "连接超时。",
+  "l1.io.addr_not_available": () => "该地址在本机不可用。",
+  "l1.io.not_found": () => "未找到目标。",
+  "l1.io.permission_denied": () => "操作系统不允许该连接，可能被防火墙或网络权限设置阻止。",
+  "l1.io.eof": () => "对端在响应前关闭了连接。",
+  "l1.io.broken_pipe": () => "发送数据时对端关闭了连接。",
+  "l1.io.host_unreachable": () => "无法访问该主机。",
+  "l1.io.network_unreachable": () => "无法访问该网络，请检查本机网络。",
   "l1.tls.bad_hostname": (a) => `${a.host} 不是有效的 TLS 主机名。`,
   "l1.tls.failed": (a) => `TLS 握手失败：${a.detail}`,
   "l1.tls.cert_expired": (a) =>
@@ -287,8 +353,18 @@ const ZH: Record<string, Say> = {
   "control.no_keys": () => "config.yaml 中尚无网关密钥，请先创建网关密钥，再接管客户端。",
   "control.key_create_failed": (a) => `无法创建网关密钥：${a.detail}`,
   "control.key_bind_failed": (a) => `无法记录密钥归属：${a.detail}`,
-  "control.name_empty": (a) => `${a.kind}名称不能为空。`,
-  "control.name_whitespace": (a) => `${a.kind}名称首尾不能包含空白。`,
+  "control.name_empty": (a) => {
+    const kind = word(KIND, a.kind);
+    return kind && `${kind}名称不能为空。`;
+  },
+  "control.name_whitespace": (a) => {
+    const kind = word(KIND, a.kind);
+    return kind && `${kind}名称首尾不能包含空白。`;
+  },
+  "control.name_reserved": (a) => {
+    const kind = word(KIND, a.kind);
+    return kind && `${kind}名称不能以 ${a.prefix} 开头，该前缀保留给内置项。`;
+  },
   "control.name_is_builtin": (a) => `「${a.name}」是内置选项的名称，请使用其他名称。`,
   "control.unsupported_value": (a) => `${a.kind}「${a.value}」不受支持。`,
   "control.unsupported_action": (a) => `不支持的操作「${a.action}」。`,
@@ -326,6 +402,253 @@ const ZH: Record<string, Say> = {
   "control.reset_cards_unreadable": (a) => `无法识别重置卡清单：${a.detail}`,
   "control.reset_card_result_unreadable": () => "无法识别使用重置卡的结果。",
   "control.bad_idempotency_key": () => "幂等键不能为空，且不超过 128 个字符。",
+  "control.device_code_unreadable": (a) => `无法识别设备码请求的响应：${a.detail}`,
+  "control.account_service_status": (a) => `账号服务返回 ${a.status}：${a.detail}`,
+  "control.account_service_not_json": (a) => `账号服务的响应不是 JSON：${a.detail}`,
+  "control.account_service_refused": (a) => `账号服务拒绝了请求：${a.why}`,
+  "control.unauthorized": () =>
+    "控制面需要启动时生成的令牌。桌面版会自动携带；自行编写的客户端需从配置目录中的 control.token 读取。",
+  "control.internal_error": (a) => `网关内部出错：${a.detail}`,
+  "control.records_unreadable": (a) => `无法读取请求记录：${a.detail}`,
+  "control.listen.bind_invalid": (a) =>
+    `bind 只能是 loopback、all、网卡名（如 en0）或地址（如 192.168.1.5），当前为 ${a.bind}。`,
+
+  // ── control：改配置时的失败 ────────────────────────────────────────
+  "control.config_stale": (a) =>
+    `版本不一致：本次修改基于 ${a.base}，当前版本为 ${a.current}。请刷新后重新修改。`,
+  "control.no_such_version": (a) => `版本历史中没有 ${a.version}。`,
+  "control.patch.no_entry": (a) =>
+    `${a.path} 中没有名为「${a.name}」的条目。列表条目按名称或序号查找。`,
+  "control.patch.not_an_entry": (a) =>
+    `${a.path} 没有指向列表中的某一项。删除时需指明条目，例如 /clients/codex。`,
+  "control.default_key_cannot_disable": () =>
+    "默认密钥不能停用。所有未单独接入网关的客户端都使用它，停用会使这些客户端全部无法使用。",
+  "control.default_key_cannot_delete": () =>
+    "默认密钥不能删除。所有未单独接入网关的客户端都使用它，删除后这些客户端将无法连接。",
+  "control.disabled_key_cannot_be_default": (a) => `网关密钥「${a.key}」已停用，不能设为默认密钥。`,
+  "control.key_used_by_client": (a) =>
+    `${a.client} 已接管到网关，其配置中使用了该密钥。请先还原该客户端，再删除密钥。`,
+  // 引用列表是 core 拼的英文说明（「rule `x` of route `y`」），原样显示
+  "control.key_in_use": (a) => `网关密钥「${a.key}」仍被 ${a.refs} 引用，请先移除这些引用再删除。`,
+  "control.upstream_in_use": (a) =>
+    `上游「${a.upstream}」仍被 ${a.refs} 引用，请先移除这些引用再删除。`,
+  "control.group_in_use": (a) => `策略组「${a.group}」仍被 ${a.refs} 引用，请先移除这些引用再删除。`,
+  "control.proxy_in_use": (a) =>
+    `代理「${a.proxy}」仍被上游${names(a.upstreams)}使用，请先解除关联再删除。`,
+  "control.sheet_in_use": (a) =>
+    `价目表「${a.sheet}」仍被上游${names(a.upstreams)}使用，请先解除关联再删除。`,
+  "control.default_route_cannot_delete": (a) =>
+    `路由「${a.route}」是默认路由，不能删除。请先将其他路由设为默认路由。`,
+  "control.reassign_to_deleted_route": (a) => `网关密钥不能改用正在删除的路由「${a.route}」。`,
+  "control.unknown_probe_class": (a) => `没有「${a.class}」这一类辅助请求。`,
+  "control.builtin_group_fixed": () => "每个上游的内置策略组随上游列表自动生成，不能编辑或删除。",
+  "control.route.duplicate_rule": (a) => `路由中有两条名为「${a.rule}」的规则。`,
+  "control.rule.condition_no_value": (a) => `规则「${a.rule}」：条件 ${a.field} 没有值。`,
+  "control.rule.condition_one_value": (a) => `规则「${a.rule}」：条件 ${a.field} 只能有一个值。`,
+  "control.rule.condition_twice": (a) => `规则「${a.rule}」：条件 ${a.field} 出现了两次。`,
+  "control.rule.condition_not_bool": (a) =>
+    `规则「${a.rule}」：条件 ${a.field} 只能是 true 或 false，当前为「${a.value}」。`,
+  "control.rule.no_such_key": (a) => `规则「${a.rule}」：不存在网关密钥「${a.key}」。`,
+  "control.rule.unknown_dialect": (a) => `规则「${a.rule}」：不支持客户端格式「${a.dialect}」。`,
+  "control.rule.no_such_probe_class": (a) =>
+    `规则「${a.rule}」：没有「${a.class}」这一类辅助请求。`,
+  "control.rule.no_such_upstream": (a) => `规则「${a.rule}」：不存在上游「${a.upstream}」。`,
+  "control.rule.unknown_condition": (a) => `规则「${a.rule}」：不支持条件 ${a.field}。`,
+  "control.rule.deny_needs_reason": (a) => `规则「${a.rule}」：拒绝时需要填写原因。`,
+  "control.rule.forward_and_deny": (a) => `规则「${a.rule}」不能同时转发和拒绝。`,
+  "control.group.name_is_upstream": (a) =>
+    `「${a.name}」已是上游的名称。规则按名称指向上游或策略组，两者不能同名。`,
+  "control.group.unknown_strategy": (a) => `不支持策略「${a.strategy}」。`,
+  "control.group.no_such_upstream": (a) => `不存在上游「${a.upstream}」。`,
+  "control.group.upstream_twice": (a) => `上游「${a.upstream}」重复。`,
+  "control.group.empty": () => "策略组至少需要一个上游。",
+  "control.group.preferred_not_member": (a) => `优先使用的上游「${a.upstream}」不在该策略组中。`,
+
+  // ── control.pricing：刷新默认价目表 ──────────────────────────────
+  "control.pricing.unreachable": (a) => `无法连接价格数据源：${a.detail}`,
+  "control.pricing.status": (a) => `价格数据源返回 HTTP ${a.status}。`,
+  "control.pricing.broke_off": (a) => `下载中断：${a.detail}`,
+  "control.pricing.too_large": (a) => `下载的文件超过 ${a.mb} MB，不是价格数据。`,
+  "control.pricing.not_a_dataset": (a) => `下载的内容不是价格数据：${a.detail}`,
+  "control.pricing.save_failed": (a) => `无法保存价目表：${a.detail}`,
+
+  // ── config：配置文件的读写与校验 ─────────────────────────────────
+  //
+  // 语法和字段错误的原话是 serde 的英文，这边只翻外面那一层（哪一关、第几行）
+  "config.rejected": (a) => {
+    const stage = word(STAGE, a.stage);
+    return stage && `配置有${stage}错误：${a.detail}`;
+  },
+  "config.rejected_at": (a) => {
+    const stage = word(STAGE, a.stage);
+    return stage && `配置第 ${a.line} 行有${stage}错误：${a.detail}`;
+  },
+  "config.schema_too_new": (a) =>
+    `配置的格式版本为 ${a.found}，当前 twcore 最高支持 ${a.supported}。请升级应用，或将配置改回旧格式。`,
+  "config.no_clients": () =>
+    "配置的 clients 中没有网关密钥，所有请求都会被拒绝。首次启动时会自动生成一把。",
+  "config.duplicate_upstream": (a) =>
+    `上游名称「${a.upstream}」重复。路由规则按名称引用上游，名称必须唯一。`,
+  "config.duplicate_key_name": (a) => `网关密钥名称「${a.key}」重复。`,
+  "config.duplicate_key_value": (a) =>
+    `网关密钥「${a.key}」和「${a.other}」的值相同。网关按密钥区分客户端，密钥的值必须唯一。`,
+  "config.default_key_missing": (a) => `default_key 指向的网关密钥「${a.key}」不存在。`,
+  "config.default_key_disabled": (a) =>
+    `默认网关密钥「${a.key}」已停用。所有未单独接入网关的客户端都使用它，停用会使这些客户端全部无法使用。`,
+  "config.duplicate_client_key": (a) =>
+    `网关密钥「${a.key}」和「${a.other}」都标记为客户端 ${a.client} 专用，一个客户端只能有一把。`,
+  "config.bad_base_url": (a) => `上游「${a.upstream}」的接口地址既不是 http 也不是 https：${a.url}`,
+  "config.empty_key": (a) => `网关密钥「${a.key}」的值为空。`,
+  "config.zero_concurrency": (a) =>
+    `网关密钥「${a.key}」的 max_concurrent 为 0，使用它的请求会一直等待。不限制并发时请删除 max_concurrent。`,
+  "config.name_collision": (a) =>
+    `「${a.name}」同时是上游和策略组的名称，规则的 to 无法区分指的是哪一个。请重命名其中一个。`,
+  "config.bad_allow_from": (a) =>
+    `listen.gateway.allow_from 中的 ${a.entry} 不是有效的 IP 地址或 CIDR，应写成 192.168.0.0/16 的形式。`,
+  "config.unknown_price_sheet": (a) => `上游「${a.upstream}」使用的价目表「${a.sheet}」不存在。`,
+  "config.empty_models_only": (a) =>
+    `上游「${a.upstream}」的模型范围（models_only）为空，不提供任何模型。暂停使用该上游请改为停用（disabled: true）。`,
+  "config.blank_models_only": (a) => `上游「${a.upstream}」的模型范围（models_only）中有空白项。`,
+  "config.reserved_name": (a) => {
+    const kind = word(KIND, a.what);
+    return kind && `${kind}名称「${a.name}」以 __ 开头，该前缀保留给内置项，请使用其他名称。`;
+  },
+  "config.rule_name_empty": (a) => {
+    const line = word(RULE_LINE, a.what);
+    return line && `有一条自定义${line}规则没有名称。`;
+  },
+  "config.rule_name_taken": (a) => {
+    const line = word(RULE_LINE, a.what);
+    return line && `自定义${line}规则名称「${a.name}」重复。`;
+  },
+  "config.rule_pattern_empty": (a) => {
+    const line = word(RULE_LINE, a.what);
+    return line && `自定义${line}规则「${a.name}」的正则表达式为空。`;
+  },
+  "config.rule_pattern_bad": (a) => {
+    const line = word(RULE_LINE, a.what);
+    return line && `自定义${line}规则「${a.name}」的正则表达式有误：${a.detail}`;
+  },
+  "config.unknown_rule": (a) => `security.${a.guard} 中的「${a.rule}」不是内置规则。`,
+  "config.store.read_failed": (a) => `无法读取 ${a.path}：${a.detail}`,
+  "config.store.missing": (a) => `${a.path} 不存在。`,
+  "config.store.conflict": (a) =>
+    `配置文件在此期间已被修改（当前版本 ${a.current}，本次修改基于 ${a.expected}），未覆盖。请查看当前内容后重试。`,
+  "config.edit.name_taken": (a) => {
+    const kind = word(KIND, a.what);
+    return kind && `已存在名为「${a.name}」的${kind}。`;
+  },
+  "config.edit.not_found": (a) => {
+    const kind = word(KIND, a.what);
+    return kind && `未找到名为「${a.name}」的${kind}。`;
+  },
+  "config.edit.nameless": (a) => {
+    const kind = word(KIND, a.what);
+    return kind && `${kind}没有名称。`;
+  },
+  "config.edit.multiline": () => "值中不能包含换行。",
+  "config.edit.parse": (a) => `无法解析配置文件：${a.detail}`,
+  "config.edit.unwritable": (a) => `该值无法写入配置：${a.detail}`,
+  "config.edit.self_check": (a) => `修改结果与预期不符（${a.detail}），未写入任何内容。`,
+
+  // ── config.credential：上游凭据的写法 ────────────────────────────
+  //
+  // 整份配置校验时多带一个 `upstream`（是哪个上游），编辑对话框里不带
+  "config.credential.empty_key": (a) => inUpstream(a, "API 密钥为空。"),
+  "config.credential.key_and_oauth": (a) => inUpstream(a, "key 和 oauth 只能填写其中一项。"),
+  "config.credential.empty_oauth": (a) => inUpstream(a, "oauth 的 refresh 和 endpoint 都不能为空。"),
+  "config.credential.claude_subscription": (a) =>
+    inUpstream(a, "不支持 Claude 订阅账号的登录凭据，请使用 Anthropic API 密钥。"),
+  "config.credential.google_subscription": (a) =>
+    inUpstream(a, "不支持 Gemini CLI 的 Google 登录凭据，请使用 Gemini API 密钥。"),
+  "config.credential.chatgpt_without_login": (a) =>
+    inUpstream(a, "ChatGPT 账号上游只接受登录获得的凭据。"),
+  "config.credential.identity_header": (a) =>
+    inUpstream(a, `请求头「${a.header}」如实说明请求的来源，由网关发送，不能在配置中设置。`),
+  "config.credential.too_many_headers": (a) => inUpstream(a, `请求头最多 ${a.max} 个。`),
+  "config.credential.bad_header_name": (a) =>
+    inUpstream(
+      a,
+      `请求头名称「${a.header}」无效：只能包含字母、数字和 - _ . ~，且不超过 ${a.max} 个字符。`,
+    ),
+  "config.credential.reserved_header": (a) =>
+    inUpstream(a, `请求头「${a.header}」由网关管理，不能在配置中设置。`),
+  "config.credential.duplicate_header": (a) =>
+    inUpstream(a, `请求头「${a.header}」重复（请求头名称不区分大小写）。`),
+  "config.credential.bad_header_value": (a) =>
+    inUpstream(a, `请求头「${a.header}」的值不能包含换行，且不超过 ${a.max} 个字符。`),
+  "config.credential.unknown_placeholder": (a) =>
+    inUpstream(
+      a,
+      `请求头「${a.header}」中的 ${a.placeholder} 无法识别，只支持 {{access_token}} 和 {{client}}。`,
+    ),
+  "config.credential.token_without_oauth": (a) =>
+    inUpstream(a, `请求头「${a.header}」使用了 {{access_token}}，但该上游未配置 oauth。`),
+  "config.credential.key_and_auth_header": (a) =>
+    inUpstream(
+      a,
+      `已填写 key，API 密钥会通过请求头「${a.header}」发送，不能再在请求头中设置「${a.header}」。`,
+    ),
+  "config.credential.oauth_and_auth_header": (a) =>
+    inUpstream(
+      a,
+      `配置 oauth 后，令牌默认通过请求头「${a.header}」发送。如需自行设置该请求头，请用 {{access_token}} 标明令牌的位置。`,
+    ),
+  "config.credential.no_token": (a) => inUpstream(a, "无法获取 OAuth 访问令牌。"),
+
+  // ── yaml：按字段改配置文件 ───────────────────────────────────────
+  "yaml.parse": (a) => `无法解析 YAML：${a.detail}`,
+  "yaml.not_found": (a) => `配置中找不到 ${a.path}。`,
+  "yaml.not_scalar": (a) => `${a.path} 不是标量，只有标量可以就地修改。`,
+  "yaml.self_check": (a) => `修改结果未通过自检，未写入任何内容：${a.detail}`,
+  "yaml.duplicate": (a) => `${a.path} 在配置中出现了多次，修改可能不会生效。请先手动删除重复项。`,
+  "yaml.block_scalar": (a) =>
+    `${a.path} 是多行块（| 或 >），无法自动修改，请直接编辑配置文件。`,
+  "yaml.anchor_or_alias": (a) =>
+    `${a.path} 位于 YAML 锚点或别名（&x / *x）中，修改会影响所有引用处，请直接编辑配置文件。`,
+
+  // ── engine：路由规则本身的问题 ───────────────────────────────────
+  "engine.no_match": () => "没有规则命中，且没有兜底规则。请在末尾添加一条不带条件的规则。",
+  "engine.phase_two_with_to": (a) =>
+    `规则「${a.rule}」同时设置了 provider_would_be 和 to。provider_would_be 要在选定上游之后才能判断，这类规则只能使用 set 或 deny。`,
+  "engine.no_action": (a) => `规则「${a.rule}」没有设置 to、deny 或 set，命中后不起作用。`,
+  "engine.unknown_target": (a) =>
+    `规则「${a.rule}」指向的「${a.target}」既不是上游也不是策略组。`,
+  "engine.empty_group": (a) => `策略组「${a.group}」中没有上游。`,
+  "engine.duplicate_group": (a) =>
+    `策略组名称「${a.group}」重复。规则按名称引用策略组，名称必须唯一。`,
+  "engine.duplicate_route": (a) =>
+    `路由名称「${a.route}」重复。网关密钥按名称绑定路由，名称必须唯一。`,
+  "engine.unknown_default_route": (a) =>
+    `default_route 指向的路由「${a.route}」不存在，未绑定路由的网关密钥将无法命中任何规则。`,
+  "engine.unknown_route": (a) => `网关密钥「${a.key}」绑定的路由「${a.route}」不存在。`,
+  // 比较式写错。在路由编辑对话框里多带一个 `rule`（是哪条规则）
+  "engine.compare.empty": (a) => inRule(a, `条件 ${a.field} 写法有误：比较式为空。`),
+  "engine.compare.no_operator": (a) =>
+    inRule(
+      a,
+      `条件 ${a.field} 写法有误：「${a.value}」缺少比较符，应以 > < >= <= = 之一开头，例如 ">200k"。`,
+    ),
+  "engine.compare.bad_number": (a) =>
+    inRule(a, `条件 ${a.field} 写法有误：无法解析「${a.value}」中的数字。`),
+  "engine.compare.bad_unit": (a) =>
+    inRule(
+      a,
+      `条件 ${a.field} 写法有误：无法识别「${a.value}」中的单位。支持 k（千）和 m（百万），金额写成 $2.5 的形式。`,
+    ),
+
+  // ── pricing.sheet：价目表的写法 ──────────────────────────────────
+  "pricing.sheet.empty_name": () => "价目表没有名称。",
+  "pricing.sheet.padded_name": (a) => `价目表名称「${a.sheet}」首尾不能包含空白。`,
+  "pricing.sheet.duplicate_name": (a) => `价目表名称「${a.sheet}」重复。`,
+  "pricing.sheet.bad_multiplier": (a) => `价目表「${a.sheet}」的倍率 ${a.value} 无效，倍率须大于 0。`,
+  "pricing.sheet.empty_model": (a) => `价目表「${a.sheet}」中有模型没有名称。`,
+  "pricing.sheet.bad_price": (a) => {
+    const field = word(PRICE_FIELD, a.field);
+    return field && `价目表「${a.sheet}」中模型 ${a.model} 的${field}为 ${a.value}，价格不能为负数。`;
+  },
+  "pricing.sheet.half_long_context": (a) =>
+    `价目表「${a.sheet}」中的模型 ${a.model} 需要同时填写长上下文输入价格和输出价格，或者都不填。`,
 
   // ── scan：静态扫描发现了什么 ────────────────────────────────────
   //
@@ -477,6 +800,24 @@ const ZH: Record<string, Say> = {
   "adopt.warn.symlink": (a) => `${a.path} 是符号链接，实际写入的文件为 ${a.real}。`,
   "adopt.warn.world_readable": (a) =>
     `${a.path} 的权限为 ${a.mode}，本机其他用户可以读取写入的密钥。可执行 chmod 600 ${a.path} 收紧权限。`,
+
+  // ── adopt：接管、还原、搬 MCP 时的失败 ──────────────────────────
+  "adopt.file.read_failed": (a) => `无法读取 ${a.path}：${a.detail}`,
+  "adopt.file.write_failed": (a) => `无法写入 ${a.path}：${a.detail}`,
+  "adopt.file.changed": (a) => `${a.path} 在确认之后被修改，未写入任何内容。请重新查看改动。`,
+  "adopt.file.verify_failed": (a) => `修改后的内容未通过校验，未写入任何内容（${a.detail}）。`,
+  "adopt.file.readback_mismatch": (a) => `写入后读回的内容与预期不符，已从备份还原：${a.path}`,
+  "adopt.file.link_loop": (a) => `符号链接层数过多：${a.path}`,
+  "adopt.plan.read_failed": (a) => `无法读取 ${a.client} 的配置 ${a.path}：${a.detail}`,
+  "adopt.plan.parse_failed": (a) => `无法解析 ${a.client} 的配置，未做任何修改：${a.detail}`,
+  "adopt.plan.foreign_record": (a) =>
+    `${a.path} 旁的接管记录属于 ${a.other}，而不是 ${a.client}，未做任何修改。`,
+  "adopt.plan.no_record": (a) =>
+    `没有 ${a.client} 的接管记录，无法还原。如需手动还原，请查看 ${a.path}。`,
+  "adopt.mcp.unknown_client": (a) => `未知的客户端「${a.client}」。`,
+  "adopt.mcp.parse_failed": (a) => `无法解析 ${a.client} 的 MCP 配置，未做任何修改：${a.detail}`,
+  "adopt.mcp.not_there": (a) => `${a.client} 中没有名为「${a.name}」的 MCP server。`,
+  "adopt.mcp.not_copyable": (a) => `${a.client} 的 MCP 配置格式尚未验证，不会写入。`,
 };
 
 /**
