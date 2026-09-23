@@ -1486,7 +1486,20 @@ fn autostart_enabled(app: tauri::AppHandle) -> bool {
         return false;
     }
     use tauri_plugin_autostart::ManagerExt;
-    matches!(app.autolaunch().is_enabled(), Ok(true))
+    if !matches!(app.autolaunch().is_enabled(), Ok(true)) {
+        return false;
+    }
+    // **插件说「开着」还不够。**Windows 的「设置 → 应用 → 启动」里关掉之后，
+    // 我们在 `Run` 下那一项原封不动，而插件只看那一项在不在 —— 见
+    // `autostart::disabled_by_windows`。
+    //
+    // 键名问 `package_info().name` 要，**和插件写进去时用的是同一个来源**
+    // （它就是这么取的），不是照着猜一个。
+    #[cfg(windows)]
+    if autostart::disabled_by_windows(&app.package_info().name) == Some(true) {
+        return false;
+    }
+    true
 }
 
 /// 开或关开机自启。
