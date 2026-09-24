@@ -92,7 +92,7 @@ export default function SecurityPage({
   const t = useText(securityPageText);
   const lt = useText(securityLabelsText);
   const [tab, setTab] = useState<SecurityTab>("log");
-  const detail = useResource<SecurityDetail>("security", () => api.detail(), { deps: [configVersion] });
+  const detail = useResource<SecurityDetail>("security-detail", () => api.detail(), { deps: [configVersion] });
   // 日志的区间放在这一层：页头的命中次数和日志是同一份
   const [range, setRange] = useRange("tw-security-range", "1d");
   const log = useSecurityLog(range, tick);

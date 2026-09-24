@@ -53,7 +53,13 @@ export function useSecurityLog(range: Range, tick: number): SecurityLog {
       const last = r.data?.events[r.data.events.length - 1];
       if (!last) return;
       const p = await api.events({ from_ms: windowStart(range), before: last.id, limit: PAGE });
-      r.mutate((prev) => ({ events: [...(prev?.events ?? []), ...p.events], more: p.more }));
+      // 读的这一会儿列表被重读过（来了新记录）：尾巴已经不是这一页接得上的那一条，
+      // 这一页不接，免得中间缺一段。再点一次就从新的尾巴往下读
+      r.mutate((prev) =>
+        prev && prev.events[prev.events.length - 1]?.id === last.id
+          ? { events: [...prev.events, ...p.events], more: p.more }
+          : (prev ?? p),
+      );
     });
 
   return { r, scope, loadMore, loadingMore };
