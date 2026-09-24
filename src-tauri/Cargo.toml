@@ -92,6 +92,13 @@ tempfile = "3.20"
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
+# 系统通知直接走 freedesktop 的 D-Bus 接口：能原地更新、撤回、点开落到对应页面（见
+# `notices/linux.rs`）。zbus 是 notify-rust 已经带进来的那一份，特性也和它一样，不多编一套；
+# gtk 是 Tauri 自己用的那一份，点通知时拿它把激活令牌交给窗口
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["async-io"] }
+gtk = "0.18"
+
 # 强杀 core 那一步：Windows 上没有 SIGKILL，用 TerminateProcess
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

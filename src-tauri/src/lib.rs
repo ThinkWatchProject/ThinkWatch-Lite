@@ -242,7 +242,11 @@ pub fn run() {
             } else {
                 Box::new(notices::SystemSink::new(handle.clone()))
             };
-            #[cfg(not(any(target_os = "macos", windows)))]
+            // Linux 上开发构建也用原生的：D-Bus 不挑发送方，见 `notices::linux`
+            #[cfg(target_os = "linux")]
+            let system: Box<dyn notices::Sink> =
+                Box::new(notices::linux::NativeSink::new(handle.clone()));
+            #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
             let system: Box<dyn notices::Sink> = Box::new(notices::SystemSink::new(handle.clone()));
             // 菜单栏在通知列表一变时要重画：它也是通知总线的一个投递端
             let menubar_wake = Arc::new(tokio::sync::Notify::new());

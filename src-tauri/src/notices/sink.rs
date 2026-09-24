@@ -23,14 +23,14 @@ pub trait Sink: Send + Sync {
 }
 
 /// 同一种的归在一起：键的种类（冒号前那段）。macOS 拿它做 thread，Windows 拿它做
-/// group —— **两边分组的依据只有这一份**
+/// group —— **两边分组的依据只有这一份**。Linux 的通知协议没有分组，用不上
 #[cfg(any(target_os = "macos", windows, test))]
 pub(crate) fn thread_of(key: &str) -> String {
     key.split(':').next().unwrap_or(key).to_string()
 }
 
 /// 原地更新时的标题：发生过不止一次的带上次数
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 pub(crate) fn counted_title(notice: &Notice) -> String {
     if notice.count > 1 {
         tr!(
@@ -65,10 +65,12 @@ impl Sink for AppSink {
 /// 系统通知的退路：`tauri-plugin-notification`。
 ///
 /// **装好的应用不走这里**，macOS 走 `macos::NativeSink`，Windows 走
-/// `windows::NativeSink`。这个插件在桌面端只能「发出即不管」—— 不能按 id 原地更新、
-/// 不能撤回、点了没有回调，所以 `update` 和 `withdraw` 是空的。留着它是给 `tauri dev`
-/// （macOS 上不在应用包里，Windows 上没有带 AUMID 的开始菜单快捷方式）和还没有原生
-/// 实现的平台用。
+/// `windows::NativeSink`，Linux 一律走 `linux::NativeSink`（连 `tauri dev` 也是：
+/// D-Bus 不要求发送方是装好的应用，而这个插件在 Linux 上走的也是同一条总线，
+/// 总线不通时它一样发不出去）。这个插件在桌面端只能「发出即不管」—— 不能按 id
+/// 原地更新、不能撤回、点了没有回调，所以 `update` 和 `withdraw` 是空的。留着它是给
+/// `tauri dev`（macOS 上不在应用包里，Windows 上没有带 AUMID 的开始菜单快捷方式）
+/// 和还没有原生实现的平台用。
 pub struct SystemSink {
     app: tauri::AppHandle,
 }
