@@ -10,7 +10,7 @@ import {
   insertIndex,
   liftShadowed,
   move,
-  routeSummary,
+  routeProblems,
   ruleProblem,
   splitCompare,
   usersOf,
@@ -139,19 +139,20 @@ describe("路由列表", () => {
       ],
     });
     expect(flowOf(r)).toEqual([
-      { rule: "禁用 Opus", target: null },
-      { rule: "兜底", target: "全部上游" },
+      { rule: "禁用 Opus", name: null, target: null },
+      { rule: "兜底", name: "__all__", target: "全部上游" },
     ]);
-    expect(routeSummary(r)).toEqual({ text: "4 条规则 · 1 条位于兜底规则之后，不会生效", warn: true });
-    expect(routeSummary(route({ has_catch_all: false, rules: [] })).text).toBe("0 条规则 · 尚无兜底规则");
+    expect(routeProblems(r)).toEqual(["1 条位于兜底规则之后，不会生效"]);
+    expect(routeProblems(route({ has_catch_all: false, rules: [] }))).toEqual(["尚无兜底规则"]);
+    expect(routeProblems(route({ rules: [view({ name: "兜底", to: "x", catch_all: true })] }))).toEqual([]);
   });
 
-  it("英文的规则数分单复数", () => {
+  it("英文的数量分单复数", () => {
     setLang("en");
-    expect(routeSummary(route({ rules: [view({ name: "a", to: "x", catch_all: true })] })).text).toBe("1 rule");
     const shadowed = [view({ name: "a", shadowed: true }), view({ name: "b", shadowed: true })];
-    expect(routeSummary(route({ has_catch_all: false, rules: shadowed })).text).toBe(
-      "2 rules · 2 are after the catch-all rule and have no effect · No catch-all rule yet",
-    );
+    expect(routeProblems(route({ has_catch_all: false, rules: shadowed }))).toEqual([
+      "2 are after the catch-all rule and have no effect",
+      "No catch-all rule yet",
+    ]);
   });
 });

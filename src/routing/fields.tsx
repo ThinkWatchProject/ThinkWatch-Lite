@@ -1,7 +1,7 @@
 /**
  * 路由页几个对话框共用的小件：带建议的模型输入、一排可切换的名称标签。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import {
@@ -12,7 +12,22 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/ui/combobox";
+import { Tip } from "@/ui/tip";
+import { Toggle } from "@/ui/toggle";
 import { fieldsText } from "./fields.i18n";
+
+/**
+ * 对话框打开时焦点落在哪（`onOpenAutoFocus`）。
+ *
+ * **打开一个已有的东西来编辑时，落在对话框本身。**落进名称框的话，名字被整段选中、
+ * 带一圈焦点框（WebKit 里脚本给的焦点照样画框），而点开它多半是来改别处的。新建时
+ * 照常落进第一个输入框。焦点仍在对话框里，Esc、Tab、读屏都照常。
+ */
+export function onOpenFocus(e: Event, onDialog: boolean) {
+  if (!onDialog) return;
+  e.preventDefault();
+  (e.currentTarget as HTMLElement | null)?.focus();
+}
 
 /**
  * 模型名：**自由输入 + 建议**。模型可能是刚发布的、也可能是中转自己起的，
@@ -81,44 +96,58 @@ export function ModelInput({
 }
 
 /**
- * 一排可切换的名称标签。**和价目表的「使用上游」是同一种控件**：选中的
- * 高亮，悬停可以看一句说明（比如它现在用的是哪条路由）。
+ * 一排可切换的名称标签（多选）。**和价目表的「使用上游」是同一种控件**：选中的
+ * 高亮，悬停可以看一句说明（比如它现在用的是哪条路由）。可以带一个标志（密钥是
+ * 客户端的标志，上游是厂商的标志）。
  */
 export function ToggleChips({
   options,
   value,
   onChange,
   mono = true,
+  label,
 }: {
-  options: { id: string; label?: string; title?: string }[];
+  options: { id: string; label?: string; title?: string; icon?: ReactNode }[];
   value: string[];
   /** 交出去的是更新函数：连点两个标签时，第二下基于第一下的结果 */
   onChange: (update: (prev: string[]) => string[]) => void;
   mono?: boolean;
+  /** 读屏读出来的这一组叫什么 */
+  label?: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
       {options.map((o) => {
         const on = value.includes(o.id);
-        return (
-          <button
+        const chip = (
+          <Toggle
             key={o.id}
-            type="button"
-            aria-pressed={on}
-            title={o.title}
-            onClick={() =>
+            variant="outline"
+            pressed={on}
+            onPressedChange={() =>
               onChange((prev) => (prev.includes(o.id) ? prev.filter((x) => x !== o.id) : [...prev, o.id]))
             }
             className={cn(
-              "rounded-md border px-2 py-0.5 tw-label transition-colors",
+              "h-6 min-w-0 gap-1 rounded-md px-2 font-normal transition-colors",
               mono && "font-mono",
               on
-                ? "border-foreground/30 bg-foreground/10 text-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
+                ? "border-foreground/30 bg-foreground/10 text-foreground hover:bg-foreground/15 aria-pressed:bg-foreground/10 data-[state=on]:bg-foreground/10"
+                : "border-border text-muted-foreground hover:bg-transparent hover:text-foreground",
             )}
+            // 字号走字阶的 tw-label。Toggle 自带的 text-sm 在样式表里排在自定义工具类后面，
+            // 写成类会被它盖掉
+            style={{ fontSize: "var(--fs-label)" }}
           >
+            {o.icon}
             {o.label ?? o.id}
-          </button>
+          </Toggle>
+        );
+        return o.title ? (
+          <Tip key={o.id} text={o.title}>
+            {chip}
+          </Tip>
+        ) : (
+          chip
         );
       })}
     </div>

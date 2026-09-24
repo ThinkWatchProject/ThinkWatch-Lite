@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, PlusIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -26,9 +28,11 @@ import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
 import type { ConditionField, ConditionView, KnownModel, Overview } from "@/types";
 import { globMatch } from "@/upstreams/glob";
-import { FormItem, Note, Segmented } from "@/upstreams/parts";
+import { Segmented } from "@/ui/segmented";
+import { FormItem, Note } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
-import { ModelInput, ToggleChips } from "./fields";
+import { ModelInput, ToggleChips, onOpenFocus } from "./fields";
+import { TargetIcon } from "./parts";
 import {
   COND_FIELDS,
   DIALECTS,
@@ -115,7 +119,10 @@ export function RuleDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[640px]">
+      <DialogContent
+        className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[640px]"
+        onOpenAutoFocus={(e) => onOpenFocus(e, !create)}
+      >
         <DialogHeader>
           <DialogTitle className="tw-title">{create ? rt.addRule : t.editTitle(initial.name)}</DialogTitle>
           <DialogDescription>{t.position(routeName, position)}</DialogDescription>
@@ -153,19 +160,18 @@ export function RuleDialog({
                   onRemove={() => set({ conditions: d.conditions.filter((_, j) => j !== i) })}
                 />
               ))}
-              {unrouted.length > 0 && (
-                <div className="flex flex-col gap-2 rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2">
-                  <Note tone="warning">{t.unrouted(unrouted.map(probeLabel))}</Note>
-                  <Field orientation="horizontal" className="w-auto">
-                    <Checkbox
-                      id="rule-route-probes"
-                      checked={routing}
-                      onCheckedChange={(v) => setRouteProbes(v === true)}
-                    />
-                    <FieldLabel htmlFor="rule-route-probes">{t.routeProbes}</FieldLabel>
-                  </Field>
-                </div>
-              )}
+              <Banner layout="inline" tone="warning" show={unrouted.length > 0} title={t.unrouted(unrouted.map(probeLabel))}>
+                <Field orientation="horizontal" className="mt-1.5 w-auto">
+                  <Checkbox
+                    id="rule-route-probes"
+                    checked={routing}
+                    onCheckedChange={(v) => setRouteProbes(v === true)}
+                  />
+                  <FieldLabel htmlFor="rule-route-probes" className="font-normal text-foreground">
+                    {t.routeProbes}
+                  </FieldLabel>
+                </Field>
+              </Banner>
               <AddCondition
                 used={d.conditions.map((c) => c.field)}
                 onAdd={(id) => set({ conditions: [...d.conditions, blankCondition(id)] })}
@@ -323,24 +329,25 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <div className="border-t border-border">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex h-9 w-full items-center gap-2 tw-body"
-      >
-        {open ? (
-          <ChevronDownIcon className="size-3.5 text-muted-foreground" />
-        ) : (
-          <ChevronRightIcon className="size-3.5 text-muted-foreground" />
-        )}
-        <span className="font-medium">{title}</span>
-        <span className="flex-1" />
-        {!open && <span className="truncate tw-label text-muted-foreground">{summary}</span>}
-      </button>
-      {open && <div className="flex flex-col gap-3 pb-3 pl-5.5">{children}</div>}
-    </div>
+    <Collapsible open={open} onOpenChange={onToggle} className="border-t border-border">
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="ghost"
+          className="h-9 w-full justify-start gap-2 rounded-none px-0 font-normal hover:bg-transparent aria-expanded:bg-transparent"
+        >
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 text-muted-foreground transition-transform duration-(--motion-fast) ease-(--motion-ease) motion-reduce:transition-none",
+              open && "rotate-90",
+            )}
+          />
+          <span className="font-medium">{title}</span>
+          <span className="flex-1" />
+          {!open && <span className="min-w-0 truncate tw-label text-muted-foreground">{summary}</span>}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-3 pb-3 pl-5.5 motion-fade">{children}</CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -392,6 +399,7 @@ function ConditionRow({
   onRemove: () => void;
 }) {
   const t = useText(ruleDialogText);
+  const ct = useText(commonText);
   const f = condField(c.field);
   const name = conditionName(c.field);
   const v0 = c.values[0] ?? "";
@@ -477,6 +485,7 @@ function ConditionRow({
         c.field === "intent" ? (
           <ToggleChips
             mono={false}
+            label={name}
             options={[
               { id: "assistant_internal", label: t.anyProbe },
               ...PROBES.map((p) => ({ id: p.id, label: p.label })),
@@ -486,7 +495,11 @@ function ConditionRow({
           />
         ) : (
           <ToggleChips
-            options={ov.providers.map((p) => ({ id: p.name }))}
+            label={name}
+            options={ov.providers.map((p) => ({
+              id: p.name,
+              icon: <TargetIcon name={p.name} providers={ov.providers} size={12} className="text-current" />,
+            }))}
             value={c.values}
             onChange={(u) => onChange({ ...c, values: u(c.values) })}
           />
@@ -500,14 +513,15 @@ function ConditionRow({
         <div className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2", f.kind === "many" && "pt-1")}>
           {control}
         </div>
+        {/* 写成字：对话框右上角的 × 是关闭，同一个面板里不能再有一个 × 表示删除 */}
         <Button
           variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground"
+          size="xs"
+          className="mt-1 text-muted-foreground"
           aria-label={t.removeCondition(name)}
           onClick={onRemove}
         >
-          <XIcon />
+          {ct.delete}
         </Button>
       </div>
       {hint && <p className="pl-26 tw-label text-muted-foreground">{hint}</p>}

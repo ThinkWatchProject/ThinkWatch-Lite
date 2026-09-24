@@ -9,9 +9,7 @@ export const probesTabText = messages(
     passthrough: "原样放行",
     passthroughWhat: "作为普通请求转发，按上游计费方式产生费用。",
     routed: "交给路由",
-    routedWhat: "按「路由」标签里的规则转发，可分流至费用更低的上游。",
-    /** 从「本地应答」改成「交给路由」时说清代价 */
-    nowCosts: "改为交给路由后，这一类请求将发送到上游并产生费用。",
+    routedWhat: "按「路由」标签里的规则转发，按转发到的上游产生费用，可分流至费用更低的上游。",
     ruleHint: "规则里的「辅助请求」条件只对设为「交给路由」的类别成立。",
   },
   {
@@ -23,9 +21,7 @@ export const probesTabText = messages(
     passthroughWhat: "Forwarded as an ordinary request, with costs according to the upstream's billing.",
     routed: "Use routing",
     routedWhat:
-      "Forwarded by the rules under the Routes tab, which can send it to a lower-cost upstream.",
-    nowCosts:
-      "Once it uses routing, this kind of request goes upstream and costs what the upstream charges.",
+      "Forwarded by the rules under the Routes tab, with costs according to the upstream it goes to; the rules can send it to a lower-cost upstream.",
     ruleHint:
       "The “Auxiliary request” condition in a rule only holds for the kinds set to “Use routing”.",
   },
