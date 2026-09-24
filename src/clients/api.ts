@@ -13,6 +13,7 @@ import type {
   CostGroup,
   FindingView,
   PlanView,
+  Retargeted,
 } from "@/types";
 
 export interface RestoreOutcome {
@@ -28,6 +29,8 @@ export const api = {
   adopt: (id: string) => invoke<AdoptResponse>("adopt_client", { id }),
   restore: (id: string) => invoke<AdoptResponse>("restore_client", { id }),
   restoreAll: () => invoke<RestoreOutcome[]>("restore_all"),
+  /** 连着远程时：还指着本机网关的，改为指向此刻连着的 core */
+  retarget: () => invoke<Retargeted>("retarget_clients"),
   diagnose: (id: string) => invoke<FindingView[]>("diagnose_client", { id }),
   /** 为这个客户端准备它的专用密钥：为它留着的，没有就新建一把绑给它。交回的是名字 */
   prepareKey: (id: string) => invoke<string>("prepare_client_key", { id }),

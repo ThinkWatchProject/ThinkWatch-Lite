@@ -16,7 +16,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { FormRow, FormRows } from "@/settings/form";
-import { connApi, type ConnectError, type Invalid, type Profile, type ServerInfo } from "./api";
+import { clientGateway, connApi, type ConnectError, type Invalid, type Profile, type ServerInfo } from "./api";
 import { connText } from "./connection.i18n";
 import { code, describeError } from "./describe";
 
@@ -209,7 +209,7 @@ export function ProfileDialog({
           </FormRow>
         </FormRows>
 
-        <TestResult result={result} testing={busy === "test" || busy === "switch"} />
+        <TestResult result={result} host={host.trim()} testing={busy === "test" || busy === "switch"} />
 
         {error && <p className="tw-body text-destructive">{error}</p>}
 
@@ -250,9 +250,12 @@ export function ProfileDialog({
 /** 试连的结果：成功一行，失败两行（发生了什么、下一步） */
 export function TestResult({
   result,
+  host,
   testing,
 }: {
   result: { ok: true; info: ServerInfo } | { ok: false; error: ConnectError } | null;
+  /** 连的是哪个主机。网关地址按它写，见 `clientGateway` */
+  host?: string;
   testing: boolean;
 }) {
   const t = useText(connText);
@@ -269,7 +272,10 @@ export function TestResult({
     return (
       <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 tw-body">
         <CheckIcon className="size-4 shrink-0 text-success" />
-        {t.testOk(result.info.core_version, result.info.gateway_addr)}
+        {t.testOk(
+          result.info.core_version,
+          host ? clientGateway(host, result.info.gateway_addr) : result.info.gateway_addr,
+        )}
       </div>
     );
   }

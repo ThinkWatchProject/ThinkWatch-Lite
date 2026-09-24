@@ -13,14 +13,20 @@ import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
+import { toast } from "sonner";
+import type { Retargeted } from "@/types";
 import { connApi, type Adopted, type ConnectError, type Profile, type ServerInfo, type SwitchError } from "./api";
 import { connText } from "./connection.i18n";
 import { TestResult } from "./ProfileDialog";
+import { RetargetReport } from "./Remote";
+import { remoteText } from "./remote.i18n";
 
 type Stage =
   | { kind: "testing" }
   | { kind: "failed"; error: ConnectError | null; text: string | null }
-  | { kind: "confirm"; info: ServerInfo; adopted: Adopted | null };
+  | { kind: "confirm"; info: ServerInfo; adopted: Adopted | null }
+  /** 已经切过去了，勾了改指向、有没改成的：逐个说完再关 */
+  | { kind: "retargeted"; result: Retargeted };
 
 /**
  * 切到一条远程连接（设计稿 ④）。
@@ -44,6 +50,7 @@ export function SwitchDialog({
   onEdit: (p: Profile) => void;
 }) {
   const t = useText(connText);
+  const rt = useText(remoteText);
   const common = useText(commonText);
   const [stage, setStage] = useState<Stage>(
     tested ? { kind: "confirm", info: tested, adopted: null } : { kind: "testing" },
@@ -90,7 +97,13 @@ export function SwitchDialog({
   async function commit() {
     setBusy(true);
     try {
-      await connApi.switchTo(target.id, retarget);
+      const done = await connApi.switchTo(target.id, retarget);
+      const r = done.retargeted;
+      if (r && r.failed.length > 0) {
+        if (alive.current) setStage({ kind: "retargeted", result: r });
+        return;
+      }
+      if (r && r.synced.length > 0) toast.success(rt.retargeted(target.name, r.synced.map((s) => s.name)));
       onClose();
     } catch (e) {
       const err = e as SwitchError;
@@ -113,7 +126,9 @@ export function SwitchDialog({
       ? t.testingTitle(target.name)
       : stage.kind === "failed"
         ? t.failedTitle(target.name)
-        : t.confirmTitle(target.name);
+        : stage.kind === "retargeted"
+          ? t.switchedTo(target.name)
+          : t.confirmTitle(target.name);
   const adopted = stage.kind === "confirm" ? stage.adopted : null;
 
   return (
@@ -131,6 +146,8 @@ export function SwitchDialog({
           ) : (
             <p className="tw-body text-destructive">{stage.text}</p>
           ))}
+
+        {stage.kind === "retargeted" && <RetargetReport name={target.name} result={stage.result} />}
 
         {stage.kind === "confirm" && (
           <ul className="flex flex-col gap-3 tw-body">
@@ -171,9 +188,13 @@ export function SwitchDialog({
               {t.editConnection}
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose}>
-            {stage.kind === "failed" ? common.close : common.cancel}
-          </Button>
+          {stage.kind === "retargeted" ? (
+            <Button onClick={onClose}>{common.close}</Button>
+          ) : (
+            <Button variant="ghost" onClick={onClose}>
+              {stage.kind === "failed" ? common.close : common.cancel}
+            </Button>
+          )}
           {stage.kind === "confirm" && (
             <Button disabled={busy} onClick={() => void commit()}>
               {busy && <Spinner />}

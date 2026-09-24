@@ -24,6 +24,9 @@ import { chatgptLoginText } from "./ChatgptLoginDialog.i18n";
 import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
 import { FormItem } from "./parts";
 import { freeName } from "./upstreamForm";
+import { useSystemProxyLabel } from "@/connection/Remote";
+import { useRemote } from "@/connection/useRemote";
+import { remoteText } from "@/connection/remote.i18n";
 
 /** 登录还没结果时，多久问一次 core。事件是主路，这是它的兜底 */
 const POLL_MS = 2_000;
@@ -56,6 +59,13 @@ export function ChatgptLoginDialog({
   onSaved: (name: string) => void;
 }) {
   const t = useText(chatgptLoginText);
+  const systemProxy = useSystemProxyLabel(t.systemProxy);
+  /**
+   * 连着远程 core 时**只给设备码**：浏览器登录的回调只能回到 core 那台机器的
+   * 1455 / 1457 端口，而浏览器开在这台机器上
+   */
+  const remote = useRemote();
+  const rt = useText(remoteText);
   const common = useText(commonText);
   const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
@@ -205,7 +215,7 @@ export function ChatgptLoginDialog({
                   onChange={(e) => setProxy(e.target.value)}
                 >
                   <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
-                  <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
+                  <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
                   {proxies.map((x) => (
                     <NativeSelectOption key={x.name} value={x.name}>
                       {x.name} · {proxyKindLabel(x.kind)} {x.addr}
@@ -214,6 +224,8 @@ export function ChatgptLoginDialog({
                 </NativeSelect>
               </FormItem>
             </div>
+
+            {remote && <p className="tw-label text-muted-foreground">{rt.deviceOnly(remote.name)}</p>}
 
             {/* 勾选框和文字**分开挂**：套在一个 label 里点一下会切换两次，等于点不动 */}
             {!relogin && (
@@ -309,19 +321,28 @@ export function ChatgptLoginDialog({
               </Button>
               {phase.at === "form" && (
                 <>
-                  {/* 次要的那条路先摆：主按钮留在最右边 */}
-                  <Button
-                    variant="outline"
-                    onClick={() => void start("device")}
-                    disabled={!canStart}
-                  >
-                    <SmartphoneIcon />
-                    {t.otherDevice}
-                  </Button>
-                  <Button onClick={() => void start("browser")} disabled={!canStart}>
-                    {busy ? <Spinner /> : <ExternalLinkIcon />}
-                    {t.thisComputer}
-                  </Button>
+                  {remote ? (
+                    <Button onClick={() => void start("device")} disabled={!canStart}>
+                      {busy ? <Spinner /> : <SmartphoneIcon />}
+                      {rt.signInWithCode}
+                    </Button>
+                  ) : (
+                    <>
+                      {/* 次要的那条路先摆：主按钮留在最右边 */}
+                      <Button
+                        variant="outline"
+                        onClick={() => void start("device")}
+                        disabled={!canStart}
+                      >
+                        <SmartphoneIcon />
+                        {t.otherDevice}
+                      </Button>
+                      <Button onClick={() => void start("browser")} disabled={!canStart}>
+                        {busy ? <Spinner /> : <ExternalLinkIcon />}
+                        {t.thisComputer}
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
             </>

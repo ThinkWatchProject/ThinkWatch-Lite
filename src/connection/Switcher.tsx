@@ -11,7 +11,7 @@ import {
 import { IconLocal, IconRemote } from "@/ui/icons";
 import { Tip } from "@/ui/tip";
 import { textOf, useText } from "@/i18n";
-import { currentProfile, type ConnView, type Profile } from "./api";
+import { clientGateway, currentProfile, type ConnView, type Profile } from "./api";
 import { connText } from "./connection.i18n";
 import { useConnections } from "./ConnectionProvider";
 import { profileName } from "./describe";
@@ -25,7 +25,11 @@ export function remoteStatus(v: ConnView): { text: string; tone: Tone; addr: str
   switch (v.link.kind) {
     case "connected":
       // 连上之后写服务器的网关地址：客户端要连的是它
-      return { text: t.connected, tone: "ok", addr: v.link.info.gateway_addr ?? p?.addr ?? null };
+      return {
+        text: t.connected,
+        tone: "ok",
+        addr: clientGateway(p?.host ?? "", v.link.info.gateway_addr) ?? p?.addr ?? null,
+      };
     case "connecting":
       return { text: t.connecting, tone: "warn", addr: p?.addr ?? null };
     default:

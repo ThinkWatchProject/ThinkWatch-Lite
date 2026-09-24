@@ -110,6 +110,7 @@ export const connText = messages(
     testingTitle: (name: string) => `正在连接 ${name}…`,
     failedTitle: (name: string) => `无法切换到 ${name}`,
     confirmTitle: (name: string) => `切换到 ${name}？`,
+    switchedTo: (name: string) => `已切换到 ${name}`,
     adoptedWarn: (n: number, addr: string) => `已接管的 ${n} 个客户端仍指向本机网关 ${addr}。`,
     adoptedWarnNext: (name: string) =>
       `切换后本机网关停止，这些客户端的请求会失败，直到重新连接本机，或在客户端页将它们改为指向 ${name}。`,
@@ -119,7 +120,6 @@ export const connText = messages(
     remoteConfig: (name: string) => `切换后，上游、路由、密钥等页面显示和修改的是 ${name} 上的配置。`,
     switchAction: "切换",
     editConnection: "编辑连接",
-    retargetFailed: "客户端未能改为指向服务器，可在客户端页逐个修改。",
     keychainFailed: `无法从${vaultZh}中读取密钥`,
     gone: "该连接已被删除。",
 
@@ -248,6 +248,7 @@ export const connText = messages(
     testingTitle: (name: string) => `Connecting to ${name}…`,
     failedTitle: (name: string) => `Cannot switch to ${name}`,
     confirmTitle: (name: string) => `Switch to ${name}?`,
+    switchedTo: (name: string) => `Switched to ${name}`,
     adoptedWarn: (n: number, addr: string) =>
       n === 1
         ? `1 connected client still points to the local gateway ${addr}.`
@@ -261,7 +262,6 @@ export const connText = messages(
       `After the switch, the Upstreams, Routing, Keys and other pages show and change the config on ${name}.`,
     switchAction: "Switch",
     editConnection: "Edit connection",
-    retargetFailed: "The clients could not be pointed at the server. They can be changed one by one on the Clients page.",
     keychainFailed: `The key could not be read from ${vaultEn}`,
     gone: "This connection has been deleted.",
 

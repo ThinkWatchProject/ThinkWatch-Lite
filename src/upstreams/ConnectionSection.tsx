@@ -6,6 +6,8 @@ import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
+import { useRemote } from "@/connection/useRemote";
+import { remoteText } from "@/connection/remote.i18n";
 import { HeaderEditor, type AuthRow } from "./HeaderEditor";
 import {
   AUTH_MODES,
@@ -52,6 +54,9 @@ export function ConnectionSection({
   onZaiLogin: () => void;
 }) {
   const t = useText(connectionSectionText);
+  // 连着远程 core 时 `${变量名}` 取的是服务器上 core 进程的环境
+  const rt = useText(remoteText);
+  const remote = useRemote();
   const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
   const autoProtocol = !form.baseUrl.trim()
@@ -169,7 +174,7 @@ export function ConnectionSection({
         <OAuth form={form} set={set} />
       )}
 
-      <FormItem label={t.headers} hint={t.headersHint}>
+      <FormItem label={t.headers} hint={remote ? rt.headersHint : t.headersHint}>
         <HeaderEditor
           form={form}
           set={set}

@@ -5,6 +5,7 @@
  * 密钥不在这里：添加、更换时从对话框递过去一次，之后再也拿不回来。
  */
 import { invoke } from "@tauri-apps/api/core";
+import type { Retargeted } from "@/types";
 
 /** 本机那一条的 id */
 export const LOCAL = "local";
@@ -97,6 +98,12 @@ export interface Adopted {
   local_addr: string | null;
 }
 
+/** 切换做完了。勾了「同时将这些客户端改为指向…」的，带着改的结果 */
+export interface Switched {
+  view: ConnView;
+  retargeted: Retargeted | null;
+}
+
 export const connApi = {
   view: () => invoke<ConnView>("connections"),
   setStartup: (startup: Startup) => invoke<ConnView>("set_connection_startup", { startup }),
@@ -105,7 +112,7 @@ export const connApi = {
   remove: (id: string) => invoke<ConnView>("delete_connection", { id }),
   preflight: () => invoke<Adopted>("switch_preflight"),
   switchTo: (id: string, retargetClients: boolean) =>
-    invoke<ConnView>("switch_connection", { id, retargetClients }),
+    invoke<Switched>("switch_connection", { id, retargetClients }),
   retry: () => invoke<void>("retry_connection"),
   pick: (id: string, then: string | null) => invoke<void>("pick_connection", { id, then }),
 };
@@ -113,4 +120,37 @@ export const connApi = {
 /** 当前那一条 */
 export function currentProfile(v: ConnView): Profile | undefined {
   return v.profiles.find((p) => p.id === v.current);
+}
+
+/** 连着的远程 core：名字、这台机器够到它的地址、它的 core 版本（连上了才有） */
+export interface RemoteCore {
+  name: string;
+  host: string;
+  /** 控制端口那个地址，`host:port` */
+  addr: string;
+  core: string | null;
+}
+
+/** 连着的是远程时是它，连本机（或者还没读到连接列表）时是 null */
+export function remoteOf(v: ConnView | null): RemoteCore | null {
+  const p = v ? currentProfile(v) : undefined;
+  if (!v || !p || p.local) return null;
+  return {
+    name: p.name,
+    host: p.host ?? "",
+    addr: p.addr ?? "",
+    core: v.link.kind === "connected" ? v.link.info.core_version : null,
+  };
+}
+
+/**
+ * 客户端该连的服务器网关：**这台机器连服务器用的那个主机** + 服务器网关的端口。
+ * 服务器报的监听地址可能是 `0.0.0.0:8788`，写给客户端是连不上的。和 Rust 侧
+ * `clients::gateway_host` 同一个取法
+ */
+export function clientGateway(host: string, gatewayAddr: string | null): string | null {
+  if (!gatewayAddr) return null;
+  const port = gatewayAddr.slice(gatewayAddr.lastIndexOf(":") + 1);
+  const h = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return h && port ? `${h}:${port}` : gatewayAddr;
 }

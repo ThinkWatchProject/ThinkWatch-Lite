@@ -54,5 +54,7 @@ export function reasonText(reason: Reason | undefined, t: typeof clientsText.zh)
       return t.silent;
     case "restart":
       return t.restart;
+    case "local":
+      return t.pointsAtLocal(hostOf(reason.endpoint));
   }
 }
