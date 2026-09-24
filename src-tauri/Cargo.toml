@@ -65,6 +65,11 @@ strip = "symbols"
 # panic，而 abort 会让那层防护失效。
 panic = "unwind"
 
+# 开发和测试构建只留行号表：报错和 panic 仍能指到文件和行，变量级调试信息不要。
+# 每个集成测试都是链接整个 crate 的独立二进制，带完整调试信息时 target/ 会涨到上百 GB。
+[profile.dev]
+debug = "line-tables-only"
+
 # 系统通知走 UNUserNotificationCenter：能原地更新、撤回、点开落到对应页面（见
 # `notices/macos.rs`）。版本跟着 Tauri 自己用的那一套
 [target.'cfg(target_os = "macos")'.dependencies]
