@@ -13,6 +13,7 @@ import { EmptyState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { usd, type Overview, type PricingStatus, type ProviderView } from "@/types";
@@ -251,14 +252,16 @@ export default function UpstreamsPage({
       <>
         {providers.length > 0 && (
           <>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "link", provider: null })}>
-              <ActivityIcon />
-              {t.linkTest}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "speed", provider: null })}>
-              <ZapIcon />
-              {t.speedTest}
-            </Button>
+            <HeaderAction
+              icon={<ActivityIcon />}
+              label={t.linkTest}
+              onClick={() => setDialog({ kind: "link", provider: null })}
+            />
+            <HeaderAction
+              icon={<ZapIcon />}
+              label={t.speedTest}
+              onClick={() => setDialog({ kind: "speed", provider: null })}
+            />
           </>
         )}
         <Button size="sm" onClick={createUpstream}>
@@ -269,20 +272,17 @@ export default function UpstreamsPage({
     ) : tab === "proxies" ? (
       <>
         {proxies.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
+          <HeaderAction
+            icon={<ActivityIcon />}
+            label={t.checkAll}
             pending={checkingAll}
             onClick={() =>
-              checkAll(async () => {
+              void checkAll(async () => {
                 // 逐个检测：并发时各自的握手耗时互相干扰
                 for (const x of proxies) await testProxy(x.name);
               })
             }
-          >
-            {!checkingAll && <ActivityIcon />}
-            {t.checkAll}
-          </Button>
+          />
         )}
         <Button size="sm" onClick={createProxy}>
           <PlusIcon />
@@ -300,10 +300,12 @@ export default function UpstreamsPage({
           />
           {t.autoUpdate}
         </label>
-        <Button variant="outline" size="sm" pending={updatingPrices} onClick={() => void refreshPrices()}>
-          {!updatingPrices && <RefreshCwIcon />}
-          {t.updateNow}
-        </Button>
+        <HeaderAction
+          icon={<RefreshCwIcon />}
+          label={t.updateNow}
+          pending={updatingPrices}
+          onClick={() => void refreshPrices()}
+        />
         <Button size="sm" onClick={() => setDialog({ kind: "sheet", mode: { kind: "create" } })}>
           <PlusIcon />
           {t.newSheet}
@@ -313,7 +315,8 @@ export default function UpstreamsPage({
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as UpstreamTab)} className="gap-0">
-      <Page>
+      {/* 具名容器：页头的次要操作按这一页有多宽决定写不写字（见 `HeaderAction`） */}
+      <Page className="@container/page">
         <PageHeader
           title={t.title}
           summary={providers.length > 0 ? <Hero providers={providers} stats={stats} /> : undefined}
@@ -587,7 +590,7 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
     <>
       <Fact>{t.hero.upstreams(<Num value={providers.length} />, providers.length)}</Fact>
       <Fact lead={<StatusDot tone="ok" />}>{t.hero.healthy(<Num value={enabled.length - attention} />)}</Fact>
-      {attention > 0 && <Fact lead={<StatusDot tone="error" />}>{t.hero.attention(<Num value={attention} />)}</Fact>}
+      {attention > 0 && <Fact lead={<StatusDot tone="error" />}>{t.hero.attention(<Num value={attention} />, attention)}</Fact>}
       {disabled > 0 && <Fact lead={<StatusDot tone="idle" />}>{t.hero.disabled(<Num value={disabled} />)}</Fact>}
       {day ? (
         <>
@@ -597,6 +600,47 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
       ) : (
         stats.loading && <Skeleton className="h-3 w-40 rounded-sm" />
       )}
+    </>
+  );
+}
+
+/**
+ * 页头上的一个次要操作（测速、检测全部、立即更新）。
+ *
+ * **这一页窄了就只画图标**，名称进悬停：小窗口里三个带字的按钮会把左边的摘要挤成
+ * 三四行，英文尤甚。两份都在，按容器宽度只显示其中一份 —— 不用量宽度，也没有
+ * 「先画宽的、量完再换窄的」那一下闪；藏起来的那份不进读屏、不进 Tab 顺序。
+ * 主操作（新建）始终写字。
+ */
+function HeaderAction({
+  icon,
+  label,
+  pending = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  pending?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <>
+      <Button variant="outline" size="sm" pending={pending} className="@max-[46rem]/page:hidden" onClick={onClick}>
+        {!pending && icon}
+        {label}
+      </Button>
+      <Tip text={label}>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          pending={pending}
+          aria-label={label}
+          className="hidden @max-[46rem]/page:inline-flex"
+          onClick={onClick}
+        >
+          {!pending && icon}
+        </Button>
+      </Tip>
     </>
   );
 }
@@ -618,7 +662,8 @@ function Num({ value, format }: { value: number; format?: (n: number) => ReactNo
 
 /**
  * 价目表标签顶上的几条：默认价目表读不到状态、上一次更新失败、最近有请求无法计价。
- * 都是持续成立的事，用横幅，不用吐司。
+ * 都是持续成立的事，用横幅，不用吐司。读不到状态和「上游」标签读不到统计一样是
+ * 琥珀：列表照常能用，只是少了几个数。
  */
 function PricingNotices({
   ov,
@@ -642,7 +687,7 @@ function PricingNotices({
       <Banner
         show={status.error !== undefined && s === undefined}
         layout="inline"
-        tone="error"
+        tone="warning"
         title={t.statusFailed}
         actions={
           <Button variant="outline" size="sm" pending={status.loading} onClick={() => void status.reload()}>
@@ -652,10 +697,14 @@ function PricingNotices({
       >
         {status.error !== undefined ? errorText(status.error) : null}
       </Banner>
+      {/*
+        更新失败时仍按上一次拉到的价格计价（琥珀）；**一次都没拉到过**才是真坏了 ——
+        那时按量计费的请求全都无法计价（红）
+      */}
       <Banner
         show={!!s?.error}
         layout="inline"
-        tone="error"
+        tone={s?.source === "empty" ? "error" : "warning"}
         title={t.updateFailedTitle}
         actions={
           <Button variant="outline" size="sm" pending={updating} onClick={onUpdate}>

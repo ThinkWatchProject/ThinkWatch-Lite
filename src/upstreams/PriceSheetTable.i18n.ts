@@ -27,7 +27,7 @@ export const priceSheetTableText = messages(
     name: "Name",
     basis: "Based on",
     multiplier: "Multiplier",
-    overrides: "Model overrides",
+    overrides: "Overrides",
     usedBy: "Used by",
     actionsColumn: "Actions",
     defaultSheet: "Default price sheet",

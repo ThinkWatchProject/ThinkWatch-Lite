@@ -42,7 +42,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { PRICE_COLUMNS, errorText, perMillion, priceSourceLabel } from "./labels";
-import { Boxed, DialogError, FormItem, Note } from "./parts";
+import { Boxed, DialogError, FormItem, Note, UpstreamChips } from "./parts";
 import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
 import { defaultSheetUsers } from "./PriceSheetTable";
 
@@ -618,9 +618,8 @@ export function PriceSheetDialog({
             <div className="flex flex-col gap-2">
               <span className="tw-body font-medium">{t.usedByTitle}</span>
               {readOnly ? (
-                <span className="tw-body">
-                  {usedBy.length ? t.names(usedBy) : <span className="text-muted-foreground">{t.notUsed}</span>}
-                </span>
+                // 和价目表列表「使用上游」那一列一样：名字带标志
+                <UpstreamChips names={usedBy} providers={ov.providers} empty={t.notUsed} />
               ) : perTokenProviders.length === 0 ? (
                 <Note>{t.noPerToken}</Note>
               ) : (

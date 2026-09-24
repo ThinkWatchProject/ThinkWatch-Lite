@@ -12,7 +12,7 @@ export const upstreamsPageText = messages(
     hero: {
       upstreams: (n: ReactNode, _count: number) => <>{n} 个上游</>,
       healthy: (n: ReactNode) => <>{n} 正常</>,
-      attention: (n: ReactNode) => <>{n} 需处理</>,
+      attention: (n: ReactNode, _count: number) => <>{n} 需处理</>,
       disabled: (n: ReactNode) => <>{n} 已停用</>,
       requests: (n: ReactNode, _count: number) => <>24 小时 {n} 次请求</>,
       cost: (n: ReactNode) => <>费用 {n}</>,
@@ -60,7 +60,7 @@ export const upstreamsPageText = messages(
     hero: {
       upstreams: (n: ReactNode, count: number) => <>{n} {count === 1 ? "upstream" : "upstreams"}</>,
       healthy: (n: ReactNode) => <>{n} healthy</>,
-      attention: (n: ReactNode) => <>{n} need attention</>,
+      attention: (n: ReactNode, count: number) => <>{n} {count === 1 ? "needs" : "need"} attention</>,
       disabled: (n: ReactNode) => <>{n} disabled</>,
       requests: (n: ReactNode, count: number) => <>{n} {count === 1 ? "request" : "requests"} in 24 h</>,
       cost: (n: ReactNode) => <>Cost {n}</>,

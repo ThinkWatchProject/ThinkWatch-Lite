@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
-import { StatusLabel, type StatusTone } from "@/ui/status-dot";
+import { StatusDot, StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
 import { resetAt } from "@/format";
@@ -108,7 +108,7 @@ export function UpstreamTable({
             <TableHead className="w-full">{t.upstream}</TableHead>
             <TableHead className="text-right">{t.models}</TableHead>
             {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
-            <TableHead className="w-40">{t.quota}</TableHead>
+            <TableHead className="w-40 @max-[50rem]:w-32">{t.quota}</TableHead>
             <TableHead className="text-right">{t.day}</TableHead>
             <TableHead className="text-right">{t.ttfb}</TableHead>
             <TableHead className="w-9">
@@ -221,10 +221,18 @@ function NameCell({
           tile
         )}
         <div className="min-w-0 flex-1">
+          {/*
+            名字排第一。表格那一栏窄了（小窗口、英文）时，套餐标签先收起来，状态只留
+            一个点（悬停照样看得到是什么）—— 不然名字会被挤得一个字都不剩
+          */}
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn("truncate font-medium", p.disabled && "text-muted-foreground")}>{p.name}</span>
             {/* 订阅类账号：套餐决定了额度有多大，和名字放在一起看 */}
-            {plan && <Badge variant="outline">{plan}</Badge>}
+            {plan && (
+              <Badge variant="outline" className="@max-[50rem]:hidden">
+                {plan}
+              </Badge>
+            )}
             {problem && (
               <Tip
                 text={
@@ -235,10 +243,15 @@ function NameCell({
                   </div>
                 }
               >
-                <span className="shrink-0">
-                  <StatusLabel tone={problem.tone} muted={problem.tone === "idle"}>
+                <span className="inline-flex shrink-0">
+                  <StatusLabel
+                    tone={problem.tone}
+                    muted={problem.tone === "idle"}
+                    className="@max-[50rem]:hidden"
+                  >
                     {problem.label}
                   </StatusLabel>
+                  <StatusDot tone={problem.tone} label={problem.label} className="hidden @max-[50rem]:inline-block" />
                 </span>
               </Tip>
             )}
@@ -440,7 +453,8 @@ function DayCell({
     </div>
   );
   return (
-    <TableCell className="text-right">
+    // 停用的上游：一天里的数照常给（它停用之前在用），但和整行一起退成次要色
+    <TableCell className={cn("text-right", p.disabled && "text-muted-foreground")}>
       <Tip text={tip}>
         {/*
           走势贴左、数字贴右，撑满这一格：各行的走势左边对齐、数字右边对齐，
@@ -476,7 +490,7 @@ function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamSt
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
   return (
-    <TableCell className="text-right">
+    <TableCell className={cn("text-right", p.disabled && "text-muted-foreground")}>
       <Tip text={t.latencyTip(lat.p95, lat.samples)}>
         <span className="tw-num">{t.ms(lat.p50)}</span>
       </Tip>

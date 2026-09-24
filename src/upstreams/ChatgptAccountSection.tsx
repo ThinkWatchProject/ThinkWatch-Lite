@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSystemProxyLabel } from "@/connection/Remote";
-import { CircleAlertIcon, RefreshCwIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { RefreshCwIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
@@ -238,11 +238,9 @@ export function ChatgptAccountSection({
             <AlertDialogTitle>{t.confirmTitle}</AlertDialogTitle>
             <AlertDialogDescription>{t.confirmDesc}</AlertDialogDescription>
           </AlertDialogHeader>
-          <Alert variant="warning">
-            <CircleAlertIcon />
-            <AlertTitle>{t.notConsumedTitle}</AlertTitle>
-            <AlertDescription>{t.notConsumedDesc}</AlertDescription>
-          </Alert>
+          <Banner layout="inline" tone="warning" title={t.notConsumedTitle}>
+            {t.notConsumedDesc}
+          </Banner>
           <AlertDialogFooter>
             <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
             <AlertDialogAction

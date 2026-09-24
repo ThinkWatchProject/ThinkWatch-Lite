@@ -5,7 +5,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tip } from "@/ui/tip";
 import type { L1Result, ProviderView, ProxyFault, ProxyView } from "@/types";
 import { useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
 import { l1ErrorText, proxyFaultText, proxyKindLabel } from "./labels";
 import { UpstreamChips, keepInRow, openRow } from "./parts";
 import { proxyTableText } from "./ProxyTable.i18n";
@@ -15,6 +14,9 @@ export type ProxyCheck = { running: true } | { running: false; result: L1Result;
 
 /**
  * 出站代理列表。**只读**：单击一行（或 Enter）编辑，行尾按钮和右键是同一份操作。
+ *
+ * 和上游表一样，名字下面一行说它是什么、在哪（类型 · 地址 · 是否认证）。这三样
+ * 原来各占一列，最小窗口里七列放不下，行尾菜单被挤到视野外。
  */
 export function ProxyTable({
   proxies,
@@ -33,16 +35,12 @@ export function ProxyTable({
   onRemove: (name: string) => void;
 }) {
   const t = useText(proxyTableText);
-  const common = useText(commonText);
   const shown = usePresentList(proxies, (x) => x.name);
   return (
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead>{t.name}</TableHead>
-          <TableHead>{t.kind}</TableHead>
-          <TableHead>{t.address}</TableHead>
-          <TableHead>{t.auth}</TableHead>
+          <TableHead>{t.proxy}</TableHead>
           <TableHead>{t.usedBy}</TableHead>
           <TableHead>{t.connectivity}</TableHead>
           <TableHead className="w-9">
@@ -61,11 +59,12 @@ export function ProxyTable({
           return (
             <RowMenu key={key} items={items}>
               <TableRow {...openRow(() => onEdit(x.name), rowMotion(presence))}>
-                <TableCell className="font-mono font-medium">{x.name}</TableCell>
-                <TableCell>{proxyKindLabel(x.kind)}</TableCell>
-                <TableCell className="font-mono text-muted-foreground">{x.addr}</TableCell>
-                <TableCell className={x.has_auth ? "" : "text-muted-foreground"}>
-                  {x.has_auth ? t.userPass : common.none}
+                <TableCell className="py-2">
+                  <div className="font-medium">{x.name}</div>
+                  <div className="tw-label text-muted-foreground">
+                    {proxyKindLabel(x.kind)} · <span className="font-mono">{x.addr}</span>
+                    {x.has_auth && ` · ${t.withAuth}`}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <UpstreamChips names={x.used_by} providers={providers} empty={t.notUsed} />

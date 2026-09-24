@@ -11,7 +11,7 @@ import {
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Segmented } from "@/ui/segmented";
-import { StatusLabel } from "@/ui/status-dot";
+import { StatusDot, StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import type { L1Result, Overview, ProxyAuthInput, ProxyInput, ProxyView } from "@/types";
 import { useText } from "@/i18n";
@@ -217,9 +217,11 @@ export function ProxyDialog({
                   {t.ok(auth, result.total_ms)}
                 </StatusLabel>
               ) : (
-                <StatusLabel tone="error" className="min-w-0 motion-fade">
-                  {l1ErrorText(result)}
-                </StatusLabel>
+                // 失败的原因可能很长（卡在哪一步、为什么）：折行写全，不截断
+                <p className="flex min-w-0 flex-1 items-start gap-1.5 tw-body text-destructive motion-fade">
+                  <StatusDot tone="error" className="mt-[7px]" />
+                  <span className="min-w-0 break-words">{l1ErrorText(result)}</span>
+                </p>
               )
             ) : (
               <span className="tw-label text-muted-foreground">{t.checkHint}</span>
