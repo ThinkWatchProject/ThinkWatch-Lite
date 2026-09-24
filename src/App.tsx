@@ -35,7 +35,7 @@ import {
   IconServer,
   IconSettings,
 } from "./ui/icons";
-import { isMac } from "@/platform";
+import { isMac, isMod } from "@/platform";
 import { RequestTable } from "./traffic/RequestTable";
 import { SessionPanel } from "./traffic/SessionPanel";
 import { useSessions } from "./traffic/useSessions";
@@ -609,13 +609,19 @@ export default function App() {
       // 地方跳到搜索框，而「正在输入」恰恰是它最该生效的场景之一。
       // ⌘⌥S 收起/展开源列表 —— 访达、邮件、备忘录都是这个键。
       // 判 `code` 不判 `key`：macOS 上 ⌥ 会把 s 变成 ß。
-      if (e.metaKey && e.altKey && !e.ctrlKey && e.code === "KeyS") {
+      //
+      // **只在 macOS 上有。**Windows 上 Ctrl+Alt 在不少键盘布局里就是 AltGr，
+      // 按它是在打字；那边收起源列表用 Ctrl+B（和 VS Code 收侧栏一样），而
+      // 那一个 `SidebarProvider` 已经在听了 —— 它听的是 Ctrl/⌘+B。
+      if (isMac && e.metaKey && e.altKey && !e.ctrlKey && e.code === "KeyS") {
         e.preventDefault();
         setRailOpen((v) => !v);
         return;
       }
 
-      if (e.metaKey && !e.altKey && !e.ctrlKey) {
+      // ⌘F / ⌘, / ⌘R，Windows 上是 Ctrl 加同一个键。`preventDefault` 在 Windows
+      // 上更要紧：WebView2 自己会把 Ctrl+F 当成页内查找、Ctrl+R 当成刷新页面
+      if (isMod(e) && !e.altKey) {
         const k = e.key.toLowerCase();
         if (k === "f") {
           e.preventDefault();
@@ -1038,11 +1044,18 @@ export default function App() {
               text={
                 <>
                   {railOpen ? t.collapseRail : t.expandRail}
-                  <KbdGroup>
-                    <Kbd>⌘</Kbd>
-                    <Kbd>⌥</Kbd>
-                    <Kbd>S</Kbd>
-                  </KbdGroup>
+                  {isMac ? (
+                    <KbdGroup>
+                      <Kbd>⌘</Kbd>
+                      <Kbd>⌥</Kbd>
+                      <Kbd>S</Kbd>
+                    </KbdGroup>
+                  ) : (
+                    <KbdGroup>
+                      <Kbd>Ctrl</Kbd>
+                      <Kbd>B</Kbd>
+                    </KbdGroup>
+                  )}
                 </>
               }
             >

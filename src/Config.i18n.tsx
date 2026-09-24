@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
+import { isWindows } from "@/platform";
 
 /** 句中要套一层组件（悬浮说明、加粗）的那一段 */
 type Wrap = (text: string) => ReactNode;
@@ -10,7 +11,9 @@ export const configText = messages(
     autostartTitle: "开机启动",
     autostartLabel: "开机时自动启动",
     autostartNote: (tip: Wrap) => <>默认关闭。{tip("开启后的效果")}</>,
-    autostartTip: "开启后将在「系统设置 › 通用 › 登录项」中添加一项。开机后应用仅在菜单栏显示图标，不打开窗口。",
+    autostartTip: isWindows
+      ? "开启后将在「设置 › 应用 › 启动」中添加一项。开机后应用仅在通知区域显示图标，不打开窗口。"
+      : "开启后将在「系统设置 › 通用 › 登录项」中添加一项。开机后应用仅在菜单栏显示图标，不打开窗口。",
 
     // 关于
     aboutTitle: "关于",
@@ -49,8 +52,9 @@ export const configText = messages(
     autostartTitle: "Launch at login",
     autostartLabel: "Launch automatically at login",
     autostartNote: (tip: Wrap) => <>Off by default. {tip("Effect of turning it on")}</>,
-    autostartTip:
-      "Turning it on adds an item to System Settings › General › Login Items. At login, the app only shows its icon in the menu bar and opens no window.",
+    autostartTip: isWindows
+      ? "Turning it on adds an item to Settings › Apps › Startup. At login, the app only shows its icon in the notification area and opens no window."
+      : "Turning it on adds an item to System Settings › General › Login Items. At login, the app only shows its icon in the menu bar and opens no window.",
 
     aboutTitle: "About",
     version: "Version",

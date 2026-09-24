@@ -243,7 +243,11 @@ describe("界面文案", () => {
    */
   it("text-sm / text-xs 绑在字阶上", () => {
     const css = readFileSync(join(SRC, "index.css"), "utf8");
-    expect(css).toContain("--text-sm: 0.8125rem"); // 13px = tw-body
-    expect(css).toContain("--text-xs: 0.6875rem"); // 11px = tw-label
+    expect(css).toContain("--text-sm: var(--fs-body)"); // = tw-body
+    expect(css).toContain("--text-xs: var(--fs-label)"); // = tw-label
+    // macOS 的值没动：字阶按平台分之后，默认那一组还是原来的 13 / 11
+    expect(css).toContain(
+      ":root {\n  --fs-title: 15px;\n  --fs-body: 13px;\n  --fs-label: 11px;",
+    );
   });
 });

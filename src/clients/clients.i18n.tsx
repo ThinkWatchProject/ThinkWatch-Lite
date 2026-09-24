@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
+import { isWindows } from "@/platform";
 
 /** 英文的单复数：`count(3, "client", "clients")` 是 `3 clients` */
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -49,7 +50,7 @@ export const clientsText = messages(
     restore: "还原…",
     manual: "配置方法…",
     details: "详情…",
-    reveal: "在访达中显示配置文件",
+    reveal: isWindows ? "在文件资源管理器中显示配置文件" : "在访达中显示配置文件",
     traffic: "查看流量",
     actionsFor: (name: string) => `${name} 的操作`,
     restoredAll: (n: number) => `已还原 ${n} 个客户端`,
@@ -59,7 +60,7 @@ export const clientsText = messages(
     // 详情
     file: "配置文件",
     realFile: (path: string) => `实际文件：${path}`,
-    revealShort: "在访达中显示",
+    revealShort: isWindows ? "在资源管理器中显示" : "在访达中显示",
     endpoint: "地址",
     pointsHere: "指向本网关",
     notHere: "未指向本网关",
@@ -148,7 +149,7 @@ export const clientsText = messages(
     restore: "Restore…",
     manual: "How to set up…",
     details: "Details…",
-    reveal: "Show configuration file in Finder",
+    reveal: isWindows ? "Show configuration file in File Explorer" : "Show configuration file in Finder",
     traffic: "Show traffic",
     actionsFor: (name: string) => `Actions for ${name}`,
     restoredAll: (n: number) => `${count(n, "client", "clients")} restored`,
@@ -158,7 +159,7 @@ export const clientsText = messages(
 
     file: "Configuration",
     realFile: (path: string) => `Actual file: ${path}`,
-    revealShort: "Show in Finder",
+    revealShort: isWindows ? "Show in File Explorer" : "Show in Finder",
     endpoint: "Address",
     pointsHere: "Points to this gateway",
     notHere: "Does not point to this gateway",
