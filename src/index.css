@@ -51,6 +51,10 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-surface: var(--surface);
+  --color-idle: var(--idle);
+  --ease-out: var(--motion-ease);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -271,23 +275,173 @@
   }
 }
 
-/* 选中项。
- *
- * **跟系统强调色走，不写死蓝色。**用户在系统设置里把强调色换成粉色，
- * 侧栏应该跟着变；写死的那一刻它又变回一个网页。`AccentColor` 是
- * CSS Color 4 的系统色，WKWebView 认得；不认的浏览器落到前一行的蓝，
- * 那也是 macOS 的默认强调色。
- */
-@utility tw-selected {
-  background: rgb(10 132 255 / 22%);
-  background: color-mix(in srgb, AccentColor 22%, transparent);
-  color: var(--chrome-strong);
+/* 源列表里的选中项和悬停。**灰的，不跟系统强调色走**：整个应用只有黑白灰，
+ * 颜色只留给状态（成功、提醒、失败）。选中是一块压暗的底加深一档的字 */
+:root {
+  --chrome-selected: rgb(0 0 0 / 7.5%);
 }
-@utility tw-selected-mark {
-  color: #0a84ff;
-  color: AccentColor;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chrome-selected: rgb(255 255 255 / 10%);
+  }
 }
 
+/* ─────────────────────────────────────────────────────── 语义色的补充
+ *
+ * 规则写在 src/ui/README.md 的「Colour」一节。这里只补组件要用、原来靠
+ * `neutral-*` / `amber-*` / `red-*` / `emerald-*` 手写的那几档：
+ *
+ * · `--surface`：内容区里压一档的面（代码片段、行内面板、骨架底）。
+ * · `--idle`：没有在工作的状态点（未使用、已停用）。
+ * · `--destructive-foreground`：红色浅底上的正文，和 `--warning-foreground`
+ *   是同一个用法。
+ */
+:root {
+  --surface: oklch(95.5% 0.003 260);
+  --idle: oklch(72% 0.005 260);
+  --destructive-foreground: oklch(44.4% 0.177 26.899); /* red-800 */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: oklch(22% 0.006 260);
+    --idle: oklch(50% 0.006 260);
+    --destructive-foreground: oklch(88.5% 0.062 18.334); /* red-200 */
+  }
+}
+
+/* ─────────────────────────────────────────────────── macOS 的半透侧栏
+ *
+ * 主窗口在 macOS 上是透明的网页叠在一层 NSVisualEffectView（sidebar 材质）
+ * 上（见 src-tauri/src/window.rs）。`data-vibrant` 由 `platform.ts` 按 Rust
+ * 注入的 `__TW_VIBRANT__` 挂上：只有这扇窗、只有 macOS 有。**页面底色这时
+ * 必须是透明的**，侧栏才露得出材质；内容区自己铺 `--background`（见 App.tsx）。
+ * 别的平台、别的窗口、隔离预览都不挂这个属性，侧栏照旧是实色。
+ */
+:root[data-vibrant] {
+  --chrome-rail: transparent;
+  background: transparent;
+}
+:root[data-vibrant] body {
+  background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────── 动效
+ *
+ * 强度「中等」：切页、切标签、新行、数字、条形、实时脉冲。时长 150–250ms，
+ * 一律缓出。**系统里关掉了动效就不动**：位移全部去掉；淡入淡出也去掉，只
+ * 留下状态本身。用法见 src/ui/README.md 的「Motion」一节。
+ */
+:root {
+  --motion-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 250ms;
+  --row-flash: color-mix(in oklab, var(--foreground) 7%, transparent);
+}
+
+@keyframes tw-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes tw-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tw-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes tw-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+    background-color: var(--row-flash);
+  }
+  45% {
+    opacity: 1;
+    transform: none;
+    background-color: var(--row-flash);
+  }
+}
+@keyframes tw-live {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px color-mix(in oklab, currentColor 0%, transparent);
+  }
+}
+@keyframes tw-shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* 换页：整页淡入并上移 4px。挂在每一页最外层（App.tsx 已经挂好） */
+@utility motion-page {
+  animation: tw-enter var(--motion-slow) var(--motion-ease);
+}
+/* 换标签、换一段内容：只淡入 */
+@utility motion-fade {
+  animation: tw-fade-in var(--motion-base) var(--motion-ease);
+}
+/* 新出现的一行：从上面滑进来，底色亮一下再退掉 */
+@utility motion-row-in {
+  animation: tw-row-in 900ms var(--motion-ease);
+}
+/* 要消失的一行：淡出，期间不再接受点击（usePresentList 给 exit 状态） */
+@utility motion-row-out {
+  animation: tw-fade-out var(--motion-fast) var(--motion-ease) forwards;
+  pointer-events: none;
+}
+/* 条形和进度：宽高变化时走过去，不跳 */
+@utility motion-bar {
+  transition-property: width, height, transform, background-color;
+  transition-duration: var(--motion-slow);
+  transition-timing-function: var(--motion-ease);
+}
+/* 实时状态点的脉冲。颜色取 currentColor */
+@utility motion-live {
+  animation: tw-live 1.6s var(--motion-ease) infinite;
+}
+/* 骨架的明暗。比 `animate-pulse` 慢、幅度小，读起来是「在取」而不是「在闪」 */
+@utility motion-shimmer {
+  animation: tw-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-page,
+  .motion-fade,
+  .motion-row-in,
+  .motion-live,
+  .motion-shimmer {
+    animation: none;
+  }
+  .motion-row-out {
+    animation-duration: 1ms;
+  }
+  .motion-bar {
+    transition: none;
+  }
+  /* shadcn 组件的进出场（tw-animate-css）：保留淡入淡出，去掉位移和缩放 */
+  * {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+  }
+}
 
 /* ----------------------------------------------------------- 按平台的字
  *

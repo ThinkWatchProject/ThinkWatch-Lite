@@ -113,7 +113,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(format!(
-            "{} window.__TW_WARM__ = {warm};",
+            "{} window.__TW_WARM__ = {warm}; window.__TW_VIBRANT__ = {VIBRANT};",
             i18n::init_script()
         ))
         .inner_size(1100.0, 720.0)
@@ -123,10 +123,23 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     // 浮在内容上，界面顶部那几处 `data-tauri-drag-region` 就是为它留的。
     // Windows 上用系统标题栏，所以那些留白按平台去掉了（见 App.tsx 里用
     // `isMac` 分开的那几处）—— 不去的话顶上会多出一条空的。
+    //
+    // **侧栏是系统的半透材质**（和访达、邮件的源列表同一种）：整扇窗铺一层
+    // `NSVisualEffectView`（sidebar 材质，窗口失焦时跟着变灰），网页设成透明。
+    // 页面只在侧栏那一块不铺底色，内容区照旧是实色（见 `index.css` 的
+    // 「macOS 的半透侧栏」）。网页靠 `__TW_VIBRANT__` 知道这件事 —— 更新窗口、
+    // 连接选择窗不铺材质，也就不注入它
     #[cfg(target_os = "macos")]
     let b = b
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
+        .hidden_title(true)
+        .transparent(true)
+        .effects(
+            tauri::window::EffectsBuilder::new()
+                .effect(tauri::window::Effect::Sidebar)
+                .state(tauri::window::EffectState::FollowsWindowActiveState)
+                .build(),
+        );
     let w = b.build()?;
     if !warm {
         return reveal(app, &w);
@@ -143,6 +156,9 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     });
     Ok(())
 }
+
+/// 主窗口的侧栏铺不铺系统的半透材质。只有 macOS 铺
+const VIBRANT: bool = cfg!(target_os = "macos");
 
 /// 热启动最多藏多久。点了之后超过这个数还没反应，会被当成没点中
 pub(crate) const WARM_REVEAL_CAP: std::time::Duration = std::time::Duration::from_millis(300);

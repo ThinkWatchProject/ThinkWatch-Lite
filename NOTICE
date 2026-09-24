@@ -1,0 +1,17 @@
+ThinkWatch Lite
+Copyright (c) ThinkWatch Project. Licensed under the MIT License (see LICENSE).
+
+This product includes third-party vector artwork, rendered monochrome, to
+identify upstream services and client applications (src/ui/logo-data.ts):
+
+- Lobe Icons (@lobehub/icons-static-svg 1.95.1)
+  https://github.com/lobehub/lobe-icons
+  MIT License, Copyright (c) 2023 LobeHub
+
+- Simple Icons (simple-icons 16.32.0)
+  https://simpleicons.org
+  CC0 1.0 Universal
+
+All product names, logos and brands are property of their respective owners.
+They are used only to identify the corresponding services and applications
+and do not imply endorsement.

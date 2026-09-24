@@ -14,6 +14,8 @@ declare global {
   interface Window {
     /** Rust 侧在页面加载之前注入的平台 */
     __TW_PLATFORM__?: Platform;
+    /** 这扇窗铺了半透的侧栏材质（只有 macOS 的主窗口），见 `window.rs` */
+    __TW_VIBRANT__?: boolean;
   }
 }
 
@@ -36,8 +38,16 @@ export const isLinux = platform === "linux";
  * **在模块求值时就挂**，不等 React：这个文件在首帧渲染之前就被 import 了，
  * 挂晚了第一帧是 macOS 的字号，然后整页跳一下。
  */
+/**
+ * 这扇窗的侧栏是半透的系统材质（macOS 主窗口）。**只在这时页面底色是透明的**，
+ * 见 `index.css` 的「macOS 的半透侧栏」。更新窗口、连接选择窗、隔离预览都不是
+ */
+export const vibrant =
+  typeof window !== "undefined" && platform === "macos" && window.__TW_VIBRANT__ === true;
+
 if (typeof document !== "undefined") {
   document.documentElement.dataset.platform = platform;
+  if (vibrant) document.documentElement.dataset.vibrant = "";
 }
 
 /**

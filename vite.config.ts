@@ -5,6 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // `/*! … */` 的许可说明留在产物里（第三方标志的署名，见 src/ui/logo-data.ts 和 NOTICE）
+  esbuild: { legalComments: "inline" },
   // shadcn 抄进来的组件一律按 `@/` 引用（`@/lib/utils`、`@/ui/button`），
   // 它的 CLI 也按这个别名写文件。tsconfig 里有一份一模一样的。
   resolve: {

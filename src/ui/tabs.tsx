@@ -71,6 +71,7 @@ function TabsTrigger({
   )
 }
 
+// 改过一处：标签内容换进来时淡入（`motion-fade`，系统关掉动效时不动）
 function TabsContent({
   className,
   ...props
@@ -78,7 +79,7 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      className={cn("flex-1 text-sm outline-none motion-fade", className)}
       {...props}
     />
   )
