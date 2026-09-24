@@ -4,14 +4,15 @@
   <img src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
   <img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
   <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
 </p>
 
 # ThinkWatch Lite
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜单栏或 Windows
-通知区域。Claude Code、Codex CLI 等使用 Anthropic、OpenAI、Gemini API 的客户端
+ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜单栏、Windows
+通知区域或 Linux 系统托盘。Claude Code、Codex CLI 等使用 Anthropic、OpenAI、Gemini API 的客户端
 把请求发给这个网关，Lite 展示每个请求的费用、由哪个上游处理及其原因，以及随请求
 发出的内容。
 
@@ -20,8 +21,9 @@ ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜�
   <img src="docs/screenshots/overview-light.png" alt="ThinkWatch Lite 的用量概览：token、费用与请求数，按模型分层的 24 小时趋势，模型排行与缓存命中率">
 </picture>
 
-支持 macOS 12 及以上版本（仅限 Apple Silicon），以及 Windows 10 21H2 及以上版本
-（x64 或 ARM64）。
+支持 macOS 12 及以上版本（仅限 Apple Silicon）、Windows 10 21H2 及以上版本
+（x64 或 ARM64），以及 Ubuntu 22.04、Debian 12、Fedora 36 及以上版本的 Linux
+（x86_64 或 aarch64）。
 
 ## 安装
 
@@ -30,9 +32,10 @@ ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜�
 | macOS，Apple Silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 | Windows，x64 | [`ThinkWatch-Lite-<版本>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 | Windows，ARM64 | [`ThinkWatch-Lite-<版本>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux，x86_64 或 aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`，或 [`ThinkWatch-Lite-<版本>-<架构>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 官网的 [Lite 页面](https://thinkwat.ch/zh-CN/lite#install)提供最新版本的直接下载，
-Windows 会自动选对架构。网关
+Windows 和 Linux 会自动选对架构。网关
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) 随应用一起
 安装，无需另行安装。
 
@@ -76,6 +79,44 @@ Get-FileHash .\ThinkWatch-Lite-<版本>-x64-setup.exe
 
 安装后应用常驻通知区域，数据保存在 `%APPDATA%\ThinkWatch`。
 
+### Linux
+
+```bash
+curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh | sh
+```
+
+脚本下载与本机架构对应的 AppImage，与同页发布的 sha256 校验值核对后安装为
+`~/Applications/ThinkWatch-Lite.AppImage` 并启动。再次运行即用最新版本覆盖旧版本。
+
+手动安装时，从 [最新版本的 release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)
+下载 `ThinkWatch-Lite-<版本>-x86_64.AppImage` 或 `ThinkWatch-Lite-<版本>-aarch64.AppImage`，
+用 `sha256sum -c` 核对后允许其执行（`chmod +x`，或在文件管理器的「属性」中勾选
+「允许作为程序执行文件」），然后打开。AppImage 应放在当前用户可写的目录中（如
+`~/Applications`），以便自动更新替换。首次启动时会把 ThinkWatch Lite 添加到应用
+菜单，同时注册图标和 `thinkwatch://` 链接。Linux 版只发布 AppImage，不提供 deb、
+rpm、Flatpak 或 Snap 包。
+
+AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`（不需要
+libfuse2）。多数桌面系统已自带；如缺少：
+
+| 发行版 | 命令 |
+|---|---|
+| Ubuntu、Debian | `sudo apt install fuse3` |
+| Fedora | `sudo dnf install fuse3` |
+| Arch Linux | `sudo pacman -S fuse3` |
+| openSUSE | `sudo zypper install fuse3` |
+
+托盘图标依赖 AppIndicator。Ubuntu 已自带对应的 GNOME 扩展；Fedora 原生 GNOME
+没有，需要另行安装 AppIndicator 扩展。没有托盘时，关闭窗口后网关继续运行，从应用
+菜单再次启动 ThinkWatch Lite 即可重新打开窗口。数据保存在 `~/.thinkwatch`。
+
+- **NVIDIA 显卡在 Wayland 下窗口空白**：以 `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+  启动应用。
+- **局域网内其他机器无法连接网关**：Fedora 默认启用的 firewalld 会拦截网关端口，
+  需放行该端口；网关监听局域网时，设置页会给出相应提示。
+- **卸载**：先在「设置 › 完全卸载」中卸载，恢复应用接管过的客户端配置，并删除开机
+  启动项和应用菜单项；再删除 AppImage 文件。
+
 ## 功能
 
 ### 用量与费用
@@ -112,7 +153,8 @@ Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之�
 价目表计价。
 
 API 密钥和请求头的值可以写成 `${变量名}`，读取系统环境变量。macOS 上读的是登录
-shell 里的环境变量，`~/.zshrc` 等文件中 `export` 的变量都会生效；Windows 上读
+shell 里的环境变量，`~/.zshrc` 等文件中 `export` 的变量都会生效，Linux 同理（`~/.bashrc`、
+`~/.profile` 等）；Windows 上读
 的是系统设置里配置的环境变量。修改变量后，重新打开应用即可生效。代理相关的
 变量（`HTTPS_PROXY` 等）和 `PATH` 不会被读取。
 
@@ -172,6 +214,9 @@ Cursor、Continue 与 Gemini CLI 提供逐步的手动配置说明。
 Windows 上图标位于通知区域：悬停显示网关状态与今日 token、费用；左键打开主界面，
 右键打开同一份菜单，其中的额度条改为文字。提醒以 Windows 原生通知发送。
 
+Linux 上图标位于系统托盘：点击打开同一份菜单，第一项为「打开主界面」，
+额度条同样改为文字。提醒通过桌面环境的通知服务发送。
+
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
@@ -197,6 +242,10 @@ Windows 上图标位于通知区域：悬停显示网关状态与今日 token、
 **Windows 上**：同样点击一次即可。应用下载新版本的安装程序，用编译进应用的公钥
 验签，同样等待进行中的请求结束，然后运行安装程序，安装完成后新版本自动启动。应用
 为所有用户安装，因此每次更新 Windows 都会请求管理员权限；拒绝则继续运行当前版本。
+
+**Linux 上**：同样点击一次即可，不需要输入密码。应用下载新版本的 AppImage，用
+编译进应用的公钥验签，等待进行中的请求结束，然后替换自身文件并重新启动。AppImage
+须位于当前用户可写的目录中。
 
 **用 Homebrew 安装的**：窗口给出更新命令和复制按钮，应用不会替换自身。Homebrew
 记录着它放入 `/Applications` 的版本，应用自行替换后，下一次 `brew upgrade` 会
@@ -226,7 +275,7 @@ src-tauri/        Tauri 2 外壳：托管 core、渲染菜单栏
 ```
 
 网关本体位于 ThinkWatch Core；本仓库不包含路由、转发或计费逻辑。与 core 的
-通信在 macOS 上走 unix socket，在 Windows 上走回环端口，两者都带一个每次启动
+通信在 macOS 和 Linux 上走 unix socket，在 Windows 上走回环端口，两者都带一个每次启动
 生成的凭据。
 
 ## 许可证

@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
   <img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
   <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
 </p>
 
 # ThinkWatch Lite
@@ -11,13 +12,14 @@
 **[English](README.md) | [中文](README.zh-CN.md)**
 
 ThinkWatch Lite is a desktop app that runs a local AI API gateway from the
-macOS menu bar or the Windows notification area. Claude Code, Codex and other
+macOS menu bar, the Windows notification area or the Linux system tray. Claude Code, Codex and other
 clients of the Anthropic, OpenAI and Gemini APIs send their requests to the
 gateway, and Lite shows what each request cost, which upstream served it and
 why, and what was sent along with it.
 
-It runs on macOS 12 or later on Apple Silicon, and on Windows 10 21H2 or later
-on x64 or ARM64.
+It runs on macOS 12 or later on Apple Silicon, on Windows 10 21H2 or later on
+x64 or ARM64, and on Linux on x86_64 or aarch64 (Ubuntu 22.04, Debian 12,
+Fedora 36 or later).
 
 ## Install
 
@@ -26,9 +28,10 @@ on x64 or ARM64.
 | macOS, Apple Silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 | Windows, x64 | [`ThinkWatch-Lite-<version>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 | Windows, ARM64 | [`ThinkWatch-Lite-<version>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux, x86_64 or aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 The [Lite page](https://thinkwat.ch/lite#install) has one-click downloads of
-the latest version and picks the Windows architecture for you. The gateway,
+the latest version and picks the Windows or Linux architecture for you. The gateway,
 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core), ships
 inside the app; nothing else needs to be installed.
 
@@ -79,6 +82,52 @@ Running a downloaded copy brings up SmartScreen's full-screen warning,
 Once installed, the app lives in the notification area. Data is kept in
 `%APPDATA%\ThinkWatch`.
 
+### Linux
+
+```bash
+curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh | sh
+```
+
+The script downloads the AppImage for the machine's architecture, checks it
+against the sha256 published beside it, installs it as
+`~/Applications/ThinkWatch-Lite.AppImage` and starts it. Running it again
+installs the latest version over the old one.
+
+To install by hand, download `ThinkWatch-Lite-<version>-x86_64.AppImage` or
+`ThinkWatch-Lite-<version>-aarch64.AppImage` from the
+[latest release](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest),
+check it with `sha256sum -c`, allow it to run (`chmod +x`, or Properties ›
+"Allow executing file as program" in the file manager) and open it. Keep it in
+a folder the user can write to, such as `~/Applications`, so that it can
+update itself. The first launch adds ThinkWatch Lite to the application menu,
+together with its icon and the `thinkwatch://` link handler. Only the AppImage
+is published; there are no deb, rpm, Flatpak or Snap packages.
+
+An AppImage mounts itself with FUSE and needs `fusermount3` from the fuse3
+package (libfuse2 is not needed). Most desktops already include it; otherwise:
+
+| Distribution | Command |
+|---|---|
+| Ubuntu, Debian | `sudo apt install fuse3` |
+| Fedora | `sudo dnf install fuse3` |
+| Arch Linux | `sudo pacman -S fuse3` |
+| openSUSE | `sudo zypper install fuse3` |
+
+The tray icon relies on AppIndicator. Ubuntu ships the GNOME extension for it;
+Fedora's stock GNOME does not, and the AppIndicator extension has to be added.
+Without a tray, closing the window leaves the gateway running, and launching
+ThinkWatch Lite again from the application menu brings the window back. Data is
+kept in `~/.thinkwatch`.
+
+- **Blank window on NVIDIA under Wayland:** start the app with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+- **Other machines cannot reach the gateway:** firewalld, which Fedora enables
+  by default, blocks the gateway port until it is opened; Settings shows a
+  note about this when the gateway listens on the local network.
+- **Uninstalling:** use Settings › Full uninstall first, which restores the clients
+  the app configured and removes the autostart and application menu entries,
+  then delete the AppImage.
+
 ## Features
 
 ### Usage and cost
@@ -127,7 +176,8 @@ outbound proxy and priced with a custom price sheet.
 
 API keys and header values can be written as `${NAME}` to read a system
 environment variable. On macOS these come from the login shell, so variables
-exported in `~/.zshrc` and similar files apply; on Windows they are the
+exported in `~/.zshrc` and similar files apply, and the same holds on Linux
+(`~/.bashrc`, `~/.profile` and so on); on Windows they are the
 environment variables configured in system settings. After a variable changes,
 reopening the app picks it up. Proxy variables such as `HTTPS_PROXY`, and
 `PATH`, are not read.
@@ -204,6 +254,10 @@ gateway's state and today's tokens and cost; a left click opens the main
 window, and a right click opens the same menu, with quota bars written out as
 text. Notices arrive as native Windows notifications.
 
+On Linux the icon sits in the system tray. Clicking it opens the same menu,
+with Open ThinkWatch Lite as its first item and quota bars written out as text.
+Notices go to the desktop's notification service.
+
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-cost-dark.png">
@@ -238,6 +292,11 @@ starts once it is done. The app is installed for all users, so Windows asks for
 administrator permission at every update; declining leaves the current version
 running.
 
+**On Linux:** the same single press, and no password is asked for. The app
+downloads the new AppImage, verifies it against the key compiled into itself,
+waits for the requests in flight to finish, then replaces its own file and
+restarts. The AppImage has to be in a folder the user can write to.
+
 **Installed with Homebrew:** the window gives the command to copy, and the app
 never replaces itself. Homebrew records which version it put in
 `/Applications`; an app that overwrote it would be written back over by the
@@ -269,8 +328,9 @@ src-tauri/        Tauri 2 shell: supervises core, renders the menu bar
 ```
 
 The gateway itself lives in ThinkWatch Core; this repository holds no routing,
-forwarding, or accounting logic. It talks to core over a unix socket on macOS,
-and over a loopback port on Windows; both carry a per-launch credential.
+forwarding, or accounting logic. It talks to core over a unix socket on macOS
+and Linux, and over a loopback port on Windows; both carry a per-launch
+credential.
 
 ## License
 
