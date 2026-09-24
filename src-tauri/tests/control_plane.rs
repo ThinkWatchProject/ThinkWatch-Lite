@@ -192,7 +192,7 @@ async fn a_refusal_comes_back_with_its_code() {
 
     let e = core
         .client(&core.token)
-        .request_detail(987_654_321)
+        .call::<tw_api::ep::RequestDetail>(&["987654321"], &())
         .await
         .unwrap_err();
     let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
@@ -210,7 +210,61 @@ async fn scanning_with_a_project_directory_works() {
     std::fs::create_dir_all(&dir).unwrap();
     let r = core
         .client(&core.token)
-        .scan(vec![dir.display().to_string()])
+        .call::<tw_api::ep::Scan>(
+            &[],
+            &tw_api::ScanRequest {
+                projects: vec![dir.display().to_string()],
+            },
+        )
         .await;
     assert!(r.is_ok(), "{:?}", r.err());
+}
+
+/// 一个端点一种写法：GET 带查询串、DELETE 带查询串、PUT 带请求体、带路径参数的
+/// 名字有空格，全都对着真的 core 走一遍。拼错的表现是 core 回 400 或 404
+#[tokio::test]
+async fn the_generic_call_speaks_every_shape() {
+    use tw_api::ep;
+
+    let core = Core::start();
+    core.wait_ready().await;
+    let c = core.client(&core.token);
+
+    // GET + 查询串
+    let rows = c
+        .call::<ep::History>(
+            &[],
+            &tw_api::ListQuery {
+                limit: Some(5),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(rows.is_ok(), "{:?}", rows.err());
+    // 文本响应
+    let md = c.call::<ep::Diagnostics>(&[], &()).await.unwrap();
+    assert!(!md.is_empty());
+    // 路径参数里有空格：编码之后仍是一段，core 说的是「没有这个密钥」而不是 404
+    let e = c
+        .call::<ep::DeleteKey>(&["no such key"], &tw_api::BaseVersion::default())
+        .await
+        .unwrap_err();
+    let m = &e
+        .downcast_ref::<thinkwatch_lite_lib::control::Refused>()
+        .expect("DELETE 被拒时要带码")
+        .0;
+    assert_eq!(m.code, "config.edit.not_found", "{m:?}");
+    assert_eq!(m.arg("name"), "no such key");
+    // 带请求体的写请求
+    let cfg = c.call::<ep::GetConfig>(&[], &()).await.unwrap();
+    let w = c
+        .call::<ep::PatchConfig>(
+            &[],
+            &tw_api::ConfigPatch {
+                base_version: Some(cfg.version),
+                ops: vec![],
+            },
+        )
+        .await;
+    assert!(w.is_ok(), "{:?}", w.err());
 }

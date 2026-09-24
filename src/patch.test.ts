@@ -23,10 +23,10 @@ function tsFiles(dir: string): string[] {
 }
 
 describe("配置补丁", () => {
-  it("没有人绕过 patchConfig 直接 invoke", () => {
+  it("没有人绕过 patchConfig 直接调", () => {
     const bad = tsFiles("src")
       .filter((f) => !f.endsWith("patch.ts") && !f.endsWith("patch.test.ts"))
-      .filter((f) => readFileSync(f, "utf8").includes('invoke("patch_config"'))
+      .filter((f) => readFileSync(f, "utf8").includes('call("PatchConfig"'))
       .map((f) => `${f}：改配置要走 patchConfig()，那里 PatchOp[] 才会被类型检查`);
     expect(bad).toEqual([]);
   });

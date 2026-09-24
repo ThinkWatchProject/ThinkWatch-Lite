@@ -14,7 +14,6 @@ import {
   type MismatchView,
   type ReplayQuote,
   type SetView,
-  type TakesEffect,
   type TranslatedView,
 } from "./types";
 import { PROTOCOLS } from "./upstreams/labels";
@@ -154,7 +153,7 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean } {
       return { text: t.rejected(a.status), ok: false };
     case "status":
       return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
-    case "error":
+    default:
       return { text: a.error ?? t.noResponse, ok: false };
   }
 }
@@ -218,7 +217,7 @@ export function secretLabel(secret: string): string {
 
 // ---------------------------------------------------------------- 客户端接管
 
-export function takesEffectText(t: TakesEffect): string {
+export function takesEffectText(t: string): string {
   const x = textOf(labelsText).takesEffect;
   return t === "immediately"
     ? x.immediately

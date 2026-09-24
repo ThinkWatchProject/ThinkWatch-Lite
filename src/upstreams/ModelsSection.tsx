@@ -15,7 +15,7 @@ import {
 } from "@/ui/table";
 import { Textarea } from "@/ui/textarea";
 import { useText } from "@/i18n";
-import type { ModelStatus, ProviderModelsView, ResolvedPrice } from "@/types";
+import type { ProviderModelsView, ResolvedPrice } from "@/types";
 import { globMatch } from "./glob";
 import { contextWindow, modelSourceLabel } from "./labels";
 import { modelsSectionText } from "./ModelsSection.i18n";
@@ -31,7 +31,7 @@ export interface ModelCatalog {
   /** 没拿到清单的原因 */
   error?: string | null;
   /** 获取的结果：拿到了、上游不提供、没问到 */
-  status?: ModelStatus;
+  status?: string;
   /** core 正在向上游问 */
   fetching?: boolean;
 }

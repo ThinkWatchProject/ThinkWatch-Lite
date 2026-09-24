@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { toast } from "sonner";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -52,7 +52,7 @@ export function ConfigFileDialog({
 
   useEffect(() => {
     let alive = true;
-    invoke<ConfigText>("get_config")
+    call("GetConfig", null)
       .then((d) => alive && setDoc(d))
       .catch((e) => toast.error(errorText(e)));
     return () => {
@@ -107,7 +107,7 @@ export function VersionHistoryDialog({
 
   useEffect(() => {
     let alive = true;
-    invoke<ConfigVersion[]>("config_history")
+    call("ConfigHistory", null)
       .then((v) => alive && setVersions(v))
       .catch((e) => toast.error(errorText(e)));
     return () => {
@@ -118,7 +118,7 @@ export function VersionHistoryDialog({
   async function restore(version: string) {
     setBusy(version);
     try {
-      await invoke("rollback_config", { version });
+      await call("ConfigRollback", { version });
     } catch (e) {
       toast.error(errorText(e));
     } finally {

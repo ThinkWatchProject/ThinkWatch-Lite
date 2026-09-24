@@ -11,7 +11,7 @@ import { GuardTab, type RuleActions } from "./GuardTab";
 import { viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { LogTab } from "./LogTab";
-import { BuiltinRuleDialog, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
+import { asAction, BuiltinRuleDialog, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { securityPageText } from "./SecurityPage.i18n";
 
@@ -159,7 +159,7 @@ export default function SecurityPage({
         seed: {
           name: viewName(guard, r),
           pattern: r.matcher.kind === "regex" ? r.matcher.pattern : "",
-          action: r.action ?? undefined,
+          action: asAction(r.action),
         },
       }),
     remove: (r) => setDialog({ kind: "delete", guard, rule: r }),

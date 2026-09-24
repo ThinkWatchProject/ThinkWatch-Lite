@@ -136,7 +136,7 @@ export function Matrix({
                               can &&
                               onAsk(
                                 m
-                                  ? { op: "remove", name: n, to: c }
+                                  ? { op: "remove", name: n, from: null, to: c }
                                   : { op: "copy", name: n, from: source!.client, to: c },
                               )
                             }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Count } from "@/ui/count";
@@ -8,7 +8,7 @@ import { Spinner } from "@/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
-import type { AdoptResponse, McpOpRequest, McpTargetView, PlanView, ScanFinding, ScanResponse } from "@/types";
+import type { McpOpRequest, McpTargetView, PlanView, ScanFinding, ScanResponse } from "@/types";
 import { useCoreEvent } from "@/useCoreEvent";
 import { Extensions } from "./Extensions";
 import { Findings } from "./Findings";
@@ -48,8 +48,8 @@ export default function McpPage({
 
   const fetchAll = useCallback(async () => {
     const [scan, ts] = await Promise.all([
-      invoke<ScanResponse>("scan_configs", { projects: [] }),
-      invoke<McpTargetView[]>("mcp_targets"),
+      call("Scan", { projects: [] }),
+      call("McpTargets", null),
     ]);
     setData(scan);
     setTargets(ts);
@@ -82,7 +82,7 @@ export default function McpPage({
   async function ask(req: McpOpRequest) {
     setBusy(true);
     try {
-      setPending({ req, plan: await invoke<PlanView>("mcp_plan", { req }) });
+      setPending({ req, plan: await call("McpPlan", req) });
     } catch (e) {
       toast.error(errorText(e));
     } finally {
@@ -94,7 +94,7 @@ export default function McpPage({
     if (!pending) return;
     setBusy(true);
     try {
-      await invoke<AdoptResponse>("mcp_apply", { req: pending.req });
+      await call("McpApply", pending.req);
       setPending(null);
       await load();
     } catch (e) {

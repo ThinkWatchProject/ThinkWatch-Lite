@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { textOf } from "@/i18n";
 import {
   applyEvent,
@@ -216,9 +216,7 @@ export function useRequests(ready: boolean) {
 
       2000 是控制面的上限。
     */
-    const history = await invoke<HistoryRow[]>("recent_requests", {
-      limit: 2000,
-    });
+    const history = await call("History", { limit: 2000 });
     mergeHistory(store.current, history, textOf(requestsText).answeredLocally);
     setRows([...store.current.values()].sort((a, b) => b.id - a.id));
   }, []);
@@ -372,7 +370,7 @@ export function useRequests(ready: boolean) {
         // **等订阅真的挂上再问**：`listen` 是异步注册的，先问的话，快照和
         // 订阅之间结束的请求，结局谁都没收到
         await un;
-        const open = await invoke<CoreEvent[]>("in_flight_requests");
+        const open = await call("InFlight", null);
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
         if (applyInFlight(store.current, open, mark)) publish();

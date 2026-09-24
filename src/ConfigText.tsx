@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import YamlEditor from "./YamlEditor";
 import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
@@ -79,7 +79,7 @@ export default function ConfigTextMode({
     // 而那个判断很便宜：偏移量变化小于几十个字节就不问
     if (Math.abs(byteOffset - askedFor.current) < 8) return;
     askedFor.current = byteOffset;
-    void invoke<ConfigAt>("config_at", { offset: byteOffset })
+    void call("ConfigAt", { offset: byteOffset })
       .then(setAt)
       .catch(() => setAt(null));
   };
@@ -118,7 +118,7 @@ export default function ConfigTextMode({
   async function save() {
     setBusy(true);
     try {
-      await invoke("put_config", { text: draft, baseVersion: base.current });
+      await call("PutConfig", { text: draft, base_version: base.current });
       base.current = "";
       onSaved();
     } catch (e) {

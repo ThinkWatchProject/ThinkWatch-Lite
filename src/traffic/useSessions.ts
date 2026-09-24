@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { useCoreEvent } from "@/useCoreEvent";
 import type { SessionView } from "@/types";
 
@@ -21,7 +21,7 @@ export function useSessions(ready: boolean) {
 
   const load = useCallback(async () => {
     try {
-      setRows(await invoke<SessionView[]>("sessions"));
+      setRows(await call("Sessions", { limit: 200 }));
     } catch {
       // 留着上一份。下一批请求落地还会再读
     }

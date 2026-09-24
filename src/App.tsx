@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { listen } from "@tauri-apps/api/event";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
@@ -378,9 +379,7 @@ export default function App() {
     let alive = true;
     void (async () => {
       try {
-        const d = await invoke<SessionDetail>("session_detail", {
-          id: openSession,
-        });
+        const d = await call("SessionDetail", null, openSession);
         if (alive) setSessionDetail(d);
       } catch (e) {
         toast.error(errorText(e));
@@ -810,7 +809,7 @@ export default function App() {
         return;
       }
       try {
-        const o = await invoke<Overview>("overview");
+        const o = await call("Overview", null);
         if (alive) setOv(o);
       } catch {
         /* 概览拿不到不影响状态那一半 —— 连上了就是连上了 */

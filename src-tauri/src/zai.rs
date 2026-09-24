@@ -46,11 +46,14 @@ pub async fn start_zai_login(
 ) -> Out<Login> {
     let login = state
         .control
-        .start_zai_login(&tw_api::ZaiLoginStart {
-            family,
-            name,
-            proxy,
-        })
+        .call::<tw_api::ep::StartZaiLogin>(
+            &[],
+            &tw_api::ZaiLoginStart {
+                family,
+                name,
+                proxy,
+            },
+        )
         .await
         .map_err(text)?;
     if let Ok(mut g) = PENDING.lock() {
@@ -84,20 +87,16 @@ pub async fn reopen_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
 }
 
 #[tauri::command]
-pub async fn zai_login_status(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Out<tw_api::ZaiLoginStatus> {
-    state.control.zai_login_status(&id).await.map_err(text)
-}
-
-#[tauri::command]
 pub async fn cancel_zai_login(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Out<tw_api::ZaiLoginStatus> {
     forget(&id);
-    state.control.cancel_zai_login(&id).await.map_err(text)
+    state
+        .control
+        .call::<tw_api::ep::CancelZaiLogin>(&[&id], &())
+        .await
+        .map_err(text)
 }
 
 pub fn forget(id: &str) {

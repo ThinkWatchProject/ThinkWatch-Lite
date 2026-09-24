@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import {
   usd,
   type BodyView,
@@ -201,7 +201,7 @@ export default function RequestDrawer({
   const load = useCallback(
     async (alive: () => boolean) => {
       try {
-        const x = await invoke<RequestDetail>("request_detail", { id });
+        const x = await call("RequestDetail", null, id);
         if (alive()) setD(x);
       } catch (e) {
         if (alive()) toast.error(errorText(e));
@@ -626,7 +626,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   useEffect(() => {
     void (async () => {
       try {
-        const o = await invoke<Overview>("overview");
+        const o = await call("Overview", null);
         setOv(o);
         // 默认选一个**和原来那次不同的**上游 —— 重放的价值在对比
         setProvider(o.providers.find((p) => p.name !== originalProvider)?.name ?? o.providers[0]?.name ?? "");
@@ -640,7 +640,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
     setBusy(true);
     setResult(null);
     try {
-      setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
+      setQuote(await call("ReplayQuote", { id, provider }));
     } catch (e) {
       toast.error(errorText(e));
       setQuote(null);
@@ -652,7 +652,7 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   async function go() {
     setBusy(true);
     try {
-      setResult(await invoke<ReplayResult>("replay_run", { id, provider }));
+      setResult(await call("ReplayRun", { id, provider }));
       setQuote(null);
     } catch (e) {
       toast.error(errorText(e));

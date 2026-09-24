@@ -14,7 +14,7 @@ import { mcpText } from "./McpPage.i18n";
 export const sameFinding = (a: ScanFinding, b: ScanFinding) =>
   a.path === b.path && a.line === b.line && a.rule === b.rule;
 
-const RANK = { high: 0, medium: 1, low: 2 } as const;
+const RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 /** 级别。**颜色和字一起说** —— 只靠颜色的话，色弱的人分不出高和中 */
 export function Level({ level }: { level: ScanFinding["level"] }) {
@@ -62,7 +62,7 @@ export function Findings({
   const [open, setOpen] = useState<ScanFinding | null>(null);
   const isNew = (f: ScanFinding) => alerts.some((a) => sameFinding(a, f));
   const rows = [...data.findings].sort(
-    (a, b) => Number(isNew(b)) - Number(isNew(a)) || RANK[a.level] - RANK[b.level],
+    (a, b) => Number(isNew(b)) - Number(isNew(a)) || (RANK[a.level] ?? 3) - (RANK[b.level] ?? 3),
   );
   const fresh = rows.filter(isNew).length;
 

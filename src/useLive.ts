@@ -1,8 +1,8 @@
 import { useEffect, useReducer, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { listen } from "@tauri-apps/api/event";
 import { textOf } from "@/i18n";
-import type { CoreEvent, HistoryRow } from "./types";
+import type { CoreEvent } from "./types";
 import { liveText } from "./useLive.i18n";
 
 /**
@@ -230,7 +230,7 @@ export function useLive(active: boolean, windowMs: number) {
         // **等订阅真的挂上再问。**`listen` 是异步注册的：先问的话，快照和
         // 订阅之间结束的请求，它的结局谁都没收到，就一直挂在「进行中」
         await un;
-        const open = await invoke<CoreEvent[]>("in_flight_requests");
+        const open = await call("InFlight", null);
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
         const next = new Set(mark.started);
@@ -273,9 +273,9 @@ export function useLive(active: boolean, windowMs: number) {
           是**结束**的时刻；带长思考的请求跑上一两分钟是常事，它开始于
           窗口之外、结束在窗口之内，也该补上。
         */
-        const rows = await invoke<HistoryRow[]>("recent_requests", {
+        const rows = await call("History", {
           limit: 2000,
-          fromMs: Date.now() - 2 * windowMs,
+          from_ms: Date.now() - 2 * windowMs,
         });
         if (!alive) return;
         const cut = Date.now() - windowMs;

@@ -24,7 +24,6 @@ import {
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/ui/empty";
 import { IconCopied, IconCopy } from "@/ui/icons";
 import type {
-  ClientsResponse,
   ClientView,
   CostGroup,
   DetectedClient,
@@ -32,7 +31,7 @@ import type {
   ManualClient,
   Overview,
 } from "@/types";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { useCoreEvent } from "@/useCoreEvent";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -97,7 +96,7 @@ export default function KeysPage({
   const load = useCallback(() => {
     api.listKeys().then(setKeys).catch((e) => toast.error(errorText(e)));
     // 接管状态在客户端配置旁边的记录里，每次现扫；拿不到时少一个标记，页面照常用
-    invoke<ClientsResponse>("list_clients")
+    call("Clients", null)
       .then((r) => {
         setClients(r.clients);
         setManual(r.manual);

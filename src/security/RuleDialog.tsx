@@ -27,6 +27,9 @@ import { ruleDialogText } from "./RuleDialog.i18n";
 import { useTrial, type Trial } from "./useTrial";
 
 type Action = "cut" | "record";
+/** core 按字符串发拦截时的动作；只认这两个 */
+export const asAction = (s: string | null | undefined): Action | undefined =>
+  s === "cut" || s === "record" ? s : undefined;
 
 /** 新建时预先填好的内容。「复制为自定义规则」从内置规则带过来 */
 export interface RuleSeed {
@@ -181,7 +184,7 @@ export function RuleDialog({
   );
   // 新建的审查规则默认切断：专门写一条规则，多半就是要拦它
   const [action, setAction] = useState<Action>(
-    (editing?.action as Action | undefined) ?? seed?.action ?? "cut",
+    asAction(editing?.action) ?? seed?.action ?? "cut",
   );
   const [sample, setSample] = useState("");
   const [saving, setSaving] = useState(false);
@@ -345,7 +348,7 @@ export function BuiltinRuleDialog({
           </Field>
 
           {tools && (
-            <ActionField value={action} onChange={setAction} factory={rule.default_action ?? null} />
+            <ActionField value={action} onChange={setAction} factory={asAction(rule.default_action) ?? null} />
           )}
 
           <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-y-1 tw-body">
