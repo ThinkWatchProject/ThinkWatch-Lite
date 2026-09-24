@@ -14,11 +14,9 @@
 //! 的安装程序，它会把那一项一起改掉，所以 winget 之后看到的就是新版本，不会
 //! 拿旧的盖回来。
 //!
-//! **Linux 上看打包时写进二进制的那个标记，不按路径猜。**打包器给 AppImage 和
-//! deb 各打一份补丁（`tauri::utils::platform::bundle_type()` 读的就是它），
-//! 所以「这是哪种包」在编译产物里已经有确定的答案。AppImage 由更新器插件原地
-//! 换掉那个文件；deb 归系统的包管理器管，更新时下载、验签由插件做，安装交给
-//! `pkexec apt-get`，由系统弹授权框 —— **应用不经手用户的密码**（见 `install_deb`）。
+//! **Linux 上只发 AppImage，看打包时写进二进制的那个标记，不按路径猜。**打包器
+//! 给 AppImage 打了补丁（`tauri::utils::platform::bundle_type()` 读的就是它），
+//! 由更新器插件原地换掉那个文件。没有这个标记的都是开发构建，不自己更新。
 
 use std::path::Path;
 #[cfg(target_os = "macos")]
@@ -56,10 +54,9 @@ pub const BREW_UPGRADE: &str = "brew update && brew upgrade --cask thinkwatch-li
 pub enum Install {
     /// Homebrew 的 cask 装的。更新走 `brew upgrade`。
     Homebrew,
-    /// 手工下载解压的 `.app`。这一种可以自己更新。
+    /// 手工下载解压的 `.app`（Windows 上是安装程序装的，Linux 上是 AppImage）。
+    /// 这一种可以自己更新。
     Standalone,
-    /// Linux 上 deb 装的。更新时下载新的 deb，经系统授权后由 apt 安装。
-    Deb,
     /// 根本不在一个 `.app` 里 —— `tauri dev`。
     Dev,
 }
@@ -67,7 +64,7 @@ pub enum Install {
 impl Install {
     /// 这一份能不能自己把自己换掉。
     pub fn can_self_update(self) -> bool {
-        matches!(self, Install::Standalone | Install::Deb)
+        self == Install::Standalone
     }
 }
 
@@ -155,7 +152,7 @@ pub fn nsis_installed(exe: &Path) -> Install {
 /// 一个可以原地替换的 AppImage 文件 —— 插件会去替换正在跑的那个可执行文件。
 /// 运行时（AppImage 的 runtime）挂载时才设这个变量。
 ///
-/// rpm 不发，打出来的也不自己更新。
+/// deb、rpm 都不发，自己打出来的也不自己更新。
 #[cfg(target_os = "linux")]
 pub fn linux_kind(
     bundle: Option<tauri::utils::config::BundleType>,
@@ -166,7 +163,6 @@ pub fn linux_kind(
         Some(BundleType::AppImage) if appimage.is_some_and(|p| !p.is_empty()) => {
             Install::Standalone
         }
-        Some(BundleType::Deb) => Install::Deb,
         _ => Install::Dev,
     }
 }
@@ -174,7 +170,7 @@ pub fn linux_kind(
 /// 不是自己的、要在启动时清掉的 AppImage 环境变量。
 ///
 /// AppImage 的运行时挂载时设 `APPIMAGE`、`APPDIR`，而环境变量会一路继承：
-/// 从一个 AppImage 里的终端、启动器拉起来的 deb 版，手里拿着的是**别人的**
+/// 从一个 AppImage 里的终端、启动器拉起来的开发构建，手里拿着的是**别人的**
 /// 这两个值。Tauri 却照单全收（`Env::default` 读这两个，只打一条警告）：
 /// `restart()` 重启的是 `$APPIMAGE` 指的那个文件，`resource_dir()` 在自己的
 /// 资源目录不在时改看 `$APPDIR` —— 更新完重启，起来的就可能是另一个程序。
@@ -223,104 +219,6 @@ pub fn kind() -> Install {
 /// 发布页。自动更新装不上时，从这里手动下载新版本。
 #[cfg(target_os = "linux")]
 const RELEASES_URL: &str = "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest";
-
-/// 系统授权框。写全路径：这是一个以 root 身份执行东西的入口，不按 PATH 找。
-#[cfg(target_os = "linux")]
-const PKEXEC: &str = "/usr/bin/pkexec";
-/// 用 apt 而不是 `dpkg -i`：新版本多了依赖时 apt 会一起补上，dpkg 只会装到
-/// 一半停下，留下一个「依赖未满足」的包。
-#[cfg(target_os = "linux")]
-const APT_GET: &str = "/usr/bin/apt-get";
-
-/// 装一个已经验过签的 deb。**`bytes` 必须来自更新器插件的 `download()`**
-/// —— 它在交出字节之前按应用里的公钥核对签名。
-///
-/// **不用插件的 `install()`。**它先试 pkexec，失败了就用 zenity / kdialog 弹一个
-/// 输入框要用户的密码，再喂给 `sudo -S`；那也失败的话去跑一个没有终端的
-/// `sudo`，会卡住。一个桌面应用不该经手用户的系统密码 —— 授权只交给系统的
-/// 授权框，它失败就是失败。
-///
-/// 包放在 `/tmp` 下一个只有自己能进的新目录里：root 读得到，别的用户读不到、
-/// 也换不掉。目录用 `create` 而不是 `create_dir_all` —— 名字被人抢先占了
-/// 就失败，不去用一个别人建的目录。
-#[cfg(target_os = "linux")]
-pub async fn install_deb(bytes: &[u8]) -> Result<(), String> {
-    use std::os::unix::fs::DirBuilderExt;
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    let dir =
-        std::env::temp_dir().join(format!("thinkwatch-update-{}-{nanos}", std::process::id()));
-    std::fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&dir)
-        .map_err(|e| not_installed(&e.to_string()))?;
-    let file = dir.join("thinkwatch-lite.deb");
-    let out = match std::fs::write(&file, bytes) {
-        Ok(()) => tokio::process::Command::new(PKEXEC)
-            .arg(APT_GET)
-            .args(["install", "-y"])
-            .arg(&file)
-            .output()
-            .await
-            .map_err(|e| e.to_string()),
-        Err(e) => Err(e.to_string()),
-    };
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let out = match out {
-        Ok(out) => out,
-        Err(e) => {
-            tracing::error!("更新：没能执行 {PKEXEC}：{e}");
-            return Err(if std::path::Path::new(PKEXEC).exists() {
-                not_installed(&e)
-            } else {
-                not_installed(tr!("系统中没有 pkexec", "pkexec is not available"))
-            });
-        }
-    };
-    if out.status.success() {
-        return Ok(());
-    }
-    tracing::error!(
-        "更新：apt 安装失败（{}）：{}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr).trim()
-    );
-    Err(not_installed(deb_failure(out.status.code())))
-}
-
-/// 「更新未安装」加上去哪里下载。
-#[cfg(target_os = "linux")]
-fn not_installed(why: &str) -> String {
-    tr!(
-        format!("更新未安装：{why}。新版本可从 {RELEASES_URL} 下载。"),
-        format!(
-            "The update was not installed: {why}. The new version can be downloaded from {RELEASES_URL}."
-        )
-    )
-}
-
-/// pkexec 的退出码说成一句话。
-///
-/// 126 是授权框被关掉了，127 是没拿到授权（或者会话里没有授权代理）。
-/// 其余的是 apt 自己的退出码 —— 包管理器那一侧的失败，比如被别的安装占着锁。
-#[cfg(target_os = "linux")]
-fn deb_failure(code: Option<i32>) -> &'static str {
-    match code {
-        Some(126) => tr!("授权已取消", "authorization was cancelled"),
-        Some(127) => tr!(
-            "未获得管理员授权",
-            "administrator authorization was not granted"
-        ),
-        _ => tr!(
-            "软件包管理器未能完成安装",
-            "the package manager could not complete the installation"
-        ),
-    }
-}
 
 /// 插件替换 AppImage 失败时的那一句。
 ///
@@ -520,15 +418,14 @@ mod tests {
             linux_kind(Some(BundleType::AppImage), Some(std::ffi::OsStr::new(""))),
             Install::Dev
         );
-        assert_eq!(linux_kind(Some(BundleType::Deb), None), Install::Deb);
-        assert!(Install::Deb.can_self_update());
-        // 不发 rpm；打出来的也不自己更新
+        // 不发 deb、rpm；自己打出来的也不自己更新
+        assert_eq!(linux_kind(Some(BundleType::Deb), None), Install::Dev);
         assert_eq!(linux_kind(Some(BundleType::Rpm), None), Install::Dev);
         // `cargo run` 的构建没有标记。环境里有个 APPIMAGE 也不算
         assert_eq!(linux_kind(None, Some(image)), Install::Dev);
     }
 
-    /// 只有 AppImage 留着这两个变量；deb 和开发构建一律清掉，restart 不会跑去
+    /// 只有 AppImage 留着这两个变量；别的构建一律清掉，restart 不会跑去
     /// 一个继承来的 `$APPIMAGE`。
     #[cfg(target_os = "linux")]
     #[test]
@@ -549,14 +446,6 @@ mod tests {
         assert!(appimage_failure(&denied).contains(RELEASES_URL));
         assert!(appimage_failure(&Error::TempDirNotOnSameMountPoint).contains(RELEASES_URL));
         assert!(!appimage_failure(&Error::BinaryNotFoundInArchive).contains(RELEASES_URL));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn a_dismissed_authorization_is_not_reported_as_a_broken_package() {
-        assert_ne!(deb_failure(Some(126)), deb_failure(Some(100)));
-        assert_ne!(deb_failure(Some(127)), deb_failure(Some(100)));
-        assert!(not_installed(deb_failure(Some(126))).contains(RELEASES_URL));
     }
 
     /// 读的是 tap 里真实的那份 cask —— 格式变了，这条先红。

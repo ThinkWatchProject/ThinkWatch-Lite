@@ -37,6 +37,10 @@ jobs:
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color -shellcheck=
+      # Linux 用户的一行安装脚本在别人的机器上、用别人的 sh 跑（Ubuntu 上是
+      # dash），写出 bash 的语法就是装不上。runner 自带 shellcheck
+      - name: The install script is POSIX sh
+        run: shellcheck -s sh scripts/install.sh
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

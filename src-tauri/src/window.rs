@@ -84,30 +84,6 @@ pub(crate) mod relaunch_token {
     }
 }
 
-/// AppImage 没有安装这一步，`thinkwatch://` 没人认领：每次启动自己登记一次。
-///
-/// 插件的 `register_all` 往 `~/.local/share/applications` 写一份
-/// `<二进制名>-handler.desktop`（`Exec` 指向 `$APPIMAGE`），再跑
-/// `update-desktop-database` 和 `xdg-mime default`；`Exec` 没变就不重写文件。
-/// **每次都做**是因为 AppImage 会被挪走、换成新下载的那个。deb 装的时候包里
-/// 的 `.desktop` 已经登记过了，不碰。
-///
-/// 放到后台线程：要起两个外部命令，不该拖住启动。失败只记一句，不打断用户。
-#[cfg(target_os = "linux")]
-pub(crate) fn register_appimage_url_handler(app: &tauri::AppHandle) {
-    use tauri::utils::config::BundleType;
-    if tauri::utils::platform::bundle_type() != Some(BundleType::AppImage) {
-        return;
-    }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        use tauri_plugin_deep_link::DeepLinkExt;
-        if let Err(e) = app.deep_link().register_all() {
-            tracing::warn!("登记 thinkwatch:// 的处理程序失败：{e}");
-        }
-    });
-}
-
 /// 主窗口用时才建。
 ///
 /// **「根本不创建」不是「创建后隐藏」**：后者省不了内存也省不了

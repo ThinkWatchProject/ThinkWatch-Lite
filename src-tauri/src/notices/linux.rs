@@ -608,13 +608,12 @@ mod native {
         /// notifications just do not appear
         pub fn new(app: tauri::AppHandle) -> Self {
             let dir = crate::data_dir();
-            // Tauri's deb bundler names the entry `<productName>.desktop`
-            // (tauri-bundler `linux/freedesktop/mod.rs` `generate_desktop_file`)
-            let name = app.package_info().name.clone();
             let a = app.clone();
             let (tx, task) = start(Config {
-                app_name: name.clone(),
-                desktop_entry: name,
+                app_name: app.package_info().name.clone(),
+                // The menu entry the AppImage writes is `<identifier>.desktop`
+                // (`crate::desktop_entry`); GNOME attributes notifications by it
+                desktop_entry: app.config().identifier.clone(),
                 icon: write_icon(&dir),
                 open_label: tr!("打开", "Open").to_string(),
                 store: Some(dir.join(STORE_FILE)),
@@ -930,7 +929,7 @@ mod tests {
             let spawn = |clicks: Clicks| {
                 let (tx, task) = start(Config {
                     app_name: "ThinkWatch Lite".into(),
-                    desktop_entry: "ThinkWatch Lite".into(),
+                    desktop_entry: "app.thinkwatch.lite".into(),
                     icon: "/tmp/icon.png".into(),
                     open_label: "Open".into(),
                     store: Some(store.clone()),
@@ -959,7 +958,7 @@ mod tests {
                     assert_eq!(body, "a &lt;b&gt; &amp; c");
                     assert_eq!(actions, ["default", "Open"]);
                     assert_eq!(urgency, Some(1));
-                    assert_eq!(entry.as_deref(), Some("ThinkWatch Lite"));
+                    assert_eq!(entry.as_deref(), Some("app.thinkwatch.lite"));
                     sender
                 }
                 c => panic!("{c:?}"),

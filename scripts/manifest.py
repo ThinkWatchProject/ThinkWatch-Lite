@@ -4,8 +4,8 @@
 应用去问「有没有新版本」时读的就是这一份清单，下载的是它指向的那个文件
 —— 和网页上给人下载的是同一个：macOS 上是 DMG（应用怎么从 DMG 更新自己，
 见 `src-tauri/src/dmg.rs`），Windows 上是 NSIS 安装程序，更新器直接跑它；
-Linux 上 AppImage 原地换掉自己，deb 交给系统授权后由 apt 安装（见
-`src-tauri/src/update.rs`）。
+Linux 上只发 AppImage，它原地换掉自己（见 `src-tauri/src/update.rs`）；
+`scripts/install.sh` 也从这一份里找本架构的 AppImage。
 
 用法：manifest.py <版本> <发布说明文件> <平台>=<文件> [<平台>=<文件> ...]
 
@@ -31,16 +31,14 @@ REPO = "ThinkWatchProject/ThinkWatch-Lite"
 #
 # Linux 的键多一段安装方式。更新器先找 `<系统>-<架构>-<安装方式>`，找不到才退
 # 到 `<系统>-<架构>`（插件的 `get_urls`）；安装方式来自打包时写进二进制的标记。
-# 同一台机器上 AppImage 和 deb 要的是不同的文件，所以两个都带后缀、不给不带
-# 后缀的那一个 —— 给了的话，哪天少写一个带后缀的，那一类用户会拿到另一种包。
+# **只给带 `-appimage` 的那个。**AppImage 第一下就找到它；不带后缀的键是所有
+# 构建的退路，给了它，一个自己打出来的 deb 或 rpm 也会被递上 AppImage 的字节。
 PLATFORMS = {
     "darwin-aarch64",
     "windows-x86_64",
     "windows-aarch64",
     "linux-x86_64-appimage",
-    "linux-x86_64-deb",
     "linux-aarch64-appimage",
-    "linux-aarch64-deb",
 }
 
 
@@ -95,12 +93,9 @@ def main() -> None:
             sys.exit(f"不认识的平台或写法：{pair}（要的是 <平台>=<文件>，平台是 {sorted(PLATFORMS)} 之一）")
         if platform in platforms:
             sys.exit(f"{platform} 给了两次")
-        # 两种 Linux 包在同一个架构上各有一个键，写反了的话，deb 装的会拿
-        # AppImage 的字节交给 apt，AppImage 会被换成一个 deb
-        want_ext = {"-appimage": ".AppImage", "-deb": ".deb"}
-        for suffix, ext in want_ext.items():
-            if platform.endswith(suffix) and not file.endswith(ext):
-                sys.exit(f"{platform} 要的是 {ext}，给的是 {file}")
+        # AppImage 会被原地换成这个文件：换成别的东西就再也起不来了
+        if platform.endswith("-appimage") and not file.endswith(".AppImage"):
+            sys.exit(f"{platform} 要的是 .AppImage，给的是 {file}")
         platforms[platform] = entry(pathlib.Path(file), version, want)
     # **少一个平台就不发。**缺掉的那个平台上，已经装好的每一份都会停在旧版本，
     # 而发布页上看起来一切正常

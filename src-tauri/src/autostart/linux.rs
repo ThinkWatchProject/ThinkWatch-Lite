@@ -43,23 +43,14 @@ impl Autostart {
         )
         .unwrap_or_default()
         .join(format!("{}.desktop", app.config().identifier));
-        let exe = std::env::current_exe().ok();
-        // The deb bundler installs the icons under the main binary's name
-        // (`/usr/share/icons/hicolor/<size>/apps/<bin>.png`) and uses the same
-        // name for `Icon=` in the menu entry; this entry follows it. An AppImage
-        // has no stable icon file outside its mount, so it gets the same name:
-        // resolved when an AppImage integrator installed the icon, the desktop's
-        // generic icon otherwise.
-        let icon = exe
-            .as_deref()
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "thinkwatch-lite".to_string());
+        // Every launch of the AppImage installs the icon into the user's hicolor
+        // theme under the identifier (`desktop_entry`), so the name resolves
+        // there; a development build gets the desktop's generic icon.
         Self {
             file,
-            program: program(exe),
+            program: program(std::env::current_exe().ok()),
             name: app.package_info().name.clone(),
-            icon,
+            icon: app.config().identifier.clone(),
         }
     }
 
@@ -168,8 +159,8 @@ impl Autostart {
 /// What the entry should start.
 ///
 /// **Asks the bundle type, not the environment alone.** `$APPIMAGE` is inherited
-/// by everything an AppImage starts, so a deb install launched from, say, an
-/// AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
+/// by everything an AppImage starts, so a development build launched from, say,
+/// an AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
 /// type is patched into the binary by the bundler, so it cannot be inherited.
 fn program(exe: Option<PathBuf>) -> Result<String, String> {
     use tauri::utils::config::BundleType;
@@ -229,11 +220,12 @@ fn autostart_dir(
 ///   entries, which would leave the user no way to see or switch it off there.
 /// - `X-GNOME-Autostart-enabled=true` is written explicitly so re-enabling an
 ///   entry GNOME switched off reads as on to every tool, not only to us.
+/// - No `Version`: it is optional, and desktop-file-utils 0.26 (Ubuntu 22.04)
+///   rejects `Version=1.5` as unknown. Same as the menu entry (`desktop_entry`).
 fn entry(name: &str, program: &str, args: &[&str], icon: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Version=1.5\n\
          Name={}\n\
          Exec={}\n\
          Icon={}\n\
@@ -259,7 +251,7 @@ fn entry(name: &str, program: &str, args: &[&str], icon: &str) -> String {
 ///
 /// The program path is always quoted: it is user-controlled (wherever the
 /// AppImage was saved), and an always-quoted path is valid per the spec.
-pub(super) fn exec_value(program: &str, args: &[&str]) -> String {
+pub(crate) fn exec_value(program: &str, args: &[&str]) -> String {
     let mut line = quote_arg(program);
     for a in args {
         line.push(' ');
@@ -318,7 +310,7 @@ fn quote_arg(a: &str) -> String {
 ///
 /// `\s` is only needed for a leading space (a key file reader trims whitespace
 /// after the `=`); elsewhere a space is written as is.
-fn escape_string(s: &str) -> String {
+pub(crate) fn escape_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for (i, c) in s.chars().enumerate() {
         match c {
@@ -697,6 +689,45 @@ mod tests {
 
         a.disable().unwrap();
         assert!(!file.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// What desktop-file-utils thinks of the entry, for every nasty path. Skipped
+    /// where `desktop-file-validate` is not installed (it is not on the CI images).
+    #[cfg(unix)]
+    #[test]
+    fn desktop_file_validate_accepts_the_entry() {
+        let dir = tempdir();
+        std::fs::create_dir_all(&dir).unwrap();
+        for (i, p) in NASTY.iter().filter(|p| !p.contains('%')).enumerate() {
+            let file = dir.join(format!("e{i}.desktop"));
+            std::fs::write(
+                &file,
+                entry(
+                    "ThinkWatch Lite",
+                    p,
+                    &[super::super::AUTOSTART_FLAG],
+                    "app.thinkwatch.lite",
+                ),
+            )
+            .unwrap();
+            let out = match std::process::Command::new("desktop-file-validate")
+                .arg(&file)
+                .output()
+            {
+                Ok(out) => out,
+                Err(_) => {
+                    eprintln!("skipped: desktop-file-validate is not installed");
+                    break;
+                }
+            };
+            assert!(
+                out.status.success() && out.stdout.is_empty(),
+                "{p:?}: {}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
