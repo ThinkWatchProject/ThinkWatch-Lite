@@ -13,7 +13,6 @@ export type Install = "homebrew" | "standalone" | "dev";
 /** 查到的新版本。 */
 export interface Found {
   version: string;
-  notes?: string | null;
 }
 
 /** 设置页读的那份状态。 */
@@ -27,7 +26,6 @@ export interface UpdateView {
 /** 更新窗口要画的东西。 */
 export interface Offer {
   version: string;
-  notes?: string | null;
   current: string;
   install: Install;
   /** Homebrew 那一档要执行的命令。由 Rust 给出，界面上不再写一遍 */

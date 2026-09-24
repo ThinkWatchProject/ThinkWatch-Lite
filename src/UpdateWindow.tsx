@@ -19,8 +19,8 @@ const COPIED_MS = 2_000;
 /**
  * 更新窗口。
  *
- * 查到新版本时由 Rust 建出来：自动检查查到了，或者用户在设置里点了
- * 「立即检查」。窗口建出来时是隐藏的 —— 这里画好、量出高度之后再亮出来。
+ * 由 Rust 建出来：用户点了「检查更新」或「立即检查」并查到新版本，或者
+ * 点了自动检查发出的那条通知、菜单里的「安装新版本」。窗口建出来时是隐藏的 —— 这里画好、量出高度之后再亮出来。
  *
  * 画哪一种取决于这一份是怎么装上来的：
  *
@@ -72,8 +72,7 @@ export default function UpdateWindow() {
     };
   }, []);
 
-  // 内容高度变了就跟着改窗口高度：出现进度条、出现错误、换了一版带着
-  // 更长的说明。第一次量完才亮出窗口，不让人看见跳一下的那一帧。
+  // 内容高度变了就跟着改窗口高度：出现进度条、出现错误。第一次量完才亮出窗口，不让人看见跳一下的那一帧。
   //
   // **窗口的尺寸由 Rust 那边设**，理由见 `update_fit`：窗口接口说的是整扇
   // 窗户，标题栏算在里面，照着内容的高度设下去，网页会少一条标题栏。宽度
@@ -144,12 +143,6 @@ export default function UpdateWindow() {
           <h1 className="tw-title font-semibold">{t.available(offer.version)}</h1>
           <p className="tw-body text-muted-foreground">{t.current(offer.current)}</p>
         </div>
-
-        {offer.notes && (
-          <p className="max-h-32 overflow-y-auto whitespace-pre-wrap text-pretty tw-body">
-            {offer.notes}
-          </p>
-        )}
 
         {canInstall(offer.install) ? (
           <>

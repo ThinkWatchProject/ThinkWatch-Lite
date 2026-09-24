@@ -1030,7 +1030,6 @@ fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Result<The
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct Found {
     version: String,
-    notes: Option<String>,
 }
 
 /// 更新在内存里的那点状态。
@@ -1046,7 +1045,6 @@ struct Updates {
 #[derive(serde::Serialize)]
 struct OfferView {
     version: String,
-    notes: Option<String>,
     current: String,
     install: update::Install,
     /// Homebrew 那一档要执行的命令。**由这里给出，界面上不再写一遍** ——
@@ -1063,7 +1061,6 @@ async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     let found = u.check().await.map_err(|e| e.to_string())?;
     Ok(found.map(|up| Found {
         version: up.version.clone(),
-        notes: up.body.clone(),
     }))
 }
 
@@ -1097,7 +1094,7 @@ async fn fetch_text(url: &str) -> Result<String, String> {
 /// **Homebrew 那一档问的是 tap，不是发布页。**发版那一刻 latest.json 就有
 /// 了新版本，而 cask 要等 tap 的定时任务跟上；在那之前提示用户执行
 /// `brew upgrade`，他照做只会看到「已经是最新」。所以那一档以 cask 里的
-/// 版本为准；发布说明只在清单和 cask 说的是同一版时才带上。
+/// 版本为准。
 async fn find(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     if update::kind() != update::Install::Homebrew {
         return look(app).await;
@@ -1114,15 +1111,8 @@ async fn find(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     if !update::newer(version, &current) {
         return Ok(None);
     }
-    let notes = look(app)
-        .await
-        .ok()
-        .flatten()
-        .filter(|f| f.version == version)
-        .and_then(|f| f.notes);
     Ok(Some(Found {
         version: version.to_string(),
-        notes,
     }))
 }
 
@@ -1199,16 +1189,42 @@ fn update_fit(window: tauri::Window, height: f64) -> tauri::Result<()> {
     window.set_size(tauri::LogicalSize::new(UPDATE_WIDTH, height))
 }
 
-/// 把查到的版本交给用户：记下来，然后把更新窗口拉起来。菜单里的「检查更新」
-/// 跟着换成「安装新版本」
-fn present(app: &tauri::AppHandle, found: Found) {
+/// 更新那条系统通知的键。点开它拉起的是更新窗口，不是主界面的某一页
+pub(crate) const UPDATE_NOTICE: &str = "update";
+
+/// 把查到的版本记下来。菜单里的「检查更新」跟着换成「安装新版本」
+fn record(app: &tauri::AppHandle, found: Found) {
     *app.state::<Updates>().offer.lock().unwrap() = Some(found.clone());
     let _ = app.emit("update-found", found);
+    if let Some(st) = app.try_state::<AppState>() {
+        st.menubar.notify_one();
+    }
+}
+
+/// 用户自己点了检查：查到了就把更新窗口拉起来 —— 他在等这个结果。
+fn present(app: &tauri::AppHandle, found: Found) {
+    record(app, found);
     if let Err(e) = show_update_window(app) {
         tracing::error!("更新窗口打不开：{e}");
     }
-    if let Some(st) = app.try_state::<AppState>() {
-        st.menubar.notify_one();
+}
+
+/// 自动检查查到了：**只发一条系统通知**，点开才拉起更新窗口。
+///
+/// 这一刻用户在做别的事；一扇自己冒出来、抢走焦点的窗口是打断，通知不是。
+/// 选了「只在应用内」或关掉提醒的，就只剩菜单里那一项「安装新版本」和设置页。
+fn notify_update(app: &tauri::AppHandle, found: Found) {
+    let version = found.version.clone();
+    record(app, found);
+    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+        n.announce(
+            UPDATE_NOTICE,
+            &tr!(
+                format!("ThinkWatch Lite {version} 可用"),
+                format!("ThinkWatch Lite {version} Is Available")
+            ),
+            tr!("点按此通知进行更新。", "Click to update."),
+        );
     }
 }
 
@@ -1255,7 +1271,6 @@ fn update_pending(app: tauri::AppHandle) -> Option<OfferView> {
     let install = update::kind();
     Some(OfferView {
         version: found.version,
-        notes: found.notes,
         current: app.package_info().version.to_string(),
         install,
         command: (install == update::Install::Homebrew).then_some(update::BREW_UPGRADE),
@@ -2181,7 +2196,7 @@ const UPDATE_FIRST_LOOK: std::time::Duration = std::time::Duration::from_secs(12
 /// 点过「稍后」的版本，在下一次检查时再提 —— 也就是一天之后。
 const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
-/// 自动检查。查到了就把更新窗口推到用户面前。
+/// 自动检查。查到了就发一条系统通知。
 ///
 /// **开发构建不自己去查。**每次 `tauri dev` 之后两分钟弹一个窗，写代码的
 /// 人学会的只是把它关掉。「立即检查」在开发构建里照样能用。
@@ -2192,7 +2207,7 @@ async fn update_loop(app: tauri::AppHandle) {
         // 循环要立刻听话，而不是等到下次启动。
         if update::kind() != update::Install::Dev && prefs::load(&data_dir()).check_updates {
             match find(&app).await {
-                Ok(Some(f)) => present(&app, f),
+                Ok(Some(f)) => notify_update(&app, f),
                 Ok(None) => {}
                 // 查不到就下次再说。**不告诉用户** —— 网络不通不是他此刻
                 // 要处理的事，而一句「检查更新失败」只会打断他在做的事。
