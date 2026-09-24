@@ -10,8 +10,9 @@ import { launchText } from "./LaunchScreen.i18n";
 import { launchPhase } from "./phase";
 
 /**
- * 至少停多久。**每次开窗都停**：秒开也不跳过，四笔要画完、亮一下。
- * 开机自启时不建窗口，自然也不会有这一面。
+ * 至少停多久。**冷启动每次都停**：秒开也不跳过，四笔要画完、亮一下。
+ * 热启动（开窗时 core 已经在跑）没有这一面，见 `warm.ts`；开机自启时不建
+ * 窗口，自然也不会有。
  */
 export const MIN_MS = 800;
 /** 淡出多久。和 index.css 里 `.launch` 的过渡是同一个数 */
