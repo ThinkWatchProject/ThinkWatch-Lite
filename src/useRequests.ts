@@ -8,6 +8,7 @@ import {
   interruptInFlight,
   type CoreEvent,
   type HistoryRow,
+  type LocalEvent,
   type RequestRow,
   type ScanFinding,
   type SeenSince,
@@ -297,7 +298,6 @@ export function useRequests(ready: boolean) {
         }
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
-        if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
         if (ev.kind === "credential_rotated") {
           setRotated((prev) => [...prev.filter((x) => x.provider !== ev.provider), ev]);
         }
@@ -397,12 +397,22 @@ export function useRequests(ready: boolean) {
       if (interruptInFlight(store.current)) publish();
     });
 
+    /*
+      客户端配置里新出现的可疑内容。**这台机器上的文件监视说的，不是 core**：
+      连着哪个 core 都一样。MCP 页有新发现时直接落在「发现」上要用它。
+    */
+    const unLocal = listen<LocalEvent>("local-event", (e) => {
+      const ev = e.payload;
+      if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
+    });
+
     // 窗口不可见时不必再排帧 —— 后台标签页的 rAF 本来就会被节流，
     // 但显式断掉能省下事件堆积。
     return () => {
       alive = false;
       un.then((f) => f());
       void unState.then((f) => f());
+      void unLocal.then((f) => f());
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (settle.current) clearTimeout(settle.current);
     };

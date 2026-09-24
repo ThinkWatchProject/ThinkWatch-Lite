@@ -447,14 +447,11 @@ async fn background(app: &tauri::AppHandle, action: Action) {
 
 async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let clients = st
-        .control
-        .call::<ep::Clients>(&[], &())
+    // 客户端该连的地址，和客户端页、密钥页复制的是同一个
+    let base = crate::clients::gateway_base(&st.control, &crate::clients::gateway_host(st))
         .await
-        .map_err(|e| format!("{e:#}"))?;
-    app.clipboard()
-        .write_text(clients.gateway_base)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    app.clipboard().write_text(base).map_err(|e| e.to_string())
 }
 
 /// **明文不经过界面**：和密钥页的「复制」同一条路，在 Rust 这边直接写剪贴板

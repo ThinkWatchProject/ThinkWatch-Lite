@@ -31,7 +31,6 @@ import type {
   ManualClient,
   Overview,
 } from "@/types";
-import { call } from "@/control";
 import { useCoreEvent } from "@/useCoreEvent";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -96,7 +95,8 @@ export default function KeysPage({
   const load = useCallback(() => {
     api.listKeys().then(setKeys).catch((e) => toast.error(errorText(e)));
     // 接管状态在客户端配置旁边的记录里，每次现扫；拿不到时少一个标记，页面照常用
-    call("Clients", null)
+    api
+      .clients()
       .then((r) => {
         setClients(r.clients);
         setManual(r.manual);

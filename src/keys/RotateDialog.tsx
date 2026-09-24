@@ -23,7 +23,7 @@ import {
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
-import type { ClientView, DetectedClient, KeyRotated } from "@/types";
+import type { ClientView, DetectedClient, KeyRotation } from "@/types";
 import { api } from "./api";
 import { errorText } from "./labels";
 import { rotateDialogText } from "./RotateDialog.i18n";
@@ -32,7 +32,7 @@ import { rotateDialogText } from "./RotateDialog.i18n";
  * 更换一把密钥。
  *
  * **先说代价，再做事。**原密钥立即失效；如果这把钥匙是某个被接管的客户端
- * 在用的，core 会把新值一并写进它的配置，而那个客户端多半要重新启动才会
+ * 在用的，新值会一并写进它的配置，而那个客户端多半要重新启动才会
  * 读到 —— 这句话必须在用户按下去之前说，不是之后。
  */
 export function RotateDialog({
@@ -51,7 +51,7 @@ export function RotateDialog({
   const t = useText(rotateDialogText);
   const common = useText(commonText);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<KeyRotated | null>(null);
+  const [done, setDone] = useState<KeyRotation | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -1,7 +1,8 @@
 //! 命令失败时交给界面的那个东西。
 //!
 //! **一律是一条 [`tw_api::Msg`] 的形状（码 + 参数 + 原句），以对象交出去。**
-//! 控制面的失败原样带着 core 的码，界面按码翻译；这一层自己造的失败（core
+//! 控制面的失败原样带着 core 的码，界面按码翻译；接管、扫描这些在这台机器上
+//! 做的事也按码说（码表见 `src-tauri/msg-codes.txt`）；这一层别的失败（core
 //! 不在、写不了文件）没有码，`code` 是空串，界面照 `text` 显示 —— 和前端
 //! `plain()` 造出来的是同一种东西。
 //!
@@ -28,6 +29,20 @@ impl CmdError {
             args: BTreeMap::new(),
             text: text.into(),
         })
+    }
+}
+
+impl CmdError {
+    /// 里面那条消息
+    pub fn into_msg(self) -> tw_api::Msg {
+        self.0
+    }
+}
+
+/// 这一层按码说的失败（接管、扫描这些在这台机器上做的事），原样交出去
+impl From<tw_api::Msg> for CmdError {
+    fn from(m: tw_api::Msg) -> Self {
+        Self(m)
     }
 }
 

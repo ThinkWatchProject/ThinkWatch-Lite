@@ -7,7 +7,7 @@ import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
-import type { ScanFinding, ScanResponse } from "@/types";
+import type { ScanFinding, ScanReport } from "@/types";
 import { mcpText } from "./McpPage.i18n";
 
 /** 同一处发现：同一个文件、同一行、同一条规则 */
@@ -52,7 +52,7 @@ export function Findings({
   nameOf,
   onSeen,
 }: {
-  data: ScanResponse;
+  data: ScanReport;
   /** 监听到的、新出现的那些 */
   alerts: ScanFinding[];
   nameOf: (client: string) => string;

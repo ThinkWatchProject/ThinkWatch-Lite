@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { CoreEvent } from "./types";
+import { LOCAL_KINDS, type CoreEvent, type LocalEvent } from "./types";
 
 /**
  * 关心的那几种事件到了就回调一次。
@@ -20,9 +20,12 @@ import type { CoreEvent } from "./types";
  *
  * **事件流丢过事件（`events_dropped`）也回调**：丢掉的那几条里可能正有这一页
  * 关心的，当它们发生过，重读一次。
+ *
+ * **这台机器上的事也在这里听**（`local-event`：客户端的配置文件动了、出现了可疑
+ * 内容）。它们不是 core 说的，但对一页来说都是「该重读了」，种类放在同一个列表里。
  */
 export function useCoreEvent(
-  kinds: readonly CoreEvent["kind"][],
+  kinds: readonly (CoreEvent["kind"] | LocalEvent["kind"])[],
   onChange: () => void,
   throttleMs = 2_500,
 ) {
@@ -35,15 +38,22 @@ export function useCoreEvent(
   useEffect(() => {
     const set = new Set([...want.split(","), "events_dropped"]);
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const un = listen<CoreEvent>("core-event", (e) => {
-      if (!set.has(e.payload.kind) || timer) return;
+    const soon = (kind: string) => {
+      if (!set.has(kind) || timer) return;
       timer = setTimeout(() => {
         timer = null;
         cb.current();
       }, throttleMs);
+    };
+    const local = new Set<string>(LOCAL_KINDS);
+    const unCore = listen<CoreEvent>("core-event", (e) => {
+      // 这台机器上的事只认 `local-event` 那一路：旧版 core 自己也发同名的两种
+      if (!local.has(e.payload.kind)) soon(e.payload.kind);
     });
+    const unLocal = listen<LocalEvent>("local-event", (e) => soon(e.payload.kind));
     return () => {
-      void un.then((f) => f());
+      void unCore.then((f) => f());
+      void unLocal.then((f) => f());
       if (timer) clearTimeout(timer);
     };
   }, [want, throttleMs]);
