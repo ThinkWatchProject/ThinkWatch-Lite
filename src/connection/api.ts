@@ -34,8 +34,7 @@ export type ConnectError =
   | { kind: "closed"; addr: string }
   | { kind: "wrong_key" }
   | { kind: "version_mismatch"; ours: string; theirs: string }
-  | { kind: "timeout"; addr: string }
-  | { kind: "not_yet_available" };
+  | { kind: "timeout"; addr: string };
 
 export type LinkState =
   /** 连的是本机：状态看 `core-state` */

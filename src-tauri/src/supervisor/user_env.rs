@@ -31,7 +31,7 @@ pub async fn load() -> Vec<(String, String)> {
 /// core 行为、而不只是给 `${…}` 取值的那些一律不带，保持应用自己的：
 ///
 /// - 自己人：`THINKWATCH_HOME` 决定数据目录，从 shell 带一个不同的过去，core 和
-///   界面就各看各的数据了；`TW_CONTROL_TOKEN` 是控制面的凭据。
+///   界面就各看各的数据了；`TW_*` 是 core 自己的开关。
 /// - 代理：「系统代理」这一档会读 `HTTPS_PROXY` 这些。终端里为了别的工具设的
 ///   代理，不该悄悄改掉网关的出站路径。
 /// - `PATH`：Windows 上系统和用户各有一份、要拼起来才对，单拿一份会更糟。
@@ -312,7 +312,7 @@ mod tests {
             "HTTPS_PROXY",
             "no_proxy",
             "THINKWATCH_HOME",
-            "TW_CONTROL_TOKEN",
+            "TW_LOG",
             "RUST_LOG",
             "DYLD_INSERT_LIBRARIES",
             "SHLVL",

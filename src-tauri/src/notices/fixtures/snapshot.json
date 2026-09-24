@@ -21,7 +21,9 @@
   "clients": 1,
   "providers": 1,
   "uptime_secs": 19,
-  "in_flight": 0
+  "in_flight": 0,
+  "remote_control": { "enabled": false, "addr": null, "allow_from": [], "reachable": [] },
+  "gateway_reachable": []
  },
  "overview": {
   "config_version": "blake3:c71fd577406c",

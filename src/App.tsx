@@ -470,9 +470,7 @@ function Shell({ first }: { first: boolean }) {
   }, []);
   const lasting =
     link?.kind === "down" &&
-    (link.error.kind === "wrong_key" ||
-      link.error.kind === "version_mismatch" ||
-      link.error.kind === "not_yet_available");
+    (link.error.kind === "wrong_key" || link.error.kind === "version_mismatch");
   /** 概览那一页的第一份数据到了。启动画面等它，交接时数字已经是对的 */
   const [landed, setLanded] = useState(false);
   /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */
@@ -1353,10 +1351,12 @@ function Shell({ first }: { first: boolean }) {
               让人点下去再报错
             */}
             <fieldset
-              disabled={remoteLost}
+              // 设置页不整页只读：连接管理在那里，断线时用户正要来这里（换密钥、切回
+              // 本机）。那一页里改服务器配置的几节自己只读，见 `Config`
+              disabled={remoteLost && tab !== "settings"}
               className={
                 "m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 " +
-                (remoteLost ? "opacity-60" : "")
+                (remoteLost && tab !== "settings" ? "opacity-60" : "")
               }
             >
             <div
@@ -1478,6 +1478,7 @@ function Shell({ first }: { first: boolean }) {
                 <Config
                   ov={ov}
                   status={status}
+                  coreReadOnly={remoteLost}
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (

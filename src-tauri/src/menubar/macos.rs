@@ -937,6 +937,49 @@ pub fn confirm_quit(mtm: MainThreadMarker, in_flight: usize) -> bool {
 /// Esc 的键码
 const KEY_ESCAPE: u16 = 53;
 
+/// 此刻菜单里有什么，一行一项，子菜单缩进、勾选的打 ✓、分隔线写成 `---`。
+/// **给预览程序用**（`menubar_preview -- --dump`）：没有屏幕录制权限时，核对原生菜单
+/// 真长什么样只能靠它
+pub fn describe_menu() -> Vec<String> {
+    fn walk(menu: &NSMenu, depth: usize, out: &mut Vec<String>) {
+        for i in 0..menu.numberOfItems() {
+            let Some(item) = menu.itemAtIndex(i) else {
+                continue;
+            };
+            let pad = "  ".repeat(depth);
+            if item.isSeparatorItem() {
+                out.push(format!("{pad}---"));
+                continue;
+            }
+            let title = item
+                .attributedTitle()
+                .map(|t| t.string().to_string())
+                .unwrap_or_else(|| item.title().to_string());
+            let check = if item.state() == NSControlStateValueOn {
+                "✓ "
+            } else {
+                ""
+            };
+            let title = if title.is_empty() && item.view().is_some() {
+                "[自绘]".to_string()
+            } else {
+                title
+            };
+            out.push(format!("{pad}{check}{title}"));
+            if let Some(sub) = item.submenu() {
+                walk(&sub, depth + 1, out);
+            }
+        }
+    }
+    UI.with(|ui| {
+        let mut out = Vec::new();
+        if let Some(ui) = ui.borrow().as_ref() {
+            walk(&ui.menu, 0, &mut out);
+        }
+        out
+    })
+}
+
 /// 一句话的提示框（检查更新之后「已是最新版本」这类）
 pub fn inform(mtm: MainThreadMarker, title: &str, body: &str) {
     let app = NSApplication::sharedApplication(mtm);

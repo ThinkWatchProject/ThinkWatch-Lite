@@ -47,7 +47,6 @@ pub mod scan;
 pub mod settings;
 pub mod supervisor;
 pub mod theme;
-mod token;
 pub mod uninstall;
 pub mod update;
 pub mod updater;
@@ -239,16 +238,16 @@ pub fn run() {
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);
-            // 控制面听在哪由平台决定，凭据这一次启动生成一个。**两样都只在
-            // 这里定一次**，守护拿它去 spawn core，客户端拿它去连。
+            // 控制面听在哪由平台决定，钥匙在 config.yaml 里（core 生成，这一侧
+            // 只读）。**两样都只在这里定一次**，守护和客户端用的是同一对
             let at = control_address();
-            let token = token::generate();
+            let key_file = tw_api::control::config_file(&data_dir());
             // 起好了没有，问控制面：`/status` 答得上来才算。半秒答不上这一次就
             // 算没答应，守护隔一会儿再问
             let ready = {
-                let (at, token) = (at.clone(), token.clone());
+                let (at, key_file) = (at.clone(), key_file.clone());
                 supervisor::probe(move || {
-                    let control = ControlClient::new(at.clone(), token.clone());
+                    let control = ControlClient::new(at.clone(), key_file.clone());
                     async move {
                         control
                             .ping(std::time::Duration::from_millis(500))
@@ -266,7 +265,7 @@ pub fn run() {
                     None,
                     ready,
                     at.clone(),
-                    token.clone(),
+                    key_file.clone(),
                 )
                 .with_user_env(),
             );
@@ -320,7 +319,7 @@ pub fn run() {
             let start_id = conns.startup_target();
             let local = control::Target::Local {
                 at: at.clone(),
-                token: token.clone(),
+                config: key_file.clone(),
             };
             let link = Arc::new(connection::Link::new(
                 handle.clone(),
@@ -396,9 +395,9 @@ pub fn run() {
             // —— 一个死锁的进程既不退出也不关 socket，前两条信号都看
             // 不见它，而它对用户的表现和挂了一模一样。
             let h = handle.clone();
-            let (at2, tok2) = (at.clone(), token.clone());
+            let (at2, key2) = (at.clone(), key_file.clone());
             tauri::async_runtime::spawn(async move {
-                heartbeat_loop(at2, tok2, sup, h).await;
+                heartbeat_loop(at2, key2, sup, h).await;
             });
 
             // 静默启动：开机拉起来的时候屏幕上什么都不该出现，

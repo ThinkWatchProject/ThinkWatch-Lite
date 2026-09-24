@@ -109,8 +109,6 @@ pub struct Supervisor {
     binary: PathBuf,
     config: Option<PathBuf>,
     ready: Probe,
-    /// 控制面的凭据，spawn 时通过环境变量交给 core。见 `crate::token`。
-    token: String,
     /// 请 core 退出要用到它。**Windows 上没有 SIGTERM**，那条路只能走控制面。
     control: crate::control::ControlClient,
     policy: Mutex<RestartPolicy>,
@@ -144,14 +142,14 @@ impl Supervisor {
         config: Option<PathBuf>,
         ready: Probe,
         at: tw_api::control::Address,
-        token: String,
+        // 控制面的钥匙在哪份配置里。**这一侧只读**：core 起来时生成、补上
+        key_file: PathBuf,
     ) -> Self {
         Self {
             binary,
             config,
             ready,
-            control: crate::control::ControlClient::new(at, token.clone()),
-            token,
+            control: crate::control::ControlClient::new(at, key_file),
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
@@ -394,14 +392,11 @@ impl Supervisor {
 
         let mut cmd = tokio::process::Command::new(&self.binary);
         if self.user_env {
-            // 先补这些，下面的凭据再覆盖 —— 虽然 `TW_*` 本来就不会被带过来
             cmd.envs(user_env::load().await);
         }
+        // **不交凭据。**控制面的钥匙在 config.yaml 里，由 core 自己生成、补上；
+        // 这一侧连接时从同一个文件读（见 `crate::control`）
         cmd.args(&args)
-            // 控制面的凭据**走环境变量交过去，不进 argv** —— Windows 上任意
-            // 同用户进程都看得见别人的命令行，而这串东西是那个平台上控制面
-            // 唯一的门。见 `crate::token`。
-            .env(tw_api::control::TOKEN_ENV, &self.token)
             // core 的日志走它自己的 stderr；UI 侧只需要知道它活着。
             .kill_on_drop(true);
         // **不给它开控制台窗口。**twcore 是个命令行程序，Windows 上起一个控制台
@@ -539,7 +534,7 @@ mod tests {
             Some(PathBuf::from("/tmp/c.yaml")),
             always_ready(),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         )
     }
 
@@ -607,7 +602,7 @@ mod tests {
             None,
             always_ready(),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         );
         assert!(!s.command_args(false).contains(&"--config".to_string()));
     }
@@ -688,7 +683,7 @@ mod tests {
             None,
             always_ready(),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         ));
         let looped = {
             let s = s.clone();
@@ -739,7 +734,7 @@ mod tests {
             None,
             third_time,
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         ));
         let mut rx = s.watch();
         let looped = {
@@ -773,7 +768,7 @@ mod tests {
             None,
             probe(|| async { false }),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         );
         let next = s.run_once(false).await.unwrap();
         assert_eq!(next, Next::Again);
@@ -795,7 +790,7 @@ mod tests {
             None,
             always_ready(),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         ));
         let first = {
             let s = s.clone();
@@ -827,7 +822,7 @@ mod tests {
             None,
             always_ready(),
             test_address(),
-            "t".into(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
         ));
         let looped = {
             let s = s.clone();

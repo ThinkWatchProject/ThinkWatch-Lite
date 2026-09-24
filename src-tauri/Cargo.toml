@@ -26,11 +26,12 @@ license = "MIT"
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.47.0" }
 
 [lib]
 name = "thinkwatch_lite_lib"
@@ -64,9 +65,12 @@ tw-adopt = { path = "crates/tw-adopt" }
 tw-scan = { path = "crates/tw-scan" }
 tw-types = { workspace = true }
 tw-guard = { workspace = true }
+# 控制面的握手与加密（Noise NNpsk0），和 core 用的是同一份实现。握手里交换的控制面
+# 版本号来自 tw-api，所以两者必须钉在同一个 tag 上（见上面 `[workspace.dependencies]`）
+tw-link = { workspace = true }
 
 anyhow = "1"
-# 生成控制面的凭据（见 src/token.rs）
+# 新连接的 id、诊断包的临时目录名
 rand = "0.10"
 libc = "0.2"
 # 界面和 Rust 侧之间不经过 core 的那些类型，导出成 TypeScript（`wire.rs`）。

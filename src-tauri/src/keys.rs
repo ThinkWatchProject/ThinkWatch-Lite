@@ -113,33 +113,7 @@ pub async fn rotate_key(
         synced: Vec::new(),
         failed: Vec::new(),
     };
-    // 钉着的这一版 core 自己还会同步（它那边的接管代码还在）。它报了的就照它报的
-    // 说，不再写一遍 —— 再写一遍会把「接管于」刷成此刻。core 不再同步之后这一段
-    // 随它的字段一起删掉
-    for s in r.synced {
-        out.synced.push(wire::KeySynced {
-            client: s.client,
-            name: s.name,
-            takes_effect: match s.takes_effect {
-                tw_api::TakesEffect::Immediately => wire::TakesEffect::Immediately,
-                tw_api::TakesEffect::OnRestart => wire::TakesEffect::OnRestart,
-            },
-            backup: s.backup,
-        });
-    }
-    for f in r.failed {
-        out.failed.push(wire::KeySyncFailed {
-            client: f.client,
-            name: f.name,
-            error: f.error,
-        });
-    }
-    let reported = |id: &str| {
-        out.synced.iter().any(|s| s.client == id) || out.failed.iter().any(|f| f.client == id)
-    };
-    if let Some(c) = owner
-        && !reported(c.id)
-    {
+    if let Some(c) = owner {
         match crate::clients::sync_rotated(&state, &c, &out.key).await {
             Ok(s) => out.synced.push(s),
             Err(f) => out.failed.push(f),

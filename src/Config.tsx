@@ -37,10 +37,13 @@ import type { RemoteCore } from "@/connection/api";
 export default function Config({
   ov,
   status,
+  coreReadOnly = false,
   onChanged,
 }: {
   ov: Overview | null;
   status: CoreStatus | null;
+  /** 连着的远程 core 断了：改它配置的几节只读，应用自己的设置照常能改 */
+  coreReadOnly?: boolean;
   /** 存完监听设置之后叫一声，状态和概览跟着重读 */
   onChanged: () => void;
 }) {
@@ -102,6 +105,10 @@ export default function Config({
     <>
       {/* 监听原来在「接入」页上，和密钥同屏。它是配一次就不动的网关设置，
           和密钥（要天天拿去填客户端）不是一类东西 */}
+      <fieldset
+        disabled={coreReadOnly}
+        className={"m-0 min-w-0 space-y-8 border-0 p-0 " + (coreReadOnly ? "opacity-60" : "")}
+      >
       {ov && (
         <ListenSection
           view={ov.listen}
@@ -119,6 +126,7 @@ export default function Config({
       {ov && (
         <RetentionSection retention={ov.retention} configVersion={ov.config_version} />
       )}
+      </fieldset>
     </>
   );
 
