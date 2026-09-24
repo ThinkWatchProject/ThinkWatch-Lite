@@ -34,7 +34,7 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
                 ..
             } = event
             {
-                let _ = crate::show_main_window(app.app_handle());
+                let _ = crate::window::show_main_window(app.app_handle());
             }
         })
         .on_menu_event(|app, event| {

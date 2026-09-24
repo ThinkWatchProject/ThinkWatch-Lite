@@ -247,7 +247,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             .as_ref()
             .is_some_and(|n| n.mode() != notices::Mode::Off),
         notices: notices.map(|n| unread(&n.list())).unwrap_or_default(),
-        update: crate::pending_update(app),
+        update: crate::updater::pending_update(app),
         now_ms,
         gateway,
         ..Default::default()
@@ -385,7 +385,7 @@ fn handle(app: &tauri::AppHandle, action: Action) {
         Action::OpenNotice(key) => notices::open_from_notification(&app, &key),
         // 窗口可能是为这一下新建的，事件会错过：和落页一样存下来，界面挂上之后自己取
         Action::AllNotices => notices::open_view(&app, "notices".to_string()),
-        Action::InstallUpdate => crate::show_pending_update(&app),
+        Action::InstallUpdate => crate::updater::show_pending_update(&app),
         Action::Quit => quit(&app),
         other => {
             tauri::async_runtime::spawn(async move { background(&app, other).await });
@@ -394,7 +394,7 @@ fn handle(app: &tauri::AppHandle, action: Action) {
 }
 
 fn open_main(app: &tauri::AppHandle) {
-    if let Err(e) = crate::show_main_window(app) {
+    if let Err(e) = crate::window::show_main_window(app) {
         tracing::error!("开窗口失败：{e}");
     }
 }
@@ -412,7 +412,9 @@ async fn background(app: &tauri::AppHandle, action: Action) {
             .select_group(&group, &provider)
             .await
             .map_err(|e| format!("{e:#}")),
-        Action::RestartGateway => crate::restart_gateway(app).await.map_err(|e| e.to_string()),
+        Action::RestartGateway => crate::gateway::restart_gateway(app)
+            .await
+            .map_err(|e| e.to_string()),
         Action::CheckUpdates => {
             check_updates(app).await;
             Ok(())
@@ -496,8 +498,8 @@ async fn undo(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
 
 /// 检查更新。查到了就拉起更新窗口；没查到要说一声 —— 用户点了，就该看到结果
 async fn check_updates(app: &tauri::AppHandle) {
-    match crate::find_update(app).await {
-        Ok(Some(found)) => crate::present_update(app, found),
+    match crate::updater::find_update(app).await {
+        Ok(Some(found)) => crate::updater::present_update(app, found),
         Ok(None) => say(
             app,
             tr!("已是最新版本", "ThinkWatch Lite Is Up to Date"),

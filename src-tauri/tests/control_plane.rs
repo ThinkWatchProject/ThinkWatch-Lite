@@ -24,7 +24,7 @@ use tw_api::control::Address;
 fn core_binary() -> PathBuf {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
-        .join(thinkwatch_lite_lib::CORE_EXE);
+        .join(thinkwatch_lite_lib::gateway::CORE_EXE);
     assert!(
         p.exists(),
         "{} 不在。先跑 bash src-tauri/scripts/fetch-core.sh",

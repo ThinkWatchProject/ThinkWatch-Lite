@@ -32,6 +32,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod rules;
@@ -630,8 +631,8 @@ static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
 pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     use tauri::Manager;
     // 新版本那一条不落在哪一页：它要的是更新窗口
-    if key == crate::UPDATE_NOTICE {
-        crate::show_pending_update(app);
+    if key == crate::updater::UPDATE_NOTICE {
+        crate::updater::show_pending_update(app);
         return;
     }
     let notices = app.try_state::<Arc<Notices>>();
@@ -683,7 +684,7 @@ pub fn open_view(app: &tauri::AppHandle, view: String) {
     // 通知的回调不在主线程上，建窗口要回到主线程
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let _ = crate::show_main_window(&a);
+        let _ = crate::window::show_main_window(&a);
         let _ = a.emit("open-view", &view);
     });
 }
