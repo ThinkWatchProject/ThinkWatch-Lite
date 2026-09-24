@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { SearchIcon } from "lucide-react";
+import { FileCodeIcon, HistoryIcon, RotateCwIcon, SearchIcon } from "lucide-react";
 import { call } from "@/control";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
@@ -30,6 +30,7 @@ import {
   IconRoute,
   IconServer,
   IconSettings,
+  IconSidebar,
 } from "./ui/icons";
 import { isMac, isMod, modKey } from "@/platform";
 import Dashboard from "./Dashboard";
@@ -607,6 +608,7 @@ function Shell({ first }: { first: boolean }) {
         group: "actions",
         label: t.configFile,
         keywords: "config.yaml",
+        icon: <FileCodeIcon />,
         disabled: !linked,
         run: () => setConfigFile({ focus: null }),
       },
@@ -614,6 +616,7 @@ function Shell({ first }: { first: boolean }) {
         id: "version-history",
         group: "actions",
         label: t.versionHistory,
+        icon: <HistoryIcon />,
         disabled: !linked,
         run: () => setHistoryOpen(true),
       },
@@ -621,6 +624,7 @@ function Shell({ first }: { first: boolean }) {
         id: "refresh",
         group: "actions",
         label: pt.refresh,
+        icon: <RotateCwIcon />,
         shortcut: [modKey, "R"],
         run: () => setNudge((n) => n + 1),
       },
@@ -628,6 +632,7 @@ function Shell({ first }: { first: boolean }) {
         id: "rail",
         group: "actions",
         label: railOpen ? t.collapseRail : t.expandRail,
+        icon: <IconSidebar />,
         shortcut: isMac ? ["⌘", "⌥", "S"] : ["Ctrl", "B"],
         run: () => setRailOpen((v) => !v),
       },

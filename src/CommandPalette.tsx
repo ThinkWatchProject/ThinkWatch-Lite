@@ -108,7 +108,7 @@ export function CommandPalette({
             className="h-full min-w-0 flex-1 bg-transparent tw-body outline-none placeholder:text-muted-foreground"
           />
         </div>
-        <div ref={listRef} role="listbox" aria-label={t.title} className="max-h-[min(360px,60vh)] overflow-y-auto p-1.5">
+        <div ref={listRef} role="listbox" aria-label={t.title} className="max-h-[min(520px,68vh)] overflow-y-auto p-1.5">
           {shown.length === 0 && <p className="px-2.5 py-6 text-center tw-body text-muted-foreground">{t.none}</p>}
           {groups.map((g) => {
             const items = shown.filter((c) => c.group === g.key);
