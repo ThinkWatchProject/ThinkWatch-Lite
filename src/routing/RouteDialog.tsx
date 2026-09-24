@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
-import { CircleAlertIcon, FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
+import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { BanIcon, FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
+import { Count } from "@/ui/count";
 import {
   Dialog,
   DialogContent,
@@ -12,17 +13,19 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
+import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
-import { Spinner } from "@/ui/spinner";
+import { EmptyState } from "@/ui/states";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { errorText } from "@/i18n/core.i18n";
 import { ALL_UPSTREAMS, conditionText, targetLabel } from "@/labels";
 import type { KnownModel, Overview, RouteInput } from "@/types";
-import { errorText } from "@/upstreams/labels";
-import { Boxed, FormItem, NameChips } from "@/upstreams/parts";
+import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
-import { ToggleChips } from "./fields";
+import { ToggleChips, onOpenFocus } from "./fields";
 import {
   addOnsText,
   blankRule,
@@ -38,6 +41,7 @@ import {
   usersOf,
   type RuleDraft,
 } from "./model";
+import { KeyChips, KeyIcon, TargetIcon } from "./parts";
 import { routeDialogText } from "./RouteDialog.i18n";
 import { routingText } from "./routing.i18n";
 import { RuleDialog } from "./RuleDialog";
@@ -51,12 +55,15 @@ export type RouteDialogMode =
 /** 正在编辑的规则：`index` 为空是新加的，放在 `at` */
 type Editing = null | { index: number | null; at: number; draft: RuleDraft };
 
+/** 行尾菜单按钮、拖动把手在行里：点它们不该再冒泡成「打开这条规则」 */
+const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
+
 /**
  * 新建、编辑、复制路由。
  *
  * **一次保存就是整条路由**：名称、使用它的密钥、规则的顺序，一个配置版本。
- * 取消不写入任何东西。规则在嵌套的规则对话框里编辑，那边的「保存」只改
- * 这里的草稿。
+ * 取消不写入任何东西。规则在嵌套的规则对话框里编辑（单击一行打开），那边的
+ * 「保存」只改这里的草稿。
  */
 export function RouteDialog({
   mode,
@@ -74,7 +81,8 @@ export function RouteDialog({
   configVersion: string;
   onChanged: () => void;
   onClose: () => void;
-  onSaved: () => void;
+  /** 保存成功，带着保存后的名字 */
+  onSaved: (name: string) => void;
   /** 按对话框里还没保存的内容试算 */
   onDryRun: (draft: RouteInput, keys: string[]) => void;
 }) {
@@ -102,8 +110,9 @@ export function RouteDialog({
   const [probes, setProbes] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const reorder = useReorder((from, to) => setRules((r) => move(r, from, to)));
+  const shown = usePresentList(rules, (r) => r.key);
 
   const notes = useMemo(() => draftNotes(rules), [rules]);
   const shadowed = rules.filter((_, i) => notes[i]!.shadowed);
@@ -143,9 +152,9 @@ export function RouteDialog({
       };
       if (mode.kind === "edit") await api.updateRoute(mode.name, save);
       else await api.createRoute(save);
-      onSaved();
+      onSaved(trimmed);
     } catch (e) {
-      setError(errorText(e));
+      setError(e);
       setSaving(false);
     }
   }
@@ -182,16 +191,20 @@ export function RouteDialog({
 
   const title =
     mode.kind === "edit" ? t.editTitle(mode.name) : mode.kind === "duplicate" ? t.duplicateTitle : rt.newRoute;
+  const keyViews = (names: string[]) => ov.clients.filter((c) => names.includes(c.name));
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[860px]">
+      <DialogContent
+        className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[860px]"
+        onOpenAutoFocus={(e) => onOpenFocus(e, mode.kind === "edit")}
+      >
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
           <DialogDescription>{t.intro}</DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-1">
+        <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-1">
           <div className="grid grid-cols-[220px_minmax(0,1fr)] items-start gap-4">
             <FormItem label={rt.name} htmlFor="route-name">
               <Input
@@ -204,7 +217,7 @@ export function RouteDialog({
             {isDefault ? (
               <FormItem label={t.keys} desc={t.defaultKeys}>
                 <div className="flex min-h-8 items-center">
-                  <NameChips names={original} empty={t.allAssigned} />
+                  <KeyChips keys={keyViews(original)} empty={t.allAssigned} />
                 </div>
               </FormItem>
             ) : (
@@ -214,8 +227,10 @@ export function RouteDialog({
               >
                 <div className="flex min-h-8 items-center">
                   <ToggleChips
+                    label={t.keys}
                     options={ov.clients.map((c) => ({
                       id: c.name,
+                      icon: <KeyIcon k={c} size={12} className="text-current" />,
                       title:
                         c.route && c.route !== source?.name
                           ? t.usesRoute(c.route)
@@ -233,8 +248,8 @@ export function RouteDialog({
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="tw-body font-medium">{t.rules}</span>
-              <span className="tw-label tabular-nums text-muted-foreground">{rules.length}</span>
+              <span className="tw-head">{t.rules}</span>
+              <Count n={rules.length} />
               <div className="flex-1" />
               <Button
                 variant="outline"
@@ -250,117 +265,146 @@ export function RouteDialog({
               </Button>
             </div>
 
-            <Boxed>
-              <table className="w-full table-fixed tw-body">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="w-7" />
-                    <th className="w-6 font-medium">#</th>
-                    <th className="w-40 py-2 font-medium">{t.rule}</th>
-                    <th className="font-medium">{t.conditions}</th>
-                    <th className="w-60 font-medium">{t.onMatch}</th>
-                    <th className="w-9" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rules.map((r, i) => {
-                    const n = notes[i]!;
-                    const mark = reorder.marker(i, rules.length);
-                    const items = rowMenu(i);
-                    return (
-                      <RowMenu key={r.key} items={items}>
-                        <tr
-                          data-reorder-row={i}
-                          onDoubleClick={() => setEditing({ index: i, at: i, draft: r })}
-                          className={cn(
-                            "cursor-default border-b border-border last:border-b-0 hover:bg-muted/40",
-                            reorder.dragging === i && "opacity-50",
-                            mark === "before" && "shadow-[inset_0_2px_0_var(--color-foreground)]",
-                            mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
-                          )}
-                        >
-                          <td
-                            className="pl-2 text-muted-foreground/60"
-                            aria-label={t.dragRule(r.name)}
-                            {...reorder.handle(i)}
-                          >
-                            <GripVerticalIcon className="size-3.5" />
-                          </td>
-                          <td className="tabular-nums text-muted-foreground">{i + 1}</td>
-                          <td className="py-2">
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              <span className="truncate font-medium">{r.name}</span>
-                              {n.shadowed && <Badge variant="warning">{t.noEffect}</Badge>}
-                              {n.phaseTwo && <Badge variant="outline">{t.phaseTwo}</Badge>}
-                            </div>
-                          </td>
-                          <td className="truncate pr-3" title={conditionsText(r)}>
-                            {r.conditions.length === 0 ? (
-                              <span className="text-muted-foreground">{rt.allRequests}</span>
-                            ) : (
-                              conditionsText(r)
+            {shown.length === 0 ? (
+              <EmptyState
+                variant="outlined"
+                title={t.noRules}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => add(0, { name: t.catchAllName })}>
+                    <PlusIcon />
+                    {rt.addRule}
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow className="bg-surface/60 hover:bg-surface/60">
+                      <TableHead className="w-7 px-0" />
+                      <TableHead className="w-7 px-0">#</TableHead>
+                      <TableHead className="w-[26%]">{t.rule}</TableHead>
+                      <TableHead>{t.conditions}</TableHead>
+                      <TableHead className="w-[30%]">{t.onMatch}</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {shown.map(({ item: r, key, presence }) => {
+                      const i = rules.indexOf(r);
+                      // 正在淡出的那一行：已经不在草稿里，不能再点、再拖
+                      if (i < 0) {
+                        return (
+                          <TableRow key={key} className={rowMotion(presence)}>
+                            <TableCell />
+                            <TableCell />
+                            <TableCell className="truncate py-2 font-medium">{r.name}</TableCell>
+                            <TableCell colSpan={3} />
+                          </TableRow>
+                        );
+                      }
+                      const n = notes[i]!;
+                      const mark = reorder.marker(i, rules.length);
+                      const items = rowMenu(i);
+                      const edit = () => setEditing({ index: i, at: i, draft: r });
+                      return (
+                        <RowMenu key={key} items={items}>
+                          <TableRow
+                            data-reorder-row={i}
+                            tabIndex={0}
+                            onClick={edit}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                              e.preventDefault();
+                              edit();
+                            }}
+                            className={cn(
+                              "cursor-pointer outline-none focus-visible:bg-muted/60",
+                              rowMotion(presence),
+                              reorder.dragging === i && "opacity-50",
+                              mark === "before" && "shadow-[inset_0_2px_0_var(--color-foreground)]",
+                              mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
                             )}
-                          </td>
-                          <td className="py-2 pr-2">
-                            <Action r={r} ov={ov} />
-                          </td>
-                          <td className="text-right">
-                            <RowMenuButton items={items} label={t.ruleActions(r.name)} />
-                          </td>
-                        </tr>
-                      </RowMenu>
-                    );
-                  })}
-                  {rules.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-3 text-muted-foreground">
-                        {t.noRules}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </Boxed>
-
-            {shadowed.length > 0 && (
-              <div className="flex items-center gap-2 tw-label text-warning">
-                <CircleAlertIcon className="size-3.5 shrink-0" />
-                <span>{t.shadowed(shadowed.map((r) => r.name))}</span>
-                <Button variant="link" size="xs" className="h-auto p-0" onClick={() => setRules(liftShadowed)}>
-                  {t.liftShadowed}
-                </Button>
+                          >
+                            <TableCell
+                              className="px-0 pl-2 text-muted-foreground/60"
+                              aria-label={t.dragRule(r.name)}
+                              onClick={stop}
+                              {...reorder.handle(i)}
+                            >
+                              <GripVerticalIcon className="size-3.5" />
+                            </TableCell>
+                            <TableCell className="px-0 tw-num text-muted-foreground">{i + 1}</TableCell>
+                            <TableCell className="py-2">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate font-medium">{r.name}</span>
+                                {n.shadowed && <Badge variant="warning">{t.noEffect}</Badge>}
+                                {n.phaseTwo && <Badge variant="outline">{t.phaseTwo}</Badge>}
+                              </div>
+                            </TableCell>
+                            <TableCell className="truncate">
+                              {r.conditions.length === 0 ? (
+                                <span className="text-muted-foreground">{rt.allRequests}</span>
+                              ) : (
+                                conditionsText(r)
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <Action r={r} ov={ov} />
+                            </TableCell>
+                            <TableCell className="text-right" onClick={stop} onKeyDown={stop}>
+                              <RowMenuButton items={items} label={t.ruleActions(r.name)} />
+                            </TableCell>
+                          </TableRow>
+                        </RowMenu>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             )}
-            {!hasCatchAll(rules) && (
-              <div className="flex items-center gap-2 tw-label text-warning">
-                <CircleAlertIcon className="size-3.5 shrink-0" />
-                <span>{t.noCatchAll}</span>
+
+            <Banner
+              layout="inline"
+              tone="warning"
+              show={shadowed.length > 0}
+              actions={
+                <Button variant="outline" size="sm" onClick={() => setRules(liftShadowed)}>
+                  {t.liftShadowed}
+                </Button>
+              }
+            >
+              {t.shadowed(shadowed.map((r) => r.name))}
+            </Banner>
+            <Banner
+              layout="inline"
+              tone="warning"
+              show={rules.length > 0 && !hasCatchAll(rules)}
+              actions={
                 <Button
-                  variant="link"
-                  size="xs"
-                  className="h-auto p-0"
+                  variant="outline"
+                  size="sm"
                   onClick={() => add(rules.length, { name: uniqueName(t.catchAllName, rules) })}
                 >
                   {t.addCatchAll}
                 </Button>
-              </div>
-            )}
+              }
+            >
+              {t.noCatchAll}
+            </Banner>
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <Banner layout="inline" tone="error" show={error !== null}>
+          {error !== null && errorText(error)}
+        </Banner>
 
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
             {ct.cancel}
           </Button>
-          <Button onClick={() => void save()} disabled={saving || missing != null}>
-            {saving && <Spinner />}
+          <Button onClick={() => void save()} pending={saving} disabled={missing != null}>
             {mode.kind === "edit" ? ct.save : rt.create}
           </Button>
         </DialogFooter>
@@ -404,10 +448,11 @@ function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
   if (r.action === "deny") {
     return (
       <div className="min-w-0">
-        <div className="text-destructive">{rt.deny}</div>
-        <div className="truncate tw-label text-muted-foreground" title={r.deny}>
-          {r.deny}
+        <div className="flex items-center gap-1.5 text-destructive">
+          <BanIcon aria-hidden className="size-3.5 shrink-0" />
+          {rt.deny}
         </div>
+        <div className="truncate tw-label text-muted-foreground">{r.deny}</div>
       </div>
     );
   }
@@ -415,22 +460,18 @@ function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
     return (
       <div className="min-w-0">
         <div className="text-muted-foreground">{rt.continueMatching}</div>
-        <div className="truncate tw-label text-muted-foreground" title={addOns}>
-          {addOns}
-        </div>
+        <div className="truncate tw-label text-muted-foreground">{addOns}</div>
       </div>
     );
   }
   const sub = [describeTarget(r.to, ov.groups, ov.providers), addOns].filter(Boolean).join(" · ");
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1">
-        <span className="text-muted-foreground">→</span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <TargetIcon name={r.to} providers={ov.providers} size={13} />
         <span className="truncate font-medium">{targetLabel(r.to)}</span>
       </div>
-      <div className="truncate tw-label text-muted-foreground" title={sub}>
-        {sub}
-      </div>
+      <div className="truncate tw-label text-muted-foreground">{sub}</div>
     </div>
   );
 }

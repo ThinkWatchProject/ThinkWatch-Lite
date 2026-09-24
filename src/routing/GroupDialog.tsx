@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { GripVerticalIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -12,20 +12,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { IconServer } from "@/ui/icons";
 import { Input } from "@/ui/input";
-import { Spinner } from "@/ui/spinner";
+import { Segmented } from "@/ui/segmented";
+import { EmptyState } from "@/ui/states";
+import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { errorText } from "@/i18n/core.i18n";
 import { groupKindLabel } from "@/labels";
 import type { GroupKind, Overview } from "@/types";
-import { billingLabel, errorText, protocolLabel } from "@/upstreams/labels";
-import { Boxed, FormItem, Note, RadioRow } from "@/upstreams/parts";
+import { billingLabel, protocolLabel } from "@/upstreams/labels";
+import { FormItem, Note } from "@/upstreams/parts";
 import { api } from "./api";
+import { onOpenFocus } from "./fields";
 import { groupDialogText } from "./GroupDialog.i18n";
 import { groupRefs } from "./GroupTable";
 import { move, strategies } from "./model";
+import { TargetIcon, upstreamState } from "./parts";
 import { routingText } from "./routing.i18n";
 import { useReorder } from "./useReorder";
 
@@ -37,8 +44,9 @@ export type GroupDialogMode =
 /**
  * 新建、编辑、复制策略组。
  *
- * 左边是策略，右边是成员 —— 成员的先后在「按顺序」「手动选择」里就是优先级，
- * 所以可以拖动；手动选择还要在已选成员里定一个优先使用的。
+ * 从上往下：名称、策略（几个里选一个，下面一句说它怎么选）、成员。成员的先后在
+ * 「按顺序」「手动选择」里就是优先级，所以可以拖动；手动选择还要在已选成员里定
+ * 一个优先使用的（行尾的「设为优先」）。
  */
 export function GroupDialog({
   mode,
@@ -74,7 +82,7 @@ export function GroupDialog({
   const [selected, setSelected] = useState<string | null>(source?.selected ?? null);
   const [sticky, setSticky] = useState(source?.session_affinity ?? true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const reorder = useReorder((from, to) => setOrder((o) => move(o, from, to)));
 
   const chosen = order.filter((n) => members.includes(n));
@@ -94,6 +102,7 @@ export function GroupDialog({
         : chosen.length === 0
           ? t.noMembers
           : null;
+  const strategy = strategies().find((s) => s.id === kind);
 
   async function save() {
     setSaving(true);
@@ -113,7 +122,7 @@ export function GroupDialog({
       else await api.createGroup(save);
       onSaved(trimmed);
     } catch (e) {
-      setError(errorText(e));
+      setError(e);
       setSaving(false);
     }
   }
@@ -123,45 +132,40 @@ export function GroupDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[820px]">
+      <DialogContent
+        className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[640px]"
+        onOpenAutoFocus={(e) => onOpenFocus(e, mode.kind === "edit")}
+      >
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
           <DialogDescription>{refs.length > 0 ? t.referencedBy(refs) : t.intro}</DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-4 grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] items-start gap-6 overflow-y-auto px-4 pb-1">
-          <div className="flex flex-col gap-4">
-            <FormItem label={rt.name} htmlFor="group-name">
-              <Input id="group-name" autoFocus={mode.kind !== "edit"} value={name} onChange={(e) => setName(e.target.value)} />
-            </FormItem>
-            <div className="flex flex-col gap-1.5">
-              <span className="tw-body font-medium">{rt.strategy}</span>
-              <div role="radiogroup" aria-label={rt.strategy} className="flex flex-col gap-3">
-                {strategies().map((s) => (
-                  <RadioRow
-                    key={s.id}
-                    checked={kind === s.id}
-                    title={groupKindLabel(s.id)}
-                    desc={
-                      s.id === "url-test" ? (
-                        <>
-                          {s.desc}
-                          <Badge variant="warning" className="ml-1.5 align-middle">
-                            {rt.affectsCache}
-                          </Badge>
-                        </>
-                      ) : (
-                        s.desc
-                      )
-                    }
-                    onSelect={() => setKind(s.id)}
-                  />
-                ))}
-              </div>
-            </div>
+        <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-1">
+          <FormItem label={rt.name} htmlFor="group-name" className="max-w-[280px]">
+            <Input
+              id="group-name"
+              autoFocus={mode.kind !== "edit"}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </FormItem>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="tw-body font-medium">{rt.strategy}</span>
+            <Segmented<GroupKind>
+              label={rt.strategy}
+              value={kind}
+              onChange={setKind}
+              options={strategies().map((s) => ({ id: s.id, label: groupKindLabel(s.id) }))}
+            />
+            <p key={kind} className="flex flex-wrap items-center gap-x-1.5 tw-label text-muted-foreground motion-fade">
+              {strategy?.desc}
+              {kind === "url-test" && <Badge variant="warning">{rt.affectsCache}</Badge>}
+            </p>
             {kind === "load-balance" && (
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-center gap-2 tw-body">
+              <div className="mt-1 flex flex-col gap-1">
+                <label className="flex w-fit items-center gap-2 tw-body">
                   <Switch checked={sticky} onCheckedChange={setSticky} />
                   {t.sticky}
                 </label>
@@ -176,99 +180,115 @@ export function GroupDialog({
               <span className="tw-label text-muted-foreground">{t.selectedCount(chosen.length)}</span>
             </div>
             {ov.providers.length === 0 ? (
-              <Note>{t.noUpstreams}</Note>
+              <EmptyState variant="outlined" icon={<IconServer />} title={t.noUpstreams} />
             ) : (
-              <Boxed>
-                <table className="w-full tw-body">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
-                      <th className="w-7" />
-                      <th className="w-7" />
-                      <th className="py-2 font-medium">{t.upstream}</th>
-                      {kind === "select" && <th className="w-20 pr-3 text-center font-medium">{t.preferred}</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="overflow-hidden rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-surface/60 hover:bg-surface/60">
+                      <TableHead className="w-7 px-0" />
+                      <TableHead className="w-7 px-0" />
+                      <TableHead>{t.upstream}</TableHead>
+                      {kind === "select" && <TableHead className="w-28 text-right">{t.preferred}</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {order.map((n, i) => {
                       const p = ov.providers.find((x) => x.name === n);
                       const on = members.includes(n);
                       const mark = reorder.marker(i, order.length);
+                      const s = upstreamState(p);
+                      const id = `group-member-${i}`;
                       return (
-                        <tr
+                        <TableRow
                           key={n}
                           data-reorder-row={i}
                           className={cn(
-                            "border-b border-border last:border-b-0",
+                            "group/member hover:bg-muted/40",
                             reorder.dragging === i && "opacity-50",
                             mark === "before" && "shadow-[inset_0_2px_0_var(--color-foreground)]",
                             mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
                           )}
                         >
-                          <td className="pl-2 text-muted-foreground/60" aria-label={t.dragMember(n)} {...reorder.handle(i)}>
+                          <TableCell
+                            className="px-0 pl-2 text-muted-foreground/60"
+                            aria-label={t.dragMember(n)}
+                            {...reorder.handle(i)}
+                          >
                             <GripVerticalIcon className="size-3.5" />
-                          </td>
-                          <td>
+                          </TableCell>
+                          <TableCell className="px-0">
                             <Checkbox
+                              id={id}
                               aria-label={t.toggleMember(on, n)}
                               checked={on}
                               onCheckedChange={(v) =>
                                 setMembers((m) => (v === true ? [...m, n] : m.filter((x) => x !== n)))
                               }
                             />
-                          </td>
-                          <td className="py-1.5">
-                            <div className={on ? "font-medium" : "text-muted-foreground"}>{n}</div>
-                            {p && (
-                              <div className="tw-label text-muted-foreground">
-                                {protocolLabel(p.protocol)} · {billingLabel(p.billing)}
-                                {p.disabled && t.disabledSuffix}
-                              </div>
-                            )}
-                          </td>
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <label htmlFor={id} className="flex min-w-0 cursor-pointer items-center gap-2">
+                              <TargetIcon name={n} providers={ov.providers} size={16} />
+                              <span className="min-w-0">
+                                <span
+                                  className={cn(
+                                    "flex items-center gap-1.5",
+                                    on ? "font-medium" : "text-muted-foreground",
+                                  )}
+                                >
+                                  <span className="truncate">{n}</span>
+                                  {s && <StatusDot tone={s.tone} label={s.label} />}
+                                </span>
+                                {p && (
+                                  <span className="block tw-label text-muted-foreground">
+                                    {protocolLabel(p.protocol)} · {billingLabel(p.billing)}
+                                    {p.disabled && t.disabledSuffix}
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                          </TableCell>
                           {kind === "select" && (
-                            <td className="pr-3 text-center">
-                              {on && (
-                                <input
-                                  type="radio"
-                                  name="group-preferred"
-                                  aria-label={t.prefer(n)}
-                                  className="size-3.5 accent-foreground"
-                                  checked={preferred === n}
-                                  onChange={() => setSelected(n)}
-                                />
-                              )}
-                            </td>
+                            <TableCell className="text-right">
+                              {on &&
+                                (preferred === n ? (
+                                  <Badge variant="secondary">{t.preferred}</Badge>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="text-muted-foreground opacity-0 transition-opacity group-hover/member:opacity-100 focus-visible:opacity-100"
+                                    onClick={() => setSelected(n)}
+                                  >
+                                    {t.setPreferred}
+                                  </Button>
+                                ))}
+                            </TableCell>
                           )}
-                        </tr>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
-              </Boxed>
+                  </TableBody>
+                </Table>
+              </div>
             )}
             <Note>
-              {kind === "select"
-                ? t.orderSelect
-                : kind === "fallback"
-                  ? t.orderFallback
-                  : t.orderOther}
+              {kind === "select" ? t.orderSelect : kind === "fallback" ? t.orderFallback : t.orderOther}
             </Note>
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <Banner layout="inline" tone="error" show={error !== null}>
+          {error !== null && errorText(error)}
+        </Banner>
 
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
             {ct.cancel}
           </Button>
-          <Button onClick={() => void save()} disabled={saving || missing != null}>
-            {saving && <Spinner />}
+          <Button onClick={() => void save()} pending={saving} disabled={missing != null}>
             {mode.kind === "edit" ? ct.save : rt.create}
           </Button>
         </DialogFooter>

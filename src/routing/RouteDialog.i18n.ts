@@ -31,7 +31,7 @@ export const routeDialogText = messages(
     noEffect: "不会生效",
     phaseTwo: "选定上游后",
     ruleActions: (name: string) => `规则「${name}」的操作`,
-    noRules: "尚无规则。",
+    noRules: "尚无规则",
     shadowed: (names: string[]) =>
       `${names.map((n) => `「${n}」`).join("、")}位于兜底规则之后，转发与拒绝不会生效。`,
     liftShadowed: "移至兜底规则之前",
@@ -70,7 +70,7 @@ export const routeDialogText = messages(
     noEffect: "No effect",
     phaseTwo: "After selection",
     ruleActions: (name: string) => `Actions for rule “${name}”`,
-    noRules: "No rules yet.",
+    noRules: "No rules yet",
     shadowed: (names: string[]) => {
       const list = andList(names.map((n) => `“${n}”`));
       return names.length === 1

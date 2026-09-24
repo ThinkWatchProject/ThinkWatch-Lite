@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
 import { Segmented } from "@/ui/segmented";
+import { notify } from "@/ui/notify";
+import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
-import { errorText } from "@/i18n/core.i18n";
 import { PROBES, probeLabel } from "@/labels";
 import { patchConfig } from "@/patch";
-import type { Overview } from "@/types";
+import type { Overview, ProbeMode } from "@/types";
 import { probesTabText } from "./ProbesTab.i18n";
 
 /**
@@ -14,66 +14,82 @@ import { probesTabText } from "./ProbesTab.i18n";
  * **它属于路由，不属于网关。**三档里有一档就叫「交给路由」，而规则的
  * `intent` 条件只对那一档成立 —— 写规则的地方和决定它能不能命中的地方
  * 隔着一个导航项时，规则会静悄悄地永远不命中。
+ *
+ * 换档是一次配置写入：**先按新档画**，写入期间那一类旁边转圈、分段控件失效；
+ * 失败时拨回原档并报错。成功不弹提示 —— 分段控件已经停在新档上了。
  */
-export function ProbesTab({
-  ov,
-  configVersion,
-}: {
-  ov: Overview;
-  configVersion: string;
-}) {
+export function ProbesTab({ ov }: { ov: Overview }) {
   const t = useText(probesTabText);
-  const [busy, setBusy] = useState<string | null>(null);
-  const probes = ov.client_probes;
+  /** 写入中的那几类，和它们要去的档 */
+  const [pending, setPending] = useState<Record<string, ProbeMode>>({});
+  /** 写完了、概览还没读回来的那几类：继续按新档画，免得弹回旧档再跳过去 */
+  const [landed, setLanded] = useState<Record<string, ProbeMode>>({});
+  useEffect(() => {
+    setLanded((l) => {
+      const left = Object.entries(l).filter(([id, mode]) => ov.client_probes.find((p) => p.id === id)?.mode !== mode);
+      return left.length === Object.keys(l).length ? l : Object.fromEntries(left);
+    });
+  }, [ov]);
 
-  const modes = [
+  /** 连着改两类时，第二次要带第一次写完的版本，而概览还没读回来 */
+  const version = useRef(ov.config_version);
+  useEffect(() => {
+    version.current = ov.config_version;
+  }, [ov.config_version]);
+
+  const modes: { id: ProbeMode; label: string; what: string }[] = [
     { id: "intercept", label: t.intercept, what: t.interceptWhat },
     { id: "passthrough", label: t.passthrough, what: t.passthroughWhat },
     { id: "route", label: t.routed, what: t.routedWhat },
   ];
 
-  async function set(id: string, mode: string) {
-    setBusy(id);
+  async function set(id: string, mode: ProbeMode) {
+    setPending((p) => ({ ...p, [id]: mode }));
     try {
-      await patchConfig(
-        [{ op: "replace", path: `/client_probes/${id}`, value: mode }],
-        configVersion,
-      );
+      const res = await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], version.current);
+      version.current = res.version;
+      setLanded((l) => ({ ...l, [id]: mode }));
     } catch (e) {
-      toast.error(errorText(e));
+      notify.error(e);
     } finally {
-      setBusy(null);
+      setPending(({ [id]: _, ...rest }) => rest);
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
       <p className="tw-body text-muted-foreground">{t.intro}</p>
-      <ul className="space-y-1.5">
-        {probes.map((p) => {
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+        {ov.client_probes.map((p) => {
           const kind = PROBES.find((x) => x.id === p.id);
-          // **从本地应答改成交给路由，这一类就开始花钱了。**它原本一个
-          // 字节都不发；规则接不住它的话，它落到兜底上游上
-          const willCost = p.mode === "intercept";
+          const label = kind?.label ?? probeLabel(p.id);
+          const mode = pending[p.id] ?? landed[p.id] ?? p.mode;
+          const busy = p.id in pending;
           return (
-            <li key={p.id} className="rounded-md border border-border px-3 py-2">
-              <div className="flex items-baseline gap-3">
-                <span className="tw-body font-medium">{kind?.label ?? probeLabel(p.id)}</span>
-                <div className="ml-auto">
-                  <Segmented<string>
-                    label={kind?.label ?? probeLabel(p.id)}
-                    value={p.mode}
-                    disabled={busy === p.id}
-                    options={modes.map((m) => ({ id: m.id, label: m.label }))}
-                    onChange={(v) => v !== p.mode && void set(p.id, v)}
-                  />
-                </div>
+            <li key={p.id} aria-busy={busy || undefined} className="flex items-start gap-4 bg-background px-3.5 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="tw-body font-medium">{label}</div>
+                {kind && <p className="mt-0.5 tw-body text-muted-foreground">{kind.what}</p>}
+                {/* 每一档自己说清产不产生费用：切过去就看得到，不用每一行都预先警告一遍 */}
+                <p key={mode} className="mt-1 tw-label text-muted-foreground motion-fade">
+                  {modes.find((m) => m.id === mode)?.what}
+                </p>
               </div>
-              {kind && <p className="mt-1 tw-body text-muted-foreground">{kind.what}</p>}
-              <p className="mt-0.5 tw-label text-muted-foreground">
-                {modes.find((m) => m.id === p.mode)?.what}
-              </p>
-              {willCost && <p className="mt-0.5 tw-label text-warning">{t.nowCosts}</p>}
+              <div className="flex shrink-0 items-center gap-2">
+                {/* 转圈的位置一直留着：出现、消失时分段控件不左右挪 */}
+                {busy ? (
+                  <Spinner aria-hidden className="size-3.5 text-muted-foreground motion-fade" />
+                ) : (
+                  <span aria-hidden className="size-3.5" />
+                )}
+                <Segmented<ProbeMode>
+                  label={label}
+                  value={mode}
+                  disabled={busy}
+                  options={modes.map((m) => ({ id: m.id, label: m.label }))}
+                  onChange={(v) => v !== mode && void set(p.id, v)}
+                />
+              </div>
             </li>
           );
         })}

@@ -293,21 +293,24 @@ export function usersOf(route: RouteView, clients: ClientView[]): string[] {
     .map((c) => c.name);
 }
 
-/** 列表「规则」一栏：按顺序列出决定去向的规则。被挡住的、只附加的不列 */
-export function flowOf(route: RouteView): { rule: string; target: string | null }[] {
+/**
+ * 列表「规则」一栏：按顺序列出决定去向的规则。被挡住的、只附加的不列。
+ * `name` 是配置里的去向（拿来认上游的标志），`target` 是显示的名字；拒绝时两个都是空。
+ */
+export function flowOf(route: RouteView): { rule: string; name: string | null; target: string | null }[] {
   return route.rules
     .filter((r) => !r.shadowed && !r.phase_two && (r.to || r.deny != null))
-    .map((r) => ({ rule: r.name, target: r.to ? targetLabel(r.to) : null }));
+    .map((r) => ({ rule: r.name, name: r.to ?? null, target: r.to ? targetLabel(r.to) : null }));
 }
 
-/** 列表「规则」一栏的次行：规则数，以及需要留意的事 */
-export function routeSummary(route: RouteView): { text: string; warn: boolean } {
+/** 一条路由需要留意的事：有规则被兜底挡住、没有兜底规则。没有就是空 */
+export function routeProblems(route: RouteView): string[] {
   const t = textOf(modelText);
-  const parts = [t.ruleCount(route.rules.length)];
+  const out: string[] = [];
   const shadowed = route.rules.filter((r) => r.shadowed).length;
-  if (shadowed > 0) parts.push(t.shadowedCount(shadowed));
-  if (!route.has_catch_all) parts.push(t.noCatchAll);
-  return { text: parts.join(" · "), warn: shadowed > 0 || !route.has_catch_all };
+  if (shadowed > 0) out.push(t.shadowedCount(shadowed));
+  if (!route.has_catch_all) out.push(t.noCatchAll);
+  return out;
 }
 
 /** 去向的说明：策略组的策略与成员，或上游的协议 */

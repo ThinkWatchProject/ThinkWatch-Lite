@@ -57,7 +57,7 @@ import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type 
 import { Banner } from "@/ui/banner";
 import { Reveal } from "@/ui/motion";
 import { Page, PageHeader, PageTitleContext } from "@/ui/page";
-import { TableSkeleton } from "@/ui/states";
+import { ErrorState, TableSkeleton } from "@/ui/states";
 import { resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { CommandPalette, type Command } from "./CommandPalette";
@@ -350,6 +350,8 @@ function Shell({ first }: { first: boolean }) {
    */
   const dashTick = settled + nudge;
   const [ov, setOv] = useStableState<Overview | null>(null);
+  /** 概览最近一次读失败的原因。还没读到过概览时，配置那几页拿它画「读取失败」 */
+  const [ovError, setOvError] = useState<unknown>(null);
   /** 配置文件对话框。`focus`：打开时选中的名字 */
   const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -540,9 +542,16 @@ function Shell({ first }: { first: boolean }) {
       }
       try {
         const o = await call("Overview", null);
-        if (alive) setOv(o);
-      } catch {
-        /* 概览拿不到不影响状态那一半 —— 连上了就是连上了 */
+        if (alive) {
+          setOv(o);
+          setOvError(null);
+        }
+      } catch (e) {
+        /*
+          概览拿不到不影响状态那一半 —— 连上了就是连上了。**原因要留着**：还没读到过概览
+          时，配置那几页只能画骨架，读失败了要换成「读取失败」和重试，而不是一直转着
+        */
+        if (alive) setOvError(e);
       }
     };
     // 头一次连上之前不攒：启动画面（热启动时是还藏着的窗口）正等着这一读
@@ -640,11 +649,15 @@ function Shell({ first }: { first: boolean }) {
     return [...pages, ...actions];
   }, [t, pt, linked, open, railOpen]);
 
-  /** 还没取到概览时的占位：页头照常，内容是表格骨架 */
+  /** 还没取到概览时的占位：页头照常，内容是表格骨架；读失败了是「读取失败」和重试 */
   const skeleton = (
     <Page>
       <PageHeader title={t.surfaces[tab]} />
-      <TableSkeleton rows={6} cols={4} />
+      {ovError !== null ? (
+        <ErrorState error={ovError} onRetry={() => setNudge((n) => n + 1)} />
+      ) : (
+        <TableSkeleton rows={6} cols={4} />
+      )}
     </Page>
   );
 
@@ -1027,7 +1040,7 @@ function Shell({ first }: { first: boolean }) {
                       )
                     ) : tab === "routing" ? (
                       ov ? (
-                        <RoutingPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} onNavigate={go} />
+                        <RoutingPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
                       ) : (
                         skeleton
                       )

@@ -33,6 +33,8 @@ export const routingText = messages(
     allRequests: "全部请求（兜底）",
     affectsCache: "影响 prompt cache",
     listSep: "、",
+    /** 一行里并列的几件事 */
+    clauseSep: " · ",
   },
   {
     name: "Name",
@@ -59,5 +61,6 @@ export const routingText = messages(
     allRequests: "All requests (catch-all)",
     affectsCache: "Affects prompt cache",
     listSep: ", ",
+    clauseSep: " · ",
   },
 );
