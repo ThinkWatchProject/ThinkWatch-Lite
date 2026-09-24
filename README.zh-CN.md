@@ -20,13 +20,21 @@ ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜�
   <img src="docs/screenshots/overview-light.png" alt="ThinkWatch Lite 的用量概览：token、费用与请求数，按模型分层的 24 小时趋势，模型排行与缓存命中率">
 </picture>
 
-支持 macOS 12 及以上版本（仅限 Apple Silicon），以及 Windows 10 及以上版本（x64
-或 ARM64）。
+支持 macOS 12 及以上版本（仅限 Apple Silicon），以及 Windows 10 21H2 及以上版本
+（x64 或 ARM64）。
 
 ## 安装
 
-网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core)
-随应用一起安装，无需另行安装。
+| 平台 | 下载 |
+|---|---|
+| macOS，Apple Silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows，x64 | [`ThinkWatch-Lite-<版本>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows，ARM64 | [`ThinkWatch-Lite-<版本>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+
+官网的 [Lite 页面](https://thinkwat.ch/zh-CN/lite#install)提供最新版本的直接下载，
+Windows 会自动选对架构。网关
+[ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) 随应用一起
+安装，无需另行安装。
 
 ### macOS
 
@@ -34,7 +42,7 @@ ThinkWatch Lite 是运行本地 AI API 网关的桌面应用，常驻 macOS 菜�
 brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
 
-也可以从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+也可以从 [最新版本的 release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)
 下载 `ThinkWatch-Lite-<版本>-arm64.dmg`，与同页发布的 sha256 校验值核对后，将
 ThinkWatch Lite 拖入「应用程序」。应用**未经 Apple 注册开发者签名**，macOS 会
 为下载的副本添加隔离属性并拒绝打开，需先移除该属性：
@@ -49,7 +57,7 @@ xattr -dr com.apple.quarantine "/Applications/ThinkWatch Lite.app"
 
 ### Windows
 
-从 [release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases)
+从 [最新版本的 release 页面](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)
 下载与本机架构对应的安装程序：大多数电脑用 `ThinkWatch-Lite-<版本>-x64-setup.exe`，
 ARM 处理器的电脑用 `ThinkWatch-Lite-<版本>-arm64-setup.exe`。下载后与同页发布的
 sha256 校验值核对：
@@ -59,7 +67,7 @@ Get-FileHash .\ThinkWatch-Lite-<版本>-x64-setup.exe
 ```
 
 安装程序为所有用户安装，装入 Program Files，因此 Windows 会请求管理员权限。
-需要 Windows 10 及以上版本；缺少 WebView2 时安装程序会自动下载（Windows 11
+需要 Windows 10 21H2 及以上版本；缺少 WebView2 时安装程序会自动下载（Windows 11
 已自带）。
 
 安装程序**未经代码签名**，项目也不会购买证书。运行下载的安装程序时，SmartScreen

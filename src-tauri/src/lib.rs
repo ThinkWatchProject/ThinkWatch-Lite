@@ -2407,8 +2407,8 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .min_inner_size(820.0, 560.0);
     // 把内容顶到标题栏里、藏掉标题：**这两样只有 macOS 有**，那里红绿灯
     // 浮在内容上，界面顶部那几处 `data-tauri-drag-region` 就是为它留的。
-    // Windows 上用系统标题栏（`.claude/windows.md` 的决策 10），所以那些
-    // 留白到时候要按平台调掉 —— 不调的话顶上会多出一条空的。
+    // Windows 上用系统标题栏，所以那些留白按平台去掉了（见 App.tsx 里用
+    // `isMac` 分开的那几处）—— 不去的话顶上会多出一条空的。
     #[cfg(target_os = "macos")]
     let b = b
         .title_bar_style(tauri::TitleBarStyle::Overlay)

@@ -16,13 +16,21 @@ clients of the Anthropic, OpenAI and Gemini APIs send their requests to the
 gateway, and Lite shows what each request cost, which upstream served it and
 why, and what was sent along with it.
 
-It runs on macOS 12 or later on Apple Silicon, and on Windows 10 or later on
-x64 or ARM64.
+It runs on macOS 12 or later on Apple Silicon, and on Windows 10 21H2 or later
+on x64 or ARM64.
 
 ## Install
 
-The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
-ships inside the app; nothing else needs to be installed.
+| Platform | Download |
+|---|---|
+| macOS, Apple Silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows, x64 | [`ThinkWatch-Lite-<version>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows, ARM64 | [`ThinkWatch-Lite-<version>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+
+The [Lite page](https://thinkwat.ch/lite#install) has one-click downloads of
+the latest version and picks the Windows architecture for you. The gateway,
+[ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core), ships
+inside the app; nothing else needs to be installed.
 
 ### macOS
 
@@ -31,7 +39,7 @@ brew install --cask thinkwatchproject/tap/thinkwatch-lite
 ```
 
 A disk image is also available from the
-[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases):
+[latest release](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest):
 download `ThinkWatch-Lite-<version>-arm64.dmg`, check it against the sha256
 published beside it, and drag ThinkWatch Lite into Applications. The app is
 **not signed by a registered Apple developer**, so macOS quarantines a
@@ -50,7 +58,7 @@ copying the app out of the disk image.
 ### Windows
 
 Download the installer for the machine's architecture from the
-[releases page](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases):
+[latest release](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest):
 `ThinkWatch-Lite-<version>-x64-setup.exe` for most PCs, or
 `ThinkWatch-Lite-<version>-arm64-setup.exe` for a PC with an ARM processor.
 Check it against the sha256 published beside it:
@@ -60,7 +68,7 @@ Get-FileHash .\ThinkWatch-Lite-<version>-x64-setup.exe
 ```
 
 The installer sets the app up for all users in Program Files, so Windows asks
-for administrator permission. It requires Windows 10 or later; WebView2, which
+for administrator permission. It requires Windows 10 21H2 or later; WebView2, which
 Windows 11 already includes, is downloaded during installation if it is
 missing.
 

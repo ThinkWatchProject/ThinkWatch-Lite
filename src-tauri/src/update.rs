@@ -223,8 +223,8 @@ mod tests {
 
     /// 这条是这个模块存在的理由：认错了就会去替换一个 brew 管着的 `.app`。
     /// **只在 macOS 上跑**：符号链接、`.app` 布局、Homebrew 的 Caskroom
-    /// 都是那个平台的东西。Windows 上怎么判断是不是 winget 装的，是另一套
-    /// （见 `.claude/windows.md` 的 4.2），到时候自己带测试。
+    /// 都是那个平台的东西。Windows 上不用分 winget：它装的和网页下载的是同一个
+    /// 安装程序，认的是旁边的卸载程序（`nsis_installed`，测试在下面）。
     #[cfg(target_os = "macos")]
     #[test]
     fn a_caskroom_link_pointing_here_means_homebrew_put_it_here() {
