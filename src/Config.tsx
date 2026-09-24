@@ -89,18 +89,11 @@ export default function Config({
             <FieldLabel htmlFor="autostart">{t.autostartLabel}</FieldLabel>
             <FieldDescription>
               {/*
-                  说清「默认是关的」和「勾了会发生什么」。一个装完就往
-                  登录项里写东西的工具，用户第一次发现它是在系统设置里
-                  看到一个自己没同意过的条目 —— 所以这里出厂不勾，而且
-                  要讲清勾上之后系统设置里会多出什么。
+                  一句话说清开了会怎样，不用悬停才看得到。出厂是关的（装完就往
+                  登录项里写东西的工具，用户第一次发现它是在系统设置里看到一个
+                  自己没同意过的条目），但开关本身就显示着关，不用再写一遍。
                 */}
-              {t.autostartNote((label) => (
-                <Tip text={t.autostartTip}>
-                  <span className="underline decoration-dotted underline-offset-2">
-                    {label}
-                  </span>
-                </Tip>
-              ))}
+              {t.autostartNote}
             </FieldDescription>
           </FieldContent>
         </Field>

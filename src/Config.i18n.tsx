@@ -10,10 +10,9 @@ export const configText = messages(
     // 开机启动
     autostartTitle: "开机启动",
     autostartLabel: "开机时自动启动",
-    autostartNote: (tip: Wrap) => <>默认关闭。{tip("开启后的效果")}</>,
-    autostartTip: isWindows
-      ? "开启后将在「设置 › 应用 › 启动」中添加一项。开机后应用仅在通知区域显示图标，不打开窗口。"
-      : "开启后将在「系统设置 › 通用 › 登录项」中添加一项。开机后应用仅在菜单栏显示图标，不打开窗口。",
+    autostartNote: isWindows
+      ? "登录后仅在通知区域显示图标，不打开窗口。"
+      : "登录后仅在菜单栏显示图标，不打开窗口。",
 
     // 关于
     aboutTitle: "关于",
@@ -51,10 +50,9 @@ export const configText = messages(
   {
     autostartTitle: "Launch at login",
     autostartLabel: "Launch automatically at login",
-    autostartNote: (tip: Wrap) => <>Off by default. {tip("Effect of turning it on")}</>,
-    autostartTip: isWindows
-      ? "Turning it on adds an item to Settings › Apps › Startup. At login, the app only shows its icon in the notification area and opens no window."
-      : "Turning it on adds an item to System Settings › General › Login Items. At login, the app only shows its icon in the menu bar and opens no window.",
+    autostartNote: isWindows
+      ? "At login, only the icon appears in the notification area; no window opens."
+      : "At login, only the icon appears in the menu bar; no window opens.",
 
     aboutTitle: "About",
     version: "Version",
