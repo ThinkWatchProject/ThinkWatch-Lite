@@ -1351,10 +1351,12 @@ function Shell({ first }: { first: boolean }) {
               让人点下去再报错
             */}
             <fieldset
-              disabled={remoteLost}
+              // 设置页不整页只读：连接管理在那里，断线时用户正要来这里（换密钥、切回
+              // 本机）。那一页里改服务器配置的几节自己只读，见 `Config`
+              disabled={remoteLost && tab !== "settings"}
               className={
                 "m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 " +
-                (remoteLost ? "opacity-60" : "")
+                (remoteLost && tab !== "settings" ? "opacity-60" : "")
               }
             >
             <div
@@ -1476,6 +1478,7 @@ function Shell({ first }: { first: boolean }) {
                 <Config
                   ov={ov}
                   status={status}
+                  coreReadOnly={remoteLost}
                   onChanged={() => setNudge((n) => n + 1)}
                 />
               ) : (

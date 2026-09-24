@@ -8,7 +8,8 @@
 //! ```
 //!
 //! 状态：`sub`（订阅账号、有请求在跑）、`alert`（额度用完、有提醒）、`payg`（按量计费、
-//! 有新版本）、`down`（网关无法启动）、`starting`。另可加 `--en`、`--icon`、`--numbers`。
+//! 有新版本）、`down`（网关无法启动）、`starting`、`remote`（连着远程、断线重连中）。
+//! 另可加 `--en`、`--icon`、`--numbers`，以及 `--dump`（打出原生菜单里的项就退出）。
 
 #[cfg(target_os = "macos")]
 fn main() {
@@ -82,6 +83,13 @@ fn main() {
     );
     let (bar, rows) = model::build(&snapshot(&name), style);
     macos::apply(mtm, &bar, &rows);
+    // `--dump`：把原生菜单里实际有的项打出来就退出（看子菜单、勾选、分隔线）
+    if args.iter().any(|a| a == "--dump") {
+        for line in macos::describe_menu() {
+            println!("{line}");
+        }
+        return;
+    }
     // 进行中的秒数每秒走：和应用里一样，只在后台线程里现算、投递到主线程
     if name == "sub" || name == "alert" {
         std::thread::spawn(move || {
@@ -136,8 +144,32 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
         notices_on: true,
         undo_at_ms: Some(now - 40 * 60_000),
         now_ms: now,
+        connections: vec![
+            Connection {
+                id: "local".into(),
+                name: "本机".into(),
+                current: name != "remote",
+            },
+            Connection {
+                id: "a1".into(),
+                name: "home-server".into(),
+                current: name == "remote",
+            },
+            Connection {
+                id: "b2".into(),
+                name: "office-nas".into(),
+                current: false,
+            },
+        ],
         ..Default::default()
     };
+    if name == "remote" {
+        return Snapshot {
+            gateway: Gateway::Unlinked,
+            remote: Some("home-server".into()),
+            ..base
+        };
+    }
     match name {
         "sub" => Snapshot {
             today: Some(Today {

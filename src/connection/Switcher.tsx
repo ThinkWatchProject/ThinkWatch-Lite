@@ -60,6 +60,8 @@ export function Switcher({
     : local;
   const name = p ? profileName(p) : t.local;
   const Icon = p && !p.local ? IconRemote : IconLocal;
+  // 列表还没读到：什么都不画。先按本机画的话，连着远程时会闪一下「本机 · 已停止」
+  if (!view) return null;
 
   return (
     <div className="flex flex-col gap-0.5">
