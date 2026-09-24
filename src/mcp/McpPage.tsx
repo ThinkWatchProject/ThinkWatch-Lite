@@ -93,8 +93,9 @@ export default function McpPage({
     setApplyError(null);
     try {
       await invoke<AdoptResponse>("apply_mcp", { req: confirm.req });
-      data.mutate(await scan());
       setConfirm(null);
+      // 写成了就关；重扫在后台，那一格随后变过来
+      void data.reload();
     } catch (e) {
       setApplyError(e);
     } finally {
