@@ -2301,14 +2301,30 @@ fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
     }
     // 窗口这时没开：只有系统通知说得到
     if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
-        n.announce(
-            "autostart",
-            tr!("ThinkWatch 已在菜单栏运行", "ThinkWatch Is Running in the Menu Bar"),
+        // Windows 上没有菜单栏，图标在任务栏右侧的通知区域
+        #[cfg(windows)]
+        let (title, body) = (
+            tr!(
+                "ThinkWatch 已在通知区域运行",
+                "ThinkWatch Is Running in the Notification Area"
+            ),
+            tr!(
+                "开机时已自动启动。窗口关闭后，应用仍在通知区域中运行。",
+                "It started at login. When the window is closed, the app keeps running in the notification area."
+            ),
+        );
+        #[cfg(not(windows))]
+        let (title, body) = (
+            tr!(
+                "ThinkWatch 已在菜单栏运行",
+                "ThinkWatch Is Running in the Menu Bar"
+            ),
             tr!(
                 "开机时已自动启动。窗口关闭后，应用仍在菜单栏中运行。",
                 "It started at login. When the window is closed, the app keeps running in the menu bar."
             ),
         );
+        n.announce("autostart", title, body);
     }
     tracing::info!("首次开机自启，已提示一次");
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
+import { isMac, modKey } from "@/platform";
 
 /** 句子中间要加重的那几个字。怎么画由组件决定，这里只管是哪几个字、在句子的哪儿 */
 type Em = (text: string) => ReactNode;
@@ -65,7 +66,7 @@ export const appText = messages(
     loadingConfig: "读取配置中…",
 
     // 过滤条
-    search: "搜索路径、密钥、上游、错误…  ⌘F",
+    search: `搜索路径、密钥、上游、错误…  ${modKey}${isMac ? "" : "+"}F`,
     failedOnly: "仅显示失败",
     groupBySession: "按会话归组",
     unpricedOnly: "仅显示无法计价",
@@ -191,7 +192,7 @@ export const appText = messages(
     loadingConfig: "Loading config…",
 
     // 输入框 256px 宽，放得下的文字约 234px；带上「Search」就放不下 ⌘F 了
-    search: "Path, key, upstream, error…  ⌘F",
+    search: `Path, key, upstream, error…  ${modKey}${isMac ? "" : "+"}F`,
     failedOnly: "Failed only",
     groupBySession: "Group by session",
     unpricedOnly: "Unpriced only",

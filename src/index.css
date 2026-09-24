@@ -80,13 +80,13 @@
    * 值是后一种写法(`calc(1.25 / 0.875)`),照着套很容易把比值填进分子 ——
    * 我就填错过一次:13px 的行高变成 24px,全应用每一行都胖了 4.5px,而
    * 没有任何一处看起来是错的,只是"有点丑"。 */
-  --text-xs: 0.6875rem; /* 11px = tw-label */
+  --text-xs: var(--fs-label); /* = tw-label：macOS 11px，Windows 12px */
   --text-xs--line-height: 1.45; /* 和 tw-label 同一个数 */
-  --text-sm: 0.8125rem; /* 13px = tw-body */
+  --text-sm: var(--fs-body); /* = tw-body：macOS 13px，Windows 14px */
   /* Input 写的是 `text-base md:text-sm` —— 那是移动端防 iOS 自动放大的
    * 写法。桌面窗口用不上，但窗口拖窄到 768px 以下时 `text-base` 会生效，
    * 不绑就是 16px。绑成同一个 13px，两边都落在字阶上。 */
-  --text-base: 0.8125rem;
+  --text-base: var(--fs-body);
   --text-sm--line-height: 1.5; /* 和 tw-body 同一个数 */
   --text-base--line-height: 1.5;
   --radius-sm: calc(var(--radius) * 0.6);
@@ -289,9 +289,37 @@
 }
 
 
+/* ----------------------------------------------------------- 按平台的字
+ *
+ * **字号和字体栈是两个平台各一套，其余全部共用。**macOS 的正文是系统标准
+ * 的 13px SF；Windows 上同样的 13px 落到 Segoe UI 明显偏小（WinUI 的正文是
+ * 14px），中文还会落到默认的宋体系回退上，和苹方观感差得很远。所以 Windows
+ * 整档上调 1px，换 Segoe UI Variable（Win11 才有，Win10 退到 Segoe UI）和
+ * 微软雅黑。
+ *
+ * 字阶的四级还是四级，只是数值跟着平台走：组件用的是 `tw-*` 和绑上来的
+ * `text-sm`/`text-xs`，不用改一个字。`data-platform` 由 `platform.ts` 挂上。
+ * **不动 macOS 的现状** —— 下面 `:root` 那一组就是原来写死的值。
+ */
+:root {
+  --fs-title: 15px;
+  --fs-body: 13px;
+  --fs-label: 11px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+:root[data-platform="windows"] {
+  --fs-title: 16px;
+  --fs-body: 14px;
+  --fs-label: 12px;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
+    system-ui, sans-serif;
+}
+
 body {
   margin: 0;
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -312,6 +340,8 @@ body {
  * · tw-body   13px      —— 正文、表格数据。**和系统一致**
  * · tw-label  11px      —— 次要说明、单位、时间戳
  *
+ * （这是 macOS 的数。Windows 上除展示级以外各大 1px，见上面「按平台的字」）
+ *
  * 数字用等宽：金额和延迟要按位对齐，否则一列数字读起来要重新对焦。
  */
 /* 概览上那个金额。**字阶里唯一一个展示级** —— 它是这一页要回答的那
@@ -323,21 +353,21 @@ body {
   letter-spacing: -0.01em;
 }
 @utility tw-title {
-  font-size: 15px;
+  font-size: var(--fs-title);
   font-weight: 600;
   line-height: 1.35;
 }
 @utility tw-head {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   line-height: 1.45;
 }
 @utility tw-body {
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 @utility tw-label {
-  font-size: 11px;
+  font-size: var(--fs-label);
   line-height: 1.45;
 }
 @utility tw-num {
