@@ -14,7 +14,7 @@ import { useText } from "@/i18n";
 import type { Overview, ResolvedPrice } from "@/types";
 import { billingSectionText } from "./BillingSection.i18n";
 import { BILLINGS, PRICE_COLUMNS, perMillion, priceSourceLabel } from "./labels";
-import { Boxed, FormItem, NameChips, Note } from "./parts";
+import { Boxed, FormItem, Note, UpstreamChips } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
 /** 「新建价目表…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
@@ -97,7 +97,7 @@ export function BillingSection({
       {perToken && sheet && (
         <div className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
           <span className="shrink-0 tw-label text-muted-foreground">{t.usedBy}</span>
-          <NameChips names={users} empty="" />
+          <UpstreamChips names={users} providers={ov.providers} empty="" />
           <div className="flex-1" />
           <Button variant="outline" size="sm" onClick={() => onEditSheet(sheet.name)}>
             <PencilIcon />
@@ -136,7 +136,7 @@ export function BillingSection({
                       <TableRow key={m}>
                         <TableCell className="font-mono">{m}</TableCell>
                         {PRICE_COLUMNS.map((c) => (
-                          <TableCell key={c.key} className="text-right tabular-nums">
+                          <TableCell key={c.key} className="text-right tw-num">
                             {perMillion(r?.price?.[c.key])}
                           </TableCell>
                         ))}

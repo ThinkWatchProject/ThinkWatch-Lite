@@ -11,6 +11,7 @@ import type {
   ChatgptLogin,
   ChatgptLoginMode,
   ChatgptLoginStatus,
+  CostBucketGroup,
   CostGroup,
   LatencyView,
   PriceQuery,
@@ -26,13 +27,14 @@ import type {
   ZaiLoginStatus,
 } from "@/types";
 
+/** `upstream_stats`：一段时间里每个上游的请求与费用、首字节耗时、订阅额度和走势 */
 export interface UpstreamStats {
   costs: CostGroup[];
   latency: LatencyView[];
   quotas: ProviderQuota[];
+  /** 按 `bucketMs` 分格、按上游分开的请求数。**稀疏的**：没有请求的格子不在里面 */
+  buckets: CostBucketGroup[];
 }
-
-/** 删除、开关这类不带正文的写入，要带上基于哪一版 */
 
 export const api = {
   createProvider: (save: ProviderSave) => call("CreateProvider", save),
@@ -47,7 +49,11 @@ export const api = {
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),
   /** 补问缺失、失败、过期的清单。**立刻回**，答案随 `models_changed` 到 */
   refreshStaleModels: () => call("RefreshStaleModels", null),
-  upstreamStats: (sinceMs: number) => invoke<UpstreamStats>("upstream_stats", { sinceMs }),
+  /** 起点和格宽都由界面给：格子对齐到本地整点（见 `bucketStart`） */
+  upstreamStats: (sinceMs: number, bucketMs: number) =>
+    invoke<UpstreamStats>("upstream_stats", { sinceMs, bucketMs }),
+  /** 此刻在途的请求（开始事件的快照）。页面半路挂上时用它补齐 */
+  inFlight: () => call("InFlight", null),
 
   createProxy: (save: ProxySave) => call("CreateProxy", save),
   updateProxy: (name: string, save: ProxySave) => call("UpdateProxy", save, name),

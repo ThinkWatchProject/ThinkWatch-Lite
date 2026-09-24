@@ -8,6 +8,7 @@ export const proxyTableText = messages(
     auth: "认证",
     usedBy: "使用上游",
     connectivity: "连通性",
+    actionsColumn: "操作",
     edit: "编辑…",
     check: "检测代理",
     delete: "删除…",
@@ -17,6 +18,7 @@ export const proxyTableText = messages(
     notChecked: "未检测",
     checking: "检测中",
     unreachable: "无法连接",
+    ms: (n: number) => `${n.toLocaleString()} ms`,
   },
   {
     name: "Name",
@@ -25,6 +27,7 @@ export const proxyTableText = messages(
     auth: "Authentication",
     usedBy: "Used by",
     connectivity: "Connectivity",
+    actionsColumn: "Actions",
     edit: "Edit…",
     check: "Check proxy",
     delete: "Delete…",
@@ -34,5 +37,6 @@ export const proxyTableText = messages(
     notChecked: "Not checked",
     checking: "Checking",
     unreachable: "Unreachable",
+    ms: (n: number) => `${n.toLocaleString()} ms`,
   },
 );

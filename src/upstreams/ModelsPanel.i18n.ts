@@ -4,7 +4,6 @@ export const modelsPanelText = messages(
   {
     title: "模型",
     refetch: "重新获取模型列表",
-    loading: "正在读取",
     fetching: "正在获取模型列表",
     failed: "获取失败",
     unreachable: "未能连接上游。",
@@ -32,7 +31,6 @@ export const modelsPanelText = messages(
   {
     title: "Models",
     refetch: "Fetch the model list again",
-    loading: "Loading",
     fetching: "Fetching the model list",
     failed: "Fetch failed",
     unreachable: "Could not reach the upstream.",

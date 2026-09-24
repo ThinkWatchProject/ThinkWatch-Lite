@@ -4,7 +4,10 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Segmented } from "@/ui/segmented";
 import { Spinner } from "@/ui/spinner";
+import { TableSkeleton } from "@/ui/states";
+import { StatusLabel } from "@/ui/status-dot";
 import {
   Table,
   TableBody,
@@ -20,7 +23,7 @@ import { coreText } from "@/i18n/core.i18n";
 import { globMatch } from "./glob";
 import { contextWindow, modelSourceLabel } from "./labels";
 import { modelsSectionText } from "./ModelsSection.i18n";
-import { Boxed, FormItem, Note, Segmented } from "./parts";
+import { Boxed, FormItem, Note } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
 /** 这家上游有哪些模型，以及是怎么知道的 */
@@ -128,23 +131,24 @@ export function ModelsSection({
           </Badge>
         )}
         {catalog && (listed || models.length > 0) && (
-          <span className="tw-label tabular-nums text-muted-foreground">
+          <span className="tw-label tw-num text-muted-foreground">
             {t.count(models.length)}
             {listed && catalog.checkedAtMs ? ` · ${t.fetchedAt(clock(catalog.checkedAtMs))}` : ""}
           </span>
         )}
         <div className="flex-1" />
-        <Button variant="ghost" size="xs" onClick={onRefresh} disabled={busy}>
+        <Button variant="ghost" size="xs" onClick={onRefresh} disabled={busy} aria-busy={busy || undefined}>
           {busy ? <Spinner /> : <RefreshCwIcon />}
           {t.refresh}
         </Button>
       </div>
 
-      {loading || waiting ? (
-        <p className="flex items-center gap-2 tw-body text-muted-foreground">
-          <Spinner />
+      {waiting ? (
+        <StatusLabel tone="pending" muted>
           {t.fetching}
-        </p>
+        </StatusLabel>
+      ) : loading ? (
+        <TableSkeleton rows={5} cols={3} />
       ) : !catalog ? (
         <Note>{t.notFetched}</Note>
       ) : (
@@ -204,7 +208,7 @@ export function ModelsSection({
                   />
                 </InputGroup>
                 <div className="flex-1" />
-                <span className="tw-label tabular-nums text-muted-foreground">
+                <span className="tw-label tw-num text-muted-foreground">
                   {t.enabled(enabled.length, models.length)}
                 </span>
               </div>
@@ -240,7 +244,7 @@ export function ModelsSection({
                           <TableCell className={on ? "font-mono" : "font-mono text-muted-foreground"}>
                             {m}
                           </TableCell>
-                          <TableCell className="tabular-nums text-muted-foreground">
+                          <TableCell className="tw-num text-muted-foreground">
                             {contextWindow(price?.max_input_tokens)}
                           </TableCell>
                           {perToken && (

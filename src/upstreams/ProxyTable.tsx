@@ -1,31 +1,32 @@
+import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
-import { Spinner } from "@/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
-import type { L1Result, ProxyFault, ProxyView } from "@/types";
+import { StatusLabel } from "@/ui/status-dot";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { Tip } from "@/ui/tip";
+import type { L1Result, ProviderView, ProxyFault, ProxyView } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { l1ErrorText, proxyFaultText, proxyKindLabel } from "./labels";
-import { NameChips, StatusDot } from "./parts";
+import { UpstreamChips, keepInRow, openRow } from "./parts";
 import { proxyTableText } from "./ProxyTable.i18n";
 
 /** 一个代理最近一次手动检测的结果。`running` = 正在检测；`at` = 什么时候测完的 */
 export type ProxyCheck = { running: true } | { running: false; result: L1Result; at: number };
 
+/**
+ * 出站代理列表。**只读**：单击一行（或 Enter）编辑，行尾按钮和右键是同一份操作。
+ */
 export function ProxyTable({
   proxies,
+  providers,
   checks,
   onEdit,
   onTest,
   onRemove,
 }: {
   proxies: ProxyView[];
+  /** 「使用上游」一列画标志要用 */
+  providers: ProviderView[];
   checks: Record<string, ProxyCheck>;
   onEdit: (name: string) => void;
   onTest: (name: string) => void;
@@ -33,21 +34,24 @@ export function ProxyTable({
 }) {
   const t = useText(proxyTableText);
   const common = useText(commonText);
+  const shown = usePresentList(proxies, (x) => x.name);
   return (
     <Table>
       <TableHeader>
-        <TableRow>
+        <TableRow className="hover:bg-transparent">
           <TableHead>{t.name}</TableHead>
           <TableHead>{t.kind}</TableHead>
           <TableHead>{t.address}</TableHead>
           <TableHead>{t.auth}</TableHead>
           <TableHead>{t.usedBy}</TableHead>
           <TableHead>{t.connectivity}</TableHead>
-          <TableHead className="w-9" />
+          <TableHead className="w-9">
+            <span className="sr-only">{t.actionsColumn}</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {proxies.map((x) => {
+        {shown.map(({ item: x, key, presence }) => {
           const items: MenuItems = [
             { kind: "item", label: t.edit, onSelect: () => onEdit(x.name) },
             { kind: "item", label: t.check, onSelect: () => onTest(x.name) },
@@ -55,8 +59,8 @@ export function ProxyTable({
             { kind: "item", label: t.delete, onSelect: () => onRemove(x.name), danger: true },
           ];
           return (
-            <RowMenu key={x.name} items={items}>
-              <TableRow onDoubleClick={() => onEdit(x.name)} className="cursor-default">
+            <RowMenu key={key} items={items}>
+              <TableRow {...openRow(() => onEdit(x.name), rowMotion(presence))}>
                 <TableCell className="font-mono font-medium">{x.name}</TableCell>
                 <TableCell>{proxyKindLabel(x.kind)}</TableCell>
                 <TableCell className="font-mono text-muted-foreground">{x.addr}</TableCell>
@@ -64,12 +68,12 @@ export function ProxyTable({
                   {x.has_auth ? t.userPass : common.none}
                 </TableCell>
                 <TableCell>
-                  <NameChips names={x.used_by} empty={t.notUsed} />
+                  <UpstreamChips names={x.used_by} providers={providers} empty={t.notUsed} />
                 </TableCell>
                 <TableCell>
                   <Connectivity check={checks[x.name]} fault={x.unreachable} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right" {...keepInRow}>
                   <RowMenuButton items={items} label={t.actions(x.name)} />
                 </TableCell>
               </TableRow>
@@ -95,27 +99,37 @@ function Connectivity({
   const t = useText(proxyTableText);
   if (check?.running) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-        <Spinner />
+      <StatusLabel tone="pending" muted>
         {t.checking}
-      </span>
+      </StatusLabel>
     );
   }
   if (fault && (!check || fault.at_ms > check.at)) {
+    return <Unreachable reason={proxyFaultText(fault)} />;
+  }
+  if (!check) {
     return (
-      <span title={proxyFaultText(fault)}>
-        <StatusDot tone="bad">{t.unreachable}</StatusDot>
-      </span>
+      <StatusLabel tone="idle" muted>
+        {t.notChecked}
+      </StatusLabel>
     );
   }
-  if (!check) return <span className="text-muted-foreground">{t.notChecked}</span>;
   const r = check.result;
-  if (!r.ok) {
-    return (
-      <span title={l1ErrorText(r)}>
-        <StatusDot tone="bad">{t.unreachable}</StatusDot>
+  if (!r.ok) return <Unreachable reason={l1ErrorText(r)} />;
+  return (
+    <StatusLabel tone="ok" muted className="tw-num">
+      {t.ms(r.total_ms)}
+    </StatusLabel>
+  );
+}
+
+function Unreachable({ reason }: { reason: string }) {
+  const t = useText(proxyTableText);
+  return (
+    <Tip text={reason}>
+      <span className="inline-flex">
+        <StatusLabel tone="error">{t.unreachable}</StatusLabel>
       </span>
-    );
-  }
-  return <StatusDot tone="ok">{r.total_ms.toLocaleString()} ms</StatusDot>;
+    </Tip>
+  );
 }

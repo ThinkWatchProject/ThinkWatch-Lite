@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -9,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type {
@@ -26,7 +24,7 @@ import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { coreText, errorText, plain, protocolLabel, shortUrl } from "./labels";
 import { ModelsSection, catalogOf, inScope, type ModelCatalog } from "./ModelsSection";
-import { StepNav } from "./parts";
+import { DialogError, ProviderTile, StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
 import { upstreamDialogText } from "./UpstreamDialog.i18n";
@@ -298,20 +296,29 @@ export function UpstreamDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      {/* 固定高度：切换分节时对话框不跳动，内容在中间滚动 */}
-      <DialogContent className="flex h-[min(88vh,680px)] flex-col gap-4 sm:max-w-[900px]">
-        <DialogHeader>
-          <DialogTitle className="tw-title">{editing ? t.titleEdit : t.titleNew}</DialogTitle>
-          {editing ? (
-            <DialogDescription>
-              <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
-              {protocolLabel(editing.protocol)}
-              {/* 账号上游的地址是登录给的，改不了，写出来只是噪声 */}
-              {!account && ` · ${shortUrl(editing.base_url)}`}
-            </DialogDescription>
-          ) : (
-            <DialogDescription className="sr-only">{t.desc}</DialogDescription>
-          )}
+      {/*
+        固定高度：切换分节时对话框不跳动，内容在中间滚动。点到对话框外面不关 ——
+        填了一半的表单不该因为一次误点丢掉；Esc、×、取消照常
+      */}
+      <DialogContent
+        className="flex h-[min(88vh,680px)] flex-col gap-4 sm:max-w-[900px]"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className={editing ? "flex-row items-center gap-3" : undefined}>
+          {editing && <ProviderTile p={editing} />}
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <DialogTitle className="tw-title">{editing ? t.titleEdit : t.titleNew}</DialogTitle>
+            {editing ? (
+              <DialogDescription className="truncate">
+                <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
+                {protocolLabel(editing.protocol)}
+                {/* 账号上游的地址是登录给的，改不了，写出来只是噪声 */}
+                {!account && ` · ${shortUrl(editing.base_url)}`}
+              </DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only">{t.desc}</DialogDescription>
+            )}
+          </div>
         </DialogHeader>
 
         <StepNav
@@ -376,11 +383,7 @@ export function UpstreamDialog({
           )}
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <DialogError error={error} />
 
         <DialogFooter className="items-center">
           {editing ? (
@@ -389,14 +392,14 @@ export function UpstreamDialog({
               <Button variant="outline" onClick={onClose}>
                 {c.cancel}
               </Button>
-              <Button onClick={save} disabled={saving || blocking != null}>
-                {saving && <Spinner />}
+              <Button onClick={save} pending={saving} disabled={blocking != null}>
                 {c.save}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="ghost" className="mr-auto" onClick={onClose}>
+              {/* 分步走时「取消」放最左，「上一步 / 下一步」成组放右边 */}
+              <Button variant="outline" className="sm:mr-auto" onClick={onClose}>
                 {c.cancel}
               </Button>
               {missing && <span className="tw-label text-muted-foreground">{missing}</span>}
@@ -410,8 +413,7 @@ export function UpstreamDialog({
                   {t.next}
                 </Button>
               ) : (
-                <Button onClick={save} disabled={saving || blocking != null}>
-                  {saving && <Spinner />}
+                <Button onClick={save} pending={saving} disabled={blocking != null}>
                   {t.create}
                 </Button>
               )}

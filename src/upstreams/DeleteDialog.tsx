@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRightIcon, LayersIcon, SplitIcon } from "lucide-react";
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -16,7 +17,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { ReferenceView } from "@/types";
 import { deleteDialogText } from "./DeleteDialog.i18n";
 import { errorText } from "./labels";
-import { Note } from "./parts";
+import { DialogError } from "./parts";
 
 /** 引用了要删的东西的一处 */
 export type Referrer =
@@ -27,6 +28,8 @@ export type Referrer =
 /**
  * 删除确认。**还被引用时不给删除按钮** —— 标题直接说「无法删除」，列出是谁
  * 在用，每一处都能跳过去解除。
+ *
+ * 删除失败时对话框留着，原因写在里面（`DialogError`），可以直接再点一次。
  */
 export function DeleteDialog({
   what,
@@ -94,14 +97,23 @@ export function DeleteDialog({
             ))}
           </div>
         )}
-        {error && <Note tone="error">{error}</Note>}
+        <DialogError error={error} />
         <AlertDialogFooter>
           <AlertDialogCancel>{blocked ? c.close : c.cancel}</AlertDialogCancel>
           {!blocked && (
-            <Button variant="destructive" onClick={run} disabled={busy}>
-              {busy && <Spinner />}
+            <AlertDialogAction
+              variant="destructive"
+              disabled={busy}
+              aria-busy={busy || undefined}
+              onClick={(e) => {
+                // 结果要留在这张对话框里：成功时由调用方关掉，失败时在这里说原因
+                e.preventDefault();
+                void run();
+              }}
+            >
+              {busy && <Spinner data-icon="inline-start" aria-hidden />}
               {c.delete}
-            </Button>
+            </AlertDialogAction>
           )}
         </AlertDialogFooter>
       </AlertDialogContent>

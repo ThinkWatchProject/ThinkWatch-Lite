@@ -2,7 +2,9 @@ import { CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
+import { Segmented } from "@/ui/segmented";
+import { StatusLabel } from "@/ui/status-dot";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
@@ -18,8 +20,9 @@ import {
   protocolLabel,
   proxyKindLabel,
 } from "./labels";
-import { FormItem, Note, Segmented } from "./parts";
-import { CHATGPT, CUSTOM, PRESETS, ZAI, nameFromUrl, presetById } from "./presets";
+import { FormItem, Note } from "./parts";
+import { CHATGPT, ZAI, nameFromUrl, presetById } from "./presets";
+import { ServicePicker } from "./ServicePicker";
 import { describeModelList, freeName, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
@@ -98,21 +101,7 @@ export function ConnectionSection({
           </FormItem>
         ) : (
           <FormItem label={t.service} htmlFor="up-preset">
-            <NativeSelect
-              id="up-preset"
-              className="w-full"
-              value={form.preset}
-              onChange={(e) => pickPreset(e.target.value)}
-            >
-              <NativeSelectOption value="custom">{CUSTOM.label}</NativeSelectOption>
-              <NativeSelectOption value={CHATGPT}>{t.chatgpt}</NativeSelectOption>
-              <NativeSelectOption value={ZAI}>{t.zai}</NativeSelectOption>
-              {PRESETS.map((p) => (
-                <NativeSelectOption key={p.id} value={p.id}>
-                  {p.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            <ServicePicker id="up-preset" value={form.preset} onPick={pickPreset} />
           </FormItem>
         )}
         <FormItem label={t.name} htmlFor="up-name">
@@ -226,13 +215,19 @@ export function ConnectionSection({
 
       <div className="flex flex-col gap-2.5 rounded-lg border border-border p-3">
         <div className="flex items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={onTest} disabled={testing}>
-            {testing ? <Spinner /> : <PlugIcon />}
+          <Button variant="outline" size="sm" onClick={onTest} pending={testing}>
+            {!testing && <PlugIcon />}
             {t.check}
           </Button>
-          <Note>{t.checkNote}</Note>
+          {testing ? (
+            <StatusLabel tone="pending" muted>
+              {t.checking}
+            </StatusLabel>
+          ) : (
+            <Note>{t.checkNote}</Note>
+          )}
         </div>
-        {test && <TestLine result={test} />}
+        {test && !testing && <TestLine result={test} />}
       </div>
     </div>
   );
@@ -423,15 +418,15 @@ function OAuth({
 }
 
 /** 「连接正常 · 认证通过 · 响应 312 ms · 经由 hk-socks · 发现 6 个模型」 */
-export function TestLine({ result }: { result: ProviderTestResult }) {
+export function TestLine({ result, bordered = true }: { result: ProviderTestResult; bordered?: boolean }) {
   const t = useText(connectionSectionText);
   if (!result.ok) {
     return (
-      <div className="flex items-start gap-2 border-t border-border pt-2.5">
+      <div className={cn("flex items-start gap-2 motion-fade", bordered && "border-t border-border pt-2.5")}>
         <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="tw-body font-medium">{t.failed}</span>
-          {result.error && <Note>{coreText(result.error)}</Note>}
+          {result.error && <p className="tw-label break-words text-muted-foreground">{coreText(result.error)}</p>}
         </div>
       </div>
     );
@@ -443,10 +438,10 @@ export function TestLine({ result }: { result: ProviderTestResult }) {
     describeModelList(result.models),
   ].filter(Boolean);
   return (
-    <div className="flex items-center gap-2 border-t border-border pt-2.5">
+    <div className={cn("flex items-center gap-2 motion-fade", bordered && "border-t border-border pt-2.5")}>
       <CircleCheckIcon className="size-4 shrink-0 text-success" />
       <span className="tw-body font-medium">{t.ok}</span>
-      <span className="tw-label tabular-nums text-muted-foreground">{parts.join(" · ")}</span>
+      <span className="tw-label tw-num text-muted-foreground">{parts.join(" · ")}</span>
     </div>
   );
 }

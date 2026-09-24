@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ActivityIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -11,14 +10,15 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
-import { Spinner } from "@/ui/spinner";
+import { Segmented } from "@/ui/segmented";
+import { StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import type { L1Result, Overview, ProxyAuthInput, ProxyInput, ProxyView } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { PROXY_KINDS, errorText, l1ErrorText } from "./labels";
-import { FormItem, Segmented, StatusDot } from "./parts";
+import { DialogError, FormItem } from "./parts";
 import { proxyDialogText } from "./ProxyDialog.i18n";
 import { plain } from "@/i18n/core.i18n";
 
@@ -110,7 +110,8 @@ export function ProxyDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex flex-col gap-4 sm:max-w-[500px]">
+      {/* 点到对话框外面不关：填了一半的表单不该因为一次误点丢掉。Esc、×、取消照常 */}
+      <DialogContent className="flex flex-col gap-4 sm:max-w-[500px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="tw-title">{editing ? t.editTitle : t.createTitle}</DialogTitle>
           <DialogDescription>
@@ -202,15 +203,23 @@ export function ProxyDialog({
               </div>
             ))}
           <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border p-3">
-            <Button variant="outline" size="sm" onClick={runTest} disabled={testing || missing != null}>
-              {testing ? <Spinner /> : <ActivityIcon />}
+            <Button variant="outline" size="sm" onClick={runTest} pending={testing} disabled={missing != null}>
+              {!testing && <ActivityIcon />}
               {t.check}
             </Button>
-            {result ? (
+            {testing ? (
+              <StatusLabel tone="pending" muted>
+                {t.checking}
+              </StatusLabel>
+            ) : result ? (
               result.ok ? (
-                <StatusDot tone="ok">{t.ok(auth, result.total_ms)}</StatusDot>
+                <StatusLabel tone="ok" className="motion-fade">
+                  {t.ok(auth, result.total_ms)}
+                </StatusLabel>
               ) : (
-                <StatusDot tone="bad">{l1ErrorText(result)}</StatusDot>
+                <StatusLabel tone="error" className="min-w-0 motion-fade">
+                  {l1ErrorText(result)}
+                </StatusLabel>
               )
             ) : (
               <span className="tw-label text-muted-foreground">{t.checkHint}</span>
@@ -218,19 +227,14 @@ export function ProxyDialog({
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <DialogError error={error} />
 
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
             {common.cancel}
           </Button>
-          <Button onClick={save} disabled={saving || missing != null}>
-            {saving && <Spinner />}
+          <Button onClick={save} pending={saving} disabled={missing != null}>
             {editing ? common.save : t.create}
           </Button>
         </DialogFooter>

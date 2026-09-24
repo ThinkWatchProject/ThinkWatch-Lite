@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useSystemProxyLabel } from "@/connection/Remote";
-import { CircleAlertIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -17,14 +17,14 @@ import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
-import { Spinner } from "@/ui/spinner";
+import { StatusLabel } from "@/ui/status-dot";
 import type { CoreEvent, Overview, ZaiFamily, ZaiLoginStatus } from "@/types";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { zaiLoginText } from "./ZaiLoginDialog.i18n";
 import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
-import { FormItem } from "./parts";
+import { DialogError, FormItem } from "./parts";
 import { ZAI_ENDPOINTS } from "./presets";
 import { freeName } from "./upstreamForm";
 
@@ -156,7 +156,8 @@ export function ZaiLoginDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && void cancel()}>
-      <DialogContent className="sm:max-w-lg">
+      {/* 点到外面不关：登录进行中时关掉就是放弃这一次登录。Esc、×、取消照常 */}
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{relogin ? t.reloginTitle : t.title}</DialogTitle>
           <DialogDescription>
@@ -167,18 +168,14 @@ export function ZaiLoginDialog({
         {phase.at === "form" && (
           <div className="flex flex-col gap-4">
             {!relogin && (
-              <Alert variant="warning">
-                <CircleAlertIcon />
-                <AlertTitle>{t.noticeTitle}</AlertTitle>
-                <AlertDescription>
-                  <ul className="list-disc pl-4 [&>li]:mt-1">
-                    <li>{t.noticeTheirPage}</li>
-                    <li>{t.noticeKey}</li>
-                    <li>{t.noticeHonest}</li>
-                    <li>{t.noticeStorage}</li>
-                  </ul>
-                </AlertDescription>
-              </Alert>
+              <Banner layout="inline" tone="warning" title={t.noticeTitle}>
+                <ul className="list-disc pl-4 [&>li]:mt-1">
+                  <li>{t.noticeTheirPage}</li>
+                  <li>{t.noticeKey}</li>
+                  <li>{t.noticeHonest}</li>
+                  <li>{t.noticeStorage}</li>
+                </ul>
+              </Banner>
             )}
 
             <FormItem
@@ -250,10 +247,7 @@ export function ZaiLoginDialog({
 
         {phase.at === "waiting" && (
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 tw-body">
-              <Spinner />
-              {t.waiting}
-            </div>
+            <StatusLabel tone="pending">{t.waiting}</StatusLabel>
             <p className="tw-label text-muted-foreground">{t.hint}</p>
             <div>
               <Button
@@ -280,7 +274,7 @@ export function ZaiLoginDialog({
           </div>
         )}
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <DialogError error={error} />
 
         <DialogFooter>
           {phase.at === "done" ? (
@@ -291,8 +285,8 @@ export function ZaiLoginDialog({
                 {common.cancel}
               </Button>
               {phase.at === "form" && (
-                <Button onClick={() => void start()} disabled={!canStart}>
-                  {busy ? <Spinner /> : <ExternalLinkIcon />}
+                <Button onClick={() => void start()} pending={busy} disabled={!canStart}>
+                  {!busy && <ExternalLinkIcon />}
                   {t.signIn}
                 </Button>
               )}

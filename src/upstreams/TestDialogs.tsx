@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIcon, ZapIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -12,7 +11,9 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
+import { Skeleton } from "@/ui/skeleton";
+import { TableSkeleton } from "@/ui/states";
+import { StatusLabel } from "@/ui/status-dot";
 import {
   Table,
   TableBody,
@@ -44,7 +45,7 @@ import {
   plain,
   skipLabel,
 } from "./labels";
-import { Boxed, FormItem, Note } from "./parts";
+import { Boxed, DialogError, FormItem, Note, VendorTile } from "./parts";
 import { testDialogsText } from "./TestDialogs.i18n";
 import { formFromView, toInput } from "./upstreamForm";
 
@@ -89,14 +90,15 @@ export function TestConnectionDialog({
             <span className="font-mono text-foreground">{name}</span> · {t.connection.desc}
           </DialogDescription>
         </DialogHeader>
-        {result ? (
-          <TestLine result={result} />
-        ) : (
-          <p className="flex items-center gap-2 tw-body text-muted-foreground">
-            <Spinner />
-            {t.connection.checking}
-          </p>
-        )}
+        <div className="flex min-h-10 items-center rounded-lg border border-border px-3 py-2.5">
+          {result ? (
+            <TestLine result={result} bordered={false} />
+          ) : (
+            <StatusLabel tone="pending" muted>
+              {t.connection.checking}
+            </StatusLabel>
+          )}
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {common.close}
@@ -109,9 +111,11 @@ export function TestConnectionDialog({
 
 /** 链路测速：DNS、TCP、TLS 各阶段耗时。只握手，不产生费用 */
 export function LinkTestDialog({
+  ov,
   provider,
   onClose,
 }: {
+  ov: Overview;
   /** null = 全部上游 */
   provider: string | null;
   onClose: () => void;
@@ -155,17 +159,14 @@ export function LinkTestDialog({
             {t.link.desc}
           </DialogDescription>
         </DialogHeader>
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <DialogError error={error} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           {results == null ? (
-            <p className="flex items-center gap-2 tw-body text-muted-foreground">
-              <Spinner />
-              {t.link.testing}
-            </p>
+            error ? null : (
+              <Boxed>
+                <TableSkeleton rows={Math.max(1, provider ? 1 : ov.providers.length)} cols={4} />
+              </Boxed>
+            )
           ) : results.length === 0 ? (
             <Note>{t.link.empty}</Note>
           ) : (
@@ -181,14 +182,16 @@ export function LinkTestDialog({
                 </TableHeader>
                 <TableBody>
                   {results.map((r) => (
-                    <TableRow key={r.target}>
-                      <TableCell className="align-top font-mono">{r.target}</TableCell>
+                    <TableRow key={r.target} className="motion-fade">
+                      <TableCell className="align-top">
+                        <UpstreamName ov={ov} name={r.target} />
+                      </TableCell>
                       <TableCell className="align-top text-muted-foreground">
                         {r.via ? egressLabel(r.via) : t.link.direct}
                       </TableCell>
                       <TableCell className="align-top whitespace-normal">
                         {r.ok ? (
-                          <span className="tabular-nums">
+                          <span className="tw-num">
                             {r.segments.map((s) => `${l1StageLabel(s.stage)} ${s.ms} ms`).join(" · ")}
                           </span>
                         ) : (
@@ -200,7 +203,7 @@ export function LinkTestDialog({
                           </div>
                         ))}
                       </TableCell>
-                      <TableCell className="text-right align-top tabular-nums">
+                      <TableCell className="text-right align-top tw-num">
                         {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
                       </TableCell>
                     </TableRow>
@@ -214,8 +217,8 @@ export function LinkTestDialog({
           <Button variant="outline" onClick={onClose}>
             {common.close}
           </Button>
-          <Button onClick={run} disabled={running}>
-            {running ? <Spinner /> : <ActivityIcon />}
+          <Button onClick={run} pending={running}>
+            {!running && <ActivityIcon />}
             {t.link.again}
           </Button>
         </DialogFooter>
@@ -342,10 +345,7 @@ export function SpeedTestDialog({
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
           <FormItem label={t.speed.model} htmlFor="speed-model">
             {models == null ? (
-              <p className="flex items-center gap-2 tw-body text-muted-foreground">
-                <Spinner />
-                {t.speed.loadingModels}
-              </p>
+              <Skeleton role="status" aria-label={t.speed.loadingModels} className="h-8 w-full rounded-lg" />
             ) : models.length === 0 ? (
               <Note>{t.speed.noModels}</Note>
             ) : (
@@ -389,6 +389,7 @@ export function SpeedTestDialog({
                         })
                       }
                     />
+                    <VendorTile name={p.name} baseUrl={p.base_url} protocol={p.protocol} size="sm" />
                     <span className="font-mono">{p.name}</span>
                     <div className="flex-1" />
                     <span className="tw-label text-muted-foreground">
@@ -403,7 +404,11 @@ export function SpeedTestDialog({
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline gap-2">
               <span className="tw-body font-medium">{t.speed.estimate}</span>
-              {quoting && <Spinner />}
+              {quoting && (
+                <StatusLabel tone="pending" muted className="tw-label">
+                  {t.speed.quoting}
+                </StatusLabel>
+              )}
               <div className="flex-1" />
               {quote && <span className="tw-label text-muted-foreground">{t.speed.pricingDate(quote.pricing_date)}</span>}
             </div>
@@ -420,14 +425,16 @@ export function SpeedTestDialog({
                 <TableBody>
                   {runnable.map((i) => (
                     <TableRow key={i.provider}>
-                      <TableCell className="font-mono">{i.provider}</TableCell>
-                      <TableCell className="text-right tabular-nums">{i.input_tokens}</TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell>
+                        <UpstreamName ov={ov} name={i.provider} />
+                      </TableCell>
+                      <TableCell className="text-right tw-num">{i.input_tokens}</TableCell>
+                      <TableCell className="text-right tw-num">
                         {i.max_output_tokens ?? (
                           <span className="text-muted-foreground">{t.speed.noLimit}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="text-right tw-num">
                         {i.cost_micros != null ? (
                           usd(i.cost_micros)
                         ) : (
@@ -447,7 +454,7 @@ export function SpeedTestDialog({
                       </TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-right font-medium tabular-nums">
+                      <TableCell className="text-right font-medium tw-num">
                         {selectedQuote?.total_micros != null
                           ? usd(selectedQuote.total_micros)
                           : t.speed.totalUncalculable}
@@ -477,22 +484,20 @@ export function SpeedTestDialog({
                   </TableHeader>
                   <TableBody>
                     {results.map((r) => (
-                      <TableRow key={r.provider}>
-                        <TableCell className="font-mono">
-                          {r.provider}
+                      <TableRow key={r.provider} className="motion-fade">
+                        <TableCell>
+                          <UpstreamName ov={ov} name={r.provider} />
                           {!r.ok && r.error && (
-                            <div className="font-sans tw-label whitespace-normal text-destructive">
-                              {coreText(r.error)}
-                            </div>
+                            <div className="pl-7 tw-label whitespace-normal text-destructive">{coreText(r.error)}</div>
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tw-num">
                           {r.ttft_ms != null ? `${r.ttft_ms.toLocaleString()} ms` : "—"}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tw-num">
                           {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tw-num">
                           {r.input_tokens != null && r.output_tokens != null
                             ? `${r.input_tokens} → ${r.output_tokens}`
                             : "—"}
@@ -506,22 +511,29 @@ export function SpeedTestDialog({
           )}
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <DialogError error={error} />
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {results ? common.close : common.cancel}
           </Button>
-          <Button onClick={run} disabled={running || runnable.length === 0 || !model}>
-            {running ? <Spinner /> : <ZapIcon />}
+          <Button onClick={run} pending={running} disabled={runnable.length === 0 || !model}>
+            {!running && <ZapIcon />}
             {results ? t.speed.again : t.speed.start}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 测速结果表里的上游：标志加名字 */
+function UpstreamName({ ov, name }: { ov: Overview; name: string }) {
+  const p = ov.providers.find((x) => x.name === name);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <VendorTile name={name} baseUrl={p?.base_url} protocol={p?.protocol} size="sm" />
+      <span className="font-mono">{name}</span>
+    </span>
   );
 }

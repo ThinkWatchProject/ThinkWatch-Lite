@@ -1,9 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useResource } from "@/lib/resource";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
+import { StatusLabel } from "@/ui/status-dot";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
@@ -16,10 +19,14 @@ const FILTER_FROM = 10;
 
 /**
  * 点开「模型」一格看到的东西：这一家有哪些模型，是怎么知道的，没拿到的话
- * 为什么、该做什么。
+ * 原因和下一步。
  *
  * **只读，改动在编辑对话框里做** —— 启用范围、手动清单都要一次保存一个
  * 配置版本，和上游其余设置走同一条路。这里给的是去那儿的入口。
+ *
+ * 清单按上游缓存（`upstream-models:<名字>`）：再点开一次先画上一次的，后台再读。
+ * 概览里这一家的获取状态一变（开始问了、问完了）就重读 —— 开着面板等它问完，
+ * 也能看到结果。读的是 core 记下的答案，不联网。
  */
 export function ModelsPanel({
   p,
@@ -27,48 +34,34 @@ export function ModelsPanel({
   onEdit,
 }: {
   p: ProviderView;
-  /** 按量计费：列出单价。别的计费方式不按单价算钱，列了也没意义 */
+  /** 按量计费：列出单价。别的计费方式不按单价算费用，列了也没意义 */
   perToken: boolean;
   /** 打开编辑对话框的「模型」一节 */
   onEdit: () => void;
 }) {
   const t = useText(modelsPanelText);
   const c = useText(commonText);
-  const [view, setView] = useState<ProviderModelsView | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const r = useResource(`upstream-models:${p.name}`, () => api.providerModels(p.name), {
+    deps: [p.model_checked_at_ms, p.model_fetching, p.model_count],
+  });
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showOff, setShowOff] = useState(false);
 
-  // 概览里这一家的获取状态一变（开始问了、问完了）就重读：打开着面板等它问完，
-  // 也能看到结果。读的是 core 记下的答案，不联网
-  useEffect(() => {
-    let alive = true;
-    api
-      .providerModels(p.name)
-      .then((v) => {
-        if (!alive) return;
-        setView(v);
-        setFailed(null);
-      })
-      .catch((e) => alive && setFailed(errorText(e)));
-    return () => {
-      alive = false;
-    };
-  }, [p.name, p.model_checked_at_ms, p.model_fetching, p.model_count]);
-
   async function refresh() {
     setRefreshing(true);
+    setRefreshError(null);
     try {
-      setView(await api.refreshProviderModels(p.name));
-      setFailed(null);
+      r.mutate(await api.refreshProviderModels(p.name));
     } catch (e) {
-      setFailed(errorText(e));
+      setRefreshError(errorText(e));
     } finally {
       setRefreshing(false);
     }
   }
 
+  const view = r.data;
   const fetching = refreshing || (view?.fetching ?? p.model_fetching);
   const models = view?.models ?? [];
   const q = query.trim().toLowerCase();
@@ -82,19 +75,23 @@ export function ModelsPanel({
   const source = view?.source ?? p.model_source;
   const error = view?.error ?? p.model_error;
   const why = error ? coreText(error) : null;
+  const readError = refreshError ?? (r.error !== undefined && !view ? errorText(r.error) : null);
 
   return (
     <div className="flex max-h-[min(30rem,var(--radix-popover-content-available-height))] flex-col">
       <div className="flex items-start gap-2 border-b px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="tw-body font-medium">{t.title}</div>
-          <div className="tw-label text-muted-foreground">{summary(source, models.length, on.length, view)}</div>
+          <div className="tw-label text-muted-foreground">
+            {view ? summary(source, models.length, on.length, view) : <Skeleton className="mt-1 h-2.5 w-28 rounded-sm" />}
+          </div>
         </div>
         <Button
           variant="ghost"
           size="icon-xs"
           aria-label={t.refetch}
           title={t.refetch}
+          aria-busy={fetching || undefined}
           disabled={fetching}
           onClick={() => void refresh()}
         >
@@ -102,22 +99,33 @@ export function ModelsPanel({
         </Button>
       </div>
 
-      {failed ? (
-        <Problem text={failed} />
+      {readError ? (
+        <Problem
+          text={readError}
+          action={
+            <Button size="xs" variant="outline" pending={r.loading} onClick={() => void r.reload()}>
+              {c.retry}
+            </Button>
+          }
+        />
       ) : !view ? (
-        <Waiting text={t.loading} />
+        <RowsSkeleton />
       ) : source === "none" && (status === "pending" || fetching) ? (
-        <Waiting text={t.fetching} />
+        <div className="px-3 py-4">
+          <StatusLabel tone="pending" muted>
+            {t.fetching}
+          </StatusLabel>
+        </div>
       ) : (
         <>
-          {/* 没从上游拿到清单：说为什么，指出该做什么。手动清单顶上时照样说 */}
+          {/* 没从上游拿到清单：说原因，指出下一步。手动清单顶上时照样说 */}
           {status === "failed" && (
             <Problem
               title={t.failed}
               text={why ?? t.unreachable}
               action={
                 <>
-                  <Button size="xs" variant="outline" disabled={fetching} onClick={() => void refresh()}>
+                  <Button size="xs" variant="outline" pending={refreshing} disabled={fetching} onClick={() => void refresh()}>
                     {c.retry}
                   </Button>
                   <Button size="xs" variant="ghost" onClick={onEdit}>
@@ -156,23 +164,27 @@ export function ModelsPanel({
                   </InputGroup>
                 </div>
               )}
-              <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
+              <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 motion-fade">
                 {shownOn.map((m) => (
                   <Row key={m.id} m={m} perToken={perToken} />
                 ))}
                 {off.length > 0 && (
                   <>
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="xs"
                       aria-expanded={showOff || q !== ""}
                       onClick={() => setShowOff((v) => !v)}
-                      className="mt-1 flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left tw-label text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="mt-1 w-full justify-start gap-1 px-1.5 font-normal text-muted-foreground"
                     >
                       <ChevronRightIcon
-                        className={cn("size-3.5 transition-transform", (showOff || q !== "") && "rotate-90")}
+                        className={cn(
+                          "size-3.5 transition-transform duration-(--motion-fast)",
+                          (showOff || q !== "") && "rotate-90",
+                        )}
                       />
                       {t.notEnabled(off.length)}
-                    </button>
+                    </Button>
                     {(showOff || q !== "") &&
                       shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} />)}
                   </>
@@ -195,8 +207,7 @@ export function ModelsPanel({
 }
 
 /** 标题下那一行：多少个、从哪儿来、什么时候问的 */
-function summary(source: string, total: number, enabled: number, view: ProviderModelsView | null): string {
-  if (!view) return "";
+function summary(source: string, total: number, enabled: number, view: ProviderModelsView): string {
   const t = textOf(modelsPanelText);
   const count = enabled === total ? t.countAll(total) : t.countSome(total, enabled);
   if (source === "discovered") {
@@ -224,26 +235,28 @@ function Row({ m, perToken }: { m: ModelRow; perToken: boolean }) {
         {m.id}
       </span>
       {price && (
-        <span
-          className="shrink-0 tabular-nums tw-label text-muted-foreground"
-          title={t.priceTitle}
-        >
+        <span className="shrink-0 tw-num tw-label text-muted-foreground" title={t.priceTitle}>
           {price}
         </span>
       )}
-      <span className="w-10 shrink-0 text-right tabular-nums tw-label text-muted-foreground" title={t.context}>
+      <span className="w-10 shrink-0 text-right tw-num tw-label text-muted-foreground" title={t.context}>
         {m.context_window ? contextWindow(m.context_window) : ""}
       </span>
     </div>
   );
 }
 
-function Waiting({ text }: { text: string }) {
+/** 清单还没读到：几行和模型行一样高的占位 */
+function RowsSkeleton() {
   return (
-    <p className="flex items-center gap-2 px-3 py-4 tw-body text-muted-foreground">
-      <Spinner />
-      {text}
-    </p>
+    <div role="status" aria-busy="true" className="flex flex-col gap-1 px-3 py-2.5">
+      {[72, 56, 64, 44].map((w, i) => (
+        <div key={i} className="flex h-6 items-center justify-between gap-3" style={{ opacity: 1 - i * 0.18 }}>
+          <Skeleton className="h-2.5 rounded-sm" style={{ width: `${w}%` }} />
+          <Skeleton className="h-2.5 w-8 rounded-sm" />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -261,7 +274,7 @@ function Problem({
   muted?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2 px-3 py-2.5">
+    <div className="flex flex-col gap-2 px-3 py-2.5 motion-fade">
       <div className={cn("flex items-start gap-2 tw-label", muted ? "text-muted-foreground" : "text-warning")}>
         {!muted && <CircleAlertIcon className="mt-px size-3.5 shrink-0" />}
         <div className="min-w-0">
