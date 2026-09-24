@@ -22,7 +22,10 @@ pub mod control;
 pub mod dmg;
 pub mod keys;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
-#[cfg(target_os = "macos")]
+///
+/// **只在开发构建里。**它是回答一次性问题的测量工具，发布包不需要一个能从命令行
+/// 让应用关窗、退出的开关。
+#[cfg(all(target_os = "macos", debug_assertions))]
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
@@ -596,20 +599,32 @@ async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Result<String, S
         format!("诊断包-{at}.md"),
         format!("diagnostics-{at}.md")
     ));
-    std::fs::write(&path, text).map_err(|e| {
+    write_private(&path, text.as_bytes()).map_err(|e| {
         tr!(
             format!("无法写入文件 {}：{e}", path.display()),
             format!("The file {} could not be written: {e}", path.display())
         )
     })?;
-    // **0600。**里面是脱敏过的，但它仍然描述了这台机器上有哪些上游、
-    // 哪些客户端 —— 同机器上的其他用户没有理由读到
+    Ok(path.display().to_string())
+}
+
+/// 建的时候就是 `0600`。
+///
+/// 诊断包里是脱敏过的，但它仍然描述了这台机器上有哪些上游、哪些客户端 ——
+/// 同机器上的其他用户没有理由读到。**不是写完再 `chmod`**：那中间有一个按
+/// umask 谁都能读的窗口。同一秒里点两次会撞上同一个名字，先删掉再建，否则
+/// `mode` 对已经存在的文件不生效（core 写控制面凭据是同一个做法）。
+fn write_private(path: &std::path::Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let _ = std::fs::remove_file(path);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
-    Ok(path.display().to_string())
+    opts.open(path)?.write_all(contents)
 }
 
 /// **算一下，不发。**和 L3 测速同一条纪律。
@@ -1641,7 +1656,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
@@ -1936,7 +1950,7 @@ pub fn run() {
             // 量 webview 占多少。**它不是一个功能，是一个回答
             // 不了就只能猜的问题的工具** —— 「关窗之后隐藏还是销毁」
             // 取决于隐藏到底放不放得掉那部分内存。
-            #[cfg(target_os = "macos")]
+            #[cfg(all(target_os = "macos", debug_assertions))]
             if memcheck::requested(std::env::args()) {
                 memcheck::run(handle.clone());
             }
@@ -2486,6 +2500,24 @@ async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 诊断包从建出来那一刻就只有属主能读；同一秒再写一次也照样是 0600、内容是新的
+    #[test]
+    fn the_diagnostics_file_is_private_from_the_start_and_can_be_rewritten() {
+        let dir = std::env::temp_dir().join(format!("tw-diag-{}", token::generate()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("diagnostics-1.md");
+        write_private(&path, b"first").unwrap();
+        write_private(&path, b"second").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// 还原一个客户端时，进地址的必须是 id，不是显示名。
     ///

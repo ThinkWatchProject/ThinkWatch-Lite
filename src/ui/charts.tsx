@@ -156,7 +156,7 @@ export function StackedArea({
     );
   }
   const cfg = Object.fromEntries(
-    keys.map((k, i) => [k, { label: k, color: colors[i] }]),
+    keys.map((k) => [k, { label: k }]),
   ) satisfies ChartConfig;
   const last = data[data.length - 1];
   // 活边那个点画在最上面一层的顶上 —— 也就是这一格的总量
