@@ -400,7 +400,7 @@ export default function UpstreamsPage({
             <p className="tw-label text-muted-foreground">
               {t.dataDate(status.date || "—")}
               {status.checked_at_ms != null && ` · ${t.lastChecked(when(status.checked_at_ms))}`}
-              {status.error && <span className="text-destructive"> · {t.updateFailed(status.error)}</span>}
+              {status.error && <span className="text-destructive"> · {t.updateFailed(coreText(status.error))}</span>}
             </p>
           )}
           {status && status.unpriced_recent > 0 && (

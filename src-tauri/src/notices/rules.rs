@@ -9,8 +9,13 @@
 //! 英文按 macOS 通知的规矩：**标题每个词首字母大写、不带句末标点**，正文是完整的
 //! 句子。上游和代理的名字加弯引号，免得一个小写的名字混在标题里认不出来。
 //! 通知在事情发生的那一刻按当时的语言写成，之后换语言，已有的那几条不跟着变。
+//!
+//! **core 发来的原因按码说**（[`core_text`]，和界面同一张表）：中文通知里不嵌
+//! core 的英文原句。表里没有的码才退回英文。
 
 use tw_api::Event;
+
+use crate::core_text;
 
 use super::{Level, Signal};
 
@@ -33,27 +38,6 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
         tr!(format!("到代理的{step}"), format!("{step} to the proxy"))
     } else {
         step.to_string()
-    }
-}
-
-/// 监听没换成的原因，中文怎么说。**码是个封闭的小集合**，和界面那张表同一套
-/// 说法；认不出的码照搬 core 的英文原句。
-pub(crate) fn listen_why(e: &tw_api::Msg) -> String {
-    let addr = e.arg("addr");
-    match e.code.as_str() {
-        "gw.listen.port_taken" => format!("{addr} 已被其他程序占用。"),
-        "gw.listen.addr_unavailable" => format!("{addr} 当前不是本机的地址。"),
-        "gw.listen.denied" => format!("系统不允许监听 {addr}，1024 以下的端口需要管理员权限。"),
-        "gw.listen.no_such_nic" => format!(
-            "本机没有名为 {} 的网卡，现有网卡：{}。",
-            e.arg("name"),
-            e.arg("available")
-        ),
-        "gw.listen.nic_offline" => format!(
-            "网卡 {} 当前没有连上网络，请检查网线或 Wi-Fi 连接。",
-            e.arg("name")
-        ),
-        _ => e.text.clone(),
     }
 }
 
@@ -177,7 +161,9 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             .collect(),
         Event::CredentialExpired {
             provider, detail, ..
-        } => vec![
+        } => {
+            let detail = core_text::clause(detail);
+            vec![
             Signal::raised(
                 format!("credential:{provider}"),
                 Level::Warning,
@@ -193,7 +179,8 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 )
             ))
             .view(UPSTREAMS),
-        ],
+            ]
+        }
         Event::LoginFinished {
             status, provider, ..
         } if status == "done" => provider
@@ -252,7 +239,10 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 .as_ref()
                 .map(|s| {
                     let step = l1_step(s);
-                    tr!(format!("卡在{step}。"), format!("It got stuck at the {step}. "))
+                    tr!(
+                        format!("卡在{step}。"),
+                        format!("It got stuck at the {step}. ")
+                    )
                 })
                 .unwrap_or_default();
             vec![
@@ -281,6 +271,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             let at = line
                 .map(|l| tr!(format!("第 {l} 行："), format!("Line {l}: ")))
                 .unwrap_or_default();
+            let message = core_text::clause(message);
             vec![
                 Signal::raised(
                     "config",
@@ -311,7 +302,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     tr!("监听设置未生效", "Listen Settings Not in Effect"),
                 )
                 .body(tr!(
-                    format!("{}网关仍在 {at} 上监听。", listen_why(e)),
+                    format!("{}网关仍在 {at} 上监听。", core_text::text(e)),
                     format!("{} The gateway is still listening on {at}.", e.text)
                 ))
                 .view(SETTINGS),
@@ -326,7 +317,9 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             if *persisted {
                 return vec![Signal::cleared(format!("writeback:{provider}"))];
             }
-            // **退出应用之前不处理，这份凭据就没了**：换发的那一刻旧的已经作废
+            // **退出应用之前不处理，这份凭据就没了**：换发的那一刻旧的已经作废。
+            // core 的原因只说卡在哪儿，「重启前要处理」由这边按 `persisted` 说
+            let detail = core_text::clause(detail);
             vec![
                 Signal::raised(
                     format!("writeback:{provider}"),
@@ -376,7 +369,9 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             } else {
                 tr!(
                     format!("命中规则「{name}」。建议在客户端拒绝此调用。"),
-                    format!("It matched the rule “{name}”. Rejecting this call in the client is recommended.")
+                    format!(
+                        "It matched the rule “{name}”. Rejecting this call in the client is recommended."
+                    )
                 )
             };
             // **正文不带调用内容**：系统通知在锁屏上也看得见

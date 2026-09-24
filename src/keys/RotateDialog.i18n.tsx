@@ -27,7 +27,7 @@ export const rotateDialogText = messages(
     stillOld: "正在运行的窗口仍在使用原密钥，重启后恢复。",
     writeFailed: (client: string) => `未能写入 ${client} 的配置`,
     enterManually: (error: string, client: string) =>
-      `${error}。密钥已经更换，请手动把新密钥填进 ${client}。`,
+      `${error}。密钥已更换，请在 ${client} 中手动填写新密钥。`,
     updateElsewhere: "使用原密钥的地方需要改成新密钥，否则将无法连接。",
     done: "完成",
     title: (name: string) => `更换密钥「${name}」`,

@@ -22,6 +22,7 @@ import {
 } from "@/ui/dialog";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { coreText } from "@/i18n/core.i18n";
 import type { ClientView, DetectedClient, KeyRotated } from "@/types";
 import { api } from "./api";
 import { errorText } from "./labels";
@@ -121,7 +122,7 @@ export function RotateDialog({
                 <CircleAlertIcon />
                 <AlertTitle>{t.writeFailed(f.name)}</AlertTitle>
                 <AlertDescription>
-                  {t.enterManually(f.error, f.name)}
+                  {t.enterManually(coreText(f.error).replace(/[。.]$/, ""), f.name)}
                 </AlertDescription>
               </Alert>
             ))}

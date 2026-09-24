@@ -850,3 +850,75 @@ fn a_wedged_core_that_was_replaced_is_recorded_without_interrupting() {
     assert_eq!(s.level, Level::Info);
     assert!(!s.body.is_empty());
 }
+
+/// core 发来的原因**按码说中文**，不把英文原句嵌进中文句子里（和界面同一张表）
+#[test]
+fn chinese_notices_say_core_reasons_in_chinese() {
+    let coded = |code: &str, args: &[(&str, &str)], text: &str| tw_api::Msg {
+        code: code.into(),
+        args: args
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        text: text.into(),
+    };
+    with_lang(Lang::Zh, || {
+        let expired = &rules::from_event(&tw_api::Event::CredentialExpired {
+            id: 1,
+            provider: "官方".into(),
+            detail: coded(
+                "gw.oauth.expired",
+                &[("status", "400"), ("body", "invalid_grant")],
+                "The OAuth credential has expired; sign in again or replace the refresh token. \
+                 The token endpoint answered 400: invalid_grant",
+            ),
+            at_ms: T0,
+        })[0];
+        assert_eq!(
+            expired.body,
+            "OAuth 凭据已过期，请重新登录或更换 refresh token。令牌端点返回 400：invalid_grant。重新登录之前，经此上游的请求都会失败。"
+        );
+        assert!(
+            expired
+                .body
+                .ends_with("重新登录之前，经此上游的请求都会失败。"),
+            "{}",
+            expired.body
+        );
+        assert!(!expired.body.contains("。。"), "{}", expired.body);
+
+        let rejected = &rules::from_event(&tw_api::Event::ConfigRejected {
+            id: 2,
+            stage: tw_api::ConfigStage::Schema,
+            message: coded(
+                "config.duplicate_key_name",
+                &[("key", "work")],
+                "Gateway key name `work` is used more than once.",
+            ),
+            line: Some(4),
+            excerpt: None,
+            origin: tw_api::ConfigOrigin::External,
+            at_ms: T0,
+        })[0];
+        assert_eq!(
+            rejected.body,
+            "第 4 行：网关密钥名称「work」重复。上一版配置仍在服务。"
+        );
+
+        let rotated = &rules::from_event(&tw_api::Event::CredentialRotated {
+            id: 3,
+            provider: "官方".into(),
+            persisted: false,
+            detail: coded(
+                "config.rotate.no_provider",
+                &[("provider", "官方")],
+                "the configuration no longer has an upstream `官方`",
+            ),
+            at_ms: T0,
+        })[0];
+        assert_eq!(
+            rotated.body,
+            "配置中已没有上游「官方」。退出应用后需要重新登录或更换凭据。"
+        );
+    });
+}

@@ -286,9 +286,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     }
     if let Ok(s) = status {
         snap.addr = s.gateway_addr;
-        snap.listen_error = s
-            .listen_error
-            .map(|e| tr!(notices::rules::listen_why(&e), e.text.clone()));
+        snap.listen_error = s.listen_error.map(|e| crate::core_text::text(&e));
     }
     if let Ok(s) = summary {
         snap.today = Some(model::Today {

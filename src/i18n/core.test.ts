@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { setLang } from "./index";
 import { coreText, errorText, plain, ruleWhy } from "./core.i18n";
+import CORE_ZH from "./core.zh.json";
+import CASE_FILE from "./core.zh.cases.json";
+import { compile } from "./template";
+import type { Msg } from "@/types";
+
+const CASES = CASE_FILE as unknown as { msg: Msg; zh: string }[];
 
 /** 每条用例自己说用哪种语言 —— 全局的那个在测试之间是共享的 */
 function inLang<T>(lang: "zh" | "en", f: () => T): T {
@@ -205,5 +211,25 @@ describe("invoke 抛出来的东西", () => {
   it("字符串不再当 JSON 解析", () => {
     const s = '{"code":"control.shutdown","text":"shutting down"}';
     expect(inLang("zh", () => errorText(s))).toBe(s);
+  });
+});
+
+describe("core.zh.json", () => {
+  it("每一句、每一层场合的写法都解析得了", () => {
+    // 写坏了的那句不会报错，只会悄悄退回英文
+    for (const [code, s] of Object.entries(CORE_ZH.messages)) {
+      expect(() => compile(s), code).not.toThrow();
+    }
+    for (const c of CORE_ZH.contexts) {
+      expect(() => compile(c.en)).not.toThrow();
+      expect(() => compile(c.zh)).not.toThrow();
+    }
+  });
+
+  it("和 Rust 那份实现跑同一份用例，说同一句话", () => {
+    // src-tauri/src/core_text.rs 的测试读的也是这个文件
+    for (const c of CASES) {
+      expect(inLang("zh", () => coreText(c.msg)), c.msg.code).toBe(c.zh);
+    }
   });
 });
