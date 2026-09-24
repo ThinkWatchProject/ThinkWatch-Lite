@@ -460,7 +460,6 @@ pub(super) fn disabled_by_desktop(contents: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
 
     /// Paths that break an unescaped `Exec`: every character with a rule of its own.
     ///
@@ -619,8 +618,11 @@ mod tests {
         assert_eq!(value("[Desktop Entry]\nName[zh_CN]=x\n", "Name"), None);
     }
 
+    /// Unix paths only: `/x/cfg` is not absolute on Windows, where this never runs.
+    #[cfg(unix)]
     #[test]
     fn the_autostart_directory_follows_xdg() {
+        use std::ffi::OsStr;
         let d = autostart_dir(Some(OsStr::new("/x/cfg")), Some(OsStr::new("/home/a")));
         assert_eq!(d, Some(PathBuf::from("/x/cfg/autostart")));
         // unset, empty or relative XDG_CONFIG_HOME: ~/.config
