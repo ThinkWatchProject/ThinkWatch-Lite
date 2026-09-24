@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { groupKindLabel } from "@/labels";
-import { isGroupKind, type GroupKind, type Overview } from "@/types";
+import type { GroupKind, Overview } from "@/types";
 import { billingLabel, errorText, protocolLabel } from "@/upstreams/labels";
 import { Boxed, FormItem, Note, RadioRow } from "@/upstreams/parts";
 import { api } from "./api";
@@ -65,7 +65,7 @@ export function GroupDialog({
   const [name, setName] = useState(
     mode.kind === "edit" ? mode.name : mode.kind === "duplicate" ? rt.copyName(mode.from) : "",
   );
-  const [kind, setKind] = useState<GroupKind>(source && isGroupKind(source.kind) ? source.kind : "fallback");
+  const [kind, setKind] = useState<GroupKind>(source?.kind ?? "fallback");
   const [order, setOrder] = useState<string[]>(() => {
     const members = source?.providers ?? [];
     return [...members, ...ov.providers.map((p) => p.name).filter((n) => !members.includes(n))];

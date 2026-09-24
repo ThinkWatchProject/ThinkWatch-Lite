@@ -15,6 +15,7 @@ import type {
   LatencyView,
   PriceQuery,
   PriceSheetSave,
+  Protocol,
   ProviderQuota,
   ProviderSave,
   ProviderTest,
@@ -40,7 +41,7 @@ export const api = {
     call("DeleteProvider", { base_version: baseVersion }, name),
   testProvider: (test: ProviderTest) => call("TestProvider", test),
   /** `protocol`：表单里选定的协议，不给就是自动识别 */
-  previewProvider: (baseUrl: string, protocol?: string) =>
+  previewProvider: (baseUrl: string, protocol?: Protocol) =>
     call("PreviewProvider", { base_url: baseUrl, protocol }),
   providerModels: (name: string) => call("ProviderModels", null, name),
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),

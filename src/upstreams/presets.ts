@@ -1,5 +1,5 @@
 import { textOf } from "@/i18n";
-import type { ZaiFamily } from "@/types";
+import type { Billing, Protocol, ZaiFamily } from "@/types";
 import { presetsText } from "./presets.i18n";
 
 /**
@@ -15,8 +15,8 @@ export interface Preset {
   name: string;
   baseUrl: string;
   /** 空字符串 = 自动识别 */
-  protocol: string;
-  billing?: "per-token" | "free";
+  protocol: Protocol | "";
+  billing?: Billing;
 }
 
 /** 要翻译的名称写成 getter：每次读取都按当时的语言取 */

@@ -7,7 +7,9 @@
  */
 import type {
   ClientView,
+  ConditionField,
   ConditionView,
+  Dialect,
   GroupKind,
   GroupView,
   ProviderView,
@@ -29,7 +31,7 @@ export type CondKind = "glob" | "compare" | "flag" | "one" | "many";
 export type CondGroup = "request" | "features" | "source" | "upstream";
 
 export interface CondField {
-  id: string;
+  id: ConditionField;
   kind: CondKind;
   group: CondGroup;
 }
@@ -51,7 +53,7 @@ export const COND_FIELDS: CondField[] = [
   { id: "provider_would_be", kind: "many", group: "upstream" },
 ];
 
-export function condField(id: string): CondField {
+export function condField(id: ConditionField): CondField {
   return COND_FIELDS.find((f) => f.id === id) ?? { id, kind: "one", group: "request" };
 }
 
@@ -84,7 +86,7 @@ export function validAmount(v: string): boolean {
 }
 
 /** 一个新加的条件的初始值 */
-export function blankCondition(id: string): ConditionView {
+export function blankCondition(id: ConditionField): ConditionView {
   switch (condField(id).kind) {
     case "flag":
       return { field: id, values: ["true"] };
@@ -359,7 +361,7 @@ export function strategies(): { id: GroupKind; desc: string }[] {
 }
 
 /** 客户端格式：规则条件和试算里可选的几种 */
-export const DIALECTS = ["anthropic", "openai-chat", "openai-responses", "gemini"];
+export const DIALECTS: readonly Dialect[] = ["anthropic", "openai-chat", "openai-responses", "gemini"];
 
 /** 辅助请求的类别（不含总称） */
 export const PROBE_IDS = ["health_check", "warmup", "titling", "topic_detect", "suggestion"];

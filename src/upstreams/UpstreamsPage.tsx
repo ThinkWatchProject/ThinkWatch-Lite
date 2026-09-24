@@ -23,7 +23,7 @@ import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { when } from "@/format";
-import { errorText } from "./labels";
+import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
 import { PriceSheetTable } from "./PriceSheetTable";
 import { ProxyDialog, type ProxyDialogMode } from "./ProxyDialog";
@@ -33,7 +33,6 @@ import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { UpstreamTable } from "./UpstreamTable";
-import { plain } from "@/i18n/core.i18n";
 
 export type UpstreamTab = "upstreams" | "proxies" | "pricing";
 
@@ -210,7 +209,7 @@ export default function UpstreamsPage({
   async function refreshModels(name: string) {
     try {
       const v = await api.refreshProviderModels(name);
-      if (v.error) toast.error(t.modelsError(name, v.error));
+      if (v.error) toast.error(t.modelsError(name, coreText(v.error)));
       changed();
     } catch (e) {
       toast.error(errorText(e));

@@ -15,7 +15,8 @@ import {
 } from "@/ui/table";
 import { Textarea } from "@/ui/textarea";
 import { useText } from "@/i18n";
-import type { ProviderModelsView, ResolvedPrice } from "@/types";
+import type { ModelListStatus, ModelSource, Msg, ProviderModelsView, ResolvedPrice } from "@/types";
+import { coreText } from "@/i18n/core.i18n";
 import { globMatch } from "./glob";
 import { contextWindow, modelSourceLabel } from "./labels";
 import { modelsSectionText } from "./ModelsSection.i18n";
@@ -24,14 +25,13 @@ import type { UpstreamForm } from "./upstreamForm";
 
 /** 这家上游有哪些模型，以及是怎么知道的 */
 export interface ModelCatalog {
-  /** `discovered` / `manual` / `none` */
-  source: string;
+  source: ModelSource;
   models: string[];
   checkedAtMs?: number | null;
   /** 没拿到清单的原因 */
-  error?: string | null;
+  error?: Msg | null;
   /** 获取的结果：拿到了、上游不提供、没问到 */
-  status?: string;
+  status?: ModelListStatus;
   /** core 正在向上游问 */
   fetching?: boolean;
 }
@@ -150,7 +150,7 @@ export function ModelsSection({
       ) : (
         <>
           {!listed && (
-            <FormItem label={t.manual} desc={t.manualDesc(catalog.error)}>
+            <FormItem label={t.manual} desc={t.manualDesc(catalog.error ? coreText(catalog.error) : null)}>
               <Textarea
                 className="min-h-24 font-mono"
                 value={manualText}

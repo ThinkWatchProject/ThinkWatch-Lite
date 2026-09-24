@@ -7,19 +7,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { Guard, GuardDetail, RuleGuard, SecurityRuleView } from "@/types";
+import type { Guard, GuardDetail, GuardMode, RuleGuard, SecurityRuleView } from "@/types";
 import { hasAction, hasCustom, type ActionGuard } from "./api";
 import { Code, MatcherText, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText } from "./GuardTab.i18n";
 
-export type Mode = "off" | "observe" | "enforce";
-const MODES: Mode[] = ["off", "observe", "enforce"];
-export const asMode = (s: string): Mode => ((MODES as string[]).includes(s) ? (s as Mode) : "observe");
+const MODES: readonly GuardMode[] = ["off", "observe", "enforce"];
 
 /** 规则表上能做的事。**都由页面接住** —— 它们要写配置、要开对话框 */
 export interface RuleActions {
-  mode: (mode: Mode) => void;
+  mode: (mode: GuardMode) => void;
   toggle: (r: SecurityRuleView, enabled: boolean) => void;
   /** 内置规则：只读查看；自定义规则：编辑 */
   open: (r: SecurityRuleView) => void;
@@ -40,9 +38,9 @@ export function ModeCard({
   onMode,
 }: {
   guard: Guard;
-  mode: Mode;
+  mode: GuardMode;
   busy: boolean;
-  onMode: (mode: Mode) => void;
+  onMode: (mode: GuardMode) => void;
 }) {
   const t = useText(guardTabText);
   const lt = useText(securityLabelsText);
@@ -52,7 +50,7 @@ export function ModeCard({
       <div className="flex flex-wrap items-center gap-3">
         <p className="tw-body font-medium">{copy.lead}</p>
         <div className="flex-1" />
-        <Segmented<Mode>
+        <Segmented<GuardMode>
           label={t.modeFor(lt.guards[guard])}
           value={mode}
           disabled={busy}
@@ -94,7 +92,7 @@ export function GuardTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <ModeCard guard={guard} mode={asMode(detail.mode)} busy={busy} onMode={actions.mode} />
+      <ModeCard guard={guard} mode={detail.mode} busy={busy} onMode={actions.mode} />
 
       <section className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">

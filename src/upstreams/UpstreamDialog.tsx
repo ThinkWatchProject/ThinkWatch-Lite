@@ -24,7 +24,7 @@ import { api } from "./api";
 import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import { ConnectionSection } from "./ConnectionSection";
-import { errorText, protocolLabel, shortUrl } from "./labels";
+import { coreText, errorText, plain, protocolLabel, shortUrl } from "./labels";
 import { ModelsSection, catalogOf, inScope, type ModelCatalog } from "./ModelsSection";
 import { StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
@@ -223,18 +223,18 @@ export function UpstreamDialog({
               status: r.ok ? "no_list" : "failed",
               models: [],
               checkedAtMs: Date.now(),
-              error: r.ok ? describeModelList(r.models) : t.connectionFailed(r.error ?? t.unknownError),
+              error: plain(r.ok ? describeModelList(r.models) : t.connectionFailed(r.error ? coreText(r.error) : t.unknownError)),
             },
       );
     } catch (e) {
       const error = errorText(e);
-      setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error });
+      setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error) });
       setCatalog({
         source: form.manualModels.length > 0 ? "manual" : "none",
         status: "failed",
         models: [],
         checkedAtMs: Date.now(),
-        error: t.connectionFailed(error),
+        error: plain(t.connectionFailed(error)),
       });
     } finally {
       setTesting(false);

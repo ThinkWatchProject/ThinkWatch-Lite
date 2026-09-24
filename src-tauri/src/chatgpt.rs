@@ -49,7 +49,7 @@ pub async fn start_chatgpt_login(
     state: tauri::State<'_, AppState>,
     name: Option<String>,
     proxy: Option<String>,
-    mode: Option<String>,
+    mode: Option<tw_api::ChatgptLoginMode>,
 ) -> Out<Login> {
     let login = state
         .control

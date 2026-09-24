@@ -482,7 +482,7 @@ mod tests {
     fn a_query_is_flat_and_leaves_out_what_is_not_there() {
         let q = query_string(
             &serde_json::to_value(tw_api::SecurityEventsQuery {
-                guard: Some("a b/中".into()),
+                guard: Some(tw_api::Guard::InspectTools),
                 from_ms: Some(5),
                 to_ms: None,
                 before: None,
@@ -493,7 +493,12 @@ mod tests {
         .unwrap();
         let mut parts: Vec<&str> = q.split('&').collect();
         parts.sort_unstable();
-        assert_eq!(parts, ["from_ms=5", "guard=a%20b%2F%E4%B8%AD", "limit=3"]);
+        assert_eq!(parts, ["from_ms=5", "guard=inspect_tools", "limit=3"]);
+        // 协议里的查询字段现在都是数字和枚举，编码拿一个手写的值来验
+        assert_eq!(
+            query_string(&serde_json::json!({ "q": "a b/中" })).unwrap(),
+            "q=a%20b%2F%E4%B8%AD"
+        );
         assert_eq!(
             query_string(&serde_json::to_value(()).unwrap()).unwrap(),
             ""

@@ -23,7 +23,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptAccountText } from "./ChatgptAccountSection.i18n";
-import { errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
+import { coreText, errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
 import { FormItem } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
 
@@ -271,7 +271,7 @@ function LoginBox({
             {planLabel(plan) && !broken && ` · ${planLabel(plan)}`}
           </p>
           {broken ? (
-            <p className="tw-label text-muted-foreground">{oauth?.failure ?? t.needsLogin}</p>
+            <p className="tw-label text-muted-foreground">{oauth?.failure ? coreText(oauth.failure) : t.needsLogin}</p>
           ) : (
             left && <p className="tw-label text-muted-foreground">{t.credentialExpires(left)}</p>
           )}

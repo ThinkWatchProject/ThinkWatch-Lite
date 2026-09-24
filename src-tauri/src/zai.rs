@@ -40,7 +40,7 @@ pub struct Login {
 pub async fn start_zai_login(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    family: Option<String>,
+    family: Option<tw_api::ZaiFamily>,
     name: Option<String>,
     proxy: Option<String>,
 ) -> Out<Login> {

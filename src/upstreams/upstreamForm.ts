@@ -6,7 +6,17 @@
  * 密钥和请求头的值留空表示沿用已保存的，OAuth 没点「更换」时沿用。
  */
 import { textOf } from "@/i18n";
-import type { HeaderInput, ModelList, OAuthChange, ProviderInput, ProviderView, SecretChange } from "@/types";
+import type {
+  Billing,
+  HeaderInput,
+  ModelList,
+  OAuthChange,
+  OnProxyFail,
+  Protocol,
+  ProviderInput,
+  ProviderView,
+  SecretChange,
+} from "@/types";
 import { CUSTOM } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
@@ -33,7 +43,7 @@ export interface UpstreamForm {
   /** 编辑时改过地址没有。没改就保持原样 */
   baseUrlTouched: boolean;
   /** 空 = 自动识别 */
-  protocol: string;
+  protocol: Protocol | "";
   authMode: AuthMode;
   /** 新填的 API 密钥 */
   key: string;
@@ -50,14 +60,14 @@ export interface UpstreamForm {
   oauthClientSecret: string;
   oauthAccess: string;
   proxy: string;
-  onProxyFail: string;
+  onProxyFail: OnProxyFail;
   /** 服务不提供模型列表时的手动清单 */
   manualModels: string[];
   scope: "all" | "some";
   /** 指定范围：模型 ID 或通配规则 */
   scopeList: string[];
   /** 按量计费按价目表算（订阅账号也是），不计费记 $0 */
-  billing: "per-token" | "free";
+  billing: Billing;
   /** 空 = 默认价目表 */
   pricing: string;
   disabled: boolean;

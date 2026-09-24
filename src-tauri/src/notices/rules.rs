@@ -20,17 +20,16 @@ use super::{Level, Signal};
 /// 再抄一份 core 的码表；而步骤是个封闭集合，几个词就够，指向的又正是
 /// 一眼要看的那件事。完整的原因在上游页上。
 fn l1_step(s: &tw_api::L1Stage) -> String {
-    let step: &str = match s.step.as_str() {
-        "config" => tr!("配置", "configuration"),
-        "dns" => tr!("DNS 解析", "DNS lookup"),
-        "tcp" => tr!("TCP 握手", "TCP handshake"),
-        "tls" => tr!("TLS 握手", "TLS handshake"),
-        "handshake" => tr!("代理握手", "proxy handshake"),
-        // 不在这几个里的照着码说，总好过不说
-        other => other,
+    use tw_api::{L1Peer, L1Step};
+    let step: &str = match s.step {
+        L1Step::Config => tr!("配置", "configuration"),
+        L1Step::Dns => tr!("DNS 解析", "DNS lookup"),
+        L1Step::Tcp => tr!("TCP 握手", "TCP handshake"),
+        L1Step::Tls => tr!("TLS 握手", "TLS handshake"),
+        L1Step::Handshake => tr!("代理握手", "proxy handshake"),
     };
     // 代理握手本来就只对着代理，再加一句「到代理」是废话
-    if s.peer == "proxy" && s.step != "handshake" {
+    if s.peer == L1Peer::Proxy && s.step != L1Step::Handshake {
         tr!(format!("到代理的{step}"), format!("{step} to the proxy"))
     } else {
         step.to_string()
@@ -50,12 +49,10 @@ pub(crate) fn listen_why(e: &tw_api::Msg) -> String {
             e.arg("name"),
             e.arg("available")
         ),
-        "gw.listen.nic_no_addr" => {
-            format!(
-                "网卡 {} 当前没有地址，请检查网线或 Wi-Fi 连接。",
-                e.arg("name")
-            )
-        }
+        "gw.listen.nic_offline" => format!(
+            "网卡 {} 当前没有连上网络，请检查网线或 Wi-Fi 连接。",
+            e.arg("name")
+        ),
         _ => e.text.clone(),
     }
 }

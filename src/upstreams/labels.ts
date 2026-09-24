@@ -7,13 +7,16 @@
 import { textOf } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type {
+  Billing,
   L1Result,
   L1Skip,
   L1Stage,
   PriceFields,
   PriceSourceView,
+  Protocol,
   ProviderView,
   ProxyFault,
+  ProxyKind,
 } from "@/types";
 import { labelsText } from "./labels.i18n";
 
@@ -23,7 +26,7 @@ import { labelsText } from "./labels.i18n";
  * 渲染里，换了语言，下一次渲染就是新的文字。
  */
 
-export const PROTOCOLS: { id: string; label: string }[] = [
+export const PROTOCOLS: { id: Protocol; label: string }[] = [
   { id: "anthropic", label: "Anthropic Messages" },
   { id: "openai-chat", label: "OpenAI Chat Completions" },
   { id: "openai-responses", label: "OpenAI Responses" },
@@ -31,7 +34,7 @@ export const PROTOCOLS: { id: string; label: string }[] = [
 ];
 
 /** 登录得来的上游，协议不在上面那张表里：它不能在新建表单里选 */
-export const CHATGPT_PROTOCOL = {
+export const CHATGPT_PROTOCOL: { id: Protocol; readonly label: string } = {
   id: "chatgpt",
   get label() {
     return textOf(labelsText).chatgptAccount;
@@ -39,13 +42,13 @@ export const CHATGPT_PROTOCOL = {
 };
 
 /** 地址认不出协议、配置里也没写时，请求按客户端发来的格式原样转发 */
-export function protocolLabel(id: string | null | undefined): string {
+export function protocolLabel(id: Protocol | null | undefined): string {
   if (id === CHATGPT_PROTOCOL.id) return CHATGPT_PROTOCOL.label;
   return PROTOCOLS.find((p) => p.id === id)?.label ?? textOf(labelsText).protocolUnknown;
 }
 
 /** 计费方式只有两档：按价目表算，或者记 $0。订阅账号也按价目表算 */
-export const BILLINGS: { id: "per-token" | "free"; label: string; desc: string }[] = (
+export const BILLINGS: { id: Billing; label: string; desc: string }[] = (
   ["per-token", "free"] as const
 ).map((id) => ({
   id,
@@ -57,11 +60,11 @@ export const BILLINGS: { id: "per-token" | "free"; label: string; desc: string }
   },
 }));
 
-export function billingLabel(id: string | null | undefined): string {
+export function billingLabel(id: Billing | null | undefined): string {
   return BILLINGS.find((b) => b.id === id)?.label ?? textOf(labelsText).billings["per-token"].label;
 }
 
-export const PROXY_KINDS: { id: string; label: string; desc: string }[] = (
+export const PROXY_KINDS: { id: ProxyKind; label: string; desc: string }[] = (
   [
     ["socks5h", "SOCKS5h"],
     ["socks5", "SOCKS5"],
@@ -76,7 +79,7 @@ export const PROXY_KINDS: { id: string; label: string; desc: string }[] = (
   },
 }));
 
-export function proxyKindLabel(id: string): string {
+export function proxyKindLabel(id: ProxyKind): string {
   return PROXY_KINDS.find((k) => k.id === id)?.label ?? id;
 }
 
@@ -303,4 +306,4 @@ export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = (
   },
 }));
 
-export { errorText } from "@/i18n/core.i18n";
+export { coreText, errorText, plain } from "@/i18n/core.i18n";

@@ -7,6 +7,7 @@
  * 集中在这里。上游页自己的那些在 `upstreams/labels.ts`。
  */
 import { textOf } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
 import {
   usd,
   type AttemptView,
@@ -154,7 +155,7 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean } {
     case "status":
       return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
     default:
-      return { text: a.error ?? t.noResponse, ok: false };
+      return { text: a.error ? coreText(a.error) : t.noResponse, ok: false };
   }
 }
 

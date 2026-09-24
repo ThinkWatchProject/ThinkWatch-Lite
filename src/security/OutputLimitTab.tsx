@@ -6,8 +6,8 @@ import { Button } from "@/ui/button";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { FormActions, FormRow, FormRows, NumberInput, intIn } from "@/settings/form";
-import type { OutputLimitDetail } from "@/types";
-import { asMode, ModeCard, type Mode } from "./GuardTab";
+import type { GuardMode, OutputLimitDetail } from "@/types";
+import { ModeCard } from "./GuardTab";
 import { outputLimitText } from "./OutputLimitTab.i18n";
 
 /**
@@ -25,7 +25,7 @@ export function OutputLimitTab({
 }: {
   detail: OutputLimitDetail;
   busy: boolean;
-  onMode: (mode: Mode) => void;
+  onMode: (mode: GuardMode) => void;
   /** 写上限。失败时抛出，这一节自己显示 */
   onSaveLimit: (max: number) => Promise<void>;
 }) {
@@ -63,7 +63,7 @@ export function OutputLimitTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <ModeCard guard="output_limit" mode={asMode(detail.mode)} busy={busy} onMode={onMode} />
+      <ModeCard guard="output_limit" mode={detail.mode} busy={busy} onMode={onMode} />
 
       <section>
         <h3 className="tw-head">{t.title}</h3>
