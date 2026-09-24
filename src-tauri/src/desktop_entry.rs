@@ -102,29 +102,24 @@ pub(crate) fn appimage() -> Option<PathBuf> {
 ///   uses it to put the window under this entry in the dock.
 /// - `%u` hands a `thinkwatch://` URL to the app; without a field code GLib
 ///   appends `%f`, which drops URLs that are not local files.
-fn entry(name: &str, comment: Option<&str>, program: &str, icon: &str, wm_class: &str) -> String {
-    let mut out = format!(
+/// - No `Version`: it is optional, every key here is in the 1.0 spec, and
+///   desktop-file-utils 0.26 (Ubuntu 22.04) rejects `Version=1.5` as unknown.
+fn entry(name: &str, program: &str, icon: &str, wm_class: &str) -> String {
+    format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Version=1.5\n\
-         Name={}\n",
-        escape_string(name)
-    );
-    if let Some(c) = comment {
-        out.push_str(&format!("Comment={}\n", escape_string(c)));
-    }
-    out.push_str(&format!(
-        "Exec={} %u\n\
+         Name={}\n\
+         Exec={} %u\n\
          Icon={}\n\
          Terminal=false\n\
          Categories=Development;\n\
          MimeType={SCHEME_MIME};\n\
          StartupWMClass={}\n",
+        escape_string(name),
         exec_value(program, &[]),
         escape_string(icon),
         escape_string(wm_class),
-    ));
-    out
+    )
 }
 
 /// Writes `contents` unless the file already holds exactly that. `Ok(true)`
@@ -176,7 +171,6 @@ pub(crate) fn integrate(app: &tauri::AppHandle) {
         return;
     };
     let name = app.package_info().name.clone();
-    let comment = app.config().bundle.short_description.clone();
     let wm_class = std::env::current_exe()
         .ok()
         .and_then(|e| e.file_name().map(|n| n.to_string_lossy().into_owned()))
@@ -200,7 +194,7 @@ pub(crate) fn integrate(app: &tauri::AppHandle) {
             tracing::warn!("desktop entry not written: the data directory is not valid UTF-8");
             return;
         };
-        let contents = entry(&name, comment.as_deref(), program, icon, &wm_class);
+        let contents = entry(&name, program, icon, &wm_class);
         match write_if_changed(&files.desktop, contents.as_bytes()) {
             Ok(true) => {
                 tracing::info!("desktop entry written: {}", files.desktop.display());
@@ -309,7 +303,6 @@ mod tests {
     fn exec_quotes_the_appimage_and_passes_the_url() {
         let e = entry(
             "ThinkWatch Lite",
-            Some("Local AI gateway"),
             "/home/a/My $Apps/ThinkWatch-Lite.AppImage",
             "/home/a/.local/share/icons/hicolor/256x256/apps/app.thinkwatch.lite.png",
             "thinkwatch-lite",
@@ -320,14 +313,8 @@ mod tests {
         );
         assert!(e.contains("\nMimeType=x-scheme-handler/thinkwatch;\n"));
         assert!(e.contains("\nStartupWMClass=thinkwatch-lite\n"));
-        assert!(e.contains("\nComment=Local AI gateway\n"));
         assert!(e.contains("\nCategories=Development;\n"));
         assert!(!e.contains("NoDisplay"));
-        assert!(
-            entry("n", None, "/a", "/i.png", "w")
-                .lines()
-                .all(|l| !l.starts_with("Comment="))
-        );
     }
 
     #[test]
