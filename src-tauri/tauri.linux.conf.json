@@ -15,6 +15,7 @@
     "linux": {
       "deb": {
         "section": "devel",
+        "depends": ["ca-certificates"],
         "desktopTemplate": "linux/main.desktop"
       }
     }

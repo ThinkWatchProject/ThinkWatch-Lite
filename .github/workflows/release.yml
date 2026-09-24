@@ -513,9 +513,12 @@ jobs:
           test "$(dpkg-deb -f "$DEB" Package)" = thinkwatch-lite
           test "$(dpkg-deb -f "$DEB" Version)" = "$VERSION"
           test "$(dpkg-deb -f "$DEB" Architecture)" = "${{ matrix.deb }}"
-          # 依赖由打包器写：WebKitGTK、GTK、托盘。少一个，apt 装完照样打不开
+          # 依赖：WebKitGTK、GTK、托盘由打包器写，少一个 apt 装完照样打不开。
+          # `ca-certificates` 是 `tauri.linux.conf.json` 里加的：网关的 HTTPS
+          # 只认系统的根证书，一张都没有时连 HTTP 客户端都建不起来，网关直接
+          # 起不来 —— 干净的 Ubuntu 22.04 容器里装这个 deb 实测过
           DEPENDS=$(dpkg-deb -f "$DEB" Depends)
-          for dep in libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1; do
+          for dep in ca-certificates libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1; do
             grep -q "$dep" <<< "$DEPENDS" || { echo "deb 的依赖里没有 $dep：$DEPENDS" >&2; exit 1; }
           done
 
