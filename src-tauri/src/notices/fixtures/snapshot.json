@@ -1,0 +1,190 @@
+{
+ "status": {
+  "api_version": 17,
+  "version": "0.45.0",
+  "pid": 73157,
+  "gateway_addr": "127.0.0.1:18963",
+  "config_rejected": {
+   "stage": "semantics",
+   "message": {
+    "code": "config.duplicate_key_name",
+    "args": {
+     "key": "default"
+    },
+    "text": "the gateway key name default appears twice"
+   },
+   "line": null,
+   "excerpt": null,
+   "at_ms": 1790252953712
+  },
+  "config_path": "/Users/me/.thinkwatch/config.yaml",
+  "clients": 1,
+  "providers": 1,
+  "uptime_secs": 19,
+  "in_flight": 0
+ },
+ "overview": {
+  "config_version": "blake3:c71fd577406c",
+  "providers": [
+   {
+    "name": "官方",
+    "base_url": "http://127.0.0.1:18944",
+    "base_url_masked": false,
+    "auth_header": "x-api-key",
+    "oauth": {
+     "endpoint": "http://127.0.0.1:18954/token",
+     "failure": {
+      "code": "gw.oauth.expired",
+      "args": {
+       "body": "{\"error\":\"invalid_grant\",\"error_description\":\"refresh token revoked\"}",
+       "status": "400"
+      },
+      "text": "The OAuth credential has expired; sign in again or replace the refresh token. The token endpoint answered 400: {\"error\":\"invalid_grant\",\"error_description\":\"refresh token revoked\"}"
+     },
+     "needs_login": true
+    },
+    "protocol": "anthropic",
+    "protocol_explicit": true,
+    "proxy": "direct",
+    "on_proxy_fail": "fail",
+    "models": [
+     "claude-sonnet-4-5"
+    ],
+    "model_source": "manual",
+    "model_status": "failed",
+    "model_fetching": false,
+    "model_checked_at_ms": 1790252936502,
+    "model_error": {
+     "code": "gw.oauth.expired",
+     "args": {
+      "body": "{\"error\":\"invalid_grant\",\"error_description\":\"refresh token revoked\"}",
+      "status": "400",
+      "upstream": "官方"
+     },
+     "text": "The credential for upstream `官方` could not be obtained: The OAuth credential has expired; sign in again or replace the refresh token. The token endpoint answered 400: {\"error\":\"invalid_grant\",\"error_description\":\"refresh token revoked\"}"
+    },
+    "model_count": 1,
+    "disabled": false,
+    "health": "ok",
+    "billing": "per-token",
+    "references": [],
+    "pricing": null
+   }
+  ],
+  "proxies": [],
+  "routes": [
+   {
+    "name": "default",
+    "default": true,
+    "builtin": true,
+    "has_catch_all": true,
+    "clients": [],
+    "rules": [
+     {
+      "name": "catch-all",
+      "conditions": [],
+      "to": "__all__",
+      "catch_all": true,
+      "phase_two": false,
+      "shadowed": false
+     }
+    ]
+   }
+  ],
+  "groups": [
+   {
+    "name": "__all__",
+    "builtin": true,
+    "kind": "fallback",
+    "session_affinity": false,
+    "providers": [
+     "官方"
+    ],
+    "hurts_cache": false
+   }
+  ],
+  "clients": [
+   {
+    "name": "default",
+    "key": "tw-re…wb4e",
+    "max_concurrent": null,
+    "route": null,
+    "allow": null,
+    "default": true
+   }
+  ],
+  "listen": {
+   "bind": "loopback",
+   "port": 18963,
+   "allow_from": [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "fc00::/7"
+   ],
+   "default_allow_from": [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "fc00::/7"
+   ],
+   "exposed": false
+  },
+  "security": {
+   "redact": "observe",
+   "inspect_tools": "observe",
+   "hidden_text": "observe",
+   "content": "observe",
+   "output_limit": "off"
+  },
+  "default_route": "default",
+  "client_probes": [
+   {
+    "id": "health_check",
+    "mode": "intercept"
+   },
+   {
+    "id": "warmup",
+    "mode": "intercept"
+   },
+   {
+    "id": "titling",
+    "mode": "passthrough"
+   },
+   {
+    "id": "topic_detect",
+    "mode": "passthrough"
+   },
+   {
+    "id": "suggestion",
+    "mode": "passthrough"
+   }
+  ],
+  "retention": {
+   "body_days": 7,
+   "row_days": 90,
+   "body_max_bytes": 2147483648,
+   "body_bytes_now": 0
+  },
+  "price_sheets": []
+ },
+ "quotas": [
+  {
+   "provider": "chatgpt",
+   "windows": [
+    {
+     "window": "primary",
+     "used_percent": 100.0,
+     "resets_at_ms": 4102444800000,
+     "status": null
+    },
+    {
+     "window": "secondary",
+     "used_percent": 40.0,
+     "resets_at_ms": 4102444800000,
+     "status": null
+    }
+   ]
+  }
+ ]
+}
