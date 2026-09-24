@@ -67,8 +67,33 @@ describe("core 的错误：码加参数", () => {
     // 编辑对话框里不带（就是正在改的那个），整份配置校验时带
     const m = { code: "config.credential.empty_key", text: "the API key is empty" };
     expect(inLang("zh", () => coreText(m))).toBe("API 密钥为空。");
-    const withUpstream = { ...m, args: { upstream: "官方" } };
+    const withUpstream = {
+      ...m,
+      args: { upstream: "官方" },
+      text: "the credential of upstream `官方`: the API key is empty",
+    };
     expect(inLang("zh", () => coreText(withUpstream))).toBe("上游「官方」的凭据：API 密钥为空。");
+  });
+
+  it("原因外面的场合接回中文那句前面，场合可以套好几层", () => {
+    // 取凭据失败：码是原因的码，上游名和英文开头是外面那层加的
+    const m = {
+      code: "config.secret.env_missing",
+      args: { upstream: "官方", proxy: "hk", var: "HK_PASS" },
+      text:
+        "The credential for upstream `官方` could not be obtained: " +
+        "The password for proxy `hk` could not be read: the environment variable HK_PASS is not set",
+    };
+    expect(inLang("zh", () => coreText(m))).toBe(
+      "无法获取上游「官方」的凭据：无法读取代理「hk」的密码：未设置环境变量 HK_PASS。",
+    );
+    // 原因自己带着 `upstream`，英文没有那层开头：不凭空加一句
+    const own = {
+      code: "gw.oauth.not_configured",
+      args: { upstream: "官方" },
+      text: "Upstream `官方` has no OAuth configured.",
+    };
+    expect(inLang("zh", () => coreText(own))).toBe("上游「官方」未配置 OAuth。");
   });
 
   it("比较式写错时带上规则名", () => {

@@ -21,7 +21,7 @@ import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptLoginText } from "./ChatgptLoginDialog.i18n";
-import { errorText, proxyKindLabel, shortUrl } from "./labels";
+import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
 import { FormItem } from "./parts";
 import { freeName } from "./upstreamForm";
 
@@ -89,7 +89,7 @@ export function ChatgptLoginDialog({
     }
     setPhase({ at: "form" });
     const text = textOf(chatgptLoginText);
-    setError(s.error ?? (s.status === "expired" ? text.expired : text.cancelled));
+    setError(s.error ? coreText(s.error) : s.status === "expired" ? text.expired : text.cancelled);
   }
 
   // 结果由 core 发事件，不必一直问；问一遍是为了事件漏掉时也能收尾

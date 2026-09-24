@@ -14,7 +14,7 @@ import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import RequestDrawer from "@/RequestDrawer";
-import { GUARDS, isGuard, isRuleGuard, type RuleGuard, type SecurityDetail, type SecurityEventView } from "@/types";
+import { GUARDS, isRuleGuard, type RuleGuard, type SecurityDetail, type SecurityEventView } from "@/types";
 import { api } from "./api";
 import { ActionBadge, EventDetail, ruleName, whereOf } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -199,7 +199,7 @@ export function LogTab({
                           <span>{when(e.at_ms)}</span>
                         </Tip>
                       </TableCell>
-                      <TableCell className="truncate text-muted-foreground">{isGuard(e.guard) ? lt.guardShort[e.guard] : e.guard}</TableCell>
+                      <TableCell className="truncate text-muted-foreground">{lt.guardShort[e.guard]}</TableCell>
                       <TableCell className="py-2">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span className="truncate font-medium">{name}</span>

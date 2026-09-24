@@ -34,7 +34,16 @@ import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { api } from "./api";
 import { TestLine } from "./ConnectionSection";
-import { billingSummary, egressLabel, errorText, l1ErrorText, l1SkipText, l1StageLabel, skipLabel } from "./labels";
+import {
+  billingSummary,
+  egressLabel,
+  errorText,
+  l1ErrorText,
+  l1SkipText,
+  l1StageLabel,
+  plain,
+  skipLabel,
+} from "./labels";
 import { Boxed, FormItem, Note } from "./parts";
 import { testDialogsText } from "./TestDialogs.i18n";
 import { formFromView, toInput } from "./upstreamForm";
@@ -63,7 +72,7 @@ export function TestConnectionDialog({
       .catch(
         (e) =>
           alive &&
-          setResult({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: errorText(e) }),
+          setResult({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(errorText(e)) }),
       );
     return () => {
       alive = false;

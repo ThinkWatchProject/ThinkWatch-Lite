@@ -186,10 +186,9 @@ const names = (list: string | undefined): string => (list ?? "").replace(/`([^`]
 
 /**
  * 可选的前缀参数。**用 `in` 判断，不直接取值** —— 取一个不存在的参数会让整句
- * 退回英文，而这两个参数本来就可有可无：同一个码，有时带着上游名或规则名，
- * 有时不带（编辑对话框里就是正在改的那一个）。
+ * 退回英文，而这个参数本来就可有可无：同一个码，有时带着规则名，有时不带
+ * （编辑对话框里就是正在改的那一条）。
  */
-const inUpstream = (a: Args, s: string) => ("upstream" in a ? `上游「${a.upstream}」的凭据：${s}` : s);
 const inRule = (a: Args, s: string) => ("rule" in a ? `规则「${a.rule}」：${s}` : s);
 
 /**
@@ -209,7 +208,6 @@ const ZH: Record<string, Say> = {
     "该上游使用系统代理，代理地址在建立连接时才由环境决定，链路测速无法测量。将代理配置为命名条目后即可测速。",
   "l1.config.proxy_undefined": (a) =>
     `上游「${a.upstream}」使用的代理「${a.proxy}」未在 proxies 中定义。`,
-  "l1.config.proxy_password": (a) => `无法读取代理「${a.proxy}」的密码：${a.detail}`,
   "l1.config.bad_url": (a) => `接口地址不是合法的 URL：${a.detail}`,
   "l1.config.unsupported_scheme": (a) =>
     `接口地址使用了 ${a.scheme} 协议，仅支持 http 和 https。`,
@@ -294,12 +292,44 @@ const ZH: Record<string, Say> = {
     "尚未配置任何上游。请在 ThinkWatch Lite 中添加上游，或在 config.yaml 的 providers 中添加。",
   "gw.config.proxy_undefined": (a) =>
     `上游「${a.upstream}」使用的代理「${a.proxy}」未在 proxies 中定义，内置选项只有 direct 和 system。`,
-  "gw.config.proxy_password": (a) => `无法读取代理「${a.proxy}」的密码：${a.detail}`,
   "gw.config.proxy_unusable": (a) => `上游「${a.upstream}」的代理「${a.proxy}」不可用：${a.detail}`,
   "gw.config.http_client": (a) => `无法创建 HTTP 客户端：${a.detail}`,
   "gw.config.allow_from": (a) => `listen.gateway.allow_from：${a.detail}`,
+
+  // ── gw.oauth / gw.chatgpt：换访问令牌 ──────────────────────────────
+  "gw.oauth.not_configured": (a) => `上游「${a.upstream}」未配置 OAuth。`,
+  "gw.oauth.unreachable": (a) => `无法连接令牌端点 ${a.endpoint}：${a.detail}`,
+  "gw.oauth.status": (a) => `令牌端点返回 ${a.status}：${a.body}`,
+  "gw.oauth.no_token": () => "令牌端点的响应中没有 access_token。",
+  "gw.oauth.expired": (a) =>
+    `OAuth 凭据已过期，请重新登录或更换 refresh token。令牌端点返回 ${a.status}：${a.body}`,
+  "gw.oauth.backoff.unreachable": (a) =>
+    `上一次刷新令牌失败，${a.secs} 秒后重试：无法连接令牌端点 ${a.endpoint}：${a.detail}`,
+  "gw.oauth.backoff.status": (a) =>
+    `上一次刷新令牌失败，${a.secs} 秒后重试：令牌端点返回 ${a.status}：${a.body}`,
+  "gw.oauth.backoff.no_token": (a) =>
+    `上一次刷新令牌失败，${a.secs} 秒后重试：令牌端点的响应中没有 access_token。`,
+  "gw.oauth.rotation_queue_full": () => "写回队列已满，这次换发的凭据未写回配置。",
+  "gw.oauth.rotation_no_manager": () =>
+    "网关在独立运行，没有配置管理器，这次换发的凭据未写回配置。",
+  "gw.chatgpt.token_unreachable": (a) => `无法连接 ${a.endpoint}：${a.detail}`,
+  "gw.chatgpt.token_status": (a) => `令牌端点返回 ${a.status}：${a.body}`,
+  "gw.chatgpt.token_not_json": () => "令牌端点的响应不是 JSON。",
+  "gw.chatgpt.token_missing": (a) => `令牌端点的响应中没有 ${a.field}。`,
+
+  // ── gw.models / gw.probe：获取模型清单、检查上游 ───────────────────
+  "gw.models.check_failed": () => "检查未通过。",
+  "gw.models.no_endpoint": (a) => `上游没有提供模型清单的接口（HTTP ${a.status}）。`,
+  "gw.models.unrecognized": () => "上游返回的模型清单格式无法识别。",
+  "gw.models.empty": () => "上游返回的模型清单为空。",
+  "gw.probe.timeout": (a) =>
+    `${a.secs} 秒内没有响应。请检查接口地址，或确认该上游是否需要经代理访问。`,
+  "gw.probe.connect": () =>
+    "无法连接。请检查接口地址的拼写和网络；如果该上游需要经代理访问，请先配置代理。",
+  "gw.probe.request_failed": (a) => `请求失败：${a.detail}`,
+  "gw.probe.key_rejected": (a) =>
+    `上游拒绝了这个密钥（HTTP ${a.status}）。请检查密钥前后是否有多余的空白，以及它是否属于该上游。`,
   "gw.config.security_rules": (a) => `安全规则无法使用：${a.detail}`,
-  "gw.credentials.failed": (a) => `无法获取上游「${a.upstream}」的凭据：${a.detail}`,
   "gw.model.unknown": (a) => `不存在模型 ${a.model}，可用模型请参见 GET /v1/models。`,
   "gw.model.no_upstream": (a) => `没有上游提供模型 ${a.model}，可用模型请参见 GET /v1/models。`,
   "gw.model.not_allowed": (a) =>
@@ -370,19 +400,17 @@ const ZH: Record<string, Say> = {
   "gw.listen.denied": (a) => `系统不允许监听 ${a.addr}，1024 以下的端口需要管理员权限。`,
   "gw.listen.bind_failed": (a) => `无法监听 ${a.addr}：${a.detail}`,
   "gw.listen.no_such_nic": (a) => `本机没有名为 ${a.name} 的网卡，现有网卡：${a.available}。`,
-  "gw.listen.nic_no_addr": (a) => `网卡 ${a.name} 当前没有地址，请检查网线或 Wi-Fi 连接。`,
+  "gw.listen.nic_offline": (a) => `网卡 ${a.name} 当前没有连上网络，请检查网线或 Wi-Fi 连接。`,
   "control.request_not_found": (a) => `未找到第 ${a.id} 号请求。`,
 
   // ── security：安全页的规则与档位 ──────────────────────────────────
   "security.guard_unknown": (a) =>
     `「${a.guard}」不是一项防护，只能是 redact、inspect_tools、hidden_text、content 或 output_limit。`,
-  "security.unknown_mode": (a) => `「${a.mode}」不是一个档位，只能是 off、observe 或 enforce。`,
   "security.unknown_rule": (a) => `没有名为「${a.rule}」的内置规则。`,
   "security.rule_name_empty": () => "规则需要一个名称。",
   "security.bad_pattern": (a) => `正则表达式有误：${a.detail}`,
   "security.unknown_action": (a) => `「${a.action}」不是一种处置，只能是 cut 或 record。`,
   "security.unknown_content_action": (a) => `「${a.action}」不是一种处置，只能是 block 或 record。`,
-  "security.unknown_match": (a) => `「${a.matching}」不是一种匹配方式，只能是 contains 或 regex。`,
   "security.bad_content_pattern": (a) => `匹配内容无法使用：${a.detail}`,
   "security.no_action_of_its_own": (a) => {
     const g = word(GUARD_NAME, a.guard);
@@ -419,8 +447,6 @@ const ZH: Record<string, Say> = {
     return kind && `${kind}名称不能以 ${a.prefix} 开头，该前缀保留给内置项。`;
   },
   "control.name_is_builtin": (a) => `「${a.name}」是内置选项的名称，请使用其他名称。`,
-  "control.unsupported_value": (a) => `${a.kind}「${a.value}」不受支持。`,
-  "control.unsupported_action": (a) => `不支持的操作「${a.action}」。`,
   "control.shutdown": () => "网关正在关闭。",
   "control.no_such_endpoint": (a) =>
     `控制面没有 ${a.method} ${a.path} 这个端点，桌面应用与网关的版本可能不一致。`,
@@ -434,13 +460,10 @@ const ZH: Record<string, Say> = {
   "control.header_no_value": (a) => `请求头「${a.header}」缺少值。`,
   "control.proxy_addr_form": (a) => `代理地址「${a.addr}」应写成 主机:端口 的形式。`,
   "control.dryrun_needs_target": () => "请指定网关密钥或路由。",
-  "control.credentials_failed": (a) => `无法获取上游「${a.upstream}」的凭据：${a.detail}`,
   "control.request_body_gone": (a) => `第 ${a.id} 号请求的请求体已不存在，可能已被清理。`,
   "control.response_body_gone": (a) => `第 ${a.id} 号请求的响应体已不存在，可能已被清理。`,
   "control.request_body_truncated": (a) =>
     `第 ${a.id} 号请求的请求体有 ${a.original} 字节，仅保存了 ${a.kept} 字节，无法原样重放。`,
-  "control.unknown_signin_mode": (a) => `不支持的登录方式「${a.mode}」。`,
-  "control.unknown_account_family": (a) => `「${a.family}」不是可登录的账号类型。`,
   "control.signin_response_unusable": (a) => `无法开始登录：${a.detail}`,
   "control.device_code_unavailable": () => "这个账号还不能用设备码登录，请改用在这台电脑上登录。",
   "control.device_code_failed": (a) => `换设备码时返回 ${a.status}：${a.detail}`,
@@ -464,6 +487,23 @@ const ZH: Record<string, Say> = {
   "control.account_service_status": (a) => `账号服务返回 ${a.status}：${a.detail}`,
   "control.account_service_not_json": (a) => `账号服务的响应不是 JSON：${a.detail}`,
   "control.account_service_refused": (a) => `账号服务拒绝了请求：${a.why}`,
+  "control.chatgpt_login.device_status": (a) => `登录返回 ${a.status}：${a.body}`,
+  "control.chatgpt_login.approval_unreadable": (a) => `无法识别授权结果：${a.detail}`,
+  "control.chatgpt_login.expired": () => "15 分钟内未完成授权。",
+  "control.chatgpt_login.page_error": (a) => `授权页面返回了错误：${a.detail}`,
+  "control.chatgpt_login.no_code": () => "回调中没有授权码。",
+  "control.zai_login.refused": () => "授权被拒绝。",
+  "control.zai_login.unknown_state": (a) => `授权处于无法识别的状态：${a.state}`,
+  "control.zai_login.expired": () => "未在限定时间内完成授权。",
+  "control.zai_login.no_access_token": () => "授权结果中没有访问令牌。",
+  "control.zai_login.no_account_token": () => "账号令牌的响应中没有令牌。",
+  "control.zai_login.no_project": () => "该账号没有可用于创建 API 密钥的组织和项目。",
+  "control.zai_login.key_without_id": () => "新建的 API 密钥缺少 id。",
+  "control.zai_login.key_id_unexpected": () => "API 密钥的 id 中含有无法识别的字符。",
+  "control.zai_login.key_without_secret": () => "API 密钥缺少密钥部分。",
+  "control.provider_test.oauth_unsaved": () =>
+    "OAuth 凭据需要先保存才能检查。如需现在检查，请同时填写访问令牌。",
+  "control.rotation.written": (a) => `已写回 ${a.path}（版本 ${a.version}）。`,
   "control.unauthorized": () =>
     "控制面需要启动时生成的令牌。桌面版会自动携带；自行编写的客户端需从配置目录中的 control.token 读取。",
   "control.internal_error": (a) => `网关内部出错：${a.detail}`,
@@ -511,12 +551,10 @@ const ZH: Record<string, Say> = {
   "control.rule.no_such_probe_class": (a) =>
     `规则「${a.rule}」：没有「${a.class}」这一类辅助请求。`,
   "control.rule.no_such_upstream": (a) => `规则「${a.rule}」：不存在上游「${a.upstream}」。`,
-  "control.rule.unknown_condition": (a) => `规则「${a.rule}」：不支持条件 ${a.field}。`,
   "control.rule.deny_needs_reason": (a) => `规则「${a.rule}」：拒绝时需要填写原因。`,
   "control.rule.forward_and_deny": (a) => `规则「${a.rule}」不能同时转发和拒绝。`,
   "control.group.name_is_upstream": (a) =>
     `「${a.name}」已是上游的名称。规则按名称指向上游或策略组，两者不能同名。`,
-  "control.group.unknown_strategy": (a) => `不支持策略「${a.strategy}」。`,
   "control.group.no_such_upstream": (a) => `不存在上游「${a.upstream}」。`,
   "control.group.upstream_twice": (a) => `上游「${a.upstream}」重复。`,
   "control.group.empty": () => "策略组至少需要一个上游。",
@@ -613,45 +651,38 @@ const ZH: Record<string, Say> = {
 
   // ── config.credential：上游凭据的写法 ────────────────────────────
   //
-  // 整份配置校验时多带一个 `upstream`（是哪个上游），编辑对话框里不带
-  "config.credential.empty_key": (a) => inUpstream(a, "API 密钥为空。"),
-  "config.credential.key_and_oauth": (a) => inUpstream(a, "key 和 oauth 只能填写其中一项。"),
-  "config.credential.empty_oauth": (a) => inUpstream(a, "oauth 的 refresh 和 endpoint 都不能为空。"),
-  "config.credential.claude_subscription": (a) =>
-    inUpstream(a, "不支持 Claude 订阅账号的登录凭据，请使用 Anthropic API 密钥。"),
-  "config.credential.google_subscription": (a) =>
-    inUpstream(a, "不支持 Gemini CLI 的 Google 登录凭据，请使用 Gemini API 密钥。"),
-  "config.credential.chatgpt_without_login": (a) =>
-    inUpstream(a, "ChatGPT 账号上游只接受登录获得的凭据。"),
-  "config.credential.identity_header": (a) =>
-    inUpstream(a, `请求头「${a.header}」如实说明请求的来源，由网关发送，不能在配置中设置。`),
-  "config.credential.too_many_headers": (a) => inUpstream(a, `请求头最多 ${a.max} 个。`),
+  // 整份配置校验时前面多一句「哪个上游的凭据」，由 `CONTEXT` 接上，这里只说原因
+  "config.credential.empty_key": () => "API 密钥为空。",
+  "config.credential.key_and_oauth": () => "key 和 oauth 只能填写其中一项。",
+  "config.credential.empty_oauth": () => "oauth 的 refresh 和 endpoint 都不能为空。",
+  "config.credential.claude_subscription": () => "不支持 Claude 订阅账号的登录凭据，请使用 Anthropic API 密钥。",
+  "config.credential.google_subscription": () => "不支持 Gemini CLI 的 Google 登录凭据，请使用 Gemini API 密钥。",
+  "config.credential.chatgpt_without_login": () => "ChatGPT 账号上游只接受登录获得的凭据。",
+  "config.credential.identity_header": (a) => `请求头「${a.header}」如实说明请求的来源，由网关发送，不能在配置中设置。`,
+  "config.credential.too_many_headers": (a) => `请求头最多 ${a.max} 个。`,
   "config.credential.bad_header_name": (a) =>
-    inUpstream(
-      a,
-      `请求头名称「${a.header}」无效：只能包含字母、数字和 - _ . ~，且不超过 ${a.max} 个字符。`,
-    ),
-  "config.credential.reserved_header": (a) =>
-    inUpstream(a, `请求头「${a.header}」由网关管理，不能在配置中设置。`),
-  "config.credential.duplicate_header": (a) =>
-    inUpstream(a, `请求头「${a.header}」重复（请求头名称不区分大小写）。`),
-  "config.credential.bad_header_value": (a) =>
-    inUpstream(a, `请求头「${a.header}」的值不能包含换行，且不超过 ${a.max} 个字符。`),
+    `请求头名称「${a.header}」无效：只能包含字母、数字和 - _ . ~，且不超过 ${a.max} 个字符。`,
+  "config.credential.reserved_header": (a) => `请求头「${a.header}」由网关管理，不能在配置中设置。`,
+  "config.credential.duplicate_header": (a) => `请求头「${a.header}」重复（请求头名称不区分大小写）。`,
+  "config.credential.bad_header_value": (a) => `请求头「${a.header}」的值不能包含换行，且不超过 ${a.max} 个字符。`,
   "config.credential.unrecognized_placeholder": (a) =>
-    inUpstream(a, `请求头「${a.header}」中的 ${a.placeholder} 无法识别，只支持 {{access_token}}。`),
+    `请求头「${a.header}」中的 ${a.placeholder} 无法识别，只支持 {{access_token}}。`,
   "config.credential.token_without_oauth": (a) =>
-    inUpstream(a, `请求头「${a.header}」使用了 {{access_token}}，但该上游未配置 oauth。`),
+    `请求头「${a.header}」使用了 {{access_token}}，但该上游未配置 oauth。`,
   "config.credential.key_and_auth_header": (a) =>
-    inUpstream(
-      a,
-      `已填写 key，API 密钥会通过请求头「${a.header}」发送，不能再在请求头中设置「${a.header}」。`,
-    ),
+    `已填写 key，API 密钥会通过请求头「${a.header}」发送，不能再在请求头中设置「${a.header}」。`,
   "config.credential.oauth_and_auth_header": (a) =>
-    inUpstream(
-      a,
-      `配置 oauth 后，令牌默认通过请求头「${a.header}」发送。如需自行设置该请求头，请用 {{access_token}} 标明令牌的位置。`,
-    ),
-  "config.credential.no_token": (a) => inUpstream(a, "无法获取 OAuth 访问令牌。"),
+    `配置 oauth 后，令牌默认通过请求头「${a.header}」发送。如需自行设置该请求头，请用 {{access_token}} 标明令牌的位置。`,
+  "config.credential.no_token": () => "无法获取 OAuth 访问令牌。",
+
+  // ── config.secret：凭据里的 ${环境变量} ──────────────────────────
+  "config.secret.env_missing": (a) => `未设置环境变量 ${a.var}。`,
+  "config.secret.unterminated": (a) => `第 ${a.pos} 个字符处的 \${...} 没有闭合。`,
+  "config.secret.empty_name": () => "变量名为空：${}",
+
+  // ── config.rotate：把换发的凭据写回配置 ─────────────────────────
+  "config.rotate.no_provider": (a) => `配置中已没有上游「${a.provider}」。`,
+  "config.rotate.read_back_differs": () => "写入后读回的令牌不是新的那个。",
 
   // ── yaml：按字段改配置文件 ───────────────────────────────────────
   "yaml.parse": (a) => `无法解析 YAML：${a.detail}`,
@@ -785,6 +816,9 @@ const ZH: Record<string, Say> = {
   "adopt.diag.managed": () => "本机存在管理策略文件",
   "adopt.diag.managed.detail": (a) =>
     `${a.path} 的优先级高于其他所有配置，包括用户配置。`,
+  "adopt.diag.managed_dropin": () => "本机存在管理策略补充文件",
+  "adopt.diag.managed_dropin.detail": (a) =>
+    `${a.path} 在 managed-settings.json 之后合并，与它一样优先于其他所有配置，包括用户配置。`,
   "adopt.diag.no_managed": () => "本机没有管理策略文件",
   "adopt.diag.no_managed.detail": () => "不存在优先级高于其他所有配置的管理策略文件。",
   "adopt.diag.no_exports": () => "shell 配置中没有同名环境变量",
@@ -796,6 +830,7 @@ const ZH: Record<string, Say> = {
     `${a.client} 读取环境变量，该行会覆盖接管写入的配置。`,
   // 一条命令，两种语言里是同一串字符
   "adopt.diag.delete_line": (a) => `sed -i '' '${a.line}d' ${a.path}`,
+  "adopt.diag.delete_line_gnu": (a) => `sed -i '${a.line}d' ${a.path}`,
   // Windows 上同名变量在注册表里：没有文件，也没有行号
   "adopt.diag.registry_env": (a) => `注册表 ${a.key} 中设置了 ${a.name}`,
   "adopt.diag.registry_env.overrides": (a) =>
@@ -894,6 +929,42 @@ export function ruleWhy(rule: string, text: string): string {
 }
 
 /**
+ * 原因外面套的那一层场合：哪个上游的凭据、哪个代理的密码、写回哪个上游的凭据。
+ *
+ * **码是原因的码**（core 的 `Msg::in_context`）：场合只多一个参数，英文
+ * 前面多一句「`{lead}: `」。所以这边按原因的码翻，再把场合接回前面。
+ *
+ * **认场合要看英文开头，不能只看参数在不在** —— `upstream` 这类参数原因
+ * 自己也可能带着（`gw.oauth.not_configured` 就带），只看参数会把一句
+ * 「上游某某的凭据」凭空加到前面。场合可以套好几层，由外往里一层层剥。
+ */
+const CONTEXT: { arg: string; en: (v: string) => string; zh: (v: string) => string }[] = [
+  // 整份配置校验时，凭据那一条说是哪个上游的
+  { arg: "upstream", en: (v) => `the credential of upstream \`${v}\``, zh: (v) => `上游「${v}」的凭据` },
+  {
+    arg: "upstream",
+    en: (v) => `The credential for upstream \`${v}\` could not be obtained`,
+    zh: (v) => `无法获取上游「${v}」的凭据`,
+  },
+  {
+    arg: "proxy",
+    en: (v) => `The password for proxy \`${v}\` could not be read`,
+    zh: (v) => `无法读取代理「${v}」的密码`,
+  },
+  {
+    arg: "provider",
+    en: (v) => `oauth.refresh of upstream \`${v}\` could not be located`,
+    zh: (v) => `找不到上游「${v}」的 oauth.refresh`,
+  },
+  {
+    arg: "provider",
+    en: (v) =>
+      `after writing the new credential for upstream \`${v}\` the configuration could not be read, so nothing was written`,
+    zh: (v) => `写入上游「${v}」的新凭据后无法读取配置，未写入任何内容`,
+  },
+];
+
+/**
  * 一句没有码的话，包成 [`Msg`]。
  *
  * **给的是退路，不是常规写法。**界面自己造的失败（invoke 抛了别的东西、
@@ -915,10 +986,22 @@ export function coreText(m: Msg | string | null | undefined): string {
   if (getLang() === "en") return m.text;
   const say = ZH[m.code];
   if (!say) return m.text;
+  const args = m.args ?? {};
+  const leads: string[] = [];
+  for (let rest = m.text; ; ) {
+    const hit = CONTEXT.flatMap((c) => {
+      const v = args[c.arg];
+      if (v === undefined) return [];
+      const en = c.en(v);
+      return rest.startsWith(`${en}: `) ? [{ zh: c.zh(v), en }] : [];
+    })[0];
+    if (!hit) break;
+    leads.push(`${hit.zh}：`);
+    rest = rest.slice(hit.en.length + 2);
+  }
   // **少一个参数就整句退回英文。**core 改了参数名而这张表还没跟上时，
   // 中文那句会缺一块（或者更糟，写出一个「undefined」）；一句完整的
   // 英文比一句缺了主语的中文好。
-  const args = m.args ?? {};
   let missing = false;
   const seen = new Proxy(args, {
     get(t, k: string) {
@@ -928,7 +1011,7 @@ export function coreText(m: Msg | string | null | undefined): string {
     },
   });
   const zh = say(seen);
-  return missing || zh === undefined ? m.text : zh;
+  return missing || zh === undefined ? m.text : leads.join("") + zh;
 }
 
 /**

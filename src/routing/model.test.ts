@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { RouteView, RuleView } from "@/types";
+import type { ConditionView, RouteView, RuleView } from "@/types";
 import {
   blankRule,
   draftFromView,
@@ -25,7 +25,7 @@ function rule(name: string, p: Partial<RuleDraft> = {}): RuleDraft {
   return { ...blankRule("pool"), name, ...p };
 }
 
-const model = (glob: string) => ({ field: "model", values: [glob] });
+const model = (glob: string): ConditionView => ({ field: "model", values: [glob] });
 
 describe("规则草稿", () => {
   it("视图读进来、交回去是同一套写法", () => {

@@ -1148,7 +1148,7 @@ export default function App() {
                 <AlertDescription>
                   <p className="mt-1 text-amber-800 dark:text-amber-300">
                     {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}
-                    {rejected.message}
+                    {coreText(rejected.message)}
                   </p>
                   {rejected.excerpt && (
                     <pre className="mt-1.5 overflow-x-auto rounded bg-amber-100 px-2 py-1 font-mono tw-label text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
@@ -1205,7 +1205,7 @@ export default function App() {
                         {t.rotatedUnsaved(r.provider)}
                       </p>
                       <p className="mt-1 text-amber-800 dark:text-amber-300">
-                        {r.detail}
+                        {coreText(r.detail)}
                       </p>
                       <p className="mt-1 text-amber-800 dark:text-amber-300">
                         {t.oldRevoked((s) => (

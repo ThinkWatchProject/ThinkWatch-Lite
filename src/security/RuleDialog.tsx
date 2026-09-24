@@ -18,7 +18,7 @@ import { Textarea } from "@/ui/textarea";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
-import type { RuleGuard, SecurityRuleView, SecurityTestHit } from "@/types";
+import type { ContentMatch, RuleAction, RuleGuard, SecurityRuleView, SecurityTestHit } from "@/types";
 import { hasAction, type ActionGuard, type CustomGuard, type RuleSave } from "./api";
 import { Highlight, lineOf, type Mark } from "./Highlight";
 import { MatcherText, ruleName, ruleWhy, viewName } from "./labels";
@@ -26,22 +26,11 @@ import { securityLabelsText } from "./labels.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { useTrial, type Trial } from "./useTrial";
 
-/**
- * 拦截档下做什么。工具调用审查是切断或仅记录，内容过滤是拒绝或仅记录。
- * core 按字符串发，界面只认这三个。
- */
-type Action = "cut" | "block" | "record";
-export const asAction = (s: string | null | undefined): Action | undefined =>
-  s === "cut" || s === "block" || s === "record" ? s : undefined;
-
 /** 这一项防护上「拦」的那一个词 */
-const strong = (guard: ActionGuard): Action => (guard === "content" ? "block" : "cut");
-
-/** 内容规则怎么认：不分大小写的子串，或者正则 */
-type Match = "contains" | "regex";
+const strong = (guard: ActionGuard): RuleAction => (guard === "content" ? "block" : "cut");
 
 /** 一条规则写的是什么，以及怎么认 */
-export function patternOf(r: SecurityRuleView): { pattern: string; match: Match } | null {
+export function patternOf(r: SecurityRuleView): { pattern: string; match: ContentMatch } | null {
   switch (r.matcher.kind) {
     case "regex":
       return { pattern: r.matcher.pattern, match: "regex" };
@@ -56,8 +45,8 @@ export function patternOf(r: SecurityRuleView): { pattern: string; match: Match 
 export interface RuleSeed {
   name: string;
   pattern: string;
-  match?: Match;
-  action?: Action;
+  match?: ContentMatch;
+  action?: RuleAction;
 }
 
 /** 一处命中标成什么颜色：会被切断、拒绝的红，会被替换或记录的黄 */
@@ -98,10 +87,10 @@ function ActionField({
   factory,
 }: {
   guard: ActionGuard;
-  value: Action;
-  onChange: (a: Action) => void;
+  value: RuleAction;
+  onChange: (a: RuleAction) => void;
   /** 内置规则出厂时的处置。改过的话在下面说一句 */
-  factory?: Action | null;
+  factory?: RuleAction | null;
 }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
@@ -112,7 +101,7 @@ function ActionField({
       label={t.whenEnforced}
       hint={factory && factory !== value ? what + t.factory(lt.ruleActions[factory] ?? factory) : what}
     >
-      <Segmented<Action>
+      <Segmented<RuleAction>
         label={t.whenEnforced}
         value={value}
         options={[
@@ -138,7 +127,7 @@ function TrialBox({
   trial: Trial;
   sample: string;
   /** 标成什么颜色。不给就按每一处自己的处置 */
-  action?: Action;
+  action?: RuleAction;
 }) {
   const t = useText(ruleDialogText);
   if (trial.state === "idle") return null;
@@ -206,13 +195,13 @@ export function RuleDialog({
   const [name, setName] = useState(editing?.id ?? seed?.name ?? "");
   const [pattern, setPattern] = useState(was?.pattern ?? seed?.pattern ?? "");
   // 只有内容过滤能选；别的两项的自定义规则都是正则
-  const [match, setMatch] = useState<Match>(
+  const [match, setMatch] = useState<ContentMatch>(
     guard === "content" ? (was?.match ?? seed?.match ?? "contains") : "regex",
   );
   // 新建的规则默认拦：专门写一条规则，多半就是要拦它
   const acts = hasAction(guard) ? guard : null;
-  const [action, setAction] = useState<Action>(
-    asAction(editing?.action) ?? seed?.action ?? (acts ? strong(acts) : "record"),
+  const [action, setAction] = useState<RuleAction>(
+    editing?.action ?? seed?.action ?? (acts ? strong(acts) : "record"),
   );
   const [sample, setSample] = useState("");
   const [saving, setSaving] = useState(false);
@@ -275,7 +264,7 @@ export function RuleDialog({
 
           {content && (
             <Field label={t.matchKind}>
-              <Segmented<Match>
+              <Segmented<ContentMatch>
                 label={t.matchKind}
                 value={match}
                 options={[
@@ -357,20 +346,20 @@ export function BuiltinRuleDialog({
   /** 复制成自定义规则。写不出等价写法的（出站脱敏、隐藏字符）不给 */
   onCopy?: () => void;
   /** 改拦截时的处置。只有工具调用审查和内容过滤的规则有 */
-  onSaveAction: (a: Action) => Promise<void>;
+  onSaveAction: (a: RuleAction) => Promise<void>;
 }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
   const common = useText(commonText);
   const [sample, setSample] = useState("");
-  const [action, setAction] = useState<Action>(asAction(rule.action) ?? "record");
+  const [action, setAction] = useState<RuleAction>(rule.action ?? "record");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trial = useTrial(guard, sample, { rule: rule.id });
   const why = ruleWhy(rule);
   const written = patternOf(rule);
   const acts = hasAction(guard) ? guard : null;
-  const changed = acts != null && action !== (asAction(rule.action) ?? "record");
+  const changed = acts != null && action !== (rule.action ?? "record");
 
   async function save() {
     setSaving(true);
@@ -410,7 +399,7 @@ export function BuiltinRuleDialog({
               guard={acts}
               value={action}
               onChange={setAction}
-              factory={asAction(rule.default_action) ?? null}
+              factory={rule.default_action ?? null}
             />
           )}
 

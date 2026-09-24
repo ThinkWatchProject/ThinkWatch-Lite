@@ -6,12 +6,13 @@
 // 上全靠人记得改两遍。
 //
 // 留在这里的只有界面自己的东西：请求列表的行和把事件缝成行的那几个函数、
-// 概览那一份（Rust 侧 `dashboard` 命令拼的）、金额的写法，以及几个 core 按
-// 字符串发、界面按固定几个值来分支的词的取值范围。
+// 概览那一份（Rust 侧 `dashboard` 命令拼的）、金额的写法，以及几个封闭集合
+// 在运行时要用的全部取值。
 import type {
   CostBucket,
   CostBucketGroup,
   Event,
+  Guard,
   HistoryRow,
   LatencyView,
   Msg,
@@ -30,39 +31,16 @@ export type CoreEvent = Event;
 /** core 的 `/status` */
 export type CoreStatus = Status;
 
-// ─── core 按字符串发的词，界面按这几个值分支 ───
+// ─── 几个封闭集合的全部取值 ───
 //
-// 协议里它们是 `string`。界面只认下面这些值：多出来的值照原样显示，不会
-// 让哪一段代码走错分支。
+// 类型本身在协议里（`slug_enum!` 导出的字符串联合），这里只补界面要在运行时
+// 遍历的取值，和「有规则表的那几项」这一个子集。
 
-/** `done` 之外都不会留下上游 */
-export type LoginStatus = "pending" | "done" | "failed" | "expired" | "cancelled";
-
-/** 一版配置是谁写的 */
-export type ConfigOrigin = "ui" | "cli" | "external" | "rollback" | "rotation";
-
-/** 在哪台设备上授权：这台机器的浏览器，还是把码输到另一台设备上 */
-export type ChatgptLoginMode = "browser" | "device";
-
-/** 登哪一家的账号 */
-export type ZaiFamily = "zai" | "bigmodel";
-
-/** 策略组按什么排候选，配置里 `type` 写的那个词 */
-export type GroupKind = "fallback" | "select" | "load-balance" | "url-test" | "cheapest";
-const GROUP_KINDS: readonly string[] = ["fallback", "select", "load-balance", "url-test", "cheapest"];
-export const isGroupKind = (s: string): s is GroupKind => GROUP_KINDS.includes(s);
-
-/** 各项防护在配置里的键，也是接口路径里的那一段 */
-export type Guard = "redact" | "inspect_tools" | "hidden_text" | "content" | "output_limit";
 export const GUARDS: readonly Guard[] = ["redact", "inspect_tools", "hidden_text", "content", "output_limit"];
-export const isGuard = (s: string): s is Guard => (GUARDS as readonly string[]).includes(s);
 
 /** 有规则表的那几项。输出长度只有一个上限 */
 export type RuleGuard = Exclude<Guard, "output_limit">;
-export const isRuleGuard = (s: string): s is RuleGuard => isGuard(s) && s !== "output_limit";
-
-/** 改动什么时候生效：`immediately` 下一个请求；`on_restart` 客户端重新启动后 */
-export type TakesEffect = "immediately" | "on_restart";
+export const isRuleGuard = (g: Guard): g is RuleGuard => g !== "output_limit";
 
 /** 命中了工具调用规则的一个调用 */
 export interface FlaggedCall {
@@ -117,8 +95,13 @@ export interface RequestRow {
   /** 失败的原因。**存的是 core 发来的那条消息，不是一句话** —— 语言
    * 是在画的时候才定的，存成句子的话换了语言它不会跟着换 */
   error?: Msg;
-  /** 出站脱敏在这次请求里找到的东西（已打码），以及换没换 */
-  secrets?: { replaced: boolean; items: SecretItem[] };
+  /**
+   * 出站脱敏在这次请求里找到的东西（已打码），以及换没换。
+   *
+   * **不带类别。**翻历史时是从安全日志拼回来的，日志里没有类别；徽标也只用
+   * 规则名和次数
+   */
+  secrets?: { replaced: boolean; items: Omit<SecretItem, "kind">[] };
   /** 做过格式转换的话，转成了什么、丢了什么 */
   translated?: TranslatedView;
   /** 命中了工具调用规则的调用 */

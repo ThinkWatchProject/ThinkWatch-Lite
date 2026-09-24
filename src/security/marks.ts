@@ -21,7 +21,6 @@ export function marksFromEvents(
             items: redact.map((e) => ({
               rule: e.rule,
               custom: e.custom === true,
-              kind: "",
               masked: e.excerpt,
               count: e.count,
             })),

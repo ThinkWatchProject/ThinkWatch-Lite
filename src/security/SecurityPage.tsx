@@ -4,7 +4,7 @@ import { RangePicker, useRange, type Range } from "@/ui/range";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
-import { GUARDS, type ConfigWritten, type Guard, type RuleGuard, type SecurityDetail, type SecurityRuleView } from "@/types";
+import { GUARDS, type ConfigWritten, type Guard, type GuardMode, type RuleGuard, type SecurityDetail, type SecurityRuleView } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
 import { api, hasAction, hasCustom, type CustomGuard, type RuleSave } from "./api";
 import { GuardTab, type RuleActions } from "./GuardTab";
@@ -12,7 +12,7 @@ import { viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { LogTab } from "./LogTab";
 import { OutputLimitTab } from "./OutputLimitTab";
-import { asAction, BuiltinRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
+import { BuiltinRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { securityPageText } from "./SecurityPage.i18n";
 
@@ -146,7 +146,7 @@ export default function SecurityPage({
     );
   }
 
-  function setMode(guard: Guard, mode: string) {
+  function setMode(guard: Guard, mode: GuardMode) {
     patch(guard, (g) => ({ ...g, mode }));
     void write((base) => api.setMode(guard, mode, base));
   }
@@ -172,7 +172,7 @@ export default function SecurityPage({
               name: viewName(guard, r),
               pattern: written?.pattern ?? "",
               match: written?.match,
-              action: asAction(r.action),
+              action: r.action ?? undefined,
             },
           });
         }

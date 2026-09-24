@@ -11,6 +11,7 @@ import {
   AUTH_MODES,
   PROTOCOLS,
   authHeaderParts,
+  coreText,
   egressLabel,
   protocolLabel,
   proxyKindLabel,
@@ -210,7 +211,7 @@ export function ConnectionSection({
             className="w-full"
             value={form.onProxyFail}
             disabled={form.proxy === "direct"}
-            onChange={(e) => set({ onProxyFail: e.target.value })}
+            onChange={(e) => set({ onProxyFail: e.target.value === "direct" ? "direct" : "fail" })}
           >
             <NativeSelectOption value="fail">{t.failWithError}</NativeSelectOption>
             <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
@@ -246,7 +247,7 @@ function ProtocolSelect({
       id="up-protocol"
       className="w-full"
       value={form.protocol}
-      onChange={(e) => set({ protocol: e.target.value })}
+      onChange={(e) => set({ protocol: PROTOCOLS.find((p) => p.id === e.target.value)?.id ?? "" })}
     >
       <NativeSelectOption value="">{auto}</NativeSelectOption>
       {PROTOCOLS.map((p) => (
@@ -425,7 +426,7 @@ export function TestLine({ result }: { result: ProviderTestResult }) {
         <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="tw-body font-medium">{t.failed}</span>
-          {result.error && <Note>{result.error}</Note>}
+          {result.error && <Note>{coreText(result.error)}</Note>}
         </div>
       </div>
     );

@@ -19,6 +19,7 @@ import { Spinner } from "@/ui/spinner";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { coreText } from "@/i18n/core.i18n";
 import {
   PROBES,
   formatLabel,
@@ -29,6 +30,7 @@ import {
   translatedText,
 } from "@/labels";
 import type {
+  Dialect,
   DryRunResult,
   KnownModel,
   Overview,
@@ -79,7 +81,7 @@ export function DryRunDialog({
         : (target.keys[0] ?? "");
   const [client, setClient] = useState(firstKey);
   const [model, setModel] = useState(models[0]?.id ?? "claude-sonnet-4-5");
-  const [dialect, setDialect] = useState("anthropic");
+  const [dialect, setDialect] = useState<Dialect>("anthropic");
   const [kTokens, setKTokens] = useState("8");
   const [maxTokens, setMaxTokens] = useState("");
   const [flags, setFlags] = useState({
@@ -217,7 +219,7 @@ export function DryRunDialog({
                 id={`${uid}-dialect`}
                 className="w-full"
                 value={dialect}
-                onChange={(e) => setDialect(e.target.value)}
+                onChange={(e) => setDialect(DIALECTS.find((d) => d === e.target.value) ?? dialect)}
               >
                 {DIALECTS.map((d) => (
                   <NativeSelectOption key={d} value={d}>
@@ -570,7 +572,7 @@ function traceView(
   }
   if (t.verdict === "phase_two")
     return { text: m.phaseTwo, tone: "muted", icon: "later" };
-  if (t.error) return { text: t.error, tone: "warn", icon: "miss" };
+  if (t.error) return { text: coreText(t.error), tone: "warn", icon: "miss" };
   return {
     text: t.mismatch ? m.missedBecause(mismatchText(t.mismatch)) : m.missed,
     tone: "muted",

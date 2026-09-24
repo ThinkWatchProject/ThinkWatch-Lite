@@ -8,7 +8,7 @@ import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
-import { contextWindow, errorText, perMillion } from "./labels";
+import { contextWindow, coreText, errorText, perMillion } from "./labels";
 import { modelsPanelText } from "./ModelsPanel.i18n";
 
 /** 列表长过这个数才给筛选框。十来个一眼就扫完了 */
@@ -81,6 +81,7 @@ export function ModelsPanel({
   const status = view?.status ?? p.model_status;
   const source = view?.source ?? p.model_source;
   const error = view?.error ?? p.model_error;
+  const why = error ? coreText(error) : null;
 
   return (
     <div className="flex max-h-[min(30rem,var(--radix-popover-content-available-height))] flex-col">
@@ -113,7 +114,7 @@ export function ModelsPanel({
           {status === "failed" && (
             <Problem
               title={t.failed}
-              text={error ?? t.unreachable}
+              text={why ?? t.unreachable}
               action={
                 <>
                   <Button size="xs" variant="outline" disabled={fetching} onClick={() => void refresh()}>
@@ -129,7 +130,7 @@ export function ModelsPanel({
           )}
           {status === "no_list" && source === "none" && (
             <Problem
-              text={t.noList(error ?? t.noListReason)}
+              text={t.noList(why ?? t.noListReason)}
               muted
               action={
                 <Button size="xs" variant="outline" onClick={onEdit}>

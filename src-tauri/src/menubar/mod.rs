@@ -303,7 +303,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         .map(|o| {
             o.providers
                 .iter()
-                .filter(|p| p.protocol.as_deref() == Some("chatgpt"))
+                .filter(|p| p.protocol == Some(tw_api::Protocol::Chatgpt))
                 .map(|p| p.name.clone())
                 .collect()
         })

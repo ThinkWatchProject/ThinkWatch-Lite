@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { errorText } from "@/i18n/core.i18n";
-import type { RuleGuard, SecurityTestHit } from "@/types";
+import type { ContentMatch, RuleGuard, SecurityTestHit } from "@/types";
 import { api } from "./api";
 
 export type Trial =
@@ -21,7 +21,7 @@ export type Trial =
 export function useTrial(
   guard: RuleGuard,
   sample: string,
-  only: { pattern?: string; match?: string; rule?: string },
+  only: { pattern?: string; match?: ContentMatch; rule?: string },
   /** 为 false 时不试（比如正则还是空的） */
   ready = true,
 ): Trial {

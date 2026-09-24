@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
-import type { ConditionView, KnownModel, Overview } from "@/types";
+import type { ConditionField, ConditionView, KnownModel, Overview } from "@/types";
 import { globMatch } from "@/upstreams/glob";
 import { FormItem, Note, Segmented } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
@@ -345,7 +345,7 @@ function Section({
 }
 
 /** 「添加条件」：按请求、特征、来源、上游分组，已有的不再列出 */
-function AddCondition({ used, onAdd }: { used: string[]; onAdd: (field: string) => void }) {
+function AddCondition({ used, onAdd }: { used: ConditionField[]; onAdd: (field: ConditionField) => void }) {
   const t = useText(ruleDialogText);
   const left = COND_FIELDS.filter((f) => !used.includes(f.id));
   if (left.length === 0) return null;

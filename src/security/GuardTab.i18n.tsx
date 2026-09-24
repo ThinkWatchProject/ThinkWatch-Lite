@@ -1,10 +1,11 @@
 import { messages } from "@/i18n";
+import type { GuardMode } from "@/types";
 
 /** 一项防护在三档下各做什么。**代价写在切换之前** */
 export interface GuardCopy {
   /** 这项防护做什么，一句话 */
   lead: string;
-  now: Record<"off" | "observe" | "enforce", string>;
+  now: Record<GuardMode, string>;
   /** 「拦截」在这一项上做的事 */
   effect: string;
   /** 「拦截」的代价 */

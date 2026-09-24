@@ -5,7 +5,15 @@
  * 全在 core。界面多判断一次，就多一处和 core 说法不一致的可能。
  */
 import { call } from "@/control";
-import type { CustomRuleSave, Guard, RuleGuard, SecurityEventsQuery } from "@/types";
+import type {
+  ContentMatch,
+  CustomRuleSave,
+  Guard,
+  GuardMode,
+  RuleAction,
+  RuleGuard,
+  SecurityEventsQuery,
+} from "@/types";
 
 /** 自定义规则保存时带的内容。版本号由页面在写的那一刻补上 */
 export type RuleSave = Omit<CustomRuleSave, "base_version">;
@@ -23,13 +31,13 @@ export const api = {
   detail: () => call("Security", null),
   /** 安全日志的一页。`guard` 不给就是全部；`before` 翻页 */
   events: (q: SecurityEventsQuery) => call("SecurityEvents", q),
-  setMode: (guard: Guard, mode: string, baseVersion: string) =>
+  setMode: (guard: Guard, mode: GuardMode, baseVersion: string) =>
     call("SetSecurityMode", { mode, base_version: baseVersion }, guard),
   /** 启用或停用一条内置规则 */
   toggleBuiltin: (guard: RuleGuard, id: string, enabled: boolean, baseVersion: string) =>
     call("ToggleBuiltinRule", { enabled, base_version: baseVersion }, guard, id),
   /** 一条内置规则在拦截档下做什么 */
-  setAction: (guard: ActionGuard, id: string, action: string, baseVersion: string) =>
+  setAction: (guard: ActionGuard, id: string, action: RuleAction, baseVersion: string) =>
     call("SetBuiltinRuleAction", { action, base_version: baseVersion }, guard, id),
   /** 输出长度的上限，按字符数 */
   setLimit: (maxChars: number, baseVersion: string) =>
@@ -44,6 +52,6 @@ export const api = {
    * 给了 `rule` 就只试这一条内置规则（停用着的也能试），都不给就按现在启用的
    * 全部规则
    */
-  test: (guard: RuleGuard, sample: string, only: { pattern?: string; match?: string; rule?: string } = {}) =>
+  test: (guard: RuleGuard, sample: string, only: { pattern?: string; match?: ContentMatch; rule?: string } = {}) =>
     call("TestSecurity", { sample, ...only }, guard),
 };

@@ -10,7 +10,7 @@ export const modelsPanelText = messages(
     unreachable: "未能连接上游。",
     editUpstream: "编辑上游…",
     usingManual: (n: number) => `暂用手动清单中的 ${n} 个模型。`,
-    noList: (reason: string) => `${reason}。可填写手动清单，列出此上游提供的模型。`,
+    noList: (reason: string) => `${reason.replace(/[。.]$/, "")}。可填写手动清单，列出此上游提供的模型。`,
     noListReason: "上游未提供模型列表",
     fillManual: "填写手动清单…",
     filter: "筛选模型",
@@ -41,7 +41,7 @@ export const modelsPanelText = messages(
       n === 1
         ? "Using the 1 model in the manual list for now."
         : `Using the ${n} models in the manual list for now.`,
-    noList: (reason: string) => `${reason}. A manual list can name the models this upstream serves.`,
+    noList: (reason: string) => `${reason.replace(/[。.]$/, "")}. A manual list can name the models this upstream serves.`,
     noListReason: "The upstream does not provide a model list",
     fillManual: "Enter a manual list…",
     filter: "Filter models",

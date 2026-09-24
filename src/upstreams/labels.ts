@@ -7,13 +7,19 @@
 import { textOf } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type {
+  Billing,
   L1Result,
   L1Skip,
   L1Stage,
+  ModelListStatus,
+  ModelSource,
   PriceFields,
   PriceSourceView,
+  Protocol,
   ProviderView,
   ProxyFault,
+  ProxyKind,
+  ServeSkip,
 } from "@/types";
 import { labelsText } from "./labels.i18n";
 
@@ -23,7 +29,7 @@ import { labelsText } from "./labels.i18n";
  * 渲染里，换了语言，下一次渲染就是新的文字。
  */
 
-export const PROTOCOLS: { id: string; label: string }[] = [
+export const PROTOCOLS: { id: Protocol; label: string }[] = [
   { id: "anthropic", label: "Anthropic Messages" },
   { id: "openai-chat", label: "OpenAI Chat Completions" },
   { id: "openai-responses", label: "OpenAI Responses" },
@@ -31,7 +37,7 @@ export const PROTOCOLS: { id: string; label: string }[] = [
 ];
 
 /** 登录得来的上游，协议不在上面那张表里：它不能在新建表单里选 */
-export const CHATGPT_PROTOCOL = {
+export const CHATGPT_PROTOCOL: { id: Protocol; readonly label: string } = {
   id: "chatgpt",
   get label() {
     return textOf(labelsText).chatgptAccount;
@@ -39,13 +45,13 @@ export const CHATGPT_PROTOCOL = {
 };
 
 /** 地址认不出协议、配置里也没写时，请求按客户端发来的格式原样转发 */
-export function protocolLabel(id: string | null | undefined): string {
+export function protocolLabel(id: Protocol | null | undefined): string {
   if (id === CHATGPT_PROTOCOL.id) return CHATGPT_PROTOCOL.label;
   return PROTOCOLS.find((p) => p.id === id)?.label ?? textOf(labelsText).protocolUnknown;
 }
 
 /** 计费方式只有两档：按价目表算，或者记 $0。订阅账号也按价目表算 */
-export const BILLINGS: { id: "per-token" | "free"; label: string; desc: string }[] = (
+export const BILLINGS: { id: Billing; label: string; desc: string }[] = (
   ["per-token", "free"] as const
 ).map((id) => ({
   id,
@@ -57,11 +63,11 @@ export const BILLINGS: { id: "per-token" | "free"; label: string; desc: string }
   },
 }));
 
-export function billingLabel(id: string | null | undefined): string {
+export function billingLabel(id: Billing | null | undefined): string {
   return BILLINGS.find((b) => b.id === id)?.label ?? textOf(labelsText).billings["per-token"].label;
 }
 
-export const PROXY_KINDS: { id: string; label: string; desc: string }[] = (
+export const PROXY_KINDS: { id: ProxyKind; label: string; desc: string }[] = (
   [
     ["socks5h", "SOCKS5h"],
     ["socks5", "SOCKS5"],
@@ -76,7 +82,7 @@ export const PROXY_KINDS: { id: string; label: string; desc: string }[] = (
   },
 }));
 
-export function proxyKindLabel(id: string): string {
+export function proxyKindLabel(id: ProxyKind): string {
   return PROXY_KINDS.find((k) => k.id === id)?.label ?? id;
 }
 
@@ -112,14 +118,14 @@ export function authHeaderParts(header: string): { name: string; prefix: string 
  * 模型清单从哪儿来。**没拿到清单时说为什么**：还在获取、上游不提供、
  * 没问到 —— 三种情况要做的事不一样，不能都叫「未获取」。
  */
-export function modelSourceLabel(source: string, status?: string): string {
+export function modelSourceLabel(source: ModelSource, status?: ModelListStatus): string {
   const t = textOf(labelsText).models;
   switch (source) {
     case "discovered":
       return t.discovered;
     case "manual":
       return t.manual;
-    default:
+    case "none":
       return status === "failed" ? t.failed : status === "no_list" ? t.noList : t.notFetched;
   }
 }
@@ -195,8 +201,7 @@ export function proxyFaultText(f: ProxyFault): string {
 }
 export function l1StageLabel(s: L1Stage): string {
   const t = textOf(labelsText);
-  const steps: Record<string, string> = t.l1Steps;
-  const step = steps[s.step] ?? s.step;
+  const step = t.l1Steps[s.step];
   return s.peer === "proxy" && s.step !== "handshake" ? t.l1ToProxy(step) : step;
 }
 
@@ -210,8 +215,6 @@ export function l1SkipText(s: L1Skip): string {
       return t.ip_address;
     case "proxy_resolves":
       return t.proxy_resolves;
-    default:
-      return s.reason;
   }
 }
 
@@ -223,7 +226,7 @@ export function l1ErrorText(r: L1Result): string {
 }
 
 /** 候选上游被跳过的原因 */
-export function skipLabel(reason: string): string {
+export function skipLabel(reason: ServeSkip): string {
   const t = textOf(labelsText).skips;
   switch (reason) {
     case "disabled":
@@ -232,8 +235,6 @@ export function skipLabel(reason: string): string {
       return t.out_of_scope;
     case "not_offered":
       return t.not_offered;
-    default:
-      return reason;
   }
 }
 
@@ -303,4 +304,4 @@ export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = (
   },
 }));
 
-export { errorText } from "@/i18n/core.i18n";
+export { coreText, errorText, plain } from "@/i18n/core.i18n";

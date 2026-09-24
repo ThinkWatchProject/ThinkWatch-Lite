@@ -148,21 +148,8 @@ jobs:
       # 理由同 macOS 那一档：`tauri.conf.json` 声明包里装着 twcore，而 Tauri
       # 的 build script 在**编译期**就校验那个文件在不在；接缝测试还要真的
       # 起它。
-      #
-      # **从钉住的那个 tag 现编，不下载。**core 的发版还没有 Linux 产物，
-      # `fetch-core.sh` 没有这个平台可取。tag 的取法和它一样，编出来的就是
-      # 那一版；等 core 发了 Linux 产物，这一步换回 `fetch-core.sh`。
-      - name: Build the core binary the bundle declares
-        run: |
-          TAG=$(cargo metadata --format-version 1 --manifest-path src-tauri/Cargo.toml \
-            | python3 -c 'import json,re,sys
-          for p in json.load(sys.stdin)["packages"]:
-              if p["name"] == "tw-api":
-                  print(re.search(r"[?&]tag=([^&#]+)", p["source"]).group(1))')
-          cargo install --locked --git https://github.com/ThinkWatchProject/ThinkWatch-Core.git \
-            --tag "$TAG" twcore --root "$RUNNER_TEMP/twcore"
-          mkdir -p src-tauri/resources
-          cp "$RUNNER_TEMP/twcore/bin/twcore" src-tauri/resources/twcore
+      - name: Fetch the core binary the bundle declares
+        run: bash src-tauri/scripts/fetch-core.sh
 
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
