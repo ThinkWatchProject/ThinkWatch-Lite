@@ -168,7 +168,7 @@ pub fn handle_return(app: &tauri::AppHandle, urls: &[String]) {
     if !urls.iter().any(|u| u.starts_with("thinkwatch://")) {
         return;
     }
-    let _ = crate::show_main_window(app);
+    let _ = crate::window::show_main_window(app);
 }
 
 #[cfg(test)]
