@@ -38,7 +38,7 @@ fn core_binary() -> PathBuf {
 /// `THINKWATCH_HOME` 指到一个临时目录，端口由系统分一个空闲的 —— **不碰
 /// `~/.thinkwatch`，也不碰这台机器上正开着的那个实例。**
 struct Core {
-    child: Child,
+    child: std::sync::Mutex<Child>,
     home: PathBuf,
 }
 
@@ -48,18 +48,6 @@ struct Core {
 /// `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来 —— 表现为
 /// 「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
 static NTH: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-
-/// 系统此刻分给我们的一个空闲端口。
-///
-/// **不写死一段端口。**写死的话，另一个检出里同时跑着的同一条测试就会撞上同一个
-/// 端口，那个 core 起不来 —— 表现也是「三十秒都没答应」。放掉之后到 core 绑上之间
-/// 有一小段空档，系统不会马上把刚分出去的端口再分给别人。
-fn free_port() -> u16 {
-    std::net::TcpListener::bind(("127.0.0.1", 0))
-        .and_then(|l| l.local_addr())
-        .expect("系统分不出空闲端口")
-        .port()
-}
 
 impl Core {
     fn start() -> Self {
@@ -73,14 +61,23 @@ impl Core {
             .args(["serve", "--config"])
             .arg(home.join("config.yaml"))
             // 这条测试不打数据面，端口只是不能撞上：同一个测试二进制里的另一个
-            // core、另一个检出里同时在跑的这条测试、这台机器上别的什么
-            .args(["--port", &free_port().to_string()])
+            // core、另一个检出里同时在跑的这条测试、这台机器上别的什么。
+            //
+            // **交给 core 自己向系统要（`--port 0`），不是这边先要一个再递过去。**
+            // 先要、放掉、再让 core 去绑，中间那段空档里端口会被别人拿走 —— 并发
+            // 跑几份测试时真撞上过，core 报「already in use」退出，而这边只看得到
+            // 「三十秒都没答应」
+            .args(["--port", "0"])
             .env("THINKWATCH_HOME", &home)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            // 输出留在它自己的目录里：起不来时 `wait_ready` 把它和退出状态一起报出来
+            .stdout(std::fs::File::create(home.join("core.out")).unwrap())
+            .stderr(std::fs::File::create(home.join("core.err")).unwrap())
             .spawn()
             .expect("起不来 twcore");
-        Self { child, home }
+        Self {
+            child: std::sync::Mutex::new(child),
+            home,
+        }
     }
 
     /// core 的配置。**钥匙由 core 写进去**，桌面端从这里读
@@ -117,10 +114,21 @@ impl Core {
         let c = self.ok();
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            if c.ping(Duration::from_millis(500)).await.is_ok() {
-                return;
+            let last = match c.ping(Duration::from_millis(500)).await {
+                Ok(()) => return,
+                Err(e) => format!("{e:#}"),
+            };
+            // **答不上来时把能看的都报出来**：它是不是已经退出了、它自己说了什么。
+            // 只报一句「没答应」的话，端口被占、配置被拒、二进制不对都长一个样
+            if Instant::now() >= deadline {
+                let exited = self.child.lock().unwrap().try_wait();
+                let log = |f: &str| std::fs::read_to_string(self.home.join(f)).unwrap_or_default();
+                panic!(
+                    "core 三十秒都没答应\n最后一次：{last}\n退出状态：{exited:?}\n--- stdout\n{}\n--- stderr\n{}",
+                    log("core.out"),
+                    log("core.err")
+                );
             }
-            assert!(Instant::now() < deadline, "core 三十秒都没答应");
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -128,8 +136,9 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let mut c = self.child.lock().unwrap();
+        let _ = c.kill();
+        let _ = c.wait();
         let _ = std::fs::remove_dir_all(&self.home);
     }
 }
