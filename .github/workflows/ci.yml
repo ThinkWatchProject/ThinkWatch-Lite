@@ -29,6 +29,14 @@ jobs:
       # 刻，而那时候要收回一个已经推上去的 tag。在改它的那个 PR 上拦。
       - name: One version, three files
         run: bash scripts/version.sh
+      # 发版流水线只在推 tag 和 `rehearse/**` 时才跑，文件写坏了，PR 上什么都
+      # 看不出来 —— GitHub 只会在之后每次推送时记一条「workflow file issue」，
+      # 演练也不会触发。lite#169 就这样把一行重复的 `- name:` 带进了 dev。
+      # 在改它的那个 PR 上拦。脚本里的 shell 不在这里查，只查工作流本身
+      - name: Workflow files are valid
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color -shellcheck=
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

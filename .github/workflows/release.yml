@@ -439,7 +439,6 @@ jobs:
       # 那一行再封回去；文件本身一个字节不动，md5sums 仍然对得上。**要在签名
       # 之前**：签的是发出去的这一份
       - name: Name the packages
-      - name: Name the packages
         run: |
           set -euo pipefail
           B="src-tauri/target/${{ matrix.target }}/release/bundle"
