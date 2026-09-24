@@ -77,25 +77,6 @@ export function ProviderTile({
   return <VendorTile name={p.name} baseUrl={p.base_url} protocol={p.protocol} {...rest} />;
 }
 
-/** 一组名称标签（使用某个代理、某张价目表的上游）。空的时候说清是空的 */
-export function NameChips({ names, empty }: { names: string[]; empty: string }) {
-  if (names.length === 0) {
-    return <span className="text-muted-foreground">{empty}</span>;
-  }
-  return (
-    <span className="flex flex-wrap items-center gap-1.5">
-      {names.map((n) => (
-        <span
-          key={n}
-          className="rounded-md border border-border bg-surface px-1.5 font-mono tw-label leading-5"
-        >
-          {n}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 /**
  * 一组上游的名称标签，各带标志。名字是用户起的（`relay-hk`），标志说的是它
  * 实际连到哪一家 —— 在「使用上游」这种一列名字里，比名字本身更快认得出。
@@ -276,69 +257,21 @@ export function Boxed({ className, children }: { className?: string; children: R
 /**
  * 对话框里一段说明或提示。`warning` 给要留意的一句（会产生费用、会改掉别的设置）。
  *
- * **报错不用它**：上游页的对话框报错一律 `DialogError`。`error` 这一档还留着，是因为
- * 路由页的几个对话框也从这里取 `Note`（它们归那一页自己迁）。
+ * **报错不用它**：对话框里的报错一律 `DialogError`。
  */
 export function Note({
   tone = "muted",
   children,
 }: {
-  tone?: "muted" | "warning" | "error";
+  tone?: "muted" | "warning";
   children: ReactNode;
 }) {
   return (
-    <p
-      className={cn(
-        "tw-label",
-        tone === "muted" && "text-muted-foreground",
-        tone === "warning" && "text-warning",
-        tone === "error" && "text-destructive",
-      )}
-    >
+    <p className={cn("tw-label", tone === "muted" ? "text-muted-foreground" : "text-warning")}>
       {children}
     </p>
   );
 }
 
-// 挪到了 `@/ui/segmented`：全应用的单选都用它。设置页、密钥页、路由页还从这里取
+// 挪到了 `@/ui/segmented`：全应用的单选都用它。设置里「外观」「提醒」两节还从这里取
 export { Segmented } from "@/ui/segmented";
-
-/** 单选的一行：圆点 + 标题 + 说明（路由页的分组对话框在用） */
-export function RadioRow({
-  checked,
-  title,
-  desc,
-  onSelect,
-  disabled,
-}: {
-  checked: boolean;
-  title: string;
-  desc: ReactNode;
-  onSelect: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={onSelect}
-      className="flex w-full items-start gap-2.5 rounded-md text-left disabled:opacity-50"
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-input",
-          checked && "border-primary",
-        )}
-      >
-        {checked && <span className="size-2 rounded-full bg-primary" />}
-      </span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="tw-body font-medium">{title}</span>
-        <span className="tw-label text-muted-foreground">{desc}</span>
-      </span>
-    </button>
-  );
-}

@@ -315,7 +315,7 @@ export default function UpstreamsPage({
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as UpstreamTab)} className="gap-0">
-      {/* 具名容器：页头的次要操作按这一页有多宽决定写不写字（见 `HeaderAction`） */}
+      {/* 具名容器：窄了之后页头的次要操作只画图标、表格收起走势（和密钥页同一个断点） */}
       <Page className="@container/page">
         <PageHeader
           title={t.title}
@@ -625,7 +625,7 @@ function HeaderAction({
 }) {
   return (
     <>
-      <Button variant="outline" size="sm" pending={pending} className="@max-[46rem]/page:hidden" onClick={onClick}>
+      <Button variant="outline" size="sm" pending={pending} className="@max-3xl/page:hidden" onClick={onClick}>
         {!pending && icon}
         {label}
       </Button>
@@ -635,7 +635,7 @@ function HeaderAction({
           size="icon-sm"
           pending={pending}
           aria-label={label}
-          className="hidden @max-[46rem]/page:inline-flex"
+          className="hidden @max-3xl/page:inline-flex"
           onClick={onClick}
         >
           {!pending && icon}

@@ -57,7 +57,7 @@ export interface UpstreamActions {
  *
  * 五列是定过的（lite#46）：上游、模型、额度 / 计费、24 小时、首字节 P50。「24 小时」
  * 一格里多了一条按小时的走势：请求在一天里怎么分布、失败落在哪几个小时，一眼看得出，
- * 数字留给右边和悬停。窗口窄到放不下时走势先让位（容器查询），数字照常在。
+ * 数字留给右边和悬停。窗口窄到放不下时走势先让位（页面的容器查询），数字照常在。
  */
 export function UpstreamTable({
   providers,
@@ -100,55 +100,54 @@ export function UpstreamTable({
     return () => clearTimeout(h);
   }, [focus]);
   return (
-    // 容器查询：表格那一栏窄了（默认窗口里约 860px，最窄约 580px），走势先收起来
-    <div className="@container">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-full">{t.upstream}</TableHead>
-            <TableHead className="text-right">{t.models}</TableHead>
-            {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
-            <TableHead className="w-40 @max-[50rem]:w-32">{t.quota}</TableHead>
-            <TableHead className="text-right">{t.day}</TableHead>
-            <TableHead className="text-right">{t.ttfb}</TableHead>
-            <TableHead className="w-9">
-              <span className="sr-only">{t.actionsColumn}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {shown.map(({ item: p, key, presence }) => {
-            const items = menu(p, actions);
-            return (
-              <RowMenu key={key} items={items}>
-                <TableRow
-                  data-row={p.name}
-                  {...openRow(() => actions.edit(p.name), rowMotion(flash === p.name ? "enter" : presence))}
-                >
-                  <NameCell
-                    p={p}
-                    account={accounts[p.name]}
-                    live={(inFlight.get(p.name) ?? 0) > 0 && !p.disabled}
-                    liveCount={inFlight.get(p.name) ?? 0}
-                  />
-                  <ModelsCell
-                    p={p}
-                    busy={refreshing.has(p.name)}
-                    onEdit={() => actions.editModels(p.name)}
-                  />
-                  <QuotaCell p={p} stats={stats} now={now} />
-                  <DayCell p={p} stats={stats} slots={slots.get(p.name)} />
-                  <LatencyCell p={p} stats={stats} />
-                  <TableCell className="text-right" {...keepInRow}>
-                    <RowMenuButton items={items} label={t.actions(p.name)} />
-                  </TableCell>
-                </TableRow>
-              </RowMenu>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+    // 窄窗口的几处让位（走势、套餐标签、状态文字）看的是页面这个容器（`@container/page`，
+    // 和密钥页同一个断点）：默认窗口里内容约 860px，最窄约 580px
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-full">{t.upstream}</TableHead>
+          <TableHead className="text-right">{t.models}</TableHead>
+          {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
+          <TableHead className="w-40 @max-3xl/page:w-32">{t.quota}</TableHead>
+          <TableHead className="text-right">{t.day}</TableHead>
+          <TableHead className="text-right">{t.ttfb}</TableHead>
+          <TableHead className="w-9">
+            <span className="sr-only">{t.actionsColumn}</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {shown.map(({ item: p, key, presence }) => {
+          const items = menu(p, actions);
+          return (
+            <RowMenu key={key} items={items}>
+              <TableRow
+                data-row={p.name}
+                {...openRow(() => actions.edit(p.name), rowMotion(flash === p.name ? "enter" : presence))}
+              >
+                <NameCell
+                  p={p}
+                  account={accounts[p.name]}
+                  live={(inFlight.get(p.name) ?? 0) > 0 && !p.disabled}
+                  liveCount={inFlight.get(p.name) ?? 0}
+                />
+                <ModelsCell
+                  p={p}
+                  busy={refreshing.has(p.name)}
+                  onEdit={() => actions.editModels(p.name)}
+                />
+                <QuotaCell p={p} stats={stats} now={now} />
+                <DayCell p={p} stats={stats} slots={slots.get(p.name)} />
+                <LatencyCell p={p} stats={stats} />
+                <TableCell className="text-right" {...keepInRow}>
+                  <RowMenuButton items={items} label={t.actions(p.name)} />
+                </TableCell>
+              </TableRow>
+            </RowMenu>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -229,7 +228,7 @@ function NameCell({
             <span className={cn("truncate font-medium", p.disabled && "text-muted-foreground")}>{p.name}</span>
             {/* 订阅类账号：套餐决定了额度有多大，和名字放在一起看 */}
             {plan && (
-              <Badge variant="outline" className="@max-[50rem]:hidden">
+              <Badge variant="outline" className="@max-3xl/page:hidden">
                 {plan}
               </Badge>
             )}
@@ -247,11 +246,11 @@ function NameCell({
                   <StatusLabel
                     tone={problem.tone}
                     muted={problem.tone === "idle"}
-                    className="@max-[50rem]:hidden"
+                    className="@max-3xl/page:hidden"
                   >
                     {problem.label}
                   </StatusLabel>
-                  <StatusDot tone={problem.tone} label={problem.label} className="hidden @max-[50rem]:inline-block" />
+                  <StatusDot tone={problem.tone} label={problem.label} className="hidden @max-3xl/page:inline-block" />
                 </span>
               </Tip>
             )}
@@ -428,7 +427,7 @@ function DayCell({
         {stats.loading ? (
           // 和读到之后一样宽：走势的位置先占上，数字到了列宽不跳
           <div className="flex items-center justify-between gap-3">
-            <Skeleton className="h-5 rounded-sm @max-[50rem]:hidden" style={{ width: SPARKLINE_WIDTH }} />
+            <Skeleton className="h-4 rounded-sm @max-3xl/page:hidden" style={{ width: SPARKLINE_WIDTH }} />
             <CellSkeleton />
           </div>
         ) : (
@@ -461,7 +460,7 @@ function DayCell({
           不随「201 次」「7 次」的宽窄左右错开
         */}
         <div className="flex items-center justify-between gap-3">
-          {slots && <Sparkline slots={slots} className="@max-[50rem]:hidden" />}
+          {slots && <Sparkline slots={slots} className="@max-3xl/page:hidden" />}
           <div className="flex min-w-14 flex-col items-end">
             <AnimatedNumber value={cost.requests} format={(n) => t.requests(Math.round(n))} />
             <span className="tw-label tw-num text-muted-foreground">
