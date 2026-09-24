@@ -228,28 +228,43 @@ pub(crate) fn integrate(app: &tauri::AppHandle) {
     });
 }
 
-/// Removes the entry and the icon (the in-app uninstall). One line per file
-/// that could not be removed; a file that is not there is not an error.
+/// Removes the entry and the icon (the in-app uninstall), as lines for the
+/// uninstall log: nothing when there was nothing to remove (a development
+/// build), one line per file that could not be removed.
 pub(crate) fn remove(app: &tauri::AppHandle) -> Vec<String> {
-    let Some(files) = Files::for_app(app) else {
-        return Vec::new();
-    };
-    let mut failed = Vec::new();
-    for path in [&files.desktop, &files.icon] {
-        match std::fs::remove_file(path) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => failed.push(tr!(
-                format!("未能删除 {}（{e}）", path.display()),
-                format!("{} could not be deleted ({e})", path.display())
-            )),
-            _ => {}
+    Files::for_app(app).map(|f| f.remove()).unwrap_or_default()
+}
+
+impl Files {
+    fn remove(&self) -> Vec<String> {
+        let mut log = Vec::new();
+        let mut removed = false;
+        for path in [&self.desktop, &self.icon] {
+            match std::fs::remove_file(path) {
+                Ok(()) => removed = true,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => log.push(tr!(
+                    format!("未能删除 {}（{e}）", path.display()),
+                    format!("{} could not be deleted ({e})", path.display())
+                )),
+            }
         }
+        if removed {
+            if let Some(dir) = self.desktop.parent() {
+                run("update-desktop-database", &[dir.as_os_str()]);
+            }
+            if log.is_empty() {
+                log.push(
+                    tr!(
+                        "已移除应用菜单中的条目",
+                        "The application menu entry was removed"
+                    )
+                    .into(),
+                );
+            }
+        }
+        log
     }
-    if let Some(dir) = files.desktop.parent()
-        && dir.is_dir()
-    {
-        run("update-desktop-database", &[dir.as_os_str()]);
-    }
-    failed
 }
 
 #[cfg(test)]
@@ -313,6 +328,20 @@ mod tests {
                 .lines()
                 .all(|l| !l.starts_with("Comment="))
         );
+    }
+
+    #[test]
+    fn uninstall_removes_both_files_and_says_so_once() {
+        let dir = std::env::temp_dir().join(format!("tw-desktop-rm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let f = Files::under(&dir, "app.thinkwatch.lite");
+        // Nothing there (a development build): nothing to say
+        assert!(f.remove().is_empty());
+        write_if_changed(&f.desktop, b"[Desktop Entry]\n").unwrap();
+        write_if_changed(&f.icon, ICON).unwrap();
+        assert_eq!(f.remove().len(), 1);
+        assert!(!f.desktop.exists() && !f.icon.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

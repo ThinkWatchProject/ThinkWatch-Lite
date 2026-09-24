@@ -114,20 +114,7 @@ pub async fn uninstall(
     // AppImage 每次启动写的菜单条目和图标（见 `desktop_entry`）。删不掉的
     // 说出是哪个文件；这之后应用还开着，重新启动会再写一份
     #[cfg(target_os = "linux")]
-    {
-        let failed = crate::desktop_entry::remove(&app);
-        if failed.is_empty() {
-            log.push(
-                tr!(
-                    "已移除应用菜单中的条目",
-                    "The application menu entry was removed"
-                )
-                .into(),
-            );
-        } else {
-            log.extend(failed);
-        }
-    }
+    log.extend(crate::desktop_entry::remove(&app));
     if drop_data {
         let dir = data_dir();
         match std::fs::remove_dir_all(&dir) {

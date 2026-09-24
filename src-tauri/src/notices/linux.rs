@@ -958,7 +958,7 @@ mod tests {
                     assert_eq!(body, "a &lt;b&gt; &amp; c");
                     assert_eq!(actions, ["default", "Open"]);
                     assert_eq!(urgency, Some(1));
-                    assert_eq!(entry.as_deref(), Some("ThinkWatch Lite"));
+                    assert_eq!(entry.as_deref(), Some("app.thinkwatch.lite"));
                     sender
                 }
                 c => panic!("{c:?}"),
