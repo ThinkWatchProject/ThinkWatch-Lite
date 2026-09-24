@@ -440,11 +440,13 @@ fn connected(app: &tauri::AppHandle, id: &str) {
 ///
 /// 切到本机：直接切，拉起本机 core。切到远程：**先试连**，通过了才提交 —— 没通过就
 /// 留在原来的连接上，把原因交给界面。提交之后本机 core 在手上的请求结束后停掉。
+///
+/// 勾了「同时将这些客户端改为指向…」的，返回改的结果。
 pub async fn switch(
     app: &tauri::AppHandle,
     id: &str,
     retarget_clients: bool,
-) -> Result<(), SwitchError> {
+) -> Result<Option<crate::wire::Retargeted>, SwitchError> {
     let st = app.state::<AppState>();
     let dir = data_dir();
     let c = store::load(&dir);
@@ -452,7 +454,7 @@ pub async fn switch(
         let _g = st.link.switching.lock().await;
         begin_local(app, &st.link);
         remember(&dir, LOCAL);
-        return Ok(());
+        return Ok(None);
     }
     let r = c.remote(id).cloned().ok_or(SwitchError::Unknown)?;
     let key = keychain::load(&r.id).map_err(|e| SwitchError::Keychain {
@@ -466,25 +468,41 @@ pub async fn switch(
     let info = connector::test(&Target::Remote(target))
         .await
         .map_err(|error| SwitchError::Connect { error })?;
-    // 要改指向的话，趁本机 core 还在跑先把名单拿到
-    let retarget = if retarget_clients {
-        info.gateway_addr.clone()
-    } else {
-        None
-    };
     {
         let _g = st.link.switching.lock().await;
         begin_remote(app, &st.link, r.clone(), Some(info));
         remember(&dir, &r.id);
     }
-    if let Some(addr) = retarget {
-        match crate::clients::retarget_adopted_clients(app, &addr).await {
-            Ok(n) => tracing::info!(n, "已接管的客户端改为指向 {addr}"),
-            Err(e) => tracing::warn!("改指向没做成：{e:#}"),
-        }
-    }
+    // 切过去之后再改指向：密钥要由服务器发，控制面此刻指着的就是它。**没改成不算
+    // 切换失败** —— 已经切过去了，没改成的逐个交给界面，客户端页上还能再改
+    let retargeted = if retarget_clients {
+        Some(
+            match crate::clients::retarget_adopted(&st.control, &r.host).await {
+                Ok(done) => done,
+                Err(e) => everything_failed(e.into_msg()),
+            },
+        )
+    } else {
+        None
+    };
     stop_local_when_quiet(app.clone());
-    Ok(())
+    Ok(retargeted)
+}
+
+/// 改指向整个没做成（问不到服务器的网关地址）：每个该改的都记一条失败
+fn everything_failed(error: tw_api::Msg) -> crate::wire::Retargeted {
+    let home = crate::clients::home_dir();
+    crate::wire::Retargeted {
+        synced: Vec::new(),
+        failed: crate::clients::ops::adopted_on_this_machine(&home)
+            .into_iter()
+            .map(|(c, _)| crate::wire::KeySyncFailed {
+                client: c.id.to_string(),
+                name: c.name.to_string(),
+                error: error.clone(),
+            })
+            .collect(),
+    }
 }
 
 fn remember(dir: &std::path::Path, id: &str) {
@@ -682,11 +700,18 @@ pub fn delete_connection(app: tauri::AppHandle, id: String) -> Out<ConnView> {
     Ok(view(&app))
 }
 
-/// 切过去之前要告诉用户的：这台机器上已接管、还指着本机网关的客户端
+/// 切过去之前要告诉用户的：这台机器上已接管、还指着本机网关的客户端。按这台机器上
+/// 的文件数，不问 core
 #[tauri::command]
-pub async fn switch_preflight(state: tauri::State<'_, AppState>) -> Out<crate::clients::Adopted> {
-    // 问本机的 core：已接管的客户端指着的是它。连着远程时它停着，数出来是 0
-    Ok(crate::clients::adopted_pointing_at_local(state.supervisor.control()).await)
+pub async fn switch_preflight() -> Out<crate::clients::Adopted> {
+    Ok(crate::clients::adopted_pointing_at_local())
+}
+
+/// 切换做完了：连接列表，加上勾了改指向时改的结果
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Switched {
+    pub view: ConnView,
+    pub retargeted: Option<crate::wire::Retargeted>,
 }
 
 #[tauri::command]
@@ -694,9 +719,12 @@ pub async fn switch_connection(
     app: tauri::AppHandle,
     id: String,
     retarget_clients: bool,
-) -> Result<ConnView, SwitchError> {
-    switch(&app, &id, retarget_clients).await?;
-    Ok(view(&app))
+) -> Result<Switched, SwitchError> {
+    let retargeted = switch(&app, &id, retarget_clients).await?;
+    Ok(Switched {
+        view: view(&app),
+        retargeted,
+    })
 }
 
 #[tauri::command]

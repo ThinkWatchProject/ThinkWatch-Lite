@@ -383,28 +383,34 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     .now(),
             ]
         }
-        // 英文写页面现在的名字「MCP」：点开这一条落到的就是那一页
-        Event::ScanAlert { alerts, .. } if !alerts.is_empty() => vec![
-            Signal::raised(
-                "scan",
-                Level::Warning,
-                tr!(
-                    "客户端配置中出现可疑内容",
-                    "Suspicious Content in Client Configuration"
-                ),
-            )
-            .body(tr!(
-                format!("新增 {} 项，详见 MCP 页。", alerts.len()),
-                match alerts.len() {
-                    1 => "1 new item. Details are on the MCP page.".to_string(),
-                    n => format!("{n} new items. Details are on the MCP page."),
-                }
-            ))
-            .view(MCP)
-            .now(),
-        ],
         _ => Vec::new(),
     }
+}
+
+/// 客户端的配置文件里新出现了可疑的东西（`n` 项）。**不是 core 说的**：这台机器
+/// 上的文件监视（`scan::spawn_watcher`）发现的，连着哪个 core 都一样。
+///
+/// 英文写页面现在的名字「MCP」：点开这一条落到的就是那一页
+pub fn scan_alert(n: usize) -> Option<Signal> {
+    (n > 0).then(|| {
+        Signal::raised(
+            "scan",
+            Level::Warning,
+            tr!(
+                "客户端配置中出现可疑内容",
+                "Suspicious Content in Client Configuration"
+            ),
+        )
+        .body(tr!(
+            format!("新增 {n} 项，详见 MCP 页。"),
+            match n {
+                1 => "1 new item. Details are on the MCP page.".to_string(),
+                n => format!("{n} new items. Details are on the MCP page."),
+            }
+        ))
+        .view(MCP)
+        .now()
+    })
 }
 
 /// 此刻的样子，按对账的需要从 core 问来：`/status`、`/overview`、`/quota`。

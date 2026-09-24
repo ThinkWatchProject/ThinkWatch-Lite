@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
@@ -31,6 +31,7 @@ pub mod dmg;
 pub mod error;
 pub mod gateway;
 pub mod keys;
+pub mod mcp;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
 ///
 /// **只在开发构建里。**它是回答一次性问题的测量工具，发布包不需要一个能从命令行
@@ -40,6 +41,7 @@ pub mod memcheck;
 pub mod menubar;
 pub mod notices;
 pub mod prefs;
+pub mod scan;
 pub mod settings;
 pub mod supervisor;
 pub mod theme;
@@ -49,6 +51,7 @@ pub mod update;
 pub mod updater;
 pub mod upstreams;
 pub mod window;
+pub mod wire;
 pub mod zai;
 
 use control::ControlClient;
@@ -181,6 +184,9 @@ pub fn run() {
             notices::commands::take_pending_view,
             keys::copy_key,
             keys::copy_gateway_base,
+            keys::gateway_base,
+            keys::delete_key,
+            keys::rotate_key,
             keys::key_usage,
             chatgpt::start_chatgpt_login,
             chatgpt::reopen_chatgpt_login,
@@ -205,8 +211,20 @@ pub fn run() {
             settings::set_autostart,
             uninstall::restore_all,
             uninstall::uninstall,
+            clients::list_clients,
+            clients::plan_adopt,
+            clients::adopt_client,
+            clients::plan_restore,
+            clients::restore_client,
+            clients::diagnose_client,
+            clients::prepare_client_key,
             clients::copy_client_endpoint,
             clients::reveal_client_config,
+            clients::retarget_clients,
+            mcp::mcp_targets,
+            mcp::plan_mcp,
+            mcp::apply_mcp,
+            scan::scan_clients,
             diagnostics::save_diagnostics,
         ])
         .setup(|app| {
@@ -432,6 +450,10 @@ pub fn run() {
                 }
             }
 
+            // 盯着这台机器上客户端的配置文件：动了就让界面重读，新出现可疑的东西
+            // 就提醒。**不等 core**：这些文件和 core 在不在无关
+            start_client_watch(&handle, notices.clone());
+
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -503,6 +525,28 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// 盯住客户端的配置面（`scan::spawn_watcher`）。事件交给界面（`local-event`），
+/// 新出现的可疑内容同时进通知总线。监视本身放进应用的状态里拿着，放掉它就停了。
+///
+/// **起不来不挡启动**：少的是「文件改了界面自动跟上」，页面打开时照样现扫。
+fn start_client_watch(handle: &tauri::AppHandle, notices: Arc<notices::Notices>) {
+    let h = handle.clone();
+    let emit = move |ev: wire::LocalEvent| {
+        if let wire::LocalEvent::ScanAlert { alerts, .. } = &ev
+            && let Some(signal) = notices::rules::scan_alert(alerts.len())
+        {
+            notices.ingest(signal, notices::now_ms());
+        }
+        let _ = h.emit("local-event", ev);
+    };
+    match scan::spawn_watcher(clients::home_dir(), emit) {
+        Ok(w) => {
+            handle.manage(w);
+        }
+        Err(e) => tracing::warn!("客户端配置的文件监视起不来：{e}"),
+    }
 }
 
 /// 数据目录。

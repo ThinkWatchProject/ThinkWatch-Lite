@@ -65,7 +65,7 @@ export function ManualDialog({
     try {
       let name = choice;
       if (choice === NEW) {
-        name = (await api.prepareKey(target.id)).name;
+        name = await api.prepareKey(target.id);
         setOwn(name);
         setChoice(name);
         onKeyReady();

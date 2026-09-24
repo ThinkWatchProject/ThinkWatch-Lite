@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
-import { call } from "@/control";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Count } from "@/ui/count";
@@ -8,7 +8,14 @@ import { Spinner } from "@/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
-import type { McpOpRequest, McpTargetView, PlanView, ScanFinding, ScanResponse } from "@/types";
+import type {
+  AdoptResponse,
+  McpOpRequest,
+  McpTargetView,
+  PlanView,
+  ScanFinding,
+  ScanReport,
+} from "@/types";
 import { useCoreEvent } from "@/useCoreEvent";
 import { Extensions } from "./Extensions";
 import { Findings } from "./Findings";
@@ -28,6 +35,8 @@ type McpTab = "servers" | "extensions" | "findings";
  * - **只报告，不自动删除。**误报删掉用户的正常配置比漏报还糟。
  * - **查干净了要说「未发现问题」**，而不是让这一块消失。
  * - **不存任何状态。**每次打开现扫一遍，看到的永远是磁盘上此刻的样子。
+ *
+ * 扫描、读写 MCP 配置都在应用里做（这台机器上的文件），不经过 core。
  */
 export default function McpPage({
   alerts,
@@ -41,15 +50,15 @@ export default function McpPage({
   // **有新发现就直接落在「发现」上。**通知点进来还要再点一下标签，等于把
   // 那条通知又藏了一层
   const [tab, setTab] = useState<McpTab>(alerts.length > 0 ? "findings" : "servers");
-  const [data, setData] = useState<ScanResponse | null>(null);
+  const [data, setData] = useState<ScanReport | null>(null);
   const [targets, setTargets] = useState<McpTargetView[]>([]);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<{ req: McpOpRequest; plan: PlanView } | null>(null);
 
   const fetchAll = useCallback(async () => {
     const [scan, ts] = await Promise.all([
-      call("Scan", { projects: [] }),
-      call("McpTargets", null),
+      invoke<ScanReport>("scan_clients"),
+      invoke<McpTargetView[]>("mcp_targets"),
     ]);
     setData(scan);
     setTargets(ts);
@@ -82,7 +91,7 @@ export default function McpPage({
   async function ask(req: McpOpRequest) {
     setBusy(true);
     try {
-      setPending({ req, plan: await call("McpPlan", req) });
+      setPending({ req, plan: await invoke<PlanView>("plan_mcp", { req }) });
     } catch (e) {
       toast.error(errorText(e));
     } finally {
@@ -94,7 +103,7 @@ export default function McpPage({
     if (!pending) return;
     setBusy(true);
     try {
-      await call("McpApply", pending.req);
+      await invoke<AdoptResponse>("apply_mcp", { req: pending.req });
       setPending(null);
       await load();
     } catch (e) {

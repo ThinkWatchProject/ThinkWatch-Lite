@@ -213,23 +213,38 @@ async fn a_refusal_comes_back_with_its_code() {
     assert!(!m.code.is_empty(), "{m:?}");
 }
 
-/// 扫描带着项目目录也扫得动。以前是 GET 加重复的 `project=`，core 一直读不了
+/// 接管要问 core 的只有两件事，都问得到：客户端该连的网关地址（按配置里的端口），
+/// 和为这个客户端发的专用密钥 —— 第二次问拿到的是同一把，记着是为谁发的
 #[tokio::test]
-async fn scanning_with_a_project_directory_works() {
+async fn adoption_gets_its_gateway_and_its_key_from_core() {
+    use tw_api::ep;
+
     let core = Core::start();
     core.wait_ready().await;
-    let dir = core.home.join("proj");
-    std::fs::create_dir_all(&dir).unwrap();
-    let r = core
-        .client(&core.token)
-        .call::<tw_api::ep::Scan>(
-            &[],
-            &tw_api::ScanRequest {
-                projects: vec![dir.display().to_string()],
-            },
-        )
-        .await;
-    assert!(r.is_ok(), "{:?}", r.err());
+    let c = core.client(&core.token);
+
+    let base = thinkwatch_lite_lib::clients::gateway_base(&c, "127.0.0.1")
+        .await
+        .unwrap();
+    assert!(base.starts_with("http://127.0.0.1:"), "{base}");
+
+    let first = c
+        .call::<ep::ClientKey>(&["claude-code"], &())
+        .await
+        .unwrap();
+    assert!(first.created);
+    let again = c
+        .call::<ep::ClientKey>(&["claude-code"], &())
+        .await
+        .unwrap();
+    assert!(!again.created);
+    assert_eq!(
+        (again.name.as_str(), again.key.as_str()),
+        (first.name.as_str(), first.key.as_str())
+    );
+    let keys = c.call::<ep::Keys>(&[], &()).await.unwrap();
+    let mine = keys.iter().find(|k| k.name == first.name).unwrap();
+    assert_eq!(mine.client.as_deref(), Some("claude-code"));
 }
 
 /// 一个端点一种写法：GET 带查询串、DELETE 带查询串、PUT 带请求体、带路径参数的

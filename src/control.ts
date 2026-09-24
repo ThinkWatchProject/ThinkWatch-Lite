@@ -4,7 +4,7 @@
  * ```ts
  * const ov = await call("Overview", null);
  * await call("UpdateProvider", save, name);           // 路径参数跟在请求后面
- * await call("DeleteKey", { base_version }, name);   // DELETE 的请求走查询串
+ * await call("DeleteProvider", { base_version }, name); // DELETE 的请求走查询串
  * ```
  *
  * **请求和响应的类型不在这里写**，端点名一给，TypeScript 就从 `Endpoints`
@@ -40,22 +40,9 @@ export const WEBVIEW_ENDPOINTS = [
   "ReplayQuote",
   "ReplayRun",
   "DryRun",
-  "Scan",
-  "Clients",
-  "PlanAdopt",
-  "Adopt",
-  "PlanRestore",
-  "Restore",
-  "Why",
-  "ClientKey",
-  "McpTargets",
-  "McpPlan",
-  "McpApply",
   "Keys",
   "CreateKey",
   "UpdateKey",
-  "DeleteKey",
-  "RotateKey",
   "SetDefaultKey",
   "CreateProvider",
   "TestProvider",

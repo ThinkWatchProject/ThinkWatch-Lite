@@ -10,6 +10,28 @@ rust-version = "1.88"
 license = "MIT"
 description = "Desktop app for a local AI gateway, built for individual developers"
 
+# 接管和扫描这两个 crate 在 `crates/` 下，和应用同一个 workspace：`cargo test`
+# 一次跑全，Cargo.lock 只有一份
+[workspace]
+members = ["crates/*"]
+default-members = [".", "crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+
+# core 的几个 crate。**钉在 tag 上，不是分支，而且全部钉同一个 tag。**跟着 `main`
+# 走意味着同一份源码今天和明天编出来的东西不一样；而更要紧的是，打进 `.app` 的那个
+# twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
+# 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
+[workspace.dependencies]
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0" }
+
 [lib]
 name = "thinkwatch_lite_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -35,17 +57,21 @@ tauri-plugin-opener = "2"
 # 浏览器里授权完成之后，那一页把应用带回前台（`thinkwatch://`）
 tauri-plugin-deep-link = "2"
 
-# 控制面契约来自 core。UI 和 CLI 依赖同一份类型，不会各写一遍。
-# **钉在 tag 上，不是分支。**跟着 `main` 走意味着同一份源码今天和明天
-# 编出来的东西不一样；而更要紧的是，打进 `.app` 的那个 twcore 二进制
-# 必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是从
-# 这个 tag 去取二进制的（见 scripts/fetch-core.sh）。
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.46.0", features = ["ts"] }
+# 控制面契约来自 core，版本钉在下面的 `[workspace.dependencies]` 里。
+tw-api = { workspace = true, features = ["ts"] }
+# 客户端接管、MCP、客户端配置面的扫描：只有桌面版用，住在这个仓库里（`crates/`）
+tw-adopt = { path = "crates/tw-adopt" }
+tw-scan = { path = "crates/tw-scan" }
+tw-types = { workspace = true }
+tw-guard = { workspace = true }
 
 anyhow = "1"
 # 生成控制面的凭据（见 src/token.rs）
 rand = "0.10"
 libc = "0.2"
+# 界面和 Rust 侧之间不经过 core 的那些类型，导出成 TypeScript（`wire.rs`）。
+# 和 tw-api 的 `ts` 特性用的是同一份
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "client", "client-legacy"] }
 http-body-util = "0.1"
@@ -149,3 +175,5 @@ windows = { version = "0.61", features = [
 [dev-dependencies]
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
+# 接管、扫描的测试在一台假机器（临时目录）上做
+tempfile = "3.20"
