@@ -233,10 +233,32 @@ fn link_error(e: tw_link::LinkError, addr: &str) -> ConnectError {
     match e {
         LinkError::Unreachable(_) => ConnectError::Unreachable { addr },
         LinkError::WrongKey => ConnectError::WrongKey,
-        LinkError::VersionMismatch { peer_version, .. } => ConnectError::VersionMismatch {
-            ours: REQUIRED_CORE.to_string(),
-            theirs: peer_version,
-        },
+        LinkError::VersionMismatch {
+            ours,
+            theirs,
+            peer_version,
+        } => {
+            // 两边报的版本号一样、协议却不一样：没发版的构建之间就是这样（版本号还没
+            // 跟着改）。只写版本号会成为「服务器 0.46.0，本应用需要 0.46.0」，看不出
+            // 差在哪，所以这时把控制面协议的版本号一起写上
+            let with_proto = |v: &str, p: u32| -> String {
+                tr!(
+                    format!("{v}（控制面协议 {p}）"),
+                    format!("{v} (control protocol {p})")
+                )
+            };
+            if peer_version == REQUIRED_CORE {
+                ConnectError::VersionMismatch {
+                    ours: with_proto(REQUIRED_CORE, ours),
+                    theirs: with_proto(&peer_version, theirs),
+                }
+            } else {
+                ConnectError::VersionMismatch {
+                    ours: REQUIRED_CORE.to_string(),
+                    theirs: peer_version,
+                }
+            }
+        }
         LinkError::Timeout => ConnectError::Timeout { addr },
         // 握手中途断了、或者对面说的不是这套协议：都是「被关掉了」
         LinkError::Closed | LinkError::Io(_) => ConnectError::Closed { addr },
@@ -423,6 +445,20 @@ mod tests {
                 theirs: "0.47.2".into(),
             }
         );
+        // 版本号一样、协议不一样：把协议号带上，不然两边说的是同一个数
+        let same = link_error(
+            tw_link::LinkError::VersionMismatch {
+                ours: 19,
+                theirs: 18,
+                peer_version: REQUIRED_CORE.into(),
+            },
+            "h:1",
+        );
+        let ConnectError::VersionMismatch { ours, theirs } = same else {
+            panic!("{same:?}");
+        };
+        assert_ne!(ours, theirs);
+        assert!(theirs.contains("18"), "{theirs}");
         assert_eq!(
             link_error(tw_link::LinkError::Timeout, "h:1"),
             ConnectError::Timeout { addr: "h:1".into() }
