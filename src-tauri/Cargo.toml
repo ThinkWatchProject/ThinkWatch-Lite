@@ -1,6 +1,6 @@
 [package]
 name = "thinkwatch-lite"
-version = "2026.9.14"
+version = "2026.9.15"
 edition = "2024"
 # **这个数决定依赖能升到哪一版。**edition 2024 的解析器只挑声明的 Rust
 # 版本编得动的依赖：写 1.85 的时候，`cargo update` 一直停在旧的 time 和
