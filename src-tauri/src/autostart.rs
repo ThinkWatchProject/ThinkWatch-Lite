@@ -6,6 +6,32 @@
 //!
 //! 这个模块处理插件给不了的那两件事：**路径漂移的校验**和**静默启动的
 //! 判定**。
+//!
+//! **Linux 上连插件都不用**，自启项整个自己写（理由见 `linux` 子模块头上）。
+//! 调用方一律经 [`launcher`] 拿开关、不直接碰插件 —— 这样 Linux 上不会有
+//! 哪一处漏走插件那条路。
+
+/// 纯文本的编码和解析在每个平台都编译，测试因此在哪都跑（和
+/// `approved_from_bytes` 同一条理由）；读写文件那几样只有 Linux 调。
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub mod linux;
+
+/// 开机自启的开关：`enable` / `disable` / `is_enabled`。
+///
+/// macOS、Windows 上是插件；Linux 上是自己写的那份 XDG 自启项。两边的错误
+/// 类型不同，调用方只拿它来显示，都实现了 `Display`。
+#[cfg(not(target_os = "linux"))]
+pub fn launcher(
+    app: &tauri::AppHandle,
+) -> tauri::State<'_, tauri_plugin_autostart::AutoLaunchManager> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch()
+}
+
+#[cfg(target_os = "linux")]
+pub fn launcher(app: &tauri::AppHandle) -> linux::Autostart {
+    linux::Autostart::for_app(app)
+}
 
 /// 注册自启时塞进 argv 的标记。
 ///
@@ -35,11 +61,13 @@ where
 /// 只看文件在不在，仍然返回 `true`。
 ///
 /// 所以每次启动都要比一次，不一致就重写。
+#[cfg(not(target_os = "linux"))]
 pub fn plist_path_matches(plist_contents: &str, current_exe: &str) -> bool {
     plist_contents.contains(current_exe)
 }
 
 /// 自启的 plist 在哪。
+#[cfg(not(target_os = "linux"))]
 pub fn plist_path(bundle_id: &str) -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(|h| {
         std::path::PathBuf::from(h)
@@ -133,6 +161,7 @@ mod tests {
         assert!(!launched_by_autostart(["thinkwatch-lite", "--hidden"]));
     }
 
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn a_moved_app_is_detected_by_comparing_paths() {
         // 用户把 App 从下载目录拖到 /Applications 之后，plist 里还指着

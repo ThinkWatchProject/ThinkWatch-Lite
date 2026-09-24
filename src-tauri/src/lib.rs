@@ -89,6 +89,9 @@ pub struct AppState {
 }
 
 pub fn run() {
+    // 在单实例插件把这个进程判成「第二个」之前放下激活令牌
+    #[cfg(target_os = "linux")]
+    window::relaunch_token::stash();
     let builder = tauri::Builder::default();
     // **单实例要第一个注册**，插件自己的文档如此要求：它得在别的插件把端口、
     // socket、注册表项占上之前就判断出「已经有一个在跑」。
@@ -109,21 +112,32 @@ pub fn run() {
         // 已经有一个在跑：把它叫到前面来。**用户点第二次，想要的是看见它**，
         // 不是被告知它已经开着。
         let _ = show_main_window(app);
+        // Wayland 上还得有新进程带来的激活令牌，窗口才会真的到前面，见
+        // `window::relaunch_token`
+        #[cfg(target_os = "linux")]
+        if let Some(token) = window::relaunch_token::take() {
+            window::activate_with_token(app, "main", token);
+        }
     }));
-    builder
+    let builder = builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_autostart::init(
-            // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
-            // 不是 SMAppService、也不是登录项 API —— 插件在 macOS 上就是
-            // 写文件（读过源码）。
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            // 注册时塞这个标记，启动时靠它判断是不是开机拉起来的。
-            Some(vec![autostart::AUTOSTART_FLAG]),
-        ))
+        .plugin(tauri_plugin_deep_link::init());
+    // Linux 上不注册：自启项是自己写的（见 `autostart::linux`）。插件在那边
+    // 初始化时只是建个对象、不碰磁盘，留着它就是第二份说法 —— 它认的是另一个
+    // 文件名，`is_enabled` 也不看桌面有没有把它关掉
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        // LaunchAgent 模式：往 ~/Library/LaunchAgents 写一个 plist。
+        // 不是 SMAppService、也不是登录项 API —— 插件在 macOS 上就是
+        // 写文件（读过源码）。
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        // 注册时塞这个标记，启动时靠它判断是不是开机拉起来的。
+        Some(vec![autostart::AUTOSTART_FLAG]),
+    ));
+    builder
         .invoke_handler(tauri::generate_handler![
             call::call,
             gateway::core_status,
@@ -354,6 +368,13 @@ pub fn run() {
                 if let Ok(Some(urls)) = handle.deep_link().get_current() {
                     let urls: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
                     open_urls(&handle, &urls);
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    window::register_appimage_url_handler(&handle);
+                    // 留下来的是这个实例：它自己启动时放下的令牌不该被当成
+                    // 下一次再启动带来的
+                    let _ = window::relaunch_token::take();
                 }
             }
 

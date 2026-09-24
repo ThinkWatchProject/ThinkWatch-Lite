@@ -14,7 +14,11 @@ static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 static TRAY: OnceLock<TrayIcon> = OnceLock::new();
 /// 菜单项的 id 是 `a:<下标>`，按下标找到它做什么
 static ACTIONS: Mutex<Vec<Action>> = Mutex::new(Vec::new());
-/// 上一次画的那一份：没变就不重建（开着的菜单会被收起来）
+/// 上一次画的那一份：没变就不重建（开着的菜单会被收起来）。
+///
+/// Linux 上更要紧：tray-icon 的 `set_menu` 每次都把一份新的 GtkMenu 交给
+/// AppIndicator，整份菜单经 D-Bus 重新导出一遍，面板那边开着的菜单跟着重画。
+/// 比较的是模型，挪「打开主界面」那一步在比较之后，不影响这层判断
 static LAST: Mutex<Option<(Bar, Vec<Row>)>> = Mutex::new(None);
 
 pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
@@ -24,6 +28,11 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
         // 那边「点一下就出菜单」故意不一致 —— 各随各的。
         //
         // Tauri 默认把菜单挂在左键上，所以这一行必须写出来。
+        //
+        // **Linux 上这一行和下面的点击回调都不起作用。**那边的托盘是 AppIndicator
+        // （StatusNotifierItem），点击由面板处理、一律弹菜单，tray-icon 一个点击
+        // 事件也收不到（它的 `TrayIconEvent` 文档写明 Linux 不支持，gtk 那份实现里
+        // 也没有发事件的地方）。所以 Linux 菜单的第一项是「打开主界面」，见 `build`。
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|app, event| {
             // **认「松开」不认「按下」**：按下就动作的话，用户按住想拖一下
@@ -79,7 +88,37 @@ pub fn apply(bar: &Bar, rows: &[Row]) {
     }
 }
 
+/// Linux 上把「打开主界面」挪到最前面，后面跟一条分隔线。
+///
+/// 别处点一下图标就开窗口，这一项放在末尾那组里就够了；AppIndicator 不给点击
+/// 事件，**菜单是唯一的入口**，它就得是第一眼看到的那一项。是挪不是加：同一个
+/// 菜单里出现两次「打开主界面」没有道理。
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn open_first(rows: &[Row]) -> Vec<Row> {
+    let is_open = |r: &Row| matches!(r, Row::Item(i) if i.id == "open");
+    let Some(at) = rows.iter().position(is_open) else {
+        return rows.to_vec();
+    };
+    let mut out = Vec::with_capacity(rows.len() + 1);
+    out.push(rows[at].clone());
+    out.push(Row::Separator);
+    out.extend(rows[..at].iter().cloned());
+    // 挪走之后原处前后可能剩下两条相邻的分隔线，或者末尾一条
+    for r in &rows[at + 1..] {
+        if matches!(r, Row::Separator) && matches!(out.last(), Some(Row::Separator)) {
+            continue;
+        }
+        out.push(r.clone());
+    }
+    if matches!(out.last(), Some(Row::Separator)) {
+        out.pop();
+    }
+    out
+}
+
 fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>> {
+    #[cfg(target_os = "linux")]
+    let rows = &open_first(rows);
     let mut actions = Vec::new();
     let mut id = |a: &Action| {
         actions.push(a.clone());
@@ -212,4 +251,40 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
     *ACTIONS.lock().expect("锁未中毒") = actions;
     let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = items.iter().map(|b| b.as_ref()).collect();
     Menu::with_items(app, &refs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::model::{Snapshot, Style, build};
+    use super::*;
+
+    fn ids(rows: &[Row]) -> Vec<String> {
+        rows.iter()
+            .map(|r| match r {
+                Row::Item(i) => i.id.clone(),
+                Row::Separator => "---".to_string(),
+                _ => "·".to_string(),
+            })
+            .collect()
+    }
+
+    /// AppIndicator 不给点击事件：「打开主界面」得是第一项，而且只出现一次
+    #[test]
+    fn open_moves_to_the_top_once() {
+        let (_, rows) = build(&Snapshot::default(), Style::default());
+        assert!(ids(&rows).contains(&"open".to_string()), "模型里得有这一项");
+        let out = ids(&open_first(&rows));
+        assert_eq!(out[0], "open");
+        assert_eq!(out[1], "---");
+        assert_eq!(out.iter().filter(|i| *i == "open").count(), 1);
+        // 挪走之后不留两条相邻的分隔线，也不以分隔线结尾
+        assert!(!out.windows(2).any(|w| w[0] == "---" && w[1] == "---"));
+        assert_ne!(out.last().map(String::as_str), Some("---"));
+    }
+
+    #[test]
+    fn a_menu_without_it_is_left_alone() {
+        let rows = vec![Row::Separator];
+        assert_eq!(open_first(&rows), rows);
+    }
 }

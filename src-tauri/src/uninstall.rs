@@ -3,7 +3,7 @@
 use tw_api::ep;
 
 use crate::{
-    AppState, data_dir,
+    AppState, autostart, data_dir,
     error::{Out, text},
 };
 
@@ -81,8 +81,7 @@ pub async fn uninstall(
     }
     // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
     // 开机自启项的后果，用户在系统设置里看得见、也删得掉
-    use tauri_plugin_autostart::ManagerExt;
-    match app.autolaunch().disable() {
+    match autostart::launcher(&app).disable() {
         Ok(_) => log.push(tr!("已取消开机启动", "Launch at login turned off").into()),
         Err(e) => log.push(tr!(
             format!(

@@ -127,8 +127,9 @@ pub fn autostart_enabled(app: tauri::AppHandle) -> bool {
     if !autostart::allowed_in_this_build() {
         return false;
     }
-    use tauri_plugin_autostart::ManagerExt;
-    if !matches!(app.autolaunch().is_enabled(), Ok(true)) {
+    // Linux 上的 `is_enabled` 自己就认桌面「关掉了」的那两种写法，见
+    // `autostart::linux::disabled_by_desktop`
+    if !matches!(autostart::launcher(&app).is_enabled(), Ok(true)) {
         return false;
     }
     // **插件说「开着」还不够。**Windows 的「设置 → 应用 → 启动」里关掉之后，
@@ -158,14 +159,14 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
         )
         .into());
     }
-    use tauri_plugin_autostart::ManagerExt;
     // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
     // 而那个目录在一台从没注册过登录项的 Mac 上根本不存在 —— 写文件
     // 得到的是 `No such file or directory (os error 2)`，一句既不说
     // 哪个文件、也不说该怎么办的话。
     //
     // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
-    // 环境都会撞上。所以自己先建。
+    // 环境都会撞上。所以自己先建。（只有 macOS 写 plist；Linux 那份自己建目录）
+    #[cfg(target_os = "macos")]
     if on
         && let Some(plist) = autostart::plist_path(&app.config().identifier)
         && let Some(dir) = plist.parent()
@@ -177,7 +178,7 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
             )
         })?;
     }
-    let mgr = app.autolaunch();
+    let mgr = autostart::launcher(&app);
     let r = if on { mgr.enable() } else { mgr.disable() };
     r.map_err(|e| format!("{e}"))?;
     Ok(matches!(mgr.is_enabled(), Ok(true)))
@@ -263,7 +264,18 @@ pub(crate) fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
                 "It started at login. When the window is closed, the app keeps running in the notification area."
             ),
         );
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        let (title, body) = (
+            tr!(
+                "ThinkWatch 已在系统托盘运行",
+                "ThinkWatch Is Running in the System Tray"
+            ),
+            tr!(
+                "开机时已自动启动。窗口关闭后，应用仍在系统托盘中运行。",
+                "It started at login. When the window is closed, the app keeps running in the system tray."
+            ),
+        );
+        #[cfg(target_os = "macos")]
         let (title, body) = (
             tr!(
                 "ThinkWatch 已在菜单栏运行",
@@ -279,10 +291,21 @@ pub(crate) fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
     tracing::info!("首次开机自启，已提示一次");
 }
 
+/// Linux 上的自启项是自己写的，路径核对也在那边（`$APPIMAGE` 挪了就重写）。
+/// 开发构建不碰：否则开着自启的机器上跑一次 `cargo tauri dev`，自启项就被
+/// 改指向 `target/debug/…`
+#[cfg(target_os = "linux")]
+pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
+    if autostart::allowed_in_this_build() {
+        autostart::launcher(app).repair();
+    }
+}
+
 /// plist 里的路径还指着现在这个二进制吗。
 ///
 /// 不一致就重新注册一次。这件事插件不做，而它的失败模式是**静默的**：
 /// 开机之后什么都没发生，而设置里显示自启是开着的。
+#[cfg(not(target_os = "linux"))]
 pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
     let mgr = app.autolaunch();
