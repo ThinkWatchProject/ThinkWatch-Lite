@@ -20,13 +20,13 @@ import { connApi, type ConnectError, type Invalid, type Profile, type ServerInfo
 import { connText } from "./connection.i18n";
 import { code, describeError } from "./describe";
 
-/** 密钥：64 位十六进制。和 Rust 那边 `keychain::normalize` 同一条规矩 */
+/** 密钥：64 位十六进制。和 Rust 那边 `secrets::normalize` 同一条规矩 */
 const KEY_RE = /^[0-9a-fA-F]{64}$/;
 
 /**
  * 添加、编辑一条远程连接（设计稿 ③）。
  *
- * **编辑时密钥不回显。**它在钥匙串里，界面拿不回来：显示「已保存在钥匙串中」，点
+ * **编辑时密钥不回显。**它存在这台电脑上，界面拿不回来：显示「已保存」，点
  * 「更换」才填新的；不换就沿用。
  *
  * 「保存并切换」**先试连**，没通过就停在这里显示原因，不存也不切。通过了才存，

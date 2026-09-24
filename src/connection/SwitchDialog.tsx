@@ -98,7 +98,7 @@ export function SwitchDialog({
         setStage({
           kind: "failed",
           error: err.kind === "connect" ? err.error : null,
-          text: err.kind === "keychain" ? t.keychainFailed : err.kind === "unknown" ? t.gone : null,
+          text: err.kind === "key_unreadable" ? t.keyUnreadable : err.kind === "unknown" ? t.gone : null,
         });
       } else {
         setStage({ kind: "failed", error: null, text: errorText(e) });

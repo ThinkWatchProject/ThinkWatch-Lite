@@ -2,7 +2,7 @@
 //!
 //! 界面外壳不能依赖 core —— 远程连不上时，连接列表、切换入口照样要能显示、能操作，
 //! 所以它归应用自己保存（和 `prefs.rs` 同一个目录，另一个文件）。**密钥不在这里**：
-//! 进系统钥匙串（`keychain.rs`），这个文件里只有名字和地址。
+//! 另存一个只有自己能读的文件（`secrets.rs`），这个文件里只有名字和地址。
 //!
 //! 「本机」不存：它是内置的、删不掉，列表里永远有它。
 
@@ -17,7 +17,7 @@ pub const LOCAL: &str = "local";
 /// 一条远程连接
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Remote {
-    /// 随机生成，不随改名变。钥匙串里的那一项按它找
+    /// 随机生成，不随改名变。保存的密钥按它找
     pub id: String,
     pub name: String,
     /// 主机名或 IP
@@ -88,7 +88,7 @@ fn path(dir: &Path) -> PathBuf {
 }
 
 /// 读列表。**读不出来就是只有本机**：文件不在（第一次运行）和文件坏了，对用户的意义
-/// 一样 —— 为一份列表让应用起不来，代价不对。密钥在钥匙串里，不会跟着丢
+/// 一样 —— 为一份列表让应用起不来，代价不对。密钥在另一个文件里，不会跟着丢
 pub fn load(dir: &Path) -> Connections {
     std::fs::read(path(dir))
         .ok()

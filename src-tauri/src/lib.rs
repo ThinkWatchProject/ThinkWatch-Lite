@@ -40,6 +40,8 @@ pub mod memcheck;
 pub mod menubar;
 pub mod notices;
 pub mod prefs;
+/// 建只有自己能读的数据目录，见模块头上
+pub mod private_dir;
 pub mod settings;
 pub mod supervisor;
 pub mod theme;
