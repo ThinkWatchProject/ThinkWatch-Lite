@@ -88,11 +88,6 @@ tauri-plugin-updater = "2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 semver = "1"
-# 远程连接的控制面密钥存在系统的钥匙串里：macOS 钥匙串、Windows 凭据管理器、Linux 的
-# Secret Service（见 `connection/keychain.rs`）。**Linux 那一支走纯 Rust 的 zbus**
-# （`async-secret-service` + `async-io`），不链 libdbus —— 那要 CI 和用户机器上多装一个
-# 开发包
-keyring = { version = "3.6", features = ["apple-native", "windows-native", "async-secret-service", "async-io", "crypto-rust"] }
 # Homebrew 那一档的「复制命令」。**在 Rust 这边写剪贴板**，理由见
 # `update_copy_command`。
 tauri-plugin-clipboard-manager = "2"
@@ -164,6 +159,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_SystemInformation",
     # 启动时看 Alt 键有没有按着：按着就先显示连接选择（`connection::launch`）
     "Win32_UI_Input_KeyboardAndMouse",
+    # 数据目录建成只有自己能读（受保护的 DACL），见 `private_dir`
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
 ] }
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套

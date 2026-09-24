@@ -3,7 +3,8 @@
 //! 应用同一时间只连一个 core。**几条原则，都来自同一种要避开的失败**：远程连不上，
 //! 界面就初始化不了，只能重装或者把远程修好才能切回本机。
 //!
-//! - 界面外壳不依赖 core。连接列表归应用自己存（`store`），密钥进钥匙串（`keychain`）。
+//! - 界面外壳不依赖 core。连接列表归应用自己存（`store`），密钥另存一个只有自己能读的
+//!   文件（`secrets`）。
 //! - 「本机」内置、删不掉，任何状态下一步就能切回来。
 //! - 先试连，再切换（`connector::test`）。失败就留在原来的连接上，说明原因。
 //! - **绝不悄悄退回本机。**连不上远程时不自动拉起本机的 core：两边配置不同，客户端又
@@ -12,8 +13,8 @@
 //! - 断线只报一次：一条系统通知，界面上一条横幅；连上后按现有的对账机制补齐。
 
 pub mod connector;
-pub mod keychain;
 pub mod launch;
+pub mod secrets;
 pub mod store;
 
 use std::sync::Arc;
@@ -326,7 +327,7 @@ fn begin_remote(app: &tauri::AppHandle, link: &Link, r: Remote, first: Option<Se
     close_picker(app);
     link.stop_task();
     *link.current.lock().expect("锁未中毒") = Current::Remote(r.clone());
-    let key = keychain::load(&r.id).unwrap_or_default();
+    let key = secrets::load(&data_dir(), &r.id).unwrap_or_default();
     let target = RemoteTarget {
         host: r.host.clone(),
         port: r.port,
@@ -457,7 +458,7 @@ pub async fn switch(
         return Ok(None);
     }
     let r = c.remote(id).cloned().ok_or(SwitchError::Unknown)?;
-    let key = keychain::load(&r.id).map_err(|e| SwitchError::Keychain {
+    let key = secrets::load(&dir, &r.id).map_err(|e| SwitchError::KeyUnreadable {
         detail: format!("{e:#}"),
     })?;
     let target = RemoteTarget {
@@ -542,8 +543,8 @@ fn stop_local_when_quiet(app: tauri::AppHandle) {
 pub enum SwitchError {
     /// 列表里没有这一条（别处刚删掉）
     Unknown,
-    /// 钥匙串里取不出密钥
-    Keychain { detail: String },
+    /// 保存的密钥读不出来
+    KeyUnreadable { detail: String },
     /// 试连没通过
     Connect { error: ConnectError },
 }
@@ -570,7 +571,7 @@ pub struct ProfileInput {
     pub name: String,
     pub host: String,
     pub port: u16,
-    /// 新建时必填；编辑时不填就是沿用钥匙串里的那一把
+    /// 新建时必填；编辑时不填就是沿用已经保存的那一把
     pub key: Option<String>,
 }
 
@@ -597,18 +598,18 @@ fn check(c: &store::Connections, p: &ProfileInput) -> Result<(), Invalid> {
         return bad("port", "invalid");
     }
     match &p.key {
-        Some(k) if keychain::normalize(k).is_none() => bad("key", "invalid"),
+        Some(k) if secrets::normalize(k).is_none() => bad("key", "invalid"),
         None if p.id.is_none() => bad("key", "empty"),
         _ => Ok(()),
     }
 }
 
-/// 试连对话框里填的这一条。**还没存**：编辑时没换密钥，就用钥匙串里那一把
+/// 试连对话框里填的这一条。**还没存**：编辑时没换密钥，就用已经保存的那一把
 #[tauri::command]
 pub async fn test_connection(input: ProfileInput) -> Out<Tested> {
     let key = match (&input.key, &input.id) {
-        (Some(k), _) => keychain::normalize(k).unwrap_or_default(),
-        (None, Some(id)) => keychain::load(id).map_err(|e| keychain_error(&e))?,
+        (Some(k), _) => secrets::normalize(k).unwrap_or_default(),
+        (None, Some(id)) => secrets::load(&data_dir(), id).map_err(|e| key_error(&e))?,
         (None, None) => String::new(),
     };
     let target = RemoteTarget {
@@ -636,7 +637,7 @@ pub enum Saved {
     Invalid { invalid: Invalid },
 }
 
-/// 存一条连接：密钥先进钥匙串，名字和地址再进列表。**当前连着的那一条改了地址或
+/// 存一条连接：密钥先存好，名字和地址再进列表。**当前连着的那一条改了地址或
 /// 密钥，要重新连一次才生效** —— 这里顺手重连
 #[tauri::command]
 pub async fn save_connection(app: tauri::AppHandle, input: ProfileInput) -> Out<Saved> {
@@ -646,8 +647,8 @@ pub async fn save_connection(app: tauri::AppHandle, input: ProfileInput) -> Out<
         return Ok(Saved::Invalid { invalid });
     }
     let id = input.id.clone().unwrap_or_else(store::new_id);
-    if let Some(k) = input.key.as_deref().and_then(keychain::normalize) {
-        keychain::store(&id, &k).map_err(|e| keychain_error(&e))?;
+    if let Some(k) = input.key.as_deref().and_then(secrets::normalize) {
+        secrets::store(&dir, &id, &k).map_err(|e| key_error(&e))?;
     }
     let remote = Remote {
         id: id.clone(),
@@ -693,8 +694,8 @@ pub fn delete_connection(app: tauri::AppHandle, id: String) -> Out<ConnView> {
         }
     })
     .map_err(saving)?;
-    if let Err(e) = keychain::remove(&id) {
-        tracing::warn!("钥匙串里那一项没删掉：{e:#}");
+    if let Err(e) = secrets::remove(&data_dir(), &id) {
+        tracing::warn!("保存的密钥没删掉：{e:#}");
     }
     announce(&app);
     Ok(view(&app))
@@ -739,10 +740,10 @@ fn saving(e: anyhow::Error) -> CmdError {
     ))
 }
 
-fn keychain_error(e: &anyhow::Error) -> CmdError {
+fn key_error(e: &anyhow::Error) -> CmdError {
     CmdError::plain(tr!(
-        format!("无法访问钥匙串：{e:#}"),
-        format!("The keychain could not be accessed: {e:#}")
+        format!("无法读写保存的密钥：{e:#}"),
+        format!("The saved key could not be read or written: {e:#}")
     ))
 }
 
@@ -807,7 +808,7 @@ mod tests {
         let v = serde_json::to_value(SwitchError::Connect { error: e.clone() }).unwrap();
         assert_eq!(v["kind"], "connect");
         assert_eq!(v["error"]["kind"], "timeout");
-        let v = serde_json::to_value(SwitchError::Keychain { detail: "x".into() }).unwrap();
+        let v = serde_json::to_value(SwitchError::KeyUnreadable { detail: "x".into() }).unwrap();
         assert_eq!(v["detail"], "x");
         let v = serde_json::to_value(Tested::Failed { error: e }).unwrap();
         assert_eq!(v["result"], "failed");

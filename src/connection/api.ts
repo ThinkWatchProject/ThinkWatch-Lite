@@ -73,7 +73,7 @@ export interface ProfileInput {
   name: string;
   host: string;
   port: number;
-  /** 新建时必填；编辑时不填就沿用钥匙串里的那一把 */
+  /** 新建时必填；编辑时不填就沿用已经保存的那一把 */
   key: string | null;
 }
 
@@ -86,10 +86,10 @@ export type Invalid = {
 
 export type Saved = { result: "ok"; profile: Profile } | { result: "invalid"; invalid: Invalid };
 
-/** 切换没做成：列表里已经没有这一条、钥匙串取不出密钥、试连没通过 */
+/** 切换没做成：列表里已经没有这一条、保存的密钥读不出来、试连没通过 */
 export type SwitchError =
   | { kind: "unknown" }
-  | { kind: "keychain"; detail: string }
+  | { kind: "key_unreadable"; detail: string }
   | { kind: "connect"; error: ConnectError };
 
 /** 切过去之前要说的：这台机器上已接管、还指着本机网关的客户端 */

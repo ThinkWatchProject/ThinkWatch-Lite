@@ -1,13 +1,10 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
-import { isLinux, isMac, isWindows } from "@/platform";
+import { isLinux, isMac } from "@/platform";
 
 /** 句中嵌着的一段代码（配置项、命令）。怎么画由组件决定 */
 type Code = (text: string) => ReactNode;
 
-/** 密钥存在哪。按平台说用户认得的那个名字 */
-const vaultZh = isWindows ? "凭据管理器" : isLinux ? "系统密钥环" : "钥匙串";
-const vaultEn = isWindows ? "Credential Manager" : isLinux ? "the system keyring" : "the keychain";
 /** 启动时按住哪个键 */
 const holdZh = isMac ? "Option" : "Alt";
 
@@ -52,7 +49,7 @@ export const connText = messages(
       ? "连续两次启动未能完成时，下次启动先显示连接选择。"
       : `按住 ${holdZh} 键启动应用时，先显示连接选择。`,
     deleteTitle: (name: string) => `删除连接「${name}」？`,
-    deleteBody: `保存在${vaultZh}中的密钥一并删除。服务器上的 core 不受影响。`,
+    deleteBody: "保存在本机的密钥一并删除。服务器上的 core 不受影响。",
 
     // 添加与编辑
     addTitle: "添加远程连接",
@@ -67,10 +64,10 @@ export const connText = messages(
     key: "密钥",
     keyHint: (code: Code) => (
       <>
-        在服务器上执行 {code("twcore control-key")} 获取。保存在{vaultZh}中。
+        在服务器上执行 {code("twcore control-key")} 获取。仅保存在本机，只有当前用户可以读取。
       </>
     ),
-    keySaved: `已保存在${vaultZh}中`,
+    keySaved: "已保存在本机",
     replaceKey: "更换",
     test: "测试连接",
     testHint: "完成握手并读取服务器 core 的版本。",
@@ -120,7 +117,7 @@ export const connText = messages(
     remoteConfig: (name: string) => `切换后，上游、路由、密钥等页面显示和修改的是 ${name} 上的配置。`,
     switchAction: "切换",
     editConnection: "编辑连接",
-    keychainFailed: `无法从${vaultZh}中读取密钥`,
+    keyUnreadable: "无法读取保存在本机的密钥，请在编辑连接时重新填写。",
     gone: "该连接已被删除。",
 
     // 未连接页
@@ -189,7 +186,7 @@ export const connText = messages(
       ? "After two startups in a row fail to finish, the next startup shows the connection choice first."
       : `Hold ${holdZh} while opening the app to choose a connection first.`,
     deleteTitle: (name: string) => `Delete the connection “${name}”?`,
-    deleteBody: `The key saved in ${vaultEn} is deleted as well. The core on the server is not affected.`,
+    deleteBody: "The key saved on this computer is deleted as well. The core on the server is not affected.",
 
     addTitle: "Add remote connection",
     editTitle: "Edit connection",
@@ -203,10 +200,10 @@ export const connText = messages(
     key: "Key",
     keyHint: (code: Code) => (
       <>
-        Run {code("twcore control-key")} on the server to get it. Saved in {vaultEn}.
+        Run {code("twcore control-key")} on the server to get it. Saved only on this computer, readable by the current user alone.
       </>
     ),
-    keySaved: `Saved in ${vaultEn}`,
+    keySaved: "Saved on this computer",
     replaceKey: "Replace",
     test: "Test connection",
     testHint: "Completes the handshake and reads the server's core version.",
@@ -262,7 +259,7 @@ export const connText = messages(
       `After the switch, the Upstreams, Routing, Keys and other pages show and change the config on ${name}.`,
     switchAction: "Switch",
     editConnection: "Edit connection",
-    keychainFailed: `The key could not be read from ${vaultEn}`,
+    keyUnreadable: "The key saved on this computer could not be read. Enter it again by editing the connection.",
     gone: "This connection has been deleted.",
 
     cannotConnect: (name: string) => `Cannot connect to ${name}`,
