@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { TriangleAlertIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
+import { notify } from "@/ui/notify";
+import { PageSection } from "@/ui/page";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { FormActions, FormRow, FormRows, NumberInput, intIn } from "@/settings/form";
@@ -19,12 +19,12 @@ import { outputLimitText } from "./OutputLimitTab.i18n";
  */
 export function OutputLimitTab({
   detail,
-  busy,
+  modePending,
   onMode,
   onSaveLimit,
 }: {
   detail: OutputLimitDetail;
-  busy: boolean;
+  modePending: boolean;
   onMode: (mode: GuardMode) => void;
   /** 写上限。失败时抛出，这一节自己显示 */
   onSaveLimit: (max: number) => Promise<void>;
@@ -53,7 +53,7 @@ export function OutputLimitTab({
     try {
       await onSaveLimit(Number(draft));
       dirtyRef.current = false;
-      toast.success(t.saved);
+      notify.success(t.saved);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -62,11 +62,10 @@ export function OutputLimitTab({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <ModeCard guard="output_limit" mode={detail.mode} busy={busy} onMode={onMode} />
+    <div className="flex flex-col">
+      <ModeCard guard="output_limit" mode={detail.mode} pending={modePending} onMode={onMode} />
 
-      <section>
-        <h3 className="tw-head">{t.title}</h3>
+      <PageSection title={t.title}>
         <FormRows>
           <FormRow
             label={t.max}
@@ -115,14 +114,10 @@ export function OutputLimitTab({
             }}
           />
         </FormRows>
-        {error && (
-          <Alert variant="destructive" className="mt-3">
-            <TriangleAlertIcon />
-            <AlertTitle>{t.saveFailed}</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </section>
+        <Banner layout="inline" tone="error" title={t.saveFailed} show={error !== null} className="mt-3">
+          {error}
+        </Banner>
+      </PageSection>
     </div>
   );
 }

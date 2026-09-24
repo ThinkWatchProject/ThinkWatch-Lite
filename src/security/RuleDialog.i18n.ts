@@ -83,9 +83,10 @@ export const ruleDialogText = messages(
       regex: "请填写正则表达式",
     },
     create: "创建",
-    /** 嵌在「删除规则「…」」里的那个名词 */
-    what: "规则",
+    saveFailed: "未能保存",
+    deleteTitle: (name: string) => `删除规则「${name}」`,
     deleteDesc: "删除后不再按此规则检查。日志中已有的记录保留。",
+    deleteFailed: "未能删除",
   },
   {
     title: {
@@ -165,7 +166,9 @@ export const ruleDialogText = messages(
       regex: "Enter a regular expression",
     },
     create: "Create",
-    what: "rule",
+    saveFailed: "Not saved",
+    deleteTitle: (name: string) => `Delete the rule “${name}”`,
     deleteDesc: "The rule is no longer checked. Entries already in the log are kept.",
+    deleteFailed: "Not deleted",
   },
 );

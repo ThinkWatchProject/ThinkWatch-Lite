@@ -6,9 +6,13 @@ export interface Mark {
   tone: "warn" | "bad";
 }
 
+/**
+ * 标记的底色：状态色压到低透明度，底边一道实色 —— 不加内边距（等宽字里一格
+ * 内边距会把后面的字全推歪），跨行时每一行各自带着底色和底边。
+ */
 const TONE: Record<Mark["tone"], string> = {
-  warn: "rounded-sm bg-amber-200/80 text-foreground dark:bg-amber-400/30",
-  bad: "rounded-sm bg-red-200/80 text-foreground dark:bg-red-500/35",
+  warn: "rounded-[3px] bg-warning/25 text-foreground shadow-[inset_0_-1.5px_0_0_var(--warning)] box-decoration-clone",
+  bad: "rounded-[3px] bg-destructive/20 text-foreground shadow-[inset_0_-1.5px_0_0_var(--destructive)] box-decoration-clone",
 };
 
 /**

@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { CopyIcon } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import { Badge } from "@/ui/badge";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -14,6 +25,7 @@ import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Segmented } from "@/ui/segmented";
+import { StatusLabel } from "@/ui/status-dot";
 import { Textarea } from "@/ui/textarea";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -133,15 +145,15 @@ function TrialBox({
   if (trial.state === "idle") return null;
   if (trial.state === "failed") {
     return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 tw-label text-destructive">
+      <Banner layout="inline" tone="error">
         {trial.error}
-      </div>
+      </Banner>
     );
   }
   const hits: SecurityTestHit[] = trial.state === "done" ? trial.hits : [];
   const bad = hits.some((h) => tone(action ?? h.action) === "bad");
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2">
+    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface/60 px-3 py-2 motion-fade">
       <p
         className={
           "tw-label " +
@@ -151,10 +163,10 @@ function TrialBox({
               ? "text-muted-foreground"
               : bad
                 ? "text-destructive"
-                : "text-success")
+                : "text-warning-foreground")
         }
       >
-        {trial.state === "running" ? <Spinner /> : hits.length > 0 ? t.hits(hits.length) : t.noHit}
+        {trial.state === "running" ? <Spinner className="size-3" /> : hits.length > 0 ? t.hits(hits.length) : t.noHit}
       </p>
       {hits.length > 0 && (
         <Highlight
@@ -310,15 +322,16 @@ export function RuleDialog({
           </Field>
         </div>
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <Banner layout="inline" tone="error" title={t.saveFailed} show={error !== null}>
+          {error}
+        </Banner>
 
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
             {common.cancel}
           </Button>
-          <Button onClick={() => void save()} disabled={saving || missing != null}>
-            {saving && <Spinner />}
+          <Button onClick={() => void save()} pending={saving} disabled={missing != null}>
             {editing ? common.save : t.create}
           </Button>
         </DialogFooter>
@@ -385,7 +398,7 @@ export function BuiltinRuleDialog({
 
         <div className="flex flex-col gap-4">
           <Field label={written?.match === "regex" ? t.patternLabel.regex : t.match}>
-            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 tw-body">
+            <div className="rounded-md border border-border bg-surface/60 px-3 py-2 tw-body">
               {written?.match === "regex" ? (
                 <span className="font-mono tw-label break-all">{written.pattern}</span>
               ) : (
@@ -405,7 +418,11 @@ export function BuiltinRuleDialog({
 
           <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-y-1 tw-body">
             <dt className="text-muted-foreground">{t.state}</dt>
-            <dd>{rule.enabled ? t.on : t.off}</dd>
+            <dd>
+              <StatusLabel tone={rule.enabled ? "ok" : "idle"} muted>
+                {rule.enabled ? t.on : t.off}
+              </StatusLabel>
+            </dd>
           </dl>
 
           <Field label={t.sample} htmlFor="builtin-sample">
@@ -421,7 +438,9 @@ export function BuiltinRuleDialog({
           </Field>
         </div>
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <Banner layout="inline" tone="error" title={t.saveFailed} show={error !== null}>
+          {error}
+        </Banner>
 
         <DialogFooter className="items-center sm:justify-between">
           {onCopy ? (
@@ -437,8 +456,7 @@ export function BuiltinRuleDialog({
               <Button variant="outline" onClick={onClose}>
                 {common.cancel}
               </Button>
-              <Button onClick={() => void save()} disabled={saving || !changed}>
-                {saving && <Spinner />}
+              <Button onClick={() => void save()} pending={saving} disabled={!changed}>
                 {common.save}
               </Button>
             </div>
@@ -534,5 +552,65 @@ export function TestDialog({ guard, onClose }: { guard: RuleGuard; onClose: () =
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 删除一条自定义规则。**删了就回不来**（写法只在配置里），所以要确认；日志里
+ * 已有的记录不受影响。失败时对话框留着，把 core 的话显示在里面。
+ */
+export function DeleteRuleDialog({
+  name,
+  onDelete,
+  onClose,
+}: {
+  name: string;
+  onDelete: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const t = useText(ruleDialogText);
+  const common = useText(commonText);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (e) {
+      setError(errorText(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AlertDialog open onOpenChange={(o) => !o && !busy && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t.deleteTitle(name)}</AlertDialogTitle>
+          <AlertDialogDescription>{t.deleteDesc}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <Banner layout="inline" tone="error" title={t.deleteFailed} show={error !== null}>
+          {error}
+        </Banner>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>{common.cancel}</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={(e) => {
+              // 等删完再关：失败时要留在这里说原因
+              e.preventDefault();
+              void run();
+            }}
+          >
+            {busy && <Spinner aria-hidden />}
+            {common.delete}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
