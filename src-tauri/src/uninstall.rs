@@ -111,6 +111,23 @@ pub async fn uninstall(
             ))
         }
     }
+    // AppImage 每次启动写的菜单条目和图标（见 `desktop_entry`）。删不掉的
+    // 说出是哪个文件；这之后应用还开着，重新启动会再写一份
+    #[cfg(target_os = "linux")]
+    {
+        let failed = crate::desktop_entry::remove(&app);
+        if failed.is_empty() {
+            log.push(
+                tr!(
+                    "已移除应用菜单中的条目",
+                    "The application menu entry was removed"
+                )
+                .into(),
+            );
+        } else {
+            log.extend(failed);
+        }
+    }
     if drop_data {
         let dir = data_dir();
         match std::fs::remove_dir_all(&dir) {
@@ -133,18 +150,29 @@ pub async fn uninstall(
             format!("Data directory kept: {}", data_dir().display())
         ));
     }
-    // 「废纸篓」只是 macOS 的说法；别处是走系统的卸载，或者直接删掉那个文件
+    // 「废纸篓」只是 macOS 的说法；Windows 上走系统的卸载，Linux 上就是删掉
+    // 那个 AppImage 文件
     #[cfg(target_os = "macos")]
-    let last = tr!(
+    let last: String = tr!(
         "现可将应用移到废纸篓。",
         "The app can now be moved to the Trash."
-    );
-    #[cfg(not(target_os = "macos"))]
-    let last = tr!(
+    )
+    .into();
+    #[cfg(windows)]
+    let last: String = tr!(
         "现可卸载或删除应用。",
         "The app can now be uninstalled or deleted."
-    );
-    log.push(last.into());
+    )
+    .into();
+    #[cfg(target_os = "linux")]
+    let last: String = match crate::desktop_entry::appimage() {
+        Some(file) => tr!(
+            format!("现可删除 AppImage 文件：{}", file.display()),
+            format!("The AppImage file can now be deleted: {}", file.display())
+        ),
+        None => tr!("现可删除应用。", "The app can now be deleted.").into(),
+    };
+    log.push(last);
     Ok(log)
 }
 

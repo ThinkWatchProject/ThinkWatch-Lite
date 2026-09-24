@@ -217,9 +217,10 @@ ICONSET = {
 
 # tauri.conf.json 的 bundle.icon 里列的那几个（除 icns 外）。
 #
-# 256 和 512 是 Linux 的（`tauri.linux.conf.json`）：deb 和 AppImage 按像素
-# 尺寸装进 `hicolor/<宽>x<高>/apps/`，而 `128x128@2x.png` 在那里落进的是
-# `256x256@2`，不是桌面环境找大图标时去的那个目录。
+# 256 和 512 是 Linux 的（`tauri.linux.conf.json`）：AppImage 按像素尺寸装进
+# `hicolor/<宽>x<高>/apps/`，而 `128x128@2x.png` 在那里落进的是 `256x256@2`，
+# 不是桌面环境找大图标时去的那个目录。256 也是应用自己写菜单条目时装进用户
+# 目录的那一张（`src/desktop_entry.rs`）。
 BUNDLE_PNGS = {
     "32x32.png": 32,
     "128x128.png": 128,

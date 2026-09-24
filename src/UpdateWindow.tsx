@@ -26,7 +26,6 @@ const COPIED_MS = 2_000;
  *
  * · 从网页下载的：「下载并安装」，按一次之后不再问任何问题 —— 下载、
  *   等网关手上的请求结束、替换、重启，全部自动。
- * · Linux 的 deb：同一个按钮，只是安装那一步由系统弹授权框。
  * · Homebrew 装的：给出那条命令和复制按钮。更新交给 brew。
  * · 开发构建：只说明不自动更新。
  *
@@ -166,7 +165,7 @@ export default function UpdateWindow() {
               </div>
             ) : (
               <p className="tw-body text-muted-foreground">
-                {offer.install === "deb" ? t.deb : t.standalone}
+                {t.standalone}
               </p>
             )}
             {failed && <p className="tw-body text-destructive">{failed}</p>}

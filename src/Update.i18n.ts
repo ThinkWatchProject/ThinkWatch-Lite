@@ -19,7 +19,6 @@ export const updateText = messages(
     available: (version: string) => `ThinkWatch Lite ${version} 可用`,
     closeWhileWaiting: "关闭此窗口不影响更新，更新完成后将发送通知。",
     standalone: "下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。",
-    deb: "下载完成后需要管理员授权才能安装。网关将在进行中的请求全部结束后重新启动。",
     later: "稍后",
     install: "下载并安装",
     homebrew: "此应用由 Homebrew 管理，请在终端中执行以下命令完成更新：",
@@ -48,8 +47,6 @@ export const updateText = messages(
     closeWhileWaiting: "Closing this window does not stop the update. A notification is sent when it is complete.",
     standalone:
       "Installs automatically after downloading. The gateway restarts once all requests in progress have finished.",
-    deb:
-      "Installing requires administrator authorization after downloading. The gateway restarts once all requests in progress have finished.",
     later: "Later",
     install: "Download and install",
     homebrew: "This app is managed by Homebrew. To update, run this command in Terminal:",

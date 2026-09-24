@@ -1,4 +1,9 @@
 [Desktop Entry]
+# The entry inside the AppImage (its AppDir root). Configured under
+# `bundle.linux.deb` because the AppImage bundler builds its AppDir with the deb
+# bundler's `generate_data`, which reads this template from there
+# (tauri-bundler 2.x, `linux/debian.rs`). The menu entry users see is written
+# by the app itself on every launch (`src/desktop_entry.rs`).
 Categories={{categories}}
 {{#if comment}}
 Comment={{comment}}

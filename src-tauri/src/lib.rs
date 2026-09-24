@@ -18,6 +18,9 @@ pub mod clients;
 pub mod control;
 pub mod core_text;
 pub mod dashboard;
+/// Linux 上 AppImage 自己写的应用菜单条目，理由见模块头上。
+#[cfg(target_os = "linux")]
+pub mod desktop_entry;
 pub mod diagnostics;
 #[cfg(target_os = "macos")]
 /// 从 DMG 里取出 `.app`，给更新器用。**只有 macOS 有** —— 它整个是 `hdiutil`，
@@ -377,7 +380,7 @@ pub fn run() {
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    window::register_appimage_url_handler(&handle);
+                    desktop_entry::integrate(&handle);
                     // 留下来的是这个实例：它自己启动时放下的令牌不该被当成
                     // 下一次再启动带来的
                     let _ = window::relaunch_token::take();

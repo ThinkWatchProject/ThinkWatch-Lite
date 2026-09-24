@@ -43,23 +43,14 @@ impl Autostart {
         )
         .unwrap_or_default()
         .join(format!("{}.desktop", app.config().identifier));
-        let exe = std::env::current_exe().ok();
-        // The deb bundler installs the icons under the main binary's name
-        // (`/usr/share/icons/hicolor/<size>/apps/<bin>.png`) and uses the same
-        // name for `Icon=` in the menu entry; this entry follows it. An AppImage
-        // has no stable icon file outside its mount, so it gets the same name:
-        // resolved when an AppImage integrator installed the icon, the desktop's
-        // generic icon otherwise.
-        let icon = exe
-            .as_deref()
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "thinkwatch-lite".to_string());
+        // Every launch of the AppImage installs the icon into the user's hicolor
+        // theme under the identifier (`desktop_entry`), so the name resolves
+        // there; a development build gets the desktop's generic icon.
         Self {
             file,
-            program: program(exe),
+            program: program(std::env::current_exe().ok()),
             name: app.package_info().name.clone(),
-            icon,
+            icon: app.config().identifier.clone(),
         }
     }
 
@@ -168,8 +159,8 @@ impl Autostart {
 /// What the entry should start.
 ///
 /// **Asks the bundle type, not the environment alone.** `$APPIMAGE` is inherited
-/// by everything an AppImage starts, so a deb install launched from, say, an
-/// AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
+/// by everything an AppImage starts, so a development build launched from, say,
+/// an AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
 /// type is patched into the binary by the bundler, so it cannot be inherited.
 fn program(exe: Option<PathBuf>) -> Result<String, String> {
     use tauri::utils::config::BundleType;
@@ -259,7 +250,7 @@ fn entry(name: &str, program: &str, args: &[&str], icon: &str) -> String {
 ///
 /// The program path is always quoted: it is user-controlled (wherever the
 /// AppImage was saved), and an always-quoted path is valid per the spec.
-pub(super) fn exec_value(program: &str, args: &[&str]) -> String {
+pub(crate) fn exec_value(program: &str, args: &[&str]) -> String {
     let mut line = quote_arg(program);
     for a in args {
         line.push(' ');
@@ -318,7 +309,7 @@ fn quote_arg(a: &str) -> String {
 ///
 /// `\s` is only needed for a leading space (a key file reader trims whitespace
 /// after the `=`); elsewhere a space is written as is.
-fn escape_string(s: &str) -> String {
+pub(crate) fn escape_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for (i, c) in s.chars().enumerate() {
         match c {

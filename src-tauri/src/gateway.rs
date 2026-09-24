@@ -55,10 +55,10 @@ pub const CORE_EXE: &str = if cfg!(windows) {
 /// 工作目录、PATH 里找一个来跑，正是下面那段注释说要堵上的口子。界面上显示
 /// 的路径也因此是框架给的 `\\?\C:\…` 那种写法。
 ///
-/// **Linux 上看打包时写进二进制的标记**（`bundle_type()`，deb 和 AppImage
-/// 各打一份）。资源在 `<可执行文件>/../lib/<产品名>/`：deb 是
-/// `/usr/lib/ThinkWatch Lite/`，AppImage 是挂载点下同样的相对位置（挂载点
-/// 每次启动都换，所以界面上的路径会变，这是正常的）。**从可执行文件的位置
+/// **Linux 上看打包时写进二进制的标记**（`bundle_type()`；只发 AppImage，没有
+/// 这个标记的是开发构建）。资源在 `<可执行文件>/../lib/<产品名>/`，也就是挂载点
+/// 下的 `usr/lib/ThinkWatch Lite/`（挂载点每次启动都换，所以界面上的路径会变，
+/// 这是正常的）。**从可执行文件的位置
 /// 推，不用框架的 `resource_dir()`**：它在那个目录不存在时改看 `APPDIR`
 /// 环境变量 —— 又是一个让环境变量决定执行哪个二进制的口子。
 pub(crate) fn bundled_core(product: &str) -> Option<PathBuf> {
@@ -72,7 +72,7 @@ pub(crate) fn bundled_core(product: &str) -> Option<PathBuf> {
         return Some(dir.join(CORE_EXE));
     }
     #[cfg(target_os = "linux")]
-    if tauri::utils::platform::bundle_type().is_some() {
+    if tauri::utils::platform::bundle_type() == Some(tauri::utils::config::BundleType::AppImage) {
         return Some(dir.parent()?.join("lib").join(product).join(CORE_EXE));
     }
     #[cfg(not(target_os = "linux"))]
