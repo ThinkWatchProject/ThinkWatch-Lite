@@ -209,7 +209,6 @@ export function useRequests(ready: boolean) {
    * 怎么并见 `mergeHistory`：历史只添信息，结局没送到的行按库里补上。
    */
   const pull = useCallback(async () => {
-    // Tauri 的 invoke 用字符串 reject，不是 Error
     /*
       **整份日志，不分段。**日志留多久是设置里的事（保留期），而这一页
       要回答的是「翻一翻最近发生过什么」—— 让人先选一个时间范围才能

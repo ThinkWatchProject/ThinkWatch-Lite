@@ -143,7 +143,7 @@ impl Supervisor {
         binary: PathBuf,
         config: Option<PathBuf>,
         ready: Probe,
-        at: tw_api::control::Endpoint,
+        at: tw_api::control::Address,
         token: String,
     ) -> Self {
         Self {
@@ -518,7 +518,7 @@ mod tests {
             PathBuf::from("/nonexistent/twcore"),
             Some(PathBuf::from("/tmp/c.yaml")),
             always_ready(),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         )
     }
@@ -586,7 +586,7 @@ mod tests {
             PathBuf::from("/x"),
             None,
             always_ready(),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         );
         assert!(!s.command_args(false).contains(&"--config".to_string()));
@@ -617,8 +617,8 @@ mod tests {
     /// 这些测试从不真的起 core，所以连不上正是对的 —— 请它退出那一步在
     /// unix 上走信号、根本不碰它，在 Windows 上会失败一次然后落到强杀，
     /// 而强杀才是这些测试要看的那一步。
-    fn test_endpoint() -> tw_api::control::Endpoint {
-        tw_api::control::Endpoint::in_dir(std::path::Path::new("/tw-no-such-dir-xyz"))
+    fn test_address() -> tw_api::control::Address {
+        tw_api::control::Address::in_dir(std::path::Path::new("/tw-no-such-dir-xyz"))
     }
 
     /// 一个不管参数、一直跑到被杀掉的「core」。
@@ -667,7 +667,7 @@ mod tests {
             long_runner("stop"),
             None,
             always_ready(),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         ));
         let looped = {
@@ -718,7 +718,7 @@ mod tests {
             long_runner("ready"),
             None,
             third_time,
-            test_endpoint(),
+            test_address(),
             "t".into(),
         ));
         let mut rx = s.watch();
@@ -752,7 +752,7 @@ mod tests {
             long_runner("never"),
             None,
             probe(|| async { false }),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         );
         let next = s.run_once(false).await.unwrap();
@@ -774,7 +774,7 @@ mod tests {
             long_runner("resume"),
             None,
             always_ready(),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         ));
         let first = {
@@ -806,7 +806,7 @@ mod tests {
             long_runner("restart"),
             None,
             always_ready(),
-            test_endpoint(),
+            test_address(),
             "t".into(),
         ));
         let looped = {

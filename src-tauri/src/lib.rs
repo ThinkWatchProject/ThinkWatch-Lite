@@ -20,6 +20,8 @@ pub mod control;
 /// 而发布页上那个 DMG 本来就只给那个平台。Windows 上更新器直接装 NSIS 包。
 #[cfg(target_os = "macos")]
 pub mod dmg;
+pub mod error;
+use error::{Out, text};
 pub mod keys;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
 ///
@@ -223,24 +225,20 @@ pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
 }
 
 #[tauri::command]
-async fn interfaces(state: tauri::State<'_, AppState>) -> Result<Vec<tw_api::NicView>, String> {
-    state
-        .control
-        .interfaces()
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn interfaces(state: tauri::State<'_, AppState>) -> Out<Vec<tw_api::NicView>> {
+    state.control.interfaces().await.map_err(text)
 }
 
 #[tauri::command]
-async fn core_status(state: tauri::State<'_, AppState>) -> Result<tw_api::Status, String> {
+async fn core_status(state: tauri::State<'_, AppState>) -> Out<tw_api::Status> {
     // Tauri 的 invoke 用**字符串** reject，不是 Error 对象 ——
     // 前端 `e instanceof Error` 永远是 false。所以这里返回 String，
     // 前端那边也按字符串处理。
-    state.control.status().await.map_err(|e| format!("{e:#}"))
+    state.control.status().await.map_err(text)
 }
 
 #[tauri::command]
-async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String> {
+async fn core_state(state: tauri::State<'_, AppState>) -> Out<String> {
     // 连 core 都没找到时，守护状态说什么都没意义 —— 那句话才是答案
     if let Some(why) = &state.core_missing {
         return Ok(format!("missing:{why}"));
@@ -254,23 +252,19 @@ async fn core_state(state: tauri::State<'_, AppState>) -> Result<String, String>
 /// （安全模式下的 core 也退了、或者 core 根本起不来），那要把循环接
 /// 回来 —— 而**不能接出第二条**，所以用一个标志守着。
 #[tauri::command]
-async fn restart_core(app: tauri::AppHandle) -> Result<(), String> {
+async fn restart_core(app: tauri::AppHandle) -> Out<()> {
     restart_gateway(&app).await
 }
 
 /// 界面上的「重新启动」和菜单栏里的「重新启动网关」走的都是这里
-pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
     use std::sync::atomic::Ordering;
     let state = app.state::<AppState>();
     if let Some(why) = &state.core_missing {
-        return Err(why.clone());
+        return Err(why.clone().into());
     }
     if state.supervising.swap(true, Ordering::SeqCst) {
-        return state
-            .supervisor
-            .request_restart()
-            .await
-            .map_err(|e| format!("{e:#}"));
+        return state.supervisor.request_restart().await.map_err(text);
     }
     let sup = state.supervisor.clone();
     let flag = state.supervising.clone();
@@ -299,8 +293,8 @@ fn describe_state(s: &CoreState) -> String {
 }
 
 #[tauri::command]
-async fn overview(state: tauri::State<'_, AppState>) -> Result<tw_api::Overview, String> {
-    state.control.overview().await.map_err(|e| format!("{e:#}"))
+async fn overview(state: tauri::State<'_, AppState>) -> Out<tw_api::Overview> {
+    state.control.overview().await.map_err(text)
 }
 
 /// L1 测速。零成本，所以不需要任何确认 —— L3 才需要。
@@ -308,12 +302,12 @@ async fn overview(state: tauri::State<'_, AppState>) -> Result<tw_api::Overview,
 async fn speed_test(
     state: tauri::State<'_, AppState>,
     provider: Option<String>,
-) -> Result<Vec<tw_api::L1Result>, String> {
+) -> Out<Vec<tw_api::L1Result>> {
     state
         .control
         .l1(tw_api::L1Request { provider })
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 /// 今天的汇总、历史、延迟、存储状态。
@@ -335,7 +329,7 @@ async fn dashboard(
     // 而补空桶要求两边算出来的格子完全重合。对不上的表现是整张图全是零。
     since_ms: Option<i64>,
     bucket_ms: Option<i64>,
-) -> Result<Dashboard, String> {
+) -> Out<Dashboard> {
     let c = &state.control;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -346,7 +340,7 @@ async fn dashboard(
     let since = since_ms.unwrap_or(now - 24 * 3_600_000).min(now);
     let bucket = bucket_ms.unwrap_or(3_600_000).max(60_000);
     Ok(Dashboard {
-        summary: c.summary(Some(since)).await.map_err(|e| format!("{e:#}"))?,
+        summary: c.summary(Some(since)).await.map_err(text)?,
         latency: c.latency().await.unwrap_or_default(),
         latency_by_provider: c.latency_by_provider(None).await.unwrap_or_default(),
         history: c.history(200, None).await.unwrap_or_default(),
@@ -388,15 +382,8 @@ pub struct Dashboard {
 }
 
 #[tauri::command]
-async fn request_detail(
-    state: tauri::State<'_, AppState>,
-    id: i64,
-) -> Result<tw_api::RequestDetail, String> {
-    state
-        .control
-        .request_detail(id)
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn request_detail(state: tauri::State<'_, AppState>, id: i64) -> Out<tw_api::RequestDetail> {
+    state.control.request_detail(id).await.map_err(text)
 }
 
 /// L3 测速的报价。**零成本** —— 它只是算了一下。
@@ -405,12 +392,12 @@ async fn speed_quote(
     state: tauri::State<'_, AppState>,
     model: String,
     providers: Vec<String>,
-) -> Result<tw_api::SpeedQuote, String> {
+) -> Out<tw_api::SpeedQuote> {
     state
         .control
         .speed_quote(model, providers)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 /// 真的跑一次测速。**这一步花钱** —— 界面必须先把报价摆给用户看过。
@@ -419,12 +406,12 @@ async fn speed_run(
     state: tauri::State<'_, AppState>,
     model: String,
     providers: Vec<String>,
-) -> Result<Vec<tw_api::SpeedResult>, String> {
+) -> Out<Vec<tw_api::SpeedResult>> {
     state
         .control
         .speed_run(model, providers)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 /// 最近的请求。**开窗时用它把实时列表填上** —— 关窗销毁了窗口，
@@ -435,12 +422,12 @@ async fn recent_requests(
     limit: usize,
     from_ms: Option<i64>,
     to_ms: Option<i64>,
-) -> Result<Vec<tw_api::HistoryRow>, String> {
+) -> Out<Vec<tw_api::HistoryRow>> {
     state
         .control
         .history(limit, window(from_ms, to_ms))
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 /// 此刻还在跑的请求（它们的开始事件）。
@@ -449,14 +436,8 @@ async fn recent_requests(
 /// 起听事件：之前就开始了的请求不问就漏掉，「进行中」少数；core 重启时正在
 /// 跑的请求再也不会有结局，不重新对一遍就一直挂在「进行中」里。
 #[tauri::command]
-async fn in_flight_requests(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<tw_api::Event>, String> {
-    state
-        .control
-        .in_flight()
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn in_flight_requests(state: tauri::State<'_, AppState>) -> Out<Vec<tw_api::Event>> {
+    state.control.in_flight().await.map_err(text)
 }
 
 /// 两端各自可缺；一个都没给就是不限时间。
@@ -468,8 +449,8 @@ fn window(from_ms: Option<i64>, to_ms: Option<i64>) -> Option<(i64, i64)> {
 }
 
 #[tauri::command]
-async fn get_config(state: tauri::State<'_, AppState>) -> Result<tw_api::ConfigText, String> {
-    state.control.config().await.map_err(|e| format!("{e:#}"))
+async fn get_config(state: tauri::State<'_, AppState>) -> Out<tw_api::ConfigText> {
+    state.control.config().await.map_err(text)
 }
 
 /// 改一个字段。**总是带 `base_version`** —— 用户在编辑器里改了什么，
@@ -479,12 +460,12 @@ async fn patch_config(
     state: tauri::State<'_, AppState>,
     ops: Vec<tw_api::PatchOp>,
     base_version: String,
-) -> Result<tw_api::ConfigWritten, String> {
+) -> Out<tw_api::ConfigWritten> {
     state
         .control
         .patch_config(ops, base_version)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 #[tauri::command]
@@ -492,59 +473,36 @@ async fn put_config(
     state: tauri::State<'_, AppState>,
     text: String,
     base_version: String,
-) -> Result<tw_api::ConfigWritten, String> {
+) -> Out<tw_api::ConfigWritten> {
     state
         .control
         .put_config(text, base_version)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(error::text)
 }
 
 /// 光标落在配置的哪一段上。
 #[tauri::command]
-async fn config_at(
-    state: tauri::State<'_, AppState>,
-    offset: usize,
-) -> Result<tw_api::ConfigAt, String> {
-    state
-        .control
-        .config_at(offset)
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn config_at(state: tauri::State<'_, AppState>, offset: usize) -> Out<tw_api::ConfigAt> {
+    state.control.config_at(offset).await.map_err(text)
 }
 
 #[tauri::command]
-async fn config_history(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<tw_api::ConfigVersion>, String> {
-    state
-        .control
-        .config_history()
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn config_history(state: tauri::State<'_, AppState>) -> Out<Vec<tw_api::ConfigVersion>> {
+    state.control.config_history().await.map_err(text)
 }
 
 #[tauri::command]
 async fn rollback_config(
     state: tauri::State<'_, AppState>,
     version: String,
-) -> Result<tw_api::ConfigWritten, String> {
-    state
-        .control
-        .rollback(version)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::ConfigWritten> {
+    state.control.rollback(version).await.map_err(text)
 }
 
 #[tauri::command]
-async fn mcp_targets(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<tw_api::McpTargetView>, String> {
-    state
-        .control
-        .mcp_targets()
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn mcp_targets(state: tauri::State<'_, AppState>) -> Out<Vec<tw_api::McpTargetView>> {
+    state.control.mcp_targets().await.map_err(text)
 }
 
 /// **算一下，不落盘。**和接管一样，中间夹着用户看 diff 的那一下。
@@ -552,24 +510,16 @@ async fn mcp_targets(
 async fn mcp_plan(
     state: tauri::State<'_, AppState>,
     req: tw_api::McpOpRequest,
-) -> Result<tw_api::PlanView, String> {
-    state
-        .control
-        .mcp_plan(req)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::PlanView> {
+    state.control.mcp_plan(req).await.map_err(text)
 }
 
 #[tauri::command]
 async fn mcp_apply(
     state: tauri::State<'_, AppState>,
     req: tw_api::McpOpRequest,
-) -> Result<tw_api::AdoptResponse, String> {
-    state
-        .control
-        .mcp_apply(req)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::AdoptResponse> {
+    state.control.mcp_apply(req).await.map_err(text)
 }
 
 /// 攒一份诊断包，写到磁盘上，把路径交回去。
@@ -577,12 +527,8 @@ async fn mcp_apply(
 /// **写文件是这一侧的事，不是 core 的。**core 只负责把内容攒出来 ——
 /// 「往哪儿写」是个桌面概念，而它在无头运行时根本不存在。
 #[tauri::command]
-async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let text = state
-        .control
-        .diagnostics()
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Out<String> {
+    let text = state.control.diagnostics().await.map_err(text)?;
     let dir = data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| {
         tr!(
@@ -633,12 +579,8 @@ async fn replay_quote(
     state: tauri::State<'_, AppState>,
     id: i64,
     provider: String,
-) -> Result<tw_api::ReplayQuote, String> {
-    state
-        .control
-        .replay_quote(id, provider)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::ReplayQuote> {
+    state.control.replay_quote(id, provider).await.map_err(text)
 }
 
 /// **这一步花钱。**
@@ -647,12 +589,8 @@ async fn replay_run(
     state: tauri::State<'_, AppState>,
     id: i64,
     provider: String,
-) -> Result<tw_api::ReplayResult, String> {
-    state
-        .control
-        .replay_run(id, provider)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::ReplayResult> {
+    state.control.replay_run(id, provider).await.map_err(text)
 }
 
 #[tauri::command]
@@ -660,24 +598,20 @@ async fn sessions(
     state: tauri::State<'_, AppState>,
     from_ms: Option<i64>,
     to_ms: Option<i64>,
-) -> Result<Vec<tw_api::SessionView>, String> {
+) -> Out<Vec<tw_api::SessionView>> {
     state
         .control
         .sessions(window(from_ms, to_ms))
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 #[tauri::command]
 async fn session_detail(
     state: tauri::State<'_, AppState>,
     id: String,
-) -> Result<tw_api::SessionDetail, String> {
-    state
-        .control
-        .session_detail(&id)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::SessionDetail> {
+    state.control.session_detail(&id).await.map_err(text)
 }
 
 /// 扫一遍客户端配置面。**只读，什么都不存**。
@@ -685,12 +619,8 @@ async fn session_detail(
 async fn scan_configs(
     state: tauri::State<'_, AppState>,
     projects: Vec<String>,
-) -> Result<tw_api::ScanResponse, String> {
-    state
-        .control
-        .scan(&projects)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::ScanResponse> {
+    state.control.scan(projects).await.map_err(text)
 }
 
 /// 路由试算。**只算，不发任何请求。**
@@ -698,19 +628,13 @@ async fn scan_configs(
 async fn dry_run(
     state: tauri::State<'_, AppState>,
     req: tw_api::DryRunRequest,
-) -> Result<tw_api::DryRunResult, String> {
-    state
-        .control
-        .dry_run(req)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::DryRunResult> {
+    state.control.dry_run(req).await.map_err(text)
 }
 
 #[tauri::command]
-async fn list_clients(
-    state: tauri::State<'_, AppState>,
-) -> Result<tw_api::ClientsResponse, String> {
-    state.control.clients().await.map_err(|e| format!("{e:#}"))
+async fn list_clients(state: tauri::State<'_, AppState>) -> Out<tw_api::ClientsResponse> {
+    state.control.clients().await.map_err(text)
 }
 
 /// **算一下，不落盘。**接管和「算接管」是两个命令，中间夹着用户看
@@ -720,12 +644,12 @@ async fn plan_adopt(
     state: tauri::State<'_, AppState>,
     client: String,
     key_name: Option<String>,
-) -> Result<tw_api::PlanView, String> {
+) -> Out<tw_api::PlanView> {
     state
         .control
         .plan_adopt(client, key_name)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(text)
 }
 
 #[tauri::command]
@@ -733,24 +657,13 @@ async fn adopt_client(
     state: tauri::State<'_, AppState>,
     client: String,
     key_name: Option<String>,
-) -> Result<tw_api::AdoptResponse, String> {
-    state
-        .control
-        .adopt(client, key_name)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::AdoptResponse> {
+    state.control.adopt(client, key_name).await.map_err(text)
 }
 
 #[tauri::command]
-async fn plan_restore(
-    state: tauri::State<'_, AppState>,
-    client: String,
-) -> Result<tw_api::PlanView, String> {
-    state
-        .control
-        .plan_restore(&client)
-        .await
-        .map_err(|e| format!("{e:#}"))
+async fn plan_restore(state: tauri::State<'_, AppState>, client: String) -> Out<tw_api::PlanView> {
+    state.control.plan_restore(&client).await.map_err(text)
 }
 
 /// 要还原哪几个，以及各自用什么去指代。返回 `(id, 名字)`。
@@ -776,12 +689,8 @@ fn restore_targets(list: &tw_api::ClientsResponse) -> Vec<(&str, &str)> {
 /// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
 /// 文件被改坏了，不该让另外四个也留在接管状态。
 #[tauri::command]
-async fn restore_all(state: tauri::State<'_, AppState>) -> Result<Vec<RestoreOutcome>, String> {
-    let list = state
-        .control
-        .clients()
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+async fn restore_all(state: tauri::State<'_, AppState>) -> Out<Vec<RestoreOutcome>> {
+    let list = state.control.clients().await.map_err(text)?;
     let mut out = Vec::new();
     for (id, name) in restore_targets(&list) {
         let r = state.control.restore(id).await;
@@ -817,7 +726,7 @@ async fn uninstall(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     drop_data: bool,
-) -> Result<Vec<String>, String> {
+) -> Out<Vec<String>> {
     let mut log = Vec::new();
     for r in restore_all(state).await? {
         log.push(tr!(
@@ -875,24 +784,16 @@ async fn uninstall(
 async fn restore_client(
     state: tauri::State<'_, AppState>,
     client: String,
-) -> Result<tw_api::AdoptResponse, String> {
-    state
-        .control
-        .restore(&client)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<tw_api::AdoptResponse> {
+    state.control.restore(&client).await.map_err(text)
 }
 
 #[tauri::command]
 async fn diagnose_client(
     state: tauri::State<'_, AppState>,
     client: String,
-) -> Result<Vec<tw_api::FindingView>, String> {
-    state
-        .control
-        .why(&client)
-        .await
-        .map_err(|e| format!("{e:#}"))
+) -> Out<Vec<tw_api::FindingView>> {
+    state.control.why(&client).await.map_err(text)
 }
 
 /// 这个应用自己的信息。
@@ -947,7 +848,7 @@ fn update_state(app: tauri::AppHandle) -> UpdateView {
 }
 
 #[tauri::command]
-fn set_update_check(app: tauri::AppHandle, on: bool) -> Result<UpdateView, String> {
+fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView> {
     prefs::update(&data_dir(), |p| p.check_updates = on).map_err(|e| {
         tr!(
             format!("无法保存设置：{e:#}"),
@@ -984,10 +885,7 @@ fn app_language() -> LanguageView {
 
 /// 换语言。**开着的窗口当场换，托盘菜单跟着重建**，不用重启应用。
 #[tauri::command]
-fn set_language(
-    app: tauri::AppHandle,
-    setting: Option<i18n::Lang>,
-) -> Result<LanguageView, String> {
+fn set_language(app: tauri::AppHandle, setting: Option<i18n::Lang>) -> Out<LanguageView> {
     prefs::update(&data_dir(), |p| p.language = setting).map_err(|e| {
         tr!(
             format!("无法保存设置：{e:#}"),
@@ -1030,7 +928,7 @@ fn app_theme() -> ThemeView {
 /// 换外观。**当场生效** —— 换的是窗口的外观，网页里的
 /// `prefers-color-scheme` 跟着翻，不用重启也不用重画。
 #[tauri::command]
-fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Result<ThemeView, String> {
+fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Out<ThemeView> {
     prefs::update(&data_dir(), |p| p.theme = setting).map_err(|e| {
         tr!(
             format!("无法保存设置：{e:#}"),
@@ -1271,7 +1169,7 @@ pub(crate) fn present_update(app: &tauri::AppHandle, found: Found) {
 
 /// 「立即检查」。查到了就把更新窗口拉起来。
 #[tauri::command]
-async fn update_check(app: tauri::AppHandle) -> Result<Option<Found>, String> {
+async fn update_check(app: tauri::AppHandle) -> Out<Option<Found>> {
     let found = find(&app).await?;
     if let Some(f) = &found {
         present(&app, f.clone());
@@ -1301,11 +1199,11 @@ fn update_pending(app: tauri::AppHandle) -> Option<OfferView> {
 /// 命令由这里给出，不从界面传进来：webview 只能复制这一条，拿不到一个
 /// 往剪贴板里写任意内容的口子。
 #[tauri::command]
-fn update_copy_command(app: tauri::AppHandle) -> Result<(), String> {
+fn update_copy_command(app: tauri::AppHandle) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     app.clipboard()
         .write_text(update::BREW_UPGRADE)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string().into())
 }
 
 /// 重启之前在数据目录里留一句「从哪一版换过来的」，起来之后读它。
@@ -1391,7 +1289,7 @@ async fn update_install(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     hub: tauri::State<'_, Updates>,
-) -> Result<(), String> {
+) -> Out<()> {
     use std::sync::atomic::Ordering;
     use tauri_plugin_updater::UpdaterExt;
 
@@ -1407,7 +1305,8 @@ async fn update_install(
                     "This app is managed by Homebrew. Run this command in Terminal: {}",
                     update::BREW_UPGRADE
                 )
-            ),
+            )
+            .into(),
             _ => tr!(
                 "开发构建不执行自动更新",
                 "Development builds do not update automatically"
@@ -1486,7 +1385,8 @@ async fn update_install(
             return Err(tr!(
                 format!("安装失败：{e}"),
                 format!("Installation failed: {e}")
-            ));
+            )
+            .into());
         }
         // 走到这里说明插件没有照它自己说的那样退出。那就和其他平台一样，自己重启
     }
@@ -1597,7 +1497,7 @@ fn autostart_enabled(app: tauri::AppHandle) -> bool {
 /// (沙盒、权限、只读的 LaunchAgents 目录),那时勾选框必须弹回去。
 /// 回一个 `Ok(())` 让界面自己乐观地打上勾,是这类开关最常见的骗人方式。
 #[tauri::command]
-fn set_autostart(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
     if !autostart::allowed_in_this_build() {
         return Err(tr!(
             "开发构建不支持开机启动",
@@ -1806,7 +1706,7 @@ pub fn run() {
             let located = locate_core(&handle);
             // 控制面听在哪由平台决定，凭据这一次启动生成一个。**两样都只在
             // 这里定一次**，守护拿它去 spawn core，客户端拿它去连。
-            let at = control_endpoint();
+            let at = control_address();
             let token = token::generate();
             // 起好了没有，问控制面：`/status` 答得上来才算。半秒答不上这一次就
             // 算没答应，守护隔一会儿再问
@@ -2050,7 +1950,7 @@ pub fn run() {
 
 /// 心跳循环。
 async fn heartbeat_loop(
-    at: tw_api::control::Endpoint,
+    at: tw_api::control::Address,
     token: String,
     sup: Arc<Supervisor>,
     app: tauri::AppHandle,
@@ -2107,7 +2007,7 @@ async fn heartbeat_loop(
 /// **重新连上时补报一条「丢过事件」**（`EventsDropped`，条数记 0：丢了多少不知道）。
 /// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面和菜单栏要各自对一次账，
 /// 否则那段时间里结束的请求，会一直显示成进行中。
-async fn bridge_events(at: tw_api::control::Endpoint, token: String, app: tauri::AppHandle) {
+async fn bridge_events(at: tw_api::control::Address, token: String, app: tauri::AppHandle) {
     let mut connected_before = false;
     loop {
         let client = ControlClient::new(at.clone(), token.clone());
@@ -2278,7 +2178,7 @@ fn set_notice_mode(
     app: tauri::AppHandle,
     notices: tauri::State<'_, Arc<notices::Notices>>,
     mode: notices::Mode,
-) -> Result<notices::Mode, String> {
+) -> Out<notices::Mode> {
     prefs::update(&data_dir(), |p| p.notices = mode).map_err(|e| {
         tr!(
             format!("无法保存设置：{e:#}"),
@@ -2302,7 +2202,7 @@ fn set_menubar_style(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     style: menubar::Style,
-) -> Result<menubar::Style, String> {
+) -> Out<menubar::Style> {
     prefs::update(&data_dir(), |p| p.menubar = style).map_err(|e| {
         tr!(
             format!("无法保存设置：{e:#}"),
@@ -2460,8 +2360,8 @@ pub(crate) fn data_dir() -> PathBuf {
 /// 而 core 那边也拼一次 —— 两份能对上只是因为那一行短到不容易写错。
 /// Windows 上这个答案要分岔（那里没有 unix socket），两份各写一次就是两份
 /// 会漂，而漂掉的表现是界面连不上一个正在跑的网关。
-fn control_endpoint() -> tw_api::control::Endpoint {
-    tw_api::control::Endpoint::in_dir(&data_dir())
+fn control_address() -> tw_api::control::Address {
+    tw_api::control::Address::in_dir(&data_dir())
 }
 
 /// 起、看着、它死了、按策略决定下一步。

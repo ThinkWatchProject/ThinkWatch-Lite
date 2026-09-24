@@ -157,23 +157,28 @@ describe("工具调用防火墙命中的规则", () => {
 });
 
 describe("invoke 抛出来的东西", () => {
-  it("控制面的 JSON 按码翻", () => {
-    const body = JSON.stringify({
+  it("控制面的失败是一个带码的对象，按码翻", () => {
+    const e = {
       code: "control.upstream_not_found",
       args: { upstream: "官方" },
       text: "There is no upstream named `官方`.",
-    });
-    expect(inLang("zh", () => errorText(body))).toBe("未找到名为「官方」的上游。");
+    };
+    expect(inLang("zh", () => errorText(e))).toBe("未找到名为「官方」的上游。");
+    expect(inLang("en", () => errorText(e))).toBe("There is no upstream named `官方`.");
   });
 
-  it("不是 JSON 的就是一句现成的话", () => {
-    // 连不上 socket 之类：这些是界面自己那一侧写的，本来就翻好了
+  it("桌面端自己的失败码是空串，照原句显示", () => {
+    expect(inLang("zh", () => errorText({ code: "", text: "core 未在运行" }))).toBe("core 未在运行");
+  });
+
+  it("字符串和 Error 就是一句现成的话", () => {
+    // Tauri 自己拒掉的调用（命令不存在、没有权限）是字符串
     expect(errorText("无法连接控制面")).toBe("无法连接控制面");
     expect(errorText(new Error("boom"))).toBe("boom");
   });
 
-  it("长得像 JSON 但不是消息的，原样显示", () => {
-    expect(errorText('{"不是": "一条消息"}')).toBe('{"不是": "一条消息"}');
-    expect(errorText("{ 半个")).toBe("{ 半个");
+  it("字符串不再当 JSON 解析", () => {
+    const s = '{"code":"control.shutdown","text":"shutting down"}';
+    expect(inLang("zh", () => errorText(s))).toBe(s);
   });
 });

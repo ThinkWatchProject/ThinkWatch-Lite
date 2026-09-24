@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Field } from "@/ui/field";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
+import { errorText } from "@/i18n/core.i18n";
 import { languageText } from "./Language.i18n";
 
 /** 现在用的、设置里选的（`null` 是跟随系统）、系统的 */
@@ -43,7 +44,7 @@ export function LanguageSection() {
               // 事件也会到，这里先换：不让界面等一趟往返
               setLang(next.current);
             } catch (err) {
-              toast.error(typeof err === "string" ? err : t.saveFailed);
+              toast.error(errorText(err) || t.saveFailed);
             }
           }}
         >

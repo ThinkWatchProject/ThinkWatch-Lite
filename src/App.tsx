@@ -377,7 +377,6 @@ export default function App() {
     let alive = true;
     void (async () => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error
         const d = await invoke<SessionDetail>("session_detail", {
           id: openSession,
         });

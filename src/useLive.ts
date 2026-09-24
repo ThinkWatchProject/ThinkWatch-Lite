@@ -273,7 +273,6 @@ export function useLive(active: boolean, windowMs: number) {
           是**结束**的时刻；带长思考的请求跑上一两分钟是常事，它开始于
           窗口之外、结束在窗口之内，也该补上。
         */
-        // Tauri 的 invoke 用字符串 reject，不是 Error
         const rows = await invoke<HistoryRow[]>("recent_requests", {
           limit: 2000,
           fromMs: Date.now() - 2 * windowMs,

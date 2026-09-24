@@ -81,7 +81,7 @@ export default function Config({
                 );
               } catch (err) {
                 setAutostart(!want);
-                toast.error(typeof err === "string" ? err : String(err));
+                toast.error(errorText(err));
               }
             }}
           />
@@ -206,7 +206,6 @@ function Diagnostics() {
           try {
             setPath(await invoke<string>("save_diagnostics"));
           } catch (e) {
-            // Tauri 的 invoke 用字符串 reject，不是 Error
             toast.error(errorText(e));
           } finally {
             setBusy(false);

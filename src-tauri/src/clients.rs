@@ -6,11 +6,7 @@
 
 use crate::AppState;
 
-type Out<T> = Result<T, String>;
-
-fn text(e: anyhow::Error) -> String {
-    format!("{e:#}")
-}
+use crate::error::{Out, text};
 
 fn unknown(id: &str) -> String {
     tr!(
@@ -53,7 +49,7 @@ pub async fn copy_client_endpoint(
         .ok_or_else(|| unknown(&id))?;
     app.clipboard()
         .write_text(endpoint)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string().into())
 }
 
 /// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
@@ -66,7 +62,7 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
         .iter()
         .find(|c| c.id == id)
         .ok_or_else(|| unknown(&id))?;
-    reveal(&c.real)
+    Ok(reveal(&c.real)?)
 }
 
 /// 把文件管理器打开到这个文件上，并且**选中它**。
@@ -75,7 +71,7 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
 /// —— `open` 那个命令在那里根本不存在，而类型系统对此无话可说。这类坏法 CI
 /// 也抓不到，它只会在用户点下那个按钮的时候出现。
 #[cfg(target_os = "macos")]
-fn reveal(path: &str) -> Out<()> {
+fn reveal(path: &str) -> Result<(), String> {
     absolute(path)?;
     // **写全路径**，和 `dmg.rs` 里的 hdiutil 一样：按 `PATH` 找的话，谁在 `PATH`
     // 前面放一个同名程序，跑起来的就是它
@@ -96,7 +92,7 @@ fn reveal(path: &str) -> Out<()> {
 }
 
 #[cfg(windows)]
-fn reveal(path: &str) -> Out<()> {
+fn reveal(path: &str) -> Result<(), String> {
     absolute(path)?;
     // `/select,<路径>` 中间**没有空格**：explorer 把这一整串当成一个参数，
     // 写成 `/select, path` 的话它只会打开「文档」。
@@ -136,7 +132,7 @@ fn explorer() -> std::path::PathBuf {
 /// 只交给文件管理器一个绝对路径。路径来自 core，本来就是绝对的；这一道是为了
 /// 一个以 `-` 开头的字符串永远不会被 `open` 当成选项
 #[cfg(any(target_os = "macos", windows))]
-fn absolute(path: &str) -> Out<()> {
+fn absolute(path: &str) -> Result<(), String> {
     if std::path::Path::new(path).is_absolute() {
         Ok(())
     } else {
@@ -149,7 +145,7 @@ fn absolute(path: &str) -> Out<()> {
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-fn reveal(path: &str) -> Out<()> {
+fn reveal(path: &str) -> Result<(), String> {
     Err(tr!(
         format!("这个平台上还不能打开文件管理器：{path}"),
         format!("Opening a file manager is not supported on this platform yet: {path}")

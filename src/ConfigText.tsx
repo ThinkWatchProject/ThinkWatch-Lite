@@ -118,7 +118,6 @@ export default function ConfigTextMode({
   async function save() {
     setBusy(true);
     try {
-      // Tauri 的 invoke 用字符串 reject，不是 Error
       await invoke("put_config", { text: draft, baseVersion: base.current });
       base.current = "";
       onSaved();
