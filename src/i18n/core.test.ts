@@ -94,13 +94,6 @@ describe("core 的错误：码加参数", () => {
       text: "Upstream `官方` has no OAuth configured.",
     };
     expect(inLang("zh", () => coreText(own))).toBe("上游「官方」未配置 OAuth。");
-    // Z.ai 登录卡在哪一步
-    const step = {
-      code: "control.account_service_refused",
-      args: { step: "create_key", why: "quota" },
-      text: "Creating an API key: The account service refused the request: quota",
-    };
-    expect(inLang("zh", () => coreText(step))).toBe("创建 API 密钥：账号服务拒绝了请求：quota");
   });
 
   it("比较式写错时带上规则名", () => {

@@ -928,19 +928,8 @@ export function ruleWhy(rule: string, text: string): string {
   return word(RULE_WHY, rule) ?? text;
 }
 
-/** Z.ai 登录卡在哪一步：core 的 `step` 参数，和它英文原句里的说法 */
-const ZAI_STEP: Record<string, { en: string; zh: string }> = {
-  authorize_url: { en: "Asking for an authorization address", zh: "获取授权地址" },
-  wait_authorization: { en: "Waiting for the authorization", zh: "等待授权" },
-  exchange_token: { en: "Exchanging the sign-in for an account token", zh: "用登录换取账号令牌" },
-  read_account: { en: "Reading the account", zh: "读取账号" },
-  list_keys: { en: "Listing the account's API keys", zh: "列出账号的 API 密钥" },
-  create_key: { en: "Creating an API key", zh: "创建 API 密钥" },
-  read_key: { en: "Reading the API key", zh: "读取 API 密钥" },
-};
-
 /**
- * 原因外面套的那一层场合：哪个上游的凭据、哪个代理的密码、登录的哪一步。
+ * 原因外面套的那一层场合：哪个上游的凭据、哪个代理的密码、写回哪个上游的凭据。
  *
  * **码是原因的码**（core 的 `Msg::in_context`）：场合只多一个参数，英文
  * 前面多一句「`{lead}: `」。所以这边按原因的码翻，再把场合接回前面。
@@ -949,7 +938,7 @@ const ZAI_STEP: Record<string, { en: string; zh: string }> = {
  * 自己也可能带着（`gw.oauth.not_configured` 就带），只看参数会把一句
  * 「上游某某的凭据」凭空加到前面。场合可以套好几层，由外往里一层层剥。
  */
-const CONTEXT: { arg: string; en: (v: string) => string | undefined; zh: (v: string) => string }[] = [
+const CONTEXT: { arg: string; en: (v: string) => string; zh: (v: string) => string }[] = [
   // 整份配置校验时，凭据那一条说是哪个上游的
   { arg: "upstream", en: (v) => `the credential of upstream \`${v}\``, zh: (v) => `上游「${v}」的凭据` },
   {
@@ -973,7 +962,6 @@ const CONTEXT: { arg: string; en: (v: string) => string | undefined; zh: (v: str
       `after writing the new credential for upstream \`${v}\` the configuration could not be read, so nothing was written`,
     zh: (v) => `写入上游「${v}」的新凭据后无法读取配置，未写入任何内容`,
   },
-  { arg: "step", en: (v) => ZAI_STEP[v]?.en, zh: (v) => ZAI_STEP[v]?.zh ?? v },
 ];
 
 /**
@@ -1003,10 +991,9 @@ export function coreText(m: Msg | string | null | undefined): string {
   for (let rest = m.text; ; ) {
     const hit = CONTEXT.flatMap((c) => {
       const v = args[c.arg];
-      const en = v === undefined ? undefined : c.en(v);
-      return v !== undefined && en !== undefined && rest.startsWith(`${en}: `)
-        ? [{ zh: c.zh(v), en }]
-        : [];
+      if (v === undefined) return [];
+      const en = c.en(v);
+      return rest.startsWith(`${en}: `) ? [{ zh: c.zh(v), en }] : [];
     })[0];
     if (!hit) break;
     leads.push(`${hit.zh}：`);

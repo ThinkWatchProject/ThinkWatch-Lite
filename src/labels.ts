@@ -12,9 +12,13 @@ import {
   usd,
   type AttemptView,
   type ConditionView,
+  type ConfigOrigin,
+  type ConfigStage,
+  type GroupKind,
   type MismatchView,
   type ReplayQuote,
   type SetView,
+  type TakesEffect,
   type TranslatedView,
 } from "./types";
 import { PROTOCOLS } from "./upstreams/labels";
@@ -29,7 +33,7 @@ import { labelsText } from "./labels.i18n";
 
 // ---------------------------------------------------------------- 路由
 
-export const GROUP_KINDS: { id: string; label: string }[] = (
+export const GROUP_KINDS: { id: GroupKind; label: string }[] = (
   ["fallback", "select", "load-balance", "url-test", "cheapest"] as const
 ).map((id) => ({
   id,
@@ -38,8 +42,8 @@ export const GROUP_KINDS: { id: string; label: string }[] = (
   },
 }));
 
-export function groupKindLabel(kind: string): string {
-  return GROUP_KINDS.find((k) => k.id === kind)?.label ?? kind;
+export function groupKindLabel(kind: GroupKind): string {
+  return textOf(labelsText).groupKinds[kind];
 }
 
 /** 内置策略组在配置里的名字。**界面上不出现它**，显示为「全部上游」 */
@@ -175,7 +179,7 @@ export function quoteText(q: ReplayQuote): string {
 
 // ---------------------------------------------------------------- 配置
 
-export function originLabel(origin: string): string {
+export function originLabel(origin: ConfigOrigin): string {
   const t = textOf(labelsText).origins;
   switch (origin) {
     case "ui":
@@ -188,13 +192,11 @@ export function originLabel(origin: string): string {
       return t.rollback;
     case "rotation":
       return t.rotation;
-    default:
-      return origin;
   }
 }
 
 /** 配置在哪一层没通过，后面接「错误」 */
-export function stageLabel(stage: string): string {
+export function stageLabel(stage: ConfigStage): string {
   const t = textOf(labelsText).stages;
   switch (stage) {
     case "syntax":
@@ -203,8 +205,6 @@ export function stageLabel(stage: string): string {
       return t.schema;
     case "semantics":
       return t.semantics;
-    default:
-      return stage;
   }
 }
 
@@ -218,11 +218,9 @@ export function secretLabel(secret: string): string {
 
 // ---------------------------------------------------------------- 客户端接管
 
-export function takesEffectText(t: string): string {
+export function takesEffectText(t: TakesEffect): string {
   const x = textOf(labelsText).takesEffect;
-  return t === "immediately"
-    ? x.immediately
-    : x.onRestart;
+  return t === "immediately" ? x.immediately : x.onRestart;
 }
 
 /** 只查证过字段名的客户端要说出来。实测过的不用说，接管后在本机收到过请求的也不用说 */

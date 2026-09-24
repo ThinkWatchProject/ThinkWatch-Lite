@@ -11,12 +11,15 @@ import type {
   L1Result,
   L1Skip,
   L1Stage,
+  ModelListStatus,
+  ModelSource,
   PriceFields,
   PriceSourceView,
   Protocol,
   ProviderView,
   ProxyFault,
   ProxyKind,
+  ServeSkip,
 } from "@/types";
 import { labelsText } from "./labels.i18n";
 
@@ -115,14 +118,14 @@ export function authHeaderParts(header: string): { name: string; prefix: string 
  * 模型清单从哪儿来。**没拿到清单时说为什么**：还在获取、上游不提供、
  * 没问到 —— 三种情况要做的事不一样，不能都叫「未获取」。
  */
-export function modelSourceLabel(source: string, status?: string): string {
+export function modelSourceLabel(source: ModelSource, status?: ModelListStatus): string {
   const t = textOf(labelsText).models;
   switch (source) {
     case "discovered":
       return t.discovered;
     case "manual":
       return t.manual;
-    default:
+    case "none":
       return status === "failed" ? t.failed : status === "no_list" ? t.noList : t.notFetched;
   }
 }
@@ -198,8 +201,7 @@ export function proxyFaultText(f: ProxyFault): string {
 }
 export function l1StageLabel(s: L1Stage): string {
   const t = textOf(labelsText);
-  const steps: Record<string, string> = t.l1Steps;
-  const step = steps[s.step] ?? s.step;
+  const step = t.l1Steps[s.step];
   return s.peer === "proxy" && s.step !== "handshake" ? t.l1ToProxy(step) : step;
 }
 
@@ -213,8 +215,6 @@ export function l1SkipText(s: L1Skip): string {
       return t.ip_address;
     case "proxy_resolves":
       return t.proxy_resolves;
-    default:
-      return s.reason;
   }
 }
 
@@ -226,7 +226,7 @@ export function l1ErrorText(r: L1Result): string {
 }
 
 /** 候选上游被跳过的原因 */
-export function skipLabel(reason: string): string {
+export function skipLabel(reason: ServeSkip): string {
   const t = textOf(labelsText).skips;
   switch (reason) {
     case "disabled":
@@ -235,8 +235,6 @@ export function skipLabel(reason: string): string {
       return t.out_of_scope;
     case "not_offered":
       return t.not_offered;
-    default:
-      return reason;
   }
 }
 
