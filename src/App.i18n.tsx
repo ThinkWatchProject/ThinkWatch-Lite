@@ -66,7 +66,9 @@ export const appText = messages(
     loadingConfig: "读取配置中…",
 
     // 过滤条
-    search: `搜索路径、密钥、上游、错误…  ${modKey}${isMac ? "" : "+"}F`,
+    // Windows 上键名是「Ctrl+F」，比「⌘F」长；那边字号又大 1px，中文带着「…」
+    // 会超出输入框 7px（量过：241 对 234）。去掉省略号就放得下
+    search: isMac ? "搜索路径、密钥、上游、错误…  ⌘F" : `搜索路径、密钥、上游、错误  ${modKey}+F`,
     failedOnly: "仅显示失败",
     groupBySession: "按会话归组",
     unpricedOnly: "仅显示无法计价",
