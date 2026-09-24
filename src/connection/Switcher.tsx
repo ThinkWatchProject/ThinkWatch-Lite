@@ -10,6 +10,7 @@ import {
 } from "@/ui/dropdown-menu";
 import { IconLocal, IconRemote } from "@/ui/icons";
 import { Tip } from "@/ui/tip";
+import { StatusDot } from "@/ui/status-dot";
 import { textOf, useText } from "@/i18n";
 import { clientGateway, currentProfile, type ConnView, type Profile } from "./api";
 import { connText } from "./connection.i18n";
@@ -110,14 +111,13 @@ export function Switcher({
         <div
           className={cn(
             "flex items-center gap-1.5 tw-label",
-            status.tone === "ok"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : status.tone === "warn"
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-red-600 dark:text-red-400",
+            status.tone === "ok" ? "text-success" : status.tone === "warn" ? "text-warning" : "text-destructive",
           )}
         >
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+          <StatusDot
+            tone={status.tone === "ok" ? "ok" : status.tone === "warn" ? "warn" : "error"}
+            pulse={status.tone === "warn"}
+          />
           {/* 展开时写全，收起时 80px 也放得下的短写 */}
           <span className="group-data-[collapsible=icon]:hidden">{status.text}</span>
           <span className="hidden group-data-[collapsible=icon]:inline">{status.short}</span>

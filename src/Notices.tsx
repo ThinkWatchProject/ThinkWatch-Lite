@@ -123,7 +123,7 @@ export function Notices({
               className={cn(
                 "rounded-full px-1.5 tabular-nums tw-label",
                 urgent
-                  ? "bg-destructive text-destructive-foreground"
+                  ? "bg-destructive text-white"
                   : "bg-muted text-muted-foreground",
               )}
             >
