@@ -130,10 +130,10 @@ pub async fn test(target: &Target) -> Result<ServerInfo, ConnectError> {
             let s = tokio::time::timeout(LOCAL_WITHIN, c.status())
                 .await
                 .map_err(|_| ConnectError::Timeout {
-                    addr: tr!("本机", "This Mac").into(),
+                    addr: super::store::local_name().into(),
                 })?
                 .map_err(|_| ConnectError::Unreachable {
-                    addr: tr!("本机", "This Mac").into(),
+                    addr: super::store::local_name().into(),
                 })?;
             Ok(ServerInfo {
                 core_version: s.version,

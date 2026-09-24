@@ -47,7 +47,10 @@ export function shortReason(e: ConnectError): string {
   }
 }
 
-/** 本机那一条的名字按界面语言写，远程的用用户起的名字 */
+/**
+ * 连接的名字：**界面上显示连接名都经它**。本机那一条按界面语言写（`connText.local`，
+ * 英文按平台），不用 Rust 给的 —— 换语言时这里当场换，不等下一次推送；远程的用用户起的名字
+ */
 export function profileName(p: { local: boolean; name: string }): string {
   return p.local ? textOf(connText).local : p.name;
 }

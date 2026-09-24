@@ -147,7 +147,7 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
         connections: vec![
             Connection {
                 id: "local".into(),
-                name: "本机".into(),
+                name: thinkwatch_lite_lib::connection::store::local_name().into(),
                 current: name != "remote",
             },
             Connection {

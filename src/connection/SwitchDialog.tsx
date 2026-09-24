@@ -17,6 +17,7 @@ import { errorText } from "@/i18n/core.i18n";
 import type { Retargeted } from "@/types";
 import { connApi, type Adopted, type ConnectError, type Profile, type ServerInfo, type SwitchError } from "./api";
 import { connText } from "./connection.i18n";
+import { profileName } from "./describe";
 import { TestResult } from "./ProfileDialog";
 import { RetargetReport } from "./Remote";
 import { remoteText } from "./remote.i18n";
@@ -36,6 +37,7 @@ type Stage =
  * 要停、之后各页改的是服务器上的配置。
  *
  * 从远程切回本机不走这里，直接切：本机 core 拉起来，指着服务器的客户端不受影响。
+ * 名字照样经 `profileName` 取，和别处说的是同一个名字。
  */
 export function SwitchDialog({
   target,
@@ -52,6 +54,7 @@ export function SwitchDialog({
   const t = useText(connText);
   const rt = useText(remoteText);
   const common = useText(commonText);
+  const name = profileName(target);
   const [stage, setStage] = useState<Stage>(
     tested ? { kind: "confirm", info: tested, adopted: null } : { kind: "testing" },
   );
@@ -103,7 +106,7 @@ export function SwitchDialog({
         if (alive.current) setStage({ kind: "retargeted", result: r });
         return;
       }
-      if (r && r.synced.length > 0) notify.success(rt.retargeted(target.name, r.synced.map((s) => s.name)));
+      if (r && r.synced.length > 0) notify.success(rt.retargeted(name, r.synced.map((s) => s.name)));
       onClose();
     } catch (e) {
       const err = e as SwitchError;
@@ -123,12 +126,12 @@ export function SwitchDialog({
 
   const title =
     stage.kind === "testing"
-      ? t.testingTitle(target.name)
+      ? t.testingTitle(name)
       : stage.kind === "failed"
-        ? t.failedTitle(target.name)
+        ? t.failedTitle(name)
         : stage.kind === "retargeted"
-          ? t.switchedTo(target.name)
-          : t.confirmTitle(target.name);
+          ? t.switchedTo(name)
+          : t.confirmTitle(name);
   const adopted = stage.kind === "confirm" ? stage.adopted : null;
 
   return (
@@ -149,7 +152,7 @@ export function SwitchDialog({
             </Banner>
           ))}
 
-        {stage.kind === "retargeted" && <RetargetReport name={target.name} result={stage.result} />}
+        {stage.kind === "retargeted" && <RetargetReport name={name} result={stage.result} />}
 
         {stage.kind === "confirm" && (
           <ul className="flex flex-col gap-3 tw-body">
@@ -161,11 +164,11 @@ export function SwitchDialog({
                     <span className="font-medium">
                       {t.adoptedWarn(adopted.count, adopted.local_addr)}
                     </span>
-                    {t.adoptedWarnNext(target.name)}
+                    {t.adoptedWarnNext(name)}
                   </p>
                   <label className="flex items-center gap-2">
                     <Checkbox checked={retarget} disabled={busy} onCheckedChange={(v) => setRetarget(v === true)} />
-                    {t.retarget(target.name)}
+                    {t.retarget(name)}
                   </label>
                 </div>
               </li>
@@ -179,7 +182,7 @@ export function SwitchDialog({
             </li>
             <li className="flex gap-2.5 text-muted-foreground">
               <InfoIcon className="mt-0.5 size-4 shrink-0" />
-              <p>{t.remoteConfig(target.name)}</p>
+              <p>{t.remoteConfig(name)}</p>
             </li>
           </ul>
         )}

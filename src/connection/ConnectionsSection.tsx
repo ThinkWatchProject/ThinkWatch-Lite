@@ -261,7 +261,7 @@ function DeleteDialog({ profile, onClose }: { profile: Profile | null; onClose: 
     <AlertDialog open={profile !== null} onOpenChange={(o) => !o && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="tw-title">{profile ? t.deleteTitle(profile.name) : ""}</AlertDialogTitle>
+          <AlertDialogTitle className="tw-title">{profile ? t.deleteTitle(profileName(profile)) : ""}</AlertDialogTitle>
           <AlertDialogDescription>{t.deleteBody}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
