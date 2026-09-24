@@ -3,8 +3,8 @@
 //! # 为什么这条不能只靠单元测试
 //!
 //! 单元测试能证明「连不上时说的是哪句话」，证明不了**连得上**。而这一侧新加的
-//! 那几样 —— 凭据从哪儿来、怎么交给 core、每个请求带不带得对、控制面的地址由
-//! 谁说了算 —— 只有在两个真进程之间才成立或者不成立。
+//! 那几样 —— 钥匙从哪儿读、每条连接的握手、控制面的地址由谁说了算、换钥匙之后
+//! 接不接得上 —— 只有在两个真进程之间才成立或者不成立。
 //!
 //! 它接的是包里那一份 `resources/twcore`，也就是**发出去的包里装的那一个**。
 //! 换句话说这条测试同时在问：桌面端钉的这一版 core，和桌面端自己编进去的那份
@@ -40,7 +40,6 @@ fn core_binary() -> PathBuf {
 struct Core {
     child: Child,
     home: PathBuf,
-    token: String,
 }
 
 /// 同一个测试二进制里的第几个 core。
@@ -70,7 +69,6 @@ impl Core {
         let home = std::env::temp_dir().join(format!("tw-ctl-{}-{nth}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
-        let token = "test-token-not-a-real-one".to_string();
         let child = Command::new(core_binary())
             .args(["serve", "--config"])
             .arg(home.join("config.yaml"))
@@ -78,26 +76,45 @@ impl Core {
             // core、另一个检出里同时在跑的这条测试、这台机器上别的什么
             .args(["--port", &free_port().to_string()])
             .env("THINKWATCH_HOME", &home)
-            .env(tw_api::control::TOKEN_ENV, &token)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("起不来 twcore");
-        Self { child, home, token }
+        Self { child, home }
+    }
+
+    /// core 的配置。**钥匙由 core 写进去**，桌面端从这里读
+    fn config(&self) -> PathBuf {
+        self.home.join("config.yaml")
+    }
+
+    /// 一份写着另一把钥匙的配置：拿它去连，就是「钥匙不对」
+    fn wrong_key(&self) -> PathBuf {
+        let p = self.home.join("wrong.yaml");
+        std::fs::write(
+            &p,
+            format!("listen:\n  control:\n    key: \"{}\"\n", "0f".repeat(32)),
+        )
+        .unwrap();
+        p
     }
 
     fn address(&self) -> Address {
         Address::in_dir(&self.home)
     }
 
-    fn client(&self, token: &str) -> ControlClient {
-        ControlClient::new(self.address(), token.to_string())
+    fn client(&self, key_file: PathBuf) -> ControlClient {
+        ControlClient::new(self.address(), key_file)
+    }
+
+    fn ok(&self) -> ControlClient {
+        self.client(self.config())
     }
 
     /// 等到它答得上话。**等的是 `/status` 有应答，不是 socket 文件出现** ——
     /// 后者在它还没把路由挂上去的时候就已经在了。
     async fn wait_ready(&self) {
-        let c = self.client(&self.token);
+        let c = self.ok();
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
             if c.ping(Duration::from_millis(500)).await.is_ok() {
@@ -117,18 +134,17 @@ impl Drop for Core {
     }
 }
 
-/// 带着对的凭据连得上，带着错的连不上。
+/// 拿着配置里的钥匙连得上，拿着别的钥匙连不上。
 ///
-/// 后半条是这里真正要钉住的：**漏带凭据的样子是一切照常** —— 在 macOS 上
-/// socket 的权限本来就挡住了别人，于是「忘了加那个头」要到 Windows 上才发作，
-/// 而那时表现为界面连不上一个正在跑的网关。
+/// 后半条是这里真正要钉住的：**握手漏掉的样子是一切照常** —— 在 macOS 上 socket
+/// 的权限本来就挡住了别人，于是门没关上要到 Windows 上才发作。
 #[tokio::test]
-async fn the_desktop_side_gets_in_with_its_token_and_not_without() {
+async fn the_desktop_side_gets_in_with_the_key_and_not_without() {
     let core = Core::start();
     core.wait_ready().await;
 
-    let ok = core.client(&core.token).status().await;
-    assert!(ok.is_ok(), "带着对的凭据反而连不上：{:?}", ok.err());
+    let ok = core.ok().status().await;
+    assert!(ok.is_ok(), "拿着对的钥匙反而连不上：{:?}", ok.err());
     let status = ok.unwrap();
     assert_eq!(
         status.api_version,
@@ -136,40 +152,38 @@ async fn the_desktop_side_gets_in_with_its_token_and_not_without() {
         "桌面端编进去的协议版本和它钉的那版 core 对不上"
     );
 
-    let wrong = core.client("not-the-token").status().await;
-    assert!(wrong.is_err(), "凭据不对居然进去了");
+    let wrong = core.client(core.wrong_key()).status().await;
+    let e = format!("{:#}", wrong.expect_err("钥匙不对居然进去了"));
+    assert!(e.contains("密钥") || e.contains("key"), "{e}");
 }
 
-/// 写请求也要带凭据。
+/// 写请求也走同一条握手。
 ///
-/// **读和写是两条代码路径**（`get` 和 `send_json`），2026.9.10 就是只有读的
-/// 那条带了：界面照常显示数据，而保存、新建、接管全部被拒。这里用
-/// `/shutdown` 当那个写请求 —— 它走的正是 `send_json`，又不会改任何配置。
+/// **读和写是两条代码路径**，2026.9.10 就是只有读的那条带了凭据：界面照常显示
+/// 数据，而保存、新建、接管全部被拒。这里用 `/shutdown` 当那个写请求，它不会改
+/// 任何配置。
 #[tokio::test]
-async fn writes_carry_the_token_too() {
+async fn writes_go_through_the_handshake_too() {
     let core = Core::start();
     core.wait_ready().await;
 
-    let wrong = core.client("not-the-token").shutdown().await;
-    assert!(wrong.is_err(), "凭据不对的写请求居然进去了");
+    let wrong = core.client(core.wrong_key()).shutdown().await;
+    assert!(wrong.is_err(), "钥匙不对的写请求居然进去了");
 
-    let ok = core.client(&core.token).shutdown().await;
-    assert!(ok.is_ok(), "带着对的凭据写请求被拒：{:?}", ok.err());
+    let ok = core.ok().shutdown().await;
+    assert!(ok.is_ok(), "拿着对的钥匙写请求被拒：{:?}", ok.err());
 }
 
-/// 事件流也要带凭据。
-///
-/// **它和别的请求不是同一条代码路径**（长连接那条自己拼请求），所以漏掉那个头
-/// 的话，界面上的表现是「什么都能点，但一切都不自己更新」—— 一种很难往凭据上
-/// 联想的坏法。
+/// 事件流也走握手。**它和别的请求不是同一条代码路径**（长连接那条自己拼请求），
+/// 坏了的样子是「什么都能点，但一切都不自己更新」
 #[tokio::test]
-async fn the_event_stream_carries_the_token_too() {
+async fn the_event_stream_goes_through_the_handshake_too() {
     let core = Core::start();
     core.wait_ready().await;
 
     let opened = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let o = opened.clone();
-    let c = core.client(&core.token);
+    let c = core.ok();
     // 流是长连接，不会自己结束 —— 给它一点时间把头发出去、把响应收回来
     let _ = tokio::time::timeout(
         Duration::from_secs(10),
@@ -181,14 +195,52 @@ async fn the_event_stream_carries_the_token_too() {
     .await;
     assert!(
         opened.load(std::sync::atomic::Ordering::SeqCst),
-        "事件流没开起来 —— 多半是那个请求没带凭据"
+        "事件流没开起来"
     );
 }
 
+/// 换钥匙（`twcore control-key --rotate`）之后，**下一条连接就用新的**：桌面端每次
+/// 连接都现读配置，不用重启。用旧钥匙开着的事件流被 core 关掉，重连时读到的是新的
+#[tokio::test]
+async fn after_the_key_is_rotated_the_next_connection_gets_in() {
+    let core = Core::start();
+    core.wait_ready().await;
+    let before = tw_link::read_key(&core.config()).unwrap();
+
+    let rotated = Command::new(core_binary())
+        .args(["control-key", "--rotate", "--config"])
+        .arg(core.config())
+        .env("THINKWATCH_HOME", &core.home)
+        .output()
+        .expect("twcore control-key 跑不起来");
+    assert!(rotated.status.success(), "{rotated:?}");
+    let after = tw_link::read_key(&core.config()).unwrap();
+    assert!(after != before, "钥匙没换");
+
+    // core 一秒之内换上新钥匙
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match core.ok().status().await {
+            Ok(_) => break,
+            Err(e) => assert!(Instant::now() < deadline, "换钥匙之后一直连不上：{e:#}"),
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    // 旧钥匙进不去了
+    let old = core.home.join("old.yaml");
+    std::fs::write(
+        &old,
+        format!("listen:\n  control:\n    key: \"{}\"\n", before.to_hex()),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while core.client(old.clone()).status().await.is_ok() {
+        assert!(Instant::now() < deadline, "旧钥匙还进得去");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 /// 控制面拒绝时，**带着 core 的码回来**，不是一段要界面再解析一遍的文本。
-///
-/// 401 用的是 core 最外层替框架回的那条（没带凭据），所以这里顺带钉住了
-/// 「框架回的失败也是 `ErrorBody`」。
 #[tokio::test]
 async fn a_refusal_comes_back_with_its_code() {
     use thinkwatch_lite_lib::control::Refused;
@@ -196,14 +248,8 @@ async fn a_refusal_comes_back_with_its_code() {
     let core = Core::start();
     core.wait_ready().await;
 
-    let e = core.client("not-the-token").status().await.unwrap_err();
-    let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
-        panic!("401 没按 ErrorBody 读出来：{e:#}");
-    };
-    assert!(!m.code.is_empty(), "{m:?}");
-
     let e = core
-        .client(&core.token)
+        .ok()
         .call::<tw_api::ep::RequestDetail>(&["987654321"], &())
         .await
         .unwrap_err();
@@ -221,7 +267,7 @@ async fn adoption_gets_its_gateway_and_its_key_from_core() {
 
     let core = Core::start();
     core.wait_ready().await;
-    let c = core.client(&core.token);
+    let c = core.ok();
 
     let base = thinkwatch_lite_lib::clients::gateway_base(&c, "127.0.0.1")
         .await
@@ -255,7 +301,7 @@ async fn the_generic_call_speaks_every_shape() {
 
     let core = Core::start();
     core.wait_ready().await;
-    let c = core.client(&core.token);
+    let c = core.ok();
 
     // GET + 查询串
     let rows = c

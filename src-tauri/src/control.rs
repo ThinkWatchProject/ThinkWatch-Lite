@@ -4,9 +4,10 @@
 //! 系统给的；Windows 上没有对等物，控制面落在回环端口上，而本机任意进程都
 //! 连得上一个回环端口。
 //!
-//! **凭据两边都带。**回环那一侧它是唯一的门，而只在一个平台上生效的防线没
-//! 人日常测 —— 两条路走同一份代码，才不会有一半从来没被跑过。凭据怎么来的
-//! 见 `crate::token`。
+//! **每条连接都先握手**（`tw-link`，Noise NNpsk0），钥匙是 config.yaml 里的
+//! `listen.control.key`。回环那一侧它是唯一的门，而只在一个平台上生效的防线没
+//! 人日常测 —— socket、回环、远程端口走同一份代码，才不会有一半从来没被跑过。
+//! **这一侧只读钥匙，不写**：由 core 生成、补上。
 //!
 //! **端点只有一个入口：[`ControlClient::call`]。**方法、路径、请求和响应的类型
 //! 都来自 `tw_api::ep` 里那一行声明，这里不再为每个端点各写一个方法 —— 以前
@@ -41,6 +42,110 @@ fn read_port(f: &Path) -> Result<u16> {
     Ok(text.trim().parse::<u16>()?)
 }
 
+fn not_running(e: &dyn std::fmt::Display) -> anyhow::Error {
+    tracing::debug!("控制面连不上：{e}");
+    anyhow::anyhow!(tr!(
+        "core 未在运行，或尚未启动完成",
+        "core is not running, or has not finished starting"
+    ))
+}
+
+/// 应用自己的版本，握手时报给 core（只进它的日志）
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// 本机那份配置里的钥匙。
+///
+/// **文件不在、还没有这一项，都当作 core 还没好**：core 在控制面开始监听之前才把
+/// 钥匙写进去，刚把它拉起来的那一小段里这两种都是常态，交给上面本来就有的重试。
+/// 写了但不是一把钥匙，是配置坏了：说出来
+fn local_key(config: &Path) -> Result<tw_link::ControlKey> {
+    use tw_link::KeyReadError;
+    tw_link::read_key(config).map_err(|e| match e {
+        KeyReadError::Io { .. } | KeyReadError::Missing => not_running(&e),
+        other => {
+            tracing::warn!("本机配置里的控制面钥匙读不出来：{other}");
+            anyhow::anyhow!(tr!(
+                "配置文件中的控制面密钥（listen.control.key）无效",
+                "The control key in the config file (listen.control.key) is not valid"
+            ))
+        }
+    })
+}
+
+/// 连上本机的控制面：socket（Windows 上是回环端口），再握手。
+async fn local(at: &tw_api::control::Address, config: &Path) -> Result<Box<dyn Stream>> {
+    let key = local_key(config)?;
+    match handshake(at, &key).await {
+        // **钥匙不对就再读一次。**读钥匙和握手之间 core 换了钥匙（`--rotate`），
+        // 手上这一把就是旧的；再读到的还是同一把，才是真的不对
+        Err(tw_link::LinkError::WrongKey) => {
+            let again = local_key(config)?;
+            if again == key {
+                return Err(link_failed(tw_link::LinkError::WrongKey));
+            }
+            handshake(at, &again).await.map_err(link_failed)
+        }
+        r => r.map_err(link_failed),
+    }
+}
+
+async fn handshake(
+    at: &tw_api::control::Address,
+    key: &tw_link::ControlKey,
+) -> std::result::Result<Box<dyn Stream>, tw_link::LinkError> {
+    use tw_api::control::Address;
+    let raw: Box<dyn Stream> = match at {
+        #[cfg(unix)]
+        Address::Socket(path) => Box::new(
+            tokio::net::UnixStream::connect(path)
+                .await
+                .map_err(tw_link::LinkError::unreachable)?,
+        ),
+        #[cfg(not(unix))]
+        Address::Socket(_) => {
+            return Err(tw_link::LinkError::unreachable(std::io::Error::other(
+                "这个平台上没有 unix socket",
+            )));
+        }
+        Address::Loopback { port_file } => {
+            let port = read_port(port_file)
+                .map_err(|e| tw_link::LinkError::unreachable(std::io::Error::other(e)))?;
+            Box::new(
+                tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .map_err(tw_link::LinkError::unreachable)?,
+            )
+        }
+    };
+    let (secure, _) = tw_link::connect(raw, key, APP_VERSION).await?;
+    Ok(Box::new(secure))
+}
+
+/// 本机握手失败说成一句话。连不上、被关、超时都是「core 不在」；钥匙不对和版本
+/// 不一致各说各的 —— 等多久都不会自己好
+fn link_failed(e: tw_link::LinkError) -> anyhow::Error {
+    use tw_link::LinkError;
+    match e {
+        LinkError::WrongKey => anyhow::anyhow!(tr!(
+            "控制面密钥不匹配：core 拒绝了配置文件中的密钥",
+            "The control key does not match: core rejected the key in the config file"
+        )),
+        LinkError::VersionMismatch {
+            ours,
+            theirs,
+            peer_version,
+        } => anyhow::anyhow!(tr!(
+            format!(
+                "控制面协议版本不一致：core {peer_version} 为 {theirs}，界面为 {ours}。请重新构建。"
+            ),
+            format!(
+                "Control plane protocol versions differ: core {peer_version} uses {theirs}, the interface uses {ours}. Rebuild the app."
+            )
+        )),
+        other => not_running(&other),
+    }
+}
+
 /// 控制面拒绝了这个请求：非 2xx，响应体是一条 [`tw_api::ErrorBody`]。
 ///
 /// **码原样留着**，一路带到界面，界面按码翻（见 `crate::error`）。在这里就
@@ -71,11 +176,12 @@ fn refused(status: hyper::StatusCode, body: &[u8]) -> anyhow::Error {
 /// 控制面在哪、凭什么进去。
 #[derive(Clone)]
 pub enum Target {
-    /// 本机的 core：数据目录里的 socket（Windows 上是回环端口），凭据是这一次启动生成的
+    /// 本机的 core：数据目录里的 socket（Windows 上是回环端口）。钥匙每次连接时从
+    /// `config` 现读 —— 换过钥匙（`twcore control-key --rotate`），下一条连接就用新的
     Local {
         at: tw_api::control::Address,
-        /// 这一次启动的凭据，见 `crate::token`。
-        token: String,
+        /// 本机那份 config.yaml
+        config: std::path::PathBuf,
     },
     /// 另一台机器上的 core，见 `crate::connection`
     Remote(crate::connection::connector::RemoteTarget),
@@ -95,8 +201,8 @@ pub struct ControlClient {
 }
 
 impl ControlClient {
-    pub fn new(at: tw_api::control::Address, token: String) -> Self {
-        Self::to(Target::Local { at, token })
+    pub fn new(at: tw_api::control::Address, config: std::path::PathBuf) -> Self {
+        Self::to(Target::Local { at, config })
     }
 
     pub fn to(target: Target) -> Self {
@@ -126,55 +232,19 @@ impl ControlClient {
         self.target.read().expect("锁未中毒").clone()
     }
 
-    /// 连上控制面。
+    /// 连上控制面：建连，再握手。
     ///
     /// **连不上时只说 core 现在不在。**socket 的路径和「No such file or
     /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
     /// 的时候回给界面的都是这一句。原话进日志
     async fn connect(&self) -> Result<Box<dyn Stream>> {
-        use tw_api::control::Address;
-        let not_running = |e: &dyn std::fmt::Display| {
-            tracing::debug!("控制面连不上：{e}");
-            anyhow::anyhow!(tr!(
-                "core 未在运行，或尚未启动完成",
-                "core is not running, or has not finished starting"
-            ))
-        };
-        let at = match self.target() {
-            Target::Local { at, .. } => at,
-            // **远程那一档的门由握手把守**，见 `connection::connector`
-            Target::Remote(r) => {
-                return crate::connection::connector::open(&r)
-                    .await
-                    .map(|(stream, _)| stream)
-                    .map_err(anyhow::Error::new);
-            }
-        };
-        match &at {
-            #[cfg(unix)]
-            Address::Socket(path) => Ok(Box::new(
-                tokio::net::UnixStream::connect(path)
-                    .await
-                    .map_err(|e| not_running(&e))?,
-            )),
-            #[cfg(not(unix))]
-            Address::Socket(_) => Err(not_running(&"这个平台上没有 unix socket")),
-            Address::Loopback { port_file } => {
-                let port = read_port(port_file).map_err(|e| not_running(&e))?;
-                Ok(Box::new(
-                    tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
-                        .await
-                        .map_err(|e| not_running(&e))?,
-                ))
-            }
-        }
-    }
-
-    /// 每个请求都带上的那个头。**远程连接不带**：那边进门靠的是握手，不是这个头
-    fn auth(&self) -> String {
         match self.target() {
-            Target::Local { token, .. } => format!("Bearer {token}"),
-            Target::Remote(_) => String::new(),
+            Target::Local { at, config } => local(&at, &config).await,
+            // 远程那一档的建连和握手见 `connection::connector`
+            Target::Remote(r) => crate::connection::connector::open(&r)
+                .await
+                .map(|(stream, _)| stream)
+                .map_err(anyhow::Error::new),
         }
     }
 
@@ -245,11 +315,7 @@ impl ControlClient {
             .method(method.as_str())
             .uri(path)
             // unix socket 上没有真正的 host，但 HTTP/1.1 要求这个头存在
-            .header(hyper::header::HOST, "localhost")
-            // **读写都带凭据。**写请求的那一处曾经漏了：读的请求都带着，于是
-            // 界面一切正常地显示，而每一次保存、新建、接管都被控制面拒掉 ——
-            // 两个平台都是。见 tests/control_plane.rs 里走写请求的那一条
-            .header(hyper::header::AUTHORIZATION, self.auth());
+            .header(hyper::header::HOST, "localhost");
         if body.is_some() {
             req = req.header(hyper::header::CONTENT_TYPE, "application/json");
         }
@@ -350,7 +416,6 @@ impl ControlClient {
         let req = hyper::Request::builder()
             .uri(ep::Events::PATH)
             .header(hyper::header::HOST, "localhost")
-            .header(hyper::header::AUTHORIZATION, self.auth())
             .header(hyper::header::ACCEPT, "text/event-stream")
             .body(String::new())?;
         let mut resp = sender.send_request(req).await?;
@@ -455,12 +520,46 @@ mod tests {
         assert_eq!(ops.len(), 6);
     }
 
+    /// 一份写着钥匙的配置。**钥匙是在的**：下面几条要测的是建连那一步，不是读钥匙
+    fn key_file(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("tw-key-{}-{name}.yaml", std::process::id()));
+        std::fs::write(
+            &p,
+            format!("listen:\n  control:\n    key: \"{}\"\n", "ab".repeat(32)),
+        )
+        .unwrap();
+        p
+    }
+
     /// 一个一定连不上的客户端：这个平台默认的那种传输，指向一个不存在的地方。
     fn unreachable() -> ControlClient {
         ControlClient::new(
             tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
-            "t".into(),
+            key_file("unreachable"),
         )
+    }
+
+    /// 配置还没写出来（或者还没写进钥匙）：**和 socket 不在同一句话** —— core 起来时
+    /// 才补上钥匙，那一小段里这是常态
+    #[tokio::test]
+    async fn no_key_yet_also_says_core_is_not_there() {
+        let missing = ControlClient::new(
+            tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
+            PathBuf::from("/tmp/tw-no-such-config-xyz.yaml"),
+        );
+        let msg = format!("{:#}", missing.status().await.unwrap_err());
+        assert!(msg.contains("core"), "{msg}");
+        assert!(!msg.contains("tw-no-such-config"), "{msg}");
+
+        let p = std::env::temp_dir().join(format!("tw-key-{}-nokey.yaml", std::process::id()));
+        std::fs::write(&p, "listen:\n  gateway:\n    port: 1\n").unwrap();
+        let no_key = ControlClient::new(
+            tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
+            p.clone(),
+        );
+        let msg = format!("{:#}", no_key.status().await.unwrap_err());
+        assert!(msg.contains("core"), "{msg}");
+        let _ = std::fs::remove_file(p);
     }
 
     /// 连不上时说 core 不在，**不带地址和系统原话**：几乎每个命令在
@@ -485,7 +584,7 @@ mod tests {
             tw_api::control::Address::Loopback {
                 port_file: PathBuf::from("/tmp/tw-no-such-port-file-xyz"),
             },
-            "t".into(),
+            key_file("noport"),
         );
         let msg = format!("{:#}", c.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
@@ -502,7 +601,7 @@ mod tests {
             tw_api::control::Address::Loopback {
                 port_file: d.clone(),
             },
-            "t".into(),
+            key_file("halfport"),
         );
         // 12 是个能解析的端口号，但没人听 —— 连接失败，同一句话
         let msg = format!("{:#}", c.status().await.unwrap_err());

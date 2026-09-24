@@ -98,8 +98,6 @@ export const connText = messages(
     wrongKeyNext: (code: Code) => <>在服务器上执行 {code("twcore control-key")} 查看当前密钥。</>,
     mismatch: (theirs: string, ours: string) => `版本不一致：服务器 core ${theirs}，本应用需要 ${ours}`,
     mismatchNext: "在服务器上升级 core 后再连接。",
-    unsupported: "此版本尚不支持连接远程 core",
-    unsupportedNext: "服务器可以访问。更新应用后即可连接。",
     reasonTimeout: "连接超时",
     reasonUnreachable: "无法访问该地址",
 
@@ -237,8 +235,6 @@ export const connText = messages(
     mismatch: (theirs: string, ours: string) =>
       `Version mismatch: the server runs core ${theirs}; this app needs ${ours}`,
     mismatchNext: "Upgrade core on the server, then connect again.",
-    unsupported: "This version cannot connect to a remote core yet",
-    unsupportedNext: "The server is reachable. Connecting becomes possible after an app update.",
     reasonTimeout: "The connection timed out",
     reasonUnreachable: "The address is not reachable",
 

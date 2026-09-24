@@ -273,12 +273,12 @@ pub(crate) fn describe_state(s: &CoreState) -> String {
 /// 心跳循环。
 pub(crate) async fn heartbeat_loop(
     at: tw_api::control::Address,
-    token: String,
+    key_file: std::path::PathBuf,
     sup: Arc<Supervisor>,
     app: tauri::AppHandle,
 ) {
     use supervisor::{HealthTracker, Verdict, health};
-    let client = ControlClient::new(at, token);
+    let client = ControlClient::new(at, key_file);
     let mut tracker = HealthTracker::new();
 
     loop {

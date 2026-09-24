@@ -27,8 +27,6 @@ export function describeError(e: ConnectError): { title: string; next: ReactNode
       return { title: t.wrongKey, next: t.wrongKeyNext(code) };
     case "version_mismatch":
       return { title: t.mismatch(e.theirs, e.ours), next: t.mismatchNext };
-    case "not_yet_available":
-      return { title: t.unsupported, next: t.unsupportedNext };
   }
 }
 
@@ -46,8 +44,6 @@ export function shortReason(e: ConnectError): string {
       return t.wrongKey;
     case "version_mismatch":
       return t.mismatch(e.theirs, e.ours);
-    case "not_yet_available":
-      return t.unsupported;
   }
 }
 

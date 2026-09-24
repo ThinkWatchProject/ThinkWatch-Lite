@@ -470,9 +470,7 @@ function Shell({ first }: { first: boolean }) {
   }, []);
   const lasting =
     link?.kind === "down" &&
-    (link.error.kind === "wrong_key" ||
-      link.error.kind === "version_mismatch" ||
-      link.error.kind === "not_yet_available");
+    (link.error.kind === "wrong_key" || link.error.kind === "version_mismatch");
   /** 概览那一页的第一份数据到了。启动画面等它，交接时数字已经是对的 */
   const [landed, setLanded] = useState(false);
   /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */

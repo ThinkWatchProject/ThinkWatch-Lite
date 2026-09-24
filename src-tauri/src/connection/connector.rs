@@ -6,12 +6,9 @@
 //! 失败分五种说（[`ConnectError`]），每一种界面上都给出下一步：地址不通、被对面
 //! 关掉、密钥不对、版本不一致、超时。
 //!
-//! # 远程那一档还没接上（P2）
-//!
-//! 远程控制面的握手（Noise，密钥来自服务器的 `listen.control.key`）由 core 的
-//! `tw-link` 提供，还没发版。这里先把 TCP 连上 —— 地址不通和超时现在就能如实说 ——
-//! 握手那一步集中在 [`handshake`] 一个函数里，眼下一律回 [`ConnectError::NotYetAvailable`]。
-//! 接上 P2 时只改它（和删掉那一种错误）。
+//! 远程这一档：TCP 连上服务器的远程控制端口，再做和本机同一套握手（`tw-link`，
+//! Noise NNpsk0，钥匙是服务器上 `twcore control-key` 给的那一把）。版本在握手里就
+//! 对过了，所以对不上时在任何 HTTP 请求之前就能说出两个确切的版本号。
 
 use std::time::Duration;
 
@@ -75,8 +72,6 @@ pub enum ConnectError {
     VersionMismatch { ours: String, theirs: String },
     /// 在限定时间内没连上，或者握手没走完
     Timeout { addr: String },
-    /// 这一版应用还不会远程握手。**P2 接上握手时删掉这一种**
-    NotYetAvailable,
 }
 
 /// 一句话。**界面不用它**（界面按种类说，带下一步）；它给的是经控制面客户端冒出来、
@@ -103,11 +98,6 @@ impl std::fmt::Display for ConnectError {
                 format!("连接 {addr} 超时"),
                 format!("Connecting to {addr} timed out")
             ),
-            ConnectError::NotYetAvailable => tr!(
-                "此版本尚不支持连接远程 core",
-                "This version cannot connect to a remote core yet"
-            )
-            .into(),
         };
         f.write_str(&s)
     }
@@ -128,6 +118,9 @@ const LOCAL_WITHIN: Duration = Duration::from_secs(3);
 pub struct Handshake {
     pub core_version: String,
 }
+
+/// 应用自己的版本，握手时报给 core（只进它的日志）
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// 试连：连上、握手、问一次 `/status`。**切换之前、启动时、断线重连都走它。**
 pub async fn test(target: &Target) -> Result<ServerInfo, ConnectError> {
@@ -189,18 +182,12 @@ pub(crate) async fn open(r: &RemoteTarget) -> Result<(Box<dyn Stream>, Handshake
         .map_err(|_| ConnectError::Timeout { addr })?
 }
 
-/// **P2 在这里接上握手。**
+/// 握手：把 `io` 包成加密的流，顺带问到对面是哪一版 core。
 ///
-/// 要做的：用 `tw-link` 的 Noise 握手（`Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s`，PSK 是
-/// `key` 的 32 字节）把 `io` 包成加密的流，第一条消息带上应用的控制面版本和应用版本；
-/// 按对面第二条消息的结果返回：
-///
-/// - 解不开、收到明文拒绝字节 → [`ConnectError::WrongKey`]
-/// - `accept=false`（版本不一致）→ [`ConnectError::VersionMismatch`]，`ours` 用
-///   [`REQUIRED_CORE`]，`theirs` 用对面报的 core 版本
-/// - 对面一个字节不回就关掉 → [`ConnectError::Closed`]
-///
-/// 返回的流交给 hyper 跑 HTTP/1.1，事件流（SSE）也走它。
+/// 失败按 [`ConnectError`] 的几种说：解不开、收到拒绝字节 → 钥匙不对；版本对不上
+/// → 两个版本号（`ours` 是这一版应用配的 core，`theirs` 是服务器的 core 自己报的
+/// 版本）；一个字节不回就关 → 被关闭。钥匙本身写得不对（钥匙串里那一串不是 64 位
+/// 十六进制）也按钥匙不对说：结果一样，去服务器上重新抄一遍
 async fn handshake<S>(
     io: S,
     key: &str,
@@ -209,9 +196,34 @@ async fn handshake<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let _ = (io, key);
-    tracing::debug!("{addr}：TCP 已连上，这一版还不会远程握手");
-    Err(ConnectError::NotYetAvailable)
+    let key = tw_link::ControlKey::parse(key).map_err(|_| ConnectError::WrongKey)?;
+    let (secure, hello) = tw_link::connect(io, &key, APP_VERSION)
+        .await
+        .map_err(|e| link_error(e, addr))?;
+    Ok((
+        Box::new(secure),
+        Handshake {
+            core_version: hello.core,
+        },
+    ))
+}
+
+/// `tw-link` 的失败对到界面的几种说法
+fn link_error(e: tw_link::LinkError, addr: &str) -> ConnectError {
+    use tw_link::LinkError;
+    tracing::debug!("{addr}：握手没过：{e}");
+    let addr = addr.to_string();
+    match e {
+        LinkError::Unreachable(_) => ConnectError::Unreachable { addr },
+        LinkError::WrongKey => ConnectError::WrongKey,
+        LinkError::VersionMismatch { peer_version, .. } => ConnectError::VersionMismatch {
+            ours: REQUIRED_CORE.to_string(),
+            theirs: peer_version,
+        },
+        LinkError::Timeout => ConnectError::Timeout { addr },
+        // 握手中途断了、或者对面说的不是这套协议：都是「被关掉了」
+        LinkError::Closed | LinkError::Io(_) => ConnectError::Closed { addr },
+    }
 }
 
 #[cfg(test)]
@@ -280,22 +292,94 @@ mod tests {
         );
     }
 
-    /// 有人听、握手还没接上：说「这一版还不支持」，不是别的
-    #[tokio::test]
-    async fn a_listening_port_reaches_the_handshake_seam() {
+    fn key() -> String {
+        "ab".repeat(32)
+    }
+
+    /// 一个只会握手的「core」：用 `server_key` 那一把，自称 9.9.9，握手之后什么都不做
+    async fn fake_core(server_key: String) -> u16 {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
         tokio::spawn(async move {
-            let _ = l.accept().await;
+            let key = tw_link::ControlKey::parse(&server_key).unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "9.9.9");
+            while let Ok((s, _)) = l.accept().await {
+                let _ = acceptor.accept(s).await;
+            }
         });
+        port
+    }
+
+    fn at(port: u16, key: String) -> Target {
+        Target::Remote(RemoteTarget {
+            host: "127.0.0.1".into(),
+            port,
+            key,
+        })
+    }
+
+    /// 对面一个字节不回就关：被关闭（不在允许列表里时就是这样）
+    #[tokio::test]
+    async fn a_server_that_hangs_up_is_closed() {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((s, _)) = l.accept().await {
+                drop(s);
+            }
+        });
+        let e = test(&at(port, key())).await.unwrap_err();
+        assert!(matches!(e, ConnectError::Closed { .. }), "{e:?}");
+    }
+
+    #[tokio::test]
+    async fn another_key_is_the_wrong_key() {
+        let port = fake_core("cd".repeat(32)).await;
+        assert_eq!(
+            test(&at(port, key())).await.unwrap_err(),
+            ConnectError::WrongKey
+        );
+        // 钥匙串里那一串压根不是一把钥匙，说的也是这一句
+        assert_eq!(
+            test(&at(port, "short".into())).await.unwrap_err(),
+            ConnectError::WrongKey
+        );
+    }
+
+    /// 同一把钥匙：握手通过，问到服务器 core 自己报的版本
+    #[tokio::test]
+    async fn the_same_key_gets_through_and_learns_the_core_version() {
+        let port = fake_core(key()).await;
         let r = RemoteTarget {
             host: "127.0.0.1".into(),
             port,
-            key: "k".into(),
+            key: key(),
         };
+        let (_, hello) = open(&r).await.unwrap();
+        assert_eq!(hello.core_version, "9.9.9");
+    }
+
+    /// 版本不一致：说出服务器 core 自己报的版本和这一版应用要的版本
+    #[test]
+    fn a_version_mismatch_names_both_versions() {
+        let e = link_error(
+            tw_link::LinkError::VersionMismatch {
+                ours: 18,
+                theirs: 17,
+                peer_version: "0.47.2".into(),
+            },
+            "h:1",
+        );
         assert_eq!(
-            test(&Target::Remote(r)).await.unwrap_err(),
-            ConnectError::NotYetAvailable
+            e,
+            ConnectError::VersionMismatch {
+                ours: REQUIRED_CORE.to_string(),
+                theirs: "0.47.2".into(),
+            }
+        );
+        assert_eq!(
+            link_error(tw_link::LinkError::Timeout, "h:1"),
+            ConnectError::Timeout { addr: "h:1".into() }
         );
     }
 }

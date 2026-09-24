@@ -9,11 +9,10 @@ const ALL: ConnectError[] = [
   { kind: "closed", addr: "192.168.1.20:8789" },
   { kind: "wrong_key" },
   { kind: "version_mismatch", ours: "0.48.0", theirs: "0.47.2" },
-  { kind: "not_yet_available" },
 ];
 
 describe("连接失败的原因", () => {
-  /** 每一种都要说出发生了什么和下一步：设计稿 ③ 的四种说法，外加还没接上的那一种 */
+  /** 每一种都要说出发生了什么和下一步：设计稿 ③ 的几种说法 */
   it("每一种都有标题和下一步，两种语言都是", () => {
     for (const lang of ["zh", "en"] as const) {
       setLang(lang);
