@@ -1,0 +1,22 @@
+[package]
+name = "tw-scan"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Static scan of client configuration for hidden characters, prompt injection, dangerous commands, and overly broad permissions"
+
+[dependencies]
+serde_yaml_ng = "0.10"
+tw-adopt = { path = "../tw-adopt" }
+tw-types = { workspace = true }
+# 扫描用的规则就是网关的内置规则全集（`scan_rules()`），不在这边另写一份
+tw-guard = { workspace = true }
+# 盯目录、去抖，和 core 盯配置文件的是同一份
+tw-watch = { workspace = true }
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

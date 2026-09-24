@@ -82,7 +82,8 @@ sys.exit(3)
 意味着同一份源码今天和明天编出来的东西不一样，而包里那个二进制又是
 另一个时刻的。
 
-在 src-tauri/Cargo.toml 里改成：
+在 src-tauri/Cargo.toml 的 [workspace.dependencies] 里改成（其余几个 core 的
+crate 钉同一个 tag）：
   tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "vX.Y.Z" }
 MSG
   exit 1

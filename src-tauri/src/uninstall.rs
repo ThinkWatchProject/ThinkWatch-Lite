@@ -1,26 +1,6 @@
 //! 还原全部接管，以及卸载。
 
-use tw_api::ep;
-
-use crate::{
-    AppState, autostart, data_dir,
-    error::{Out, text},
-};
-
-/// 要还原哪几个，以及各自用什么去指代。返回 `(id, 名字)`。
-///
-/// **对 core 说 id，对用户说名字。**core 的路由是 `/clients/{id}/restore`，
-/// 而 `name` 是显示名：拿「Claude Code」去拼 URI，那个空格连请求都发不出去；
-/// 拿「Zed」去发，换来的是一句「未知的客户端 Zed」。两者只有 opencode 恰好
-/// 相同，所以挑错了字段，测一遍还会看到一个成功的例子。把这一步单独拎出来，
-/// 就是为了让「哪个字段进地址」有地方可测。
-pub(crate) fn restore_targets(list: &tw_api::ClientsResponse) -> Vec<(&str, &str)> {
-    list.clients
-        .iter()
-        .filter(|c| c.adopted_at_ms.is_some())
-        .map(|c| (c.id.as_str(), c.name.as_str()))
-        .collect()
-}
+use crate::{autostart, data_dir, error::Out};
 
 /// 把所有接管过的客户端一次性还原（第二层的第二个入口）。
 ///
@@ -28,27 +8,32 @@ pub(crate) fn restore_targets(list: &tw_api::ClientsResponse) -> Vec<(&str, &str
 /// —— 藏起来的退路等于没有退路，他会在心里给接管打上「不可逆」的标签。
 ///
 /// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
-/// 文件被改坏了，不该让另外四个也留在接管状态。
+/// 文件被改坏了，不该让另外四个也留在接管状态。**也不问 core**：退路不该
+/// 依赖网关还在不在。
 #[tauri::command]
-pub async fn restore_all(state: tauri::State<'_, AppState>) -> Out<Vec<RestoreOutcome>> {
-    let list = state
-        .control
-        .call::<ep::Clients>(&[], &())
-        .await
-        .map_err(text)?;
-    let mut out = Vec::new();
-    for (id, name) in restore_targets(&list) {
-        let r = state.control.call::<ep::Restore>(&[id], &()).await;
-        out.push(RestoreOutcome {
-            client: name.to_string(),
-            ok: r.is_ok(),
-            detail: match r {
-                Ok(_) => tr!("已还原", "Restored").to_string(),
-                Err(e) => format!("{e:#}"),
-            },
-        });
-    }
-    Ok(out)
+pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
+    Ok(restore_all_in(
+        &crate::clients::home_dir(),
+        &tw_adopt::foreign::backup_root(),
+    ))
+}
+
+fn restore_all_in(home: &std::path::Path, backups: &std::path::Path) -> Vec<RestoreOutcome> {
+    use crate::clients::ops;
+    ops::adopted(home)
+        .into_iter()
+        .map(|c| {
+            let r = ops::restore(home, backups, c.id);
+            RestoreOutcome {
+                client: c.name.to_string(),
+                ok: r.is_ok(),
+                detail: match r {
+                    Ok(_) => tr!("已还原", "Restored").to_string(),
+                    Err(e) => crate::core_text::text(&e),
+                },
+            }
+        })
+        .collect()
 }
 
 #[derive(serde::Serialize)]
@@ -67,13 +52,9 @@ pub struct RestoreOutcome {
 /// **我们不删自己。**macOS 上应用删除没有钩子，也不该由应用自己动手 ——
 /// 最后一句话是「可以把应用拖进废纸篓了」，那一下由用户来。
 #[tauri::command]
-pub async fn uninstall(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    drop_data: bool,
-) -> Out<Vec<String>> {
+pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<String>> {
     let mut log = Vec::new();
-    for r in restore_all(state).await? {
+    for r in restore_all().await? {
         log.push(tr!(
             format!("{}：{}", r.client, r.detail),
             format!("{}: {}", r.client, r.detail)
@@ -167,73 +148,26 @@ pub async fn uninstall(
 mod tests {
     use super::*;
 
-    /// 还原一个客户端时，进地址的必须是 id，不是显示名。
-    ///
-    /// **这条缝裂过一次。**「全部还原」当时逐个传的是 `name`：
-    /// 「Claude Code」带空格，连 URI 都拼不出来；「Zed」换来一句
-    /// 「未知的客户端 Zed」。五个里只有 opencode 的 id 和名字一样，于是
-    /// 它每次都成功 —— 手上有一个能用的例子，这个错就很难被看见。
-    /// 夹着 opencode 一起断言，就是不让那个巧合再当证据用。
+    /// 还原全部：接管过的每一个都还原，**报的是名字**；没接管过的不碰
     #[test]
-    fn restore_addresses_a_client_by_id_and_reports_it_by_name() {
-        let list = clients_json(&[
-            (r#""claude-code""#, r#""Claude Code""#, "1700000000000"),
-            (r#""codex""#, r#""Codex""#, "null"),
-            (r#""opencode""#, r#""opencode""#, "1700000000001"),
-            (r#""zed""#, r#""Zed""#, "1700000000002"),
-        ]);
-
-        // 没接管过的那个不在里面：还原一个本来就没动过的客户端，core 那边
-        // 是一次没有意义的写
-        assert_eq!(
-            restore_targets(&list),
-            vec![
-                ("claude-code", "Claude Code"),
-                ("opencode", "opencode"),
-                ("zed", "Zed"),
-            ]
-        );
-    }
-
-    /// 按 core 实际发来的形状造 `/clients` 的响应。
-    ///
-    /// 直接填结构体的话，字段一加一减这里就编不过，而这个测试要问的事情
-    /// 跟那些字段无关；走 JSON 还顺带钉住了 `id`、`name`、`adopted_at_ms`
-    /// 这三个字段名 —— 它们要是在 core 那边改了名，这里会响。
-    fn clients_json(each: &[(&str, &str, &str)]) -> tw_api::ClientsResponse {
-        let clients = each
-            .iter()
-            .map(|(id, name, adopted_at_ms)| {
-                format!(
-                    r#"{{
-                        "id": {id},
-                        "name": {name},
-                        "path": "/tmp/x",
-                        "real": "/tmp/x",
-                        "installed": true,
-                        "has_config": true,
-                        "adopted_at_ms": {adopted_at_ms},
-                        "endpoint": "http://127.0.0.1:8080",
-                        "shadows": [],
-                        "takes_effect": "immediately",
-                        "warns_when_silent": true,
-                        "verified": "measured",
-                        "costs": [],
-                        "last_seen_ms": null,
-                        "manual": {{ "steps": [], "fields": [], "endpoint": "http://127.0.0.1:8080" }}
-                    }}"#
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        serde_json::from_str(&format!(
-            r#"{{
-                "clients": [{clients}],
-                "manual": [],
-                "gateway_base": "http://127.0.0.1:8080",
-                "keys": ["tw-x"]
-            }}"#
-        ))
-        .expect("core 发来的 /clients 解不动")
+    fn restoring_all_puts_every_adopted_client_back_and_names_it() {
+        use crate::clients::ops;
+        let home = tempfile::tempdir().unwrap();
+        let backups = home.path().join("backups");
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        ops::adopt(
+            home.path(),
+            &backups,
+            "claude-code",
+            "http://127.0.0.1:8788",
+            "tw-c",
+        )
+        .unwrap();
+        let out = restore_all_in(home.path(), &backups);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].client, "Claude Code");
+        assert!(out[0].ok, "{}", out[0].detail);
+        assert!(ops::adopted(home.path()).is_empty());
     }
 }

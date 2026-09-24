@@ -3,7 +3,8 @@
 // **控制面契约的类型不在这里写。**它们由钉着的那版 tw-api 生成，提交在
 // `./generated/tw-api.ts`（`src-tauri/tests/ts_bindings.rs` 核对它和钉着的
 // core 一致），这里原样转出去。以前这里是手抄的镜像，和 Rust 那边对不对得
-// 上全靠人记得改两遍。
+// 上全靠人记得改两遍。**不经过 core 的那几样**（客户端接管、MCP、扫描、这台
+// 机器上的事件）同样是生成的：`./generated/lite-api.ts`，源头是 `src-tauri/src/wire.rs`。
 //
 // 留在这里的只有界面自己的东西：请求列表的行和把事件缝成行的那几个函数、
 // 概览那一份（Rust 侧 `dashboard` 命令拼的）、金额的写法，以及几个封闭集合
@@ -22,11 +23,16 @@ import type {
   Summary,
   TranslatedView,
 } from "./generated/tw-api";
+import type { LocalEvent } from "./generated/lite-api";
 
 export type * from "./generated/tw-api";
+export type * from "./generated/lite-api";
 
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;
+
+/** 这台机器上的事的全部种类（Tauri 事件 `local-event`，不是 core 说的） */
+export const LOCAL_KINDS: readonly LocalEvent["kind"][] = ["clients_changed", "scan_alert"];
 
 /** core 的 `/status` */
 export type CoreStatus = Status;

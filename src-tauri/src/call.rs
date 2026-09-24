@@ -12,6 +12,9 @@
 //! 编码，所以界面给的名字只能是一段，拼不出别的路径。
 //!
 //! 做的事不止转发的命令（打开浏览器、写剪贴板、拼概览）仍然各是一个命令。
+//! 其中有三个端点**只能经过那些命令**，因为这台机器上的客户端要一起照顾到：删密钥
+//! （接管着的客户端的那把删不得）、换密钥（新值要同步进它的配置）、为客户端发密钥
+//! （先认得这个客户端）。客户端接管、MCP、扫描本来就不经过 core，见 `clients`。
 
 use serde_json::Value;
 use tw_api::{Endpoint, ep};
@@ -71,24 +74,10 @@ webview_endpoints![
     ReplayQuote,
     ReplayRun,
     DryRun,
-    // 客户端与接管
-    Scan,
-    Clients,
-    PlanAdopt,
-    Adopt,
-    PlanRestore,
-    Restore,
-    Why,
-    ClientKey,
-    McpTargets,
-    McpPlan,
-    McpApply,
-    // 密钥
+    // 密钥（删和换走 Rust 这边的命令，见下面的测试）
     Keys,
     CreateKey,
     UpdateKey,
-    DeleteKey,
-    RotateKey,
     SetDefaultKey,
     // 上游与代理
     CreateProvider,
@@ -171,6 +160,10 @@ mod tests {
             "CancelChatgptLogin",
             "StartZaiLogin",
             "CancelZaiLogin",
+            // 要这台机器上的客户端一起照顾到的，见模块说明
+            "DeleteKey",
+            "RotateKey",
+            "ClientKey",
         ] {
             assert!(!ALLOWED.contains(&name), "{name}");
         }

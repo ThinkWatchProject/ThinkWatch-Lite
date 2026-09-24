@@ -68,7 +68,8 @@ export default function ClientsPage({
 
   /*
     这一页有两件事会变，而它们各自都有事件：客户端的配置文件被改了
-    （`clients_changed`），和请求落地了（「使用中」等的就是它）。
+    （`clients_changed`，这台机器上的文件监视说的），和请求落地了（「使用中」
+    等的就是它，core 说的）。
   */
   useCoreEvent(
     ["clients_changed", "request_finished", "request_failed", "request_cancelled", "config_reloaded"],

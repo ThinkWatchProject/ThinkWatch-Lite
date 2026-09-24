@@ -1,6 +1,6 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { useText } from "@/i18n";
-import type { HookView, ScanFinding, ScanResponse, SkillView } from "@/types";
+import type { HookView, ScanFinding, ScanReport, SkillView } from "@/types";
 import { Level } from "./Findings";
 import { mcpText } from "./McpPage.i18n";
 
@@ -37,7 +37,7 @@ function skillFindings(s: SkillView, findings: ScanFinding[]): ScanFinding[] {
  *
  * 命中扫描规则的那一行标出级别，详情在「发现」里。
  */
-export function Extensions({ data, nameOf }: { data: ScanResponse; nameOf: (client: string) => string }) {
+export function Extensions({ data, nameOf }: { data: ScanReport; nameOf: (client: string) => string }) {
   const t = useText(mcpText);
   return (
     <div className="flex flex-col gap-5">

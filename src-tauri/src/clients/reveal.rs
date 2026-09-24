@@ -1,68 +1,4 @@
-//! 客户端页的几个命令。
-//!
-//! **界面只说是哪个客户端**，要写进剪贴板的地址、要打开的文件都由这一层
-//! 去问 core 再动手 —— 界面递一段任意文字进剪贴板、递一个任意路径给访达，
-//! 都是不该开的口子。
-
-use crate::AppState;
-use tw_api::ep;
-
-use crate::error::{Out, text};
-
-fn unknown(id: &str) -> String {
-    tr!(
-        format!("未知的客户端「{id}」"),
-        format!("`{id}` is not a client we know")
-    )
-    .to_string()
-}
-
-/// 复制这个客户端要填的网关地址（它要的那种写法，有的带 `/v1`）。
-#[tauri::command]
-pub async fn copy_client_endpoint(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Out<()> {
-    use tauri_plugin_clipboard_manager::ClipboardExt;
-    let list = state
-        .control
-        .call::<ep::Clients>(&[], &())
-        .await
-        .map_err(text)?;
-    let endpoint = list
-        .clients
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.manual.endpoint.clone())
-        .or_else(|| {
-            list.manual
-                .iter()
-                .find(|m| m.id == id)
-                .map(|m| m.setup.endpoint.clone())
-        })
-        .ok_or_else(|| unknown(&id))?;
-    app.clipboard()
-        .write_text(endpoint)
-        .map_err(|e| e.to_string().into())
-}
-
-/// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
-/// 真正会被改的。
-#[tauri::command]
-pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String) -> Out<()> {
-    let list = state
-        .control
-        .call::<ep::Clients>(&[], &())
-        .await
-        .map_err(text)?;
-    let c = list
-        .clients
-        .iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| unknown(&id))?;
-    Ok(reveal(&c.real)?)
-}
+//! 在文件管理器里选中一个文件。每个平台各有各的说法。
 
 /// 把文件管理器打开到这个文件上，并且**选中它**。
 ///
@@ -70,7 +6,7 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
 /// —— `open` 那个命令在那里根本不存在，而类型系统对此无话可说。这类坏法 CI
 /// 也抓不到，它只会在用户点下那个按钮的时候出现。
 #[cfg(target_os = "macos")]
-fn reveal(path: &str) -> Result<(), String> {
+pub fn reveal(path: &str) -> Result<(), String> {
     absolute(path)?;
     // **写全路径**，和 `dmg.rs` 里的 hdiutil 一样：按 `PATH` 找的话，谁在 `PATH`
     // 前面放一个同名程序，跑起来的就是它
@@ -91,7 +27,7 @@ fn reveal(path: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn reveal(path: &str) -> Result<(), String> {
+pub fn reveal(path: &str) -> Result<(), String> {
     absolute(path)?;
     // `/select,<路径>` 中间**没有空格**：explorer 把这一整串当成一个参数，
     // 写成 `/select, path` 的话它只会打开「文档」。
@@ -128,7 +64,7 @@ fn explorer() -> std::path::PathBuf {
     dir.join("explorer.exe")
 }
 
-/// 只交给文件管理器一个绝对路径。路径来自 core，本来就是绝对的；这一道是为了
+/// 只交给文件管理器一个绝对路径。路径是检测出来的，本来就是绝对的；这一道是为了
 /// 一个以 `-` 开头的字符串永远不会被 `open` 当成选项
 #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn absolute(path: &str) -> Result<(), String> {
@@ -152,7 +88,7 @@ fn absolute(path: &str) -> Result<(), String> {
 /// 字符串，签名对不上，每次都会被拒。所以两样都失败时由这里用 `xdg-open`
 /// 打开所在目录：选不中那个文件，但至少到了那里。
 #[cfg(target_os = "linux")]
-fn reveal(path: &str) -> Result<(), String> {
+pub fn reveal(path: &str) -> Result<(), String> {
     absolute(path)?;
     let Err(first) = tauri_plugin_opener::reveal_item_in_dir(path) else {
         return Ok(());
@@ -180,7 +116,7 @@ fn reveal(path: &str) -> Result<(), String> {
 }
 
 #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
-fn reveal(path: &str) -> Result<(), String> {
+pub fn reveal(path: &str) -> Result<(), String> {
     Err(tr!(
         format!("这个平台上还不能打开文件管理器：{path}"),
         format!("Opening a file manager is not supported on this platform yet: {path}")
