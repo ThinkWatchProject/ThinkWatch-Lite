@@ -99,12 +99,25 @@ pub const CORE_EXE: &str = if cfg!(windows) {
 /// 打包之后，core 只可能在一个地方。
 ///
 /// macOS 的 `.app/Contents/MacOS/<exe>` 到 `.app/Contents/Resources/`
-/// 是 bundle 布局定死的关系。别的平台还没有打包形态，到时候各自回答。
+/// 是 bundle 布局定死的关系。
+///
+/// **Windows 上装好的那一份，网关就在自己旁边**：NSIS 把资源放进安装目录
+/// （`tauri.windows.conf.json` 把它映射成 `twcore.exe`）。「是不是装好的那
+/// 一份」和自更新问的是同一件事，所以同一个判断（旁边有没有卸载程序）。
+///
+/// 以前这里只认 macOS 的布局，Windows 上装好的应用于是被当成开发构建，往下
+/// 走到了开发那几条候选 —— 包里缺了 `twcore.exe` 的时候，它会去环境变量、
+/// 工作目录、PATH 里找一个来跑，正是下面那段注释说要堵上的口子。界面上显示
+/// 的路径也因此是框架给的 `\\?\C:\…` 那种写法。
 fn bundled_core() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     if dir.ends_with("Contents/MacOS") {
         return Some(dir.parent()?.join("Resources").join(CORE_EXE));
+    }
+    #[cfg(windows)]
+    if update::nsis_installed(&exe) == update::Install::Standalone {
+        return Some(dir.join(CORE_EXE));
     }
     None
 }
