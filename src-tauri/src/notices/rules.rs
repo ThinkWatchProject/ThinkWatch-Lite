@@ -17,7 +17,7 @@ use tw_api::Event;
 
 use crate::core_text;
 
-use super::{Level, Signal};
+use super::{Change, Level, Signal};
 
 /// 建连卡在哪一步，一句话。
 ///
@@ -404,6 +404,139 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
         ],
         _ => Vec::new(),
     }
+}
+
+/// 此刻的样子，按对账的需要从 core 问来：`/status`、`/overview`、`/quota`。
+pub struct Snapshot<'a> {
+    pub status: &'a tw_api::Status,
+    pub overview: &'a tw_api::Overview,
+    pub quotas: &'a [tw_api::ProviderQuota],
+}
+
+/// 对账时认得的那几类键：**现状查得到的**。快照里没有、而列表里还开着的这几类，
+/// 就是在没连上的那段时间里好了。
+///
+/// 上游不通（`upstream:`）不在里面：熔断冷却到点的半开在现状里和「正常」一样，拿它
+/// 收起一条提醒，就是把「可以再试」当成了恢复（见 `HealthChanged` 那条规则）。
+pub const RECONCILED: &[&str] = &[
+    "credential:",
+    "auth:",
+    "proxy:",
+    "writeback:",
+    "quota:",
+    "config",
+    "listen",
+];
+
+/// 这个键是不是对账管的那几类
+pub fn reconciled(key: &str) -> bool {
+    RECONCILED.iter().any(|p| {
+        if p.ends_with(':') {
+            key.starts_with(p)
+        } else {
+            key == *p
+        }
+    })
+}
+
+/// 现状里**此刻不对**的那几件事，说成和事件一样的话。
+///
+/// **按事件的样子造一条，再走同一套规则**：通知怎么写只有 [`from_event`] 一处。
+/// 事件流是「那一刻」，这里是「现在」—— 桌面端半路才连上（启动时 core 已经报过
+/// 凭据失效，或者断线重连），错过的就从这里补上。
+pub fn from_snapshot(s: &Snapshot<'_>, now_ms: u64) -> Vec<Signal> {
+    use tw_api::{AuthState, ConfigOrigin, Event, ProxyState};
+    let mut events = Vec::new();
+    for p in &s.overview.providers {
+        if let Some(o) = &p.oauth
+            && o.needs_login
+            && let Some(detail) = &o.failure
+        {
+            events.push(Event::CredentialExpired {
+                id: 0,
+                provider: p.name.clone(),
+                detail: detail.clone(),
+                at_ms: now_ms,
+            });
+        }
+        if let Some(status) = p.auth_rejected {
+            events.push(Event::AuthChanged {
+                id: 0,
+                provider: p.name.clone(),
+                state: AuthState::Rejected,
+                status: Some(status),
+                at_ms: now_ms,
+            });
+        }
+        if let Some(detail) = &p.writeback_failed {
+            events.push(Event::CredentialRotated {
+                id: 0,
+                provider: p.name.clone(),
+                persisted: false,
+                detail: detail.clone(),
+                at_ms: now_ms,
+            });
+        }
+        if p.health == tw_api::Health::Open {
+            events.push(Event::HealthChanged {
+                id: 0,
+                provider: p.name.clone(),
+                state: tw_api::BreakerState::Open,
+                at_ms: now_ms,
+            });
+        }
+    }
+    for x in &s.overview.proxies {
+        if let Some(f) = &x.unreachable {
+            events.push(Event::ProxyChanged {
+                id: 0,
+                proxy: x.name.clone(),
+                state: ProxyState::Unreachable,
+                failed: f.failed.clone(),
+                detail: Some(f.detail.clone()),
+                at_ms: now_ms,
+            });
+        }
+    }
+    for q in s.quotas {
+        for w in &q.windows {
+            // 用完了、而且还没到重置的时刻
+            let used_up = w.status.as_deref() == Some("rejected") || w.used_percent >= 100.0;
+            if used_up && w.resets_at_ms.is_none_or(|at| at > now_ms) {
+                events.push(Event::QuotaExhausted {
+                    id: 0,
+                    provider: q.provider.clone(),
+                    window: w.window.clone(),
+                    resets_at_ms: w.resets_at_ms,
+                    at_ms: now_ms,
+                });
+            }
+        }
+    }
+    if let Some(r) = &s.status.config_rejected {
+        events.push(Event::ConfigRejected {
+            id: 0,
+            stage: r.stage,
+            message: r.message.clone(),
+            line: r.line,
+            excerpt: r.excerpt.clone(),
+            origin: ConfigOrigin::External,
+            at_ms: r.at_ms,
+        });
+    }
+    if let Some(e) = &s.status.listen_error {
+        events.push(Event::ListenChanged {
+            id: 0,
+            addr: s.status.gateway_addr.clone(),
+            error: Some(e.clone()),
+            at_ms: now_ms,
+        });
+    }
+    events
+        .iter()
+        .flat_map(from_event)
+        .filter(|sig| sig.change == Change::Raised)
+        .collect()
 }
 
 /// 工具调用规则的名字，和安全页上的一样。**只有内置的这些**：自定义规则的

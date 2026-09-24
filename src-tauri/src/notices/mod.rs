@@ -351,6 +351,45 @@ impl Notices {
         }
     }
 
+    /// **按现状对账。**事件流只说「那一刻」：桌面端半路才连上的话（core 启动时就报了
+    /// 凭据失效，或者断线的那一段里配置被拒），错过的那几件事这里补上 ——
+    /// `raised` 是 [`rules::from_snapshot`] 按现状说出来的。
+    ///
+    /// - **已经开着的不动**：不涨次数、不再弹。重启、重连都会对一次账，同一件事
+    ///   说一遍就够了（提醒是落盘的，已读的还是已读）。
+    /// - 对账管的那几类（[`rules::RECONCILED`]）里，**开着、现状里却没有的**，是在没连上
+    ///   的那段时间里好了：收起来。只收问现状之前就开着的（`asked_at_ms`）——
+    ///   问的这会儿从事件流上新来的那条，现状里可能还没有。
+    pub fn reconcile(self: &Arc<Self>, raised: Vec<Signal>, asked_at_ms: u64) {
+        let now = now_ms();
+        let (fresh, gone): (Vec<Signal>, Vec<String>) = {
+            let g = self.state.lock().expect("锁未中毒");
+            let keys: std::collections::HashSet<&str> =
+                raised.iter().map(|s| s.key.as_str()).collect();
+            let gone = g
+                .open
+                .values()
+                .filter(|o| {
+                    rules::reconciled(&o.notice.key)
+                        && !keys.contains(o.notice.key.as_str())
+                        && o.notice.at_ms < asked_at_ms
+                })
+                .map(|o| o.notice.key.clone())
+                .collect();
+            let fresh = raised
+                .into_iter()
+                .filter(|s| !g.open.contains_key(&s.key))
+                .collect();
+            (fresh, gone)
+        };
+        for s in fresh {
+            self.raise(s, now);
+        }
+        for k in gone {
+            self.clear(&k, now);
+        }
+    }
+
     /// 网关自己的状态变了
     pub fn on_core_state(self: &Arc<Self>, state: &crate::supervisor::CoreState) {
         let at = now_ms();

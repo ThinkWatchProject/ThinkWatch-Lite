@@ -922,3 +922,124 @@ fn chinese_notices_say_core_reasons_in_chinese() {
         );
     });
 }
+
+// ---------------------------------------------------------------- 对账
+
+/// 一份真的现状：隔离实例里凭据在启动时就失效（令牌端点回 invalid_grant）、配置文件
+/// 刚被外部改坏；额度那一段是手写的（一个窗口用完、一个没有）
+fn snapshot() -> (tw_api::Status, tw_api::Overview, Vec<tw_api::ProviderQuota>) {
+    #[derive(serde::Deserialize)]
+    struct F {
+        status: tw_api::Status,
+        overview: tw_api::Overview,
+        quotas: Vec<tw_api::ProviderQuota>,
+    }
+    let f: F = serde_json::from_str(include_str!("fixtures/snapshot.json")).unwrap();
+    (f.status, f.overview, f.quotas)
+}
+
+fn snapshot_keys(now: u64) -> Vec<String> {
+    let (status, overview, quotas) = snapshot();
+    let snap = rules::Snapshot {
+        status: &status,
+        overview: &overview,
+        quotas: &quotas,
+    };
+    let mut keys: Vec<String> = rules::from_snapshot(&snap, now)
+        .into_iter()
+        .map(|s| s.key)
+        .collect();
+    keys.sort();
+    keys
+}
+
+/// 现状里不对的那几件事，和事件流上那一刻说的是同一条（同一个键、同一套话）
+#[test]
+fn the_snapshot_says_what_the_events_would_have_said() {
+    assert_eq!(
+        snapshot_keys(T0),
+        ["config", "credential:官方", "quota:chatgpt:primary"]
+    );
+    // 到了重置的时刻，那个窗口就不算用完了
+    assert_eq!(
+        snapshot_keys(4_102_444_800_001),
+        ["config", "credential:官方"]
+    );
+    with_lang(Lang::Zh, || {
+        let (status, overview, quotas) = snapshot();
+        let snap = rules::Snapshot {
+            status: &status,
+            overview: &overview,
+            quotas: &quotas,
+        };
+        let s = rules::from_snapshot(&snap, T0);
+        let cred = s.iter().find(|s| s.key == "credential:官方").unwrap();
+        assert!(cred.body.starts_with("OAuth 凭据已过期"), "{}", cred.body);
+        let config = s.iter().find(|s| s.key == "config").unwrap();
+        assert_eq!(
+            config.body,
+            "网关密钥名称「default」重复。上一版配置仍在服务。"
+        );
+    });
+}
+
+/// 对账：**开着的不动**（不涨次数、看过的还是看过的、不再弹），没开的补上，现状里
+/// 已经好了的收起来 —— 但只收对账管的那几类、只收问现状之前就开着的
+#[tokio::test]
+async fn reconciling_fills_in_what_was_missed_without_saying_anything_twice() {
+    let b = bed();
+    let expired = rules::from_event(&tw_api::Event::CredentialExpired {
+        id: 1,
+        provider: "官方".into(),
+        detail: msg("gw.oauth.expired", "expired"),
+        at_ms: T0,
+    });
+    for s in expired {
+        b.bus.ingest(s.now(), T0);
+    }
+    b.bus.mark_read("credential:官方");
+    // 断线之前开着、现状里已经没有了的
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通").now(),
+        T0,
+    );
+    // 上游不通不归对账管：现状里的「正常」可能只是熔断冷却到点
+    b.bus
+        .ingest(Signal::raised("upstream:relay", Level::Info, "x"), T0);
+    // 问现状的这会儿从事件流上新来的
+    b.bus.ingest(
+        Signal::raised("listen", Level::Warning, "监听设置未生效").now(),
+        T0 + 5_000,
+    );
+    let shown_before = b.titles().len();
+
+    let (status, overview, quotas) = snapshot();
+    let snap = rules::Snapshot {
+        status: &status,
+        overview: &overview,
+        quotas: &quotas,
+    };
+    let asked_at = T0 + 1_000;
+    b.bus
+        .reconcile(rules::from_snapshot(&snap, asked_at), asked_at);
+    // 再对一次（重连）：什么都不该变
+    b.bus
+        .reconcile(rules::from_snapshot(&snap, asked_at), asked_at);
+
+    let list = b.bus.list();
+    let get = |k: &str| list.iter().find(|n| n.key == k);
+    let cred = get("credential:官方").expect("还开着");
+    assert_eq!(cred.count, 1, "对账不是又发生了一次");
+    assert!(cred.read, "看过的还是看过的");
+    assert!(get("config").is_some(), "错过的补上");
+    assert!(get("quota:chatgpt:primary").is_some());
+    assert!(get("proxy:hk").is_none(), "现状里好了的收起来");
+    assert!(get("upstream:relay").is_some(), "不拿现状收上游不通");
+    assert!(get("listen").is_some(), "问现状之后才来的不收");
+    // 开着的那条没有再弹（新补上的照常过去抖，和事件流上来的一样）
+    let shown: Vec<String> = b.titles()[shown_before..].to_vec();
+    assert!(
+        !shown.iter().any(|t| t.contains("需要重新登录")),
+        "{shown:?}"
+    );
+}

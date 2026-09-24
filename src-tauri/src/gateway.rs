@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
+use tw_api::ep;
 
 #[cfg(windows)]
 use crate::update;
@@ -312,6 +313,9 @@ pub(crate) async fn bridge_events(
             .subscribe_events(
                 move || {
                     o.store(true, std::sync::atomic::Ordering::SeqCst);
+                    // **每次接上都按现状对一次账**：接上之前 core 报过的（启动时的凭据
+                    // 失效、断线那段里被拒的配置），事件流不会再说一遍
+                    reconcile_notices(&b);
                     if resumed {
                         let lost = tw_api::Event::EventsDropped {
                             id: 0,
@@ -351,6 +355,10 @@ pub(crate) async fn bridge_events(
                     {
                         st.menubar.notify_one();
                     }
+                    // core 说这个订阅者掉过队：掉的那几条里可能有该提醒的事
+                    if matches!(ev, tw_api::Event::EventsDropped { .. }) {
+                        reconcile_notices(&a);
+                    }
                     let _ = a.emit("core-event", &ev);
                 },
             )
@@ -362,6 +370,37 @@ pub(crate) async fn bridge_events(
         connected_before |= opened.load(std::sync::atomic::Ordering::SeqCst);
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+}
+
+/// 提醒按 core 的现状对账（见 [`notices::Notices::reconcile`]）。问不到就算了：
+/// 下一次接上还会再问，事件流上来的照常处理。
+pub(crate) fn reconcile_notices(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let (Some(st), Some(n)) = (
+            app.try_state::<AppState>(),
+            app.try_state::<Arc<notices::Notices>>(),
+        ) else {
+            return;
+        };
+        let asked_at = notices::now_ms();
+        let c = &st.control;
+        let (status, overview, quotas) = tokio::join!(
+            c.status(),
+            c.call::<ep::Overview>(&[], &()),
+            c.call::<ep::Quota>(&[], &())
+        );
+        let (Ok(status), Ok(overview), Ok(quotas)) = (status, overview, quotas) else {
+            tracing::debug!("提醒对账：没问到 core 的现状");
+            return;
+        };
+        let snap = notices::rules::Snapshot {
+            status: &status,
+            overview: &overview,
+            quotas: &quotas,
+        };
+        n.reconcile(notices::rules::from_snapshot(&snap, asked_at), asked_at);
+    });
 }
 
 /// 控制面听在哪。
