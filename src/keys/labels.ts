@@ -3,8 +3,11 @@ import type { ClientView, DetectedClient, KnownModel, ManualClient } from "@/typ
 import { labelsText } from "./labels.i18n";
 import { splitEntries, visibleCount } from "./scope";
 
-/** 这把密钥是为谁生成的：正被接管的、当前未接管的、手动配置的 */
-export type KeyOwner = { client: string; kind: "adopted" | "idle" | "manual" };
+/**
+ * 这把密钥是为谁生成的：正被接管的、当前未接管的、手动配置的。`id` 是客户端的
+ * id（`claude-code`，画标志用），`client` 是显示名。
+ */
+export type KeyOwner = { id: string; client: string; kind: "adopted" | "idle" | "manual" };
 
 /**
  * 这把密钥是为哪个客户端生成的。
@@ -20,9 +23,9 @@ export function takeoverOf(
 ): KeyOwner | null {
   if (!k.client) return null;
   const m = manual.find((x) => x.id === k.client);
-  if (m) return { client: m.name, kind: "manual" };
+  if (m) return { id: m.id, client: m.name, kind: "manual" };
   const c = clients.find((x) => x.id === k.client);
-  return { client: c?.name ?? k.client, kind: c?.adopted_at_ms ? "adopted" : "idle" };
+  return { id: k.client, client: c?.name ?? k.client, kind: c?.adopted_at_ms ? "adopted" : "idle" };
 }
 
 /**
@@ -58,10 +61,12 @@ export { errorText } from "@/i18n/core.i18n";
  * 没绑路由时那一格写什么。
  *
  * **默认路由本来就叫「默认」时，不写成「默认（默认）」** —— 括号里重复一遍
- * 同一个词，读起来像个 bug。
+ * 同一个词，读起来像个 bug。叫 `default` 的（新装时 core 生成的那一条就叫这个）
+ * 同理：「默认（default）」「Default (default)」也是同一个词说两遍。
  */
 export function routeLabel(route: string | null | undefined, defaultRoute: string): string {
   if (route) return route;
   const t = textOf(labelsText);
-  return defaultRoute === t.defaultRoute ? t.defaultRoute : t.defaultNamed(defaultRoute);
+  const name = defaultRoute.trim().toLowerCase();
+  return name === "default" || name === t.defaultRoute.toLowerCase() ? t.defaultRoute : t.defaultNamed(defaultRoute);
 }

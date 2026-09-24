@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
-import { Spinner } from "@/ui/spinner";
+import { Reveal } from "@/ui/motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { DetectedClient, FieldChange, PlanView } from "@/types";
+import { ClientMark, DISCLOSURE, Tile, useDialogFocus } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 
 /**
@@ -17,35 +19,40 @@ import { clientsText } from "./clients.i18n";
  * 「密钥 xxx」，新建和沿用对用户是两件事）、有什么要知道的；完整的改动默认
  * 收起 —— 需要逐行核对的人点开，其余的人不必读一段配置文件。
  *
+ * 按下确认之后对话框留着、按钮转圈，写完才关；失败时对话框还在，可以再试。
  * 确认之后不再弹第二个对话框：行上的状态会变成「等待首个请求」。
  */
 export function PlanDialog({
   plan,
   client,
   restore,
-  busy,
+  pending,
   onCancel,
   onConfirm,
 }: {
   plan: PlanView;
   client: DetectedClient;
   restore: boolean;
-  busy: boolean;
+  pending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const t = useText(clientsText);
   const common = useText(commonText);
+  const dialogFocus = useDialogFocus();
   const [diffOpen, setDiffOpen] = useState(false);
   const path = <code className="font-mono text-foreground">{plan.path}</code>;
   return (
-    <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{restore ? t.restoreTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
-          <DialogDescription>
-            {plan.before == null ? t.creates(path) : t.modifies(path)}
-          </DialogDescription>
+    <Dialog open onOpenChange={(o) => !o && !pending && onCancel()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl" {...dialogFocus}>
+        <DialogHeader className="flex-row items-center gap-3">
+          <Tile className="size-9 rounded-lg [&_svg]:size-[18px]">
+            <ClientMark id={client.id} name={client.name} size={18} />
+          </Tile>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <DialogTitle>{restore ? t.restoreTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
+            <DialogDescription>{plan.before == null ? t.creates(path) : t.modifies(path)}</DialogDescription>
+          </div>
         </DialogHeader>
 
         {plan.noop ? (
@@ -53,17 +60,17 @@ export function PlanDialog({
         ) : (
           <div className="flex flex-col gap-4">
             {plan.fields.length > 0 && (
-              <div className="rounded-md border border-border">
+              <div className="overflow-hidden rounded-lg border border-border">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableHead>{t.field}</TableHead>
                       <TableHead>{restore ? t.change : t.written}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {plan.fields.map((f) => (
-                      <TableRow key={`${f.op} ${f.path}`}>
+                      <TableRow key={`${f.op} ${f.path}`} className="hover:bg-transparent">
                         <TableCell className="font-mono tw-label">{f.path}</TableCell>
                         <TableCell className="whitespace-normal break-all">
                           <FieldValue f={f} plan={plan} restore={restore} />
@@ -77,7 +84,7 @@ export function PlanDialog({
 
             {(plan.notes.length > 0 || (restore && plan.key)) && (
               <div className="flex flex-col gap-1">
-                <p className="tw-body font-medium">{t.notes}</p>
+                <p className="tw-head">{t.notes}</p>
                 <ul className="flex list-disc flex-col gap-1 pl-5 tw-body text-muted-foreground">
                   {plan.notes.map((n, i) => (
                     <li key={i}>{coreText(n)}</li>
@@ -88,32 +95,30 @@ export function PlanDialog({
             )}
 
             <div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 tw-body text-muted-foreground hover:text-foreground"
+              <Button
+                variant="ghost"
+                size="xs"
+                className={cn("-ml-1.5 gap-1 px-1.5 text-muted-foreground aria-expanded:text-muted-foreground", DISCLOSURE)}
                 aria-expanded={diffOpen}
                 onClick={() => setDiffOpen((o) => !o)}
               >
-                {diffOpen ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}
+                <ChevronRightIcon className={cn("motion-bar", diffOpen && "rotate-90")} />
                 {t.diff}
-              </button>
-              {diffOpen && (
-                <>
-                  <Diff before={plan.before} after={plan.after} />
-                  {plan.carries_secret && <p className="mt-1.5 tw-label text-muted-foreground">{t.secretMasked}</p>}
-                </>
-              )}
+              </Button>
+              <Reveal show={diffOpen}>
+                <Diff before={plan.before} after={plan.after} />
+                {plan.carries_secret && <p className="mt-1.5 tw-label text-muted-foreground">{t.secretMasked}</p>}
+              </Reveal>
             </div>
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} disabled={pending}>
             {common.cancel}
           </Button>
           {!plan.noop && (
-            <Button variant={restore ? "destructive" : "default"} disabled={busy} onClick={onConfirm}>
-              {busy && <Spinner />}
+            <Button variant={restore ? "destructive" : "default"} pending={pending} onClick={onConfirm}>
               {restore ? t.confirmRestore : t.confirmAdopt}
             </Button>
           )}
@@ -185,15 +190,15 @@ export function Diff({ before, after }: { before: string | null; after: string }
   while (j < m) rows.push({ text: line(b, j++), kind: "add" });
 
   return (
-    <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono tw-label leading-relaxed">
+    <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-border bg-surface p-2 font-mono tw-label leading-relaxed">
       {rows.map((r, i) => (
         <div
           key={i}
           className={
             r.kind === "add"
-              ? "bg-success/10 text-success"
+              ? "bg-success/10 text-success-foreground"
               : r.kind === "del"
-                ? "bg-destructive/10 text-destructive line-through"
+                ? "bg-destructive/8 text-destructive-foreground line-through"
                 : "text-muted-foreground"
           }
         >

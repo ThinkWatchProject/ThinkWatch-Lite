@@ -122,14 +122,22 @@ pub async fn rotate_key(
     Ok(out)
 }
 
-/// 每把密钥这段时间发了多少请求。**按密钥算，不是按客户端自报的标识**
+/// 每把密钥这段时间的用量：合计，和按 `bucket_ms` 分格的走势。**按密钥算，不是
+/// 按客户端自报的标识。**
+///
+/// **起点和格宽由界面给**（起点对齐到本地整点），理由和 `dashboard` 一样：格子的
+/// 边界要跟着本地时钟，而不是每读一次往前挪一点。
+///
+/// **读不到就报错，不回一份空的。**空的合计在界面上等于「这把密钥 24 小时里没有
+/// 请求」—— 那是一个编出来的零。报错时界面那几格写「—」。
 #[tauri::command]
 pub async fn key_usage(
     state: tauri::State<'_, AppState>,
     since_ms: i64,
-) -> Out<Vec<tw_api::CostGroup>> {
-    Ok(state
-        .control
+    bucket_ms: i64,
+) -> Out<wire::KeyUsage> {
+    let c = &state.control;
+    let totals = c
         .call::<ep::CostBy>(
             &[],
             &tw_api::GroupQuery {
@@ -139,5 +147,23 @@ pub async fn key_usage(
             },
         )
         .await
-        .unwrap_or_default())
+        .map_err(text)?;
+    let buckets = c
+        .call::<ep::CostBucketsBy>(
+            &[],
+            &tw_api::BucketGroupQuery {
+                from_ms: Some(since_ms),
+                to_ms: None,
+                bucket_ms: Some(bucket_ms),
+                dim: tw_api::CostDim::Client,
+            },
+        )
+        .await
+        .map_err(text)?;
+    Ok(wire::KeyUsage {
+        since_ms,
+        bucket_ms,
+        totals,
+        buckets,
+    })
 }

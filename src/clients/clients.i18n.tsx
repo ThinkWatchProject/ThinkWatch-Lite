@@ -12,19 +12,29 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  */
 export const clientsText = messages(
   {
-    scanning: "扫描中…",
-    intro: "接管后，客户端的地址和密钥指向本网关，其余配置不变，可随时还原。",
     restoreAll: "全部还原…",
-    noneDetected:
-      "本机未检测到可接管的客户端。已安装的客户端运行一次、生成配置文件后会出现在这里，也可以按「配置方法」手动接入。",
+    loadFailed: "无法读取本机的客户端",
+    noneTitle: "未检测到可接管的客户端",
+    noneHint: "已安装的客户端运行一次、生成配置文件后会出现在这里；也可以按下方的配置方法手动接入。",
     manualTitle: "需要手动配置",
     manualIntro: "以下客户端无法自动接管，按步骤填入网关地址和密钥即可。",
+    absentTitle: "未检测到",
+    absentIntro: "配置文件不在默认位置时，可以按配置方法手动接入。",
+
+    // 页头的摘要
+    noneConnected: "尚未接管客户端",
+    nDetected: (_n: number, n: ReactNode) => <>检测到 {n} 个</>,
+    nInUse: "使用中",
+    nWaiting: "等待首个请求",
+    nBroken: "未生效",
+    nIdle: "未接管",
 
     // 表头
     client: "客户端",
     status: "状态",
     key: "密钥",
     last24h: "24 小时",
+    actions: "操作",
 
     // 状态
     inUse: "使用中",
@@ -41,10 +51,6 @@ export const clientsText = messages(
     pointsTo: (host: string) => `当前指向 ${host}`,
     ownService: "使用自带的服务",
     seeWhy: "查看原因",
-
-    // 用量
-    requests: (n: number) => `${n.toLocaleString()} 次`,
-    neverUsed: "从未使用",
 
     // 操作
     adopt: "接管…",
@@ -71,15 +77,15 @@ export const clientsText = messages(
     notHere: "未指向本网关",
     noEndpoint: "未设置，使用自带的服务",
     keyOnAdopt: "接管时生成",
-    openKey: "在密钥页查看",
     effect: "生效",
     usage: "24 小时",
     usageLine: (n: number, at: string) => `${n.toLocaleString()} 次请求 · 最近一次 ${at}`,
+    lastSeenLine: (at: string) => `最近一次 ${at}`,
     noUsage: "尚无请求",
     costs: "接管的影响",
     check: "配置链检查",
     recheck: "重新检查",
-    checking: "检查中…",
+    checkFailed: "配置链检查未能完成",
 
     // 接管、还原的确认
     adoptTitle: (name: string) => `接管 ${name}`,
@@ -118,20 +124,29 @@ export const clientsText = messages(
     confirmRestoreAll: "全部还原",
   },
   {
-    scanning: "Scanning…",
-    intro:
-      "Once connected, a client's address and key point to this gateway; the rest of its configuration is left as it is, and it can be restored at any time.",
     restoreAll: "Restore all…",
-    noneDetected:
-      "No client that can be connected automatically was found on this computer. An installed client appears here once it has been run and has created its configuration file; each one can also be set up by hand from “How to set up”.",
+    loadFailed: "Could not read the clients on this computer",
+    noneTitle: "No client to connect was found",
+    noneHint:
+      "An installed client appears here once it has been run and has created its configuration file. Each one can also be set up by hand below.",
     manualTitle: "Set up by hand",
     manualIntro:
       "These clients cannot be connected automatically; follow the steps to enter the gateway address and key.",
+    absentTitle: "Not detected",
+    absentIntro: "When the configuration file is not in its default location, the client can be set up by hand.",
+
+    noneConnected: "No client connected yet",
+    nDetected: (count: number, n: ReactNode) => <>{n} {count === 1 ? "client" : "clients"} detected</>,
+    nInUse: "in use",
+    nWaiting: "waiting for first request",
+    nBroken: "not in effect",
+    nIdle: "not connected",
 
     client: "Client",
     status: "Status",
     key: "Key",
     last24h: "Last 24 hours",
+    actions: "Actions",
 
     inUse: "In use",
     waiting: "Waiting for first request",
@@ -148,12 +163,9 @@ export const clientsText = messages(
     ownService: "Uses its own service",
     seeWhy: "See why",
 
-    requests: (n: number) => (n === 1 ? "1 request" : `${n.toLocaleString()} requests`),
-    neverUsed: "Never used",
-
     adopt: "Connect…",
     restore: "Restore…",
-    manual: "How to set up…",
+    manual: "Set up…",
     details: "Details…",
     reveal: isWindows
       ? "Show configuration file in File Explorer"
@@ -175,16 +187,16 @@ export const clientsText = messages(
     notHere: "Does not point to this gateway",
     noEndpoint: "Not set; uses its own service",
     keyOnAdopt: "Generated when connecting",
-    openKey: "Show on the Keys page",
     effect: "Takes effect",
     usage: "Last 24 hours",
     usageLine: (n: number, at: string) =>
       `${n === 1 ? "1 request" : `${n.toLocaleString()} requests`} · last at ${at}`,
+    lastSeenLine: (at: string) => `Last at ${at}`,
     noUsage: "No requests yet",
     costs: "What changes",
     check: "Configuration check",
     recheck: "Check again",
-    checking: "Checking…",
+    checkFailed: "The configuration check could not finish",
 
     adoptTitle: (name: string) => `Connect ${name}`,
     restoreTitle: (name: string) => `Restore ${name}`,

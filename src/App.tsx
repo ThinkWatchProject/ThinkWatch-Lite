@@ -11,6 +11,7 @@ import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import ClientsPage from "./clients/ClientsPage";
 import KeysPage from "./keys/KeysPage";
+import { useBusyKeys } from "./keys/live";
 import RoutingPage from "./routing/RoutingPage";
 import SecurityPage, { type LogFocus } from "./security/SecurityPage";
 import McpPage from "./mcp/McpPage";
@@ -274,6 +275,8 @@ function Shell({ first }: { first: boolean }) {
     upstreamState,
   } = useRequests(linked);
   const sessions = useSessions(linked);
+  /** 此刻有请求在跑的密钥：密钥页、客户端页上那一格的「请求中」 */
+  const busyKeys = useBusyKeys(allRows);
   const traffic = useTrafficView();
   const { setFilter, setGrouped } = traffic;
 
@@ -301,8 +304,6 @@ function Shell({ first }: { first: boolean }) {
   /** 送到某一页的深链参数，见 `nav.tsx` */
   const [delivery, setDelivery] = useState<NavDelivery | null>(null);
   const deliveries = useRef(0);
-  /** 从别的页点了某把密钥：密钥页打开时定位到那一行 */
-  const [focusKey, setFocusKey] = useState<string | null>(null);
   /**
    * 从概览的安全计数点进日志时带的区间。**离开安全页就清掉** —— 过一阵再回来，
    * 不该又被拨回当时那一段时间。
@@ -323,7 +324,6 @@ function Shell({ first }: { first: boolean }) {
         if (p.filter) setFilter({ ...EMPTY_FILTER, ...p.filter });
         if (p.grouped !== undefined) setGrouped(p.grouped);
       }
-      if (s === "keys") setFocusKey((params as NavParams["keys"])?.key ?? null);
       if (s === "security") setSecurityFocus((params as NavParams["security"])?.focus ?? null);
       setTab(s);
       deliveries.current += 1;
@@ -1005,11 +1005,7 @@ function Shell({ first }: { first: boolean }) {
                         onShowUnpriced={() => open("requests", { grouped: false, filter: { unpricedOnly: true } })}
                       />
                     ) : tab === "clients" ? (
-                      <ClientsPage
-                        onOpenKey={(name) => open("keys", { key: name })}
-                        // 流量表的「密钥」一列就是密钥名
-                        onShowTraffic={(key) => open("requests", { filter: { client: key } })}
-                      />
+                      <ClientsPage busy={busyKeys} />
                     ) : tab === "mcp" ? (
                       <McpPage alerts={alerts} onSeen={clearAlerts} />
                     ) : tab === "security" ? (
@@ -1025,14 +1021,7 @@ function Shell({ first }: { first: boolean }) {
                       )
                     ) : tab === "keys" ? (
                       ov ? (
-                        <KeysPage
-                          ov={ov}
-                          focus={focusKey}
-                          onFocused={() => setFocusKey(null)}
-                          onChanged={changed}
-                          onOpenConfigFile={openConfigFile}
-                          onNavigate={go}
-                        />
+                        <KeysPage ov={ov} busy={busyKeys} onChanged={changed} onOpenConfigFile={openConfigFile} />
                       ) : (
                         skeleton
                       )

@@ -1,17 +1,14 @@
 import { useState } from "react";
-import { TriangleAlertIcon } from "lucide-react";
-import { toast } from "sonner";
-import { Alert, AlertDescription } from "@/ui/alert";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
-import { IconCopied, IconCopy } from "@/ui/icons";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
+import { notify } from "@/ui/notify";
 import { Table, TableBody, TableCell, TableRow } from "@/ui/table";
 import { useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
-import { coreText, errorText } from "@/i18n/core.i18n";
+import { coreText } from "@/i18n/core.i18n";
 import type { ClientView, ManualSetup, Msg } from "@/types";
+import { ClientMark, CopyButton, Tile, focusSelf, useDialogFocus } from "@/keys/parts";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
 
@@ -49,19 +46,13 @@ export function ManualDialog({
   onKeyReady: () => void;
 }) {
   const t = useText(clientsText);
+  const dialogFocus = useDialogFocus();
   /** 为它留着的那把。刚建好的在列表重读回来之前也要能选到 */
   const [own, setOwn] = useState(target.key ?? null);
   const [choice, setChoice] = useState(target.key ?? NEW);
-  const [copied, setCopied] = useState<"endpoint" | "key" | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const flash = (what: "endpoint" | "key") => {
-    setCopied(what);
-    setTimeout(() => setCopied((c) => (c === what ? null : c)), 1500);
-  };
-
+  /** 复制密钥；选的是「新建」就先建，建好的那一把从此是选中的 */
   async function copyKey() {
-    setBusy(true);
     try {
       let name = choice;
       if (choice === NEW) {
@@ -71,11 +62,9 @@ export function ManualDialog({
         onKeyReady();
       }
       await api.copyKey(name);
-      flash("key");
     } catch (e) {
-      toast.error(errorText(e));
-    } finally {
-      setBusy(false);
+      notify.error(e);
+      throw e;
     }
   }
 
@@ -84,36 +73,42 @@ export function ManualDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
+        {...dialogFocus}
         // 点一行就打开：焦点落在对话框本身，不落到第一个按钮上 —— WebKit 里
-        // 脚本给的焦点会在按钮上画一圈框，而用户根本没按过 Tab。和请求详情
-        // 抽屉同一个做法：焦点仍在对话框里，读屏和 Esc 照常
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          (e.currentTarget as HTMLElement | null)?.focus();
-        }}
+        // 脚本给的焦点会在按钮上画一圈框，而用户根本没按过 Tab
+        onOpenAutoFocus={focusSelf}
       >
-        <DialogHeader>
+        <DialogHeader className="flex-row items-center gap-3">
+          <Tile className="size-9 rounded-lg [&_svg]:size-[18px]">
+            <ClientMark id={target.id} name={target.name} size={18} />
+          </Tile>
           <DialogTitle>{t.manualDialogTitle(target.name)}</DialogTitle>
         </DialogHeader>
 
-        <ol className="flex list-decimal flex-col gap-1.5 pl-5 tw-body">
+        {/* 步骤带编号圆点：几步、做到哪一步，一眼数得出来 */}
+        <ol className="flex flex-col gap-2.5 tw-body">
           {steps.map((s, i) => (
-            <li key={i}>{coreText(s)}</li>
+            <li key={i} className="flex gap-2.5">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface tw-label tw-num text-muted-foreground">
+                {i + 1}
+              </span>
+              <span className="min-w-0 pt-px">{coreText(s)}</span>
+            </li>
           ))}
         </ol>
 
         {fields.length > 0 && (
-          <div className="rounded-md border border-border">
+          <div className="overflow-hidden rounded-lg border border-border">
             <Table>
               <TableBody>
                 {fields.map((f) => (
-                  <TableRow key={f.path}>
+                  <TableRow key={f.path} className="hover:bg-transparent">
                     <TableCell className="font-mono tw-label">{f.path}</TableCell>
                     <TableCell className="whitespace-normal break-all">
                       {f.secret ? (
                         <span className="text-muted-foreground">{t.keyGoesBelow}</span>
                       ) : (
-                        <span className="font-mono tw-label">{f.value}</span>
+                        <span className="font-mono tw-label select-text">{f.value}</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -123,32 +118,32 @@ export function ManualDialog({
           </div>
         )}
 
-        <div className="rounded-md border border-border">
+        <div className="overflow-hidden rounded-lg border border-border bg-surface/60">
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div className="min-w-0">
               <p className="tw-label text-muted-foreground">{t.endpointLabel}</p>
               <p className="truncate font-mono tw-body select-text">{endpoint}</p>
             </div>
             <CopyButton
-              copied={copied === "endpoint"}
-              onClick={() =>
-                void api
-                  .copyEndpoint(target.id)
-                  .then(() => flash("endpoint"))
-                  .catch((e) => toast.error(errorText(e)))
+              onCopy={() =>
+                api.copyEndpoint(target.id).catch((e: unknown) => {
+                  notify.error(e);
+                  throw e;
+                })
               }
             />
           </div>
           <div className="border-t border-border" />
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div className="flex min-w-0 flex-col gap-1.5">
-              <p className="tw-label text-muted-foreground">{t.keyLabel}</p>
+              <label className="tw-label text-muted-foreground" htmlFor="manual-key">
+                {t.keyLabel}
+              </label>
               <NativeSelect
+                id="manual-key"
                 size="sm"
-                aria-label={t.keyLabel}
-                className="w-72"
+                className="w-72 max-w-full"
                 value={choice}
-                disabled={busy}
                 onChange={(e) => setChoice(e.target.value)}
               >
                 {own == null && <NativeSelectOption value={NEW}>{t.newKeyFor(target.name)}</NativeSelectOption>}
@@ -162,20 +157,14 @@ export function ManualDialog({
                 ))}
               </NativeSelect>
             </div>
-            <CopyButton
-              copied={copied === "key"}
-              busy={busy}
-              label={choice === NEW ? t.createAndCopy : undefined}
-              onClick={() => void copyKey()}
-            />
+            <CopyButton label={choice === NEW ? t.createAndCopy : undefined} onCopy={copyKey} />
           </div>
         </div>
 
         {target.caveat && (
-          <Alert variant="warning">
-            <TriangleAlertIcon />
-            <AlertDescription>{coreText(target.caveat)}</AlertDescription>
-          </Alert>
+          <Banner layout="inline" tone="warning">
+            {coreText(target.caveat)}
+          </Banner>
         )}
 
         <DialogFooter>
@@ -183,25 +172,5 @@ export function ManualDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function CopyButton({
-  copied,
-  busy,
-  label,
-  onClick,
-}: {
-  copied: boolean;
-  busy?: boolean;
-  label?: string;
-  onClick: () => void;
-}) {
-  const common = useText(commonText);
-  return (
-    <Button variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={onClick}>
-      {busy ? <Spinner /> : copied ? <IconCopied /> : <IconCopy />}
-      {copied ? common.copied : (label ?? common.copy)}
-    </Button>
   );
 }
