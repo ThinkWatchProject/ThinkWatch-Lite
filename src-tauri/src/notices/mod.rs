@@ -25,7 +25,7 @@
 //!
 //! # 平台
 //!
-//! 投递是 [`Sink`]，系统通知只是其中一个实现。macOS 和 Windows 各有一个原生的
+//! 投递是 [`Sink`]，系统通知只是其中一个实现。macOS、Windows、Linux 各有一个原生的
 //! sink，判定只有这一套。
 
 use std::collections::{HashMap, VecDeque};
@@ -33,6 +33,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub mod commands;
+// 键 ↔ id 表的存取这类纯逻辑在哪个平台都测；接 D-Bus 的部分只在 Linux 上编
+#[cfg(any(target_os = "linux", test))]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod rules;

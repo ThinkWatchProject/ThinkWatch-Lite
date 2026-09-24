@@ -4544,6 +4544,7 @@ dependencies = [
  "block2",
  "dispatch2",
  "flate2",
+ "gtk",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -4576,6 +4577,7 @@ dependencies = [
  "tw-api",
  "windows",
  "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]
