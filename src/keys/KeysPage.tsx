@@ -1,53 +1,38 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KeyRoundIcon, PlusIcon } from "lucide-react";
-import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/ui/dialog";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/ui/empty";
-import { IconCopied, IconCopy } from "@/ui/icons";
-import type {
-  ClientView,
-  CostGroup,
-  DetectedClient,
-  KnownModel,
-  ManualClient,
-  Overview,
-} from "@/types";
-import { useCoreEvent } from "@/useCoreEvent";
+import { IconClient } from "@/ui/icons";
+import { AnimatedNumber, Reveal } from "@/ui/motion";
+import { notify, undoable } from "@/ui/notify";
+import { Page, PageHeader, SummaryItem } from "@/ui/page";
+import { Skeleton } from "@/ui/skeleton";
+import { EmptyState, Loadable } from "@/ui/states";
+import { StatusDot } from "@/ui/status-dot";
+import { useNav, useNavParams } from "@/nav";
+import { usd, type ClientView, type KeyInput, type Overview } from "@/types";
 import { useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
+import { appText } from "@/App.i18n";
+import { useClients } from "@/clients/data";
 import { api } from "./api";
+import { CreatedDialog } from "./CreatedDialog";
+import { useConfigVersion, useGatewayBase, useKeys, useKeyUsage, useKnownModels, type KeyUse } from "./data";
+import { DeleteDialog } from "./DeleteDialog";
 import { KeyDialog } from "./KeyDialog";
 import { KeysTable } from "./KeysTable";
 import { keysPageText } from "./KeysPage.i18n";
-import { errorText } from "./labels";
+import { takeoverOf } from "./labels";
+import { RowsSkeleton } from "./parts";
 import { RotateDialog } from "./RotateDialog";
-
-const DAY_MS = 24 * 3_600_000;
 
 type DialogState =
   | null
   | { kind: "edit"; name: string | null }
   | { kind: "rotate"; name: string }
-  | { kind: "delete"; name: string }
+  /**
+   * 删的那一把**连同它的样子一起记下**：删成功之后它就从列表里拿掉了，对话框还要
+   * 放完自己的收起动画
+   */
+  | { kind: "delete"; target: ClientView }
   | { kind: "created"; name: string };
 
 /**
@@ -56,355 +41,329 @@ type DialogState =
  * **客户端连网关必须带一把**，本机也不例外。每把的值原样显示、旁边一个复制
  * 按钮；接管客户端时生成的那几把单独标出来，写明是给谁的。
  *
- * **自己一页，挨着客户端。**它曾经和监听范围、并发合在「接入」里 —— 三样
- * 东西都跟「谁能连进来」有关，但用户来这一页只为一件事：拿一把密钥、看它
- * 给了谁。监听是配一次就不动的网关设置，已经挪去了设置页。
+ * **自己一页，挨着客户端。**用户来这一页只为一件事：拿一把密钥、看它给了谁、
+ * 还有没有在用。页头一行是总数和 24 小时的用量，每一行右边是那把的小柱图。
  *
  * 只读，改任何东西都在对话框里完成；能不能删、改名要不要带着规则一起改、
- * 更换要同步给谁，都由 core 判断 —— 界面只负责把话说清楚。
+ * 更换要同步给谁，都由 core 判断 —— 界面只负责把话说清楚。停用、启用、设为
+ * 默认可以撤销，不弹确认；删除要确认。
  */
 export default function KeysPage({
   ov,
-  focus,
-  onFocused,
+  busy,
   onChanged,
   onOpenConfigFile,
-  onNavigate,
 }: {
   ov: Overview;
-  /** 从客户端页点过来的那一把：打开时定位到它，底色亮一下 */
-  focus?: string | null;
-  onFocused?: () => void;
+  /** 此刻有请求在跑的密钥 */
+  busy: ReadonlySet<string>;
   onChanged: () => void;
   onOpenConfigFile: (focus: string | null) => void;
-  onNavigate: (tab: string) => void;
 }) {
   const t = useText(keysPageText);
-  const configVersion = ov.config_version;
-  const common = useText(commonText);
-  const [keys, setKeys] = useState<ClientView[]>([]);
-  const [clients, setClients] = useState<DetectedClient[]>([]);
-  const [manual, setManual] = useState<ManualClient[]>([]);
-  const [highlight, setHighlight] = useState<string | null>(null);
-  const [usage, setUsage] = useState<CostGroup[]>([]);
-  const [catalog, setCatalog] = useState<KnownModel[]>([]);
+  const title = useText(appText).surfaces.keys;
+  const nav = useNav();
+  const version = useConfigVersion(ov.config_version);
+  const keys = useKeys(ov.config_version);
+  const usage = useKeyUsage();
+  const clients = useClients();
+  const catalog = useKnownModels();
+  const gateway = useGatewayBase();
   const [dialog, setDialog] = useState<DialogState>(null);
-  const [gateway, setGateway] = useState("");
-  const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api.listKeys().then(setKeys).catch((e) => toast.error(errorText(e)));
-    // 接管状态在客户端配置旁边的记录里，每次现扫；拿不到时少一个标记，页面照常用
-    api
-      .clients()
-      .then((r) => {
-        setClients(r.clients);
-        setManual(r.manual);
-      })
-      .catch(() => {
-        setClients([]);
-        setManual([]);
-      });
-    api
-      .keyUsage(Date.now() - DAY_MS)
-      .then(setUsage)
-      .catch(() => setUsage([]));
-    // 取不到就当作还没有清单：那一栏退回说规则条数，选择器只留手填
-    api
-      .knownModels()
-      .then(setCatalog)
-      .catch(() => setCatalog([]));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load, ov]);
+  const list = keys.data;
+  const detected = clients.data?.clients ?? [];
+  const manual = clients.data?.manual ?? [];
 
   /*
-    **最近使用和 24 小时用量跟着请求走。**配好一个客户端之后来这一页，为的就是
-    看那把密钥有没有在用 —— 请求落地之后重读这两样。在后台重读，读不到就保持
-    原样，不弹错误。接管状态跟着客户端配置的变化重读。
+    从别的页点过来的那一把（客户端页的密钥名）：那一行出现了就滚过去、底色亮一下。
+    参数一次送达只回调一次，行还没到的话先记着
   */
-  const loadUse = useCallback(() => {
-    api
-      .listKeys()
-      .then(setKeys)
-      .catch(() => {});
-    api
-      .keyUsage(Date.now() - DAY_MS)
-      .then(setUsage)
-      .catch(() => {});
-  }, []);
-  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], loadUse);
-  useCoreEvent(["clients_changed"], load);
-
-  // 从客户端页点过来：那一行出现了就滚过去、亮一下，然后把这个请求交还
+  const [focus, setFocus] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  useNavParams("keys", (p) => setFocus(p.key ?? null));
   useEffect(() => {
-    if (!focus || !keys.some((k) => k.name === focus)) return;
+    if (!focus || !list?.some((k) => k.name === focus)) return;
     document.querySelector(`[data-row="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
     setHighlight(focus);
-    onFocused?.();
-  }, [focus, keys, onFocused]);
+    setFocus(null);
+  }, [focus, list]);
   useEffect(() => {
     if (!highlight) return;
-    const timer = setTimeout(() => setHighlight(null), 1600);
-    return () => clearTimeout(timer);
+    const h = setTimeout(() => setHighlight(null), 1600);
+    return () => clearTimeout(h);
   }, [highlight]);
 
-  // 换了监听端口，地址跟着变 —— 所以跟着概览重取，不是只取一次
-  useEffect(() => {
-    api.gatewayBase().then(setGateway).catch(() => setGateway(""));
-  }, [ov]);
-
-  const changed = (name?: string) => {
+  /** 写完一次：记下新版本，重读列表，告诉外壳（概览跟着重读） */
+  function wrote(v: string) {
+    version.set(v);
+    void keys.reload();
     onChanged();
-    load();
-    if (name) setTimeout(() => document.querySelector(`[data-row="${CSS.escape(name)}"]`)?.scrollIntoView({ block: "nearest" }), 0);
-  };
-
-  async function write(what: () => Promise<unknown>, ok?: string) {
-    setBusy(true);
-    try {
-      await what();
-      if (ok) toast.success(ok);
-      changed();
-    } catch (e) {
-      toast.error(errorText(e));
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function copy(name: string, quiet?: boolean) {
     try {
       await api.copyKey(name);
-      if (!quiet) toast.success(t.copied(name));
+      if (!quiet) notify.success(t.copied(name));
     } catch (e) {
-      toast.error(errorText(e));
+      notify.error(e);
       throw e;
     }
   }
 
-  const editing = dialog?.kind === "edit" && dialog.name ? keys.find((k) => k.name === dialog.name) : null;
-  const target = (name: string) => keys.find((k) => k.name === name);
-  const defaultRoute = ov.default_route;
+  /** 停用、启用。**可以撤销**：先改界面，再写；toast 上给撤销 */
+  function toggle(k: ClientView) {
+    const next = !k.disabled;
+    const write = async (disabled: boolean) => {
+      const w = await api.updateKey(k.name, { key: inputOf(k, { disabled }), base_version: version.get() });
+      wrote(w.version);
+    };
+    void undoable({
+      message: next ? t.disabledToast(k.name) : t.enabledToast(k.name),
+      apply: () => keys.mutate((ks) => (ks ?? []).map((x) => (x.name === k.name ? { ...x, disabled: next } : x))),
+      do: () => write(next),
+      undo: () => write(!next),
+    });
+  }
+
+  /** 设为默认。**可以撤销**：撤销就是把原来那一把设回去 */
+  function makeDefault(name: string) {
+    const before = list?.find((k) => k.default)?.name;
+    const write = async (to: string) => {
+      const w = await api.setDefaultKey(to, version.get());
+      wrote(w.version);
+    };
+    const mark = (to: string) => (ks: ClientView[] | undefined) => (ks ?? []).map((k) => ({ ...k, default: k.name === to }));
+    if (!before) {
+      void write(name).catch((e) => notify.error(e));
+      return;
+    }
+    void undoable({
+      message: t.madeDefault(name),
+      apply: () => keys.mutate(mark(name)),
+      do: () => write(name),
+      undo: () => write(before),
+    });
+  }
+
+  const byName = (name: string) => list?.find((k) => k.name === name);
+  const editing = dialog?.kind === "edit" && dialog.name ? byName(dialog.name) : null;
+  const rotating = dialog?.kind === "rotate" ? byName(dialog.name) : undefined;
+  const deleting = dialog?.kind === "delete" ? dialog.target : undefined;
   // 只有一把默认密钥时，这一页要回答的是「接下来做什么」
-  const onlyDefault = keys.length === 1 && keys[0]?.default;
+  const onlyDefault = list?.length === 1 && list[0]?.default === true;
 
   return (
-    <div className="flex flex-col gap-4 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="tw-body text-muted-foreground">{t.intro}</p>
-        <div className="flex-1" />
-        <Button variant="outline" size="sm" onClick={() => onNavigate("clients")}>
-          {t.connectClient}
-        </Button>
-        <Button size="sm" onClick={() => setDialog({ kind: "edit", name: null })}>
-          <PlusIcon />
-          {t.newKey}
-        </Button>
-      </div>
-
-      <KeysTable
-        keys={keys}
-        clients={clients}
-        manual={manual}
-        highlight={highlight}
-        usage={usage}
-        defaultRoute={defaultRoute}
-        catalog={catalog}
-        actions={{
-          edit: (name) => setDialog({ kind: "edit", name }),
-          rotate: (name) => setDialog({ kind: "rotate", name }),
-          remove: (name) => setDialog({ kind: "delete", name }),
-          copy,
-          toggle: (k) =>
-            void write(() =>
-              api.updateKey(k.name, {
-                key: {
-                  name: k.name,
-                  route: k.route ?? null,
-                  allow: k.allow ?? null,
-                  max_concurrent: k.max_concurrent,
-                  disabled: !k.disabled,
-                },
-                base_version: configVersion,
-              }),
-            ),
-          makeDefault: (name) =>
-            void write(() => api.setDefaultKey(name, configVersion), t.madeDefault(name)),
-          locate: (name) => onOpenConfigFile(name),
-        }}
-      />
-
-      {onlyDefault && (
-        <Empty className="border border-dashed">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <KeyRoundIcon />
-            </EmptyMedia>
-            <EmptyTitle>{t.emptyTitle}</EmptyTitle>
-            <EmptyDescription>{t.emptyDescription}</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button size="sm" onClick={() => onNavigate("clients")}>
+    <Page className="@container/page">
+      <PageHeader
+        title={title}
+        summary={<Summary keys={list} loading={keys.loading} usage={usage.byKey} />}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => nav.open("clients")}>
               {t.connectClient}
             </Button>
-          </EmptyContent>
-        </Empty>
-      )}
+            <Button size="sm" onClick={() => setDialog({ kind: "edit", name: null })}>
+              <PlusIcon />
+              {t.newKey}
+            </Button>
+          </>
+        }
+      />
+
+      <Loadable
+        r={keys}
+        loading={<RowsSkeleton rows={4} cols={5} />}
+        errorTitle={t.loadFailed}
+        isEmpty={(d) => d.length === 0}
+        empty={
+          <EmptyState
+            icon={<KeyRoundIcon />}
+            title={t.noKeys}
+            description={t.noKeysHint}
+            action={
+              <Button size="sm" onClick={() => setDialog({ kind: "edit", name: null })}>
+                <PlusIcon />
+                {t.newKey}
+              </Button>
+            }
+          />
+        }
+      >
+        {(data) => (
+          <>
+            <KeysTable
+              keys={data}
+              clients={detected}
+              manual={manual}
+              highlight={highlight}
+              usage={usage.byKey}
+              busy={busy}
+              defaultRoute={ov.default_route}
+              catalog={catalog.data ?? []}
+              actions={{
+                edit: (name) => setDialog({ kind: "edit", name }),
+                rotate: (name) => setDialog({ kind: "rotate", name }),
+                remove: (name) => {
+                  const target = byName(name);
+                  if (target) setDialog({ kind: "delete", target });
+                },
+                copy,
+                toggle,
+                makeDefault,
+                locate: (name) => onOpenConfigFile(name),
+              }}
+            />
+            <Reveal show={onlyDefault}>
+              <EmptyState
+                variant="outlined"
+                className="mt-6"
+                icon={<IconClient />}
+                title={t.emptyTitle}
+                description={t.emptyDescription}
+                action={
+                  <Button size="sm" onClick={() => nav.open("clients")}>
+                    {t.connectClient}
+                  </Button>
+                }
+              />
+            </Reveal>
+          </>
+        )}
+      </Loadable>
 
       {dialog?.kind === "edit" && (
         <KeyDialog
           editing={editing ?? null}
-          keys={keys}
-          clients={clients}
+          keys={list ?? []}
+          clients={detected}
           manual={manual}
-          usage={usage}
+          usage={editing ? usage.byKey?.get(editing.name) : undefined}
+          usageLoaded={usage.byKey !== undefined}
           routes={ov.routes}
-          defaultRoute={defaultRoute}
-          catalog={catalog}
-          configVersion={configVersion}
+          defaultRoute={ov.default_route}
+          catalog={catalog.data ?? []}
+          version={version}
           onClose={() => setDialog(null)}
-          onSaved={(name) => {
-            const created = !dialog.name;
-            setDialog(created ? { kind: "created", name } : null);
-            changed(name);
+          onSaved={(name, v) => {
+            wrote(v);
+            setDialog(dialog.name ? null : { kind: "created", name });
           }}
           onRotate={(name) => setDialog({ kind: "rotate", name })}
         />
       )}
 
-      {dialog?.kind === "rotate" && target(dialog.name) && (
+      {rotating && (
         <RotateDialog
-          target={target(dialog.name)!}
-          clients={clients}
-          configVersion={configVersion}
+          target={rotating}
+          clients={detected}
+          version={version}
           onClose={() => setDialog(null)}
-          onRotated={changed}
+          onRotated={wrote}
         />
       )}
 
       {dialog?.kind === "created" && (
         <CreatedDialog
           name={dialog.name}
-          value={target(dialog.name)?.key ?? null}
-          gateway={gateway}
+          value={byName(dialog.name)?.key ?? null}
+          gateway={gateway.data ?? null}
           onCopyKey={() => copy(dialog.name, true)}
           onClose={() => setDialog(null)}
         />
       )}
 
-      {dialog?.kind === "delete" && (
-        <AlertDialog open onOpenChange={(o) => !o && setDialog(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t.deleteTitle(dialog.name)}</AlertDialogTitle>
-              <AlertDialogDescription>{t.deleteDescription}</AlertDialogDescription>
-            </AlertDialogHeader>
-            {/* 这一步随手就做了，而代价要到下次接管才显出来 */}
-            {target(dialog.name)?.client && (
-              <Alert>
-                <AlertTitle>
-                  {t.regenerated(
-                    clients.find((c) => c.id === target(dialog.name)?.client)?.name ??
-                      target(dialog.name)?.client ??
-                      "",
-                  )}
-                </AlertTitle>
-                <AlertDescription>{t.keepIt}</AlertDescription>
-              </Alert>
-            )}
-            <AlertDialogFooter>
-              <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={busy}
-                onClick={() => {
-                  const name = dialog.name;
-                  setDialog(null);
-                  void write(() => api.deleteKey(name, configVersion));
-                }}
-              >
-                {common.delete}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+      {deleting && (
+        <DeleteDialog
+          target={deleting}
+          owner={takeoverOf(deleting, detected, manual)}
+          onDelete={async () => {
+            const w = await api.deleteKey(deleting.name, version.get());
+            // 先从列表里拿掉（那一行淡出），再去取真值
+            keys.mutate((ks) => (ks ?? []).filter((k) => k.name !== deleting.name));
+            wrote(w.version);
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
-    </div>
+    </Page>
   );
 }
 
-/** 刚建好的一把密钥，下一步一定是拿去某个地方填上 —— 地址和密钥一起给 */
-function CreatedDialog({
-  name,
-  value,
-  gateway,
-  onCopyKey,
-  onClose,
+/**
+ * 页头那一行：几把密钥、几把在用、停用的有几把，24 小时的请求数和费用。
+ *
+ * **用量没取到就不写用量**（不写成 0）；24 小时里一个请求都没有时写一句「24 小时内
+ * 无请求」，而不是一排零。
+ */
+function Summary({
+  keys,
+  loading,
+  usage,
 }: {
-  name: string;
-  /** 列表重取回来之前是 null */
-  value: string | null;
-  gateway: string;
-  onCopyKey: () => Promise<void>;
-  onClose: () => void;
+  keys: ClientView[] | undefined;
+  /** 列表还在取。**取失败了不画骨架**：下面是一个报错，页头不该还像在等 */
+  loading: boolean;
+  usage: Map<string, KeyUse> | undefined;
 }) {
   const t = useText(keysPageText);
+  const totals = useMemo(() => {
+    if (!keys || !usage) return null;
+    let requests = 0;
+    let cost = 0;
+    let active = 0;
+    for (const k of keys) {
+      const u = usage.get(k.name);
+      if (!u || u.requests === 0) continue;
+      active += 1;
+      requests += u.requests;
+      cost += u.cost;
+    }
+    return { requests, cost, active };
+  }, [keys, usage]);
+  if (!keys) return loading ? <Skeleton className="my-1 h-3 w-64 rounded-sm" /> : null;
+  const disabled = keys.filter((k) => k.disabled).length;
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t.createdTitle}</DialogTitle>
-          <DialogDescription>
-            <span className="font-mono text-foreground">{name}</span> {t.canConnect}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="rounded-md border border-border">
-          <CopyRow label={t.gatewayAddress} value={gateway || null} onCopy={api.copyGatewayBase} />
-          <div className="border-t border-border" />
-          <CopyRow label={t.key} value={value} onCopy={onCopyKey} />
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose}>{t.done}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <SummaryItem value={<AnimatedNumber value={keys.length} />} label={t.keysUnit(keys.length)} />
+      {totals && totals.active > 0 && (
+        <SummaryItem
+          lead={<StatusDot tone="ok" />}
+          value={<AnimatedNumber value={totals.active} />}
+          label={t.active}
+        />
+      )}
+      {disabled > 0 && <SummaryItem lead={<StatusDot tone="idle" />} value={disabled} label={t.disabled} />}
+      {totals &&
+        (totals.requests > 0 ? (
+          <>
+            <span className="motion-fade whitespace-nowrap">
+              {t.requests24h(<AnimatedNumber value={totals.requests} className="font-medium text-foreground" />)}
+            </span>
+            <span className="motion-fade inline-flex items-center gap-1.5 whitespace-nowrap">
+              {t.cost}
+              <AnimatedNumber
+                value={totals.cost}
+                format={(v) => usd(Math.round(v))}
+                className="font-medium text-foreground"
+              />
+            </span>
+          </>
+        ) : (
+          <span className="motion-fade whitespace-nowrap">{t.noRequests24h}</span>
+        ))}
+    </>
   );
 }
 
-function CopyRow({
-  label,
-  value,
-  onCopy,
-}: {
-  label: string;
-  value: string | null;
-  onCopy: () => Promise<void>;
-}) {
-  const t = useText(keysPageText);
-  const common = useText(commonText);
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-      <div className="min-w-0">
-        <p className="tw-label text-muted-foreground">{label}</p>
-        <p className="truncate font-mono tw-body select-text">{value ?? t.loading}</p>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={value == null}
-        onClick={() =>
-          void onCopy()
-            .then(() => setCopied(true))
-            .catch((e) => toast.error(errorText(e)))
-        }
-      >
-        {copied ? <IconCopied /> : <IconCopy />}
-        {copied ? common.copied : common.copy}
-      </Button>
-    </div>
-  );
+/** 一把密钥写回去时的样子：照原样，改其中几项 */
+function inputOf(k: ClientView, patch: Partial<KeyInput>): KeyInput {
+  return {
+    name: k.name,
+    route: k.route ?? null,
+    allow: k.allow ?? null,
+    max_concurrent: k.max_concurrent,
+    disabled: k.disabled ?? false,
+    ...patch,
+  };
 }

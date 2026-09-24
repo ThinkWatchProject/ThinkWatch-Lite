@@ -1,31 +1,29 @@
-import { cn } from "@/lib/utils";
+import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { useText } from "@/i18n";
 import { clientsText } from "./clients.i18n";
 import { hostOf, type ClientState, type Reason, type Status } from "./status";
 
-const DOT: Record<ClientState, string> = {
-  in_use: "bg-success",
-  waiting: "bg-warning",
-  broken: "bg-destructive",
-  idle: "bg-muted-foreground/60",
-  absent: "bg-muted-foreground/40",
-};
-
-const TEXT: Record<ClientState, string> = {
-  in_use: "text-success",
-  waiting: "text-warning",
-  broken: "text-destructive",
-  idle: "",
-  absent: "text-muted-foreground",
+/**
+ * 每一档用哪种语气。**颜色只给要留意的几档** —— 未接管是常态，灰着；使用中绿、
+ * 等待黄、未生效红（2026-09-22 定下的配色）。
+ */
+const TONE: Record<ClientState, StatusTone> = {
+  in_use: "ok",
+  waiting: "warn",
+  broken: "error",
+  idle: "idle",
+  absent: "idle",
 };
 
 /**
- * 状态：一个圆点、一个词。**颜色只给要留意的几档** —— 未接管是常态，灰着；
- * 使用中绿、等待黄、未生效红。
+ * 状态：一个圆点、一个词。
+ *
+ * `live`：刚接管、正等着第一个请求 —— 点带脉冲，这件事此刻正在发生。等久了（要重启
+ * 才生效、或者手动配置的一直没用上）就不再跳：一个一直在跳的点等于没说话。
  *
  * `manual` 时「未接管」写成「未配置」：手动配置的客户端谈不上接管。
  */
-export function StatusLabel({ status, manual }: { status: Status; manual?: boolean }) {
+export function ClientStatus({ status, manual, live }: { status: Status; manual?: boolean; live?: boolean }) {
   const t = useText(clientsText);
   const label = {
     in_use: t.inUse,
@@ -35,10 +33,9 @@ export function StatusLabel({ status, manual }: { status: Status; manual?: boole
     absent: t.absent,
   }[status.state];
   return (
-    <span className={cn("inline-flex items-center gap-1.5", TEXT[status.state])}>
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[status.state])} />
+    <StatusLabel tone={TONE[status.state]} pulse={live && status.state === "waiting"} muted={status.state === "absent"}>
       {label}
-    </span>
+    </StatusLabel>
   );
 }
 

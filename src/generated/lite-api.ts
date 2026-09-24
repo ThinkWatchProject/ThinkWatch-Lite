@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { Msg } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -150,6 +150,30 @@ name: string, takes_effect: TakesEffect,
  * 改之前的全文备份在哪
  */
 backup: string, };
+
+/**
+ * 每把密钥一段时间里的用量（`key_usage`）：合计，和同一个时间窗按格子分的走势。
+ *
+ * **两样一起给。**密钥页、客户端页上它们是同一格（次数、费用和一条小柱图），
+ * 分两次取的话那一格会在几十毫秒里跳两次。
+ */
+export type KeyUsage = { 
+/**
+ * 时间窗的起点，**原样回传**：界面补空格从它数起，和取数时算的是同一个
+ */
+since_ms: number, 
+/**
+ * 一格多宽
+ */
+bucket_ms: number, 
+/**
+ * 每把密钥的合计，`name` 是密钥名
+ */
+totals: Array<CostGroup>, 
+/**
+ * 按格子分。**稀疏的**：没有请求的格子不在里面，由界面补
+ */
+buckets: Array<CostBucketGroup>, };
 
 /**
  * 这台机器上发生的、界面要跟上的事（Tauri 事件 `local-event`）。

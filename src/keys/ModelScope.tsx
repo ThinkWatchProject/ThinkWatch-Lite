@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { SearchIcon, Trash2Icon } from "lucide-react";
+import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Segmented } from "@/ui/segmented";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { useText } from "@/i18n";
 import type { KnownModel } from "@/types";
-import { Boxed, FormItem, Note, Segmented } from "@/upstreams/parts";
+import { Boxed, FormItem, Note } from "@/upstreams/parts";
 import { modelScopeText } from "./ModelScope.i18n";
 import {
   addPattern,
@@ -99,14 +101,15 @@ export function ModelScope({
                   <span className="tw-label tabular-nums text-muted-foreground">
                     {catalog.length > 0 ? t.patternHits(patternHits(p, catalog)) : t.patternHitsUnknown}
                   </span>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={t.patternRemove(p)}
-                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    className="-my-1 -mr-1 text-muted-foreground"
                     onClick={() => onEntries(removeEntry(entries, p))}
                   >
-                    <XIcon className="size-3.5" />
-                  </button>
+                    <Trash2Icon />
+                  </Button>
                 </div>
               ))}
               <div className="flex items-center gap-2.5 px-3 py-1">
@@ -208,13 +211,14 @@ export function ModelScope({
                   <p className="px-3 py-2 tw-label text-muted-foreground">{t.noMatch}</p>
                 )}
                 {matched.length > shown && (
-                  <button
-                    type="button"
-                    className="w-full px-3 py-2 text-left tw-label text-muted-foreground transition-colors hover:text-foreground"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start rounded-none px-3 font-normal text-muted-foreground"
                     onClick={() => setShown((n) => n + PAGE)}
                   >
                     {t.rest(matched.length - shown)}
-                  </button>
+                  </Button>
                 )}
               </Boxed>
             </>

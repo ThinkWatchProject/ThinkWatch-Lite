@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CopyIcon, RotateCwIcon } from "lucide-react";
+import { RotateCwIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -11,17 +12,18 @@ import {
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
 import { Switch } from "@/ui/switch";
 import { when } from "@/format";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { ClientView, CostGroup, DetectedClient, KnownModel, ManualClient, RouteView } from "@/types";
+import type { ClientView, DetectedClient, KnownModel, ManualClient, RouteView } from "@/types";
 import { api } from "./api";
+import type { KeyUse } from "./data";
 import { keyDialogText } from "./KeyDialog.i18n";
 import { errorText, routeLabel, takeoverOf } from "./labels";
 import { TakeoverBadge } from "./KeysTable";
 import { ModelScope } from "./ModelScope";
+import { CopyButton, focusSelf, useDialogFocus } from "./parts";
 import { allowOf, scopeOf, type Scope } from "./scope";
 
 /**
@@ -36,10 +38,11 @@ export function KeyDialog({
   clients,
   manual,
   usage,
+  usageLoaded,
   routes,
   defaultRoute,
   catalog,
-  configVersion,
+  version,
   onClose,
   onSaved,
   onRotate,
@@ -49,31 +52,32 @@ export function KeyDialog({
   keys: ClientView[];
   clients: DetectedClient[];
   manual: ManualClient[];
-  usage: CostGroup[];
+  /** 这一把 24 小时的用量。没有请求、或者没取到时没有 */
+  usage: KeyUse | undefined;
+  usageLoaded: boolean;
   routes: RouteView[];
   defaultRoute: string;
   /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
   catalog: KnownModel[];
-  configVersion: string;
+  /** 写配置时带的版本号 */
+  version: { get: () => string };
   onClose: () => void;
-  onSaved: (name: string) => void;
+  /** 保存好了：密钥名，和配置的新版本 */
+  onSaved: (name: string, version: string) => void;
   onRotate: (name: string) => void;
 }) {
   const t = useText(keyDialogText);
+  const dialogFocus = useDialogFocus();
   const common = useText(commonText);
   const [name, setName] = useState(editing?.name ?? "");
   const [route, setRoute] = useState(editing?.route ?? "");
   const [scope, setScope] = useState<Scope>(scopeOf(editing?.allow));
   const [entries, setEntries] = useState<string[]>(editing?.allow ?? []);
-  const [limit, setLimit] = useState(
-    editing?.max_concurrent != null ? String(editing.max_concurrent) : "",
-  );
+  const [limit, setLimit] = useState(editing?.max_concurrent != null ? String(editing.max_concurrent) : "");
   const [enabled, setEnabled] = useState(!editing?.disabled);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const used = usage.find((u) => u.name === editing?.name);
   const owner = editing ? takeoverOf(editing, clients, manual) : null;
   const taken = keys.some((k) => k.name === name.trim() && k.name !== editing?.name);
   const missing =
@@ -96,30 +100,34 @@ export function KeyDialog({
         max_concurrent: limit.trim() ? Number(limit.trim()) : null,
         disabled: !enabled,
       },
-      base_version: configVersion,
+      base_version: version.get(),
     };
     try {
-      if (editing) await api.updateKey(editing.name, body);
-      else await api.createKey(body);
-      onSaved(name.trim());
+      const w = editing ? await api.updateKey(editing.name, body) : await api.createKey(body);
+      onSaved(name.trim(), w.version);
     } catch (e) {
       setError(errorText(e));
-    } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        {...dialogFocus}
+        // 编辑是点一行打开的：焦点落在对话框本身，不落到第一个按钮上 —— WebKit 里
+        // 脚本给的焦点会在按钮上画一圈框。新建时照常落到名称输入框
+        onOpenAutoFocus={editing ? focusSelf : undefined}
+      >
         <DialogHeader>
           <DialogTitle>{editing ? t.editTitle : t.newTitle}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription asChild={editing != null}>
             {editing ? (
-              <span className="flex items-center gap-1.5">
-                <span className="font-mono text-foreground">{editing.name}</span>
-                {owner && <TakeoverBadge owner={owner} />}
-              </span>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate font-mono text-foreground">{editing.name}</span>
+                {owner && <TakeoverBadge owner={owner} logo />}
+              </div>
             ) : (
               t.newDescription
             )}
@@ -128,29 +136,23 @@ export function KeyDialog({
 
         <div className="flex flex-col gap-4">
           {editing && (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface/60 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate font-mono tw-body">{editing.key}</p>
+                <p className="truncate font-mono tw-body select-text">{editing.key}</p>
                 <p className="tw-label text-muted-foreground">
                   {editing.last_seen_ms ? t.lastUsed(when(editing.last_seen_ms)) : t.neverUsed}
-                  {used && used.requests > 0 && ` · ${t.usage(used.requests)}`}
+                  {usageLoaded && usage && usage.requests > 0 && ` · ${t.usage(usage.requests)}`}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setCopied(false);
-                    api
-                      .copyKey(editing.name)
-                      .then(() => setCopied(true))
-                      .catch((e) => setError(errorText(e)));
-                  }}
-                >
-                  <CopyIcon />
-                  {copied ? common.copied : common.copy}
-                </Button>
+                <CopyButton
+                  onCopy={() =>
+                    api.copyKey(editing.name).catch((e: unknown) => {
+                      setError(errorText(e));
+                      throw e;
+                    })
+                  }
+                />
                 <Button variant="outline" size="sm" onClick={() => onRotate(editing.name)}>
                   <RotateCwIcon />
                   {t.rotate}
@@ -206,38 +208,31 @@ export function KeyDialog({
             />
           </div>
 
-          <ModelScope
-            scope={scope}
-            entries={entries}
-            catalog={catalog}
-            onScope={setScope}
-            onEntries={setEntries}
-          />
+          <ModelScope scope={scope} entries={entries} catalog={catalog} onScope={setScope} onEntries={setEntries} />
 
-          <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
             <div>
-              <p className="tw-body font-medium">{t.enabled}</p>
+              <label className="tw-body font-medium" htmlFor="k-enabled">
+                {t.enabled}
+              </label>
               <p className="tw-label text-muted-foreground">
                 {editing?.default ? t.defaultAlwaysOn : t.disabledRejects}
               </p>
             </div>
-            <Switch
-              checked={enabled}
-              disabled={editing?.default}
-              onCheckedChange={(v) => setEnabled(v)}
-            />
+            <Switch id="k-enabled" checked={enabled} disabled={editing?.default} onCheckedChange={(v) => setEnabled(v)} />
           </div>
         </div>
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <Banner show={error !== null} layout="inline" tone="error">
+          {error}
+        </Banner>
 
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             {common.cancel}
           </Button>
-          <Button onClick={() => void save()} disabled={saving || missing != null}>
-            {saving && <Spinner />}
+          <Button onClick={() => void save()} pending={saving} disabled={missing != null}>
             {editing ? common.save : t.create}
           </Button>
         </DialogFooter>

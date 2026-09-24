@@ -6,15 +6,7 @@
  * 只有网关地址和密钥，那也是 Rust 那一侧去问。
  */
 import { invoke } from "@tauri-apps/api/core";
-import { call } from "@/control";
-import type {
-  AdoptResponse,
-  ClientsResponse,
-  CostGroup,
-  FindingView,
-  PlanView,
-  Retargeted,
-} from "@/types";
+import type { AdoptResponse, ClientsResponse, FindingView, PlanView, Retargeted } from "@/types";
 
 export interface RestoreOutcome {
   client: string;
@@ -38,7 +30,4 @@ export const api = {
   copyEndpoint: (id: string) => invoke<void>("copy_client_endpoint", { id }),
   copyKey: (name: string) => invoke<void>("copy_key", { name }),
   reveal: (id: string) => invoke<void>("reveal_client_config", { id }),
-  keys: () => call("Keys", null),
-  /** 每把密钥这段时间发了多少请求。客户端的用量按它的密钥算 */
-  keyUsage: (sinceMs: number) => invoke<CostGroup[]>("key_usage", { sinceMs }),
 };
