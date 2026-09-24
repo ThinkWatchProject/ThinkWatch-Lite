@@ -6,11 +6,11 @@ import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
-import { HeaderEditor } from "./HeaderEditor";
+import { HeaderEditor, type AuthRow } from "./HeaderEditor";
 import {
   AUTH_MODES,
   PROTOCOLS,
-  authHeaderLabel,
+  authHeaderParts,
   egressLabel,
   protocolLabel,
   proxyKindLabel,
@@ -163,13 +163,20 @@ export function ConnectionSection({
       </div>
 
       {form.authMode === "key" ? (
-        <ApiKey form={form} set={set} editing={editing} authHeader={preview?.auth_header ?? null} />
+        <ApiKey form={form} set={set} editing={editing} />
       ) : (
         <OAuth form={form} set={set} />
       )}
 
       <FormItem label={t.headers} hint={t.headersHint}>
-        <HeaderEditor form={form} set={set} />
+        <HeaderEditor
+          form={form}
+          set={set}
+          auth={authRow(form, editing, preview?.auth_header ?? editing?.auth_header ?? null, {
+            unknown: t.authUnknown,
+            token: t.renewedToken,
+          })}
+        />
       </FormItem>
 
       <div className="grid grid-cols-2 gap-4">
@@ -254,25 +261,50 @@ function ProtocolSelect({
 /** `${NAME}` 整个就是一个环境变量引用：不是秘密，明文显示 */
 const ENV_REF = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 
+/**
+ * 请求头列表的第一行：密钥或 OAuth token 实际放进的那个鉴权头。
+ *
+ * **跟着密钥和协议走，不能单独改**：core 按协议把密钥放进鉴权头，`headers` 里
+ * 再写同一个头会被判成冲突。要用别的头发凭据，就不填密钥、自己加一行。
+ * 没有密钥就没有这一行 —— 那时确实什么都不发。
+ */
+function authRow(
+  form: UpstreamForm,
+  editing: ProviderView | null,
+  /** 按选定或识别出的协议，凭据放在哪个请求头里。地址还没填时不知道 */
+  header: string | null,
+  text: { unknown: string; token: string },
+): AuthRow | null {
+  const parts = header ? authHeaderParts(header) : null;
+  const name = parts?.name ?? null;
+  const prefix = parts?.prefix ?? "";
+  if (form.authMode === "oauth") {
+    return { source: "oauth", name, unknownName: text.unknown, prefix, value: null, placeholder: text.token };
+  }
+  const key = form.key.trim();
+  if (key) {
+    // 环境变量引用不是秘密，照写；其余打码，不管多长都是十个点
+    const value = key.includes("${") ? key : "●".repeat(10);
+    return { source: "key", name, unknownName: text.unknown, prefix, value, placeholder: "" };
+  }
+  if (form.keySaved && editing?.key) {
+    return { source: "key", name, unknownName: text.unknown, prefix, value: editing.key.display, placeholder: "" };
+  }
+  return null;
+}
+
 function ApiKey({
   form,
   set,
   editing,
-  authHeader,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   editing: ProviderView | null;
-  /** 按选定或识别出的协议，密钥放在哪个请求头里。地址还没填时不知道 */
-  authHeader: string | null;
 }) {
   const t = useText(connectionSectionText);
   return (
-    <FormItem
-      label={t.apiKey}
-      htmlFor="up-key"
-      desc={authHeader ? t.sentIn(authHeaderLabel(authHeader), t.env) : t.env}
-    >
+    <FormItem label={t.apiKey} htmlFor="up-key">
       <div className="flex items-center gap-2">
         <Input
           id="up-key"
