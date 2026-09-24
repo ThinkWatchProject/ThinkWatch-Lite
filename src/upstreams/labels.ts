@@ -99,9 +99,14 @@ export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
   { id: "oauth", label: "OAuth" },
 ];
 
-/** 密钥所在的请求头，按 HTTP 报文里的写法 */
-export function authHeaderLabel(header: string): string {
-  return header === "authorization" ? "Authorization: Bearer" : header;
+/**
+ * 密钥所在的请求头，按 HTTP 报文里的写法：名字，和值前面拼的东西。
+ * core 给的是小写的 `authorization`，报文里习惯写 `Authorization`。
+ */
+export function authHeaderParts(header: string): { name: string; prefix: string } {
+  return header === "authorization"
+    ? { name: "Authorization", prefix: "Bearer" }
+    : { name: header, prefix: "" };
 }
 
 /**

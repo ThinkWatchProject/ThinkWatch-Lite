@@ -10,8 +10,8 @@ export const headerEditorText = messages(
     valuePlaceholder: "值，或 ${变量名}",
     remove: "删除此请求头",
     add: "添加请求头",
-    client: "网关密钥名称",
-    accessToken: "Access Token",
+    fromKey: "由 API 密钥生成",
+    fromOauth: "由 OAuth 凭据生成",
   },
   {
     name: "Header name",
@@ -22,7 +22,7 @@ export const headerEditorText = messages(
     valuePlaceholder: "Value, or ${NAME}",
     remove: "Delete this header",
     add: "Add header",
-    client: "Gateway key name",
-    accessToken: "Access token",
+    fromKey: "Set by the API key",
+    fromOauth: "Set by the OAuth credentials",
   },
 );
