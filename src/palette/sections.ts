@@ -1,10 +1,7 @@
 import type { Messages } from "@/i18n";
-import { configText } from "@/Config.i18n";
-import { languageText } from "@/Language.i18n";
-import { appearanceText } from "@/Appearance.i18n";
-import { menubarSettingsText } from "@/MenubarSettings.i18n";
-import { updateText } from "@/Update.i18n";
-import { noticeSettingsText } from "@/NoticeSettings.i18n";
+import { isMac } from "@/platform";
+import { generalText } from "@/settings/GeneralSection.i18n";
+import { settingsText } from "@/settings/SettingsPage.i18n";
 import { listenText } from "@/settings/ListenSection.i18n";
 import { retentionText } from "@/settings/RetentionSection.i18n";
 import { connText } from "@/connection/connection.i18n";
@@ -24,6 +21,10 @@ import { connText } from "@/connection/connection.i18n";
  *
  * · `core`：改的是 core 的配置（config.yaml），没连上 core 时那一节不画。
  * · `local`：只在连本机时有（诊断包生成在本机的数据目录里）。
+ *
+ * 设置页上一节（`SettingsGroup`）或一行（`SettingsRow` 的 `anchor`）的锚点就是这里的
+ * `id`：语言、外观、菜单栏、开机启动、提醒是「通用」里的几行，更新、诊断包是「关于」
+ * 里的几行，其余各是一节（见 settings/kit.tsx 的 `jump`）。
  */
 export type SettingsSection =
   | "connections"
@@ -50,17 +51,18 @@ const pick = <T,>(m: Messages<T>, get: (t: T) => string): Messages<string> => ({
 
 export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "connections", title: pick(connText, (t) => t.title) },
-  { id: "language", title: pick(languageText, (t) => t.title) },
-  { id: "appearance", title: pick(appearanceText, (t) => t.title) },
-  { id: "menubar", title: pick(menubarSettingsText, (t) => t.title) },
-  { id: "autostart", title: pick(configText, (t) => t.autostartTitle) },
+  { id: "language", title: pick(generalText, (t) => t.language) },
+  { id: "appearance", title: pick(generalText, (t) => t.appearance) },
+  // 只有 macOS 有菜单栏这一行（别处的通知区放不下两行数字）
+  ...(isMac ? [{ id: "menubar" as const, title: pick(generalText, (t) => t.menubar) }] : []),
+  { id: "autostart", title: pick(generalText, (t) => t.autostart) },
+  { id: "notices", title: pick(generalText, (t) => t.notices) },
   { id: "listen", title: pick(listenText, (t) => t.title), core: true },
   { id: "retention", title: pick(retentionText, (t) => t.title), core: true },
-  { id: "updates", title: pick(updateText, (t) => t.title) },
-  { id: "notices", title: pick(noticeSettingsText, (t) => t.title) },
-  { id: "about", title: pick(configText, (t) => t.aboutTitle) },
-  { id: "diagnostics", title: pick(configText, (t) => t.diagnosticsTitle), local: true },
-  { id: "uninstall", title: pick(configText, (t) => t.uninstallTitle) },
+  { id: "about", title: pick(settingsText, (t) => t.about) },
+  { id: "updates", title: pick(settingsText, (t) => t.updates) },
+  { id: "diagnostics", title: pick(settingsText, (t) => t.diagnostics), local: true },
+  { id: "uninstall", title: pick(settingsText, (t) => t.uninstallTitle) },
 ];
 
 /** 某一节现在的标题（当前语言）。不是这里列的节时是 `undefined` */

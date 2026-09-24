@@ -6,7 +6,7 @@ import { call } from "@/control";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
 import { EMPTY_FILTER } from "./requestTable";
-import Config from "./Config";
+import { SettingsPage } from "./settings/SettingsPage";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import ClientsPage from "./clients/ClientsPage";
@@ -406,6 +406,8 @@ function Shell({ first }: { first: boolean }) {
       if (!(SURFACES as readonly string[]).includes(page ?? "")) return;
       // `requests:42`：打开流量页并展开那一条（菜单栏里点了一个进行中的请求）
       if (page === "requests" && id) openRef.current("requests", { request: Number(id) });
+      // `settings:listen`：设置页并滚到那一节（「监听设置未生效」）
+      else if (page === "settings" && id) openRef.current("settings", { section: id });
       else openRef.current(page as Surface);
     };
     void invoke<string | null>("take_pending_view")
@@ -613,7 +615,15 @@ function Shell({ first }: { first: boolean }) {
 
   const changed = useCallback(() => setNudge((n) => n + 1), []);
   const openConfigFile = useCallback((focus: string | null) => setConfigFile({ focus }), []);
-  const go = useCallback((to: string) => open(to as Surface), [open]);
+  /** 页面、提醒要落到别的页时用。`settings:listen`：设置页并滚到那一节 */
+  const go = useCallback(
+    (to: string) => {
+      const [page, section] = to.split(":");
+      if (page === "settings" && section) open("settings", { section });
+      else open(to as Surface);
+    },
+    [open],
+  );
 
   /** 命令面板里只有外壳做得了的几件事。**引用不变**：面板按它们建条目，变了就要重建 */
   const paletteShell = useMemo(
@@ -950,7 +960,7 @@ function Shell({ first }: { first: boolean }) {
                 {/*
                   断线时整块只读：`fieldset disabled` 让里面的按钮、输入框、下拉一起失效，
                   读、滚动、悬停说明照旧。设置页不整页只读：连接管理在那里，断线时正要来
-                  这里（换密钥、切回本机）；那一页里改服务器配置的几节自己只读，见 `Config`
+                  这里（换密钥、切回本机）；那一页里改服务器配置的几节自己只读，见 `SettingsPage`
                 */}
                 <fieldset
                   disabled={remoteLost && tab !== "settings"}
@@ -977,7 +987,7 @@ function Shell({ first }: { first: boolean }) {
                     */}
                     {!linked ? (
                       launching ? null : tab === "settings" ? (
-                        <Config ov={null} status={null} onChanged={changed} />
+                        <SettingsPage ov={null} status={null} local={c} linked={false} onChanged={changed} />
                       ) : (
                         <Unlinked core={core} />
                       )
@@ -1029,7 +1039,14 @@ function Shell({ first }: { first: boolean }) {
                         skeleton
                       )
                     ) : tab === "settings" ? (
-                      <Config ov={ov} status={status} coreReadOnly={remoteLost} onChanged={changed} />
+                      <SettingsPage
+                        ov={ov}
+                        status={status}
+                        local={c}
+                        linked
+                        coreReadOnly={remoteLost}
+                        onChanged={changed}
+                      />
                     ) : (
                       <TrafficPage
                         rows={allRows}
@@ -1054,7 +1071,9 @@ function Shell({ first }: { first: boolean }) {
                 onClose={() => setConfigFile(null)}
                 onJump={(section) => {
                   setConfigFile(null);
-                  open(surfaceOf(section));
+                  // 监听、日志保留是设置页里的两节：直接滚到那一节
+                  if (section === "listen" || section === "retention") open("settings", { section });
+                  else open(surfaceOf(section));
                 }}
               />
             )}

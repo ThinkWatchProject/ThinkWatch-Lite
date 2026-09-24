@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CheckIcon, XIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -11,7 +12,6 @@ import {
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Spinner } from "@/ui/spinner";
-import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -211,33 +211,39 @@ export function ProfileDialog({
 
         <TestResult result={result} host={host.trim()} testing={busy === "test" || busy === "switch"} />
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <Banner layout="inline" tone="error" show={error !== null}>
+          {error}
+        </Banner>
 
         <DialogFooter className="items-center">
           {/* 测试在左边，和保存那一组分开：它不改任何东西 */}
           <Button
             variant="outline"
             className="sm:mr-auto"
+            pending={busy === "test"}
             disabled={busy !== null || missing !== null}
             onClick={() => void run("test")}
           >
             {t.test}
           </Button>
           {hint && <span className="tw-label text-muted-foreground">{hint}</span>}
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="outline" disabled={busy !== null} onClick={onClose}>
             {common.cancel}
           </Button>
           <Button
             variant={isCurrent ? "default" : "outline"}
+            pending={busy === "save"}
             disabled={busy !== null || missing !== null}
             onClick={() => void run("save")}
           >
-            {busy === "save" && <Spinner />}
             {common.save}
           </Button>
           {!isCurrent && (
-            <Button disabled={busy !== null || missing !== null} onClick={() => void run("switch")}>
-              {busy === "switch" && <Spinner />}
+            <Button
+              pending={busy === "switch"}
+              disabled={busy !== null || missing !== null}
+              onClick={() => void run("switch")}
+            >
               {t.saveAndSwitch}
             </Button>
           )}
@@ -261,7 +267,7 @@ export function TestResult({
   const t = useText(connText);
   if (testing) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 tw-body text-muted-foreground">
+      <div role="status" className="flex items-center gap-2 rounded-lg border border-border bg-surface/45 px-3.5 py-2.5 tw-body text-muted-foreground motion-fade">
         <Spinner />
         {t.connecting}…
       </div>
@@ -270,8 +276,8 @@ export function TestResult({
   if (!result) return null;
   if (result.ok) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 tw-body">
-        <CheckIcon className="size-4 shrink-0 text-success" />
+      <div role="status" className="flex items-center gap-2 rounded-lg border border-border bg-surface/45 px-3.5 py-2.5 tw-body motion-fade">
+        <CheckIcon className="size-4 shrink-0 text-success" aria-hidden />
         {t.testOk(
           result.info.core_version,
           host ? clientGateway(host, result.info.gateway_addr) : result.info.gateway_addr,
@@ -279,20 +285,11 @@ export function TestResult({
       </div>
     );
   }
+  // 发生了什么（标题）和下一步做什么（正文）。**不用 ×**：× 在对话框里只表示关闭
   const d = describeError(result.error);
   return (
-    <div
-      role="alert"
-      className={cn(
-        "flex items-start gap-2 rounded-lg border px-3 py-2.5 tw-body",
-        "border-destructive/30 bg-destructive/5",
-      )}
-    >
-      <XIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-      <div className="min-w-0">
-        <p className="font-medium text-destructive">{d.title}</p>
-        <p className="mt-0.5 text-muted-foreground">{d.next}</p>
-      </div>
-    </div>
+    <Banner layout="inline" tone="error" title={d.title} className="motion-fade">
+      {d.next}
+    </Banner>
   );
 }

@@ -795,7 +795,7 @@ fn a_listen_change_that_did_not_take_is_raised_and_one_that_did_clears_it() {
             s.body,
             "127.0.0.1:8080 已被其他程序占用。网关仍在 127.0.0.1:18790 上监听。"
         );
-        assert_eq!(s.view, Some("settings"));
+        assert_eq!(s.view, Some("settings:listen"));
     });
     let ok = rules::from_event(&tw_api::Event::ListenChanged {
         id: 2,

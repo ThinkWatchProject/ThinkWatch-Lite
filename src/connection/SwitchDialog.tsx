@@ -9,11 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Spinner } from "@/ui/spinner";
+import { Banner } from "@/ui/banner";
+import { notify } from "@/ui/notify";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
-import { toast } from "sonner";
 import type { Retargeted } from "@/types";
 import { connApi, type Adopted, type ConnectError, type Profile, type ServerInfo, type SwitchError } from "./api";
 import { connText } from "./connection.i18n";
@@ -103,7 +103,7 @@ export function SwitchDialog({
         if (alive.current) setStage({ kind: "retargeted", result: r });
         return;
       }
-      if (r && r.synced.length > 0) toast.success(rt.retargeted(target.name, r.synced.map((s) => s.name)));
+      if (r && r.synced.length > 0) notify.success(rt.retargeted(target.name, r.synced.map((s) => s.name)));
       onClose();
     } catch (e) {
       const err = e as SwitchError;
@@ -144,7 +144,9 @@ export function SwitchDialog({
           (stage.error ? (
             <TestResult result={{ ok: false, error: stage.error }} testing={false} />
           ) : (
-            <p className="tw-body text-destructive">{stage.text}</p>
+            <Banner layout="inline" tone="error">
+              {stage.text}
+            </Banner>
           ))}
 
         {stage.kind === "retargeted" && <RetargetReport name={target.name} result={stage.result} />}
@@ -157,12 +159,12 @@ export function SwitchDialog({
                 <div className="flex flex-col gap-2">
                   <p>
                     <span className="font-medium">
-                      {t.adoptedWarn(adopted.count, adopted.local_addr ?? "127.0.0.1:8788")}
+                      {t.adoptedWarn(adopted.count, adopted.local_addr)}
                     </span>
                     {t.adoptedWarnNext(target.name)}
                   </p>
                   <label className="flex items-center gap-2">
-                    <Checkbox checked={retarget} onCheckedChange={(v) => setRetarget(v === true)} />
+                    <Checkbox checked={retarget} disabled={busy} onCheckedChange={(v) => setRetarget(v === true)} />
                     {t.retarget(target.name)}
                   </label>
                 </div>
@@ -182,22 +184,18 @@ export function SwitchDialog({
           </ul>
         )}
 
+        {/* 取消在左、主操作在右。没切成时主操作是「编辑连接」：原因多半出在地址或密钥上 */}
         <DialogFooter>
-          {stage.kind === "failed" && (
-            <Button variant="outline" className="sm:mr-auto" onClick={() => onEdit(target)}>
-              {t.editConnection}
-            </Button>
-          )}
           {stage.kind === "retargeted" ? (
             <Button onClick={onClose}>{common.close}</Button>
           ) : (
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="outline" disabled={busy} onClick={onClose}>
               {stage.kind === "failed" ? common.close : common.cancel}
             </Button>
           )}
+          {stage.kind === "failed" && <Button onClick={() => onEdit(target)}>{t.editConnection}</Button>}
           {stage.kind === "confirm" && (
-            <Button disabled={busy} onClick={() => void commit()}>
-              {busy && <Spinner />}
+            <Button pending={busy} onClick={() => void commit()}>
               {t.switchAction}
             </Button>
           )}

@@ -5,6 +5,9 @@ export const listenText = messages(
     title: "网关监听",
     current: "当前地址",
     notListening: "未在监听",
+    /** 对外开放时，别的设备该用的地址（core 按网卡算好的） */
+    reachable: (addrs: string) => `其他设备使用 ${addrs} 连接。`,
+    sep: "、",
     scope: "访问范围",
     /**
      * 三档回答的是同一个问题。
@@ -29,7 +32,6 @@ export const listenText = messages(
     port: "端口",
     badPort: "端口须为 1 到 65535 之间的整数。",
     allowlist: "放行网段",
-    saved: "监听设置已保存",
     saveFailed: "未能保存",
     staleTitle: "监听设置未生效",
     staleBody: (why: string, addr: string) => `${why}网关仍在 ${addr} 上监听。`,
@@ -38,6 +40,8 @@ export const listenText = messages(
     title: "Listening",
     current: "Address",
     notListening: "Not listening",
+    reachable: (addrs: string) => `Other devices connect to ${addrs}.`,
+    sep: ", ",
     scope: "Reachable from",
     local: "This machine",
     localWhat: "Only programs on this computer can connect.",
@@ -53,7 +57,6 @@ export const listenText = messages(
     port: "Port",
     badPort: "The port is a whole number from 1 to 65535.",
     allowlist: "Allowed ranges",
-    saved: "Listen settings saved",
     saveFailed: "Not saved",
     staleTitle: "The listen settings have not taken effect",
     staleBody: (why: string, addr: string) => `${why} The gateway is still listening on ${addr}.`,

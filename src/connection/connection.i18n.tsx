@@ -37,18 +37,18 @@ export const connText = messages(
       : "应用同一时间连接一个 core。连接到远程 core 时，本机的 core 停止运行，本机数据保留。",
     current: "当前",
     switchTo: "切换到此连接",
+    switchShort: "切换",
+    actionsFor: (name: string) => `「${name}」的操作`,
     lastConnected: (when: string) => `上次连接 ${when}`,
     neverConnected: "尚未连接",
     coreVersion: (v: string) => `core ${v}`,
-    currentOnlyDelete: "当前连接不能删除，请先切换到其他连接。",
-    startupGroup: "启动",
     startupLabel: "启动时连接",
     startupLast: "上次使用的连接",
     startupLocal: "本机",
     startupHint: isLinux
       ? "连续两次启动未能完成时，下次启动先显示连接选择。"
       : `按住 ${holdZh} 键启动应用时，先显示连接选择。`,
-    deleteTitle: (name: string) => `删除连接「${name}」？`,
+    deleteTitle: (name: string) => `删除连接「${name}」`,
     deleteBody: "保存在本机的密钥一并删除。服务器上的 core 不受影响。",
 
     // 添加与编辑
@@ -104,9 +104,10 @@ export const connText = messages(
     // 切换
     testingTitle: (name: string) => `正在连接 ${name}…`,
     failedTitle: (name: string) => `无法切换到 ${name}`,
-    confirmTitle: (name: string) => `切换到 ${name}？`,
+    confirmTitle: (name: string) => `切换到 ${name}`,
     switchedTo: (name: string) => `已切换到 ${name}`,
-    adoptedWarn: (n: number, addr: string) => `已接管的 ${n} 个客户端仍指向本机网关 ${addr}。`,
+    adoptedWarn: (n: number, addr: string | null) =>
+      addr ? `已接管的 ${n} 个客户端仍指向本机网关 ${addr}。` : `已接管的 ${n} 个客户端仍指向本机网关。`,
     adoptedWarnNext: (name: string) =>
       `切换后本机网关停止，这些客户端的请求会失败，直到重新连接本机，或在客户端页将它们改为指向 ${name}。`,
     retarget: (name: string) => `同时将这些客户端改为指向 ${name}`,
@@ -172,18 +173,18 @@ export const connText = messages(
       : "The app connects to one core at a time. While it is connected to a remote core, the core on this computer stops running; its data is kept.",
     current: "Current",
     switchTo: "Switch to this connection",
+    switchShort: "Switch",
+    actionsFor: (name: string) => `Actions for “${name}”`,
     lastConnected: (when: string) => `Last connected ${when}`,
     neverConnected: "Never connected",
     coreVersion: (v: string) => `core ${v}`,
-    currentOnlyDelete: "The current connection cannot be deleted. Switch to another connection first.",
-    startupGroup: "Startup",
     startupLabel: "Connect at startup",
     startupLast: "Last used connection",
     startupLocal: isMac ? "This Mac" : "This computer",
     startupHint: isLinux
       ? "After two startups in a row fail to finish, the next startup shows the connection choice first."
       : `Hold ${holdZh} while opening the app to choose a connection first.`,
-    deleteTitle: (name: string) => `Delete the connection “${name}”?`,
+    deleteTitle: (name: string) => `Delete connection “${name}”`,
     deleteBody: "The key saved on this computer is deleted as well. The core on the server is not affected.",
 
     addTitle: "Add remote connection",
@@ -240,12 +241,14 @@ export const connText = messages(
 
     testingTitle: (name: string) => `Connecting to ${name}…`,
     failedTitle: (name: string) => `Cannot switch to ${name}`,
-    confirmTitle: (name: string) => `Switch to ${name}?`,
+    confirmTitle: (name: string) => `Switch to ${name}`,
     switchedTo: (name: string) => `Switched to ${name}`,
-    adoptedWarn: (n: number, addr: string) =>
-      n === 1
-        ? `1 connected client still points to the local gateway ${addr}.`
-        : `${n} connected clients still point to the local gateway ${addr}.`,
+    adoptedWarn: (n: number, addr: string | null) => {
+      const at = addr ? ` ${addr}` : "";
+      return n === 1
+        ? `1 connected client still points to the local gateway${at}.`
+        : `${n} connected clients still point to the local gateway${at}.`;
+    },
     adoptedWarnNext: (name: string) =>
       `After the switch, the local gateway stops and their requests fail until the app switches back, or until they are pointed at ${name} on the Clients page.`,
     retarget: (name: string) => `Also point these clients at ${name}`,

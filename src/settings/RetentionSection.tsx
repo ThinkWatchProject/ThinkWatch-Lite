@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { TriangleAlertIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Banner } from "@/ui/banner";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { patchConfig } from "@/patch";
 import type { PatchOp, RetentionView } from "@/types";
-import { FormActions, FormRow, FormRows, NumberInput, intIn } from "./form";
+import { NumberInput, intIn, useFormDraft } from "./form";
+import { SaveBar, SettingsCard, SettingsGroup, SettingsRow, useDirtyMark, useSavedFlash } from "./kit";
 import { retentionText } from "./RetentionSection.i18n";
 
 const GIB = 1024 * 1024 * 1024;
@@ -24,49 +24,46 @@ const draftOf = (r: RetentionView): Draft => ({
   body_max_gb: gib(r.body_max_bytes),
 });
 
+const same = (a: Draft, b: Draft) =>
+  a.body_days === b.body_days && a.row_days === b.row_days && a.body_max_gb === b.body_max_gb;
+
+/** 一位小数以内的正数 */
+const gbOk = (v: string) => /^\d+(\.\d)?$/.test(v) && Number(v) > 0;
+
 /**
  * 日志留多久。
  *
- * **两个期限，因为两样东西的代价差三个数量级。**一条报文几十 KB，忙一天
- * 就是几百 MB；一行记录（时刻、模型、用量、费用）几百字节，留一个季度也
- * 不过几十 MB。合成一个期限，要么早早丢掉「上个月的费用」，要么让磁盘替
- * 报文买单。
+ * **两个期限，因为两样东西的代价差三个数量级。**一条报文几十 KB，忙一天就是几百
+ * MB；一行记录（时刻、模型、用量、费用）几百字节，留一个季度也不过几十 MB。合成
+ * 一个期限，要么早早丢掉「上个月的费用」，要么让磁盘替报文买单。
  *
- * **总量上限旁边写现在占了多少。**「2 GB」这个数字，用户没法判断松还是
- * 紧 —— 除非同时看得见当下的占用。
+ * **总量上限旁边画出现在占了多少。**「2 GB」这个数字，用户没法判断松还是紧 ——
+ * 除非同时看得见当下的占用。条的长度按格子里正在填的上限算：改小之前就看得见会不会
+ * 马上被删。
  */
 export function RetentionSection({
   retention,
   configVersion,
+  onChanged,
 }: {
   retention: RetentionView;
   configVersion: string;
+  onChanged: () => void;
 }) {
   const t = useText(retentionText);
-  const [draft, setDraft] = useState(() => draftOf(retention));
+  const saved = draftOf(retention);
+  const { draft, setDraft, dirty, commit, reset } = useFormDraft("retention", saved, same);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const saved = draftOf(retention);
-  const dirty =
-    draft.body_days !== saved.body_days ||
-    draft.row_days !== saved.row_days ||
-    draft.body_max_gb !== saved.body_max_gb;
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
-  const key = JSON.stringify([retention.body_days, retention.row_days, retention.body_max_bytes]);
-  useEffect(() => {
-    if (!dirtyRef.current) {
-      const [body_days, row_days, max] = JSON.parse(key) as [number, number, number];
-      setDraft({ body_days: String(body_days), row_days: String(row_days), body_max_gb: gib(max) });
-    }
-  }, [key]);
+  const [justSaved, flash] = useSavedFlash();
+  useDirtyMark("retention", dirty);
 
   const ok = {
     body_days: intIn(draft.body_days, 1, 3_650),
     row_days: intIn(draft.row_days, 1, 36_500),
-    body_max_gb: /^\d+(\.\d)?$/.test(draft.body_max_gb) && Number(draft.body_max_gb) > 0,
+    body_max_gb: gbOk(draft.body_max_gb),
   };
+  const valid = ok.body_days && ok.row_days && ok.body_max_gb;
 
   async function save() {
     const ops: PatchOp[] = [];
@@ -84,8 +81,9 @@ export function RetentionSection({
     setError(null);
     try {
       await patchConfig(ops, configVersion);
-      dirtyRef.current = false;
-      toast.success(t.saved);
+      commit();
+      flash();
+      onChanged();
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -98,65 +96,121 @@ export function RetentionSection({
     setDraft((d) => ({ ...d, [k]: v }));
   };
 
+  // 条按正在填的上限画；格子里写的不是个数时按配置里的
+  const cap = ok.body_max_gb ? Number(draft.body_max_gb) * GIB : retention.body_max_bytes;
+  const bad = (msg: string) => <span className="text-destructive">{msg}</span>;
+
   return (
-    <section>
-      <h2 className="tw-title font-semibold">{t.title}</h2>
-      <p className="mt-1 tw-body text-muted-foreground">{t.intro}</p>
-      <FormRows>
-        <FormRow label={t.bodyDays} htmlFor="retention-body" hint={ok.body_days ? t.bodyDaysWhat : t.bad}>
-          <NumberInput
-            id="retention-body"
-            value={draft.body_days}
-            unit={t.days}
-            invalid={!ok.body_days}
-            disabled={busy}
-            onChange={edit("body_days")}
+    <SettingsGroup id="retention" title={t.title} description={t.intro}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && !busy && valid) void save();
+        }}
+      >
+        <SettingsCard>
+          <SettingsRow
+            label={t.bodyDays}
+            htmlFor="retention-body"
+            description={ok.body_days ? t.bodyDaysWhat : bad(t.bad)}
+            control={
+              <NumberInput
+                id="retention-body"
+                value={draft.body_days}
+                unit={t.days}
+                invalid={!ok.body_days}
+                disabled={busy}
+                onChange={edit("body_days")}
+              />
+            }
           />
-        </FormRow>
-        <FormRow label={t.rowDays} htmlFor="retention-rows" hint={ok.row_days ? t.rowDaysWhat : t.bad}>
-          <NumberInput
-            id="retention-rows"
-            value={draft.row_days}
-            unit={t.days}
-            invalid={!ok.row_days}
-            disabled={busy}
-            onChange={edit("row_days")}
+          <SettingsRow
+            label={t.rowDays}
+            htmlFor="retention-rows"
+            description={ok.row_days ? t.rowDaysWhat : bad(t.bad)}
+            control={
+              <NumberInput
+                id="retention-rows"
+                value={draft.row_days}
+                unit={t.days}
+                invalid={!ok.row_days}
+                disabled={busy}
+                onChange={edit("row_days")}
+              />
+            }
           />
-        </FormRow>
-        <FormRow
-          label={t.bodyMax}
-          htmlFor="retention-max"
-          hint={ok.body_max_gb ? t.bodyMaxWhat(bytes(retention.body_bytes_now)) : t.badGb}
-        >
-          <NumberInput
-            id="retention-max"
-            decimal
-            value={draft.body_max_gb}
-            unit="GB"
-            invalid={!ok.body_max_gb}
-            disabled={busy}
-            onChange={edit("body_max_gb")}
+          <SettingsRow
+            label={t.bodyMax}
+            htmlFor="retention-max"
+            description={
+              ok.body_max_gb ? (
+                <>
+                  {t.bodyMaxWhat}
+                  <Usage used={retention.body_bytes_now} cap={cap} label={t.usage} />
+                </>
+              ) : (
+                bad(t.badGb)
+              )
+            }
+            control={
+              <NumberInput
+                id="retention-max"
+                decimal
+                value={draft.body_max_gb}
+                unit="GB"
+                invalid={!ok.body_max_gb}
+                disabled={busy}
+                onChange={edit("body_max_gb")}
+              />
+            }
           />
-        </FormRow>
-        <FormActions
-          dirty={dirty}
-          busy={busy}
-          invalid={!ok.body_days || !ok.row_days || !ok.body_max_gb}
-          onSave={() => void save()}
-          onDiscard={() => {
-            setError(null);
-            setDraft(saved);
-          }}
+          <SaveBar
+            dirty={dirty}
+            pending={busy}
+            saved={justSaved}
+            invalid={!valid}
+            onDiscard={() => {
+              setError(null);
+              reset();
+            }}
+          />
+        </SettingsCard>
+      </form>
+      <Banner layout="inline" tone="error" show={error !== null} title={t.saveFailed}>
+        {error}
+      </Banner>
+    </SettingsGroup>
+  );
+}
+
+/**
+ * 报文现在占了上限的多少：一根细条和「412 MB / 2 GB」。**快满了才上颜色**（九成
+ * 以上），平时是灰的 —— 占用本身不是问题。
+ */
+function Usage({ used, cap, label }: { used: number; cap: number; label: string }) {
+  const ratio = cap > 0 ? Math.min(1, used / cap) : 0;
+  const near = ratio >= 0.9;
+  return (
+    <span className="mt-2 flex items-center gap-2.5">
+      <span
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={cap}
+        aria-valuenow={Math.min(used, cap)}
+        aria-valuetext={`${bytes(used)} / ${bytes(cap)}`}
+        className="relative h-1 w-40 shrink-0 overflow-hidden rounded-full bg-foreground/10"
+      >
+        <span
+          className={cn("absolute inset-y-0 left-0 rounded-full motion-bar", near ? "bg-warning" : "bg-foreground/45")}
+          // 占用很小时也留一个看得见的头，不是一根空条
+          style={{ width: `${used > 0 ? Math.max(2, ratio * 100) : 0}%` }}
         />
-      </FormRows>
-      {error && (
-        <Alert variant="destructive" className="mt-3">
-          <TriangleAlertIcon />
-          <AlertTitle>{t.saveFailed}</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-    </section>
+      </span>
+      <span className={cn("tw-num", near && "text-warning-foreground")}>
+        {bytes(used)} / {bytes(cap)}
+      </span>
+    </span>
   );
 }
 

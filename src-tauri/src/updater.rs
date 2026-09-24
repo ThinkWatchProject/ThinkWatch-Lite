@@ -241,7 +241,7 @@ pub(crate) fn show_pending_update(app: &tauri::AppHandle) {
     }
 }
 
-/// 菜单里的「检查更新…」和设置页的「立即检查」查的是同一处
+/// 菜单里的「检查更新…」和设置页「关于」里的「检查更新」查的是同一处
 pub(crate) async fn find_update(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     find(app).await
 }
@@ -250,7 +250,7 @@ pub(crate) fn present_update(app: &tauri::AppHandle, found: Found) {
     present(app, found);
 }
 
-/// 「立即检查」。查到了就把更新窗口拉起来。
+/// 设置页的「检查更新」。查到了就把更新窗口拉起来。
 #[tauri::command]
 pub async fn update_check(app: tauri::AppHandle) -> Out<Option<Found>> {
     let found = find(&app).await?;
@@ -258,6 +258,22 @@ pub async fn update_check(app: tauri::AppHandle) -> Out<Option<Found>> {
         present(&app, f.clone());
     }
     Ok(found)
+}
+
+/// 设置页的「更新到 x…」：已经查到了一版，把更新窗口拉起来。
+///
+/// **不再联网问一遍**（`update_check` 会）：那一版已经记在这里，再问一遍只会让这个
+/// 按钮在没网的时候失灵，而窗口里的「下载并安装」反正会自己去取。
+#[tauri::command]
+pub fn update_show(app: tauri::AppHandle) -> Out<()> {
+    if pending_update(&app).is_none() {
+        return Err(tr!(
+            "尚无可安装的新版本",
+            "No new version is waiting to be installed"
+        )
+        .into());
+    }
+    show_update_window(&app).map_err(|e| e.to_string().into())
 }
 
 /// 更新窗口打开时来读：要画的是哪一版、这一份该怎么装。
@@ -557,7 +573,7 @@ pub(crate) const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_s
 /// 自动检查。查到了就发一条系统通知。
 ///
 /// **开发构建不自己去查。**每次 `tauri dev` 之后两分钟弹一个窗，写代码的
-/// 人学会的只是把它关掉。「立即检查」在开发构建里照样能用。
+/// 人学会的只是把它关掉。「检查更新」在开发构建里照样能用。
 pub(crate) async fn update_loop(app: tauri::AppHandle) {
     tokio::time::sleep(UPDATE_FIRST_LOOK).await;
     loop {

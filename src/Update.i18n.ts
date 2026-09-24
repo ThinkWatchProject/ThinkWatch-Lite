@@ -1,26 +1,20 @@
 import { messages } from "@/i18n";
 
 /**
- * 更新：设置里的那一节（`Update.tsx`）、更新窗口（`UpdateWindow.tsx`），
- * 以及安装进行到哪一步（`updateFlow.ts`）。三处说的是同一件事，放在一份里。
+ * 更新窗口（`UpdateWindow.tsx`）和安装进行到哪一步（`updateFlow.ts`）。设置里
+ * 「关于」那一节的几句在 `settings/SettingsPage.i18n.tsx`。
  */
 export const updateText = messages(
   {
-    // 设置里的「更新」
-    title: "更新",
-    autoCheck: "自动检查新版本",
-    checkNow: "立即检查",
-    checkFailed: (err: string) => `检查更新失败：${err}`,
-    newer: (version: string, current: string) => `新版本 ${version} 可用，当前 ${current}`,
-    latest: (version: string) => `已是最新版本 ${version}`,
-    current: (version: string) => `当前版本 ${version}`,
-
     // 更新窗口
+    current: (version: string) => `当前版本 ${version}`,
     available: (version: string) => `ThinkWatch Lite ${version} 可用`,
     closeWhileWaiting: "关闭此窗口不影响更新，更新完成后将发送通知。",
     standalone: "下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。",
     later: "稍后",
     install: "下载并安装",
+    /** 下载或安装中途失败时那条提示的标题，正文是原因 */
+    failed: "未能完成更新",
     homebrew: "此应用由 Homebrew 管理，请在终端中执行以下命令完成更新：",
     command: "更新命令",
     copyFailed: "未能写入剪贴板。命令已选中，请按 ⌘C 复制。",
@@ -35,20 +29,14 @@ export const updateText = messages(
     restarting: "正在重新启动",
   },
   {
-    title: "Updates",
-    autoCheck: "Check for updates automatically",
-    checkNow: "Check now",
-    checkFailed: (err: string) => `Update check failed: ${err}`,
-    newer: (version: string, current: string) => `Version ${version} is available (current: ${current})`,
-    latest: (version: string) => `${version} is the latest version`,
     current: (version: string) => `Current version: ${version}`,
-
     available: (version: string) => `ThinkWatch Lite ${version} is available`,
     closeWhileWaiting: "Closing this window does not stop the update. A notification is sent when it is complete.",
     standalone:
       "Installs automatically after downloading. The gateway restarts once all requests in progress have finished.",
     later: "Later",
     install: "Download and install",
+    failed: "The update did not finish",
     homebrew: "This app is managed by Homebrew. To update, run this command in Terminal:",
     command: "Update command",
     copyFailed: "The clipboard could not be written to. The command is selected; press ⌘C to copy it.",

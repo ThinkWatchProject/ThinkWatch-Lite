@@ -1,21 +1,14 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { useConnections } from "@/connection/ConnectionProvider";
 import { formText } from "./form.i18n";
 
 /**
- * 设置页里改网关配置的那几节（监听、日志保留）共用的表单。
- *
- * **改完点保存才生效。**这几项改的是 config.yaml，改错的代价是客户端连不上
- * 或者日志被删 —— 一个选项点下去立刻生效、一个格子失焦就写盘，用户没有
- * 机会把几处一起改好再落地，也没有机会反悔。外观、提醒那几节改的是这个
- * 应用自己，点一下就换，照旧。
- *
- * 版式是两列：左边标签右对齐成一列，右边控件，控件下面一行说明。保存和
- * 放弃更改放在控件那一列的最下面，和控件对齐。
+ * 两列表单：左边标签右对齐成一列，右边控件，控件下面一行说明。连接的添加与编辑、
+ * 安全页「输出长度」的上限用它。设置页本身是一行一项的面板，见 `kit.tsx`。
  */
 export function FormRows({ children }: { children: ReactNode }) {
   return (
@@ -53,10 +46,9 @@ export function FormRow({
 }
 
 /**
- * 保存和放弃更改。**改过才出现**：没改的时候两个灰按钮摆在那儿，看起来
- * 像是有什么没存。存的时候两个都灰掉，存完随改动一起消失。
- *
- * `invalid` 时保存灰着：哪一格不对，那一格下面自己会说。
+ * 两列表单下面的保存和放弃更改。**改过才出现**：没改的时候两个灰按钮摆在那儿，看起来
+ * 像是有什么没存。`invalid` 时保存灰着：哪一格不对，那一格下面自己会说。设置页里
+ * 一行一项的面板用的是 `kit.tsx` 的 `SaveBar`。
  */
 export function FormActions({
   dirty,
@@ -78,8 +70,7 @@ export function FormActions({
     <>
       <dt />
       <dd className="flex items-center gap-2 pt-1">
-        <Button size="sm" disabled={busy || invalid} onClick={onSave}>
-          {busy && <Spinner />}
+        <Button size="sm" pending={busy} disabled={invalid} onClick={onSave}>
           {common.save}
         </Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={onDiscard}>
@@ -90,7 +81,7 @@ export function FormActions({
   );
 }
 
-/** 一个整数（或一位小数）的格子，后面可以跟一个单位 */
+/** 一个整数（或一位小数）的格子，后面可以跟一个单位。28px，和工具条、设置里一行的其他控件一样高 */
 export function NumberInput({
   id,
   value,
@@ -113,8 +104,9 @@ export function NumberInput({
     <span className="inline-flex items-center gap-2">
       <Input
         id={id}
+        variant="sm"
         inputMode={decimal ? "decimal" : "numeric"}
-        className="h-7 w-24 font-mono tabular-nums"
+        className="w-24 font-mono tabular-nums"
         value={value}
         disabled={disabled}
         aria-invalid={invalid || undefined}
@@ -126,7 +118,7 @@ export function NumberInput({
         spellCheck={false}
         onChange={(e) => onChange(e.target.value.trim())}
       />
-      {unit && <span className="tw-body text-muted-foreground">{unit}</span>}
+      {unit && <span className="min-w-6 tw-body text-muted-foreground">{unit}</span>}
     </span>
   );
 }
@@ -136,4 +128,70 @@ export function intIn(v: string, min: number, max: number): boolean {
   if (!/^\d+$/.test(v)) return false;
   const n = Number(v);
   return n >= min && n <= max;
+}
+
+/**
+ * 改到一半的表单。**切到别的页再回来接着改**：设置页换页时整个卸掉，而改了一半的
+ * 端口不该因为去流量页看了一眼就没了（目录上那一节挂着点，回来看得见）。只记在这次
+ * 运行里；按连接分开 —— 换了连接就是另一份配置。
+ */
+const drafts = new Map<string, { conn: string; value: unknown }>();
+
+/**
+ * 一节表单的草稿：`draft` 是正在改的，`saved` 是配置里现在的。
+ *
+ * · 没在改的时候跟着配置走（别处改的、或者刚存完推回来的）。
+ * · `commit(value?)`：刚存上（存的是 `value`，缺省是当前草稿）。配置推回来之前也不
+ *   算「改过」—— 保存栏不会在「已保存」和「有未保存的更改」之间闪一下。
+ * · `reset()`：放弃更改，回到配置里的值。
+ */
+export function useFormDraft<T>(
+  name: string,
+  saved: T,
+  same: (a: T, b: T) => boolean,
+): {
+  draft: T;
+  setDraft: Dispatch<SetStateAction<T>>;
+  dirty: boolean;
+  commit: (value?: T) => void;
+  reset: () => void;
+} {
+  const conn = useConnections().view?.current ?? null;
+  const [draft, setDraft] = useState<T>(() => {
+    const d = drafts.get(name);
+    return d && conn !== null && d.conn === conn ? (d.value as T) : saved;
+  });
+  /** 刚存上的那一份。配置推回来（`saved` 变了）就不用它了 */
+  const [committed, setCommitted] = useState<T | null>(null);
+  const dirty = !same(draft, saved) && !(committed !== null && same(draft, committed));
+
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
+  const savedKey = JSON.stringify(saved);
+  useEffect(() => {
+    setCommitted(null);
+    if (!dirtyRef.current) setDraft(savedRef.current);
+  }, [savedKey]);
+
+  useEffect(() => {
+    if (dirty && conn !== null) drafts.set(name, { conn, value: draft });
+    else drafts.delete(name);
+  }, [name, conn, dirty, draft]);
+
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const commit = useCallback((value?: T) => {
+    const v = value === undefined ? draftRef.current : value;
+    dirtyRef.current = false;
+    setDraft(v);
+    setCommitted(v);
+  }, []);
+  const reset = useCallback(() => {
+    dirtyRef.current = false;
+    setCommitted(null);
+    setDraft(savedRef.current);
+  }, []);
+  return { draft, setDraft, dirty, commit, reset };
 }

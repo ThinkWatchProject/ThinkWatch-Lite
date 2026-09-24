@@ -7,6 +7,7 @@ export const rangeListText = messages(
     /** 一行是单个地址时，右边写这个而不是起止 */
     single: "单个地址",
     remove: (c: string) => `删除 ${c}`,
+    removeShort: "删除",
     what: "可添加多个网段或单个地址。只有这些来源的设备可以连接，本机始终可以连接。",
     empty: "未放行任何网段，除本机外的设备都无法连接。",
     restore: "恢复默认",
@@ -17,6 +18,7 @@ export const rangeListText = messages(
     enterToAdd: "Enter to add",
     single: "single address",
     remove: (c: string) => `Remove ${c}`,
+    removeShort: "Remove",
     what: "Add as many ranges or single addresses as needed. Only devices from these can connect; this computer always can.",
     empty: "No range is allowed, so only this computer can connect.",
     restore: "Restore defaults",

@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { call } from "@/control";
-import { toast } from "sonner";
-import { TriangleAlertIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { useResource } from "@/lib/resource";
+import { Banner } from "@/ui/banner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
+import { StatusLabel } from "@/ui/status-dot";
 import { useText } from "@/i18n";
 import { isLinux } from "@/platform";
 import { coreText, errorText } from "@/i18n/core.i18n";
-import type { CoreStatus, ListenSave, ListenView, NicView } from "@/types";
-import { FormActions, FormRow, FormRows, NumberInput, intIn } from "./form";
+import type { CoreStatus, ListenSave, ListenView } from "@/types";
+import { NumberInput, intIn, useFormDraft } from "./form";
+import { RowError, SaveBar, SettingsCard, SettingsGroup, SettingsRow, useDirtyMark, useSavedFlash } from "./kit";
 import { listenText } from "./ListenSection.i18n";
 import { RangeList } from "./RangeList";
 
@@ -55,59 +56,48 @@ function same(a: Draft, b: Draft): boolean {
 /**
  * 网关监听：谁能连、在哪个端口。
  *
- * **改完点保存才生效。**以前三个档位点下去立刻写配置、端口格子失焦就写盘
- * —— 从「仅本机」换到「局域网」再选网卡，中间那一版监听在一个用户没选过
- * 的地址上；而换到一个被占的端口，网关当场退出。现在几项一起改好再存，
- * core 在写配置之前先试着绑一下，绑不上就不写，并且说清为什么。
+ * **改完点保存才生效。**以前三个档位点下去立刻写配置、端口格子失焦就写盘 —— 从
+ * 「仅本机」换到「局域网」再选网卡，中间那一版监听在一个用户没选过的地址上；而换到
+ * 一个被占的端口，网关当场退出。现在几项一起改好再存，core 在写配置之前先试着绑一下，
+ * 绑不上就不写，并且说清为什么。
  *
- * 最上面一行是网关**此刻**在听的地址：它跟着真实的监听器走，存完之后
- * 这里（和侧栏底部）就变成新的。
+ * 第一行是网关**此刻**在听的地址：它跟着真实的监听器走，存完之后这里（和侧栏底部）
+ * 就变成新的。对外开放时下面写出别的设备该用的地址（core 按网卡算好的，不是这里猜的）。
  */
 export function ListenSection({
   view,
   status,
   configVersion,
+  note,
   onChanged,
 }: {
   view: ListenView;
   status: CoreStatus | null;
   configVersion: string;
+  /** 这一节最下面的一句（连着远程时：远程控制的监听只能在服务器上改） */
+  note?: ReactNode;
   onChanged: () => void;
 }) {
   const t = useText(listenText);
-  const [draft, setDraft] = useState(() => draftOf(view));
-  const [nics, setNics] = useState<NicView[] | null>(null);
+  const saved = draftOf(view);
+  const { draft, setDraft, dirty, commit, reset } = useFormDraft("listen", saved, same);
+  // 网卡清单每次打开这一节都重取 —— 它会变（插拔网线、换 Wi-Fi、起 VPN）；取到之前先画上一次的
+  const nicList = useResource("settings:interfaces", () =>
+    call("Interfaces", null).then((list) => list.filter((n) => !n.loopback)),
+  );
+  const nics = nicList.data ?? null;
   // 放弃更改时连同名单里没加进去的那一行一起清掉：换一个 key 让它重来
   const [epoch, setEpoch] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const saved = draftOf(view);
-  const dirty = !same(draft, saved);
-  // 配置换了一份（别处改的、或者刚存完）：没在改的时候跟着走
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
-  const viewKey = JSON.stringify(view);
-  useEffect(() => {
-    if (!dirtyRef.current) setDraft(draftOf(JSON.parse(viewKey) as ListenView));
-  }, [viewKey]);
-
-  // 网卡清单每次打开这一节现拉 —— 它会变（插拔网线、换 Wi-Fi、起 VPN）
-  useEffect(() => {
-    let alive = true;
-    void call("Interfaces", null)
-      .then((list) => alive && setNics(list.filter((n) => !n.loopback)))
-      .catch(() => alive && setNics([]));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const [justSaved, flash] = useSavedFlash();
+  useDirtyMark("listen", dirty);
 
   // 选「局域网」时网卡清单还没到：到了就落到第一张，不让保存一直灰着
   useEffect(() => {
     const first = nics?.[0]?.name;
     if (first) setDraft((d) => (d.level === "lan" && !d.nic ? { ...d, nic: first } : d));
-  }, [nics]);
+  }, [nics, setDraft]);
 
   const set = (patch: Partial<Draft>) => {
     setError(null);
@@ -141,11 +131,10 @@ export function ListenSection({
     setError(null);
     try {
       await call("SaveListen", body);
-      // 存上了就不算在改：配置换回来那一刻表单跟着新值走。网卡按名字存，
-      // 草稿里若还是地址，先换成名字，否则配置回来之后两边对不上、表单一直显示改过
-      dirtyRef.current = false;
-      setDraft((d) => ({ ...d, nic: d.level === "lan" ? bind : "" }));
-      toast.success(t.saved);
+      // 网卡按名字存。草稿里若还是地址，先换成名字，否则配置推回来之后两边对不上、
+      // 表单一直显示改过
+      commit({ ...draft, nic: draft.level === "lan" ? bind : "" });
+      flash();
       onChanged();
     } catch (e) {
       setError(errorText(e));
@@ -156,113 +145,148 @@ export function ListenSection({
 
   const what = draft.level === "local" ? t.localWhat : draft.level === "lan" ? t.lanWhat : t.allWhat;
   /**
-   * **防火墙那一句只在 Linux 上说。**macOS 和 Windows 的防火墙在应用第一次
-   * 对外监听时会弹窗问用户放不放行，用户当场就知道有这么一道；Fedora、
-   * openSUSE 默认开着的 firewalld（以及手动开了的 ufw）不问，直接丢包 ——
-   * 另一台机器上只看到连接超时，而界面这边一切正常。
+   * **防火墙那一句只在 Linux 上说。**macOS 和 Windows 的防火墙在应用第一次对外监听
+   * 时会弹窗问放不放行，用户当场就知道有这么一道；Fedora、openSUSE 默认开着的
+   * firewalld（以及手动开了的 ufw）不问，直接丢包 —— 另一台机器上只看到连接超时，
+   * 而界面这边一切正常。
    */
   const scopeHint = exposed && isLinux ? `${what}${t.firewall}` : what;
+  const addr = status?.gateway_addr ?? null;
+  // 别的设备该连的地址：只在配置里已经对外开放、core 也算出来了的时候写
+  const reachable = levelOf(view.bind) !== "local" ? (status?.gateway_reachable ?? []) : [];
 
   return (
-    <section>
-      <h2 className="tw-title font-semibold">{t.title}</h2>
-      <FormRows>
-        <FormRow label={t.current}>
-          <span className="pt-1 font-mono tw-body">{status?.gateway_addr ?? t.notListening}</span>
-        </FormRow>
-
-        <FormRow label={t.scope} hint={scopeHint}>
-          <Segmented<Level>
-            label={t.scope}
-            value={draft.level}
-            disabled={busy}
-            options={[
-              { id: "local", label: t.local },
-              { id: "lan", label: t.lan },
-              { id: "all", label: t.all },
-            ]}
-            onChange={pick}
-          />
-        </FormRow>
-
-        {draft.level === "lan" && (
-          <FormRow label={t.nic} htmlFor="listen-nic" hint={nics?.length === 0 ? t.noNic : undefined}>
-            <NativeSelect
-              id="listen-nic"
-              size="sm"
-              className="w-64 font-mono"
-              value={selected}
-              disabled={busy || !nics?.length}
-              onChange={(e) => set({ nic: e.target.value })}
-            >
-              {/* 配置里写着一张当前枚举不到的网卡 —— 网线拔了、换了网络。
-               **必须列出来**，否则选单会显示成别的网卡，看起来像是它变了 */}
-              {selected && !known && (
-                <NativeSelectOption value={selected}>{t.nicMissing(selected)}</NativeSelectOption>
-              )}
-              {nics?.map((n) => (
-                <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.name}>
-                  {t.nicOption(n.name, n.addr)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </FormRow>
-        )}
-
-        <FormRow label={t.port} htmlFor="listen-port" hint={portOk ? undefined : t.badPort}>
-          <NumberInput
-            id="listen-port"
-            value={draft.port}
-            invalid={!portOk}
-            disabled={busy}
-            onChange={(port) => set({ port })}
-          />
-        </FormRow>
-
-        {exposed && (
-          <FormRow label={t.allowlist} htmlFor="listen-allow">
-            <RangeList
-              key={epoch}
-              id="listen-allow"
-              value={draft.allow}
-              defaults={view.default_allow_from}
-              disabled={busy}
-              onChange={(allow) => set({ allow })}
-            />
-          </FormRow>
-        )}
-
-        <FormActions
-          dirty={dirty}
-          busy={busy}
-          invalid={!portOk || !nicOk}
-          onSave={() => void save()}
-          onDiscard={() => {
-            setError(null);
-            setEpoch((n) => n + 1);
-            setDraft(saved);
-          }}
-        />
-      </FormRows>
-
-      {error && (
-        <Alert variant="destructive" className="mt-3">
-          <TriangleAlertIcon />
-          <AlertTitle>{t.saveFailed}</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
+    <SettingsGroup id="listen" title={t.title}>
       {/* 配置里写的地址没换上（手改了配置、网卡没了地址）：旧地址还在服务 */}
-      {!error && status?.listen_error && (
-        <Alert variant="warning" className="mt-3">
-          <TriangleAlertIcon />
-          <AlertTitle>{t.staleTitle}</AlertTitle>
-          <AlertDescription>
-            {t.staleBody(coreText(status.listen_error), status.gateway_addr ?? "")}
-          </AlertDescription>
-        </Alert>
-      )}
-    </section>
+      <Banner layout="inline" tone="warning" show={!error && !!status?.listen_error} title={t.staleTitle}>
+        {status?.listen_error ? t.staleBody(coreText(status.listen_error), addr ?? "") : null}
+      </Banner>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && !busy && portOk && nicOk) void save();
+        }}
+      >
+        <SettingsCard>
+          <SettingsRow
+            label={t.current}
+            description={reachable.length > 0 ? t.reachable(reachable.join(t.sep)) : undefined}
+            control={
+              addr ? (
+                <StatusLabel tone={status?.listen_error ? "warn" : "ok"} muted>
+                  <span className="font-mono text-foreground select-text">{addr}</span>
+                </StatusLabel>
+              ) : (
+                <StatusLabel tone="idle">{t.notListening}</StatusLabel>
+              )
+            }
+          />
+
+          <SettingsRow
+            label={t.scope}
+            description={scopeHint}
+            control={
+              <Segmented<Level>
+                label={t.scope}
+                value={draft.level}
+                disabled={busy}
+                options={[
+                  { id: "local", label: t.local },
+                  { id: "lan", label: t.lan },
+                  { id: "all", label: t.all },
+                ]}
+                onChange={pick}
+              />
+            }
+          />
+
+          {draft.level === "lan" && (
+            <SettingsRow
+              label={t.nic}
+              htmlFor="listen-nic"
+              description={nics?.length === 0 ? t.noNic : undefined}
+              className="motion-fade"
+              control={
+                // 清单读不出来：说出来、给重试，不当成「没有网卡」
+                nics === null && nicList.error !== undefined ? (
+                  <RowError error={nicList.error} onRetry={() => void nicList.reload()} />
+                ) : (
+                  <NativeSelect
+                    id="listen-nic"
+                    size="sm"
+                    className="w-60 font-mono"
+                    value={selected}
+                    disabled={busy || !nics?.length}
+                    onChange={(e) => set({ nic: e.target.value })}
+                  >
+                    {/* 配置里写着一张当前枚举不到的网卡 —— 网线拔了、换了网络。
+                        **必须列出来**，否则选单会显示成别的网卡，看起来像是它变了 */}
+                    {selected && !known && (
+                      <NativeSelectOption value={selected}>{t.nicMissing(selected)}</NativeSelectOption>
+                    )}
+                    {nics?.map((n) => (
+                      <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.name}>
+                        {t.nicOption(n.name, n.addr)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                )
+              }
+            />
+          )}
+
+          <SettingsRow
+            label={t.port}
+            htmlFor="listen-port"
+            description={portOk ? undefined : <span className="text-destructive">{t.badPort}</span>}
+            control={
+              <NumberInput
+                id="listen-port"
+                value={draft.port}
+                invalid={!portOk}
+                disabled={busy}
+                onChange={(port) => set({ port })}
+              />
+            }
+          />
+
+          {exposed && (
+            <SettingsRow
+              stack
+              label={t.allowlist}
+              htmlFor="listen-allow"
+              className="motion-fade"
+              control={
+                <RangeList
+                  key={epoch}
+                  id="listen-allow"
+                  value={draft.allow}
+                  defaults={view.default_allow_from}
+                  disabled={busy}
+                  onChange={(allow) => set({ allow })}
+                />
+              }
+            />
+          )}
+
+          <SaveBar
+            dirty={dirty}
+            pending={busy}
+            saved={justSaved}
+            invalid={!portOk || !nicOk}
+            onDiscard={() => {
+              setError(null);
+              setEpoch((n) => n + 1);
+              reset();
+            }}
+          />
+        </SettingsCard>
+      </form>
+      <Banner layout="inline" tone="error" show={error !== null} title={t.saveFailed}>
+        {error}
+      </Banner>
+      {note && <p className="tw-label text-muted-foreground">{note}</p>}
+    </SettingsGroup>
   );
 }
+
