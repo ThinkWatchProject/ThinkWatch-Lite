@@ -43,6 +43,8 @@ case "${TARGET:-${TAURI_ENV_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/^host: //p')}
   aarch64-apple-darwin)      ASSET="twcore-aarch64-apple-darwin" ;;
   x86_64-pc-windows-msvc)    ASSET="twcore-x86_64-pc-windows-msvc.exe" ;;
   aarch64-pc-windows-msvc)   ASSET="twcore-aarch64-pc-windows-msvc.exe" ;;
+  x86_64-unknown-linux-gnu)  ASSET="twcore-x86_64-unknown-linux-gnu" ;;
+  aarch64-unknown-linux-gnu) ASSET="twcore-aarch64-unknown-linux-gnu" ;;
   *)
     echo "没有为 ${TARGET:-本机} 发布的 twcore —— 发版流水线里加一条，或者用 TARGET= 指一个有的" >&2
     exit 1
@@ -128,6 +130,9 @@ if command -v file >/dev/null 2>&1; then
     *-apple-darwin)             EXPECT="arm64" ;;
     twcore-x86_64-pc-windows*)  EXPECT="x86-64" ;;
     twcore-aarch64-pc-windows*) EXPECT="aarch64|arm64" ;;
+    # 只写 `x86-64` 的话，一个同架构的 Windows exe 也对得上
+    *-x86_64-unknown-linux-gnu)  EXPECT="ELF 64-bit.*x86-64" ;;
+    *-aarch64-unknown-linux-gnu) EXPECT="ELF 64-bit.*aarch64" ;;
     *)                          EXPECT="" ;;
   esac
   if [ -n "$EXPECT" ] && ! file "$TMP/twcore" | grep -Eqi "$EXPECT"; then

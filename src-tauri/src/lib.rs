@@ -89,6 +89,14 @@ pub struct AppState {
 }
 
 pub fn run() {
+    // 继承来的 AppImage 变量不是自己的，先清掉，理由见 `update::foreign_appimage_vars`
+    #[cfg(target_os = "linux")]
+    for var in update::foreign_appimage_vars(tauri::utils::platform::bundle_type()) {
+        // SAFETY: 这是 `run()` 的第一件事，在 Tauri、tokio、任何插件起线程之前；
+        // `main` 在这之前只装了日志订阅器，它不起线程。进程里此刻只有主线程，
+        // 没有别的线程可能同时读写环境变量。
+        unsafe { std::env::remove_var(var) };
+    }
     // 在单实例插件把这个进程判成「第二个」之前放下激活令牌
     #[cfg(target_os = "linux")]
     window::relaunch_token::stash();

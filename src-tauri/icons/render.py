@@ -4,7 +4,8 @@
     python3 src-tauri/icons/render.py <目录>     # 只导出各个尺寸，用来看效果
 
 第一种用法产出 tauri.conf.json 里列的那几个文件（32x32.png、128x128.png、
-128x128@2x.png、icon.icns），以及 Windows 构建要的 icon.ico。**别手工改
+128x128@2x.png、icon.icns），Windows 构建要的 icon.ico，以及 Linux 的
+256x256.png、512x512.png。**别手工改
 它们** —— 它们是这个脚本的输出，手改会和脚本悄悄分叉，下次谁重新生成一次
 就被覆盖了。
 
@@ -215,7 +216,17 @@ ICONSET = {
 }
 
 # tauri.conf.json 的 bundle.icon 里列的那几个（除 icns 外）。
-BUNDLE_PNGS = {"32x32.png": 32, "128x128.png": 128, "128x128@2x.png": 256}
+#
+# 256 和 512 是 Linux 的（`tauri.linux.conf.json`）：deb 和 AppImage 按像素
+# 尺寸装进 `hicolor/<宽>x<高>/apps/`，而 `128x128@2x.png` 在那里落进的是
+# `256x256@2`，不是桌面环境找大图标时去的那个目录。
+BUNDLE_PNGS = {
+    "32x32.png": 32,
+    "128x128.png": 128,
+    "128x128@2x.png": 256,
+    "256x256.png": 256,
+    "512x512.png": 512,
+}
 
 PREVIEW_SIZES = (16, 32, 64, 128, 256, 512, 1024)
 

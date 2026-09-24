@@ -53,7 +53,14 @@ pub const CORE_EXE: &str = if cfg!(windows) {
 /// 走到了开发那几条候选 —— 包里缺了 `twcore.exe` 的时候，它会去环境变量、
 /// 工作目录、PATH 里找一个来跑，正是下面那段注释说要堵上的口子。界面上显示
 /// 的路径也因此是框架给的 `\\?\C:\…` 那种写法。
-pub(crate) fn bundled_core() -> Option<PathBuf> {
+///
+/// **Linux 上看打包时写进二进制的标记**（`bundle_type()`，deb 和 AppImage
+/// 各打一份）。资源在 `<可执行文件>/../lib/<产品名>/`：deb 是
+/// `/usr/lib/ThinkWatch Lite/`，AppImage 是挂载点下同样的相对位置（挂载点
+/// 每次启动都换，所以界面上的路径会变，这是正常的）。**从可执行文件的位置
+/// 推，不用框架的 `resource_dir()`**：它在那个目录不存在时改看 `APPDIR`
+/// 环境变量 —— 又是一个让环境变量决定执行哪个二进制的口子。
+pub(crate) fn bundled_core(product: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     if dir.ends_with("Contents/MacOS") {
@@ -63,6 +70,12 @@ pub(crate) fn bundled_core() -> Option<PathBuf> {
     if update::nsis_installed(&exe) == update::Install::Standalone {
         return Some(dir.join(CORE_EXE));
     }
+    #[cfg(target_os = "linux")]
+    if tauri::utils::platform::bundle_type().is_some() {
+        return Some(dir.parent()?.join("lib").join(product).join(CORE_EXE));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = product;
     None
 }
 
@@ -80,7 +93,7 @@ pub(crate) fn bundled_core() -> Option<PathBuf> {
 /// 的 API key。同理，装好之后也不再看 `THINKWATCH_CORE_BIN` 和 PATH：
 /// 让环境变量替换掉网关本体，在开发机上是便利，在用户机器上是一个口子。
 pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
-    if let Some(inside) = bundled_core() {
+    if let Some(inside) = bundled_core(&app.package_info().name) {
         if inside.exists() {
             return Ok(inside);
         }
