@@ -410,7 +410,7 @@ async fn background(app: &tauri::AppHandle, action: Action) {
             .select_group(&group, &provider)
             .await
             .map_err(|e| format!("{e:#}")),
-        Action::RestartGateway => crate::restart_gateway(app).await,
+        Action::RestartGateway => crate::restart_gateway(app).await.map_err(|e| e.to_string()),
         Action::CheckUpdates => {
             check_updates(app).await;
             Ok(())

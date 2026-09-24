@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useText } from "@/i18n";
+import { errorText } from "@/i18n/core.i18n";
 import { Segmented } from "@/upstreams/parts";
 import { appearanceText } from "./Appearance.i18n";
 
@@ -39,7 +40,7 @@ export function AppearanceSection() {
     try {
       setView(await invoke<ThemeView>("set_theme", { setting }));
     } catch (err) {
-      toast.error(typeof err === "string" ? err : t.saveFailed);
+      toast.error(errorText(err) || t.saveFailed);
     }
   }
 

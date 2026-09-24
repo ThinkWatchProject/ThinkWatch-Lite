@@ -328,7 +328,6 @@ export default function Dashboard({
         // 取一小时就够 —— 五秒一格去查二十四小时是一万七千多个分组。
         const q = live ? HOUR : bucketMs;
         const sinceMs = windowStart(range);
-        // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<Data>("dashboard", { sinceMs, bucketMs: q });
         if (alive) {
           setD(x);

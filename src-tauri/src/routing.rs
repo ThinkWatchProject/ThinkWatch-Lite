@@ -5,11 +5,7 @@
 
 use crate::AppState;
 
-type Out<T> = Result<T, String>;
-
-fn text(e: anyhow::Error) -> String {
-    format!("{e:#}")
-}
+use crate::error::{Out, text};
 
 #[tauri::command]
 pub async fn create_route(

@@ -14,11 +14,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::AppState;
 
-type Out<T> = Result<T, String>;
-
-fn text(e: anyhow::Error) -> String {
-    format!("{e:#}")
-}
+use crate::error::{Out, text};
 
 /// 授权完成后回到应用的地址。core 只接受应用自己的协议
 const RETURN_TO: &str = "thinkwatch://chatgpt/login";
@@ -87,7 +83,7 @@ pub async fn start_chatgpt_login(
 #[tauri::command]
 pub async fn reopen_chatgpt_login(app: tauri::AppHandle, id: String) -> Out<()> {
     let url = pending(&id, |p| p.url.clone())?;
-    open_page(&app, &url)
+    Ok(open_page(&app, &url)?)
 }
 
 /// 把登录码放进剪贴板。
@@ -99,11 +95,13 @@ pub async fn reopen_chatgpt_login(app: tauri::AppHandle, id: String) -> Out<()> 
 pub fn copy_chatgpt_code(app: tauri::AppHandle, id: String) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     let code = pending(&id, |p| p.code.clone())?;
-    app.clipboard().write_text(code).map_err(|e| e.to_string())
+    app.clipboard()
+        .write_text(code)
+        .map_err(|e| e.to_string().into())
 }
 
 /// 还在等的那次登录里的某一项。**只认还在等的那一次**
-fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Out<String> {
+fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Result<String, String> {
     PENDING
         .lock()
         .ok()
@@ -120,7 +118,7 @@ fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Out<String> {
 /// 在默认浏览器里打开登录页。**只开 `https://` 的网页**：地址来自 core（Z.ai 的还是
 /// 平台接口返回的），而系统的「打开」对 `file://`、别的应用注册的协议一视同仁 ——
 /// 一个被改掉的地址不该变成「打开本机上的某个程序」
-pub(crate) fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
+pub(crate) fn open_page(app: &tauri::AppHandle, url: &str) -> Result<(), String> {
     if !is_web_page(url) {
         return Err(tr!(
             format!("登录页地址不是 https 网页：{url}"),

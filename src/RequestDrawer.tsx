@@ -201,7 +201,6 @@ export default function RequestDrawer({
   const load = useCallback(
     async (alive: () => boolean) => {
       try {
-        // Tauri 的 invoke 用字符串 reject，不是 Error
         const x = await invoke<RequestDetail>("request_detail", { id });
         if (alive()) setD(x);
       } catch (e) {
@@ -643,7 +642,6 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
     try {
       setQuote(await invoke<ReplayQuote>("replay_quote", { id, provider }));
     } catch (e) {
-      // Tauri 的 invoke 用字符串 reject，不是 Error
       toast.error(errorText(e));
       setQuote(null);
     } finally {

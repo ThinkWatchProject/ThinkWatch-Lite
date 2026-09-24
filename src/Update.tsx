@@ -73,7 +73,7 @@ export default function Update() {
               setView(await invoke<UpdateView>("set_update_check", { on: want }));
             } catch (err) {
               setView(before);
-              toast.error(typeof err === "string" ? err : String(err));
+              toast.error(errorText(err));
             }
           }}
         />

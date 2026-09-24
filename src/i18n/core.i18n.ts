@@ -369,6 +369,11 @@ const ZH: Record<string, Say> = {
   "control.unsupported_value": (a) => `${a.kind}「${a.value}」不受支持。`,
   "control.unsupported_action": (a) => `不支持的操作「${a.action}」。`,
   "control.shutdown": () => "网关正在关闭。",
+  "control.no_such_endpoint": (a) =>
+    `控制面没有 ${a.method} ${a.path} 这个端点，桌面应用与网关的版本可能不一致。`,
+  "control.method_not_allowed": (a) =>
+    `控制面不接受对 ${a.path} 的 ${a.method} 请求，桌面应用与网关的版本可能不一致。`,
+  "control.request_rejected": (a) => `控制面无法读取该请求：${a.detail}`,
   "control.base_url_empty": () => "接口地址不能为空。",
   "control.api_key_empty": () => "API 密钥不能为空。",
   "control.user_empty": () => "用户名不能为空。",
@@ -688,8 +693,6 @@ const ZH: Record<string, Say> = {
   "adopt.cost.claude_code.mcp_tool_search": () => "MCP tool search 将默认关闭。",
   "adopt.cost.claude_code.welcome_screen": () =>
     "Claude Code 可能会显示一次欢迎页，关闭即可。",
-  "adopt.cost.codex.model_list": () =>
-    "Codex 不从网关获取模型列表，自定义模型名无效，模型列表以本地的模型目录文件为准。",
   "adopt.cost.codex.chatgpt_desktop": () =>
     "ChatGPT 桌面版读取同一份配置文件，其本地 Codex 会话也会一并接管，重新启动该应用后生效。",
   "adopt.cost.codex.reopen_terminal": () => "修改后需要重新打开终端。",
@@ -876,21 +879,19 @@ export function coreText(m: Msg | string | null | undefined): string {
 /**
  * invoke 抛出来的东西变成一句话。
  *
- * **Tauri 的 invoke 用字符串 reject，不是 Error。**控制面的错误是一个
- * JSON 的 [`Msg`]（core 那边的 `Fail`），别的错误就是一句现成的话 ——
- * 先按 JSON 试一次，不是就原样用。
+ * **命令失败时交出来的是一条 `Msg` 形状的对象**（src-tauri 的 `CmdError`）：
+ * 控制面的失败带着 core 的码，按码翻；桌面端自己的失败码是空串，照 `text`
+ * 显示。Tauri 自己拒掉的调用（命令不存在、没有权限）仍然是一句字符串。
  */
 export function errorText(e: unknown): string {
-  const raw = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
-  const t = raw.trimStart();
-  if (!t.startsWith("{")) return raw;
-  try {
-    const v = JSON.parse(t) as Partial<Msg>;
-    if (typeof v?.code === "string" && typeof v?.text === "string") {
-      return coreText(v as Msg);
-    }
-  } catch {
-    // 不是 JSON：那它本来就是一句话
-  }
-  return raw;
+  if (isMsg(e)) return coreText(e);
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+function isMsg(e: unknown): e is Msg {
+  if (typeof e !== "object" || e === null) return false;
+  const m = e as Partial<Msg>;
+  return typeof m.code === "string" && typeof m.text === "string";
 }

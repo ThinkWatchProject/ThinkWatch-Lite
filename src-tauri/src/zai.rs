@@ -15,11 +15,7 @@ use std::sync::Mutex;
 
 use crate::AppState;
 
-type Out<T> = Result<T, String>;
-
-fn text(e: anyhow::Error) -> String {
-    format!("{e:#}")
-}
+use crate::error::{Out, text};
 
 /// 正在等的那次登录。**同一时刻只有一次**，core 那边也是
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
@@ -84,7 +80,7 @@ pub async fn reopen_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
             )
             .to_string()
         })?;
-    crate::chatgpt::open_page(&app, &url)
+    Ok(crate::chatgpt::open_page(&app, &url)?)
 }
 
 #[tauri::command]

@@ -15,7 +15,7 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use thinkwatch_lite_lib::control::ControlClient;
-use tw_api::control::Endpoint;
+use tw_api::control::Address;
 
 /// 包里那份 core。
 ///
@@ -74,12 +74,12 @@ impl Core {
         Self { child, home, token }
     }
 
-    fn endpoint(&self) -> Endpoint {
-        Endpoint::in_dir(&self.home)
+    fn address(&self) -> Address {
+        Address::in_dir(&self.home)
     }
 
     fn client(&self, token: &str) -> ControlClient {
-        ControlClient::new(self.endpoint(), token.to_string())
+        ControlClient::new(self.address(), token.to_string())
     }
 
     /// 等到它答得上话。**等的是 `/status` 有应答，不是 socket 文件出现** ——
@@ -171,4 +171,46 @@ async fn the_event_stream_carries_the_token_too() {
         opened.load(std::sync::atomic::Ordering::SeqCst),
         "事件流没开起来 —— 多半是那个请求没带凭据"
     );
+}
+
+/// 控制面拒绝时，**带着 core 的码回来**，不是一段要界面再解析一遍的文本。
+///
+/// 401 用的是 core 最外层替框架回的那条（没带凭据），所以这里顺带钉住了
+/// 「框架回的失败也是 `ErrorBody`」。
+#[tokio::test]
+async fn a_refusal_comes_back_with_its_code() {
+    use thinkwatch_lite_lib::control::Refused;
+
+    let core = Core::start();
+    core.wait_ready().await;
+
+    let e = core.client("not-the-token").status().await.unwrap_err();
+    let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
+        panic!("401 没按 ErrorBody 读出来：{e:#}");
+    };
+    assert!(!m.code.is_empty(), "{m:?}");
+
+    let e = core
+        .client(&core.token)
+        .request_detail(987_654_321)
+        .await
+        .unwrap_err();
+    let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
+        panic!("不存在的请求没按 ErrorBody 读出来：{e:#}");
+    };
+    assert!(!m.code.is_empty(), "{m:?}");
+}
+
+/// 扫描带着项目目录也扫得动。以前是 GET 加重复的 `project=`，core 一直读不了
+#[tokio::test]
+async fn scanning_with_a_project_directory_works() {
+    let core = Core::start();
+    core.wait_ready().await;
+    let dir = core.home.join("proj");
+    std::fs::create_dir_all(&dir).unwrap();
+    let r = core
+        .client(&core.token)
+        .scan(vec![dir.display().to_string()])
+        .await;
+    assert!(r.is_ok(), "{:?}", r.err());
 }

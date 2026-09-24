@@ -70,14 +70,41 @@ fn read_port(f: &Path) -> Result<u16> {
     Ok(text.trim().parse::<u16>()?)
 }
 
+/// 控制面拒绝了这个请求：非 2xx，响应体是一条 [`tw_api::ErrorBody`]。
+///
+/// **码原样留着**，一路带到界面，界面按码翻（见 `crate::error`）。在这里就
+/// 写成一句话的话，码就埋掉了。
+#[derive(Debug)]
+pub struct Refused(pub tw_api::ErrorBody);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.text)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// 非 2xx 的响应变成错误。**协议说响应体一定是 [`tw_api::ErrorBody`]**；
+/// 读不成就是对面不是这一版的 core，只剩状态码可说。
+fn refused(status: hyper::StatusCode, body: &[u8]) -> anyhow::Error {
+    match serde_json::from_slice::<tw_api::ErrorBody>(body) {
+        Ok(m) => Refused(m).into(),
+        Err(_) => anyhow::anyhow!(tr!(
+            format!("控制面返回 {status}"),
+            format!("The control plane returned {status}")
+        )),
+    }
+}
+
 pub struct ControlClient {
-    at: tw_api::control::Endpoint,
+    at: tw_api::control::Address,
     /// 这一次启动的凭据，见 `crate::token`。
     token: String,
 }
 
 impl ControlClient {
-    pub fn new(at: tw_api::control::Endpoint, token: String) -> Self {
+    pub fn new(at: tw_api::control::Address, token: String) -> Self {
         Self { at, token }
     }
 
@@ -87,7 +114,7 @@ impl ControlClient {
     /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
     /// 的时候回给界面的都是这一句。原话进日志
     async fn connect(&self) -> Result<Box<dyn Stream>> {
-        use tw_api::control::Endpoint;
+        use tw_api::control::Address;
         let not_running = |e: &dyn std::fmt::Display| {
             tracing::debug!("控制面连不上：{e}");
             anyhow::anyhow!(tr!(
@@ -97,14 +124,14 @@ impl ControlClient {
         };
         match &self.at {
             #[cfg(unix)]
-            Endpoint::Socket(path) => Ok(Box::new(
+            Address::Socket(path) => Ok(Box::new(
                 tokio::net::UnixStream::connect(path)
                     .await
                     .map_err(|e| not_running(&e))?,
             )),
             #[cfg(not(unix))]
-            Endpoint::Socket(_) => Err(not_running(&"这个平台上没有 unix socket")),
-            Endpoint::Loopback { port_file } => {
+            Address::Socket(_) => Err(not_running(&"这个平台上没有 unix socket")),
+            Address::Loopback { port_file } => {
                 let port = read_port(port_file).map_err(|e| not_running(&e))?;
                 Ok(Box::new(
                     tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
@@ -144,17 +171,7 @@ impl ControlClient {
         let status = resp.status();
         let bytes = resp.into_body().collect().await?.to_bytes();
         if !status.is_success() {
-            // 控制面的响应体是一条 JSON 的 `Msg`：**原样带出去，界面那边
-            // 按码翻**（见 `errorText`）。只剩状态码的话，界面上只能显示
-            // 一个 404
-            let text = String::from_utf8_lossy(&bytes);
-            if text.trim().is_empty() {
-                anyhow::bail!(tr!(
-                    format!("控制面返回 {status}"),
-                    format!("The control plane returned {status}")
-                ));
-            }
-            anyhow::bail!("{text}");
+            return Err(refused(status, &bytes));
         }
         Ok(bytes.to_vec())
     }
@@ -245,10 +262,7 @@ impl ControlClient {
         let status = resp.status();
         let bytes = resp.into_body().collect().await?.to_bytes();
         if !status.is_success() {
-            // 控制面对可预期的失败回的是一条 JSON 的 `Msg`（码 + 参数 +
-            // 英文原句）。**原样带出去**：翻译在界面那一侧，因为词表在
-            // 那儿；在这里重新包装一遍只会把码埋掉。
-            anyhow::bail!("{}", String::from_utf8_lossy(&bytes));
+            return Err(refused(status, &bytes));
         }
         Ok(serde_json::from_slice(&bytes)?)
     }
@@ -575,18 +589,9 @@ impl ControlClient {
     }
 
     /// 扫一遍客户端配置面。**每次现扫，什么都不存**。
-    pub async fn scan(&self, projects: &[String]) -> Result<tw_api::ScanResponse> {
-        let q = projects
-            .iter()
-            .map(|p| format!("project={}", urlencode(p)))
-            .collect::<Vec<_>>()
-            .join("&");
-        let path = if q.is_empty() {
-            "/scan".to_string()
-        } else {
-            format!("/scan?{q}")
-        };
-        Ok(serde_json::from_slice(&self.get(&path).await?)?)
+    pub async fn scan(&self, projects: Vec<String>) -> Result<tw_api::ScanResponse> {
+        self.post_json("/scan", &tw_api::ScanRequest { projects })
+            .await
     }
 
     /// 路由试算。**只算，不发任何请求。**
@@ -1162,15 +1167,7 @@ impl ControlClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.collect().await?.to_bytes();
-            let text = String::from_utf8_lossy(&body);
-            anyhow::bail!(if text.trim().is_empty() {
-                tr!(
-                    format!("事件流被拒：{status}"),
-                    format!("The event stream was refused: {status}")
-                )
-            } else {
-                text.to_string()
-            });
+            return Err(refused(status, &body));
         }
         on_open();
 
@@ -1237,7 +1234,7 @@ mod tests {
     /// 一个一定连不上的客户端：这个平台默认的那种传输，指向一个不存在的地方。
     fn unreachable() -> ControlClient {
         ControlClient::new(
-            tw_api::control::Endpoint::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
+            tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
             "t".into(),
         )
     }
@@ -1261,7 +1258,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_port_file_also_says_core_is_not_there() {
         let c = ControlClient::new(
-            tw_api::control::Endpoint::Loopback {
+            tw_api::control::Address::Loopback {
                 port_file: PathBuf::from("/tmp/tw-no-such-port-file-xyz"),
             },
             "t".into(),
@@ -1278,7 +1275,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("tw-port-{}", std::process::id()));
         std::fs::write(&d, "12").unwrap();
         let c = ControlClient::new(
-            tw_api::control::Endpoint::Loopback {
+            tw_api::control::Address::Loopback {
                 port_file: d.clone(),
             },
             "t".into(),

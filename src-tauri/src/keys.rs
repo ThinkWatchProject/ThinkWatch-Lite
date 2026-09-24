@@ -9,11 +9,7 @@
 
 use crate::AppState;
 
-type Out<T> = Result<T, String>;
-
-fn text(e: anyhow::Error) -> String {
-    format!("{e:#}")
-}
+use crate::error::{Out, text};
 
 #[tauri::command]
 pub async fn list_keys(state: tauri::State<'_, AppState>) -> Out<Vec<tw_api::ClientView>> {
@@ -90,7 +86,9 @@ pub async fn copy_key(
 ) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     let v = state.control.key_value(&name).await.map_err(text)?;
-    app.clipboard().write_text(v.key).map_err(|e| e.to_string())
+    app.clipboard()
+        .write_text(v.key)
+        .map_err(|e| e.to_string().into())
 }
 
 /// 保存监听设置（设置页「网关监听」那一节）。
@@ -121,7 +119,7 @@ pub async fn copy_gateway_base(
     let clients = state.control.clients().await.map_err(text)?;
     app.clipboard()
         .write_text(clients.gateway_base)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string().into())
 }
 
 /// 每把密钥这段时间发了多少请求。**按密钥算，不是按客户端自报的标识**
