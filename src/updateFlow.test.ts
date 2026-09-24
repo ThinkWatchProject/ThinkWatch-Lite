@@ -15,6 +15,10 @@ describe("谁能在窗口里直接装", () => {
     expect(canInstall("standalone")).toBe(true);
   });
 
+  it("deb 装的也可以：安装那一步由系统授权", () => {
+    expect(canInstall("deb")).toBe(true);
+  });
+
   it("开发构建不自己更新", () => {
     expect(canInstall("dev")).toBe(false);
   });

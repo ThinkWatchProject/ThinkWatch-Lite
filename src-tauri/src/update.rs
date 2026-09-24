@@ -13,17 +13,23 @@
 //! 程序，已装版本记在「添加/删除程序」的注册表项里；自己更新时跑的是新版本
 //! 的安装程序，它会把那一项一起改掉，所以 winget 之后看到的就是新版本，不会
 //! 拿旧的盖回来。
+//!
+//! **Linux 上看打包时写进二进制的那个标记，不按路径猜。**打包器给 AppImage 和
+//! deb 各打一份补丁（`tauri::utils::platform::bundle_type()` 读的就是它），
+//! 所以「这是哪种包」在编译产物里已经有确定的答案。AppImage 由更新器插件原地
+//! 换掉那个文件；deb 归系统的包管理器管，更新时下载、验签由插件做，安装交给
+//! `pkexec apt-get`，由系统弹授权框 —— **应用不经手用户的密码**（见 `install_deb`）。
 
 use std::path::Path;
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
 /// cask 的名字，也是 Caskroom 下那个目录的名字。
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 const CASK: &str = "thinkwatch-lite";
 
 /// Homebrew 装在哪。
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 ///
 /// 只有这两个。cask 要求标准前缀 —— arm64 上是 `/opt/homebrew`，另一个是
 /// Intel 时代的位置；自定义前缀装不了 cask，也就不会出现在这里。
@@ -52,6 +58,8 @@ pub enum Install {
     Homebrew,
     /// 手工下载解压的 `.app`。这一种可以自己更新。
     Standalone,
+    /// Linux 上 deb 装的。更新时下载新的 deb，经系统授权后由 apt 安装。
+    Deb,
     /// 根本不在一个 `.app` 里 —— `tauri dev`。
     Dev,
 }
@@ -59,12 +67,12 @@ pub enum Install {
 impl Install {
     /// 这一份能不能自己把自己换掉。
     pub fn can_self_update(self) -> bool {
-        matches!(self, Install::Standalone)
+        matches!(self, Install::Standalone | Install::Deb)
     }
 }
 
 /// 自己所在的 `.app`。不在一个 `.app` 里就是 `None`。
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 ///
 /// 只认 `…/Foo.app/Contents/MacOS/可执行文件` 这一种形状。**不往上找到
 /// 第一个 `.app` 为止** —— 那样一个放在 `/Applications/别的.app/` 里的
@@ -86,7 +94,7 @@ fn bundle_of(exe: &Path) -> Option<&Path> {
 }
 
 /// 这个 `.app` 是不是 Homebrew 放的。
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 ///
 /// **比对的是 Caskroom 里那个符号链接。**brew 把 app 移进 `/Applications`，
 /// 再在 `Caskroom/<cask>/<版本>/` 留一个链接指回去；每次升级都会重写它，
@@ -114,7 +122,7 @@ fn from_homebrew(bundle: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// 给定可执行文件和 brew 的前缀，判断这是哪一种安装。
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn kind_at(exe: &Path, roots: &[PathBuf]) -> Install {
     match bundle_of(exe) {
         None => Install::Dev,
@@ -140,20 +148,188 @@ pub fn nsis_installed(exe: &Path) -> Install {
     }
 }
 
+/// Linux 上这一份是怎么装上来的。
+///
+/// **AppImage 还要看 `APPIMAGE` 在不在。**同一个打过补丁的二进制，用户用
+/// `--appimage-extract` 解开之后直接跑，标记照样是 AppImage，而这时根本没有
+/// 一个可以原地替换的 AppImage 文件 —— 插件会去替换正在跑的那个可执行文件。
+/// 运行时（AppImage 的 runtime）挂载时才设这个变量。
+///
+/// rpm 不发，打出来的也不自己更新。
+#[cfg(target_os = "linux")]
+pub fn linux_kind(
+    bundle: Option<tauri::utils::config::BundleType>,
+    appimage: Option<&std::ffi::OsStr>,
+) -> Install {
+    use tauri::utils::config::BundleType;
+    match bundle {
+        Some(BundleType::AppImage) if appimage.is_some_and(|p| !p.is_empty()) => {
+            Install::Standalone
+        }
+        Some(BundleType::Deb) => Install::Deb,
+        _ => Install::Dev,
+    }
+}
+
 /// 这一份是怎么装上来的。
 pub fn kind() -> Install {
-    // 连自己在哪都答不上来时当作 `Dev` —— 那一档不自己更新。**不确定的
-    // 时候不要动用户装好的那一份。**
-    let Ok(exe) = std::env::current_exe() else {
-        return Install::Dev;
-    };
-    #[cfg(windows)]
+    // Linux 上不看路径：答案在打包时已经写进二进制里了（见 `linux_kind`）
+    #[cfg(target_os = "linux")]
     {
-        nsis_installed(&exe)
+        linux_kind(
+            tauri::utils::platform::bundle_type(),
+            std::env::var_os("APPIMAGE").as_deref(),
+        )
     }
-    #[cfg(not(windows))]
+    #[cfg(not(target_os = "linux"))]
     {
-        kind_at(&exe, &BREW_PREFIXES.map(PathBuf::from))
+        // 连自己在哪都答不上来时当作 `Dev` —— 那一档不自己更新。**不确定的
+        // 时候不要动用户装好的那一份。**
+        let Ok(exe) = std::env::current_exe() else {
+            return Install::Dev;
+        };
+        #[cfg(windows)]
+        {
+            nsis_installed(&exe)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            kind_at(&exe, &BREW_PREFIXES.map(PathBuf::from))
+        }
+    }
+}
+
+/// 发布页。自动更新装不上时，从这里手动下载新版本。
+#[cfg(target_os = "linux")]
+const RELEASES_URL: &str = "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest";
+
+/// 系统授权框。写全路径：这是一个以 root 身份执行东西的入口，不按 PATH 找。
+#[cfg(target_os = "linux")]
+const PKEXEC: &str = "/usr/bin/pkexec";
+/// 用 apt 而不是 `dpkg -i`：新版本多了依赖时 apt 会一起补上，dpkg 只会装到
+/// 一半停下，留下一个「依赖未满足」的包。
+#[cfg(target_os = "linux")]
+const APT_GET: &str = "/usr/bin/apt-get";
+
+/// 装一个已经验过签的 deb。**`bytes` 必须来自更新器插件的 `download()`**
+/// —— 它在交出字节之前按应用里的公钥核对签名。
+///
+/// **不用插件的 `install()`。**它先试 pkexec，失败了就用 zenity / kdialog 弹一个
+/// 输入框要用户的密码，再喂给 `sudo -S`；那也失败的话去跑一个没有终端的
+/// `sudo`，会卡住。一个桌面应用不该经手用户的系统密码 —— 授权只交给系统的
+/// 授权框，它失败就是失败。
+///
+/// 包放在 `/tmp` 下一个只有自己能进的新目录里：root 读得到，别的用户读不到、
+/// 也换不掉。目录用 `create` 而不是 `create_dir_all` —— 名字被人抢先占了
+/// 就失败，不去用一个别人建的目录。
+#[cfg(target_os = "linux")]
+pub async fn install_deb(bytes: &[u8]) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let dir =
+        std::env::temp_dir().join(format!("thinkwatch-update-{}-{nanos}", std::process::id()));
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|e| not_installed(&e.to_string()))?;
+    let file = dir.join("thinkwatch-lite.deb");
+    let out = match std::fs::write(&file, bytes) {
+        Ok(()) => tokio::process::Command::new(PKEXEC)
+            .arg(APT_GET)
+            .args(["install", "-y"])
+            .arg(&file)
+            .output()
+            .await
+            .map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    };
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let out = match out {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::error!("更新：没能执行 {PKEXEC}：{e}");
+            return Err(if std::path::Path::new(PKEXEC).exists() {
+                not_installed(&e)
+            } else {
+                not_installed(tr!("系统中没有 pkexec", "pkexec is not available"))
+            });
+        }
+    };
+    if out.status.success() {
+        return Ok(());
+    }
+    tracing::error!(
+        "更新：apt 安装失败（{}）：{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    Err(not_installed(deb_failure(out.status.code())))
+}
+
+/// 「更新未安装」加上去哪里下载。
+#[cfg(target_os = "linux")]
+fn not_installed(why: &str) -> String {
+    tr!(
+        format!("更新未安装：{why}。新版本可从 {RELEASES_URL} 下载。"),
+        format!(
+            "The update was not installed: {why}. The new version can be downloaded from {RELEASES_URL}."
+        )
+    )
+}
+
+/// pkexec 的退出码说成一句话。
+///
+/// 126 是授权框被关掉了，127 是没拿到授权（或者会话里没有授权代理）。
+/// 其余的是 apt 自己的退出码 —— 包管理器那一侧的失败，比如被别的安装占着锁。
+#[cfg(target_os = "linux")]
+fn deb_failure(code: Option<i32>) -> &'static str {
+    match code {
+        Some(126) => tr!("授权已取消", "authorization was cancelled"),
+        Some(127) => tr!(
+            "未获得管理员授权",
+            "administrator authorization was not granted"
+        ),
+        _ => tr!(
+            "软件包管理器未能完成安装",
+            "the package manager could not complete the installation"
+        ),
+    }
+}
+
+/// 插件替换 AppImage 失败时的那一句。
+///
+/// 替换的做法是把原文件改名挪走、在原处写新的，所以 AppImage 所在的目录必须
+/// 可写，而且插件要在同一个文件系统上找到一个临时目录。放在 `/opt` 这类
+/// 只有 root 能写的地方时，两个条件都不满足 —— 这不是重试能解决的，说清楚
+/// 去哪下载。
+#[cfg(target_os = "linux")]
+pub fn appimage_failure(e: &tauri_plugin_updater::Error) -> String {
+    use tauri_plugin_updater::Error;
+    let location = match e {
+        Error::TempDirNotOnSameMountPoint => true,
+        Error::Io(io) => matches!(
+            io.kind(),
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+        ),
+        _ => false,
+    };
+    if location {
+        tr!(
+            format!("无法写入 AppImage 所在的位置，更新未安装。新版本可从 {RELEASES_URL} 下载。"),
+            format!(
+                "The location of the AppImage is not writable, so the update was not installed. The new version can be downloaded from {RELEASES_URL}."
+            )
+        )
+    } else {
+        tr!(
+            format!("安装失败：{e}"),
+            format!("Installation failed: {e}")
+        )
     }
 }
 
@@ -200,7 +376,7 @@ mod tests {
         p
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     #[test]
     fn only_the_one_shape_counts_as_a_bundle() {
         assert_eq!(
@@ -305,6 +481,49 @@ mod tests {
         assert_eq!(nsis_installed(&other.join("x.exe")), Install::Dev);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Linux 上信打包时写进去的标记，不信路径和环境变量。
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_trusts_the_bundle_marker() {
+        use tauri::utils::config::BundleType;
+        let image = std::ffi::OsStr::new("/home/u/Apps/ThinkWatch-Lite.AppImage");
+        assert_eq!(
+            linux_kind(Some(BundleType::AppImage), Some(image)),
+            Install::Standalone
+        );
+        // `--appimage-extract` 解开之后直接跑：没有一个可以原地替换的文件
+        assert_eq!(linux_kind(Some(BundleType::AppImage), None), Install::Dev);
+        assert_eq!(
+            linux_kind(Some(BundleType::AppImage), Some(std::ffi::OsStr::new(""))),
+            Install::Dev
+        );
+        assert_eq!(linux_kind(Some(BundleType::Deb), None), Install::Deb);
+        assert!(Install::Deb.can_self_update());
+        // 不发 rpm；打出来的也不自己更新
+        assert_eq!(linux_kind(Some(BundleType::Rpm), None), Install::Dev);
+        // `cargo run` 的构建没有标记。环境里有个 APPIMAGE 也不算
+        assert_eq!(linux_kind(None, Some(image)), Install::Dev);
+    }
+
+    /// 放在只有 root 能写的目录里，是「换个地方」的问题，不是「再试一次」。
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_unwritable_appimage_location_says_where_to_download() {
+        use tauri_plugin_updater::Error;
+        let denied = Error::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert!(appimage_failure(&denied).contains(RELEASES_URL));
+        assert!(appimage_failure(&Error::TempDirNotOnSameMountPoint).contains(RELEASES_URL));
+        assert!(!appimage_failure(&Error::BinaryNotFoundInArchive).contains(RELEASES_URL));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_dismissed_authorization_is_not_reported_as_a_broken_package() {
+        assert_ne!(deb_failure(Some(126)), deb_failure(Some(100)));
+        assert_ne!(deb_failure(Some(127)), deb_failure(Some(100)));
+        assert!(not_installed(deb_failure(Some(126))).contains(RELEASES_URL));
     }
 
     /// 读的是 tap 里真实的那份 cask —— 格式变了，这条先红。

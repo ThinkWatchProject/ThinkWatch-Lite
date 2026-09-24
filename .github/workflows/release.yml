@@ -1,18 +1,20 @@
 # 发一版桌面端。
 #
-# **每个平台只发一个文件**，外加它的 sha256，和一份三个平台共用的
+# **每一种安装方式只发一个文件**，外加它的 sha256，和一份所有平台共用的
 # latest.json：
 #
 #   macOS           ThinkWatch-Lite-<版本>-arm64.dmg
 #   Windows x64     ThinkWatch-Lite-<版本>-x64-setup.exe
 #   Windows arm64   ThinkWatch-Lite-<版本>-arm64-setup.exe
+#   Linux x86_64    ThinkWatch-Lite-<版本>-x86_64.AppImage、thinkwatch-lite_<版本>_amd64.deb
+#   Linux aarch64   ThinkWatch-Lite-<版本>-aarch64.AppImage、thinkwatch-lite_<版本>_arm64.deb
 #
 # 网页上下载的是它，Homebrew 的 cask / winget 的清单吃的是它，已经装上的
 # 应用自己更新下的也是它：latest.json 指向它，签名签的也是它（应用怎么从
 # DMG 更新自己，见 `src-tauri/src/dmg.rs`；Windows 上更新器直接跑新的安装
-# 程序）。
+# 程序；Linux 上 AppImage 原地换掉自己，deb 经系统授权交给 apt）。
 #
-# **三个平台一起发，或者都不发。**各自构建、拆开看过，最后一个 job 才把
+# **所有平台一起发，或者都不发。**各自构建、拆开看过，最后一个 job 才把
 # 它们一起挂上去 —— 只发出一部分的话，latest.json 要么缺平台，要么指向
 # 一个不存在的文件。
 #
@@ -20,7 +22,7 @@
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出安装包并且
 # 在发出去之前拆开看一眼。
 #
-# **推到 `rehearse/` 开头的分支是演练**：全部照做，只是不发布 —— 三个安装
+# **推到 `rehearse/` 开头的分支是演练**：全部照做，只是不发布 —— 各个安装
 # 包留在这次运行的产物里，可以下载下来装到真机上看。改了这条流水线，先演练
 # 一遍，不要拿一个 tag 去试。
 #
@@ -355,9 +357,198 @@ jobs:
             dist/ThinkWatch-Lite-*-setup.exe.sig
           if-no-files-found: error
 
+  linux:
+    name: ThinkWatch Lite (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # **在 22.04 上构建**：glibc 2.35 是 Linux 版的最低要求，在更新的系统
+          # 上构建出来的二进制会去要更新的 glibc，在 22.04 上起不来
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            deb: amd64
+            runner: ubuntu-22.04
+          # 和 Windows 一样在同架构的机器上打，「拆开看一眼」里运行网关那一行才
+          # 不用跳过
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            deb: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      # linuxdeploy 自己是个 AppImage，runner 上不一定能挂 FUSE。解开再跑，
+      # 不依赖它
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag is the version in the tree
+        run: |
+          set -euo pipefail
+          GOT=$(bash scripts/version.sh)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            WANT="${GITHUB_REF_NAME#v}"
+            if [ "$GOT" != "$WANT" ]; then
+              echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
+              exit 1
+            fi
+          fi
+          echo "VERSION=$GOT" >> "$GITHUB_ENV"
+
+      # Tauri 在 Linux 上的构建依赖（https://v2.tauri.app/start/prerequisites/）。
+      # 托盘走 ayatana 那一套：打包器看到它才会把 `libayatana-appindicator3-1`
+      # 写进 deb 的依赖、把那个库放进 AppImage。`xdg-utils`：配了深链接的
+      # 应用，打 AppImage 时要把 `/usr/bin/xdg-mime` 拷进包里（运行时靠它注册
+      # `thinkwatch://`），没有它打包直接失败
+      - name: System libraries
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential file libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev \
+            xdg-utils desktop-file-utils
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: pnpm install --frozen-lockfile
+
+      # 打哪两种包写在 `tauri.linux.conf.json` 里。取哪一份 twcore 跟着
+      # `--target` 走，见 `fetch-core.sh`
+      - name: Build
+        run: pnpm tauri build --target ${{ matrix.target }}
+
+      # 发出去的名字**不带空格**，理由和 Windows 那边一样。deb 按 Debian 的
+      # 惯例起名：包名_版本_架构。
+      #
+      # **包名要改一次。**打包器拿产品名转 kebab-case 当包名，「ThinkWatch
+      # Lite」成了 `think-watch-lite`，和可执行文件、cask、winget 里的
+      # `thinkwatch-lite` 对不上，也没有配置项能改。这里拆开改掉 control 里
+      # 那一行再封回去；文件本身一个字节不动，md5sums 仍然对得上。**要在签名
+      # 之前**：签的是发出去的这一份
+      - name: Name the packages
+      - name: Name the packages
+        run: |
+          set -euo pipefail
+          B="src-tauri/target/${{ matrix.target }}/release/bundle"
+          shopt -s nullglob
+          IMAGES=("$B"/appimage/*.AppImage)
+          DEBS=("$B"/deb/*.deb)
+          [ "${#IMAGES[@]}" -eq 1 ] || { echo "要一个 AppImage，打出来的是 ${#IMAGES[@]} 个" >&2; exit 1; }
+          [ "${#DEBS[@]}" -eq 1 ] || { echo "要一个 deb，打出来的是 ${#DEBS[@]} 个" >&2; exit 1; }
+          mkdir -p dist
+          cp "${IMAGES[0]}" "dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}.AppImage"
+          R=$(mktemp -d)
+          dpkg-deb -R "${DEBS[0]}" "$R/pkg"
+          sed -i 's/^Package: .*/Package: thinkwatch-lite/' "$R/pkg/DEBIAN/control"
+          dpkg-deb --root-owner-group -Zxz -b "$R/pkg" "dist/thinkwatch-lite_${VERSION}_${{ matrix.deb }}.deb"
+          echo "APPIMAGE=dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}.AppImage" >> "$GITHUB_ENV"
+          echo "DEB=dist/thinkwatch-lite_${VERSION}_${{ matrix.deb }}.deb" >> "$GITHUB_ENV"
+
+      # **拆开看一眼再发。**和另外两个平台同一个理由：缺了网关、网关是别的
+      # 架构、或者更新器认不出这是哪种包，从文件列表上都看不出来。
+      #
+      # 应用靠打包器写进二进制的那个标记区分 AppImage 和 deb（自更新走哪条路、
+      # 去哪找网关都看它），所以每个包里的那一份都要带着**自己那种**标记。
+      - name: Look inside before shipping it
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x86_64)  ELF="ELF 64-bit.*x86-64" ;;
+            aarch64) ELF="ELF 64-bit.*aarch64" ;;
+          esac
+          # 一个包拆开之后的根目录里，应用和网关都在，且都对
+          check() {
+            local root=$1 marker=$2
+            local app="$root/usr/bin/thinkwatch-lite"
+            local core="$root/usr/lib/ThinkWatch Lite/twcore"
+            test -x "$app" || { echo "没有 $app" >&2; exit 1; }
+            test -x "$core" || { echo "没有 $core" >&2; exit 1; }
+            file "$app" | grep -Eq "$ELF" || { echo "应用的架构不对：$(file "$app")" >&2; exit 1; }
+            file "$core" | grep -Eq "$ELF" || { echo "网关的架构不对：$(file "$core")" >&2; exit 1; }
+            # 打包器把 `…_UNK` 那几个字节原地改成这种包的名字（没打补丁的
+            # 二进制里只有 `UNK` 这一份，比较用的那几个名字不以字符串的形式出现）
+            if grep -aq __TAURI_BUNDLE_TYPE_VAR_UNK "$app"; then
+              echo "应用没打上打包标记" >&2; exit 1
+            fi
+            [ "$(grep -ao "__TAURI_BUNDLE_TYPE_VAR_$marker" "$app" | wc -l)" -eq 1 ] \
+              || { echo "应用里的打包标记不是 $marker" >&2; exit 1; }
+            # glibc 的底线：比 2.35 新的符号意味着在 22.04 上起不来
+            local top
+            top=$(objdump -T "$app" "$core" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
+            printf '%s\n' "$top" GLIBC_2.35 | sort -V -C \
+              || { echo "要的 glibc 是 $top，超过了 2.35" >&2; exit 1; }
+            echo "包里的网关：$("$core" --version)"
+            # 登录回调靠这两行：认领 `thinkwatch://`，并且 Exec 带 `%u` 把链接交进来
+            # （见 `src-tauri/linux/main.desktop`）
+            local desktop="$root/usr/share/applications/ThinkWatch Lite.desktop"
+            desktop-file-validate "$desktop"
+            grep -q '^MimeType=.*x-scheme-handler/thinkwatch;' "$desktop" \
+              || { echo ".desktop 里没有 thinkwatch 链接" >&2; exit 1; }
+            grep -q '^Exec=thinkwatch-lite %u$' "$desktop" \
+              || { echo ".desktop 的 Exec 不带 %u" >&2; exit 1; }
+          }
+
+          X=$(mktemp -d)
+          ( cd "$X" && "$GITHUB_WORKSPACE/$APPIMAGE" --appimage-extract > /dev/null )
+          check "$X/squashfs-root" APP
+
+          D=$(mktemp -d)
+          dpkg-deb -x "$DEB" "$D"
+          check "$D" DEB
+          # 不用 `grep -q`：它找到就退出，`dpkg-deb` 还在写就挨一个 SIGPIPE，
+          # 在 pipefail 下整步失败
+          dpkg-deb -c "$DEB" | grep ' ./usr/lib/ThinkWatch Lite/twcore$' > /dev/null
+          test "$(dpkg-deb -f "$DEB" Package)" = thinkwatch-lite
+          test "$(dpkg-deb -f "$DEB" Version)" = "$VERSION"
+          test "$(dpkg-deb -f "$DEB" Architecture)" = "${{ matrix.deb }}"
+          # 依赖由打包器写：WebKitGTK、GTK、托盘。少一个，apt 装完照样打不开
+          DEPENDS=$(dpkg-deb -f "$DEB" Depends)
+          for dep in libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1; do
+            grep -q "$dep" <<< "$DEPENDS" || { echo "deb 的依赖里没有 $dep：$DEPENDS" >&2; exit 1; }
+          done
+
+      # 两个都签：AppImage 的用户更新时下的是 AppImage，deb 的用户下的是
+      # deb，验签验的都是下载下来的原始字节。**私钥没传进来这一步就失败**
+      - name: Package
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for f in "$APPIMAGE" "$DEB"; do
+            ( cd dist && sha256sum "$(basename "$f")" > "$(basename "$f").sha256" )
+            cat "$f.sha256"
+            pnpm tauri signer sign "$f"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/ThinkWatch-Lite-*.AppImage
+            dist/ThinkWatch-Lite-*.AppImage.sha256
+            dist/ThinkWatch-Lite-*.AppImage.sig
+            dist/thinkwatch-lite_*.deb
+            dist/thinkwatch-lite_*.deb.sha256
+            dist/thinkwatch-lite_*.deb.sig
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: [app, windows]
+    needs: [app, windows, linux]
     # 演练到上面为止
     if: github.ref_type == 'tag'
     runs-on: macos-latest
@@ -399,14 +590,18 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # 清单等三个平台都到齐了才写 —— 少一个它就不写，见 manifest.py。
-      - name: One manifest for all three
+      # 清单等所有平台都到齐了才写 —— 少一个它就不写，见 manifest.py。
+      - name: One manifest for every platform
         run: |
           set -euo pipefail
           python3 scripts/manifest.py "$VERSION" notes.txt \
             "darwin-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64.dmg" \
             "windows-x86_64=dist/ThinkWatch-Lite-$VERSION-x64-setup.exe" \
-            "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64-setup.exe"
+            "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64-setup.exe" \
+            "linux-x86_64-appimage=dist/ThinkWatch-Lite-$VERSION-x86_64.AppImage" \
+            "linux-x86_64-deb=dist/thinkwatch-lite_${VERSION}_amd64.deb" \
+            "linux-aarch64-appimage=dist/ThinkWatch-Lite-$VERSION-aarch64.AppImage" \
+            "linux-aarch64-deb=dist/thinkwatch-lite_${VERSION}_arm64.deb"
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -417,6 +612,10 @@ jobs:
             dist/ThinkWatch-Lite-*-arm64.dmg.sha256
             dist/ThinkWatch-Lite-*-setup.exe
             dist/ThinkWatch-Lite-*-setup.exe.sha256
+            dist/ThinkWatch-Lite-*.AppImage
+            dist/ThinkWatch-Lite-*.AppImage.sha256
+            dist/thinkwatch-lite_*.deb
+            dist/thinkwatch-lite_*.deb.sha256
             dist/latest.json
           generate_release_notes: true
 

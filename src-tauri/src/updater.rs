@@ -6,7 +6,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use crate::dmg;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use crate::gateway::restart_gateway;
 use crate::{AppState, control::ControlClient, data_dir, error::Out, i18n, notices, prefs, update};
 
@@ -478,6 +478,23 @@ pub async fn update_install(
     let marker = data_dir().join(UPDATED_FROM);
     let from = app.package_info().version.to_string();
 
+    // **deb 不交给插件装**，理由见 `update::install_deb`。和 Windows 一样先停
+    // 网关再装：装不成（授权框点了取消最常见）就把网关接回来
+    #[cfg(target_os = "linux")]
+    if install == update::Install::Deb {
+        state
+            .supervisor
+            .stop_and_wait(std::time::Duration::from_secs(5))
+            .await;
+        if let Err(e) = update::install_deb(&bytes).await {
+            resume_after_failed_update(&app).await;
+            return Err(e.into());
+        }
+        let _ = std::fs::write(&marker, &from);
+        let _ = app.emit("update-step", Step::Restarting);
+        app.restart()
+    }
+
     // **Windows 上 `install` 不回来。**插件拉起新版本的安装程序之后当场
     // `exit(0)`，排在它后面的每一步都轮不到 —— 所以标记和停 core 都得挪到
     // 它前面。停 core 在那边还是硬要求：`twcore.exe` 还在跑的话，安装程序
@@ -505,6 +522,11 @@ pub async fn update_install(
     }
     #[cfg(not(windows))]
     {
+        // Linux 上走到这里的只有 AppImage：插件原地换掉 `$APPIMAGE` 那个文件
+        #[cfg(target_os = "linux")]
+        up.install(&bytes)
+            .map_err(|e| update::appimage_failure(&e))?;
+        #[cfg(target_os = "macos")]
         up.install(&bytes).map_err(|e| {
             tr!(
                 format!("安装失败：{e}"),
@@ -528,7 +550,9 @@ pub async fn update_install(
 /// **先等守护循环真的退干净。**`stop_and_wait` 在 core 翻成「已停止」时就
 /// 返回了，而循环要再走一步才把「正在守护」放下；这之间去拉，会被当成
 /// 「守护还在，重启一下」，然后因为 core 不在跑而什么也不做。
-#[cfg(windows)]
+///
+/// Windows 的安装程序和 Linux 的 deb 都是先停网关再装，装不成都走这里。
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) async fn resume_after_failed_update(app: &tauri::AppHandle) {
     use std::sync::atomic::Ordering;
     let state = app.state::<AppState>();

@@ -8,7 +8,7 @@ import { textOf } from "@/i18n";
 import { updateText } from "./Update.i18n";
 
 /** 这一份是怎么装上来的。决定更新由谁做。 */
-export type Install = "homebrew" | "standalone" | "dev";
+export type Install = "homebrew" | "standalone" | "deb" | "dev";
 
 /** 查到的新版本。 */
 export interface Found {
@@ -46,9 +46,11 @@ export type Step =
  * 一个已经不在磁盘上的版本，下一次 `brew upgrade` 会把旧的那版盖回来。
  * Rust 那一侧也挡着；这里再判断一次，是因为多出来的那个按钮本身就是错
  * 的 —— 它承诺了一件做不到的事，用户要点下去才知道。
+ *
+ * Linux 的 deb 可以：下载、验签之后交给系统的授权框和 apt 安装。
  */
 export function canInstall(install: Install): boolean {
-  return install === "standalone";
+  return install === "standalone" || install === "deb";
 }
 
 const MB = 1_048_576;
