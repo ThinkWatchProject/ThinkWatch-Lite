@@ -1,0 +1,503 @@
+{
+  "client_probes": [
+    {
+      "id": "health_check",
+      "mode": "intercept"
+    },
+    {
+      "id": "warmup",
+      "mode": "intercept"
+    },
+    {
+      "id": "titling",
+      "mode": "passthrough"
+    },
+    {
+      "id": "topic_detect",
+      "mode": "passthrough"
+    },
+    {
+      "id": "suggestion",
+      "mode": "passthrough"
+    }
+  ],
+  "clients": [
+    {
+      "allow": null,
+      "default": true,
+      "key": "tw-m9…j7ak",
+      "max_concurrent": null,
+      "name": "default",
+      "route": null
+    },
+    {
+      "allow": null,
+      "client": "claude-code",
+      "key": "tw-5a…qmg8",
+      "max_concurrent": null,
+      "name": "claude-code",
+      "route": null
+    },
+    {
+      "allow": null,
+      "client": "codex",
+      "key": "tw-h5…yrqn",
+      "max_concurrent": 4,
+      "name": "codex",
+      "route": "codex"
+    },
+    {
+      "allow": [
+        "claude-sonnet-*",
+        "gemini-2.5-pro"
+      ],
+      "client": "cursor",
+      "key": "tw-e6…6td6",
+      "max_concurrent": null,
+      "name": "cursor",
+      "route": null
+    }
+  ],
+  "config_version": "blake3:4dd8ef03d564",
+  "default_route": "default",
+  "groups": [
+    {
+      "builtin": false,
+      "hurts_cache": false,
+      "kind": "fallback",
+      "name": "main",
+      "providers": [
+        "anthropic",
+        "relay"
+      ],
+      "session_affinity": true
+    },
+    {
+      "builtin": true,
+      "hurts_cache": false,
+      "kind": "fallback",
+      "name": "__all__",
+      "providers": [
+        "anthropic",
+        "relay",
+        "chatgpt",
+        "openrouter",
+        "deepseek",
+        "gemini",
+        "ollama"
+      ],
+      "session_affinity": false
+    }
+  ],
+  "listen": {
+    "allow_from": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "fc00::/7"
+    ],
+    "bind": "loopback",
+    "default_allow_from": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "fc00::/7"
+    ],
+    "exposed": false,
+    "port": 8788
+  },
+  "price_sheets": [
+    {
+      "multiplier": 0.8,
+      "name": "relay-discount",
+      "overrides": 0,
+      "used_by": [
+        "relay"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "auth_header": "x-api-key",
+      "base_url": "https://api.anthropic.com",
+      "base_url_masked": false,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "key": {
+        "display": "sk-an…Q3xA"
+      },
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "name": "anthropic",
+      "on_proxy_fail": "fail",
+      "pricing": null,
+      "protocol": "anthropic",
+      "protocol_explicit": false,
+      "proxy": "direct",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "default",
+          "rule": "opus-direct"
+        },
+        {
+          "group": "main",
+          "kind": "group"
+        }
+      ]
+    },
+    {
+      "auth_header": "x-api-key",
+      "base_url": "https://relay.example.com",
+      "base_url_masked": false,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "key": {
+        "display": "sk-rl…Ga7e"
+      },
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "name": "relay",
+      "on_proxy_fail": "fail",
+      "pricing": "relay-discount",
+      "protocol": "anthropic",
+      "protocol_explicit": true,
+      "proxy": "direct",
+      "references": [
+        {
+          "group": "main",
+          "kind": "group"
+        }
+      ]
+    },
+    {
+      "auth_header": "authorization",
+      "base_url": "https://chatgpt.com",
+      "base_url_masked": true,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "name": "chatgpt",
+      "oauth": {
+        "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+        "endpoint": "https://auth.openai.com/oauth/token",
+        "expires_at": "2026-10-04T08:12:40Z"
+      },
+      "on_proxy_fail": "fail",
+      "pricing": null,
+      "protocol": "chatgpt",
+      "protocol_explicit": true,
+      "proxy": "direct",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "codex",
+          "rule": "catch-all"
+        }
+      ]
+    },
+    {
+      "auth_header": "authorization",
+      "base_url": "https://openrouter.ai",
+      "base_url_masked": true,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "key": {
+        "display": "${OPENROUTER_API_KEY}",
+        "env": "OPENROUTER_API_KEY"
+      },
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "models_only": [
+        "qwen/*",
+        "moonshotai/*"
+      ],
+      "name": "openrouter",
+      "on_proxy_fail": "direct",
+      "pricing": null,
+      "protocol": "openai-chat",
+      "protocol_explicit": true,
+      "proxy": "clash",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "codex",
+          "rule": "qwen"
+        }
+      ]
+    },
+    {
+      "auth_header": "x-api-key",
+      "base_url": "https://api.deepseek.com",
+      "base_url_masked": true,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "key": {
+        "display": "sk-3f…9f2c"
+      },
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "name": "deepseek",
+      "on_proxy_fail": "fail",
+      "pricing": null,
+      "protocol": "anthropic",
+      "protocol_explicit": true,
+      "proxy": "direct",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "default",
+          "rule": "deepseek"
+        }
+      ]
+    },
+    {
+      "auth_header": "x-goog-api-key",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "base_url_masked": false,
+      "billing": "per-token",
+      "disabled": false,
+      "health": "ok",
+      "key": {
+        "display": "${GEMINI_API_KEY}",
+        "env": "GEMINI_API_KEY"
+      },
+      "model_count": 0,
+      "model_fetching": false,
+      "model_source": "none",
+      "model_status": "pending",
+      "models": [],
+      "name": "gemini",
+      "on_proxy_fail": "fail",
+      "pricing": null,
+      "protocol": "gemini",
+      "protocol_explicit": false,
+      "proxy": "direct",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "default",
+          "rule": "gemini"
+        }
+      ]
+    },
+    {
+      "auth_header": "authorization",
+      "base_url": "http://127.0.0.1:11434",
+      "base_url_masked": true,
+      "billing": "free",
+      "disabled": false,
+      "health": "ok",
+      "model_count": 1,
+      "model_fetching": false,
+      "model_source": "manual",
+      "model_status": "pending",
+      "models": [
+        "qwen3-coder:30b"
+      ],
+      "name": "ollama",
+      "on_proxy_fail": "fail",
+      "pricing": null,
+      "protocol": "openai-chat",
+      "protocol_explicit": true,
+      "proxy": "direct",
+      "references": [
+        {
+          "kind": "rule_target",
+          "route": "default",
+          "rule": "local-models"
+        }
+      ]
+    }
+  ],
+  "proxies": [
+    {
+      "addr": "127.0.0.1:7890",
+      "has_auth": false,
+      "kind": "socks5h",
+      "name": "clash",
+      "used_by": [
+        "openrouter"
+      ]
+    }
+  ],
+  "retention": {
+    "body_bytes_now": 0,
+    "body_days": 7,
+    "body_max_bytes": 2147483648,
+    "row_days": 90
+  },
+  "routes": [
+    {
+      "builtin": false,
+      "clients": [],
+      "default": true,
+      "has_catch_all": true,
+      "name": "default",
+      "rules": [
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "claude-opus-*"
+              ]
+            }
+          ],
+          "name": "opus-direct",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "anthropic"
+        },
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "deepseek-*"
+              ]
+            }
+          ],
+          "name": "deepseek",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "deepseek"
+        },
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "gemini-*"
+              ]
+            }
+          ],
+          "name": "gemini",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "gemini"
+        },
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "qwen3-coder:*"
+              ]
+            }
+          ],
+          "name": "local-models",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "ollama"
+        },
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "input_tokens",
+              "values": [
+                ">200k"
+              ]
+            }
+          ],
+          "name": "long-context",
+          "phase_two": false,
+          "set": {
+            "model": "claude-sonnet-5"
+          },
+          "shadowed": false
+        },
+        {
+          "catch_all": true,
+          "conditions": [],
+          "name": "catch-all",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "main"
+        }
+      ]
+    },
+    {
+      "builtin": false,
+      "clients": [
+        "codex"
+      ],
+      "default": false,
+      "has_catch_all": true,
+      "name": "codex",
+      "rules": [
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "claude-opus-*"
+              ]
+            }
+          ],
+          "deny": "Opus is not offered on this key",
+          "name": "no-opus",
+          "phase_two": false,
+          "shadowed": false
+        },
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "qwen/*"
+              ]
+            }
+          ],
+          "name": "qwen",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "openrouter"
+        },
+        {
+          "catch_all": true,
+          "conditions": [],
+          "name": "catch-all",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "chatgpt"
+        }
+      ]
+    }
+  ],
+  "security": {
+    "content": "observe",
+    "hidden_text": "observe",
+    "inspect_tools": "enforce",
+    "output_limit": "off",
+    "redact": "enforce"
+  }
+}

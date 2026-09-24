@@ -2,6 +2,10 @@
 @import "shadcn/tailwind.css";
 @import "tw-animate-css";
 
+/* **仓库里的脚本不是界面。**Tailwind 会扫整个项目找类名，scripts/ 下截图用的 mock
+ * 里出现一个 `grow` 这样的词，应用的样式表就多一条规则。 */
+@source not "../scripts";
+
 /* **Tailwind v4 把无颜色 `border` 的默认色改成了 `currentColor`。**
  *
  * v3 是灰色,v4 是「当前文字色」。于是 `border-r`、表格的 `border-b`

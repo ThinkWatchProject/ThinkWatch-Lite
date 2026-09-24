@@ -1,0 +1,106 @@
+# 截图用的示例配置（中文界面那一套）。`oracle.sh` 把它交给真的 core，
+# core 答出来的样子存在 zh/ 下，截图页照着答。和 config.en.yaml 只差用户起的名字。
+version: 1
+listen:
+  control:
+    key: 513b96e9292e7f7fcae569b14bd137c764d3d63ab13d4a35677d07752f23a1db
+clients:
+  - name: default
+    key: tw-m9e3tdqv924ywhvspc9tj7ak
+  - name: claude-code
+    key: tw-5amhwwyzhrv4ad6gtj3vqmg8
+    client: claude-code
+  - name: codex
+    key: tw-h5hz5q3s7rac8c4krekfyrqn
+    client: codex
+    route: codex
+    max_concurrent: 4
+  - name: cursor
+    key: tw-e67q552pun7s3uub5btw6td6
+    client: cursor
+    allow: [claude-sonnet-*, gemini-2.5-pro]
+providers:
+  - name: anthropic
+    base_url: https://api.anthropic.com
+    key: sk-ant-api03-Kf7wQ2mZr9TxLb4NcV8yHj3PdS6aE1uGk0oXqWz5RtYiUoPl2sMnBvC7xDfA9gHh4JkL1ZxCvBnM8qWeRtYuIoP-3xQ3xA
+  - name: relay
+    base_url: https://relay.example.com
+    protocol: anthropic
+    key: sk-rl-4Pq9Xw2Lm7Tn5Vb8Kc3Yh6Dj1Fs0Ga7e
+    pricing: relay-discount
+  - name: chatgpt
+    base_url: https://chatgpt.com/backend-api/codex
+    protocol: chatgpt
+    oauth:
+      refresh: rt_7Hc2PqLmX9vN4sRk8TwZ3yBd6FgJ1aUe5iOp0QxCvMnB2
+      endpoint: https://auth.openai.com/oauth/token
+      client_id: app_EMoamEEZ73f0CkXaXp7hrann
+      access: eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2ln
+      expires_at: "2026-10-04T08:12:40Z"
+  - name: openrouter
+    base_url: https://openrouter.ai/api/v1
+    protocol: openai-chat
+    key: ${OPENROUTER_API_KEY}
+    proxy: clash
+    on_proxy_fail: direct
+    models_only: [qwen/*, moonshotai/*]
+  - name: deepseek
+    base_url: https://api.deepseek.com/anthropic
+    protocol: anthropic
+    key: sk-3f9c0b7e5a2d48c1b6e9f4a07d3c9f2c
+  - name: gemini
+    base_url: https://generativelanguage.googleapis.com
+    key: ${GEMINI_API_KEY}
+  - name: ollama
+    base_url: http://127.0.0.1:11434/v1
+    protocol: openai-chat
+    billing: free
+    models: [qwen3-coder:30b]
+proxies:
+  - name: clash
+    addr: 127.0.0.1:7890
+pricing:
+  sheets:
+    - name: relay-discount
+      multiplier: 0.8
+security:
+  redact:
+    mode: enforce
+    custom:
+      - name: 客户编号
+        pattern: 'CUST-\d{6}'
+  inspect_tools:
+    mode: enforce
+groups:
+  - name: 主力
+    providers: [anthropic, relay]
+routes:
+  - name: default
+    rules:
+      - name: Opus 直连
+        when: { model: "claude-opus-*" }
+        to: anthropic
+      - name: DeepSeek 模型
+        when: { model: "deepseek-*" }
+        to: deepseek
+      - name: Gemini 模型
+        when: { model: "gemini-*" }
+        to: gemini
+      - name: 本地模型
+        when: { model: "qwen3-coder:*" }
+        to: ollama
+      - name: 长上下文
+        when: { input_tokens: ">200k" }
+        set: { model: claude-sonnet-5 }
+      - name: 兜底
+        to: 主力
+  - name: codex
+    rules:
+      - name: 禁用 Opus
+        when: { model: "claude-opus-*" }
+        deny: 此密钥不提供 Opus 模型
+      - name: Qwen 模型
+        when: { model: "qwen/*" }
+        to: openrouter
+      - name: 兜底
+        to: chatgpt

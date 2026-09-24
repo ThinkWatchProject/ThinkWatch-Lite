@@ -1,0 +1,92 @@
+[
+  {
+    "candidates": [
+      "anthropic",
+      "relay"
+    ],
+    "circuit_open": [],
+    "converted": [
+      {
+        "from": "openai-chat",
+        "provider": "anthropic",
+        "to": "anthropic"
+      },
+      {
+        "from": "openai-chat",
+        "provider": "relay",
+        "to": "anthropic"
+      }
+    ],
+    "hurts_cache": false,
+    "outcome": "route",
+    "reason": null,
+    "route": "default",
+    "rule": "catch-all",
+    "set": [],
+    "skipped": [],
+    "strategy": "fallback",
+    "trace": [
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "claude-opus-*"
+          ]
+        },
+        "name": "opus-direct",
+        "verdict": "skipped"
+      },
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "deepseek-*"
+          ]
+        },
+        "name": "deepseek",
+        "verdict": "skipped"
+      },
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "gemini-*"
+          ]
+        },
+        "name": "gemini",
+        "verdict": "skipped"
+      },
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "qwen3-coder:*"
+          ]
+        },
+        "name": "local-models",
+        "verdict": "skipped"
+      },
+      {
+        "mismatch": {
+          "field": "input_tokens",
+          "got": "8000",
+          "want": [
+            ">200k"
+          ]
+        },
+        "name": "long-context",
+        "verdict": "skipped"
+      },
+      {
+        "effect": "decide",
+        "name": "catch-all",
+        "verdict": "matched"
+      }
+    ],
+    "via_group": "main"
+  }
+]
