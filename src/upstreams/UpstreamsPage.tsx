@@ -117,12 +117,26 @@ export default function UpstreamsPage({
     });
   }, [ov.providers, pendingDisabled]);
 
-  // 从别的页带着一个上游名打开：切到上游标签，那一行滚进视野、亮一下
+  /*
+    别的页和命令面板送来的（见 nav.tsx）。带着一个上游名打开：切到上游标签，那一行滚进
+    视野、亮一下。打开这一页上的对话框：和点按钮、点那一行一样
+  */
   const [focus, setFocus] = useState<{ name: string; at: number } | null>(null);
   useNavParams("upstreams", (p) => {
-    if (!p.upstream) return;
-    setTab("upstreams");
-    setFocus({ name: p.upstream, at: Date.now() });
+    if (p.upstream) {
+      setTab("upstreams");
+      setFocus({ name: p.upstream, at: Date.now() });
+    }
+    if (p.edit && ov.providers.some((x) => x.name === p.edit)) {
+      setTab("upstreams");
+      setDialog({ kind: "upstream", mode: { kind: "edit", name: p.edit } });
+    } else if (p.create) {
+      setTab(p.create === "proxy" ? "proxies" : p.create === "sheet" ? "pricing" : "upstreams");
+      setDialog({ kind: p.create, mode: { kind: "create" } });
+    } else if (p.test) {
+      setTab("upstreams");
+      setDialog({ kind: p.test, provider: null });
+    }
   });
 
   /**

@@ -27,6 +27,17 @@ export const notify = {
   info(message: ReactNode, description?: ReactNode) {
     return toast(message, { description });
   },
+  /**
+   * 要等一会儿、结果在界面上又看不出来的事（检查更新）：先说「正在…」，完了原地换成
+   * 结果；失败换成 `error` 这句标题加翻好的原因。
+   */
+  promise<T>(p: Promise<T>, m: { loading: ReactNode; success: (value: T) => ReactNode; error: ReactNode }) {
+    toast.promise(p, {
+      loading: m.loading,
+      success: m.success,
+      error: (e: unknown) => ({ message: m.error, description: errorText(e) }),
+    });
+  },
 };
 
 /**

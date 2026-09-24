@@ -12,7 +12,7 @@ import { Count } from "@/ui/count";
 import { useResource } from "@/lib/resource";
 import { useText } from "@/i18n";
 import { targetLabel } from "@/labels";
-import { useNav } from "@/nav";
+import { useNav, useNavParams } from "@/nav";
 import type { GroupView, Overview, RouteInput } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
 import { api } from "./api";
@@ -73,6 +73,22 @@ export default function RoutingPage({
   const hover = useChainFocus();
   // 挂在页上，不挂在图上：切到「辅助请求」再切回来，在途的请求还在
   const flights = useFlights();
+  // 命令面板和别的页送来的：打开这一页上的对话框，和点按钮、点那一行一样（见 nav.tsx）
+  useNavParams("routing", (p) => {
+    if (p.editRoute && ov.routes.some((r) => r.name === p.editRoute)) {
+      setTab("routes");
+      setDialog({ kind: "route", mode: { kind: "edit", name: p.editRoute } });
+    } else if (p.editGroup && ov.groups.some((g) => g.name === p.editGroup)) {
+      setTab("groups");
+      setDialog({ kind: "group", mode: { kind: "edit", name: p.editGroup } });
+    } else if (p.create) {
+      setTab(p.create === "group" ? "groups" : "routes");
+      setDialog({ kind: p.create, mode: { kind: "create" } });
+    } else if (p.dryRun) {
+      setTab("routes");
+      setDryRun({ kind: "key" });
+    }
+  });
 
   // 模型建议（规则条件、改写参数、试算）。拿不到不影响任何功能，照常可以手写，所以
   // 失败时什么都不画。**跟着各上游的模型清单重读**，不只是配置版本：后台问完一个
