@@ -1,9 +1,30 @@
-import { Badge } from "@/ui/badge";
-import { textOf, useText } from "@/i18n";
+import { StatusLabel, type StatusTone } from "@/ui/status-dot";
+import { getLang, textOf, useText } from "@/i18n";
 import { hiddenWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
 import { secretLabel } from "@/labels";
-import type { Guard, Matcher, SecurityEventView, SecurityRuleView } from "@/types";
+import type { Guard, GuardMode, Matcher, SecurityEventView, SecurityOutcome, SecurityRuleView } from "@/types";
 import { securityLabelsText } from "./labels.i18n";
+
+/**
+ * 一项防护的档位，画成状态点的语气。
+ *
+ * **拦截是绿的**（防护在起作用），**观察是琥珀的**（命中照常放行，只记下来 ——
+ * 要留意，但它在工作），**关闭是灰的**（没有在工作，也不是故障）。页头、标签、
+ * 档位那一块用同一套，一眼对得上。
+ */
+export function modeTone(mode: GuardMode): StatusTone {
+  return mode === "enforce" ? "ok" : mode === "observe" ? "warn" : "idle";
+}
+
+/**
+ * 一次命中最后怎么处置的，画成状态点的语气。
+ *
+ * **三种颜色说三件事**：切断、拒绝是红的（请求的结局变了），替换是绿的（防护在
+ * 起作用，请求照常完成），仅记录是琥珀的（命中的东西照常放行了，值得看一眼）。
+ */
+export function outcomeTone(action: SecurityOutcome): StatusTone {
+  return action === "cut" || action === "blocked" ? "error" : action === "replaced" ? "ok" : "warn";
+}
 
 /**
  * 一条规则叫什么。
@@ -92,7 +113,7 @@ export function EventDetail({ e }: { e: SecurityEventView }) {
 export function Code({ children }: { children: string }) {
   return (
     // `pre`：内容规则的首尾空格有意义（` dan `），不能被折叠掉
-    <code className="rounded bg-muted px-1 font-mono text-[0.92em] whitespace-pre text-foreground">
+    <code className="rounded bg-surface px-1 font-mono text-[0.92em] whitespace-pre text-foreground">
       {children}
     </code>
   );
@@ -128,14 +149,51 @@ export function MatcherText({ m }: { m: Matcher }) {
 }
 
 /**
- * 一次命中最后怎么处置的。
+ * 一次命中最后怎么处置的：状态点加一个词，颜色见 `outcomeTone`。
  *
- * **三种颜色说三件事**：切断、拒绝是红的（请求的结局变了），替换是绿的（防护在
- * 起作用，请求照常完成），仅记录不上色（什么都没改）。
+ * **只有切断、拒绝的字是红的** —— 一列里大多数是替换和仅记录，满列彩字等于
+ * 没有重点；那两种改变了请求的结局，要一眼挑得出来。
  */
-export function ActionBadge({ action }: { action: SecurityEventView["action"] }) {
+export function ActionBadge({ action }: { action: SecurityOutcome }) {
   const t = useText(securityLabelsText).actions;
-  const variant =
-    action === "cut" || action === "blocked" ? "destructive" : action === "replaced" ? "success" : "outline";
-  return <Badge variant={variant}>{t[action] ?? action}</Badge>;
+  const tone = outcomeTone(action);
+  return (
+    <StatusLabel tone={tone} muted={tone !== "error"}>
+      {t[action] ?? action}
+    </StatusLabel>
+  );
+}
+
+/** 本地时区里的哪一天，当分组的键 */
+export function dayKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/**
+ * 一天的标题：今天、昨天写词，日期跟在后面；更早的只写日期（带星期，跨年带年份）。
+ * 日期按界面语言写（`9月23日周三` / `Wed, Sep 23`）。
+ */
+export function dayHead(ms: number, now = Date.now()): { title: string; date: string | null } {
+  const t = textOf(securityLabelsText).day;
+  const d = new Date(ms);
+  const today = new Date(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(today.getDate() - 1);
+  const date = new Intl.DateTimeFormat(getLang() === "zh" ? "zh-CN" : "en-US", {
+    year: d.getFullYear() === today.getFullYear() ? undefined : "numeric",
+    month: getLang() === "zh" ? "long" : "short",
+    day: "numeric",
+    weekday: "short",
+  }).format(d);
+  if (dayKey(ms) === dayKey(now)) return { title: t.today, date };
+  if (dayKey(ms) === dayKey(yesterday.getTime())) return { title: t.yesterday, date };
+  return { title: date, date: null };
+}
+
+/** 一天之内的时刻，到秒。日期在那一天的标题上 */
+export function clock(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }

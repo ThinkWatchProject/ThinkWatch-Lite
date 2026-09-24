@@ -1,17 +1,15 @@
+import { SparklesIcon, WebhookIcon } from "lucide-react";
+import { ClientLogo } from "@/ui/logos";
+import { PageSection } from "@/ui/page";
+import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
+import { EmptyState } from "@/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
+import { ROW_FOCUS, rowNav, stop } from "@/security/rows";
 import type { HookView, ScanFinding, ScanReport, SkillView } from "@/types";
-import { Level } from "./Findings";
 import { mcpText } from "./McpPage.i18n";
-
-const RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
-
-/** 几处发现里最高的那一级。一处都没有就是 `null` */
-function worst(findings: ScanFinding[]): ScanFinding["level"] | null {
-  let out: ScanFinding["level"] | null = null;
-  for (const f of findings) if (out == null || (RANK[f.level] ?? 3) < (RANK[out] ?? 3)) out = f.level;
-  return out;
-}
+import { copyText, Level, rank, worst } from "./parts";
 
 /**
  * 一个钩子命中了哪些发现。
@@ -31,101 +29,165 @@ function skillFindings(s: SkillView, findings: ScanFinding[]): ScanFinding[] {
   return findings.filter((f) => f.kind === "skill" && f.path === s.path);
 }
 
+/** 最要紧的那一处 */
+const first = (fs: ScanFinding[]) => [...fs].sort((a, b) => rank(a.level) - rank(b.level))[0];
+
+function ClientCell({ id, name }: { id: string; name: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+      <ClientLogo id={id} name={name} className="shrink-0" />
+      <span className="truncate">{name}</span>
+    </span>
+  );
+}
+
 /**
  * 钩子和技能。**两张表，都只列出** —— 钩子不需要模型参与就能拿到执行权，
  * 是危险度最高的一类；技能没有跨客户端的通行格式，不提供复制。
  *
- * 命中扫描规则的那一行标出级别，详情在「发现」里。
+ * 命中扫描规则的那一行标出级别，点它看那一处发现。
  */
-export function Extensions({ data, nameOf }: { data: ScanReport; nameOf: (client: string) => string }) {
+export function Extensions({
+  data,
+  nameOf,
+  onFinding,
+}: {
+  data: ScanReport;
+  nameOf: (client: string) => string;
+  /** 打开一处发现的详情 */
+  onFinding: (f: ScanFinding) => void;
+}) {
   const t = useText(mcpText);
+
+  const hookMenu = (h: HookView, found: ScanFinding | undefined): MenuItems => [
+    ...(found ? [{ kind: "item" as const, label: t.viewFinding, onSelect: () => onFinding(found) }, { kind: "sep" as const }] : []),
+    { kind: "item", label: t.copyCommand, onSelect: () => copyText(h.command) },
+    { kind: "item", label: t.copyPath, onSelect: () => copyText(h.source) },
+  ];
+  const skillMenu = (s: SkillView, found: ScanFinding | undefined): MenuItems => [
+    ...(found ? [{ kind: "item" as const, label: t.viewFinding, onSelect: () => onFinding(found) }, { kind: "sep" as const }] : []),
+    { kind: "item", label: t.copyPath, onSelect: () => copyText(s.path) },
+  ];
+
   return (
-    <div className="flex flex-col gap-5">
-      <section className="flex flex-col gap-1.5">
-        <h3 className="tw-head">
-          {t.hooks} <span className="tw-label tabular-nums text-muted-foreground">{data.hooks.length}</span>
-        </h3>
-        <p className="tw-label text-muted-foreground">{t.hooksNote}</p>
+    <div>
+      <PageSection
+        title={
+          <>
+            {t.hooks} <span className="ml-1 tw-label tw-num text-muted-foreground">{data.hooks.length}</span>
+          </>
+        }
+        description={t.hooksNote}
+      >
         {data.hooks.length === 0 ? (
-          <p className="tw-body text-muted-foreground">{t.noHooks}</p>
+          <EmptyState variant="outlined" icon={<WebhookIcon />} title={t.noHooks} className="py-8" />
         ) : (
           <Table className="table-fixed min-w-[560px]">
             <colgroup>
-              <col className="w-[128px]" />
+              <col className="w-[148px]" />
               <col className="w-[128px]" />
               <col />
-              <col className="w-14" />
+              <col className="w-[88px]" />
+              <col className="w-9" />
             </colgroup>
             <TableHeader>
               <TableRow>
                 <TableHead>{t.client}</TableHead>
                 <TableHead>{t.event}</TableHead>
                 <TableHead>{t.command}</TableHead>
+                <TableHead>{t.level}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.hooks.map((h, i) => {
-                const level = worst(hookFindings(h, data.findings));
+                const fs = hookFindings(h, data.findings);
+                const level = worst(fs);
+                const found = first(fs);
+                const items = hookMenu(h, found);
+                const open = found ? () => onFinding(found) : undefined;
                 return (
-                  <TableRow key={`${h.source}:${h.event}:${i}`}>
-                    <TableCell className="truncate text-muted-foreground">{nameOf(h.client)}</TableCell>
-                    <TableCell className="truncate font-mono tw-label">{h.event}</TableCell>
-                    <TableCell className="truncate font-mono tw-label" title={h.command}>
-                      {h.command}
-                    </TableCell>
-                    <TableCell className="text-right">{level && <Level level={level} />}</TableCell>
-                  </TableRow>
+                  <RowMenu key={`${h.source}:${h.event}:${i}`} items={items}>
+                    <TableRow className={cn("cursor-default", ROW_FOCUS)} onClick={open} {...rowNav(open)}>
+                      <TableCell>
+                        <ClientCell id={h.client} name={nameOf(h.client)} />
+                      </TableCell>
+                      <TableCell className="truncate font-mono tw-label">{h.event}</TableCell>
+                      <TableCell className="truncate font-mono tw-label" title={h.command}>
+                        {h.command}
+                      </TableCell>
+                      <TableCell>{level && <Level level={level} />}</TableCell>
+                      <TableCell className="text-right" {...stop}>
+                        <RowMenuButton items={items} label={t.actionsFor(h.event)} />
+                      </TableCell>
+                    </TableRow>
+                  </RowMenu>
                 );
               })}
             </TableBody>
           </Table>
         )}
-      </section>
+      </PageSection>
 
-      <section className="flex flex-col gap-1.5">
-        <h3 className="tw-head">
-          {t.skills} <span className="tw-label tabular-nums text-muted-foreground">{data.skills.length}</span>
-        </h3>
-        <p className="tw-label text-muted-foreground">{t.skillsNote}</p>
+      <PageSection
+        title={
+          <>
+            {t.skills} <span className="ml-1 tw-label tw-num text-muted-foreground">{data.skills.length}</span>
+          </>
+        }
+        description={t.skillsNote}
+      >
         {data.skills.length === 0 ? (
-          <p className="tw-body text-muted-foreground">{t.noSkills}</p>
+          <EmptyState variant="outlined" icon={<SparklesIcon />} title={t.noSkills} className="py-8" />
         ) : (
           <Table className="table-fixed min-w-[560px]">
             <colgroup>
               <col className="w-[200px]" />
-              <col className="w-[128px]" />
+              <col className="w-[148px]" />
               <col />
-              <col className="w-14" />
+              <col className="w-[88px]" />
+              <col className="w-9" />
             </colgroup>
             <TableHeader>
               <TableRow>
                 <TableHead>{t.name}</TableHead>
                 <TableHead>{t.client}</TableHead>
                 <TableHead>{t.allowedTools}</TableHead>
+                <TableHead>{t.level}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.skills.map((s) => {
-                const level = worst(skillFindings(s, data.findings));
+                const fs = skillFindings(s, data.findings);
+                const level = worst(fs);
+                const found = first(fs);
+                const items = skillMenu(s, found);
+                const open = found ? () => onFinding(found) : undefined;
                 return (
-                  <TableRow key={s.path}>
-                    <TableCell className="truncate font-medium" title={s.path}>
-                      {s.name}
-                    </TableCell>
-                    <TableCell className="truncate text-muted-foreground">{nameOf(s.client)}</TableCell>
-                    <TableCell className="truncate font-mono tw-label">
-                      {s.allowed_tools.length > 0 ? s.allowed_tools.join(t.listSep) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">{level && <Level level={level} />}</TableCell>
-                  </TableRow>
+                  <RowMenu key={s.path} items={items}>
+                    <TableRow className={cn("cursor-default", ROW_FOCUS)} onClick={open} {...rowNav(open)}>
+                      <TableCell className="truncate font-medium" title={s.path}>
+                        {s.name}
+                      </TableCell>
+                      <TableCell>
+                        <ClientCell id={s.client} name={nameOf(s.client)} />
+                      </TableCell>
+                      <TableCell className="truncate font-mono tw-label text-muted-foreground">
+                        {s.allowed_tools.length > 0 ? s.allowed_tools.join(t.listSep) : "—"}
+                      </TableCell>
+                      <TableCell>{level && <Level level={level} />}</TableCell>
+                      <TableCell className="text-right" {...stop}>
+                        <RowMenuButton items={items} label={t.actionsFor(s.name)} />
+                      </TableCell>
+                    </TableRow>
+                  </RowMenu>
                 );
               })}
             </TableBody>
           </Table>
         )}
-      </section>
+      </PageSection>
     </div>
   );
 }

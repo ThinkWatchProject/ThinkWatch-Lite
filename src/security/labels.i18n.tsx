@@ -61,11 +61,15 @@ export const securityLabelsText = messages(
     builtin: "内置",
     /** 命中处在工具结果里（日志的 `tool` 是 `tool_result`） */
     toolResult: "工具结果",
-    /** 隐藏字符的两种。和 core.i18n 里扫描发现用的是同一对名字 */
     /** 隐藏字符的两种。和 core 消息、扫描发现用的是同一对名字 */
     hiddenKinds: CORE_ZH.tables.hidden_name as Record<string, string>,
     /** 输出长度只有一条「规则」，日志里 `rule` 是 `max_chars` */
     outputLimit: "超过输出长度",
+    /** 日志按天分组时，一天的标题 */
+    day: {
+      today: "今天",
+      yesterday: "昨天",
+    },
     /** 日志一条的第二行 */
     detail: {
       /** 出站脱敏：同一个值在一个请求里出现了几次 */
@@ -162,6 +166,10 @@ export const securityLabelsText = messages(
       bidi: "Bidirectional controls",
     },
     outputLimit: "Over the output limit",
+    day: {
+      today: "Today",
+      yesterday: "Yesterday",
+    },
     detail: {
       times: (n: number) => `${n} times`,
       revealed: (text: string) => `hidden text “${text}”`,
