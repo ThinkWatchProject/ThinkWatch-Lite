@@ -217,6 +217,18 @@ export function invalidate(prefix: string) {
 }
 
 /**
+ * 全部重取：⌘R、命令面板的「刷新数据」。和 `invalidate` 一样，挂着的立刻重取，没人
+ * 挂着的只标成过时 —— 刷新的是眼前这一页的全部数据，不只是外壳读的状态和概览。
+ */
+export function invalidateAll() {
+  for (const [key, e] of cache) {
+    e.at = 0;
+    const live = e.fetchers.values().next().value;
+    if (live) void fetchInto(key, live);
+  }
+}
+
+/**
  * 换了连接：整份缓存作废。**不是清空再重取**：新连接的界面会整个重挂（App.tsx 的
  * `PerConnection`），各页挂上时自己取。
  */

@@ -25,6 +25,9 @@ import { errorText } from "@/i18n/core.i18n";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import type { RemoteCore } from "@/connection/api";
+import { revealSection, useNavParams } from "@/nav";
+import { getLang } from "@/i18n";
+import { sectionTitle } from "@/palette/sections";
 
 /**
  * 设置：这个应用自己的，和网关那几项配一次就不动的。
@@ -50,6 +53,10 @@ export default function Config({
   const t = useText(configText);
   const rt = useText(remoteText);
   const remote = useRemote();
+  // 命令面板送来的「设置 › 外观」：滚到那一节。节是陆续画出来的，`revealSection` 会等它
+  useNavParams("settings", (p) => {
+    if (p.section) revealSection(p.section, sectionTitle(p.section, getLang()));
+  });
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
       .then(setAutostart)

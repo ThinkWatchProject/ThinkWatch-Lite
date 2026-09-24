@@ -417,6 +417,10 @@
 @utility motion-shimmer {
   animation: tw-shimmer 1.6s ease-in-out infinite;
 }
+/* 高度跟着内容变的列表（命令面板的结果）：结果变多变少时走过去 */
+@utility motion-list-height {
+  transition: height var(--motion-fast) var(--motion-ease);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .motion-page,
@@ -429,7 +433,8 @@
   .motion-row-out {
     animation-duration: 1ms;
   }
-  .motion-bar {
+  .motion-bar,
+  .motion-list-height {
     transition: none;
   }
   /* shadcn 组件的进出场（tw-animate-css）：保留淡入淡出，去掉位移和缩放 */

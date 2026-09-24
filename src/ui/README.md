@@ -372,7 +372,56 @@ useNavParams("keys", (p) => setHighlight(p.key ?? null));
 
 Add new deep-link parameters to `NavParams` in `src/nav.tsx`. Keyboard: ⌘1…⌘9 follow
 the sidebar order (`SURFACES`), ⌘K opens the command palette, ⌘F focuses Traffic search,
-⌘, opens Settings, ⌘R refreshes.
+⌘, opens Settings, ⌘R refreshes, `?` (outside text fields) shows the shortcut sheet.
+
+**Opening a page's dialog from elsewhere.** A dialog lives in exactly one place, its page.
+Other places (the command palette, another page) open it through `NavParams`, and the page
+handles the param in `useNavParams` exactly as its own button or row click would:
+
+```ts
+nav.open("upstreams", { create: "upstream" });      // or "proxy" / "sheet"
+nav.open("upstreams", { edit: "deepseek" });        // = clicking that row
+nav.open("upstreams", { test: "speed" });           // or "link"
+nav.open("keys", { create: true });   nav.open("keys", { edit: "codex" });
+nav.open("routing", { create: "route" });           // or "group"; { editRoute }, { editGroup }, { dryRun: true }
+nav.open("clients", { detail: "codex" });           // installed; { setup: id } = manual setup
+nav.open("settings", { section: "appearance" });    // the Settings page scrolls there
+
+// in the page, next to its dialog state:
+useNavParams("keys", (p) => {
+  if (p.edit) setDialog({ kind: "edit", name: p.edit });
+  else if (p.create) setDialog({ kind: "edit", name: null });
+});
+```
+
+Wait for the data a dialog needs before rendering it (an edit dialog opened by a deep link
+may mount before its row is loaded). The Settings page handles `section` itself
+(`revealSection` finds `data-section="<id>"`, or the heading whose text is the title in
+`palette/sections.ts`). When the Settings page is restructured, keep one palette entry per
+setting a user would search for and point its `id` at the section that now holds it.
+
+### Command palette and shortcuts
+
+`src/palette/`: ⌘K palette (cmdk via `@/ui/command`) and the `?` shortcut sheet.
+
+- **The palette only navigates.** Every action and search result is a `nav.open(…)` into a
+  page (see above) or one of the shell's own actions; it never renders a page's dialog. To
+  make a new dialog reachable, add a `NavParams` field, handle it in the page, then add the
+  item in `palette/items.tsx` (strings, including search-only aliases in both languages, in
+  `palette/palette.i18n.ts`).
+- It searches data that is already loaded: the overview (upstreams, keys, routes, groups),
+  Traffic's loaded rows (by id or model), connections, Settings sections, and the client
+  list (read when the palette opens).
+- **Key caps come from `palette/keys.tsx`** (`Keys`, `COMBOS`, `pageCombo`). The palette rows,
+  the shortcut sheet and the sidebar tooltips all render from it; the handlers are in
+  `App.tsx` (global) and the pages (Traffic's row keys). Change a key in both places.
+- Global shortcuts do nothing while a modal dialog is open (`modalOpen()`), so ⌘2 never
+  throws away a half-edited form. The request drawer does not count as modal, and neither
+  does a dialog marked `data-passive` (the palette and the shortcut sheet: nothing in them
+  can be lost, so ⌘4 read off the sheet works).
+- Search stays focused: pages, actions and entity **names** score first; aliases (the other
+  language, synonyms, a base URL) score lower, and requests match by model or id only, one
+  row per model. Add aliases to `palette.i18n.ts` in both languages, never to the title.
 
 ---
 

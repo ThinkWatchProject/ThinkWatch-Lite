@@ -81,7 +81,12 @@ export default function KeysPage({
   */
   const [focus, setFocus] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
-  useNavParams("keys", (p) => setFocus(p.key ?? null));
+  useNavParams("keys", (p) => {
+    setFocus(p.key ?? null);
+    // 命令面板送来的：打开这一页上的对话框，和点「新建密钥」、点那一行一样（见 nav.tsx）
+    if (p.edit) setDialog({ kind: "edit", name: p.edit });
+    else if (p.create) setDialog({ kind: "edit", name: null });
+  });
   useEffect(() => {
     if (!focus || !list?.some((k) => k.name === focus)) return;
     document.querySelector(`[data-row="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
@@ -232,7 +237,8 @@ export default function KeysPage({
         )}
       </Loadable>
 
-      {dialog?.kind === "edit" && (
+      {/* 编辑要等那把密钥读到了再开：先开的话对话框按「新建」起了表单，读到之后也不会换 */}
+      {dialog?.kind === "edit" && (dialog.name === null || editing) && (
         <KeyDialog
           editing={editing ?? null}
           keys={list ?? []}

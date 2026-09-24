@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { FileCodeIcon, HistoryIcon, RotateCwIcon, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 import { call } from "@/control";
 import { useRequests } from "./useRequests";
 import { useStableState } from "./useStable";
@@ -31,9 +31,8 @@ import {
   IconRoute,
   IconServer,
   IconSettings,
-  IconSidebar,
 } from "./ui/icons";
-import { isMac, isMod, modKey } from "@/platform";
+import { isMac, isMod } from "@/platform";
 import Dashboard from "./Dashboard";
 import type { CoreStatus, Overview } from "./types";
 import { stageLabel } from "./labels";
@@ -42,7 +41,6 @@ import { commonText } from "@/i18n/common.i18n";
 import { appText } from "./App.i18n";
 import { Button } from "@/ui/button";
 import type { LucideIcon } from "lucide-react";
-import { Kbd, KbdGroup } from "@/ui/kbd";
 import { Toaster } from "@/ui/sonner";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import { trouble } from "./launch/trouble";
@@ -58,10 +56,11 @@ import { Banner } from "@/ui/banner";
 import { Reveal } from "@/ui/motion";
 import { Page, PageHeader, PageTitleContext } from "@/ui/page";
 import { ErrorState, TableSkeleton } from "@/ui/states";
-import { resetResources } from "@/lib/resource";
+import { invalidateAll, resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
-import { CommandPalette, type Command } from "./CommandPalette";
-import { paletteText } from "./CommandPalette.i18n";
+import { Palette } from "./palette/Palette";
+import { paletteText } from "./palette/palette.i18n";
+import { COMBOS, Keys, isTyping, modalOpen, pageCombo } from "./palette/keys";
 import {
   Sidebar,
   SidebarContent,
@@ -162,11 +161,6 @@ const SOURCES: { group: string; items: { id: Surface; icon: LucideIcon }[] }[] =
     items: [{ id: "settings", icon: IconSettings }],
   },
 ];
-
-const ICONS = Object.fromEntries(SOURCES.flatMap((g) => g.items.map((it) => [it.id, it.icon]))) as Record<
-  Surface,
-  LucideIcon
->;
 
 /**
  * core 的状态说成人话。
@@ -344,6 +338,11 @@ function Shell({ first }: { first: boolean }) {
 
   // ⌘R 和配置改动之后立刻重读一次。等下一次事件的话，刚点完「保存」还看着旧值
   const [nudge, setNudge] = useState(0);
+  /** ⌘R、命令面板的「刷新数据」：状态和概览重读，眼前这一页的数据也重取 */
+  const refreshAll = useCallback(() => {
+    setNudge((n) => n + 1);
+    invalidateAll();
+  }, []);
   /**
    * 概览页什么时候重新拉数。**不是定时轮询**：跟着对账走，`settled` 每涨一次说明库里
    * 确实多了东西（见 useRequests）；`nudge` 是手动刷新。都没动的时候一次请求都不发。
@@ -356,6 +355,8 @@ function Shell({ first }: { first: boolean }) {
   const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [palette, setPalette] = useState(false);
+  /** 快捷键一览（`?`，或者命令面板左下角） */
+  const [shortcuts, setShortcuts] = useState(false);
 
   /**
    * 源列表收起还是展开。**记住用户的选择**；读取放在初始化里而不是 effect 里，否则
@@ -426,14 +427,20 @@ function Shell({ first }: { first: boolean }) {
   /**
    * 全局快捷键。**在「正在输入」判断之前处理** —— ⌘F 的全部意义就是从任何地方跳到
    * 搜索框，在输入框里按它该重选。行内的方向键导航在流量页里（`TrafficPage`）。
+   * 键位和界面上显示的键帽在 `palette/keys.tsx`，改一边要改另一边。
    *
    * · ⌘K 命令面板 · ⌘1…⌘9 按源列表的顺序换页 · ⌘F 流量搜索 · ⌘, 设置 · ⌘R 刷新
+   * · `?` 快捷键一览（在打字时不接管）
    * · ⌘⌥S 收起/展开源列表（访达、邮件、备忘录都是这个键；判 `code` 不判 `key`：
    *   ⌥ 会把 s 变成 ß）。**只在 macOS 上有**：Windows 上 Ctrl+Alt 常是 AltGr，
    *   Linux 上 Ctrl+Alt 加字母常被桌面拿去。那两边用 Ctrl+B（`SidebarProvider` 在听）。
    *
+   * **开着编辑、确认这类对话框时不换页、不开面板**：对话框里可能是改了一半的表单，
+   * 页面一换就没了（`modalOpen`；命令面板、快捷键一览、右侧的请求详情不算）。换页时
+   * 顺手关掉面板和一览 —— 在面板里按 ⌘2、看着一览按 ⌘4 也是换页。
+   *
    * Windows 上是 Ctrl 加同一个键；`preventDefault` 在那边更要紧：WebView2 自己会把
-   * Ctrl+F 当成页内查找、Ctrl+R 当成刷新页面。
+   * Ctrl+F 当成页内查找、Ctrl+R 当成刷新页面。所以对话框开着时键照样吞掉，只是不做事。
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -442,10 +449,24 @@ function Shell({ first }: { first: boolean }) {
         setRailOpen((v) => !v);
         return;
       }
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.defaultPrevented || isTyping(e.target) || modalOpen()) return;
+        e.preventDefault();
+        setShortcuts(true);
+        return;
+      }
       if (!isMod(e) || e.altKey) return;
       const k = e.key.toLowerCase();
+      const busy = modalOpen();
+      const go = <S extends Surface>(s: S, params?: NavParams[S]) => {
+        setPalette(false);
+        setShortcuts(false);
+        open(s, params);
+      };
       if (k === "k" && !e.shiftKey) {
         e.preventDefault();
+        if (busy) return;
+        setShortcuts(false);
         setPalette((v) => !v);
         return;
       }
@@ -453,27 +474,27 @@ function Shell({ first }: { first: boolean }) {
         const s = SURFACES[Number(e.key) - 1];
         if (!s) return;
         e.preventDefault();
-        if (linked || s === "settings") open(s);
+        if (!busy && (linked || s === "settings")) go(s);
         return;
       }
       if (k === "f") {
         e.preventDefault();
-        if (linked) open("requests", { search: true });
+        if (!busy && linked) go("requests", { search: true });
         return;
       }
       if (k === ",") {
         e.preventDefault();
-        open("settings");
+        if (!busy) go("settings");
         return;
       }
       if (k === "r") {
         e.preventDefault();
-        setNudge((n) => n + 1);
+        refreshAll();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [linked, open]);
+  }, [linked, open, refreshAll]);
 
   /**
    * 守护状态。**推过来的，不是问出来的。**先挂监听再读一次当前值，顺序不能反：
@@ -594,60 +615,17 @@ function Shell({ first }: { first: boolean }) {
   const openConfigFile = useCallback((focus: string | null) => setConfigFile({ focus }), []);
   const go = useCallback((to: string) => open(to as Surface), [open]);
 
-  /** ⌘K 里的条目：各页，加几个全局动作 */
-  const commands = useMemo<Command[]>(() => {
-    const zh = appText.zh.surfaces;
-    const en = appText.en.surfaces;
-    const pages: Command[] = SURFACES.map((s, i) => {
-      const Icon = ICONS[s];
-      return {
-        id: s,
-        group: "pages",
-        label: t.surfaces[s],
-        keywords: `${zh[s]} ${en[s]}`,
-        icon: <Icon />,
-        shortcut: [modKey, `${i + 1}`],
-        disabled: !linked && s !== "settings",
-        run: () => open(s),
-      };
-    });
-    const actions: Command[] = [
-      {
-        id: "config-file",
-        group: "actions",
-        label: t.configFile,
-        keywords: "config.yaml",
-        icon: <FileCodeIcon />,
-        disabled: !linked,
-        run: () => setConfigFile({ focus: null }),
-      },
-      {
-        id: "version-history",
-        group: "actions",
-        label: t.versionHistory,
-        icon: <HistoryIcon />,
-        disabled: !linked,
-        run: () => setHistoryOpen(true),
-      },
-      {
-        id: "refresh",
-        group: "actions",
-        label: pt.refresh,
-        icon: <RotateCwIcon />,
-        shortcut: [modKey, "R"],
-        run: () => setNudge((n) => n + 1),
-      },
-      {
-        id: "rail",
-        group: "actions",
-        label: railOpen ? t.collapseRail : t.expandRail,
-        icon: <IconSidebar />,
-        shortcut: isMac ? ["⌘", "⌥", "S"] : ["Ctrl", "B"],
-        run: () => setRailOpen((v) => !v),
-      },
-    ];
-    return [...pages, ...actions];
-  }, [t, pt, linked, open, railOpen]);
+  /** 命令面板里只有外壳做得了的几件事。**引用不变**：面板按它们建条目，变了就要重建 */
+  const paletteShell = useMemo(
+    () => ({
+      toggleRail: () => setRailOpen((v) => !v),
+      refresh: refreshAll,
+      configFile: () => setConfigFile({ focus: null }),
+      history: () => setHistoryOpen(true),
+      notices: () => setNoticesAsked((n) => n + 1),
+    }),
+    [refreshAll],
+  );
 
   /** 还没取到概览时的占位：页头照常，内容是表格骨架；读失败了是「读取失败」和重试 */
   const skeleton = (
@@ -702,6 +680,8 @@ function Shell({ first }: { first: boolean }) {
                       <SidebarMenu className="gap-px">
                         {g.items.map((it) => {
                           const on = tab === it.id;
+                          /** 在源列表里排第几，⌘1…⌘9 按它数 */
+                          const index = SURFACES.indexOf(it.id);
                           // 客户端配置里出现了新东西：挂个角标，直到去看过
                           const badge = it.id === "mcp" ? alerts.length : 0;
                           const Icon = it.icon;
@@ -715,7 +695,19 @@ function Shell({ first }: { first: boolean }) {
                                 isActive={on}
                                 onClick={() => open(it.id)}
                                 aria-current={on ? "page" : undefined}
-                                tooltip={badge > 0 ? t.newFindings(label, badge) : label}
+                                /*
+                                  悬浮说明写上这一页的快捷键。**展开时也显示**（shadcn 默认只在收起时
+                                  显示）：名字看得见，但 ⌘1…⌘9 只有在这里才学得到
+                                */
+                                tooltip={{
+                                  hidden: false,
+                                  children: (
+                                    <>
+                                      {badge > 0 ? t.newFindings(label, badge) : label}
+                                      <Keys combo={pageCombo(index)} />
+                                    </>
+                                  ),
+                                }}
                                 className={cn(
                                   "h-7 gap-2.5 px-2 text-(--chrome-text) transition-colors duration-(--motion-fast)",
                                   "hover:bg-(--chrome-hover) hover:text-(--chrome-strong) active:bg-(--chrome-selected)",
@@ -784,18 +776,7 @@ function Shell({ first }: { first: boolean }) {
                   text={
                     <>
                       {railOpen ? t.collapseRail : t.expandRail}
-                      {isMac ? (
-                        <KbdGroup>
-                          <Kbd>⌘</Kbd>
-                          <Kbd>⌥</Kbd>
-                          <Kbd>S</Kbd>
-                        </KbdGroup>
-                      ) : (
-                        <KbdGroup>
-                          <Kbd>Ctrl</Kbd>
-                          <Kbd>B</Kbd>
-                        </KbdGroup>
-                      )}
+                      <Keys combo={COMBOS.rail} />
                     </>
                   }
                 >
@@ -844,10 +825,7 @@ function Shell({ first }: { first: boolean }) {
                     text={
                       <>
                         {pt.title}
-                        <KbdGroup>
-                          <Kbd>{modKey}</Kbd>
-                          <Kbd>K</Kbd>
-                        </KbdGroup>
+                        <Keys combo={COMBOS.palette} />
                       </>
                     }
                   >
@@ -1081,7 +1059,19 @@ function Shell({ first }: { first: boolean }) {
               />
             )}
             {historyOpen && <VersionHistoryDialog reloads={reloads} onClose={() => setHistoryOpen(false)} />}
-            <CommandPalette open={palette} onOpenChange={setPalette} commands={commands} />
+            <Palette
+              open={palette}
+              onOpenChange={setPalette}
+              shortcuts={shortcuts}
+              onShortcutsChange={setShortcuts}
+              linked={linked}
+              readOnly={remoteLost}
+              remote={remote}
+              ov={ov}
+              rows={allRows}
+              railOpen={railOpen}
+              shell={paletteShell}
+            />
             {/*
               **所有出错都走这里**（`notify`）。吐司统一在右下角，谁触发的都一样；状态类的
               事走横幅，不走吐司。

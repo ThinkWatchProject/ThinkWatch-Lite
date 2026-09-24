@@ -8,7 +8,7 @@ import { Page, PageHeader, SummaryItem } from "@/ui/page";
 import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, Loadable } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
-import { useNav } from "@/nav";
+import { useNav, useNavParams } from "@/nav";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { appText } from "@/App.i18n";
@@ -68,6 +68,11 @@ export default function ClientsPage({
   const [retargeting, retargetRun] = usePending();
   /** 「改为指向服务器」有没改成的：留在页上，直到再改一次或者离开这一页 */
   const [retargeted, setRetargeted] = useState<Retargeted | null>(null);
+  // 命令面板送来的：打开这一行的详情或手动配置，和点那一行一样（见 nav.tsx）
+  useNavParams("clients", (p) => {
+    if (p.detail) setDialog({ kind: "detail", id: p.detail });
+    else if (p.setup) setDialog({ kind: "manual", id: p.setup });
+  });
 
   const data = clients.data;
   const adopted = data?.clients.filter((c) => c.adopted_at_ms != null) ?? [];
