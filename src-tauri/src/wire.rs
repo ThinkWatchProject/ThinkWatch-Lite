@@ -242,6 +242,13 @@ pub struct KeyRotation {
     pub failed: Vec<KeySyncFailed>,
 }
 
+/// 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct Retargeted {
+    pub synced: Vec<KeySynced>,
+    pub failed: Vec<KeySyncFailed>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct KeySynced {
     /// 客户端 id（`claude-code` …）

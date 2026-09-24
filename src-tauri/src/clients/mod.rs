@@ -41,10 +41,14 @@ fn backups() -> PathBuf {
 /// 客户端要连的那台机器。
 ///
 /// **本地模式下是回环**：网关就在这台机器上，监听地址（可能是 `0.0.0.0`）填进
-/// 客户端配置里是连不上的。连远程 core 时，这里换成服务器的地址 —— 客户端页
-/// 写进配置、复制出去的地址都从这一个地方来。
-pub(crate) fn gateway_host(_state: &AppState) -> String {
-    "127.0.0.1".to_string()
+/// 客户端配置里是连不上的。连远程 core 时是连接里填的那个服务器地址 —— 这台机器
+/// 就是用它够到服务器的（服务器自己报的监听地址可能是 `0.0.0.0`）。客户端页写进
+/// 配置、复制出去的地址都从这一个地方来。
+pub(crate) fn gateway_host(state: &AppState) -> String {
+    match state.link.current() {
+        crate::connection::Current::Remote(r) => r.host,
+        crate::connection::Current::Local => "127.0.0.1".to_string(),
+    }
 }
 
 /// 客户端该连的地址：`http://主机:网关端口`。端口按 core 的配置（`listen.gateway.port`），
@@ -183,24 +187,23 @@ pub async fn reveal_client_config(id: String) -> Out<()> {
     Ok(reveal::reveal(&d.real.display().to_string())?)
 }
 
-/// 把这台机器上接管着的客户端全部重新指一次：指向 `control` 那个 core 的网关，
-/// 用它为每个客户端发的那把密钥。
+/// 把这台机器上接管着、**还指着本机网关**的客户端改为指向 `control` 那个 core 的
+/// 网关（`host` 是它的地址），用它为每个客户端发的那把密钥。
 ///
-/// 从本机切到远程 core 时，确认框里「同时将这些客户端改为指向服务器」勾上就走这里
-/// （`host` 是服务器的地址）。**一个失败不影响其余的**，逐个报。
-pub async fn retarget_adopted(
-    control: &ControlClient,
-    host: &str,
-) -> Out<(Vec<wire::KeySynced>, Vec<wire::KeySyncFailed>)> {
+/// 从本机切到远程 core 时，确认框里「同时将这些客户端改为指向…」勾上就走这里；连着
+/// 远程时客户端页上的「改为指向服务器」也是这一步。**一个失败不影响其余的**，逐个报。
+pub async fn retarget_adopted(control: &ControlClient, host: &str) -> Out<wire::Retargeted> {
     let base = gateway_base(control, host).await?;
     let home = home_dir();
-    let mut done = Vec::new();
-    let mut failed = Vec::new();
-    for c in ops::adopted(&home) {
+    let mut out = wire::Retargeted {
+        synced: Vec::new(),
+        failed: Vec::new(),
+    };
+    for (c, _) in ops::adopted_on_this_machine(&home) {
         let key = match prepare_key(control, c.id).await {
             Ok(k) => k.key,
             Err(e) => {
-                failed.push(wire::KeySyncFailed {
+                out.failed.push(wire::KeySyncFailed {
                     client: c.id.to_string(),
                     name: c.name.to_string(),
                     error: e.into_msg(),
@@ -209,11 +212,46 @@ pub async fn retarget_adopted(
             }
         };
         match ops::repoint(&home, &backups(), &c, &base, &key) {
-            Ok(s) => done.push(s),
-            Err(f) => failed.push(f),
+            Ok(s) => out.synced.push(s),
+            Err(f) => out.failed.push(f),
         }
     }
-    Ok((done, failed))
+    Ok(out)
+}
+
+/// 客户端页上的「改为指向服务器」：还指着本机网关的，改为指向此刻连着的那个 core。
+/// **连着本机时什么都不做** —— 指着本机网关本来就是对的
+#[tauri::command]
+pub async fn retarget_clients(state: tauri::State<'_, AppState>) -> Out<wire::Retargeted> {
+    if !state.link.is_remote() {
+        return Ok(wire::Retargeted {
+            synced: Vec::new(),
+            failed: Vec::new(),
+        });
+    }
+    retarget_adopted(&state.control, &gateway_host(&state)).await
+}
+
+/// 这台机器上已接管、还指着本机网关的客户端。切到远程之前的确认里说（「已接管的 3 个
+/// 客户端仍指向本机网关 127.0.0.1:8788」）
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct Adopted {
+    pub count: usize,
+    /// 它们指着的那个地址（`127.0.0.1:8788`）
+    pub local_addr: Option<String>,
+}
+
+/// 数一数这台机器上已接管、还指着本机网关的客户端。**按这台机器上的文件数**，不问
+/// 哪个 core：连着远程、本机 core 停着的时候也数得出来
+pub fn adopted_pointing_at_local() -> Adopted {
+    let here = ops::adopted_on_this_machine(&home_dir());
+    Adopted {
+        count: here.len(),
+        local_addr: here
+            .first()
+            .and_then(|(_, e)| ops::host_port(e))
+            .map(str::to_string),
+    }
 }
 
 /// 更换密钥之后，把新值写进正在用它的那个客户端的配置。

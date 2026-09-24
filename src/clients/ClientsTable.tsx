@@ -34,6 +34,7 @@ export function ClientsTable({
   manual,
   usage,
   gatewayBase,
+  remote = false,
   actions,
 }: {
   clients: DetectedClient[];
@@ -41,6 +42,8 @@ export function ClientsTable({
   manual: ManualClient[];
   usage: CostGroup[];
   gatewayBase: string;
+  /** 连着远程 core。还指着本机网关的单独标出来 */
+  remote?: boolean;
   actions: RowActions;
 }) {
   const t = useText(clientsText);
@@ -50,7 +53,7 @@ export function ClientsTable({
       <Header />
       <TableBody>
         {rows.map((c) => {
-          const status = statusOf(c, gatewayBase);
+          const status = statusOf(c, gatewayBase, Date.now(), remote);
           const absent = status.state === "absent";
           const items = menu(c, actions, t);
           const open = () => (absent ? actions.manual(c.id) : actions.details(c));

@@ -101,9 +101,15 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         // 热启动还藏着的时候又点了一次，也是这里：不等了，直接出来
         return reveal(app, &w);
     }
+    // 「core 已经在跑」按当前连接算：连着远程时本机的 core 本来就停着
     let warm = app
         .try_state::<AppState>()
-        .is_some_and(|s| matches!(s.supervisor.state(), CoreState::Running { .. }));
+        .is_some_and(|s| match s.link.state() {
+            crate::connection::LinkState::Local => {
+                matches!(s.supervisor.state(), CoreState::Running { .. })
+            }
+            state => matches!(state, crate::connection::LinkState::Connected { .. }),
+        });
     let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(format!(
@@ -164,6 +170,38 @@ pub(crate) fn reveal(app: &tauri::AppHandle, w: &tauri::WebviewWindow) -> tauri:
     let _ = app;
     w.show()?;
     w.set_focus()
+}
+
+/// 把一扇小窗调成网页量出来的那么大（更新窗口、连接选择）。
+///
+/// **窗口有多高，不等于网页有多高。**Tauri 在 macOS 上建的是一扇
+/// `FullSizeContentView` 的窗：内容视图铺满整扇窗户，标题栏盖在它上面，
+/// webview 只摆在标题栏底下那一块。而 `set_size` 说的是整扇窗户
+/// （`inner_size()` 和 `outer_size()` 在这里报的也是同一个数，所以标题栏
+/// 有多高，从它们之间也减不出来）—— 照着网页量出来的高度设下去，网页拿到
+/// 的就少了一条标题栏，内容的最后一截被窗口下沿切掉：底部留白没了，那排
+/// 按钮只剩上半截。
+///
+/// 标题栏多高不写死 —— 各版本不一样（Tahoe 上是 32 点），没有标题栏的窗
+/// 是 0。`contentLayoutRect` 给的正是没被标题栏盖住的那一块，和整扇窗户
+/// 一减就是要补上的数。
+pub(crate) fn fit(window: &tauri::Window, width: f64, height: f64) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let w = window.clone();
+        // **走 Tauri 的主线程队列，不走 GCD。**紧跟在这之后网页会把窗口
+        // 亮出来，那一步排在同一条队列上；换一条队列，用户就会先看见一扇
+        // 大小还没调好的窗
+        window.run_on_main_thread(move || {
+            let Ok(ptr) = w.ns_window() else { return };
+            // SAFETY: `ns_window()` 给的是这扇窗的 NSWindow，这里在主线程上
+            let ns = unsafe { &*ptr.cast::<objc2_app_kit::NSWindow>() };
+            let titlebar = ns.frame().size.height - ns.contentLayoutRect().size.height;
+            ns.setContentSize(objc2_foundation::NSSize::new(width, height + titlebar));
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    window.set_size(tauri::LogicalSize::new(width, height))
 }
 
 /// 没有窗口时退回菜单栏应用：不占 Dock、不进 ⌘Tab。

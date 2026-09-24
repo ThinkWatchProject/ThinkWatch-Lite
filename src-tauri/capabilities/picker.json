@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "picker",
+  "description": "启动时的连接选择。按内容定好高度（picker_fit，走 Rust）之后自己亮出来、拿焦点；选好之后由 Rust 关掉它（pick_connection）。别的都不需要。",
+  "windows": [
+    "picker"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

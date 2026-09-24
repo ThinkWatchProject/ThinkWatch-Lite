@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DetectedClient, ManualClient } from "@/types";
-import { hostOf, manualStatusOf, pointsHere, SILENCE_MS, statusOf } from "./status";
+import { hostOf, isLoopback, manualStatusOf, pointsHere, SILENCE_MS, statusOf } from "./status";
 
 const BASE = "http://127.0.0.1:18790";
 const NOW = 10_000_000;
@@ -102,5 +102,28 @@ describe("地址", () => {
   it("行上只写主机", () => {
     expect(hostOf("https://api.anthropic.com/v1")).toBe("api.anthropic.com");
     expect(hostOf("不是地址")).toBe("不是地址");
+  });
+});
+
+describe("本机网关的地址", () => {
+  it("认得出这台机器，认得出服务器", () => {
+    for (const e of ["http://127.0.0.1:8788", "http://localhost:8788/v1", "http://[::1]:8788"]) {
+      expect(isLoopback(e)).toBe(true);
+    }
+    for (const e of ["http://192.168.1.20:8788/v1", "http://nas.local:8788", "", "not a url"]) {
+      expect(isLoopback(e)).toBe(false);
+    }
+  });
+});
+
+describe("连着远程 core 时", () => {
+  it("还指着本机网关的单独标出来，哪怕它以前用过", () => {
+    const c = client({ adopted_at_ms: 1, last_seen_ms: 5, endpoint: "http://127.0.0.1:8788" });
+    expect(statusOf(c, "http://192.168.1.20:8788", 10, true)).toEqual({
+      state: "broken",
+      reason: { kind: "local", endpoint: "http://127.0.0.1:8788" },
+    });
+    // 本机模式下同一个客户端照常
+    expect(statusOf(c, "http://127.0.0.1:8788", 10, false).state).toBe("in_use");
   });
 });

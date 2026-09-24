@@ -21,6 +21,9 @@ import { Extensions } from "./Extensions";
 import { Findings } from "./Findings";
 import { Matrix, McpConfirm } from "./Matrix";
 import { mcpText } from "./McpPage.i18n";
+import { useRemote } from "@/connection/useRemote";
+import { RemoteNote } from "@/connection/Remote";
+import { remoteText } from "@/connection/remote.i18n";
 
 type McpTab = "servers" | "extensions" | "findings";
 
@@ -47,6 +50,9 @@ export default function McpPage({
   onSeen: () => void;
 }) {
   const t = useText(mcpText);
+  const rt = useText(remoteText);
+  /** 连着远程 core：这一页看的、改的仍是这台机器（设计稿 ⑧） */
+  const remote = useRemote();
   // **有新发现就直接落在「发现」上。**通知点进来还要再点一下标签，等于把
   // 那条通知又藏了一层
   const [tab, setTab] = useState<McpTab>(alerts.length > 0 ? "findings" : "servers");
@@ -124,6 +130,7 @@ export default function McpPage({
 
   return (
     <div className="flex flex-col gap-4 p-5">
+      {remote && <RemoteNote>{rt.mcpNote(remote.name)}</RemoteNote>}
       <Tabs value={tab} onValueChange={(v) => setTab(v as McpTab)}>
         <div className="flex flex-wrap items-center gap-2">
           <TabsList>

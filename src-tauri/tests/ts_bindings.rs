@@ -115,6 +115,7 @@ fn lite_typescript() -> String {
     c.root::<wire::AdoptResponse>();
     c.root::<wire::FindingView>();
     c.root::<wire::KeyRotation>();
+    c.root::<wire::Retargeted>();
     c.root::<wire::ScanReport>();
     c.root::<wire::McpTargetView>();
     c.root::<wire::McpOpRequest>();

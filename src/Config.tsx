@@ -8,6 +8,7 @@ import { AppearanceSection } from "./Appearance";
 import MenubarSettings from "./MenubarSettings";
 import { ListenSection } from "./settings/ListenSection";
 import { RetentionSection } from "./settings/RetentionSection";
+import { ConnectionsSection } from "./connection/ConnectionsSection";
 import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -21,6 +22,9 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configText } from "./Config.i18n";
 import { errorText } from "@/i18n/core.i18n";
+import { useRemote } from "@/connection/useRemote";
+import { remoteText } from "@/connection/remote.i18n";
+import type { RemoteCore } from "@/connection/api";
 
 /**
  * 设置：这个应用自己的，和网关那几项配一次就不动的。
@@ -41,6 +45,8 @@ export default function Config({
   onChanged: () => void;
 }) {
   const t = useText(configText);
+  const rt = useText(remoteText);
+  const remote = useRemote();
   useEffect(() => {
     void invoke<boolean>("autostart_enabled")
       .then(setAutostart)
@@ -49,56 +55,51 @@ export default function Config({
   // 开机自启。**出厂是关的** —— null 表示还没读到，别在读到之前先画一个
   // 勾或不勾出来：那一瞬间画错的话，用户会以为是自己之前设的。
   const [autostart, setAutostart] = useState<boolean | null>(null);
-  return (
-    <div className="space-y-8 p-5">
-      <LanguageSection />
-
-      <AppearanceSection />
-
-      <MenubarSettings />
-
-      <section>
-        <h2 className="tw-title font-semibold">{t.autostartTitle}</h2>
-        <Field orientation="horizontal" className="mt-2">
-          {/*
-              **开关而不是复选框。**复选框是「在一组里挑几个」，而这是
-              「打开或关掉一个系统行为」—— macOS 的系统设置里这一类一律
-              是开关。`Field` 的 horizontal 布局两者通用。
-            */}
-          <Switch
-            id="autostart"
-            checked={autostart === true}
-            disabled={autostart === null}
-            onCheckedChange={async (checked) => {
-              const want = checked === true;
-              // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
-              // 状态为准**，不是以这里传出去的那个为准。注册可能失败
-              // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
-              setAutostart(want);
-              try {
-                setAutostart(
-                  await invoke<boolean>("set_autostart", { on: want }),
-                );
-              } catch (err) {
-                setAutostart(!want);
-                toast.error(errorText(err));
-              }
-            }}
-          />
-          <FieldContent>
-            <FieldLabel htmlFor="autostart">{t.autostartLabel}</FieldLabel>
-            <FieldDescription>
-              {/*
-                  一句话说清开了会怎样，不用悬停才看得到。出厂是关的（装完就往
-                  登录项里写东西的工具，用户第一次发现它是在系统设置里看到一个
-                  自己没同意过的条目），但开关本身就显示着关，不用再写一遍。
-                */}
-              {t.autostartNote}
-            </FieldDescription>
-          </FieldContent>
-        </Field>
-      </section>
-
+  const autostartSection = (
+    <section>
+      <h2 className="tw-title font-semibold">{t.autostartTitle}</h2>
+      <Field orientation="horizontal" className="mt-2">
+        {/*
+            **开关而不是复选框。**复选框是「在一组里挑几个」，而这是
+            「打开或关掉一个系统行为」—— macOS 的系统设置里这一类一律
+            是开关。`Field` 的 horizontal 布局两者通用。
+          */}
+        <Switch
+          id="autostart"
+          checked={autostart === true}
+          disabled={autostart === null}
+          onCheckedChange={async (checked) => {
+            const want = checked === true;
+            // 先乐观地画上，失败再弹回去 —— 但**以后端返回的实际
+            // 状态为准**，不是以这里传出去的那个为准。注册可能失败
+            // （只读的 LaunchAgents 目录、权限），那时勾必须弹回去。
+            setAutostart(want);
+            try {
+              setAutostart(
+                await invoke<boolean>("set_autostart", { on: want }),
+              );
+            } catch (err) {
+              setAutostart(!want);
+              toast.error(errorText(err));
+            }
+          }}
+        />
+        <FieldContent>
+          <FieldLabel htmlFor="autostart">{t.autostartLabel}</FieldLabel>
+          <FieldDescription>
+            {/*
+                一句话说清开了会怎样，不用悬停才看得到。出厂是关的（装完就往
+                登录项里写东西的工具，用户第一次发现它是在系统设置里看到一个
+                自己没同意过的条目），但开关本身就显示着关，不用再写一遍。
+              */}
+            {t.autostartNote}
+          </FieldDescription>
+        </FieldContent>
+      </Field>
+    </section>
+  );
+  const serverSections = (
+    <>
       {/* 监听原来在「接入」页上，和密钥同屏。它是配一次就不动的网关设置，
           和密钥（要天天拿去填客户端）不是一类东西 */}
       {ov && (
@@ -118,16 +119,70 @@ export default function Config({
       {ov && (
         <RetentionSection retention={ov.retention} configVersion={ov.config_version} />
       )}
+    </>
+  );
+
+  /*
+    **连着远程 core 时分成两组**（设计稿 ⑧）：改这个应用自己的，和改服务器配置的。
+    混在一起的话，「语言」和「监听」挨着，用户分不清哪一项改的是服务器。诊断包在
+    这时不给：它生成在服务器的文件系统上，远程拿不到。
+  */
+  if (remote) {
+    return (
+      <div className="space-y-8 p-5">
+        <Group title={rt.appGroup}>
+          <ConnectionsSection />
+          <LanguageSection />
+          <AppearanceSection />
+          <MenubarSettings />
+          {autostartSection}
+          <Update />
+          <NoticeSettings />
+          <About remote={remote} />
+          <Uninstall remote={remote} />
+        </Group>
+        <Group title={rt.serverGroup(remote.name)}>
+          {serverSections}
+          <p className="tw-body text-muted-foreground">{rt.controlReadOnly}</p>
+        </Group>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 p-5">
+      {/* 最上面：连不上的时候用户就是来这里的 */}
+      <ConnectionsSection />
+
+      <LanguageSection />
+
+      <AppearanceSection />
+
+      <MenubarSettings />
+
+      {autostartSection}
+
+      {serverSections}
 
       <Update />
       <NoticeSettings />
 
       {/* 诊断包和卸载改的是这个应用本身，归「设置」 */}
-      <About />
+      <About remote={null} />
 
       <Diagnostics />
 
-      <Uninstall />
+      <Uninstall remote={null} />
+    </div>
+  );
+}
+
+/** 远程模式下设置页的一组。组名比各节标题低一档，只是分隔 */
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-8">
+      <h2 className="border-b border-border pb-1.5 tw-label font-medium text-muted-foreground">{title}</h2>
+      {children}
     </div>
   );
 }
@@ -138,8 +193,9 @@ export default function Config({
  * **排查时最先要问的就是这几个**：哪个版本、数据在哪、core 从哪儿加载的。
  * 之前它们只在日志里，而用户在交出诊断包之前根本看不到自己要交什么。
  */
-function About() {
+function About({ remote }: { remote: RemoteCore | null }) {
   const t = useText(configText);
+  const rt = useText(remoteText);
   const [info, setInfo] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     void invoke<Record<string, string>>("app_info")
@@ -147,11 +203,19 @@ function About() {
       .catch(() => {});
   }, []);
   if (!info) return null;
-  const rows: [string, string][] = [
-    [t.version, info.version ?? "—"],
-    [t.dataDir, info.data_dir ?? "—"],
-    [t.coreBin, info.core_bin ?? "—"],
-  ];
+  // 连着远程时说连的是哪一台、它的 core 是哪一版；本机 core 的二进制那时不在用
+  const rows: [string, string][] = remote
+    ? [
+        [t.version, info.version ?? "—"],
+        [rt.connection, `${remote.name} · ${remote.addr}`],
+        [rt.serverCore, remote.core ?? "—"],
+        [t.dataDir, info.data_dir ?? "—"],
+      ]
+    : [
+        [t.version, info.version ?? "—"],
+        [t.dataDir, info.data_dir ?? "—"],
+        [t.coreBin, info.core_bin ?? "—"],
+      ];
   return (
     <section>
       <h2 className="tw-title font-semibold">{t.aboutTitle}</h2>
@@ -242,8 +306,9 @@ function Diagnostics() {
  * 会留下一个「客户端还指着一个不在的端口」的状态，而那正是这一整节要
  * 防的事。
  */
-function Uninstall() {
+function Uninstall({ remote }: { remote: RemoteCore | null }) {
   const t = useText(configText);
+  const rt = useText(remoteText);
   const common = useText(commonText);
   const [step, setStep] = useState<"idle" | "ask" | "done">("idle");
   const [drop, setDrop] = useState(false);
@@ -272,6 +337,7 @@ function Uninstall() {
             {t.uninstallIntro((text) => (
               <span className="font-medium">{text}</span>
             ))}
+            {remote && <span className="mt-1 block">{rt.uninstallServer(remote.name)}</span>}
           </p>
           <Button
             variant="outline"

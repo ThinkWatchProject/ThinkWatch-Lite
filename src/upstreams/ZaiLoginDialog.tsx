@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSystemProxyLabel } from "@/connection/Remote";
 import { CircleAlertIcon, ExternalLinkIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -56,6 +57,7 @@ export function ZaiLoginDialog({
   onSaved: (name: string) => void;
 }) {
   const t = useText(zaiLoginText);
+  const systemProxy = useSystemProxyLabel(t.systemProxy);
   const common = useText(commonText);
   const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
@@ -220,7 +222,7 @@ export function ZaiLoginDialog({
                   onChange={(e) => setProxy(e.target.value)}
                 >
                   <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
-                  <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
+                  <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
                   {proxies.map((x) => (
                     <NativeSelectOption key={x.name} value={x.name}>
                       {x.name} · {proxyKindLabel(x.kind)} {x.addr}

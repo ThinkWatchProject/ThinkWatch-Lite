@@ -12,6 +12,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { DetectedClient } from "@/types";
 import { clientsText } from "./clients.i18n";
+import { useRemote } from "@/connection/useRemote";
 import { statusOf } from "./status";
 import { StatusLabel } from "./StatusLabel";
 
@@ -33,6 +34,7 @@ export function RestoreAllDialog({
   onConfirm: () => void;
 }) {
   const t = useText(clientsText);
+  const remote = useRemote();
   const common = useText(commonText);
   return (
     <AlertDialog open onOpenChange={(o) => !o && onCancel()}>
@@ -46,7 +48,7 @@ export function RestoreAllDialog({
             <li key={c.id} className="flex items-center justify-between gap-3">
               <span className="font-medium">{c.name}</span>
               <span className="tw-label">
-                <StatusLabel status={statusOf(c, gatewayBase)} />
+                <StatusLabel status={statusOf(c, gatewayBase, Date.now(), remote !== null)} />
               </span>
             </li>
           ))}

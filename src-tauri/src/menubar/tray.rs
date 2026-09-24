@@ -230,6 +230,18 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
                 } else {
                     let mut subs: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
                     for m in &i.submenu {
+                        // 隔在线后面的是动作（「管理连接…」），不是几个里选一个：不画成勾选项
+                        if m.sep_before {
+                            subs.push(Box::new(PredefinedMenuItem::separator(app)?));
+                            subs.push(Box::new(MenuItem::with_id(
+                                app,
+                                id(&m.action),
+                                &m.title,
+                                true,
+                                None::<&str>,
+                            )?));
+                            continue;
+                        }
                         subs.push(Box::new(CheckMenuItem::with_id(
                             app,
                             id(&m.action),

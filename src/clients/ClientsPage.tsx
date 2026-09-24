@@ -12,6 +12,11 @@ import { DetailDialog } from "./DetailDialog";
 import { ManualDialog, type ManualTarget } from "./ManualDialog";
 import { PlanDialog } from "./PlanDialog";
 import { RestoreAllDialog } from "./RestoreAllDialog";
+import { useRemote } from "@/connection/useRemote";
+import { RemoteNote, RetargetReport } from "@/connection/Remote";
+import { remoteText } from "@/connection/remote.i18n";
+import type { Retargeted } from "@/types";
+import { hostOf, isLoopback } from "./status";
 
 const DAY_MS = 24 * 3_600_000;
 
@@ -42,6 +47,11 @@ export default function ClientsPage({
   onShowTraffic: (key: string) => void;
 }) {
   const t = useText(clientsText);
+  const rt = useText(remoteText);
+  /** 连着远程 core：这一页改的仍是这台机器，写进去的是服务器的网关（设计稿 ⑧） */
+  const remote = useRemote();
+  /** 「改为指向服务器」有没改成的：留在页上，直到再改一次或者离开这一页 */
+  const [retargeted, setRetargeted] = useState<Retargeted | null>(null);
   const [data, setData] = useState<ClientsResponse | null>(null);
   const [keys, setKeys] = useState<ClientView[]>([]);
   const [usage, setUsage] = useState<CostGroup[]>([]);
@@ -107,6 +117,24 @@ export default function ClientsPage({
     }
   }
 
+  /** 还指着本机网关的，改为指向连着的那台服务器 */
+  async function retarget(serverName: string) {
+    setBusy(true);
+    try {
+      const r = await api.retarget();
+      if (r.failed.length > 0) setRetargeted(r);
+      else {
+        setRetargeted(null);
+        if (r.synced.length > 0) toast.success(rt.retargeted(serverName, r.synced.map((s) => s.name)));
+      }
+      await load();
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function restoreAll() {
     setBusy(true);
     try {
@@ -129,6 +157,10 @@ export default function ClientsPage({
   const byId = (id: string) => data.clients.find((c) => c.id === id);
   const adopted = data.clients.filter((c) => c.adopted_at_ms != null);
   const noneHere = !data.clients.some((c) => c.installed);
+  /** 连着远程时，接管着却还指着本机网关的 */
+  const leftBehind = remote
+    ? adopted.filter((c) => c.endpoint != null && isLoopback(c.endpoint))
+    : [];
   const manualTarget = (id: string): ManualTarget | null => {
     const c = byId(id);
     if (c) return { id: c.id, name: c.name, setup: c.manual, key: c.key };
@@ -142,6 +174,21 @@ export default function ClientsPage({
 
   return (
     <div className="flex flex-col gap-4 p-5">
+      {remote && <RemoteNote>{rt.clientsNote(remote.name, hostOf(data.gateway_base))}</RemoteNote>}
+
+      {remote && leftBehind.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 tw-body">
+          <p className="min-w-0 flex-1 text-warning">
+            {rt.localLeft(leftBehind.length, hostOf(leftBehind[0]?.endpoint ?? ""))}
+          </p>
+          <Button size="sm" disabled={busy} onClick={() => void retarget(remote.name)}>
+            {rt.retargetTo(remote.name)}
+          </Button>
+        </div>
+      )}
+
+      {remote && retargeted && <RetargetReport name={remote.name} result={retargeted} />}
+
       <div className="flex flex-wrap items-center gap-2">
         <p className="tw-body text-muted-foreground">{t.intro}</p>
         <div className="flex-1" />
@@ -163,6 +210,7 @@ export default function ClientsPage({
         manual={data.manual}
         usage={usage}
         gatewayBase={data.gateway_base}
+        remote={remote !== null}
         actions={{
           details: (c) => setDialog({ kind: "detail", id: c.id }),
           adopt: (c) => void ask(c, false),

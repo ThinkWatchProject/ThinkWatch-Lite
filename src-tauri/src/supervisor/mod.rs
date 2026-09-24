@@ -356,6 +356,12 @@ impl Supervisor {
         args
     }
 
+    /// 本机 core 的控制面客户端。**永远指着本机**，切到远程也不跟着走：等本机手上的
+    /// 请求结束、再停掉它，问的都是本机这一个
+    pub fn control(&self) -> &crate::control::ControlClient {
+        &self.control
+    }
+
     pub fn binary(&self) -> &PathBuf {
         &self.binary
     }

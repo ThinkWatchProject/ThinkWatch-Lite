@@ -30,3 +30,5 @@ export { SlidersHorizontal as IconSettings } from "lucide-react"; // 设置 —�
 export { PanelLeft as IconSidebar } from "lucide-react"; // 收起/展开源列表
 export { Copy as IconCopy } from "lucide-react"; // 复制 —— 两张叠着的纸
 export { Check as IconCopied } from "lucide-react"; // 已复制 —— 一个勾
+export { Monitor as IconLocal } from "lucide-react"; // 本机这一条连接 —— 一台显示器
+export { Network as IconRemote } from "lucide-react"; // 远程连接 —— 连到另一台机器

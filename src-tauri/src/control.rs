@@ -24,7 +24,10 @@ use tw_api::{Endpoint, Format, ep};
 /// 两种传输各给一种，而**两种在所有平台上都编译**（只有 unix socket 那一支
 /// 本身是 unix 专有的）。装箱是为了让上面那些函数只写一遍 —— 拿到流之后的
 /// 每一件事，两边都该一模一样。
-trait Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+pub(crate) trait Stream:
+    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
+{
+}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Stream for T {}
 
 /// 控制面绑到了哪个端口。
@@ -65,15 +68,62 @@ fn refused(status: hyper::StatusCode, body: &[u8]) -> anyhow::Error {
     }
 }
 
+/// 控制面在哪、凭什么进去。
+#[derive(Clone)]
+pub enum Target {
+    /// 本机的 core：数据目录里的 socket（Windows 上是回环端口），凭据是这一次启动生成的
+    Local {
+        at: tw_api::control::Address,
+        /// 这一次启动的凭据，见 `crate::token`。
+        token: String,
+    },
+    /// 另一台机器上的 core，见 `crate::connection`
+    Remote(crate::connection::connector::RemoteTarget),
+}
+
+/// 控制面客户端。
+///
+/// **克隆出来的几份指着同一个地方。**应用同一时间只连一个 core，切换连接时
+/// [`ControlClient::retarget`] 换掉的是大家共用的那一份 —— 各页的命令、菜单栏、
+/// 事件桥手里拿的都是 `AppState.control` 的克隆，不用一个个去通知。守护和心跳
+/// 另外各建一份（[`ControlClient::new`]），它们只管本机那个 core，切到远程也不跟着走。
+#[derive(Clone)]
 pub struct ControlClient {
-    at: tw_api::control::Address,
-    /// 这一次启动的凭据，见 `crate::token`。
-    token: String,
+    target: std::sync::Arc<std::sync::RwLock<Target>>,
+    /// 换过几次地方。事件流靠它知道手上那条订阅已经连错了对象
+    moved: std::sync::Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 impl ControlClient {
     pub fn new(at: tw_api::control::Address, token: String) -> Self {
-        Self { at, token }
+        Self::to(Target::Local { at, token })
+    }
+
+    pub fn to(target: Target) -> Self {
+        Self {
+            target: std::sync::Arc::new(std::sync::RwLock::new(target)),
+            moved: std::sync::Arc::new(tokio::sync::watch::channel(0).0),
+        }
+    }
+
+    /// 换一个 core 连。**所有克隆一起换**，正在订阅的事件流会被叫醒重连
+    pub fn retarget(&self, target: Target) {
+        *self.target.write().expect("锁未中毒") = target;
+        self.moved.send_modify(|n| *n += 1);
+    }
+
+    /// 连的是不是别的机器
+    pub fn is_remote(&self) -> bool {
+        matches!(*self.target.read().expect("锁未中毒"), Target::Remote(_))
+    }
+
+    /// 换地方的通知
+    pub fn moved(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.moved.subscribe()
+    }
+
+    fn target(&self) -> Target {
+        self.target.read().expect("锁未中毒").clone()
     }
 
     /// 连上控制面。
@@ -90,7 +140,17 @@ impl ControlClient {
                 "core is not running, or has not finished starting"
             ))
         };
-        match &self.at {
+        let at = match self.target() {
+            Target::Local { at, .. } => at,
+            // **远程那一档的门由握手把守**，见 `connection::connector`
+            Target::Remote(r) => {
+                return crate::connection::connector::open(&r)
+                    .await
+                    .map(|(stream, _)| stream)
+                    .map_err(anyhow::Error::new);
+            }
+        };
+        match &at {
             #[cfg(unix)]
             Address::Socket(path) => Ok(Box::new(
                 tokio::net::UnixStream::connect(path)
@@ -110,9 +170,12 @@ impl ControlClient {
         }
     }
 
-    /// 每个请求都带上的那个头。
+    /// 每个请求都带上的那个头。**远程连接不带**：那边进门靠的是握手，不是这个头
     fn auth(&self) -> String {
-        format!("Bearer {}", self.token)
+        match self.target() {
+            Target::Local { token, .. } => format!("Bearer {token}"),
+            Target::Remote(_) => String::new(),
+        }
     }
 
     /// 调一个端点。

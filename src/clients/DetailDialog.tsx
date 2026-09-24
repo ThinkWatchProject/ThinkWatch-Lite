@@ -15,6 +15,7 @@ import type { ClientView, CostGroup, DetectedClient, FindingView } from "@/types
 import { TakeoverBadge } from "@/keys/KeysTable";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
+import { useRemote } from "@/connection/useRemote";
 import { pointsHere, statusOf } from "./status";
 import { reasonText, StatusLabel } from "./StatusLabel";
 
@@ -46,8 +47,9 @@ export function DetailDialog({
   onTraffic: (key: string) => void;
 }) {
   const t = useText(clientsText);
+  const remote = useRemote();
   const common = useText(commonText);
-  const status = statusOf(client, gatewayBase);
+  const status = statusOf(client, gatewayBase, Date.now(), remote !== null);
   const adopted = client.adopted_at_ms != null;
   const key = client.key ? keys.find((k) => k.name === client.key) : undefined;
   const requests = client.key ? (usage.find((u) => u.name === client.key)?.requests ?? 0) : 0;

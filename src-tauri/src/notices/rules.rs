@@ -66,7 +66,8 @@ pub fn default_view(key: &str) -> &'static str {
 /// **网关不在服务时不必再说它下面每一家怎么了** —— 那时用户要做的只有一件事。
 pub fn suppresses(key: &str) -> &'static [&'static str] {
     match key {
-        "gateway" => &[
+        // 连着的远程 core 断了：和本机网关停了一样，它下面每一家怎么了都不必再说
+        "gateway" | "remote" => &[
             "upstream:",
             "quota:",
             "credential:",
@@ -648,6 +649,33 @@ pub fn wedged() -> Signal {
     )
     .view(SETTINGS)
     .now()
+}
+
+/// 和远程 core 的连接断了。**只报一次**：总线按键去重，重连的每一次失败都不再说；
+/// 连上之后由 [`remote_back`] 收起
+pub fn remote_lost(name: &str) -> Signal {
+    Signal::raised(
+        "remote",
+        Level::Critical,
+        tr!(
+            format!("与 {name} 的连接已断开"),
+            format!("Disconnected from “{name}”")
+        ),
+    )
+    .body(
+        tr!(
+            "正在重新连接。连接恢复前，应用中的内容停留在断开时的状态。",
+            "Reconnecting. Until the connection is restored, the app shows the state at the time of the disconnect."
+        )
+        .to_string(),
+    )
+    .view(SETTINGS)
+    .now()
+    .suppressing(suppresses("remote"))
+}
+
+pub fn remote_back() -> Signal {
+    Signal::cleared("remote")
 }
 
 /// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用

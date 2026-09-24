@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSystemProxyLabel } from "@/connection/Remote";
 import { CircleAlertIcon, RefreshCwIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import {
@@ -53,6 +54,7 @@ export function ChatgptAccountSection({
   onRelogin: () => void;
 }) {
   const t = useText(chatgptAccountText);
+  const systemProxy = useSystemProxyLabel(t.systemProxy);
   const common = useText(commonText);
   const now = useNow();
   /** 上游的状态词。认不出来的原样显示 —— 编不出来的说法比一个陌生的词更糟 */
@@ -125,7 +127,7 @@ export function ChatgptAccountSection({
             onChange={(e) => set({ proxy: e.target.value })}
           >
             <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
-            <NativeSelectOption value="system">{t.systemProxy}</NativeSelectOption>
+            <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
             {ov.proxies.map((x) => (
               <NativeSelectOption key={x.name} value={x.name}>
                 {x.name} · {proxyKindLabel(x.kind)} {x.addr}

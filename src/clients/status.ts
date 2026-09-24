@@ -20,7 +20,9 @@ export type Reason =
   /** 接管五分钟了，一个请求都没有 */
   | { kind: "silent" }
   /** 还没生效，要重启客户端 */
-  | { kind: "restart" };
+  | { kind: "restart" }
+  /** 连着远程 core，而它还指着这台机器上（已经停了的）网关 */
+  | { kind: "local"; endpoint: string };
 
 export interface Status {
   state: ClientState;
@@ -36,10 +38,19 @@ export const SILENCE_MS = 5 * 60 * 1000;
  * **收到过请求排在最前面。**有一份优先级更高的文件「可能」盖住我们的设置，
  * 而请求已经带着这把密钥来了 —— 证据比怀疑可靠，这时它就是在用。
  */
-export function statusOf(c: DetectedClient, gatewayBase: string, now = Date.now()): Status {
+export function statusOf(
+  c: DetectedClient,
+  gatewayBase: string,
+  now = Date.now(),
+  /** 连着远程 core：还指着本机网关的单独说，它们的请求落在一个停了的网关上 */
+  remote = false,
+): Status {
   if (!c.installed) return { state: "absent" };
   const adoptedAt = c.adopted_at_ms;
   if (adoptedAt == null) return { state: "idle" };
+  if (remote && c.endpoint && isLoopback(c.endpoint)) {
+    return { state: "broken", reason: { kind: "local", endpoint: c.endpoint } };
+  }
   if (c.last_seen_ms != null && c.last_seen_ms > adoptedAt) return { state: "in_use" };
   if (c.endpoint && !pointsHere(c.endpoint, gatewayBase)) {
     return { state: "broken", reason: { kind: "moved", endpoint: c.endpoint } };
@@ -78,4 +89,16 @@ export function hostOf(endpoint: string): string {
   } catch {
     return endpoint;
   }
+}
+
+/** 这个地址指的是不是这台机器：`127.0.0.1`、`localhost`、`[::1]`。和 Rust 侧 `ops::is_loopback` 同一个判断 */
+export function isLoopback(endpoint: string): boolean {
+  let host: string;
+  try {
+    host = new URL(endpoint).hostname;
+  } catch {
+    return false;
+  }
+  host = host.replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
 }

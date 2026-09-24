@@ -27,6 +27,8 @@ pub enum Gateway {
     Failed,
     /// 停下了，没有在重启
     Stopped,
+    /// 连着远程 core，眼下连不上（正在重连）
+    Unlinked,
 }
 
 impl Gateway {
@@ -61,7 +63,18 @@ pub struct Snapshot {
     pub undo_at_ms: Option<u64>,
     /// 查到了、还没装的新版本
     pub update: Option<String>,
+    /// 连接列表，本机在最前。「连接」子菜单照它列
+    pub connections: Vec<Connection>,
+    /// 连着远程时是那台服务器的名字。状态头写它，不写应用名
+    pub remote: Option<String>,
     pub now_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Connection {
+    pub id: String,
+    pub name: String,
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -145,6 +158,10 @@ pub enum Action {
         provider: String,
     },
     RestartGateway,
+    /// 连着远程、连不上时：马上再连一次
+    RetryConnection,
+    /// 切到这个连接。本机直接切；远程要先试连、确认，在主界面里做
+    SwitchConnection(String),
     CheckUpdates,
     InstallUpdate,
     Quit,
@@ -209,6 +226,8 @@ pub struct SubItem {
     pub title: String,
     pub checked: bool,
     pub action: Action,
+    /// 前面隔一条线
+    pub sep_before: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -435,6 +454,7 @@ fn state_text(g: &Gateway) -> &'static str {
         Gateway::SafeMode => tr!("未在转发", "Not Forwarding"),
         Gateway::Failed => tr!("无法启动", "Cannot Start"),
         Gateway::Stopped => tr!("未运行", "Not Running"),
+        Gateway::Unlinked => tr!("未连接", "Not Connected"),
     }
 }
 
@@ -452,7 +472,21 @@ fn live_count(n: usize) -> String {
 fn rows(s: &Snapshot) -> Vec<Row> {
     let mut out = vec![header(s), Row::Separator];
     if !s.gateway.running() {
-        if !matches!(s.gateway, Gateway::Starting) {
+        if s.gateway == Gateway::Unlinked {
+            out.push(Row::Item(Item::new(
+                "retry",
+                "arrow.clockwise",
+                tr!("立即重试", "Retry Now"),
+                Action::RetryConnection,
+            )));
+            out.push(Row::Item(Item::new(
+                "why",
+                "info.circle",
+                tr!("查看原因…", "Show Details…"),
+                Action::OpenMain,
+            )));
+            out.push(Row::Separator);
+        } else if !matches!(s.gateway, Gateway::Starting) {
             out.push(Row::Item(Item::new(
                 "restart",
                 "arrow.clockwise",
@@ -601,6 +635,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     group: g.name.clone(),
                     provider: m.clone(),
                 },
+                sep_before: false,
             })
             .collect();
         out.push(Row::Item(item));
@@ -675,9 +710,18 @@ fn header(s: &Snapshot) -> Row {
             tr!("转发已停止。", "Forwarding has stopped.").to_string(),
             true,
         ),
+        Gateway::Unlinked => (
+            StateTone::Bad,
+            tr!("正在重新连接。", "Reconnecting.").to_string(),
+            true,
+        ),
     };
     Row::Header {
-        title: "ThinkWatch Lite".to_string(),
+        // 连着远程时写服务器的名字：菜单里的数字、提醒都是那台的
+        title: s
+            .remote
+            .clone()
+            .unwrap_or_else(|| "ThinkWatch Lite".to_string()),
         state: state_text(&s.gateway).to_string(),
         tone,
         line2,
@@ -699,6 +743,7 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         tr!("打开主界面", "Open ThinkWatch Lite"),
         Action::OpenMain,
     )));
+    out.push(Row::Item(connections(s)));
     out.push(Row::Item(
         Item::new(
             "settings",
@@ -735,6 +780,35 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         )
         .key("q"),
     ));
+}
+
+/// 「连接」子菜单：主窗口关着也能切。**本机永远在第一个**，任何状态下一步就能切回来
+fn connections(s: &Snapshot) -> Item {
+    let mut item = Item::new(
+        "connections",
+        "network",
+        tr!("连接", "Connection"),
+        Action::OpenMain,
+    );
+    item.action = None;
+    let mut subs: Vec<SubItem> = s
+        .connections
+        .iter()
+        .map(|c| SubItem {
+            title: c.name.clone(),
+            checked: c.current,
+            action: Action::SwitchConnection(c.id.clone()),
+            sep_before: false,
+        })
+        .collect();
+    subs.push(SubItem {
+        title: tr!("管理连接…", "Manage Connections…").to_string(),
+        checked: false,
+        action: Action::Settings,
+        sep_before: true,
+    });
+    item.submenu = subs;
+    item
 }
 
 fn window_row(w: &Window, now_ms: u64) -> WindowRow {

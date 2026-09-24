@@ -78,6 +78,11 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { trouble } from "./launch/trouble";
 import { LaunchScreen } from "./launch/LaunchScreen";
 import { warm } from "./launch/warm";
+import { ConnectionProvider, useConnections } from "./connection/ConnectionProvider";
+import { Switcher } from "./connection/Switcher";
+import { Unlinked } from "./connection/Unlinked";
+import { currentProfile } from "./connection/api";
+import { connText } from "./connection/connection.i18n";
 import {
   Sidebar,
   SidebarContent,
@@ -107,6 +112,13 @@ const MAX_TRIES = 8;
 
 /** 概览的几个重读理由挨着到时，等这么久再读：一串只读一次 */
 const COALESCE_MS = 100;
+
+/**
+ * 启动画面最多等多久。**过了就照常打开窗口**，内容区显示「未连接」那一页、后台接着
+ * 重连 —— 而不是一直转圈。界面外壳不该依赖 core 连没连上：连接管理在设置里，那一页
+ * 这时必须能用
+ */
+const LAUNCH_CAP_MS = 8_000;
 
 /** core 的状态字符串来自 Rust 侧的 CoreState，见 supervisor/mod.rs。 */
 /**
@@ -265,8 +277,40 @@ function describeCore(raw: string): {
  */
 const drag = isMac ? { "data-tauri-drag-region": true } : {};
 
+/**
+ * 主窗口。
+ *
+ * **换了连接，主界面整个重挂。**流量、会话、概览、各页的缓存都属于原来那个 core ——
+ * 两边的请求编号还会重叠 —— 一样样去清，漏一处就是把一台机器的数据安在另一台头上。
+ * 连接的对话框挂在重挂的那一层外面（`ConnectionProvider`），切换那一下不跟着消失。
+ */
 export default function App() {
+  return (
+    <ConnectionProvider>
+      <PerConnection />
+    </ConnectionProvider>
+  );
+}
+
+function PerConnection() {
+  const { view } = useConnections();
+  // 第一次读到的那个连接不算「换了」：那是启动时本来就要连的
+  const seen = useRef<{ id: string | null; n: number }>({ id: null, n: 0 });
+  if (view && seen.current.id !== view.current) {
+    if (seen.current.id !== null) seen.current.n += 1;
+    seen.current.id = view.current;
+  }
+  return <Shell key={seen.current.n} first={seen.current.n === 0} />;
+}
+
+function Shell({ first }: { first: boolean }) {
   const t = useText(appText);
+  const ct = useText(connText);
+  const conn = useConnections();
+  const profile = conn.view ? currentProfile(conn.view) : undefined;
+  /** 连着的是远程 core */
+  const remote = profile !== undefined && !profile.local;
+  const link = conn.view?.link ?? null;
   const common = useText(commonText);
   /**
    * 守护状态。**先当它在起**：第一次读到之前画「已停止」的话，启动画面会先
@@ -417,7 +461,18 @@ export default function App() {
    * 启动画面还在。**只在冷启动、这次开窗第一次交接之前**，见 `LaunchScreen`。
    * 热启动没有这一面，窗口藏到交接那一刻才出现（见 `warm`）
    */
-  const [launching, setLaunching] = useState(!warm);
+  const [launching, setLaunching] = useState(!warm && first);
+  /** 启动画面等够了（或者远程说了一个等多久都不会好的原因）：不再等，交出主界面 */
+  const [gaveUp, setGaveUp] = useState(false);
+  useEffect(() => {
+    const h = setTimeout(() => setGaveUp(true), LAUNCH_CAP_MS);
+    return () => clearTimeout(h);
+  }, []);
+  const lasting =
+    link?.kind === "down" &&
+    (link.error.kind === "wrong_key" ||
+      link.error.kind === "version_mismatch" ||
+      link.error.kind === "not_yet_available");
   /** 概览那一页的第一份数据到了。启动画面等它，交接时数字已经是对的 */
   const [landed, setLanded] = useState(false);
   /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */
@@ -574,6 +629,11 @@ export default function App() {
       }
       // `requests:42`：打开流量页并展开那一条（菜单栏里点了一个进行中的请求）
       const [page, id] = view.split(":");
+      // `switch:<id>`：菜单栏里选了一条远程连接。试连和确认在这里做，和侧栏同一条路
+      if (page === "switch" && id) {
+        switchTo.current(id);
+        return;
+      }
       setTab(page as Surface);
       if (page === "requests" && id) setOpen(Number(id));
     };
@@ -584,10 +644,18 @@ export default function App() {
       go(e.payload);
       void invoke("take_pending_view").catch(() => {});
     });
+    // 连接那一层（切换器里的「管理连接…」）要落页时发的
+    const local = (e: Event) => go((e as CustomEvent<string>).detail);
+    window.addEventListener("tw-open-view", local);
     return () => {
       un.then((f) => f());
+      window.removeEventListener("tw-open-view", local);
     };
   }, []);
+
+  /** 切换连接的入口。**用 ref**：落页那个 effect 只挂一次，而连接列表是后来才读到的 */
+  const switchTo = useRef(conn.switchTo);
+  switchTo.current = conn.switchTo;
 
   /**
    * 列表的键盘导航。
@@ -827,8 +895,15 @@ export default function App() {
   }, [reloads, nudge, health, models, listening, upstreamState, core, setStatus, setOv]);
 
   const c = describeCore(core);
-  /** 连上过、又断了。**只在这时候挂那条带子** */
-  const lost = linked && tries > 0 ? trouble(core, tries) : null;
+  /** 连上过、又断了。**只在这时候挂那条带子**。连着远程时断线另有一条（见下面） */
+  const lost = linked && tries > 0 && !remote ? trouble(core, tries) : null;
+  /**
+   * 连着远程、连上过、现在断了（设计稿 ⑥ 右）。**不换成「未连接」整页**：已有的内容
+   * 留着、置为只读，顶上一条横幅。连上后按现有的对账机制补齐（`core-state` 回到
+   * `running:` 时各处自己对账）
+   */
+  const remoteLost = remote && linked && link !== null && link.kind !== "connected";
+  const remoteAttempt = link?.kind === "down" ? link.attempt : link?.kind === "connecting" ? link.attempt : 0;
 
   useEffect(() => {
     if (!linked) return;
@@ -840,7 +915,10 @@ export default function App() {
     被盖着；交接时概览（和落地页那一页的数据）已经在了，数字不会在眼前从零
     跳成实际值。取不齐就不等了（`waited`），那一页有自己的骨架。
   */
-  const handover = linked && ((ov !== null && (tab !== "dashboard" || landed)) || waited);
+  const handover =
+    (linked && ((ov !== null && (tab !== "dashboard" || landed)) || waited)) ||
+    gaveUp ||
+    lasting;
 
   // 热启动：交接的那一刻就是窗口出现的那一刻。Rust 那边也有保底，这里只管早到
   useEffect(() => {
@@ -932,9 +1010,13 @@ export default function App() {
                       const badge = it.id === "mcp" ? alerts.length : 0;
                       const Icon = it.icon;
                       const label = t.surfaces[it.id];
+                      // 没连上时需要 core 数据的几页置灰；设置始终可用，连接管理在那里
+                      const off = !linked && it.id !== "settings";
                       return (
                         <SidebarMenuItem key={it.id}>
                           <SidebarMenuButton
+                            disabled={off}
+                            className={off ? "opacity-45" : undefined}
                             isActive={on}
                             onClick={() => setTab(it.id)}
                             aria-current={on ? "page" : undefined}
@@ -980,48 +1062,29 @@ export default function App() {
             className="border-t"
             style={{ borderColor: "var(--chrome-hair)" }}
           >
-            <Tip
-              side="right"
-              text={
-                <>
-                  {status?.gateway_addr
-                    ? `${c.text} · ${status.gateway_addr}`
-                    : c.text}
-                  {/* 监听设置没换成：上面的地址是还在服务的旧地址，原因写在这里 */}
-                  {status?.listen_error && (
-                    <div>{t.listenStale(coreText(status.listen_error))}</div>
-                  )}
-                </>
-              }
-            >
-              <div
-                className={
-                  "flex items-center gap-1.5 tw-label " +
-                  (c.tone === "ok"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : c.tone === "warn"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400")
-                }
-              >
-                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-                {/* 展开时写全,收起时 80px 也放得下「运行中」四个字 */}
-                <span className="group-data-[collapsible=icon]:hidden">
-                  {c.text}
-                </span>
-                <span className="hidden group-data-[collapsible=icon]:inline">
-                  {c.short}
-                </span>
-              </div>
-            </Tip>
-            {status?.gateway_addr && (
-              <code
-                className="block font-mono tw-label group-data-[collapsible=icon]:hidden"
-                style={{ color: "var(--chrome-dim)" }}
-              >
-                {status.gateway_addr}
-              </code>
-            )}
+            {/*
+              连接名在状态点和网关地址上面，点开是连接列表（见 `Switcher`）。连本机时
+              状态和地址照旧来自守护；连远程时来自连接那一层
+            */}
+            <Switcher
+              local={{
+                text: c.text,
+                short: c.short,
+                tone: c.tone,
+                addr: status?.gateway_addr ?? null,
+                tip: (
+                  <>
+                    {status?.gateway_addr
+                      ? `${c.text} · ${status.gateway_addr}`
+                      : c.text}
+                    {/* 监听设置没换成：上面的地址是还在服务的旧地址，原因写在这里 */}
+                    {status?.listen_error && (
+                      <div>{t.listenStale(coreText(status.listen_error))}</div>
+                    )}
+                  </>
+                ),
+              }}
+            />
           </SidebarFooter>
         </Sidebar>
 
@@ -1234,6 +1297,27 @@ export default function App() {
         起来还是新鲜的。一条常驻的带子两件事都解决：数字留着，旁边写着
         它们为什么不动了。
       */}
+            {/* 连着远程时断线：一条横幅，内容留着、只读（设计稿 ⑥ 右） */}
+            {remoteLost && profile && (
+              <div
+                role="status"
+                className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950"
+              >
+                <span className="text-amber-900 dark:text-amber-200">
+                  {ct.lostBanner(profile.name, remoteAttempt)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto shrink-0"
+                  disabled={link?.kind === "connecting"}
+                  onClick={() => void invoke("retry_connection").catch(() => {})}
+                >
+                  {ct.retryNow}
+                </Button>
+              </div>
+            )}
+
             {linked && tries > 0 && lost && (
               <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2 tw-body dark:border-amber-800 dark:bg-amber-950">
                 <span className="font-medium text-amber-900 dark:text-amber-200">
@@ -1263,6 +1347,18 @@ export default function App() {
         **每一面自己滚。**工具栏钉在上面不动,这一层只负责给出高度;
         真正滚的是下面这个容器（请求页是它自己的那一层，见下面）。
       */}
+            {/*
+              断线时整块只读：`fieldset disabled` 让里面的按钮、输入框、下拉一起失效，
+              读、滚动、悬停说明照旧 —— 用户要看的是断开前的样子，改不了的东西就不该
+              让人点下去再报错
+            */}
+            <fieldset
+              disabled={remoteLost}
+              className={
+                "m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 " +
+                (remoteLost ? "opacity-60" : "")
+              }
+            >
             <div
               className={
                 "flex min-h-0 flex-1 flex-col " +
@@ -1281,7 +1377,15 @@ export default function App() {
         连接状态。**控制面一答应就交接** —— 哪怕网关还没起来（安全模式下
         配置、回滚、还原接管都能用，那时绝不能再挡）。
       */}
-              {!linked ? null : tab === "dashboard" ? (
+              {!linked ? (
+                // 启动画面还盖着时不画；交出来之后（等够了 8 秒）是「未连接」那一页。
+                // 设置页照常可用：连接管理在那里
+                launching ? null : tab === "settings" ? (
+                  <Config ov={null} status={null} onChanged={() => setNudge((n) => n + 1)} />
+                ) : (
+                  <Unlinked core={core} />
+                )
+              ) : tab === "dashboard" ? (
                 <Dashboard
                   tick={dashTick}
                   ov={ov}
@@ -1642,6 +1746,7 @@ export default function App() {
               {/* 右侧抽屉。Dashboard 那边早就接了，请求页反而没有 —— 而
           这里才是主战场 */}
             </div>
+            </fieldset>
           </div>
         </div>
 
@@ -1715,6 +1820,7 @@ export default function App() {
       </SidebarProvider>
       {launching && (
         <LaunchScreen
+          remote={remote && profile ? profile.name : null}
           state={core}
           linked={linked}
           tries={tries}

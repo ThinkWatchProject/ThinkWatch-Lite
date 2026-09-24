@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import App from "./App";
 import UpdateWindow from "./UpdateWindow";
+import PickerWindow from "./connection/PickerWindow";
 import { setLang, type Lang } from "./i18n";
 import "./index.css";
 
@@ -23,7 +24,8 @@ function windowLabel(): string {
   }
 }
 
-const Root = windowLabel() === "update" ? UpdateWindow : App;
+const label = windowLabel();
+const Root = label === "update" ? UpdateWindow : label === "picker" ? PickerWindow : App;
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

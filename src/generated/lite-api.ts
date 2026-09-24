@@ -32,6 +32,11 @@ failed: Array<KeySyncFailed>, };
 export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind": "scan_alert", alerts: Array<ScanFinding>, at_ms: number, };
 
 /**
+ * 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的
+ */
+export type Retargeted = { synced: Array<KeySynced>, failed: Array<KeySyncFailed>, };
+
+/**
  * 扫一次的结果：用户级的配置面，此刻磁盘上的样子。
  *
  * **不存任何东西**：页面关了就没了。**只扫用户级的**：界面递不进一个目录来 ——

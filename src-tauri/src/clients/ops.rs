@@ -356,6 +356,47 @@ pub fn adopted(home: &Path) -> Vec<Client> {
         .collect()
 }
 
+/// 此刻接管着、**配置里指着这台机器上的网关**的客户端，连同它此刻的端点。
+///
+/// 连着远程 core 时，它们的请求落到一个已经停了的网关上：客户端页把它们单独标出来，
+/// 切换确认里说有几个，「改为指向服务器」改的也正是这几个。指着别处的（已经改过去
+/// 了、或者用户自己指到了别的机器）不在里面。
+pub fn adopted_on_this_machine(home: &Path) -> Vec<(Client, String)> {
+    clients::adoptable()
+        .into_iter()
+        .filter_map(|c| {
+            let d = detect::detect_one(&c, home);
+            d.adopted_at_ms?;
+            let endpoint = d.endpoint?;
+            is_loopback(&endpoint).then_some((c, endpoint))
+        })
+        .collect()
+}
+
+/// 一个端点指的是不是这台机器：`127.0.0.1`、`localhost`、`[::1]`
+pub fn is_loopback(endpoint: &str) -> bool {
+    host_port(endpoint).is_some_and(|hp| {
+        let host = match hp.rsplit_once(':') {
+            // `[::1]:8788` 这种，方括号里才是主机
+            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h,
+            _ => hp,
+        };
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        host == "localhost"
+            || host == "::1"
+            || host
+                .parse::<std::net::Ipv4Addr>()
+                .is_ok_and(|a| a.is_loopback())
+    })
+}
+
+/// `http://127.0.0.1:8788/v1` → `127.0.0.1:8788`
+pub fn host_port(endpoint: &str) -> Option<&str> {
+    let rest = endpoint.split_once("://").map_or(endpoint, |(_, r)| r);
+    let hp = rest.split(['/', '?', '#']).next()?;
+    (!hp.is_empty()).then_some(hp)
+}
+
 /// 这把密钥是为某个客户端生成的，而那个客户端此刻正被接管着吗。返回那个客户端。
 ///
 /// 接管状态在对方配置旁边的记录里，读它要走文件系统 —— 所以这件事只有这台机器
@@ -614,6 +655,61 @@ mod tests {
         assert_eq!(owner.id, "claude-code");
         assert_eq!(key_used_by(&owner).code, "control.key_used_by_client");
         assert!(adopted_owner(home.path(), &keys, "default").is_none());
+    }
+
+    #[test]
+    fn a_loopback_endpoint_is_this_machine_and_a_server_is_not() {
+        for e in [
+            "http://127.0.0.1:8788",
+            "http://127.0.0.1:8788/v1",
+            "http://localhost:8788/v1",
+            "http://[::1]:8788",
+        ] {
+            assert!(is_loopback(e), "{e}");
+        }
+        for e in [
+            "http://192.168.1.20:8788/v1",
+            "http://nas.local:8788",
+            "",
+            "http://",
+        ] {
+            assert!(!is_loopback(e), "{e}");
+        }
+        assert_eq!(
+            host_port("http://127.0.0.1:8788/v1"),
+            Some("127.0.0.1:8788")
+        );
+    }
+
+    /// 接管着、指着本机网关的才算；指到了服务器上的不算
+    #[test]
+    fn only_clients_pointing_at_this_machine_count() {
+        let home = home_with_claude();
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        adopt(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            "http://127.0.0.1:8788",
+            "tw-c",
+        )
+        .unwrap();
+        adopt(
+            home.path(),
+            &backups(&home),
+            "codex",
+            "http://192.168.1.20:8788",
+            "tw-x",
+        )
+        .unwrap();
+        let here: Vec<_> = adopted_on_this_machine(home.path())
+            .into_iter()
+            .map(|(c, e)| (c.id, e))
+            .collect();
+        assert_eq!(
+            here,
+            vec![("claude-code", "http://127.0.0.1:8788".to_string())]
+        );
     }
 
     /// 换了密钥之后重新指一次：新值写进它的配置

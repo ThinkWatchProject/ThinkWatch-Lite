@@ -157,6 +157,12 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Environment",
     # explorer.exe 按 Windows 目录拼全路径，不按 PATH 找（`clients::explorer`）
     "Win32_System_SystemInformation",
+    # 启动时看 Alt 键有没有按着：按着就先显示连接选择（`connection::launch`）
+    "Win32_UI_Input_KeyboardAndMouse",
+    # 数据目录建成只有自己能读（受保护的 DACL），见 `private_dir`
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
 ] }
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套
