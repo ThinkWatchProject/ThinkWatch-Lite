@@ -171,6 +171,27 @@ pub fn linux_kind(
     }
 }
 
+/// 不是自己的、要在启动时清掉的 AppImage 环境变量。
+///
+/// AppImage 的运行时挂载时设 `APPIMAGE`、`APPDIR`，而环境变量会一路继承：
+/// 从一个 AppImage 里的终端、启动器拉起来的 deb 版，手里拿着的是**别人的**
+/// 这两个值。Tauri 却照单全收（`Env::default` 读这两个，只打一条警告）：
+/// `restart()` 重启的是 `$APPIMAGE` 指的那个文件，`resource_dir()` 在自己的
+/// 资源目录不在时改看 `$APPDIR` —— 更新完重启，起来的就可能是另一个程序。
+/// 子进程（twcore）也会继承它们。
+///
+/// 只有打包标记说自己是 AppImage 时，这两个值才是运行时给自己设的。
+#[cfg(target_os = "linux")]
+pub fn foreign_appimage_vars(
+    bundle: Option<tauri::utils::config::BundleType>,
+) -> &'static [&'static str] {
+    if bundle == Some(tauri::utils::config::BundleType::AppImage) {
+        &[]
+    } else {
+        &["APPIMAGE", "APPDIR"]
+    }
+}
+
 /// 这一份是怎么装上来的。
 pub fn kind() -> Install {
     // Linux 上不看路径：答案在打包时已经写进二进制里了（见 `linux_kind`）
@@ -505,6 +526,18 @@ mod tests {
         assert_eq!(linux_kind(Some(BundleType::Rpm), None), Install::Dev);
         // `cargo run` 的构建没有标记。环境里有个 APPIMAGE 也不算
         assert_eq!(linux_kind(None, Some(image)), Install::Dev);
+    }
+
+    /// 只有 AppImage 留着这两个变量；deb 和开发构建一律清掉，restart 不会跑去
+    /// 一个继承来的 `$APPIMAGE`。
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn only_an_appimage_keeps_the_appimage_variables() {
+        use tauri::utils::config::BundleType;
+        assert!(foreign_appimage_vars(Some(BundleType::AppImage)).is_empty());
+        for bundle in [Some(BundleType::Deb), Some(BundleType::Rpm), None] {
+            assert_eq!(foreign_appimage_vars(bundle), ["APPIMAGE", "APPDIR"]);
+        }
     }
 
     /// 放在只有 root 能写的目录里，是「换个地方」的问题，不是「再试一次」。
