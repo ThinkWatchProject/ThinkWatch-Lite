@@ -130,6 +130,7 @@ async fn run(app: tauri::AppHandle) {
     let mut credits = Credits::default();
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let open = || OPEN.load(Ordering::Relaxed);
     loop {
         let Some(state) = app.try_state::<AppState>() else {
             return;
@@ -137,20 +138,31 @@ async fn run(app: tauri::AppHandle) {
         let mut snap = collect(&app, &state, &mut credits).await;
         present(&snap);
         let reset = next_reset_in(&snap).map(|d| tokio::time::Instant::now() + d);
-        // 秒数和倒计时只用手上的数和计数器现算，不为它去问 core
-        let on_tick = || {
-            refresh_live(&app, &mut snap);
+        let mut due = None;
+        // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
+        // 汇总和额度不问
+        while let Woke::Tick =
+            wait(&wake, &now, &mut core_rx, reset, &mut tick, open, &mut due).await
+        {
+            refresh_live(&state, &mut snap).await;
             present(&snap);
-        };
-        let open = || OPEN.load(Ordering::Relaxed);
-        wait(&wake, &now, &mut core_rx, reset, &mut tick, open, on_tick).await;
+        }
     }
 }
 
+/// [`wait`] 为什么回来了
+#[derive(Debug, PartialEq, Eq)]
+enum Woke {
+    /// 整个重收
+    Collect,
+    /// 菜单开着，走一秒
+    Tick,
+}
+
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
-/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒
-/// `on_tick` 一次，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里
-/// 秒数会一卡几秒
+/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒回来
+/// 一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的
+/// 菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
 async fn wait(
     wake: &tokio::sync::Notify,
     now: &tokio::sync::Notify,
@@ -158,19 +170,19 @@ async fn wait(
     reset: Option<tokio::time::Instant>,
     tick: &mut tokio::time::Interval,
     open: impl Fn() -> bool,
-    mut on_tick: impl FnMut(),
-) {
-    let mut due = None;
+    due: &mut Option<tokio::time::Instant>,
+) -> Woke {
     loop {
+        let settle = *due;
         tokio::select! {
-            _ = wake.notified(), if due.is_none() => {
-                due = Some(tokio::time::Instant::now() + SETTLE);
+            _ = wake.notified(), if settle.is_none() => {
+                *due = Some(tokio::time::Instant::now() + SETTLE);
             }
-            _ = sleep_until(due), if due.is_some() => return,
-            _ = now.notified() => return,
-            _ = core_rx.changed() => return,
-            _ = sleep_until(reset), if reset.is_some() => return,
-            _ = tick.tick(), if open() => on_tick(),
+            _ = sleep_until(settle), if settle.is_some() => return Woke::Collect,
+            _ = now.notified() => return Woke::Collect,
+            _ = core_rx.changed() => return Woke::Collect,
+            _ = sleep_until(reset), if reset.is_some() => return Woke::Collect,
+            _ = tick.tick(), if open() => return Woke::Tick,
         }
     }
 }
@@ -189,28 +201,32 @@ fn present(snap: &Snapshot) {
     tray::apply(&bar, &rows);
 }
 
-/// 只更新随时间走的那几样：现在几点、谁在跑、速率
-fn refresh_live(app: &tauri::AppHandle, snap: &mut Snapshot) {
+/// 只更新随时间走的那几样：现在几点、谁在跑、速率。**问 core 要**（`/live`）：
+/// 在跑的和最近的生成速率是 core 的事件总线数的，这边不再自己听事件去数。
+/// 问不到时留着上一次的
+async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     snap.now_ms = notices::now_ms();
-    if let Some(st) = app.try_state::<AppState>()
-        && let Ok(mut t) = st.tally.lock()
-    {
-        snap.live = live_of(&t.running());
-        snap.rate = t.tokens_per_sec(std::time::Instant::now());
+    if snap.gateway != Gateway::Running {
+        return;
+    }
+    if let Ok(live) = state.control.call::<ep::Live>(&[], &()).await {
+        apply_live(snap, live);
     }
 }
 
-fn live_of(running: &[(u64, crate::tally::Running)]) -> Vec<model::Live> {
-    running
-        .iter()
-        .map(|(id, r)| model::Live {
-            id: *id,
-            app: r.app.clone(),
-            key: r.key.clone(),
-            model: r.model.clone(),
+fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
+    snap.live = live
+        .running
+        .into_iter()
+        .map(|r| model::Live {
+            id: r.id,
+            app: r.client_hint,
+            key: r.client,
+            model: r.model,
             started_ms: r.at_ms,
         })
-        .collect()
+        .collect();
+    snap.rate = live.tokens_per_sec;
 }
 
 /// 最近的一个额度重置时刻还有多久
@@ -257,13 +273,17 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     }
     let c = &state.control;
     let today = tw_api::Window::default();
-    let (status, quota, summary, overview, history) = tokio::join!(
+    let (status, quota, summary, overview, history, live) = tokio::join!(
         c.status(),
         c.call::<ep::Quota>(&[], &()),
         c.call::<ep::Summary>(&[], &today),
         c.call::<ep::Overview>(&[], &()),
-        c.call::<ep::ConfigHistory>(&[], &())
+        c.call::<ep::ConfigHistory>(&[], &()),
+        c.call::<ep::Live>(&[], &())
     );
+    if let Ok(l) = live {
+        apply_live(&mut snap, l);
+    }
     if let Ok(s) = status {
         snap.addr = s.gateway_addr;
         snap.listen_error = s
@@ -344,7 +364,6 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             reset_credits,
         });
     }
-    refresh_live(app, &mut snap);
     snap
 }
 
@@ -518,26 +537,38 @@ async fn check_updates(app: &tauri::AppHandle) {
     }
 }
 
-/// 退出前问一句。**原生的对话框**，不再拉起主窗口；有请求在跑时说清会中断几个
+/// 退出前问一句。**原生的对话框**，不再拉起主窗口；有请求在跑时说清会中断几个。
+///
+/// 几个是问 core 的（`/live`，和菜单里「进行中」同一份）。**只等一秒**：core 卡住
+/// 的时候退出正是用户要做的事，不能让这一问把退出也卡住 —— 问不到就按没有算。
 fn quit(app: &tauri::AppHandle) {
-    let in_flight = app
-        .try_state::<AppState>()
-        .and_then(|st| st.tally.lock().ok().map(|t| t.active() as usize))
-        .unwrap_or(0);
-    #[cfg(target_os = "macos")]
-    {
-        let app = app.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let in_flight = match app.try_state::<AppState>() {
+            Some(st) if matches!(st.supervisor.state(), CoreState::Running { .. }) => {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(1),
+                    st.control.call::<ep::Live>(&[], &()),
+                )
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .map_or(0, |l| l.running.len())
+            }
+            _ => 0,
+        };
+        #[cfg(target_os = "macos")]
         macos::on_main(move |mtm| {
             if macos::confirm_quit(mtm, in_flight) {
                 app.exit(0);
             }
         });
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = in_flight;
-        app.exit(0);
-    }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = in_flight;
+            app.exit(0);
+        }
+    });
 }
 
 /// 一句话的提示
@@ -603,23 +634,31 @@ mod tests {
         )
     }
 
+    /// 一直等到该整个重收，数中途走了几秒。和 `run` 里的循环同一个走法
+    async fn until_collect(
+        wake: &tokio::sync::Notify,
+        now: &tokio::sync::Notify,
+        rx: &mut tokio::sync::watch::Receiver<CoreState>,
+        reset: Option<tokio::time::Instant>,
+        tick: &mut tokio::time::Interval,
+        open: bool,
+    ) -> usize {
+        let mut due = None;
+        let mut ticks = 0;
+        while wait(wake, now, rx, reset, tick, || open, &mut due).await == Woke::Tick {
+            ticks += 1;
+        }
+        ticks
+    }
+
     #[tokio::test(start_paused = true)]
     async fn an_open_menu_keeps_ticking_while_a_wake_settles() {
         let (wake, now, tx, mut tick) = setup();
         let mut rx = tx.subscribe();
         let start = tokio::time::Instant::now();
-        let mut ticks = 0;
         wake.notify_one();
-        wait(
-            &wake,
-            &now,
-            &mut rx,
-            None,
-            &mut tick,
-            || true,
-            || ticks += 1,
-        )
-        .await;
+        let ticks = until_collect(&wake, &now, &mut rx, None, &mut tick, true).await;
+        // **走一秒不会把攒着的那三秒重新算起**
         assert_eq!(start.elapsed(), SETTLE);
         // 0、1、2 秒各走一次；第 3 秒和收数同时到，谁先都行
         assert!(ticks >= 3, "只走了 {ticks} 次");
@@ -631,17 +670,7 @@ mod tests {
         let mut rx = tx.subscribe();
         let start = tokio::time::Instant::now();
         let reset = Some(start + std::time::Duration::from_secs(600));
-        let mut ticks = 0;
-        wait(
-            &wake,
-            &now,
-            &mut rx,
-            reset,
-            &mut tick,
-            || false,
-            || ticks += 1,
-        )
-        .await;
+        let ticks = until_collect(&wake, &now, &mut rx, reset, &mut tick, false).await;
         assert_eq!(start.elapsed(), std::time::Duration::from_secs(600));
         assert_eq!(ticks, 0);
     }
@@ -654,11 +683,46 @@ mod tests {
         // 攒着的时候菜单被打开：不等攒够
         wake.notify_one();
         now.notify_one();
-        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        until_collect(&wake, &now, &mut rx, None, &mut tick, false).await;
         assert_eq!(start.elapsed(), std::time::Duration::ZERO);
         tx.send_replace(CoreState::Stopped);
-        wait(&wake, &now, &mut rx, None, &mut tick, || false, || {}).await;
+        until_collect(&wake, &now, &mut rx, None, &mut tick, false).await;
         assert_eq!(start.elapsed(), std::time::Duration::ZERO);
+    }
+
+    /// core 给的在跑的请求照原样进菜单：谁、哪个模型、什么时候开始的，还有速率
+    #[test]
+    fn the_live_numbers_come_from_core_as_they_are() {
+        let mut snap = Snapshot::default();
+        apply_live(
+            &mut snap,
+            tw_api::LiveView {
+                running: vec![tw_api::RunningView {
+                    id: 7,
+                    client: "default".into(),
+                    client_hint: Some("codex".into()),
+                    model: "gpt-5".into(),
+                    provider: "openai".into(),
+                    at_ms: 1_000,
+                }],
+                tokens_per_sec: Some(52),
+            },
+        );
+        assert_eq!(
+            snap.live,
+            vec![model::Live {
+                id: 7,
+                app: Some("codex".into()),
+                key: "default".into(),
+                model: "gpt-5".into(),
+                started_ms: 1_000,
+            }]
+        );
+        assert_eq!(snap.rate, Some(52));
+        // 下一次一个都不在跑、这一分钟也没有跑完的：都清掉，不留上一次的
+        apply_live(&mut snap, tw_api::LiveView::default());
+        assert!(snap.live.is_empty());
+        assert_eq!(snap.rate, None);
     }
 
     #[test]

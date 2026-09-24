@@ -84,6 +84,24 @@ const RULE_WHY: Record<string, string> = {
   "ssh-key-read": "读取私钥或云服务凭据",
 };
 
+/** 各项防护在配置里的键，中文叫什么。和安全页的标签是同一张表 */
+const GUARD_NAME: Record<string, string> = securityLabelsText.zh.guards;
+
+/**
+ * 拒绝请求时说的那几种隐藏字符（core 发的是 `tag, bidi`）。**有一个不认识就整句
+ * 退回英文**
+ */
+function hiddenKinds(list: string | undefined): string | undefined {
+  const names = (list ?? "").split(", ").map((k) => HIDDEN_KIND[k]?.split("：")[0]);
+  return names.length > 0 && names.every(Boolean) ? names.join("、") : undefined;
+}
+
+/** 隐藏字符的一种为什么值得看一眼。查不到就用 core 的原话 */
+export function hiddenWhy(kind: string, text: string): string {
+  if (getLang() === "en") return text;
+  return HIDDEN_KIND[kind] ?? text;
+}
+
 /** 「hook 中」要空一格，「项目指令中」不要：只有西文词后面接中文时才空 */
 const spaced = (label: string) => (/[A-Za-z0-9]$/.test(label) ? `${label} ` : label);
 
@@ -129,13 +147,18 @@ const KIND: Record<string, string> = {
   "gateway key": "网关密钥",
   "redaction rule": "出站脱敏规则",
   "tool-call rule": "工具调用审查规则",
+  "content rule": "内容过滤规则",
 };
 
 /** 自定义规则属于哪一道防护（`config.rule_*` 的 `what`） */
 const RULE_LINE: Record<string, string> = {
   redaction: "出站脱敏",
   "tool-call": "工具调用审查",
+  content: "内容过滤",
 };
+
+/** 自定义规则写的是什么：内容过滤可以是关键词，其余两项都是正则 */
+const patternOf = (what: string | undefined) => (what === "content" ? "匹配内容" : "正则表达式");
 
 /** 配置卡在哪一关（`config.rejected*` 的 `stage`） */
 const STAGE: Record<string, string> = {
@@ -300,6 +323,19 @@ const ZH: Record<string, Say> = {
   "gw.upstream.forward_failed": (a) => `转发失败：${a.detail}`,
   "gw.upstream.rate_limited": (a) => `上游「${a.upstream}」触发限流。`,
   "gw.upstream.status": (a) => `上游「${a.upstream}」返回 ${a.status}。`,
+  "gw.hidden_text.refused_message": (a) => {
+    const kinds = hiddenKinds(a.kinds);
+    return kinds && `消息中含有可向读者隐藏指令的不可见字符（${kinds}），请求未发出。`;
+  },
+  "gw.hidden_text.refused_tool_result": (a) => {
+    const kinds = hiddenKinds(a.kinds);
+    return kinds && `请求中的工具结果含有可向读者隐藏指令的不可见字符（${kinds}），请求未发出。`;
+  },
+  "gw.content.refused": (a) =>
+    `请求命中内容规则「${word(securityLabelsText.zh.contentRules, a.rule) ?? a.name}」（「${a.excerpt}」），未发出。`,
+  "gw.output_limit.cut": (a) => `上游「${a.upstream}」的回答超过输出长度上限 ${a.max} 个字符，已切断。`,
+  "gw.output_limit.withheld": (a) =>
+    `上游「${a.upstream}」的回答有 ${a.seen} 个字符，超过输出长度上限 ${a.max}，未返回。`,
   "gw.toolcall.cut": (a) => {
     const r = toolRuleZh(a, a.why);
     return r && `上游「${a.upstream}」返回的 ${a.tool} 调用命中规则「${r.name}」${r.why}，已切断响应。`;
@@ -338,13 +374,30 @@ const ZH: Record<string, Say> = {
   "control.request_not_found": (a) => `未找到第 ${a.id} 号请求。`,
 
   // ── security：安全页的规则与档位 ──────────────────────────────────
-  "security.unknown_guard": (a) => `「${a.guard}」不是一项防护，只能是 redact 或 inspect_tools。`,
+  "security.guard_unknown": (a) =>
+    `「${a.guard}」不是一项防护，只能是 redact、inspect_tools、hidden_text、content 或 output_limit。`,
   "security.unknown_mode": (a) => `「${a.mode}」不是一个档位，只能是 off、observe 或 enforce。`,
   "security.unknown_rule": (a) => `没有名为「${a.rule}」的内置规则。`,
   "security.rule_name_empty": () => "规则需要一个名称。",
   "security.bad_pattern": (a) => `正则表达式有误：${a.detail}`,
   "security.unknown_action": (a) => `「${a.action}」不是一种处置，只能是 cut 或 record。`,
-  "security.no_action": () => "出站脱敏规则不单独设处置，命中后的处理由档位决定。",
+  "security.unknown_content_action": (a) => `「${a.action}」不是一种处置，只能是 block 或 record。`,
+  "security.unknown_match": (a) => `「${a.matching}」不是一种匹配方式，只能是 contains 或 regex。`,
+  "security.bad_content_pattern": (a) => `匹配内容无法使用：${a.detail}`,
+  "security.no_action_of_its_own": (a) => {
+    const g = word(GUARD_NAME, a.guard);
+    return g && `${g}的规则不单独设处置，命中后的处理由档位决定。`;
+  },
+  "security.no_custom_rules": (a) => {
+    const g = word(GUARD_NAME, a.guard);
+    return g && `${g}没有自定义规则。`;
+  },
+  "security.no_limit": (a) => {
+    const g = word(GUARD_NAME, a.guard);
+    return g && `${g}没有上限，只有输出长度有。`;
+  },
+  "security.limit_range": (a) => `输出长度上限为 ${a.max}，须在 1 到 ${a.ceiling} 个字符之间。`,
+  "security.nothing_to_test": () => "输出长度没有可供测试的规则。",
   "control.session_not_found": (a) => `未找到会话 ${a.id}。`,
   "control.client_unknown": (a) => `未知的客户端「${a.client}」。`,
   "control.store_off": () => "请求记录未启动。",
@@ -528,13 +581,15 @@ const ZH: Record<string, Say> = {
   },
   "config.rule_pattern_empty": (a) => {
     const line = word(RULE_LINE, a.what);
-    return line && `自定义${line}规则「${a.name}」的正则表达式为空。`;
+    return line && `自定义${line}规则「${a.name}」的${patternOf(a.what)}为空。`;
   },
   "config.rule_pattern_bad": (a) => {
     const line = word(RULE_LINE, a.what);
-    return line && `自定义${line}规则「${a.name}」的正则表达式有误：${a.detail}`;
+    return line && `自定义${line}规则「${a.name}」的${patternOf(a.what)}有误：${a.detail}`;
   },
   "config.unknown_rule": (a) => `security.${a.guard} 中的「${a.rule}」不是内置规则。`,
+  "config.output_limit_range": (a) =>
+    `security.output_limit.max_chars 为 ${a.max}，须在 1 到 ${a.ceiling} 之间。`,
   "config.store.read_failed": (a) => `无法读取 ${a.path}：${a.detail}`,
   "config.store.missing": (a) => `${a.path} 不存在。`,
   "config.store.conflict": (a) =>

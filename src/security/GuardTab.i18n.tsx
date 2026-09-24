@@ -1,7 +1,7 @@
 import { messages } from "@/i18n";
 
 /** 一项防护在三档下各做什么。**代价写在切换之前** */
-interface GuardCopy {
+export interface GuardCopy {
   /** 这项防护做什么，一句话 */
   lead: string;
   now: Record<"off" | "observe" | "enforce", string>;
@@ -36,6 +36,37 @@ export const guardTabText = messages(
       effect: "命中「切断」规则的调用不会完整到达客户端，因而无法执行。",
       risk: "误判时，回答会在该调用处中断。",
     } as GuardCopy,
+    hidden_text: {
+      lead: "检查请求中的用户消息和工具结果是否含有隐藏字符。",
+      now: {
+        off: "当前：不检查，不记录。",
+        observe: "当前：发现的隐藏字符记入日志，请求原样发出。",
+        enforce: "当前：含有隐藏字符的请求不发出，客户端收到拒绝的原因。",
+      },
+      effect: "含有隐藏字符的请求不发出。",
+      risk: "从部分网页或文档复制的正常文本也带有双向控制符，这类请求同样会被拒绝。",
+    } as GuardCopy,
+    content: {
+      lead: "按以下规则检查请求中的用户消息和工具结果。",
+      now: {
+        off: "当前：不检查，不记录。",
+        observe: "当前：命中的内容记入日志，请求原样发出。",
+        enforce:
+          "当前：命中「拒绝」规则的请求不发出，客户端收到拒绝的原因；命中「仅记录」规则的请求照常发出。两类都记入日志。",
+      },
+      effect: "命中「拒绝」规则的请求不发出。",
+      risk: "误判时，正常的请求也会被拒绝。",
+    } as GuardCopy,
+    output_limit: {
+      lead: "限制模型每次回答的正文长度。",
+      now: {
+        off: "当前：不检查，不记录。",
+        observe: "当前：超过上限的回答记入日志，照常返回。",
+        enforce: "当前：流式回答在超过上限处切断；非流式回答超过上限时整份不返回。",
+      },
+      effect: "流式回答在超过上限处切断；非流式回答超过上限时整份不返回。",
+      risk: "较长的正常回答也会被截断。",
+    } as GuardCopy,
     ifEnforced: (effect: string, risk: string) => `切换到「拦截」后：${effect}${risk}`,
     rules: "规则",
     ruleCount: (on: number, all: number) => `已启用 ${on} 条，共 ${all} 条`,
@@ -44,6 +75,7 @@ export const guardTabText = messages(
     rule: "规则",
     match: "匹配",
     regex: "匹配（正则表达式）",
+    codepoints: "码位",
     whenEnforced: "拦截时",
     enabled: "启用",
     builtinGroup: "内置",
@@ -78,6 +110,39 @@ export const guardTabText = messages(
       effect: "calls that match a “cut off” rule never fully reach the client, so they cannot run. ",
       risk: "On a false match, the answer stops at that call.",
     },
+    hidden_text: {
+      lead: "User messages and tool results in each request are checked for hidden characters.",
+      now: {
+        off: "Currently: nothing is checked or recorded.",
+        observe: "Currently: hidden characters found are recorded in the log, and the request is sent unchanged.",
+        enforce: "Currently: a request that contains hidden characters is not sent, and the client is told why.",
+      },
+      effect: "a request that contains hidden characters is not sent. ",
+      risk: "Ordinary text copied from some web pages or documents also carries bidirectional controls, and such requests are refused too.",
+    },
+    content: {
+      lead: "User messages and tool results in each request are checked against the rules below.",
+      now: {
+        off: "Currently: nothing is checked or recorded.",
+        observe: "Currently: matches are recorded in the log, and the request is sent unchanged.",
+        enforce:
+          "Currently: a request that matches a “refuse” rule is not sent, and the client is told why; a request that matches a “record only” rule is sent as usual. Both are recorded in the log.",
+      },
+      effect: "a request that matches a “refuse” rule is not sent. ",
+      risk: "On a false match, an ordinary request is refused.",
+    },
+    output_limit: {
+      lead: "The length of each answer from the model is limited.",
+      now: {
+        off: "Currently: nothing is checked or recorded.",
+        observe: "Currently: answers over the limit are recorded in the log and returned as usual.",
+        enforce:
+          "Currently: a streamed answer is cut off where it passes the limit; a non-streamed answer over the limit is not returned at all.",
+      },
+      effect:
+        "a streamed answer is cut off where it passes the limit; a non-streamed answer over the limit is not returned at all. ",
+      risk: "Long answers that are fine are cut off too.",
+    },
     ifEnforced: (effect: string, risk: string) => `After switching to Enforce: ${effect}${risk}`,
     rules: "Rules",
     ruleCount: (on: number, all: number) => `${on} of ${plural(all, "rule", "rules")} on`,
@@ -86,6 +151,7 @@ export const guardTabText = messages(
     rule: "Rule",
     match: "Match",
     regex: "Match (regular expression)",
+    codepoints: "Code points",
     whenEnforced: "On enforce",
     enabled: "On",
     builtinGroup: "Built-in",

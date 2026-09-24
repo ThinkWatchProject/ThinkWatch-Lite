@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
-use tw_api::ep;
 
 #[cfg(windows)]
 use crate::update;
@@ -15,7 +14,6 @@ use crate::{
     error::{Out, text},
     notices, supervisor,
     supervisor::{CoreState, Supervisor},
-    tally,
 };
 
 /// 网关那个可执行文件叫什么。
@@ -283,8 +281,9 @@ pub(crate) async fn heartbeat_loop(
 /// 恢复后还盯着一个空列表等太久。
 ///
 /// **重新连上时补报一条「丢过事件」**（`EventsDropped`，条数记 0：丢了多少不知道）。
-/// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面和菜单栏要各自对一次账，
-/// 否则那段时间里结束的请求，会一直显示成进行中。
+/// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面要对一次账，否则那段时间
+/// 里结束的请求，会一直显示成进行中。菜单栏的实时数是问 core 要的（`/live`），
+/// 叫醒它重收一次就对了。
 pub(crate) async fn bridge_events(
     at: tw_api::control::Address,
     token: String,
@@ -306,7 +305,9 @@ pub(crate) async fn bridge_events(
                             count: 0,
                             at_ms: notices::now_ms(),
                         };
-                        resync_tally(&b);
+                        if let Some(st) = b.try_state::<AppState>() {
+                            st.menubar.notify_one();
+                        }
                         let _ = b.emit("core-event", &lost);
                     }
                 },
@@ -318,14 +319,13 @@ pub(crate) async fn bridge_events(
                     if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
                         n.on_event(&ev);
                     }
-                    if let Some(st) = a.try_state::<AppState>() {
-                        if let Ok(mut t) = st.tally.lock() {
-                            t.on_event(&ev, std::time::Instant::now());
-                        }
-                        // 菜单栏上那几个数只跟这几种事件有关：花了多少（请求
-                        // 落地之后存储层才算得出来）、额度还剩多少、进行中几个。
-                        // 别的事件叫醒它只是让它白跑一趟。
-                        if matches!(
+                    // 菜单栏上那几个数只跟这几种事件有关：花了多少（请求
+                    // 落地之后存储层才算得出来）、额度还剩多少、进行中几个。
+                    // 别的事件叫醒它只是让它白跑一趟。**事件只是叫醒它，数
+                    // 由 core 给**（`/live`）：掉过队的话（`EventsDropped`）
+                    // 重收一次也就对上了
+                    if let Some(st) = a.try_state::<AppState>()
+                        && matches!(
                             ev,
                             tw_api::Event::RequestStarted { .. }
                                 | tw_api::Event::RequestFinished { .. }
@@ -333,13 +333,10 @@ pub(crate) async fn bridge_events(
                                 | tw_api::Event::RequestCancelled { .. }
                                 | tw_api::Event::QuotaSeen { .. }
                                 | tw_api::Event::ConfigReloaded { .. }
-                        ) {
-                            st.menubar.notify_one();
-                        }
-                    }
-                    // core 说这个订阅者掉过队：进行中的那几个按快照重数
-                    if matches!(ev, tw_api::Event::EventsDropped { .. }) {
-                        resync_tally(&a);
+                                | tw_api::Event::EventsDropped { .. }
+                        )
+                    {
+                        st.menubar.notify_one();
                     }
                     let _ = a.emit("core-event", &ev);
                 },
@@ -352,36 +349,6 @@ pub(crate) async fn bridge_events(
         connected_before |= opened.load(std::sync::atomic::Ordering::SeqCst);
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-}
-
-/// 菜单栏上「进行中几个」按 core 的快照重数一遍（`/in-flight`）。
-///
-/// **先开始记账再去问**：问的这会儿开始、结束的请求记在一边，快照到了一起合进去
-/// （见 `Tally::finish_resync`）。
-pub(crate) fn resync_tally(app: &tauri::AppHandle) {
-    let Some(st) = app.try_state::<AppState>() else {
-        return;
-    };
-    if let Ok(mut t) = st.tally.lock() {
-        t.begin_resync();
-    }
-    let a = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let Some(st) = a.try_state::<AppState>() else {
-            return;
-        };
-        let Ok(open) = st.control.call::<ep::InFlight>(&[], &()).await else {
-            if let Ok(mut t) = st.tally.lock() {
-                t.abandon_resync();
-            }
-            return;
-        };
-        let running = open.iter().filter_map(tally::Running::of);
-        if let Ok(mut t) = st.tally.lock() {
-            t.finish_resync(running);
-        }
-        st.menubar.notify_one();
-    });
 }
 
 /// 控制面听在哪。

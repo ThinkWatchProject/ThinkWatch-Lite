@@ -3,12 +3,12 @@
 export const CONTROL_API_VERSION = 13;
 
 /**
- * 改一条内置规则在拦截档下做什么。只有工具调用审查的规则有这一项 ——
- * 出站脱敏命中之后做什么由档位决定。
+ * 改一条内置规则在拦截档下做什么。只有工具调用审查和内容过滤的规则有这一项 ——
+ * 别的防护命中之后做什么由档位决定。
  */
 export type ActionSave = { 
 /**
- * `cut` / `record`
+ * 工具调用审查：`cut` / `record`；内容过滤：`block` / `record`
  */
 action: string, base_version?: string | null, };
 
@@ -402,9 +402,14 @@ no_usage_requests: number, };
  */
 export type CustomRuleSave = { name: string, pattern: string, 
 /**
- * 工具调用审查才有：`cut` / `record`。不给按 `record`
+ * 工具调用审查：`cut` / `record`；内容过滤：`block` / `record`。不给按 `record`
  */
-action?: string | null, enabled: boolean, base_version?: string | null, };
+action?: string | null, 
+/**
+ * 内容过滤才有：`contains`（不分大小写的子串）/ `regex`。不给按 `contains`。
+ * 别的防护的自定义规则都是正则
+ */
+match?: string | null, enabled: boolean, base_version?: string | null, };
 
 /**
  * 设默认密钥（`PUT /default_key`）。
@@ -680,7 +685,47 @@ attempts: Array<AttemptView>,
  *
  * 一家都没接下时是 `per-token`：没有哪一家的计费方式可以跟着走。
  */
-billing: string, } | { "kind": "secrets_found", id: number, 
+billing: string, } | { "kind": "hidden_text_found", id: number, 
+/**
+ * 这时要发往的上游（故障转移之前的首选）
+ */
+provider: string, 
+/**
+ * 请求被拒了吗。`false` = 观察档，只记录
+ */
+blocked: boolean, items: Array<HiddenItem>, at_ms: number, } | { "kind": "content_matched", id: number, provider: string, 
+/**
+ * 内置规则的 id，或者自定义规则的名字
+ */
+rule: string, custom: boolean, 
+/**
+ * 这条规则在拦截档下做什么：`block` / `record`
+ */
+action: string, 
+/**
+ * 请求被拒了吗。**拦截档 + 规则是拦**两者同时成立才会
+ */
+blocked: boolean, 
+/**
+ * 在工具结果里，而不是调用方自己打的字
+ */
+in_tool_result: boolean, 
+/**
+ * 命中处前后的一小段，**已截断**
+ */
+excerpt: string, at_ms: number, } | { "kind": "output_limited", id: number, provider: string, 
+/**
+ * 上限，按字符数
+ */
+max_chars: number, 
+/**
+ * 超的那一刻数到了多少
+ */
+seen_chars: number, 
+/**
+ * 切断了吗：流从那一帧起不再发、整包整份不发。`false` = 观察档，只记录
+ */
+cut: boolean, at_ms: number, } | { "kind": "secrets_found", id: number, 
 /**
  * 这时要发往的上游（故障转移之前的首选）
  */
@@ -961,6 +1006,27 @@ value: string,
 masked: boolean, };
 
 /**
+ * 藏匿字符的一种：哪一种、在哪儿、几处、第一个长什么样。
+ */
+export type HiddenItem = { 
+/**
+ * `tag`（Unicode 标签字符）/ `bidi`（双向控制符）
+ */
+kind: string, 
+/**
+ * 在工具结果里，而不是调用方自己打的字
+ */
+in_tool_result: boolean, count: number, 
+/**
+ * 第一个的码位，写成 `U+E0049`
+ */
+example: string, 
+/**
+ * 标签字符解出来的原文（最多 120 个字符）：**藏的是什么**。双向控制符是空的
+ */
+revealed: string, };
+
+/**
  * 一条历史请求。
  */
 export type HistoryRow = { id: number, at_ms: number, client: string, provider: string, model: string, path: string, status: number | null, ttfb_ms: number | null, duration_ms: number | null, bytes: number | null, input_tokens: number | null, output_tokens: number | null, cache_read_tokens: number | null, cache_write_tokens: number | null, cost_micros: number | null, 
@@ -1178,6 +1244,15 @@ export type LatencyView = { model: string, p50: number, p95: number,
 samples: number, };
 
 /**
+ * 改输出长度的上限。
+ */
+export type LimitSave = { 
+/**
+ * 按字符数，1 到 [`OutputLimitDetail::ceiling`]
+ */
+max_chars: number, base_version?: string | null, };
+
+/**
  * 一张列表要的两样：看哪一段，最多几条（`GET /history`、`/sessions`）。
  *
  * **时间窗是可选的，而且缺省不是「今天」。**「最近 N 条」本身就是一个完整
@@ -1217,6 +1292,24 @@ default_allow_from: Array<string>,
  * 非 loopback 时为真。界面上要据此把「关闭密钥校验」置灰
  */
 exposed: boolean, };
+
+/**
+ * 此刻的实时读数（`GET /live`）：在跑的请求，和最近跑完的请求生成得多快。
+ *
+ * **按事件数出来的，core 里只数一份。**以前菜单栏自己听事件流、自己记在跑的和
+ * 跑完的：半路才开始听的那一段要拿 `/in-flight` 对账，丢过事件要重对，而这些
+ * core 的事件总线本来就在记。
+ */
+export type LiveView = { 
+/**
+ * 开始了、还没有结局的请求，开始得早的在前。和 `/in-flight` 是同一批
+ */
+running: Array<RunningView>, 
+/**
+ * 最近一分钟跑完的请求平均每秒生成多少 token：**每个请求的输出除以它生成用的
+ * 时间**（总耗时减去首字节），按 token 加权。这一分钟里没有跑完的是空，不是 0
+ */
+tokens_per_sec: number | null, };
 
 /**
  * 接管不了、只能给指引的。
@@ -1263,7 +1356,7 @@ endpoint: string, };
 /**
  * 一条内置规则按什么认。**给界面说明用**，界面按类型写成自己的话。
  */
-export type Matcher = { "kind": "prefix", prefix: string, min_tail: number, } | { "kind": "openai-legacy", min_len: number, } | { "kind": "pem" } | { "kind": "jwt" } | { "kind": "conn-string" } | { "kind": "private-ip" } | { "kind": "domain-suffix", suffixes: Array<string>, } | { "kind": "regex", pattern: string, };
+export type Matcher = { "kind": "prefix", prefix: string, min_tail: number, } | { "kind": "openai-legacy", min_len: number, } | { "kind": "pem" } | { "kind": "jwt" } | { "kind": "conn-string" } | { "kind": "private-ip" } | { "kind": "domain-suffix", suffixes: Array<string>, } | { "kind": "regex", pattern: string, } | { "kind": "contains", text: string, } | { "kind": "codepoints", ranges: Array<string>, };
 
 /**
  * 在矩阵上点一下。
@@ -1439,6 +1532,27 @@ failure?: string | null,
  * 凭据已经失效，只有重新登录能恢复
  */
 needs_login?: boolean, };
+
+/**
+ * 输出长度的档位和上限。它没有规则，只有一个数。
+ */
+export type OutputLimitDetail = { 
+/**
+ * `off` / `observe` / `enforce`
+ */
+mode: string, 
+/**
+ * 上限，按字符数
+ */
+max_chars: number, 
+/**
+ * 出厂的上限
+ */
+default_max_chars: number, 
+/**
+ * 最多能设多大
+ */
+ceiling: number, };
 
 /**
  * 界面要显示的配置概览。
@@ -2294,6 +2408,23 @@ phase_two: boolean,
 shadowed: boolean, };
 
 /**
+ * 一个在跑的请求。
+ */
+export type RunningView = { id: number, 
+/**
+ * 网关密钥的名字
+ */
+client: string, 
+/**
+ * 按请求头推测的应用。**可以伪造**，只用来显示
+ */
+client_hint: string | null, model: string, 
+/**
+ * 开始时的首选上游
+ */
+provider: string, at_ms: number, };
+
+/**
  * 一处发现。
  */
 export type ScanFinding = { 
@@ -2383,7 +2514,7 @@ display: string,
 env?: string | null, };
 
 /**
- * 两项防护在一段时间里各留下了几条记录。
+ * 各项防护在一段时间里各留下了几条记录。
  */
 export type SecurityCounts = { 
 /**
@@ -2401,12 +2532,40 @@ tool_calls: number,
 /**
  * 其中被切断的
  */
-tool_calls_cut: number, };
+tool_calls_cut: number, 
+/**
+ * 藏匿字符（每条 = 一个请求里一种藏法在一个地方）
+ */
+hidden_text: number, 
+/**
+ * 其中请求被拒的
+ */
+hidden_text_blocked: number, 
+/**
+ * 命中内容规则的（每条 = 一个请求命中一条规则）
+ */
+content: number, 
+/**
+ * 其中请求被拒的
+ */
+content_blocked: number, 
+/**
+ * 回答超过输出长度的
+ */
+output_limit: number, 
+/**
+ * 其中被切断的
+ */
+output_limit_cut: number, };
 
 /**
- * 两项防护。
+ * 各项防护。
  */
-export type SecurityDetail = { redact: GuardDetail, inspect_tools: GuardDetail, };
+export type SecurityDetail = { redact: GuardDetail, inspect_tools: GuardDetail, 
+/**
+ * 规则就是那两种藏法，可以各自关掉
+ */
+hidden_text: GuardDetail, content: GuardDetail, output_limit: OutputLimitDetail, };
 
 /**
  * 安全日志的一条。
@@ -2416,15 +2575,17 @@ export type SecurityDetail = { redact: GuardDetail, inspect_tools: GuardDetail, 
  */
 export type SecurityEventView = { id: number, at_ms: number, request_id: number, 
 /**
- * `redact` / `inspect_tools`
+ * `redact` / `inspect_tools` / `hidden_text` / `content` / `output_limit`
  */
 guard: string, 
 /**
- * 内置规则的 id，或者自定义规则的名字
+ * 内置规则的 id，或者自定义规则的名字。藏匿字符是那一种（`tag` / `bidi`），
+ * 输出长度是 `max_chars`
  */
 rule: string, custom: boolean, 
 /**
- * 做了什么：`recorded`（只记录）/ `replaced`（已替换）/ `cut`（已切断）
+ * 做了什么：`recorded`（只记录）/ `replaced`（已替换）/ `cut`（已切断）/
+ * `blocked`（请求被拒，没有发出去）
  */
 action: string, 
 /**
@@ -2440,15 +2601,17 @@ client: string,
  */
 model: string, 
 /**
- * 工具调用审查：哪个工具
+ * 工具调用审查：哪个工具。藏匿字符和内容过滤：在工具结果里时是 `tool_result`
  */
 tool?: string | null, 
 /**
- * 出站脱敏是打码后的值；工具调用审查是命中的那一小段（已截断）
+ * 出站脱敏是打码后的值；工具调用审查、内容过滤是命中的那一小段（已截断）；
+ * 藏匿字符是第一个的码位，标签字符后面跟一个空格和解出来的原文；输出长度是上限
  */
 excerpt: string, 
 /**
- * 出站脱敏：这个值在请求里出现了几次
+ * 出站脱敏：这个值在请求里出现了几次。藏匿字符：几个字符。输出长度：超的那一刻
+ * 数到了多少个字符。其余是 1
  */
 count: number, 
 /**
@@ -2497,7 +2660,8 @@ name: string,
  */
 why?: string, 
 /**
- * 类别。出站脱敏：`api-keys` … `custom`；工具调用审查：`command` / `custom`
+ * 类别。出站脱敏：`api-keys` … `custom`；工具调用审查：`command` / `custom`；
+ * 内容过滤：`injection` / `persona` / `chinese` / `custom`；藏匿字符：`invisible`
  */
 kind: string, matcher: Matcher, enabled: boolean, 
 /**
@@ -2505,11 +2669,11 @@ kind: string, matcher: Matcher, enabled: boolean,
  */
 on_by_default: boolean, 
 /**
- * 工具调用审查：拦截档下做什么，`cut` / `record`
+ * 工具调用审查：拦截档下做什么，`cut` / `record`；内容过滤：`block` / `record`
  */
 action?: string | null, 
 /**
- * 内置的工具调用规则出厂时拦截档下做什么。和 `action` 不一样就是改过
+ * 内置规则出厂时拦截档下做什么。和 `action` 不一样就是改过
  */
 default_action?: string | null, };
 
@@ -2523,11 +2687,12 @@ export type SecurityTestHit = { rule: string, custom: boolean,
  */
 start: number, end: number, 
 /**
- * 出站脱敏：打码后的值；工具调用审查：命中的那一小段
+ * 出站脱敏：打码后的值；工具调用审查、内容过滤：命中的那一小段；藏匿字符：
+ * 那个字符的码位
  */
 excerpt: string, 
 /**
- * 工具调用审查：拦截档下做什么
+ * 工具调用审查、内容过滤：拦截档下做什么
  */
 action?: string | null, };
 
@@ -2535,17 +2700,22 @@ action?: string | null, };
  * 拿一段文本试一试。给了 `pattern` 就只试这一条正则，给了 `rule` 就只试
  * 这一条内置规则（停用着的也能试），都不给就按现在启用的全部规则。
  */
-export type SecurityTestRequest = { sample: string, pattern?: string | null, rule?: string | null, };
+export type SecurityTestRequest = { sample: string, pattern?: string | null, 
+/**
+ * 内容过滤试 `pattern` 时怎么认：`contains` / `regex`，不给按 `contains`
+ */
+match?: string | null, rule?: string | null, };
 
 export type SecurityTestResult = { hits: Array<SecurityTestHit>, };
 
 /**
- * 两项防护各在哪一档：`off` / `observe` / `enforce`。
+ * 每项防护各在哪一档：`off` / `observe` / `enforce`。
  *
- * **「拦截」在两项上做的事不一样**：脱敏是替换成占位符，审查是切断响应。
+ * **「拦截」在各项上做的事不一样**：脱敏是替换成占位符，工具调用审查和输出长度
+ * 是切断响应，藏匿字符和内容过滤是拒绝请求。
  * 规则和日志在 [`SecurityDetail`] 和 `/security/events` 里，不塞进概览。
  */
-export type SecurityView = { redact: string, inspect_tools: string, };
+export type SecurityView = { redact: string, inspect_tools: string, hidden_text: string, content: string, output_limit: string, };
 
 export type SessionDetail = { session: SessionView, turns: Array<TurnView>, };
 
@@ -2899,6 +3069,7 @@ export const ENDPOINTS = {
   Interfaces: { method: "GET", path: "/interfaces", params: [], format: "json" },
   Events: { method: "GET", path: "/events", params: [], format: "events" },
   InFlight: { method: "GET", path: "/in-flight", params: [], format: "json" },
+  Live: { method: "GET", path: "/live", params: [], format: "json" },
   Overview: { method: "GET", path: "/overview", params: [], format: "json" },
   L1: { method: "POST", path: "/l1", params: [], format: "json" },
   Storage: { method: "GET", path: "/storage", params: [], format: "json" },
@@ -2978,6 +3149,7 @@ export const ENDPOINTS = {
   SetSecurityMode: { method: "PUT", path: "/security/{guard}/mode", params: ["guard"], format: "json" },
   ToggleBuiltinRule: { method: "PUT", path: "/security/{guard}/builtin/{id}", params: ["guard", "id"], format: "json" },
   SetBuiltinRuleAction: { method: "PUT", path: "/security/{guard}/builtin/{id}/action", params: ["guard", "id"], format: "json" },
+  SetSecurityLimit: { method: "PUT", path: "/security/{guard}/limit", params: ["guard"], format: "json" },
   CreateCustomRule: { method: "POST", path: "/security/{guard}/custom", params: ["guard"], format: "json" },
   UpdateCustomRule: { method: "PUT", path: "/security/{guard}/custom/{name}", params: ["guard", "name"], format: "json" },
   DeleteCustomRule: { method: "DELETE", path: "/security/{guard}/custom/{name}", params: ["guard", "name"], format: "json" },
@@ -3001,6 +3173,7 @@ export type Endpoints = {
   Interfaces: { req: null; res: Array<NicView> };
   Events: { req: null; res: Event };
   InFlight: { req: null; res: Array<Event> };
+  Live: { req: null; res: LiveView };
   Overview: { req: null; res: Overview };
   L1: { req: L1Request; res: Array<L1Result> };
   Storage: { req: null; res: StorageStatus };
@@ -3080,6 +3253,7 @@ export type Endpoints = {
   SetSecurityMode: { req: ModeSave; res: ConfigWritten };
   ToggleBuiltinRule: { req: RuleToggle; res: ConfigWritten };
   SetBuiltinRuleAction: { req: ActionSave; res: ConfigWritten };
+  SetSecurityLimit: { req: LimitSave; res: ConfigWritten };
   CreateCustomRule: { req: CustomRuleSave; res: ConfigWritten };
   UpdateCustomRule: { req: CustomRuleSave; res: ConfigWritten };
   DeleteCustomRule: { req: BaseVersion; res: ConfigWritten };

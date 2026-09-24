@@ -14,9 +14,9 @@ import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import RequestDrawer from "@/RequestDrawer";
-import { isGuard, type Guard, type SecurityDetail, type SecurityEventView } from "@/types";
+import { GUARDS, isGuard, isRuleGuard, type RuleGuard, type SecurityDetail, type SecurityEventView } from "@/types";
 import { api } from "./api";
-import { ActionBadge, ruleName } from "./labels";
+import { ActionBadge, EventDetail, ruleName, whereOf } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { logTabText } from "./LogTab.i18n";
 
@@ -25,15 +25,15 @@ const PAGE = 100;
 
 /** 日志行上的菜单能做的两件事，由页面接住：它们要切标签、要写配置 */
 export interface LogActions {
-  viewRule: (guard: Guard, id: string, custom: boolean) => void;
-  disableRule: (guard: Guard, id: string, custom: boolean) => void;
+  viewRule: (guard: RuleGuard, id: string, custom: boolean) => void;
+  disableRule: (guard: RuleGuard, id: string, custom: boolean) => void;
 }
 
 /**
- * 安全日志：一行是一次命中，两项防护的都在一张表里，「类型」一列分得开。
+ * 安全日志：一行是一次命中，各项防护的都在一张表里，「类型」一列分得开。
  *
- * **和概览上那两个数是同一批。**时间窗的起点用同一个函数算（`windowStart`），
- * 从概览点进来时，条数是那两个数之和。
+ * **和概览上那几个数是同一批。**时间窗的起点用同一个函数算（`windowStart`），
+ * 从概览点进来时，条数是那几个数之和。
  *
  * 点一行打开那次请求的详情 —— 日志说的是「命中了什么」，请求详情说的是
  * 「那次请求本身」，排查时两样都要看。
@@ -111,9 +111,12 @@ export function LogTab({
     }
   }
 
-  /** 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉 */
+  /**
+   * 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉；
+   * 输出长度没有规则，那两项也是灰的
+   */
   const ruleOf = (e: SecurityEventView) =>
-    isGuard(e.guard)
+    isRuleGuard(e.guard)
       ? detail?.[e.guard].rules.find((r) => r.id === e.rule && r.custom === e.custom)
       : undefined;
 
@@ -124,14 +127,14 @@ export function LogTab({
       {
         kind: "item",
         label: t.viewRule,
-        onSelect: () => isGuard(e.guard) && actions.viewRule(e.guard, e.rule, e.custom),
+        onSelect: () => isRuleGuard(e.guard) && actions.viewRule(e.guard, e.rule, e.custom),
         disabled: !r,
       },
       { kind: "sep" },
       {
         kind: "item",
         label: t.disableRule,
-        onSelect: () => isGuard(e.guard) && actions.disableRule(e.guard, e.rule, e.custom),
+        onSelect: () => isRuleGuard(e.guard) && actions.disableRule(e.guard, e.rule, e.custom),
         disabled: !r || !r.enabled,
       },
     ];
@@ -144,8 +147,7 @@ export function LogTab({
   }, [count, onCount]);
 
   // 空的时候说清是「这段时间没有」还是「根本不会有」
-  const emptyNote =
-    detail?.redact.mode === "off" && detail.inspect_tools.mode === "off" ? t.bothOff : t.empty;
+  const emptyNote = detail && GUARDS.every((g) => detail[g].mode === "off") ? t.allOff : t.empty;
 
   return (
     <div className="flex flex-col gap-3">
@@ -164,10 +166,11 @@ export function LogTab({
       ) : (
         <>
           {/* 列宽是定死的：窗口再窄，「命中」一列也要留出能读的宽度，放不下就横向滚 */}
-          <Table className="table-fixed min-w-[710px]">
+          <Table className="table-fixed min-w-[722px]">
             <colgroup>
               <col className="w-[92px]" />
-              <col className="w-[84px]" />
+              {/* 「Hidden text」要 88 */}
+              <col className="w-[96px]" />
               <col />
               <col className="w-[84px]" />
               <col className="w-[230px]" />
@@ -187,6 +190,7 @@ export function LogTab({
               {rows.map((e) => {
                 const items = menu(e);
                 const name = ruleName(e.guard, e.rule, e.custom);
+                const where = whereOf(e);
                 return (
                   <RowMenu key={e.id} items={items}>
                     <TableRow className="cursor-default" onClick={() => setOpen(e.request_id)}>
@@ -200,12 +204,11 @@ export function LogTab({
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span className="truncate font-medium">{name}</span>
                           {e.custom && <Badge variant="outline">{lt.custom}</Badge>}
-                          {e.tool && <span className="shrink-0 text-muted-foreground">· {e.tool}</span>}
+                          {where && <span className="shrink-0 text-muted-foreground">· {where}</span>}
                         </div>
                         {/* 值只剩头尾：日志截一张图就能带出去 */}
                         <div className="truncate tw-label text-muted-foreground">
-                          <span className="font-mono">{e.excerpt}</span>
-                          {e.count > 1 && ` · ${t.times(e.count)}`}
+                          <EventDetail e={e} />
                         </div>
                       </TableCell>
                       <TableCell>
