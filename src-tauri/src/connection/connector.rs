@@ -149,14 +149,31 @@ pub async fn test(target: &Target) -> Result<ServerInfo, ConnectError> {
                 .await
                 .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
             Ok(ServerInfo {
+                gateway_addr: remote_gateway(&r.host, &s),
                 core_version: if s.version.is_empty() {
                     hello.core_version
                 } else {
                     s.version
                 },
-                gateway_addr: s.gateway_addr,
             })
         }
+    }
+}
+
+/// 客户端连服务器网关用的地址：**这台电脑拨通控制端口的那个主机名**，加上网关的端口。
+///
+/// core 自己报的 `gateway_addr` 是它绑的地址（常常是 `0.0.0.0:8788`），别的机器照抄
+/// 连不上；它也看不见 NAT、端口转发、域名。而拨控制端口的那个主机名刚刚被证明从这里
+/// 连得通。`gateway_reachable`（core 按网卡列的地址）只在网关没报地址时兜底
+fn remote_gateway(host: &str, s: &tw_api::Status) -> Option<String> {
+    let port = s
+        .gateway_addr
+        .as_deref()
+        .and_then(|a| a.rsplit_once(':'))
+        .and_then(|(_, p)| p.parse::<u16>().ok());
+    match port {
+        Some(port) => Some(display_addr(host.trim_matches(['[', ']']), port)),
+        None => s.gateway_reachable.first().cloned(),
     }
 }
 
@@ -229,6 +246,35 @@ fn link_error(e: tw_link::LinkError, addr: &str) -> ConnectError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn status(gateway: Option<&str>, reachable: &[&str]) -> tw_api::Status {
+        serde_json::from_value(serde_json::json!({
+            "api_version": tw_api::CONTROL_API_VERSION, "version": "x", "pid": 1,
+            "gateway_addr": gateway, "config_path": "/x", "clients": 0, "providers": 0,
+            "uptime_secs": 0, "in_flight": 0,
+            "remote_control": { "enabled": true, "addr": null, "allow_from": [], "reachable": [] },
+            "gateway_reachable": reachable,
+        }))
+        .unwrap()
+    }
+
+    /// 网关绑在 0.0.0.0 上：客户端要连的是拨通控制端口的那个主机名，不是 0.0.0.0
+    #[test]
+    fn the_gateway_address_uses_the_host_that_was_dialled() {
+        let s = status(Some("0.0.0.0:8788"), &["192.168.1.20:8788"]);
+        assert_eq!(
+            remote_gateway("nas.local", &s).as_deref(),
+            Some("nas.local:8788")
+        );
+        assert_eq!(remote_gateway("::1", &s).as_deref(), Some("[::1]:8788"));
+        // 安全模式下网关没有地址：用 core 列的那几个兜底，一个都没有就不说
+        let none = status(None, &["192.168.1.20:8788"]);
+        assert_eq!(
+            remote_gateway("h", &none).as_deref(),
+            Some("192.168.1.20:8788")
+        );
+        assert_eq!(remote_gateway("h", &status(None, &[])), None);
+    }
 
     #[test]
     fn ipv6_addresses_get_brackets() {
