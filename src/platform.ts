@@ -8,7 +8,7 @@
  * 不在应用里时（浏览器直接打开、隔离预览）是 `"other"` —— 那些地方不该出现
  * 任何按平台分叉的东西。
  */
-export type Platform = "macos" | "windows" | "other";
+export type Platform = "macos" | "windows" | "linux" | "other";
 
 declare global {
   interface Window {
@@ -19,12 +19,15 @@ declare global {
 
 export const platform: Platform =
   typeof window !== "undefined" &&
-  (window.__TW_PLATFORM__ === "macos" || window.__TW_PLATFORM__ === "windows")
+  (window.__TW_PLATFORM__ === "macos" ||
+    window.__TW_PLATFORM__ === "windows" ||
+    window.__TW_PLATFORM__ === "linux")
     ? window.__TW_PLATFORM__
     : "other";
 
 export const isMac = platform === "macos";
 export const isWindows = platform === "windows";
+export const isLinux = platform === "linux";
 
 /**
  * 挂到 `<html data-platform>` 上，给只能在 CSS 里分的东西用 —— 字号、字体栈
@@ -39,7 +42,8 @@ if (typeof document !== "undefined") {
 
 /**
  * 主修饰键。macOS 上是 ⌘；Windows 上 `metaKey` 是 Win 键，那个键按下去
- * 系统先拿走了，应用收不到 —— 对应的是 Ctrl。
+ * 系统先拿走了，应用收不到 —— 对应的是 Ctrl。Linux 同 Windows：Super 键归
+ * 桌面（GNOME 的活动概览、KDE 的启动器），应用的快捷键一律是 Ctrl。
  *
  * 判定和提示里的键帽都从这里取，两处才不会一处说 ⌘ 一处认 Ctrl。
  * **另一个修饰键必须没按**：Windows 上 Ctrl+Win 是切虚拟桌面，macOS 上

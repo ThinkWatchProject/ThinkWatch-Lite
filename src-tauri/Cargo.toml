@@ -18,7 +18,18 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+# **默认特性里去掉了 `dbus`**，其余照抄 tauri 的默认。那一项让 tao 自己监听
+# portal 的深浅色，并在系统切换时无条件改掉整个进程的外观 —— 用户强制选的
+# 那一档会被冲掉。Linux 的跟随系统由 `theme.rs` 自己做
+tauri = { version = "2", default-features = false, features = [
+    "wry",
+    "compression",
+    "common-controls-v6",
+    "dynamic-acl",
+    "x11",
+    "macos-private-api",
+    "tray-icon",
+] }
 # 在默认浏览器里打开授权页
 tauri-plugin-opener = "2"
 # 浏览器里授权完成之后，那一页把应用带回前台（`thinkwatch://`）
@@ -94,8 +105,12 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # 系统通知直接走 freedesktop 的 D-Bus 接口：能原地更新、撤回、点开落到对应页面（见
 # `notices/linux.rs`）。zbus 是 notify-rust 已经带进来的那一份，特性也和它一样，不多编一套；
 # gtk 是 Tauri 自己用的那一份，点通知时拿它把激活令牌交给窗口
+#
+# 跟随系统的深浅色也用这两样（`theme.rs`）：zbus 读 xdg-desktop-portal、听它的变化，
+# 用的是阻塞接口（`blocking-api`，opener 插件本来就开着它）；portal 不在时退回 GTK
+# 自己的主题设置
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5", default-features = false, features = ["async-io"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 gtk = "0.18"
 
 # 开机自启。**Linux 上不用它**：它在那边写的 `Exec=` 不加引号不转义，路径带空格

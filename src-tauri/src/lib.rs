@@ -190,11 +190,8 @@ pub fn run() {
             // **语言最先定。**托盘、通知、窗口都要用它，而它们在下面陆续出现
             let saved = prefs::load(&data_dir());
             i18n::set(i18n::effective(saved.language));
-            // 外观在窗口出现之前就设好，不然会先画一帧系统那一档的颜色。
-            // 跟随系统（`None`）时什么都不做：那本来就是默认行为
-            if saved.theme.is_some() {
-                theme::apply(&handle, saved.theme);
-            }
+            // 外观在窗口出现之前就设好，不然会先画一帧系统那一档的颜色
+            theme::init(&handle, saved.theme);
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);

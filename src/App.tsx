@@ -260,7 +260,7 @@ function describeCore(raw: string): {
  * 那里窗口用的是 Overlay 标题栏（红绿灯浮在内容上），没有一条真的标题栏可以
  * 抓，不给拖拽区窗口就挪不动。
  *
- * Windows 用系统标题栏（决策 10），本来就抓得住。再把内容标成拖拽区的话，
+ * Windows 和 Linux 用系统标题栏（决策 10），本来就抓得住。再把内容标成拖拽区的话，
  * 点一下侧栏空白就会把窗口拖走 —— 在那个平台上这是意外行为，不是便利。
  */
 const drag = isMac ? { "data-tauri-drag-region": true } : {};
@@ -613,7 +613,8 @@ export default function App() {
       // 判 `code` 不判 `key`：macOS 上 ⌥ 会把 s 变成 ß。
       //
       // **只在 macOS 上有。**Windows 上 Ctrl+Alt 在不少键盘布局里就是 AltGr，
-      // 按它是在打字；那边收起源列表用 Ctrl+B（和 VS Code 收侧栏一样），而
+      // 按它是在打字；Linux 上 Ctrl+Alt 加字母常被桌面拿去做全局快捷键。
+      // 那两边收起源列表用 Ctrl+B（和 VS Code 收侧栏一样），而
       // 那一个 `SidebarProvider` 已经在听了 —— 它听的是 Ctrl/⌘+B。
       if (isMac && e.metaKey && e.altKey && !e.ctrlKey && e.code === "KeyS") {
         e.preventDefault();

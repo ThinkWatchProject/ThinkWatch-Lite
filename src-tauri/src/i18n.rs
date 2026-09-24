@@ -111,11 +111,31 @@ pub fn system() -> Lang {
     if let Some(tag) = user_locale() {
         return from_tag(&tag);
     }
-    // **`LANG` 是 unix 的东西。**Windows 上它通常根本不存在，上面那一支答不
-    // 出来时落到这里，而那时英文是唯一诚实的默认。
-    std::env::var("LANG")
-        .map(|l| from_tag(&l))
-        .unwrap_or(Lang::En)
+    // **这几个变量是 unix 的东西。**Windows 上它们通常根本不存在，上面那一支
+    // 答不出来时落到这里，而那时英文是唯一诚实的默认。
+    from_env(|k| std::env::var(k).ok())
+}
+
+/// unix 的语言环境变量，按 POSIX 规定的先后：`LC_ALL` 盖过一切，其次是管
+/// 消息文字的 `LC_MESSAGES`，最后才是 `LANG`。**空值等于没设**（规范如此，
+/// 会话脚本里 `LC_ALL=` 这种写法并不少见）。
+///
+/// `C` / `POSIX` 是「不要本地化」的那一档：直接英文，不再往下找 —— 用户在
+/// 前面那一级明确关掉了语言，不该再去 `LANG` 里翻出一个中文来。
+fn from_env(var: impl Fn(&str) -> Option<String>) -> Lang {
+    let Some(tag) = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .find_map(|k| var(k).filter(|v| !v.is_empty()))
+    else {
+        return Lang::En;
+    };
+    // `C.UTF-8` 也是它
+    let base = tag.split(['.', '@']).next().unwrap_or_default();
+    if base == "C" || base == "POSIX" {
+        Lang::En
+    } else {
+        from_tag(&tag)
+    }
 }
 
 /// 这个用户在 Windows 里选的语言，形如 `zh-CN`。
@@ -150,6 +170,8 @@ pub const PLATFORM: &str = if cfg!(target_os = "macos") {
     "macos"
 } else if cfg!(windows) {
     "windows"
+} else if cfg!(target_os = "linux") {
+    "linux"
 } else {
     "other"
 };
@@ -229,8 +251,40 @@ mod tests {
         assert_eq!(PLATFORM, "macos");
         #[cfg(windows)]
         assert_eq!(PLATFORM, "windows");
-        #[cfg(not(any(target_os = "macos", windows)))]
-        assert_eq!(PLATFORM, "other");
+        #[cfg(target_os = "linux")]
+        assert_eq!(PLATFORM, "linux");
+    }
+
+    /// 按 POSIX 的先后取第一个非空的；`C` / `POSIX` 是英文，不再往下找。
+    #[test]
+    fn the_locale_variables_are_read_in_posix_order() {
+        fn pick(pairs: &[(&str, &str)]) -> Lang {
+            from_env(|k| {
+                pairs
+                    .iter()
+                    .find(|(name, _)| *name == k)
+                    .map(|(_, v)| v.to_string())
+            })
+        }
+        assert_eq!(pick(&[("LANG", "zh_CN.UTF-8")]), Lang::Zh);
+        assert_eq!(
+            pick(&[("LC_MESSAGES", "en_US.UTF-8"), ("LANG", "zh_CN.UTF-8")]),
+            Lang::En
+        );
+        assert_eq!(
+            pick(&[("LC_ALL", "zh_TW.UTF-8"), ("LC_MESSAGES", "en_US.UTF-8")]),
+            Lang::Zh
+        );
+        // 空值等于没设
+        assert_eq!(pick(&[("LC_ALL", ""), ("LANG", "zh_CN.UTF-8")]), Lang::Zh);
+        for c in ["C", "C.UTF-8", "POSIX"] {
+            assert_eq!(
+                pick(&[("LC_ALL", c), ("LANG", "zh_CN.UTF-8")]),
+                Lang::En,
+                "{c}"
+            );
+        }
+        assert_eq!(pick(&[]), Lang::En);
     }
 
     #[test]

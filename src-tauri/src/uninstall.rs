@@ -81,8 +81,11 @@ pub async fn uninstall(
     }
     // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
     // 开机自启项的后果，用户在系统设置里看得见、也删得掉
-    match autostart::launcher(&app).disable() {
+    let launcher = autostart::launcher(&app);
+    match launcher.disable() {
         Ok(_) => log.push(tr!("已取消开机启动", "Launch at login turned off").into()),
+        // 退路按平台说：自启项在哪儿、用户去哪儿关，三处各不相同
+        #[cfg(target_os = "macos")]
         Err(e) => log.push(tr!(
             format!(
                 "未能取消开机启动（{e}）。请在「系统设置 › 通用 › 登录项」中关闭 ThinkWatch Lite。"
@@ -91,6 +94,22 @@ pub async fn uninstall(
                 "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in System Settings › General › Login Items."
             )
         )),
+        #[cfg(windows)]
+        Err(e) => log.push(tr!(
+            format!("未能取消开机启动（{e}）。请在「设置 › 应用 › 启动」中关闭 ThinkWatch Lite。"),
+            format!(
+                "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in Settings › Apps › Startup."
+            )
+        )),
+        // 各家桌面的「开机启动的应用」设置不在同一个地方，文件在哪儿却是确定的
+        #[cfg(target_os = "linux")]
+        Err(e) => {
+            let file = launcher.file().display();
+            log.push(tr!(
+                format!("未能取消开机启动（{e}）。请删除 {file}。"),
+                format!("Launch at login could not be turned off ({e}). Delete {file}.")
+            ))
+        }
     }
     if drop_data {
         let dir = data_dir();
@@ -114,13 +133,18 @@ pub async fn uninstall(
             format!("Data directory kept: {}", data_dir().display())
         ));
     }
-    log.push(
-        tr!(
-            "现可将应用移到废纸篓。",
-            "The app can now be moved to the Trash."
-        )
-        .into(),
+    // 「废纸篓」只是 macOS 的说法；别处是走系统的卸载，或者直接删掉那个文件
+    #[cfg(target_os = "macos")]
+    let last = tr!(
+        "现可将应用移到废纸篓。",
+        "The app can now be moved to the Trash."
     );
+    #[cfg(not(target_os = "macos"))]
+    let last = tr!(
+        "现可卸载或删除应用。",
+        "The app can now be uninstalled or deleted."
+    );
+    log.push(last.into());
     Ok(log)
 }
 

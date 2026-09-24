@@ -19,6 +19,8 @@ export const listenText = messages(
     lanWhat: "本机和所选网卡所在网络中的设备可以连接。",
     all: "所有网卡",
     allWhat: "所有网卡所在网络中的设备均可连接，包括公网和 VPN。",
+    /** 只在 Linux 上接在上面两句后面，理由见用到它的地方。英文那句因此自带开头的空格 */
+    firewall: "本机防火墙（如 firewalld、ufw）可能拦截这个端口的入站连接。",
     nic: "网卡",
     nicOption: (name: string, addr: string) => `${name}　${addr}`,
     /** 配置里写着一张当前枚举不到的网卡：网线拔了、Wi-Fi 断了 */
@@ -43,6 +45,7 @@ export const listenText = messages(
     lanWhat: "This computer and devices on the selected interface's network can connect.",
     all: "Every interface",
     allWhat: "Devices on the network of any interface can connect, including the internet and a VPN.",
+    firewall: " A firewall on this computer, such as firewalld or ufw, may block incoming connections to this port.",
     nic: "Interface",
     nicOption: (name: string, addr: string) => `${name}　${addr}`,
     nicMissing: (name: string) => `${name} (not found right now)`,

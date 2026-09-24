@@ -42,10 +42,10 @@ jobs:
 
   rust:
     name: Rust
-    # macOS: the menu-bar rendering and the client-detection paths are
-    # macOS-specific, and `cargo check` on Linux would be checking code
-    # that never runs. Tauri's Linux deps (webkit2gtk) would also have to
-    # be installed to get there.
+    # macOS, Windows and Linux each get their own job: every platform has
+    # `cfg` branches (menu bar, notifications, theme, login-shell env) that
+    # only its own compiler ever sees. This one also runs `cargo fmt`, once,
+    # since formatting doesn't depend on the platform.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,3 +116,58 @@ jobs:
       # 成立，只有这台机器答得出来。
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # 理由同 Windows 那一档：一个 `#[cfg(target_os = "linux")]` 分支「检查通过」
+  # 和「根本没人编过它」长得一模一样。跟随系统的深浅色（portal）、登录 shell
+  # 的环境、系统通知，这些只在这里编、只在这里测。
+  #
+  # **ubuntu-22.04，不是 latest。**发出去的包在 22.04 上编（glibc 2.35 是支持
+  # 的底线），检查也在同一个系统上做。
+  rust-linux:
+    name: Rust (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      # Tauri v2 在 Debian/Ubuntu 上的系统依赖，照官方的前置清单
+      # （https://v2.tauri.app/start/prerequisites/#linux）；`dbus` 给下面的
+      # `dbus-run-session`
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev dbus
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      # 理由同 macOS 那一档：`tauri.conf.json` 声明包里装着 twcore，而 Tauri
+      # 的 build script 在**编译期**就校验那个文件在不在；接缝测试还要真的
+      # 起它。
+      #
+      # **从钉住的那个 tag 现编，不下载。**core 的发版还没有 Linux 产物，
+      # `fetch-core.sh` 没有这个平台可取。tag 的取法和它一样，编出来的就是
+      # 那一版；等 core 发了 Linux 产物，这一步换回 `fetch-core.sh`。
+      - name: Build the core binary the bundle declares
+        run: |
+          TAG=$(cargo metadata --format-version 1 --manifest-path src-tauri/Cargo.toml \
+            | python3 -c 'import json,re,sys
+          for p in json.load(sys.stdin)["packages"]:
+              if p["name"] == "tw-api":
+                  print(re.search(r"[?&]tag=([^&#]+)", p["source"]).group(1))')
+          cargo install --locked --git https://github.com/ThinkWatchProject/ThinkWatch-Core.git \
+            --tag "$TAG" twcore --root "$RUNNER_TEMP/twcore"
+          cp "$RUNNER_TEMP/twcore/bin/twcore" src-tauri/resources/twcore
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      # **套一层会话总线。**这台机器没有桌面，而有几条测试要真的连 D-Bus
+      # （系统通知的往返、深浅色的 portal）；不套的话通知那条会悄悄跳过自己。
+      # `dbus-run-session` 起一个只活到命令结束的总线，把地址交给它
+      - name: Test
+        run: dbus-run-session -- cargo test --manifest-path src-tauri/Cargo.toml

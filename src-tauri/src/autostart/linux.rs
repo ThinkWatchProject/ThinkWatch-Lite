@@ -112,6 +112,12 @@ impl Autostart {
         })
     }
 
+    /// Where the entry lives, for telling the user which file to delete when
+    /// [`Self::disable`] could not.
+    pub fn file(&self) -> &Path {
+        &self.file
+    }
+
     pub fn disable(&self) -> io::Result<()> {
         match std::fs::remove_file(&self.file) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),

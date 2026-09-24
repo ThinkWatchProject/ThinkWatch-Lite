@@ -314,6 +314,26 @@
   --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
     system-ui, sans-serif;
 }
+/*
+ * **Linux 和 Windows 同一档字号。**GNOME 的界面字体是 11pt（96 DPI 下约
+ * 14.7px），KDE 是 10pt（约 13.3px），14px 落在两者之间；而且那边默认的
+ * Cantarell / Noto Sans 字面比 SF 宽，13px 的正文和 Windows 上一样显得小。
+ *
+ * **按名字点各家桌面的界面字体，不靠 `system-ui`。**WebKitGTK 不把它解析成
+ * 桌面设的界面字体（实测：GTK 的字体改成衬线体，`system-ui` 量出来仍和
+ * `sans-serif` 一样宽），拿到的只是 fontconfig 的默认无衬线体。顺序按「装了
+ * 它就说明是那个桌面」排：Ubuntu 字体几乎只在 Ubuntu 上有，Adwaita Sans 是
+ * GNOME 48 起的界面字体，Cantarell 是之前的，Noto Sans 是 KDE 的。中文**明确
+ * 点名简体**：不点名时 fontconfig 常把汉字落到 Noto Sans CJK JP 上，字形是
+ * 日文的写法。
+ */
+:root[data-platform="linux"] {
+  --fs-title: 16px;
+  --fs-body: 14px;
+  --fs-label: 12px;
+  --font-ui: Ubuntu, "Adwaita Sans", Cantarell, "Noto Sans", "Noto Sans CJK SC", "Source Han Sans SC",
+    "WenQuanYi Micro Hei", system-ui, sans-serif;
+}
 
 body {
   margin: 0;
