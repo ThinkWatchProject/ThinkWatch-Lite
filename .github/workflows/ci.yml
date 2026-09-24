@@ -161,6 +161,7 @@ jobs:
                   print(re.search(r"[?&]tag=([^&#]+)", p["source"]).group(1))')
           cargo install --locked --git https://github.com/ThinkWatchProject/ThinkWatch-Core.git \
             --tag "$TAG" twcore --root "$RUNNER_TEMP/twcore"
+          mkdir -p src-tauri/resources
           cp "$RUNNER_TEMP/twcore/bin/twcore" src-tauri/resources/twcore
 
       - name: Clippy
