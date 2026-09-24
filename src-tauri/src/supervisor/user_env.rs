@@ -7,13 +7,16 @@
 //!   `PATH` 那几个。写在 `~/.zshrc` 里的 `export OPENAI_API_KEY=…` 它看不见
 //!   —— 而那几乎是所有人配环境变量的地方。所以去问用户的登录 shell：以交互式
 //!   登录 shell 跑一次 `env -0`，`.zprofile`、`.zshrc` 都会被读到。
+//! - **Linux**：同一个问题，同一个办法。桌面会话最多读过 `~/.profile`，
+//!   `~/.bashrc`、fish 的 `config.fish` 里的 `export` / `set -x` 从应用菜单
+//!   打开的程序看不见。
 //! - **Windows**：环境来自注册表，但**是应用启动那一刻的**。应用开着时在系统
 //!   设置里改了变量，它和它拉起的 core 都还拿着旧值。所以每次现读注册表。
 //!
 //! **每次起 core 都重新取**，不是应用启动时取一次：core 崩了被重新拉起、或者
 //! 被重启时，拿到的是那一刻的值，而不是应用打开那天的。
 //!
-//! 这个文件只用 `std`、`tokio` 和 `windows-sys`，不引 `crate::` —— Windows 那一支
+//! 这个文件只用 `std`、`tokio`、`libc` 和 `windows-sys`，不引 `crate::` —— Windows 那一支
 //! 要能摘进临时 crate 交叉编译。
 
 /// 取一份，过滤好了，直接交给 `Command::envs`。取不到就是空的：那时 core 仍然
@@ -55,7 +58,7 @@ fn keep(name: &str) -> bool {
         && !PREFIX.iter().any(|p| upper.starts_with(p))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 async fn read() -> Vec<(String, String)> {
     shell::read().await
 }
@@ -65,18 +68,13 @@ async fn read() -> Vec<(String, String)> {
     registry::read()
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
-async fn read() -> Vec<(String, String)> {
-    Vec::new()
-}
-
 /// 夹住 `env -0` 输出的记号。交互式 shell 启动时可能自己打印东西（欢迎语、
 /// 插件的提示），只认两个记号之间的那段。
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(windows, allow(dead_code))]
 const MARK: &str = "__THINKWATCH_ENV_7f3c__";
 
 /// 从 `记号 + env -0 + 记号` 里拆出变量。值里可以有换行，所以用 `-0`。
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(windows, allow(dead_code))]
 fn parse_env0(out: &[u8]) -> Vec<(String, String)> {
     let text = String::from_utf8_lossy(out);
     let Some(start) = text.find(MARK) else {
@@ -95,7 +93,7 @@ fn parse_env0(out: &[u8]) -> Vec<(String, String)> {
         .collect()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 mod shell {
     use std::process::Stdio;
     use std::time::Duration;
@@ -105,10 +103,7 @@ mod shell {
     const WITHIN: Duration = Duration::from_secs(5);
 
     pub async fn read() -> Vec<(String, String)> {
-        let shell = std::env::var("SHELL")
-            .ok()
-            .filter(|s| s.starts_with('/'))
-            .unwrap_or_else(|| "/bin/zsh".into());
+        let shell = login_shell();
         let script = format!(
             "printf %s {m}; /usr/bin/env -0; printf %s {m}",
             m = super::MARK
@@ -132,6 +127,53 @@ mod shell {
                 Vec::new()
             }
         }
+    }
+
+    /// 用哪个 shell：`$SHELL`，没有就问账户数据库（`/etc/passwd`、LDAP 之类，
+    /// `getpwuid` 替我们查），再没有才按平台猜。
+    ///
+    /// **不能一律猜 zsh。**那是 macOS 的默认；Linux 上多数人用 bash，有的
+    /// 发行版根本没装 zsh —— 猜错了就是起不来，一个变量都拿不到。
+    fn login_shell() -> String {
+        std::env::var("SHELL")
+            .ok()
+            .filter(|s| s.starts_with('/'))
+            .or_else(from_passwd)
+            .unwrap_or_else(|| {
+                if cfg!(target_os = "macos") {
+                    "/bin/zsh".into()
+                } else {
+                    "/bin/sh".into()
+                }
+            })
+    }
+
+    /// 这个用户在账户数据库里登记的登录 shell。
+    pub(super) fn from_passwd() -> Option<String> {
+        // `getpwuid_r` 而不是 `getpwuid`：后者返回一块全进程共用的静态内存，
+        // 别的线程同时查一次就把它改掉了
+        let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::passwd = std::ptr::null_mut();
+        let mut buf = vec![0 as libc::c_char; 4096];
+        // SAFETY: 缓冲区和给出的长度一致；成功时 `pw` 里的指针都指进 `buf`，
+        // 下面在 `buf` 还活着的时候就把字符串拷了出来。
+        let rc = unsafe {
+            libc::getpwuid_r(
+                libc::getuid(),
+                &mut pw,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut out,
+            )
+        };
+        if rc != 0 || out.is_null() || pw.pw_shell.is_null() {
+            return None;
+        }
+        // SAFETY: 同上，`pw_shell` 指进 `buf`，以 NUL 结尾
+        let shell = unsafe { std::ffi::CStr::from_ptr(pw.pw_shell) }
+            .to_string_lossy()
+            .into_owned();
+        shell.starts_with('/').then_some(shell)
     }
 }
 
@@ -286,7 +328,7 @@ mod tests {
 
     /// 真跑一次登录 shell。**记号之间真的拿到了东西**，而不是超时或者被
     /// shell 的启动输出搅乱之后返回空的 —— 那样 `load` 也不会报错，只是悄悄没用。
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_login_shell_reports_its_environment() {
         let vars = shell::read().await;
@@ -294,5 +336,14 @@ mod tests {
             vars.iter().any(|(k, v)| k == "HOME" && !v.is_empty()),
             "{vars:?}"
         );
+    }
+
+    /// 账户数据库里这个用户有一个登录 shell，而且是绝对路径 —— CI 和开发机
+    /// 上都是。查不到的话 `$SHELL` 不在时就只能靠猜。
+    #[cfg(unix)]
+    #[test]
+    fn the_account_database_names_a_login_shell() {
+        let shell = shell::from_passwd().expect("getpwuid_r found no shell");
+        assert!(shell.starts_with('/'), "{shell}");
     }
 }

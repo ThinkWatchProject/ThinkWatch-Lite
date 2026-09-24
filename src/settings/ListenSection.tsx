@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
+import { isLinux } from "@/platform";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import type { CoreStatus, ListenSave, ListenView, NicView } from "@/types";
 import { FormActions, FormRow, FormRows, NumberInput, intIn } from "./form";
@@ -154,6 +155,13 @@ export function ListenSection({
   }
 
   const what = draft.level === "local" ? t.localWhat : draft.level === "lan" ? t.lanWhat : t.allWhat;
+  /**
+   * **防火墙那一句只在 Linux 上说。**macOS 和 Windows 的防火墙在应用第一次
+   * 对外监听时会弹窗问用户放不放行，用户当场就知道有这么一道；Fedora、
+   * openSUSE 默认开着的 firewalld（以及手动开了的 ufw）不问，直接丢包 ——
+   * 另一台机器上只看到连接超时，而界面这边一切正常。
+   */
+  const scopeHint = exposed && isLinux ? `${what}${t.firewall}` : what;
 
   return (
     <section>
@@ -163,7 +171,7 @@ export function ListenSection({
           <span className="pt-1 font-mono tw-body">{status?.gateway_addr ?? t.notListening}</span>
         </FormRow>
 
-        <FormRow label={t.scope} hint={what}>
+        <FormRow label={t.scope} hint={scopeHint}>
           <Segmented<Level>
             label={t.scope}
             value={draft.level}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
-import { isWindows } from "@/platform";
+import { isLinux, isMac, isWindows } from "@/platform";
 
 /** 句中要套一层组件（悬浮说明、加粗）的那一段 */
 type Wrap = (text: string) => ReactNode;
@@ -12,7 +12,9 @@ export const configText = messages(
     autostartLabel: "开机时自动启动",
     autostartNote: isWindows
       ? "登录后仅在通知区域显示图标，不打开窗口。"
-      : "登录后仅在菜单栏显示图标，不打开窗口。",
+      : isLinux
+        ? "登录后仅在系统托盘显示图标，不打开窗口。"
+        : "登录后仅在菜单栏显示图标，不打开窗口。",
 
     // 关于
     aboutTitle: "关于",
@@ -37,7 +39,8 @@ export const configText = messages(
     uninstallTitle: "完全卸载",
     uninstallIntro: (em: Wrap) => (
       <>
-        还原所有已接管的客户端，并取消开机启动。{em("直接将应用移到废纸篓不会执行这些操作")}，已接管的客户端将指向一个无人监听的端口。
+        还原所有已接管的客户端，并取消开机启动。
+        {em(isMac ? "直接将应用移到废纸篓不会执行这些操作" : "通过系统卸载或直接删除应用不会执行这些操作")}，已接管的客户端将指向一个无人监听的端口。
       </>
     ),
     uninstall: "卸载…",
@@ -52,7 +55,9 @@ export const configText = messages(
     autostartLabel: "Launch automatically at login",
     autostartNote: isWindows
       ? "At login, only the icon appears in the notification area; no window opens."
-      : "At login, only the icon appears in the menu bar; no window opens.",
+      : isLinux
+        ? "At login, only the icon appears in the system tray; no window opens."
+        : "At login, only the icon appears in the menu bar; no window opens.",
 
     aboutTitle: "About",
     version: "Version",
@@ -76,7 +81,7 @@ export const configText = messages(
     uninstallIntro: (em: Wrap) => (
       <>
         Restores every connected client and turns off launch at login.{" "}
-        {em("Moving the app straight to the Trash does neither")}, leaving connected clients pointed at a port
+        {em(isMac ? "Moving the app straight to the Trash does neither" : "Uninstalling or deleting the app through the system does neither")}, leaving connected clients pointed at a port
         where nothing is listening.
       </>
     ),

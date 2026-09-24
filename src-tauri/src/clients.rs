@@ -66,7 +66,7 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
 
 /// 把文件管理器打开到这个文件上，并且**选中它**。
 ///
-/// 两个平台各有各的说法，而且**这段代码在 Windows 上编得过、只在运行时失败**
+/// 每个平台各有各的说法，而且**这段代码在 Windows 上编得过、只在运行时失败**
 /// —— `open` 那个命令在那里根本不存在，而类型系统对此无话可说。这类坏法 CI
 /// 也抓不到，它只会在用户点下那个按钮的时候出现。
 #[cfg(target_os = "macos")]
@@ -130,7 +130,7 @@ fn explorer() -> std::path::PathBuf {
 
 /// 只交给文件管理器一个绝对路径。路径来自 core，本来就是绝对的；这一道是为了
 /// 一个以 `-` 开头的字符串永远不会被 `open` 当成选项
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn absolute(path: &str) -> Result<(), String> {
     if std::path::Path::new(path).is_absolute() {
         Ok(())
@@ -143,7 +143,43 @@ fn absolute(path: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+/// Linux 上交给 opener 插件：它问 `org.freedesktop.FileManager1.ShowItems`
+/// —— Nautilus、Dolphin、Nemo、Thunar 都实现了这个接口，打开所在目录并选中
+/// 那个文件。
+///
+/// **插件自己的退路不作数。**`ShowItems` 失败时它改问 portal 的
+/// `OpenDirectory`，但那个方法要的是一个文件描述符（`h`），插件传的是 URI
+/// 字符串，签名对不上，每次都会被拒。所以两样都失败时由这里用 `xdg-open`
+/// 打开所在目录：选不中那个文件，但至少到了那里。
+#[cfg(target_os = "linux")]
+fn reveal(path: &str) -> Result<(), String> {
+    absolute(path)?;
+    let Err(first) = tauri_plugin_opener::reveal_item_in_dir(path) else {
+        return Ok(());
+    };
+    tracing::warn!(%path, "FileManager1.ShowItems failed, opening the folder instead: {first}");
+    let dir = std::path::Path::new(path)
+        .parent()
+        .unwrap_or(std::path::Path::new("/"));
+    // **写全路径**，理由同 macOS 的 `open`。不就地等它：有的桌面上 xdg-open
+    // 要等文件管理器退出才返回。等在一条单独的线程上，只为收尸 —— 不等的话
+    // 每点一次就留一个僵尸进程，直到应用退出
+    std::process::Command::new("/usr/bin/xdg-open")
+        .arg(dir)
+        .spawn()
+        .map(|mut child| {
+            std::thread::spawn(move || child.wait());
+        })
+        .map_err(|e| {
+            tr!(
+                format!("无法在文件管理器中显示 {path}：{e}"),
+                format!("{path} could not be shown in the file manager: {e}")
+            )
+            .to_string()
+        })
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 fn reveal(path: &str) -> Result<(), String> {
     Err(tr!(
         format!("这个平台上还不能打开文件管理器：{path}"),
