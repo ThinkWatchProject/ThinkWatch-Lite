@@ -82,9 +82,8 @@ jobs:
   #
   # 不重复跑 `cargo fmt`：格式和平台无关，跑两遍只是慢一倍。
   #
-  # **还打不出安装包。**托盘、通知、自启这些还没有 Windows 的实现（见
-  # `.claude/windows.md` 的第 2 期）。这个任务先把「编得过、测得过、连得上」
-  # 钉住，那三样做一件进来一件。
+  # **只编、只测，不打包。**安装包在 release.yml 里打；改了打包流程，推一个
+  # `rehearse/` 开头的分支先演练。这个任务钉住的是「编得过、测得过、连得上」。
   rust-windows:
     name: Rust (Windows)
     runs-on: windows-latest
