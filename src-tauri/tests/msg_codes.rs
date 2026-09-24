@@ -52,7 +52,8 @@ fn manifest() -> Manifest {
 /// 这里只认这一种写法，写法变了下面的断言会先失败。
 fn translated() -> BTreeSet<String> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/i18n/core.i18n.ts");
-    let src = std::fs::read_to_string(path).unwrap();
+    // Windows 上检出的是 CRLF
+    let src = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
     let start = src
         .find("\nconst ZH: Record<string, Say> = {\n")
         .expect("core.i18n.ts 里找不到 ZH 表");
