@@ -87,7 +87,7 @@ export function Extensions({
               <col className="w-[148px]" />
               <col className="w-[128px]" />
               <col />
-              <col className="w-[76px]" />
+              <col className="w-[88px]" />
               <col className="w-9" />
             </colgroup>
             <TableHeader>
@@ -145,7 +145,7 @@ export function Extensions({
               <col className="w-[200px]" />
               <col className="w-[148px]" />
               <col />
-              <col className="w-[76px]" />
+              <col className="w-[88px]" />
               <col className="w-9" />
             </colgroup>
             <TableHeader>

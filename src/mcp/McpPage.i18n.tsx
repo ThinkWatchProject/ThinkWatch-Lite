@@ -20,6 +20,7 @@ export const mcpText = messages(
     /** 各级发现几项：「1 项高风险」 */
     levelCount: { high: "项高风险", medium: "项中风险", low: "项低风险" } as Record<string, string>,
     clean: "未发现问题",
+    unreadableCount: "个文件无法读取",
     scannedAt: (files: number, time: string) => `已扫描 ${files} 个文件 · ${time}`,
     newDot: "有新发现",
 
@@ -85,7 +86,7 @@ export const mcpText = messages(
     // 发现
     newFindings: (n: number, em: Em) => <>{em(`${n} 项新发现`)}，此前扫描时不存在。</>,
     markRead: "标为已读",
-    scanned: (files: number) => `已扫描 ${files} 个文件：客户端配置、技能、钩子、斜杠命令、subagent 与项目指令。`,
+    scope: "扫描范围：客户端配置、技能、钩子、斜杠命令、subagent 与项目指令。",
     unreadable: (n: number) => `${n} 个文件无法读取，本次未扫描`,
     finding: "发现",
     levels: { high: "高", medium: "中", low: "低" } as Record<string, string>,
@@ -105,6 +106,7 @@ export const mcpText = messages(
 
     levelCount: { high: "high", medium: "medium", low: "low" },
     clean: "No issues found",
+    unreadableCount: "unreadable",
     scannedAt: (files: number, time: string) => `${plural(files, "file", "files")} scanned · ${time}`,
     newDot: "New findings",
 
@@ -171,8 +173,7 @@ export const mcpText = messages(
       </>
     ),
     markRead: "Mark as read",
-    scanned: (files: number) =>
-      `Scanned ${plural(files, "file", "files")}: client configuration, skills, hooks, slash commands, subagents and project instructions.`,
+    scope: "Scanned: client configuration, skills, hooks, slash commands, subagents and project instructions.",
     unreadable: (n: number) =>
       n === 1 ? "1 file could not be read and was not scanned" : `${n} files could not be read and were not scanned`,
     finding: "Finding",

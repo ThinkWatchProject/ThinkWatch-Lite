@@ -11,7 +11,7 @@ import { TableCell, TableRow } from "@/ui/table";
 
 /** 行上的键盘焦点。不用一圈焦点框：表格行一圈框会压到上下两条表格线 */
 export const ROW_FOCUS =
-  "outline-none focus-visible:bg-muted/70 focus-visible:shadow-[inset_2px_0_0_0_var(--ring)]";
+  "outline-none focus-visible:bg-foreground/[0.045] focus-visible:shadow-[inset_2px_0_0_0_color-mix(in_oklab,var(--foreground)_60%,transparent)]";
 
 /** 可以用键盘走到、打开的一行。`open` 不给就只能走到，不能打开 */
 export function rowNav(open?: () => void) {

@@ -220,6 +220,14 @@ function Summary({ of }: { of: Scan }) {
           return n > 0 ? <SummaryItem key={l} lead={<StatusDot tone={levelTone(l)} />} value={n} label={t.levelCount[l]} /> : null;
         })
       )}
+      {/* 有文件没读到时，「未发现问题」只对读到的那些成立：一起说 */}
+      {of.report.unreadable.length > 0 && (
+        <SummaryItem
+          lead={<StatusDot tone="warn" />}
+          value={of.report.unreadable.length}
+          label={t.unreadableCount}
+        />
+      )}
       <span aria-hidden className="h-3 w-px bg-border" />
       <span className="whitespace-nowrap">{t.scannedAt(of.report.scanned, clock(of.at))}</span>
     </>

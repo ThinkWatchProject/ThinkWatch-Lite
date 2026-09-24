@@ -86,7 +86,7 @@ export function Findings({
           title={t.noIssues}
           description={
             <>
-              {t.scanned(data.scanned)}
+              {t.scope}
               <br />
               {t.checked}
             </>
@@ -96,7 +96,8 @@ export function Findings({
         <>
           <Table className="table-fixed min-w-[520px]">
             <colgroup>
-              <col className="w-[76px]" />
+              {/* 「● Medium」要 67 */}
+              <col className="w-[88px]" />
               <col />
               <col className="w-[156px]" />
               <col className="w-9" />
@@ -151,7 +152,7 @@ export function Findings({
               })}
             </TableBody>
           </Table>
-          <p className="tw-label text-muted-foreground">{t.scanned(data.scanned)}</p>
+          <p className="tw-label text-muted-foreground">{t.scope}</p>
         </>
       )}
     </div>
