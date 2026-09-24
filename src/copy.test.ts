@@ -24,7 +24,14 @@ function copyFiles(dir: string): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     if (e.isDirectory()) out.push(...copyFiles(p));
-    else if (e.name.endsWith(".tsx") || e.name === "labels.ts" || e.name.endsWith(".i18n.ts")) out.push(p);
+    else if (
+      e.name.endsWith(".tsx") ||
+      e.name === "labels.ts" ||
+      e.name.endsWith(".i18n.ts") ||
+      // core 消息码的中文：界面和系统通知都显示它
+      e.name === "core.zh.json"
+    )
+      out.push(p);
   }
   return out;
 }
@@ -33,7 +40,9 @@ function copyFiles(dir: string): string[] {
 function visible(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+    .replace(/^\s*\/\/.*$/gm, "")
+    // core.zh.json 里分节的标题（`"// ── l1：…": ""`）也是注释
+    .replace(/^\s*"\/\/.*$/gm, "");
 }
 
 const files = copyFiles(SRC).map((f) => ({

@@ -16,6 +16,7 @@ pub mod call;
 pub mod chatgpt;
 pub mod clients;
 pub mod control;
+pub mod core_text;
 pub mod dashboard;
 pub mod diagnostics;
 #[cfg(target_os = "macos")]

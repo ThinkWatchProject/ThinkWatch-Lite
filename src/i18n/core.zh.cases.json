@@ -1,0 +1,228 @@
+[
+  {
+    "msg": {
+      "code": "l1.tcp.refused",
+      "args": {
+        "addr": "127.0.0.1:1080"
+      },
+      "text": "127.0.0.1:1080 refused the connection: nothing is listening on that port."
+    },
+    "zh": "127.0.0.1:1080 拒绝连接，该端口上没有服务在监听。请检查地址和端口。"
+  },
+  {
+    "msg": {
+      "code": "config.rejected_at",
+      "args": {
+        "stage": "schema",
+        "line": "12",
+        "detail": "unknown field `foo`"
+      },
+      "text": "line 12: schema error: unknown field `foo`"
+    },
+    "zh": "配置第 12 行有字段错误：unknown field `foo`"
+  },
+  {
+    "msg": {
+      "code": "config.rejected",
+      "args": {
+        "stage": "nonsense",
+        "detail": "x"
+      },
+      "text": "nonsense error: x"
+    },
+    "zh": "nonsense error: x"
+  },
+  {
+    "msg": {
+      "code": "gw.hidden_text.refused_tool_result",
+      "args": {
+        "kinds": "tag, bidi"
+      },
+      "text": "A tool result in this request contains invisible characters that can hide instructions from a reader (tag, bidi), so the request was not sent."
+    },
+    "zh": "请求中的工具结果含有可向读者隐藏指令的不可见字符（Unicode 标签字符、双向控制符），请求未发出。"
+  },
+  {
+    "msg": {
+      "code": "gw.content.refused",
+      "args": {
+        "rule": "jailbreak",
+        "name": "Jailbreak",
+        "excerpt": "a jailbreak"
+      },
+      "text": "Content rule “Jailbreak” matched this request (“a jailbreak”), so it was not sent."
+    },
+    "zh": "请求命中内容规则「越狱」（「a jailbreak」），未发出。"
+  },
+  {
+    "msg": {
+      "code": "gw.content.refused",
+      "args": {
+        "rule": "项目代号",
+        "name": "项目代号",
+        "excerpt": "project falcon"
+      },
+      "text": "Content rule “项目代号” matched this request (“project falcon”), so it was not sent."
+    },
+    "zh": "请求命中内容规则「项目代号」（「project falcon」），未发出。"
+  },
+  {
+    "msg": {
+      "code": "gw.toolcall.cut",
+      "args": {
+        "upstream": "relay",
+        "tool": "Bash",
+        "rule": "curl-pipe-sh",
+        "name": "Download and run",
+        "why": "Downloads and runs it"
+      },
+      "text": "The Bash call returned by upstream `relay` matched rule “Download and run” (Downloads and runs it), so the response was cut off."
+    },
+    "zh": "上游「relay」返回的 Bash 调用命中规则「下载即执行」（下载后直接执行，执行的内容由远端决定且无法预先查看），已切断响应。"
+  },
+  {
+    "msg": {
+      "code": "gw.toolcall.cut",
+      "args": {
+        "upstream": "relay",
+        "tool": "Bash",
+        "rule": "删除集群资源",
+        "name": "删除集群资源",
+        "why": ""
+      },
+      "text": "The Bash call returned by upstream `relay` matched rule “删除集群资源”, so the response was cut off."
+    },
+    "zh": "上游「relay」返回的 Bash 调用命中规则「删除集群资源」，已切断响应。"
+  },
+  {
+    "msg": {
+      "code": "control.proxy_in_use",
+      "args": {
+        "proxy": "hk",
+        "upstreams": "`官方`, `中转`"
+      },
+      "text": "Proxy `hk` is still used by upstreams `官方`, `中转`; unlink it first."
+    },
+    "zh": "代理「hk」仍被上游「官方」、「中转」使用，请先解除关联再删除。"
+  },
+  {
+    "msg": {
+      "code": "config.credential.token_without_oauth",
+      "args": {
+        "header": "authorization"
+      },
+      "text": "Header `authorization` uses {{access_token}}, but this upstream has no oauth."
+    },
+    "zh": "请求头「authorization」使用了 {{access_token}}，但该上游未配置 oauth。"
+  },
+  {
+    "msg": {
+      "code": "engine.compare.empty",
+      "args": {
+        "field": "input_tokens"
+      },
+      "text": "condition input_tokens: the comparison is empty."
+    },
+    "zh": "条件 input_tokens 写法有误：比较式为空。"
+  },
+  {
+    "msg": {
+      "code": "engine.compare.empty",
+      "args": {
+        "field": "input_tokens",
+        "rule": "长上下文"
+      },
+      "text": "rule `长上下文`: condition input_tokens: the comparison is empty."
+    },
+    "zh": "规则「长上下文」：条件 input_tokens 写法有误：比较式为空。"
+  },
+  {
+    "msg": {
+      "code": "gw.oauth.not_configured",
+      "args": {
+        "upstream": "官方"
+      },
+      "text": "The credential for upstream `官方` could not be obtained: upstream `官方` has no OAuth configured."
+    },
+    "zh": "无法获取上游「官方」的凭据：上游「官方」未配置 OAuth。"
+  },
+  {
+    "msg": {
+      "code": "gw.oauth.not_configured",
+      "args": {
+        "upstream": "官方"
+      },
+      "text": "upstream `官方` has no OAuth configured."
+    },
+    "zh": "上游「官方」未配置 OAuth。"
+  },
+  {
+    "msg": {
+      "code": "control.zai_login.refused",
+      "args": {
+        "step": "wait_authorization"
+      },
+      "text": "Waiting for the authorization: The authorization was refused."
+    },
+    "zh": "等待授权时失败：授权被拒绝。"
+  },
+  {
+    "msg": {
+      "code": "control.zai_login.refused",
+      "args": {
+        "step": "not_a_step"
+      },
+      "text": "Something: The authorization was refused."
+    },
+    "zh": "授权被拒绝。"
+  },
+  {
+    "msg": {
+      "code": "l1.dns.no_records",
+      "args": {},
+      "text": "resolved to nothing"
+    },
+    "zh": "resolved to nothing"
+  },
+  {
+    "msg": {
+      "code": "gw.something.brand.new",
+      "args": {},
+      "text": "Something new happened."
+    },
+    "zh": "Something new happened."
+  },
+  {
+    "msg": {
+      "code": "scan.rule",
+      "args": {
+        "kind": "hooks",
+        "rule": "curl-pipe-sh"
+      },
+      "text": "hook matched rule “Download and run”"
+    },
+    "zh": "hook 中命中规则「下载即执行」"
+  },
+  {
+    "msg": {
+      "code": "scan.rule",
+      "args": {
+        "kind": "instructions",
+        "rule": "my-own-rule"
+      },
+      "text": "project instructions matched rule “my-own-rule”"
+    },
+    "zh": "project instructions matched rule “my-own-rule”"
+  },
+  {
+    "msg": {
+      "code": "gw.upstream.unreachable",
+      "args": {
+        "url": "https://chatgpt.com/backend-api/wham/usage",
+        "backend": "chatgpt"
+      },
+      "text": "The ChatGPT backend could not be reached: Could not connect to https://chatgpt.com/backend-api/wham/usage; check the address, the network and the proxy settings."
+    },
+    "zh": "无法连接 ChatGPT 后端：无法连接上游 https://chatgpt.com/backend-api/wham/usage，请检查接口地址、网络和代理设置。"
+  }
+]

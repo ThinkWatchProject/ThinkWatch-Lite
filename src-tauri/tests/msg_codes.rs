@@ -1,7 +1,7 @@
 //! 界面的译文表和钉着的那版 core 发得出的消息码对得上。
 //!
 //! core 在 `tw_api::MSG_CODES` 里列出它发得出的每一个码。界面按码翻译
-//! （`src/i18n/core.i18n.ts` 的 `ZH` 表），查不到就整句退回英文 —— 那条退路
+//! （`src/i18n/core.zh.json`，界面和系统通知共用），查不到就整句退回英文 —— 那条退路
 //! 让一个漏翻的码不会坏掉任何东西，也正因为如此没有人会发现它漏了。这条测试
 //! 在升级 core 的那个 PR 上把两个方向都拦住：
 //!
@@ -48,25 +48,21 @@ fn manifest() -> Manifest {
     m
 }
 
-/// `ZH` 表的键。表是一个对象字面量，一个码一行、两格缩进、带引号 ——
-/// 这里只认这一种写法，写法变了下面的断言会先失败。
+/// 译文表（`src/i18n/core.zh.json` 的 `messages`）里的码。界面和系统通知读的
+/// 都是这一张。`//` 开头的键是分节的标题，不是码
 fn translated() -> BTreeSet<String> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/i18n/core.i18n.ts");
-    // Windows 上检出的是 CRLF
-    let src = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
-    let start = src
-        .find("\nconst ZH: Record<string, Say> = {\n")
-        .expect("core.i18n.ts 里找不到 ZH 表");
-    let body = &src[start..];
-    let end = body.find("\n};\n").expect("ZH 表没有结尾");
-    let keys: BTreeSet<String> = body[..end]
-        .lines()
-        .filter_map(|l| l.strip_prefix("  \""))
-        .filter_map(|l| l.split_once('"'))
-        .filter(|(_, rest)| rest.starts_with(':'))
-        .map(|(k, _)| k.to_string())
+    #[derive(serde::Deserialize)]
+    struct Table {
+        messages: std::collections::BTreeMap<String, String>,
+    }
+    let t: Table =
+        serde_json::from_str(include_str!("../../src/i18n/core.zh.json")).expect("core.zh.json");
+    let keys: BTreeSet<String> = t
+        .messages
+        .into_keys()
+        .filter(|k| !k.starts_with("//"))
         .collect();
-    assert!(keys.len() > 100, "ZH 表几乎是空的，多半是写法变了");
+    assert!(keys.len() > 100, "译文表几乎是空的");
     keys
 }
 
@@ -77,7 +73,7 @@ fn every_code_core_emits_has_a_chinese_sentence() {
     let missing: Vec<_> = m.translate.difference(&zh).collect();
     assert!(
         missing.is_empty(),
-        "这些码 core 发得出、ZH 表里没有，中文界面上会是英文：{missing:#?}"
+        "这些码 core 发得出、译文表里没有，中文界面上会是英文：{missing:#?}"
     );
 }
 
