@@ -577,11 +577,8 @@ const ZH: Record<string, Say> = {
     inUpstream(a, `请求头「${a.header}」重复（请求头名称不区分大小写）。`),
   "config.credential.bad_header_value": (a) =>
     inUpstream(a, `请求头「${a.header}」的值不能包含换行，且不超过 ${a.max} 个字符。`),
-  "config.credential.unknown_placeholder": (a) =>
-    inUpstream(
-      a,
-      `请求头「${a.header}」中的 ${a.placeholder} 无法识别，只支持 {{access_token}} 和 {{client}}。`,
-    ),
+  "config.credential.unrecognized_placeholder": (a) =>
+    inUpstream(a, `请求头「${a.header}」中的 ${a.placeholder} 无法识别，只支持 {{access_token}}。`),
   "config.credential.token_without_oauth": (a) =>
     inUpstream(a, `请求头「${a.header}」使用了 {{access_token}}，但该上游未配置 oauth。`),
   "config.credential.key_and_auth_header": (a) =>
