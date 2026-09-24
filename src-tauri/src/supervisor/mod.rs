@@ -15,6 +15,7 @@ use tokio::sync::{Mutex, watch};
 
 pub mod health;
 pub mod policy;
+pub mod user_env;
 
 pub use health::{HealthTracker, Verdict};
 pub use policy::{Decision, RestartPolicy, should_interrupt};
@@ -127,6 +128,10 @@ pub struct Supervisor {
     /// 两者分开是因为对 `wait()` 来说它们还是长得一模一样 —— 而一个应该
     /// 立刻重起，一个应该一个都不再起。
     stopping: AtomicBool,
+    /// 起 core 之前补上用户配的环境变量。见 [`user_env`]。
+    ///
+    /// 测试里不开：那要真去跑一次用户的登录 shell。
+    user_env: bool,
 }
 
 /// 强杀之后再给它这么久把状态翻过来。**不是在等它死** —— 那一下已经发出去了
@@ -151,7 +156,14 @@ impl Supervisor {
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
             stopping: AtomicBool::new(false),
+            user_env: false,
         }
+    }
+
+    /// 每次起 core 都补上用户配的环境变量。
+    pub fn with_user_env(mut self) -> Self {
+        self.user_env = true;
+        self
     }
 
     /// 现在是什么状态。
@@ -375,6 +387,10 @@ impl Supervisor {
         let started = Instant::now();
 
         let mut cmd = tokio::process::Command::new(&self.binary);
+        if self.user_env {
+            // 先补这些，下面的凭据再覆盖 —— 虽然 `TW_*` 本来就不会被带过来
+            cmd.envs(user_env::load().await);
+        }
         cmd.args(&args)
             // 控制面的凭据**走环境变量交过去，不进 argv** —— Windows 上任意
             // 同用户进程都看得见别人的命令行，而这串东西是那个平台上控制面

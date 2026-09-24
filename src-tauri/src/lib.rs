@@ -1808,16 +1808,19 @@ pub fn run() {
                     }
                 })
             };
-            let sup = Arc::new(Supervisor::new(
-                located
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|_| PathBuf::from(CORE_EXE)),
-                None,
-                ready,
-                at.clone(),
-                token.clone(),
-            ));
+            let sup = Arc::new(
+                Supervisor::new(
+                    located
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or_else(|_| PathBuf::from(CORE_EXE)),
+                    None,
+                    ready,
+                    at.clone(),
+                    token.clone(),
+                )
+                .with_user_env(),
+            );
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(Updates::default());

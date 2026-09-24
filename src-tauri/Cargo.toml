@@ -102,6 +102,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Registry",
     # 跟随系统的语言
     "Win32_Globalization",
+    # 起 core 前现读用户配的环境变量（`supervisor::user_env`）
+    "Win32_System_Environment",
 ] }
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套

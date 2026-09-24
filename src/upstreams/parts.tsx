@@ -52,12 +52,15 @@ export function NameChips({ names, empty }: { names: string[]; empty: string }) 
 /** 表单里的一项：标签在上，说明在下 */
 export function FormItem({
   label,
+  hint,
   desc,
   htmlFor,
   className,
   children,
 }: {
   label: string;
+  /** 标题下、控件上的一句。控件本身是空的（比如一张还没有行的列表）时，说明放在下面会压在按钮底下 */
+  hint?: ReactNode;
   desc?: ReactNode;
   htmlFor?: string;
   className?: string;
@@ -68,6 +71,7 @@ export function FormItem({
       <Label htmlFor={htmlFor} className="tw-body font-medium">
         {label}
       </Label>
+      {hint && <p className="-mt-1 tw-label text-muted-foreground">{hint}</p>}
       {children}
       {desc && <p className="tw-label text-muted-foreground">{desc}</p>}
     </div>
