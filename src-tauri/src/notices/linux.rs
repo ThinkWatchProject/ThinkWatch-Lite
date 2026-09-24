@@ -683,15 +683,7 @@ mod native {
         } else {
             "main"
         };
-        let a = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            use gtk::prelude::GtkWindowExt;
-            if let Some(w) = a.get_webview_window(label)
-                && let Ok(g) = w.gtk_window()
-            {
-                g.set_startup_id(&token);
-            }
-        });
+        crate::window::activate_with_token(app, label, token);
     }
 }
 

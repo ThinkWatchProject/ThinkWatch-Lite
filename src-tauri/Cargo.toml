@@ -19,7 +19,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
-tauri-plugin-autostart = "2"
 # 在默认浏览器里打开授权页
 tauri-plugin-opener = "2"
 # 浏览器里授权完成之后，那一页把应用带回前台（`thinkwatch://`）
@@ -98,6 +97,11 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["async-io"] }
 gtk = "0.18"
+
+# 开机自启。**Linux 上不用它**：它在那边写的 `Exec=` 不加引号不转义，路径带空格
+# 就静默失效，所以那边的自启项自己写（见 `autostart/linux.rs`）
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri-plugin-autostart = "2"
 
 # 强杀 core 那一步：Windows 上没有 SIGKILL，用 TerminateProcess
 [target.'cfg(windows)'.dependencies]
