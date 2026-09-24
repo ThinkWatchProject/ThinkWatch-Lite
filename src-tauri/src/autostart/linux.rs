@@ -220,11 +220,12 @@ fn autostart_dir(
 ///   entries, which would leave the user no way to see or switch it off there.
 /// - `X-GNOME-Autostart-enabled=true` is written explicitly so re-enabling an
 ///   entry GNOME switched off reads as on to every tool, not only to us.
+/// - No `Version`: it is optional, and desktop-file-utils 0.26 (Ubuntu 22.04)
+///   rejects `Version=1.5` as unknown. Same as the menu entry (`desktop_entry`).
 fn entry(name: &str, program: &str, args: &[&str], icon: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Version=1.5\n\
          Name={}\n\
          Exec={}\n\
          Icon={}\n\
@@ -688,6 +689,45 @@ mod tests {
 
         a.disable().unwrap();
         assert!(!file.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// What desktop-file-utils thinks of the entry, for every nasty path. Skipped
+    /// where `desktop-file-validate` is not installed (it is not on the CI images).
+    #[cfg(unix)]
+    #[test]
+    fn desktop_file_validate_accepts_the_entry() {
+        let dir = tempdir();
+        std::fs::create_dir_all(&dir).unwrap();
+        for (i, p) in NASTY.iter().filter(|p| !p.contains('%')).enumerate() {
+            let file = dir.join(format!("e{i}.desktop"));
+            std::fs::write(
+                &file,
+                entry(
+                    "ThinkWatch Lite",
+                    p,
+                    &[super::super::AUTOSTART_FLAG],
+                    "app.thinkwatch.lite",
+                ),
+            )
+            .unwrap();
+            let out = match std::process::Command::new("desktop-file-validate")
+                .arg(&file)
+                .output()
+            {
+                Ok(out) => out,
+                Err(_) => {
+                    eprintln!("skipped: desktop-file-validate is not installed");
+                    break;
+                }
+            };
+            assert!(
+                out.status.success() && out.stdout.is_empty(),
+                "{p:?}: {}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
