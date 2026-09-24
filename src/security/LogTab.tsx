@@ -14,7 +14,7 @@ import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import RequestDrawer from "@/RequestDrawer";
-import type { Guard, SecurityDetail, SecurityEventView } from "@/types";
+import { isGuard, type Guard, type SecurityDetail, type SecurityEventView } from "@/types";
 import { api } from "./api";
 import { ActionBadge, ruleName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -77,7 +77,7 @@ export function LogTab({
     const limit = same ? Math.max(PAGE, loaded.current) : PAGE;
     let alive = true;
     api
-      .events({ fromMs: windowStart(range), limit })
+      .events({ from_ms: windowStart(range), limit })
       .then((p) => {
         if (!alive) return;
         setRows(p.events);
@@ -98,7 +98,7 @@ export function LogTab({
     setLoadingMore(true);
     try {
       const p = await api.events({
-        fromMs: windowStart(range),
+        from_ms: windowStart(range),
         before: last.id,
         limit: PAGE,
       });
@@ -113,7 +113,9 @@ export function LogTab({
 
   /** 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉 */
   const ruleOf = (e: SecurityEventView) =>
-    detail?.[e.guard].rules.find((r) => r.id === e.rule && (r.custom ?? false) === (e.custom ?? false));
+    isGuard(e.guard)
+      ? detail?.[e.guard].rules.find((r) => r.id === e.rule && r.custom === e.custom)
+      : undefined;
 
   function menu(e: SecurityEventView): MenuItems {
     const r = ruleOf(e);
@@ -122,14 +124,14 @@ export function LogTab({
       {
         kind: "item",
         label: t.viewRule,
-        onSelect: () => actions.viewRule(e.guard, e.rule, e.custom ?? false),
+        onSelect: () => isGuard(e.guard) && actions.viewRule(e.guard, e.rule, e.custom),
         disabled: !r,
       },
       { kind: "sep" },
       {
         kind: "item",
         label: t.disableRule,
-        onSelect: () => actions.disableRule(e.guard, e.rule, e.custom ?? false),
+        onSelect: () => isGuard(e.guard) && actions.disableRule(e.guard, e.rule, e.custom),
         disabled: !r || !r.enabled,
       },
     ];
@@ -193,7 +195,7 @@ export function LogTab({
                           <span>{when(e.at_ms)}</span>
                         </Tip>
                       </TableCell>
-                      <TableCell className="truncate text-muted-foreground">{lt.guardShort[e.guard]}</TableCell>
+                      <TableCell className="truncate text-muted-foreground">{isGuard(e.guard) ? lt.guardShort[e.guard] : e.guard}</TableCell>
                       <TableCell className="py-2">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span className="truncate font-medium">{name}</span>

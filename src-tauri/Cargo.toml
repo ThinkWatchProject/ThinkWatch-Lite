@@ -30,7 +30,7 @@ tauri-plugin-deep-link = "2"
 # 编出来的东西不一样；而更要紧的是，打进 `.app` 的那个 twcore 二进制
 # 必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是从
 # 这个 tag 去取二进制的（见 scripts/fetch-core.sh）。
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.42.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.42.0", features = ["ts"] }
 
 anyhow = "1"
 # 生成控制面的凭据（见 src/token.rs）

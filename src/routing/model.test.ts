@@ -122,8 +122,8 @@ describe("路由列表", () => {
 
   it("默认路由的使用者包括没指定路由的密钥", () => {
     const clients = [
-      { name: "claude-code", key: "tw-a", max_concurrent: null, route: null },
-      { name: "codex", key: "tw-b", max_concurrent: null, route: "codex" },
+      { name: "claude-code", key: "tw-a", max_concurrent: null, route: null, allow: null },
+      { name: "codex", key: "tw-b", max_concurrent: null, route: "codex", allow: null },
     ];
     expect(usersOf(route({ name: "默认", default: true }), clients)).toEqual(["claude-code"]);
     expect(usersOf(route({}), clients)).toEqual(["codex"]);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "@/control";
 import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -7,7 +7,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
-import type { ConfigWritten, CoreStatus, ListenSave, ListenView, NicView } from "@/types";
+import type { CoreStatus, ListenSave, ListenView, NicView } from "@/types";
 import { FormActions, FormRow, FormRows, NumberInput, intIn } from "./form";
 import { listenText } from "./ListenSection.i18n";
 import { RangeList } from "./RangeList";
@@ -94,7 +94,7 @@ export function ListenSection({
   // 网卡清单每次打开这一节现拉 —— 它会变（插拔网线、换 Wi-Fi、起 VPN）
   useEffect(() => {
     let alive = true;
-    void invoke<NicView[]>("interfaces")
+    void call("Interfaces", null)
       .then((list) => alive && setNics(list.filter((n) => !n.loopback)))
       .catch(() => alive && setNics([]));
     return () => {
@@ -139,7 +139,7 @@ export function ListenSection({
     setBusy(true);
     setError(null);
     try {
-      await invoke<ConfigWritten>("save_listen", { save: body });
+      await call("SaveListen", body);
       // 存上了就不算在改：配置换回来那一刻表单跟着新值走。网卡按名字存，
       // 草稿里若还是地址，先换成名字，否则配置回来之后两边对不上、表单一直显示改过
       dirtyRef.current = false;

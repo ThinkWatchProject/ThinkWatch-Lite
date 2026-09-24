@@ -7,49 +7,17 @@
 //! **凭据两边都带。**回环那一侧它是唯一的门，而只在一个平台上生效的防线没
 //! 人日常测 —— 两条路走同一份代码，才不会有一半从来没被跑过。凭据怎么来的
 //! 见 `crate::token`。
+//!
+//! **端点只有一个入口：[`ControlClient::call`]。**方法、路径、请求和响应的类型
+//! 都来自 `tw_api::ep` 里那一行声明，这里不再为每个端点各写一个方法 —— 以前
+//! 那样写，路径是字符串、查询串是手拼的，拼错的表现是运行时的 400。
 
 use std::path::Path;
 
 use anyhow::Result;
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
-
-/// 查询串里的一段。项目路径里有空格和中文是常事。
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                out.push(*b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-/// 路径里的一段（上游、代理、价目表的名字）。**斜杠也要转** —— 名字里的
-/// `/` 原样拼进去就成了两段路径，打到另一个端点上。
-fn segment(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(*b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-/// 删除时带上的版本，拼成查询串。
-fn with_base(path: String, base_version: Option<&str>) -> String {
-    match base_version {
-        Some(v) => format!("{path}?base_version={}", urlencode(v)),
-        None => path,
-    }
-}
+use tw_api::{Endpoint, Format, ep};
 
 /// 一条连上控制面的流。
 ///
@@ -147,12 +115,61 @@ impl ControlClient {
         format!("Bearer {}", self.token)
     }
 
-    /// 发一个 GET，把 body 整个读回来。
+    /// 调一个端点。
+    ///
+    /// `params` 按顺序填进路径模板里的参数（`E::PARAMS`），每个值都做百分号
+    /// 编码；`req` 在 GET 和 DELETE 上是查询串，其余方法上是 JSON 请求体，
+    /// `()` 就是两样都没有。
     ///
     /// 每次新建连接。控制面的调用频率是「用户点一下」的量级，连接复用
     /// 带来的复杂度（连接死了怎么办、什么时候重建）换不来任何东西。
-    /// **事件流是例外**，它走 `stream` 那条路，本来就是长连接。
-    async fn get(&self, path: &str) -> Result<Vec<u8>> {
+    /// **事件流是例外**，它走 `subscribe_events`，本来就是长连接。
+    pub async fn call<E: Endpoint>(&self, params: &[&str], req: &E::Req) -> Result<E::Res> {
+        anyhow::ensure!(
+            params.len() == E::PARAMS.len(),
+            "{} takes {} path parameters, got {}",
+            E::NAME,
+            E::PARAMS.len(),
+            params.len()
+        );
+        anyhow::ensure!(
+            E::FORMAT != Format::Events,
+            "{} is an event stream; use subscribe_events",
+            E::NAME
+        );
+        let filled: Vec<(&str, &str)> = E::PARAMS
+            .iter()
+            .copied()
+            .zip(params.iter().copied())
+            .collect();
+        let mut path = tw_api::fill(E::PATH, &filled);
+        let req = serde_json::to_value(req)?;
+        let mut body = None;
+        if E::METHOD.query() {
+            let q = query_string(&req)?;
+            if !q.is_empty() {
+                path.push('?');
+                path.push_str(&q);
+            }
+        } else if !req.is_null() {
+            body = Some(serde_json::to_string(&req)?);
+        }
+        let bytes = self.send(E::METHOD, &path, body).await?;
+        Ok(match E::FORMAT {
+            Format::Text => {
+                serde_json::from_value(serde_json::Value::String(String::from_utf8(bytes)?))?
+            }
+            _ => serde_json::from_slice(&bytes)?,
+        })
+    }
+
+    /// 发出去，把成功的响应体整个读回来。非 2xx 是 [`Refused`]。
+    async fn send(
+        &self,
+        method: tw_api::Method,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<Vec<u8>> {
         let stream = self.connect().await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
@@ -161,13 +178,21 @@ impl ControlClient {
                 tracing::debug!("控制面连接结束：{e}");
             }
         });
-        let req = hyper::Request::builder()
+        let mut req = hyper::Request::builder()
+            .method(method.as_str())
             .uri(path)
             // unix socket 上没有真正的 host，但 HTTP/1.1 要求这个头存在
             .header(hyper::header::HOST, "localhost")
-            .header(hyper::header::AUTHORIZATION, self.auth())
-            .body(String::new())?;
-        let resp = sender.send_request(req).await?;
+            // **读写都带凭据。**写请求的那一处曾经漏了：读的请求都带着，于是
+            // 界面一切正常地显示，而每一次保存、新建、接管都被控制面拒掉 ——
+            // 两个平台都是。见 tests/control_plane.rs 里走写请求的那一条
+            .header(hyper::header::AUTHORIZATION, self.auth());
+        if body.is_some() {
+            req = req.header(hyper::header::CONTENT_TYPE, "application/json");
+        }
+        let resp = sender
+            .send_request(req.body(body.unwrap_or_default())?)
+            .await?;
         let status = resp.status();
         let bytes = resp.into_body().collect().await?.to_bytes();
         if !status.is_success() {
@@ -182,15 +207,14 @@ impl ControlClient {
     /// 探测本身就变成了卡死的一部分 —— 守护会永远停在这一行，再也发现
     /// 不了任何东西。
     pub async fn ping(&self, timeout: std::time::Duration) -> Result<()> {
-        tokio::time::timeout(timeout, self.get("/status"))
+        tokio::time::timeout(timeout, self.call::<ep::Status>(&[], &()))
             .await
             .map_err(|_| anyhow::anyhow!("控制面 {timeout:?} 内没回话"))??;
         Ok(())
     }
 
     pub async fn status(&self) -> Result<tw_api::Status> {
-        let body = self.get("/status").await?;
-        let s: tw_api::Status = serde_json::from_slice(&body)?;
+        let s = self.call::<ep::Status>(&[], &()).await?;
         // 版本不匹配要明确提示「请升级客户端」，而不是以奇怪的方式失败。
         // 这里 UI 和 core 是一起打包的，理论上不该发生 ——
         // 但开发时会（一边改 core 一边跑旧 UI），而那正是最需要一句
@@ -212,7 +236,6 @@ impl ControlClient {
         Ok(s)
     }
 
-    /// 发一个 POST，body 是 JSON。
     /// 请网关自己退出。
     ///
     /// **Windows 上这是「停掉 core」唯一温和的办法** —— 那里没有 SIGTERM。
@@ -221,921 +244,28 @@ impl ControlClient {
     /// 两个平台都走它，理由同 core 那边：只在一个平台上生效的路径没人日常测。
     pub async fn shutdown(&self) -> Result<()> {
         // 202 的响应体是一条 `Msg`，这里不需要它 —— 要的是「收到了」。
-        let _: tw_api::Msg = self.post_json("/shutdown", &()).await?;
+        self.call::<ep::Shutdown>(&[], &()).await?;
         Ok(())
-    }
-
-    async fn post_json<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &Req,
-    ) -> Result<Res> {
-        self.send_json(hyper::Method::POST, path, body).await
-    }
-
-    /// 带 JSON body 的请求。**PATCH 和 POST 只差一个动词** —— 分两份
-    /// 写就是两份会漂移，而漂移的那份大概率是漏了错误处理的那份。
-    async fn send_json<Req: serde::Serialize, Res: serde::de::DeserializeOwned>(
-        &self,
-        method: hyper::Method,
-        path: &str,
-        body: &Req,
-    ) -> Result<Res> {
-        let stream = self.connect().await?;
-        let io = TokioIo::new(stream);
-        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
-        tokio::spawn(async move {
-            let _ = conn.await;
-        });
-        let payload = serde_json::to_string(body)?;
-        let req = hyper::Request::builder()
-            .method(method)
-            .uri(path)
-            .header(hyper::header::HOST, "localhost")
-            // **写请求也要带凭据。**这一处曾经漏了：读的请求都带着，于是界面
-            // 一切正常地显示，而每一次保存、新建、接管都被控制面拒掉 —— 两个
-            // 平台都是。见 tests/control_plane.rs 里走写请求的那一条
-            .header(hyper::header::AUTHORIZATION, self.auth())
-            .header(hyper::header::CONTENT_TYPE, "application/json")
-            .body(payload)?;
-        let resp = sender.send_request(req).await?;
-        let status = resp.status();
-        let bytes = resp.into_body().collect().await?.to_bytes();
-        if !status.is_success() {
-            return Err(refused(status, &bytes));
-        }
-        Ok(serde_json::from_slice(&bytes)?)
-    }
-
-    /// L1 测速：只握手，不发业务请求。**零成本**，用户可以随便点。
-    ///
-    /// 全部不给就测所有上游。core 那边是逐个测的 —— 并发会让每一段的
-    /// 耗时互相干扰，而这一层存在的全部意义就是那几个数字准不准。
-    pub async fn l1(&self, req: tw_api::L1Request) -> Result<Vec<tw_api::L1Result>> {
-        self.post_json("/l1", &req).await
-    }
-
-    /// 一个时间窗内的汇总。不给窗口就是 core 的默认口径（今天）。
-    pub async fn summary(&self, from_ms: Option<i64>) -> Result<tw_api::Summary> {
-        let path = match from_ms {
-            Some(f) => format!("/summary?from_ms={f}"),
-            None => "/summary".to_string(),
-        };
-        Ok(serde_json::from_slice(&self.get(&path).await?)?)
-    }
-
-    /// 一段闭区间的汇总。**概览拿它算「较上一个区间」** —— 一个没有
-    /// 参照系的金额只能读，不能判断。
-    pub async fn summary_range(&self, from_ms: i64, to_ms: i64) -> Result<tw_api::Summary> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/summary?from_ms={from_ms}&to_ms={to_ms}"))
-                .await?,
-        )?)
-    }
-
-    /// 按时间分桶的花费（概览的趋势图）。
-    ///
-    /// **空桶由界面补。**core 那边只产出有数据的桶 —— 要画多少格只有
-    /// 知道图有多宽的那一层清楚。
-    pub async fn cost_buckets(
-        &self,
-        from_ms: i64,
-        bucket_ms: i64,
-    ) -> Result<Vec<tw_api::CostBucket>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!(
-                    "/summary/buckets?from_ms={from_ms}&bucket_ms={bucket_ms}"
-                ))
-                .await?,
-        )?)
-    }
-
-    /// 按模型或上游分组的花费。`dim` 只有 `model` / `provider` 两个值 ——
-    /// core 那边是个枚举，写错的值在那里被拒掉。
-    /// 按时间分桶、再按模型分层的花费（概览那张堆叠面积图）。
-    ///
-    /// 桶边界和 `cost_buckets` 是同一套算法，**必须如此**：界面按同一个
-    /// 起点补空桶，差一格就会把有数据的那一格画在空位置上。
-    pub async fn cost_buckets_by(
-        &self,
-        dim: &str,
-        from_ms: i64,
-        bucket_ms: i64,
-    ) -> Result<Vec<tw_api::CostBucketGroup>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!(
-                    "/summary/buckets/by?dim={dim}&from_ms={from_ms}&bucket_ms={bucket_ms}"
-                ))
-                .await?,
-        )?)
-    }
-
-    pub async fn cost_by(&self, dim: &str, from_ms: i64) -> Result<Vec<tw_api::CostGroup>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/summary/by?dim={dim}&from_ms={from_ms}"))
-                .await?,
-        )?)
-    }
-
-    /// 最近的请求。`within` 给了就只看那一段。
-    ///
-    /// **不给不等于「今天」** —— 列表的默认答案是「最近 N 条」，缺省成
-    /// 今天的话过了零点这张表会空掉（core 那边同一条理由）。
-    pub async fn history(
-        &self,
-        limit: usize,
-        within: Option<(i64, i64)>,
-    ) -> Result<Vec<tw_api::HistoryRow>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/history?limit={limit}{}", window_q(within)))
-                .await?,
-        )?)
-    }
-
-    /// 此刻还在跑的请求：它们的开始事件，原样。**半路才开始听事件流的一方
-    /// 先问这个**，把订阅之前就开始了的补上（core 的 `/in-flight`）。
-    pub async fn in_flight(&self) -> Result<Vec<tw_api::Event>> {
-        Ok(serde_json::from_slice(&self.get("/in-flight").await?)?)
-    }
-
-    pub async fn latency(&self) -> Result<Vec<tw_api::LatencyView>> {
-        Ok(serde_json::from_slice(&self.get("/latency").await?)?)
-    }
-
-    /// L3 测速要花多少。**必须先问这个。**`providers` 空 = 全部上游
-    pub async fn speed_quote(
-        &self,
-        model: String,
-        providers: Vec<String>,
-    ) -> Result<tw_api::SpeedQuote> {
-        self.post_json(
-            "/speed/quote",
-            &tw_api::SpeedRunRequest { providers, model },
-        )
-        .await
-    }
-
-    /// 真的跑。**这一步花钱。**
-    pub async fn speed_run(
-        &self,
-        model: String,
-        providers: Vec<String>,
-    ) -> Result<Vec<tw_api::SpeedResult>> {
-        self.post_json("/speed/run", &tw_api::SpeedRunRequest { providers, model })
-            .await
-    }
-
-    /// 一条请求的全部细节，含 body。
-    pub async fn request_detail(&self, id: i64) -> Result<tw_api::RequestDetail> {
-        Ok(serde_json::from_slice(
-            &self.get(&format!("/request/{id}")).await?,
-        )?)
-    }
-
-    /// 订阅额度。按量付费的账号没有，那时是空列表。
-    pub async fn quota(&self) -> Result<Vec<tw_api::ProviderQuota>> {
-        Ok(serde_json::from_slice(&self.get("/quota").await?)?)
-    }
-
-    /// 按上游分的延迟。**「哪家 TTFT 最差」问的是这个。**
-    pub async fn latency_by_provider(
-        &self,
-        from_ms: Option<i64>,
-    ) -> Result<Vec<tw_api::LatencyView>> {
-        let path = match from_ms {
-            Some(f) => format!("/latency/provider?from_ms={f}"),
-            None => "/latency/provider".to_string(),
-        };
-        Ok(serde_json::from_slice(&self.get(&path).await?)?)
-    }
-
-    /// 矩阵上能写的是哪几个客户端。
-    pub async fn mcp_targets(&self) -> Result<Vec<tw_api::McpTargetView>> {
-        Ok(serde_json::from_slice(&self.get("/mcp/targets").await?)?)
-    }
-
-    /// 算一份 MCP 改动。**不落盘。**
-    pub async fn mcp_plan(&self, req: tw_api::McpOpRequest) -> Result<tw_api::PlanView> {
-        self.send_json(hyper::Method::POST, "/mcp/plan", &req).await
-    }
-
-    pub async fn mcp_apply(&self, req: tw_api::McpOpRequest) -> Result<tw_api::AdoptResponse> {
-        self.send_json(hyper::Method::POST, "/mcp/apply", &req)
-            .await
-    }
-
-    /// 诊断包的正文（Markdown，已脱敏）。
-    pub async fn diagnostics(&self) -> Result<String> {
-        Ok(String::from_utf8(self.get("/diagnostics").await?)?)
-    }
-
-    /// 重放报价。**不发任何请求。**
-    pub async fn replay_quote(&self, id: i64, provider: String) -> Result<tw_api::ReplayQuote> {
-        self.send_json(
-            hyper::Method::POST,
-            "/replay/quote",
-            &tw_api::ReplayRequest { id, provider },
-        )
-        .await
-    }
-
-    /// 真的发。**这一步花钱。**
-    pub async fn replay_run(&self, id: i64, provider: String) -> Result<tw_api::ReplayResult> {
-        self.send_json(
-            hyper::Method::POST,
-            "/replay/run",
-            &tw_api::ReplayRequest { id, provider },
-        )
-        .await
-    }
-
-    // ---------------------------------------------------------------- 安全
-
-    /// 两项防护的档位和全部规则。
-    pub async fn security(&self) -> Result<tw_api::SecurityDetail> {
-        Ok(serde_json::from_slice(&self.get("/security").await?)?)
-    }
-
-    /// 安全日志的一页，按时间倒序。
-    pub async fn security_events(
-        &self,
-        guard: Option<&str>,
-        within: Option<(i64, i64)>,
-        before: Option<i64>,
-        limit: usize,
-    ) -> Result<tw_api::SecurityEventsPage> {
-        let mut path = format!("/security/events?limit={limit}{}", window_q(within));
-        if let Some(g) = guard {
-            path.push_str(&format!("&guard={}", urlencode(g)));
-        }
-        if let Some(b) = before {
-            path.push_str(&format!("&before={b}"));
-        }
-        Ok(serde_json::from_slice(&self.get(&path).await?)?)
-    }
-
-    pub async fn set_security_mode(
-        &self,
-        guard: &str,
-        req: &tw_api::ModeSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/security/{}/mode", segment(guard)),
-            req,
-        )
-        .await
-    }
-
-    /// 启用或停用一条内置规则。
-    pub async fn toggle_security_rule(
-        &self,
-        guard: &str,
-        id: &str,
-        req: &tw_api::RuleToggle,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/security/{}/builtin/{}", segment(guard), segment(id)),
-            req,
-        )
-        .await
-    }
-
-    /// 一条内置规则在拦截档下做什么。只有工具调用审查的规则有这一项
-    pub async fn set_security_rule_action(
-        &self,
-        guard: &str,
-        id: &str,
-        req: &tw_api::ActionSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!(
-                "/security/{}/builtin/{}/action",
-                segment(guard),
-                segment(id)
-            ),
-            req,
-        )
-        .await
-    }
-
-    pub async fn create_security_rule(
-        &self,
-        guard: &str,
-        req: &tw_api::CustomRuleSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.post_json(&format!("/security/{}/custom", segment(guard)), req)
-            .await
-    }
-
-    pub async fn update_security_rule(
-        &self,
-        guard: &str,
-        name: &str,
-        req: &tw_api::CustomRuleSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/security/{}/custom/{}", segment(guard), segment(name)),
-            req,
-        )
-        .await
-    }
-
-    pub async fn delete_security_rule(
-        &self,
-        guard: &str,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(
-            format!("/security/{}/custom/{}", segment(guard), segment(name)),
-            base_version,
-        );
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    /// 拿一段文本试一试规则。**不发出任何请求**
-    pub async fn test_security(
-        &self,
-        guard: &str,
-        req: &tw_api::SecurityTestRequest,
-    ) -> Result<tw_api::SecurityTestResult> {
-        self.post_json(&format!("/security/{}/test", segment(guard)), req)
-            .await
-    }
-
-    /// 会话列表。
-    pub async fn sessions(&self, within: Option<(i64, i64)>) -> Result<Vec<tw_api::SessionView>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/sessions?limit=200{}", window_q(within)))
-                .await?,
-        )?)
-    }
-
-    /// 一次会话里的每一轮。
-    pub async fn session_detail(&self, id: &str) -> Result<tw_api::SessionDetail> {
-        Ok(serde_json::from_slice(
-            &self.get(&format!("/sessions/{}", urlencode(id))).await?,
-        )?)
-    }
-
-    /// 扫一遍客户端配置面。**每次现扫，什么都不存**。
-    pub async fn scan(&self, projects: Vec<String>) -> Result<tw_api::ScanResponse> {
-        self.post_json("/scan", &tw_api::ScanRequest { projects })
-            .await
-    }
-
-    /// 路由试算。**只算，不发任何请求。**
-    pub async fn dry_run(&self, req: tw_api::DryRunRequest) -> Result<tw_api::DryRunResult> {
-        self.send_json(hyper::Method::POST, "/dryrun", &req).await
-    }
-
-    // ---------------------------------------------------- 客户端接管
-
-    /// 本机装了哪些 AI 客户端、各自指向哪儿。**只读。**
-    pub async fn clients(&self) -> Result<tw_api::ClientsResponse> {
-        Ok(serde_json::from_slice(&self.get("/clients").await?)?)
-    }
-
-    /// 算一份接管改动。**不落盘** —— 界面拿它画 diff 给用户确认。
-    pub async fn plan_adopt(
-        &self,
-        client: String,
-        key_name: Option<String>,
-    ) -> Result<tw_api::PlanView> {
-        self.send_json(
-            hyper::Method::POST,
-            "/clients/plan",
-            &tw_api::AdoptRequest { client, key_name },
-        )
-        .await
-    }
-
-    /// 落盘。**用户在 diff 上点过确认之后才该调它。**
-    pub async fn adopt(
-        &self,
-        client: String,
-        key_name: Option<String>,
-    ) -> Result<tw_api::AdoptResponse> {
-        self.send_json(
-            hyper::Method::POST,
-            "/clients/adopt",
-            &tw_api::AdoptRequest { client, key_name },
-        )
-        .await
-    }
-
-    pub async fn plan_restore(&self, client: &str) -> Result<tw_api::PlanView> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/clients/{}/restore/plan", segment(client)))
-                .await?,
-        )?)
-    }
-
-    pub async fn restore(&self, client: &str) -> Result<tw_api::AdoptResponse> {
-        self.send_json(
-            hyper::Method::POST,
-            &format!("/clients/{}/restore", segment(client)),
-            &serde_json::json!({}),
-        )
-        .await
-    }
-
-    /// 「我明明配了，为什么没生效」。
-    /// 为这个客户端准备它的专用密钥（为它留着的，或者新建一把绑给它）
-    pub async fn client_key(&self, client: &str) -> Result<tw_api::ClientKey> {
-        self.send_json(
-            hyper::Method::POST,
-            &format!("/clients/{}/key", segment(client)),
-            &serde_json::json!({}),
-        )
-        .await
-    }
-
-    pub async fn why(&self, client: &str) -> Result<Vec<tw_api::FindingView>> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/clients/{}/why", segment(client)))
-                .await?,
-        )?)
-    }
-
-    pub async fn storage(&self) -> Result<tw_api::StorageStatus> {
-        Ok(serde_json::from_slice(&self.get("/storage").await?)?)
-    }
-
-    /// 当前配置的原文和版本号。
-    pub async fn config(&self) -> Result<tw_api::ConfigText> {
-        let body = self.get("/config").await?;
-        Ok(serde_json::from_slice(&body)?)
-    }
-
-    /// 按字段改配置。
-    ///
-    /// **带上 `base_version`** —— 不带就是「我知道我在覆盖」，而界面
-    /// 永远不该那样做：用户在编辑器里改了什么，我们无从知道。
-    pub async fn patch_config(
-        &self,
-        ops: Vec<tw_api::PatchOp>,
-        base_version: String,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PATCH,
-            "/config",
-            &tw_api::ConfigPatch {
-                base_version: Some(base_version),
-                ops,
-            },
-        )
-        .await
-    }
-
-    /// 整份写回去（文本模式）。
-    pub async fn put_config(
-        &self,
-        text: String,
-        base_version: String,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            "/config",
-            &tw_api::ConfigWrite { base_version, text },
-        )
-        .await
     }
 
     /// 托盘里切 `select` 组（这个策略就是「UI 上点选或托盘里切」）。
     ///
-    /// **走和界面同一条路** —— `patch_config` 加乐观并发，于是它同样会
+    /// **走和界面同一条路** —— 按字段改配置加乐观并发，于是它同样会
     /// 校验、存历史、防回环。
     pub async fn select_group(&self, group: &str, provider: &str) -> Result<()> {
-        let cur = self.config().await?;
-        self.patch_config(
-            vec![tw_api::PatchOp::Replace {
-                path: format!("/groups/{group}/selected"),
-                value: tw_api::PatchValue::Str(provider.to_string()),
-            }],
-            cur.version,
+        let cur = self.call::<ep::GetConfig>(&[], &()).await?;
+        self.call::<ep::PatchConfig>(
+            &[],
+            &tw_api::ConfigPatch {
+                base_version: Some(cur.version),
+                ops: vec![tw_api::PatchOp::Replace {
+                    path: format!("/groups/{group}/selected"),
+                    value: tw_api::PatchValue::Str(provider.to_string()),
+                }],
+            },
         )
         .await?;
         Ok(())
-    }
-
-    // ───────────────────────────────────────── 上游
-
-    pub async fn create_provider(
-        &self,
-        req: &tw_api::ProviderSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/providers", req).await
-    }
-
-    pub async fn update_provider(
-        &self,
-        name: &str,
-        req: &tw_api::ProviderSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/providers/{}", segment(name)),
-            req,
-        )
-        .await
-    }
-
-    pub async fn delete_provider(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(format!("/providers/{}", segment(name)), base_version);
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    /// 检测一个上游，**不保存**。零成本，不调用模型
-    pub async fn test_provider(
-        &self,
-        req: &tw_api::ProviderTest,
-    ) -> Result<tw_api::ProviderTestResult> {
-        self.post_json("/providers/test", req).await
-    }
-
-    /// 按接口地址自动识别会得到什么。不联网
-    pub async fn preview_provider(
-        &self,
-        req: &tw_api::ProviderPreviewRequest,
-    ) -> Result<tw_api::ProviderPreview> {
-        self.post_json("/providers/preview", req).await
-    }
-
-    pub async fn provider_models(&self, name: &str) -> Result<tw_api::ProviderModelsView> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/providers/{}/models", segment(name)))
-                .await?,
-        )?)
-    }
-
-    pub async fn refresh_provider_models(&self, name: &str) -> Result<tw_api::ProviderModelsView> {
-        self.post_json(&format!("/providers/{}/models/refresh", segment(name)), &())
-            .await
-    }
-
-    /// 补问缺失、失败、过期的模型清单。**立刻回**：答案随 `models_changed` 到
-    pub async fn refresh_stale_models(&self) -> Result<tw_api::ModelsRefreshing> {
-        self.post_json("/models/refresh", &()).await
-    }
-
-    // ───────────────────────────────────────── ChatGPT 账号
-
-    /// 开始一次登录。回来的地址要在浏览器里打开，core 在本机等回调
-    pub async fn start_chatgpt_login(
-        &self,
-        req: &tw_api::ChatgptLoginStart,
-    ) -> Result<tw_api::ChatgptLogin> {
-        self.post_json("/chatgpt/login", req).await
-    }
-
-    pub async fn chatgpt_login_status(&self, id: &str) -> Result<tw_api::ChatgptLoginStatus> {
-        Ok(serde_json::from_slice(
-            &self.get(&format!("/chatgpt/login/{}", segment(id))).await?,
-        )?)
-    }
-
-    pub async fn cancel_chatgpt_login(&self, id: &str) -> Result<tw_api::ChatgptLoginStatus> {
-        self.send_json(
-            hyper::Method::DELETE,
-            &format!("/chatgpt/login/{}", segment(id)),
-            &(),
-        )
-        .await
-    }
-
-    // ───────────────────────────────────────── Z.ai / BigModel 账号
-
-    /// 开始一次登录。回来的地址要在浏览器里打开，core 自己去问「授权了没有」
-    pub async fn start_zai_login(&self, req: &tw_api::ZaiLoginStart) -> Result<tw_api::ZaiLogin> {
-        self.post_json("/zai/login", req).await
-    }
-
-    pub async fn zai_login_status(&self, id: &str) -> Result<tw_api::ZaiLoginStatus> {
-        Ok(serde_json::from_slice(
-            &self.get(&format!("/zai/login/{}", segment(id))).await?,
-        )?)
-    }
-
-    pub async fn cancel_zai_login(&self, id: &str) -> Result<tw_api::ZaiLoginStatus> {
-        self.send_json(
-            hyper::Method::DELETE,
-            &format!("/zai/login/{}", segment(id)),
-            &(),
-        )
-        .await
-    }
-
-    pub async fn chatgpt_usage(&self, name: &str) -> Result<tw_api::ChatgptUsage> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/providers/{}/chatgpt/usage", segment(name)))
-                .await?,
-        )?)
-    }
-
-    pub async fn chatgpt_resets(&self, name: &str) -> Result<tw_api::ResetCredits> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/providers/{}/chatgpt/resets", segment(name)))
-                .await?,
-        )?)
-    }
-
-    /// 用掉一张额度重置卡。**只在用户明确点下去时调**：卡用掉就回不来
-    pub async fn use_chatgpt_reset(
-        &self,
-        name: &str,
-        req: &tw_api::ResetCreditUse,
-    ) -> Result<tw_api::ResetCreditUsed> {
-        self.post_json(&format!("/providers/{}/chatgpt/resets", segment(name)), req)
-            .await
-    }
-
-    // ───────────────────────────────────────── 代理
-
-    pub async fn create_proxy(&self, req: &tw_api::ProxySave) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/proxies", req).await
-    }
-
-    pub async fn update_proxy(
-        &self,
-        name: &str,
-        req: &tw_api::ProxySave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/proxies/{}", segment(name)),
-            req,
-        )
-        .await
-    }
-
-    pub async fn delete_proxy(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(format!("/proxies/{}", segment(name)), base_version);
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    /// 检测一个代理：完成握手和认证。**不保存**
-    pub async fn test_proxy(&self, req: &tw_api::ProxyTest) -> Result<tw_api::L1Result> {
-        self.post_json("/proxies/test", req).await
-    }
-
-    // ───────────────────────────────────────── 价目表
-
-    pub async fn pricing_status(&self) -> Result<tw_api::PricingStatus> {
-        Ok(serde_json::from_slice(&self.get("/pricing").await?)?)
-    }
-
-    /// 立即刷新默认价目表
-    pub async fn refresh_pricing(&self) -> Result<tw_api::PricingRefreshed> {
-        self.post_json("/pricing/refresh", &()).await
-    }
-
-    pub async fn set_price_auto_update(
-        &self,
-        req: &tw_api::AutoUpdateSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, "/pricing/auto_update", req)
-            .await
-    }
-
-    pub async fn query_prices(&self, req: &tw_api::PriceQuery) -> Result<tw_api::PriceQueryResult> {
-        self.post_json("/pricing/query", req).await
-    }
-
-    pub async fn price_sheet(&self, name: &str) -> Result<tw_api::PriceSheetInput> {
-        Ok(serde_json::from_slice(
-            &self
-                .get(&format!("/pricing/sheets/{}", segment(name)))
-                .await?,
-        )?)
-    }
-
-    pub async fn create_price_sheet(
-        &self,
-        req: &tw_api::PriceSheetSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/pricing/sheets", req).await
-    }
-
-    pub async fn update_price_sheet(
-        &self,
-        name: &str,
-        req: &tw_api::PriceSheetSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/pricing/sheets/{}", segment(name)),
-            req,
-        )
-        .await
-    }
-
-    pub async fn delete_price_sheet(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(format!("/pricing/sheets/{}", segment(name)), base_version);
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    // ───────────────────────────────────────── 路由与策略组
-
-    pub async fn create_route(&self, req: &tw_api::RouteSave) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/routes", req).await
-    }
-
-    pub async fn update_route(
-        &self,
-        name: &str,
-        req: &tw_api::RouteSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/routes/{}", segment(name)),
-            req,
-        )
-        .await
-    }
-
-    /// 删除一条路由。使用它的密钥改用 `reassign_to`；不给就改用默认路由
-    pub async fn delete_route(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-        reassign_to: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let mut path = with_base(format!("/routes/{}", segment(name)), base_version);
-        if let Some(t) = reassign_to {
-            path.push(if path.contains('?') { '&' } else { '?' });
-            path.push_str(&format!("reassign_to={}", urlencode(t)));
-        }
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    pub async fn set_default_route(
-        &self,
-        req: &tw_api::DefaultRouteSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, "/default_route", req)
-            .await
-    }
-
-    pub async fn create_group(&self, req: &tw_api::GroupSave) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/groups", req).await
-    }
-
-    pub async fn update_group(
-        &self,
-        name: &str,
-        req: &tw_api::GroupSave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            &format!("/groups/{}", segment(name)),
-            req,
-        )
-        .await
-    }
-
-    pub async fn delete_group(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(format!("/groups/{}", segment(name)), base_version);
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    /// 网关知道的全部模型，以及能提供它们的上游
-    pub async fn known_models(&self) -> Result<Vec<tw_api::KnownModel>> {
-        Ok(serde_json::from_slice(&self.get("/models").await?)?)
-    }
-
-    pub async fn config_at(&self, offset: usize) -> Result<tw_api::ConfigAt> {
-        let body = self.get(&format!("/config/at?offset={offset}")).await?;
-        Ok(serde_json::from_slice(&body)?)
-    }
-
-    pub async fn config_history(&self) -> Result<Vec<tw_api::ConfigVersion>> {
-        let body = self.get("/config/history").await?;
-        Ok(serde_json::from_slice(&body)?)
-    }
-
-    pub async fn rollback(&self, version: String) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/config/rollback", &tw_api::RollbackRequest { version })
-            .await
-    }
-
-    // ── 网关密钥。**规则全在 core**：默认密钥删不得、接管中的删不得、
-    // 改名带着规则一起改、更换同步给被接管的客户端
-
-    pub async fn keys(&self) -> Result<Vec<tw_api::ClientView>> {
-        Ok(serde_json::from_slice(&self.get("/keys").await?)?)
-    }
-
-    /// 一把密钥的明文。**只在用户点「复制」那一刻问**
-    pub async fn key_value(&self, name: &str) -> Result<tw_api::KeyValue> {
-        Ok(serde_json::from_slice(
-            &self.get(&format!("/keys/{}/value", segment(name))).await?,
-        )?)
-    }
-
-    pub async fn create_key(&self, req: &tw_api::KeySave) -> Result<tw_api::ConfigWritten> {
-        self.post_json("/keys", req).await
-    }
-
-    pub async fn update_key(
-        &self,
-        name: &str,
-        req: &tw_api::KeySave,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, &format!("/keys/{}", segment(name)), req)
-            .await
-    }
-
-    pub async fn delete_key(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        let path = with_base(format!("/keys/{}", segment(name)), base_version);
-        self.send_json(hyper::Method::DELETE, &path, &()).await
-    }
-
-    /// 换一把新的，并同步给正在用它的客户端。**一次调用做完两件事**
-    pub async fn rotate_key(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::KeyRotated> {
-        self.post_json(
-            &format!("/keys/{}/rotate", segment(name)),
-            &tw_api::KeyRotate {
-                base_version: base_version.map(str::to_string),
-            },
-        )
-        .await
-    }
-
-    /// 保存监听设置。**core 先试着绑一下新地址**，绑不上就不写配置、说清为什么。
-    pub async fn save_listen(&self, save: &tw_api::ListenSave) -> Result<tw_api::ConfigWritten> {
-        self.send_json(hyper::Method::PUT, "/listen", save).await
-    }
-
-    pub async fn set_default_key(
-        &self,
-        name: &str,
-        base_version: Option<&str>,
-    ) -> Result<tw_api::ConfigWritten> {
-        self.send_json(
-            hyper::Method::PUT,
-            "/default_key",
-            &tw_api::DefaultKeySave {
-                name: name.to_string(),
-                base_version: base_version.map(str::to_string),
-            },
-        )
-        .await
-    }
-
-    /// 这台机器上有哪些网卡。
-    ///
-    /// **每次现问，不缓存。**插拔网线、连上另一个 Wi-Fi、起一条 VPN，
-    /// 清单就变了 —— 缓存下来只会让选单里出现一个已经不存在的地址，
-    /// 而选中它的后果是网关起不来。
-    pub async fn interfaces(&self) -> Result<Vec<tw_api::NicView>> {
-        let body = self.get("/interfaces").await?;
-        Ok(serde_json::from_slice(&body)?)
-    }
-
-    /// 界面要显示的配置概览。
-    pub async fn overview(&self) -> Result<tw_api::Overview> {
-        let body = self.get("/overview").await?;
-        Ok(serde_json::from_slice(&body)?)
     }
 
     /// 订阅事件流，逐条交给回调。`on_open` 在流接通的那一刻调一次：调用方据此
@@ -1155,7 +285,7 @@ impl ControlClient {
             let _ = conn.await;
         });
         let req = hyper::Request::builder()
-            .uri("/events")
+            .uri(ep::Events::PATH)
             .header(hyper::header::HOST, "localhost")
             .header(hyper::header::AUTHORIZATION, self.auth())
             .header(hyper::header::ACCEPT, "text/event-stream")
@@ -1197,12 +327,43 @@ impl ControlClient {
     }
 }
 
-/// 时间窗拼成 query。**两端都可缺** —— 只给起点就是「从那时起到现在」。
-fn window_q(within: Option<(i64, i64)>) -> String {
-    match within {
-        None => String::new(),
-        Some((from, to)) => format!("&from_ms={from}&to_ms={to}"),
+/// GET 和 DELETE 的请求拼成查询串。
+///
+/// 这些请求类型都是平的：字段是字符串、数字、布尔或者不带（`None` 不序列化，
+/// 或者是 `null`）。别的形状在查询串里说不清，遇到就是 tw-api 那边的端点写错了。
+fn query_string(req: &serde_json::Value) -> Result<String> {
+    use serde_json::Value;
+    let fields = match req {
+        Value::Null => return Ok(String::new()),
+        Value::Object(m) => m,
+        other => anyhow::bail!("a query must be an object, not {other}"),
+    };
+    let mut out = Vec::new();
+    for (k, v) in fields {
+        let v = match v {
+            Value::Null => continue,
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            other => anyhow::bail!("query field `{k}` cannot be {other}"),
+        };
+        out.push(format!("{}={}", encode(k), encode(&v)));
     }
+    Ok(out.join("&"))
+}
+
+/// 查询串里的一段。项目路径、名字里有空格和中文是常事。
+fn encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1314,6 +475,39 @@ mod tests {
             "core is not running, or has not finished starting"
         );
         assert_eq!(said(Lang::Zh), "core 未在运行，或尚未启动完成");
+    }
+
+    /// GET 的请求变成查询串：没带的字段不出现，值做百分号编码，`()` 什么都不拼。
+    #[test]
+    fn a_query_is_flat_and_leaves_out_what_is_not_there() {
+        let q = query_string(
+            &serde_json::to_value(tw_api::SecurityEventsQuery {
+                guard: Some("a b/中".into()),
+                from_ms: Some(5),
+                to_ms: None,
+                before: None,
+                limit: Some(3),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let mut parts: Vec<&str> = q.split('&').collect();
+        parts.sort_unstable();
+        assert_eq!(parts, ["from_ms=5", "guard=a%20b%2F%E4%B8%AD", "limit=3"]);
+        assert_eq!(
+            query_string(&serde_json::to_value(()).unwrap()).unwrap(),
+            ""
+        );
+        let dim = query_string(
+            &serde_json::to_value(tw_api::GroupQuery {
+                from_ms: None,
+                to_ms: None,
+                dim: tw_api::CostDim::Client,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(dim, "dim=client");
     }
 
     #[test]

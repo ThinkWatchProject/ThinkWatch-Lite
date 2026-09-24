@@ -53,12 +53,15 @@ pub async fn start_chatgpt_login(
 ) -> Out<Login> {
     let login = state
         .control
-        .start_chatgpt_login(&tw_api::ChatgptLoginStart {
-            name,
-            proxy,
-            return_to: Some(RETURN_TO.to_string()),
-            mode,
-        })
+        .call::<tw_api::ep::StartChatgptLogin>(
+            &[],
+            &tw_api::ChatgptLoginStart {
+                name,
+                proxy,
+                return_to: Some(RETURN_TO.to_string()),
+                mode,
+            },
+        )
         .await
         .map_err(text)?;
     if let Ok(mut g) = PENDING.lock() {
@@ -139,20 +142,16 @@ fn is_web_page(url: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn chatgpt_login_status(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Out<tw_api::ChatgptLoginStatus> {
-    state.control.chatgpt_login_status(&id).await.map_err(text)
-}
-
-#[tauri::command]
 pub async fn cancel_chatgpt_login(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Out<tw_api::ChatgptLoginStatus> {
     forget(&id);
-    state.control.cancel_chatgpt_login(&id).await.map_err(text)
+    state
+        .control
+        .call::<tw_api::ep::CancelChatgptLogin>(&[&id], &())
+        .await
+        .map_err(text)
 }
 
 pub fn forget(id: &str) {
@@ -161,43 +160,6 @@ pub fn forget(id: &str) {
     {
         *g = None;
     }
-}
-
-#[tauri::command]
-pub async fn chatgpt_usage(
-    state: tauri::State<'_, AppState>,
-    name: String,
-) -> Out<tw_api::ChatgptUsage> {
-    state.control.chatgpt_usage(&name).await.map_err(text)
-}
-
-#[tauri::command]
-pub async fn chatgpt_resets(
-    state: tauri::State<'_, AppState>,
-    name: String,
-) -> Out<tw_api::ResetCredits> {
-    state.control.chatgpt_resets(&name).await.map_err(text)
-}
-
-/// 用掉一张额度重置卡。**界面上必须先让用户确认**：卡用掉就回不来
-#[tauri::command]
-pub async fn use_chatgpt_reset(
-    state: tauri::State<'_, AppState>,
-    name: String,
-    credit_id: Option<String>,
-    idempotency_key: String,
-) -> Out<tw_api::ResetCreditUsed> {
-    state
-        .control
-        .use_chatgpt_reset(
-            &name,
-            &tw_api::ResetCreditUse {
-                idempotency_key,
-                credit_id,
-            },
-        )
-        .await
-        .map_err(text)
 }
 
 /// 浏览器里点了「返回 ThinkWatch」。**窗口可能已经被销毁**（菜单栏模式下关窗即销毁），

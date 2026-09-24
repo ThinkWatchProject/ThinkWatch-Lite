@@ -5,6 +5,7 @@
 //! 都是不该开的口子。
 
 use crate::AppState;
+use tw_api::ep;
 
 use crate::error::{Out, text};
 
@@ -16,16 +17,6 @@ fn unknown(id: &str) -> String {
     .to_string()
 }
 
-/// 为这个客户端准备它的专用密钥：为它留着的那把，没有就新建一把绑给它。
-/// 手动配置时用 —— 填进 Cursor 的应该是只属于 Cursor 的钥匙。
-#[tauri::command]
-pub async fn prepare_client_key(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Out<tw_api::ClientKey> {
-    state.control.client_key(&id).await.map_err(text)
-}
-
 /// 复制这个客户端要填的网关地址（它要的那种写法，有的带 `/v1`）。
 #[tauri::command]
 pub async fn copy_client_endpoint(
@@ -34,7 +25,11 @@ pub async fn copy_client_endpoint(
     id: String,
 ) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let list = state.control.clients().await.map_err(text)?;
+    let list = state
+        .control
+        .call::<ep::Clients>(&[], &())
+        .await
+        .map_err(text)?;
     let endpoint = list
         .clients
         .iter()
@@ -56,7 +51,11 @@ pub async fn copy_client_endpoint(
 /// 真正会被改的。
 #[tauri::command]
 pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String) -> Out<()> {
-    let list = state.control.clients().await.map_err(text)?;
+    let list = state
+        .control
+        .call::<ep::Clients>(&[], &())
+        .await
+        .map_err(text)?;
     let c = list
         .clients
         .iter()

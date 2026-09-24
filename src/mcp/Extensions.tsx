@@ -4,12 +4,12 @@ import type { HookView, ScanFinding, ScanResponse, SkillView } from "@/types";
 import { Level } from "./Findings";
 import { mcpText } from "./McpPage.i18n";
 
-const RANK = { high: 0, medium: 1, low: 2 } as const;
+const RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 /** 几处发现里最高的那一级。一处都没有就是 `null` */
 function worst(findings: ScanFinding[]): ScanFinding["level"] | null {
   let out: ScanFinding["level"] | null = null;
-  for (const f of findings) if (out == null || RANK[f.level] < RANK[out]) out = f.level;
+  for (const f of findings) if (out == null || (RANK[f.level] ?? 3) < (RANK[out] ?? 3)) out = f.level;
   return out;
 }
 

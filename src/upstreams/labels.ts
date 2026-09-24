@@ -10,7 +10,6 @@ import type {
   L1Result,
   L1Skip,
   L1Stage,
-  ModelStatus,
   PriceFields,
   PriceSourceView,
   ProviderView,
@@ -113,7 +112,7 @@ export function authHeaderParts(header: string): { name: string; prefix: string 
  * 模型清单从哪儿来。**没拿到清单时说为什么**：还在获取、上游不提供、
  * 没问到 —— 三种情况要做的事不一样，不能都叫「未获取」。
  */
-export function modelSourceLabel(source: string, status?: ModelStatus): string {
+export function modelSourceLabel(source: string, status?: string): string {
   const t = textOf(labelsText).models;
   switch (source) {
     case "discovered":
@@ -196,7 +195,8 @@ export function proxyFaultText(f: ProxyFault): string {
 }
 export function l1StageLabel(s: L1Stage): string {
   const t = textOf(labelsText);
-  const step = t.l1Steps[s.step] ?? s.step;
+  const steps: Record<string, string> = t.l1Steps;
+  const step = steps[s.step] ?? s.step;
   return s.peer === "proxy" && s.step !== "handshake" ? t.l1ToProxy(step) : step;
 }
 

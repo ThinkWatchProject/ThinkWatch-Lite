@@ -13,7 +13,7 @@ import { securityLabelsText } from "./labels.i18n";
  * 起的名字**，原样显示。两张表里都没有的，退回 core 给的英文名，再没有就是
  * id。
  */
-export function ruleName(guard: Guard, id: string, custom?: boolean, fallback?: string): string {
+export function ruleName(guard: string, id: string, custom?: boolean, fallback?: string): string {
   if (custom) return id;
   if (guard === "redact") {
     const name = secretLabel(id);

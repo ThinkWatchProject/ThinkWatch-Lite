@@ -16,6 +16,7 @@ mod tray;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use tw_api::ep;
 
 use tauri::Manager;
 
@@ -255,12 +256,13 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         return snap;
     }
     let c = &state.control;
+    let today = tw_api::Window::default();
     let (status, quota, summary, overview, history) = tokio::join!(
         c.status(),
-        c.quota(),
-        c.summary(None),
-        c.overview(),
-        c.config_history()
+        c.call::<ep::Quota>(&[], &()),
+        c.call::<ep::Summary>(&[], &today),
+        c.call::<ep::Overview>(&[], &()),
+        c.call::<ep::ConfigHistory>(&[], &())
     );
     if let Ok(s) = status {
         snap.addr = s.gateway_addr;
@@ -325,7 +327,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
                     Some((at, n)) if *at == w.resets_at_ms => *n,
                     _ => {
                         let n = c
-                            .chatgpt_usage(&q.provider)
+                            .call::<ep::ChatgptUsage>(&[&q.provider], &())
                             .await
                             .ok()
                             .and_then(|u| u.reset_credits);
@@ -426,7 +428,11 @@ async fn background(app: &tauri::AppHandle, action: Action) {
 
 async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let clients = st.control.clients().await.map_err(|e| format!("{e:#}"))?;
+    let clients = st
+        .control
+        .call::<ep::Clients>(&[], &())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     app.clipboard()
         .write_text(clients.gateway_base)
         .map_err(|e| e.to_string())
@@ -435,7 +441,11 @@ async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), Strin
 /// **明文不经过界面**：和密钥页的「复制」同一条路，在 Rust 这边直接写剪贴板
 async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let keys = st.control.keys().await.map_err(|e| format!("{e:#}"))?;
+    let keys = st
+        .control
+        .call::<ep::Keys>(&[], &())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     let name = keys
         .iter()
         .find(|k| k.default)
@@ -444,7 +454,7 @@ async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), S
         .ok_or_else(|| tr!("尚无网关密钥。", "There is no gateway key yet.").to_string())?;
     let v = st
         .control
-        .key_value(&name)
+        .call::<ep::KeyValue>(&[&name], &())
         .await
         .map_err(|e| format!("{e:#}"))?;
     app.clipboard().write_text(v.key).map_err(|e| e.to_string())
@@ -454,14 +464,19 @@ async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), S
 async fn undo(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
     let hist = st
         .control
-        .config_history()
+        .call::<ep::ConfigHistory>(&[], &())
         .await
         .map_err(|e| format!("{e:#}"))?;
     let Some(prev) = hist.iter().rev().nth(1).cloned() else {
         return Ok(());
     };
     st.control
-        .rollback(prev.version.clone())
+        .call::<ep::ConfigRollback>(
+            &[],
+            &tw_api::RollbackRequest {
+                version: prev.version.clone(),
+            },
+        )
         .await
         .map_err(|e| format!("{e:#}"))?;
     if let Some(n) = app.try_state::<Arc<notices::Notices>>() {

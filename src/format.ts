@@ -1,3 +1,4 @@
+import type { CostBucket } from "./generated/tw-api";
 /**
  * 表格里的显示格式。
  *
@@ -131,17 +132,8 @@ export function statusTone(
   return "ok";
 }
 
-/** 一个时间桶（和 core 的 `/summary/buckets` 对应）。 */
-export interface CostBucket {
-  at_ms: number;
-  requests: number;
-  failed: number;
-  cost_micros_exact: number;
-  cost_micros_estimated: number;
-  unpriced_requests: number;
-  /** 没有拿到用量的条数 */
-  no_usage_requests: number;
-}
+/** 一个时间桶（core 的 `/summary/buckets`）。 */
+export type { CostBucket };
 
 /**
  * 把一个时刻落到它所在那一格的开头。
