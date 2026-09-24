@@ -168,7 +168,7 @@ export function ConnectionSection({
         <OAuth form={form} set={set} />
       )}
 
-      <FormItem label={t.headers} desc={form.authMode === "oauth" ? t.headersOauth : t.headersKey}>
+      <FormItem label={t.headers} hint={t.headersHint}>
         <HeaderEditor form={form} set={set} />
       </FormItem>
 
@@ -286,7 +286,7 @@ function ApiKey({
               ? t.keySaved
               : editing?.key
                 ? t.keyRemoved
-                : undefined
+                : t.keyPlaceholder
           }
           onChange={(e) => set({ key: e.target.value })}
         />

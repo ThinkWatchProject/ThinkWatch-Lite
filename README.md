@@ -125,6 +125,13 @@ Messages, OpenAI Chat Completions, OpenAI Responses and Gemini, and the fields
 that cannot be carried over are listed. Upstreams can be reached through an
 outbound proxy and priced with a custom price sheet.
 
+API keys and header values can be written as `${NAME}` to read a system
+environment variable. On macOS these come from the login shell, so variables
+exported in `~/.zshrc` and similar files apply; on Windows they are the
+environment variables configured in system settings. After a variable changes,
+reopening the app picks it up. Proxy variables such as `HTTPS_PROXY`, and
+`PATH`, are not read.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/upstreams-en-dark.png">
   <img src="docs/screenshots/upstreams-en-light.png" alt="The upstream list: API-key upstreams, a ChatGPT account on Plus with 34% of its 5-hour quota used, OpenRouter through a proxy, DeepSeek, Gemini and a local Ollama, each with its 24-hour requests, cost and time to first byte">

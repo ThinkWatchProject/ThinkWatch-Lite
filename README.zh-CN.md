@@ -111,6 +111,11 @@ Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之�
 自动转换，无法转换的字段会逐一列出。上游可以经出站代理访问，也可以按自定义
 价目表计价。
 
+API 密钥和请求头的值可以写成 `${变量名}`，读取系统环境变量。macOS 上读的是登录
+shell 里的环境变量，`~/.zshrc` 等文件中 `export` 的变量都会生效；Windows 上读
+的是系统设置里配置的环境变量。修改变量后，重新打开应用即可生效。代理相关的
+变量（`HTTPS_PROXY` 等）和 `PATH` 不会被读取。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/upstreams-dark.png">
   <img src="docs/screenshots/upstreams-light.png" alt="上游列表：API 密钥上游、ChatGPT 账号（Plus，5 小时额度已用 34%）、经代理访问的 OpenRouter、DeepSeek、Gemini 与本机 Ollama，以及各自 24 小时的请求数、费用与首字节延迟">
