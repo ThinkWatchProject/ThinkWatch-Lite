@@ -37,7 +37,6 @@ pub mod notices;
 pub mod prefs;
 pub mod settings;
 pub mod supervisor;
-pub mod tally;
 pub mod theme;
 mod token;
 pub mod uninstall;
@@ -87,8 +86,6 @@ pub struct AppState {
     pub menubar: Arc<tokio::sync::Notify>,
     /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言
     pub menubar_now: Arc<tokio::sync::Notify>,
-    /// 菜单栏要的实时数：哪些请求在跑、最近的输出速率。事件桥喂它
-    pub tally: Arc<std::sync::Mutex<tally::Tally>>,
 }
 
 pub fn run() {
@@ -263,7 +260,6 @@ pub fn run() {
                 supervising: supervising.clone(),
                 menubar: menubar_wake,
                 menubar_now: Arc::new(tokio::sync::Notify::new()),
-                tally: Default::default(),
             });
 
             // **状态变化推给界面，不要让它来问。**「core 起来没、是不是

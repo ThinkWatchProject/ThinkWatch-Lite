@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { errorText } from "@/i18n/core.i18n";
-import type { Guard, SecurityTestHit } from "@/types";
+import type { RuleGuard, SecurityTestHit } from "@/types";
 import { api } from "./api";
 
 export type Trial =
@@ -19,14 +19,14 @@ export type Trial =
  * 输入又变了，丢掉它。
  */
 export function useTrial(
-  guard: Guard,
+  guard: RuleGuard,
   sample: string,
-  only: { pattern?: string; rule?: string },
+  only: { pattern?: string; match?: string; rule?: string },
   /** 为 false 时不试（比如正则还是空的） */
   ready = true,
 ): Trial {
   const [trial, setTrial] = useState<Trial>({ state: "idle" });
-  const { pattern, rule } = only;
+  const { pattern, match, rule } = only;
   useEffect(() => {
     if (!ready || sample.length === 0) {
       setTrial({ state: "idle" });
@@ -36,7 +36,7 @@ export function useTrial(
     setTrial((t) => (t.state === "done" ? t : { state: "running" }));
     const h = setTimeout(() => {
       api
-        .test(guard, sample, { pattern, rule })
+        .test(guard, sample, { pattern, match, rule })
         .then((r) => alive && setTrial({ state: "done", hits: r.hits }))
         .catch((e) => alive && setTrial({ state: "failed", error: errorText(e) }));
     }, 250);
@@ -44,6 +44,6 @@ export function useTrial(
       alive = false;
       clearTimeout(h);
     };
-  }, [guard, sample, pattern, rule, ready]);
+  }, [guard, sample, pattern, match, rule, ready]);
   return trial;
 }

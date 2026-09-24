@@ -52,9 +52,14 @@ export type GroupKind = "fallback" | "select" | "load-balance" | "url-test" | "c
 const GROUP_KINDS: readonly string[] = ["fallback", "select", "load-balance", "url-test", "cheapest"];
 export const isGroupKind = (s: string): s is GroupKind => GROUP_KINDS.includes(s);
 
-/** 两项防护在配置里的键，也是接口路径里的那一段 */
-export type Guard = "redact" | "inspect_tools";
-export const isGuard = (s: string): s is Guard => s === "redact" || s === "inspect_tools";
+/** 各项防护在配置里的键，也是接口路径里的那一段 */
+export type Guard = "redact" | "inspect_tools" | "hidden_text" | "content" | "output_limit";
+export const GUARDS: readonly Guard[] = ["redact", "inspect_tools", "hidden_text", "content", "output_limit"];
+export const isGuard = (s: string): s is Guard => (GUARDS as readonly string[]).includes(s);
+
+/** 有规则表的那几项。输出长度只有一个上限 */
+export type RuleGuard = Exclude<Guard, "output_limit">;
+export const isRuleGuard = (s: string): s is RuleGuard => isGuard(s) && s !== "output_limit";
 
 /** 改动什么时候生效：`immediately` 下一个请求；`on_restart` 客户端重新启动后 */
 export type TakesEffect = "immediately" | "on_restart";
@@ -209,7 +214,13 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "auth_changed":
     case "credential_expired":
     case "events_dropped":
-      // 都不进请求列表。配置事件、扫描告警、熔断、额度、凭据、代理说的都是
+    case "hidden_text_found":
+    case "content_matched":
+    case "output_limited":
+      // 都不进请求列表。三项请求和输出防护的命中在安全日志和请求详情里；拦下的
+      // 请求随后有一条失败事件，那一行照常标成失败。
+      //
+      // 其余几种也不进。配置事件、扫描告警、熔断、额度、凭据、代理说的都是
       // 「现在什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "secrets_found": {

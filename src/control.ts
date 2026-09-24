@@ -90,6 +90,7 @@ export const WEBVIEW_ENDPOINTS = [
   "SetSecurityMode",
   "ToggleBuiltinRule",
   "SetBuiltinRuleAction",
+  "SetSecurityLimit",
   "CreateCustomRule",
   "UpdateCustomRule",
   "DeleteCustomRule",

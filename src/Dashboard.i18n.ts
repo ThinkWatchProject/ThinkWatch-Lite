@@ -84,7 +84,7 @@ export const dashboardText = messages(
     byModel: "按模型 · 首字节 P50 至 P95",
     byUpstream: "按上游 · 同上",
 
-    // 安全：两项防护的档位和这段时间各自看见了什么。数的是安全日志里的条数
+    // 安全：各项防护的档位和这段时间各自看见了什么。数的是安全日志里的条数
     modeOff: "关闭",
     modeObserve: "观察",
     modeEnforce: "拦截",
@@ -97,6 +97,18 @@ export const dashboardText = messages(
     toolCalls: (n: number, cut: number) =>
       `发现 ${n} 个可疑工具调用，` + (cut === 0 ? "均未切断" : cut === n ? "均已切断" : `已切断 ${cut} 个`),
     noToolCalls: "未发现可疑工具调用",
+    hiddenText: "隐藏字符",
+    hiddenFound: (n: number, blocked: number) =>
+      `发现 ${n} 处隐藏字符，` + (blocked === 0 ? "均未拒绝" : blocked === n ? "均已拒绝" : `已拒绝 ${blocked} 处`),
+    noHidden: "未发现隐藏字符",
+    content: "内容过滤",
+    contentMatched: (n: number, blocked: number) =>
+      `命中内容规则 ${n} 次，` + (blocked === 0 ? "均未拒绝" : blocked === n ? "均已拒绝" : `已拒绝 ${blocked} 次`),
+    noContent: "未命中内容规则",
+    outputLimit: "输出长度",
+    overLimit: (n: number, cut: number) =>
+      `${n} 次回答超过上限，` + (cut === 0 ? "均未切断" : cut === n ? "均已切断" : `已切断 ${cut} 次`),
+    noOverLimit: "无回答超过上限",
     showLog: "在安全日志中查看",
 
     /** 后面可能接「。转发不受影响。」，所以不带句号 */
@@ -193,6 +205,21 @@ export const dashboardText = messages(
       (n === 1 ? "1 suspicious tool call found, " : `${n} suspicious tool calls found, `) +
       (cut === 0 ? "none cut off" : cut === n ? (n === 1 ? "cut off" : "all cut off") : `${cut} cut off`),
     noToolCalls: "No suspicious tool calls found",
+    hiddenText: "Hidden characters",
+    hiddenFound: (n: number, blocked: number) =>
+      (n === 1 ? "Hidden characters found once, " : `Hidden characters found ${n} times, `) +
+      (blocked === 0 ? "none refused" : blocked === n ? (n === 1 ? "refused" : "all refused") : `${blocked} refused`),
+    noHidden: "No hidden characters found",
+    content: "Content filter",
+    contentMatched: (n: number, blocked: number) =>
+      (n === 1 ? "1 content rule match, " : `${n} content rule matches, `) +
+      (blocked === 0 ? "none refused" : blocked === n ? (n === 1 ? "refused" : "all refused") : `${blocked} refused`),
+    noContent: "No content rule matches",
+    outputLimit: "Output limit",
+    overLimit: (n: number, cut: number) =>
+      (n === 1 ? "1 answer over the limit, " : `${n} answers over the limit, `) +
+      (cut === 0 ? "none cut off" : cut === n ? (n === 1 ? "cut off" : "all cut off") : `${cut} cut off`),
+    noOverLimit: "No answers over the limit",
     showLog: "View in the security log",
 
     recordingUnavailable: "Request recording could not start",

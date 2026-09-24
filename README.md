@@ -143,11 +143,19 @@ reopening the app picks it up. Proxy variables such as `HTTPS_PROXY`, and
   before a request leaves, and restores them in the response.
 - **Tool-call inspection** cuts off the response stream when an upstream returns
   a tool call carrying a command that would grant code execution.
+- **Hidden characters** refuses a request whose user messages or tool results
+  carry Unicode tag characters or bidirectional controls.
+- **Content filter** refuses a request whose user messages or tool results match
+  a keyword or regex rule. Only the three explicit "ignore previous
+  instructions" rules are on out of the box.
+- **Output limit** cuts a streamed answer off where it passes a set number of
+  characters, and withholds a non-streamed answer that is over it.
 
-Both apply to every upstream and run in Off, Observe or Enforce mode, starting
-in Observe. The Security page lists every rule: built-in rules can be turned off
-one at a time, custom rules are regular expressions, and any rule can be tried
-on a sample first. Everything the two protections catch is kept in a log.
+All of them apply to every upstream and run in Off, Observe or Enforce mode; the
+output limit starts Off and the rest start in Observe. The Security page lists
+every rule: built-in rules can be turned off one at a time, custom rules are
+regular expressions (or keywords, for the content filter), and any rule can be
+tried on a sample first. Everything the protections catch is kept in a log.
 
 ### MCP
 

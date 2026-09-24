@@ -661,7 +661,7 @@ export default function Dashboard({
     Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
 
   /*
-    两项防护现在各在哪一档，以及这段时间各自看见了什么。
+    各项防护现在各在哪一档，以及这段时间各自看见了什么。
 
     **档位和所见要一起说。**只说所见的话，「未发现」在关闭档下是句
     空话；只说档位的话，用户不知道它到底拦下过什么。
@@ -708,6 +708,45 @@ export default function Dashboard({
               : sec.inspect_tools === "off"
                 ? t.notChecked
                 : t.noToolCalls,
+        },
+        {
+          key: "hidden_text",
+          name: t.hiddenText,
+          mode: sec.hidden_text,
+          hits: counts.hidden_text,
+          open: counts.hidden_text - counts.hidden_text_blocked,
+          saw:
+            counts.hidden_text > 0
+              ? t.hiddenFound(counts.hidden_text, counts.hidden_text_blocked)
+              : sec.hidden_text === "off"
+                ? t.notChecked
+                : t.noHidden,
+        },
+        {
+          key: "content",
+          name: t.content,
+          mode: sec.content,
+          hits: counts.content,
+          open: counts.content - counts.content_blocked,
+          saw:
+            counts.content > 0
+              ? t.contentMatched(counts.content, counts.content_blocked)
+              : sec.content === "off"
+                ? t.notChecked
+                : t.noContent,
+        },
+        {
+          key: "output_limit",
+          name: t.outputLimit,
+          mode: sec.output_limit,
+          hits: counts.output_limit,
+          open: counts.output_limit - counts.output_limit_cut,
+          saw:
+            counts.output_limit > 0
+              ? t.overLimit(counts.output_limit, counts.output_limit_cut)
+              : sec.output_limit === "off"
+                ? t.notChecked
+                : t.noOverLimit,
         },
       ]
     : [];

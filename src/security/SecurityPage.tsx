@@ -4,14 +4,15 @@ import { RangePicker, useRange, type Range } from "@/ui/range";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
-import type { ConfigWritten, Guard, SecurityDetail, SecurityRuleView } from "@/types";
+import { GUARDS, type ConfigWritten, type Guard, type RuleGuard, type SecurityDetail, type SecurityRuleView } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
-import { api, type CustomRuleSave } from "./api";
+import { api, hasAction, hasCustom, type CustomGuard, type RuleSave } from "./api";
 import { GuardTab, type RuleActions } from "./GuardTab";
 import { viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { LogTab } from "./LogTab";
-import { asAction, BuiltinRuleDialog, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
+import { OutputLimitTab } from "./OutputLimitTab";
+import { asAction, BuiltinRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { securityPageText } from "./SecurityPage.i18n";
 
@@ -26,27 +27,29 @@ export interface LogFocus {
 
 type DialogState =
   | null
-  | { kind: "rule"; guard: Guard; editing: SecurityRuleView | null; seed?: RuleSeed }
-  | { kind: "builtin"; guard: Guard; rule: SecurityRuleView }
-  | { kind: "test"; guard: Guard }
-  | { kind: "delete"; guard: Guard; rule: SecurityRuleView };
-
-const GUARDS: Guard[] = ["redact", "inspect_tools"];
+  | { kind: "rule"; guard: CustomGuard; editing: SecurityRuleView | null; seed?: RuleSeed }
+  | { kind: "builtin"; guard: RuleGuard; rule: SecurityRuleView }
+  | { kind: "test"; guard: RuleGuard }
+  | { kind: "delete"; guard: CustomGuard; rule: SecurityRuleView };
 
 /** 自定义规则现在的样子，改一处（启停）时原样带回去 */
-function saveOf(r: SecurityRuleView, enabled: boolean): Omit<CustomRuleSave, "base_version"> {
+function saveOf(guard: CustomGuard, r: SecurityRuleView, enabled: boolean): RuleSave {
+  const written = patternOf(r);
   return {
     name: r.id,
-    pattern: r.matcher.kind === "regex" ? r.matcher.pattern : "",
+    pattern: written?.pattern ?? "",
     action: r.action ?? undefined,
+    match: guard === "content" ? written?.match : undefined,
     enabled,
   };
 }
 
 /**
- * 安全页：日志，以及两项防护 —— 出站脱敏、工具调用审查。
+ * 安全页：日志，以及五项防护 —— 出站脱敏、工具调用审查、隐藏字符、内容过滤、
+ * 输出长度。前两项管发出去的凭据和回来的工具调用，隐藏字符和内容过滤管调用方
+ * 发来的正文，输出长度管回答有多长。
  *
- * **两项防护都是全局的。**档位和规则对所有上游、所有密钥一样，上游、路由、
+ * **各项防护都是全局的。**档位和规则对所有上游、所有密钥一样，上游、路由、
  * 密钥上没有任何安全设置。MCP 服务器、技能、钩子这些客户端配置的检查在
  * MCP 页，不在这里：这一页只管经过网关的请求。
  *
@@ -124,51 +127,63 @@ export default function SecurityPage({
   }
 
   /** 先在界面上改过来，再写。写失败时 `reload` 会把它改回去 */
-  function patch(guard: Guard, f: (d: SecurityDetail[Guard]) => SecurityDetail[Guard]) {
+  function patch<G extends Guard>(guard: G, f: (d: SecurityDetail[G]) => SecurityDetail[G]) {
     setDetail((d) => (d ? { ...d, [guard]: f(d[guard]) } : d));
   }
 
-  const find = (guard: Guard, id: string, custom: boolean) =>
-    detail?.[guard].rules.find((r) => r.id === id && (r.custom ?? false) === custom);
+  const find = (guard: RuleGuard, id: string, custom: boolean) =>
+    detail?.[guard].rules.find((r) => r.id === id && r.custom === custom);
 
-  function toggle(guard: Guard, r: SecurityRuleView, enabled: boolean) {
+  function toggle(guard: RuleGuard, r: SecurityRuleView, enabled: boolean) {
     patch(guard, (g) => ({
       ...g,
       rules: g.rules.map((x) => (x === r ? { ...x, enabled } : x)),
     }));
     void write((base) =>
-      r.custom
-        ? api.updateRule(guard, r.id, { ...saveOf(r, enabled), base_version: base })
-        : api.toggleBuiltin(guard, r.id, enabled, base ?? null),
+      r.custom && hasCustom(guard)
+        ? api.updateRule(guard, r.id, { ...saveOf(guard, r, enabled), base_version: base })
+        : api.toggleBuiltin(guard, r.id, enabled, base),
     );
   }
 
-  const actions = (guard: Guard): RuleActions => ({
-    mode: (mode) => {
-      patch(guard, (g) => ({ ...g, mode }));
-      void write((base) => api.setMode(guard, mode, base ?? null));
-    },
+  function setMode(guard: Guard, mode: string) {
+    patch(guard, (g) => ({ ...g, mode }));
+    void write((base) => api.setMode(guard, mode, base));
+  }
+
+  const actions = (guard: RuleGuard): RuleActions => ({
+    mode: (mode) => setMode(guard, mode),
     toggle: (r, enabled) => toggle(guard, r, enabled),
     open: (r) =>
-      setDialog(r.custom ? { kind: "rule", guard, editing: r } : { kind: "builtin", guard, rule: r }),
-    copy: (r) =>
-      setDialog({
-        kind: "rule",
-        guard,
-        editing: null,
-        seed: {
-          name: viewName(guard, r),
-          pattern: r.matcher.kind === "regex" ? r.matcher.pattern : "",
-          action: asAction(r.action),
-        },
-      }),
-    remove: (r) => setDialog({ kind: "delete", guard, rule: r }),
-    create: () => setDialog({ kind: "rule", guard, editing: null }),
+      setDialog(
+        r.custom && hasCustom(guard)
+          ? { kind: "rule", guard, editing: r }
+          : { kind: "builtin", guard, rule: r },
+      ),
+    // 内置规则只有工具调用和内容规则写得出等价的自定义规则
+    copy: hasAction(guard)
+      ? (r) => {
+          const written = patternOf(r);
+          setDialog({
+            kind: "rule",
+            guard,
+            editing: null,
+            seed: {
+              name: viewName(guard, r),
+              pattern: written?.pattern ?? "",
+              match: written?.match,
+              action: asAction(r.action),
+            },
+          });
+        }
+      : undefined,
+    remove: (r) => hasCustom(guard) && setDialog({ kind: "delete", guard, rule: r }),
+    create: () => hasCustom(guard) && setDialog({ kind: "rule", guard, editing: null }),
     test: () => setDialog({ kind: "test", guard }),
   });
 
   /** 自定义规则保存。**失败时对话框留着**，把 core 的话显示在里面 */
-  async function saveRule(guard: Guard, editing: SecurityRuleView | null, save: Omit<CustomRuleSave, "base_version">) {
+  async function saveRule(guard: CustomGuard, editing: SecurityRuleView | null, save: RuleSave) {
     const body = { ...save, base_version: version.current };
     const w = editing ? await api.updateRule(guard, editing.id, body) : await api.createRule(guard, body);
     version.current = w.version;
@@ -176,6 +191,12 @@ export default function SecurityPage({
     onChanged();
     await reload();
   }
+
+  /** 内置规则对话框里的「复制为自定义规则」。写不出等价写法的不给 */
+  const copyOf = (guard: RuleGuard, r: SecurityRuleView) => {
+    const copy = actions(guard).copy;
+    return copy && (() => copy(r));
+  };
 
   return (
     <div className="flex flex-col gap-4 p-5">
@@ -220,9 +241,22 @@ export default function SecurityPage({
 
         {GUARDS.map((g) => (
           <TabsContent key={g} value={g} className="mt-2">
-            {detail ? (
-              <GuardTab guard={g} detail={detail[g]} busy={busy} actions={actions(g)} />
+            {!detail ? null : g === "output_limit" ? (
+              <OutputLimitTab
+                detail={detail.output_limit}
+                busy={busy}
+                onMode={(mode) => setMode(g, mode)}
+                onSaveLimit={async (max) => {
+                  const w = await api.setLimit(max, version.current);
+                  version.current = w.version;
+                  onChanged();
+                  await reload();
+                }}
+              />
             ) : (
+              <GuardTab guard={g} detail={detail[g]} busy={busy} actions={actions(g)} />
+            )}
+            {!detail && (
               <p className="tw-body text-muted-foreground">{error ? t.loadFailed(error) : t.loading}</p>
             )}
           </TabsContent>
@@ -246,9 +280,11 @@ export default function SecurityPage({
           guard={dialog.guard}
           rule={dialog.rule}
           onClose={() => setDialog(null)}
-          onCopy={() => actions(dialog.guard).copy(dialog.rule)}
+          onCopy={copyOf(dialog.guard, dialog.rule)}
           onSaveAction={async (a) => {
-            const w = await api.setAction(dialog.rule.id, a, version.current);
+            const g = dialog.guard;
+            if (!hasAction(g)) return;
+            const w = await api.setAction(g, dialog.rule.id, a, version.current);
             version.current = w.version;
             setDialog(null);
             onChanged();

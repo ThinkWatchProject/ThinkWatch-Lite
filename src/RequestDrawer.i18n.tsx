@@ -45,7 +45,6 @@ export const requestDrawerText = messages(
     dropped: "丢弃字段",
     /** 两项防护在这次请求上的全部命中 */
     security: "安全",
-    times: (n: number) => `出现 ${n} 次`,
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     status: "状态",
     inProgress: "进行中",
@@ -140,7 +139,6 @@ export const requestDrawerText = messages(
     conversion: "Conversion",
     dropped: "Dropped",
     security: "Security",
-    times: (n: number) => `${n} times`,
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     status: "Status",
     inProgress: "In progress",

@@ -35,7 +35,7 @@ fn core_binary() -> PathBuf {
 
 /// 起一个只有自己看得见的 core。
 ///
-/// `THINKWATCH_HOME` 指到一个临时目录，端口挑一个不常用的 —— **不碰
+/// `THINKWATCH_HOME` 指到一个临时目录，端口由系统分一个空闲的 —— **不碰
 /// `~/.thinkwatch`，也不碰这台机器上正开着的那个实例。**
 struct Core {
     child: Child,
@@ -45,10 +45,22 @@ struct Core {
 
 /// 同一个测试二进制里的第几个 core。
 ///
-/// **每个都要自己的目录和端口。**同一个进程里的测试是并行跑的，而两个 core
-/// 共用一个 `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来
-/// —— 表现为「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
+/// **每个都要自己的目录。**同一个进程里的测试是并行跑的，而两个 core 共用一个
+/// `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来 —— 表现为
+/// 「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
 static NTH: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+
+/// 系统此刻分给我们的一个空闲端口。
+///
+/// **不写死一段端口。**写死的话，另一个检出里同时跑着的同一条测试就会撞上同一个
+/// 端口，那个 core 起不来 —— 表现也是「三十秒都没答应」。放掉之后到 core 绑上之间
+/// 有一小段空档，系统不会马上把刚分出去的端口再分给别人。
+fn free_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|l| l.local_addr())
+        .expect("系统分不出空闲端口")
+        .port()
+}
 
 impl Core {
     fn start() -> Self {
@@ -62,9 +74,9 @@ impl Core {
         let child = Command::new(core_binary())
             .args(["serve", "--config"])
             .arg(home.join("config.yaml"))
-            // 这条测试不打数据面，端口只是不能撞上 —— 包括不能撞上同一个
-            // 测试二进制里的另一个 core
-            .args(["--port", &(18790 + nth).to_string()])
+            // 这条测试不打数据面，端口只是不能撞上：同一个测试二进制里的另一个
+            // core、另一个检出里同时在跑的这条测试、这台机器上别的什么
+            .args(["--port", &free_port().to_string()])
             .env("THINKWATCH_HOME", &home)
             .env(tw_api::control::TOKEN_ENV, &token)
             .stdout(std::process::Stdio::null())
