@@ -187,3 +187,50 @@ fn reveal(path: &str) -> Result<(), String> {
     )
     .to_string())
 }
+
+/// 这台机器上已接管、还指着本机网关的客户端。切到远程之前的确认里说（「已接管的 3 个
+/// 客户端仍指向本机网关 127.0.0.1:8788」）
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct Adopted {
+    pub count: usize,
+    /// 本机网关此刻的地址
+    pub local_addr: Option<String>,
+}
+
+/// 数一数这台机器上已接管、还指着本机网关的客户端。**数不出来就当没有**：确认框里
+/// 少说一条提醒，不该挡住切换。
+///
+/// TODO(P3)：客户端接管整块搬进 lite 之后，改成问 lite 自己的扫描；现在还是问本机
+/// core 的 `/clients`（`control` 必须是本机那一个，见 `Supervisor::control`）。
+pub async fn adopted_pointing_at_local(control: &crate::control::ControlClient) -> Adopted {
+    let (clients, status) = tokio::join!(control.call::<ep::Clients>(&[], &()), control.status());
+    let local_addr = status.ok().and_then(|s| s.gateway_addr);
+    let count = match (&clients, &local_addr) {
+        (Ok(list), Some(addr)) => list
+            .clients
+            .iter()
+            .filter(|c| c.adopted_at_ms.is_some())
+            .filter(|c| {
+                c.endpoint
+                    .as_deref()
+                    .is_none_or(|e| e.contains(addr.as_str()))
+            })
+            .count(),
+        _ => 0,
+    };
+    Adopted { count, local_addr }
+}
+
+/// 把这台机器上已接管的客户端改为指向 `gateway_addr`（远程服务器的网关）。返回改了
+/// 几个。切换确认里勾了「同时将这些客户端改为指向…」时调。
+///
+/// TODO(P3)：接管搬进 lite 之后在这里接上 —— 对每个已接管、指着本机网关的客户端，
+/// 用 lite 侧的接管代码把端点换成 `http://{gateway_addr}`，密钥换成服务器上为它发放的
+/// 专用密钥。在那之前如实说做不到，不假装改过了。
+pub async fn retarget_adopted_clients(
+    app: &tauri::AppHandle,
+    gateway_addr: &str,
+) -> anyhow::Result<usize> {
+    let _ = app;
+    anyhow::bail!("retargeting adopted clients to {gateway_addr} is not implemented yet (P3)")
+}

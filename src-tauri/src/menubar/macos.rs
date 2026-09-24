@@ -412,6 +412,9 @@ fn fill_item(mtm: MainThreadMarker, ui: &mut Ui, item: &NSMenuItem, i: &super::m
             }
         };
         for m in &i.submenu {
+            if m.sep_before {
+                sub.addItem(&NSMenuItem::separatorItem(mtm));
+            }
             let one = NSMenuItem::new(mtm);
             one.setTitle(&NSString::from_str(&m.title));
             one.setState(if m.checked {

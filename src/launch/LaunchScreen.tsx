@@ -8,6 +8,7 @@ import { errorText } from "@/i18n/core.i18n";
 import { troubleText } from "./trouble.i18n";
 import { launchText } from "./LaunchScreen.i18n";
 import { launchPhase } from "./phase";
+import { connText } from "@/connection/connection.i18n";
 
 /**
  * 至少停多久。**冷启动每次都停**：秒开也不跳过，四笔要画完、亮一下。
@@ -49,6 +50,7 @@ const STROKES: [string, number][] = [
  * 用户本来在看数据，整窗盖住比留着旧值加一句说明更糟。
  */
 export function LaunchScreen({
+  remote,
   state,
   linked,
   tries,
@@ -56,6 +58,12 @@ export function LaunchScreen({
   ready,
   onGone,
 }: {
+  /**
+   * 连的是远程 core 时是它的名字。**那时这一面只说「正在连接」**：本机 core 的那几种
+   * 状态（起不来、安全模式）和它无关，重启本机 core 也不是出路 —— 连不上的原因和出路
+   * 在交接之后的「未连接」页上
+   */
+  remote: string | null;
   /** `core_state` 的字符串 */
   state: string;
   /** 状态读到过了 */
@@ -71,6 +79,7 @@ export function LaunchScreen({
 }) {
   const t = useText(launchText);
   const tt = useText(troubleText);
+  const ct = useText(connText);
   const born = useRef(performance.now());
   const [leaving, setLeaving] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -98,7 +107,10 @@ export function LaunchScreen({
     return () => clearInterval(h);
   }, [leaving]);
 
-  const { what, problem } = launchPhase(state, linked, tries, linkError);
+  const { what, problem } =
+    remote !== null && !linked
+      ? { what: ct.connectingTo(remote), problem: null }
+      : launchPhase(state, linked, tries, linkError);
   const sub =
     failedAction ??
     problem?.next ??

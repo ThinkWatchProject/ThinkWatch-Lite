@@ -185,11 +185,17 @@ pub async fn core_status(state: tauri::State<'_, AppState>) -> Out<tw_api::Statu
 
 #[tauri::command]
 pub async fn core_state(state: tauri::State<'_, AppState>) -> Out<String> {
-    // 连 core 都没找到时，守护状态说什么都没意义 —— 那句话才是答案
-    if let Some(why) = &state.core_missing {
+    // 连 core 都没找到时，守护状态说什么都没意义 —— 那句话才是答案。**连着远程时
+    // 不说这个**：用不着本机的 core
+    if let Some(why) = &state.core_missing
+        && !state.link.is_remote()
+    {
         return Ok(format!("missing:{why}"));
     }
-    Ok(describe_state(&state.supervisor.state()))
+    Ok(crate::connection::describe_active(
+        &state.link.state(),
+        &state.supervisor.state(),
+    ))
 }
 
 /// 把 core 拉起来。
@@ -206,6 +212,16 @@ pub async fn restart_core(app: tauri::AppHandle) -> Out<()> {
 pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
     use std::sync::atomic::Ordering;
     let state = app.state::<AppState>();
+    // 启动时的连接选择还没选，就点了「重新启动网关」：那就是选了本机
+    if crate::connection::waiting(app) {
+        crate::connection::start(app, crate::connection::store::LOCAL);
+        return Ok(());
+    }
+    // **连着远程时不碰本机的 core**：「重新启动」在那时的意思是马上再连一次
+    if state.link.is_remote() {
+        state.link.retry_now();
+        return Ok(());
+    }
     if let Some(why) = &state.core_missing {
         return Err(why.clone().into());
     }
@@ -220,6 +236,22 @@ pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
         flag.store(false, Ordering::SeqCst);
     });
     Ok(())
+}
+
+/// 守护没在跑就接回来；在跑就什么都不做。切回本机时用：远程模式下它停了
+pub(crate) fn ensure_supervising(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    let state = app.state::<AppState>();
+    if state.core_missing.is_some() || state.supervising.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let sup = state.supervisor.clone();
+    let flag = state.supervising.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        supervise(sup, app).await;
+        flag.store(false, Ordering::SeqCst);
+    });
 }
 
 /// 守护状态说成界面认得的那个字符串。
@@ -298,77 +330,110 @@ pub(crate) async fn heartbeat_loop(
 /// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面要对一次账，否则那段时间
 /// 里结束的请求，会一直显示成进行中。菜单栏的实时数是问 core 要的（`/live`），
 /// 叫醒它重收一次就对了。
-pub(crate) async fn bridge_events(
-    at: tw_api::control::Address,
-    token: String,
-    app: tauri::AppHandle,
-) {
+///
+/// **跟着当前连接走。**用的是 `AppState.control`：切换连接时它换了地方，这里手上那条
+/// 订阅随即作废、连新的那个。连着远程时事件流断了就是断线，告诉连接那一层
+pub(crate) async fn bridge_events(app: tauri::AppHandle) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    let client = st.control.clone();
+    let mut moved = client.moved();
+    let mut link = st.link.watch();
     let mut connected_before = false;
     loop {
-        let client = ControlClient::new(at.clone(), token.clone());
+        moved.mark_unchanged();
+        // **连着远程、还没连上时不去订阅**：连接那一层自己在按退避重连，这里再每秒
+        // 连一次，就是往服务器上多打一份不带退避的连接。等它连上（或者换了连接）
+        while !matches!(
+            *link.borrow_and_update(),
+            crate::connection::LinkState::Local | crate::connection::LinkState::Connected { .. }
+        ) {
+            if link.changed().await.is_err() {
+                return;
+            }
+        }
         let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (a, b, o) = (app.clone(), app.clone(), opened.clone());
         let resumed = connected_before;
-        let r = client
-            .subscribe_events(
-                move || {
-                    o.store(true, std::sync::atomic::Ordering::SeqCst);
-                    // **每次接上都按现状对一次账**：接上之前 core 报过的（启动时的凭据
-                    // 失效、断线那段里被拒的配置），事件流不会再说一遍
-                    reconcile_notices(&b);
-                    if resumed {
-                        let lost = tw_api::Event::EventsDropped {
-                            id: 0,
-                            count: 0,
-                            at_ms: notices::now_ms(),
-                        };
-                        if let Some(st) = b.try_state::<AppState>() {
-                            st.menubar.notify_one();
-                        }
-                        let _ = b.emit("core-event", &lost);
-                    }
-                },
-                move |ev| {
-                    // **在客户端弹批准提示的同一瞬间弹一条通知**。
-                    // 这是网关位置独有的能力：只有我们同时知道「这个调用长
-                    // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
-                    // 看到这条，判断质量完全不一样。
-                    if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
-                        n.on_event(&ev);
-                    }
-                    // 菜单栏上那几个数只跟这几种事件有关：花了多少（请求
-                    // 落地之后存储层才算得出来）、额度还剩多少、进行中几个。
-                    // 别的事件叫醒它只是让它白跑一趟。**事件只是叫醒它，数
-                    // 由 core 给**（`/live`）：掉过队的话（`EventsDropped`）
-                    // 重收一次也就对上了
-                    if let Some(st) = a.try_state::<AppState>()
-                        && matches!(
-                            ev,
-                            tw_api::Event::RequestStarted { .. }
-                                | tw_api::Event::RequestFinished { .. }
-                                | tw_api::Event::RequestFailed { .. }
-                                | tw_api::Event::RequestCancelled { .. }
-                                | tw_api::Event::QuotaSeen { .. }
-                                | tw_api::Event::ConfigReloaded { .. }
-                                | tw_api::Event::EventsDropped { .. }
-                        )
-                    {
+        let sub = client.subscribe_events(
+            move || {
+                o.store(true, std::sync::atomic::Ordering::SeqCst);
+                // **每次接上都按现状对一次账**：接上之前 core 报过的（启动时的凭据
+                // 失效、断线那段里被拒的配置），事件流不会再说一遍
+                reconcile_notices(&b);
+                if resumed {
+                    let lost = tw_api::Event::EventsDropped {
+                        id: 0,
+                        count: 0,
+                        at_ms: notices::now_ms(),
+                    };
+                    if let Some(st) = b.try_state::<AppState>() {
                         st.menubar.notify_one();
                     }
-                    // core 说这个订阅者掉过队：掉的那几条里可能有该提醒的事
-                    if matches!(ev, tw_api::Event::EventsDropped { .. }) {
-                        reconcile_notices(&a);
-                    }
-                    let _ = a.emit("core-event", &ev);
-                },
-            )
-            .await;
-        if let Err(e) = r {
-            tracing::debug!("事件流断开：{e:#}");
+                    let _ = b.emit("core-event", &lost);
+                }
+            },
+            move |ev| {
+                // **在客户端弹批准提示的同一瞬间弹一条通知**。
+                // 这是网关位置独有的能力：只有我们同时知道「这个调用长
+                // 什么样」和「它来自哪个上游」。用户看到批准提示的同时
+                // 看到这条，判断质量完全不一样。
+                if let Some(n) = a.try_state::<Arc<notices::Notices>>() {
+                    n.on_event(&ev);
+                }
+                // 菜单栏上那几个数只跟这几种事件有关：花了多少（请求
+                // 落地之后存储层才算得出来）、额度还剩多少、进行中几个。
+                // 别的事件叫醒它只是让它白跑一趟。**事件只是叫醒它，数
+                // 由 core 给**（`/live`）：掉过队的话（`EventsDropped`）
+                // 重收一次也就对上了
+                if let Some(st) = a.try_state::<AppState>()
+                    && matches!(
+                        ev,
+                        tw_api::Event::RequestStarted { .. }
+                            | tw_api::Event::RequestFinished { .. }
+                            | tw_api::Event::RequestFailed { .. }
+                            | tw_api::Event::RequestCancelled { .. }
+                            | tw_api::Event::QuotaSeen { .. }
+                            | tw_api::Event::ConfigReloaded { .. }
+                            | tw_api::Event::EventsDropped { .. }
+                    )
+                {
+                    st.menubar.notify_one();
+                }
+                // core 说这个订阅者掉过队：掉的那几条里可能有该提醒的事
+                if matches!(ev, tw_api::Event::EventsDropped { .. }) {
+                    reconcile_notices(&a);
+                }
+                let _ = a.emit("core-event", &ev);
+            },
+        );
+        let switched = tokio::select! {
+            r = sub => {
+                if let Err(e) = r {
+                    tracing::debug!("事件流断开：{e:#}");
+                }
+                false
+            }
+            _ = moved.changed() => true,
+        };
+        let was_open = opened.load(std::sync::atomic::Ordering::SeqCst);
+        if was_open && !switched {
+            st.link.stream_lost();
         }
-        // 接通过才算连上过：core 重启期间那几轮连不上的不算
-        connected_before |= opened.load(std::sync::atomic::Ordering::SeqCst);
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // 接通过才算连上过：core 重启期间那几轮连不上的不算。**换了连接从头算**：
+        // 新连上的那个 core 界面会整个重新取一遍，不用补报丢事件
+        connected_before = if switched {
+            false
+        } else {
+            connected_before | was_open
+        };
+        if !switched {
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+                _ = moved.changed() => {}
+            }
+        }
     }
 }
 

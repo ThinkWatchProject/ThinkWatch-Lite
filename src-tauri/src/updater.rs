@@ -179,40 +179,10 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 把更新窗口调成网页量出来的那么高。
-///
-/// **窗口有多高，不等于网页有多高。**Tauri 在 macOS 上建的是一扇
-/// `FullSizeContentView` 的窗：内容视图铺满整扇窗户，标题栏盖在它上面，
-/// webview 只摆在标题栏底下那一块。而 `set_size` 说的是整扇窗户
-/// （`inner_size()` 和 `outer_size()` 在这里报的也是同一个数，所以标题栏
-/// 有多高，从它们之间也减不出来）—— 照着网页量出来的高度设下去，网页拿到
-/// 的就少了一条标题栏，内容的最后一截被窗口下沿切掉：底部留白没了，那排
-/// 按钮只剩上半截。
-///
-/// 标题栏多高不写死 —— 各版本不一样（Tahoe 上是 32 点），没有标题栏的窗
-/// 是 0。`contentLayoutRect` 给的正是没被标题栏盖住的那一块，和整扇窗户
-/// 一减就是要补上的数。
+/// 把更新窗口调成网页量出来的那么高。理由见 [`crate::window::fit`]
 #[tauri::command]
 pub fn update_fit(window: tauri::Window, height: f64) -> tauri::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        let w = window.clone();
-        // **走 Tauri 的主线程队列，不走 GCD。**紧跟在这之后网页会把窗口
-        // 亮出来，那一步排在同一条队列上；换一条队列，用户就会先看见一扇
-        // 大小还没调好的窗
-        window.run_on_main_thread(move || {
-            let Ok(ptr) = w.ns_window() else { return };
-            // SAFETY: `ns_window()` 给的是这扇窗的 NSWindow，这里在主线程上
-            let ns = unsafe { &*ptr.cast::<objc2_app_kit::NSWindow>() };
-            let titlebar = ns.frame().size.height - ns.contentLayoutRect().size.height;
-            ns.setContentSize(objc2_foundation::NSSize::new(
-                UPDATE_WIDTH,
-                height + titlebar,
-            ));
-        })
-    }
-    #[cfg(not(target_os = "macos"))]
-    window.set_size(tauri::LogicalSize::new(UPDATE_WIDTH, height))
+    crate::window::fit(&window, UPDATE_WIDTH, height)
 }
 
 /// 更新那条系统通知的键。点开它拉起的是更新窗口，不是主界面的某一页
@@ -347,43 +317,35 @@ pub(crate) enum Step {
 ///
 /// 问不到（core 不在跑、控制面没答应）就不等 —— 没有网关，也就没有要保护
 /// 的请求。
-pub(crate) async fn wait_for_quiet(app: &tauri::AppHandle, control: &ControlClient) {
+pub(crate) async fn wait_for_quiet(control: &ControlClient, on_wait: impl Fn(usize)) {
     let started = std::time::Instant::now();
     let mut waited = false;
     loop {
         let s = match control.status().await {
             Ok(s) => s,
             Err(e) => {
-                tracing::info!("更新：问不到网关的状态，不等（{e:#}）");
+                tracing::info!("等请求结束：问不到网关的状态，不等（{e:#}）");
                 return;
             }
         };
         if s.in_flight == 0 {
             if waited {
-                tracing::info!("更新：请求都结束了，等了 {:?}", started.elapsed());
+                tracing::info!("等请求结束：都结束了，等了 {:?}", started.elapsed());
             }
             return;
         }
         if started.elapsed() >= DRAIN_LIMIT {
             tracing::warn!(
-                "更新：等了 {DRAIN_LIMIT:?} 还有 {} 个请求没结束，照常重启",
+                "等请求结束：等了 {DRAIN_LIMIT:?} 还有 {} 个请求没结束，不再等",
                 s.in_flight
             );
             return;
         }
         if !waited {
-            tracing::info!(
-                "更新：网关手上还有 {} 个请求，等它们结束再重启",
-                s.in_flight
-            );
+            tracing::info!("等请求结束：网关手上还有 {} 个请求", s.in_flight);
             waited = true;
         }
-        let _ = app.emit(
-            "update-step",
-            Step::Waiting {
-                in_flight: s.in_flight,
-            },
-        );
+        on_wait(s.in_flight);
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 }
@@ -471,7 +433,11 @@ pub async fn update_install(
             )
         })?;
 
-    wait_for_quiet(&app, &state.control).await;
+    // 问的是本机的 core：要重启的是它。连着远程时它本来就停着，不用等
+    wait_for_quiet(state.supervisor.control(), |in_flight| {
+        let _ = app.emit("update-step", Step::Waiting { in_flight });
+    })
+    .await;
 
     let _ = app.emit("update-step", Step::Installing);
     // 起来之后说一声换到了哪一版。写不进去不影响更新本身。

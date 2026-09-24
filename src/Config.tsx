@@ -8,6 +8,7 @@ import { AppearanceSection } from "./Appearance";
 import MenubarSettings from "./MenubarSettings";
 import { ListenSection } from "./settings/ListenSection";
 import { RetentionSection } from "./settings/RetentionSection";
+import { ConnectionsSection } from "./connection/ConnectionsSection";
 import type { CoreStatus, Overview } from "./types";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -51,6 +52,9 @@ export default function Config({
   const [autostart, setAutostart] = useState<boolean | null>(null);
   return (
     <div className="space-y-8 p-5">
+      {/* 最上面：连不上的时候用户就是来这里的 */}
+      <ConnectionsSection />
+
       <LanguageSection />
 
       <AppearanceSection />

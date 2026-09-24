@@ -249,7 +249,17 @@ struct Credits {
 
 async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits) -> Snapshot {
     let now_ms = notices::now_ms();
+    let current = state.link.current();
+    let remote = match &current {
+        crate::connection::Current::Remote(r) => Some(r.name.clone()),
+        crate::connection::Current::Local => None,
+    };
     let gateway = match state.supervisor.state() {
+        // 连着远程：看的是那一条连接，本机的 core 本来就停着
+        _ if remote.is_some() => match state.link.state() {
+            crate::connection::LinkState::Connected { .. } => Gateway::Running,
+            _ => Gateway::Unlinked,
+        },
         _ if state.core_missing.is_some() => Gateway::Failed,
         CoreState::Running { .. } => Gateway::Running,
         CoreState::Starting | CoreState::Restarting { .. } => Gateway::Starting,
@@ -264,6 +274,16 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             .is_some_and(|n| n.mode() != notices::Mode::Off),
         notices: notices.map(|n| unread(&n.list())).unwrap_or_default(),
         update: crate::updater::pending_update(app),
+        connections: crate::connection::view(app)
+            .profiles
+            .into_iter()
+            .map(|p| model::Connection {
+                current: p.id == current_id(&current),
+                id: p.id,
+                name: p.name,
+            })
+            .collect(),
+        remote,
         now_ms,
         gateway,
         ..Default::default()
@@ -365,6 +385,13 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     snap
 }
 
+fn current_id(c: &crate::connection::Current) -> &str {
+    match c {
+        crate::connection::Current::Local => crate::connection::store::LOCAL,
+        crate::connection::Current::Remote(r) => &r.id,
+    }
+}
+
 /// 未读的提醒，要紧的在前，同样要紧的新的在前
 fn unread(list: &[notices::Notice]) -> Vec<model::NoticeLine> {
     let mut out: Vec<(model::NoticeLine, u64)> = list
@@ -403,6 +430,11 @@ fn handle(app: &tauri::AppHandle, action: Action) {
         // 窗口可能是为这一下新建的，事件会错过：和落页一样存下来，界面挂上之后自己取
         Action::AllNotices => notices::open_view(&app, "notices".to_string()),
         Action::InstallUpdate => crate::updater::show_pending_update(&app),
+        // 切到远程要先试连、再确认（确认框里要说哪些客户端还指着本机）：交给主界面
+        // 走和侧栏同一条路。切回本机不用确认，直接切
+        Action::SwitchConnection(id) if id != crate::connection::store::LOCAL => {
+            notices::open_view(&app, format!("switch:{id}"))
+        }
         Action::Quit => quit(&app),
         other => {
             tauri::async_runtime::spawn(async move { background(&app, other).await });
@@ -432,6 +464,13 @@ async fn background(app: &tauri::AppHandle, action: Action) {
         Action::RestartGateway => crate::gateway::restart_gateway(app)
             .await
             .map_err(|e| e.to_string()),
+        Action::RetryConnection => {
+            st.link.retry_now();
+            Ok(())
+        }
+        Action::SwitchConnection(id) => crate::connection::switch(app, &id, false)
+            .await
+            .map_err(|e| format!("{e:?}")),
         Action::CheckUpdates => {
             check_updates(app).await;
             Ok(())

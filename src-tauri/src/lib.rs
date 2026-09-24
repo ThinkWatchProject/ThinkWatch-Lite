@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
@@ -15,6 +15,7 @@ pub mod autostart;
 pub mod call;
 pub mod chatgpt;
 pub mod clients;
+pub mod connection;
 pub mod control;
 pub mod core_text;
 pub mod dashboard;
@@ -51,10 +52,7 @@ pub mod window;
 pub mod zai;
 
 use control::ControlClient;
-use gateway::{
-    CORE_EXE, bridge_events, control_address, describe_state, heartbeat_loop, locate_core,
-    supervise,
-};
+use gateway::{CORE_EXE, bridge_events, control_address, heartbeat_loop, locate_core, supervise};
 use settings::{check_autostart_path, maybe_notify_first_autostart};
 use supervisor::Supervisor;
 use updater::{Updates, announce_update, update_loop};
@@ -63,7 +61,11 @@ use window::become_accessory;
 use window::{open_urls, show_main_window};
 
 pub struct AppState {
+    /// 控制面客户端，**指着当前连接的那个 core**：本机的，或者远程的。切换连接时
+    /// 由 `connection` 换掉它的目标，各处拿着的克隆一起跟着换
     pub control: ControlClient,
+    /// 当前连哪个 core、连到了哪一步。见 `connection`
+    pub link: Arc<connection::Link>,
     pub supervisor: Arc<Supervisor>,
     /// 连 twcore 都没找到时，那句话。
     ///
@@ -155,6 +157,16 @@ pub fn run() {
             gateway::core_status,
             gateway::core_state,
             window::reveal_main_window,
+            connection::connections,
+            connection::set_connection_startup,
+            connection::test_connection,
+            connection::save_connection,
+            connection::delete_connection,
+            connection::switch_preflight,
+            connection::switch_connection,
+            connection::retry_connection,
+            connection::pick_connection,
+            connection::picker_fit,
             gateway::restart_core,
             dashboard::dashboard,
             upstreams::upstream_stats,
@@ -280,8 +292,24 @@ pub fn run() {
                 saved.notices,
             );
             app.manage(notices.clone());
+            // 这次连哪个。**按住 ⌥ 启动，或者上两次启动都没走到就绪**，先让人选
+            let dir = data_dir();
+            let attempts = connection::launch::begin(&dir);
+            let pick = connection::launch::why(attempts, connection::launch::option_held());
+            let conns = connection::store::load(&dir);
+            let start_id = conns.startup_target();
+            let local = control::Target::Local {
+                at: at.clone(),
+                token: token.clone(),
+            };
+            let link = Arc::new(connection::Link::new(
+                handle.clone(),
+                local.clone(),
+                connection::Current::Local,
+            ));
             app.manage(AppState {
-                control: ControlClient::new(at.clone(), token.clone()),
+                control: ControlClient::to(local),
+                link: link.clone(),
                 supervisor: sup.clone(),
                 core_missing: located.as_ref().err().map(|e| format!("{e:#}")),
                 supervising: supervising.clone(),
@@ -303,14 +331,26 @@ pub fn run() {
                         if let Some(n) = h.try_state::<Arc<notices::Notices>>() {
                             n.on_core_state(&now);
                         }
-                        let _ = h.emit("core-state", describe_state(&now));
+                        connection::on_supervisor(&h, &now);
+                        // 界面收到的是**当前连接**的状态：连着远程时本机 core 停下，
+                        // 界面上不该出现「已停止」
+                        connection::emit_core_state(&h);
                     }
                 });
             }
 
             // 守护循环。**它跑在后台任务里而不是阻塞 setup** —— core 起
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
-            if located.is_ok() {
+            //
+            // **只在连本机时起。**连远程时本机的 core 不跑；要先让人选的话，选好了再起
+            let remote_start = pick.is_some() || conns.remote(&start_id).is_some();
+            if remote_start {
+                if pick.is_some() {
+                    link.wait_for_pick();
+                } else {
+                    connection::start(&handle, &start_id);
+                }
+            } else if located.is_ok() {
                 supervising.store(true, std::sync::atomic::Ordering::SeqCst);
                 let h = handle.clone();
                 let sup_for_loop = sup.clone();
@@ -344,7 +384,12 @@ pub fn run() {
             // 静默启动：开机拉起来的时候屏幕上什么都不该出现，
             // 只有菜单栏多一个图标。**图标已经在上面建好了** —— 它不等
             // core 就绪，否则用户开机后会有一段「到底启没启」的空白期。
-            if autostart::launched_by_autostart(std::env::args()) {
+            if let Some(why) = pick {
+                // 连接选择先出来，主窗口等选好了再开。**开机自启时也出来**：只有
+                // 连着两次没走到就绪才会走到这里，那时再悄悄撞一次不如问一句
+                tracing::info!(?why, "启动时先显示连接选择");
+                connection::show_picker(&handle, why)?;
+            } else if autostart::launched_by_autostart(std::env::args()) {
                 tracing::info!("开机自启，不开窗口");
                 #[cfg(target_os = "macos")]
                 become_accessory(&handle);
@@ -389,9 +434,8 @@ pub fn run() {
 
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();
-            let (at3, tok3) = (at.clone(), token.clone());
             tauri::async_runtime::spawn(async move {
-                bridge_events(at3, tok3, h).await;
+                bridge_events(h).await;
             });
 
             // 有没有新版本。**循环无条件起，开关在循环里读** —— 用户在
