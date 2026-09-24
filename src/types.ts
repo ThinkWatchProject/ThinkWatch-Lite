@@ -193,8 +193,6 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "config_reloaded":
     case "listen_changed":
     case "config_rejected":
-    case "scan_alert":
-    case "clients_changed":
     case "health_changed":
     case "models_changed":
     case "quota_seen":
@@ -209,7 +207,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       // 都不进请求列表。三项请求和输出防护的命中在安全日志和请求详情里；拦下的
       // 请求随后有一条失败事件，那一行照常标成失败。
       //
-      // 其余几种也不进。配置事件、扫描告警、熔断、额度、凭据、代理说的都是
+      // 其余几种也不进。配置事件、熔断、额度、凭据、代理说的都是
       // 「现在什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "secrets_found": {

@@ -1,6 +1,118 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { HookView, KeySyncFailed, KeySynced, McpView, ScanFinding, SkillView } from "./tw-api";
+import type { Msg } from "./tw-api";
+
+export type AdoptResponse = { real: string, backup: string, created: boolean, 
+/**
+ * 不至于失败、但用户该知道的事（符号链接、权限太松……）
+ */
+warnings: Array<Msg>, 
+/**
+ * 改动什么时候生效
+ */
+takes_effect: TakesEffect, };
+
+export type ClientsResponse = { clients: Array<DetectedClient>, manual: Array<ManualClient>, 
+/**
+ * 客户端该连的地址
+ */
+gateway_base: string, 
+/**
+ * config.yaml 里有哪几把网关密钥可选
+ */
+keys: Array<string>, };
+
+/**
+ * 一个客户端此刻的样子。
+ */
+export type DetectedClient = { id: string, name: string, 
+/**
+ * 用户认得的那个路径
+ */
+path: string, 
+/**
+ * 跟完符号链接的真身。**和 `path` 不同时要显示出来** —— 用户以为
+ * 在改 ~/.claude/settings.json，实际写的可能是他 dotfiles 仓库里
+ * 的那份，而那是个会被 git 提交的地方
+ */
+real: string, installed: boolean, has_config: boolean, adopted_at_ms: number | null, 
+/**
+ * 配置里此刻的端点。**读出来的**，不是拿我们自己的记录充数
+ */
+endpoint: string | null, shadows: Array<string>, takes_effect: TakesEffect, 
+/**
+ * 接管之后要不要在「一直没收到请求」时提示。
+ *
+ * **需要重开终端的客户端不提示** —— 用户可能一整天都没重开过，那时
+ * 弹「是不是没生效」是狼来了
+ */
+warns_when_silent: boolean, 
+/**
+ * `measured`（在本机实际运行验证过）| `fields_only`（字段名查证过，
+ * 没有在本机实际运行验证）
+ */
+verified: Verification, 
+/**
+ * 接管之后会失去或改变的功能
+ */
+costs: Array<Msg>, 
+/**
+ * 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就不给
+ */
+key?: string | null, 
+/**
+ * 最后一次收到**那把密钥**的请求。**接管有没有真的生效，只有它能证明。**
+ *
+ * 按密钥算，不按请求头里自报的客户端标识 —— 后者可以伪造，而「接好了没有」
+ * 要的正是一个不能伪造的答案。没有密钥就没有这个值
+ */
+last_seen_ms?: number | null, 
+/**
+ * 手动配置的方法：没检测到它（配置文件不在默认位置）时照着做
+ */
+manual: ManualSetup, };
+
+/**
+ * 配置文件里的一处改动。
+ */
+export type FieldChange = { 
+/**
+ * `set` | `remove`
+ */
+op: FieldOp, 
+/**
+ * 字段路径，按层级用 `.` 连起来：`env.ANTHROPIC_BASE_URL`
+ */
+path: string, 
+/**
+ * 要写入的值。写的是网关密钥时不给
+ */
+value?: string | null, 
+/**
+ * 这一项是网关密钥。**值不回显**，哪怕是打码的；界面写成「密钥 xxx」
+ */
+secret?: boolean, };
+
+/**
+ * 对一个字段做什么。
+ */
+export type FieldOp = "set" | "remove";
+
+/**
+ * 一条诊断发现的结论。
+ */
+export type FindingLevel = "blocking" | "suspect" | "clear";
+
+/**
+ * 一条诊断发现。
+ */
+export type FindingView = { level: FindingLevel, title: Msg, detail: Msg, 
+/**
+ * 用户可以自己执行的下一步。**我们不替他执行。**
+ */
+fix: Msg | null, };
+
+export type HookView = { client: string, event: string, command: string, source: string, };
 
 /**
  * 换完之后的结果：core 换好的那把，加上**这台机器上**跟着改好、或者没能改好的客户端。
@@ -23,6 +135,22 @@ synced: Array<KeySynced>,
  */
 failed: Array<KeySyncFailed>, };
 
+export type KeySyncFailed = { client: string, name: string, error: Msg, };
+
+export type KeySynced = { 
+/**
+ * 客户端 id（`claude-code` …）
+ */
+client: string, 
+/**
+ * 界面上显示的名字
+ */
+name: string, takes_effect: TakesEffect, 
+/**
+ * 改之前的全文备份在哪
+ */
+backup: string, };
+
 /**
  * 这台机器上发生的、界面要跟上的事（Tauri 事件 `local-event`）。
  *
@@ -32,9 +160,158 @@ failed: Array<KeySyncFailed>, };
 export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind": "scan_alert", alerts: Array<ScanFinding>, at_ms: number, };
 
 /**
+ * 接管不了、只能给指引的。
+ */
+export type ManualClient = { 
+/**
+ * `cursor` / `continue` / `gemini-cli`。为它生成专用密钥时用
+ */
+id: string, name: string, 
+/**
+ * 为它生成的那把网关密钥。还没有就不给
+ */
+key?: string | null, 
+/**
+ * 最后一次收到那把密钥的请求
+ */
+last_seen_ms?: number | null, setup: ManualSetup, 
+/**
+ * 配完还漏什么（Cursor 的补全不经过网关之类）
+ */
+caveat: Msg, };
+
+/**
+ * 手动配置一个客户端的方法。
+ *
+ * **地址和密钥不写进句子里**：界面各给一个复制按钮。写进句子的话，用户
+ * 得从一句话里抠出一段 URL，而密钥根本不该出现在一句说明里。
+ */
+export type ManualSetup = { 
+/**
+ * 按顺序做的几步
+ */
+steps: Array<Msg>, 
+/**
+ * 要写进配置文件的字段，就是接管时写的那几项。只有能接管的客户端有；
+ * 密钥那一项不给值（`secret` 为真），界面换成密钥的复制按钮
+ */
+fields: Array<FieldChange>, 
+/**
+ * 要填的网关地址，这个客户端要的写法（有的带 `/v1`）
+ */
+endpoint: string, };
+
+/**
+ * MCP 矩阵上的一下。
+ */
+export type McpOp = "copy" | "remove";
+
+/**
+ * 在矩阵上点一下。
+ */
+export type McpOpRequest = { 
+/**
+ * `copy` 或 `remove`
+ */
+op: McpOp, name: string, 
+/**
+ * `copy` 时从哪个客户端取
+ */
+from: string | null, 
+/**
+ * 写到（或从中删掉）哪个客户端
+ */
+to: string, };
+
+/**
+ * 哪些客户端能被写入，哪些只能看。
+ */
+export type McpTargetView = { client: string, name: string, path: string, 
+/**
+ * 能不能往里写。**不能写的照样在清单里** —— 看得见是第一目标
+ */
+copyable: boolean, 
+/**
+ * 不能写的话，为什么。能写的时候没有
+ */
+why_not?: Msg | null, };
+
+export type McpView = { name: string, client: string, command: string, args: Array<string>, 
+/**
+ * 远端型的地址
+ */
+url: string | null, 
+/**
+ * **只有名字，没有值**
+ */
+env_keys: Array<string>, enabled: boolean, source: string, 
+/**
+ * 远端而且不在本机
+ */
+third_party: boolean, };
+
+/**
+ * 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**
+ */
+export type PlanView = { client: string, path: string, 
+/**
+ * 改之前的原文，**密钥已打码**。
+ */
+before: string | null, 
+/**
+ * 改之后的原文，**密钥已打码 —— 落盘写的是真值**。
+ *
+ * 界面上永远不显示真正的密钥，diff 里也不行：用户会截图这一屏来问
+ * 「这样对吗」。
+ */
+after: string, notes: Array<Msg>, shadows: Array<string>, 
+/**
+ * 已经是这样了，什么都不用改
+ */
+noop: boolean, carries_secret: boolean, 
+/**
+ * 这次会改哪些字段。diff 之外再给一份摘要
+ */
+fields: Array<FieldChange>, 
+/**
+ * 写进去的是哪把网关密钥（还原时是留下来的那把）。MCP 的改动没有
+ */
+key?: string | null, 
+/**
+ * 那把密钥要在接管的那一刻新建（此前没有为这个客户端留着的）
+ */
+key_created?: boolean, };
+
+/**
  * 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的
  */
 export type Retargeted = { synced: Array<KeySynced>, failed: Array<KeySyncFailed>, };
+
+/**
+ * 一处发现。
+ */
+export type ScanFinding = { level: ScanLevel, 
+/**
+ * 哪条规则命中的
+ */
+rule: string, 
+/**
+ * `hooks` | `mcp` | `skill` | `command` | `agent` | `instructions`
+ */
+kind: ScanSource, client: string, path: string, 
+/**
+ * 第几行，从 1 开始
+ */
+line: number, title: Msg, detail: Msg, 
+/**
+ * 命中的那一行，**不可见字符已经换成可见记号**
+ */
+excerpt: string, };
+
+/**
+ * 一处扫描发现有多要紧。
+ */
+export type ScanLevel = "high" | "medium" | "low";
 
 /**
  * 扫一次的结果：用户级的配置面，此刻磁盘上的样子。
@@ -51,4 +328,21 @@ conflicting: Array<string>,
  * 读不动的文件。**要显示** —— 悄悄跳过会给人「查过了」的错觉
  */
 unreadable: Array<string>, scanned: number, };
+
+/**
+ * 扫描发现出在客户端配置面的哪一类东西里。
+ */
+export type ScanSource = "hooks" | "mcp" | "skill" | "command" | "agent" | "instructions";
+
+export type SkillView = { name: string, client: string, path: string, allowed_tools: Array<string>, };
+
+/**
+ * 改了客户端的配置之后，什么时候生效。
+ */
+export type TakesEffect = "immediately" | "on_restart";
+
+/**
+ * 一个客户端的接管方式验证到什么程度。
+ */
+export type Verification = "measured" | "fields_only";
 

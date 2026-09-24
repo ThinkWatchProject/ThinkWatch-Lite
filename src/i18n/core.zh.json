@@ -366,7 +366,6 @@
     "control.store_unavailable": "请求记录不可用，数据库无法打开或磁盘出错，转发不受影响。",
     "control.no_keys": "config.yaml 中尚无网关密钥，请先创建网关密钥，再接管客户端。",
     "control.key_create_failed": "无法创建网关密钥：{detail}",
-    "control.key_bind_failed": "无法记录密钥归属：{detail}",
     "control.name_empty": "{kind:kind}名称不能为空。",
     "control.name_whitespace": "{kind:kind}名称首尾不能包含空白。",
     "control.name_reserved": "{kind:kind}名称不能以 {prefix} 开头，该前缀保留给内置项。",

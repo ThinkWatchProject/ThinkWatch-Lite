@@ -214,10 +214,12 @@ mod tests {
 
         let (_w, mut rx) = watch(std::slice::from_ref(&dir)).unwrap();
         std::fs::write(dir.join("CLAUDE.md"), "# 二\n").unwrap();
+        // 超时和通道关了都不算：要的是真收到一个信号
         assert!(
-            tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                .await
-                .is_ok(),
+            matches!(
+                tokio::time::timeout(Duration::from_secs(5), rx.recv()).await,
+                Ok(Some(()))
+            ),
             "没收到信号"
         );
     }
@@ -244,10 +246,12 @@ mod tests {
 
         // 而我们关心的那种照样能叫醒它
         std::fs::write(dir.join("CLAUDE.md"), "# 改了\n").unwrap();
+        // 超时和通道关了都不算：要的是真收到一个信号
         assert!(
-            tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                .await
-                .is_ok(),
+            matches!(
+                tokio::time::timeout(Duration::from_secs(5), rx.recv()).await,
+                Ok(Some(()))
+            ),
             "该醒的时候没醒"
         );
     }
