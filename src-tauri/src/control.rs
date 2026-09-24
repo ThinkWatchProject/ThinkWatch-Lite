@@ -631,14 +631,16 @@ impl ControlClient {
 
     pub async fn plan_restore(&self, client: &str) -> Result<tw_api::PlanView> {
         Ok(serde_json::from_slice(
-            &self.get(&format!("/clients/{client}/restore/plan")).await?,
+            &self
+                .get(&format!("/clients/{}/restore/plan", segment(client)))
+                .await?,
         )?)
     }
 
     pub async fn restore(&self, client: &str) -> Result<tw_api::AdoptResponse> {
         self.send_json(
             hyper::Method::POST,
-            &format!("/clients/{client}/restore"),
+            &format!("/clients/{}/restore", segment(client)),
             &serde_json::json!({}),
         )
         .await
@@ -649,7 +651,7 @@ impl ControlClient {
     pub async fn client_key(&self, client: &str) -> Result<tw_api::ClientKey> {
         self.send_json(
             hyper::Method::POST,
-            &format!("/clients/{client}/key"),
+            &format!("/clients/{}/key", segment(client)),
             &serde_json::json!({}),
         )
         .await
@@ -657,7 +659,9 @@ impl ControlClient {
 
     pub async fn why(&self, client: &str) -> Result<Vec<tw_api::FindingView>> {
         Ok(serde_json::from_slice(
-            &self.get(&format!("/clients/{client}/why")).await?,
+            &self
+                .get(&format!("/clients/{}/why", segment(client)))
+                .await?,
         )?)
     }
 

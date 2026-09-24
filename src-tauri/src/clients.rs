@@ -76,7 +76,10 @@ pub async fn reveal_client_config(state: tauri::State<'_, AppState>, id: String)
 /// 也抓不到，它只会在用户点下那个按钮的时候出现。
 #[cfg(target_os = "macos")]
 fn reveal(path: &str) -> Out<()> {
-    let st = std::process::Command::new("open")
+    absolute(path)?;
+    // **写全路径**，和 `dmg.rs` 里的 hdiutil 一样：按 `PATH` 找的话，谁在 `PATH`
+    // 前面放一个同名程序，跑起来的就是它
+    let st = std::process::Command::new("/usr/bin/open")
         .arg("-R")
         .arg(path)
         .status()
@@ -94,9 +97,10 @@ fn reveal(path: &str) -> Out<()> {
 
 #[cfg(windows)]
 fn reveal(path: &str) -> Out<()> {
+    absolute(path)?;
     // `/select,<路径>` 中间**没有空格**：explorer 把这一整串当成一个参数，
     // 写成 `/select, path` 的话它只会打开「文档」。
-    std::process::Command::new("explorer")
+    std::process::Command::new(explorer())
         .arg(format!("/select,{path}"))
         // **不看退出码。**explorer.exe 即使成功也常常返回 1 —— 照着它判断的话，
         // 每一次都会告诉用户失败了，而窗口就在他眼前开着。起不来（`spawn`
@@ -110,6 +114,38 @@ fn reveal(path: &str) -> Out<()> {
             )
             .to_string()
         })
+}
+
+/// explorer.exe 的全路径：Windows 目录由系统给出，不按 `PATH` 找，也不信
+/// `%SystemRoot%` 这类谁都能改的环境变量。问不到时退回默认的安装位置。
+#[cfg(windows)]
+fn explorer() -> std::path::PathBuf {
+    use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
+    let mut buf = [0u16; 260];
+    // SAFETY: 缓冲区和给出的长度一致；返回值是写入的字符数（不含结尾的 0），
+    // 放不下时是需要的长度，那时它比缓冲区大
+    let n = unsafe { GetWindowsDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    let dir = if n > 0 && n < buf.len() {
+        std::path::PathBuf::from(String::from_utf16_lossy(&buf[..n]))
+    } else {
+        std::path::PathBuf::from(r"C:\Windows")
+    };
+    dir.join("explorer.exe")
+}
+
+/// 只交给文件管理器一个绝对路径。路径来自 core，本来就是绝对的；这一道是为了
+/// 一个以 `-` 开头的字符串永远不会被 `open` 当成选项
+#[cfg(any(target_os = "macos", windows))]
+fn absolute(path: &str) -> Out<()> {
+    if std::path::Path::new(path).is_absolute() {
+        Ok(())
+    } else {
+        Err(tr!(
+            format!("配置文件的路径不是绝对路径：{path}"),
+            format!("The configuration file path is not absolute: {path}")
+        )
+        .to_string())
+    }
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]

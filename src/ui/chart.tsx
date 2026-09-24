@@ -3,21 +3,21 @@ import { cn } from "@/lib/utils"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"
 
-// Format: { THEME_NAME: CSS_SELECTOR }
-const THEMES = { light: "", dark: ".dark" } as const
-
 const INITIAL_DIMENSION = { width: 320, height: 200 } as const
 type TooltipNameType = number | string
 
+/**
+ * 每个系列的名字和图标。**没有 shadcn 原版的 `color` / `theme`**：原版把它们拼成
+ * `--color-<键>` 写进一段 `<style>`，而这里的键是模型名 —— 客户端请求里带来的、
+ * 任意的字符串，拼进样式表就是一个 CSS 注入口。颜色由调用方直接给到图形上
+ * （`stroke` / `fill`），悬停提示用的是 recharts 传进来的 `item.color`。
+ */
 export type ChartConfig = Record<
   string,
   {
     label?: React.ReactNode
     icon?: React.ComponentType
-  } & (
-    | { color?: string; theme?: never }
-    | { color?: never; theme: Record<keyof typeof THEMES, string> }
-  )
+  }
 >
 
 type ChartContextProps = {
@@ -67,7 +67,6 @@ function ChartContainer({
         )}
         {...props}
       >
-        <ChartStyle id={chartId} config={config} />
         <RechartsPrimitive.ResponsiveContainer
           initialDimension={initialDimension}
         >
@@ -75,39 +74,6 @@ function ChartContainer({
         </RechartsPrimitive.ResponsiveContainer>
       </div>
     </ChartContext.Provider>
-  )
-}
-
-const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(
-    ([, config]) => config.theme ?? config.color
-  )
-
-  if (!colorConfig.length) {
-    return null
-  }
-
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color =
-      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
-      itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
-  })
-  .join("\n")}
-}
-`
-          )
-          .join("\n"),
-      }}
-    />
   )
 }
 
@@ -376,5 +342,4 @@ export {
   ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
-  ChartStyle,
 }

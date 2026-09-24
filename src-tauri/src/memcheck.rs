@@ -58,8 +58,11 @@ impl Footprint {
     }
 }
 
+/// **写全路径。**按 `PATH` 找的话，谁在 `PATH` 前面放一个同名程序，跑起来的就是它
+const PS: &str = "/bin/ps";
+
 fn rss_kb_of(pid: &str) -> Option<u64> {
-    let out = std::process::Command::new("ps")
+    let out = std::process::Command::new(PS)
         .args(["-o", "rss=", "-p", pid])
         .output()
         .ok()?;
@@ -67,7 +70,7 @@ fn rss_kb_of(pid: &str) -> Option<u64> {
 }
 
 fn webkit_rss_kb() -> u64 {
-    let Ok(out) = std::process::Command::new("ps")
+    let Ok(out) = std::process::Command::new(PS)
         .args(["-axo", "rss,comm"])
         .output()
     else {

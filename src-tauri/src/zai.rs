@@ -13,8 +13,6 @@
 
 use std::sync::Mutex;
 
-use tauri_plugin_opener::OpenerExt;
-
 use crate::AppState;
 
 type Out<T> = Result<T, String>;
@@ -65,7 +63,7 @@ pub async fn start_zai_login(
             url: login.authorize_url.clone(),
         });
     }
-    open_page(&app, &login.authorize_url)?;
+    crate::chatgpt::open_page(&app, &login.authorize_url)?;
     Ok(Login {
         id: login.id,
         expires_in_secs: login.expires_in_secs,
@@ -86,16 +84,7 @@ pub async fn reopen_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
             )
             .to_string()
         })?;
-    open_page(&app, &url)
-}
-
-fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
-    app.opener().open_url(url, None::<&str>).map_err(|e| {
-        tr!(
-            format!("无法打开浏览器：{e}"),
-            format!("The browser could not be opened: {e}")
-        )
-    })
+    crate::chatgpt::open_page(&app, &url)
 }
 
 #[tauri::command]

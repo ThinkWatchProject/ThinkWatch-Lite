@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "update",
+  "description": "更新窗口的能力。它按内容定好高度（update_fit，走 Rust）之后自己亮出来、拿焦点，点「稍后」时关掉自己；别的都不需要。",
+  "windows": [
+    "update"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-close"
+  ]
+}

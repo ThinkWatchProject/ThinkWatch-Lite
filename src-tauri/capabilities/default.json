@@ -1,23 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的能力。Tauri v2 的 capability 漏配是静默失败 —— 加一个新命令就要回来确认这里有它。start-dragging 是同一个坑的实例：标题栏是 Overlay，没有一条真的标题栏可以抓，窗口全靠 data-tauri-drag-region 移动，而那条权限不在 core:window 的默认集合里。少了它拖拽区毫无反应，也不报错。更新窗口（update）和主窗口共用这一份：它要按内容高度调自己的尺寸，所以多一条 set-size。",
+  "description": "主窗口的能力。**只给网页真的会调的那几样**：托盘、通知、开机启动都由 Rust 这一侧去做，网页不需要直接碰这些插件；应用自己的命令不受这份清单约束。Tauri v2 的 capability 漏配是静默失败 —— 网页里新用一个 window/插件接口，就要回来确认这里有它。start-dragging 是同一个坑的实例：标题栏是 Overlay，没有一条真的标题栏可以抓，窗口全靠 data-tauri-drag-region 移动，而那条权限不在 core:window 的默认集合里。少了它拖拽区毫无反应，也不报错。",
   "windows": [
-    "main",
-    "update"
+    "main"
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-close",
-    "core:window:allow-set-focus",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:app:allow-app-hide",
-    "core:event:default",
-    "core:tray:default",
-    "autostart:default",
-    "notification:default"
+    "core:window:allow-start-dragging"
   ]
 }

@@ -117,13 +117,27 @@ fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Out<String> {
         })
 }
 
-fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
+/// 在默认浏览器里打开登录页。**只开 `https://` 的网页**：地址来自 core（Z.ai 的还是
+/// 平台接口返回的），而系统的「打开」对 `file://`、别的应用注册的协议一视同仁 ——
+/// 一个被改掉的地址不该变成「打开本机上的某个程序」
+pub(crate) fn open_page(app: &tauri::AppHandle, url: &str) -> Out<()> {
+    if !is_web_page(url) {
+        return Err(tr!(
+            format!("登录页地址不是 https 网页：{url}"),
+            format!("The sign-in address is not an https web page: {url}")
+        )
+        .to_string());
+    }
     app.opener().open_url(url, None::<&str>).map_err(|e| {
         tr!(
             format!("无法打开浏览器：{e}"),
             format!("The browser could not be opened: {e}")
         )
     })
+}
+
+fn is_web_page(url: &str) -> bool {
+    tauri::Url::parse(url).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some())
 }
 
 #[tauri::command]
@@ -195,4 +209,20 @@ pub fn handle_return(app: &tauri::AppHandle, urls: &[String]) {
         return;
     }
     let _ = crate::show_main_window(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_web_page;
+
+    #[test]
+    fn only_https_web_pages_are_opened() {
+        assert!(is_web_page("https://auth.openai.com/oauth/authorize?x=1"));
+        assert!(!is_web_page("http://auth.openai.com/"));
+        assert!(!is_web_page("file:///System/Applications/Calculator.app"));
+        assert!(!is_web_page(
+            "x-apple.systempreferences:com.apple.preference.security"
+        ));
+        assert!(!is_web_page("/Applications/Calculator.app"));
+    }
 }
