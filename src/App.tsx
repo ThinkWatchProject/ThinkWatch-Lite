@@ -76,6 +76,7 @@ import { coreText, errorText } from "@/i18n/core.i18n";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { trouble } from "./launch/trouble";
 import { LaunchScreen } from "./launch/LaunchScreen";
+import { warm } from "./launch/warm";
 import {
   Sidebar,
   SidebarContent,
@@ -414,8 +415,11 @@ export default function App() {
     }
   }
   const [status, setStatus] = useStableState<CoreStatus | null>(null);
-  /** 启动画面还在。**只在这次开窗第一次交接之前**，见 `LaunchScreen` */
-  const [launching, setLaunching] = useState(true);
+  /**
+   * 启动画面还在。**只在冷启动、这次开窗第一次交接之前**，见 `LaunchScreen`。
+   * 热启动没有这一面，窗口藏到交接那一刻才出现（见 `warm`）
+   */
+  const [launching, setLaunching] = useState(!warm);
   /** 概览那一页的第一份数据到了。启动画面等它，交接时数字已经是对的 */
   const [landed, setLanded] = useState(false);
   /** 连上之后首屏迟迟取不齐：不再等，交给那一页自己的骨架 */
@@ -813,7 +817,9 @@ export default function App() {
         /* 概览拿不到不影响状态那一半 —— 连上了就是连上了 */
       }
     };
-    const kick = setTimeout(() => void read(), COALESCE_MS);
+    // 头一次连上之前不攒：那时还没有一串触发可合并，而启动画面（热启动时是
+    // 还藏着的窗口）正等着这一读
+    const kick = setTimeout(() => void read(), linkedRef.current ? COALESCE_MS : 0);
     return () => {
       alive = false;
       clearTimeout(kick);
@@ -836,6 +842,11 @@ export default function App() {
     跳成实际值。取不齐就不等了（`waited`），那一页有自己的骨架。
   */
   const handover = linked && ((ov !== null && (tab !== "dashboard" || landed)) || waited);
+
+  // 热启动：交接的那一刻就是窗口出现的那一刻。Rust 那边也有保底，这里只管早到
+  useEffect(() => {
+    if (warm && handover) void invoke("reveal_main_window").catch(() => {});
+  }, [handover]);
 
   // **不再有独立的初始化页面。**原来这里有两道全屏门禁：零上游时是
   // 一个填表向导，填完是一个「等第一个请求」的页面。两道都拆了。
