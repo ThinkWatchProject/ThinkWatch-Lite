@@ -73,6 +73,24 @@ export default function KeysPage() {
   no explanations), `actions` on the right (`size="sm"`; at most one `default`-variant
   primary button, placed last), optional `tabs` (a `TabsList`; the header then draws a
   divider under it).
+- **Page-level tabs** go in the header's `tabs` slot as a `variant="line"` list (the
+  underline sits on the header's divider). Wrap the whole `Page` in `Tabs` so the list and
+  the panels share state, and give each panel `pt-4`:
+
+  ```tsx
+  <Tabs value={tab} onValueChange={setTab}>
+    <Page>
+      <PageHeader title={t.title} tabs={
+        <TabsList variant="line">
+          <TabsTrigger value="upstreams">{t.upstreams}<Count n={n} /></TabsTrigger>
+          <TabsTrigger value="proxies">{t.proxies}</TabsTrigger>
+        </TabsList>
+      } />
+      <TabsContent value="upstreams" className="pt-4">…</TabsContent>
+      <TabsContent value="proxies" className="pt-4">…</TabsContent>
+    </Page>
+  </Tabs>
+  ```
 - **The page name is written once.** When a page renders a `PageHeader`, the 38px window
   toolbar hides its page name, and fades a small title back in when the header scrolls out
   of view (macOS behaviour). Pages without a header keep the toolbar title. Do not render
