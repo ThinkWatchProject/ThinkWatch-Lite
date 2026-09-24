@@ -16,10 +16,10 @@ base — the commits and the discussion carry over. A bot will remind you.
 
 These decisions are settled and not up for a PR:
 
-- **macOS and Windows, from one tag.** Every release tag produces three
-  files for people to install, each with the gateway inside it and a
-  sha256 beside it: an arm64 disk image for macOS, and an x64 and an
-  arm64 installer for Windows. There is no Linux build.
+- **macOS, Windows and Linux, from one tag.** Every release tag produces
+  five files for people to install, each with the gateway inside it and a
+  sha256 beside it: an arm64 disk image for macOS, an x64 and an arm64
+  installer for Windows, and an x86_64 and an aarch64 AppImage for Linux.
 - **macOS: Apple Silicon only, and not signed by Apple.** The macOS
   artifact is an arm64 `.app` in a disk image, signed with the project's
   own self-signed certificate. That certificate does not satisfy Gatekeeper; it
@@ -34,6 +34,11 @@ These decisions are settled and not up for a PR:
   signature, and no certificate will be bought, so SmartScreen warns when
   a downloaded installer is first run. Updates are verified against the
   key compiled into the app, the same as on macOS.
+- **Linux: the AppImage only.** No deb, rpm, Flatpak or Snap. The
+  sandboxed formats cannot start the bundled `twcore` or edit client
+  configuration such as `~/.claude`, and the AppImage updates itself
+  without a password. Builds target glibc 2.35 (Ubuntu 22.04) and
+  WebKitGTK 4.1.
 
 The gateway itself — routing, forwarding, cost accounting, redaction —
 lives in [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core).
@@ -48,6 +53,19 @@ public repository and the history is documentation.
 Say *why* in the body, not just *what*; the diff already shows what
 changed. A commit explaining the reasoning behind a non-obvious choice
 saves the next person from re-deriving it or "fixing" it back.
+
+## Linux prerequisites
+
+Building on Linux needs the WebKitGTK, AppIndicator and D-Bus development
+packages. On Ubuntu or Debian, the same set CI installs:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
+  libssl-dev libayatana-appindicator3-dev librsvg2-dev dbus
+```
+
+The notification tests talk to a session bus; without a desktop session, run
+them under `dbus-run-session -- cargo test --manifest-path src-tauri/Cargo.toml`.
 
 ## Before you open the PR
 
@@ -93,7 +111,7 @@ tw-api`, rebuild.
 `locate_core` finds a binary in a sibling `thinkwatch-core` checkout.
 
 On Windows the same command produces an NSIS installer instead, and it
-is not code-signed. The macOS bundle is Apple Silicon only, and neither
+is not code-signed; on Linux it produces an AppImage. The macOS bundle is Apple Silicon only, and neither
 signed nor notarized. On macOS 15 and later a downloaded copy has to be
 cleared once:
 
