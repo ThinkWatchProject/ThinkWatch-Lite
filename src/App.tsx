@@ -36,7 +36,7 @@ import { isMac, isMod } from "@/platform";
 import Dashboard from "./Dashboard";
 import type { CoreStatus, Overview } from "./types";
 import { stageLabel } from "./labels";
-import { getLang, textOf, useText } from "@/i18n";
+import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { appText } from "./App.i18n";
 import { Button } from "@/ui/button";
@@ -51,17 +51,16 @@ import { Switcher } from "./connection/Switcher";
 import { Unlinked } from "./connection/Unlinked";
 import { currentProfile } from "./connection/api";
 import { connText } from "./connection/connection.i18n";
-import { NavContext, SURFACES, revealSection, type Nav, type NavDelivery, type NavParams, type Surface } from "./nav";
+import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type Surface } from "./nav";
 import { Banner } from "@/ui/banner";
 import { Reveal } from "@/ui/motion";
 import { Page, PageHeader, PageTitleContext } from "@/ui/page";
 import { ErrorState, TableSkeleton } from "@/ui/states";
-import { resetResources } from "@/lib/resource";
+import { invalidateAll, resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { Palette } from "./palette/Palette";
 import { paletteText } from "./palette/palette.i18n";
 import { COMBOS, Keys, isTyping, modalOpen, pageCombo } from "./palette/keys";
-import { sectionTitle } from "./palette/sections";
 import {
   Sidebar,
   SidebarContent,
@@ -320,9 +319,6 @@ function Shell({ first }: { first: boolean }) {
         if (p.grouped !== undefined) setGrouped(p.grouped);
       }
       if (s === "security") setSecurityFocus((params as NavParams["security"])?.focus ?? null);
-      // 设置的某一节：换页之后滚过去（那一节可能还没画出来，`revealSection` 会等它）
-      const section = s === "settings" ? (params as NavParams["settings"])?.section : undefined;
-      if (section) revealSection(section, sectionTitle(section, getLang()));
       setTab(s);
       deliveries.current += 1;
       setDelivery({ surface: s, params, seq: deliveries.current });
@@ -342,6 +338,11 @@ function Shell({ first }: { first: boolean }) {
 
   // ⌘R 和配置改动之后立刻重读一次。等下一次事件的话，刚点完「保存」还看着旧值
   const [nudge, setNudge] = useState(0);
+  /** ⌘R、命令面板的「刷新数据」：状态和概览重读，眼前这一页的数据也重取 */
+  const refreshAll = useCallback(() => {
+    setNudge((n) => n + 1);
+    invalidateAll();
+  }, []);
   /**
    * 概览页什么时候重新拉数。**不是定时轮询**：跟着对账走，`settled` 每涨一次说明库里
    * 确实多了东西（见 useRequests）；`nudge` 是手动刷新。都没动的时候一次请求都不发。
@@ -488,12 +489,12 @@ function Shell({ first }: { first: boolean }) {
       }
       if (k === "r") {
         e.preventDefault();
-        setNudge((n) => n + 1);
+        refreshAll();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [linked, open]);
+  }, [linked, open, refreshAll]);
 
   /**
    * 守护状态。**推过来的，不是问出来的。**先挂监听再读一次当前值，顺序不能反：
@@ -618,12 +619,12 @@ function Shell({ first }: { first: boolean }) {
   const paletteShell = useMemo(
     () => ({
       toggleRail: () => setRailOpen((v) => !v),
-      refresh: changed,
+      refresh: refreshAll,
       configFile: () => setConfigFile({ focus: null }),
       history: () => setHistoryOpen(true),
       notices: () => setNoticesAsked((n) => n + 1),
     }),
-    [changed],
+    [refreshAll],
   );
 
   /** 还没取到概览时的占位：页头照常，内容是表格骨架；读失败了是「读取失败」和重试 */

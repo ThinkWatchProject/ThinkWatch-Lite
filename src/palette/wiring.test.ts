@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  *
  * 这里从 `items.tsx` 找出面板送出的每一对（页，参数），再查有没有一个源文件接住它：
  * 文件里有 `useNavParams("<页>"`（或者外壳在 App.tsx 里按 `NavParams["<页>"]` 处理的
- * 流量筛选、设置的某一节），并且读了 `.<参数>`。
+ * 流量筛选、搜索框），并且读了 `.<参数>`。
  */
 
 function sources(dir: string): string[] {

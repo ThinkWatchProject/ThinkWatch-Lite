@@ -20,24 +20,6 @@ export const SURFACES = [
 export type Surface = (typeof SURFACES)[number];
 
 /**
- * 设置页的各节。`nav.open("settings", { section })` 打开设置并滚到那一节（外壳做，
- * 见 `revealSection`）。节上标 `data-section="<id>"`；没标的按标题的字找。
- */
-export type SettingsSection =
-  | "connections"
-  | "language"
-  | "appearance"
-  | "menubar"
-  | "autostart"
-  | "listen"
-  | "retention"
-  | "updates"
-  | "notices"
-  | "about"
-  | "diagnostics"
-  | "uninstall";
-
-/**
  * 打开一页时能带的参数（深链）。**只放「打开时定位到哪儿、打开哪个对话框」**，不放
  * 页面的状态：
  *
@@ -46,7 +28,7 @@ export type SettingsSection =
  * · `keys`：定位并高亮某把密钥（`key`）。
  * · `security`：日志定位到某个时间段。
  * · `upstreams`：定位某个上游（`upstream`，页面接上之前忽略）。
- * · `settings`：滚到某一节。
+ * · `settings`：滚到某一节（`section`，设置页自己认；命令面板送的见 palette/sections.ts）。
  *
  * **打开对话框**（命令面板、别的页上的入口用）：页面收到就打开它自己的那个对话框，
  * 和点页面上的按钮、点那一行一模一样 —— 对话框只有一份，在页面里。
@@ -72,7 +54,7 @@ export interface NavParams {
   routing: { editRoute?: string; editGroup?: string; create?: "route" | "group"; dryRun?: boolean };
   security: { focus?: LogFocus };
   mcp: undefined;
-  settings: { section?: SettingsSection };
+  settings: { section?: string };
 }
 
 export interface Nav {
@@ -123,7 +105,8 @@ export function useNavParams<S extends Surface>(surface: S, onParams: (params: N
 }
 
 /**
- * 滚到页面里的一节（`nav.open("settings", { section })` 用，外壳在换页时调）。
+ * 滚到页面里的一节。页面在 `useNavParams` 里收到「打开到某一节」时调（设置页的
+ * `section`）。
  *
  * 先找 `[data-section="<id>"]`，没有就找字是 `title` 的标题（`h1`–`h3`）。**节是
  * 陆续画出来的**（语言、外观要先读到当前值），所以等它出现，最多 1.5 秒；它上面

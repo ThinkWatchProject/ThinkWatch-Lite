@@ -385,7 +385,7 @@ nav.open("upstreams", { test: "speed" });           // or "link"
 nav.open("keys", { create: true });   nav.open("keys", { edit: "codex" });
 nav.open("routing", { create: "route" });           // or "group"; { editRoute }, { editGroup }, { dryRun: true }
 nav.open("clients", { detail: "codex" });           // installed; { setup: id } = manual setup
-nav.open("settings", { section: "appearance" });    // the shell scrolls there
+nav.open("settings", { section: "appearance" });    // the Settings page scrolls there
 
 // in the page, next to its dialog state:
 useNavParams("keys", (p) => {
@@ -395,8 +395,10 @@ useNavParams("keys", (p) => {
 ```
 
 Wait for the data a dialog needs before rendering it (an edit dialog opened by a deep link
-may mount before its row is loaded). Settings sections are found by `data-section="<id>"`
-on the section, falling back to the heading text (the titles in `palette/sections.ts`).
+may mount before its row is loaded). The Settings page handles `section` itself
+(`revealSection` finds `data-section="<id>"`, or the heading whose text is the title in
+`palette/sections.ts`). When the Settings page is restructured, keep one palette entry per
+setting a user would search for and point its `id` at the section that now holds it.
 
 ### Command palette and shortcuts
 
@@ -408,7 +410,7 @@ on the section, falling back to the heading text (the titles in `palette/section
   item in `palette/items.tsx` (strings, including search-only aliases in both languages, in
   `palette/palette.i18n.ts`).
 - It searches data that is already loaded: the overview (upstreams, keys, routes, groups),
-  Traffic's rows (id, model, upstream, key), connections, Settings sections, and the client
+  Traffic's loaded rows (by id or model), connections, Settings sections, and the client
   list (read when the palette opens).
 - **Key caps come from `palette/keys.tsx`** (`Keys`, `COMBOS`, `pageCombo`). The palette rows,
   the shortcut sheet and the sidebar tooltips all render from it; the handlers are in
