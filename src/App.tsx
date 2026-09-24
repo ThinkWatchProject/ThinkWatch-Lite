@@ -18,7 +18,6 @@ import McpPage from "./mcp/McpPage";
 import TrafficPage from "./traffic/TrafficPage";
 import { useTrafficView } from "./traffic/view";
 import { useSessions } from "./traffic/useSessions";
-import { presetRange } from "@/ui/range";
 import { Notices } from "./Notices";
 import { Tip, TooltipRoot } from "@/ui/tip";
 import {
@@ -33,7 +32,7 @@ import {
   IconSettings,
 } from "./ui/icons";
 import { isMac, isMod } from "@/platform";
-import Dashboard from "./Dashboard";
+import OverviewPage from "./overview/OverviewPage";
 import type { CoreStatus, Overview } from "./types";
 import { stageLabel } from "./labels";
 import { textOf, useText } from "@/i18n";
@@ -992,19 +991,7 @@ function Shell({ first }: { first: boolean }) {
                         <Unlinked core={core} />
                       )
                     ) : tab === "dashboard" ? (
-                      <Dashboard
-                        tick={dashTick}
-                        ov={ov}
-                        onLanded={() => setLanded(true)}
-                        onShowSecurity={(range) =>
-                          // 实时档的计数按 24 小时算（见 `windowStart`），日志也按 24 小时看
-                          open("security", {
-                            focus: { range: range.live ? presetRange("1d") : range, at: Date.now() },
-                          })
-                        }
-                        // 归组态下「哪些模型没定价」看不出来：那是一行一行的问题
-                        onShowUnpriced={() => open("requests", { grouped: false, filter: { unpricedOnly: true } })}
-                      />
+                      <OverviewPage tick={dashTick} ov={ov} onLanded={() => setLanded(true)} />
                     ) : tab === "clients" ? (
                       <ClientsPage busy={busyKeys} />
                     ) : tab === "mcp" ? (

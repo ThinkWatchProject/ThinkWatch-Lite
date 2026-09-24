@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import {
   Area,
   AreaChart,
@@ -6,13 +6,10 @@ import {
   ReferenceDot,
   XAxis,
   YAxis,
+  type TooltipContentProps,
 } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/ui/chart";
+import { cn } from "@/lib/utils";
+import { ChartContainer, ChartTooltip } from "@/ui/chart";
 import { useText } from "@/i18n";
 import { chartsText } from "./charts.i18n";
 
@@ -27,10 +24,11 @@ import { chartsText } from "./charts.i18n";
  * 文件名是 `charts`（复数）：`chart.tsx` 是 shadcn 抄进来的那个，而
  * macOS 的文件系统不分大小写，`Chart.tsx` 会把它盖掉。
  *
- * **进场动画关掉了。这不是省一个效果，是修一个 bug**：数据一换，
- * recharts 会把图形从零重新长一遍，而贴着图形边缘的标签跟着一起动 ——
- * 那几百毫秒里它在跳。刷新一次跳一次，看起来就是「数字一直在闪」。
- * 一张每次刷新都要重演一遍的图，读的人还得等它演完。
+ * **动画默认关着，只在换了看法的那一下打开**（`animate`）：数据一换，
+ * recharts 会把图形重新长一遍，而贴着图形边缘的标签跟着一起动 —— 刷新一次
+ * 跳一次，看起来就是「数字一直在闪」；一张每次刷新都要重演一遍的图，读的人
+ * 还得等它演完。所以后台刷新、实时档的每一帧都不动；换时间范围（整张图重画，
+ * 从左往右铺开）和换口径（同一批格子，形状变过去）才动一次，250ms。
  *
  * **没有数据的那一格要画出来，不能跳过。**跳过的话，一天里的空档会被
  * 两边的数据挤没，图上看起来就是连续在用 —— 而「昨天下午我根本没用」
@@ -49,11 +47,23 @@ import { chartsText } from "./charts.i18n";
 export const Y_AXIS_WIDTH = 46;
 
 /**
- * 按模型分层的花费走势。
+ * 悬停提示的抬头，一格一份：这一格是什么时候、一共多少，以及一句补充（请求数、
+ * 失败数）。**和图的数据分开给**：图的每一格是「层名 → 值」，而层名（模型名）
+ * 是客户端送来的任意字符串，抬头塞进同一个对象里迟早撞上一个同名的模型。
+ */
+export interface ChartTip {
+  title: string;
+  /** 这一格的合计，写好的样子 */
+  value?: string;
+  note?: string;
+}
+
+/**
+ * 按模型分层的用量走势。
  *
- * **一张图回答两个问题**：支出发生在什么时候，以及落在哪个模型上。
+ * **一张图回答两个问题**：用量发生在什么时候，以及落在哪个模型上。
  * 拆成「趋势图 + 构成图」的话，读的人要在两张图之间自行对齐时间 ——
- * 而「昨天下午那笔支出来自 opus」恰好是要得到的结论。
+ * 而「昨天下午那一阵来自 opus」恰好是要得到的结论。
  *
  * 用面积不用柱子，是因为格子已经细到能看出作息（白天成片、夜里断开、
  * 周末矮一截）—— 那个密度下柱子只剩几像素宽的碎片。**面积图在这里
@@ -71,7 +81,8 @@ export const Y_AXIS_WIDTH = 46;
  * 整张图读成了几条飘着的波。
  *
  * **纵轴要有刻度。**没有刻度的曲线只是纹理 —— 峰高一倍还是十倍读不
- * 出来，而这正是看这张图的原因。三个刻度、细体弱色，不抢形状。
+ * 出来，而这正是看这张图的原因。两个刻度（一半和顶），细体弱色，不抢形状；
+ * 零就是基线，不另写。
  *
  * **悬停的显隐由这一层说了算，不全交给 recharts。**recharts 只认送到
  * 它自己那个 wrapper 上的 `mouseleave`，而这个事件是会丢的：切走应用、
@@ -83,16 +94,23 @@ export function StackedArea({
   data,
   keys,
   colors,
+  tips,
   height = 96,
   empty,
   tickFormat,
   valueFormat,
   yMax,
+  highlight = null,
   liveEdge = false,
+  pulse = 0,
+  animate = false,
 }: {
   data: Record<string, number | string>[];
+  /** 图的层，**从下往上** */
   keys: string[];
   colors: string[];
+  /** 每一格悬停提示的抬头，和 `data` 一一对应。不给就只列各层 */
+  tips?: readonly ChartTip[];
   height?: number;
   empty?: string;
   /** 纵轴刻度怎么写。不给就不画纵轴 —— 光秃秃的数字比没有更难读 */
@@ -102,10 +120,22 @@ export function StackedArea({
    * 的数，取整会把 0.5 写成 1；而图值可以是任意的浮点，要先取整再写。
    */
   valueFormat?: (v: number) => string;
-  /** 纵轴上界。由调用方钉住，**不让它每帧跟着峰值跑**（见 `yHold`） */
+  /** 纵轴上界。由调用方钉住，**不让它每帧跟着峰值跑**（见 `holdY`） */
   yMax?: number;
+  /**
+   * 突出哪一层（图例上指着的那一项）。其余几层淡下去，读的人不用在几层相近
+   * 的蓝里自己找。`null` = 都一样。
+   */
+  highlight?: string | null;
   /** 最右端是「现在」：给它一个点，标出活的那一头 */
   liveEdge?: boolean;
+  /**
+   * 新数据落地了几次。**每涨一次，「现在」那一点向外闪一圈**（`motion-ping`，一次，
+   * 不循环）。0 = 还没有新数据，不闪。
+   */
+  pulse?: number;
+  /** 这一次重画要不要动画（见文件开头）。系统关掉了动效时调用方传 false */
+  animate?: boolean;
 }) {
   const t = useText(chartsText);
   // 同一页上可能有几张图，渐变的 id 不能撞。**在提前 return 之前取** ——
@@ -148,24 +178,21 @@ export function StackedArea({
   if (data.length === 0 || keys.length === 0) {
     return (
       <div
-        className="flex w-full items-center justify-center rounded-sm border border-dashed border-border/60"
+        className="flex w-full items-center justify-center rounded-md border border-dashed border-border motion-fade"
         style={{ height }}
       >
-        <p className="tw-label text-muted-foreground">{empty ?? t.noData}</p>
+        <p className="tw-body text-muted-foreground">{empty ?? t.noData}</p>
       </div>
     );
   }
-  const cfg = Object.fromEntries(
-    keys.map((k) => [k, { label: k }]),
-  ) satisfies ChartConfig;
   const last = data[data.length - 1];
   // 活边那个点画在最上面一层的顶上 —— 也就是这一格的总量
   const edge = last
     ? keys.reduce((a, k) => a + (typeof last[k] === "number" ? last[k] : 0), 0)
     : 0;
+  const top = colors[keys.length - 1] ?? "var(--chart-1)";
   return (
     <ChartContainer
-      config={cfg}
       className="w-full"
       style={{ height }}
       onMouseEnter={() => setOver(true)}
@@ -177,7 +204,7 @@ export function StackedArea({
       onMouseMove={() => !over && setOver(true)}
       onMouseLeave={() => setOver(false)}
     >
-      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+      <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
         <defs>
           {keys.map((k, i) => (
             <linearGradient key={k} id={`${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -192,32 +219,27 @@ export function StackedArea({
           <YAxis
             orientation="right"
             width={Y_AXIS_WIDTH}
-            tickCount={3}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+            tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
             tickFormatter={tickFormat}
-            {...(yMax ? { domain: [0, yMax] as [number, number] } : {})}
+            /*
+              **刻度写死成上界和它的一半。**上界已经是取整过的数（`niceCeil` 的档位
+              保证一半也是整数）；交给 recharts 按 `tickCount` 去凑的话，刻度落在哪
+              几个数上由它自己的取整规则定，和档位不一定对得上。零是基线，不另写。
+            */
+            {...(yMax ? { domain: [0, yMax] as [number, number], ticks: [yMax / 2, yMax] } : { tickCount: 3 })}
           />
         )}
-        {/*
-          **标题行（时间 · 金额 · 次数）靠 `XAxis dataKey` 传进来，不能给
-          `labelKey`。**shadcn 的 `ChartTooltipContent` 把 `labelKey` 当成
-          「去 config 里查哪一条」的键：给了 "label"，它先从数据里取出
-          `label` 的值（也就是那一整句话），再拿这句话去 config 里找 ——
-          config 里只有模型名，找不到，于是 `value` 是 undefined，整个标题
-          行 return null。悬停时只剩下面几行模型名和数字，没有时间。
-          不给 `labelKey` 走的是另一条：recharts 传进来的 `label` 就是
-          `XAxis dataKey="label"` 那一格的值，直接显示。
-        */}
         <ChartTooltip
           // `false` = 一定不显示，`undefined` = 照常交给 recharts 判断
           active={over ? undefined : false}
-          cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
-          content={<ChartTooltipContent indicator="line" valueFormatter={valueFormat} />}
+          cursor={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.55, strokeWidth: 1 }}
+          animationDuration={120}
+          animationEasing="ease-out"
+          content={(p: TooltipContentProps) => <TipBox {...p} tips={tips} valueFormat={valueFormat} />}
         />
-        {/* 先声明的在下面。**便宜的垫底、贵的在上**：贵的那层在视觉上
-            也该是最重的一层 */}
+        {/* 先声明的在下面。**占得少的垫底、多的在上**：最重的那一层在视觉上也该最重 */}
         {keys.map((k, i) => (
           <Area
             key={k}
@@ -229,26 +251,117 @@ export function StackedArea({
             stroke={colors[i]}
             strokeWidth={1.6}
             dot={false}
-            activeDot={false}
-            isAnimationActive={false}
+            /*
+              悬停时只在最上面那一层的顶上点一个点 —— 那是这一格的合计，和提示抬头
+              上的数是同一个。每一层都点的话，量小的几层的点挤在基线上叠成一团
+            */
+            activeDot={i === keys.length - 1 ? { r: 3, fill: top, stroke: "var(--background)", strokeWidth: 2 } : false}
+            isAnimationActive={animate}
+            animationDuration={250}
+            animationEasing={EASE}
+            className={cn(
+              "transition-opacity duration-(--motion-fast) ease-(--motion-ease) motion-reduce:transition-none",
+              highlight !== null && highlight !== k && "opacity-25",
+            )}
           />
         ))}
         {/*
-          「现在」那一头。**不做脉冲** —— 这张图当初专门关掉了动画，
-          理由是每秒重演一遍比不动更难读；一个静止的点加一圈光晕已经
-          够说明哪一端是活的。
+          「现在」那一头：一个静止的点，**不一直跳** —— 每秒都在动的东西比不动更难
+          读。只在新数据落地时向外闪一圈，说的是「刚到了一条」。
         */}
         {liveEdge && last && (
           <ReferenceDot
             x={String(last.label)}
             y={edge}
             r={3}
-            fill={colors[keys.length - 1] ?? "var(--chart-1)"}
-            stroke="var(--background)"
-            strokeWidth={2}
+            shape={(p: { cx?: number; cy?: number }) => (
+              <EdgeDot cx={p.cx ?? 0} cy={p.cy ?? 0} color={top} pulse={pulse} />
+            )}
           />
         )}
       </AreaChart>
     </ChartContainer>
+  );
+}
+
+/**
+ * 悬停提示。抬头一行是这一格的时刻和合计，下面按图里**从上到下**的次序列出
+ * 各层（和图例、和眼睛看到的层叠次序一致），最后一行是补充说明。
+ *
+ * **这一格里是零的层不列。**一格里常常只有一两个模型在用，把另外四个写成一排
+ * 「0」只是让要找的那一行更难找。
+ */
+function TipBox({
+  active,
+  payload,
+  activeIndex,
+  tips,
+  valueFormat,
+}: TooltipContentProps & {
+  tips?: readonly ChartTip[];
+  valueFormat?: (v: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  const fmt = valueFormat ?? ((v: number) => v.toLocaleString());
+  const zero = fmt(0);
+  const tip = activeIndex == null ? undefined : tips?.[Number(activeIndex)];
+  const rows = [...payload]
+    .reverse()
+    .filter((p) => typeof p.value === "number" && fmt(p.value) !== zero);
+  return (
+    <div className="grid min-w-44 max-w-72 gap-1.5 rounded-lg border border-border bg-popover px-3 py-2 tw-label text-popover-foreground shadow-lg">
+      {tip && (
+        <Line
+          left={<span className="tw-num text-muted-foreground">{tip.title}</span>}
+          right={tip.value && <span className="tw-num font-medium">{tip.value}</span>}
+        />
+      )}
+      {rows.length > 0 && (
+        <div className={cn("grid gap-1", tip && "border-t border-border/70 pt-1.5")}>
+          {rows.map((p) => (
+            <Line
+              key={String(p.dataKey ?? p.name)}
+              left={
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span aria-hidden className="h-2.5 w-1 shrink-0 rounded-[1px]" style={{ background: p.color }} />
+                  <span className="truncate text-muted-foreground">{String(p.name ?? p.dataKey)}</span>
+                </span>
+              }
+              right={<span className="tw-num">{fmt(Number(p.value))}</span>}
+            />
+          ))}
+        </div>
+      )}
+      {tip?.note && <p className="text-muted-foreground">{tip.note}</p>}
+    </div>
+  );
+}
+
+function Line({ left, right }: { left: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-4">
+      {left}
+      {right}
+    </div>
+  );
+}
+
+/**
+ * 动画的缓动，和 `--motion-ease` 同一条曲线。recharts 运行时认 `cubic-bezier(…)`
+ * （`animation/easing` 的 `configEasing`），只是属性的类型只列了几个具名曲线 ——
+ * 而它的具名 `ease-out` 其实是一条两头慢的曲线，不是这里要的「开头快、末尾慢」。
+ */
+const EASE = "cubic-bezier(0.22, 0.8, 0.24, 1)" as "ease-out";
+
+/**
+ * 「现在」那一点。`pulse` 一变，底下那一圈重新挂上、放一次 `motion-ping`：
+ * 按键重挂是让同一段 CSS 动画再放一遍的办法。
+ */
+function EdgeDot({ cx, cy, color, pulse }: { cx: number; cy: number; color: string; pulse: number }) {
+  return (
+    <g>
+      {pulse > 0 && <circle key={pulse} cx={cx} cy={cy} r={3} fill={color} className="motion-ping" />}
+      <circle cx={cx} cy={cy} r={3} fill={color} stroke="var(--background)" strokeWidth={2} />
+    </g>
   );
 }

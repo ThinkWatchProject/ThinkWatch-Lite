@@ -152,7 +152,7 @@ All colours are CSS tokens (`src/index.css`) exposed as Tailwind colours. **Neve
 | `destructive` | failed, stopped, unavailable, dangerous action |
 | `idle` | not working but not a fault: unused, disabled, no data yet |
 | `warning-foreground`, `destructive-foreground`, `success-foreground` | **Text** in that hue on a tinted background (`bg-warning/10`). Not text on a solid fill — that is `text-white`. |
-| `chart-1…5`, `cache-*` | Data visualisation only |
+| `chart-1…5`, `chart-other`, `cache-*` | Data visualisation only (`chart-other` is the grey "Other" series) |
 | `--chrome-*` | Window chrome (sidebar, toolbar). Shell only. |
 
 Tinted status backgrounds are the status colour at low alpha: `bg-warning/10`,
@@ -320,6 +320,7 @@ movement. Do not write your own `@keyframes` or `transition-all` in pages.
 | Numbers that change | `<AnimatedNumber value format scope />` (`@/ui/motion`), built on `useCountUp`. Change `scope` when the meaning changes (time range) so it jumps instead of counting. |
 | Bars, meters, progress | `motion-bar` on the element whose width/height changes. |
 | Live / in-flight | `<StatusDot tone="pending" />` or `motion-live` on a dot. |
+| New data at a live edge | `motion-ping` on a dot (HTML or SVG): one ring, not looping. Re-key the element to play it again. |
 | Skeleton shimmer | Built into `Skeleton` (`motion-shimmer`). |
 | Hover / press | `transition-colors duration-(--motion-fast)`. |
 
