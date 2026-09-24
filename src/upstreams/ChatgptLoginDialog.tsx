@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlertIcon, CopyIcon, ExternalLinkIcon, SmartphoneIcon } from "lucide-react";
+import { CopyIcon, ExternalLinkIcon, SmartphoneIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -15,14 +15,14 @@ import {
 import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
+import { StatusLabel } from "@/ui/status-dot";
 import type { ChatgptLoginMode, ChatgptLoginStatus, CoreEvent, Overview } from "@/types";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptLoginText } from "./ChatgptLoginDialog.i18n";
 import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
-import { FormItem } from "./parts";
+import { DialogError, FormItem } from "./parts";
 import { freeName } from "./upstreamForm";
 import { useSystemProxyLabel } from "@/connection/Remote";
 import { useRemote } from "@/connection/useRemote";
@@ -74,7 +74,9 @@ export function ChatgptLoginDialog({
   // 重新登录的人此前已经看过并同意了这些，不再拦一次
   const [understood, setUnderstood] = useState(relogin != null);
   const [phase, setPhase] = useState<Phase>({ at: "form" });
-  const [busy, setBusy] = useState(false);
+  /** 正在发起哪一种登录。两条路各有一个按钮，转圈的是被点的那个 */
+  const [starting, setStarting] = useState<ChatgptLoginMode | null>(null);
+  const busy = starting !== null;
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // 卸载之后不要再写状态：等待期间用户可能直接关掉对话框。
@@ -132,7 +134,7 @@ export function ChatgptLoginDialog({
   }, [waiting]);
 
   async function start(mode: ChatgptLoginMode) {
-    setBusy(true);
+    setStarting(mode);
     setError(null);
     try {
       const login = await api.startChatgptLogin(name.trim(), proxy, mode);
@@ -150,7 +152,7 @@ export function ChatgptLoginDialog({
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setBusy(false);
+      setStarting(null);
     }
   }
 
@@ -170,7 +172,8 @@ export function ChatgptLoginDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && void cancel()}>
-      <DialogContent className="sm:max-w-lg">
+      {/* 点到外面不关：登录进行中时关掉就是放弃这一次登录。Esc、×、取消照常 */}
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{relogin ? t.reloginTitle : t.title}</DialogTitle>
           <DialogDescription>
@@ -181,18 +184,14 @@ export function ChatgptLoginDialog({
         {phase.at === "form" && (
           <div className="flex flex-col gap-4">
             {!relogin && (
-            <Alert variant="warning">
-              <CircleAlertIcon />
-              <AlertTitle>{t.noticeTitle}</AlertTitle>
-              <AlertDescription>
+              <Banner layout="inline" tone="warning" title={t.noticeTitle}>
                 <ul className="list-disc pl-4 [&>li]:mt-1">
                   <li>{t.noticeOfficial}</li>
                   <li>{t.noticeHonest}</li>
                   <li>{t.noticeStorage}</li>
                   <li>{t.noticeRevoke}</li>
                 </ul>
-              </AlertDescription>
-            </Alert>
+              </Banner>
             )}
 
             <div className="grid grid-cols-2 gap-4">
@@ -245,10 +244,7 @@ export function ChatgptLoginDialog({
 
         {phase.at === "browser" && (
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 tw-body">
-              <Spinner />
-              {t.browserWaiting}
-            </div>
+            <StatusLabel tone="pending">{t.browserWaiting}</StatusLabel>
             <p className="tw-label text-muted-foreground">{t.browserHint}</p>
             <div>
               <Button
@@ -272,7 +268,7 @@ export function ChatgptLoginDialog({
             </p>
             <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3">
               {/* 码要能一眼读准也能选中：字距拉开，等宽字体 */}
-              <span className="select-text font-mono text-2xl tracking-[0.2em] tabular-nums">
+              <span className="select-text font-mono text-2xl tracking-[0.2em] tw-num">
                 {phase.code}
               </span>
               <Button
@@ -290,10 +286,7 @@ export function ChatgptLoginDialog({
                 {copied ? common.copied : common.copy}
               </Button>
             </div>
-            <div className="flex items-center gap-2 tw-body">
-              <Spinner />
-              {t.deviceWaiting}
-            </div>
+            <StatusLabel tone="pending">{t.deviceWaiting}</StatusLabel>
             {/* Codex 也有这一句：拿着别人给的码去输，等于把自己的账号授权给对方 */}
             <p className="tw-label text-muted-foreground">{t.deviceWarning}</p>
           </div>
@@ -309,7 +302,7 @@ export function ChatgptLoginDialog({
           </div>
         )}
 
-        {error && <p className="tw-body text-destructive">{error}</p>}
+        <DialogError error={error} />
 
         <DialogFooter>
           {phase.at === "done" ? (
@@ -322,8 +315,8 @@ export function ChatgptLoginDialog({
               {phase.at === "form" && (
                 <>
                   {remote ? (
-                    <Button onClick={() => void start("device")} disabled={!canStart}>
-                      {busy ? <Spinner /> : <SmartphoneIcon />}
+                    <Button onClick={() => void start("device")} pending={busy} disabled={!canStart}>
+                      {!busy && <SmartphoneIcon />}
                       {rt.signInWithCode}
                     </Button>
                   ) : (
@@ -332,13 +325,14 @@ export function ChatgptLoginDialog({
                       <Button
                         variant="outline"
                         onClick={() => void start("device")}
+                        pending={starting === "device"}
                         disabled={!canStart}
                       >
-                        <SmartphoneIcon />
+                        {starting !== "device" && <SmartphoneIcon />}
                         {t.otherDevice}
                       </Button>
-                      <Button onClick={() => void start("browser")} disabled={!canStart}>
-                        {busy ? <Spinner /> : <ExternalLinkIcon />}
+                      <Button onClick={() => void start("browser")} pending={starting === "browser"} disabled={!canStart}>
+                        {starting !== "browser" && <ExternalLinkIcon />}
                         {t.thisComputer}
                       </Button>
                     </>

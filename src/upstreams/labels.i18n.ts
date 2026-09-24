@@ -89,7 +89,8 @@ export const labelsText = messages(
       noList: "No list provided",
       notFetched: "Not fetched",
       fetching: "Fetching",
-      scoped: "Selected models",
+      // 模型数下面的一个词：「5 / Selected」。对话框里那一项叫 Selected models
+      scoped: "Selected",
     },
     quotaWindows: { "5h": "5h", "7d": "7d", weekly: "Weekly" },
     l1Steps: {

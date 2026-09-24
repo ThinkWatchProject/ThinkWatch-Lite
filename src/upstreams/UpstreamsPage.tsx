@@ -1,28 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { ActivityIcon, CircleAlertIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
-import { toast } from "sonner";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/ui/alert";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
+import { invalidate, type Resource } from "@/lib/resource";
+import { useNav, useNavParams } from "@/nav";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/ui/empty";
-import { Spinner } from "@/ui/spinner";
+import { Count } from "@/ui/count";
+import { AnimatedNumber } from "@/ui/motion";
+import { notify, undoable, usePending } from "@/ui/notify";
+import { Page, PageHeader } from "@/ui/page";
+import { Skeleton } from "@/ui/skeleton";
+import { EmptyState } from "@/ui/states";
+import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
-import type { ChatgptUsage, CoreEvent, Overview, PricingStatus } from "@/types";
-import { useCoreEvent } from "@/useCoreEvent";
+import { commonText } from "@/i18n/common.i18n";
+import { usd, type Overview, type PricingStatus, type ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
-import { ZaiLoginDialog } from "./ZaiLoginDialog";
+import { patch, useAccounts, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
-import { when } from "@/format";
 import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
 import { PriceSheetTable } from "./PriceSheetTable";
@@ -32,9 +30,16 @@ import { LinkTestDialog, SpeedTestDialog, TestConnectionDialog } from "./TestDia
 import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
-import { UpstreamTable } from "./UpstreamTable";
+import { UpstreamTable, problemsOf } from "./UpstreamTable";
+import { ZaiLoginDialog } from "./ZaiLoginDialog";
 
 export type UpstreamTab = "upstreams" | "proxies" | "pricing";
+
+/**
+ * 这次打开应用以来最后看的那个标签。切到别的页再回来，还停在那一个。
+ * 不存盘：重新打开应用从上游开始。
+ */
+let lastTab: UpstreamTab = "upstreams";
 
 type DialogState =
   | null
@@ -51,135 +56,80 @@ type DialogState =
   | { kind: "sheet"; mode: PriceSheetDialogMode }
   | { kind: "delete-sheet"; name: string };
 
-const DAY_MS = 24 * 3_600_000;
-
 /**
  * 上游页：上游、代理、价目表三个标签。
  *
  * 三者描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、按什么
  * 价格结算 —— 而代理和价目表只被上游引用，所以放在同一页里，引用关系在
  * 页内闭合。**列表只读**，新建与编辑都在对话框里完成，一次保存一个版本。
+ *
+ * 页头的摘要说上游的整体状况：几个、几个正常、几个要处理，24 小时的请求与费用。
  */
 export default function UpstreamsPage({
   ov,
-  initialTab = "upstreams",
   onChanged,
   onOpenConfigFile,
-  onNavigate,
 }: {
   ov: Overview;
-  initialTab?: UpstreamTab;
   /** 写入之后让外面立刻重读概览 */
   onChanged: () => void;
   /** 打开配置文件，并定位到这个名字 */
   onOpenConfigFile: (focus: string | null) => void;
-  /** 跳到别的页（路由、防护） */
-  onNavigate: (tab: string) => void;
 }) {
   const t = useText(upstreamsPageText);
+  const c = useText(commonText);
+  const nav = useNav();
   const configVersion = ov.config_version;
-  const [tab, setTab] = useState<UpstreamTab>(initialTab);
-  const [stats, setStats] = useState<UpstreamStats | null>(null);
-  const [status, setStatus] = useState<PricingStatus | null>(null);
-  const [checks, setChecks] = useState<Record<string, ProxyCheck>>({});
+  const [tab, setTabState] = useState<UpstreamTab>(lastTab);
+  const setTab = (next: UpstreamTab) => {
+    lastTab = next;
+    setTabState(next);
+  };
   const [dialog, setDialog] = useState<DialogState>(null);
-  const [refreshingPrices, setRefreshingPrices] = useState(false);
+  const { stats, since } = useUpstreamStats();
+  const pricing = usePricingStatus(configVersion);
+  const accounts = useAccounts(ov.providers, () => void stats.reload());
+  const inFlight = useInFlight();
   const proxies = ov.proxies;
 
-  const loadStats = useCallback(() => {
-    api
-      .upstreamStats(Date.now() - DAY_MS)
-      .then(setStats)
-      .catch(() => {
-        // 统计拿不到时这几列显示「—」，列表照常可用
-      });
-  }, []);
-  const loadStatus = useCallback(() => {
-    api
-      .pricingStatus()
-      .then(setStatus)
-      .catch((e) => toast.error(errorText(e)));
-  }, []);
-
   /**
-   * 24 小时的请求数、费用和首字节耗时。
-   *
-   * **请求落地之后重读**，不按时间轮询：这几个数只在请求落地时才变。随时间变的
-   * 只有 24 小时这个窗口本身在往前滑 —— 长时间没有请求时没有事件叫醒它，窗口
-   * 重新拿到焦点时补一次。
+   * 停用、启用是**乐观的**：先按新值画，写入回来、概览重读之后以概览为准。
+   * 这里记的是「还没被概览证实的那几个」，概览对上了就撤掉。
    */
-  useEffect(() => {
-    loadStats();
-    window.addEventListener("focus", loadStats);
-    return () => window.removeEventListener("focus", loadStats);
-  }, [loadStats]);
-  useCoreEvent(["request_finished", "request_failed", "request_cancelled"], loadStats);
-
-  /**
-   * 订阅额度。**事件里就是完整的数**（和 `/quota` 同一份），收到直接换上：
-   * 额度变的那一刻就是这条事件到的那一刻。
-   */
-  useEffect(() => {
-    const un = listen<CoreEvent>("core-event", (e) => {
-      const ev = e.payload;
-      if (ev.kind !== "quota_seen") return;
-      setStats(
-        (s) =>
-          s && {
-            ...s,
-            quotas: [
-              ...s.quotas.filter((q) => q.provider !== ev.provider),
-              { provider: ev.provider, windows: ev.windows },
-            ],
-          },
-      );
-    });
-    return () => void un.then((f) => f());
-  }, []);
-
-  /**
-   * 账号类上游：**打开这一页时问一次它自己。**
-   *
-   * 一次问答同时回答三件事：登的是哪个账号、什么套餐、额度还剩多少。
-   * 这三件都不在配置里 —— 额度平时是跟着真实流量白捡的，所以刚启动、
-   * 或者这个账号今天还没被用过时，不问就什么都没有。
-   *
-   * **每个上游只问一次。**问一次是一次真实调用；失败了也不再问 —— 连不上时
-   * 反复重试，只会把错误刷满日志。
-   */
-  const [accounts, setAccounts] = useState<Record<string, ChatgptUsage>>({});
-  const askedUsage = useRef(new Set<string>());
-  useEffect(() => {
-    const fresh = ov.providers.filter(
-      (p) => p.protocol === "chatgpt" && !p.disabled && !askedUsage.current.has(p.name),
-    );
-    if (fresh.length === 0) return;
-    fresh.forEach((p) => askedUsage.current.add(p.name));
-    void Promise.all(
-      fresh.map((p) =>
-        api
-          .chatgptUsage(p.name)
-          .then((u) => [p.name, u] as const)
-          .catch(() => null),
+  const [pendingDisabled, setPendingDisabled] = useState<Record<string, boolean>>({});
+  const providers = useMemo(
+    () =>
+      ov.providers.map((p) =>
+        p.name in pendingDisabled ? { ...p, disabled: pendingDisabled[p.name]! } : p,
       ),
-    ).then((rs) => {
-      const got = rs.filter((r) => r !== null);
-      if (got.length === 0) return;
-      setAccounts((a) => ({ ...a, ...Object.fromEntries(got) }));
-      // 额度 core 那边也记下了，从它再读一遍，免得这里和它各存一份
-      loadStats();
-    });
-  }, [ov.providers, loadStats]);
+    [ov.providers, pendingDisabled],
+  );
   useEffect(() => {
-    loadStatus();
-  }, [loadStatus, configVersion]);
+    const stale = Object.keys(pendingDisabled).filter((n) => {
+      const p = ov.providers.find((x) => x.name === n);
+      return !p || p.disabled === pendingDisabled[n];
+    });
+    if (stale.length === 0) return;
+    setPendingDisabled((o) => {
+      const next = { ...o };
+      for (const n of stale) delete next[n];
+      return next;
+    });
+  }, [ov.providers, pendingDisabled]);
+
+  // 从别的页带着一个上游名打开：切到上游标签，那一行滚进视野、亮一下
+  const [focus, setFocus] = useState<{ name: string; at: number } | null>(null);
+  useNavParams("upstreams", (p) => {
+    if (!p.upstream) return;
+    setTab("upstreams");
+    setFocus({ name: p.upstream, at: Date.now() });
+  });
 
   /**
    * **打开这一页时补问模型清单**：还没有的、没问到的、过期的。
    *
    * 不等、不管结果 —— core 立刻回话，答案随 `models_changed` 一家一家地到，
    * 概览跟着重读。一分钟内问过的它自己会跳过，来回切页面不会每次都打网络。
-   * 以前要「编辑 → 模型 → 刷新」才看得到的东西，现在进页面就有。
    */
   useEffect(() => {
     api.refreshStaleModels().catch(() => {
@@ -189,46 +139,70 @@ export default function UpstreamsPage({
 
   const changed = () => {
     onChanged();
-    loadStats();
+    void stats.reload();
   };
 
-  async function toggle(name: string) {
-    const p = ov.providers.find((x) => x.name === name);
-    if (!p) return;
-    try {
-      await api.updateProvider(p.name, {
-        provider: { ...toInput(formFromView(p), true), disabled: !p.disabled },
-        base_version: configVersion,
-      });
-      changed();
-    } catch (e) {
-      toast.error(errorText(e));
-    }
+  async function toggle(p: ProviderView) {
+    const saved = ov.providers.find((x) => x.name === p.name);
+    if (!saved) return;
+    const next = !p.disabled;
+    // 撤销要基于这一次写入之后的版本，不然会被当成冲突
+    let version = configVersion;
+    const write = (disabled: boolean) =>
+      api
+        .updateProvider(saved.name, {
+          provider: { ...toInput(formFromView(saved), true), disabled },
+          base_version: version,
+        })
+        .then((w) => {
+          version = w.version;
+        });
+    await undoable({
+      message: next ? t.disabledToast(p.name) : t.enabledToast(p.name),
+      apply: () => {
+        setPendingDisabled((o) => ({ ...o, [p.name]: next }));
+        return () => setPendingDisabled((o) => ({ ...o, [p.name]: !next }));
+      },
+      do: () => write(next),
+      undo: () => write(!next),
+      after: changed,
+    });
   }
 
+  const [refreshing, setRefreshing] = useState<ReadonlySet<string>>(() => new Set());
   async function refreshModels(name: string) {
+    setRefreshing((s) => new Set(s).add(name));
     try {
       const v = await api.refreshProviderModels(name);
-      if (v.error) toast.error(t.modelsError(name, coreText(v.error)));
+      if (v.error) notify.error(v.error, t.modelsFailed(name));
+      else notify.success(t.modelsFetched(name, v.models.length));
+      invalidate(`upstream-models:${name}`);
       changed();
     } catch (e) {
-      toast.error(errorText(e));
+      notify.error(e, t.modelsFailed(name));
+    } finally {
+      setRefreshing((s) => {
+        const n = new Set(s);
+        n.delete(name);
+        return n;
+      });
     }
   }
 
+  const [checks, setChecks] = useState<Record<string, ProxyCheck>>({});
   async function testProxy(name: string) {
     const x = proxies.find((p) => p.name === name);
     if (!x) return;
-    setChecks((c) => ({ ...c, [name]: { running: true } }));
+    setChecks((prev) => ({ ...prev, [name]: { running: true } }));
     try {
       const result = await api.testProxy({
         proxy: { name: x.name, kind: x.kind, addr: x.addr, auth: { mode: "keep" } },
         current: x.name,
       });
-      setChecks((c) => ({ ...c, [name]: { running: false, result, at: Date.now() } }));
+      setChecks((prev) => ({ ...prev, [name]: { running: false, result, at: Date.now() } }));
     } catch (e) {
-      setChecks((c) => ({
-        ...c,
+      setChecks((prev) => ({
+        ...prev,
         [name]: {
           running: false,
           result: { target: name, ok: false, segments: [], total_ms: 0, error: plain(errorText(e)) },
@@ -237,127 +211,166 @@ export default function UpstreamsPage({
       }));
     }
   }
+  const [checkingAll, checkAll] = usePending();
 
-  async function testAllProxies() {
-    // 逐个检测：并发时各自的握手耗时互相干扰
-    for (const x of proxies) await testProxy(x.name);
-  }
+  const [updatingPrices, updatePrices] = usePending();
+  const refreshPrices = () =>
+    updatePrices(async () => {
+      try {
+        const r = await api.refreshPricing();
+        pricing.mutate(r.status);
+        notify.success(r.changed > 0 ? t.pricesUpdated(r.changed) : t.pricesCurrent);
+      } catch (e) {
+        void pricing.reload();
+        throw e;
+      }
+    });
 
-  async function refreshPrices() {
-    setRefreshingPrices(true);
-    try {
-      const r = await api.refreshPricing();
-      setStatus(r.status);
-      toast.success(r.changed > 0 ? t.pricesUpdated(r.changed) : t.pricesCurrent);
-    } catch (e) {
-      toast.error(errorText(e));
-      loadStatus();
-    } finally {
-      setRefreshingPrices(false);
-    }
-  }
-
+  /**
+   * 自动更新的开关：先按新值画、转圈；写成了就记下新值（配置换了版本，状态随之重读），
+   * 失败拨回去并报错。
+   */
+  const [autoUpdate, setAutoUpdateState] = useState<boolean | null>(null);
   async function setAutoUpdate(on: boolean) {
+    setAutoUpdateState(on);
     try {
       await api.setPriceAutoUpdate(on, configVersion);
+      pricing.mutate(patch((s) => ({ ...s, auto_update: on })));
       onChanged();
-      loadStatus();
     } catch (e) {
-      toast.error(errorText(e));
+      notify.error(e);
+    } finally {
+      setAutoUpdateState(null);
     }
   }
 
-  return (
-    <div className="flex flex-col gap-4 p-5">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as UpstreamTab)}>
-        <div className="flex flex-wrap items-center gap-2">
-          <TabsList>
-            <TabsTrigger value="upstreams">
-              {t.tabs.upstreams} <Count n={ov.providers.length} />
-            </TabsTrigger>
-            <TabsTrigger value="proxies">
-              {t.tabs.proxies} <Count n={proxies.length} />
-            </TabsTrigger>
-            <TabsTrigger value="pricing">
-              {t.tabs.pricing} <Count n={ov.price_sheets.length + 1} />
-            </TabsTrigger>
-          </TabsList>
-          <div className="flex-1" />
-          {tab === "upstreams" && ov.providers.length > 0 && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "link", provider: null })}>
-                <ActivityIcon />
-                {t.linkTest}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "speed", provider: null })}>
-                <ZapIcon />
-                {t.speedTest}
-              </Button>
-              <Button size="sm" onClick={() => setDialog({ kind: "upstream", mode: { kind: "create" } })}>
-                <PlusIcon />
-                {t.newUpstream}
-              </Button>
-            </>
-          )}
-          {tab === "proxies" && (
-            <>
-              {proxies.length > 0 && (
-                <Button variant="outline" size="sm" onClick={testAllProxies}>
-                  <ActivityIcon />
-                  {t.checkAll}
-                </Button>
-              )}
-              <Button size="sm" onClick={() => setDialog({ kind: "proxy", mode: { kind: "create" } })}>
-                <PlusIcon />
-                {t.newProxy}
-              </Button>
-            </>
-          )}
-          {tab === "pricing" && (
-            <>
-              <label className="flex items-center gap-2 tw-body">
-                <Switch
-                  checked={status?.auto_update ?? true}
-                  disabled={!status}
-                  onCheckedChange={setAutoUpdate}
-                />
-                {t.autoUpdate}
-              </label>
-              <Button variant="outline" size="sm" onClick={refreshPrices} disabled={refreshingPrices}>
-                {refreshingPrices ? <Spinner /> : <RefreshCwIcon />}
-                {t.updateNow}
-              </Button>
-              <Button size="sm" onClick={() => setDialog({ kind: "sheet", mode: { kind: "create" } })}>
-                <PlusIcon />
-                {t.newSheet}
-              </Button>
-            </>
-          )}
-        </div>
+  const createUpstream = () => setDialog({ kind: "upstream", mode: { kind: "create" } });
+  const createProxy = () => setDialog({ kind: "proxy", mode: { kind: "create" } });
 
-        <TabsContent value="upstreams" className="mt-2">
-          {ov.providers.length === 0 ? (
-            <Empty className="border border-dashed">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <ServerIcon />
-                </EmptyMedia>
-                <EmptyTitle>{t.noUpstreams}</EmptyTitle>
-                <EmptyDescription>{t.noUpstreamsDesc}</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                {/* 服务类型在新建对话框的第一栏里选，这里不再平铺一排预设 */}
-                <Button size="sm" onClick={() => setDialog({ kind: "upstream", mode: { kind: "create" } })}>
+  const actions =
+    tab === "upstreams" ? (
+      <>
+        {providers.length > 0 && (
+          <>
+            <HeaderAction
+              icon={<ActivityIcon />}
+              label={t.linkTest}
+              onClick={() => setDialog({ kind: "link", provider: null })}
+            />
+            <HeaderAction
+              icon={<ZapIcon />}
+              label={t.speedTest}
+              onClick={() => setDialog({ kind: "speed", provider: null })}
+            />
+          </>
+        )}
+        <Button size="sm" onClick={createUpstream}>
+          <PlusIcon />
+          {t.newUpstream}
+        </Button>
+      </>
+    ) : tab === "proxies" ? (
+      <>
+        {proxies.length > 0 && (
+          <HeaderAction
+            icon={<ActivityIcon />}
+            label={t.checkAll}
+            pending={checkingAll}
+            onClick={() =>
+              void checkAll(async () => {
+                // 逐个检测：并发时各自的握手耗时互相干扰
+                for (const x of proxies) await testProxy(x.name);
+              })
+            }
+          />
+        )}
+        <Button size="sm" onClick={createProxy}>
+          <PlusIcon />
+          {t.newProxy}
+        </Button>
+      </>
+    ) : (
+      <>
+        <label className="mr-1 flex items-center gap-2 tw-body">
+          <Switch
+            checked={autoUpdate ?? pricing.data?.auto_update ?? true}
+            pending={autoUpdate !== null}
+            disabled={!pricing.data}
+            onCheckedChange={(on) => void setAutoUpdate(on)}
+          />
+          {t.autoUpdate}
+        </label>
+        <HeaderAction
+          icon={<RefreshCwIcon />}
+          label={t.updateNow}
+          pending={updatingPrices}
+          onClick={() => void refreshPrices()}
+        />
+        <Button size="sm" onClick={() => setDialog({ kind: "sheet", mode: { kind: "create" } })}>
+          <PlusIcon />
+          {t.newSheet}
+        </Button>
+      </>
+    );
+
+  return (
+    <Tabs value={tab} onValueChange={(v) => setTab(v as UpstreamTab)} className="gap-0">
+      {/* 具名容器：窄了之后页头的次要操作只画图标、表格收起走势（和密钥页同一个断点） */}
+      <Page className="@container/page">
+        <PageHeader
+          title={t.title}
+          summary={providers.length > 0 ? <Hero providers={providers} stats={stats} /> : undefined}
+          actions={actions}
+          tabs={
+            <TabsList variant="line">
+              <TabsTrigger value="upstreams">
+                {t.tabs.upstreams} <Count n={providers.length} />
+              </TabsTrigger>
+              <TabsTrigger value="proxies">
+                {t.tabs.proxies} <Count n={proxies.length} />
+              </TabsTrigger>
+              <TabsTrigger value="pricing">
+                {t.tabs.pricing} <Count n={ov.price_sheets.length + 1} />
+              </TabsTrigger>
+            </TabsList>
+          }
+        />
+
+        <TabsContent value="upstreams" className="flex flex-col gap-3 pt-4">
+          <Banner
+            show={stats.error !== undefined && stats.data === undefined}
+            layout="inline"
+            tone="warning"
+            title={t.statsFailed}
+            actions={
+              <Button variant="outline" size="sm" pending={stats.loading} onClick={() => void stats.reload()}>
+                {c.retry}
+              </Button>
+            }
+          >
+            {stats.error !== undefined ? errorText(stats.error) : null}
+          </Banner>
+          {providers.length === 0 ? (
+            <EmptyState
+              icon={<ServerIcon />}
+              title={t.noUpstreams}
+              description={t.noUpstreamsDesc}
+              action={
+                <Button size="sm" onClick={createUpstream}>
                   <PlusIcon />
                   {t.newUpstream}
                 </Button>
-              </EmptyContent>
-            </Empty>
+              }
+            />
           ) : (
             <UpstreamTable
-              ov={ov}
+              providers={providers}
               stats={stats}
+              since={since}
               accounts={accounts}
+              inFlight={inFlight}
+              refreshing={refreshing}
+              focus={focus}
               actions={{
                 edit: (name) => setDialog({ kind: "upstream", mode: { kind: "edit", name } }),
                 test: (name) => setDialog({ kind: "test", name }),
@@ -368,7 +381,8 @@ export default function UpstreamsPage({
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "models" } }),
                 account: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
-                toggle: (p) => void toggle(p.name),
+                traffic: (name) => nav.open("requests", { filter: { provider: name } }),
+                toggle: (p) => void toggle(p),
                 locate: (name) => onOpenConfigFile(name),
                 remove: (name) => setDialog({ kind: "delete-upstream", name }),
               }}
@@ -376,17 +390,23 @@ export default function UpstreamsPage({
           )}
         </TabsContent>
 
-        <TabsContent value="proxies" className="mt-2">
+        <TabsContent value="proxies" className="pt-4">
           {proxies.length === 0 ? (
-            <Empty className="border border-dashed">
-              <EmptyHeader>
-                <EmptyTitle>{t.noProxies}</EmptyTitle>
-                <EmptyDescription>{t.noProxiesDesc}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <EmptyState
+              icon={<NetworkIcon />}
+              title={t.noProxies}
+              description={t.noProxiesDesc}
+              action={
+                <Button size="sm" onClick={createProxy}>
+                  <PlusIcon />
+                  {t.newProxy}
+                </Button>
+              }
+            />
           ) : (
             <ProxyTable
               proxies={proxies}
+              providers={ov.providers}
               checks={checks}
               onEdit={(name) => setDialog({ kind: "proxy", mode: { kind: "edit", name } })}
               onTest={(name) => void testProxy(name)}
@@ -395,66 +415,24 @@ export default function UpstreamsPage({
           )}
         </TabsContent>
 
-        <TabsContent value="pricing" className="mt-2 flex flex-col gap-3">
-          {status && (
-            <p className="tw-label text-muted-foreground">
-              {t.dataDate(status.date || "—")}
-              {status.checked_at_ms != null && ` · ${t.lastChecked(when(status.checked_at_ms))}`}
-              {status.error && <span className="text-destructive"> · {t.updateFailed(coreText(status.error))}</span>}
-            </p>
-          )}
-          {status && status.unpriced_recent > 0 && (
-            <Alert variant="warning">
-              <CircleAlertIcon />
-              <AlertTitle>{t.unpricedTitle(status.unpriced_recent)}</AlertTitle>
-              <AlertDescription>
-                {t.unpricedModels}{" "}
-                {status.unpriced_models.slice(0, 4).map((u, i) => (
-                  <span key={`${u.provider}/${u.model}`}>
-                    {i > 0 && t.listSep}
-                    <span className="font-mono">{u.model}</span>
-                    {t.provider(u.provider)}
-                  </span>
-                ))}
-                {status.unpriced_models.length > 4 && t.more(status.unpriced_models.length, 4)}
-                {t.unpricedEnd}
-              </AlertDescription>
-              <AlertAction>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setDialog({
-                      kind: "sheet",
-                      mode: {
-                        kind: "create",
-                        prefill: {
-                          models: [...new Set(status.unpriced_models.map((u) => u.model))],
-                          // 只预选还在用默认价目表的上游。已选了自定义价目表的，改用新表
-                          // 会连带改掉它其余模型的价格 —— 那一家留给用户自己决定
-                          usedBy: [...new Set(status.unpriced_models.map((u) => u.provider))].filter((n) =>
-                            ov.providers.some((p) => p.name === n && !p.pricing),
-                          ),
-                        },
-                      },
-                    })
-                  }
-                >
-                  {t.setPrices}
-                </Button>
-              </AlertAction>
-            </Alert>
-          )}
+        <TabsContent value="pricing" className="flex flex-col gap-3 pt-4">
+          <PricingNotices
+            ov={ov}
+            status={pricing}
+            updating={updatingPrices}
+            onUpdate={() => void refreshPrices()}
+            onSetPrices={(prefill) => setDialog({ kind: "sheet", mode: { kind: "create", prefill } })}
+          />
           <PriceSheetTable
             ov={ov}
-            status={status}
+            status={pricing}
             onViewDefault={() => setDialog({ kind: "sheet", mode: { kind: "default" } })}
             onEdit={(name) => setDialog({ kind: "sheet", mode: { kind: "edit", name } })}
             onDuplicate={(name) => setDialog({ kind: "sheet", mode: { kind: "duplicate", from: name } })}
             onRemove={(name) => setDialog({ kind: "delete-sheet", name })}
           />
         </TabsContent>
-      </Tabs>
+      </Page>
 
       {dialog?.kind === "upstream" && (
         <UpstreamDialog
@@ -462,8 +440,10 @@ export default function UpstreamsPage({
           ov={ov}
           configVersion={configVersion}
           onClose={() => setDialog(null)}
-          onSaved={() => {
+          onSaved={(name) => {
             setDialog(null);
+            // 新建的那一行自己会滑进来；改动未必看得出来，说一声
+            if (dialog.mode.kind === "edit") notify.success(t.saved(name));
             changed();
           }}
           onChanged={changed}
@@ -488,7 +468,7 @@ export default function UpstreamsPage({
           onClose={() => setDialog(null)}
           onShow={() => {
             setDialog(null);
-            onNavigate("routing");
+            nav.open("routing");
           }}
         />
       )}
@@ -507,7 +487,7 @@ export default function UpstreamsPage({
         <TestConnectionDialog ov={ov} name={dialog.name} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === "link" && (
-        <LinkTestDialog provider={dialog.provider} onClose={() => setDialog(null)} />
+        <LinkTestDialog ov={ov} provider={dialog.provider} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === "speed" && (
         <SpeedTestDialog ov={ov} preselect={dialog.provider} onClose={() => setDialog(null)} />
@@ -518,8 +498,9 @@ export default function UpstreamsPage({
           ov={ov}
           configVersion={configVersion}
           onClose={() => setDialog(null)}
-          onSaved={() => {
+          onSaved={(name) => {
             setDialog(null);
+            if (dialog.mode.kind === "edit") notify.success(t.saved(name));
             changed();
           }}
         />
@@ -548,10 +529,11 @@ export default function UpstreamsPage({
           ov={ov}
           configVersion={configVersion}
           onClose={() => setDialog(null)}
-          onSaved={() => {
+          onSaved={(name) => {
             setDialog(null);
+            if (dialog.mode.kind === "edit") notify.success(t.saved(name));
+            // 配置换了版本，价目表的状态（无法计价的次数）随之重读
             changed();
-            loadStatus();
           }}
           onDeleted={() => {
             setDialog(null);
@@ -577,7 +559,7 @@ export default function UpstreamsPage({
           onShow={(r) => showUpstream(r, "billing")}
         />
       )}
-    </div>
+    </Tabs>
   );
 
   function showUpstream(r: Referrer, section: "connection" | "billing") {
@@ -587,6 +569,192 @@ export default function UpstreamsPage({
   }
 }
 
-function Count({ n }: { n: number }) {
-  return <span className="tw-label tabular-nums text-muted-foreground">{n}</span>;
+/**
+ * 页头的摘要：几个上游、几个正常、几个要处理（凭据被拒、要重新登录、熔断）、
+ * 几个停用，以及 24 小时的请求数和费用。数字变了走过去，不跳。
+ *
+ * 24 小时的两个数**读到之前不画**（画一截骨架）：从 0 滚到实际值像是在眼前涨了一截。
+ */
+function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource<UpstreamStats> }) {
+  const t = useText(upstreamsPageText);
+  const enabled = providers.filter((p) => !p.disabled);
+  const attention = enabled.filter((p) => problemsOf(p).length > 0).length;
+  const disabled = providers.length - enabled.length;
+  const day = stats.data
+    ? stats.data.costs.reduce(
+        (a, c) => ({ requests: a.requests + c.requests, cost: a.cost + c.cost_micros }),
+        { requests: 0, cost: 0 },
+      )
+    : null;
+  return (
+    <>
+      <Fact>{t.hero.upstreams(<Num value={providers.length} />, providers.length)}</Fact>
+      <Fact lead={<StatusDot tone="ok" />}>{t.hero.healthy(<Num value={enabled.length - attention} />)}</Fact>
+      {attention > 0 && <Fact lead={<StatusDot tone="error" />}>{t.hero.attention(<Num value={attention} />, attention)}</Fact>}
+      {disabled > 0 && <Fact lead={<StatusDot tone="idle" />}>{t.hero.disabled(<Num value={disabled} />)}</Fact>}
+      {day ? (
+        <>
+          <Fact>{t.hero.requests(<Num value={day.requests} />, day.requests)}</Fact>
+          <Fact>{t.hero.cost(<Num value={day.cost} format={(n) => usd(Math.round(n))} />)}</Fact>
+        </>
+      ) : (
+        stats.loading && <Skeleton className="h-3 w-40 rounded-sm" />
+      )}
+    </>
+  );
+}
+
+/**
+ * 页头上的一个次要操作（测速、检测全部、立即更新）。
+ *
+ * **这一页窄了就只画图标**，名称进悬停：小窗口里三个带字的按钮会把左边的摘要挤成
+ * 三四行，英文尤甚。两份都在，按容器宽度只显示其中一份 —— 不用量宽度，也没有
+ * 「先画宽的、量完再换窄的」那一下闪；藏起来的那份不进读屏、不进 Tab 顺序。
+ * 主操作（新建）始终写字。
+ */
+function HeaderAction({
+  icon,
+  label,
+  pending = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  pending?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <>
+      <Button variant="outline" size="sm" pending={pending} className="@max-3xl/page:hidden" onClick={onClick}>
+        {!pending && icon}
+        {label}
+      </Button>
+      <Tip text={label}>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          pending={pending}
+          aria-label={label}
+          className="hidden @max-3xl/page:inline-flex"
+          onClick={onClick}
+        >
+          {!pending && icon}
+        </Button>
+      </Tip>
+    </>
+  );
+}
+
+/** 摘要里的一项：可选的状态点，加一句带数字的话。样子和 `SummaryItem` 一样 */
+function Fact({ lead, children }: { lead?: ReactNode; children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {lead}
+      <span>{children}</span>
+    </span>
+  );
+}
+
+/** 摘要里的数：前景色、等宽，变化时走过去 */
+function Num({ value, format }: { value: number; format?: (n: number) => ReactNode }) {
+  return <AnimatedNumber value={value} format={format} className="font-medium text-foreground" />;
+}
+
+/**
+ * 价目表标签顶上的几条：默认价目表读不到状态、上一次更新失败、最近有请求无法计价。
+ * 都是持续成立的事，用横幅，不用吐司。读不到状态和「上游」标签读不到统计一样是
+ * 琥珀：列表照常能用，只是少了几个数。
+ */
+function PricingNotices({
+  ov,
+  status,
+  updating,
+  onUpdate,
+  onSetPrices,
+}: {
+  ov: Overview;
+  status: Resource<PricingStatus>;
+  updating: boolean;
+  onUpdate: () => void;
+  onSetPrices: (prefill: { models: string[]; usedBy: string[] }) => void;
+}) {
+  const t = useText(upstreamsPageText);
+  const c = useText(commonText);
+  const s = status.data;
+  const unpriced = s && s.unpriced_recent > 0 ? s : null;
+  return (
+    <>
+      <Banner
+        show={status.error !== undefined && s === undefined}
+        layout="inline"
+        tone="warning"
+        title={t.statusFailed}
+        actions={
+          <Button variant="outline" size="sm" pending={status.loading} onClick={() => void status.reload()}>
+            {c.retry}
+          </Button>
+        }
+      >
+        {status.error !== undefined ? errorText(status.error) : null}
+      </Banner>
+      {/*
+        更新失败时仍按上一次拉到的价格计价（琥珀）；**一次都没拉到过**才是真坏了 ——
+        那时按量计费的请求全都无法计价（红）
+      */}
+      <Banner
+        show={!!s?.error}
+        layout="inline"
+        tone={s?.source === "empty" ? "error" : "warning"}
+        title={t.updateFailedTitle}
+        actions={
+          <Button variant="outline" size="sm" pending={updating} onClick={onUpdate}>
+            {c.retry}
+          </Button>
+        }
+      >
+        {s?.error ? coreText(s.error) : null}
+      </Banner>
+      <Banner
+        show={unpriced !== null}
+        layout="inline"
+        tone="warning"
+        title={unpriced ? t.unpricedTitle(unpriced.unpriced_recent) : null}
+        actions={
+          unpriced && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onSetPrices({
+                  models: [...new Set(unpriced.unpriced_models.map((u) => u.model))],
+                  // 只预选还在用默认价目表的上游。已选了自定义价目表的，改用新表
+                  // 会连带改掉它其余模型的价格 —— 那一家留给用户自己决定
+                  usedBy: [...new Set(unpriced.unpriced_models.map((u) => u.provider))].filter((n) =>
+                    ov.providers.some((p) => p.name === n && !p.pricing),
+                  ),
+                })
+              }
+            >
+              {t.setPrices}
+            </Button>
+          )
+        }
+      >
+        {unpriced && (
+          <>
+            {t.unpricedModels}{" "}
+            {unpriced.unpriced_models.slice(0, 4).map((u, i) => (
+              <span key={`${u.provider}/${u.model}`}>
+                {i > 0 && t.listSep}
+                <span className="font-mono">{u.model}</span>
+                {t.provider(u.provider)}
+              </span>
+            ))}
+            {unpriced.unpriced_models.length > 4 && t.more(unpriced.unpriced_models.length, 4)}
+            {t.unpricedEnd}
+          </>
+        )}
+      </Banner>
+    </>
+  );
 }

@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
-import { Alert, AlertDescription } from "@/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +12,7 @@ import {
 } from "@/ui/alert-dialog";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Count } from "@/ui/count";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,10 @@ import {
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Logo, upstreamGlyph } from "@/ui/logos";
+import { Segmented } from "@/ui/segmented";
 import { Spinner } from "@/ui/spinner";
+import { TableSkeleton } from "@/ui/states";
 import {
   Table,
   TableBody,
@@ -32,13 +35,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { Toggle } from "@/ui/toggle";
 import type { Overview, PriceFields, PriceSheetInput, ResolvedPrice, SheetRef } from "@/types";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { PRICE_COLUMNS, errorText, perMillion, priceSourceLabel } from "./labels";
-import { Boxed, FormItem, Note, Segmented } from "./parts";
+import { Boxed, DialogError, FormItem, Note, UpstreamChips } from "./parts";
 import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
 import { defaultSheetUsers } from "./PriceSheetTable";
 
@@ -321,16 +325,17 @@ export function PriceSheetDialog({
     }
   }
 
+  const [deleting, setDeleting] = useState(false);
   async function remove() {
     if (mode.kind !== "edit") return;
-    setSaving(true);
+    setDeleting(true);
     try {
       await api.deletePriceSheet(mode.name, configVersion);
       onDeleted?.();
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setSaving(false);
+      setDeleting(false);
       setConfirmDelete(false);
     }
   }
@@ -347,17 +352,18 @@ export function PriceSheetDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[980px]">
+      {/* 能改的时候点到外面不关：改了一半的价格不该因为一次误点丢掉 */}
+      <DialogContent
+        className="flex max-h-[88vh] flex-col gap-4 sm:max-w-[980px]"
+        onInteractOutside={readOnly ? undefined : (e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="tw-title">{title}</DialogTitle>
           <DialogDescription>{readOnly ? t.descDefault : t.descCustom}</DialogDescription>
         </DialogHeader>
 
         {loading ? (
-          <p className="flex items-center gap-2 tw-body text-muted-foreground">
-            <Spinner />
-            {t.loading}
-          </p>
+          <TableSkeleton rows={6} cols={6} />
         ) : (
           <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
             {!readOnly && (
@@ -371,7 +377,7 @@ export function PriceSheetDialog({
                 <FormItem label={t.multiplier} htmlFor="ps-mult">
                   <Input
                     id="ps-mult"
-                    className="font-mono tabular-nums"
+                    className="font-mono tw-num"
                     inputMode="decimal"
                     value={multiplier}
                     onChange={(e) => setMultiplier(e.target.value)}
@@ -449,7 +455,7 @@ export function PriceSheetDialog({
                 </div>
               )}
 
-              {draftError && <Note tone="error">{draftError}</Note>}
+              <DialogError error={draftError} />
 
               <Boxed className="max-h-[42vh] overflow-y-auto">
                 <Table>
@@ -475,20 +481,26 @@ export function PriceSheetDialog({
                           <TableRow>
                             <TableCell className="font-mono">
                               {o ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1"
-                                  onClick={() => toggleLong(r.model)}
-                                  aria-expanded={open}
-                                  aria-label={t.longContextPrices}
-                                >
-                                  <ChevronRightIcon
-                                    className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-90")}
-                                  />
+                                <span className="inline-flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="-ml-1 text-muted-foreground"
+                                    onClick={() => toggleLong(r.model)}
+                                    aria-expanded={open}
+                                    aria-label={t.longContextPrices}
+                                  >
+                                    <ChevronRightIcon
+                                      className={cn(
+                                        "size-3.5 transition-transform duration-(--motion-fast)",
+                                        open && "rotate-90",
+                                      )}
+                                    />
+                                  </Button>
                                   {r.model}
-                                </button>
+                                </span>
                               ) : (
-                                <span className={readOnly ? undefined : "pl-[18px]"}>
+                                <span className={readOnly ? undefined : "pl-6"}>
                                   {r.model}
                                   {readOnly && !r.price && (
                                     <Badge variant="warning" className="ml-2 font-sans">
@@ -499,7 +511,7 @@ export function PriceSheetDialog({
                               )}
                             </TableCell>
                             {PRICE_COLUMNS.map((c) => (
-                              <TableCell key={c.key} className="text-right tabular-nums">
+                              <TableCell key={c.key} className="text-right tw-num">
                                 {o ? (
                                   <PriceInput
                                     value={o[c.key] as number}
@@ -550,7 +562,7 @@ export function PriceSheetDialog({
                           {o && open && (
                             <TableRow className="bg-muted/30">
                               <TableCell colSpan={PRICE_COLUMNS.length + 3}>
-                                <div className="flex flex-wrap items-center gap-4 pl-[18px]">
+                                <div className="flex flex-wrap items-center gap-4 pl-6">
                                   <span className="tw-label text-muted-foreground">{t.longContextNote}</span>
                                   {o.input_above_200k == null ? (
                                     <Button variant="outline" size="xs" onClick={() => setLongTier(r.model, true)}>
@@ -596,7 +608,7 @@ export function PriceSheetDialog({
                 <span className="tw-label text-muted-foreground">{t.unit}</span>
                 <div className="flex-1" />
                 {filter === "all" && matched > rows.length && (
-                  <span className="tw-label tabular-nums text-muted-foreground">
+                  <span className="tw-label tw-num text-muted-foreground">
                     {t.truncated(rows.length, matched)}
                   </span>
                 )}
@@ -606,9 +618,8 @@ export function PriceSheetDialog({
             <div className="flex flex-col gap-2">
               <span className="tw-body font-medium">{t.usedByTitle}</span>
               {readOnly ? (
-                <span className="tw-body">
-                  {usedBy.length ? t.names(usedBy) : <span className="text-muted-foreground">{t.notUsed}</span>}
-                </span>
+                // 和价目表列表「使用上游」那一列一样：名字带标志
+                <UpstreamChips names={usedBy} providers={ov.providers} empty={t.notUsed} />
               ) : perTokenProviders.length === 0 ? (
                 <Note>{t.noPerToken}</Note>
               ) : (
@@ -616,25 +627,23 @@ export function PriceSheetDialog({
                   {perTokenProviders.map((p) => {
                     const on = usedBy.includes(p.name);
                     const elsewhere = !on && p.pricing && p.pricing !== (mode.kind === "edit" ? mode.name : "");
+                    const glyph = upstreamGlyph({ name: p.name, baseUrl: p.base_url, protocol: p.protocol });
                     return (
-                      <button
+                      <Toggle
                         key={p.name}
-                        type="button"
-                        aria-pressed={on}
+                        variant="outline"
+                        size="sm"
+                        pressed={on}
                         title={elsewhere ? t.switchHint(p.pricing!) : undefined}
-                        onClick={() => {
+                        onPressedChange={() => {
                           setUsedByTouched(true);
                           setUsedBy((u) => (on ? u.filter((x) => x !== p.name) : [...u, p.name]));
                         }}
-                        className={cn(
-                          "rounded-md border px-2 py-0.5 font-mono tw-label transition-colors",
-                          on
-                            ? "border-foreground/30 bg-foreground/10 text-foreground"
-                            : "border-border text-muted-foreground hover:text-foreground",
-                        )}
+                        className="gap-1.5 px-2 font-mono font-normal tw-label data-[state=off]:text-muted-foreground data-[state=on]:border-foreground/30 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
                       >
+                        {glyph && <Logo id={glyph} size={12} />}
                         {p.name}
-                      </button>
+                      </Toggle>
                     );
                   })}
                 </div>
@@ -643,11 +652,7 @@ export function PriceSheetDialog({
           </div>
         )}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <DialogError error={error} />
 
         <DialogFooter className="items-center">
           {mode.kind === "edit" && (
@@ -679,8 +684,7 @@ export function PriceSheetDialog({
               <Button variant="outline" onClick={onClose}>
                 {common.cancel}
               </Button>
-              <Button onClick={save} disabled={saving || missing != null}>
-                {saving && <Spinner />}
+              <Button onClick={save} pending={saving} disabled={missing != null}>
                 {mode.kind === "edit" ? common.save : t.create}
               </Button>
             </>
@@ -695,7 +699,17 @@ export function PriceSheetDialog({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={remove}>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={deleting}
+                aria-busy={deleting || undefined}
+                onClick={(e) => {
+                  // 删完由调用方关掉整个对话框；失败时原因写在外面这张对话框里
+                  e.preventDefault();
+                  void remove();
+                }}
+              >
+                {deleting && <Spinner data-icon="inline-start" aria-hidden />}
                 {common.delete}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -704,10 +718,6 @@ export function PriceSheetDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function Count({ n }: { n: number }) {
-  return <span className="tw-label tabular-nums text-muted-foreground">{n.toLocaleString()}</span>;
 }
 
 /** 表格里的单价输入。失焦前保留用户打的原样（「0.」这种中间态） */
@@ -725,7 +735,7 @@ function PriceInput({
     <Input
       aria-label={label}
       inputMode="decimal"
-      className="ml-auto h-6 w-20 px-1.5 text-right font-mono tabular-nums"
+      className="ml-auto h-6 w-20 px-1.5 text-right font-mono tw-num"
       value={text ?? perMillion(value)}
       onFocus={() => setText(String(value))}
       onBlur={() => setText(null)}

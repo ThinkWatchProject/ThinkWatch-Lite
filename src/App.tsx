@@ -1046,7 +1046,7 @@ function Shell({ first }: { first: boolean }) {
                       )
                     ) : tab === "upstreams" ? (
                       ov ? (
-                        <UpstreamsPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} onNavigate={go} />
+                        <UpstreamsPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
                       ) : (
                         skeleton
                       )

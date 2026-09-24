@@ -12,7 +12,6 @@ export const priceSheetDialogText = messages(
     draftName: "草稿",
     multiplierPositive: "倍率须大于 0",
     enterName: "填写名称",
-    loading: "正在读取价目表",
     name: "名称",
     basis: "定价依据",
     multiplier: "倍率",
@@ -46,7 +45,6 @@ export const priceSheetDialogText = messages(
     truncated: (shown: number, matched: number) =>
       `显示前 ${shown} 个，共 ${matched.toLocaleString()} 个匹配。输入模型名称缩小范围。`,
     usedByTitle: "使用此价目表的上游",
-    names: (names: string[]) => names.join("、"),
     notUsed: "未被使用",
     noPerToken: "尚无按量计费的上游。",
     switchHint: (sheet: string) => `当前使用价目表「${sheet}」，选中后改用此价目表`,
@@ -67,7 +65,6 @@ export const priceSheetDialogText = messages(
     draftName: "Draft",
     multiplierPositive: "Multiplier must be greater than 0",
     enterName: "Enter a name",
-    loading: "Loading price sheet",
     name: "Name",
     basis: "Based on",
     multiplier: "Multiplier",
@@ -101,7 +98,6 @@ export const priceSheetDialogText = messages(
     truncated: (shown: number, matched: number) =>
       `Showing the first ${shown} of ${matched.toLocaleString()} ${matched === 1 ? "match" : "matches"}. Type a model name to narrow the list.`,
     usedByTitle: "Upstreams using this price sheet",
-    names: (names: string[]) => names.join(", "),
     notUsed: "Not in use",
     noPerToken: "No upstreams are billed per token yet.",
     switchHint: (sheet: string) =>

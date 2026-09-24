@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSystemProxyLabel } from "@/connection/Remote";
-import { CircleAlertIcon, RefreshCwIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { RefreshCwIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,10 +11,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Progress } from "@/ui/progress";
+import { notify } from "@/ui/notify";
+import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { resetAt, resetIn } from "@/format";
 import { useNow } from "@/useNow";
@@ -25,7 +26,8 @@ import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptAccountText } from "./ChatgptAccountSection.i18n";
 import { coreText, errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
-import { FormItem } from "./parts";
+import { DialogError, FormItem } from "./parts";
+import { QuotaBar } from "./QuotaBar";
 import type { UpstreamForm } from "./upstreamForm";
 
 /** 卡的状态词表由上游给，只有这一个能用 */
@@ -68,7 +70,6 @@ export function ChatgptAccountSection({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<ResetCreditView | null>(null);
   const [using, setUsing] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,7 +97,10 @@ export function ChatgptAccountSection({
       // 幂等键按这一次操作生成：重试时不会再扣一张
       const key = `${name}:${credit.id}:${Date.now()}`;
       const r = await api.useChatgptReset(name, credit.id, key);
-      setOutcome(r.code);
+      // 结果是一句话：重置了（额度条随之变回去），或者没有用卡的原因
+      const said = codes[r.code] ?? r.code;
+      if (r.code === "reset") notify.success(said);
+      else notify.info(said);
       await load();
     } catch (e) {
       setError(errorText(e));
@@ -147,34 +151,44 @@ export function ChatgptAccountSection({
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="tw-head font-medium">{t.quota}</h3>
-          <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
-            {loading ? <Spinner /> : <RefreshCwIcon />}
+          <Button variant="ghost" size="sm" onClick={() => void load()} pending={loading}>
+            {!loading && <RefreshCwIcon />}
             {t.reload}
           </Button>
         </div>
         {loading && !usage ? (
-          <p className="tw-body text-muted-foreground">{t.loading}</p>
+          <div role="status" aria-busy="true" className="flex flex-col gap-3.5">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="flex justify-between">
+                  <Skeleton className="h-3 w-24 rounded-sm" />
+                  <Skeleton className="h-3 w-32 rounded-sm" />
+                </div>
+                <Skeleton className="h-1 w-full rounded-full" />
+              </div>
+            ))}
+          </div>
         ) : usage && usage.windows.length > 0 ? (
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2.5 motion-fade">
             {usage.windows.map((w) => {
               const reset = resetAt(w.resets_at_ms, now);
               return (
                 <div key={w.window} className="flex flex-col gap-1">
                   <div className="flex items-baseline justify-between tw-body">
                     <span>{t.window(quotaWindowLabel(w.window))}</span>
-                    <span className="tabular-nums text-muted-foreground">
+                    <span className="tw-num text-muted-foreground">
                       {t.used(Math.round(w.used_percent))}
                       {reset && ` · ${t.resets(reset)}`}
                     </span>
                   </div>
-                  <Progress value={Math.min(100, w.used_percent)} />
+                  <QuotaBar percent={w.used_percent} label={t.window(quotaWindowLabel(w.window))} />
                 </div>
               );
             })}
           </div>
-        ) : (
+        ) : usage ? (
           <p className="tw-body text-muted-foreground">{t.noQuota}</p>
-        )}
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-2">
@@ -185,7 +199,7 @@ export function ChatgptAccountSection({
           </h3>
         </div>
         <p className="tw-label text-muted-foreground">{t.creditsNote}</p>
-        {list.length === 0 ? (
+        {!credits ? null : list.length === 0 ? (
           <p className="tw-body text-muted-foreground">{t.noCredits}</p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -216,8 +230,7 @@ export function ChatgptAccountSection({
         )}
       </section>
 
-      {outcome && <p className="tw-body">{codes[outcome] ?? outcome}</p>}
-      {error && <p className="tw-body text-destructive">{error}</p>}
+      <DialogError error={error} />
 
       <AlertDialog open={confirming != null} onOpenChange={(o) => !o && setConfirming(null)}>
         <AlertDialogContent>
@@ -225,14 +238,21 @@ export function ChatgptAccountSection({
             <AlertDialogTitle>{t.confirmTitle}</AlertDialogTitle>
             <AlertDialogDescription>{t.confirmDesc}</AlertDialogDescription>
           </AlertDialogHeader>
-          <Alert variant="warning">
-            <CircleAlertIcon />
-            <AlertTitle>{t.notConsumedTitle}</AlertTitle>
-            <AlertDescription>{t.notConsumedDesc}</AlertDescription>
-          </Alert>
+          <Banner layout="inline" tone="warning" title={t.notConsumedTitle}>
+            {t.notConsumedDesc}
+          </Banner>
           <AlertDialogFooter>
             <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirming && void use(confirming)} disabled={using}>
+            <AlertDialogAction
+              disabled={using}
+              aria-busy={using || undefined}
+              onClick={(e) => {
+                // 用完再关：结果和原因要等上游答复
+                e.preventDefault();
+                if (confirming) void use(confirming);
+              }}
+            >
+              {using && <Spinner data-icon="inline-start" aria-hidden />}
               {t.use}
             </AlertDialogAction>
           </AlertDialogFooter>
