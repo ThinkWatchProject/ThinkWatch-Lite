@@ -629,6 +629,11 @@ static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
 /// 点了系统通知（或者菜单里的那一条提醒）：把窗口带回来，落到能处理这件事的那一页
 pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     use tauri::Manager;
+    // 新版本那一条不落在哪一页：它要的是更新窗口
+    if key == crate::UPDATE_NOTICE {
+        crate::show_pending_update(app);
+        return;
+    }
     let notices = app.try_state::<Arc<Notices>>();
     let view = notices
         .as_ref()
