@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ThinkWatch Lite",
-  "version": "2026.9.13",
+  "version": "2026.9.14",
   "identifier": "app.thinkwatch.lite",
   "build": {
     "beforeDevCommand": "pnpm dev",
