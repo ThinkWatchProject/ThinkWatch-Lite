@@ -404,7 +404,21 @@ impl Supervisor {
         // 真机上装好第一次打开就是这样。
         #[cfg(windows)]
         cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
-        let spawned = cmd.spawn();
+        let mut spawned = cmd.spawn();
+        // **「文本文件忙」等一下再试。**刚写完的可执行文件，只要还有别的进程
+        // 握着它的写句柄，exec 就会拒绝（ETXTBSY）。别的线程恰好在这时 fork，
+        // 子进程在 exec 之前会短暂继承一份这样的句柄 —— 不是这个文件真的
+        // 坏了，过一瞬间就好。cargo 自己跑构建脚本时也是这样重试的。Linux 的
+        // CI 上并行跑的测试撞到过：写完假 core 立刻起它
+        for _ in 0..5 {
+            match &spawned {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    spawned = cmd.spawn();
+                }
+                _ => break,
+            }
+        }
         let mut child = match spawned {
             Ok(c) => c,
             Err(e) => {
