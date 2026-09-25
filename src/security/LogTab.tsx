@@ -142,13 +142,22 @@ function LogTable({
   const lt = useText(securityLabelsText);
   const shown = usePresentList(events, (e) => e.id);
 
-  // 按天分组。列表本来就是倒序，同一天的挨在一起
+  /*
+    按天分组。列表本来就是倒序，同一天的挨在一起 —— 除了淡出的那一小会儿：
+    一下子来了一整页新记录时，读回来的全是新的，旧的几行留在原处淡出，新行
+    排在它们后面，同一天会被隔成两段。按天归拢，一天只有一个标题。
+  */
   const days: { key: string; at: number; rows: typeof shown }[] = [];
+  const byKey = new Map<string, (typeof days)[number]>();
   for (const s of shown) {
     const key = dayKey(s.item.at_ms);
-    const last = days[days.length - 1];
-    if (last && last.key === key) last.rows.push(s);
-    else days.push({ key, at: s.item.at_ms, rows: [s] });
+    const day = byKey.get(key);
+    if (day) day.rows.push(s);
+    else {
+      const next = { key, at: s.item.at_ms, rows: [s] };
+      byKey.set(key, next);
+      days.push(next);
+    }
   }
 
   /**
