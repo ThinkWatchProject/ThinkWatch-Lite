@@ -1,0 +1,119 @@
+# 截图用的示例配置（英文界面那一套）。`oracle.sh` 把它交给真的 core，
+# core 答出来的样子存在 en/ 下，截图页照着答。和 config.zh.yaml 只差用户起的名字。
+# 里面的密钥都是假的：打码之后露出来的头 5 尾 4 照旧，中间写成 EXAMPLE（控制面的钥匙只能是
+# 十六进制，中间写成 0）。
+version: 1
+listen:
+  control:
+    key: 513b90000000000000000000000000000000000000000000000000000000a1db
+clients:
+  - name: default
+    key: tw-m9EXAMPLEj7ak
+  - name: claude-code
+    key: tw-5aEXAMPLEqmg8
+    client: claude-code
+  - name: codex
+    key: tw-h5EXAMPLEyrqn
+    client: codex
+    route: codex
+    max_concurrent: 4
+  - name: cursor
+    key: tw-e6EXAMPLE6td6
+    client: cursor
+    route: cursor
+    allow: [claude-sonnet-*, gemini-2.5-pro]
+providers:
+  - name: anthropic
+    base_url: https://api.anthropic.com
+    key: sk-anEXAMPLEQ3xA
+  - name: relay
+    base_url: https://relay.example.com
+    protocol: anthropic
+    key: sk-rlEXAMPLEGa7e
+    pricing: relay-discount
+  - name: chatgpt
+    base_url: https://chatgpt.com/backend-api/codex
+    protocol: chatgpt
+    oauth:
+      refresh: rt_7HEXAMPLEMnB2
+      endpoint: https://auth.openai.com/oauth/token
+      client_id: app_EMoamEEZ73f0CkXaXp7hrann
+      access: eyJhbEXAMPLEc2ln
+      expires_at: "2026-10-04T08:12:40Z"
+  - name: openrouter
+    base_url: https://openrouter.ai/api/v1
+    protocol: openai-chat
+    key: ${OPENROUTER_API_KEY}
+    proxy: clash
+    on_proxy_fail: direct
+    models_only: [qwen/*, moonshotai/*]
+  - name: deepseek
+    base_url: https://api.deepseek.com/anthropic
+    protocol: anthropic
+    key: sk-3fEXAMPLE9f2c
+  - name: gemini
+    base_url: https://generativelanguage.googleapis.com
+    key: ${GEMINI_API_KEY}
+  - name: ollama
+    base_url: http://127.0.0.1:11434/v1
+    protocol: openai-chat
+    billing: free
+    models: [qwen3-coder:30b]
+proxies:
+  - name: clash
+    addr: 127.0.0.1:7890
+pricing:
+  sheets:
+    - name: relay-discount
+      multiplier: 0.8
+security:
+  redact:
+    mode: enforce
+    custom:
+      - name: customer-id
+        pattern: 'CUST-\d{6}'
+  inspect_tools:
+    mode: enforce
+groups:
+  - name: main
+    providers: [anthropic, relay]
+  - name: budget
+    type: cheapest
+    providers: [anthropic, relay]
+routes:
+  - name: default
+    rules:
+      - name: opus-direct
+        when: { model: "claude-opus-*" }
+        to: anthropic
+      - name: deepseek
+        when: { model: "deepseek-*" }
+        to: deepseek
+      - name: gemini
+        when: { model: "gemini-*" }
+        to: gemini
+      - name: local-models
+        when: { model: "qwen3-coder:*" }
+        to: ollama
+      - name: long-context
+        when: { input_tokens: ">200k" }
+        set: { model: claude-sonnet-5 }
+      - name: catch-all
+        to: main
+  - name: codex
+    rules:
+      - name: no-opus
+        when: { model: "claude-opus-*" }
+        deny: Opus is not offered on this key
+      - name: qwen
+        when: { model: "qwen/*" }
+        to: openrouter
+      - name: catch-all
+        to: chatgpt
+  - name: cursor
+    rules:
+      - name: gemini
+        when: { model: "gemini-*" }
+        to: gemini
+      - name: catch-all
+        to: budget

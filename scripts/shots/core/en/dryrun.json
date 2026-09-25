@@ -1,0 +1,48 @@
+[
+  {
+    "candidates": [
+      "relay",
+      "anthropic"
+    ],
+    "circuit_open": [],
+    "converted": [
+      {
+        "from": "openai-chat",
+        "provider": "relay",
+        "to": "anthropic"
+      },
+      {
+        "from": "openai-chat",
+        "provider": "anthropic",
+        "to": "anthropic"
+      }
+    ],
+    "hurts_cache": false,
+    "outcome": "route",
+    "reason": null,
+    "route": "cursor",
+    "rule": "catch-all",
+    "set": [],
+    "skipped": [],
+    "strategy": "cheapest",
+    "trace": [
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "gemini-*"
+          ]
+        },
+        "name": "gemini",
+        "verdict": "skipped"
+      },
+      {
+        "effect": "decide",
+        "name": "catch-all",
+        "verdict": "matched"
+      }
+    ],
+    "via_group": "budget"
+  }
+]

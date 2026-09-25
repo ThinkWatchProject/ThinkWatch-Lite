@@ -1,0 +1,18 @@
+{
+  "api_version": 20,
+  "clients": 4,
+  "config_path": "",
+  "gateway_addr": null,
+  "gateway_reachable": [],
+  "in_flight": 0,
+  "pid": 0,
+  "providers": 7,
+  "remote_control": {
+    "addr": null,
+    "allow_from": [],
+    "enabled": false,
+    "reachable": []
+  },
+  "uptime_secs": 0,
+  "version": "0.47.0"
+}

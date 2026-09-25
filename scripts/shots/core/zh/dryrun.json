@@ -1,0 +1,48 @@
+[
+  {
+    "candidates": [
+      "relay",
+      "anthropic"
+    ],
+    "circuit_open": [],
+    "converted": [
+      {
+        "from": "openai-chat",
+        "provider": "relay",
+        "to": "anthropic"
+      },
+      {
+        "from": "openai-chat",
+        "provider": "anthropic",
+        "to": "anthropic"
+      }
+    ],
+    "hurts_cache": false,
+    "outcome": "route",
+    "reason": null,
+    "route": "cursor",
+    "rule": "兜底",
+    "set": [],
+    "skipped": [],
+    "strategy": "cheapest",
+    "trace": [
+      {
+        "mismatch": {
+          "field": "model",
+          "got": "claude-sonnet-5",
+          "want": [
+            "gemini-*"
+          ]
+        },
+        "name": "Gemini 模型",
+        "verdict": "skipped"
+      },
+      {
+        "effect": "decide",
+        "name": "兜底",
+        "verdict": "matched"
+      }
+    ],
+    "via_group": "低价"
+  }
+]

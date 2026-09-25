@@ -1,0 +1,37 @@
+[
+  {
+    "allow": null,
+    "default": true,
+    "key": "tw-m9EXAMPLEj7ak",
+    "max_concurrent": null,
+    "name": "default",
+    "route": null
+  },
+  {
+    "allow": null,
+    "client": "claude-code",
+    "key": "tw-5aEXAMPLEqmg8",
+    "max_concurrent": null,
+    "name": "claude-code",
+    "route": null
+  },
+  {
+    "allow": null,
+    "client": "codex",
+    "key": "tw-h5EXAMPLEyrqn",
+    "max_concurrent": 4,
+    "name": "codex",
+    "route": "codex"
+  },
+  {
+    "allow": [
+      "claude-sonnet-*",
+      "gemini-2.5-pro"
+    ],
+    "client": "cursor",
+    "key": "tw-e6EXAMPLE6td6",
+    "max_concurrent": null,
+    "name": "cursor",
+    "route": "cursor"
+  }
+]

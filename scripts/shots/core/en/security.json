@@ -1,0 +1,861 @@
+{
+  "content": {
+    "mode": "observe",
+    "rules": [
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": true,
+        "id": "ignore-previous-instructions",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": "ignore previous instructions"
+        },
+        "name": "Ignore previous instructions",
+        "on_by_default": true
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": true,
+        "id": "ignore-all-previous",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": "ignore all previous"
+        },
+        "name": "Ignore all previous",
+        "on_by_default": true
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": true,
+        "id": "disregard-your-instructions",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": "disregard your instructions"
+        },
+        "name": "Disregard your instructions",
+        "on_by_default": true
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "jailbreak",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": "jailbreak"
+        },
+        "name": "Jailbreak",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "dan",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": " dan "
+        },
+        "name": "DAN",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "developer-mode",
+        "kind": "injection",
+        "matcher": {
+          "kind": "contains",
+          "text": "developer mode"
+        },
+        "name": "Developer mode",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "you-are-now",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "you are now"
+        },
+        "name": "Persona manipulation",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "new-persona",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "new persona"
+        },
+        "name": "New persona",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "act-as",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "act as"
+        },
+        "name": "Act as",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "pretend-to-be",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "pretend to be"
+        },
+        "name": "Pretend to be",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "system-prompt",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "system prompt"
+        },
+        "name": "System prompt extraction",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "reveal-your-instructions",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "reveal your instructions"
+        },
+        "name": "Reveal instructions",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "what-are-your-rules",
+        "kind": "persona",
+        "matcher": {
+          "kind": "contains",
+          "text": "what are your rules"
+        },
+        "name": "What are your rules",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "base64-wall",
+        "kind": "persona",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "[A-Za-z0-9+/=]{50,}"
+        },
+        "name": "Base64 smuggling",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "zh-ignore-previous",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "忽略之前"
+        },
+        "name": "Ignore previous instructions (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "zh-forget-your",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "忘记你"
+        },
+        "name": "Forget your instructions (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "zh-do-not-follow",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "不要遵循"
+        },
+        "name": "Do not follow (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "zh-you-are-now",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "现在你是"
+        },
+        "name": "You are now (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "zh-role-play",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "扮演"
+        },
+        "name": "Role-play (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "zh-reveal-your",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "透露你的"
+        },
+        "name": "Reveal your instructions (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": false,
+        "id": "zh-system-prompt",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "系统提示词"
+        },
+        "name": "System prompt (Chinese)",
+        "on_by_default": false
+      },
+      {
+        "action": "block",
+        "custom": false,
+        "default_action": "block",
+        "enabled": false,
+        "id": "zh-jailbreak",
+        "kind": "chinese",
+        "matcher": {
+          "kind": "contains",
+          "text": "越狱"
+        },
+        "name": "Jailbreak (Chinese)",
+        "on_by_default": false
+      }
+    ]
+  },
+  "hidden_text": {
+    "mode": "observe",
+    "rules": [
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "tag",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+E0000–U+E007F"
+          ]
+        },
+        "name": "tag",
+        "on_by_default": true,
+        "why": "Unicode tag characters: entirely invisible in an editor, carried into the model's context as they are, and able to hide a whole instruction."
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "bidi",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+202A–U+202E",
+            "U+2066–U+2069"
+          ]
+        },
+        "name": "bidi",
+        "on_by_default": true,
+        "why": "Bidirectional controls: they make what is on screen read in a different order than the characters actually are."
+      }
+    ]
+  },
+  "inspect_tools": {
+    "mode": "enforce",
+    "rules": [
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "curl-pipe-sh",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(?i)(curl|wget)[^\\n|]*\\|\\s*(sudo\\s+)?(ba|z|d)?sh"
+        },
+        "name": "Download and run",
+        "on_by_default": true,
+        "why": "Downloads and runs it straight away; what runs is decided remotely and cannot be read first"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "base64-decode-exec",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(?i)base64\\s+(-d|--decode)[^\\n|]*\\|\\s*(ba)?sh"
+        },
+        "name": "Decode and run",
+        "on_by_default": true,
+        "why": "Hides what will run inside base64"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "exfil-env",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(?i)(env|printenv|cat\\s+[^\\n]{0,60}\\.env)[^\\n]{0,200}(curl|wget|nc\\s)"
+        },
+        "name": "Send out environment variables",
+        "on_by_default": true,
+        "why": "Sends the environment, which usually holds keys, somewhere else"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "exfil-credentials",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)[^\\n]{0,30}(发|传|上报|打印|输出|贴出|读出|(?i:send|upload|post|print|paste|exfil))"
+        },
+        "name": "Send out a credential file",
+        "on_by_default": true,
+        "why": "Asks the model to send the contents of a credential file somewhere"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "exfil-credentials-reversed",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(发送|上传|贴出|打印|输出|读取|(?i:send|upload|post|print|read))[^\\n]{0,30}(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)"
+        },
+        "name": "Send out a credential file (verb first)",
+        "on_by_default": true,
+        "why": "Asks the model to send the contents of a credential file somewhere"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "ssh-key-read",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(?i)(cat|cp|scp|curl)[^\\n]{0,200}(\\.ssh/id_|\\.aws/credentials|\\.netrc)"
+        },
+        "name": "Read a private key or cloud credential",
+        "on_by_default": true,
+        "why": "Reads a private key or a cloud credential"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "write-startup-item",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "(>>?|tee|cp|mv|ln\\s+-s)[^\\n]{0,200}(\\.zshrc|\\.bashrc|\\.bash_profile|\\.profile|\\.zprofile|LaunchAgents|LaunchDaemons|\\.git/hooks|crontab)"
+        },
+        "name": "Write a startup item",
+        "on_by_default": true,
+        "why": "Writes somewhere that runs at login or whenever a terminal opens"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
+        "id": "crontab-install",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "crontab\\s+(-r\\b|-\\s*($|[\"';&|)])|[^\\s-][^\\n]{0,40})"
+        },
+        "name": "Install a scheduled job",
+        "on_by_default": true,
+        "why": "Installs a scheduled job, or deletes every existing one"
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": true,
+        "id": "rm-rf-root",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "rm\\s+(-[a-zA-Z]*\\s+)*-[a-zA-Z]*[rf][a-zA-Z]*\\s+(/|~|\\$HOME)(\\s|$|[\"';&|)])"
+        },
+        "name": "Delete home or root",
+        "on_by_default": true,
+        "why": "Deletes the whole home directory or the root"
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": true,
+        "id": "chmod-777",
+        "kind": "command",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "chmod\\s+(-R\\s+)?777"
+        },
+        "name": "World-writable permissions",
+        "on_by_default": true,
+        "why": "Makes a file writable by everyone"
+      }
+    ]
+  },
+  "output_limit": {
+    "ceiling": 1000000,
+    "default_max_chars": 100000,
+    "max_chars": 100000,
+    "mode": "off"
+  },
+  "redact": {
+    "mode": "enforce",
+    "rules": [
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "anthropic-api-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "sk-ant-"
+        },
+        "name": "Anthropic API key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "openai-project-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "sk-proj-"
+        },
+        "name": "OpenAI project key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "openai-api-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "openai-legacy",
+          "min_len": 40
+        },
+        "name": "OpenAI API key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "github-personal-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "ghp_"
+        },
+        "name": "GitHub personal access token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "github-oauth-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "gho_"
+        },
+        "name": "GitHub OAuth token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "github-server-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "ghs_"
+        },
+        "name": "GitHub server token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "github-user-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "ghu_"
+        },
+        "name": "GitHub user token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "github-fine-grained-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "github_pat_"
+        },
+        "name": "GitHub fine-grained token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "slack-bot-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxb-"
+        },
+        "name": "Slack bot token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "slack-user-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxp-"
+        },
+        "name": "Slack user token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "slack-app-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxa-"
+        },
+        "name": "Slack app token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "aws-access-key-id",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 12,
+          "prefix": "AKIA"
+        },
+        "name": "AWS access key ID",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "aws-temporary-key-id",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 12,
+          "prefix": "ASIA"
+        },
+        "name": "AWS temporary access key ID",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "google-api-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "AIza"
+        },
+        "name": "Google API key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "google-oauth-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "ya29."
+        },
+        "name": "Google OAuth token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "gitlab-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 15,
+          "prefix": "glpat-"
+        },
+        "name": "GitLab token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "stripe-live-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "sk_live_"
+        },
+        "name": "Stripe live key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "stripe-restricted-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "rk_live_"
+        },
+        "name": "Stripe restricted key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "npm-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "npm_"
+        },
+        "name": "npm token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "digitalocean-token",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "dop_v1_"
+        },
+        "name": "DigitalOcean token",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "sendgrid-key",
+        "kind": "api-keys",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 30,
+          "prefix": "SG."
+        },
+        "name": "SendGrid key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "private-key",
+        "kind": "private-keys",
+        "matcher": {
+          "kind": "pem"
+        },
+        "name": "Private key",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "jwt",
+        "kind": "jwt",
+        "matcher": {
+          "kind": "jwt"
+        },
+        "name": "JWT",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "conn-string-password",
+        "kind": "conn-strings",
+        "matcher": {
+          "kind": "conn-string"
+        },
+        "name": "Connection string password",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": false,
+        "id": "internal-ip",
+        "kind": "internal",
+        "matcher": {
+          "kind": "private-ip"
+        },
+        "name": "Internal IP address",
+        "on_by_default": false
+      },
+      {
+        "custom": false,
+        "enabled": false,
+        "id": "internal-domain",
+        "kind": "internal",
+        "matcher": {
+          "kind": "domain-suffix",
+          "suffixes": [
+            ".local",
+            ".internal",
+            ".lan"
+          ]
+        },
+        "name": "Internal domain",
+        "on_by_default": false
+      },
+      {
+        "custom": true,
+        "enabled": true,
+        "id": "customer-id",
+        "kind": "custom",
+        "matcher": {
+          "kind": "regex",
+          "pattern": "CUST-\\d{6}"
+        },
+        "name": "customer-id",
+        "on_by_default": true
+      }
+    ]
+  }
+}
