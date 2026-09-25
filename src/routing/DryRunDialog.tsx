@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { BanIcon, ChevronRightIcon, CircleCheckIcon, CircleDotIcon, CircleMinusIcon } from "lucide-react";
+import { ChevronRightIcon, CircleCheckIcon, CircleDotIcon, CircleMinusIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
-import { IconRoute } from "@/ui/icons";
+import { IconDenied, IconRoute } from "@/ui/icons";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Skeleton } from "@/ui/skeleton";
@@ -397,7 +397,7 @@ function Result({
   } else if (r.outcome === "deny") {
     steps.push(
       <Step key="deny" className="text-destructive">
-        <BanIcon aria-hidden className="size-3.5" />
+        <IconDenied aria-hidden className="size-3.5" />
         {rt.deny}
       </Step>,
     );

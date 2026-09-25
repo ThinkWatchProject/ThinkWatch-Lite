@@ -23,6 +23,7 @@ import {
 } from "./types";
 import { PROTOCOLS } from "./upstreams/labels";
 import { labelsText } from "./labels.i18n";
+import type { NotSent } from "./requestRouting";
 
 /*
  * 显示文字都在 `labels.i18n.ts`，每次调用都按当时的语言取（`textOf`）。
@@ -161,6 +162,16 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean } {
     default:
       return { text: a.error ? coreText(a.error) : t.noResponse, ok: false };
   }
+}
+
+/** 尝试链里被规则拒绝的那一跳（选定上游之后判断的规则）：没有发给这个上游 */
+export function deniedHopText(rule: string): string {
+  return textOf(labelsText).deniedHop(rule);
+}
+
+/** 没有发往任何上游的请求，在「上游」的位置上写什么：被规则拒绝，或者没有可用的上游 */
+export function notSentText(kind: NotSent): string {
+  return textOf(labelsText).notSent[kind];
 }
 
 /** 做过的格式转换：`OpenAI Chat Completions → Anthropic Messages` */

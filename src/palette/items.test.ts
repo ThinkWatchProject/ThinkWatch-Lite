@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Nav } from "@/nav";
 import type { ConnView } from "@/connection/api";
 import type { Overview, RequestRow } from "@/types";
+import { NotSentIcon } from "@/traffic/cells";
+import { UpstreamLogo } from "@/ui/logos";
 import { score } from "./match";
 import { buildItems, requestItems, type Sources } from "./items";
 
@@ -214,5 +216,47 @@ describe("命令面板里的请求", () => {
     const got = requestItems(rows, ov, nav, () => 0, "48123", 5);
     expect(got).toHaveLength(1);
     expect(got[0]!.item.title).toBe("打开请求 #48123");
+  });
+
+  /** 条目的图形是哪一种：没有发往上游的是 `NotSentIcon`（带 `kind`），其余看组件本身 */
+  const iconOf = (icon: unknown) => {
+    const el = icon as ReactElement<{ kind?: string; name?: string }>;
+    return el.type === NotSentIcon ? `not-sent:${el.props.kind}` : el.type === UpstreamLogo ? `upstream:${el.props.name}` : "other";
+  };
+
+  it("没有发往任何上游的：图形和那一行说是被规则拒绝还是无可用上游，不画「?」方块", () => {
+    const denied = row(203, "claude-opus-5", {
+      provider: "",
+      client: "codex",
+      state: "failed",
+      error: { code: "gw.route.denied", args: { rule: "no-opus", reason: "Opus is not offered" }, text: "" },
+    });
+    const nowhere = row(202, "moonshotai/kimi-k2", {
+      provider: "",
+      client: "codex",
+      state: "failed",
+      error: { code: "gw.model.no_upstream_available", args: { model: "moonshotai/kimi-k2", detail: "" }, text: "" },
+    });
+    // 选定上游之后被拒绝的记在要去的那个上游上：照常画那个上游
+    const afterPick = row(201, "claude-sonnet-5", {
+      provider: "openrouter",
+      client: "claude-code",
+      state: "failed",
+      error: { code: "gw.route.denied", args: { rule: "no-images-via-relay", reason: "" }, text: "" },
+    });
+    const got = requestItems([denied, nowhere, afterPick], ov, nav, () => 0, "20", 5).map((x) => x.item);
+    expect(got.map((i) => [i.id, iconOf(i.icon), i.detail])).toEqual([
+      ["request:203", "not-sent:denied", "#203 · 规则拒绝 · codex"],
+      ["request:202", "not-sent:unavailable", "#202 · 无可用上游 · codex"],
+      ["request:201", "upstream:openrouter", "#201 · openrouter · claude-code"],
+      ["request:20", "other", undefined],
+    ]);
+  });
+
+  it("本地应答的：标题是辅助请求的类别，图形是网关，按原词也搜得到", () => {
+    // 流量表给本地应答那几行的「上游」是那一句说明，不是上游的名字
+    const local = row(301, "", { model: undefined, provider: "本地应答", local: true, path: "titling", client: "claude-code" });
+    const got = requestItems([local], ov, nav, (t, kw) => score("titling", t, kw), null, 5).map((x) => x.item);
+    expect(got.map((i) => [i.title, iconOf(i.icon), i.detail])).toEqual([["生成标题", "other", "#301 · 本地应答 · claude-code"]]);
   });
 });

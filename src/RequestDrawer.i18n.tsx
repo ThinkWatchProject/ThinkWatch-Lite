@@ -61,12 +61,29 @@ export const requestDrawerText = messages(
     generating: "生成",
     timingLabel: (ttfb: string, gen: string) => `等待首字节 ${ttfb}，生成 ${gen}`,
 
+    /** 选定上游之后被规则拒绝的请求，「上游」那一行名字后面的标记 */
+    notSentSuffix: "（未发送）",
+
     // 路由
+    route: "路由",
     matchedRule: "命中规则",
+    /** 命中规则后面的标记：决定去向的这一条就是拒绝 */
+    denied: "拒绝",
     viaGroup: "经过策略组",
+    /** 改写了参数的规则，按求值的顺序 */
+    rewrittenBy: "参数改写",
+    /** 选定上游之后才判断、拒绝了此请求的规则 */
+    deniedBy: "拒绝规则",
+    /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
+    reason: "原因",
     attempts: "尝试链",
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
+    failoverDenied: (failed: number, rule: string) =>
+      `已发生故障转移：前 ${failed} 个上游失败，切换至下一个上游后，规则「${rule}」拒绝了此请求，未向该上游发送。`,
+    deniedAfterPick: (rule: string) => `选定上游后，规则「${rule}」拒绝了此请求，未发往任何上游。`,
+    deniedBeforePick: (rule: string) => `选定上游之前，规则「${rule}」已拒绝此请求，未发往任何上游。`,
+    unavailable: "规则选中的上游均无法服务此请求，未发往任何上游。",
     noRouting: "此请求由网关本地应答，未经过路由。",
     routingPending: "路由尚未完成",
     noAttempts: "此请求没有上游尝试记录。",
@@ -166,13 +183,29 @@ export const requestDrawerText = messages(
     generating: "Generating",
     timingLabel: (ttfb: string, gen: string) => `Waiting for first byte ${ttfb}, generating ${gen}`,
 
+    notSentSuffix: " (not sent)",
+
+    route: "Route",
     matchedRule: "Matched rule",
+    denied: "Denied",
     viaGroup: "Via group",
+    rewrittenBy: "Rewritten by",
+    deniedBy: "Denied by",
+    reason: "Reason",
     attempts: "Attempts",
     failover: (failed: number) =>
       failed === 1
         ? "Failover occurred: the first upstream failed, and the request was switched to the next upstream automatically."
         : `Failover occurred: the first ${failed} upstreams failed, and the request was switched to the next upstream automatically.`,
+    failoverDenied: (failed: number, rule: string) =>
+      failed === 1
+        ? `Failover occurred: the first upstream failed, and after the switch to the next upstream, rule “${rule}” denied the request before it was sent there.`
+        : `Failover occurred: the first ${failed} upstreams failed, and after the switch to the next upstream, rule “${rule}” denied the request before it was sent there.`,
+    deniedAfterPick: (rule: string) =>
+      `Rule “${rule}” denied this request after the upstream was chosen; it was not sent to any upstream.`,
+    deniedBeforePick: (rule: string) =>
+      `Rule “${rule}” denied this request before an upstream was chosen; it was not sent to any upstream.`,
+    unavailable: "No upstream the rule selected can serve this request; it was not sent to any upstream.",
     noRouting: "The gateway answered this request locally; it did not go through routing.",
     routingPending: "Routing has not finished yet",
     noAttempts: "No upstream attempts were recorded for this request.",

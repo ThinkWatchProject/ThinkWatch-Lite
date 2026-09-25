@@ -1,6 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { BanIcon } from "lucide-react";
-import { IconRoute } from "@/ui/icons";
+import { IconDenied, IconRoute } from "@/ui/icons";
 import { prefersReducedMotion } from "@/ui/motion";
 import { StatusDot } from "@/ui/status-dot";
 import { Tip } from "@/ui/tip";
@@ -440,7 +439,7 @@ function describe(
       return {
         body: (
           <>
-            <BanIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
+            <IconDenied aria-hidden className="size-3.5 shrink-0 text-destructive" />
             <span className="min-w-0 truncate text-destructive">{rt.deny}</span>
           </>
         ),
