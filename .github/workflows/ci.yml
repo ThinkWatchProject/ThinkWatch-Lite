@@ -41,6 +41,11 @@ jobs:
       # dash），写出 bash 的语法就是装不上。runner 自带 shellcheck
       - name: The install script is POSIX sh
         run: shellcheck -s sh scripts/install.sh
+      # 发布页的正文只在推 tag 时才写（release.yml 的 `release-body`）。脚本和
+      # `release-notes/` 下的说明在改它们的那个 PR 上就核对：链接对不对得上
+      # 发出去的文件、说明里有没有混进中文
+      - name: Release page text
+        run: python3 scripts/release_notes_test.py
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
