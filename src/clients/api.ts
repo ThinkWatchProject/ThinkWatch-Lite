@@ -39,5 +39,7 @@ export const api = {
   copyKey: (name: string) => invoke<void>("copy_key", { name }),
   /** 放行 WSL 的那条防火墙命令，由 Rust 侧拼好写进剪贴板 */
   copyFirewall: () => invoke<void>("copy_wsl_firewall"),
+  /** 手动配置 WSL 里的客户端之前：把网关的监听改到这个发行版够得到的样子 */
+  listenForWsl: (env: string) => invoke<void>("listen_for_wsl", { env }),
   reveal: (id: string, env?: string) => invoke<void>("reveal_client_config", { id, env }),
 };
