@@ -5,6 +5,8 @@ import type { UpdateView } from "@/updateFlow";
 import type { ConnView, LinkState, Profile, Tested } from "@/connection/api";
 import { P } from "./params";
 import { DAY, HOUR, MIN, NOW, L, clone } from "./util";
+import PKG from "../../../package.json";
+import CORE_STATUS from "../core/en/status.json";
 
 // ───────────────────────────────────────── 提醒（句子照 src-tauri/src/notices/rules.rs）
 
@@ -51,14 +53,20 @@ export const autostart = true;
 
 // ───────────────────────────────────────── 更新
 
-/** 这一版应用。**截图拍的就是它**：和 package.json 一致 */
-export const APP_VERSION = "2026.9.16";
+/**
+ * 这一版应用。**截图拍的就是它，所以从 package.json 读**，不在这里写一遍：写死的话
+ * 每次发版都得记得改，忘了就是设置页上挂着上一版的版本号
+ */
+export const APP_VERSION: string = PKG.version;
 export const updateView = (): UpdateView => ({ version: APP_VERSION, install: "standalone", check_updates: true, offer: null });
 
 // ───────────────────────────────────────── 连接
 
-/** 这一版应用配的 core */
-export const CORE_VERSION = "0.48.0";
+/**
+ * 这一版应用配的 core：**取 core 自己答的版本**（oracle.sh 按钉住的 tag 重录的
+ * status.json），升级钉点、重录一次就跟上，不用再改这里
+ */
+export const CORE_VERSION: string = CORE_STATUS.version;
 
 const PROFILES: Profile[] = [
   { id: "local", name: "", local: true, host: null, port: null, addr: null, last_connected_at: NOW - 2 * HOUR },
