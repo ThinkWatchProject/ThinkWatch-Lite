@@ -79,8 +79,13 @@ export interface LiveSample {
   at: number;
   model: string;
   tokens: number;
-  /** 价钱比用量晚一拍到（`request_priced`）。没到之前是 `undefined` */
-  cost?: number;
+  /**
+   * 微分。价钱比用量晚一拍到（`request_priced`）：没到之前是 `undefined`；到了却是
+   * 空的是 `null` —— 用量是有的，模型不在价目表里（不计费的上游记的是 0）
+   */
+  cost?: number | null;
+  /** 这笔费用是估算的（请求在响应结束前断开，输出只算到断开时） */
+  estimated?: boolean;
 }
 
 /** 一次失败。**带着 id**：事件流和补回来的历史会说到同一次，要能去重 */
@@ -271,7 +276,8 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         for (let i = samples.current.length - 1; i >= 0; i--) {
           const x = samples.current[i];
           if (x && x.id === ev.id) {
-            if (ev.cost_micros != null) x.cost = ev.cost_micros;
+            x.cost = ev.cost_micros ?? null;
+            x.estimated = ev.cost_estimated === true;
             break;
           }
         }
@@ -297,6 +303,14 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         // 挂上了再补 —— `listen` 是异步注册的
         await un;
         /*
+          **库里的时刻是 core 的时钟，图的横轴是这边的时钟。**连的是另一台机器上
+          的 core 时，两边不一定对得上：差出一分钟，补回来的这一段就整段错开一分钟，
+          和事件流上画的接不上。所以先问 core 此刻几点（`/in-flight` 带着它），
+          起点按它算，每一条再按两边的差挪回这边的时钟上。
+        */
+        const { now_ms: coreNow } = await call("InFlight", null);
+        const skew = coreNow - Date.now();
+        /*
           **按时间取，不按条数取。**十分钟里有多少条请求说不准：取固定的
           条数，忙的时候补不满一个窗口，闲的时候又白拿一堆窗口外的。
 
@@ -306,15 +320,17 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         */
         const rows = await call("History", {
           limit: 2000,
-          from_ms: Date.now() - 2 * windowMs,
+          from_ms: coreNow - 2 * windowMs,
         });
         if (!alive) return;
         const cut = Date.now() - windowMs;
         const seeded: LiveSample[] = [];
         const seededFails: LiveFail[] = [];
         for (const r of rows) {
-          // 和事件流同一个口径：落在结束的那一刻
-          const at = r.at_ms + (r.duration_ms ?? 0);
+          // 本地应答没到上游，和别处的汇总一样不算
+          if (r.local) continue;
+          // 和事件流同一个口径：落在结束的那一刻，换到这边的时钟上
+          const at = r.at_ms + (r.duration_ms ?? 0) - skew;
           if (at < cut) continue;
           if (r.error && !failedAlready(r.id)) seededFails.push({ id: r.id, at });
           if (counted(r.id)) continue;
@@ -330,7 +346,9 @@ export function useLiveWindow(active: boolean, windowMs: number) {
             at,
             model: r.model || textOf(liveText).unknownModel,
             tokens,
-            ...(r.cost_micros != null ? { cost: r.cost_micros } : {}),
+            // 落了库的都已经算过价：有用量却是空的，就是未定价
+            cost: r.cost_micros,
+            estimated: r.cost_estimated,
           });
         }
         // **按时间排好**：`request_priced` 是从末尾倒着找那一条的

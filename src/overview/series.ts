@@ -82,11 +82,65 @@ export interface RankRow {
   /** 合并了几项。单个模型是 0 */
   merged: number;
   tokens: number;
-  /** 微分 */
+  /** 微分：实测加估算 */
   cost: number;
+  /** 其中估算的那部分，微分 */
+  estimated: number;
+  /** 有用量、模型却不在价目表里的请求：费用不在 `cost` 里 */
+  unpriced: number;
+  /** 没有拿到用量的请求：费用算不出来，也不在 `cost` 里 */
+  noUsage: number;
   requests: number;
   /** 图里那一层的颜色 */
   color: string;
+}
+
+/**
+ * 排行里费用那一格写什么。**一个数或一个词，说明进悬停**，和会话的费用那一格
+ * （`costCell`）同一套写法：
+ *
+ * · 有用量、却一条都没算出费用：「无法计价」。**不写 $0** —— 那是在说它不花钱。
+ * · 连用量都没有：「无用量」。
+ * · 其余写金额。有算不出来的请求时金额只是下限，写成「≥」；含估算的带「~」。
+ *   全都算出来了、合计是零时写 $0：不计费的上游（本地模型）就是这样，它说的是真的。
+ *
+ * `notes` 是悬停里的几句话，一句一段；空的就没有悬停。
+ */
+export function rankCost(
+  r: Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage">,
+  t: Text,
+): { kind: "amount" | "unpriced" | "noUsage"; prefix: string; notes: string[] } {
+  // 金额之外的请求，各说各的
+  const outside = [
+    ...(r.unpriced > 0 ? [t.rankUnpriced(r.unpriced)] : []),
+    ...(r.noUsage > 0 ? [t.rankNoUsage(r.noUsage)] : []),
+  ];
+  if (r.cost === 0 && r.unpriced > 0) return { kind: "unpriced", prefix: "", notes: outside };
+  if (r.cost === 0 && r.noUsage > 0) return { kind: "noUsage", prefix: "", notes: outside };
+  const estimated = r.estimated > 0;
+  return {
+    kind: "amount",
+    prefix: costPrefix(outside.length > 0, estimated),
+    notes: [...(estimated ? [t.estimated(usd(r.estimated))] : []), ...outside],
+  };
+}
+
+/**
+ * 金额前面的记号：缺了算不出来的请求，金额只是下限（「≥」）；**估算不能冒充实测**，
+ * 含估算的带「~」。
+ */
+function costPrefix(incomplete: boolean, estimated: boolean): string {
+  return (incomplete ? "≥" : "") + (estimated ? "~" : "");
+}
+
+/** 一格的费用写成一个词或一个带记号的金额，和排行那一格同一套（`rankCost`） */
+function bucketCost(g: CostBucket, t: Text): string {
+  const cost = g.cost_micros_exact + g.cost_micros_estimated;
+  const c = rankCost(
+    { cost, estimated: g.cost_micros_estimated, unpriced: g.unpriced_requests, noUsage: g.no_usage_requests },
+    t,
+  );
+  return c.kind === "unpriced" ? t.unpricedCell : c.kind === "noUsage" ? t.noUsageCell : c.prefix + usd(cost);
 }
 
 export interface Trend {
@@ -160,12 +214,18 @@ export function buildTrend({
     : [];
   const byBucket = new Map<number, Map<string, number>>();
   const money = new Map<string, number>();
+  const estimated = new Map<string, number>();
+  const unpriced = new Map<string, number>();
+  const noUsage = new Map<string, number>();
   const volume = new Map<string, number>();
   const count = new Map<string, number>();
   const add = (at: number, name: string, v: number) => {
     const slot = byBucket.get(at) ?? new Map<string, number>();
     slot.set(name, (slot.get(name) ?? 0) + v);
     byBucket.set(at, slot);
+  };
+  const bump = (m: Map<string, number>, name: string, v: number) => {
+    if (v !== 0) m.set(name, (m.get(name) ?? 0) + v);
   };
   if (live) {
     /*
@@ -182,6 +242,9 @@ export function buildTrend({
       volume.set(x.model, (volume.get(x.model) ?? 0) + x.tokens);
       money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
+      if (x.estimated) bump(estimated, x.model, x.cost ?? 0);
+      // 价钱到了却是空的：模型未定价。还没到的（`undefined`）不算
+      if (x.cost === null) bump(unpriced, x.model, 1);
       const amount = tokensMode ? x.tokens : (x.cost ?? 0) * 3600;
       // 只碰核够得着的那几格
       const lo = Math.max(0, Math.ceil((x.at - LIVE_REACH_MS - from) / LIVE_BUCKET_MS));
@@ -199,6 +262,9 @@ export function buildTrend({
       money.set(name, (money.get(name) ?? 0) + cost);
       volume.set(name, (volume.get(name) ?? 0) + tok);
       count.set(name, (count.get(name) ?? 0) + b.requests);
+      bump(estimated, name, b.cost_micros_estimated);
+      bump(unpriced, name, b.unpriced_requests);
+      bump(noUsage, name, b.no_usage_requests);
       add(b.at_ms, name, tokensMode ? tok : cost);
     }
   }
@@ -263,6 +329,9 @@ export function buildTrend({
     merged: 0,
     tokens: volume.get(name) ?? 0,
     cost: money.get(name) ?? 0,
+    estimated: estimated.get(name) ?? 0,
+    unpriced: unpriced.get(name) ?? 0,
+    noUsage: noUsage.get(name) ?? 0,
     requests: count.get(name) ?? 0,
     color: colorOf.get(name) ?? "var(--chart-1)",
   }));
@@ -272,6 +341,9 @@ export function buildTrend({
       merged: rest.length,
       tokens: sum(volume),
       cost: sum(money),
+      estimated: sum(estimated),
+      unpriced: sum(unpriced),
+      noUsage: sum(noUsage),
       requests: sum(count),
       color: OTHER,
     });
@@ -320,10 +392,16 @@ export function buildTrend({
           }
         : {
             title: at,
-            value: tokensMode
-              ? t.tokens(compact(Math.round(total)), total)
-              : usd(g.cost_micros_exact + g.cost_micros_estimated),
-            note: g.requests > 0 ? t.tipRequests(g.requests, g.failed) : t.tipNone,
+            value: tokensMode ? t.tokens(compact(Math.round(total)), total) : bucketCost(g, t),
+            note:
+              g.requests === 0
+                ? t.tipNone
+                : [
+                    t.tipRequests(g.requests, g.failed),
+                    // 费用口径下，金额之外的那几条也说出来：和上面费用那个大数的限定语同一套说法
+                    ...(!tokensMode && g.unpriced_requests > 0 ? [t.unpriced(g.unpriced_requests)] : []),
+                    ...(!tokensMode && g.no_usage_requests > 0 ? [t.noUsage(g.no_usage_requests)] : []),
+                  ].join(t.listSep),
           },
     );
     // `label` 是横轴的键：每一格各不相同（到分钟，实时档到秒），「现在」那一点靠它找位置

@@ -5,8 +5,8 @@ import { useNav } from "@/nav";
 import { compact } from "@/format";
 import { usd } from "@/types";
 import { useText } from "@/i18n";
-import type { Metric, RankRow } from "./series";
-import { LinkRow, MarkSpace, Meter, ModelMark } from "./parts";
+import { rankCost, type Metric, type RankRow } from "./series";
+import { LinkRow, LinkText, MarkSpace, Meter, ModelMark } from "./parts";
 import { overviewText } from "./overview.i18n";
 
 const fmtTokens = (n: number) => compact(Math.round(n));
@@ -66,19 +66,9 @@ export function ModelRanking({
               <AnimatedNumber value={r.tokens} format={fmtTokens} scope={scope} />
             </span>
           </Tip>
-          <span className={cn("w-16 shrink-0 text-right", tokensMode ? "text-muted-foreground" : "font-medium")}>
-            {/*
-              **用了 token 却没有费用，不写「$0」。**那可能是未定价（费用没算进来），也
-              可能是不计费（本地模型）—— 分组的格子里没有「无法计价」的条数，分不出是哪
-              一种，而「$0」只在后一种情况下是真的。
-            */}
-            {r.cost === 0 && r.tokens > 0 ? (
-              <Tip text={t.noCost}>
-                <span className="tw-num text-muted-foreground">—</span>
-              </Tip>
-            ) : (
-              <AnimatedNumber value={r.cost} format={usd} scope={scope} />
-            )}
+          {/* 80px：「≥~$1234.56」要 79 */}
+          <span className={cn("w-20 shrink-0 text-right", tokensMode ? "text-muted-foreground" : "font-medium")}>
+            <Cost r={r} scope={scope} />
           </span>
           <span className="w-12 shrink-0 text-right tw-label text-muted-foreground">
             <AnimatedNumber value={r.requests} format={(n) => t.times(Math.round(n))} scope={scope} />
@@ -86,5 +76,60 @@ export function ModelRanking({
         </LinkRow>
       ))}
     </div>
+  );
+}
+
+/**
+ * 一行的费用。写什么见 `rankCost`；有说明的写在悬停里。
+ *
+ * · 金额有说明时带虚线下划线，和会话、请求行里有说明的金额同一个记号。
+ * · 「无法计价」是琥珀色：它要人去补一个价，和上面费用大数下的「N 条无法计价」同色。
+ *   「无用量」补不了什么，淡一档。两个词都不跟着费用口径加粗 —— 它们不是金额。
+ *
+ * **有无法计价的请求时，这一格自己可以点**：落到流量页这个模型里没算出费用的那一批
+ * —— 看到它之后要做的就是去补价，而补给谁要从那一批里看。合并的「其他」不是一个
+ * 模型，只说不点。
+ */
+function Cost({ r, scope }: { r: RankRow; scope: string }) {
+  const t = useText(overviewText);
+  const nav = useNav();
+  const c = rankCost(r, t);
+  if (c.kind === "amount" && c.notes.length === 0)
+    return <AnimatedNumber value={r.cost} format={usd} scope={scope} />;
+  const shown =
+    c.kind === "unpriced" ? (
+      t.unpricedCell
+    ) : c.kind === "noUsage" ? (
+      t.noUsageCell
+    ) : (
+      <AnimatedNumber value={r.cost} format={(n) => c.prefix + usd(n)} scope={scope} />
+    );
+  const look =
+    c.kind === "amount"
+      ? "underline decoration-dotted underline-offset-2"
+      : c.kind === "unpriced"
+        ? "font-normal text-warning"
+        : "font-normal text-muted-foreground";
+  const tip = (
+    <div className="space-y-1">
+      {c.notes.map((l) => (
+        <p key={l}>{l}</p>
+      ))}
+    </div>
+  );
+  return (
+    <Tip text={tip}>
+      {r.unpriced > 0 && !r.merged ? (
+        <LinkText
+          className={cn(look, "hover:decoration-solid")}
+          onOpen={() => nav.open("requests", { grouped: false, filter: { model: r.name, unpricedOnly: true } })}
+        >
+          {shown}
+          <span className="sr-only">{t.viewUnpriced}</span>
+        </LinkText>
+      ) : (
+        <span className={look}>{shown}</span>
+      )}
+    </Tip>
   );
 }

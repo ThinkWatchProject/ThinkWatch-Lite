@@ -69,6 +69,8 @@ export const overviewText = messages(
     costRate: (amount: string) => `${amount}/小时`,
     /** 悬停提示抬头下面那一句：这一格有几次请求 */
     tipRequests: (requests: number, failed: number) => `${requests} 次请求${failed ? `，${failed} 次失败` : ""}`,
+    /** 那一句后面接着的几项（费用口径下的「3 条无法计价」）之间的分隔 */
+    listSep: "，",
     tipNone: "无请求",
     waiting: "等待请求",
     noRequests: "所选区间内无请求记录",
@@ -81,8 +83,15 @@ export const overviewText = messages(
     // 模型排行
     models: "模型",
     times: (n: number) => `${n} 次`,
-    /** 用了 token 却没有费用的那一格（「—」）的悬停说明 */
-    noCost: "无费用记录：模型未定价或不计费",
+    /** 排行费用那一格（和费用口径下悬停的合计）：有用量，却一条都没算出费用 */
+    unpricedCell: "无法计价",
+    /** 同上：连用量都没有 */
+    noUsageCell: "无用量",
+    /** 费用那一格悬停里的句子：金额之外的请求。含估算的那句和费用大数的限定语共用 `estimated` */
+    rankUnpriced: (n: number) => `${n} 条请求无法计价：模型未定价，费用未计入`,
+    rankNoUsage: (n: number) => `${n} 条请求没有用量数据，费用未计入`,
+    /** 可以点的「无法计价」，读屏读出来的后半句 */
+    viewUnpriced: "在流量中查看无法计价的请求",
     moreNotListed: (n: number) => `另有 ${n} 项未列出`,
     /** 可以点的一行，读屏读出来的后半句 */
     viewInTraffic: "在流量中查看",
@@ -199,6 +208,7 @@ export const overviewText = messages(
     costRate: (amount: string) => `${amount}/hour`,
     tipRequests: (requests: number, failed: number) =>
       `${requests === 1 ? "1 request" : `${requests} requests`}${failed ? `, ${failed} failed` : ""}`,
+    listSep: ", ",
     tipNone: "No requests",
     waiting: "Waiting for requests",
     noRequests: "No requests recorded in the selected range",
@@ -209,7 +219,17 @@ export const overviewText = messages(
 
     models: "Models",
     times: (n: number) => `${n}×`,
-    noCost: "No cost recorded: the model is unpriced or not billed",
+    unpricedCell: "Unpriced",
+    noUsageCell: "No usage",
+    rankUnpriced: (n: number) =>
+      n === 1
+        ? "1 request unpriced: the model has no price, so its cost is not included"
+        : `${n} requests unpriced: the model has no price, so their cost is not included`,
+    rankNoUsage: (n: number) =>
+      n === 1
+        ? "1 request has no usage data, so its cost is not included"
+        : `${n} requests have no usage data, so their cost is not included`,
+    viewUnpriced: "View unpriced requests in Traffic",
     moreNotListed: (n: number) => `${n} more not listed`,
     viewInTraffic: "View in Traffic",
 
