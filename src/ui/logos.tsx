@@ -173,6 +173,8 @@ const CLIENTS: Record<string, GlyphId> = {
   zed: "zed",
   zededitor: "zed",
   windsurf: "windsurf",
+  dsh: "deepseek",
+  deepseekharness: "deepseek",
 };
 
 /** 客户端是哪个。`claude-code`、`Claude Code`、`claude_code` 都认。认不出来返回 `null` */

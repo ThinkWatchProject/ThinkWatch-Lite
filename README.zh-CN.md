@@ -107,7 +107,7 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 ### 客户端接管
 
-客户端页可以把 Claude Code、Codex、opencode、Zed 与 Aider 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。已接管的客户端可以随时单独还原或全部还原。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
+客户端页可以把 Claude Code、Codex、opencode、Zed、Aider 与 DeepSeek Harness 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。已接管的客户端可以随时单独还原或全部还原。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/clients-dark.png">
@@ -173,7 +173,7 @@ API 密钥和请求头的值可以写成 `${变量名}`，读取系统环境变�
 
 MCP 页管理客户端从自己的配置文件中加载的内容，这些内容不经过网关。
 
-- **服务器**：并排列出 Claude Code、Claude Desktop、Cursor、Codex、opencode、Antigravity CLI 与 Zed 配置的 MCP 服务器。可以把一个服务器从一个客户端复制到另一个客户端，或从某个客户端移除；写入前先显示改动，并备份原文件。复制与移除支持 Claude Code、Claude Desktop、Cursor 与 Codex，opencode、Antigravity CLI 与 Zed 只列出、不写入。位于其他主机的远程服务器标为「第三方」，使用它会把相关上下文发送到该地址；同名服务器在各客户端中配置不同时标为「配置不一致」，可以并排比较。
+- **服务器**：并排列出 Claude Code、Claude Desktop、Cursor、Codex、opencode、Antigravity CLI、Zed 与 DeepSeek Harness 配置的 MCP 服务器。可以把一个服务器从一个客户端复制到另一个客户端，或从某个客户端移除；写入前先显示改动，并备份原文件。复制与移除支持 Claude Code、Claude Desktop、Cursor 与 Codex，opencode、Antigravity CLI、Zed 与 DeepSeek Harness 只列出、不写入。位于其他主机的远程服务器标为「第三方」，使用它会把相关上下文发送到该地址；同名服务器在各客户端中配置不同时标为「配置不一致」，可以并排比较。
 - **技能与钩子**：列出已安装的技能和配置的钩子，以及各自所属的客户端。
 - **发现**：扫描客户端配置、技能、钩子、斜杠命令、subagent 与项目指令文件，检查隐藏字符、提示注入、危险命令与过宽权限四类问题，每项发现按高、中、低分级。扫描只报告，不修改任何文件。
 

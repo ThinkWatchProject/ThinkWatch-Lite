@@ -17,6 +17,7 @@ pub mod json;
 pub mod mcp;
 pub mod paths;
 pub mod plan;
+pub mod rows;
 pub mod sentinel;
 pub mod toml;
 pub mod yaml;

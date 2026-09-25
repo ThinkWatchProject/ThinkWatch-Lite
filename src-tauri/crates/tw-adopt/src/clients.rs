@@ -23,6 +23,16 @@ pub enum Format {
     Json,
     Toml,
     Yaml,
+    /// YAML 列表，每一行按 `id` 定位：dsh 的 Cordis 补丁，见 [`crate::rows`]
+    Rows,
+}
+
+/// 这种格式的注释前缀。JSON 没有 —— 那时哨兵走旁文件。
+pub fn comment_prefix(f: Format) -> Option<&'static str> {
+    match f {
+        Format::Json => None,
+        Format::Toml | Format::Yaml | Format::Rows => Some("#"),
+    }
 }
 
 /// 配置改完什么时候生效。
@@ -114,7 +124,7 @@ pub struct Client {
     /// **检测阶段就要扫**：cc-switch 的 #6828 就是栽在
     /// `settings.local.json` 上 —— 我们写了 `settings.json`，而那边的
     /// 残留把它遮住了，用户看到的是「接管了但没生效」。
-    pub shadowed_by: &'static [&'static str],
+    pub shadowed_by: &'static [Loc],
     /// 接管的代价。**接管确认对话框要把它们列出来，不能等用户自己发现**
     /// —— 这些不是我们的 bug，但用户会算到我们头上。
     ///
@@ -224,7 +234,7 @@ pub fn adoptable() -> Vec<Client> {
             format: Format::Json,
             takes_effect: TakesEffect::Immediately,
             // **`settings.local.json` 优先级更高。**cc-switch #6828 栽在这里
-            shadowed_by: &[".claude/settings.local.json"],
+            shadowed_by: &[Loc::Home(".claude/settings.local.json")],
             costs: &[
                 (
                     code!("adopt.cost.claude_code.remote_control"),
@@ -358,7 +368,93 @@ pub fn adoptable() -> Vec<Client> {
             key_elsewhere: None,
             config_beats_env: false,
         },
+        // DeepSeek Harness。网页版（`dsh web`）、桌面版、headless 三种入口读的是
+        // 同一个家目录，所以接管一次三个都走网关。
+        //
+        // **写家目录这一层补丁，不写 `DEEPSEEK_BASE_URL`**：那个变量优先级最低，
+        // 还会连带改掉 DeepSeek 账号登录那条线路。**也不动 `DEEPSEEK_API_KEY`**：
+        // 联网搜索拿它直连 api.deepseek.com，不跟 baseURL 走。密钥用我们自己的
+        // 引用名 `THINKWATCH_API_KEY`，写进它的凭据文件（见 [`also`]）。
+        Client {
+            id: "dsh",
+            name: "DeepSeek Harness",
+            config: &[crate::paths::DSH_PATCH],
+            format: Format::Rows,
+            // 补丁文件和凭据文件一变它就重新加载
+            takes_effect: TakesEffect::Immediately,
+            // 0.1.5 的设置页写的 `settings.yaml` 压过补丁层。**只有它写了
+            // `llm-deepseek.baseURL` 才算盖住**，见 [`Client::live_shadows`]；
+            // profile 那一层同 id 的行被家目录这一层压着，不算
+            shadowed_by: &[crate::paths::DSH_SETTINGS],
+            costs: &[
+                (
+                    code!("adopt.cost.dsh.every_entry"),
+                    "The web app, the desktop app and headless runs all go through the gateway, without a restart.",
+                ),
+                (
+                    code!("adopt.cost.dsh.web_search"),
+                    "Web search still goes straight to DeepSeek rather than through the gateway.",
+                ),
+                (
+                    code!("adopt.cost.dsh.settings_page"),
+                    "While this is in place, the llm-deepseek entry cannot be changed from the settings page of DeepSeek Harness.",
+                ),
+                (
+                    code!("adopt.cost.dsh.models"),
+                    "DeepSeek Harness asks for deepseek-flash, deepseek-v4-pro and deepseek-v4-flash; a route has to send these names to a DeepSeek upstream or rewrite them for another one.",
+                ),
+            ],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::DSH_DIR],
+            process: &["dsh"],
+            // 继承下来的环境变量压过凭据文件：shell 里 export 了同名的，
+            // 写进凭据文件的那把就不用了
+            env_vars: &["THINKWATCH_API_KEY"],
+            key_elsewhere: None,
+            config_beats_env: false,
+        },
     ]
+}
+
+/// 同一次接管还要写的另一份文件。
+#[derive(Debug, Clone, Copy)]
+pub struct Also {
+    pub config: Loc,
+    pub format: Format,
+    /// 这几个顶层键底下全是密钥：界面上的 diff 整段打码
+    pub secret_roots: &'static [&'static str],
+}
+
+/// 这个客户端的密钥不在主配置里、要另写一份文件时，是哪一份。只有 dsh 是这样：
+/// 补丁里只写引用名，值在它的凭据文件里。
+pub fn also(client: &Client) -> Option<Also> {
+    match client.id {
+        "dsh" => Some(Also {
+            config: crate::paths::DSH_CREDENTIALS,
+            format: Format::Yaml,
+            secret_roots: &["refs", "records"],
+        }),
+        _ => None,
+    }
+}
+
+/// dsh 补丁里写的密钥引用名，凭据文件 `refs` 底下的那个键。
+pub const DSH_KEY_REF: &str = "THINKWATCH_API_KEY";
+
+/// 接管时 [`also`] 那份文件要写的字段。
+pub fn also_edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
+    match client.id {
+        "dsh" => {
+            // `version: 1` 是这个文件的格式标记，没有它 dsh 拒绝整个文件；
+            // 已经是 1 的话这一项什么都不改
+            let mut v = vec![e(&["version"], Val::Num("1".into()))];
+            if let Some(k) = &gw.key {
+                v.push(secret(&["refs", DSH_KEY_REF], Val::s(k)));
+            }
+            v
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// 接管不了、只能给指引的。
@@ -655,6 +751,17 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
             }
             v
         }
+        // 家目录这一层补丁里 `llm-deepseek` 那一行的 config。0.1.7 发 Anthropic
+        // Messages，打 `{baseURL}/v1/messages`（baseURL 已经以 /v1 结尾就不再补）；
+        // 0.1.5 发 Chat Completions，打 `{baseURL}/chat/completions`。带 /v1 的
+        // 地址两代都对
+        "dsh" => vec![
+            e(&["llm-deepseek", "config", "baseURL"], Val::s(gw.v1())),
+            e(
+                &["llm-deepseek", "config", "apiKeyEnv"],
+                Val::s(DSH_KEY_REF),
+            ),
+        ],
         _ => Vec::new(),
     }
 }
@@ -678,6 +785,12 @@ impl Client {
                 args: BTreeMap::new(),
                 text: text.into(),
             });
+        }
+        if let Some(a) = also(self) {
+            out.push(msg!(
+                "adopt.manual.also_file", file = a.config.shown() =>
+                "The key goes into {file}; the fields below that start with refs or version belong there."
+            ));
         }
         out
     }
@@ -725,16 +838,29 @@ impl Client {
         let above = &self.config[..self.config_index(home)];
         self.shadowed_by
             .iter()
-            .map(|p| crate::paths::under(home, p))
-            .chain(above.iter().map(|l| l.resolve(home)))
+            .chain(above)
+            .map(|l| l.resolve(home))
+            .collect()
+    }
+    /// [`Client::shadow_paths`] 里此刻真的盖住了我们的那些。
+    ///
+    /// 多数客户端「文件在」就算：那一份整个压在我们上面。dsh 0.1.5 的
+    /// `settings.yaml` 按行 id 分节，**只有 `llm-deepseek` 那一节写了 `baseURL`
+    /// 才压过补丁**；别的节、或者这一节里只有思考深度之类，和我们并存。
+    pub fn live_shadows(&self, home: &std::path::Path) -> Vec<PathBuf> {
+        self.shadow_paths(home)
+            .into_iter()
+            .filter(|p| match self.id {
+                "dsh" => std::fs::read_to_string(p).is_ok_and(|t| {
+                    crate::yaml::get(&t, &["llm-deepseek", "baseURL"]).is_ok_and(|v| v.is_some())
+                }),
+                _ => p.exists(),
+            })
             .collect()
     }
     /// 注释前缀。JSON 没有 —— 那时哨兵走旁文件。
     pub fn comment_prefix(&self) -> Option<&'static str> {
-        match self.format {
-            Format::Json => None,
-            Format::Toml | Format::Yaml => Some("#"),
-        }
+        comment_prefix(self.format)
     }
 }
 
@@ -791,7 +917,9 @@ mod tests {
             .find(|c| c.id == "claude-code")
             .unwrap();
         assert!(
-            cc.shadowed_by.iter().any(|p| p.contains("settings.local")),
+            cc.shadowed_by
+                .iter()
+                .any(|p| p.home_rel().is_some_and(|r| r.contains("settings.local"))),
             "{:?}",
             cc.shadowed_by
         );
@@ -902,7 +1030,7 @@ mod tests {
         let by = |id: &str| adoptable().into_iter().find(|c| c.id == id).unwrap();
         // 各要各的写法：Claude Code 不带 /v1，其余带
         assert_eq!(by("claude-code").endpoint(&gw), "http://127.0.0.1:18790");
-        for id in ["codex", "opencode", "zed", "aider"] {
+        for id in ["codex", "opencode", "zed", "aider", "dsh"] {
             assert_eq!(by(id).endpoint(&gw), "http://127.0.0.1:18790/v1", "{id}");
         }
         for c in adoptable() {
@@ -914,6 +1042,8 @@ mod tests {
         // Zed 的密钥不在配置文件里，多一步在它自己的设置里填
         assert_eq!(by("zed").manual_steps().len(), 2);
         assert_eq!(by("claude-code").manual_steps().len(), 1);
+        // dsh 的密钥在另一份文件里，多一步说在哪
+        assert_eq!(by("dsh").manual_steps().len(), 2);
     }
 
     /// **`note()` 给的是整句，不是半截。**这两个 `note()` 都会被接到

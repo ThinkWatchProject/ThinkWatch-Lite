@@ -64,6 +64,7 @@ pub fn plan_op(home: &Path, req: &wire::McpOpRequest) -> Result<wire::PlanView, 
         }],
         key: None,
         key_created: false,
+        also: Vec::new(),
     })
 }
 

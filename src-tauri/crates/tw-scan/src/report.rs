@@ -142,6 +142,9 @@ fn parse_any(src: &Source, text: &str) -> Option<Val> {
     match src.path.extension().and_then(|e| e.to_str()) {
         Some("toml") => tw_adopt::toml::value(text).ok(),
         Some("json") => tw_adopt::json::value(text).ok(),
+        // dsh 的补丁是一张插件行的列表，MCP server 是其中的一种行。摊成
+        // `mcpServers` 的形状，后面和别家走同一条路
+        Some("yml") if src.kind == sources::Kind::Mcp => tw_adopt::rows::mcp_servers(text).ok(),
         _ => None,
     }
 }

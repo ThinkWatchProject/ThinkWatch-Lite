@@ -188,11 +188,11 @@ two responses are shown side by side.
 
 ### Client setup
 
-The Clients page points Claude Code, Codex, opencode, Zed and Aider at the
-gateway. Before anything is written, it lists the fields that change and what
-else the change affects (the ChatGPT desktop app, for instance, reads the same
-configuration file as Codex), shows the full diff and backs up the original
-file. Only the settings that point the client at the gateway change, and each
+The Clients page points Claude Code, Codex, opencode, Zed, Aider and
+DeepSeek Harness at the gateway. Before anything is written, it lists the
+fields that change and what else the change affects (the ChatGPT desktop
+app, for instance, reads the same configuration file as Codex), shows the full
+diff and backs up the original file. Only the settings that point the client at the gateway change, and each
 client receives a key of its own. A connected client can be restored at any
 time, on its own or together with all the others. Cursor, Continue and
 Antigravity CLI come with step-by-step instructions and a key created for them.
@@ -335,11 +335,12 @@ The MCP page covers what clients load from their own configuration files,
 which does not pass through the gateway.
 
 - **Servers:** the MCP servers configured in Claude Code, Claude Desktop,
-  Cursor, Codex, opencode, Antigravity CLI and Zed, side by side. A server can
-  be copied from one client to another or removed from a client; the change is
-  shown before anything is written, and the original file is backed up. Copying
-  and removing work for Claude Code, Claude Desktop, Cursor and Codex;
-  opencode, Antigravity CLI and Zed are listed but not written to. A remote server on another host is marked as
+  Cursor, Codex, opencode, Antigravity CLI, Zed and DeepSeek Harness, side by
+  side. A server can be copied from one client to another or removed from a
+  client; the change is shown before anything is written, and the original file
+  is backed up. Copying and removing work for Claude Code, Claude Desktop,
+  Cursor and Codex; opencode, Antigravity CLI, Zed and DeepSeek Harness are
+  listed but not written to. A remote server on another host is marked as
   third party, since using it sends the surrounding context to that host, and
   a server configured differently in different clients is marked as well and
   can be compared side by side.

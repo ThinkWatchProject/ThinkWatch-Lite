@@ -132,8 +132,10 @@ pub fn list(home: &Path, gw: &Gateway) -> wire::ClientsResponse {
 fn setup_of(c: &Client, gw: &clients::Gateway) -> wire::ManualSetup {
     wire::ManualSetup {
         steps: c.manual_steps(),
+        // 另一份文件里的那几项接在后面，步骤里说了它们在哪个文件
         fields: clients::edits(c, gw)
             .iter()
+            .chain(&clients::also_edits(c, gw))
             .map(|e| field(wire::FieldOp::Set, &e.path, Some(&e.value), e.secret))
             .collect(),
         endpoint: c.endpoint(gw),
@@ -159,7 +161,8 @@ fn field(
     }
 }
 
-/// 接管这个客户端时哪几项是密钥。按一把占位的密钥算 —— 只看路径
+/// 接管这个客户端时哪几项是密钥。按一把占位的密钥算 —— 只看路径。
+/// 主配置和另一份文件的路径不会撞（一个以行 id 开头，一个以 `refs` 开头）
 fn secret_paths(c: &Client) -> Vec<Vec<String>> {
     let gw = clients::Gateway {
         base: String::new(),
@@ -167,9 +170,14 @@ fn secret_paths(c: &Client) -> Vec<Vec<String>> {
     };
     clients::edits(c, &gw)
         .into_iter()
+        .chain(clients::also_edits(c, &gw))
         .filter(|e| e.secret)
         .map(|e| e.path)
         .collect()
+}
+
+fn secret_roots(c: &Client) -> &'static [&'static str] {
+    clients::also(c).map_or(&[], |a| a.secret_roots)
 }
 
 fn fields_of(p: &plan::Plan, secrets: &[Vec<String>]) -> Vec<wire::FieldChange> {
@@ -201,7 +209,18 @@ fn mask(text: &str, key: Option<&str>) -> String {
     }
 }
 
-fn view(p: &plan::Plan, fields: Vec<wire::FieldChange>, key: Option<&str>) -> wire::PlanView {
+/// 另一份文件里整段是密钥的那几节（dsh 凭据文件的 `refs`、`records`）整段打码，
+/// 其余照 [`mask`]
+fn mask_file(text: &str, roots: &[&str], key: Option<&str>) -> String {
+    mask(&tw_adopt::yaml::mask_under(text, roots, MASK), key)
+}
+
+fn view(
+    p: &plan::Plan,
+    secrets: &[Vec<String>],
+    roots: &[&str],
+    key: Option<&str>,
+) -> wire::PlanView {
     wire::PlanView {
         client: p.client.clone(),
         path: p.path.display().to_string(),
@@ -211,9 +230,21 @@ fn view(p: &plan::Plan, fields: Vec<wire::FieldChange>, key: Option<&str>) -> wi
         shadows: p.shadows.iter().map(|x| x.display().to_string()).collect(),
         noop: p.is_noop(),
         carries_secret: p.carries_secret,
-        fields,
+        fields: fields_of(p, secrets),
         key: None,
         key_created: false,
+        also: p
+            .also
+            .iter()
+            .map(|a| wire::FilePlanView {
+                path: a.path.display().to_string(),
+                before: a.before.as_deref().map(|t| mask_file(t, roots, key)),
+                after: mask_file(&a.after, roots, key),
+                fields: fields_of(a, secrets),
+                noop: a.is_noop(),
+                deletes: a.delete_file,
+            })
+            .collect(),
     }
 }
 
@@ -249,7 +280,12 @@ pub fn plan_adopt(home: &Path, id: &str, gw: &Gateway) -> Result<wire::PlanView,
         key: Some(value),
     };
     let p = plan::plan_adopt(&c, home, &target).map_err(|e| e.msg())?;
-    let mut v = view(&p, fields_of(&p, &secret_paths(&c)), target.key.as_deref());
+    let mut v = view(
+        &p,
+        &secret_paths(&c),
+        secret_roots(&c),
+        target.key.as_deref(),
+    );
     v.key = Some(name);
     v.key_created = created;
     Ok(v)
@@ -299,10 +335,14 @@ pub fn plan_restore(home: &Path, id: &str, keys: &[ClientView]) -> Result<wire::
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     // 还原的 diff 里，**要打码的是用户自己的原始密钥** —— 它正要被写
     // 回去，而它比我们那把更不该出现在截图里
-    let mut v = view(&p, fields_of(&p, &secret_paths(&c)), None);
+    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), None);
     for k in keys {
         v.before = v.before.as_deref().map(|t| mask(t, Some(&k.key)));
         v.after = mask(&v.after, Some(&k.key));
+        for a in &mut v.also {
+            a.before = a.before.as_deref().map(|t| mask(t, Some(&k.key)));
+            a.after = mask(&a.after, Some(&k.key));
+        }
     }
     // 还原不删密钥：说清留下的是哪一把，下次接管直接用它
     v.key = keys

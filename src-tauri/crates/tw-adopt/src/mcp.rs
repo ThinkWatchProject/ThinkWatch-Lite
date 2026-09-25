@@ -175,6 +175,20 @@ pub fn targets() -> Vec<Target> {
                 "Zed's context servers use a different structure and do not take the command/args form",
             )),
         },
+        // **只读**：dsh 的 MCP server 是补丁里的一行 `@deepseek-ai/dsh-mcp-client`，
+        // 扫描把它们列出来（见 tw-scan）。往里写要按 id 插一行插件，那是另一种结构
+        Target {
+            client: "dsh",
+            name: "DeepSeek Harness",
+            config: &[crate::paths::DSH_PATCH],
+            format: Format::Rows,
+            key: "mcpServers",
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.dsh_rows"),
+                "DeepSeek Harness keeps each MCP server as a plugin row in its patch file, which is listed here but not written to",
+            )),
+        },
     ]
 }
 
@@ -225,7 +239,7 @@ fn semantic(t: &Target, text: &str) -> Result<Val, McpError> {
     match t.format {
         Format::Json => crate::json::value(text).map_err(|e| parse_err(t.client, e)),
         Format::Toml => crate::toml::value(text).map_err(|e| parse_err(t.client, e)),
-        Format::Yaml => Err(parse_err(t.client, "MCP configuration is not YAML")),
+        Format::Yaml | Format::Rows => Err(parse_err(t.client, "MCP configuration is not YAML")),
     }
 }
 
@@ -233,7 +247,7 @@ fn put(t: &Target, text: &str, path: &[&str], v: &Val) -> Result<String, McpErro
     match t.format {
         Format::Json => crate::json::set(text, path, v).map_err(|e| parse_err(t.client, e)),
         Format::Toml => crate::toml::set(text, path, v).map_err(|e| parse_err(t.client, e)),
-        Format::Yaml => Err(parse_err(t.client, "MCP configuration is not YAML")),
+        Format::Yaml | Format::Rows => Err(parse_err(t.client, "MCP configuration is not YAML")),
     }
 }
 
@@ -241,7 +255,7 @@ fn drop_(t: &Target, text: &str, path: &[&str]) -> Result<String, McpError> {
     match t.format {
         Format::Json => crate::json::remove(text, path).map_err(|e| parse_err(t.client, e)),
         Format::Toml => crate::toml::remove(text, path).map_err(|e| parse_err(t.client, e)),
-        Format::Yaml => Err(parse_err(t.client, "MCP configuration is not YAML")),
+        Format::Yaml | Format::Rows => Err(parse_err(t.client, "MCP configuration is not YAML")),
     }
 }
 
@@ -374,7 +388,7 @@ pub fn apply(t: &Target, plan: &Plan, backup_root: &Path) -> Result<Applied, Mcp
             let got = match t.format {
                 Format::Json => crate::json::value(text).map_err(|e| e.to_string())?,
                 Format::Toml => crate::toml::value(text).map_err(|e| e.to_string())?,
-                Format::Yaml => return Err("MCP configuration is not YAML".into()),
+                Format::Yaml | Format::Rows => return Err("MCP configuration is not YAML".into()),
             };
             if strip(&got).normalized() != untouched {
                 return Err(format!("something other than {key} changed"));

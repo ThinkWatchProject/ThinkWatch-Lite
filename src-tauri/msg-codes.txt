@@ -10,6 +10,10 @@ adopt.cost.claude_code.remote_control
 adopt.cost.claude_code.welcome_screen
 adopt.cost.codex.chatgpt_desktop
 adopt.cost.codex.reopen_terminal
+adopt.cost.dsh.every_entry
+adopt.cost.dsh.models
+adopt.cost.dsh.settings_page
+adopt.cost.dsh.web_search
 adopt.cost.opencode.restart
 adopt.cost.zed.key_store
 adopt.diag.adopt_again
@@ -34,6 +38,7 @@ adopt.diag.no_registry_env.detail
 adopt.diag.no_shadow
 adopt.diag.no_shadow.absent
 adopt.diag.no_shadow.none
+adopt.diag.no_shadow.unset
 adopt.diag.not_adopted
 adopt.diag.not_adopted.detail
 adopt.diag.not_running
@@ -63,6 +68,7 @@ adopt.file.read_failed
 adopt.file.readback_mismatch
 adopt.file.verify_failed
 adopt.file.write_failed
+adopt.manual.also_file
 adopt.manual.antigravity_cli.caveat
 adopt.manual.antigravity_cli.export
 adopt.manual.antigravity_cli.provider
@@ -79,6 +85,7 @@ adopt.manual.cursor.key
 adopt.manual.cursor.open
 adopt.manual.file
 adopt.manual.zed.key
+adopt.mcp.dsh_rows
 adopt.mcp.not_copyable
 adopt.mcp.not_there
 adopt.mcp.parse_failed
