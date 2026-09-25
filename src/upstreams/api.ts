@@ -76,6 +76,13 @@ export const api = {
   zaiLoginStatus: (id: string) => call("ZaiLoginStatus", null, id),
   cancelZaiLogin: (id: string) => invoke<ZaiLoginStatus>("cancel_zai_login", { id }),
 
+  /**
+   * 这个上游此刻登的是哪个账号（上游视图的 `oauth.account`，core 从凭据自己的令牌里读，
+   * 不联网）。登录刚完成时用它：core 先写配置再报完成，这时读到的就是这一次登录的；
+   * 页面手上那份概览可能还是写入之前读的
+   */
+  signedInAs: (name: string) =>
+    call("Overview", null).then((o) => o.providers.find((p) => p.name === name)?.oauth?.account ?? null),
   chatgptUsage: (name: string) => call("ChatgptUsage", null, name),
   chatgptResets: (name: string) => call("ChatgptResets", null, name),
   /** 用掉一张卡。**用掉就回不来**，调用前必须让用户确认 */

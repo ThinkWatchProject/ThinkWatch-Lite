@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CostBucketGroup } from "@/types";
-import { HOUR, SLOTS, dayStart, slotsByUpstream } from "./data";
+import type { CostBucketGroup, OAuthView, ProviderView } from "@/types";
+import { HOUR, SLOTS, dayStart, quotaAccounts, slotsByUpstream } from "./data";
 
 function bucket(name: string, at: number, requests: number, failed = 0): CostBucketGroup {
   return {
@@ -61,5 +61,31 @@ describe("slotsByUpstream", () => {
   it("has no row for an upstream without requests in the window", () => {
     expect(slotsByUpstream(undefined, since).size).toBe(0);
     expect(slotsByUpstream([bucket("a", since - 2 * HOUR, 3)], since).has("a")).toBe(false);
+  });
+});
+
+describe("quotaAccounts", () => {
+  function account(name: string, patch: Partial<ProviderView> = {}, oauth: Partial<OAuthView> = {}): ProviderView {
+    return {
+      name,
+      protocol: "chatgpt",
+      disabled: false,
+      oauth: { endpoint: "https://auth.openai.com/oauth/token", ...oauth },
+      ...patch,
+    } as ProviderView;
+  }
+
+  it("asks every enabled ChatGPT account, in name order", () => {
+    expect(quotaAccounts([account("work"), account("home")])).toEqual(["home", "work"]);
+  });
+
+  it("leaves out other upstreams, disabled accounts and accounts whose sign-in no longer works", () => {
+    const list = [
+      account("anthropic", { protocol: "anthropic", oauth: null }),
+      account("off", { disabled: true }),
+      account("expired", {}, { needs_login: true }),
+      account("ok", {}, { needs_login: false }),
+    ];
+    expect(quotaAccounts(list)).toEqual(["ok"]);
   });
 });

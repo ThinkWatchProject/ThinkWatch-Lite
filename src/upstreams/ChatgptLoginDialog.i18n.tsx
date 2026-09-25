@@ -35,6 +35,8 @@ export const chatgptLoginText = messages(
     deviceWaiting: "输入完成后此处会自动继续。",
     deviceWarning: "登录码有效期 15 分钟。只输入这里显示的这一个；由他人提供的登录码请勿输入。",
     done: (provider: ReactNode) => <>已登录，上游 {provider} 已写入配置。</>,
+    account: (email: string, plan: string | null) =>
+      plan ? `账号 ${email}，订阅类型 ${plan}。` : `账号 ${email}。`,
     plan: (plan: string) => `订阅类型 ${plan}。`,
     doneHint: "模型范围、计费方式等可在该上游的编辑对话框中调整。",
     finish: "完成",
@@ -76,6 +78,8 @@ export const chatgptLoginText = messages(
     deviceWaiting: "Sign-in continues here automatically once the code is entered.",
     deviceWarning: "The sign-in code is valid for 15 minutes. Enter only the code shown here; do not enter a sign-in code provided by someone else.",
     done: (provider: ReactNode) => <>Signed in. The upstream {provider} has been saved to the config.</>,
+    account: (email: string, plan: string | null) =>
+      plan ? `Account: ${email}, plan: ${plan}.` : `Account: ${email}.`,
     plan: (plan: string) => `Plan: ${plan}.`,
     doneHint: "Model scope, billing and other settings can be changed in the upstream's edit dialog.",
     finish: "Done",

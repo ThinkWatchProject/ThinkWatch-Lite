@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import type { Nav } from "@/nav";
 import type { ConnView } from "@/connection/api";
@@ -140,6 +141,29 @@ describe("命令面板的条目", () => {
       ["routing", { editGroup: "budget" }],
       ["upstreams", { create: "upstream" }],
     ]);
+  });
+
+  it("账号上游写登的是哪个账号，按邮箱也搜得到；登录失效和上游列表里一样说出来", () => {
+    const account = {
+      name: "chatgpt",
+      base_url: "https://chatgpt.com/backend-api/codex",
+      protocol: "chatgpt",
+      disabled: false,
+      health: "closed",
+      oauth: {
+        endpoint: "https://auth.openai.com/oauth/token",
+        needs_login: true,
+        account: { email: "dev@example.com", plan: "plus" },
+      },
+    };
+    const withAccount = { ...ov, providers: [...ov.providers, account] } as unknown as Overview;
+    const items = buildItems(sources({ ov: withAccount }));
+    const item = items.find((i) => i.id === "upstream:chatgpt")!;
+    expect(item.detail).toBe("dev@example.com");
+    expect(score("dev@example", item.title, item.keywords)).toBeGreaterThan(0);
+    expect((item.meta as ReactElement<{ text: string }>).props.text).toBe("需要重新登录");
+    // 别的上游照旧写地址
+    expect(items.find((i) => i.id === "upstream:deepseek")!.detail).toBe("api.deepseek.com");
   });
 
   it("只有一个连接时不出现「切换连接」", () => {
