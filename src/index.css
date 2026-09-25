@@ -63,6 +63,7 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-other: var(--chart-other);
   --color-cache-hit: var(--cache-hit);
   --color-cache-plain: var(--cache-plain);
   --color-cache-write: var(--cache-write);
@@ -169,6 +170,9 @@
   --chart-3: oklch(0.72 0.07 249);
   --chart-4: oklch(0.8 0.05 246);
   --chart-5: oklch(0.86 0.032 243);
+  /* 前五项以外合并成的「其他」那一层：灰的。它不是一个模型，不该和排第五的那个
+   * 模型同色 —— 两层同色叠在一起就读成了一层 */
+  --chart-other: oklch(0.84 0.004 250);
   /* 缓存构成条的三段。**排列依据是计费单价，不是类别**：命中 0.1 倍、
    * 新输入 1 倍、写入 1.25 倍 —— 亮的那一段越长越省。写入用一档收敛的
    * 琥珀（不是告警用的 `--warning`）：它是唯一会抬高总支出的部分。 */
@@ -220,6 +224,7 @@
     --chart-3: oklch(0.51 0.065 251);
     --chart-4: oklch(0.42 0.045 247);
     --chart-5: oklch(0.35 0.03 244);
+    --chart-other: oklch(0.4 0.006 250);
     --cache-hit: oklch(0.76 0.12 174);
     --code-key: oklch(97% 0 none);
     --code-string: oklch(0.78 0.11 160);
@@ -376,6 +381,16 @@
     box-shadow: 0 0 0 5px color-mix(in oklab, currentColor 0%, transparent);
   }
 }
+@keyframes tw-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
 @keyframes tw-shimmer {
   0%,
   100% {
@@ -413,6 +428,14 @@
 @utility motion-live {
   animation: tw-live 1.6s var(--motion-ease) infinite;
 }
+/* 新数据落地：一个点向外闪一圈，放一次（不循环）。SVG 元素也能用 —— 缩放按它自己
+ * 的中心。要再闪一次就换 React key 重新挂上（概览图上「现在」那一点） */
+@utility motion-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tw-ping 900ms var(--motion-ease) both;
+  pointer-events: none;
+}
 /* 骨架的明暗。比 `animate-pulse` 慢、幅度小，读起来是「在取」而不是「在闪」 */
 @utility motion-shimmer {
   animation: tw-shimmer 1.6s ease-in-out infinite;
@@ -432,6 +455,10 @@
   }
   .motion-row-out {
     animation-duration: 1ms;
+  }
+  .motion-ping {
+    animation: none;
+    visibility: hidden;
   }
   .motion-bar,
   .motion-list-height {

@@ -4,6 +4,7 @@ import { Button } from "@/ui/button";
 import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Segmented } from "@/ui/segmented";
+import { StatusDot } from "@/ui/status-dot";
 import { bucketStart } from "@/format";
 import { textOf, useText } from "@/i18n";
 import { rangeText } from "./range.i18n";
@@ -26,9 +27,9 @@ export type Range = {
   /**
    * 实时档。
    *
-   * **只有图是实时的，别的都不是。**十分钟里的样本撑不起有意义的延迟
-   * 分位，也统计不出像样的缓存命中率 —— 那些仍然按 24 小时算，图下面有
-   * 一行小字说明。切到这一档，图一直往左走，有请求进来最右边立刻长高。
+   * **只有图（和它的图例）是实时的，别的都不是。**十分钟里的样本撑不起有意义
+   * 的延迟分位，也统计不出像样的缓存命中率 —— 那些仍然按 24 小时算，各节标题
+   * 右边标着。切到这一档，图一直往左走，有请求进来最右边立刻长高。
    */
   live?: boolean;
   /**
@@ -236,9 +237,9 @@ export function RangePicker({
                   id: "live",
                   label: (
                     <>
-                      {/* 会呼吸的点。**它是这一档唯一的装饰**，而它说的是真的：
-                          那条曲线确实在动 */}
-                      <span className="inline-block size-1.5 animate-pulse rounded-full bg-cache-hit" />
+                      {/* 选中时是绿点，没选中是灰点。**不在这里跳**：跳动的那个点在图的
+                          标题上（`LiveBadge`），同一件事不用两处一起闪 */}
+                      <StatusDot tone={value.live ? "ok" : "idle"} />
                       {t.live}
                     </>
                   ),

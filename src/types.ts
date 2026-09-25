@@ -14,7 +14,6 @@ import type {
   CostBucketGroup,
   Event,
   Guard,
-  HistoryRow,
   LatencyView,
   Msg,
   SecretItem,
@@ -339,10 +338,10 @@ export function interruptInFlight(rows: Map<number, RequestRow>): boolean {
 /** 概览要的全部数据，Rust 侧 `dashboard` 命令一次拼好 */
 export interface Dashboard {
   summary: Summary;
+  /** 首字节时间的分位，按模型分。和 `summary` 同一个时间窗 */
   latency: LatencyView[];
   /** 按上游分。**和按模型分是两个问题** */
   latency_by_provider: LatencyView[];
-  history: HistoryRow[];
   storage: StorageStatus | null;
   /**
    * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，

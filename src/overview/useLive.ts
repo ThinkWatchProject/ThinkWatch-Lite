@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 import { call } from "@/control";
 import { listen } from "@tauri-apps/api/event";
 import { textOf } from "@/i18n";
-import type { CoreEvent } from "./types";
+import type { CoreEvent } from "@/types";
 import { liveText } from "./useLive.i18n";
 
 /**
@@ -90,77 +90,49 @@ export interface LiveFail {
 }
 
 /**
- * 最近这十分钟，直接从事件流上攒出来。
- *
- * **不查库、不轮询。**概览别的部分问的是 SQLite，而那条路的最小延迟是
- * 「落库 + 下一次刷新」；实时档要的是请求到达的那一刻曲线就动，那只有
- * 事件流给得了。每条请求要画的东西都在它的结局里：模型和用量一起到
- * （`request_finished`、`request_failed`、`request_cancelled`）。
- *
- * **模型名从结局里拿，不从开始事件里记。**这个钩子只在概览开着时才挂
- * 上，打开的那一刻正在跑的请求，它的开始事件早就过去了；以前按 id 去
- * 找开始时记下的模型，这些请求就全落进了「未知模型」那一层。
- * `request_started` 现在只用来数「进行中」（怎么数见 `resync`）。
- *
- * 金额比用量晚一拍：它是存储层落库时按价目表算的，core 算完会补一条
- * `request_priced`。所以实时档也画得出花费，只是那一格会在请求结束之后
- * 的几十毫秒里先长出 token、再长出钱。
- *
- * 那个定时器**不是轮询**：它什么都不查，只是让曲线往左走。不走的话，
- * 一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
- *
- * **进这一档先把已经发生过的那十分钟补上。**只挂事件流的话，曲线永远
- * 从切进来的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图加
- * 一句「等待请求」，而顶上的数字说有几十次。请求发生过，没人看着不
- * 等于没发生；流量列表早就是这么填的（见 `recent_requests`）。
+ * 按帧合并的重画。一阵并发的请求一起落地时，一帧里只画一次。
  */
-export function useLive(active: boolean, windowMs: number) {
-  const samples = useRef<LiveSample[]>([]);
-  const fails = useRef<LiveFail[]>([]);
-  const flying = useRef(new Set<number>());
+function useFrame(): [() => void, () => void] {
   const [, frame] = useReducer((n: number) => n + 1, 0);
+  const raf = useRef<number | null>(null);
+  const soon = useRef(() => {
+    if (raf.current === null)
+      raf.current = requestAnimationFrame(() => {
+        raf.current = null;
+        frame();
+      });
+  });
+  useEffect(
+    () => () => {
+      if (raf.current !== null) cancelAnimationFrame(raf.current);
+    },
+    [],
+  );
+  return [frame, soon.current];
+}
+
+/**
+ * 此刻有几个请求在跑。概览的页头一直显示它，不只在实时档。
+ *
+ * **从 core 的快照起步，之后跟着事件流加减。**只靠事件流数有两处数不对：挂上
+ * 之前就开始了的请求，开始事件早就过去了，一直少数到它结束；core 重启时正在跑
+ * 的请求再也不会有结局，一直挂在「进行中」里。所以挂上时问一次「此刻还在跑
+ * 的」，core 重启回来再问一次（`resync`），平时照旧按事件加减。
+ *
+ * **快照在路上的时候事件照样在来。**它是 core 在某一刻拍下的，到这边时已经晚了
+ * 一截：这中间开始的它没有，这中间结束的它还有。所以从问出去的那一刻起，把事件
+ * 流上见到的开始和结局都记下来（`since`），快照到了再合在一起：快照里的，加上
+ * 中途开始的，减去中途结束的。
+ *
+ * **别拿 `Status::in_flight`**：那个从连接进数据面就算，鉴权失败、排队的都在
+ * 里面。
+ */
+export function useInFlight(): number {
+  const flying = useRef(new Set<number>());
+  const [, soon] = useFrame();
 
   useEffect(() => {
-    if (!active) {
-      // 切走就把攒的东西扔掉。**留着的话，切回来画的是一段过期的窗口**
-      // —— 重新进来时按当下的时间补，比拿旧样本往左挪准。
-      samples.current = [];
-      fails.current = [];
-      flying.current.clear();
-      return;
-    }
     let alive = true;
-    /*
-      事件当场重画，**按帧合并**：一阵并发的请求一起落地时，一帧里只画
-      一次。
-    */
-    let raf: number | null = null;
-    const soon = () => {
-      if (raf === null)
-        raf = requestAnimationFrame(() => {
-          raf = null;
-          frame();
-        });
-    };
-    /*
-      事件流和补回来的历史会说到同一次请求，而且**谁先到都有可能**：落库
-      和事件是两条路。所以两边落样本之前都要看一眼对方记过没有。
-    */
-    const counted = (id: number) => samples.current.some((s) => s.id === id);
-    const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
-    /*
-      **「进行中」从 core 的快照起步，之后跟着事件流加减。**
-
-      只靠事件流数有两处数不对：挂上之前就开始了的请求，开始事件早就过去
-      了，一直少数到它结束；core 重启时正在跑的请求再也不会有结局，一直挂在
-      「进行中」里。所以挂上时问一次「此刻还在跑的」，core 重启回来再问一次
-      （`resync`），平时照旧按事件加减。
-
-      **快照在路上的时候事件照样在来。**它是 core 在某一刻拍下的，到这边时
-      已经晚了一截：这中间开始的它没有，这中间结束的它还有。所以从问出去的
-      那一刻起，把事件流上见到的开始和结局都记下来（`since`），快照到了再
-      合在一起：快照里的，加上中途开始的，减去中途结束的。
-    */
     let since: { started: Set<number>; ended: Set<number> } | null = null;
     const start = (id: number) => {
       flying.current.add(id);
@@ -172,55 +144,18 @@ export function useLive(active: boolean, windowMs: number) {
     };
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
-      if (ev.kind === "request_started") {
-        start(ev.id);
-      } else if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
-        // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
+      if (ev.kind === "request_started") start(ev.id);
+      else if (
+        ev.kind === "request_finished" ||
+        ev.kind === "request_cancelled" ||
+        ev.kind === "request_failed"
+      )
         end(ev.id);
-        if (ev.usage && !counted(ev.id)) {
-          const u = ev.usage;
-          samples.current.push({
-            id: ev.id,
-            at: Date.now(),
-            model: ev.model || textOf(liveText).unknownModel,
-            tokens: u.input + u.output + u.cache_read + u.cache_write,
-          });
-        }
-      } else if (ev.kind === "request_priced") {
-        // 价钱补在那一格原来的位置上，**不是补在「现在」** —— 它说的
-        // 是那次请求花了多少，而那次请求发生在几十毫秒之前。
-        // 倒着找：刚落地的那条几乎总在末尾。
-        for (let i = samples.current.length - 1; i >= 0; i--) {
-          const x = samples.current[i];
-          if (x && x.id === ev.id) {
-            if (ev.cost_micros != null) x.cost = ev.cost_micros;
-            break;
-          }
-        }
-      } else if (ev.kind === "request_failed") {
-        end(ev.id);
-        // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
-        if (ev.usage && !counted(ev.id)) {
-          const u = ev.usage;
-          samples.current.push({
-            id: ev.id,
-            at: Date.now(),
-            model: ev.model || textOf(liveText).unknownModel,
-            tokens: u.input + u.output + u.cache_read + u.cache_write,
-          });
-        }
-        if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
-      } else if (ev.kind === "events_dropped") {
-        /*
-          **丢过事件：进行中的重新对账，丢掉的结局从库里补进曲线。**落库要一点
-          时间，等一会儿再补；补的时候按 id 去重，事件流上已经画了的不会画两遍。
-        */
+      else if (ev.kind === "events_dropped") {
+        // 丢过事件：重新对账
         void resync();
-        setTimeout(() => void seed(), REFILL_MS);
         return;
-      } else {
-        return;
-      }
+      } else return;
       soon();
     });
     const resync = async () => {
@@ -258,12 +193,108 @@ export function useLive(active: boolean, windowMs: number) {
         soon();
       }
     });
+    return () => {
+      alive = false;
+      void un.then((f) => f());
+      void unState.then((f) => f());
+    };
+  }, [soon]);
+
+  return flying.current.size;
+}
+
+/**
+ * 最近这一段（实时档的十分钟），直接从事件流上攒出来。
+ *
+ * **不查库、不轮询。**概览别的部分问的是 SQLite，而那条路的最小延迟是
+ * 「落库 + 下一次刷新」；实时档要的是请求到达的那一刻曲线就动，那只有
+ * 事件流给得了。每条请求要画的东西都在它的结局里：模型和用量一起到
+ * （`request_finished`、`request_failed`、`request_cancelled`）。
+ *
+ * **模型名从结局里拿，不从开始事件里记。**这个钩子只在实时档挂上，打开的
+ * 那一刻正在跑的请求，它的开始事件早就过去了。
+ *
+ * 金额比用量晚一拍：它是存储层落库时按价目表算的，core 算完会补一条
+ * `request_priced`。所以实时档也画得出费用，只是那一格会在请求结束之后
+ * 的几十毫秒里先长出 token、再长出费用。
+ *
+ * 那个定时器**不是轮询**：它什么都不查，只是让曲线往左走。不走的话，
+ * 一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
+ *
+ * **进这一档先把已经发生过的那一段补上。**只挂事件流的话，曲线永远从切进来
+ * 的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图加一句「等待
+ * 请求」，而顶上的数字说有几十次。请求发生过，没人看着不等于没发生。
+ *
+ * `arrived`：事件流上落地了几条带用量的请求（补回来的历史不算）。每涨一次，
+ * 图上「现在」那一点闪一下 —— 新数据到了。
+ */
+export function useLiveWindow(active: boolean, windowMs: number) {
+  const samples = useRef<LiveSample[]>([]);
+  const fails = useRef<LiveFail[]>([]);
+  const arrived = useRef(0);
+  const [frame, soon] = useFrame();
+
+  useEffect(() => {
+    if (!active) {
+      // 切走就把攒的东西扔掉。**留着的话，切回来画的是一段过期的窗口**
+      // —— 重新进来时按当下的时间补，比拿旧样本往左挪准。
+      samples.current = [];
+      fails.current = [];
+      return;
+    }
+    let alive = true;
+    /*
+      事件流和补回来的历史会说到同一次请求，而且**谁先到都有可能**：落库
+      和事件是两条路。所以两边落样本之前都要看一眼对方记过没有。
+    */
+    const counted = (id: number) => samples.current.some((s) => s.id === id);
+    const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
+    const land = (id: number, model: string | null | undefined, u: { input: number; output: number; cache_read: number; cache_write: number }) => {
+      if (counted(id)) return;
+      samples.current.push({
+        id,
+        at: Date.now(),
+        model: model || textOf(liveText).unknownModel,
+        tokens: u.input + u.output + u.cache_read + u.cache_write,
+      });
+      arrived.current += 1;
+    };
+    const un = listen<CoreEvent>("core-event", (e) => {
+      const ev = e.payload;
+      if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
+        // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
+        if (ev.usage) land(ev.id, ev.model, ev.usage);
+      } else if (ev.kind === "request_priced") {
+        // 费用补在那一格原来的位置上，**不是补在「现在」** —— 它说的
+        // 是那次请求的费用，而那次请求发生在几十毫秒之前。
+        // 倒着找：刚落地的那条几乎总在末尾。
+        for (let i = samples.current.length - 1; i >= 0; i--) {
+          const x = samples.current[i];
+          if (x && x.id === ev.id) {
+            if (ev.cost_micros != null) x.cost = ev.cost_micros;
+            break;
+          }
+        }
+      } else if (ev.kind === "request_failed") {
+        // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
+        if (ev.usage) land(ev.id, ev.model, ev.usage);
+        if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
+      } else if (ev.kind === "events_dropped") {
+        // 丢过事件：丢掉的结局从库里补进曲线。落库要一点时间，等一会儿再补；
+        // 补的时候按 id 去重，事件流上已经画了的不会画两遍
+        setTimeout(() => void seed(), REFILL_MS);
+        return;
+      } else {
+        return;
+      }
+      soon();
+    });
     /*
       先挂事件流再补历史：反过来的话，这两者之间结束的请求谁都不记。
     */
     const seed = async () => {
       try {
-        // 挂上了再补 —— `listen` 是异步注册的，理由同上
+        // 挂上了再补 —— `listen` 是异步注册的
         await un;
         /*
           **按时间取，不按条数取。**十分钟里有多少条请求说不准：取固定的
@@ -303,9 +334,7 @@ export function useLive(active: boolean, windowMs: number) {
           });
         }
         // **按时间排好**：`request_priced` 是从末尾倒着找那一条的
-        samples.current = [...seeded, ...samples.current].sort(
-          (a, b) => a.at - b.at,
-        );
+        samples.current = [...seeded, ...samples.current].sort((a, b) => a.at - b.at);
         fails.current = [...seededFails, ...fails.current];
         frame();
       } catch {
@@ -323,15 +352,13 @@ export function useLive(active: boolean, windowMs: number) {
     return () => {
       alive = false;
       void un.then((f) => f());
-      void unState.then((f) => f());
       clearInterval(h);
-      if (raf !== null) cancelAnimationFrame(raf);
     };
-  }, [active, windowMs]);
+  }, [active, windowMs, frame, soon]);
 
   return {
     samples: samples.current,
     fails: fails.current,
-    inFlight: flying.current.size,
+    arrived: arrived.current,
   };
 }

@@ -7,10 +7,10 @@ use crate::{
     error::{Out, text},
 };
 
-/// 今天的汇总、历史、延迟、存储状态。
+/// 一段时间的汇总、趋势、延迟、存储状态，和上一个等长区间的汇总。
 ///
-/// **四个一起取。**界面上它们是同一块，分四次 invoke 会让那一块在几十
-/// 毫秒里分四次跳变。
+/// **一起取。**界面上它们是同一块，分几次 invoke 会让那一块在几十毫秒里分几次
+/// 跳变。
 #[tauri::command]
 pub async fn dashboard(
     state: tauri::State<'_, AppState>,
@@ -41,22 +41,14 @@ pub async fn dashboard(
             .call::<ep::Summary>(&[], &window(Some(since), None))
             .await
             .map_err(text)?,
+        // 延迟和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，而
+        // 界面上它和上面的数字摆在一起，读的人会当成同一段时间
         latency: c
-            .call::<ep::Latency>(&[], &tw_api::Window::default())
+            .call::<ep::Latency>(&[], &window(Some(since), None))
             .await
             .unwrap_or_default(),
         latency_by_provider: c
-            .call::<ep::LatencyByProvider>(&[], &tw_api::Window::default())
-            .await
-            .unwrap_or_default(),
-        history: c
-            .call::<ep::History>(
-                &[],
-                &tw_api::ListQuery {
-                    limit: Some(200),
-                    ..Default::default()
-                },
-            )
+            .call::<ep::LatencyByProvider>(&[], &window(Some(since), None))
             .await
             .unwrap_or_default(),
         storage: c.call::<ep::Storage>(&[], &()).await.ok(),
@@ -99,10 +91,10 @@ pub async fn dashboard(
 #[derive(serde::Serialize)]
 pub struct Dashboard {
     summary: tw_api::Summary,
+    /// 首字节时间的分位，按模型分。和 `summary` 同一个时间窗
     latency: Vec<tw_api::LatencyView>,
     /// 按上游分。**和按模型分是两个问题**
     latency_by_provider: Vec<tw_api::LatencyView>,
-    history: Vec<tw_api::HistoryRow>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑
     storage: Option<tw_api::StorageStatus>,
     /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补
