@@ -244,8 +244,11 @@ describe("命令面板里的请求", () => {
       state: "failed",
       error: { code: "gw.route.denied", args: { rule: "no-images-via-relay", reason: "" }, text: "" },
     });
-    const got = requestItems([denied, nowhere, afterPick], ov, nav, () => 0, "20", 5).map((x) => x.item);
+    // 开始时就没有上游、失败还没到的那一瞬：也不画「?」
+    const starting = row(204, "claude-opus-5", { provider: "", client: "codex", state: "in_flight" });
+    const got = requestItems([starting, denied, nowhere, afterPick], ov, nav, () => 0, "20", 5).map((x) => x.item);
     expect(got.map((i) => [i.id, iconOf(i.icon), i.detail])).toEqual([
+      ["request:204", "other", "#204 · codex"],
       ["request:203", "not-sent:denied", "#203 · 规则拒绝 · codex"],
       ["request:202", "not-sent:unavailable", "#202 · 无可用上游 · codex"],
       ["request:201", "upstream:openrouter", "#201 · openrouter · claude-code"],

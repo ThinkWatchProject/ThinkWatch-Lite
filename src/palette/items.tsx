@@ -480,8 +480,11 @@ export function requestItems(
           <NotSentIcon kind={sent} plain />
         ) : r.local ? (
           <IconGateway />
-        ) : (
+        ) : r.provider ? (
           <UpstreamLogo name={r.provider} baseUrl={p?.base_url} protocol={p?.protocol} />
+        ) : (
+          // 开始时就没有上游、结局还没到的那一瞬：画成一条请求
+          <IconFlow />
         ),
         meta: (
           <>
