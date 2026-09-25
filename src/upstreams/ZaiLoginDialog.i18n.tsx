@@ -7,12 +7,6 @@ export const zaiLoginText = messages(
     cancelled: "登录已取消",
     title: "使用 Z.ai 或 BigModel 账号",
     desc: "登录账号，把它的编程套餐额度作为一个上游使用。",
-    reloginTitle: "重新登录账号",
-    reloginDesc: (name: ReactNode) => (
-      <>
-        为上游 {name} 换一把密钥。模型范围、计费方式等设置保持不变。
-      </>
-    ),
     service: "账号归属",
     serviceDesc: (url: ReactNode) => (
       <>两者是同一服务的两个站点，账号不通用；请求发往 {url}</>
@@ -47,13 +41,6 @@ export const zaiLoginText = messages(
     cancelled: "Sign-in was canceled",
     title: "Use a Z.ai or BigModel account",
     desc: "Signs in to an account and uses its coding plan quota as an upstream.",
-    reloginTitle: "Sign in to the account again",
-    reloginDesc: (name: ReactNode) => (
-      <>
-        Replaces the key of the upstream {name}. Model scope, billing and other settings stay
-        unchanged.
-      </>
-    ),
     service: "Account service",
     serviceDesc: (url: ReactNode) => (
       <>Two sites of the same service; an account works on one of them only. Requests go to {url}</>

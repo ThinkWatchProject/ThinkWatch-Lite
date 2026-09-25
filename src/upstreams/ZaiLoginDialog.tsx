@@ -38,7 +38,7 @@ type Phase =
   | { at: "done"; provider: string; account: string | null };
 
 /**
- * 用 Z.ai 或 BigModel 账号新建上游，或给已有的换一把密钥。
+ * 用 Z.ai 或 BigModel 账号新建上游，或给同名的已有上游换一把密钥。
  *
  * **只有一条路：这台机器上的浏览器。**授权回的是对方自己的服务端，所以既没有
  * 「在另一台设备上输码」那条路（那要对方支持），也没有「返回 ThinkWatch」那一步 ——
@@ -46,13 +46,10 @@ type Phase =
  */
 export function ZaiLoginDialog({
   ov,
-  relogin,
   onClose,
   onSaved,
 }: {
   ov: Overview;
-  /** 给这个已有的上游换一把密钥：名称固定，账号归属和出站方式沿用它的 */
-  relogin?: { name: string; proxy: string; family: ZaiFamily };
   onClose: () => void;
   onSaved: (name: string) => void;
 }) {
@@ -61,11 +58,10 @@ export function ZaiLoginDialog({
   const common = useText(commonText);
   const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
-  const [family, setFamily] = useState<ZaiFamily>(relogin?.family ?? "zai");
-  const [name, setName] = useState(() => relogin?.name ?? freeName("zai", taken));
-  const [proxy, setProxy] = useState(relogin?.proxy ?? "direct");
-  // 重新登录的人此前已经看过并同意了这些，不再拦一次
-  const [understood, setUnderstood] = useState(relogin != null);
+  const [family, setFamily] = useState<ZaiFamily>("zai");
+  const [name, setName] = useState(() => freeName("zai", taken));
+  const [proxy, setProxy] = useState("direct");
+  const [understood, setUnderstood] = useState(false);
   const [phase, setPhase] = useState<Phase>({ at: "form" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,9 +152,8 @@ export function ZaiLoginDialog({
 
   // 同名的上游已经是这一家的话，登录换的是它的密钥 —— 那不是冲突，要说清是替换
   const existing = ov.providers.find((p) => p.name === name.trim());
-  const replaces =
-    existing != null && existing.base_url === ZAI_ENDPOINTS[family] && !relogin;
-  const nameTaken = !relogin && !replaces && existing != null && phase.at === "form";
+  const replaces = existing != null && existing.base_url === ZAI_ENDPOINTS[family];
+  const nameTaken = !replaces && existing != null && phase.at === "form";
   const canStart = name.trim().length > 0 && !nameTaken && understood && !busy;
 
   return (
@@ -166,24 +161,20 @@ export function ZaiLoginDialog({
       {/* 点到外面不关：登录进行中时关掉就是放弃这一次登录。Esc、×、取消照常 */}
       <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>{relogin ? t.reloginTitle : t.title}</DialogTitle>
-          <DialogDescription>
-            {relogin ? t.reloginDesc(<span className="font-mono">{relogin.name}</span>) : t.desc}
-          </DialogDescription>
+          <DialogTitle>{t.title}</DialogTitle>
+          <DialogDescription>{t.desc}</DialogDescription>
         </DialogHeader>
 
         {phase.at === "form" && (
           <div className="flex flex-col gap-4">
-            {!relogin && (
-              <Banner layout="inline" tone="warning" title={t.noticeTitle}>
-                <ul className="list-disc pl-4 [&>li]:mt-1">
-                  <li>{t.noticeTheirPage}</li>
-                  <li>{t.noticeKey}</li>
-                  <li>{t.noticeHonest}</li>
-                  <li>{t.noticeStorage}</li>
-                </ul>
-              </Banner>
-            )}
+            <Banner layout="inline" tone="warning" title={t.noticeTitle}>
+              <ul className="list-disc pl-4 [&>li]:mt-1">
+                <li>{t.noticeTheirPage}</li>
+                <li>{t.noticeKey}</li>
+                <li>{t.noticeHonest}</li>
+                <li>{t.noticeStorage}</li>
+              </ul>
+            </Banner>
 
             <FormItem
               label={t.service}
@@ -199,7 +190,6 @@ export function ZaiLoginDialog({
                     { id: "bigmodel" as ZaiFamily, label: "BigModel" },
                   ]}
                   onChange={setFamily}
-                  disabled={relogin != null}
                   label={t.service}
                 />
               </div>
@@ -212,7 +202,6 @@ export function ZaiLoginDialog({
                   className="font-mono"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={relogin != null}
                   aria-invalid={nameTaken}
                 />
                 {nameTaken && <p className="tw-label text-destructive">{t.nameTaken}</p>}
@@ -237,18 +226,16 @@ export function ZaiLoginDialog({
             </div>
 
             {/* 勾选框和文字**分开挂**：套在一个 label 里点一下会切换两次，等于点不动 */}
-            {!relogin && (
-              <Field orientation="horizontal" className="w-auto">
-                <Checkbox
-                  id="zai-understood"
-                  checked={understood}
-                  onCheckedChange={(v) => setUnderstood(v === true)}
-                />
-                <FieldLabel htmlFor="zai-understood" className="font-normal">
-                  {t.understood}
-                </FieldLabel>
-              </Field>
-            )}
+            <Field orientation="horizontal" className="w-auto">
+              <Checkbox
+                id="zai-understood"
+                checked={understood}
+                onCheckedChange={(v) => setUnderstood(v === true)}
+              />
+              <FieldLabel htmlFor="zai-understood" className="font-normal">
+                {t.understood}
+              </FieldLabel>
+            </Field>
           </div>
         )}
 

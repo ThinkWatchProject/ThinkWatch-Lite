@@ -26,12 +26,12 @@ license = "MIT"
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.48.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.49.0" }
 
 [lib]
 name = "thinkwatch_lite_lib"
