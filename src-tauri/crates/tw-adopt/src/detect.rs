@@ -45,6 +45,8 @@ pub struct Detected {
     pub costs: Vec<Msg>,
     /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）
     pub models: Option<Vec<String>>,
+    /// 这台电脑上它由组织统一管理，接管不了：托管配置在哪。只有 Claude Desktop 会有
+    pub managed: Option<String>,
 }
 
 fn endpoint_of(c: &Client, text: &str) -> Option<String> {
@@ -61,6 +63,7 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
         ],
         "aider" => vec!["openai-api-base"],
         "dsh" => vec!["llm-deepseek", "config", "baseURL"],
+        "claude-desktop" => vec!["inferenceGatewayBaseUrl"],
         _ => return None,
     };
     // **Codex 的那一段不等于它在用的那一段。**还原之后
@@ -123,6 +126,9 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
                 text: (*text).into(),
             })
             .collect(),
+        managed: (c.id == crate::desktop::ID)
+            .then(|| crate::desktop::managed(home))
+            .flatten(),
         path,
         real,
     }
@@ -652,6 +658,53 @@ fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
     }
 }
 
+/// Claude Desktop 独有的几条：它不看环境变量，也没有更高优先级的文件，会盖住
+/// 我们的是组织托管的配置、应用里换了一份配置、和登录模式。
+fn desktop_findings(home: &Path, managed: Option<&str>, adopted: bool) -> Vec<Finding> {
+    let mut out = Vec::new();
+    if let Some(by) = managed {
+        out.push(Finding {
+            level: Level::Blocking,
+            title: msg!("adopt.diag.claude_desktop.managed" => "Claude Desktop on this computer is managed by an organization"),
+            detail: msg!(
+                "adopt.diag.claude_desktop.managed.detail", by = by
+                => "The managed configuration at {by} takes precedence, and the local configuration is not used."
+            ),
+            fix: None,
+        });
+    }
+    if !adopted {
+        return out;
+    }
+    if crate::desktop::applied_is_ours(home) != Some(true) {
+        let meta = crate::desktop::meta_path(home);
+        out.push(Finding {
+            level: Level::Blocking,
+            title: msg!("adopt.diag.claude_desktop.not_applied" => "Another configuration is in use in Claude Desktop"),
+            detail: msg!(
+                "adopt.diag.claude_desktop.not_applied.detail",
+                path = meta.display()
+                => "appliedId in {path} no longer names the ThinkWatch configuration."
+            ),
+            fix: Some(msg!("adopt.diag.adopt_again" => "Point this client at the gateway again")),
+        });
+    }
+    let off = crate::desktop::not_third_party(home);
+    if !off.is_empty() {
+        out.push(Finding {
+            level: Level::Suspect,
+            title: msg!("adopt.diag.claude_desktop.mode" => "Claude Desktop may still open in its usual mode"),
+            detail: msg!(
+                "adopt.diag.claude_desktop.mode.detail",
+                paths = off.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+                => "deploymentMode in {paths} is not 3p. On the sign-in page, choose to continue with the gateway."
+            ),
+            fix: None,
+        });
+    }
+    out
+}
+
 /// 走一遍优先级链。`project` 是当前项目目录（有的话）。
 pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding> {
     diagnose_in(c, home, project, None)
@@ -870,6 +923,15 @@ fn diagnose_in(
                 fix: None,
             });
         }
+    }
+
+    // 四之二、Claude Desktop：托管配置、正在用的是不是我们那一份、登录模式
+    if c.id == crate::desktop::ID {
+        out.extend(desktop_findings(
+            home,
+            d.managed.as_deref(),
+            d.adopted_at_ms.is_some(),
+        ));
     }
 
     // 五、别处设了同名的环境变量

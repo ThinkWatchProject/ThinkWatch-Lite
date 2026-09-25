@@ -1,9 +1,10 @@
 //! 本机上有哪些 AI 客户端。
 //!
 //! **两张表的成员不一样。**「能接管 API 端点」和「有 MCP 要管」是两件
-//! 事：Claude Code 两张表都在，Claude Desktop 只在第二张（它是订阅制，
-//! 接管不了，但它的 MCP 配置是危险度第二高的攻击面）。初稿把两张表混成
-//! 一张，就漏掉了后者 —— 而漏掉它等于扫描留了个洞。
+//! 事：Claude Code 和 Claude Desktop 两张表都在，别的有的只在其中一张。
+//! 初稿把两张表混成一张，就漏掉了 Claude Desktop 的 MCP 配置（它那时还
+//! 接管不了，而它的 MCP 配置是危险度第二高的攻击面）—— 漏掉它等于扫描
+//! 留了个洞。
 //!
 //! 这个文件只管第一张表。
 
@@ -454,6 +455,52 @@ pub fn adoptable() -> Vec<Client> {
             reloads: false,
             config_beats_env: false,
         },
+        // 官方的「第三方推理」模式。**一次改四个文件**，写哪几个、为什么，见
+        // `crate::desktop`；这里的 `config` 是其中的主文件，我们在它配置库里的那一份。
+        Client {
+            id: crate::desktop::ID,
+            name: "Claude Desktop",
+            config: &[crate::desktop::PROFILE],
+            format: Format::Json,
+            takes_effect: TakesEffect::OnRestart,
+            shadowed_by: &[],
+            // **第一条要是「完全退出再打开」**：还原时也拿它说（`desktop::restart_note`）
+            costs: &[
+                (
+                    code!("adopt.cost.claude_desktop.restart"),
+                    "Claude Desktop has to be quit completely and opened again.",
+                ),
+                (
+                    code!("adopt.cost.claude_desktop.sign_in"),
+                    "If the sign-in page appears when it opens, choose to continue with the gateway there; this happens only once.",
+                ),
+                (
+                    code!("adopt.cost.claude_desktop.separate_history"),
+                    "Conversations in this mode are kept apart from the existing ones.",
+                ),
+                (
+                    code!("adopt.cost.claude_desktop.web_search"),
+                    "Web search does not work through the gateway and needs its own setup.",
+                ),
+            ],
+            // Linux 版的路径照官方文档，同样没有实跑过
+            verified: Verified::FieldsOnly,
+            marker: &[
+                crate::desktop::FIRST_PARTY_DIR,
+                crate::desktop::THIRD_PARTY_DIR,
+            ],
+            // macOS 上是 `Claude.app/Contents/MacOS/Claude`，Windows 上是 `Claude.exe`。
+            // **大写开头**：进程名比较分大小写，小写的 `claude` 是 Claude Code
+            process: &["Claude"],
+            env_vars: &[],
+            key_elsewhere: None,
+            // 模型清单也写进它的配置，但只挑它认的那几个（`crate::desktop`），清单
+            // 变了不提示更新：重新接管一次就是新的
+            writes_models: false,
+            reloads: false,
+            // 不读环境变量
+            config_beats_env: true,
+        },
     ]
 }
 
@@ -772,6 +819,24 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
             ],
             Val::s(gw.v1()),
         )],
+        // 官方文档 configuration 一页的键。地址**不带 `/v1`**，它自己拼
+        // `/v1/messages`。模型列表不在这里 —— 要先问过网关，见 `desktop::plan_adopt`。
+        //
+        // 鉴权用 `x-api-key`：网关按钥匙放的位置认方言，放在这里就是
+        // Anthropic，和它说的正是同一种（放在 Bearer 里会被当成 OpenAI 系）。
+        "claude-desktop" => {
+            let mut v = vec![
+                e(&["inferenceProvider"], Val::s("gateway")),
+                e(&["inferenceGatewayBaseUrl"], Val::s(&gw.base)),
+            ];
+            if let Some(k) = &gw.key {
+                v.push(e(&["inferenceGatewayAuthScheme"], Val::s("x-api-key")));
+                v.push(secret(&["inferenceGatewayApiKey"], Val::s(k)));
+            }
+            // 不写的话 Chat 标签默认是关的
+            v.push(e(&["chatTabEnabled"], Val::Bool(true)));
+            v
+        }
         "aider" => {
             let mut v = vec![e(&["openai-api-base"], Val::s(gw.v1()))];
             if let Some(k) = &gw.key {
@@ -860,6 +925,10 @@ impl Client {
     /// **没检测到它的时候也要给。**配置文件不在默认位置、或者装在别的
     /// 用户目录下时，检测不到不等于用不了 —— 照着做一样能接上。
     pub fn manual_steps(&self) -> Vec<Msg> {
+        // 它有自己的配置界面，照官方的单机做法在应用里点，不去手改四个文件
+        if self.id == crate::desktop::ID {
+            return crate::desktop::manual_steps();
+        }
         let i = crate::paths::env_home().map_or(0, |h| self.config_index(&h));
         self.manual_steps_for(self.config[i].shown())
     }
@@ -1126,16 +1195,22 @@ mod tests {
             models: Vec::new(),
         };
         let by = |id: &str| adoptable().into_iter().find(|c| c.id == id).unwrap();
-        // 各要各的写法：Claude Code 不带 /v1，其余带
+        // 各要各的写法：Claude Code 和 Claude Desktop 不带 /v1，其余带
         assert_eq!(by("claude-code").endpoint(&gw), "http://127.0.0.1:18790");
+        assert_eq!(by("claude-desktop").endpoint(&gw), "http://127.0.0.1:18790");
         for id in ["codex", "opencode", "zed", "aider", "dsh"] {
             assert_eq!(by(id).endpoint(&gw), "http://127.0.0.1:18790/v1", "{id}");
         }
         for c in adoptable() {
+            assert!(!edits(&c, &gw).is_empty(), "{}：没有要写的字段", c.id);
+            // Claude Desktop 在它自己的界面里配，不打开文件
+            if c.id == crate::desktop::ID {
+                assert_eq!(c.manual_steps().len(), 3);
+                continue;
+            }
             let steps = c.manual_steps();
             // 写法按平台（`~/…` 或 `%USERPROFILE%\…`），各自的样子见 paths 里那条测试
             assert_eq!(steps[0].arg("file"), c.config[0].shown(), "{}", c.id);
-            assert!(!edits(&c, &gw).is_empty(), "{}：没有要写的字段", c.id);
         }
         // Zed 的密钥不在配置文件里，多一步在它自己的设置里填
         assert_eq!(by("zed").manual_steps().len(), 2);

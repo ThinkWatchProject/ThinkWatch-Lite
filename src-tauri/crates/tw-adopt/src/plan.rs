@@ -47,6 +47,9 @@ pub enum PlanError {
     },
     #[error("{}", self.msg())]
     NoRecord { client: String, path: PathBuf },
+    /// 这个客户端由组织统一管理（MDM）：本机的配置不起作用，写了也白写
+    #[error("{}", self.msg())]
+    Managed { client: String, by: String },
 }
 
 impl PlanError {
@@ -75,6 +78,11 @@ impl PlanError {
             } => msg!(
                 "adopt.plan.foreign_record", path = path.display(), other = other, client = client =>
                 "the record beside {path} belongs to {other}, not {client}, so nothing was changed"
+            ),
+            PlanError::Managed { client, by } => msg!(
+                "adopt.plan.managed", client = client, by = by =>
+                "{client} on this computer is managed by an organization ({by}), so it cannot be \
+                 pointed at the gateway. Nothing was changed."
             ),
             PlanError::NoRecord { client, path } => msg!(
                 "adopt.plan.no_record", client = client, path = path.display() =>
@@ -121,6 +129,7 @@ pub struct Plan {
     ///
     /// **一起落盘、一起失败**：写到一半停下，比哪一份都没写更糟 —— 那时补丁
     /// 指着一个凭据文件里还没有的密钥名，dsh 起不来，而用户不知道为什么。
+    /// Claude Desktop 一次要改四个（见 [`crate::desktop`]）。
     pub also: Vec<Plan>,
     /// 之前那次接管留下的记录（备份路径、文件是不是我们建的）。
     ///
@@ -190,10 +199,11 @@ fn peek(fmt: Format, text: &str, path: &[&str], client: &str) -> Result<Option<S
     })
 }
 
-/// 空文件长什么样。JSON 得先有个 `{}`，不然连插字段的地方都没有。
+/// 空文件长什么样。JSON 得先有个对象，不然连插字段的地方都没有；写成两行，
+/// 新建的文件里一个字段一行，和手写的一样。
 fn empty(fmt: Format) -> &'static str {
     match fmt {
-        Format::Json => "{}\n",
+        Format::Json => "{\n}\n",
         Format::Toml | Format::Yaml | Format::Rows => "",
     }
 }
@@ -218,6 +228,9 @@ fn takes_effect_note(c: &Client) -> Msg {
 }
 
 pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanError> {
+    if c.id == crate::desktop::ID {
+        return crate::desktop::plan_adopt(c, home, gw, None);
+    }
     // 什么时候生效、有什么代价，按装着的版本说
     let c = &c.clone().here(home);
     let path = c.config_path(home);
@@ -236,13 +249,17 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
         )?);
     }
     plan.carries_secret |= plan.also.iter().any(|p| p.carries_secret);
+    let (notes, shadows) = adopt_notes(c, home, gw);
+    plan.notes = notes;
+    plan.shadows = shadows;
+    Ok(plan)
+}
 
+/// 接管完成那一屏要说的话（什么时候生效、有什么代价、查证到什么程度），和
+/// 优先级比我们高、此刻在的那些文件。
+pub(crate) fn adopt_notes(c: &Client, home: &Path, gw: &Gateway) -> (Vec<Msg>, Vec<PathBuf>) {
     let mut notes = vec![takes_effect_note(c)];
-    notes.extend(c.costs.iter().map(|(code, text)| Msg {
-        code: (*code).into(),
-        args: BTreeMap::new(),
-        text: (*text).into(),
-    }));
+    notes.extend(cost_notes(c));
     // 一个模型都没写进去：opencode 里不会出现网关的模型。**在确认之前说**，
     // 而不是让用户接管完了在模型列表里找不到
     if c.writes_models && gw.models.is_empty() {
@@ -254,11 +271,7 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
         ));
     }
     if c.verified == crate::clients::Verified::FieldsOnly {
-        notes.push(msg!(
-            "adopt.plan.fields_only"
-            => "{} Do not take it as working until the first request arrives.",
-            c.verified.note()
-        ));
+        notes.push(fields_only_note(c));
     }
 
     let shadows = c.live_shadows(home);
@@ -273,13 +286,35 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
             => "{paths} was found, and it takes precedence over what was written here, so a setting of the same name there wins."
         ));
     }
-    plan.notes = notes;
-    plan.shadows = shadows;
-    Ok(plan)
+    (notes, shadows)
 }
 
-/// 一份文件的接管改动：读它、记下原值、改那几个字段、放上哨兵。
-fn adopt_file(client: &str, path: PathBuf, fmt: Format, edits: &[Edit]) -> Result<Plan, PlanError> {
+/// 接管的代价，每条一句
+pub(crate) fn cost_notes(c: &Client) -> impl Iterator<Item = Msg> + '_ {
+    c.costs.iter().map(|(code, text)| Msg {
+        code: (*code).into(),
+        args: BTreeMap::new(),
+        text: (*text).into(),
+    })
+}
+
+pub(crate) fn fields_only_note(c: &Client) -> Msg {
+    msg!(
+        "adopt.plan.fields_only"
+        => "{} Do not take it as working until the first request arrives.",
+        c.verified.note()
+    )
+}
+
+/// 一份文件的接管改动：读它、记下原值、改那几个字段、放上哨兵。**不写任何东西。**
+///
+/// 只管这一个文件的字节和记录，接管说明由调用方补。
+pub(crate) fn adopt_file(
+    client: &str,
+    path: PathBuf,
+    fmt: Format,
+    edits: &[Edit],
+) -> Result<Plan, PlanError> {
     let before = foreign::read(&path).map_err(|source| PlanError::Read {
         client: client.into(),
         source,
@@ -325,7 +360,13 @@ fn adopt_file(client: &str, path: PathBuf, fmt: Format, edits: &[Edit]) -> Resul
         };
         originals.push(Original::new(p, was));
         carries_secret |= secret;
-        text = put(fmt, &text, &r, value, client)?;
+        // 已经是这个值了就不碰那一段字节：JSON 的数组和对象是重新排出来的，
+        // 重排一遍会换掉原来的排版 —— 重复接管也就不再是空操作
+        let same = fmt == Format::Json
+            && crate::json::get(&text, &r).ok().flatten().as_ref() == Some(value);
+        if !same {
+            text = put(fmt, &text, &r, value, client)?;
+        }
         targets.push(Target::Set(p.clone(), value.clone()));
     }
 
@@ -510,17 +551,66 @@ fn as_read(fmt: Format, v: &Val) -> Val {
 /// 而不是指着一个已经从凭据文件里删掉的密钥名。
 pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
     let _ = c;
+    let mut done: Vec<(Applied, Option<String>)> = Vec::new();
     let mut warnings = Vec::new();
+    // 哪一份还原不成，前面还原了的都退回接管状态：还原一半，比哪一份都没动更难收拾
+    let undo_done = |done: &[(Applied, Option<String>)]| {
+        for (a, side) in done.iter().rev() {
+            undo(a, side.as_deref());
+        }
+    };
     for p in &plan.also {
-        warnings.extend(restore_file(p, backup_root)?.warnings);
+        match restore_file(p, backup_root) {
+            Ok(Some((a, side))) => {
+                warnings.extend(a.warnings.iter().cloned());
+                done.push((a, side));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                undo_done(&done);
+                return Err(e);
+            }
+        }
     }
-    let mut a = restore_file(plan, backup_root)?;
-    a.warnings.extend(warnings);
-    Ok(a)
+    match restore_file(plan, backup_root) {
+        Ok(Some((mut a, _))) => {
+            a.warnings.extend(warnings);
+            Ok(a)
+        }
+        Ok(None) => Ok(Applied {
+            real: plan.path.clone(),
+            asked: plan.path.clone(),
+            backup: PathBuf::new(),
+            created: false,
+            warnings,
+        }),
+        Err(e) => {
+            undo_done(&done);
+            Err(e)
+        }
+    }
 }
 
-fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
+/// 一份文件的还原落盘，返回结果和删掉之前的旁文件（退回时要用）。
+/// 文件已经不在了的，只删记录（`None`）—— 不能照着空的原文写出一个空文件。
+fn restore_file(
+    plan: &Plan,
+    backup_root: &Path,
+) -> Result<Option<(Applied, Option<String>)>, PlanError> {
     let fmt = plan.format;
+    let old_side = plan
+        .drop_sidecar
+        .as_ref()
+        .and_then(|s| std::fs::read_to_string(s).ok());
+    let drop_side = || {
+        if let Some(side) = &plan.drop_sidecar {
+            let _ = std::fs::remove_file(side);
+        }
+    };
+    if plan.before.is_none() {
+        drop_side();
+        return Ok(None);
+    }
     if plan.delete_file {
         // 删之前照样先备份。**「删掉一个文件」是这里面最不可逆的动作**，
         // 它更需要那份备份，不是更不需要。
@@ -538,10 +628,8 @@ fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
             path: applied.real.clone(),
             source,
         })?;
-        if let Some(side) = &plan.drop_sidecar {
-            let _ = std::fs::remove_file(side);
-        }
-        return Ok(applied);
+        drop_side();
+        return Ok(Some((applied, old_side)));
     }
     let client = plan.client.clone();
     let expect = expected(plan)?;
@@ -565,10 +653,8 @@ fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
             }
         },
     )?;
-    if let Some(side) = &plan.drop_sidecar {
-        let _ = std::fs::remove_file(side);
-    }
-    Ok(applied)
+    drop_side();
+    Ok(Some((applied, old_side)))
 }
 
 /// 算一份还原改动。**不写任何东西。**
@@ -576,6 +662,9 @@ fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
 /// 分工是刻意的：**旁文件说「我们动过哪几个字段」，全文备份说「它们原来
 /// 是什么」**。所以密钥类的原值一份都不用抄进旁文件，也不会因此丢失。
 pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
+    if c.id == crate::desktop::ID {
+        return crate::desktop::plan_restore(c, home);
+    }
     let c = &c.clone().here(home);
     let mut plan = restore_file_plan(c.id, c.config_path(home), c.format)?;
     if let Some(also) = crate::clients::also(c) {
@@ -594,8 +683,12 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
     Ok(plan)
 }
 
-/// 一份文件的还原改动。
-fn restore_file_plan(client: &str, path: PathBuf, fmt: Format) -> Result<Plan, PlanError> {
+/// 一份文件的还原改动。**不写任何东西。**没有接管记录就是 [`PlanError::NoRecord`]。
+pub(crate) fn restore_file_plan(
+    client: &str,
+    path: PathBuf,
+    fmt: Format,
+) -> Result<Plan, PlanError> {
     let real = foreign::resolve(&path)?;
     let before = foreign::read(&path).map_err(|source| PlanError::Read {
         client: client.into(),
@@ -745,7 +838,7 @@ fn restore_file_plan(client: &str, path: PathBuf, fmt: Format) -> Result<Plan, P
     })
 }
 
-fn lookup(v: &Val, path: &[&str]) -> Option<Val> {
+pub(crate) fn lookup(v: &Val, path: &[&str]) -> Option<Val> {
     let mut cur = v;
     for k in path {
         let Val::Obj(ms) = cur else { return None };
@@ -833,6 +926,10 @@ mod msg_codes {
             PlanError::NoRecord {
                 client: "claude-code".into(),
                 path: p(),
+            },
+            PlanError::Managed {
+                client: "Claude Desktop".into(),
+                by: "/etc/claude-desktop/managed-settings.json".into(),
             },
         ] {
             all.push((e.msg(), e.to_string()));

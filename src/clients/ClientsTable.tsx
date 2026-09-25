@@ -177,14 +177,16 @@ function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext
         </TableCell>
         <TableCell className="text-right" onClick={stop} onKeyDown={stop}>
           <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="outline"
-              size="xs"
-              pending={ctx.asking === c.id}
-              onClick={() => (absent ? actions.manual(c.id) : adopted ? actions.restore(c) : actions.adopt(c))}
-            >
-              {absent ? t.manual : adopted ? t.restore : t.adopt}
-            </Button>
+            {!(c.managed && !adopted && !absent) && (
+              <Button
+                variant="outline"
+                size="xs"
+                pending={ctx.asking === c.id}
+                onClick={() => (absent ? actions.manual(c.id) : adopted ? actions.restore(c) : actions.adopt(c))}
+              >
+                {absent ? t.manual : adopted ? t.restore : t.adopt}
+              </Button>
+            )}
             <RowMenuButton items={items} label={t.actionsFor(c.name)} />
           </div>
         </TableCell>
@@ -353,6 +355,8 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: Reac
 
 /** 状态下面那一行 */
 function subline(c: DetectedClient, s: Status, t: typeof clientsText.zh): string | null {
+  // 由组织统一管理的，说明为什么接管不了（接管按钮也不给）
+  if (c.managed && c.adopted_at_ms == null) return coreText(c.managed);
   const why = reasonText(s.reason, t);
   if (why) return why;
   if (s.state === "idle") return c.endpoint ? t.pointsTo(hostOf(c.endpoint)) : t.ownService;

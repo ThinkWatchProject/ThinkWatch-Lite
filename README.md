@@ -188,12 +188,15 @@ two responses are shown side by side.
 
 ### Client setup
 
-The Clients page points Claude Code, Codex, opencode, Zed, Aider and
-DeepSeek Harness at the gateway. Before anything is written, it lists the
-fields that change and what else the change affects (the ChatGPT desktop
+The Clients page points Claude Code, Claude Desktop, Codex, opencode, Zed,
+Aider and DeepSeek Harness at the gateway. Before anything is written, it lists
+the fields that change and what else the change affects (the ChatGPT desktop
 app, for instance, reads the same configuration file as Codex), shows the full
-diff and backs up the original file. Only the settings that point the client at the gateway change, and each
-client receives a key of its own. A connected client can be restored at any
+diff and backs up the original file. Only the settings that point the client at
+the gateway change, and each client receives a key of its own. Claude Desktop is
+connected through its official third-party inference mode, and the page lists
+each of the files that change for it; a Claude Desktop managed by an
+organization is left as it is. A connected client can be restored at any
 time, on its own or together with all the others; a restored Codex keeps a
 plain OpenAI entry in place of the gateway's, so sessions started while it was
 connected can still be opened. opencode (v1 and v2) also

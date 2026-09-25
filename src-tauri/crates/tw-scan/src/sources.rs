@@ -176,8 +176,8 @@ pub fn user_level(home: &Path) -> Vec<Source> {
         ),
         // 危险度第二：MCP
         f("claude-code", Kind::Mcp, under(home, ".claude.json")),
-        // **Claude Desktop 只在这张表里**：它是订阅制，接管不了，但它的
-        // MCP 配置是危险度第二高的攻击面。漏掉它等于扫描留了个洞
+        // Claude Desktop 的 MCP 配置是危险度第二高的攻击面，漏掉它等于
+        // 扫描留了个洞
         f(
             "claude-desktop",
             Kind::Mcp,
@@ -321,9 +321,9 @@ mod tests {
     }
 
     #[test]
-    fn claude_desktop_is_in_the_scan_even_though_it_cannot_be_adopted() {
-        // 它是订阅制、接管不了，但它的 MCP 配置是危险度第二高的攻击面。
-        // 漏掉它等于扫描留了个洞。
+    fn claude_desktop_is_in_the_scan_whether_or_not_it_is_adopted() {
+        // 它的 MCP 配置是危险度第二高的攻击面，接不接管都要扫。漏掉它等于
+        // 扫描留了个洞。
         let d = tempfile::tempdir().unwrap();
         // 路径按平台走 —— 写死 macOS 那一条的话，这个测试在 Windows 上
         // 会造一个没人找的文件，然后报告扫描漏了它。
@@ -332,12 +332,6 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].client, "claude-desktop");
         assert_eq!(got[0].kind, Kind::Mcp);
-        // 它确实不在接管表里
-        assert!(
-            !tw_adopt::clients::adoptable()
-                .iter()
-                .any(|c| c.id == "claude-desktop")
-        );
     }
 
     #[test]

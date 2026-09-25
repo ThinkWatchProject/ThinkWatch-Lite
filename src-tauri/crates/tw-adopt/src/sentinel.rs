@@ -188,12 +188,26 @@ pub struct SidecarRecord {
 pub const SIDECAR_SUFFIX: &str = ".thinkwatch.json";
 
 /// 某份配置文件对应的旁文件路径。
+///
+/// **Claude Desktop 的配置库（`configLibrary/`）是个例外，旁文件放到它的上一层**
+/// （`configLibrary.<文件名>.thinkwatch.json`）。那个目录归应用管，每份配置是
+/// 一个 `<id>.json`：一个我们自己的 `.json` 放进去，应用会不会把它当成一份配置
+/// 去读，文档没有说 —— 不往里放，就不用赌这件事。
 pub fn sidecar_path(config: &std::path::Path) -> std::path::PathBuf {
     let name = config
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("config");
-    config.with_file_name(format!("{name}{SIDECAR_SUFFIX}"))
+    let dir = config.parent();
+    match dir
+        .filter(|d| d.file_name().and_then(|n| n.to_str()) == Some(crate::desktop::LIBRARY_DIR))
+    {
+        Some(lib) => lib.with_file_name(format!(
+            "{}.{name}{SIDECAR_SUFFIX}",
+            crate::desktop::LIBRARY_DIR
+        )),
+        None => config.with_file_name(format!("{name}{SIDECAR_SUFFIX}")),
+    }
 }
 
 impl SidecarRecord {
@@ -350,6 +364,14 @@ mod tests {
         assert_eq!(
             p,
             std::path::Path::new("/Users/x/.aider.conf.yml.thinkwatch.json")
+        );
+        // Claude Desktop 的配置库里不放我们的文件，放到上一层
+        let p = sidecar_path(std::path::Path::new(
+            "/a/Claude-3p/configLibrary/_meta.json",
+        ));
+        assert_eq!(
+            p,
+            std::path::Path::new("/a/Claude-3p/configLibrary._meta.json.thinkwatch.json")
         );
     }
 

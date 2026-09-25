@@ -664,6 +664,76 @@ pub fn remove(text: &str, path: &[&str]) -> Result<String, JErr> {
     Ok(drop_blank_line_at(&out, cut.start))
 }
 
+/// 往一个数组末尾追加一项；数组不在就建一个只有这一项的。
+///
+/// **数组里原有的字节一个都不动**：拿整个数组去 [`set`] 会按我们的排版重排一遍，
+/// 用户一行一个的写法就变了样，还原时也回不到原来那几个字节。追加的这一项
+/// 跟着前一项的分隔和缩进走，所以 [`remove_item`] 拿掉它之后，剩下的正是原文。
+pub fn push(text: &str, path: &[&str], v: &Val) -> Result<String, JErr> {
+    let root = parse(text)?;
+    let Some(node) = find(&root, path) else {
+        return set(text, path, &Val::Arr(vec![v.clone()]));
+    };
+    let Body::Arr(es) = &node.body else {
+        return Err(JErr::NotObject(path.join(".")));
+    };
+    let unit = unit_of(text);
+    match es.last() {
+        Some(last) => {
+            let multiline = text[node.span.clone()].contains('\n');
+            let base = indent_at(text, last.span.start);
+            let sep = if multiline {
+                format!(",\n{base}")
+            } else {
+                ", ".to_string()
+            };
+            let piece = format!("{sep}{}", render(v, &base, &unit));
+            Ok(splice(text, last.span.end..last.span.end, &piece))
+        }
+        None => {
+            let base = indent_at(text, node.span.start);
+            let at = node.span.start + 1;
+            Ok(splice(text, at..at, &render(v, &base, &unit)))
+        }
+    }
+}
+
+/// 拿掉数组里的第 `idx` 项，连同它和前后项之间的那个逗号。数组或那一项不在就
+/// 原样返回。
+pub fn remove_item(text: &str, path: &[&str], idx: usize) -> Result<String, JErr> {
+    let root = parse(text)?;
+    let Some(Node {
+        body: Body::Arr(es),
+        ..
+    }) = find(&root, path)
+    else {
+        return Ok(text.to_string());
+    };
+    if idx >= es.len() {
+        return Ok(text.to_string());
+    }
+    let cut = if idx > 0 {
+        // 往前吃掉逗号：追加时加上的正是「逗号 + 换行缩进 + 这一项」
+        es[idx - 1].span.end..es[idx].span.end
+    } else if es.len() > 1 {
+        es[0].span.start..es[1].span.start
+    } else {
+        es[0].span.clone()
+    };
+    Ok(splice(text, cut, ""))
+}
+
+fn find<'a>(root: &'a Node, path: &[&str]) -> Option<&'a Node> {
+    let mut node = root;
+    for k in path {
+        let Body::Obj(ms) = &node.body else {
+            return None;
+        };
+        node = &ms.iter().find(|m| m.key == *k)?.val;
+    }
+    Some(node)
+}
+
 /// 删完之后如果那一行只剩空白，把整行拿掉。**只删全空白的行** —— 行里
 /// 还有别的东西（比如一句注释）就留着。
 fn drop_blank_line_at(text: &str, pos: usize) -> String {
@@ -683,6 +753,35 @@ fn drop_blank_line_at(text: &str, pos: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_item_pushed_and_removed_leaves_the_array_as_it_was() {
+        let one_per_line =
+            "{\n  \"xs\": [\n    { \"id\": \"a\" },\n    { \"id\": \"b\" }\n  ]\n}\n";
+        let inline = "{\"xs\": [1, 2]}";
+        let empty = "{\"xs\": []}";
+        for src in [one_per_line, inline, empty] {
+            let item = Val::Obj(vec![("id".into(), Val::s("ours"))]);
+            let out = push(src, &["xs"], &item).unwrap();
+            let Some(Val::Arr(es)) = get(&out, &["xs"]).unwrap() else {
+                panic!("{out}")
+            };
+            assert_eq!(es.last(), Some(&item), "{out}");
+            assert_eq!(remove_item(&out, &["xs"], es.len() - 1).unwrap(), src);
+        }
+        // 数组不在就建一个
+        let out = push("{}", &["xs"], &Val::s("a")).unwrap();
+        assert_eq!(
+            get(&out, &["xs"]).unwrap(),
+            Some(Val::Arr(vec![Val::s("a")]))
+        );
+        // 拿掉头一项
+        assert_eq!(remove_item("[1, 2, 3]", &[], 0).unwrap(), "[2, 3]");
+        assert_eq!(
+            remove_item("{\"xs\": [1]}", &["xs"], 5).unwrap(),
+            "{\"xs\": [1]}"
+        );
+    }
 
     #[test]
     fn setting_one_field_leaves_every_other_byte_alone() {
