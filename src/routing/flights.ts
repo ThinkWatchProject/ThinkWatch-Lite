@@ -9,8 +9,8 @@
  *   才画到上游 —— 之前只知道首选，故障转移之后服务它的可能是另一个。
  * · 三种结局：这条路随之熄灭。
  *
- * 半路才打开这一页时，已经在跑的请求从 `/in-flight` 补上。那里只有开始事件，所以这些
- * 请求只画到路由为止。
+ * 半路才打开这一页时，已经在跑的请求从 `/in-flight` 补上：每个请求到目前为止的事件照原样
+ * 重放一遍，已经路由了的一打开就画到上游。
  */
 import type { CoreEvent, Overview } from "@/types";
 import { chainId, edgeId, type Chain } from "./chain";

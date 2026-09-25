@@ -16,6 +16,8 @@ function bucket(name: string, hoursAfterSince: number, requests: number, since: 
     failed: 0,
     cost_micros_exact: 0,
     cost_micros_estimated: 0,
+    unpriced_requests: 0,
+    no_usage_requests: 0,
     input_tokens: 0,
     output_tokens: 0,
     cache_read_tokens: 0,

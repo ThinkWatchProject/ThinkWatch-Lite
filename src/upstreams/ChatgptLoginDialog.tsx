@@ -16,12 +16,12 @@ import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { StatusLabel } from "@/ui/status-dot";
-import type { ChatgptLoginMode, ChatgptLoginStatus, CoreEvent, Overview } from "@/types";
+import type { ChatgptLoginMode, ChatgptLoginStatus, ChatgptPlan, CoreEvent, Overview } from "@/types";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptLoginText } from "./ChatgptLoginDialog.i18n";
-import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
+import { coreText, errorText, planLabel, proxyKindLabel, shortUrl } from "./labels";
 import { DialogError, FormItem } from "./parts";
 import { freeName } from "./upstreamForm";
 import { useSystemProxyLabel } from "@/connection/Remote";
@@ -37,7 +37,7 @@ type Phase =
   | { at: "browser"; id: string }
   /** 码已经拿到，等用户在另一台设备上输 */
   | { at: "device"; id: string; code: string; url: string }
-  | { at: "done"; provider: string; plan: string | null };
+  | { at: "done"; provider: string; plan: ChatgptPlan | null };
 
 /**
  * 用 ChatGPT 账号新建上游，或给已有的账号换一次凭据。
@@ -169,6 +169,7 @@ export function ChatgptLoginDialog({
 
   const nameTaken = !relogin && taken.includes(name.trim()) && phase.at === "form";
   const canStart = name.trim().length > 0 && !nameTaken && understood && !busy;
+  const planName = phase.at === "done" ? planLabel(phase.plan) : null;
 
   return (
     <Dialog open onOpenChange={(o) => !o && void cancel()}>
@@ -296,7 +297,7 @@ export function ChatgptLoginDialog({
           <div className="flex flex-col gap-2 tw-body">
             <p>
               {t.done(<span className="font-mono">{phase.provider}</span>)}
-              {phase.plan && ` ${t.plan(phase.plan)}`}
+              {planName && ` ${t.plan(planName)}`}
             </p>
             <p className="tw-label text-muted-foreground">{t.doneHint}</p>
           </div>

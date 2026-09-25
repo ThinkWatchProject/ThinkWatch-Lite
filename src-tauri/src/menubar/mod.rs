@@ -214,7 +214,11 @@ async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     }
 }
 
+/// **开始的时刻按 core 报的「已经跑了多久」往回推**，推到这台机器的时钟上（`snap.now_ms`
+/// 是刚取的）。不拿 `at_ms`：那是 core 的时钟，连的是另一台机器上的 core 时，两边差着
+/// 几秒，「已跑」就跟着差几秒，差成负数时一直是 0
 fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
+    let now = snap.now_ms;
     snap.live = live
         .running
         .into_iter()
@@ -223,7 +227,7 @@ fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
             app: r.client_hint,
             key: r.client,
             model: r.model,
-            started_ms: r.at_ms,
+            started_ms: now.saturating_sub(r.elapsed_ms),
         })
         .collect();
     snap.rate = live.tokens_per_sec;
@@ -725,10 +729,15 @@ mod tests {
         assert_eq!(start.elapsed(), std::time::Duration::ZERO);
     }
 
-    /// core 给的在跑的请求照原样进菜单：谁、哪个模型、什么时候开始的，还有速率
+    /// core 给的在跑的请求照原样进菜单：谁、哪个模型、跑了多久，还有速率。**跑了多久
+    /// 以 core 算的为准**：它的时钟比这台机器快了一分钟（`at_ms` 在「将来」），菜单上
+    /// 照样是 12 秒
     #[test]
     fn the_live_numbers_come_from_core_as_they_are() {
-        let mut snap = Snapshot::default();
+        let mut snap = Snapshot {
+            now_ms: 100_000,
+            ..Default::default()
+        };
         apply_live(
             &mut snap,
             tw_api::LiveView {
@@ -738,7 +747,13 @@ mod tests {
                     client_hint: Some("codex".into()),
                     model: "gpt-5".into(),
                     provider: "openai".into(),
-                    at_ms: 1_000,
+                    at_ms: 148_000,
+                    elapsed_ms: 12_000,
+                    session: None,
+                    route: "default".into(),
+                    rule: "catch-all".into(),
+                    group: Some("__all__".into()),
+                    upstream: None,
                 }],
                 tokens_per_sec: Some(52),
             },
@@ -750,7 +765,7 @@ mod tests {
                 app: Some("codex".into()),
                 key: "default".into(),
                 model: "gpt-5".into(),
-                started_ms: 1_000,
+                started_ms: 88_000,
             }]
         );
         assert_eq!(snap.rate, Some(52));

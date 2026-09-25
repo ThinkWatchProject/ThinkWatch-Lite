@@ -14,6 +14,7 @@ import type {
   CostBucketGroup,
   Event,
   Guard,
+  InFlightRequest,
   LatencyView,
   Msg,
   SecretItem,
@@ -97,9 +98,9 @@ export interface RequestRow {
   /**
    * 这次花了多少微分。
    *
-   * **事件流里没有它。**价钱是存储层落库时按价目表算出来的，算在
-   * 事件之后 —— 所以刚跑完的那一行先是空的，几秒后由历史补上
-   * （见 useRequests 的对账）。空着显示「—」，不显示 0。
+   * **结局事件里没有它。**价钱是存储层落库时按价目表算出来的，算完 core
+   * 补一条 `request_priced` —— 所以刚跑完的那一行先是空的，紧跟着补上。
+   * 空着显示「—」，不显示 0。
    */
   costMicros?: number;
   /** 上游没给用量、只能按输入长度估的。显示时要带 `~` */
@@ -121,12 +122,11 @@ export interface RequestRow {
   /**
    * 它属于哪次会话，和 `SessionView.id` 同一个值。
    *
-   * **只有落库之后才有。**会话 id 是存储层给的，事件里那个 `session_fp`
-   * 只是指纹，差着起始时刻那一截。所以正在跑的那一条是没有会话的 ——
-   * 它确实还没被记下来，归组时独立成行，落库之后自然归位。
+   * **开始时就有**（`request_started.session`）：网关在请求开始的那一刻定下它，
+   * 落库时记的就是这一个。所以正在跑的那一条已经在它的会话里，不用等落库。
    *
-   * 认不出会话的（拼不出指纹的，比如 WebSocket）也没有 —— **不能拿一个假的
-   * 把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
+   * 认不出会话的（正文里没有能认人的东西，或者是 WebSocket）没有 —— **不能拿一个
+   * 假的把它们凑成一组**，它们之间唯一的共同点是我们不知道它属于谁。
    */
   session?: string;
 }
@@ -146,6 +146,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         path: ev.path,
         atMs: ev.at_ms,
         state: "in_flight",
+        session: ev.session ?? undefined,
       });
       break;
     case "request_headers": {
@@ -284,12 +285,16 @@ export interface SeenSince {
 }
 
 /**
- * 把 core 的「此刻还在跑的」快照（`in_flight_requests`）补成「进行中」的行。
+ * 把 core 的「此刻还在跑的」快照（`GET /in-flight` 的 `requests`）补成「进行中」的行。
  * 返回有没有改动。
  *
+ * 快照里每个请求带着它到目前为止的事件，第一条是开始事件，之后是响应头、路由、格式
+ * 转换、防护的记录。**按原来的顺序重放一遍**，和从头听起一样：半路才补上的那一行也有
+ * 状态码、服务它的上游和徽标。
+ *
  * **只补事件流没给的。**中途结束的不补 —— 补进去就是一行永远等不到结局的
- * 「进行中」；中途开始的、已经在跑的也不补 —— 那一行事件流已经建了，开始
- * 事件再套一遍会把已经到了的响应头冲掉。
+ * 「进行中」；中途开始的、已经在跑的也不补 —— 那一行事件流已经建了，从开始
+ * 事件再重放一遍会把快照之后才到的那几条冲掉。
  *
  * 同一个 id 已经有一行、但它不在跑：那是上一次 core 留下的（见
  * `interruptInFlight`）。core 重启后接着库里最大的号往下发，而没落库的
@@ -297,15 +302,14 @@ export interface SeenSince {
  */
 export function applyInFlight(
   rows: Map<number, RequestRow>,
-  open: CoreEvent[],
+  open: InFlightRequest[],
   seen: SeenSince,
 ): boolean {
   let changed = false;
-  for (const ev of open) {
-    if (ev.kind !== "request_started") continue;
-    if (seen.ended.has(ev.id) || seen.started.has(ev.id)) continue;
-    if (rows.get(ev.id)?.state === "in_flight") continue;
-    applyEvent(rows, ev);
+  for (const { id, events } of open) {
+    if (seen.ended.has(id) || seen.started.has(id)) continue;
+    if (rows.get(id)?.state === "in_flight") continue;
+    for (const ev of events) applyEvent(rows, ev);
     changed = true;
   }
   return changed;

@@ -113,6 +113,8 @@ pub struct Live {
     /// 网关密钥的名字
     pub key: String,
     pub model: String,
+    /// 开始的时刻，**这台机器的时钟**：由 core 报的「已经跑了多久」推回来的，
+    /// 和 `Snapshot::now_ms` 相减就是已跑时长
     pub started_ms: u64,
 }
 

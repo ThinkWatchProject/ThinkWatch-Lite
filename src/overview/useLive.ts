@@ -169,7 +169,7 @@ export function useInFlight(): number {
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
         const next = new Set(mark.started);
-        for (const ev of open) if (ev.kind === "request_started") next.add(ev.id);
+        for (const r of open.requests) next.add(r.id);
         for (const id of mark.ended) next.delete(id);
         flying.current = next;
         soon();

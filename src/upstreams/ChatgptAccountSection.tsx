@@ -141,12 +141,7 @@ export function ChatgptAccountSection({
         </FormItem>
       </div>
 
-      <LoginBox
-        editing={editing}
-        email={usage?.email ?? null}
-        plan={usage?.plan ?? null}
-        onRelogin={onRelogin}
-      />
+      <LoginBox editing={editing} onRelogin={onRelogin} />
 
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
@@ -268,19 +263,12 @@ export function ChatgptAccountSection({
  * 先说**登的是哪个账号** —— 上游的名字是用户自己取的，说明不了这一条。
  * **凭据失效时这里是唯一的出路**，所以它自己就带着重新登录。
  */
-function LoginBox({
-  editing,
-  email,
-  plan,
-  onRelogin,
-}: {
-  editing: ProviderView;
-  email: string | null;
-  plan: string | null;
-  onRelogin: () => void;
-}) {
+function LoginBox({ editing, onRelogin }: { editing: ProviderView; onRelogin: () => void }) {
   const t = useText(chatgptAccountText);
   const oauth = editing.oauth;
+  // 账号和套餐是 core 从凭据的令牌里读的：凭据失效之后仍是最后登着的那个
+  const email = oauth?.account?.email ?? null;
+  const plan = oauth?.account?.plan;
   const broken = oauth?.needs_login === true;
   const expires = oauth?.expires_at ? Date.parse(oauth.expires_at) : NaN;
   const left = Number.isNaN(expires) ? null : resetIn((expires - Date.now()) / 1000);

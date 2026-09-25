@@ -8,6 +8,8 @@ import { textOf } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type {
   Billing,
+  ChatgptPlan,
+  KnownChatgptPlan,
   L1Result,
   L1Skip,
   L1Stage,
@@ -161,21 +163,37 @@ export function modelFace(p: ProviderView): {
 }
 
 /**
+ * ChatGPT 套餐的叫法，和 Codex 客户端显示的一样。**词和叫法不是一回事**：套餐改过名，
+ * `team` 现在叫 Business，`business` 叫 Enterprise，`prolite` 才是 Pro。产品名，中英
+ * 界面一样。
+ */
+const PLANS: Record<KnownChatgptPlan, string> = {
+  free: "Free",
+  go: "Go",
+  plus: "Plus",
+  pro: "Pro (More)",
+  prolite: "Pro",
+  promax: "Pro (Max)",
+  team: "Business",
+  business: "Enterprise",
+  self_serve_business_prolite: "Business Premium",
+  self_serve_business_usage_based: "Business",
+  enterprise: "Enterprise",
+  ent26: "Enterprise",
+  enterprise_cbp_automation: "Enterprise (Automation)",
+  enterprise_cbp_usage_based: "Enterprise",
+  edu: "Edu",
+  edu_plus: "Edu Plus",
+  edu_pro: "Edu Pro",
+};
+
+/**
  * 订阅类型。**认不出来的原样显示** —— OpenAI 随时会多出一个
  * 新名字，把它显示成「未知」比直接写出那个词更差。
  */
-export function planLabel(plan: string | null | undefined): string | null {
+export function planLabel(plan: ChatgptPlan | null | undefined): string | null {
   if (!plan) return null;
-  const known: Record<string, string> = {
-    free: "Free",
-    plus: "Plus",
-    pro: "Pro",
-    team: "Team",
-    business: "Business",
-    enterprise: "Enterprise",
-    edu: "Edu",
-  };
-  return known[plan.toLowerCase()] ?? plan;
+  return Object.hasOwn(PLANS, plan) ? PLANS[plan as KnownChatgptPlan] : plan;
 }
 
 export function quotaWindowLabel(window: string): string {

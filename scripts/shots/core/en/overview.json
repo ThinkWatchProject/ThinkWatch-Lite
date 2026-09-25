@@ -58,7 +58,7 @@
       "route": "cursor"
     }
   ],
-  "config_version": "blake3:8cda33aea2d3",
+  "config_version": "blake3:99aaf5e60d80",
   "default_route": "default",
   "groups": [
     {
@@ -211,6 +211,10 @@
       "models": [],
       "name": "chatgpt",
       "oauth": {
+        "account": {
+          "email": "alex@example.com",
+          "plan": "plus"
+        },
         "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
         "endpoint": "https://auth.openai.com/oauth/token",
         "expires_at": "2026-10-04T08:12:40Z"

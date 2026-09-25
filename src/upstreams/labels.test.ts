@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
-import { l1ErrorText, modelFace } from "./labels";
+import { l1ErrorText, modelFace, planLabel } from "./labels";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -83,5 +83,23 @@ describe("链路测速失败的那句话", () => {
 
   it("连原因都没有时也要有一句话", () => {
     expect(l1ErrorText(base)).not.toBe("");
+  });
+});
+
+describe("planLabel", () => {
+  it("names a known plan the way Codex does, renamed plans included", () => {
+    expect(planLabel("plus")).toBe("Plus");
+    expect(planLabel("prolite")).toBe("Pro");
+    expect(planLabel("team")).toBe("Business");
+    expect(planLabel("business")).toBe("Enterprise");
+    expect(planLabel("self_serve_business_prolite")).toBe("Business Premium");
+  });
+
+  it("shows a word it does not know as it came, never as 'unknown'", () => {
+    expect(planLabel("pro_ultra")).toBe("pro_ultra");
+    // 对象原型上的名字不算认得
+    expect(planLabel("constructor")).toBe("constructor");
+    expect(planLabel(null)).toBeNull();
+    expect(planLabel("")).toBeNull();
   });
 });

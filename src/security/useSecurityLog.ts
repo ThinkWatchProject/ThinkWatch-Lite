@@ -54,10 +54,11 @@ export function useSecurityLog(range: Range, tick: number): SecurityLog {
       if (!last) return;
       const p = await api.events({ from_ms: windowStart(range), before: last.id, limit: PAGE });
       // 读的这一会儿列表被重读过（来了新记录）：尾巴已经不是这一页接得上的那一条，
-      // 这一页不接，免得中间缺一段。再点一次就从新的尾巴往下读
+      // 这一页不接，免得中间缺一段。再点一次就从新的尾巴往下读。
+      // 总数和各做法的条数说的是整段时间，哪一页带来的都一样：取新的这一页的
       r.mutate((prev) =>
         prev && prev.events[prev.events.length - 1]?.id === last.id
-          ? { events: [...prev.events, ...p.events], more: p.more }
+          ? { ...p, events: [...prev.events, ...p.events] }
           : (prev ?? p),
       );
     });

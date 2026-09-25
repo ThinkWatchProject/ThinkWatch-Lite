@@ -58,7 +58,7 @@ export const updateView = (): UpdateView => ({ version: APP_VERSION, install: "s
 // ───────────────────────────────────────── 连接
 
 /** 这一版应用配的 core */
-export const CORE_VERSION = "0.47.0";
+export const CORE_VERSION = "0.48.0";
 
 const PROFILES: Profile[] = [
   { id: "local", name: "", local: true, host: null, port: null, addr: null, last_connected_at: NOW - 2 * HOUR },

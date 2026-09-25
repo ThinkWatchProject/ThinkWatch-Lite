@@ -62,8 +62,7 @@ export function mergeHistory(
         next.costEstimated = h.cost_estimated;
       }
       next.translated ??= h.translated ?? undefined;
-      // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
-      next.session = h.session ?? next.session;
+      next.session ??= h.session ?? undefined;
       if (!next.secrets || !next.flagged) {
         const marks = marksFromEvents(h.security);
         next.secrets ??= marks.secrets;
@@ -269,7 +268,7 @@ export function useRequests(ready: boolean) {
   /**
    * 从库里读一遍最近的记录，并进当前列表。
    *
-   * 开窗时读一次；之后每批请求落地再读一次（`settled`），给新落地的行补上会话。
+   * 开窗时读一次；之后每批请求落地再读一次（`settled`），补上事件流没见全的行。
    * 怎么并见 `mergeHistory`：历史只添信息，结局没送到的行按库里补上。
    */
   const pull = useCallback(async () => {
@@ -316,12 +315,11 @@ export function useRequests(ready: boolean) {
   }, [seed, ready]);
 
   /*
-    **落库之后再对一次账。**会话 id 是存储层给的，而事件里只有指纹 ——
-    所以一条请求要等它写进库、再被读回来，才知道自己属于哪次任务。
+    **落库之后再对一次账。**事件流没说全的，库里有：页面挂上之前就开始、又在
+    快照路上结束了的请求，事件流上只见过它的结局，列表里还没有这一行；事件流
+    丢过事件时，丢掉的那些结局也要从库里补。
 
-    `settled` 正是「刚落地的那几行已经在库里了」这个信号，本来就有，
-    只是一直只用来重算概览的聚合。不挂上它的话，这一程里跑出来的请求
-    永远归不了组，得等重开窗口。
+    `settled` 正是「刚落地的那几行已经在库里了」这个信号。
   */
   useEffect(() => {
     if (settled === 0) return;
@@ -443,7 +441,7 @@ export function useRequests(ready: boolean) {
         const open = await call("InFlight", null);
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
-        if (applyInFlight(store.current, open, mark)) publish();
+        if (applyInFlight(store.current, open.requests, mark)) publish();
       } catch {
         // 问不到就和以前一样：等它们结束、落库之后对账时出现
       } finally {

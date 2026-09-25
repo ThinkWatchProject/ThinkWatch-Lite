@@ -14,7 +14,7 @@ import { resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type ChatgptUsage, type ProviderView, type QuotaWindow } from "@/types";
+import { usd, type ProviderView, type QuotaWindow } from "@/types";
 import type { UpstreamStats } from "./api";
 import { slotsByUpstream, type Slot } from "./data";
 import {
@@ -63,7 +63,6 @@ export function UpstreamTable({
   providers,
   stats,
   since,
-  accounts,
   inFlight,
   refreshing,
   focus,
@@ -73,8 +72,6 @@ export function UpstreamTable({
   stats: Resource<UpstreamStats>;
   /** 走势第一格的起点（对齐到整点） */
   since: number;
-  /** 账号类上游问来的账号信息，按上游名。还没问到的就没有 */
-  accounts: Record<string, ChatgptUsage>;
   /** 此刻每个上游在途的请求数 */
   inFlight: ReadonlyMap<string, number>;
   /** 正在手动刷新模型清单的上游 */
@@ -127,7 +124,6 @@ export function UpstreamTable({
               >
                 <NameCell
                   p={p}
-                  account={accounts[p.name]}
                   live={(inFlight.get(p.name) ?? 0) > 0 && !p.disabled}
                   liveCount={inFlight.get(p.name) ?? 0}
                 />
@@ -193,21 +189,11 @@ export function problemsOf(p: ProviderView): { tone: StatusTone; label: string; 
  * 名称一格：标志、名字、套餐与状态，下面一行是协议、地址、出站方式 —— 这一家
  * 在哪、怎么连。地址可能很长（带路径的中转）：截断，悬停看全。
  */
-function NameCell({
-  p,
-  account,
-  live,
-  liveCount,
-}: {
-  p: ProviderView;
-  account?: ChatgptUsage;
-  live: boolean;
-  liveCount: number;
-}) {
+function NameCell({ p, live, liveCount }: { p: ProviderView; live: boolean; liveCount: number }) {
   const t = useText(upstreamTableText);
   const problems = problemsOf(p);
   const problem = problems[0];
-  const plan = planLabel(account?.plan);
+  const plan = planLabel(p.oauth?.account?.plan);
   const tile = <ProviderTile p={p} muted={p.disabled} live={live} />;
   return (
     <TableCell className="max-w-0 py-2">
@@ -255,7 +241,7 @@ function NameCell({
               </Tip>
             )}
           </div>
-          <Where p={p} account={account} />
+          <Where p={p} />
         </div>
       </div>
     </TableCell>
@@ -266,15 +252,17 @@ function NameCell({
  * 这一家在哪、怎么连。
  *
  * 账号类上游的地址永远是同一个，**写出来一行废话** —— 那一格留给邮箱：登了两个
- * 账号时，它是唯一能分辨哪行是哪个的东西。
+ * 账号时，它是唯一能分辨哪行是哪个的东西。邮箱是 core 从这份凭据的令牌里读的，
+ * 不用为了它去问上游。
  */
-function Where({ p, account }: { p: ProviderView; account?: ChatgptUsage }) {
+function Where({ p }: { p: ProviderView }) {
   const t = useText(upstreamTableText);
   const isAccount = p.protocol === "chatgpt";
-  const where = isAccount ? (account?.email ?? null) : shortUrl(p.base_url);
+  const email = p.oauth?.account?.email ?? null;
+  const where = isAccount ? email : shortUrl(p.base_url);
   // 直连是默认，不用说
   const egress = p.proxy === "direct" ? "" : ` · ${t.via(egressLabel(p.proxy))}`;
-  const full = [protocolLabel(p.protocol), isAccount ? account?.email : p.base_url].filter(Boolean).join(" · ");
+  const full = [protocolLabel(p.protocol), isAccount ? email : p.base_url].filter(Boolean).join(" · ");
   return (
     <div className="truncate tw-label text-muted-foreground" title={`${full}${egress}`}>
       {protocolLabel(p.protocol)}
