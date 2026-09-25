@@ -1,53 +1,31 @@
 [
   {
     "candidates": [
-      "anthropic",
-      "relay"
+      "relay",
+      "anthropic"
     ],
     "circuit_open": [],
     "converted": [
       {
         "from": "openai-chat",
-        "provider": "anthropic",
+        "provider": "relay",
         "to": "anthropic"
       },
       {
         "from": "openai-chat",
-        "provider": "relay",
+        "provider": "anthropic",
         "to": "anthropic"
       }
     ],
     "hurts_cache": false,
     "outcome": "route",
     "reason": null,
-    "route": "default",
+    "route": "cursor",
     "rule": "兜底",
     "set": [],
     "skipped": [],
-    "strategy": "fallback",
+    "strategy": "cheapest",
     "trace": [
-      {
-        "mismatch": {
-          "field": "model",
-          "got": "claude-sonnet-5",
-          "want": [
-            "claude-opus-*"
-          ]
-        },
-        "name": "Opus 直连",
-        "verdict": "skipped"
-      },
-      {
-        "mismatch": {
-          "field": "model",
-          "got": "claude-sonnet-5",
-          "want": [
-            "deepseek-*"
-          ]
-        },
-        "name": "DeepSeek 模型",
-        "verdict": "skipped"
-      },
       {
         "mismatch": {
           "field": "model",
@@ -60,33 +38,11 @@
         "verdict": "skipped"
       },
       {
-        "mismatch": {
-          "field": "model",
-          "got": "claude-sonnet-5",
-          "want": [
-            "qwen3-coder:*"
-          ]
-        },
-        "name": "本地模型",
-        "verdict": "skipped"
-      },
-      {
-        "mismatch": {
-          "field": "input_tokens",
-          "got": "8000",
-          "want": [
-            ">200k"
-          ]
-        },
-        "name": "长上下文",
-        "verdict": "skipped"
-      },
-      {
         "effect": "decide",
         "name": "兜底",
         "verdict": "matched"
       }
     ],
-    "via_group": "主力"
+    "via_group": "低价"
   }
 ]

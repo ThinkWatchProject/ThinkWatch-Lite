@@ -3,7 +3,7 @@
 //!
 //! ```sh
 //! cargo run --manifest-path src-tauri/Cargo.toml --example menubar_shots -- \
-//!   --out docs/screenshots [--today <token 数> <费用微分> <请求数> <失败数>]
+//!   --out docs/screenshots [--today <token 数> <费用微分> <请求数> <失败数>] [--now <毫秒>]
 //! ```
 //!
 //! 写出两样：
@@ -15,6 +15,10 @@
 //!
 //! 数据和截图页（scripts/shots/）是同一个场景：今天的用量由 `--today` 传进来，就是概览上
 //! 的那几个数；ChatGPT 额度、正在跑的那一条请求、连接列表和截图页里的一致。
+//!
+//! **时钟也是截图页那一只。**`--now` 是截图页定住的那一刻（`scripts/shots/boot.ts` 的
+//! `NOW`）：额度还有多久重置、正在跑的那一条跑了几秒、上一版配置是哪天的，都从它算，
+//! 所以哪天拍出来都一样。不给就用同一刻（本地时间 2026-09-25 16:42:07）。
 
 #[cfg(target_os = "macos")]
 fn main() {
@@ -52,10 +56,23 @@ fn main() {
     NSApplication::sharedApplication(mtm)
         .setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
+    let now = arg("--now", 1)
+        .map(|v| v[0].parse::<u64>().expect("--now 要一个毫秒数"))
+        .unwrap_or_else(|| {
+            // 和 boot.ts 一样按本地时间取这一刻，换了时区拍出来的字也一样
+            // SAFETY: tm 是只含整数和指针的 C 结构，全零是合法的值
+            let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+            tm.tm_year = 2026 - 1900;
+            tm.tm_mon = 8;
+            tm.tm_mday = 25;
+            tm.tm_hour = 16;
+            tm.tm_min = 42;
+            tm.tm_sec = 7;
+            tm.tm_isdst = -1;
+            // SAFETY: 传进去的是上面那一块 tm，mktime 只按本地时区换算、改写它
+            let secs = unsafe { libc::mktime(&mut tm) };
+            u64::try_from(secs).expect("本地时间换算不出") * 1000
+        });
     const MIN: u64 = 60_000;
     const HOUR: u64 = 60 * MIN;
     let snapshot = || model::Snapshot {

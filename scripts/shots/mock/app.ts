@@ -1,7 +1,6 @@
 // 应用的 Rust 侧自己管的东西：提醒、外观、语言、菜单栏、开机启动、更新、连接。
 import type { Notice } from "@/Notices";
-import type { NoticeMode } from "@/NoticeSettings";
-import type { MenubarStyle } from "@/MenubarSettings";
+import type { LanguageView, MenubarStyle, NoticeMode, Theme, ThemeView } from "@/settings/api";
 import type { UpdateView } from "@/updateFlow";
 import type { ConnView, LinkState, Profile, Tested } from "@/connection/api";
 import { P } from "./params";
@@ -44,9 +43,9 @@ export const noticeMode: NoticeMode = "system";
 // ───────────────────────────────────────── 外观、语言、菜单栏、开机启动
 
 /** 跟随系统。系统是深是浅由截图程序给 WKWebView 设的外观决定 */
-const sysTheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-export const themeView = () => ({ current: sysTheme, setting: null, system: sysTheme });
-export const langView = () => ({ current: P.lang, setting: null, system: P.lang });
+const sysTheme: Theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+export const themeView = (): ThemeView => ({ current: sysTheme, setting: null, system: sysTheme });
+export const langView = (): LanguageView => ({ current: P.lang, setting: null, system: P.lang });
 export const menubar: MenubarStyle = "full";
 export const autostart = true;
 

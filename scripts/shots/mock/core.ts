@@ -1,7 +1,7 @@
 // 界面能调的每一个控制面端点（src/control.ts 的 WEBVIEW_ENDPOINTS）。
 //
 // 类型是按端点名映射出来的：**core 加了端点、改了请求或响应的形状，这里就编译不过**
-// （`pnpm shots` 第一步就是对这个目录跑 tsc）。截图只读不写，改配置的端点一律拒绝 ——
+// （`pnpm typecheck` 连这个目录一起查，CI 上就拦下了）。截图只读不写，改配置的端点一律拒绝 ——
 // 场景里要是点到了保存，拍出来的是一条报错，而不是一张假装保存成功的图。
 import type { WebviewEndpoint } from "@/control";
 import type { Endpoints, L1Result } from "@/types";

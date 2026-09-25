@@ -55,10 +55,10 @@
       "key": "tw-e6…6td6",
       "max_concurrent": null,
       "name": "cursor",
-      "route": null
+      "route": "cursor"
     }
   ],
-  "config_version": "blake3:74e6e02aa036",
+  "config_version": "blake3:4daf5fdd341b",
   "default_route": "default",
   "groups": [
     {
@@ -66,6 +66,17 @@
       "hurts_cache": false,
       "kind": "fallback",
       "name": "主力",
+      "providers": [
+        "anthropic",
+        "relay"
+      ],
+      "session_affinity": true
+    },
+    {
+      "builtin": false,
+      "hurts_cache": false,
+      "kind": "cheapest",
+      "name": "低价",
       "providers": [
         "anthropic",
         "relay"
@@ -147,6 +158,10 @@
         {
           "group": "主力",
           "kind": "group"
+        },
+        {
+          "group": "低价",
+          "kind": "group"
         }
       ]
     },
@@ -174,6 +189,10 @@
       "references": [
         {
           "group": "主力",
+          "kind": "group"
+        },
+        {
+          "group": "低价",
           "kind": "group"
         }
       ]
@@ -298,6 +317,11 @@
         {
           "kind": "rule_target",
           "route": "default",
+          "rule": "Gemini 模型"
+        },
+        {
+          "kind": "rule_target",
+          "route": "cursor",
           "rule": "Gemini 模型"
         }
       ]
@@ -489,6 +513,40 @@
           "phase_two": false,
           "shadowed": false,
           "to": "chatgpt"
+        }
+      ]
+    },
+    {
+      "builtin": false,
+      "clients": [
+        "cursor"
+      ],
+      "default": false,
+      "has_catch_all": true,
+      "name": "cursor",
+      "rules": [
+        {
+          "catch_all": false,
+          "conditions": [
+            {
+              "field": "model",
+              "values": [
+                "gemini-*"
+              ]
+            }
+          ],
+          "name": "Gemini 模型",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "gemini"
+        },
+        {
+          "catch_all": true,
+          "conditions": [],
+          "name": "兜底",
+          "phase_two": false,
+          "shadowed": false,
+          "to": "低价"
         }
       ]
     }

@@ -37,8 +37,26 @@ import { P } from "./params";
 import { HOUR, MIN, NOW, clone, msg } from "./util";
 
 const en = P.lang === "en";
-/** JSON 推出来的类型是宽的（字符串而不是那几个取值），按 core 的类型读 */
-const as = <T>(x: unknown) => x as T;
+
+/** 一个类型「放宽」之后的样子：`"free" | "per-token"` 这类取值放宽成 string，结构不变 */
+type Widen<T> = T extends string
+  ? string
+  : T extends number
+    ? number
+    : T extends boolean
+      ? boolean
+      : T extends readonly (infer U)[]
+        ? Widen<U>[]
+        : T extends object
+          ? { [K in keyof T]: Widen<T[K]> }
+          : T;
+
+/**
+ * 按 core 的类型读 JSON。JSON 推出来的类型是宽的（字符串而不是那几个取值），不能直接当
+ * core 的类型用，**但先按放宽的类型核对一遍结构**：升级了钉住的 core、类型多了一个字段，
+ * 而答案没有用 `oracle.sh` 重新生成，这里就编译不过
+ */
+const as = <T>(x: Widen<T>) => x as T;
 const FX = {
   overview: as<Overview>(en ? OV_EN : OV_ZH),
   keys: as<ClientView[]>(en ? KEYS_EN : KEYS_ZH),
@@ -58,6 +76,7 @@ export const N = {
   catchAll: en ? "catch-all" : "兜底",
   qwen: en ? "qwen" : "Qwen 模型",
   main: en ? "main" : "主力",
+  budget: en ? "budget" : "低价",
   customer: en ? "customer-id" : "客户编号",
 };
 

@@ -15,12 +15,14 @@ async function main() {
   const q = new URLSearchParams(location.search);
   if (q.has("list")) {
     window.__shotList = SCENES.map((s) => s.id);
-    // 菜单栏那几张图（src-tauri/examples/menubar_shots.rs）上的「今天」：和概览同一个口径
+    // 菜单栏那几张图（src-tauri/examples/menubar_shots.rs）上的「今天」：和概览同一个口径。
+    // 连同定住的时钟一起交过去，菜单上「还有多久重置」「跑了几秒」按同一刻算
     const { summary } = await import("./mock/traffic");
     const midnight = new Date(NOW);
     midnight.setHours(0, 0, 0, 0);
     const t = summary(midnight.getTime());
     window.__shotToday = {
+      now: NOW,
       tokens: t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_write_tokens,
       cost_micros: t.cost_micros_exact + t.cost_micros_estimated,
       requests: t.requests,
@@ -35,9 +37,18 @@ async function main() {
   for (const [k, v] of Object.entries(scene.storage ?? {})) localStorage.setItem(k, v);
   const { command } = await import("./mock/commands");
   mockWindows("main");
-  mockIPC((cmd, args) => track(command(cmd, (args ?? {}) as Record<string, unknown>)), {
-    shouldMockEvents: true,
-  });
+  // **答不上来的调用都报出来。**界面多半会接住失败、画一个「—」或一行报错，页面照样说
+  // 「可以拍了」—— 不报的话，拍下来的就是一张缺了一块的图。报了，截图程序就停在这一张
+  mockIPC(
+    (cmd, args) =>
+      track(
+        command(cmd, (args ?? {}) as Record<string, unknown>).catch((e: unknown) => {
+          console.error(`IPC ${cmd === "call" ? `call ${String((args as { endpoint?: unknown }).endpoint)}` : cmd} failed:`, e);
+          throw e;
+        }),
+      ),
+    { shouldMockEvents: true },
+  );
   // mock 的 unlisten 读 `args.id`，而 @tauri-apps/api 传的是 `eventId`：不改的话，卸载了的
   // 监听一直挂着，之后每发一个事件都报一句「Couldn't find callback id」
   {

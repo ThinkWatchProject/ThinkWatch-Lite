@@ -137,8 +137,8 @@ pnpm shots --langs en --themes dark
 This runs on macOS only, because the images show the macOS app: the
 pages are rendered by the system WKWebView, as in the app, and framed as
 a macOS window. It needs the Xcode command line tools (`swiftc`) and
-`src-tauri/resources/twcore` (see the section above), since the menu bar
-images are drawn by the app's own code.
+`src-tauri/resources/twcore`, which `bash src-tauri/scripts/fetch-core.sh`
+downloads, since the menu bar images are drawn by the app's own code.
 
 How it works, in the order `scripts/shots/shots.sh` runs it:
 
@@ -150,7 +150,8 @@ How it works, in the order `scripts/shots/shots.sh` runs it:
   without it.
 - **Deterministic.** The clock is fixed at Friday 2026-09-25 16:42:07
   local time and the traffic is generated from a fixed seed, so two runs
-  produce the same pages.
+  produce the same pages. The menu bar images use the same clock: the
+  page hands its fixed time to `menubar_shots` as `--now`.
 - **Core's own answers.** The configuration views (upstreams, keys,
   routes, security rules, prices, dry runs) are what the pinned core
   returns for `scripts/shots/core/config.{en,zh}.yaml`, stored as JSON in
@@ -160,16 +161,25 @@ How it works, in the order `scripts/shots/shots.sh` runs it:
   Sentences that core or the Rust side produce carry their real message
   codes and English text, so the Chinese interface translates them
   through `src/i18n/core.zh.json` exactly as it does in the app.
-- **The mock is type-checked first.** Endpoint handlers are typed from
-  `src/generated/tw-api.ts`, so a protocol change stops the run at the
-  first step instead of producing pages with missing data.
+- **The mock is type-checked with the app.** `pnpm typecheck`, and so
+  CI, also checks `scripts/shots/`. Every Tauri command and control-plane
+  endpoint handler returns the type the interface reads (from
+  `src/generated/` or the page's own API module), and the stored core
+  answers are checked against the core types, so a protocol change fails
+  the check rather than producing pages with missing data. When a newer
+  core tag changes those types, run `oracle.sh` again. At capture time, a
+  command the mock does not answer, or one called without the arguments it
+  expects, stops the run.
 - **Scenes** are listed in `scripts/shots/scenes.ts`: which page, local or
   remote core, and what to open before the picture is taken.
   `scripts/shots/capture.swift` loads each one in an off-screen WKWebView,
   waits until the page reports it is ready with no console errors and two
-  snapshots in a row are identical, and frames it. The sidebar is shown in
-  its solid colour: the translucent material the app uses on macOS is
-  drawn by the window server and cannot be captured off-screen.
+  snapshots in a row are identical, and frames it. A scene with a table
+  that does not fit the window stops the run instead of being captured
+  with its last columns cut off; such a scene can collapse the sidebar, as
+  the MCP scene does. The sidebar is shown in its solid color: the translucent
+  material the app uses on macOS is drawn by the window server and cannot
+  be captured off-screen.
   `src-tauri/examples/menubar_shots.rs` draws the menu bar.
   `scripts/shots/finish.mjs` writes the results.
 

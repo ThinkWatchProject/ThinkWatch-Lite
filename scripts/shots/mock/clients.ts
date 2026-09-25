@@ -355,7 +355,7 @@ export function scanReport(): ScanReport {
       {
         // 远端型：上下文会发到那台服务器。多半是用户有意加的，所以是低
         level: "low",
-        rule: "remote",
+        rule: "remote-mcp",
         kind: "mcp",
         client: "claude-code",
         path: abs("~/.claude.json"),

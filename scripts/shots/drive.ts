@@ -118,7 +118,7 @@ declare global {
     __shot: ShotState;
     /** `index.html?list`：有哪些场景 */
     __shotList?: string[];
-    /** `index.html?list`：今天的用量，菜单栏那几张图用 */
-    __shotToday?: { tokens: number; cost_micros: number; requests: number; failed: number };
+    /** `index.html?list`：定住的「现在」和今天的用量，菜单栏那几张图用 */
+    __shotToday?: { now: number; tokens: number; cost_micros: number; requests: number; failed: number };
   }
 }

@@ -42,12 +42,14 @@ echo "· 拍界面"
 "$cache/bin/capture" "$cache/site" "$raw" --today "$cache/today.json" "$@"
 
 echo "· 画菜单栏"
-today=$(node -e '
+# 截图页定住的「现在」和今天的用量：菜单上的数、倒计时和概览、截图页是同一刻的
+read -r now today < <(node -e '
   const t = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-  console.log(t.tokens, t.cost_micros, t.requests, t.failed);
+  console.log(t.now, t.tokens, t.cost_micros, t.requests, t.failed);
 ' "$cache/today.json")
 # shellcheck disable=SC2086 # 四个数，按空格拆开正是要的
-cargo run --quiet --manifest-path src-tauri/Cargo.toml --example menubar_shots -- --out "$raw" --today $today
+cargo run --quiet --manifest-path src-tauri/Cargo.toml --example menubar_shots -- \
+  --out "$raw" --now "$now" --today $today
 
 echo "· 收进 docs/screenshots/"
 node scripts/shots/finish.mjs "$raw" docs/screenshots

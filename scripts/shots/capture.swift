@@ -104,6 +104,21 @@ let consoleHook = """
   })();
   """
 
+/// 页面上放不下的表格：表格外那一层能横着滚，而内容比它宽。拍出来就是右边几列被切掉的
+/// 一张图，所以这样的场景不拍，报出来（每一处是「要多宽 > 有多宽」，单位是点）
+let clippedTables = """
+  [...document.querySelectorAll("table")].flatMap((t) => {
+    const r = t.getBoundingClientRect();
+    if (r.width === 0) return [];
+    for (let el = t.parentElement; el; el = el.parentElement) {
+      const o = getComputedStyle(el).overflowX;
+      if (o !== "auto" && o !== "scroll" && o !== "hidden") continue;
+      return el.scrollWidth > el.clientWidth + 1 ? [`${el.scrollWidth} > ${el.clientWidth}`] : [];
+    }
+    return r.right > innerWidth + 1 ? [`${Math.ceil(r.right)} > ${innerWidth}`] : [];
+  })
+  """
+
 // MARK: - 拍
 
 struct PageState: Decodable {
@@ -179,6 +194,11 @@ final class Shooter {
     for line in state.log { print("    \(line)") }
     if state.shot?.state == "error" { throw Failure(state.shot?.message ?? "场景出错") }
     if state.log.contains(where: { $0.hasPrefix("error") }) { throw Failure("页面报了错（见上）") }
+    if let clipped = try await web.evaluateJavaScript(clippedTables) as? [String], !clipped.isEmpty {
+      throw Failure(
+        "表格在 \(Int(pageW)) 点宽的窗口里放不下（\(clipped.joined(separator: "，"))），拍出来右边是切掉的。"
+          + "这一个场景可以收起侧栏：scenes.ts 里给它 `storage: { rail: \"collapsed\" }`")
+    }
     if let probe {
       let out = try? await web.evaluateJavaScript(probe)
       print("    \(out.map { "\($0)" } ?? "（没有结果）")")

@@ -19,7 +19,7 @@ export interface Scene {
   remote?: boolean;
   /** `homelab` 这条连接还没存：拍的就是添加它的那一刻 */
   adding?: boolean;
-  /** 页面自己记在 localStorage 里的偏好（概览的时间范围……），挂载之前写进去 */
+  /** 页面自己记在 localStorage 里的偏好（概览的时间范围、侧栏收起……），挂载之前写进去 */
   storage?: Record<string, string>;
   /** 页面取完数之后要做的事：点开弹层、填表。做完之后才拍 */
   setup?: () => Promise<void>;
@@ -34,11 +34,13 @@ export const SCENES: Scene[] = [
   { id: "upstreams", page: "upstreams" },
   { id: "routing", page: "routing" },
   { id: "security", page: "security" },
-  { id: "mcp", page: "mcp" },
+  // 侧栏收起来：六个客户端一列一个，展开侧栏时这张表比内容区宽，右边两列要横着滚才看得到
+  { id: "mcp", page: "mcp", storage: { rail: "collapsed" } },
   { id: "settings", page: "settings" },
   {
     // 路由页的试算：Cursor 那把密钥用 OpenAI 的格式要 Sonnet，会走到哪儿、为什么、
-    // 要不要转换格式。和 core/requests.json 里的那一条是同一个请求
+    // 要不要转换格式（它走自己的路由，Sonnet 进按价格排的「budget」组，打折的中转排在
+    // 前面）。和 core/requests.json 里的那一条是同一个请求
     id: "dry-run",
     page: "routing",
     setup: async () => {
@@ -75,7 +77,8 @@ export const SCENES: Scene[] = [
       type(await waitFor<HTMLInputElement>("#conn-name"), "homelab");
       type(await waitFor<HTMLInputElement>("#conn-host"), "192.168.1.40");
       type(await waitFor<HTMLInputElement>("#conn-port"), "24817");
-      type(await waitFor<HTMLInputElement>("#conn-key"), "8c1f4e0a7d2b96f3a5e8c0d4b7f1a3e62d9c5b8f0e4a7d1c3b6f9e2a5d8c0b7f");
+      // 密码框里只看得见点。值是假的，中间写成 0，和示例配置里的钥匙一样
+      type(await waitFor<HTMLInputElement>("#conn-key"), "8c1f400000000000000000000000000000000000000000000000000000000b7f");
       (document.activeElement as HTMLElement | null)?.blur();
       const dialog = await waitFor<HTMLElement>("[role=dialog]");
       click(await waitFor(() => byText(t.test, "button", dialog)));
