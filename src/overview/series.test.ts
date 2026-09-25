@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CostBucketGroup, Dashboard, Summary } from "@/types";
+import type { CostBucket, CostBucketGroup, Dashboard, Summary } from "@/types";
 import {
   buildTrend,
   cacheByModel,
@@ -11,9 +11,11 @@ import {
   liveTicks,
   modelGlyph,
   niceCeil,
+  rankCost,
+  type RankRow,
 } from "./series";
 import { overviewText } from "./overview.i18n";
-import { LIVE_BUCKET_MS } from "./useLive";
+import { LIVE_BUCKET_MS, type LiveSample } from "./useLive";
 
 const t = overviewText.zh;
 const HOUR = 3_600_000;
@@ -68,12 +70,25 @@ function group(at_ms: number, name: string, tokens: number, cost = 0, requests =
   };
 }
 
+/** 各格按模型加起来，和 core 的 `/summary/buckets` 对得上 */
 function dashboard(since: number, groups: CostBucketGroup[]): Dashboard {
-  const buckets = new Map<number, { requests: number; cost: number }>();
+  const buckets = new Map<number, CostBucket>();
   for (const g of groups) {
-    const b = buckets.get(g.at_ms) ?? { requests: 0, cost: 0 };
+    const b = buckets.get(g.at_ms) ?? {
+      at_ms: g.at_ms,
+      requests: 0,
+      failed: 0,
+      cost_micros_exact: 0,
+      cost_micros_estimated: 0,
+      unpriced_requests: 0,
+      no_usage_requests: 0,
+    };
     b.requests += g.requests;
-    b.cost += g.cost_micros_exact;
+    b.failed += g.failed;
+    b.cost_micros_exact += g.cost_micros_exact;
+    b.cost_micros_estimated += g.cost_micros_estimated;
+    b.unpriced_requests += g.unpriced_requests;
+    b.no_usage_requests += g.no_usage_requests;
     buckets.set(g.at_ms, b);
   }
   return {
@@ -81,18 +96,26 @@ function dashboard(since: number, groups: CostBucketGroup[]): Dashboard {
     latency: [],
     latency_by_provider: [],
     storage: null,
-    buckets: [...buckets].map(([at_ms, b]) => ({
-      at_ms,
-      requests: b.requests,
-      failed: 0,
-      cost_micros_exact: b.cost,
-      cost_micros_estimated: 0,
-      unpriced_requests: 0,
-      no_usage_requests: 0,
-    })),
+    buckets: [...buckets.values()],
     buckets_by_model: groups,
     prev: null,
     since_ms: since,
+  };
+}
+
+/** 排行里的一行，只写要测的那几项 */
+function rank(over: Partial<RankRow>): RankRow {
+  return {
+    name: "m",
+    merged: 0,
+    tokens: 1000,
+    cost: 0,
+    estimated: 0,
+    unpriced: 0,
+    noUsage: 0,
+    requests: 1,
+    color: "var(--chart-1)",
+    ...over,
   };
 }
 
@@ -271,6 +294,141 @@ describe("趋势图和模型排行", () => {
       expect(tr.grid.at(-1)?.at_ms).toBe(now);
       expect(tr.grid.at(-3)?.failed).toBe(1);
       expect(tr.tips.at(-1)?.note).toBeUndefined();
+    });
+  });
+});
+
+/**
+ * 排行里费用那一格。**「没有价格」「确实不花钱」「没有用量」是三件事**，都写成
+ * 一个 `$0` 或一个「—」的话，读的人分不出哪一行该去补价。
+ */
+describe("排行的费用", () => {
+  it("全都算出来了：写金额，没有悬停；合计是零就写 $0（不计费的上游）", () => {
+    expect(rankCost(rank({ cost: 1_234 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+    expect(rankCost(rank({ cost: 0 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+  });
+
+  it("有用量、一条都没算出费用：「无法计价」，不写 $0", () => {
+    const c = rankCost(rank({ unpriced: 5 }), t);
+    expect(c.kind).toBe("unpriced");
+    expect(c.notes).toEqual([t.rankUnpriced(5)]);
+  });
+
+  it("连用量都没有：「无用量」", () => {
+    const c = rankCost(rank({ tokens: 0, noUsage: 2 }), t);
+    expect(c.kind).toBe("noUsage");
+    expect(c.notes).toEqual([t.rankNoUsage(2)]);
+  });
+
+  it("两样都有、一分钱都没算出来：算「无法计价」—— 补价修得好的那一种优先说", () => {
+    const c = rankCost(rank({ unpriced: 1, noUsage: 3 }), t);
+    expect(c.kind).toBe("unpriced");
+    expect(c.notes).toEqual([t.rankUnpriced(1), t.rankNoUsage(3)]);
+  });
+
+  it("算出了一部分：金额是下限，写「≥」，缺的那几条写在悬停里", () => {
+    expect(rankCost(rank({ cost: 500, unpriced: 2 }), t)).toEqual({
+      kind: "amount",
+      prefix: "≥",
+      notes: [t.rankUnpriced(2)],
+    });
+    expect(rankCost(rank({ cost: 500, noUsage: 1 }), t)).toMatchObject({ prefix: "≥", notes: [t.rankNoUsage(1)] });
+  });
+
+  it("含估算：带「~」，估算的数写在悬停里；两样都有是「≥~」", () => {
+    expect(rankCost(rank({ cost: 500, estimated: 120 }), t)).toEqual({
+      kind: "amount",
+      prefix: "~",
+      notes: [t.estimated("$0.0001")],
+    });
+    expect(rankCost(rank({ cost: 500, estimated: 120, unpriced: 1 }), t)).toMatchObject({
+      prefix: "≥~",
+      notes: [t.estimated("$0.0001"), t.rankUnpriced(1)],
+    });
+  });
+
+  describe("从哪儿数出来", () => {
+    const since = new Date(2026, 8, 24, 0, 0).getTime();
+    const now = since + 3 * HOUR;
+    const base = { live: false, bucketMs: HOUR, rangeMs: DAY, samples: [], fails: [], now, prevStack: [], t };
+    const at = since + HOUR;
+    const g = (name: string, over: Partial<CostBucketGroup>): CostBucketGroup => ({ ...group(at, name, 1000), ...over });
+
+    it("历史档：每个模型自己带着无法计价、无用量的条数和估算的金额，跨格加起来", () => {
+      const d = dashboard(since, [
+        g("priced", { cost_micros_exact: 900, cost_micros_estimated: 100 }),
+        g("priced", { at_ms: at + HOUR, cost_micros_exact: 50 }),
+        g("unpriced", { unpriced_requests: 4, requests: 4 }),
+        g("free", {}),
+        g("silent", { input_tokens: 0, no_usage_requests: 2, requests: 2 }),
+      ]);
+      const by = new Map(buildTrend({ ...base, d, by: "token" }).ranking.map((r) => [r.name, r]));
+      expect(by.get("priced")).toMatchObject({ cost: 1050, estimated: 100, unpriced: 0, noUsage: 0 });
+      expect(by.get("unpriced")).toMatchObject({ cost: 0, unpriced: 4, noUsage: 0 });
+      expect(by.get("free")).toMatchObject({ cost: 0, unpriced: 0, noUsage: 0 });
+      expect(by.get("silent")).toMatchObject({ tokens: 0, noUsage: 2 });
+      expect(rankCost(by.get("unpriced")!, t).kind).toBe("unpriced");
+      expect(rankCost(by.get("free")!, t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+      expect(rankCost(by.get("silent")!, t).kind).toBe("noUsage");
+    });
+
+    it("合并的「其他」把几项的条数加在一起：里面有无法计价的，金额就是下限", () => {
+      const d = dashboard(
+        since,
+        ["a", "b", "c", "d", "e"].map((m, i) => g(m, { input_tokens: (10 - i) * 1000, cost_micros_exact: 100 })).concat([
+          g("f", { input_tokens: 10, cost_micros_exact: 30 }),
+          g("g", { input_tokens: 5, unpriced_requests: 1 }),
+        ]),
+      );
+      const other = buildTrend({ ...base, d, by: "token" }).ranking.at(-1)!;
+      expect(other).toMatchObject({ merged: 2, cost: 30, unpriced: 1 });
+      expect(rankCost(other, t).prefix).toBe("≥");
+    });
+
+    it("实时档：价钱到了却是空的算无法计价，还没到的不算", () => {
+      const live = { ...base, live: true, rangeMs: 10 * 60_000, d: dashboard(since, []) };
+      const s = (id: number, model: string, over: Partial<LiveSample>): LiveSample => ({ id, at: now - 30_000, model, tokens: 100, ...over });
+      const tr = buildTrend({
+        ...live,
+        by: "cost",
+        samples: [
+          s(1, "a", { cost: 300 }),
+          s(2, "a", { cost: 200, estimated: true }),
+          s(3, "b", { cost: null }),
+          // 刚落地，价钱还在路上
+          s(4, "b", {}),
+          s(5, "c", { cost: 0 }),
+        ],
+      });
+      const by = new Map(tr.ranking.map((r) => [r.name, r]));
+      expect(by.get("a")).toMatchObject({ cost: 500, estimated: 200, unpriced: 0, requests: 2 });
+      expect(by.get("b")).toMatchObject({ cost: 0, unpriced: 1, requests: 2 });
+      expect(by.get("c")).toMatchObject({ cost: 0, unpriced: 0 });
+    });
+
+    it("费用口径的悬停：金额之外的条数跟在请求数后面，金额写成下限", () => {
+      const d = dashboard(since, [
+        g("a", { cost_micros_exact: 5_000, requests: 3, failed: 1 }),
+        g("b", { unpriced_requests: 2, requests: 2 }),
+        g("c", { no_usage_requests: 1, requests: 1 }),
+      ]);
+      const tip = buildTrend({ ...base, d, by: "cost" }).tips[1];
+      expect(tip).toEqual({
+        title: fmtBucket(at, HOUR),
+        value: "≥$0.0050",
+        note: [t.tipRequests(6, 1), t.unpriced(2), t.noUsage(1)].join(t.listSep),
+      });
+      // token 口径说的是用量，和价钱无关
+      expect(buildTrend({ ...base, d, by: "token" }).tips[1]?.note).toBe(t.tipRequests(6, 1));
+    });
+
+    it("一格里一分钱都没算出来：合计写成词，不写「≥$0」", () => {
+      const only = (over: Partial<CostBucketGroup>) =>
+        buildTrend({ ...base, d: dashboard(since, [g("x", over)]), by: "cost" }).tips[1]?.value;
+      expect(only({ unpriced_requests: 1 })).toBe(t.unpricedCell);
+      expect(only({ input_tokens: 0, no_usage_requests: 1 })).toBe(t.noUsageCell);
+      // 不计费：真的是零
+      expect(only({})).toBe("$0");
     });
   });
 });

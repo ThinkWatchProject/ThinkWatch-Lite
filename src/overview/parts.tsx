@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -84,22 +84,40 @@ export function LinkRow({
 
 /**
  * 一段可以点的字（「6 次失败」「3 条无法计价」）。悬停出下划线，键盘同样能打开。
+ *
+ * **别的属性原样落到这个 span 上**：套在 `Tip` 里时，悬停提示的触发器把指针、焦点的
+ * 处理和 ref 交给它，吞掉的话提示永远不出来。
+ *
+ * 点击和按键只打开它自己，**不再往上冒泡**：它放在一整行都能点的排行里时（排行里
+ * 「无法计价」那一格），那一行不该跟着再打开一次。
  */
 export function LinkText({
   onOpen,
   className,
   children,
-}: {
+  onClick,
+  onKeyDown,
+  ...rest
+}: Omit<ComponentProps<"span">, "role" | "tabIndex"> & {
   onOpen: () => void;
-  className?: string;
   children: ReactNode;
 }) {
+  const activate = onActivate(onOpen);
   return (
     <span
+      {...rest}
       role="link"
       tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={onActivate(onOpen)}
+      onClick={(e) => {
+        onClick?.(e);
+        e.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        onKeyDown?.(e);
+        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        activate(e);
+      }}
       className={cn(
         "cursor-pointer rounded-sm underline-offset-2 outline-none transition-colors duration-(--motion-fast) hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-ring/40",
         className,
