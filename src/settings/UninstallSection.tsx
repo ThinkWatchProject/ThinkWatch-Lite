@@ -15,7 +15,10 @@ import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
+import { StatusDot } from "@/ui/status-dot";
+import type { UninstallStep } from "@/types";
 import { useResource } from "@/lib/resource";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -30,7 +33,7 @@ import { settingsText } from "./SettingsPage.i18n";
  * 最近一次卸载每一步的结果。**放在模块里**：切到别的页再回来，这一节还记得已经
  * 卸载过（这之后用户多半就去把应用移到废纸篓了）。
  */
-let lastLog: string[] | null = null;
+let lastLog: UninstallStep[] | null = null;
 
 /**
  * 完全卸载。
@@ -57,7 +60,7 @@ export function UninstallSection({ remote }: { remote: RemoteCore | null }) {
           label={t.uninstallTitle}
           description={
             <>
-              {log ? (log.at(-1) ?? t.uninstalledRow) : t.uninstallIntro(em)}
+              {log ? (log.at(-1)?.text ?? t.uninstalledRow) : t.uninstallIntro(em)}
               {remote && !log && <span className="mt-1 block">{rt.uninstallServer(remote.name)}</span>}
             </>
           }
@@ -81,9 +84,13 @@ export function UninstallSection({ remote }: { remote: RemoteCore | null }) {
   );
 }
 
-type Stage = { kind: "ask" } | { kind: "running" } | { kind: "done"; log: string[] } | { kind: "failed"; error: unknown };
+type Stage =
+  | { kind: "ask" }
+  | { kind: "running" }
+  | { kind: "done"; log: UninstallStep[] }
+  | { kind: "failed"; error: unknown };
 
-function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (log: string[]) => void }) {
+function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (log: UninstallStep[]) => void }) {
   const t = useText(settingsText);
   const common = useText(commonText);
   const [drop, setDrop] = useState(false);
@@ -97,6 +104,8 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
   const adopted = clients.data?.clients.filter((c) => c.adopted_at_ms !== null).map((c) => c.name);
   const running = stage.kind === "running";
   const done = stage.kind === "done";
+  /** 没做成的几步。**标题按它说**：有一步没做成还写「卸载完成」，用户就不会往下看是哪一步 */
+  const failed = stage.kind === "done" ? stage.log.filter((s) => !s.ok).length : 0;
 
   async function run() {
     setStage({ kind: "running" });
@@ -114,16 +123,22 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
     <AlertDialog open onOpenChange={(o) => !o && !running && onClose()}>
       <AlertDialogContent className="data-[size=default]:sm:max-w-[440px]">
         <AlertDialogHeader>
-          <AlertDialogTitle className="tw-title">{done ? t.uninstalled : t.uninstallTitle}</AlertDialogTitle>
+          <AlertDialogTitle className="tw-title">
+            {!done ? t.uninstallTitle : failed > 0 ? t.uninstalledWithFailures(failed) : t.uninstalled}
+          </AlertDialogTitle>
           {!done && <AlertDialogDescription>{t.willDo}</AlertDialogDescription>}
         </AlertDialogHeader>
 
         {stage.kind === "done" ? (
           <ul className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface/45 px-3.5 py-3 tw-body">
-            {stage.log.map((line, i) => (
+            {stage.log.map((step, i) => (
               <li key={i} className="flex gap-2.5 motion-fade">
-                <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full bg-muted-foreground" />
-                <span className="min-w-0 break-words select-text">{line}</span>
+                {step.ok ? (
+                  <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full bg-muted-foreground" />
+                ) : (
+                  <StatusDot tone="error" className="mt-[0.45em] shrink-0" label={t.stepFailed} />
+                )}
+                <span className={cn("min-w-0 break-words select-text", !step.ok && "text-destructive")}>{step.text}</span>
               </li>
             ))}
           </ul>
