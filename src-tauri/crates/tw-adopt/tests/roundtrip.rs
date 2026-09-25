@@ -601,6 +601,57 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
     assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), DSH_CREDS);
 }
 
+/// dsh 自己写出来的几种形状：新建的补丁是 `[]`，删空了的 `refs` 是 `{}`，行里的
+/// `config` 可能是行内的。接管再还原，两份文件**一个字节都不变**：还原之后补丁
+/// 不能是空文件（dsh 不认），`refs` 里补的那一项得摘得回去
+#[test]
+fn dsh_shapes_dsh_writes_itself_come_back_exactly() {
+    for (patch, creds) in [
+        ("[]\n", "version: 1\nrefs: {}\n"),
+        (
+            "# 补丁\n[]\n",
+            "version: 1\nrefs: {OTHER: x}\nrecords: {}\n",
+        ),
+        (
+            "- id: llm-deepseek\n  config: {thinking: high}\n",
+            "version: 1\nrefs: {}\n",
+        ),
+    ] {
+        let b = bed("dsh", patch);
+        std::fs::write(dsh_home(&b).join(".credentials.yaml"), creds).unwrap();
+        let c = client("dsh");
+        let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+        assert!(read(&dsh_home(&b).join(".credentials.yaml")).contains("THINKWATCH_API_KEY"));
+
+        let r = plan_restore(&c, &b.home).unwrap();
+        apply_restore(&c, &r, &b.backups).unwrap();
+        assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), patch);
+        assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), creds);
+    }
+}
+
+/// 接管期间用户在我们那一行后面加了一条 `insert:`：还原照样过得去，那一条留着
+#[test]
+fn dsh_restores_with_a_row_the_user_added_after_ours() {
+    let b = bed("dsh", "- id: a\n");
+    std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let path = dsh_home(&b).join("cordis.patch.yml");
+    let mut t = read(&path);
+    t.push_str("- insert:\n    - id: x\n      name: y\n");
+    std::fs::write(&path, t).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&path),
+        "- id: a\n- insert:\n    - id: x\n      name: y\n"
+    );
+}
+
 #[test]
 fn dsh_is_left_untouched_when_the_second_file_cannot_be_written() {
     // 凭据文件不是 dsh 认的形状（顶层是个列表）：一个字节都不写，补丁也不写

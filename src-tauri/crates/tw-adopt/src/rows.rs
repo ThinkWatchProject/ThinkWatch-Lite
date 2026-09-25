@@ -222,13 +222,20 @@ pub fn remove(text: &str, path: &[&str]) -> Result<String, RErr> {
         return Ok(text.to_string());
     };
     if keys.is_empty() {
-        return Ok(tw_yaml::remove(text, &[], i)?);
+        let out = tw_yaml::remove(text, &[], i)?;
+        // 删完一行都不剩：留下一个 `[]`。空文件、只有注释的文件 dsh 都不认
+        // （「must be a top-level YAML array」），而它自己建这个文件时写的就是 `[]`
+        if matches!(top(&out, &tw_yaml::nodes(&out)?)?, Top::Empty) {
+            let mut out = out;
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str("[]\n");
+            return Ok(out);
+        }
+        return Ok(out);
     }
-    match tw_yaml::remove_key(text, &steps(i, keys)) {
-        Ok(out) => Ok(out),
-        Err(PatchError::NotFound { .. }) => Ok(text.to_string()),
-        Err(e) => Err(e.into()),
-    }
+    Ok(crate::yaml::remove_nested(text, &steps(i, keys))?)
 }
 
 /// 可比较的语义值：**按 id 键起来的一张表**，行里的 `id` 本身不再重复一遍。
@@ -245,6 +252,9 @@ pub fn value(text: &str) -> Result<Val, RErr> {
         _ => Vec::new(),
     };
     let mut out = Vec::with_capacity(rows.len());
+    // 不按 id 认的行按它在**这类行里**排第几来键：用整个列表里的位置的话，
+    // 我们那一行一删，排在它后面的都换了键，还原就过不了写回校验
+    let mut plain = 0;
     for (i, row) in rows.into_iter().enumerate() {
         match ids.iter().find(|(j, _)| *j == i) {
             Some((_, id)) => {
@@ -252,7 +262,10 @@ pub fn value(text: &str) -> Result<Val, RErr> {
                 let ms = ms.into_iter().filter(|(k, _)| k != "id").collect();
                 out.push((id.clone(), Val::Obj(ms)));
             }
-            None => out.push((format!("#{i}"), row)),
+            None => {
+                out.push((format!("#{plain}"), row));
+                plain += 1;
+            }
         }
     }
     Ok(Val::Obj(out))
@@ -331,7 +344,8 @@ mod tests {
             out,
             "- id: llm-deepseek\n  config:\n    baseURL: http://127.0.0.1:8788/v1\n    apiKeyEnv: THINKWATCH_API_KEY\n"
         );
-        assert_eq!(restore(&out), "");
+        // 删空了留一个 `[]`：dsh 不认空文件。文件是我们建的话，还原会把它整个删掉
+        assert_eq!(restore(&out), "[]\n");
     }
 
     #[test]
