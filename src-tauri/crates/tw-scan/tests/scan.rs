@@ -414,3 +414,46 @@ fn antigravity_cli_mcp_config_is_read_as_jsonc() {
     let local = agy.iter().find(|m| m.name == "本地").unwrap();
     assert!(!local.enabled, "disabled: true 是关着的");
 }
+
+#[test]
+fn dsh_mcp_rows_show_up_next_to_everyone_elses() {
+    // dsh 没有 mcp.json：每个 server 是补丁里的一行插件。它们要和别家的
+    // 列在同一张矩阵上，远端的照样报
+    let b = bed();
+    let dsh = tw_adopt::paths::DSH_DIR.resolve(&b.home);
+    write(
+        &dsh.join("cordis.patch.yml"),
+        "\
+- id: llm-deepseek
+  config:
+    baseURL: http://127.0.0.1:8788/v1
+- insert:
+    - id: fs-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: filesystem
+        transport: stdio
+        command: npx
+        args: [-y, '@modelcontextprotocol/server-filesystem', /work]
+        env:
+          TOKEN: 别抄我
+    - id: far
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: far
+        transport: streamable-http
+        url: https://mcp.example.com/mcp
+",
+    );
+    let r = run(&b.home);
+    let ours: Vec<_> = r.mcp.iter().filter(|m| m.client == "dsh").collect();
+    assert_eq!(ours.len(), 2, "{:?}", r.mcp);
+    let fs = ours.iter().find(|m| m.name == "filesystem").unwrap();
+    assert_eq!(fs.command, "npx");
+    assert_eq!(fs.env_keys, ["TOKEN"]);
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.client == "dsh" && f.rule == "remote-mcp")
+    );
+}

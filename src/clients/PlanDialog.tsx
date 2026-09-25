@@ -41,6 +41,10 @@ export function PlanDialog({
   const common = useText(commonText);
   const dialogFocus = useDialogFocus();
   const [diffOpen, setDiffOpen] = useState(false);
+  // 同一次改动里的另外几份文件（DeepSeek Harness 的凭据文件）：字段接在后面，
+  // 完整改动按文件分开画
+  const also = plan.also ?? [];
+  const fields = [...plan.fields, ...also.flatMap((a) => a.fields)];
   const path = <code className="font-mono text-foreground">{plan.path}</code>;
   return (
     <Dialog open onOpenChange={(o) => !o && !pending && onCancel()}>
@@ -51,7 +55,17 @@ export function PlanDialog({
           </Tile>
           <div className="flex min-w-0 flex-col gap-1.5">
             <DialogTitle>{restore ? t.restoreTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
-            <DialogDescription>{plan.before == null ? t.creates(path) : t.modifies(path)}</DialogDescription>
+            <DialogDescription>
+              {plan.before == null ? t.creates(path) : t.modifies(path)}
+              {(plan.also ?? []).map((a) => {
+                const p = <code className="font-mono text-foreground">{a.path}</code>;
+                return (
+                  <span key={a.path} className="block">
+                    {a.deletes ? t.alsoDeletes(p) : a.before == null ? t.alsoCreates(p) : t.alsoModifies(p)}
+                  </span>
+                );
+              })}
+            </DialogDescription>
           </div>
         </DialogHeader>
 
@@ -59,7 +73,7 @@ export function PlanDialog({
           <p className="tw-body">{t.noop}</p>
         ) : (
           <div className="flex flex-col gap-4">
-            {plan.fields.length > 0 && (
+            {fields.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-border">
                 <Table>
                   <TableHeader>
@@ -69,7 +83,7 @@ export function PlanDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {plan.fields.map((f) => (
+                    {fields.map((f) => (
                       <TableRow key={`${f.op} ${f.path}`} className="hover:bg-transparent">
                         <TableCell className="font-mono tw-label">{f.path}</TableCell>
                         <TableCell className="whitespace-normal break-all">
@@ -106,7 +120,14 @@ export function PlanDialog({
                 {t.diff}
               </Button>
               <Reveal show={diffOpen}>
+                {also.length > 0 && <p className="mt-2 font-mono tw-label text-muted-foreground">{plan.path}</p>}
                 <Diff before={plan.before} after={plan.after} />
+                {also.map((a) => (
+                  <div key={a.path}>
+                    <p className="mt-3 font-mono tw-label text-muted-foreground">{a.path}</p>
+                    <Diff before={a.before} after={a.deletes ? "" : a.after} />
+                  </div>
+                ))}
                 {plan.carries_secret && <p className="mt-1.5 tw-label text-muted-foreground">{t.secretMasked}</p>}
               </Reveal>
             </div>

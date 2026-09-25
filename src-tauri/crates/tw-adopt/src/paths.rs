@@ -49,6 +49,8 @@ pub enum Loc {
     XdgConfig(&'static str),
     /// 相对 XDG 数据目录：`$XDG_DATA_HOME`，没设就是 `~/.local/share`
     XdgData(&'static str),
+    /// 相对 DeepSeek Harness 的家目录：`$DSH_HOME`，没设就是 `~/.dsh`
+    DshHome(&'static str),
 }
 
 impl Loc {
@@ -83,6 +85,26 @@ impl Loc {
             Loc::Home(rel) => under(home, rel),
             Loc::XdgConfig(rel) => xdg("XDG_CONFIG_HOME", ".config", rel),
             Loc::XdgData(rel) => xdg("XDG_DATA_HOME", ".local/share", rel),
+            Loc::DshHome(rel) => {
+                // dsh 自己的 `resolveDshHome()`：变量设了（去掉空白后不为空）就用它，
+                // `~` 开头的按 home 展开；没设就是 `~/.dsh`。**相对路径不认** —— dsh
+                // 拿它对着自己启动时的工作目录解析，那个目录这里不知道
+                let set = var("DSH_HOME")
+                    .filter(|_| proc_home == Some(home))
+                    .and_then(|v| v.into_string().ok())
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty());
+                let base = match set.as_deref() {
+                    Some("~") => Some(home.to_path_buf()),
+                    Some(v) if v.starts_with("~/") || v.starts_with("~\\") => {
+                        Some(under(home, &v[2..].replace('\\', "/")))
+                    }
+                    Some(v) => Some(PathBuf::from(v)).filter(|p| p.is_absolute()),
+                    None => None,
+                }
+                .unwrap_or_else(|| under(home, ".dsh"));
+                under(&base, rel)
+            }
         }
     }
 
@@ -92,7 +114,7 @@ impl Loc {
     pub fn home_rel(&self) -> Option<&'static str> {
         match *self {
             Loc::Home(rel) => Some(rel),
-            Loc::XdgConfig(_) | Loc::XdgData(_) => None,
+            Loc::XdgConfig(_) | Loc::XdgData(_) | Loc::DshHome(_) => None,
         }
     }
 
@@ -172,6 +194,21 @@ pub const OPENCODE_CONFIGS: &[Loc] = &[
     Loc::XdgConfig("opencode/opencode.json"),
     Loc::XdgConfig("opencode/config.json"),
 ];
+
+/// DeepSeek Harness（dsh）的家目录本身。**它在就算装了** —— 网页版、桌面版、
+/// headless 三种入口共用这一个目录。
+pub const DSH_DIR: Loc = Loc::DshHome("");
+
+/// dsh 家目录这一层的 Cordis 补丁。所有 profile 共用，压过 profile 自己那一层
+/// （`profiles/<名>/cordis.patch.yml`）。见 dsh 的 `homePatchPath()`。
+pub const DSH_PATCH: Loc = Loc::DshHome("cordis.patch.yml");
+
+/// dsh 的密钥文件：`version: 1`、`refs`、`records` 三个顶层键，多一个就被拒绝。
+pub const DSH_CREDENTIALS: Loc = Loc::DshHome(".credentials.yaml");
+
+/// dsh 0.1.5 的设置页写的文件，按行 id 分节。**这一层压过补丁层**；0.1.7
+/// 第一次启动时把它导入 profile、改名成 `settings.yaml.imported`。
+pub const DSH_SETTINGS: Loc = Loc::DshHome("settings.yaml");
 
 /// 按优先级从高到低排好的几个位置里，第一个存在的是第几个；都不在就是
 /// 第一个（该新建的那一个）。
@@ -428,6 +465,41 @@ mod tests {
         assert_eq!(
             OPENCODE_CONFIGS[1].resolve_with(h, Some(h), var),
             Path::new("/home/u/.config/opencode/opencode.json")
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn dsh_home_follows_the_variable_the_way_dsh_does() {
+        let h = Path::new("/home/u");
+        let with = |v: &'static str| move |n: &str| (n == "DSH_HOME").then(|| v.into());
+        let none = |_: &str| None;
+        // 没设：~/.dsh
+        assert_eq!(
+            DSH_PATCH.resolve_with(h, Some(h), none),
+            Path::new("/home/u/.dsh/cordis.patch.yml")
+        );
+        // 设了绝对路径就用它；`~` 开头的按 home 展开
+        assert_eq!(
+            DSH_PATCH.resolve_with(h, Some(h), with("/srv/dsh")),
+            Path::new("/srv/dsh/cordis.patch.yml")
+        );
+        assert_eq!(
+            DSH_CREDENTIALS.resolve_with(h, Some(h), with("~/work/dsh")),
+            Path::new("/home/u/work/dsh/.credentials.yaml")
+        );
+        // 空白、相对路径不认；别人的 home 不认这个进程的变量
+        assert_eq!(
+            DSH_DIR.resolve_with(h, Some(h), with("  ")),
+            Path::new("/home/u/.dsh")
+        );
+        assert_eq!(
+            DSH_DIR.resolve_with(h, Some(h), with("rel/dsh")),
+            Path::new("/home/u/.dsh")
+        );
+        assert_eq!(
+            DSH_DIR.resolve_with(h, Some(Path::new("/other")), with("/srv/dsh")),
+            Path::new("/home/u/.dsh")
         );
     }
 }

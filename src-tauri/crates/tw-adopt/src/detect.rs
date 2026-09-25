@@ -61,6 +61,7 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
             "api_url",
         ],
         "aider" => vec!["openai-api-base"],
+        "dsh" => vec!["llm-deepseek", "config", "baseURL"],
         _ => return None,
     };
     match c.format {
@@ -73,6 +74,10 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
             .flatten()
             .map(|v| v.to_line()),
         Format::Yaml => crate::yaml::get(text, &path).ok().flatten(),
+        Format::Rows => crate::rows::get(text, &path)
+            .ok()
+            .flatten()
+            .map(|v| v.to_line()),
     }
 }
 
@@ -92,11 +97,7 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
             .filter(|r: &SidecarRecord| r.client == c.id)
             .map(|r| r.adopted_at_ms),
         endpoint: text.as_deref().and_then(|t| endpoint_of(c, t)),
-        shadows: c
-            .shadow_paths(home)
-            .into_iter()
-            .filter(|p| p.exists())
-            .collect(),
+        shadows: c.live_shadows(home),
         takes_effect: c.takes_effect,
         verified: c.verified,
         format: c.format,
@@ -591,6 +592,11 @@ fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
 /// 才会盖住我们写的东西，别的键（`$schema`、别的 provider）和我们并存。
 fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
     match c.id {
+        // 0.1.5 的 `settings.yaml`：`llm-deepseek` 那一节写了 baseURL 才压过补丁
+        "dsh" => match crate::yaml::get(text, &["llm-deepseek", "baseURL"]) {
+            Ok(Some(_)) => vec!["llm-deepseek.baseURL".to_string()],
+            _ => Vec::new(),
+        },
         "opencode" => {
             let path = ["provider", crate::clients::PROVIDER_ID];
             match crate::json::get(text, &path) {
@@ -664,7 +670,18 @@ pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding>
             detail: if c.shadowed_by.is_empty() {
                 msg!("adopt.diag.no_shadow.none" => "This client has no configuration file that takes precedence.")
             } else {
-                msg!("adopt.diag.no_shadow.absent", files = c.shadowed_by.join(", ") => "{files} does not exist.")
+                let there: Vec<_> = c
+                    .shadowed_by
+                    .iter()
+                    .filter(|l| l.resolve(home).exists())
+                    .map(|l| l.shown())
+                    .collect();
+                let files = c.shadowed_by.iter().map(|l| l.shown()).collect::<Vec<_>>().join(", ");
+                if there.is_empty() {
+                    msg!("adopt.diag.no_shadow.absent", files = files => "{files} does not exist.")
+                } else {
+                    msg!("adopt.diag.no_shadow.unset", files = there.join(", ") => "{files} exists, and sets none of the fields written here.")
+                }
             },
             fix: None,
         });

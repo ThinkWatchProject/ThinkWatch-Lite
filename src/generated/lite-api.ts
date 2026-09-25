@@ -99,6 +99,23 @@ secret?: boolean, };
 export type FieldOp = "set" | "remove";
 
 /**
+ * 一次改动里的另一份文件：改哪个、改哪几项、完整的前后原文。**密钥已打码。**
+ */
+export type FilePlanView = { path: string, 
+/**
+ * 改之前的原文。没有 = 这个文件本来不存在，会新建（还原时：会删掉）
+ */
+before: string | null, after: string, fields: Array<FieldChange>, 
+/**
+ * 这一份已经是这样了
+ */
+noop: boolean, 
+/**
+ * 还原时这个文件会被整个删掉（当初就是接管时建的，还原后又空了）
+ */
+deletes?: boolean, };
+
+/**
  * 一条诊断发现的结论。
  */
 export type FindingLevel = "blocking" | "suspect" | "clear";
@@ -304,7 +321,12 @@ key?: string | null,
 /**
  * 那把密钥要在接管的那一刻新建（此前没有为这个客户端留着的）
  */
-key_created?: boolean, };
+key_created?: boolean, 
+/**
+ * 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败。
+ * DeepSeek Harness 的密钥在它自己的凭据文件里，就在这儿
+ */
+also?: Array<FilePlanView>, };
 
 /**
  * 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的

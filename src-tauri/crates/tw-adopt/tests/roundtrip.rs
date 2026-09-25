@@ -324,6 +324,198 @@ fn aider_round_trips_too() {
     assert_eq!(read(&b.home.join(".aider.conf.yml")), AIDER);
 }
 
+// ---- DeepSeek Harness：补丁一行 + 凭据文件里一个引用 ---------------------
+
+/// 一份**有生活痕迹**的家目录补丁：`!!js` 标签、注释、别的插件行、一段
+/// `insert:`，还有一行用户自己调过思考深度的 `llm-deepseek`。
+const DSH_PATCH: &str = "\
+# 我自己的 dsh 补丁
+- id: fs-sandbox
+  disabled: !!js \"!ctx.get('profileContext')\"  # 行尾注释
+
+- id: llm-deepseek
+  config:
+    thinking: !!js \"({ type: 'enabled', budget: 8000 })\"
+    baseURL: https://api.deepseek.com/anthropic
+- insert:
+    - id: demo-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: demo
+        transport: stdio
+        command: npx
+";
+
+const DSH_CREDS: &str = "\
+version: 1
+refs:
+  # 联网搜索也在用它，不能动
+  DEEPSEEK_API_KEY: sk-我自己的
+records:
+  deepseek-account/default:
+    kind: token
+";
+
+fn dsh_home(b: &Bed) -> PathBuf {
+    b.home.join(".dsh")
+}
+
+#[test]
+fn dsh_gets_one_row_and_one_reference_and_nothing_else() {
+    let b = bed("dsh", DSH_PATCH);
+    std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    assert_eq!(p.also.len(), 1, "凭据文件也在这一次改动里");
+    assert!(p.carries_secret);
+    apply(&c, &p, &b.backups).unwrap();
+
+    let patch = read(&dsh_home(&b).join("cordis.patch.yml"));
+    for keep in [
+        "# 我自己的 dsh 补丁",
+        "disabled: !!js \"!ctx.get('profileContext')\"  # 行尾注释",
+        "thinking: !!js \"({ type: 'enabled', budget: 8000 })\"",
+        "      name: '@deepseek-ai/dsh-mcp-client'",
+    ] {
+        assert!(patch.contains(keep), "接管把 {keep} 弄丢了：\n{patch}");
+    }
+    assert!(
+        patch.contains("baseURL: http://127.0.0.1:8080/v1"),
+        "{patch}"
+    );
+    assert!(patch.contains("apiKeyEnv: THINKWATCH_API_KEY"), "{patch}");
+    assert!(!patch.contains("\n    baseURL: https://"), "{patch}");
+    assert!(
+        !patch.contains("tw-用户的专属密钥"),
+        "补丁里只写引用名：\n{patch}"
+    );
+
+    let creds = read(&dsh_home(&b).join(".credentials.yaml"));
+    assert!(creds.contains("DEEPSEEK_API_KEY: sk-我自己的"), "{creds}");
+    assert!(
+        creds.contains("THINKWATCH_API_KEY: tw-用户的专属密钥"),
+        "{creds}"
+    );
+    assert!(creds.contains("version: 1\n"), "{creds}");
+    assert!(creds.contains("kind: token"), "{creds}");
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
+    assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), DSH_CREDS);
+    for side in [
+        "cordis.patch.yml.thinkwatch.json",
+        ".credentials.yaml.thinkwatch.json",
+    ] {
+        assert!(!dsh_home(&b).join(side).exists(), "{side} 没删");
+    }
+}
+
+#[test]
+fn dsh_files_created_here_are_removed_again() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    assert!(p.before.is_none() && p.also[0].before.is_none());
+    apply(&c, &p, &b.backups).unwrap();
+
+    let patch = read(&dsh_home(&b).join("cordis.patch.yml"));
+    assert!(
+        patch.ends_with("- id: llm-deepseek\n  config:\n    baseURL: http://127.0.0.1:8080/v1\n    apiKeyEnv: THINKWATCH_API_KEY\n"),
+        "{patch}"
+    );
+    let creds = read(&dsh_home(&b).join(".credentials.yaml"));
+    // 数字的 1，不是字符串 —— 写成 '1' 的话 dsh 拒绝整个文件
+    assert!(
+        creds.contains("version: 1\nrefs:\n  THINKWATCH_API_KEY: tw-用户的专属密钥\n"),
+        "{creds}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dsh_home(&b).join(".credentials.yaml"))
+            .unwrap()
+            .permissions()
+            .mode();
+        // dsh 拒绝读一个别人也能读的凭据文件
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+    }
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(
+        r.delete_file && r.also[0].delete_file,
+        "两份都是我们建的，还原后都是空的"
+    );
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert!(!dsh_home(&b).join("cordis.patch.yml").exists());
+    assert!(!dsh_home(&b).join(".credentials.yaml").exists());
+}
+
+#[test]
+fn dsh_adopted_twice_keeps_the_first_originals() {
+    let b = bed("dsh", DSH_PATCH);
+    std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let again = plan_adopt(&c, &b.home, &gw()).unwrap();
+    assert!(again.is_noop(), "第二次接管应该是空操作");
+    // 换一把密钥再接管一次，还原回的仍然是用户原来那一份
+    let other = Gateway {
+        base: "http://127.0.0.1:9090".into(),
+        key: Some("tw-换过的".into()),
+    };
+    let p = plan_adopt(&c, &b.home, &other).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
+    assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), DSH_CREDS);
+}
+
+#[test]
+fn dsh_is_left_untouched_when_the_second_file_cannot_be_written() {
+    // 凭据文件不是 dsh 认的形状（顶层是个列表）：一个字节都不写，补丁也不写
+    let b = bed("dsh", DSH_PATCH);
+    std::fs::write(dsh_home(&b).join(".credentials.yaml"), "- 不是映射\n").unwrap();
+    let c = client("dsh");
+    assert!(plan_adopt(&c, &b.home, &gw()).is_err());
+    assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
+}
+
+#[test]
+fn dsh_settings_yaml_counts_as_shadowing_only_when_it_sets_the_base_url() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    // profile 那一层同 id 的行被家目录这一层压着，不算盖住
+    let profile = dsh_home(&b).join("profiles/default/cordis.patch.yml");
+    std::fs::create_dir_all(profile.parent().unwrap()).unwrap();
+    std::fs::write(
+        &profile,
+        "- id: llm-deepseek\n  config:\n    baseURL: https://x\n",
+    )
+    .unwrap();
+    let settings = dsh_home(&b).join("settings.yaml");
+    std::fs::write(
+        &settings,
+        "llm-deepseek:\n  thinking: high\nui:\n  theme: dark\n",
+    )
+    .unwrap();
+    assert!(plan_adopt(&c, &b.home, &gw()).unwrap().shadows.is_empty());
+    // 0.1.5 的设置页写了 baseURL：它压过补丁层
+    std::fs::write(
+        &settings,
+        "llm-deepseek:\n  baseURL: https://api.deepseek.com\n",
+    )
+    .unwrap();
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    assert_eq!(p.shadows, vec![settings.clone()]);
+    assert!(p.notes.iter().any(|n| n.code == "adopt.plan.shadowed"));
+    // 0.1.7 导入之后改了名，就不再读它了
+    std::fs::rename(&settings, dsh_home(&b).join("settings.yaml.imported")).unwrap();
+    assert!(plan_adopt(&c, &b.home, &gw()).unwrap().shadows.is_empty());
+}
+
 // ---- 跨格式的规矩 ------------------------------------------------------
 
 #[test]
@@ -334,6 +526,7 @@ fn every_adoptable_client_survives_a_round_trip() {
             tw_adopt::clients::Format::Json => "{\n  \"我自己的\": \"别动\"\n}\n",
             tw_adopt::clients::Format::Toml => "\"我自己的\" = \"别动\"\n",
             tw_adopt::clients::Format::Yaml => "我自己的: 别动\n",
+            tw_adopt::clients::Format::Rows => "- id: 我自己的\n  config:\n    k: 别动\n",
         };
         let b = bed(c.id, seed);
         let p = plan_adopt(&c, &b.home, &gw()).unwrap();

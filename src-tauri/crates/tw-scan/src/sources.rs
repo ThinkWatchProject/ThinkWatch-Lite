@@ -140,6 +140,20 @@ fn skills_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// dsh 每个 profile 的补丁：`profiles/<名>/cordis.patch.yml`。
+fn profile_patches(dsh: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dsh.join("profiles")) else {
+        return Vec::new();
+    };
+    let mut out: Vec<_> = rd
+        .flatten()
+        .map(|e| e.path().join("cordis.patch.yml"))
+        .filter(|p| p.is_file())
+        .collect();
+    out.sort();
+    out
+}
+
 /// 用户级的那一小撮。**位置固定、数量有限**，所以可以无条件全看一遍。
 pub fn user_level(home: &Path) -> Vec<Source> {
     let mut v = vec![
@@ -196,6 +210,24 @@ pub fn user_level(home: &Path) -> Vec<Source> {
     }
     for p in skills_in(&under(home, ".claude/skills")) {
         v.push(f("claude-code", Kind::Skill, p));
+    }
+    // DeepSeek Harness：MCP server 是补丁里的插件行。家目录这一层，加上每个
+    // profile 自己那一层 —— 两层都会被读进去
+    let dsh = tw_adopt::paths::DSH_DIR.resolve(home);
+    v.push(f(
+        "dsh",
+        Kind::Mcp,
+        tw_adopt::paths::DSH_PATCH.resolve(home),
+    ));
+    for p in profile_patches(&dsh) {
+        v.push(f("dsh", Kind::Mcp, p));
+    }
+    // 它的 skills 目录：自己的一个，加上各家共用的 `~/.agents/skills`
+    for p in skills_in(&dsh.join("skills"))
+        .into_iter()
+        .chain(skills_in(&under(home, ".agents/skills")))
+    {
+        v.push(f("dsh", Kind::Skill, p));
     }
     for p in md_in(&under(home, ".claude/commands")) {
         v.push(f("claude-code", Kind::Command, p));
@@ -259,6 +291,10 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
     }
     for p in md_in(&under(dir, ".agents/agents")) {
         v.push(f("antigravity-cli", Kind::Agent, p));
+    }
+    // 项目里共用的 `.agents/skills` 上面已经算在 agy 名下，dsh 这里只加它自己的
+    for p in skills_in(&under(dir, ".dsh/skills")) {
+        v.push(f("dsh", Kind::Skill, p));
     }
     v.retain(|s| s.path.exists());
     for s in &mut v {
@@ -386,5 +422,34 @@ mod tests {
         };
         assert_eq!(names(user_level(d.path())), ["a.md", "m.md", "z.md"]);
         assert_eq!(names(user_level(d.path())), names(user_level(d.path())));
+    }
+
+    #[test]
+    fn dsh_patches_and_skills_are_in_the_scan() {
+        let d = tempfile::tempdir().unwrap();
+        let dsh = tw_adopt::paths::DSH_DIR.resolve(d.path());
+        touch(&dsh.join("cordis.patch.yml"));
+        touch(&dsh.join("profiles/default/cordis.patch.yml"));
+        touch(&dsh.join("profiles/work/cordis.patch.yml"));
+        touch(&dsh.join("skills/审查/SKILL.md"));
+        touch(&d.path().join(".agents/skills/共用/SKILL.md"));
+        let got: Vec<_> = user_level(d.path())
+            .into_iter()
+            .map(|s| (s.client, s.kind))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("dsh", Kind::Mcp),
+                ("dsh", Kind::Mcp),
+                ("dsh", Kind::Mcp),
+                ("dsh", Kind::Skill),
+                ("dsh", Kind::Skill),
+            ]
+        );
+        let p = tempfile::tempdir().unwrap();
+        touch(&p.path().join(".dsh/skills/a/SKILL.md"));
+        touch(&p.path().join(".agents/skills/b/SKILL.md"));
+        assert_eq!(in_project(p.path()).len(), 2);
     }
 }

@@ -72,6 +72,24 @@ function setup(id: string, path: string): ManualSetup {
         endpoint: v1(),
         fields: [set("language_models.openai_compatible.ThinkWatch.api_url", v1())],
       };
+    case "dsh":
+      return {
+        steps: [
+          file(path),
+          msg(
+            "adopt.manual.also_file",
+            "The key goes into ~/.dsh/.credentials.yaml; the fields below that start with refs or version belong there.",
+            { file: "~/.dsh/.credentials.yaml" },
+          ),
+        ],
+        endpoint: v1(),
+        fields: [
+          set("llm-deepseek.config.baseURL", v1()),
+          set("llm-deepseek.config.apiKeyEnv", "THINKWATCH_API_KEY"),
+          set("version", "1"),
+          secret("refs.THINKWATCH_API_KEY"),
+        ],
+      };
     default:
       return { steps: [file(path)], endpoint: v1(), fields: [set("openai-api-base", v1()), secret("openai-api-key")] };
   }
@@ -169,6 +187,27 @@ function clientsNow(): DetectedClient[] {
         msg("adopt.cost.aider.restart", "Aider has to be restarted afterwards."),
       ],
     }),
+    detected({
+      id: "dsh",
+      name: "DeepSeek Harness",
+      path: "~/.dsh/cordis.patch.yml",
+      has_config: false,
+      costs: [
+        msg(
+          "adopt.cost.dsh.every_entry",
+          "The web app, the desktop app and headless runs all go through the gateway, without a restart.",
+        ),
+        msg("adopt.cost.dsh.web_search", "Web search still goes straight to DeepSeek rather than through the gateway."),
+        msg(
+          "adopt.cost.dsh.settings_page",
+          "While this is in place, the llm-deepseek entry cannot be changed from the settings page of DeepSeek Harness.",
+        ),
+        msg(
+          "adopt.cost.dsh.models",
+          "DeepSeek Harness asks for deepseek-flash, deepseek-v4-pro and deepseek-v4-flash; a route has to send these names to a DeepSeek upstream or rewrite them for another one.",
+        ),
+      ],
+    }),
   ];
 }
 
@@ -258,6 +297,7 @@ export function plan(id: string, restore: boolean): PlanView {
     fields: c.manual.fields,
     key: c.key ?? c.id,
     key_created: false,
+    also: [],
   };
 }
 

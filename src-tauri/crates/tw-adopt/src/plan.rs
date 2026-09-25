@@ -115,6 +115,13 @@ pub struct Plan {
     pub drop_sidecar: Option<PathBuf>,
     /// 还原时要把整个配置文件删掉（当初就是我们建的，而且还原后它是空的）
     pub delete_file: bool,
+    /// 这个文件是什么格式。落盘时的写回校验照它解析
+    pub format: Format,
+    /// 同一次改动里另外那几份文件（dsh 的密钥在单独的凭据文件里）。
+    ///
+    /// **一起落盘、一起失败**：写到一半停下，比哪一份都没写更糟 —— 那时补丁
+    /// 指着一个凭据文件里还没有的密钥名，dsh 起不来，而用户不知道为什么。
+    pub also: Vec<Plan>,
     /// 之前那次接管留下的记录（备份路径、文件是不是我们建的）。
     ///
     /// **重复接管不能覆盖它。**第二次接管时文件里的值已经是我们写的了，
@@ -128,7 +135,7 @@ impl Plan {
     /// 什么都不用改。**「已经是这样了」和「改完了」要能分开说** ——
     /// 前者不该产生备份，也不该在历史里留一条。
     pub fn is_noop(&self) -> bool {
-        self.before.as_deref() == Some(self.after.as_str())
+        self.before.as_deref() == Some(self.after.as_str()) && self.also.iter().all(Plan::is_noop)
     }
 }
 
@@ -146,6 +153,7 @@ fn semantic(fmt: Format, text: &str, client: &str) -> Result<Val, PlanError> {
         Format::Json => crate::json::value(text).map_err(|e| parse_err(client, e)),
         Format::Toml => crate::toml::value(text).map_err(|e| parse_err(client, e)),
         Format::Yaml => crate::yamlval::value(text).map_err(|e| parse_err(client, e)),
+        Format::Rows => crate::rows::value(text).map_err(|e| parse_err(client, e)),
     }
 }
 
@@ -153,9 +161,8 @@ fn put(fmt: Format, text: &str, path: &[&str], v: &Val, client: &str) -> Result<
     match fmt {
         Format::Json => crate::json::set(text, path, v).map_err(|e| parse_err(client, e)),
         Format::Toml => crate::toml::set(text, path, v).map_err(|e| parse_err(client, e)),
-        Format::Yaml => {
-            crate::yaml::set(text, path, &v.to_line()).map_err(|e| parse_err(client, e))
-        }
+        Format::Yaml => crate::yaml::set(text, path, v).map_err(|e| parse_err(client, e)),
+        Format::Rows => crate::rows::set(text, path, v).map_err(|e| parse_err(client, e)),
     }
 }
 
@@ -164,6 +171,7 @@ fn drop_(fmt: Format, text: &str, path: &[&str], client: &str) -> Result<String,
         Format::Json => crate::json::remove(text, path).map_err(|e| parse_err(client, e)),
         Format::Toml => crate::toml::remove(text, path).map_err(|e| parse_err(client, e)),
         Format::Yaml => crate::yaml::remove(text, path).map_err(|e| parse_err(client, e)),
+        Format::Rows => crate::rows::remove(text, path).map_err(|e| parse_err(client, e)),
     }
 }
 
@@ -176,6 +184,9 @@ fn peek(fmt: Format, text: &str, path: &[&str], client: &str) -> Result<Option<S
             .map_err(|e| parse_err(client, e))?
             .map(|v| v.to_line()),
         Format::Yaml => crate::yaml::get(text, path).map_err(|e| parse_err(client, e))?,
+        Format::Rows => crate::rows::get(text, path)
+            .map_err(|e| parse_err(client, e))?
+            .map(|v| v.to_line()),
     })
 }
 
@@ -183,7 +194,7 @@ fn peek(fmt: Format, text: &str, path: &[&str], client: &str) -> Result<Option<S
 fn empty(fmt: Format) -> &'static str {
     match fmt {
         Format::Json => "{}\n",
-        Format::Toml | Format::Yaml => "",
+        Format::Toml | Format::Yaml | Format::Rows => "",
     }
 }
 
@@ -207,66 +218,18 @@ fn takes_effect_note(c: &Client) -> Msg {
 }
 
 pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanError> {
-    let path = c.config_path(home);
-    let before = foreign::read(&path).map_err(|source| PlanError::Read {
-        client: c.id.into(),
-        source,
-    })?;
-    let base = before
-        .clone()
-        .unwrap_or_else(|| empty(c.format).to_string());
-
-    // 之前接管过的话，「原值」以那一次的记录为准，不看现在文件里是什么
-    // —— 现在文件里的正是我们上次写进去的。
-    let real = foreign::resolve(&path)?;
-    let side = sentinel::sidecar_path(&real);
-    let prior_rec: Option<SidecarRecord> = std::fs::read_to_string(&side)
-        .ok()
-        .and_then(|t| serde_json::from_str::<SidecarRecord>(&t).ok())
-        .filter(|r| r.client == c.id);
-    let prior_originals = match &prior_rec {
-        Some(r) => Some(originals_from(r, c.format, c.id)?),
-        None => None,
-    };
-
     let edits = crate::clients::edits(c, gw);
-    let mut text = base.clone();
-    let mut originals = Vec::new();
-    let mut carries_secret = false;
-
-    let mut targets = Vec::new();
-    for Edit {
-        path: p,
-        value,
-        secret,
-    } in &edits
-    {
-        let r = refs(p);
-        let was = match prior_originals
-            .as_ref()
-            .and_then(|os| os.iter().find(|o| o.path == *p))
-        {
-            Some(o) => o.was.clone(),
-            None => match peek(c.format, &text, &r, c.id)? {
-                None => Was::Missing,
-                // 原值是密钥的话，它只进全文备份，不进旁文件
-                Some(v) if *secret => Was::Secret(v),
-                Some(v) => Was::Value(v),
-            },
-        };
-        originals.push(Original::new(p, was));
-        carries_secret |= secret;
-        text = put(c.format, &text, &r, value, c.id)?;
-        targets.push(Target::Set(p.clone(), value.clone()));
+    let mut plan = adopt_file(c.id, c.config_path(home), c.format, &edits)?;
+    if let Some(also) = crate::clients::also(c) {
+        let edits = crate::clients::also_edits(c, gw);
+        plan.also.push(adopt_file(
+            c.id,
+            also.config.resolve(home),
+            also.format,
+            &edits,
+        )?);
     }
-
-    // 哨兵注释放在最前面 —— 要的是**用户打开文件就看见**。
-    // 严格 JSON 装不下注释，那时只有旁文件。
-    if let Some(prefix) = c.comment_prefix() {
-        let block = sentinel::comment_block(prefix, &originals);
-        // 重复接管不该叠一堆哨兵
-        text = format!("{block}{}", sentinel::strip(&text, prefix));
-    }
+    plan.carries_secret |= plan.also.iter().any(|p| p.carries_secret);
 
     let mut notes = vec![takes_effect_note(c)];
     notes.extend(c.costs.iter().map(|(code, text)| Msg {
@@ -282,11 +245,7 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
         ));
     }
 
-    let shadows: Vec<_> = c
-        .shadow_paths(home)
-        .into_iter()
-        .filter(|p| p.exists())
-        .collect();
+    let shadows = c.live_shadows(home);
     if !shadows.is_empty() {
         notes.push(msg!(
             "adopt.plan.shadowed",
@@ -298,19 +257,84 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
             => "{paths} was found, and it takes precedence over what was written here, so a setting of the same name there wins."
         ));
     }
+    plan.notes = notes;
+    plan.shadows = shadows;
+    Ok(plan)
+}
+
+/// 一份文件的接管改动：读它、记下原值、改那几个字段、放上哨兵。
+fn adopt_file(client: &str, path: PathBuf, fmt: Format, edits: &[Edit]) -> Result<Plan, PlanError> {
+    let before = foreign::read(&path).map_err(|source| PlanError::Read {
+        client: client.into(),
+        source,
+    })?;
+    let base = before.clone().unwrap_or_else(|| empty(fmt).to_string());
+
+    // 之前接管过的话，「原值」以那一次的记录为准，不看现在文件里是什么
+    // —— 现在文件里的正是我们上次写进去的。
+    let real = foreign::resolve(&path)?;
+    let side = sentinel::sidecar_path(&real);
+    let prior_rec: Option<SidecarRecord> = std::fs::read_to_string(&side)
+        .ok()
+        .and_then(|t| serde_json::from_str::<SidecarRecord>(&t).ok())
+        .filter(|r| r.client == client);
+    let prior_originals = match &prior_rec {
+        Some(r) => Some(originals_from(r, fmt, client)?),
+        None => None,
+    };
+
+    let mut text = base.clone();
+    let mut originals = Vec::new();
+    let mut carries_secret = false;
+
+    let mut targets = Vec::new();
+    for Edit {
+        path: p,
+        value,
+        secret,
+    } in edits
+    {
+        let r = refs(p);
+        let was = match prior_originals
+            .as_ref()
+            .and_then(|os| os.iter().find(|o| o.path == *p))
+        {
+            Some(o) => o.was.clone(),
+            None => match peek(fmt, &text, &r, client)? {
+                None => Was::Missing,
+                // 原值是密钥的话，它只进全文备份，不进旁文件
+                Some(v) if *secret => Was::Secret(v),
+                Some(v) => Was::Value(v),
+            },
+        };
+        originals.push(Original::new(p, was));
+        carries_secret |= secret;
+        text = put(fmt, &text, &r, value, client)?;
+        targets.push(Target::Set(p.clone(), value.clone()));
+    }
+
+    // 哨兵注释放在最前面 —— 要的是**用户打开文件就看见**。
+    // 严格 JSON 装不下注释，那时只有旁文件。
+    if let Some(prefix) = crate::clients::comment_prefix(fmt) {
+        let block = sentinel::comment_block(prefix, &originals);
+        // 重复接管不该叠一堆哨兵
+        text = format!("{block}{}", sentinel::strip(&text, prefix));
+    }
 
     Ok(Plan {
-        client: c.id.into(),
+        client: client.into(),
         path,
         before,
         after: text,
         originals,
         carries_secret,
-        notes,
-        shadows,
+        notes: Vec::new(),
+        shadows: Vec::new(),
         targets,
         drop_sidecar: None,
         delete_file: false,
+        format: fmt,
+        also: Vec::new(),
         prior: prior_rec.map(|r| (r.backup, r.created_file)),
     })
 }
@@ -355,23 +379,49 @@ fn originals_from(
 }
 
 /// 落盘。**用户确认之后才该调到这里。**
+///
+/// 几份文件的改动（[`Plan::also`]）一起落盘：后面哪一份失败，前面写好的都退回去。
 pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
-    let fmt = c.format;
-    let client = plan.client.clone();
-    let expect = {
-        let base = plan
-            .before
-            .clone()
-            .unwrap_or_else(|| empty(fmt).to_string());
-        let mut v = semantic(fmt, &base, &client)?;
-        for t in &plan.targets {
-            v = match t {
-                Target::Set(p, val) => v.with(&refs(p), val),
-                Target::Remove(p) => v.without(&refs(p)),
-            };
+    let _ = c;
+    let mut done: Vec<(Applied, Option<String>)> = Vec::new();
+    for p in std::iter::once(plan).chain(&plan.also) {
+        match apply_file(p, backup_root) {
+            Ok(a) => done.push(a),
+            Err(e) => {
+                for (a, side) in done.iter().rev() {
+                    undo(a, side.as_deref());
+                }
+                return Err(e);
+            }
         }
-        v
-    };
+    }
+    let mut it = done.into_iter().map(|(a, _)| a);
+    let mut first = it.next().expect("至少有主配置那一份");
+    for a in it {
+        first.warnings.extend(a.warnings);
+    }
+    Ok(first)
+}
+
+/// 退回一份已经落盘的接管：文件换回原文，旁文件换回原来那一份（或者删掉）。
+fn undo(a: &Applied, old_sidecar: Option<&str>) {
+    let _ = rollback(a);
+    let side = sentinel::sidecar_path(&a.real);
+    match old_sidecar {
+        Some(t) => {
+            let _ = crate::foreign::write_private(&side, t.as_bytes());
+        }
+        None => {
+            let _ = std::fs::remove_file(&side);
+        }
+    }
+}
+
+/// 一份文件落盘，返回结果和它之前的旁文件（退回时要用）。
+fn apply_file(plan: &Plan, backup_root: &Path) -> Result<(Applied, Option<String>), PlanError> {
+    let fmt = plan.format;
+    let client = plan.client.clone();
+    let expect = expected(plan)?;
 
     let applied = foreign::apply(
         &Change {
@@ -397,6 +447,7 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
     // —— 一次接管要么完整，要么等于没发生；只改了配置却没留下还原记录，
     // 是这里面最坏的一种半成品。
     let side = sentinel::sidecar_path(&applied.real);
+    let old_side = std::fs::read_to_string(&side).ok();
     // 重复接管时，**指向第一次那份备份**。这一次的备份里装的是已经被我们
     // 改过的文件，拿它去还原等于还原到我们自己身上。
     let (backup, created) = plan
@@ -408,13 +459,52 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
         let _ = rollback(&applied);
         return Err(PlanError::Write(e));
     }
-    Ok(applied)
+    Ok((applied, old_side))
+}
+
+/// 「原文件 + 预期的那几处改动」—— 写回校验的参照物。
+fn expected(plan: &Plan) -> Result<Val, PlanError> {
+    let base = plan
+        .before
+        .clone()
+        .unwrap_or_else(|| empty(plan.format).to_string());
+    let mut v = semantic(plan.format, &base, &plan.client)?;
+    for t in &plan.targets {
+        v = match t {
+            Target::Set(p, val) => v.with(&refs(p), &as_read(plan.format, val)),
+            Target::Remove(p) => v.without(&refs(p)),
+        };
+    }
+    Ok(v)
+}
+
+/// 一个值写进去之后再读出来是什么样。YAML 的语义值里标量都是字符串
+/// （见 [`crate::yamlval`]），`version: 1` 读回来是 `"1"`。
+fn as_read(fmt: Format, v: &Val) -> Val {
+    match (fmt, v) {
+        (Format::Yaml | Format::Rows, Val::Num(_) | Val::Bool(_)) => Val::s(v.to_line()),
+        _ => v.clone(),
+    }
 }
 
 /// 落盘一次还原。和 [`apply`] 走同一套护栏，只是最后**删掉**旁文件而不是
 /// 写它 —— 还原之后不该再留下「这个文件被接管着」的痕迹。
+///
+/// 另外那几份文件先还原、主配置最后：中途失败时，主配置仍然完整地指着网关，
+/// 而不是指着一个已经从凭据文件里删掉的密钥名。
 pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
-    let fmt = c.format;
+    let _ = c;
+    let mut warnings = Vec::new();
+    for p in &plan.also {
+        warnings.extend(restore_file(p, backup_root)?.warnings);
+    }
+    let mut a = restore_file(plan, backup_root)?;
+    a.warnings.extend(warnings);
+    Ok(a)
+}
+
+fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
+    let fmt = plan.format;
     if plan.delete_file {
         // 删之前照样先备份。**「删掉一个文件」是这里面最不可逆的动作**，
         // 它更需要那份备份，不是更不需要。
@@ -438,20 +528,7 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
         return Ok(applied);
     }
     let client = plan.client.clone();
-    let expect = {
-        let base = plan
-            .before
-            .clone()
-            .unwrap_or_else(|| empty(fmt).to_string());
-        let mut v = semantic(fmt, &base, &client)?;
-        for t in &plan.targets {
-            v = match t {
-                Target::Set(p, val) => v.with(&refs(p), val),
-                Target::Remove(p) => v.without(&refs(p)),
-            };
-        }
-        v
-    };
+    let expect = expected(plan)?;
     let applied = foreign::apply(
         &Change {
             path: &plan.path,
@@ -483,34 +560,52 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
 /// 分工是刻意的：**旁文件说「我们动过哪几个字段」，全文备份说「它们原来
 /// 是什么」**。所以密钥类的原值一份都不用抄进旁文件，也不会因此丢失。
 pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
-    let path = c.config_path(home);
+    let mut plan = restore_file_plan(c.id, c.config_path(home), c.format)?;
+    if let Some(also) = crate::clients::also(c) {
+        // 另外那一份没有记录（接管那时还没有它、或者记录被删了）就不动它：
+        // 主配置照样还原，**不因为它拦住整个还原**
+        match restore_file_plan(c.id, also.config.resolve(home), also.format) {
+            Ok(p) => {
+                plan.notes.extend(p.notes.iter().cloned());
+                plan.also.push(p);
+            }
+            Err(PlanError::NoRecord { .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    plan.notes.insert(0, takes_effect_note(c));
+    Ok(plan)
+}
+
+/// 一份文件的还原改动。
+fn restore_file_plan(client: &str, path: PathBuf, fmt: Format) -> Result<Plan, PlanError> {
     let real = foreign::resolve(&path)?;
     let before = foreign::read(&path).map_err(|source| PlanError::Read {
-        client: c.id.into(),
+        client: client.into(),
         source,
     })?;
     let side = sentinel::sidecar_path(&real);
     let rec: SidecarRecord = match std::fs::read_to_string(&side) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| parse_err(c.id, e))?,
+        Ok(t) => serde_json::from_str(&t).map_err(|e| parse_err(client, e))?,
         Err(_) => {
             return Err(PlanError::NoRecord {
-                client: c.id.into(),
+                client: client.into(),
                 path: side,
             });
         }
     };
-    if rec.client != c.id {
+    if rec.client != client {
         return Err(PlanError::ForeignSidecar {
             path: side,
             other: rec.client,
-            client: c.id.into(),
+            client: client.into(),
         });
     }
 
     let Some(mut text) = before.clone() else {
         // 文件都没了，没什么可还原的 —— 把记录删掉就行
         return Ok(Plan {
-            client: c.id.into(),
+            client: client.into(),
             path,
             before,
             after: String::new(),
@@ -523,6 +618,8 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
             targets: Vec::new(),
             drop_sidecar: Some(side),
             delete_file: false,
+            format: fmt,
+            also: Vec::new(),
             prior: None,
         });
     };
@@ -534,7 +631,7 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
         // 空备份 = 接管前那个文件根本不存在。**这和「备份丢了」不是一
         // 回事**：前者知道原来什么都没有，后者是不知道原来是什么。
         Some(t) if t.trim().is_empty() => Some(Val::Obj(Vec::new())),
-        Some(t) => Some(semantic(c.format, t, c.id)?),
+        Some(t) => Some(semantic(fmt, t, client)?),
         None => None,
     };
 
@@ -584,26 +681,28 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
 
     for t in &targets {
         text = match t {
-            Target::Set(p, v) => put(c.format, &text, &refs(p), v, c.id)?,
-            Target::Remove(p) => drop_(c.format, &text, &refs(p), c.id)?,
+            // 已经是那个值了就不写：重写一遍可能换掉原来的写法（`version: 1`
+            // 按字符串写回去会变成 `'1'`，dsh 就不认这个文件了）
+            Target::Set(p, v) if peek(fmt, &text, &refs(p), client)? == Some(v.to_line()) => text,
+            Target::Set(p, v) => put(fmt, &text, &refs(p), v, client)?,
+            Target::Remove(p) => drop_(fmt, &text, &refs(p), client)?,
         };
     }
-    if let Some(prefix) = c.comment_prefix() {
+    if let Some(prefix) = crate::clients::comment_prefix(fmt) {
         text = sentinel::strip(&text, prefix);
     }
 
     // 当初这个文件就是我们建的，还原之后又空了 —— 那就整个删掉。
     // **只在空的时候删**：用户可能在这三个月里往里加了自己的东西，
     // 那些必须留下（卸载走还原，不是拿备份覆盖）。
-    let delete_file = rec.created_file
-        && matches!(semantic(c.format, &text, c.id)?, Val::Obj(ms) if ms.is_empty());
+    let delete_file =
+        rec.created_file && matches!(semantic(fmt, &text, client)?, Val::Obj(ms) if ms.is_empty());
     if delete_file {
         notes.push(msg!("adopt.restore.file_removed" => "This file was created here, restoring leaves it empty, and it was removed with the rest."));
     }
 
-    notes.insert(0, takes_effect_note(c));
     Ok(Plan {
-        client: c.id.into(),
+        client: client.into(),
         path,
         before,
         after: text,
@@ -614,6 +713,8 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
         targets,
         drop_sidecar: Some(side),
         delete_file,
+        format: fmt,
+        also: Vec::new(),
         prior: None,
     })
 }

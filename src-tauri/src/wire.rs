@@ -167,6 +167,25 @@ pub struct PlanView {
     /// 那把密钥要在接管的那一刻新建（此前没有为这个客户端留着的）
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub key_created: bool,
+    /// 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败。
+    /// DeepSeek Harness 的密钥在它自己的凭据文件里，就在这儿
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<FilePlanView>,
+}
+
+/// 一次改动里的另一份文件：改哪个、改哪几项、完整的前后原文。**密钥已打码。**
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct FilePlanView {
+    pub path: String,
+    /// 改之前的原文。没有 = 这个文件本来不存在，会新建（还原时：会删掉）
+    pub before: Option<String>,
+    pub after: String,
+    pub fields: Vec<FieldChange>,
+    /// 这一份已经是这样了
+    pub noop: bool,
+    /// 还原时这个文件会被整个删掉（当初就是接管时建的，还原后又空了）
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deletes: bool,
 }
 
 /// 对一个字段做什么。
