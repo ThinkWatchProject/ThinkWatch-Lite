@@ -13,7 +13,7 @@ import { troubleText } from "@/launch/trouble.i18n";
 import { LOCAL, connApi, currentProfile, type ConnView } from "./api";
 import { connText } from "./connection.i18n";
 import { useConnections } from "./ConnectionProvider";
-import { profileName, shortReason } from "./describe";
+import { coreInstallCommand, profileName, shortReason } from "./describe";
 
 /**
  * 没连上时内容区里的那一页。
@@ -138,7 +138,13 @@ function RemoteDown({ view }: { view: ConnView }) {
   );
 }
 
-function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string; theirs: string }) {
+/**
+ * 版本不一致：两个版本号，和在服务器上装本应用需要的那一版的命令。
+ *
+ * **命令指定版本**（`view.required_core`，见 `coreInstallCommand`）：服务器比应用新的时候，
+ * 升级到最新帮不上忙，要装的是更旧的那一版。导出给测试用
+ */
+export function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string; theirs: string }) {
   const t = useText(connText);
   const { switchTo } = useConnections();
   const p = currentProfile(view)!;
@@ -151,9 +157,9 @@ function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string; theirs
         ]}
       />
       <div className="flex flex-col gap-1.5">
-        <p className="tw-body text-muted-foreground">{t.runOnServer}</p>
+        <p className="tw-body text-muted-foreground">{t.runOnServer(view.required_core)}</p>
         <pre className="rounded-md border border-border bg-surface px-3 py-2 font-mono tw-body select-text">
-          {t.upgradeCommand}
+          {coreInstallCommand(view.required_core)}
         </pre>
       </div>
       <div className="flex flex-wrap gap-2">

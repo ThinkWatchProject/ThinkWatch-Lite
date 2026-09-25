@@ -105,7 +105,13 @@ export const connText = messages(
     wrongKey: "密钥不正确",
     wrongKeyNext: (code: Code) => <>在服务器上执行 {code("twcore control-key")} 查看当前密钥。</>,
     mismatch: (theirs: string, ours: string) => `版本不一致：服务器 core ${theirs}，本应用需要 ${ours}`,
-    mismatchNext: "在服务器上升级 core 后再连接。",
+    /**
+     * **不说「升级」。**服务器可能比应用新，这时要装的是一个更旧的版本。命令指定版本，
+     * 新旧都照装，见 `coreInstallCommand`
+     */
+    mismatchNext: (code: Code, command: string) => (
+      <>在服务器上执行 {code(command)} 安装本应用需要的版本，然后重新连接。</>
+    ),
     reasonTimeout: "连接超时",
     reasonUnreachable: "无法访问该地址",
 
@@ -141,8 +147,9 @@ export const connText = messages(
     mismatchTitle: (name: string) => `${name} 上的 core 版本与本应用不一致`,
     server: "服务器",
     appNeeds: "本应用需要",
-    runOnServer: "在服务器上执行：",
-    upgradeCommand: "twcore upgrade",
+    /** 下面接着的是 `coreInstallCommand` 给的命令。服务器比应用新时也是这一条 */
+    runOnServer: (version: string) =>
+      `服务器需要运行 core ${version}。在服务器上执行以下命令安装此版本，服务器上现有的版本较新或较旧均适用：`,
     reconnect: "重新连接",
     localDown: "本机 core 未在运行",
     restartLocal: "重新启动",
@@ -243,7 +250,9 @@ export const connText = messages(
     wrongKeyNext: (code: Code) => <>Run {code("twcore control-key")} on the server to see the current key.</>,
     mismatch: (theirs: string, ours: string) =>
       `Version mismatch: the server runs core ${theirs}; this app needs ${ours}`,
-    mismatchNext: "Upgrade core on the server, then connect again.",
+    mismatchNext: (code: Code, command: string) => (
+      <>Run {code(command)} on the server to install the version this app needs, then connect again.</>
+    ),
     reasonTimeout: "The connection timed out",
     reasonUnreachable: "The address is not reachable",
 
@@ -282,8 +291,8 @@ export const connText = messages(
     mismatchTitle: (name: string) => `The core on ${name} does not match this app`,
     server: "Server",
     appNeeds: "This app needs",
-    runOnServer: "Run on the server:",
-    upgradeCommand: "twcore upgrade",
+    runOnServer: (version: string) =>
+      `The server needs core ${version}. Run this command on the server to install that version, whether the installed one is newer or older:`,
     reconnect: "Reconnect",
     localDown: "The local core is not running",
     restartLocal: "Restart",

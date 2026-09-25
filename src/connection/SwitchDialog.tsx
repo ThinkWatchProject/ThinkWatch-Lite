@@ -42,12 +42,15 @@ type Stage =
 export function SwitchDialog({
   target,
   tested,
+  required,
   onClose,
   onEdit,
 }: {
   target: Profile;
   /** 刚在编辑对话框里试连过：不再试一遍，直接到确认 */
   tested: ServerInfo | null;
+  /** 这一版应用配的 core（`ConnView.required_core`）。试连遇到版本不一致时用它写出命令 */
+  required: string;
   onClose: () => void;
   onEdit: (p: Profile) => void;
 }) {
@@ -141,11 +144,11 @@ export function SwitchDialog({
           <DialogTitle className="tw-title">{title}</DialogTitle>
         </DialogHeader>
 
-        {stage.kind === "testing" && <TestResult result={null} testing />}
+        {stage.kind === "testing" && <TestResult result={null} required={required} testing />}
 
         {stage.kind === "failed" &&
           (stage.error ? (
-            <TestResult result={{ ok: false, error: stage.error }} testing={false} />
+            <TestResult result={{ ok: false, error: stage.error }} required={required} testing={false} />
           ) : (
             <Banner layout="inline" tone="error">
               {stage.text}
