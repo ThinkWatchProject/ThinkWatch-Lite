@@ -28,7 +28,16 @@ export interface Scene {
 export const SCENES: Scene[] = [
   // 七天：一格两小时，看得出白天、夜里和周末
   { id: "overview", page: "dashboard", storage: { "tw-range": "7d" } },
-  { id: "traffic", page: "requests" },
+  {
+    id: "traffic",
+    page: "requests",
+    // **等表格真的画出来。**表体走 `useDeferredValue`：机器忙的时候，取数和两次相同的
+    // 快照都过去了，延后的那一次渲染还没提交 —— 拍下来只有进行中的那一行，而流水线照样
+    // 算它成功
+    setup: async () => {
+      await waitFor(() => (document.querySelectorAll("[data-slot=table-body] > tr").length > 100 ? document.body : null), 30_000);
+    },
+  },
   { id: "clients", page: "clients" },
   { id: "keys", page: "keys" },
   { id: "upstreams", page: "upstreams" },
