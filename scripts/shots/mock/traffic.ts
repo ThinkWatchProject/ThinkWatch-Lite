@@ -20,6 +20,7 @@ import type {
   Msg,
   PriceFields,
   RouteHits,
+  RouteStats,
   RoutingView,
   SecurityEventView,
   SessionView,
@@ -730,11 +731,18 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
 export const upstreamLatency = (from: number) => latency(rowsBetween(from), (h) => h.provider);
 
 /**
- * 各条路由、各条规则命中了多少（`GET /summary/routes`），照 tw-store 的 `route_hits`：按每一行
+ * 各条路由、各条规则命中了多少（`GET /summary/routes`），照 tw-store 的 `route_stats`：按每一行
  * 记下的路由数；一个请求算在决定去向的规则、每条改写了它的规则、第二阶段拒绝了它的规则上，
- * 每条只算一次；本地应答的不算；多的在前，一样多按名字
+ * 每条只算一次；本地应答的不算；多的在前，一样多按名字。记录从哪一刻起是全的：问的起点和
+ * 最老那条请求（本地应答的也算）取晚的那个，不在窗口里就是空
  */
-export function routeStats(from: number, to: number): RouteHits[] {
+export function routeStats(from: number, to: number): RouteStats {
+  const oldest = HISTORY.length ? Math.min(...HISTORY.map((h) => h.at_ms)) : null;
+  const covered = oldest == null ? null : Math.max(oldest, from);
+  return { covered_since_ms: covered != null && covered < to ? covered : null, routes: routeHits(from, to) };
+}
+
+function routeHits(from: number, to: number): RouteHits[] {
   const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const routes = new Map<string, RouteHits>();
   for (const h of rowsBetween(from, to)) {

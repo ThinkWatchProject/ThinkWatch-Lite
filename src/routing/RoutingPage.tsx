@@ -75,7 +75,7 @@ export default function RoutingPage({
   // 挂在页上，不挂在图上：切到「辅助请求」再切回来，在途的请求还在
   const flights = useFlights();
   // 图的线宽和列表里的命中数是同一份
-  const { hits, days } = useRouteHits(ov.retention.row_days);
+  const hits = useRouteHits(ov.retention.row_days);
   // 命令面板和别的页送来的：打开这一页上的对话框，和点按钮、点那一行一样（见 nav.tsx）
   useNavParams("routing", (p) => {
     if (p.editRoute && ov.routes.some((r) => r.name === p.editRoute)) {
@@ -286,8 +286,7 @@ export default function RoutingPage({
             className="mt-4"
             ov={view}
             flights={flights}
-            hits={hits.data}
-            days={days}
+            hits={hits}
             focus={hover.focus}
             onEnter={hover.enter}
             onLeave={hover.leave}
@@ -299,7 +298,6 @@ export default function RoutingPage({
           <RouteTable
             ov={view}
             hits={hits}
-            days={days}
             focus={hover.focus}
             onEnter={hover.enter}
             onLeave={hover.leave}
@@ -346,7 +344,6 @@ export default function RoutingPage({
           ov={view}
           models={models}
           hits={hits}
-          days={days}
           configVersion={view.config_version}
           onChanged={onChanged}
           onClose={() => setDialog(null)}

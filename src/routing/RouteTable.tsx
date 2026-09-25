@@ -7,15 +7,14 @@ import { StatusLabel } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
-import type { Resource } from "@/lib/resource";
-import type { Overview, RouteHits, RouteView } from "@/types";
+import type { Overview, RouteView } from "@/types";
 import { orderedRoutes, type ChainFocus } from "./chain";
 import { flowOf, routeProblems } from "./model";
 import { modelText } from "./model.i18n";
 import { KeyChips, TargetIcon } from "./parts";
 import { routeTableText } from "./RouteTable.i18n";
 import { routingText } from "./routing.i18n";
-import { hitsOfRoute, hitsOfRule } from "./useRouteHits";
+import { hitsOfRoute, hitsOfRule, type HitSpan, type RouteHitsWindow } from "./useRouteHits";
 
 export interface RouteActions {
   edit: (name: string) => void;
@@ -34,13 +33,12 @@ const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
  *
  * 默认路由固定在第一行 —— 没指定路由的密钥都走它，它是读这张表的起点。
  * 「规则」一栏一行一条，按顺序写出决定去向的规则和它们最近几天命中了多少，不打开
- * 对话框也能看出一条路由做什么、哪条规则在用。悬停一行，上面的路由图里经过它的路
- * 亮起来。
+ * 对话框也能看出一条路由做什么、哪条规则在用。这些数说的是多长一段写在这一栏的表头
+ * 上。悬停一行，上面的路由图里经过它的路亮起来。
  */
 export function RouteTable({
   ov,
   hits,
-  days,
   actions,
   focus,
   onEnter,
@@ -48,9 +46,8 @@ export function RouteTable({
   flash,
 }: {
   ov: Overview;
-  /** 最近 `days` 天的命中数（`useRouteHits`） */
-  hits: Resource<RouteHits[]>;
-  days: number;
+  /** 最近一段时间的命中数（`useRouteHits`） */
+  hits: RouteHitsWindow;
   actions: RouteActions;
   focus: ChainFocus | null;
   onEnter: (f: ChainFocus) => void;
@@ -71,7 +68,10 @@ export function RouteTable({
           <TableHead>
             <div className="flex items-center justify-between gap-3">
               <span>{t.rules}</span>
-              <span className="font-normal">{rt.hitsIn(days)}</span>
+              {/* 一条请求记录都没有时在这里说一次，下面不逐条写 */}
+              <span className="font-normal">
+                {hits.state === "counted" ? rt.hitsIn(hits.span) : hits.state === "empty" ? rt.noRecords : null}
+              </span>
             </div>
           </TableHead>
           <TableHead className="w-10" />
@@ -112,13 +112,13 @@ export function RouteTable({
                     {r.default && <Badge variant="secondary">{t.defaultBadge}</Badge>}
                   </div>
                   <div className="mt-0.5 tw-label text-muted-foreground">{mt.ruleCount(r.rules.length)}</div>
-                  <RouteTotal route={r.name} hits={hits} days={days} />
+                  <RouteTotal route={r.name} hits={hits} />
                 </TableCell>
                 <TableCell className="py-2.5 align-top whitespace-normal">
                   <KeyChips keys={users} empty={t.unused} />
                 </TableCell>
                 <TableCell className="overflow-hidden py-2.5 align-top">
-                  <Flow route={r} ov={ov} hits={hits} days={days} />
+                  <Flow route={r} ov={ov} hits={hits} />
                   {problems.length > 0 && (
                     <div className="mt-0.5">
                       <StatusLabel tone="warn" className="tw-label">
@@ -139,48 +139,52 @@ export function RouteTable({
   );
 }
 
-/** 这条路由最近几天走了多少请求。读不到时是一道横线，没有请求时直说 */
-function RouteTotal({ route, hits, days }: { route: string; hits: Resource<RouteHits[]>; days: number }) {
+/**
+ * 这条路由最近一段时间走了多少请求。读不到时是一道横线，没有请求时直说；一条请求记录
+ * 都没有时不写 —— 表头已经说了
+ */
+function RouteTotal({ route, hits }: { route: string; hits: RouteHitsWindow }) {
   const rt = useText(routingText);
-  if (hits.loading) return <Skeleton className="mt-1.5 h-2.5 w-20 rounded-sm" />;
-  const h = hitsOfRoute(hits.data, route);
+  if (hits.state === "loading") return <Skeleton className="mt-1.5 h-2.5 w-20 rounded-sm" />;
+  if (hits.state === "empty") return null;
+  if (hits.state === "unknown") return <div className="tw-label text-muted-foreground">—</div>;
+  const { span } = hits;
+  const h = hitsOfRoute(hits.routes, route);
   return (
     <div className="tw-label tw-num text-muted-foreground">
-      {h === undefined ? (
-        "—"
-      ) : h ? (
-        <AnimatedNumber value={h.requests} scope={String(days)} format={(n) => rt.requestsIn(days, Math.round(n))} />
+      {h ? (
+        <AnimatedNumber
+          value={h.requests}
+          scope={spanKey(span)}
+          format={(n) => rt.requestsIn(span, Math.round(n))}
+        />
       ) : (
-        rt.noRequestsIn(days)
+        rt.noRequestsIn(span)
       )}
     </div>
   );
 }
 
+/** 换了一段（7 天换成 5 小时）数字直接换，不从旧数滚过去 */
+const spanKey = (s: HitSpan) => `${s.n}${s.unit}`;
+
 /**
  * 决定去向的规则，一行一条：「长上下文 → 长上下文池」，右边是它命中了多少。
  *
  * **一次都没命中的写「未命中」**，不是错误，是提醒这条规则可能用不上了。整条路由这段
- * 时间都没有请求时不逐条写 —— 那是路由没在用，这一行左边已经说了。
+ * 时间都没有请求时不逐条写 —— 那是路由没在用，这一行左边已经说了；一条请求记录都没有
+ * 时也不写，那时「未命中」什么都说明不了。
  */
-function Flow({
-  route,
-  ov,
-  hits,
-  days,
-}: {
-  route: RouteView;
-  ov: Overview;
-  hits: Resource<RouteHits[]>;
-  days: number;
-}) {
+function Flow({ route, ov, hits }: { route: RouteView; ov: Overview; hits: RouteHitsWindow }) {
   const t = useText(routeTableText);
   const rt = useText(routingText);
   const flow = flowOf(route);
   if (flow.length === 0) {
     return <div className="text-muted-foreground">{t.noDecidingRule}</div>;
   }
-  const h = hitsOfRoute(hits.data, route.name);
+  const counted = hits.state === "counted" ? hits : null;
+  const h = counted ? hitsOfRoute(counted.routes, route.name) : null;
+  const scope = counted ? spanKey(counted.span) : "";
   return (
     <ul className="flex flex-col gap-0.5">
       {flow.map((f) => {
@@ -205,10 +209,10 @@ function Flow({
               )}
             </span>
             <div className="ml-auto shrink-0 tw-num">
-              {hits.loading ? (
+              {hits.state === "loading" ? (
                 <Skeleton className="h-2.5 w-8 rounded-sm" />
               ) : n == null ? null : n > 0 ? (
-                <AnimatedNumber value={n} scope={String(days)} />
+                <AnimatedNumber value={n} scope={scope} />
               ) : (
                 <span className="text-muted-foreground">{rt.noHits}</span>
               )}

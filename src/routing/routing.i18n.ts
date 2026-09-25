@@ -1,9 +1,20 @@
 import { messages } from "@/i18n";
+import type { HitSpan } from "./useRouteHits";
 
 /** 英文的列举：`a`、`a and b`、`a, b, and c`。中文用顿号连，用不到它 */
 export function andList(items: string[]): string {
   if (items.length <= 2) return items.join(" and ");
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+/** 命中数说的那一段（`HitSpan`）：「7 天」「5 小时」「12 分钟」 */
+export function spanZh({ n, unit }: HitSpan): string {
+  return `${n} ${unit === "day" ? "天" : unit === "hour" ? "小时" : "分钟"}`;
+}
+
+/** 同上，英文：「7 days」「1 hour」 */
+export function spanEn({ n, unit }: HitSpan): string {
+  return n === 1 ? `1 ${unit}` : `${n.toLocaleString()} ${unit}s`;
 }
 
 /** 路由页几个文件共用的词。**同一个说法只写一次** */
@@ -32,11 +43,16 @@ export const routingText = messages(
     continueMatching: "继续匹配",
     allRequests: "全部请求（兜底）",
     affectsCache: "影响 prompt cache",
-    /** 最近几天的命中数：一列数的表头、一次都没命中、一条路由走了多少请求 */
-    hitsIn: (days: number) => `${days} 天命中`,
+    /**
+     * 命中数：一列数的表头、一次都没命中、一条路由走了多少请求。`span` 是这些数说的
+     * 那一段 —— 通常是 7 天，记录开始得晚时是记录开始以来的那一段
+     */
+    hitsIn: (span: HitSpan) => `${spanZh(span)}命中`,
     noHits: "未命中",
-    requestsIn: (days: number, n: number) => `${days} 天 ${n.toLocaleString()} 次请求`,
-    noRequestsIn: (days: number) => `${days} 天内无请求`,
+    requestsIn: (span: HitSpan, n: number) => `${spanZh(span)} ${n.toLocaleString()} 次请求`,
+    noRequestsIn: (span: HitSpan) => `${spanZh(span)}内无请求`,
+    /** 这段时间一条请求记录都没有：表头说一次，不逐条标「未命中」 */
+    noRecords: "尚无请求记录",
     listSep: "、",
     /** 一行里并列的几件事 */
     clauseSep: " · ",
@@ -65,11 +81,12 @@ export const routingText = messages(
     continueMatching: "Continue matching",
     allRequests: "All requests (catch-all)",
     affectsCache: "Affects prompt cache",
-    hitsIn: (days: number) => `${days}-day hits`,
+    hitsIn: ({ n, unit }: HitSpan) => `${n}-${unit} hits`,
     noHits: "No hits",
-    requestsIn: (days: number, n: number) =>
-      `${n === 1 ? "1 request" : `${n.toLocaleString()} requests`} in ${days === 1 ? "1 day" : `${days} days`}`,
-    noRequestsIn: (days: number) => `No requests in ${days === 1 ? "1 day" : `${days} days`}`,
+    requestsIn: (span: HitSpan, n: number) =>
+      `${n === 1 ? "1 request" : `${n.toLocaleString()} requests`} in ${spanEn(span)}`,
+    noRequestsIn: (span: HitSpan) => `No requests in ${spanEn(span)}`,
+    noRecords: "No requests recorded yet",
     listSep: ", ",
     clauseSep: " · ",
   },

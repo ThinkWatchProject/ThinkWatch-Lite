@@ -37,7 +37,10 @@ type Phase =
   | { at: "browser"; id: string }
   /** 码已经拿到，等用户在另一台设备上输 */
   | { at: "device"; id: string; code: string; url: string }
-  /** `account`：登上的是哪个账号，和列表、编辑对话框读的是同一份（上游视图的 `oauth.account`） */
+  /**
+   * `account`：登上的是哪个账号。和上游视图的 `oauth.account` 同一块、同一个来源（这次
+   * 登录存进配置的令牌），所以和列表、编辑对话框说的是同一个账号
+   */
   | { at: "done"; provider: string; account: AccountView | null };
 
 /**
@@ -99,15 +102,8 @@ export function ChatgptLoginDialog({
     if (!alive.current || s.status === "pending" || settled.current === s.id) return;
     settled.current = s.id;
     if (s.status === "done" && s.provider) {
-      const provider = s.provider;
-      onSaved(provider);
-      // 登上的是哪个账号，问上游视图：和列表、编辑对话框说的是同一份。问不到就只说上游
-      void api
-        .signedInAs(provider)
-        .catch(() => null)
-        .then((account) => {
-          if (alive.current) setPhase({ at: "done", provider, account });
-        });
+      setPhase({ at: "done", provider: s.provider, account: s.account ?? null });
+      onSaved(s.provider);
       return;
     }
     setPhase({ at: "form" });
@@ -121,14 +117,18 @@ export function ChatgptLoginDialog({
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind !== "login_finished" || ev.login !== waiting) return;
-      settle({
-        id: ev.login,
-        status: ev.status,
-        provider: ev.provider ?? null,
-        error: ev.error ?? null,
-      });
+      // 事件只报结果，不带登上的是哪个账号：那一项只在这次登录的状态里。立刻问一次，
+      // 问不到就按事件收尾
+      api.chatgptLoginStatus(ev.login).then(settle, () =>
+        settle({
+          id: ev.login,
+          status: ev.status,
+          provider: ev.provider ?? null,
+          error: ev.error ?? null,
+        }),
+      );
     });
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       api
         .chatgptLoginStatus(waiting)
         .then(settle)
@@ -138,7 +138,7 @@ export function ChatgptLoginDialog({
     }, POLL_MS);
     return () => {
       void un.then((f) => f());
-      clearInterval(t);
+      clearInterval(timer);
     };
     // settle 每次渲染都是新的，但订阅只该跟着这次登录重建
     // eslint-disable-next-line react-hooks/exhaustive-deps

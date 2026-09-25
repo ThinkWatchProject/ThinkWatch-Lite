@@ -6,7 +6,7 @@ import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { groupKindLabel, targetLabel } from "@/labels";
-import type { Overview, RouteHits } from "@/types";
+import type { Overview } from "@/types";
 import {
   buildChain,
   EDGE_W,
@@ -28,7 +28,7 @@ import { usersOf } from "./model";
 import { KeyIcon, TargetIcon, upstreamState } from "./parts";
 import { partsText } from "./parts.i18n";
 import { routingText } from "./routing.i18n";
-import { hitsOfRoute } from "./useRouteHits";
+import { hitsOfRoute, type RouteHitsWindow } from "./useRouteHits";
 
 /**
  * 悬停的那一处。**离开时等一小会儿再清**：鼠标从一个节点移到相邻的节点、从表格的
@@ -71,7 +71,6 @@ export function ChainMap({
   ov,
   flights,
   hits,
-  days,
   focus,
   onEnter,
   onLeave,
@@ -81,9 +80,8 @@ export function ChainMap({
   ov: Overview;
   /** 在途的请求（`useFlights`） */
   flights: ReadonlyMap<number, Flight>;
-  /** 最近 `days` 天各条路由、规则的命中数（`useRouteHits`）。还没读到、读不到时为空，线照常画 */
-  hits: readonly RouteHits[] | undefined;
-  days: number;
+  /** 最近一段时间各条路由、规则的命中数（`useRouteHits`）。还没读到、读不到时线照常画 */
+  hits: RouteHitsWindow;
   focus: ChainFocus | null;
   onEnter: (f: ChainFocus) => void;
   onLeave: () => void;
@@ -94,13 +92,14 @@ export function ChainMap({
   const t = useText(chainMapText);
   const chain = useMemo(() => buildChain(ov), [ov]);
   const activity = useMemo(() => activityOf(flights, chain), [flights, chain]);
+  const routes = hits.state === "counted" ? hits.routes : null;
   /** 每条线画多粗。还没有命中数时都是最细的那一档 */
   const strokeOf = useMemo(() => {
-    if (!hits) return () => EDGE_W;
-    const traffic = trafficOf(chain, hits);
+    if (!routes) return () => EDGE_W;
+    const traffic = trafficOf(chain, routes);
     const max = Math.max(0, ...traffic.values());
     return (id: string) => edgeWidth(traffic.get(id), max);
-  }, [chain, hits]);
+  }, [chain, routes]);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -196,7 +195,6 @@ export function ChainMap({
                   ov={ov}
                   live={activity?.nodes.get(p.node.id) ?? 0}
                   hits={hits}
-                  days={days}
                   style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
                   state={
                     lit === null
@@ -299,7 +297,6 @@ function Node({
   ov,
   live,
   hits,
-  days,
   style,
   state,
   onEnter,
@@ -310,8 +307,7 @@ function Node({
   ov: Overview;
   /** 经过它的在途请求数 */
   live: number;
-  hits: readonly RouteHits[] | undefined;
-  days: number;
+  hits: RouteHitsWindow;
   style: CSSProperties;
   state: NodeState;
   onEnter: (f: ChainFocus) => void;
@@ -324,7 +320,7 @@ function Node({
   const group = node.kind === "group" ? ov.groups.find((g) => g.name === node.name) : undefined;
   // 拒绝没有东西可打开；内置的「全部上游」不能编辑
   const openable = node.kind !== "deny" && !group?.builtin;
-  const { body, tip } = describe(node, ov, live, hits, days, t, rt);
+  const { body, tip } = describe(node, ov, live, hits, t, rt);
   return (
     <Tip text={tip}>
       <div
@@ -355,8 +351,7 @@ function describe(
   node: ChainNode,
   ov: Overview,
   live: number,
-  hits: readonly RouteHits[] | undefined,
-  days: number,
+  hits: RouteHitsWindow,
   t: (typeof chainMapText)["zh"],
   rt: (typeof routingText)["zh"],
 ): { body: ReactNode; tip: ReactNode } {
@@ -396,7 +391,12 @@ function describe(
     case "route": {
       const r = ov.routes.find((x) => x.name === node.name)!;
       const users = usersOf(r, ov.clients);
-      const h = hitsOfRoute(hits, r.name);
+      // 最近走了多少请求。一条请求记录都没有、读不到时不写
+      let total: string | null = null;
+      if (hits.state === "counted") {
+        const h = hitsOfRoute(hits.routes, r.name);
+        total = h ? rt.requestsIn(hits.span, h.requests) : rt.noRequestsIn(hits.span);
+      }
       // 默认路由不在节点上标：下面的表里那一行带「默认」，悬停说明里也写着
       return {
         body: (
@@ -410,7 +410,7 @@ function describe(
           r.default && t.defaultRoute,
           users.length ? t.keyCount(users.length) : t.unusedRoute,
           t.ruleCount(r.rules.length),
-          h === undefined ? null : h ? rt.requestsIn(days, h.requests) : rt.noRequestsIn(days),
+          total,
         ),
       };
     }
