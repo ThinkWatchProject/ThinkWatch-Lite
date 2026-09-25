@@ -220,7 +220,7 @@ Linux 上图标位于系统托盘：点击打开同一份菜单，第一项为�
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/remote-add-dark.png">
-  <img src="docs/screenshots/zh/remote-add-light.png" alt="在设置中添加远程连接：填写服务器地址、控制端口和 twcore control-key 给出的密钥；测试连接已完成握手，显示 core 0.47.0 和服务器的网关地址">
+  <img src="docs/screenshots/zh/remote-add-light.png" alt="在设置中添加远程连接：填写服务器地址、控制端口和 twcore control-key 给出的密钥；测试连接已完成握手，显示 core 0.48.0 和服务器的网关地址">
 </picture>
 
 - 应用同一时间只连接一个 core。连接服务器期间，本机 core 在进行中的请求结束后停止运行，其配置、密钥和请求历史原样保留，切回本机时重新启动。服务器无法连接时，应用持续重试，不会自行退回本机；「本机」始终在连接列表中，任何时候都可以一步切回。

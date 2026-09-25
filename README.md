@@ -437,7 +437,7 @@ and any saved server.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/remote-add-dark.png">
-  <img src="docs/screenshots/en/remote-add-light.png" alt="Adding a remote connection in Settings: the server's address, its control port and the key from twcore control-key; the connection test has completed the handshake and reports core 0.47.0 and the server's gateway address">
+  <img src="docs/screenshots/en/remote-add-light.png" alt="Adding a remote connection in Settings: the server's address, its control port and the key from twcore control-key; the connection test has completed the handshake and reports core 0.48.0 and the server's gateway address">
 </picture>
 
 - The app connects to one core at a time. While it is connected to a server,
