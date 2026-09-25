@@ -285,6 +285,7 @@ pub async fn list_wsl(
                     base_error: None,
                     stale: Vec::new(),
                     firewall: None,
+                    listen: Vec::new(),
                 });
                 continue;
             }
@@ -316,6 +317,11 @@ pub async fn list_wsl(
             firewall: target
                 .as_ref()
                 .and_then(|t| wsl::firewall_hint(program.as_deref(), t)),
+            listen: target
+                .as_ref()
+                .and_then(|t| t.listen.as_ref())
+                .map(|l| l.notes.clone())
+                .unwrap_or_default(),
         });
     }
     Ok(wire::WslResponse { distros: out })
@@ -605,6 +611,19 @@ pub async fn retarget_wsl(state: tauri::State<'_, AppState>, env: String) -> Out
     }
     let cs = ops::stale(&w.home, &t.base);
     Ok(retarget_in(&state.control, &Place::Wsl(w), &t.base, cs).await)
+}
+
+/// 手动配置 WSL 里的客户端之前，把网关的监听改到这个发行版够得到的样子
+/// （[`wire::WslGroup::listen`] 说的那几句）。**用户在手动配置对话框里点过才到这里**，
+/// 和一键接管确认后改的是同一处设置。已经够得到就什么都不做
+#[tauri::command]
+pub async fn listen_for_wsl(state: tauri::State<'_, AppState>, env: String) -> Out<()> {
+    let w = wsl::find(&env)?;
+    let t = wsl::target(&state, &w).await?;
+    if let Some(l) = &t.listen {
+        wsl::save_listen(&state.control, &l.save).await?;
+    }
+    Ok(())
 }
 
 /// 客户端页上的「改为指向服务器」：还指着本机网关的，改为指向此刻连着的那个 core。

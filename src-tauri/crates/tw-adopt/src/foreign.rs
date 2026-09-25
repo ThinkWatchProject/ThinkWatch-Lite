@@ -166,6 +166,14 @@ fn mode_of(path: &Path) -> Option<u32> {
 /// 不强行改成 0600：那超出了「只改 endpoint 和 key 字段」的边界。权限
 /// 太松就报告给用户，让他自己决定 —— 报告是我们的职责，修改是他的权利。
 fn write_atomic(real: &Path, text: &str, keep_mode: Option<u32>) -> Result<(), ForeignError> {
+    // WSL 里已经在的文件**写进原文件**，不换一个新的挪过去：从 Windows 这一侧
+    // 看不到也设不了 Linux 的权限位，挪过去的新文件拿的是 9P 默认给的权限
+    // （通常别人也能读），用户原来的 0600 就没了，还原也回不去。原文件还是那个
+    // inode，权限位原样留着。这一步不是原子的 —— 能接受的理由和
+    // [`replace_in_wsl`] 最后那条退路一样：全文备份已经落盘，写完还有一次读回核对。
+    if crate::wsl::is_wsl_path(real) && real.is_file() {
+        return write_in_place(real, text);
+    }
     let dir = real.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|source| ForeignError::Write {
         path: dir.to_path_buf(),
@@ -197,6 +205,33 @@ fn write_atomic(real: &Path, text: &str, keep_mode: Option<u32>) -> Result<(), F
         path: real.to_path_buf(),
         source,
     })
+}
+
+#[cfg(windows)]
+fn make_private(real: &Path) -> bool {
+    crate::wsl::make_private(real)
+}
+
+/// 只有 Windows 上才会写到 WSL 里
+#[cfg(not(windows))]
+fn make_private(_: &Path) -> bool {
+    false
+}
+
+/// 截断原文件再写，落盘了再返回。**不新建**：文件不在就是出错了。
+fn write_in_place(real: &Path, text: &str) -> Result<(), ForeignError> {
+    use std::io::Write;
+    let w = |source| ForeignError::Write {
+        path: real.to_path_buf(),
+        source,
+    };
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(real)
+        .map_err(w)?;
+    f.write_all(text.as_bytes()).map_err(w)?;
+    f.sync_all().map_err(w)
 }
 
 /// 写一个只给自己看的文件：**新建时带着 `0600` 建出来**，不是建完再 `chmod`
@@ -436,6 +471,17 @@ pub fn apply(
     }
 
     write_atomic(&real, ch.after, keep)?;
+    // WSL 里新建的、装着密钥的文件：在发行版里收成 0600（见 `wsl::make_private`）。
+    // 收不成**说出来**，不当成失败 —— 配置已经写对了，只是权限要用户自己收
+    if created && ch.carries_secret && crate::wsl::is_wsl_path(&real) && !make_private(&real) {
+        let path = crate::wsl::split_wsl_path(&real)
+            .map(|(_, p)| p)
+            .unwrap_or_else(|| real.display().to_string());
+        warnings.push(msg!(
+            "adopt.warn.wsl_private", path = path
+            => "{path} was created from Windows, so other users inside WSL may be able to read the key written into it. Run chmod 600 {path} inside WSL to tighten it."
+        ));
+    }
 
     // 五：读回来对一遍。对不上就还原 —— 我们宁可什么都没做成，也不
     // 能留下一个半截的文件。
@@ -481,6 +527,23 @@ mod tests {
     /// 在 unix 上这个测试看不出任何名堂，`rename` 本来就覆盖。它是给
     /// Windows 立的桩：那里 `rename` 遇到已存在的目标直接失败，于是接管
     /// 在第一步就断了，报的还是一句「文件已存在」。
+    /// WSL 里的文件走这一条：写进原文件，权限位原样留着
+    #[cfg(unix)]
+    #[test]
+    fn writing_in_place_keeps_the_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.json");
+        std::fs::write(&p, "before").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write_in_place(&p, "after").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "after");
+        let mode = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        // 文件不在就是出错，不替它新建一个
+        assert!(write_in_place(&d.path().join("gone.json"), "x").is_err());
+    }
+
     #[test]
     fn writing_over_a_file_that_is_already_there_works() {
         let d = tempfile::tempdir().unwrap();

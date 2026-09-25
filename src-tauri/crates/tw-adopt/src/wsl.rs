@@ -145,6 +145,76 @@ pub fn is_wsl_path(p: &Path) -> bool {
     lower.starts_with(r"\\wsl.localhost\") || lower.starts_with(r"\\wsl$\")
 }
 
+/// WSL 里的一条路径拆成发行版的名字和它在发行版里的写法：
+/// `\\wsl.localhost\Ubuntu\home\u\.codex\config.toml` → (`Ubuntu`, `/home/u/.codex/config.toml`)。
+pub fn split_wsl_path(p: &Path) -> Option<(String, String)> {
+    if !is_wsl_path(p) {
+        return None;
+    }
+    let s = p.to_string_lossy().replace('/', "\\");
+    let s = s
+        .strip_prefix(r"\\?\UNC\")
+        .map(|r| format!(r"\\{r}"))
+        .unwrap_or(s);
+    // `\\wsl.localhost\` 或 `\\wsl$\` 后面：发行版名，再后面是发行版里的路径
+    let rest = s.strip_prefix(r"\\")?;
+    let mut parts = rest.split('\\').filter(|x| !x.is_empty());
+    parts.next()?;
+    let distro = parts.next()?.to_string();
+    let linux: Vec<_> = parts.collect();
+    if linux.is_empty() {
+        return None;
+    }
+    Some((distro, format!("/{}", linux.join("/"))))
+}
+
+/// 在发行版里把一个文件收成 `0600`。**不经 shell**：`wsl.exe --exec` 直接起 `chmod`，
+/// 以发行版的默认用户身份（从 Windows 这一侧建的文件，主人就是他）。最多等几秒，
+/// 成不成都交回去，由调用方决定要不要告诉用户。
+///
+/// 为什么要它：从 Windows 经 `\\wsl.localhost` 新建的文件，权限由 WSL 的 9P 服务
+/// 按默认规则给（通常别人也能读），Windows 这一侧没有办法在建的时候指定 —— 而这份
+/// 文件里正是网关的密钥。在 Linux 上我们新建的这种文件生来就是 `0600`，这里补上同一件事。
+#[cfg(windows)]
+pub fn make_private(p: &Path) -> bool {
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    let Some((distro, linux)) = split_wsl_path(p) else {
+        return false;
+    };
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args([
+        "--distribution",
+        &distro,
+        "--exec",
+        "chmod",
+        "600",
+        "--",
+        &linux,
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => return st.success(),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
 /// 注册表里登记着的发行版，按注册表里的顺序。
 ///
 /// 每个发行版是 `Lxss` 下一个以 GUID 命名的子键，里面有 `DistributionName`、
@@ -632,6 +702,29 @@ odd:x:1001:1001::relative/home:/bin/sh
         ] {
             assert!(!is_wsl_path(Path::new(p)), "{p}");
         }
+    }
+
+    #[test]
+    fn a_wsl_path_splits_into_the_distro_and_its_linux_path() {
+        for p in [
+            r"\\wsl.localhost\Ubuntu-22.04\home\u\.codex\config.toml",
+            r"\\wsl$\Ubuntu-22.04\home\u\.codex\config.toml",
+            r"\\?\UNC\wsl.localhost\Ubuntu-22.04\home\u\.codex\config.toml",
+        ] {
+            assert_eq!(
+                split_wsl_path(Path::new(p)),
+                Some((
+                    "Ubuntu-22.04".to_string(),
+                    "/home/u/.codex/config.toml".to_string()
+                )),
+                "{p}"
+            );
+        }
+        assert_eq!(split_wsl_path(Path::new(r"\\wsl.localhost\Ubuntu")), None);
+        assert_eq!(
+            split_wsl_path(Path::new(r"C:\Users\u\.codex\config.toml")),
+            None
+        );
     }
 
     #[test]

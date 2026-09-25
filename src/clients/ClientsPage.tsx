@@ -198,7 +198,10 @@ export default function ClientsPage({
   };
   const manualTarget = (id: string, env?: string): ManualTarget | null => {
     const l = locate(id, env);
-    if (l) return { id: l.c.id, name: l.c.name, setup: l.c.manual, key: l.c.key, env };
+    if (l) {
+      const listen = env ? groups.find((x) => x.distro === env)?.listen : undefined;
+      return { id: l.c.id, name: l.c.name, setup: l.c.manual, key: l.c.key, env, listen };
+    }
     const m = env ? undefined : data?.manual.find((x) => x.id === id);
     return m ? { id: m.id, name: m.name, setup: m.setup, caveat: m.caveat, key: m.key } : null;
   };
@@ -365,6 +368,7 @@ export default function ClientsPage({
             void keys.reload();
             if (manual.env) void wsl.reload();
           }}
+          onListenChanged={() => void wsl.reload()}
         />
       )}
 

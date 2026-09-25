@@ -127,6 +127,7 @@ adopt.restore.secret_lost
 adopt.takes_effect
 adopt.warn.symlink
 adopt.warn.world_readable
+adopt.warn.wsl_private
 control.client_unknown
 control.key_used_by_client
 control.models_unreadable

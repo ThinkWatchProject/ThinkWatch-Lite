@@ -141,6 +141,8 @@ export const clientsText = messages(
     firewallTitle: "Windows 防火墙中缺少放行 WSL 的规则",
     firewallBody: "缺少该规则时，WSL 中的客户端无法连接网关。请在以管理员身份运行的 PowerShell 中执行以下命令：",
     copyCommand: "复制命令",
+    manualListenTitle: "网关尚未监听 WSL 可以访问的地址",
+    manualListenApply: "修改监听设置",
 
     // 全部还原
     restoreAllTitle: "还原全部客户端",
@@ -279,6 +281,8 @@ export const clientsText = messages(
     firewallBody:
       "Without it, clients in WSL cannot connect to the gateway. Run this command in PowerShell as an administrator:",
     copyCommand: "Copy command",
+    manualListenTitle: "The gateway is not yet listening where WSL can reach it",
+    manualListenApply: "Change listen setting",
 
     restoreAllTitle: "Restore all clients",
     restoreAllBody: (n: number) =>

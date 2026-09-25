@@ -217,6 +217,7 @@ pub fn run() {
             clients::list_wsl,
             clients::retarget_wsl,
             clients::copy_wsl_firewall,
+            clients::listen_for_wsl,
             clients::plan_adopt,
             clients::adopt_client,
             clients::plan_restore,

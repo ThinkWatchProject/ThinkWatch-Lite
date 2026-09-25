@@ -186,6 +186,11 @@ pub struct WslGroup {
     /// 防火墙里放行 WSL 的那条规则缺了时，要在管理员 PowerShell 里执行的命令
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub firewall: Option<String>,
+    /// 网关此刻的监听够不到这个发行版时，要怎么改（每条一句）。**手动配置**用它：
+    /// 一键接管会在确认框里说、确认后才改，手动配置的那一份也得先把监听改好，
+    /// 不然照着复制的地址接不通。够得到时是空的
+    #[serde(default)]
+    pub listen: Vec<Msg>,
 }
 
 /// 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，

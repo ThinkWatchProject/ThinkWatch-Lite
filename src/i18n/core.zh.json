@@ -707,6 +707,7 @@
     "adopt.restore.file_removed": "该文件在接管时新建，还原后内容为空，已一并删除。",
     "adopt.warn.symlink": "{path} 是符号链接，实际写入的文件为 {real}。",
     "adopt.warn.world_readable": "{path} 的权限为 {mode}，本机其他用户可以读取写入的密钥。可执行 chmod 600 {path} 收紧权限。",
+    "adopt.warn.wsl_private": "{path} 是从 Windows 一侧新建的，WSL 中的其他用户可能读得到写入的密钥。可在 WSL 中执行 chmod 600 {path} 收紧权限。",
     "// ── adopt：接管、还原、搬 MCP 时的失败 ──────────────────────────": "",
     "adopt.file.read_failed": "无法读取 {path}：{detail}",
     "adopt.file.write_failed": "无法写入 {path}：{detail}",
