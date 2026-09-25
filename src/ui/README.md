@@ -350,7 +350,7 @@ sit in the grey palette. Unknown ones render a letter tile of the same size.
 - Colour: `text-muted-foreground` in tables, `text-foreground` when selected or in a title.
 - Covered: Anthropic, Claude, OpenAI/ChatGPT, OpenRouter, DeepSeek, Gemini, Ollama, Z.ai,
   Zhipu, Moonshot, Kimi, Qwen, xAI, Mistral, Groq, Bedrock, Azure; clients Claude Code,
-  Claude Desktop, Codex, opencode, Cursor, Gemini CLI, Cline, Zed, Windsurf. VS Code,
+  Claude Desktop, Codex, opencode, Cursor, Antigravity CLI, Cline, Zed, Windsurf. VS Code,
   Aider and Continue use the letter tile (no permissive source).
 - Sources and licences: `src/ui/logo-data.ts` header and `/NOTICE`. Add new marks only from
   MIT/CC0 sets (Lobe Icons, Simple Icons); never from LGPL projects.

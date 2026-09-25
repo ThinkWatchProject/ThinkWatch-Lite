@@ -154,6 +154,12 @@ pub fn user_level(home: &Path) -> Vec<Source> {
             Kind::Hooks,
             under(home, ".claude/settings.local.json"),
         ),
+        // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
+        f(
+            "antigravity-cli",
+            Kind::Hooks,
+            under(home, ".gemini/config/hooks.json"),
+        ),
         // 危险度第二：MCP
         f("claude-code", Kind::Mcp, under(home, ".claude.json")),
         // **Claude Desktop 只在这张表里**：它是订阅制，接管不了，但它的
@@ -165,6 +171,12 @@ pub fn user_level(home: &Path) -> Vec<Source> {
         ),
         f("cursor", Kind::Mcp, under(home, ".cursor/mcp.json")),
         f("codex", Kind::Mcp, under(home, ".codex/config.toml")),
+        // JSONC，按 JSON 读（扫描器跳过注释和尾逗号）
+        f(
+            "antigravity-cli",
+            Kind::Mcp,
+            tw_adopt::paths::AGY_MCP_CONFIG.resolve(home),
+        ),
         f(
             "zed",
             Kind::Mcp,
@@ -191,6 +203,12 @@ pub fn user_level(home: &Path) -> Vec<Source> {
     for p in md_in(&under(home, ".claude/agents")) {
         v.push(f("claude-code", Kind::Agent, p));
     }
+    for p in skills_in(&under(home, ".gemini/config/skills")) {
+        v.push(f("antigravity-cli", Kind::Skill, p));
+    }
+    for p in md_in(&under(home, ".gemini/config/agents")) {
+        v.push(f("antigravity-cli", Kind::Agent, p));
+    }
     v.retain(|s| s.path.exists());
     v
 }
@@ -215,6 +233,17 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
         f("claude-code", Kind::Instructions, under(dir, "CLAUDE.md")),
         f("codex", Kind::Instructions, under(dir, "AGENTS.md")),
         f("cursor", Kind::Instructions, under(dir, ".cursorrules")),
+        // agy 的项目级配置在 `.agents/` 下
+        f(
+            "antigravity-cli",
+            Kind::Hooks,
+            under(dir, ".agents/hooks.json"),
+        ),
+        f(
+            "antigravity-cli",
+            Kind::Mcp,
+            under(dir, ".agents/mcp_config.json"),
+        ),
     ];
     for p in md_in(&under(dir, ".claude/commands")) {
         v.push(f("claude-code", Kind::Command, p));
@@ -224,6 +253,12 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
     }
     for p in skills_in(&under(dir, ".claude/skills")) {
         v.push(f("claude-code", Kind::Skill, p));
+    }
+    for p in skills_in(&under(dir, ".agents/skills")) {
+        v.push(f("antigravity-cli", Kind::Skill, p));
+    }
+    for p in md_in(&under(dir, ".agents/agents")) {
+        v.push(f("antigravity-cli", Kind::Agent, p));
     }
     v.retain(|s| s.path.exists());
     for s in &mut v {
@@ -298,6 +333,33 @@ mod tests {
             1,
             "只认 .md"
         );
+    }
+
+    #[test]
+    fn antigravity_cli_is_scanned_at_both_levels() {
+        let d = tempfile::tempdir().unwrap();
+        touch(&tw_adopt::paths::AGY_MCP_CONFIG.resolve(d.path()));
+        touch(&d.path().join(".gemini/config/hooks.json"));
+        touch(&d.path().join(".gemini/config/skills/审查/SKILL.md"));
+        touch(&d.path().join(".gemini/config/agents/a.md"));
+        let got = user_level(d.path());
+        assert!(got.iter().all(|s| s.client == "antigravity-cli"), "{got:?}");
+        let mut kinds: Vec<_> = got.iter().map(|s| s.kind).collect();
+        kinds.sort();
+        assert_eq!(
+            kinds,
+            [Kind::Hooks, Kind::Mcp, Kind::Skill, Kind::Agent],
+            "{got:?}"
+        );
+
+        let p = tempfile::tempdir().unwrap();
+        touch(&p.path().join(".agents/mcp_config.json"));
+        touch(&p.path().join(".agents/hooks.json"));
+        touch(&p.path().join(".agents/skills/x/SKILL.md"));
+        touch(&p.path().join(".agents/agents/b.md"));
+        let got = in_project(p.path());
+        assert_eq!(got.len(), 4, "{got:?}");
+        assert!(got.iter().all(|s| s.client == "antigravity-cli"));
     }
 
     #[test]

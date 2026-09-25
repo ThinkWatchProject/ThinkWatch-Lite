@@ -367,7 +367,7 @@ pub fn adoptable() -> Vec<Client> {
 /// Tab 补全和 inline edit 仍然走它自己的后端 —— 显示成「已接管」会让
 /// 用户以为所有流量都在我们这儿。
 pub struct ManualOnly {
-    /// 为它生成专用密钥时用的标识：`cursor` / `continue` / `gemini-cli`
+    /// 为它生成专用密钥时用的标识：`cursor` / `continue` / `antigravity-cli`
     pub id: &'static str,
     pub name: &'static str,
     /// 手动配置的几步，每步「码，英文原句」。
@@ -472,45 +472,53 @@ pub fn manual_only() -> Vec<ManualOnly> {
             ),
         },
         ManualOnly {
-            id: "gemini-cli",
-            name: "Gemini CLI",
+            id: "antigravity-cli",
+            name: "Antigravity CLI",
+            // **只有 API key 模式能换接口地址**（agy 1.1.13 起）：settings.json
+            // 里的 `modelProvider` 选中 Gemini API，地址和密钥只认环境变量 ——
+            // `.env` 不读，`GOOGLE_API_KEY` 不认。写了 modelProvider 却没有
+            // `GEMINI_API_KEY`，agy 启动就退出，所以两半必须一起做，不能只替
+            // 用户改那一个 JSON 字段。
+            //
             // **Windows 上没有 shell 配置文件可 export**：用户级环境变量用 setx
             // 写，写完只对之后打开的终端生效。两个平台各用各的码
             #[cfg(not(windows))]
             steps: &[
                 (
-                    code!("adopt.manual.gemini_cli.export"),
+                    code!("adopt.manual.antigravity_cli.export"),
                     "In the shell configuration, export GOOGLE_GEMINI_BASE_URL set to the gateway address and GEMINI_API_KEY set to the key.",
                 ),
                 (
-                    code!("adopt.manual.gemini_cli.reopen"),
+                    code!("adopt.manual.antigravity_cli.provider"),
+                    r#"In ~/.gemini/antigravity-cli/settings.json, add "modelProvider": "gemini"."#,
+                ),
+                (
+                    code!("adopt.manual.antigravity_cli.reopen"),
                     "Then reopen the terminal.",
                 ),
             ],
             #[cfg(windows)]
             steps: &[
                 (
-                    code!("adopt.manual.gemini_cli.setx"),
+                    code!("adopt.manual.antigravity_cli.setx"),
                     "In a terminal, run setx GOOGLE_GEMINI_BASE_URL followed by the gateway address, and setx GEMINI_API_KEY followed by the key.",
                 ),
                 (
-                    code!("adopt.manual.gemini_cli.reopen"),
+                    code!("adopt.manual.antigravity_cli.provider_windows"),
+                    r#"In %USERPROFILE%\.gemini\antigravity-cli\settings.json, add "modelProvider": "gemini"."#,
+                ),
+                (
+                    code!("adopt.manual.antigravity_cli.reopen"),
                     "Then reopen the terminal.",
                 ),
             ],
+            // 它自己拼 `/v1beta/models/{model}:streamGenerateContent`
             v1: false,
-            // 它只认环境变量，没有可写的配置字段。改 .zshrc 超出了
-            // 「只改 endpoint 和 key 字段」的边界 ——
-            // **报告是我们的职责，修改是他的权利。**
-            #[cfg(not(windows))]
+            // 两件事用户配完才会撞上：额度的来源换了；模型名只能是它
+            // 自带目录里的 Gemini 模型，要用别家的只能靠路由改写
             caveat: (
-                code!("adopt.manual.gemini_cli.caveat"),
-                "Gemini CLI reads the endpoint only from the environment. ThinkWatch does not edit shell configuration files, so add it by hand.",
-            ),
-            #[cfg(windows)]
-            caveat: (
-                code!("adopt.manual.gemini_cli.caveat_windows"),
-                "Gemini CLI reads the endpoint only from the environment. ThinkWatch does not change environment variables, so add them by hand.",
+                code!("adopt.manual.antigravity_cli.caveat"),
+                "Once set, agy no longer uses the quota of the Google account. agy sends Gemini model names, so using another provider's models takes a routing rule that rewrites the model name.",
             ),
         },
     ]
@@ -834,11 +842,11 @@ mod tests {
             key: None,
         };
         assert_eq!(cursor.endpoint(&gw), "http://127.0.0.1:8788/v1");
-        let gemini = m.iter().find(|c| c.id == "gemini-cli").unwrap();
+        let agy = m.iter().find(|c| c.id == "antigravity-cli").unwrap();
         assert_eq!(
-            gemini.endpoint(&gw),
+            agy.endpoint(&gw),
             "http://127.0.0.1:8788",
-            "Gemini CLI 不要 /v1"
+            "Antigravity CLI 不要 /v1"
         );
         for c in &m {
             for step in c.steps() {

@@ -63,6 +63,12 @@ adopt.file.read_failed
 adopt.file.readback_mismatch
 adopt.file.verify_failed
 adopt.file.write_failed
+adopt.manual.antigravity_cli.caveat
+adopt.manual.antigravity_cli.export
+adopt.manual.antigravity_cli.provider
+adopt.manual.antigravity_cli.provider_windows
+adopt.manual.antigravity_cli.reopen
+adopt.manual.antigravity_cli.setx
 adopt.manual.continue.caveat
 adopt.manual.continue.entry
 adopt.manual.continue.open
@@ -72,11 +78,6 @@ adopt.manual.cursor.caveat
 adopt.manual.cursor.key
 adopt.manual.cursor.open
 adopt.manual.file
-adopt.manual.gemini_cli.caveat
-adopt.manual.gemini_cli.caveat_windows
-adopt.manual.gemini_cli.export
-adopt.manual.gemini_cli.reopen
-adopt.manual.gemini_cli.setx
 adopt.manual.zed.key
 adopt.mcp.not_copyable
 adopt.mcp.not_there

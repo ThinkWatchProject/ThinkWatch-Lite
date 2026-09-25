@@ -92,11 +92,11 @@ impl Target {
     }
 }
 
-/// 能往里写的那几个，以及为什么另外两个不行。
+/// 能往里写的那几个，以及为什么另外几个不行。
 ///
 /// 判据是**我们有没有实际见过那个形状**。`mcpServers` 那三家和 Codex 的
 /// `mcp_servers` 在本机都有真实样本，字段名一致（`command` / `args` /
-/// `env`）；opencode 和 Zed 的 MCP 段本机没有样本，**照着猜写进去，
+/// `env`）；opencode、Zed 和 Antigravity CLI 的 MCP 段本机没有样本，**照着猜写进去，
 /// 用户拿到的是一份客户端读不懂的配置** —— 那比不提供这个功能糟得多。
 pub fn targets() -> Vec<Target> {
     vec![
@@ -142,6 +142,21 @@ pub fn targets() -> Vec<Target> {
             config: crate::paths::OPENCODE_CONFIGS,
             format: Format::Json,
             key: "mcp",
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+        },
+        // JSONC（agy 允许注释和尾逗号），顶层 `mcpServers`，但远程 server
+        // 用的是 `serverUrl`，本机没有样本。照着文档猜写进去，客户端读不懂
+        // 就是用户的损失 —— 先只读
+        Target {
+            client: "antigravity-cli",
+            name: "Antigravity CLI",
+            config: &[crate::paths::AGY_MCP_CONFIG],
+            format: Format::Json,
+            key: "mcpServers",
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.unverified_format"),
@@ -481,7 +496,7 @@ mod tests {
         // 那比不提供这个功能糟得多。
         let (_d, home) = home_with(&[(".claude.json", CLAUDE)]);
         let v = read_server(&target("claude-code").unwrap(), &home, "filesystem").unwrap();
-        for c in ["zed", "opencode"] {
+        for c in ["zed", "opencode", "antigravity-cli"] {
             let t = target(c).unwrap();
             let e = plan_copy(&t, &home, "filesystem", &v).unwrap_err();
             assert!(matches!(e, McpError::NotCopyable { .. }), "{e}");

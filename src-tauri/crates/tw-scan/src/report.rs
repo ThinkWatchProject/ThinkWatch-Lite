@@ -185,16 +185,21 @@ fn mcp_from(src: &Source, v: &Val) -> Vec<McpServer> {
                 client: src.client.to_string(),
                 command: s(cfg, "command").unwrap_or_default(),
                 args: strings(cfg, "args"),
-                url: s(cfg, "url"),
+                // agy 的远程 server 写 `serverUrl`（也认 `url`）
+                url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
                 // **只取键名，不取值。**值里常常就是密钥本身
                 env_keys: match obj(cfg, "env") {
                     Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
                     None => Vec::new(),
                 },
-                // 没写就是开着 —— 各家的默认都是这样
+                // 没写就是开着 —— 各家的默认都是这样。关掉的写法有两种：
+                // `enabled: false`，以及 agy 的 `disabled: true`
                 enabled: !matches!(
                     cfg,
-                    Val::Obj(ms) if ms.iter().any(|(k, v)| k == "enabled" && *v == Val::Bool(false))
+                    Val::Obj(ms) if ms.iter().any(|(k, v)| {
+                        (k == "enabled" && *v == Val::Bool(false))
+                            || (k == "disabled" && *v == Val::Bool(true))
+                    })
                 ),
                 source: src.path.clone(),
             });

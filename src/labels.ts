@@ -254,7 +254,7 @@ const APPS: Record<string, string> = {
   aider: "Aider",
   zed: "Zed",
   continue: "Continue",
-  "gemini-cli": "Gemini CLI",
+  "antigravity-cli": "Antigravity CLI",
 };
 
 export function appLabel(hint: string): string {
