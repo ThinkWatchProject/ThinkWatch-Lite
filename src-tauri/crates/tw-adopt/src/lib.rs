@@ -20,5 +20,6 @@ pub mod plan;
 pub mod rows;
 pub mod sentinel;
 pub mod toml;
+pub mod wsl;
 pub mod yaml;
 pub mod yamlval;

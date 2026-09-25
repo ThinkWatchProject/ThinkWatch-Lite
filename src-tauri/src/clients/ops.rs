@@ -50,6 +50,7 @@ pub fn find(id: &str) -> Result<Client, Msg> {
 pub fn known(id: &str) -> bool {
     clients::adoptable().iter().any(|c| c.id == id)
         || clients::manual_only().iter().any(|m| m.id == id)
+        || tw_adopt::wsl::split_key_id(id).is_some()
 }
 
 pub fn unknown(id: &str) -> Msg {
@@ -67,38 +68,15 @@ pub fn list(home: &Path, gw: &Gateway) -> wire::ClientsResponse {
         base: gw.base.clone(),
         key: Some(String::new()),
     };
-    let defs = clients::adoptable();
-    let detected = detect::detect(home)
-        .into_iter()
-        .map(|d| {
+    let detected = clients::adoptable()
+        .iter()
+        .map(|c| {
+            let d = detect::detect_one(c, home);
             let (key, last_seen_ms) = key_of(d.id).unzip();
-            let manual = defs
-                .iter()
-                .find(|c| c.id == d.id)
-                .map(|c| setup_of(c, &placeholder))
-                .unwrap_or_else(|| wire::ManualSetup {
-                    steps: Vec::new(),
-                    fields: Vec::new(),
-                    endpoint: gw.base.clone(),
-                });
-            wire::DetectedClient {
-                last_seen_ms: last_seen_ms.flatten(),
-                key,
-                manual,
-                id: d.id.to_string(),
-                name: d.name.to_string(),
-                path: d.path.display().to_string(),
-                real: d.real.display().to_string(),
-                installed: d.installed,
-                has_config: d.has_config,
-                adopted_at_ms: d.adopted_at_ms,
-                endpoint: d.endpoint,
-                shadows: d.shadows.iter().map(|p| p.display().to_string()).collect(),
-                takes_effect: d.takes_effect.into(),
-                warns_when_silent: d.takes_effect.warns_when_silent(),
-                verified: d.verified.into(),
-                costs: d.costs,
-            }
+            let manual = setup_of(c, c.manual_steps(), &placeholder);
+            detected_view(d, key, last_seen_ms.flatten(), manual, |p| {
+                p.display().to_string()
+            })
         })
         .collect();
     let manual = clients::manual_only()
@@ -127,11 +105,103 @@ pub fn list(home: &Path, gw: &Gateway) -> wire::ClientsResponse {
     }
 }
 
+/// 一个检测结果在界面上的样子。`shown` 决定路径怎么写：这台电脑上原样，WSL
+/// 里的写成 WSL 终端里的样子
+fn detected_view(
+    d: detect::Detected,
+    key: Option<String>,
+    last_seen_ms: Option<u64>,
+    manual: wire::ManualSetup,
+    shown: impl Fn(&Path) -> String,
+) -> wire::DetectedClient {
+    wire::DetectedClient {
+        last_seen_ms,
+        key,
+        manual,
+        id: d.id.to_string(),
+        name: d.name.to_string(),
+        path: shown(&d.path),
+        real: shown(&d.real),
+        installed: d.installed,
+        has_config: d.has_config,
+        adopted_at_ms: d.adopted_at_ms,
+        endpoint: d.endpoint,
+        shadows: d.shadows.iter().map(|p| shown(p)).collect(),
+        takes_effect: d.takes_effect.into(),
+        warns_when_silent: d.takes_effect.warns_when_silent(),
+        verified: d.verified.into(),
+        costs: d.costs,
+    }
+}
+
+/// 一个 WSL 发行版里的客户端：第一批的那几个（`tw_adopt::wsl::CLIENTS`）。
+///
+/// 和这台电脑上的一样检测、一样给手动配置的方法，只是 home 是 WSL 里的，密钥是
+/// 为 WSL 里这一份单独发的那把（`tw_adopt::wsl::key_id`）。
+pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedClient> {
+    let placeholder = clients::Gateway {
+        base: gw.base.clone(),
+        key: Some(String::new()),
+    };
+    clients::adoptable()
+        .iter()
+        .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id))
+        .map(|c| {
+            let d = detect::detect_one(c, &w.home);
+            let owner = tw_adopt::wsl::key_id(c.id, w.name());
+            let k = gw.key_of(&owner);
+            let manual = setup_of(c, c.manual_steps_wsl(w), &placeholder);
+            detected_view(
+                d,
+                k.map(|k| k.name.clone()),
+                k.and_then(|k| k.last_seen_ms),
+                manual,
+                |p| w.shown(p),
+            )
+        })
+        .collect()
+}
+
+/// 接管着、**还指着这个网关的旧地址**的客户端：端口还是网关的端口，主机是一个
+/// IP 地址，但已经不是 `base` 了。WSL 用 NAT 网络时，WSL 一重启，写进去的那个
+/// 虚拟网卡地址就作废了；连着远程 core 时，还指着本机网关的也是这样。
+///
+/// 指着别的端口、写的是主机名的，是用户自己改的，不在里面 —— 重新指向不该把它们
+/// 改回来。
+pub fn stale(home: &Path, base: &str) -> Vec<Client> {
+    let Some(want) = host_port(base).map(str::to_string) else {
+        return Vec::new();
+    };
+    let port = want.rsplit_once(':').map(|(_, p)| p.to_string());
+    clients::adoptable()
+        .into_iter()
+        .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id))
+        .filter(|c| {
+            let d = detect::detect_one(c, home);
+            let (Some(_), Some(e)) = (d.adopted_at_ms, d.endpoint) else {
+                return false;
+            };
+            let Some(hp) = host_port(&e) else {
+                return false;
+            };
+            let Some((host, p)) = hp.rsplit_once(':') else {
+                return false;
+            };
+            hp != want
+                && Some(p.to_string()) == port
+                && host
+                    .trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .is_ok()
+        })
+        .collect()
+}
+
 /// 手动配置一个能接管的客户端：打开哪个文件、写哪几项、填哪个地址。
 /// 写的那几项就是接管时写的那几项 —— 两条路写出来的配置一模一样。
-fn setup_of(c: &Client, gw: &clients::Gateway) -> wire::ManualSetup {
+fn setup_of(c: &Client, steps: Vec<Msg>, gw: &clients::Gateway) -> wire::ManualSetup {
     wire::ManualSetup {
-        steps: c.manual_steps(),
+        steps,
         // 另一份文件里的那几项接在后面，步骤里说了它们在哪个文件
         fields: clients::edits(c, gw)
             .iter()
@@ -267,12 +337,23 @@ fn free_name(keys: &[ClientView], id: &str) -> String {
 /// 算 —— diff 里的密钥本来就是打码的。落盘时写进去的是哪一把要**在确认之前说**：
 /// 新建一把和沿用一把，对用户是两件事。
 pub fn plan_adopt(home: &Path, id: &str, gw: &Gateway) -> Result<wire::PlanView, Msg> {
+    plan_adopt_as(home, id, id, gw)
+}
+
+/// [`plan_adopt`]，密钥归在 `owner` 名下。WSL 里的那一份用它自己的一把
+/// （`tw_adopt::wsl::key_id`），不和这台电脑上的同一个客户端共用
+pub fn plan_adopt_as(
+    home: &Path,
+    id: &str,
+    owner: &str,
+    gw: &Gateway,
+) -> Result<wire::PlanView, Msg> {
     let c = find(id)?;
-    let (name, value, created) = match gw.key_of(c.id) {
+    let (name, value, created) = match gw.key_of(owner) {
         Some(k) => (k.name.clone(), k.key.clone(), false),
         None => {
             let default = gw.keys.iter().find(|k| k.default).ok_or_else(no_keys)?;
-            (free_name(&gw.keys, c.id), default.key.clone(), true)
+            (free_name(&gw.keys, owner), default.key.clone(), true)
         }
     };
     let target = clients::Gateway {
@@ -331,6 +412,16 @@ pub fn adopt(
 
 /// 算一份还原改动。**不写任何东西。**
 pub fn plan_restore(home: &Path, id: &str, keys: &[ClientView]) -> Result<wire::PlanView, Msg> {
+    plan_restore_as(home, id, id, keys)
+}
+
+/// [`plan_restore`]，留下的那把密钥归在 `owner` 名下
+pub fn plan_restore_as(
+    home: &Path,
+    id: &str,
+    owner: &str,
+    keys: &[ClientView],
+) -> Result<wire::PlanView, Msg> {
     let c = find(id)?;
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     // 还原的 diff 里，**要打码的是用户自己的原始密钥** —— 它正要被写
@@ -347,7 +438,7 @@ pub fn plan_restore(home: &Path, id: &str, keys: &[ClientView]) -> Result<wire::
     // 还原不删密钥：说清留下的是哪一把，下次接管直接用它
     v.key = keys
         .iter()
-        .find(|k| k.client.as_deref() == Some(c.id))
+        .find(|k| k.client.as_deref() == Some(owner))
         .map(|k| k.name.clone());
     Ok(v)
 }
@@ -373,8 +464,17 @@ pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptRespo
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
 pub fn diagnose(home: &Path, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
     let c = find(id)?;
-    Ok(detect::diagnose(&c, home, None)
-        .into_iter()
+    Ok(findings(detect::diagnose(&c, home, None)))
+}
+
+/// WSL 里的那一份走一遍同样的链
+pub fn diagnose_wsl(w: &tw_adopt::wsl::WslHome, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
+    let c = find(id)?;
+    Ok(findings(detect::diagnose_wsl(&c, w)))
+}
+
+fn findings(f: Vec<detect::Finding>) -> Vec<wire::FindingView> {
+    f.into_iter()
         .map(|f| wire::FindingView {
             level: match f.level {
                 detect::Level::Blocking => wire::FindingLevel::Blocking,
@@ -385,7 +485,7 @@ pub fn diagnose(home: &Path, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
             detail: f.detail,
             fix: f.fix,
         })
-        .collect())
+        .collect()
 }
 
 /// 此刻接管着的客户端。
@@ -449,9 +549,9 @@ pub fn adopted_owner(home: &Path, keys: &[ClientView], key: &str) -> Option<Clie
 
 /// 接管着的这个客户端里还写着这把密钥：先还原它，才能删这把密钥。和 core 以前
 /// 说的是同一句
-pub fn key_used_by(c: &Client) -> Msg {
+pub fn key_used_by(client: &str) -> Msg {
     msg!(
-        "control.key_used_by_client", client = c.name =>
+        "control.key_used_by_client", client = client =>
         "{client} is pointed at the gateway and has this key in its configuration. \
          Restore it before deleting the key."
     )
@@ -693,7 +793,7 @@ mod tests {
         .unwrap();
         let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
         assert_eq!(owner.id, "claude-code");
-        assert_eq!(key_used_by(&owner).code, "control.key_used_by_client");
+        assert_eq!(key_used_by(owner.name).code, "control.key_used_by_client");
         assert!(adopted_owner(home.path(), &keys, "default").is_none());
     }
 
@@ -750,6 +850,93 @@ mod tests {
             here,
             vec![("claude-code", "http://127.0.0.1:8788".to_string())]
         );
+    }
+
+    /// 一个假的 WSL 发行版：`etc/passwd` 和默认用户的 home，Claude Code 和 Codex 都装了
+    fn wsl_home() -> (tempfile::TempDir, tw_adopt::wsl::WslHome) {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("Ubuntu");
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(
+            root.join("etc/passwd"),
+            "u:x:1000:1000::/home/u:/bin/bash\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("home/u/.claude")).unwrap();
+        std::fs::create_dir_all(root.join("home/u/.codex")).unwrap();
+        std::fs::create_dir_all(root.join("home/u/.config/zed")).unwrap();
+        let w = tw_adopt::wsl::WslHome::read(
+            tw_adopt::wsl::Distro {
+                name: "Ubuntu".into(),
+                version: 2,
+                uid: 1000,
+            },
+            root,
+        )
+        .unwrap();
+        (d, w)
+    }
+
+    /// WSL 里只列第一批的那两个；路径写成 WSL 里的样子；密钥认的是为 WSL 里
+    /// 这一份发的那把，不是这台电脑上同一个客户端的那把
+    #[test]
+    fn a_wsl_distro_lists_its_own_copies_with_their_own_keys() {
+        let (_d, w) = wsl_home();
+        let mut mine = key(
+            "claude-code-wsl-ubuntu",
+            "tw-w",
+            Some("claude-code-wsl-ubuntu"),
+            false,
+        );
+        mine.last_seen_ms = Some(7);
+        let gw = Gateway {
+            base: "http://172.27.96.1:8788".into(),
+            keys: vec![
+                key("default", "tw-d", None, true),
+                key("claude-code", "tw-c", Some("claude-code"), false),
+                mine,
+            ],
+        };
+        let r = list_wsl(&w, &gw);
+        let ids: Vec<_> = r.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["claude-code", "codex"]);
+        let cc = &r[0];
+        assert!(cc.installed);
+        assert_eq!(cc.path, "~/.claude/settings.json");
+        assert_eq!(cc.key.as_deref(), Some("claude-code-wsl-ubuntu"));
+        assert_eq!(cc.last_seen_ms, Some(7));
+        assert_eq!(cc.manual.endpoint, "http://172.27.96.1:8788");
+        assert_eq!(cc.manual.steps[0].arg("file"), "~/.claude/settings.json");
+        assert_eq!(r[1].key, None);
+        // 接管的方案：新建的那把叫 WSL 那一份的名字
+        let p = plan_adopt_as(&w.home, "codex", "codex-wsl-ubuntu", &gw).unwrap();
+        assert_eq!(p.key.as_deref(), Some("codex-wsl-ubuntu"));
+        assert!(p.key_created);
+        assert!(known("codex-wsl-ubuntu"));
+    }
+
+    /// WSL 重启之后：还指着网关端口上一个旧 IP 的算「旧地址」；用户自己指到
+    /// 别的端口、别的主机名上的不算，重新指向不该把它们改回来
+    #[test]
+    fn only_clients_left_on_an_old_gateway_address_are_stale() {
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        adopt(&w.home, &b, "claude-code", "http://172.20.0.1:8788", "tw-c").unwrap();
+        adopt(&w.home, &b, "codex", "http://relay.example:8788", "tw-x").unwrap();
+        let ids = |base: &str| -> Vec<&str> { stale(&w.home, base).iter().map(|c| c.id).collect() };
+        assert_eq!(ids("http://172.27.96.1:8788"), ["claude-code"]);
+        assert!(ids("http://172.20.0.1:8788").is_empty(), "指着的就是它");
+        assert!(
+            ids("http://172.27.96.1:9999").is_empty(),
+            "端口不同，是用户自己改的"
+        );
+        // 重新指向之后就不旧了
+        let c = find("claude-code").unwrap();
+        repoint(&w.home, &b, &c, "http://172.27.96.1:8788", "tw-c").unwrap();
+        assert!(ids("http://172.27.96.1:8788").is_empty());
+        // 还原回到原样：WSL 里的那一份和这台电脑上的一样能退回去
+        restore(&w.home, &b, "claude-code").unwrap();
+        assert!(adopted(&w.home).iter().all(|c| c.id != "claude-code"));
     }
 
     /// 换了密钥之后重新指一次：新值写进它的配置

@@ -12,9 +12,8 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { DetectedClient } from "@/types";
 import { ConfirmAction, focusSelf } from "@/keys/parts";
-import { useRemote } from "@/connection/useRemote";
 import { clientsText } from "./clients.i18n";
-import { statusOf } from "./status";
+import type { Status } from "./status";
 import { ClientStatus } from "./ClientStatus";
 
 /**
@@ -25,19 +24,17 @@ import { ClientStatus } from "./ClientStatus";
  */
 export function RestoreAllDialog({
   adopted,
-  gatewayBase,
   pending,
   onCancel,
   onConfirm,
 }: {
-  adopted: DetectedClient[];
-  gatewayBase: string;
+  /** 会被还原的每一个，和它此刻的状态（WSL 里的按它那一组的地址算） */
+  adopted: { key: string; client: DetectedClient; status: Status }[];
   pending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const t = useText(clientsText);
-  const remote = useRemote();
   const common = useText(commonText);
   return (
     <AlertDialog open onOpenChange={(o) => !o && !pending && onCancel()}>
@@ -47,13 +44,13 @@ export function RestoreAllDialog({
           <AlertDialogDescription>{t.restoreAllBody(adopted.length)}</AlertDialogDescription>
         </AlertDialogHeader>
         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border tw-body">
-          {adopted.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2">
+          {adopted.map(({ key, client: c, status }) => (
+            <li key={key} className="flex items-center justify-between gap-3 px-3 py-2">
               <span className="flex min-w-0 items-center gap-2">
                 <ClientLogo id={c.id} name={c.name} className="text-muted-foreground" />
                 <span className="truncate font-medium">{c.name}</span>
               </span>
-              <ClientStatus status={statusOf(c, gatewayBase, Date.now(), remote !== null)} />
+              <ClientStatus status={status} />
             </li>
           ))}
         </ul>

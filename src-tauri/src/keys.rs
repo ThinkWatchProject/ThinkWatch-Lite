@@ -72,8 +72,8 @@ pub async fn delete_key(
         .call::<ep::Keys>(&[], &())
         .await
         .map_err(text)?;
-    if let Some(c) = crate::clients::adopted_owner(&keys, &name) {
-        return Err(crate::clients::ops::key_used_by(&c).into());
+    if let Some(o) = crate::clients::adopted_owner(&keys, &name) {
+        return Err(crate::clients::ops::key_used_by(&o.name()).into());
     }
     state
         .control

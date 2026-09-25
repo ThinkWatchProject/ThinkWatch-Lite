@@ -62,6 +62,8 @@ adopt.diag.static_only
 adopt.diag.static_only.detail
 adopt.diag.unset_env
 adopt.diag.unset_env_machine
+adopt.diag.wsl_process
+adopt.diag.wsl_process.detail
 adopt.file.changed
 adopt.file.link_loop
 adopt.file.read_failed
@@ -117,3 +119,12 @@ scan.skill.all_tools
 scan.skill.all_tools.detail
 t.detail test
 t.title test
+wsl.listen.all
+wsl.listen.allow
+wsl.listen.nic
+wsl.nat_address
+wsl.no_adapter
+wsl.no_user
+wsl.unknown
+wsl.unreadable
+wsl.via_windows

@@ -34,6 +34,8 @@ export function DetailDialog({
   usage,
   usageLoaded,
   gatewayBase,
+  env,
+  stale,
   asking,
   onClose,
   onAdopt,
@@ -45,6 +47,10 @@ export function DetailDialog({
   usage: KeyUse | undefined;
   usageLoaded: boolean;
   gatewayBase: string;
+  /** 在哪个 WSL 发行版里；这台电脑上的不给 */
+  env?: string;
+  /** WSL 里的、还指着旧地址的 */
+  stale?: boolean;
   /** 正在取接管 / 还原的方案 */
   asking: boolean;
   onClose: () => void;
@@ -56,7 +62,7 @@ export function DetailDialog({
   const common = useText(commonText);
   const nav = useNav();
   const remote = useRemote();
-  const status = statusOf(client, gatewayBase, Date.now(), remote !== null);
+  const status = statusOf(client, gatewayBase, Date.now(), remote !== null, stale);
   const adopted = client.adopted_at_ms != null;
   const key = client.key ? keys.find((k) => k.name === client.key) : undefined;
   const why = reasonText(status.reason, t);
@@ -68,11 +74,11 @@ export function DetailDialog({
     setChecking(true);
     setCheckError(null);
     api
-      .diagnose(client.id)
+      .diagnose(client.id, env)
       .then(setFound)
       .catch((e: unknown) => setCheckError(e))
       .finally(() => setChecking(false));
-  }, [client.id]);
+  }, [client.id, env]);
   useEffect(() => {
     check();
   }, [check]);
@@ -111,7 +117,7 @@ export function DetailDialog({
                   variant="ghost"
                   size="xs"
                   className="-my-1 text-muted-foreground"
-                  onClick={() => void api.reveal(client.id).catch((e) => notify.error(e))}
+                  onClick={() => void api.reveal(client.id, env).catch((e) => notify.error(e))}
                 >
                   <FolderOpenIcon />
                   {t.revealShort}

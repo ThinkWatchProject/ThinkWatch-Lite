@@ -111,6 +111,7 @@ fn lite_typescript() -> String {
     };
     // 每个命令的请求和响应，连同它们引用到的一切
     c.root::<wire::ClientsResponse>();
+    c.root::<wire::WslResponse>();
     c.root::<wire::PlanView>();
     c.root::<wire::AdoptResponse>();
     c.root::<wire::FindingView>();

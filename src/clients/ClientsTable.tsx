@@ -36,6 +36,8 @@ export interface RowContext {
   remote: boolean;
   /** 正在取接管方案的那一个（它的主按钮转圈） */
   asking: string | null;
+  /** WSL 里的、还指着旧地址的（这一组的 `stale`）。这台电脑上的没有 */
+  stale?: ReadonlySet<string>;
   actions: RowActions;
 }
 
@@ -125,7 +127,7 @@ export function DetectedTable({
 function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext; className?: string }) {
   const t = useText(clientsText);
   const { actions, usage } = ctx;
-  const status = statusOf(c, ctx.gatewayBase, Date.now(), ctx.remote);
+  const status = statusOf(c, ctx.gatewayBase, Date.now(), ctx.remote, ctx.stale?.has(c.id));
   const absent = status.state === "absent";
   const adopted = c.adopted_at_ms != null;
   const items = menu(c, actions, t);

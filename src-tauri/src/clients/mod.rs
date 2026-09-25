@@ -10,8 +10,11 @@
 
 pub mod ops;
 mod reveal;
+pub mod wsl;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use tw_adopt::wsl::WslHome;
 
 use tw_api::ep;
 
@@ -58,7 +61,7 @@ pub async fn gateway_base(control: &ControlClient, host: &str) -> Out<String> {
     Ok(base_url(host, ov.listen.port))
 }
 
-fn base_url(host: &str, port: u16) -> String {
+pub(crate) fn base_url(host: &str, port: u16) -> String {
     // IPv6 的地址在 URL 里要加方括号
     if host.contains(':') && !host.starts_with('[') {
         format!("http://[{host}]:{port}")
@@ -95,59 +98,245 @@ async fn prepare_key(control: &ControlClient, id: &str) -> Out<tw_api::ClientKey
         .map_err(text)
 }
 
+/// 客户端装在哪：这台电脑上，或者某个 WSL 发行版里。
+///
+/// 界面对每个客户端的命令都带着它（`env`：发行版的名字，这台电脑上的不带）。
+/// 同一个客户端在两处是两份配置、两把密钥，接管、还原各管各的。
+pub enum Place {
+    Here,
+    Wsl(WslHome),
+}
+
+impl Place {
+    /// 界面递来的 `env`。WSL 的要现读一次那个发行版 —— **这一步会唤醒它**，而用户
+    /// 此刻正要动它
+    pub fn of(env: Option<&str>) -> Out<Place> {
+        match env {
+            None => Ok(Place::Here),
+            Some(name) => Ok(Place::Wsl(wsl::find(name)?)),
+        }
+    }
+
+    pub fn home(&self) -> PathBuf {
+        match self {
+            Place::Here => home_dir(),
+            Place::Wsl(w) => w.home.clone(),
+        }
+    }
+
+    /// 这一份的专用密钥归在谁名下
+    pub fn owner(&self, id: &str) -> String {
+        match self {
+            Place::Here => id.to_string(),
+            Place::Wsl(w) => tw_adopt::wsl::key_id(id, w.name()),
+        }
+    }
+
+    /// 认得的、能接管的那一个。WSL 里只认第一批的那几个
+    fn find(&self, id: &str) -> Out<tw_adopt::clients::Client> {
+        let c = ops::find(id)?;
+        if matches!(self, Place::Wsl(_)) && !tw_adopt::wsl::CLIENTS.contains(&c.id) {
+            return Err(ops::unknown(id).into());
+        }
+        Ok(c)
+    }
+
+    /// 给人看的名字：WSL 里的带上发行版
+    pub fn name(&self, c: &tw_adopt::clients::Client) -> String {
+        match self {
+            Place::Here => c.name.to_string(),
+            Place::Wsl(w) => wsl::display_name(c.name, w),
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
     Ok(ops::list(&home_dir(), &gw))
 }
 
-/// 算一份接管改动。**不写任何东西。**
+/// 客户端页的 WSL 部分：每个发行版一组。
+///
+/// **读 WSL 会唤醒发行版**，所以它是单独的一个命令，界面只在打开客户端页、动过
+/// 某个 WSL 客户端之后取，不跟着请求刷新。读不到的发行版那一组写「无法读取」，
+/// 不让整页报错。
 #[tauri::command]
-pub async fn plan_adopt(state: tauri::State<'_, AppState>, id: String) -> Out<wire::PlanView> {
-    ops::find(&id)?;
-    let gw = gateway(&state).await?;
-    Ok(ops::plan_adopt(&home_dir(), &id, &gw)?)
+pub async fn list_wsl(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Out<wire::WslResponse> {
+    let distros = wsl::distros();
+    if distros.is_empty() {
+        return Ok(wire::WslResponse {
+            distros: Vec::new(),
+        });
+    }
+    let keys = keys(&state.control).await?;
+    let program = crate::gateway::locate_core(&app).ok();
+    let mut out = Vec::new();
+    for d in distros {
+        let network = wsl::network(&d, wsl::net_mode());
+        let name = d.name.clone();
+        let w = match wsl::open(d) {
+            Ok(w) => w,
+            Err(e) => {
+                out.push(wire::WslGroup {
+                    distro: name,
+                    network,
+                    error: Some(e),
+                    clients: Vec::new(),
+                    gateway_base: String::new(),
+                    base_error: None,
+                    stale: Vec::new(),
+                    firewall: None,
+                });
+                continue;
+            }
+        };
+        let (target, base_error) = match wsl::target(&state, &w).await {
+            Ok(t) => (Some(t), None),
+            Err(e) => (None, Some(e)),
+        };
+        let base = target.as_ref().map(|t| t.base.clone()).unwrap_or_default();
+        let gw = ops::Gateway {
+            base: base.clone(),
+            keys: keys.clone(),
+        };
+        out.push(wire::WslGroup {
+            distro: name,
+            network: target.as_ref().map_or(network, |t| t.network),
+            error: None,
+            clients: ops::list_wsl(&w, &gw),
+            stale: if base.is_empty() {
+                Vec::new()
+            } else {
+                ops::stale(&w.home, &base)
+                    .iter()
+                    .map(|c| c.id.to_string())
+                    .collect()
+            },
+            gateway_base: base,
+            base_error,
+            firewall: target
+                .as_ref()
+                .and_then(|t| wsl::firewall_hint(program.as_deref(), t)),
+        });
+    }
+    Ok(wire::WslResponse { distros: out })
+}
+
+/// 算一份接管改动。**不写任何东西。**
+///
+/// WSL 里的那一份，确认框里多几句：请求经由 Windows 上的网关、NAT 下地址会变、
+/// 监听要怎么改（[`wsl::plan_notes`]）。
+#[tauri::command]
+pub async fn plan_adopt(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    env: Option<String>,
+) -> Out<wire::PlanView> {
+    let place = Place::of(env.as_deref())?;
+    let c = place.find(&id)?;
+    match &place {
+        Place::Here => {
+            let gw = gateway(&state).await?;
+            Ok(ops::plan_adopt(&home_dir(), &id, &gw)?)
+        }
+        Place::Wsl(w) => {
+            let t = wsl::target(&state, w).await?;
+            let gw = ops::Gateway {
+                base: t.base.clone(),
+                keys: keys(&state.control).await?,
+            };
+            let mut v = ops::plan_adopt_as(&w.home, &id, &place.owner(&id), &gw)?;
+            v.path = w.shown(Path::new(&v.path));
+            v.notes.extend(wsl::plan_notes(c.name, w, &t));
+            Ok(v)
+        }
+    }
 }
 
 /// 落盘。**用户在 diff 上点过确认之后才该到这里。**
 ///
 /// 落盘这一步才要钥匙：**先有钥匙再写对方的配置** —— 反过来的话，中间那一刻
-/// 对方配置里写着一把 config.yaml 里没有的钥匙。
+/// 对方配置里写着一把 config.yaml 里没有的钥匙。WSL 里的那一份要改监听的，也是
+/// 在这里、确认之后才改，并且在写客户端配置之前：写完了网关却不在那张网卡上听，
+/// 客户端的第一个请求就连不上。
 #[tauri::command]
 pub async fn adopt_client(
     state: tauri::State<'_, AppState>,
     id: String,
+    env: Option<String>,
 ) -> Out<wire::AdoptResponse> {
-    ops::find(&id)?;
-    let base = gateway_base(&state.control, &gateway_host(&state)).await?;
-    let key = prepare_key(&state.control, &id).await?;
-    Ok(ops::adopt(&home_dir(), &backups(), &id, &base, &key.key)?)
+    let place = Place::of(env.as_deref())?;
+    place.find(&id)?;
+    let base = match &place {
+        Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
+        Place::Wsl(w) => {
+            let t = wsl::target(&state, w).await?;
+            if let Some(l) = &t.listen {
+                wsl::save_listen(&state.control, &l.save).await?;
+            }
+            t.base
+        }
+    };
+    let key = prepare_key(&state.control, &place.owner(&id)).await?;
+    let mut r = ops::adopt(&place.home(), &backups(), &id, &base, &key.key)?;
+    if let Place::Wsl(w) = &place {
+        r.real = w.shown(Path::new(&r.real));
+    }
+    Ok(r)
 }
 
 /// 算一份还原改动。**不写任何东西。**密钥只拿来给 diff 打码，问不到 core 也照样能算
 #[tauri::command]
-pub async fn plan_restore(state: tauri::State<'_, AppState>, id: String) -> Out<wire::PlanView> {
+pub async fn plan_restore(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    env: Option<String>,
+) -> Out<wire::PlanView> {
+    let place = Place::of(env.as_deref())?;
+    place.find(&id)?;
     let keys = keys(&state.control).await.unwrap_or_default();
-    Ok(ops::plan_restore(&home_dir(), &id, &keys)?)
+    let mut v = ops::plan_restore_as(&place.home(), &id, &place.owner(&id), &keys)?;
+    if let Place::Wsl(w) = &place {
+        v.path = w.shown(Path::new(&v.path));
+    }
+    Ok(v)
 }
 
 /// 还原。**不问 core**：退路不该依赖网关还在不在
 #[tauri::command]
-pub async fn restore_client(id: String) -> Out<wire::AdoptResponse> {
-    Ok(ops::restore(&home_dir(), &backups(), &id)?)
+pub async fn restore_client(id: String, env: Option<String>) -> Out<wire::AdoptResponse> {
+    let place = Place::of(env.as_deref())?;
+    place.find(&id)?;
+    Ok(ops::restore(&place.home(), &backups(), &id)?)
 }
 
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
 #[tauri::command]
-pub async fn diagnose_client(id: String) -> Out<Vec<wire::FindingView>> {
-    Ok(ops::diagnose(&home_dir(), &id)?)
+pub async fn diagnose_client(id: String, env: Option<String>) -> Out<Vec<wire::FindingView>> {
+    match Place::of(env.as_deref())? {
+        Place::Here => Ok(ops::diagnose(&home_dir(), &id)?),
+        Place::Wsl(w) => Ok(ops::diagnose_wsl(&w, &id)?),
+    }
 }
 
 /// 为这个客户端准备它的专用密钥（手动配置时用）。**只交回名字**：复制走
-/// `copy_key`，明文不经过界面
+/// `copy_key`，明文不经过界面。WSL 里的那一份是它自己的一把
 #[tauri::command]
-pub async fn prepare_client_key(state: tauri::State<'_, AppState>, id: String) -> Out<String> {
-    Ok(prepare_key(&state.control, &id).await?.name)
+pub async fn prepare_client_key(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    env: Option<String>,
+) -> Out<String> {
+    let owner = match env.as_deref() {
+        None => id,
+        // 只要名字，用不着读那个发行版
+        Some(distro) => tw_adopt::wsl::key_id(&id, distro),
+    };
+    Ok(prepare_key(&state.control, &owner).await?.name)
 }
 
 /// 复制这个客户端要填的网关地址（它要的那种写法，有的带 `/v1`）。
@@ -156,12 +345,14 @@ pub async fn copy_client_endpoint(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
+    env: Option<String>,
 ) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let gw = tw_adopt::clients::Gateway {
-        base: gateway_base(&state.control, &gateway_host(&state)).await?,
-        key: None,
+    let base = match Place::of(env.as_deref())? {
+        Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
+        Place::Wsl(w) => wsl::target(&state, &w).await?.base,
     };
+    let gw = tw_adopt::clients::Gateway { base, key: None };
     let endpoint = tw_adopt::clients::adoptable()
         .iter()
         .find(|c| c.id == id)
@@ -178,13 +369,76 @@ pub async fn copy_client_endpoint(
         .map_err(|e| e.to_string().into())
 }
 
-/// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
-/// 真正会被改的。
+/// 复制放行 WSL 的那条防火墙命令（客户端页上规则缺失时的「复制」）。命令由这一侧
+/// 按此刻的网卡和网关位置拼好再写进剪贴板，界面只说「复制它」
 #[tauri::command]
-pub async fn reveal_client_config(id: String) -> Out<()> {
-    let c = ops::find(&id)?;
-    let d = tw_adopt::detect::detect_one(&c, &home_dir());
+pub async fn copy_wsl_firewall(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Out<()> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let nics = state
+        .control
+        .call::<ep::Interfaces>(&[], &())
+        .await
+        .map_err(text)?;
+    let (_, addr) =
+        tw_adopt::wsl::pick_nic(nics.iter().map(|n| (n.name.as_str(), n.addr.as_str())))
+            .ok_or_else(|| CmdError::from(wsl::no_adapter()))?;
+    let program = crate::gateway::locate_core(&app)?;
+    let cmd = tw_adopt::wsl::firewall_command(&program, &tw_adopt::wsl::remote_range(addr));
+    app.clipboard()
+        .write_text(cmd)
+        .map_err(|e| e.to_string().into())
+}
+
+/// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
+/// 真正会被改的。WSL 里的在资源管理器里打开的是 `\\wsl.localhost\…` 那条路径。
+#[tauri::command]
+pub async fn reveal_client_config(id: String, env: Option<String>) -> Out<()> {
+    let place = Place::of(env.as_deref())?;
+    let c = place.find(&id)?;
+    let d = tw_adopt::detect::detect_one(&c, &place.home());
     Ok(reveal::reveal(&d.real.display().to_string())?)
+}
+
+/// 把接管着的几个客户端重新指一次：地址换成 `base`，密钥用 `control` 那个 core 为
+/// 每个客户端发的那把。**一个失败不影响其余的**，逐个报。
+async fn retarget_in(
+    control: &ControlClient,
+    place: &Place,
+    base: &str,
+    cs: Vec<tw_adopt::clients::Client>,
+) -> wire::Retargeted {
+    let home = place.home();
+    let mut out = wire::Retargeted {
+        synced: Vec::new(),
+        failed: Vec::new(),
+    };
+    for c in cs {
+        let key = match prepare_key(control, &place.owner(c.id)).await {
+            Ok(k) => k.key,
+            Err(e) => {
+                out.failed.push(wire::KeySyncFailed {
+                    client: c.id.to_string(),
+                    name: place.name(&c),
+                    error: e.into_msg(),
+                });
+                continue;
+            }
+        };
+        match ops::repoint(&home, &backups(), &c, base, &key) {
+            Ok(mut s) => {
+                s.name = place.name(&c);
+                out.synced.push(s);
+            }
+            Err(mut f) => {
+                f.name = place.name(&c);
+                out.failed.push(f);
+            }
+        }
+    }
+    out
 }
 
 /// 把这台机器上接管着、**还指着本机网关**的客户端改为指向 `control` 那个 core 的
@@ -192,31 +446,32 @@ pub async fn reveal_client_config(id: String) -> Out<()> {
 ///
 /// 从本机切到远程 core 时，确认框里「同时将这些客户端改为指向…」勾上就走这里；连着
 /// 远程时客户端页上的「改为指向服务器」也是这一步。**一个失败不影响其余的**，逐个报。
+///
+/// WSL 里的不在这里：改它们要把每个发行版唤醒，它们在客户端页上各自那一组里改
+/// （[`retarget_wsl`]）。
 pub async fn retarget_adopted(control: &ControlClient, host: &str) -> Out<wire::Retargeted> {
     let base = gateway_base(control, host).await?;
-    let home = home_dir();
-    let mut out = wire::Retargeted {
-        synced: Vec::new(),
-        failed: Vec::new(),
-    };
-    for (c, _) in ops::adopted_on_this_machine(&home) {
-        let key = match prepare_key(control, c.id).await {
-            Ok(k) => k.key,
-            Err(e) => {
-                out.failed.push(wire::KeySyncFailed {
-                    client: c.id.to_string(),
-                    name: c.name.to_string(),
-                    error: e.into_msg(),
-                });
-                continue;
-            }
-        };
-        match ops::repoint(&home, &backups(), &c, &base, &key) {
-            Ok(s) => out.synced.push(s),
-            Err(f) => out.failed.push(f),
-        }
+    let cs = ops::adopted_on_this_machine(&home_dir())
+        .into_iter()
+        .map(|(c, _)| c)
+        .collect();
+    Ok(retarget_in(control, &Place::Here, &base, cs).await)
+}
+
+/// 「WSL · <发行版>」那一组的「重新指向」：还指着旧地址的，改为指向此刻该连的
+/// 那一个（NAT 模式下 WSL 重启之后，或者连着远程 core 时）。
+///
+/// 监听绑在 WSL 网卡上的，先原样再存一次监听，网关才会换到那张网卡的新地址上 ——
+/// 否则客户端改过去了，那个地址上却没有人在听。
+#[tauri::command]
+pub async fn retarget_wsl(state: tauri::State<'_, AppState>, env: String) -> Out<wire::Retargeted> {
+    let w = wsl::find(&env)?;
+    let t = wsl::target(&state, &w).await?;
+    if !state.link.is_remote() {
+        wsl::relisten(&state.control, &t).await?;
     }
-    Ok(out)
+    let cs = ops::stale(&w.home, &t.base);
+    Ok(retarget_in(&state.control, &Place::Wsl(w), &t.base, cs).await)
 }
 
 /// 客户端页上的「改为指向服务器」：还指着本机网关的，改为指向此刻连着的那个 core。
@@ -254,31 +509,72 @@ pub fn adopted_pointing_at_local() -> Adopted {
     }
 }
 
+/// 一把密钥的主人：哪个客户端，在哪一处。
+pub(crate) struct Owner {
+    pub client: tw_adopt::clients::Client,
+    pub place: Place,
+}
+
+impl Owner {
+    /// 给人看的名字：WSL 里的带上发行版
+    pub fn name(&self) -> String {
+        self.place.name(&self.client)
+    }
+}
+
 /// 更换密钥之后，把新值写进正在用它的那个客户端的配置。
 pub(crate) async fn sync_rotated(
     state: &AppState,
-    owner: &tw_adopt::clients::Client,
+    owner: &Owner,
     fresh: &str,
 ) -> Result<wire::KeySynced, wire::KeySyncFailed> {
-    let base = match gateway_base(&state.control, &gateway_host(state)).await {
-        Ok(b) => b,
-        Err(e) => {
-            return Err(wire::KeySyncFailed {
-                client: owner.id.to_string(),
-                name: owner.name.to_string(),
-                error: e.into_msg(),
-            });
-        }
+    let c = &owner.client;
+    let failed = |error: tw_api::Msg| wire::KeySyncFailed {
+        client: c.id.to_string(),
+        name: owner.name(),
+        error,
     };
-    ops::repoint(&home_dir(), &backups(), owner, &base, fresh)
+    let base = match &owner.place {
+        Place::Here => gateway_base(&state.control, &gateway_host(state))
+            .await
+            .map_err(|e| failed(e.into_msg()))?,
+        Place::Wsl(w) => wsl::target(state, w).await.map_err(failed)?.base,
+    };
+    ops::repoint(&owner.place.home(), &backups(), c, &base, fresh)
+        .map(|mut s| {
+            s.name = owner.name();
+            s
+        })
+        .map_err(|mut f| {
+            f.name = owner.name();
+            f
+        })
 }
 
 /// 删之前、换之前要知道：这把密钥的主人此刻接管着吗
-pub(crate) fn adopted_owner(
-    keys: &[tw_api::ClientView],
-    name: &str,
-) -> Option<tw_adopt::clients::Client> {
-    ops::adopted_owner(&home_dir(), keys, name)
+///
+/// 为 WSL 里的某一份发的密钥（`claude-code-wsl-ubuntu`），要读那个发行版才答得上
+/// —— 这会唤醒它，而用户此刻正要删、换这把密钥。
+pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Option<Owner> {
+    if let Some(client) = ops::adopted_owner(&home_dir(), keys, name) {
+        return Some(Owner {
+            client,
+            place: Place::Here,
+        });
+    }
+    let id = keys.iter().find(|k| k.name == name)?.client.as_deref()?;
+    let (client, slug) = tw_adopt::wsl::split_key_id(id)?;
+    let d = wsl::distros()
+        .into_iter()
+        .find(|d| tw_adopt::wsl::same_distro(&d.name, slug))?;
+    let w = wsl::open(d).ok()?;
+    let c = ops::find(client).ok()?;
+    tw_adopt::detect::detect_one(&c, &w.home)
+        .adopted_at_ms
+        .map(|_| Owner {
+            client: c,
+            place: Place::Wsl(w),
+        })
 }
 
 #[cfg(test)]

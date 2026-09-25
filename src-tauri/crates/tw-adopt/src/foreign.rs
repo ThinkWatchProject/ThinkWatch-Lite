@@ -246,20 +246,46 @@ fn replace(tmp: &Path, real: &Path) -> std::io::Result<()> {
             .collect()
     }
     let (from, to) = (wide(tmp), wide(real));
-    // SAFETY: 两个参数都是以 NUL 结尾的 UTF-16，函数只读它们。
-    //
+    let mv = |flags| {
+        // SAFETY: 两个参数都是以 NUL 结尾的 UTF-16，函数只读它们。
+        if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), flags) } == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    };
     // `WRITE_THROUGH`：这一次挪动落盘了再返回。改的是别人的配置文件，
     // 而「说改完了、断电之后发现没改」比「改失败」难查得多。
-    let ok = unsafe {
-        MoveFileExW(
-            from.as_ptr(),
-            to.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if ok == 0 {
-        return Err(std::io::Error::last_os_error());
+    let first = mv(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+    match first {
+        Err(_) if crate::wsl::is_wsl_path(real) => replace_in_wsl(tmp, real, mv),
+        r => r,
     }
+}
+
+/// WSL 里的文件（`\\wsl.localhost\…`）挪不过去时的退路。
+///
+/// 那些路径由 WSL 的 9P 文件服务器经网络重定向器提供，**不是 NTFS**：
+/// `WRITE_THROUGH` 这类只对本地卷有意义的标志，重定向器可能直接拒绝。先去掉它
+/// 再挪一次 —— 这仍然是原子替换，WSL 那一侧就是一次 `rename(2)`。
+///
+/// 还不行，就把内容写进原文件（截断再写），再删掉临时文件。**这一步不是原子的**：
+/// 写到一半断电，原文件是半截。它能接受，是因为到这里全文备份已经落盘、写完还有
+/// 一次读回核对（对不上就从备份写回去），而不接受的代价是 WSL 里的客户端一个都
+/// 接管不了。
+#[cfg(windows)]
+fn replace_in_wsl(
+    tmp: &Path,
+    real: &Path,
+    mv: impl Fn(u32) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::MOVEFILE_REPLACE_EXISTING;
+    if mv(MOVEFILE_REPLACE_EXISTING).is_ok() {
+        return Ok(());
+    }
+    let bytes = std::fs::read(tmp)?;
+    std::fs::write(real, bytes)?;
+    let _ = std::fs::remove_file(tmp);
     Ok(())
 }
 

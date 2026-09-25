@@ -109,6 +109,11 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 客户端页可以把 Claude Code、Codex、opencode、Zed、Aider 与 DeepSeek Harness 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。已接管的客户端可以随时单独还原或全部还原。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
 
+在 Windows 上，安装在 WSL 中的 Claude Code 与 Codex 按发行版单独成组，列在这台电脑的客户端之后。它们同样可以指向 Windows 上的网关、还原和检查，使用与 Windows 上那一份分开的密钥，配置文件经由 `\\wsl.localhost` 修改。写入的地址取决于 WSL 的网络模式：
+
+- **WSL1，或在 `%USERPROFILE%\.wslconfig` 中设置了 `networkingMode=mirrored` 的 WSL2**：与 Windows 上相同，写入 `127.0.0.1`。
+- **使用默认 NAT 网络的 WSL2**：写入 WSL 虚拟网卡在 Windows 一侧的地址。网关需要监听这张网卡；尚未监听时，确认框会先说明监听设置如何调整，确认后才保存。该地址会随 WSL 重启而变化，变化后页面将这些客户端显示为未生效，点击一次即可重新指向新地址。安装程序会在 Windows 防火墙中添加一条规则，仅放行网关进程、仅接受来自 WSL 网段（`172.16.0.0/12`）的连接；规则缺失时，页面给出等价的 PowerShell 命令，以管理员身份运行即可。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/clients-dark.png">
   <img src="docs/screenshots/zh/clients-light.png" alt="客户端页：已接管的 Claude Code 与 Codex 各用一把专用密钥，附最近 24 小时的请求；未接管的 opencode；按配置方法手动设置并已在使用的 Cursor；尚未设置的 Continue 与 Antigravity CLI；以及未检测到的 Zed 与 Aider">

@@ -774,7 +774,15 @@ impl Client {
     /// 用户目录下时，检测不到不等于用不了 —— 照着做一样能接上。
     pub fn manual_steps(&self) -> Vec<Msg> {
         let i = crate::paths::env_home().map_or(0, |h| self.config_index(&h));
-        let file = self.config[i].shown();
+        self.manual_steps_for(self.config[i].shown())
+    }
+
+    /// WSL 里的那一份：文件写成 WSL 终端里的样子（`~/.claude/settings.json`）。
+    pub fn manual_steps_wsl(&self, w: &crate::wsl::WslHome) -> Vec<Msg> {
+        self.manual_steps_for(w.shown(&self.config_path(&w.home)))
+    }
+
+    fn manual_steps_for(&self, file: String) -> Vec<Msg> {
         let mut out = vec![msg!(
             "adopt.manual.file", file = file =>
             "Open {file} and set the fields below."

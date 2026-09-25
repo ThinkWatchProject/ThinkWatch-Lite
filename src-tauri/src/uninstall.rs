@@ -10,22 +10,41 @@ use crate::{autostart, data_dir, error::Out, wire::UninstallStep};
 /// **一家失败不影响别家。**逐个还原、逐个记结果：五个客户端里有一个的
 /// 文件被改坏了，不该让另外四个也留在接管状态。**也不问 core**：退路不该
 /// 依赖网关还在不在。
+///
+/// **WSL 里的也还原。**每个发行版都要读一遍（会把它们唤醒），读不到的那一个记一条
+/// 失败：它里面有没有接管着的客户端，这时说不上来，不能当成「没有」。
 #[tauri::command]
 pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
-    Ok(restore_all_in(
-        &crate::clients::home_dir(),
-        &tw_adopt::foreign::backup_root(),
-    ))
+    let backups = tw_adopt::foreign::backup_root();
+    let mut out = restore_all_in(&crate::clients::home_dir(), &backups, |n| n.to_string());
+    for d in crate::clients::wsl::distros() {
+        let name = d.name.clone();
+        match crate::clients::wsl::open(d) {
+            Ok(w) => out.extend(restore_all_in(&w.home, &backups, |n| {
+                crate::clients::wsl::display_name(n, &w)
+            })),
+            Err(e) => out.push(RestoreOutcome {
+                client: format!("WSL · {name}"),
+                ok: false,
+                detail: crate::core_text::text(&e),
+            }),
+        }
+    }
+    Ok(out)
 }
 
-fn restore_all_in(home: &std::path::Path, backups: &std::path::Path) -> Vec<RestoreOutcome> {
+fn restore_all_in(
+    home: &std::path::Path,
+    backups: &std::path::Path,
+    name: impl Fn(&str) -> String,
+) -> Vec<RestoreOutcome> {
     use crate::clients::ops;
     ops::adopted(home)
         .into_iter()
         .map(|c| {
             let r = ops::restore(home, backups, c.id);
             RestoreOutcome {
-                client: c.name.to_string(),
+                client: name(c.name),
                 ok: r.is_ok(),
                 detail: match r {
                     Ok(_) => tr!("已还原", "Restored").to_string(),
@@ -172,7 +191,7 @@ mod tests {
             "tw-c",
         )
         .unwrap();
-        let out = restore_all_in(home.path(), &backups);
+        let out = restore_all_in(home.path(), &backups, |n| n.to_string());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].client, "Claude Code");
         assert!(out[0].ok, "{}", out[0].detail);

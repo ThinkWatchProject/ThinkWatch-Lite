@@ -46,6 +46,15 @@ describe("客户端的状态", () => {
     );
   });
 
+  it("WSL 里还指着旧地址的是未生效，哪怕之前收到过请求", () => {
+    const adopted = NOW - 60_000;
+    const c = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: "http://172.20.0.1:18790" });
+    const s = statusOf(c, "http://172.27.96.1:18790", NOW, false, true);
+    expect(s).toEqual({ state: "broken", reason: { kind: "stale", endpoint: "http://172.20.0.1:18790" } });
+    // 没接管的不算
+    expect(statusOf(client(), BASE, NOW, false, true).state).toBe("idle");
+  });
+
   it("证据比怀疑可靠：有更高优先级的文件，但请求已经来了，就是在用", () => {
     const s = statusOf(
       client({ adopted_at_ms: 1, last_seen_ms: 2, shadows: ["~/.claude/settings.local.json"] }),
