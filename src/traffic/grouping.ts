@@ -77,9 +77,62 @@ export function sortWithin(g: Group): RequestRow[] {
   return [...g.rows].sort((a, b) => a.atMs - b.atMs);
 }
 
-/** 这一组里失败了几条。折叠态要显示它 —— 一次任务里有没有翻车是第一位的。 */
-export function failedIn(g: Group): number {
-  return g.rows.filter((r) => r.state === "failed").length;
+/**
+ * 一次会话的几个数：汇总（`SessionView`），加上汇总里还没有的那几轮。
+ *
+ * **汇总是从库里聚出来的，一轮落了库才算进去**，而一轮从开始就在它的会话里（开始
+ * 事件带着会话）：在跑的那一轮、刚落地还没重读的那一轮，都已经在组里、汇总里却没有。
+ * 只看汇总的话，组头说「12 轮」，展开是 13 行，正在跑的会话看不出在跑。
+ *
+ * 汇总里没有的补上：轮数、失败数、用过的模型、起止时刻。**费用和上下文峰值不补**：
+ * 它们按价目表、按用量算，要等那一轮落库、汇总重读。汇总还没有的会话（第一轮还在跑）
+ * 全靠行 —— 认得出会话，它就是一个会话。
+ *
+ * 轮数和失败数各有两个说法，**取大的那个**：汇总加上认得出不在汇总里的那几轮，和表里
+ * 这次会话有几行。两个都不会多数（前者只加汇总里确实没有的，后者每一行都是真的一轮），
+ * 只会少数：前者认不全（两轮同时在跑，后开始的先落了库、汇总也重读了，先开始的那一轮
+ * 这时才结束），后者缺表里没装下的、筛掉的。取大的，那一轮结束到汇总重读之间，组头
+ * 不会先少一轮再多回来。
+ */
+export interface Tally {
+  turns: number;
+  /** 失败了几轮。折叠态要显示它 —— 一次任务里有没有翻车是第一位的 */
+  failed: number;
+  /** 在跑的轮数。不是 0 就是一个正在进行的会话 */
+  running: number;
+  /** 第一轮开始的时刻 */
+  started: number;
+  /** 最后一轮开始的时刻（和汇总的 `ended_ms` 同一个意思） */
+  ended: number;
+  /** 用过的模型：汇总里的在前，汇总之后才用上的接在后面 */
+  models: string[];
+}
+
+/**
+ * `rows`：表里这次会话的行。`extra`：其中汇总还没算进去的那几轮。汇总是 `null` 时
+ * 两者是同一批。
+ */
+export function tally(s: SessionView | null, rows: readonly RequestRow[], extra: readonly RequestRow[]): Tally {
+  const at = rows.map((r) => r.atMs);
+  const later = [...extra].sort((a, b) => a.atMs - b.atMs);
+  const failed = (xs: readonly RequestRow[]) => xs.filter((r) => r.state === "failed").length;
+  return {
+    turns: Math.max((s?.turns ?? 0) + extra.length, rows.length),
+    failed: Math.max((s?.errors ?? 0) + failed(extra), failed(rows)),
+    running: rows.filter((r) => r.state === "in_flight").length,
+    started: Math.min(s?.started_ms ?? Infinity, ...at),
+    ended: Math.max(s?.ended_ms ?? -Infinity, ...at),
+    models: [...new Set([...(s?.models ?? []), ...later.flatMap((r) => (r.model ? [r.model] : []))])],
+  };
+}
+
+/**
+ * 组头上的数。汇总里还没有的是这几轮：在跑的（结局到了才落库），和比汇总里最后一轮
+ * 开始得晚的（落了库，汇总还没重读）。
+ */
+export function tallyOf(g: Group): Tally {
+  const s = g.session;
+  return tally(s, g.rows, s ? g.rows.filter((r) => r.state === "in_flight" || r.atMs > s.ended_ms) : g.rows);
 }
 
 /** 键盘选中的那一行：一条请求，或者归组时的一个组头 */

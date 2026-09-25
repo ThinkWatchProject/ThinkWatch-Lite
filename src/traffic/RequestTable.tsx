@@ -15,7 +15,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { copyText, DIM, Lines, MENU_REVEAL, ROW, RowKeyCell } from "./cells";
+import { copyText, DIM, Elapsed, Lines, MENU_REVEAL, ROW, RowKeyCell } from "./cells";
 import { sortWithin, type Cursor, type Group } from "./grouping";
 import { SessionRow } from "./SessionRow";
 import { trafficText } from "./Traffic.i18n";
@@ -31,8 +31,9 @@ const FIRST_PAINT = 60;
  * 流量页那张请求表。
  *
  * 平铺和按会话归组是同一张表的两个形态（`groups` 给了就是归组）。行是 `memo`
- * 的：键盘挪一格只重画离开和到达的两行，一条请求落地只重画那一行。这要求行对象
- * 不被原地修改 —— `useRequests` 改一行之前先换成新对象，见那边的 `touches`。
+ * 的：键盘挪一格只重画离开和到达的两行，一条请求落地只重画那一行；在跑的请求每秒
+ * 走一格的已跑时长不经过渲染（见 `Elapsed`）。这要求行对象不被原地修改 ——
+ * `useRequests` 改一行之前先换成新对象，见那边的 `touches`。
  */
 export function RequestTable({
   rows,
@@ -500,12 +501,7 @@ const Row = memo(function Row({
           扫出极值。
         */}
         <TableCell className="text-right">
-          {/* 在跑的那一条只有首字节：写成「1966→…」，别让它看起来像已经结束的总耗时 */}
-          {r.state === "in_flight" && r.ttfbMs != null ? (
-            <span className="text-muted-foreground">{r.ttfbMs}→…</span>
-          ) : (
-            latency(r.ttfbMs, r.durationMs)
-          )}
+          {r.state === "in_flight" ? <Running r={r} /> : latency(r.ttfbMs, r.durationMs)}
         </TableCell>
         <TableCell className="text-right text-muted-foreground">
           <TokensCell r={r} />
@@ -528,6 +524,22 @@ const Row = memo(function Row({
     </RowMenu>
   );
 });
+
+/**
+ * 在跑的那一条的延迟：首字节到了就先写它，后面是已经跑了多久，每秒走一格
+ * （`1180→0:42`）。灰的，而且写成时钟的样子 —— 别让它看起来像已经结束的总耗时；
+ * 结局一到换成「首字节→总耗时」。
+ *
+ * 秒针只改这一格里的字（`Elapsed`），行和表都不重画。
+ */
+function Running({ r }: { r: RequestRow }) {
+  return (
+    <span className="text-muted-foreground">
+      {r.ttfbMs != null && `${r.ttfbMs}→`}
+      <Elapsed at={r.atMs} />
+    </span>
+  );
+}
 
 function StatusCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);

@@ -125,6 +125,11 @@ export default function TrafficPage({
   const [open, setOpen] = useState<number | null>(null);
   /** 右侧开着的那次会话。请求可以叠在它上面，见 `SessionSheet` */
   const [openSession, setOpenSession] = useState<string | null>(null);
+  /** 那次会话在表里的行（不看筛选）：库里的详情还没有的那几轮从这里补 */
+  const openSessionRows = useMemo(
+    () => (openSession === null ? [] : allRows.filter((r) => r.session === openSession)),
+    [allRows, openSession],
+  );
   /**
    * 键盘选中的那一行：一条请求，或者归组时的一个组头。`null` 表示还没用过键盘 ——
    * 一进页面就高亮第一行，会让人以为那一行有什么特别。记的是哪一行，不是第几行。
@@ -494,7 +499,12 @@ export default function TrafficPage({
 
       <RequestDrawer id={open} onClose={() => setOpen(null)} />
       {/* 在会话这一层之上再叠一层请求，不是把它换掉：看完这一轮要退回任务看下一轮 */}
-      <SessionSheet id={openSession} onClose={() => setOpenSession(null)} onOpenTurn={setOpen} />
+      <SessionSheet
+        id={openSession}
+        rows={openSessionRows}
+        onClose={() => setOpenSession(null)}
+        onOpenTurn={setOpen}
+      />
     </div>
   );
 }

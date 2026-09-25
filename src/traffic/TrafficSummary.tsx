@@ -9,6 +9,7 @@ import { Button } from "@/ui/button";
 import { SummaryItem } from "@/ui/page";
 import { StatusDot } from "@/ui/status-dot";
 import { Tip } from "@/ui/tip";
+import { coreNow } from "./clock";
 import { summarize, type Bar } from "./summary";
 import { trafficText } from "./Traffic.i18n";
 
@@ -33,8 +34,11 @@ export function TrafficSummary({
   onFailedOnly: (on: boolean) => void;
 }) {
   const t = useText(trafficText);
-  // 小图只在跨过一分钟时才要挪；十秒看一次，挪得晚也晚不过十秒
-  const minute = Math.floor(useNow(10_000) / MIN) * MIN;
+  // 小图只在跨过一分钟时才要挪；十秒看一次，挪得晚也晚不过十秒。**分钟按 core 的钟
+  // 对**：行上的时刻是 core 的钟，连着另一台机器上的 core 时，两边的钟差多少，请求就
+  // 错开多少格（见 `clock.ts`）。还没对过钟的那一下先按本机的
+  const local = useNow(10_000);
+  const minute = Math.floor((coreNow(local) ?? local) / MIN) * MIN;
   const s = useMemo(() => summarize(rows, minute, LIST_LIMIT), [rows, minute]);
   const capped = rows.length >= LIST_LIMIT;
 

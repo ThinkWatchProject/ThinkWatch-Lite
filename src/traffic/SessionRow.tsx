@@ -12,7 +12,7 @@ import { copyText, KeyCell, MENU_REVEAL, ROW } from "./cells";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
 import { dur, tokens as short, when } from "./format";
-import { failedIn, type Cursor, type Group } from "./grouping";
+import { tallyOf, type Cursor, type Group } from "./grouping";
 
 /**
  * 归组之后的组头：**一次会话，占一行**。
@@ -63,13 +63,11 @@ export const SessionRow = memo(function SessionRow({
   const s = g.session;
   const rows = g.rows;
   const first = rows[0];
-  const started = s?.started_ms ?? Math.min(...rows.map((r) => r.atMs));
-  const ended = s?.ended_ms ?? Math.max(...rows.map((r) => r.atMs));
+  // 汇总加上汇总里还没有的那几轮：在跑的、刚落地的（见 `tally`）
+  const n = tallyOf(g);
   // **上游从行里数，不从汇总里拿** —— `SessionView` 没有这一项，
   // 而组里的每一条都知道自己走了哪个上游（没有发往任何上游的那几条是空的，不算）
   const providers = [...new Set(rows.map((r) => r.provider).filter(Boolean))];
-  const failed = s?.errors ?? failedIn(g);
-  const turns = s?.turns ?? rows.length;
   const openIt = () => {
     // 点组头和点请求行一样，键盘接着从这一行往下走
     onCursor({ kind: "session", id });
@@ -111,24 +109,42 @@ export const SessionRow = memo(function SessionRow({
                 className={cn("transition-transform duration-(--motion-fast) ease-(--motion-ease)", open && "rotate-90")}
               />
             </Button>
-            <span>{t.turnCount(turns)}</span>
+            <span>{t.turnCount(n.turns)}</span>
             {/*
               失败数：红点加数字，和请求行里失败那一条是同一个红点。「几轮
               失败」这几个字进悬停 —— 写成「1 失败」要 42px，英文「1 failed」
               要 50px，红点加数字是 22px。
             */}
-            {failed > 0 && (
-              <Tip text={t.failedTip(failed)}>
+            {n.failed > 0 && (
+              <Tip text={t.failedTip(n.failed)}>
                 <span className="flex items-center gap-[3px] text-destructive">
                   <StatusDot tone="error" />
-                  <span aria-hidden>{failed}</span>
-                  <span className="sr-only">{t.failedTip(failed)}</span>
+                  <span aria-hidden>{n.failed}</span>
+                  <span className="sr-only">{t.failedTip(n.failed)}</span>
                 </span>
               </Tip>
             )}
           </span>
         </TableCell>
-        <TableCell>{when(started)}</TableCell>
+        {/*
+          正在进行的会话：开始时刻前面一个跳动的点，和在跑的请求行上是同一个点。
+          **不放在状态那一格**：那一格已经是整列最宽的（展开钮、轮数、失败数），
+          再加一个点，默认窗口下归组的表就比页面宽；这一格比请求行的「16:42:01」
+          窄，放得下。
+        */}
+        <TableCell>
+          {n.running > 0 ? (
+            <Tip text={t.runningTip(n.running)}>
+              <span className="flex items-center gap-1.5">
+                <StatusDot tone="pending" />
+                {when(n.started)}
+                <span className="sr-only">{t.runningTip(n.running)}</span>
+              </span>
+            </Tip>
+          ) : (
+            when(n.started)
+          )}
+        </TableCell>
         {showClient && (
           <TableCell>
             <KeyCell
@@ -141,7 +157,7 @@ export const SessionRow = memo(function SessionRow({
           </TableCell>
         )}
         <TableCell>
-          <Names items={s?.models ?? []} sep={t.modelSep} />
+          <Names items={n.models} sep={t.modelSep} />
         </TableCell>
         <TableCell>
           <span className="flex items-center gap-1.5">
@@ -151,17 +167,20 @@ export const SessionRow = memo(function SessionRow({
             <Names items={providers} sep=" · " />
           </span>
         </TableCell>
-        <TableCell className="text-right">{dur(ended - started)}</TableCell>
+        <TableCell className="text-right">{dur(n.ended - n.started)}</TableCell>
+        {/* 上下文峰值和费用只有汇总里有：第一轮还没落库的会话写「—」，和请求行一样 */}
         <TableCell className="text-right">
           {s ? (
             <Tip text={t.peakContext}>
               <span>{short(s.peak_input_tokens)}</span>
             </Tip>
           ) : (
-            ""
+            <span className="text-muted-foreground">—</span>
           )}
         </TableCell>
-        <TableCell className="text-right">{s ? <SessionCost s={s} /> : ""}</TableCell>
+        <TableCell className="text-right">
+          {s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>}
+        </TableCell>
         <TableCell className="w-6 px-0! py-0 text-center font-normal" onClick={(e) => e.stopPropagation()}>
           <span className={MENU_REVEAL}>
             <RowMenuButton items={items} label={t.sessionActions} tabIndex={selected ? 0 : -1} />
