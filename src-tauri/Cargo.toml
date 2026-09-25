@@ -8,7 +8,7 @@ edition = "2024"
 # stable，把它往回调不会让谁编译得更顺，只会把修复挡在外面。
 rust-version = "1.88"
 license = "MIT"
-description = "Desktop app for a local AI gateway, built for individual developers"
+description = "Desktop app for a local AI API gateway on macOS, Windows and Linux"
 
 # 接管和扫描这两个 crate 在 `crates/` 下，和应用同一个 workspace：`cargo test`
 # 一次跑全，Cargo.lock 只有一份

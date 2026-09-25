@@ -7,7 +7,7 @@ to `dev`; with the CLI, pass `--base dev`.
 
 Before writing: every release ships an arm64 disk image for macOS, x64
 and arm64 installers for Windows, and x86_64 and aarch64 AppImages for
-Linux. The macOS build is Apple Silicon only and not signed by Apple,
+Linux. The macOS build is Apple silicon only and not signed by Apple,
 the Windows installers are not code-signed, and Linux gets the AppImage
 and nothing else. Gateway behavior (routing, forwarding, cost,
 redaction) lives in ThinkWatch Core, not here. See CONTRIBUTING.md.

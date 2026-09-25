@@ -15,8 +15,10 @@
 # script 在**编译期**就校验它在不在 —— 挂在打包那一步上，等于在一个
 # 干净的检出里永远赶不上：编译先失败。
 #
-# 日常 `tauri dev` 不经过这里，也不需要网络：那时 `locate_core` 会在
-# 隔壁仓库的 target 里找到一个。
+# 日常 `tauri dev` 不经过这里，但编译照样要求 `resources/twcore` 在（原因同
+# 上一段）：**新检出先跑一次这个脚本**，之后的 dev 不再需要网络。运行时
+# `locate_core` 也先用 resources 里的这一份；要换一个 core 调试，用
+# `THINKWATCH_CORE_BIN` 显式指定。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
