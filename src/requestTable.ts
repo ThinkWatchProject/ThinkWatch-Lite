@@ -48,6 +48,19 @@ export function hasAnyFilter(f: Filter): boolean {
   );
 }
 
+/**
+ * 这一轮送进去的全部输入：新输入加缓存读取、缓存写入。
+ *
+ * **core 的「输入」不含缓存。**三者不重叠，加起来才是全部（和 Anthropic 的用量
+ * 同一个口径，别家在 core 里换算成这个口径）。一轮带着五万 token 上下文的请求，
+ * 新输入常常只有一两千 —— 只看它，「上下文有多大」就答不出来。上游没报用量时
+ * 是 `undefined`，不是 0。
+ */
+export function promptTokens(r: RequestRow): number | undefined {
+  if (r.inputTokens == null) return undefined;
+  return r.inputTokens + (r.cacheReadTokens ?? 0) + (r.cacheWriteTokens ?? 0);
+}
+
 function valueOf(r: RequestRow, key: SortKey): number | null {
   switch (key) {
     case "time":
@@ -56,12 +69,12 @@ function valueOf(r: RequestRow, key: SortKey): number | null {
       return r.durationMs ?? null;
     case "ttfb":
       return r.ttfbMs ?? null;
-    case "tokens":
+    case "tokens": {
       // 按总量排。**只按输出排会把长上下文的那几次藏起来**，而那恰恰是
-      // 账单上最贵的部分。
-      return r.inputTokens != null && r.outputTokens != null
-        ? r.inputTokens + r.outputTokens
-        : null;
+      // 账单上最贵的部分。输入算上缓存读写，见 `promptTokens`
+      const prompt = promptTokens(r);
+      return prompt != null && r.outputTokens != null ? prompt + r.outputTokens : null;
+    }
     case "cost":
       return r.costMicros ?? null;
     case "status":

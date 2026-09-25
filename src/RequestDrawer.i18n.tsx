@@ -16,6 +16,7 @@ export const requestDrawerText = messages(
     title: "请求详情",
     /** 没有模型名时的标题 */
     requestNo: (id: number) => `第 ${id} 号请求`,
+    loadFailed: "请求详情读取失败",
 
     tabTimeline: "时间线",
     tabRouting: "路由",
@@ -48,8 +49,17 @@ export const requestDrawerText = messages(
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     status: "状态",
     inProgress: "进行中",
+    /** 头上那一项：失败了。原因写在「时间线」的状态那一行 */
+    failed: "失败",
+    cancelledShort: "已取消",
     cancelled: "已取消：客户端在响应结束前断开连接",
     bytes: "字节",
+    /** 顶上那一排数字 */
+    tokens: "token",
+    /** 首字节和生成的比例条：两段的名字，和读屏念的那一句 */
+    waiting: "等待首字节",
+    generating: "生成",
+    timingLabel: (ttfb: string, gen: string) => `等待首字节 ${ttfb}，生成 ${gen}`,
 
     // 路由
     matchedRule: "命中规则",
@@ -80,10 +90,13 @@ export const requestDrawerText = messages(
     noUsage: "上游未报告用量",
     noUsageTip:
       "部分上游的响应不含用量字段。缺少用量时，无法得知此次调用的消耗，也无法计算费用。",
-    input: "输入",
+    input: "新输入",
     output: "输出",
     cacheReads: "缓存读取",
     cacheWrites: "缓存写入",
+    /** 输入构成条，读屏念的那一句 */
+    inputMix: (read: string, input: string, write: string) =>
+      `缓存读取 ${read}，新输入 ${input}，缓存写入 ${write}`,
     cost: "费用",
     free: "不计费",
     unpriced: "无法计价：该模型未定价",
@@ -98,6 +111,8 @@ export const requestDrawerText = messages(
     ),
     asIsTip: "使用记录中保存的原始请求体，内容与原请求完全一致。",
     asIs: "「原样」的含义",
+    /** 选重放目标的那个下拉框，上游列表没取到 */
+    upstreamsFailed: "上游列表读取失败",
     /** 下拉框里原来那个上游名后面的标记 */
     originalUpstream: "（原上游）",
     estimateCost: "预估费用",
@@ -115,6 +130,7 @@ export const requestDrawerText = messages(
   {
     title: "Request details",
     requestNo: (id: number) => `Request #${id}`,
+    loadFailed: "Could not load the request",
 
     tabTimeline: "Timeline",
     tabRouting: "Routing",
@@ -142,8 +158,14 @@ export const requestDrawerText = messages(
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     status: "Status",
     inProgress: "In progress",
+    failed: "Failed",
+    cancelledShort: "Canceled",
     cancelled: "Canceled: the client disconnected before the response finished",
     bytes: "Bytes",
+    tokens: "Tokens",
+    waiting: "Waiting for first byte",
+    generating: "Generating",
+    timingLabel: (ttfb: string, gen: string) => `Waiting for first byte ${ttfb}, generating ${gen}`,
 
     matchedRule: "Matched rule",
     viaGroup: "Via group",
@@ -174,10 +196,12 @@ export const requestDrawerText = messages(
     noUsage: "The upstream did not report usage",
     noUsageTip:
       "Some upstreams' responses do not include usage fields. Without usage, the consumption of this call is unknown and its cost cannot be calculated.",
-    input: "Input",
+    input: "Uncached input",
     output: "Output",
     cacheReads: "Cache reads",
     cacheWrites: "Cache writes",
+    inputMix: (read: string, input: string, write: string) =>
+      `Cache reads ${read}, uncached input ${input}, cache writes ${write}`,
     cost: "Cost",
     free: "Free",
     unpriced: "Unpriced: this model has no price",
@@ -194,6 +218,7 @@ export const requestDrawerText = messages(
     asIsTip:
       "Uses the original request body saved in the record; the content is identical to the original request.",
     asIs: "What “as is” means",
+    upstreamsFailed: "Could not load the upstreams",
     originalUpstream: " (original)",
     estimateCost: "Estimate cost",
     quote: (upstream: ReactNode, bytes: number, tokens: number) => (

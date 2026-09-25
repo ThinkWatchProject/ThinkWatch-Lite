@@ -1,7 +1,7 @@
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import type { SessionView } from "@/types";
-import { sessionsText } from "@/Sessions.i18n";
+import { sessionsText } from "./Sessions.i18n";
 import { costCell } from "./costCell";
 
 /**

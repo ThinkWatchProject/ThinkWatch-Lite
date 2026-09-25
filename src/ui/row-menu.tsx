@@ -91,8 +91,11 @@ export function RowMenu({ children, items }: { children: ReactNode; items: MenuI
 /**
  * 行尾的「…」按钮。和右键打开的是**同一份**菜单 —— 右键发现不了，按钮是
  * 给第一次用的人的入口。
+ *
+ * `tabIndex`：行多的表（流量）只让键盘选中的那一行的按钮进 Tab 顺序，别的给 -1，
+ * 免得 Tab 要穿过两千个「…」。
  */
-export function RowMenuButton({ items, label }: { items: MenuItems; label: string }) {
+export function RowMenuButton({ items, label, tabIndex }: { items: MenuItems; label: string; tabIndex?: number }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -100,6 +103,7 @@ export function RowMenuButton({ items, label }: { items: MenuItems; label: strin
           variant="ghost"
           size="icon-xs"
           aria-label={label}
+          tabIndex={tabIndex}
           className="text-muted-foreground"
           // 行本身双击打开编辑；按钮上的点击不该冒泡成那一下
           onDoubleClick={(e) => e.stopPropagation()}

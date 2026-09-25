@@ -23,6 +23,10 @@ import { requestsText } from "./useRequests.i18n";
  * 合并的方向是「历史只添信息」，两个例外：还在「进行中」的行按库里记上结局，上游
  * 以库里的为准（理由写在循环里）。
  *
+ * **有变化的行换一个新对象，没变的原样留着。**表格按行对象是不是同一个来决定要不要
+ * 重画那一行（见 `RequestTable` 的 `Row`）：每次对账都把两千行换成新对象的话，一条
+ * 请求落地就要整表重画一遍。
+ *
  * `localLabel`：本地应答那几行的「上游」一栏写什么。
  */
 export function mergeHistory(
@@ -33,42 +37,49 @@ export function mergeHistory(
   for (const h of history) {
     const cur = rows.get(h.id);
     if (cur) {
+      const next = { ...cur };
       /*
         **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
         确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
         按库里的补上结局，不然这一行永远在跑。
       */
-      if (cur.state === "in_flight") {
-        cur.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
-        if (h.status != null) cur.status = h.status;
-        cur.durationMs = h.duration_ms ?? undefined;
-        cur.bytes = h.bytes ?? undefined;
-        cur.error = h.error ?? undefined;
+      if (next.state === "in_flight") {
+        next.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
+        if (h.status != null) next.status = h.status;
+        next.durationMs = h.duration_ms ?? undefined;
+        next.bytes = h.bytes ?? undefined;
+        next.error = h.error ?? undefined;
       }
       // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
-      if (!h.local) cur.provider = h.provider;
-      cur.model ??= h.model || undefined;
-      if (h.input_tokens != null) cur.inputTokens = h.input_tokens;
-      if (h.output_tokens != null) cur.outputTokens = h.output_tokens;
+      if (!h.local) next.provider = h.provider;
+      next.model ??= h.model || undefined;
+      if (h.input_tokens != null) next.inputTokens = h.input_tokens;
+      if (h.output_tokens != null) next.outputTokens = h.output_tokens;
+      if (h.cache_read_tokens != null) next.cacheReadTokens = h.cache_read_tokens;
+      if (h.cache_write_tokens != null) next.cacheWriteTokens = h.cache_write_tokens;
       if (h.cost_micros != null) {
-        cur.costMicros = h.cost_micros;
-        cur.costEstimated = h.cost_estimated;
+        next.costMicros = h.cost_micros;
+        next.costEstimated = h.cost_estimated;
       }
-      cur.translated ??= h.translated ?? undefined;
+      next.translated ??= h.translated ?? undefined;
       // **会话 id 只有库里有。**事件里那个是指纹，差着起始时刻
-      cur.session = h.session ?? cur.session;
-      const marks = marksFromEvents(h.security);
-      cur.secrets ??= marks.secrets;
-      cur.flagged ??= marks.flagged;
-      cur.hint ??= h.client_hint ?? undefined;
-      cur.peer ??= h.peer ?? undefined;
-      cur.keyMasked ??= h.key_masked ?? undefined;
+      next.session = h.session ?? next.session;
+      if (!next.secrets || !next.flagged) {
+        const marks = marksFromEvents(h.security);
+        next.secrets ??= marks.secrets;
+        next.flagged ??= marks.flagged;
+      }
+      next.hint ??= h.client_hint ?? undefined;
+      next.peer ??= h.peer ?? undefined;
+      next.keyMasked ??= h.key_masked ?? undefined;
+      if (changed(cur, next)) rows.set(h.id, next);
       continue;
     }
     rows.set(h.id, {
       id: h.id,
       client: h.client,
       provider: h.local ? localLabel : h.provider,
+      local: h.local || undefined,
       model: h.model || undefined,
       path: h.path,
       atMs: h.at_ms,
@@ -79,6 +90,8 @@ export function mergeHistory(
       bytes: h.bytes ?? undefined,
       inputTokens: h.input_tokens ?? undefined,
       outputTokens: h.output_tokens ?? undefined,
+      cacheReadTokens: h.cache_read_tokens ?? undefined,
+      cacheWriteTokens: h.cache_write_tokens ?? undefined,
       costMicros: h.cost_micros ?? undefined,
       costEstimated: h.cost_estimated,
       error: h.error ?? undefined,
@@ -92,8 +105,47 @@ export function mergeHistory(
   }
 }
 
-/** 列表上限。超过就丢最老的 —— 实时视图不是历史，历史在 SQLite 里。 */
-const MAX_ROWS = 500;
+/**
+ * 两个行对象上有没有哪一项不一样（只比一层：嵌套的那几样只在原来没有时才换）。
+ *
+ * **没有这一项和这一项是 `undefined` 算一样。**上面的 `??=` 在库里也没有的时候
+ * 会写上一个 `undefined`，按键数比的话每次对账都「变了」，整张表跟着重画。
+ */
+function changed(a: RequestRow, b: RequestRow): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof RequestRow>;
+  for (const k of keys) if (!Object.is(a[k], b[k])) return true;
+  return false;
+}
+
+/**
+ * 这条事件会改哪一行。**改之前先把那一行换成一个新对象**（`flush` 里），理由同
+ * `mergeHistory`：没被事件碰过的行保持原来的对象，表格就不重画它们。
+ */
+function touches(ev: CoreEvent): number | null {
+  switch (ev.kind) {
+    case "request_headers":
+    case "request_finished":
+    case "request_cancelled":
+    case "request_failed":
+    case "request_routed":
+    case "request_priced":
+    case "secrets_found":
+    case "tool_call_flagged":
+    case "translated":
+      return ev.id;
+    default:
+      return null;
+  }
+}
+
+/**
+ * 列表里最多留多少条。超过就丢最老的。
+ *
+ * **和开窗时读历史的条数是同一个数**（控制面的上限）。原来这里是 500 而历史读
+ * 2000：开窗时列表有两千条，第一条新请求一进来就被砍到五百 —— 表格、计数、
+ * 筛选的结果一下子少了四分之三，而什么都没发生。
+ */
+export const LIST_LIMIT = 2000;
 
 /**
  * 一批请求落地之后，隔多久告诉别人「库里可以重算了」。
@@ -115,8 +167,7 @@ const SETTLE_MS = 2_500;
  * 请求每秒几十条事件，十个并发就是每秒几百次重渲染。所以事件先进
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
  * 而重渲染次数降了一到两个数量级。
- */
-/**
+ *
  * `ready`：连上控制面了（App 的 `linked`）。**历史等它再读** —— 开窗那一刻 core
  * 多半还在起，读回来的只有一句「连不上」，而这一份只读一次。
  */
@@ -126,16 +177,16 @@ export function useRequests(ready: boolean) {
   // 连上了，又说明那些探测一分钱都没花。
   const [locallyAnswered, setLocallyAnswered] = useState(0);
   /**
-   * 最后一次配置被拒的样子。**留着直到下一次成功换入** ——
-   * 一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
-   */
-  /**
    * 配置面上新出现的可疑内容。
    *
    * **只攒新出现的那些**，而且不清空 —— 用户可能正在别的页上，这条
    * 提示要一直挂着直到他去看过。
    */
   const [alerts, setAlerts] = useState<ScanFinding[]>([]);
+  /**
+   * 最后一次配置被拒的样子。**留着直到下一次成功换入** ——
+   * 一闪而过的提示等于没提示：用户在编辑器里保存完，眼睛还在编辑器上。
+   */
   const [rejected, setRejected] = useState<Extract<CoreEvent, { kind: "config_rejected" }> | null>(
     null,
   );
@@ -160,6 +211,14 @@ export function useRequests(ready: boolean) {
   /** 历史读过了吗。**读之前是骨架屏，读完没有才是空状态** */
   const [seeded, setSeeded] = useState(false);
   /**
+   * 开窗时那一次读历史失败的原因。**下一次读成了才清掉。**
+   *
+   * 原来读失败就当成「没有记录」：流量页说「暂无请求记录」，而库里明明有两千条。
+   * 现在流量页据此说「读取失败」并给「重试」；事件流照常，这之后收到的请求照样
+   * 进列表。
+   */
+  const [seedError, setSeedError] = useState<unknown>(undefined);
+  /**
    * 对过几次账了。
    *
    * **概览页靠它决定什么时候重新拉数。**那一页问的是库，而库只在请求
@@ -168,13 +227,6 @@ export function useRequests(ready: boolean) {
    */
   const [settled, setSettled] = useState(0);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * 「库里可以重算了」发生过几次。
-   *
-   * 概览那一页的聚合（按模型分层、分位延迟、命中率）只有 SQL 算得出
-   * 来，而写入是异步的 —— 请求结束那一刻还查不到。这个计数每涨一次，
-   * 就意味着「刚落地的那几行已经在库里了」。
-   */
   /**
    * 「现在什么情况」变了几次。
    *
@@ -200,13 +252,24 @@ export function useRequests(ready: boolean) {
    */
   const [upstreamState, setUpstreamState] = useState(0);
 
+  /** 超出上限时按 id 顺序丢最老的 */
+  const prune = useCallback(() => {
+    const m = store.current;
+    if (m.size <= LIST_LIMIT) return;
+    const ids = [...m.keys()].sort((a, b) => a - b);
+    for (const id of ids.slice(0, m.size - LIST_LIMIT)) m.delete(id);
+  }, []);
+
+  /** 把存着的行按新的在前交给界面 */
+  const publish = useCallback(() => {
+    prune();
+    setRows([...store.current.values()].sort((a, b) => b.id - a.id));
+  }, [prune]);
 
   /**
    * 从库里读一遍最近的记录，并进当前列表。
    *
-   * **只在开窗时用一次。**在此之前它还兼着「回库把价钱取回来」——
-   * 因为价钱不在事件流里。core 现在会报 `request_priced`，那条路没了。
-   *
+   * 开窗时读一次；之后每批请求落地再读一次（`settled`），给新落地的行补上会话。
    * 怎么并见 `mergeHistory`：历史只添信息，结局没送到的行按库里补上。
    */
   const pull = useCallback(async () => {
@@ -214,13 +277,31 @@ export function useRequests(ready: boolean) {
       **整份日志，不分段。**日志留多久是设置里的事（保留期），而这一页
       要回答的是「翻一翻最近发生过什么」—— 让人先选一个时间范围才能
       开始搜，等于在一个本来就不大的集合上加一道门。
-
-      2000 是控制面的上限。
     */
-    const history = await call("History", { limit: 2000 });
+    const history = await call("History", { limit: LIST_LIMIT });
     mergeHistory(store.current, history, textOf(requestsText).answeredLocally);
-    setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-  }, []);
+    publish();
+    setSeedError(undefined);
+  }, [publish]);
+
+  /**
+   * 读一遍历史，记下成没成。**成没成都算读过了**：这个标记决定「画骨架屏还是画
+   * 别的」，读失败时该画的是失败和重试，骨架屏会一直转下去。
+   */
+  const seed = useCallback(
+    async (alive: () => boolean = () => true) => {
+      try {
+        await pull();
+      } catch (e) {
+        if (alive()) setSeedError(e);
+      }
+      if (alive()) setSeeded(true);
+    },
+    [pull],
+  );
+
+  /** 「重试」：再读一遍历史 */
+  const reseed = useCallback(() => seed(), [seed]);
 
   // **连上就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
@@ -228,20 +309,11 @@ export function useRequests(ready: boolean) {
   useEffect(() => {
     if (!ready) return;
     let alive = true;
-    void (async () => {
-      try {
-        await pull();
-      } catch {
-        /* 历史拿不到就从空白开始 —— 事件流照常，几秒后就有内容了 */
-      }
-      // **成没成都算读过了。**这个标记只用来决定「画骨架屏还是画空
-      // 状态」，而读失败时该画的是空状态：骨架屏会一直转下去。
-      if (alive) setSeeded(true);
-    })();
+    void seed(() => alive);
     return () => {
       alive = false;
     };
-  }, [pull, ready]);
+  }, [seed, ready]);
 
   /*
     **落库之后再对一次账。**会话 id 是存储层给的，而事件里只有指纹 ——
@@ -259,17 +331,6 @@ export function useRequests(ready: boolean) {
   }, [settled, pull]);
 
   useEffect(() => {
-    /** 超出上限时按 id 顺序丢最老的，再交给界面 */
-    const publish = () => {
-      if (store.current.size > MAX_ROWS) {
-        const ids = [...store.current.keys()].sort((a, b) => a - b);
-        for (const id of ids.slice(0, store.current.size - MAX_ROWS)) {
-          store.current.delete(id);
-        }
-      }
-      setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-    };
-
     const flush = () => {
       frame.current = null;
       if (pending.current.length === 0) return;
@@ -277,6 +338,8 @@ export function useRequests(ready: boolean) {
       pending.current = [];
       let local = 0;
       let landed = false;
+      /** 这一批里已经换成新对象的行：同一行一批里只换一次 */
+      const fresh = new Set<number>();
       for (const ev of batch) {
         if (
           ev.kind === "request_finished" ||
@@ -305,6 +368,13 @@ export function useRequests(ready: boolean) {
           // 换成功了就把上一条错误撤掉 —— 留着它会让用户以为还没修好
           setRejected(null);
           setReloads((n) => n + 1);
+        }
+        // 先换成新对象再改，见 `touches`
+        const id = touches(ev);
+        if (id !== null && !fresh.has(id)) {
+          const r = store.current.get(id);
+          if (r) store.current.set(id, { ...r });
+          fresh.add(id);
         }
         applyEvent(store.current, ev);
       }
@@ -394,6 +464,8 @@ export function useRequests(ready: boolean) {
       since = null;
       // 先把缓冲里的事件落下去：结局已经到了的，别被记成中断
       flush();
+      // 要改的行先换成新对象，见 `touches`
+      for (const [id, r] of store.current) if (r.state === "in_flight") store.current.set(id, { ...r });
       if (interruptInFlight(store.current)) publish();
     });
 
@@ -416,11 +488,13 @@ export function useRequests(ready: boolean) {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (settle.current) clearTimeout(settle.current);
     };
-  }, [pull]);
+  }, [publish]);
 
   return {
     rows,
     seeded,
+    seedError,
+    reseed,
     settled,
     health,
     models,

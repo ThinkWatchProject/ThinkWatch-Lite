@@ -255,6 +255,8 @@ function Shell({ first }: { first: boolean }) {
   const {
     rows: allRows,
     seeded,
+    seedError,
+    reseed,
     settled,
     health,
     models,
@@ -1051,6 +1053,8 @@ function Shell({ first }: { first: boolean }) {
                       <TrafficPage
                         rows={allRows}
                         seeded={seeded}
+                        seedError={seedError}
+                        onRetry={reseed}
                         locallyAnswered={locallyAnswered}
                         sessions={sessions}
                         status={status}

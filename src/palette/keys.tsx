@@ -14,6 +14,7 @@ export type KeyName =
   | "alt"
   | "shift"
   | "enter"
+  | "space"
   | "esc"
   | "backspace"
   | "up"
@@ -29,6 +30,8 @@ const MAC: Record<string, string> = {
   alt: "⌥",
   shift: "⇧",
   enter: "↵",
+  // 和系统菜单一样写成字（访达的「快速查看」）
+  space: "Space",
   esc: "esc",
   backspace: "⌫",
 };
@@ -37,6 +40,7 @@ const OTHER: Record<string, string> = {
   alt: "Alt",
   shift: "Shift",
   enter: "Enter",
+  space: "Space",
   esc: "Esc",
   backspace: "Backspace",
 };

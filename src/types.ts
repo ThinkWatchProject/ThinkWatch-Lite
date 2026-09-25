@@ -86,8 +86,15 @@ export interface RequestRow {
   ttfbMs?: number;
   durationMs?: number;
   bytes?: number;
+  /** 新输入的 token。**不含缓存读写**：三者不重叠，加起来才是这一轮送进去的全部 */
   inputTokens?: number;
   outputTokens?: number;
+  /** 缓存读取的 token。上游没报就没有 */
+  cacheReadTokens?: number;
+  /** 缓存写入的 token */
+  cacheWriteTokens?: number;
+  /** 网关本地应答的（客户端探测）。**没有上游** —— 「上游」那一格写的是「本地应答」 */
+  local?: boolean;
   /**
    * 这次花了多少微分。
    *
@@ -160,6 +167,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
           r.outputTokens = ev.usage.output;
+          r.cacheReadTokens = ev.usage.cache_read;
+          r.cacheWriteTokens = ev.usage.cache_write;
         }
       }
       break;
@@ -177,6 +186,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
           r.outputTokens = ev.usage.output;
+          r.cacheReadTokens = ev.usage.cache_read;
+          r.cacheWriteTokens = ev.usage.cache_write;
         }
       }
       break;
@@ -217,14 +228,12 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     }
     case "tool_call_flagged": {
       const r = rows.get(ev.id);
+      // 换一个新数组，不往原来那个里推：流量表按对象是不是同一个决定重不重画
       if (r)
-        (r.flagged ??= []).push({
-          tool: ev.tool,
-          rule: ev.rule,
-          custom: ev.custom === true,
-          excerpt: ev.excerpt,
-          blocked: ev.blocked,
-        });
+        r.flagged = [
+          ...(r.flagged ?? []),
+          { tool: ev.tool, rule: ev.rule, custom: ev.custom === true, excerpt: ev.excerpt, blocked: ev.blocked },
+        ];
       break;
     }
     case "translated": {
@@ -255,6 +264,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
           r.outputTokens = ev.usage.output;
+          r.cacheReadTokens = ev.usage.cache_read;
+          r.cacheWriteTokens = ev.usage.cache_write;
         }
       }
       break;
