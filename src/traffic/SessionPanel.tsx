@@ -3,7 +3,7 @@ import { call } from "@/control";
 import { useText } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
-import { usd, type SessionDetail, type TurnView } from "@/types";
+import { usd, type RequestRow, type SessionDetail, type TurnView } from "@/types";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
 import { AnimatedNumber } from "@/ui/motion";
@@ -16,6 +16,7 @@ import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "./PanelHeader";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
 import { dur, tokens, when } from "./format";
+import { tally } from "./grouping";
 
 /**
  * 一次会话，在右侧浮层里。**点开立刻出来**：先是和内容同样形状的骨架，取到了
@@ -24,18 +25,23 @@ import { dur, tokens, when } from "./format";
  *
  * **任务还在进行的话，详情要跟得上。**打开一次会话多半是想看这次的费用，而那时
  * 它往往还在跑：有请求落地就重读（按事件节流，和会话列表同一个节奏）。数据在
- * 模块里缓存着：再点开同一次会话是立刻出来的。
+ * 模块里缓存着：再点开同一次会话是立刻出来的。详情是从库里读的，一轮落了库才有；
+ * 在跑的那一轮、刚落地还没重读的那一轮从表里的行补上（`rows`）。第一轮还在跑的
+ * 会话库里还没有，core 说「没有这次会话」—— 那不是读失败，照样画，全靠行。
  *
  * 会话和请求走同一种浮层。比请求那一层宽：叠起来的时候左边露出一截，那一截就是
  * 「下面还有一层」唯一的说明。
  */
 export function SessionSheet({
   id,
+  rows,
   onClose,
   onOpenTurn,
 }: {
   /** 开着的那次会话。`null` 是关着 */
   id: string | null;
+  /** 表里这次会话的行 */
+  rows: readonly RequestRow[];
   onClose: () => void;
   /** 点了其中一轮 —— 在这一层之上再叠一层请求详情 */
   onOpenTurn: (id: number) => void;
@@ -44,10 +50,12 @@ export function SessionSheet({
   const r = useResource(id === null ? null : `session:${id}`, () => call("SessionDetail", null, id ?? ""), {
     events: ["request_finished", "request_failed", "request_cancelled"],
   });
+  const early = r.data === undefined && rows.length > 0 && unrecorded(r.error);
+  const now = r.data ? { d: r.data, rows } : early ? { d: null, rows } : undefined;
   /** 关上的那一下还要画着刚才那一份：浮层是滑出去的，不是一下没了 */
-  const last = useRef<SessionDetail | undefined>(undefined);
-  if (r.data) last.current = r.data;
-  const d = id === null ? last.current : r.data;
+  const last = useRef(now);
+  if (now) last.current = now;
+  const shown = id === null ? last.current : now;
 
   return (
     <Sheet open={id !== null} onOpenChange={(o) => !o && onClose()}>
@@ -64,8 +72,8 @@ export function SessionSheet({
         <SheetHeader className="sr-only">
           <SheetTitle>{t.title}</SheetTitle>
         </SheetHeader>
-        {d ? (
-          <SessionPanel d={d} onOpenTurn={onOpenTurn} onClose={onClose} />
+        {shown ? (
+          <SessionPanel d={shown.d} rows={shown.rows} onOpenTurn={onOpenTurn} onClose={onClose} />
         ) : r.error !== undefined ? (
           // 重试的时候留在这里，按钮转着 —— 换回骨架的话，看起来像是点了没反应
           <>
@@ -80,51 +88,69 @@ export function SessionSheet({
   );
 }
 
+/** core 说没有这次会话：它的轮次还一轮都没落库 */
+function unrecorded(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "control.session_not_found";
+}
+
 /**
  * 会话详情：几个总数、每轮的输入、每轮的费用。
  *
  * 瀑布里的一轮就是一条请求（`TurnView.id` 就是请求 id）：从「这次任务第 12 轮
  * 特别贵」走到「那一条请求到底发了什么」，点一下就到。
+ *
+ * `d` 是库里的详情，一轮落了库才算进去；`rows` 是表里这次会话的行，详情里还没有的
+ * 那几轮（在跑的、刚落地还没重读的）从这里补进轮数、失败数、时长和瀑布（见 `tally`）。
+ * 费用、用量和每轮输入只看详情：它们按落了库的用量算。`d` 是 `null`：库里还没有这次
+ * 会话，全靠行。
  */
 export function SessionPanel({
   d,
+  rows,
   onOpenTurn,
   onClose,
 }: {
-  d: SessionDetail;
+  d: SessionDetail | null;
+  rows: readonly RequestRow[];
   onOpenTurn: (id: number) => void;
   onClose: () => void;
 }) {
   const t = useText(sessionsText);
-  const { session: s, turns } = d;
+  const s = d?.session ?? null;
+  const turns = d?.turns ?? [];
+  const recorded = new Set(turns.map((x) => x.id));
+  const pending = rows.filter((r) => !recorded.has(r.id)).sort((a, b) => a.atMs - b.atMs);
+  const n = tally(s, rows, pending);
   // 走过哪几个上游，按第一次出现的先后。一次任务中途换过上游，这里能看出来。
   // 没有发往任何上游的那几轮（被规则拒绝）上游是空的，不算
-  const providers = [...new Set(turns.map((x) => x.provider).filter(Boolean))];
+  const providers = [...new Set([...turns.map((x) => x.provider), ...pending.map((r) => r.provider)].filter(Boolean))];
+  const client = s?.client ?? pending[0]?.client;
   return (
     <>
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}
-      <PanelHeader title={t.title} meta={t.startedAt(when(s.started_ms))} onClose={onClose}>
+      <PanelHeader title={t.title} meta={t.startedAt(when(n.started))} onClose={onClose}>
         {providers.length > 0 && (
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <UpstreamLogo name={providers[0] ?? ""} className="opacity-70" />
             <span className="truncate">{providers.join(" · ")}</span>
           </span>
         )}
-        {s.client && <span className="min-w-0 truncate">{s.client}</span>}
-        <span className="min-w-0 truncate">{s.models.join(t.modelSep)}</span>
+        {client && <span className="min-w-0 truncate">{client}</span>}
+        <span className="min-w-0 truncate">{n.models.join(t.modelSep)}</span>
       </PanelHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6">
         <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
-          <Stat label={t.turns} value={<AnimatedNumber value={s.turns} />} />
-          <Stat label={t.duration} value={dur(s.ended_ms - s.started_ms)} />
-          <Stat label={t.cost} value={<SessionCost s={s} />} />
+          <Stat label={t.turns} value={<AnimatedNumber value={n.turns} />} />
+          <Stat label={t.duration} value={dur(n.ended - n.started)} />
+          {/* 库里还没有这次会话：一轮费用都还没算出来 */}
+          <Stat label={t.cost} value={s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>} />
           <Stat
             label={t.failedTurns}
             value={
-              s.errors > 0 ? (
+              n.failed > 0 ? (
                 <span className="inline-flex items-center gap-1.5 text-destructive">
                   <StatusDot tone="error" />
-                  <AnimatedNumber value={s.errors} />
+                  <AnimatedNumber value={n.failed} />
                 </span>
               ) : (
                 <span className="text-muted-foreground">0</span>
@@ -132,12 +158,14 @@ export function SessionPanel({
             }
           />
         </dl>
-        <p className="mt-2 tw-label text-muted-foreground">
-          {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
-        </p>
+        {s && (
+          <p className="mt-2 tw-label text-muted-foreground">
+            {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
+          </p>
+        )}
 
-        <Growth turns={turns} />
-        <Waterfall turns={turns} onOpen={onOpenTurn} />
+        {turns.length > 0 && <Growth turns={turns} />}
+        <Waterfall steps={[...turns.map(fromTurn), ...pending.map(fromRow)]} onOpen={onOpenTurn} />
       </div>
     </>
   );
@@ -214,20 +242,53 @@ function Swatch({ className, children }: { className: string; children: ReactNod
 }
 
 /**
+ * 瀑布里的一轮：落了库的（`TurnView`），或者表里的一行 —— 还在跑的，刚落地、详情还
+ * 没重读的。
+ */
+interface Step {
+  id: number;
+  model: string;
+  cost: number | null;
+  estimated: boolean;
+  state: RequestRow["state"];
+  /** 落了库的。没有金额时：落了库的是没有价格，表里的那几轮是还没算出来 */
+  recorded: boolean;
+}
+
+const fromTurn = (x: TurnView): Step => ({
+  id: x.id,
+  model: x.model,
+  cost: x.cost_micros,
+  estimated: x.cost_estimated,
+  state: x.error ? "failed" : x.cancelled ? "cancelled" : "done",
+  recorded: true,
+});
+
+const fromRow = (r: RequestRow): Step => ({
+  id: r.id,
+  model: r.model ?? "",
+  cost: r.costMicros ?? null,
+  estimated: r.costEstimated === true,
+  state: r.state,
+  recorded: false,
+});
+
+/**
  * 每轮的费用 —— 找出那个 8 万 token 的文件读取。一轮一行，点开是那一条请求。
  *
  * 行尾「失败」「已取消」那一格只在有这样的轮次时才占位：一次顺利的任务，金额
- * 贴着右边，不留一截空白。
+ * 贴着右边，不留一截空白。**在跑的那一轮写在金额的位置**：它还没有金额，而一轮
+ * 开始、结束就让那一格出现又消失的话，整列金额跟着左右跳。
  */
-function Waterfall({ turns, onOpen }: { turns: TurnView[]; onOpen: (id: number) => void }) {
+function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => void }) {
   const t = useText(sessionsText);
-  const max = Math.max(1, ...turns.map((x) => x.cost_micros ?? 0));
-  const marks = turns.some((x) => x.error || x.cancelled);
+  const max = Math.max(1, ...steps.map((x) => x.cost ?? 0));
+  const marks = steps.some((x) => x.state === "failed" || x.state === "cancelled");
   return (
     <section className="mt-6">
       <h3 className="mb-2 tw-head text-foreground">{t.waterfallTitle}</h3>
       <ol className="-mx-1.5 flex flex-col">
-        {turns.map((x, i) => (
+        {steps.map((x, i) => (
           <li key={x.id}>
             <Button
               variant="ghost"
@@ -240,22 +301,27 @@ function Waterfall({ turns, onOpen }: { turns: TurnView[]; onOpen: (id: number) 
               <span className="relative h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-foreground/[0.06]">
                 <span
                   className="motion-bar absolute inset-y-0 left-0 rounded-full bg-chart-2"
-                  style={{ width: `${((x.cost_micros ?? 0) / max) * 100}%` }}
+                  style={{ width: `${((x.cost ?? 0) / max) * 100}%` }}
                 />
               </span>
-              <span className="w-20 shrink-0 text-right">
+              {/* 两格的宽度按最长的那个词定：英文的「In progress」「Canceled」，Windows 上字大 1px 也放得下 */}
+              <span className="w-24 shrink-0 text-right">
                 {/* **没有价格就说没有价格，不写 $0**；估算的金额带记号 */}
-                {x.cost_micros == null ? (
-                  <span className="text-muted-foreground">{t.unpriced}</span>
+                {x.state === "in_flight" ? (
+                  <StatusLabel tone="pending" muted>
+                    {t.turnRunning}
+                  </StatusLabel>
+                ) : x.cost == null ? (
+                  <span className="text-muted-foreground">{x.recorded ? t.unpriced : "—"}</span>
                 ) : (
-                  (x.cost_estimated ? "~" : "") + usd(x.cost_micros)
+                  (x.estimated ? "~" : "") + usd(x.cost)
                 )}
               </span>
               {marks && (
-                <span className="w-14 shrink-0 text-left">
-                  {x.error ? (
+                <span className="w-20 shrink-0 text-left">
+                  {x.state === "failed" ? (
                     <StatusLabel tone="error">{t.turnFailed}</StatusLabel>
-                  ) : x.cancelled ? (
+                  ) : x.state === "cancelled" ? (
                     <StatusLabel tone="idle" muted>
                       {t.turnCancelled}
                     </StatusLabel>

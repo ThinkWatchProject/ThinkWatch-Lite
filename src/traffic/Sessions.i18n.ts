@@ -18,6 +18,8 @@ export const sessionsText = messages(
     peakContext: "上下文峰值",
     /** 组头上失败数的悬停说明。格子里只有红点和数字 */
     failedTip: (n: number) => `此会话中 ${n} 轮失败`,
+    /** 正在进行的会话：开始时刻前那个跳动的点的悬停说明 */
+    runningTip: (n: number) => `此会话中 ${n} 轮进行中`,
     sessionActions: "此会话的操作",
     openSession: "打开会话",
     copySessionId: "复制会话 ID",
@@ -63,6 +65,7 @@ export const sessionsText = messages(
     /** 瀑布里单独一轮的标注 */
     turnFailed: "失败",
     turnCancelled: "已取消",
+    turnRunning: "进行中",
   },
   {
     expandSession: "Expand this session",
@@ -71,6 +74,8 @@ export const sessionsText = messages(
     peakContext: "Peak context",
     failedTip: (n: number) =>
       n === 1 ? "1 turn in this session failed." : `${n} turns in this session failed.`,
+    runningTip: (n: number) =>
+      n === 1 ? "1 turn in this session is in progress." : `${n} turns in this session are in progress.`,
     sessionActions: "Actions for this session",
     openSession: "Open session",
     copySessionId: "Copy session ID",
@@ -114,5 +119,6 @@ export const sessionsText = messages(
     waterfallTitle: "Cost per turn",
     turnFailed: "Failed",
     turnCancelled: "Canceled",
+    turnRunning: "In progress",
   },
 );

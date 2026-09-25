@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { appLabel } from "@/labels";
@@ -7,10 +8,12 @@ import { IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
 import { notify } from "@/ui/notify";
 import { Tip } from "@/ui/tip";
+import { coreNow, onTick, stopwatch } from "./clock";
 import { trafficText } from "./Traffic.i18n";
 
 /**
- * 请求行和组头共用的几样：行的底色、压暗的格子、密钥那一格、悬停里的几行字、复制。
+ * 请求行和组头共用的几样：行的底色、压暗的格子、密钥那一格、悬停里的几行字、复制、
+ * 在跑的请求的已跑时长。
  */
 
 /**
@@ -96,6 +99,31 @@ export function KeyCell({
 /** 一条请求的密钥那一格 */
 export function RowKeyCell({ r, hints }: { r: RequestRow; hints: boolean }) {
   return <KeyCell client={r.client} masked={r.keyMasked} hint={r.hint} peer={r.peer} hints={hints} />;
+}
+
+/**
+ * 一个在跑的请求已经跑了多久（`0:42`），每秒走一格。`at` 是开始事件的 `at_ms`，core
+ * 的钟；减的也是 core 的钟（见 `clock.ts`）。还没对过钟时写「…」。
+ *
+ * **秒针不经过 React：字直接写进这个 `<span>`。**秒针要是走 React 的状态，每一秒都是
+ * 一次比后台渲染优先的更新，会打断流量表在后台补画那两千行（`useDeferredValue`，
+ * 被打断就从头来）—— 补画一次要一秒以上的话，表就一直停在首屏那几行。直接写字，行、
+ * 表都不重画。React 只管这个空的 `<span>`，里面的字它不碰。
+ */
+export function Elapsed({ at }: { at: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // 画之前写好：第一帧就有字，不闪一下空的
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const draw = () => {
+      const now = coreNow();
+      el.textContent = now === null ? "…" : stopwatch(Math.max(0, now - at));
+    };
+    draw();
+    return onTick(draw);
+  }, [at]);
+  return <span ref={ref} />;
 }
 
 /** 悬停里的几句话，一句一行。气泡本身是横排的 flex，要包成一块 */

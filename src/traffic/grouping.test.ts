@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  failedIn,
   groupAt,
   groupBySession,
   lines,
   sortWithin,
   step,
+  tally,
+  tallyOf,
   type Cursor,
 } from "./grouping";
 import type { RequestRow, SessionView } from "@/types";
@@ -61,14 +62,83 @@ describe("按会话归组", () => {
     expect(sortWithin(g[0]!).map((r) => r.id)).toEqual([1, 2, 3]);
   });
 
-  it("数得出一组里翻了几条", () => {
-    const bad = { ...row(2, 200, "a"), state: "failed" as const };
-    const g = groupBySession([row(1, 100, "a"), bad, row(3, 300, "a")], []);
-    expect(failedIn(g[0]!)).toBe(1);
-  });
-
   it("空输入给空结果，不是一个空组", () => {
     expect(groupBySession([], [])).toEqual([]);
+  });
+});
+
+/**
+ * 组头上的数。**汇总只算落了库的轮次**，而一轮从开始就在它的会话里：在跑的、刚落地
+ * 还没重读的那一轮，汇总里没有、组里有。
+ */
+describe("组头上的数", () => {
+  /** 会话汇总：第 100 到 300 毫秒之间三轮，其中一轮失败 */
+  const summary = (over: Partial<SessionView> = {}): SessionView =>
+    ({ id: "a", client: "claude-code", started_ms: 100, ended_ms: 300, turns: 3, errors: 1, models: ["m1"], ...over }) as SessionView;
+  const running = (id: number, atMs: number, session: string, model = "m2"): RequestRow => ({
+    ...row(id, atMs, session),
+    state: "in_flight",
+    model,
+  });
+
+  it("在跑的那一轮算进轮数，会话在进行", () => {
+    const [g] = groupBySession([row(1, 100, "a"), row(3, 300, "a"), running(4, 400, "a")], [summary()]);
+    expect(tallyOf(g!)).toEqual({ turns: 4, failed: 1, running: 1, started: 100, ended: 400, models: ["m1", "m2"] });
+  });
+
+  it("汇总之后才落地的一轮也算上；汇总重读之后不重复算", () => {
+    const landed = { ...row(4, 400, "a"), state: "failed" as const };
+    const [before] = groupBySession([row(3, 300, "a"), landed], [summary()]);
+    expect(tallyOf(before!)).toMatchObject({ turns: 4, failed: 2, running: 0, ended: 400 });
+    const [after] = groupBySession([row(3, 300, "a"), landed], [summary({ turns: 4, errors: 2, ended_ms: 400 })]);
+    expect(tallyOf(after!)).toMatchObject({ turns: 4, failed: 2 });
+  });
+
+  it("汇总里还没有的会话（第一轮还在跑）全靠行", () => {
+    const [g] = groupBySession([running(7, 700, "new", "m")], []);
+    expect(tallyOf(g!)).toEqual({ turns: 1, failed: 0, running: 1, started: 700, ended: 700, models: ["m"] });
+  });
+
+  it("汇总还没读到时，失败数从行里数", () => {
+    const bad = { ...row(2, 200, "a"), state: "failed" as const };
+    const [g] = groupBySession([row(1, 100, "a"), bad, row(3, 300, "a")], []);
+    expect(tallyOf(g!)).toMatchObject({ turns: 3, failed: 1, running: 0, started: 100, ended: 300 });
+  });
+
+  /**
+   * 两轮同时在跑：后开始的先结束、落了库，汇总也重读了；先开始的那一轮这时才结束。
+   * 它比汇总里最后一轮开始得早，认不出不在汇总里 —— 表里的行数兜住，组头不会先少
+   * 一轮、等汇总重读再多回来。
+   */
+  it("先开始、后结束的那一轮结束时，组头不少数", () => {
+    const early = { ...row(4, 400, "a"), state: "done" as const };
+    const [g] = groupBySession(
+      [row(1, 100, "a"), row(2, 200, "a"), row(3, 300, "a"), early, row(5, 500, "a")],
+      [summary({ turns: 4, errors: 0, ended_ms: 500 })],
+    );
+    expect(tallyOf(g!)).toMatchObject({ turns: 5, running: 0 });
+  });
+
+  it("比汇总里的第一轮开始得还早、还在跑的那一轮，起点跟着它", () => {
+    // 第一轮是个长请求，第二轮先结束、先落了库
+    const [g] = groupBySession(
+      [running(1, 50, "a"), row(2, 100, "a")],
+      [summary({ started_ms: 100, ended_ms: 100, turns: 1, errors: 0 })],
+    );
+    expect(tallyOf(g!)).toMatchObject({ turns: 2, running: 1, started: 50, ended: 100 });
+  });
+
+  it("汇总之外按给的那几轮补：会话详情按 id 找出来的", () => {
+    const pending = [running(9, 900, "a", "m1")];
+    // 同一个模型不重复
+    expect(tally(summary(), pending, pending)).toEqual({
+      turns: 4,
+      failed: 1,
+      running: 1,
+      started: 100,
+      ended: 900,
+      models: ["m1"],
+    });
   });
 });
 

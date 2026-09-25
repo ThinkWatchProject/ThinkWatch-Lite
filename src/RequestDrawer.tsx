@@ -19,6 +19,7 @@ import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
+import { Elapsed } from "@/traffic/cells";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "@/traffic/PanelHeader";
 import { KeyLabel } from "./KeyLabel";
 import { appLabel, attemptText, formatLabel, quoteText, targetLabel } from "./labels";
@@ -347,9 +348,18 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
     <div>
       <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
         <Stat label={t.ttfb} value={r.ttfb_ms != null ? <AnimatedNumber value={r.ttfb_ms} format={ms} /> : "—"} muted={r.ttfb_ms == null} />
+        {/* 还在跑的，总耗时是到现在为止跑了多久，每秒走一格；和流量表那一格同一个写法 */}
         <Stat
           label={t.totalTime}
-          value={r.duration_ms != null ? <AnimatedNumber value={r.duration_ms} format={ms} /> : running ? t.inProgress : "—"}
+          value={
+            r.duration_ms != null ? (
+              <AnimatedNumber value={r.duration_ms} format={ms} />
+            ) : running ? (
+              <Elapsed at={r.at_ms} />
+            ) : (
+              "—"
+            )
+          }
           muted={r.duration_ms == null}
         />
         <Stat label={t.tokens} value={tokenPair(prompt, r.output_tokens ?? undefined)} muted={prompt == null} />

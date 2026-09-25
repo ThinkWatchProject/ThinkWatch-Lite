@@ -14,6 +14,7 @@ import {
   type SeenSince,
 } from "./types";
 import { marksFromEvents } from "./security/marks";
+import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
 import { requestsText } from "./useRequests.i18n";
 
 /**
@@ -408,8 +409,16 @@ export function useRequests(ready: boolean) {
     */
     let alive = true;
     let since: SeenSince | null = null;
+    /*
+      **core 的钟从这里对**：在跑的那几行「已跑多久」拿 core 的现在减开始时刻，而连的
+      可能是另一台机器上的 core（见 `traffic/clock`）。这个 hook 跟着连接走，挂上时
+      之前那个 core 的钟作废；快照到了按它定，开始事件到了按它往上校 —— 按**到达**的
+      那一刻记，不等下一帧落地。
+    */
+    resetCoreClock();
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
+      if (ev.kind === "request_started") noteCoreTime(ev.at_ms, Date.now());
       if (since) {
         if (ev.kind === "request_started") since.started.add(ev.id);
         else if (
@@ -438,9 +447,12 @@ export function useRequests(ready: boolean) {
         // **等订阅真的挂上再问**：`listen` 是异步注册的，先问的话，快照和
         // 订阅之间结束的请求，结局谁都没收到
         await un;
+        const sentAt = Date.now();
         const open = await call("InFlight", null);
+        const gotAt = Date.now();
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
+        syncCoreClock(open.now_ms, sentAt, gotAt);
         if (applyInFlight(store.current, open.requests, mark)) publish();
       } catch {
         // 问不到就和以前一样：等它们结束、落库之后对账时出现
