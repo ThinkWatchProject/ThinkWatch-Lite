@@ -14,6 +14,23 @@ const FILE: &str = "connections.json";
 /// 「本机」的 id。**远程连接的 id 不会是它**：那些是随机生成的
 pub const LOCAL: &str = "local";
 
+/// 「本机」那一条叫什么。中文一律「本机」；英文**按平台**：macOS 上是「This Mac」，
+/// Windows、Linux 上是「This computer」。
+///
+/// 应用这一侧说到它都从这里取：连接列表、菜单栏和托盘的「连接」子菜单、连不上本机时的
+/// 那一句。界面自己按语言写（`src/connection/describe.tsx` 的 `profileName`，写法和这里
+/// 一样）：换语言时界面当场换，不等下一次推送
+pub fn local_name() -> &'static str {
+    tr!(
+        "本机",
+        if cfg!(target_os = "macos") {
+            "This Mac"
+        } else {
+            "This computer"
+        }
+    )
+}
+
 /// 一条远程连接
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Remote {
@@ -199,6 +216,21 @@ mod tests {
         );
         assert!(c.name_taken("本机", None));
         assert!(!c.name_taken("office-nas", None));
+    }
+
+    /// 英文按平台叫：Windows、Linux 上写「This Mac」是错的。叫什么都不能被远程连接拿去用
+    #[test]
+    fn the_local_connection_is_named_for_this_platform() {
+        use crate::i18n::{Lang, with_lang};
+        assert_eq!(with_lang(Lang::Zh, local_name), "本机");
+        let en = with_lang(Lang::En, local_name);
+        #[cfg(target_os = "macos")]
+        assert_eq!(en, "This Mac");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(en, "This computer");
+        for name in ["本机", en] {
+            assert!(Connections::default().name_taken(name, None), "{name}");
+        }
     }
 
     /// 密钥永远不进这个文件

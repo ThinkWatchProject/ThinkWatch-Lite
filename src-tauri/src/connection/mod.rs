@@ -256,7 +256,7 @@ pub fn view(app: &tauri::AppHandle) -> ConnView {
     let c = store::load(&data_dir());
     let mut profiles = vec![ProfileView {
         id: LOCAL.into(),
-        name: tr!("本机", "This Mac").into(),
+        name: store::local_name().into(),
         local: true,
         host: None,
         port: None,

@@ -13,7 +13,7 @@ import { troubleText } from "@/launch/trouble.i18n";
 import { LOCAL, connApi, currentProfile, type ConnView } from "./api";
 import { connText } from "./connection.i18n";
 import { useConnections } from "./ConnectionProvider";
-import { shortReason } from "./describe";
+import { profileName, shortReason } from "./describe";
 
 /**
  * 没连上时内容区里的那一页。
@@ -99,6 +99,7 @@ function RemoteDown({ view }: { view: ConnView }) {
   const { edit, switchTo } = useConnections();
   const now = useNow(1_000);
   const p = currentProfile(view)!;
+  const name = profileName(p);
   const link = view.link;
   const connecting = link.kind === "connecting";
   const retry =
@@ -111,7 +112,7 @@ function RemoteDown({ view }: { view: ConnView }) {
     <Frame
       icon={<PlugZapIcon />}
       tone={connecting ? "pending" : "error"}
-      title={connecting && link.attempt <= 1 ? t.connectingTo(p.name) : t.cannotConnect(p.name)}
+      title={connecting && link.attempt <= 1 ? t.connectingTo(name) : t.cannotConnect(name)}
       status={connecting ? t.connecting : t.unlinked}
     >
       <Facts
@@ -142,7 +143,7 @@ function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string; theirs
   const { switchTo } = useConnections();
   const p = currentProfile(view)!;
   return (
-    <Frame icon={<TriangleAlertIcon />} tone="warn" title={t.mismatchTitle(p.name)}>
+    <Frame icon={<TriangleAlertIcon />} tone="warn" title={t.mismatchTitle(profileName(p))}>
       <Facts
         rows={[
           [t.server, <code className="font-mono">core {theirs}</code>],

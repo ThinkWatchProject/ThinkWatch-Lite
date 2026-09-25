@@ -9,13 +9,21 @@ type Code = (text: string) => ReactNode;
 const holdZh = isMac ? "Option" : "Alt";
 
 /**
+ * 本机那一条叫什么：中文一律「本机」，英文按平台 —— macOS 上是「This Mac」，别的平台是
+ * 「This computer」。应用那一侧（菜单栏、托盘的「连接」子菜单）写法一样，见 Rust 的
+ * `connection::store::local_name`
+ */
+const localZh = "本机";
+const localEn = isMac ? "This Mac" : "This computer";
+
+/**
  * 连接：侧栏的切换器、设置里的「连接」一节、添加与编辑、切换确认、未连接页、
  * 断线横幅、启动时的连接选择。
  */
 export const connText = messages(
   {
-    /** 内置的那一条 */
-    local: "本机",
+    /** 内置的那一条。显示连接的名字一律经 `profileName`（describe.tsx） */
+    local: localZh,
     localNote: (dir: string) => `${dir} · 内置，不可删除`,
     localCore: "本地 core",
     localStopped: "本地 core · 已停止",
@@ -44,7 +52,7 @@ export const connText = messages(
     coreVersion: (v: string) => `core ${v}`,
     startupLabel: "启动时连接",
     startupLast: "上次使用的连接",
-    startupLocal: "本机",
+    startupLocal: localZh,
     startupHint: isLinux
       ? "连续两次启动未能完成时，下次启动先显示连接选择。"
       : `按住 ${holdZh} 键启动应用时，先显示连接选择。`,
@@ -153,7 +161,7 @@ export const connText = messages(
     connect: "连接",
   },
   {
-    local: isMac ? "This Mac" : "This computer",
+    local: localEn,
     localNote: (dir: string) => `${dir} · Built in, cannot be deleted`,
     localCore: "Local core",
     localStopped: "Local core · Stopped",
@@ -180,7 +188,7 @@ export const connText = messages(
     coreVersion: (v: string) => `core ${v}`,
     startupLabel: "Connect at startup",
     startupLast: "Last used connection",
-    startupLocal: isMac ? "This Mac" : "This computer",
+    startupLocal: localEn,
     startupHint: isLinux
       ? "After two startups in a row fail to finish, the next startup shows the connection choice first."
       : `Hold ${holdZh} while opening the app to choose a connection first.`,

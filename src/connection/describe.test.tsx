@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ConnectError } from "./api";
-import { describeError, shortReason } from "./describe";
+import { describeError, profileName, shortReason } from "./describe";
 
 const ALL: ConnectError[] = [
   { kind: "unreachable", addr: "192.168.1.20:8789" },
@@ -39,5 +39,20 @@ describe("连接失败的原因", () => {
     expect(a.title).toBe("无法连接到 h:1");
     expect(a.title).toBe(b.title);
     expect(shortReason({ kind: "timeout", addr: "h:1" })).toBe("连接超时");
+  });
+});
+
+describe("连接的名字", () => {
+  /**
+   * 本机那一条不用 Rust 给的名字：换语言时界面当场换，不等下一次推送。英文按平台 ——
+   * 这里不在应用里、没有注入平台，走的是非 macOS 那一支
+   */
+  it("本机按界面语言和平台写，远程用用户起的名字", () => {
+    const local = { local: true, name: "This Mac" };
+    setLang("en");
+    expect(profileName(local)).toBe("This computer");
+    expect(profileName({ local: false, name: "home-server" })).toBe("home-server");
+    setLang("zh");
+    expect(profileName(local)).toBe("本机");
   });
 });

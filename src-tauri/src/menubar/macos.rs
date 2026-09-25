@@ -19,7 +19,7 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject};
 use objc2::{
-    AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel,
+    AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
@@ -309,8 +309,9 @@ fn rebuild(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
     ui.menu.removeAllItems();
     ui.items.clear();
     ui.actions.clear();
+    let quota = quota_text(rows);
     for row in rows {
-        let item = make_item(mtm, ui, row);
+        let item = make_item(mtm, ui, row, quota);
         ui.menu.addItem(&item);
         ui.items.push(item);
     }
@@ -319,6 +320,7 @@ fn rebuild(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
 /// 样子没变：只换文字和数据。**不删不加**，开着的菜单不跳
 fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
     ui.actions.clear();
+    let quota = quota_text(rows);
     for (row, item) in rows.iter().zip(ui.items.clone()) {
         match row {
             Row::Separator => {}
@@ -326,7 +328,7 @@ fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
             _ => {
                 let tag = row_action(row).map(|a| push_action(ui, a.clone()));
                 if let Some(view) = item.view().and_then(|v| v.downcast::<InfoView>().ok()) {
-                    view.set_info(info_of(row), tag);
+                    view.set_info(info_of(row, quota), tag);
                 }
             }
         }
@@ -348,7 +350,12 @@ fn push_action(ui: &mut Ui, action: Action) -> isize {
     (ui.actions.len() - 1) as isize
 }
 
-fn make_item(mtm: MainThreadMarker, ui: &mut Ui, row: &Row) -> Retained<NSMenuItem> {
+fn make_item(
+    mtm: MainThreadMarker,
+    ui: &mut Ui,
+    row: &Row,
+    quota: QuotaText,
+) -> Retained<NSMenuItem> {
     match row {
         Row::Separator => NSMenuItem::separatorItem(mtm),
         Row::Item(i) => {
@@ -359,7 +366,7 @@ fn make_item(mtm: MainThreadMarker, ui: &mut Ui, row: &Row) -> Retained<NSMenuIt
         _ => {
             let item = NSMenuItem::new(mtm);
             let tag = row_action(row).map(|a| push_action(ui, a.clone()));
-            let info = info_of(row);
+            let info = info_of(row, quota);
             let view = InfoView::new(mtm, info, tag);
             item.setView(Some(&view));
             item
@@ -494,6 +501,8 @@ enum Info {
     Quota {
         provider: String,
         windows: Vec<WindowRow>,
+        /// 菜单里所有额度行共用的字宽，见 [`quota_text`]
+        text: QuotaText,
     },
     Stats {
         cells: Vec<super::model::StatCell>,
@@ -505,7 +514,8 @@ enum Info {
     },
 }
 
-fn info_of(row: &Row) -> Info {
+/// `quota`：整份菜单的额度行一起量出来的字宽（[`quota_text`]），只有额度行用
+fn info_of(row: &Row, quota: QuotaText) -> Info {
     match row.clone() {
         Row::Header {
             title,
@@ -526,7 +536,11 @@ fn info_of(row: &Row) -> Info {
         } => Info::Notice { level, title, body },
         Row::Quota {
             provider, windows, ..
-        } => Info::Quota { provider, windows },
+        } => Info::Quota {
+            provider,
+            windows,
+            text: quota,
+        },
         Row::Stats { cells, .. } => Info::Stats { cells },
         Row::Live {
             app,
@@ -610,6 +624,148 @@ impl InfoView {
     }
 }
 
+// ------------------------------------------------------------------ 自定义行的列宽
+//
+// **列宽按字量，不按一种语言写死。**中文的字都落在下面的最小列宽里，排出来和原来
+// 写死的一样；英文的「Resets in 3 days」「Requests 4 failed」比那宽，写死的时候
+// 就压到了旁边那一列上。
+
+/// 同一行里两段字之间至少空这么多
+const TEXT_GAP: f64 = 10.0;
+/// 额度行：窗口名和条之间
+const LABEL_GAP: f64 = 8.0;
+/// 额度行：窗口名一列至少这么宽（含它和条之间的空）
+const QUOTA_LABEL: f64 = 50.0;
+/// 额度行：窗口名一列最多这么宽。上游给了很长的窗口名就截断，不把条挤没
+const QUOTA_LABEL_MAX: f64 = 96.0;
+/// 额度行：条和百分比之间
+const QUOTA_BAR_GAP: f64 = 8.0;
+/// 额度行：百分比一列，「100%」放得下
+const QUOTA_PCT: f64 = 40.0;
+/// 额度行：重置一列至少这么宽（含它和百分比之间的空）
+const QUOTA_RESET: f64 = 92.0;
+/// 额度行：条最短这么长
+const QUOTA_MIN_BAR: f64 = 40.0;
+/// 「今日」：标签和旁边的橙色小字（失败数）之间
+const NOTE_GAP: f64 = 6.0;
+
+fn quota_label_font() -> Retained<NSFont> {
+    sys(12.0, weight(Weight::Regular))
+}
+
+/// 等宽数字：倒计时在走，同位数时宽度不变
+fn quota_reset_font() -> Retained<NSFont> {
+    mono(12.0, weight(Weight::Regular))
+}
+
+fn stat_value_font() -> Retained<NSFont> {
+    mono(17.0, weight(Weight::Semibold))
+}
+
+fn stat_label_font() -> Retained<NSFont> {
+    sys(11.0, weight(Weight::Regular))
+}
+
+fn text_width(text: &str, font: &NSFont) -> f64 {
+    attributed(text, font, &NSColor::labelColor()).size().width
+}
+
+/// 额度行里最宽的窗口名和最宽的重置时刻。**整份菜单的额度行一起量**：几家的额度
+/// 共用一套列，条的起止上下对齐
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct QuotaText {
+    label: f64,
+    reset: f64,
+}
+
+fn quota_text(rows: &[Row]) -> QuotaText {
+    let (label_font, reset_font) = (quota_label_font(), quota_reset_font());
+    rows.iter()
+        .flat_map(|r| match r {
+            Row::Quota { windows, .. } => windows.as_slice(),
+            _ => &[],
+        })
+        .fold(QuotaText::default(), |t, wr| QuotaText {
+            label: t.label.max(text_width(&wr.label, &label_font)),
+            reset: t.reset.max(text_width(&wr.reset, &reset_font)),
+        })
+}
+
+/// 额度行横着怎么排：窗口名 · 条 · 百分比 · 重置
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct QuotaCols {
+    /// 窗口名一列，含它和条之间的空
+    label: f64,
+    bar_x: f64,
+    bar_w: f64,
+    /// 百分比右对齐到这里
+    pct_right: f64,
+    /// 重置一列，含它和百分比之间的空。右对齐到 `w - PAD`
+    reset: f64,
+}
+
+/// 两头的字要多宽给多宽，条拿剩下的。条短到 [`QUOTA_MIN_BAR`] 还放不下时，重置一列
+/// 不再放宽，字截断
+fn quota_cols(w: f64, text: QuotaText) -> QuotaCols {
+    let label = (text.label + LABEL_GAP).clamp(QUOTA_LABEL, QUOTA_LABEL_MAX);
+    let bar_x = PAD + label;
+    let room = w - PAD - bar_x - QUOTA_MIN_BAR - QUOTA_BAR_GAP - QUOTA_PCT;
+    let reset = (text.reset + TEXT_GAP).max(QUOTA_RESET).min(room);
+    let bar_w = w - PAD - reset - QUOTA_PCT - QUOTA_BAR_GAP - bar_x;
+    QuotaCols {
+        label,
+        bar_x,
+        bar_w,
+        pct_right: bar_x + bar_w + QUOTA_BAR_GAP + QUOTA_PCT,
+        reset,
+    }
+}
+
+/// 「今日」几格各多宽：量出每一格的字，交给 [`share_columns`]
+fn stat_widths(w: f64, cells: &[super::model::StatCell]) -> Vec<f64> {
+    let (value_font, label_font) = (stat_value_font(), stat_label_font());
+    let needs: Vec<f64> = cells
+        .iter()
+        .map(|c| {
+            let line2 = text_width(&c.label, &label_font)
+                + c.note
+                    .as_deref()
+                    .map_or(0.0, |n| NOTE_GAP + text_width(n, &label_font));
+            text_width(&c.value, &value_font).max(line2) + TEXT_GAP
+        })
+        .collect();
+    share_columns(w - PAD * 2.0, &needs)
+}
+
+/// 把 `avail` 分给几格。**放得下时等分**；有一格要的比等分多（英文的「Requests
+/// 4 failed」），就给它要的那么多，其余几格平分剩下的 —— 那几格也不小于自己要的。
+/// 怎么分都放不下时按各自要的比例分，画的时候截断
+fn share_columns(avail: f64, needs: &[f64]) -> Vec<f64> {
+    let total: f64 = needs.iter().sum();
+    if total > avail && total > 0.0 {
+        return needs.iter().map(|n| avail * n / total).collect();
+    }
+    // 从要得最多的一格起：比「剩下的地方平分」还多，就照它要的给，剩下的接着平分
+    let mut order: Vec<usize> = (0..needs.len()).collect();
+    order.sort_by(|&a, &b| needs[b].total_cmp(&needs[a]));
+    let (mut left, mut rest) = (avail, needs.len());
+    let mut fixed = vec![false; needs.len()];
+    for i in order {
+        if needs[i] <= left / rest as f64 {
+            break;
+        }
+        fixed[i] = true;
+        left -= needs[i];
+        rest -= 1;
+    }
+    let share = left / rest.max(1) as f64;
+    needs
+        .iter()
+        .zip(fixed)
+        .map(|(&n, fixed)| if fixed { n } else { share })
+        .collect()
+}
+
 fn draw_info(info: &Info, b: NSRect, hl: bool) {
     let w = b.size.width;
     if hl {
@@ -640,8 +796,6 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
             line2,
             line2_warn,
         } => {
-            let t = attributed(title, &sys(13.0, weight(Weight::Semibold)), &label);
-            t.drawAtPoint(NSPoint::new(PAD, 6.0));
             let st = attributed(state, &sys(12.0, weight(Weight::Regular)), &secondary);
             let sw = st.size().width;
             st.drawAtPoint(NSPoint::new(w - PAD - sw, 7.0));
@@ -651,7 +805,11 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
                 StateTone::Warn => NSColor::systemOrangeColor(),
                 StateTone::Bad => NSColor::systemRedColor(),
             };
-            fill_oval(w - PAD - sw - 12.0, 11.0, 7.0, &dot);
+            let dot_x = w - PAD - sw - 12.0;
+            fill_oval(dot_x, 11.0, 7.0, &dot);
+            // 连着远程时标题是服务器的名字，多长都有：截断在状态前面，不压上去
+            let t = attributed(title, &sys(13.0, weight(Weight::Semibold)), &label);
+            draw_clipped(&t, PAD, 6.0, dot_x - TEXT_GAP - PAD);
             let color = if *line2_warn {
                 NSColor::systemOrangeColor()
             } else {
@@ -686,20 +844,25 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
             let bd = attributed(body, &sys(11.5, weight(Weight::Regular)), &secondary);
             draw_clipped(&bd, TEXT_X, 21.0, w - TEXT_X - PAD);
         }
-        Info::Quota { provider, windows } => {
-            attributed(provider, &sys(13.0, weight(Weight::Medium)), &label)
-                .drawAtPoint(NSPoint::new(PAD, 4.0));
-            let small = mono(12.0, weight(Weight::Regular));
-            let small_b = mono(12.0, weight(Weight::Medium));
+        Info::Quota {
+            provider,
+            windows,
+            text,
+        } => {
+            let name = attributed(provider, &sys(13.0, weight(Weight::Medium)), &label);
+            draw_clipped(&name, PAD, 4.0, w - PAD * 2.0);
+            let pct_font = mono(12.0, weight(Weight::Medium));
+            let QuotaCols {
+                label: label_col,
+                bar_x,
+                bar_w,
+                pct_right,
+                reset: reset_col,
+            } = quota_cols(w, *text);
             for (i, wr) in windows.iter().enumerate() {
                 let y = 26.0 + 21.0 * i as f64;
-                attributed(&wr.label, &sys(12.0, weight(Weight::Regular)), &secondary)
-                    .drawAtPoint(NSPoint::new(PAD, y));
-                // 列：窗口名 48 · 条 · 百分比 40 · 重置 90
-                let reset_w = 92.0;
-                let pct_w = 40.0;
-                let bar_x = PAD + 50.0;
-                let bar_w = (w - PAD - reset_w - pct_w - 8.0 - bar_x).max(40.0);
+                let lab = attributed(&wr.label, &quota_label_font(), &secondary);
+                draw_clipped(&lab, PAD, y, label_col - LABEL_GAP);
                 let track = if hl {
                     NSColor::whiteColor().colorWithAlphaComponent(0.3)
                 } else {
@@ -738,31 +901,36 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
                         )
                         .fill();
                     }
-                    let pct = attributed(&format!("{}%", p.round() as i64), &small_b, &tone_color);
-                    let px = bar_x + bar_w + 8.0 + pct_w - pct.size().width;
-                    pct.drawAtPoint(NSPoint::new(px, y));
+                    let pct = attributed(&format!("{}%", p.round() as i64), &pct_font, &tone_color);
+                    pct.drawAtPoint(NSPoint::new(pct_right - pct.size().width, y));
                 }
-                let rs = attributed(&wr.reset, &small, &secondary);
-                rs.drawAtPoint(NSPoint::new(w - PAD - rs.size().width, y));
+                // 右对齐。列宽是按字量出来的，截断只在菜单窄得放不下条的时候才会发生
+                let rs = attributed(&wr.reset, &quota_reset_font(), &secondary);
+                if let Some(rs) = fit(&rs, reset_col - TEXT_GAP) {
+                    rs.drawAtPoint(NSPoint::new(w - PAD - rs.size().width, y));
+                }
             }
         }
         Info::Stats { cells } => {
-            let col = (w - PAD * 2.0) / cells.len().max(1) as f64;
-            for (i, c) in cells.iter().enumerate() {
-                let x = PAD + col * i as f64;
-                attributed(&c.value, &mono(17.0, weight(Weight::Semibold)), &label)
-                    .drawAtPoint(NSPoint::new(x, 3.0));
-                let lab = attributed(&c.label, &sys(11.0, weight(Weight::Regular)), &secondary);
-                lab.drawAtPoint(NSPoint::new(x, 27.0));
+            let note_color = if hl {
+                NSColor::whiteColor()
+            } else {
+                NSColor::systemOrangeColor()
+            };
+            let mut x = PAD;
+            for (c, col) in cells.iter().zip(stat_widths(w, cells)) {
+                // 格子右边留出和下一格之间的空；字只在这一格里画，放不下的截断
+                let right = x + col - TEXT_GAP;
+                let value = attributed(&c.value, &stat_value_font(), &label);
+                draw_clipped(&value, x, 3.0, right - x);
+                let lab = attributed(&c.label, &stat_label_font(), &secondary);
+                draw_clipped(&lab, x, 27.0, right - x);
                 if let Some(note) = &c.note {
-                    let color = if hl {
-                        NSColor::whiteColor()
-                    } else {
-                        NSColor::systemOrangeColor()
-                    };
-                    attributed(note, &sys(11.0, weight(Weight::Regular)), &color)
-                        .drawAtPoint(NSPoint::new(x + lab.size().width + 6.0, 27.0));
+                    let nx = x + lab.size().width + NOTE_GAP;
+                    let note = attributed(note, &stat_label_font(), &note_color);
+                    draw_clipped(&note, nx, 27.0, right - nx);
                 }
+                x += col;
             }
         }
         Info::Live {
@@ -773,26 +941,46 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
             if let Some(img) = symbol("circle.dashed", Some(&*secondary)) {
                 img.drawInRect(rect(PAD, 4.0, 16.0, 16.0));
             }
-            let a = attributed(app, &NSFont::menuFontOfSize(0.0), &label);
-            a.drawAtPoint(NSPoint::new(TEXT_X, 3.5));
             let el = attributed(elapsed, &mono(12.0, weight(Weight::Regular)), &secondary);
             let ew = el.size().width;
             el.drawAtPoint(NSPoint::new(w - PAD - ew, 4.5));
-            let mx = TEXT_X + a.size().width + 8.0;
+            // 应用名和模型都在时长左边。放不下先截模型；应用名（认不出应用时是密钥名，
+            // 多长都有）再长也截在时长前面
+            let right = w - PAD - ew - 10.0;
+            let a = attributed(app, &NSFont::menuFontOfSize(0.0), &label);
+            let aw = match fit(&a, right - TEXT_X) {
+                Some(a) => {
+                    a.drawAtPoint(NSPoint::new(TEXT_X, 3.5));
+                    a.size().width
+                }
+                None => 0.0,
+            };
+            let mx = TEXT_X + aw + 8.0;
             let m = attributed(model, &sys(12.0, weight(Weight::Regular)), &secondary);
-            draw_clipped(&m, mx, 4.5, w - PAD - ew - 10.0 - mx);
+            draw_clipped(&m, mx, 4.5, right - mx);
         }
     }
 }
 
 /// 画一段字，**放不下就截断**：自定义行不会自己换行，超出的部分会画到别的格子上
 fn draw_clipped(s: &NSAttributedString, x: f64, y: f64, max_w: f64) {
-    if max_w <= 0.0 {
-        return;
-    }
-    if s.size().width <= max_w {
+    if let Some(s) = fit(s, max_w) {
         s.drawAtPoint(NSPoint::new(x, y));
-        return;
+    }
+}
+
+/// 列宽是「字宽 + 空」再减去空算回来的，和量出来的字宽之间差一点浮点误差。这点差不算
+/// 放不下 —— 否则正好放得下的字会被截成「4 fai…」
+const FIT_SLACK: f64 = 0.001;
+
+/// 放得下就是它本身；放不下就从尾巴上去字、末尾加「…」，直到放得下。一个字都放不下
+/// 是 None。**要右对齐的先拿它，再按它的宽定位置**
+fn fit(s: &NSAttributedString, max_w: f64) -> Option<Retained<NSAttributedString>> {
+    if max_w <= 0.0 {
+        return None;
+    }
+    if s.size().width <= max_w + FIT_SLACK {
+        return Some(s.retain());
     }
     let text = s.string().to_string();
     // SAFETY: 第 0 个字符一定在（上面已经量过它比 max_w 宽），不要范围就传空指针
@@ -808,11 +996,11 @@ fn draw_clipped(s: &NSAttributedString, x: f64, y: f64, max_w: f64) {
                 Some(&attrs),
             )
         };
-        if a.size().width <= max_w {
-            a.drawAtPoint(NSPoint::new(x, y));
-            return;
+        if a.size().width <= max_w + FIT_SLACK {
+            return Some(a);
         }
     }
+    None
 }
 
 // ------------------------------------------------------------------ 点击与开合
@@ -1051,12 +1239,13 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
     };
     use objc2_foundation::NSAffineTransform;
 
+    let quota = quota_text(rows);
     let heights: Vec<f64> = rows
         .iter()
         .map(|r| match r {
             Row::Separator => 11.0,
             Row::Item(_) => 24.0,
-            other => info_height(&info_of(other)),
+            other => info_height(&info_of(other, quota)),
         })
         .collect();
     let bar_img = bar_image(bar);
@@ -1140,7 +1329,7 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
                         NSBezierPath::fillRect(rect(PAD, 5.0, MENU_WIDTH - PAD * 2.0, 1.0));
                     }
                     Row::Item(i) => preview_item(i, r),
-                    other => draw_info(&info_of(other), r, false),
+                    other => draw_info(&info_of(other, quota), r, false),
                 }
                 ctx.restoreGraphicsState();
                 y += h;
@@ -1203,4 +1392,176 @@ pub fn write_png(image: &NSImage, path: &std::path::Path) -> bool {
         return false;
     };
     std::fs::write(path, data.to_vec()).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Lang, with_lang};
+    use crate::menubar::model::{self, Gateway, Quota, Snapshot, StatCell, Today, Window};
+
+    /// 量字的几条测试一条一条来：AppKit 排字不必经得起几个线程同时量
+    static APPKIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 一条挂了不连累别的：锁被挂掉的那条带走了也照样拿
+    fn appkit() -> std::sync::MutexGuard<'static, ()> {
+        APPKIT.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    const NOW: u64 = 1_800_000_000_000;
+    const MIN: u64 = 60_000;
+    const DAY: u64 = 86_400_000;
+
+    /// 截图里那一份菜单：ChatGPT 两个窗口，今天有几次失败
+    fn menu(lang: Lang, failed: i64) -> Vec<Row> {
+        let window = |name: &str, used: f64, in_ms: u64| Window {
+            window: name.into(),
+            used_percent: used,
+            resets_at_ms: Some(NOW + in_ms),
+            status: None,
+        };
+        let s = Snapshot {
+            gateway: Gateway::Running,
+            today: Some(Today {
+                requests: 244,
+                failed,
+                tokens: 4_200_000,
+                cost_micros: 40_260_000,
+            }),
+            quotas: vec![Quota {
+                provider: "chatgpt".into(),
+                windows: vec![
+                    window("5h", 58.0, 42 * MIN),
+                    window("weekly", 31.0, 3 * DAY),
+                ],
+                reset_credits: None,
+            }],
+            now_ms: NOW,
+            ..Default::default()
+        };
+        with_lang(lang, || model::build(&s, model::Style::Full).1)
+    }
+
+    fn windows(rows: &[Row]) -> Vec<WindowRow> {
+        rows.iter()
+            .flat_map(|r| match r {
+                Row::Quota { windows, .. } => windows.clone(),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    fn cells(rows: &[Row]) -> Vec<StatCell> {
+        rows.iter()
+            .find_map(|r| match r {
+                Row::Stats { cells, .. } => Some(cells.clone()),
+                _ => None,
+            })
+            .expect("今日那一格不见了")
+    }
+
+    #[test]
+    fn chinese_quota_rows_keep_the_columns_they_always_had() {
+        let _appkit = appkit();
+        let cols = quota_cols(MENU_WIDTH, quota_text(&menu(Lang::Zh, 0)));
+        assert_eq!(
+            cols,
+            QuotaCols {
+                label: 50.0,
+                bar_x: 64.0,
+                bar_w: 90.0,
+                pct_right: 202.0,
+                reset: 92.0,
+            }
+        );
+    }
+
+    /// 英文的「Resets in 3 days」比写死的 92 宽：曾经压在「31%」上，画成「31%Resets in 3 days」
+    #[test]
+    fn english_reset_times_leave_room_after_the_percentage() {
+        let _appkit = appkit();
+        let rows = menu(Lang::En, 0);
+        let all = windows(&rows);
+        assert!(all.iter().any(|w| w.reset == "Resets in 3 days"), "{all:?}");
+        let cols = quota_cols(MENU_WIDTH, quota_text(&rows));
+        assert!(cols.bar_w >= QUOTA_MIN_BAR, "{cols:?}");
+        for w in &all {
+            let reset_left = MENU_WIDTH - PAD - text_width(&w.reset, &quota_reset_font());
+            assert!(
+                reset_left - cols.pct_right >= TEXT_GAP - 1e-9,
+                "「{}」离百分比只有 {:.1}",
+                w.reset,
+                reset_left - cols.pct_right
+            );
+            let label_right = PAD + text_width(&w.label, &quota_label_font());
+            assert!(label_right + LABEL_GAP <= cols.bar_x + 1e-9, "{w:?}");
+        }
+    }
+
+    /// 英文的「Requests 4 failed」比三等分的一格宽：曾经画成「Requests 4 failedTokens」
+    #[test]
+    fn the_failed_count_stays_inside_its_own_cell() {
+        let _appkit = appkit();
+        let avail = MENU_WIDTH - PAD * 2.0;
+        for lang in [Lang::Zh, Lang::En] {
+            let cells = cells(&menu(lang, 4));
+            assert!(cells[0].note.is_some());
+            let widths = stat_widths(MENU_WIDTH, &cells);
+            assert!(
+                (widths.iter().sum::<f64>() - avail).abs() < 1e-9,
+                "{widths:?}"
+            );
+            for (c, w) in cells.iter().zip(&widths) {
+                let line2 = text_width(&c.label, &stat_label_font())
+                    + c.note
+                        .as_deref()
+                        .map_or(0.0, |n| NOTE_GAP + text_width(n, &stat_label_font()));
+                let value = text_width(&c.value, &stat_value_font());
+                assert!(
+                    line2.max(value) + TEXT_GAP <= w + 1e-9,
+                    "{lang:?} {c:?} 放不进 {w:.1}"
+                );
+            }
+        }
+        // 中文照旧三等分
+        let zh = stat_widths(MENU_WIDTH, &cells(&menu(Lang::Zh, 4)));
+        assert!(zh.iter().all(|w| (w - avail / 3.0).abs() < 1e-9), "{zh:?}");
+    }
+
+    #[test]
+    fn columns_are_equal_until_one_cell_needs_more() {
+        assert_eq!(share_columns(300.0, &[50.0, 60.0, 70.0]), [100.0; 3]);
+        // 多要的那一格照它要的给，其余平分剩下的
+        assert_eq!(
+            share_columns(300.0, &[150.0, 60.0, 70.0]),
+            [150.0, 75.0, 75.0]
+        );
+        // 平分之后又有一格不够：它也照要的给
+        assert_eq!(
+            share_columns(300.0, &[150.0, 60.0, 85.0]),
+            [150.0, 65.0, 85.0]
+        );
+        // 怎么分都放不下：按比例
+        assert_eq!(share_columns(100.0, &[100.0, 100.0]), [50.0, 50.0]);
+        assert!(share_columns(100.0, &[]).is_empty());
+    }
+
+    #[test]
+    fn text_that_does_not_fit_is_cut_with_an_ellipsis() {
+        let _appkit = appkit();
+        let s = attributed(
+            "Resets in 3 days",
+            &quota_reset_font(),
+            &NSColor::labelColor(),
+        );
+        let whole = fit(&s, 1000.0).unwrap();
+        assert_eq!(whole.string().to_string(), "Resets in 3 days");
+        // 列宽差一点浮点误差，照样算放得下
+        let exact = fit(&s, s.size().width - 1e-9).unwrap();
+        assert_eq!(exact.string().to_string(), "Resets in 3 days");
+        let cut = fit(&s, 50.0).unwrap();
+        assert!(cut.string().to_string().ends_with('…'), "{}", cut.string());
+        assert!(cut.size().width <= 50.0);
+        assert!(fit(&s, 0.0).is_none());
+    }
 }
