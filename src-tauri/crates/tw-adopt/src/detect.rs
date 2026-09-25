@@ -43,18 +43,16 @@ pub struct Detected {
     pub verified: Verified,
     pub format: Format,
     pub costs: Vec<Msg>,
+    /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）
+    pub models: Option<Vec<String>>,
 }
 
 fn endpoint_of(c: &Client, text: &str) -> Option<String> {
     let path: Vec<&str> = match c.id {
         "claude-code" => vec!["env", "ANTHROPIC_BASE_URL"],
         "codex" => vec!["model_providers", crate::clients::PROVIDER_ID, "base_url"],
-        "opencode" => vec![
-            "provider",
-            crate::clients::PROVIDER_ID,
-            "options",
-            "baseURL",
-        ],
+        // 两种写法都认，v2 原生的那一条优先
+        "opencode" => return crate::opencode::endpoint(text),
         "zed" => vec![
             "language_models",
             "openai_compatible",
@@ -83,6 +81,7 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
 }
 
 pub fn detect_one(c: &Client, home: &Path) -> Detected {
+    let c = &c.clone().here(home);
     let path = c.config_path(home);
     let real = foreign::resolve(&path).unwrap_or_else(|_| path.clone());
     let text = std::fs::read_to_string(&real).ok();
@@ -98,6 +97,10 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
             .filter(|r: &SidecarRecord| r.client == c.id)
             .map(|r| r.adopted_at_ms),
         endpoint: text.as_deref().and_then(|t| endpoint_of(c, t)),
+        models: text
+            .as_deref()
+            .filter(|_| c.writes_models)
+            .and_then(crate::opencode::models_in),
         shadows: c.live_shadows(home),
         takes_effect: c.takes_effect,
         verified: c.verified,
@@ -621,7 +624,8 @@ fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
 ///
 /// 多数客户端认的是环境变量那一块（Claude Code 的 `env` 块），出现变量名就
 /// 算。opencode 逐层**深合并**：更高的那份文件只有写了 `provider.thinkwatch`
-/// 才会盖住我们写的东西，别的键（`$schema`、别的 provider）和我们并存。
+/// 或 `providers.thinkwatch` 才会盖住我们写的东西，别的键（`$schema`、别的
+/// provider）和我们并存。
 fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
     match c.id {
         // 0.1.5 的 `settings.yaml`：`llm-deepseek` 那一节写了 baseURL 才压过补丁
@@ -629,13 +633,7 @@ fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
             Ok(Some(_)) => vec!["llm-deepseek.baseURL".to_string()],
             _ => Vec::new(),
         },
-        "opencode" => {
-            let path = ["provider", crate::clients::PROVIDER_ID];
-            match crate::json::get(text, &path) {
-                Ok(Some(_)) => vec![path.join(".")],
-                _ => Vec::new(),
-            }
-        }
+        "opencode" => crate::opencode::overriding(text),
         _ => c
             .env_vars
             .iter()
@@ -666,6 +664,8 @@ fn diagnose_in(
     project: Option<&Path>,
     wsl: Option<&WslHome>,
 ) -> Vec<Finding> {
+    // 什么时候生效按装着的版本说（opencode v2 自己重载）
+    let c = &c.clone().here(home);
     let d = detect_one(c, home);
     let mut out = Vec::new();
 
@@ -684,6 +684,14 @@ fn diagnose_in(
                 c.takes_effect.note()
             ),
             fix: Some(msg!("adopt.diag.restart", client = c.name => "Quit {client} and open it again")),
+        }),
+        // 它自己重读配置（opencode v2）：改之前就在跑的进程也已经换上了新配置，
+        // 这时候喊「要重启」是狼来了
+        Some(_) if c.reloads => out.push(Finding {
+            level: Level::Clear,
+            title: msg!("adopt.diag.reloads", client = c.name => "{client} reloads its configuration by itself"),
+            detail: msg!("adopt.diag.reloads.detail" => "A running instance picks up the change without a restart."),
+            fix: None,
         }),
         Some(at) => {
             let started = running_since(c.process);
@@ -1214,6 +1222,7 @@ mod tests {
         let gw = crate::clients::Gateway {
             base: "http://127.0.0.1:8080".into(),
             key: None,
+            models: vec!["m".into()],
         };
         let p = crate::plan::plan_adopt(&c(id), home, &gw).unwrap();
         crate::plan::apply(&c(id), &p, backups).unwrap();

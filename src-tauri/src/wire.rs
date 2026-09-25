@@ -87,6 +87,10 @@ pub struct DetectedClient {
     pub verified: Verification,
     /// 接管之后会失去或改变的功能
     pub costs: Vec<Msg>,
+    /// 配置里写着的模型清单和网关此刻对它那把密钥答的不一样了（上游或路由变了）。
+    /// 只有把模型写进配置的客户端（opencode）会是 `true`；点一下走一遍接管的
+    /// 「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
+    pub models_stale: bool,
     /// 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就不给
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,

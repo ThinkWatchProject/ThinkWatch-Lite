@@ -12,11 +12,13 @@ pub mod ops;
 mod reveal;
 pub mod wsl;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use tw_adopt::wsl::WslHome;
 
 use tw_api::ep;
+use tw_types::{Msg, msg};
 
 use crate::AppState;
 use crate::control::ControlClient;
@@ -82,6 +84,69 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
         base: base?,
         keys: keys?,
     })
+}
+
+/// 这把密钥在网关上能用哪些模型：网关的 `GET /v1/models` 对它答的。
+///
+/// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
+/// 网关按它的 `allow` 答得准。opencode 要把这份清单写进配置（它不自己去问）。
+async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
+    let url = format!("{}/v1/models", base.trim_end_matches('/'));
+    let failed = |detail: String| {
+        msg!(
+            "control.models_unreadable", url = url.clone(), detail = detail =>
+            "The model list could not be read from {url}: {detail}"
+        )
+    };
+    // 和 updater::fetch_text 同一套 TLS：连远程 core 时网关可能在 https 后面
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+    let mut builder = reqwest::Client::builder()
+        .user_agent("ThinkWatch-Lite")
+        .timeout(std::time::Duration::from_secs(5));
+    // 本机的网关不经过系统代理：代理那头够不到这台机器的回环地址
+    if ops::is_loopback(base) {
+        builder = builder.no_proxy();
+    }
+    let client = builder.build().map_err(|e| failed(e.to_string()))?;
+    let text = client
+        .get(&url)
+        .bearer_auth(key)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| failed(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| failed(e.to_string()))?;
+    let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| failed(e.to_string()))?;
+    Ok(model_ids(&body))
+}
+
+/// OpenAI 形状的 `/v1/models`：`data[].id`
+fn model_ids(body: &serde_json::Value) -> Vec<String> {
+    body.get("data")
+        .and_then(|d| d.as_array())
+        .map(|xs| {
+            xs.iter()
+                .filter_map(|x| x.get("id")?.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 接管这个客户端要写进它配置的模型清单。不写模型的客户端不问网关
+async fn models_for(
+    c: &tw_adopt::clients::Client,
+    base: &str,
+    key: &str,
+) -> Result<Vec<String>, Msg> {
+    if c.writes_models {
+        models_of(base, key).await
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 /// 请 core 为这个客户端发一把专用密钥：为它留着的，没有就新建一把绑给它。
@@ -153,7 +218,21 @@ impl Place {
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
-    Ok(ops::list(&home_dir(), &gw))
+    // 把模型写进配置的那几个（opencode），问一下网关此刻给它那把密钥答什么：拿来
+    // 判断配置里的清单过没过期，也给手动配置那一栏照着写。还没有它自己的密钥就按
+    // 接管时会用的那把问。**问不到就不说** —— 网关停着的时候客户端页照样要打得开
+    let mut models = BTreeMap::new();
+    for c in tw_adopt::clients::adoptable()
+        .iter()
+        .filter(|c| c.writes_models)
+    {
+        if let Ok((_, key, _)) = ops::key_for(&gw, c.id)
+            && let Ok(ms) = models_of(&gw.base, &key).await
+        {
+            models.insert(c.id.to_string(), ms);
+        }
+    }
+    Ok(ops::list(&home_dir(), &gw, &models))
 }
 
 /// 客户端页的 WSL 部分：每个发行版一组。
@@ -241,7 +320,12 @@ pub async fn plan_adopt(
     match &place {
         Place::Here => {
             let gw = gateway(&state).await?;
-            Ok(ops::plan_adopt(&home_dir(), &id, &gw)?)
+            // 模型清单按落盘时会写进去的那把密钥问，差异里给的就是会写进去的那一份
+            let models = match ops::key_for(&gw, c.id) {
+                Ok((_, key, _)) => models_for(&c, &gw.base, &key).await?,
+                Err(_) => Vec::new(),
+            };
+            Ok(ops::plan_adopt(&home_dir(), &id, &gw, models)?)
         }
         Place::Wsl(w) => {
             let t = wsl::target(&state, w).await?;
@@ -249,7 +333,17 @@ pub async fn plan_adopt(
                 base: t.base.clone(),
                 keys: keys(&state.control).await?,
             };
-            let mut v = ops::plan_adopt_as(&w.home, &id, &place.owner(&id), &gw)?;
+            // 模型清单只看密钥，不看地址：从这台电脑上问本机能连的那个地址。WSL 那个
+            // 地址的监听要确认之后才改，此刻未必有人在听
+            let owner = place.owner(&id);
+            let models = match ops::key_for(&gw, &owner) {
+                Ok((_, key, _)) if c.writes_models => {
+                    let here = gateway_base(&state.control, &gateway_host(&state)).await?;
+                    models_of(&here, &key).await?
+                }
+                _ => Vec::new(),
+            };
+            let mut v = ops::plan_adopt_as(&w.home, &id, &owner, &gw, models)?;
             v.path = w.shown(Path::new(&v.path));
             v.notes.extend(wsl::plan_notes(c.name, w, &t));
             Ok(v)
@@ -270,7 +364,7 @@ pub async fn adopt_client(
     env: Option<String>,
 ) -> Out<wire::AdoptResponse> {
     let place = Place::of(env.as_deref())?;
-    place.find(&id)?;
+    let c = place.find(&id)?;
     let base = match &place {
         Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
         Place::Wsl(w) => {
@@ -282,7 +376,15 @@ pub async fn adopt_client(
         }
     };
     let key = prepare_key(&state.control, &place.owner(&id)).await?;
-    let mut r = ops::adopt(&place.home(), &backups(), &id, &base, &key.key)?;
+    // 模型清单只看密钥：WSL 里的那一份也从这台电脑上问本机能连的地址
+    let models = match &place {
+        Place::Wsl(_) if c.writes_models => {
+            let here = gateway_base(&state.control, &gateway_host(&state)).await?;
+            models_of(&here, &key.key).await?
+        }
+        _ => models_for(&c, &base, &key.key).await?,
+    };
+    let mut r = ops::adopt(&place.home(), &backups(), &id, &base, &key.key, models)?;
     if let Place::Wsl(w) = &place {
         r.real = w.shown(Path::new(&r.real));
     }
@@ -352,7 +454,11 @@ pub async fn copy_client_endpoint(
         Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
         Place::Wsl(w) => wsl::target(&state, &w).await?.base,
     };
-    let gw = tw_adopt::clients::Gateway { base, key: None };
+    let gw = tw_adopt::clients::Gateway {
+        base,
+        key: None,
+        models: Vec::new(),
+    };
     let endpoint = tw_adopt::clients::adoptable()
         .iter()
         .find(|c| c.id == id)
@@ -427,7 +533,18 @@ async fn retarget_in(
                 continue;
             }
         };
-        match ops::repoint(&home, &backups(), &c, base, &key) {
+        let models = match models_for(&c, base, &key).await {
+            Ok(m) => m,
+            Err(error) => {
+                out.failed.push(wire::KeySyncFailed {
+                    client: c.id.to_string(),
+                    name: place.name(&c),
+                    error,
+                });
+                continue;
+            }
+        };
+        match ops::repoint(&home, &backups(), &c, base, &key, models) {
             Ok(mut s) => {
                 s.name = place.name(&c);
                 out.synced.push(s);
@@ -540,7 +657,8 @@ pub(crate) async fn sync_rotated(
             .map_err(|e| failed(e.into_msg()))?,
         Place::Wsl(w) => wsl::target(state, w).await.map_err(failed)?.base,
     };
-    ops::repoint(&owner.place.home(), &backups(), c, &base, fresh)
+    let models = models_for(c, &base, fresh).await.map_err(failed)?;
+    ops::repoint(&owner.place.home(), &backups(), c, &base, fresh, models)
         .map(|mut s| {
             s.name = owner.name();
             s
@@ -580,6 +698,16 @@ pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Option<O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_model_list_is_the_ids_under_data() {
+        let body = serde_json::json!({
+            "object": "list",
+            "data": [{ "id": "gpt-5", "object": "model" }, { "id": "claude-sonnet" }, { "x": 1 }],
+        });
+        assert_eq!(model_ids(&body), ["gpt-5", "claude-sonnet"]);
+        assert!(model_ids(&serde_json::json!({ "models": [] })).is_empty());
+    }
 
     #[test]
     fn the_base_is_a_url_a_client_can_connect_to() {

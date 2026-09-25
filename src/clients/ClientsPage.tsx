@@ -111,6 +111,8 @@ export default function ClientsPage({
         })),
     ),
   ];
+  /** 配置里的模型清单跟网关对不上了（opencode）：更新走的是接管那一遍「差异 → 确认 → 写入」 */
+  const staleModels = data?.clients.filter((c) => c.models_stale) ?? [];
   /** 连着远程时，接管着却还指着本机网关的 */
   const leftBehind = remote ? adopted.filter((c) => c.endpoint != null && isLoopback(c.endpoint)) : [];
 
@@ -283,6 +285,22 @@ export default function ClientsPage({
           ))}
         </ul>
       </Banner>
+
+      {staleModels.map((c) => (
+        <Banner
+          key={c.id}
+          layout="inline"
+          tone="warning"
+          className="mb-3"
+          actions={
+            <Button size="sm" variant="outline" pending={asking === c.id} onClick={() => void ask(c, false)}>
+              {t.updateModels}
+            </Button>
+          }
+        >
+          {t.modelsStale(c.name)}
+        </Banner>
+      ))}
 
       <Loadable r={clients} loading={<RowsSkeleton rows={5} cols={5} />} errorTitle={t.loadFailed}>
         {(d) =>

@@ -204,7 +204,7 @@ pub fn user_level(home: &Path) -> Vec<Source> {
         ),
         f("codex", Kind::Instructions, under(home, ".codex/AGENTS.md")),
     ];
-    // opencode 三个文件都读、逐层合并，哪个里都可能有 MCP
+    // opencode 两个文件都读、逐层合并，哪个里都可能有 MCP
     for l in tw_adopt::paths::OPENCODE_CONFIGS {
         v.push(f("opencode", Kind::Mcp, l.resolve(home)));
     }

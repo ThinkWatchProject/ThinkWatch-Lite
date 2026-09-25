@@ -147,6 +147,11 @@ pub struct Client {
     /// 密钥不在配置文件里、要在客户端自己的界面里填时，手动配置多出来的那一步
     /// （「码，英文原句」）。只有 Zed 是这样：它的密钥走自己的凭据存储。
     pub key_elsewhere: Option<(&'static str, &'static str)>,
+    /// 模型清单要写进它的配置（opencode）：接管时写一份网关对这把密钥答的清单，
+    /// 上游或路由变了之后客户端页提示更新。别的客户端自己去问网关。
+    pub writes_models: bool,
+    /// 它自己会重读配置，改完不用重启。**装着的版本说了算**，见 [`Client::here`]
+    pub reloads: bool,
     /// 它的配置文件优先级**高于**真实 shell 环境变量。
     ///
     /// Claude Code 是这样（`env` 块会盖住 shell 里的 export），所以对它
@@ -166,6 +171,9 @@ pub struct Gateway {
     /// 专属密钥的意义在于**客户端识别**，这样规则里才能写
     /// `when: { client: claude-code }`。
     pub key: Option<String>,
+    /// 这把密钥能用的模型：网关的 `GET /v1/models` 对它答的。只有要把模型写进
+    /// 配置的客户端（[`Client::writes_models`]）用得上，别的留空。
+    pub models: Vec<String>,
 }
 
 impl Gateway {
@@ -260,6 +268,8 @@ pub fn adoptable() -> Vec<Client> {
             ],
             // `env` 块会盖住 shell 里的 export
             key_elsewhere: None,
+            writes_models: false,
+            reloads: false,
             config_beats_env: true,
         },
         // **不叫「Codex CLI」。**`~/.codex/config.toml` 是一份配置、两个
@@ -295,6 +305,8 @@ pub fn adoptable() -> Vec<Client> {
             process: &["codex"],
             env_vars: &["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"],
             key_elsewhere: None,
+            writes_models: false,
+            reloads: false,
             config_beats_env: false,
         },
         Client {
@@ -302,17 +314,22 @@ pub fn adoptable() -> Vec<Client> {
             name: "opencode",
             config: crate::paths::OPENCODE_CONFIGS,
             format: Format::Json,
+            // v1 只在启动时读一次；v2 自己重载，见 [`Client::here`]
             takes_effect: TakesEffect::OnRestart,
             shadowed_by: &[],
             costs: &[(
                 code!("adopt.cost.opencode.restart"),
                 "opencode has to be restarted afterwards.",
             )],
-            verified: Verified::FieldsOnly,
+            // v1.18.32 和 v2.0.16 都用一个本地的假网关实跑过：接管写出的配置两个
+            // 版本都选得到模型，请求带着这把密钥落在 `POST /v1/chat/completions`
+            verified: Verified::Measured,
             marker: &[Loc::XdgConfig("opencode"), Loc::XdgData("opencode")],
             process: &["opencode"],
             env_vars: &["OPENAI_API_KEY", "OPENAI_BASE_URL"],
             key_elsewhere: None,
+            writes_models: true,
+            reloads: false,
             config_beats_env: false,
         },
         Client {
@@ -336,6 +353,8 @@ pub fn adoptable() -> Vec<Client> {
                 code!("adopt.manual.zed.key"),
                 "Then enter the key in Zed's settings, under the ThinkWatch provider.",
             )),
+            writes_models: false,
+            reloads: false,
             config_beats_env: false,
         },
         Client {
@@ -366,6 +385,8 @@ pub fn adoptable() -> Vec<Client> {
             process: &["aider"],
             env_vars: &["OPENAI_API_BASE", "OPENAI_API_KEY"],
             key_elsewhere: None,
+            writes_models: false,
+            reloads: false,
             config_beats_env: false,
         },
         // DeepSeek Harness。网页版（`dsh web`）、桌面版、headless 三种入口读的是
@@ -411,6 +432,8 @@ pub fn adoptable() -> Vec<Client> {
             // 写进凭据文件的那把就不用了
             env_vars: &["THINKWATCH_API_KEY"],
             key_elsewhere: None,
+            writes_models: false,
+            reloads: false,
             config_beats_env: false,
         },
     ]
@@ -704,36 +727,8 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
             }
             v
         }
-        "opencode" => {
-            let p = |k: &str| {
-                vec![
-                    "provider".to_string(),
-                    PROVIDER_ID.to_string(),
-                    "options".to_string(),
-                    k.to_string(),
-                ]
-            };
-            let mut v = vec![
-                Edit {
-                    path: vec!["provider".into(), PROVIDER_ID.into(), "name".into()],
-                    value: Val::s("ThinkWatch"),
-                    secret: false,
-                },
-                Edit {
-                    path: p("baseURL"),
-                    value: Val::s(gw.v1()),
-                    secret: false,
-                },
-            ];
-            if let Some(k) = &gw.key {
-                v.push(Edit {
-                    path: p("apiKey"),
-                    value: Val::s(k),
-                    secret: true,
-                });
-            }
-            v
-        }
+        // 写 v1 的写法：v1 和 v2 都认。已经有原生那一条的见 [`edits_for`]
+        "opencode" => crate::opencode::edits(gw, crate::opencode::Shape::V1),
         // 密钥不在这里 —— Zed 走它自己的凭据存储，所以这条只写端点
         "zed" => vec![e(
             &[
@@ -766,7 +761,31 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
     }
 }
 
+/// 接管这个客户端要写哪些字段，按它配置此刻的样子。
+///
+/// 只有 opencode 看样子：文件里已经有一条 v2 原生的 `providers.thinkwatch` 时，
+/// 改那一条 —— v1 写法的那一条会被它整条盖掉。
+pub fn edits_for(client: &Client, gw: &Gateway, current: &str) -> Vec<Edit> {
+    match client.id {
+        "opencode" => crate::opencode::edits(gw, crate::opencode::shape_in(current)),
+        _ => edits(client, gw),
+    }
+}
+
 impl Client {
+    /// 按这台机器上装着的版本调整过的样子。
+    ///
+    /// opencode v2 自己重读配置：改完就生效，不用重启，接管对话框里也就不该再说
+    /// 「要重启」。认不出版本时照 v1 说。
+    pub fn here(mut self, home: &std::path::Path) -> Client {
+        if self.id == "opencode" && crate::opencode::reloads_by_itself(home) {
+            self.takes_effect = TakesEffect::Immediately;
+            self.costs = &[];
+            self.reloads = true;
+        }
+        self
+    }
+
     /// 手动配置的几步：打开哪个文件、写下面那几项（就是接管时写的那几项，
     /// 见 [`edits`]），密钥要另外填的再加一步。
     ///
@@ -976,6 +995,7 @@ mod tests {
         let gw = Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: None,
+            models: Vec::new(),
         };
         assert_eq!(cursor.endpoint(&gw), "http://127.0.0.1:8788/v1");
         let agy = m.iter().find(|c| c.id == "antigravity-cli").unwrap();
@@ -1012,6 +1032,7 @@ mod tests {
         let gw = Gateway {
             base: "http://127.0.0.1:8787".into(),
             key: None,
+            models: Vec::new(),
         };
         let _ = &gw;
         for m in manual_only() {
@@ -1034,6 +1055,7 @@ mod tests {
         let gw = Gateway {
             base: "http://127.0.0.1:18790".into(),
             key: Some("tw-k".into()),
+            models: Vec::new(),
         };
         let by = |id: &str| adoptable().into_iter().find(|c| c.id == id).unwrap();
         // 各要各的写法：Claude Code 不带 /v1，其余带

@@ -189,6 +189,7 @@ mod tests {
             "claude-code",
             "http://127.0.0.1:8788",
             "tw-c",
+            Vec::new(),
         )
         .unwrap();
         let out = restore_all_in(home.path(), &backups, |n| n.to_string());

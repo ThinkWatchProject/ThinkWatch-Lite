@@ -13,6 +13,8 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 export const clientsText = messages(
   {
     restoreAll: "全部还原…",
+    modelsStale: (name: string) => `${name} 的模型列表需要更新：网关上可用的模型已有变化。`,
+    updateModels: "更新模型列表…",
     loadFailed: "无法读取本机的客户端",
     noneTitle: "未检测到可接管的客户端",
     noneHint: "已安装的客户端运行一次、生成配置文件后会出现在这里；也可以按下方的配置方法手动接入。",
@@ -149,6 +151,9 @@ export const clientsText = messages(
   },
   {
     restoreAll: "Restore all…",
+    modelsStale: (name: string) =>
+      `The model list in ${name} needs updating: the models available on the gateway have changed.`,
+    updateModels: "Update model list…",
     loadFailed: "Could not read the clients on this computer",
     noneTitle: "No client to connect was found",
     noneHint:

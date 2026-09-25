@@ -47,6 +47,8 @@ adopt.diag.project_config
 adopt.diag.project_config.detail
 adopt.diag.registry_env
 adopt.diag.registry_env.overrides
+adopt.diag.reloads
+adopt.diag.reloads.detail
 adopt.diag.restart
 adopt.diag.shadowed
 adopt.diag.shadowed.fields
@@ -96,6 +98,7 @@ adopt.mcp.unverified_format
 adopt.mcp.zed_structure
 adopt.plan.fields_only
 adopt.plan.foreign_record
+adopt.plan.no_models
 adopt.plan.no_record
 adopt.plan.parse_failed
 adopt.plan.read_failed
@@ -108,6 +111,7 @@ adopt.warn.symlink
 adopt.warn.world_readable
 control.client_unknown
 control.key_used_by_client
+control.models_unreadable
 control.no_keys
 scan.hidden
 scan.hidden.detail
