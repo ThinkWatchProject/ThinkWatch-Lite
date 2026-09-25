@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import appIcon from "../src-tauri/icons/128x128.png";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { Progress } from "@/ui/progress";
 import { Spinner } from "@/ui/spinner";
+import { StatusDot } from "@/ui/status-dot";
 import { IconCopied, IconCopy } from "@/ui/icons";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -19,10 +21,11 @@ const COPIED_MS = 2_000;
 /**
  * 更新窗口。
  *
- * 由 Rust 建出来：用户点了「检查更新」或「立即检查」并查到新版本，或者
- * 点了自动检查发出的那条通知、菜单里的「安装新版本」。窗口建出来时是隐藏的 —— 这里画好、量出高度之后再亮出来。
+ * 由 Rust 建出来：用户点了「检查更新」并查到新版本、设置里点了「更新到 x…」，或者
+ * 点了自动检查发出的那条通知、菜单里的「安装新版本」。窗口建出来时是隐藏的 —— 这里
+ * 画好、量出高度之后再亮出来。
  *
- * 画哪一种取决于这一份是怎么装上来的：
+ * 上面是应用图标、哪一版可用、现在是哪一版；下面画哪一种取决于这一份是怎么装上来的：
  *
  * · 从网页下载的：「下载并安装」，按一次之后不再问任何问题 —— 下载、
  *   等网关手上的请求结束、替换、重启，全部自动。
@@ -31,6 +34,9 @@ const COPIED_MS = 2_000;
  *
  * **没有任何按钮默认获得焦点。**这个窗口是在用户做别的事时冒出来的；
  * 他在终端里按下的回车，不该变成一次「下载并安装」。
+ *
+ * **不做展开、收起的动画**（换一步只淡入）：窗口的高度跟着内容走（`update_fit`），
+ * 内容一边展开、窗口一边一格格地改尺寸，比直接换过去难看。
  */
 export default function UpdateWindow() {
   const t = useText(updateText);
@@ -136,92 +142,133 @@ export default function UpdateWindow() {
     }
   };
 
+  let content: ReactNode;
+  let actions: ReactNode;
+  if (canInstall(offer.install)) {
+    content = busy && step ? (
+      <Progressing step={step} done={progress[0]} total={progress[1]} />
+    ) : (
+      <>
+        <p className="tw-body text-muted-foreground">{t.standalone}</p>
+        {failed && (
+          <Banner layout="inline" tone="error" title={t.failed}>
+            <span className="select-text">{failed}</span>
+          </Banner>
+        )}
+      </>
+    );
+    actions = busy ? (
+      // 等请求结束可能要几分钟：窗口可以先关掉，更新照常进行（上面那句说了）
+      step?.step === "waiting" && (
+        <Button variant="outline" onClick={close}>
+          {common.close}
+        </Button>
+      )
+    ) : (
+      <>
+        <Button variant="outline" onClick={close}>
+          {t.later}
+        </Button>
+        <Button onClick={() => void install()}>{failed ? common.retry : t.install}</Button>
+      </>
+    );
+  } else if (offer.install === "homebrew" && offer.command) {
+    content = (
+      <>
+        <p className="tw-body text-muted-foreground">{t.homebrew}</p>
+        {/*
+          命令占满整行，复制放进底下那排按钮里当主操作 —— 和另一档的
+          「稍后 / 下载并安装」同一个位置、同一个分量。按钮塞在输入框
+          里面的话，命令就只剩一截能显示。
+        */}
+        <div className="flex flex-col gap-1.5">
+          <Input
+            ref={command}
+            readOnly
+            value={offer.command}
+            aria-label={t.command}
+            className="bg-surface font-mono dark:bg-surface"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          {copyFailed && <p className="tw-label text-destructive">{t.copyFailed}</p>}
+        </div>
+      </>
+    );
+    actions = (
+      <>
+        <Button variant="outline" onClick={close}>
+          {common.close}
+        </Button>
+        <Button onClick={() => void copy()}>
+          {copied ? <IconCopied /> : <IconCopy />}
+          {copied ? common.copied : t.copyCommand}
+        </Button>
+      </>
+    );
+  } else {
+    content = <p className="tw-body text-muted-foreground">{t.dev}</p>;
+    actions = (
+      <Button variant="outline" onClick={close}>
+        {common.close}
+      </Button>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div ref={body} className="flex flex-col gap-4 p-5">
-        <div className="space-y-0.5">
-          <h1 className="tw-title font-semibold">{t.available(offer.version)}</h1>
-          <p className="tw-body text-muted-foreground">{t.current(offer.current)}</p>
-        </div>
-
-        {canInstall(offer.install) ? (
-          <>
-            {busy ? (
-              <div className="space-y-1.5">
-                {/* 知道总长才画进度条 —— 一根假装知道还剩多少的进度条比没有更糟 */}
-                {step?.step === "downloading" && progress[1] ? (
-                  <Progress value={(progress[0] / progress[1]) * 100} />
-                ) : null}
-                <p className="flex items-center gap-2 tw-body text-muted-foreground">
-                  {!(step?.step === "downloading" && progress[1]) && <Spinner />}
-                  {step && describeStep(step, progress[0], progress[1])}
-                </p>
-                {/* 这一步可能要几分钟，而且长短取决于用户自己的请求 */}
-                {step?.step === "waiting" && (
-                  <p className="tw-label text-muted-foreground">
-                    {t.closeWhileWaiting}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="tw-body text-muted-foreground">
-                {t.standalone}
-              </p>
-            )}
-            {failed && <p className="tw-body text-destructive">{failed}</p>}
-            {!busy && (
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={close}>
-                  {t.later}
-                </Button>
-                <Button size="sm" onClick={() => void install()}>
-                  {failed ? common.retry : t.install}
-                </Button>
-              </div>
-            )}
-          </>
-        ) : offer.install === "homebrew" && offer.command ? (
-          <>
-            <p className="tw-body text-muted-foreground">
-              {t.homebrew}
-            </p>
-            {/*
-              命令占满整行，复制放进底下那排按钮里当主操作 —— 和另一档的
-              「稍后 / 下载并安装」同一个位置、同一个分量。按钮塞在输入框
-              里面的话，命令就只剩一截能显示。
-            */}
-            <Input
-              ref={command}
-              readOnly
-              value={offer.command}
-              aria-label={t.command}
-              className="font-mono"
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            {copyFailed && (
-              <p className="tw-label text-destructive">{t.copyFailed}</p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={close}>
-                {common.close}
-              </Button>
-              <Button size="sm" onClick={() => void copy()}>
-                {copied ? <IconCopied /> : <IconCopy />}
-                {copied ? common.copied : t.copyCommand}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="tw-body text-muted-foreground">{t.dev}</p>
-            <div className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={close}>
-                {common.close}
-              </Button>
-            </div>
-          </>
-        )}
+        <header className="flex items-center gap-3.5">
+          {/* 应用图标本身（和程序坞里同一张） */}
+          <img src={appIcon} alt="" width={48} height={48} draggable={false} className="size-12 shrink-0 select-none" />
+          <div className="min-w-0">
+            <h1 className="tw-title">{t.available(offer.version)}</h1>
+            <p className="tw-num tw-body text-muted-foreground">{t.current(offer.current)}</p>
+          </div>
+        </header>
+        {content}
+        {actions && <div className="flex justify-end gap-2">{actions}</div>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 按下安装之后走到哪一步了。**知道总长才画进度条** —— 一根假装知道还剩多少的进度条
+ * 比没有更糟；等请求结束那一步是一个在跳的点（此刻在等），下面说明窗口可以关。
+ */
+function Progressing({ step, done, total }: { step: Step; done: number; total: number | null }) {
+  const t = useText(updateText);
+  const text = describeStep(step, done, total);
+  if (step.step === "downloading" && total) {
+    const pct = Math.min(100, (done / total) * 100);
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          role="progressbar"
+          aria-label={text}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+          className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
+        >
+          <div className="h-full rounded-full bg-foreground motion-bar" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="tw-num tw-body text-muted-foreground">{text}</p>
+      </div>
+    );
+  }
+  return (
+    <div key={step.step} className="flex flex-col gap-1 motion-fade">
+      <p role="status" className="flex items-center gap-2 tw-body text-foreground">
+        {step.step === "waiting" ? (
+          <StatusDot tone="pending" />
+        ) : (
+          <Spinner className="size-3.5 text-muted-foreground" aria-hidden />
+        )}
+        <span className="tw-num">{text}</span>
+      </p>
+      {/* 这一步可能要几分钟，而且长短取决于用户自己的请求 */}
+      {step.step === "waiting" && <p className="tw-label text-muted-foreground">{t.closeWhileWaiting}</p>}
     </div>
   );
 }

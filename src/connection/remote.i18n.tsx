@@ -3,6 +3,8 @@ import { isMac } from "@/platform";
 
 /** 这台机器叫什么。设计稿里写「这台 Mac」，别的平台写「这台电脑」 */
 const hereZh = isMac ? "这台 Mac" : "这台电脑";
+/** 「这台 Mac 上」：拉丁字母和汉字之间留一个空格，「这台电脑上」不留 */
+const onHereZh = isMac ? "这台 Mac 上" : "这台电脑上";
 const hereEn = isMac ? "this Mac" : "this computer";
 const HereEn = isMac ? "This Mac" : "This computer";
 
@@ -17,9 +19,9 @@ export const remoteText = messages(
   {
     // 客户端页、MCP 页顶上的说明
     clientsNote: (name: string, gateway: string) =>
-      `此处检查和修改的是${hereZh}上的客户端配置，使其指向 ${name} 的网关 ${gateway}；服务器上的客户端不受影响。`,
+      `此处检查和修改的是${onHereZh}的客户端配置，使其指向 ${name} 的网关 ${gateway}；服务器上的客户端不受影响。`,
     mcpNote: (name: string) =>
-      `此处检查和修改的是${hereZh}上客户端的 MCP 配置、技能与钩子；${name} 上的不受影响。`,
+      `此处检查和修改的是${onHereZh}客户端的 MCP 配置、技能与钩子；${name} 上的不受影响。`,
 
     // 还指着本机网关的客户端
     localLeft: (n: number, addr: string) =>
@@ -27,12 +29,12 @@ export const remoteText = messages(
     retargetTo: (name: string) => `改为指向 ${name}`,
     retargeted: (name: string, clients: string[]) => `已改为指向 ${name}：${clients.join("、")}。`,
     retargetFailedTitle: (name: string) => `以下客户端未能改为指向 ${name}`,
-    retargetNone: "没有需要修改的客户端。",
+    retargetNone: "无需修改任何客户端。",
     /** 客户端名和原因之间 */
     sep: "：",
 
     // 设置
-    appGroup: `${hereZh}上的应用`,
+    appGroup: `${onHereZh}的应用`,
     serverGroup: (name: string) => `${name} 的配置`,
     controlReadOnly: "远程控制的监听与密钥只能在服务器上修改。",
     connection: "连接",

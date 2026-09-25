@@ -1,5 +1,5 @@
-import { CircleAlertIcon, MonitorIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { MonitorIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { Retargeted } from "@/types";
@@ -12,10 +12,9 @@ import { useRemote } from "./useRemote";
  */
 export function RemoteNote({ children }: { children: string }) {
   return (
-    <Alert>
-      <MonitorIcon />
-      <AlertDescription>{children}</AlertDescription>
-    </Alert>
+    <Banner layout="inline" tone="info" icon={<MonitorIcon />}>
+      {children}
+    </Banner>
   );
 }
 
@@ -31,21 +30,17 @@ export function RetargetReport({ name, result }: { name: string; result: Retarge
         <p className="tw-body">{t.retargeted(name, result.synced.map((s) => s.name))}</p>
       )}
       {result.failed.length > 0 && (
-        <Alert variant="destructive">
-          <CircleAlertIcon />
-          <AlertTitle>{t.retargetFailedTitle(name)}</AlertTitle>
-          <AlertDescription>
-            <ul className="flex flex-col gap-0.5">
-              {result.failed.map((f) => (
-                <li key={f.client}>
-                  <span className="font-medium">{f.name}</span>
-                  {t.sep}
-                  {coreText(f.error)}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <Banner layout="inline" tone="error" title={t.retargetFailedTitle(name)}>
+          <ul className="flex flex-col gap-0.5">
+            {result.failed.map((f) => (
+              <li key={f.client}>
+                <span className="font-medium">{f.name}</span>
+                {t.sep}
+                {coreText(f.error)}
+              </li>
+            ))}
+          </ul>
+        </Banner>
       )}
       {result.synced.length === 0 && result.failed.length === 0 && (
         <p className="tw-body text-muted-foreground">{t.retargetNone}</p>

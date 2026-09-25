@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { noticesText } from "./Notices.i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { NoticeMode } from "./NoticeSettings";
+import type { NoticeMode } from "./settings/api";
 
 /** 一条提醒。判定在 Rust 侧，这里只负责显示 */
 export interface Notice {

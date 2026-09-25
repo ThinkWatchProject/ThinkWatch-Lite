@@ -48,6 +48,8 @@ const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const MCP: &str = "mcp";
 const SETTINGS: &str = "settings";
+/// 设置页的「网关监听」一节（`settings:<节>`，界面滚到那一节）
+const LISTEN_SETTINGS: &str = "settings:listen";
 
 /// 一个键默认落在哪一页（那一条已经不在列表里时用）。按键的种类，也就是冒号前那段
 pub fn default_view(key: &str) -> &'static str {
@@ -306,7 +308,8 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     format!("{}网关仍在 {at} 上监听。", core_text::text(e)),
                     format!("{} The gateway is still listening on {at}.", e.text)
                 ))
-                .view(SETTINGS),
+                // 设置页并滚到「网关监听」那一节：未生效的原因也写在那里
+                .view(LISTEN_SETTINGS),
             ]
         }
         Event::CredentialRotated {

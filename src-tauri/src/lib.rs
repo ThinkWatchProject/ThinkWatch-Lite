@@ -204,6 +204,7 @@ pub fn run() {
             settings::app_theme,
             settings::set_theme,
             updater::update_check,
+            updater::update_show,
             updater::update_pending,
             updater::update_fit,
             updater::update_copy_command,
