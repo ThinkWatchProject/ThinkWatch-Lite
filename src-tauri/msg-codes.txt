@@ -10,6 +10,9 @@ adopt.cost.claude_code.remote_control
 adopt.cost.claude_code.welcome_screen
 adopt.cost.codex.chatgpt_desktop
 adopt.cost.codex.reopen_terminal
+adopt.cost.codex.resume_through_gateway
+adopt.cost.codex.sessions_after_restore
+adopt.cost.codex.sessions_split
 adopt.cost.dsh.every_entry
 adopt.cost.dsh.models
 adopt.cost.dsh.settings_page

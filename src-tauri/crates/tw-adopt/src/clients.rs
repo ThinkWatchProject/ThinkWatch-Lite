@@ -299,6 +299,24 @@ pub fn adoptable() -> Vec<Client> {
                     code!("adopt.cost.codex.reopen_terminal"),
                     "The terminal has to be reopened afterwards.",
                 ),
+                // **会话按 provider 分开。**Codex 的会话列表只列当前 provider
+                // 的会话，恢复会话时又照会话记下的 provider 来（TUI 0.145
+                // 以后、桌面版）。于是接管前的会话从列表里消失，按 ID 打开
+                // 时还直连 OpenAI、绕过网关；还原之后反过来，接管期间的
+                // 会话消失 —— 这一头靠还原时留下的影子 OpenAI 兜住（见
+                // [`leaves_behind`]），打得开，只是直连
+                (
+                    code!("adopt.cost.codex.sessions_split"),
+                    "Sessions started before and after connecting Codex are listed separately.",
+                ),
+                (
+                    code!("adopt.cost.codex.resume_through_gateway"),
+                    "To continue an earlier session through the gateway, run codex resume <session ID> -c model_provider=thinkwatch.",
+                ),
+                (
+                    code!("adopt.cost.codex.sessions_after_restore"),
+                    "After a restore, sessions started while connected can still be opened; they then go straight to OpenAI.",
+                ),
             ],
             verified: Verified::Measured,
             marker: &[Loc::Home(".codex")],
@@ -708,6 +726,21 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
                     value: Val::s("responses"),
                     secret: false,
                 },
+                // **这两个要明写成 false**，哪怕它们本来就默认 false：还原
+                // 之后这一段会变成「影子 OpenAI」（见 [`leaves_behind`]），
+                // 里面这两项是 true。再次接管时不改回来，没配密钥的网关会
+                // 收到用户自己的 OpenAI 密钥或 ChatGPT 令牌，还会先被
+                // WebSocket 敲一遍门。
+                Edit {
+                    path: p("requires_openai_auth"),
+                    value: Val::Bool(false),
+                    secret: false,
+                },
+                Edit {
+                    path: p("supports_websockets"),
+                    value: Val::Bool(false),
+                    secret: false,
+                },
                 // **不写 `env_key`。**实测：不配任何密钥它也照发请求；
                 // 而 env_key 指向一个没 export 的变量反而会让它起不来。
                 Edit {
@@ -770,6 +803,41 @@ pub fn edits_for(client: &Client, gw: &Gateway, current: &str) -> Vec<Edit> {
         "opencode" => crate::opencode::edits(gw, crate::opencode::shape_in(current)),
         _ => edits(client, gw),
     }
+}
+
+/// 还原之后**要留在**配置里的字段。只有 Codex 有。
+///
+/// Codex 给每个会话记下它当时用的 provider（`state_5.sqlite` 的
+/// `threads.model_provider`，和 rollout 文件第一行），恢复会话时照记下的
+/// 那个来。整段 `[model_providers.thinkwatch]` 删掉，接管期间开的会话就
+/// 一个都打不开了：``Model provider `thinkwatch` not found``。所以还原把这
+/// 一段改写成一个「影子 OpenAI」—— 和内置的 `openai` 一样用 auth.json 里
+/// 的登录、一样走 Responses 和 WebSocket，那些会话还能接着用，只是直连
+/// OpenAI。
+///
+/// - **不写 `base_url`**：Codex 会按登录方式挑 api.openai.com 或 ChatGPT
+///   的后端，和内置的一样。但顶层的 `openai_base_url` 只管内置的 `openai`，
+///   管不到这里，用户设了它就照抄一份。
+/// - 不留密钥，不留 `http_headers`：还原了还替网关署名，是在说谎。
+/// - 内置的 `openai` 不能在配置里重新定义，所以影子只能借我们自己的 id。
+pub fn leaves_behind(client: &str, now: &Val) -> Vec<Edit> {
+    if client != "codex" {
+        return Vec::new();
+    }
+    let f = |k: &str, v: Val| e(&["model_providers", PROVIDER_ID, k], v);
+    let mut v = vec![
+        f("name", Val::s("OpenAI")),
+        f("wire_api", Val::s("responses")),
+        f("requires_openai_auth", Val::Bool(true)),
+        f("supports_websockets", Val::Bool(true)),
+    ];
+    if let Val::Obj(top) = now
+        && let Some((_, Val::Str(url))) = top.iter().find(|(k, _)| k == "openai_base_url")
+        && !url.trim().is_empty()
+    {
+        v.push(f("base_url", Val::s(url)));
+    }
+    v
 }
 
 impl Client {

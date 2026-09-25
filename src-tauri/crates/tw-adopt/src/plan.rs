@@ -696,6 +696,15 @@ fn restore_file_plan(client: &str, path: PathBuf, fmt: Format) -> Result<Plan, P
         }
     }
 
+    // 有的字段还原之后得留下（Codex 那一段影子 OpenAI，见
+    // `clients::leaves_behind`）。**它们的容器也就不能收走**，删它们的那几条
+    // 让给写它们的那一条。
+    let now = semantic(fmt, &text, client)?;
+    for Edit { path: p, value, .. } in crate::clients::leaves_behind(client, &now) {
+        targets.retain(|t| !matches!(t, Target::Remove(x) if p.starts_with(x)));
+        targets.push(Target::Set(p, value));
+    }
+
     for t in &targets {
         text = match t {
             // 已经是那个值了就不写：重写一遍可能换掉原来的写法（`version: 1`
