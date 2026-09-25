@@ -397,8 +397,11 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
     // 这家真的又接下了一个请求
     b.bus.on_event(&tw_api::Event::RequestRouted {
         id: 2,
+        route: "default".into(),
         rule: "兜底".into(),
         group: None,
+        rewritten_by: vec![],
+        denied_by: None,
         attempts: vec![tw_api::AttemptView {
             provider: "relay".into(),
             outcome: tw_api::AttemptOutcome::Served,

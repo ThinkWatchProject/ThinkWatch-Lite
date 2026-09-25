@@ -406,7 +406,12 @@ const Row = memo(function Row({
     { kind: "sep" },
     // **按这一行的值筛，不是打开一个筛选器。**排查时的动作是「这一个上游的」
     // 「这一把密钥的」，而手打名字会打错，打错的表现是「筛出来空的」
-    { kind: "item", label: t.onlyUpstream(r.provider), onSelect: () => onFilter((f) => ({ ...f, provider: r.provider })) },
+    // 没有发往任何上游的那几行上游是空的，没有可筛的
+    ...(r.provider
+      ? ([
+          { kind: "item", label: t.onlyUpstream(r.provider), onSelect: () => onFilter((f) => ({ ...f, provider: r.provider })) },
+        ] as const)
+      : []),
     ...(showClient
       ? ([
           { kind: "item", label: t.onlyClient(r.client), onSelect: () => onFilter((f) => ({ ...f, client: r.client })) },
@@ -560,12 +565,13 @@ function UpstreamCell({ r }: { r: RequestRow }) {
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       {/* 本地应答的那一句（英文两个词）可以在词间折行：它不是一个名字，别让它定这一列的最小宽度 */}
       <span className={cn("flex items-center gap-1.5", !r.local && "whitespace-nowrap")}>
-        {r.local ? (
+        {r.local || !r.provider ? (
           <span aria-hidden className="size-4 shrink-0" />
         ) : (
           <UpstreamLogo name={r.provider} className="opacity-70" />
         )}
-        <span>{r.provider}</span>
+        {/* 被规则拒绝、选中的上游一个都接不了的请求没有发往任何上游：上游是空的 */}
+        {r.provider ? <span>{r.provider}</span> : <span className="text-muted-foreground">—</span>}
       </span>
       {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑是脱敏搞坏了功能。
           所以脱敏发生了就要在列表这一层看得见，而不是藏在详情里 */}

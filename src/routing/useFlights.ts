@@ -65,8 +65,10 @@ export function useFlights(): ReadonlyMap<number, Flight> {
         await un;
         const open = await call("InFlight", null);
         if (!alive || seen !== mark) return;
-        for (const ev of open) {
-          if (ev.kind === "request_started" && !mark.has(ev.id) && !live.has(ev.id)) applyFlightEvent(live, ev);
+        // 每个请求到目前为止的事件按原来的顺序重放：已经路由了的，一打开就画到上游
+        for (const { id, events } of open.requests) {
+          if (mark.has(id) || live.has(id)) continue;
+          for (const ev of events) applyFlightEvent(live, ev);
         }
         publish();
       } catch {

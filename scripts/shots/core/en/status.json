@@ -1,5 +1,5 @@
 {
-  "api_version": 20,
+  "api_version": 21,
   "clients": 4,
   "config_path": "",
   "gateway_addr": null,
@@ -14,5 +14,5 @@
     "reachable": []
   },
   "uptime_secs": 0,
-  "version": "0.47.0"
+  "version": "0.48.0"
 }

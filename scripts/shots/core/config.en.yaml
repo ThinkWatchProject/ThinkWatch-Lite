@@ -38,7 +38,7 @@ providers:
       refresh: rt_7HEXAMPLEMnB2
       endpoint: https://auth.openai.com/oauth/token
       client_id: app_EMoamEEZ73f0CkXaXp7hrann
-      access: eyJhbEXAMPLEc2ln
+      access: eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJwbHVzIn0sImh0dHBzOi8vYXBpLm9wZW5haS5jb20vcHJvZmlsZSI6eyJlbWFpbCI6ImFsZXhAZXhhbXBsZS5jb20ifX0.EXAMPLE
       expires_at: "2026-10-04T08:12:40Z"
   - name: openrouter
     base_url: https://openrouter.ai/api/v1

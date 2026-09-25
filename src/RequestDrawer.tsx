@@ -194,10 +194,13 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         }
       >
         <HeadStatus r={r} state={state} />
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          {!r.local && <UpstreamLogo name={r.provider} className="opacity-70" />}
-          <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
-        </span>
+        {/* 没有发往任何上游的（被规则拒绝、选中的上游一个都接不了）上游是空的，不写 */}
+        {(r.local || r.provider) && (
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            {!r.local && <UpstreamLogo name={r.provider} className="opacity-70" />}
+            <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
+          </span>
+        )}
         <span className="min-w-0 truncate">
           <KeyLabel name={r.client} masked={r.key_masked} />
         </span>
@@ -358,7 +361,7 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
 
       <Rows className="mt-4">
         <Row label={t.generationTime} value={gen !== null ? ms(gen) : running ? t.inProgress : "—"} />
-        <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider} />
+        <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider || "—"} />
         {/* 密钥是身份；应用是按请求头推测的，能伪造；来源是这条连接对面的
             地址，只有非本机来的才有 */}
         <Row label={t.client} value={<KeyLabel name={r.client} masked={r.key_masked} />} />
@@ -522,19 +525,8 @@ function CostText({ r, running, short }: { r: HistoryRow; running: boolean; shor
 /** 路由：命中的规则、经过的策略组、尝试链 */
 function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
   const t = useText(requestDrawerText);
-  if (!r.routing) {
-    return running ? (
-      // 还没走完：尝试链在那一跳有了结果之后才有
-      <p className="text-muted-foreground">{t.routingPending}</p>
-    ) : (
-      <p className="text-muted-foreground">
-        {t.noRouting}
-        <Tip text={t.noRoutingTip}>
-          <span className="ml-1 underline decoration-dotted underline-offset-2">{t.possibleCauses}</span>
-        </Tip>
-      </p>
-    );
-  }
+  // 只有本地应答的没有：它没到规则那一层
+  if (!r.routing) return <p className="text-muted-foreground">{t.noRouting}</p>;
   const attempts = r.routing.attempts;
   return (
     <div className="space-y-4">
@@ -545,29 +537,37 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
       </Rows>
       <section>
         <h3 className="mb-2 tw-head text-foreground">{t.attempts}</h3>
-        <ol className="overflow-hidden rounded-lg border border-border">
-          {attempts.map((a, i) => {
-            const outcome = attemptText(a);
-            return (
-              <li
-                key={`${a.provider}-${i}`}
-                className="flex items-center gap-3 border-t border-border px-3 py-2 first:border-t-0"
-              >
-                <span className="w-4 shrink-0 tw-num text-muted-foreground">{i + 1}</span>
-                <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                  <UpstreamLogo name={a.provider} className="opacity-70" />
-                  <span className="truncate">{a.provider}</span>
-                </span>
-                {/* **失败的原因要留着** —— 一条说「试过 A → B → C」的链和一条还说清
-                    每一跳为什么失败的链，排查价值差得远 */}
-                <StatusLabel tone={outcome.ok ? "ok" : "warn"} muted={outcome.ok} className="min-w-0 flex-1">
-                  {outcome.text}
-                </StatusLabel>
-                <span className="shrink-0 tw-num text-muted-foreground">{ms(a.ms)}</span>
-              </li>
-            );
-          })}
-        </ol>
+        {/*
+          尝试链是空的：还在等第一跳的结果；或者请求没有发给任何上游（被规则拒绝、
+          选中的上游一个都接不了），或者上游应答之前客户端就走了
+        */}
+        {attempts.length === 0 ? (
+          <p className="text-muted-foreground">{running ? t.routingPending : t.noAttempts}</p>
+        ) : (
+          <ol className="overflow-hidden rounded-lg border border-border">
+            {attempts.map((a, i) => {
+              const outcome = attemptText(a);
+              return (
+                <li
+                  key={`${a.provider}-${i}`}
+                  className="flex items-center gap-3 border-t border-border px-3 py-2 first:border-t-0"
+                >
+                  <span className="w-4 shrink-0 tw-num text-muted-foreground">{i + 1}</span>
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                    <UpstreamLogo name={a.provider} className="opacity-70" />
+                    <span className="truncate">{a.provider}</span>
+                  </span>
+                  {/* **失败的原因要留着** —— 一条说「试过 A → B → C」的链和一条还说清
+                      每一跳为什么失败的链，排查价值差得远 */}
+                  <StatusLabel tone={outcome.ok ? "ok" : "warn"} muted={outcome.ok} className="min-w-0 flex-1">
+                    {outcome.text}
+                  </StatusLabel>
+                  <span className="shrink-0 tw-num text-muted-foreground">{ms(a.ms)}</span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
         {attempts.length > 1 && (
           // **用户能看见故障转移在替他工作，这是信任的来源**。一个静默切换过的请求和
           // 一次就成的请求，在他眼里应该是不同的

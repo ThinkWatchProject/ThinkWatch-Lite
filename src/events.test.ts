@@ -5,6 +5,7 @@ import {
   interruptInFlight,
   type CoreEvent,
   type HistoryRow,
+  type InFlightRequest,
   type RequestRow,
 } from "./types";
 import { mergeHistory } from "./useRequests";
@@ -23,6 +24,10 @@ function started(over: Partial<Extract<CoreEvent, { kind: "request_started" }>> 
     kind: "request_started",
     id: 1,
     client: "claude-code",
+    route: "default",
+    rule: "catch-all",
+    group: "__all__",
+    rewritten_by: [],
     provider: "relay",
     billing: "per-token",
     model: "claude-sonnet-4-5",
@@ -33,11 +38,26 @@ function started(over: Partial<Extract<CoreEvent, { kind: "request_started" }>> 
   } satisfies CoreEvent;
 }
 
+/** `GET /in-flight` 里的一个请求：到目前为止的事件，第一条是开始事件 */
+function open(...events: CoreEvent[]): InFlightRequest {
+  return { id: events[0]!.id, events };
+}
+
 describe("从事件缝出一行", () => {
   it("开始就带着模型", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     expect(rows.get(1)?.model).toBe("claude-sonnet-4-5");
+  });
+
+  /** 会话是网关在开始的那一刻定的：正在跑的那一条已经在它的会话里，不用等落库 */
+  it("开始就带着会话", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ session: "fp-1-1000000" }));
+    expect(rows.get(1)?.session).toBe("fp-1-1000000");
+    // 认不出会话的没有，不拿一个假的凑数
+    applyEvent(rows, started({ id: 2 }));
+    expect(rows.get(2)?.session).toBeUndefined();
   });
 
   /** WebSocket 这类认不出模型的请求，core 发的是空串 —— 空串不是一个模型名 */
@@ -221,14 +241,51 @@ describe("用快照补上进行中的行", () => {
 
   it("没见过开始事件的请求补成进行中", () => {
     const rows = new Map<number, RequestRow>();
-    expect(applyInFlight(rows, [started({ id: 7 })], seen())).toBe(true);
+    expect(applyInFlight(rows, [open(started({ id: 7 }))], seen())).toBe(true);
     expect(rows.get(7)?.state).toBe("in_flight");
     expect(rows.get(7)?.model).toBe("claude-sonnet-4-5");
   });
 
+  /**
+   * 快照里是这个请求到目前为止的全部事件。**照原样重放**：响应头、服务它的上游
+   * 都在，和从头听起的那一行一样。
+   */
+  it("快照里的事件照原样重放", () => {
+    const rows = new Map<number, RequestRow>();
+    applyInFlight(
+      rows,
+      [
+        open(
+          started({ id: 7, provider: "relay", session: "fp-7-1000000" }),
+          {
+            kind: "request_routed",
+            id: 7,
+            route: "default",
+            rule: "catch-all",
+            group: "__all__",
+            rewritten_by: [],
+            attempts: [
+              { provider: "relay", outcome: "status", status: 503, ms: 40 },
+              { provider: "official", outcome: "served", status: 200, ms: 900 },
+            ],
+            billing: "per-token",
+          },
+          { kind: "request_headers", id: 7, status: 200, ttfb_ms: 940 },
+        ),
+      ],
+      seen(),
+    );
+    const r = rows.get(7);
+    expect(r?.state).toBe("in_flight");
+    expect(r?.provider).toBe("official");
+    expect(r?.status).toBe(200);
+    expect(r?.ttfbMs).toBe(940);
+    expect(r?.session).toBe("fp-7-1000000");
+  });
+
   it("快照在路上时结束了的不补", () => {
     const rows = new Map<number, RequestRow>();
-    expect(applyInFlight(rows, [started({ id: 7 })], seen([], [7]))).toBe(false);
+    expect(applyInFlight(rows, [open(started({ id: 7 }))], seen([], [7]))).toBe(false);
     expect(rows.has(7)).toBe(false);
   });
 
@@ -237,10 +294,10 @@ describe("用快照补上进行中的行", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ id: 7 }));
     applyEvent(rows, { kind: "request_headers", id: 7, status: 200, ttfb_ms: 812 });
-    expect(applyInFlight(rows, [started({ id: 7 })], seen([7]))).toBe(false);
+    expect(applyInFlight(rows, [open(started({ id: 7 }))], seen([7]))).toBe(false);
     expect(rows.get(7)?.status).toBe(200);
     // 开始事件还在缓冲里、这一行还没建出来的，同样不补 —— 缓冲落地时会建
-    expect(applyInFlight(new Map(), [started({ id: 8 })], seen([8]))).toBe(false);
+    expect(applyInFlight(new Map(), [open(started({ id: 8 }))], seen([8]))).toBe(false);
   });
 
   /**
@@ -251,7 +308,7 @@ describe("用快照补上进行中的行", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ id: 7, model: "gpt-5.5" }));
     interruptInFlight(rows);
-    expect(applyInFlight(rows, [started({ id: 7 })], seen())).toBe(true);
+    expect(applyInFlight(rows, [open(started({ id: 7 }))], seen())).toBe(true);
     expect(rows.get(7)?.state).toBe("in_flight");
     expect(rows.get(7)?.model).toBe("claude-sonnet-4-5");
     expect(rows.get(7)?.error).toBeUndefined();
@@ -307,8 +364,10 @@ describe("故障转移之后的上游", () => {
     applyEvent(rows, {
       kind: "request_routed",
       id: 1,
+      route: "default",
       rule: "catch-all",
       group: "__all__",
+      rewritten_by: [],
       attempts: [
         { provider: "relay", outcome: "status", status: 503, ms: 40 },
         { provider: "official", outcome: "served", status: 200, ms: 900 },
@@ -316,6 +375,22 @@ describe("故障转移之后的上游", () => {
       billing: "per-token",
     });
     expect(rows.get(1)?.provider).toBe("official");
+  });
+
+  /** 被规则拒绝的请求没有发往任何上游：开始时上游就是空的，尝试链也是空的 */
+  it("没有发往任何上游的，上游一直是空的", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ provider: "", group: null, rule: "no-opus" }));
+    applyEvent(rows, {
+      kind: "request_routed",
+      id: 1,
+      route: "default",
+      rule: "no-opus",
+      rewritten_by: [],
+      attempts: [],
+      billing: "per-token",
+    });
+    expect(rows.get(1)?.provider).toBe("");
   });
 });
 

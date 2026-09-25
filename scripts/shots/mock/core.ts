@@ -18,7 +18,7 @@ import {
   security,
   keys,
 } from "./config";
-import { HISTORY, IN_FLIGHT, SEC_EVENTS, bodies, lastSeen, sessionView, sessions, turns, unpricedModels } from "./traffic";
+import { HISTORY, IN_FLIGHT, SEC_EVENTS, bodies, lastSeen, routeStats, sessionView, sessions, turns, unpricedModels } from "./traffic";
 import { DAY, HOUR, NOW, clone, msg } from "./util";
 
 type Handler<N extends WebviewEndpoint> = (req: Endpoints[N]["req"], params: string[]) => Endpoints[N]["res"];
@@ -61,7 +61,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
     overview(lastSeen())
       .providers.filter((p) => !req.provider || p.name === req.provider)
       .map((p) => l1(p.name, p.proxy === "direct" || p.proxy === "system" ? null : p.proxy)),
-  InFlight: () => clone(IN_FLIGHT),
+  InFlight: () => ({ now_ms: Date.now(), requests: clone(IN_FLIGHT) }),
 
   GetConfig: () => ({ path: "~/.thinkwatch/config.yaml", text: CONFIG_TEXT, version: configVersion() }),
   PatchConfig: refuse,
@@ -119,6 +119,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   UpdateGroup: refuse,
   DeleteGroup: refuse,
   KnownModels: () => knownModels(),
+  // 没给时间窗就是今天：本地零点到现在（`Window` 的默认）
+  RouteStats: (req) => routeStats(req.from_ms ?? new Date(NOW).setHours(0, 0, 0, 0), req.to_ms ?? Date.now()),
 
   Pricing: () => pricing(unpricedModels()),
   RefreshPricing: refuse,
@@ -138,15 +140,18 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
 
   Security: () => security(),
   SecurityEvents: (req) => {
-    const xs = SEC_EVENTS.filter(
+    // 总数和各做法的条数是整段时间的，翻到第几页都一样（`before` 只是翻页的位置）
+    const window = SEC_EVENTS.filter(
       (e) =>
         (!req.guard || e.guard === req.guard) &&
         (req.from_ms == null || e.at_ms >= req.from_ms) &&
-        (req.to_ms == null || e.at_ms < req.to_ms) &&
-        (req.before == null || e.id < req.before),
+        (req.to_ms == null || e.at_ms < req.to_ms),
     );
+    const xs = window.filter((e) => req.before == null || e.id < req.before);
     const limit = req.limit ?? 100;
-    return { events: clone(xs.slice(0, limit)), more: xs.length > limit };
+    const by_outcome = { recorded: 0, replaced: 0, cut: 0, blocked: 0 };
+    for (const e of window) by_outcome[e.action] += 1;
+    return { events: clone(xs.slice(0, limit)), more: xs.length > limit, total: window.length, by_outcome };
   },
   SetSecurityMode: refuse,
   ToggleBuiltinRule: refuse,
@@ -158,9 +163,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   TestSecurity: () => ({ hits: [] }),
 
   ChatgptLoginStatus: refuse,
+  // 登的是谁不在这里：core 从凭据的令牌里读，在上游视图的 `oauth.account`（overview.json）
   ChatgptUsage: () => ({
-    email: "alex@example.com",
-    plan: "plus",
     windows: CHATGPT_WINDOWS(),
     reset_credits: 1,
   }),

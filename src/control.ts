@@ -64,6 +64,7 @@ export const WEBVIEW_ENDPOINTS = [
   "UpdateGroup",
   "DeleteGroup",
   "KnownModels",
+  "RouteStats",
   "Pricing",
   "RefreshPricing",
   "SetPricingAutoUpdate",

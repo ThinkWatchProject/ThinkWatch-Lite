@@ -59,6 +59,8 @@ function group(at_ms: number, name: string, tokens: number, cost = 0, requests =
     failed: 0,
     cost_micros_exact: cost,
     cost_micros_estimated: 0,
+    unpriced_requests: 0,
+    no_usage_requests: 0,
     input_tokens: tokens,
     output_tokens: 0,
     cache_read_tokens: 0,

@@ -52,7 +52,7 @@ export const api = {
   /** 起点和格宽都由界面给：格子对齐到本地整点（见 `bucketStart`） */
   upstreamStats: (sinceMs: number, bucketMs: number) =>
     invoke<UpstreamStats>("upstream_stats", { sinceMs, bucketMs }),
-  /** 此刻在途的请求（开始事件的快照）。页面半路挂上时用它补齐 */
+  /** 此刻在途的请求，各带到目前为止的事件。页面半路挂上时用它补齐 */
   inFlight: () => call("InFlight", null),
 
   createProxy: (save: ProxySave) => call("CreateProxy", save),

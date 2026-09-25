@@ -66,8 +66,8 @@ export const SessionRow = memo(function SessionRow({
   const started = s?.started_ms ?? Math.min(...rows.map((r) => r.atMs));
   const ended = s?.ended_ms ?? Math.max(...rows.map((r) => r.atMs));
   // **上游从行里数，不从汇总里拿** —— `SessionView` 没有这一项，
-  // 而组里的每一条都知道自己走了哪个上游
-  const providers = [...new Set(rows.map((r) => r.provider))];
+  // 而组里的每一条都知道自己走了哪个上游（没有发往任何上游的那几条是空的，不算）
+  const providers = [...new Set(rows.map((r) => r.provider).filter(Boolean))];
   const failed = s?.errors ?? failedIn(g);
   const turns = s?.turns ?? rows.length;
   const openIt = () => {

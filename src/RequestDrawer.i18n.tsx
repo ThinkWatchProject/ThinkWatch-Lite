@@ -67,10 +67,9 @@ export const requestDrawerText = messages(
     attempts: "尝试链",
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
-    noRouting: "此请求没有路由信息",
+    noRouting: "此请求由网关本地应答，未经过路由。",
     routingPending: "路由尚未完成",
-    noRoutingTip: "网关本地应答的请求、被路由规则拒绝的请求，以及上游应答之前客户端就断开的请求，不记录路由信息。",
-    possibleCauses: "可能原因",
+    noAttempts: "此请求没有上游尝试记录。",
 
     // 内容
     request: "请求",
@@ -174,11 +173,9 @@ export const requestDrawerText = messages(
       failed === 1
         ? "Failover occurred: the first upstream failed, and the request was switched to the next upstream automatically."
         : `Failover occurred: the first ${failed} upstreams failed, and the request was switched to the next upstream automatically.`,
-    noRouting: "No routing information for this request",
+    noRouting: "The gateway answered this request locally; it did not go through routing.",
     routingPending: "Routing has not finished yet",
-    noRoutingTip:
-      "Requests answered locally by the gateway, requests refused by a routing rule, and requests whose client disconnected before any upstream answered carry no routing information.",
-    possibleCauses: "Possible causes",
+    noAttempts: "No upstream attempts were recorded for this request.",
 
     request: "Request",
     response: "Response",

@@ -19,7 +19,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { usd, type Overview, type PricingStatus, type ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
-import { patch, useAccounts, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
+import { patch, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
@@ -88,7 +88,7 @@ export default function UpstreamsPage({
   const [dialog, setDialog] = useState<DialogState>(null);
   const { stats, since } = useUpstreamStats();
   const pricing = usePricingStatus(configVersion);
-  const accounts = useAccounts(ov.providers, () => void stats.reload());
+  useAccountQuotas(ov.providers, () => void stats.reload());
   const inFlight = useInFlight();
   const proxies = ov.proxies;
 
@@ -381,7 +381,6 @@ export default function UpstreamsPage({
               providers={providers}
               stats={stats}
               since={since}
-              accounts={accounts}
               inFlight={inFlight}
               refreshing={refreshing}
               focus={focus}

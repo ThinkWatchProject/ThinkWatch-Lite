@@ -97,8 +97,9 @@ export function SessionPanel({
 }) {
   const t = useText(sessionsText);
   const { session: s, turns } = d;
-  // 走过哪几个上游，按第一次出现的先后。一次任务中途换过上游，这里能看出来
-  const providers = [...new Set(turns.map((x) => x.provider))];
+  // 走过哪几个上游，按第一次出现的先后。一次任务中途换过上游，这里能看出来。
+  // 没有发往任何上游的那几轮（被规则拒绝）上游是空的，不算
+  const providers = [...new Set(turns.map((x) => x.provider).filter(Boolean))];
   return (
     <>
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}

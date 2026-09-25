@@ -14,11 +14,12 @@ import type {
   CostBucketGroup,
   CostGroup,
   Dialect,
-  Event,
   HistoryRow,
+  InFlightRequest,
   LatencyView,
   Msg,
   PriceFields,
+  RouteHits,
   RoutingView,
   SecurityEventView,
   SessionView,
@@ -60,22 +61,26 @@ const PROTOCOL: Record<string, Dialect> = {
   ollama: "openai-chat",
 };
 
-/** 按 config.*.yaml 的路由规则走：哪条规则、哪个策略组、先试哪家 */
-function route(who: Who, model: string): { rule: string; group: string | null; order: string[] } {
+/**
+ * 按 config.*.yaml 的路由规则走：哪条路由（密钥指定的那条，没指定的走默认路由）、
+ * 哪条规则、哪个策略组、先试哪家
+ */
+function route(who: Who, model: string): { route: string; rule: string; group: string | null; order: string[] } {
   if (who === "codex") {
-    if (model.startsWith("qwen/")) return { rule: N.qwen, group: null, order: ["openrouter"] };
-    return { rule: N.catchAll, group: null, order: ["chatgpt"] };
+    if (model.startsWith("qwen/")) return { route: "codex", rule: N.qwen, group: null, order: ["openrouter"] };
+    return { route: "codex", rule: N.catchAll, group: null, order: ["chatgpt"] };
   }
   if (who === "cursor") {
-    if (model.startsWith("gemini-")) return { rule: N.gemini, group: null, order: ["gemini"] };
+    if (model.startsWith("gemini-")) return { route: "cursor", rule: N.gemini, group: null, order: ["gemini"] };
     // `cheapest` 按输入单价排：中转打八折，排在官方前面（tw-engine 的 `order_by`）
-    return { rule: N.catchAll, group: N.budget, order: ["relay", "anthropic"] };
+    return { route: "cursor", rule: N.catchAll, group: N.budget, order: ["relay", "anthropic"] };
   }
-  if (model.startsWith("claude-opus-")) return { rule: N.opus, group: null, order: ["anthropic"] };
-  if (model.startsWith("deepseek-")) return { rule: N.deepseek, group: null, order: ["deepseek"] };
-  if (model.startsWith("gemini-")) return { rule: N.gemini, group: null, order: ["gemini"] };
-  if (model.startsWith("qwen3-coder:")) return { rule: N.local, group: null, order: ["ollama"] };
-  return { rule: N.catchAll, group: N.main, order: ["anthropic", "relay"] };
+  const via = (rule: string, to: string) => ({ route: "default", rule, group: null, order: [to] });
+  if (model.startsWith("claude-opus-")) return via(N.opus, "anthropic");
+  if (model.startsWith("deepseek-")) return via(N.deepseek, "deepseek");
+  if (model.startsWith("gemini-")) return via(N.gemini, "gemini");
+  if (model.startsWith("qwen3-coder:")) return via(N.local, "ollama");
+  return { route: "default", rule: N.catchAll, group: N.main, order: ["anthropic", "relay"] };
 }
 
 // ───────────────────────────────────────── core 会说的几句话
@@ -176,8 +181,8 @@ interface Spec {
 
 export const HISTORY: HistoryRow[] = [];
 export const SEC_EVENTS: SecurityEventView[] = [];
-/** 打开页面时还在跑的请求（`InFlight` 快照） */
-export const IN_FLIGHT: Event[] = [];
+/** 打开页面时还在跑的请求（`InFlight` 快照）：每个请求到目前为止的事件 */
+export const IN_FLIGHT: InFlightRequest[] = [];
 
 function makeRow(s: Spec, r: () => number): HistoryRow {
   const outcome = s.outcome ?? { kind: "ok" };
@@ -199,7 +204,7 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
       : outcome.kind === "failed"
         ? [{ provider, outcome: "status", status: outcome.status, error: null, ms: ttfb }]
         : [{ provider, outcome: "served", status: 200, error: null, ms: duration }];
-  const routing: RoutingView = { rule: plan.rule, group: plan.group, attempts };
+  const routing: RoutingView = { route: plan.route, rule: plan.rule, group: plan.group, rewritten_by: [], denied_by: null, attempts };
   const to = PROTOCOL[provider]!;
   const row: HistoryRow = {
     id: 0,
@@ -430,21 +435,42 @@ function generate() {
   for (const row of rows) row.id = id++;
   HISTORY.push(...rows);
 
-  // 正在跑的那一条：Claude Code 的下一轮，6 秒前开始
+  // 正在跑的那一条：Claude Code 的下一轮，6 秒前开始，已经在收 anthropic 的回答
+  const plan = route("claude-code", "claude-sonnet-5");
   IN_FLIGHT.push({
-    kind: "request_started",
     id,
-    client: "claude-code",
-    client_hint: "claude-code",
-    session_fp: cc,
-    peer: null,
-    key_masked: MASKED["claude-code"],
-    provider: "anthropic",
-    billing: "per-token",
-    model: "claude-sonnet-5",
-    method: "POST",
-    path: "/v1/messages",
-    at_ms: NOW - 6 * SEC,
+    events: [
+      {
+        kind: "request_started",
+        id,
+        client: "claude-code",
+        client_hint: "claude-code",
+        session: cc,
+        peer: null,
+        key_masked: MASKED["claude-code"],
+        route: plan.route,
+        rule: plan.rule,
+        group: plan.group,
+        rewritten_by: [],
+        provider: plan.order[0]!,
+        billing: "per-token",
+        model: "claude-sonnet-5",
+        method: "POST",
+        path: "/v1/messages",
+        at_ms: NOW - 6 * SEC,
+      },
+      {
+        kind: "request_routed",
+        id,
+        route: plan.route,
+        rule: plan.rule,
+        group: plan.group,
+        rewritten_by: [],
+        attempts: [{ provider: plan.order[0]!, outcome: "served", status: 200, error: null, ms: 1_320 }],
+        billing: "per-token",
+      },
+      { kind: "request_headers", id, status: 200, ttfb_ms: 1_320 },
+    ],
   });
 
   securityLog();
@@ -524,6 +550,9 @@ export function rowsBetween(from: number, to = Infinity) {
 }
 
 const unpriced = (h: HistoryRow) => !h.error && !h.local && h.cost_micros == null && h.billing !== "free";
+/** 没拿到用量的（tw-store 的 `NO_USAGE`）：没失败、没用量、按量计费，取消的或者答了 2xx */
+const noUsage = (h: HistoryRow) =>
+  !h.error && !h.local && h.cost_micros == null && h.input_tokens == null && h.billing === "per-token" && (h.cancelled || (h.status != null && h.status < 300));
 
 export function summary(from: number, to = Infinity): Summary {
   const rows = rowsBetween(from, to);
@@ -541,7 +570,7 @@ export function summary(from: number, to = Infinity): Summary {
     cost_micros_exact: sum(real, (h) => (h.cost_estimated ? 0 : (h.cost_micros ?? 0))),
     cost_micros_estimated: sum(real, (h) => (h.cost_estimated ? (h.cost_micros ?? 0) : 0)),
     unpriced_requests: real.filter(unpriced).length,
-    no_usage_requests: 0,
+    no_usage_requests: real.filter(noUsage).length,
     cache_saved_micros: sum(real, (h) => h.cache_saved_micros ?? 0),
     security: {
       secrets: count("redact"),
@@ -592,6 +621,7 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     if (h.cost_estimated) b.cost_micros_estimated += h.cost_micros ?? 0;
     else b.cost_micros_exact += h.cost_micros ?? 0;
     if (unpriced(h)) b.unpriced_requests += 1;
+    if (noUsage(h)) b.no_usage_requests += 1;
     buckets.set(at, b);
     const k = `${at}|${h.model}`;
     const g = byModel.get(k) ?? {
@@ -601,6 +631,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
       failed: 0,
       cost_micros_exact: 0,
       cost_micros_estimated: 0,
+      unpriced_requests: 0,
+      no_usage_requests: 0,
       input_tokens: 0,
       output_tokens: 0,
       cache_read_tokens: 0,
@@ -610,6 +642,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     if (h.error) g.failed += 1;
     if (h.cost_estimated) g.cost_micros_estimated += h.cost_micros ?? 0;
     else g.cost_micros_exact += h.cost_micros ?? 0;
+    if (unpriced(h)) g.unpriced_requests += 1;
+    if (noUsage(h)) g.no_usage_requests += 1;
     g.input_tokens += h.input_tokens ?? 0;
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
@@ -645,6 +679,7 @@ export function costBy(from: number, key: (h: HistoryRow) => string | null): Cos
     g.requests += 1;
     g.cost_micros += h.cost_micros ?? 0;
     if (unpriced(h)) g.unpriced_requests += 1;
+    if (noUsage(h)) g.no_usage_requests += 1;
     g.input_tokens += h.input_tokens ?? 0;
     g.output_tokens += h.output_tokens ?? 0;
     by.set(k, g);
@@ -670,6 +705,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
       failed: 0,
       cost_micros_exact: 0,
       cost_micros_estimated: 0,
+      unpriced_requests: 0,
+      no_usage_requests: 0,
       input_tokens: 0,
       output_tokens: 0,
       cache_read_tokens: 0,
@@ -679,6 +716,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
     if (h.error) g.failed += 1;
     if (h.cost_estimated) g.cost_micros_estimated += h.cost_micros ?? 0;
     else g.cost_micros_exact += h.cost_micros ?? 0;
+    if (unpriced(h)) g.unpriced_requests += 1;
+    if (noUsage(h)) g.no_usage_requests += 1;
     g.input_tokens += h.input_tokens ?? 0;
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
@@ -689,6 +728,37 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
 }
 
 export const upstreamLatency = (from: number) => latency(rowsBetween(from), (h) => h.provider);
+
+/**
+ * 各条路由、各条规则命中了多少（`GET /summary/routes`），照 tw-store 的 `route_hits`：按每一行
+ * 记下的路由数；一个请求算在决定去向的规则、每条改写了它的规则、第二阶段拒绝了它的规则上，
+ * 每条只算一次；本地应答的不算；多的在前，一样多按名字
+ */
+export function routeStats(from: number, to: number): RouteHits[] {
+  const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const routes = new Map<string, RouteHits>();
+  for (const h of rowsBetween(from, to)) {
+    const r = h.routing;
+    if (h.local || !r) continue;
+    const failed = h.error != null;
+    let x = routes.get(r.route);
+    if (!x) routes.set(r.route, (x = { route: r.route, requests: 0, failed: 0, last_ms: 0, rules: [] }));
+    x.requests += 1;
+    if (failed) x.failed += 1;
+    x.last_ms = Math.max(x.last_ms, h.at_ms);
+    for (const name of new Set([r.rule, ...r.rewritten_by, ...(r.denied_by ? [r.denied_by] : [])])) {
+      let rule = x.rules.find((y) => y.rule === name);
+      if (!rule) x.rules.push((rule = { rule: name, decided: 0, requests: 0, failed: 0, last_ms: 0 }));
+      if (name === r.rule) rule.decided += 1;
+      rule.requests += 1;
+      if (failed) rule.failed += 1;
+      rule.last_ms = Math.max(rule.last_ms, h.at_ms);
+    }
+  }
+  const out = [...routes.values()].sort((a, b) => b.requests - a.requests || byName(a.route, b.route));
+  for (const x of out) x.rules.sort((a, b) => b.requests - a.requests || byName(a.rule, b.rule));
+  return out;
+}
 
 /** 最近一段时间里按名字查不到价格的模型（价格状态里那一栏） */
 export function unpricedModels(from = NOW - 7 * DAY) {

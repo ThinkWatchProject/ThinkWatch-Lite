@@ -1,5 +1,5 @@
 /**
- * 上游页的几份数据：24 小时统计、默认价目表的状态、账号类上游的账号信息、在途请求。
+ * 上游页的几份数据：24 小时统计、默认价目表的状态、账号类上游的额度、在途请求。
  *
  * 前三份走 `useResource`：切走再回来先画上一次的数，后台再取，不闪。在途请求是
  * 跟着事件流走的一份现状，不缓存。
@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { bucketStart } from "@/format";
 import { useResource, type Resource } from "@/lib/resource";
-import type { ChatgptUsage, CoreEvent, CostBucketGroup, ProviderView } from "@/types";
+import type { CoreEvent, CostBucketGroup, ProviderView } from "@/types";
 import { useNow } from "@/useNow";
 import { api, type UpstreamStats } from "./api";
 
@@ -107,15 +107,15 @@ export function usePricingStatus(configVersion: string) {
 }
 
 /**
- * 账号类上游：**打开这一页时问一次它自己。**
+ * 账号类上游的额度：**打开这一页时问一次它自己。**
  *
- * 一次问答同时回答三件事：登的是哪个账号、什么套餐、额度还剩多少。这三件都不在
- * 配置里 —— 额度平时是跟着真实流量白捡的，刚启动、或者这个账号今天还没被用过时，
- * 不问就什么都没有。问一次是一次真实调用：**失败了也不重试**，连不上时反复问只会
- * 把错误刷满日志；单个账号问不到不影响别的。问完 core 也记下了额度，`onAnswered`
- * 让统计从 core 再读一遍，免得这里和它各存一份。
+ * 登的是哪个账号、什么套餐不用问 —— core 从这份凭据自己的令牌里读，就在上游视图里
+ * （`oauth.account`）。额度不一样：平时是跟着真实流量白捡的，刚启动、或者这个账号
+ * 今天还没被用过时，不问就什么都没有。问一次是一次真实调用：**失败了也不重试**，
+ * 连不上时反复问只会把错误刷满日志；单个账号问不到不影响别的。问完 core 记下了
+ * 额度，`onAnswered` 让统计从 core 再读一遍，免得这里和它各存一份。
  */
-export function useAccounts(providers: ProviderView[], onAnswered: () => void): Record<string, ChatgptUsage> {
+export function useAccountQuotas(providers: ProviderView[], onAnswered: () => void): void {
   const names = providers
     .filter((p) => p.protocol === "chatgpt" && !p.disabled)
     .map((p) => p.name)
@@ -123,27 +123,17 @@ export function useAccounts(providers: ProviderView[], onAnswered: () => void): 
   const key = names.join("\n");
   const answered = useRef(onAnswered);
   answered.current = onAnswered;
-  const r = useResource(
-    names.length > 0 ? "upstream-accounts" : null,
+  useResource(
+    names.length > 0 ? "upstream-account-quotas" : null,
     async () => {
-      const got = await Promise.all(
-        names.map((n) =>
-          api
-            .chatgptUsage(n)
-            .then((u) => [n, u] as const)
-            .catch(() => null),
-        ),
-      );
-      const found = got.filter((g) => g !== null);
-      if (found.length > 0) answered.current();
-      return Object.fromEntries(found) as Record<string, ChatgptUsage>;
+      const got = await Promise.all(names.map((n) => api.chatgptUsage(n).then(() => true, () => false)));
+      const n = got.filter(Boolean).length;
+      if (n > 0) answered.current();
+      return n;
     },
     { deps: [key] },
   );
-  return r.data ?? NO_ACCOUNTS;
 }
-
-const NO_ACCOUNTS: Record<string, ChatgptUsage> = {};
 
 /** 在途请求记住多少条已经结束的 id（结束事件比快照先到时用来排除）。只是防御性的上限 */
 const ENDED_CAP = 512;
@@ -153,8 +143,9 @@ const ENDED_CAP = 512;
  *
  * 开始事件里就有上游；换了上游（转移）以 `request_routed` 的最后一跳为准；三种结局
  * 都算结束。**页面半路挂上**时，已经在飞的那几个没有开始事件可听 —— 挂上时读一次
- * `/in-flight` 的快照补上（比快照先到的结束事件记下来，免得补回一个已经结束的）。
- * core 停了、重启了，在途的全部作废：它们不会再有结局。
+ * `/in-flight` 的快照，把每个请求到目前为止的事件照原样重放（比快照先到的结束事件
+ * 记下来，免得补回一个已经结束的）。core 停了、重启了，在途的全部作废：它们不会再有
+ * 结局。
  */
 export function useInFlight(): ReadonlyMap<string, number> {
   const live = useRef(new Map<number, string>());
@@ -164,14 +155,22 @@ export function useInFlight(): ReadonlyMap<string, number> {
   useEffect(() => {
     let alive = true;
     const bump = () => alive && setTick((n) => n + 1);
+    /** 开始、路由落到「哪个请求在哪个上游」上。事件流和快照重放用的是同一段 */
+    const track = (ev: CoreEvent) => {
+      if (ev.kind === "request_started") live.current.set(ev.id, ev.provider);
+      else if (ev.kind === "request_routed") {
+        const last = ev.attempts[ev.attempts.length - 1];
+        if (last && live.current.has(ev.id)) live.current.set(ev.id, last.provider);
+      }
+    };
     const seed = () => {
       api
         .inFlight()
-        .then((evs) => {
+        .then((open) => {
           if (!alive) return;
-          for (const ev of evs) {
-            if (ev.kind !== "request_started" || ended.current.has(ev.id) || live.current.has(ev.id)) continue;
-            live.current.set(ev.id, ev.provider);
+          for (const { id, events } of open.requests) {
+            if (ended.current.has(id) || live.current.has(id)) continue;
+            for (const ev of events) track(ev);
           }
           bump();
         })
@@ -191,13 +190,11 @@ export function useInFlight(): ReadonlyMap<string, number> {
       const ev = e.payload;
       switch (ev.kind) {
         case "request_started":
-          if (!ended.current.has(ev.id)) live.current.set(ev.id, ev.provider);
+          if (!ended.current.has(ev.id)) track(ev);
           break;
-        case "request_routed": {
-          const last = ev.attempts[ev.attempts.length - 1];
-          if (last && live.current.has(ev.id)) live.current.set(ev.id, last.provider);
+        case "request_routed":
+          track(ev);
           break;
-        }
         case "request_finished":
         case "request_failed":
         case "request_cancelled":
