@@ -389,3 +389,81 @@ describe("丢了结局的行，由库里补上", () => {
     expect(rows.get(1)?.durationMs).toBe(300);
   });
 });
+
+/**
+ * 流量表的行是 `memo` 的，按行对象是不是同一个决定要不要重画（`RequestTable`）。
+ * **没变的行必须还是原来那个对象**：对一次账就把两千行全换新，一条请求落地就是
+ * 整表重画；**变了的行必须是新对象**：原地改的话，那一行不重画，界面停在旧值上。
+ */
+describe("对账时行对象换不换", () => {
+  it("库里和列表里一样的行，保留原来的对象", () => {
+    const rows = new Map<number, RequestRow>();
+    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    const before = rows.get(1);
+    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    expect(rows.get(1)).toBe(before);
+  });
+
+  it("库里多出了信息的行，换成新对象，旧的不动", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    const before = rows.get(1);
+    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    expect(rows.get(1)).not.toBe(before);
+    expect(rows.get(1)?.session).toBe("s1");
+    expect(before?.state).toBe("in_flight");
+    expect(before?.session).toBeUndefined();
+  });
+
+  it("可疑调用接在一个新数组上，不往原来那个里推", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    const flag = {
+      kind: "tool_call_flagged",
+      id: 1,
+      provider: "official",
+      tool: "Bash",
+      rule: "curl-pipe-sh",
+      custom: false,
+      why: "Pipes a download into a shell.",
+      excerpt: "curl … | sh",
+      action: "record",
+      blocked: false,
+      at_ms: 1_000_500,
+    } satisfies CoreEvent;
+    applyEvent(rows, flag);
+    const first = rows.get(1)?.flagged;
+    applyEvent(rows, flag);
+    expect(rows.get(1)?.flagged).toHaveLength(2);
+    expect(first).toHaveLength(1);
+  });
+});
+
+/**
+ * **token 那一列是输入合计：新输入加缓存读写。**core 的「输入」不含缓存，事件和
+ * 库里的两路都要把缓存读写带上，否则一轮五万 token 上下文的请求在表里是「1.2k」。
+ */
+describe("缓存读写跟着用量走", () => {
+  it("事件里的用量带上缓存读写", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, {
+      kind: "request_finished",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      status: 200,
+      bytes: 10,
+      duration_ms: 900,
+      usage: { input: 1_200, output: 300, cache_read: 48_000, cache_write: 2_000 },
+    });
+    expect(rows.get(1)?.cacheReadTokens).toBe(48_000);
+    expect(rows.get(1)?.cacheWriteTokens).toBe(2_000);
+  });
+
+  it("库里读回来的行带上缓存读写", () => {
+    const rows = new Map<number, RequestRow>();
+    mergeHistory(rows, [stored({ cache_read_tokens: 48_000, cache_write_tokens: 2_000 })], "本地应答");
+    expect(rows.get(1)?.cacheReadTokens).toBe(48_000);
+    expect(rows.get(1)?.cacheWriteTokens).toBe(2_000);
+  });
+});

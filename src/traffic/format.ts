@@ -1,5 +1,5 @@
 import { textOf } from "@/i18n";
-import { sessionsText } from "@/Sessions.i18n";
+import { sessionsText } from "./Sessions.i18n";
 
 /** 会话这一侧的三个小格式化。**和请求那侧的 `format.ts` 不是一回事** ——
  *  那边说的是一条请求的时刻和耗时，这边说的是一次任务的跨度。 */
@@ -19,6 +19,8 @@ export function dur(ms: number) {
 }
 
 export function tokens(n: number) {
+  // 带缓存的长会话，缓存读取动辄几百万：写成「2698k」要数位数
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
   return String(n);
 }

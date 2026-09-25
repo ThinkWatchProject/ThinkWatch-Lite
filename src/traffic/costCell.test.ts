@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionsText } from "@/Sessions.i18n";
+import { sessionsText } from "./Sessions.i18n";
 import type { SessionView } from "@/types";
 import { costCell } from "./costCell";
 

@@ -1,4 +1,4 @@
-import type { sessionsText } from "@/Sessions.i18n";
+import type { sessionsText } from "./Sessions.i18n";
 import { usd, type SessionView } from "@/types";
 
 type Text = (typeof sessionsText)["zh"];

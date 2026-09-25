@@ -68,7 +68,7 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
             <Section title={t.traffic}>
               <Line label={t.search} combos={[COMBOS.search]} />
               <Line label={t.rowMove} combos={[["up"], ["down"]]} />
-              <Line label={t.rowOpen} combos={[["enter"]]} />
+              <Line label={t.rowOpen} combos={[["enter"], ["space"]]} />
               <Line label={t.groupToggle} combos={[["right"], ["left"]]} />
               <Line label={t.detailClose} combos={[["esc"]]} />
             </Section>

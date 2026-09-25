@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
-import { isMac, modKey } from "@/platform";
 
 /** 句子中间要加重的那几个字。怎么画由组件决定，这里只管是哪几个字、在句子的哪儿 */
 type Em = (text: string) => ReactNode;
@@ -9,7 +8,7 @@ type Em = (text: string) => ReactNode;
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * 主窗口外壳的文案：源列表、工具栏、状态带、流量表、退出确认。
+ * 主窗口外壳的文案：源列表、工具栏、状态带、退出确认。流量页的在 `traffic/Traffic.i18n.tsx`。
  *
  * `.tsx`：有几句话中间嵌着地址（`<code>`）、上游名或加粗的片段，而它们在
  * 中英文句子里的位置不同 —— 片段由组件画好传进来，放在哪儿由句子自己决定。
@@ -63,80 +62,6 @@ export const appText = messages(
     // 断线重连
     staleData: (what: string) => `${what} · 以下数据截至连接断开时`,
     restart: "重新启动",
-    loadingConfig: "读取配置中…",
-
-    // 过滤条
-    // Windows 上键名是「Ctrl+F」，比「⌘F」长；那边字号又大 1px，中文带着「…」
-    // 会超出输入框 7px（量过：241 对 234）。去掉省略号就放得下
-    search: isMac ? "搜索路径、密钥、上游、错误…  ⌘F" : `搜索路径、密钥、上游、错误  ${modKey}+F`,
-    failedOnly: "仅显示失败",
-    groupBySession: "按会话归组",
-    unpricedOnly: "仅显示无法计价",
-    expandSession: "展开这次会话",
-    collapseSession: "收起这次会话",
-    turnCount: (n: number) => `${n} 轮`,
-    allClients: "全部密钥",
-    allUpstreams: "全部上游",
-    shownOf: (shown: number, total: number) => `${shown} / ${total} 条`,
-    total: (n: number) => `${n} 条`,
-    clear: "清空",
-
-    // 还没有上游
-    noUpstreams: "尚未配置上游",
-    listening: (addr: ReactNode) => <>网关正在 {addr} 监听。配置上游后，请求才能转发。</>,
-    goToUpstreams: "前往上游",
-
-    // 空状态
-    noMatchTitle: "没有符合条件的请求",
-    noMatch: (n: number) => `共 ${n} 条记录，当前筛选条件下没有匹配项。`,
-    clearFilters: "清除筛选条件",
-    emptyTitle: "暂无请求记录",
-    pointClients: (endpoint: ReactNode) => <>将客户端的端点设为 {endpoint}，并使用以 tw- 开头的客户端密钥。</>,
-    appearHere: "收到请求后，请求记录将显示在此处。",
-    probesAnswered: (n: number) => `已本地应答 ${n} 次客户端探测。客户端已连接网关，这些探测未产生费用。`,
-    probesElsewhere: (n: number) => `另有 ${n} 次客户端探测由网关本地应答，未发送到上游。`,
-
-    // 表头
-    status: "状态",
-    time: "时间",
-    /** 请求带的是哪把网关密钥。**不是哪个应用** —— 应用写在后面，是按请求头推测的 */
-    client: "密钥",
-    fromPeer: (ip: string) => `来自 ${ip}`,
-    model: "模型",
-    upstream: "上游",
-    latency: "延迟",
-    tokens: "token",
-    cost: "费用",
-
-    // 行的右键菜单
-    openDetails: "打开详情",
-    onlyUpstream: (name: string) => `仅显示上游 ${name}`,
-    onlyClient: (name: string) => `仅显示密钥 ${name}`,
-    copyId: "复制请求 ID",
-    copyRow: "复制此行",
-
-    // 状态一列
-    failed: "失败",
-    cancelled: "已取消",
-
-    // 上游一列的徽标和它们的悬浮说明
-    redactedTip: (items: string[]) => `发送前已替换：${items.join("、")}\n模型回显的内容将自动还原。`,
-    redacted: (n: number) => `已脱敏 ${n}`,
-    secretsTip: (items: string[]) => `请求中含有凭据，已原样发出：${items.join("、")}`,
-    withSecrets: (n: number) => `含凭据 ${n}`,
-    sentConverted: (formats: string) => `请求已转换格式后发送：${formats}。`,
-    droppedFields: (fields: string[]) => `\n\n目标格式不支持、已丢弃的字段：${fields.join("、")}`,
-    noneDropped: "\n未丢弃任何字段。",
-    converted: "已转换",
-    convertedDropped: (n: number) => `已转换 · 丢弃 ${n} 项`,
-    flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
-    blocked: "已拦截",
-    suspicious: "可疑调用",
-
-    // 估算的费用为什么是估算
-    estimatedCancelled: "客户端在响应结束前断开，输出用量计至断开时，实际费用可能更高。",
-    estimatedFailed: "响应在结束前中断，输出用量计至中断时，实际费用可能更高。",
-    estimatedBorrowed: "价目表中没有此上游的单价，该金额按同一模型在其他平台的单价估算。",
   },
   {
     surfaces: {
@@ -191,87 +116,5 @@ export const appText = messages(
 
     staleData: (what: string) => `${what} · Data below is as of the disconnect`,
     restart: "Restart",
-    loadingConfig: "Loading config…",
-
-    // 输入框 256px 宽，放得下的文字约 234px；带上「Search」就放不下 ⌘F 了
-    search: `Path, key, upstream, error…  ${modKey}${isMac ? "" : "+"}F`,
-    failedOnly: "Failed only",
-    groupBySession: "Group by session",
-    unpricedOnly: "Unpriced only",
-    expandSession: "Expand this session",
-    collapseSession: "Collapse this session",
-    turnCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
-    allClients: "All keys",
-    allUpstreams: "All upstreams",
-    shownOf: (shown: number, total: number) => `${shown} / ${count(total, "request", "requests")}`,
-    total: (n: number) => count(n, "request", "requests"),
-    clear: "Clear",
-
-    noUpstreams: "No upstreams configured yet",
-    listening: (addr: ReactNode) => (
-      <>The gateway is listening on {addr}. Requests can be forwarded once an upstream is configured.</>
-    ),
-    goToUpstreams: "Go to Upstreams",
-
-    noMatchTitle: "No matching requests",
-    noMatch: (n: number) =>
-      n === 1
-        ? "1 request recorded; it does not match the current filters."
-        : `${n} requests recorded; none match the current filters.`,
-    clearFilters: "Clear filters",
-    emptyTitle: "No requests yet",
-    pointClients: (endpoint: ReactNode) => (
-      <>Set the client's endpoint to {endpoint} and use a client key that starts with tw-.</>
-    ),
-    appearHere: "Requests appear here once they are received.",
-    probesAnswered: (n: number) =>
-      n === 1
-        ? "1 client probe was answered locally. A client is already connected to the gateway; the probe incurred no cost."
-        : `${n} client probes were answered locally. A client is already connected to the gateway; these probes incurred no cost.`,
-    probesElsewhere: (n: number) =>
-      n === 1
-        ? "In addition, 1 client probe was answered locally by the gateway and not sent to an upstream."
-        : `In addition, ${n} client probes were answered locally by the gateway and not sent to an upstream.`,
-
-    status: "Status",
-    time: "Time",
-    client: "Key",
-    fromPeer: (ip: string) => `from ${ip}`,
-    model: "Model",
-    upstream: "Upstream",
-    latency: "Latency",
-    tokens: "Tokens",
-    cost: "Cost",
-
-    openDetails: "Open details",
-    onlyUpstream: (name: string) => `Show only upstream ${name}`,
-    onlyClient: (name: string) => `Show only key ${name}`,
-    copyId: "Copy request ID",
-    copyRow: "Copy row",
-
-    failed: "Failed",
-    cancelled: "Canceled",
-
-    redactedTip: (items: string[]) =>
-      `Replaced before sending: ${items.join(", ")}\nContent echoed by the model is restored automatically.`,
-    redacted: (n: number) => `Redacted ${n}`,
-    secretsTip: (items: string[]) => `Sent as is, with credentials in it: ${items.join(", ")}`,
-    withSecrets: (n: number) => `Credentials ${n}`,
-    sentConverted: (formats: string) => `Sent after format conversion: ${formats}.`,
-    droppedFields: (fields: string[]) =>
-      `\n\nFields dropped because the target format does not support them: ${fields.join(", ")}`,
-    noneDropped: "\nNo fields were dropped.",
-    converted: "Converted",
-    convertedDropped: (n: number) => `Converted · ${n} dropped`,
-    flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
-    blocked: "Blocked",
-    suspicious: "Suspicious call",
-
-    estimatedCancelled:
-      "The client disconnected before the response finished. Output usage is counted up to the disconnect, so the actual cost may be higher.",
-    estimatedFailed:
-      "The response was interrupted before it finished. Output usage is counted up to the interruption, so the actual cost may be higher.",
-    estimatedBorrowed:
-      "The price sheet has no price for this upstream; the amount is estimated from the same model's price on another platform.",
   },
 );
