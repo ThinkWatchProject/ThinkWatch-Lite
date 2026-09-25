@@ -237,6 +237,31 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"]
 "#;
 
+/// Codex 还原之后**唯一多出来的东西**：`[model_providers.thinkwatch]`
+/// 改写成的影子 OpenAI。接管期间开的会话记着 `thinkwatch` 这个 provider，
+/// 整段删掉它们就再也打不开了（见 `clients::leaves_behind`）。
+const SHADOW: &str = "\n[model_providers.thinkwatch]\nname = \"OpenAI\"\nwire_api = \"responses\"\nrequires_openai_auth = true\nsupports_websockets = true\n";
+
+fn restored_codex(seed: &str) -> String {
+    format!("{seed}{SHADOW}")
+}
+
+/// 还原之后的 Codex 配置里不该有的东西：密钥、网关地址、我们的署名，
+/// 以及选中那一段的 `model_provider`。
+fn assert_nothing_of_ours_is_left(after: &str) {
+    for gone in [
+        "tw-用户的专属密钥",
+        "experimental_bearer_token",
+        "127.0.0.1:8080",
+        "X-ThinkWatch-Client",
+        "http_headers",
+        "model_provider =",
+        "ThinkWatch",
+    ] {
+        assert!(!after.contains(gone), "还原之后还留着 {gone}：\n{after}");
+    }
+}
+
 #[test]
 fn adopting_codex_keeps_every_project_trust_and_mcp_server() {
     let b = bed("codex", CODEX);
@@ -276,14 +301,112 @@ fn codex_gets_a_sentinel_comment_because_toml_can_hold_one() {
 }
 
 #[test]
-fn restoring_codex_puts_the_file_back_byte_for_byte() {
+fn restoring_codex_puts_the_file_back_plus_only_the_shadow_openai() {
     let b = bed("codex", CODEX);
     let c = client("codex");
     let p = plan_adopt(&c, &b.home, &gw()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
-    assert_eq!(read(&b.home.join(".codex/config.toml")), CODEX);
+    let after = read(&b.home.join(".codex/config.toml"));
+    assert_eq!(after, restored_codex(CODEX));
+    assert_nothing_of_ours_is_left(&after);
+}
+
+#[test]
+fn the_shadow_openai_follows_the_users_own_openai_base_url() {
+    // 顶层的 `openai_base_url` 只管内置的 `openai`，管不到影子那一段：
+    // 不照抄一份，接管期间的会话会绕过用户自己设的地址
+    let seed = format!("openai_base_url = \"http://127.0.0.1:18081/v1\"\n{CODEX}");
+    let b = bed("codex", &seed);
+    let c = client("codex");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&b.home.join(".codex/config.toml"));
+    let got = |k: &str| tw_adopt::toml::get(&after, &["model_providers", "thinkwatch", k]).unwrap();
+    assert_eq!(
+        got("base_url"),
+        Some(tw_adopt::json::Val::s("http://127.0.0.1:18081/v1")),
+        "{after}"
+    );
+    assert_eq!(
+        got("requires_openai_auth"),
+        Some(tw_adopt::json::Val::Bool(true))
+    );
+    assert!(after.starts_with(&seed), "用户原有的部分变了：\n{after}");
+    assert_nothing_of_ours_is_left(&after);
+}
+
+#[test]
+fn re_adopting_codex_after_a_restore_points_the_shadow_back_at_the_gateway() {
+    let b = bed("codex", CODEX);
+    let c = client("codex");
+    let path = b.home.join(".codex/config.toml");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        tw_adopt::detect::detect_one(&c, &b.home).endpoint,
+        None,
+        "影子那一段不是网关"
+    );
+
+    // 再接管一次：影子那一段要整个改回指向网关。**尤其是那两个 true** ——
+    // 留着 `requires_openai_auth` 会把用户自己的 OpenAI 登录送给网关
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&path);
+    let got = |k: &str| {
+        tw_adopt::toml::get(&after, &["model_providers", "thinkwatch", k])
+            .unwrap()
+            .unwrap_or_else(|| panic!("没有 {k}：\n{after}"))
+    };
+    use tw_adopt::json::Val;
+    assert_eq!(got("name"), Val::s("ThinkWatch"));
+    assert_eq!(got("base_url"), Val::s("http://127.0.0.1:8080/v1"));
+    assert_eq!(got("requires_openai_auth"), Val::Bool(false), "{after}");
+    assert_eq!(got("supports_websockets"), Val::Bool(false), "{after}");
+    assert_eq!(
+        got("experimental_bearer_token"),
+        Val::s("tw-用户的专属密钥")
+    );
+    assert!(
+        after.contains(r#"model_provider = "thinkwatch""#),
+        "{after}"
+    );
+    assert_eq!(
+        tw_adopt::detect::detect_one(&c, &b.home)
+            .endpoint
+            .as_deref(),
+        Some("http://127.0.0.1:8080/v1")
+    );
+
+    // 再还原：回到的还是「原样 + 影子」，不会一轮一轮地攒东西
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&path);
+    assert_eq!(after, restored_codex(CODEX));
+    assert_nothing_of_ours_is_left(&after);
+}
+
+#[test]
+fn a_codex_config_created_here_keeps_the_shadow_after_a_restore() {
+    // 文件是接管时新建的。还原之后它不是空的 —— 影子那一段得留着，
+    // 否则接管期间的会话照样打不开 —— 所以**不删**
+    let b = bed("codex", "");
+    let c = client("codex");
+    let path = b.home.join(".codex/config.toml");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(!r.delete_file);
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&path);
+    assert_eq!(after.trim_start(), SHADOW.trim_start());
+    assert_nothing_of_ours_is_left(&after);
 }
 
 #[test]
@@ -302,7 +425,10 @@ fn adopting_twice_does_not_stack_up_sentinels() {
     );
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
-    assert_eq!(read(&b.home.join(".codex/config.toml")), CODEX);
+    assert_eq!(
+        read(&b.home.join(".codex/config.toml")),
+        restored_codex(CODEX)
+    );
 }
 
 // ---- Aider：YAML ------------------------------------------------------
@@ -542,9 +668,13 @@ fn every_adoptable_client_survives_a_round_trip() {
 
         let r = plan_restore(&c, &b.home).unwrap();
         apply_restore(&c, &r, &b.backups).unwrap();
+        let want = match c.id {
+            "codex" => restored_codex(seed),
+            _ => seed.to_string(),
+        };
         assert_eq!(
             read(&c.config_path(&b.home)),
-            seed,
+            want,
             "{} 还原之后对不上",
             c.id
         );
@@ -692,7 +822,10 @@ fn re_adopting_codex_also_keeps_the_first_record() {
     );
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
-    assert_eq!(read(&b.home.join(".codex/config.toml")), CODEX);
+    assert_eq!(
+        read(&b.home.join(".codex/config.toml")),
+        restored_codex(CODEX)
+    );
 }
 
 // ---- opencode：v1 的写法两个版本都认，v2 原生的那一条在就改它 ----------

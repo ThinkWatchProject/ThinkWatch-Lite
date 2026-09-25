@@ -159,6 +159,18 @@ function clientsNow(): DetectedClient[] {
           "The ChatGPT desktop app reads the same configuration file, so its local Codex sessions go through the gateway as well; the app has to be restarted for that to take effect.",
         ),
         msg("adopt.cost.codex.reopen_terminal", "The terminal has to be reopened afterwards."),
+        msg(
+          "adopt.cost.codex.sessions_split",
+          "Sessions started before and after connecting Codex are listed separately.",
+        ),
+        msg(
+          "adopt.cost.codex.resume_through_gateway",
+          "To continue an earlier session through the gateway, run codex resume <session ID> -c model_provider=thinkwatch.",
+        ),
+        msg(
+          "adopt.cost.codex.sessions_after_restore",
+          "After a restore, sessions started while connected can still be opened; they then go straight to OpenAI.",
+        ),
       ],
     }),
     detected({

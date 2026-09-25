@@ -63,6 +63,15 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
         "dsh" => vec!["llm-deepseek", "config", "baseURL"],
         _ => return None,
     };
+    // **Codex 的那一段不等于它在用的那一段。**还原之后
+    // `[model_providers.thinkwatch]` 还在（影子 OpenAI，见
+    // `clients::leaves_behind`），只是顶层的 `model_provider` 不再选它
+    if c.id == "codex"
+        && crate::toml::get(text, &["model_provider"]).ok().flatten()
+            != Some(crate::json::Val::s(crate::clients::PROVIDER_ID))
+    {
+        return None;
+    }
     match c.format {
         Format::Json => crate::json::get(text, &path)
             .ok()
