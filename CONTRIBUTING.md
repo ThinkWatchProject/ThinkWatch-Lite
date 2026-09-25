@@ -20,7 +20,7 @@ These decisions are settled and not up for a PR:
   five files for people to install, each with the gateway inside it and a
   sha256 beside it: an arm64 disk image for macOS, an x64 and an arm64
   installer for Windows, and an x86_64 and an aarch64 AppImage for Linux.
-- **macOS: Apple Silicon only, and not signed by Apple.** The macOS
+- **macOS: Apple silicon only, and not signed by Apple.** The macOS
   artifact is an arm64 `.app` in a disk image, signed with the project's
   own self-signed certificate. That certificate does not satisfy Gatekeeper; it
   exists so that every release has the same signer, which is what lets
@@ -94,7 +94,7 @@ These are load-bearing and a PR that breaks one will be asked to change:
   first.** Every destructive action goes through our own confirmation
   UI, never a browser `confirm`.
 
-## Building a `.app`
+## Building a release bundle
 
 `pnpm tauri build` produces a self-contained bundle. The `twcore` inside
 it is downloaded from a ThinkWatch-Core release and checksum-verified —
@@ -107,11 +107,18 @@ shipped beside it always come from one core commit. To move to a newer
 core: change the `tag` in `src-tauri/Cargo.toml`, `cargo update -p
 tw-api`, rebuild.
 
-`pnpm tauri dev` does not run any of this and needs no network. There,
-`locate_core` finds a binary in a sibling `thinkwatch-core` checkout.
+Every build needs that file, including `pnpm tauri dev`, `cargo clippy`
+and `cargo test`, because Tauri checks at compile time that the
+resources `tauri.conf.json` declares exist. In a fresh checkout, run
+`bash src-tauri/scripts/fetch-core.sh` once before the first build.
+`pnpm tauri dev` then runs the copy the build places beside the debug
+binary, and the control-plane tests start it and complete a handshake
+with it, so it has to be the version `Cargo.lock` pins.
 
-On Windows the same command produces an NSIS installer instead, and it
-is not code-signed; on Linux it produces an AppImage. The macOS bundle is Apple Silicon only, and neither
+On macOS the command produces the `.app`, which the release workflow
+puts in a disk image with `dmgbuild` (layout in `src-tauri/dmg/`); on
+Windows it produces an NSIS installer, which is not code-signed; on Linux
+it produces an AppImage. The macOS bundle is Apple silicon only, and neither
 signed nor notarized. On macOS 15 and later a downloaded copy has to be
 cleared once:
 
