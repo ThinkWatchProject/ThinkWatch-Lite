@@ -7,15 +7,18 @@ import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { groupKindLabel, targetLabel } from "@/labels";
-import type { Overview } from "@/types";
+import type { Overview, RouteHits } from "@/types";
 import {
   buildChain,
+  EDGE_W,
+  edgeWidth,
   focusId,
   layoutChain,
   litBy,
   membersOf,
   NODE_H,
   orderedRoutes,
+  trafficOf,
   type ChainFocus,
   type ChainNode,
   type PlacedEdge,
@@ -26,6 +29,7 @@ import { usersOf } from "./model";
 import { KeyIcon, TargetIcon, upstreamState } from "./parts";
 import { partsText } from "./parts.i18n";
 import { routingText } from "./routing.i18n";
+import { hitsOfRoute } from "./useRouteHits";
 
 /**
  * 悬停的那一处。**离开时等一小会儿再清**：鼠标从一个节点移到相邻的节点、从表格的
@@ -59,11 +63,16 @@ export function useChainFocus() {
  * **请求在途时，它走的那条路是亮的**：线深一档，两头的密钥和上游带一个脉冲点。走完
  * 就熄。
  *
+ * **线的粗细是最近几天走过的请求**：路由 → 策略组、拒绝、直连上游那一段按规则决定了
+ * 去向的请求数画，越忙越粗（见 `trafficOf`）。别的线分不出数，照常画。
+ *
  * 单色：线和节点都是前景色的深浅；颜色只留给状态（停用、熔断、拒绝）。
  */
 export function ChainMap({
   ov,
   flights,
+  hits,
+  days,
   focus,
   onEnter,
   onLeave,
@@ -73,6 +82,9 @@ export function ChainMap({
   ov: Overview;
   /** 在途的请求（`useFlights`） */
   flights: ReadonlyMap<number, Flight>;
+  /** 最近 `days` 天各条路由、规则的命中数（`useRouteHits`）。还没读到、读不到时为空，线照常画 */
+  hits: readonly RouteHits[] | undefined;
+  days: number;
   focus: ChainFocus | null;
   onEnter: (f: ChainFocus) => void;
   onLeave: () => void;
@@ -82,7 +94,14 @@ export function ChainMap({
 }) {
   const t = useText(chainMapText);
   const chain = useMemo(() => buildChain(ov), [ov]);
-  const activity = useMemo(() => activityOf(flights, ov, chain), [flights, ov, chain]);
+  const activity = useMemo(() => activityOf(flights, chain), [flights, chain]);
+  /** 每条线画多粗。还没有命中数时都是最细的那一档 */
+  const strokeOf = useMemo(() => {
+    if (!hits) return () => EDGE_W;
+    const traffic = trafficOf(chain, hits);
+    const max = Math.max(0, ...traffic.values());
+    return (id: string) => edgeWidth(traffic.get(id), max);
+  }, [chain, hits]);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -135,21 +154,37 @@ export function ChainMap({
               className="pointer-events-none absolute inset-0 overflow-visible"
               aria-hidden
             >
-              <g fill="none" strokeLinecap="round">
+              {/*
+                平头：线的两头都藏在节点底下，圆头只会在穿过策略组那一列的接缝处叠出一个深点
+                （线是半透明的，粗了更显眼）
+              */}
+              <g fill="none" strokeLinecap="butt">
                 {layout.edges.map((e) => (
-                  <BaseEdge key={e.edge.id} e={e} dim={lit !== null && !lit.edges.has(e.edge.id)} />
+                  <BaseEdge
+                    key={e.edge.id}
+                    e={e}
+                    w={strokeOf(e.edge.id)}
+                    dim={lit !== null && !lit.edges.has(e.edge.id)}
+                  />
                 ))}
                 {layout.edges.map((e) => (
                   <LiveEdge
                     key={e.edge.id}
                     e={e}
+                    w={strokeOf(e.edge.id)}
                     on={activity?.edges.has(e.edge.id) ?? false}
                     dim={lit !== null && !lit.edges.has(e.edge.id)}
                     calm={calm}
                   />
                 ))}
                 {layout.edges.map((e) => (
-                  <LitEdge key={e.edge.id} e={e} on={lit?.edges.has(e.edge.id) ?? false} calm={calm} />
+                  <LitEdge
+                    key={e.edge.id}
+                    e={e}
+                    w={strokeOf(e.edge.id)}
+                    on={lit?.edges.has(e.edge.id) ?? false}
+                    calm={calm}
+                  />
                 ))}
               </g>
             </svg>
@@ -161,6 +196,8 @@ export function ChainMap({
                   node={p.node}
                   ov={ov}
                   live={activity?.nodes.get(p.node.id) ?? 0}
+                  hits={hits}
+                  days={days}
                   style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
                   state={
                     lit === null
@@ -183,13 +220,17 @@ export function ChainMap({
   );
 }
 
-/** 底下那层线：一直在，悬停别处时淡下去 */
-function BaseEdge({ e, dim }: { e: PlacedEdge; dim: boolean }) {
+/** 叠在上面的两层（在途、点亮）比底下那层粗一点，底下已经更粗时和它一样粗 */
+const over = (w: number) => Math.max(1.5, w);
+
+/** 底下那层线：一直在，悬停别处时淡下去。`w` 是它的粗细（走过的请求越多越粗） */
+function BaseEdge({ e, w, dim }: { e: PlacedEdge; w: number; dim: boolean }) {
   return (
     <path
+      data-edge={e.edge.id}
       d={e.d}
       stroke="currentColor"
-      strokeWidth={1.25}
+      strokeWidth={w}
       strokeDasharray={e.edge.idle ? "3 4" : undefined}
       className={cn(
         "transition-opacity duration-(--motion-base) ease-(--motion-ease) motion-reduce:transition-none",
@@ -204,13 +245,13 @@ function BaseEdge({ e, dim }: { e: PlacedEdge; dim: boolean }) {
  * 在途请求走的那段：比底下那层深一档，出现、熄灭都是淡入淡出。悬停别处时和底下那层
  * 一起淡下去。
  */
-function LiveEdge({ e, on, dim, calm }: { e: PlacedEdge; on: boolean; dim: boolean; calm: boolean }) {
+function LiveEdge({ e, w, on, dim, calm }: { e: PlacedEdge; w: number; on: boolean; dim: boolean; calm: boolean }) {
   return (
     <path
-      data-live={on || undefined}
+      data-live={on ? e.edge.id : undefined}
       d={e.d}
       stroke="currentColor"
-      strokeWidth={1.5}
+      strokeWidth={over(w)}
       className="text-foreground/50"
       style={{
         opacity: on ? (dim ? 0.4 : 1) : 0,
@@ -225,7 +266,7 @@ function LiveEdge({ e, on, dim, calm }: { e: PlacedEdge; on: boolean; dim: boole
  * 起点在越靠右的层越晚一点开始，读起来是请求从密钥走到上游。熄灭时直接淡出，再在
  * 看不见的时候把偏移拨回去，下一次还是从头画。
  */
-function LitEdge({ e, on, calm }: { e: PlacedEdge; on: boolean; calm: boolean }) {
+function LitEdge({ e, w, on, calm }: { e: PlacedEdge; w: number; on: boolean; calm: boolean }) {
   const style: CSSProperties = calm
     ? { strokeDashoffset: on ? 0 : 1, opacity: on ? 1 : 0, transition: "none" }
     : on
@@ -245,7 +286,7 @@ function LitEdge({ e, on, calm }: { e: PlacedEdge; on: boolean; calm: boolean })
       pathLength={1}
       strokeDasharray="1 1"
       stroke="currentColor"
-      strokeWidth={1.5}
+      strokeWidth={over(w)}
       className="text-foreground/75"
       style={style}
     />
@@ -258,6 +299,8 @@ function Node({
   node,
   ov,
   live,
+  hits,
+  days,
   style,
   state,
   onEnter,
@@ -268,6 +311,8 @@ function Node({
   ov: Overview;
   /** 经过它的在途请求数 */
   live: number;
+  hits: readonly RouteHits[] | undefined;
+  days: number;
   style: CSSProperties;
   state: NodeState;
   onEnter: (f: ChainFocus) => void;
@@ -280,7 +325,7 @@ function Node({
   const group = node.kind === "group" ? ov.groups.find((g) => g.name === node.name) : undefined;
   // 拒绝没有东西可打开；内置的「全部上游」不能编辑
   const openable = node.kind !== "deny" && !group?.builtin;
-  const { body, tip } = describe(node, ov, live, t, rt);
+  const { body, tip } = describe(node, ov, live, hits, days, t, rt);
   return (
     <Tip text={tip}>
       <div
@@ -311,6 +356,8 @@ function describe(
   node: ChainNode,
   ov: Overview,
   live: number,
+  hits: readonly RouteHits[] | undefined,
+  days: number,
   t: (typeof chainMapText)["zh"],
   rt: (typeof routingText)["zh"],
 ): { body: ReactNode; tip: ReactNode } {
@@ -350,6 +397,7 @@ function describe(
     case "route": {
       const r = ov.routes.find((x) => x.name === node.name)!;
       const users = usersOf(r, ov.clients);
+      const h = hitsOfRoute(hits, r.name);
       // 默认路由不在节点上标：下面的表里那一行带「默认」，悬停说明里也写着
       return {
         body: (
@@ -363,6 +411,7 @@ function describe(
           r.default && t.defaultRoute,
           users.length ? t.keyCount(users.length) : t.unusedRoute,
           t.ruleCount(r.rules.length),
+          h === undefined ? null : h ? rt.requestsIn(days, h.requests) : rt.noRequestsIn(days),
         ),
       };
     }

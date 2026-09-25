@@ -22,7 +22,8 @@ import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ALL_UPSTREAMS, conditionText, targetLabel } from "@/labels";
-import type { KnownModel, Overview, RouteInput } from "@/types";
+import type { Resource } from "@/lib/resource";
+import type { KnownModel, Overview, RouteHits, RouteInput } from "@/types";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
 import { ToggleChips, onOpenFocus } from "./fields";
@@ -46,6 +47,7 @@ import { routeDialogText } from "./RouteDialog.i18n";
 import { routingText } from "./routing.i18n";
 import { RuleDialog } from "./RuleDialog";
 import { useReorder } from "./useReorder";
+import { hitsOfRoute, hitsOfRule } from "./useRouteHits";
 
 export type RouteDialogMode =
   | { kind: "create" }
@@ -64,11 +66,16 @@ const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
  * **一次保存就是整条路由**：名称、使用它的密钥、规则的顺序，一个配置版本。
  * 取消不写入任何东西。规则在嵌套的规则对话框里编辑（单击一行打开），那边的
  * 「保存」只改这里的草稿。
+ *
+ * 编辑时每条规则名下写着它最近几天命中了多少（只附加改写的、选定上游之后才判断的
+ * 也算），哪条用不上了一眼看得出。
  */
 export function RouteDialog({
   mode,
   ov,
   models,
+  hits,
+  days,
   configVersion,
   onChanged,
   onClose,
@@ -78,6 +85,9 @@ export function RouteDialog({
   mode: RouteDialogMode;
   ov: Overview;
   models: KnownModel[];
+  /** 最近 `days` 天的命中数（`useRouteHits`） */
+  hits: Resource<RouteHits[]>;
+  days: number;
   configVersion: string;
   onChanged: () => void;
   onClose: () => void;
@@ -96,6 +106,8 @@ export function RouteDialog({
         ? ov.routes.find((r) => r.name === mode.from)
         : undefined;
   const isDefault = mode.kind === "edit" && !!source?.default;
+  // 只有已保存的路由有命中数；这段时间整条路由都没有请求时不逐条写「未命中」（同路由列表）
+  const routeHits = mode.kind === "edit" ? hitsOfRoute(hits.data, mode.name) : null;
   const original = mode.kind === "edit" && source ? usersOf(source, ov.clients) : [];
 
   const [name, setName] = useState(
@@ -341,6 +353,9 @@ export function RouteDialog({
                                 {n.shadowed && <Badge variant="warning">{t.noEffect}</Badge>}
                                 {n.phaseTwo && <Badge variant="outline">{t.phaseTwo}</Badge>}
                               </div>
+                              {routeHits && r.saved != null && (
+                                <RuleHitsLine n={hitsOfRule(routeHits, r.saved).requests} days={days} />
+                              )}
                             </TableCell>
                             <TableCell className="truncate">
                               {r.conditions.length === 0 ? (
@@ -434,6 +449,19 @@ export function RouteDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 规则名下面那一行：最近几天命中了多少。一次都没命中的照样写出来 —— 这正是决定
+ * 删不删、挪不挪它的时候要看的
+ */
+function RuleHitsLine({ n, days }: { n: number; days: number }) {
+  const t = useText(routeDialogText);
+  return (
+    <div className="truncate tw-label tw-num text-muted-foreground">
+      {n > 0 ? t.hits(days, n) : t.noHits(days)}
+    </div>
   );
 }
 

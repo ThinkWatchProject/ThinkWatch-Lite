@@ -32,6 +32,11 @@ export const routingText = messages(
     continueMatching: "继续匹配",
     allRequests: "全部请求（兜底）",
     affectsCache: "影响 prompt cache",
+    /** 最近几天的命中数：一列数的表头、一次都没命中、一条路由走了多少请求 */
+    hitsIn: (days: number) => `${days} 天命中`,
+    noHits: "未命中",
+    requestsIn: (days: number, n: number) => `${days} 天 ${n.toLocaleString()} 次请求`,
+    noRequestsIn: (days: number) => `${days} 天内无请求`,
     listSep: "、",
     /** 一行里并列的几件事 */
     clauseSep: " · ",
@@ -60,6 +65,11 @@ export const routingText = messages(
     continueMatching: "Continue matching",
     allRequests: "All requests (catch-all)",
     affectsCache: "Affects prompt cache",
+    hitsIn: (days: number) => `${days}-day hits`,
+    noHits: "No hits",
+    requestsIn: (days: number, n: number) =>
+      `${n === 1 ? "1 request" : `${n.toLocaleString()} requests`} in ${days === 1 ? "1 day" : `${days} days`}`,
+    noRequestsIn: (days: number) => `No requests in ${days === 1 ? "1 day" : `${days} days`}`,
     listSep: ", ",
     clauseSep: " · ",
   },

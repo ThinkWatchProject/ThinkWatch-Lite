@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { ClientView, GroupView, ProviderView, RouteView, RuleView } from "@/types";
-import { buildChain, chainId, DENSE_FROM, layoutChain, litBy, NODE_H, type Chain } from "./chain";
+import type { ClientView, GroupView, ProviderView, RouteHits, RouteView, RuleHits, RuleView } from "@/types";
+import {
+  buildChain,
+  chainId,
+  DENSE_FROM,
+  EDGE_W,
+  edgeWidth,
+  layoutChain,
+  litBy,
+  NODE_H,
+  trafficOf,
+  type Chain,
+} from "./chain";
 
 const key = (name: string, x: Partial<ClientView> = {}): ClientView => ({
   name,
@@ -161,6 +172,66 @@ describe("路由图的连线", () => {
     expect(node("up:b").idle).toBe(true);
     expect(edge(c, "group:__all__", "up:b")?.idle).toBe(true);
     expect(edge(c, "group:__all__", "up:a")?.idle).toBe(false);
+  });
+});
+
+describe("走过的请求", () => {
+  const hit = (rule: string, decided: number, requests = decided): RuleHits => ({ rule, decided, requests, failed: 0, last_ms: 1 });
+  const routeHits = (route: string, rules: RuleHits[]): RouteHits => ({
+    route,
+    requests: rules.reduce((n, r) => n + r.decided, 0),
+    failed: 0,
+    last_ms: 1,
+    rules,
+  });
+
+  it("每条画出来的规则连到哪几站：策略组、拒绝、穿过第二列的直连上游", () => {
+    const c = buildChain(sample());
+    expect(c.rules.get("default")?.get("opus")).toEqual(["via:anthropic", "up:anthropic"]);
+    expect(c.rules.get("default")?.get("catch-all")).toEqual(["group:main"]);
+    expect(c.rules.get("codex")?.get("no-opus")).toEqual(["deny"]);
+    // 没有第二列时直连上游
+    const flat = buildChain({
+      clients: [key("default")],
+      routes: [route("default", [catchAll("catch-all", "a")], { default: true })],
+      groups: [ALL],
+      providers: [up("a")],
+    });
+    expect(flat.rules.get("default")?.get("catch-all")).toEqual(["up:a"]);
+  });
+
+  it("路由 → 第二列那一段按决定了去向的请求数；直连的线穿过去之后还是它们；连到同一站的规则相加", () => {
+    const c = buildChain(sample());
+    const t = trafficOf(c, [
+      routeHits("default", [hit("catch-all", 600), hit("opus", 40, 45), hit("ds", 0, 3)]),
+      routeHits("codex", [hit("catch-all", 300), hit("qwen", 20), hit("no-opus", 1)]),
+    ]);
+    expect(t.get("route:default>group:main")).toBe(600);
+    expect(t.get("route:default>via:anthropic")).toBe(40);
+    expect(t.get("via:anthropic>up:anthropic")).toBe(40);
+    expect(t.get("route:codex>deny")).toBe(1);
+    expect(t.get("route:codex>via:chatgpt")).toBe(300);
+    // 只附加了改写、没有决定过去向的：线上没有数
+    expect(t.has("route:default>via:deepseek")).toBe(false);
+    // 密钥 → 路由、策略组 → 上游在统计里分不出来
+    expect(t.has("key:default>route:default")).toBe(false);
+    expect(t.has("group:main>up:anthropic")).toBe(false);
+  });
+
+  it("统计里有、图上没有的路由和规则不落到线上", () => {
+    const c = buildChain(sample());
+    const t = trafficOf(c, [routeHits("renamed", [hit("catch-all", 9)]), routeHits("default", [hit("gone", 5)])]);
+    expect(t.size).toBe(0);
+  });
+
+  it("线宽：没有数的最细，最忙的最粗，只走过一个请求的也明显比没有粗", () => {
+    expect(edgeWidth(undefined, 600)).toBe(EDGE_W);
+    expect(edgeWidth(0, 600)).toBe(EDGE_W);
+    expect(edgeWidth(5, 0)).toBe(EDGE_W);
+    const top = edgeWidth(600, 600);
+    expect(edgeWidth(1, 600) - EDGE_W).toBeGreaterThanOrEqual(0.35);
+    expect(top).toBeGreaterThan(edgeWidth(300, 600));
+    expect(top).toBe(3.25);
   });
 });
 

@@ -3,6 +3,7 @@
  *
  * · `buildChain`：图怎么连。每一把密钥走哪条路由、路由的规则把请求交给谁、
  *   策略组里有哪些上游 —— 全部从概览里读，不猜。
+ * · `trafficOf`：每条线在统计窗口里走过多少请求（线宽按它）。
  * · `layoutChain`：每个节点画在哪儿、每条线怎么弯。
  * · `litBy`：悬停一处时哪些节点和线要亮。
  *
@@ -10,7 +11,7 @@
  * （`phase_two`）、只附加改写的（继续匹配）不改变请求去哪儿，画出来反而像
  * 多了几条路。和路由列表「规则」一栏同一个口径（`flowOf`）。
  */
-import type { ClientView, GroupView, Overview, RouteView } from "@/types";
+import type { ClientView, GroupView, Overview, RouteHits, RouteView, RuleView } from "@/types";
 
 export type ChainKind = "key" | "route" | "group" | "deny" | "via" | "upstream";
 
@@ -46,6 +47,12 @@ export interface Chain {
   paths: string[][];
   /** 有没有策略组那一列（策略组、拒绝）。没有时路由直接连上游 */
   middle: boolean;
+  /**
+   * 画出来的每条规则在路由之后连到哪几站：策略组、拒绝，或者直连的上游（有第二列时
+   * 先穿过它）。按路由名、规则名找 —— 在途请求和命中数报的都是「哪条路由的哪条规则」，
+   * 靠它落到线上
+   */
+  rules: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
 }
 
 export const chainId = {
@@ -73,21 +80,26 @@ export function membersOf(g: GroupView, providers: readonly string[]): string[] 
   return g.providers;
 }
 
-/** 一条路由把请求交给的去向，按规则顺序、去重 */
+/** 规则把请求交给的去向 */
 type Target = { kind: "group" | "deny" | "upstream"; name: string };
 
+/** 一条规则的去向。不画的规则（见文件头）和指向不存在的去向的没有 */
+function targetOf(x: RuleView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target | null {
+  if (x.shadowed || x.phase_two) return null;
+  if (x.to) {
+    if (groups.has(x.to)) return { kind: "group", name: x.to };
+    if (providers.has(x.to)) return { kind: "upstream", name: x.to };
+    return null;
+  }
+  return x.deny != null ? { kind: "deny", name: "" } : null;
+}
+
+/** 一条路由把请求交给的去向，按规则顺序、去重 */
 export function targetsOf(r: RouteView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
   const out: Target[] = [];
   const seen = new Set<string>();
   for (const x of r.rules) {
-    if (x.shadowed || x.phase_two) continue;
-    let t: Target | null = null;
-    if (x.to) {
-      if (groups.has(x.to)) t = { kind: "group", name: x.to };
-      else if (providers.has(x.to)) t = { kind: "upstream", name: x.to };
-    } else if (x.deny != null) {
-      t = { kind: "deny", name: "" };
-    }
+    const t = targetOf(x, groups, providers);
     if (!t) continue;
     const k = `${t.kind}:${t.name}`;
     if (seen.has(k)) continue;
@@ -129,6 +141,27 @@ export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | 
   const shownGroups = ov.groups.filter((g) => !g.builtin || referencedGroups.has(g.name));
   const middle = shownGroups.length > 0 || anyDeny;
 
+  /** 一个去向在路由之后的那几站：直连的上游在有第二列时先穿过它 */
+  const stationsOf = (t: Target): string[] =>
+    t.kind === "deny"
+      ? [chainId.deny]
+      : t.kind === "group"
+        ? [chainId.group(t.name)]
+        : middle
+          ? [chainId.via(t.name), chainId.upstream(t.name)]
+          : [chainId.upstream(t.name)];
+  const rules = new Map(
+    routes.map((r) => [
+      r.name,
+      new Map(
+        r.rules.flatMap((x) => {
+          const t = targetOf(x, groupNames, providerSet);
+          return t ? [[x.name, stationsOf(t)] as const] : [];
+        }),
+      ),
+    ]),
+  );
+
   // ── 路：从密钥（没有密钥时从路由）一直走到头
   const paths: { ids: string[]; live: boolean }[] = [];
   const keysOf = new Map<string, ClientView[]>();
@@ -144,11 +177,9 @@ export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | 
   const tailsOf = (r: RouteView): { ids: string[]; live: boolean }[] => {
     const out: { ids: string[]; live: boolean }[] = [];
     for (const t of targets.get(r.name) ?? []) {
-      if (t.kind === "deny") out.push({ ids: [chainId.deny], live: true });
-      else if (t.kind === "upstream") {
-        const up = chainId.upstream(t.name);
-        out.push({ ids: middle ? [chainId.via(t.name), up] : [up], live: !stoppedUpstreams.has(t.name) });
-      } else {
+      if (t.kind === "deny") out.push({ ids: stationsOf(t), live: true });
+      else if (t.kind === "upstream") out.push({ ids: stationsOf(t), live: !stoppedUpstreams.has(t.name) });
+      else {
         const g = groupsByName.get(t.name)!;
         const ms = membersOf(g, providerNames).filter((m) => providerSet.has(m));
         if (ms.length === 0) out.push({ ids: [chainId.group(t.name)], live: true });
@@ -279,7 +310,51 @@ export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | 
     edges: [...edgeMap.values()],
     paths: paths.map((p) => p.ids),
     middle,
+    rules,
   };
+}
+
+// ---------------------------------------------------------------- 走过的请求
+
+/**
+ * 每条线在统计窗口里走过多少请求（`GET /summary/routes`，按线的 id）。
+ *
+ * 「路由 → 第二列」那一段：这条路由里连到那一站的规则**决定了去向**的请求数之和
+ * （`decided`）；直连上游的线穿过第二列之后还是这些请求。**别的线没有数**：一条路由
+ * 几把密钥共用时各走了多少、策略组里由哪个上游接下，统计里都分不出来，那几段照常画。
+ * 统计里有、图上没有的路由和规则（改过名、删掉了）落不到线上。
+ */
+export function trafficOf(chain: Chain, hits: readonly RouteHits[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of hits) {
+    const links = chain.rules.get(r.route);
+    if (!links) continue;
+    for (const x of r.rules) {
+      const stations = links.get(x.rule);
+      if (!stations || x.decided === 0) continue;
+      const path = [chainId.route(r.route), ...stations];
+      for (let i = 1; i < path.length; i++) {
+        const id = edgeId(path[i - 1]!, path[i]!);
+        out.set(id, (out.get(id) ?? 0) + x.decided);
+      }
+    }
+  }
+  return out;
+}
+
+/** 线宽：没有数的、一个请求都没走过的是最细的那一档 */
+export const EDGE_W = 1.25;
+/** 走过请求的线至少这么粗：只走过一两个的也和一个都没走过的分得开 */
+const EDGE_W_USED = 1.6;
+const EDGE_W_MAX = 3.25;
+
+/**
+ * 走过 `n` 个请求的线画多粗：最忙的那条（`max`）最粗。**按平方根放大**，最忙的那条不会
+ * 把别的都压成一样细。
+ */
+export function edgeWidth(n: number | undefined, max: number): number {
+  if (!n || max <= 0) return EDGE_W;
+  return EDGE_W_USED + (EDGE_W_MAX - EDGE_W_USED) * Math.sqrt(Math.min(1, n / max));
 }
 
 /** 相邻两层之间的线交叉了几次：两条线的起点和终点上下颠倒就是一次 */

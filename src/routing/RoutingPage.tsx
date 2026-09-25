@@ -28,6 +28,7 @@ import { RouteTable } from "./RouteTable";
 import { routingText } from "./routing.i18n";
 import { routingPageText } from "./RoutingPage.i18n";
 import { useFlights } from "./useFlights";
+import { useRouteHits } from "./useRouteHits";
 
 export type RoutingTab = "routes" | "groups" | "probes";
 
@@ -73,6 +74,8 @@ export default function RoutingPage({
   const hover = useChainFocus();
   // 挂在页上，不挂在图上：切到「辅助请求」再切回来，在途的请求还在
   const flights = useFlights();
+  // 图的线宽和列表里的命中数是同一份
+  const { hits, days } = useRouteHits(ov.retention.row_days);
   // 命令面板和别的页送来的：打开这一页上的对话框，和点按钮、点那一行一样（见 nav.tsx）
   useNavParams("routing", (p) => {
     if (p.editRoute && ov.routes.some((r) => r.name === p.editRoute)) {
@@ -283,6 +286,8 @@ export default function RoutingPage({
             className="mt-4"
             ov={view}
             flights={flights}
+            hits={hits.data}
+            days={days}
             focus={hover.focus}
             onEnter={hover.enter}
             onLeave={hover.leave}
@@ -293,6 +298,8 @@ export default function RoutingPage({
         <TabsContent value="routes" className="pt-4">
           <RouteTable
             ov={view}
+            hits={hits}
+            days={days}
             focus={hover.focus}
             onEnter={hover.enter}
             onLeave={hover.leave}
@@ -338,6 +345,8 @@ export default function RoutingPage({
           mode={dialog.mode}
           ov={view}
           models={models}
+          hits={hits}
+          days={days}
           configVersion={view.config_version}
           onChanged={onChanged}
           onClose={() => setDialog(null)}
