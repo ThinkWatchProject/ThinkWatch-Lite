@@ -52,6 +52,8 @@ function setup(id: string, path: string): ManualSetup {
           set("model_providers.thinkwatch.name", "ThinkWatch"),
           set("model_providers.thinkwatch.base_url", v1()),
           set("model_providers.thinkwatch.wire_api", "responses"),
+          set("model_providers.thinkwatch.requires_openai_auth", "false"),
+          set("model_providers.thinkwatch.supports_websockets", "false"),
           set("model_providers.thinkwatch.http_headers", '{ X-ThinkWatch-Client = "codex" }'),
           secret("model_providers.thinkwatch.experimental_bearer_token"),
         ],
