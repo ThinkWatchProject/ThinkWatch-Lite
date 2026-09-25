@@ -21,6 +21,10 @@
 # 它们一起挂上去 —— 只发出一部分的话，latest.json 要么缺平台，要么指向
 # 一个不存在的文件。
 #
+# 发布页的标题是「ThinkWatch Lite <版本>」，正文（英文）由
+# `scripts/release_notes.py` 写：`release-notes/<版本>.md` 里的说明、下载表、
+# 核对方法、上一版以来合并的 PR。见 `release-body` 这个 job。
+#
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出安装包并且
 # 在发出去之前拆开看一眼。
@@ -505,9 +509,54 @@ jobs:
             dist/ThinkWatch-Lite-*.AppImage.sig
           if-no-files-found: error
 
+  # 发布页上的正文，英文：这一版的说明（`release-notes/<版本>.md`，可以没有）、
+  # 各平台的下载表和安装命令、核对方法，最后是 GitHub 按上一版以来合并的 PR 生成
+  # 的清单。怎么拼见 `scripts/release_notes.py`。
+  #
+  # **单独一个 job，演练也跑。**它不等安装包：推一个 `rehearse/` 分支，一分钟内
+  # 就能在这次运行的摘要里看到发布页会是什么样。发布时 `publish` 取它的产物。
+  release-body:
+    name: Release page text
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag is the version in the tree
+        run: |
+          set -euo pipefail
+          GOT=$(bash scripts/version.sh)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            WANT="${GITHUB_REF_NAME#v}"
+            if [ "$GOT" != "$WANT" ]; then
+              echo "tag 是 $WANT，而代码里写的是 $GOT" >&2
+              exit 1
+            fi
+          fi
+          echo "VERSION=$GOT" >> "$GITHUB_ENV"
+
+      # 清单向 GitHub 要：和它在发布页上「自动生成」的是同一份。演练时这个 tag
+      # 可能还不存在，那就算到这次的 commit 为止（tag 存在时 target_commitish 不起作用）
+      - name: Write it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="v$VERSION" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > "$RUNNER_TEMP/changes.md"
+          mkdir -p page
+          python3 scripts/release_notes.py "$VERSION" "$RUNNER_TEMP/changes.md" > page/release-body.md
+          cat page/release-body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-body
+          path: page/release-body.md
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: [app, windows, linux]
+    needs: [app, windows, linux, release-body]
     # 演练到上面为止
     if: github.ref_type == 'tag'
     runs-on: macos-latest
@@ -521,8 +570,9 @@ jobs:
 
       - run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      # tag 上那段话就是应用里显示的发布说明 —— 自动生成的提交清单在
-      # 那个位置对用户没有意义。
+      # tag 上那段话写进 latest.json，是给已经装上的应用的发布说明（2026.9.13
+      # 之前的版本在更新窗口里显示它）—— 自动生成的提交清单在那个位置对用户
+      # 没有意义。发布页上的正文是另一份，见 `release-body`。
       #
       # **不从工作区的 git 里读。**`actions/checkout` 取 tag 时建的是一个
       # 直接指向 commit 的轻量引用，注解对象根本不在这个克隆里；
@@ -544,6 +594,8 @@ jobs:
           fi
           cat notes.txt
 
+      # 各平台的安装包，和 `release-body` 写好的正文（`dist/release-body.md`，
+      # 下面的 `files` 不挂它）
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -560,8 +612,32 @@ jobs:
             "linux-x86_64-appimage=dist/ThinkWatch-Lite-$VERSION-x86_64.AppImage" \
             "linux-aarch64-appimage=dist/ThinkWatch-Lite-$VERSION-aarch64.AppImage"
 
+      # **正文只在建 Release 时写一次。**Release 已经在了 —— 重跑这个 job（比如
+      # 挂文件挂到一半断了），或者有人先手工建好了 —— 就不动它的正文：那可能是
+      # 发布之后有人亲手改过的。
+      #
+      # 「不存在」只认 gh 查不到时的那句 `release not found`。网络断了、令牌不对，
+      # gh 一样失败；把那些也当成「不存在」，就会盖掉一份已有的正文
+      - name: The page text, only for a release that does not exist yet
+        id: page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if out=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+            echo "Release $GITHUB_REF_NAME 已经存在，正文保持原样"
+            echo "body_path=" >> "$GITHUB_OUTPUT"
+          elif grep -qx 'release not found' <<<"$out"; then
+            echo "body_path=dist/release-body.md" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
+          name: ThinkWatch Lite ${{ env.VERSION }}
+          # 空的话（Release 已经在了）这个 action 保留原有的正文
+          body_path: ${{ steps.page.outputs.body_path }}
           # `.sig` 不挂：签名已经写进 latest.json，挂上去只是多几个让人
           # 不知道该下哪个的文件。`install.sh` 挂上去是为了一个固定的地址
           # （`releases/latest/download/install.sh`），它读的是同一版的 latest.json
@@ -574,7 +650,6 @@ jobs:
             dist/ThinkWatch-Lite-*.AppImage.sha256
             dist/latest.json
             scripts/install.sh
-          generate_release_notes: true
 
       # Homebrew 装的应用读的是 tap 里的 cask：**cask 没跟上之前，
       # `brew upgrade` 什么也装不到**，那部分用户就一直停在上一版。所以发布

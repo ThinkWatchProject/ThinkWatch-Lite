@@ -121,6 +121,45 @@ That flag is set by whatever downloaded the file. An update fetched by
 the app itself never carries it, so this is a one-time step rather than
 one per release.
 
+## Releases
+
+A release is an annotated tag `v<version>` on `main`, such as
+`v2026.9.16`. The version is written in `package.json`,
+`src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (and in
+`src-tauri/Cargo.lock`); `bash scripts/version.sh` checks that the three
+agree, and `release.yml` refuses a tag that differs from them.
+
+Pushing the tag runs `release.yml`. It builds the five installers, looks
+inside each one, signs them for the updater and publishes them in one
+step, together with their `.sha256` files, `latest.json` and
+`install.sh`; if one platform fails, nothing is published. To try a
+change to `release.yml`, push the branch as `rehearse/<name>`: every job
+runs and the installers are kept as the run's artifacts, but nothing is
+published.
+
+A release has two texts:
+
+- **The tag message.** Its first line is `ThinkWatch Lite <version>`; the
+  rest becomes the `notes` of `latest.json`, the manifest for in-app
+  updates. It is not shown on the release page.
+- **The release page**, titled `ThinkWatch Lite <version>` and written in
+  English by `scripts/release_notes.py`, in this order:
+  1. `release-notes/<version>.md`, when that file exists: a summary of the
+     release in paragraphs or lists, without a top-level heading. Add it in
+     the pull request that bumps the version, because the tag fixes what
+     the tree contains.
+  2. A table of the file for each platform, and the Homebrew and Linux
+     install commands.
+  3. How to verify a download against its `.sha256`.
+  4. GitHub's list of the pull requests merged since the previous release.
+
+  The text is written when the release is created. A release that already
+  exists keeps its text, so a correction after publishing is made on the
+  release page itself. CI runs `python3 scripts/release_notes_test.py`,
+  which checks the script against `release.yml` and renders every file in
+  `release-notes/`; a rehearsal shows the complete text in the summary of
+  its run.
+
 ## Product screenshots
 
 The images in `docs/screenshots/` — used by the READMEs and, through
