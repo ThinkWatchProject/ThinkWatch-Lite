@@ -35,6 +35,7 @@ const KEY_RE = /^[0-9a-fA-F]{64}$/;
 export function ProfileDialog({
   editing,
   isCurrent,
+  required,
   onClose,
   onSaved,
 }: {
@@ -42,6 +43,8 @@ export function ProfileDialog({
   editing: Profile | null;
   /** 编辑的是当前连着的那一条：没有「保存并切换」，存完就按新的地址重连 */
   isCurrent: boolean;
+  /** 这一版应用配的 core（`ConnView.required_core`）。试连遇到版本不一致时用它写出命令 */
+  required: string;
   onClose: () => void;
   /** 存好了。`andSwitch`：点的是「保存并切换」，带着刚才试连的结果 */
   onSaved: (p: Profile, andSwitch: ServerInfo | null) => void;
@@ -209,7 +212,12 @@ export function ProfileDialog({
           </FormRow>
         </FormRows>
 
-        <TestResult result={result} host={host.trim()} testing={busy === "test" || busy === "switch"} />
+        <TestResult
+          result={result}
+          host={host.trim()}
+          required={required}
+          testing={busy === "test" || busy === "switch"}
+        />
 
         <Banner layout="inline" tone="error" show={error !== null}>
           {error}
@@ -257,11 +265,14 @@ export function ProfileDialog({
 export function TestResult({
   result,
   host,
+  required,
   testing,
 }: {
   result: { ok: true; info: ServerInfo } | { ok: false; error: ConnectError } | null;
   /** 连的是哪个主机。网关地址按它写，见 `clientGateway` */
   host?: string;
+  /** 这一版应用配的 core。版本不一致时的下一步用它，见 `describeError` */
+  required: string;
   testing: boolean;
 }) {
   const t = useText(connText);
@@ -286,7 +297,7 @@ export function TestResult({
     );
   }
   // 发生了什么（标题）和下一步做什么（正文）。**不用 ×**：× 在对话框里只表示关闭
-  const d = describeError(result.error);
+  const d = describeError(result.error, required);
   return (
     <Banner layout="inline" tone="error" title={d.title} className="motion-fade">
       {d.next}

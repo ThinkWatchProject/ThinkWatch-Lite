@@ -9,12 +9,28 @@ export function code(text: string): ReactNode {
 }
 
 /**
+ * 在服务器上装本应用需要的那一版 core 的命令。未连接页和连接对话框给的都是这一条。
+ *
+ * **指定版本，不是「升级到最新」。**服务器上的 core 必须是这一版应用配的那一版，而服务器
+ * 可能比应用新 —— 这时升级到最新什么也不会改变。`twcore upgrade --version` 装指定的那一版，
+ * 比服务器上现有的旧也照装。`--restart`：服务由 systemd 管着时当场重启成这一版。二进制在
+ * `/usr/local/bin`，重启服务也要 root，所以带 `sudo`
+ */
+export function coreInstallCommand(version: string): string {
+  return `sudo twcore upgrade --version ${version} --restart`;
+}
+
+/**
  * 连不上的原因说成两句：**发生了什么**，和**下一步做什么**。
  *
  * 四种都给出下一步（设计稿 ③）。「被关闭」只能说「可能」：core 对允许列表之外的地址
  * accept 之后直接关、一个字节不回，应用分不出那是不是唯一的原因。
+ *
+ * `required` 是这一版应用配的 core（`ConnView.required_core`），版本不一致时的下一步用它
+ * 写出命令。**不用错误里的 `ours`**：两边版本号相同、协议不同时（没发版的构建之间），
+ * 它带着协议号，不是一个能装的版本
  */
-export function describeError(e: ConnectError): { title: string; next: ReactNode } {
+export function describeError(e: ConnectError, required: string): { title: string; next: ReactNode } {
   const t = textOf(connText);
   switch (e.kind) {
     case "unreachable":
@@ -26,7 +42,7 @@ export function describeError(e: ConnectError): { title: string; next: ReactNode
     case "wrong_key":
       return { title: t.wrongKey, next: t.wrongKeyNext(code) };
     case "version_mismatch":
-      return { title: t.mismatch(e.theirs, e.ours), next: t.mismatchNext };
+      return { title: t.mismatch(e.theirs, e.ours), next: t.mismatchNext(code, coreInstallCommand(required)) };
   }
 }
 

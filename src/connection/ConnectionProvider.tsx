@@ -94,10 +94,12 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={actions}>
       {children}
-      {editing && (
+      {/* 两个对话框都等连接列表读到了再出现：试连遇到版本不一致时，命令里的版本来自它 */}
+      {editing && view && (
         <ProfileDialog
           editing={editing.profile}
-          isCurrent={editing.profile !== null && editing.profile.id === view?.current}
+          isCurrent={editing.profile !== null && editing.profile.id === view.current}
+          required={view.required_core}
           onClose={() => setEditing(null)}
           onSaved={(p, andSwitch) => {
             setEditing(null);
@@ -105,10 +107,11 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           }}
         />
       )}
-      {switching && (
+      {switching && view && (
         <SwitchDialog
           target={switching.target}
           tested={switching.tested}
+          required={view.required_core}
           onClose={() => setSwitching(null)}
           onEdit={(p) => {
             setSwitching(null);
