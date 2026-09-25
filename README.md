@@ -11,13 +11,12 @@
 
 **[English](README.md) | [中文](README.zh-CN.md)**
 
-ThinkWatch Lite is a desktop app that runs an AI API gateway on the local
-machine, on macOS, Windows and Linux. Claude Code, Codex and other clients of
-the OpenAI and Anthropic APIs send their requests through it, and the app
-records what each request cost, which upstream served it and which keys were
-redacted before it was sent. The gateway can also be deployed on a server; the
-app then connects to ThinkWatch Core on that server over an encrypted control
-channel.
+ThinkWatch Lite is a desktop app for macOS, Windows and Linux that runs an AI
+API gateway on the local machine. Claude Code, Codex and other clients of the
+OpenAI and Anthropic APIs send their requests through it, and the app records
+what each request cost, which upstream served it and which keys were redacted
+before it was sent. The gateway can also be deployed on a server; the app then
+connects to ThinkWatch Core on that server over an encrypted control channel.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
