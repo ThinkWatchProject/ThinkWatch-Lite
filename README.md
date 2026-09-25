@@ -410,13 +410,14 @@ System notifications, native on macOS and Windows and sent through the
 desktop's notification service on Linux, report when the gateway stops
 forwarding or keeps restarting, the connection to a remote core drops, a
 subscription quota runs out, a sign-in expires or an upstream rejects its
-credential, a proxy cannot be reached, the configuration file fails
-validation, a tool call matches a rule that cuts the response off, or
-suspicious content appears in a client's configuration. An unreachable
-upstream, which a fallback usually covers, is only listed in the app. Notices
-as a whole can be set to system notifications, in-app only, or off. Marking a
-notice as read stops the bell from counting it; the notice stays in the list
-until the problem behind it clears or the list is cleared.
+credential, a proxy cannot be reached, the configuration file fails validation,
+a tool call matches a rule that cuts the response off, or suspicious content
+appears in a client's configuration. A new version found by the automatic check
+is announced the same way (see [Updates](#updates)). An unreachable upstream,
+which a fallback usually covers, is only listed in the app. Notices as a whole
+can be set to system notifications, in-app only, or off. Marking a notice as
+read stops the bell from counting it; the notice stays in the list until the
+problem behind it clears or the list is cleared.
 
 ## Connecting to a remote core
 
@@ -458,7 +459,10 @@ and any saved server.
   reads the environment of the core process on the server. The diagnostics
   bundle is only offered for the local core.
 - The server has to run the core version this release of the app expects. The
-  app checks this when it connects and names both versions if they differ.
+  app checks this when it connects; if the versions differ, it names both and
+  gives the command that installs the expected version on the server, whether
+  it is newer or older than the installed one:
+  `sudo twcore upgrade --version <version> --restart`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/remote-switcher-dark.png">
@@ -471,8 +475,11 @@ The app looks for a new version shortly after it starts and once a day after
 that, reading a small manifest and nothing else. It can be turned off in
 Settings.
 
-When there is one, a small window says so, and what happens next depends on how
-the app was installed.
+When the check finds one, the app sends a system notification, unless notices
+are set to in-app only or off. The update window opens from that notification,
+from the Install Version item that replaces Check for Updates in the menu bar or
+tray menu, and from the update button in Settings › About. What happens next
+depends on how the app was installed.
 
 **Downloaded from the releases page on macOS:** one press on the install
 button does the rest. The app downloads the update, verifies it against a key
@@ -496,8 +503,10 @@ restarts. The AppImage has to be in a folder the user can write to.
 **Installed with Homebrew:** the window gives the command to copy, and the app
 never replaces itself. Homebrew records which version it put in
 `/Applications`; an app that overwrote it would be written back over by the
-next `brew upgrade`. The window only appears once the tap carries the new
-version, so the command always has something to install:
+next `brew upgrade`. For a Homebrew installation the check reads the version in
+the tap's cask instead of the release manifest, so a new version is only
+reported once the tap carries it, and the command always has something to
+install:
 
 ```bash
 brew update && brew upgrade --cask thinkwatch-lite
