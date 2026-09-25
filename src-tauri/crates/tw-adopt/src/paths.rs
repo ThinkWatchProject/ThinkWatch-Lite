@@ -195,6 +195,12 @@ pub const CLAUDE_DESKTOP_CONFIG: Loc = if cfg!(windows) {
     Loc::XdgConfig("Claude/claude_desktop_config.json")
 };
 
+/// Antigravity CLI（`agy`）的全局 MCP 配置。
+///
+/// 三个平台都在 `~/.gemini/config/` 下（Windows 上是 `%USERPROFILE%`）。
+/// 早期版本放在别处，agy 自己已经迁到这里，旧位置不跟。
+pub const AGY_MCP_CONFIG: Loc = Loc::Home(".gemini/config/mcp_config.json");
+
 /// 机器级的管理策略文件。**优先级压过一切**，包括用户自己的配置。
 ///
 /// 机器级，所以这一个不相对 home。位置照 Claude Code 文档「Deploy managed

@@ -195,13 +195,13 @@ configuration file as Codex), shows the full diff and backs up the original
 file. Only the settings that point the client at the gateway change, and each
 client receives a key of its own. A connected client can be restored at any
 time, on its own or together with all the others. Cursor, Continue and
-Gemini CLI come with step-by-step instructions and a key created for them. For
-every client the page shows whether it is in use, waiting for its first
+Antigravity CLI come with step-by-step instructions and a key created for them.
+For every client the page shows whether it is in use, waiting for its first
 request or not in effect, and its requests over the last 24 hours.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/clients-dark.png">
-  <img src="docs/screenshots/en/clients-light.png" alt="The clients page: Claude Code and Codex connected, each with its own key and its requests over the last 24 hours; opencode not connected; Cursor set up by hand and in use; Continue and Gemini CLI not yet set up; Zed and Aider not detected">
+  <img src="docs/screenshots/en/clients-light.png" alt="The clients page: Claude Code and Codex connected, each with its own key and its requests over the last 24 hours; opencode not connected; Cursor set up by hand and in use; Continue and Antigravity CLI not yet set up; Zed and Aider not detected">
 </picture>
 
 ### Keys
@@ -335,11 +335,11 @@ The MCP page covers what clients load from their own configuration files,
 which does not pass through the gateway.
 
 - **Servers:** the MCP servers configured in Claude Code, Claude Desktop,
-  Cursor, Codex, opencode and Zed, side by side. A server can be copied from
-  one client to another or removed from a client; the change is shown before
-  anything is written, and the original file is backed up. Copying and removing
-  work for Claude Code, Claude Desktop, Cursor and Codex; opencode and Zed are
-  listed but not written to. A remote server on another host is marked as
+  Cursor, Codex, opencode, Antigravity CLI and Zed, side by side. A server can
+  be copied from one client to another or removed from a client; the change is
+  shown before anything is written, and the original file is backed up. Copying
+  and removing work for Claude Code, Claude Desktop, Cursor and Codex;
+  opencode, Antigravity CLI and Zed are listed but not written to. A remote server on another host is marked as
   third party, since using it sends the surrounding context to that host, and
   a server configured differently in different clients is marked as well and
   can be compared side by side.
@@ -356,7 +356,7 @@ notification.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/mcp-dark.png">
-  <img src="docs/screenshots/en/mcp-light.png" alt="The MCP page: the MCP servers configured in Claude Code, Claude Desktop, Cursor, Codex, opencode and Zed side by side, with remote third-party servers and a server configured differently in two clients marked; the header counts one high, one medium and one low finding in 11 scanned files">
+  <img src="docs/screenshots/en/mcp-light.png" alt="The MCP page: the MCP servers configured in Claude Code, Claude Desktop, Cursor, Codex, opencode, Antigravity CLI and Zed side by side, with remote third-party servers and a server configured differently in two clients marked; the header counts one high, one medium and one low finding in 11 scanned files">
 </picture>
 
 ### Settings

@@ -945,7 +945,7 @@ pub fn app_label(hint: &str) -> &str {
         "aider" => "Aider",
         "zed" => "Zed",
         "continue" => "Continue",
-        "gemini-cli" => "Gemini CLI",
+        "antigravity-cli" => "Antigravity CLI",
         other => other,
     }
 }

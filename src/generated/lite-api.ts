@@ -188,7 +188,7 @@ export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind
  */
 export type ManualClient = { 
 /**
- * `cursor` / `continue` / `gemini-cli`。为它生成专用密钥时用
+ * `cursor` / `continue` / `antigravity-cli`。为它生成专用密钥时用
  */
 id: string, name: string, 
 /**

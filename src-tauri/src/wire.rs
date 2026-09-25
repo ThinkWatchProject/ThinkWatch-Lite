@@ -103,7 +103,7 @@ pub struct DetectedClient {
 /// 接管不了、只能给指引的。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ManualClient {
-    /// `cursor` / `continue` / `gemini-cli`。为它生成专用密钥时用
+    /// `cursor` / `continue` / `antigravity-cli`。为它生成专用密钥时用
     pub id: String,
     pub name: String,
     /// 为它生成的那把网关密钥。还没有就不给

@@ -384,3 +384,33 @@ fn every_finding_carries_a_code_and_words_to_look_up() {
         }
     }
 }
+
+#[test]
+fn antigravity_cli_mcp_config_is_read_as_jsonc() {
+    // agy 的 mcp_config.json 允许注释和尾逗号；远程 server 写 `serverUrl`，
+    // 关掉写 `disabled: true`
+    let b = bed();
+    write(
+        &tw_adopt::paths::AGY_MCP_CONFIG.resolve(&b.home),
+        r#"{
+  // 全局的
+  "mcpServers": {
+    "文档": { "serverUrl": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer 别抄我" } },
+    "本地": { "command": "npx", "args": ["-y", "server-x"], "disabled": true, },
+  },
+}"#,
+    );
+    let r = run(&b.home);
+    assert!(r.unreadable.is_empty(), "{:?}", r.unreadable);
+    let agy: Vec<_> = r
+        .mcp
+        .iter()
+        .filter(|m| m.client == "antigravity-cli")
+        .collect();
+    assert_eq!(agy.len(), 2, "{:?}", r.mcp);
+    let remote = agy.iter().find(|m| m.name == "文档").unwrap();
+    assert_eq!(remote.shape(), "remote https://mcp.example.com/mcp");
+    assert!(remote.enabled);
+    let local = agy.iter().find(|m| m.name == "本地").unwrap();
+    assert!(!local.enabled, "disabled: true 是关着的");
+}

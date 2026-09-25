@@ -23,7 +23,8 @@ describe("上游和客户端的标志", () => {
   it("客户端 id、显示名都认", () => {
     expect(clientGlyph("claude-code")).toBe("claudecode");
     expect(clientGlyph("Claude Code")).toBe("claudecode");
-    expect(clientGlyph("gemini-cli")).toBe("geminicli");
+    expect(clientGlyph("antigravity-cli")).toBe("antigravity");
+    expect(clientGlyph("gemini-cli")).toBeNull();
     expect(clientGlyph("zed-editor")).toBe("zed");
     expect(clientGlyph("aider")).toBeNull();
   });

@@ -212,24 +212,28 @@ function manualNow(): ManualClient[] {
       caveat: msg("adopt.manual.continue.caveat", "This needs a new entry in the models list, which is not written automatically; follow the steps above."),
     },
     {
-      id: "gemini-cli",
-      name: "Gemini CLI",
+      id: "antigravity-cli",
+      name: "Antigravity CLI",
       key: null,
       last_seen_ms: null,
       setup: {
         steps: [
           msg(
-            "adopt.manual.gemini_cli.export",
+            "adopt.manual.antigravity_cli.export",
             "In the shell configuration, export GOOGLE_GEMINI_BASE_URL set to the gateway address and GEMINI_API_KEY set to the key.",
           ),
-          msg("adopt.manual.gemini_cli.reopen", "Then reopen the terminal."),
+          msg(
+            "adopt.manual.antigravity_cli.provider",
+            'In ~/.gemini/antigravity-cli/settings.json, add "modelProvider": "gemini".',
+          ),
+          msg("adopt.manual.antigravity_cli.reopen", "Then reopen the terminal."),
         ],
         fields: [],
         endpoint: base(),
       },
       caveat: msg(
-        "adopt.manual.gemini_cli.caveat",
-        "Gemini CLI reads the endpoint only from the environment. ThinkWatch does not edit shell configuration files, so add it by hand.",
+        "adopt.manual.antigravity_cli.caveat",
+        "Once set, agy no longer uses the quota of the Google account. agy sends Gemini model names, so using another provider's models takes a routing rule that rewrites the model name.",
       ),
     },
   ];
@@ -270,6 +274,16 @@ export function mcpTargets(): McpTargetView[] {
       client: "opencode",
       name: "opencode",
       path: "~/.config/opencode/opencode.json",
+      copyable: false,
+      why_not: msg(
+        "adopt.mcp.unverified_format",
+        "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+      ),
+    },
+    {
+      client: "antigravity-cli",
+      name: "Antigravity CLI",
+      path: "~/.gemini/config/mcp_config.json",
       copyable: false,
       why_not: msg(
         "adopt.mcp.unverified_format",
