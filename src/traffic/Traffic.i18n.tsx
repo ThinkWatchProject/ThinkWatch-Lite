@@ -42,6 +42,7 @@ export const trafficText = messages(
     unpricedOnly: "仅显示无法计价",
     allClients: "全部密钥",
     allUpstreams: "全部上游",
+    allModels: "全部模型",
     shownOf: (shown: number, total: number) => `${shown} / ${total} 条`,
     clear: "清空",
 
@@ -145,6 +146,7 @@ export const trafficText = messages(
     unpricedOnly: "Unpriced only",
     allClients: "All keys",
     allUpstreams: "All upstreams",
+    allModels: "All models",
     shownOf: (shown: number, total: number) => `${shown} / ${count(total, "request", "requests")}`,
     clear: "Clear",
 

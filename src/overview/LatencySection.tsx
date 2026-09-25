@@ -74,7 +74,7 @@ export function LatencySection({
             max={max}
             scope={scope}
             mark={(name) => <ModelMark name={name} />}
-            onOpen={(name) => nav.open("requests", { grouped: false, filter: { q: name } })}
+            onOpen={(name) => nav.open("requests", { grouped: false, filter: { model: name } })}
           />
           {upstreams && (
             <Spreads
