@@ -972,6 +972,35 @@ fn rewriting_the_opencode_model_list_keeps_the_first_record() {
     assert_eq!(read(&opencode_path(&b.home)), OPENCODE_V1);
 }
 
+/// 两次接管之间文件里冒出一条原生的 `providers.thinkwatch`（v2 迁移写回、或者
+/// 用户自己加的），第二次改的就是它。**第一次写的那条 v1 的连同密钥也得在还原时
+/// 收走**：记录里只剩第二次的字段的话，它会带着我们的密钥一直留在文件里
+#[test]
+fn restoring_opencode_after_the_shape_changed_removes_both_entries() {
+    use tw_adopt::json::Val;
+    let b = bed("opencode", OPENCODE_V1);
+    let c = client("opencode");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let path = opencode_path(&b.home);
+    let native = tw_adopt::json::set(
+        &read(&path),
+        &["providers", "thinkwatch"],
+        &Val::Obj(vec![("name".into(), Val::s("ThinkWatch"))]),
+    )
+    .unwrap();
+    std::fs::write(&path, native).unwrap();
+
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&path);
+    assert!(!after.contains("tw-用户的专属密钥"), "{after}");
+    assert_eq!(get(&after, &["provider", "thinkwatch"]), None, "{after}");
+}
+
 /// 网关一个模型都还没有：照样能接管，但**在确认之前说清** opencode 里不会有它的模型
 #[test]
 fn adopting_opencode_with_no_models_says_so_before_confirming() {
