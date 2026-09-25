@@ -896,11 +896,16 @@ fn diagnose_in(
                 Level::Blocking
             }
         };
+        // WSL 里的文件按 Linux 那一侧的写法说，不说 `\\wsl.localhost\…`
+        let shown = |p: &Path| match wsl {
+            Some(w) => w.linux_path(p),
+            None => p.display().to_string(),
+        };
         if managed.exists() {
             out.push(Finding {
                 level: level(&managed),
                 title: msg!("adopt.diag.managed" => "This machine has a managed-policy file"),
-                detail: msg!("adopt.diag.managed.detail", path = managed.display() => "{path} takes precedence over everything else, including the user's own configuration."),
+                detail: msg!("adopt.diag.managed.detail", path = shown(&managed) => "{path} takes precedence over everything else, including the user's own configuration."),
                 fix: None,
             });
         }
@@ -909,7 +914,7 @@ fn diagnose_in(
                 level: level(p),
                 title: msg!("adopt.diag.managed_dropin" => "This machine has a managed-policy drop-in file"),
                 detail: msg!(
-                    "adopt.diag.managed_dropin.detail", path = p.display()
+                    "adopt.diag.managed_dropin.detail", path = shown(p)
                     => "{path} is merged after managed-settings.json; like it, it takes precedence over everything else, including the user's own configuration."
                 ),
                 fix: None,
@@ -1351,7 +1356,10 @@ mod tests {
             .iter()
             .find(|f| f.title.code == "adopt.diag.managed")
             .unwrap();
-        assert!(managed.detail.arg("path").contains("claude-code"));
+        assert_eq!(
+            managed.detail.arg("path"),
+            "/etc/claude-code/managed-settings.json"
+        );
         // 没接管的不说进程的事
         assert!(!cc.iter().any(|f| f.title.code == "adopt.diag.wsl_process"));
         // 手动配置的文件写成 WSL 里的样子

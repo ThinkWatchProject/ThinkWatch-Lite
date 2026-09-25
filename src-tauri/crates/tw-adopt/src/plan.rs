@@ -369,6 +369,16 @@ pub(crate) fn adopt_file(
         }
         targets.push(Target::Set(p.clone(), value.clone()));
     }
+    // 上一次写过、这一次不写的字段**照样记着**：它们还在文件里（opencode 两次
+    // 接管之间换了写法时，v1 那一条连同密钥都还在），记录里没了，还原就不会
+    // 收走它们
+    if let Some(os) = prior_originals {
+        for o in os {
+            if !originals.iter().any(|n: &Original| n.path == o.path) {
+                originals.push(o);
+            }
+        }
+    }
 
     // 哨兵注释放在最前面 —— 要的是**用户打开文件就看见**。
     // 严格 JSON 装不下注释，那时只有旁文件。

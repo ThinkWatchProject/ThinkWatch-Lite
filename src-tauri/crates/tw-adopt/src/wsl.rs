@@ -301,7 +301,8 @@ pub fn net_mode(wslconfig: Option<&str>) -> NetMode {
     };
     let mut section = String::new();
     let mut mode = NetMode::Nat;
-    for line in text.lines() {
+    // 记事本存的 UTF-8 带 BOM：不去掉它，第一行的 `[wsl2]` 就认不出来
+    for line in text.trim_start_matches('\u{feff}').lines() {
         let l = line.trim();
         if l.is_empty() || l.starts_with('#') || l.starts_with(';') {
             continue;
@@ -329,6 +330,32 @@ pub fn net_mode(wslconfig: Option<&str>) -> NetMode {
         };
     }
     mode
+}
+
+/// `.wslconfig` 的字节读成文字。WSL 自己 UTF-8 和 UTF-16 都认：PowerShell 5 的
+/// `Out-File`、`>` 默认写的是带 BOM 的 UTF-16LE，按 UTF-8 读会整份读不出来，
+/// 那时 mirrored 就被当成了 NAT。
+pub fn decode_config(bytes: &[u8]) -> Option<String> {
+    let utf16 = |b: &[u8], le: bool| {
+        let units: Vec<u16> = b
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| {
+                if le {
+                    u16::from_le_bytes([c[0], c[1]])
+                } else {
+                    u16::from_be_bytes([c[0], c[1]])
+                }
+            })
+            .collect();
+        String::from_utf16(&units).ok()
+    };
+    match bytes {
+        [0xFF, 0xFE, rest @ ..] => utf16(rest, true),
+        [0xFE, 0xFF, rest @ ..] => utf16(rest, false),
+        _ => String::from_utf8(bytes.to_vec()).ok(),
+    }
 }
 
 /// 这个发行版里的客户端怎么够到 Windows 上的网关。
@@ -395,9 +422,12 @@ pub fn split_key_id(id: &str) -> Option<(&str, &str)> {
     (CLIENTS.contains(&client) && !slug.is_empty()).then_some((client, slug))
 }
 
-/// 这个发行版是不是 [`key_id`] 里那一段说的那个
-pub fn same_distro(distro: &str, slug: &str) -> bool {
-    split_key_id(&key_id(CLIENTS[0], distro)).is_some_and(|(_, s)| s == slug)
+/// 这把密钥的主人是不是这个发行版里的这个客户端。
+///
+/// **按那个客户端自己的 id 重算一遍再比**：[`key_id`] 截到 64 个字符，客户端名
+/// 长短不一，发行版名字一长，两个客户端截出来的那一段就不一样了。
+pub fn same_distro(client: &str, distro: &str, id: &str) -> bool {
+    key_id(client, distro) == id
 }
 
 /// WSL 的 NAT 常用的网段。**core 默认的放行名单里有它**，安装程序加的防火墙规则
@@ -567,8 +597,21 @@ odd:x:1001:1001::relative/home:/bin/sh
         );
         assert_eq!(split_key_id("claude-code"), None);
         assert_eq!(split_key_id("zed-wsl-ubuntu"), None, "WSL 里只支持两个");
-        assert!(same_distro("Ubuntu-22.04", "ubuntu-22-04"));
-        assert!(!same_distro("Ubuntu", "ubuntu-22-04"));
+        assert!(same_distro(
+            "claude-code",
+            "Ubuntu-22.04",
+            "claude-code-wsl-ubuntu-22-04"
+        ));
+        assert!(!same_distro(
+            "claude-code",
+            "Ubuntu",
+            "claude-code-wsl-ubuntu-22-04"
+        ));
+        // 名字长到被截断：两个客户端截的地方不一样，各自认得出自己的
+        let long = "Ubuntu-24.04-with-a-very-long-name-given-by-its-owner";
+        for c in CLIENTS {
+            assert!(same_distro(c, long, &key_id(c, long)), "{c}");
+        }
     }
 
     #[test]
@@ -670,5 +713,23 @@ odd:x:1001:1001::relative/home:/bin/sh
         .unwrap();
         let e = WslHome::read(distro, d.path().join("Root")).unwrap_err();
         assert_eq!(e.code, "wsl.no_user");
+    }
+
+    /// 记事本存的带 BOM 的 UTF-8、PowerShell 5 写的 UTF-16：mirrored 照样认得出
+    #[test]
+    fn a_wslconfig_with_a_byte_order_mark_is_still_read() {
+        let text = "[wsl2]\r\nnetworkingMode=mirrored\r\n";
+        let bom8 = format!("\u{feff}{text}");
+        assert_eq!(net_mode(Some(&bom8)), NetMode::Mirrored);
+        let mut le = vec![0xFF, 0xFE];
+        le.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(net_mode(decode_config(&le).as_deref()), NetMode::Mirrored);
+        let mut be = vec![0xFE, 0xFF];
+        be.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
+        assert_eq!(net_mode(decode_config(&be).as_deref()), NetMode::Mirrored);
+        assert_eq!(
+            net_mode(decode_config(bom8.as_bytes()).as_deref()),
+            NetMode::Mirrored
+        );
     }
 }

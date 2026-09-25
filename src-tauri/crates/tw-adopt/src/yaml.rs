@@ -88,11 +88,7 @@ pub fn set(text: &str, path: &[&str], value: &Val) -> Result<String, YErr> {
 /// 够用；碰上不是我们写的形状，宁可不动。嵌套的键交给 [`tw_yaml::remove_key`]。
 pub fn remove(text: &str, path: &[&str]) -> Result<String, YErr> {
     if path.len() > 1 {
-        return match tw_yaml::remove_key(text, &steps(path)) {
-            Ok(out) => Ok(out),
-            Err(PatchError::NotFound { .. }) => Ok(text.to_string()),
-            Err(e) => Err(e.into()),
-        };
+        return Ok(remove_nested(text, &steps(path))?);
     }
     let k = path.first().copied().unwrap_or_default();
     let found = match tw_yaml::find(text, &steps(path)) {
@@ -120,6 +116,152 @@ pub fn remove(text: &str, path: &[&str]) -> Result<String, YErr> {
     out.push_str(&text[..line_start]);
     out.push_str(&text[line_end..]);
     Ok(out)
+}
+
+/// 删掉一个嵌套的键。**不在就原样返回** —— 还原时先删的字段可能已经带走了
+/// 空掉的父映射。
+///
+/// [`tw_yaml::remove_key`] 只认块式映射；键在行内映射里（`refs: {K: v}`）时它
+/// 报「不在」，可键明明在 —— 照原样返回的话，还原就永远过不了写回校验，我们的
+/// 密钥也一直留在文件里。而这正是我们自己写出来的形状：往 `refs: {}` 里补键，
+/// `tw_yaml::insert` 写的就是 `refs: {K: v}`。这种情形在这里把那一项连同它的逗号
+/// 摘掉，再核对其余节点一个没变。
+pub(crate) fn remove_nested(text: &str, path: &[Step]) -> Result<String, PatchError> {
+    match tw_yaml::remove_key(text, path) {
+        Ok(out) => Ok(out),
+        Err(PatchError::NotFound(why)) => match remove_from_flow(text, path)? {
+            Some(out) => Ok(out),
+            // 真的不在
+            None if tw_yaml::find(text, path).is_err() => Ok(text.to_string()),
+            None => Err(PatchError::NotFound(why)),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+/// 行内映射里的一项：摘掉它和它的逗号。不是行内映射里的键就是 `None`。
+fn remove_from_flow(text: &str, path: &[Step]) -> Result<Option<String>, PatchError> {
+    let Some((Step::Key(key), parent)) = path.split_last() else {
+        return Ok(None);
+    };
+    let all = tw_yaml::nodes(text)?;
+    if !all.iter().any(|n| n.path == path) {
+        return Ok(None);
+    }
+    let Some(pn) = all.iter().find(|n| n.path == parent) else {
+        return Ok(None);
+    };
+    if !matches!(pn.kind, tw_yaml::NodeKind::Map) || pn.anchored {
+        return Ok(None);
+    }
+    let open = pn.bytes.start;
+    if text.as_bytes().get(open) != Some(&b'{') {
+        return Ok(None);
+    }
+    let Some(close) = flow_close(text, open) else {
+        return Ok(None);
+    };
+    // 花括号里按顶层的逗号切成一项一项
+    let inner = open + 1..close;
+    let mut items = Vec::new();
+    let (mut depth, mut quote, mut from) = (0i32, None::<u8>, inner.start);
+    let b = text.as_bytes();
+    let mut i = inner.start;
+    while i < inner.end {
+        let c = b[i];
+        match quote {
+            Some(q) if c == b'\\' && q == b'"' => i += 1,
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                b'"' | b'\'' => quote = Some(c),
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => depth -= 1,
+                b',' if depth == 0 => {
+                    items.push(from..i);
+                    from = i + 1;
+                }
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    items.push(from..inner.end);
+    let name = |r: &std::ops::Range<usize>| {
+        let seg = &text[r.clone()];
+        let k = seg.split(':').next().unwrap_or_default().trim();
+        k.trim_matches(|c| c == '"' || c == '\'').to_string()
+    };
+    let hits: Vec<usize> = (0..items.len())
+        .filter(|&j| name(&items[j]) == *key)
+        .collect();
+    let [j] = hits.as_slice() else {
+        return Ok(None);
+    };
+    let j = *j;
+    // 这一项连同一侧的逗号：不是最后一项就带走后面那个，是最后一项就带走前面那个
+    let cut = if items.len() == 1 {
+        items[j].clone()
+    } else if j + 1 < items.len() {
+        items[j].start..items[j + 1].start
+    } else {
+        // 最后一项后面的空白是 `}` 前面那段，留给它
+        let seg = &text[items[j].clone()];
+        items[j - 1].end..items[j].start + seg.trim_end().len()
+    };
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..cut.start]);
+    out.push_str(&text[cut.end..]);
+    if items.len() == 1 {
+        // 只剩空白就收成 `{}`，和我们补键之前一样
+        let o = open;
+        let c = out[o..].find('}').map(|x| o + x).unwrap_or(o);
+        if out[o + 1..c].trim().is_empty() {
+            out.replace_range(o..=c, "{}");
+        }
+    }
+    // 自检：目标之外的节点一个没变
+    let keep = |ns: Vec<tw_yaml::Node>| -> Vec<(Vec<Step>, tw_yaml::NodeKind)> {
+        ns.into_iter()
+            .filter(|n| !n.path.starts_with(path))
+            .map(|n| (n.path, n.kind))
+            .collect()
+    };
+    if keep(tw_yaml::nodes(&out)?) != keep(all) {
+        return Err(PatchError::SelfCheck(format!(
+            "{} could not be taken out of its inline mapping cleanly",
+            tw_yaml::show(path)
+        )));
+    }
+    Ok(Some(out))
+}
+
+/// 从 `{` 开始，找到配对的 `}`。认引号里的括号。
+fn flow_close(text: &str, open: usize) -> Option<usize> {
+    let b = text.as_bytes();
+    let (mut depth, mut quote) = (0i32, None::<u8>);
+    let mut i = open;
+    while i < b.len() {
+        let c = b[i];
+        match quote {
+            Some(q) if c == b'\\' && q == b'"' => i += 1,
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                b'"' | b'\'' => quote = Some(c),
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    None
 }
 
 /// 把这几个顶层键底下的每个标量值都换成 `mask`，其余原样。给界面上的 diff 用：
@@ -290,6 +432,30 @@ mod tests {
         assert_eq!(
             mask_under(src, &["refs", "records"], "***"),
             "# was refs.T: ***\n# no version originally\nversion: 1\nrefs:\n  A: ***\n  B: ***  # 注释\nrecords:\n  x/y:\n    token: ***\n"
+        );
+    }
+
+    /// 往 `refs: {}` 里补的键写成行内的 `refs: {K: v}`：还原要能把它摘回去，
+    /// 不然写回校验永远过不了，密钥也一直留在文件里
+    #[test]
+    fn a_key_added_to_an_inline_mapping_comes_back_out() {
+        for t in [
+            "version: 1\nrefs: {}\n",
+            "version: 1\nrefs: {A: x}\nrecords: {}\n",
+            "refs: { 'A': \"a,}\" }\n",
+        ] {
+            let with = set(t, &["refs", "K"], &Val::s("v")).unwrap();
+            assert!(with.contains("K: v"), "{with}");
+            assert_eq!(remove(&with, &["refs", "K"]).unwrap(), t);
+        }
+        // 用户自己的那一项照样摘得掉，别的不动
+        assert_eq!(
+            remove("refs: {A: x, B: y}\n", &["refs", "A"]).unwrap(),
+            "refs: { B: y}\n"
+        );
+        assert_eq!(
+            remove("refs: {A: x}\n", &["refs", "B"]).unwrap(),
+            "refs: {A: x}\n"
         );
     }
 }

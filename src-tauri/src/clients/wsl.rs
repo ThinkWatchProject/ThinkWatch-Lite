@@ -73,7 +73,8 @@ fn unknown(name: &str) -> Msg {
 /// `wsl --shutdown` 之后就是另一种了
 pub fn net_mode() -> NetMode {
     let text = tw_adopt::paths::env_home()
-        .and_then(|h| std::fs::read_to_string(h.join(".wslconfig")).ok());
+        .and_then(|h| std::fs::read(h.join(".wslconfig")).ok())
+        .and_then(|b| wsl::decode_config(&b));
     wsl::net_mode(text.as_deref())
 }
 

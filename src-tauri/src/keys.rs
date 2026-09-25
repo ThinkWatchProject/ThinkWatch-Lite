@@ -72,7 +72,7 @@ pub async fn delete_key(
         .call::<ep::Keys>(&[], &())
         .await
         .map_err(text)?;
-    if let Some(o) = crate::clients::adopted_owner(&keys, &name) {
+    if let Some(o) = crate::clients::adopted_owner(&keys, &name)? {
         return Err(crate::clients::ops::key_used_by(&o.name()).into());
     }
     state
@@ -101,7 +101,7 @@ pub async fn rotate_key(
         .await
         .map_err(text)?;
     // 只有被接管的客户端要同步：没接管的那些，密钥根本没写进它们的配置
-    let owner = crate::clients::adopted_owner(&keys, &name);
+    let owner = crate::clients::adopted_owner(&keys, &name)?;
     let r = state
         .control
         .call::<ep::RotateKey>(&[&name], &tw_api::KeyRotate { base_version })

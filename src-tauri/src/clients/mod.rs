@@ -688,27 +688,42 @@ pub(crate) async fn sync_rotated(
 /// 删之前、换之前要知道：这把密钥的主人此刻接管着吗
 ///
 /// 为 WSL 里的某一份发的密钥（`claude-code-wsl-ubuntu`），要读那个发行版才答得上
-/// —— 这会唤醒它，而用户此刻正要删、换这把密钥。
-pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Option<Owner> {
+/// —— 这会唤醒它，而用户此刻正要删、换这把密钥。**读不出来就说读不出来**，不当
+/// 成「没接管」：那样删掉的是它配置里正写着的钥匙，换掉的新值也同步不过去。
+pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<Option<Owner>, Msg> {
     if let Some(client) = ops::adopted_owner(&home_dir(), keys, name) {
-        return Some(Owner {
+        return Ok(Some(Owner {
             client,
             place: Place::Here,
-        });
+        }));
     }
-    let id = keys.iter().find(|k| k.name == name)?.client.as_deref()?;
-    let (client, slug) = tw_adopt::wsl::split_key_id(id)?;
-    let d = wsl::distros()
+    let Some(id) = keys
+        .iter()
+        .find(|k| k.name == name)
+        .and_then(|k| k.client.as_deref())
+    else {
+        return Ok(None);
+    };
+    let Some((client, _)) = tw_adopt::wsl::split_key_id(id) else {
+        return Ok(None);
+    };
+    // 那个发行版已经不在了：没有谁的配置里还写着它
+    let Some(d) = wsl::distros()
         .into_iter()
-        .find(|d| tw_adopt::wsl::same_distro(&d.name, slug))?;
-    let w = wsl::open(d).ok()?;
-    let c = ops::find(client).ok()?;
-    tw_adopt::detect::detect_one(&c, &w.home)
+        .find(|d| tw_adopt::wsl::same_distro(client, &d.name, id))
+    else {
+        return Ok(None);
+    };
+    let w = wsl::open(d)?;
+    let Ok(c) = ops::find(client) else {
+        return Ok(None);
+    };
+    Ok(tw_adopt::detect::detect_one(&c, &w.home)
         .adopted_at_ms
         .map(|_| Owner {
             client: c,
             place: Place::Wsl(w),
-        })
+        }))
 }
 
 #[cfg(test)]
