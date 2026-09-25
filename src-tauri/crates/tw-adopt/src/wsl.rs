@@ -338,7 +338,9 @@ pub fn net_mode(wslconfig: Option<&str>) -> NetMode {
 pub fn decode_config(bytes: &[u8]) -> Option<String> {
     let utf16 = |b: &[u8], le: bool| {
         let units: Vec<u16> = b
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 if le {
                     u16::from_le_bytes([c[0], c[1]])
