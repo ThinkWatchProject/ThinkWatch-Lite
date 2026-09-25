@@ -102,6 +102,10 @@ pub struct DetectedClient {
     pub last_seen_ms: Option<u64>,
     /// 手动配置的方法：没检测到它（配置文件不在默认位置）时照着做
     pub manual: ManualSetup,
+    /// 这台电脑上它由组织统一管理，接管不了：给出的这句话说明原因。**这时不给
+    /// 接管按钮**。只有 Claude Desktop 会有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed: Option<Msg>,
 }
 
 /// 接管不了、只能给指引的。
@@ -217,8 +221,9 @@ pub struct PlanView {
     /// 那把密钥要在接管的那一刻新建（此前没有为这个客户端留着的）
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub key_created: bool,
-    /// 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败。
-    /// DeepSeek Harness 的密钥在它自己的凭据文件里，就在这儿
+    /// 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败，按落盘的
+    /// 顺序。DeepSeek Harness 的密钥在它自己的凭据文件里；Claude Desktop 一次改
+    /// 四个，`path` 那一个是它配置库里的那一份，其余三个在这里
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also: Vec<FilePlanView>,
 }

@@ -91,6 +91,12 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
 /// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
 /// 网关按它的 `allow` 答得准。opencode 要把这份清单写进配置（它不自己去问）。
 async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
+    fetch_models(base, key, false).await
+}
+
+/// [`models_of`]。`anthropic` = 按 Anthropic 的方式问（密钥放在 `x-api-key`、带
+/// `anthropic-version`）：Claude Desktop 就是这么问的，网关按这个答它说得通的那些
+async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<String>, Msg> {
     let url = format!("{}/v1/models", base.trim_end_matches('/'));
     let failed = |detail: String| {
         msg!(
@@ -110,9 +116,14 @@ async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
         builder = builder.no_proxy();
     }
     let client = builder.build().map_err(|e| failed(e.to_string()))?;
-    let text = client
-        .get(&url)
-        .bearer_auth(key)
+    let req = client.get(&url);
+    let req = if anthropic {
+        req.header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01")
+    } else {
+        req.bearer_auth(key)
+    };
+    let text = req
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -136,7 +147,10 @@ fn model_ids(body: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 接管这个客户端要写进它配置的模型清单。不写模型的客户端不问网关
+/// 接管这个客户端要写进它配置的模型清单。不写模型的客户端不问网关。
+///
+/// Claude Desktop 只认名字像 Claude 的模型，写进它配置的那份从这里挑
+/// （`tw_adopt::desktop`），按它自己问的方式问
 async fn models_for(
     c: &tw_adopt::clients::Client,
     base: &str,
@@ -144,6 +158,8 @@ async fn models_for(
 ) -> Result<Vec<String>, Msg> {
     if c.writes_models {
         models_of(base, key).await
+    } else if c.id == tw_adopt::desktop::ID {
+        fetch_models(base, key, true).await
     } else {
         Ok(Vec::new())
     }

@@ -156,6 +156,13 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
+        managed: d.managed.as_ref().map(|by| {
+            plan::PlanError::Managed {
+                client: d.name.into(),
+                by: by.clone(),
+            }
+            .msg()
+        }),
     }
 }
 
@@ -331,7 +338,7 @@ fn view(
         notes: p.notes.clone(),
         shadows: p.shadows.iter().map(|x| x.display().to_string()).collect(),
         noop: p.is_noop(),
-        carries_secret: p.carries_secret,
+        carries_secret: p.carries_secret || p.also.iter().any(|a| a.carries_secret),
         fields: fields_of(p, secrets),
         key: None,
         key_created: false,
@@ -396,7 +403,7 @@ pub fn plan_adopt_as(
         key: Some(value),
         models,
     };
-    let p = plan::plan_adopt(&c, home, &target).map_err(|e| e.msg())?;
+    let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
     let mut v = view(
         &p,
         &secret_paths(&c),
@@ -418,6 +425,16 @@ pub fn key_for(gw: &Gateway, owner: &str) -> Result<(String, String, bool), Msg>
             (free_name(&gw.keys, owner), default.key.clone(), true)
         }
     })
+}
+
+/// Claude Desktop 一次改四个文件，交给 `tw_adopt::desktop`；模型清单从 `gw.models`
+/// 里挑它认的那些
+fn plan_for(c: &Client, home: &Path, gw: &clients::Gateway) -> Result<plan::Plan, plan::PlanError> {
+    if c.id == tw_adopt::desktop::ID {
+        tw_adopt::desktop::plan_adopt(c, home, gw, Some(&gw.models))
+    } else {
+        plan::plan_adopt(c, home, gw)
+    }
 }
 
 /// 一把网关密钥都还没有：先建一把，才谈得上把客户端指向网关。和 core 发密钥时
@@ -449,7 +466,7 @@ pub fn adopt(
         key: Some(key.to_string()),
         models,
     };
-    let p = plan::plan_adopt(&c, home, &target).map_err(|e| e.msg())?;
+    let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),

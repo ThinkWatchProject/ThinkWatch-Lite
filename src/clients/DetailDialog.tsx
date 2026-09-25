@@ -108,6 +108,8 @@ export function DetailDialog({
           </div>
         </DialogHeader>
 
+        {client.managed && !adopted && <p className="tw-body text-muted-foreground">{coreText(client.managed)}</p>}
+
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-6 gap-y-3 rounded-lg border border-border bg-surface/60 px-3.5 py-3 tw-body">
           <Fact label={t.file}>
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -271,9 +273,11 @@ export function DetailDialog({
               {t.restore}
             </Button>
           ) : (
-            <Button pending={asking} onClick={onAdopt}>
-              {t.adopt}
-            </Button>
+            !client.managed && (
+              <Button pending={asking} onClick={onAdopt}>
+                {t.adopt}
+              </Button>
+            )
           )}
         </DialogFooter>
       </DialogContent>

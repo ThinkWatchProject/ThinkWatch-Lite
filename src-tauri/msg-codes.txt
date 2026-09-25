@@ -8,6 +8,10 @@ adopt.cost.aider.restart
 adopt.cost.claude_code.mcp_tool_search
 adopt.cost.claude_code.remote_control
 adopt.cost.claude_code.welcome_screen
+adopt.cost.claude_desktop.restart
+adopt.cost.claude_desktop.separate_history
+adopt.cost.claude_desktop.sign_in
+adopt.cost.claude_desktop.web_search
 adopt.cost.codex.chatgpt_desktop
 adopt.cost.codex.reopen_terminal
 adopt.cost.codex.resume_through_gateway
@@ -20,6 +24,12 @@ adopt.cost.dsh.web_search
 adopt.cost.opencode.restart
 adopt.cost.zed.key_store
 adopt.diag.adopt_again
+adopt.diag.claude_desktop.managed
+adopt.diag.claude_desktop.managed.detail
+adopt.diag.claude_desktop.mode
+adopt.diag.claude_desktop.mode.detail
+adopt.diag.claude_desktop.not_applied
+adopt.diag.claude_desktop.not_applied.detail
 adopt.diag.delete_line
 adopt.diag.delete_line_gnu
 adopt.diag.endpoint_ok
@@ -82,6 +92,9 @@ adopt.manual.antigravity_cli.provider
 adopt.manual.antigravity_cli.provider_windows
 adopt.manual.antigravity_cli.reopen
 adopt.manual.antigravity_cli.setx
+adopt.manual.claude_desktop.apply
+adopt.manual.claude_desktop.fields
+adopt.manual.claude_desktop.open
 adopt.manual.continue.caveat
 adopt.manual.continue.entry
 adopt.manual.continue.open
@@ -99,8 +112,10 @@ adopt.mcp.parse_failed
 adopt.mcp.unknown_client
 adopt.mcp.unverified_format
 adopt.mcp.zed_structure
+adopt.plan.claude_desktop.no_claude_model
 adopt.plan.fields_only
 adopt.plan.foreign_record
+adopt.plan.managed
 adopt.plan.no_models
 adopt.plan.no_record
 adopt.plan.parse_failed

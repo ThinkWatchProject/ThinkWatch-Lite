@@ -41,9 +41,9 @@ export function PlanDialog({
   const common = useText(commonText);
   const dialogFocus = useDialogFocus();
   const [diffOpen, setDiffOpen] = useState(false);
-  // 同一次改动里的另外几份文件（DeepSeek Harness 的凭据文件）：字段接在后面，
-  // 完整改动按文件分开画
-  const also = plan.also ?? [];
+  // 同一次改动里的另外几份文件（DeepSeek Harness 的凭据文件、Claude Desktop 的
+  // 另外三个）：字段接在后面，完整改动按文件分开画。已经是目标状态的不列
+  const also = (plan.also ?? []).filter((a) => !a.noop);
   const fields = [...plan.fields, ...also.flatMap((a) => a.fields)];
   const path = <code className="font-mono text-foreground">{plan.path}</code>;
   return (
@@ -57,7 +57,7 @@ export function PlanDialog({
             <DialogTitle>{restore ? t.restoreTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
             <DialogDescription>
               {plan.before == null ? t.creates(path) : t.modifies(path)}
-              {(plan.also ?? []).map((a) => {
+              {also.map((a) => {
                 const p = <code className="font-mono text-foreground">{a.path}</code>;
                 return (
                   <span key={a.path} className="block">
@@ -83,8 +83,9 @@ export function PlanDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {fields.map((f) => (
-                      <TableRow key={`${f.op} ${f.path}`} className="hover:bg-transparent">
+                    {/* 同名的字段可能在两个文件里各有一项（Claude Desktop 的 deploymentMode） */}
+                    {fields.map((f, i) => (
+                      <TableRow key={`${i} ${f.op} ${f.path}`} className="hover:bg-transparent">
                         <TableCell className="font-mono tw-label">{f.path}</TableCell>
                         <TableCell className="whitespace-normal break-all">
                           <FieldValue f={f} plan={plan} restore={restore} />

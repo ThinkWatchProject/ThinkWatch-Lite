@@ -71,6 +71,28 @@ function setup(id: string, path: string): ManualSetup {
           ),
         ],
       };
+    case "claude-desktop":
+      return {
+        steps: [
+          msg(
+            "adopt.manual.claude_desktop.open",
+            "In Claude Desktop, turn on Help → Troubleshooting → Enable Developer Mode, then open Developer → Configure Third-Party Inference.",
+          ),
+          msg(
+            "adopt.manual.claude_desktop.fields",
+            "Choose the gateway provider, enter the gateway address and the key, and set the authentication scheme to x-api-key.",
+          ),
+          msg("adopt.manual.claude_desktop.apply", "Click Apply Changes, then quit Claude Desktop completely and open it again."),
+        ],
+        endpoint: base(),
+        fields: [
+          set("inferenceProvider", "gateway"),
+          set("inferenceGatewayBaseUrl", base()),
+          set("inferenceGatewayAuthScheme", "x-api-key"),
+          secret("inferenceGatewayApiKey"),
+          set("chatTabEnabled", "true"),
+        ],
+      };
     case "zed":
       return {
         steps: [file(path), msg("adopt.manual.zed.key", "Then enter the key in Zed's settings, under the ThinkWatch provider.")],
@@ -179,6 +201,23 @@ function clientsNow(): DetectedClient[] {
       // opencode v2：自己重载配置，不用重启
       path: "~/.config/opencode/opencode.jsonc",
       verified: "measured",
+    }),
+    detected({
+      id: "claude-desktop",
+      name: "Claude Desktop",
+      path: "~/Library/Application Support/Claude-3p/configLibrary/7477a7c4-1ce0-4d3a-9b1e-7477a7c40001.json",
+      has_config: false,
+      takes_effect: "on_restart",
+      warns_when_silent: false,
+      costs: [
+        msg("adopt.cost.claude_desktop.restart", "Claude Desktop has to be quit completely and opened again."),
+        msg(
+          "adopt.cost.claude_desktop.sign_in",
+          "If the sign-in page appears when it opens, choose to continue with the gateway there; this happens only once.",
+        ),
+        msg("adopt.cost.claude_desktop.separate_history", "Conversations in this mode are kept apart from the existing ones."),
+        msg("adopt.cost.claude_desktop.web_search", "Web search does not work through the gateway and needs its own setup."),
+      ],
     }),
     detected({
       id: "zed",
