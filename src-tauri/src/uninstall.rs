@@ -1,6 +1,6 @@
 //! 还原全部接管，以及卸载。
 
-use crate::{autostart, data_dir, error::Out};
+use crate::{autostart, data_dir, error::Out, wire::UninstallStep};
 
 /// 把所有接管过的客户端一次性还原（第二层的第二个入口）。
 ///
@@ -51,45 +51,53 @@ pub struct RestoreOutcome {
 ///
 /// **我们不删自己。**macOS 上应用删除没有钩子，也不该由应用自己动手 ——
 /// 最后一句话是「可以把应用拖进废纸篓了」，那一下由用户来。
+///
+/// 每一步交回做成了没有（`UninstallStep`），一步没做成不影响后面的步骤。
 #[tauri::command]
-pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<String>> {
+pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<UninstallStep>> {
     let mut log = Vec::new();
     for r in restore_all().await? {
-        log.push(tr!(
-            format!("{}：{}", r.client, r.detail),
-            format!("{}: {}", r.client, r.detail)
-        ));
+        log.push(UninstallStep {
+            ok: r.ok,
+            text: tr!(
+                format!("{}：{}", r.client, r.detail),
+                format!("{}: {}", r.client, r.detail)
+            ),
+        });
     }
     // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
     // 开机自启项的后果，用户在系统设置里看得见、也删得掉
     let launcher = autostart::launcher(&app);
     match launcher.disable() {
-        Ok(_) => log.push(tr!("已取消开机启动", "Launch at login turned off").into()),
+        Ok(_) => log.push(UninstallStep::done(tr!(
+            "已取消开机启动",
+            "Launch at login turned off"
+        ))),
         // 退路按平台说：自启项在哪儿、用户去哪儿关，三处各不相同
         #[cfg(target_os = "macos")]
-        Err(e) => log.push(tr!(
+        Err(e) => log.push(UninstallStep::failed(tr!(
             format!(
                 "未能取消开机启动（{e}）。请在「系统设置 › 通用 › 登录项」中关闭 ThinkWatch Lite。"
             ),
             format!(
                 "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in System Settings › General › Login Items."
             )
-        )),
+        ))),
         #[cfg(windows)]
-        Err(e) => log.push(tr!(
+        Err(e) => log.push(UninstallStep::failed(tr!(
             format!("未能取消开机启动（{e}）。请在「设置 › 应用 › 启动」中关闭 ThinkWatch Lite。"),
             format!(
                 "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in Settings › Apps › Startup."
             )
-        )),
+        ))),
         // 各家桌面的「开机启动的应用」设置不在同一个地方，文件在哪儿却是确定的
         #[cfg(target_os = "linux")]
         Err(e) => {
             let file = launcher.file().display();
-            log.push(tr!(
+            log.push(UninstallStep::failed(tr!(
                 format!("未能取消开机启动（{e}）。请删除 {file}。"),
                 format!("Launch at login could not be turned off ({e}). Delete {file}.")
-            ))
+            )))
         }
     }
     // AppImage 每次启动写的菜单条目和图标（见 `desktop_entry`）。删不掉的
@@ -99,24 +107,24 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<String
     if drop_data {
         let dir = data_dir();
         match std::fs::remove_dir_all(&dir) {
-            Ok(_) => log.push(tr!(
+            Ok(_) => log.push(UninstallStep::done(tr!(
                 format!("数据目录已删除：{}", dir.display()),
                 format!("Data directory deleted: {}", dir.display())
-            )),
+            ))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => log.push(tr!(
+            Err(e) => log.push(UninstallStep::failed(tr!(
                 format!("未能删除数据目录：{}（{e}）", dir.display()),
                 format!(
                     "The data directory could not be deleted: {} ({e})",
                     dir.display()
                 )
-            )),
+            ))),
         }
     } else {
-        log.push(tr!(
+        log.push(UninstallStep::done(tr!(
             format!("数据目录已保留：{}", data_dir().display()),
             format!("Data directory kept: {}", data_dir().display())
-        ));
+        )));
     }
     // 「废纸篓」只是 macOS 的说法；Windows 上走系统的卸载，Linux 上就是删掉
     // 那个 AppImage 文件
@@ -140,7 +148,7 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<String
         ),
         None => tr!("现可删除应用。", "The app can now be deleted.").into(),
     };
-    log.push(last);
+    log.push(UninstallStep::done(last));
     Ok(log)
 }
 

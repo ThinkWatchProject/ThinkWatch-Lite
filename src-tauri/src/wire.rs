@@ -286,6 +286,35 @@ pub struct KeyUsage {
     pub buckets: Vec<tw_api::CostBucketGroup>,
 }
 
+// ---------------------------------------------------------- 卸载
+
+/// 完全卸载的一步（`uninstall` 交回的是一串）：做成了没有，和给用户看的那句话。
+///
+/// **成败要单独给，不能让界面从句子里猜。**对话框的标题要说「卸载完成」还是
+/// 「有几项没做成」，没做成的那几行要标出来；句子是按语言拼的，拿来判断成败
+/// 换一种语言就失效。说明性的几句（数据目录已保留、现在可以删应用了）算成。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UninstallStep {
+    pub ok: bool,
+    pub text: String,
+}
+
+impl UninstallStep {
+    pub fn done(text: impl Into<String>) -> Self {
+        Self {
+            ok: true,
+            text: text.into(),
+        }
+    }
+
+    pub fn failed(text: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            text: text.into(),
+        }
+    }
+}
+
 // ---------------------------------------------------------- 静态扫描
 
 /// 一处扫描发现有多要紧。

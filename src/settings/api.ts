@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Lang } from "@/i18n";
 import type { Found, UpdateView } from "@/updateFlow";
+import type { UninstallStep } from "@/types";
 
 export type Theme = "light" | "dark";
 /** 设置里的三档：`system` 是跟随系统 */
@@ -63,8 +64,8 @@ export const settingsApi = {
   info: () => invoke<AppInfo>("app_info"),
   /** 诊断包写在数据目录里，交回路径 */
   saveDiagnostics: () => invoke<string>("save_diagnostics"),
-  /** 还原接管、取消开机启动、按需删数据目录。交回的是每一步的结果，一步一句 */
-  uninstall: (dropData: boolean) => invoke<string[]>("uninstall", { dropData }),
+  /** 还原接管、取消开机启动、按需删数据目录。交回的是每一步的结果：做成了没有，和一句话 */
+  uninstall: (dropData: boolean) => invoke<UninstallStep[]>("uninstall", { dropData }),
 };
 
 /**

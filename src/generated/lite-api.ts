@@ -366,6 +366,15 @@ export type SkillView = { name: string, client: string, path: string, allowed_to
 export type TakesEffect = "immediately" | "on_restart";
 
 /**
+ * 完全卸载的一步（`uninstall` 交回的是一串）：做成了没有，和给用户看的那句话。
+ *
+ * **成败要单独给，不能让界面从句子里猜。**对话框的标题要说「卸载完成」还是
+ * 「有几项没做成」，没做成的那几行要标出来；句子是按语言拼的，拿来判断成败
+ * 换一种语言就失效。说明性的几句（数据目录已保留、现在可以删应用了）算成。
+ */
+export type UninstallStep = { ok: boolean, text: string, };
+
+/**
  * 一个客户端的接管方式验证到什么程度。
  */
 export type Verification = "measured" | "fields_only";

@@ -225,22 +225,23 @@ pub(crate) fn integrate(app: &tauri::AppHandle) {
 /// Removes the entry and the icon (the in-app uninstall), as lines for the
 /// uninstall log: nothing when there was nothing to remove (a development
 /// build), one line per file that could not be removed.
-pub(crate) fn remove(app: &tauri::AppHandle) -> Vec<String> {
+pub(crate) fn remove(app: &tauri::AppHandle) -> Vec<crate::wire::UninstallStep> {
     Files::for_app(app).map(|f| f.remove()).unwrap_or_default()
 }
 
 impl Files {
-    fn remove(&self) -> Vec<String> {
+    fn remove(&self) -> Vec<crate::wire::UninstallStep> {
+        use crate::wire::UninstallStep;
         let mut log = Vec::new();
         let mut removed = false;
         for path in [&self.desktop, &self.icon] {
             match std::fs::remove_file(path) {
                 Ok(()) => removed = true,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => log.push(tr!(
+                Err(e) => log.push(UninstallStep::failed(tr!(
                     format!("未能删除 {}（{e}）", path.display()),
                     format!("{} could not be deleted ({e})", path.display())
-                )),
+                ))),
             }
         }
         if removed {
@@ -248,13 +249,10 @@ impl Files {
                 run("update-desktop-database", &[dir.as_os_str()]);
             }
             if log.is_empty() {
-                log.push(
-                    tr!(
-                        "已移除应用菜单中的条目",
-                        "The application menu entry was removed"
-                    )
-                    .into(),
-                );
+                log.push(UninstallStep::done(tr!(
+                    "已移除应用菜单中的条目",
+                    "The application menu entry was removed"
+                )));
             }
         }
         log
@@ -326,7 +324,9 @@ mod tests {
         assert!(f.remove().is_empty());
         write_if_changed(&f.desktop, b"[Desktop Entry]\n").unwrap();
         write_if_changed(&f.icon, ICON).unwrap();
-        assert_eq!(f.remove().len(), 1);
+        let out = f.remove();
+        assert_eq!(out.len(), 1);
+        assert!(out[0].ok, "{}", out[0].text);
         assert!(!f.desktop.exists() && !f.icon.exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
