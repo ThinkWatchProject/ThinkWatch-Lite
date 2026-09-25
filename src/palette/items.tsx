@@ -276,18 +276,23 @@ export function buildItems(s: Sources): Item[] {
     for (const p of ov.providers) {
       const status: [StatusTone, string] | null = p.disabled
         ? ["idle", t.disabled]
-        : p.auth_rejected != null
-          ? ["error", t.authRejected]
-          : p.health === "open"
-            ? ["error", t.circuitOpen]
-            : null;
+        : p.oauth?.needs_login
+          ? ["error", t.needsLogin]
+          : p.auth_rejected != null
+            ? ["error", t.authRejected]
+            : p.health === "open"
+              ? ["error", t.circuitOpen]
+              : null;
+      // 账号上游的地址人人一样：和上游列表一样，写登的是哪个账号
+      const email = p.oauth?.account?.email;
       items.push({
         id: `upstream:${p.name}`,
         group: "upstreams",
         title: p.name,
-        detail: hostOf(p.base_url),
-        // 地址也能搜（`11434`、`api.deepseek`）；协议不算 —— 打 `openai` 会把一半上游都带出来
-        keywords: [p.base_url],
+        detail: email ?? hostOf(p.base_url),
+        // 地址也能搜（`11434`、`api.deepseek`），账号的邮箱也能；协议不算 —— 打 `openai`
+        // 会把一半上游都带出来
+        keywords: email ? [p.base_url, email] : [p.base_url],
         icon: <UpstreamLogo name={p.name} baseUrl={p.base_url} protocol={p.protocol} />,
         meta: status && <Status tone={status[0]} text={status[1]} />,
         verb: "open",

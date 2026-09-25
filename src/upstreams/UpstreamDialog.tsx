@@ -96,6 +96,8 @@ export function UpstreamDialog({
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
   // ChatGPT 账号是登录来的，编辑它的那一套分节也不一样
   const account = editing?.protocol === "chatgpt";
+  /** 登的是哪个账号。core 从凭据的令牌里读，和列表那一行是同一份 */
+  const email = editing?.oauth?.account?.email;
   const sections = (account ? ACCOUNT_SECTIONS : SECTIONS).map((id) => ({ id, label: t.sections[id] }));
   const [section, setSection] = useState<Section>(
     mode.kind === "edit"
@@ -312,8 +314,11 @@ export function UpstreamDialog({
               <DialogDescription className="truncate">
                 <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
                 {protocolLabel(editing.protocol)}
-                {/* 账号上游的地址是登录给的，改不了，写出来只是噪声 */}
-                {!account && ` · ${shortUrl(editing.base_url)}`}
+                {/*
+                  账号上游的地址是登录给的，改不了，写出来只是噪声：那一格和列表里一样写
+                  登的是哪个账号
+                */}
+                {account ? email && ` · ${email}` : ` · ${shortUrl(editing.base_url)}`}
               </DialogDescription>
             ) : (
               <DialogDescription className="sr-only">{t.desc}</DialogDescription>

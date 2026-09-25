@@ -18,6 +18,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
+import { StatusLabel } from "@/ui/status-dot";
 import { resetAt, resetIn } from "@/format";
 import { useNow } from "@/useNow";
 import type { ChatgptUsage, Overview, ProviderView, ResetCredits, ResetCreditView } from "@/types";
@@ -64,6 +65,7 @@ export function ChatgptAccountSection({
   /** 用一张卡的结果 */
   const codes: Record<string, string> = t.codes;
   const name = editing.name;
+  const broken = editing.oauth?.needs_login === true;
   const [usage, setUsage] = useState<ChatgptUsage | null>(null);
   const [credits, setCredits] = useState<ResetCredits | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,10 +87,11 @@ export function ChatgptAccountSection({
     }
   }, [name]);
 
-  // 额度只在 core 的内存里：冷启动之后第一次打开就去问一次
+  // 额度只在 core 的内存里：冷启动之后第一次打开就去问一次。**登录失效时不问**：凭据
+  // 换不来令牌，额度和重置卡都问不到，这一节只剩重新登录
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!broken) void load();
+  }, [load, broken]);
 
   async function use(credit: ResetCreditView) {
     setUsing(true);
@@ -143,87 +146,91 @@ export function ChatgptAccountSection({
 
       <LoginBox editing={editing} onRelogin={onRelogin} />
 
-      <section className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="tw-head font-medium">{t.quota}</h3>
-          <Button variant="ghost" size="sm" onClick={() => void load()} pending={loading}>
-            {!loading && <RefreshCwIcon />}
-            {t.reload}
-          </Button>
-        </div>
-        {loading && !usage ? (
-          <div role="status" aria-busy="true" className="flex flex-col gap-3.5">
-            {[0, 1].map((i) => (
-              <div key={i} className="flex flex-col gap-1.5">
-                <div className="flex justify-between">
-                  <Skeleton className="h-3 w-24 rounded-sm" />
-                  <Skeleton className="h-3 w-32 rounded-sm" />
-                </div>
-                <Skeleton className="h-1 w-full rounded-full" />
-              </div>
-            ))}
-          </div>
-        ) : usage && usage.windows.length > 0 ? (
-          <div className="flex flex-col gap-2.5 motion-fade">
-            {usage.windows.map((w) => {
-              const reset = resetAt(w.resets_at_ms, now);
-              return (
-                <div key={w.window} className="flex flex-col gap-1">
-                  <div className="flex items-baseline justify-between tw-body">
-                    <span>{t.window(quotaWindowLabel(w.window))}</span>
-                    <span className="tw-num text-muted-foreground">
-                      {t.used(Math.round(w.used_percent))}
-                      {reset && ` · ${t.resets(reset)}`}
-                    </span>
+      {!broken && (
+        <>
+          <section className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="tw-head font-medium">{t.quota}</h3>
+              <Button variant="ghost" size="sm" onClick={() => void load()} pending={loading}>
+                {!loading && <RefreshCwIcon />}
+                {t.reload}
+              </Button>
+            </div>
+            {loading && !usage ? (
+              <div role="status" aria-busy="true" className="flex flex-col gap-3.5">
+                {[0, 1].map((i) => (
+                  <div key={i} className="flex flex-col gap-1.5">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-3 w-24 rounded-sm" />
+                      <Skeleton className="h-3 w-32 rounded-sm" />
+                    </div>
+                    <Skeleton className="h-1 w-full rounded-full" />
                   </div>
-                  <QuotaBar percent={w.used_percent} label={t.window(quotaWindowLabel(w.window))} />
-                </div>
-              );
-            })}
-          </div>
-        ) : usage ? (
-          <p className="tw-body text-muted-foreground">{t.noQuota}</p>
-        ) : null}
-      </section>
+                ))}
+              </div>
+            ) : usage && usage.windows.length > 0 ? (
+              <div className="flex flex-col gap-2.5 motion-fade">
+                {usage.windows.map((w) => {
+                  const reset = resetAt(w.resets_at_ms, now);
+                  return (
+                    <div key={w.window} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between tw-body">
+                        <span>{t.window(quotaWindowLabel(w.window))}</span>
+                        <span className="tw-num text-muted-foreground">
+                          {t.used(Math.round(w.used_percent))}
+                          {reset && ` · ${t.resets(reset)}`}
+                        </span>
+                      </div>
+                      <QuotaBar percent={w.used_percent} label={t.window(quotaWindowLabel(w.window))} />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : usage ? (
+              <p className="tw-body text-muted-foreground">{t.noQuota}</p>
+            ) : null}
+          </section>
 
-      <section className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="tw-head font-medium">
-            {t.credits}
-            {credits && ` · ${t.available(available.length)}`}
-          </h3>
-        </div>
-        <p className="tw-label text-muted-foreground">{t.creditsNote}</p>
-        {!credits ? null : list.length === 0 ? (
-          <p className="tw-body text-muted-foreground">{t.noCredits}</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {list.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="tw-body">{c.title ?? t.credit}</p>
-                  <p className="tw-label text-muted-foreground">
-                    {status[c.status] ?? c.status}
-                    {/* 到期日只对还能用的卡有意义 */}
-                    {c.status === AVAILABLE && c.expires_at && ` · ${t.expires(c.expires_at.slice(0, 10))}`}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={c.status !== AVAILABLE || using}
-                  onClick={() => setConfirming(c)}
-                >
-                  {t.useEllipsis}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <section className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="tw-head font-medium">
+                {t.credits}
+                {credits && ` · ${t.available(available.length)}`}
+              </h3>
+            </div>
+            <p className="tw-label text-muted-foreground">{t.creditsNote}</p>
+            {!credits ? null : list.length === 0 ? (
+              <p className="tw-body text-muted-foreground">{t.noCredits}</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {list.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="tw-body">{c.title ?? t.credit}</p>
+                      <p className="tw-label text-muted-foreground">
+                        {status[c.status] ?? c.status}
+                        {/* 到期日只对还能用的卡有意义 */}
+                        {c.status === AVAILABLE && c.expires_at && ` · ${t.expires(c.expires_at.slice(0, 10))}`}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={c.status !== AVAILABLE || using}
+                      onClick={() => setConfirming(c)}
+                    >
+                      {t.useEllipsis}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
 
       <DialogError error={error} />
 
@@ -260,15 +267,15 @@ export function ChatgptAccountSection({
 /**
  * 登录状态。
  *
- * 先说**登的是哪个账号** —— 上游的名字是用户自己取的，说明不了这一条。
+ * 先说**登的是哪个账号** —— 上游的名字是用户自己取的，说明不了这一条。账号和套餐是
+ * core 从凭据的令牌里读的，和列表那一行是同一份。**凭据失效之后仍是最后登着的那个，
+ * 照样写出来**：重新登录时要登回的就是它。
  * **凭据失效时这里是唯一的出路**，所以它自己就带着重新登录。
  */
 function LoginBox({ editing, onRelogin }: { editing: ProviderView; onRelogin: () => void }) {
   const t = useText(chatgptAccountText);
   const oauth = editing.oauth;
-  // 账号和套餐是 core 从凭据的令牌里读的：凭据失效之后仍是最后登着的那个
-  const email = oauth?.account?.email ?? null;
-  const plan = oauth?.account?.plan;
+  const who = [oauth?.account?.email, planLabel(oauth?.account?.plan)].filter(Boolean).join(" · ");
   const broken = oauth?.needs_login === true;
   const expires = oauth?.expires_at ? Date.parse(oauth.expires_at) : NaN;
   const left = Number.isNaN(expires) ? null : resetIn((expires - Date.now()) / 1000);
@@ -276,10 +283,16 @@ function LoginBox({ editing, onRelogin }: { editing: ProviderView; onRelogin: ()
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="truncate tw-body font-medium" title={email ?? undefined}>
-            {broken ? t.loginInvalid : (email ?? t.signedIn)}
-            {planLabel(plan) && !broken && ` · ${planLabel(plan)}`}
-          </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate tw-body font-medium" title={who || undefined}>
+              {who || (broken ? t.loginInvalid : t.signedIn)}
+            </p>
+            {broken && who && (
+              <StatusLabel tone="error" className="shrink-0">
+                {t.loginInvalid}
+              </StatusLabel>
+            )}
+          </div>
           {broken ? (
             <p className="tw-label text-muted-foreground">{oauth?.failure ? coreText(oauth.failure) : t.needsLogin}</p>
           ) : (

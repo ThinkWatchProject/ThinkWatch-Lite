@@ -80,9 +80,12 @@ export function ZaiLoginDialog({
   }, []);
 
   const waiting = phase.at === "waiting" ? phase.id : null;
+  /** 已经收过尾的那次登录。事件和轮询都会报结果，只收一次 */
+  const settled = useRef<string | null>(null);
 
   function settle(s: ZaiLoginStatus) {
-    if (!alive.current || s.status === "pending") return;
+    if (!alive.current || s.status === "pending" || settled.current === s.id) return;
+    settled.current = s.id;
     if (s.status === "done" && s.provider) {
       setPhase({ at: "done", provider: s.provider, account: s.account ?? null });
       onSaved(s.provider);
@@ -99,12 +102,16 @@ export function ZaiLoginDialog({
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind !== "login_finished" || ev.login !== waiting) return;
-      settle({
-        id: ev.login,
-        status: ev.status,
-        provider: ev.provider ?? null,
-        error: ev.error ?? null,
-      });
+      // 事件只报结果，不带登上的是哪个账号：那一项只在这次登录的状态里。立刻问一次，
+      // 问不到就按事件收尾
+      api.zaiLoginStatus(ev.login).then(settle, () =>
+        settle({
+          id: ev.login,
+          status: ev.status,
+          provider: ev.provider ?? null,
+          error: ev.error ?? null,
+        }),
+      );
     });
     const timer = setInterval(() => {
       api
@@ -266,10 +273,11 @@ export function ZaiLoginDialog({
 
         {phase.at === "done" && (
           <div className="flex flex-col gap-2 tw-body">
-            <p>
-              {t.done(<span className="font-mono">{phase.provider}</span>)}
-              {phase.account && ` ${t.account(phase.account)}`}
-            </p>
+            {/* 登上的账号单独一行，和 ChatGPT 账号登录完成时一样 */}
+            <div>
+              <p>{t.done(<span className="font-mono">{phase.provider}</span>)}</p>
+              {phase.account && <p>{t.account(phase.account)}</p>}
+            </div>
             <p className="tw-label text-muted-foreground">{t.doneHint}</p>
           </div>
         )}

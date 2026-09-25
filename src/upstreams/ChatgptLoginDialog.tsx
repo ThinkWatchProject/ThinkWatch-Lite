@@ -16,7 +16,7 @@ import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { StatusLabel } from "@/ui/status-dot";
-import type { ChatgptLoginMode, ChatgptLoginStatus, ChatgptPlan, CoreEvent, Overview } from "@/types";
+import type { AccountView, ChatgptLoginMode, ChatgptLoginStatus, CoreEvent, Overview } from "@/types";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
@@ -37,7 +37,8 @@ type Phase =
   | { at: "browser"; id: string }
   /** 码已经拿到，等用户在另一台设备上输 */
   | { at: "device"; id: string; code: string; url: string }
-  | { at: "done"; provider: string; plan: ChatgptPlan | null };
+  /** `account`：登上的是哪个账号，和列表、编辑对话框读的是同一份（上游视图的 `oauth.account`） */
+  | { at: "done"; provider: string; account: AccountView | null };
 
 /**
  * 用 ChatGPT 账号新建上游，或给已有的账号换一次凭据。
@@ -91,12 +92,22 @@ export function ChatgptLoginDialog({
   }, []);
 
   const waiting = phase.at === "browser" || phase.at === "device" ? phase.id : null;
+  /** 已经收过尾的那次登录。事件和轮询都会报结果，只收一次 */
+  const settled = useRef<string | null>(null);
 
   function settle(s: ChatgptLoginStatus) {
-    if (!alive.current || s.status === "pending") return;
+    if (!alive.current || s.status === "pending" || settled.current === s.id) return;
+    settled.current = s.id;
     if (s.status === "done" && s.provider) {
-      setPhase({ at: "done", provider: s.provider, plan: s.plan ?? null });
-      onSaved(s.provider);
+      const provider = s.provider;
+      onSaved(provider);
+      // 登上的是哪个账号，问上游视图：和列表、编辑对话框说的是同一份。问不到就只说上游
+      void api
+        .signedInAs(provider)
+        .catch(() => null)
+        .then((account) => {
+          if (alive.current) setPhase({ at: "done", provider, account });
+        });
       return;
     }
     setPhase({ at: "form" });
@@ -169,7 +180,10 @@ export function ChatgptLoginDialog({
 
   const nameTaken = !relogin && taken.includes(name.trim()) && phase.at === "form";
   const canStart = name.trim().length > 0 && !nameTaken && understood && !busy;
-  const planName = phase.at === "done" ? planLabel(phase.plan) : null;
+  // 登上的账号：邮箱和套餐，令牌里读不出来的那一项不说
+  const account = phase.at === "done" ? phase.account : null;
+  const plan = planLabel(account?.plan);
+  const who = account?.email ? t.account(account.email, plan) : plan ? t.plan(plan) : null;
 
   return (
     <Dialog open onOpenChange={(o) => !o && void cancel()}>
@@ -295,10 +309,11 @@ export function ChatgptLoginDialog({
 
         {phase.at === "done" && (
           <div className="flex flex-col gap-2 tw-body">
-            <p>
-              {t.done(<span className="font-mono">{phase.provider}</span>)}
-              {planName && ` ${t.plan(planName)}`}
-            </p>
+            {/* 登上的账号单独一行：接在上一句后面时，套餐名会被折断 */}
+            <div>
+              <p>{t.done(<span className="font-mono">{phase.provider}</span>)}</p>
+              {who && <p>{who}</p>}
+            </div>
             <p className="tw-label text-muted-foreground">{t.doneHint}</p>
           </div>
         )}

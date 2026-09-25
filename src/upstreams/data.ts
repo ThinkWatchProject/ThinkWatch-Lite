@@ -116,10 +116,7 @@ export function usePricingStatus(configVersion: string) {
  * 额度，`onAnswered` 让统计从 core 再读一遍，免得这里和它各存一份。
  */
 export function useAccountQuotas(providers: ProviderView[], onAnswered: () => void): void {
-  const names = providers
-    .filter((p) => p.protocol === "chatgpt" && !p.disabled)
-    .map((p) => p.name)
-    .sort();
+  const names = quotaAccounts(providers);
   const key = names.join("\n");
   const answered = useRef(onAnswered);
   answered.current = onAnswered;
@@ -133,6 +130,18 @@ export function useAccountQuotas(providers: ProviderView[], onAnswered: () => vo
     },
     { deps: [key] },
   );
+}
+
+/**
+ * 打开这一页时要问额度的账号：启用着的 ChatGPT 账号上游，按名字排好。
+ *
+ * **登录已失效的不问**：凭据换不来令牌，这一问注定失败。
+ */
+export function quotaAccounts(providers: readonly ProviderView[]): string[] {
+  return providers
+    .filter((p) => p.protocol === "chatgpt" && !p.disabled && p.oauth?.needs_login !== true)
+    .map((p) => p.name)
+    .sort();
 }
 
 /** 在途请求记住多少条已经结束的 id（结束事件比快照先到时用来排除）。只是防御性的上限 */
