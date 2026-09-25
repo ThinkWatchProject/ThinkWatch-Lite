@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { statusTone, tokens as tokenPair, when } from "@/format";
 import { Button } from "@/ui/button";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
+import { IconDenied } from "@/ui/icons";
 import { UpstreamLogo } from "@/ui/logos";
 import { AnimatedNumber } from "@/ui/motion";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
@@ -19,12 +20,22 @@ import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
-import { Elapsed } from "@/traffic/cells";
+import { Elapsed, NotSentIcon } from "@/traffic/cells";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "@/traffic/PanelHeader";
 import { KeyLabel } from "./KeyLabel";
-import { appLabel, attemptText, formatLabel, quoteText, targetLabel } from "./labels";
+import {
+  appLabel,
+  attemptText,
+  deniedHopText,
+  formatLabel,
+  notSentText,
+  probeLabel,
+  quoteText,
+  targetLabel,
+} from "./labels";
 import { prettyJson } from "./prettyJson";
 import { requestDrawerText } from "./RequestDrawer.i18n";
+import { notSent, routingFacts, type RoutingNote } from "./requestRouting";
 import { ActionBadge, EventDetail, ruleName, whereOf } from "./security/labels";
 import {
   usd,
@@ -177,10 +188,12 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
 
   const r = d.row;
   const state = stateOf(d);
+  const sent = notSent(r);
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex min-h-0 flex-1 flex-col gap-0">
       <PanelHeader
-        title={r.model || t.requestNo(id)}
+        // 本地应答的没有模型，路径是辅助请求的类别：标题写类别的名字
+        title={r.model || (r.local ? probeLabel(r.path) : t.requestNo(id))}
         meta={when(r.at_ms)}
         onClose={onClose}
         tabs={
@@ -195,12 +208,20 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         }
       >
         <HeadStatus r={r} state={state} />
-        {/* 没有发往任何上游的（被规则拒绝、选中的上游一个都接不了）上游是空的，不写 */}
-        {(r.local || r.provider) && (
+        {/* 没有发往任何上游的（被规则拒绝、选中的上游一个都接不了）上游是空的：写是哪一种，
+            图形和流量表那一格一样 */}
+        {sent ? (
           <span className="inline-flex min-w-0 items-center gap-1.5">
-            {!r.local && <UpstreamLogo name={r.provider} className="opacity-70" />}
-            <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
+            <NotSentIcon kind={sent} />
+            <span className="truncate">{notSentText(sent)}</span>
           </span>
+        ) : (
+          (r.local || r.provider) && (
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              {!r.local && <UpstreamLogo name={r.provider} className="opacity-70" />}
+              <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
+            </span>
+          )
         )}
         <span className="min-w-0 truncate">
           <KeyLabel name={r.client} masked={r.key_masked} />
@@ -341,6 +362,7 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
   const t = useText(requestDrawerText);
   const r = d.row;
   const running = state === "in_flight";
+  const sent = notSent(r);
   const prompt =
     r.input_tokens != null ? r.input_tokens + (r.cache_read_tokens ?? 0) + (r.cache_write_tokens ?? 0) : undefined;
   const gen = r.duration_ms != null && r.ttfb_ms != null ? r.duration_ms - r.ttfb_ms : null;
@@ -371,7 +393,24 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
 
       <Rows className="mt-4">
         <Row label={t.generationTime} value={gen !== null ? ms(gen) : running ? t.inProgress : "—"} />
-        <Row label={t.upstream} value={r.local ? t.answeredLocally : r.provider || "—"} />
+        <Row
+          label={t.upstream}
+          value={
+            r.local ? (
+              t.answeredLocally
+            ) : sent ? (
+              notSentText(sent)
+            ) : r.routing?.denied_by ? (
+              // 选定上游之后被规则拒绝：这一行记在要去的那个上游上，但没有发给它
+              <>
+                {r.provider}
+                <span className="text-muted-foreground">{t.notSentSuffix}</span>
+              </>
+            ) : (
+              r.provider || "—"
+            )
+          }
+        />
         {/* 密钥是身份；应用是按请求头推测的，能伪造；来源是这条连接对面的
             地址，只有非本机来的才有 */}
         <Row label={t.client} value={<KeyLabel name={r.client} masked={r.key_masked} />} />
@@ -532,30 +571,45 @@ function CostText({ r, running, short }: { r: HistoryRow; running: boolean; shor
   );
 }
 
-/** 路由：命中的规则、经过的策略组、尝试链 */
+/**
+ * 路由：走的哪条路由、哪条规则决定了去向、经过的策略组、改写了参数的规则、拒绝了它的
+ * 规则和理由，然后是尝试链。全是 core 记下的（`RoutingView` 和失败的那一句），排法在
+ * `routingFacts`。
+ */
 function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
   const t = useText(requestDrawerText);
+  const f = routingFacts(r, running);
   // 只有本地应答的没有：它没到规则那一层
-  if (!r.routing) return <p className="text-muted-foreground">{t.noRouting}</p>;
-  const attempts = r.routing.attempts;
+  if (!f) return <p className="text-muted-foreground">{t.noRouting}</p>;
+  const note = f.note && noteText(f.note, t);
   return (
     <div className="space-y-4">
       {/* **「命中第 4 条」远不如「命中『带缓存的必须走官方』」有用** */}
       <Rows>
-        <Row label={t.matchedRule} value={r.routing.rule} />
-        {r.routing.group && <Row label={t.viaGroup} value={targetLabel(r.routing.group)} />}
+        <Row label={t.route} value={f.route} />
+        <Row
+          label={t.matchedRule}
+          value={
+            <span className="inline-flex flex-wrap items-center gap-x-2">
+              <span>{f.rule}</span>
+              {/* 决定去向的这一条就是拒绝：选定上游之前就被拒绝了 */}
+              {f.ruleDenied && <Denied>{t.denied}</Denied>}
+            </span>
+          }
+        />
+        {f.group && <Row label={t.viaGroup} value={targetLabel(f.group)} />}
+        {/* 按求值的顺序：先是选定上游之前的，再是每一跳之后的 */}
+        {f.rewrittenBy.length > 0 && <Row label={t.rewrittenBy} value={f.rewrittenBy.join(t.listSep)} />}
+        {f.deniedBy && <Row label={t.deniedBy} value={<Denied>{f.deniedBy}</Denied>} />}
+        {f.reason && (
+          <Row label={t.reason} value={"text" in f.reason ? f.reason.text : coreText(f.reason.msg)} />
+        )}
       </Rows>
       <section>
         <h3 className="mb-2 tw-head text-foreground">{t.attempts}</h3>
-        {/*
-          尝试链是空的：还在等第一跳的结果；或者请求没有发给任何上游（被规则拒绝、
-          选中的上游一个都接不了），或者上游应答之前客户端就走了
-        */}
-        {attempts.length === 0 ? (
-          <p className="text-muted-foreground">{running ? t.routingPending : t.noAttempts}</p>
-        ) : (
+        {f.hops.length > 0 && (
           <ol className="overflow-hidden rounded-lg border border-border">
-            {attempts.map((a, i) => {
+            {f.hops.map(({ attempt: a, denied }, i) => {
               const outcome = attemptText(a);
               return (
                 <li
@@ -563,29 +617,69 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
                   className="flex items-center gap-3 border-t border-border px-3 py-2 first:border-t-0"
                 >
                   <span className="w-4 shrink-0 tw-num text-muted-foreground">{i + 1}</span>
-                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                  <span
+                    className={cn("flex min-w-0 items-center gap-1.5 font-medium", denied && "text-muted-foreground")}
+                  >
                     <UpstreamLogo name={a.provider} className="opacity-70" />
                     <span className="truncate">{a.provider}</span>
                   </span>
-                  {/* **失败的原因要留着** —— 一条说「试过 A → B → C」的链和一条还说清
-                      每一跳为什么失败的链，排查价值差得远 */}
-                  <StatusLabel tone={outcome.ok ? "ok" : "warn"} muted={outcome.ok} className="min-w-0 flex-1">
-                    {outcome.text}
-                  </StatusLabel>
-                  <span className="shrink-0 tw-num text-muted-foreground">{ms(a.ms)}</span>
+                  {denied ? (
+                    // 选定上游之后的规则在这一跳拒绝了它：没有发给这个上游，不是上游的失败
+                    <Denied className="min-w-0 flex-1">
+                      <span className="truncate">{deniedHopText(f.deniedBy ?? "")}</span>
+                    </Denied>
+                  ) : (
+                    /* **失败的原因要留着** —— 一条说「试过 A → B → C」的链和一条还说清
+                       每一跳为什么失败的链，排查价值差得远 */
+                    <StatusLabel tone={outcome.ok ? "ok" : "warn"} muted={outcome.ok} className="min-w-0 flex-1">
+                      {outcome.text}
+                    </StatusLabel>
+                  )}
+                  {/* 没有发出的那一跳没有耗时可言 */}
+                  <span className="shrink-0 tw-num text-muted-foreground">{denied ? "—" : ms(a.ms)}</span>
                 </li>
               );
             })}
           </ol>
         )}
-        {attempts.length > 1 && (
-          // **用户能看见故障转移在替他工作，这是信任的来源**。一个静默切换过的请求和
-          // 一次就成的请求，在他眼里应该是不同的
-          <p className="mt-2 text-muted-foreground">{t.failover(attempts.length - 1)}</p>
-        )}
+        {/*
+          **用户能看见故障转移在替他工作，这是信任的来源**。一个静默切换过的请求和一次就成
+          的请求，在他眼里应该是不同的。尝试链是空的时候，这一句说为什么是空的
+        */}
+        {note && <p className={cn("text-muted-foreground", f.hops.length > 0 && "mt-2")}>{note}</p>}
       </section>
     </div>
   );
+}
+
+/** 拒绝：禁止符号加字，红色。和路由图上「拒绝」那个节点同一个图形 */
+function Denied({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-destructive", className)}>
+      <IconDenied aria-hidden className="size-3.5 shrink-0" />
+      {children}
+    </span>
+  );
+}
+
+/** 尝试链下面那一句（见 `RoutingNote`）。只说字面上成立的事：被拒绝的那一跳不算切换成功 */
+function noteText(n: RoutingNote, t: (typeof requestDrawerText)["zh"]): string {
+  switch (n.kind) {
+    case "failover":
+      return t.failover(n.failed);
+    case "failover_denied":
+      return t.failoverDenied(n.failed, n.rule);
+    case "denied_after_pick":
+      return t.deniedAfterPick(n.rule);
+    case "denied_before_pick":
+      return t.deniedBeforePick(n.rule);
+    case "unavailable":
+      return t.unavailable;
+    case "pending":
+      return t.routingPending;
+    case "none":
+      return t.noAttempts;
+  }
 }
 
 /**

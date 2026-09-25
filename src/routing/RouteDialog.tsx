@@ -1,5 +1,5 @@
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { BanIcon, FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
+import { FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { IconDenied } from "@/ui/icons";
 import { Input } from "@/ui/input";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
@@ -477,7 +478,7 @@ function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
     return (
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-destructive">
-          <BanIcon aria-hidden className="size-3.5 shrink-0" />
+          <IconDenied aria-hidden className="size-3.5 shrink-0" />
           {rt.deny}
         </div>
         <div className="truncate tw-label text-muted-foreground">{r.deny}</div>

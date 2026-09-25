@@ -21,6 +21,7 @@ import {
   IconClient,
   IconDashboard,
   IconFlow,
+  IconGateway,
   IconGuard,
   IconKey,
   IconLocal,
@@ -33,8 +34,10 @@ import {
 } from "@/ui/icons";
 import { ClientLogo, UpstreamLogo } from "@/ui/logos";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
-import { groupKindLabel, targetLabel, ALL_UPSTREAMS } from "@/labels";
+import { groupKindLabel, notSentText, probeLabel, targetLabel, ALL_UPSTREAMS } from "@/labels";
 import { when } from "@/format";
+import { notSent } from "@/requestRouting";
+import { NotSentIcon } from "@/traffic/cells";
 import type { ConnView } from "@/connection/api";
 import { connText } from "@/connection/connection.i18n";
 import { profileName } from "@/connection/describe";
@@ -446,29 +449,43 @@ export function requestItems(
   /** 按模型搜时已经列过的模型（`rows` 新的在前，先碰到的就是最近的那一条） */
   const seen = new Set<string>();
   for (const r of rows) {
+    // 本地应答的没有模型，路径是辅助请求的类别（`titling`）：标题写类别的名字，原词留着搜
+    const title = r.model || (r.local ? probeLabel(r.path) : r.path);
+    const keywords = r.local && !r.model ? [r.path] : [];
     let sc: number;
     if (idQuery !== null) {
       const id = String(r.id);
       sc = id === idQuery ? 1 : id.startsWith(idQuery) ? 0.85 : 0;
     } else {
-      const title = r.model || r.path;
       if (seen.has(title)) continue;
-      sc = scoreOf(title, []);
+      sc = scoreOf(title, keywords);
       if (sc >= 0.5) seen.add(title);
     }
     if (sc < 0.5) continue;
     const p = baseOf.get(r.provider);
     const tone: StatusTone | null =
       r.state === "in_flight" ? "pending" : r.state === "failed" ? "error" : null;
+    // 没有发往任何上游的（被规则拒绝、选中的上游一个都接不了）上游是空的：图形和那一行说是
+    // 哪一种，不画一个「?」方块。本地应答的「上游」一格是那一句说明，不是上游的名字
+    const sent = notSent(r);
     out.push({
       row: r,
       score: sc,
       item: {
         id: `request:${r.id}`,
         group: "requests",
-        title: r.model || r.path,
-        detail: [t.requestNo(r.id), r.provider, r.client].filter(Boolean).join(" · "),
-        icon: <UpstreamLogo name={r.provider} baseUrl={p?.base_url} protocol={p?.protocol} />,
+        title,
+        detail: [t.requestNo(r.id), sent ? notSentText(sent) : r.provider, r.client].filter(Boolean).join(" · "),
+        icon: sent ? (
+          <NotSentIcon kind={sent} plain />
+        ) : r.local ? (
+          <IconGateway />
+        ) : r.provider ? (
+          <UpstreamLogo name={r.provider} baseUrl={p?.base_url} protocol={p?.protocol} />
+        ) : (
+          // 开始时就没有上游、结局还没到的那一瞬：画成一条请求
+          <IconFlow />
+        ),
         meta: (
           <>
             {tone && <StatusDot tone={tone} label={tone === "pending" ? t.inFlight : t.failed} />}

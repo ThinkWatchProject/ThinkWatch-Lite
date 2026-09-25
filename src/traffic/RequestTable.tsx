@@ -3,8 +3,9 @@ import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { latency, money, statusTone, tokens, when } from "@/format";
-import { translatedText } from "@/labels";
+import { notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
+import { notSent } from "@/requestRouting";
 import { promptTokens, type Filter, type SortDir, type SortKey } from "@/requestTable";
 import type { RequestRow } from "@/types";
 import { Badge } from "@/ui/badge";
@@ -15,7 +16,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { copyText, DIM, Elapsed, Lines, MENU_REVEAL, ROW, RowKeyCell } from "./cells";
+import { copyText, DIM, Elapsed, Lines, MENU_REVEAL, NotSentIcon, ROW, RowKeyCell } from "./cells";
 import { sortWithin, type Cursor, type Group } from "./grouping";
 import { SessionRow } from "./SessionRow";
 import { trafficText } from "./Traffic.i18n";
@@ -573,17 +574,29 @@ function StatusCell({ r }: { r: RequestRow }) {
  */
 function UpstreamCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
+  const sent = notSent(r);
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       {/* 本地应答的那一句（英文两个词）可以在词间折行：它不是一个名字，别让它定这一列的最小宽度 */}
-      <span className={cn("flex items-center gap-1.5", !r.local && "whitespace-nowrap")}>
-        {r.local || !r.provider ? (
-          <span aria-hidden className="size-4 shrink-0" />
+      <span className={cn("flex items-center gap-1.5", !r.local && !sent && "whitespace-nowrap")}>
+        {/* 被规则拒绝、选中的上游一个都接不了的请求没有发往任何上游：上游是空的，
+            这一格说是哪一种，图形和路由图上的拒绝一致。和本地应答一样是一句话、不是
+            名字，可以在词间折行 */}
+        {sent ? (
+          <>
+            <NotSentIcon kind={sent} />
+            <span>{notSentText(sent)}</span>
+          </>
         ) : (
-          <UpstreamLogo name={r.provider} className="opacity-70" />
+          <>
+            {r.local || !r.provider ? (
+              <span aria-hidden className="size-4 shrink-0" />
+            ) : (
+              <UpstreamLogo name={r.provider} className="opacity-70" />
+            )}
+            {r.provider ? <span>{r.provider}</span> : <span className="text-muted-foreground">—</span>}
+          </>
         )}
-        {/* 被规则拒绝、选中的上游一个都接不了的请求没有发往任何上游：上游是空的 */}
-        {r.provider ? <span>{r.provider}</span> : <span className="text-muted-foreground">—</span>}
       </span>
       {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑是脱敏搞坏了功能。
           所以脱敏发生了就要在列表这一层看得见，而不是藏在详情里 */}

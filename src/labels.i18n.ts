@@ -64,6 +64,13 @@ export const labelsText = messages(
     rateLimited: "429 · 限流",
     upstreamError: (status: number | string) => `${status} · 上游错误`,
     noResponse: "未收到响应",
+    /** 选定上游之后被规则拒绝的那一跳：没有发给这个上游 */
+    deniedHop: (rule: string) => `未发送 · 被规则「${rule}」拒绝`,
+    // 没有发往任何上游的请求，在「上游」的位置上写的那一句
+    notSent: {
+      denied: "规则拒绝",
+      unavailable: "无可用上游",
+    },
 
     // ------------------------------------------------------------ 请求与费用
     quote: {
@@ -186,6 +193,12 @@ export const labelsText = messages(
     rateLimited: "429 · Rate limited",
     upstreamError: (status: number | string) => `${status} · Upstream error`,
     noResponse: "No response received",
+    deniedHop: (rule: string) => `Not sent · denied by rule “${rule}”`,
+    // 流量表「上游」那一列放得下的长度：再长就折成两行
+    notSent: {
+      denied: "Denied",
+      unavailable: "No upstream",
+    },
 
     quote: {
       free: "Free.",

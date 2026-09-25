@@ -25,6 +25,8 @@ export { Router as IconGateway } from "lucide-react"; // 网关 —— 一台路
 export { Laptop as IconClient } from "lucide-react"; // 客户端 —— 一台笔电
 export { Plug as IconMcp } from "lucide-react"; // MCP —— 给客户端接上的插头
 export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机器
+export { ServerOff as IconNoUpstream } from "lucide-react"; // 没有可用的上游 —— 那一摞机器划掉
+export { Ban as IconDenied } from "lucide-react"; // 被规则拒绝 —— 禁止符号
 export { KeyRound as IconKey } from "lucide-react"; // 密钥 —— 钥匙，不是锁
 export { SlidersHorizontal as IconSettings } from "lucide-react"; // 设置 —— 推子，齿轮留给系统设置
 export { PanelLeft as IconSidebar } from "lucide-react"; // 收起/展开源列表

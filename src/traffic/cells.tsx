@@ -3,8 +3,10 @@ import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { appLabel } from "@/labels";
 import { keyText } from "@/KeyLabel";
+import { cn } from "@/lib/utils";
+import type { NotSent } from "@/requestRouting";
 import type { RequestRow } from "@/types";
-import { IconRemote } from "@/ui/icons";
+import { IconDenied, IconNoUpstream, IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
 import { notify } from "@/ui/notify";
 import { Tip } from "@/ui/tip";
@@ -99,6 +101,24 @@ export function KeyCell({
 /** 一条请求的密钥那一格 */
 export function RowKeyCell({ r, hints }: { r: RequestRow; hints: boolean }) {
   return <KeyCell client={r.client} masked={r.keyMasked} hint={r.hint} peer={r.peer} hints={hints} />;
+}
+
+/**
+ * 没有发往任何上游的请求在上游标志的位置上画什么：被规则拒绝是禁止符号（和路由图上
+ * 「拒绝」那个节点同一个），没有可用的上游是划掉的上游。和上游标志一样大，名字对得齐。
+ *
+ * 拒绝带红色，和路由图一致；`plain` 时跟着周围的字色（命令面板里的图标都是单色）。
+ */
+export function NotSentIcon({ kind, plain }: { kind: NotSent; plain?: boolean }) {
+  const Icon = kind === "denied" ? IconDenied : IconNoUpstream;
+  return (
+    <Icon
+      aria-hidden
+      data-not-sent={kind}
+      size={16}
+      className={cn("shrink-0", !plain && (kind === "denied" ? "text-destructive" : "text-muted-foreground"))}
+    />
+  );
 }
 
 /**
