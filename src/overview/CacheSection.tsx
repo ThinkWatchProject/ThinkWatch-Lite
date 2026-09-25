@@ -109,7 +109,7 @@ export function CacheSection({ d, scope, scoped }: { d: Dashboard; scope: string
                   key={key}
                   className={cn("h-7 gap-2.5", rowMotion(presence))}
                   hint={t.viewInTraffic}
-                  onOpen={() => nav.open("requests", { grouped: false, filter: { q: r.name } })}
+                  onOpen={() => nav.open("requests", { grouped: false, filter: { model: r.name } })}
                 >
                   <ModelMark name={r.name} />
                   <span className="min-w-0 flex-1 truncate" title={r.name}>

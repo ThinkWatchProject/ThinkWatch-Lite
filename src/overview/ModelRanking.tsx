@@ -53,7 +53,7 @@ export function ModelRanking({
           key={key}
           className={rowMotion(presence)}
           hint={r.merged ? undefined : t.viewInTraffic}
-          onOpen={r.merged ? undefined : () => nav.open("requests", { grouped: false, filter: { q: r.name } })}
+          onOpen={r.merged ? undefined : () => nav.open("requests", { grouped: false, filter: { model: r.name } })}
           onPoint={(on) => onFocus(on ? r.name : null)}
         >
           {r.merged ? <MarkSpace /> : <ModelMark name={r.name} />}

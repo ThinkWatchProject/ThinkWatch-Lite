@@ -349,6 +349,25 @@ export default function TrafficPage({
             </NativeSelect>
           )}
           {/*
+            模型只在筛着的时候出现（从概览点一个模型进来）：平时按模型找用搜索框就够，
+            再常驻一个下拉，默认窗口宽度下过滤条就折成两行。筛着的模型可能还没出现在
+            已读到的行里 —— 照样列出来，筛子不能藏着。
+          */}
+          {filter.model !== "" && (
+            <NativeSelect
+              size="sm"
+              value={filter.model}
+              onChange={(e) => setFilter((f) => ({ ...f, model: e.target.value }))}
+            >
+              <NativeSelectOption value="">{t.allModels}</NativeSelectOption>
+              {(facet.models.includes(filter.model) ? facet.models : [filter.model, ...facet.models]).map((m) => (
+                <NativeSelectOption key={m} value={m}>
+                  {m}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          )}
+          {/*
             筛掉了多少要说出来：只写「12 条」不写「共 340 条」，会以为总共就这么多。
             没筛的时候不写 —— 页头已经说了一共几条。
           */}

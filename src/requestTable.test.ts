@@ -149,6 +149,28 @@ describe("过滤下拉的取值", () => {
   });
 });
 
+describe("按模型筛", () => {
+  const row = (id: number, model?: string): RequestRow => ({
+    id,
+    client: "c",
+    provider: "p",
+    path: "/v1/messages",
+    atMs: id,
+    state: "done",
+    model,
+  });
+
+  /** 概览上 gpt-5.5 那一行不含 gpt-5.5-codex，点进来看到的也不能含 */
+  it("整个名字相等才算，不是子串", () => {
+    const rows = [row(1, "gpt-5.5"), row(2, "gpt-5.5-codex"), row(3)];
+    expect(filterRows(rows, { ...EMPTY_FILTER, model: "gpt-5.5" }).map((r) => r.id)).toEqual([1]);
+  });
+
+  it("出现过的模型进下拉，没报模型的不算", () => {
+    expect(facets([row(1, "b"), row(2, "a"), row(3)]).models).toEqual(["a", "b"]);
+  });
+});
+
 describe("只看无法计价的", () => {
   const row = (x: Partial<RequestRow>): RequestRow => ({
     id: 1,

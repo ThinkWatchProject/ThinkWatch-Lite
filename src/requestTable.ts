@@ -22,6 +22,13 @@ export interface Filter {
   /** 限定某个上游。空串 = 不限 */
   provider: string;
   /**
+   * 限定某个模型，**整个名字相等**才算。空串 = 不限
+   *
+   * 从概览点一个模型进来走的是它，不是 `q`：自由文本是子串匹配，点 gpt-5.5
+   * 会把 gpt-5.5-codex 一起筛出来，而概览上那一行的数字不含它。
+   */
+  model: string;
+  /**
    * 只看没算出金额的。
    *
    * **「无法计价」在概览上是一个数字，而它该是一个可以点进来的问题** ——
@@ -35,6 +42,7 @@ export const EMPTY_FILTER: Filter = {
   failedOnly: false,
   client: "",
   provider: "",
+  model: "",
   unpricedOnly: false,
 };
 
@@ -44,7 +52,8 @@ export function hasAnyFilter(f: Filter): boolean {
     f.failedOnly ||
     f.unpricedOnly ||
     f.client !== "" ||
-    f.provider !== ""
+    f.provider !== "" ||
+    f.model !== ""
   );
 }
 
@@ -120,6 +129,7 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
       return false;
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;
+    if (f.model && r.model !== f.model) return false;
     if (!q) return true;
     // 路径、密钥、应用、来源、上游、模型、错误信息都算 —— 排查时记得住的
     // 往往是错误里的那半句话，而不是哪个字段装着它。
@@ -139,15 +149,19 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
 export function facets(rows: RequestRow[]): {
   clients: string[];
   providers: string[];
+  models: string[];
 } {
   const c = new Set<string>();
   const p = new Set<string>();
+  const m = new Set<string>();
   for (const r of rows) {
     if (r.client) c.add(r.client);
     if (r.provider) p.add(r.provider);
+    if (r.model) m.add(r.model);
   }
   return {
     clients: [...c].sort(),
     providers: [...p].sort(),
+    models: [...m].sort(),
   };
 }
