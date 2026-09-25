@@ -62,10 +62,13 @@ pub fn shape_in(text: &str) -> Shape {
 /// 模型清单的写法：`{ "模型": { "name": "模型" } }`。
 ///
 /// **name 不留空**：opencode 的模型选择器显示的就是它，空着就是一行空白。
+/// 同名的只写一次：JSON 对象里重复的键，各家解析器取哪一个说法不一。
 pub fn models_val(models: &[String]) -> Val {
+    let mut seen = std::collections::HashSet::new();
     Val::Obj(
         models
             .iter()
+            .filter(|m| seen.insert(m.as_str()))
             .map(|m| (m.clone(), Val::Obj(vec![("name".into(), Val::s(m))])))
             .collect(),
     )
@@ -506,6 +509,12 @@ mod tests {
             unreachable!()
         };
         assert_eq!(ms[0].1, Val::Obj(vec![("name".into(), Val::s("m"))]));
+        // 同名的只写一次，先后照原样
+        let Val::Obj(ms) = models_val(&["b".into(), "a".into(), "b".into()]) else {
+            unreachable!()
+        };
+        let keys: Vec<_> = ms.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["b", "a"]);
     }
 
     #[test]
