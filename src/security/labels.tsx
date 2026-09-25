@@ -27,6 +27,12 @@ export function outcomeTone(action: SecurityOutcome): StatusTone {
 }
 
 /**
+ * 几种处置一起列时的先后（页头）：先说改变了请求结局的切断、拒绝，再说替换、
+ * 仅记录。和规则「拦截时」的选项同一个先后。
+ */
+export const OUTCOMES: readonly SecurityOutcome[] = ["cut", "blocked", "replaced", "recorded"];
+
+/**
  * 一条规则叫什么。
  *
  * 出站脱敏的内置规则 id 就是凭据种类（`anthropic-api-key` …），和流量页上

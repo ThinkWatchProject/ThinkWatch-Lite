@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import { clock, dayHead, dayKey, modeTone, outcomeTone } from "./labels";
+import type { SecurityOutcomeCounts } from "@/types";
+import { clock, dayHead, dayKey, modeTone, OUTCOMES, outcomeTone } from "./labels";
 
 /** 2026-09-25（周五）16:42:07，本地时区 */
 const NOW = new Date(2026, 8, 25, 16, 42, 7).getTime();
@@ -60,5 +61,12 @@ describe("状态的颜色", () => {
     expect(outcomeTone("blocked")).toBe("error");
     expect(outcomeTone("replaced")).toBe("ok");
     expect(outcomeTone("recorded")).toBe("warn");
+  });
+
+  /** 页头按这个先后列各做法的条数：四种各一次，红的在前 */
+  it("处置的先后", () => {
+    const all: SecurityOutcomeCounts = { recorded: 0, replaced: 0, cut: 0, blocked: 0 };
+    expect([...OUTCOMES].sort()).toEqual(Object.keys(all).sort());
+    expect(OUTCOMES.map(outcomeTone)).toEqual(["error", "error", "ok", "warn"]);
   });
 });

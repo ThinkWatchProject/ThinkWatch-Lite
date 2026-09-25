@@ -20,7 +20,7 @@ import {
 } from "@/types";
 import { api, hasAction, hasCustom, type CustomGuard, type RuleSave } from "./api";
 import { GuardSkeleton, GuardTab, type RuleActions } from "./GuardTab";
-import { modeTone, viewName } from "./labels";
+import { modeTone, OUTCOMES, outcomeTone, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { LogTab, type LogActions } from "./LogTab";
 import { OutputLimitTab } from "./OutputLimitTab";
@@ -70,8 +70,8 @@ const ruleKey = (guard: RuleGuard, r: SecurityRuleView) => `${guard}/${r.custom 
  * MCP 页，不在这里：这一页只管经过网关的请求。
  *
  * 页头一行是全貌：几项在拦截、几项在观察、几项关着（状态点和标签上的同色），
- * 以及日志那段时间里命中了几次。日志在第一个标签：开着一项防护却不知道它查到
- * 了什么，等于没开。
+ * 以及日志那段时间里一共命中了几次、各做了什么。日志在第一个标签：开着一项防护
+ * 却不知道它查到了什么，等于没开。
  *
  * **改动先画出来再写**：启停规则、换档都是先改界面，写完给一个带「撤销」的
  * 提示；几处连着改时一个接一个写（每一次写都要带上一次写完的版本号）。
@@ -93,7 +93,7 @@ export default function SecurityPage({
   const lt = useText(securityLabelsText);
   const [tab, setTab] = useState<SecurityTab>("log");
   const detail = useResource<SecurityDetail>("security-detail", () => api.detail(), { deps: [configVersion] });
-  // 日志的区间放在这一层：页头的命中次数和日志是同一份
+  // 日志的区间放在这一层：页头的命中次数和日志是同一次读取
   const [range, setRange] = useRange("tw-security-range", "1d");
   const log = useSecurityLog(range, tick);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -352,8 +352,12 @@ export default function SecurityPage({
 }
 
 /**
- * 页头的一行：几项防护各在哪一档（和标签上的点同色），日志那段时间里命中了
- * 几次。命中次数就是日志读到的条数；读到的是前若干条时写「100+」，不估。
+ * 页头的一行：几项防护各在哪一档（和标签上的点同色）；日志那段时间里一共命中了
+ * 几次、各做了什么（和日志「处置」一栏同色）。
+ *
+ * **条数是 core 按整段时间数的**（`total`、`by_outcome`），不是日志读到了几条：
+ * 日志往下翻多少页，这几个数都不变；来了新记录、日志重读时跟着走。换了区间
+ * 直接落到新值，不从旧区间的数滚过去（`scope`）。
  */
 function Summary({
   detail,
@@ -371,6 +375,31 @@ function Summary({
   if (!detail && loading) return <Skeleton className="my-1 h-3 w-56 rounded-sm" />;
   const counts: Record<GuardMode, number> = { enforce: 0, observe: 0, off: 0 };
   if (detail) for (const g of GUARDS) counts[detail[g].mode] += 1;
+  // 日志还在读（开页、换了没读过的区间）：先占住数字的位置；读不到时日志那里说
+  const hits = page ? (
+    // 总数和各做了什么是一句话：窗口窄、一行放不下时整句换到下一行，不从中间断开
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+      {/* 不能是 flex：flex 会吞掉数字两边的空格 */}
+      <span className="whitespace-nowrap">
+        {t.hits(
+          page.total,
+          <AnimatedNumber value={page.total} scope={log.scope} className="font-medium text-foreground" />,
+          range.label,
+          range.custom === true,
+        )}
+      </span>
+      {OUTCOMES.filter((o) => page.by_outcome[o] > 0).map((o) => (
+        <SummaryItem
+          key={o}
+          lead={<StatusDot tone={outcomeTone(o)} />}
+          value={<AnimatedNumber value={page.by_outcome[o]} scope={log.scope} />}
+          label={t.outcomes[o]}
+        />
+      ))}
+    </span>
+  ) : log.r.loading ? (
+    <Skeleton className="my-1 h-3 w-40 rounded-sm" />
+  ) : null;
   return (
     <>
       {detail &&
@@ -379,22 +408,8 @@ function Summary({
           .map((m) => (
             <SummaryItem key={m} lead={<StatusDot tone={modeTone(m)} />} value={counts[m]} label={t.modes[m]} />
           ))}
-      {detail && page && <span aria-hidden className="h-3 w-px bg-border" />}
-      {page && (
-        // 不能是 flex：flex 会吞掉数字两边的空格
-        <span className="whitespace-nowrap">
-          {t.hits(
-            <AnimatedNumber
-              value={page.events.length}
-              scope={log.scope}
-              format={(n) => `${Math.round(n)}${page.more ? "+" : ""}`}
-              className="font-medium text-foreground"
-            />,
-            range.label,
-            range.custom === true,
-          )}
-        </span>
-      )}
+      {detail && hits && <span aria-hidden className="h-3 w-px bg-border" />}
+      {hits}
     </>
   );
 }
