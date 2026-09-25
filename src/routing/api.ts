@@ -20,4 +20,6 @@ export const api = {
     call("DeleteGroup", { base_version: baseVersion }, name),
   knownModels: () => call("KnownModels", null),
   dryRun: (req: DryRunRequest) => call("DryRun", req),
+  /** 从 `fromMs` 到现在，各条路由、各条规则命中了多少 */
+  routeStats: (fromMs: number) => call("RouteStats", { from_ms: fromMs }),
 };

@@ -124,6 +124,11 @@ export type Action = "forward" | "deny" | "continue";
 export interface RuleDraft {
   /** 列表里的稳定标识。规则名在编辑中会变，不能拿来当 key */
   key: string;
+  /**
+   * 这条规则保存时的名字：新加的、复制出来的为空。命中数按保存时的名字记，
+   * 草稿里改了名也还是它
+   */
+  saved: string | null;
   name: string;
   conditions: ConditionView[];
   action: Action;
@@ -143,6 +148,7 @@ function nextKey(): string {
 export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
   return {
     key: nextKey(),
+    saved: null,
     name: "",
     conditions: [],
     action: "forward",
@@ -157,6 +163,7 @@ export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
 export function draftFromView(r: RuleView): RuleDraft {
   return {
     key: nextKey(),
+    saved: r.name,
     name: r.name,
     conditions: r.conditions.map((c) => ({ field: c.field, values: [...c.values] })),
     action: r.to ? "forward" : r.deny != null ? "deny" : "continue",
@@ -169,7 +176,12 @@ export function draftFromView(r: RuleView): RuleDraft {
 }
 
 export function copyDraft(d: RuleDraft): RuleDraft {
-  return { ...d, key: nextKey(), conditions: d.conditions.map((c) => ({ ...c, values: [...c.values] })) };
+  return {
+    ...d,
+    key: nextKey(),
+    saved: null,
+    conditions: d.conditions.map((c) => ({ ...c, values: [...c.values] })),
+  };
 }
 
 /** 附加了改写 */

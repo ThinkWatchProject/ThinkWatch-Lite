@@ -30,6 +30,8 @@ export const routeDialogText = messages(
     dragRule: (name: string) => `拖动调整规则「${name}」的位置`,
     noEffect: "不会生效",
     phaseTwo: "选定上游后",
+    hits: (days: number, n: number) => `${days} 天命中 ${n.toLocaleString()} 次`,
+    noHits: (days: number) => `${days} 天内未命中`,
     ruleActions: (name: string) => `规则「${name}」的操作`,
     noRules: "尚无规则",
     shadowed: (names: string[]) =>
@@ -69,6 +71,9 @@ export const routeDialogText = messages(
     dragRule: (name: string) => `Drag to reorder rule “${name}”`,
     noEffect: "No effect",
     phaseTwo: "After selection",
+    hits: (days: number, n: number) =>
+      `${n === 1 ? "1 hit" : `${n.toLocaleString()} hits`} in ${days === 1 ? "1 day" : `${days} days`}`,
+    noHits: (days: number) => `No hits in ${days === 1 ? "1 day" : `${days} days`}`,
     ruleActions: (name: string) => `Actions for rule “${name}”`,
     noRules: "No rules yet",
     shadowed: (names: string[]) => {
