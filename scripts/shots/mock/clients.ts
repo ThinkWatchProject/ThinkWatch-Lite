@@ -62,8 +62,13 @@ function setup(id: string, path: string): ManualSetup {
         endpoint: v1(),
         fields: [
           set("provider.thinkwatch.name", "ThinkWatch"),
+          set("provider.thinkwatch.npm", "@ai-sdk/openai-compatible"),
           set("provider.thinkwatch.options.baseURL", v1()),
           secret("provider.thinkwatch.options.apiKey"),
+          set(
+            "provider.thinkwatch.models",
+            "{claude-sonnet-5: {name: claude-sonnet-5}, gpt-5.5: {name: gpt-5.5}, deepseek-chat: {name: deepseek-chat}}",
+          ),
         ],
       };
     case "zed":
@@ -110,6 +115,7 @@ function detected(x: Partial<DetectedClient> & { id: string; name: string; path:
     warns_when_silent: true,
     verified: "fields_only",
     costs: [],
+    models_stale: false,
     key: null,
     last_seen_ms: null,
     manual: setup(x.id, x.path),
@@ -158,10 +164,9 @@ function clientsNow(): DetectedClient[] {
     detected({
       id: "opencode",
       name: "opencode",
-      path: "~/.config/opencode/opencode.json",
-      takes_effect: "on_restart",
-      warns_when_silent: false,
-      costs: [msg("adopt.cost.opencode.restart", "opencode has to be restarted afterwards.")],
+      // opencode v2：自己重载配置，不用重启
+      path: "~/.config/opencode/opencode.jsonc",
+      verified: "measured",
     }),
     detected({
       id: "zed",
@@ -313,7 +318,7 @@ export function mcpTargets(): McpTargetView[] {
     {
       client: "opencode",
       name: "opencode",
-      path: "~/.config/opencode/opencode.json",
+      path: "~/.config/opencode/opencode.jsonc",
       copyable: false,
       why_not: msg(
         "adopt.mcp.unverified_format",

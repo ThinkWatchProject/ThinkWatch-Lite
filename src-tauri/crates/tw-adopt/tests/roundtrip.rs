@@ -13,6 +13,7 @@ fn gw() -> Gateway {
     Gateway {
         base: "http://127.0.0.1:8080".into(),
         key: Some("tw-用户的专属密钥".into()),
+        models: vec!["claude-sonnet".into(), "gpt-5".into()],
     }
 }
 
@@ -464,6 +465,7 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
     let other = Gateway {
         base: "http://127.0.0.1:9090".into(),
         key: Some("tw-换过的".into()),
+        models: Vec::new(),
     };
     let p = plan_adopt(&c, &b.home, &other).unwrap();
     apply(&c, &p, &b.backups).unwrap();
@@ -556,6 +558,7 @@ fn a_gateway_without_a_key_writes_no_key_field() {
     let g = Gateway {
         base: "http://127.0.0.1:8080".into(),
         key: None,
+        models: Vec::new(),
     };
     for c in adoptable() {
         let seed = match c.format {
@@ -649,6 +652,7 @@ fn re_adopting_does_not_overwrite_what_the_original_was() {
         let g = Gateway {
             base: base.into(),
             key: Some("tw-新密钥".into()),
+            models: Vec::new(),
         };
         let p = plan_adopt(&c, &b.home, &g).unwrap();
         apply(&c, &p, &b.backups).unwrap();
@@ -676,6 +680,7 @@ fn re_adopting_codex_also_keeps_the_first_record() {
         let g = Gateway {
             base: base.into(),
             key: None,
+            models: Vec::new(),
         };
         let p = plan_adopt(&c, &b.home, &g).unwrap();
         apply(&c, &p, &b.backups).unwrap();
@@ -688,4 +693,167 @@ fn re_adopting_codex_also_keeps_the_first_record() {
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
     assert_eq!(read(&b.home.join(".codex/config.toml")), CODEX);
+}
+
+// ---- opencode：v1 的写法两个版本都认，v2 原生的那一条在就改它 ----------
+
+/// 刚装好、用过一阵的 `opencode.jsonc`：带注释、别的 provider、MCP。
+const OPENCODE_V1: &str = r#"{
+  // opencode 自己生成的
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4",
+  "provider": {
+    "anthropic": { "options": { "apiKey": "sk-ant-我自己的" } }
+  },
+  "mcp": {
+    "fs": { "type": "local", "command": ["npx", "-y", "server-fs"], "enabled": true },
+  },
+}
+"#;
+
+fn opencode_path(home: &Path) -> PathBuf {
+    client("opencode").config_path(home)
+}
+
+fn get(text: &str, path: &[&str]) -> Option<tw_adopt::json::Val> {
+    tw_adopt::json::get(text, path).unwrap()
+}
+
+#[test]
+fn adopting_opencode_writes_a_provider_both_versions_can_use() {
+    use tw_adopt::json::Val;
+    let b = bed("opencode", OPENCODE_V1);
+    let c = client("opencode");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let after = read(&opencode_path(&b.home));
+    let at = |k: &[&str]| {
+        let mut path = vec!["provider", "thinkwatch"];
+        path.extend_from_slice(k);
+        get(&after, &path)
+    };
+    // 没有 npm 的话 v2 报 Unsupported package；没有 models 的话 v1 整条删掉
+    assert_eq!(at(&["npm"]), Some(Val::s("@ai-sdk/openai-compatible")));
+    assert_eq!(
+        at(&["options", "baseURL"]),
+        Some(Val::s("http://127.0.0.1:8080/v1"))
+    );
+    assert_eq!(
+        at(&["options", "apiKey"]),
+        Some(Val::s("tw-用户的专属密钥"))
+    );
+    assert_eq!(
+        at(&["models", "gpt-5", "name"]),
+        Some(Val::s("gpt-5")),
+        "{after}"
+    );
+    assert_eq!(get(&after, &["providers"]), None, "不该另起一条原生的");
+    // 别的东西一个字都不动：注释、别的 provider、MCP
+    assert!(after.contains("// opencode 自己生成的"), "{after}");
+    assert!(after.contains("sk-ant-我自己的"), "{after}");
+    assert!(after.contains("\"server-fs\""), "{after}");
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&opencode_path(&b.home)), OPENCODE_V1);
+}
+
+/// v2 用户自己写过一条原生的 `providers.thinkwatch`：**改那一条**。另写一条 v1 的
+/// 会被它整条盖掉（实测 v2.0.16：Model unavailable）
+const OPENCODE_V2: &str = r#"{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "openai": { "settings": { "apiKey": "sk-我自己的" } },
+    "thinkwatch": { "name": "我以前配的", "settings": { "baseURL": "http://192.168.1.2:8788/v1", "timeout": 60000 } }
+  },
+  "mcp": { "servers": { "fs": { "type": "local", "command": ["npx", "server-fs"] } } }
+}
+"#;
+
+#[test]
+fn adopting_opencode_edits_the_native_v2_entry_when_there_is_one() {
+    use tw_adopt::json::Val;
+    let b = bed("opencode", OPENCODE_V2);
+    let c = client("opencode");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let after = read(&opencode_path(&b.home));
+    let at = |k: &[&str]| {
+        let mut path = vec!["providers", "thinkwatch"];
+        path.extend_from_slice(k);
+        get(&after, &path)
+    };
+    assert_eq!(
+        at(&["package"]),
+        Some(Val::s("aisdk:@ai-sdk/openai-compatible"))
+    );
+    assert_eq!(
+        at(&["settings", "baseURL"]),
+        Some(Val::s("http://127.0.0.1:8080/v1"))
+    );
+    assert_eq!(
+        at(&["settings", "apiKey"]),
+        Some(Val::s("tw-用户的专属密钥"))
+    );
+    // 用户自己设的超时留着
+    assert_eq!(at(&["settings", "timeout"]), Some(Val::Num("60000".into())));
+    assert_eq!(
+        at(&["models", "claude-sonnet", "name"]),
+        Some(Val::s("claude-sonnet"))
+    );
+    assert_eq!(get(&after, &["provider"]), None, "不该再写一条 v1 的");
+
+    // 检测认的是原生的那一条
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
+    assert_eq!(
+        d.models,
+        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
+    );
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&opencode_path(&b.home)), OPENCODE_V2);
+}
+
+/// 上游或路由变了之后重写模型清单：走的就是再接管一次，还原仍然回到最初的样子
+#[test]
+fn rewriting_the_opencode_model_list_keeps_the_first_record() {
+    let b = bed("opencode", OPENCODE_V1);
+    let c = client("opencode");
+    for models in [vec!["a"], vec!["a", "b"]] {
+        let g = Gateway {
+            models: models.into_iter().map(str::to_string).collect(),
+            ..gw()
+        };
+        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+    }
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.models, Some(vec!["a".to_string(), "b".to_string()]));
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&opencode_path(&b.home)), OPENCODE_V1);
+}
+
+/// 网关一个模型都还没有：照样能接管，但**在确认之前说清** opencode 里不会有它的模型
+#[test]
+fn adopting_opencode_with_no_models_says_so_before_confirming() {
+    let b = bed("opencode", "");
+    let c = client("opencode");
+    let g = Gateway {
+        models: Vec::new(),
+        ..gw()
+    };
+    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    assert!(
+        p.notes.iter().any(|n| n.code == "adopt.plan.no_models"),
+        "{:?}",
+        p.notes
+    );
+    let with = plan_adopt(&c, &b.home, &gw()).unwrap();
+    assert!(!with.notes.iter().any(|n| n.code == "adopt.plan.no_models"));
 }

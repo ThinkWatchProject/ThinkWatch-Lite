@@ -218,8 +218,14 @@ fn takes_effect_note(c: &Client) -> Msg {
 }
 
 pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanError> {
-    let edits = crate::clients::edits(c, gw);
-    let mut plan = adopt_file(c.id, c.config_path(home), c.format, &edits)?;
+    // 什么时候生效、有什么代价，按装着的版本说
+    let c = &c.clone().here(home);
+    let path = c.config_path(home);
+    // 写哪些字段要看文件此刻的样子（opencode 有没有原生的 `providers.thinkwatch`）；
+    // 读不出来的由 adopt_file 去报
+    let current = foreign::read(&path).ok().flatten().unwrap_or_default();
+    let edits = crate::clients::edits_for(c, gw, &current);
+    let mut plan = adopt_file(c.id, path, c.format, &edits)?;
     if let Some(also) = crate::clients::also(c) {
         let edits = crate::clients::also_edits(c, gw);
         plan.also.push(adopt_file(
@@ -237,6 +243,16 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
         args: BTreeMap::new(),
         text: (*text).into(),
     }));
+    // 一个模型都没写进去：opencode 里不会出现网关的模型。**在确认之前说**，
+    // 而不是让用户接管完了在模型列表里找不到
+    if c.writes_models && gw.models.is_empty() {
+        notes.push(msg!(
+            "adopt.plan.no_models", client = c.name =>
+            "The gateway has no model available to this key yet, so no ThinkWatch model \
+             shows up in {client}. Once models are available, update the model list on the \
+             Clients page."
+        ));
+    }
     if c.verified == crate::clients::Verified::FieldsOnly {
         notes.push(msg!(
             "adopt.plan.fields_only"
@@ -560,6 +576,7 @@ fn restore_file(plan: &Plan, backup_root: &Path) -> Result<Applied, PlanError> {
 /// 分工是刻意的：**旁文件说「我们动过哪几个字段」，全文备份说「它们原来
 /// 是什么」**。所以密钥类的原值一份都不用抄进旁文件，也不会因此丢失。
 pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
+    let c = &c.clone().here(home);
     let mut plan = restore_file_plan(c.id, c.config_path(home), c.format)?;
     if let Some(also) = crate::clients::also(c) {
         // 另外那一份没有记录（接管那时还没有它、或者记录被删了）就不动它：

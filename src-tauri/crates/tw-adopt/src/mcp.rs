@@ -70,8 +70,12 @@ pub struct Target {
     /// [`crate::paths::first_existing`]
     pub config: &'static [Loc],
     pub format: Format,
-    /// server 挂在哪个键下面
-    pub key: &'static str,
+    /// server 挂在哪条路径下面（`["mcpServers"]`）。
+    ///
+    /// opencode 的 server 有两处能放（扁平的 `mcp.<名>` 和 v2 的
+    /// `mcp.servers.<名>`），读和删按 [`crate::opencode::mcp_servers`] 找，
+    /// 这里只写两处共同的那一段
+    pub key: &'static [&'static str],
     /// 能不能往里写。
     ///
     /// **不能写的照样列在清单里**（看得见是第一目标），只是
@@ -105,7 +109,7 @@ pub fn targets() -> Vec<Target> {
             name: "Claude Code",
             config: &[Loc::Home(".claude.json")],
             format: Format::Json,
-            key: "mcpServers",
+            key: &["mcpServers"],
             copyable: true,
             why_not: None,
         },
@@ -114,7 +118,7 @@ pub fn targets() -> Vec<Target> {
             name: "Claude Desktop",
             config: &[crate::paths::CLAUDE_DESKTOP_CONFIG],
             format: Format::Json,
-            key: "mcpServers",
+            key: &["mcpServers"],
             copyable: true,
             why_not: None,
         },
@@ -123,7 +127,7 @@ pub fn targets() -> Vec<Target> {
             name: "Cursor",
             config: &[Loc::Home(".cursor/mcp.json")],
             format: Format::Json,
-            key: "mcpServers",
+            key: &["mcpServers"],
             copyable: true,
             why_not: None,
         },
@@ -132,7 +136,7 @@ pub fn targets() -> Vec<Target> {
             name: "Codex",
             config: &[Loc::Home(".codex/config.toml")],
             format: Format::Toml,
-            key: "mcp_servers",
+            key: &["mcp_servers"],
             copyable: true,
             why_not: None,
         },
@@ -141,7 +145,7 @@ pub fn targets() -> Vec<Target> {
             name: "opencode",
             config: crate::paths::OPENCODE_CONFIGS,
             format: Format::Json,
-            key: "mcp",
+            key: &["mcp"],
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.unverified_format"),
@@ -156,7 +160,7 @@ pub fn targets() -> Vec<Target> {
             name: "Antigravity CLI",
             config: &[crate::paths::AGY_MCP_CONFIG],
             format: Format::Json,
-            key: "mcpServers",
+            key: &["mcpServers"],
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.unverified_format"),
@@ -168,7 +172,7 @@ pub fn targets() -> Vec<Target> {
             name: "Zed",
             config: &[crate::paths::ZED_SETTINGS],
             format: Format::Json,
-            key: "context_servers",
+            key: &["context_servers"],
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.zed_structure"),
@@ -182,7 +186,7 @@ pub fn targets() -> Vec<Target> {
             name: "DeepSeek Harness",
             config: &[crate::paths::DSH_PATCH],
             format: Format::Rows,
-            key: "mcpServers",
+            key: &["mcpServers"],
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.dsh_rows"),
@@ -259,6 +263,10 @@ fn drop_(t: &Target, text: &str, path: &[&str]) -> Result<String, McpError> {
     }
 }
 
+fn refs(path: &[String]) -> Vec<&str> {
+    path.iter().map(String::as_str).collect()
+}
+
 fn empty(f: Format) -> &'static str {
     match f {
         Format::Json => "{}\n",
@@ -290,24 +298,48 @@ pub fn read_server(t: &Target, home: &Path, name: &str) -> Result<Val, McpError>
         });
     }
     let v = semantic(t, &text)?;
-    let Val::Obj(root) = &v else {
+    let Val::Obj(_) = &v else {
         return Err(parse_err(t.client, "the root is not an object"));
     };
-    let servers = root.iter().find(|(k, _)| k == t.key).map(|(_, v)| v);
+    let not_there = || McpError::NotThere {
+        client: t.client.into(),
+        name: name.into(),
+    };
+    // opencode 的两种写法都读，交出去的是别的客户端认的那种样子
+    if t.client == "opencode" {
+        return crate::opencode::mcp_servers(&v)
+            .into_iter()
+            .find(|m| m.name == name)
+            .map(|m| m.portable())
+            .ok_or_else(not_there);
+    }
+    let servers = lookup(&v, t.key);
     match servers {
         Some(Val::Obj(ms)) => ms
             .iter()
             .find(|(k, _)| k == name)
             .map(|(_, v)| v.clone())
-            .ok_or_else(|| McpError::NotThere {
-                client: t.client.into(),
-                name: name.into(),
-            }),
-        _ => Err(McpError::NotThere {
-            client: t.client.into(),
-            name: name.into(),
-        }),
+            .ok_or_else(not_there),
+        _ => Err(not_there()),
     }
+}
+
+fn lookup<'a>(v: &'a Val, path: &[&str]) -> Option<&'a Val> {
+    let mut cur = v;
+    for k in path {
+        let Val::Obj(ms) = cur else { return None };
+        cur = &ms.iter().find(|(mk, _)| mk == k)?.1;
+    }
+    Some(cur)
+}
+
+/// 一个 server 的路径：挂载路径后面接上它的名字。
+fn server_path(t: &Target, name: &str) -> Vec<String> {
+    t.key
+        .iter()
+        .map(|k| k.to_string())
+        .chain(std::iter::once(name.to_string()))
+        .collect()
 }
 
 /// 把一份 server 配置写进某个客户端。**只动那一个键。**
@@ -318,10 +350,11 @@ pub fn plan_copy(t: &Target, home: &Path, name: &str, value: &Val) -> Result<Pla
     let base = before
         .clone()
         .unwrap_or_else(|| empty(t.format).to_string());
-    let after = put(t, &base, &[t.key, name], value)?;
+    let field = server_path(t, name);
+    let after = put(t, &base, &refs(&field), value)?;
     Ok(Plan {
         noop: before.as_deref() == Some(after.as_str()),
-        field: vec![t.key.to_string(), name.to_string()],
+        field,
         remove: false,
         client: t.client.into(),
         path,
@@ -340,10 +373,24 @@ pub fn plan_remove(t: &Target, home: &Path, name: &str) -> Result<Plan, McpError
             name: name.into(),
         });
     };
-    let after = drop_(t, &base, &[t.key, name])?;
+    // opencode 的同名 server 可能扁平的和 `servers` 里各有一份：两处都删，
+    // 只删一处的话另一处会顶上来
+    let paths = if t.client == "opencode" {
+        let v = semantic(t, &base)?;
+        crate::opencode::mcp_paths(&v, name)
+    } else {
+        vec![server_path(t, name)]
+    };
+    let mut after = base.clone();
+    for p in &paths {
+        after = drop_(t, &after, &refs(p))?;
+    }
     Ok(Plan {
         noop: after == base,
-        field: vec![t.key.to_string(), name.to_string()],
+        field: paths
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| server_path(t, name)),
         remove: true,
         client: t.client.into(),
         path,
@@ -361,7 +408,7 @@ pub fn apply(t: &Target, plan: &Plan, backup_root: &Path) -> Result<Applied, Mcp
     let expect = semantic(t, &base)?;
     let want = semantic(t, &plan.after)?;
     // 除了那一个键，其余必须逐字段一致
-    let key = t.key;
+    let key = t.key[0];
     let strip = |v: &Val| -> Val {
         match v {
             Val::Obj(ms) => Val::Obj(
@@ -517,6 +564,59 @@ mod tests {
             // 而且要说清为什么
             assert!(e.to_string().len() > 20, "{e}");
         }
+    }
+
+    /// opencode 的两种写法都读得出来，交出去的是别的客户端认的样子；同名的
+    /// 以 `servers` 里的为准
+    #[test]
+    fn opencode_servers_are_read_in_either_shape() {
+        let oc = r#"{
+  // v1 的扁平写法和 v2 的 servers 混在一起
+  "mcp": {
+    "timeout": { "catalog": 5000 },
+    "fs": { "type": "local", "command": ["old-fs"] },
+    "git": { "type": "local", "command": ["mcp-git", "--repo", "."], "environment": { "T": "x" } },
+    "servers": { "fs": { "type": "local", "command": ["npx", "-y", "server-fs"], "disabled": false } },
+  },
+}
+"#;
+        let (_d, home) = home_with(&[(".config/opencode/opencode.jsonc", oc)]);
+        let t = target("opencode").unwrap();
+        assert_eq!(
+            read_server(&t, &home, "fs").unwrap(),
+            crate::json::value(r#"{"command": "npx", "args": ["-y", "server-fs"]}"#).unwrap()
+        );
+        assert_eq!(
+            read_server(&t, &home, "git").unwrap(),
+            crate::json::value(
+                r#"{"command": "mcp-git", "args": ["--repo", "."], "env": {"T": "x"}}"#
+            )
+            .unwrap()
+        );
+        assert!(matches!(
+            read_server(&t, &home, "timeout"),
+            Err(McpError::NotThere { .. })
+        ));
+    }
+
+    /// 从 opencode 移除一个两处都有的 server：两处都删，不然另一处会顶上来
+    #[test]
+    fn removing_from_opencode_takes_both_shapes() {
+        let oc = r#"{
+  "mcp": {
+    "fs": { "type": "local", "command": ["old-fs"] },
+    "servers": { "fs": { "type": "local", "command": ["new-fs"] }, "git": { "type": "local", "command": ["g"] } }
+  }
+}
+"#;
+        let (d, home) = home_with(&[(".config/opencode/opencode.jsonc", oc)]);
+        let t = target("opencode").unwrap();
+        let p = plan_remove(&t, &home, "fs").unwrap();
+        assert_eq!(p.field, ["mcp", "servers", "fs"]);
+        apply(&t, &p, &d.path().join("backups")).unwrap();
+        let out = std::fs::read_to_string(home.join(".config/opencode/opencode.jsonc")).unwrap();
+        assert!(!out.contains("fs"), "{out}");
+        assert!(out.contains("\"git\""), "{out}");
     }
 
     #[test]

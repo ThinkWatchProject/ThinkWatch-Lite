@@ -499,16 +499,25 @@ fn indent_at(text: &str, pos: usize) -> String {
 }
 
 /// 猜这份文件用几个空格缩进。猜错不会坏事，只是新字段对不齐。
+///
+/// **投票的是「比上一行多缩进了多少」，不是每行的缩进本身。**后者在嵌套深的
+/// 文件里会投出一个深层的缩进（一份四层的配置里，六个空格的行可能最多），
+/// 然后新插进去的对象每深一层就多缩进六格。
 fn unit_of(text: &str) -> String {
     let mut votes: BTreeMap<String, usize> = BTreeMap::new();
-    for line in text.lines() {
+    let mut prev = String::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
         let ws: String = line
             .chars()
             .take_while(|c| *c == ' ' || *c == '\t')
             .collect();
-        if !ws.is_empty() && ws.len() <= 8 {
-            *votes.entry(ws).or_default() += 1;
+        if let Some(step) = ws.strip_prefix(prev.as_str())
+            && !step.is_empty()
+            && step.len() <= 8
+        {
+            *votes.entry(step.to_string()).or_default() += 1;
         }
+        prev = ws;
     }
     votes
         .into_iter()
@@ -847,6 +856,28 @@ mod tests {
         assert_eq!(
             set(src, &["env", "X"], &Val::Null),
             Err(JErr::NotObject("env".into()))
+        );
+    }
+
+    /// 深层嵌套的文件里插一个对象：每深一层多缩进一个单位，不是多缩进最常见的
+    /// 那一行的缩进
+    #[test]
+    fn the_indent_unit_is_the_step_not_the_most_common_depth() {
+        let text = "{\n  \"a\": {\n    \"b\": {\n      \"c\": 1,\n      \"d\": 2,\n      \"e\": 3\n    }\n  }\n}\n";
+        assert_eq!(unit_of(text), "  ");
+        assert_eq!(unit_of("{\n\t\"a\": {\n\t\t\"b\": 1\n\t}\n}"), "\t");
+        let out = set(
+            text,
+            &["a", "m"],
+            &Val::Obj(vec![(
+                "x".into(),
+                Val::Obj(vec![("n".into(), Val::s("x"))]),
+            )]),
+        )
+        .unwrap();
+        assert!(
+            out.contains("    \"m\": {\n      \"x\": {\n        \"n\": \"x\"\n      }\n    }"),
+            "{out}"
         );
     }
 

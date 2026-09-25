@@ -178,13 +178,16 @@ pub const ZED_DIR: Loc = if cfg!(windows) {
     Loc::XdgConfig("zed")
 };
 
-/// opencode 的全局配置。**三个文件、按优先级从高到低。**
+/// opencode 的全局配置。**两个文件、按优先级从高到低。**
 ///
 /// 目录用 `xdg-basedir`，**每个平台都**认 `$XDG_CONFIG_HOME`，没设才是
-/// `~/.config/opencode`。目录里它依次读 `config.json`、`opencode.json`、
-/// `opencode.jsonc` 再逐层深合并，后读的赢；它自己要写全局配置时，写的是
-/// 这三个里按 jsonc → json → config.json 找到的第一个，一个都没有就新建
-/// `opencode.jsonc` —— 所以刚装好的 opencode 手里就是一份 `opencode.jsonc`。
+/// `~/.config/opencode`。目录里它依次读 `opencode.json`、`opencode.jsonc`
+/// 再逐层深合并，后读的赢；它自己要写全局配置时，写的是这两个里按 jsonc →
+/// json 找到的第一个，一个都没有就新建 `opencode.jsonc` —— 所以刚装好的
+/// opencode 手里就是一份 `opencode.jsonc`。
+///
+/// **没有 `config.json`。**v1 还会先读它，v2（2026-09 起替换了原来的二进制）
+/// 不再读：写进去等于在一份没人读的文件里接管。
 ///
 /// 我们照它自己的挑法挑：写进它认作「那份全局配置」的文件，也就是在的几个
 /// 里优先级最高的那一个。只认 `opencode.json` 的话，刚装好的用户每个人都会
@@ -192,7 +195,6 @@ pub const ZED_DIR: Loc = if cfg!(windows) {
 pub const OPENCODE_CONFIGS: &[Loc] = &[
     Loc::XdgConfig("opencode/opencode.jsonc"),
     Loc::XdgConfig("opencode/opencode.json"),
-    Loc::XdgConfig("opencode/config.json"),
 ];
 
 /// DeepSeek Harness（dsh）的家目录本身。**它在就算装了** —— 网页版、桌面版、
@@ -449,8 +451,9 @@ mod tests {
         assert_eq!(first_existing(OPENCODE_CONFIGS, h), 0, "都不在：新建 jsonc");
         let json = OPENCODE_CONFIGS[1].resolve(h);
         std::fs::create_dir_all(json.parent().unwrap()).unwrap();
-        std::fs::write(OPENCODE_CONFIGS[2].resolve(h), "{}").unwrap();
-        assert_eq!(first_existing(OPENCODE_CONFIGS, h), 2);
+        // v2 不读的那一份不算
+        std::fs::write(json.with_file_name("config.json"), "{}").unwrap();
+        assert_eq!(first_existing(OPENCODE_CONFIGS, h), 0);
         std::fs::write(&json, "{}").unwrap();
         assert_eq!(first_existing(OPENCODE_CONFIGS, h), 1);
         std::fs::write(OPENCODE_CONFIGS[0].resolve(h), "{}").unwrap();

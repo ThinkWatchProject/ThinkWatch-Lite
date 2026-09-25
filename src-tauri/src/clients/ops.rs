@@ -8,6 +8,7 @@
 //! 该连哪个网关，和有哪几把网关密钥。**密钥由 core 发放**（`POST /clients/{id}/key`），
 //! 这里不写 config.yaml。连着的是哪个 core，这里不关心 —— 改的总是这台机器上的文件。
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use tw_adopt::clients::{self, Client};
@@ -58,7 +59,15 @@ pub fn unknown(id: &str) -> Msg {
 }
 
 /// 客户端页的那一张表。
-pub fn list(home: &Path, gw: &Gateway) -> wire::ClientsResponse {
+///
+/// `models` 是要把模型写进配置的客户端（opencode）此刻从网关问到的模型清单，按
+/// 客户端 id：拿它和配置里写着的比，不一样就提示更新；手动配置的那几项也照它写。
+/// 问不到的不在里面。
+pub fn list(
+    home: &Path,
+    gw: &Gateway,
+    models: &BTreeMap<String, Vec<String>>,
+) -> wire::ClientsResponse {
     // 「使用中」的依据：**我们改了一个文件，但那个文件有没有被读到，只有请求能证明**
     // —— 而且是带着为它生成的那把密钥的请求。按请求头里自报的客户端标识算的话，
     // 一个没接管的客户端冒用那个标识就能让它显示成「使用中」
@@ -67,16 +76,31 @@ pub fn list(home: &Path, gw: &Gateway) -> wire::ClientsResponse {
     let placeholder = clients::Gateway {
         base: gw.base.clone(),
         key: Some(String::new()),
+        models: Vec::new(),
     };
     let detected = clients::adoptable()
         .iter()
         .map(|c| {
             let d = detect::detect_one(c, home);
             let (key, last_seen_ms) = key_of(d.id).unzip();
-            let manual = setup_of(c, c.manual_steps(), &placeholder);
-            detected_view(d, key, last_seen_ms.flatten(), manual, |p| {
+            let now = models.get(d.id);
+            let gw = clients::Gateway {
+                models: now.cloned().unwrap_or_default(),
+                ..placeholder.clone()
+            };
+            let manual = setup_of(c, c.manual_steps(), &gw);
+            // 接管着、而且两边都读得到才比：没接管的没有清单可比，问不到的
+            // 不知道该是什么
+            let stale = d.adopted_at_ms.is_some()
+                && matches!(
+                    (&d.models, now),
+                    (Some(written), Some(now)) if tw_adopt::opencode::models_stale(written, now)
+                );
+            let mut v = detected_view(d, key, last_seen_ms.flatten(), manual, |p| {
                 p.display().to_string()
-            })
+            });
+            v.models_stale = stale;
+            v
         })
         .collect();
     let manual = clients::manual_only()
@@ -131,6 +155,7 @@ fn detected_view(
         warns_when_silent: d.takes_effect.warns_when_silent(),
         verified: d.verified.into(),
         costs: d.costs,
+        models_stale: false,
     }
 }
 
@@ -142,6 +167,7 @@ pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedC
     let placeholder = clients::Gateway {
         base: gw.base.clone(),
         key: Some(String::new()),
+        models: Vec::new(),
     };
     clients::adoptable()
         .iter()
@@ -237,13 +263,19 @@ fn secret_paths(c: &Client) -> Vec<Vec<String>> {
     let gw = clients::Gateway {
         base: String::new(),
         key: Some(String::new()),
+        models: Vec::new(),
     };
-    clients::edits(c, &gw)
+    // opencode 的两种写法（`provider` 和 v2 原生的 `providers`）的密钥路径都算进来
+    let native = clients::edits_for(c, &gw, r#"{"providers": {"thinkwatch": {}}}"#);
+    let mut out: Vec<Vec<String>> = clients::edits(c, &gw)
         .into_iter()
         .chain(clients::also_edits(c, &gw))
+        .chain(native)
         .filter(|e| e.secret)
         .map(|e| e.path)
-        .collect()
+        .collect();
+    out.dedup();
+    out
 }
 
 fn secret_roots(c: &Client) -> &'static [&'static str] {
@@ -336,8 +368,16 @@ fn free_name(keys: &[ClientView], id: &str) -> String {
 /// **算一份改动不该写任何东西**，所以这里不建密钥：没有为它留着的，就按默认那把
 /// 算 —— diff 里的密钥本来就是打码的。落盘时写进去的是哪一把要**在确认之前说**：
 /// 新建一把和沿用一把，对用户是两件事。
-pub fn plan_adopt(home: &Path, id: &str, gw: &Gateway) -> Result<wire::PlanView, Msg> {
-    plan_adopt_as(home, id, id, gw)
+///
+/// `models` 是这把密钥在网关上能用的模型（只有要把模型写进配置的客户端用得上，
+/// 见 [`Client::writes_models`]）。
+pub fn plan_adopt(
+    home: &Path,
+    id: &str,
+    gw: &Gateway,
+    models: Vec<String>,
+) -> Result<wire::PlanView, Msg> {
+    plan_adopt_as(home, id, id, gw, models)
 }
 
 /// [`plan_adopt`]，密钥归在 `owner` 名下。WSL 里的那一份用它自己的一把
@@ -347,18 +387,14 @@ pub fn plan_adopt_as(
     id: &str,
     owner: &str,
     gw: &Gateway,
+    models: Vec<String>,
 ) -> Result<wire::PlanView, Msg> {
     let c = find(id)?;
-    let (name, value, created) = match gw.key_of(owner) {
-        Some(k) => (k.name.clone(), k.key.clone(), false),
-        None => {
-            let default = gw.keys.iter().find(|k| k.default).ok_or_else(no_keys)?;
-            (free_name(&gw.keys, owner), default.key.clone(), true)
-        }
-    };
+    let (name, value, created) = key_for(gw, owner)?;
     let target = clients::Gateway {
         base: gw.base.clone(),
         key: Some(value),
+        models,
     };
     let p = plan::plan_adopt(&c, home, &target).map_err(|e| e.msg())?;
     let mut v = view(
@@ -370,6 +406,18 @@ pub fn plan_adopt_as(
     v.key = Some(name);
     v.key_created = created;
     Ok(v)
+}
+
+/// 接管时写进去的是哪一把：`owner` 名下留着的，没有就按默认那把算（落盘时才
+/// 新建）。给出名字、值、是不是要新建
+pub fn key_for(gw: &Gateway, owner: &str) -> Result<(String, String, bool), Msg> {
+    Ok(match gw.key_of(owner) {
+        Some(k) => (k.name.clone(), k.key.clone(), false),
+        None => {
+            let default = gw.keys.iter().find(|k| k.default).ok_or_else(no_keys)?;
+            (free_name(&gw.keys, owner), default.key.clone(), true)
+        }
+    })
 }
 
 /// 一把网关密钥都还没有：先建一把，才谈得上把客户端指向网关。和 core 发密钥时
@@ -392,11 +440,14 @@ pub fn adopt(
     id: &str,
     base: &str,
     key: &str,
+    models: Vec<String>,
 ) -> Result<wire::AdoptResponse, Msg> {
-    let c = find(id)?;
+    // 什么时候生效按装着的版本说（opencode v2 不用重启）
+    let c = find(id)?.here(home);
     let target = clients::Gateway {
         base: base.to_string(),
         key: Some(key.to_string()),
+        models,
     };
     let p = plan::plan_adopt(&c, home, &target).map_err(|e| e.msg())?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
@@ -449,7 +500,7 @@ pub fn plan_restore_as(
 /// —— 后者会把用户这三个月里加的 MCP server、调的权限、写的 hook 全部
 /// 抹掉。不问 core：还原用不着密钥，core 不在的时候也要能退回去。
 pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptResponse, Msg> {
-    let c = find(id)?;
+    let c = find(id)?.here(home);
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     let a = plan::apply_restore(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
@@ -567,10 +618,13 @@ pub fn repoint(
     c: &Client,
     base: &str,
     key: &str,
+    models: Vec<String>,
 ) -> Result<wire::KeySynced, wire::KeySyncFailed> {
+    let c = &c.clone().here(home);
     let target = clients::Gateway {
         base: base.to_string(),
         key: Some(key.to_string()),
+        models,
     };
     plan::plan_adopt(c, home, &target)
         .and_then(|p| plan::apply(c, &p, backups))
@@ -627,7 +681,11 @@ mod tests {
     #[test]
     fn listing_says_which_clients_are_here_and_which_are_only_advice() {
         let home = home_with_claude();
-        let r = list(home.path(), &gw(vec![key("default", "tw-d", None, true)]));
+        let r = list(
+            home.path(),
+            &gw(vec![key("default", "tw-d", None, true)]),
+            &BTreeMap::new(),
+        );
         let cc = r.clients.iter().find(|c| c.id == "claude-code").unwrap();
         assert!(cc.installed);
         assert_eq!(cc.adopted_at_ms, None);
@@ -645,6 +703,7 @@ mod tests {
         let r = list(
             home.path(),
             &gw(vec![key("default", "tw-d", None, true), mine]),
+            &BTreeMap::new(),
         );
         let cc = r.clients.iter().find(|c| c.id == "claude-code").unwrap();
         assert_eq!(cc.key.as_deref(), Some("claude-code"));
@@ -658,7 +717,11 @@ mod tests {
     #[test]
     fn every_client_says_how_to_connect_it_by_hand_without_the_key() {
         let home = tempfile::tempdir().unwrap();
-        let r = list(home.path(), &gw(vec![key("default", "tw-d", None, true)]));
+        let r = list(
+            home.path(),
+            &gw(vec![key("default", "tw-d", None, true)]),
+            &BTreeMap::new(),
+        );
         let cc = r.clients.iter().find(|c| c.id == "claude-code").unwrap();
         assert!(!cc.manual.fields.is_empty());
         assert!(
@@ -678,6 +741,7 @@ mod tests {
             home.path(),
             "claude-code",
             &gw(vec![key("default", "tw-secret-value", None, true)]),
+            Vec::new(),
         )
         .unwrap();
         assert!(!home.path().join(".claude/settings.json").exists());
@@ -699,6 +763,7 @@ mod tests {
                 key("default", "tw-d", None, true),
                 key("mine", "tw-m", Some("claude-code"), false),
             ]),
+            Vec::new(),
         )
         .unwrap();
         assert_eq!(kept.key.as_deref(), Some("mine"));
@@ -711,6 +776,7 @@ mod tests {
                 key("default", "tw-d", None, true),
                 key("claude-code", "tw-x", None, false),
             ]),
+            Vec::new(),
         )
         .unwrap();
         assert_eq!(taken.key.as_deref(), Some("claude-code-2"));
@@ -720,14 +786,14 @@ mod tests {
     #[test]
     fn without_any_key_there_is_nothing_to_point_a_client_with() {
         let home = home_with_claude();
-        let e = plan_adopt(home.path(), "claude-code", &gw(Vec::new())).unwrap_err();
+        let e = plan_adopt(home.path(), "claude-code", &gw(Vec::new()), Vec::new()).unwrap_err();
         assert_eq!(e.code, "control.no_keys");
     }
 
     #[test]
     fn a_client_we_do_not_know_is_refused_by_name() {
         let home = tempfile::tempdir().unwrap();
-        let e = plan_adopt(home.path(), "../etc", &gw(Vec::new())).unwrap_err();
+        let e = plan_adopt(home.path(), "../etc", &gw(Vec::new()), Vec::new()).unwrap_err();
         assert_eq!(e.code, "control.client_unknown");
         assert!(!known("../etc"));
         assert!(known("claude-code") && known("cursor"));
@@ -746,6 +812,7 @@ mod tests {
             "claude-code",
             "http://127.0.0.1:8788",
             "tw-new",
+            Vec::new(),
         )
         .unwrap();
         assert_eq!(a.takes_effect, wire::TakesEffect::Immediately);
@@ -766,6 +833,55 @@ mod tests {
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
         assert_eq!(back, want);
         assert!(adopted(home.path()).is_empty());
+    }
+
+    /// opencode 的模型清单跟网关对不上了才提示更新；顺序不算，没接管的不提示
+    #[test]
+    fn a_stale_opencode_model_list_is_flagged_on_the_listing() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
+        let keys = vec![key("opencode", "tw-o", Some("opencode"), false)];
+        let now = |ms: &[&str]| {
+            BTreeMap::from([(
+                "opencode".to_string(),
+                ms.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+            )])
+        };
+        let stale = |models: &BTreeMap<String, Vec<String>>| {
+            list(home.path(), &gw(keys.clone()), models)
+                .clients
+                .into_iter()
+                .find(|c| c.id == "opencode")
+                .unwrap()
+                .models_stale
+        };
+        assert!(!stale(&now(&["a"])), "没接管的没有清单可比");
+
+        adopt(
+            home.path(),
+            &backups(&home),
+            "opencode",
+            "http://127.0.0.1:8788",
+            "tw-o",
+            vec!["a".into(), "b".into()],
+        )
+        .unwrap();
+        assert!(!stale(&now(&["b", "a"])));
+        assert!(stale(&now(&["a", "b", "c"])));
+        assert!(!stale(&BTreeMap::new()), "问不到网关就不说");
+
+        // 手动配置那一栏照网关此刻答的写
+        let r = list(home.path(), &gw(keys.clone()), &now(&["m1"]));
+        let oc = r.clients.iter().find(|c| c.id == "opencode").unwrap();
+        assert!(
+            oc.manual
+                .fields
+                .iter()
+                .any(|f| f.path == "provider.thinkwatch.models"
+                    && f.value.as_deref() == Some("{m1: {name: m1}}")),
+            "{:?}",
+            oc.manual.fields
+        );
     }
 
     #[test]
@@ -789,6 +905,7 @@ mod tests {
             "claude-code",
             "http://127.0.0.1:8788",
             "tw-c",
+            Vec::new(),
         )
         .unwrap();
         let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
@@ -832,6 +949,7 @@ mod tests {
             "claude-code",
             "http://127.0.0.1:8788",
             "tw-c",
+            Vec::new(),
         )
         .unwrap();
         adopt(
@@ -840,6 +958,7 @@ mod tests {
             "codex",
             "http://192.168.1.20:8788",
             "tw-x",
+            Vec::new(),
         )
         .unwrap();
         let here: Vec<_> = adopted_on_this_machine(home.path())
@@ -909,7 +1028,7 @@ mod tests {
         assert_eq!(cc.manual.steps[0].arg("file"), "~/.claude/settings.json");
         assert_eq!(r[1].key, None);
         // 接管的方案：新建的那把叫 WSL 那一份的名字
-        let p = plan_adopt_as(&w.home, "codex", "codex-wsl-ubuntu", &gw).unwrap();
+        let p = plan_adopt_as(&w.home, "codex", "codex-wsl-ubuntu", &gw, Vec::new()).unwrap();
         assert_eq!(p.key.as_deref(), Some("codex-wsl-ubuntu"));
         assert!(p.key_created);
         assert!(known("codex-wsl-ubuntu"));
@@ -921,8 +1040,24 @@ mod tests {
     fn only_clients_left_on_an_old_gateway_address_are_stale() {
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        adopt(&w.home, &b, "claude-code", "http://172.20.0.1:8788", "tw-c").unwrap();
-        adopt(&w.home, &b, "codex", "http://relay.example:8788", "tw-x").unwrap();
+        adopt(
+            &w.home,
+            &b,
+            "claude-code",
+            "http://172.20.0.1:8788",
+            "tw-c",
+            Vec::new(),
+        )
+        .unwrap();
+        adopt(
+            &w.home,
+            &b,
+            "codex",
+            "http://relay.example:8788",
+            "tw-x",
+            Vec::new(),
+        )
+        .unwrap();
         let ids = |base: &str| -> Vec<&str> { stale(&w.home, base).iter().map(|c| c.id).collect() };
         assert_eq!(ids("http://172.27.96.1:8788"), ["claude-code"]);
         assert!(ids("http://172.20.0.1:8788").is_empty(), "指着的就是它");
@@ -932,7 +1067,15 @@ mod tests {
         );
         // 重新指向之后就不旧了
         let c = find("claude-code").unwrap();
-        repoint(&w.home, &b, &c, "http://172.27.96.1:8788", "tw-c").unwrap();
+        repoint(
+            &w.home,
+            &b,
+            &c,
+            "http://172.27.96.1:8788",
+            "tw-c",
+            Vec::new(),
+        )
+        .unwrap();
         assert!(ids("http://172.27.96.1:8788").is_empty());
         // 还原回到原样：WSL 里的那一份和这台电脑上的一样能退回去
         restore(&w.home, &b, "claude-code").unwrap();
@@ -949,6 +1092,7 @@ mod tests {
             "claude-code",
             "http://127.0.0.1:8788",
             "tw-old",
+            Vec::new(),
         )
         .unwrap();
         let c = find("claude-code").unwrap();
@@ -958,6 +1102,7 @@ mod tests {
             &c,
             "http://127.0.0.1:8788",
             "tw-fresh",
+            Vec::new(),
         )
         .unwrap();
         assert_eq!(s.client, "claude-code");

@@ -15,6 +15,7 @@ pub mod detect;
 pub mod foreign;
 pub mod json;
 pub mod mcp;
+pub mod opencode;
 pub mod paths;
 pub mod plan;
 pub mod rows;

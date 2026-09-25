@@ -138,10 +138,13 @@ fn read(p: &std::path::Path) -> Option<String> {
 
 /// 把 JSON / TOML 读成同一种值。两种格式各有各的解析器，但清单和扫描
 /// 只关心结构。
+///
+/// **`.jsonc` 也要认**：刚装好的 opencode 手里就是一份 `opencode.jsonc`，不认它
+/// 等于没扫 opencode。注释和尾逗号 JSON 那个解析器本来就放过。
 fn parse_any(src: &Source, text: &str) -> Option<Val> {
     match src.path.extension().and_then(|e| e.to_str()) {
         Some("toml") => tw_adopt::toml::value(text).ok(),
-        Some("json") => tw_adopt::json::value(text).ok(),
+        Some("json" | "jsonc") => tw_adopt::json::value(text).ok(),
         // dsh 的补丁是一张插件行的列表，MCP server 是其中的一种行。摊成
         // `mcpServers` 的形状，后面和别家走同一条路
         Some("yml") if src.kind == sources::Kind::Mcp => tw_adopt::rows::mcp_servers(text).ok(),
@@ -174,12 +177,38 @@ fn strings(v: &Val, key: &str) -> Vec<String> {
     }
 }
 
-/// 各客户端把 MCP 段放在不同的键下面。**这是唯一的差别** —— 里面的
-/// 形状（`command` / `args` / `env`）反而是一致的。
-const MCP_KEYS: &[&str] = &["mcpServers", "mcp_servers", "mcp", "context_servers"];
+/// 各客户端把 MCP 段放在不同的键下面，里面的形状（`command` / `args` /
+/// `env`）是一致的。**opencode 例外**，见 [`opencode_mcp`]。
+const MCP_KEYS: &[&str] = &["mcpServers", "mcp_servers", "context_servers"];
+
+/// opencode 的 MCP：扁平的 `mcp.<名>`、v2 的 `mcp.servers.<名>`，或者两者混在
+/// 一起。`command` 是连参数一起的字符串数组，环境变量的键叫 `environment`，
+/// 开关按写法是 `enabled` 或 `disabled`。
+fn opencode_mcp(src: &Source, v: &Val) -> Vec<McpServer> {
+    tw_adopt::opencode::mcp_servers(v)
+        .into_iter()
+        .map(|m| {
+            let mut cmd = m.command().into_iter();
+            McpServer {
+                client: src.client.to_string(),
+                command: cmd.next().unwrap_or_default(),
+                args: cmd.collect(),
+                url: m.url(),
+                env_keys: m.env_keys(),
+                enabled: m.enabled(),
+                source: src.path.clone(),
+                name: m.name,
+            }
+        })
+        .collect()
+}
 
 fn mcp_from(src: &Source, v: &Val) -> Vec<McpServer> {
-    let mut out = Vec::new();
+    let mut out = if src.client == "opencode" {
+        opencode_mcp(src, v)
+    } else {
+        Vec::new()
+    };
     for key in MCP_KEYS {
         let Some(servers) = obj(v, key) else { continue };
         for (name, cfg) in servers {

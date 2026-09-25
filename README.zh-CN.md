@@ -107,7 +107,7 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 ### 客户端接管
 
-客户端页可以把 Claude Code、Codex、opencode、Zed、Aider 与 DeepSeek Harness 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。已接管的客户端可以随时单独还原或全部还原。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
+客户端页可以把 Claude Code、Codex、opencode、Zed、Aider 与 DeepSeek Harness 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。已接管的客户端可以随时单独还原或全部还原。opencode（v1 与 v2）的配置中同时写入其密钥在网关上可用的模型列表；网关上可用的模型变化后，页面提示更新，更新同样先给出改动差异。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
 
 在 Windows 上，安装在 WSL 中的 Claude Code 与 Codex 按发行版单独成组，列在这台电脑的客户端之后。它们同样可以指向 Windows 上的网关、还原和检查，使用与 Windows 上那一份分开的密钥，配置文件经由 `\\wsl.localhost` 修改。写入的地址取决于 WSL 的网络模式：
 

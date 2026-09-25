@@ -194,9 +194,11 @@ fields that change and what else the change affects (the ChatGPT desktop
 app, for instance, reads the same configuration file as Codex), shows the full
 diff and backs up the original file. Only the settings that point the client at the gateway change, and each
 client receives a key of its own. A connected client can be restored at any
-time, on its own or together with all the others. Cursor, Continue and
-Antigravity CLI come with step-by-step instructions and a key created for them.
-For every client the page shows whether it is in use, waiting for its first
+time, on its own or together with all the others. opencode (v1 and v2) also
+gets the list of models its key can use on the gateway; when that list
+changes, the page offers to update it, through the same diff. Cursor, Continue
+and Antigravity CLI come with step-by-step instructions and a key created for
+them. For every client the page shows whether it is in use, waiting for its first
 request or not in effect, and its requests over the last 24 hours.
 
 On Windows, Claude Code and Codex installed inside WSL appear in a group of
