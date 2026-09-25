@@ -2,7 +2,7 @@
   "name": "thinkwatch-lite",
   "private": true,
   "description": "Desktop app for a local AI API gateway on macOS, Windows and Linux",
-  "version": "2026.9.16",
+  "version": "2026.9.17",
   "type": "module",
   "packageManager": "pnpm@11.13.0",
   "scripts": {
