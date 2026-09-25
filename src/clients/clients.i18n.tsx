@@ -119,6 +119,27 @@ export const clientsText = messages(
     createAndCopy: "创建并复制",
     done: "完成",
 
+    // WSL
+    thisComputer: "这台电脑",
+    wslGroup: (distro: string) => `WSL · ${distro}`,
+    inWsl: (name: string, distro: string) => `${name}（WSL · ${distro}）`,
+    wslIntro: (network: "wsl1" | "nat" | "mirrored", host: string) =>
+      network === "nat"
+        ? `NAT 网络，经由 ${host} 连接 Windows 上的网关。WSL 重启后该地址可能变化。`
+        : network === "mirrored"
+          ? `镜像网络，经由 ${host} 连接 Windows 上的网关。`
+          : `WSL1 与 Windows 共用网络，经由 ${host} 连接网关。`,
+    wslIntroNoHost: "WSL 中的 Claude Code 和 Codex 经由 Windows 上的网关发送请求。",
+    wslUnreadable: "无法读取",
+    stale: (host: string) => `仍指向旧地址 ${host}`,
+    wslStale: (n: number) => `${n} 个客户端仍指向 WSL 重启前的地址，请求无法到达网关。`,
+    readdress: "重新指向",
+    readdressed: (names: string[]) => `已重新指向：${names.join("、")}`,
+    readdressFailed: "以下客户端未能重新指向",
+    firewallTitle: "Windows 防火墙中缺少放行 WSL 的规则",
+    firewallBody: "缺少该规则时，WSL 中的客户端无法连接网关。请在以管理员身份运行的 PowerShell 中执行以下命令：",
+    copyCommand: "复制命令",
+
     // 全部还原
     restoreAllTitle: "还原全部客户端",
     restoreAllBody: (n: number) =>
@@ -230,6 +251,29 @@ export const clientsText = messages(
     newKeyFor: (name: string) => `A new key for ${name}`,
     createAndCopy: "Create and copy",
     done: "Done",
+
+    // WSL
+    thisComputer: "This computer",
+    wslGroup: (distro: string) => `WSL · ${distro}`,
+    inWsl: (name: string, distro: string) => `${name} (WSL · ${distro})`,
+    wslIntro: (network: "wsl1" | "nat" | "mirrored", host: string) =>
+      network === "nat"
+        ? `NAT networking; clients reach the gateway on Windows at ${host}. The address can change when WSL restarts.`
+        : network === "mirrored"
+          ? `Mirrored networking; clients reach the gateway on Windows at ${host}.`
+          : `WSL 1 shares the network with Windows; clients reach the gateway at ${host}.`,
+    wslIntroNoHost: "Claude Code and Codex in WSL send their requests through the gateway on Windows.",
+    wslUnreadable: "Could not be read",
+    stale: (host: string) => `Still points at the old address ${host}`,
+    wslStale: (n: number) =>
+      `${count(n, "client still points", "clients still point")} at the address WSL had before it restarted, so requests do not reach the gateway.`,
+    readdress: "Point again",
+    readdressed: (names: string[]) => `Pointed again: ${names.join(", ")}`,
+    readdressFailed: "These clients could not be pointed again",
+    firewallTitle: "Windows Firewall has no rule allowing WSL",
+    firewallBody:
+      "Without it, clients in WSL cannot connect to the gateway. Run this command in PowerShell as an administrator:",
+    copyCommand: "Copy command",
 
     restoreAllTitle: "Restore all clients",
     restoreAllBody: (n: number) =>

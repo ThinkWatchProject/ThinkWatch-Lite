@@ -21,6 +21,8 @@ export interface ManualTarget {
   caveat?: Msg | null;
   /** 为它生成的那把密钥 */
   key?: string | null;
+  /** 在哪个 WSL 发行版里；这台电脑上的不给。WSL 里的那一份有它自己的一把密钥 */
+  env?: string;
 }
 
 /** 选单里「新建一把」那一项的值。**密钥名首尾不能有空白**，所以没有哪把密钥叫这个 */
@@ -56,7 +58,7 @@ export function ManualDialog({
     try {
       let name = choice;
       if (choice === NEW) {
-        name = await api.prepareKey(target.id);
+        name = await api.prepareKey(target.id, target.env);
         setOwn(name);
         setChoice(name);
         onKeyReady();
@@ -126,7 +128,7 @@ export function ManualDialog({
             </div>
             <CopyButton
               onCopy={() =>
-                api.copyEndpoint(target.id).catch((e: unknown) => {
+                api.copyEndpoint(target.id, target.env).catch((e: unknown) => {
                   notify.error(e);
                   throw e;
                 })

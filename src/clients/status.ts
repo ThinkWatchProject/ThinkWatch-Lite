@@ -22,7 +22,9 @@ export type Reason =
   /** 还没生效，要重启客户端 */
   | { kind: "restart" }
   /** 连着远程 core，而它还指着这台机器上（已经停了的）网关 */
-  | { kind: "local"; endpoint: string };
+  | { kind: "local"; endpoint: string }
+  /** WSL 里的：还指着 WSL 重启之前的那个地址（NAT 模式下它会变） */
+  | { kind: "stale"; endpoint: string };
 
 export interface Status {
   state: ClientState;
@@ -44,10 +46,16 @@ export function statusOf(
   now = Date.now(),
   /** 连着远程 core：还指着本机网关的单独说，它们的请求落在一个停了的网关上 */
   remote = false,
+  /**
+   * WSL 里的、还指着旧地址的（Rust 侧算好的，见 `WslGroup.stale`）。**排在「收到过请求」
+   * 前面**：那些请求是 WSL 重启之前的，之后的一个也到不了
+   */
+  stale = false,
 ): Status {
   if (!c.installed) return { state: "absent" };
   const adoptedAt = c.adopted_at_ms;
   if (adoptedAt == null) return { state: "idle" };
+  if (stale && c.endpoint) return { state: "broken", reason: { kind: "stale", endpoint: c.endpoint } };
   if (remote && c.endpoint && isLoopback(c.endpoint)) {
     return { state: "broken", reason: { kind: "local", endpoint: c.endpoint } };
   }

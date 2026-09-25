@@ -401,3 +401,52 @@ export type UninstallStep = { ok: boolean, text: string, };
  */
 export type Verification = "measured" | "fields_only";
 
+/**
+ * 客户端页上「WSL · <发行版>」那一组。
+ */
+export type WslGroup = { 
+/**
+ * 发行版的名字（`Ubuntu`）。对这一组的命令都带着它
+ */
+distro: string, network: WslNetwork, 
+/**
+ * 读不到这个发行版时的原因。**这时其余几项都是空的**，界面写「无法读取」
+ */
+error?: Msg | null, 
+/**
+ * 这个发行版里的客户端（第一批：Claude Code、Codex）
+ */
+clients: Array<DetectedClient>, 
+/**
+ * 这个发行版里的客户端该连的地址。算不出来时是空串，原因在 `base_error`
+ */
+gateway_base: string, 
+/**
+ * 地址算不出来的原因（NAT 模式下找不到 WSL 的虚拟网卡）
+ */
+base_error?: Msg | null, 
+/**
+ * 接管着、还指着旧地址的客户端 id（NAT 模式下 WSL 重启之后）。点一下「重新
+ * 指向」就改到 `gateway_base`
+ */
+stale: Array<string>, 
+/**
+ * 防火墙里放行 WSL 的那条规则缺了时，要在管理员 PowerShell 里执行的命令
+ */
+firewall?: string | null, };
+
+/**
+ * WSL 里的一个发行版用哪种网络。决定写进客户端的是哪个地址。
+ */
+export type WslNetwork = "wsl1" | "nat" | "mirrored";
+
+/**
+ * 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，
+ * 所以只在打开这一页、动过它之后取，不跟着每个请求刷新。
+ */
+export type WslResponse = { 
+/**
+ * 注册表里登记着的发行版，按注册表里的顺序。不在 Windows 上时是空的
+ */
+distros: Array<WslGroup>, };
+

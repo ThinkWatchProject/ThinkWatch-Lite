@@ -142,6 +142,52 @@ pub struct ClientsResponse {
     pub keys: Vec<String>,
 }
 
+/// WSL 里的一个发行版用哪种网络。决定写进客户端的是哪个地址。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub enum WslNetwork {
+    /// WSL1：和 Windows 共用网络，写 127.0.0.1
+    #[serde(rename = "wsl1")]
+    Wsl1,
+    /// WSL2 的默认：写 WSL 虚拟网卡的地址，WSL 重启后会变
+    #[serde(rename = "nat")]
+    Nat,
+    /// `.wslconfig` 里 `networkingMode=mirrored`：写 127.0.0.1
+    #[serde(rename = "mirrored")]
+    Mirrored,
+}
+
+/// 客户端页上「WSL · <发行版>」那一组。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct WslGroup {
+    /// 发行版的名字（`Ubuntu`）。对这一组的命令都带着它
+    pub distro: String,
+    pub network: WslNetwork,
+    /// 读不到这个发行版时的原因。**这时其余几项都是空的**，界面写「无法读取」
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<Msg>,
+    /// 这个发行版里的客户端（第一批：Claude Code、Codex）
+    pub clients: Vec<DetectedClient>,
+    /// 这个发行版里的客户端该连的地址。算不出来时是空串，原因在 `base_error`
+    pub gateway_base: String,
+    /// 地址算不出来的原因（NAT 模式下找不到 WSL 的虚拟网卡）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_error: Option<Msg>,
+    /// 接管着、还指着旧地址的客户端 id（NAT 模式下 WSL 重启之后）。点一下「重新
+    /// 指向」就改到 `gateway_base`
+    pub stale: Vec<String>,
+    /// 防火墙里放行 WSL 的那条规则缺了时，要在管理员 PowerShell 里执行的命令
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firewall: Option<String>,
+}
+
+/// 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，
+/// 所以只在打开这一页、动过它之后取，不跟着每个请求刷新。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct WslResponse {
+    /// 注册表里登记着的发行版，按注册表里的顺序。不在 Windows 上时是空的
+    pub distros: Vec<WslGroup>,
+}
+
 /// 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct PlanView {

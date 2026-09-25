@@ -199,6 +199,25 @@ Antigravity CLI come with step-by-step instructions and a key created for them.
 For every client the page shows whether it is in use, waiting for its first
 request or not in effect, and its requests over the last 24 hours.
 
+On Windows, Claude Code and Codex installed inside WSL appear in a group of
+their own for each distribution, next to the clients on the computer itself.
+They are pointed at the gateway on Windows, restored and diagnosed the same
+way, each with a key separate from the Windows copy, and their files are edited
+through `\\wsl.localhost`. The address written into them depends on how WSL
+is networked:
+
+- **WSL 1, or WSL 2 with `networkingMode=mirrored`** in `%USERPROFILE%\.wslconfig`:
+  `127.0.0.1`, as on Windows.
+- **WSL 2 with the default NAT networking:** the address of the WSL virtual
+  adapter on Windows. The gateway has to listen on that adapter; when it does
+  not yet, the confirmation says how the listen setting changes before
+  anything is saved. The adapter's address changes when WSL restarts; the
+  page then shows those clients as not in effect, and one click points them at
+  the new address. The installer adds a Windows Firewall rule that lets only
+  the gateway accept connections, and only from WSL's range
+  (`172.16.0.0/12`); if the rule is missing, the page shows the equivalent
+  PowerShell command to run as an administrator.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/clients-dark.png">
   <img src="docs/screenshots/en/clients-light.png" alt="The clients page: Claude Code and Codex connected, each with its own key and its requests over the last 24 hours; opencode not connected; Cursor set up by hand and in use; Continue and Antigravity CLI not yet set up; Zed and Aider not detected">

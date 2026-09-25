@@ -284,7 +284,7 @@ pub fn managed_settings_dropins() -> Vec<PathBuf> {
 }
 
 /// 一个目录里 Claude Code 会读的那些分片，按它读的顺序。
-fn dropins_in(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn dropins_in(dir: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
     };

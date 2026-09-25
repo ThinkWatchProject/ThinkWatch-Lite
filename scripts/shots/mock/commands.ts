@@ -71,8 +71,8 @@ interface Commands {
   gateway_base: [void, string];
   // 这台机器上的客户端、MCP、扫描
   list_clients: [void, ClientsResponse];
-  plan_adopt: [{ id: string }, PlanView];
-  plan_restore: [{ id: string }, PlanView];
+  plan_adopt: [{ id: string; env?: string }, PlanView];
+  plan_restore: [{ id: string; env?: string }, PlanView];
   mcp_targets: [void, McpTargetView[]];
   scan_clients: [void, ScanReport];
   copy_key: [void, void];

@@ -19,6 +19,7 @@ use tw_types::{Msg, msg};
 use crate::clients::{Client, Format, TakesEffect, Verified, adoptable};
 use crate::foreign;
 use crate::sentinel::{self, SidecarRecord};
+use crate::wsl::WslHome;
 
 /// 一个客户端此刻的样子。
 #[derive(Debug, Clone)]
@@ -325,6 +326,11 @@ fn running_since(markers: &[&str]) -> Vec<u64> {
 /// 的中文。查过哪些地方要**说出来**，否则「没有」这句话没人知道它有多可信。
 #[cfg(not(windows))]
 fn nothing_else_sets_it() -> (Msg, Msg) {
+    shell_files_clear()
+}
+
+/// 查的是 shell 配置时的那一条：unix 上，和 WSL 里。
+fn shell_files_clear() -> (Msg, Msg) {
     (
         msg!("adopt.diag.no_exports" => "No shell file exports a variable of the same name"),
         msg!("adopt.diag.no_exports.detail" => "Checked .zshrc, .zprofile, .bashrc and the rest."),
@@ -362,24 +368,46 @@ fn env_conflicts(home: &Path, names: &[&str]) -> Vec<EnvConflict> {
     shell_exports(home, names)
         .into_iter()
         .map(|(f, line, name)| EnvConflict {
-            title: msg!(
-                "adopt.diag.shell_export",
-                path = f.display(),
-                name = name,
-                line = line
-                => "{path} exports {name} on line {line}"
-            ),
+            title: shell_export(&f.display().to_string(), &name, line),
             // 命令给出来，执行与否是他的事
             fix: delete_line(&f, line),
-            overrides: |client| {
-                msg!(
-                    "adopt.diag.shell_export.overrides",
-                    client = client
-                    => "{client} reads the environment, so this line overrides what was written here."
-                )
-            },
+            overrides: shell_overrides,
         })
         .collect()
+}
+
+/// WSL 里 shell 配置导出的同名变量。路径写 WSL 里的样子（`/home/u/.bashrc`），
+/// 删行的命令是 GNU sed 的 —— 用户是在 WSL 的终端里执行它。
+fn wsl_env_conflicts(w: &WslHome, names: &[&str]) -> Vec<EnvConflict> {
+    shell_exports(&w.home, names)
+        .into_iter()
+        .map(|(f, line, name)| {
+            let path = w.linux_path(&f);
+            EnvConflict {
+                title: shell_export(&path, &name, line),
+                fix: delete_line_gnu(&path, line),
+                overrides: shell_overrides,
+            }
+        })
+        .collect()
+}
+
+fn shell_export(path: &str, name: &str, line: usize) -> Msg {
+    msg!(
+        "adopt.diag.shell_export",
+        path = path,
+        name = name,
+        line = line
+        => "{path} exports {name} on line {line}"
+    )
+}
+
+fn shell_overrides(client: &str) -> Msg {
+    msg!(
+        "adopt.diag.shell_export.overrides",
+        client = client
+        => "{client} reads the environment, so this line overrides what was written here."
+    )
 }
 
 /// Windows 上没有 shell 配置这回事。
@@ -481,9 +509,14 @@ fn delete_line(path: &Path, line: usize) -> Msg {
 }
 #[cfg(all(not(windows), not(target_os = "macos")))]
 fn delete_line(path: &Path, line: usize) -> Msg {
+    delete_line_gnu(&path.display().to_string(), line)
+}
+
+/// GNU sed 的那一句。Linux 上用它；**WSL 里也是它**，路径是 WSL 里的写法。
+fn delete_line_gnu(path: &str, line: usize) -> Msg {
     msg!(
         "adopt.diag.delete_line_gnu",
-        path = path.display(),
+        path = path,
         line = line
         => "sed -i '{line}d' {path}"
     )
@@ -493,7 +526,8 @@ fn delete_line(path: &Path, line: usize) -> Msg {
 ///
 /// bash 登录时读 `.bash_profile`、`.bash_login`、`.profile` 里先找到的那一个，
 /// 交互时读 `.bashrc`；Linux 上多数人用的是 bash，这几个都得在。
-#[cfg(not(windows))]
+///
+/// **Windows 上也要**：那里没有 shell 配置，但 WSL 里有（[`diagnose_wsl`]）。
 const SHELL_FILES: &[(&str, bool)] = &[
     (".zshrc", false),
     (".zprofile", false),
@@ -518,7 +552,6 @@ const SHELL_FILES: &[(&str, bool)] = &[
 ///
 /// 注释掉的不算。**这个判断很便宜，但漏掉它就会天天误报** —— 而误报几次
 /// 之后，真正该看的那一次也不会被看。
-#[cfg(not(windows))]
 fn exported_names(line: &str, fish: bool) -> Vec<&str> {
     let t = line.trim_start();
     if t.starts_with('#') {
@@ -565,7 +598,6 @@ fn exported_names(line: &str, fish: bool) -> Vec<&str> {
 }
 
 /// shell 配置里 export 了同名变量的那些行。
-#[cfg(not(windows))]
 fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
     let mut out = Vec::new();
     for &(f, fish) in SHELL_FILES {
@@ -615,11 +647,44 @@ fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
 
 /// 走一遍优先级链。`project` 是当前项目目录（有的话）。
 pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding> {
+    diagnose_in(c, home, project, None)
+}
+
+/// WSL 里的那一份走一遍同样的链。
+///
+/// 三处和这台电脑上不一样：**进程看不见**（WSL 里的进程不在 Windows 的进程表里，
+/// 那一条如实说查不了）；管理策略是那个发行版里的 `/etc/claude-code/`；同名变量
+/// 在 WSL 里的 shell 配置里，不在 Windows 的注册表里 —— 路径和 `sed` 命令都写成
+/// WSL 终端里能直接用的样子。
+pub fn diagnose_wsl(c: &Client, w: &WslHome) -> Vec<Finding> {
+    diagnose_in(c, &w.home, None, Some(w))
+}
+
+fn diagnose_in(
+    c: &Client,
+    home: &Path,
+    project: Option<&Path>,
+    wsl: Option<&WslHome>,
+) -> Vec<Finding> {
     let d = detect_one(c, home);
     let mut out = Vec::new();
 
     // 一、客户端没重启。**最常见，而且判据便宜得离谱**
     match d.adopted_at_ms {
+        Some(_) if wsl.is_some() => out.push(Finding {
+            level: Level::Suspect,
+            title: msg!(
+                "adopt.diag.wsl_process", client = c.name =>
+                "Whether {client} was restarted cannot be seen from Windows"
+            ),
+            detail: msg!(
+                "adopt.diag.wsl_process.detail",
+                takes_effect = c.takes_effect.slug(),
+                => "It runs inside WSL, whose processes are not visible here. A copy started before the change is still on the old configuration. {}",
+                c.takes_effect.note()
+            ),
+            fix: Some(msg!("adopt.diag.restart", client = c.name => "Quit {client} and open it again")),
+        }),
         Some(at) => {
             let started = running_since(c.process);
             let stale: Vec<_> = started.iter().filter(|s| **s < at).collect();
@@ -739,8 +804,20 @@ pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding>
     // 来源：先读前者，再按字母序合并分片，同一个键后读的赢。每个文件各报
     // 一条 —— 用户要去改的是具体哪一个文件。
     if c.id == "claude-code" {
-        let managed = crate::paths::managed_settings();
-        let dropins = crate::paths::managed_settings_dropins();
+        let (managed, dropins) = match wsl {
+            Some(w) => {
+                let m = w.managed_settings();
+                let d = m
+                    .parent()
+                    .map(|p| crate::paths::dropins_in(&p.join("managed-settings.d")))
+                    .unwrap_or_default();
+                (m, d)
+            }
+            None => (
+                crate::paths::managed_settings(),
+                crate::paths::managed_settings_dropins(),
+            ),
+        };
         let level = |p: &Path| {
             let text = std::fs::read_to_string(p).unwrap_or_default();
             if overriding_fields(c, &text).is_empty() {
@@ -779,9 +856,15 @@ pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding>
     }
 
     // 五、别处设了同名的环境变量
-    let exports = env_conflicts(home, c.env_vars);
+    let exports = match wsl {
+        Some(w) => wsl_env_conflicts(w, c.env_vars),
+        None => env_conflicts(home, c.env_vars),
+    };
     if exports.is_empty() {
-        let (clear_title, clear_detail) = nothing_else_sets_it();
+        let (clear_title, clear_detail) = match wsl {
+            Some(_) => shell_files_clear(),
+            None => nothing_else_sets_it(),
+        };
         out.push(Finding {
             level: Level::Clear,
             title: clear_title,
@@ -1134,6 +1217,66 @@ mod tests {
         };
         let p = crate::plan::plan_adopt(&c(id), home, &gw).unwrap();
         crate::plan::apply(&c(id), &p, backups).unwrap();
+    }
+
+    /// WSL 里的那一份：进程如实说看不见；同名变量从 WSL 的 shell 配置里找，
+    /// 给的是 WSL 终端里能直接执行的 GNU sed 和 Linux 路径；管理策略看那个发行版的 `/etc`。
+    #[test]
+    fn a_wsl_copy_is_diagnosed_in_linux_terms() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("Ubuntu");
+        std::fs::create_dir_all(root.join("etc/claude-code")).unwrap();
+        std::fs::write(
+            root.join("etc/passwd"),
+            "u:x:1000:1000::/home/u:/bin/bash\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("etc/claude-code/managed-settings.json"), "{}").unwrap();
+        std::fs::create_dir_all(root.join("home/u/.claude")).unwrap();
+        std::fs::create_dir_all(root.join("home/u/.codex")).unwrap();
+        std::fs::write(
+            root.join("home/u/.bashrc"),
+            "# x\nexport OPENAI_BASE_URL=http://x\n",
+        )
+        .unwrap();
+        let w = crate::wsl::WslHome::read(
+            crate::wsl::Distro {
+                name: "Ubuntu".into(),
+                version: 2,
+                uid: 1000,
+            },
+            root,
+        )
+        .unwrap();
+        adopt("codex", &w.home, &d.path().join("b"));
+
+        let f = diagnose_wsl(&c("codex"), &w);
+        assert!(f.iter().any(|f| f.title.code == "adopt.diag.wsl_process"));
+        assert!(
+            !f.iter()
+                .any(|f| f.title.code.starts_with("adopt.diag.started"))
+        );
+        let export = f
+            .iter()
+            .find(|f| f.title.code == "adopt.diag.shell_export")
+            .expect("WSL 里的 .bashrc 要查");
+        assert_eq!(export.level, Level::Blocking);
+        assert_eq!(export.title.arg("path"), "/home/u/.bashrc");
+        let fix = export.fix.as_ref().unwrap();
+        assert_eq!(fix.code, "adopt.diag.delete_line_gnu");
+        assert_eq!(fix.text, "sed -i '2d' /home/u/.bashrc");
+
+        let cc = diagnose_wsl(&c("claude-code"), &w);
+        let managed = cc
+            .iter()
+            .find(|f| f.title.code == "adopt.diag.managed")
+            .unwrap();
+        assert!(managed.detail.arg("path").contains("claude-code"));
+        // 没接管的不说进程的事
+        assert!(!cc.iter().any(|f| f.title.code == "adopt.diag.wsl_process"));
+        // 手动配置的文件写成 WSL 里的样子
+        let steps = c("claude-code").manual_steps_wsl(&w);
+        assert_eq!(steps[0].arg("file"), "~/.claude/settings.json");
     }
 
     /// 刚装好的 opencode 自己建的是 `opencode.jsonc`：写进它，而不是另起一份
