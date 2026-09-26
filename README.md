@@ -427,13 +427,12 @@ Settings can reduce the item to the icon or to the numbers.
 </p>
 
 Clicking it opens a native menu with the gateway's address and state, unread
-notices, the quotas and reset times of each subscription account and GLM Coding
-Plan upstream (with the credits left under the bar on a plan billed in
-credits), today's requests,
-tokens and cost, and the requests in progress, followed by actions: choosing
-the upstream of a manually selected group, copying the gateway address or the
-default key, undoing the last configuration change, switching connections and
-checking for updates, all without opening the main window.
+notices, today's requests, tokens and cost, the quotas and reset times of each
+subscription account and GLM Coding Plan upstream (with the credits left under
+the bar on a plan billed in credits), and the requests in progress, followed by
+actions: choosing the upstream of a manually selected group, copying the
+gateway address or the default key, switching connections and checking for
+updates, all without opening the main window.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/menubar-menu-dark.png">

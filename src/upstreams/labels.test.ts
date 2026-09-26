@@ -115,8 +115,26 @@ describe("额度窗口", () => {
 
   it("names the GLM Coding Plan windows", () => {
     expect(["5h", "weekly"].map(quotaWindowLabel)).toEqual(["5 小时", "每周"]);
-    // 认不出来的原样显示
-    expect(quotaWindowLabel("3d")).toBe("3d");
+  });
+
+  // core 按长度起的名字（ChatGPT 账号的 30 天窗口是 `30d`）按长度说；认不出来的原样显示
+  const byLength = ["30d", "1d", "7d", "3h", "1h", "45m", "1m", "monthly", "d", "+5h", "5 h", ""];
+
+  it("says windows named by their length in words", () => {
+    expect(byLength.map(quotaWindowLabel)).toEqual([
+      "30 天",
+      "1 天",
+      "7 天",
+      "3 小时",
+      "1 小时",
+      "45 分钟",
+      "1 分钟",
+      "monthly",
+      "d",
+      "+5h",
+      "5 h",
+      "",
+    ]);
   });
 
   it("says what a credit plan has left, as the upstream reported it", () => {
@@ -129,7 +147,21 @@ describe("额度窗口", () => {
   it("follows the interface language", () => {
     setLang("en");
     try {
-      expect(quotaWindowLabel("weekly")).toBe("Weekly");
+      expect(["5h", "weekly"].map(quotaWindowLabel)).toEqual(["5h", "Weekly"]);
+      expect(byLength.map(quotaWindowLabel)).toEqual([
+        "30 days",
+        "1 day",
+        "7 days",
+        "3 hours",
+        "1 hour",
+        "45 minutes",
+        "1 minute",
+        "monthly",
+        "d",
+        "+5h",
+        "5 h",
+        "",
+      ]);
       expect(quotaLeft(w("weekly", { total: 10000, used: 268, remaining: 9731 }))).toBe(
         "9,731 / 10,000 credits left",
       );

@@ -26,7 +26,13 @@ export const labelsText = messages(
       fetching: "获取中",
       scoped: "指定范围",
     },
-    quotaWindows: { "5h": "5 小时", "7d": "7 天", weekly: "每周" },
+    quotaWindows: { "5h": "5 小时", weekly: "每周" },
+    // 按长度起名的额度窗口（`30d`、`3h`、`45m`）
+    quotaSpans: {
+      d: (n: number) => `${n} 天`,
+      h: (n: number) => `${n} 小时`,
+      m: (n: number) => `${n} 分钟`,
+    },
     // 积分制套餐（GLM Coding Plan）的额度窗口还剩多少积分
     quotaLeft: (left: string, total: string) => `剩余 ${left} / ${total} 积分`,
     l1Steps: {
@@ -94,7 +100,12 @@ export const labelsText = messages(
       // 模型数下面的一个词：「5 / Selected」。对话框里那一项叫 Selected models
       scoped: "Selected",
     },
-    quotaWindows: { "5h": "5h", "7d": "7d", weekly: "Weekly" },
+    quotaWindows: { "5h": "5h", weekly: "Weekly" },
+    quotaSpans: {
+      d: (n: number) => (n === 1 ? "1 day" : `${n} days`),
+      h: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
+      m: (n: number) => (n === 1 ? "1 minute" : `${n} minutes`),
+    },
     quotaLeft: (left: string, total: string) => `${left} / ${total} credits left`,
     l1Steps: {
       config: "Configuration",
