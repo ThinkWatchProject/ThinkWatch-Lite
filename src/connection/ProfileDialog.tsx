@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
+import { SecretInput } from "@/ui/secret-input";
 import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -24,10 +25,7 @@ import { code, describeError } from "./describe";
 const KEY_RE = /^[0-9a-fA-F]{64}$/;
 
 /**
- * 添加、编辑一条远程连接（设计稿 ③）。
- *
- * **编辑时密钥不回显。**它存在这台电脑上，界面拿不回来：显示「已保存」，点
- * 「更换」才填新的；不换就沿用。
+ * 添加、编辑一条远程连接（设计稿 ③）。编辑时密钥回填保存的那一把，默认隐藏。
  *
  * 「保存并切换」**先试连**，没通过就停在这里显示原因，不存也不切。通过了才存，
  * 然后交给切换确认（④）—— 那一步要说哪些客户端还指着本机。
@@ -54,8 +52,6 @@ export function ProfileDialog({
   const [name, setName] = useState(editing?.name ?? "");
   const [host, setHost] = useState(editing?.host ?? "");
   const [port, setPort] = useState(editing?.port != null ? String(editing.port) : "");
-  /** 编辑时点过「更换」没有 */
-  const [replacing, setReplacing] = useState(editing === null);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<"test" | "save" | "switch" | null>(null);
   const [result, setResult] = useState<
@@ -64,9 +60,23 @@ export function ProfileDialog({
   const [invalid, setInvalid] = useState<Invalid | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 编辑时回填保存的密钥。**已经开始填的不盖掉**：本机文件，一般在第一次渲染之后就到了
+  const editingId = editing?.id;
+  useEffect(() => {
+    if (!editingId) return;
+    let alive = true;
+    connApi
+      .key(editingId)
+      .then((k) => alive && setKey((typed) => typed || k))
+      .catch((e) => alive && setError(errorText(e)));
+    return () => {
+      alive = false;
+    };
+  }, [editingId]);
+
   const portNum = Number(port.trim());
   const portOk = /^\d+$/.test(port.trim()) && portNum >= 1 && portNum <= 65535;
-  const keyOk = !replacing || KEY_RE.test(key.trim());
+  const keyOk = KEY_RE.test(key.trim());
   /** 还差什么。页脚左边那一句，和别的对话框一个样 */
   const missing =
     name.trim() === ""
@@ -75,7 +85,7 @@ export function ProfileDialog({
         ? t.enterHost
         : !portOk
           ? t.badPort
-          : replacing && key.trim() === ""
+          : key.trim() === ""
             ? t.enterKey
             : !keyOk
               ? t.badKey
@@ -97,7 +107,7 @@ export function ProfileDialog({
       name: name.trim(),
       host: host.trim(),
       port: portNum,
-      key: replacing ? key.trim() : null,
+      key: key.trim(),
     };
   }
 
@@ -190,25 +200,13 @@ export function ProfileDialog({
             />
           </FormRow>
           <FormRow label={t.key} htmlFor="conn-key" hint={t.keyHint(code)}>
-            {replacing ? (
-              <Input
-                id="conn-key"
-                type="password"
-                className="w-full font-mono"
-                value={key}
-                autoComplete="off"
-                spellCheck={false}
-                aria-invalid={(key !== "" && !keyOk) || undefined}
-                onChange={(e) => touched(setKey)(e.target.value)}
-              />
-            ) : (
-              <div className="flex w-full items-center gap-2">
-                <Input id="conn-key" readOnly value={t.keySaved} className="text-muted-foreground" />
-                <Button variant="outline" onClick={() => setReplacing(true)}>
-                  {t.replaceKey}
-                </Button>
-              </div>
-            )}
+            <SecretInput
+              id="conn-key"
+              className="font-mono"
+              value={key}
+              aria-invalid={(key !== "" && !keyOk) || undefined}
+              onChange={(e) => touched(setKey)(e.target.value)}
+            />
           </FormRow>
         </FormRows>
 

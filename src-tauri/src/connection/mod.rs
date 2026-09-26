@@ -554,7 +554,8 @@ pub struct ProfileInput {
     pub name: String,
     pub host: String,
     pub port: u16,
-    /// 新建时必填；编辑时不填就是沿用已经保存的那一把
+    /// 对话框里一律给（编辑时回填的是保存的那一把）。不给就用已经保存的那一把：
+    /// 切换之前试连一条存好的连接时，手里没有表单
     pub key: Option<String>,
 }
 
@@ -587,7 +588,13 @@ fn check(c: &store::Connections, p: &ProfileInput) -> Result<(), Invalid> {
     }
 }
 
-/// 试连对话框里填的这一条。**还没存**：编辑时没换密钥，就用已经保存的那一把
+/// 一条远程连接保存的密钥，编辑对话框回填用。**原值给界面**，由界面默认隐藏
+#[tauri::command]
+pub fn connection_key(id: String) -> Out<String> {
+    secrets::load(&data_dir(), &id).map_err(|e| key_error(&e))
+}
+
+/// 试连对话框里填的这一条。**还没存**：没给密钥时用已经保存的那一把
 #[tauri::command]
 pub async fn test_connection(input: ProfileInput) -> Out<Tested> {
     let key = match (&input.key, &input.id) {
@@ -897,7 +904,7 @@ mod tests {
             field(input(None, "n", "h", 1, None)),
             Some(("key", "empty"))
         );
-        // 编辑时不填密钥就是沿用
+        // 试连一条存好的连接时不给密钥，用保存的那一把
         assert_eq!(field(input(Some("x"), "n", "h", 1, None)), None);
     }
 }

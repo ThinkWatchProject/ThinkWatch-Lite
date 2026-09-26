@@ -163,6 +163,7 @@ pub fn run() {
             window::reveal_main_window,
             connection::connections,
             connection::set_connection_startup,
+            connection::connection_key,
             connection::test_connection,
             connection::save_connection,
             connection::delete_connection,
