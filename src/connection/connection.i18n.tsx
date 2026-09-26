@@ -83,8 +83,6 @@ export const connText = messages(
         在服务器上执行 {code("twcore control-key")} 获取。仅保存在本机，只有当前用户可以读取。
       </>
     ),
-    keySaved: "已保存在本机",
-    replaceKey: "更换",
     test: "测试连接",
     testHint: "完成握手并读取服务器 core 的版本。",
     testOk: (version: string, gateway: string | null) =>
@@ -230,8 +228,6 @@ export const connText = messages(
         Run {code("twcore control-key")} on the server to get it. Saved only on this computer, readable by the current user alone.
       </>
     ),
-    keySaved: "Saved on this computer",
-    replaceKey: "Replace",
     test: "Test connection",
     testHint: "Completes the handshake and reads the server's core version.",
     testOk: (version: string, gateway: string | null) =>

@@ -2,7 +2,7 @@
  * 连接：连哪个 core。**列表和状态都来自 Rust 侧**（`src-tauri/src/connection/`），
  * 不经 core —— 远程连不上时这些照样要能显示、能操作。
  *
- * 密钥不在这里：添加、更换时从对话框递过去一次，之后再也拿不回来。
+ * 密钥不在列表里：编辑对话框按 id 单独取（`connApi.key`），回填后默认隐藏。
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { Retargeted } from "@/types";
@@ -72,7 +72,7 @@ export interface ProfileInput {
   name: string;
   host: string;
   port: number;
-  /** 新建时必填；编辑时不填就沿用已经保存的那一把 */
+  /** 对话框里一律给。不给就用已经保存的那一把（切换前试连一条存好的连接时） */
   key: string | null;
 }
 
@@ -115,6 +115,7 @@ export interface Switched {
 export const connApi = {
   view: () => invoke<ConnView>("connections"),
   setStartup: (startup: Startup) => invoke<ConnView>("set_connection_startup", { startup }),
+  key: (id: string) => invoke<string>("connection_key", { id }),
   test: (input: ProfileInput) => invoke<Tested>("test_connection", { input }),
   save: (input: ProfileInput) => invoke<Saved>("save_connection", { input }),
   remove: (id: string) => invoke<ConnView>("delete_connection", { id }),
