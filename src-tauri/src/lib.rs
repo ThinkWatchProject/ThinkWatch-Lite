@@ -228,6 +228,7 @@ pub fn run() {
             clients::prepare_client_key,
             clients::copy_client_endpoint,
             clients::reveal_client_config,
+            clients::set_client_path,
             clients::retarget_clients,
             mcp::mcp_targets,
             mcp::plan_mcp,

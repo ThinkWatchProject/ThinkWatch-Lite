@@ -431,6 +431,41 @@ fn adopting_twice_does_not_stack_up_sentinels() {
     );
 }
 
+/// 配置不在默认位置（`CLAUDE_CONFIG_DIR` 挪过）：接管、检测、还原都在指定的那个
+/// 文件上做，默认位置一个字节都不碰
+#[test]
+fn a_config_file_somewhere_else_is_adopted_and_restored_where_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let backups = dir.path().join("backups");
+    let custom = dir.path().join("work").join("claude").join("settings.json");
+    std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
+    std::fs::write(&custom, CLAUDE).unwrap();
+    let mut c = client("claude-code");
+    c.custom_config = Some(custom.clone());
+
+    let p = plan_adopt(&c, &home, &gw()).unwrap();
+    apply(&c, &p, &backups).unwrap();
+    assert!(
+        read(&custom).contains("127.0.0.1:8080"),
+        "{}",
+        read(&custom)
+    );
+    assert!(!home.join(".claude").join("settings.json").exists());
+    let d = tw_adopt::detect::detect_one(&c, &home);
+    assert!(d.adopted_at_ms.is_some());
+    assert_eq!(d.path, custom);
+
+    let r = plan_restore(&c, &home).unwrap();
+    apply_restore(&c, &r, &backups).unwrap();
+    assert_eq!(read(&custom), CLAUDE);
+    assert!(
+        tw_adopt::detect::detect_one(&c, &home)
+            .adopted_at_ms
+            .is_none()
+    );
+}
+
 // ---- Aider：YAML ------------------------------------------------------
 
 const AIDER: &str = "# 我的 aider 配置\nmodel: gpt-4o\ndark-mode: true\nauto-commits: false\n";

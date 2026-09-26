@@ -22,6 +22,8 @@ export interface RowActions {
   restore: (c: DetectedClient) => void;
   manual: (id: string) => void;
   reveal: (c: DetectedClient) => void;
+  /** 更改配置文件的路径。只有这台电脑上能换位置的才有这一项 */
+  path: (c: DetectedClient) => void;
   traffic: (key: string) => void;
   openKey: (key: string) => void;
 }
@@ -383,6 +385,7 @@ function menu(c: DetectedClient, a: RowActions, t: typeof clientsText.zh, reacha
       onSelect: () => a.reveal(c),
       disabled: !c.has_config,
     },
+    ...(c.default_path != null ? [{ kind: "item" as const, label: t.changePath, onSelect: () => a.path(c) }] : []),
     {
       kind: "item",
       label: t.traffic,

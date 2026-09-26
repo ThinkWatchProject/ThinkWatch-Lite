@@ -22,6 +22,7 @@ function client(over: Partial<DetectedClient> = {}): DetectedClient {
     verified: "fields_only",
     costs: [],
     models_stale: false,
+    custom_path: false,
     manual: { steps: [], fields: [], endpoint: BASE },
     ...over,
   };

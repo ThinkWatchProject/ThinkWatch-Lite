@@ -124,24 +124,29 @@ impl Loc {
     /// 写成资源管理器地址栏里能直接粘贴的 `%USERPROFILE%\.claude\settings.json`。
     /// XDG 目录被挪到 home 外面的，给完整路径。
     pub fn shown(&self) -> String {
-        let home = env_home().unwrap_or_default();
-        let p = self.resolve(&home);
-        let rel = match p.strip_prefix(&home) {
-            Ok(rel) if !home.as_os_str().is_empty() => rel,
-            _ => return p.display().to_string(),
-        };
-        let parts: Vec<_> = rel
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy())
-            .collect();
-        #[cfg(windows)]
-        {
-            format!(r"%USERPROFILE%\{}", parts.join(r"\"))
-        }
-        #[cfg(not(windows))]
-        {
-            format!("~/{}", parts.join("/"))
-        }
+        shown_path(&self.resolve(&env_home().unwrap_or_default()))
+    }
+}
+
+/// 一条路径给人看的写法，见 [`Loc::shown`]：home 底下的写成 `~/…`（Windows 上
+/// `%USERPROFILE%\…`），别处的给完整路径。
+pub fn shown_path(p: &Path) -> String {
+    let home = env_home().unwrap_or_default();
+    let rel = match p.strip_prefix(&home) {
+        Ok(rel) if !home.as_os_str().is_empty() => rel,
+        _ => return p.display().to_string(),
+    };
+    let parts: Vec<_> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect();
+    #[cfg(windows)]
+    {
+        format!(r"%USERPROFILE%\{}", parts.join(r"\"))
+    }
+    #[cfg(not(windows))]
+    {
+        format!("~/{}", parts.join("/"))
     }
 }
 

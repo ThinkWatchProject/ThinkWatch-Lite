@@ -63,6 +63,15 @@ costs: Array<Msg>,
  */
 models_stale: boolean, 
 /**
+ * 配置文件的默认位置。**能换位置的才有**（`tw_adopt::clients::Client::config_movable`）：
+ * Claude Desktop、DeepSeek Harness 和 WSL 里的没有
+ */
+default_path?: string | null, 
+/**
+ * `path` 是用户指定的（客户端页「更改路径」），不是默认位置
+ */
+custom_path: boolean, 
+/**
  * 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就不给
  */
 key?: string | null, 

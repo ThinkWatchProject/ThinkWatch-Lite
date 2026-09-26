@@ -215,7 +215,7 @@ impl Place {
 
     /// 认得的、能接管的那一个。WSL 里只认第一批的那几个
     fn find(&self, id: &str) -> Out<tw_adopt::clients::Client> {
-        let c = ops::find(id)?;
+        let c = ops::find(id, &self.home())?;
         if matches!(self, Place::Wsl(_)) && !tw_adopt::wsl::CLIENTS.contains(&c.id) {
             return Err(ops::unknown(id).into());
         }
@@ -512,6 +512,25 @@ pub async fn copy_client_endpoint(
     app.clipboard()
         .write_text(endpoint)
         .map_err(|e| e.to_string().into())
+}
+
+/// 为这台电脑上的一个客户端指定配置文件（客户端页的「更改路径」）。`path` 是空的、
+/// 或者就是默认位置，都是回到默认位置。核对的规矩见 [`ops::chosen_config`]
+#[tauri::command]
+pub fn set_client_path(id: String, path: Option<String>) -> Out<()> {
+    let home = home_dir();
+    let c = ops::find(&id, &home)?;
+    let chosen = ops::chosen_config(&c, &home, path.as_deref().unwrap_or(""))?;
+    crate::prefs::update(&crate::data_dir(), |p| match chosen {
+        Some(to) => {
+            p.client_paths.insert(id, to.display().to_string());
+        }
+        None => {
+            p.client_paths.remove(&id);
+        }
+    })
+    .map_err(text)?;
+    Ok(())
 }
 
 /// 在文件管理器里选中这个客户端的配置文件 —— 跟完符号链接的那一份，那才是
@@ -876,7 +895,7 @@ pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<O
         return Ok(None);
     };
     let w = wsl::open(d)?;
-    let Ok(c) = ops::find(client) else {
+    let Ok(c) = ops::find(client, &w.home) else {
         return Ok(None);
     };
     Ok(tw_adopt::detect::detect_one(&c, &w.home)

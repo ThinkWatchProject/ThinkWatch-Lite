@@ -57,4 +57,9 @@ export const api = {
   /** 卸载不改回的 `.wslconfig`（是在这里改成 mirrored 的）。没改过就是 null */
   wslconfigKept: () => invoke<WslConfigKept | null>("wslconfig_kept"),
   reveal: (id: string, env?: string) => invoke<void>("reveal_client_config", { id, env }),
+  /**
+   * 这台电脑上的一个客户端读哪个配置文件。`null` 是回到默认位置；核对不过（接管着、
+   * 不是完整路径、文件夹不在、后缀不对）时报的是那一句
+   */
+  setPath: (id: string, path: string | null) => invoke<void>("set_client_path", { id, path }),
 };

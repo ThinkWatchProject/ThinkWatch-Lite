@@ -112,6 +112,12 @@ adopt.mcp.parse_failed
 adopt.mcp.unknown_client
 adopt.mcp.unverified_format
 adopt.mcp.zed_structure
+adopt.path.adopted
+adopt.path.fixed
+adopt.path.folder
+adopt.path.format
+adopt.path.no_folder
+adopt.path.not_absolute
 adopt.plan.claude_desktop.no_claude_model
 adopt.plan.fields_only
 adopt.plan.foreign_record

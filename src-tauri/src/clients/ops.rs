@@ -9,7 +9,7 @@
 //! 这里不写 config.yaml。连着的是哪个 core，这里不关心 —— 改的总是这台机器上的文件。
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tw_adopt::clients::{self, Client};
 use tw_adopt::{detect, plan};
@@ -38,12 +38,101 @@ impl Gateway {
     }
 }
 
-/// 认得的、能接管的那一个。
-pub fn find(id: &str) -> Result<Client, Msg> {
+/// 能接管的客户端，带着用户为这台电脑上的它们指定的配置文件（`app.json` 的
+/// `client_paths`，见 [`set_config_path`]）。
+///
+/// **只认这台电脑的 home**：WSL 里的、测试用的临时目录，给的都是表里原样的那一份
+/// —— 和 `tw_adopt::paths::Loc::resolve` 只在这台电脑上认 XDG 变量是同一个道理。
+pub fn all(home: &Path) -> Vec<Client> {
+    let custom = if !home.as_os_str().is_empty() && home == super::home_dir() {
+        crate::prefs::load(&crate::data_dir()).client_paths
+    } else {
+        BTreeMap::new()
+    };
     clients::adoptable()
+        .into_iter()
+        .map(|mut c| {
+            if c.config_movable() {
+                c.custom_config = custom.get(c.id).map(PathBuf::from);
+            }
+            c
+        })
+        .collect()
+}
+
+/// 认得的、能接管的那一个，带着用户指定的配置文件（见 [`all`]）。
+pub fn find(id: &str, home: &Path) -> Result<Client, Msg> {
+    all(home)
         .into_iter()
         .find(|c| c.id == id)
         .ok_or_else(|| unknown(id))
+}
+
+/// 客户端页「更改路径」填的那一串，核对之后是哪个文件。空的、或者就是默认位置，都是
+/// `None`：回到默认位置。
+///
+/// **接管着的不改**：接管记录和能还原的原文都在原来那个文件旁边，换了路径就再也还原
+/// 不了 —— 先还原。写成 `~/…` 的按 home 展开；要的是一个文件，它所在的文件夹得在，
+/// 后缀得是这个客户端读的格式（免得把 TOML 写进一个 `.json`）。
+pub fn chosen_config(c: &Client, home: &Path, raw: &str) -> Result<Option<PathBuf>, Msg> {
+    if !c.config_movable() {
+        return Err(msg!(
+            "adopt.path.fixed", client = c.name =>
+            "The configuration file of {client} cannot be moved."
+        ));
+    }
+    if detect::detect_one(c, home).adopted_at_ms.is_some() {
+        return Err(msg!(
+            "adopt.path.adopted", client = c.name =>
+            "{client} is connected. Restore it before changing the path."
+        ));
+    }
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    let p = match raw.strip_prefix('~') {
+        Some("") => home.to_path_buf(),
+        Some(rest) if rest.starts_with(['/', '\\']) => {
+            tw_adopt::paths::under(home, &rest[1..].replace('\\', "/"))
+        }
+        _ => PathBuf::from(raw),
+    };
+    if !p.is_absolute() {
+        return Err(msg!(
+            "adopt.path.not_absolute", path = raw =>
+            "{path} is not a full path."
+        ));
+    }
+    if p.is_dir() {
+        return Err(msg!(
+            "adopt.path.folder", path = p.display().to_string() =>
+            "{path} is a folder. Enter the path of the configuration file."
+        ));
+    }
+    if let Some(dir) = p.parent().filter(|d| !d.is_dir()) {
+        return Err(msg!(
+            "adopt.path.no_folder", folder = dir.display().to_string() =>
+            "The folder {folder} does not exist."
+        ));
+    }
+    let exts = c.format.extensions();
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    if !ext.is_some_and(|e| exts.contains(&e.as_str())) {
+        let ext = exts
+            .iter()
+            .map(|e| format!(".{e}"))
+            .collect::<Vec<_>>()
+            .join(" / ");
+        return Err(msg!(
+            "adopt.path.format", client = c.name, ext = ext =>
+            "{client} reads a {ext} file."
+        ));
+    }
+    Ok((p != c.default_config_path(home)).then_some(p))
 }
 
 /// 认得的客户端：能接管的，加上只能手动配置的。为它准备专用密钥之前先问这个 ——
@@ -78,7 +167,7 @@ pub fn list(
         key: Some(String::new()),
         models: Vec::new(),
     };
-    let detected = clients::adoptable()
+    let detected = all(home)
         .iter()
         .map(|c| {
             let d = detect::detect_one(c, home);
@@ -100,6 +189,10 @@ pub fn list(
                 p.display().to_string()
             });
             v.models_stale = stale;
+            if c.config_movable() {
+                v.default_path = Some(c.default_config_path(home).display().to_string());
+                v.custom_path = c.custom_config.is_some();
+            }
             v
         })
         .collect();
@@ -156,6 +249,8 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
+        default_path: None,
+        custom_path: false,
         managed: d.managed.as_ref().map(|by| {
             plan::PlanError::Managed {
                 client: d.name.into(),
@@ -176,7 +271,7 @@ pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedC
         key: Some(String::new()),
         models: Vec::new(),
     };
-    clients::adoptable()
+    all(&w.home)
         .iter()
         .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id))
         .map(|c| {
@@ -361,7 +456,7 @@ pub fn plan_adopt_as(
     gw: &Gateway,
     models: Vec<String>,
 ) -> Result<wire::PlanView, Msg> {
-    let c = find(id)?;
+    let c = find(id, home)?;
     let (name, value, created) = key_for(gw, owner)?;
     let target = clients::Gateway {
         base: gw.base.clone(),
@@ -425,7 +520,7 @@ pub fn adopt(
     models: Vec<String>,
 ) -> Result<wire::AdoptResponse, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
-    let c = find(id)?.here(home);
+    let c = find(id, home)?.here(home);
     let target = clients::Gateway {
         base: base.to_string(),
         key: Some(key.to_string()),
@@ -455,7 +550,7 @@ pub fn plan_restore_as(
     owner: &str,
     keys: &[ClientView],
 ) -> Result<wire::PlanView, Msg> {
-    let c = find(id)?;
+    let c = find(id, home)?;
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     // 还原的 diff 里，**要打码的是用户自己的原始密钥** —— 它正要被写
     // 回去，而它比我们那把更不该出现在截图里
@@ -482,7 +577,7 @@ pub fn plan_restore_as(
 /// —— 后者会把用户这三个月里加的 MCP server、调的权限、写的 hook 全部
 /// 抹掉。不问 core：还原用不着密钥，core 不在的时候也要能退回去。
 pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptResponse, Msg> {
-    let c = find(id)?.here(home);
+    let c = find(id, home)?.here(home);
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     let a = plan::apply_restore(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
@@ -496,13 +591,13 @@ pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptRespo
 
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
 pub fn diagnose(home: &Path, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
-    let c = find(id)?;
+    let c = find(id, home)?;
     Ok(findings(detect::diagnose(&c, home, None)))
 }
 
 /// WSL 里的那一份走一遍同样的链
 pub fn diagnose_wsl(w: &tw_adopt::wsl::WslHome, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
-    let c = find(id)?;
+    let c = find(id, &w.home)?;
     Ok(findings(detect::diagnose_wsl(&c, w)))
 }
 
@@ -523,7 +618,7 @@ fn findings(f: Vec<detect::Finding>) -> Vec<wire::FindingView> {
 
 /// 此刻接管着的客户端。
 pub fn adopted(home: &Path) -> Vec<Client> {
-    clients::adoptable()
+    all(home)
         .into_iter()
         .filter(|c| detect::detect_one(c, home).adopted_at_ms.is_some())
         .collect()
@@ -535,7 +630,7 @@ pub fn adopted(home: &Path) -> Vec<Client> {
 /// 切换确认里说有几个，「改为指向服务器」改的也正是这几个。指着别处的（已经改过去
 /// 了、或者用户自己指到了别的机器）不在里面。
 pub fn adopted_on_this_machine(home: &Path) -> Vec<(Client, String)> {
-    pointing_here(home, clients::adoptable())
+    pointing_here(home, all(home))
 }
 
 /// [`adopted_on_this_machine`]，WSL 里的那一份：只看第一批的那几个
@@ -544,7 +639,7 @@ pub fn adopted_on_this_machine(home: &Path) -> Vec<(Client, String)> {
 pub fn adopted_on_this_machine_wsl(w: &tw_adopt::wsl::WslHome) -> Vec<(Client, String)> {
     pointing_here(
         &w.home,
-        clients::adoptable()
+        all(&w.home)
             .into_iter()
             .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id)),
     )
@@ -591,7 +686,7 @@ pub fn host_port(endpoint: &str) -> Option<&str> {
 /// 答得上来，core 答不上
 pub fn adopted_owner(home: &Path, keys: &[ClientView], key: &str) -> Option<Client> {
     let id = keys.iter().find(|k| k.name == key)?.client.as_deref()?;
-    let c = find(id).ok()?;
+    let c = find(id, home).ok()?;
     detect::detect_one(&c, home).adopted_at_ms.map(|_| c)
 }
 
@@ -883,6 +978,84 @@ pub(crate) mod tests {
         );
     }
 
+    /// 「更改路径」填的那一串：核对完是哪个文件，或者为什么不收
+    #[test]
+    fn a_chosen_config_file_is_checked_before_it_is_kept() {
+        let home = home_with_claude();
+        let h = home.path();
+        std::fs::create_dir_all(h.join("work")).unwrap();
+        let c = find("claude-code", h).unwrap();
+        let code = |raw: &str| chosen_config(&c, h, raw).unwrap_err().code;
+
+        assert_eq!(chosen_config(&c, h, "  ").unwrap(), None);
+        // 就是默认位置：等于没指定
+        let default = h.join(".claude").join("settings.json");
+        assert_eq!(
+            chosen_config(&c, h, &default.display().to_string()).unwrap(),
+            None
+        );
+        assert_eq!(
+            chosen_config(&c, h, "~/work/settings.json").unwrap(),
+            Some(h.join("work").join("settings.json"))
+        );
+        let full = h.join("work").join("my.json");
+        assert_eq!(
+            chosen_config(&c, h, &full.display().to_string()).unwrap(),
+            Some(full)
+        );
+        assert_eq!(code("work/settings.json"), "adopt.path.not_absolute");
+        assert_eq!(
+            code(&h.join("work").display().to_string()),
+            "adopt.path.folder"
+        );
+        assert_eq!(
+            code(&h.join("nope").join("settings.json").display().to_string()),
+            "adopt.path.no_folder"
+        );
+        assert_eq!(
+            code(&h.join("work").join("config.toml").display().to_string()),
+            "adopt.path.format"
+        );
+        // 一次改几个文件的，位置不能换
+        let desktop = find(tw_adopt::desktop::ID, h).unwrap();
+        assert_eq!(
+            chosen_config(&desktop, h, "~/work/x.json")
+                .unwrap_err()
+                .code,
+            "adopt.path.fixed"
+        );
+    }
+
+    /// 接管着的不换路径：接管记录和能还原的原文都在原来那个文件旁边
+    #[test]
+    fn an_adopted_client_keeps_its_path_until_restored() {
+        let home = home_with_claude();
+        adopt(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            "http://127.0.0.1:8788",
+            "tw-k",
+            Vec::new(),
+        )
+        .unwrap();
+        let c = find("claude-code", home.path()).unwrap();
+        assert_eq!(
+            chosen_config(&c, home.path(), "~/other.json")
+                .unwrap_err()
+                .code,
+            "adopt.path.adopted"
+        );
+    }
+
+    /// 别处的 home（WSL 里的、测试的临时目录）不带用户指定的配置文件：那份设置只管
+    /// 这台电脑上的
+    #[test]
+    fn a_home_other_than_this_computers_gets_the_default_files() {
+        let home = home_with_claude();
+        assert!(all(home.path()).iter().all(|c| c.custom_config.is_none()));
+    }
+
     #[test]
     fn restoring_something_we_never_adopted_refuses_instead_of_guessing() {
         let home = home_with_claude();
@@ -1129,7 +1302,7 @@ pub(crate) mod tests {
             Vec::new(),
         )
         .unwrap();
-        let c = find("claude-code").unwrap();
+        let c = find("claude-code", home.path()).unwrap();
         let s = repoint(
             home.path(),
             &backups(&home),

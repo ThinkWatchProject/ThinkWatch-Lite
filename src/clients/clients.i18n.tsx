@@ -21,7 +21,7 @@ export const clientsText = messages(
     manualTitle: "需要手动配置",
     manualIntro: "以下客户端无法自动接管，按步骤填入网关地址和密钥即可。",
     absentTitle: "未检测到",
-    absentIntro: "配置文件不在默认位置时，可以按配置方法手动接入。",
+    absentIntro: "配置文件不在默认位置时，可以更改路径，或按配置方法手动接入。",
 
     // 页头的摘要
     noneConnected: "尚未接管客户端",
@@ -64,6 +64,7 @@ export const clientsText = messages(
       : isLinux
         ? "在文件管理器中显示配置文件"
         : "在访达中显示配置文件",
+    changePath: "更改路径…",
     traffic: "查看流量",
     actionsFor: (name: string) => `${name} 的操作`,
     restoredAll: (n: number) => `已还原 ${n} 个客户端`,
@@ -161,6 +162,15 @@ export const clientsText = messages(
     confirmRestart: "重启 WSL",
     wslRestarted: "已重启 WSL",
 
+    // 更改配置文件路径
+    pathTitle: (name: string) => `${name} 的配置文件`,
+    pathDesc: "接管与还原时修改的文件。",
+    pathLabel: "路径",
+    pathDefault: (path: string) => `默认位置：${path}`,
+    pathRestore: "恢复默认",
+    pathAdopted: "已接管，需先还原才能更改路径。",
+    enterPath: "填写路径",
+
     // 全部还原
     restoreAllTitle: "还原全部客户端",
     restoreAllBody: (n: number) =>
@@ -181,7 +191,8 @@ export const clientsText = messages(
     manualIntro:
       "These clients cannot be connected automatically; follow the steps to enter the gateway address and key.",
     absentTitle: "Not detected",
-    absentIntro: "When the configuration file is not in its default location, the client can be set up by hand.",
+    absentIntro:
+      "When the configuration file is not in its default location, change the path, or set the client up by hand.",
 
     noneConnected: "No client connected yet",
     nDetected: (count: number, n: ReactNode) => <>{n} {count === 1 ? "client" : "clients"} detected</>,
@@ -220,6 +231,7 @@ export const clientsText = messages(
       : isLinux
         ? "Show configuration file in the file manager"
         : "Show configuration file in Finder",
+    changePath: "Change path…",
     traffic: "Show traffic",
     actionsFor: (name: string) => `Actions for ${name}`,
     restoredAll: (n: number) => `${count(n, "client", "clients")} restored`,
@@ -318,6 +330,14 @@ export const clientsText = messages(
       "This runs wsl --shutdown: every running WSL distribution stops, and the programs running in it exit.",
     confirmRestart: "Restart WSL",
     wslRestarted: "WSL restarted",
+
+    pathTitle: (name: string) => `${name} configuration file`,
+    pathDesc: "The file changed when connecting and restoring.",
+    pathLabel: "Path",
+    pathDefault: (path: string) => `Default location: ${path}`,
+    pathRestore: "Restore default",
+    pathAdopted: "Connected. Restore it before changing the path.",
+    enterPath: "Enter a path",
 
     restoreAllTitle: "Restore all clients",
     restoreAllBody: (n: number) =>
