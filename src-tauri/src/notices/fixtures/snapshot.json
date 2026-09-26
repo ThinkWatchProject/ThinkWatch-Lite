@@ -31,10 +31,10 @@
    {
     "name": "官方",
     "base_url": "http://127.0.0.1:18944",
-    "base_url_masked": false,
     "auth_header": "x-api-key",
     "oauth": {
      "endpoint": "http://127.0.0.1:18954/token",
+     "refresh": "rt-revoked",
      "failure": {
       "code": "gw.oauth.expired",
       "args": {

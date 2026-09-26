@@ -15,6 +15,8 @@ export const uiText = messages(
     undone: "已撤销",
     dismiss: "关闭",
     live: "实时",
+    show: "显示",
+    hide: "隐藏",
   },
   {
     loading: "Loading…",
@@ -24,5 +26,7 @@ export const uiText = messages(
     undone: "Undone",
     dismiss: "Dismiss",
     live: "Live",
+    show: "Show",
+    hide: "Hide",
   },
 );

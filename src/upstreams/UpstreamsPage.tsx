@@ -165,7 +165,7 @@ export default function UpstreamsPage({
     const write = (disabled: boolean) =>
       api
         .updateProvider(saved.name, {
-          provider: { ...toInput(formFromView(saved), true), disabled },
+          provider: { ...toInput(formFromView(saved)), disabled },
           base_version: version,
         })
         .then((w) => {
@@ -210,7 +210,7 @@ export default function UpstreamsPage({
     setChecks((prev) => ({ ...prev, [name]: { running: true } }));
     try {
       const result = await api.testProxy({
-        proxy: { name: x.name, kind: x.kind, addr: x.addr, auth: { mode: "keep" } },
+        proxy: { name: x.name, kind: x.kind, addr: x.addr, auth: x.auth },
         current: x.name,
       });
       setChecks((prev) => ({ ...prev, [name]: { running: false, result, at: Date.now() } }));

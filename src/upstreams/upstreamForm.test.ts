@@ -7,6 +7,7 @@ import {
   connectionMissing,
   formFromView,
   headerRow,
+  oauthKept,
   toInput,
   type UpstreamForm,
 } from "./upstreamForm";
@@ -17,13 +18,12 @@ beforeAll(() => setLang("zh"));
 function view(patch: Partial<ProviderView> = {}): ProviderView {
   return {
     name: "relay",
-    base_url: "https://relay.example",
-    base_url_masked: false,
-    key: { display: "sk-…Q3xA" },
+    base_url: "https://relay.example/v1",
+    key: "sk-relay-Q3xA",
     auth_header: "x-api-key",
     headers: [
-      { name: "anthropic-version", value: "2023-06-01", masked: false },
-      { name: "X-Relay-Token", value: "rt-…9f2c", masked: true },
+      { name: "anthropic-version", value: "2023-06-01" },
+      { name: "X-Relay-Token", value: "rt-5d1e9f2c" },
     ],
     oauth: null,
     protocol: "anthropic",
@@ -45,70 +45,99 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
   };
 }
 
+function oauthView(): ProviderView {
+  return view({
+    key: null,
+    oauth: {
+      endpoint: "https://auth.example/token",
+      refresh: "rt-saved",
+      client_id: "cid",
+      client_secret: "cs-saved",
+    },
+  });
+}
+
 function fresh(patch: Partial<UpstreamForm>): UpstreamForm {
   return { ...blankForm(), name: "relay", baseUrl: "https://relay.example", ...patch };
 }
 
-describe("编辑时的凭据", () => {
-  it("没动过：密钥和打过码的请求头沿用，公开的请求头原样发回", () => {
-    const input = toInput(formFromView(view()), true);
-    expect(input.key).toEqual({ mode: "keep" });
+describe("编辑时回填原样", () => {
+  it("地址、密钥和请求头按配置里写的回填，没改就原样交回", () => {
+    const p = view();
+    const f = formFromView(p);
+    expect(f.baseUrl).toBe("https://relay.example/v1");
+    expect(f.key).toBe("sk-relay-Q3xA");
+    const input = toInput(f);
+    expect(input.base_url).toBe("https://relay.example/v1");
+    expect(input.key).toBe("sk-relay-Q3xA");
     expect(input.oauth).toEqual({ mode: "none" });
     expect(input.headers).toEqual([
       { name: "anthropic-version", value: "2023-06-01" },
-      // 不给值 = 沿用。发回打过码的值会把码写进配置
-      { name: "X-Relay-Token" },
+      { name: "X-Relay-Token", value: "rt-5d1e9f2c" },
     ]);
-  });
-
-  it("打过码的请求头：名称不分大小写，改了名就不再沿用", () => {
-    const f = formFromView(view());
-    const token = f.headers[1]!;
-    const renamed = { ...f, headers: [{ ...token, name: "x-relay-token" }] };
-    expect(toInput(renamed, true).headers).toEqual([{ name: "x-relay-token" }]);
-
-    const other = { ...f, headers: [{ ...token, name: "X-Relay-Key" }] };
-    expect(connectionMissing(other, "relay", ["relay"])).toBe("填写请求头「X-Relay-Key」的值");
-  });
-
-  it("填了新密钥就换；点了移除就删", () => {
-    const f = formFromView(view());
-    expect(toInput({ ...f, key: " sk-new " }, true).key).toEqual({ mode: "set", value: "sk-new" });
-    expect(toInput({ ...f, keySaved: false }, true).key).toEqual({ mode: "none" });
-  });
-
-  it("环境变量引用回填，原样保存等于沿用", () => {
-    const p = view({ key: { display: "环境变量 ${RELAY_KEY}", env: "RELAY_KEY" } });
-    const f = formFromView(p);
-    expect(f.key).toBe("${RELAY_KEY}");
     expect(connectionChanged(f, p)).toBe(false);
   });
 
-  it("OAuth 没点更换就整份沿用；改成 API 密钥时删掉 OAuth", () => {
-    const p = view({ key: null, oauth: { endpoint: "https://auth.example/token" } });
-    const f = formFromView(p);
-    expect(f.authMode).toBe("oauth");
-    expect(toInput(f, true).oauth).toEqual({ mode: "keep" });
-    expect(toInput(f, true).key).toEqual({ mode: "none" });
-    expect(connectionMissing(f, "relay", ["relay"])).toBeNull();
+  it("清空密钥就是不要密钥；清空请求头的值要补上", () => {
+    const f = formFromView(view());
+    expect(toInput({ ...f, key: " " }).key).toBeUndefined();
+    const cleared = { ...f, headers: [{ ...f.headers[1]!, value: "" }] };
+    expect(connectionMissing(cleared, "relay", ["relay"])).toBe("填写请求头「X-Relay-Token」的值");
+  });
 
-    const switched = { ...f, authMode: "key" as const, key: "sk-new" };
-    expect(toInput(switched, true).oauth).toEqual({ mode: "none" });
-    expect(toInput(switched, true).key).toEqual({ mode: "set", value: "sk-new" });
+  it("环境变量引用原样回填、原样交回", () => {
+    const p = view({ key: "${RELAY_KEY}" });
+    const f = formFromView(p);
+    expect(f.key).toBe("${RELAY_KEY}");
+    expect(toInput(f).key).toBe("${RELAY_KEY}");
+    expect(connectionChanged(f, p)).toBe(false);
+  });
+
+  it("OAuth 回填原样；没改就交「保持原样」，检测也不用填 Access Token", () => {
+    const f = formFromView(oauthView());
+    expect(f.authMode).toBe("oauth");
+    expect(f.oauthRefresh).toBe("rt-saved");
+    expect(f.oauthClientSecret).toBe("cs-saved");
+    expect(oauthKept(f)).toBe(true);
+    expect(toInput(f).oauth).toEqual({ mode: "keep" });
+    expect(toInput(f).key).toBeUndefined();
+    expect(connectionMissing(f, "relay", ["relay"])).toBeNull();
+  });
+
+  it("改了 OAuth 的任何一项就整份交新的", () => {
+    const f = { ...formFromView(oauthView()), oauthRefresh: "rt-new" };
+    expect(oauthKept(f)).toBe(false);
+    expect(toInput(f).oauth).toEqual({
+      mode: "set",
+      refresh: "rt-new",
+      endpoint: "https://auth.example/token",
+      client_id: "cid",
+      client_secret: "cs-saved",
+      access: undefined,
+    });
+    expect(connectionMissing({ ...f, oauthRefresh: "" }, "relay", ["relay"])).toBe(
+      "填写 Refresh Token 与 Token 端点",
+    );
+  });
+
+  it("OAuth 改成 API 密钥：删掉 OAuth、交新密钥", () => {
+    const f = { ...formFromView(oauthView()), authMode: "key" as const, key: "sk-new" };
+    expect(toInput(f).oauth).toEqual({ mode: "none" });
+    expect(toInput(f).key).toBe("sk-new");
   });
 
   it("从 API 密钥改成 OAuth：必须填新的 OAuth 凭据，原密钥删掉", () => {
     const f = { ...formFromView(view()), authMode: "oauth" as const };
     expect(connectionMissing(f, "relay", ["relay"])).toBe("填写 Refresh Token 与 Token 端点");
     const filled = { ...f, oauthRefresh: "rt", oauthEndpoint: "https://auth.example/token" };
-    expect(toInput(filled, true).key).toEqual({ mode: "none" });
-    expect(toInput(filled, true).oauth).toMatchObject({ mode: "set", refresh: "rt" });
+    expect(toInput(filled).key).toBeUndefined();
+    expect(toInput(filled).oauth).toMatchObject({ mode: "set", refresh: "rt" });
   });
 
-  it("改了请求头、协议或代理都算连接改过", () => {
+  it("改了地址、请求头、协议或代理都算连接改过", () => {
     const p = view();
     const f = formFromView(p);
-    expect(connectionChanged(f, p)).toBe(false);
+    expect(connectionChanged({ ...f, baseUrl: "https://relay.example" }, p)).toBe(true);
     expect(connectionChanged({ ...f, headers: [...f.headers, headerRow("X-Org", "o-1")] }, p)).toBe(true);
     expect(connectionChanged({ ...f, protocol: "openai-chat" }, p)).toBe(true);
     expect(connectionChanged({ ...f, proxy: "system" }, p)).toBe(true);
@@ -119,11 +148,15 @@ describe("新建时的凭据", () => {
   it("密钥可以不填：本地服务和用请求头鉴权的中转站都不需要", () => {
     const f = fresh({});
     expect(connectionMissing(f, null, [])).toBeNull();
-    expect(toInput(f, false).key).toEqual({ mode: "none" });
+    expect(toInput(f).key).toBeUndefined();
+  });
+
+  it("地址必填", () => {
+    expect(connectionMissing(fresh({ baseUrl: " " }), null, [])).toBe("填写接口地址");
   });
 
   it("空行忽略；只有名称或只有值的行要补全", () => {
-    expect(toInput(fresh({ headers: [headerRow()] }), false).headers).toEqual([]);
+    expect(toInput(fresh({ headers: [headerRow()] })).headers).toEqual([]);
     expect(connectionMissing(fresh({ headers: [headerRow("", "v")] }), null, [])).toBe(
       "填写请求头名称",
     );
