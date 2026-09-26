@@ -132,7 +132,7 @@ WSL 2 默认使用 NAT 网络，此时 Windows 上的网关无法从 WSL 内访�
 
 ### 上游
 
-上游是网关转发请求的目标：Anthropic、OpenAI、Google Gemini、DeepSeek 或任何兼容接口的 API 密钥，在应用内登录的 ChatGPT 账号或 Z.ai / BigModel 账号，OpenRouter 等中转服务，以及 Ollama 等本机模型。ChatGPT 账号显示订阅额度与重置时间；GLM Coding Plan 的上游（地址在 `api.z.ai` 或 `open.bigmodel.cn` 上，在应用内登录或手动填写密钥均可）同样显示：5 小时与每周额度、老套餐每月的 MCP 调用次数，积分制套餐另外显示剩余积分（「剩余 1,976 / 2,000 积分」）。客户端与上游的 API 格式不同时，请求在 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之间自动转换，无法转换的字段会在请求上逐一列出。上游可以经出站代理访问，也可以使用单独的价目表计价，代理与价目表在同一页的标签中管理。链路测速测量 DNS 解析以及 TCP、TLS、代理握手的耗时，不产生费用；推理测速测量首个 token 的时间，运行前先给出费用预估。
+上游是网关转发请求的目标：Anthropic、OpenAI、Google Gemini、DeepSeek 或任何兼容接口的 API 密钥，在应用内登录的 ChatGPT 账号或 Z.ai / BigModel 账号，OpenRouter 等中转服务，以及 Ollama 等本机模型。ChatGPT 账号显示订阅额度与重置时间；GLM Coding Plan 的上游（地址在 `api.z.ai` 或 `open.bigmodel.cn` 上，在应用内登录或手动填写密钥均可）同样显示：5 小时与每周额度，积分制套餐另外显示剩余积分（「剩余 1,976 / 2,000 积分」）。客户端与上游的 API 格式不同时，请求在 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之间自动转换，无法转换的字段会在请求上逐一列出。上游可以经出站代理访问，也可以使用单独的价目表计价，代理与价目表在同一页的标签中管理。链路测速测量 DNS 解析以及 TCP、TLS、代理握手的耗时，不产生费用；推理测速测量首个 token 的时间，运行前先给出费用预估。
 
 API 密钥和请求头的值可以写成 `${变量名}`，读取系统环境变量。macOS 上读的是登录 shell 里的环境变量，`~/.zshrc` 等文件中 `export` 的变量都会生效，Linux 同理（`~/.bashrc`、`~/.profile` 等）；Windows 上读的是系统设置里配置的环境变量。修改变量后，重新打开应用即可生效。代理相关的变量（`HTTPS_PROXY` 等）和 `PATH` 不会被读取。
 

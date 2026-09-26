@@ -328,8 +328,8 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
  * 还剩多少可用。
  *
  * 报过额度的上游，答案是额度条 —— 那是这一家「今天还能不能接着用」的唯一答案，
- * 画的是**最紧张的那个窗口**，其余窗口在悬停里。额度按数量计的（GLM Coding Plan 的
- * 积分），条下面再写一行还剩多少。**没报过额度就退回说计费方式**：画一根 0% 的空条
+ * 画的是**最紧张的那个窗口**，其余窗口在悬停里。积分制套餐（GLM Coding Plan）的
+ * 窗口，条下面再写一行还剩多少积分。**没报过额度就退回说计费方式**：画一根 0% 的空条
  * 等于说「一点没用」，而事实是不知道。
  */
 function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<UpstreamStats>; now: number }) {

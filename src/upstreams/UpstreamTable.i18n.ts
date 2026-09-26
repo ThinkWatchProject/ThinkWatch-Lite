@@ -38,7 +38,7 @@ export const upstreamTableText = messages(
     modelsOf: (name: string) => `${name} 的模型`,
     used: (percent: number) => `已用 ${percent}%`,
     quotaOf: (window: string) => `${window}额度`,
-    // `left`：按数量计的窗口还剩多少（「剩余 1,976 / 2,000 积分」），按百分比报的没有
+    // `left`：积分制套餐的窗口还剩多少积分（「剩余 1,976 / 2,000 积分」），别的窗口没有
     windowLine: (window: string, used: number, left: string | null, reset: string | null) =>
       `${window}额度：${[`已用 ${used}%`, left, reset && `${reset}重置`].filter(Boolean).join("，")}`,
     sheet: (name: string) => `价目表 ${name}`,

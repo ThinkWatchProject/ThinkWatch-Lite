@@ -196,7 +196,7 @@ export function planLabel(plan: ChatgptPlan | null | undefined): string | null {
   return Object.hasOwn(PLANS, plan) ? PLANS[plan as KnownChatgptPlan] : plan;
 }
 
-/** 订阅额度窗口：`5h` / `7d` / `weekly` / `monthly`。认不出来的原样显示 */
+/** 订阅额度窗口：`5h` / `7d` / `weekly`。认不出来的原样显示 */
 export function quotaWindowLabel(window: string): string {
   const t = textOf(labelsText).quotaWindows;
   switch (window) {
@@ -206,26 +206,22 @@ export function quotaWindowLabel(window: string): string {
       return t["7d"];
     case "weekly":
       return t.weekly;
-    case "monthly":
-      return t.monthly;
     default:
       return window;
   }
 }
 
 /**
- * 按数量计的额度窗口还剩多少：「剩余 1,976 / 2,000 积分」。按百分比报的窗口没有，是 null。
+ * 积分制套餐（GLM Coding Plan）的窗口还剩多少积分：「剩余 1,976 / 2,000 积分」。
+ * 别的窗口不带积分，是 null。
  *
- * **剩余照上游说的写**，不拿总额减已用去算 —— 上游给的三个数不一定对得上。每月那个窗口
- * （GLM 老套餐）数的是 MCP 调用次数，不是积分。
+ * **剩余照上游说的写**，不拿总额减已用去算 —— 上游给的三个数不一定对得上。
  */
 export function quotaLeft(w: QuotaWindow): string | null {
   if (!w.credits) return null;
-  const t = textOf(labelsText).quotaLeft;
   // 小数差的不到一个，不值得占位置
   const n = (x: number) => Math.round(Math.max(0, x)).toLocaleString();
-  const say = w.window === "monthly" ? t.calls : t.credits;
-  return say(n(w.credits.remaining), n(w.credits.total));
+  return textOf(labelsText).quotaLeft(n(w.credits.remaining), n(w.credits.total));
 }
 
 /** 建连的一步。对着代理的那几步带上「代理」，代理握手本身不用 */

@@ -82,9 +82,8 @@ known colloquialisms.
 | 订阅 / 订阅额度 | subscription / subscription quota | |
 | 额度 | usage limit / quota | ChatGPT windows: "usage limit" |
 | 重置卡 | reset credit | |
-| 5 小时 / 每周 / 每月 | 5h / Weekly / Monthly | quota windows; notices write 5-hour / weekly / monthly inside a sentence |
+| 5 小时 / 每周 | 5h / Weekly | quota windows; notices write 5-hour / weekly inside a sentence |
 | 积分 | credits | the unit of a GLM Coding Plan billed in credits: 剩余 1,976 / 2,000 积分 = 1,976 / 2,000 credits left; not the ChatGPT reset credits |
-| 次 | calls | the monthly window of the older GLM plans counts MCP calls: 剩余 960 / 1,000 次 = 960 / 1,000 calls left |
 | 会话日志 | session log | the whole conversation DeepSeek Harness attaches to each request |
 | 按量计费 / 不计费 | Per token / Free | billing: the only two modes; subscription accounts are billed per token |
 | 首字节 | time to first byte (TTFB) | column headers may use "TTFB" |

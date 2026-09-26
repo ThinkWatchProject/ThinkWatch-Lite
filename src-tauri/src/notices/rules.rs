@@ -99,24 +99,6 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Some(s) if s <= 300 => Level::Info,
                 _ => Level::Warning,
             };
-            let used_up = tr!(
-                format!("{}额度已用完{}。", window_label(window), reset),
-                format!(
-                    "The {} usage limit has been reached{}.",
-                    window_label(window),
-                    reset
-                )
-            );
-            // 每月那个窗口数的是 GLM 老套餐每月的 MCP 调用次数：它用完不等于经此上游的
-            // 请求会被拒绝，这一句不说
-            let body = if window == "monthly" {
-                used_up
-            } else {
-                tr!(
-                    format!("{used_up}经此上游的请求会被拒绝。"),
-                    format!("{used_up} Requests through this upstream will be rejected.")
-                )
-            };
             vec![
                 Signal::raised(
                     format!("quota:{provider}:{window}"),
@@ -126,10 +108,26 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                         format!("“{provider}” Subscription Quota Used Up")
                     ),
                 )
-                .body(body)
+                .body(tr!(
+                    format!(
+                        "{}额度已用完{}。经此上游的请求会被拒绝。",
+                        window_label(window),
+                        reset
+                    ),
+                    format!(
+                        "The {} usage limit has been reached{}. Requests through this upstream will be rejected.",
+                        window_label(window),
+                        reset
+                    )
+                ))
                 .view(UPSTREAMS),
             ]
         }
+        // 窗口是空的：这一家的额度撤下了（GLM 的 key 被判定没有套餐），之前报过的窗口都
+        // 不再作数。开着的是哪几个窗口的提醒，事件里没有 —— 这一家的全部收起
+        Event::QuotaSeen {
+            provider, windows, ..
+        } if windows.is_empty() => vec![Signal::cleared_under(format!("quota:{provider}:"))],
         // 额度是按窗口报的：没到上限的窗口就是恢复了
         Event::QuotaSeen {
             provider, windows, ..
@@ -688,12 +686,10 @@ pub fn remote_back() -> Signal {
     Signal::cleared("remote")
 }
 
-/// `5h` / `weekly` / `monthly` → 「5 小时」「每周」「每月」（英文是 `5-hour`、`weekly`、
-/// `monthly`）。认不出来的原样用
+/// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用
 fn window_label(w: &str) -> String {
     match w {
         "weekly" => tr!("每周", "weekly").into(),
-        "monthly" => tr!("每月", "monthly").into(),
         "5h" => tr!("5 小时", "5-hour").into(),
         other => match other.strip_suffix('h').and_then(|n| n.parse::<u32>().ok()) {
             Some(h) => tr!(format!("{h} 小时"), format!("{h}-hour")),
@@ -706,7 +702,7 @@ fn window_label(w: &str) -> String {
 }
 
 /// 「，约 3 小时后重置」（英文是 ` and resets in about 3 hours`，接在句子中间）。
-/// 满一天按天说：每周、每月的窗口离重置常常还有好几天，「约 240 小时」没法读
+/// 满一天按天说：每周的窗口离重置常常还有好几天，「约 150 小时」没法读
 fn after(secs: u64) -> String {
     let (n, unit, unit_en) = if secs >= 86_400 {
         (secs / 86_400, "天", "day")
