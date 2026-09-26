@@ -114,6 +114,11 @@ export function usePricingStatus(configVersion: string) {
  * 今天还没被用过时，不问就什么都没有。问一次是一次真实调用：**失败了也不重试**，
  * 连不上时反复问只会把错误刷满日志；单个账号问不到不影响别的。问完 core 记下了
  * 额度，`onAnswered` 让统计从 core 再读一遍，免得这里和它各存一份。
+ *
+ * **额度的显示不看这份名单**：上游表对 core 报了额度的每一个上游都画额度条，不论
+ * 协议。这里只管「哪些要界面开口问」—— GLM Coding Plan（Z.ai、BigModel）的额度
+ * core 在答 `/quota` 时自己去问，统计那一问（`upstream_stats`）就带着它，问得慢的
+ * 随 `quota_seen` 补上，不用这里再问。
  */
 export function useAccountQuotas(providers: ProviderView[], onAnswered: () => void): void {
   const names = quotaAccounts(providers);
@@ -133,7 +138,9 @@ export function useAccountQuotas(providers: ProviderView[], onAnswered: () => vo
 }
 
 /**
- * 打开这一页时要问额度的账号：启用着的 ChatGPT 账号上游，按名字排好。
+ * 打开这一页时要界面开口问额度的账号：启用着的 ChatGPT 账号上游，按名字排好。
+ * 它们的额度要走 ChatGPT 自己的用量接口（`ChatgptUsage`）；别的上游没有这样一问，
+ * 有额度的（订阅账号的响应头、GLM Coding Plan）由 core 自己报，见 `useAccountQuotas`。
  *
  * **登录已失效的不问**：凭据换不来令牌，这一问注定失败。
  */

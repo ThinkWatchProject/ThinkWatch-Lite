@@ -177,7 +177,10 @@ turns, with the input tokens and the cost of each turn.
 
 A request opens into its timeline, its routing (the rule it matched, the group
 it went through and each attempt with its status and duration), the request
-and response bodies, and its usage and cost. A finished request can be sent
+and response bodies, and its usage and cost. A request from DeepSeek Harness
+also shows the size of the session log it carried, the whole conversation the
+client attaches to every request; the gateway removes it before a request goes
+to an upstream other than DeepSeek. A finished request can be sent
 again, unchanged, to another upstream after an estimate of its cost, and the
 two responses are shown side by side.
 
@@ -253,7 +256,11 @@ Upstreams are the services requests are forwarded to: API keys for Anthropic,
 OpenAI, Google Gemini, DeepSeek or any compatible endpoint, a ChatGPT account
 or a Z.ai / BigModel account signed in from the app, relays such as
 OpenRouter, and local models such as Ollama. A ChatGPT account shows its usage
-limits and reset times. When a client and an upstream use different API
+limits and reset times. So does an upstream on a GLM Coding Plan, that is, one
+whose address is on `api.z.ai` or `open.bigmodel.cn`, whether it was signed in
+from the app or added with a key: its 5-hour and weekly limits, the monthly MCP
+calls of the older plans and, on a plan billed in credits, the credits left
+(“1,976 / 2,000 credits left”). When a client and an upstream use different API
 formats, requests are converted between Anthropic Messages, OpenAI Chat
 Completions, OpenAI Responses and Gemini, and the fields that cannot be
 carried over are listed on the request. Upstreams can be reached through an
@@ -414,7 +421,9 @@ Settings can reduce the item to the icon or to the numbers.
 </p>
 
 Clicking it opens a native menu with the gateway's address and state, unread
-notices, each subscription account's quotas and reset times, today's requests,
+notices, the quotas and reset times of each subscription account and GLM Coding
+Plan upstream (with the credits left under the bar on a plan billed in
+credits), today's requests,
 tokens and cost, and the requests in progress, followed by actions: choosing
 the upstream of a manually selected group, copying the gateway address or the
 default key, undoing the last configuration change, switching connections and

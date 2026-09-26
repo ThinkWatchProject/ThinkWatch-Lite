@@ -561,7 +561,9 @@ fn info_height(info: &Info) -> f64 {
         Info::Header { .. } => 46.0,
         Info::Section { .. } => 21.0,
         Info::Notice { .. } => 40.0,
-        Info::Quota { windows, .. } => 6.0 + 20.0 + 21.0 * windows.len() as f64 + 3.0,
+        Info::Quota { windows, .. } => {
+            6.0 + 20.0 + windows.iter().map(quota_row_height).sum::<f64>() + 3.0
+        }
         Info::Stats { .. } => 48.0,
         Info::Live { .. } => 24.0,
     }
@@ -646,6 +648,10 @@ const QUOTA_PCT: f64 = 40.0;
 const QUOTA_RESET: f64 = 92.0;
 /// 额度行：条最短这么长
 const QUOTA_MIN_BAR: f64 = 40.0;
+/// 额度行：一个窗口占多高
+const QUOTA_ROW: f64 = 21.0;
+/// 额度行：条下面那一行小字（还剩多少积分）再占多高
+const QUOTA_DETAIL: f64 = 15.0;
 /// 「今日」：标签和旁边的橙色小字（失败数）之间
 const NOTE_GAP: f64 = 6.0;
 
@@ -656,6 +662,19 @@ fn quota_label_font() -> Retained<NSFont> {
 /// 等宽数字：倒计时在走，同位数时宽度不变
 fn quota_reset_font() -> Retained<NSFont> {
     mono(12.0, weight(Weight::Regular))
+}
+
+/// 条下面那一行小字：比窗口名小一号，和「今日」的标签同一个字号
+fn quota_detail_font() -> Retained<NSFont> {
+    sys(11.0, weight(Weight::Regular))
+}
+
+/// 一个窗口占多高：带小字的高一截
+fn quota_row_height(w: &WindowRow) -> f64 {
+    match w.detail {
+        Some(_) => QUOTA_ROW + QUOTA_DETAIL,
+        None => QUOTA_ROW,
+    }
 }
 
 fn stat_value_font() -> Retained<NSFont> {
@@ -859,8 +878,8 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
                 pct_right,
                 reset: reset_col,
             } = quota_cols(w, *text);
-            for (i, wr) in windows.iter().enumerate() {
-                let y = 26.0 + 21.0 * i as f64;
+            let mut y = 26.0;
+            for wr in windows {
                 let lab = attributed(&wr.label, &quota_label_font(), &secondary);
                 draw_clipped(&lab, PAD, y, label_col - LABEL_GAP);
                 let track = if hl {
@@ -909,6 +928,12 @@ fn draw_info(info: &Info, b: NSRect, hl: bool) {
                 if let Some(rs) = fit(&rs, reset_col - TEXT_GAP) {
                     rs.drawAtPoint(NSPoint::new(w - PAD - rs.size().width, y));
                 }
+                // 还剩多少：贴在条的正下方、和条左对齐，读得出是这一个窗口的
+                if let Some(detail) = &wr.detail {
+                    let d = attributed(detail, &quota_detail_font(), &secondary);
+                    draw_clipped(&d, bar_x, y + 17.0, w - PAD - bar_x);
+                }
+                y += quota_row_height(wr);
             }
         }
         Info::Stats { cells } => {
@@ -1419,6 +1444,7 @@ mod tests {
             used_percent: used,
             resets_at_ms: Some(NOW + in_ms),
             status: None,
+            credits: None,
         };
         let s = Snapshot {
             gateway: Gateway::Running,
@@ -1526,6 +1552,35 @@ mod tests {
         // 中文照旧三等分
         let zh = stat_widths(MENU_WIDTH, &cells(&menu(Lang::Zh, 4)));
         assert!(zh.iter().all(|w| (w - avail / 3.0).abs() < 1e-9), "{zh:?}");
+    }
+
+    /// 积分制套餐的窗口在条下面多一行小字：那一块要高出这一行，不然最后一行被下一项压住
+    #[test]
+    fn a_line_under_a_bar_makes_the_quota_row_taller() {
+        let row = |detail: Option<&str>| WindowRow {
+            label: "5 小时".into(),
+            percent: Some(1.0),
+            reset: "3 小时后重置".into(),
+            tone: model::Tone::Normal,
+            detail: detail.map(str::to_string),
+        };
+        let height = |windows: Vec<WindowRow>| {
+            info_height(&Info::Quota {
+                provider: "glm".into(),
+                windows,
+                text: QuotaText::default(),
+            })
+        };
+        let plain = height(vec![row(None), row(None)]);
+        assert_eq!(
+            plain,
+            6.0 + 20.0 + 2.0 * QUOTA_ROW + 3.0,
+            "按百分比报的照旧"
+        );
+        assert_eq!(
+            height(vec![row(Some("剩余 1,976 / 2,000 积分")), row(None)]),
+            plain + QUOTA_DETAIL
+        );
     }
 
     #[test]

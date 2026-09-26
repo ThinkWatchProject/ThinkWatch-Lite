@@ -312,6 +312,7 @@
     "gw.route.all_selected_disabled": "路由选中的上游均已停用：{detail}",
     "gw.route.protocol_mismatch": "{path} 只能由 {wanted} 格式的上游处理，而上游「{upstream}」是 {got} 格式。",
     "gw.convert.failed": "无法转换为上游「{upstream}」的格式：{detail}",
+    "gw.files.unsupported": "网关不托管文件，图片和文档请直接放在请求中发送。",
     "gw.request.body_too_large": "请求体大小为 {size} 字节，超过上限 {max} 字节。",
     "gw.upstream.timeout": "上游响应超时。",
     "gw.upstream.unreachable": "无法连接上游 {url}，请检查接口地址、网络和代理设置。",

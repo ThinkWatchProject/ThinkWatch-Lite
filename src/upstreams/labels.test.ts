@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { ProviderView } from "@/types";
-import { l1ErrorText, modelFace, planLabel } from "./labels";
+import type { ProviderView, QuotaWindow } from "@/types";
+import { l1ErrorText, modelFace, planLabel, quotaLeft, quotaWindowLabel } from "./labels";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -101,5 +101,44 @@ describe("planLabel", () => {
     expect(planLabel("constructor")).toBe("constructor");
     expect(planLabel(null)).toBeNull();
     expect(planLabel("")).toBeNull();
+  });
+});
+
+describe("额度窗口", () => {
+  const w = (window: string, credits?: QuotaWindow["credits"]): QuotaWindow => ({
+    window,
+    used_percent: 1,
+    resets_at_ms: null,
+    status: null,
+    credits,
+  });
+
+  it("names the GLM Coding Plan windows", () => {
+    expect(["5h", "weekly", "monthly"].map(quotaWindowLabel)).toEqual(["5 小时", "每周", "每月"]);
+    // 认不出来的原样显示
+    expect(quotaWindowLabel("3d")).toBe("3d");
+  });
+
+  it("says what a credit plan has left, as the upstream reported it", () => {
+    // 2000 − 23 是 1977，上游说的剩余是 1976：照它说的写
+    expect(quotaLeft(w("5h", { total: 2000, used: 23, remaining: 1976 }))).toBe("剩余 1,976 / 2,000 积分");
+    expect(quotaLeft(w("5h"))).toBeNull();
+    expect(quotaLeft(w("5h", null))).toBeNull();
+  });
+
+  it("counts calls, not credits, in the monthly window", () => {
+    expect(quotaLeft(w("monthly", { total: 1000, used: 40, remaining: 960 }))).toBe("剩余 960 / 1,000 次");
+  });
+
+  it("follows the interface language", () => {
+    setLang("en");
+    try {
+      expect(quotaWindowLabel("monthly")).toBe("Monthly");
+      expect(quotaLeft(w("weekly", { total: 10000, used: 268, remaining: 9731 }))).toBe(
+        "9,731 / 10,000 credits left",
+      );
+    } finally {
+      setLang("zh");
+    }
   });
 });

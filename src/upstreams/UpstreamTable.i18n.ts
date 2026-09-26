@@ -38,8 +38,9 @@ export const upstreamTableText = messages(
     modelsOf: (name: string) => `${name} 的模型`,
     used: (percent: number) => `已用 ${percent}%`,
     quotaOf: (window: string) => `${window}额度`,
-    windowLine: (window: string, used: number, reset: string | null) =>
-      reset ? `${window}额度：已用 ${used}%，${reset}重置` : `${window}额度：已用 ${used}%`,
+    // `left`：按数量计的窗口还剩多少（「剩余 1,976 / 2,000 积分」），按百分比报的没有
+    windowLine: (window: string, used: number, left: string | null, reset: string | null) =>
+      `${window}额度：${[`已用 ${used}%`, left, reset && `${reset}重置`].filter(Boolean).join("，")}`,
     sheet: (name: string) => `价目表 ${name}`,
     defaultSheet: "默认",
     requests: (n: number) => `${n.toLocaleString()} 次`,
@@ -85,8 +86,8 @@ export const upstreamTableText = messages(
     modelsOf: (name: string) => `Models for ${name}`,
     used: (percent: number) => `${percent}% used`,
     quotaOf: (window: string) => `${window} usage limit`,
-    windowLine: (window: string, used: number, reset: string | null) =>
-      reset ? `${window} limit: ${used}% used, resets ${reset}` : `${window} limit: ${used}% used`,
+    windowLine: (window: string, used: number, left: string | null, reset: string | null) =>
+      `${window} limit: ${[`${used}% used`, left, reset && `resets ${reset}`].filter(Boolean).join(", ")}`,
     sheet: (name: string) => `Price sheet: ${name}`,
     defaultSheet: "default",
     requests: (n: number) => (n === 1 ? "1 request" : `${n.toLocaleString()} requests`),

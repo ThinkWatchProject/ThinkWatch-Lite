@@ -99,6 +99,24 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Some(s) if s <= 300 => Level::Info,
                 _ => Level::Warning,
             };
+            let used_up = tr!(
+                format!("{}额度已用完{}。", window_label(window), reset),
+                format!(
+                    "The {} usage limit has been reached{}.",
+                    window_label(window),
+                    reset
+                )
+            );
+            // 每月那个窗口数的是 GLM 老套餐每月的 MCP 调用次数：它用完不等于经此上游的
+            // 请求会被拒绝，这一句不说
+            let body = if window == "monthly" {
+                used_up
+            } else {
+                tr!(
+                    format!("{used_up}经此上游的请求会被拒绝。"),
+                    format!("{used_up} Requests through this upstream will be rejected.")
+                )
+            };
             vec![
                 Signal::raised(
                     format!("quota:{provider}:{window}"),
@@ -108,18 +126,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                         format!("“{provider}” Subscription Quota Used Up")
                     ),
                 )
-                .body(tr!(
-                    format!(
-                        "{}额度已用完{}。经此上游的请求会被拒绝。",
-                        window_label(window),
-                        reset
-                    ),
-                    format!(
-                        "The {} usage limit has been reached{}. Requests through this upstream will be rejected.",
-                        window_label(window),
-                        reset
-                    )
-                ))
+                .body(body)
                 .view(UPSTREAMS),
             ]
         }
@@ -681,10 +688,12 @@ pub fn remote_back() -> Signal {
     Signal::cleared("remote")
 }
 
-/// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用
+/// `5h` / `weekly` / `monthly` → 「5 小时」「每周」「每月」（英文是 `5-hour`、`weekly`、
+/// `monthly`）。认不出来的原样用
 fn window_label(w: &str) -> String {
     match w {
         "weekly" => tr!("每周", "weekly").into(),
+        "monthly" => tr!("每月", "monthly").into(),
         "5h" => tr!("5 小时", "5-hour").into(),
         other => match other.strip_suffix('h').and_then(|n| n.parse::<u32>().ok()) {
             Some(h) => tr!(format!("{h} 小时"), format!("{h}-hour")),
@@ -696,9 +705,12 @@ fn window_label(w: &str) -> String {
     }
 }
 
-/// 「，约 3 小时后重置」（英文是 ` and resets in about 3 hours`，接在句子中间）
+/// 「，约 3 小时后重置」（英文是 ` and resets in about 3 hours`，接在句子中间）。
+/// 满一天按天说：每周、每月的窗口离重置常常还有好几天，「约 240 小时」没法读
 fn after(secs: u64) -> String {
-    let (n, unit, unit_en) = if secs >= 3600 {
+    let (n, unit, unit_en) = if secs >= 86_400 {
+        (secs / 86_400, "天", "day")
+    } else if secs >= 3600 {
         (secs / 3600, "小时", "hour")
     } else if secs >= 60 {
         (secs / 60, "分钟", "minute")
