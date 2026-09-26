@@ -68,7 +68,7 @@ export function TestConnectionDialog({
     if (!p) return;
     let alive = true;
     api
-      .testProvider({ provider: toInput(formFromView(p), true), current: p.name })
+      .testProvider({ provider: toInput(formFromView(p)), current: p.name })
       .then((r) => alive && setResult(r))
       .catch(
         (e) =>

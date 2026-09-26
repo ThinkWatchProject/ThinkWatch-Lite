@@ -26,6 +26,9 @@ House rules that also apply (from the product owner, binding):
   never inline on the page.
 - One icon = one meaning. `×` only closes. Item actions are written as words.
 - Settings that write `config.yaml` use an explicit Save / Discard (`settings/form.tsx`).
+- Config values are shown as written, never masked. A key or password is filled in and
+  hidden behind the eye toggle of `SecretInput` (`@/ui/secret-input`); a `${NAME}`
+  reference is not a secret and stays visible.
 - If the UI lacks data, the fix belongs in core. Do not fabricate or estimate numbers in
   the UI; degrade gracefully (hide the figure, or show `—`) and note the needed core change.
 

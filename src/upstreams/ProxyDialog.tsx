@@ -10,10 +10,11 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
+import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { StatusDot, StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
-import type { L1Result, Overview, ProxyAuthInput, ProxyInput, ProxyView } from "@/types";
+import type { L1Result, Overview, ProxyInput, ProxyView } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
@@ -25,10 +26,7 @@ import { plain } from "@/i18n/core.i18n";
 export type ProxyDialogMode = { kind: "create" } | { kind: "edit"; name: string };
 
 /**
- * 新建与编辑出站代理。
- *
- * **编辑时认证不回显。**视图里没有用户名和密码 —— 用户名也是凭据的一半。
- * 不动认证就保持原样；点「更换」才填新的。
+ * 新建与编辑出站代理。编辑时用户名和密码回填配置里写的原样，密码默认隐藏。
  */
 export function ProxyDialog({
   mode,
@@ -52,22 +50,21 @@ export function ProxyDialog({
   const [kind, setKind] = useState(editing?.kind ?? "socks5h");
   const [host, setHost] = useState(host0);
   const [port, setPort] = useState(port0);
-  const [auth, setAuth] = useState(editing?.has_auth ?? false);
-  /** 编辑时点过「更换」没有 */
-  const [replacing, setReplacing] = useState(!editing?.has_auth);
-  const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
+  const [auth, setAuth] = useState(editing?.auth != null);
+  const [user, setUser] = useState(editing?.auth?.user ?? "");
+  const [pass, setPass] = useState(editing?.auth?.pass ?? "");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<L1Result | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function input(): ProxyInput {
-    let a: ProxyAuthInput;
-    if (!auth) a = { mode: "none" };
-    else if (editing?.has_auth && !replacing) a = { mode: "keep" };
-    else a = { mode: "set", user, pass };
-    return { name, kind, addr: `${host.trim()}:${port.trim()}`, auth: a };
+    return {
+      name,
+      kind,
+      addr: `${host.trim()}:${port.trim()}`,
+      auth: auth ? { user, pass } : undefined,
+    };
   }
 
   const missing =
@@ -75,7 +72,7 @@ export function ProxyDialog({
       ? t.enterName
       : host.trim() === "" || port.trim() === ""
         ? t.enterAddress
-        : auth && (!editing?.has_auth || replacing) && user.trim() === ""
+        : auth && user.trim() === ""
           ? t.enterUser
           : null;
 
@@ -169,39 +166,27 @@ export function ProxyDialog({
             <Switch checked={auth} onCheckedChange={setAuth} />
             {t.needsAuth}
           </label>
-          {auth &&
-            (editing?.has_auth && !replacing ? (
-              <FormItem label={t.credentials} desc={t.credentialsDesc}>
-                <div className="flex items-center gap-2">
-                  <Input readOnly value={t.credentialsSet} className="text-muted-foreground" />
-                  <Button variant="outline" onClick={() => setReplacing(true)}>
-                    {t.replace}
-                  </Button>
-                </div>
+          {auth && (
+            <div className="grid grid-cols-2 gap-4">
+              <FormItem label={t.user} htmlFor="px-user">
+                <Input
+                  id="px-user"
+                  autoComplete="off"
+                  className="font-mono"
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                />
               </FormItem>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <FormItem label={t.user} htmlFor="px-user">
-                  <Input
-                    id="px-user"
-                    autoComplete="off"
-                    className="font-mono"
-                    value={user}
-                    onChange={(e) => setUser(e.target.value)}
-                  />
-                </FormItem>
-                <FormItem label={t.pass} htmlFor="px-pass">
-                  <Input
-                    id="px-pass"
-                    type="password"
-                    autoComplete="off"
-                    className="font-mono"
-                    value={pass}
-                    onChange={(e) => setPass(e.target.value)}
-                  />
-                </FormItem>
-              </div>
-            ))}
+              <FormItem label={t.pass} htmlFor="px-pass">
+                <SecretInput
+                  id="px-pass"
+                  className="font-mono"
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                />
+              </FormItem>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border p-3">
             <Button variant="outline" size="sm" onClick={runTest} pending={testing} disabled={missing != null}>
               {!testing && <ActivityIcon />}

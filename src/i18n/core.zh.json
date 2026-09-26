@@ -378,7 +378,6 @@
     "control.base_url_empty": "接口地址不能为空。",
     "control.api_key_empty": "API 密钥不能为空。",
     "control.user_empty": "用户名不能为空。",
-    "control.pass_has_expansion": "密码中不能包含 ${{。",
     "control.header_no_value": "请求头「{header}」缺少值。",
     "control.proxy_addr_form": "代理地址「{addr}」应写成 主机:端口 的形式。",
     "control.dryrun_needs_target": "请指定网关密钥或路由。",

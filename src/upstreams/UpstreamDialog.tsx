@@ -210,7 +210,7 @@ export function UpstreamDialog({
     setTesting(true);
     try {
       const r = await api.testProvider({
-        provider: toInput(form, editing != null),
+        provider: toInput(form),
         current: editing?.name,
       });
       setTest(r);
@@ -270,7 +270,7 @@ export function UpstreamDialog({
     setError(null);
     try {
       const save = {
-        provider: toInput(form, editing != null),
+        provider: toInput(form),
         base_version: configVersion,
       };
       if (editing) await api.updateProvider(editing.name, save);

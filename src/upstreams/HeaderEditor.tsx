@@ -5,12 +5,11 @@ import { Input } from "@/ui/input";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import { headerEditorText } from "./HeaderEditor.i18n";
-import { headerRow, keepsSavedValue, type HeaderRow, type UpstreamForm } from "./upstreamForm";
+import { headerRow, type HeaderRow, type UpstreamForm } from "./upstreamForm";
 
 /**
- * 发给上游的请求头，一行一个。
+ * 发给上游的请求头，一行一个，值是配置里写的原样。
  *
- * **已保存的敏感值不回填**：那一行的值留空表示沿用，和 API 密钥同一个约定。
  * 名称和值写得对不对（保留头、重名、占位符）由 core 在检测和保存时说。
  *
  * **第一行是鉴权头**（有的话），和企业版一样把密钥当成请求头里的一行给人看。
@@ -102,7 +101,7 @@ export function HeaderEditor({
             autoComplete="off"
             spellCheck={false}
             className="font-mono"
-            placeholder={keepsSavedValue(form, r) ? t.keepSaved : t.valuePlaceholder}
+            placeholder={t.valuePlaceholder}
             value={r.value}
             onChange={(e) => update(r.id, { value: e.target.value })}
           />

@@ -1,9 +1,9 @@
 /**
  * 上游对话框的表单：从视图回填、转成交给 core 的输入、判断能不能往下走。
  *
- * **编辑时地址和凭据默认「保持原样」。**视图里的密钥和敏感请求头是打过码的、
- * 地址也可能打了码，原样写回去会把码写进配置 —— 所以没改地址时地址不发，
- * 密钥和请求头的值留空表示沿用已保存的，OAuth 没点「更换」时沿用。
+ * **回填的是配置里写的原样**（地址、密钥、请求头），保存交回整份定义。只有 OAuth
+ * 凭据没改时交「保持原样」：网关随时会换发 token、把新的 refresh token 写回，
+ * 回填的那一把可能已经作废了。
  */
 import { textOf } from "@/i18n";
 import type {
@@ -15,7 +15,6 @@ import type {
   Protocol,
   ProviderInput,
   ProviderView,
-  SecretChange,
 } from "@/types";
 import { CUSTOM } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
@@ -36,24 +35,26 @@ export function headerRow(name = "", value = ""): HeaderRow {
   return { id: nextRow++, name, value };
 }
 
+/** OAuth 凭据里表单编辑的那几项 */
+interface OAuthFields {
+  endpoint: string;
+  refresh: string;
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface UpstreamForm {
   preset: string;
   name: string;
   baseUrl: string;
-  /** 编辑时改过地址没有。没改就保持原样 */
-  baseUrlTouched: boolean;
   /** 空 = 自动识别 */
   protocol: Protocol | "";
   authMode: AuthMode;
-  /** 新填的 API 密钥 */
+  /** API 密钥，可以写 `${变量名}`。空 = 没有密钥 */
   key: string;
-  /** 有已保存的密钥：`key` 留空时沿用 */
-  keySaved: boolean;
   headers: HeaderRow[];
-  /** 已保存的、值打过码的请求头名（小写）。这些行的值留空时沿用 */
-  savedHeaders: string[];
-  /** 有已保存的 OAuth 凭据、没点「更换」：整份沿用 */
-  oauthSaved: boolean;
+  /** 编辑时回填的 OAuth 凭据。表单里这几项和它一样，就交「保持原样」 */
+  oauthSaved: OAuthFields | null;
   oauthRefresh: string;
   oauthEndpoint: string;
   oauthClientId: string;
@@ -91,14 +92,11 @@ export function blankForm(): UpstreamForm {
     preset: CUSTOM.id,
     name: "",
     baseUrl: "",
-    baseUrlTouched: true,
     protocol: "",
     authMode: "key",
     key: "",
-    keySaved: false,
     headers: [],
-    savedHeaders: [],
-    oauthSaved: false,
+    oauthSaved: null,
     oauthRefresh: "",
     oauthEndpoint: "",
     oauthClientId: "",
@@ -120,19 +118,22 @@ export function formFromView(p: ProviderView): UpstreamForm {
     preset: "custom",
     name: p.name,
     baseUrl: p.base_url,
-    baseUrlTouched: false,
     protocol: p.protocol_explicit ? (p.protocol ?? "") : "",
     authMode: p.oauth ? "oauth" : "key",
-    // 环境变量名不是秘密，回填；打过码的密钥不回填
-    key: p.key?.env ? `\${${p.key.env}}` : "",
-    keySaved: p.key != null,
-    headers: (p.headers ?? []).map((h) => headerRow(h.name, h.masked ? "" : h.value)),
-    savedHeaders: (p.headers ?? []).filter((h) => h.masked).map((h) => h.name.toLowerCase()),
-    oauthSaved: p.oauth != null,
-    oauthRefresh: "",
+    key: p.key ?? "",
+    headers: (p.headers ?? []).map((h) => headerRow(h.name, h.value)),
+    oauthSaved: p.oauth
+      ? {
+          endpoint: p.oauth.endpoint,
+          refresh: p.oauth.refresh,
+          clientId: p.oauth.client_id ?? "",
+          clientSecret: p.oauth.client_secret ?? "",
+        }
+      : null,
+    oauthRefresh: p.oauth?.refresh ?? "",
     oauthEndpoint: p.oauth?.endpoint ?? "",
     oauthClientId: p.oauth?.client_id ?? "",
-    oauthClientSecret: "",
+    oauthClientSecret: p.oauth?.client_secret ?? "",
     oauthAccess: "",
     proxy: p.proxy,
     onProxyFail: p.on_proxy_fail,
@@ -145,30 +146,27 @@ export function formFromView(p: ProviderView): UpstreamForm {
   };
 }
 
-/** 这一行的值留空时沿用已保存的 */
-export function keepsSavedValue(f: UpstreamForm, row: HeaderRow): boolean {
-  return row.value.trim() === "" && f.savedHeaders.includes(row.name.trim().toLowerCase());
-}
-
-function keyChange(f: UpstreamForm): SecretChange {
-  if (f.authMode === "oauth") return { mode: "none" };
-  const key = f.key.trim();
-  if (key !== "") return { mode: "set", value: key };
-  return f.keySaved ? { mode: "keep" } : { mode: "none" };
+/** OAuth 凭据和回填的一样：保存时交「保持原样」，检测时用网关现有的 token */
+export function oauthKept(f: UpstreamForm): boolean {
+  const s = f.oauthSaved;
+  return (
+    s != null &&
+    f.oauthEndpoint.trim() === s.endpoint &&
+    f.oauthRefresh.trim() === s.refresh &&
+    f.oauthClientId.trim() === s.clientId &&
+    f.oauthClientSecret.trim() === s.clientSecret
+  );
 }
 
 function headerInputs(f: UpstreamForm): HeaderInput[] {
   return f.headers
     .filter((r) => r.name.trim() !== "" || r.value.trim() !== "")
-    .map((r) => ({
-      name: r.name.trim(),
-      value: keepsSavedValue(f, r) ? undefined : r.value.trim(),
-    }));
+    .map((r) => ({ name: r.name.trim(), value: r.value.trim() }));
 }
 
 function oauthChange(f: UpstreamForm): OAuthChange {
   if (f.authMode === "key") return { mode: "none" };
-  if (f.oauthSaved) return { mode: "keep" };
+  if (oauthKept(f)) return { mode: "keep" };
   return {
     mode: "set",
     refresh: f.oauthRefresh.trim(),
@@ -179,12 +177,11 @@ function oauthChange(f: UpstreamForm): OAuthChange {
   };
 }
 
-/** `editing`：改的是已经保存的一家。没动过的地址不发 */
-export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
+export function toInput(f: UpstreamForm): ProviderInput {
   return {
     name: f.name,
-    base_url: !editing || f.baseUrlTouched ? f.baseUrl.trim() : undefined,
-    key: keyChange(f),
+    base_url: f.baseUrl.trim(),
+    key: f.authMode === "key" ? f.key.trim() || undefined : undefined,
     headers: headerInputs(f),
     oauth: oauthChange(f),
     protocol: f.protocol || undefined,
@@ -205,7 +202,7 @@ export function toInput(f: UpstreamForm, editing: boolean): ProviderInput {
 export function connectionChanged(f: UpstreamForm, p: ProviderView): boolean {
   const pick = (i: ProviderInput) =>
     JSON.stringify([i.base_url, i.protocol, i.key, i.headers, i.oauth, i.proxy]);
-  return pick(toInput(f, true)) !== pick(toInput(formFromView(p), true));
+  return pick(toInput(f)) !== pick(toInput(formFromView(p)));
 }
 
 /**
@@ -219,14 +216,13 @@ export function connectionMissing(
   taken: string[],
 ): string | null {
   const t = textOf(upstreamFormText);
-  const editing = original != null;
   const name = f.name.trim();
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);
-  if ((!editing || f.baseUrlTouched) && f.baseUrl.trim() === "") return t.baseUrl;
+  if (f.baseUrl.trim() === "") return t.baseUrl;
   if (
     f.authMode === "oauth" &&
-    !f.oauthSaved &&
+    !oauthKept(f) &&
     (f.oauthRefresh.trim() === "" || f.oauthEndpoint.trim() === "")
   )
     return t.oauth;
@@ -234,7 +230,7 @@ export function connectionMissing(
     const header = r.name.trim();
     if (header === "" && r.value.trim() === "") continue;
     if (header === "") return t.headerName;
-    if (r.value.trim() === "" && !keepsSavedValue(f, r)) return t.headerValue(header);
+    if (r.value.trim() === "") return t.headerValue(header);
   }
   return null;
 }

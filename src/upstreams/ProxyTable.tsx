@@ -63,7 +63,7 @@ export function ProxyTable({
                   <div className="font-medium">{x.name}</div>
                   <div className="tw-label text-muted-foreground">
                     {proxyKindLabel(x.kind)} · <span className="font-mono">{x.addr}</span>
-                    {x.has_auth && ` · ${t.withAuth}`}
+                    {x.auth && ` · ${t.withAuth}`}
                   </div>
                 </TableCell>
                 <TableCell>

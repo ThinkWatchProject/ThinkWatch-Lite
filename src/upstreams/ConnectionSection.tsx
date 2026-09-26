@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
@@ -23,7 +25,7 @@ import {
 import { FormItem, Note } from "./parts";
 import { CHATGPT, ZAI, nameFromUrl, presetById } from "./presets";
 import { ServicePicker } from "./ServicePicker";
-import { describeModelList, freeName, type UpstreamForm } from "./upstreamForm";
+import { describeModelList, freeName, oauthKept, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
 const NEW_PROXY = " new-proxy";
@@ -62,6 +64,8 @@ export function ConnectionSection({
   const remote = useRemote();
   const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
+  /** 密钥显示与否：输入框和请求头第一行是同一个值，跟着同一个开关 */
+  const [showKey, setShowKey] = useState(false);
   const autoProtocol = !form.baseUrl.trim()
     ? t.auto
     : preview?.protocol
@@ -115,11 +119,7 @@ export function ConnectionSection({
         </FormItem>
       </div>
 
-      <FormItem
-        label={t.baseUrl}
-        htmlFor="up-url"
-        desc={editing?.base_url_masked && !form.baseUrlTouched ? t.baseUrlMasked : t.baseUrlDesc}
-      >
+      <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
         <Input
           id="up-url"
           className="font-mono"
@@ -128,7 +128,6 @@ export function ConnectionSection({
           onChange={(e) =>
             set({
               baseUrl: e.target.value,
-              baseUrlTouched: true,
               // 新建时名称跟着地址猜，直到用户自己填了
               name:
                 !editing && (form.name === "" || form.name === freeName(nameFromUrl(form.baseUrl), taken))
@@ -158,7 +157,18 @@ export function ConnectionSection({
       </div>
 
       {form.authMode === "key" ? (
-        <ApiKey form={form} set={set} editing={editing} />
+        <FormItem label={t.apiKey} htmlFor="up-key">
+          <SecretInput
+            id="up-key"
+            className="font-mono"
+            value={form.key}
+            placeholder={t.keyPlaceholder}
+            plain={ENV_REF.test(form.key.trim())}
+            revealed={showKey}
+            onRevealedChange={setShowKey}
+            onChange={(e) => set({ key: e.target.value })}
+          />
+        </FormItem>
       ) : (
         <OAuth form={form} set={set} />
       )}
@@ -167,7 +177,7 @@ export function ConnectionSection({
         <HeaderEditor
           form={form}
           set={set}
-          auth={authRow(form, editing, preview?.auth_header ?? editing?.auth_header ?? null, {
+          auth={authRow(form, preview?.auth_header ?? editing?.auth_header ?? null, showKey, {
             unknown: t.authUnknown,
             token: t.renewedToken,
           })}
@@ -271,9 +281,10 @@ const ENV_REF = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
  */
 function authRow(
   form: UpstreamForm,
-  editing: ProviderView | null,
   /** 按选定或识别出的协议，凭据放在哪个请求头里。地址还没填时不知道 */
   header: string | null,
+  /** 密钥那一栏此刻显示着没有 */
+  revealed: boolean,
   text: { unknown: string; token: string },
 ): AuthRow | null {
   const parts = header ? authHeaderParts(header) : null;
@@ -283,54 +294,10 @@ function authRow(
     return { source: "oauth", name, unknownName: text.unknown, prefix, value: null, placeholder: text.token };
   }
   const key = form.key.trim();
-  if (key) {
-    // 环境变量引用不是秘密，照写；其余打码，不管多长都是十个点
-    const value = key.includes("${") ? key : "●".repeat(10);
-    return { source: "key", name, unknownName: text.unknown, prefix, value, placeholder: "" };
-  }
-  if (form.keySaved && editing?.key) {
-    return { source: "key", name, unknownName: text.unknown, prefix, value: editing.key.display, placeholder: "" };
-  }
-  return null;
-}
-
-function ApiKey({
-  form,
-  set,
-  editing,
-}: {
-  form: UpstreamForm;
-  set: (patch: Partial<UpstreamForm>) => void;
-  editing: ProviderView | null;
-}) {
-  const t = useText(connectionSectionText);
-  return (
-    <FormItem label={t.apiKey} htmlFor="up-key">
-      <div className="flex items-center gap-2">
-        <Input
-          id="up-key"
-          type={ENV_REF.test(form.key.trim()) ? "text" : "password"}
-          autoComplete="off"
-          spellCheck={false}
-          className="font-mono"
-          value={form.key}
-          placeholder={
-            form.keySaved
-              ? t.keySaved
-              : editing?.key
-                ? t.keyRemoved
-                : t.keyPlaceholder
-          }
-          onChange={(e) => set({ key: e.target.value })}
-        />
-        {form.keySaved && form.key.trim() === "" && (
-          <Button variant="outline" onClick={() => set({ keySaved: false })}>
-            {t.remove}
-          </Button>
-        )}
-      </div>
-    </FormItem>
-  );
+  if (!key) return null;
+  // 环境变量引用不是秘密，照写；密钥跟着那一栏显示或隐藏，隐藏时不管多长都是十个点
+  const value = revealed || ENV_REF.test(key) ? key : "●".repeat(10);
+  return { source: "key", name, unknownName: text.unknown, prefix, value, placeholder: "" };
 }
 
 function OAuth({
@@ -341,24 +308,6 @@ function OAuth({
   set: (patch: Partial<UpstreamForm>) => void;
 }) {
   const t = useText(connectionSectionText);
-  // 已保存的 OAuth 凭据整份沿用：Refresh Token 与 Client Secret 不回显，点「更换」重新填写
-  if (form.oauthSaved) {
-    return (
-      <FormItem label={t.tokenEndpoint} desc={t.oauthSaved}>
-        <div className="flex items-center gap-2">
-          <Input readOnly value={form.oauthEndpoint} className="font-mono text-muted-foreground" />
-          <Button
-            variant="outline"
-            onClick={() =>
-              set({ oauthSaved: false, oauthRefresh: "", oauthClientSecret: "", oauthAccess: "" })
-            }
-          >
-            {t.replace}
-          </Button>
-        </div>
-      </FormItem>
-    );
-  }
   return (
     <div className="grid grid-cols-2 gap-4">
       <FormItem label={t.tokenEndpoint} htmlFor="up-endpoint">
@@ -371,10 +320,8 @@ function OAuth({
         />
       </FormItem>
       <FormItem label={t.refreshToken} htmlFor="up-refresh">
-        <Input
+        <SecretInput
           id="up-refresh"
-          type="password"
-          autoComplete="off"
           className="font-mono"
           value={form.oauthRefresh}
           onChange={(e) => set({ oauthRefresh: e.target.value })}
@@ -389,30 +336,29 @@ function OAuth({
         />
       </FormItem>
       <FormItem label={t.clientSecret} htmlFor="up-client-secret">
-        <Input
+        <SecretInput
           id="up-client-secret"
-          type="password"
-          autoComplete="off"
           className="font-mono"
           value={form.oauthClientSecret}
           onChange={(e) => set({ oauthClientSecret: e.target.value })}
         />
       </FormItem>
-      <FormItem
-        label={t.accessToken}
-        htmlFor="up-access"
-        className="col-span-2"
-        desc={t.accessTokenDesc}
-      >
-        <Input
-          id="up-access"
-          type="password"
-          autoComplete="off"
-          className="font-mono"
-          value={form.oauthAccess}
-          onChange={(e) => set({ oauthAccess: e.target.value })}
-        />
-      </FormItem>
+      {/* 凭据没改时检测用网关现有的 token；新填或改过的才需要现成的 Access Token */}
+      {!oauthKept(form) && (
+        <FormItem
+          label={t.accessToken}
+          htmlFor="up-access"
+          className="col-span-2"
+          desc={t.accessTokenDesc}
+        >
+          <SecretInput
+            id="up-access"
+            className="font-mono"
+            value={form.oauthAccess}
+            onChange={(e) => set({ oauthAccess: e.target.value })}
+          />
+        </FormItem>
+      )}
     </div>
   );
 }

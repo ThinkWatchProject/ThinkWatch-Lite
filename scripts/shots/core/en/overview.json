@@ -131,13 +131,10 @@
     {
       "auth_header": "x-api-key",
       "base_url": "https://api.anthropic.com",
-      "base_url_masked": false,
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
-      "key": {
-        "display": "sk-an…Q3xA"
-      },
+      "key": "sk-ant-mock-7Kq2pV9xQ3xA",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -168,13 +165,10 @@
     {
       "auth_header": "x-api-key",
       "base_url": "https://relay.example.com",
-      "base_url_masked": false,
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
-      "key": {
-        "display": "sk-rl…Ga7e"
-      },
+      "key": "sk-rl-mock-4fT8wN2cGa7e",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -199,8 +193,7 @@
     },
     {
       "auth_header": "authorization",
-      "base_url": "https://chatgpt.com",
-      "base_url_masked": true,
+      "base_url": "https://chatgpt.com/backend-api/codex",
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
@@ -217,7 +210,8 @@
         },
         "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
         "endpoint": "https://auth.openai.com/oauth/token",
-        "expires_at": "2026-10-04T08:12:40Z"
+        "expires_at": "2026-10-04T08:12:40Z",
+        "refresh": "rt-mock-chatgpt-refresh-token"
       },
       "on_proxy_fail": "fail",
       "pricing": null,
@@ -234,15 +228,11 @@
     },
     {
       "auth_header": "authorization",
-      "base_url": "https://openrouter.ai",
-      "base_url_masked": true,
+      "base_url": "https://openrouter.ai/api",
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
-      "key": {
-        "display": "${OPENROUTER_API_KEY}",
-        "env": "OPENROUTER_API_KEY"
-      },
+      "key": "${OPENROUTER_API_KEY}",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -268,14 +258,11 @@
     },
     {
       "auth_header": "x-api-key",
-      "base_url": "https://api.deepseek.com",
-      "base_url_masked": true,
+      "base_url": "https://api.deepseek.com/anthropic",
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
-      "key": {
-        "display": "sk-3f…9f2c"
-      },
+      "key": "sk-3f5c2e8a1d7b4f0e9c6a2d8b5e19f2c",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -298,14 +285,10 @@
     {
       "auth_header": "x-goog-api-key",
       "base_url": "https://generativelanguage.googleapis.com",
-      "base_url_masked": false,
       "billing": "per-token",
       "disabled": false,
       "health": "ok",
-      "key": {
-        "display": "${GEMINI_API_KEY}",
-        "env": "GEMINI_API_KEY"
-      },
+      "key": "${GEMINI_API_KEY}",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -333,7 +316,6 @@
     {
       "auth_header": "authorization",
       "base_url": "http://127.0.0.1:11434",
-      "base_url_masked": true,
       "billing": "free",
       "disabled": false,
       "health": "ok",
@@ -362,7 +344,6 @@
   "proxies": [
     {
       "addr": "127.0.0.1:7890",
-      "has_auth": false,
       "kind": "socks5h",
       "name": "clash",
       "used_by": [
