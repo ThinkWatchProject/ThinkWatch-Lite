@@ -283,7 +283,7 @@ mod tests {
         std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
         std::fs::write(home.join(".claude/skills/x/SKILL.md"), "---\n---\n").unwrap();
 
-        let dirs = dirs_for(&crate::sources::user_level(home));
+        let dirs = dirs_for(&crate::sources::user_level(home, &Default::default()));
         assert!(dirs.contains(&home.join(".claude")));
         // 一层深的 skill 目录要各自被盯到 —— 我们不递归
         assert!(dirs.contains(&home.join(".claude/skills/x")));

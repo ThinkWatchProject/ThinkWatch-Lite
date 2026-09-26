@@ -56,7 +56,10 @@ fn bed() -> Bed {
 }
 
 fn run(home: &Path) -> tw_scan::report::Report {
-    scan(&sources::user_level(home), &rules::scan_rules())
+    scan(
+        &sources::user_level(home, &Default::default()),
+        &rules::scan_rules(),
+    )
 }
 
 #[test]
@@ -223,7 +226,7 @@ fn a_file_we_cannot_read_is_said_out_loud() {
     let b = bed();
     let p = b.home.join(".claude/CLAUDE.md");
     write(&p, "x");
-    let srcs = sources::user_level(&b.home);
+    let srcs = sources::user_level(&b.home, &Default::default());
     std::fs::remove_file(&p).unwrap();
     let rules = rules::scan_rules();
     let r = scan(&srcs, &rules);
@@ -235,7 +238,7 @@ fn scanning_never_touches_a_single_file() {
     // 写死的那一条纪律：只报告，不自动删除。误报删掉用户的正常配置
     // 比漏报还糟。
     let b = bed();
-    let before: Vec<_> = sources::user_level(&b.home)
+    let before: Vec<_> = sources::user_level(&b.home, &Default::default())
         .iter()
         .map(|s| (s.path.clone(), std::fs::read(&s.path).unwrap()))
         .collect();

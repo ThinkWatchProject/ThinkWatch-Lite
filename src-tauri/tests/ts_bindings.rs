@@ -123,6 +123,9 @@ fn lite_typescript() -> String {
     c.root::<wire::ScanReport>();
     c.root::<wire::McpTargetView>();
     c.root::<wire::McpOpRequest>();
+    c.root::<wire::ClientLocations>();
+    c.root::<wire::LocationEdit>();
+    c.root::<wire::LocationChange>();
     c.root::<wire::LocalEvent>();
     c.root::<wire::UninstallStep>();
 

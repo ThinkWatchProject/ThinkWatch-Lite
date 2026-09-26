@@ -16,6 +16,7 @@ import type { AdoptResponse, McpOpRequest, McpTargetView, PlanView, ScanFinding,
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { clock } from "@/security/labels";
+import { LocationsDialog } from "@/clients/LocationsDialog";
 import { Extensions } from "./Extensions";
 import { FindingDetail, Findings } from "./Findings";
 import { Matrix, McpConfirm, ServerDialog } from "./Matrix";
@@ -103,13 +104,15 @@ export default function McpPage({
     }
   }
 
-  /** 正在看配置的那个服务器；正在看详情的那一处发现 */
+  /** 正在看配置的那个服务器；正在看详情的那一处发现；正在改配置位置的那个客户端 */
   const [server, setServer] = useState<string | null>(null);
   const [finding, setFinding] = useState<ScanFinding | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
 
   const report = data.data?.report;
   const targets = data.data?.targets ?? [];
   const nameOf = (c: string) => targets.find((x) => x.client === c)?.name ?? c;
+  const movable = (c: string) => targets.find((x) => x.client === c)?.movable ?? false;
   const servers = report ? new Set(report.mcp.map((m) => m.name)).size : null;
 
   return (
@@ -167,11 +170,26 @@ export default function McpPage({
                     onAsk={ask}
                     onOpen={setServer}
                     onRescan={rescan}
+                    onMove={setMoving}
                   />
                 ) : k === "extensions" ? (
-                  <Extensions data={d.report} nameOf={nameOf} onFinding={setFinding} />
+                  <Extensions
+                    data={d.report}
+                    nameOf={nameOf}
+                    onFinding={setFinding}
+                    movable={movable}
+                    onMove={setMoving}
+                  />
                 ) : (
-                  <Findings data={d.report} alerts={alerts} nameOf={nameOf} onSeen={onSeen} onOpen={setFinding} />
+                  <Findings
+                    data={d.report}
+                    alerts={alerts}
+                    nameOf={nameOf}
+                    onSeen={onSeen}
+                    onOpen={setFinding}
+                    movable={movable}
+                    onMove={setMoving}
+                  />
                 )
               }
             </Loadable>
@@ -180,6 +198,16 @@ export default function McpPage({
       </Page>
 
       {finding && <FindingDetail f={finding} nameOf={nameOf} onClose={() => setFinding(null)} />}
+      {moving && (
+        <LocationsDialog
+          client={moving}
+          onClose={() => setMoving(null)}
+          onSaved={() => {
+            setMoving(null);
+            void data.reload();
+          }}
+        />
+      )}
       {server && report && (
         <ServerDialog
           name={server}

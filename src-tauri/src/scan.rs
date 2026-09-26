@@ -13,7 +13,7 @@ use std::sync::Arc;
 use crate::error::Out;
 use crate::wire;
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -53,7 +53,7 @@ pub fn scan(home: &Path) -> wire::ScanReport {
     // **只用内置规则。**安全页上的规则只作用于经过网关的请求：在那边停用
     // 一条误报，不该让这边悄悄少查一样东西
     let rules = tw_guard::tools::rules::scan_rules();
-    let sources = tw_scan::sources::user_level(home);
+    let sources = tw_scan::sources::user_level(home, &crate::clients::locations::moved(home));
     let scanned = sources.len();
     let r = tw_scan::report::scan(&sources, &rules);
     wire::ScanReport {
@@ -119,7 +119,10 @@ pub fn spawn_watcher(
     home: std::path::PathBuf,
     emit: impl Fn(wire::LocalEvent) + Send + 'static,
 ) -> Result<Arc<tw_scan::watch::Watch>, tw_scan::watch::WatchError> {
-    let dirs = tw_scan::watch::dirs_for(&tw_scan::sources::user_level(&home));
+    let dirs = tw_scan::watch::dirs_for(&tw_scan::sources::user_level(
+        &home,
+        &crate::clients::locations::moved(&home),
+    ));
     tracing::debug!(
         dirs = dirs.len(),
         "watching the clients' configuration surface"
@@ -130,8 +133,14 @@ pub fn spawn_watcher(
         let mut seen = tw_scan::watch::Seen::default();
         // 内置规则，和打开页面时扫的是同一套
         let rules = tw_guard::tools::rules::scan_rules();
-        let scan_now =
-            |home: &Path| tw_scan::report::scan(&tw_scan::sources::user_level(home), &rules);
+        // 位置按此刻的设置取：换过位置之后监视会重起（[`restart_client_watch`]），而
+        // 这一轮扫描和盯的目录要是同一批
+        let scan_now = |home: &Path| {
+            tw_scan::report::scan(
+                &tw_scan::sources::user_level(home, &crate::clients::locations::moved(home)),
+                &rules,
+            )
+        };
         // 先垫一次底：把此刻已经存在的那些记下来，它们不算「新出现」
         seen.diff(&scan_now(&home).findings);
 
@@ -159,6 +168,50 @@ pub fn spawn_watcher(
         }
     });
     Ok(Arc::new(w))
+}
+
+/// 客户端配置面的文件监视，拿在应用状态里。**配置位置换了要重起**：盯的目录跟着变
+/// （[`restart_client_watch`]）。
+pub struct ClientWatch {
+    notices: Arc<crate::notices::Notices>,
+    watch: std::sync::Mutex<Option<Arc<tw_scan::watch::Watch>>>,
+}
+
+impl ClientWatch {
+    pub fn new(notices: Arc<crate::notices::Notices>) -> Self {
+        Self {
+            notices,
+            watch: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+/// 起（或者重起）客户端配置面的文件监视：事件交给界面（`local-event`），新出现的可疑
+/// 内容同时进通知总线。先停掉旧的，再按此刻的配置位置盯。
+///
+/// **起不来不挡什么**：少的是「文件改了界面自动跟上」，页面打开时照样现扫。
+pub fn restart_client_watch(handle: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let Some(state) = handle.try_state::<ClientWatch>() else {
+        return;
+    };
+    let h = handle.clone();
+    let notices = state.notices.clone();
+    let emit = move |ev: wire::LocalEvent| {
+        if let wire::LocalEvent::ScanAlert { alerts, .. } = &ev
+            && let Some(signal) = crate::notices::rules::scan_alert(alerts.len())
+        {
+            notices.ingest(signal, crate::notices::now_ms());
+        }
+        let _ = h.emit("local-event", ev);
+    };
+    let mut slot = state.watch.lock().unwrap_or_else(|e| e.into_inner());
+    // 旧的先放掉：它那条事件循环随之结束，不会和新的一起报同一次改动
+    *slot = None;
+    match spawn_watcher(crate::clients::home_dir(), emit) {
+        Ok(w) => *slot = Some(w),
+        Err(e) => tracing::warn!("客户端配置的文件监视起不来：{e}"),
+    }
 }
 
 #[cfg(test)]

@@ -162,13 +162,19 @@ export const clientsText = messages(
     confirmRestart: "重启 WSL",
     wslRestarted: "已重启 WSL",
 
-    // 更改配置文件路径
-    pathTitle: (name: string) => `${name} 的配置文件`,
-    pathDesc: "接管与还原时修改的文件。",
-    pathLabel: "路径",
-    pathDefault: (path: string) => `默认位置：${path}`,
-    pathRestore: "恢复默认",
-    pathAdopted: "已接管，需先还原才能更改路径。",
+    // 配置位置（接管、MCP 管理、安全扫描）
+    locTitle: (name: string) => `${name} 的配置位置`,
+    locDesc: "接管、MCP 管理和安全扫描读写的位置。",
+    locRole: { config: "接管", mcp: "MCP 管理", scan: "安全扫描" },
+    locJoin: "、",
+    locDefaultFile: (path: string) => `默认位置：${path}`,
+    locDefaultFolder: (path: string) => `默认文件夹：${path}`,
+    locAdopted: "已接管，需先还原才能更改位置。",
+    locRestore: "恢复默认",
+    locConfirmTitle: "更改配置位置",
+    locRestoreTitle: "恢复默认位置",
+    locConfirmBody: "接管、MCP 管理和安全扫描使用同一个配置目录，以下几处一起更改。",
+    locConfirm: "更改",
     enterPath: "填写路径",
 
     // 全部还原
@@ -331,12 +337,19 @@ export const clientsText = messages(
     confirmRestart: "Restart WSL",
     wslRestarted: "WSL restarted",
 
-    pathTitle: (name: string) => `${name} configuration file`,
-    pathDesc: "The file changed when connecting and restoring.",
-    pathLabel: "Path",
-    pathDefault: (path: string) => `Default location: ${path}`,
-    pathRestore: "Restore default",
-    pathAdopted: "Connected. Restore it before changing the path.",
+    locTitle: (name: string) => `${name} configuration locations`,
+    locDesc: "Where connecting, MCP management and the security scan read and write.",
+    locRole: { config: "Connecting", mcp: "MCP management", scan: "Security scan" },
+    locJoin: ", ",
+    locDefaultFile: (path: string) => `Default location: ${path}`,
+    locDefaultFolder: (path: string) => `Default folder: ${path}`,
+    locAdopted: "Connected. Restore it before changing its locations.",
+    locRestore: "Restore defaults",
+    locConfirmTitle: "Change locations",
+    locRestoreTitle: "Restore default locations",
+    locConfirmBody:
+      "Connecting, MCP management and the security scan share one configuration folder, so these change together.",
+    locConfirm: "Change",
     enterPath: "Enter a path",
 
     restoreAllTitle: "Restore all clients",

@@ -22,7 +22,7 @@ function client(over: Partial<DetectedClient> = {}): DetectedClient {
     verified: "fields_only",
     costs: [],
     models_stale: false,
-    custom_path: false,
+    movable: true,
     manual: { steps: [], fields: [], endpoint: BASE },
     ...over,
   };
@@ -124,6 +124,7 @@ describe("客户端的状态", () => {
       name: "Cursor",
       setup: { steps: [], fields: [], endpoint: `${BASE}/v1` },
       caveat: { code: "", text: "" },
+      movable: true,
       ...over,
     });
     expect(manualStatusOf(m({})).state).toBe("idle");

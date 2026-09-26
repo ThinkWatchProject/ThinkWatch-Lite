@@ -24,7 +24,7 @@ import { DetectedTable, ManualTable, Section, type RowContext } from "./ClientsT
 import { useClients, useWsl } from "./data";
 import { DetailDialog } from "./DetailDialog";
 import { ManualDialog, type ManualTarget } from "./ManualDialog";
-import { PathDialog } from "./PathDialog";
+import { LocationsDialog } from "./LocationsDialog";
 import { PlanDialog } from "./PlanDialog";
 import { RestoreAllDialog } from "./RestoreAllDialog";
 import { MirroredDialog, RestartWslDialog } from "./WslDialogs";
@@ -36,7 +36,7 @@ type DialogState =
   | { kind: "detail"; id: string; env?: string }
   | { kind: "plan"; id: string; env?: string; restore: boolean; plan: PlanView }
   | { kind: "manual"; id: string; env?: string }
-  /** 更改配置文件路径。只有这台电脑上的 */
+  /** 配置位置（接管、MCP 管理、安全扫描）。只有这台电脑上的 */
   | { kind: "path"; id: string }
   | { kind: "restoreAll" }
   /** 把 WSL 2 改成 mirrored 网络：`.wslconfig` 的改动，确认之后才写 */
@@ -261,7 +261,6 @@ export default function ClientsPage({
   const detail = dialog?.kind === "detail" ? locate(dialog.id, dialog.env) : undefined;
   const planned = dialog?.kind === "plan" ? locate(dialog.id, dialog.env) : undefined;
   const manual = dialog?.kind === "manual" ? manualTarget(dialog.id, dialog.env) : null;
-  const moving = dialog?.kind === "path" ? data?.clients.find((c) => c.id === dialog.id) : undefined;
 
   /** 一处（这台电脑，或者一个 WSL 发行版）的表格要用的东西。行上的操作都带着 `env` */
   const ctxFor = (
@@ -283,7 +282,7 @@ export default function ClientsPage({
       restore: (c) => void ask(c, true, env),
       manual: (id) => setDialog({ kind: "manual", id, env }),
       reveal: (c) => void api.reveal(c.id, env).catch((e) => notify.error(e)),
-      path: (c) => setDialog({ kind: "path", id: c.id }),
+      path: (id) => setDialog({ kind: "path", id }),
       // 流量表的「密钥」一列就是密钥名
       traffic: (key) => nav.open("requests", { filter: { client: key } }),
       openKey: (key) => nav.open("keys", { key }),
@@ -443,9 +442,9 @@ export default function ClientsPage({
         />
       )}
 
-      {moving && (
-        <PathDialog
-          client={moving}
+      {dialog?.kind === "path" && (
+        <LocationsDialog
+          client={dialog.id}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);

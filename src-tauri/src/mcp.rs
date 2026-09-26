@@ -12,28 +12,43 @@ use crate::clients::home_dir;
 use crate::error::Out;
 use crate::wire;
 
+/// MCP 表里的那一个，带着用户为这台电脑上的它换过的文件（见
+/// [`crate::clients::locations`]）
+fn target(id: &str, home: &Path) -> Result<mcp::Target, Msg> {
+    let mut t = mcp::target(id).map_err(|e| e.msg())?;
+    t.custom_path = crate::clients::locations::moved(home)
+        .get(id)
+        .and_then(|p| p.mcp.clone());
+    Ok(t)
+}
+
 fn plan(home: &Path, req: &wire::McpOpRequest) -> Result<mcp::Plan, Msg> {
-    let to = mcp::target(&req.to).map_err(|e| e.msg())?;
+    let to = target(&req.to, home)?;
     match req.op {
         wire::McpOp::Remove => mcp::plan_remove(&to, home, &req.name).map_err(|e| e.msg()),
         wire::McpOp::Copy => {
-            let from = mcp::target(req.from.as_deref().unwrap_or_default()).map_err(|e| e.msg())?;
+            let from = target(req.from.as_deref().unwrap_or_default(), home)?;
             let v = mcp::read_server(&from, home, &req.name).map_err(|e| e.msg())?;
             mcp::plan_copy(&to, home, &req.name, &v).map_err(|e| e.msg())
         }
     }
 }
 
-/// 能写和不能写的分别是哪些。
-pub fn targets() -> Vec<wire::McpTargetView> {
+/// 能写和不能写的分别是哪些，路径按用户换过的写。
+pub fn targets(home: &Path) -> Vec<wire::McpTargetView> {
+    let moved = crate::clients::locations::moved(home);
     mcp::targets()
         .into_iter()
-        .map(|t| wire::McpTargetView {
-            client: t.client.to_string(),
-            name: t.name.to_string(),
-            path: t.shown(),
-            copyable: t.copyable,
-            why_not: t.why_not(),
+        .map(|mut t| {
+            t.custom_path = moved.get(t.client).and_then(|p| p.mcp.clone());
+            wire::McpTargetView {
+                client: t.client.to_string(),
+                name: t.name.to_string(),
+                path: t.shown(),
+                copyable: t.copyable,
+                why_not: t.why_not(),
+                movable: tw_adopt::locations::layout(t.client).is_some(),
+            }
         })
         .collect()
 }
@@ -74,7 +89,7 @@ pub fn apply(
     backups: &Path,
     req: &wire::McpOpRequest,
 ) -> Result<wire::AdoptResponse, Msg> {
-    let to = mcp::target(&req.to).map_err(|e| e.msg())?;
+    let to = target(&req.to, home)?;
     let p = plan(home, req)?;
     let a = mcp::apply(&to, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
@@ -89,7 +104,7 @@ pub fn apply(
 
 #[tauri::command]
 pub async fn mcp_targets() -> Out<Vec<wire::McpTargetView>> {
-    Ok(targets())
+    Ok(targets(&home_dir()))
 }
 
 #[tauri::command]
@@ -156,7 +171,10 @@ mod tests {
     #[test]
     fn a_client_whose_mcp_shape_we_have_not_verified_refuses_and_explains() {
         let h = home();
-        let bad = targets().into_iter().find(|t| !t.copyable).unwrap();
+        let bad = targets(Path::new(""))
+            .into_iter()
+            .find(|t| !t.copyable)
+            .unwrap();
         assert!(bad.why_not.is_some());
         let r = req(wire::McpOp::Copy, "fs", Some("claude-code"), &bad.client);
         assert!(plan_op(h.path(), &r).is_err());

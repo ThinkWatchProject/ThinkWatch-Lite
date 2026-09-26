@@ -140,9 +140,8 @@ function detected(x: Partial<DetectedClient> & { id: string; name: string; path:
     verified: "fields_only",
     costs: [],
     models_stale: false,
-    // Claude Desktop 和 DeepSeek Harness 的配置不能换位置，Rust 那一侧不给默认位置
-    default_path: ["claude-desktop", "dsh"].includes(x.id) ? null : x.path,
-    custom_path: false,
+    // Claude Desktop 和 DeepSeek Harness 的配置位置不能换
+    movable: !["claude-desktop", "dsh"].includes(x.id),
     key: null,
     last_seen_ms: null,
     manual: setup(x.id, x.path),
@@ -292,6 +291,7 @@ function manualNow(): ManualClient[] {
         "adopt.manual.cursor.caveat",
         "Tab completion and inline edit still go to Cursor's own service rather than the gateway, so only part of Cursor is covered.",
       ),
+      movable: true,
     },
     {
       id: "continue",
@@ -310,6 +310,7 @@ function manualNow(): ManualClient[] {
         endpoint: v1(),
       },
       caveat: msg("adopt.manual.continue.caveat", "This needs a new entry in the models list, which is not written automatically; follow the steps above."),
+      movable: false,
     },
     {
       id: "antigravity-cli",
@@ -335,6 +336,7 @@ function manualNow(): ManualClient[] {
         "adopt.manual.antigravity_cli.caveat",
         "Once set, agy no longer uses the quota of the Google account. agy sends Gemini model names, so using another provider's models takes a routing rule that rewrites the model name.",
       ),
+      movable: true,
     },
   ];
 }
@@ -367,10 +369,10 @@ export function plan(id: string, restore: boolean): PlanView {
 /** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少） */
 export function mcpTargets(): McpTargetView[] {
   return [
-    { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null },
-    { client: "claude-desktop", name: "Claude Desktop", path: "~/Library/Application Support/Claude/claude_desktop_config.json", copyable: true, why_not: null },
-    { client: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", copyable: true, why_not: null },
-    { client: "codex", name: "Codex", path: "~/.codex/config.toml", copyable: true, why_not: null },
+    { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null, movable: true },
+    { client: "claude-desktop", name: "Claude Desktop", path: "~/Library/Application Support/Claude/claude_desktop_config.json", copyable: true, why_not: null, movable: false },
+    { client: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", copyable: true, why_not: null, movable: true },
+    { client: "codex", name: "Codex", path: "~/.codex/config.toml", copyable: true, why_not: null, movable: true },
     {
       client: "opencode",
       name: "opencode",
@@ -380,6 +382,7 @@ export function mcpTargets(): McpTargetView[] {
         "adopt.mcp.unverified_format",
         "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
       ),
+      movable: true,
     },
     {
       client: "antigravity-cli",
@@ -390,6 +393,7 @@ export function mcpTargets(): McpTargetView[] {
         "adopt.mcp.unverified_format",
         "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
       ),
+      movable: true,
     },
     {
       client: "zed",
@@ -397,6 +401,7 @@ export function mcpTargets(): McpTargetView[] {
       path: "~/.config/zed/settings.json",
       copyable: false,
       why_not: msg("adopt.mcp.zed_structure", "Zed's context servers use a different structure and do not take the command/args form"),
+      movable: true,
     },
   ];
 }

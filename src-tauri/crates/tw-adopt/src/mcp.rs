@@ -83,6 +83,9 @@ pub struct Target {
     pub copyable: bool,
     /// 不能写的话，为什么。能写的这里是 `None`
     pub why_not: Option<(&'static str, &'static str)>,
+    /// 用户为这台电脑上的它指定的 MCP 文件（见 [`crate::locations`]）。**给了就只认它**。
+    /// 表里都是 `None`，由桌面端按用户的设置填上
+    pub custom_path: Option<PathBuf>,
 }
 
 impl Target {
@@ -112,6 +115,7 @@ pub fn targets() -> Vec<Target> {
             key: &["mcpServers"],
             copyable: true,
             why_not: None,
+            custom_path: None,
         },
         Target {
             client: "claude-desktop",
@@ -121,6 +125,7 @@ pub fn targets() -> Vec<Target> {
             key: &["mcpServers"],
             copyable: true,
             why_not: None,
+            custom_path: None,
         },
         Target {
             client: "cursor",
@@ -130,6 +135,7 @@ pub fn targets() -> Vec<Target> {
             key: &["mcpServers"],
             copyable: true,
             why_not: None,
+            custom_path: None,
         },
         Target {
             client: "codex",
@@ -139,6 +145,7 @@ pub fn targets() -> Vec<Target> {
             key: &["mcp_servers"],
             copyable: true,
             why_not: None,
+            custom_path: None,
         },
         Target {
             client: "opencode",
@@ -151,6 +158,7 @@ pub fn targets() -> Vec<Target> {
                 code!("adopt.mcp.unverified_format"),
                 "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
             )),
+            custom_path: None,
         },
         // JSONC（agy 允许注释和尾逗号），顶层 `mcpServers`，但远程 server
         // 用的是 `serverUrl`，本机没有样本。照着文档猜写进去，客户端读不懂
@@ -166,6 +174,7 @@ pub fn targets() -> Vec<Target> {
                 code!("adopt.mcp.unverified_format"),
                 "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
             )),
+            custom_path: None,
         },
         Target {
             client: "zed",
@@ -178,6 +187,7 @@ pub fn targets() -> Vec<Target> {
                 code!("adopt.mcp.zed_structure"),
                 "Zed's context servers use a different structure and do not take the command/args form",
             )),
+            custom_path: None,
         },
         // **只读**：dsh 的 MCP server 是补丁里的一行 `@deepseek-ai/dsh-mcp-client`，
         // 扫描把它们列出来（见 tw-scan）。往里写要按 id 插一行插件，那是另一种结构
@@ -192,6 +202,7 @@ pub fn targets() -> Vec<Target> {
                 code!("adopt.mcp.dsh_rows"),
                 "DeepSeek Harness keeps each MCP server as a plugin row in its patch file, which is listed here but not written to",
             )),
+            custom_path: None,
         },
     ]
 }
@@ -204,11 +215,22 @@ pub fn target(client: &str) -> Result<Target, McpError> {
 }
 
 impl Target {
-    pub fn path(&self, home: &Path) -> PathBuf {
+    /// 没指定时读写的那一个：几个候选里在的那个
+    pub fn default_path(&self, home: &Path) -> PathBuf {
         self.config[crate::paths::first_existing(self.config, home)].resolve(home)
+    }
+    /// 读写的那一个：指定了的就是它，没指定就是默认的那一个
+    pub fn path(&self, home: &Path) -> PathBuf {
+        match &self.custom_path {
+            Some(p) => p.clone(),
+            None => self.default_path(home),
+        }
     }
     /// 给人看的路径。
     pub fn shown(&self) -> String {
+        if let Some(p) = &self.custom_path {
+            return crate::paths::shown_path(p);
+        }
         let i =
             crate::paths::env_home().map_or(0, |h| crate::paths::first_existing(self.config, &h));
         self.config[i].shown()

@@ -8,6 +8,7 @@
 //! 这一层按 id 找出来再动手 —— 界面递一段任意文字进剪贴板、递一个任意路径给
 //! 访达，都是不该开的口子。
 
+pub mod locations;
 pub mod ops;
 mod reveal;
 pub mod wsl;
@@ -19,6 +20,8 @@ use tw_adopt::wsl::WslHome;
 
 use tw_api::ep;
 use tw_types::{Msg, msg};
+
+use tauri::Emitter;
 
 use crate::AppState;
 use crate::control::ControlClient;
@@ -514,22 +517,39 @@ pub async fn copy_client_endpoint(
         .map_err(|e| e.to_string().into())
 }
 
-/// 为这台电脑上的一个客户端指定配置文件（客户端页的「更改路径」）。`path` 是空的、
-/// 或者就是默认位置，都是回到默认位置。核对的规矩见 [`ops::chosen_config`]
+/// 一个客户端的配置位置（接管、MCP 管理、安全扫描）：客户端页、MCP 页「更改路径…」那个
+/// 对话框。只管这台电脑上的
 #[tauri::command]
-pub fn set_client_path(id: String, path: Option<String>) -> Out<()> {
-    let home = home_dir();
-    let c = ops::find(&id, &home)?;
-    let chosen = ops::chosen_config(&c, &home, path.as_deref().unwrap_or(""))?;
-    crate::prefs::update(&crate::data_dir(), |p| match chosen {
-        Some(to) => {
-            p.client_paths.insert(id, to.display().to_string());
-        }
-        None => {
-            p.client_paths.remove(&id);
-        }
-    })
-    .map_err(text)?;
+pub fn client_locations(id: String) -> Out<wire::ClientLocations> {
+    Ok(locations::view(&home_dir(), &id)?)
+}
+
+/// 改一项之后哪几处跟着换到哪儿（`edit` 为空是全部回到默认位置）。**不写任何东西** ——
+/// 界面拿它在改之前一起列出来
+#[tauri::command]
+pub fn plan_client_locations(
+    id: String,
+    edit: Option<wire::LocationEdit>,
+) -> Out<Vec<wire::LocationChange>> {
+    Ok(locations::plan(&home_dir(), &id, edit.as_ref())?)
+}
+
+/// 换位置：三处一起生效。换完客户端页、MCP 页都要跟上（`clients_changed`），文件监视
+/// 按新的位置重起
+#[tauri::command]
+pub fn set_client_locations(
+    app: tauri::AppHandle,
+    id: String,
+    edit: Option<wire::LocationEdit>,
+) -> Out<()> {
+    locations::set(&home_dir(), &crate::data_dir(), &id, edit.as_ref())?;
+    crate::scan::restart_client_watch(&app);
+    let _ = app.emit(
+        "local-event",
+        wire::LocalEvent::ClientsChanged {
+            at_ms: crate::scan::now_ms(),
+        },
+    );
     Ok(())
 }
 

@@ -12,6 +12,18 @@ warnings: Array<Msg>,
  */
 takes_effect: TakesEffect, };
 
+/**
+ * 一个客户端的配置位置：「更改路径…」那个对话框。
+ *
+ * **三处跟着同一个目录一起换**（`tw_adopt::locations`）：改一处，其余几处按这个
+ * 客户端的布局换到同一个目录下，改之前一起列出来（[`LocationChange`]）。
+ */
+export type ClientLocations = { client: string, name: string, 
+/**
+ * 接管着：先还原才能换 —— 接管的文件会跟着换，而接管记录在原来那个文件旁边
+ */
+adopted: boolean, rows: Array<LocationView>, };
+
 export type ClientsResponse = { clients: Array<DetectedClient>, manual: Array<ManualClient>, 
 /**
  * 客户端该连的地址
@@ -63,14 +75,10 @@ costs: Array<Msg>,
  */
 models_stale: boolean, 
 /**
- * 配置文件的默认位置。**能换位置的才有**（`tw_adopt::clients::Client::config_movable`）：
- * Claude Desktop、DeepSeek Harness 和 WSL 里的没有
+ * 配置位置能换（行菜单里给「更改路径…」，见 [`ClientLocations`]）。Claude Desktop、
+ * DeepSeek Harness 和 WSL 里的不能
  */
-default_path?: string | null, 
-/**
- * `path` 是用户指定的（客户端页「更改路径」），不是默认位置
- */
-custom_path: boolean, 
+movable: boolean, 
 /**
  * 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就不给
  */
@@ -230,6 +238,35 @@ buckets: Array<CostBucketGroup>, };
 export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind": "scan_alert", alerts: Array<ScanFinding>, at_ms: number, };
 
 /**
+ * 改之前要说的一处：从哪儿换到哪儿。
+ */
+export type LocationChange = { roles: Array<LocationRole>, dir: boolean, from: string, to: string, };
+
+/**
+ * 改的是哪一项、改成什么。`~/…` 按 home 展开
+ */
+export type LocationEdit = { role: LocationRole, path: string, };
+
+/**
+ * 客户端配置位置里的一项。
+ */
+export type LocationRole = "config" | "mcp" | "scan";
+
+/**
+ * 一处配置位置，和接管、MCP 管理、安全扫描里用到它的那几项。
+ */
+export type LocationView = { 
+/**
+ * 用到它的几项，按 接管 → MCP 管理 → 安全扫描 排。同一个文件的几项在同一行
+ * （Codex 的 `config.toml` 既是接管的也是 MCP 的）
+ */
+roles: Array<LocationRole>, 
+/**
+ * 文件夹（安全扫描看的那一处）还是文件
+ */
+dir: boolean, path: string, default: string, };
+
+/**
  * 接管不了、只能给指引的。
  */
 export type ManualClient = { 
@@ -248,7 +285,11 @@ last_seen_ms?: number | null, setup: ManualSetup,
 /**
  * 配完还漏什么（Cursor 的补全不经过网关之类）
  */
-caveat: Msg, };
+caveat: Msg, 
+/**
+ * MCP 管理、安全扫描的位置能换（Cursor、Antigravity CLI），见 [`ClientLocations`]
+ */
+movable: boolean, };
 
 /**
  * 手动配置一个客户端的方法。
@@ -304,7 +345,11 @@ copyable: boolean,
 /**
  * 不能写的话，为什么。能写的时候没有
  */
-why_not?: Msg | null, };
+why_not?: Msg | null, 
+/**
+ * 配置位置能换（MCP 页的右键菜单里给「更改路径…」），见 [`ClientLocations`]
+ */
+movable: boolean, };
 
 export type McpView = { name: string, client: string, command: string, args: Array<string>, 
 /**

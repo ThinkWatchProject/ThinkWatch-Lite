@@ -15,6 +15,7 @@ pub mod desktop;
 pub mod detect;
 pub mod foreign;
 pub mod json;
+pub mod locations;
 pub mod mcp;
 pub mod opencode;
 pub mod paths;

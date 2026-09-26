@@ -51,22 +51,35 @@ export function Extensions({
   data,
   nameOf,
   onFinding,
+  movable,
+  onMove,
 }: {
   data: ScanReport;
   nameOf: (client: string) => string;
   /** 打开一处发现的详情 */
   onFinding: (f: ScanFinding) => void;
+  /** 这个客户端的配置位置能不能换 */
+  movable: (client: string) => boolean;
+  /** 更改这个客户端的配置位置 */
+  onMove: (client: string) => void;
 }) {
   const t = useText(mcpText);
 
+  /** 行菜单最后一项：更改这一行所属客户端的配置位置 */
+  const move = (client: string): MenuItems =>
+    movable(client)
+      ? [{ kind: "sep" }, { kind: "item", label: t.changePathOf(nameOf(client)), onSelect: () => onMove(client) }]
+      : [];
   const hookMenu = (h: HookView, found: ScanFinding | undefined): MenuItems => [
     ...(found ? [{ kind: "item" as const, label: t.viewFinding, onSelect: () => onFinding(found) }, { kind: "sep" as const }] : []),
     { kind: "item", label: t.copyCommand, onSelect: () => copyText(h.command) },
     { kind: "item", label: t.copyPath, onSelect: () => copyText(h.source) },
+    ...move(h.client),
   ];
   const skillMenu = (s: SkillView, found: ScanFinding | undefined): MenuItems => [
     ...(found ? [{ kind: "item" as const, label: t.viewFinding, onSelect: () => onFinding(found) }, { kind: "sep" as const }] : []),
     { kind: "item", label: t.copyPath, onSelect: () => copyText(s.path) },
+    ...move(s.client),
   ];
 
   return (

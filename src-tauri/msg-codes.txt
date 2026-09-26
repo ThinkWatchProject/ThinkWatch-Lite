@@ -118,6 +118,8 @@ adopt.path.folder
 adopt.path.format
 adopt.path.no_folder
 adopt.path.not_absolute
+adopt.path.not_folder
+adopt.path.unsaved
 adopt.plan.claude_desktop.no_claude_model
 adopt.plan.fields_only
 adopt.plan.foreign_record
