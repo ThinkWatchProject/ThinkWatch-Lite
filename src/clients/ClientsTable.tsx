@@ -22,8 +22,8 @@ export interface RowActions {
   restore: (c: DetectedClient) => void;
   manual: (id: string) => void;
   reveal: (c: DetectedClient) => void;
-  /** 更改配置文件的路径。只有这台电脑上能换位置的才有这一项 */
-  path: (c: DetectedClient) => void;
+  /** 更改配置位置（接管、MCP 管理、安全扫描）。只有这台电脑上能换位置的才有这一项 */
+  path: (id: string) => void;
   traffic: (key: string) => void;
   openKey: (key: string) => void;
 }
@@ -220,6 +220,7 @@ export function ManualTable({ manual, ctx }: { manual: ManualClient[]; ctx: RowC
         {shown.map(({ item: m, key, presence }) => {
           const items: MenuItems = [
             { kind: "item", label: t.manual, onSelect: () => actions.manual(m.id) },
+            ...(m.movable ? [{ kind: "item" as const, label: t.changePath, onSelect: () => actions.path(m.id) }] : []),
             {
               kind: "item",
               label: t.traffic,
@@ -385,7 +386,7 @@ function menu(c: DetectedClient, a: RowActions, t: typeof clientsText.zh, reacha
       onSelect: () => a.reveal(c),
       disabled: !c.has_config,
     },
-    ...(c.default_path != null ? [{ kind: "item" as const, label: t.changePath, onSelect: () => a.path(c) }] : []),
+    ...(c.movable ? [{ kind: "item" as const, label: t.changePath, onSelect: () => a.path(c.id) }] : []),
     {
       kind: "item",
       label: t.traffic,

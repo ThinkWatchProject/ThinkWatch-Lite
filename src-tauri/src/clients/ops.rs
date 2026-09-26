@@ -9,7 +9,7 @@
 //! 这里不写 config.yaml。连着的是哪个 core，这里不关心 —— 改的总是这台机器上的文件。
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tw_adopt::clients::{self, Client};
 use tw_adopt::{detect, plan};
@@ -38,23 +38,14 @@ impl Gateway {
     }
 }
 
-/// 能接管的客户端，带着用户为这台电脑上的它们指定的配置文件（`app.json` 的
-/// `client_paths`，见 [`set_config_path`]）。
-///
-/// **只认这台电脑的 home**：WSL 里的、测试用的临时目录，给的都是表里原样的那一份
-/// —— 和 `tw_adopt::paths::Loc::resolve` 只在这台电脑上认 XDG 变量是同一个道理。
+/// 能接管的客户端，带着用户为这台电脑上的它们换过的配置文件（见 [`super::locations`]）。
+/// WSL 里的、测试用的临时目录，给的都是表里原样的那一份。
 pub fn all(home: &Path) -> Vec<Client> {
-    let custom = if !home.as_os_str().is_empty() && home == super::home_dir() {
-        crate::prefs::load(&crate::data_dir()).client_paths
-    } else {
-        BTreeMap::new()
-    };
+    let moved = super::locations::moved(home);
     clients::adoptable()
         .into_iter()
         .map(|mut c| {
-            if c.config_movable() {
-                c.custom_config = custom.get(c.id).map(PathBuf::from);
-            }
+            c.custom_config = moved.get(c.id).and_then(|p| p.config.clone());
             c
         })
         .collect()
@@ -66,73 +57,6 @@ pub fn find(id: &str, home: &Path) -> Result<Client, Msg> {
         .into_iter()
         .find(|c| c.id == id)
         .ok_or_else(|| unknown(id))
-}
-
-/// 客户端页「更改路径」填的那一串，核对之后是哪个文件。空的、或者就是默认位置，都是
-/// `None`：回到默认位置。
-///
-/// **接管着的不改**：接管记录和能还原的原文都在原来那个文件旁边，换了路径就再也还原
-/// 不了 —— 先还原。写成 `~/…` 的按 home 展开；要的是一个文件，它所在的文件夹得在，
-/// 后缀得是这个客户端读的格式（免得把 TOML 写进一个 `.json`）。
-pub fn chosen_config(c: &Client, home: &Path, raw: &str) -> Result<Option<PathBuf>, Msg> {
-    if !c.config_movable() {
-        return Err(msg!(
-            "adopt.path.fixed", client = c.name =>
-            "The configuration file of {client} cannot be moved."
-        ));
-    }
-    if detect::detect_one(c, home).adopted_at_ms.is_some() {
-        return Err(msg!(
-            "adopt.path.adopted", client = c.name =>
-            "{client} is connected. Restore it before changing the path."
-        ));
-    }
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    let p = match raw.strip_prefix('~') {
-        Some("") => home.to_path_buf(),
-        Some(rest) if rest.starts_with(['/', '\\']) => {
-            tw_adopt::paths::under(home, &rest[1..].replace('\\', "/"))
-        }
-        _ => PathBuf::from(raw),
-    };
-    if !p.is_absolute() {
-        return Err(msg!(
-            "adopt.path.not_absolute", path = raw =>
-            "{path} is not a full path."
-        ));
-    }
-    if p.is_dir() {
-        return Err(msg!(
-            "adopt.path.folder", path = p.display().to_string() =>
-            "{path} is a folder. Enter the path of the configuration file."
-        ));
-    }
-    if let Some(dir) = p.parent().filter(|d| !d.is_dir()) {
-        return Err(msg!(
-            "adopt.path.no_folder", folder = dir.display().to_string() =>
-            "The folder {folder} does not exist."
-        ));
-    }
-    let exts = c.format.extensions();
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase);
-    if !ext.is_some_and(|e| exts.contains(&e.as_str())) {
-        let ext = exts
-            .iter()
-            .map(|e| format!(".{e}"))
-            .collect::<Vec<_>>()
-            .join(" / ");
-        return Err(msg!(
-            "adopt.path.format", client = c.name, ext = ext =>
-            "{client} reads a {ext} file."
-        ));
-    }
-    Ok((p != c.default_config_path(home)).then_some(p))
 }
 
 /// 认得的客户端：能接管的，加上只能手动配置的。为它准备专用密钥之前先问这个 ——
@@ -189,10 +113,7 @@ pub fn list(
                 p.display().to_string()
             });
             v.models_stale = stale;
-            if c.config_movable() {
-                v.default_path = Some(c.default_config_path(home).display().to_string());
-                v.custom_path = c.custom_config.is_some();
-            }
+            v.movable = tw_adopt::locations::layout(c.id).is_some();
             v
         })
         .collect();
@@ -211,6 +132,7 @@ pub fn list(
                     endpoint: m.endpoint(&placeholder),
                 },
                 caveat: m.caveat(),
+                movable: tw_adopt::locations::layout(m.id).is_some(),
             }
         })
         .collect();
@@ -249,8 +171,7 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
-        default_path: None,
-        custom_path: false,
+        movable: false,
         managed: d.managed.as_ref().map(|by| {
             plan::PlanError::Managed {
                 client: d.name.into(),
@@ -975,76 +896,6 @@ pub(crate) mod tests {
                     && f.value.as_deref() == Some("{m1: {name: m1}}")),
             "{:?}",
             oc.manual.fields
-        );
-    }
-
-    /// 「更改路径」填的那一串：核对完是哪个文件，或者为什么不收
-    #[test]
-    fn a_chosen_config_file_is_checked_before_it_is_kept() {
-        let home = home_with_claude();
-        let h = home.path();
-        std::fs::create_dir_all(h.join("work")).unwrap();
-        let c = find("claude-code", h).unwrap();
-        let code = |raw: &str| chosen_config(&c, h, raw).unwrap_err().code;
-
-        assert_eq!(chosen_config(&c, h, "  ").unwrap(), None);
-        // 就是默认位置：等于没指定
-        let default = h.join(".claude").join("settings.json");
-        assert_eq!(
-            chosen_config(&c, h, &default.display().to_string()).unwrap(),
-            None
-        );
-        assert_eq!(
-            chosen_config(&c, h, "~/work/settings.json").unwrap(),
-            Some(h.join("work").join("settings.json"))
-        );
-        let full = h.join("work").join("my.json");
-        assert_eq!(
-            chosen_config(&c, h, &full.display().to_string()).unwrap(),
-            Some(full)
-        );
-        assert_eq!(code("work/settings.json"), "adopt.path.not_absolute");
-        assert_eq!(
-            code(&h.join("work").display().to_string()),
-            "adopt.path.folder"
-        );
-        assert_eq!(
-            code(&h.join("nope").join("settings.json").display().to_string()),
-            "adopt.path.no_folder"
-        );
-        assert_eq!(
-            code(&h.join("work").join("config.toml").display().to_string()),
-            "adopt.path.format"
-        );
-        // 一次改几个文件的，位置不能换
-        let desktop = find(tw_adopt::desktop::ID, h).unwrap();
-        assert_eq!(
-            chosen_config(&desktop, h, "~/work/x.json")
-                .unwrap_err()
-                .code,
-            "adopt.path.fixed"
-        );
-    }
-
-    /// 接管着的不换路径：接管记录和能还原的原文都在原来那个文件旁边
-    #[test]
-    fn an_adopted_client_keeps_its_path_until_restored() {
-        let home = home_with_claude();
-        adopt(
-            home.path(),
-            &backups(&home),
-            "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-k",
-            Vec::new(),
-        )
-        .unwrap();
-        let c = find("claude-code", home.path()).unwrap();
-        assert_eq!(
-            chosen_config(&c, home.path(), "~/other.json")
-                .unwrap_err()
-                .code,
-            "adopt.path.adopted"
         );
     }
 

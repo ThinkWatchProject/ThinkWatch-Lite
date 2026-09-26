@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
@@ -228,7 +228,9 @@ pub fn run() {
             clients::prepare_client_key,
             clients::copy_client_endpoint,
             clients::reveal_client_config,
-            clients::set_client_path,
+            clients::client_locations,
+            clients::plan_client_locations,
+            clients::set_client_locations,
             clients::retarget_clients,
             mcp::mcp_targets,
             mcp::plan_mcp,
@@ -541,21 +543,8 @@ pub fn run() {
 ///
 /// **起不来不挡启动**：少的是「文件改了界面自动跟上」，页面打开时照样现扫。
 fn start_client_watch(handle: &tauri::AppHandle, notices: Arc<notices::Notices>) {
-    let h = handle.clone();
-    let emit = move |ev: wire::LocalEvent| {
-        if let wire::LocalEvent::ScanAlert { alerts, .. } = &ev
-            && let Some(signal) = notices::rules::scan_alert(alerts.len())
-        {
-            notices.ingest(signal, notices::now_ms());
-        }
-        let _ = h.emit("local-event", ev);
-    };
-    match scan::spawn_watcher(clients::home_dir(), emit) {
-        Ok(w) => {
-            handle.manage(w);
-        }
-        Err(e) => tracing::warn!("客户端配置的文件监视起不来：{e}"),
-    }
+    handle.manage(scan::ClientWatch::new(notices));
+    scan::restart_client_watch(handle);
 }
 
 /// 数据目录。

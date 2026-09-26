@@ -35,6 +35,8 @@ export function Findings({
   nameOf,
   onSeen,
   onOpen,
+  movable,
+  onMove,
 }: {
   data: ScanReport;
   /** 监听到的、新出现的那些 */
@@ -43,6 +45,10 @@ export function Findings({
   onSeen: () => void;
   /** 打开一处的详情（对话框在页面上：技能与钩子那边也能点开） */
   onOpen: (f: ScanFinding) => void;
+  /** 这个客户端的配置位置能不能换 */
+  movable: (client: string) => boolean;
+  /** 更改这个客户端的配置位置 */
+  onMove: (client: string) => void;
 }) {
   const t = useText(mcpText);
   const isNew = (f: ScanFinding) => alerts.some((a) => sameFinding(a, f));
@@ -55,6 +61,12 @@ export function Findings({
   const menu = (f: ScanFinding): MenuItems => [
     { kind: "item", label: t.viewDetail, onSelect: () => onOpen(f) },
     { kind: "item", label: t.copyPath, onSelect: () => copyText(`${f.path}:${f.line}`) },
+    ...(movable(f.client)
+      ? [
+          { kind: "sep" as const },
+          { kind: "item" as const, label: t.changePathOf(nameOf(f.client)), onSelect: () => onMove(f.client) },
+        ]
+      : []),
   ];
 
   return (

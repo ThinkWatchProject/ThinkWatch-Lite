@@ -37,10 +37,10 @@ pub struct Prefs {
     /// 出厂值
     #[serde(default)]
     pub menubar: crate::menubar::Style,
-    /// 用户为这台电脑上的客户端指定的配置文件，按客户端 id。**没写就是都在默认位置**，
-    /// 见 `clients::ops::all`
+    /// 用户为这台电脑上的客户端换过的配置位置（接管、MCP 管理、安全扫描），按客户端 id，
+    /// 只写和默认位置不一样的几项。**没写就是都在默认位置**，见 `clients::locations`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub client_paths: BTreeMap<String, String>,
+    pub client_locations: BTreeMap<String, tw_adopt::locations::Places>,
 }
 
 impl Default for Prefs {
@@ -51,7 +51,7 @@ impl Default for Prefs {
             theme: None,
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
-            client_paths: BTreeMap::new(),
+            client_locations: BTreeMap::new(),
         }
     }
 }
@@ -148,9 +148,13 @@ mod tests {
             theme: Some(Theme::Dark),
             notices: Mode::App,
             menubar: crate::menubar::Style::Numbers,
-            client_paths: BTreeMap::from([(
+            client_locations: BTreeMap::from([(
                 "claude-code".to_string(),
-                "/work/claude/settings.json".to_string(),
+                tw_adopt::locations::Places {
+                    config: Some("/work/claude/settings.json".into()),
+                    mcp: Some("/work/claude/.claude.json".into()),
+                    scan: Some("/work/claude".into()),
+                },
             )]),
         };
         save(&dir, &want).unwrap();
@@ -171,7 +175,7 @@ mod tests {
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
         assert_eq!(p.menubar, crate::menubar::Style::Full);
-        assert!(p.client_paths.is_empty());
+        assert!(p.client_locations.is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

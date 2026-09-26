@@ -8,8 +8,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AdoptResponse,
+  ClientLocations,
   ClientsResponse,
   FindingView,
+  LocationChange,
+  LocationEdit,
   Msg,
   PlanView,
   Retargeted,
@@ -57,9 +60,15 @@ export const api = {
   /** 卸载不改回的 `.wslconfig`（是在这里改成 mirrored 的）。没改过就是 null */
   wslconfigKept: () => invoke<WslConfigKept | null>("wslconfig_kept"),
   reveal: (id: string, env?: string) => invoke<void>("reveal_client_config", { id, env }),
+  /** 这台电脑上一个客户端的配置位置：接管、MCP 管理、安全扫描（「更改路径…」那个对话框） */
+  locations: (id: string) => invoke<ClientLocations>("client_locations", { id }),
   /**
-   * 这台电脑上的一个客户端读哪个配置文件。`null` 是回到默认位置；核对不过（接管着、
-   * 不是完整路径、文件夹不在、后缀不对）时报的是那一句
+   * 改一处之后哪几处跟着换到哪儿（`null` 是全部回到默认位置）。**不写任何东西** ——
+   * 改之前一起列出来。核对不过（接管着、不是完整路径、文件夹不在、后缀不对）时报的是那一句
    */
-  setPath: (id: string, path: string | null) => invoke<void>("set_client_path", { id, path }),
+  planLocations: (id: string, edit: LocationEdit | null) =>
+    invoke<LocationChange[]>("plan_client_locations", { id, edit }),
+  /** 换位置：几处一起生效 */
+  setLocations: (id: string, edit: LocationEdit | null) =>
+    invoke<void>("set_client_locations", { id, edit }),
 };

@@ -20,8 +20,10 @@
 //! 冲突。而且一个用户 clone 过的仓库可能有几百个，其中绝大多数他这辈子
 //! 都不会再打开 —— 为它们持续烧 CPU 换不到任何东西。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use tw_adopt::locations::{Places, Role};
 use tw_adopt::paths::under;
 
 /// 这份文件属于哪类攻击面。**顺序就是危险度**（那张表）。
@@ -154,28 +156,37 @@ fn profile_patches(dsh: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// 用户级的那一小撮。**位置固定、数量有限**，所以可以无条件全看一遍。
-pub fn user_level(home: &Path) -> Vec<Source> {
+/// 用户级的那一小撮。**数量有限**，所以可以无条件全看一遍。
+///
+/// 位置默认是各家客户端的默认位置；用户在客户端页或 MCP 页换过位置的（`moved`，按
+/// 客户端 id，见 [`tw_adopt::locations`]），按换过的找：扫描看的目录（hooks、skills、
+/// 指令文件）和 MCP 那一份都跟着走。
+pub fn user_level(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> {
+    let at = |client: &str, role: Role, default: PathBuf| {
+        moved
+            .get(client)
+            .and_then(|p| p.get(role).cloned())
+            .unwrap_or(default)
+    };
+    let claude = at("claude-code", Role::Scan, under(home, ".claude"));
+    let codex = at("codex", Role::Scan, under(home, ".codex"));
+    // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
+    let agy = at("antigravity-cli", Role::Scan, under(home, ".gemini/config"));
     let mut v = vec![
         // 危险度第一：hooks 直接执行 shell
+        f("claude-code", Kind::Hooks, claude.join("settings.json")),
         f(
             "claude-code",
             Kind::Hooks,
-            under(home, ".claude/settings.json"),
+            claude.join("settings.local.json"),
         ),
-        f(
-            "claude-code",
-            Kind::Hooks,
-            under(home, ".claude/settings.local.json"),
-        ),
-        // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
-        f(
-            "antigravity-cli",
-            Kind::Hooks,
-            under(home, ".gemini/config/hooks.json"),
-        ),
+        f("antigravity-cli", Kind::Hooks, agy.join("hooks.json")),
         // 危险度第二：MCP
-        f("claude-code", Kind::Mcp, under(home, ".claude.json")),
+        f(
+            "claude-code",
+            Kind::Mcp,
+            at("claude-code", Role::Mcp, under(home, ".claude.json")),
+        ),
         // Claude Desktop 的 MCP 配置是危险度第二高的攻击面，漏掉它等于
         // 扫描留了个洞
         f(
@@ -183,32 +194,49 @@ pub fn user_level(home: &Path) -> Vec<Source> {
             Kind::Mcp,
             tw_adopt::paths::CLAUDE_DESKTOP_CONFIG.resolve(home),
         ),
-        f("cursor", Kind::Mcp, under(home, ".cursor/mcp.json")),
-        f("codex", Kind::Mcp, under(home, ".codex/config.toml")),
+        f(
+            "cursor",
+            Kind::Mcp,
+            at("cursor", Role::Mcp, under(home, ".cursor/mcp.json")),
+        ),
+        f(
+            "codex",
+            Kind::Mcp,
+            at("codex", Role::Mcp, under(home, ".codex/config.toml")),
+        ),
         // JSONC，按 JSON 读（扫描器跳过注释和尾逗号）
         f(
             "antigravity-cli",
             Kind::Mcp,
-            tw_adopt::paths::AGY_MCP_CONFIG.resolve(home),
+            at(
+                "antigravity-cli",
+                Role::Mcp,
+                tw_adopt::paths::AGY_MCP_CONFIG.resolve(home),
+            ),
         ),
         f(
             "zed",
             Kind::Mcp,
-            tw_adopt::paths::ZED_SETTINGS.resolve(home),
+            at(
+                "zed",
+                Role::Mcp,
+                tw_adopt::paths::ZED_SETTINGS.resolve(home),
+            ),
         ),
         // 指令类
-        f(
-            "claude-code",
-            Kind::Instructions,
-            under(home, ".claude/CLAUDE.md"),
-        ),
-        f("codex", Kind::Instructions, under(home, ".codex/AGENTS.md")),
+        f("claude-code", Kind::Instructions, claude.join("CLAUDE.md")),
+        f("codex", Kind::Instructions, codex.join("AGENTS.md")),
     ];
-    // opencode 两个文件都读、逐层合并，哪个里都可能有 MCP
-    for l in tw_adopt::paths::OPENCODE_CONFIGS {
-        v.push(f("opencode", Kind::Mcp, l.resolve(home)));
+    // opencode 两个文件都读、逐层合并，哪个里都可能有 MCP；指定了就只看那一个
+    match moved.get("opencode").and_then(|p| p.mcp.clone()) {
+        Some(p) => v.push(f("opencode", Kind::Mcp, p)),
+        None => {
+            for l in tw_adopt::paths::OPENCODE_CONFIGS {
+                v.push(f("opencode", Kind::Mcp, l.resolve(home)));
+            }
+        }
     }
-    for p in skills_in(&under(home, ".claude/skills")) {
+    for p in skills_in(&claude.join("skills")) {
         v.push(f("claude-code", Kind::Skill, p));
     }
     // DeepSeek Harness：MCP server 是补丁里的插件行。家目录这一层，加上每个
@@ -229,16 +257,16 @@ pub fn user_level(home: &Path) -> Vec<Source> {
     {
         v.push(f("dsh", Kind::Skill, p));
     }
-    for p in md_in(&under(home, ".claude/commands")) {
+    for p in md_in(&claude.join("commands")) {
         v.push(f("claude-code", Kind::Command, p));
     }
-    for p in md_in(&under(home, ".claude/agents")) {
+    for p in md_in(&claude.join("agents")) {
         v.push(f("claude-code", Kind::Agent, p));
     }
-    for p in skills_in(&under(home, ".gemini/config/skills")) {
+    for p in skills_in(&agy.join("skills")) {
         v.push(f("antigravity-cli", Kind::Skill, p));
     }
-    for p in md_in(&under(home, ".gemini/config/agents")) {
+    for p in md_in(&agy.join("agents")) {
         v.push(f("antigravity-cli", Kind::Agent, p));
     }
     v.retain(|s| s.path.exists());
@@ -316,7 +344,7 @@ mod tests {
     fn nothing_is_reported_for_files_that_do_not_exist() {
         // 一个空目录不该产出十条「找不到」。
         let d = tempfile::tempdir().unwrap();
-        assert_eq!(user_level(d.path()), Vec::new());
+        assert_eq!(user_level(d.path(), &BTreeMap::new()), Vec::new());
         assert_eq!(in_project(d.path()), Vec::new());
     }
 
@@ -328,7 +356,7 @@ mod tests {
         // 路径按平台走 —— 写死 macOS 那一条的话，这个测试在 Windows 上
         // 会造一个没人找的文件，然后报告扫描漏了它。
         touch(&tw_adopt::paths::CLAUDE_DESKTOP_CONFIG.resolve(d.path()));
-        let got = user_level(d.path());
+        let got = user_level(d.path(), &BTreeMap::new());
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].client, "claude-desktop");
         assert_eq!(got[0].kind, Kind::Mcp);
@@ -350,7 +378,7 @@ mod tests {
         touch(&d.path().join(".claude/commands/a.md"));
         touch(&d.path().join(".claude/agents/b.md"));
         touch(&d.path().join(".claude/agents/README.txt"));
-        let got = user_level(d.path());
+        let got = user_level(d.path(), &BTreeMap::new());
         let kinds: Vec<_> = got.iter().map(|s| s.kind).collect();
         assert_eq!(
             kinds.iter().filter(|k| **k == Kind::Skill).count(),
@@ -372,7 +400,7 @@ mod tests {
         touch(&d.path().join(".gemini/config/hooks.json"));
         touch(&d.path().join(".gemini/config/skills/审查/SKILL.md"));
         touch(&d.path().join(".gemini/config/agents/a.md"));
-        let got = user_level(d.path());
+        let got = user_level(d.path(), &BTreeMap::new());
         assert!(got.iter().all(|s| s.client == "antigravity-cli"), "{got:?}");
         let mut kinds: Vec<_> = got.iter().map(|s| s.kind).collect();
         kinds.sort();
@@ -414,8 +442,14 @@ mod tests {
                 .map(|s| s.path.file_name().unwrap().to_string_lossy().to_string())
                 .collect()
         };
-        assert_eq!(names(user_level(d.path())), ["a.md", "m.md", "z.md"]);
-        assert_eq!(names(user_level(d.path())), names(user_level(d.path())));
+        assert_eq!(
+            names(user_level(d.path(), &BTreeMap::new())),
+            ["a.md", "m.md", "z.md"]
+        );
+        assert_eq!(
+            names(user_level(d.path(), &BTreeMap::new())),
+            names(user_level(d.path(), &BTreeMap::new()))
+        );
     }
 
     #[test]
@@ -427,7 +461,7 @@ mod tests {
         touch(&dsh.join("profiles/work/cordis.patch.yml"));
         touch(&dsh.join("skills/审查/SKILL.md"));
         touch(&d.path().join(".agents/skills/共用/SKILL.md"));
-        let got: Vec<_> = user_level(d.path())
+        let got: Vec<_> = user_level(d.path(), &BTreeMap::new())
             .into_iter()
             .map(|s| (s.client, s.kind))
             .collect();
@@ -445,5 +479,39 @@ mod tests {
         touch(&p.path().join(".dsh/skills/a/SKILL.md"));
         touch(&p.path().join(".agents/skills/b/SKILL.md"));
         assert_eq!(in_project(p.path()).len(), 2);
+    }
+
+    /// 换过位置的客户端：扫描看的目录和 MCP 那一份都按换过的找，默认位置的不再看
+    #[test]
+    fn a_moved_client_is_scanned_where_it_was_moved() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path().join("home");
+        let work = d.path().join("work").join("claude");
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::create_dir_all(work.join("commands")).unwrap();
+        std::fs::write(home.join(".claude").join("settings.json"), "{}").unwrap();
+        std::fs::write(work.join("settings.json"), "{}").unwrap();
+        std::fs::write(work.join(".claude.json"), "{}").unwrap();
+        std::fs::write(work.join("commands").join("go.md"), "go").unwrap();
+        let moved = BTreeMap::from([(
+            "claude-code".to_string(),
+            Places {
+                config: Some(work.join("settings.json")),
+                mcp: Some(work.join(".claude.json")),
+                scan: Some(work.clone()),
+            },
+        )]);
+        let got: Vec<_> = user_level(&home, &moved)
+            .into_iter()
+            .map(|s| (s.kind, s.path))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (Kind::Hooks, work.join("settings.json")),
+                (Kind::Mcp, work.join(".claude.json")),
+                (Kind::Command, work.join("commands").join("go.md")),
+            ]
+        );
     }
 }

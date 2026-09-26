@@ -1023,12 +1023,6 @@ impl Client {
         crate::paths::first_existing(self.config, home)
     }
 
-    /// 配置文件能不能换位置。Claude Desktop 一次改四个文件，位置由它自己的配置库
-    /// 决定；DeepSeek Harness 的两个文件都在它的家目录下，跟着 `$DSH_HOME` 走
-    pub fn config_movable(&self) -> bool {
-        !matches!(self.id, crate::desktop::ID | "dsh")
-    }
-
     /// 没指定配置文件时写的那一个，见 [`Client::config_index`]
     pub fn default_config_path(&self, home: &std::path::Path) -> PathBuf {
         self.config[self.config_index(home)].resolve(home)
@@ -1338,12 +1332,12 @@ mod tests {
         assert!(o.shadow_paths(&home).is_empty());
     }
 
-    /// 一次改几个文件、位置由自己决定的两个，配置文件不能换位置
+    /// 一次改几个文件、位置由自己决定的两个，配置位置不能换；表里不带指定的文件
     #[test]
     fn only_single_file_clients_can_move_their_config() {
         for c in adoptable() {
             let fixed = c.id == crate::desktop::ID || c.id == "dsh";
-            assert_eq!(c.config_movable(), !fixed, "{}", c.id);
+            assert_eq!(crate::locations::layout(c.id).is_some(), !fixed, "{}", c.id);
             assert!(
                 c.custom_config.is_none(),
                 "{}：表里不带指定的配置文件",

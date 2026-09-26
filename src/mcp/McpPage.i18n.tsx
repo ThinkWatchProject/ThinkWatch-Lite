@@ -81,6 +81,8 @@ export const mcpText = messages(
     listSep: "、",
     copyCommand: "复制命令",
     copyPath: "复制路径",
+    changePath: "更改路径…",
+    changePathOf: (name: string) => `更改 ${name} 的路径…`,
     viewFinding: "查看发现",
 
     // 发现
@@ -165,6 +167,8 @@ export const mcpText = messages(
     listSep: ", ",
     copyCommand: "Copy command",
     copyPath: "Copy path",
+    changePath: "Change path…",
+    changePathOf: (name: string) => `Change the path of ${name}…`,
     viewFinding: "View finding",
 
     newFindings: (n: number, em: Em) => (

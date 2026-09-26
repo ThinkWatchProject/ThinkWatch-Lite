@@ -668,6 +668,8 @@
     "adopt.path.folder": "{path} 是一个文件夹，需填写配置文件的路径。",
     "adopt.path.no_folder": "文件夹 {folder} 不存在。",
     "adopt.path.format": "{client} 的配置文件是 {ext} 文件。",
+    "adopt.path.not_folder": "{path} 不是文件夹。",
+    "adopt.path.unsaved": "位置未能保存：{detail}",
     "adopt.manual.zed.key": "然后在 Zed 的设置中，为 ThinkWatch 填入密钥。",
     "adopt.manual.also_file": "密钥写入 {file}；下面以 refs 或 version 开头的几项属于该文件。",
     "adopt.manual.cursor.open": "在 Cursor 中打开 Settings → Models。",

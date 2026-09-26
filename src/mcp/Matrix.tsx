@@ -37,6 +37,7 @@ export function Matrix({
   onAsk,
   onOpen,
   onRescan,
+  onMove,
 }: {
   mcp: McpView[];
   conflicting: string[];
@@ -48,6 +49,8 @@ export function Matrix({
   /** 看一个服务器在各客户端里的配置 */
   onOpen: (name: string) => void;
   onRescan: () => void;
+  /** 更改一个客户端的配置位置（列头的右键菜单） */
+  onMove: (client: string) => void;
 }) {
   const t = useText(mcpText);
   // 列 = 所有能写的位置 ∪ 已经配了东西的位置
@@ -55,6 +58,7 @@ export function Matrix({
   const nameOf = (c: string) => targets.find((x) => x.client === c)?.name ?? c;
   const canWrite = (c: string) => targets.find((x) => x.client === c)?.copyable ?? false;
   const whyNot = (c: string) => coreText(targets.find((x) => x.client === c)?.why_not) || t.cannotWrite;
+  const movable = (c: string) => targets.find((x) => x.client === c)?.movable ?? false;
   const names = [...new Set(mcp.map((m) => m.name))].sort();
   const at = (name: string, client: string) => mcp.find((m) => m.name === name && m.client === client);
   const shown = usePresentList(names, (n) => n);
@@ -114,14 +118,24 @@ export function Matrix({
         <TableHeader>
           <TableRow>
             <TableHead>{t.server}</TableHead>
-            {clients.map((c) => (
-              <TableHead key={c} className="text-center" title={nameOf(c)}>
-                <span className="inline-flex max-w-full items-center justify-center gap-1.5">
-                  <ClientLogo id={c} name={nameOf(c)} size={14} className="shrink-0 text-muted-foreground" />
-                  <span className="truncate">{nameOf(c)}</span>
-                </span>
-              </TableHead>
-            ))}
+            {clients.map((c) => {
+              const head = (
+                <TableHead key={c} className="text-center" title={nameOf(c)}>
+                  <span className="inline-flex max-w-full items-center justify-center gap-1.5">
+                    <ClientLogo id={c} name={nameOf(c)} size={14} className="shrink-0 text-muted-foreground" />
+                    <span className="truncate">{nameOf(c)}</span>
+                  </span>
+                </TableHead>
+              );
+              // 列头右键：更改这个客户端的配置位置
+              return movable(c) ? (
+                <RowMenu key={c} items={[{ kind: "item", label: t.changePath, onSelect: () => onMove(c) }]}>
+                  {head}
+                </RowMenu>
+              ) : (
+                head
+              );
+            })}
             <TableHead />
           </TableRow>
         </TableHeader>
