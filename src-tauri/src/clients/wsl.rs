@@ -1,26 +1,25 @@
-//! WSL 里的客户端：客户端页上「WSL · <发行版>」那几组，以及它们该连哪个地址。
+//! WSL 里的客户端：客户端页上「WSL · <发行版>」那几组，以及它们此刻能不能接管。
 //!
 //! 接管、还原、诊断走的都是 [`super::ops`] 那一套，只是 home 换成 WSL 里那个
-//! 用户的 home（UNC 路径，见 `tw_adopt::wsl`）。这里多出来的是**地址**：
+//! 用户的 home（UNC 路径，见 `tw_adopt::wsl`）。**写进去的地址和这台电脑上的
+//! 客户端一样**：本机时是 `127.0.0.1`，连着远程 core 时是服务器的地址。
 //!
-//! - WSL1、mirrored 模式：和 Windows 共用网络，写 127.0.0.1；
-//! - NAT 模式（WSL2 的默认）：WSL 里的 127.0.0.1 是它自己，要写 WSL 虚拟网卡在
-//!   Windows 这一侧的地址，**而且网关要在那张网卡上听**。监听要改的，接管的确认
-//!   框里说出来，确认之后才改（[`ListenChange`]）；
-//! - 连着远程 core：写服务器的地址，和这台电脑上的客户端一样。
-//!
-//! NAT 模式下那张网卡的地址会随 WSL 重启而变。变了之后，接管着的客户端还指着
-//! 旧地址：列表里把它们标出来（[`super::ops::stale`]），用户点一下就重新指向。
+//! 本机时，WSL 里够得着 Windows 的 `127.0.0.1` 的只有 WSL 1 和 WSL 2 的 mirrored
+//! 网络。**网关不为 WSL 另外听一张网卡**，所以 WSL 2 默认的 NAT 下不接管：客户端页
+//! 说明原因，给「改为 mirrored 模式」（改 `.wslconfig`，走和接管一样的差异、确认、
+//! 全文备份）和「重启 WSL」。连着远程 core 时，客户端经网络去连服务器，WSL 用哪种
+//! 网络都够得着。
 
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::SystemTime;
 
-use tw_adopt::wsl::{self, Distro, NetMode, Reach, WslHome};
-use tw_api::ep;
+use tw_adopt::wsl::{self, Distro, Wsl2, WslHome};
+use tw_adopt::wslconfig::{self, NetMode};
 use tw_types::{Msg, msg};
 
 use crate::AppState;
-use crate::control::ControlClient;
-use crate::error::{Out, text};
+use crate::error::CmdError;
 use crate::wire;
 
 /// 注册表里登记着的发行版。**只读注册表，不碰 `\\wsl.localhost`**，不会唤醒谁。
@@ -57,207 +56,137 @@ pub fn find(name: &str) -> Result<WslHome, Msg> {
     open(d)
 }
 
-/// NAT 模式下找不到 WSL 的虚拟网卡：WSL 没在跑时它不在
-pub fn no_adapter() -> Msg {
-    msg!(
-        "wsl.no_adapter" =>
-        "The WSL virtual network adapter was not found. Start WSL and look again."
-    )
-}
-
 fn unknown(name: &str) -> Msg {
     msg!("wsl.unknown", distro = name => "There is no WSL distribution named {distro}.")
 }
 
-/// 这台电脑上的 `.wslconfig` 说的是哪种网络。**每次现读**：用户改了它、
-/// `wsl --shutdown` 之后就是另一种了
-pub fn net_mode() -> NetMode {
-    let text = tw_adopt::paths::env_home()
-        .and_then(|h| std::fs::read(h.join(".wslconfig")).ok())
-        .and_then(|b| wsl::decode_config(&b));
-    wsl::net_mode(text.as_deref())
-}
-
-/// 界面上这一组的网络说成哪一种
-pub fn network(d: &Distro, mode: NetMode) -> wire::WslNetwork {
-    if d.version == 1 {
-        wire::WslNetwork::Wsl1
+/// 改 `.wslconfig`、重启 WSL 之前先认一下：这台电脑上有 WSL 发行版（不在 Windows
+/// 上就没有）。界面只在 WSL 那几组里给这两个按钮
+pub fn ensure_any() -> Result<(), Msg> {
+    if distros().is_empty() {
+        Err(msg!("wsl.none" => "There is no WSL distribution on this computer."))
     } else {
-        match mode {
-            NetMode::Nat => wire::WslNetwork::Nat,
-            NetMode::Mirrored => wire::WslNetwork::Mirrored,
-        }
+        Ok(())
     }
 }
 
-/// 要让网关在 WSL 网卡上听，监听设置要怎么改。**确认框里照着它说**，确认之后
-/// 照着它存。
-#[derive(Debug, Clone)]
-pub struct ListenChange {
-    pub save: tw_api::ListenSave,
-    /// 给人看的那几句：改成听哪张网卡、放行名单加了什么
-    pub notes: Vec<Msg>,
+/// `%USERPROFILE%\.wslconfig`
+pub fn wslconfig() -> PathBuf {
+    wslconfig::path(&super::home_dir())
 }
 
-/// 这个发行版里的客户端此刻该连哪儿。
-pub struct Target {
-    /// `http://172.27.96.1:8788`
-    pub base: String,
-    pub network: wire::WslNetwork,
-    /// NAT 模式下 WSL 虚拟网卡：名字和地址
-    pub nic: Option<(String, std::net::Ipv4Addr)>,
-    /// 监听要改的话，怎么改
-    pub listen: Option<ListenChange>,
-    /// 此刻的监听（NAT 模式下重新指向时要原样再存一次，见 [`relisten`]）
-    pub view: Option<(tw_api::ListenView, String)>,
+/// `.wslconfig` 此刻说的网络。**每次现读**：用户可能刚在编辑器或 WSL 设置里改过
+pub fn config_mode() -> NetMode {
+    wslconfig::mode_of(std::fs::read(wslconfig()).ok().as_deref())
 }
 
-/// 算出这个发行版里的客户端该连的地址。
-///
-/// 连着远程 core 时和这台电脑上的客户端一样，是服务器的地址。本机时按网络模式：
-/// NAT 下要找到 WSL 的虚拟网卡 —— **找不到就说找不到**（WSL 没在跑时它不在），
-/// 不拿一个猜的地址写进客户端。
-pub async fn target(state: &AppState, w: &WslHome) -> Result<Target, Msg> {
-    let mode = net_mode();
-    let network = network(&w.distro, mode);
-    let remote = state.link.is_remote();
-    let host = super::gateway_host(state);
-    let ov = state
-        .control
-        .call::<ep::Overview>(&[], &())
-        .await
-        .map_err(|e| text(e).into_msg())?;
-    let port = ov.listen.port;
-    if remote || wsl::reach(w.distro.version, mode) == Reach::Loopback {
-        return Ok(Target {
-            base: super::base_url(&host, port),
-            network,
-            nic: None,
-            listen: None,
-            view: None,
-        });
-    }
-    let nics = state
-        .control
-        .call::<ep::Interfaces>(&[], &())
-        .await
-        .map_err(|e| text(e).into_msg())?;
-    let (name, addr) = wsl::pick_nic(nics.iter().map(|n| (n.name.as_str(), n.addr.as_str())))
-        .ok_or_else(no_adapter)?;
-    let listen = listen_change(&ov.listen, &ov.config_version, &name, addr);
-    Ok(Target {
-        base: super::base_url(&addr.to_string(), port),
-        network,
-        listen,
-        view: Some((ov.listen, ov.config_version)),
-        nic: Some((name, addr)),
-    })
-}
+/// 上一次在这里重启 WSL 的时刻。**只记在内存里**：应用重启之后就不知道了，那时
+/// 「`.wslconfig` 是 mirrored、WSL 还在用 NAT」按还没重启说，多给一次重启的按钮
+static RESTARTED_AT: Mutex<Option<SystemTime>> = Mutex::new(None);
 
-/// 网关要在 WSL 网卡上听，监听设置要怎么改。不用改就是 `None`。
-///
-/// core 的监听是「回环，加上**一张**网卡」或者「所有网卡」：
-///
-/// - 只听本机：改成听 WSL 那张网卡（回环照旧听着）；
-/// - 已经听着 WSL 网卡、或者所有网卡：不改监听；
-/// - 听着别的网卡（局域网那一档）：改成听所有网卡 —— 换成 WSL 网卡的话，局域网
-///   那一边就断了。
-///
-/// 监听超出本机时，放行名单要盖住 WSL 网卡的地址，没盖住就加上它的网段。
-pub fn listen_change(
-    view: &tw_api::ListenView,
-    version: &str,
-    nic: &str,
-    addr: std::net::Ipv4Addr,
-) -> Option<ListenChange> {
-    let b = view.bind.as_str();
-    let loopback = b == "loopback" || b == "::1" || b.starts_with("127.");
-    let all = b == "all" || b == "0.0.0.0" || b == "::";
-    let on_nic = b == nic || b == addr.to_string();
-    let mut notes = Vec::new();
-    let bind = if loopback {
-        notes.push(msg!(
-            "wsl.listen.nic", nic = nic, addr = addr =>
-            "The gateway listens only on this computer at present. It will also listen on {nic} ({addr}), the adapter WSL reaches Windows through."
-        ));
-        nic.to_string()
-    } else if all || on_nic {
-        view.bind.clone()
-    } else {
-        notes.push(msg!(
-            "wsl.listen.all", bind = b =>
-            "The gateway listens on {bind} at present. It will listen on all adapters, so that WSL can reach it as well."
-        ));
-        "all".to_string()
+/// 在这里重启过 WSL，而且是在 `.wslconfig` 最后一次改动之后
+fn restarted_since_change() -> bool {
+    let at = *RESTARTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(at) = at else {
+        return false;
     };
-    let mut allow = view.allow_from.clone();
-    if !allow.iter().any(|c| wsl::in_cidr(addr, c)) {
-        let range = wsl::remote_range(addr);
-        notes.push(msg!(
-            "wsl.listen.allow", range = &range =>
-            "{range} will be added to the allowed sources, so that connections from WSL are accepted."
-        ));
-        allow.push(range);
-    }
-    (!notes.is_empty()).then(|| ListenChange {
-        save: tw_api::ListenSave {
-            bind,
-            port: view.port,
-            allow_from: allow,
-            base_version: Some(version.to_string()),
-        },
-        notes,
-    })
+    std::fs::metadata(wslconfig())
+        .and_then(|m| m.modified())
+        .is_ok_and(|changed| at > changed)
 }
 
-/// 存一次监听。确认过的改动，或者 WSL 重启之后原样再存一次：core 存监听时会
-/// 照着配置重新绑一遍，**网卡名这时现问系统**，于是换到那张网卡的新地址上。
-pub async fn save_listen(control: &ControlClient, save: &tw_api::ListenSave) -> Out<()> {
-    control
-        .call::<ep::SaveListen>(&[], save)
-        .await
-        .map_err(text)?;
+/// 重启 WSL：`wsl --shutdown` 停掉所有发行版，下次启动时照 `.wslconfig` 来。
+/// **阻塞**，最多一分钟
+pub fn shutdown() -> Result<(), Msg> {
+    wsl::shutdown().map_err(|detail| {
+        msg!(
+            "wsl.shutdown_failed", detail = detail =>
+            "WSL could not be shut down: {detail}"
+        )
+    })?;
+    *RESTARTED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(SystemTime::now());
     Ok(())
 }
 
-/// WSL 重启之后网卡换了地址：监听绑在那张网卡上的，原样再存一次，让网关换到新
-/// 地址上。没绑在它上面（所有网卡、只听本机）的用不着。
-pub async fn relisten(control: &ControlClient, t: &Target) -> Out<()> {
-    let (Some((view, version)), Some((nic, addr))) = (&t.view, &t.nic) else {
-        return Ok(());
-    };
-    if view.bind != *nic && view.bind != addr.to_string() {
-        return Ok(());
-    }
-    save_listen(
-        control,
-        &tw_api::ListenSave {
-            bind: view.bind.clone(),
-            port: view.port,
-            allow_from: view.allow_from.clone(),
-            base_version: Some(version.clone()),
-        },
+/// 这台电脑上 WSL 2 的网络（本机时）。**会读注册表、起 `wsl.exe`**：阻塞，调用方
+/// 放进 `spawn_blocking`。`probe` 是一个开着的 WSL 2 发行版：问它 WSL 此刻实际用的
+/// 是哪种网络（所有 WSL 2 发行版在同一台虚拟机里，问一个就够）
+pub fn wsl2(probe: Option<String>) -> Wsl2 {
+    wsl::decide(
+        wsl::windows_build(),
+        config_mode(),
+        || probe.as_deref().and_then(wsl::running_mirrored),
+        wsl::wsl_version,
+        restarted_since_change(),
     )
-    .await
 }
 
-/// 接管确认框里 WSL 多出来的几句：请求经由 Windows 上的网关；NAT 下地址会变；
-/// 监听要怎么改。
-pub fn plan_notes(client: &str, w: &WslHome, t: &Target) -> Vec<Msg> {
-    let mut out = vec![msg!(
+/// 一个发行版的网络，以及此刻能不能接管。
+///
+/// WSL 1 总能：它和 Windows 共用网络。连着远程 core 时也总能 —— 客户端经网络去连
+/// 服务器，和 WSL 用哪种网络无关，这时只照 `.wslconfig` 说一声是哪种，不起
+/// `wsl.exe`。其余的看这台电脑上 WSL 2 的情况：只有 mirrored 能。
+pub fn network(
+    remote: bool,
+    d: &Distro,
+    config: NetMode,
+    wsl2: impl FnOnce() -> Wsl2,
+) -> (wire::WslNetwork, bool) {
+    if d.version == 1 {
+        return (wire::WslNetwork::Wsl1, true);
+    }
+    if remote {
+        let n = match config {
+            NetMode::Mirrored => wire::WslNetwork::Mirrored,
+            NetMode::Nat => wire::WslNetwork::Nat { wsl_version: None },
+        };
+        return (n, true);
+    }
+    let n = wire::WslNetwork::from(wsl2());
+    let ok = n == wire::WslNetwork::Mirrored;
+    (n, ok)
+}
+
+/// 此刻从这个发行版里够不着网关（NAT 这些）。界面上本来不给接管、手动配置的按钮，
+/// 这一句拦的是绕过界面的那一次
+fn unreachable(distro: &str) -> Msg {
+    msg!(
+        "wsl.unreachable", distro = distro =>
+        "The gateway on Windows cannot be reached from WSL · {distro} with its current networking."
+    )
+}
+
+/// 这个发行版里的客户端要写的地址。**和这台电脑上的一样**（`http://127.0.0.1:8788`，
+/// 或者服务器的）；此刻够不着网关的拒绝。会起 `wsl.exe` 问一次网络
+pub async fn target(state: &AppState, w: &WslHome) -> Result<String, Msg> {
+    let base = super::gateway_base(&state.control, &super::gateway_host(state))
+        .await
+        .map_err(CmdError::into_msg)?;
+    let remote = state.link.is_remote();
+    let d = w.distro.clone();
+    let (_, ok) = tokio::task::spawn_blocking(move || {
+        let probe = Some(d.name.clone());
+        network(remote, &d, config_mode(), || wsl2(probe))
+    })
+    .await
+    .map_err(|e| CmdError::plain(e.to_string()).into_msg())?;
+    if ok {
+        Ok(base)
+    } else {
+        Err(unreachable(w.name()))
+    }
+}
+
+/// 接管确认框里 WSL 多出来的那一句：请求经由 Windows 上的网关。连着远程 core 时
+/// 不说 —— 那时网关不在 Windows 上
+pub fn plan_notes(client: &str, w: &WslHome, remote: bool) -> Vec<Msg> {
+    if remote {
+        return Vec::new();
+    }
+    vec![msg!(
         "wsl.via_windows", client = client, distro = w.name() =>
         "{client} in WSL · {distro} sends its requests through the gateway on Windows."
-    )];
-    if let Some((_, addr)) = &t.nic {
-        out.push(msg!(
-            "wsl.nat_address", addr = addr =>
-            "WSL uses NAT networking, so its address for Windows, {addr}, changes when WSL restarts. The client is then shown as not in effect, and one click points it at the new address."
-        ));
-    }
-    if let Some(l) = &t.listen {
-        out.extend(l.notes.iter().cloned());
-    }
-    out
+    )]
 }
 
 /// 给人看的客户端名字：`Claude Code (WSL · Ubuntu)`
@@ -265,144 +194,99 @@ pub fn display_name(client: &str, w: &WslHome) -> String {
     format!("{client} (WSL · {})", w.name())
 }
 
-/// 防火墙里那条放行 WSL 的规则缺了时，要用户在管理员 PowerShell 里执行的命令。
-/// 规则在、查不了、或者用不着（不是 NAT）都是 `None`。
-pub fn firewall_hint(program: Option<&Path>, t: &Target) -> Option<String> {
-    let (_, addr) = t.nic.as_ref()?;
-    let program = program?;
-    match rule_exists() {
-        Some(false) => Some(wsl::firewall_command(program, &wsl::remote_range(*addr))),
-        _ => None,
+/// 卸载确认框里那一句要的：`.wslconfig` 此刻是 mirrored，而且是在这里改的（备份
+/// 目录里有它改之前的样子）。**卸载不改回它**，这一句把这件事说在前面
+pub fn kept() -> Option<wire::WslConfigKept> {
+    let path = wslconfig();
+    if config_mode() != NetMode::Mirrored {
+        return None;
     }
-}
-
-/// 那条规则在不在。问 `netsh`：它找不到规则时退出码是 1。**问不了就不知道**
-/// （`None`），不因为一次没跑起来的查询就叫用户去执行管理员命令。
-#[cfg(windows)]
-fn rule_exists() -> Option<bool> {
-    use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("netsh")
-        .args([
-            "advfirewall",
-            "firewall",
-            "show",
-            "rule",
-            &format!("name={}", wsl::FIREWALL_RULE),
-        ])
-        // 没有这一句，每次打开客户端页都会闪一个黑窗口
-        .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
-    match out.status.code() {
-        Some(0) => Some(true),
-        Some(1) => Some(false),
-        _ => None,
-    }
-}
-
-#[cfg(not(windows))]
-fn rule_exists() -> Option<bool> {
-    None
+    let real = tw_adopt::foreign::resolve(&path).ok()?;
+    let first = tw_adopt::foreign::backups_of(&tw_adopt::foreign::backup_root(), &real)
+        .into_iter()
+        .next()?;
+    // 第一次改之前没有这个文件：备份是空的，文件是这里新建的
+    let created = std::fs::metadata(&first).is_ok_and(|m| m.len() == 0);
+    Some(wire::WslConfigKept {
+        path: path.display().to_string(),
+        backup: (!created).then(|| first.display().to_string()),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
 
-    fn view(bind: &str, allow: &[&str]) -> tw_api::ListenView {
-        tw_api::ListenView {
-            bind: bind.into(),
-            port: 8788,
-            allow_from: allow.iter().map(|s| s.to_string()).collect(),
-            default_allow_from: Vec::new(),
-            exposed: bind != "loopback",
-        }
-    }
-
-    const NIC: &str = "vEthernet (WSL)";
-    const ADDR: Ipv4Addr = Ipv4Addr::new(172, 27, 96, 1);
-    const PRIVATE: &[&str] = &["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
-
-    #[test]
-    fn only_local_listening_moves_onto_the_wsl_adapter() {
-        let c = listen_change(&view("loopback", PRIVATE), "v1", NIC, ADDR).unwrap();
-        assert_eq!(c.save.bind, NIC);
-        assert_eq!(c.save.port, 8788);
-        assert_eq!(c.save.allow_from, PRIVATE);
-        assert_eq!(c.save.base_version.as_deref(), Some("v1"));
-        assert_eq!(c.notes.len(), 1);
-        assert_eq!(c.notes[0].code, "wsl.listen.nic");
-    }
-
-    #[test]
-    fn listening_that_already_reaches_wsl_is_left_alone() {
-        for b in ["all", "0.0.0.0", NIC, "172.27.96.1"] {
-            assert!(
-                listen_change(&view(b, PRIVATE), "v", NIC, ADDR).is_none(),
-                "{b}"
-            );
-        }
-    }
-
-    /// 听着局域网那张网卡的，换成所有网卡 —— 换成 WSL 网卡的话局域网就断了
-    #[test]
-    fn another_adapter_widens_to_all_rather_than_dropping_the_lan() {
-        let c = listen_change(&view("Ethernet", PRIVATE), "v", NIC, ADDR).unwrap();
-        assert_eq!(c.save.bind, "all");
-        assert_eq!(c.notes[0].code, "wsl.listen.all");
-    }
-
-    #[test]
-    fn the_allowed_sources_are_widened_only_when_they_miss_wsl() {
-        let c = listen_change(&view("all", &["192.168.1.0/24"]), "v", NIC, ADDR).unwrap();
-        assert_eq!(c.save.bind, "all");
-        assert_eq!(c.save.allow_from, ["192.168.1.0/24", "172.16.0.0/12"]);
-        assert_eq!(c.notes[0].code, "wsl.listen.allow");
-        let odd = Ipv4Addr::new(192, 168, 50, 1);
-        let c = listen_change(&view("loopback", &[]), "v", NIC, odd).unwrap();
-        assert_eq!(c.save.allow_from, ["192.168.0.0/16"]);
-        assert_eq!(c.notes.len(), 2);
-    }
-
-    /// 安装程序加的那条规则，和界面上查的、给出的命令是同一条
-    #[test]
-    fn the_installer_adds_the_rule_the_client_page_looks_for() {
-        let nsh = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("windows/hooks.nsh"),
-        )
-        .unwrap();
-        let (net, bits) = wsl::NAT_RANGE;
-        assert!(
-            nsh.contains(&format!("!define TW_WSL_RULE \"{}\"", wsl::FIREWALL_RULE)),
-            "规则名对不上"
-        );
-        assert!(
-            nsh.contains(&format!("!define TW_WSL_RANGE \"{net}/{bits}\"")),
-            "网段对不上"
-        );
-        // 程序路径是安装目录里的那一个（tauri.windows.conf.json 把它放在那儿）
-        assert!(nsh.contains(r#"program="$INSTDIR\twcore.exe""#));
-        let conf = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.windows.conf.json"),
-        )
-        .unwrap();
-        assert!(conf.contains(r#""installerHooks": "./windows/hooks.nsh""#));
-        assert!(conf.contains(r#""resources/twcore.exe": "twcore.exe""#));
-    }
-
-    #[test]
-    fn a_wsl1_distro_shares_the_network_whatever_wslconfig_says() {
-        let d = |version| Distro {
+    fn distro(version: u32) -> Distro {
+        Distro {
             name: "Ubuntu".into(),
             version,
             uid: 1000,
-        };
-        assert_eq!(network(&d(1), NetMode::Nat), wire::WslNetwork::Wsl1);
-        assert_eq!(network(&d(2), NetMode::Nat), wire::WslNetwork::Nat);
+        }
+    }
+
+    fn never() -> Wsl2 {
+        panic!("用不着问 WSL 2 的情况")
+    }
+
+    /// WSL 1 和 Windows 共用网络，哪种情况下都能接管
+    #[test]
+    fn wsl1_is_always_adoptable() {
+        for remote in [false, true] {
+            for config in [NetMode::Nat, NetMode::Mirrored] {
+                assert_eq!(
+                    network(remote, &distro(1), config, never),
+                    (wire::WslNetwork::Wsl1, true)
+                );
+            }
+        }
+    }
+
+    /// 本机时 WSL 2 只有 mirrored 能接管；NAT、等重启、没能启用、Windows 或 WSL
+    /// 太旧的都不能
+    #[test]
+    fn locally_only_mirrored_wsl2_is_adoptable() {
+        let at = |s: Wsl2| network(false, &distro(2), NetMode::Mirrored, || s);
+        assert_eq!(at(Wsl2::Mirrored), (wire::WslNetwork::Mirrored, true));
+        for (s, want) in [
+            (
+                Wsl2::Nat { version: None },
+                wire::WslNetwork::Nat { wsl_version: None },
+            ),
+            (
+                Wsl2::Nat {
+                    version: Some("2.3.26.0".into()),
+                },
+                wire::WslNetwork::Nat {
+                    wsl_version: Some("2.3.26.0".into()),
+                },
+            ),
+            (Wsl2::Restart, wire::WslNetwork::Restart),
+            (Wsl2::Fallback, wire::WslNetwork::Fallback),
+            (Wsl2::OldWindows, wire::WslNetwork::OldWindows),
+            (
+                Wsl2::OldWsl {
+                    version: "1.2.5.0".into(),
+                },
+                wire::WslNetwork::OldWsl {
+                    wsl_version: "1.2.5.0".into(),
+                },
+            ),
+        ] {
+            assert_eq!(at(s), (want, false));
+        }
+    }
+
+    /// 连着远程 core：客户端经网络去连服务器，NAT 也够得着；不为此去问 WSL
+    #[test]
+    fn with_a_remote_core_any_network_is_adoptable() {
         assert_eq!(
-            network(&d(2), NetMode::Mirrored),
-            wire::WslNetwork::Mirrored
+            network(true, &distro(2), NetMode::Nat, never),
+            (wire::WslNetwork::Nat { wsl_version: None }, true)
+        );
+        assert_eq!(
+            network(true, &distro(2), NetMode::Mirrored, never),
+            (wire::WslNetwork::Mirrored, true)
         );
     }
 }

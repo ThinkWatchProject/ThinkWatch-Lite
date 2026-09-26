@@ -195,41 +195,6 @@ pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedC
         .collect()
 }
 
-/// 接管着、**还指着这个网关的旧地址**的客户端：端口还是网关的端口，主机是一个
-/// IP 地址，但已经不是 `base` 了。WSL 用 NAT 网络时，WSL 一重启，写进去的那个
-/// 虚拟网卡地址就作废了；连着远程 core 时，还指着本机网关的也是这样。
-///
-/// 指着别的端口、写的是主机名的，是用户自己改的，不在里面 —— 重新指向不该把它们
-/// 改回来。
-pub fn stale(home: &Path, base: &str) -> Vec<Client> {
-    let Some(want) = host_port(base).map(str::to_string) else {
-        return Vec::new();
-    };
-    let port = want.rsplit_once(':').map(|(_, p)| p.to_string());
-    clients::adoptable()
-        .into_iter()
-        .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id))
-        .filter(|c| {
-            let d = detect::detect_one(c, home);
-            let (Some(_), Some(e)) = (d.adopted_at_ms, d.endpoint) else {
-                return false;
-            };
-            let Some(hp) = host_port(&e) else {
-                return false;
-            };
-            let Some((host, p)) = hp.rsplit_once(':') else {
-                return false;
-            };
-            hp != want
-                && Some(p.to_string()) == port
-                && host
-                    .trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .is_ok()
-        })
-        .collect()
-}
-
 /// 手动配置一个能接管的客户端：打开哪个文件、写哪几项、填哪个地址。
 /// 写的那几项就是接管时写的那几项 —— 两条路写出来的配置一模一样。
 fn setup_of(c: &Client, steps: Vec<Msg>, gw: &clients::Gateway) -> wire::ManualSetup {
@@ -1026,7 +991,7 @@ mod tests {
         );
         mine.last_seen_ms = Some(7);
         let gw = Gateway {
-            base: "http://172.27.96.1:8788".into(),
+            base: "http://127.0.0.1:8788".into(),
             keys: vec![
                 key("default", "tw-d", None, true),
                 key("claude-code", "tw-c", Some("claude-code"), false),
@@ -1041,7 +1006,8 @@ mod tests {
         assert_eq!(cc.path, "~/.claude/settings.json");
         assert_eq!(cc.key.as_deref(), Some("claude-code-wsl-ubuntu"));
         assert_eq!(cc.last_seen_ms, Some(7));
-        assert_eq!(cc.manual.endpoint, "http://172.27.96.1:8788");
+        // 手动配置给的地址和这台电脑上的一样
+        assert_eq!(cc.manual.endpoint, "http://127.0.0.1:8788");
         assert_eq!(cc.manual.steps[0].arg("file"), "~/.claude/settings.json");
         assert_eq!(r[1].key, None);
         // 接管的方案：新建的那把叫 WSL 那一份的名字
@@ -1051,17 +1017,24 @@ mod tests {
         assert!(known("codex-wsl-ubuntu"));
     }
 
-    /// WSL 重启之后：还指着网关端口上一个旧 IP 的算「旧地址」；用户自己指到
-    /// 别的端口、别的主机名上的不算，重新指向不该把它们改回来
+    /// WSL 1 和 mirrored 下，WSL 里的客户端写的就是 `127.0.0.1`，和这台电脑上的一样
+    /// （地址由 `wsl::target` 给，它交回的就是这台电脑的那一个）；还原回到原样
     #[test]
-    fn only_clients_left_on_an_old_gateway_address_are_stale() {
+    fn a_wsl_copy_is_pointed_at_127_0_0_1_and_restored_to_what_it_was() {
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
+        let settings = w.home.join(".claude").join("settings.json");
+        let original =
+            r#"{ "model": "opus", "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com" } }"#;
+        std::fs::write(&settings, original).unwrap();
+        let config = w.home.join(".codex").join("config.toml");
+        std::fs::write(&config, "model = \"gpt-5\"\n").unwrap();
+
         adopt(
             &w.home,
             &b,
             "claude-code",
-            "http://172.20.0.1:8788",
+            "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
         )
@@ -1070,33 +1043,60 @@ mod tests {
             &w.home,
             &b,
             "codex",
-            "http://relay.example:8788",
+            "http://127.0.0.1:8788",
             "tw-x",
             Vec::new(),
         )
         .unwrap();
-        let ids = |base: &str| -> Vec<&str> { stale(&w.home, base).iter().map(|c| c.id).collect() };
-        assert_eq!(ids("http://172.27.96.1:8788"), ["claude-code"]);
-        assert!(ids("http://172.20.0.1:8788").is_empty(), "指着的就是它");
-        assert!(
-            ids("http://172.27.96.1:9999").is_empty(),
-            "端口不同，是用户自己改的"
+        let listed = list_wsl(
+            &w,
+            &Gateway {
+                base: "http://127.0.0.1:8788".into(),
+                keys: Vec::new(),
+            },
         );
-        // 重新指向之后就不旧了
-        let c = find("claude-code").unwrap();
-        repoint(
+        for c in &listed {
+            let e = c.endpoint.as_deref().unwrap_or_default();
+            assert!(e.starts_with("http://127.0.0.1:8788"), "{}: {e}", c.id);
+            assert!(is_loopback(e));
+        }
+
+        restore(&w.home, &b, "claude-code").unwrap();
+        restore(&w.home, &b, "codex").unwrap();
+        let back: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let want: serde_json::Value = serde_json::from_str(original).unwrap();
+        assert_eq!(back, want);
+        assert!(adopted(&w.home).is_empty());
+    }
+
+    /// 按 NAT 的做法接管过的（指着 WSL 虚拟网卡的地址）不迁移：列出来的就是它
+    /// 此刻指着的地址（界面据此标成未生效），照样能还原
+    #[test]
+    fn a_copy_adopted_the_old_nat_way_is_listed_as_is_and_can_be_restored() {
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        adopt(
             &w.home,
             &b,
-            &c,
+            "claude-code",
             "http://172.27.96.1:8788",
             "tw-c",
             Vec::new(),
         )
         .unwrap();
-        assert!(ids("http://172.27.96.1:8788").is_empty());
-        // 还原回到原样：WSL 里的那一份和这台电脑上的一样能退回去
+        let gw = Gateway {
+            base: "http://127.0.0.1:8788".into(),
+            keys: Vec::new(),
+        };
+        let cc = list_wsl(&w, &gw)
+            .into_iter()
+            .find(|c| c.id == "claude-code")
+            .unwrap();
+        assert!(cc.adopted_at_ms.is_some());
+        assert_eq!(cc.endpoint.as_deref(), Some("http://172.27.96.1:8788"));
         restore(&w.home, &b, "claude-code").unwrap();
-        assert!(adopted(&w.home).iter().all(|c| c.id != "claude-code"));
+        assert!(adopted(&w.home).is_empty());
     }
 
     /// 换了密钥之后重新指一次：新值写进它的配置

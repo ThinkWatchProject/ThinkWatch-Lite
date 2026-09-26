@@ -414,6 +414,41 @@ export type UninstallStep = { ok: boolean, text: string, };
 export type Verification = "measured" | "fields_only";
 
 /**
+ * 卸载时不改回的 `.wslconfig`：它此刻是 mirrored，是在这里改的。
+ */
+export type WslConfigKept = { 
+/**
+ * `C:\Users\u\.wslconfig`
+ */
+path: string, 
+/**
+ * 改之前的全文备份。**这个文件是这里新建的**（改之前没有）时不给
+ */
+backup?: string | null, };
+
+/**
+ * 把 WSL 2 改成 mirrored 网络的那一份改动（`%USERPROFILE%\.wslconfig`）。
+ * **UI 拿它画差异让用户确认**，确认之后才写。
+ */
+export type WslConfigPlan = { 
+/**
+ * `C:\Users\u\.wslconfig`
+ */
+path: string, 
+/**
+ * 改之前的原文。没有这个文件（要新建）时不给
+ */
+before?: string | null, after: string, 
+/**
+ * 改的是哪一项：`wsl2.networkingMode`（写在旧位置的是 `experimental.networkingMode`）
+ */
+field: string, 
+/**
+ * 已经是 mirrored 了，什么都不用改
+ */
+noop: boolean, };
+
+/**
  * 客户端页上「WSL · <发行版>」那一组。
  */
 export type WslGroup = { 
@@ -422,7 +457,12 @@ export type WslGroup = {
  */
 distro: string, network: WslNetwork, 
 /**
- * 读不到这个发行版时的原因。**这时其余几项都是空的**，界面写「无法读取」
+ * 此刻能不能接管：WSL 1、mirrored 能，连着远程 core 时都能。**不能的时候不给
+ * 接管和手动配置**，接管过的照样能还原
+ */
+adoptable: boolean, 
+/**
+ * 读不到这个发行版时的原因。**这时 `clients` 是空的**，界面写「无法读取」
  */
 error?: Msg | null, 
 /**
@@ -430,33 +470,18 @@ error?: Msg | null,
  */
 clients: Array<DetectedClient>, 
 /**
- * 这个发行版里的客户端该连的地址。算不出来时是空串，原因在 `base_error`
+ * 这个发行版里的客户端该连的地址：和这台电脑上的一样
  */
-gateway_base: string, 
-/**
- * 地址算不出来的原因（NAT 模式下找不到 WSL 的虚拟网卡）
- */
-base_error?: Msg | null, 
-/**
- * 接管着、还指着旧地址的客户端 id（NAT 模式下 WSL 重启之后）。点一下「重新
- * 指向」就改到 `gateway_base`
- */
-stale: Array<string>, 
-/**
- * 防火墙里放行 WSL 的那条规则缺了时，要在管理员 PowerShell 里执行的命令
- */
-firewall?: string | null, 
-/**
- * 网关此刻的监听够不到这个发行版时，要怎么改（每条一句）。**手动配置**用它：
- * 一键接管会在确认框里说、确认后才改，手动配置的那一份也得先把监听改好，
- * 不然照着复制的地址接不通。够得到时是空的
- */
-listen: Array<Msg>, };
+gateway_base: string, };
 
 /**
- * WSL 里的一个发行版用哪种网络。决定写进客户端的是哪个地址。
+ * WSL 里的一个发行版用哪种网络；本机时，不能接管的那几种说明卡在哪一步。
+ *
+ * WSL 里的客户端写的地址和这台电脑上的一样（本机时是 `127.0.0.1`），够得着它的
+ * 只有 WSL 1 和 mirrored。其余几种界面上说明原因，能动手的给按钮（改为 mirrored、
+ * 重启 WSL）。
  */
-export type WslNetwork = "wsl1" | "nat" | "mirrored";
+export type WslNetwork = { "kind": "wsl1" } | { "kind": "mirrored" } | { "kind": "nat", wsl_version: string | null, } | { "kind": "restart" } | { "kind": "fallback" } | { "kind": "old_windows" } | { "kind": "old_wsl", wsl_version: string, };
 
 /**
  * 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，

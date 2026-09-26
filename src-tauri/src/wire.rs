@@ -150,18 +150,47 @@ pub struct ClientsResponse {
     pub keys: Vec<String>,
 }
 
-/// WSL 里的一个发行版用哪种网络。决定写进客户端的是哪个地址。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// WSL 里的一个发行版用哪种网络；本机时，不能接管的那几种说明卡在哪一步。
+///
+/// WSL 里的客户端写的地址和这台电脑上的一样（本机时是 `127.0.0.1`），够得着它的
+/// 只有 WSL 1 和 mirrored。其余几种界面上说明原因，能动手的给按钮（改为 mirrored、
+/// 重启 WSL）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WslNetwork {
-    /// WSL1：和 Windows 共用网络，写 127.0.0.1
-    #[serde(rename = "wsl1")]
+    /// WSL 1：和 Windows 共用网络
     Wsl1,
-    /// WSL2 的默认：写 WSL 虚拟网卡的地址，WSL 重启后会变
-    #[serde(rename = "nat")]
-    Nat,
-    /// `.wslconfig` 里 `networkingMode=mirrored`：写 127.0.0.1
-    #[serde(rename = "mirrored")]
+    /// WSL 2 的 mirrored 网络：和 Windows 共用网卡
     Mirrored,
+    /// WSL 2 的默认：NAT。本机时不能接管，可以改为 mirrored。`wsl_version`：
+    /// 查到的 WSL 版本（够新）；查不出来是 `null`，说明里要提一句版本要求
+    Nat { wsl_version: Option<String> },
+    /// `.wslconfig` 已设为 mirrored，WSL 还在用改之前的网络：重启 WSL 之后生效
+    Restart,
+    /// 在这里重启过 WSL，它仍然没用上 mirrored
+    Fallback,
+    /// Windows 10、Windows 11 21H2：没有 mirrored 网络
+    OldWindows,
+    /// WSL 太旧，要先 `wsl --update`
+    OldWsl { wsl_version: String },
+}
+
+impl From<tw_adopt::wsl::Wsl2> for WslNetwork {
+    fn from(s: tw_adopt::wsl::Wsl2) -> Self {
+        use tw_adopt::wsl::Wsl2;
+        match s {
+            Wsl2::Mirrored => Self::Mirrored,
+            Wsl2::Nat { version } => Self::Nat {
+                wsl_version: version,
+            },
+            Wsl2::Restart => Self::Restart,
+            Wsl2::Fallback => Self::Fallback,
+            Wsl2::OldWindows => Self::OldWindows,
+            Wsl2::OldWsl { version } => Self::OldWsl {
+                wsl_version: version,
+            },
+        }
+    }
 }
 
 /// 客户端页上「WSL · <发行版>」那一组。
@@ -170,27 +199,16 @@ pub struct WslGroup {
     /// 发行版的名字（`Ubuntu`）。对这一组的命令都带着它
     pub distro: String,
     pub network: WslNetwork,
-    /// 读不到这个发行版时的原因。**这时其余几项都是空的**，界面写「无法读取」
+    /// 此刻能不能接管：WSL 1、mirrored 能，连着远程 core 时都能。**不能的时候不给
+    /// 接管和手动配置**，接管过的照样能还原
+    pub adoptable: bool,
+    /// 读不到这个发行版时的原因。**这时 `clients` 是空的**，界面写「无法读取」
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<Msg>,
     /// 这个发行版里的客户端（第一批：Claude Code、Codex）
     pub clients: Vec<DetectedClient>,
-    /// 这个发行版里的客户端该连的地址。算不出来时是空串，原因在 `base_error`
+    /// 这个发行版里的客户端该连的地址：和这台电脑上的一样
     pub gateway_base: String,
-    /// 地址算不出来的原因（NAT 模式下找不到 WSL 的虚拟网卡）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_error: Option<Msg>,
-    /// 接管着、还指着旧地址的客户端 id（NAT 模式下 WSL 重启之后）。点一下「重新
-    /// 指向」就改到 `gateway_base`
-    pub stale: Vec<String>,
-    /// 防火墙里放行 WSL 的那条规则缺了时，要在管理员 PowerShell 里执行的命令
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub firewall: Option<String>,
-    /// 网关此刻的监听够不到这个发行版时，要怎么改（每条一句）。**手动配置**用它：
-    /// 一键接管会在确认框里说、确认后才改，手动配置的那一份也得先把监听改好，
-    /// 不然照着复制的地址接不通。够得到时是空的
-    #[serde(default)]
-    pub listen: Vec<Msg>,
 }
 
 /// 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，
@@ -199,6 +217,32 @@ pub struct WslGroup {
 pub struct WslResponse {
     /// 注册表里登记着的发行版，按注册表里的顺序。不在 Windows 上时是空的
     pub distros: Vec<WslGroup>,
+}
+
+/// 把 WSL 2 改成 mirrored 网络的那一份改动（`%USERPROFILE%\.wslconfig`）。
+/// **UI 拿它画差异让用户确认**，确认之后才写。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct WslConfigPlan {
+    /// `C:\Users\u\.wslconfig`
+    pub path: String,
+    /// 改之前的原文。没有这个文件（要新建）时不给
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    pub after: String,
+    /// 改的是哪一项：`wsl2.networkingMode`（写在旧位置的是 `experimental.networkingMode`）
+    pub field: String,
+    /// 已经是 mirrored 了，什么都不用改
+    pub noop: bool,
+}
+
+/// 卸载时不改回的 `.wslconfig`：它此刻是 mirrored，是在这里改的。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct WslConfigKept {
+    /// `C:\Users\u\.wslconfig`
+    pub path: String,
+    /// 改之前的全文备份。**这个文件是这里新建的**（改之前没有）时不给
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<String>,
 }
 
 /// 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**

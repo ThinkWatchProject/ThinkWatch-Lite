@@ -87,6 +87,13 @@ export const settingsText = messages(
     /** 列名字时的分隔 */
     sep: "、",
     stopAutostart: "取消开机启动",
+    /** `.wslconfig` 是在客户端页改成 mirrored 的：卸载不改回它 */
+    wslconfigKept: "WSL 的网络模式不会改回",
+    wslconfigCreated: (path: string) => `${path} 是改为 mirrored 网络模式时新建的，卸载后保留。`,
+    wslconfigBackup: (path: string, backup: string) =>
+      `${path} 保持 mirrored 网络模式；修改前的备份保留在 ${backup}。`,
+    wslconfigBackupDropped: (path: string) =>
+      `${path} 保持 mirrored 网络模式；修改前的备份随数据目录一并删除。`,
     dropData: "同时删除数据目录",
     dropDataWhat: "包括请求历史、费用记录与配置备份，删除后无法恢复。",
     confirmUninstall: "卸载",
@@ -153,6 +160,12 @@ export const settingsText = messages(
     restoreNone: "No client is connected at the moment",
     sep: ", ",
     stopAutostart: "Turn off launch at login",
+    wslconfigKept: "WSL networking is not changed back",
+    wslconfigCreated: (path: string) => `${path} was created when switching to mirrored networking and is kept.`,
+    wslconfigBackup: (path: string, backup: string) =>
+      `${path} stays on mirrored networking; the backup from before the change is kept at ${backup}.`,
+    wslconfigBackupDropped: (path: string) =>
+      `${path} stays on mirrored networking; the backup from before the change is deleted with the data directory.`,
     dropData: "Also delete the data directory",
     dropDataWhat: "The request history, cost records and config backups. This cannot be undone.",
     confirmUninstall: "Uninstall",

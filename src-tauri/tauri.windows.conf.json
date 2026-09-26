@@ -9,7 +9,6 @@
     "windows": {
       "nsis": {
         "installMode": "perMachine",
-        "installerHooks": "./windows/hooks.nsh",
         "installerIcon": "icons/icon.ico",
         "displayLanguageSelector": false,
         "languages": ["English", "SimpChinese"]

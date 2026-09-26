@@ -1,6 +1,6 @@
-//! WSL 里的客户端：有哪些发行版、默认用户的 home 在哪、客户端该连哪个地址。
+//! WSL 里的客户端：有哪些发行版、默认用户的 home 在哪、此刻能不能接管。
 //!
-//! **从 Windows 这一侧看进去，不进 WSL 里跑东西。**发行版的清单在注册表里
+//! **从 Windows 这一侧看进去，尽量不进 WSL 里跑东西。**发行版的清单在注册表里
 //! （`HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss`），默认用户的 home 从
 //! `\\wsl.localhost\<发行版>\etc\passwd` 按 `DefaultUid` 查。起一个 shell 去问
 //! `echo $HOME` 也能拿到，但那要为每个发行版拉起一个进程、等它的登录脚本跑完，
@@ -15,13 +15,20 @@
 //! **访问 `\\wsl.localhost` 会把发行版唤醒。**所以这里只提供「读一个发行版」，
 //! 什么时候读由调用方决定：客户端页打开时、用户要动它的时候，不在后台轮询。
 //!
-//! 除了注册表那一段，这里全是和平台无关的纯函数：passwd 和 `.wslconfig` 的解析、
-//! 地址的选择、密钥名。它们在任何平台上都跑单测。
+//! WSL 里的客户端写的地址和 Windows 上的一样，是 `127.0.0.1` —— **网关不为 WSL
+//! 另外听一张网卡**。够得着它的只有两种：WSL 1（和 Windows 共用网络），以及 WSL 2
+//! 的 mirrored 网络。WSL 2 默认的 NAT 下，WSL 里的 127.0.0.1 是它自己，那时不接管，
+//! 只说清楚为什么、怎么改成 mirrored（[`decide`]；`.wslconfig` 的读写见
+//! [`crate::wslconfig`]）。
+//!
+//! 注册表、`wsl.exe` 那几段只在 Windows 上；其余是和平台无关的纯函数（passwd、
+//! `wsl --version` 的输出、该怎么判断），在任何平台上都跑单测。
 
-use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
 use tw_types::{Msg, msg};
+
+use crate::wslconfig::NetMode;
 
 /// 第一批在 WSL 里支持的客户端。
 ///
@@ -177,41 +184,357 @@ pub fn split_wsl_path(p: &Path) -> Option<(String, String)> {
 /// 文件里正是网关的密钥。在 Linux 上我们新建的这种文件生来就是 `0600`，这里补上同一件事。
 #[cfg(windows)]
 pub fn make_private(p: &Path) -> bool {
-    use std::os::windows::process::CommandExt;
-    use std::process::{Command, Stdio};
     let Some((distro, linux)) = split_wsl_path(p) else {
         return false;
     };
-    let mut cmd = Command::new("wsl.exe");
-    cmd.args([
-        "--distribution",
-        &distro,
-        "--exec",
-        "chmod",
-        "600",
-        "--",
-        &linux,
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
-    let Ok(mut child) = cmd.spawn() else {
-        return false;
-    };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
+    run(
+        &[
+            "--distribution",
+            &distro,
+            "--exec",
+            "chmod",
+            "600",
+            "--",
+            &linux,
+        ],
+        std::time::Duration::from_secs(10),
+    )
+    .is_some_and(|r| r.ok)
+}
+
+/// `wsl.exe` 跑完一次：退出码是不是 0，和它的输出
+#[cfg(windows)]
+struct Ran {
+    ok: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// 起一次 `wsl.exe`，最多等 `limit`。起不来、等超了都是 `None`（超了的那一个杀掉）。
+///
+/// 不开黑窗口（`CREATE_NO_WINDOW`）；`WSL_UTF8=1` 让 `wsl.exe` 自己的话按 UTF-8 写
+/// （不设就是 UTF-16LE），发行版里的程序写什么照原样转过来。输出在另外的线程里读
+/// —— 管道写满了子进程就停住，等它退出的循环就永远等不到。
+#[cfg(windows)]
+fn run(args: &[&str], limit: std::time::Duration) -> Option<Ran> {
+    use std::io::Read;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut child = Command::new("wsl.exe")
+        .args(args)
+        .env("WSL_UTF8", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
+        .spawn()
+        .ok()?;
+    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::sync::mpsc::Receiver<Vec<u8>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if let Some(mut pipe) = pipe {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                let _ = pipe.read_to_end(&mut buf);
+                let _ = tx.send(buf);
+            });
+        }
+        rx
+    }
+    let out = drain(child.stdout.take());
+    let err = drain(child.stderr.take());
+    let deadline = Instant::now() + limit;
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(st)) => return st.success(),
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(50))
-            }
+            Ok(Some(st)) => break st,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return false;
+                return None;
             }
         }
+    };
+    // 进程退了，管道也就关了；万一有谁还攥着它，不为它一直等下去
+    let take = |rx: std::sync::mpsc::Receiver<Vec<u8>>| {
+        rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
+    };
+    Some(Ran {
+        ok: status.success(),
+        stdout: take(out),
+        stderr: take(err),
+    })
+}
+
+/// 这台电脑的 Windows 构建号（`22631`）。读注册表里的 `CurrentBuildNumber`，不用
+/// `GetVersionEx` —— 应用清单没声明兼容哪些版本时，那个函数报的是 Windows 8。
+#[cfg(windows)]
+pub fn windows_build() -> Option<u32> {
+    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    let key = wide(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+    let name = wide("CurrentBuildNumber");
+    let mut buf = [0u16; 32];
+    let mut len = std::mem::size_of_val(&buf) as u32;
+    // SAFETY: 两个字符串以 NUL 结尾；缓冲区的字节数如实给出，函数保证写进去的以 NUL 结尾。
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..n]).trim().parse().ok()
+}
+
+#[cfg(not(windows))]
+pub fn windows_build() -> Option<u32> {
+    None
+}
+
+/// 装着的 WSL 是哪一版：`wsl.exe --version` 的第一行。**问不出来就是 `None`**：
+/// 系统自带的旧版 WSL 不认 `--version`，别的原因（服务没起来、超时）也可能 ——
+/// 这时不下结论，由调用方在说明里提一句版本要求。
+#[cfg(windows)]
+pub fn wsl_version() -> Option<Version> {
+    let r = run(&["--version"], std::time::Duration::from_secs(10))?;
+    if !r.ok {
+        return None;
+    }
+    parse_version(&decode_output(&r.stdout))
+}
+
+#[cfg(not(windows))]
+pub fn wsl_version() -> Option<Version> {
+    None
+}
+
+/// WSL 此刻实际用的是不是 mirrored 网络：在一个开着的 WSL 2 发行版里问
+/// `wslinfo --networking-mode`（WSL 2.0.4 起有）。
+///
+/// `.wslconfig` 说的是下一次启动用什么，这里问的是现在：改完没重启、或者 WSL
+/// 起来时没能用上 mirrored（它会退回 NAT），两者就不一样。问不出来是 `None`。
+#[cfg(windows)]
+pub fn running_mirrored(distro: &str) -> Option<bool> {
+    let r = run(
+        &[
+            "--distribution",
+            distro,
+            "--exec",
+            "/usr/bin/wslinfo",
+            "--networking-mode",
+        ],
+        std::time::Duration::from_secs(10),
+    )?;
+    if !r.ok {
+        return None;
+    }
+    parse_networking_mode(&r.stdout)
+}
+
+#[cfg(not(windows))]
+pub fn running_mirrored(_distro: &str) -> Option<bool> {
+    None
+}
+
+/// 停掉所有发行版和 WSL 2 的虚拟机（`wsl --shutdown`），下次启动时照 `.wslconfig`
+/// 重新来。失败时交回 `wsl.exe` 说的那句话。
+#[cfg(windows)]
+pub fn shutdown() -> Result<(), String> {
+    match run(&["--shutdown"], std::time::Duration::from_secs(60)) {
+        Some(r) if r.ok => Ok(()),
+        Some(r) => {
+            let said = [decode_output(&r.stderr), decode_output(&r.stdout)]
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .find(|s| !s.is_empty());
+            Err(said.unwrap_or_else(|| "wsl.exe --shutdown failed".to_string()))
+        }
+        None => Err("wsl.exe --shutdown did not finish".to_string()),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn shutdown() -> Result<(), String> {
+    Err("WSL is only on Windows".to_string())
+}
+
+/// `wsl.exe` 的输出变成文字。设了 `WSL_UTF8=1` 是 UTF-8；老版本不认那个变量，写的
+/// 是 UTF-16LE —— 英文字母的高字节全是 0，一看就分得出来。
+pub fn decode_output(b: &[u8]) -> String {
+    let b = b.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(b);
+    let (b, bom16) = match b.strip_prefix(&[0xFF, 0xFE]) {
+        Some(rest) => (rest, true),
+        None => (b, false),
+    };
+    let zeros = b.iter().skip(1).step_by(2).filter(|&&c| c == 0).count();
+    if bom16 || (b.len() >= 2 && zeros * 2 >= b.len() / 2) {
+        let units: Vec<u16> = b
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(b).into_owned()
+    }
+}
+
+/// 一个 WSL 的版本号：`2.3.26.0`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Version(Vec<u32>);
+
+/// 能用 mirrored 网络、而且认 `[wsl2]` 下 `networkingMode` 的最早一版。
+///
+/// mirrored 是 2.0.0 加的，那时只写在 `[experimental]` 下；2.0.5 起挪进 `[wsl2]`。
+/// 我们写的是 `[wsl2]`，所以按 2.0.5 算。
+pub const MIRRORED_SINCE: [u32; 3] = [2, 0, 5];
+
+impl Version {
+    /// 不低于 `min`。少写的几段按 0 算：`2.0` 就是 `2.0.0`
+    pub fn at_least(&self, min: &[u32]) -> bool {
+        let n = self.0.len().max(min.len());
+        let at = |v: &[u32], i: usize| v.get(i).copied().unwrap_or(0);
+        for i in 0..n {
+            let (a, b) = (at(&self.0, i), at(min, i));
+            if a != b {
+                return a > b;
+            }
+        }
+        true
+    }
+
+    pub fn supports_mirrored(&self) -> bool {
+        self.at_least(&MIRRORED_SINCE)
+    }
+}
+
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parts: Vec<String> = self.0.iter().map(u32::to_string).collect();
+        f.write_str(&parts.join("."))
+    }
+}
+
+/// `wsl --version` 的输出里找出 WSL 的版本：**第一行里第一个 `数.数.数`**。
+///
+/// 那一行的说明文字跟着系统语言走（`WSL version: 2.3.26.0`、`WSL 版本: 2.3.26.0`、
+/// `Version WSL : 2.3.26.0`），但每种语言里都是它排第一、说明里没有数字。后面几行
+/// 是内核、WSLg 这些的版本，不看。
+pub fn parse_version(text: &str) -> Option<Version> {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let mut run = String::new();
+    let mut runs = Vec::new();
+    for c in line.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() || c == '.' {
+            run.push(c);
+        } else if !run.is_empty() {
+            runs.push(std::mem::take(&mut run));
+        }
+    }
+    runs.into_iter().find_map(|r| {
+        let r = r.trim_matches('.');
+        let parts: Vec<u32> = r
+            .split('.')
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?;
+        (parts.len() >= 3).then_some(Version(parts))
+    })
+}
+
+/// `wslinfo --networking-mode` 说的是不是 mirrored。它答 `nat`、`mirrored`、
+/// `consomme`、`none` 这几个词之一（WSL 1 上答 `wsl1`）；认不出来是 `None`。
+pub fn parse_networking_mode(out: &[u8]) -> Option<bool> {
+    let word = String::from_utf8_lossy(out).trim().to_ascii_lowercase();
+    match word.as_str() {
+        "mirrored" => Some(true),
+        "nat" | "none" | "bridged" | "consomme" | "virtioproxy" | "wsl1" => Some(false),
+        _ => None,
+    }
+}
+
+/// Windows 11 22H2 的构建号：mirrored 网络从这一版起才有
+pub const MIRRORED_BUILD: u32 = 22621;
+
+/// 这个构建号的 Windows 能不能用 mirrored 网络（Windows 10、Windows 11 21H2 不能）
+pub fn build_supports_mirrored(build: u32) -> bool {
+    build >= MIRRORED_BUILD
+}
+
+/// 这台电脑上的 WSL 2 此刻能不能经由 `127.0.0.1` 够到 Windows 上的网关；不能的话，
+/// 卡在哪一步 —— 界面照它说明、给对应的按钮。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Wsl2 {
+    /// `.wslconfig` 设了 mirrored，WSL 也在用（问不出来时照 `.wslconfig` 算）
+    Mirrored,
+    /// `.wslconfig` 没设 mirrored（默认的 NAT）。`version`：查到的 WSL 版本（够新），
+    /// 查不出来时是 `None` —— 说明里要提一句版本要求
+    Nat { version: Option<String> },
+    /// `.wslconfig` 设了 mirrored，WSL 还在用改之前的网络：重启之后生效
+    Restart,
+    /// 在这里重启过 WSL 了，它仍然没用上 mirrored
+    Fallback,
+    /// Windows 10、Windows 11 21H2：没有 mirrored 网络
+    OldWindows,
+    /// WSL 太旧，要先 `wsl --update`
+    OldWsl { version: String },
+}
+
+/// 判断 WSL 2 的网络。
+///
+/// `running` 和 `version` 要起 `wsl.exe`，**用得着才问**：`.wslconfig` 设了
+/// mirrored、WSL 也答 mirrored 的，版本不用再问。`restarted`：在这里重启过 WSL，
+/// 而且是在 `.wslconfig` 最后一次改动之后。
+pub fn decide(
+    build: Option<u32>,
+    config: NetMode,
+    running: impl FnOnce() -> Option<bool>,
+    version: impl FnOnce() -> Option<Version>,
+    restarted: bool,
+) -> Wsl2 {
+    if build.is_some_and(|b| !build_supports_mirrored(b)) {
+        return Wsl2::OldWindows;
+    }
+    let too_old = |v: &Option<Version>| {
+        v.as_ref()
+            .filter(|v| !v.supports_mirrored())
+            .map(|v| Wsl2::OldWsl {
+                version: v.to_string(),
+            })
+    };
+    if config == NetMode::Mirrored {
+        let now = running();
+        if now == Some(true) {
+            return Wsl2::Mirrored;
+        }
+        if let Some(old) = too_old(&version()) {
+            return old;
+        }
+        return match now {
+            Some(_) if restarted => Wsl2::Fallback,
+            Some(_) => Wsl2::Restart,
+            None => Wsl2::Mirrored,
+        };
+    }
+    let v = version();
+    if let Some(old) = too_old(&v) {
+        return old;
+    }
+    Wsl2::Nat {
+        version: v.map(|v| v.to_string()),
     }
 }
 
@@ -341,125 +664,6 @@ pub fn passwd_home(text: &str, uid: u32) -> Option<String> {
         .filter(|h| h.starts_with('/'))
 }
 
-/// WSL2 用哪种网络。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NetMode {
-    /// 默认：WSL 在一个 NAT 后面，它的 127.0.0.1 是它自己
-    Nat,
-    /// `networkingMode=mirrored`：和 Windows 共用网卡，127.0.0.1 连得到 Windows
-    Mirrored,
-}
-
-impl NetMode {
-    pub fn slug(&self) -> &'static str {
-        match self {
-            NetMode::Nat => "nat",
-            NetMode::Mirrored => "mirrored",
-        }
-    }
-}
-
-/// `%USERPROFILE%\.wslconfig` 说的是哪种网络。**文件不在、没写、写了别的，都按
-/// NAT 算** —— 那是 WSL 自己的默认值。
-///
-/// 格式是 INI：`[wsl2]` 下的 `networkingMode`。键名不分大小写（WSL 自己就不分），
-/// 值也不分；`#` 和 `;` 开头的是注释，值可以带引号。WSL 2.0.0 的预览版把它放在
-/// `[experimental]` 下，那一节也认。
-pub fn net_mode(wslconfig: Option<&str>) -> NetMode {
-    let Some(text) = wslconfig else {
-        return NetMode::Nat;
-    };
-    let mut section = String::new();
-    let mut mode = NetMode::Nat;
-    // 记事本存的 UTF-8 带 BOM：不去掉它，第一行的 `[wsl2]` 就认不出来
-    for line in text.trim_start_matches('\u{feff}').lines() {
-        let l = line.trim();
-        if l.is_empty() || l.starts_with('#') || l.starts_with(';') {
-            continue;
-        }
-        if let Some(s) = l.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-            section = s.trim().to_ascii_lowercase();
-            continue;
-        }
-        if section != "wsl2" && section != "experimental" {
-            continue;
-        }
-        let Some((k, v)) = l.split_once('=') else {
-            continue;
-        };
-        if !k.trim().eq_ignore_ascii_case("networkingMode") {
-            continue;
-        }
-        // 行尾注释去掉，引号去掉
-        let v = v.split(['#', ';']).next().unwrap_or("").trim();
-        let v = v.trim_matches(|c| c == '"' || c == '\'');
-        mode = if v.eq_ignore_ascii_case("mirrored") {
-            NetMode::Mirrored
-        } else {
-            NetMode::Nat
-        };
-    }
-    mode
-}
-
-/// `.wslconfig` 的字节读成文字。WSL 自己 UTF-8 和 UTF-16 都认：PowerShell 5 的
-/// `Out-File`、`>` 默认写的是带 BOM 的 UTF-16LE，按 UTF-8 读会整份读不出来，
-/// 那时 mirrored 就被当成了 NAT。
-pub fn decode_config(bytes: &[u8]) -> Option<String> {
-    let utf16 = |b: &[u8], le: bool| {
-        let units: Vec<u16> = b
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|c| {
-                if le {
-                    u16::from_le_bytes([c[0], c[1]])
-                } else {
-                    u16::from_be_bytes([c[0], c[1]])
-                }
-            })
-            .collect();
-        String::from_utf16(&units).ok()
-    };
-    match bytes {
-        [0xFF, 0xFE, rest @ ..] => utf16(rest, true),
-        [0xFE, 0xFF, rest @ ..] => utf16(rest, false),
-        _ => String::from_utf8(bytes.to_vec()).ok(),
-    }
-}
-
-/// 这个发行版里的客户端怎么够到 Windows 上的网关。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Reach {
-    /// 写 127.0.0.1：WSL1，或者 mirrored 模式
-    Loopback,
-    /// 写 WSL 虚拟网卡在 Windows 这一侧的地址：NAT 模式
-    Nic,
-}
-
-pub fn reach(version: u32, mode: NetMode) -> Reach {
-    if version == 1 || mode == NetMode::Mirrored {
-        Reach::Loopback
-    } else {
-        Reach::Nic
-    }
-}
-
-/// WSL 的虚拟网卡。Windows 按 FriendlyName 列出，叫 `vEthernet (WSL)`；装了
-/// Hyper-V 防火墙的新版本叫 `vEthernet (WSL (Hyper-V firewall))`。两种都认。
-pub fn is_wsl_nic(name: &str) -> bool {
-    name.starts_with("vEthernet (WSL")
-}
-
-/// 从网卡清单里挑出 WSL 的那一张，交回它的名字和 IPv4 地址。
-pub fn pick_nic<'a>(
-    nics: impl IntoIterator<Item = (&'a str, &'a str)>,
-) -> Option<(String, Ipv4Addr)> {
-    nics.into_iter()
-        .filter(|(n, _)| is_wsl_nic(n))
-        .find_map(|(n, a)| a.parse::<Ipv4Addr>().ok().map(|a| (n.to_string(), a)))
-}
-
 /// WSL 这一侧客户端的专用密钥归在谁名下：`claude-code-wsl-ubuntu-22-04`。
 ///
 /// **每个客户端一把自己的钥匙，WSL 里的和 Windows 上的也分开**：一台电脑上两份
@@ -500,58 +704,6 @@ pub fn same_distro(client: &str, distro: &str, id: &str) -> bool {
     key_id(client, distro) == id
 }
 
-/// WSL 的 NAT 常用的网段。**core 默认的放行名单里有它**，安装程序加的防火墙规则
-/// 放行的也是它。
-pub const NAT_RANGE: (Ipv4Addr, u8) = (Ipv4Addr::new(172, 16, 0, 0), 12);
-
-/// 一个 IPv4 地址在不在 `a.b.c.d/n` 里。写法不对的网段算不在。
-pub fn in_cidr(addr: Ipv4Addr, cidr: &str) -> bool {
-    let (net, bits) = match cidr.split_once('/') {
-        Some((n, b)) => match (n.trim().parse::<Ipv4Addr>(), b.trim().parse::<u8>()) {
-            (Ok(n), Ok(b)) if b <= 32 => (n, b),
-            _ => return false,
-        },
-        None => match cidr.trim().parse::<Ipv4Addr>() {
-            Ok(n) => (n, 32),
-            Err(_) => return false,
-        },
-    };
-    let mask = if bits == 0 {
-        0
-    } else {
-        u32::MAX << (32 - u32::from(bits))
-    };
-    u32::from(addr) & mask == u32::from(net) & mask
-}
-
-/// 放行 WSL 要写的那个网段：WSL 虚拟网卡的地址在 172.16/12 里（绝大多数）就是
-/// 它；不在（WSL 挑了 192.168.x 那种）就放行那张网卡所在的 /16。
-pub fn remote_range(nic: Ipv4Addr) -> String {
-    let (net, bits) = NAT_RANGE;
-    if in_cidr(nic, &format!("{net}/{bits}")) {
-        format!("{net}/{bits}")
-    } else {
-        let o = nic.octets();
-        format!("{}.{}.0.0/16", o[0], o[1])
-    }
-}
-
-/// 防火墙规则的名字。安装程序加的、卸载程序删的、界面上查的都是这一条。
-pub const FIREWALL_RULE: &str = "ThinkWatch Lite (WSL)";
-
-/// 规则缺失时交给用户的那条命令：在管理员身份的 PowerShell 里执行。
-///
-/// **和安装程序加的是同一条规则**（`src-tauri/windows/hooks.nsh`）：只放行网关
-/// 进程，只放行来自 WSL 网段的 TCP 入站，三种网络位置都生效 —— WSL 的虚拟网卡
-/// 被 Windows 归为「公用网络」，只写专用网络的规则对它不起作用。
-pub fn firewall_command(program: &Path, remote: &str) -> String {
-    format!(
-        "New-NetFirewallRule -DisplayName \"{FIREWALL_RULE}\" -Direction Inbound -Action Allow \
-         -Protocol TCP -Program \"{}\" -RemoteAddress {remote} -Profile Any",
-        program.display()
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,67 +731,6 @@ odd:x:1001:1001::relative/home:/bin/sh
             passwd_home("u:x:1000:1000::/home/u:/bin/bash\r\n", 1000).as_deref(),
             Some("/home/u")
         );
-    }
-
-    #[test]
-    fn networking_mode_is_nat_unless_it_says_mirrored() {
-        assert_eq!(net_mode(None), NetMode::Nat);
-        assert_eq!(net_mode(Some("")), NetMode::Nat);
-        assert_eq!(
-            net_mode(Some("[wsl2]\nmemory=8GB\nnetworkingMode=mirrored\n")),
-            NetMode::Mirrored
-        );
-        // 键名、值、节名都不分大小写；空格、引号、行尾注释
-        assert_eq!(
-            net_mode(Some("[WSL2]\r\n  NetworkingMode = \"Mirrored\" # 新的\r\n")),
-            NetMode::Mirrored
-        );
-        // 预览版的位置
-        assert_eq!(
-            net_mode(Some("[experimental]\nnetworkingMode=mirrored")),
-            NetMode::Mirrored
-        );
-        // 注释掉的、写在别的节里的、写了别的值的
-        assert_eq!(
-            net_mode(Some("[wsl2]\n# networkingMode=mirrored")),
-            NetMode::Nat
-        );
-        assert_eq!(
-            net_mode(Some("[boot]\nnetworkingMode=mirrored")),
-            NetMode::Nat
-        );
-        assert_eq!(net_mode(Some("[wsl2]\nnetworkingMode=NAT")), NetMode::Nat);
-        // 后写的赢
-        assert_eq!(
-            net_mode(Some("[wsl2]\nnetworkingMode=mirrored\nnetworkingMode=nat")),
-            NetMode::Nat
-        );
-    }
-
-    #[test]
-    fn only_wsl2_in_nat_mode_needs_the_virtual_adapter() {
-        assert_eq!(reach(1, NetMode::Nat), Reach::Loopback);
-        assert_eq!(reach(1, NetMode::Mirrored), Reach::Loopback);
-        assert_eq!(reach(2, NetMode::Mirrored), Reach::Loopback);
-        assert_eq!(reach(2, NetMode::Nat), Reach::Nic);
-    }
-
-    #[test]
-    fn the_wsl_adapter_is_picked_by_name_and_needs_an_ipv4() {
-        let nics = [
-            ("Ethernet", "192.168.1.20"),
-            ("vEthernet (WSL)", "fe80::1"),
-            ("vEthernet (WSL (Hyper-V firewall))", "172.27.96.1"),
-        ];
-        assert_eq!(
-            pick_nic(nics),
-            Some((
-                "vEthernet (WSL (Hyper-V firewall))".to_string(),
-                Ipv4Addr::new(172, 27, 96, 1)
-            ))
-        );
-        assert_eq!(pick_nic([("Wi-Fi", "10.0.0.2")]), None);
-        assert!(!is_wsl_nic("vEthernet (Default Switch)"));
     }
 
     #[test]
@@ -727,31 +818,6 @@ odd:x:1001:1001::relative/home:/bin/sh
         );
     }
 
-    #[test]
-    fn the_firewall_range_covers_the_adapter() {
-        assert_eq!(remote_range(Ipv4Addr::new(172, 27, 96, 1)), "172.16.0.0/12");
-        assert_eq!(
-            remote_range(Ipv4Addr::new(192, 168, 50, 1)),
-            "192.168.0.0/16"
-        );
-        assert!(in_cidr(Ipv4Addr::new(172, 31, 255, 1), "172.16.0.0/12"));
-        assert!(!in_cidr(Ipv4Addr::new(172, 32, 0, 1), "172.16.0.0/12"));
-        assert!(in_cidr(Ipv4Addr::new(10, 1, 2, 3), "0.0.0.0/0"));
-        assert!(in_cidr(Ipv4Addr::new(10, 1, 2, 3), "10.1.2.3"));
-        assert!(!in_cidr(Ipv4Addr::new(10, 1, 2, 3), "fd00::/8"));
-        assert!(!in_cidr(Ipv4Addr::new(10, 1, 2, 3), "10.0.0.0/40"));
-        let cmd = firewall_command(
-            Path::new(r"C:\Program Files\ThinkWatch Lite\twcore.exe"),
-            "172.16.0.0/12",
-        );
-        assert!(cmd.contains("-RemoteAddress 172.16.0.0/12"), "{cmd}");
-        assert!(
-            cmd.contains(r#"-Program "C:\Program Files\ThinkWatch Lite\twcore.exe""#),
-            "{cmd}"
-        );
-        assert!(cmd.contains(FIREWALL_RULE));
-    }
-
     /// 一个假的发行版根：`etc/passwd` 和默认用户的 home
     fn fake_root() -> (tempfile::TempDir, WslHome) {
         let d = tempfile::tempdir().unwrap();
@@ -808,21 +874,199 @@ odd:x:1001:1001::relative/home:/bin/sh
         assert_eq!(e.code, "wsl.no_user");
     }
 
-    /// 记事本存的带 BOM 的 UTF-8、PowerShell 5 写的 UTF-16：mirrored 照样认得出
+    /// 22H2（22621）起才有 mirrored：Windows 10 和 Windows 11 21H2 没有
     #[test]
-    fn a_wslconfig_with_a_byte_order_mark_is_still_read() {
-        let text = "[wsl2]\r\nnetworkingMode=mirrored\r\n";
-        let bom8 = format!("\u{feff}{text}");
-        assert_eq!(net_mode(Some(&bom8)), NetMode::Mirrored);
-        let mut le = vec![0xFF, 0xFE];
-        le.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
-        assert_eq!(net_mode(decode_config(&le).as_deref()), NetMode::Mirrored);
-        let mut be = vec![0xFE, 0xFF];
-        be.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
-        assert_eq!(net_mode(decode_config(&be).as_deref()), NetMode::Mirrored);
+    fn mirrored_needs_windows_11_22h2() {
+        for b in [19041, 19045, 20348, 22000, 22620] {
+            assert!(!build_supports_mirrored(b), "{b}");
+        }
+        for b in [22621, 22631, 26100, 27000] {
+            assert!(build_supports_mirrored(b), "{b}");
+        }
+    }
+
+    /// 说明文字跟着系统语言走，版本号总是第一行里的第一个 `数.数.数`
+    #[test]
+    fn the_wsl_version_is_the_first_version_on_the_first_line() {
+        let v = |s: &str| parse_version(s).map(|v| v.to_string());
+        let full = "WSL version: 2.3.26.0\r\nKernel version: 5.15.167.4-1\r\nWSLg version: 1.0.65\r\n\
+                    MSRDC version: 1.2.5620\r\nDirect3D version: 1.611.1-81528511\r\n\
+                    DXCore version: 10.0.26100.1-240331-1435.ge-release\r\nWindows version: 10.0.26100.2605\r\n";
+        assert_eq!(v(full).as_deref(), Some("2.3.26.0"));
+        for line in [
+            "WSL 版本: 2.3.26.0",
+            "WSL 版本： 2.3.26.0",
+            "WSL 版本：2.3.26.0",
+            "Version WSL : 2.3.26.0",
+            "WSL バージョン: 2.3.26.0",
+            "Wersja podsystemu WSL: 2.3.26.0",
+        ] {
+            assert_eq!(v(line).as_deref(), Some("2.3.26.0"), "{line}");
+        }
+        // 前面有空行、行尾有空白
         assert_eq!(
-            net_mode(decode_config(bom8.as_bytes()).as_deref()),
-            NetMode::Mirrored
+            v("\r\n  WSL version: 2.0.14.0  \r\n").as_deref(),
+            Some("2.0.14.0")
+        );
+        // 没有版本号的（旧版 WSL 不认 --version，打出来的是用法说明）
+        assert_eq!(v("Invalid command line option: --version"), None);
+        assert_eq!(v(""), None);
+        // 只有两段的不当版本号：WSL 的版本号总有三段以上
+        assert_eq!(v("WSL 2 version 1.2"), None);
+    }
+
+    #[test]
+    fn versions_compare_part_by_part() {
+        let v = |s: &str| parse_version(&format!("WSL version: {s}")).unwrap();
+        assert!(v("2.0.5.0").supports_mirrored());
+        assert!(v("2.0.14.0").supports_mirrored());
+        assert!(v("2.3.26.0").supports_mirrored());
+        assert!(v("10.0.0").supports_mirrored());
+        // 2.0.0 到 2.0.4 只认 [experimental] 下的写法；更早的没有 mirrored
+        assert!(!v("2.0.4.0").supports_mirrored());
+        assert!(!v("2.0.0").supports_mirrored());
+        assert!(!v("1.2.5.0").supports_mirrored());
+        assert!(!v("0.67.6.0").supports_mirrored());
+        assert!(v("2.0.5").at_least(&[2, 0, 5, 0]));
+    }
+
+    /// 设了 `WSL_UTF8=1` 是 UTF-8；老版本不认它，写的是 UTF-16LE
+    #[test]
+    fn wsl_exe_output_is_read_in_either_encoding() {
+        let text = "WSL 版本: 2.3.26.0\r\n内核版本: 5.15\r\n";
+        assert_eq!(decode_output(text.as_bytes()), text);
+        let le: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert_eq!(decode_output(&le), text);
+        let mut bom = vec![0xFF, 0xFE];
+        bom.extend(&le);
+        assert_eq!(decode_output(&bom), text);
+        assert_eq!(
+            parse_version(&decode_output(&le)).unwrap().to_string(),
+            "2.3.26.0"
+        );
+        assert_eq!(decode_output(b""), "");
+    }
+
+    #[test]
+    fn wslinfo_says_whether_mirrored_is_running() {
+        assert_eq!(parse_networking_mode(b"mirrored\n"), Some(true));
+        assert_eq!(parse_networking_mode(b"Mirrored"), Some(true));
+        for w in ["nat\n", "none", "consomme\n", "virtioproxy", "bridged"] {
+            assert_eq!(parse_networking_mode(w.as_bytes()), Some(false), "{w}");
+        }
+        // 不认得的回答：不下结论
+        assert_eq!(parse_networking_mode(b""), None);
+        assert_eq!(parse_networking_mode(b"wslinfo: unknown option"), None);
+    }
+
+    fn ver(s: &str) -> Option<Version> {
+        parse_version(&format!("WSL version: {s}"))
+    }
+
+    /// 问了不该问的就失败：用得着才起 wsl.exe
+    fn never<T>() -> T {
+        panic!("这一步用不着问")
+    }
+
+    #[test]
+    fn mirrored_in_wslconfig_and_in_use_is_all_it_takes() {
+        let s = decide(Some(22631), NetMode::Mirrored, || Some(true), never, false);
+        assert_eq!(s, Wsl2::Mirrored);
+        // 问不出 WSL 在用什么：照 .wslconfig 算
+        let s = decide(
+            Some(22631),
+            NetMode::Mirrored,
+            || None,
+            || ver("2.3.26"),
+            false,
+        );
+        assert_eq!(s, Wsl2::Mirrored);
+        // 构建号也读不出来：一样照 .wslconfig
+        assert_eq!(
+            decide(None, NetMode::Mirrored, || None, || None, false),
+            Wsl2::Mirrored
+        );
+    }
+
+    /// NAT（没有 .wslconfig、没写、写了 nat）：不接管；版本查得到就不提，查不到要提一句
+    #[test]
+    fn nat_is_not_adopted_and_says_whether_the_version_is_known() {
+        assert_eq!(
+            decide(Some(22631), NetMode::Nat, never, || ver("2.3.26.0"), false),
+            Wsl2::Nat {
+                version: Some("2.3.26.0".into())
+            }
+        );
+        assert_eq!(
+            decide(Some(22631), NetMode::Nat, never, || None, false),
+            Wsl2::Nat { version: None }
+        );
+    }
+
+    #[test]
+    fn windows_10_and_11_21h2_have_no_mirrored_networking() {
+        for mode in [NetMode::Nat, NetMode::Mirrored] {
+            assert_eq!(
+                decide(Some(19045), mode, never, never, false),
+                Wsl2::OldWindows
+            );
+            assert_eq!(
+                decide(Some(22000), mode, never, never, true),
+                Wsl2::OldWindows
+            );
+        }
+    }
+
+    #[test]
+    fn an_old_wsl_has_to_be_updated_first() {
+        assert_eq!(
+            decide(Some(22631), NetMode::Nat, never, || ver("1.2.5.0"), false),
+            Wsl2::OldWsl {
+                version: "1.2.5.0".into()
+            }
+        );
+        // .wslconfig 写了 mirrored，可 WSL 太旧，重启也没用
+        for running in [Some(false), None] {
+            assert_eq!(
+                decide(
+                    Some(22631),
+                    NetMode::Mirrored,
+                    || running,
+                    || ver("2.0.4.0"),
+                    true
+                ),
+                Wsl2::OldWsl {
+                    version: "2.0.4.0".into()
+                }
+            );
+        }
+    }
+
+    /// .wslconfig 改成了 mirrored、WSL 还在用 NAT：没重启过就是等重启；在这里重启过
+    /// 还是 NAT，就是没能启用
+    #[test]
+    fn mirrored_in_wslconfig_but_not_in_use_waits_for_a_restart() {
+        let s = |restarted| {
+            decide(
+                Some(22631),
+                NetMode::Mirrored,
+                || Some(false),
+                || ver("2.3.26"),
+                restarted,
+            )
+        };
+        assert_eq!(s(false), Wsl2::Restart);
+        assert_eq!(s(true), Wsl2::Fallback);
+        // 版本查不出来也一样
+        assert_eq!(
+            decide(
+                Some(22631),
+                NetMode::Mirrored,
+                || Some(false),
+                || None,
+                false
+            ),
+            Wsl2::Restart
         );
     }
 }

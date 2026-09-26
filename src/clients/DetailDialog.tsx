@@ -19,7 +19,7 @@ import { ClientMark, CopyIconButton, Tile, focusSelf, useDialogFocus } from "@/k
 import { useRemote } from "@/connection/useRemote";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
-import { pointsHere, statusOf } from "./status";
+import { pointsHere, statusOf, type WslPlace } from "./status";
 import { ClientStatus, reasonText } from "./ClientStatus";
 
 /**
@@ -35,7 +35,7 @@ export function DetailDialog({
   usageLoaded,
   gatewayBase,
   env,
-  stale,
+  wsl,
   asking,
   onClose,
   onAdopt,
@@ -49,8 +49,8 @@ export function DetailDialog({
   gatewayBase: string;
   /** 在哪个 WSL 发行版里；这台电脑上的不给 */
   env?: string;
-  /** WSL 里的、还指着旧地址的 */
-  stale?: boolean;
+  /** WSL 里的那一份：它那一组此刻能不能从 WSL 里够到网关。够不着的不给接管 */
+  wsl?: WslPlace;
   /** 正在取接管 / 还原的方案 */
   asking: boolean;
   onClose: () => void;
@@ -62,7 +62,7 @@ export function DetailDialog({
   const common = useText(commonText);
   const nav = useNav();
   const remote = useRemote();
-  const status = statusOf(client, gatewayBase, Date.now(), remote !== null, stale);
+  const status = statusOf(client, gatewayBase, Date.now(), remote !== null, wsl);
   const adopted = client.adopted_at_ms != null;
   const key = client.key ? keys.find((k) => k.name === client.key) : undefined;
   const why = reasonText(status.reason, t);
@@ -273,7 +273,8 @@ export function DetailDialog({
               {t.restore}
             </Button>
           ) : (
-            !client.managed && (
+            !client.managed &&
+            (wsl?.adoptable ?? true) && (
               <Button pending={asking} onClick={onAdopt}>
                 {t.adopt}
               </Button>

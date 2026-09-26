@@ -13,7 +13,7 @@ import type { DetectedClient, ManualClient } from "@/types";
 import type { KeyUse } from "@/keys/data";
 import { ClientMark, DISCLOSURE, OPENABLE_ROW, Tile, UsageCell, openable, stop } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
-import { SILENCE_MS, hostOf, manualStatusOf, statusOf, type Status } from "./status";
+import { SILENCE_MS, hostOf, manualStatusOf, statusOf, type Status, type WslPlace } from "./status";
 import { ClientStatus, reasonText } from "./ClientStatus";
 
 export interface RowActions {
@@ -36,8 +36,11 @@ export interface RowContext {
   remote: boolean;
   /** 正在取接管方案的那一个（它的主按钮转圈） */
   asking: string | null;
-  /** WSL 里的、还指着旧地址的（这一组的 `stale`）。这台电脑上的没有 */
-  stale?: ReadonlySet<string>;
+  /**
+   * WSL 里的那一组：此刻能不能从 WSL 里够到网关。**够不着的不给接管、手动配置**，
+   * 接管过的照样能还原。这台电脑上的没有
+   */
+  wsl?: WslPlace;
   actions: RowActions;
 }
 
@@ -127,11 +130,16 @@ export function DetectedTable({
 function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext; className?: string }) {
   const t = useText(clientsText);
   const { actions, usage } = ctx;
-  const status = statusOf(c, ctx.gatewayBase, Date.now(), ctx.remote, ctx.stale?.has(c.id));
+  const status = statusOf(c, ctx.gatewayBase, Date.now(), ctx.remote, ctx.wsl);
   const absent = status.state === "absent";
   const adopted = c.adopted_at_ms != null;
-  const items = menu(c, actions, t);
-  const open = () => (absent ? actions.manual(c.id) : actions.details(c));
+  /** WSL 里够不着网关的那一组：接管、手动配置都不给 */
+  const reachable = ctx.wsl?.adoptable ?? true;
+  const items = menu(c, actions, t, reachable);
+  const open = () => {
+    if (!absent) actions.details(c);
+    else if (reachable) actions.manual(c.id);
+  };
   const sub = subline(c, status, t);
   // 刚接管、正等着第一个请求：点带脉冲。等久了就不跳了
   const live = adopted && status.state === "waiting" && Date.now() - (c.adopted_at_ms ?? 0) < SILENCE_MS;
@@ -177,7 +185,7 @@ function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext
         </TableCell>
         <TableCell className="text-right" onClick={stop} onKeyDown={stop}>
           <div className="flex items-center justify-end gap-1">
-            {!(c.managed && !adopted && !absent) && (
+            {!(c.managed && !adopted && !absent) && (adopted || reachable) && (
               <Button
                 variant="outline"
                 size="xs"
@@ -363,11 +371,11 @@ function subline(c: DetectedClient, s: Status, t: typeof clientsText.zh): string
   return null;
 }
 
-function menu(c: DetectedClient, a: RowActions, t: typeof clientsText.zh): MenuItems {
+function menu(c: DetectedClient, a: RowActions, t: typeof clientsText.zh, reachable: boolean): MenuItems {
   const installed = c.installed;
   return [
     { kind: "item", label: t.details, onSelect: () => a.details(c), disabled: !installed },
-    { kind: "item", label: t.manual, onSelect: () => a.manual(c.id) },
+    ...(reachable ? [{ kind: "item" as const, label: t.manual, onSelect: () => a.manual(c.id) }] : []),
     { kind: "sep" },
     {
       kind: "item",

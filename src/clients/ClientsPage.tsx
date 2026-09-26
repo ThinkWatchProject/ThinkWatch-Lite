@@ -12,11 +12,11 @@ import { useNav, useNavParams } from "@/nav";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { appText } from "@/App.i18n";
-import type { ClientsResponse, DetectedClient, PlanView, Retargeted, WslGroup } from "@/types";
+import type { ClientsResponse, DetectedClient, PlanView, Retargeted, WslConfigPlan, WslGroup } from "@/types";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { useKeys, useKeyUsage } from "@/keys/data";
-import { CopyIconButton, RowsSkeleton } from "@/keys/parts";
+import { RowsSkeleton } from "@/keys/parts";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
 import { DetectedTable, ManualTable, Section, type RowContext } from "./ClientsTable";
@@ -25,7 +25,8 @@ import { DetailDialog } from "./DetailDialog";
 import { ManualDialog, type ManualTarget } from "./ManualDialog";
 import { PlanDialog } from "./PlanDialog";
 import { RestoreAllDialog } from "./RestoreAllDialog";
-import { hostOf, isLoopback, manualStatusOf, statusOf, type ClientState, type Status } from "./status";
+import { MirroredDialog, RestartWslDialog } from "./WslDialogs";
+import { hostOf, isLoopback, manualStatusOf, statusOf, type ClientState, type Status, type WslPlace } from "./status";
 
 /** `env`：在哪个 WSL 发行版里（发行版的名字）；这台电脑上的不带 */
 type DialogState =
@@ -33,7 +34,10 @@ type DialogState =
   | { kind: "detail"; id: string; env?: string }
   | { kind: "plan"; id: string; env?: string; restore: boolean; plan: PlanView }
   | { kind: "manual"; id: string; env?: string }
-  | { kind: "restoreAll" };
+  | { kind: "restoreAll" }
+  /** 把 WSL 2 改成 mirrored 网络：`.wslconfig` 的改动，确认之后才写 */
+  | { kind: "mirrored"; plan: WslConfigPlan }
+  | { kind: "restartWsl" };
 
 /** 一个客户端，连同它在哪一处、那一处该连的地址 */
 interface Located {
@@ -41,7 +45,8 @@ interface Located {
   c: DetectedClient;
   env?: string;
   base: string;
-  stale: boolean;
+  /** WSL 里的那一份：那一组此刻能不能从 WSL 里够到网关 */
+  wsl?: WslPlace;
 }
 
 /** 正在取方案的那一个的标识：同一个客户端在这台电脑上和 WSL 里是两份 */
@@ -57,6 +62,10 @@ const slot = (id: string, env?: string) => (env ? `${env}/${id}` : id);
  *
  * 页头一行是各档各有几个；下面一张表是检测到的客户端，再往下两组（需要手动配置、
  * 未检测到）可以收起。详情、接管、还原、手动配置、全部还原都在对话框里。
+ *
+ * Windows 上每个 WSL 发行版再各是一组。WSL 2 默认的 NAT 网络下那一组不能接管，
+ * 组里说明原因，给「改为 mirrored 模式」（改 `.wslconfig`，同样先看改动再确认）和
+ * 「重启 WSL」。
  */
 export default function ClientsPage({
   busy,
@@ -82,8 +91,9 @@ export default function ClientsPage({
   const [confirming, confirm] = usePending();
   const [restoringAll, restoreAllRun] = usePending();
   const [retargeting, retargetRun] = usePending();
-  /** 正在「重新指向」的那个发行版 */
-  const [readdressing, setReaddressing] = useState<string | null>(null);
+  /** 正在取 `.wslconfig` 的改动：「改为 mirrored 模式」那个按钮转圈 */
+  const [planningMirrored, setPlanningMirrored] = useState(false);
+  const [restartingWsl, restartWslRun] = usePending();
   /** 「改为指向服务器」有没改成的：留在页上，直到再改一次或者离开这一页 */
   const [retargeted, setRetargeted] = useState<Retargeted | null>(null);
   // 命令面板送来的：打开这一行的详情或手动配置，和点那一行一样（见 nav.tsx）
@@ -107,7 +117,7 @@ export default function ClientsPage({
         .map((c) => ({
           key: slot(c.id, g.distro),
           client: { ...c, name: t.inWsl(c.name, g.distro) },
-          status: statusOf(c, g.gateway_base, Date.now(), remote !== null, g.stale.includes(c.id)),
+          status: statusOf(c, g.gateway_base, Date.now(), remote !== null, { adoptable: g.adoptable }),
         })),
     ),
   ];
@@ -154,22 +164,37 @@ export default function ClientsPage({
     });
   }
 
-  /** 一个 WSL 发行版里还指着旧地址的，改为指向此刻该连的那一个 */
-  async function readdress(distro: string) {
-    setReaddressing(distro);
+  /** 「改为 mirrored 模式…」：先取 `.wslconfig` 的改动，确认框里给人看 */
+  async function askMirrored() {
+    setPlanningMirrored(true);
     try {
-      const r = await api.retargetWsl(distro);
-      if (r.failed.length > 0) {
-        notify.error(`${t.readdressFailed}: ${r.failed.map((f) => `${f.name} (${coreText(f.error)})`).join("; ")}`);
-      } else if (r.synced.length > 0) {
-        notify.success(t.readdressed(r.synced.map((x) => x.name)));
-      }
-      await wsl.reload();
+      setDialog({ kind: "mirrored", plan: await api.planMirrored() });
     } catch (e) {
       notify.error(e);
     } finally {
-      setReaddressing(null);
+      setPlanningMirrored(false);
     }
+  }
+
+  /** 写 `.wslconfig`。**重启 WSL 之后才生效**：那一组随即换成「重启 WSL」的说明和按钮 */
+  function applyMirrored() {
+    void confirm(async () => {
+      const warnings = await api.setMirrored();
+      setDialog(null);
+      notify.success(t.mirroredSet);
+      if (warnings.length > 0) notify.info(warnings.map((w) => coreText(w)).join(" "));
+      await wsl.reload();
+    });
+  }
+
+  /** `wsl --shutdown`。之后重取那几组会把发行版再唤醒，这时用的就是新的网络 */
+  function restartWsl() {
+    void restartWslRun(async () => {
+      await api.shutdownWsl();
+      setDialog(null);
+      notify.success(t.wslRestarted);
+      await wsl.reload();
+    });
   }
 
   /** 还指着本机网关的，改为指向连着的那台服务器 */
@@ -188,20 +213,24 @@ export default function ClientsPage({
   const locate = (id: string, env?: string): Located | undefined => {
     if (!env) {
       const c = data?.clients.find((x) => x.id === id);
-      return c && data ? { c, base: data.gateway_base, stale: false } : undefined;
+      return c && data ? { c, base: data.gateway_base } : undefined;
     }
     const g = groups.find((x) => x.distro === env);
     const c = g?.clients.find((x) => x.id === id);
     return g && c
-      ? { c: { ...c, name: t.inWsl(c.name, g.distro) }, env, base: g.gateway_base, stale: g.stale.includes(id) }
+      ? {
+          c: { ...c, name: t.inWsl(c.name, g.distro) },
+          env,
+          base: g.gateway_base,
+          wsl: { adoptable: g.adoptable },
+        }
       : undefined;
   };
   const manualTarget = (id: string, env?: string): ManualTarget | null => {
     const l = locate(id, env);
-    if (l) {
-      const listen = env ? groups.find((x) => x.distro === env)?.listen : undefined;
-      return { id: l.c.id, name: l.c.name, setup: l.c.manual, key: l.c.key, env, listen };
-    }
+    // WSL 里够不着网关的那一组没有手动配置：照着配的地址从 WSL 里连不上
+    if (l && l.wsl?.adoptable === false) return null;
+    if (l) return { id: l.c.id, name: l.c.name, setup: l.c.manual, key: l.c.key, env };
     const m = env ? undefined : data?.manual.find((x) => x.id === id);
     return m ? { id: m.id, name: m.name, setup: m.setup, caveat: m.caveat, key: m.key } : null;
   };
@@ -214,7 +243,7 @@ export default function ClientsPage({
     gatewayBase: string,
     ids: string[],
     env?: string,
-    stale?: ReadonlySet<string>,
+    wslPlace?: WslPlace,
   ): RowContext => ({
     usage: usage.byKey,
     busy,
@@ -222,7 +251,7 @@ export default function ClientsPage({
     remote: remote !== null,
     // 表格按客户端 id 认转圈的那一个：只认这一处的
     asking: asking === null ? null : (ids.find((id) => slot(id, env) === asking) ?? null),
-    stale,
+    wsl: wslPlace,
     actions: {
       details: (c) => setDialog({ kind: "detail", id: c.id, env }),
       adopt: (c) => void ask(c, false, env),
@@ -320,10 +349,11 @@ export default function ClientsPage({
                     g.gateway_base,
                     g.clients.map((c) => c.id),
                     g.distro,
-                    new Set(g.stale),
+                    { adoptable: g.adoptable },
                   )}
-                  readdressing={readdressing === g.distro}
-                  onReaddress={() => void readdress(g.distro)}
+                  planning={planningMirrored}
+                  onMirrored={() => void askMirrored()}
+                  onRestart={() => setDialog({ kind: "restartWsl" })}
                 />
               ))}
             </>
@@ -339,7 +369,7 @@ export default function ClientsPage({
           usageLoaded={usage.byKey !== undefined}
           gatewayBase={detail.base}
           env={detail.env}
-          stale={detail.stale}
+          wsl={detail.wsl}
           asking={asking === slot(detail.c.id, detail.env)}
           onClose={() => setDialog(null)}
           onAdopt={() => void ask(detail.c, false, detail.env)}
@@ -368,7 +398,6 @@ export default function ClientsPage({
             void keys.reload();
             if (manual.env) void wsl.reload();
           }}
-          onListenChanged={() => void wsl.reload()}
         />
       )}
 
@@ -379,6 +408,19 @@ export default function ClientsPage({
           onCancel={() => setDialog(null)}
           onConfirm={restoreAll}
         />
+      )}
+
+      {dialog?.kind === "mirrored" && (
+        <MirroredDialog
+          plan={dialog.plan}
+          pending={confirming}
+          onCancel={() => setDialog(null)}
+          onConfirm={applyMirrored}
+        />
+      )}
+
+      {dialog?.kind === "restartWsl" && (
+        <RestartWslDialog pending={restartingWsl} onCancel={() => setDialog(null)} onConfirm={restartWsl} />
       )}
     </Page>
   );
@@ -421,81 +463,141 @@ function Body({ data, ctx }: { data: ClientsResponse; ctx: RowContext }) {
 /**
  * 「WSL · <发行版>」那一组：可以收起，和上面几组一样。
  *
- * 组名下面一句说它经由哪个地址连网关（按网络模式）。读不到这个发行版、找不到 WSL
- * 的虚拟网卡、防火墙缺规则、有客户端还指着 WSL 重启前的地址，各在表格上面说一句，
- * 能动手的给一个按钮。
+ * 组名下面一句说它用哪种网络、经由哪个地址连网关。**此刻够不着网关的**（NAT、等着
+ * 重启、Windows 或 WSL 太旧）组里先说为什么，能动手的给按钮；表里不给接管和手动配置，
+ * 接管过的照样能还原，没检测到的那几行不列 —— 列出来也没法配。
  */
 function WslSection({
   group: g,
   ctx,
-  readdressing,
-  onReaddress,
+  planning,
+  onMirrored,
+  onRestart,
 }: {
   group: WslGroup;
   ctx: RowContext;
-  readdressing: boolean;
-  onReaddress: () => void;
+  /** 正在取 `.wslconfig` 的改动 */
+  planning: boolean;
+  onMirrored: () => void;
+  onRestart: () => void;
 }) {
   const t = useText(clientsText);
   const installed = g.clients.filter((c) => c.installed);
   const absent = g.clients.filter((c) => !c.installed);
-  const description = g.error
-    ? t.wslUnreadable
-    : g.gateway_base
-      ? t.wslIntro(g.network, hostOf(g.gateway_base))
-      : t.wslIntroNoHost;
+  const description = g.error ? t.wslUnreadable : wslSummary(g, t);
   return (
     <Section id={`wsl.${g.distro}`} title={t.wslGroup(g.distro)} count={installed.length} description={description}>
       <div className="flex flex-col gap-3">
-        {g.error && (
+        {g.error ? (
           <Banner layout="inline" tone="warning">
             {coreText(g.error)}
           </Banner>
-        )}
-        {g.base_error && (
-          <Banner layout="inline" tone="warning">
-            {coreText(g.base_error)}
-          </Banner>
-        )}
-        {g.firewall && (
-          <Banner layout="inline" tone="warning" title={t.firewallTitle}>
-            <p>{t.firewallBody}</p>
-            <div className="mt-1.5 flex items-start gap-1">
-              <code className="min-w-0 flex-1 font-mono tw-label break-all select-text">{g.firewall}</code>
-              <CopyIconButton
-                label={t.copyCommand}
-                onCopy={() =>
-                  api.copyFirewall().catch((e: unknown) => {
-                    notify.error(e);
-                    throw e;
-                  })
-                }
-              />
-            </div>
-          </Banner>
-        )}
-        {g.stale.length > 0 && (
-          <Banner
-            layout="inline"
-            tone="warning"
-            actions={
-              <Button size="sm" variant="outline" pending={readdressing} onClick={onReaddress}>
-                {t.readdress}
-              </Button>
-            }
-          >
-            {t.wslStale(g.stale.length)}
-          </Banner>
+        ) : (
+          !g.adoptable && (
+            <WslBlocked network={g.network} planning={planning} onMirrored={onMirrored} onRestart={onRestart} />
+          )
         )}
         {!g.error && (
           <>
             {installed.length > 0 && <DetectedTable clients={installed} ctx={ctx} head={false} />}
-            {absent.length > 0 && <DetectedTable clients={absent} ctx={ctx} head={false} dim />}
+            {g.adoptable && absent.length > 0 && <DetectedTable clients={absent} ctx={ctx} head={false} dim />}
           </>
         )}
       </div>
     </Section>
   );
+}
+
+/** 组名下面那一句：此刻用的是哪种网络。说明和按钮在组里那条横幅上，这里不重复 */
+function wslSummary(g: WslGroup, t: typeof clientsText.zh): string {
+  const host = hostOf(g.gateway_base);
+  const s = t.wslSummary;
+  switch (g.network.kind) {
+    case "wsl1":
+      return s.wsl1(host);
+    case "mirrored":
+      return s.mirrored(host);
+    case "nat":
+      // 连着远程 core 时 NAT 也能接管：客户端经网络去连服务器
+      return g.adoptable ? s.nat(host) : s.natBlocked;
+    case "restart":
+      return s.restart;
+    case "fallback":
+      return s.fallback;
+    // 这两种下 WSL 2 用的都是 NAT；为什么改不了，组里那条说明说
+    case "old_windows":
+    case "old_wsl":
+      return s.natBlocked;
+  }
+}
+
+/**
+ * 不能接管时组里的那条说明，和能动手的那个按钮：NAT 给「改为 mirrored 模式」，
+ * 等重启的、重启了也没用上的给「重启 WSL」。Windows 或 WSL 太旧的只说明 —— 这一页
+ * 替不了那一步。
+ */
+function WslBlocked({
+  network: n,
+  planning,
+  onMirrored,
+  onRestart,
+}: {
+  network: WslGroup["network"];
+  planning: boolean;
+  onMirrored: () => void;
+  onRestart: () => void;
+}) {
+  const t = useText(clientsText);
+  const restart = (
+    <Button size="sm" variant="outline" onClick={onRestart}>
+      {t.restartWsl}
+    </Button>
+  );
+  switch (n.kind) {
+    case "nat":
+      return (
+        <Banner
+          layout="inline"
+          tone="info"
+          actions={
+            <Button size="sm" variant="outline" pending={planning} onClick={onMirrored}>
+              {t.toMirrored}
+            </Button>
+          }
+        >
+          {t.natBody}
+          {/* WSL 的版本查不出来：先说一句要求，免得改完、重启完还是用不上 */}
+          {n.wsl_version == null && <span className="mt-1 block">{t.natVersion}</span>}
+        </Banner>
+      );
+    case "restart":
+      return (
+        <Banner layout="inline" tone="info" actions={restart}>
+          {t.restartBody}
+        </Banner>
+      );
+    case "fallback":
+      return (
+        <Banner layout="inline" tone="warning" actions={restart}>
+          {t.fallbackBody}
+        </Banner>
+      );
+    case "old_windows":
+      return (
+        <Banner layout="inline" tone="warning">
+          {t.oldWindowsBody}
+        </Banner>
+      );
+    case "old_wsl":
+      return (
+        <Banner layout="inline" tone="warning">
+          {t.oldWslBody(n.wsl_version)}
+        </Banner>
+      );
+    case "wsl1":
+    case "mirrored":
+      return null;
+  }
 }
 
 /**
@@ -522,7 +624,7 @@ function Summary({
     const now = Date.now();
     for (const c of data.clients) n[statusOf(c, data.gateway_base, now, remote).state] += 1;
     for (const g of groups) {
-      for (const c of g.clients) n[statusOf(c, g.gateway_base, now, remote, g.stale.includes(c.id)).state] += 1;
+      for (const c of g.clients) n[statusOf(c, g.gateway_base, now, remote, { adoptable: g.adoptable }).state] += 1;
     }
     for (const m of data.manual) {
       const s = manualStatusOf(m).state;

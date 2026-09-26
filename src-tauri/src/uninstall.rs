@@ -72,6 +72,10 @@ pub struct RestoreOutcome {
 /// 最后一句话是「可以把应用拖进废纸篓了」，那一下由用户来。
 ///
 /// 每一步交回做成了没有（`UninstallStep`），一步没做成不影响后面的步骤。
+///
+/// **`.wslconfig` 不改回。**客户端页上改成 mirrored 的那一项是 WSL 自己的网络设置，
+/// 改的时候是为了接管，改完之后别的东西也可能用上了它；卸载确认框里说了这件事
+/// （`clients::wsl::kept`），修改前的全文备份留在备份目录里。
 #[tauri::command]
 pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<UninstallStep>> {
     let mut log = Vec::new();

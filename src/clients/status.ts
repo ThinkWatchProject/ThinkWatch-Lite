@@ -23,12 +23,19 @@ export type Reason =
   | { kind: "restart" }
   /** 连着远程 core，而它还指着这台机器上（已经停了的）网关 */
   | { kind: "local"; endpoint: string }
-  /** WSL 里的：还指着 WSL 重启之前的那个地址（NAT 模式下它会变） */
-  | { kind: "stale"; endpoint: string };
+  /** WSL 里的：此刻从 WSL 里够不着网关（NAT 这些，那一组上面说了为什么） */
+  | { kind: "unreachable" }
+  /** WSL 里的：指着的不是 127.0.0.1（以前按 NAT 的做法接管的，指着 WSL 虚拟网卡的地址） */
+  | { kind: "elsewhere"; endpoint: string };
 
 export interface Status {
   state: ClientState;
   reason?: Reason;
+}
+
+/** WSL 里的一份：它那一组此刻能不能从 WSL 里够到网关（`WslGroup.adoptable`）。这台电脑上的不给 */
+export interface WslPlace {
+  adoptable: boolean;
 }
 
 /** 接管之后多久没请求算「未生效」。**只对即时生效的客户端** —— 要重开终端的，用户可能一整天都没重开过 */
@@ -47,15 +54,19 @@ export function statusOf(
   /** 连着远程 core：还指着本机网关的单独说，它们的请求落在一个停了的网关上 */
   remote = false,
   /**
-   * WSL 里的、还指着旧地址的（Rust 侧算好的，见 `WslGroup.stale`）。**排在「收到过请求」
-   * 前面**：那些请求是 WSL 重启之前的，之后的一个也到不了
+   * WSL 里的一份。**这两条排在「收到过请求」前面**：那些请求是以前的，此刻的一个也
+   * 到不了 —— 那一组够不着网关（NAT 这些），或者它指着的不是 127.0.0.1（本机时 WSL 里
+   * 的客户端只该指着它；以前按 NAT 的做法接管的指着 WSL 虚拟网卡，不迁移，标出来）
    */
-  stale = false,
+  wsl?: WslPlace,
 ): Status {
   if (!c.installed) return { state: "absent" };
   const adoptedAt = c.adopted_at_ms;
   if (adoptedAt == null) return { state: "idle" };
-  if (stale && c.endpoint) return { state: "broken", reason: { kind: "stale", endpoint: c.endpoint } };
+  if (wsl && !wsl.adoptable) return { state: "broken", reason: { kind: "unreachable" } };
+  if (wsl && !remote && c.endpoint && !isIpv4Loopback(c.endpoint)) {
+    return { state: "broken", reason: { kind: "elsewhere", endpoint: c.endpoint } };
+  }
   if (remote && c.endpoint && isLoopback(c.endpoint)) {
     return { state: "broken", reason: { kind: "local", endpoint: c.endpoint } };
   }
@@ -109,4 +120,13 @@ export function isLoopback(endpoint: string): boolean {
   }
   host = host.replace(/^\[|\]$/g, "");
   return host === "localhost" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+}
+
+/** 指的是不是 `127.0.0.1`：本机时 WSL 里的客户端写的就是它（mirrored 不认 `::1`，`localhost` 也不算） */
+export function isIpv4Loopback(endpoint: string): boolean {
+  try {
+    return new URL(endpoint).hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
 }
