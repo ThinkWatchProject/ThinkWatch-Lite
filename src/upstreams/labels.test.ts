@@ -114,7 +114,7 @@ describe("额度窗口", () => {
   });
 
   it("names the GLM Coding Plan windows", () => {
-    expect(["5h", "weekly", "monthly"].map(quotaWindowLabel)).toEqual(["5 小时", "每周", "每月"]);
+    expect(["5h", "weekly"].map(quotaWindowLabel)).toEqual(["5 小时", "每周"]);
     // 认不出来的原样显示
     expect(quotaWindowLabel("3d")).toBe("3d");
   });
@@ -126,14 +126,10 @@ describe("额度窗口", () => {
     expect(quotaLeft(w("5h", null))).toBeNull();
   });
 
-  it("counts calls, not credits, in the monthly window", () => {
-    expect(quotaLeft(w("monthly", { total: 1000, used: 40, remaining: 960 }))).toBe("剩余 960 / 1,000 次");
-  });
-
   it("follows the interface language", () => {
     setLang("en");
     try {
-      expect(quotaWindowLabel("monthly")).toBe("Monthly");
+      expect(quotaWindowLabel("weekly")).toBe("Weekly");
       expect(quotaLeft(w("weekly", { total: 10000, used: 268, remaining: 9731 }))).toBe(
         "9,731 / 10,000 credits left",
       );

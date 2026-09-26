@@ -99,6 +99,8 @@ pub enum Mode {
 pub enum Change {
     Raised,
     Cleared,
+    /// 一组都收起：键是这一条的键再接一段的那几条（[`Signal::cleared_under`]）
+    ClearedUnder,
 }
 
 /// 规则层交给总线的东西。**不含平台细节，也不含时间** —— 那两样由总线补
@@ -142,6 +144,18 @@ impl Signal {
             view: None,
             suppresses: &[],
             hold: false,
+        }
+    }
+
+    /// 收起 `parent` 下面的每一条：键是 `parent` 再接一段、这一段里没有冒号的那几条。
+    ///
+    /// 给规则层不知道开着哪几条的时候用：一家上游的额度整个撤下时，它开着的是哪几个
+    /// 窗口的提醒，事件里没有。**只收紧挨着的那一级**：`quota:glm:` 收 `quota:glm:5h`，
+    /// 不收名字恰好以 `glm:` 开头的另一家（`quota:glm:cn:5h`）
+    pub fn cleared_under(parent: impl Into<String>) -> Self {
+        Self {
+            change: Change::ClearedUnder,
+            ..Self::cleared(parent)
         }
     }
 
@@ -415,8 +429,26 @@ impl Notices {
     pub fn ingest(self: &Arc<Self>, signal: Signal, at_ms: u64) {
         match signal.change {
             Change::Cleared => self.clear(&signal.key, at_ms),
+            Change::ClearedUnder => {
+                for key in self.keys_under(&signal.key) {
+                    self.clear(&key, at_ms);
+                }
+            }
             Change::Raised => self.raise(signal, at_ms),
         }
+    }
+
+    /// 开着的、键是 `parent` 再接一段（这一段里没有冒号）的那几条
+    fn keys_under(&self, parent: &str) -> Vec<String> {
+        let g = self.state.lock().expect("锁未中毒");
+        g.open
+            .keys()
+            .filter(|k| {
+                k.strip_prefix(parent)
+                    .is_some_and(|rest| !rest.is_empty() && !rest.contains(':'))
+            })
+            .cloned()
+            .collect()
     }
 
     fn raise(self: &Arc<Self>, signal: Signal, at_ms: u64) {

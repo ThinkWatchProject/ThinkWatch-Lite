@@ -264,16 +264,16 @@ or a Z.ai / BigModel account signed in from the app, relays such as
 OpenRouter, and local models such as Ollama. A ChatGPT account shows its usage
 limits and reset times. So does an upstream on a GLM Coding Plan, that is, one
 whose address is on `api.z.ai` or `open.bigmodel.cn`, whether it was signed in
-from the app or added with a key: its 5-hour and weekly limits, the monthly MCP
-calls of the older plans and, on a plan billed in credits, the credits left
-(“1,976 / 2,000 credits left”). When a client and an upstream use different API
-formats, requests are converted between Anthropic Messages, OpenAI Chat
-Completions, OpenAI Responses and Gemini, and the fields that cannot be
-carried over are listed on the request. Upstreams can be reached through an
-outbound proxy and priced with a price sheet of their own; proxies and price
-sheets have tabs on the same page. A connection test times the DNS lookup and
-the TCP, TLS and proxy handshakes without incurring any cost; an inference test
-measures the time to first token and estimates its cost before it runs.
+from the app or added with a key: its 5-hour and weekly limits and, on a plan
+billed in credits, the credits left (“1,976 / 2,000 credits left”). When a
+client and an upstream use different API formats, requests are converted
+between Anthropic Messages, OpenAI Chat Completions, OpenAI Responses and
+Gemini, and the fields that cannot be carried over are listed on the request.
+Upstreams can be reached through an outbound proxy and priced with a price
+sheet of their own; proxies and price sheets have tabs on the same page. A
+connection test times the DNS lookup and the TCP, TLS and proxy handshakes
+without incurring any cost; an inference test measures the time to first token
+and estimates its cost before it runs.
 
 API keys and header values can be written as `${NAME}` to read a system
 environment variable. On macOS these come from the login shell, so variables

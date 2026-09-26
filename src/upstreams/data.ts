@@ -32,7 +32,8 @@ export function dayStart(now: number): number {
  *
  * **请求落地之后重读**，不按时间轮询：这些数只在请求落地时才变。随时间变的只有
  * 窗口本身 —— 起点每过一个整点往前挪一格（`deps`），窗口重新拿到焦点时补一次。
- * 订阅额度的事件里就是完整的数，收到直接换上。
+ * 订阅额度的事件里就是这一家此刻的全部窗口，收到整份换上。**窗口是空的就是额度撤下了**
+ * （GLM 的 key 被判定没有套餐）：换上的一个窗口都没有，那一格当场退回说计费方式。
  */
 export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: number } {
   const now = useNow(60_000);

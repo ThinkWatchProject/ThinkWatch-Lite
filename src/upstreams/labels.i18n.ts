@@ -26,12 +26,9 @@ export const labelsText = messages(
       fetching: "获取中",
       scoped: "指定范围",
     },
-    quotaWindows: { "5h": "5 小时", "7d": "7 天", weekly: "每周", monthly: "每月" },
-    // 按数量计的额度窗口还剩多少（GLM Coding Plan）。每月那个窗口数的是 MCP 调用次数
-    quotaLeft: {
-      credits: (left: string, total: string) => `剩余 ${left} / ${total} 积分`,
-      calls: (left: string, total: string) => `剩余 ${left} / ${total} 次`,
-    },
+    quotaWindows: { "5h": "5 小时", "7d": "7 天", weekly: "每周" },
+    // 积分制套餐（GLM Coding Plan）的额度窗口还剩多少积分
+    quotaLeft: (left: string, total: string) => `剩余 ${left} / ${total} 积分`,
     l1Steps: {
       config: "配置",
       dns: "DNS 解析",
@@ -97,11 +94,8 @@ export const labelsText = messages(
       // 模型数下面的一个词：「5 / Selected」。对话框里那一项叫 Selected models
       scoped: "Selected",
     },
-    quotaWindows: { "5h": "5h", "7d": "7d", weekly: "Weekly", monthly: "Monthly" },
-    quotaLeft: {
-      credits: (left: string, total: string) => `${left} / ${total} credits left`,
-      calls: (left: string, total: string) => `${left} / ${total} calls left`,
-    },
+    quotaWindows: { "5h": "5h", "7d": "7d", weekly: "Weekly" },
+    quotaLeft: (left: string, total: string) => `${left} / ${total} credits left`,
     l1Steps: {
       config: "Configuration",
       dns: "DNS lookup",

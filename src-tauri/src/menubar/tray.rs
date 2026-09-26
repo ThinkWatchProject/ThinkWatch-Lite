@@ -165,7 +165,7 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
                 windows,
                 action,
             } => {
-                // 按数量计的窗口还剩多少（macOS 上是条下面那行小字），跟在百分比后面
+                // 积分制套餐的窗口还剩多少积分（macOS 上是条下面那行小字），跟在百分比后面
                 let text = windows
                     .iter()
                     .map(|w| {

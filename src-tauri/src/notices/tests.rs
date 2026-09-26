@@ -537,7 +537,43 @@ fn a_quota_report_below_the_limit_clears_that_window() {
     assert_eq!(keys, ["quota:chatgpt:weekly"], "用完的那个窗口不该被撤掉");
 }
 
-/// GLM Coding Plan 的三个窗口都有名字；每周、每月离重置常常还有好几天，按天说
+/// 额度撤下了（GLM 的 key 被判定没有套餐）：core 报一条窗口为空的 `QuotaSeen`。开着的是
+/// 哪几个窗口的提醒，事件里没有 —— **这一家的全部收起**，别家的不动
+#[tokio::test]
+async fn an_empty_quota_report_clears_every_window_of_that_upstream() {
+    let b = bed();
+    for (provider, window) in [
+        ("glm", "5h"),
+        ("glm", "weekly"),
+        ("chatgpt", "weekly"),
+        // 名字恰好以「glm:」开头的另一家
+        ("glm:cn", "weekly"),
+    ] {
+        b.bus.on_event(&tw_api::Event::QuotaExhausted {
+            id: 1,
+            provider: provider.into(),
+            window: window.into(),
+            resets_at_ms: resets_in(3 * 86_400),
+            at_ms: T0,
+        });
+    }
+    assert_eq!(b.bus.list().len(), 4);
+
+    b.bus.on_event(&tw_api::Event::QuotaSeen {
+        id: 2,
+        provider: "glm".into(),
+        windows: vec![],
+        at_ms: T0,
+    });
+    let mut open: Vec<String> = b.bus.list().into_iter().map(|n| n.key).collect();
+    open.sort();
+    assert_eq!(open, ["quota:chatgpt:weekly", "quota:glm:cn:weekly"]);
+    let mut withdrawn = b.withdrawn.lock().unwrap().clone();
+    withdrawn.sort();
+    assert_eq!(withdrawn, ["quota:glm:5h", "quota:glm:weekly"]);
+}
+
+/// GLM Coding Plan 的两个窗口都有名字；每周的离重置常常还有好几天，按天说
 #[test]
 fn glm_windows_have_names_and_far_resets_are_told_in_days() {
     let body = |window: &str, secs: Option<u64>| {
@@ -560,16 +596,12 @@ fn glm_windows_have_names_and_far_resets_are_told_in_days() {
             body("5h", Some(7_200)),
             "5 小时额度已用完，约 2 小时后重置。经此上游的请求会被拒绝。"
         );
-        // 每月那个窗口数的是 MCP 调用次数：用完不说请求会被拒绝
-        assert_eq!(
-            body("monthly", Some(86_400)),
-            "每月额度已用完，约 1 天后重置。"
-        );
     });
     with_lang(Lang::En, || {
         assert_eq!(
-            body("monthly", Some(10 * 86_400)),
-            "The monthly usage limit has been reached and resets in about 10 days."
+            body("weekly", Some(5 * 86_400)),
+            "The weekly usage limit has been reached and resets in about 5 days. \
+             Requests through this upstream will be rejected."
         );
         assert_eq!(
             body("weekly", Some(86_400)),
@@ -632,7 +664,7 @@ fn in_english_no_rule_writes_a_chinese_word() {
         quota_exhausted("weekly", Some(90)),
         quota_exhausted("7d", Some(30)),
         quota_exhausted("weekly", None),
-        quota_exhausted("monthly", Some(5 * 86_400)),
+        quota_exhausted("weekly", Some(5 * 86_400)),
         tw_api::Event::HealthChanged {
             id: 1,
             provider: "relay".into(),
