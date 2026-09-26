@@ -140,6 +140,9 @@ function detected(x: Partial<DetectedClient> & { id: string; name: string; path:
     verified: "fields_only",
     costs: [],
     models_stale: false,
+    // Claude Desktop 和 DeepSeek Harness 的配置不能换位置，Rust 那一侧不给默认位置
+    default_path: ["claude-desktop", "dsh"].includes(x.id) ? null : x.path,
+    custom_path: false,
     key: null,
     last_seen_ms: null,
     manual: setup(x.id, x.path),

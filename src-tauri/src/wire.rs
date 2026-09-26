@@ -91,6 +91,12 @@ pub struct DetectedClient {
     /// 只有把模型写进配置的客户端（opencode）会是 `true`；点一下走一遍接管的
     /// 「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
     pub models_stale: bool,
+    /// 配置文件的默认位置。**能换位置的才有**（`tw_adopt::clients::Client::config_movable`）：
+    /// Claude Desktop、DeepSeek Harness 和 WSL 里的没有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_path: Option<String>,
+    /// `path` 是用户指定的（客户端页「更改路径」），不是默认位置
+    pub custom_path: bool,
     /// 为它生成的那把网关密钥（取消接管之后仍然记着）。还没有就不给
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,

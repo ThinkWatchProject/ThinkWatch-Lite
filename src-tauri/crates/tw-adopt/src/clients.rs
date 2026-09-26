@@ -28,6 +28,18 @@ pub enum Format {
     Rows,
 }
 
+impl Format {
+    /// 这种格式的文件名后缀（不带点）。指定配置文件时按它核对，免得把 TOML 写进
+    /// 一个 `.json` 里
+    pub fn extensions(&self) -> &'static [&'static str] {
+        match self {
+            Format::Json => &["json", "jsonc"],
+            Format::Toml => &["toml"],
+            Format::Yaml | Format::Rows => &["yml", "yaml"],
+        }
+    }
+}
+
 /// 这种格式的注释前缀。JSON 没有 —— 那时哨兵走旁文件。
 pub fn comment_prefix(f: Format) -> Option<&'static str> {
     match f {
@@ -160,6 +172,11 @@ pub struct Client {
     /// 就是问题。**同一条发现，对不同客户端的结论相反** —— 不区分的话
     /// 就会给出一条错误的诊断。
     pub config_beats_env: bool,
+    /// 用户在客户端页为这台电脑上的它指定的配置文件：它读的不是默认位置那一份时
+    /// （`CLAUDE_CONFIG_DIR`、`CODEX_HOME` 挪过，或者装在别处）。**给了就只认它**：
+    /// 不在几个候选里挑，被盖住的文件也到它所在的目录里找（见 [`Client::shadow_paths`]）。
+    /// 表里都是 `None`，由桌面端按用户的设置填上；WSL 里的不填。
+    pub custom_config: Option<PathBuf>,
 }
 
 /// 网关这一侧的地址和钥匙。
@@ -272,6 +289,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: false,
             reloads: false,
             config_beats_env: true,
+            custom_config: None,
         },
         // **不叫「Codex CLI」。**`~/.codex/config.toml` 是一份配置、两个
         // 前端：命令行的 codex，和 ChatGPT 桌面版内置的那一个
@@ -327,6 +345,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: false,
             reloads: false,
             config_beats_env: false,
+            custom_config: None,
         },
         Client {
             id: "opencode",
@@ -350,6 +369,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: true,
             reloads: false,
             config_beats_env: false,
+            custom_config: None,
         },
         Client {
             id: "zed",
@@ -375,6 +395,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: false,
             reloads: false,
             config_beats_env: false,
+            custom_config: None,
         },
         Client {
             id: "aider",
@@ -407,6 +428,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: false,
             reloads: false,
             config_beats_env: false,
+            custom_config: None,
         },
         // DeepSeek Harness。网页版（`dsh web`）、桌面版、headless 三种入口读的是
         // 同一个家目录，所以接管一次三个都走网关。
@@ -454,6 +476,7 @@ pub fn adoptable() -> Vec<Client> {
             writes_models: false,
             reloads: false,
             config_beats_env: false,
+            custom_config: None,
         },
         // 官方的「第三方推理」模式。**一次改四个文件**，写哪几个、为什么，见
         // `crate::desktop`；这里的 `config` 是其中的主文件，我们在它配置库里的那一份。
@@ -500,6 +523,7 @@ pub fn adoptable() -> Vec<Client> {
             reloads: false,
             // 不读环境变量
             config_beats_env: true,
+            custom_config: None,
         },
     ]
 }
@@ -929,8 +953,14 @@ impl Client {
         if self.id == crate::desktop::ID {
             return crate::desktop::manual_steps();
         }
-        let i = crate::paths::env_home().map_or(0, |h| self.config_index(&h));
-        self.manual_steps_for(self.config[i].shown())
+        let file = match &self.custom_config {
+            Some(p) => crate::paths::shown_path(p),
+            None => {
+                let i = crate::paths::env_home().map_or(0, |h| self.config_index(&h));
+                self.config[i].shown()
+            }
+        };
+        self.manual_steps_for(file)
     }
 
     /// WSL 里的那一份：文件写成 WSL 终端里的样子（`~/.claude/settings.json`）。
@@ -993,17 +1023,53 @@ impl Client {
         crate::paths::first_existing(self.config, home)
     }
 
-    pub fn config_path(&self, home: &std::path::Path) -> PathBuf {
+    /// 配置文件能不能换位置。Claude Desktop 一次改四个文件，位置由它自己的配置库
+    /// 决定；DeepSeek Harness 的两个文件都在它的家目录下，跟着 `$DSH_HOME` 走
+    pub fn config_movable(&self) -> bool {
+        !matches!(self.id, crate::desktop::ID | "dsh")
+    }
+
+    /// 没指定配置文件时写的那一个，见 [`Client::config_index`]
+    pub fn default_config_path(&self, home: &std::path::Path) -> PathBuf {
         self.config[self.config_index(home)].resolve(home)
     }
+
+    /// 写的那一个：指定了的就是它（[`Client::custom_config`]），没指定就是默认的那一个
+    pub fn config_path(&self, home: &std::path::Path) -> PathBuf {
+        match &self.custom_config {
+            Some(p) => p.clone(),
+            None => self.default_config_path(home),
+        }
+    }
+
     /// 优先级比写的那一个更高的文件：固定的那几个（`settings.local.json`），
     /// 加上同一份配置里排在它前面的文件名。
+    ///
+    /// 指定了配置文件的，**挨着默认那一份的也跟着挪**：`CLAUDE_CONFIG_DIR` 挪走的是
+    /// 整个目录，`settings.local.json` 在新目录里。候选文件那一层没有了：只认指定的
+    /// 那一个
     pub fn shadow_paths(&self, home: &std::path::Path) -> Vec<PathBuf> {
-        let above = &self.config[..self.config_index(home)];
+        let Some(custom) = &self.custom_config else {
+            let above = &self.config[..self.config_index(home)];
+            return self
+                .shadowed_by
+                .iter()
+                .chain(above)
+                .map(|l| l.resolve(home))
+                .collect();
+        };
+        let default_dir = self.default_config_path(home).parent().map(PathBuf::from);
         self.shadowed_by
             .iter()
-            .chain(above)
-            .map(|l| l.resolve(home))
+            .map(|l| {
+                let p = l.resolve(home);
+                match (p.parent(), p.file_name(), custom.parent()) {
+                    (Some(dir), Some(name), Some(to)) if default_dir.as_deref() == Some(dir) => {
+                        to.join(name)
+                    }
+                    _ => p,
+                }
+            })
             .collect()
     }
     /// [`Client::shadow_paths`] 里此刻真的盖住了我们的那些。
@@ -1237,6 +1303,52 @@ mod tests {
                 "「{n}」小写开头，接在别的句子后面读不通"
             );
             assert!(n.ends_with('.'), "「{n}」没有句号，后面再接一句就连成一片");
+        }
+    }
+
+    /// 指定了配置文件的：写的是它，默认位置照旧说得出来；`settings.local.json` 这种
+    /// 挨着默认那一份的，跟着挪到它旁边
+    #[test]
+    fn a_custom_config_is_the_one_written_and_its_neighbours_move_with_it() {
+        let home = PathBuf::from("/nowhere/home");
+        let under = |rel: &str| crate::paths::under(&home, rel);
+        let mut c = adoptable()
+            .into_iter()
+            .find(|c| c.id == "claude-code")
+            .unwrap();
+        c.custom_config = Some(under("work/claude/settings.json"));
+        assert_eq!(c.config_path(&home), under("work/claude/settings.json"));
+        assert_eq!(c.default_config_path(&home), under(".claude/settings.json"));
+        assert_eq!(
+            c.shadow_paths(&home),
+            vec![under("work/claude/settings.local.json")]
+        );
+        assert_eq!(
+            c.manual_steps()[0].arg("file"),
+            crate::paths::shown_path(&under("work/claude/settings.json"))
+        );
+
+        // 几个候选里挑一个的（opencode）：指定了就只认那一个，没有「排在前面的」
+        let mut o = adoptable()
+            .into_iter()
+            .find(|c| c.id == "opencode")
+            .unwrap();
+        o.custom_config = Some(under("cfg/opencode.json"));
+        assert_eq!(o.config_path(&home), under("cfg/opencode.json"));
+        assert!(o.shadow_paths(&home).is_empty());
+    }
+
+    /// 一次改几个文件、位置由自己决定的两个，配置文件不能换位置
+    #[test]
+    fn only_single_file_clients_can_move_their_config() {
+        for c in adoptable() {
+            let fixed = c.id == crate::desktop::ID || c.id == "dsh";
+            assert_eq!(c.config_movable(), !fixed, "{}", c.id);
+            assert!(
+                c.custom_config.is_none(),
+                "{}：表里不带指定的配置文件",
+                c.id
+            );
         }
     }
 

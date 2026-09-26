@@ -3,6 +3,7 @@
 //! **不是网关的配置。**`config.yaml` 有版本、有历史、能回滚，因为改错一行
 //! 会让所有客户端断流；这里只有几个开关，改了就生效，回滚没有意义。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::i18n::Lang;
@@ -36,6 +37,10 @@ pub struct Prefs {
     /// 出厂值
     #[serde(default)]
     pub menubar: crate::menubar::Style,
+    /// 用户为这台电脑上的客户端指定的配置文件，按客户端 id。**没写就是都在默认位置**，
+    /// 见 `clients::ops::all`
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub client_paths: BTreeMap<String, String>,
 }
 
 impl Default for Prefs {
@@ -46,6 +51,7 @@ impl Default for Prefs {
             theme: None,
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
+            client_paths: BTreeMap::new(),
         }
     }
 }
@@ -142,6 +148,10 @@ mod tests {
             theme: Some(Theme::Dark),
             notices: Mode::App,
             menubar: crate::menubar::Style::Numbers,
+            client_paths: BTreeMap::from([(
+                "claude-code".to_string(),
+                "/work/claude/settings.json".to_string(),
+            )]),
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);
@@ -161,6 +171,7 @@ mod tests {
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
         assert_eq!(p.menubar, crate::menubar::Style::Full);
+        assert!(p.client_paths.is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
