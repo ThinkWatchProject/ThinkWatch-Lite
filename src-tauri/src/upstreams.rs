@@ -12,6 +12,10 @@ use crate::error::Out;
 ///
 /// **一起取。**列表上它们是同一行的几格，分几次 invoke 会让一行数字分几次
 /// 跳变。拿不到的就是空的 —— 存储层不在的时候网关照常转发，列表也该照常打开。
+///
+/// **四样同时问，不排队。**额度那一问可能要等几秒：GLM Coding Plan 的额度不在响应头
+/// 里，core 答 `/quota` 时现去问账号的额度接口（最多等 5 秒）。排着队问的话，费用和
+/// 走势要白白跟着等。
 #[derive(serde::Serialize)]
 pub struct UpstreamStats {
     costs: Vec<tw_api::CostGroup>,
@@ -33,35 +37,29 @@ pub async fn upstream_stats(
     bucket_ms: i64,
 ) -> Out<UpstreamStats> {
     let c = &state.control;
+    let costs = tw_api::GroupQuery {
+        from_ms: Some(since_ms),
+        to_ms: None,
+        dim: tw_api::CostDim::Provider,
+    };
+    let window = since(since_ms);
+    let buckets = tw_api::BucketGroupQuery {
+        from_ms: Some(since_ms),
+        to_ms: None,
+        bucket_ms: Some(bucket_ms.max(MIN_BUCKET_MS)),
+        dim: tw_api::CostDim::Provider,
+    };
+    let (costs, latency, quotas, buckets) = tokio::join!(
+        c.call::<ep::CostBy>(&[], &costs),
+        c.call::<ep::LatencyByProvider>(&[], &window),
+        c.call::<ep::Quota>(&[], &()),
+        c.call::<ep::CostBucketsBy>(&[], &buckets),
+    );
     Ok(UpstreamStats {
-        costs: c
-            .call::<ep::CostBy>(
-                &[],
-                &tw_api::GroupQuery {
-                    from_ms: Some(since_ms),
-                    to_ms: None,
-                    dim: tw_api::CostDim::Provider,
-                },
-            )
-            .await
-            .unwrap_or_default(),
-        latency: c
-            .call::<ep::LatencyByProvider>(&[], &since(since_ms))
-            .await
-            .unwrap_or_default(),
-        quotas: c.call::<ep::Quota>(&[], &()).await.unwrap_or_default(),
-        buckets: c
-            .call::<ep::CostBucketsBy>(
-                &[],
-                &tw_api::BucketGroupQuery {
-                    from_ms: Some(since_ms),
-                    to_ms: None,
-                    bucket_ms: Some(bucket_ms.max(MIN_BUCKET_MS)),
-                    dim: tw_api::CostDim::Provider,
-                },
-            )
-            .await
-            .unwrap_or_default(),
+        costs: costs.unwrap_or_default(),
+        latency: latency.unwrap_or_default(),
+        quotas: quotas.unwrap_or_default(),
+        buckets: buckets.unwrap_or_default(),
     })
 }
 

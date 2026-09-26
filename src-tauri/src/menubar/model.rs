@@ -97,12 +97,23 @@ pub struct Quota {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Window {
-    /// 上游给的窗口名：`5h` / `7d` / `weekly`
+    /// 上游给的窗口名：`5h` / `7d` / `weekly` / `monthly`
     pub window: String,
     pub used_percent: f64,
     pub resets_at_ms: Option<u64>,
     /// 上游的原词：`allowed` / `allowed_warning` / `rejected`
     pub status: Option<String>,
+    /// 这个窗口的额度按数量计（GLM Coding Plan）时的三个数。按百分比报的没有
+    pub credits: Option<QuotaCredits>,
+}
+
+/// 一个额度窗口的总额、已用、剩余，**都是上游给的原数**：剩余不是总额减已用算出来的，
+/// 三个数不一定对得上，显示剩余就显示它说的剩余
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct QuotaCredits {
+    pub total: f64,
+    pub used: f64,
+    pub remaining: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -213,6 +224,9 @@ pub struct WindowRow {
     pub percent: Option<f64>,
     pub reset: String,
     pub tone: Tone,
+    /// 条下面那一行小字：按数量计的窗口还剩多少（「剩余 1,976 / 2,000 积分」）。
+    /// 按百分比报的窗口、已经重置过的窗口没有
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -325,9 +339,16 @@ impl Row {
             Row::Separator => "sep".into(),
             Row::Section { title, .. } => format!("section:{title}"),
             Row::Notice { action, .. } => format!("notice:{action:?}"),
+            // 带小字的窗口高一截：哪几个窗口带着小字也是样子的一部分
             Row::Quota {
                 provider, windows, ..
-            } => format!("quota:{provider}:{}", windows.len()),
+            } => format!(
+                "quota:{provider}:{}",
+                windows
+                    .iter()
+                    .map(|w| if w.detail.is_some() { '+' } else { '-' })
+                    .collect::<String>()
+            ),
             Row::Stats { cells, .. } => format!("stats:{}", cells.len()),
             Row::Live { action, .. } => format!("live:{action:?}"),
             Row::Item(i) => format!("item:{}:{}", i.id, i.submenu.len()),
@@ -815,11 +836,13 @@ fn connections(s: &Snapshot) -> Item {
 
 fn window_row(w: &Window, now_ms: u64) -> WindowRow {
     if !current(w, now_ms) {
+        // 剩多少也是重置之前的数，和百分比一起不再作数
         return WindowRow {
             label: window_label(&w.window),
             percent: None,
             reset: tr!("已重置", "Reset").to_string(),
             tone: Tone::Normal,
+            detail: None,
         };
     }
     WindowRow {
@@ -830,6 +853,7 @@ fn window_row(w: &Window, now_ms: u64) -> WindowRow {
             None => String::new(),
         },
         tone: window_tone(w),
+        detail: w.credits.map(|c| credits_left(&w.window, c)),
     }
 }
 
@@ -839,8 +863,33 @@ pub fn window_label(window: &str) -> String {
         "5h" => tr!("5 小时", "5h").to_string(),
         "7d" => tr!("7 天", "7d").to_string(),
         "weekly" => tr!("每周", "Weekly").to_string(),
+        "monthly" => tr!("每月", "Monthly").to_string(),
         other => other.to_string(),
     }
+}
+
+/// 按数量计的窗口还剩多少：「剩余 1,976 / 2,000 积分」，和上游页同一个写法。
+///
+/// **每月那个窗口数的是次数**（GLM 老套餐每月的 MCP 调用次数），不是积分。剩余照上游
+/// 说的写，不拿总额减已用去算
+fn credits_left(window: &str, c: QuotaCredits) -> String {
+    let (left, total) = (count(c.remaining), count(c.total));
+    if window == "monthly" {
+        tr!(
+            format!("剩余 {left} / {total} 次"),
+            format!("{left} / {total} calls left")
+        )
+    } else {
+        tr!(
+            format!("剩余 {left} / {total} 积分"),
+            format!("{left} / {total} credits left")
+        )
+    }
+}
+
+/// 积分、次数：取整、千分位。上游给的是小数时差的不到一个，不值得占位置
+fn count(n: f64) -> String {
+    grouped(n.max(0.0).round() as i64)
 }
 
 /// 多久之后重置。**只给一个量级**，和上游页的写法一样：读它是为了知道今天还够
@@ -1028,6 +1077,7 @@ mod tests {
             used_percent: used,
             resets_at_ms: Some(NOW + reset_in_ms),
             status: None,
+            credits: None,
         }
     }
 
@@ -1124,6 +1174,7 @@ mod tests {
                 used_percent: 100.0,
                 resets_at_ms: Some(NOW - 1),
                 status: Some("rejected".into()),
+                credits: None,
             }],
             reset_credits: Some(2),
         }];
@@ -1399,5 +1450,114 @@ mod tests {
         s.now_ms += 5_000;
         let b: Vec<String> = rows(&s).iter().map(Row::shape).collect();
         assert_eq!(a, b);
+    }
+
+    /// GLM Coding Plan 积分制套餐：5 小时和每周两个窗口，各带总额、已用、剩余
+    fn glm() -> Quota {
+        let credits = |total: f64, used: f64, remaining: f64| {
+            Some(QuotaCredits {
+                total,
+                used,
+                remaining,
+            })
+        };
+        Quota {
+            provider: "glm".into(),
+            windows: vec![
+                Window {
+                    credits: credits(2_000.0, 23.0, 1_976.0),
+                    ..window("5h", 1.0, 3_600_000)
+                },
+                Window {
+                    credits: credits(10_000.0, 268.0, 9_731.0),
+                    ..window("weekly", 2.0, 3 * 86_400_000)
+                },
+            ],
+            reset_credits: None,
+        }
+    }
+
+    fn quota_rows(s: &Snapshot) -> Vec<WindowRow> {
+        rows(s)
+            .into_iter()
+            .find_map(|r| match r {
+                Row::Quota { windows, .. } => Some(windows),
+                _ => None,
+            })
+            .expect("额度那一块不见了")
+    }
+
+    #[test]
+    fn a_credit_plan_says_what_is_left_under_each_bar() {
+        let mut s = running();
+        s.quotas = vec![glm()];
+        let w = quota_rows(&s);
+        assert_eq!(w[0].label, "5 小时");
+        // **剩余照上游说的写**：2000 − 23 是 1977，上游说的是 1976
+        assert_eq!(w[0].detail.as_deref(), Some("剩余 1,976 / 2,000 积分"));
+        assert_eq!(w[1].detail.as_deref(), Some("剩余 9,731 / 10,000 积分"));
+        with_lang(Lang::En, || {
+            assert_eq!(
+                quota_rows(&s)[0].detail.as_deref(),
+                Some("1,976 / 2,000 credits left")
+            );
+        });
+        // 按百分比报的窗口没有这一行
+        s.quotas[0].windows[0].credits = None;
+        assert_eq!(quota_rows(&s)[0].detail, None);
+    }
+
+    #[test]
+    fn the_monthly_window_counts_calls() {
+        let mut s = running();
+        s.quotas = vec![Quota {
+            provider: "glm".into(),
+            windows: vec![Window {
+                credits: Some(QuotaCredits {
+                    total: 1_000.0,
+                    used: 40.0,
+                    remaining: 960.0,
+                }),
+                ..window("monthly", 4.0, 10 * 86_400_000)
+            }],
+            reset_credits: None,
+        }];
+        let w = quota_rows(&s);
+        assert_eq!(w[0].label, "每月");
+        assert_eq!(w[0].detail.as_deref(), Some("剩余 960 / 1,000 次"));
+        with_lang(Lang::En, || {
+            let w = quota_rows(&s);
+            assert_eq!(w[0].label, "Monthly");
+            assert_eq!(w[0].detail.as_deref(), Some("960 / 1,000 calls left"));
+        });
+    }
+
+    #[test]
+    fn what_was_left_before_a_reset_is_not_shown_after_it() {
+        let mut s = running();
+        s.quotas = vec![glm()];
+        s.now_ms = NOW + 3_600_000;
+        let w = quota_rows(&s);
+        assert_eq!((w[0].percent, w[0].detail.as_deref()), (None, None));
+        assert!(w[1].detail.is_some(), "没到重置时刻的窗口照常写");
+    }
+
+    #[test]
+    fn a_line_under_a_bar_changes_the_shape_of_the_row() {
+        // 带小字的窗口高一截：菜单开着时多了、少了这一行，要重建，不能就地改
+        let mut s = running();
+        s.quotas = vec![glm()];
+        let shape = |s: &Snapshot| -> Vec<String> { rows(s).iter().map(Row::shape).collect() };
+        let a = shape(&s);
+        assert!(a.contains(&"quota:glm:++".to_string()), "{a:?}");
+        s.quotas[0].windows[1].credits = None;
+        assert!(shape(&s).contains(&"quota:glm:+-".to_string()));
+        // 只是数变了：样子不变
+        s.quotas[0].windows[0].credits = Some(QuotaCredits {
+            total: 2_000.0,
+            used: 500.0,
+            remaining: 1_500.0,
+        });
+        assert!(shape(&s).contains(&"quota:glm:+-".to_string()));
     }
 }

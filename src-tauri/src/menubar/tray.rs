@@ -165,11 +165,21 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
                 windows,
                 action,
             } => {
+                // 按数量计的窗口还剩多少（macOS 上是条下面那行小字），跟在百分比后面
                 let text = windows
                     .iter()
-                    .map(|w| match w.percent {
-                        Some(p) => format!("{} {}%", w.label, p.round() as i64),
-                        None => format!("{} {}", w.label, w.reset),
+                    .map(|w| {
+                        let p = w.percent.map(|p| p.round() as i64);
+                        match (p, &w.detail) {
+                            (Some(p), Some(d)) => {
+                                tr!(
+                                    format!("{} {p}%（{d}）", w.label),
+                                    format!("{} {p}% ({d})", w.label)
+                                )
+                            }
+                            (Some(p), None) => format!("{} {p}%", w.label),
+                            (None, _) => format!("{} {}", w.label, w.reset),
+                        }
                     })
                     .collect::<Vec<_>>()
                     .join(" · ");

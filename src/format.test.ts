@@ -8,6 +8,7 @@ import {
   repeated,
   resetAt,
   resetIn,
+  size,
   statusTone,
   tokens,
   when,
@@ -254,5 +255,23 @@ describe("额度重置时间", () => {
     expect(resetIn(4 * 86400)).toBe("in 4 days");
     setLang("zh");
     expect(resetIn(90)).toBe("2 分钟后");
+  });
+});
+
+describe("字节数", () => {
+  it("按 1024 进位，不到 10 的留一位小数", () => {
+    expect(size(0)).toBe("0 B");
+    expect(size(1023)).toBe("1023 B");
+    expect(size(1024)).toBe("1 KB");
+    expect(size(3_482)).toBe("3.4 KB");
+    expect(size(250_880)).toBe("245 KB");
+    expect(size(1_468_006)).toBe("1.4 MB");
+    // DeepSeek Harness 的会话日志单次最多 8 MiB
+    expect(size(8 * 1024 * 1024)).toBe("8 MB");
+    expect(size(12 * 1024 * 1024)).toBe("12 MB");
+  });
+
+  it("进位之后满 1024 KB 的写成 MB", () => {
+    expect(size(1024 * 1024 - 1)).toBe("1 MB");
   });
 });

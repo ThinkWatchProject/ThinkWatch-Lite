@@ -356,6 +356,11 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
                 used_percent: w.used_percent,
                 resets_at_ms: w.resets_at_ms,
                 status: w.status.clone(),
+                credits: w.credits.map(|c| model::QuotaCredits {
+                    total: c.total,
+                    used: c.used,
+                    remaining: c.remaining,
+                }),
             })
             .collect();
         let used_up = windows.iter().find(|w| {

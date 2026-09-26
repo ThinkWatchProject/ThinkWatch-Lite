@@ -47,6 +47,9 @@ export const requestDrawerText = messages(
     /** 两项防护在这次请求上的全部命中 */
     security: "安全",
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
+    /** DeepSeek Harness 随请求附带的会话日志：标签，和大小下面那一句 */
+    sessionLog: "会话日志",
+    sessionLogNote: "DeepSeek Harness 随请求附带的整段对话记录。发往 DeepSeek 以外的上游之前，网关已将其去除。",
     status: "状态",
     inProgress: "进行中",
     /** 头上那一项：失败了。原因写在「时间线」的状态那一行 */
@@ -172,6 +175,9 @@ export const requestDrawerText = messages(
     dropped: "Dropped",
     security: "Security",
     droppedTip: "The target format does not support these fields; they were removed before sending.",
+    sessionLog: "Session log",
+    sessionLogNote:
+      "The whole conversation, attached by DeepSeek Harness. The gateway removes it before a request goes to an upstream other than DeepSeek.",
     status: "Status",
     inProgress: "In progress",
     failed: "Failed",

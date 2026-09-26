@@ -137,6 +137,15 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
         used_percent: used,
         resets_at_ms: Some(now + in_ms),
         status: None,
+        credits: None,
+    };
+    // GLM Coding Plan 积分制套餐：每个窗口的条下面多一行还剩多少积分
+    let credits = |total: f64, used: f64, remaining: f64| {
+        Some(QuotaCredits {
+            total,
+            used,
+            remaining,
+        })
     };
     let base = Snapshot {
         gateway: Gateway::Running,
@@ -178,14 +187,30 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 tokens: 3_100_000,
                 cost_micros: 41_200_000,
             }),
-            quotas: vec![Quota {
-                provider: "chatgpt".into(),
-                windows: vec![
-                    window("5h", 42.0, 3 * 3_600_000),
-                    window("weekly", 18.0, 4 * 86_400_000),
-                ],
-                reset_credits: None,
-            }],
+            quotas: vec![
+                Quota {
+                    provider: "chatgpt".into(),
+                    windows: vec![
+                        window("5h", 42.0, 3 * 3_600_000),
+                        window("weekly", 18.0, 4 * 86_400_000),
+                    ],
+                    reset_credits: None,
+                },
+                Quota {
+                    provider: "glm".into(),
+                    windows: vec![
+                        Window {
+                            credits: credits(2_000.0, 23.0, 1_976.0),
+                            ..window("5h", 1.0, 58 * 60_000)
+                        },
+                        Window {
+                            credits: credits(10_000.0, 268.0, 9_731.0),
+                            ..window("weekly", 2.0, 3 * 86_400_000)
+                        },
+                    ],
+                    reset_credits: None,
+                },
+            ],
             live: vec![
                 Live {
                     id: 41,

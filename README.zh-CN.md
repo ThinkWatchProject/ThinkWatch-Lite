@@ -98,7 +98,7 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 流量页实时列出请求：状态、密钥、模型、上游、首字节时间与总耗时、token 和费用，并标出格式转换、被脱敏的密钥，以及被拦截或可疑的工具调用。列表可以按密钥、上游和模型筛选，或只看失败、无法计价的请求。「会话」视图把同一段对话的请求归为若干轮次，给出每一轮的输入 token 与费用。
 
-打开一个请求可以查看时间线、路由（命中的规则、经过的策略组，以及每一次尝试的状态与耗时）、请求与响应正文、用量与费用。已结束的请求可以在预估费用后原样发送到另一个上游，两次的响应并排对照。
+打开一个请求可以查看时间线、路由（命中的规则、经过的策略组，以及每一次尝试的状态与耗时）、请求与响应正文、用量与费用。DeepSeek Harness 发出的请求还会显示所带会话日志的大小：这是客户端随每个请求附带的整段对话记录，发往 DeepSeek 以外的上游之前由网关去除。已结束的请求可以在预估费用后原样发送到另一个上游，两次的响应并排对照。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/traffic-dark.png">
@@ -130,7 +130,7 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 ### 上游
 
-上游是网关转发请求的目标：Anthropic、OpenAI、Google Gemini、DeepSeek 或任何兼容接口的 API 密钥，在应用内登录的 ChatGPT 账号或 Z.ai / BigModel 账号，OpenRouter 等中转服务，以及 Ollama 等本机模型。ChatGPT 账号显示订阅额度与重置时间。客户端与上游的 API 格式不同时，请求在 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之间自动转换，无法转换的字段会在请求上逐一列出。上游可以经出站代理访问，也可以使用单独的价目表计价，代理与价目表在同一页的标签中管理。链路测速测量 DNS 解析以及 TCP、TLS、代理握手的耗时，不产生费用；推理测速测量首个 token 的时间，运行前先给出费用预估。
+上游是网关转发请求的目标：Anthropic、OpenAI、Google Gemini、DeepSeek 或任何兼容接口的 API 密钥，在应用内登录的 ChatGPT 账号或 Z.ai / BigModel 账号，OpenRouter 等中转服务，以及 Ollama 等本机模型。ChatGPT 账号显示订阅额度与重置时间；GLM Coding Plan 的上游（地址在 `api.z.ai` 或 `open.bigmodel.cn` 上，在应用内登录或手动填写密钥均可）同样显示：5 小时与每周额度、老套餐每月的 MCP 调用次数，积分制套餐另外显示剩余积分（「剩余 1,976 / 2,000 积分」）。客户端与上游的 API 格式不同时，请求在 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 与 Gemini 之间自动转换，无法转换的字段会在请求上逐一列出。上游可以经出站代理访问，也可以使用单独的价目表计价，代理与价目表在同一页的标签中管理。链路测速测量 DNS 解析以及 TCP、TLS、代理握手的耗时，不产生费用；推理测速测量首个 token 的时间，运行前先给出费用预估。
 
 API 密钥和请求头的值可以写成 `${变量名}`，读取系统环境变量。macOS 上读的是登录 shell 里的环境变量，`~/.zshrc` 等文件中 `export` 的变量都会生效，Linux 同理（`~/.bashrc`、`~/.profile` 等）；Windows 上读的是系统设置里配置的环境变量。修改变量后，重新打开应用即可生效。代理相关的变量（`HTTPS_PROXY` 等）和 `PATH` 不会被读取。
 
@@ -204,7 +204,7 @@ macOS 菜单栏显示今日 token 与今日费用，订阅额度紧张时数字�
   </picture>
 </p>
 
-点开是原生菜单：网关地址与状态、未读的提醒、各订阅账号的额度与重置时间、今日的请求数、token 与费用、进行中的请求，以及切换手动选择策略组中的上游、复制网关地址和默认密钥、撤销上一次配置修改、切换连接、检查更新等常用操作，不必先打开主界面。
+点开是原生菜单：网关地址与状态、未读的提醒、各订阅账号与 GLM Coding Plan 上游的额度与重置时间（积分制套餐在额度条下方显示剩余积分）、今日的请求数、token 与费用、进行中的请求，以及切换手动选择策略组中的上游、复制网关地址和默认密钥、撤销上一次配置修改、切换连接、检查更新等常用操作，不必先打开主界面。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/menubar-menu-dark.png">

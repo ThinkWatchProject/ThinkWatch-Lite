@@ -5,7 +5,7 @@ import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
-import { statusTone, tokens as tokenPair, when } from "@/format";
+import { size, statusTone, tokens as tokenPair, when } from "@/format";
 import { Button } from "@/ui/button";
 import { Collapsible, CollapsibleTrigger } from "@/ui/collapsible";
 import { IconDenied } from "@/ui/icons";
@@ -464,6 +464,20 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
               />
             )}
           </>
+        )}
+        {/* DeepSeek Harness 每个请求都带着整段对话（单次最多 8 MiB）。**带了就要看得见**：
+            它不进模型输入，只有 DeepSeek 收，发给别家之前网关去掉了 */}
+        {r.session_log_bytes != null && (
+          <Row
+            label={t.sessionLog}
+            value={
+              <>
+                <span className="tw-num">{size(r.session_log_bytes)}</span>
+                {/* 英文按词换行：这一格为路径设了 break-all */}
+                <span className="block break-normal tw-label text-muted-foreground">{t.sessionLogNote}</span>
+              </>
+            }
+          />
         )}
         {/* 这次请求在各项防护上的全部命中：哪条规则、什么值、做了什么 */}
         {r.security && r.security.length > 0 && (

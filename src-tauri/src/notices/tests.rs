@@ -517,18 +517,66 @@ fn a_quota_report_below_the_limit_clears_that_window() {
                 used_percent: 21.0,
                 resets_at_ms: None,
                 status: None,
+                credits: None,
             },
             tw_api::QuotaWindow {
                 window: "5h".into(),
                 used_percent: 100.0,
                 resets_at_ms: resets_in(600),
                 status: Some("rejected".into()),
+                credits: Some(tw_api::QuotaCredits {
+                    total: 2_000.0,
+                    used: 2_000.0,
+                    remaining: 0.0,
+                }),
             },
         ],
         at_ms: T0,
     });
     let keys: Vec<&str> = signals.iter().map(|s| s.key.as_str()).collect();
     assert_eq!(keys, ["quota:chatgpt:weekly"], "用完的那个窗口不该被撤掉");
+}
+
+/// GLM Coding Plan 的三个窗口都有名字；每周、每月离重置常常还有好几天，按天说
+#[test]
+fn glm_windows_have_names_and_far_resets_are_told_in_days() {
+    let body = |window: &str, secs: Option<u64>| {
+        rules::from_event(&tw_api::Event::QuotaExhausted {
+            id: 1,
+            provider: "glm".into(),
+            window: window.into(),
+            resets_at_ms: secs.and_then(resets_in),
+            at_ms: T0,
+        })[0]
+            .body
+            .clone()
+    };
+    with_lang(Lang::Zh, || {
+        assert_eq!(
+            body("weekly", Some(3 * 86_400 + 600)),
+            "每周额度已用完，约 3 天后重置。经此上游的请求会被拒绝。"
+        );
+        assert_eq!(
+            body("5h", Some(7_200)),
+            "5 小时额度已用完，约 2 小时后重置。经此上游的请求会被拒绝。"
+        );
+        // 每月那个窗口数的是 MCP 调用次数：用完不说请求会被拒绝
+        assert_eq!(
+            body("monthly", Some(86_400)),
+            "每月额度已用完，约 1 天后重置。"
+        );
+    });
+    with_lang(Lang::En, || {
+        assert_eq!(
+            body("monthly", Some(10 * 86_400)),
+            "The monthly usage limit has been reached and resets in about 10 days."
+        );
+        assert_eq!(
+            body("weekly", Some(86_400)),
+            "The weekly usage limit has been reached and resets in about 1 day. \
+             Requests through this upstream will be rejected."
+        );
+    });
 }
 
 // ---------------------------------------------------------------- 英文
@@ -584,6 +632,7 @@ fn in_english_no_rule_writes_a_chinese_word() {
         quota_exhausted("weekly", Some(90)),
         quota_exhausted("7d", Some(30)),
         quota_exhausted("weekly", None),
+        quota_exhausted("monthly", Some(5 * 86_400)),
         tw_api::Event::HealthChanged {
             id: 1,
             provider: "relay".into(),

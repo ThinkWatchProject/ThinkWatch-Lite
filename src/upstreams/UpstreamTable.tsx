@@ -23,6 +23,7 @@ import {
   modelFace,
   planLabel,
   protocolLabel,
+  quotaLeft,
   quotaWindowLabel,
   shortUrl,
 } from "./labels";
@@ -327,8 +328,9 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
  * 还剩多少可用。
  *
  * 报过额度的上游，答案是额度条 —— 那是这一家「今天还能不能接着用」的唯一答案，
- * 画的是**最紧张的那个窗口**，其余窗口在悬停里。**没报过额度就退回说计费方式**：
- * 画一根 0% 的空条等于说「一点没用」，而事实是不知道。
+ * 画的是**最紧张的那个窗口**，其余窗口在悬停里。额度按数量计的（GLM Coding Plan 的
+ * 积分），条下面再写一行还剩多少。**没报过额度就退回说计费方式**：画一根 0% 的空条
+ * 等于说「一点没用」，而事实是不知道。
  */
 function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<UpstreamStats>; now: number }) {
   const t = useText(upstreamTableText);
@@ -345,6 +347,7 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
   if (tight && !p.disabled) {
     const reset = resetAt(tight.resets_at_ms, now);
     const used = Math.round(tight.used_percent);
+    const left = quotaLeft(tight);
     return (
       <TableCell>
         <Tip text={<QuotaTip windows={windows} now={now} />}>
@@ -356,7 +359,19 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
                 {reset ? `${quotaWindowLabel(tight.window)} · ${reset}` : quotaWindowLabel(tight.window)}
               </span>
             </div>
-            <QuotaBar percent={tight.used_percent} label={t.quotaOf(quotaWindowLabel(tight.window))} className="mt-1" />
+            <QuotaBar
+              percent={tight.used_percent}
+              label={t.quotaOf(quotaWindowLabel(tight.window))}
+              className={left ? "mt-0.5" : "mt-1"}
+            />
+            {/*
+              行高不因这一行变高：条往上靠一点，这一行按字高排。**这一行不撑宽这一列**
+              （`w-0 min-w-full`）：英文的「9,731 / 10,000 credits left」比上面那行宽，
+              窄窗口里被挤掉的会是上游的名字。放不下就截断，全文在悬停里
+            */}
+            {left && (
+              <div className="mt-0.5 w-0 min-w-full truncate tw-label leading-none text-muted-foreground">{left}</div>
+            )}
           </div>
         </Tip>
       </TableCell>
@@ -384,7 +399,7 @@ function QuotaTip({ windows, now }: { windows: QuotaWindow[]; now: number }) {
         const reset = resetAt(w.resets_at_ms, now);
         return (
           <div key={w.window}>
-            {t.windowLine(quotaWindowLabel(w.window), Math.round(w.used_percent), reset)}
+            {t.windowLine(quotaWindowLabel(w.window), Math.round(w.used_percent), quotaLeft(w), reset)}
           </div>
         );
       })}

@@ -65,6 +65,21 @@ export function compact(n: number): string {
 }
 
 /**
+ * 字节数写成 KB、MB（按 1024 进位，和设置里报文占用的写法一样）。
+ *
+ * 不到 10 的留一位小数：「1.4 MB」和「1 MB」差着四百多 KB，而「245 KB」的
+ * 小数位读的人不会在意。整数不带「.0」。
+ */
+export function size(bytes: number): string {
+  const one = (n: number) => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n));
+  if (bytes < 1024) return `${bytes} B`;
+  // 进位之后满 1024 KB 的写成 MB，不写「1024 KB」
+  const kb = one(bytes / 1024);
+  if (kb < 1024) return `${kb} KB`;
+  return `${one(bytes / (1024 * 1024))} MB`;
+}
+
+/**
  * 输入与输出 token。
  *
  * 合成一列，因为读的时候要的是两者的**比例**：输入远大于输出 = 上下文
