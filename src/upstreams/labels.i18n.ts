@@ -33,6 +33,12 @@ export const labelsText = messages(
       h: (n: number) => `${n} 小时`,
       m: (n: number) => `${n} 分钟`,
     },
+    // 同上，放在名词前面时的写法（「30 天窗口」）。中文和单独用时一样
+    quotaSpansBefore: {
+      d: (n: number) => `${n} 天`,
+      h: (n: number) => `${n} 小时`,
+      m: (n: number) => `${n} 分钟`,
+    },
     // 积分制套餐（GLM Coding Plan）的额度窗口还剩多少积分
     quotaLeft: (left: string, total: string) => `剩余 ${left} / ${total} 积分`,
     l1Steps: {
@@ -105,6 +111,12 @@ export const labelsText = messages(
       d: (n: number) => (n === 1 ? "1 day" : `${n} days`),
       h: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
       m: (n: number) => (n === 1 ? "1 minute" : `${n} minutes`),
+    },
+    // Before a noun: "30-day window", "30-day usage limit"
+    quotaSpansBefore: {
+      d: (n: number) => `${n}-day`,
+      h: (n: number) => `${n}-hour`,
+      m: (n: number) => `${n}-minute`,
     },
     quotaLeft: (left: string, total: string) => `${left} / ${total} credits left`,
     l1Steps: {

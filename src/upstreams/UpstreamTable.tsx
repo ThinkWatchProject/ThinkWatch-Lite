@@ -24,6 +24,7 @@ import {
   planLabel,
   protocolLabel,
   quotaLeft,
+  quotaWindowBefore,
   quotaWindowLabel,
   shortUrl,
 } from "./labels";
@@ -361,7 +362,7 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
             </div>
             <QuotaBar
               percent={tight.used_percent}
-              label={t.quotaOf(quotaWindowLabel(tight.window))}
+              label={t.quotaOf(quotaWindowBefore(tight.window))}
               className={left ? "mt-0.5" : "mt-1"}
             />
             {/*
@@ -399,7 +400,7 @@ function QuotaTip({ windows, now }: { windows: QuotaWindow[]; now: number }) {
         const reset = resetAt(w.resets_at_ms, now);
         return (
           <div key={w.window}>
-            {t.windowLine(quotaWindowLabel(w.window), Math.round(w.used_percent), quotaLeft(w), reset)}
+            {t.windowLine(quotaWindowBefore(w.window), Math.round(w.used_percent), quotaLeft(w), reset)}
           </div>
         );
       })}

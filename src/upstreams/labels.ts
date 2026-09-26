@@ -210,6 +210,18 @@ export function quotaWindowLabel(window: string): string {
 }
 
 /**
+ * 同一个窗口名，放在名词前面时的写法：英文要说「30-day window」而不是「30 days
+ * window」。中文和 [`quotaWindowLabel`] 一样
+ */
+export function quotaWindowBefore(window: string): string {
+  const t = textOf(labelsText);
+  if (window === "5h") return t.quotaWindows["5h"];
+  if (window === "weekly") return t.quotaWindows.weekly;
+  const span = /^(\d+)([dhm])$/.exec(window);
+  return span ? t.quotaSpansBefore[span[2] as "d" | "h" | "m"](Number(span[1])) : window;
+}
+
+/**
  * 积分制套餐（GLM Coding Plan）的窗口还剩多少积分：「剩余 1,976 / 2,000 积分」。
  * 别的窗口不带积分，是 null。
  *
