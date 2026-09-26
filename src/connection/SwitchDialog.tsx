@@ -164,9 +164,7 @@ export function SwitchDialog({
                 <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" />
                 <div className="flex flex-col gap-2">
                   <p>
-                    <span className="font-medium">
-                      {t.adoptedWarn(adopted.count, adopted.local_addr)}
-                    </span>
+                    <span className="font-medium">{t.adoptedWarn(adopted)}</span>
                     {t.adoptedWarnNext(name)}
                   </p>
                   <label className="flex items-center gap-2">

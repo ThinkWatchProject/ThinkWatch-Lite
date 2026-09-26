@@ -105,7 +105,7 @@ const COMMANDS: Table = {
     await new Promise((r) => setTimeout(r, 400));
     return tested();
   },
-  switch_preflight: () => ({ count: 2, local_addr: LOCAL_GATEWAY }),
+  switch_preflight: () => ({ count: 2, local_addr: LOCAL_GATEWAY, places: [{ distro: null, count: 2 }] }),
   reveal_main_window: done,
   retry_connection: done,
   pick_connection: done,

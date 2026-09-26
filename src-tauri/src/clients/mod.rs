@@ -524,106 +524,283 @@ pub async fn reveal_client_config(id: String, env: Option<String>) -> Out<()> {
     Ok(reveal::reveal(&d.real.display().to_string())?)
 }
 
-/// 把接管着的几个客户端重新指一次：地址换成 `base`，密钥用 `control` 那个 core 为
-/// 每个客户端发的那把。**一个失败不影响其余的**，逐个报。
-async fn retarget_in(
-    control: &ControlClient,
-    place: &Place,
-    base: &str,
-    cs: Vec<tw_adopt::clients::Client>,
-) -> wire::Retargeted {
-    let home = place.home();
-    let mut out = wire::Retargeted {
-        synced: Vec::new(),
-        failed: Vec::new(),
-    };
-    for c in cs {
-        let key = match prepare_key(control, &place.owner(c.id)).await {
-            Ok(k) => k.key,
-            Err(e) => {
-                out.failed.push(wire::KeySyncFailed {
-                    client: c.id.to_string(),
-                    name: place.name(&c),
-                    error: e.into_msg(),
-                });
-                continue;
-            }
-        };
-        let models = match models_for(&c, base, &key).await {
-            Ok(m) => m,
-            Err(error) => {
-                out.failed.push(wire::KeySyncFailed {
-                    client: c.id.to_string(),
-                    name: place.name(&c),
-                    error,
-                });
-                continue;
-            }
-        };
-        match ops::repoint(&home, &backups(), &c, base, &key, models) {
-            Ok(mut s) => {
-                s.name = place.name(&c);
-                out.synced.push(s);
-            }
-            Err(mut f) => {
-                f.name = place.name(&c);
-                out.failed.push(f);
-            }
-        }
-    }
-    out
+/// 要改为指向服务器的是哪几处。
+#[derive(Debug, Clone)]
+pub enum Scope {
+    /// 这台电脑上的，和每个 WSL 发行版里的：从本机切到远程 core 时
+    All,
+    /// 这台电脑上的：客户端页上这台电脑那几个的「改为指向服务器」
+    Here,
+    /// 这个 WSL 发行版里的：客户端页上那一组的「改为指向服务器」
+    Wsl(String),
 }
 
-/// 把这台机器上接管着、**还指着本机网关**的客户端改为指向 `control` 那个 core 的
-/// 网关（`host` 是它的地址），用它为每个客户端发的那把密钥。
+/// 一处（这台电脑，或者一个 WSL 发行版）接管着、还指着本机网关的客户端。
+struct Behind {
+    place: Place,
+    /// 那一处的 home：这台电脑上是用户目录，WSL 里是 `\\wsl.localhost\…` 下的那个
+    home: PathBuf,
+    /// 连同它此刻指着的地址
+    clients: Vec<(tw_adopt::clients::Client, String)>,
+}
+
+impl Behind {
+    fn distro(&self) -> Option<String> {
+        match &self.place {
+            Place::Here => None,
+            Place::Wsl(w) => Some(w.name().to_string()),
+        }
+    }
+}
+
+/// 读不到的 WSL 发行版：不知道里面有没有要改的，连同原因报出来。
+struct Unread {
+    distro: String,
+    error: Msg,
+}
+
+impl Unread {
+    /// 结果里的那一条：没有具体哪个客户端，名字写发行版
+    fn failed(self) -> wire::KeySyncFailed {
+        wire::KeySyncFailed {
+            client: String::new(),
+            name: wsl::place_name(&self.distro),
+            error: self.error,
+        }
+    }
+}
+
+/// 接管着、还指着本机网关的客户端，按所在的地方：这台电脑在前，再是各个 WSL 发行版
+/// （注册表里的顺序），读不到的发行版也在它那个位置上。
 ///
-/// 从本机切到远程 core 时，确认框里「同时将这些客户端改为指向…」勾上就走这里；连着
-/// 远程时客户端页上的「改为指向服务器」也是这一步。**一个失败不影响其余的**，逐个报。
+/// 连着远程 core 时，它们的请求落在一个停了的网关上。切换确认框里数的（[`Adopted`]）、
+/// 「改为指向服务器」改的（[`retarget_adopted`]）都是它们。
+struct LeftBehind(Vec<Result<Behind, Unread>>);
+
+impl LeftBehind {
+    /// 找一遍。**读 WSL 会唤醒发行版**，所以只在用户正要切换、或者点了「改为指向
+    /// 服务器」的时候找。阻塞：读的都是文件，WSL 里的经过 `\\wsl.localhost`
+    fn find(scope: &Scope) -> LeftBehind {
+        let here = matches!(scope, Scope::All | Scope::Here).then(home_dir);
+        let opened = match scope {
+            Scope::Here => Vec::new(),
+            Scope::All => wsl::distros()
+                .into_iter()
+                .map(|d| {
+                    let distro = d.name.clone();
+                    wsl::open(d).map_err(|error| Unread { distro, error })
+                })
+                .collect(),
+            // 那个发行版已经不在了也照「读不到」报：界面上那一组是刚才读到的
+            Scope::Wsl(name) => vec![wsl::find(name).map_err(|error| Unread {
+                distro: name.clone(),
+                error,
+            })],
+        };
+        Self::of(here, opened)
+    }
+
+    /// [`find`](Self::find) 的本体：这台电脑的 home（不看这台电脑时不给），和读过的
+    /// 发行版
+    fn of(here: Option<PathBuf>, wsl: Vec<Result<WslHome, Unread>>) -> LeftBehind {
+        let here = here.map(|home| {
+            Ok(Behind {
+                clients: ops::adopted_on_this_machine(&home),
+                place: Place::Here,
+                home,
+            })
+        });
+        let wsl = wsl.into_iter().map(|w| {
+            w.map(|w| Behind {
+                clients: ops::adopted_on_this_machine_wsl(&w),
+                home: w.home.clone(),
+                place: Place::Wsl(w),
+            })
+        });
+        LeftBehind(here.into_iter().chain(wsl).collect())
+    }
+
+    /// 切换确认框里说的：一共几个、指着哪个地址、各在哪一处。读不到的发行版数不出来，
+    /// 不在里面
+    fn adopted(&self) -> Adopted {
+        let found: Vec<&Behind> = self
+            .0
+            .iter()
+            .filter_map(|s| s.as_ref().ok())
+            .filter(|b| !b.clients.is_empty())
+            .collect();
+        Adopted {
+            count: found.iter().map(|b| b.clients.len()).sum(),
+            local_addr: found
+                .iter()
+                .flat_map(|b| &b.clients)
+                .find_map(|(_, e)| ops::host_port(e))
+                .map(str::to_string),
+            places: found
+                .iter()
+                .map(|b| AdoptedAt {
+                    distro: b.distro(),
+                    count: b.clients.len(),
+                })
+                .collect(),
+        }
+    }
+
+    /// 都改为指向 `base`。每一份写进去的密钥和模型清单由 `prepare(owner, client)` 给：
+    /// 线上是 core 为这一份发的那把（WSL 里的归在 `tw_adopt::wsl::key_id` 名下），和
+    /// 网关对它答的模型。走的是接管那一套（[`ops::repoint`]）：写之前全文备份，接管记录里
+    /// 的原值不变。**一个失败不影响其余的**，逐个报；读不到的发行版各记一条
+    async fn retarget<P, F>(self, base: &str, backups: &Path, prepare: P) -> wire::Retargeted
+    where
+        P: Fn(String, tw_adopt::clients::Client) -> F,
+        F: std::future::Future<Output = Result<(String, Vec<String>), Msg>>,
+    {
+        let mut out = wire::Retargeted {
+            synced: Vec::new(),
+            failed: Vec::new(),
+        };
+        for spot in self.0 {
+            let b = match spot {
+                Ok(b) => b,
+                Err(u) => {
+                    out.failed.push(u.failed());
+                    continue;
+                }
+            };
+            for (c, _) in b.clients {
+                let name = b.place.name(&c);
+                match prepare(b.place.owner(c.id), c.clone()).await {
+                    Ok((key, models)) => {
+                        match ops::repoint(&b.home, backups, &c, base, &key, models) {
+                            Ok(s) => out.synced.push(wire::KeySynced { name, ..s }),
+                            Err(f) => out.failed.push(wire::KeySyncFailed { name, ..f }),
+                        }
+                    }
+                    Err(error) => out.failed.push(wire::KeySyncFailed {
+                        client: c.id.to_string(),
+                        name,
+                        error,
+                    }),
+                }
+            }
+        }
+        out
+    }
+
+    /// 服务器的网关地址没问到：每一个该改的都记一条失败，原因就是没问到的那一句；读不到
+    /// 的发行版照它自己的原因
+    fn all_failed(self, error: Msg) -> wire::Retargeted {
+        let mut failed = Vec::new();
+        for spot in self.0 {
+            match spot {
+                Ok(b) => failed.extend(b.clients.iter().map(|(c, _)| wire::KeySyncFailed {
+                    client: c.id.to_string(),
+                    name: b.place.name(c),
+                    error: error.clone(),
+                })),
+                Err(u) => failed.push(u.failed()),
+            }
+        }
+        wire::Retargeted {
+            synced: Vec::new(),
+            failed,
+        }
+    }
+}
+
+/// 改为指向服务器时一份要写进去的：`control` 那个 core 为 `owner` 发的那把密钥，和
+/// 网关对它答的模型清单（只有要写模型的客户端才问）
+async fn key_and_models(
+    control: &ControlClient,
+    base: &str,
+    owner: String,
+    c: tw_adopt::clients::Client,
+) -> Result<(String, Vec<String>), Msg> {
+    let key = prepare_key(control, &owner)
+        .await
+        .map_err(CmdError::into_msg)?
+        .key;
+    let models = models_for(&c, base, &key).await?;
+    Ok((key, models))
+}
+
+/// 把接管着、**还指着本机网关**的客户端改为指向 `control` 那个 core 的网关（`host` 是
+/// 它的地址），用它为每一份发的那把密钥。`scope` 是改哪几处。
 ///
-/// WSL 里的不在这里：改它们要把每个发行版唤醒。它们在各自那一组里显示为未生效，
-/// 还原之后再接管。
-pub async fn retarget_adopted(control: &ControlClient, host: &str) -> Out<wire::Retargeted> {
-    let base = gateway_base(control, host).await?;
-    let cs = ops::adopted_on_this_machine(&home_dir())
-        .into_iter()
-        .map(|(c, _)| c)
-        .collect();
-    Ok(retarget_in(control, &Place::Here, &base, cs).await)
+/// 从本机切到远程 core 时，确认框里「同时将这些客户端改为指向…」勾上就走这里，改全部；
+/// 连着远程时客户端页上的「改为指向服务器」也是这一步，改这台电脑上的或者某个 WSL
+/// 发行版里的。**一个失败不影响其余的**，逐个报；服务器的网关地址没问到，就是每一个
+/// 都没改成。
+///
+/// WSL 里的也在这里：**读它们会唤醒发行版**，而这一步是用户切换或者点了按钮才做的。
+/// 读不到的发行版跳过，结果里记一条它为什么读不到
+pub async fn retarget_adopted(
+    control: &ControlClient,
+    host: &str,
+    scope: Scope,
+) -> wire::Retargeted {
+    // 读文件、唤醒 WSL 都是阻塞的，不占着异步线程；同时问服务器的网关地址
+    let find = tokio::task::spawn_blocking(move || LeftBehind::find(&scope));
+    let (found, base) = tokio::join!(find, gateway_base(control, host));
+    // 找的那一步 panic 了：照原样抛出去，和在这里直接找一样
+    let found = found.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+    match base {
+        Ok(base) => {
+            found
+                .retarget(&base, &backups(), |owner, c| {
+                    key_and_models(control, &base, owner, c)
+                })
+                .await
+        }
+        Err(e) => found.all_failed(e.into_msg()),
+    }
 }
 
 /// 客户端页上的「改为指向服务器」：还指着本机网关的，改为指向此刻连着的那个 core。
+/// `env` 和页上别的命令一样：那一组所在的 WSL 发行版，不带就是这台电脑上的那几个。
 /// **连着本机时什么都不做** —— 指着本机网关本来就是对的
 #[tauri::command]
-pub async fn retarget_clients(state: tauri::State<'_, AppState>) -> Out<wire::Retargeted> {
+pub async fn retarget_clients(
+    state: tauri::State<'_, AppState>,
+    env: Option<String>,
+) -> Out<wire::Retargeted> {
     if !state.link.is_remote() {
         return Ok(wire::Retargeted {
             synced: Vec::new(),
             failed: Vec::new(),
         });
     }
-    retarget_adopted(&state.control, &gateway_host(&state)).await
+    let scope = match env {
+        None => Scope::Here,
+        Some(distro) => Scope::Wsl(distro),
+    };
+    Ok(retarget_adopted(&state.control, &gateway_host(&state), scope).await)
 }
 
-/// 这台机器上已接管、还指着本机网关的客户端。切到远程之前的确认里说（「已接管的 3 个
-/// 客户端仍指向本机网关 127.0.0.1:8788」）
+/// 接管着、还指着本机网关的客户端。切到远程之前的确认里说（「已接管的客户端仍指向本机
+/// 网关 127.0.0.1:8788：这台电脑 2 个、WSL · Ubuntu 1 个」）
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Adopted {
+    /// 一共几个
     pub count: usize,
     /// 它们指着的那个地址（`127.0.0.1:8788`）
     pub local_addr: Option<String>,
+    /// 各在哪一处：这台电脑在前，再是各个 WSL 发行版。一个都没有的地方不列
+    pub places: Vec<AdoptedAt>,
 }
 
-/// 数一数这台机器上已接管、还指着本机网关的客户端。**按这台机器上的文件数**，不问
-/// 哪个 core：连着远程、本机 core 停着的时候也数得出来
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AdoptedAt {
+    /// WSL 发行版的名字；这台电脑上的没有
+    pub distro: Option<String>,
+    pub count: usize,
+}
+
+/// 数一数接管着、还指着本机网关的客户端：这台电脑上的，和各个 WSL 发行版里的。**按这台
+/// 机器上的文件数**，不问哪个 core：连着远程、本机 core 停着的时候也数得出来。**会唤醒
+/// WSL 发行版**：用户正要切换。阻塞
 pub fn adopted_pointing_at_local() -> Adopted {
-    let here = ops::adopted_on_this_machine(&home_dir());
-    Adopted {
-        count: here.len(),
-        local_addr: here
-            .first()
-            .and_then(|(_, e)| ops::host_port(e))
-            .map(str::to_string),
-    }
+    LeftBehind::find(&Scope::All).adopted()
 }
 
 /// 一把密钥的主人：哪个客户端，在哪一处。
@@ -713,6 +890,8 @@ pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ops::tests::{key, wsl_home};
+    use tw_adopt::wsl::Distro;
 
     #[test]
     fn the_model_list_is_the_ids_under_data() {
@@ -733,5 +912,272 @@ mod tests {
             base_url("home-server.local", 8788),
             "http://home-server.local:8788"
         );
+    }
+
+    /// 服务器的网关，和本机的
+    const SERVER: &str = "http://10.0.3.7:8788";
+    const LOCAL: &str = "http://127.0.0.1:8788";
+
+    /// 服务器为每一份发的密钥：按主人起名，看得出写进去的是哪一把。这两个客户端不写模型
+    async fn issued(
+        owner: String,
+        _c: tw_adopt::clients::Client,
+    ) -> Result<(String, Vec<String>), Msg> {
+        Ok((format!("tw-{owner}"), Vec::new()))
+    }
+
+    /// 这台电脑那一份假的 home：Claude Code 和 Codex 都装了
+    fn here_home() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".claude")).unwrap();
+        std::fs::create_dir_all(d.path().join(".codex")).unwrap();
+        d
+    }
+
+    /// 一个读不到的发行版：根目录下没有 `/etc/passwd`
+    fn unreadable(root: &Path) -> Unread {
+        let d = Distro {
+            name: "Debian".into(),
+            version: 1,
+            uid: 1000,
+        };
+        Unread {
+            error: WslHome::read(d, root.join("Debian")).unwrap_err(),
+            distro: "Debian".into(),
+        }
+    }
+
+    fn read(p: &Path) -> String {
+        std::fs::read_to_string(p).unwrap()
+    }
+
+    /// 切到远程：WSL 里接管着、指着本机的，改成服务器的地址和为这个发行版发的那把密钥，
+    /// 这台电脑上的同一个客户端用它自己的那把。改之前全文备份；写进去的就是照服务器
+    /// 接管时算出的那一份改动；还原照样回到接管之前
+    #[tokio::test]
+    async fn switching_to_a_server_points_wsl_copies_at_it_with_their_own_keys() {
+        let here = here_home();
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        let settings = w.home.join(".claude").join("settings.json");
+        let original =
+            r#"{ "model": "opus", "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com" } }"#;
+        std::fs::write(&settings, original).unwrap();
+        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-local", Vec::new()).unwrap();
+        ops::adopt(
+            here.path(),
+            &b,
+            "claude-code",
+            LOCAL,
+            "tw-local",
+            Vec::new(),
+        )
+        .unwrap();
+        let adopted = read(&settings);
+
+        let found = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w.clone())]);
+        let r = found.retarget(SERVER, &b, issued).await;
+        assert!(r.failed.is_empty(), "{:?}", r.failed);
+        let names: Vec<_> = r
+            .synced
+            .iter()
+            .map(|s| (s.client.as_str(), s.name.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("claude-code", "Claude Code"),
+                ("claude-code", "Claude Code (WSL · Ubuntu)")
+            ]
+        );
+
+        let now = read(&settings);
+        assert!(
+            now.contains(SERVER) && now.contains("\"tw-claude-code-wsl-ubuntu\""),
+            "{now}"
+        );
+        assert!(
+            !now.contains("127.0.0.1") && !now.contains("tw-local"),
+            "{now}"
+        );
+        let windows = read(&here.path().join(".claude").join("settings.json"));
+        assert!(
+            windows.contains(SERVER) && windows.contains("\"tw-claude-code\""),
+            "{windows}"
+        );
+
+        // 改之前的那一份全文备份着
+        assert_eq!(read(Path::new(&r.synced[1].backup)), adopted);
+        // 写进去的就是照服务器和那把密钥接管时会写的：再算一次，没有要改的
+        let gw = ops::Gateway {
+            base: SERVER.into(),
+            keys: vec![key(
+                "claude-code-wsl-ubuntu",
+                "tw-claude-code-wsl-ubuntu",
+                Some("claude-code-wsl-ubuntu"),
+                false,
+            )],
+        };
+        let p = ops::plan_adopt_as(
+            &w.home,
+            "claude-code",
+            "claude-code-wsl-ubuntu",
+            &gw,
+            Vec::new(),
+        )
+        .unwrap();
+        assert!(p.noop, "{}", p.after);
+        assert_eq!(p.key.as_deref(), Some("claude-code-wsl-ubuntu"));
+        // 接管记录里的原值没被服务器的地址盖掉：还原回到接管之前
+        ops::restore(&w.home, &b, "claude-code").unwrap();
+        let back: serde_json::Value = serde_json::from_str(&read(&settings)).unwrap();
+        let want: serde_json::Value = serde_json::from_str(original).unwrap();
+        assert_eq!(back, want);
+    }
+
+    /// 已经指着服务器的不再改：文件不动、不多一份备份；再改一遍什么都不做
+    #[tokio::test]
+    async fn a_wsl_copy_already_on_the_server_is_left_alone() {
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        ops::adopt(
+            &w.home,
+            &b,
+            "claude-code",
+            SERVER,
+            "tw-claude-code-wsl-ubuntu",
+            Vec::new(),
+        )
+        .unwrap();
+        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new()).unwrap();
+        let settings = w.home.join(".claude").join("settings.json");
+        let before = read(&settings);
+        let real = tw_adopt::foreign::resolve(&settings).unwrap();
+        let backups_of = || tw_adopt::foreign::backups_of(&b, &real).len();
+        let kept = backups_of();
+
+        let found = LeftBehind::of(None, vec![Ok(w.clone())]);
+        // 切换确认框里数的也只有还指着本机的那一个
+        let a = found.adopted();
+        assert_eq!((a.count, a.places.len()), (1, 1));
+        let r = found.retarget(SERVER, &b, issued).await;
+        assert!(r.failed.is_empty(), "{:?}", r.failed);
+        let ids: Vec<_> = r.synced.iter().map(|s| s.client.as_str()).collect();
+        assert_eq!(ids, ["codex"]);
+        assert_eq!(read(&settings), before);
+        assert_eq!(backups_of(), kept);
+
+        let again = LeftBehind::of(None, vec![Ok(w)])
+            .retarget(SERVER, &b, issued)
+            .await;
+        assert!(again.synced.is_empty() && again.failed.is_empty());
+    }
+
+    /// 读不到的发行版跳过，结果里记一条它为什么读不到；别处的照改
+    #[tokio::test]
+    async fn an_unreadable_distro_is_skipped_and_reported_with_the_reason() {
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new()).unwrap();
+        let found = || LeftBehind::of(None, vec![Err(unreadable(d.path())), Ok(w.clone())]);
+
+        // 数不出来的不算进确认框里的数
+        let a = found().adopted();
+        let places: Vec<_> = a
+            .places
+            .iter()
+            .map(|p| (p.distro.as_deref(), p.count))
+            .collect();
+        assert_eq!(places, [(Some("Ubuntu"), 1)]);
+
+        let r = found().retarget(SERVER, &b, issued).await;
+        let synced: Vec<_> = r.synced.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(synced, ["Codex (WSL · Ubuntu)"]);
+        let failed: Vec<_> = r
+            .failed
+            .iter()
+            .map(|f| (f.client.as_str(), f.name.as_str(), f.error.code.as_str()))
+            .collect();
+        assert_eq!(failed, [("", "WSL · Debian", "wsl.unreadable")]);
+        let config = read(&w.home.join(".codex").join("config.toml"));
+        assert!(
+            config.contains("10.0.3.7:8788") && config.contains("tw-codex-wsl-ubuntu"),
+            "{config}"
+        );
+    }
+
+    /// 服务器的网关地址没问到：每一个该改的都记一条没改成，WSL 里的也在；读不到的
+    /// 发行版照它自己的原因
+    #[test]
+    fn without_the_servers_address_every_client_left_behind_is_reported() {
+        let here = here_home();
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new()).unwrap();
+        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-c", Vec::new()).unwrap();
+        let why = CmdError::plain("core is not running").into_msg();
+        let r = LeftBehind::of(
+            Some(here.path().to_path_buf()),
+            vec![Ok(w), Err(unreadable(d.path()))],
+        )
+        .all_failed(why);
+        assert!(r.synced.is_empty());
+        let failed: Vec<_> = r
+            .failed
+            .iter()
+            .map(|f| (f.name.as_str(), f.error.code.as_str()))
+            .collect();
+        assert_eq!(
+            failed,
+            [
+                ("Codex", ""),
+                ("Claude Code (WSL · Ubuntu)", ""),
+                ("WSL · Debian", "wsl.unreadable")
+            ]
+        );
+    }
+
+    /// 客户端页上某一组的「改为指向服务器」，而那个发行版已经不在了：照读不到报，不是
+    /// 悄悄地什么都不做
+    #[test]
+    fn a_distro_that_is_gone_is_reported_not_skipped_silently() {
+        let r = LeftBehind::find(&Scope::Wsl("No-Such-Distro".into()))
+            .all_failed(CmdError::plain("unused").into_msg());
+        let failed: Vec<_> = r
+            .failed
+            .iter()
+            .map(|f| (f.name.as_str(), f.error.code.as_str()))
+            .collect();
+        assert_eq!(failed, [("WSL · No-Such-Distro", "wsl.unknown")]);
+    }
+
+    /// 切换确认框里的数：这台电脑上的和每个发行版里的分开数，指着服务器的不算，一个
+    /// 都没有的地方不列
+    #[test]
+    fn the_switch_counts_this_computer_and_each_distro_apart() {
+        let here = here_home();
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
+        ops::adopt(here.path(), &b, "claude-code", LOCAL, "tw-c", Vec::new()).unwrap();
+        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new()).unwrap();
+        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-w", Vec::new()).unwrap();
+        ops::adopt(&w.home, &b, "codex", SERVER, "tw-s", Vec::new()).unwrap();
+        let a = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w)]).adopted();
+        assert_eq!(a.count, 3);
+        assert_eq!(a.local_addr.as_deref(), Some("127.0.0.1:8788"));
+        let places: Vec<_> = a
+            .places
+            .iter()
+            .map(|p| (p.distro.as_deref(), p.count))
+            .collect();
+        assert_eq!(places, [(None, 2), (Some("Ubuntu"), 1)]);
+        // 界面按这个形状读：这台电脑上的那一处 `distro` 是 null
+        let json = serde_json::to_value(&a).unwrap();
+        assert_eq!(json["places"][0]["distro"], serde_json::Value::Null);
+        assert_eq!(json["places"][1]["distro"], "Ubuntu");
+
+        let (_d, empty) = wsl_home();
+        let a = LeftBehind::of(None, vec![Ok(empty)]).adopted();
+        assert_eq!((a.count, a.places.len(), a.local_addr), (0, 0, None));
     }
 }

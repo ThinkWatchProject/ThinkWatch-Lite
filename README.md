@@ -493,7 +493,10 @@ and any saved server.
   from the server's configuration, and the remote control listener and its key
   can only be changed on the server. The Clients and MCP pages always act on
   the machine the app runs on: connecting a client points it at the server's
-  gateway.
+  gateway. When switching from the local core to a server, the connected
+  clients that still point to the local gateway, those in WSL included, can be
+  pointed at the server in the same step; any left as they were can be pointed
+  at it later from the Clients page.
 - The connection key is stored in a private file in the app's data directory,
   readable only by the current user.
 - A ChatGPT account is signed in with a device code, because a browser sign-in

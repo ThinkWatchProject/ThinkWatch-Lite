@@ -23,9 +23,12 @@ export const remoteText = messages(
     mcpNote: (name: string) =>
       `此处检查和修改的是${onHereZh}客户端的 MCP 配置、技能与钩子；${name} 上的不受影响。`,
 
-    // 还指着本机网关的客户端
+    // 还指着本机网关的客户端。WSL 那几组各说各的，所以页上有 WSL 分组时，页顶这一句
+    // 说明是这台电脑上的
     localLeft: (n: number, addr: string) =>
       `${n} 个已接管的客户端仍指向本机网关 ${addr}。本机网关已停止，这些客户端的请求会失败。`,
+    localLeftHere: (n: number, addr: string) =>
+      `${onHereZh}有 ${n} 个已接管的客户端仍指向本机网关 ${addr}。本机网关已停止，这些客户端的请求会失败。`,
     retargetTo: (name: string) => `改为指向 ${name}`,
     retargeted: (name: string, clients: string[]) => `已改为指向 ${name}：${clients.join("、")}。`,
     retargetFailedTitle: (name: string) => `以下客户端未能改为指向 ${name}`,
@@ -58,6 +61,10 @@ export const remoteText = messages(
       n === 1
         ? `1 connected client still points to the local gateway ${addr}. The local gateway has stopped, so its requests fail.`
         : `${n} connected clients still point to the local gateway ${addr}. The local gateway has stopped, so their requests fail.`,
+    localLeftHere: (n: number, addr: string) =>
+      n === 1
+        ? `1 connected client on ${hereEn} still points to the local gateway ${addr}. The local gateway has stopped, so its requests fail.`
+        : `${n} connected clients on ${hereEn} still point to the local gateway ${addr}. The local gateway has stopped, so their requests fail.`,
     retargetTo: (name: string) => `Point at ${name}`,
     retargeted: (name: string, clients: string[]) => `Now pointed at ${name}: ${clients.join(", ")}.`,
     retargetFailedTitle: (name: string) => `These clients could not be pointed at ${name}`,

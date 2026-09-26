@@ -1,9 +1,17 @@
 import type { ReactNode } from "react";
 import { messages } from "@/i18n";
 import { isLinux, isMac } from "@/platform";
+import type { Adopted } from "./api";
 
 /** 句中嵌着的一段代码（配置项、命令）。怎么画由组件决定 */
 type Code = (text: string) => ReactNode;
+
+/** 这台机器叫什么（切换确认框里按所在的地方分开数时）。有 WSL 的只有 Windows */
+const hereZh = isMac ? "这台 Mac" : "这台电脑";
+const hereEn = isMac ? "this Mac" : "this computer";
+
+/** 还指着本机网关的客户端里有没有 WSL 里的：有才按所在的地方分开数 */
+const anyInWsl = (a: Adopted) => a.places.some((p) => p.distro !== null);
 
 /** 启动时按住哪个键 */
 const holdZh = isMac ? "Option" : "Alt";
@@ -120,8 +128,13 @@ export const connText = messages(
     failedTitle: (name: string) => `无法切换到 ${name}`,
     confirmTitle: (name: string) => `切换到 ${name}`,
     switchedTo: (name: string) => `已切换到 ${name}`,
-    adoptedWarn: (n: number, addr: string | null) =>
-      addr ? `已接管的 ${n} 个客户端仍指向本机网关 ${addr}。` : `已接管的 ${n} 个客户端仍指向本机网关。`,
+    /** WSL 里也有的，按所在的地方分开数：「这台电脑 2 个、WSL · Ubuntu 1 个」 */
+    adoptedWarn: (a: Adopted) => {
+      const at = a.local_addr ? ` ${a.local_addr}` : "";
+      if (!anyInWsl(a)) return `已接管的 ${a.count} 个客户端仍指向本机网关${at}。`;
+      const parts = a.places.map((p) => `${p.distro === null ? hereZh : `WSL · ${p.distro}`} ${p.count} 个`);
+      return `已接管的客户端仍指向本机网关${at}：${parts.join("、")}。`;
+    },
     adoptedWarnNext: (name: string) =>
       `切换后本机网关停止，这些客户端的请求会失败，直到重新连接本机，或在客户端页将它们改为指向 ${name}。`,
     retarget: (name: string) => `同时将这些客户端改为指向 ${name}`,
@@ -260,14 +273,19 @@ export const connText = messages(
     failedTitle: (name: string) => `Cannot switch to ${name}`,
     confirmTitle: (name: string) => `Switch to ${name}`,
     switchedTo: (name: string) => `Switched to ${name}`,
-    adoptedWarn: (n: number, addr: string | null) => {
-      const at = addr ? ` ${addr}` : "";
-      return n === 1
-        ? `1 connected client still points to the local gateway${at}.`
-        : `${n} connected clients still point to the local gateway${at}.`;
+    adoptedWarn: (a: Adopted) => {
+      const at = a.local_addr ? ` ${a.local_addr}` : "";
+      const lead =
+        a.count === 1
+          ? `1 connected client still points to the local gateway${at}`
+          : `${a.count} connected clients still point to the local gateway${at}`;
+      if (!anyInWsl(a)) return `${lead}.`;
+      const parts = a.places.map((p) => (p.distro === null ? `${p.count} on ${hereEn}` : `${p.count} in WSL · ${p.distro}`));
+      return `${lead}: ${parts.join(", ")}.`;
     },
+    /** 接在上一句（加粗的那一段）后面：开头的空格隔开两句 */
     adoptedWarnNext: (name: string) =>
-      `After the switch, the local gateway stops and their requests fail until the app switches back, or until they are pointed at ${name} on the Clients page.`,
+      ` After the switch, the local gateway stops and their requests fail until the app switches back, or until they are pointed at ${name} on the Clients page.`,
     retarget: (name: string) => `Also point these clients at ${name}`,
     localStops: "The local core stops once in-progress requests finish",
     localKept: "; its config, keys and request history are kept.",

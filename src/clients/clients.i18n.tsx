@@ -135,6 +135,8 @@ export const clientsText = messages(
       restart: "NAT 网络，重启 WSL 后改用 mirrored 网络。",
       fallback: "NAT 网络，未能改用 mirrored 网络。",
     },
+    /** 连着远程时，组名下面那一句后面接上：这一组里还有指着本机网关的（组收起时也看得见） */
+    wslLeft: (summary: string, n: number) => `${summary}${n} 个已接管的客户端仍指向本机网关。`,
     // 不能接管时，组里的那条说明
     natBody: "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问；改为 mirrored 网络模式后才能接管。",
     natVersion: "mirrored 网络模式需要 WSL 2.0.5 或更高版本，可在终端中运行 wsl --update 更新。",
@@ -287,6 +289,10 @@ export const clientsText = messages(
       restart: "NAT networking; mirrored networking takes over once WSL restarts.",
       fallback: "NAT networking; mirrored networking could not be turned on.",
     },
+    wslLeft: (summary: string, n: number) =>
+      n === 1
+        ? `${summary} 1 connected client still points to the local gateway.`
+        : `${summary} ${n} connected clients still point to the local gateway.`,
     natBody:
       "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. Clients can be connected once WSL uses mirrored networking.",
     natVersion: "Mirrored networking needs WSL 2.0.5 or later; wsl --update in a terminal updates it.",
