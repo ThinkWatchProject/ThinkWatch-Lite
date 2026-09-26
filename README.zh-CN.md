@@ -109,10 +109,12 @@ AppImage 通过 FUSE 挂载自身，需要 fuse3 软件包中的 `fusermount3`�
 
 客户端页可以把 Claude Code、Claude Desktop、Codex、opencode、Zed、Aider 与 DeepSeek Harness 指向网关。写入之前，页面列出将要修改的字段和这次接管的其他影响（例如 ChatGPT 桌面版与 Codex 读取同一份配置文件），给出完整的改动差异，并完整备份原文件。只修改指向网关所需的配置，每个客户端使用各自的密钥。Claude Desktop 通过官方的第三方推理模式接入，页面逐一列出要修改的各个文件；由组织统一管理的 Claude Desktop 不做修改。已接管的客户端可以随时单独还原或全部还原；Codex 还原后保留一项直连 OpenAI 的配置，接管期间的会话仍可打开。opencode（v1 与 v2）的配置中同时写入其密钥在网关上可用的模型列表；网关上可用的模型变化后，页面提示更新，更新同样先给出改动差异。Cursor、Continue 与 Antigravity CLI 提供逐步的配置方法，并为其创建密钥。页面列出每个客户端处于使用中、等待首个请求还是未生效，以及最近 24 小时的请求。
 
-在 Windows 上，安装在 WSL 中的 Claude Code 与 Codex 按发行版单独成组，列在这台电脑的客户端之后。它们同样可以指向 Windows 上的网关、还原和检查，使用与 Windows 上那一份分开的密钥，配置文件经由 `\\wsl.localhost` 修改。写入的地址取决于 WSL 的网络模式：
+在 Windows 上，安装在 WSL 中的 Claude Code 与 Codex 按发行版单独成组，列在这台电脑的客户端之后。它们同样可以指向 Windows 上的网关、还原和检查，使用与 Windows 上那一份分开的密钥，配置文件经由 `\\wsl.localhost` 修改。写入的地址与 Windows 上的客户端相同，是 `127.0.0.1`，WSL 在以下两种情况下可以访问：
 
-- **WSL1，或在 `%USERPROFILE%\.wslconfig` 中设置了 `networkingMode=mirrored` 的 WSL2**：与 Windows 上相同，写入 `127.0.0.1`。
-- **使用默认 NAT 网络的 WSL2**：写入 WSL 虚拟网卡在 Windows 一侧的地址。网关需要监听这张网卡；尚未监听时，确认框会先说明监听设置如何调整，确认后才保存。该地址会随 WSL 重启而变化，变化后页面将这些客户端显示为未生效，点击一次即可重新指向新地址。安装程序会在 Windows 防火墙中添加一条规则，仅放行网关进程、仅接受来自 WSL 网段（`172.16.0.0/12`）的连接；规则缺失时，页面给出等价的 PowerShell 命令，以管理员身份运行即可。
+- **WSL 1**：与 Windows 共用网络。
+- **使用 mirrored 网络模式的 WSL 2**：在 `%USERPROFILE%\.wslconfig` 的 `[wsl2]` 段（或旧的 `[experimental]` 段）中设置 `networkingMode=mirrored`，需要 Windows 11 22H2 及以上版本、WSL 2.0.5 及以上版本。
+
+WSL 2 默认使用 NAT 网络，此时 Windows 上的网关无法从 WSL 内访问，网关也不会为此另外监听 WSL 的虚拟网卡。WSL 分组因此不提供接管，改为说明原因，并提供「改为 mirrored 模式」：在 `.wslconfig` 中新增或修改 `networkingMode`，文件的其他内容保持不变，与接管客户端一样先给出完整差异，确认后全文备份再写入。修改在 WSL 重启后生效，页面同时提供「重启 WSL」（执行 `wsl --shutdown`，会停止所有正在运行的发行版）。完全卸载时 `.wslconfig` 不会改回，备份保留。Windows 10 与 Windows 11 21H2 没有 mirrored 网络模式，WSL 版本低于 2.0.5 时也无法使用，页面会分别说明。连接远程 core 时，WSL 中的客户端与 Windows 上的一样指向服务器，不受网络模式限制。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/clients-dark.png">

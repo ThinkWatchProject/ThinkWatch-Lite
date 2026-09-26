@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DetectedClient, ManualClient } from "@/types";
-import { hostOf, isLoopback, manualStatusOf, pointsHere, SILENCE_MS, statusOf } from "./status";
+import { hostOf, isIpv4Loopback, isLoopback, manualStatusOf, pointsHere, SILENCE_MS, statusOf } from "./status";
 
 const BASE = "http://127.0.0.1:18790";
 const NOW = 10_000_000;
@@ -47,13 +47,42 @@ describe("客户端的状态", () => {
     );
   });
 
-  it("WSL 里还指着旧地址的是未生效，哪怕之前收到过请求", () => {
+  it("WSL 里指着的不是 127.0.0.1 的是未生效（以前按 NAT 接管的），哪怕之前收到过请求", () => {
     const adopted = NOW - 60_000;
-    const c = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: "http://172.20.0.1:18790" });
-    const s = statusOf(c, "http://172.27.96.1:18790", NOW, false, true);
-    expect(s).toEqual({ state: "broken", reason: { kind: "stale", endpoint: "http://172.20.0.1:18790" } });
+    const reachable = { adoptable: true };
+    const nat = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: "http://172.27.96.1:18790" });
+    expect(statusOf(nat, BASE, NOW, false, reachable)).toEqual({
+      state: "broken",
+      reason: { kind: "elsewhere", endpoint: "http://172.27.96.1:18790" },
+    });
+    // localhost 也不算：mirrored 下只认 127.0.0.1
+    const named = client({ adopted_at_ms: adopted, endpoint: "http://localhost:18790" });
+    expect(statusOf(named, BASE, NOW, false, reachable).reason?.kind).toBe("elsewhere");
+    // 指着 127.0.0.1 的照常：收到过请求就是使用中，带不带 /v1 都一样
+    const ok = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: `${BASE}/v1` });
+    expect(statusOf(ok, BASE, NOW, false, reachable).state).toBe("in_use");
     // 没接管的不算
-    expect(statusOf(client(), BASE, NOW, false, true).state).toBe("idle");
+    expect(statusOf(client({ endpoint: "http://172.27.96.1:18790" }), BASE, NOW, false, reachable).state).toBe(
+      "idle",
+    );
+  });
+
+  it("WSL 里那一组够不着网关（NAT 这些）时，接管过的都是未生效", () => {
+    const adopted = NOW - 60_000;
+    const blocked = { adoptable: false };
+    const c = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: BASE });
+    expect(statusOf(c, BASE, NOW, false, blocked)).toEqual({ state: "broken", reason: { kind: "unreachable" } });
+    // 没接管的、没检测到的照旧
+    expect(statusOf(client(), BASE, NOW, false, blocked).state).toBe("idle");
+    expect(statusOf(client({ installed: false }), BASE, NOW, false, blocked).state).toBe("absent");
+  });
+
+  it("连着远程 core 时，WSL 里的和这台电脑上的一样：指着服务器才算", () => {
+    const server = "http://192.168.1.20:8788";
+    const c = client({ adopted_at_ms: 1, last_seen_ms: 5, endpoint: server });
+    expect(statusOf(c, server, 10, true, { adoptable: true }).state).toBe("in_use");
+    const left = client({ adopted_at_ms: 1, endpoint: "http://127.0.0.1:8788" });
+    expect(statusOf(left, server, 10, true, { adoptable: true }).reason?.kind).toBe("local");
   });
 
   it("证据比怀疑可靠：有更高优先级的文件，但请求已经来了，就是在用", () => {
@@ -122,6 +151,14 @@ describe("本机网关的地址", () => {
     }
     for (const e of ["http://192.168.1.20:8788/v1", "http://nas.local:8788", "", "not a url"]) {
       expect(isLoopback(e)).toBe(false);
+    }
+  });
+
+  it("WSL 里的客户端只认 127.0.0.1", () => {
+    expect(isIpv4Loopback("http://127.0.0.1:8788")).toBe(true);
+    expect(isIpv4Loopback("http://127.0.0.1:8788/v1")).toBe(true);
+    for (const e of ["http://localhost:8788", "http://[::1]:8788", "http://172.27.96.1:8788", "not a url"]) {
+      expect(isIpv4Loopback(e)).toBe(false);
     }
   });
 });

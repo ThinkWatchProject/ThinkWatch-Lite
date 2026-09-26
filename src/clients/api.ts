@@ -6,7 +6,17 @@
  * 只有网关地址和密钥，那也是 Rust 那一侧去问。
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { AdoptResponse, ClientsResponse, FindingView, PlanView, Retargeted, WslResponse } from "@/types";
+import type {
+  AdoptResponse,
+  ClientsResponse,
+  FindingView,
+  Msg,
+  PlanView,
+  Retargeted,
+  WslConfigKept,
+  WslConfigPlan,
+  WslResponse,
+} from "@/types";
 
 export interface RestoreOutcome {
   client: string;
@@ -29,17 +39,19 @@ export const api = {
   restoreAll: () => invoke<RestoreOutcome[]>("restore_all"),
   /** 连着远程时：还指着本机网关的，改为指向此刻连着的 core */
   retarget: () => invoke<Retargeted>("retarget_clients"),
-  /** 一个 WSL 发行版里还指着旧地址的，改为指向此刻该连的那一个 */
-  retargetWsl: (env: string) => invoke<Retargeted>("retarget_wsl", { env }),
   diagnose: (id: string, env?: string) => invoke<FindingView[]>("diagnose_client", { id, env }),
   /** 为这个客户端准备它的专用密钥：为它留着的，没有就新建一把绑给它。交回的是名字 */
   prepareKey: (id: string, env?: string) => invoke<string>("prepare_client_key", { id, env }),
   /** 地址由 Rust 侧去问 core 再写进剪贴板，界面只说是哪个客户端 */
   copyEndpoint: (id: string, env?: string) => invoke<void>("copy_client_endpoint", { id, env }),
   copyKey: (name: string) => invoke<void>("copy_key", { name }),
-  /** 放行 WSL 的那条防火墙命令，由 Rust 侧拼好写进剪贴板 */
-  copyFirewall: () => invoke<void>("copy_wsl_firewall"),
-  /** 手动配置 WSL 里的客户端之前：把网关的监听改到这个发行版够得到的样子 */
-  listenForWsl: (env: string) => invoke<void>("listen_for_wsl", { env }),
+  /** 把 WSL 2 改成 mirrored 网络：`.wslconfig` 的改动，确认之前不写 */
+  planMirrored: () => invoke<WslConfigPlan>("plan_wsl_mirrored"),
+  /** 落盘上面那一份（全文备份之后）。交回不至于失败、但该说一声的事 */
+  setMirrored: () => invoke<Msg[]>("set_wsl_mirrored"),
+  /** `wsl --shutdown`：所有正在运行的发行版都会停下 */
+  shutdownWsl: () => invoke<void>("shutdown_wsl"),
+  /** 卸载不改回的 `.wslconfig`（是在这里改成 mirrored 的）。没改过就是 null */
+  wslconfigKept: () => invoke<WslConfigKept | null>("wslconfig_kept"),
   reveal: (id: string, env?: string) => invoke<void>("reveal_client_config", { id, env }),
 };

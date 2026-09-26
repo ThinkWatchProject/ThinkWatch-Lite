@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PowerOffIcon, RotateCcwIcon } from "lucide-react";
+import { NetworkIcon, PowerOffIcon, RotateCcwIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +19,7 @@ import { StatusDot } from "@/ui/status-dot";
 import type { UninstallStep } from "@/types";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
+import { isWindows } from "@/platform";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -102,6 +103,12 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
    */
   const clients = useResource("settings:uninstall-clients", clientsApi.list);
   const adopted = clients.data?.clients.filter((c) => c.adopted_at_ms !== null).map((c) => c.name);
+  /**
+   * 客户端页上改成 mirrored 的 `.wslconfig`。**卸载不改回它**：那是 WSL 自己的设置，
+   * 改回 NAT 会让别的东西跟着变 —— 这件事在按下去之前说
+   */
+  const wslconfig = useResource(isWindows ? "settings:uninstall-wslconfig" : null, clientsApi.wslconfigKept);
+  const kept = wslconfig.data;
   const running = stage.kind === "running";
   const done = stage.kind === "done";
   /** 没做成的几步。**标题按它说**：有一步没做成还写「卸载完成」，用户就不会往下看是哪一步 */
@@ -159,6 +166,21 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
               <PowerOffIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
               <p>{t.stopAutostart}</p>
             </li>
+            {kept && (
+              <li className="flex gap-2.5">
+                <NetworkIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <div className="min-w-0">
+                  <p>{t.wslconfigKept}</p>
+                  <p className="tw-label break-words text-muted-foreground">
+                    {kept.backup == null
+                      ? t.wslconfigCreated(kept.path)
+                      : drop
+                        ? t.wslconfigBackupDropped(kept.path)
+                        : t.wslconfigBackup(kept.path, kept.backup)}
+                  </p>
+                </div>
+              </li>
+            )}
             <li className="flex gap-2.5">
               <Checkbox
                 id="uninstall-drop-data"

@@ -23,8 +23,6 @@ export interface ManualTarget {
   key?: string | null;
   /** 在哪个 WSL 发行版里；这台电脑上的不给。WSL 里的那一份有它自己的一把密钥 */
   env?: string;
-  /** 网关此刻的监听够不到这个发行版时，要怎么改。空的或不给就是够得到 */
-  listen?: Msg[];
 }
 
 /** 选单里「新建一把」那一项的值。**密钥名首尾不能有空白**，所以没有哪把密钥叫这个 */
@@ -42,15 +40,12 @@ export function ManualDialog({
   keys,
   onClose,
   onKeyReady,
-  onListenChanged,
 }: {
   target: ManualTarget;
   keys: ClientView[];
   onClose: () => void;
   /** 新建了密钥：列表要跟着重读 */
   onKeyReady: () => void;
-  /** 改过了监听：WSL 那几组要跟着重读 */
-  onListenChanged?: () => void;
 }) {
   const t = useText(clientsText);
   const dialogFocus = useDialogFocus();
@@ -75,26 +70,6 @@ export function ManualDialog({
     }
   }
 
-  /** 监听改好了。**点过按钮才改**：和一键接管一样，改设置要用户自己确认 */
-  const [listened, setListened] = useState(false);
-  const [listening, setListening] = useState(false);
-  const env = target.env;
-  const needsListen = env !== undefined && !listened && (target.listen?.length ?? 0) > 0;
-
-  async function changeListen() {
-    if (env === undefined) return;
-    setListening(true);
-    try {
-      await api.listenForWsl(env);
-      setListened(true);
-      onListenChanged?.();
-    } catch (e) {
-      notify.error(e);
-    } finally {
-      setListening(false);
-    }
-  }
-
   const { steps, fields, endpoint } = target.setup;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -111,24 +86,6 @@ export function ManualDialog({
           </Tile>
           <DialogTitle>{t.manualDialogTitle(target.name)}</DialogTitle>
         </DialogHeader>
-
-        {/* 网关不在 WSL 够得到的地方听：下面复制的地址接不通，先说、先改 */}
-        {needsListen && (
-          <Banner
-            layout="inline"
-            tone="warning"
-            title={t.manualListenTitle}
-            actions={
-              <Button size="sm" variant="outline" disabled={listening} onClick={() => void changeListen()}>
-                {t.manualListenApply}
-              </Button>
-            }
-          >
-            {target.listen?.map((m, i) => (
-              <p key={i}>{coreText(m)}</p>
-            ))}
-          </Banner>
-        )}
 
         {/* 步骤带编号圆点：几步、做到哪一步，一眼数得出来 */}
         <ol className="flex flex-col gap-2.5 tw-body">

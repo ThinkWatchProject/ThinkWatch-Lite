@@ -213,20 +213,26 @@ On Windows, Claude Code and Codex installed inside WSL appear in a group of
 their own for each distribution, next to the clients on the computer itself.
 They are pointed at the gateway on Windows, restored and diagnosed the same
 way, each with a key separate from the Windows copy, and their files are edited
-through `\\wsl.localhost`. The address written into them depends on how WSL
-is networked:
+through `\\wsl.localhost`. They are given `127.0.0.1`, the same address as the
+clients on Windows, which WSL reaches in two setups:
 
-- **WSL 1, or WSL 2 with `networkingMode=mirrored`** in `%USERPROFILE%\.wslconfig`:
-  `127.0.0.1`, as on Windows.
-- **WSL 2 with the default NAT networking:** the address of the WSL virtual
-  adapter on Windows. The gateway has to listen on that adapter; when it does
-  not yet, the confirmation says how the listen setting changes before
-  anything is saved. The adapter's address changes when WSL restarts; the
-  page then shows those clients as not in effect, and one click points them at
-  the new address. The installer adds a Windows Firewall rule that lets only
-  the gateway accept connections, and only from WSL's range
-  (`172.16.0.0/12`); if the rule is missing, the page shows the equivalent
-  PowerShell command to run as an administrator.
+- **WSL 1**, which shares the network with Windows.
+- **WSL 2 with mirrored networking**: `networkingMode=mirrored` under `[wsl2]`
+  (or the older `[experimental]`) in `%USERPROFILE%\.wslconfig`. It needs
+  Windows 11 22H2 or later and WSL 2.0.5 or later.
+
+WSL 2 uses NAT networking by default, and the gateway on Windows cannot be
+reached from inside WSL that way; the gateway does not listen on the WSL
+virtual adapter for it. The WSL group then explains this instead of offering to
+connect, and offers to switch to mirrored networking: `networkingMode` in
+`.wslconfig` is added or changed, and nothing else in the file is touched,
+through the same diff, confirmation and full backup as a client. The switch
+takes effect once WSL restarts, which the page also offers (`wsl --shutdown`,
+which stops every running distribution). A full uninstall leaves `.wslconfig`
+as it is, and its backup is kept. On Windows 10 and Windows 11 21H2, which
+have no mirrored networking, and with a WSL older than 2.0.5, the group says
+so. When connected to a remote core, clients in WSL are pointed at the server
+like those on Windows, whatever the networking.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/clients-dark.png">

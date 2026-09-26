@@ -125,24 +125,39 @@ export const clientsText = messages(
     thisComputer: "这台电脑",
     wslGroup: (distro: string) => `WSL · ${distro}`,
     inWsl: (name: string, distro: string) => `${name}（WSL · ${distro}）`,
-    wslIntro: (network: "wsl1" | "nat" | "mirrored", host: string) =>
-      network === "nat"
-        ? `NAT 网络，经由 ${host} 连接 Windows 上的网关。WSL 重启后该地址可能变化。`
-        : network === "mirrored"
-          ? `镜像网络，经由 ${host} 连接 Windows 上的网关。`
-          : `WSL1 与 Windows 共用网络，经由 ${host} 连接网关。`,
-    wslIntroNoHost: "WSL 中的 Claude Code 和 Codex 经由 Windows 上的网关发送请求。",
     wslUnreadable: "无法读取",
-    stale: (host: string) => `仍指向旧地址 ${host}`,
-    wslStale: (n: number) => `${n} 个客户端仍指向 WSL 重启前的地址，请求无法到达网关。`,
-    readdress: "重新指向",
-    readdressed: (names: string[]) => `已重新指向：${names.join("、")}`,
-    readdressFailed: "以下客户端未能重新指向",
-    firewallTitle: "Windows 防火墙中缺少放行 WSL 的规则",
-    firewallBody: "缺少该规则时，WSL 中的客户端无法连接网关。请在以管理员身份运行的 PowerShell 中执行以下命令：",
-    copyCommand: "复制命令",
-    manualListenTitle: "网关尚未监听 WSL 可以访问的地址",
-    manualListenApply: "修改监听设置",
+    /** 组名下面那一句：此刻用的是哪种网络、经由哪个地址连接网关；不能接管的说一声 */
+    wslSummary: {
+      wsl1: (host: string) => `WSL 1，与 Windows 共用网络，经由 ${host} 连接网关。`,
+      mirrored: (host: string) => `mirrored 网络，经由 ${host} 连接网关。`,
+      nat: (host: string) => `NAT 网络，经由 ${host} 连接网关。`,
+      natBlocked: "NAT 网络，无法接管。",
+      restart: "NAT 网络，重启 WSL 后改用 mirrored 网络。",
+      fallback: "NAT 网络，未能改用 mirrored 网络。",
+    },
+    // 不能接管时，组里的那条说明
+    natBody: "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问；改为 mirrored 网络模式后才能接管。",
+    natVersion: "mirrored 网络模式需要 WSL 2.0.5 或更高版本，可在终端中运行 wsl --update 更新。",
+    toMirrored: "改为 mirrored 模式…",
+    restartBody: "已在 .wslconfig 中设为 mirrored 网络模式，重启 WSL 后生效。",
+    fallbackBody: "WSL 重启后仍在使用 NAT 网络，未能启用 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
+    restartWsl: "重启 WSL…",
+    oldWindowsBody: "这台电脑的 Windows 版本不支持 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
+    oldWslBody: (version: string) => `WSL ${version} 不支持 mirrored 网络模式，需先在终端中运行 wsl --update。`,
+    unreachable: "WSL 中无法访问网关",
+    // 改为 mirrored 的确认
+    mirroredTitle: "改为 mirrored 网络模式",
+    mirroredAllDistros: "对这台电脑上所有 WSL 2 发行版生效。",
+    mirroredRestart: "重启 WSL 后才会生效。",
+    mirroredKept: "完全卸载时不会改回。",
+    mirroredNoop: "已是 mirrored 网络模式，无需修改。",
+    confirmMirrored: "改为 mirrored",
+    mirroredSet: "已改为 mirrored 网络模式，重启 WSL 后生效",
+    // 重启 WSL 的确认
+    restartTitle: "重启 WSL",
+    restartWhat: "将执行 wsl --shutdown：所有正在运行的 WSL 发行版都会停止，其中运行的程序随之退出。",
+    confirmRestart: "重启 WSL",
+    wslRestarted: "已重启 WSL",
 
     // 全部还原
     restoreAllTitle: "还原全部客户端",
@@ -263,26 +278,40 @@ export const clientsText = messages(
     thisComputer: "This computer",
     wslGroup: (distro: string) => `WSL · ${distro}`,
     inWsl: (name: string, distro: string) => `${name} (WSL · ${distro})`,
-    wslIntro: (network: "wsl1" | "nat" | "mirrored", host: string) =>
-      network === "nat"
-        ? `NAT networking; clients reach the gateway on Windows at ${host}. The address can change when WSL restarts.`
-        : network === "mirrored"
-          ? `Mirrored networking; clients reach the gateway on Windows at ${host}.`
-          : `WSL 1 shares the network with Windows; clients reach the gateway at ${host}.`,
-    wslIntroNoHost: "Claude Code and Codex in WSL send their requests through the gateway on Windows.",
     wslUnreadable: "Could not be read",
-    stale: (host: string) => `Still points at the old address ${host}`,
-    wslStale: (n: number) =>
-      `${count(n, "client still points", "clients still point")} at the address WSL had before it restarted, so requests do not reach the gateway.`,
-    readdress: "Point again",
-    readdressed: (names: string[]) => `Pointed again: ${names.join(", ")}`,
-    readdressFailed: "These clients could not be pointed again",
-    firewallTitle: "Windows Firewall has no rule allowing WSL",
-    firewallBody:
-      "Without it, clients in WSL cannot connect to the gateway. Run this command in PowerShell as an administrator:",
-    copyCommand: "Copy command",
-    manualListenTitle: "The gateway is not yet listening where WSL can reach it",
-    manualListenApply: "Change listen setting",
+    wslSummary: {
+      wsl1: (host: string) => `WSL 1 shares the network with Windows; clients reach the gateway at ${host}.`,
+      mirrored: (host: string) => `Mirrored networking; clients reach the gateway at ${host}.`,
+      nat: (host: string) => `NAT networking; clients reach the gateway at ${host}.`,
+      natBlocked: "NAT networking; clients cannot be connected.",
+      restart: "NAT networking; mirrored networking takes over once WSL restarts.",
+      fallback: "NAT networking; mirrored networking could not be turned on.",
+    },
+    natBody:
+      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. Clients can be connected once WSL uses mirrored networking.",
+    natVersion: "Mirrored networking needs WSL 2.0.5 or later; wsl --update in a terminal updates it.",
+    toMirrored: "Switch to mirrored…",
+    restartBody: "Mirrored networking is set in .wslconfig and takes effect once WSL restarts.",
+    fallbackBody:
+      "WSL still uses NAT networking after restarting. Mirrored networking could not be turned on, so clients in WSL cannot be connected.",
+    restartWsl: "Restart WSL…",
+    oldWindowsBody:
+      "This version of Windows does not support mirrored networking, so clients in WSL cannot be connected.",
+    oldWslBody: (version: string) =>
+      `WSL ${version} does not support mirrored networking. Run wsl --update in a terminal first.`,
+    unreachable: "The gateway cannot be reached from WSL",
+    mirroredTitle: "Switch to mirrored networking",
+    mirroredAllDistros: "Applies to every WSL 2 distribution on this computer.",
+    mirroredRestart: "Takes effect once WSL restarts.",
+    mirroredKept: "A full uninstall does not change it back.",
+    mirroredNoop: "Mirrored networking is already set; nothing to change.",
+    confirmMirrored: "Switch",
+    mirroredSet: "Switched to mirrored networking; it takes effect once WSL restarts",
+    restartTitle: "Restart WSL",
+    restartWhat:
+      "This runs wsl --shutdown: every running WSL distribution stops, and the programs running in it exit.",
+    confirmRestart: "Restart WSL",
+    wslRestarted: "WSL restarted",
 
     restoreAllTitle: "Restore all clients",
     restoreAllBody: (n: number) =>

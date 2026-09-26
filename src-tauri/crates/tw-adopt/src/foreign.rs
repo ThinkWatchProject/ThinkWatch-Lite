@@ -146,6 +146,18 @@ pub fn read(path: &Path) -> Result<Option<String>, ForeignError> {
     }
 }
 
+/// [`read`]，不当成 UTF-8：编码由调用方自己认（`.wslconfig` 可能是 UTF-16）。
+pub fn read_bytes(path: &Path) -> Result<Option<Vec<u8>>, ForeignError> {
+    match std::fs::read(resolve(path)?) {
+        Ok(b) => Ok(Some(b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(ForeignError::Read {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 fn mode_of(path: &Path) -> Option<u32> {
     #[cfg(unix)]
     {
@@ -165,7 +177,12 @@ fn mode_of(path: &Path) -> Option<u32> {
 ///
 /// 不强行改成 0600：那超出了「只改 endpoint 和 key 字段」的边界。权限
 /// 太松就报告给用户，让他自己决定 —— 报告是我们的职责，修改是他的权利。
-fn write_atomic(real: &Path, text: &str, keep_mode: Option<u32>) -> Result<(), ForeignError> {
+fn write_atomic(
+    real: &Path,
+    text: impl AsRef<[u8]>,
+    keep_mode: Option<u32>,
+) -> Result<(), ForeignError> {
+    let text = text.as_ref();
     // WSL 里已经在的文件**写进原文件**，不换一个新的挪过去：从 Windows 这一侧
     // 看不到也设不了 Linux 的权限位，挪过去的新文件拿的是 9P 默认给的权限
     // （通常别人也能读），用户原来的 0600 就没了，还原也回不去。原文件还是那个
@@ -193,7 +210,7 @@ fn write_atomic(real: &Path, text: &str, keep_mode: Option<u32>) -> Result<(), F
     // 临时文件**生来就是 0600**：里面已经是换上的网关密钥。写完再放宽成原文件
     // 的权限位（用户自己给的，`chmod` 不受 umask 影响，照原样还回去）。
     let _ = std::fs::remove_file(&tmp);
-    write_private(&tmp, text.as_bytes()).map_err(w)?;
+    write_private(&tmp, text).map_err(w)?;
     #[cfg(unix)]
     if let Some(mode) = keep_mode.filter(|m| *m != 0o600) {
         use std::os::unix::fs::PermissionsExt;
@@ -219,7 +236,7 @@ fn make_private(_: &Path) -> bool {
 }
 
 /// 截断原文件再写，落盘了再返回。**不新建**：文件不在就是出错了。
-fn write_in_place(real: &Path, text: &str) -> Result<(), ForeignError> {
+fn write_in_place(real: &Path, text: impl AsRef<[u8]>) -> Result<(), ForeignError> {
     use std::io::Write;
     let w = |source| ForeignError::Write {
         path: real.to_path_buf(),
@@ -230,7 +247,7 @@ fn write_in_place(real: &Path, text: &str) -> Result<(), ForeignError> {
         .truncate(true)
         .open(real)
         .map_err(w)?;
-    f.write_all(text.as_bytes()).map_err(w)?;
+    f.write_all(text.as_ref()).map_err(w)?;
     f.sync_all().map_err(w)
 }
 
@@ -358,12 +375,34 @@ fn flat_name(real: &Path) -> String {
         .replace(['/', '\\', ':'], "%")
 }
 
-fn backup_to(root: &Path, real: &Path, text: &str) -> Result<PathBuf, ForeignError> {
+/// 这个文件在 `root` 下的全部备份，旧的在前。每次改它之前都留一份，最旧的那一份
+/// 就是第一次改它之前的样子
+pub fn backups_of(root: &Path, real: &Path) -> Vec<PathBuf> {
+    let flat = flat_name(real);
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path().join(&flat))
+        .filter(|p| p.is_file())
+        .collect();
+    // 目录名是 `<毫秒>-<序号>`，补零到同样宽度：按名字排就是按时间排
+    out.sort();
+    out
+}
+
+fn backup_to(root: &Path, real: &Path, text: impl AsRef<[u8]>) -> Result<PathBuf, ForeignError> {
     backup_at(root, real, text, now_ms())
 }
 
 /// 时间戳从外面传进来，测试才能稳定地造出「同一毫秒」。
-fn backup_at(root: &Path, real: &Path, text: &str, ms: u64) -> Result<PathBuf, ForeignError> {
+fn backup_at(
+    root: &Path,
+    real: &Path,
+    text: impl AsRef<[u8]>,
+    ms: u64,
+) -> Result<PathBuf, ForeignError> {
     // 目录名里带上来源路径的形状，一眼能看出这是谁的备份
     let flat = flat_name(real);
     std::fs::create_dir_all(root).map_err(|source| ForeignError::Write {
@@ -395,7 +434,7 @@ fn backup_at(root: &Path, real: &Path, text: &str, ms: u64) -> Result<PathBuf, F
             path: file.clone(),
             source,
         })?;
-    std::io::Write::write_all(&mut f, text.as_bytes()).map_err(|source| ForeignError::Write {
+    std::io::Write::write_all(&mut f, text.as_ref()).map_err(|source| ForeignError::Write {
         path: file.clone(),
         source,
     })?;
@@ -412,11 +451,38 @@ pub struct Change<'a> {
     pub carries_secret: bool,
 }
 
+/// [`Change`]，内容是字节：不是 UTF-8 的文件（UTF-16 的 `.wslconfig`）照原来的
+/// 编码写回去。五道关一道不少，见 [`apply_bytes`]。
+pub struct Bytes<'a> {
+    pub path: &'a Path,
+    pub before: Option<&'a [u8]>,
+    pub after: &'a [u8],
+    pub carries_secret: bool,
+}
+
 /// 落盘。`verify` 由调用方按格式提供 —— JSON、TOML、YAML 各有各的解析。
 pub fn apply(
     ch: &Change<'_>,
     root: &Path,
     verify: impl Fn(&str) -> Result<(), String>,
+) -> Result<Applied, ForeignError> {
+    apply_bytes(
+        &Bytes {
+            path: ch.path,
+            before: ch.before.map(str::as_bytes),
+            after: ch.after.as_bytes(),
+            carries_secret: ch.carries_secret,
+        },
+        root,
+        |b| verify(std::str::from_utf8(b).map_err(|e| e.to_string())?),
+    )
+}
+
+/// 落盘一份字节。[`apply`] 是它的文字版。
+pub fn apply_bytes(
+    ch: &Bytes<'_>,
+    root: &Path,
+    verify: impl Fn(&[u8]) -> Result<(), String>,
 ) -> Result<Applied, ForeignError> {
     let real = resolve(ch.path)?;
     let mut warnings = Vec::new();
@@ -433,7 +499,7 @@ pub fn apply(
     }
 
     // 二：还是我们看过的那一份吗
-    let now = match std::fs::read_to_string(&real) {
+    let now = match std::fs::read(&real) {
         Ok(s) => Some(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(source) => {
@@ -454,7 +520,7 @@ pub fn apply(
     // 四：备份 —— 只备份存在过的文件；本来就没有的，还原靠「删掉」
     let backup = match &now {
         Some(text) => backup_to(root, &real, text)?,
-        None => backup_to(root, &real, "")?,
+        None => backup_to(root, &real, b"")?,
     };
 
     let keep = mode_of(&real);
@@ -485,7 +551,7 @@ pub fn apply(
 
     // 五：读回来对一遍。对不上就还原 —— 我们宁可什么都没做成，也不
     // 能留下一个半截的文件。
-    let back = std::fs::read_to_string(&real).map_err(|source| ForeignError::Read {
+    let back = std::fs::read(&real).map_err(|source| ForeignError::Read {
         path: real.clone(),
         source,
     })?;
@@ -739,13 +805,26 @@ mod tests {
         assert_eq!(names, vec![parent(&first), parent(&second), parent(&third)]);
     }
 
+    /// 一个文件的全部备份，旧的在前；别的文件的不算
+    #[test]
+    fn the_backups_of_a_file_are_listed_oldest_first() {
+        let (d, root) = dirs();
+        let p = d.path().join(".wslconfig");
+        let other = d.path().join("c.json");
+        assert!(backups_of(&root, &p).is_empty(), "还没有备份目录");
+        let second = backup_at(&root, &p, "第二次", 1_700_000_000_002).unwrap();
+        let first = backup_at(&root, &p, "第一次", 1_700_000_000_001).unwrap();
+        backup_at(&root, &other, "别人的", 1_700_000_000_000).unwrap();
+        assert_eq!(backups_of(&root, &p), vec![first, second]);
+    }
+
     #[test]
     fn back_to_back_real_backups_all_survive() {
         // 不注入时间戳，走真实时钟：一口气备份很多份，几乎必然撞在同一毫秒。
         let (d, root) = dirs();
         let p = d.path().join("c.json");
         let files: Vec<_> = (0..50)
-            .map(|i| backup_to(&root, &p, &i.to_string()).unwrap())
+            .map(|i| backup_to(&root, &p, i.to_string()).unwrap())
             .collect();
         for (i, f) in files.iter().enumerate() {
             assert_eq!(std::fs::read_to_string(f).unwrap(), i.to_string());

@@ -142,12 +142,11 @@ scan.skill.all_tools
 scan.skill.all_tools.detail
 t.detail test
 t.title test
-wsl.listen.all
-wsl.listen.allow
-wsl.listen.nic
-wsl.nat_address
-wsl.no_adapter
 wsl.no_user
+wsl.none
+wsl.shutdown_failed
 wsl.unknown
+wsl.unreachable
 wsl.unreadable
 wsl.via_windows
+wslconfig.encoding
