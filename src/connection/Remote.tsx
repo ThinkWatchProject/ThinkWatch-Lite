@@ -20,7 +20,8 @@ export function RemoteNote({ children }: { children: string }) {
 
 /**
  * 把接管着的客户端改为指向服务器之后，**逐个说**：改好了哪几个，哪几个没改成、为什么。
- * 一个失败不影响其余的，所以也不能只说一句「失败了」。
+ * 一个失败不影响其余的，所以也不能只说一句「失败了」。WSL 里的名字带着发行版；整个
+ * 发行版读不到的，那一条的名字就是发行版（`WSL · Ubuntu`）。
  */
 export function RetargetReport({ name, result }: { name: string; result: Retargeted }) {
   const t = useText(remoteText);
@@ -31,21 +32,32 @@ export function RetargetReport({ name, result }: { name: string; result: Retarge
       )}
       {result.failed.length > 0 && (
         <Banner layout="inline" tone="error" title={t.retargetFailedTitle(name)}>
-          <ul className="flex flex-col gap-0.5">
-            {result.failed.map((f) => (
-              <li key={f.client}>
-                <span className="font-medium">{f.name}</span>
-                {t.sep}
-                {coreText(f.error)}
-              </li>
-            ))}
-          </ul>
+          <RetargetFailures failed={result.failed} />
         </Banner>
       )}
       {result.synced.length === 0 && result.failed.length === 0 && (
         <p className="tw-body text-muted-foreground">{t.retargetNone}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * 没改成的那几个，一行一个：名字和原因。**按名字认行**：同一个客户端在这台电脑上和
+ * WSL 里是两份，客户端 id 一样、名字不一样
+ */
+export function RetargetFailures({ failed }: { failed: Retargeted["failed"] }) {
+  const t = useText(remoteText);
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {failed.map((f) => (
+        <li key={f.name}>
+          <span className="font-medium">{f.name}</span>
+          {t.sep}
+          {coreText(f.error)}
+        </li>
+      ))}
+    </ul>
   );
 }
 

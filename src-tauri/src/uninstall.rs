@@ -24,7 +24,7 @@ pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
                 crate::clients::wsl::display_name(n, &w)
             })),
             Err(e) => out.push(RestoreOutcome {
-                client: format!("WSL · {name}"),
+                client: crate::clients::wsl::place_name(&name),
                 ok: false,
                 detail: crate::core_text::text(&e),
             }),

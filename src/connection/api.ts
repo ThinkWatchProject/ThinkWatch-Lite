@@ -91,10 +91,19 @@ export type SwitchError =
   | { kind: "key_unreadable"; detail: string }
   | { kind: "connect"; error: ConnectError };
 
-/** 切过去之前要说的：这台机器上已接管、还指着本机网关的客户端 */
+/** 切过去之前要说的：已接管、还指着本机网关的客户端，这台电脑上的和各个 WSL 发行版里的 */
 export interface Adopted {
+  /** 一共几个 */
   count: number;
   local_addr: string | null;
+  /** 各在哪一处：这台电脑在前，再是各个 WSL 发行版。一个都没有的地方不列 */
+  places: AdoptedAt[];
+}
+
+export interface AdoptedAt {
+  /** WSL 发行版的名字；这台电脑上的是 null */
+  distro: string | null;
+  count: number;
 }
 
 /** 切换做完了。勾了「同时将这些客户端改为指向…」的，带着改的结果 */

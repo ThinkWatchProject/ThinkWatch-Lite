@@ -14,6 +14,7 @@ import { coreText } from "@/i18n/core.i18n";
 import { appText } from "@/App.i18n";
 import type { ClientsResponse, DetectedClient, PlanView, Retargeted, WslConfigPlan, WslGroup } from "@/types";
 import { useRemote } from "@/connection/useRemote";
+import { RetargetFailures } from "@/connection/Remote";
 import { remoteText } from "@/connection/remote.i18n";
 import { useKeys, useKeyUsage } from "@/keys/data";
 import { RowsSkeleton } from "@/keys/parts";
@@ -53,6 +54,13 @@ interface Located {
 const slot = (id: string, env?: string) => (env ? `${env}/${id}` : id);
 
 /**
+ * 接管着、还指着本机网关的。连着远程时它们的请求落在一个停了的网关上（切换时没勾选
+ * 「同时将这些客户端改为指向…」）
+ */
+const leftBehindOf = (cs: DetectedClient[]) =>
+  cs.filter((c) => c.adopted_at_ms != null && c.endpoint != null && isLoopback(c.endpoint));
+
+/**
  * 客户端：这台电脑上的 AI 客户端，哪些经过网关、是不是真的生效，没接上的怎么接上。
  *
  * 这是整个应用里唯一会去改**用户其他软件**配置的地方，所以每一处交互都按
@@ -66,6 +74,9 @@ const slot = (id: string, env?: string) => (env ? `${env}/${id}` : id);
  * Windows 上每个 WSL 发行版再各是一组。WSL 2 默认的 NAT 网络下那一组不能接管，
  * 组里说明原因，给「改为 mirrored 模式」（改 `.wslconfig`，同样先看改动再确认）和
  * 「重启 WSL」。
+ *
+ * 连着远程 core 时，接管着却还指着本机网关的（切换时没一起改的）在各自那一处说：
+ * 这台电脑上的在页顶，WSL 里的在各自那一组里，各给一个「改为指向服务器」，只改那一处。
  */
 export default function ClientsPage({
   busy,
@@ -90,7 +101,9 @@ export default function ClientsPage({
   const [asking, setAsking] = useState<string | null>(null);
   const [confirming, confirm] = usePending();
   const [restoringAll, restoreAllRun] = usePending();
-  const [retargeting, retargetRun] = usePending();
+  const [, retargetRun] = usePending();
+  /** 正在「改为指向服务器」的那一处：这台电脑是 `""`，WSL 里的是发行版的名字 */
+  const [retargetingAt, setRetargetingAt] = useState<string | null>(null);
   /** 正在取 `.wslconfig` 的改动：「改为 mirrored 模式」那个按钮转圈 */
   const [planningMirrored, setPlanningMirrored] = useState(false);
   const [restartingWsl, restartWslRun] = usePending();
@@ -123,8 +136,8 @@ export default function ClientsPage({
   ];
   /** 配置里的模型清单跟网关对不上了（opencode）：更新走的是接管那一遍「差异 → 确认 → 写入」 */
   const staleModels = data?.clients.filter((c) => c.models_stale) ?? [];
-  /** 连着远程时，接管着却还指着本机网关的 */
-  const leftBehind = remote ? adopted.filter((c) => c.endpoint != null && isLoopback(c.endpoint)) : [];
+  /** 连着远程时，这台电脑上接管着却还指着本机网关的。WSL 里的在各自那一组里说 */
+  const leftBehind = remote ? leftBehindOf(adopted) : [];
 
   async function ask(c: DetectedClient, restore: boolean, env?: string) {
     setAsking(slot(c.id, env));
@@ -197,16 +210,24 @@ export default function ClientsPage({
     });
   }
 
-  /** 还指着本机网关的，改为指向连着的那台服务器 */
-  function retarget(serverName: string) {
+  /**
+   * 还指着本机网关的，改为指向连着的那台服务器：这台电脑上的，或者 `env` 那个 WSL 发行版
+   * 里的（读它会唤醒发行版，而这一下是用户点的）
+   */
+  function retarget(serverName: string, env?: string) {
     void retargetRun(async () => {
-      const r = await api.retarget();
-      setRetargeted(r.failed.length > 0 ? r : null);
-      if (r.failed.length === 0) {
-        if (r.synced.length > 0) notify.success(rt.retargeted(serverName, r.synced.map((s) => s.name)));
-        else notify.info(rt.retargetNone);
+      setRetargetingAt(env ?? "");
+      try {
+        const r = await api.retarget(env);
+        setRetargeted(r.failed.length > 0 ? r : null);
+        if (r.failed.length === 0) {
+          if (r.synced.length > 0) notify.success(rt.retargeted(serverName, r.synced.map((s) => s.name)));
+          else notify.info(rt.retargetNone);
+        }
+        await Promise.all([clients.reload(), env ? wsl.reload() : undefined]);
+      } finally {
+        setRetargetingAt(null);
       }
-      await clients.reload();
     });
   }
 
@@ -292,13 +313,23 @@ export default function ClientsPage({
         className="mb-3"
         actions={
           remote && (
-            <Button size="sm" variant="outline" pending={retargeting} onClick={() => retarget(remote.name)}>
+            <Button
+              size="sm"
+              variant="outline"
+              pending={retargetingAt === ""}
+              onClick={() => retarget(remote.name)}
+            >
               {rt.retargetTo(remote.name)}
             </Button>
           )
         }
       >
-        {leftBehind.length > 0 && rt.localLeft(leftBehind.length, hostOf(leftBehind[0]?.endpoint ?? ""))}
+        {leftBehind.length > 0 &&
+          // 有 WSL 分组时说明是这台电脑上的：WSL 里的在各自那一组里另说
+          (groups.length > 0 ? rt.localLeftHere : rt.localLeft)(
+            leftBehind.length,
+            hostOf(leftBehind[0]?.endpoint ?? ""),
+          )}
       </Banner>
       <Banner
         show={remote !== null && retargeted !== null}
@@ -307,15 +338,7 @@ export default function ClientsPage({
         className="mb-3"
         title={remote && rt.retargetFailedTitle(remote.name)}
       >
-        <ul className="flex flex-col gap-0.5">
-          {retargeted?.failed.map((f) => (
-            <li key={f.client}>
-              <span className="font-medium">{f.name}</span>
-              {rt.sep}
-              {coreText(f.error)}
-            </li>
-          ))}
-        </ul>
+        <RetargetFailures failed={retargeted?.failed ?? []} />
       </Banner>
 
       {staleModels.map((c) => (
@@ -341,21 +364,35 @@ export default function ClientsPage({
               {/* 有 WSL 时分组：先是这台电脑，再是每个发行版 */}
               {groups.length > 0 && <h2 className="mb-3 tw-head text-foreground">{t.thisComputer}</h2>}
               <Body data={d} ctx={ctx} />
-              {groups.map((g) => (
-                <WslSection
-                  key={g.distro}
-                  group={g}
-                  ctx={ctxFor(
-                    g.gateway_base,
-                    g.clients.map((c) => c.id),
-                    g.distro,
-                    { adoptable: g.adoptable },
-                  )}
-                  planning={planningMirrored}
-                  onMirrored={() => void askMirrored()}
-                  onRestart={() => setDialog({ kind: "restartWsl" })}
-                />
-              ))}
+              {groups.map((g) => {
+                const left = remote ? leftBehindOf(g.clients) : [];
+                return (
+                  <WslSection
+                    key={g.distro}
+                    group={g}
+                    ctx={ctxFor(
+                      g.gateway_base,
+                      g.clients.map((c) => c.id),
+                      g.distro,
+                      { adoptable: g.adoptable },
+                    )}
+                    planning={planningMirrored}
+                    onMirrored={() => void askMirrored()}
+                    onRestart={() => setDialog({ kind: "restartWsl" })}
+                    left={
+                      remote && left.length > 0
+                        ? {
+                            count: left.length,
+                            addr: hostOf(left[0]?.endpoint ?? ""),
+                            server: remote.name,
+                            pending: retargetingAt === g.distro,
+                            onRetarget: () => retarget(remote.name, g.distro),
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </>
           )
         }
@@ -460,12 +497,27 @@ function Body({ data, ctx }: { data: ClientsResponse; ctx: RowContext }) {
   );
 }
 
+/** 连着远程时，一个 WSL 分组里接管着、还指着本机网关的（切换时没一起改的） */
+interface WslLeft {
+  count: number;
+  /** 它们指着的地址：`127.0.0.1:8788` */
+  addr: string;
+  /** 连着的那台服务器的名字 */
+  server: string;
+  /** 这一组的「改为指向服务器」正在改 */
+  pending: boolean;
+  onRetarget: () => void;
+}
+
 /**
  * 「WSL · <发行版>」那一组：可以收起，和上面几组一样。
  *
  * 组名下面一句说它用哪种网络、经由哪个地址连网关。**此刻够不着网关的**（NAT、等着
  * 重启、Windows 或 WSL 太旧）组里先说为什么，能动手的给按钮；表里不给接管和手动配置，
  * 接管过的照样能还原，没检测到的那几行不列 —— 列出来也没法配。
+ *
+ * 连着远程 core、组里还有指着本机网关的（`left`）：组名下面那一句接着说有几个，组里
+ * 说明它们的请求会失败，给「改为指向服务器」，和这台电脑上的那几个一样。
  */
 function WslSection({
   group: g,
@@ -473,6 +525,7 @@ function WslSection({
   planning,
   onMirrored,
   onRestart,
+  left,
 }: {
   group: WslGroup;
   ctx: RowContext;
@@ -480,11 +533,14 @@ function WslSection({
   planning: boolean;
   onMirrored: () => void;
   onRestart: () => void;
+  left?: WslLeft;
 }) {
   const t = useText(clientsText);
+  const rt = useText(remoteText);
   const installed = g.clients.filter((c) => c.installed);
   const absent = g.clients.filter((c) => !c.installed);
-  const description = g.error ? t.wslUnreadable : wslSummary(g, t);
+  const summary = wslSummary(g, t);
+  const description = g.error ? t.wslUnreadable : left ? t.wslLeft(summary, left.count) : summary;
   return (
     <Section id={`wsl.${g.distro}`} title={t.wslGroup(g.distro)} count={installed.length} description={description}>
       <div className="flex flex-col gap-3">
@@ -496,6 +552,19 @@ function WslSection({
           !g.adoptable && (
             <WslBlocked network={g.network} planning={planning} onMirrored={onMirrored} onRestart={onRestart} />
           )
+        )}
+        {left && (
+          <Banner
+            layout="inline"
+            tone="warning"
+            actions={
+              <Button size="sm" variant="outline" pending={left.pending} onClick={left.onRetarget}>
+                {rt.retargetTo(left.server)}
+              </Button>
+            }
+          >
+            {rt.localLeft(left.count, left.addr)}
+          </Banner>
         )}
         {!g.error && (
           <>

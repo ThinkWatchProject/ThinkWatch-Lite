@@ -37,8 +37,11 @@ export const api = {
   adopt: (id: string, env?: string) => invoke<AdoptResponse>("adopt_client", { id, env }),
   restore: (id: string, env?: string) => invoke<AdoptResponse>("restore_client", { id, env }),
   restoreAll: () => invoke<RestoreOutcome[]>("restore_all"),
-  /** 连着远程时：还指着本机网关的，改为指向此刻连着的 core */
-  retarget: () => invoke<Retargeted>("retarget_clients"),
+  /**
+   * 连着远程时：还指着本机网关的，改为指向此刻连着的 core。`env` 和别的命令一样：
+   * 只改这个 WSL 发行版里的；不带是这台电脑上的
+   */
+  retarget: (env?: string) => invoke<Retargeted>("retarget_clients", { env }),
   diagnose: (id: string, env?: string) => invoke<FindingView[]>("diagnose_client", { id, env }),
   /** 为这个客户端准备它的专用密钥：为它留着的，没有就新建一把绑给它。交回的是名字 */
   prepareKey: (id: string, env?: string) => invoke<string>("prepare_client_key", { id, env }),

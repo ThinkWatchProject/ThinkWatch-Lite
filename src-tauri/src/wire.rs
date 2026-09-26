@@ -386,7 +386,10 @@ pub struct KeySynced {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct KeySyncFailed {
+    /// 客户端 id。改为指向服务器时整个 WSL 发行版读不到，是空的：那时 `name` 是
+    /// 那个发行版（`WSL · Ubuntu`），`error` 说为什么读不到
     pub client: String,
+    /// 界面上显示的名字，WSL 里的带着发行版（`Claude Code (WSL · Ubuntu)`）
     pub name: String,
     pub error: Msg,
 }

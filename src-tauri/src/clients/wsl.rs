@@ -189,9 +189,14 @@ pub fn plan_notes(client: &str, w: &WslHome, remote: bool) -> Vec<Msg> {
     )]
 }
 
+/// 一个发行版给人看的名字：`WSL · Ubuntu`，和客户端页上那一组的组名一样
+pub fn place_name(distro: &str) -> String {
+    format!("WSL · {distro}")
+}
+
 /// 给人看的客户端名字：`Claude Code (WSL · Ubuntu)`
 pub fn display_name(client: &str, w: &WslHome) -> String {
-    format!("{client} (WSL · {})", w.name())
+    format!("{client} ({})", place_name(w.name()))
 }
 
 /// 卸载确认框里那一句要的：`.wslconfig` 此刻是 mirrored，而且是在这里改的（备份

@@ -535,8 +535,23 @@ pub fn adopted(home: &Path) -> Vec<Client> {
 /// 切换确认里说有几个，「改为指向服务器」改的也正是这几个。指着别处的（已经改过去
 /// 了、或者用户自己指到了别的机器）不在里面。
 pub fn adopted_on_this_machine(home: &Path) -> Vec<(Client, String)> {
-    clients::adoptable()
-        .into_iter()
+    pointing_here(home, clients::adoptable())
+}
+
+/// [`adopted_on_this_machine`]，WSL 里的那一份：只看第一批的那几个
+/// （`tw_adopt::wsl::CLIENTS`）。本机时 WSL 里的客户端写的也是 `127.0.0.1`，
+/// 指的是 Windows 上的网关
+pub fn adopted_on_this_machine_wsl(w: &tw_adopt::wsl::WslHome) -> Vec<(Client, String)> {
+    pointing_here(
+        &w.home,
+        clients::adoptable()
+            .into_iter()
+            .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id)),
+    )
+}
+
+fn pointing_here(home: &Path, cs: impl IntoIterator<Item = Client>) -> Vec<(Client, String)> {
+    cs.into_iter()
         .filter_map(|c| {
             let d = detect::detect_one(&c, home);
             d.adopted_at_ms?;
@@ -593,7 +608,8 @@ pub fn key_used_by(client: &str) -> Msg {
 /// 把一个接管着的客户端重新指一次：换一个网关地址、或者换一把密钥。
 ///
 /// 更换密钥之后的同步走这里；从本机切到远程 core 时「把已接管的客户端一起改为指向
-/// 服务器」也是这一步，只是地址和密钥换成了那边的。
+/// 服务器」也是这一步，只是地址和密钥换成了那边的。走的是接管那一套：算出改动、写之前
+/// 全文备份，接管记录里的原值不变，还原照样回到接管之前。
 pub fn repoint(
     home: &Path,
     backups: &Path,
@@ -623,11 +639,12 @@ pub fn repoint(
         })
 }
 
+/// 测试用的假机器，`super::tests`（改为指向服务器那几条）也用
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn key(name: &str, value: &str, client: Option<&str>, default: bool) -> ClientView {
+    pub(crate) fn key(name: &str, value: &str, client: Option<&str>, default: bool) -> ClientView {
         ClientView {
             name: name.into(),
             key: value.into(),
@@ -954,7 +971,7 @@ mod tests {
     }
 
     /// 一个假的 WSL 发行版：`etc/passwd` 和默认用户的 home，Claude Code 和 Codex 都装了
-    fn wsl_home() -> (tempfile::TempDir, tw_adopt::wsl::WslHome) {
+    pub(crate) fn wsl_home() -> (tempfile::TempDir, tw_adopt::wsl::WslHome) {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().join("Ubuntu");
         std::fs::create_dir_all(root.join("etc")).unwrap();

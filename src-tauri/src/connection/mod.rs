@@ -475,35 +475,18 @@ pub async fn switch(
         remember(&dir, &r.id);
     }
     // 切过去之后再改指向：密钥要由服务器发，控制面此刻指着的就是它。**没改成不算
-    // 切换失败** —— 已经切过去了，没改成的逐个交给界面，客户端页上还能再改
+    // 切换失败** —— 已经切过去了，没改成的逐个交给界面，客户端页上还能再改。WSL 里
+    // 接管着的一起改；问不到服务器的网关地址时，每一个都记一条没改成
     let retargeted = if retarget_clients {
         Some(
-            match crate::clients::retarget_adopted(&st.control, &r.host).await {
-                Ok(done) => done,
-                Err(e) => everything_failed(e.into_msg()),
-            },
+            crate::clients::retarget_adopted(&st.control, &r.host, crate::clients::Scope::All)
+                .await,
         )
     } else {
         None
     };
     stop_local_when_quiet(app.clone());
     Ok(retargeted)
-}
-
-/// 改指向整个没做成（问不到服务器的网关地址）：每个该改的都记一条失败
-fn everything_failed(error: tw_api::Msg) -> crate::wire::Retargeted {
-    let home = crate::clients::home_dir();
-    crate::wire::Retargeted {
-        synced: Vec::new(),
-        failed: crate::clients::ops::adopted_on_this_machine(&home)
-            .into_iter()
-            .map(|(c, _)| crate::wire::KeySyncFailed {
-                client: c.id.to_string(),
-                name: c.name.to_string(),
-                error: error.clone(),
-            })
-            .collect(),
-    }
 }
 
 fn remember(dir: &std::path::Path, id: &str) {
@@ -701,11 +684,13 @@ pub fn delete_connection(app: tauri::AppHandle, id: String) -> Out<ConnView> {
     Ok(view(&app))
 }
 
-/// 切过去之前要告诉用户的：这台机器上已接管、还指着本机网关的客户端。按这台机器上
-/// 的文件数，不问 core
+/// 切过去之前要告诉用户的：这台机器上已接管、还指着本机网关的客户端，WSL 里的也算。
+/// 按这台机器上的文件数，不问 core。读 WSL 会唤醒发行版，要等一会儿：不占着异步线程
 #[tauri::command]
 pub async fn switch_preflight() -> Out<crate::clients::Adopted> {
-    Ok(crate::clients::adopted_pointing_at_local())
+    tokio::task::spawn_blocking(crate::clients::adopted_pointing_at_local)
+        .await
+        .map_err(|e| CmdError::plain(e.to_string()))
 }
 
 /// 切换做完了：连接列表，加上勾了改指向时改的结果
