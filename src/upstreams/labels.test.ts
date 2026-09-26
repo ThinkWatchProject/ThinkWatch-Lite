@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView, QuotaWindow } from "@/types";
-import { l1ErrorText, modelFace, planLabel, quotaLeft, quotaWindowLabel } from "./labels";
+import { l1ErrorText, modelFace, planLabel, quotaLeft, quotaWindowBefore, quotaWindowLabel } from "./labels";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -165,6 +165,25 @@ describe("额度窗口", () => {
       expect(quotaLeft(w("weekly", { total: 10000, used: 268, remaining: 9731 }))).toBe(
         "9,731 / 10,000 credits left",
       );
+    } finally {
+      setLang("zh");
+    }
+  });
+
+  // 放在名词前面（「30-day window」「30-day usage limit」）时英文要换成连字符的写法
+  it("names a window before a noun", () => {
+    expect(["30d", "5h", "weekly", "monthly"].map(quotaWindowBefore)).toEqual(["30 天", "5 小时", "每周", "monthly"]);
+    setLang("en");
+    try {
+      expect(["30d", "1d", "3h", "45m", "5h", "weekly", "monthly"].map(quotaWindowBefore)).toEqual([
+        "30-day",
+        "1-day",
+        "3-hour",
+        "45-minute",
+        "5h",
+        "Weekly",
+        "monthly",
+      ]);
     } finally {
       setLang("zh");
     }

@@ -26,7 +26,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptAccountText } from "./ChatgptAccountSection.i18n";
-import { coreText, errorText, planLabel, proxyKindLabel, quotaWindowLabel } from "./labels";
+import { coreText, errorText, planLabel, proxyKindLabel, quotaWindowBefore } from "./labels";
 import { DialogError, FormItem } from "./parts";
 import { QuotaBar } from "./QuotaBar";
 import type { UpstreamForm } from "./upstreamForm";
@@ -175,13 +175,13 @@ export function ChatgptAccountSection({
                   return (
                     <div key={w.window} className="flex flex-col gap-1">
                       <div className="flex items-baseline justify-between tw-body">
-                        <span>{t.window(quotaWindowLabel(w.window))}</span>
+                        <span>{t.window(quotaWindowBefore(w.window))}</span>
                         <span className="tw-num text-muted-foreground">
                           {t.used(Math.round(w.used_percent))}
                           {reset && ` · ${t.resets(reset)}`}
                         </span>
                       </div>
-                      <QuotaBar percent={w.used_percent} label={t.window(quotaWindowLabel(w.window))} />
+                      <QuotaBar percent={w.used_percent} label={t.window(quotaWindowBefore(w.window))} />
                     </div>
                   );
                 })}
