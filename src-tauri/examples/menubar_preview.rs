@@ -151,7 +151,6 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
         gateway: Gateway::Running,
         addr: Some("127.0.0.1:18790".into()),
         notices_on: true,
-        undo_at_ms: Some(now - 40 * 60_000),
         now_ms: now,
         connections: vec![
             Connection {
@@ -300,7 +299,6 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 tokens: 5_800_000,
                 cost_micros: 3_420_000,
             }),
-            undo_at_ms: None,
             update: Some("2026.9.8".into()),
             ..base
         },

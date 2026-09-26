@@ -611,6 +611,43 @@ fn glm_windows_have_names_and_far_resets_are_told_in_days() {
     });
 }
 
+/// ChatGPT 账号的窗口，core 按长度起名（`30d`、`3h`、`45m`）：按长度说，认不出来的原样用
+#[test]
+fn windows_named_by_their_length_are_said_in_words() {
+    let body = |window: &str| {
+        rules::from_event(&quota_exhausted(window, None))[0]
+            .body
+            .clone()
+    };
+    let names = ["30d", "3h", "45m", "monthly"];
+    with_lang(Lang::Zh, || {
+        assert_eq!(
+            names.map(body),
+            [
+                "30 天额度已用完。经此上游的请求会被拒绝。",
+                "3 小时额度已用完。经此上游的请求会被拒绝。",
+                "45 分钟额度已用完。经此上游的请求会被拒绝。",
+                "monthly额度已用完。经此上游的请求会被拒绝。",
+            ]
+        );
+    });
+    with_lang(Lang::En, || {
+        assert_eq!(
+            names.map(body),
+            [
+                "The 30-day usage limit has been reached. \
+                 Requests through this upstream will be rejected.",
+                "The 3-hour usage limit has been reached. \
+                 Requests through this upstream will be rejected.",
+                "The 45-minute usage limit has been reached. \
+                 Requests through this upstream will be rejected.",
+                "The monthly usage limit has been reached. \
+                 Requests through this upstream will be rejected.",
+            ]
+        );
+    });
+}
+
 // ---------------------------------------------------------------- 英文
 
 /// 有没有中文：汉字、中文标点、全角符号

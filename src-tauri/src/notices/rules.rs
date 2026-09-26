@@ -686,17 +686,20 @@ pub fn remote_back() -> Signal {
     Signal::cleared("remote")
 }
 
-/// `5h` / `weekly` → 「5 小时」「每周」（英文是 `5-hour`、`weekly`）。认不出来的原样用
+/// `5h` / `weekly` → 「5 小时」「每周」；按长度起的名字按长度说：`30d` → 「30 天」、
+/// `45m` → 「45 分钟」（和菜单栏认的是同一套写法，见 `window_span`）。认不出来的原样用。
+///
+/// 英文接在「usage limit」前面当定语，写成 `5-hour`、`weekly`、`30-day`、`45-minute`
 fn window_label(w: &str) -> String {
+    use crate::menubar::model::{Span, window_span};
     match w {
         "weekly" => tr!("每周", "weekly").into(),
         "5h" => tr!("5 小时", "5-hour").into(),
-        other => match other.strip_suffix('h').and_then(|n| n.parse::<u32>().ok()) {
-            Some(h) => tr!(format!("{h} 小时"), format!("{h}-hour")),
-            None => match other.strip_suffix('d').and_then(|n| n.parse::<u32>().ok()) {
-                Some(d) => tr!(format!("{d} 天"), format!("{d}-day")),
-                None => other.to_string(),
-            },
+        other => match window_span(other) {
+            Some((n, Span::Days)) => tr!(format!("{n} 天"), format!("{n}-day")),
+            Some((n, Span::Hours)) => tr!(format!("{n} 小时"), format!("{n}-hour")),
+            Some((n, Span::Minutes)) => tr!(format!("{n} 分钟"), format!("{n}-minute")),
+            None => other.to_string(),
         },
     }
 }

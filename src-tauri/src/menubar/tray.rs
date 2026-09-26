@@ -90,9 +90,9 @@ pub fn apply(bar: &Bar, rows: &[Row]) {
 
 /// Linux 上把「打开主界面」挪到最前面，后面跟一条分隔线。
 ///
-/// 别处点一下图标就开窗口，这一项放在末尾那组里就够了；AppIndicator 不给点击
-/// 事件，**菜单是唯一的入口**，它就得是第一眼看到的那一项。是挪不是加：同一个
-/// 菜单里出现两次「打开主界面」没有道理。
+/// 别处点一下图标就开窗口，这一项在动作区打头就够了，哪怕动作区排在今日、额度、
+/// 进行中几节下面；AppIndicator 不给点击事件，**菜单是唯一的入口**，它就得是第一眼
+/// 看到的那一项。是挪不是加：同一个菜单里出现两次「打开主界面」没有道理。
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn open_first(rows: &[Row]) -> Vec<Row> {
     let is_open = |r: &Row| matches!(r, Row::Item(i) if i.id == "open");
@@ -277,7 +277,7 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
 
 #[cfg(test)]
 mod tests {
-    use super::super::model::{Snapshot, Style, build};
+    use super::super::model::{Gateway, Group, Snapshot, Style, Today, build};
     use super::*;
 
     fn ids(rows: &[Row]) -> Vec<String> {
@@ -285,23 +285,95 @@ mod tests {
             .map(|r| match r {
                 Row::Item(i) => i.id.clone(),
                 Row::Separator => "---".to_string(),
+                Row::Header { .. } => "header".to_string(),
                 _ => "·".to_string(),
             })
             .collect()
     }
 
-    /// AppIndicator 不给点击事件：「打开主界面」得是第一项，而且只出现一次
+    /// 今日一节、一个手动选择的策略组：连着网关时动作区排在几节下面
+    fn snapshot(gateway: Gateway) -> Snapshot {
+        Snapshot {
+            gateway,
+            addr: Some("127.0.0.1:18790".into()),
+            today: Some(Today::default()),
+            groups: vec![Group {
+                name: "主力".into(),
+                members: vec!["chatgpt".into(), "openai".into()],
+                selected: Some("chatgpt".into()),
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// AppIndicator 不给点击事件：「打开主界面」得是第一项，而且只出现一次。每一种状态都是
     #[test]
     fn open_moves_to_the_top_once() {
-        let (_, rows) = build(&Snapshot::default(), Style::default());
-        assert!(ids(&rows).contains(&"open".to_string()), "模型里得有这一项");
-        let out = ids(&open_first(&rows));
-        assert_eq!(out[0], "open");
-        assert_eq!(out[1], "---");
-        assert_eq!(out.iter().filter(|i| *i == "open").count(), 1);
-        // 挪走之后不留两条相邻的分隔线，也不以分隔线结尾
-        assert!(!out.windows(2).any(|w| w[0] == "---" && w[1] == "---"));
-        assert_ne!(out.last().map(String::as_str), Some("---"));
+        for gateway in [
+            Gateway::Starting,
+            Gateway::Running,
+            Gateway::SafeMode,
+            Gateway::Failed,
+            Gateway::Stopped,
+            Gateway::Unlinked,
+        ] {
+            let (_, rows) = build(&snapshot(gateway.clone()), Style::default());
+            assert!(ids(&rows).contains(&"open".to_string()), "模型里得有这一项");
+            let out = ids(&open_first(&rows));
+            assert_eq!(out[0], "open", "{gateway:?}");
+            assert_eq!(out[1], "---");
+            assert_eq!(out.iter().filter(|i| *i == "open").count(), 1);
+            // 挪走之后不留两条相邻的分隔线，也不以分隔线结尾
+            assert!(
+                !out.windows(2).any(|w| w[0] == "---" && w[1] == "---"),
+                "{gateway:?} {out:?}"
+            );
+            assert_ne!(out.last().map(String::as_str), Some("---"));
+        }
+    }
+
+    /// Linux 上最后的样子：「打开主界面」在最前，其余照模型的顺序
+    #[test]
+    fn the_rest_keeps_the_order_of_the_model() {
+        let linux = |gateway| ids(&open_first(&build(&snapshot(gateway), Style::default()).1));
+        assert_eq!(
+            linux(Gateway::Running),
+            [
+                "open",
+                "---",
+                "header",
+                "---",
+                "·",
+                "·",
+                "---",
+                "group:主力",
+                "copy-address",
+                "copy-key",
+                "---",
+                "settings",
+                "connections",
+                "update",
+                "---",
+                "quit",
+            ]
+        );
+        assert_eq!(
+            linux(Gateway::Failed),
+            [
+                "open",
+                "---",
+                "header",
+                "---",
+                "restart",
+                "why",
+                "---",
+                "settings",
+                "connections",
+                "update",
+                "---",
+                "quit",
+            ]
+        );
     }
 
     #[test]

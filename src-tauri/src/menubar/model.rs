@@ -59,8 +59,6 @@ pub struct Snapshot {
     pub notices_on: bool,
     /// 手动选择的策略组
     pub groups: Vec<Group>,
-    /// 上一版配置是什么时候的。没有上一版是 None
-    pub undo_at_ms: Option<u64>,
     /// 查到了、还没装的新版本
     pub update: Option<String>,
     /// 连接列表，本机在最前。「连接」子菜单照它列
@@ -97,7 +95,7 @@ pub struct Quota {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Window {
-    /// 上游给的窗口名：`5h` / `7d` / `weekly`
+    /// 上游给的窗口名：`5h` / `weekly` / `30d`…，写法见 [`window_label`]
     pub window: String,
     pub used_percent: f64,
     pub resets_at_ms: Option<u64>,
@@ -165,7 +163,6 @@ pub enum Action {
     Settings,
     CopyAddress,
     CopyKey,
-    Undo,
     SelectGroup {
         group: String,
         provider: String,
@@ -524,7 +521,8 @@ fn rows(s: &Snapshot) -> Vec<Row> {
             )));
             out.push(Row::Separator);
         }
-        app_items(s, &mut out);
+        // 地址、密钥、策略组都要问运行着的网关：动作区只剩「打开主界面」
+        app_items(s, Vec::new(), &mut out);
         return out;
     }
 
@@ -549,6 +547,32 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 Action::AllNotices,
             )));
         }
+        out.push(Row::Separator);
+    }
+
+    if let Some(t) = &s.today {
+        out.push(section(tr!("今日", "Today"), None));
+        out.push(Row::Stats {
+            cells: vec![
+                StatCell {
+                    value: grouped(t.requests),
+                    label: tr!("请求", "Requests").to_string(),
+                    note: (t.failed > 0)
+                        .then(|| tr!(format!("失败 {}", t.failed), format!("{} failed", t.failed))),
+                },
+                StatCell {
+                    value: tokens_short(t.tokens),
+                    label: tr!("token", "Tokens").to_string(),
+                    note: None,
+                },
+                StatCell {
+                    value: cost_long(t.cost_micros),
+                    label: tr!("费用", "Cost").to_string(),
+                    note: None,
+                },
+            ],
+            action: Action::Open("dashboard"),
+        });
         out.push(Row::Separator);
     }
 
@@ -577,32 +601,6 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 ));
             }
         }
-        out.push(Row::Separator);
-    }
-
-    if let Some(t) = &s.today {
-        out.push(section(tr!("今日", "Today"), None));
-        out.push(Row::Stats {
-            cells: vec![
-                StatCell {
-                    value: grouped(t.requests),
-                    label: tr!("请求", "Requests").to_string(),
-                    note: (t.failed > 0)
-                        .then(|| tr!(format!("失败 {}", t.failed), format!("{} failed", t.failed))),
-                },
-                StatCell {
-                    value: tokens_short(t.tokens),
-                    label: tr!("token", "Tokens").to_string(),
-                    note: None,
-                },
-                StatCell {
-                    value: cost_long(t.cost_micros),
-                    label: tr!("费用", "Cost").to_string(),
-                    note: None,
-                },
-            ],
-            action: Action::Open("dashboard"),
-        });
         out.push(Row::Separator);
     }
 
@@ -639,60 +637,52 @@ fn rows(s: &Snapshot) -> Vec<Row> {
         out.push(Row::Separator);
     }
 
-    for g in &s.groups {
-        let mut item = Item::new(
-            &format!("group:{}", g.name),
-            "arrow.left.arrow.right",
-            g.name.clone(),
-            Action::OpenMain,
-        );
-        item.action = None;
-        item.right = g.selected.clone();
-        item.submenu = g
-            .members
-            .iter()
-            .map(|m| SubItem {
-                title: m.clone(),
-                checked: g.selected.as_deref() == Some(m),
-                action: Action::SelectGroup {
-                    group: g.name.clone(),
-                    provider: m.clone(),
-                },
-                sep_before: false,
-            })
-            .collect();
-        out.push(Row::Item(item));
-    }
+    let mut actions: Vec<Row> = s
+        .groups
+        .iter()
+        .map(|g| {
+            let mut item = Item::new(
+                &format!("group:{}", g.name),
+                "arrow.left.arrow.right",
+                g.name.clone(),
+                Action::OpenMain,
+            );
+            item.action = None;
+            item.right = g.selected.clone();
+            item.submenu = g
+                .members
+                .iter()
+                .map(|m| SubItem {
+                    title: m.clone(),
+                    checked: g.selected.as_deref() == Some(m),
+                    action: Action::SelectGroup {
+                        group: g.name.clone(),
+                        provider: m.clone(),
+                    },
+                    sep_before: false,
+                })
+                .collect();
+            Row::Item(item)
+        })
+        .collect();
     let copy = Item::new(
         "copy-address",
         "doc.on.doc",
         tr!("复制网关地址", "Copy Gateway Address"),
         Action::CopyAddress,
     );
-    out.push(Row::Item(if s.addr.is_some() {
+    actions.push(Row::Item(if s.addr.is_some() {
         copy
     } else {
         copy.disabled()
     }));
-    out.push(Row::Item(Item::new(
+    actions.push(Row::Item(Item::new(
         "copy-key",
         "key",
         tr!("复制默认密钥", "Copy Default Key"),
         Action::CopyKey,
     )));
-    let undo = Item::new(
-        "undo",
-        "arrow.uturn.backward",
-        tr!("撤销上一次配置修改", "Undo Last Configuration Change"),
-        Action::Undo,
-    );
-    // **没得撤就是灰的，不是不显示。**一个时有时无的菜单项，用户每次都要重新找
-    out.push(Row::Item(match s.undo_at_ms {
-        Some(at) => undo.right(clock(at, s.now_ms)),
-        None => undo.disabled(),
-    }));
-    out.push(Row::Separator);
-    app_items(s, &mut out);
+    app_items(s, actions, &mut out);
     out
 }
 
@@ -759,14 +749,17 @@ fn section(title: &str, right: Option<String>) -> Row {
     }
 }
 
-fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
+/// 菜单的后半截，每种状态都是这个样子：**「打开主界面」是动作区的第一项**，后面跟着
+/// 这个状态下能做的事（`actions`）；隔一条线是设置、连接、更新，最后隔一条线退出
+fn app_items(s: &Snapshot, actions: Vec<Row>, out: &mut Vec<Row>) {
     out.push(Row::Item(Item::new(
         "open",
         "macwindow",
         tr!("打开主界面", "Open ThinkWatch Lite"),
         Action::OpenMain,
     )));
-    out.push(Row::Item(connections(s)));
+    out.extend(actions);
+    out.push(Row::Separator);
     out.push(Row::Item(
         Item::new(
             "settings",
@@ -776,6 +769,7 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         )
         .key(","),
     ));
+    out.push(Row::Item(connections(s)));
     out.push(Row::Item(match &s.update {
         Some(v) => Item {
             accent: true,
@@ -857,13 +851,53 @@ fn window_row(w: &Window, now_ms: u64) -> WindowRow {
     }
 }
 
-/// 窗口名，和上游页同一套写法
+/// 窗口名，和上游页同一套写法：`5h`、`weekly` 有自己的叫法，别的按长度说（「30 天」
+/// 「45 分钟」），认不出来的原样显示
 pub fn window_label(window: &str) -> String {
     match window {
         "5h" => tr!("5 小时", "5h").to_string(),
-        "7d" => tr!("7 天", "7d").to_string(),
         "weekly" => tr!("每周", "Weekly").to_string(),
-        other => other.to_string(),
+        other => match window_span(other) {
+            Some((n, Span::Days)) => tr!(format!("{n} 天"), english_count(n, "day")),
+            Some((n, Span::Hours)) => tr!(format!("{n} 小时"), english_count(n, "hour")),
+            Some((n, Span::Minutes)) => tr!(format!("{n} 分钟"), english_count(n, "minute")),
+            None => other.to_string(),
+        },
+    }
+}
+
+/// 窗口长度的单位
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Span {
+    Minutes,
+    Hours,
+    Days,
+}
+
+/// 按长度起名的窗口有多长：`30d` 是 30 天。core 把窗口的分钟数写成 `<数>d`、`<数>h`、
+/// `<数>m`，除得尽一天的按天写、除得尽一小时的按小时写（core 的 `quota::codex_window`）。
+/// 不是这个写法的（`weekly`）是 None
+pub(crate) fn window_span(window: &str) -> Option<(u64, Span)> {
+    let unit = match window.as_bytes().last()? {
+        b'd' => Span::Days,
+        b'h' => Span::Hours,
+        b'm' => Span::Minutes,
+        _ => return None,
+    };
+    // 最后一个字节是 ASCII，切在它前面不会切开一个字。`parse` 认前面的 `+`，先挡掉
+    let digits = &window[..window.len() - 1];
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((digits.parse().ok()?, unit))
+}
+
+/// `1 day`、`30 days`
+fn english_count(n: u64, unit: &str) -> String {
+    if n == 1 {
+        format!("1 {unit}")
+    } else {
+        format!("{n} {unit}s")
     }
 }
 
@@ -989,55 +1023,6 @@ pub fn app_label(hint: &str) -> &str {
     }
 }
 
-/// 上一版配置是什么时候的：今天的写时刻，更早的写日期
-fn clock(at_ms: u64, now_ms: u64) -> String {
-    let (at, now) = (local(at_ms), local(now_ms));
-    if (at.0, at.1, at.2) == (now.0, now.1, now.2) {
-        format!("{:02}:{:02}", at.3, at.4)
-    } else {
-        tr!(
-            format!("{}月{}日", at.1, at.2),
-            format!("{:02}-{:02}", at.1, at.2)
-        )
-    }
-}
-
-/// 一个时间戳在本地时区里的那个 `tm`。
-///
-/// **两个平台的名字和参数顺序都不一样**：POSIX 是 `localtime_r(&t, &mut tm)`，
-/// MSVC 是 `localtime_s(&mut tm, &t)` —— 参数反过来。写反了不会编译失败，
-/// 只会让日期错得离谱，所以两支各写一遍，谁也别去"复用"谁。
-#[cfg(unix)]
-fn to_local(secs: libc::time_t) -> libc::tm {
-    // SAFETY: localtime_r 只写进我们给的那一块 tm
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe { libc::localtime_r(&secs, &mut tm) };
-    tm
-}
-
-#[cfg(windows)]
-fn to_local(secs: libc::time_t) -> libc::tm {
-    // SAFETY: localtime_s 只写进我们给的那一块 tm。它失败时把 tm 清零，
-    // 那给出的是 1900-01-01 —— 一个一眼看得出不对的日期，而不是一个
-    // 错得像真的的日期。
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe { libc::localtime_s(&mut tm, &secs) };
-    tm
-}
-
-/// 本地时间的（年, 月, 日, 时, 分）
-pub(crate) fn local(ms: u64) -> (i32, u32, u32, u32, u32) {
-    let secs = (ms / 1000) as libc::time_t;
-    let tm = to_local(secs);
-    (
-        tm.tm_year + 1900,
-        (tm.tm_mon + 1) as u32,
-        tm.tm_mday as u32,
-        tm.tm_hour as u32,
-        tm.tm_min as u32,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1082,6 +1067,133 @@ mod tests {
 
     fn item<'a>(rows: &'a [Row], id: &str) -> Option<&'a Item> {
         items(rows).into_iter().find(|i| i.id == id)
+    }
+
+    /// 菜单从上到下：状态头、分隔线（`---`）、节的标题（`[今日]`）、各行，菜单项写 id
+    fn outline(rows: &[Row]) -> Vec<String> {
+        rows.iter()
+            .map(|r| match r {
+                Row::Header { .. } => "header".to_string(),
+                Row::Separator => "---".to_string(),
+                Row::Section { title, .. } => format!("[{title}]"),
+                Row::Notice { .. } => "notice".to_string(),
+                Row::Quota { provider, .. } => format!("quota:{provider}"),
+                Row::Stats { .. } => "stats".to_string(),
+                Row::Live { .. } => "live".to_string(),
+                Row::Item(i) => i.id.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_full_menu_has_today_above_quota_and_open_first_among_the_actions() {
+        let mut s = running();
+        s.notices = vec![NoticeLine {
+            key: "k".into(),
+            level: Level::Warning,
+            title: "t".into(),
+            body: "b".into(),
+        }];
+        s.quotas = vec![Quota {
+            provider: "chatgpt".into(),
+            windows: vec![window("5h", 42.0, 3_600_000)],
+            reset_credits: None,
+        }];
+        s.live = vec![Live {
+            id: 1,
+            started_ms: NOW - 1_000,
+            ..Default::default()
+        }];
+        s.groups = vec![Group {
+            name: "主力".into(),
+            members: vec!["chatgpt".into(), "openai".into()],
+            selected: Some("chatgpt".into()),
+        }];
+        assert_eq!(
+            outline(&rows(&s)),
+            [
+                "header",
+                "---",
+                "[提醒]",
+                "notice",
+                "---",
+                "[今日]",
+                "stats",
+                "---",
+                "[额度]",
+                "quota:chatgpt",
+                "---",
+                "[进行中]",
+                "live",
+                "---",
+                "open",
+                "group:主力",
+                "copy-address",
+                "copy-key",
+                "---",
+                "settings",
+                "connections",
+                "update",
+                "---",
+                "quit",
+            ]
+        );
+        // 各节都空着：动作区紧跟在状态头后面
+        s.notices.clear();
+        s.today = None;
+        s.quotas.clear();
+        s.live.clear();
+        s.groups.clear();
+        assert_eq!(
+            outline(&rows(&s)),
+            [
+                "header",
+                "---",
+                "open",
+                "copy-address",
+                "copy-key",
+                "---",
+                "settings",
+                "connections",
+                "update",
+                "---",
+                "quit",
+            ]
+        );
+    }
+
+    /// 网关不在运行的每一种状态：「打开主界面」照样在，照样是动作区的第一项；设置、
+    /// 连接、更新的顺序和运行时一样。今天的用量不代表现在，不列
+    #[test]
+    fn every_state_keeps_open_first_and_the_app_items_in_one_order() {
+        let fix = ["restart", "why", "---"];
+        for (gateway, head) in [
+            (Gateway::Starting, &[][..]),
+            (Gateway::SafeMode, &fix[..]),
+            (Gateway::Failed, &fix[..]),
+            (Gateway::Stopped, &fix[..]),
+            (Gateway::Unlinked, &["retry", "why", "---"][..]),
+        ] {
+            let s = Snapshot {
+                gateway: gateway.clone(),
+                ..running()
+            };
+            let want: Vec<&str> = ["header", "---"]
+                .iter()
+                .chain(head)
+                .chain(&[
+                    "open",
+                    "---",
+                    "settings",
+                    "connections",
+                    "update",
+                    "---",
+                    "quit",
+                ])
+                .copied()
+                .collect();
+            assert_eq!(outline(&rows(&s)), want, "{gateway:?}");
+        }
     }
 
     #[test]
@@ -1230,6 +1342,56 @@ mod tests {
         assert_eq!(windows[1].label, "每周");
     }
 
+    /// `5h`、`weekly` 有自己的叫法；core 按长度起的名字（ChatGPT 账号的 `30d`）按长度说；
+    /// 认不出来的原样显示
+    #[test]
+    fn windows_named_by_their_length_are_said_in_words() {
+        let names = [
+            "5h", "weekly", "30d", "1d", "7d", "3h", "1h", "45m", "1m", "monthly", "d", "+5h",
+            "5 h", "",
+        ];
+        assert_eq!(
+            names.map(window_label),
+            [
+                "5 小时",
+                "每周",
+                "30 天",
+                "1 天",
+                "7 天",
+                "3 小时",
+                "1 小时",
+                "45 分钟",
+                "1 分钟",
+                "monthly",
+                "d",
+                "+5h",
+                "5 h",
+                "",
+            ]
+        );
+        with_lang(Lang::En, || {
+            assert_eq!(
+                names.map(window_label),
+                [
+                    "5h",
+                    "Weekly",
+                    "30 days",
+                    "1 day",
+                    "7 days",
+                    "3 hours",
+                    "1 hour",
+                    "45 minutes",
+                    "1 minute",
+                    "monthly",
+                    "d",
+                    "+5h",
+                    "5 h",
+                    "",
+                ]
+            );
+        });
+    }
+
     #[test]
     fn requests_in_progress_put_a_dot_on_the_mark_and_list_at_most_five() {
         let mut s = running();
@@ -1342,21 +1504,17 @@ mod tests {
     }
 
     #[test]
-    fn nothing_to_undo_is_grey_not_gone_and_a_new_version_replaces_the_check() {
+    fn a_new_version_replaces_the_check() {
         let mut s = running();
-        let rows1 = rows(&s);
-        let undo = item(&rows1, "undo").expect("撤销那一项不见了");
-        assert!(!undo.enabled);
         assert_eq!(
-            item(&rows1, "update").unwrap().action,
+            item(&rows(&s), "update").unwrap().action,
             Some(Action::CheckUpdates)
         );
-        s.undo_at_ms = Some(NOW - 60_000);
         s.update = Some("2026.9.8".into());
-        let rows2 = rows(&s);
-        assert!(item(&rows2, "undo").unwrap().enabled);
-        let update = item(&rows2, "update").unwrap();
+        let rows = rows(&s);
+        let update = item(&rows, "update").unwrap();
         assert_eq!(update.title, "安装新版本 2026.9.8…");
+        assert_eq!(update.action, Some(Action::InstallUpdate));
         assert!(update.accent);
     }
 

@@ -196,19 +196,17 @@ export function planLabel(plan: ChatgptPlan | null | undefined): string | null {
   return Object.hasOwn(PLANS, plan) ? PLANS[plan as KnownChatgptPlan] : plan;
 }
 
-/** 订阅额度窗口：`5h` / `7d` / `weekly`。认不出来的原样显示 */
+/**
+ * 订阅额度窗口。`5h`、`weekly` 有自己的叫法；别的按长度说 —— core 把窗口的分钟数
+ * 写成 `<数>d`、`<数>h`、`<数>m`（ChatGPT 账号的 `30d` 是「30 天」），和菜单栏
+ * 同一套写法。认不出来的原样显示
+ */
 export function quotaWindowLabel(window: string): string {
-  const t = textOf(labelsText).quotaWindows;
-  switch (window) {
-    case "5h":
-      return t["5h"];
-    case "7d":
-      return t["7d"];
-    case "weekly":
-      return t.weekly;
-    default:
-      return window;
-  }
+  const t = textOf(labelsText);
+  if (window === "5h") return t.quotaWindows["5h"];
+  if (window === "weekly") return t.quotaWindows.weekly;
+  const span = /^(\d+)([dhm])$/.exec(window);
+  return span ? t.quotaSpans[span[2] as "d" | "h" | "m"](Number(span[1])) : window;
 }
 
 /**

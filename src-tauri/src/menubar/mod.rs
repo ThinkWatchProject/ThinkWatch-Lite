@@ -297,12 +297,11 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     }
     let c = &state.control;
     let today = tw_api::Window::default();
-    let (status, quota, summary, overview, history, live) = tokio::join!(
+    let (status, quota, summary, overview, live) = tokio::join!(
         c.status(),
         c.call::<ep::Quota>(&[], &()),
         c.call::<ep::Summary>(&[], &today),
         c.call::<ep::Overview>(&[], &()),
-        c.call::<ep::ConfigHistory>(&[], &()),
         c.call::<ep::Live>(&[], &())
     );
     if let Ok(l) = live {
@@ -342,10 +341,6 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
                 selected: g.selected,
             })
             .collect();
-    }
-    if let Ok(h) = history {
-        // 历史里包括现在跑着的这一版：「上一版」是倒数第二条
-        snap.undo_at_ms = h.iter().rev().nth(1).map(|v| v.at_ms);
     }
     for q in quota.unwrap_or_default() {
         let windows: Vec<model::Window> = q
@@ -464,7 +459,6 @@ async fn background(app: &tauri::AppHandle, action: Action) {
     let result: Result<(), String> = match action {
         Action::CopyAddress => copy_address(app, &st).await,
         Action::CopyKey => copy_default_key(app, &st).await,
-        Action::Undo => undo(app, &st).await,
         Action::SelectGroup { group, provider } => st
             .control
             .select_group(&group, &provider)
@@ -523,40 +517,6 @@ async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), S
         .await
         .map_err(|e| format!("{e:#}"))?;
     app.clipboard().write_text(v.key).map_err(|e| e.to_string())
-}
-
-/// 撤销上一次配置修改：回到历史里的上一版。**撤完说一声撤到了哪一版**
-async fn undo(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
-    let hist = st
-        .control
-        .call::<ep::ConfigHistory>(&[], &())
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    let Some(prev) = hist.iter().rev().nth(1).cloned() else {
-        return Ok(());
-    };
-    st.control
-        .call::<ep::ConfigRollback>(
-            &[],
-            &tw_api::RollbackRequest {
-                version: prev.version.clone(),
-            },
-        )
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
-        let (_, _, _, h, m) = model::local(prev.at_ms);
-        n.announce(
-            "undo",
-            tr!("已撤销上一次配置修改", "Last Configuration Change Undone"),
-            &tr!(
-                format!("已恢复 {h:02}:{m:02} 的配置。"),
-                format!("The configuration from {h:02}:{m:02} is back in effect.")
-            ),
-        );
-    }
-    tracing::info!(version = %prev.version, "从菜单撤销了上一次配置修改");
-    Ok(())
 }
 
 /// 检查更新。查到了就拉起更新窗口；没查到要说一声 —— 用户点了，就该看到结果
