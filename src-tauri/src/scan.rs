@@ -105,44 +105,57 @@ pub async fn scan_clients() -> Out<wire::ScanReport> {
     Ok(scan(&crate::clients::home_dir()))
 }
 
+/// 此刻的来源和该盯的目录。位置按此刻的设置取：换过位置之后监视会重起
+/// （[`restart_client_watch`]），而这一轮扫描和盯的目录要是同一批
+fn look(home: &Path) -> (Vec<tw_scan::sources::Source>, tw_scan::watch::Plan) {
+    let moved = crate::clients::locations::moved(home);
+    let all = tw_scan::sources::candidates(home, &moved);
+    let plan = tw_scan::watch::Plan::new(home, &all, &tw_scan::sources::roots(home, &moved));
+    let sources = all.into_iter().filter(|s| s.path.exists()).collect();
+    (sources, plan)
+}
+
+/// 正在用的那一个监视，应用状态里拿着的就是它。**来源一变它就换一个**（新装的 skill
+/// 是一个新目录）；事件循环只拿它的弱引用 —— 应用状态放掉它，监视和事件循环一起停。
+pub struct Watching(std::sync::Mutex<Option<tw_scan::watch::Watch>>);
+
 /// 盯着配置面，文件一动就说一声，**有新的可疑内容出现时**另说一声。
 ///
-/// 三条纪律都在这个函数里：
+/// 四条纪律都在这个函数里：
 ///
 /// 1. **首次扫描不算「新出现」**（[`tw_scan::watch::Seen`] 负责）——
 ///    否则用户第一次打开就会被一屏告警砸中，而那些东西可能放了半年。
 /// 2. **范围就是 [`tw_scan::sources`] 划定的那一批目录**，不递归、不全盘。
-/// 3. **只报告。**这条路径上没有任何一处会改用户的文件。
+/// 3. **盯的目录跟着来源走**：每扫一遍重算一次（[`tw_scan::watch::Plan`]），变了就换
+///    一个监视。启动之后才装的 skill、才建的目录，不这样就要等到下次启动。
+/// 4. **只报告。**这条路径上没有任何一处会改用户的文件。
 ///
-/// 返回的 [`tw_scan::watch::Watch`] 要一直拿着：放掉它，监视就停了。
+/// 返回的 [`Watching`] 要一直拿着：放掉它，监视就停了。
 pub fn spawn_watcher(
     home: std::path::PathBuf,
     emit: impl Fn(wire::LocalEvent) + Send + 'static,
-) -> Result<Arc<tw_scan::watch::Watch>, tw_scan::watch::WatchError> {
-    let dirs = tw_scan::watch::dirs_for(&tw_scan::sources::user_level(
-        &home,
-        &crate::clients::locations::moved(&home),
-    ));
+) -> Result<Arc<Watching>, tw_scan::watch::WatchError> {
+    let (_, mut plan) = look(&home);
     tracing::debug!(
-        dirs = dirs.len(),
+        dirs = plan.dirs.len(),
         "watching the clients' configuration surface"
     );
-    let (w, mut rx) = tw_scan::watch::watch(&dirs)?;
+    let (w, mut rx) = tw_scan::watch::watch_plan(&plan)?;
+    let held = Arc::new(Watching(std::sync::Mutex::new(Some(w))));
+    let weak = Arc::downgrade(&held);
 
     tauri::async_runtime::spawn(async move {
         let mut seen = tw_scan::watch::Seen::default();
         // 内置规则，和打开页面时扫的是同一套
         let rules = tw_guard::tools::rules::scan_rules();
-        // 位置按此刻的设置取：换过位置之后监视会重起（[`restart_client_watch`]），而
-        // 这一轮扫描和盯的目录要是同一批
-        let scan_now = |home: &Path| {
-            tw_scan::report::scan(
-                &tw_scan::sources::user_level(home, &crate::clients::locations::moved(home)),
-                &rules,
-            )
+        // 扫一遍：这次新出现的可疑内容，和此刻该盯的目录
+        let scan_now = |seen: &mut tw_scan::watch::Seen| {
+            let (sources, wanted) = look(&home);
+            let fresh = seen.diff(&tw_scan::report::scan(&sources, &rules).findings);
+            (fresh, wanted)
         };
         // 先垫一次底：把此刻已经存在的那些记下来，它们不算「新出现」
-        seen.diff(&scan_now(&home).findings);
+        scan_now(&mut seen);
 
         while rx.recv().await.is_some() {
             // **文件动了本身就是一条消息，和「可疑不可疑」无关。**接管
@@ -153,28 +166,52 @@ pub fn spawn_watcher(
 
             // **每次重新枚举来源**：用户可能刚加了一个 skill，
             // 而那个文件在启动时还不存在
-            let fresh = seen.diff(&scan_now(&home).findings);
-            if fresh.is_empty() {
+            let (fresh, wanted) = scan_now(&mut seen);
+            alert(&emit, &fresh);
+            if !tw_scan::watch::needs_rewatch(&plan, &wanted) {
                 continue;
             }
-            tracing::info!(
-                count = fresh.len(),
-                "something new and suspicious appeared in the clients' configuration"
-            );
-            emit(wire::LocalEvent::ScanAlert {
-                alerts: fresh.iter().map(finding_view).collect(),
-                at_ms: now_ms(),
-            });
+            let Some(held) = weak.upgrade() else {
+                break;
+            };
+            match tw_scan::watch::watch_plan(&wanted) {
+                Ok((w, next)) => {
+                    // 旧的随之放掉，它那条通道也跟着关了
+                    *held.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(w);
+                    rx = next;
+                    plan = wanted;
+                    // 换监视之前那一小段里的改动没人看见（新目录里紧跟着写进来的
+                    // SKILL.md）：再扫一遍
+                    alert(&emit, &scan_now(&mut seen).0);
+                }
+                // 换不成就接着用旧的，下一次改动再试
+                Err(e) => tracing::warn!("客户端配置的文件监视换不了目录：{e}"),
+            }
         }
     });
-    Ok(Arc::new(w))
+    Ok(held)
+}
+
+/// 新出现的可疑内容，另说一声
+fn alert(emit: &impl Fn(wire::LocalEvent), fresh: &[tw_scan::report::Finding]) {
+    if fresh.is_empty() {
+        return;
+    }
+    tracing::info!(
+        count = fresh.len(),
+        "something new and suspicious appeared in the clients' configuration"
+    );
+    emit(wire::LocalEvent::ScanAlert {
+        alerts: fresh.iter().map(finding_view).collect(),
+        at_ms: now_ms(),
+    });
 }
 
 /// 客户端配置面的文件监视，拿在应用状态里。**配置位置换了要重起**：盯的目录跟着变
 /// （[`restart_client_watch`]）。
 pub struct ClientWatch {
     notices: Arc<crate::notices::Notices>,
-    watch: std::sync::Mutex<Option<Arc<tw_scan::watch::Watch>>>,
+    watch: std::sync::Mutex<Option<Arc<Watching>>>,
 }
 
 impl ClientWatch {
@@ -269,6 +306,82 @@ mod tests {
             vec!["zero_width".to_string()],
             "{alerts:#?}"
         );
+    }
+
+    /// 等下一条事件，最多等 8 秒
+    async fn next_event(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<wire::LocalEvent>,
+        what: &str,
+    ) -> wire::LocalEvent {
+        tokio::time::timeout(Duration::from_secs(8), rx.recv())
+            .await
+            .unwrap_or_else(|_| panic!("8 秒内没等到{what}"))
+            .unwrap()
+    }
+
+    /// 等到一次告警，路过的「文件变了」不算
+    async fn next_alert(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<wire::LocalEvent>,
+    ) -> Vec<wire::ScanFinding> {
+        loop {
+            if let wire::LocalEvent::ScanAlert { alerts, .. } = next_event(rx, "告警").await {
+                return alerts;
+            }
+        }
+    }
+
+    /// 起一个监视，事件收进通道。第一项要一直拿着：放掉它，监视就停了
+    fn watching(
+        home: &Path,
+    ) -> (
+        impl Sized,
+        tokio::sync::mpsc::UnboundedReceiver<wire::LocalEvent>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let w = spawn_watcher(home.to_path_buf(), move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        (w, rx)
+    }
+
+    /// 启动之后才装的 skill：`skills` 目录和它都是这一刻才建出来的。**照样盯得到**，
+    /// 里面藏着的东西照样报 —— 不用等到下次启动
+    #[tokio::test]
+    async fn a_skill_installed_after_launch_is_scanned_without_a_restart() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
+        let (_w, mut rx) = watching(home.path());
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        let skill = home.path().join(".claude/skills/新装的/SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        std::fs::write(&skill, "---\nname: 新装的\n---\n\n藏\u{200b}着\n").unwrap();
+        let alerts = next_alert(&mut rx).await;
+        assert_eq!(rules_of(&alerts), vec!["zero_width".to_string()]);
+    }
+
+    /// skill 的目录先建好、`SKILL.md` 晚一步才写进来（下载、解压都是这样）：目录出现就
+    /// 说一声，之后写进来的那一份也盯得到
+    #[tokio::test]
+    async fn a_skill_md_written_after_its_folder_appeared_is_still_seen() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude/skills")).unwrap();
+        std::fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
+        let (_w, mut rx) = watching(home.path());
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        let dir = home.path().join(".claude/skills/慢慢写的");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(matches!(
+            next_event(&mut rx, "目录出现的那一声").await,
+            wire::LocalEvent::ClientsChanged { .. }
+        ));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        std::fs::write(dir.join("SKILL.md"), "---\nname: 慢\n---\n\n藏\u{200b}着\n").unwrap();
+        let alerts = next_alert(&mut rx).await;
+        assert_eq!(rules_of(&alerts), vec!["zero_width".to_string()]);
     }
 
     /// 写死的那条纪律：只报告，不自动删除。

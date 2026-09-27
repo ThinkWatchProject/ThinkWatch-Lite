@@ -18,7 +18,7 @@
 //!
 //! **盯目录不盯文件、不递归、去抖**，和配置文件的监听是同一份（[`tw_watch`]）。
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -74,6 +74,134 @@ fn interesting(p: &Path) -> bool {
 /// 不算：接管一次会触发一轮扫描，那一轮又什么都发现不了。
 pub fn watch(dirs: &[PathBuf]) -> Result<(Watch, tokio::sync::mpsc::Receiver<()>), WatchError> {
     tw_watch::watch(dirs, DEBOUNCE, |p| interesting(p) && !is_ours(p))
+}
+
+/// 要盯的目录，和盯着它们时哪些改动算数。**跟着来源变**：每扫一次重算一遍，变了就
+/// 换一个监视（[`needs_rewatch`]）。
+///
+/// 只盯来源文件所在的目录（[`dirs_for`]）的话，启动之后才出现的东西永远盯不到：新装的
+/// skill 是一个新目录，它的 `SKILL.md` 在一个谁都没盯着的地方；`~/.claude/skills` 本身
+/// 也可能是这一刻才建出来的。所以还要盯：
+///
+/// - 冒出新来源的那几个目录（[`crate::sources::roots`]）：在的就盯它，skill 那种每个
+///   子目录各是一份的，子目录也各盯一个（`SKILL.md` 可能晚一步才写进来）；
+/// - 还不在的（那几个目录、固定位置的配置文件）：盯**离它最近的、已经在的上一层**，
+///   只认通往它的那一个名字。**不越过 home 往上**，也不盯文件系统的根。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Plan {
+    /// 要盯的目录，排好序、去过重
+    pub dirs: Vec<PathBuf>,
+    /// 这些目录里的配置文件（按后缀认，见 [`interesting`]）改了算数
+    files_in: BTreeSet<PathBuf>,
+    /// 这些路径出现、消失算数：那几个目录，还没有的配置文件，和通往它们的、还不在的几层
+    awaited: BTreeSet<PathBuf>,
+    /// 这些目录里多一个、少一个子目录算数（`skills/<名>`）
+    nested: BTreeSet<PathBuf>,
+}
+
+impl Plan {
+    /// `candidates` 是 [`crate::sources::candidates`]：在的和还不在的都给
+    pub fn new(
+        home: &Path,
+        candidates: &[crate::sources::Source],
+        roots: &[crate::sources::Root],
+    ) -> Plan {
+        let (there, missing): (Vec<_>, Vec<_>) =
+            candidates.iter().cloned().partition(|s| s.path.exists());
+        let mut files_in: BTreeSet<PathBuf> = dirs_for(&there).into_iter().collect();
+        let mut dirs = files_in.clone();
+        let mut awaited = BTreeSet::new();
+        let mut nested = BTreeSet::new();
+        // 还不在的：盯最近的上一层，认通往它的那几层名字
+        let wait_for = |path: &Path, dirs: &mut BTreeSet<_>, awaited: &mut BTreeSet<_>| {
+            let Some(above) = nearest_dir(path, home) else {
+                return;
+            };
+            awaited.extend(
+                path.ancestors()
+                    .take_while(|a| *a != above)
+                    .map(Path::to_path_buf),
+            );
+            dirs.insert(above);
+        };
+        for s in &missing {
+            wait_for(&s.path, &mut dirs, &mut awaited);
+        }
+        for r in roots {
+            if !r.dir.is_dir() {
+                wait_for(&r.dir, &mut dirs, &mut awaited);
+                continue;
+            }
+            // 在的也要知道它什么时候没了
+            awaited.insert(r.dir.clone());
+            dirs.insert(r.dir.clone());
+            if r.nested {
+                nested.insert(r.dir.clone());
+                for sub in subdirs(&r.dir) {
+                    files_in.insert(sub.clone());
+                    dirs.insert(sub);
+                }
+            } else {
+                files_in.insert(r.dir.clone());
+            }
+        }
+        Plan {
+            dirs: dirs.into_iter().collect(),
+            files_in,
+            awaited,
+            nested,
+        }
+    }
+
+    /// 这一处改动算不算数
+    pub fn relevant(&self, p: &Path) -> bool {
+        let parent = p.parent().map(Path::to_path_buf).unwrap_or_default();
+        // skill 目录里点开头的不是 skill：访达在看过的目录里写 `.DS_Store`
+        let dotted = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with('.'));
+        (interesting(p) && !is_ours(p) && self.files_in.contains(&parent))
+            || self.awaited.contains(p)
+            || (self.nested.contains(&parent) && !dotted)
+    }
+}
+
+/// 扫完一遍之后，此刻在盯的和该盯的对不上：要换一个监视。
+pub fn needs_rewatch(watching: &Plan, wanted: &Plan) -> bool {
+    watching != wanted
+}
+
+/// 照着一份 [`Plan`] 盯，聚合出的每一次改动发一个信号。
+pub fn watch_plan(plan: &Plan) -> Result<(Watch, tokio::sync::mpsc::Receiver<()>), WatchError> {
+    let p = plan.clone();
+    tw_watch::watch(&plan.dirs, DEBOUNCE, move |path| p.relevant(path))
+}
+
+/// 离 `path` 最近的、已经在的上一层目录。在 home 底下的不越过 home 往上找；文件系统的
+/// 根不算（盯它等于什么都盯）。
+///
+/// home 以外的（换过位置的目录）**只看上一层**：那个目录自己都不在的话，再往上找就要
+/// 盯到 `/Volumes` 这种地方去 —— macOS 上盯一个目录，其实是盯它底下的一整棵树。
+fn nearest_dir(path: &Path, home: &Path) -> Option<PathBuf> {
+    let inside = path.starts_with(home);
+    path.ancestors()
+        .skip(1)
+        .take(if inside { usize::MAX } else { 1 })
+        .take_while(|a| a.parent().is_some() && (!inside || a.starts_with(home)))
+        .find(|a| a.is_dir())
+        .map(Path::to_path_buf)
+}
+
+/// 目录下的子目录
+fn subdirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    rd.flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect()
 }
 
 /// 这个路径是我们自己写的吗。
@@ -293,6 +421,111 @@ mod tests {
         assert!(
             !dirs.contains(&home.to_path_buf()),
             "不该盯整个 home：{dirs:?}"
+        );
+    }
+
+    fn plan_for(home: &Path) -> Plan {
+        let moved = Default::default();
+        Plan::new(
+            home,
+            &crate::sources::candidates(home, &moved),
+            &crate::sources::roots(home, &moved),
+        )
+    }
+
+    /// 新来源冒出来的地方，**还不在的也盯着**：盯最近的上一层，只认通往它的名字。
+    /// 同一个目录里别的东西照旧不算，也不越过 home 往上盯
+    #[test]
+    fn places_new_sources_appear_in_are_watched_before_they_exist() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
+        let plan = plan_for(home);
+
+        assert!(plan.dirs.contains(&home.join(".claude")), "{:?}", plan.dirs);
+        for p in [".claude/skills", ".claude/commands", ".claude/agents"] {
+            assert!(plan.relevant(&home.join(p)), "{p}");
+        }
+        // 还没有的 CLAUDE.md 一写就算数
+        assert!(plan.relevant(&home.join(".claude/CLAUDE.md")));
+        // `~/.claude/` 底下每分钟都在变的那些不算
+        assert!(!plan.relevant(&home.join(".claude/projects")));
+        assert!(!plan.relevant(&home.join(".claude/todos")));
+
+        // 整个还没装的客户端：盯 home，只认它的那个名字
+        assert!(plan.dirs.contains(&home.to_path_buf()), "{:?}", plan.dirs);
+        assert!(plan.relevant(&home.join(".codex")));
+        assert!(plan.relevant(&home.join(".gemini")));
+        assert!(!plan.relevant(&home.join(".zsh_history")));
+        assert!(
+            !plan.relevant(&home.join("notes.md")),
+            "home 里别的配置文件不算"
+        );
+        assert!(
+            plan.dirs.iter().all(|d| d.starts_with(home)),
+            "越过 home 往上盯了：{:?}",
+            plan.dirs
+        );
+    }
+
+    /// skill 那种每个子目录各是一份的：子目录各盯一个，`SKILL.md` 晚一步才写进来也看得见；
+    /// 再多一个子目录也算数
+    #[test]
+    fn each_skill_folder_is_watched_even_before_its_skill_md_is_written() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        std::fs::create_dir_all(home.join(".claude/skills/写了一半")).unwrap();
+        let before = plan_for(home);
+        assert!(before.dirs.contains(&home.join(".claude/skills")));
+        assert!(before.dirs.contains(&home.join(".claude/skills/写了一半")));
+        assert!(before.relevant(&home.join(".claude/skills/写了一半/SKILL.md")));
+        assert!(before.relevant(&home.join(".claude/skills/又一个")));
+        assert!(!before.relevant(&home.join(".claude/skills/.DS_Store")));
+
+        // 什么都没变就不换监视；多了一个目录就换
+        assert!(!needs_rewatch(&before, &plan_for(home)));
+        std::fs::create_dir_all(home.join(".claude/skills/又一个")).unwrap();
+        let after = plan_for(home);
+        assert!(needs_rewatch(&before, &after));
+        assert!(after.dirs.contains(&home.join(".claude/skills/又一个")));
+    }
+
+    /// 往上找盯哪一层：home 底下的找到 home 为止；别处的只看上一层；根从来不盯
+    #[test]
+    fn the_folder_watched_for_a_missing_one_stays_close() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path().join("home");
+        let elsewhere = d.path().join("work");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        assert_eq!(
+            nearest_dir(&home.join(".gemini/config/skills"), &home),
+            Some(home.clone())
+        );
+        // 换到 home 以外的：上一层在就盯它，不在就不再往上找
+        assert_eq!(
+            nearest_dir(&elsewhere.join("skills"), &home),
+            Some(elsewhere.clone())
+        );
+        assert_eq!(nearest_dir(&elsewhere.join("gone/skills"), &home), None);
+        assert_eq!(nearest_dir(Path::new("/nope"), &home), None);
+    }
+
+    #[tokio::test]
+    async fn a_new_skill_folder_produces_a_signal() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
+        let (_w, mut rx) = watch_plan(&plan_for(home)).unwrap();
+        std::fs::create_dir_all(home.join(".claude/skills/新的")).unwrap();
+        assert!(
+            matches!(
+                tokio::time::timeout(Duration::from_secs(5), rx.recv()).await,
+                Ok(Some(()))
+            ),
+            "新装的 skill 没叫醒它"
         );
     }
 }
