@@ -391,6 +391,9 @@ fn adopt_meta(client: &str, home: &Path) -> Result<Plan, PlanError> {
             Some(v) => sentinel::Was::Value(v.to_line()),
         }
     });
+    // 重复接管时，`adopt_file` 已经把上一次记下的 `entries` 带过来了（它不在这次写的
+    // 字段里）：**换掉那一条**，不是再记一条 —— 否则每接管一次，记录里就多一份
+    p.originals.retain(|o| o.path != field);
     p.originals.push(sentinel::Original::new(&field, was));
 
     if !entries.iter().any(is_ours) {

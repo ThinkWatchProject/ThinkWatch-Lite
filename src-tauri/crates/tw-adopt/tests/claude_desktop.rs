@@ -287,6 +287,45 @@ fn other_configurations_in_the_library_are_kept_and_the_applied_one_comes_back()
     assert_eq!(read(&theirs_path), theirs);
 }
 
+/// 重复接管（换了钥匙之后再同步一次走的就是它）：`_meta.json` 里我们那一条还是一条，
+/// 它的接管记录里 `entries` 也只记一次 —— 不是每接管一次就多出一份
+#[test]
+fn adopting_again_registers_the_configuration_only_once() {
+    let b = bed();
+    write(&desktop::meta_path(&b.home), META);
+    adopt(&b, Some(&names(&["claude-sonnet-5"])));
+    let c = client();
+    for key in ["tw-第二把", "tw-第三把"] {
+        let g = Gateway {
+            base: "http://127.0.0.1:9090".into(),
+            key: Some(key.into()),
+            models: Vec::new(),
+        };
+        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+    }
+
+    let meta = json(&desktop::meta_path(&b.home));
+    let ours = meta["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["id"] == PROFILE_ID)
+        .count();
+    assert_eq!(ours, 1, "{meta}");
+    let side = tw_adopt::sentinel::sidecar_path(&desktop::meta_path(&b.home));
+    let rec: tw_adopt::sentinel::SidecarRecord = serde_json::from_str(&read(&side)).unwrap();
+    let fields: Vec<_> = rec.originals.iter().map(|f| f.field.as_str()).collect();
+    assert_eq!(
+        fields.iter().filter(|f| **f == "entries").count(),
+        1,
+        "{fields:?}"
+    );
+
+    restore(&b);
+    assert_eq!(read(&desktop::meta_path(&b.home)), META);
+}
+
 #[test]
 fn if_the_old_applied_configuration_is_gone_the_next_one_takes_over() {
     let b = bed();
