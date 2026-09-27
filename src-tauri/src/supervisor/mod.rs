@@ -223,20 +223,26 @@ impl Supervisor {
     ///
     /// 控制面不应答时（core 卡死了、或者还没起好），unix 还有信号这条退路；
     /// Windows 上就只能交给调用方那一步强杀了。
-    async fn ask_to_exit(&self, pid: u32) {
+    ///
+    /// 请到了返回 true：控制面应了，或者信号送出去了。**Windows 上控制面不应就是没请到**：
+    /// 那里没有信号这条退路，core 照旧跑着，调用方要知道
+    async fn ask_to_exit(&self, pid: u32) -> bool {
         match self.control.shutdown().await {
-            Ok(()) => return,
-            Err(e) => tracing::debug!("控制面请不动 core，退回信号：{e:#}"),
+            Ok(()) => return true,
+            Err(e) => tracing::debug!("控制面请不动 core：{e:#}"),
         }
         #[cfg(unix)]
         {
             // SAFETY: kill 只是往一个 pid 上送信号；送给一个已经没了的 pid
             // 是无害的。SIGTERM 而不是 SIGKILL —— 给它机会把 socket 和 lock
             // 文件清掉，而下一个 core 要的正是那把锁。
-            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) == 0 }
         }
         #[cfg(not(unix))]
-        let _ = pid;
+        {
+            let _ = pid;
+            false
+        }
     }
 
     /// 强杀这个 pid。**不温和的那一档**，只在温和那一档等不到时用。
@@ -315,7 +321,16 @@ impl Supervisor {
         };
         self.intentional.store(true, Ordering::SeqCst);
         // 温和那一档就够：它自己退干净，守护循环看见就把它拉回来。
-        self.ask_to_exit(pid).await;
+        if !self.ask_to_exit(pid).await {
+            // **没请动就把记号收回来。**Windows 上控制面不应时再没有别的温和办法，core
+            // 照旧跑着；记号留着的话，它下一次真的崩溃会被当成这次重启 —— 不计入退避、
+            // 连着崩也进不了安全模式、也不提醒。「重新启动」也不该静默成功
+            self.intentional.store(false, Ordering::SeqCst);
+            anyhow::bail!(tr!(
+                "core 没有响应，未能重启",
+                "Core did not respond and was not restarted"
+            ));
+        }
         Ok(())
     }
 
@@ -382,12 +397,15 @@ impl Supervisor {
         }
     }
 
-    /// 撤回 `stop_and_wait` 留下的「按要求停止」。
+    /// 撤回 `stop_and_wait` 留下的「按要求停止」，连同没来得及用上的「按要求重启」。
     ///
-    /// 每次接起守护循环之前调。那个记号只对它停掉的那一个 core 有意义；带进
+    /// 每次接起守护循环之前调。那两个记号只对停掉的那一个 core 有意义；带进
     /// 下一轮的话，之后的崩溃全都会被当成按要求停止，不重启、不进安全模式。
+    /// 重启请求撞上停止时（点了「重新启动」、紧接着切到远程），守护循环先认停止，
+    /// 重启的记号就留了下来：新一轮里第一次真崩溃会被当成按要求重启。
     pub fn resume(&self) {
         self.stopping.send_replace(false);
+        self.intentional.store(false, Ordering::SeqCst);
     }
 
     /// 按要求停下：报「已停止」，守护循环不再起它。
@@ -1240,5 +1258,73 @@ mod tests {
             .expect("强杀之后它还在")
             .unwrap();
         assert_eq!(next, Next::Again);
+    }
+
+    /// 一个一定不存在的 pid：比 Linux 的 `pid_max` 上限（2^22）和 macOS 的（99999）都大，
+    /// 又还是正数 —— 转成 `i32` 是负数的话，`kill` 会送给一整个进程组
+    const NO_SUCH_PID: u32 = i32::MAX as u32;
+
+    /// **没请动的重启不留记号，也不说成了。**Windows 上控制面不应时 core 照旧跑着，重启
+    /// 没有发生；记号留着的话，它下一次真的崩溃会被当成这次重启：不计入退避，连着崩
+    /// 也进不了安全模式
+    #[tokio::test]
+    async fn a_restart_that_could_not_be_asked_for_leaves_no_mark() {
+        let (bin, _) = counting_core("restart-unasked", Acts::Crashes);
+        let s = Supervisor::new(
+            bin,
+            None,
+            probe(|| async { false }),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        );
+        // 请不到它：控制面不在，这个 pid 上也没有进程收信号（两个平台上都是没请动）
+        s.set(CoreState::Running { pid: NO_SUCH_PID });
+        assert!(s.request_restart().await.is_err(), "没重启成却说成了");
+
+        // 之后 core 真的崩了：照一次失败算，不是「按要求重启」
+        assert_eq!(s.run_once(false).await.unwrap(), Next::Again);
+        assert!(
+            matches!(s.state(), CoreState::Restarting { attempt: 1, .. }),
+            "{:?}",
+            s.state()
+        );
+    }
+
+    /// 重启的请求撞上停止（点了「重新启动」、紧接着切到远程）：守护循环先认停止。
+    /// 那个重启的记号**不能带进下一轮**，不然接回来之后第一次真崩溃会被当成按要求重启
+    #[tokio::test]
+    async fn a_restart_cut_short_by_a_stop_does_not_carry_into_the_next_round() {
+        let s = Arc::new(Supervisor::new(
+            long_runner("restart-then-stop"),
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        let first = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+        // 两个请求都在守护循环看见 core 退出之前立下（测试跑在单线程的运行时上，
+        // `join!` 先把两边各推到等待处）。Windows 上重启本来就请不动，不看它的结果
+        let (_, restarted) =
+            tokio::join!(s.stop_and_wait(Duration::from_secs(5)), s.request_restart());
+        let _ = restarted;
+        assert_eq!(first.await.unwrap(), Next::Stop);
+
+        s.resume();
+        let second = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        let pid = until_running(&s).await;
+        s.kill_now(pid);
+        assert_eq!(second.await.unwrap(), Next::Again);
+        assert!(
+            matches!(s.state(), CoreState::Restarting { attempt: 1, .. }),
+            "接回来之后的崩溃被当成了按要求重启：{:?}",
+            s.state()
+        );
     }
 }
