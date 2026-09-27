@@ -1060,6 +1060,13 @@ fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
     );
     assert_eq!(read(&path), before, "拒绝了还是改了配置");
     assert_eq!(read(&side), broken, "拒绝了还是盖掉了那份记录");
+
+    // 是 JSON、却不是我们写的那种：一样拒绝，**报错里不抄原文**（它会显示在界面上）
+    std::fs::write(&side, "{ \"file_created_by_us\": \"sk-别抄到界面上\" }").unwrap();
+    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.parse_failed");
+    assert!(!e.to_string().contains("sk-别抄到界面上"), "{e}");
+    assert_eq!(read(&path), before);
 }
 
 /// 记录是另一个客户端的（两个客户端被指到了同一个文件上）：不接管，也不盖掉它 ——

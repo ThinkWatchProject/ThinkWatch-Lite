@@ -958,9 +958,23 @@ pub(crate) fn read_record(client: &str, side: &Path) -> Result<Option<SidecarRec
             });
         }
     };
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|e| parse_err(client, format!("{}: {e}", side.display())))
+    serde_json::from_str(&text).map(Some).map_err(|e| {
+        // 只说在哪儿、为什么，**不抄原文**：serde 的原话会把认不出的那个值带出来，
+        // 而这句话一路显示到界面上（配置文件的解析错误也是这么说的）
+        let why = match e.classify() {
+            serde_json::error::Category::Data => "not the record written here",
+            _ => "not valid JSON",
+        };
+        parse_err(
+            client,
+            format!(
+                "{}: line {}, column {}: {why}",
+                side.display(),
+                e.line(),
+                e.column()
+            ),
+        )
+    })
 }
 
 /// 写接管记录。**原子地换上去**（临时文件 + rename，和配置文件同一条路）：写到一半
