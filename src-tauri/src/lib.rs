@@ -11,6 +11,8 @@ use tauri::Manager;
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
 pub mod i18n;
+/// 整份换掉应用自己的小文件（设置、提醒记录），见模块头上
+pub mod atomic_file;
 pub mod autostart;
 pub mod call;
 pub mod chatgpt;

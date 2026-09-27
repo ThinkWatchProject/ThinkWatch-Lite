@@ -266,6 +266,9 @@ struct State {
     /// 被限流压下去、还没说出去的那几件事，给「另有 N 项」用。**按键记**：同一件事
     /// 压下几次还是一项；好了的、用户看过的不再是待处理的事，随即划掉
     held_back: HashSet<String>,
+    /// 取过几份落盘用的列表。**号和那一份在同一把锁里取**，号越大那一份越新（见
+    /// [`store::Store::save`]）
+    snapshots: u64,
 }
 
 /// 通知总线。**整个应用只有一份**
@@ -274,8 +277,8 @@ pub struct Notices {
     sinks: Vec<Box<dyn Sink>>,
     /// 用户选的那一档。**存盘不归这里管**：它和其他应用设置在同一个文件里
     mode: Mutex<Mode>,
-    /// 落盘的目录。关窗期间发生的事要留得住
-    dir: Option<std::path::PathBuf>,
+    /// 落盘的那一份。关窗期间发生的事要留得住
+    store: Option<store::Store>,
 }
 
 const OPEN_FILE: &str = "notices.json";
@@ -287,10 +290,8 @@ impl Notices {
         dir: Option<std::path::PathBuf>,
         mode: Mode,
     ) -> Arc<Self> {
-        let open = dir
-            .as_deref()
-            .map(|d| store::load(&d.join(OPEN_FILE)))
-            .unwrap_or_default();
+        let store = dir.map(|d| store::Store::new(d.join(OPEN_FILE)));
+        let open = store.as_ref().map(|s| s.load()).unwrap_or_default();
         Arc::new(Self {
             state: Mutex::new(State {
                 open: open
@@ -314,7 +315,7 @@ impl Notices {
             }),
             sinks,
             mode: Mutex::new(mode),
-            dir,
+            store,
         })
     }
 
@@ -345,10 +346,7 @@ impl Notices {
 
     /// 界面要显示的那一份，最近的在前
     pub fn list(&self) -> Vec<Notice> {
-        let g = self.state.lock().expect("锁未中毒");
-        let mut out: Vec<Notice> = g.open.values().map(|o| o.notice.clone()).collect();
-        out.sort_by_key(|n| std::cmp::Reverse(n.at_ms));
-        out
+        newest_first(&self.state.lock().expect("锁未中毒"))
     }
 
     /// 用户看过了这一条。**只是不再数它** —— 事情本身好没好由信号说了算，没好的
@@ -813,9 +811,13 @@ impl Notices {
     }
 
     fn persist(&self) {
-        let Some(dir) = &self.dir else { return };
-        let list = self.list();
-        store::save(&dir.join(OPEN_FILE), &list);
+        let Some(store) = &self.store else { return };
+        let (seq, list) = {
+            let mut g = self.state.lock().expect("锁未中毒");
+            g.snapshots += 1;
+            (g.snapshots, newest_first(&g))
+        };
+        store.save(seq, &list);
     }
 
     /// 界面在开着的话，让它重画
@@ -825,6 +827,13 @@ impl Notices {
             s.listed(&list);
         }
     }
+}
+
+/// 开着的全部，最近的在前
+fn newest_first(state: &State) -> Vec<Notice> {
+    let mut out: Vec<Notice> = state.open.values().map(|o| o.notice.clone()).collect();
+    out.sort_by_key(|n| std::cmp::Reverse(n.at_ms));
+    out
 }
 
 /// 冷却结束时合成的那一条的正文：最近那一次的内容，再带一句上次弹出之后又发生了几次
