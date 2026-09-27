@@ -96,6 +96,8 @@ function dashboard(since: number, groups: CostBucketGroup[]): Dashboard {
     summary: summary(),
     latency: [],
     latency_by_provider: [],
+    token_rate: [],
+    token_rate_by_provider: [],
     storage: null,
     buckets: [...buckets.values()],
     buckets_by_model: groups,

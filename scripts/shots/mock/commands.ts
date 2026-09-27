@@ -17,7 +17,7 @@ import type { UpstreamStats } from "@/upstreams/api";
 import type { ClientsResponse, CoreStatus, Dashboard, KeyUsage, McpTargetView, PlanView, ScanReport } from "@/types";
 import { CORE, CHATGPT_WINDOWS } from "./core";
 import { LOCAL_GATEWAY, status } from "./config";
-import { IN_FLIGHT, costBucketsBy, costBy, dashboard, upstreamLatency } from "./traffic";
+import { IN_FLIGHT, costBucketsBy, costBy, dashboard, upstreamLatency, upstreamTokenRate } from "./traffic";
 import { clientsResponse, mcpTargets, plan, scanReport } from "./clients";
 import { NOTICES, APP_VERSION, SERVER, autostart, connView, langView, menubar, noticeMode, tested, themeView, updateView } from "./app";
 import { P } from "./params";
@@ -121,6 +121,7 @@ const COMMANDS: Table = {
     return {
       costs: costBy(sinceMs, (h) => h.provider || null),
       latency: upstreamLatency(sinceMs),
+      token_rate: upstreamTokenRate(sinceMs),
       quotas: [{ provider: "chatgpt", windows: CHATGPT_WINDOWS() }],
       // Rust 侧把格宽压到不小于一分钟（upstreams.rs 的 `MIN_BUCKET_MS`）
       buckets: costBucketsBy(sinceMs, Math.max(60_000, bucketMs), (h) => h.provider),

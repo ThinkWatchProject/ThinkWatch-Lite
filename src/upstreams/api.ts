@@ -14,6 +14,7 @@ import type {
   CostBucketGroup,
   CostGroup,
   LatencyView,
+  TokenRateView,
   PriceQuery,
   PriceSheetSave,
   Protocol,
@@ -36,6 +37,8 @@ import type {
 export interface UpstreamStats {
   costs: CostGroup[] | null;
   latency: LatencyView[] | null;
+  /** 生成速度的中位数，按上游 */
+  token_rate: TokenRateView[] | null;
   quotas: ProviderQuota[] | null;
   /** 按 `bucketMs` 分格、按上游分开的请求数。**稀疏的**：没有请求的格子不在里面 */
   buckets: CostBucketGroup[] | null;

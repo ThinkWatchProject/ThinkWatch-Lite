@@ -21,6 +21,7 @@ import type {
   Status,
   StorageStatus,
   Summary,
+  TokenRateView,
   TranslatedView,
 } from "./generated/tw-api";
 import type { LocalEvent } from "./generated/lite-api";
@@ -83,8 +84,16 @@ export interface RequestRow {
    */
   state: "in_flight" | "done" | "failed" | "cancelled";
   status?: number;
+  /** 响应头到的时刻 */
   ttfbMs?: number;
+  /**
+   * 第一个 token 到的时刻。**只有流式请求有**：非流式的整段一起到，没有「第一个」。
+   * 在跑的请求一到就有（`request_first_token`）
+   */
+  ttftMs?: number;
   durationMs?: number;
+  /** 生成速度，token/秒，core 在结局里算好的。只有跑完的流式请求有 */
+  tokensPerSec?: number;
   bytes?: number;
   /** 新输入的 token。**不含缓存读写**：三者不重叠，加起来才是这一轮送进去的全部 */
   inputTokens?: number;
@@ -157,6 +166,11 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       }
       break;
     }
+    case "request_first_token": {
+      const r = rows.get(ev.id);
+      if (r) r.ttftMs = ev.ttft_ms;
+      break;
+    }
     case "request_finished": {
       const r = rows.get(ev.id);
       if (r) {
@@ -164,6 +178,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.status = ev.status;
         r.bytes = ev.bytes;
         r.durationMs = ev.duration_ms;
+        r.tokensPerSec = ev.tokens_per_sec ?? undefined;
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
           r.outputTokens = ev.usage.output;
@@ -343,7 +358,7 @@ export function interruptInFlight(rows: Map<number, RequestRow>): boolean {
 export interface Dashboard {
   summary: Summary;
   /**
-   * 首字节时间的分位，按模型分。和 `summary` 同一个时间窗。
+   * 第一个 token 到的时刻的分位，按模型分。和 `summary` 同一个时间窗。
    *
    * 这一样和下面几样**取不到是 `null`，不是空的**：空的是「没有样本、没有请求」，
    * 取数失败时照那样画就是编了一个零。见到 `null` 写「暂时取不到」。
@@ -351,6 +366,10 @@ export interface Dashboard {
   latency: LatencyView[] | null;
   /** 按上游分。**和按模型分是两个问题** */
   latency_by_provider: LatencyView[] | null;
+  /** 生成速度的中位数，按模型分。同一个时间窗 */
+  token_rate: TokenRateView[] | null;
+  /** 按上游分 */
+  token_rate_by_provider: TokenRateView[] | null;
   storage: StorageStatus | null;
   /**
    * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，

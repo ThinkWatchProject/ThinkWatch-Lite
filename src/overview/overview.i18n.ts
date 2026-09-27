@@ -118,7 +118,7 @@ export const overviewText = messages(
 
     // 延迟
     latency: "延迟",
-    latencyWhat: "首字节时间",
+    latencyWhat: "首 token 时间",
     notEnoughSamples: "所选区间内样本不足，暂无分位数据",
     /** 取数失败，**不是样本不足** */
     latencyUnavailable: "延迟数据暂时取不到",
@@ -128,6 +128,12 @@ export const overviewText = messages(
     samples: "样本",
     /** 样本太少的那一格的悬停说明 */
     fewSamples: "样本较少，分位数仅供参考",
+
+    // 生成速度：和延迟一节同一个样子
+    speed: "生成速度",
+    speedWhat: "token/秒",
+    /** 取数失败，**不是样本不足** */
+    speedUnavailable: "生成速度数据暂时取不到",
 
     // 安全：各项防护的档位和这段时间各自看见了什么。数的是安全日志里的条数
     security: "安全",
@@ -262,13 +268,17 @@ export const overviewText = messages(
     hitByModel: "Hit rate by model",
 
     latency: "Latency",
-    latencyWhat: "Time to first byte",
+    latencyWhat: "Time to first token",
     notEnoughSamples: "Not enough samples in the selected range; no percentiles yet",
     latencyUnavailable: "Latency data is unavailable right now",
     byModel: "By model",
     byUpstream: "By upstream",
     samples: "Samples",
     fewSamples: "Few samples; the percentiles are only indicative",
+
+    speed: "Generation speed",
+    speedWhat: "Tokens/s",
+    speedUnavailable: "Generation speed data is unavailable right now",
 
     security: "Security",
     modeOff: "Off",

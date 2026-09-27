@@ -59,7 +59,7 @@ export interface UpstreamActions {
  *
  * 单击一行（或 Enter）打开它的编辑对话框；行尾按钮和右键打开的是同一份操作。
  *
- * 五列是定过的（lite#46）：上游、模型、额度 / 计费、24 小时、首字节 P50。「24 小时」
+ * 五列是定过的（lite#46）：上游、模型、额度 / 计费、24 小时、首 token / 速度。「24 小时」
  * 一格里多了一条按小时的走势：请求在一天里怎么分布、失败落在哪几个小时，一眼看得出，
  * 数字留给右边和悬停。窗口窄到放不下时走势先让位（页面的容器查询），数字照常在。
  */
@@ -111,7 +111,7 @@ export function UpstreamTable({
           {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
           <TableHead className="w-40 @max-3xl/page:w-32">{t.quota}</TableHead>
           <TableHead className="text-right">{t.day}</TableHead>
-          <TableHead className="text-right">{t.ttfb}</TableHead>
+          <TableHead className="text-right">{t.timing}</TableHead>
           <TableHead className="w-9">
             <span className="sr-only">{t.actionsColumn}</span>
           </TableHead>
@@ -511,7 +511,14 @@ function DayCell({
   );
 }
 
-/** 首字节 P50。P95 与样本数在悬停里：「800 ms」是 3 个样本还是 300 个，含义完全不同 */
+/**
+ * 首 token 和生成速度，上下两行，和「24 小时」那一格同一个写法：上面是首 token 的 P50，
+ * 下面淡一档的是生成速度的中位数。P95 与样本数在悬停里：「800 ms」是 3 个样本还是 300 个，
+ * 含义完全不同。
+ *
+ * **速度不另占一列**：单起一列，上游名那一列要让出一百多像素，副行的地址被截得只剩开头。
+ * 只有非流式请求的上游没有速度，下一行写「—」。
+ */
 function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamStats> }) {
   const t = useText(upstreamTableText);
   if (stats.data === undefined) {
@@ -525,10 +532,22 @@ function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamSt
   if (!lat || lat.samples === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
+  const rate = stats.data.token_rate?.find((r) => r.model === p.name);
+  const speed = rate && rate.samples > 0 ? rate : null;
   return (
     <TableCell className={cn("text-right", p.disabled && "text-muted-foreground")}>
-      <Tip text={t.latencyTip(lat.p95, lat.samples)}>
-        <span className="tw-num">{t.ms(lat.p50)}</span>
+      <Tip
+        text={
+          <div className="flex flex-col gap-0.5 tw-num">
+            <div>{t.latencyTip(lat.p95, lat.samples)}</div>
+            {speed && <div>{t.speedTip(speed.samples)}</div>}
+          </div>
+        }
+      >
+        <div className="flex flex-col items-end">
+          <span className="tw-num">{t.ms(lat.p50)}</span>
+          <span className="tw-label tw-num text-muted-foreground">{speed ? t.speedValue(speed.p50) : "—"}</span>
+        </div>
       </Tip>
     </TableCell>
   );

@@ -17,6 +17,7 @@ import type {
   HistoryRow,
   InFlightRequest,
   LatencyView,
+  TokenRateView,
   Msg,
   PriceFields,
   RouteHits,
@@ -195,6 +196,8 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
   const price = priceFor(provider, s.model);
   const wait = outcome.kind === "fallback" ? Math.round(1_200 + r() * 1_400) : 0;
   const duration = wait + ttfb + Math.round((usage.out / perSec) * 1000);
+  // `ttfb` is when the first token arrives; a stream's response headers come back well before that
+  const headers = wait + Math.round(ttfb * 0.3);
   // 收到了响应的一跳只记状态码，`error` 留给没收到响应的（tw-gateway 的 `hop`）
   const attempts: AttemptView[] =
     outcome.kind === "fallback"
@@ -215,8 +218,10 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     model: s.model,
     path,
     status: 200,
-    ttfb_ms: wait + ttfb,
+    ttfb_ms: headers,
+    ttft_ms: wait + ttfb,
     duration_ms: duration,
+    tokens_per_sec: rate(usage.out, duration - wait - ttfb),
     bytes: Math.round(usage.out * 5.2 + 900),
     input_tokens: usage.in,
     output_tokens: usage.out,
@@ -244,7 +249,9 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     Object.assign(row, {
       status: null,
       ttfb_ms: null,
+      ttft_ms: null,
       duration_ms: ttfb,
+      tokens_per_sec: null,
       bytes: null,
       input_tokens: null,
       output_tokens: null,
@@ -261,6 +268,8 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     Object.assign(row, {
       output_tokens: out,
       duration_ms: ttfb + Math.round((out / perSec) * 1000),
+      // 没跑完的没有速度（tw-gateway 的 `ending::rate`）
+      tokens_per_sec: null,
       bytes: Math.round(out * 5.2 + 900),
       cost_micros: price ? costOf(price, cut) : null,
       cost_estimated: true,
@@ -282,7 +291,9 @@ function localRow(who: Who, at: number, probe: "health_check" | "warmup"): Histo
     path: probe,
     status: 200,
     ttfb_ms: 0,
+    ttft_ms: null,
     duration_ms: 0,
+    tokens_per_sec: null,
     bytes: null,
     input_tokens: null,
     output_tokens: null,
@@ -470,7 +481,8 @@ function generate() {
         attempts: [{ provider: plan.order[0]!, outcome: "served", status: 200, error: null, ms: 1_320 }],
         billing: "per-token",
       },
-      { kind: "request_headers", id, status: 200, ttfb_ms: 1_320 },
+      { kind: "request_headers", id, status: 200, ttfb_ms: 400 },
+      { kind: "request_first_token", id, ttft_ms: 1_320 },
     ],
   });
 
@@ -590,16 +602,16 @@ export function summary(from: number, to = Infinity): Summary {
 }
 
 /**
- * 首字节的 P50 / P95，按模型或按上游，照 tw-store 的 `latency_by_model` / `latency_by_provider`：
- * 本地应答的和没收到首字节的不算，按名字排，分位取第 ⌈p·n/100⌉ 个
+ * 第一个 token 的 P50 / P95，按模型或按上游，照 tw-store 的 `latency_by_model` / `latency_by_provider`：
+ * 本地应答的和没有第一个 token 的不算，按名字排，分位取第 ⌈p·n/100⌉ 个
  */
 function latency(rows: HistoryRow[], key: (h: HistoryRow) => string): LatencyView[] {
   const by = new Map<string, number[]>();
   for (const h of rows) {
-    if (h.local || h.ttfb_ms == null) continue;
+    if (h.local || h.ttft_ms == null) continue;
     const k = key(h);
     if (!k) continue;
-    by.set(k, [...(by.get(k) ?? []), h.ttfb_ms]);
+    by.set(k, [...(by.get(k) ?? []), h.ttft_ms]);
   }
   return [...by.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -607,6 +619,28 @@ function latency(rows: HistoryRow[], key: (h: HistoryRow) => string): LatencyVie
       xs.sort((a, b) => a - b);
       const pct = (p: number) => xs[Math.min(xs.length - 1, Math.max(0, Math.ceil((p * xs.length) / 100) - 1))]!;
       return { model, p50: pct(50), p95: pct(95), samples: xs.length };
+    });
+}
+
+/** 生成速度，照 tw-gateway 的 `ending::rate`：生成不到半秒的没有 */
+function rate(output: number, genMs: number): number | null {
+  return output > 0 && genMs >= 500 ? Math.floor((output * 1000) / genMs) : null;
+}
+
+/** 生成速度的中位数，按模型或按上游，照 tw-store 的 `token_rate`：分位同 `latency` */
+function tokenRate(rows: HistoryRow[], key: (h: HistoryRow) => string): TokenRateView[] {
+  const by = new Map<string, number[]>();
+  for (const h of rows) {
+    if (h.local || h.tokens_per_sec == null) continue;
+    const k = key(h);
+    if (!k) continue;
+    by.set(k, [...(by.get(k) ?? []), h.tokens_per_sec]);
+  }
+  return [...by.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([model, xs]) => {
+      xs.sort((a, b) => a - b);
+      return { model, p50: xs[Math.max(0, Math.ceil(xs.length / 2) - 1)]!, samples: xs.length };
     });
 }
 
@@ -659,6 +693,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     prev: summary(sinceMs - span, sinceMs),
     latency: latency(window, (h) => h.model),
     latency_by_provider: latency(window, (h) => h.provider),
+    token_rate: tokenRate(window, (h) => h.model),
+    token_rate_by_provider: tokenRate(window, (h) => h.provider),
     storage: { recording: true, rows: HISTORY.length, blob_bytes: 412 * 1024 ** 2, forwarding_affected: false },
     buckets: [...buckets.values()].sort((a, b) => a.at_ms - b.at_ms),
     buckets_by_model: [...byModel.values()].sort((a, b) => a.at_ms - b.at_ms),
@@ -729,6 +765,7 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
 }
 
 export const upstreamLatency = (from: number) => latency(rowsBetween(from), (h) => h.provider);
+export const upstreamTokenRate = (from: number) => tokenRate(rowsBetween(from), (h) => h.provider);
 
 /**
  * 各条路由、各条规则命中了多少（`GET /summary/routes`），照 tw-store 的 `route_stats`：按每一行
