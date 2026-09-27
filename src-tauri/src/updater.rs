@@ -264,8 +264,11 @@ pub async fn update_check(app: tauri::AppHandle) -> Out<Option<Found>> {
 ///
 /// **不再联网问一遍**（`update_check` 会）：那一版已经记在这里，再问一遍只会让这个
 /// 按钮在没网的时候失灵，而窗口里的「下载并安装」反正会自己去取。
+///
+/// **`async`**：更新窗口要在这里建出来，同步命令在 Windows 上跑在 WebView2 的回调里，
+/// 在那里建窗口会死锁（Tauri 的 `WebviewWindowBuilder::new` 写明了）
 #[tauri::command]
-pub fn update_show(app: tauri::AppHandle) -> Out<()> {
+pub async fn update_show(app: tauri::AppHandle) -> Out<()> {
     if pending_update(&app).is_none() {
         return Err(tr!(
             "尚无可安装的新版本",

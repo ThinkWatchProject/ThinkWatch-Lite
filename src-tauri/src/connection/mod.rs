@@ -770,8 +770,11 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
 pub(crate) const PICKER_WIDTH: f64 = 420.0;
 
 /// 连接选择里选好了：连它，打开主界面（`settings`：落到设置页的「连接」一节）
+///
+/// **`async`**：这时主窗口多半还不存在，要在这里建出来。同步命令在 Windows 上跑在
+/// WebView2 的回调里，在那里建窗口会死锁（Tauri 的 `WebviewWindowBuilder::new` 写明了）
 #[tauri::command]
-pub fn pick_connection(app: tauri::AppHandle, id: String, then: Option<String>) -> Out<()> {
+pub async fn pick_connection(app: tauri::AppHandle, id: String, then: Option<String>) -> Out<()> {
     remember(&data_dir(), &id);
     start(&app, &id);
     match then {
