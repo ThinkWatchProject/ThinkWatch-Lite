@@ -21,6 +21,12 @@ const DIALOGS = [
 ];
 
 describe("编辑对话框的乐观并发", () => {
+  it("密钥对话框：打开时读一次版本号，保存带那一个", () => {
+    const src = readFileSync("src/keys/KeyDialog.tsx", "utf8");
+    expect(src).toMatch(/useState\(\(\) => version\.get\(\)\)/);
+    expect(src).not.toMatch(/base_version:\s*version\.get\(\)/);
+  });
+
   it("打开时记下版本号，保存、删除、嵌套的对话框都用记下的那一个", () => {
     for (const f of DIALOGS) {
       const src = readFileSync(f, "utf8");
