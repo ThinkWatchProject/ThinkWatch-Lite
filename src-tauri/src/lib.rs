@@ -58,7 +58,9 @@ pub mod wire;
 pub mod zai;
 
 use control::ControlClient;
-use gateway::{CORE_EXE, bridge_events, control_address, heartbeat_loop, locate_core, supervise};
+use gateway::{
+    CORE_EXE, bridge_events, control_address, heartbeat_loop, locate_core, spawn_supervise,
+};
 use settings::{check_autostart_path, maybe_notify_first_autostart};
 use supervisor::Supervisor;
 use updater::{Updates, announce_update, update_loop};
@@ -390,13 +392,7 @@ pub fn run() {
                 }
             } else if located.is_ok() {
                 supervising.store(true, std::sync::atomic::Ordering::SeqCst);
-                let h = handle.clone();
-                let sup_for_loop = sup.clone();
-                let flag = supervising.clone();
-                tauri::async_runtime::spawn(async move {
-                    supervise(sup_for_loop, h).await;
-                    flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                });
+                spawn_supervise(&handle, sup.clone(), supervising.clone());
             } else if let Err(e) = &located {
                 tracing::error!("找不到 core：{e:#}");
             }

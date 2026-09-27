@@ -228,13 +228,7 @@ pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
     if state.supervising.swap(true, Ordering::SeqCst) {
         return state.supervisor.request_restart().await.map_err(text);
     }
-    let sup = state.supervisor.clone();
-    let flag = state.supervising.clone();
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        supervise(sup, app).await;
-        flag.store(false, Ordering::SeqCst);
-    });
+    spawn_supervise(app, state.supervisor.clone(), state.supervising.clone());
     Ok(())
 }
 
@@ -245,12 +239,27 @@ pub(crate) fn ensure_supervising(app: &tauri::AppHandle) {
     if state.core_missing.is_some() || state.supervising.swap(true, Ordering::SeqCst) {
         return;
     }
-    let sup = state.supervisor.clone();
-    let flag = state.supervising.clone();
+    spawn_supervise(app, state.supervisor.clone(), state.supervising.clone());
+}
+
+/// 接起一条守护循环。`flag` 是「守护在跑」那个标志，调用方已经把它立起来了，循环
+/// 退出时放下。
+///
+/// 接起一条新的守护循环，意思就是要 core 跑着：之前为了退出、切到远程、或者一次
+/// 没装成的更新停过它的话，那个「按要求停止」的记号不能留到这一条里来 —— 留着的话，
+/// 这之后 core 每一次崩溃都会被当成按要求停止。**在这里撤回，不在起来的那个任务里**：
+/// 任务要等调度才跑，这之间要是又有人要它停（切回本机、马上又切去远程），任务开头
+/// 那一下会把新的要求一起撤掉
+pub(crate) fn spawn_supervise(
+    app: &tauri::AppHandle,
+    sup: Arc<Supervisor>,
+    flag: Arc<std::sync::atomic::AtomicBool>,
+) {
+    sup.resume();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         supervise(sup, app).await;
-        flag.store(false, Ordering::SeqCst);
+        flag.store(false, std::sync::atomic::Ordering::SeqCst);
     });
 }
 
@@ -478,12 +487,8 @@ pub(crate) fn control_address() -> tw_api::control::Address {
     tw_api::control::Address::in_dir(&data_dir())
 }
 
-/// 起、看着、它死了、按策略决定下一步。
-pub(crate) async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
-    // 接起一条新的守护循环，意思就是要 core 跑着。之前为了退出（或者为了
-    // 一次没装成的更新）停过它的话，那个「按要求停止」的记号不能留到这一条
-    // 里来 —— 留着的话，这之后 core 每一次崩溃都会被当成按要求停止
-    sup.resume();
+/// 起、看着、它死了、按策略决定下一步。经 [`spawn_supervise`] 起
+async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
     let mut safe = false;
     loop {
         // 每一次转换都随 `core-state` 推给界面（见 setup 里那一段），这里不再另发

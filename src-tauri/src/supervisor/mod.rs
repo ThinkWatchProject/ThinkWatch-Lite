@@ -107,7 +107,8 @@ pub enum Next {
     Again,
     /// 连续失败太多，改用安全模式起
     SafeMode,
-    /// 不再起了：安全模式里的 core 也退出了，或者它是为了退出应用而被停掉的
+    /// 不再起了：安全模式里的 core 也退出了，或者它是按要求停掉的（退出应用、装更新、
+    /// 切到远程）
     Stop,
 }
 
@@ -127,11 +128,15 @@ pub struct Supervisor {
     /// 进安全模式，那是荒唐的。这个标志把「它崩了」和「我们让它退的」
     /// 分开，而这两件事在 `wait()` 眼里长得一模一样。
     intentional: Arc<AtomicBool>,
-    /// 为了退出应用而停的。**和 `intentional` 相反：退了就不再起。**
+    /// 按要求停的（退出应用、装更新、切到远程）。**和 `intentional` 相反：退了就不再起。**
     ///
     /// 两者分开是因为对 `wait()` 来说它们还是长得一模一样 —— 而一个应该
     /// 立刻重起，一个应该一个都不再起。
-    stopping: AtomicBool,
+    ///
+    /// **用 watch 而不是一个布尔**：守护循环在等控制面答应、在退避里睡着的时候都要被它
+    /// 叫醒。只是一个标志的话，那两段里没人看它 —— 以前切到远程时，一个还在启动的 core
+    /// 照样起来、照样占着网关端口，一个在退避里的睡醒了照样被拉起来
+    stopping: watch::Sender<bool>,
     /// 起 core 之前补上用户配的环境变量。见 [`user_env`]。
     ///
     /// 测试里不开：那要真去跑一次用户的登录 shell。
@@ -141,6 +146,24 @@ pub struct Supervisor {
 /// 强杀之后再给它这么久把状态翻过来。**不是在等它死** —— 那一下已经发出去了
 /// —— 是在等守护循环收到子进程的退出。
 const KILL_GRACE: Duration = Duration::from_secs(3);
+
+/// 等到有人要它停。**先看当下**（`wait_for` 就是这样），要求可能早就到了
+async fn until_stopped(rx: &mut watch::Receiver<bool>) {
+    // 拿到的那个借用当场放掉：它握着 watch 的读锁
+    let _ = rx.wait_for(|s| *s).await;
+}
+
+/// 还没报「运行中」就被要求停：按句柄直接杀掉。
+///
+/// 还没答应控制面的 core 手上没有请求，温和那一档（控制面）也多半还叫不应；而它是
+/// 守护循环手里的子进程，按句柄杀，不会杀到别人。一直不答应时换掉它也是这么做的
+async fn stop_starting(
+    child: &mut tokio::process::Child,
+) -> std::io::Result<std::process::ExitStatus> {
+    tracing::info!("core 还在启动就被要求停下，直接停掉");
+    let _ = child.start_kill();
+    child.wait().await
+}
 
 impl Supervisor {
     pub fn new(
@@ -159,7 +182,7 @@ impl Supervisor {
             policy: Mutex::new(RestartPolicy::new()),
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
-            stopping: AtomicBool::new(false),
+            stopping: watch::channel(false).0,
             user_env: false,
         }
     }
@@ -291,20 +314,51 @@ impl Supervisor {
         Ok(())
     }
 
-    /// 为了退出应用而停掉 core，**并且等它真的退出**。
+    /// 停掉 core、守护不再拉它，**并且等它真的退出**。
     ///
     /// 应用重启（装完更新）之前要用它。只是自己退出、让 core 靠 `--parent`
     /// 发现父进程没了再跟着退是不够的：它要一秒左右才发现，而新起来的应用
     /// 这时已经在拉新的 core —— 锁还在旧的手里，新的连起几次都失败，网关
     /// 多停一秒，日志里多出几段「已经有一个 twcore 在跑」。这是实测出来的。
+    /// 切到远程之后停本机的 core 也是它。
     ///
-    /// 超时还没退就强杀。**不在跑就什么都不做。**
+    /// **不管此刻走到哪一步都算数。**以前只认「运行中」，别的时候直接返回：还在启动的、
+    /// 在退避里等着重起的 core 照样被拉起来 —— 切到远程之后本机的网关还占着那个端口，
+    /// Windows 上安装程序还撞上一个在跑的 twcore.exe。现在记号先立起来，守护循环在起
+    /// 之前、等控制面答应的时候、退避睡着的时候都听着它；这里等到「已停止」（或者
+    /// 「无法启动」），至多 `timeout`。
+    ///
+    /// 在跑的，超时还没退就强杀。**已经停着就什么都不做。**
     pub async fn stop_and_wait(&self, timeout: Duration) {
-        let (CoreState::Running { pid } | CoreState::SafeMode { pid: Some(pid) }) = self.state()
-        else {
-            return;
-        };
-        self.stopping.store(true, Ordering::SeqCst);
+        self.stopping.send_replace(true);
+        let mut rx = self.watch();
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            // 先取出来再看：`borrow` 握着读锁，不能带过下面的 await
+            let now = rx.borrow_and_update().clone();
+            match now {
+                CoreState::Stopped | CoreState::Failed { .. } => return,
+                CoreState::Running { pid } | CoreState::SafeMode { pid: Some(pid) } => {
+                    return self.stop_running(pid, timeout).await;
+                }
+                // 启动中、退避里、安全模式的 core 还没答应：守护循环自己看得见那个记号，
+                // 等它停下来。停下之前先报了答应（记号到的那一刻它正好答应了），就走上面
+                // 那一支
+                _ => {}
+            }
+            match tokio::time::timeout_at(deadline, rx.changed()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => return,
+                Err(_) => {
+                    tracing::error!(?timeout, state = ?self.state(), "要停的 core 没按时停下");
+                    return;
+                }
+            }
+        }
+    }
+
+    /// 停掉答应了控制面的这一个（运行中，或者安全模式里的）：先请，等不到再强杀。
+    async fn stop_running(&self, pid: u32, timeout: Duration) {
         self.ask_to_exit(pid).await;
         if self.wait_gone(pid, timeout).await {
             return;
@@ -325,10 +379,16 @@ impl Supervisor {
 
     /// 撤回 `stop_and_wait` 留下的「按要求停止」。
     ///
-    /// 守护循环每次开始时调。那个记号只对它停掉的那一个 core 有意义；带进
+    /// 每次接起守护循环之前调。那个记号只对它停掉的那一个 core 有意义；带进
     /// 下一轮的话，之后的崩溃全都会被当成按要求停止，不重启、不进安全模式。
     pub fn resume(&self) {
-        self.stopping.store(false, Ordering::SeqCst);
+        self.stopping.send_replace(false);
+    }
+
+    /// 按要求停下：报「已停止」，守护循环不再起它。
+    fn stopped(&self) -> Next {
+        self.set(CoreState::Stopped);
+        Next::Stop
     }
 
     /// 等到它不再是这个 pid。等到了返回 true，超时返回 false。
@@ -400,6 +460,12 @@ impl Supervisor {
 
     /// 一次「起、看着、它死了、决定下一步」的完整循环。
     pub async fn run_once(&self, safe: bool) -> anyhow::Result<Next> {
+        // **起之前先看一眼。**要停的请求可能正落在两轮之间（按要求重启、进安全模式的
+        // 那一下），不看的话刚被要求停下的又被拉起来
+        let mut stop = self.stopping.subscribe();
+        if *stop.borrow_and_update() {
+            return Ok(self.stopped());
+        }
         self.set(if safe {
             CoreState::SafeMode { pid: None }
         } else {
@@ -410,7 +476,14 @@ impl Supervisor {
 
         let mut cmd = tokio::process::Command::new(&self.binary);
         if self.user_env {
-            cmd.envs(user_env::load().await);
+            // 读用户的环境要跑一次登录 shell，最多五秒。这段里被要求停，就不起了 ——
+            // 不是起一个再杀掉
+            tokio::select! {
+                env = user_env::load() => {
+                    cmd.envs(env);
+                }
+                _ = until_stopped(&mut stop) => return Ok(self.stopped()),
+            }
         }
         // **不交凭据。**控制面的钥匙在 config.yaml 里，由 core 自己生成、补上；
         // 这一侧连接时从同一个文件读（见 `crate::control`）
@@ -456,16 +529,27 @@ impl Supervisor {
         // **进程起来了还不算起好。**控制面的 socket 要再过一会儿才建好，这之前
         // 报「运行中」的话，界面一见到就去取数，拿回来的是一句「连不上」。
         // 所以控制面答应之前一直是「启动中」；等的这段时间里它要是退出了，
-        // 照崩溃算
-        let ready = tokio::select! {
-            status = child.wait() => Err(status),
-            ready = self.until_ready() => Ok(ready),
+        // 照崩溃算。
+        //
+        // **等的时候也听着「要停」**：等它答应最长要十五秒，而要它停的那一方（切到远程、
+        // 装更新、退出）在等它退。
+        enum Waited {
+            Exited(std::io::Result<std::process::ExitStatus>),
+            Ready(bool),
+            Stop,
+        }
+        let waited = tokio::select! {
+            status = child.wait() => Waited::Exited(status),
+            ready = self.until_ready() => Waited::Ready(ready),
+            _ = until_stopped(&mut stop) => Waited::Stop,
         };
         // 信号一：子进程退出事件。**最快最准**，但只覆盖我们自己 spawn
         // 的那个 —— 所以另外两个信号（socket 断开、心跳）不是冗余。
-        let status = match ready {
-            Err(status) => status?,
-            Ok(ready) => {
+        let status = match waited {
+            Waited::Exited(status) => status?,
+            // 答应的那一刻「要停」也到了：不报「运行中」，和下面一样停掉
+            Waited::Ready(true) if *self.stopping.borrow() => stop_starting(&mut child).await?,
+            Waited::Ready(ready) => {
                 match (ready, child.id()) {
                     (true, Some(pid)) => {
                         self.set(if safe {
@@ -483,16 +567,16 @@ impl Supervisor {
                 }
                 child.wait().await?
             }
+            Waited::Stop => stop_starting(&mut child).await?,
         };
         let ran_for = started.elapsed();
 
-        // **先看是不是为了退出而停的。**这一条必须排在最前面：落到下面任何
+        // **先看是不是按要求停的。**这一条必须排在最前面：落到下面任何
         // 一个分支里，它都会被当成一次崩溃 —— 要么立刻再起一个去抢那把锁，
         // 要么攒够次数进安全模式、把主窗口弹出来。
-        if self.stopping.load(Ordering::SeqCst) {
+        if *self.stopping.borrow() {
             tracing::info!(?status, "core 已按要求停止");
-            self.set(CoreState::Stopped);
-            return Ok(Next::Stop);
+            return Ok(self.stopped());
         }
         tracing::warn!(?status, ?ran_for, "core 退出");
 
@@ -531,7 +615,11 @@ impl Supervisor {
                     in_ms: d.as_millis() as u64,
                 });
                 if !d.is_zero() {
-                    tokio::time::sleep(d).await;
+                    // 退避最长睡八秒。这中间被要求停，就不必睡完、更不该再起一个
+                    tokio::select! {
+                        _ = tokio::time::sleep(d) => {}
+                        _ = until_stopped(&mut stop) => return Ok(self.stopped()),
+                    }
                 }
                 Ok(Next::Again)
             }
@@ -902,5 +990,186 @@ mod tests {
         until_running(&s).await;
         s.request_restart().await.unwrap();
         assert_eq!(looped.await.unwrap(), Next::Again);
+    }
+
+    /// 假 core 起来之后做什么
+    #[derive(Clone, Copy)]
+    enum Acts {
+        /// 一直跑到被杀掉
+        Stays,
+        /// 当场退出：启动就崩
+        Crashes,
+    }
+
+    /// 一个每起一次就往 `starts` 那个文件里记一行的「core」（unix 上记的是它的 pid）。
+    /// 返回程序和那个文件
+    fn counting_core(name: &str, acts: Acts) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let starts = dir.join("starts");
+        #[cfg(unix)]
+        {
+            let bin = dir.join("fake-core");
+            let then = match acts {
+                Acts::Stays => "exec sleep 30",
+                Acts::Crashes => "exit 1",
+            };
+            let script = format!("#!/bin/sh\necho $$ >> '{}'\n{then}\n", starts.display());
+            std::fs::write(&bin, script).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            (bin, starts)
+        }
+        #[cfg(windows)]
+        {
+            let bin = dir.join("fake-core.cmd");
+            let then = match acts {
+                Acts::Stays => "@ping -n 30 127.0.0.1 >nul",
+                Acts::Crashes => "@exit /b 1",
+            };
+            let script = format!("@echo x>> \"{}\"\r\n{then}\r\n", starts.display());
+            std::fs::write(&bin, script).unwrap();
+            (bin, starts)
+        }
+    }
+
+    /// 起过几次
+    fn starts(file: &std::path::Path) -> usize {
+        std::fs::read_to_string(file).map_or(0, |s| s.lines().count())
+    }
+
+    async fn until_started(file: &std::path::Path, times: usize) {
+        let t0 = Instant::now();
+        while starts(file) < times {
+            assert!(t0.elapsed() < Duration::from_secs(5), "core 迟迟没起来");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// **还在启动的 core 也停得下来。**以前只认「运行中」：切到远程的那一刻本机的 core
+    /// 要是还没答应控制面，它照样起来、照样占着网关端口。停下之后照样接得回来
+    #[tokio::test]
+    async fn a_core_that_is_still_starting_is_stopped_and_can_start_again() {
+        let answer = Arc::new(AtomicBool::new(false));
+        let ready = {
+            let answer = answer.clone();
+            probe(move || {
+                let yes = answer.load(Ordering::SeqCst);
+                async move { yes }
+            })
+        };
+        let (bin, started) = counting_core("starting", Acts::Stays);
+        let s = Arc::new(Supervisor::new(
+            bin,
+            None,
+            ready,
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        // 进程起来了，控制面还没答应
+        until_started(&started, 1).await;
+        assert_eq!(s.state(), CoreState::Starting);
+
+        let t0 = Instant::now();
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert_eq!(s.state(), CoreState::Stopped, "还在启动的 core 没被停下");
+        assert!(t0.elapsed() < Duration::from_secs(5), "等到超时才停下");
+        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+            .await
+            .expect("守护循环没有停下")
+            .unwrap();
+        assert_eq!(next, Next::Stop);
+        #[cfg(unix)]
+        {
+            let pid: i32 = std::fs::read_to_string(&started)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            // SAFETY: 信号 0 只问这个 pid 还在不在，什么都不送
+            let alive = unsafe { libc::kill(pid, 0) } == 0;
+            assert!(!alive, "进程还在跑");
+        }
+
+        // 接回来：记号撤掉，照常起到「运行中」
+        s.resume();
+        answer.store(true, Ordering::SeqCst);
+        let again = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+        until_started(&started, 2).await;
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert_eq!(again.await.unwrap(), Next::Stop);
+    }
+
+    /// **在退避里等着重起的 core 也停得下来**：不会睡醒了再起一个
+    #[tokio::test]
+    async fn a_core_waiting_out_its_backoff_is_not_started_again() {
+        let (bin, started) = counting_core("backoff", Acts::Crashes);
+        let s = Arc::new(Supervisor::new(
+            bin,
+            None,
+            probe(|| async { false }),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        // 和 `gateway::supervise` 一样，一轮接一轮地跑
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move {
+                loop {
+                    match s.run_once(false).await.unwrap() {
+                        Next::Again => continue,
+                        other => return other,
+                    }
+                }
+            })
+        };
+        // 第一次崩溃立刻重起，第二次之后要等一秒
+        let mut rx = s.watch();
+        let backing_off =
+            rx.wait_for(|st| matches!(st, CoreState::Restarting { in_ms, .. } if *in_ms > 0));
+        let _ = tokio::time::timeout(Duration::from_secs(5), backing_off)
+            .await
+            .expect("迟迟没进退避")
+            .unwrap();
+
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        assert_eq!(s.state(), CoreState::Stopped, "退避里的 core 没被停下");
+        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+            .await
+            .expect("守护循环没有停下")
+            .unwrap();
+        assert_eq!(next, Next::Stop);
+        assert_eq!(starts(&started), 2, "睡醒之后又起了一个");
+    }
+
+    /// 要停的请求落在两轮之间（比如按要求重启的那一下）：**下一轮不起**
+    #[tokio::test]
+    async fn a_stop_between_two_rounds_keeps_the_next_one_from_starting() {
+        let (bin, started) = counting_core("between", Acts::Stays);
+        let s = Supervisor::new(
+            bin,
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        );
+        // 此刻没有在跑的：只是把记号立起来
+        s.stop_and_wait(Duration::from_secs(5)).await;
+        let next = tokio::time::timeout(Duration::from_secs(5), s.run_once(false))
+            .await
+            .expect("要停的时候又起了一个")
+            .unwrap();
+        assert_eq!(next, Next::Stop);
+        assert_eq!(s.state(), CoreState::Stopped);
+        assert_eq!(starts(&started), 0);
     }
 }
