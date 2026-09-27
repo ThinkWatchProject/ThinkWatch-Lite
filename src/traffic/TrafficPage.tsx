@@ -22,7 +22,7 @@ import { StatusDot } from "@/ui/status-dot";
 import { Toggle } from "@/ui/toggle";
 import { useArrivals } from "./arrivals";
 import { copyText } from "./cells";
-import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor } from "./grouping";
+import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
 import { RequestTable } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
 import { TrafficSummary } from "./TrafficSummary";
@@ -90,6 +90,8 @@ export default function TrafficPage({
     [allRows, filter, sortKey, sortDir],
   );
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /** 上一次归出来的组：没变的组沿用原来的对象，组头就不重画（见 `groupBySession`） */
+  const lastGroups = useRef<Group[]>([]);
   /*
     **过滤和排序先跑，归组后跑。**反过来的话，筛掉一半请求之后组头上的汇总还是
     整次任务的数字，而用户会以为自己筛错了。组与组之间沿用表头选的那个方向（按组里
@@ -97,7 +99,8 @@ export default function TrafficPage({
   */
   const groups = useMemo(() => {
     if (!grouped) return undefined;
-    const gs = groupBySession(rows, sessions);
+    const gs = groupBySession(rows, sessions, lastGroups.current);
+    lastGroups.current = gs;
     const dir = sortDir === "asc" ? 1 : -1;
     return sortKey === "time" ? [...gs].sort((a, b) => (groupAt(a) - groupAt(b)) * dir) : gs;
   }, [grouped, rows, sessions, sortKey, sortDir]);

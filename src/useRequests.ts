@@ -30,8 +30,12 @@ import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
  * **本地应答的那几行没有上游**：`provider` 是空的，`local` 标着。「上游」那一格写的
  * 那句说明是画的时候才按语言取的（`upstreamText`）。原来这里把「本地应答」当成上游名
  * 写进行里：换了语言它还是原来那种，上游下拉框里多出一个叫「本地应答」的上游。
+ *
+ * 返回有没有哪一行变了（换了对象、或者多了一行）。**没变就不用交给界面**（见 `publish`）：
+ * 每批请求落地都要对一次账，而大多数时候两千行里只有刚落地的那几行不一样。
  */
-export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[]): void {
+export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[]): boolean {
+  let dirty = false;
   for (const h of history) {
     const cur = rows.get(h.id);
     /*
@@ -76,9 +80,13 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       next.hint ??= h.client_hint ?? undefined;
       next.peer ??= h.peer ?? undefined;
       next.keyMasked ??= h.key_masked ?? undefined;
-      if (changed(cur, next)) rows.set(h.id, next);
+      if (changed(cur, next)) {
+        rows.set(h.id, next);
+        dirty = true;
+      }
       continue;
     }
+    dirty = true;
     rows.set(h.id, {
       id: h.id,
       client: h.client,
@@ -107,6 +115,7 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       ...marksFromEvents(h.security),
     });
   }
+  return dirty;
 }
 
 /**
@@ -140,6 +149,32 @@ function touches(ev: CoreEvent): number | null {
     default:
       return null;
   }
+}
+
+/**
+ * 把一批事件落进列表。返回有没有哪一行变了：多了一行，或者哪一行换了新对象。
+ *
+ * 改一行之前先把它换成新对象（见 `touches`），同一行一批里只换一次。
+ *
+ * **一行都没动的批次返回 false**：只有熔断、模型清单、配置这类「现在什么情况」的
+ * 事件，或者说的是一条已经不在列表里的请求。原来每一批都把两千行重排一遍交给界面，
+ * 外壳和流量页跟着整个重算 —— 而那一批什么都没改。导出给测试用。
+ */
+export function applyBatch(rows: Map<number, RequestRow>, batch: readonly CoreEvent[]): boolean {
+  let dirty = false;
+  /** 这一批里已经换成新对象的行 */
+  const fresh = new Set<number>();
+  for (const ev of batch) {
+    const id = touches(ev);
+    if (id !== null && !fresh.has(id)) {
+      const r = rows.get(id);
+      if (r) rows.set(id, { ...r });
+      fresh.add(id);
+    }
+    if (ev.kind === "request_started" || (id !== null && rows.has(id))) dirty = true;
+    applyEvent(rows, ev);
+  }
+  return dirty;
 }
 
 /**
@@ -283,8 +318,7 @@ export function useRequests(ready: boolean) {
       开始搜，等于在一个本来就不大的集合上加一道门。
     */
     const history = await call("History", { limit: LIST_LIMIT });
-    mergeHistory(store.current, history);
-    publish();
+    if (mergeHistory(store.current, history)) publish();
     setSeedError(undefined);
   }, [publish]);
 
@@ -341,8 +375,6 @@ export function useRequests(ready: boolean) {
       pending.current = [];
       let local = 0;
       let landed = false;
-      /** 这一批里已经换成新对象的行：同一行一批里只换一次 */
-      const fresh = new Set<number>();
       for (const ev of batch) {
         if (
           ev.kind === "request_finished" ||
@@ -372,17 +404,10 @@ export function useRequests(ready: boolean) {
           setRejected(null);
           setReloads((n) => n + 1);
         }
-        // 先换成新对象再改，见 `touches`
-        const id = touches(ev);
-        if (id !== null && !fresh.has(id)) {
-          const r = store.current.get(id);
-          if (r) store.current.set(id, { ...r });
-          fresh.add(id);
-        }
-        applyEvent(store.current, ev);
       }
       if (local > 0) setLocallyAnswered((n) => n + local);
-      publish();
+      // 一行都没动的批次不交给界面，见 `applyBatch`
+      if (applyBatch(store.current, batch)) publish();
       // 落地一批就发一次「可以重算聚合了」
       if (landed) settleSoon();
     };

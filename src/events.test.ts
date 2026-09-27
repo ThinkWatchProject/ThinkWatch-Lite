@@ -8,7 +8,7 @@ import {
   type InFlightRequest,
   type RequestRow,
 } from "./types";
-import { mergeHistory } from "./useRequests";
+import { applyBatch, mergeHistory } from "./useRequests";
 import { coreText, plain } from "@/i18n/core.i18n";
 import { setLang } from "@/i18n";
 
@@ -505,6 +505,34 @@ describe("对账时行对象换不换", () => {
     const before = rows.get(1);
     mergeHistory(rows, [stored({ session: "s1" })]);
     expect(rows.get(1)).toBe(before);
+  });
+
+  /**
+   * 一批事件落进列表。**一行都没动的批次**（只有「现在什么情况」的事件，或者说的是
+   * 一条已经不在列表里的请求）要说出来：那时不用把两千行重排一遍交给界面。
+   */
+  it("一批事件：只有状态事件、或者说的是不在列表里的请求时，报没有改动", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(applyBatch(rows, [started()])).toBe(true);
+    const before = rows.get(1);
+    const status = { kind: "models_changed", id: 90, provider: "official", at_ms: 1_000_100 } satisfies CoreEvent;
+    const gone = { kind: "request_headers", id: 42, status: 200, ttfb_ms: 300 } satisfies CoreEvent;
+    expect(applyBatch(rows, [status, gone])).toBe(false);
+    expect(rows.get(1)).toBe(before);
+    // 碰到了列表里的那一行：换成新对象再改
+    expect(applyBatch(rows, [status, { kind: "request_headers", id: 1, status: 200, ttfb_ms: 300 }])).toBe(true);
+    expect(rows.get(1)).not.toBe(before);
+    expect(rows.get(1)?.ttfbMs).toBe(300);
+    expect(before?.ttfbMs).toBeUndefined();
+  });
+
+  /** 说出有没有哪一行变了：一行都没变的对账不用把两千行重排一遍交给界面 */
+  it("报出这一次对账有没有改动", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(mergeHistory(rows, [stored({ session: "s1" })])).toBe(true);
+    expect(mergeHistory(rows, [stored({ session: "s1" })])).toBe(false);
+    expect(mergeHistory(rows, [stored({ session: "s1", cost_micros: 2_000 })])).toBe(true);
+    expect(mergeHistory(rows, [])).toBe(false);
   });
 
   it("库里多出了信息的行，换成新对象，旧的不动", () => {

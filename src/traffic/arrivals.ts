@@ -4,6 +4,19 @@ import { useEffect, useRef, useState } from "react";
 const FRESH_MS = 900;
 
 /**
+ * 这一批里第一次出现的那几项，同时把它们记成「见过」。
+ *
+ * **见过的只留还在的那些。**列表有上限，被挤出去的是最老的，不会再回来；留着它们，
+ * 这份集合只涨不落 —— 开着一天就攥着几万个再也用不上的 id。攒到比眼前这一批多出一倍
+ * 时按眼前的重建一次，平摊下来每一批仍然只看新来的那几项。导出给测试用。
+ */
+export function arrive<K>(known: Set<K>, keys: readonly K[]): { known: Set<K>; news: K[] } {
+  const news = keys.filter((k) => !known.has(k));
+  for (const k of news) known.add(k);
+  return { known: known.size > 2 * keys.length ? new Set(keys) : known, news };
+}
+
+/**
  * 刚到的那几项（请求 id、会话 id），给它们挂进场动画。
  *
  * **第一个请求进来时那一行要跳出来** —— 它是「网关真的在工作」的证明。`armed`
@@ -27,10 +40,9 @@ export function useArrivals<K>(keys: readonly K[], armed: boolean): ReadonlySet<
       seen.current = new Set(keys);
       return;
     }
-    const known = seen.current;
-    const news = keys.filter((k) => !known.has(k));
+    const { known, news } = arrive(seen.current, keys);
+    seen.current = known;
     if (news.length === 0) return;
-    for (const k of news) known.add(k);
     setFresh((prev) => new Set([...prev, ...news]));
     const h = setTimeout(() => {
       timers.current.delete(h);
