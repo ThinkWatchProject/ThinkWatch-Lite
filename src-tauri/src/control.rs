@@ -20,6 +20,9 @@ use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use tw_api::{Endpoint, Format, ep};
 
+/// 事件流多久没有一个字节就算断了：core 每 15 秒发一次心跳，这是错过三次
+const EVENTS_SILENT_FOR: std::time::Duration = std::time::Duration::from_secs(45);
+
 /// 一条连上控制面的流。
 ///
 /// 两种传输各给一种，而**两种在所有平台上都编译**（只有 unix socket 那一支
@@ -429,18 +432,30 @@ impl ControlClient {
         }
         on_open();
 
-        let mut buf = String::new();
-        while let Some(frame) = resp.frame().await {
-            let frame = frame?;
+        let mut buf: Vec<u8> = Vec::new();
+        loop {
+            // **一直没有字节就算断了。**连着远程的机器睡过一觉、换过网络，TCP 那一头早就
+            // 不在，这一头却收不到 FIN，会在这里一直等下去：链接还显示「已连接」，实时的
+            // 东西再也不来。core 每 15 秒发一次心跳，错过三次还没有动静就是没了 —— 返回
+            // 错误，调用方照断线处理（远程的重连一次、再订阅，并补报丢过事件）
+            let frame = match tokio::time::timeout(EVENTS_SILENT_FOR, resp.frame()).await {
+                Ok(Some(frame)) => frame?,
+                Ok(None) => break,
+                Err(_) => anyhow::bail!(
+                    "the event stream was silent for {} seconds",
+                    EVENTS_SILENT_FOR.as_secs()
+                ),
+            };
             let Some(chunk) = frame.data_ref() else {
                 continue;
             };
-            buf.push_str(&String::from_utf8_lossy(chunk));
+            buf.extend_from_slice(chunk);
             // SSE 的事件以空行分隔。**必须按空行切而不是按 chunk 切** ——
             // 一个事件可能被拆在两个 TCP 包里，按 chunk 处理会切出半个
-            // JSON，然后每隔一阵就丢一条事件而且看不出原因。
-            while let Some(idx) = buf.find("\n\n") {
-                let raw = buf[..idx].to_string();
+            // JSON，然后每隔一阵就丢一条事件而且看不出原因。**也按字节切、切完
+            // 再解码**：拆在两半中间的一个汉字，各自解码就成了两个替换符
+            while let Some(idx) = buf.windows(2).position(|w| w == b"\n\n") {
+                let raw = String::from_utf8_lossy(&buf[..idx]).into_owned();
                 buf.drain(..idx + 2);
                 for line in raw.lines() {
                     if let Some(data) = line.strip_prefix("data:")
