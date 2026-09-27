@@ -475,7 +475,10 @@ pub async fn update_install(
             .supervisor
             .stop_and_wait(std::time::Duration::from_secs(5))
             .await;
-        if let Err(e) = up.install(&bytes) {
+        let installed = install_blocking(up, bytes)
+            .await
+            .and_then(|r| r.map_err(|e| e.to_string()));
+        if let Err(e) = installed {
             // 最常见的是 UAC 那一下点了「否」。**把刚才做的两件事都撤回来**：
             // 不撤的话，网关就这么停着，而下次启动还会说一句没发生过的「已更新」。
             let _ = std::fs::remove_file(&marker);
@@ -492,10 +495,11 @@ pub async fn update_install(
     {
         // Linux 上走到这里的只有 AppImage：插件原地换掉 `$APPIMAGE` 那个文件
         #[cfg(target_os = "linux")]
-        up.install(&bytes)
+        install_blocking(up, bytes)
+            .await?
             .map_err(|e| update::appimage_failure(&e))?;
         #[cfg(target_os = "macos")]
-        up.install(&bytes).map_err(|e| {
+        install_blocking(up, bytes).await?.map_err(|e| {
             tr!(
                 format!("安装失败：{e}"),
                 format!("Installation failed: {e}")
@@ -511,6 +515,24 @@ pub async fn update_install(
             .await;
     }
     app.restart()
+}
+
+/// 装下载好的那一份，**在阻塞线程上**。
+///
+/// `install` 从头到尾都是阻塞的活：macOS 上要替换的位置写不进去时，插件把管理员密码
+/// 的对话框派到主线程，然后在这里干等用户的答案；Linux 上是写一整个 AppImage；Windows
+/// 上要等 UAC 那一下。放在异步运行时的工作线程上，这段时间里排在那个线程上的别的任务
+/// （事件流、菜单栏、心跳）都跟着停。
+///
+/// 外面那层错是那个线程本身没跑完（panic）；里面那层是插件给的原样，各平台照旧按自己
+/// 的写法说
+async fn install_blocking(
+    up: tauri_plugin_updater::Update,
+    bytes: Vec<u8>,
+) -> Result<Result<(), tauri_plugin_updater::Error>, String> {
+    tauri::async_runtime::spawn_blocking(move || up.install(&bytes))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 更新没装成，把为它停掉的网关接回来。
