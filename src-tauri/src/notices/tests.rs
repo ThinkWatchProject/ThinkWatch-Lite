@@ -332,6 +332,46 @@ async fn what_was_held_back_is_not_mentioned_after_clearing() {
     assert!(!last.contains("另有"), "清掉的不该再算进去：{last}");
 }
 
+/// 「另有 N 项」数的是**几件事**：同一件事被压下几次还是一项
+#[tokio::test]
+async fn something_held_back_again_and_again_is_still_one_more() {
+    let b = bed();
+    // 三个令牌花在前三家上
+    for i in 0..3 {
+        b.bus.ingest(quota(&format!("relay-{i}")), T0 + i as u64);
+    }
+    // 第四家被压下三次，第五家一次
+    for i in 0..3 {
+        b.bus.ingest(quota("relay-3"), T0 + 10 + i);
+    }
+    b.bus.ingest(quota("relay-4"), T0 + 20);
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发").now(),
+        T0 + 30,
+    );
+    let last = b.bodies().last().cloned().unwrap_or_default();
+    assert!(last.contains("另有 2 项"), "{last}");
+}
+
+/// 压下之后好了的、用户看过了的，**不再是待处理的事**，不算进「另有 N 项」
+#[tokio::test]
+async fn what_was_held_back_and_then_resolved_or_read_is_not_mentioned() {
+    let b = bed();
+    for i in 0..5 {
+        b.bus.ingest(quota(&format!("relay-{i}")), T0 + i as u64);
+    }
+    // 第四、五家被压下：一家好了，一家用户看过了
+    b.bus
+        .ingest(Signal::cleared("quota:relay-3:weekly"), T0 + 10);
+    b.bus.mark_read("quota:relay-4:weekly");
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发").now(),
+        T0 + 20,
+    );
+    let last = b.bodies().last().cloned().unwrap_or_default();
+    assert!(!last.contains("另有"), "{last}");
+}
+
 // ---------------------------------------------------------------- 开关
 
 #[tokio::test]

@@ -28,7 +28,7 @@
 //! 投递是 [`Sink`]，系统通知只是其中一个实现。macOS、Windows、Linux 各有一个原生的
 //! sink，判定只有这一套。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -223,8 +223,9 @@ struct State {
     /// 令牌桶
     tokens: u32,
     refilled_at: Option<Instant>,
-    /// 被限流压下去的条数，给「另有 N 项」用
-    held_back: u32,
+    /// 被限流压下去、还没说出去的那几件事，给「另有 N 项」用。**按键记**：同一件事
+    /// 压下几次还是一项；好了的、用户看过的不再是待处理的事，随即划掉
+    held_back: HashSet<String>,
 }
 
 /// 通知总线。**整个应用只有一份**
@@ -322,14 +323,19 @@ impl Notices {
     fn mark_read_where(&self, pick: impl Fn(&str) -> bool) {
         let marked: Vec<String> = {
             let mut g = self.state.lock().expect("锁未中毒");
-            g.open
+            let marked: Vec<String> = g
+                .open
                 .values_mut()
                 .filter(|o| !o.notice.read && pick(&o.notice.key))
                 .map(|o| {
                     o.notice.read = true;
                     o.notice.key.clone()
                 })
-                .collect()
+                .collect();
+            for k in &marked {
+                g.held_back.remove(k);
+            }
+            marked
         };
         if marked.is_empty() {
             return;
@@ -348,7 +354,7 @@ impl Notices {
         let gone: Vec<String> = {
             let mut g = self.state.lock().expect("锁未中毒");
             // 被限流压下去的那几条也不在了，下一条通知不该再说「另有 N 项」
-            g.held_back = 0;
+            g.held_back.clear();
             g.open.drain().map(|(k, _)| k).collect()
         };
         for k in &gone {
@@ -502,7 +508,7 @@ impl Notices {
             // 用户选了「仅在应用内」的，级别再高也不打断
             let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
-            let deliver = wants && !signal.hold && take_token(&mut g, signal.level);
+            let deliver = wants && !signal.hold && take_token(&mut g, &signal.key, signal.level);
             g.open.insert(
                 signal.key.clone(),
                 Open {
@@ -543,7 +549,7 @@ impl Notices {
                     Some(o) if o.due == Some(at) && !o.notice.notified && !o.notice.read => {
                         let level = o.notice.level;
                         o.due = None;
-                        if !wants || !take_token(&mut g, level) {
+                        if !wants || !take_token(&mut g, &key, level) {
                             None
                         } else {
                             g.open.get(&key).map(|o| o.notice.clone())
@@ -566,7 +572,10 @@ impl Notices {
             if let Some(o) = g.open.get_mut(&notice.key) {
                 o.notice.notified = true;
             }
-            std::mem::take(&mut g.held_back)
+            let mut held = std::mem::take(&mut g.held_back);
+            // 这一条自己先前被压下过的话，现在说的就是它，不算「另有」
+            held.remove(&notice.key);
+            held.len()
         };
         let mut shown = notice.clone();
         shown.notified = true;
@@ -592,6 +601,8 @@ impl Notices {
             let Some(o) = g.open.remove(key) else {
                 return;
             };
+            // 好了就不再是待处理的事
+            g.held_back.remove(key);
             let now = Instant::now();
             if o.intermittent {
                 // 「时断时续」那一条是一句说明，不是一件开着的事：它收到的「好了」**不算又
@@ -695,8 +706,8 @@ fn open_suppresses(key: &str) -> &'static [&'static str] {
     rules::suppresses(key)
 }
 
-/// 取一个令牌。critical 不走桶 —— 它本来就少，而且每一条都该看见
-fn take_token(state: &mut State, level: Level) -> bool {
+/// 为 `key` 这一条取一个令牌。critical 不走桶 —— 它本来就少，而且每一条都该看见
+fn take_token(state: &mut State, key: &str, level: Level) -> bool {
     if level == Level::Critical {
         return true;
     }
@@ -708,7 +719,7 @@ fn take_token(state: &mut State, level: Level) -> bool {
         state.refilled_at = Some(now);
     }
     if state.tokens == 0 {
-        state.held_back += 1;
+        state.held_back.insert(key.to_string());
         return false;
     }
     state.tokens -= 1;
