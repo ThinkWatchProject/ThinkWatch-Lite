@@ -97,6 +97,11 @@ export interface RankRow {
   unpriced: number;
   /** 没有拿到用量的请求：费用算不出来，也不在 `cost` 里 */
   noUsage: number;
+  /**
+   * 价钱还没到的请求（实时档）：落地了，`request_priced` 还在路上。费用也不在 `cost`
+   * 里 —— **不当成 $0**，金额写成下限。历史档从库里算，没有这一种，是 0
+   */
+  pending: number;
   requests: number;
   /** 图里那一层的颜色 */
   color: string;
@@ -110,17 +115,21 @@ export interface RankRow {
  * · 连用量都没有：「无用量」。
  * · 其余写金额。有算不出来的请求时金额只是下限，写成「≥」；含估算的带「~」。
  *   全都算出来了、合计是零时写 $0：不计费的上游（本地模型）就是这样，它说的是真的。
+ * · 实时档里价钱还没到的请求（`pending`）同样不在金额里：金额写成下限，等它们到了
+ *   再补上。
  *
  * `notes` 是悬停里的几句话，一句一段；空的就没有悬停。
  */
 export function rankCost(
-  r: Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage">,
+  r: Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage"> & { pending?: number },
   t: Text,
 ): { kind: "amount" | "unpriced" | "noUsage"; prefix: string; notes: string[] } {
+  const pending = r.pending ?? 0;
   // 金额之外的请求，各说各的
   const outside = [
     ...(r.unpriced > 0 ? [t.rankUnpriced(r.unpriced)] : []),
     ...(r.noUsage > 0 ? [t.rankNoUsage(r.noUsage)] : []),
+    ...(pending > 0 ? [t.rankPending(pending)] : []),
   ];
   if (r.cost === 0 && r.unpriced > 0) return { kind: "unpriced", prefix: "", notes: outside };
   if (r.cost === 0 && r.noUsage > 0) return { kind: "noUsage", prefix: "", notes: outside };
@@ -224,6 +233,7 @@ export function buildTrend({
   const estimated = new Map<string, number>();
   const unpriced = new Map<string, number>();
   const noUsage = new Map<string, number>();
+  const pending = new Map<string, number>();
   const volume = new Map<string, number>();
   const count = new Map<string, number>();
   const add = (at: number, name: string, v: number) => {
@@ -250,8 +260,10 @@ export function buildTrend({
       money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
       if (x.estimated) bump(estimated, x.model, x.cost ?? 0);
-      // 价钱到了却是空的：模型未定价。还没到的（`undefined`）不算
+      // 价钱到了却是空的：模型未定价。还没到的（`undefined`）另数：**它不是 $0**，
+      // 在它到之前，这个模型的金额只是下限（见 `rankCost`）
       if (x.cost === null) bump(unpriced, x.model, 1);
+      if (x.cost === undefined) bump(pending, x.model, 1);
       const amount = tokensMode ? x.tokens : (x.cost ?? 0) * 3600;
       // 只碰核够得着的那几格
       const lo = Math.max(0, Math.ceil((x.at - LIVE_REACH_MS - from) / LIVE_BUCKET_MS));
@@ -340,6 +352,7 @@ export function buildTrend({
     estimated: estimated.get(name) ?? 0,
     unpriced: unpriced.get(name) ?? 0,
     noUsage: noUsage.get(name) ?? 0,
+    pending: pending.get(name) ?? 0,
     requests: count.get(name) ?? 0,
     color: colorOf.get(name) ?? "var(--chart-1)",
   }));
@@ -352,6 +365,7 @@ export function buildTrend({
       estimated: sum(estimated),
       unpriced: sum(unpriced),
       noUsage: sum(noUsage),
+      pending: sum(pending),
       requests: sum(count),
       color: OTHER,
     });

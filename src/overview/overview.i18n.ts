@@ -94,6 +94,8 @@ export const overviewText = messages(
     /** 费用那一格悬停里的句子：金额之外的请求。含估算的那句和费用大数的限定语共用 `estimated` */
     rankUnpriced: (n: number) => `${n} 条请求无法计价：模型未定价，费用未计入`,
     rankNoUsage: (n: number) => `${n} 条请求没有用量数据，费用未计入`,
+    /** 实时档：请求刚落地，价钱还没算出来 */
+    rankPending: (n: number) => `${n} 条请求的费用尚在计算，暂未计入`,
     /** 可以点的「无法计价」，读屏读出来的后半句 */
     viewUnpriced: "在流量中查看无法计价的请求",
     moreNotListed: (n: number) => `另有 ${n} 项未列出`,
@@ -239,6 +241,10 @@ export const overviewText = messages(
       n === 1
         ? "1 request has no usage data, so its cost is not included"
         : `${n} requests have no usage data, so their cost is not included`,
+    rankPending: (n: number) =>
+      n === 1
+        ? "1 request is still being priced, so its cost is not included yet"
+        : `${n} requests are still being priced, so their cost is not included yet`,
     viewUnpriced: "View unpriced requests in Traffic",
     moreNotListed: (n: number) => `${n} more not listed`,
     viewInTraffic: "View in Traffic",

@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 import { call } from "@/control";
 import { listen } from "@tauri-apps/api/event";
 import { textOf } from "@/i18n";
-import type { CoreEvent } from "@/types";
+import type { CoreEvent, HistoryRow } from "@/types";
 import { liveText } from "./useLive.i18n";
 
 /**
@@ -92,6 +92,66 @@ export interface LiveSample {
 export interface LiveFail {
   id: number;
   at: number;
+}
+
+/**
+ * 从库里补回来的那一段，并进事件流攒下的样本。
+ *
+ * 事件流和库会说到同一次请求，**谁先到都有可能**（落库和事件是两条路），所以按 id
+ * 去重：事件流上已经画了的不画第二遍。**去重按表查，不逐条比**：补一次是两千行对
+ * 两千个样本，逐条比就是四百万次。
+ *
+ * **事件流上画了、价钱却没等到的，按库里的补上。**这条路走的正是事件流丢过事件之后
+ * （`events_dropped`），丢掉的那一段里可能就有它的 `request_priced`：不补的话，它在
+ * 窗口里一直算「价钱还没到」，那个模型的金额一直是下限。落了库的都已经算过价。
+ *
+ * `skew`：core 的时钟减这边的时钟。`cut`：窗口的左边（这边的时钟）。导出给测试用。
+ */
+export function refill(
+  samples: readonly LiveSample[],
+  fails: readonly LiveFail[],
+  rows: readonly HistoryRow[],
+  { skew, cut, unknownModel }: { skew: number; cut: number; unknownModel: string },
+): { samples: LiveSample[]; fails: LiveFail[] } {
+  const drawn = new Map(samples.map((s) => [s.id, s]));
+  const failed = new Set(fails.map((f) => f.id));
+  const seeded: LiveSample[] = [];
+  const seededFails: LiveFail[] = [];
+  for (const r of rows) {
+    // 本地应答没到上游，和别处的汇总一样不算
+    if (r.local) continue;
+    // 和事件流同一个口径：落在结束的那一刻，换到这边的时钟上
+    const at = r.at_ms + (r.duration_ms ?? 0) - skew;
+    if (at < cut) continue;
+    if (r.error && !failed.has(r.id)) seededFails.push({ id: r.id, at });
+    const x = drawn.get(r.id);
+    if (x) {
+      // 和 `request_priced` 一样补在那一格原来的位置上
+      if (x.cost === undefined) {
+        x.cost = r.cost_micros;
+        x.estimated = r.cost_estimated;
+      }
+      continue;
+    }
+    const tokens =
+      (r.input_tokens ?? 0) + (r.output_tokens ?? 0) + (r.cache_read_tokens ?? 0) + (r.cache_write_tokens ?? 0);
+    // 没有用量的那些事件流也不画，补的时候一样跳过
+    if (tokens === 0) continue;
+    seeded.push({
+      id: r.id,
+      at,
+      model: r.model || unknownModel,
+      tokens,
+      // 落了库的都已经算过价：有用量却是空的，就是未定价
+      cost: r.cost_micros,
+      estimated: r.cost_estimated,
+    });
+  }
+  return {
+    // **按时间排好**：`request_priced` 是从末尾倒着找那一条的
+    samples: [...seeded, ...samples].sort((a, b) => a.at - b.at),
+    fails: [...seededFails, ...fails],
+  };
 }
 
 /**
@@ -287,7 +347,8 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
       } else if (ev.kind === "events_dropped") {
         // 丢过事件：丢掉的结局从库里补进曲线。落库要一点时间，等一会儿再补；
-        // 补的时候按 id 去重，事件流上已经画了的不会画两遍
+        // 补的时候按 id 去重，事件流上已经画了的不会画两遍，它们没等到的价钱
+        // 按库里的补上（见 `refill`）
         setTimeout(() => void seed(), REFILL_MS);
         return;
       } else {
@@ -323,37 +384,14 @@ export function useLiveWindow(active: boolean, windowMs: number) {
           from_ms: coreNow - 2 * windowMs,
         });
         if (!alive) return;
-        const cut = Date.now() - windowMs;
-        const seeded: LiveSample[] = [];
-        const seededFails: LiveFail[] = [];
-        for (const r of rows) {
-          // 本地应答没到上游，和别处的汇总一样不算
-          if (r.local) continue;
-          // 和事件流同一个口径：落在结束的那一刻，换到这边的时钟上
-          const at = r.at_ms + (r.duration_ms ?? 0) - skew;
-          if (at < cut) continue;
-          if (r.error && !failedAlready(r.id)) seededFails.push({ id: r.id, at });
-          if (counted(r.id)) continue;
-          const tokens =
-            (r.input_tokens ?? 0) +
-            (r.output_tokens ?? 0) +
-            (r.cache_read_tokens ?? 0) +
-            (r.cache_write_tokens ?? 0);
-          // 没有用量的那些事件流也不画，补的时候一样跳过
-          if (tokens === 0) continue;
-          seeded.push({
-            id: r.id,
-            at,
-            model: r.model || textOf(liveText).unknownModel,
-            tokens,
-            // 落了库的都已经算过价：有用量却是空的，就是未定价
-            cost: r.cost_micros,
-            estimated: r.cost_estimated,
-          });
-        }
-        // **按时间排好**：`request_priced` 是从末尾倒着找那一条的
-        samples.current = [...seeded, ...samples.current].sort((a, b) => a.at - b.at);
-        fails.current = [...seededFails, ...fails.current];
+        // 并进来、去重、补上没等到的价钱，见 `refill`
+        const next = refill(samples.current, fails.current, rows, {
+          skew,
+          cut: Date.now() - windowMs,
+          unknownModel: textOf(liveText).unknownModel,
+        });
+        samples.current = next.samples;
+        fails.current = next.fails;
         frame();
       } catch {
         // 读不到就只画事件流那一半，和补这一段之前一样

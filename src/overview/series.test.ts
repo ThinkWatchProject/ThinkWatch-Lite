@@ -113,6 +113,7 @@ function rank(over: Partial<RankRow>): RankRow {
     estimated: 0,
     unpriced: 0,
     noUsage: 0,
+    pending: 0,
     requests: 1,
     color: "var(--chart-1)",
     ...over,
@@ -428,6 +429,21 @@ describe("排行的费用", () => {
       expect(by.get("a")).toMatchObject({ cost: 500, estimated: 200, unpriced: 0, requests: 2 });
       expect(by.get("b")).toMatchObject({ cost: 0, unpriced: 1, requests: 2 });
       expect(by.get("c")).toMatchObject({ cost: 0, unpriced: 0 });
+    });
+
+    /**
+     * **价钱还在路上的不是 $0。**它落地了、用量有了，`request_priced` 还没到：这时
+     * 这个模型的金额只是下限，和缺了算不出钱的请求同一个写法（「≥」）；到了就不带了。
+     */
+    it("实时档：价钱还没到的，金额写成下限", () => {
+      const live = { ...base, live: true, rangeMs: 10 * 60_000, d: dashboard(since, []) };
+      const s = (id: number, over: Partial<LiveSample>): LiveSample => ({ id, at: now - 30_000, model: "a", tokens: 100, ...over });
+      const waiting = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, {})] }).ranking[0]!;
+      expect(waiting).toMatchObject({ cost: 300, pending: 1, requests: 2 });
+      expect(rankCost(waiting, t)).toEqual({ kind: "amount", prefix: "≥", notes: [t.rankPending(1)] });
+      const priced = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, { cost: 200 })] }).ranking[0]!;
+      expect(priced.pending).toBe(0);
+      expect(rankCost(priced, t)).toEqual({ kind: "amount", prefix: "", notes: [] });
     });
 
     it("费用口径的悬停：金额之外的条数跟在请求数后面，金额写成下限", () => {
