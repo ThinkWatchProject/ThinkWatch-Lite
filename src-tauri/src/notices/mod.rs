@@ -468,9 +468,9 @@ impl Notices {
         let now = Instant::now();
         let (notice, deliver, due) = {
             let mut g = self.state.lock().expect("锁未中毒");
-            let suppressed = suppressed_by(&g, &signal);
             let existing = g.open.get(&signal.key).cloned();
             let muted = existing.as_ref().and_then(|o| o.muted_until);
+            let hush = hushed(&g, &signal.key, muted, now);
             let escalated = existing
                 .as_ref()
                 .is_some_and(|o| signal.level > o.notice.level);
@@ -501,10 +501,7 @@ impl Notices {
                 },
             };
             // 抖动中、被抑制、已经弹过，或者用户已经看过：只留记号
-            let quiet = muted.is_some_and(|until| now < until)
-                || suppressed
-                || notice.notified
-                || notice.read;
+            let quiet = hush || notice.notified || notice.read;
             // 用户选了「仅在应用内」的，级别再高也不打断
             let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
@@ -535,27 +532,40 @@ impl Notices {
         self.changed();
     }
 
-    /// 等去抖那一段过去。**期间事情好了就不说了** —— 这正是去抖的意义
+    /// 等去抖那一段过去。**期间事情好了就不说了** —— 这正是去抖的意义。
+    ///
+    /// **到点时照投递那一刻的样子再判一遍**，和 [`Self::raise`] 同一套：这一分钟里
+    /// 网关可能停了（它那一条压着这一条，见 [`hushed`]），用户可能换了一档、看过了，
+    /// 事情可能好了（那就不在 `open` 里了）
     fn schedule(self: &Arc<Self>, key: String, at: Instant) {
         let me = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep_until(at.into()).await;
-            // 等的这一分钟里用户可能换了一档
             let wants = me.mode() == Mode::System;
             let notice = {
                 let mut g = me.state.lock().expect("锁未中毒");
-                match g.open.get_mut(&key) {
-                    // 还开着、还没弹过、用户还没看过、拿得到令牌
-                    Some(o) if o.due == Some(at) && !o.notice.notified && !o.notice.read => {
-                        let level = o.notice.level;
-                        o.due = None;
-                        if !wants || !take_token(&mut g, &key, level) {
-                            None
-                        } else {
+                // 还开着、等的还是这一次、还没弹过、用户还没看过
+                let pending = g
+                    .open
+                    .get(&key)
+                    .filter(|o| o.due == Some(at) && !o.notice.notified && !o.notice.read)
+                    .map(|o| (o.notice.level, o.muted_until));
+                match pending {
+                    Some((level, muted)) => {
+                        if let Some(o) = g.open.get_mut(&key) {
+                            o.due = None;
+                        }
+                        // 此刻没被压着、拿得到令牌
+                        let say = wants
+                            && !hushed(&g, &key, muted, Instant::now())
+                            && take_token(&mut g, &key, level);
+                        if say {
                             g.open.get(&key).map(|o| o.notice.clone())
+                        } else {
+                            None
                         }
                     }
-                    _ => None,
+                    None => None,
                 }
             };
             if let Some(n) = notice {
@@ -691,13 +701,19 @@ impl Notices {
     }
 }
 
+/// 此刻不该为 `key` 打断用户：它在抖（`muted_until` 之前），或者有更要紧的事压着它。
+/// 新来的时候判一次，去抖到点时再判一次（[`Notices::schedule`]）—— 两处必须是同一套
+fn hushed(state: &State, key: &str, muted_until: Option<Instant>, now: Instant) -> bool {
+    muted_until.is_some_and(|until| now < until) || suppressed(state, key)
+}
+
 /// 有没有更要紧的事正开着。**网关整个不在服务时，不必再说它下面每一家怎么了**
-fn suppressed_by(state: &State, signal: &Signal) -> bool {
+fn suppressed(state: &State, key: &str) -> bool {
     state.open.values().any(|o| {
-        o.notice.key != signal.key
+        o.notice.key != key
             && open_suppresses(&o.notice.key)
                 .iter()
-                .any(|p| signal.key.starts_with(p))
+                .any(|p| key.starts_with(p))
     })
 }
 

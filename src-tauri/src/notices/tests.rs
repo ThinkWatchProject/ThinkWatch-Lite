@@ -113,6 +113,29 @@ async fn a_fault_that_persists_is_announced_after_the_hold() {
     assert_eq!(b.titles(), ["代理「hk」不通"]);
 }
 
+/// 去抖的那一分钟里网关停了：**到点时再看一遍**，它压着这一条，就不再弹 —— 网关那一条
+/// 已经说了，那时用户要做的只有一件事
+#[tokio::test(start_paused = true)]
+async fn a_notice_on_hold_stays_quiet_if_the_gateway_goes_down_meanwhile() {
+    let b = bed();
+    b.bus.ingest(
+        Signal::raised("proxy:hk", Level::Warning, "代理「hk」不通"),
+        T0,
+    );
+    tokio::time::advance(Duration::from_secs(20)).await;
+    b.bus.ingest(
+        Signal::raised("gateway", Level::Critical, "网关未在转发")
+            .now()
+            .suppressing(rules::suppresses("gateway")),
+        T0 + 20_000,
+    );
+    tokio::time::advance(Duration::from_secs(90)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(b.titles(), ["网关未在转发"], "{:?}", b.titles());
+    // 压下去的仍然在列表里
+    assert_eq!(b.bus.list().len(), 2);
+}
+
 #[tokio::test]
 async fn the_gateway_being_down_silences_everything_under_it() {
     let b = bed();
