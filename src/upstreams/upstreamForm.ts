@@ -60,6 +60,8 @@ export interface UpstreamForm {
   oauthClientId: string;
   oauthClientSecret: string;
   oauthAccess: string;
+  /** 把客户端自己的 User-Agent 和身份信息发给这家。只给按客户端放行的上游打开 */
+  forwardClientIdentity: boolean;
   proxy: string;
   onProxyFail: OnProxyFail;
   /** 服务不提供模型列表时的手动清单 */
@@ -102,6 +104,7 @@ export function blankForm(): UpstreamForm {
     oauthClientId: "",
     oauthClientSecret: "",
     oauthAccess: "",
+    forwardClientIdentity: false,
     proxy: "direct",
     onProxyFail: "fail",
     manualModels: [],
@@ -135,6 +138,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     oauthClientId: p.oauth?.client_id ?? "",
     oauthClientSecret: p.oauth?.client_secret ?? "",
     oauthAccess: "",
+    forwardClientIdentity: p.forward_client_identity,
     proxy: p.proxy,
     onProxyFail: p.on_proxy_fail,
     manualModels: p.models,
@@ -185,6 +189,7 @@ export function toInput(f: UpstreamForm): ProviderInput {
     headers: headerInputs(f),
     oauth: oauthChange(f),
     protocol: f.protocol || undefined,
+    forward_client_identity: f.forwardClientIdentity,
     proxy: f.proxy,
     on_proxy_fail: f.onProxyFail,
     models: f.manualModels,

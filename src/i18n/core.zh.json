@@ -521,6 +521,7 @@
     "config.credential.claude_subscription": "不支持 Claude 订阅账号的登录凭据，请使用 Anthropic API 密钥。",
     "config.credential.google_subscription": "不支持 Gemini CLI 的 Google 登录凭据，请使用 Gemini API 密钥。",
     "config.credential.chatgpt_without_login": "ChatGPT 账号上游只接受登录获得的凭据。",
+    "config.credential.chatgpt_client_identity": "ChatGPT 账号上游始终以 ThinkWatch 的身份发送请求，不能转发客户端的身份。",
     "config.credential.identity_header": "请求头「{header}」如实说明请求的来源，由网关发送，不能在配置中设置。",
     "config.credential.too_many_headers": "请求头最多 {max} 个。",
     "config.credential.bad_header_name": "请求头名称「{header}」无效：只能包含字母、数字和 - _ . ~，且不超过 {max} 个字符。",

@@ -28,6 +28,7 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     oauth: null,
     protocol: "anthropic",
     protocol_explicit: true,
+    forward_client_identity: false,
     proxy: "direct",
     on_proxy_fail: "fail",
     models: [],
@@ -76,6 +77,14 @@ describe("编辑时回填原样", () => {
       { name: "X-Relay-Token", value: "rt-5d1e9f2c" },
     ]);
     expect(connectionChanged(f, p)).toBe(false);
+  });
+
+  it("转发客户端身份：新建默认关，编辑时回填、原样交回", () => {
+    expect(toInput(blankForm()).forward_client_identity).toBe(false);
+    const f = formFromView(view({ forward_client_identity: true }));
+    expect(f.forwardClientIdentity).toBe(true);
+    expect(toInput(f).forward_client_identity).toBe(true);
+    expect(toInput({ ...f, forwardClientIdentity: false }).forward_client_identity).toBe(false);
   });
 
   it("清空密钥就是不要密钥；清空请求头的值要补上", () => {

@@ -145,6 +145,7 @@
       "pricing": null,
       "protocol": "anthropic",
       "protocol_explicit": false,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -179,6 +180,7 @@
       "pricing": "relay-discount",
       "protocol": "anthropic",
       "protocol_explicit": true,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -217,6 +219,7 @@
       "pricing": null,
       "protocol": "chatgpt",
       "protocol_explicit": true,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -247,6 +250,7 @@
       "pricing": null,
       "protocol": "openai-chat",
       "protocol_explicit": true,
+      "forward_client_identity": false,
       "proxy": "clash",
       "references": [
         {
@@ -273,6 +277,7 @@
       "pricing": null,
       "protocol": "anthropic",
       "protocol_explicit": true,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -299,6 +304,7 @@
       "pricing": null,
       "protocol": "gemini",
       "protocol_explicit": false,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -331,6 +337,7 @@
       "pricing": null,
       "protocol": "openai-chat",
       "protocol_explicit": true,
+      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
