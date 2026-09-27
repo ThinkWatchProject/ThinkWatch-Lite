@@ -10,6 +10,7 @@ import {
 } from "@/ui/dialog";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { latestOnly } from "@/lib/latestOnly";
 import type {
   Overview,
   ProviderPreview,
@@ -152,7 +153,13 @@ export function UpstreamDialog({
     return () => clearTimeout(t);
   }, [form.baseUrl, form.protocol]);
 
-  // 新建：连接信息一改，之前检测到的结果和模型列表就不再对应这一家
+  /**
+   * 连接信息一改，之前的检测结果就不再对应表单里的这一家。
+   *
+   * **编辑时也一样**：显示着「连接正常」的时候改了密钥、地址、协议或代理，那句话说的
+   * 已经不是现在这一份了。还没回来的那次检测，回来了也不要 —— 它测的是改之前的那一份
+   * （`tests`）。新建时模型列表也是检测带进来的，一起作废；编辑时那是已保存的清单，留着
+   */
   const connectionKey = JSON.stringify([
     form.baseUrl,
     form.protocol,
@@ -164,10 +171,12 @@ export function UpstreamDialog({
     form.oauthAccess,
     form.proxy,
   ]);
+  const [tests] = useState(latestOnly);
   useEffect(() => {
-    if (editing) return;
+    tests.drop();
     setTest(null);
-    setCatalog(null);
+    setTesting(false);
+    if (!editing) setCatalog(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionKey]);
 
@@ -221,12 +230,15 @@ export function UpstreamDialog({
   }, [sheetKey, modelsKey, ov.price_sheets]);
 
   async function runTest() {
+    const current = tests.start();
     setTesting(true);
     try {
       const r = await api.testProvider({
         provider: toInput(form),
         current: editing?.name,
       });
+      // 回来时表单已经改了，或者又点了一次：这个结果不算（finally 里也不收转圈）
+      if (!current()) return;
       setTest(r);
       setCatalog(
         r.ok && r.models.kind === "listed"
@@ -241,6 +253,7 @@ export function UpstreamDialog({
             },
       );
     } catch (e) {
+      if (!current()) return;
       const error = errorText(e);
       setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error) });
       setCatalog({
@@ -251,7 +264,7 @@ export function UpstreamDialog({
         error: plain(t.connectionFailed(error)),
       });
     } finally {
-      setTesting(false);
+      if (current()) setTesting(false);
     }
   }
 
