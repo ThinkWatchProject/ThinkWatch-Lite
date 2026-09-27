@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "picker",
-  "description": "启动时的连接选择。按内容定好高度（picker_fit，走 Rust）之后自己亮出来、拿焦点；选好之后由 Rust 关掉它（pick_connection）。别的都不需要。",
+  "description": "启动时的连接选择。按内容定好高度（picker_fit，走 Rust）之后自己亮出来、拿焦点（show、set-focus）；选好之后由 Rust 关掉它（pick_connection）。页面还听一个事件：换了界面语言（main.tsx 在每个窗口里都听 language-changed，从不取消，所以只要 listen）。开发者工具快捷键同主窗口。不给 core:default，理由见 default.json。",
   "windows": [
     "picker"
   ],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
     "core:window:allow-show",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }

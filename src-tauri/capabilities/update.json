@@ -1,14 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "update",
-  "description": "更新窗口的能力。它按内容定好高度（update_fit，走 Rust）之后自己亮出来、拿焦点，点「稍后」时关掉自己；别的都不需要。",
+  "description": "更新窗口的能力。它按内容定好高度（update_fit，走 Rust）之后自己亮出来、拿焦点（show、set-focus），点「稍后」时关掉自己（close）。页面听更新走到哪一步、下载了多少，离开时取消（listen、unlisten）；换界面语言也是一个事件。开发者工具快捷键同主窗口。不给 core:default，理由见 default.json。",
   "windows": [
     "update"
   ],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-show",
     "core:window:allow-set-focus",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }
