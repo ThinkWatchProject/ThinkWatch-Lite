@@ -47,6 +47,7 @@
     },
     "protocol": "anthropic",
     "protocol_explicit": true,
+    "forward_client_identity": false,
     "proxy": "direct",
     "on_proxy_fail": "fail",
     "models": [

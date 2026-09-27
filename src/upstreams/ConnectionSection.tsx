@@ -6,6 +6,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
+import { Switch } from "@/ui/switch";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
@@ -183,6 +184,17 @@ export function ConnectionSection({
           })}
         />
       </FormItem>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-center gap-2.5 tw-body font-medium">
+          <Switch
+            checked={form.forwardClientIdentity}
+            onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
+          />
+          {t.clientIdentity}
+        </label>
+        <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <FormItem label={t.proxy} htmlFor="up-proxy">

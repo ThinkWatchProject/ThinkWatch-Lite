@@ -41,6 +41,9 @@ export const connectionSectionText = messages(
     responded: (ms: number) => `响应 ${ms.toLocaleString()} ms`,
     via: (proxy: string) => `经由 ${proxy}`,
     ok: "连接正常",
+    clientIdentity: "转发客户端身份",
+    clientIdentityDesc:
+      "向此上游发送客户端自己的 User-Agent 和身份信息；关闭时显示为 ThinkWatch。仅在上游只接受特定客户端时开启，例如 Kimi For Coding、百炼 Coding Plan。",
   },
   {
     auto: "Auto-detect",
@@ -79,5 +82,8 @@ export const connectionSectionText = messages(
     responded: (ms: number) => `responded in ${ms.toLocaleString()} ms`,
     via: (proxy: string) => `via ${proxy}`,
     ok: "Connection OK",
+    clientIdentity: "Forward client identity",
+    clientIdentityDesc:
+      "Sends this upstream the client's own User-Agent and identity; when off, requests appear as ThinkWatch. Turn on only for upstreams that accept specific clients, such as Kimi For Coding or Bailian Coding Plan.",
   },
 );

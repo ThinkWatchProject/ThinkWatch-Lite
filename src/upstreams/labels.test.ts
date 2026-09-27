@@ -14,6 +14,7 @@ function p(patch: Partial<ProviderView>): ProviderView {
     auth_header: "x-api-key",
     protocol: "anthropic",
     protocol_explicit: false,
+    forward_client_identity: false,
     proxy: "direct",
     on_proxy_fail: "fail",
     models: [],
