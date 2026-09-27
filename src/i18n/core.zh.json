@@ -724,6 +724,8 @@
     "adopt.file.verify_failed": "修改后的内容未通过校验，未写入任何内容（{detail}）。",
     "adopt.file.readback_mismatch": "写入后读回的内容与预期不符，已从备份还原：{path}",
     "adopt.file.link_loop": "符号链接层数过多：{path}",
+    "adopt.file.not_restored": "写入中途停止，且无法将 {path} 恢复原样：{detail}。原来的内容保存在 {backup}",
+    "adopt.file.not_removed": "写入中途停止，且无法删除此次新建的 {path}：{detail}",
     "adopt.plan.read_failed": "无法读取 {client} 的配置 {path}：{detail}",
     "adopt.plan.parse_failed": "无法解析 {client} 的配置，未做任何修改：{detail}",
     "adopt.plan.foreign_record": "{path} 旁的接管记录属于 {other}，而不是 {client}，未做任何修改。",

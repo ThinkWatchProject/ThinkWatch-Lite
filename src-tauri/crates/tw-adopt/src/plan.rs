@@ -484,12 +484,7 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
     for p in std::iter::once(plan).chain(&plan.also) {
         match apply_file(p, backup_root) {
             Ok(a) => done.push(a),
-            Err(e) => {
-                for (a, side) in done.iter().rev() {
-                    undo(a, side.as_deref());
-                }
-                return Err(e);
-            }
+            Err(e) => return Err(undo_all(&done).map_or(e, PlanError::Write)),
         }
     }
     let mut it = done.into_iter().map(|(a, _)| a);
@@ -500,18 +495,35 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
     Ok(first)
 }
 
-/// 退回一份已经落盘的接管：文件换回原文，旁文件换回原来那一份（或者删掉）。
-fn undo(a: &Applied, old_sidecar: Option<&str>) {
-    let _ = rollback(a);
-    let side = sentinel::sidecar_path(&a.real);
-    match old_sidecar {
-        Some(t) => {
-            let _ = crate::foreign::write_private(&side, t.as_bytes());
-        }
-        None => {
-            let _ = std::fs::remove_file(&side);
+/// 把已经落盘的那几份倒着退回去。**退不回去的要说出来**，返回第一处：那时文件停在
+/// 一半，用户得知道是哪一个、原来的内容在哪儿 —— 这比让它停下来的那个原因更要紧。
+/// 一处退不回去也照样退别的。
+fn undo_all(done: &[(Applied, Option<String>)]) -> Option<ForeignError> {
+    let mut first = None;
+    for (a, side) in done.iter().rev() {
+        if let Err(e) = undo(a, side.as_deref()) {
+            first.get_or_insert(e);
         }
     }
+    first
+}
+
+/// 退回一份已经落盘的改动：文件换回原文，旁文件换回原来那一份（或者删掉）。两样
+/// 都做，报先出错的那一样。
+fn undo(a: &Applied, old_sidecar: Option<&str>) -> Result<(), ForeignError> {
+    let file = rollback(a);
+    let side = sentinel::sidecar_path(&a.real);
+    let record = match old_sidecar {
+        Some(t) => crate::foreign::write_atomic(&side, t.as_bytes(), None),
+        None => match std::fs::remove_file(&side) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ForeignError::Write {
+                path: side,
+                source: e,
+            }),
+            _ => Ok(()),
+        },
+    };
+    file.and(record)
 }
 
 /// 一份文件落盘，返回结果和它之前的旁文件（退回时要用）。
@@ -553,8 +565,8 @@ fn apply_file(plan: &Plan, backup_root: &Path) -> Result<(Applied, Option<String
         .unwrap_or_else(|| (applied.backup.display().to_string(), applied.created));
     let rec = SidecarRecord::new(&plan.client, now_ms(), &backup, created, &plan.originals);
     if let Err(e) = write_sidecar(&side, &rec) {
-        let _ = rollback(&applied);
-        return Err(PlanError::Write(e));
+        // 配置也退不回去的话，说的是那一件：它停在改过的样子上，而且没有记录
+        return Err(PlanError::Write(rollback(&applied).err().unwrap_or(e)));
     }
     Ok((applied, old_side))
 }
@@ -598,11 +610,10 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
     let _ = c;
     let mut done: Vec<(Applied, Option<String>)> = Vec::new();
     let mut warnings = Vec::new();
-    // 哪一份还原不成，前面还原了的都退回接管状态：还原一半，比哪一份都没动更难收拾
-    let undo_done = |done: &[(Applied, Option<String>)]| {
-        for (a, side) in done.iter().rev() {
-            undo(a, side.as_deref());
-        }
+    // 哪一份还原不成，前面还原了的都退回接管状态：还原一半，比哪一份都没动更难收拾。
+    // 退不回去的那一份要说出来（[`undo_all`]）
+    let undo_done = |done: &[(Applied, Option<String>)], e: PlanError| {
+        undo_all(done).map_or(e, PlanError::Write)
     };
     for p in &plan.also {
         match restore_file(p, backup_root) {
@@ -611,10 +622,7 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
                 done.push((a, side));
             }
             Ok(None) => {}
-            Err(e) => {
-                undo_done(&done);
-                return Err(e);
-            }
+            Err(e) => return Err(undo_done(&done, e)),
         }
     }
     match restore_file(plan, backup_root) {
@@ -629,10 +637,7 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
             created: false,
             warnings,
         }),
-        Err(e) => {
-            undo_done(&done);
-            Err(e)
-        }
+        Err(e) => Err(undo_done(&done, e)),
     }
 }
 
@@ -985,12 +990,56 @@ fn write_sidecar(path: &Path, rec: &SidecarRecord) -> Result<(), ForeignError> {
     crate::foreign::write_atomic(path, text.as_bytes(), None)
 }
 
-fn rollback(a: &Applied) -> std::io::Result<()> {
+/// 拿全文备份把一份刚写过的文件放回去（我们新建的就删掉）。放不回去是错，见
+/// [`foreign::put_back`]。
+fn rollback(a: &Applied) -> Result<(), ForeignError> {
     if a.created {
-        std::fs::remove_file(&a.real)
-    } else {
-        let text = std::fs::read_to_string(&a.backup)?;
-        std::fs::write(&a.real, text)
+        return foreign::put_back(&a.real, None, &a.backup);
+    }
+    let text = std::fs::read(&a.backup).map_err(|source| ForeignError::NotRestored {
+        path: a.real.clone(),
+        backup: a.backup.clone(),
+        source,
+    })?;
+    foreign::put_back(&a.real, Some(&text), &a.backup)
+}
+
+#[cfg(test)]
+mod undoing {
+    use super::*;
+
+    /// 后面那一份失败、前面写好的要退回去：**退不回去的要说出来**（是哪一个、原文在
+    /// 哪儿），而且一处退不回去，别的照样退
+    #[test]
+    fn a_file_that_cannot_be_undone_is_reported_and_the_rest_are_still_undone() {
+        let d = tempfile::tempdir().unwrap();
+        let applied = |real: &Path, backup: PathBuf, created: bool| Applied {
+            real: real.to_path_buf(),
+            asked: real.to_path_buf(),
+            backup,
+            created,
+            warnings: Vec::new(),
+        };
+        // 改过的配置，它的全文备份却已经没了
+        let stuck = d.path().join("settings.json");
+        std::fs::write(&stuck, "ours").unwrap();
+        // 我们新建的文件
+        let created = d.path().join("credentials.yaml");
+        std::fs::write(&created, "ours").unwrap();
+        let done = vec![
+            (applied(&stuck, d.path().join("gone"), false), None),
+            (applied(&created, d.path().join("empty"), true), None),
+        ];
+
+        let e = undo_all(&done).expect("有一份退不回去，要说出来");
+        assert!(
+            matches!(&e, ForeignError::NotRestored { path, .. } if *path == stuck),
+            "{e}"
+        );
+        assert!(!created.exists(), "一处退不回去，别的也不退了");
+        assert_eq!(std::fs::read_to_string(&stuck).unwrap(), "ours");
+        // 这时整个接管报的就是它
+        assert_eq!(PlanError::Write(e).msg().code, "adopt.file.not_restored");
     }
 }
 
@@ -1017,6 +1066,15 @@ mod msg_codes {
                 ForeignError::VerifyFailed("x".into()),
                 ForeignError::Readback { path: p() },
                 ForeignError::LinkLoop { path: p() },
+                ForeignError::NotRestored {
+                    path: p(),
+                    backup: p(),
+                    source: io(),
+                },
+                ForeignError::NotRemoved {
+                    path: p(),
+                    source: io(),
+                },
             ]
         };
         let mut all: Vec<(Msg, String)> = foreign()

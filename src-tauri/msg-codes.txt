@@ -81,6 +81,8 @@ adopt.diag.wsl_process
 adopt.diag.wsl_process.detail
 adopt.file.changed
 adopt.file.link_loop
+adopt.file.not_removed
+adopt.file.not_restored
 adopt.file.read_failed
 adopt.file.readback_mismatch
 adopt.file.verify_failed

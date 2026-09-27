@@ -48,6 +48,19 @@ pub enum ForeignError {
     Readback { path: PathBuf },
     #[error("{}", self.msg())]
     LinkLoop { path: PathBuf },
+    /// 写到一半停下来，这个文件**没能放回原样**：它停在改过的样子上
+    #[error("{}", self.msg())]
+    NotRestored {
+        path: PathBuf,
+        backup: PathBuf,
+        source: std::io::Error,
+    },
+    /// 写到一半停下来，这个我们新建的文件**没能删掉**
+    #[error("{}", self.msg())]
+    NotRemoved {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl ForeignError {
@@ -79,6 +92,23 @@ impl ForeignError {
             ForeignError::LinkLoop { path } => msg!(
                 "adopt.file.link_loop", path = path.display() =>
                 "too many levels of symbolic link: {path}"
+            ),
+            // **比让它停下来的那个原因更要紧**：文件停在改过的样子上，用户得知道
+            // 是哪一个、原来的内容在哪儿
+            ForeignError::NotRestored {
+                path,
+                backup,
+                source,
+            } => msg!(
+                "adopt.file.not_restored", path = path.display(), backup = backup.display(),
+                detail = source =>
+                "writing stopped part-way, and {path} could not be put back as it was: {detail}. \
+                 What it was before is in {backup}"
+            ),
+            ForeignError::NotRemoved { path, source } => msg!(
+                "adopt.file.not_removed", path = path.display(), detail = source =>
+                "writing stopped part-way, and {path}, which was created here, could not be \
+                 removed again: {detail}"
             ),
         }
     }
@@ -205,34 +235,46 @@ pub(crate) fn write_atomic(
         real.file_name().and_then(|s| s.to_str()).unwrap_or("cfg"),
         std::process::id()
     ));
-    let w = |source| ForeignError::Write {
-        path: tmp.clone(),
-        source,
-    };
     // 临时文件**生来就是 0600**：里面已经是换上的网关密钥。写完再放宽成原文件
     // 的权限位（用户自己给的，`chmod` 不受 umask 影响，照原样还回去）。
+    //
+    // **先落盘再挪过去。**rename 是原子的，可它不管内容写没写到盘上：断电之后可能
+    // 是名字已经换过来了，内容却是空的 —— 用户的配置没了，备份也救不了一个我们说
+    // 「写好了」的文件。所以临时文件同步完才挪（[`write_private`]），挪完再同步一次
+    // 目录，让「换过来了」这件事本身也落盘。
     let _ = std::fs::remove_file(&tmp);
-    let written = (|| {
-        write_private(&tmp, text).map_err(w)?;
-        #[cfg(unix)]
-        if let Some(mode) = keep_mode.filter(|m| *m != 0o600) {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode)).map_err(w)?;
-        }
-        #[cfg(not(unix))]
-        let _ = keep_mode;
-        replace(&tmp, real).map_err(|source| ForeignError::Write {
-            path: real.to_path_buf(),
+    let written = write_private(&tmp, text, keep_mode)
+        .map_err(|source| ForeignError::Write {
+            path: tmp.clone(),
             source,
         })
-    })();
+        .and_then(|()| {
+            replace(&tmp, real).map_err(|source| ForeignError::Write {
+                path: real.to_path_buf(),
+                source,
+            })
+        });
     // 没挪成（目标只读、被别的程序占着）就把临时文件收掉：里面是换上的网关密钥，
     // 而它就躺在用户的配置旁边 —— 那个目录可能正是一个 git 管着的 dotfiles 仓库。
     // 名字带着进程号，不收的话每失败一次就多留一份
     if written.is_err() {
         let _ = std::fs::remove_file(&tmp);
+    } else {
+        sync_dir(dir);
     }
     written
+}
+
+/// 把目录项的改动（刚挪过来的那个名字）同步到盘上。**尽力而为**：有的文件系统
+/// 不让同步目录，那时内容已经落盘，差的只是这个名字，不值得为它报错。
+fn sync_dir(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
+    }
+    // Windows 上的 `MOVEFILE_WRITE_THROUGH` 已经等挪动落盘了才返回，见 [`replace`]
+    #[cfg(not(unix))]
+    let _ = dir;
 }
 
 #[cfg(windows)]
@@ -262,10 +304,11 @@ fn write_in_place(real: &Path, text: impl AsRef<[u8]>) -> Result<(), ForeignErro
     f.sync_all().map_err(w)
 }
 
-/// 写一个只给自己看的文件：**新建时带着 `0600` 建出来**，不是建完再 `chmod`
-/// —— 那中间有一个按 umask 给的 0644 窗口。文件已经在的话 `mode` 不生效，
-/// 权限保持原样（调用方要收紧就自己再 `chmod`）。
-pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// 写一个只给自己看的文件，**落盘了再返回**：新建时带着 `0600` 建出来，不是建完
+/// 再 `chmod` —— 那中间有一个按 umask 给的 0644 窗口。`mode` 给了就在落盘之前换成
+/// 它（照原文件的权限位还回去）。文件已经在的话新建时那个 `0600` 不生效，调用方
+/// 要的是新文件（[`write_atomic`] 先删掉了残留的那个）。
+fn write_private(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create(true).truncate(true);
@@ -274,7 +317,16 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    opts.open(path)?.write_all(bytes)
+    let mut f = opts.open(path)?;
+    f.write_all(bytes)?;
+    #[cfg(unix)]
+    if let Some(m) = mode.filter(|m| *m != 0o600) {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(m))?;
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    f.sync_all()
 }
 
 /// 把 `tmp` 挪成 `real`，**目标已经存在也照挪**。
@@ -567,11 +619,8 @@ pub fn apply_bytes(
         source,
     })?;
     if back != ch.after {
-        if created {
-            let _ = std::fs::remove_file(&real);
-        } else if let Some(text) = &now {
-            let _ = write_atomic(&real, text, keep);
-        }
+        // 那一句说的是「已经从备份还原」：**还原不成就不能那么说**
+        put_back(&real, now.as_deref(), &backup)?;
         return Err(ForeignError::Readback { path: real });
     }
 
@@ -582,6 +631,36 @@ pub fn apply_bytes(
         created,
         warnings,
     })
+}
+
+/// 把一个刚写过的文件放回写之前的样子：`before` 是 `None`（原来没有这个文件）就
+/// 删掉它，否则写回原文，权限位照旧。`backup` 是那份原文的全文备份，放不回去时
+/// 告诉用户去哪儿找。
+///
+/// **放不回去要说出来**，不能当成已经放回去了：调用方接下来说的正是「已经退回去了」，
+/// 而那时文件其实停在改过的样子上。已经不在了的新文件算删掉了。
+pub(crate) fn put_back(
+    real: &Path,
+    before: Option<&[u8]>,
+    backup: &Path,
+) -> Result<(), ForeignError> {
+    match before {
+        None => match std::fs::remove_file(real) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ForeignError::NotRemoved {
+                path: real.to_path_buf(),
+                source: e,
+            }),
+            _ => Ok(()),
+        },
+        Some(text) => write_atomic(real, text, mode_of(real)).map_err(|e| match e {
+            ForeignError::Write { source, .. } => ForeignError::NotRestored {
+                path: real.to_path_buf(),
+                backup: backup.to_path_buf(),
+                source,
+            },
+            other => other,
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -846,6 +925,33 @@ mod tests {
         let first = backup_at(&root, &p, "第一次", 1_700_000_000_001).unwrap();
         backup_at(&root, &other, "别人的", 1_700_000_000_000).unwrap();
         assert_eq!(backups_of(&root, &p), vec![first, second]);
+    }
+
+    /// 写到一半要退回去、却退不回去：**说出来**（是哪个文件、原文在哪儿），不能当成
+    /// 已经退回去了。已经不在了的新文件算删掉了
+    #[test]
+    fn a_file_that_cannot_be_put_back_is_an_error_not_a_silent_success() {
+        let d = tempfile::tempdir().unwrap();
+        let backup = d.path().join("backup-of-c.json");
+        // 写回原文：它所在的「目录」其实是个普通文件
+        let blocker = d.path().join("not-a-folder");
+        std::fs::write(&blocker, "x").unwrap();
+        let e = put_back(&blocker.join("c.json"), Some(b"old"), &backup).unwrap_err();
+        assert!(matches!(e, ForeignError::NotRestored { .. }), "{e}");
+        assert_eq!(e.msg().code, "adopt.file.not_restored");
+        assert!(e.to_string().contains(&backup.display().to_string()), "{e}");
+        // 删掉新建的：那儿其实是个不空的目录
+        let dir = d.path().join("c.json");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("inside"), "x").unwrap();
+        let e = put_back(&dir, None, &backup).unwrap_err();
+        assert!(matches!(e, ForeignError::NotRemoved { .. }), "{e}");
+
+        assert!(put_back(&d.path().join("gone.json"), None, &backup).is_ok());
+        let p = d.path().join("ok.json");
+        std::fs::write(&p, "new").unwrap();
+        put_back(&p, Some(b"old"), &backup).unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "old");
     }
 
     #[test]
