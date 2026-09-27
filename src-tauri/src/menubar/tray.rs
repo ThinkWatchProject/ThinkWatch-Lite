@@ -3,6 +3,7 @@
 //! 画不出额度条和三格数字，那几行写成文字。**判定都在模型里**，这里只是另一种画法
 //! —— 以后给 Windows 做一套像样的，换掉的只是这个文件。
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -12,8 +13,11 @@ use super::model::{Action, Bar, Row};
 
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 static TRAY: OnceLock<TrayIcon> = OnceLock::new();
-/// 菜单项的 id 是 `a:<下标>`，按下标找到它做什么
-static ACTIONS: Mutex<Vec<Action>> = Mutex::new(Vec::new());
+/// 现在这一版菜单是第几版，和它上面的动作。菜单项的 id 是 `a:<第几版>:<下标>`
+/// （[`item_id`]），按下标找到它做什么 —— **下标只在建它的那一版里作数**，见 [`pick`]
+static ACTIONS: Mutex<(u64, Vec<Action>)> = Mutex::new((0, Vec::new()));
+/// 菜单建到第几版了
+static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// 上一次画的那一份：没变就不重建（开着的菜单会被收起来）。
 ///
 /// Linux 上更要紧：tray-icon 的 `set_menu` 每次都把一份新的 GtkMenu 交给
@@ -47,15 +51,10 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
             }
         })
         .on_menu_event(|app, event| {
-            let Some(i) = event
-                .id()
-                .as_ref()
-                .strip_prefix("a:")
-                .and_then(|i| i.parse::<usize>().ok())
-            else {
-                return;
-            };
-            let action = ACTIONS.lock().ok().and_then(|a| a.get(i).cloned());
+            let action = ACTIONS
+                .lock()
+                .ok()
+                .and_then(|current| pick(event.id().as_ref(), &current));
             if let Some(action) = action {
                 super::handle(app, action);
             }
@@ -116,13 +115,30 @@ fn open_first(rows: &[Row]) -> Vec<Row> {
     out
 }
 
+/// 第 `generation` 版菜单上第 `index` 个动作的那一项的 id
+fn item_id(generation: u64, index: usize) -> String {
+    format!("a:{generation}:{index}")
+}
+
+/// 点的那一项做什么。**只认现在这一版菜单的**：菜单开着时数据变了、菜单换了一版，旧菜单
+/// 上的一下点击照样会送过来，按下标它会落到新菜单的另一项上 —— 可能就是「退出」（这些
+/// 平台上退出不再问一句）。旧菜单的点击就当没点，再点一下就是
+fn pick(id: &str, (generation, actions): &(u64, Vec<Action>)) -> Option<Action> {
+    let (g, i) = id.strip_prefix("a:")?.split_once(':')?;
+    if g.parse::<u64>().ok()? != *generation {
+        return None;
+    }
+    actions.get(i.parse::<usize>().ok()?).cloned()
+}
+
 fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>> {
     #[cfg(target_os = "linux")]
     let rows = &open_first(rows);
+    let generation = GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
     let mut actions = Vec::new();
     let mut id = |a: &Action| {
         actions.push(a.clone());
-        format!("a:{}", actions.len() - 1)
+        item_id(generation, actions.len() - 1)
     };
     let mut items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
     for row in rows {
@@ -270,7 +286,7 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
             }
         }
     }
-    *ACTIONS.lock().expect("锁未中毒") = actions;
+    *ACTIONS.lock().expect("锁未中毒") = (generation, actions);
     let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = items.iter().map(|b| b.as_ref()).collect();
     Menu::with_items(app, &refs)
 }
@@ -380,5 +396,18 @@ mod tests {
     fn a_menu_without_it_is_left_alone() {
         let rows = vec![Row::Separator];
         assert_eq!(open_first(&rows), rows);
+    }
+
+    /// 菜单换了一版之后，旧菜单上的点击不算数：按下标，它会落到新菜单的另一项上
+    #[test]
+    fn a_click_on_a_replaced_menu_does_nothing() {
+        let current = (7, vec![Action::OpenMain, Action::Quit]);
+        assert_eq!(pick(&item_id(7, 1), &current), Some(Action::Quit));
+        // 上一版菜单的第 1 项：送到的时候，菜单已经换成了这一版
+        assert_eq!(pick(&item_id(6, 1), &current), None);
+        assert_eq!(pick(&item_id(7, 2), &current), None);
+        // 没带版本的旧写法，没有动作的那几项（策略组、连接的标题）
+        assert_eq!(pick("a:1", &current), None);
+        assert_eq!(pick("group:主力", &current), None);
     }
 }
