@@ -137,7 +137,11 @@ async fn run(app: tauri::AppHandle) {
         };
         let mut snap = collect(&app, &state, &mut credits).await;
         present(&snap);
-        let reset = next_reset_in(&snap).map(|d| tokio::time::Instant::now() + d);
+        let day_end = snap
+            .today
+            .is_some()
+            .then(|| day_of(&chrono::Local, snap.now_ms).1);
+        let reset = next_reset_in(&snap, day_end).map(|d| tokio::time::Instant::now() + d);
         let mut due = None;
         // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
         // 汇总和额度不问
@@ -160,9 +164,9 @@ enum Woke {
 }
 
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
-/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒回来
-/// 一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的
-/// 菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
+/// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
+/// 菜单开着时每秒回来一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个
+/// 落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
 async fn wait(
     wake: &tokio::sync::Notify,
     now: &tokio::sync::Notify,
@@ -233,15 +237,66 @@ fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
     snap.rate = live.tokens_per_sec;
 }
 
-/// 最近的一个额度重置时刻还有多久
-fn next_reset_in(snap: &Snapshot) -> Option<std::time::Duration> {
+/// 最近的一个该整个重收的时刻还有多久：额度重置（那份额度作废），或者显示着的「今日」
+/// 过完了（`day_end_ms`，本地的下一个零点 —— 过了零点还挂着昨天的数，那就不是「今日」）
+fn next_reset_in(snap: &Snapshot, day_end_ms: Option<i64>) -> Option<std::time::Duration> {
     snap.quotas
         .iter()
         .flat_map(|q| q.windows.iter())
         .filter_map(|w| w.resets_at_ms)
+        .chain(day_end_ms.and_then(|at| u64::try_from(at).ok()))
         .filter(|at| *at > snap.now_ms)
         .min()
         .map(|at| std::time::Duration::from_millis(at - snap.now_ms))
+}
+
+/// 「今日」的时间窗：这台机器的本地零点起，到现在。
+///
+/// **零点在这边按本机的时区算好了交给 core**：core 只收 Unix 毫秒的时间窗。不给起点，
+/// core 就按它自己那台机器的零点算 —— 连着一台跑在 UTC 容器里的远程 core、人在东八区
+/// 时，「今日」每天早上八点才归零；它还是拿此刻的 UTC 偏移去推零点的，夏令时切换的
+/// 那一天差一个小时。终点不给，就是到现在
+fn today_window<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> tw_api::Window {
+    tw_api::Window {
+        from_ms: Some(day_of(tz, now_ms).0),
+        to_ms: None,
+    }
+}
+
+/// `now_ms` 所在的那一天，按 `tz` 的日历：`[零点, 下一个零点)`，Unix 毫秒。
+///
+/// **按日期去找零点，不拿此刻的偏移往回推**：夏令时切换的那一天，零点时的偏移和此刻的
+/// 不是同一个
+fn day_of<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> (i64, i64) {
+    let now_ms = now_ms as i64;
+    let Some(now) = chrono::DateTime::from_timestamp_millis(now_ms) else {
+        // 日历表示不了的时刻：不会遇到，也不值得为它编一个日子
+        return (now_ms, now_ms);
+    };
+    let date = now.with_timezone(tz).date_naive();
+    let next = date.succ_opt().unwrap_or(date);
+    (day_start(tz, date), day_start(tz, next))
+}
+
+/// 这一天从哪一刻起。**零点不一定正好有一个**：
+///
+/// - 在零点把表往前拨的地方（智利、古巴、黎巴嫩），时钟从 23:59:59 直接跳到 01:00，这一天
+///   没有零点 —— 取跳过去之后的第一刻；
+/// - 在一点把表拨回零点的地方（古巴入冬），零点有两个 —— 取前一个：两个零点之间那一小时
+///   已经是这一天了
+fn day_start<Tz: chrono::TimeZone>(tz: &Tz, date: chrono::NaiveDate) -> i64 {
+    let midnight = date.and_time(chrono::NaiveTime::MIN);
+    // 跳过的那一段按分钟往后找。拨表都落在整分钟上，所以找到的就是跳过去的那一刻；
+    // 一天里总有存在的时刻，最多找一天
+    (0..=24 * 60)
+        .find_map(|m| {
+            let local = midnight.checked_add_signed(chrono::TimeDelta::minutes(m))?;
+            tz.from_local_datetime(&local).earliest()
+        })
+        .map_or_else(
+            || midnight.and_utc().timestamp_millis(),
+            |t| t.timestamp_millis(),
+        )
 }
 
 /// 额度用完之后问到的重置卡张数。**每次用完只问一次**：问的是 ChatGPT 的后端
@@ -296,7 +351,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         return snap;
     }
     let c = &state.control;
-    let today = tw_api::Window::default();
+    let today = today_window(&chrono::Local, now_ms);
     let (status, quota, summary, overview, live) = tokio::join!(
         c.status(),
         c.call::<ep::Quota>(&[], &()),
@@ -750,5 +805,161 @@ mod tests {
             assert_eq!(style(), s);
         }
         set_style(Style::Full);
+    }
+
+    use chrono::{FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+
+    /// UTC 的这一刻，Unix 毫秒
+    fn utc_ms(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> i64 {
+        NaiveDate::from_ymd_opt(y, mo, d)
+            .and_then(|d| d.and_hms_opt(h, mi, 0))
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
+    }
+
+    /// 测试用的时区：`at`（UTC 毫秒）之前是 `before`，之后是 `after` —— 夏令时的一次拨表
+    #[derive(Debug, Clone, Copy)]
+    struct Shift {
+        at: i64,
+        before: FixedOffset,
+        after: FixedOffset,
+    }
+
+    fn shift(at: i64, before_h: i32, after_h: i32) -> Shift {
+        let hours = |h: i32| FixedOffset::east_opt(h * 3600).unwrap();
+        Shift {
+            at,
+            before: hours(before_h),
+            after: hours(after_h),
+        }
+    }
+
+    impl TimeZone for Shift {
+        type Offset = FixedOffset;
+
+        fn from_offset(o: &FixedOffset) -> Self {
+            Shift {
+                at: i64::MAX,
+                before: *o,
+                after: *o,
+            }
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            if utc.and_utc().timestamp_millis() < self.at {
+                self.before
+            } else {
+                self.after
+            }
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+            self.offset_from_utc_datetime(&utc.and_time(NaiveTime::MIN))
+        }
+
+        /// 同一个钟面按两边的偏移各换回一刻，落在自己那一边的才算数
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<FixedOffset> {
+            let utc = |o: FixedOffset| {
+                local.and_utc().timestamp_millis() - i64::from(o.local_minus_utc()) * 1000
+            };
+            match (utc(self.before) < self.at, utc(self.after) >= self.at) {
+                (true, true) => MappedLocalTime::Ambiguous(self.before, self.after),
+                (true, false) => MappedLocalTime::Single(self.before),
+                (false, true) => MappedLocalTime::Single(self.after),
+                (false, false) => MappedLocalTime::None,
+            }
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<FixedOffset> {
+            self.offset_from_local_datetime(&local.and_time(NaiveTime::MIN))
+        }
+    }
+
+    /// 人在东八区，早上七点半（UTC 前一天 23:30）看「今日」：从东八区的零点算起。**不给
+    /// 起点，就是 core 那台机器的零点** —— 跑在 UTC 容器里的 core，「今日」到早上八点才归零
+    #[test]
+    fn today_starts_at_this_machines_midnight() {
+        let now = utc_ms(2026, 9, 26, 23, 30) as u64;
+        let east8 = FixedOffset::east_opt(8 * 3600).unwrap();
+        let w = today_window(&east8, now);
+        assert_eq!(w.from_ms, Some(utc_ms(2026, 9, 26, 16, 0)));
+        assert_eq!(w.to_ms, None, "终点不给，就是到现在");
+        // 同一刻在西五区是 9/26 的傍晚
+        let west5 = FixedOffset::west_opt(5 * 3600).unwrap();
+        assert_eq!(
+            today_window(&west5, now).from_ms,
+            Some(utc_ms(2026, 9, 26, 5, 0))
+        );
+    }
+
+    /// 夏令时开始的那一天（纽约 2026-03-08，两点拨到三点）中午：零点是拨表之前的那个
+    /// （-05:00）。拿此刻的偏移（-04:00）往回推，会早一个小时
+    #[test]
+    fn a_dst_day_starts_at_its_own_midnight() {
+        let new_york = shift(utc_ms(2026, 3, 8, 7, 0), -5, -4);
+        let noon = utc_ms(2026, 3, 8, 16, 0) as u64;
+        assert_eq!(
+            day_of(&new_york, noon),
+            (utc_ms(2026, 3, 8, 5, 0), utc_ms(2026, 3, 9, 4, 0))
+        );
+    }
+
+    /// 在零点拨表的地方（圣地亚哥 2026-09-06，零点直接跳到一点）：这一天没有零点，从跳过去
+    /// 的那一刻算起；前一天也正好到那一刻为止
+    #[test]
+    fn a_day_without_a_midnight_starts_where_the_clock_lands() {
+        let santiago = shift(utc_ms(2026, 9, 6, 4, 0), -4, -3);
+        let noon = utc_ms(2026, 9, 6, 15, 0) as u64;
+        assert_eq!(
+            day_of(&santiago, noon),
+            (utc_ms(2026, 9, 6, 4, 0), utc_ms(2026, 9, 7, 3, 0))
+        );
+        let day_before = utc_ms(2026, 9, 5, 16, 0) as u64;
+        assert_eq!(
+            day_of(&santiago, day_before),
+            (utc_ms(2026, 9, 5, 4, 0), utc_ms(2026, 9, 6, 4, 0))
+        );
+    }
+
+    /// 在一点拨回零点的地方（哈瓦那 2026-11-01）：零点有两个，从前一个算起 —— 两个零点
+    /// 之间那一小时已经是这一天了
+    #[test]
+    fn a_day_with_two_midnights_starts_at_the_first() {
+        let havana = shift(utc_ms(2026, 11, 1, 5, 0), -4, -5);
+        let noon = utc_ms(2026, 11, 1, 17, 0) as u64;
+        assert_eq!(
+            day_of(&havana, noon),
+            (utc_ms(2026, 11, 1, 4, 0), utc_ms(2026, 11, 2, 5, 0))
+        );
+    }
+
+    /// 显示着「今日」时，到了本地的下一个零点就整个重收一次，不等下一个事件：不然过了零点，
+    /// 菜单栏上挂着的还是昨天的数
+    #[test]
+    fn the_day_is_collected_again_when_it_ends() {
+        const HOUR: u64 = 3_600_000;
+        let now = 1_800_000_000_000;
+        let snap = Snapshot {
+            now_ms: now,
+            quotas: vec![model::Quota {
+                provider: "chatgpt".into(),
+                windows: vec![model::Window {
+                    resets_at_ms: Some(now + 10 * HOUR),
+                    ..Default::default()
+                }],
+                reset_credits: None,
+            }],
+            ..Default::default()
+        };
+        let hours = |h: u64| Some(std::time::Duration::from_millis(h * HOUR));
+        let at = |h: u64| Some((now + h * HOUR) as i64);
+        assert_eq!(next_reset_in(&snap, at(2)), hours(2));
+        // 额度先重置的，先按额度来
+        assert_eq!(next_reset_in(&snap, at(20)), hours(10));
+        assert_eq!(next_reset_in(&snap, None), hours(10));
     }
 }

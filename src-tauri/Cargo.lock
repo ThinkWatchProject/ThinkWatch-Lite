@@ -4760,6 +4760,7 @@ version = "2026.9.19"
 dependencies = [
  "anyhow",
  "block2",
+ "chrono",
  "dispatch2",
  "flate2",
  "gtk",
