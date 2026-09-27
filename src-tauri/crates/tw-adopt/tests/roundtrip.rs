@@ -675,6 +675,55 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
     assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), DSH_CREDS);
 }
 
+/// 凭据文件是接管时建的，接管期间 dsh 自己往里写了登录令牌：还原收走我们的密钥，
+/// **`version: 1` 留着** —— 没有它 dsh 拒绝整个文件，连它自己写的令牌一起
+#[test]
+fn a_credentials_file_dsh_has_written_into_keeps_its_version_after_a_restore() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let creds = dsh_home(&b).join(".credentials.yaml");
+    let mut t = read(&creds);
+    t.push_str("records:\n  deepseek-account/default:\n    kind: token\n");
+    std::fs::write(&creds, t).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(!r.also[0].delete_file, "dsh 写进去的东西还在，文件不删");
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds),
+        "version: 1\nrecords:\n  deepseek-account/default:\n    kind: token\n"
+    );
+    // 补丁那一份什么都没剩，照旧整个删掉
+    assert!(!dsh_home(&b).join("cordis.patch.yml").exists());
+}
+
+/// 同一份新建的凭据文件，接管期间 dsh 在我们建的 `refs` 里记了用户自己的密钥：
+/// 还原只摘掉我们那一项，`refs` 留着，`version` 也就跟着留着
+#[test]
+fn a_credentials_file_created_here_keeps_its_version_and_the_keys_dsh_added() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let creds = dsh_home(&b).join(".credentials.yaml");
+    let t = tw_adopt::yaml::set(
+        &read(&creds),
+        &["refs", "DEEPSEEK_API_KEY"],
+        &tw_adopt::json::Val::s("sk-我自己的"),
+    )
+    .unwrap();
+    std::fs::write(&creds, t).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds),
+        "version: 1\nrefs:\n  DEEPSEEK_API_KEY: sk-我自己的\n"
+    );
+}
+
 /// dsh 自己写出来的几种形状：新建的补丁是 `[]`，删空了的 `refs` 是 `{}`，行里的
 /// `config` 可能是行内的。接管再还原，两份文件**一个字节都不变**：还原之后补丁
 /// 不能是空文件（dsh 不认），`refs` 里补的那一项得摘得回去

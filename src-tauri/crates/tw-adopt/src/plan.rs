@@ -575,6 +575,11 @@ fn expected(plan: &Plan) -> Result<Val, PlanError> {
     Ok(v)
 }
 
+/// 什么都不剩：一个空的对象（空的映射、空的表）
+fn is_empty(v: &Val) -> bool {
+    matches!(v, Val::Obj(ms) if ms.is_empty())
+}
+
 /// 一个值写进去之后再读出来是什么样。YAML 的语义值里标量都是字符串
 /// （见 [`crate::yamlval`]），`version: 1` 读回来是 `"1"`。
 fn as_read(fmt: Format, v: &Val) -> Val {
@@ -817,6 +822,15 @@ pub(crate) fn restore_file_plan(
         targets.push(Target::Set(p, value));
     }
 
+    // 文件里还剩别的东西就得留着的字段（dsh 凭据文件的 `version`，见
+    // `clients::kept_while_in_use`）：接管时加的，照理要收走，可收走之后剩下的东西
+    // 就没人认了。删它们的那几条**先放着**，等别的字段都改回去、空了的容器也收走
+    // 之后再看（最后一段）
+    let kept = crate::clients::kept_while_in_use(client, fmt);
+    let (later, mut targets): (Vec<Target>, Vec<Target>) = targets
+        .into_iter()
+        .partition(|t| matches!(t, Target::Remove(x) if kept.iter().any(|k| k.starts_with(x))));
+
     for t in &targets {
         text = match t {
             // 已经是那个值了就不写：重写一遍可能换掉原来的写法（`version: 1`
@@ -860,6 +874,22 @@ pub(crate) fn restore_file_plan(
                 Some(_) => continue,
             }
             targets.push(Target::Remove(anc));
+        }
+    }
+
+    // 先放着的那几条（`version`）：别的都改回去之后**什么都不剩才收**，文件是我们建的
+    // 就照旧整个删掉；还剩东西就留着它们，留的是文件里此刻的样子，不另写一个值进去
+    if !later.is_empty() {
+        let rest = kept
+            .iter()
+            .fold(semantic(fmt, &text, client)?, |v, k| v.without(&refs(k)));
+        if is_empty(&rest) {
+            for t in later {
+                if let Target::Remove(p) = &t {
+                    text = drop_(fmt, &text, &refs(p), client)?;
+                }
+                targets.push(t);
+            }
         }
     }
     if let Some(prefix) = crate::clients::comment_prefix(fmt) {
