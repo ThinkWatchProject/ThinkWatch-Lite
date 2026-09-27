@@ -85,8 +85,14 @@ before blaming CI.
 
 These are load-bearing and a PR that breaks one will be asked to change:
 
-- **Never display a real secret**, in the UI, a diff, a log, an event,
-  or a diagnostic bundle. Masking happens before it leaves the process.
+- **Show a secret only where the user manages it.** The config file
+  editor and the forms that edit a secret (an upstream's API key and
+  headers, a proxy's credentials, a remote connection's key) show the
+  real value — that is what is being edited — with key fields hidden
+  behind an eye toggle until the user asks. Everywhere else it is masked
+  before it leaves the process: change diffs, logs, error messages,
+  notifications and diagnostic bundles. Gateway keys are listed masked;
+  copying one goes straight to the clipboard, never through the webview.
 - **Never present an estimate as exact.** Measured, estimated, and
   unpriced stay three separate figures. An invented precise number is
   more harmful than an honest "don't know".

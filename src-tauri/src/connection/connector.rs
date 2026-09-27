@@ -16,8 +16,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::control::{ControlClient, Stream, Target};
 
-/// 远程的 core 在哪、拿什么进门。**密钥只在内存里**：存盘在 `secrets` 那个只有自己
-/// 能读的文件里，不进连接列表，也不交给界面
+/// 远程的 core 在哪、拿什么进门。**密钥不进连接列表**：存盘在 `secrets` 那个只有
+/// 自己能读的文件里；编辑这条连接时才按 id 单独取一次给界面，由界面默认隐藏
 #[derive(Clone)]
 pub struct RemoteTarget {
     pub host: String,
