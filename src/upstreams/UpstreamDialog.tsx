@@ -75,6 +75,7 @@ export function UpstreamDialog({
 }: {
   mode: UpstreamDialogMode;
   ov: Overview;
+  /** 概览里的配置版本。**只取打开那一刻的**（见 `base`） */
   configVersion: string;
   onClose: () => void;
   onSaved: (name: string) => void;
@@ -93,6 +94,15 @@ export function UpstreamDialog({
   const [form, setForm] = useState<UpstreamForm>(() =>
     editing ? formFromView(editing) : blankForm(),
   );
+  /**
+   * 保存时带的版本号：**表单填进来的那一版**，不是保存那一刻的。
+   *
+   * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件、core 换了令牌）。带着
+   * 保存那一刻的版本号，core 的冲突检查永远通过，旧表单就把那些改动悄悄盖掉了；带着
+   * 打开时的，core 回一个版本冲突，原因写在对话框里。在这里新建的代理、价目表是这一次
+   * 编辑自己写的：写完接着用它回的版本。
+   */
+  const [base, setBase] = useState(configVersion);
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
   // ChatGPT 账号是登录来的，编辑它的那一套分节也不一样
   const account = editing?.protocol === "chatgpt";
@@ -275,7 +285,7 @@ export function UpstreamDialog({
     try {
       const save = {
         provider: toInput(form),
-        base_version: configVersion,
+        base_version: base,
       };
       if (editing) await api.updateProvider(editing.name, save);
       else await api.createProvider(save);
@@ -434,11 +444,12 @@ export function UpstreamDialog({
           <ProxyDialog
             mode={{ kind: "create" }}
             ov={ov}
-            configVersion={configVersion}
+            configVersion={base}
             onClose={() => setNested(null)}
-            onSaved={(name) => {
+            onSaved={(name, version) => {
               setNested(null);
               set({ proxy: name });
+              setBase(version);
               onChanged();
             }}
           />
@@ -451,19 +462,21 @@ export function UpstreamDialog({
                 : { kind: "create", prefill: nested.add ? { models: nested.add, usedBy: [] } : undefined }
             }
             ov={ov}
-            configVersion={configVersion}
+            configVersion={base}
             context={{ models: enabledModels, protocol: form.protocol || preview?.protocol || null }}
             onClose={() => setNested(null)}
-            onSaved={(name) => {
+            onSaved={(name, version) => {
               setNested(null);
               set({ pricing: name });
+              setBase(version);
               onChanged();
             }}
             // 在这里删掉了一张价目表：对话框关上，表单里选着它的话退回默认的那张 ——
             // 留着一个已经不存在的名字，保存这个上游只会得到「没有这张价目表」
-            onDeleted={() => {
+            onDeleted={(version) => {
               if (nested.name && form.pricing === nested.name) set({ pricing: "" });
               setNested(null);
+              setBase(version);
               onChanged();
             }}
           />

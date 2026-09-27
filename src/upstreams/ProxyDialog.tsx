@@ -37,14 +37,18 @@ export function ProxyDialog({
 }: {
   mode: ProxyDialogMode;
   ov: Overview;
+  /** 概览里的配置版本。**只取打开那一刻的**：保存时带它，开着的时候别处改过就是冲突 */
   configVersion: string;
   onClose: () => void;
-  onSaved: (name: string) => void;
+  /** 保存成功。`version`：写完之后的配置版本（从上游对话框里新建时，那边接着用它） */
+  onSaved: (name: string, version: string) => void;
 }) {
   const t = useText(proxyDialogText);
   const common = useText(commonText);
   const editing: ProxyView | null =
     mode.kind === "edit" ? (ov.proxies.find((x) => x.name === mode.name) ?? null) : null;
+  // 表单按打开时的概览填，保存时带的也是那一版（见 UpstreamDialog 的 `base`）
+  const [base] = useState(configVersion);
   const [host0, port0] = splitAddr(editing?.addr ?? "");
   const [name, setName] = useState(editing?.name ?? "");
   const [kind, setKind] = useState(editing?.kind ?? "socks5h");
@@ -92,10 +96,9 @@ export function ProxyDialog({
     setSaving(true);
     setError(null);
     try {
-      const save = { proxy: input(), base_version: configVersion };
-      if (editing) await api.updateProxy(editing.name, save);
-      else await api.createProxy(save);
-      onSaved(name);
+      const save = { proxy: input(), base_version: base };
+      const w = editing ? await api.updateProxy(editing.name, save) : await api.createProxy(save);
+      onSaved(name, w.version);
     } catch (e) {
       setError(errorText(e));
     } finally {

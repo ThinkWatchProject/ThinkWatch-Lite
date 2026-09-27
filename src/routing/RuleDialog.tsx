@@ -85,8 +85,8 @@ export function RuleDialog({
   ov: Overview;
   models: KnownModel[];
   configVersion: string;
-  /** 在这里新建了策略组：外面要重读概览 */
-  onChanged: () => void;
+  /** 在这里新建了策略组：外面要重读概览，路由对话框接着用写完的版本 `version` */
+  onChanged: (version: string) => void;
   onClose: () => void;
   /** `routeProbes`：保存路由时一并设为「交给路由」的辅助请求类别 */
   onSave: (rule: RuleDraft, routeProbes: string[]) => void;
@@ -302,10 +302,10 @@ export function RuleDialog({
             ov={ov}
             configVersion={configVersion}
             onClose={() => setNewGroup(false)}
-            onSaved={(name) => {
+            onSaved={(name, version) => {
               setNewGroup(false);
               set({ to: name });
-              onChanged();
+              onChanged(version);
             }}
           />
         )}

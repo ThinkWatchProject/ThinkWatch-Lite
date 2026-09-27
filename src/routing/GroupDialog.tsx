@@ -57,13 +57,17 @@ export function GroupDialog({
 }: {
   mode: GroupDialogMode;
   ov: Overview;
+  /** 概览里的配置版本。**只取打开那一刻的**：保存时带它，开着的时候别处改过就是冲突 */
   configVersion: string;
   onClose: () => void;
-  onSaved: (name: string) => void;
+  /** 保存成功。`version`：写完之后的配置版本（从规则里新建时，路由对话框接着用它） */
+  onSaved: (name: string, version: string) => void;
 }) {
   const t = useText(groupDialogText);
   const rt = useText(routingText);
   const ct = useText(commonText);
+  // 表单按打开时的概览填，保存时带的也是那一版（见 RouteDialog 的 `base`）
+  const [base] = useState(configVersion);
   const source =
     mode.kind === "edit"
       ? ov.groups.find((g) => g.name === mode.name)
@@ -116,11 +120,10 @@ export function GroupDialog({
           selected: preferred,
           session_affinity: kind === "load-balance" ? sticky : true,
         },
-        base_version: configVersion,
+        base_version: base,
       };
-      if (mode.kind === "edit") await api.updateGroup(mode.name, save);
-      else await api.createGroup(save);
-      onSaved(trimmed);
+      const w = mode.kind === "edit" ? await api.updateGroup(mode.name, save) : await api.createGroup(save);
+      onSaved(trimmed, w.version);
     } catch (e) {
       setError(e);
       setSaving(false);

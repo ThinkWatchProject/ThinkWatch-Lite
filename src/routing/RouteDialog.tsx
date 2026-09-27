@@ -87,6 +87,7 @@ export function RouteDialog({
   models: KnownModel[];
   /** 最近一段时间的命中数（`useRouteHits`） */
   hits: RouteHitsWindow;
+  /** 概览里的配置版本。**只取打开那一刻的**（见 `base`） */
   configVersion: string;
   onChanged: () => void;
   onClose: () => void;
@@ -127,6 +128,15 @@ export function RouteDialog({
    * 网关本地应答变成发给付费的上游
    */
   const [probes, setProbes] = useState<ReadonlyMap<string, string[]>>(() => new Map());
+  /**
+   * 保存时带的版本号：**草稿起步的那一版**，不是保存那一刻的。
+   *
+   * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件）。带着保存那一刻的版本号，
+   * core 的冲突检查永远通过，旧草稿就把那些改动悄悄盖掉了；带着打开时的，core 回一个
+   * 版本冲突，原因写在对话框里。在规则里新建的策略组是这一次编辑自己写的：写完接着用
+   * 它回的版本。
+   */
+  const [base, setBase] = useState(configVersion);
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -164,7 +174,7 @@ export function RouteDialog({
     try {
       const save = {
         route: input(),
-        base_version: configVersion,
+        base_version: base,
         // 默认路由的使用者是「没指定路由的密钥」，这里不改
         keys: isDefault ? undefined : keys,
         route_probes: [...new Set(rules.flatMap((r) => probes.get(r.key) ?? []))],
@@ -444,8 +454,11 @@ export function RouteDialog({
             takenNames={rules.filter((_, j) => j !== editing.index).map((x) => x.name.trim())}
             ov={ov}
             models={models}
-            configVersion={configVersion}
-            onChanged={onChanged}
+            configVersion={base}
+            onChanged={(version) => {
+              setBase(version);
+              onChanged();
+            }}
             onClose={() => setEditing(null)}
             onSave={(d, routeProbes) => {
               setRules((r) =>
