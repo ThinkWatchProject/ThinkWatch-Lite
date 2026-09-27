@@ -100,8 +100,8 @@ export function UpstreamDialog({
    *
    * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件、core 换了令牌）。带着
    * 保存那一刻的版本号，core 的冲突检查永远通过，旧表单就把那些改动悄悄盖掉了；带着
-   * 打开时的，core 回一个版本冲突，原因写在对话框里。在这里新建的代理、价目表是这一次
-   * 编辑自己写的：写完接着用它回的版本。
+   * 打开时的，core 回一个版本冲突，原因写在对话框里。在这里新建的代理、新建或删掉的
+   * 价目表是这一次编辑自己写的：写完接着用它回的版本。
    */
   const [base, setBase] = useState(configVersion);
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
