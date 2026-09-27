@@ -305,9 +305,16 @@ pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
 ///
 /// 不一致就重新注册一次。这件事插件不做，而它的失败模式是**静默的**：
 /// 开机之后什么都没发生，而设置里显示自启是开着的。
+///
+/// **开发构建不碰**，和 Linux 那一份一样：装好的应用开着自启的机器上跑一次
+/// `cargo tauri dev`，这里会觉得「路径不对」，把 plist 改指向 `target/debug/…`
+/// —— 之后每次开机拉起的是一个开发构建，或者一个已经被 `cargo clean` 掉的文件
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
+    if !autostart::allowed_in_this_build() {
+        return;
+    }
     let mgr = app.autolaunch();
     if !matches!(mgr.is_enabled(), Ok(true)) {
         return;
