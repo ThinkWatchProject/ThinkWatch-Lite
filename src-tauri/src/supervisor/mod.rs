@@ -1006,6 +1006,11 @@ mod tests {
     }
 
     /// 对照组：改配置那种重启照旧立刻再起 —— 两个标志没有串。
+    ///
+    /// **只在 unix 上跑**：这个假 core 没有控制面，请它退只能靠信号。Windows 上没有信号
+    /// 这条退路，重启本来就请不动（见 `a_restart_that_could_not_be_asked_for_leaves_no_mark`）
+    /// —— 以前那里「请」了个空也照样说成了，这一条是等假 core 自己跑完三十秒才过的
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_requested_restart_still_comes_back() {
         let s = Arc::new(Supervisor::new(
