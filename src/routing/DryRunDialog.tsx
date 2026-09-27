@@ -19,6 +19,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
+import { parseDecimal } from "@/lib/decimal";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
@@ -116,7 +117,9 @@ export function DryRunDialog({
       route: target.kind === "route" ? target.name : null,
       draft: target.kind === "draft" ? target.route : null,
       dialect,
-      input_tokens: Math.round((Number.parseFloat(kTokens) || 0) * 1000),
+      // `1,5` 是 1.5k（小数点写成逗号的地区），不是 `parseFloat` 读出来的 1k；认不出的
+      // （带着单位的 `8k`）照旧取开头的数
+      input_tokens: Math.round(((parseDecimal(kTokens) ?? Number.parseFloat(kTokens)) || 0) * 1000),
       max_tokens: /^\d+$/.test(maxTokens.trim()) ? Number(maxTokens.trim()) : null,
       cache: flags.cache,
       tools: flags.tools,

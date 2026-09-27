@@ -38,6 +38,7 @@ import {
 import { Toggle } from "@/ui/toggle";
 import type { Overview, PriceFields, PriceSheetInput, ResolvedPrice, SheetRef } from "@/types";
 import { cn } from "@/lib/utils";
+import { parseDecimal } from "@/lib/decimal";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
@@ -190,7 +191,8 @@ export function PriceSheetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usedKey, contextKey]);
 
-  const mult = Number(multiplier);
+  // 倍率和单价一样，`0,85` 也认
+  const mult = parseDecimal(multiplier) ?? NaN;
   const draft: PriceSheetInput = useMemo(
     () => ({ name: name.trim() || t.draftName, multiplier: mult, models: overrides }),
     [name, mult, overrides, t.draftName],
@@ -260,8 +262,9 @@ export function PriceSheetDialog({
   }
 
   function editPrice(model: string, key: keyof PriceFields, raw: string) {
-    const v = raw === "" ? 0 : Number(raw);
-    if (!Number.isFinite(v)) return;
+    // `0,5` 也认（小数点写成逗号的地区）；认不出的这一下不改
+    const v = raw.trim() === "" ? 0 : parseDecimal(raw);
+    if (v === null) return;
     setOverrides((o) => {
       const cur = o[model];
       if (!cur) return o;
