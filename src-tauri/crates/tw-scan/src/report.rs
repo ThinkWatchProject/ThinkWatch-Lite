@@ -359,6 +359,187 @@ fn line_of(text: &str, needle: &str) -> (usize, String) {
     (0, needle.to_string())
 }
 
+/// 一次最多拿多少字节交给 [`hidden::scan`]。
+///
+/// **它的代价是「命中几处 × 这一段多长」**：每命中一处，它都从行首找到行尾，再把整行
+/// 换成可见的样子装进结果。一行几兆、塞满零宽字符的文件（伪造起来不难）整份交给它，
+/// 启动时的那一遍扫描就停在那里，内存也跟着涨满。所以按行扫，长的行再切成这么长的
+/// 几段：每一处的代价就封了顶。
+const HIDDEN_PIECE: usize = 256;
+
+/// 一份文件里最多细看多少处藏起来的字符。用完了就停，并且说出来（见 [`hidden_findings`]）。
+const HIDDEN_WORK: usize = 10_000;
+
+/// 一份文件里最多列多少条藏起来的字符。
+const HIDDEN_MAX: usize = 50;
+
+/// 摘录最多多少个字符（不可见的已经换成了记号）。
+const EXCERPT_MAX: usize = 240;
+
+/// 一份文件里藏起来的东西，**同一行、同一种只报一条**。
+///
+/// 纯 ASCII 的行不用看：藏起来的那几种全都不是 ASCII（零宽、标签、双向控制、私用区；
+/// 同形字要有西里尔或希腊字母）。长的行切成几段扫，切在词和词之间 —— 同形字是按词认的。
+///
+/// **有上限，到了就停，而且说出来**：列满 [`HIDDEN_MAX`] 条，或者细看的处数用完了
+/// [`HIDDEN_WORK`]，就在停下的那一行留一条「从这儿往后没有再查」。悄悄少报比不扫更糟：
+/// 它会给人一种「查过了」的错觉。
+fn hidden_findings(src: &Source, text: &str) -> Vec<Finding> {
+    let mut out = Vec::new();
+    let mut work = HIDDEN_WORK;
+    for (i, line) in text.split('\n').enumerate() {
+        if line.is_ascii() {
+            continue;
+        }
+        let n = i + 1;
+        let mut kinds: Vec<hidden::Kind> = Vec::new();
+        for (at, piece) in pieces(line, HIDDEN_PIECE) {
+            if work == 0 {
+                out.push(not_all_checked(src, n, out.len()));
+                return out;
+            }
+            let hits = hidden::scan(piece);
+            work = work.saturating_sub(hits.len());
+            for h in hits {
+                if kinds.contains(&h.kind) {
+                    continue;
+                }
+                if out.len() == HIDDEN_MAX {
+                    out.push(not_all_checked(src, n, out.len()));
+                    return out;
+                }
+                kinds.push(h.kind);
+                let bytes = at + h.bytes.start..at + h.bytes.end;
+                let excerpt =
+                    if line.len() == piece.len() && h.line_text.chars().count() <= EXCERPT_MAX {
+                        // 整行放得下：就是整行，和从前一样
+                        h.line_text
+                    } else {
+                        excerpt_around(line, bytes)
+                    };
+                out.push(hidden_finding(src, h.kind, n, excerpt));
+            }
+        }
+    }
+    out
+}
+
+/// 一行切成不超过 `max` 字节的几段，连同每段在行里的起点。**尽量切在词和词之间**：
+/// 同形字按「词」认（拉丁字母和西里尔、希腊字母混在一个词里），词被切开就认不出来了。
+fn pieces(line: &str, max: usize) -> impl Iterator<Item = (usize, &str)> {
+    // 词由这几套字母组成（和 `tw_guard` 认同形字时用的一样），别的字符都是词的边界
+    let in_word = |c: char| c.is_ascii_alphabetic() || ('\u{0370}'..='\u{052f}').contains(&c);
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        let rest = &line[at..];
+        if rest.is_empty() {
+            return None;
+        }
+        let mut cut = rest.len().min(max);
+        while !rest.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        if cut < rest.len()
+            && let Some((i, c)) = rest[..cut]
+                .char_indices()
+                .rev()
+                .take_while(|(i, _)| *i >= max / 2)
+                .find(|(_, c)| !in_word(*c))
+        {
+            cut = i + c.len_utf8();
+        }
+        let piece = (at, &rest[..cut]);
+        at += cut;
+        Some(piece)
+    })
+}
+
+/// 那一处前后一小段，不可见的换成可见记号，两头被截掉的地方加「…」
+fn excerpt_around(line: &str, hit: std::ops::Range<usize>) -> String {
+    const AROUND: usize = 60;
+    let mut start = hit.start.saturating_sub(AROUND);
+    while !line.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = (hit.end + AROUND).min(line.len());
+    while !line.is_char_boundary(end) {
+        end += 1;
+    }
+    let window = &line[start..end];
+    // 换成可见记号那一步在 tw_guard 里：扫这一小段，拿它给的那一行
+    let shown = hidden::scan(window)
+        .into_iter()
+        .next()
+        .map_or_else(|| window.to_string(), |h| h.line_text);
+    let shown: String = shown.chars().take(EXCERPT_MAX).collect();
+    let before = if start > 0 { "…" } else { "" };
+    let after = if end < line.len() { "…" } else { "" };
+    format!("{before}{shown}{after}")
+}
+
+fn hidden_finding(src: &Source, h: hidden::Kind, line: usize, excerpt: String) -> Finding {
+    // `msg!` 会把 `what` 遮住，所以句子要用到的几段先取出来
+    let (slug, why) = (h.slug(), h.why());
+    let name = why.split(':').next().unwrap_or("hidden characters");
+    Finding {
+        // 标签字符和双向控制符在任何文本里都没有正当用途
+        level: if h.smuggles() {
+            Level::High
+        } else {
+            Level::Medium
+        },
+        rule: slug.to_string(),
+        kind: src.kind,
+        client: src.client.to_string(),
+        path: src.path.clone(),
+        line,
+        title: msg!(
+            "scan.hidden",
+            kind = src.kind.slug(),
+            what = slug
+            => "{} contains {}",
+            src.kind.label(),
+            name
+        ),
+        // 两句之间要有一个空格 —— 中文句号自己带停顿，英文句点不带，
+        // 直接接上会读成「…by the model.The content of…」
+        detail: msg!(
+            "scan.hidden.detail",
+            kind = src.kind.slug(),
+            what = slug
+            => "{} {}",
+            why,
+            src.kind.why()
+        ),
+        excerpt,
+    }
+}
+
+/// 停在第 `line` 行的那一条：藏起来的字符太多，从这儿往后没有再查
+fn not_all_checked(src: &Source, line: usize, listed: usize) -> Finding {
+    Finding {
+        level: Level::Medium,
+        rule: "hidden-not-all-checked".into(),
+        kind: src.kind,
+        client: src.client.to_string(),
+        path: src.path.clone(),
+        line,
+        title: msg!(
+            "scan.hidden.not_all_checked",
+            kind = src.kind.slug()
+            => "{} was not fully checked for hidden characters",
+            src.kind.label()
+        ),
+        detail: msg!(
+            "scan.hidden.not_all_checked.detail",
+            count = listed,
+            line = line
+            => "It holds too many to list one by one. The first {count} are listed; from line {line} on it was not checked for them."
+        ),
+        excerpt: String::new(),
+    }
+}
+
 /// 扫一批文件。**不写任何东西。**
 pub fn scan(sources: &[Source], rules: &Rules) -> Report {
     let mut r = Report::default();
@@ -371,45 +552,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         };
 
         // 一、藏起来的东西。**每一份都扫**，配置文件也不例外
-        for h in hidden::scan(&text) {
-            // 标签字符和双向控制符在任何文本里都没有正当用途
-            let level = if h.kind.smuggles() {
-                Level::High
-            } else {
-                Level::Medium
-            };
-            r.findings.push(Finding {
-                level,
-                rule: h.kind.slug().to_string(),
-                kind: src.kind,
-                client: src.client.to_string(),
-                path: src.path.clone(),
-                line: h.line,
-                title: msg!(
-                    "scan.hidden",
-                    kind = src.kind.slug(),
-                    what = h.kind.slug()
-                    => "{} contains {}",
-                    src.kind.label(),
-                    h.kind
-                        .why()
-                        .split(':')
-                        .next()
-                        .unwrap_or("hidden characters")
-                ),
-                // 两句之间要有一个空格 —— 中文句号自己带停顿，英文句点不带，
-                // 直接接上会读成「…by the model.The content of…」
-                detail: msg!(
-                    "scan.hidden.detail",
-                    kind = src.kind.slug(),
-                    what = h.kind.slug()
-                    => "{} {}",
-                    h.kind.why(),
-                    src.kind.why()
-                ),
-                excerpt: h.line_text,
-            });
-        }
+        r.findings.extend(hidden_findings(src, &text));
 
         // 二、结构化的那几类：MCP、hooks、skill
         let parsed = parse_any(src, &text);
@@ -612,5 +755,26 @@ mod tests {
         let crlf = lf.replace('\n', "\r\n");
         assert_eq!(allowed_tools(&crlf), ["*"]);
         assert_eq!(allowed_tools(&format!("\u{feff}{crlf}")), ["*"]);
+    }
+
+    /// 长的一行切成几段：拼回去就是原来那一行，每段不超长、不切在字符中间，
+    /// 也不把一个词切成两半 —— 同形字按词认，切开了就认不出来
+    #[test]
+    fn a_long_line_is_cut_between_words() {
+        let word = "p\u{0430}ypal"; // 第二个字母是西里尔的 а
+        let line = format!("{}{word} {}", "中文和 English ".repeat(12), "x".repeat(700));
+        let got: Vec<_> = pieces(&line, 64).collect();
+        let joined: String = got.iter().map(|(_, p)| *p).collect();
+        assert_eq!(joined, line);
+        let mut at = 0;
+        for (start, p) in &got {
+            assert_eq!(*start, at);
+            assert!(p.len() <= 64, "{p:?}");
+            at += p.len();
+        }
+        assert!(got.iter().any(|(_, p)| p.contains(word)), "{got:?}");
+        // 一行塞满一个词也切得开，只是那时只能切在字符之间
+        assert!(pieces(&"я".repeat(100), 64).all(|(_, p)| p.len() <= 64));
+        assert_eq!(pieces("", 64).count(), 0);
     }
 }

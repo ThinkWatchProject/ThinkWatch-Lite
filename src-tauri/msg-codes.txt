@@ -147,6 +147,8 @@ control.models_unreadable
 control.no_keys
 scan.hidden
 scan.hidden.detail
+scan.hidden.not_all_checked
+scan.hidden.not_all_checked.detail
 scan.mcp.remote
 scan.mcp.remote.detail
 scan.rule

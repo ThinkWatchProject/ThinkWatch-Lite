@@ -575,6 +575,8 @@
     "// 词表里没有那个词就整句退回英文 —— 用户自定义的规则走的正是这条路。": "",
     "scan.hidden": "{kind:source_in}含有{what:hidden_name}",
     "scan.hidden.detail": "{what:hidden_why}{kind:source_why}",
+    "scan.hidden.not_all_checked": "{kind:source_in}的隐藏字符未全部检查",
+    "scan.hidden.not_all_checked.detail": "隐藏字符太多，无法逐一列出：已列出前 {count} 处，从第 {line} 行起未再检查。",
     "scan.mcp.remote": "MCP server「{name}」位于远端",
     "scan.mcp.remote.detail": "该 server 的地址为 {url}，使用时相关上下文会发送到该服务器。",
     "scan.rule": "{kind:source_in}命中规则「{rule:scan_rule}」",

@@ -118,6 +118,74 @@ fn a_zero_width_character_in_a_skill_is_found_and_pointed_at() {
     );
 }
 
+/// 伪造出来的一份文件：一行塞满零宽字符，后面两百行每行一个。**很快扫完，同一行的
+/// 同一种只报一条，条数有上限，而且说出后面没有再查** —— 悄悄少报会让人以为查过了
+#[test]
+fn a_file_stuffed_with_hidden_characters_is_reported_briefly_and_says_where_it_stopped() {
+    let b = bed();
+    let mut text = "\u{200b}".repeat(3_000);
+    text.push('\n');
+    for i in 0..200 {
+        text.push_str(&format!("第 {i} 行\u{200b}\n"));
+    }
+    write(&b.home.join(".claude/CLAUDE.md"), &text);
+
+    let t = std::time::Instant::now();
+    let r = run(&b.home);
+    assert!(t.elapsed().as_secs() < 10, "扫了 {:?}", t.elapsed());
+    let ours: Vec<_> = r
+        .findings
+        .iter()
+        .filter(|f| f.path.ends_with("CLAUDE.md"))
+        .collect();
+    assert_eq!(ours.len(), 51, "{:#?}", ours.len());
+    assert_eq!(
+        ours.iter().filter(|f| f.line == 1).count(),
+        1,
+        "同一行的零宽字符只报一条"
+    );
+    let stop = ours
+        .iter()
+        .find(|f| f.rule == "hidden-not-all-checked")
+        .expect("没说后面没有再查");
+    assert_eq!(stop.line, 51);
+    assert_eq!(stop.title.code, "scan.hidden.not_all_checked");
+    assert_eq!(stop.detail.arg("line"), "51");
+    assert!(
+        ours.iter().all(|f| f.excerpt.chars().count() <= 250),
+        "摘录没有封顶"
+    );
+    // 正常大小的一行照旧：整行都在摘录里
+    let second = ours.iter().find(|f| f.line == 2).unwrap();
+    assert_eq!(second.excerpt, "第 0 行‹U+200B›");
+}
+
+/// 几兆长的一行，里面全是零宽字符和同形字：扫描不能停在这里，报的也就那么两条
+#[test]
+fn a_huge_line_of_hidden_characters_does_not_stall_the_scan() {
+    let b = bed();
+    let mut text = "\u{200b}".repeat(1_500_000);
+    text.push_str(&"a\u{0430} ".repeat(200_000));
+    text.push('\n');
+    write(&b.home.join(".claude/CLAUDE.md"), &text);
+
+    let t = std::time::Instant::now();
+    let r = run(&b.home);
+    assert!(t.elapsed().as_secs() < 10, "扫了 {:?}", t.elapsed());
+    let ours: Vec<_> = r
+        .findings
+        .iter()
+        .filter(|f| f.path.ends_with("CLAUDE.md"))
+        .collect();
+    assert!(ours.len() <= 3, "{ours:#?}");
+    assert!(ours.iter().any(|f| f.rule == "zero_width" && f.line == 1));
+    assert!(
+        ours.iter()
+            .any(|f| f.rule == "hidden-not-all-checked" && f.line == 1),
+        "{ours:#?}"
+    );
+}
+
 #[test]
 fn a_hook_that_downloads_and_executes_is_the_highest_level() {
     // hook 是攻击面里唯一**无需任何模型参与**就能拿到执行权的。
