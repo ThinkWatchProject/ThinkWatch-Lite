@@ -238,6 +238,9 @@ r.mutate(next | (prev) => next, { revalidate? })  // optimistic update; returns 
 
 - `key` names the data, not the request: `"keys"`, `"upstream-models:" + name`. Pass
   `null` to disable. Two components using the same key share one request and one cache.
+  A refetch asked for while a fetch is in flight (`reload`, an event, a `deps` change,
+  `invalidate`) runs once more after that fetch lands — several coalesce into one — so
+  the last change is never answered with data from before it.
 - `events`: core / local event kinds that make the data stale (throttled 2.5s, like
   `useCoreEvent`). Prefer this over polling — never add `setInterval`.
 - `deps`: values that change the answer (config version, a filter). The old data stays
