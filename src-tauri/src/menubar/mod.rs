@@ -32,6 +32,15 @@ const SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
 /// 菜单开着时隔多久走一次秒数和倒计时。**只在开着时走**，关上就停
 const TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// 问 core 的一句最多等多久。**core 接了连接却不回话**（卡在存储层上、远程那台半死不活）
+/// 时，菜单栏不能跟着停在这一问上：收数是一轮一轮来的，这一问不回，后面就再也不刷新了。
+/// 比心跳的 3 秒宽一点：汇总要查库，连远程时每一问还要重新连上、握手
+const ASK: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 问额度重置卡最多等多久。这一问 core 要转去问 ChatGPT 的后端，它自己给那边 15 秒，
+/// token 过期时还要换一个再问一遍：不在它答上来之前先放弃 —— 每次用完只问一次
+const ASK_CHATGPT: std::time::Duration = std::time::Duration::from_secs(35);
+
 /// 设置里选的那一档。**改了立刻生效**：不重启，也不等下一次收数
 static STYLE: AtomicU8 = AtomicU8::new(0);
 /// 菜单开着吗（delegate 报的）
@@ -207,15 +216,25 @@ fn present(snap: &Snapshot) {
 
 /// 只更新随时间走的那几样：现在几点、谁在跑、速率。**问 core 要**（`/live`）：
 /// 在跑的和最近的生成速率是 core 的事件总线数的，这边不再自己听事件去数。
-/// 问不到时留着上一次的
+/// 问不到（或者 [`ASK`] 之内没回话）时留着上一次的
 async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     snap.now_ms = notices::now_ms();
     if snap.gateway != Gateway::Running {
         return;
     }
-    if let Ok(live) = state.control.call::<ep::Live>(&[], &()).await {
+    if let Ok(live) = ask(ASK, state.control.call::<ep::Live>(&[], &())).await {
         apply_live(snap, live);
     }
+}
+
+/// 问 core 一句，最多等 `within`。**等不到就当没问到**，和问了被拒一样处理
+async fn ask<T>(
+    within: std::time::Duration,
+    question: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::time::timeout(within, question)
+        .await
+        .unwrap_or_else(|_| Err(anyhow::anyhow!("core {within:?} 内没回话")))
 }
 
 /// **开始的时刻按 core 报的「已经跑了多久」往回推**，推到这台机器的时钟上（`snap.now_ms`
@@ -352,12 +371,13 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     }
     let c = &state.control;
     let today = today_window(&chrono::Local, now_ms);
+    // 每一问各自限时：一问不回，别的照常画，没问到的那几样是「不知道」
     let (status, quota, summary, overview, live) = tokio::join!(
-        c.status(),
-        c.call::<ep::Quota>(&[], &()),
-        c.call::<ep::Summary>(&[], &today),
-        c.call::<ep::Overview>(&[], &()),
-        c.call::<ep::Live>(&[], &())
+        ask(ASK, c.status()),
+        ask(ASK, c.call::<ep::Quota>(&[], &())),
+        ask(ASK, c.call::<ep::Summary>(&[], &today)),
+        ask(ASK, c.call::<ep::Overview>(&[], &())),
+        ask(ASK, c.call::<ep::Live>(&[], &()))
     );
     if let Ok(l) = live {
         apply_live(&mut snap, l);
@@ -426,8 +446,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
                 match known {
                     Some((at, n)) if *at == w.resets_at_ms => *n,
                     _ => {
-                        let n = c
-                            .call::<ep::ChatgptUsage>(&[&q.provider], &())
+                        let n = ask(ASK_CHATGPT, c.call::<ep::ChatgptUsage>(&[&q.provider], &()))
                             .await
                             .ok()
                             .and_then(|u| u.reset_credits);
@@ -796,6 +815,23 @@ mod tests {
         apply_live(&mut snap, tw_api::LiveView::default());
         assert!(snap.live.is_empty());
         assert_eq!(snap.rate, None);
+    }
+
+    /// core 接了连接却一直不回话：问一句最多等 [`ASK`]，等不到就当没问到。收数和每秒的
+    /// `/live` 都是一问接一问的，一问挂住，菜单栏就再也不刷新
+    #[tokio::test(start_paused = true)]
+    async fn a_core_that_never_answers_holds_up_the_menu_bar_only_for_a_while() {
+        let start = tokio::time::Instant::now();
+        let stalled = std::future::pending::<anyhow::Result<tw_api::LiveView>>();
+        let asked = tokio::time::timeout(ASK * 10, ask(ASK, stalled)).await;
+        let Ok(answer) = asked else {
+            panic!("一直在等一个不回话的 core");
+        };
+        assert!(answer.is_err());
+        assert_eq!(start.elapsed(), ASK);
+        // 答得上来的照常拿到
+        let live = ask(ASK, async { Ok(tw_api::LiveView::default()) }).await;
+        assert!(live.is_ok());
     }
 
     #[test]
