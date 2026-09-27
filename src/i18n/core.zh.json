@@ -705,6 +705,7 @@
     "adopt.mcp.unverified_format": "该客户端的 MCP 配置格式尚未验证，写入可能导致客户端无法读取配置",
     "adopt.mcp.zed_structure": "Zed 的 context server 使用不同的配置结构，不支持 command/args 形式",
     "adopt.mcp.dsh_rows": "DeepSeek Harness 的每个 MCP server 是补丁文件中的一行插件配置，此处只列出，不写入",
+    "adopt.mcp.toml_null": "{field} 的值为 null，而 {client} 的 MCP 配置是 TOML，没有 null 的写法，未做任何修改",
     "// ── adopt：接管和还原的说明 ─────────────────────────────────────": "",
     "adopt.takes_effect": "{takes_effect:takes_effect}",
     "adopt.plan.fields_only": "字段名已查证，尚未在本机实际运行验证。收到第一个请求之前，请勿视为已生效。",

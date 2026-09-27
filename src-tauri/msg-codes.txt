@@ -111,6 +111,7 @@ adopt.mcp.dsh_rows
 adopt.mcp.not_copyable
 adopt.mcp.not_there
 adopt.mcp.parse_failed
+adopt.mcp.toml_null
 adopt.mcp.unknown_client
 adopt.mcp.unverified_format
 adopt.mcp.zed_structure

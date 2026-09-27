@@ -272,7 +272,19 @@ fn semantic(t: &Target, text: &str) -> Result<Val, McpError> {
 fn put(t: &Target, text: &str, path: &[&str], v: &Val) -> Result<String, McpError> {
     match t.format {
         Format::Json => crate::json::set(text, path, v).map_err(|e| parse_err(t.client, e)),
-        Format::Toml => crate::toml::set(text, path, v).map_err(|e| parse_err(t.client, e)),
+        Format::Toml => crate::toml::set(text, path, v).map_err(|e| match e {
+            // 对象里的 null 已经当「没设」略过了（见 `crate::toml`），剩下的是没有
+            // 不改意思的写法的那种。**说的是这个 server，不是说目标文件坏了**
+            crate::toml::TErr::Null(field) => McpError::NotCopyable {
+                client: t.client.to_string(),
+                why: msg!(
+                    "adopt.mcp.toml_null", field = field, client = t.name =>
+                    "{field} is null, and {client} keeps its MCP servers in TOML, which has no \
+                     null, so nothing was changed"
+                ),
+            },
+            e => parse_err(t.client, e),
+        }),
         Format::Yaml | Format::Rows => Err(parse_err(t.client, "MCP configuration is not YAML")),
     }
 }
@@ -604,6 +616,44 @@ mod tests {
         // 用户的项目授权一条都不能少
         assert!(out.contains("[projects.\"/a\"]"), "{out}");
         assert!(out.contains("model = \"gpt-5\""), "{out}");
+    }
+
+    /// JSON 里写成 `null` 的键就是「没设」。TOML 没有 null：**不写这个键**，而不是写成
+    /// 空串 —— `cwd = ""` 是另一个意思，`env = ""` 让 Codex 连整份配置都读不进去
+    #[test]
+    fn a_null_in_a_json_server_is_left_out_of_toml_rather_than_written_as_empty() {
+        let (d, home) = home_with(&[
+            (
+                ".claude.json",
+                r#"{ "mcpServers": {
+                  "fs": { "command": "npx", "args": ["-y", "fs"], "cwd": null, "env": { "A": "1", "B": null } },
+                  "odd": { "command": "x", "args": ["-y", null] }
+                } }"#,
+            ),
+            (".codex/config.toml", "model = \"gpt-5\"\n"),
+        ]);
+        let src = target("claude-code").unwrap();
+        let dst = target("codex").unwrap();
+        let v = read_server(&src, &home, "fs").unwrap();
+        let p = plan_copy(&dst, &home, "fs", &v).unwrap();
+        apply(&dst, &p, &d.path().join("backups")).unwrap();
+        let out = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
+        let get = |k: &[&str]| {
+            let mut path = vec!["mcp_servers", "fs"];
+            path.extend_from_slice(k);
+            crate::toml::get(&out, &path).unwrap()
+        };
+        assert_eq!(get(&["cwd"]), None, "{out}");
+        assert_eq!(get(&["env", "B"]), None, "{out}");
+        assert_eq!(get(&["env", "A"]), Some(Val::s("1")), "{out}");
+        assert_eq!(get(&["command"]), Some(Val::s("npx")), "{out}");
+        assert!(!out.contains("\"\""), "{out}");
+
+        // 参数里的 null 去掉了就是换了参数的位置：不写，说出来
+        let v = read_server(&src, &home, "odd").unwrap();
+        let e = plan_copy(&dst, &home, "odd", &v).unwrap_err();
+        assert_eq!(e.msg().code, "adopt.mcp.toml_null", "{e}");
+        assert!(e.to_string().contains("args"), "{e}");
     }
 
     #[test]

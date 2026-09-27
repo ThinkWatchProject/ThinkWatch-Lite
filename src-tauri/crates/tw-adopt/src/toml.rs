@@ -18,6 +18,9 @@ pub enum TErr {
     Syntax(String),
     #[error("{0} is not a table, so no field can be written into it")]
     NotTable(String),
+    /// 一个没有 TOML 写法的 null，见 [`to_toml`]
+    #[error("{0} is null, and TOML has no null")]
+    Null(String),
 }
 
 fn parse(text: &str) -> Result<DocumentMut, TErr> {
@@ -38,9 +41,15 @@ fn describe(text: &str, e: &toml_edit::TomlError) -> String {
     format!("line {line}, column {column}: {why}")
 }
 
-fn to_toml(v: &Val) -> TValue {
-    match v {
-        Val::Null => TValue::from(""), // TOML 没有 null；我们从不写它
+/// 一个值的 TOML 写法。`at` 是它的路径，出错时说是哪一个。
+///
+/// **TOML 没有 null。**对象里值是 null 的键就是「没设」：不写这个键（从 JSON 搬过来的
+/// MCP server 里有这种写法）。写成空串是另一个意思 —— `cwd = ""` 是一个目录，
+/// `env = ""` 让 Codex 连整份配置都读不进去。别处的 null 没有不改意思的写法（数组里
+/// 去掉一项，后面的参数就挪了位置），报错，一个字节都不写。
+fn to_toml(v: &Val, at: &str) -> Result<TValue, TErr> {
+    Ok(match v {
+        Val::Null => return Err(TErr::Null(at.to_string())),
         Val::Bool(b) => TValue::from(*b),
         Val::Num(n) => n
             .parse::<i64>()
@@ -50,36 +59,42 @@ fn to_toml(v: &Val) -> TValue {
         Val::Str(s) => TValue::from(s.as_str()),
         Val::Arr(es) => {
             let mut a = toml_edit::Array::new();
-            for e in es {
-                a.push(to_toml(e));
+            for (i, e) in es.iter().enumerate() {
+                a.push(to_toml(e, &format!("{at}[{i}]"))?);
             }
             TValue::Array(a)
         }
         Val::Obj(ms) => {
             let mut t = toml_edit::InlineTable::new();
-            for (k, v) in ms {
-                t.insert(k, to_toml(v));
+            for (k, v) in set_members(ms) {
+                t.insert(k, to_toml(v, &format!("{at}.{k}"))?);
             }
             TValue::InlineTable(t)
         }
-    }
+    })
+}
+
+/// 对象里值不是 null 的那些键，见 [`to_toml`]
+fn set_members(ms: &[(String, Val)]) -> impl Iterator<Item = &(String, Val)> {
+    ms.iter().filter(|(_, v)| *v != Val::Null)
 }
 
 /// 一个对象写成独立表段，嵌套的对象继续往下写成子表 —— `[a.b]`、
 /// `[a.b.c]`。
-fn to_table(ms: &[(String, Val)]) -> Table {
+fn to_table(ms: &[(String, Val)], at: &str) -> Result<Table, TErr> {
     let mut t = Table::new();
-    for (k, v) in ms {
+    for (k, v) in set_members(ms) {
+        let at = format!("{at}.{k}");
         match v {
             Val::Obj(inner) if !inner.is_empty() => {
-                t.insert(k, Item::Table(to_table(inner)));
+                t.insert(k, Item::Table(to_table(inner, &at)?));
             }
             _ => {
-                t.insert(k, Item::Value(to_toml(v)));
+                t.insert(k, Item::Value(to_toml(v, &at)?));
             }
         }
     }
-    t
+    Ok(t)
 }
 
 fn from_toml(item: &Item) -> Option<Val> {
@@ -169,6 +184,7 @@ pub fn set(text: &str, path: &[&str], v: &Val) -> Result<String, TErr> {
     let Some(tbl) = item.as_table_like_mut() else {
         return Err(TErr::NotTable(parents.join(".")));
     };
+    let at = path.join(".");
     // 已经有这个键就只换值，键上挂着的注释和空行留在原处 ——
     // **也保住它原来是行内表还是独立表**：把用户写的
     // `x = { a = 1 }` 换成一个 `[x]` 段落，是一次他没要求的重排版
@@ -179,9 +195,9 @@ pub fn set(text: &str, path: &[&str], v: &Val) -> Result<String, TErr> {
             // 它们，那句注释就跟着旧值一起没了 —— 还原换回原值也找不回来
             let decor = slot.as_value().map(|old| old.decor().clone());
             *slot = match v {
-                Val::Obj(ms) if keep_table && !ms.is_empty() => Item::Table(to_table(ms)),
+                Val::Obj(ms) if keep_table && !ms.is_empty() => Item::Table(to_table(ms, &at)?),
                 _ => {
-                    let mut new = to_toml(v);
+                    let mut new = to_toml(v, &at)?;
                     if let Some(d) = decor {
                         *new.decor_mut() = d;
                     }
@@ -194,8 +210,8 @@ pub fn set(text: &str, path: &[&str], v: &Val) -> Result<String, TErr> {
             // 每个 MCP server 都是 `[mcp_servers.x]`，塞一个几百字符的
             // 行内表进去，在那个文件里会显得格格不入
             let item = match v {
-                Val::Obj(ms) if !ms.is_empty() => Item::Table(to_table(ms)),
-                _ => Item::Value(to_toml(v)),
+                Val::Obj(ms) if !ms.is_empty() => Item::Table(to_table(ms, &at)?),
+                _ => Item::Value(to_toml(v, &at)?),
             };
             tbl.insert(leaf, item);
         }
