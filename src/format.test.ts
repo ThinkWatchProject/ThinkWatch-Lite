@@ -197,6 +197,17 @@ describe("补空桶", () => {
     expect(densify([], 0, 1_000_000_000, 1000).length).toBe(500);
   });
 
+  /**
+   * **截掉的是最早的那一头。**图的右边写着「现在」：从起点数满上限就停的话，最近的
+   * 那一段悄悄不见了。留下的格子仍然落在 `起点 + k × 格宽` 上，和 core 分的格对得上。
+   */
+  it("超过上限时留最近的那几格", () => {
+    const out = densify([b(999_999_000, 5), b(1_000, 7)], 0, 1_000_000_000, 1000);
+    expect(out).toHaveLength(500);
+    expect(out.at(-1)).toMatchObject({ at_ms: 999_999_000, requests: 5 });
+    expect(out[0]?.at_ms).toBe(999_500_000);
+  });
+
   it("参数不合法时给空数组，不是抛异常", () => {
     expect(densify([], 0, 1000, 0)).toEqual([]);
     expect(densify([], 1000, 0, 1000)).toEqual([]);

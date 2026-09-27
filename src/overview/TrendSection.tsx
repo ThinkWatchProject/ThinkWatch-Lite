@@ -88,9 +88,10 @@ export function TrendSection({
     return () => clearTimeout(h);
   }, [anim, by]);
 
+  // 刻度从画出来的第一格数起：格子多到被截掉最早的那一头时，它不是区间的起点（见 `densify`）
   const ticks: Tick[] = live
     ? liveTicks(t.liveTicks, t.now)
-    : historyTicks(d.since_ms, bucketMs, trend.grid.length, t.now);
+    : historyTicks(trend.grid[0]?.at_ms ?? d.since_ms, bucketMs, trend.grid.length, t.now);
   /*
     **取不到不是没有。**历史档那两样取数失败（`null`）时照样补空桶的话，画出来是一张
     全零的图、排行里一个模型也没有 —— 读作「这段时间没有请求」，是编出来的零。这时

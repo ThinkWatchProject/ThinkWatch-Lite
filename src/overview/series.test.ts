@@ -209,6 +209,24 @@ describe("时间刻度", () => {
     expect(fmtBucket(at, HOUR)).toBe("9/25 07:05");
     expect(fmtBucket(at, LIVE_BUCKET_MS)).toBe("07:05:09");
   });
+
+  /**
+   * 按天、按周的格子是从本地零点起按固定毫秒数数的，过了夏令时切换，起点落在前一天
+   * 的 23 点或当天的 1 点。**写离起点最近的那一天**，不然那一格写成前一天，和上一格
+   * 撞成同一个标签。
+   */
+  it("按天的格子起点偏了一小时，还是写那一天", () => {
+    expect(fmtBucket(new Date(2026, 10, 1, 23, 0).getTime(), DAY)).toBe("11/2");
+    expect(fmtBucket(new Date(2026, 2, 9, 1, 0).getTime(), 7 * DAY)).toBe("3/9");
+  });
+
+  /** 按周分格、跨度几年的自定义区间：零点刻度的间隔跟着放宽，中间不超过七个 */
+  it("跨度很长时刻度不挤在一起", () => {
+    const since = new Date(2023, 0, 2).getTime();
+    const ticks = historyTicks(since, 7 * DAY, 190, t.now);
+    expect(ticks.length - 2).toBeLessThanOrEqual(7);
+    expect(ticks.length - 2).toBeGreaterThan(2);
+  });
 });
 
 describe("趋势图和模型排行", () => {

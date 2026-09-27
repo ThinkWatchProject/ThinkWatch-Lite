@@ -57,10 +57,17 @@ const pad = (n: number) => String(n).padStart(2, "0");
  *
  * 不到一分钟的格子（实时档）**写到秒，也带上小时**：只写「07:12」读起来
  * 像七点十二分，而十分钟的窗口随时会跨过整点。
+ *
+ * **按天、按周的格子写离格子起点最近的那一天。**格子是从本地零点起按固定毫秒数往后
+ * 数的（core 那边就是这么分的），过了夏令时切换，起点会落在前一天的 23 点：照实写
+ * 日期，那一格就写成了前一天，和上一格撞成同一个标签。
  */
 export function fmtBucket(atMs: number, bucketMs: number): string {
+  if (bucketMs >= DAY) {
+    const d = new Date(atMs + 12 * HOUR);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
   const t = new Date(atMs);
-  if (bucketMs >= DAY) return `${t.getMonth() + 1}/${t.getDate()}`;
   if (bucketMs < 60_000) return `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
   return `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
@@ -476,7 +483,10 @@ function nextMidnight(ms: number): number {
  * 或「现在」挤在一起。
  *
  * `n` 是格数：图上的点按格等距排开，第一个点是第一格的起点，最后一个点是最后
- * 一格的起点。
+ * 一格的起点。`sinceMs` 就是第一格的起点 —— 格子多到被 `densify` 截掉最早的那一头
+ * 时，是截完之后的第一格，不是区间的起点。
+ *
+ * 几个月、几年的自定义区间，零点刻度的间隔按跨度放宽，中间始终不超过七个。
  */
 export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLabel: string): Tick[] {
   const first: Tick = { at: 0, label: fmtBucket(sinceMs, bucketMs) };
@@ -484,7 +494,7 @@ export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLa
   const span = (n - 1) * bucketMs;
   if (!(span > 0)) return [first, last];
   const hourSteps = [1, 2, 3, 4, 6, 12];
-  const daySteps = [1, 2, 5, 7, 14];
+  const daySteps = [1, 2, 5, 7, 14, 30];
   const inner: Tick[] = [];
   const push = (at: number, label: string) => {
     const x = (at - sinceMs) / span;
@@ -498,7 +508,7 @@ export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLa
       push(at, d.getHours() === 0 ? `${d.getMonth() + 1}/${d.getDate()}` : `${pad(d.getHours())}:00`);
     }
   } else {
-    const k = daySteps.find((s) => span / (s * DAY) <= 7) ?? 30;
+    const k = daySteps.find((s) => span / (s * DAY) <= 7) ?? Math.ceil(span / (7 * DAY));
     let at = nextMidnight(sinceMs);
     let i = 0;
     while (at < sinceMs + span) {

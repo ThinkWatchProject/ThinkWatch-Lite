@@ -79,8 +79,18 @@ export function presetRange(id: Preset["id"]): Range {
  *
  * 上限压在 120 格上下：再密就是把噪声当细节，而每一格还要再乘上模型
  * 个数去查库。
+ *
+ * **自定义区间可以很长**（从哪一天到现在都行），所以往上还有一天一格、一周一格。
+ * 原来最宽只到六小时：超过 125 天，格数顶到 `densify` 的上限，最近的那一段被截掉，
+ * 图的右边却照样写着「现在」。一周一格要到九年半才顶到上限；真顶到了，截掉的是最早
+ * 的那一头（见 `densify`）。
+ *
+ * 一天、一周的格子都从**本地零点**数起（`bucketStart`）。一周不对齐到周一：自定义
+ * 区间是「从那一天起」，往前挪到周一，就把用户没选的那几天也算进来了。
  */
 export function bucketFor(rangeMs: number): number {
+  if (rangeMs > 120 * DAY) return 7 * DAY;
+  if (rangeMs > 30 * DAY) return DAY;
   if (rangeMs > 7 * DAY) return 6 * HOUR;
   if (rangeMs > 2 * DAY) return 2 * HOUR;
   return HOUR / 2;
