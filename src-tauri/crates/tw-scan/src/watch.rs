@@ -145,11 +145,15 @@ impl Plan {
                 files_in.insert(r.dir.clone());
             }
         }
+        // **按真实路径记**（见 [`real`]）：macOS 报来的事件路径是真实路径，按我们拼出来的
+        // 样子去比，一个都对不上
+        let real_all =
+            |set: BTreeSet<PathBuf>| set.iter().map(|p| real(p)).collect::<BTreeSet<_>>();
         Plan {
-            dirs: dirs.into_iter().collect(),
-            files_in,
-            awaited,
-            nested,
+            dirs: real_all(dirs).into_iter().collect(),
+            files_in: real_all(files_in),
+            awaited: real_all(awaited),
+            nested: real_all(nested),
         }
     }
 
@@ -165,6 +169,42 @@ impl Plan {
             || self.awaited.contains(p)
             || (self.nested.contains(&parent) && !dotted)
     }
+}
+
+/// 这条路径在文件系统里真正的样子：在的那一段换成真实路径（跟完符号链接），还不在的
+/// 那几层原样接在后面。
+///
+/// **macOS 上不这样就一个事件都对不上。**FSEvents 报来的是真实路径：临时目录
+/// `/var/folders/…` 报成 `/private/var/folders/…`，指向 dotfiles 仓库的 `~/.claude` 报成
+/// 仓库里的那个位置，而计划里的路径是从 home 拼出来的。盯的也是真实路径，其他 unix 上
+/// 报来的事件就是按盯的那条路径写的，同样对得上。
+///
+/// Windows 上不换：那里的真实路径是 `\\?\` 开头的写法，盯它、比它都得跟着换，而那边没有
+/// 这种前缀要对
+#[cfg(unix)]
+fn real(p: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut here = p;
+    loop {
+        if let Ok(r) = std::fs::canonicalize(here) {
+            return missing
+                .iter()
+                .rev()
+                .fold(r, |acc: PathBuf, name| acc.join(name));
+        }
+        match (here.parent(), here.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                here = parent;
+            }
+            _ => return p.to_path_buf(),
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn real(p: &Path) -> PathBuf {
+    p.to_path_buf()
 }
 
 /// 扫完一遍之后，此刻在盯的和该盯的对不上：要换一个监视。
@@ -424,6 +464,37 @@ mod tests {
         );
     }
 
+    /// 在的那一段换成真实路径，还不在的那几层原样接在后面：经过一个符号链接的 home
+    /// 也一样（dotfiles 仓库那种布局）
+    #[cfg(unix)]
+    #[test]
+    fn a_path_is_compared_by_where_it_really_is() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("dotfiles/claude")).unwrap();
+        std::os::unix::fs::symlink(root.join("dotfiles/claude"), root.join(".claude")).unwrap();
+        assert_eq!(
+            real(&root.join(".claude/skills/new/SKILL.md")),
+            root.join("dotfiles/claude/skills/new/SKILL.md")
+        );
+        assert_eq!(real(&root.join(".claude")), root.join("dotfiles/claude"));
+        // 整条都不在（连根都找不到）的原样交回
+        assert_eq!(
+            real(Path::new("nowhere/at/all")),
+            Path::new("nowhere/at/all")
+        );
+    }
+
+    /// 测试用的 home：临时目录的真实路径。计划里记的是真实路径（见 [`real`]），而 macOS 的
+    /// 临时目录在 `/private` 底下。**只在 unix 上换**：Windows 上换出来的是 `\\?\` 开头的
+    /// 写法，接在后面的 `/` 不再当分隔符
+    fn home_of(d: &tempfile::TempDir) -> PathBuf {
+        #[cfg(unix)]
+        return d.path().canonicalize().unwrap();
+        #[cfg(not(unix))]
+        return d.path().to_path_buf();
+    }
+
     fn plan_for(home: &Path) -> Plan {
         let moved = Default::default();
         Plan::new(
@@ -438,7 +509,7 @@ mod tests {
     #[test]
     fn places_new_sources_appear_in_are_watched_before_they_exist() {
         let d = tempfile::tempdir().unwrap();
-        let home = d.path();
+        let home = &home_of(&d);
         std::fs::create_dir_all(home.join(".claude")).unwrap();
         std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
         let plan = plan_for(home);
@@ -474,7 +545,7 @@ mod tests {
     #[test]
     fn each_skill_folder_is_watched_even_before_its_skill_md_is_written() {
         let d = tempfile::tempdir().unwrap();
-        let home = d.path();
+        let home = &home_of(&d);
         std::fs::create_dir_all(home.join(".claude/skills/写了一半")).unwrap();
         let before = plan_for(home);
         assert!(before.dirs.contains(&home.join(".claude/skills")));
@@ -515,7 +586,7 @@ mod tests {
     #[tokio::test]
     async fn a_new_skill_folder_produces_a_signal() {
         let d = tempfile::tempdir().unwrap();
-        let home = d.path();
+        let home = &home_of(&d);
         std::fs::create_dir_all(home.join(".claude")).unwrap();
         std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
         let (_w, mut rx) = watch_plan(&plan_for(home)).unwrap();
