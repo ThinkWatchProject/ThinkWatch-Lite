@@ -99,6 +99,8 @@ export const clientsText = messages(
     alsoCreates: (path: ReactNode) => <>同时新建 {path}。</>,
     alsoDeletes: (path: ReactNode) => <>同时删除 {path}（接管时新建，还原后为空）。</>,
     noop: "配置已是目标状态，无需修改。",
+    /** 确认时发现文件在看改动的这段时间里被改过：什么都没写，下面是重算的那一份 */
+    stale: "配置文件在查看改动期间已被修改，未写入任何内容。以下改动已按当前内容重新计算，核对后请再次确认。",
     field: "字段",
     written: "写入",
     change: "改动",
@@ -272,6 +274,8 @@ export const clientsText = messages(
     alsoCreates: (path: ReactNode) => <>{path} is created along with it.</>,
     alsoDeletes: (path: ReactNode) => <>{path} is removed along with it (it was created on connecting and is empty once restored).</>,
     noop: "The configuration is already as it should be; nothing to change.",
+    stale:
+      "The configuration file changed while the change was being reviewed, so nothing was written. The change below was recomputed from the current file; review it and confirm again.",
     field: "Field",
     written: "Value",
     change: "Change",

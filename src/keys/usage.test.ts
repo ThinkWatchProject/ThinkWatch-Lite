@@ -66,6 +66,19 @@ describe("usageByKey", () => {
     expect(got?.series.slice(1, BARS - 1).every((v) => v === 0)).toBe(true);
   });
 
+  it("keeps the three cost states apart: estimated from the buckets, unpriced and no-usage from the totals", () => {
+    const u: KeyUsage = {
+      since_ms: since,
+      bucket_ms: HOUR_MS,
+      totals: [{ ...total("codex", 6, 900_000), unpriced_requests: 2, no_usage_requests: 1 }],
+      buckets: [
+        { ...bucket("codex", 1, 3, since), cost_micros_estimated: 200_000 },
+        { ...bucket("codex", 2, 3, since), cost_micros_estimated: 100_000 },
+      ],
+    };
+    expect(usageByKey(u).get("codex")).toMatchObject({ cost: 900_000, estimated: 300_000, unpriced: 2, noUsage: 1 });
+  });
+
   it("drops buckets outside the window", () => {
     const u: KeyUsage = {
       since_ms: since,

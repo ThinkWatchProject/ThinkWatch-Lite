@@ -929,6 +929,22 @@ pub fn leaves_behind(client: &str, now: &Val) -> Vec<Edit> {
     v
 }
 
+/// 还原时**文件里还剩别的东西就不收走**的字段。只有 dsh 的凭据文件有：`version`。
+///
+/// 它是那个文件的格式标记（见 [`also_edits`]），没有它 dsh 拒绝整个文件。接管时文件
+/// 是我们建的，`version` 也就记成「原本没有」；接管期间 dsh 自己往里写了东西（登录
+/// 拿到的令牌在 `records` 底下）。还原收走我们加的那几样，文件因为不空而留下 ——
+/// 连 `version` 一起收走的话，dsh 连同它自己写的令牌一起拒绝这个文件。
+///
+/// 补丁（[`Format::Rows`]）和凭据文件（[`Format::Yaml`]）是同一个客户端的两份文件，
+/// 按格式分开。
+pub fn kept_while_in_use(client: &str, fmt: Format) -> Vec<Vec<String>> {
+    match (client, fmt) {
+        ("dsh", Format::Yaml) => vec![vec!["version".to_string()]],
+        _ => Vec::new(),
+    }
+}
+
 impl Client {
     /// 按这台机器上装着的版本调整过的样子。
     ///

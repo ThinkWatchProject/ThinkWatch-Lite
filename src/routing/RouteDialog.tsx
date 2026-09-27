@@ -30,6 +30,7 @@ import { ToggleChips, onOpenFocus } from "./fields";
 import {
   addOnsText,
   blankRule,
+  canLift,
   copyDraft,
   describeTarget,
   draftFromView,
@@ -86,6 +87,7 @@ export function RouteDialog({
   models: KnownModel[];
   /** 最近一段时间的命中数（`useRouteHits`） */
   hits: RouteHitsWindow;
+  /** 概览里的配置版本。**只取打开那一刻的**（见 `base`） */
   configVersion: string;
   onChanged: () => void;
   onClose: () => void;
@@ -119,7 +121,22 @@ export function RouteDialog({
   const [rules, setRules] = useState<RuleDraft[]>(() =>
     source ? source.rules.map(draftFromView) : [{ ...blankRule(ALL_UPSTREAMS), name: t.catchAllName }],
   );
-  const [probes, setProbes] = useState<string[]>([]);
+  /**
+   * 每条规则保存时要一并「交给路由」的辅助请求类别，按规则的 `key` 记。**保存那条规则时
+   * 整个换掉**：重开之后取消了勾选、去掉了那个条件，都要算数；删掉的规则不算。以前这里
+   * 只加不减，取消勾选之后保存路由，那几类照样被改成交给路由 —— 连通性检查、预热从
+   * 网关本地应答变成发给付费的上游
+   */
+  const [probes, setProbes] = useState<ReadonlyMap<string, string[]>>(() => new Map());
+  /**
+   * 保存时带的版本号：**草稿起步的那一版**，不是保存那一刻的。
+   *
+   * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件）。带着保存那一刻的版本号，
+   * core 的冲突检查永远通过，旧草稿就把那些改动悄悄盖掉了；带着打开时的，core 回一个
+   * 版本冲突，原因写在对话框里。在规则里新建的策略组是这一次编辑自己写的：写完接着用
+   * 它回的版本。
+   */
+  const [base, setBase] = useState(configVersion);
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -157,10 +174,10 @@ export function RouteDialog({
     try {
       const save = {
         route: input(),
-        base_version: configVersion,
+        base_version: base,
         // 默认路由的使用者是「没指定路由的密钥」，这里不改
         keys: isDefault ? undefined : keys,
-        route_probes: probes,
+        route_probes: [...new Set(rules.flatMap((r) => probes.get(r.key) ?? []))],
       };
       if (mode.kind === "edit") await api.updateRoute(mode.name, save);
       else await api.createRoute(save);
@@ -182,11 +199,13 @@ export function RouteDialog({
       {
         kind: "item",
         label: t.duplicate,
-        onSelect: () =>
-          setRules((r) => {
-            const c = { ...copyDraft(r[i]!), name: uniqueName(rt.copyName(r[i]!.name), r) };
-            return [...r.slice(0, i + 1), c, ...r.slice(i + 1)];
-          }),
+        onSelect: () => {
+          const c = { ...copyDraft(rules[i]!), name: uniqueName(rt.copyName(rules[i]!.name), rules) };
+          setRules((r) => [...r.slice(0, i + 1), c, ...r.slice(i + 1)]);
+          // 复制出来的那条带着同样的条件，也带着「交给路由」的那个选择
+          const chosen = probes.get(rules[i]!.key);
+          if (chosen) setProbes((m) => new Map(m).set(c.key, chosen));
+        },
       },
       { kind: "sep" },
       { kind: "item", label: t.moveUp, disabled: i === 0, onSelect: () => setRules((r) => move(r, i, i - 1)) },
@@ -384,9 +403,11 @@ export function RouteDialog({
               tone="warning"
               show={shadowed.length > 0}
               actions={
-                <Button variant="outline" size="sm" onClick={() => setRules(liftShadowed)}>
-                  {t.liftShadowed}
-                </Button>
+                canLift(rules) && (
+                  <Button variant="outline" size="sm" onClick={() => setRules(liftShadowed)}>
+                    {t.liftShadowed}
+                  </Button>
+                )
               }
             >
               {t.shadowed(shadowed.map((r) => r.name))}
@@ -433,8 +454,11 @@ export function RouteDialog({
             takenNames={rules.filter((_, j) => j !== editing.index).map((x) => x.name.trim())}
             ov={ov}
             models={models}
-            configVersion={configVersion}
-            onChanged={onChanged}
+            configVersion={base}
+            onChanged={(version) => {
+              setBase(version);
+              onChanged();
+            }}
             onClose={() => setEditing(null)}
             onSave={(d, routeProbes) => {
               setRules((r) =>
@@ -442,7 +466,7 @@ export function RouteDialog({
                   ? [...r.slice(0, editing.at), d, ...r.slice(editing.at)]
                   : r.map((x, j) => (j === editing.index ? d : x)),
               );
-              if (routeProbes.length) setProbes((p) => [...new Set([...p, ...routeProbes])]);
+              setProbes((m) => new Map(m).set(d.key, routeProbes));
               setEditing(null);
             }}
           />

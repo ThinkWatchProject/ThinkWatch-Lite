@@ -257,8 +257,8 @@ describe("命令面板里的请求", () => {
   });
 
   it("本地应答的：标题是辅助请求的类别，图形是网关，按原词也搜得到", () => {
-    // 流量表给本地应答那几行的「上游」是那一句说明，不是上游的名字
-    const local = row(301, "", { model: undefined, provider: "本地应答", local: true, path: "titling", client: "claude-code" });
+    // 本地应答那几行没有上游：「上游」写的是那一句说明，按此刻的语言取，不是上游的名字
+    const local = row(301, "", { model: undefined, provider: "", local: true, path: "titling", client: "claude-code" });
     const got = requestItems([local], ov, nav, (t, kw) => score("titling", t, kw), null, 5).map((x) => x.item);
     expect(got.map((i) => [i.title, iconOf(i.icon), i.detail])).toEqual([["生成标题", "other", "#301 · 本地应答 · claude-code"]]);
   });

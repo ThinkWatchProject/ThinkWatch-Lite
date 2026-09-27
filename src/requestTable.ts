@@ -1,5 +1,7 @@
 import type { RequestRow } from "./types";
+import { textOf } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
+import { requestsText } from "./useRequests.i18n";
 
 /**
  * 请求表的排序与过滤。
@@ -70,6 +72,15 @@ export function promptTokens(r: RequestRow): number | undefined {
   return r.inputTokens + (r.cacheReadTokens ?? 0) + (r.cacheWriteTokens ?? 0);
 }
 
+/**
+ * 「上游」那一格写的字。本地应答的那几行**没有上游**（`provider` 是空的，`local` 标着），
+ * 格子里写一句说明，**按此刻的语言取**。它不是上游的名字：不进上游下拉框，也不按它筛。
+ * 没有发往任何上游的那几行是空的（格子里另说是哪一种，见 `notSent`）。
+ */
+export function upstreamText(r: RequestRow): string {
+  return r.local ? textOf(requestsText).answeredLocally : r.provider;
+}
+
 function valueOf(r: RequestRow, key: SortKey): number | null {
   switch (key) {
     case "time":
@@ -122,23 +133,29 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
     if (f.failedOnly && r.state !== "failed") return false;
     /*
       **没算出金额，不等于金额是零。**跑完了、也报了用量，却没有单价
-      的那些才是「无法计价」；还在跑的和失败的没有金额是另一回事，
-      混进来会让「哪些模型该补价」这个问题答不出来。
+      的那些才是「无法计价」；还在跑的、失败的、上游回了 4xx 或者压根
+      没报用量的，没有金额是另一回事（core 的 `unpriced_requests` 也不
+      数它们）。混进来会让「哪些模型该补价」这个问题答不出来，从概览
+      点进来的条数也和那个数对不上。
     */
-    if (f.unpricedOnly && (r.costMicros != null || r.state !== "done"))
+    if (
+      f.unpricedOnly &&
+      (r.costMicros != null || r.state !== "done" || (r.inputTokens == null && r.outputTokens == null))
+    )
       return false;
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;
     if (f.model && r.model !== f.model) return false;
     if (!q) return true;
     // 路径、密钥、应用、来源、上游、模型、错误信息都算 —— 排查时记得住的
-    // 往往是错误里的那半句话，而不是哪个字段装着它。
+    // 往往是错误里的那半句话，而不是哪个字段装着它。上游那一格写的是什么就按什么搜
+    //（本地应答的那句说明，按此刻的语言）
     return (
       r.path.toLowerCase().includes(q) ||
       r.client.toLowerCase().includes(q) ||
       (r.hint ?? "").toLowerCase().includes(q) ||
       (r.peer ?? "").includes(q) ||
-      r.provider.toLowerCase().includes(q) ||
+      upstreamText(r).toLowerCase().includes(q) ||
       (r.model ?? "").toLowerCase().includes(q) ||
       coreText(r.error).toLowerCase().includes(q)
     );

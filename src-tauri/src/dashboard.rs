@@ -24,18 +24,19 @@ pub async fn dashboard(
     //
     // 另一个理由是这两个数原来在两边各算了一遍：一边算窗口，一边算格宽，
     // 而补空桶要求两边算出来的格子完全重合。对不上的表现是整张图全是零。
-    since_ms: Option<i64>,
-    bucket_ms: Option<i64>,
+    //
+    // **没有兜底。**这一层替界面挑一个时间窗（原来是「最近 24 小时」），就又有一处
+    // 不按本地时钟定的窗口；缺参数是界面的错，该在那边报出来。
+    since_ms: i64,
+    bucket_ms: i64,
 ) -> Out<Dashboard> {
     let c = &state.control;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    // 兜底是「最近 24 小时、一小时一格」—— 界面总会把这两个值带上，
-    // 这里只是不让缺参数变成一次失败。
-    let since = since_ms.unwrap_or(now - 24 * 3_600_000).min(now);
-    let bucket = bucket_ms.unwrap_or(3_600_000).max(60_000);
+    let since = since_ms.min(now);
+    let bucket = bucket_ms.max(60_000);
     Ok(Dashboard {
         summary: c
             .call::<ep::Summary>(&[], &window(Some(since), None))
@@ -46,14 +47,15 @@ pub async fn dashboard(
         latency: c
             .call::<ep::Latency>(&[], &window(Some(since), None))
             .await
-            .unwrap_or_default(),
+            .ok(),
         latency_by_provider: c
             .call::<ep::LatencyByProvider>(&[], &window(Some(since), None))
             .await
-            .unwrap_or_default(),
+            .ok(),
         storage: c.call::<ep::Storage>(&[], &()).await.ok(),
-        // 趋势和分组。**拿不到就是空的，不该让整页失败** —— 这一页别的
-        // 部分照样有用（同一条：观测层的缺失不该扩散）。
+        // 趋势和分组。**拿不到不该让整页失败** —— 这一页别的部分照样有用（同一条：
+        // 观测层的缺失不该扩散）。但拿不到是 `None`，**不是空的**：空的在界面上就是
+        // 一张全零的图，读作「这段时间没有请求」，那是一个编出来的零
         buckets: c
             .call::<ep::CostBuckets>(
                 &[],
@@ -64,7 +66,7 @@ pub async fn dashboard(
                 },
             )
             .await
-            .unwrap_or_default(),
+            .ok(),
         buckets_by_model: c
             .call::<ep::CostBucketsBy>(
                 &[],
@@ -76,7 +78,7 @@ pub async fn dashboard(
                 },
             )
             .await
-            .unwrap_or_default(),
+            .ok(),
         // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
         // ——「$4.05」是多还是少，只有和上一个七天比过才知道。
         // 拿不到就不显示那句对比，不影响这一页别的部分。
@@ -91,21 +93,24 @@ pub async fn dashboard(
 #[derive(serde::Serialize)]
 pub struct Dashboard {
     summary: tw_api::Summary,
-    /// 首字节时间的分位，按模型分。和 `summary` 同一个时间窗
-    latency: Vec<tw_api::LatencyView>,
+    /// 首字节时间的分位，按模型分。和 `summary` 同一个时间窗。
+    ///
+    /// 下面这几样**拿不到是 `None`，不是空的**：空的是「没有样本、没有请求」，
+    /// 取数失败时那样说就是编了一个零。界面见到 `None` 写「暂时取不到」
+    latency: Option<Vec<tw_api::LatencyView>>,
     /// 按上游分。**和按模型分是两个问题**
-    latency_by_provider: Vec<tw_api::LatencyView>,
+    latency_by_provider: Option<Vec<tw_api::LatencyView>>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑
     storage: Option<tw_api::StorageStatus>,
     /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补
-    buckets: Vec<tw_api::CostBucket>,
+    buckets: Option<Vec<tw_api::CostBucket>>,
     /// 同样的格子，再按模型分层。趋势图靠它把「什么时候花的」和
     /// 「花在哪个模型上」画成同一张图
-    buckets_by_model: Vec<tw_api::CostBucketGroup>,
+    buckets_by_model: Option<Vec<tw_api::CostBucketGroup>>,
     /// 上一个等长区间的汇总。拿不到就是没有对比，不是零
     prev: Option<tw_api::Summary>,
-    /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，
-    /// 而兜底路径上它不等于界面送来的那个值
+    /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，而界面送来的
+    /// 起点在未来时（时钟被往回拨过）这里截到了现在
     since_ms: i64,
 }
 

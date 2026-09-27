@@ -237,8 +237,10 @@ export function ruleProblem(d: RuleDraft, takenNames: string[]): string | null {
   }
   if (d.action === "deny" && !d.deny.trim()) return t.denyReasonMissing;
   if (d.action === "continue" && !hasAddOns(d)) return t.continueNeedsAddOns;
+  // 正整数：「0」过得了 `\d+`，写回去时却被当成没填丢掉（`draftToInput`），一条只改
+  // max_tokens 的规则就成了什么都不改
   const mt = d.maxTokens.trim();
-  if (mt && !/^\d+$/.test(mt)) return t.maxTokensInvalid;
+  if (mt && !/^[1-9]\d*$/.test(mt)) return t.maxTokensInvalid;
   return null;
 }
 
@@ -279,13 +281,25 @@ export function insertIndex(rules: RuleDraft[]): number {
   return i < 0 ? rules.length : i;
 }
 
-/** 把被兜底挡住的规则挪到第一条兜底规则之前，其余次序不变 */
+/**
+ * 把被兜底挡住的规则挪到第一条兜底规则之前，其余次序不变。
+ *
+ * **被挡住的兜底规则不挪**：两条兜底规则怎么排都是一条挡住另一条（复制一条兜底规则就是
+ * 这样），挪过去只是换成另一条被挡住。那一条该删，不是该挪（见 [`canLift`]）
+ */
 export function liftShadowed(rules: RuleDraft[]): RuleDraft[] {
   const notes = draftNotes(rules);
-  const lifted = rules.filter((_, i) => notes[i]!.shadowed);
-  const rest = rules.filter((_, i) => !notes[i]!.shadowed);
+  const lifts = (i: number) => notes[i]!.shadowed && !notes[i]!.catchAll;
+  const lifted = rules.filter((_, i) => lifts(i));
+  const rest = rules.filter((_, i) => !lifts(i));
   const at = insertIndex(rest);
   return [...rest.slice(0, at), ...lifted, ...rest.slice(at)];
+}
+
+/** 有没有挪得动的：被挡住的里面有不是兜底规则的 */
+export function canLift(rules: RuleDraft[]): boolean {
+  const notes = draftNotes(rules);
+  return notes.some((n) => n.shadowed && !n.catchAll);
 }
 
 export function move<T>(list: T[], from: number, to: number): T[] {

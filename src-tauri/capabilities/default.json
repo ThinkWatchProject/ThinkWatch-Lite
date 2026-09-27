@@ -1,12 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的能力。**只给网页真的会调的那几样**：托盘、通知、开机启动都由 Rust 这一侧去做，网页不需要直接碰这些插件；应用自己的命令不受这份清单约束。Tauri v2 的 capability 漏配是静默失败 —— 网页里新用一个 window/插件接口，就要回来确认这里有它。start-dragging 是同一个坑的实例：标题栏是 Overlay，没有一条真的标题栏可以抓，窗口全靠 data-tauri-drag-region 移动，而那条权限不在 core:window 的默认集合里。少了它拖拽区毫无反应，也不报错。",
+  "description": "主窗口的能力。**只给网页真的会调的那几样，不给 core:default**：那一整套里有托盘、菜单、建窗和改窗口、webview、路径、图片……网页一样都不用，而一段混进页面的脚本拿着它们就都能做。托盘、通知、开机启动由 Rust 这一侧去做，应用自己的命令不受这份清单约束。网页用到的：听事件（event 的 listen / unlisten，@tauri-apps/api/event 的 listen 和它返回的取消函数）；拖动窗口（start-dragging：标题栏是 Overlay，没有一条真的标题栏可以抓，窗口全靠 data-tauri-drag-region 移动）和双击拖拽区缩放（internal-toggle-maximize，Tauri 的拖拽脚本双击时调它）；开发构建里的开发者工具快捷键（internal-toggle-devtools，Tauri 只在开发构建里注进那段脚本、注册那条命令）。Tauri v2 的 capability 漏配是静默失败：网页里新用一个 window / event / 插件接口，就要回来把它加上 —— start-dragging 就是这个坑的实例，少了它拖拽区毫无反应，也不报错。",
   "windows": [
     "main"
   ],
   "permissions": [
-    "core:default",
-    "core:window:allow-start-dragging"
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }

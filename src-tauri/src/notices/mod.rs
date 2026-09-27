@@ -11,7 +11,9 @@
 //! 1. **分级**：只有「此刻所有客户端都在瞎」是 critical，「有事要用户动手」是
 //!    warning，其余只进应用内。
 //! 2. **去抖**：故障类要持续一会儿才说 —— 一次网络抖动自己就好了。
-//! 3. **去重**：同一件事（同一个去重键）只说一次，后续只更新计数。
+//! 3. **去重**：同一件事（同一个去重键）只说一次，后续只更新计数。**一次性的事**
+//!    （一次拦截、一次扫描发现）每发生一次都是新的一件，由冷却限着不刷屏
+//!    （[`Signal::event`]）。
 //! 4. **抑制**：网关整个不在服务时，不必再说它下面每一家上游怎么了。
 //! 5. **限流**：令牌桶。用完了的只进应用内，并合并成一句「另有 N 项」。
 //!
@@ -28,7 +30,7 @@
 //! 投递是 [`Sink`]，系统通知只是其中一个实现。macOS、Windows、Linux 各有一个原生的
 //! sink，判定只有这一套。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -61,6 +63,15 @@ const FLAP_TIMES: usize = 3;
 
 /// 撑过这么久的 critical，恢复时值得说一句；短的静默撤回
 const SAY_RECOVERED_AFTER: Duration = Duration::from_secs(300);
+
+/// 一次性的事（[`Signal::event`]）弹过一次之后，这么久里再发生只记下、不再弹；冷却结束时
+/// 还有没说的，合成一条说。
+///
+/// **5 分钟**：一次拦截发生时客户端正在弹批准提示，第一条必须立刻说；之后几分钟里同一家
+/// 再拦下的，几乎总是同一件事的后续（代理在重试同一个调用、同一段会话接着往下走），用户
+/// 已经被叫过一次，列表里那一条也在累计次数。短到隔一阵子的另一件事照样会再说；长到一个
+/// 每隔几秒重试一次的循环，每 5 分钟最多再多一条
+const COOLDOWN: Duration = Duration::from_secs(300);
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -118,6 +129,8 @@ pub struct Signal {
     pub suppresses: &'static [&'static str],
     /// 要不要去抖。用户已经在等结果的事（安全模式、上游全挂）不等
     pub hold: bool,
+    /// 一次性的事，不是一种持续的状态（见 [`Signal::event`]）
+    pub event: bool,
 }
 
 impl Signal {
@@ -131,6 +144,7 @@ impl Signal {
             view: None,
             suppresses: &[],
             hold: true,
+            event: false,
         }
     }
 
@@ -144,6 +158,7 @@ impl Signal {
             view: None,
             suppresses: &[],
             hold: false,
+            event: false,
         }
     }
 
@@ -174,6 +189,23 @@ impl Signal {
         self
     }
 
+    /// 一次性的事（一次拦截、一次扫描发现）：**每发生一次都是新的一件**，不是同一件事
+    /// 又报了一遍。
+    ///
+    /// 持续的状态（额度用完、凭据失效）有「好了」的那一刻来收起，在那之前按键去重、说
+    /// 一次就够。一次性的事没有「好了」：照那一套去重，用户看过一次之后它再发生多少次，
+    /// 铃铛、菜单栏、系统通知都不再有动静 —— 而记录是落盘的，重启之后也一样。所以：
+    ///
+    /// - 每发生一次，列表里那一条都**重新算没看过**，次数和内容换成最近的这一次
+    /// - 系统通知按 [`COOLDOWN`] 限着：弹过一次之后，冷却期间再发生只记下；冷却结束时
+    ///   还有没说的、用户也还没看过，合成一条再说一次
+    /// - 不去抖：它不会自己好
+    pub fn event(mut self) -> Self {
+        self.event = true;
+        self.hold = false;
+        self
+    }
+
     pub fn suppressing(mut self, keys: &'static [&'static str]) -> Self {
         self.suppresses = keys;
         self
@@ -199,7 +231,7 @@ pub struct Notice {
     #[serde(default)]
     pub notified: bool,
     /// 用户看过了。**看过不等于好了**：还没好的照样留在列表里，只是铃铛不再数它，
-    /// 也不再为它打断用户
+    /// 也不再为它打断用户。一次性的事（[`Signal::event`]）再发生一次，就又算没看过
     pub read: bool,
 }
 
@@ -211,6 +243,16 @@ struct Open {
     due: Option<Instant>,
     /// 因为抖动被静音到什么时候
     muted_until: Option<Instant>,
+    /// 这一条是抖动之后留下的那句「（时断时续）」说明，不是一件还开着的事
+    intermittent: bool,
+    /// 一次性的事上次弹出之后，冷却到什么时候（[`COOLDOWN`]）。用 tokio 的钟：和冷却结束
+    /// 时的那个计时器是同一个钟，测试里拨得动。
+    ///
+    /// **只在内存里，不落盘**：重启之后头一次再发生照常弹。宁可重启之后多说一次，也不能
+    /// 让存下来的状态把以后的每一次都压住
+    cool_until: Option<tokio::time::Instant>,
+    /// 冷却期间又发生、还没为它弹过的次数。冷却结束时合成一条说
+    unsaid: u32,
 }
 
 #[derive(Debug, Default)]
@@ -221,8 +263,12 @@ struct State {
     /// 令牌桶
     tokens: u32,
     refilled_at: Option<Instant>,
-    /// 被限流压下去的条数，给「另有 N 项」用
-    held_back: u32,
+    /// 被限流压下去、还没说出去的那几件事，给「另有 N 项」用。**按键记**：同一件事
+    /// 压下几次还是一项；好了的、用户看过的不再是待处理的事，随即划掉
+    held_back: HashSet<String>,
+    /// 取过几份落盘用的列表。**号和那一份在同一把锁里取**，号越大那一份越新（见
+    /// [`store::Store::save`]）
+    snapshots: u64,
 }
 
 /// 通知总线。**整个应用只有一份**
@@ -231,8 +277,8 @@ pub struct Notices {
     sinks: Vec<Box<dyn Sink>>,
     /// 用户选的那一档。**存盘不归这里管**：它和其他应用设置在同一个文件里
     mode: Mutex<Mode>,
-    /// 落盘的目录。关窗期间发生的事要留得住
-    dir: Option<std::path::PathBuf>,
+    /// 落盘的那一份。关窗期间发生的事要留得住
+    store: Option<store::Store>,
 }
 
 const OPEN_FILE: &str = "notices.json";
@@ -244,10 +290,8 @@ impl Notices {
         dir: Option<std::path::PathBuf>,
         mode: Mode,
     ) -> Arc<Self> {
-        let open = dir
-            .as_deref()
-            .map(|d| store::load(&d.join(OPEN_FILE)))
-            .unwrap_or_default();
+        let store = dir.map(|d| store::Store::new(d.join(OPEN_FILE)));
+        let open = store.as_ref().map(|s| s.load()).unwrap_or_default();
         Arc::new(Self {
             state: Mutex::new(State {
                 open: open
@@ -259,6 +303,9 @@ impl Notices {
                                 notice: n,
                                 due: None,
                                 muted_until: None,
+                                intermittent: false,
+                                cool_until: None,
+                                unsaid: 0,
                             },
                         )
                     })
@@ -268,7 +315,7 @@ impl Notices {
             }),
             sinks,
             mode: Mutex::new(mode),
-            dir,
+            store,
         })
     }
 
@@ -299,10 +346,7 @@ impl Notices {
 
     /// 界面要显示的那一份，最近的在前
     pub fn list(&self) -> Vec<Notice> {
-        let g = self.state.lock().expect("锁未中毒");
-        let mut out: Vec<Notice> = g.open.values().map(|o| o.notice.clone()).collect();
-        out.sort_by_key(|n| std::cmp::Reverse(n.at_ms));
-        out
+        newest_first(&self.state.lock().expect("锁未中毒"))
     }
 
     /// 用户看过了这一条。**只是不再数它** —— 事情本身好没好由信号说了算，没好的
@@ -319,14 +363,19 @@ impl Notices {
     fn mark_read_where(&self, pick: impl Fn(&str) -> bool) {
         let marked: Vec<String> = {
             let mut g = self.state.lock().expect("锁未中毒");
-            g.open
+            let marked: Vec<String> = g
+                .open
                 .values_mut()
                 .filter(|o| !o.notice.read && pick(&o.notice.key))
                 .map(|o| {
                     o.notice.read = true;
                     o.notice.key.clone()
                 })
-                .collect()
+                .collect();
+            for k in &marked {
+                g.held_back.remove(k);
+            }
+            marked
         };
         if marked.is_empty() {
             return;
@@ -345,7 +394,7 @@ impl Notices {
         let gone: Vec<String> = {
             let mut g = self.state.lock().expect("锁未中毒");
             // 被限流压下去的那几条也不在了，下一条通知不该再说「另有 N 项」
-            g.held_back = 0;
+            g.held_back.clear();
             g.open.drain().map(|(k, _)| k).collect()
         };
         for k in &gone {
@@ -457,15 +506,30 @@ impl Notices {
             return;
         }
         let now = Instant::now();
-        let (notice, deliver, due) = {
+        let tick = tokio::time::Instant::now();
+        let (notice, deliver, due, sum_up) = {
             let mut g = self.state.lock().expect("锁未中毒");
-            let suppressed = suppressed_by(&g, &signal);
             let existing = g.open.get(&signal.key).cloned();
             let muted = existing.as_ref().and_then(|o| o.muted_until);
+            let hush = hushed(&g, &signal.key, muted, now);
             let escalated = existing
                 .as_ref()
                 .is_some_and(|o| signal.level > o.notice.level);
+            let (mut cool_until, mut unsaid) = existing
+                .as_ref()
+                .map_or((None, 0), |o| (o.cool_until, o.unsaid));
+            let cooling = signal.event && cool_until.is_some_and(|t| tick < t);
             let notice = match existing {
+                // 一次性的事又发生了一次：**是新的一件**，重新算没看过
+                Some(o) if signal.event => Notice {
+                    level: signal.level.max(o.notice.level),
+                    title: signal.title.clone(),
+                    body: signal.body.clone(),
+                    at_ms,
+                    count: o.notice.count + 1,
+                    read: false,
+                    ..o.notice
+                },
                 // 同一件事又发生了：**只更新，不再弹**（除非升级成了 critical）
                 Some(o) => Notice {
                     level: signal.level.max(o.notice.level),
@@ -491,24 +555,44 @@ impl Notices {
                     read: false,
                 },
             };
-            // 抖动中、被抑制、已经弹过，或者用户已经看过：只留记号
-            let quiet = muted.is_some_and(|until| now < until)
-                || suppressed
-                || notice.notified
-                || notice.read;
+            // 抖动中、被抑制：只留记号。持续的状态弹过了、用户看过了，也只留记号；
+            // 一次性的事每次都是新的，只看还在不在冷却
+            let said = if signal.event {
+                cooling
+            } else {
+                notice.notified || notice.read
+            };
+            let quiet = hush || said;
             // 用户选了「仅在应用内」的，级别再高也不打断
-            let wants = mode == Mode::System && signal.level.interrupts() && !quiet;
+            let interrupts = mode == Mode::System && signal.level.interrupts();
+            let wants = interrupts && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
-            let deliver = wants && !signal.hold && take_token(&mut g, signal.level);
+            let deliver = wants && !signal.hold && take_token(&mut g, &signal.key, signal.level);
+            let mut sum_up = None;
+            if signal.event {
+                if deliver {
+                    cool_until = Some(tick + COOLDOWN);
+                    unsaid = 0;
+                } else if interrupts && !hush && cooling {
+                    // 只差冷却这一条：记下，冷却结束时合成一条说。头一次记下时排上那个时刻
+                    unsaid += 1;
+                    if unsaid == 1 {
+                        sum_up = cool_until;
+                    }
+                }
+            }
             g.open.insert(
                 signal.key.clone(),
                 Open {
                     notice: notice.clone(),
                     due,
                     muted_until: muted,
+                    intermittent: false,
+                    cool_until,
+                    unsaid,
                 },
             );
-            (notice, deliver, due)
+            (notice, deliver, due, sum_up)
         };
         if deliver {
             self.deliver(&notice);
@@ -521,34 +605,92 @@ impl Notices {
         if let Some(at) = due {
             self.schedule(signal.key.clone(), at);
         }
+        if let Some(at) = sum_up {
+            self.sum_up(signal.key.clone(), at);
+        }
         self.persist();
         self.changed();
     }
 
-    /// 等去抖那一段过去。**期间事情好了就不说了** —— 这正是去抖的意义
+    /// 等去抖那一段过去。**期间事情好了就不说了** —— 这正是去抖的意义。
+    ///
+    /// **到点时照投递那一刻的样子再判一遍**，和 [`Self::raise`] 同一套：这一分钟里
+    /// 网关可能停了（它那一条压着这一条，见 [`hushed`]），用户可能换了一档、看过了，
+    /// 事情可能好了（那就不在 `open` 里了）
     fn schedule(self: &Arc<Self>, key: String, at: Instant) {
         let me = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep_until(at.into()).await;
-            // 等的这一分钟里用户可能换了一档
             let wants = me.mode() == Mode::System;
             let notice = {
                 let mut g = me.state.lock().expect("锁未中毒");
-                match g.open.get_mut(&key) {
-                    // 还开着、还没弹过、用户还没看过、拿得到令牌
-                    Some(o) if o.due == Some(at) && !o.notice.notified && !o.notice.read => {
-                        let level = o.notice.level;
-                        o.due = None;
-                        if !wants || !take_token(&mut g, level) {
-                            None
-                        } else {
+                // 还开着、等的还是这一次、还没弹过、用户还没看过
+                let pending = g
+                    .open
+                    .get(&key)
+                    .filter(|o| o.due == Some(at) && !o.notice.notified && !o.notice.read)
+                    .map(|o| (o.notice.level, o.muted_until));
+                match pending {
+                    Some((level, muted)) => {
+                        if let Some(o) = g.open.get_mut(&key) {
+                            o.due = None;
+                        }
+                        // 此刻没被压着、拿得到令牌
+                        let say = wants
+                            && !hushed(&g, &key, muted, Instant::now())
+                            && take_token(&mut g, &key, level);
+                        if say {
                             g.open.get(&key).map(|o| o.notice.clone())
+                        } else {
+                            None
                         }
                     }
-                    _ => None,
+                    None => None,
                 }
             };
             if let Some(n) = notice {
+                me.deliver(&n);
+                me.persist();
+                me.changed();
+            }
+        });
+    }
+
+    /// 一次性的事冷却结束（`at`）。**期间又发生过、用户还没看的，合成一条说**，说了就再
+    /// 冷却一段。用户已经看过了、换了一档、这会儿被更要紧的事压着的，就不说了 —— 列表里
+    /// 那一条一直在，次数也一直在涨
+    fn sum_up(self: &Arc<Self>, key: String, at: tokio::time::Instant) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(at).await;
+            let wants = me.mode() == Mode::System;
+            let shown = {
+                let mut g = me.state.lock().expect("锁未中毒");
+                // 还开着、冷却的还是这一段、期间有没说的
+                let pending = g
+                    .open
+                    .get(&key)
+                    .filter(|o| o.cool_until == Some(at) && o.unsaid > 0)
+                    .map(|o| (o.notice.clone(), o.unsaid, o.muted_until));
+                let Some((notice, unsaid, muted)) = pending else {
+                    return;
+                };
+                let say = wants
+                    && !notice.read
+                    && !hushed(&g, &key, muted, Instant::now())
+                    && take_token(&mut g, &key, notice.level);
+                if let Some(o) = g.open.get_mut(&key) {
+                    o.unsaid = 0;
+                    if say {
+                        o.cool_until = Some(tokio::time::Instant::now() + COOLDOWN);
+                    }
+                }
+                say.then(|| Notice {
+                    body: summed_up(&notice.body, unsaid),
+                    ..notice
+                })
+            };
+            if let Some(n) = shown {
                 me.deliver(&n);
                 me.persist();
                 me.changed();
@@ -562,7 +704,10 @@ impl Notices {
             if let Some(o) = g.open.get_mut(&notice.key) {
                 o.notice.notified = true;
             }
-            std::mem::take(&mut g.held_back)
+            let mut held = std::mem::take(&mut g.held_back);
+            // 这一条自己先前被压下过的话，现在说的就是它，不算「另有」
+            held.remove(&notice.key);
+            held.len()
         };
         let mut shown = notice.clone();
         shown.notified = true;
@@ -588,33 +733,50 @@ impl Notices {
             let Some(o) = g.open.remove(key) else {
                 return;
             };
+            // 好了就不再是待处理的事
+            g.held_back.remove(key);
             let now = Instant::now();
-            let times = g.flaps.entry(key.to_string()).or_default();
-            times.push_back(now);
-            while times.front().is_some_and(|t| now - *t > FLAP_WINDOW) {
-                times.pop_front();
-            }
-            let flapping = times.len() >= FLAP_TIMES;
-            if flapping {
-                // 时断时续：下一次别再弹了，直到它稳定一段时间
-                g.open.insert(
-                    key.to_string(),
-                    Open {
-                        notice: Notice {
-                            level: Level::Info,
-                            title: tr!(
-                                format!("{}（时断时续）", o.notice.title),
-                                format!("{} (Intermittent)", o.notice.title)
-                            ),
-                            at_ms,
-                            ..o.notice.clone()
+            if o.intermittent {
+                // 「时断时续」那一条是一句说明，不是一件开着的事：它收到的「好了」**不算又
+                // 一次开合**。算的话，每来一个「好了」就给标题再接一段「（时断时续）」、把
+                // 整个列表重写一遍落盘 —— 而上游的「好了」是它每接下一个请求就来一次。
+                // 静音期里留着它；过了静音期还没再出事，就收起来
+                if o.muted_until.is_some_and(|until| now < until) {
+                    g.open.insert(key.to_string(), o);
+                    return;
+                }
+                (o, false)
+            } else {
+                let times = g.flaps.entry(key.to_string()).or_default();
+                times.push_back(now);
+                while times.front().is_some_and(|t| now - *t > FLAP_WINDOW) {
+                    times.pop_front();
+                }
+                let flapping = times.len() >= FLAP_TIMES;
+                if flapping {
+                    // 时断时续：下一次别再弹了，直到它稳定一段时间
+                    g.open.insert(
+                        key.to_string(),
+                        Open {
+                            notice: Notice {
+                                level: Level::Info,
+                                title: tr!(
+                                    format!("{}（时断时续）", o.notice.title),
+                                    format!("{} (Intermittent)", o.notice.title)
+                                ),
+                                at_ms,
+                                ..o.notice.clone()
+                            },
+                            due: None,
+                            muted_until: Some(now + FLAP_WINDOW),
+                            intermittent: true,
+                            cool_until: None,
+                            unsaid: 0,
                         },
-                        due: None,
-                        muted_until: Some(now + FLAP_WINDOW),
-                    },
-                );
+                    );
+                }
+                (o, flapping)
             }
-            (o, flapping)
         };
         for s in &self.sinks {
             s.withdraw(key);
@@ -649,9 +811,13 @@ impl Notices {
     }
 
     fn persist(&self) {
-        let Some(dir) = &self.dir else { return };
-        let list = self.list();
-        store::save(&dir.join(OPEN_FILE), &list);
+        let Some(store) = &self.store else { return };
+        let (seq, list) = {
+            let mut g = self.state.lock().expect("锁未中毒");
+            g.snapshots += 1;
+            (g.snapshots, newest_first(&g))
+        };
+        store.save(seq, &list);
     }
 
     /// 界面在开着的话，让它重画
@@ -663,13 +829,38 @@ impl Notices {
     }
 }
 
+/// 开着的全部，最近的在前
+fn newest_first(state: &State) -> Vec<Notice> {
+    let mut out: Vec<Notice> = state.open.values().map(|o| o.notice.clone()).collect();
+    out.sort_by_key(|n| std::cmp::Reverse(n.at_ms));
+    out
+}
+
+/// 冷却结束时合成的那一条的正文：最近那一次的内容，再带一句上次弹出之后又发生了几次
+fn summed_up(body: &str, n: u32) -> String {
+    tr!(
+        format!("{body}（上次通知后又发生 {n} 次）"),
+        if n == 1 {
+            format!("{body} (1 more time since the last notification)")
+        } else {
+            format!("{body} ({n} more times since the last notification)")
+        }
+    )
+}
+
+/// 此刻不该为 `key` 打断用户：它在抖（`muted_until` 之前），或者有更要紧的事压着它。
+/// 新来的时候判一次，去抖到点时再判一次（[`Notices::schedule`]）—— 两处必须是同一套
+fn hushed(state: &State, key: &str, muted_until: Option<Instant>, now: Instant) -> bool {
+    muted_until.is_some_and(|until| now < until) || suppressed(state, key)
+}
+
 /// 有没有更要紧的事正开着。**网关整个不在服务时，不必再说它下面每一家怎么了**
-fn suppressed_by(state: &State, signal: &Signal) -> bool {
+fn suppressed(state: &State, key: &str) -> bool {
     state.open.values().any(|o| {
-        o.notice.key != signal.key
+        o.notice.key != key
             && open_suppresses(&o.notice.key)
                 .iter()
-                .any(|p| signal.key.starts_with(p))
+                .any(|p| key.starts_with(p))
     })
 }
 
@@ -678,8 +869,8 @@ fn open_suppresses(key: &str) -> &'static [&'static str] {
     rules::suppresses(key)
 }
 
-/// 取一个令牌。critical 不走桶 —— 它本来就少，而且每一条都该看见
-fn take_token(state: &mut State, level: Level) -> bool {
+/// 为 `key` 这一条取一个令牌。critical 不走桶 —— 它本来就少，而且每一条都该看见
+fn take_token(state: &mut State, key: &str, level: Level) -> bool {
     if level == Level::Critical {
         return true;
     }
@@ -691,7 +882,7 @@ fn take_token(state: &mut State, level: Level) -> bool {
         state.refilled_at = Some(now);
     }
     if state.tokens == 0 {
-        state.held_back += 1;
+        state.held_back.insert(key.to_string());
         return false;
     }
     state.tokens -= 1;

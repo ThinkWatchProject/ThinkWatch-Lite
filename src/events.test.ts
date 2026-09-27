@@ -8,7 +8,7 @@ import {
   type InFlightRequest,
   type RequestRow,
 } from "./types";
-import { mergeHistory } from "./useRequests";
+import { applyBatch, mergeHistory } from "./useRequests";
 import { coreText, plain } from "@/i18n/core.i18n";
 import { setLang } from "@/i18n";
 
@@ -429,7 +429,7 @@ describe("丢了结局的行，由库里补上", () => {
   it("还在进行中的行按库里记上结局", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ provider: "relay" }));
-    mergeHistory(rows, [stored()], "本地应答");
+    mergeHistory(rows, [stored()]);
     const r = rows.get(1);
     expect(r?.state).toBe("done");
     expect(r?.durationMs).toBe(4_000);
@@ -443,9 +443,37 @@ describe("丢了结局的行，由库里补上", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     const why = { code: "gw.upstream.status", args: {}, text: "Upstream `relay` answered 503." };
-    mergeHistory(rows, [stored({ status: null, error: why, input_tokens: null })], "本地应答");
+    mergeHistory(rows, [stored({ status: null, error: why, input_tokens: null })]);
     expect(rows.get(1)?.state).toBe("failed");
     expect(rows.get(1)?.error).toEqual(why);
+  });
+
+  /**
+   * **连着远程时断了一下**：这边把跑着的记成「core 停了」，那边照常跑完、落了库。
+   * 重连之后按库里的改回来 —— 不然一个成功的请求一直挂着失败，还算进失败数里
+   */
+  it("被记成 core 停了、库里却跑完了的，按库里改回来", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    interruptInFlight(rows);
+    expect(rows.get(1)?.state).toBe("failed");
+    mergeHistory(rows, [stored()]);
+    expect(rows.get(1)?.state).toBe("done");
+    expect(rows.get(1)?.error).toBeUndefined();
+    expect(rows.get(1)?.status).toBe(200);
+  });
+
+  /** core 崩过之后号会被重新用上：同一个号、另一个时刻开始的，是另一个请求 */
+  it("号被重新用上时，整行换成库里的那一条", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ path: "/v1/old" }));
+    interruptInFlight(rows);
+    mergeHistory(rows, [stored({ at_ms: 2_000_000, path: "/v1/messages", model: "gpt-5" })]);
+    const r = rows.get(1);
+    expect(r?.atMs).toBe(2_000_000);
+    expect(r?.path).toBe("/v1/messages");
+    expect(r?.model).toBe("gpt-5");
+    expect(r?.state).toBe("done");
   });
 
   /** 已经有结局的行不动它的结局：实时那一份和库里是同一个结局 */
@@ -459,7 +487,7 @@ describe("丢了结局的行，由库里补上", () => {
       bytes: 10,
       duration_ms: 300,
     });
-    mergeHistory(rows, [stored({ cancelled: true })], "本地应答");
+    mergeHistory(rows, [stored({ cancelled: true })]);
     expect(rows.get(1)?.state).toBe("cancelled");
     expect(rows.get(1)?.durationMs).toBe(300);
   });
@@ -473,17 +501,45 @@ describe("丢了结局的行，由库里补上", () => {
 describe("对账时行对象换不换", () => {
   it("库里和列表里一样的行，保留原来的对象", () => {
     const rows = new Map<number, RequestRow>();
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     const before = rows.get(1);
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     expect(rows.get(1)).toBe(before);
+  });
+
+  /**
+   * 一批事件落进列表。**一行都没动的批次**（只有「现在什么情况」的事件，或者说的是
+   * 一条已经不在列表里的请求）要说出来：那时不用把两千行重排一遍交给界面。
+   */
+  it("一批事件：只有状态事件、或者说的是不在列表里的请求时，报没有改动", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(applyBatch(rows, [started()])).toBe(true);
+    const before = rows.get(1);
+    const status = { kind: "models_changed", id: 90, provider: "official", at_ms: 1_000_100 } satisfies CoreEvent;
+    const gone = { kind: "request_headers", id: 42, status: 200, ttfb_ms: 300 } satisfies CoreEvent;
+    expect(applyBatch(rows, [status, gone])).toBe(false);
+    expect(rows.get(1)).toBe(before);
+    // 碰到了列表里的那一行：换成新对象再改
+    expect(applyBatch(rows, [status, { kind: "request_headers", id: 1, status: 200, ttfb_ms: 300 }])).toBe(true);
+    expect(rows.get(1)).not.toBe(before);
+    expect(rows.get(1)?.ttfbMs).toBe(300);
+    expect(before?.ttfbMs).toBeUndefined();
+  });
+
+  /** 说出有没有哪一行变了：一行都没变的对账不用把两千行重排一遍交给界面 */
+  it("报出这一次对账有没有改动", () => {
+    const rows = new Map<number, RequestRow>();
+    expect(mergeHistory(rows, [stored({ session: "s1" })])).toBe(true);
+    expect(mergeHistory(rows, [stored({ session: "s1" })])).toBe(false);
+    expect(mergeHistory(rows, [stored({ session: "s1", cost_micros: 2_000 })])).toBe(true);
+    expect(mergeHistory(rows, [])).toBe(false);
   });
 
   it("库里多出了信息的行，换成新对象，旧的不动", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     const before = rows.get(1);
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     expect(rows.get(1)).not.toBe(before);
     expect(rows.get(1)?.session).toBe("s1");
     expect(before?.state).toBe("in_flight");
@@ -537,8 +593,21 @@ describe("缓存读写跟着用量走", () => {
 
   it("库里读回来的行带上缓存读写", () => {
     const rows = new Map<number, RequestRow>();
-    mergeHistory(rows, [stored({ cache_read_tokens: 48_000, cache_write_tokens: 2_000 })], "本地应答");
+    mergeHistory(rows, [stored({ cache_read_tokens: 48_000, cache_write_tokens: 2_000 })]);
     expect(rows.get(1)?.cacheReadTokens).toBe(48_000);
     expect(rows.get(1)?.cacheWriteTokens).toBe(2_000);
+  });
+});
+
+/**
+ * **本地应答的那一行没有上游。**「上游」那一格的那句说明画的时候才按语言取
+ * （`upstreamText`）；原来这里把当时那种语言的「本地应答」当上游名写进行里，换了
+ * 语言它不跟着换，筛选和上游下拉框还把它当成一个上游。
+ */
+describe("库里读回来的本地应答", () => {
+  it("上游是空的，另有本地应答的标记", () => {
+    const rows = new Map<number, RequestRow>();
+    mergeHistory(rows, [stored({ local: true, provider: "", model: "", path: "titling", billing: "free" })]);
+    expect(rows.get(1)).toMatchObject({ provider: "", local: true });
   });
 });

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
+import type { ConfigFocus } from "@/configLocate";
 import { invalidate, type Resource } from "@/lib/resource";
+import { useWriteQueue } from "@/lib/writeQueue";
 import { useNav, useNavParams } from "@/nav";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -16,10 +18,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type Overview, type PricingStatus, type ProviderView } from "@/types";
+import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
-import { patch, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
+import { patch, statsPartial, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
@@ -30,6 +32,7 @@ import { LinkTestDialog, SpeedTestDialog, TestConnectionDialog } from "./TestDia
 import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
+import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 
@@ -73,13 +76,15 @@ export default function UpstreamsPage({
   ov: Overview;
   /** 写入之后让外面立刻重读概览 */
   onChanged: () => void;
-  /** 打开配置文件，并定位到这个名字 */
-  onOpenConfigFile: (focus: string | null) => void;
+  /** 打开配置文件，并定位到这一项 */
+  onOpenConfigFile: (focus: ConfigFocus | null) => void;
 }) {
   const t = useText(upstreamsPageText);
   const c = useText(commonText);
   const nav = useNav();
   const configVersion = ov.config_version;
+  /** 这一页上的启停排成一队，见 `toggle` */
+  const queue = useWriteQueue(configVersion);
   const [tab, setTabState] = useState<UpstreamTab>(lastTab);
   const setTab = (next: UpstreamTab) => {
     lastTab = next;
@@ -160,17 +165,16 @@ export default function UpstreamsPage({
     const saved = ov.providers.find((x) => x.name === p.name);
     if (!saved) return;
     const next = !p.disabled;
-    // 撤销要基于这一次写入之后的版本，不然会被当成冲突
-    let version = configVersion;
+    // **排队写**（`useWriteQueue`）：连着停用两个上游，第二次等第一次写完、带它回的版本号；
+    // 撤销也排在后面，基于这一次写入之后的版本 —— 都带着同一个旧版本的话，后到的那次会
+    // 被当成冲突拒掉，开关弹回去
     const write = (disabled: boolean) =>
-      api
-        .updateProvider(saved.name, {
+      queue((base) =>
+        api.updateProvider(saved.name, {
           provider: { ...toInput(formFromView(saved)), disabled },
-          base_version: version,
-        })
-        .then((w) => {
-          version = w.version;
-        });
+          base_version: base,
+        }),
+      ).then(() => undefined);
     await undoable({
       message: next ? t.disabledToast(p.name) : t.enabledToast(p.name),
       apply: () => {
@@ -352,7 +356,9 @@ export default function UpstreamsPage({
 
         <TabsContent value="upstreams" className="flex flex-col gap-3 pt-4">
           <Banner
-            show={stats.error !== undefined && stats.data === undefined}
+            // 整份没读到，或者读到了但其中几样取不到（`null`，那几格写「—」）：都要说一声，
+            // 否则一列「—」读起来像是这些上游都没有请求
+            show={(stats.error !== undefined && stats.data === undefined) || statsPartial(stats.data)}
             layout="inline"
             tone="warning"
             title={t.statsFailed}
@@ -396,7 +402,7 @@ export default function UpstreamsPage({
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
                 traffic: (name) => nav.open("requests", { filter: { provider: name } }),
                 toggle: (p) => void toggle(p),
-                locate: (name) => onOpenConfigFile(name),
+                locate: (name) => onOpenConfigFile({ section: "providers", name }),
                 remove: (name) => setDialog({ kind: "delete-upstream", name }),
               }}
             />
@@ -593,12 +599,30 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
   const enabled = providers.filter((p) => !p.disabled);
   const attention = enabled.filter((p) => problemsOf(p).length > 0).length;
   const disabled = providers.length - enabled.length;
-  const day = stats.data
-    ? stats.data.costs.reduce(
-        (a, c) => ({ requests: a.requests + c.requests, cost: a.cost + c.cost_micros }),
-        { requests: 0, cost: 0 },
-      )
-    : null;
+  // 费用三态分开加：估算的部分合计里没有分出来，按格子加回来（同一个时间窗）。
+  // **两样都要在**：合计取不到时写 0 是编出来的；格子取不到就分不出哪些是估的，
+  // 写出来的数会冒充实测。缺一样就不写这两个数（页上另有一条「统计取不到」）
+  const costs = stats.data?.costs;
+  const buckets = stats.data?.buckets;
+  const day =
+    costs && buckets
+      ? costs.reduce(
+          (a, c) => ({
+            ...a,
+            requests: a.requests + c.requests,
+            cost: a.cost + c.cost_micros,
+            unpriced: a.unpriced + c.unpriced_requests,
+            noUsage: a.noUsage + c.no_usage_requests,
+          }),
+          {
+            requests: 0,
+            cost: 0,
+            estimated: buckets.reduce((n, b) => n + b.cost_micros_estimated, 0),
+            unpriced: 0,
+            noUsage: 0,
+          },
+        )
+      : null;
   return (
     <>
       <Fact>{t.hero.upstreams(<Num value={providers.length} />, providers.length)}</Fact>
@@ -608,7 +632,7 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
       {day ? (
         <>
           <Fact>{t.hero.requests(<Num value={day.requests} />, day.requests)}</Fact>
-          <Fact>{t.hero.cost(<Num value={day.cost} format={(n) => usd(Math.round(n))} />)}</Fact>
+          <Fact>{t.hero.cost(<CostFigure c={day} className="font-medium text-foreground" />)}</Fact>
         </>
       ) : (
         stats.loading && <Skeleton className="h-3 w-40 rounded-sm" />

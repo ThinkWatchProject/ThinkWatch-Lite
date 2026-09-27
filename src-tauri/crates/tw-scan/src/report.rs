@@ -97,10 +97,27 @@ impl McpServer {
     }
     /// 远端型，而且不在本机。
     pub fn is_third_party(&self) -> bool {
-        self.url.as_deref().is_some_and(|u| {
-            !u.contains("://localhost") && !u.contains("://127.0.0.1") && !u.contains("://[::1]")
-        })
+        self.url.as_deref().is_some_and(|u| !is_local(u))
     }
+}
+
+/// 地址指着本机。**按主机名比，不按子串**：`https://localhost.evil.example/` 不是本机，
+/// `https://evil.example/?r=http://127.0.0.1` 也不是 —— 子串比的话，这两个都被当成
+/// 本机，远程 server 的提醒就没了
+fn is_local(url: &str) -> bool {
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = match host_port.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => host_port.split(':').next().unwrap_or_default(),
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,6 +136,12 @@ pub struct HookEntry {
     pub event: String,
     pub command: String,
     pub source: PathBuf,
+    /// 这条命令在 `source` 的第几行（1 起），找不到是 0（见 [`command_line`]）。
+    ///
+    /// 发现按文件和行记：清单上的一行要知道哪些发现是它的，就得知道自己在哪一行。
+    /// 按摘录里有没有这条命令去认的话，隐藏字符那一类对不上 —— 它的摘录把不可见字符
+    /// 换成了可见记号，偏偏藏在命令里的零宽字符最该挂到这一行上
+    pub line: usize,
 }
 
 #[derive(Debug, Default)]
@@ -132,7 +155,17 @@ pub struct Report {
     pub unreadable: Vec<String>,
 }
 
+/// 一份要扫的文件最多读多大。宽到装得下攒了很久的 `~/.claude.json`
+const MAX_SCAN_BYTES: u64 = 32 << 20;
+
+/// 读一份要扫的文件。**只读普通文件，而且有上限**：一条指向 `/dev/zero` 的链接会一直
+/// 读下去、一个命名管道会一直等下去，启动时的那一次扫描就卡在那里。读不了的由调用方
+/// 记进 `unreadable`，照样说出来
 fn read(p: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(p).ok()?;
+    if !meta.is_file() || meta.len() > MAX_SCAN_BYTES {
+        return None;
+    }
     std::fs::read_to_string(p).ok()
 }
 
@@ -212,32 +245,126 @@ fn mcp_from(src: &Source, v: &Val) -> Vec<McpServer> {
     for key in MCP_KEYS {
         let Some(servers) = obj(v, key) else { continue };
         for (name, cfg) in servers {
-            out.push(McpServer {
-                name: name.clone(),
-                client: src.client.to_string(),
-                command: s(cfg, "command").unwrap_or_default(),
-                args: strings(cfg, "args"),
-                // agy 的远程 server 写 `serverUrl`（也认 `url`）
-                url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
-                // **只取键名，不取值。**值里常常就是密钥本身
-                env_keys: match obj(cfg, "env") {
-                    Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
-                    None => Vec::new(),
-                },
-                // 没写就是开着 —— 各家的默认都是这样。关掉的写法有两种：
-                // `enabled: false`，以及 agy 的 `disabled: true`
-                enabled: !matches!(
-                    cfg,
-                    Val::Obj(ms) if ms.iter().any(|(k, v)| {
-                        (k == "enabled" && *v == Val::Bool(false))
-                            || (k == "disabled" && *v == Val::Bool(true))
-                    })
-                ),
-                source: src.path.clone(),
-            });
+            out.push(server(src, name.clone(), cfg));
         }
     }
     out.sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
+    out
+}
+
+/// 一个 `command` / `args` / `env` 形状的 server。
+fn server(src: &Source, name: String, cfg: &Val) -> McpServer {
+    McpServer {
+        name,
+        client: src.client.to_string(),
+        command: s(cfg, "command").unwrap_or_default(),
+        args: strings(cfg, "args"),
+        // agy 的远程 server 写 `serverUrl`（也认 `url`）
+        url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
+        // **只取键名，不取值。**值里常常就是密钥本身
+        env_keys: match obj(cfg, "env") {
+            Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
+            None => Vec::new(),
+        },
+        // 没写就是开着 —— 各家的默认都是这样。关掉的写法有两种：
+        // `enabled: false`，以及 agy 的 `disabled: true`
+        enabled: !matches!(
+            cfg,
+            Val::Obj(ms) if ms.iter().any(|(k, v)| {
+                (k == "enabled" && *v == Val::Bool(false))
+                    || (k == "disabled" && *v == Val::Bool(true))
+            })
+        ),
+        source: src.path.clone(),
+    }
+}
+
+/// Claude Code 按项目配的 MCP server：`~/.claude.json` 里 `projects.<项目路径>.mcpServers`。
+/// 在那个项目里打开 Claude Code，它们和用户级的一样会跑起来，所以一样要扫。
+///
+/// **只进发现，不进清单**：MCP 页的矩阵一行一个名字、一列一个客户端，复制和移除改的是
+/// 用户级那一段（`mcpServers`）。项目里的列进去，点它改到的会是用户级的同名那一个，
+/// 或者什么都改不到。名字后面带上项目，发现里说得出是哪一个项目的。
+fn project_mcp(src: &Source, v: &Val) -> Vec<McpServer> {
+    if src.client != "claude-code" {
+        return Vec::new();
+    }
+    let Some(projects) = obj(v, "projects") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (project, cfg) in projects {
+        let Some(servers) = obj(cfg, "mcpServers") else {
+            continue;
+        };
+        for (name, s) in servers {
+            out.push(server(src, format!("{name} ({project})"), s));
+        }
+    }
+    out
+}
+
+/// Claude Code 设置里另外几个**不经模型就执行命令**的键（设置文档里的名字）：状态栏
+/// 每刷新一次跑一遍，取密钥、刷新云凭据、生成遥测请求头的脚本在要用的时候跑。和 hook
+/// 一样，模型什么都没决定，命令就执行了。
+///
+/// 第二项说它打印出来的是不是凭据（密钥、云凭据、带鉴权的请求头）。**这几个只按规则
+/// 扫，不进清单**：`"apiKeyHelper": "echo sk-…"` 是把中转站的密钥交给 Claude Code 的
+/// 常见写法，清单上的命令是原样显示的，列出来就是把密钥摆在界面上
+const CLAUDE_CODE_COMMANDS: &[(&[&str], bool)] = &[
+    (&["statusLine", "command"], false),
+    (&["apiKeyHelper"], true),
+    (&["awsAuthRefresh"], false),
+    (&["awsCredentialExport"], true),
+    (&["otelHeadersHelper"], true),
+];
+
+/// 顺着路径往下走。
+fn at<'a>(v: &'a Val, path: &[&str]) -> Option<&'a Val> {
+    path.iter().try_fold(v, |cur, k| match cur {
+        Val::Obj(ms) => ms.iter().find(|(mk, _)| mk == k).map(|(_, x)| x),
+        _ => None,
+    })
+}
+
+/// 不经模型就会执行的命令：hooks，加上几个同样会执行命令的设置 —— Claude Code 的那几个
+/// （[`CLAUDE_CODE_COMMANDS`]），和 Codex 的 `notify`（每一轮结束就执行的那条命令，写成
+/// argv 数组）。**和 hook 一样对待**：清单里列在 hooks 那一栏（事件就是那个键名），规则
+/// 按「会被执行」扫它们。
+///
+/// `for_list`：给清单的。打印凭据的那几个不给（见 [`CLAUDE_CODE_COMMANDS`]），规则照扫
+fn auto_commands(src: &Source, v: &Val, for_list: bool) -> Vec<HookEntry> {
+    let entry = |event: &str, command: String| HookEntry {
+        client: src.client.to_string(),
+        event: event.to_string(),
+        command,
+        source: src.path.clone(),
+        line: 0,
+    };
+    let mut out = Vec::new();
+    if src.kind == sources::Kind::Hooks {
+        out.extend(hooks_from(src, v));
+        if src.client == "claude-code" {
+            for (path, prints_secret) in CLAUDE_CODE_COMMANDS {
+                if let Some(Val::Str(c)) = at(v, path)
+                    && !c.trim().is_empty()
+                    && !(for_list && *prints_secret)
+                {
+                    out.push(entry(path[0], c.clone()));
+                }
+            }
+        }
+    }
+    if src.client == "codex" {
+        let cmd = match at(v, &["notify"]) {
+            Some(Val::Arr(args)) => args.iter().map(Val::to_line).collect::<Vec<_>>().join(" "),
+            Some(Val::Str(c)) => c.clone(),
+            _ => String::new(),
+        };
+        if !cmd.trim().is_empty() {
+            out.push(entry("notify", cmd));
+        }
+    }
     out
 }
 
@@ -278,6 +405,7 @@ fn hooks_from(src: &Source, v: &Val) -> Vec<HookEntry> {
                 event: event.clone(),
                 command: c,
                 source: src.path.clone(),
+                line: 0,
             });
         }
     }
@@ -285,17 +413,24 @@ fn hooks_from(src: &Source, v: &Val) -> Vec<HookEntry> {
 }
 
 /// `---` 之间的 frontmatter。
-fn frontmatter(text: &str) -> Option<&str> {
+///
+/// **CRLF 和开头的 BOM 也认**：Git for Windows 默认按 CRLF 检出，记事本存的 UTF-8 带
+/// BOM。认不出来的话 `allowed-tools` 读成空的，放得太宽的那一条就查不出来
+fn frontmatter(text: &str) -> Option<String> {
+    let text = text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .replace("\r\n", "\n");
     let rest = text.strip_prefix("---\n")?;
     let end = rest.find("\n---")?;
-    Some(&rest[..end])
+    Some(rest[..end].to_string())
 }
 
 fn allowed_tools(text: &str) -> Vec<String> {
     let Some(fm) = frontmatter(text) else {
         return Vec::new();
     };
-    let Ok(v) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(fm) else {
+    let Ok(v) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&fm) else {
         return Vec::new();
     };
     let get = |k: &str| v.get(k).cloned();
@@ -316,6 +451,35 @@ fn allowed_tools(text: &str) -> Vec<String> {
     }
 }
 
+/// 一条自动执行的命令在文件里的第几行（1 起），找不到是 0。
+///
+/// 配置文件里的命令是 JSON 字符串：引号、反斜杠是转义过的，原样和转义后的样子各找一次。
+/// Codex 的 `notify` 是 argv 数组，拼起来的那一句不在文件里，认 `notify =` 那一行。同一条
+/// 命令写了两遍的，都算第一次出现的那一行
+fn command_line(text: &str, h: &HookEntry) -> usize {
+    let escaped = h.command.replace('\\', "\\\\").replace('"', "\\\"");
+    for needle in [h.command.as_str(), escaped.as_str()] {
+        if needle.trim().is_empty() {
+            continue;
+        }
+        let (line, _) = line_of(text, needle);
+        if line > 0 {
+            return line;
+        }
+    }
+    if h.event == "notify" {
+        return text
+            .lines()
+            .position(|l| {
+                l.trim_start()
+                    .strip_prefix("notify")
+                    .is_some_and(|rest| rest.trim_start().starts_with('='))
+            })
+            .map_or(0, |i| i + 1);
+    }
+    0
+}
+
 fn line_of(text: &str, needle: &str) -> (usize, String) {
     for (i, l) in text.lines().enumerate() {
         if l.contains(needle) {
@@ -323,6 +487,187 @@ fn line_of(text: &str, needle: &str) -> (usize, String) {
         }
     }
     (0, needle.to_string())
+}
+
+/// 一次最多拿多少字节交给 [`hidden::scan`]。
+///
+/// **它的代价是「命中几处 × 这一段多长」**：每命中一处，它都从行首找到行尾，再把整行
+/// 换成可见的样子装进结果。一行几兆、塞满零宽字符的文件（伪造起来不难）整份交给它，
+/// 启动时的那一遍扫描就停在那里，内存也跟着涨满。所以按行扫，长的行再切成这么长的
+/// 几段：每一处的代价就封了顶。
+const HIDDEN_PIECE: usize = 256;
+
+/// 一份文件里最多细看多少处藏起来的字符。用完了就停，并且说出来（见 [`hidden_findings`]）。
+const HIDDEN_WORK: usize = 10_000;
+
+/// 一份文件里最多列多少条藏起来的字符。
+const HIDDEN_MAX: usize = 50;
+
+/// 摘录最多多少个字符（不可见的已经换成了记号）。
+const EXCERPT_MAX: usize = 240;
+
+/// 一份文件里藏起来的东西，**同一行、同一种只报一条**。
+///
+/// 纯 ASCII 的行不用看：藏起来的那几种全都不是 ASCII（零宽、标签、双向控制、私用区；
+/// 同形字要有西里尔或希腊字母）。长的行切成几段扫，切在词和词之间 —— 同形字是按词认的。
+///
+/// **有上限，到了就停，而且说出来**：列满 [`HIDDEN_MAX`] 条，或者细看的处数用完了
+/// [`HIDDEN_WORK`]，就在停下的那一行留一条「从这儿往后没有再查」。悄悄少报比不扫更糟：
+/// 它会给人一种「查过了」的错觉。
+fn hidden_findings(src: &Source, text: &str) -> Vec<Finding> {
+    let mut out = Vec::new();
+    let mut work = HIDDEN_WORK;
+    for (i, line) in text.split('\n').enumerate() {
+        if line.is_ascii() {
+            continue;
+        }
+        let n = i + 1;
+        let mut kinds: Vec<hidden::Kind> = Vec::new();
+        for (at, piece) in pieces(line, HIDDEN_PIECE) {
+            if work == 0 {
+                out.push(not_all_checked(src, n, out.len()));
+                return out;
+            }
+            let hits = hidden::scan(piece);
+            work = work.saturating_sub(hits.len());
+            for h in hits {
+                if kinds.contains(&h.kind) {
+                    continue;
+                }
+                if out.len() == HIDDEN_MAX {
+                    out.push(not_all_checked(src, n, out.len()));
+                    return out;
+                }
+                kinds.push(h.kind);
+                let bytes = at + h.bytes.start..at + h.bytes.end;
+                let excerpt =
+                    if line.len() == piece.len() && h.line_text.chars().count() <= EXCERPT_MAX {
+                        // 整行放得下：就是整行，和从前一样
+                        h.line_text
+                    } else {
+                        excerpt_around(line, bytes)
+                    };
+                out.push(hidden_finding(src, h.kind, n, excerpt));
+            }
+        }
+    }
+    out
+}
+
+/// 一行切成不超过 `max` 字节的几段，连同每段在行里的起点。**尽量切在词和词之间**：
+/// 同形字按「词」认（拉丁字母和西里尔、希腊字母混在一个词里），词被切开就认不出来了。
+fn pieces(line: &str, max: usize) -> impl Iterator<Item = (usize, &str)> {
+    // 词由这几套字母组成（和 `tw_guard` 认同形字时用的一样），别的字符都是词的边界
+    let in_word = |c: char| c.is_ascii_alphabetic() || ('\u{0370}'..='\u{052f}').contains(&c);
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        let rest = &line[at..];
+        if rest.is_empty() {
+            return None;
+        }
+        let mut cut = rest.len().min(max);
+        while !rest.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        if cut < rest.len()
+            && let Some((i, c)) = rest[..cut]
+                .char_indices()
+                .rev()
+                .take_while(|(i, _)| *i >= max / 2)
+                .find(|(_, c)| !in_word(*c))
+        {
+            cut = i + c.len_utf8();
+        }
+        let piece = (at, &rest[..cut]);
+        at += cut;
+        Some(piece)
+    })
+}
+
+/// 那一处前后一小段，不可见的换成可见记号，两头被截掉的地方加「…」
+fn excerpt_around(line: &str, hit: std::ops::Range<usize>) -> String {
+    const AROUND: usize = 60;
+    let mut start = hit.start.saturating_sub(AROUND);
+    while !line.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = (hit.end + AROUND).min(line.len());
+    while !line.is_char_boundary(end) {
+        end += 1;
+    }
+    let window = &line[start..end];
+    // 换成可见记号那一步在 tw_guard 里：扫这一小段，拿它给的那一行
+    let shown = hidden::scan(window)
+        .into_iter()
+        .next()
+        .map_or_else(|| window.to_string(), |h| h.line_text);
+    let shown: String = shown.chars().take(EXCERPT_MAX).collect();
+    let before = if start > 0 { "…" } else { "" };
+    let after = if end < line.len() { "…" } else { "" };
+    format!("{before}{shown}{after}")
+}
+
+fn hidden_finding(src: &Source, h: hidden::Kind, line: usize, excerpt: String) -> Finding {
+    // `msg!` 会把 `what` 遮住，所以句子要用到的几段先取出来
+    let (slug, why) = (h.slug(), h.why());
+    let name = why.split(':').next().unwrap_or("hidden characters");
+    Finding {
+        // 标签字符和双向控制符在任何文本里都没有正当用途
+        level: if h.smuggles() {
+            Level::High
+        } else {
+            Level::Medium
+        },
+        rule: slug.to_string(),
+        kind: src.kind,
+        client: src.client.to_string(),
+        path: src.path.clone(),
+        line,
+        title: msg!(
+            "scan.hidden",
+            kind = src.kind.slug(),
+            what = slug
+            => "{} contains {}",
+            src.kind.label(),
+            name
+        ),
+        // 两句之间要有一个空格 —— 中文句号自己带停顿，英文句点不带，
+        // 直接接上会读成「…by the model.The content of…」
+        detail: msg!(
+            "scan.hidden.detail",
+            kind = src.kind.slug(),
+            what = slug
+            => "{} {}",
+            why,
+            src.kind.why()
+        ),
+        excerpt,
+    }
+}
+
+/// 停在第 `line` 行的那一条：藏起来的字符太多，从这儿往后没有再查
+fn not_all_checked(src: &Source, line: usize, listed: usize) -> Finding {
+    Finding {
+        level: Level::Medium,
+        rule: "hidden-not-all-checked".into(),
+        kind: src.kind,
+        client: src.client.to_string(),
+        path: src.path.clone(),
+        line,
+        title: msg!(
+            "scan.hidden.not_all_checked",
+            kind = src.kind.slug()
+            => "{} was not fully checked for hidden characters",
+            src.kind.label()
+        ),
+        detail: msg!(
+            "scan.hidden.not_all_checked.detail",
+            count = listed,
+            line = line
+            => "It holds too many to list one by one. The first {count} are listed; from line {line} on it was not checked for them."
+        ),
+        excerpt: String::new(),
+    }
 }
 
 /// 扫一批文件。**不写任何东西。**
@@ -337,51 +682,15 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         };
 
         // 一、藏起来的东西。**每一份都扫**，配置文件也不例外
-        for h in hidden::scan(&text) {
-            // 标签字符和双向控制符在任何文本里都没有正当用途
-            let level = if h.kind.smuggles() {
-                Level::High
-            } else {
-                Level::Medium
-            };
-            r.findings.push(Finding {
-                level,
-                rule: h.kind.slug().to_string(),
-                kind: src.kind,
-                client: src.client.to_string(),
-                path: src.path.clone(),
-                line: h.line,
-                title: msg!(
-                    "scan.hidden",
-                    kind = src.kind.slug(),
-                    what = h.kind.slug()
-                    => "{} contains {}",
-                    src.kind.label(),
-                    h.kind
-                        .why()
-                        .split(':')
-                        .next()
-                        .unwrap_or("hidden characters")
-                ),
-                // 两句之间要有一个空格 —— 中文句号自己带停顿，英文句点不带，
-                // 直接接上会读成「…by the model.The content of…」
-                detail: msg!(
-                    "scan.hidden.detail",
-                    kind = src.kind.slug(),
-                    what = h.kind.slug()
-                    => "{} {}",
-                    h.kind.why(),
-                    src.kind.why()
-                ),
-                excerpt: h.line_text,
-            });
-        }
+        r.findings.extend(hidden_findings(src, &text));
 
         // 二、结构化的那几类：MCP、hooks、skill
         let parsed = parse_any(src, &text);
         if let Some(v) = &parsed {
             if src.kind == sources::Kind::Mcp {
-                for m in mcp_from(src, v) {
+                let listed = mcp_from(src, v);
+                // 按项目配的只进发现（见 `project_mcp`）
+                for m in listed.iter().chain(&project_mcp(src, v)) {
                     // **远端型不是「运行一个二进制」，而是「把上下文发
                     // 出去」。**级别定成 low：它多半是用户自己有意加的，
                     // 喊高危就是狼来了；但他有权知道有这么一条出境路径。
@@ -403,14 +712,16 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                             excerpt,
                         });
                     }
-                    r.mcp.push(m);
                 }
+                r.mcp.extend(listed);
                 r.mcp
                     .sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
             }
-            if src.kind == sources::Kind::Hooks {
-                r.hooks.extend(hooks_from(src, v));
+            let mut hooks = auto_commands(src, v, true);
+            for h in &mut hooks {
+                h.line = command_line(&text, h);
             }
+            r.hooks.extend(hooks);
         }
         if src.kind == sources::Kind::Skill {
             let name = src
@@ -445,33 +756,47 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         }
 
         // 三、规则集。**指令类文件扫全文**，配置类只扫命令字段 ——
-        // 拿注入规则去扫一份 JSON 会把里面正常的英文说明全报一遍
-        let targets: Vec<(String, bool)> = match src.kind {
+        // 拿注入规则去扫一份 JSON 会把里面正常的英文说明全报一遍。
+        //
+        // 每一段带着它自己是哪一类：Codex 的 `notify` 在 config.toml 里（这份文件算 MCP），
+        // 可它是一条和 hook 一样不经模型就执行的命令
+        let v = parsed.as_ref().unwrap_or(&Val::Null);
+        let commands = || {
+            auto_commands(src, v, false)
+                .into_iter()
+                .map(|h| (h.command, true, sources::Kind::Hooks))
+        };
+        let targets: Vec<(String, bool, sources::Kind)> = match src.kind {
             sources::Kind::Skill
             | sources::Kind::Command
             | sources::Kind::Agent
-            | sources::Kind::Instructions => vec![(text.clone(), false)],
-            sources::Kind::Hooks => hooks_from(src, parsed.as_ref().unwrap_or(&Val::Null))
+            | sources::Kind::Instructions => vec![(text.clone(), false, src.kind)],
+            sources::Kind::Hooks => commands().collect(),
+            sources::Kind::Mcp => mcp_from(src, v)
                 .into_iter()
-                .map(|h| (h.command, true))
-                .collect(),
-            sources::Kind::Mcp => mcp_from(src, parsed.as_ref().unwrap_or(&Val::Null))
-                .into_iter()
+                .chain(project_mcp(src, v))
                 // 关掉的那些跑不起来，规则不扫它们；它们仍然在清单里
                 .filter(|m| m.enabled)
-                .map(|m| (format!("{} {}", m.command, m.args.join(" ")), true))
+                .map(|m| {
+                    (
+                        format!("{} {}", m.command, m.args.join(" ")),
+                        true,
+                        sources::Kind::Mcp,
+                    )
+                })
+                .chain(commands())
                 .collect(),
         };
-        for (hay, executes) in targets {
+        for (hay, executes, of) in targets {
             for rule in &rules.rules {
                 let Some(m) = rule.re.find(&hay) else {
                     continue;
                 };
                 let (line, excerpt) = line_of(&text, m.as_str());
-                // `msg!` 会把 `rule` 遮住，所以句子要用到的几段先取出来
+                // `msg!` 会把 `rule`、`kind` 遮住，所以句子要用到的几段先取出来
                 let why = rule.why.clone();
                 let name = rule.name.clone();
-                let kind_why = src.kind.why();
+                let (slug, label, kind_why) = (of.slug(), of.label(), of.why());
                 r.findings.push(Finding {
                     // **hook 和 MCP 里的危险命令是最高级**：它们不需要
                     // 模型参与就会被执行
@@ -481,21 +806,21 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                         Level::Medium
                     },
                     rule: rule.id.clone(),
-                    kind: src.kind,
+                    kind: of,
                     client: src.client.to_string(),
                     path: src.path.clone(),
                     line,
                     title: msg!(
                         "scan.rule",
-                        kind = src.kind.slug(),
+                        kind = slug,
                         rule = rule.id.clone()
                         => "{} matched rule “{}”",
-                        src.kind.label(),
+                        label,
                         name
                     ),
                     detail: msg!(
                         "scan.rule.detail",
-                        kind = src.kind.slug(),
+                        kind = slug,
                         rule = rule.id.clone()
                         => "{}. {}",
                         why,
@@ -526,4 +851,78 @@ pub fn conflicting(mcp: &[McpServer]) -> Vec<String> {
         })
         .map(|(n, _)| n.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_means_the_host_is_this_machine_not_that_the_url_mentions_it() {
+        for local in [
+            "http://localhost:3000/mcp",
+            "http://LOCALHOST/mcp",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.2:8080/x",
+            "http://[::1]:3000/mcp",
+            "http://0.0.0.0:3000",
+            "http://user:pass@localhost:3000/mcp",
+        ] {
+            assert!(is_local(local), "{local}");
+        }
+        for remote in [
+            "https://mcp.example.com/mcp",
+            "https://localhost.evil.example/mcp",
+            "https://evil.example/?r=http://127.0.0.1",
+            "https://evil.example/#http://[::1]",
+            "https://127.0.0.1.evil.example/",
+            "https://localhost@evil.example/",
+            "localhost:3000/mcp",
+        ] {
+            assert!(!is_local(remote), "{remote}");
+        }
+    }
+
+    /// 不是普通文件的（设备、命名管道）不读：读下去就不回来了
+    #[cfg(unix)]
+    #[test]
+    fn only_regular_files_are_read() {
+        let d = tempfile::tempdir().unwrap();
+        let link = d.path().join("SKILL.md");
+        std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
+        assert_eq!(read(&link), None);
+        let file = d.path().join("ok.md");
+        std::fs::write(&file, "hi").unwrap();
+        assert_eq!(read(&file).as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn frontmatter_is_read_with_crlf_line_ends_and_a_bom() {
+        let lf = "---\nname: x\nallowed-tools: [\"*\"]\n---\n\nbody\n";
+        assert_eq!(allowed_tools(lf), ["*"]);
+        let crlf = lf.replace('\n', "\r\n");
+        assert_eq!(allowed_tools(&crlf), ["*"]);
+        assert_eq!(allowed_tools(&format!("\u{feff}{crlf}")), ["*"]);
+    }
+
+    /// 长的一行切成几段：拼回去就是原来那一行，每段不超长、不切在字符中间，
+    /// 也不把一个词切成两半 —— 同形字按词认，切开了就认不出来
+    #[test]
+    fn a_long_line_is_cut_between_words() {
+        let word = "p\u{0430}ypal"; // 第二个字母是西里尔的 а
+        let line = format!("{}{word} {}", "中文和 English ".repeat(12), "x".repeat(700));
+        let got: Vec<_> = pieces(&line, 64).collect();
+        let joined: String = got.iter().map(|(_, p)| *p).collect();
+        assert_eq!(joined, line);
+        let mut at = 0;
+        for (start, p) in &got {
+            assert_eq!(*start, at);
+            assert!(p.len() <= 64, "{p:?}");
+            at += p.len();
+        }
+        assert!(got.iter().any(|(_, p)| p.contains(word)), "{got:?}");
+        // 一行塞满一个词也切得开，只是那时只能切在字符之间
+        assert!(pieces(&"я".repeat(100), 64).all(|(_, p)| p.len() <= 64));
+        assert_eq!(pieces("", 64).count(), 0);
+    }
 }

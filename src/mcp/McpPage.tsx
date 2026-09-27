@@ -17,6 +17,7 @@ import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { clock } from "@/security/labels";
 import { LocationsDialog } from "@/clients/LocationsDialog";
+import { isStalePlan } from "@/clients/api";
 import { Extensions } from "./Extensions";
 import { FindingDetail, Findings } from "./Findings";
 import { Matrix, McpConfirm, ServerDialog } from "./Matrix";
@@ -82,7 +83,8 @@ export default function McpPage({
   const rescan = () => void runRescan(async () => void data.mutate(await scan()));
 
   /** 点了格子：先算一份改动，不直接写 —— 和接管同一条纪律 */
-  const [confirm, setConfirm] = useState<{ req: McpOpRequest; plan: PlanView } | null>(null);
+  /** `stale`：刚才确认时目标文件已经被改过，这一份是按现在的内容重算的 */
+  const [confirm, setConfirm] = useState<{ req: McpOpRequest; plan: PlanView; stale?: boolean } | null>(null);
   const [planning, runPlan] = usePending();
   const ask = (req: McpOpRequest) =>
     void runPlan(async () => setConfirm({ req, plan: await invoke<PlanView>("plan_mcp", { req }) }));
@@ -93,12 +95,22 @@ export default function McpPage({
     setApplying(true);
     setApplyError(null);
     try {
-      await invoke<AdoptResponse>("apply_mcp", { req: confirm.req });
+      // 带回确认的那一份的指纹：目标文件在看改动的时候被改过就不写
+      await invoke<AdoptResponse>("apply_mcp", { req: confirm.req, expect: confirm.plan.digest });
       setConfirm(null);
       // 写成了就关；重扫在后台，那一格随后变过来
       void data.reload();
     } catch (e) {
-      setApplyError(e);
+      if (isStalePlan(e)) {
+        // 什么都没写：按现在的文件重算一份，还在这个对话框里给人看，由人再确认一次
+        try {
+          setConfirm({ req: confirm.req, plan: await invoke<PlanView>("plan_mcp", { req: confirm.req }), stale: true });
+        } catch (again) {
+          setApplyError(again);
+        }
+      } else {
+        setApplyError(e);
+      }
     } finally {
       setApplying(false);
     }
@@ -221,6 +233,7 @@ export default function McpPage({
         <McpConfirm
           plan={confirm.plan}
           req={confirm.req}
+          stale={confirm.stale}
           nameOf={nameOf}
           applying={applying}
           error={applyError}

@@ -6,6 +6,7 @@ import { scopeLabel } from "./labels";
 import {
   allowOf,
   rowsOf,
+  sameModel,
   scopeOf,
   sourceOf,
   splitEntries,
@@ -80,6 +81,27 @@ describe("表格要画的行", () => {
   it("每一行说得出模型来自哪个上游", () => {
     const row = rowsOf([], CATALOG).find((r) => r.id === "claude-sonnet-5");
     expect(row?.providers).toEqual(["anthropic", "openrouter"]);
+  });
+});
+
+describe("单独选中的模型和 core 一样不分大小写", () => {
+  // core 的 glob_match 两边都按 ASCII 转小写：`Claude-Opus-5` 放行的就是 claude-opus-5
+  it("手写成别的大小写的那一条，目录里那一行照样算选中，不多出一行目录外的", () => {
+    expect(sourceOf(["Claude-Opus-5"], "claude-opus-5")).toEqual({ kind: "picked" });
+    const rows = rowsOf(["Claude-Opus-5"], CATALOG);
+    expect(rows).toHaveLength(CATALOG.length);
+    expect(rows.find((r) => r.id === "claude-opus-5")?.source).toEqual({ kind: "picked" });
+    expect(visibleCount(["GPT-5.5"], CATALOG)).toBe(1);
+  });
+
+  it("勾上不再写一条；取消时大小写不同的那条一起拿掉，规则不动", () => {
+    expect(toggleModel(["GPT-5.5"], "gpt-5.5", true)).toEqual(["GPT-5.5"]);
+    expect(toggleModel(["claude-*", "Claude-Opus-5", "claude-opus-5"], "claude-opus-5", false)).toEqual(["claude-*"]);
+  });
+
+  it("只转 ASCII 字母，和 core 的 to_ascii_lowercase 一样", () => {
+    expect(sameModel("É-model", "é-model")).toBe(false);
+    expect(sameModel("MODEL-É", "model-É")).toBe(true);
   });
 });
 

@@ -264,8 +264,11 @@ pub async fn update_check(app: tauri::AppHandle) -> Out<Option<Found>> {
 ///
 /// **不再联网问一遍**（`update_check` 会）：那一版已经记在这里，再问一遍只会让这个
 /// 按钮在没网的时候失灵，而窗口里的「下载并安装」反正会自己去取。
+///
+/// **`async`**：更新窗口要在这里建出来，同步命令在 Windows 上跑在 WebView2 的回调里，
+/// 在那里建窗口会死锁（Tauri 的 `WebviewWindowBuilder::new` 写明了）
 #[tauri::command]
-pub fn update_show(app: tauri::AppHandle) -> Out<()> {
+pub async fn update_show(app: tauri::AppHandle) -> Out<()> {
     if pending_update(&app).is_none() {
         return Err(tr!(
             "尚无可安装的新版本",
@@ -472,7 +475,10 @@ pub async fn update_install(
             .supervisor
             .stop_and_wait(std::time::Duration::from_secs(5))
             .await;
-        if let Err(e) = up.install(&bytes) {
+        let installed = install_blocking(up, bytes)
+            .await
+            .and_then(|r| r.map_err(|e| e.to_string()));
+        if let Err(e) = installed {
             // 最常见的是 UAC 那一下点了「否」。**把刚才做的两件事都撤回来**：
             // 不撤的话，网关就这么停着，而下次启动还会说一句没发生过的「已更新」。
             let _ = std::fs::remove_file(&marker);
@@ -489,10 +495,11 @@ pub async fn update_install(
     {
         // Linux 上走到这里的只有 AppImage：插件原地换掉 `$APPIMAGE` 那个文件
         #[cfg(target_os = "linux")]
-        up.install(&bytes)
+        install_blocking(up, bytes)
+            .await?
             .map_err(|e| update::appimage_failure(&e))?;
         #[cfg(target_os = "macos")]
-        up.install(&bytes).map_err(|e| {
+        install_blocking(up, bytes).await?.map_err(|e| {
             tr!(
                 format!("安装失败：{e}"),
                 format!("Installation failed: {e}")
@@ -508,6 +515,24 @@ pub async fn update_install(
             .await;
     }
     app.restart()
+}
+
+/// 装下载好的那一份，**在阻塞线程上**。
+///
+/// `install` 从头到尾都是阻塞的活：macOS 上要替换的位置写不进去时，插件把管理员密码
+/// 的对话框派到主线程，然后在这里干等用户的答案；Linux 上是写一整个 AppImage；Windows
+/// 上要等 UAC 那一下。放在异步运行时的工作线程上，这段时间里排在那个线程上的别的任务
+/// （事件流、菜单栏、心跳）都跟着停。
+///
+/// 外面那层错是那个线程本身没跑完（panic）；里面那层是插件给的原样，各平台照旧按自己
+/// 的写法说
+async fn install_blocking(
+    up: tauri_plugin_updater::Update,
+    bytes: Vec<u8>,
+) -> Result<Result<(), tauri_plugin_updater::Error>, String> {
+    tauri::async_runtime::spawn_blocking(move || up.install(&bytes))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 更新没装成，把为它停掉的网关接回来。
@@ -532,10 +557,8 @@ pub(crate) async fn resume_after_failed_update(app: &tauri::AppHandle) {
     }
 }
 
-/// 上一次是被更新重启的话，说一声换到了哪一版。
-///
-/// **只在版本真的变了时说。**标记是重启之前写下的；替换没成功、起来的
-/// 还是原来那一版的话，这句话就是假的。
+/// 上一次是被更新重启的话，说一声换到了哪一版。标记读过就删：不说的时候也删，不然
+/// 下次启动还会翻出这一句。
 pub(crate) fn announce_update(app: &tauri::AppHandle) {
     use tauri_plugin_notification::NotificationExt;
     let marker = data_dir().join(UPDATED_FROM);
@@ -544,19 +567,36 @@ pub(crate) fn announce_update(app: &tauri::AppHandle) {
     };
     let _ = std::fs::remove_file(&marker);
     let now = app.package_info().version.to_string();
-    let from = from.trim();
-    if from.is_empty() || from == now {
+    // 和别的提醒同一个开关。总线已经建起来的话问它；启动时它还没建（这一句说在它之前），
+    // 就读设置 —— 总线一会儿用的也正是这一档
+    let mode = app
+        .try_state::<Arc<notices::Notices>>()
+        .map(|n| n.mode())
+        .unwrap_or_else(|| prefs::load(&data_dir()).notices);
+    let Some((title, body)) = updated_notice(from.trim(), &now, mode) else {
         return;
+    };
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// 「已更新到 x」那一条的标题和正文；不该说就是 `None`。
+///
+/// **只在版本真的变了时说。**标记是重启之前写下的；替换没成功、起来的还是原来那一版
+/// 的话，这句话就是假的。
+///
+/// **用户选了「仅在应用内」或者关掉了提醒，就不弹**，和别的告知一样（见
+/// [`notices::Notices::announce`]）：它不是一件待处理的事，应用内的列表也不收它
+fn updated_notice(from: &str, now: &str, mode: notices::Mode) -> Option<(String, String)> {
+    if from.is_empty() || from == now || mode != notices::Mode::System {
+        return None;
     }
-    let _ = app
-        .notification()
-        .builder()
-        .title(tr!(format!("已更新到 {now}"), format!("Updated to {now}")))
-        .body(tr!(
+    Some((
+        tr!(format!("已更新到 {now}"), format!("Updated to {now}")),
+        tr!(
             format!("ThinkWatch Lite 已从 {from} 更新到 {now}。"),
             format!("ThinkWatch Lite was updated from {from} to {now}.")
-        ))
-        .show();
+        ),
+    ))
 }
 
 /// 第一次检查之前先等一会儿。
@@ -589,5 +629,36 @@ pub(crate) async fn update_loop(app: tauri::AppHandle) {
             }
         }
         tokio::time::sleep(UPDATE_EVERY).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Lang, with_lang};
+    use notices::Mode;
+
+    /// 「已更新到 x」和别的告知同一个开关：**只在「系统通知」那一档弹**
+    #[test]
+    fn the_updated_notice_follows_the_notification_setting() {
+        assert!(updated_notice("2026.9.18", "2026.9.19", Mode::System).is_some());
+        assert_eq!(updated_notice("2026.9.18", "2026.9.19", Mode::App), None);
+        assert_eq!(updated_notice("2026.9.18", "2026.9.19", Mode::Off), None);
+    }
+
+    /// 替换没成功（起来的还是原来那一版）、标记是空的：不说
+    #[test]
+    fn the_updated_notice_is_only_said_when_the_version_changed() {
+        assert_eq!(updated_notice("2026.9.19", "2026.9.19", Mode::System), None);
+        assert_eq!(updated_notice("", "2026.9.19", Mode::System), None);
+        with_lang(Lang::En, || {
+            assert_eq!(
+                updated_notice("2026.9.18", "2026.9.19", Mode::System),
+                Some((
+                    "Updated to 2026.9.19".to_string(),
+                    "ThinkWatch Lite was updated from 2026.9.18 to 2026.9.19.".to_string()
+                ))
+            );
+        });
     }
 }

@@ -11,6 +11,8 @@ use tauri::Manager;
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
 pub mod i18n;
+/// 整份换掉应用自己的小文件（设置、提醒记录），见模块头上
+pub mod atomic_file;
 pub mod autostart;
 pub mod call;
 pub mod chatgpt;
@@ -56,7 +58,9 @@ pub mod wire;
 pub mod zai;
 
 use control::ControlClient;
-use gateway::{CORE_EXE, bridge_events, control_address, heartbeat_loop, locate_core, supervise};
+use gateway::{
+    CORE_EXE, bridge_events, control_address, heartbeat_loop, locate_core, spawn_supervise,
+};
 use settings::{check_autostart_path, maybe_notify_first_autostart};
 use supervisor::Supervisor;
 use updater::{Updates, announce_update, update_loop};
@@ -240,6 +244,13 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            // **数据目录先建出来，建成只有自己能读的**（见 `private_dir`）。下面头一个往里
+            // 写东西的（启动记号、提醒、连接列表）用的是 `create_dir_all`，新装的机器上
+            // 由它建出来的目录是默认权限；而 core 和 `private_dir` 都不动已经在的目录，
+            // 这份宽松就一直留着 —— 目录里的 config.yaml 放着上游的密钥和控制面的钥匙
+            if let Err(e) = private_dir::create(&data_dir()) {
+                tracing::warn!("建不出数据目录：{e:#}");
+            }
             // **语言最先定。**托盘、通知、窗口都要用它，而它们在下面陆续出现
             let saved = prefs::load(&data_dir());
             i18n::set(i18n::effective(saved.language));
@@ -381,13 +392,7 @@ pub fn run() {
                 }
             } else if located.is_ok() {
                 supervising.store(true, std::sync::atomic::Ordering::SeqCst);
-                let h = handle.clone();
-                let sup_for_loop = sup.clone();
-                let flag = supervising.clone();
-                tauri::async_runtime::spawn(async move {
-                    supervise(sup_for_loop, h).await;
-                    flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                });
+                spawn_supervise(&handle, sup.clone(), supervising.clone());
             } else if let Err(e) = &located {
                 tracing::error!("找不到 core：{e:#}");
             }
@@ -515,28 +520,61 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 起不来")
         .run(|app, event| {
-            // Dock 和 ⌘Tab 是 macOS 的概念，下面那一段只在那里有事做。
-            #[cfg(not(target_os = "macos"))]
-            let _ = app;
             // 点 Dock 图标 / 从 ⌘Tab 回来时把窗口叫回来。没有这条，一个
             // 已经隐藏窗口的菜单栏应用在 Dock 上点了没反应。
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 let _ = show_main_window(app);
             }
-            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
-                // 没有存活窗口不等于要退出 —— 那正是「关窗口留菜单栏」
-                // 的状态。只有真的收到退出码才走清理。
-                if code.is_none() {
-                    api.prevent_exit();
-                } else {
-                    // core 是我们 spawn 的子进程，`kill_on_drop` 会带走它。
-                    // 但显式说一句，因为这条是「一个程序」原则的另一半。
-                    tracing::info!("退出，core 跟着走");
+            match event {
+                tauri::RunEvent::ExitRequested { code, api, .. } => {
+                    // 没有存活窗口不等于要退出 —— 那正是「关窗口留菜单栏」
+                    // 的状态。只有真的收到退出码才走清理。
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
                 }
+                // 真要退了：「一个程序」原则的另一半，core 跟着走
+                tauri::RunEvent::Exit => stop_core_on_exit(app),
+                _ => {}
             }
         });
 }
+
+/// 退出前先请本机的 core 退出、等它走，**至多等 [`EXIT_WAIT`]**。
+///
+/// 靠别的都带不走它：进程是 `exit` 退的，运行时不会被析构，守护手上那个子进程的
+/// `kill_on_drop` 轮不到（以前这里的注释以为轮得到）。真正让它跟着退的是它自己的
+/// `--parent` 守望：每两秒看一次父进程还在不在，没了就当场 `exit` —— 不收尾，锁文件
+/// 留在原地。这里请它照正常的路子退（控制面，unix 上再加信号），它自己收好尾；等不到
+/// 就强杀。再等不到也不拖着退出，交给那条守望。
+///
+/// 已经停着（连着远程、装更新前停过）就立刻回来。
+fn stop_core_on_exit(app: &tauri::AppHandle) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    // 这个回调跑在主线程的事件循环上，不在运行时里。万一在，`block_on` 会 panic ——
+    // 那就不等了，交给守望
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return;
+    }
+    let sup = st.supervisor.clone();
+    // 在主线程上等：停它的是守护循环（在运行时的工作线程上）和控制面的一次请求，
+    // 都不需要主线程
+    tauri::async_runtime::block_on(async move {
+        let stopped = tokio::time::timeout(EXIT_WAIT, sup.stop_and_wait(EXIT_GRACE)).await;
+        if stopped.is_err() {
+            tracing::warn!(?EXIT_WAIT, "退出时 core 没按时停下，交给它的 --parent 守望");
+        }
+    });
+}
+
+/// 退出时请 core 退出之后，等它自己走多久，过了就强杀
+const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 退出时为停 core 最多拖多久。卡死的 core 不该让「退出」也跟着卡住
+const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// 盯住客户端的配置面（`scan::spawn_watcher`）。事件交给界面（`local-event`），
 /// 新出现的可疑内容同时进通知总线。监视本身放进应用的状态里拿着，放掉它就停了。

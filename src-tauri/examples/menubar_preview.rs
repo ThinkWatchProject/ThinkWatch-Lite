@@ -185,6 +185,7 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 failed: 0,
                 tokens: 3_100_000,
                 cost_micros: 41_200_000,
+                ..Default::default()
             }),
             quotas: vec![
                 Quota {
@@ -240,6 +241,7 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 failed: 9,
                 tokens: 4_200_000,
                 cost_micros: 40_260_000,
+                ..Default::default()
             }),
             quotas: vec![Quota {
                 provider: "chatgpt".into(),
@@ -298,6 +300,7 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 failed: 0,
                 tokens: 5_800_000,
                 cost_micros: 3_420_000,
+                ..Default::default()
             }),
             update: Some("2026.9.8".into()),
             ..base

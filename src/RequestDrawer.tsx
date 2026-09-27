@@ -880,6 +880,17 @@ function BodyText({
 }
 
 /**
+ * 眼前能拿去「确认发送」的那份报价：**报的是下拉框里此刻选着的那一家**，否则作废。
+ *
+ * 报价在路上的时候换了选择（或者上游列表刷新了、默认的那一家换了），回来的是上一家的
+ * 报价。原来它照样显示出来，点「确认发送」发的却是此刻选着的那一家 —— 一家没报过价的。
+ * 发送也按报价上的那一家发（`quote.provider`），两边对不上就要重新报价。导出给测试用。
+ */
+export function quoteFor(quote: ReplayQuote | null, selected: string): ReplayQuote | null {
+  return quote !== null && quote.provider === selected ? quote : null;
+}
+
+/**
  * 把这条请求原样发给另一个上游。
  *
  * 用途只有一个，但它是这个工具最常被需要的那一个：**这条请求走中转慢或者失败了，
@@ -888,7 +899,8 @@ function BodyText({
  * 记录里正好有原样的那一份。
  *
  * **它会产生费用**，所以和测速一样是三步：选上游 → 看报价 → 点确认。中间那一步不能
- * 省 —— 发出之前必须显示预估的费用，而不是发了才知道。
+ * 省 —— 发出之前必须显示预估的费用，而不是发了才知道。报价和发送在路上时下拉框不能动，
+ * 发的是报过价的那一家（`quoteFor`）。
  */
 function Replay({ id, originalProvider }: { id: number; originalProvider: string }) {
   const t = useText(requestDrawerText);
@@ -902,6 +914,8 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
       ? picked
       : (names.find((n) => n !== originalProvider) ?? names[0] ?? "");
   const [quote, setQuote] = useState<ReplayQuote | null>(null);
+  /** 能拿去确认的那份：报的是此刻选着的那一家。别的那一家的作废 */
+  const current = quoteFor(quote, provider);
   const [result, setResult] = useState<ReplayResult | null>(null);
   /** 哪一步在等：报价，还是发送 */
   const [busy, setBusy] = useState<"quote" | "run" | null>(null);
@@ -922,9 +936,11 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
   }
 
   async function go() {
+    if (!current) return;
     setBusy("run");
     try {
-      setResult(await call("ReplayRun", { id, provider }));
+      // **发给报过价的那一家**，不是发送这一刻下拉框里选着的
+      setResult(await call("ReplayRun", { id, provider: current.provider }));
       setQuote(null);
     } catch (e) {
       notify.error(e);
@@ -954,7 +970,8 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
           <NativeSelect
             size="sm"
             value={provider}
-            disabled={!ov.data}
+            // 报价、发送在路上时不能换：换了的话，回来的报价和要发的不是同一家
+            disabled={!ov.data || busy !== null}
             onChange={(e) => {
               setPicked(e.target.value);
               setQuote(null);
@@ -979,13 +996,13 @@ function Replay({ id, originalProvider }: { id: number; originalProvider: string
         </div>
       )}
 
-      {quote && (
+      {current && (
         <div className="space-y-1 rounded-lg border border-border px-3 py-2.5 motion-fade">
           {/* **发出之前必须显示预估的费用**，而不是发了才知道 */}
-          <p>{t.quote(<span className="font-medium">{quote.provider}</span>, quote.body_bytes, quote.input_tokens)}</p>
-          <p className="font-medium tw-num">{quoteText(quote)}</p>
-          {quote.will_redact && <p className="text-muted-foreground">{t.willRedact}</p>}
-          <p className="tw-label text-muted-foreground">{t.pricingDate(quote.pricing_date)}</p>
+          <p>{t.quote(<span className="font-medium">{current.provider}</span>, current.body_bytes, current.input_tokens)}</p>
+          <p className="font-medium tw-num">{quoteText(current)}</p>
+          {current.will_redact && <p className="text-muted-foreground">{t.willRedact}</p>}
+          <p className="tw-label text-muted-foreground">{t.pricingDate(current.pricing_date)}</p>
           <div className="pt-2">
             <Button size="sm" pending={busy === "run"} disabled={busy !== null} onClick={() => void go()}>
               {t.confirmSend}

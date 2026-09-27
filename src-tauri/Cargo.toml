@@ -83,6 +83,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "io-util"] }
+# 菜单栏的「今日」从这台机器的本地零点算起（`menubar::day_of`）。**时区只有桌面这边
+# 知道**：core 只收 Unix 毫秒的时间窗。只要本地时区（`clock`），格式化、serde 都不要；
+# 版本是 Cargo.lock 里本来就锁着的那一份
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-notification = "2.4.0"

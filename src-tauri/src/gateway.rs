@@ -228,13 +228,7 @@ pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
     if state.supervising.swap(true, Ordering::SeqCst) {
         return state.supervisor.request_restart().await.map_err(text);
     }
-    let sup = state.supervisor.clone();
-    let flag = state.supervising.clone();
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        supervise(sup, app).await;
-        flag.store(false, Ordering::SeqCst);
-    });
+    spawn_supervise(app, state.supervisor.clone(), state.supervising.clone());
     Ok(())
 }
 
@@ -245,12 +239,27 @@ pub(crate) fn ensure_supervising(app: &tauri::AppHandle) {
     if state.core_missing.is_some() || state.supervising.swap(true, Ordering::SeqCst) {
         return;
     }
-    let sup = state.supervisor.clone();
-    let flag = state.supervising.clone();
+    spawn_supervise(app, state.supervisor.clone(), state.supervising.clone());
+}
+
+/// 接起一条守护循环。`flag` 是「守护在跑」那个标志，调用方已经把它立起来了，循环
+/// 退出时放下。
+///
+/// 接起一条新的守护循环，意思就是要 core 跑着：之前为了退出、切到远程、或者一次
+/// 没装成的更新停过它的话，那个「按要求停止」的记号不能留到这一条里来 —— 留着的话，
+/// 这之后 core 每一次崩溃都会被当成按要求停止。**在这里撤回，不在起来的那个任务里**：
+/// 任务要等调度才跑，这之间要是又有人要它停（切回本机、马上又切去远程），任务开头
+/// 那一下会把新的要求一起撤掉
+pub(crate) fn spawn_supervise(
+    app: &tauri::AppHandle,
+    sup: Arc<Supervisor>,
+    flag: Arc<std::sync::atomic::AtomicBool>,
+) {
+    sup.resume();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         supervise(sup, app).await;
-        flag.store(false, Ordering::SeqCst);
+        flag.store(false, std::sync::atomic::Ordering::SeqCst);
     });
 }
 
@@ -264,7 +273,7 @@ pub(crate) fn describe_state(s: &CoreState) -> String {
         CoreState::Starting => "starting".into(),
         CoreState::Running { pid } => format!("running:{pid}"),
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
-        CoreState::SafeMode => "safe_mode".into(),
+        CoreState::SafeMode { .. } => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
         CoreState::Failed { reason } => format!("failed:{reason}"),
     }
@@ -408,14 +417,14 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 let _ = a.emit("core-event", &ev);
             },
         );
-        let switched = tokio::select! {
-            r = sub => {
+        let switched = match until_switched(sub, &mut moved).await {
+            Some(r) => {
                 if let Err(e) = r {
                     tracing::debug!("事件流断开：{e:#}");
                 }
                 false
             }
-            _ = moved.changed() => true,
+            None => true,
         };
         let was_open = opened.load(std::sync::atomic::Ordering::SeqCst);
         if was_open && !switched {
@@ -434,6 +443,22 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 _ = moved.changed() => {}
             }
         }
+    }
+}
+
+/// 跑着这条事件流，直到它自己结束（`Some`，带着它的结果），或者换了连接（`None`）。
+///
+/// **先看换没换连接**（`biased`，那一支排在前面）：切换之后，旧的那条流可能还攒着
+/// 几条没交出去的事件。两支不分先后的话，每一轮都有一半的机会先去读它们 —— 旧 core
+/// 的事件就这样在切换之后落到界面上、菜单栏上
+async fn until_switched<F: std::future::Future>(
+    sub: F,
+    moved: &mut tokio::sync::watch::Receiver<u64>,
+) -> Option<F::Output> {
+    tokio::select! {
+        biased;
+        _ = moved.changed() => None,
+        r = sub => Some(r),
     }
 }
 
@@ -478,26 +503,26 @@ pub(crate) fn control_address() -> tw_api::control::Address {
     tw_api::control::Address::in_dir(&data_dir())
 }
 
-/// 起、看着、它死了、按策略决定下一步。
-pub(crate) async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
-    // 接起一条新的守护循环，意思就是要 core 跑着。之前为了退出（或者为了
-    // 一次没装成的更新）停过它的话，那个「按要求停止」的记号不能留到这一条
-    // 里来 —— 留着的话，这之后 core 每一次崩溃都会被当成按要求停止
-    sup.resume();
+/// 起、看着、它死了、按策略决定下一步。经 [`spawn_supervise`] 起
+async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
     let mut safe = false;
     loop {
         // 每一次转换都随 `core-state` 推给界面（见 setup 里那一段），这里不再另发
         match sup.run_once(safe).await {
-            Ok(supervisor::Next::Again) => continue,
+            // 再起一个就是按正常模式起：安全模式里只会因为用户点了「重新启动」走到这里
+            Ok(supervisor::Next::Again) => {
+                safe = false;
+                continue;
+            }
             Ok(supervisor::Next::Stop) => break,
             Ok(supervisor::Next::SafeMode) => {
                 // 进安全模式：**必须打断用户并自动开窗**。这时候网关
                 // 已经不转发了，他所有的 AI 客户端都在瞎。
+                //
+                // **窗口不在就建一个**：关窗即销毁，开机自启时也从没建过 —— 只去找
+                // 现成的那个的话，这两种情况下什么都不会出现
                 safe = true;
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                let _ = crate::window::show_main_window(&app);
                 continue;
             }
             Err(e) => {
@@ -508,5 +533,27 @@ pub(crate) async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **换了连接，先认换连接**：旧的那条流此刻也还有东西可交（两支同时就绪），也不再
+    /// 去读它。不分先后的话，这里每一次都有一半的机会先读旧的
+    #[tokio::test]
+    async fn a_switch_wins_over_what_the_old_stream_still_has() {
+        let (tx, mut moved) = tokio::sync::watch::channel(0u64);
+        for _ in 0..64 {
+            tx.send_modify(|n| *n += 1);
+            let got = until_switched(std::future::ready("旧 core 的事件"), &mut moved).await;
+            assert_eq!(got, None, "切换之后还读了旧的那条流");
+        }
+        // 没换连接的时候，流照常交出它的结果
+        assert_eq!(
+            until_switched(std::future::ready(7), &mut moved).await,
+            Some(7)
+        );
     }
 }

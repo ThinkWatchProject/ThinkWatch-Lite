@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useWriteQueue } from "@/lib/writeQueue";
 import { Segmented } from "@/ui/segmented";
 import { notify } from "@/ui/notify";
 import { Spinner } from "@/ui/spinner";
@@ -31,11 +32,11 @@ export function ProbesTab({ ov }: { ov: Overview }) {
     });
   }, [ov]);
 
-  /** 连着改两类时，第二次要带第一次写完的版本，而概览还没读回来 */
-  const version = useRef(ov.config_version);
-  useEffect(() => {
-    version.current = ov.config_version;
-  }, [ov.config_version]);
+  /**
+   * 连着改两类时，第二次要等第一次写完、带它回的版本，而概览还没读回来 —— 两次一起
+   * 发出去的话，后到的那次被当成冲突拒掉（见 writeQueue）
+   */
+  const queue = useWriteQueue(ov.config_version);
 
   const modes: { id: ProbeMode; label: string; what: string }[] = [
     { id: "intercept", label: t.intercept, what: t.interceptWhat },
@@ -46,8 +47,7 @@ export function ProbesTab({ ov }: { ov: Overview }) {
   async function set(id: string, mode: ProbeMode) {
     setPending((p) => ({ ...p, [id]: mode }));
     try {
-      const res = await patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], version.current);
-      version.current = res.version;
+      await queue((base) => patchConfig([{ op: "replace", path: `/client_probes/${id}`, value: mode }], base));
       setLanded((l) => ({ ...l, [id]: mode }));
     } catch (e) {
       notify.error(e);

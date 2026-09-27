@@ -44,17 +44,24 @@ export function AboutSection({ remote, linked }: { remote: RemoteCore | null; li
   const [opening, open] = usePending();
   const { mutate, reload } = update;
 
-  // 后台那轮自动检查查到了：这里也跟着显示
-  useAppEvent<Found>("update-found", (found) => {
-    if (update.data) mutate({ ...update.data, offer: found });
+  /*
+    查到的新版本并进缓存里**现在的**那一份，不是发起检查那一刻的：查的这一会儿用户可能
+    拨过「自动检查」，拿旧的那份整个写回去，开关在界面上就被拨了回去
+  */
+  const withOffer = (found: Found | null) => {
+    const was = update.data;
+    if (was) mutate((prev) => ({ ...(prev ?? was), offer: found }));
     else void reload();
-  });
+  };
+
+  // 后台那轮自动检查查到了：这里也跟着显示
+  useAppEvent<Found>("update-found", withOffer);
 
   async function look() {
     setCheck({ kind: "checking" });
     try {
       const found = await settingsApi.checkUpdate();
-      if (update.data) mutate({ ...update.data, offer: found });
+      withOffer(found);
       setCheck(found ? { kind: "idle" } : { kind: "latest" });
     } catch (e) {
       setCheck({ kind: "failed", error: e });

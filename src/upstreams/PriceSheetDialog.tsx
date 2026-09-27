@@ -38,6 +38,7 @@ import {
 import { Toggle } from "@/ui/toggle";
 import type { Overview, PriceFields, PriceSheetInput, ResolvedPrice, SheetRef } from "@/types";
 import { cn } from "@/lib/utils";
+import { parseDecimal } from "@/lib/decimal";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
@@ -86,6 +87,7 @@ export function PriceSheetDialog({
 }: {
   mode: PriceSheetDialogMode;
   ov: Overview;
+  /** 概览里的配置版本。**只取打开那一刻的**：保存、删除时带它，开着的时候别处改过就是冲突 */
   configVersion: string;
   /**
    * 从上游对话框里打开时，那一家（可能还没保存）的模型与协议。它的模型算作
@@ -93,12 +95,19 @@ export function PriceSheetDialog({
    */
   context?: { models: string[]; protocol: string | null };
   onClose: () => void;
-  onSaved: (name: string) => void;
-  onDeleted?: () => void;
+  /** 保存成功。`version`：写完之后的配置版本（从上游对话框里新建时，那边接着用它） */
+  onSaved: (name: string, version: string) => void;
+  /** 删掉了。`version`：删完之后的配置版本（从上游对话框里删的，那边接着用它） */
+  onDeleted?: (version: string) => void;
 }) {
   const t = useText(priceSheetDialogText);
   const common = useText(commonText);
   const readOnly = mode.kind === "default";
+  /**
+   * 保存时带的版本号：打开那一刻的（见 UpstreamDialog 的 `base`）。编辑时价目表的内容
+   * 是打开之后才读的：中间要是改过，那也是一次冲突，不会被旧的覆盖
+   */
+  const [base] = useState(configVersion);
   const original =
     mode.kind === "edit" ? (ov.price_sheets.find((s) => s.name === mode.name) ?? null) : null;
   const [name, setName] = useState("");
@@ -182,7 +191,8 @@ export function PriceSheetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usedKey, contextKey]);
 
-  const mult = Number(multiplier);
+  // 倍率和单价一样，`0,85` 也认
+  const mult = parseDecimal(multiplier) ?? NaN;
   const draft: PriceSheetInput = useMemo(
     () => ({ name: name.trim() || t.draftName, multiplier: mult, models: overrides }),
     [name, mult, overrides, t.draftName],
@@ -252,8 +262,9 @@ export function PriceSheetDialog({
   }
 
   function editPrice(model: string, key: keyof PriceFields, raw: string) {
-    const v = raw === "" ? 0 : Number(raw);
-    if (!Number.isFinite(v)) return;
+    // `0,5` 也认（小数点写成逗号的地区）；认不出的这一下不改
+    const v = raw.trim() === "" ? 0 : parseDecimal(raw);
+    if (v === null) return;
     setOverrides((o) => {
       const cur = o[model];
       if (!cur) return o;
@@ -312,12 +323,11 @@ export function PriceSheetDialog({
     try {
       const save = {
         sheet: { name, multiplier: mult, models: overrides },
-        base_version: configVersion,
+        base_version: base,
         used_by: usedByTouched ? usedBy : undefined,
       };
-      if (mode.kind === "edit") await api.updatePriceSheet(mode.name, save);
-      else await api.createPriceSheet(save);
-      onSaved(name);
+      const w = mode.kind === "edit" ? await api.updatePriceSheet(mode.name, save) : await api.createPriceSheet(save);
+      onSaved(name, w.version);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -330,8 +340,8 @@ export function PriceSheetDialog({
     if (mode.kind !== "edit") return;
     setDeleting(true);
     try {
-      await api.deletePriceSheet(mode.name, configVersion);
-      onDeleted?.();
+      const w = await api.deletePriceSheet(mode.name, base);
+      onDeleted?.(w.version);
     } catch (e) {
       setError(errorText(e));
     } finally {

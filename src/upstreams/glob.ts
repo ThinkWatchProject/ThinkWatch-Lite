@@ -4,10 +4,18 @@
  *
  * 界面要在用户勾选、编辑启用范围的时候实时说出哪些模型在范围里，保存之前
  * 没有机会去问 core。规则只有这一条，两边照着同一份写。
+ *
+ * **只折叠 ASCII 字母的大小写**，和 core 的 `to_ascii_lowercase` 一样。`toLowerCase`
+ * 按 Unicode 折叠（`İ`、`Σ`、全角字母都会变），界面上判成「在范围里」的模型，core
+ * 那边可能不认
  */
+export function asciiLower(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
 export function globMatch(pattern: string, s: string): boolean {
-  const p = pattern.toLowerCase();
-  const t = s.toLowerCase();
+  const p = asciiLower(pattern);
+  const t = asciiLower(s);
   const parts = p.split("*");
   if (parts.length === 1) return p === t;
   const first = parts[0]!;

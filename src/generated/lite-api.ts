@@ -157,7 +157,12 @@ export type FindingView = { level: FindingLevel, title: Msg, detail: Msg,
  */
 fix: Msg | null, };
 
-export type HookView = { client: string, event: string, command: string, source: string, };
+export type HookView = { client: string, event: string, command: string, source: string, 
+/**
+ * 这条命令在 `source` 的第几行（1 起），找不到是 0。**发现按文件和行记**，
+ * 清单上的一行靠它认出哪些发现是自己的
+ */
+line: number, };
 
 /**
  * 换完之后的结果：core 换好的那把，加上**这台机器上**跟着改好、或者没能改好的客户端。
@@ -397,6 +402,11 @@ key?: string | null,
  */
 key_created?: boolean, 
 /**
+ * 这份改动是按哪几份原文算的（`clients::ops::fingerprint`）。**确认时原样带回来**：
+ * 落盘时按那一刻的文件重算，原文在人看差异的时候被改过就什么都不写
+ */
+digest: string, 
+/**
  * 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败，按落盘的
  * 顺序。DeepSeek Harness 的密钥在它自己的凭据文件里；Claude Desktop 一次改
  * 四个，`path` 那一个是它配置库里的那一份，其余三个在这里
@@ -502,6 +512,10 @@ path: string,
  * 改之前的原文。没有这个文件（要新建）时不给
  */
 before?: string | null, after: string, 
+/**
+ * 这份改动是按哪一份原文算的。确认时原样带回来，见 [`PlanView::digest`]
+ */
+digest: string, 
 /**
  * 改的是哪一项：`wsl2.networkingMode`（写在旧位置的是 `experimental.networkingMode`）
  */

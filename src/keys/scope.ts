@@ -9,7 +9,7 @@
  * —— 因为聚合目录可能有几百个模型：逐个勾不现实，而勾一下就把规则展开成
  * 明细会往配置里写几百行。两者并存，互不摧毁。
  */
-import { globMatch } from "@/upstreams/glob";
+import { asciiLower, globMatch } from "@/upstreams/glob";
 import type { KnownModel } from "@/types";
 
 export type Scope = "all" | "some" | "none";
@@ -38,6 +38,16 @@ export function splitEntries(entries: string[]): { patterns: string[]; picked: s
   };
 }
 
+/**
+ * 单独选中的一条和一个模型 ID 是不是同一个。**和 core 一样不分大小写**：core 的
+ * `glob_match` 两边都按 ASCII 转小写再比，没有 `*` 的条目也是（`Claude-Opus-5` 放行
+ * `claude-opus-5`）。以前这里逐字比，目录里那一行显示成没选中，另外多出一行目录里没有
+ * 的，勾一下还会再写进去一条。只转 ASCII 字母，和 Rust 的 `to_ascii_lowercase` 一致
+ */
+export function sameModel(a: string, b: string): boolean {
+  return a.length === b.length && asciiLower(a) === asciiLower(b);
+}
+
 /** 这个模型为什么可见：被某条规则命中，还是单独选中的 */
 export type Source = { kind: "pattern"; pattern: string } | { kind: "picked" } | null;
 
@@ -46,7 +56,7 @@ export function sourceOf(entries: string[], model: string): Source {
   // 而原因是规则，不是那条重复的明细
   const hit = entries.find((e) => isPattern(e) && globMatch(e, model));
   if (hit != null) return { kind: "pattern", pattern: hit };
-  return entries.some((e) => !isPattern(e) && e === model) ? { kind: "picked" } : null;
+  return entries.some((e) => !isPattern(e) && sameModel(e, model)) ? { kind: "picked" } : null;
 }
 
 /** 表格里要画哪些行：目录里的，加上选中了但目录里没有的 */
@@ -60,9 +70,8 @@ export interface ScopeRow {
 }
 
 export function rowsOf(entries: string[], catalog: KnownModel[]): ScopeRow[] {
-  const known = new Set(catalog.map((m) => m.id));
   const stale = splitEntries(entries)
-    .picked.filter((m) => !known.has(m))
+    .picked.filter((e) => !catalog.some((m) => sameModel(e, m.id)))
     .map<ScopeRow>((id) => ({ id, providers: [], unknown: true, source: { kind: "picked" } }));
   const rest = catalog.map<ScopeRow>((m) => ({
     id: m.id,
@@ -90,8 +99,10 @@ export function patternHits(pattern: string, catalog: KnownModel[]): number {
  * 收到明细的勾选；真收到了也照样只加减明细，规则留在原处。
  */
 export function toggleModel(entries: string[], model: string, on: boolean): string[] {
-  if (on) return entries.includes(model) ? entries : [...entries, model];
-  return entries.filter((e) => e !== model);
+  // 大小写不同的也算已经选中（见 sameModel）：勾上不再写一条，取消时一起拿掉
+  const picks = (e: string) => !isPattern(e) && sameModel(e, model);
+  if (on) return entries.some(picks) ? entries : [...entries, model];
+  return entries.filter((e) => !picks(e));
 }
 
 export function addPattern(entries: string[], pattern: string): string[] {

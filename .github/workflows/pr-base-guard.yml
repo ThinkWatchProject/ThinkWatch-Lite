@@ -46,4 +46,4 @@ jobs:
 
           No need to close and reopen: click **Edit** next to the PR title and change the base branch to `dev`. The commits and the discussion carry over.
 
-          See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) and [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the branch contract.'
+          See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the branch contract.'

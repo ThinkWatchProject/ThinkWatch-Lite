@@ -57,10 +57,17 @@ const pad = (n: number) => String(n).padStart(2, "0");
  *
  * 不到一分钟的格子（实时档）**写到秒，也带上小时**：只写「07:12」读起来
  * 像七点十二分，而十分钟的窗口随时会跨过整点。
+ *
+ * **按天、按周的格子写离格子起点最近的那一天。**格子是从本地零点起按固定毫秒数往后
+ * 数的（core 那边就是这么分的），过了夏令时切换，起点会落在前一天的 23 点：照实写
+ * 日期，那一格就写成了前一天，和上一格撞成同一个标签。
  */
 export function fmtBucket(atMs: number, bucketMs: number): string {
+  if (bucketMs >= DAY) {
+    const d = new Date(atMs + 12 * HOUR);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
   const t = new Date(atMs);
-  if (bucketMs >= DAY) return `${t.getMonth() + 1}/${t.getDate()}`;
   if (bucketMs < 60_000) return `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
   return `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
@@ -90,6 +97,11 @@ export interface RankRow {
   unpriced: number;
   /** 没有拿到用量的请求：费用算不出来，也不在 `cost` 里 */
   noUsage: number;
+  /**
+   * 价钱还没到的请求（实时档）：落地了，`request_priced` 还在路上。费用也不在 `cost`
+   * 里 —— **不当成 $0**，金额写成下限。历史档从库里算，没有这一种，是 0
+   */
+  pending: number;
   requests: number;
   /** 图里那一层的颜色 */
   color: string;
@@ -103,17 +115,21 @@ export interface RankRow {
  * · 连用量都没有：「无用量」。
  * · 其余写金额。有算不出来的请求时金额只是下限，写成「≥」；含估算的带「~」。
  *   全都算出来了、合计是零时写 $0：不计费的上游（本地模型）就是这样，它说的是真的。
+ * · 实时档里价钱还没到的请求（`pending`）同样不在金额里：金额写成下限，等它们到了
+ *   再补上。
  *
  * `notes` 是悬停里的几句话，一句一段；空的就没有悬停。
  */
 export function rankCost(
-  r: Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage">,
+  r: Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage"> & { pending?: number },
   t: Text,
 ): { kind: "amount" | "unpriced" | "noUsage"; prefix: string; notes: string[] } {
+  const pending = r.pending ?? 0;
   // 金额之外的请求，各说各的
   const outside = [
     ...(r.unpriced > 0 ? [t.rankUnpriced(r.unpriced)] : []),
     ...(r.noUsage > 0 ? [t.rankNoUsage(r.noUsage)] : []),
+    ...(pending > 0 ? [t.rankPending(pending)] : []),
   ];
   if (r.cost === 0 && r.unpriced > 0) return { kind: "unpriced", prefix: "", notes: outside };
   if (r.cost === 0 && r.noUsage > 0) return { kind: "noUsage", prefix: "", notes: outside };
@@ -217,6 +233,7 @@ export function buildTrend({
   const estimated = new Map<string, number>();
   const unpriced = new Map<string, number>();
   const noUsage = new Map<string, number>();
+  const pending = new Map<string, number>();
   const volume = new Map<string, number>();
   const count = new Map<string, number>();
   const add = (at: number, name: string, v: number) => {
@@ -243,8 +260,10 @@ export function buildTrend({
       money.set(x.model, (money.get(x.model) ?? 0) + (x.cost ?? 0));
       count.set(x.model, (count.get(x.model) ?? 0) + 1);
       if (x.estimated) bump(estimated, x.model, x.cost ?? 0);
-      // 价钱到了却是空的：模型未定价。还没到的（`undefined`）不算
+      // 价钱到了却是空的：模型未定价。还没到的（`undefined`）另数：**它不是 $0**，
+      // 在它到之前，这个模型的金额只是下限（见 `rankCost`）
       if (x.cost === null) bump(unpriced, x.model, 1);
+      if (x.cost === undefined) bump(pending, x.model, 1);
       const amount = tokensMode ? x.tokens : (x.cost ?? 0) * 3600;
       // 只碰核够得着的那几格
       const lo = Math.max(0, Math.ceil((x.at - LIVE_REACH_MS - from) / LIVE_BUCKET_MS));
@@ -255,7 +274,8 @@ export function buildTrend({
       }
     }
   } else {
-    for (const b of d.buckets_by_model) {
+    // 取不到（`null`）时这一块写「暂时取不到」，不画这张图（见 `TrendSection`）
+    for (const b of d.buckets_by_model ?? []) {
       const name = b.name || t.unknownModel;
       const cost = b.cost_micros_exact + b.cost_micros_estimated;
       const tok = tokensOf(b);
@@ -277,7 +297,7 @@ export function buildTrend({
   */
   const steady = new Map<string, number>();
   if (live) {
-    for (const b of d.buckets_by_model) {
+    for (const b of d.buckets_by_model ?? []) {
       const name = b.name || t.unknownModel;
       const v = tokensMode ? tokensOf(b) : b.cost_micros_exact + b.cost_micros_estimated;
       steady.set(name, (steady.get(name) ?? 0) + v);
@@ -332,6 +352,7 @@ export function buildTrend({
     estimated: estimated.get(name) ?? 0,
     unpriced: unpriced.get(name) ?? 0,
     noUsage: noUsage.get(name) ?? 0,
+    pending: pending.get(name) ?? 0,
     requests: count.get(name) ?? 0,
     color: colorOf.get(name) ?? "var(--chart-1)",
   }));
@@ -344,6 +365,7 @@ export function buildTrend({
       estimated: sum(estimated),
       unpriced: sum(unpriced),
       noUsage: sum(noUsage),
+      pending: sum(pending),
       requests: sum(count),
       color: OTHER,
     });
@@ -365,7 +387,7 @@ export function buildTrend({
         unpriced_requests: 0,
         no_usage_requests: 0,
       }))
-    : densify(d.buckets, d.since_ms, now, bucketMs);
+    : densify(d.buckets ?? [], d.since_ms, now, bucketMs);
   if (live) {
     const from = liveAt[0] ?? 0;
     for (const f of fails) {
@@ -442,6 +464,15 @@ export function holdY(
   return base;
 }
 
+/**
+ * 纵轴刻度上的字。刻度是取整过的数（`holdY` 的上界和它的一半），**小数点后全是 0 的
+ * 不写**：「100.0M」「$120.00」塞不进纵轴那一栏（`Y_AXIS_WIDTH`），而它们说的就是
+ * 「100M」「$120」。按天、按周分格的长区间里一格的量大，这样的刻度最常见。
+ */
+export function axisLabel(text: string): string {
+  return text.replace(/\.0+(?=\D*$)/, "");
+}
+
 /** 图下面的一个刻度：`at` 是它在画图区域里的横向位置（0…1） */
 export interface Tick {
   at: number;
@@ -475,7 +506,10 @@ function nextMidnight(ms: number): number {
  * 或「现在」挤在一起。
  *
  * `n` 是格数：图上的点按格等距排开，第一个点是第一格的起点，最后一个点是最后
- * 一格的起点。
+ * 一格的起点。`sinceMs` 就是第一格的起点 —— 格子多到被 `densify` 截掉最早的那一头
+ * 时，是截完之后的第一格，不是区间的起点。
+ *
+ * 几个月、几年的自定义区间，零点刻度的间隔按跨度放宽，中间始终不超过七个。
  */
 export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLabel: string): Tick[] {
   const first: Tick = { at: 0, label: fmtBucket(sinceMs, bucketMs) };
@@ -483,7 +517,7 @@ export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLa
   const span = (n - 1) * bucketMs;
   if (!(span > 0)) return [first, last];
   const hourSteps = [1, 2, 3, 4, 6, 12];
-  const daySteps = [1, 2, 5, 7, 14];
+  const daySteps = [1, 2, 5, 7, 14, 30];
   const inner: Tick[] = [];
   const push = (at: number, label: string) => {
     const x = (at - sinceMs) / span;
@@ -497,7 +531,7 @@ export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLa
       push(at, d.getHours() === 0 ? `${d.getMonth() + 1}/${d.getDate()}` : `${pad(d.getHours())}:00`);
     }
   } else {
-    const k = daySteps.find((s) => span / (s * DAY) <= 7) ?? 30;
+    const k = daySteps.find((s) => span / (s * DAY) <= 7) ?? Math.ceil(span / (7 * DAY));
     let at = nextMidnight(sinceMs);
     let i = 0;
     while (at < sinceMs + span) {
@@ -538,7 +572,7 @@ export interface CacheRow {
  */
 export function cacheByModel(d: Dashboard, unknownModel: string): CacheRow[] {
   const by = new Map<string, { read: number; plain: number; write: number }>();
-  for (const b of d.buckets_by_model) {
+  for (const b of d.buckets_by_model ?? []) {
     const name = b.name || unknownModel;
     const x = by.get(name) ?? { read: 0, plain: 0, write: 0 };
     x.read += b.cache_read_tokens;
@@ -565,12 +599,17 @@ export function latencyRows(rows: readonly LatencyView[]): LatencyView[] {
  *
  * **不写成 `1,182ms`**：并排两列四位数的毫秒要逐位读，而「1.18s」一眼就是一秒出头
  * —— 这一栏要比的是快慢的量级和差距，不是个位上的那几毫秒（精确值在流量里）。
+ *
+ * **先取整再定位数**：9_996ms 按两位小数是「10.00s」，进了位就该按下一档写成「10.0s」；
+ * 99_960ms 同理是「100s」，不是「100.0s」。
  */
 export function fmtMs(ms: number): string {
   const n = Math.max(0, Math.round(ms));
   if (n < 1000) return `${n}ms`;
-  if (n < 10_000) return `${(n / 1000).toFixed(2)}s`;
-  if (n < 100_000) return `${(n / 1000).toFixed(1)}s`;
+  const two = (n / 1000).toFixed(2);
+  if (Number(two) < 10) return `${two}s`;
+  const one = (n / 1000).toFixed(1);
+  if (Number(one) < 100) return `${one}s`;
   return `${Math.round(n / 1000)}s`;
 }
 

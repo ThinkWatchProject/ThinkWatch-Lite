@@ -18,7 +18,7 @@ import { RetargetFailures } from "@/connection/Remote";
 import { remoteText } from "@/connection/remote.i18n";
 import { useKeys, useKeyUsage } from "@/keys/data";
 import { RowsSkeleton } from "@/keys/parts";
-import { api } from "./api";
+import { api, isStalePlan } from "./api";
 import { clientsText } from "./clients.i18n";
 import { DetectedTable, ManualTable, Section, type RowContext } from "./ClientsTable";
 import { useClients, useWsl } from "./data";
@@ -34,13 +34,14 @@ import { hostOf, isLoopback, manualStatusOf, statusOf, type ClientState, type St
 type DialogState =
   | null
   | { kind: "detail"; id: string; env?: string }
-  | { kind: "plan"; id: string; env?: string; restore: boolean; plan: PlanView }
+  /** `stale`：刚才确认时文件已经被改过，这一份是按现在的内容重算的 */
+  | { kind: "plan"; id: string; env?: string; restore: boolean; plan: PlanView; stale?: boolean }
   | { kind: "manual"; id: string; env?: string }
   /** 配置位置（接管、MCP 管理、安全扫描）。只有这台电脑上的 */
   | { kind: "path"; id: string }
   | { kind: "restoreAll" }
   /** 把 WSL 2 改成 mirrored 网络：`.wslconfig` 的改动，确认之后才写 */
-  | { kind: "mirrored"; plan: WslConfigPlan }
+  | { kind: "mirrored"; plan: WslConfigPlan; stale?: boolean }
   | { kind: "restartWsl" };
 
 /** 一个客户端，连同它在哪一处、那一处该连的地址 */
@@ -158,9 +159,19 @@ export default function ClientsPage({
    * 落盘。**成功之后不弹第二个对话框** —— 行上的状态会说「等待首个请求」。
    * 只有不至于失败、但用户该知道的事（符号链接、权限太松）才另说一句。
    */
-  function apply(id: string, restore: boolean, env?: string) {
+  function apply(id: string, restore: boolean, digest: string, env?: string) {
     void confirm(async () => {
-      const r = restore ? await api.restore(id, env) : await api.adopt(id, env);
+      const r = await (restore ? api.restore(id, digest, env) : api.adopt(id, digest, env)).catch(
+        async (e: unknown) => {
+          if (!isStalePlan(e)) throw e;
+          // 看改动的这段时间里文件被改过，什么都没写：按现在的文件重算一份，还在这个
+          // 对话框里给人看。**不替人决定照新的写** —— 那就又是一份没人看过的改动
+          const plan = restore ? await api.planRestore(id, env) : await api.planAdopt(id, env);
+          setDialog({ kind: "plan", id, env, restore, plan, stale: true });
+          return null;
+        },
+      );
+      if (r === null) return;
       setDialog(null);
       if (r.warnings.length > 0) notify.info(r.warnings.map((w) => coreText(w)).join(" "));
       // 接管 WSL 里的那一份会用掉一把新密钥，这台电脑上的列表里密钥名也跟着变
@@ -193,9 +204,15 @@ export default function ClientsPage({
   }
 
   /** 写 `.wslconfig`。**重启 WSL 之后才生效**：那一组随即换成「重启 WSL」的说明和按钮 */
-  function applyMirrored() {
+  function applyMirrored(digest: string) {
     void confirm(async () => {
-      const warnings = await api.setMirrored();
+      const warnings = await api.setMirrored(digest).catch(async (e: unknown) => {
+        if (!isStalePlan(e)) throw e;
+        // 和接管同一条：文件在看改动时被改过，重算一份再给人看
+        setDialog({ kind: "mirrored", plan: await api.planMirrored(), stale: true });
+        return null;
+      });
+      if (warnings === null) return;
       setDialog(null);
       notify.success(t.mirroredSet);
       if (warnings.length > 0) notify.info(warnings.map((w) => coreText(w)).join(" "));
@@ -423,9 +440,10 @@ export default function ClientsPage({
           plan={dialog.plan}
           client={planned.c}
           restore={dialog.restore}
+          stale={dialog.stale}
           pending={confirming}
           onCancel={() => setDialog(null)}
-          onConfirm={() => apply(dialog.id, dialog.restore, dialog.env)}
+          onConfirm={() => apply(dialog.id, dialog.restore, dialog.plan.digest, dialog.env)}
         />
       )}
 
@@ -465,9 +483,10 @@ export default function ClientsPage({
       {dialog?.kind === "mirrored" && (
         <MirroredDialog
           plan={dialog.plan}
+          stale={dialog.stale}
           pending={confirming}
           onCancel={() => setDialog(null)}
-          onConfirm={applyMirrored}
+          onConfirm={() => applyMirrored(dialog.plan.digest)}
         />
       )}
 

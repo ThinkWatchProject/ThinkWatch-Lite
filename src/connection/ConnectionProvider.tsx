@@ -94,9 +94,16 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={actions}>
       {children}
-      {/* 两个对话框都等连接列表读到了再出现：试连遇到版本不一致时，命令里的版本来自它 */}
+      {/*
+        两个对话框都等连接列表读到了再出现：试连遇到版本不一致时，命令里的版本来自它。
+
+        **按它们对着的那一条连接挂**（`key`）：开着的时候换了一条（菜单栏上又选了另一条
+        连接），对话框要整个重来。不然上一条的试连结果、填了一半的名字地址和密钥、「同时
+        改指向」的勾都留在新的那一条上 —— 保存时写进的是另一条连接。
+      */}
       {editing && view && (
         <ProfileDialog
+          key={editing.profile?.id ?? "new"}
           editing={editing.profile}
           isCurrent={editing.profile !== null && editing.profile.id === view.current}
           required={view.required_core}
@@ -109,6 +116,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       )}
       {switching && view && (
         <SwitchDialog
+          key={switching.target.id}
           target={switching.target}
           tested={switching.tested}
           required={view.required_core}

@@ -21,11 +21,23 @@ export function usageWindow(now = Date.now()): { since: number; bucket: number }
   return { since: bucketStart(now - DAY_MS, HOUR_MS), bucket: HOUR_MS };
 }
 
-/** 一把密钥在这个时间窗里的用量 */
+/**
+ * 一把密钥在这个时间窗里的用量。
+ *
+ * **费用三态不合并**：实测、估算（`estimated`，已含在 `cost` 里）、算不出钱的请求
+ * 条数（`unpriced`、`noUsage`，费用不在 `cost` 里）。字段名和概览排行的一行
+ * （`RankRow`）一样，费用那一格照它的写法写（`rankCost`）
+ */
 export interface KeyUse {
   requests: number;
-  /** 微美元 */
+  /** 微美元：实测加估算 */
   cost: number;
+  /** 其中估算的那部分，微美元 */
+  estimated: number;
+  /** 有用量、模型却不在价目表里的请求 */
+  unpriced: number;
+  /** 没有拿到用量的请求 */
+  noUsage: number;
   /** 每格的请求数，旧的在前，补齐成 `BARS` 格 */
   series: number[];
 }
@@ -39,7 +51,7 @@ export function usageByKey(u: KeyUsage): Map<string, KeyUse> {
   const entry = (name: string) => {
     let e = out.get(name);
     if (!e) {
-      e = { requests: 0, cost: 0, series: new Array<number>(BARS).fill(0) };
+      e = { requests: 0, cost: 0, estimated: 0, unpriced: 0, noUsage: 0, series: new Array<number>(BARS).fill(0) };
       out.set(name, e);
     }
     return e;
@@ -48,12 +60,16 @@ export function usageByKey(u: KeyUsage): Map<string, KeyUse> {
     const e = entry(t.name);
     e.requests = t.requests;
     e.cost = t.cost_micros;
+    e.unpriced = t.unpriced_requests;
+    e.noUsage = t.no_usage_requests;
   }
   for (const b of u.buckets) {
     const i = Math.round((b.at_ms - u.since_ms) / u.bucket_ms);
     if (i < 0 || i >= BARS) continue;
     const e = entry(b.name);
     e.series[i] = (e.series[i] ?? 0) + b.requests;
+    // 合计里没有分出估算的那部分，按格子加回来：同一个时间窗、同一批请求
+    e.estimated += b.cost_micros_estimated;
   }
   return out;
 }

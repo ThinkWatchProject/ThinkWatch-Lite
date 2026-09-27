@@ -1,10 +1,14 @@
 import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { Annotation, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { yaml } from "@codemirror/lang-yaml";
 import { tags as t } from "@lezer/highlight";
+import { byteOffsetAt, docPosOf, dominantEnd, lineEndsOf, mapEnds, textOf } from "./lineEnds";
+
+/** 外面整份换进来的内容（重新读了文件、放弃修改）。带着原文：行尾按它重记 */
+const replaced = Annotation.define<string>();
 
 /**
  * 语法色走 CSS 变量，跟着系统的深浅色切换。
@@ -45,11 +49,12 @@ export default function YamlEditor({
   focusRange,
   errorLine,
 }: {
+  /** 文件原文。**换行符原样**：交回去的文本也是（见 `lineEnds.ts`） */
   value: string;
   onChange: (v: string) => void;
   /** 光标动了，给出**字节**偏移量 —— 后端按字节切 */
   onCursor?: (byteOffset: number) => void;
-  /** 从表单跳过来时要选中的字节区间 */
+  /** 从表单跳过来时要选中的区间：`value` 里的字符下标 */
   focusRange?: [number, number] | null;
   /** 校验报错的那一行（1 起）。**没有就是 null**，不是 0 */
   errorLine?: number | null;
@@ -60,10 +65,16 @@ export default function YamlEditor({
   // 会一直调到第一次渲染时的那个函数
   const cb = useRef({ onChange, onCursor });
   cb.current = { onChange, onCursor };
+  /** 每个换行在文件里原来是什么，和新添的换行用哪一种 */
+  const ends = useRef<{ list: string[]; fallback: string }>({ list: [], fallback: "\n" });
+  const remember = (text: string) => {
+    const list = lineEndsOf(text);
+    ends.current = { list, fallback: dominantEnd(list) };
+  };
 
   useEffect(() => {
     if (!host.current) return;
-    const enc = new TextEncoder();
+    remember(value);
     const state = EditorState.create({
       doc: value,
       extensions: [
@@ -75,13 +86,23 @@ export default function YamlEditor({
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) cb.current.onChange(u.state.doc.toString());
+          if (u.docChanged) {
+            // 行尾跟着每一次改动走。外面整份换进来的，按新的原文重记
+            for (const tr of u.transactions) {
+              const text = tr.annotation(replaced);
+              if (text !== undefined) remember(text);
+              else if (tr.docChanged) {
+                const { list, fallback } = ends.current;
+                ends.current = { list: mapEnds(list, tr.changes, tr.startState.doc, fallback), fallback };
+              }
+            }
+            cb.current.onChange(textOf(u.state.doc, ends.current.list));
+          }
           if (u.selectionSet || u.docChanged) {
             // **字节偏移，不是字符偏移。**中文配置下两者差得很远，而
-            // 后端是按字节切的（栽过好几次的那个坑）
+            // 后端是按字节切的（栽过好几次的那个坑）。`\r\n` 算两个字节
             const head = u.state.selection.main.head;
-            const before = u.state.doc.sliceString(0, head);
-            cb.current.onCursor?.(enc.encode(before).length);
+            cb.current.onCursor?.(byteOffsetAt(u.state.doc, ends.current.list, head));
           }
         }),
         EditorView.theme({
@@ -117,8 +138,8 @@ export default function YamlEditor({
   // **正在编辑的不要冲掉** —— 相同就什么都不做
   useEffect(() => {
     const v = view.current;
-    if (!v || v.state.doc.toString() === value) return;
-    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
+    if (!v || textOf(v.state.doc, ends.current.list) === value) return;
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value }, annotations: replaced.of(value) });
   }, [value]);
 
   // 从表单跳过来：选中那一段并滚到可见处。
@@ -127,10 +148,12 @@ export default function YamlEditor({
   useEffect(() => {
     const v = view.current;
     if (!v || !focusRange) return;
+    // 区间是按文件原文算的；`\r\n` 在编辑器里只占一格
+    const text = textOf(v.state.doc, ends.current.list);
     const [a, b] = focusRange;
     const max = v.state.doc.length;
-    const from = Math.min(a, max);
-    const to = Math.min(b, max);
+    const from = Math.min(docPosOf(text, a), max);
+    const to = Math.min(docPosOf(text, b), max);
     v.dispatch({
       selection: { anchor: from, head: to },
       effects: EditorView.scrollIntoView(from, { y: "center" }),
@@ -151,10 +174,6 @@ export default function YamlEditor({
     });
   }, [errorLine]);
 
-  return (
-    <div
-      ref={host}
-      className="h-full min-h-0 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900"
-    />
-  );
+  // 边框、底色由外面的框画：这个组件是按需加载的，加载完之前那个框就得在（见 ConfigText）
+  return <div ref={host} className="h-full min-h-0" />;
 }

@@ -349,7 +349,10 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             ]
         }
         // 客户端此刻正在弹批准提示，**这一条要立刻说**。只说处置为「切断」的
-        // 那些规则：「仅记录」的那一类本来就是用户说了不必打断的
+        // 那些规则：「仅记录」的那一类本来就是用户说了不必打断的。
+        //
+        // **每拦下一次都是一件新的事**（`event`）：用户看过上一次之后再拦下，照样要说；
+        // 同一家接连拦下的，由冷却合成一条，不刷屏
         Event::ToolCallFlagged {
             provider,
             tool,
@@ -388,7 +391,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Signal::raised(format!("toolwall:{provider}"), Level::Warning, title)
                     .body(body)
                     .view(SECURITY)
-                    .now(),
+                    .event(),
             ]
         }
         _ => Vec::new(),
@@ -397,6 +400,8 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
 
 /// 客户端的配置文件里新出现了可疑的东西（`n` 项）。**不是 core 说的**：这台机器
 /// 上的文件监视（`scan::spawn_watcher`）发现的，连着哪个 core 都一样。
+///
+/// **每次新出现都是一件新的事**（`event`）：看过上一次之后又出现的，照样要说。
 ///
 /// 英文写页面现在的名字「MCP」：点开这一条落到的就是那一页
 pub fn scan_alert(n: usize) -> Option<Signal> {
@@ -417,7 +422,7 @@ pub fn scan_alert(n: usize) -> Option<Signal> {
             }
         ))
         .view(MCP)
-        .now()
+        .event()
     })
 }
 
@@ -582,7 +587,7 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
     match state {
         // 用户自己停掉的也算「这件事过去了」：界面上那一条说得清清楚楚
         CoreState::Running { .. } | CoreState::Stopped => vec![Signal::cleared("gateway")],
-        CoreState::SafeMode => vec![
+        CoreState::SafeMode { .. } => vec![
             Signal::raised(
                 "gateway",
                 Level::Critical,

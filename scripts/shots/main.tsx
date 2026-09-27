@@ -4,14 +4,18 @@
 // **不进应用的包。**应用的构建只认根目录的 index.html，这里是另一个入口，由
 // `scripts/shots/vite.config.ts` 单独构建。
 import { NOW } from "./boot"; // 必须是第一个：注入的全局量和定住的时钟
-import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { P } from "./mock/params";
-import { SCENES } from "./scenes";
-import { animationsDone, freezeLoops, idle, sleep, track } from "./drive";
 
 window.__shot = { state: "loading" };
 
 async function main() {
+  // **别的模块都等 boot 跑完再加载，所以这里只有它一个静态 import。**应用按窗口拆了包，
+  // 这里静态 import 的模块（`@/i18n`、React）会被打进和应用共用的块，而那些块先于这个
+  // 文件的正文求值：`@/i18n` 在 boot 设好 `__TW_LANG__` 之前就读了它，中文的图拍出来是
+  // 英文。开发服务器不拆包，看不出来
+  const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+  const { P } = await import("./mock/params");
+  const { SCENES } = await import("./scenes");
+  const { animationsDone, freezeLoops, idle, sleep, track } = await import("./drive");
   const q = new URLSearchParams(location.search);
   if (q.has("list")) {
     window.__shotList = SCENES.map((s) => s.id);

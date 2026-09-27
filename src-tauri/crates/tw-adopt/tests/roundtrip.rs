@@ -220,6 +220,45 @@ fn a_file_the_user_has_since_written_into_is_never_deleted_by_a_restore() {
     assert!(!after.contains("127.0.0.1"), "{after}");
 }
 
+/// `env` 是接管时我们建的，之后用户往里加了自己的变量：还原收走我们那几项，
+/// 他的那一项留着 —— 不是连同整个 `env` 一起删掉
+#[test]
+fn a_variable_the_user_added_to_a_section_we_created_survives_a_restore() {
+    const SEED: &str = "{\n  \"model\": \"opus\"\n}\n";
+    let b = bed("claude-code", SEED);
+    let c = client("claude-code");
+    let path = b.home.join(".claude/settings.json");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let mine = tw_adopt::json::set(
+        &read(&path),
+        &["env", "MY_OWN_VAR"],
+        &tw_adopt::json::Val::s("别动我"),
+    )
+    .unwrap();
+    std::fs::write(&path, mine).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&path);
+    assert!(
+        after.contains("\"MY_OWN_VAR\": \"别动我\""),
+        "把用户后来加的变量连同 env 一起删了：{after}"
+    );
+    assert!(after.contains("\"model\": \"opus\""), "{after}");
+    assert!(!after.contains("127.0.0.1"), "{after}");
+    assert!(!after.contains("tw-用户的专属密钥"), "{after}");
+
+    // 没人往里加东西的话，那一段照旧整个收走：还原之后一个字节都不差
+    let b = bed("claude-code", SEED);
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&b.home.join(".claude/settings.json")), SEED);
+}
+
 // ---- Codex：TOML，有注释，几十条项目授权 -------------------------------
 
 const CODEX: &str = r#"model = "gpt-5.6-sol"
@@ -636,6 +675,55 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
     assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), DSH_CREDS);
 }
 
+/// 凭据文件是接管时建的，接管期间 dsh 自己往里写了登录令牌：还原收走我们的密钥，
+/// **`version: 1` 留着** —— 没有它 dsh 拒绝整个文件，连它自己写的令牌一起
+#[test]
+fn a_credentials_file_dsh_has_written_into_keeps_its_version_after_a_restore() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let creds = dsh_home(&b).join(".credentials.yaml");
+    let mut t = read(&creds);
+    t.push_str("records:\n  deepseek-account/default:\n    kind: token\n");
+    std::fs::write(&creds, t).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(!r.also[0].delete_file, "dsh 写进去的东西还在，文件不删");
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds),
+        "version: 1\nrecords:\n  deepseek-account/default:\n    kind: token\n"
+    );
+    // 补丁那一份什么都没剩，照旧整个删掉
+    assert!(!dsh_home(&b).join("cordis.patch.yml").exists());
+}
+
+/// 同一份新建的凭据文件，接管期间 dsh 在我们建的 `refs` 里记了用户自己的密钥：
+/// 还原只摘掉我们那一项，`refs` 留着，`version` 也就跟着留着
+#[test]
+fn a_credentials_file_created_here_keeps_its_version_and_the_keys_dsh_added() {
+    let b = bed("dsh", "");
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let creds = dsh_home(&b).join(".credentials.yaml");
+    let t = tw_adopt::yaml::set(
+        &read(&creds),
+        &["refs", "DEEPSEEK_API_KEY"],
+        &tw_adopt::json::Val::s("sk-我自己的"),
+    )
+    .unwrap();
+    std::fs::write(&creds, t).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds),
+        "version: 1\nrefs:\n  DEEPSEEK_API_KEY: sk-我自己的\n"
+    );
+}
+
 /// dsh 自己写出来的几种形状：新建的补丁是 `[]`，删空了的 `refs` 是 `{}`，行里的
 /// `config` 可能是行内的。接管再还原，两份文件**一个字节都不变**：还原之后补丁
 /// 不能是空文件（dsh 不认），`refs` 里补的那一项得摘得回去
@@ -664,6 +752,34 @@ fn dsh_shapes_dsh_writes_itself_come_back_exactly() {
         assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), patch);
         assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), creds);
     }
+}
+
+/// 凭据文件原来没有 `refs`，是接管时建的；之后用户在里面加了自己的引用（联网搜索
+/// 要用）。还原收走我们那一条，他的留着 —— 而不是去删整个 `refs`、再因为它不是
+/// 一个标量而整个还原失败
+#[test]
+fn dsh_keeps_a_reference_the_user_added_to_the_refs_we_created() {
+    let b = bed("dsh", DSH_PATCH);
+    let creds_path = dsh_home(&b).join(".credentials.yaml");
+    std::fs::write(&creds_path, "version: 1\n").unwrap();
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let mut creds = read(&creds_path);
+    assert!(
+        creds.ends_with("refs:\n  THINKWATCH_API_KEY: tw-用户的专属密钥\n"),
+        "{creds}"
+    );
+    creds.push_str("  DEEPSEEK_API_KEY: sk-我自己的\n");
+    std::fs::write(&creds_path, creds).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds_path),
+        "version: 1\nrefs:\n  DEEPSEEK_API_KEY: sk-我自己的\n"
+    );
+    assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
 }
 
 /// 接管期间用户在我们那一行后面加了一条 `insert:`：还原照样过得去，那一条留着
@@ -912,6 +1028,107 @@ fn re_adopting_codex_also_keeps_the_first_record() {
         read(&b.home.join(".codex/config.toml")),
         restored_codex(CODEX)
     );
+}
+
+/// 接管记录在、却读不出来（写到一半断了电、被别的工具改坏了）：**不接管**，和还原
+/// 一样拒绝。当成「没接管过」的话，此刻文件里我们写的网关地址和密钥会被记成原值，
+/// 之后的还原把用户还原到网关上 —— 每一步看起来都成功了
+#[test]
+fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    let broken = "{ \"what_this_file_is\": \"半截";
+    std::fs::write(&side, broken).unwrap();
+    let path = b.home.join(".claude/settings.json");
+    let before = read(&path);
+
+    let g = Gateway {
+        base: "http://127.0.0.1:9999".into(),
+        ..gw()
+    };
+    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    // 还原早就这么说，界面有这一句的译文；说的是记录那个文件
+    let r = plan_restore(&c, &b.home).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.parse_failed");
+    assert_eq!(r.msg().code, e.msg().code);
+    assert!(
+        e.to_string().contains("settings.json.thinkwatch.json"),
+        "{e}"
+    );
+    assert_eq!(read(&path), before, "拒绝了还是改了配置");
+    assert_eq!(read(&side), broken, "拒绝了还是盖掉了那份记录");
+
+    // 是 JSON、却不是我们写的那种：一样拒绝，**报错里不抄原文**（它会显示在界面上）
+    std::fs::write(&side, "{ \"file_created_by_us\": \"sk-别抄到界面上\" }").unwrap();
+    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.parse_failed");
+    assert!(!e.to_string().contains("sk-别抄到界面上"), "{e}");
+    assert_eq!(read(&path), before);
+}
+
+/// 记录是另一个客户端的（两个客户端被指到了同一个文件上）：不接管，也不盖掉它 ——
+/// 那一个的还原全靠这份记录
+#[test]
+fn a_record_that_belongs_to_another_client_stops_a_takeover() {
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let theirs = serde_json::to_string_pretty(&tw_adopt::sentinel::SidecarRecord::new(
+        "codex",
+        1,
+        "/nowhere/backup",
+        false,
+        &[tw_adopt::sentinel::Original::missing("model_provider")],
+    ))
+    .unwrap();
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    std::fs::write(&side, &theirs).unwrap();
+
+    let e = plan_adopt(&c, &b.home, &gw()).unwrap_err();
+    assert!(
+        matches!(e, tw_adopt::plan::PlanError::ForeignSidecar { .. }),
+        "{e}"
+    );
+    assert_eq!(e.msg().code, "adopt.plan.foreign_record");
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE);
+    assert_eq!(read(&side), theirs);
+}
+
+/// 接管记录是**换上去**的，不是原地截断重写：写到一半断了电，留下的是上一份完整的
+/// 记录。换上去的那一份仍然只有自己能读
+#[cfg(unix)]
+#[test]
+fn the_record_is_replaced_whole_rather_than_rewritten_in_place() {
+    use std::os::unix::fs::MetadataExt;
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let first = std::fs::metadata(&side).unwrap().ino();
+
+    let g = Gateway {
+        base: "http://127.0.0.1:9999".into(),
+        ..gw()
+    };
+    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let meta = std::fs::metadata(&side).unwrap();
+    assert_ne!(meta.ino(), first, "记录是在原文件上截断重写的");
+    assert_eq!(meta.mode() & 0o777, 0o600);
+    let strays: Vec<_> = std::fs::read_dir(b.home.join(".claude"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(strays.is_empty(), "留下了临时文件：{strays:?}");
+    // 重复接管照常：还原回到的是第一次之前的样子
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE);
 }
 
 // ---- opencode：v1 的写法两个版本都认，v2 原生的那一条在就改它 ----------

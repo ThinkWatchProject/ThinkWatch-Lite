@@ -53,9 +53,10 @@ export function ModelScope({
   const { patterns } = splitEntries(entries);
   const rows = useMemo(() => rowsOf(entries, catalog), [entries, catalog]);
   const matched = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    // 目录是空的时候没有搜索框：之前留下的过滤词不能把剩下那几行也藏起来
+    const q = catalog.length > 0 ? filter.trim().toLowerCase() : "";
     return q ? rows.filter((r) => r.id.toLowerCase().includes(q)) : rows;
-  }, [rows, filter]);
+  }, [rows, filter, catalog.length]);
   const visible = visibleCount(entries, catalog);
 
   function commitDraft() {
@@ -132,29 +133,34 @@ export function ModelScope({
             </Boxed>
           </div>
 
-          {catalog.length === 0 ? (
-            <Note>{t.noCatalog}</Note>
-          ) : (
+          {catalog.length === 0 && <Note>{t.noCatalog}</Note>}
+          {/*
+            **目录是空的也要列出单独选中的那几条。**在规则框里手填的模型 ID（没有 `*`）
+            是单独选中的一条，不算规则：以前目录一空这张表就不画，它们既看不见也删不掉
+          */}
+          {(catalog.length > 0 || rows.length > 0) && (
             <>
-              <div className="flex items-center gap-3">
-                <InputGroup className="flex-1">
-                  <InputGroupAddon>
-                    <SearchIcon />
-                  </InputGroupAddon>
-                  <InputGroupInput
-                    aria-label={t.search}
-                    placeholder={t.search}
-                    value={filter}
-                    onChange={(e) => {
-                      setFilter(e.target.value);
-                      setShown(PAGE);
-                    }}
-                  />
-                </InputGroup>
-                <span className="tw-label tabular-nums text-muted-foreground">
-                  {t.counts(visible, catalog.length)}
-                </span>
-              </div>
+              {catalog.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <InputGroup className="flex-1">
+                    <InputGroupAddon>
+                      <SearchIcon />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      aria-label={t.search}
+                      placeholder={t.search}
+                      value={filter}
+                      onChange={(e) => {
+                        setFilter(e.target.value);
+                        setShown(PAGE);
+                      }}
+                    />
+                  </InputGroup>
+                  <span className="tw-label tabular-nums text-muted-foreground">
+                    {t.counts(visible, catalog.length)}
+                  </span>
+                </div>
+              )}
 
               <Boxed className="max-h-64 overflow-y-auto">
                 <Table>

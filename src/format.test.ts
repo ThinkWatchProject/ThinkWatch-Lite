@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
 import {
   bucketStart,
+  compact,
   densify,
   latency,
   money,
@@ -69,6 +70,20 @@ describe("token", () => {
     // 还在跑的行、以及上游没报用量的行。0 会让它在排序里冒充一个测量结果
     expect(tokens(undefined, undefined)).toBe("—");
     expect(tokens(100, undefined)).toBe("—");
+  });
+
+  /**
+   * **先取整，再定单位。**按取整之前的值挑单位，9_960 写成「10.0k」、999_600 写成
+   * 「1000k」—— 同一列里别的数都是「12k」「1.2M」的写法，这两个读起来像另一种量。
+   */
+  it("取整进了位的，按下一档写", () => {
+    expect(compact(9_949)).toBe("9.9k");
+    expect(compact(9_960)).toBe("10k");
+    expect(compact(10_000)).toBe("10k");
+    expect(compact(999_499)).toBe("999k");
+    expect(compact(999_600)).toBe("1.0M");
+    expect(compact(999_950)).toBe("1.0M");
+    expect(compact(1_000_000)).toBe("1.0M");
   });
 });
 
@@ -182,6 +197,17 @@ describe("补空桶", () => {
     expect(densify([], 0, 1_000_000_000, 1000).length).toBe(500);
   });
 
+  /**
+   * **截掉的是最早的那一头。**图的右边写着「现在」：从起点数满上限就停的话，最近的
+   * 那一段悄悄不见了。留下的格子仍然落在 `起点 + k × 格宽` 上，和 core 分的格对得上。
+   */
+  it("超过上限时留最近的那几格", () => {
+    const out = densify([b(999_999_000, 5), b(1_000, 7)], 0, 1_000_000_000, 1000);
+    expect(out).toHaveLength(500);
+    expect(out.at(-1)).toMatchObject({ at_ms: 999_999_000, requests: 5 });
+    expect(out[0]?.at_ms).toBe(999_500_000);
+  });
+
   it("参数不合法时给空数组，不是抛异常", () => {
     expect(densify([], 0, 1000, 0)).toEqual([]);
     expect(densify([], 1000, 0, 1000)).toEqual([]);
@@ -199,6 +225,21 @@ describe("金额", () => {
   });
   it("大额两位小数", () => {
     expect(usd(2_500_000)).toBe("$2.50");
+  });
+  it("四位小数也写不下的，写成不到 $0.0001，而不是 $0.0000", () => {
+    // 两百个输入、二十个输出 token 的一次便宜调用，大约 28 微分
+    expect(usd(28)).toBe("<$0.0001");
+    expect(usd(1)).toBe("<$0.0001");
+    expect(usd(50)).toBe("$0.0001");
+  });
+  it("挡位按四舍五入之后的数挑", () => {
+    expect(usd(9_940)).toBe("$0.0099");
+    expect(usd(9_996)).toBe("$0.010");
+    expect(usd(999_400)).toBe("$0.999");
+    expect(usd(999_600)).toBe("$1.00");
+  });
+  it("负数照样写", () => {
+    expect(usd(-2_500_000)).toBe("-$2.50");
   });
 });
 

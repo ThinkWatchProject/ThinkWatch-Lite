@@ -56,11 +56,17 @@ export function when(atMs: number, now = Date.now()): string {
  * 四位数以上换 k：一列 `128000` 和 `463` 混排时，位数差本身会被误读成
  * 数量级差。而一个逗号分隔的 `514,567` 读起来是账本上的条目，不是一个
  * 能一眼掂量的量 —— 精确值留给悬停。
+ *
+ * **先按这一档的精度取整，再看它还在不在这一档。**按取整之前的值挑单位的话，
+ * 9_960 落在「一位小数的 k」那一档，写出来是「10.0k」；999_600 落在「整数 k」
+ * 那一档，写出来是「1000k」。取整之后进了位的，交给下一档去写（「10k」「1.0M」）。
  */
 export function compact(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  const tenths = (n / 1000).toFixed(1);
+  if (Number(tenths) < 10) return `${tenths}k`;
+  const k = Math.round(n / 1000);
+  if (k < 1000) return `${k}k`;
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
@@ -150,6 +156,9 @@ export function statusTone(
 /** 一个时间桶（core 的 `/summary/buckets`）。 */
 export type { CostBucket };
 
+/** 一张趋势图最多画几格（`densify`） */
+export const MAX_BUCKETS = 500;
+
 /**
  * 把一个时刻落到它所在那一格的开头。
  *
@@ -161,6 +170,8 @@ export type { CostBucket };
  * **对齐到本地日历，不是对齐到纪元。**一天一格时，纪元对齐的「一天」是
  * UTC 零点到零点，而格子上写的是本地日期 —— 两者差着时区那几个小时。
  * 半小时偏移的时区里连整点都对不上。
+ *
+ * 一天以上的格子（一周一格）同样落到本地零点：那一周从这一天数起，不往前挪到周一。
  */
 export function bucketStart(atMs: number, bucketMs: number): number {
   const d = new Date(atMs);
@@ -182,6 +193,9 @@ export function bucketStart(atMs: number, bucketMs: number): number {
  * 为什么必须做：跳过空桶的话，一天里的空档会被两边的柱子挤没，图上
  * 看起来就是**连续在用** —— 而「昨天下午我根本没碰它」恰恰是看这张图
  * 想确认的事。一张会把「没用过」画成「在用」的图，比没有图更糟。
+ *
+ * 格数超过 `MAX_BUCKETS` 时只留最近的那几格：图画的是 `[0].at_ms` 到现在，刻度
+ * 要从那一格数起，不从 `sinceMs`。
  */
 export function densify(
   buckets: CostBucket[],
@@ -192,9 +206,15 @@ export function densify(
   if (bucketMs <= 0 || untilMs <= sinceMs) return [];
   const by = new Map(buckets.map((b) => [b.at_ms, b]));
   const out: CostBucket[] = [];
-  // 上限是防御性的：跨度和桶宽算出几万格时，那不是一张图，是一次卡死
-  const n = Math.min(500, Math.ceil((untilMs - sinceMs) / bucketMs));
-  for (let i = 0; i < n; i++) {
+  const n = Math.ceil((untilMs - sinceMs) / bucketMs);
+  /*
+    上限是防御性的：跨度和桶宽算出几万格时，那不是一张图，是一次卡死。
+
+    **截的是最早的那一头。**图的右边写着「现在」：从起点数满上限就停的话，截掉的是
+    最近的那一段 —— 最新的数据悄悄不见了，右边照样标着「现在」。格子仍然从 `sinceMs`
+    数起（和 core 分格的算法一致，`sinceMs + k × bucketMs`），只是从第几格开始画。
+  */
+  for (let i = Math.max(0, n - MAX_BUCKETS); i < n; i++) {
     const at = sinceMs + i * bucketMs;
     out.push(
       by.get(at) ?? {

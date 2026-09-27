@@ -12,16 +12,20 @@ import { mcpText } from "./McpPage.i18n";
 import { copyText, Level, rank, worst } from "./parts";
 
 /**
- * 一个钩子命中了哪些发现。
+ * 一个钩子命中了哪些发现：**同一个文件、同一行**。
  *
- * 发现按文件和行记，而一个配置文件里有好几个钩子 —— 按命中的那一行里有没有
- * 这条命令来认。那一行是 JSON，命令在里面是转义过的样子，两种写法都比一下。
+ * 发现按文件和行记，钩子也带着它在文件里的行号（`HookView.line`，扫描时找好的）：那一行
+ * 上的发现都是它的 —— 规则命中，也包括隐藏字符那一类。以前钩子不带行号，只能按摘录里
+ * 有没有这条命令去认，而隐藏字符那一类的摘录把不可见字符换成了可见记号：藏在钩子命令
+ * 里的零宽字符 —— 偏偏是最该挂到这一行上的那一处 —— 永远对不上。
+ *
+ * 找不到行号的钩子（`0`）才退回按摘录认：命令原样，或者 JSON 转义过的样子。导出给测试用。
  */
-function hookFindings(h: HookView, findings: ScanFinding[]): ScanFinding[] {
+export function hookFindings(h: HookView, findings: ScanFinding[]): ScanFinding[] {
+  const here = findings.filter((f) => f.path === h.source);
+  if (h.line > 0) return here.filter((f) => f.line === h.line);
   const escaped = JSON.stringify(h.command).slice(1, -1);
-  return findings.filter(
-    (f) => f.kind === "hooks" && f.path === h.source && (f.excerpt.includes(escaped) || f.excerpt.includes(h.command)),
-  );
+  return here.filter((f) => f.kind === "hooks" && (f.excerpt.includes(h.command) || f.excerpt.includes(escaped)));
 }
 
 /** 一个技能命中了哪些发现：技能就是一个 SKILL.md，按文件认 */

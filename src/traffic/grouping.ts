@@ -28,10 +28,16 @@ export type Group = {
  * 把它们塞进一个「其他」组，等于声称它们属于同一次任务 —— 而它们之间
  * 唯一的共同点是我们不知道它们属于谁。所以每一条各成一组，折叠态下就
  * 显示成一行普通请求。
+ *
+ * `prev`：上一次归出来的组。**没变的组交回原来那个对象**：组头是 `memo` 的（见
+ * `SessionRow`），每落地一条请求都换一批新的组对象的话，两百个组头全跟着重画，
+ * 而变了的只有那一条所在的那一组。「没变」是行还是原来那几个对象、次序也一样，
+ * 汇总的内容一样（汇总每次重读都是新对象，所以按内容比）。
  */
 export function groupBySession(
   rows: RequestRow[],
   sessions: SessionView[],
+  prev: readonly Group[] = [],
 ): Group[] {
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const out: Group[] = [];
@@ -51,7 +57,25 @@ export function groupBySession(
     at.set(id, made);
     out.push(made);
   }
-  return out;
+  if (prev.length === 0) return out;
+  // 会话按 id 认，无主的那一条按它自己那一行认
+  const bySession = new Map<string, Group>();
+  const byRow = new Map<number, Group>();
+  for (const g of prev) {
+    if (g.id !== null) bySession.set(g.id, g);
+    else if (g.rows[0]) byRow.set(g.rows[0].id, g);
+  }
+  return out.map((g) => {
+    const old = g.id !== null ? bySession.get(g.id) : g.rows[0] && byRow.get(g.rows[0].id);
+    return old && sameGroup(old, g) ? old : g;
+  });
+}
+
+function sameGroup(a: Group, b: Group): boolean {
+  if (a.rows.length !== b.rows.length) return false;
+  for (let i = 0; i < a.rows.length; i++) if (a.rows[i] !== b.rows[i]) return false;
+  if (a.session === b.session) return true;
+  return a.session !== null && b.session !== null && JSON.stringify(a.session) === JSON.stringify(b.session);
 }
 
 /**

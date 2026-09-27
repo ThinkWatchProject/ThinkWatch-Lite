@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { call } from "@/control";
-import { textOf } from "@/i18n";
 import {
   applyEvent,
   applyInFlight,
+  CORE_STOPPED,
   interruptInFlight,
   type CoreEvent,
   type HistoryRow,
@@ -15,7 +15,6 @@ import {
 } from "./types";
 import { marksFromEvents } from "./security/marks";
 import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
-import { requestsText } from "./useRequests.i18n";
 
 /**
  * 库里读回来的记录并进当前列表。
@@ -28,23 +27,32 @@ import { requestsText } from "./useRequests.i18n";
  * 重画那一行（见 `RequestTable` 的 `Row`）：每次对账都把两千行换成新对象的话，一条
  * 请求落地就要整表重画一遍。
  *
- * `localLabel`：本地应答那几行的「上游」一栏写什么。
+ * **本地应答的那几行没有上游**：`provider` 是空的，`local` 标着。「上游」那一格写的
+ * 那句说明是画的时候才按语言取的（`upstreamText`）。原来这里把「本地应答」当成上游名
+ * 写进行里：换了语言它还是原来那种，上游下拉框里多出一个叫「本地应答」的上游。
+ *
+ * 返回有没有哪一行变了（换了对象、或者多了一行）。**没变就不用交给界面**（见 `publish`）：
+ * 每批请求落地都要对一次账，而大多数时候两千行里只有刚落地的那几行不一样。
  */
-export function mergeHistory(
-  rows: Map<number, RequestRow>,
-  history: HistoryRow[],
-  localLabel: string,
-): void {
+export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[]): boolean {
+  let dirty = false;
   for (const h of history) {
     const cur = rows.get(h.id);
-    if (cur) {
+    /*
+      **被记成「core 停了」的那一行，库里却有它。**两种可能：连着远程时断的只是这边
+      的连接，那边照常跑完、落了库 —— 结局按库里的改回来，和还在跑的那种一样；或者
+      这个号被重新用上了（core 崩过之后，没落库的号接着发，见 `applyInFlight`）——
+      那是另一个请求，开始的时刻不一样，整行换成库里这一条，不往旧行上补
+    */
+    const cut = cur?.state === "failed" && cur.error?.code === CORE_STOPPED.code;
+    if (cur && !(cut && cur.atMs !== h.at_ms)) {
       const next = { ...cur };
       /*
         **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
         确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
         按库里的补上结局，不然这一行永远在跑。
       */
-      if (next.state === "in_flight") {
+      if (next.state === "in_flight" || cut) {
         next.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
         if (h.status != null) next.status = h.status;
         next.durationMs = h.duration_ms ?? undefined;
@@ -72,13 +80,17 @@ export function mergeHistory(
       next.hint ??= h.client_hint ?? undefined;
       next.peer ??= h.peer ?? undefined;
       next.keyMasked ??= h.key_masked ?? undefined;
-      if (changed(cur, next)) rows.set(h.id, next);
+      if (changed(cur, next)) {
+        rows.set(h.id, next);
+        dirty = true;
+      }
       continue;
     }
+    dirty = true;
     rows.set(h.id, {
       id: h.id,
       client: h.client,
-      provider: h.local ? localLabel : h.provider,
+      provider: h.local ? "" : h.provider,
       local: h.local || undefined,
       model: h.model || undefined,
       path: h.path,
@@ -103,6 +115,7 @@ export function mergeHistory(
       ...marksFromEvents(h.security),
     });
   }
+  return dirty;
 }
 
 /**
@@ -136,6 +149,32 @@ function touches(ev: CoreEvent): number | null {
     default:
       return null;
   }
+}
+
+/**
+ * 把一批事件落进列表。返回有没有哪一行变了：多了一行，或者哪一行换了新对象。
+ *
+ * 改一行之前先把它换成新对象（见 `touches`），同一行一批里只换一次。
+ *
+ * **一行都没动的批次返回 false**：只有熔断、模型清单、配置这类「现在什么情况」的
+ * 事件，或者说的是一条已经不在列表里的请求。原来每一批都把两千行重排一遍交给界面，
+ * 外壳和流量页跟着整个重算 —— 而那一批什么都没改。导出给测试用。
+ */
+export function applyBatch(rows: Map<number, RequestRow>, batch: readonly CoreEvent[]): boolean {
+  let dirty = false;
+  /** 这一批里已经换成新对象的行 */
+  const fresh = new Set<number>();
+  for (const ev of batch) {
+    const id = touches(ev);
+    if (id !== null && !fresh.has(id)) {
+      const r = rows.get(id);
+      if (r) rows.set(id, { ...r });
+      fresh.add(id);
+    }
+    if (ev.kind === "request_started" || (id !== null && rows.has(id))) dirty = true;
+    applyEvent(rows, ev);
+  }
+  return dirty;
 }
 
 /**
@@ -279,8 +318,7 @@ export function useRequests(ready: boolean) {
       开始搜，等于在一个本来就不大的集合上加一道门。
     */
     const history = await call("History", { limit: LIST_LIMIT });
-    mergeHistory(store.current, history, textOf(requestsText).answeredLocally);
-    publish();
+    if (mergeHistory(store.current, history)) publish();
     setSeedError(undefined);
   }, [publish]);
 
@@ -337,8 +375,6 @@ export function useRequests(ready: boolean) {
       pending.current = [];
       let local = 0;
       let landed = false;
-      /** 这一批里已经换成新对象的行：同一行一批里只换一次 */
-      const fresh = new Set<number>();
       for (const ev of batch) {
         if (
           ev.kind === "request_finished" ||
@@ -368,17 +404,10 @@ export function useRequests(ready: boolean) {
           setRejected(null);
           setReloads((n) => n + 1);
         }
-        // 先换成新对象再改，见 `touches`
-        const id = touches(ev);
-        if (id !== null && !fresh.has(id)) {
-          const r = store.current.get(id);
-          if (r) store.current.set(id, { ...r });
-          fresh.add(id);
-        }
-        applyEvent(store.current, ev);
       }
       if (local > 0) setLocallyAnswered((n) => n + local);
-      publish();
+      // 一行都没动的批次不交给界面，见 `applyBatch`
+      if (applyBatch(store.current, batch)) publish();
       // 落地一批就发一次「可以重算聚合了」
       if (landed) settleSoon();
     };
@@ -516,6 +545,7 @@ export function useRequests(ready: boolean) {
     alerts,
     rotated,
     clearAlerts: () => setAlerts([]),
-    clearRotated: () => setRotated([]),
+    /** 关掉一家的那一条。**不是全部**：关一条告知，不该顺手把另一家「重启前必须处理」的那条也关了 */
+    clearRotated: (provider: string) => setRotated((p) => p.filter((x) => x.provider !== provider)),
   };
 }

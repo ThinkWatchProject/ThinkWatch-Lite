@@ -156,7 +156,9 @@ export function ProfileDialog({
   const hint = missing ?? refused;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    // 保存、切换在路上时 Esc 和 × 也不关：关了它照样存下、照样切，之后还冒出一个切换
+    // 确认。只是试连（只读，连一台不应答的主机要等一阵）时照常能关
+    <Dialog open onOpenChange={(open) => !open && busy !== "save" && busy !== "switch" && onClose()}>
       <DialogContent className="flex flex-col gap-4 sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle className="tw-title">{editing ? t.editTitle : t.addTitle}</DialogTitle>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTER, facets, filterRows, sortRows } from "./requestTable";
+import { EMPTY_FILTER, facets, filterRows, sortRows, upstreamText } from "./requestTable";
 import type { RequestRow } from "./types";
+import { setLang } from "@/i18n";
 import { plain } from "@/i18n/core.i18n";
 
 function row(p: Partial<RequestRow> & { id: number }): RequestRow {
@@ -149,6 +150,34 @@ describe("过滤下拉的取值", () => {
   });
 });
 
+/**
+ * 本地应答的那几行**没有上游**：`provider` 是空的，`local` 标着。「上游」那一格的那句
+ * 说明是按此刻的语言取的 —— 原来它作为上游名写进行里，换了语言还是原来那种，上游
+ * 下拉框里还多出一个叫「本地应答」的上游。
+ */
+describe("本地应答的那几行", () => {
+  const local = row({ id: 7, provider: "", local: true, path: "titling" });
+
+  it("不是一个上游：不进上游下拉框", () => {
+    expect(facets([local, row({ id: 8 })]).providers).toEqual(["relay"]);
+  });
+
+  it("「上游」那一格按此刻的语言写", () => {
+    expect(upstreamText(local)).toBe("本地应答");
+    setLang("en");
+    expect(upstreamText(local)).toBe("Answered locally");
+    expect(upstreamText(row({ id: 8 }))).toBe("relay");
+  });
+
+  it("按格子里写的字搜得到，换了语言按新的搜", () => {
+    const rows = [local, row({ id: 8 })];
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "本地" }).map((r) => r.id)).toEqual([7]);
+    setLang("en");
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "locally" }).map((r) => r.id)).toEqual([7]);
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "本地" })).toEqual([]);
+  });
+});
+
 describe("按模型筛", () => {
   const row = (id: number, model?: string): RequestRow => ({
     id,
@@ -184,10 +213,18 @@ describe("只看无法计价的", () => {
 
   it("留下跑完了却没有金额的那些", () => {
     const rows = [
-      row({ id: 1, costMicros: 120 }),
-      row({ id: 2 }),
-      row({ id: 3, costMicros: 0 }),
+      row({ id: 1, costMicros: 120, inputTokens: 100, outputTokens: 20 }),
+      row({ id: 2, inputTokens: 100, outputTokens: 20 }),
+      row({ id: 3, costMicros: 0, inputTokens: 100, outputTokens: 20 }),
     ];
+    const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
+    expect(got.map((r) => r.id)).toEqual([2]);
+  });
+
+  it("没报用量的不算无法计价：配了价格也算不出它的钱", () => {
+    // 上游回了 429、或者响应里就没有用量 —— core 的 `unpriced_requests` 不数它们，
+    // 从概览点进来的条数要和那个数对得上
+    const rows = [row({ id: 1, status: 429 }), row({ id: 2, inputTokens: 100, outputTokens: 20 })];
     const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
     expect(got.map((r) => r.id)).toEqual([2]);
   });
@@ -195,11 +232,12 @@ describe("只看无法计价的", () => {
   it("进行中和失败的不算无法计价", () => {
     // **没算出金额和「还没有金额」不是一回事** —— 混进来会让
     // 「哪些模型该补价」这个问题答不出来
+    const used = { inputTokens: 100, outputTokens: 20 };
     const rows = [
-      row({ id: 1, state: "in_flight" }),
-      row({ id: 2, state: "failed" }),
-      row({ id: 3, state: "cancelled" }),
-      row({ id: 4 }),
+      row({ id: 1, state: "in_flight", ...used }),
+      row({ id: 2, state: "failed", ...used }),
+      row({ id: 3, state: "cancelled", ...used }),
+      row({ id: 4, ...used }),
     ];
     const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
     expect(got.map((r) => r.id)).toEqual([4]);

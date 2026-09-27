@@ -37,6 +37,7 @@ import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { groupKindLabel, notSentText, probeLabel, targetLabel, ALL_UPSTREAMS } from "@/labels";
 import { when } from "@/format";
 import { notSent } from "@/requestRouting";
+import { upstreamText } from "@/requestTable";
 import { NotSentIcon } from "@/traffic/cells";
 import type { ConnView } from "@/connection/api";
 import { connText } from "@/connection/connection.i18n";
@@ -475,7 +476,7 @@ export function requestItems(
         id: `request:${r.id}`,
         group: "requests",
         title,
-        detail: [t.requestNo(r.id), sent ? notSentText(sent) : r.provider, r.client].filter(Boolean).join(" · "),
+        detail: [t.requestNo(r.id), sent ? notSentText(sent) : upstreamText(r), r.client].filter(Boolean).join(" · "),
         icon: sent ? (
           <NotSentIcon kind={sent} plain />
         ) : r.local ? (

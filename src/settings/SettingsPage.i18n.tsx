@@ -86,6 +86,8 @@ export const settingsText = messages(
     restoreNone: "当前无已接管的客户端",
     /** 列名字时的分隔 */
     sep: "、",
+    /** WSL 里的那个客户端。和卸载结果里那一行（Rust 侧 `wsl::display_name`）同一个写法 */
+    wslClient: (client: string, distro: string) => `${client} (WSL · ${distro})`,
     stopAutostart: "取消开机启动",
     /** `.wslconfig` 是在客户端页改成 mirrored 的：卸载不改回它 */
     wslconfigKept: "WSL 的网络模式不会改回",
@@ -159,6 +161,7 @@ export const settingsText = messages(
     restoreClients: "Restore connected clients",
     restoreNone: "No client is connected at the moment",
     sep: ", ",
+    wslClient: (client: string, distro: string) => `${client} (WSL · ${distro})`,
     stopAutostart: "Turn off launch at login",
     wslconfigKept: "WSL networking is not changed back",
     wslconfigCreated: (path: string) => `${path} was created when switching to mirrored networking and is kept.`,

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
@@ -26,6 +27,7 @@ export function PlanDialog({
   plan,
   client,
   restore,
+  stale = false,
   pending,
   onCancel,
   onConfirm,
@@ -33,6 +35,8 @@ export function PlanDialog({
   plan: PlanView;
   client: DetectedClient;
   restore: boolean;
+  /** 刚才确认时文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
+  stale?: boolean;
   pending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -68,6 +72,10 @@ export function PlanDialog({
             </DialogDescription>
           </div>
         </DialogHeader>
+
+        <Banner layout="inline" tone="warning" show={stale}>
+          {t.stale}
+        </Banner>
 
         {plan.noop ? (
           <p className="tw-body">{t.noop}</p>
@@ -173,44 +181,7 @@ function FieldValue({ f, plan, restore }: { f: FieldChange; plan: PlanView; rest
  * 所以用最长公共子序列：没动的行原地不动，改动的行紧挨着显示。
  */
 export function Diff({ before, after }: { before: string | null; after: string }) {
-  const a = (before ?? "").split("\n");
-  const b = after.split("\n");
-
-  // LCS 表。配置文件都是几十行，O(n·m) 完全够用。
-  // 摊平成一维的 Uint32Array —— 二维数组每次下标访问在
-  // noUncheckedIndexedAccess 下都是 `number | undefined`
-  const n = a.length;
-  const m = b.length;
-  const w = m + 1;
-  const lcs = new Uint32Array((n + 1) * w);
-  const line = (xs: string[], k: number) => xs[k] ?? "";
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      lcs[i * w + j] =
-        line(a, i) === line(b, j)
-          ? lcs[(i + 1) * w + j + 1]! + 1
-          : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!);
-    }
-  }
-  const rows: { text: string; kind: "add" | "del" | "same" }[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (line(a, i) === line(b, j)) {
-      rows.push({ text: line(a, i), kind: "same" });
-      i++;
-      j++;
-    } else if (lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) {
-      rows.push({ text: line(a, i), kind: "del" });
-      i++;
-    } else {
-      rows.push({ text: line(b, j), kind: "add" });
-      j++;
-    }
-  }
-  while (i < n) rows.push({ text: line(a, i++), kind: "del" });
-  while (j < m) rows.push({ text: line(b, j++), kind: "add" });
-
+  const rows = useMemo(() => diffRows(before ?? "", after), [before, after]);
   return (
     <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-border bg-surface p-2 font-mono tw-label leading-relaxed">
       {rows.map((r, i) => (
@@ -230,4 +201,65 @@ export function Diff({ before, after }: { before: string | null; after: string }
       ))}
     </pre>
   );
+}
+
+export type DiffRow = { text: string; kind: "add" | "del" | "same" };
+
+/**
+ * [`Diff`] 画的那几行。
+ *
+ * **两头相同的行先摘掉，只拿中间那段做 LCS。**两头相同的行本来就一定在最长公共子序列
+ * 里，摘掉不改结果；而 MCP 页拿来比的是整份 `~/.claude.json`，几千行里只动了一段 ——
+ * 整份做 O(n·m) 的表，两千行是 16 MB、一两百毫秒，八千行是 256 MB、两秒多，窗口就卡在那儿。
+ */
+export function diffRows(before: string, after: string): DiffRow[] {
+  const all = before.split("\n");
+  const bll = after.split("\n");
+  let head = 0;
+  while (head < all.length && head < bll.length && all[head] === bll[head]) head++;
+  let tail = 0;
+  while (
+    tail < all.length - head &&
+    tail < bll.length - head &&
+    all[all.length - 1 - tail] === bll[bll.length - 1 - tail]
+  )
+    tail++;
+  const a = all.slice(head, all.length - tail);
+  const b = bll.slice(head, bll.length - tail);
+
+  // LCS 表，只为中间那段。摊平成一维的 Uint32Array —— 二维数组每次下标访问在
+  // noUncheckedIndexedAccess 下都是 `number | undefined`
+  const n = a.length;
+  const m = b.length;
+  const w = m + 1;
+  const lcs = new Uint32Array((n + 1) * w);
+  const line = (xs: string[], k: number) => xs[k] ?? "";
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i * w + j] =
+        line(a, i) === line(b, j)
+          ? lcs[(i + 1) * w + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!);
+    }
+  }
+  const rows: DiffRow[] = all.slice(0, head).map((text) => ({ text, kind: "same" }));
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (line(a, i) === line(b, j)) {
+      rows.push({ text: line(a, i), kind: "same" });
+      i++;
+      j++;
+    } else if (lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) {
+      rows.push({ text: line(a, i), kind: "del" });
+      i++;
+    } else {
+      rows.push({ text: line(b, j), kind: "add" });
+      j++;
+    }
+  }
+  while (i < n) rows.push({ text: line(a, i++), kind: "del" });
+  while (j < m) rows.push({ text: line(b, j++), kind: "add" });
+  for (const text of all.slice(all.length - tail)) rows.push({ text, kind: "same" });
+  return rows;
 }

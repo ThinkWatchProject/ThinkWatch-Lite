@@ -68,6 +68,42 @@ describe("按会话归组", () => {
 });
 
 /**
+ * 组头是 `memo` 的：**没变的组要交回原来那个对象**，不然落地一条请求，两百个组头全跟着
+ * 重画。变了的组必须是新对象，不然那个组头停在旧的数上。
+ */
+describe("重新归组时组对象换不换", () => {
+  const a1 = row(1, 100, "a");
+  const b1 = row(2, 200, "b");
+  const lone = row(3, 300);
+
+  it("行和汇总都没变的组，交回原来的对象", () => {
+    const before = groupBySession([a1, b1, lone], [session("a"), session("b")]);
+    // 汇总重读了一遍：内容一样，对象是新的
+    const after = groupBySession([a1, b1, lone], [session("a"), session("b")], before);
+    expect(after).toHaveLength(3);
+    after.forEach((g, i) => expect(g).toBe(before[i]));
+  });
+
+  it("多了一行、行换了对象、汇总变了的组，换成新对象；别的组不动", () => {
+    const before = groupBySession([a1, b1, lone], [session("a"), session("b")]);
+    const a2 = row(4, 400, "a");
+    const grew = groupBySession([a1, a2, b1, lone], [session("a"), session("b")], before);
+    expect(grew[0]).not.toBe(before[0]);
+    expect(grew[0]?.rows).toEqual([a1, a2]);
+    expect(grew[1]).toBe(before[1]);
+    expect(grew[2]).toBe(before[2]);
+
+    const updated = groupBySession([a1, { ...b1, state: "failed" }, lone], [session("a"), session("b")], before);
+    expect(updated[1]).not.toBe(before[1]);
+    expect(updated[0]).toBe(before[0]);
+
+    const recounted = groupBySession([a1, b1, lone], [session("a"), { ...session("b"), turns: 4 }], before);
+    expect(recounted[1]).not.toBe(before[1]);
+    expect(recounted[1]?.session?.turns).toBe(4);
+  });
+});
+
+/**
  * 组头上的数。**汇总只算落了库的轮次**，而一轮从开始就在它的会话里：在跑的、刚落地
  * 还没重读的那一轮，汇总里没有、组里有。
  */

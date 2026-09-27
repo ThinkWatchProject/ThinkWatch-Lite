@@ -10,6 +10,7 @@ import {
 } from "@/ui/dialog";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
+import { latestOnly } from "@/lib/latestOnly";
 import type {
   Overview,
   ProviderPreview,
@@ -75,6 +76,7 @@ export function UpstreamDialog({
 }: {
   mode: UpstreamDialogMode;
   ov: Overview;
+  /** 概览里的配置版本。**只取打开那一刻的**（见 `base`） */
   configVersion: string;
   onClose: () => void;
   onSaved: (name: string) => void;
@@ -93,17 +95,30 @@ export function UpstreamDialog({
   const [form, setForm] = useState<UpstreamForm>(() =>
     editing ? formFromView(editing) : blankForm(),
   );
+  /**
+   * 保存时带的版本号：**表单填进来的那一版**，不是保存那一刻的。
+   *
+   * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件、core 换了令牌）。带着
+   * 保存那一刻的版本号，core 的冲突检查永远通过，旧表单就把那些改动悄悄盖掉了；带着
+   * 打开时的，core 回一个版本冲突，原因写在对话框里。在这里新建的代理、新建或删掉的
+   * 价目表是这一次编辑自己写的：写完接着用它回的版本。
+   */
+  const [base, setBase] = useState(configVersion);
   const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
   // ChatGPT 账号是登录来的，编辑它的那一套分节也不一样
   const account = editing?.protocol === "chatgpt";
   /** 登的是哪个账号。core 从凭据的令牌里读，和列表那一行是同一份 */
   const email = editing?.oauth?.account?.email;
   const sections = (account ? ACCOUNT_SECTIONS : SECTIONS).map((id) => ({ id, label: t.sections[id] }));
-  const [section, setSection] = useState<Section>(
-    mode.kind === "edit"
-      ? (mode.section ?? (account ? "account" : "connection"))
-      : "connection",
-  );
+  const [section, setSection] = useState<Section>(() => {
+    if (mode.kind !== "edit") return "connection";
+    const own = account ? ACCOUNT_SECTIONS : SECTIONS;
+    // 账号上游没有「连接」这一节，出站连接（代理）在「账号」那一节里：从删代理的对话框
+    // 点「查看」过来时落到那里。**不在这一套里的节一律不画** —— 画出来的是这种上游
+    // 不该有的地址、协议、凭据表单，改了就坏
+    const want = account && mode.section === "connection" ? "account" : mode.section;
+    return want && own.includes(want) ? want : own[0]!;
+  });
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(["connection"]));
 
   const [preview, setPreview] = useState<ProviderPreview | null>(null);
@@ -138,7 +153,13 @@ export function UpstreamDialog({
     return () => clearTimeout(t);
   }, [form.baseUrl, form.protocol]);
 
-  // 新建：连接信息一改，之前检测到的结果和模型列表就不再对应这一家
+  /**
+   * 连接信息一改，之前的检测结果就不再对应表单里的这一家。
+   *
+   * **编辑时也一样**：显示着「连接正常」的时候改了密钥、地址、协议或代理，那句话说的
+   * 已经不是现在这一份了。还没回来的那次检测，回来了也不要 —— 它测的是改之前的那一份
+   * （`tests`）。新建时模型列表也是检测带进来的，一起作废；编辑时那是已保存的清单，留着
+   */
   const connectionKey = JSON.stringify([
     form.baseUrl,
     form.protocol,
@@ -150,10 +171,12 @@ export function UpstreamDialog({
     form.oauthAccess,
     form.proxy,
   ]);
+  const [tests] = useState(latestOnly);
   useEffect(() => {
-    if (editing) return;
+    tests.drop();
     setTest(null);
-    setCatalog(null);
+    setTesting(false);
+    if (!editing) setCatalog(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionKey]);
 
@@ -207,12 +230,15 @@ export function UpstreamDialog({
   }, [sheetKey, modelsKey, ov.price_sheets]);
 
   async function runTest() {
+    const current = tests.start();
     setTesting(true);
     try {
       const r = await api.testProvider({
         provider: toInput(form),
         current: editing?.name,
       });
+      // 回来时表单已经改了，或者又点了一次：这个结果不算（finally 里也不收转圈）
+      if (!current()) return;
       setTest(r);
       setCatalog(
         r.ok && r.models.kind === "listed"
@@ -227,6 +253,7 @@ export function UpstreamDialog({
             },
       );
     } catch (e) {
+      if (!current()) return;
       const error = errorText(e);
       setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error) });
       setCatalog({
@@ -237,7 +264,7 @@ export function UpstreamDialog({
         error: plain(t.connectionFailed(error)),
       });
     } finally {
-      setTesting(false);
+      if (current()) setTesting(false);
     }
   }
 
@@ -271,7 +298,7 @@ export function UpstreamDialog({
     try {
       const save = {
         provider: toInput(form),
-        base_version: configVersion,
+        base_version: base,
       };
       if (editing) await api.updateProvider(editing.name, save);
       else await api.createProvider(save);
@@ -430,11 +457,12 @@ export function UpstreamDialog({
           <ProxyDialog
             mode={{ kind: "create" }}
             ov={ov}
-            configVersion={configVersion}
+            configVersion={base}
             onClose={() => setNested(null)}
-            onSaved={(name) => {
+            onSaved={(name, version) => {
               setNested(null);
               set({ proxy: name });
+              setBase(version);
               onChanged();
             }}
           />
@@ -447,12 +475,21 @@ export function UpstreamDialog({
                 : { kind: "create", prefill: nested.add ? { models: nested.add, usedBy: [] } : undefined }
             }
             ov={ov}
-            configVersion={configVersion}
+            configVersion={base}
             context={{ models: enabledModels, protocol: form.protocol || preview?.protocol || null }}
             onClose={() => setNested(null)}
-            onSaved={(name) => {
+            onSaved={(name, version) => {
               setNested(null);
               set({ pricing: name });
+              setBase(version);
+              onChanged();
+            }}
+            // 在这里删掉了一张价目表：对话框关上，表单里选着它的话退回默认的那张 ——
+            // 留着一个已经不存在的名字，保存这个上游只会得到「没有这张价目表」
+            onDeleted={(version) => {
+              if (nested.name && form.pricing === nested.name) set({ pricing: "" });
+              setNested(null);
+              setBase(version);
               onChanged();
             }}
           />

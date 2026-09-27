@@ -6,7 +6,7 @@ import { latency, money, statusTone, tokens, when } from "@/format";
 import { notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
-import { promptTokens, type Filter, type SortDir, type SortKey } from "@/requestTable";
+import { promptTokens, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
 import type { RequestRow } from "@/types";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -305,7 +305,7 @@ function RequestRows({
       r={r}
       sameClient={prev !== undefined && clientKey(prev) === clientKey(r)}
       sameModel={prev !== undefined && (prev.model ?? "") === (r.model ?? "")}
-      sameProvider={prev !== undefined && prev.provider === r.provider}
+      sameProvider={prev !== undefined && upstreamText(prev) === upstreamText(r)}
       showClient={showClient}
       hints={hints}
       today={today}
@@ -430,7 +430,7 @@ const Row = memo(function Row({
             new Date(r.atMs).toLocaleString(),
             r.client,
             r.model ?? "",
-            r.provider,
+            upstreamText(r),
             r.path,
             r.status ?? r.state,
             r.durationMs != null ? `${r.durationMs}ms` : "",
@@ -594,7 +594,7 @@ function UpstreamCell({ r }: { r: RequestRow }) {
             ) : (
               <UpstreamLogo name={r.provider} className="opacity-70" />
             )}
-            {r.provider ? <span>{r.provider}</span> : <span className="text-muted-foreground">—</span>}
+            {r.local || r.provider ? <span>{upstreamText(r)}</span> : <span className="text-muted-foreground">—</span>}
           </>
         )}
       </span>

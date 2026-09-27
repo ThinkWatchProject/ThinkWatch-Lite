@@ -291,31 +291,159 @@ fn fields_of(p: &plan::Plan, secrets: &[Vec<String>]) -> Vec<wire::FieldChange> 
 /// 字段的文档里写清了这一点。
 const MASK: &str = "«the gateway key from config.yaml»";
 
-fn mask(text: &str, key: Option<&str>) -> String {
-    match key {
-        // 空 key 会把每个字符之间都插一遍，那不是脱敏是毁掉整份 diff
-        Some(k) if !k.is_empty() => text.replace(k, MASK),
-        _ => text.to_string(),
+/// 别的密钥在界面上的样子：用户自己的（接管时被换下来的、还原时要放回去的），
+/// 和 MCP server 的环境变量、请求头
+const HIDDEN: &str = "«hidden secret»";
+
+/// 不带引号地出现在别处（哨兵注释里）时，比这还短的值不去盖：盖一个 `1` 会把整份
+/// diff 里的每一个 `1` 都换掉
+const SHORTEST_SECRET: usize = 8;
+
+/// 一份改动在界面上要盖住的值。
+///
+/// **diff 画的是整份文件**，里面除了我们写进去的网关那把，还有用户自己的密钥
+/// —— 只盖网关那把的话，其余的全都原样出现在这一屏上。
+pub(crate) struct Hide {
+    /// 网关的那几把，出现在哪儿都换成 [`MASK`]
+    gateway: Vec<String>,
+    /// 密钥字段上的值（用户自己的，也可能是网关那把），换成 [`HIDDEN`]：带引号的
+    /// 整串一律换；不带引号的 —— 哨兵注释里抄着的那一份（`# was …: sk-…`）、YAML
+    /// 里的裸值 —— 够长的才换
+    fields: Vec<String>,
+    /// **只换整个带引号的字符串**：MCP server 的环境变量和请求头。里面也会有
+    /// `production` 这种平常的词，写在别处的那些不该跟着被盖住
+    quoted: Vec<String>,
+}
+
+impl Hide {
+    pub(crate) fn new(
+        gateway: impl IntoIterator<Item = String>,
+        fields: impl IntoIterator<Item = String>,
+        quoted: impl IntoIterator<Item = String>,
+    ) -> Hide {
+        // 长的先换：一个值是另一个的一段时，先换短的会把长的拆成两截，剩下那截就漏了
+        fn tidy(v: impl IntoIterator<Item = String>, shortest: usize) -> Vec<String> {
+            let mut v: Vec<String> = v
+                .into_iter()
+                .filter(|s| s.chars().count() >= shortest)
+                .collect();
+            v.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+            v.dedup();
+            v
+        }
+        Hide {
+            // 空的会在每个字符之间插一遍，那不是脱敏是毁掉整份 diff
+            gateway: tidy(gateway, 1),
+            fields: tidy(fields, 1),
+            quoted: tidy(quoted, SHORTEST_SECRET),
+        }
+    }
+
+    /// 这份改动（连同另外那几份文件）要盖住的：网关的那几把、`secrets` 这几条路径上
+    /// 的值、MCP server 的环境变量和请求头
+    fn of(p: &plan::Plan, secrets: &[Vec<String>], gateway: &[&str]) -> Hide {
+        let quoted: Vec<String> = std::iter::once(p)
+            .chain(&p.also)
+            .flat_map(|x| {
+                x.before
+                    .iter()
+                    .chain([&x.after])
+                    .flat_map(|t| tw_adopt::mcp::server_secrets(x.format, t))
+            })
+            .collect();
+        Hide::new(
+            gateway.iter().map(|k| k.to_string()),
+            p.values_at(secrets),
+            quoted,
+        )
+    }
+
+    pub(crate) fn apply(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        for k in &self.gateway {
+            out = out.replace(k.as_str(), MASK);
+        }
+        for v in &self.fields {
+            out = hide_quoted(&out, v);
+            if v.chars().count() >= SHORTEST_SECRET {
+                out = out.replace(v.as_str(), HIDDEN);
+            }
+        }
+        for v in &self.quoted {
+            out = hide_quoted(&out, v);
+        }
+        out
     }
 }
 
-/// 另一份文件里整段是密钥的那几节（dsh 凭据文件的 `refs`、`records`）整段打码，
-/// 其余照 [`mask`]
-fn mask_file(text: &str, roots: &[&str], key: Option<&str>) -> String {
-    mask(&tw_adopt::yaml::mask_under(text, roots, MASK), key)
+/// 把 `v` 作为一整个带引号的字符串出现的地方换成 [`HIDDEN`]：JSON、TOML、YAML 的双引号
+/// 字符串（引号、反斜杠的转义几家一样），和单引号的那种
+fn hide_quoted(text: &str, v: &str) -> String {
+    let mut out = text.to_string();
+    if let Ok(q) = serde_json::to_string(v) {
+        out = out.replace(&q, &format!("\"{HIDDEN}\""));
+    }
+    out.replace(&format!("'{v}'"), &format!("'{HIDDEN}'"))
+}
+
+/// 改之前那几份原文的指纹：确认框里给人看的改动是按它们算的。
+///
+/// **落盘时按那一刻的文件重算一遍计划**（密钥这一刻才发、模型清单这一刻才问），所以
+/// 文件要是在人看改动的这段时间里被改过 —— 客户端自己改了一项设置、用户手改了一行 ——
+/// 写下去的就不是确认过的那一份，而写入那一步自己的核对（`adopt.file.changed`）只管
+/// 重算和写入之间，管不到这一段。确认时界面把它原样带回来，重算出来的对不上就什么都
+/// 不写（[`still_as_reviewed`]）。
+///
+/// 种子是**这个进程里随机的**：交给界面的是一个只在本进程里有意义的数。原文里有密钥，
+/// 指纹不该能拿去和猜测的内容对照。
+pub fn fingerprint<'a>(files: impl IntoIterator<Item = (&'a Path, Option<&'a [u8]>)>) -> String {
+    use std::hash::{BuildHasher, Hash, Hasher};
+    static SEED: std::sync::OnceLock<std::hash::RandomState> = std::sync::OnceLock::new();
+    let mut h = SEED.get_or_init(std::hash::RandomState::new).build_hasher();
+    for (path, before) in files {
+        path.hash(&mut h);
+        before.hash(&mut h);
+    }
+    format!("{:016x}", h.finish())
+}
+
+/// 一份接管、还原计划读到的那几份原文：它自己的文件，加上同一次改动里的另外几份
+pub fn plan_fingerprint(p: &plan::Plan) -> String {
+    fingerprint(
+        std::iter::once(p)
+            .chain(&p.also)
+            .map(|x| (x.path.as_path(), x.before.as_deref().map(str::as_bytes))),
+    )
+}
+
+/// 落盘之前核对：重算出来的计划读到的原文，还是确认框里那一份（[`fingerprint`]）。
+///
+/// 界面没带（`None`）就不核对 —— 全部还原、卸载时的还原走的是没有差异可看的那条路。
+pub fn still_as_reviewed(expect: Option<&str>, now: &str, client: &str) -> Result<(), Msg> {
+    match expect {
+        Some(e) if e != now => Err(msg!(
+            "adopt.plan.stale", client = client =>
+            "{client}'s configuration changed while the change was being reviewed, so \
+             nothing was written. Look at the change again"
+        )),
+        _ => Ok(()),
+    }
 }
 
 fn view(
     p: &plan::Plan,
     secrets: &[Vec<String>],
     roots: &[&str],
-    key: Option<&str>,
+    gateway: &[&str],
 ) -> wire::PlanView {
+    let hide = Hide::of(p, secrets, gateway);
+    // 另一份文件里整段是密钥的那几节（dsh 凭据文件的 `refs`、`records`）整段打码
+    let file = |t: &str| hide.apply(&tw_adopt::yaml::mask_under(t, roots, MASK));
     wire::PlanView {
         client: p.client.clone(),
         path: p.path.display().to_string(),
-        before: p.before.as_deref().map(|t| mask(t, key)),
-        after: mask(&p.after, key),
+        before: p.before.as_deref().map(|t| hide.apply(t)),
+        after: hide.apply(&p.after),
         notes: p.notes.clone(),
         shadows: p.shadows.iter().map(|x| x.display().to_string()).collect(),
         noop: p.is_noop(),
@@ -323,13 +451,14 @@ fn view(
         fields: fields_of(p, secrets),
         key: None,
         key_created: false,
+        digest: plan_fingerprint(p),
         also: p
             .also
             .iter()
             .map(|a| wire::FilePlanView {
                 path: a.path.display().to_string(),
-                before: a.before.as_deref().map(|t| mask_file(t, roots, key)),
-                after: mask_file(&a.after, roots, key),
+                before: a.before.as_deref().map(file),
+                after: file(&a.after),
                 fields: fields_of(a, secrets),
                 noop: a.is_noop(),
                 deletes: a.delete_file,
@@ -389,7 +518,7 @@ pub fn plan_adopt_as(
         &p,
         &secret_paths(&c),
         secret_roots(&c),
-        target.key.as_deref(),
+        target.key.as_deref().as_slice(),
     );
     v.key = Some(name);
     v.key_created = created;
@@ -432,6 +561,8 @@ fn no_keys() -> Msg {
 ///
 /// `key` 是 core 此刻为它发的那把（为它留着的，或者这一刻新建的）：**先有钥匙再写
 /// 对方的配置** —— 反过来的话，中间那一刻对方配置里写着一把网关不认识的钥匙。
+///
+/// `expect` 是确认框里那份改动的 [`fingerprint`]：这中间文件被改过就什么都不写。
 pub fn adopt(
     home: &Path,
     backups: &Path,
@@ -439,6 +570,7 @@ pub fn adopt(
     base: &str,
     key: &str,
     models: Vec<String>,
+    expect: Option<&str>,
 ) -> Result<wire::AdoptResponse, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
     let c = find(id, home)?.here(home);
@@ -448,6 +580,7 @@ pub fn adopt(
         models,
     };
     let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
+    still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),
@@ -473,17 +606,12 @@ pub fn plan_restore_as(
 ) -> Result<wire::PlanView, Msg> {
     let c = find(id, home)?;
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
-    // 还原的 diff 里，**要打码的是用户自己的原始密钥** —— 它正要被写
-    // 回去，而它比我们那把更不该出现在截图里
-    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), None);
-    for k in keys {
-        v.before = v.before.as_deref().map(|t| mask(t, Some(&k.key)));
-        v.after = mask(&v.after, Some(&k.key));
-        for a in &mut v.also {
-            a.before = a.before.as_deref().map(|t| mask(t, Some(&k.key)));
-            a.after = mask(&a.after, Some(&k.key));
-        }
-    }
+    // 还原的 diff 里，**要打码的还有用户自己的原始密钥** —— 它正要被写
+    // 回去，而它比我们那把更不该出现在截图里。`view` 按密钥字段上的值盖住它；
+    // 网关那几把也是按字段盖的，core 不在、连着远程（这里拿到的密钥清单是空的、
+    // 或者是别的机器上的）时照样盖得住
+    let gateway: Vec<&str> = keys.iter().map(|k| k.key.as_str()).collect();
+    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), &gateway);
     // 还原不删密钥：说清留下的是哪一把，下次接管直接用它
     v.key = keys
         .iter()
@@ -497,9 +625,17 @@ pub fn plan_restore_as(
 /// **走的是「把我们写的那几个字段改回去」，不是「拿全文备份覆盖」**
 /// —— 后者会把用户这三个月里加的 MCP server、调的权限、写的 hook 全部
 /// 抹掉。不问 core：还原用不着密钥，core 不在的时候也要能退回去。
-pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptResponse, Msg> {
+///
+/// `expect` 和 [`adopt`] 的一样：确认框里那份改动的指纹，不带就不核对。
+pub fn restore(
+    home: &Path,
+    backups: &Path,
+    id: &str,
+    expect: Option<&str>,
+) -> Result<wire::AdoptResponse, Msg> {
     let c = find(id, home)?.here(home);
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
+    still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply_restore(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),
@@ -640,7 +776,9 @@ pub fn repoint(
         key: Some(key.to_string()),
         models,
     };
-    plan::plan_adopt(c, home, &target)
+    // **和接管走同一个入口**（[`plan_for`]）：Claude Desktop 一次改四个文件、模型清单
+    // 从 `models` 里挑，按单个文件的通用那一套算的话，它的模型列表和另外几份都不跟着换
+    plan_for(c, home, &target)
         .and_then(|p| plan::apply(c, &p, backups))
         .map(|a| wire::KeySynced {
             client: c.id.to_string(),
@@ -821,6 +959,25 @@ pub(crate) mod tests {
         let original = r#"{ "env": { "ANTHROPIC_BASE_URL": "https://example.com", "ANTHROPIC_AUTH_TOKEN": "users-own" } }"#;
         std::fs::write(&settings, original).unwrap();
 
+        // 接管的 diff：被换下来的是用户自己的那把，改之前那一栏里也不能有它
+        let p = plan_adopt(
+            home.path(),
+            "claude-code",
+            &gw(vec![key("default", "tw-new", None, true)]),
+            Vec::new(),
+        )
+        .unwrap();
+        let before = p.before.as_deref().unwrap();
+        assert!(!before.contains("users-own"), "{before}");
+        assert!(before.contains(HIDDEN), "{before}");
+        assert!(
+            p.after.contains(MASK) && !p.after.contains("tw-new"),
+            "{}",
+            p.after
+        );
+        // 不是密钥的照常显示
+        assert!(before.contains("https://example.com"), "{before}");
+
         let a = adopt(
             home.path(),
             &backups(&home),
@@ -828,6 +985,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-new",
             Vec::new(),
+            None,
         )
         .unwrap();
         assert_eq!(a.takes_effect, wire::TakesEffect::Immediately);
@@ -839,10 +997,15 @@ pub(crate) mod tests {
         let p = plan_restore(home.path(), "claude-code", &keys).unwrap();
         assert!(!p.before.as_deref().unwrap().contains("tw-new"));
         assert_eq!(p.key.as_deref(), Some("claude-code"));
-        // 用户自己的那把正要被写回去：它也不出现在 diff 里（写的是旁文件里记下的值）
+        // 用户自己的那把正要被写回去：它也不出现在 diff 里
         assert!(!p.after.contains("tw-new"));
+        assert!(!p.after.contains("users-own"), "{}", p.after);
+        // core 不在（拿不到密钥清单）时，网关那把照样盖得住：它在密钥字段上
+        let offline = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        assert!(!offline.before.as_deref().unwrap().contains("tw-new"));
+        assert!(!offline.after.contains("users-own"), "{}", offline.after);
 
-        restore(home.path(), &backups(&home), "claude-code").unwrap();
+        restore(home.path(), &backups(&home), "claude-code", None).unwrap();
         let back: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
@@ -879,6 +1042,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-o",
             vec!["a".into(), "b".into()],
+            None,
         )
         .unwrap();
         assert!(!stale(&now(&["b", "a"])));
@@ -910,7 +1074,7 @@ pub(crate) mod tests {
     #[test]
     fn restoring_something_we_never_adopted_refuses_instead_of_guessing() {
         let home = home_with_claude();
-        assert!(restore(home.path(), &backups(&home), "claude-code").is_err());
+        assert!(restore(home.path(), &backups(&home), "claude-code", None).is_err());
     }
 
     /// 接管着的客户端的密钥删不得；它的主人是哪个，只有这台机器答得上来
@@ -929,6 +1093,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
@@ -973,6 +1138,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         adopt(
@@ -982,6 +1148,7 @@ pub(crate) mod tests {
             "http://192.168.1.20:8788",
             "tw-x",
             Vec::new(),
+            None,
         )
         .unwrap();
         let here: Vec<_> = adopted_on_this_machine(home.path())
@@ -1078,6 +1245,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         adopt(
@@ -1087,6 +1255,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-x",
             Vec::new(),
+            None,
         )
         .unwrap();
         let listed = list_wsl(
@@ -1102,8 +1271,8 @@ pub(crate) mod tests {
             assert!(is_loopback(e));
         }
 
-        restore(&w.home, &b, "claude-code").unwrap();
-        restore(&w.home, &b, "codex").unwrap();
+        restore(&w.home, &b, "claude-code", None).unwrap();
+        restore(&w.home, &b, "codex", None).unwrap();
         let back: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
@@ -1124,6 +1293,7 @@ pub(crate) mod tests {
             "http://172.27.96.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         let gw = Gateway {
@@ -1136,7 +1306,7 @@ pub(crate) mod tests {
             .unwrap();
         assert!(cc.adopted_at_ms.is_some());
         assert_eq!(cc.endpoint.as_deref(), Some("http://172.27.96.1:8788"));
-        restore(&w.home, &b, "claude-code").unwrap();
+        restore(&w.home, &b, "claude-code", None).unwrap();
         assert!(adopted(&w.home).is_empty());
     }
 
@@ -1151,6 +1321,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-old",
             Vec::new(),
+            None,
         )
         .unwrap();
         let c = find("claude-code", home.path()).unwrap();
@@ -1169,5 +1340,127 @@ pub(crate) mod tests {
             text.contains("tw-fresh") && !text.contains("tw-old"),
             "{text}"
         );
+    }
+
+    /// 重新指向 Claude Desktop：**模型列表按新网关此刻答的换**，和接管同一个入口。
+    /// 按单个文件的通用那一套算的话，列表还是旧网关那一份
+    #[test]
+    fn repointing_claude_desktop_rewrites_its_model_list_too() {
+        let home = tempfile::tempdir().unwrap();
+        if tw_adopt::desktop::managed(home.path()).is_some() {
+            // 这台跑测试的机器上的 Claude Desktop 由组织托管：接管本来就会被拒
+            return;
+        }
+        let first = tw_adopt::desktop::first_party_config(home.path());
+        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+        std::fs::write(&first, "{\n  \"globalShortcut\": \"Alt+Space\"\n}\n").unwrap();
+        let base = "http://127.0.0.1:8788";
+        let id = tw_adopt::desktop::ID;
+        adopt(
+            home.path(),
+            &backups(&home),
+            id,
+            base,
+            "tw-old",
+            vec!["claude-sonnet-5".into()],
+            None,
+        )
+        .unwrap();
+        let c = find(id, home.path()).unwrap();
+        repoint(
+            home.path(),
+            &backups(&home),
+            &c,
+            "http://10.0.0.2:8788",
+            "tw-fresh",
+            vec!["claude-opus-5".into(), "gpt-5".into()],
+        )
+        .unwrap();
+        let profile: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tw_adopt::desktop::profile_path(home.path())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(profile["inferenceGatewayApiKey"], "tw-fresh");
+        assert_eq!(
+            profile["inferenceModels"],
+            serde_json::json!(["claude-opus-5"])
+        );
+    }
+
+    /// 同一份原文同一个指纹；原文、路径、有没有这个文件，任何一样不同都不同
+    #[test]
+    fn the_fingerprint_follows_every_file_the_plan_read() {
+        let a = Path::new("/h/a.json");
+        let b = Path::new("/h/b.json");
+        let f = |xs: &[(&Path, Option<&[u8]>)]| fingerprint(xs.iter().copied());
+        assert_eq!(f(&[(a, Some(b"x"))]), f(&[(a, Some(b"x"))]));
+        assert_ne!(f(&[(a, Some(b"x"))]), f(&[(a, Some(b"y"))]));
+        assert_ne!(f(&[(a, Some(b"x"))]), f(&[(b, Some(b"x"))]));
+        assert_ne!(f(&[(a, None)]), f(&[(a, Some(b""))]));
+        assert_ne!(
+            f(&[(a, Some(b"x"))]),
+            f(&[(a, Some(b"x")), (b, None)]),
+            "多一份文件也算"
+        );
+    }
+
+    /// 看着差异的时候文件被改了：**什么都不写**，按此刻的文件重算的那一份才写得进去
+    #[test]
+    fn a_file_changed_while_its_diff_was_shown_is_not_written() {
+        let home = home_with_claude();
+        let settings = home.path().join(".claude/settings.json");
+        std::fs::write(&settings, "{\n  \"model\": \"opus\"\n}\n").unwrap();
+        let g = gw(vec![key("default", "tw-d", None, true)]);
+        let shown = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+
+        // 客户端自己在这时改了一项设置
+        let changed = "{\n  \"model\": \"sonnet\"\n}\n";
+        std::fs::write(&settings, changed).unwrap();
+        let adopt_now = |expect: &str| {
+            adopt(
+                home.path(),
+                &backups(&home),
+                "claude-code",
+                "http://127.0.0.1:8788",
+                "tw-d",
+                Vec::new(),
+                Some(expect),
+            )
+        };
+        let e = adopt_now(&shown.digest).unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), changed);
+        assert!(adopted(home.path()).is_empty());
+
+        // 重新算一份给人看，照那一份就写得进去
+        let again = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+        assert_ne!(again.digest, shown.digest);
+        adopt_now(&again.digest).unwrap();
+        assert_eq!(adopted(home.path()).len(), 1);
+
+        // 还原也一样
+        let shown = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        let edited = std::fs::read_to_string(&settings)
+            .unwrap()
+            .replace("sonnet", "haiku");
+        std::fs::write(&settings, &edited).unwrap();
+        let e = restore(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            Some(&shown.digest),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), edited);
+        let again = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        restore(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            Some(&again.digest),
+        )
+        .unwrap();
+        assert!(adopted(home.path()).is_empty());
     }
 }

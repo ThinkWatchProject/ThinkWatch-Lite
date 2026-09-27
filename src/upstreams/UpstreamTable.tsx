@@ -34,6 +34,8 @@ import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
 import { SPARKLINE_WIDTH, Sparkline } from "./Sparkline";
 import { upstreamTableText } from "./UpstreamTable.i18n";
+import { overviewText } from "@/overview/overview.i18n";
+import { rankCost } from "@/overview/series";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -86,7 +88,7 @@ export function UpstreamTable({
   // 额度的「多久后重置」随时间走：重画就行，不用再问 core
   const now = useNow();
   const shown = usePresentList(providers, (p) => p.name);
-  const slots = useMemo(() => slotsByUpstream(stats.data?.buckets, since), [stats.data, since]);
+  const slots = useMemo(() => slotsByUpstream(stats.data?.buckets ?? undefined, since), [stats.data, since]);
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
     if (!focus) return;
@@ -337,7 +339,7 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
   const t = useText(upstreamTableText);
   // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会带来
   // 新的。拿它画一根满格的条，说的是一件已经不成立的事
-  const windows = (stats.data?.quotas.find((q) => q.provider === p.name)?.windows ?? []).filter(
+  const windows = (stats.data?.quotas?.find((q) => q.provider === p.name)?.windows ?? []).filter(
     (w) => w.resets_at_ms == null || w.resets_at_ms > now,
   );
   // 最紧张的那个窗口：先到的那条线决定什么时候用完
@@ -425,6 +427,7 @@ function DayCell({
   slots: Slot[] | undefined;
 }) {
   const t = useText(upstreamTableText);
+  const ot = useText(overviewText);
   if (stats.data === undefined) {
     return (
       <TableCell className="text-right">
@@ -440,19 +443,42 @@ function DayCell({
       </TableCell>
     );
   }
+  // 取不到（`null`）不是没有请求：写「—」，页上另有一条「统计取不到」。**费用要两样
+  // 都在** —— 估算的部分只在格子里，缺了它就分不出哪些是估的，写出来的数会冒充实测
+  if (stats.data.costs === null || stats.data.buckets === null) {
+    return <TableCell className="text-right text-muted-foreground">—</TableCell>;
+  }
   const cost = stats.data.costs.find((c) => c.name === p.name);
   if (!cost || cost.requests === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
   const failed = slots?.reduce((n, s) => n + s.failed, 0) ?? 0;
+  /*
+    **费用三态分开写**，和概览排行那一格同一套（`rankCost`）：一条都没算出钱的写成一个
+    词、不写「$0」；有算不出来的带「≥」，含估算的带「~」。合计里没有分出估算的部分，
+    按这一家的格子加回来 —— 同一个时间窗、同一批请求
+  */
+  const rc = rankCost(
+    {
+      cost: cost.cost_micros,
+      estimated: stats.data.buckets.reduce((n, b) => (b.name === p.name ? n + b.cost_micros_estimated : n), 0),
+      unpriced: cost.unpriced_requests,
+      noUsage: cost.no_usage_requests,
+    },
+    ot,
+  );
+  const amount = (v: number) =>
+    rc.kind === "unpriced" ? ot.unpricedCell : rc.kind === "noUsage" ? ot.noUsageCell : rc.prefix + usd(Math.round(v));
   const tip = (
     <div className="flex flex-col gap-0.5 tw-num">
       <div>{t.dayRequests(cost.requests)}</div>
       <div>
         {failed > 0 ? t.dayFailed(failed, (1 - failed / cost.requests) * 100) : t.dayNoFailures}
       </div>
-      <div>{t.dayCost(usd(cost.cost_micros))}</div>
-      {cost.unpriced_requests > 0 && <div>{t.unpricedTip(cost.unpriced_requests)}</div>}
+      <div>{t.dayCost(amount(cost.cost_micros))}</div>
+      {rc.notes.map((l) => (
+        <div key={l}>{l}</div>
+      ))}
     </div>
   );
   return (
@@ -468,8 +494,15 @@ function DayCell({
           <div className="flex min-w-14 flex-col items-end">
             <AnimatedNumber value={cost.requests} format={(n) => t.requests(Math.round(n))} />
             <span className="tw-label tw-num text-muted-foreground">
-              <AnimatedNumber value={cost.cost_micros} format={(n) => usd(Math.round(n))} />
-              {cost.unpriced_requests > 0 && <span className="text-warning"> · {t.unpriced(cost.unpriced_requests)}</span>}
+              {/* 一条都没算出钱时那个词本身就是要去补价的提醒，和后面那半句同一个琥珀色 */}
+              <AnimatedNumber
+                value={cost.cost_micros}
+                format={amount}
+                className={cn(rc.kind === "unpriced" && "text-warning")}
+              />
+              {rc.kind === "amount" && cost.unpriced_requests > 0 && (
+                <span className="text-warning"> · {t.unpriced(cost.unpriced_requests)}</span>
+              )}
             </span>
           </div>
         </div>
@@ -488,7 +521,7 @@ function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamSt
       </TableCell>
     );
   }
-  const lat = stats.data.latency.find((l) => l.model === p.name);
+  const lat = stats.data.latency?.find((l) => l.model === p.name);
   if (!lat || lat.samples === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }

@@ -146,6 +146,28 @@ impl Plan {
     pub fn is_noop(&self) -> bool {
         self.before.as_deref() == Some(self.after.as_str()) && self.also.iter().all(Plan::is_noop)
     }
+
+    /// `paths` 上的字符串值：改之前的、改之后的，另外那几份文件里的也算。
+    ///
+    /// 给界面画 diff 之前打码用。密钥字段上除了网关那把，还有**用户自己的** ——
+    /// 接管时被换下来的、还原时要放回去的，而画出来的是整份文件。解析不了的那一份
+    /// 不算（它本来就算不出改动）
+    pub fn values_at(&self, paths: &[Vec<String>]) -> Vec<String> {
+        let mut out = Vec::new();
+        for p in std::iter::once(self).chain(&self.also) {
+            for text in p.before.iter().chain(std::iter::once(&p.after)) {
+                let Ok(v) = semantic(p.format, text, &p.client) else {
+                    continue;
+                };
+                for path in paths {
+                    if let Some(Val::Str(s)) = lookup(&v, &refs(path)) {
+                        out.push(s);
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 fn parse_err(client: &str, e: impl std::fmt::Display) -> PlanError {
@@ -325,10 +347,18 @@ pub(crate) fn adopt_file(
     // —— 现在文件里的正是我们上次写进去的。
     let real = foreign::resolve(&path)?;
     let side = sentinel::sidecar_path(&real);
-    let prior_rec: Option<SidecarRecord> = std::fs::read_to_string(&side)
-        .ok()
-        .and_then(|t| serde_json::from_str::<SidecarRecord>(&t).ok())
-        .filter(|r| r.client == client);
+    // **记录在、却读不出来或者是别人的，就不接管**，和还原一样拒绝：当成「没接管过」
+    // 的话，此刻文件里的网关地址和密钥会被记成「原值」（见 [`Plan::prior`]）
+    let prior_rec = match read_record(client, &side)? {
+        Some(r) if r.client != client => {
+            return Err(PlanError::ForeignSidecar {
+                path: side,
+                other: r.client,
+                client: client.into(),
+            });
+        }
+        r => r,
+    };
     let prior_originals = match &prior_rec {
         Some(r) => Some(originals_from(r, fmt, client)?),
         None => None,
@@ -454,12 +484,7 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
     for p in std::iter::once(plan).chain(&plan.also) {
         match apply_file(p, backup_root) {
             Ok(a) => done.push(a),
-            Err(e) => {
-                for (a, side) in done.iter().rev() {
-                    undo(a, side.as_deref());
-                }
-                return Err(e);
-            }
+            Err(e) => return Err(undo_all(&done).map_or(e, PlanError::Write)),
         }
     }
     let mut it = done.into_iter().map(|(a, _)| a);
@@ -470,18 +495,35 @@ pub fn apply(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Applied, Pla
     Ok(first)
 }
 
-/// 退回一份已经落盘的接管：文件换回原文，旁文件换回原来那一份（或者删掉）。
-fn undo(a: &Applied, old_sidecar: Option<&str>) {
-    let _ = rollback(a);
-    let side = sentinel::sidecar_path(&a.real);
-    match old_sidecar {
-        Some(t) => {
-            let _ = crate::foreign::write_private(&side, t.as_bytes());
-        }
-        None => {
-            let _ = std::fs::remove_file(&side);
+/// 把已经落盘的那几份倒着退回去。**退不回去的要说出来**，返回第一处：那时文件停在
+/// 一半，用户得知道是哪一个、原来的内容在哪儿 —— 这比让它停下来的那个原因更要紧。
+/// 一处退不回去也照样退别的。
+fn undo_all(done: &[(Applied, Option<String>)]) -> Option<ForeignError> {
+    let mut first = None;
+    for (a, side) in done.iter().rev() {
+        if let Err(e) = undo(a, side.as_deref()) {
+            first.get_or_insert(e);
         }
     }
+    first
+}
+
+/// 退回一份已经落盘的改动：文件换回原文，旁文件换回原来那一份（或者删掉）。两样
+/// 都做，报先出错的那一样。
+fn undo(a: &Applied, old_sidecar: Option<&str>) -> Result<(), ForeignError> {
+    let file = rollback(a);
+    let side = sentinel::sidecar_path(&a.real);
+    let record = match old_sidecar {
+        Some(t) => crate::foreign::write_atomic(&side, t.as_bytes(), None),
+        None => match std::fs::remove_file(&side) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ForeignError::Write {
+                path: side,
+                source: e,
+            }),
+            _ => Ok(()),
+        },
+    };
+    file.and(record)
 }
 
 /// 一份文件落盘，返回结果和它之前的旁文件（退回时要用）。
@@ -523,8 +565,8 @@ fn apply_file(plan: &Plan, backup_root: &Path) -> Result<(Applied, Option<String
         .unwrap_or_else(|| (applied.backup.display().to_string(), applied.created));
     let rec = SidecarRecord::new(&plan.client, now_ms(), &backup, created, &plan.originals);
     if let Err(e) = write_sidecar(&side, &rec) {
-        let _ = rollback(&applied);
-        return Err(PlanError::Write(e));
+        // 配置也退不回去的话，说的是那一件：它停在改过的样子上，而且没有记录
+        return Err(PlanError::Write(rollback(&applied).err().unwrap_or(e)));
     }
     Ok((applied, old_side))
 }
@@ -545,6 +587,11 @@ fn expected(plan: &Plan) -> Result<Val, PlanError> {
     Ok(v)
 }
 
+/// 什么都不剩：一个空的对象（空的映射、空的表）
+fn is_empty(v: &Val) -> bool {
+    matches!(v, Val::Obj(ms) if ms.is_empty())
+}
+
 /// 一个值写进去之后再读出来是什么样。YAML 的语义值里标量都是字符串
 /// （见 [`crate::yamlval`]），`version: 1` 读回来是 `"1"`。
 fn as_read(fmt: Format, v: &Val) -> Val {
@@ -563,11 +610,10 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
     let _ = c;
     let mut done: Vec<(Applied, Option<String>)> = Vec::new();
     let mut warnings = Vec::new();
-    // 哪一份还原不成，前面还原了的都退回接管状态：还原一半，比哪一份都没动更难收拾
-    let undo_done = |done: &[(Applied, Option<String>)]| {
-        for (a, side) in done.iter().rev() {
-            undo(a, side.as_deref());
-        }
+    // 哪一份还原不成，前面还原了的都退回接管状态：还原一半，比哪一份都没动更难收拾。
+    // 退不回去的那一份要说出来（[`undo_all`]）
+    let undo_done = |done: &[(Applied, Option<String>)], e: PlanError| {
+        undo_all(done).map_or(e, PlanError::Write)
     };
     for p in &plan.also {
         match restore_file(p, backup_root) {
@@ -576,10 +622,7 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
                 done.push((a, side));
             }
             Ok(None) => {}
-            Err(e) => {
-                undo_done(&done);
-                return Err(e);
-            }
+            Err(e) => return Err(undo_done(&done, e)),
         }
     }
     match restore_file(plan, backup_root) {
@@ -594,10 +637,7 @@ pub fn apply_restore(c: &Client, plan: &Plan, backup_root: &Path) -> Result<Appl
             created: false,
             warnings,
         }),
-        Err(e) => {
-            undo_done(&done);
-            Err(e)
-        }
+        Err(e) => Err(undo_done(&done, e)),
     }
 }
 
@@ -705,14 +745,11 @@ pub(crate) fn restore_file_plan(
         source,
     })?;
     let side = sentinel::sidecar_path(&real);
-    let rec: SidecarRecord = match std::fs::read_to_string(&side) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| parse_err(client, e))?,
-        Err(_) => {
-            return Err(PlanError::NoRecord {
-                client: client.into(),
-                path: side,
-            });
-        }
+    let Some(rec) = read_record(client, &side)? else {
+        return Err(PlanError::NoRecord {
+            client: client.into(),
+            path: side,
+        });
     };
     if rec.client != client {
         return Err(PlanError::ForeignSidecar {
@@ -781,32 +818,23 @@ pub(crate) fn restore_file_plan(
         }
     }
 
-    // 我们凭空造出来的容器（比如原本没有的 `env`）要跟着收走，
-    // 否则「还原」之后会留下一个用户从来没有过的空段落。
-    if let Some(bv) = &backed_val {
-        for f in &rec.originals {
-            let p = f.path.clone();
-            for cut in (1..p.len()).rev() {
-                let anc = &p[..cut];
-                if lookup(bv, &refs(anc)).is_none()
-                    && !targets
-                        .iter()
-                        .any(|t| matches!(t, Target::Remove(x) if x == anc))
-                {
-                    targets.push(Target::Remove(anc.to_vec()));
-                }
-            }
-        }
-    }
-
     // 有的字段还原之后得留下（Codex 那一段影子 OpenAI，见
-    // `clients::leaves_behind`）。**它们的容器也就不能收走**，删它们的那几条
-    // 让给写它们的那一条。
+    // `clients::leaves_behind`）。删它们的那几条让给写它们的那一条；它们的容器
+    // 因此不空，下面也就不会被收走。
     let now = semantic(fmt, &text, client)?;
     for Edit { path: p, value, .. } in crate::clients::leaves_behind(client, &now) {
         targets.retain(|t| !matches!(t, Target::Remove(x) if p.starts_with(x)));
         targets.push(Target::Set(p, value));
     }
+
+    // 文件里还剩别的东西就得留着的字段（dsh 凭据文件的 `version`，见
+    // `clients::kept_while_in_use`）：接管时加的，照理要收走，可收走之后剩下的东西
+    // 就没人认了。删它们的那几条**先放着**，等别的字段都改回去、空了的容器也收走
+    // 之后再看（最后一段）
+    let kept = crate::clients::kept_while_in_use(client, fmt);
+    let (later, mut targets): (Vec<Target>, Vec<Target>) = targets
+        .into_iter()
+        .partition(|t| matches!(t, Target::Remove(x) if kept.iter().any(|k| k.starts_with(x))));
 
     for t in &targets {
         text = match t {
@@ -816,6 +844,58 @@ pub(crate) fn restore_file_plan(
             Target::Set(p, v) => put(fmt, &text, &refs(p), v, client)?,
             Target::Remove(p) => drop_(fmt, &text, &refs(p), client)?,
         };
+    }
+
+    // 我们凭空造出来的容器（比如原本没有的 `env`）要跟着收走，
+    // 否则「还原」之后会留下一个用户从来没有过的空段落。
+    //
+    // **只收空了的。**接管之后用户可能往这个容器里加了自己的东西（`env` 里的另一个
+    // 变量、opencode 里另一家 provider、dsh 凭据里另一条引用）：整段删掉就是替他删了
+    // 配置。所以等上面那几个字段都改回去之后再看，从最深的一层往外收。
+    if let Some(bv) = &backed_val {
+        let mut created: Vec<Vec<String>> = rec
+            .originals
+            .iter()
+            .flat_map(|f| (1..f.path.len()).map(|cut| f.path[..cut].to_vec()))
+            .filter(|anc| lookup(bv, &refs(anc)).is_none())
+            .collect();
+        created.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        created.dedup();
+        for anc in created {
+            if targets.iter().any(|t| match t {
+                Target::Set(x, _) | Target::Remove(x) => *x == anc,
+            }) {
+                continue;
+            }
+            match lookup(&semantic(fmt, &text, client)?, &refs(&anc)) {
+                // 删掉最后一个字段时容器已经跟着没了（YAML 的嵌套映射）。照样记一条：
+                // 写回校验按这几条改动推算还原之后该是什么样
+                None => {}
+                Some(Val::Null) => text = drop_(fmt, &text, &refs(&anc), client)?,
+                Some(Val::Obj(ms)) if ms.is_empty() => {
+                    text = drop_(fmt, &text, &refs(&anc), client)?
+                }
+                // 里面有用户自己的东西：留着
+                Some(_) => continue,
+            }
+            targets.push(Target::Remove(anc));
+        }
+    }
+
+    // 先放着的那几条（`version`）：别的都改回去之后**什么都不剩才收**，文件是我们建的
+    // 就照旧整个删掉；还剩东西就留着它们，留的是文件里此刻的样子，不另写一个值进去
+    if !later.is_empty() {
+        let rest = kept
+            .iter()
+            .fold(semantic(fmt, &text, client)?, |v, k| v.without(&refs(k)));
+        if is_empty(&rest) {
+            for t in later {
+                if let Target::Remove(p) = &t {
+                    text = drop_(fmt, &text, &refs(p), client)?;
+                }
+                targets.push(t);
+            }
+        }
     }
     if let Some(prefix) = crate::clients::comment_prefix(fmt) {
         text = sentinel::strip(&text, prefix);
@@ -864,26 +944,102 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn write_sidecar(path: &Path, rec: &SidecarRecord) -> Result<(), ForeignError> {
-    let text = serde_json::to_string_pretty(rec).unwrap_or_default();
-    crate::foreign::write_private(path, text.as_bytes()).map_err(|source| ForeignError::Write {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+/// 一份文件旁边的接管记录。**没有是 `None`；在却读不出来、解析不了是错**，不是「没有」。
+///
+/// 接管和还原都从这里读，所以两边对一份坏记录说的是同一句话（解析不了的那一句带上
+/// 记录的路径：用户要去看、去删的是它，不是配置文件本身）。当成「没有」对还原来说是
+/// 找不到原值，对接管来说更糟 —— 见 [`Plan::prior`]。
+pub(crate) fn read_record(client: &str, side: &Path) -> Result<Option<SidecarRecord>, PlanError> {
+    let text = match std::fs::read_to_string(side) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(PlanError::Read {
+                client: client.into(),
+                source: ForeignError::Read {
+                    path: side.to_path_buf(),
+                    source,
+                },
+            });
+        }
+    };
+    serde_json::from_str(&text).map(Some).map_err(|e| {
+        // 只说在哪儿、为什么，**不抄原文**：serde 的原话会把认不出的那个值带出来，
+        // 而这句话一路显示到界面上（配置文件的解析错误也是这么说的）
+        let why = match e.classify() {
+            serde_json::error::Category::Data => "not the record written here",
+            _ => "not valid JSON",
+        };
+        parse_err(
+            client,
+            format!(
+                "{}: line {}, column {}: {why}",
+                side.display(),
+                e.line(),
+                e.column()
+            ),
+        )
+    })
 }
 
-fn rollback(a: &Applied) -> std::io::Result<()> {
+/// 写接管记录。**原子地换上去**（临时文件 + rename，和配置文件同一条路）：写到一半
+/// 断电的话，留下的是上一份完整的记录，而不是半截 —— 半截的记录读不出来，那个文件
+/// 就既还原不了、也不能再接管。临时文件生来就是 `0600`，换上去之后仍然是。
+fn write_sidecar(path: &Path, rec: &SidecarRecord) -> Result<(), ForeignError> {
+    let text = serde_json::to_string_pretty(rec).unwrap_or_default();
+    crate::foreign::write_atomic(path, text.as_bytes(), None)
+}
+
+/// 拿全文备份把一份刚写过的文件放回去（我们新建的就删掉）。放不回去是错，见
+/// [`foreign::put_back`]。
+fn rollback(a: &Applied) -> Result<(), ForeignError> {
     if a.created {
-        std::fs::remove_file(&a.real)
-    } else {
-        let text = std::fs::read_to_string(&a.backup)?;
-        std::fs::write(&a.real, text)
+        return foreign::put_back(&a.real, None, &a.backup);
+    }
+    let text = std::fs::read(&a.backup).map_err(|source| ForeignError::NotRestored {
+        path: a.real.clone(),
+        backup: a.backup.clone(),
+        source,
+    })?;
+    foreign::put_back(&a.real, Some(&text), &a.backup)
+}
+
+#[cfg(test)]
+mod undoing {
+    use super::*;
+
+    /// 后面那一份失败、前面写好的要退回去：**退不回去的要说出来**（是哪一个、原文在
+    /// 哪儿），而且一处退不回去，别的照样退
+    #[test]
+    fn a_file_that_cannot_be_undone_is_reported_and_the_rest_are_still_undone() {
+        let d = tempfile::tempdir().unwrap();
+        let applied = |real: &Path, backup: PathBuf, created: bool| Applied {
+            real: real.to_path_buf(),
+            asked: real.to_path_buf(),
+            backup,
+            created,
+            warnings: Vec::new(),
+        };
+        // 改过的配置，它的全文备份却已经没了
+        let stuck = d.path().join("settings.json");
+        std::fs::write(&stuck, "ours").unwrap();
+        // 我们新建的文件
+        let created = d.path().join("credentials.yaml");
+        std::fs::write(&created, "ours").unwrap();
+        let done = vec![
+            (applied(&stuck, d.path().join("gone"), false), None),
+            (applied(&created, d.path().join("empty"), true), None),
+        ];
+
+        let e = undo_all(&done).expect("有一份退不回去，要说出来");
+        assert!(
+            matches!(&e, ForeignError::NotRestored { path, .. } if *path == stuck),
+            "{e}"
+        );
+        assert!(!created.exists(), "一处退不回去，别的也不退了");
+        assert_eq!(std::fs::read_to_string(&stuck).unwrap(), "ours");
+        // 这时整个接管报的就是它
+        assert_eq!(PlanError::Write(e).msg().code, "adopt.file.not_restored");
     }
 }
 
@@ -910,6 +1066,15 @@ mod msg_codes {
                 ForeignError::VerifyFailed("x".into()),
                 ForeignError::Readback { path: p() },
                 ForeignError::LinkLoop { path: p() },
+                ForeignError::NotRestored {
+                    path: p(),
+                    backup: p(),
+                    source: io(),
+                },
+                ForeignError::NotRemoved {
+                    path: p(),
+                    source: io(),
+                },
             ]
         };
         let mut all: Vec<(Msg, String)> = foreign()

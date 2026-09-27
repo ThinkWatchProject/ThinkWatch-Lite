@@ -156,22 +156,48 @@ fn profile_patches(dsh: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// 换过位置的按换过的找（见 [`user_level`]），没换过就是默认的那一个
+fn placed(moved: &BTreeMap<String, Places>, client: &str, role: Role, default: PathBuf) -> PathBuf {
+    moved
+        .get(client)
+        .and_then(|p| p.get(role).cloned())
+        .unwrap_or(default)
+}
+
+/// 扫描要看的几个目录：Claude Code、Codex、agy 的（换过位置的按换过的），和 dsh 的。
+/// [`candidates`] 和 [`roots`] 从同一处取，两边说的才是同一批目录
+fn scan_dirs(home: &Path, moved: &BTreeMap<String, Places>) -> [PathBuf; 4] {
+    [
+        placed(moved, "claude-code", Role::Scan, under(home, ".claude")),
+        placed(moved, "codex", Role::Scan, under(home, ".codex")),
+        // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
+        placed(
+            moved,
+            "antigravity-cli",
+            Role::Scan,
+            under(home, ".gemini/config"),
+        ),
+        tw_adopt::paths::DSH_DIR.resolve(home),
+    ]
+}
+
 /// 用户级的那一小撮。**数量有限**，所以可以无条件全看一遍。
 ///
 /// 位置默认是各家客户端的默认位置；用户在客户端页或 MCP 页换过位置的（`moved`，按
 /// 客户端 id，见 [`tw_adopt::locations`]），按换过的找：扫描看的目录（hooks、skills、
 /// 指令文件）和 MCP 那一份都跟着走。
 pub fn user_level(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> {
-    let at = |client: &str, role: Role, default: PathBuf| {
-        moved
-            .get(client)
-            .and_then(|p| p.get(role).cloned())
-            .unwrap_or(default)
-    };
-    let claude = at("claude-code", Role::Scan, under(home, ".claude"));
-    let codex = at("codex", Role::Scan, under(home, ".codex"));
-    // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
-    let agy = at("antigravity-cli", Role::Scan, under(home, ".gemini/config"));
+    let mut v = candidates(home, moved);
+    v.retain(|s| s.path.exists());
+    v
+}
+
+/// [`user_level`]，还不在的也列着：固定位置的那几份文件在不在都算（监听要等它们出现，
+/// 见 [`crate::watch::Plan`]）。按形状找的 skill、斜杠命令只列得出已经在的；它们会在
+/// 哪儿冒出来，见 [`roots`]。
+pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> {
+    let at = |client: &str, role: Role, default: PathBuf| placed(moved, client, role, default);
+    let [claude, codex, agy, dsh] = scan_dirs(home, moved);
     let mut v = vec![
         // 危险度第一：hooks 直接执行 shell
         f("claude-code", Kind::Hooks, claude.join("settings.json")),
@@ -241,7 +267,6 @@ pub fn user_level(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
     }
     // DeepSeek Harness：MCP server 是补丁里的插件行。家目录这一层，加上每个
     // profile 自己那一层 —— 两层都会被读进去
-    let dsh = tw_adopt::paths::DSH_DIR.resolve(home);
     v.push(f(
         "dsh",
         Kind::Mcp,
@@ -269,8 +294,33 @@ pub fn user_level(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
     for p in md_in(&agy.join("agents")) {
         v.push(f("antigravity-cli", Kind::Agent, p));
     }
-    v.retain(|s| s.path.exists());
     v
+}
+
+/// 按形状找的来源（skill、斜杠命令、subagent、dsh 的 profile）会在哪个目录里冒出来。
+/// **在不在都列**：新装一个 skill 时，这个目录可能正是这一刻才建出来的，监听要等着它
+/// （见 [`crate::watch::Plan`]）。和 [`candidates`] 里找它们的地方一一对应。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Root {
+    pub dir: PathBuf,
+    /// 底下**每个子目录**各装着一份来源（`skills/<名>/SKILL.md`、
+    /// `profiles/<名>/cordis.patch.yml`）；否则来源就是它里面的文件（`commands/*.md`）
+    pub nested: bool,
+}
+
+pub fn roots(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Root> {
+    let [claude, _, agy, dsh] = scan_dirs(home, moved);
+    let root = |dir: PathBuf, nested: bool| Root { dir, nested };
+    vec![
+        root(claude.join("skills"), true),
+        root(claude.join("commands"), false),
+        root(claude.join("agents"), false),
+        root(dsh.join("profiles"), true),
+        root(dsh.join("skills"), true),
+        root(under(home, ".agents/skills"), true),
+        root(agy.join("skills"), true),
+        root(agy.join("agents"), false),
+    ]
 }
 
 /// 一个**用户显式添加的**项目目录。
@@ -360,6 +410,48 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].client, "claude-desktop");
         assert_eq!(got[0].kind, Kind::Mcp);
+    }
+
+    /// 按形状找到的每一份来源都在某个 [`roots`] 目录里：监听等的就是这些目录，两边
+    /// 对不上的话，新装的那一种就等不到
+    #[test]
+    fn every_source_found_by_shape_sits_in_a_root() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        let dsh = tw_adopt::paths::DSH_DIR.resolve(home);
+        let profile = dsh.join("profiles/work/cordis.patch.yml");
+        for p in [
+            home.join(".claude/skills/a/SKILL.md"),
+            home.join(".claude/commands/b.md"),
+            home.join(".claude/agents/c.md"),
+            profile.clone(),
+            dsh.join("skills/d/SKILL.md"),
+            home.join(".agents/skills/e/SKILL.md"),
+            home.join(".gemini/config/skills/f/SKILL.md"),
+            home.join(".gemini/config/agents/g.md"),
+        ] {
+            touch(&p);
+        }
+        let roots = roots(home, &BTreeMap::new());
+        let found: Vec<_> = user_level(home, &BTreeMap::new())
+            .into_iter()
+            .filter(|s| {
+                matches!(s.kind, Kind::Skill | Kind::Command | Kind::Agent) || s.path == profile
+            })
+            .collect();
+        assert_eq!(found.len(), 8, "{found:?}");
+        for s in found {
+            let dir = s.path.parent().unwrap();
+            assert!(
+                roots.iter().any(|r| if r.nested {
+                    dir.parent() == Some(r.dir.as_path())
+                } else {
+                    dir == r.dir
+                }),
+                "{} 不在任何一个 root 里",
+                s.path.display()
+            );
+        }
     }
 
     #[test]

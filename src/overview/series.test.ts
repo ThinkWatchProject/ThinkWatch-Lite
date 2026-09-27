@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CostBucket, CostBucketGroup, Dashboard, Summary } from "@/types";
 import {
+  axisLabel,
   buildTrend,
   cacheByModel,
   fmtBucket,
@@ -113,6 +114,7 @@ function rank(over: Partial<RankRow>): RankRow {
     estimated: 0,
     unpriced: 0,
     noUsage: 0,
+    pending: 0,
     requests: 1,
     color: "var(--chart-1)",
     ...over,
@@ -172,6 +174,21 @@ describe("纵轴上界", () => {
     const y = holdY({ key: "token/last:1d", v: 5_000_000 }, "cost/last:1d", 3_000);
     expect(y).toEqual({ key: "cost/last:1d", v: 5_000 });
   });
+
+  /**
+   * 纵轴那一栏只有 46px：「100.0M」「$120.00」塞不下，而按周分格的长区间里一格的量大，
+   * 这样的刻度最常见。刻度是取整过的数，小数点后全是 0 的不写
+   */
+  it("刻度上的字：小数点后全是 0 的不写", () => {
+    expect(axisLabel("100.0M")).toBe("100M");
+    expect(axisLabel("$120.00")).toBe("$120");
+    expect(axisLabel("1.0k")).toBe("1k");
+    // 有意义的小数照写
+    expect(axisLabel("1.2k")).toBe("1.2k");
+    expect(axisLabel("$0.500")).toBe("$0.500");
+    expect(axisLabel("$0.0050")).toBe("$0.0050");
+    expect(axisLabel("$0")).toBe("$0");
+  });
 });
 
 describe("时间刻度", () => {
@@ -209,6 +226,24 @@ describe("时间刻度", () => {
     expect(fmtBucket(at, HOUR)).toBe("9/25 07:05");
     expect(fmtBucket(at, LIVE_BUCKET_MS)).toBe("07:05:09");
   });
+
+  /**
+   * 按天、按周的格子是从本地零点起按固定毫秒数数的，过了夏令时切换，起点落在前一天
+   * 的 23 点或当天的 1 点。**写离起点最近的那一天**，不然那一格写成前一天，和上一格
+   * 撞成同一个标签。
+   */
+  it("按天的格子起点偏了一小时，还是写那一天", () => {
+    expect(fmtBucket(new Date(2026, 10, 1, 23, 0).getTime(), DAY)).toBe("11/2");
+    expect(fmtBucket(new Date(2026, 2, 9, 1, 0).getTime(), 7 * DAY)).toBe("3/9");
+  });
+
+  /** 按周分格、跨度几年的自定义区间：零点刻度的间隔跟着放宽，中间不超过七个 */
+  it("跨度很长时刻度不挤在一起", () => {
+    const since = new Date(2023, 0, 2).getTime();
+    const ticks = historyTicks(since, 7 * DAY, 190, t.now);
+    expect(ticks.length - 2).toBeLessThanOrEqual(7);
+    expect(ticks.length - 2).toBeGreaterThan(2);
+  });
 });
 
 describe("趋势图和模型排行", () => {
@@ -220,6 +255,12 @@ describe("趋势图和模型排行", () => {
   const groups = models.map((m, i) => group(since + HOUR, m, (7 - i) * 1000, (i + 1) * 100));
   const d = dashboard(since, groups);
   const base = { d, live: false, bucketMs: HOUR, rangeMs: DAY, samples: [], fails: [], now, prevStack: [], t };
+
+  it("趋势那两样取不到（null）时不报错，也排不出任何模型", () => {
+    const tr = buildTrend({ ...base, d: { ...d, buckets: null, buckets_by_model: null }, by: "cost" });
+    expect(tr.ranking).toEqual([]);
+    expect(tr.keys).toEqual([]);
+  });
 
   it("按 token 排：前五项各一层，其余合并成「其他」，排行从大到小", () => {
     const tr = buildTrend({ ...base, by: "token" });
@@ -406,6 +447,21 @@ describe("排行的费用", () => {
       expect(by.get("c")).toMatchObject({ cost: 0, unpriced: 0 });
     });
 
+    /**
+     * **价钱还在路上的不是 $0。**它落地了、用量有了，`request_priced` 还没到：这时
+     * 这个模型的金额只是下限，和缺了算不出钱的请求同一个写法（「≥」）；到了就不带了。
+     */
+    it("实时档：价钱还没到的，金额写成下限", () => {
+      const live = { ...base, live: true, rangeMs: 10 * 60_000, d: dashboard(since, []) };
+      const s = (id: number, over: Partial<LiveSample>): LiveSample => ({ id, at: now - 30_000, model: "a", tokens: 100, ...over });
+      const waiting = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, {})] }).ranking[0]!;
+      expect(waiting).toMatchObject({ cost: 300, pending: 1, requests: 2 });
+      expect(rankCost(waiting, t)).toEqual({ kind: "amount", prefix: "≥", notes: [t.rankPending(1)] });
+      const priced = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, { cost: 200 })] }).ranking[0]!;
+      expect(priced.pending).toBe(0);
+      expect(rankCost(priced, t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+    });
+
     it("费用口径的悬停：金额之外的条数跟在请求数后面，金额写成下限", () => {
       const d = dashboard(since, [
         g("a", { cost_micros_exact: 5_000, requests: 3, failed: 1 }),
@@ -446,6 +502,10 @@ describe("各模型的缓存", () => {
     expect(rows[0]).toMatchObject({ ctx: 1000, hit: 0.9 });
     expect(rows[1]).toMatchObject({ read: 80, plain: 110, write: 10, ctx: 200, hit: 0.4 });
   });
+
+  it("按模型那份取不到（null）时一行也不列，不报错", () => {
+    expect(cacheByModel({ ...dashboard(0, []), buckets_by_model: null }, t.unknownModel)).toEqual([]);
+  });
 });
 
 describe("延迟", () => {
@@ -465,6 +525,14 @@ describe("延迟", () => {
     expect(fmtMs(1182)).toBe("1.18s");
     expect(fmtMs(12_345)).toBe("12.3s");
     expect(fmtMs(123_456)).toBe("123s");
+  });
+
+  /** 取整进了位的，按下一档的位数写：不是「10.00s」「100.0s」 */
+  it("取整之后再定位数", () => {
+    expect(fmtMs(9_994)).toBe("9.99s");
+    expect(fmtMs(9_996)).toBe("10.0s");
+    expect(fmtMs(99_949)).toBe("99.9s");
+    expect(fmtMs(99_960)).toBe("100s");
   });
 });
 

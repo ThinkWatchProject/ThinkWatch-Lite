@@ -21,6 +21,7 @@ import {
 } from "@/ui/table";
 import { useText } from "@/i18n";
 import ConfigTextMode from "./ConfigText";
+import type { ConfigFocus } from "./configLocate";
 import { configDialogsText } from "./ConfigDialogs.i18n";
 import { when } from "./format";
 import type { ConfigText, ConfigVersion } from "./types";
@@ -40,8 +41,8 @@ export function ConfigFileDialog({
 }: {
   /** 配置换入过几次。换了就重读 */
   reloads: number;
-  /** 打开时选中这个名字所在的那一段 */
-  focus: string | null;
+  /** 打开时选中这一项（哪一段、叫什么） */
+  focus: ConfigFocus | null;
   rejectedLine: number | null;
   onClose: () => void;
   /** 光标所在那一段由哪个页面管理，跳过去 */

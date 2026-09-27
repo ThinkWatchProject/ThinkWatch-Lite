@@ -81,20 +81,6 @@ impl RestartPolicy {
     }
 }
 
-/// 该不该打断用户。
-///
-/// **分级告知**：偶发崩溃自动恢复了就别打扰人 —— 一个用完就
-/// 忘的通知，代价是用户下次真出事时也不看了。
-pub fn should_interrupt(decision: Decision, failures: usize) -> bool {
-    match decision {
-        // 进安全模式必须打断，而且要自动开窗：这时候网关已经不转发了，
-        // 用户的所有 AI 客户端都在瞎，他必须知道。
-        Decision::SafeMode => true,
-        // 第一次崩溃自动恢复了，安静处理。连着崩到第三次说明不是偶发。
-        Decision::RestartAfter(_) => failures >= 3,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,25 +151,5 @@ mod tests {
         }
         assert_eq!(p.on_exit(now), Decision::SafeMode);
         assert_eq!(p.on_exit(now), Decision::SafeMode);
-    }
-
-    #[test]
-    fn one_off_crashes_do_not_interrupt_the_user() {
-        // 一个用完就忘的通知，代价是用户下次真出事时也不看了。
-        assert!(!should_interrupt(Decision::RestartAfter(Duration::ZERO), 1));
-        assert!(!should_interrupt(
-            Decision::RestartAfter(Duration::from_secs(1)),
-            2
-        ));
-    }
-
-    #[test]
-    fn a_run_of_crashes_and_safe_mode_do_interrupt() {
-        assert!(should_interrupt(
-            Decision::RestartAfter(Duration::from_secs(2)),
-            3
-        ));
-        // 安全模式必须打断：网关已经不转发了，用户所有的 AI 客户端都在瞎。
-        assert!(should_interrupt(Decision::SafeMode, 6));
     }
 }

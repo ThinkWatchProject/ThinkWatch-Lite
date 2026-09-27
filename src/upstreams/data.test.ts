@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CostBucketGroup, OAuthView, ProviderView } from "@/types";
-import { HOUR, SLOTS, dayStart, quotaAccounts, slotsByUpstream } from "./data";
+import type { UpstreamStats } from "./api";
+import { HOUR, SLOTS, dayStart, quotaAccounts, slotsByUpstream, statsPartial } from "./data";
 
 function bucket(name: string, at: number, requests: number, failed = 0): CostBucketGroup {
   return {
@@ -61,6 +62,23 @@ describe("slotsByUpstream", () => {
   it("has no row for an upstream without requests in the window", () => {
     expect(slotsByUpstream(undefined, since).size).toBe(0);
     expect(slotsByUpstream([bucket("a", since - 2 * HOUR, 3)], since).has("a")).toBe(false);
+  });
+});
+
+describe("statsPartial", () => {
+  const full: UpstreamStats = { costs: [], latency: [], quotas: [], buckets: [] };
+
+  it("says nothing before the stats arrive, or when every part was read", () => {
+    expect(statsPartial(undefined)).toBe(false);
+    // 读到了、只是空的：那是真的没有请求
+    expect(statsPartial(full)).toBe(false);
+  });
+
+  it("speaks up when costs, the trend or latency could not be read, but not for quotas", () => {
+    expect(statsPartial({ ...full, costs: null })).toBe(true);
+    expect(statsPartial({ ...full, buckets: null })).toBe(true);
+    expect(statsPartial({ ...full, latency: null })).toBe(true);
+    expect(statsPartial({ ...full, quotas: null })).toBe(false);
   });
 });
 

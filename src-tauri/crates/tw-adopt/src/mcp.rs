@@ -272,7 +272,19 @@ fn semantic(t: &Target, text: &str) -> Result<Val, McpError> {
 fn put(t: &Target, text: &str, path: &[&str], v: &Val) -> Result<String, McpError> {
     match t.format {
         Format::Json => crate::json::set(text, path, v).map_err(|e| parse_err(t.client, e)),
-        Format::Toml => crate::toml::set(text, path, v).map_err(|e| parse_err(t.client, e)),
+        Format::Toml => crate::toml::set(text, path, v).map_err(|e| match e {
+            // 对象里的 null 已经当「没设」略过了（见 `crate::toml`），剩下的是没有
+            // 不改意思的写法的那种。**说的是这个 server，不是说目标文件坏了**
+            crate::toml::TErr::Null(field) => McpError::NotCopyable {
+                client: t.client.to_string(),
+                why: msg!(
+                    "adopt.mcp.toml_null", field = field, client = t.name =>
+                    "{field} is null, and {client} keeps its MCP servers in TOML, which has no \
+                     null, so nothing was changed"
+                ),
+            },
+            e => parse_err(t.client, e),
+        }),
         Format::Yaml | Format::Rows => Err(parse_err(t.client, "MCP configuration is not YAML")),
     }
 }
@@ -294,6 +306,59 @@ fn empty(f: Format) -> &'static str {
         Format::Json => "{}\n",
         _ => "",
     }
+}
+
+/// 放 MCP server 的那几个键，各家的写法（见 [`targets`]）
+const SERVER_ROOTS: &[&str] = &["mcpServers", "mcp_servers", "mcp", "context_servers"];
+
+/// server 里装着令牌的那几个键：环境变量和请求头
+const SECRET_KEYS: &[&str] = &[
+    "env",
+    "environment",
+    "headers",
+    "http_headers",
+    "env_http_headers",
+];
+
+/// 一份配置里 MCP server 的环境变量和请求头的值。
+///
+/// **画 diff 之前拿它们打码**：它们多半是令牌（`GITHUB_PERSONAL_ACCESS_TOKEN`、
+/// `Authorization: Bearer …`），而界面上画的是整份文件 —— `~/.claude.json` 里每一个
+/// server、每个项目下的 server 都在里面。认不出的格式、解析不了的文件就当没有
+pub fn server_secrets(format: Format, text: &str) -> Vec<String> {
+    fn strings(v: &Val, out: &mut Vec<String>) {
+        match v {
+            Val::Str(s) => out.push(s.clone()),
+            Val::Arr(es) => es.iter().for_each(|x| strings(x, out)),
+            Val::Obj(ms) => ms.iter().for_each(|(_, x)| strings(x, out)),
+            _ => {}
+        }
+    }
+    fn walk(v: &Val, in_servers: bool, out: &mut Vec<String>) {
+        match v {
+            Val::Obj(ms) => {
+                for (k, x) in ms {
+                    if in_servers && SECRET_KEYS.contains(&k.as_str()) {
+                        strings(x, out);
+                    } else {
+                        walk(x, in_servers || SERVER_ROOTS.contains(&k.as_str()), out);
+                    }
+                }
+            }
+            Val::Arr(es) => es.iter().for_each(|x| walk(x, in_servers, out)),
+            _ => {}
+        }
+    }
+    let v = match format {
+        Format::Json => crate::json::value(text).ok(),
+        Format::Toml => crate::toml::value(text).ok(),
+        Format::Yaml | Format::Rows => None,
+    };
+    let mut out = Vec::new();
+    if let Some(v) = v {
+        walk(&v, false, &mut out);
+    }
+    out
 }
 
 /// 一次改动，算好了还没落盘。
@@ -551,6 +616,44 @@ mod tests {
         // 用户的项目授权一条都不能少
         assert!(out.contains("[projects.\"/a\"]"), "{out}");
         assert!(out.contains("model = \"gpt-5\""), "{out}");
+    }
+
+    /// JSON 里写成 `null` 的键就是「没设」。TOML 没有 null：**不写这个键**，而不是写成
+    /// 空串 —— `cwd = ""` 是另一个意思，`env = ""` 让 Codex 连整份配置都读不进去
+    #[test]
+    fn a_null_in_a_json_server_is_left_out_of_toml_rather_than_written_as_empty() {
+        let (d, home) = home_with(&[
+            (
+                ".claude.json",
+                r#"{ "mcpServers": {
+                  "fs": { "command": "npx", "args": ["-y", "fs"], "cwd": null, "env": { "A": "1", "B": null } },
+                  "odd": { "command": "x", "args": ["-y", null] }
+                } }"#,
+            ),
+            (".codex/config.toml", "model = \"gpt-5\"\n"),
+        ]);
+        let src = target("claude-code").unwrap();
+        let dst = target("codex").unwrap();
+        let v = read_server(&src, &home, "fs").unwrap();
+        let p = plan_copy(&dst, &home, "fs", &v).unwrap();
+        apply(&dst, &p, &d.path().join("backups")).unwrap();
+        let out = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
+        let get = |k: &[&str]| {
+            let mut path = vec!["mcp_servers", "fs"];
+            path.extend_from_slice(k);
+            crate::toml::get(&out, &path).unwrap()
+        };
+        assert_eq!(get(&["cwd"]), None, "{out}");
+        assert_eq!(get(&["env", "B"]), None, "{out}");
+        assert_eq!(get(&["env", "A"]), Some(Val::s("1")), "{out}");
+        assert_eq!(get(&["command"]), Some(Val::s("npx")), "{out}");
+        assert!(!out.contains("\"\""), "{out}");
+
+        // 参数里的 null 去掉了就是换了参数的位置：不写，说出来
+        let v = read_server(&src, &home, "odd").unwrap();
+        let e = plan_copy(&dst, &home, "odd", &v).unwrap_err();
+        assert_eq!(e.msg().code, "adopt.mcp.toml_null", "{e}");
+        assert!(e.to_string().contains("args"), "{e}");
     }
 
     #[test]

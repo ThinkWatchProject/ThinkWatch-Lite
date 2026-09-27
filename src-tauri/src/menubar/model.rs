@@ -83,6 +83,44 @@ pub struct Today {
     pub tokens: i64,
     /// 实测加估算，微分
     pub cost_micros: i64,
+    /// 其中估算的那部分，微分
+    pub estimated_micros: i64,
+    /// 有用量、模型却不在价目表里的请求。**它们的费用不在 `cost_micros` 里**
+    pub unpriced: i64,
+    /// 没有拿到用量的请求：费用同样算不出来，也不在 `cost_micros` 里
+    pub no_usage: i64,
+}
+
+impl Today {
+    /// 费用写出来的样子，和界面上同一套记号：有算不出钱的请求时，金额只是下限
+    /// （「≥」）；**估算不能冒充实测**，含估算的带「~」
+    fn cost(&self, amount: fn(i64) -> String) -> String {
+        let lower_bound = if self.unpriced + self.no_usage > 0 {
+            "≥"
+        } else {
+            ""
+        };
+        let estimated = if self.estimated_micros > 0 { "~" } else { "" };
+        format!("{lower_bound}{estimated}{}", amount(self.cost_micros))
+    }
+
+    /// 费用那一格旁边的小字：金额里缺着的请求，先说能补上的（配个价格）。含估算的
+    /// 不在这里说，金额前面那个「~」就是界面上各处说估算的记号
+    fn cost_note(&self) -> Option<String> {
+        if self.unpriced > 0 {
+            Some(tr!(
+                format!("{} 条无法计价", self.unpriced),
+                format!("{} unpriced", self.unpriced)
+            ))
+        } else if self.no_usage > 0 {
+            Some(tr!(
+                format!("{} 条无用量", self.no_usage),
+                format!("{} with no usage", self.no_usage)
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -177,8 +215,8 @@ pub enum Action {
     Quit,
 }
 
-/// 数字和标识染什么颜色
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// 数字和标识染什么颜色。**越往下越要紧**：比较的顺序就是这个顺序
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tone {
     #[default]
     Normal,
@@ -230,7 +268,7 @@ pub struct WindowRow {
 pub struct StatCell {
     pub value: String,
     pub label: String,
-    /// 标签旁的橙色小字（失败数）
+    /// 标签旁的橙色小字（失败数、算不出钱的请求数）
     pub note: Option<String>,
 }
 
@@ -375,7 +413,7 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
         numbers: if running {
             s.today
                 .as_ref()
-                .map(|t| (tokens_short(t.tokens), cost_short(t.cost_micros)))
+                .map(|t| (tokens_short(t.tokens), t.cost(cost_short)))
         } else {
             // 不在运行时，上一次的数字已经不代表现在：画破折号，不画一个凝固的旧值
             None
@@ -392,14 +430,20 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
     }
 }
 
-/// 还在当前的窗口里最紧张的那个。**过了重置时刻的不算**：手上的百分比是重置
-/// 之前的，下一个请求才会带来新的
+/// 还在当前的窗口里最紧张的那个。**先比颜色，再比用了多少**：上游说快到了、说已经
+/// 拒绝的那个窗口，用得再少也比一个用了 89% 的要紧 —— 只比百分比的话，菜单栏就不变色，
+/// 悬停提示说的也是另一个窗口。**过了重置时刻的不算**：手上的百分比是重置之前的，
+/// 下一个请求才会带来新的
 fn tightest(s: &Snapshot) -> Option<(&str, &Window)> {
     s.quotas
         .iter()
         .flat_map(|q| q.windows.iter().map(move |w| (q.provider.as_str(), w)))
         .filter(|(_, w)| current(w, s.now_ms))
-        .max_by(|a, b| a.1.used_percent.total_cmp(&b.1.used_percent))
+        .max_by(|a, b| {
+            bar_tone(a.1)
+                .cmp(&bar_tone(b.1))
+                .then(a.1.used_percent.total_cmp(&b.1.used_percent))
+        })
 }
 
 fn current(w: &Window, now_ms: u64) -> bool {
@@ -441,12 +485,12 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                 format!(
                     "今日 {} token，费用 {}",
                     tokens_short(t.tokens),
-                    cost_long(t.cost_micros)
+                    t.cost(cost_long)
                 ),
                 format!(
                     "{} tokens today, {} cost",
                     tokens_short(t.tokens),
-                    cost_long(t.cost_micros)
+                    t.cost(cost_long)
                 )
             ));
         }
@@ -566,9 +610,9 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     note: None,
                 },
                 StatCell {
-                    value: cost_long(t.cost_micros),
+                    value: t.cost(cost_long),
                     label: tr!("费用", "Cost").to_string(),
-                    note: None,
+                    note: t.cost_note(),
                 },
             ],
             action: Action::Open("dashboard"),
@@ -917,20 +961,18 @@ fn count(n: f64) -> String {
 }
 
 /// 多久之后重置。**只给一个量级**，和上游页的写法一样：读它是为了知道今天还够
-/// 不够用，不是为了对表
+/// 不够用，不是为了对表。**取整之后再定单位**：59.5 分钟是「1 小时」，不是「60 分钟」
 pub fn resets_in(secs: u64) -> String {
+    let [m, h, d] = [60.0, 3600.0, 86_400.0].map(|unit| (secs as f64 / unit).round() as u64);
     let (zh, en) = if secs == 0 {
         ("刚刚".to_string(), "now".to_string())
     } else if secs < 60 {
         ("1 分钟内".to_string(), "within 1 min".to_string())
-    } else if secs < 3600 {
-        let m = (secs as f64 / 60.0).round() as u64;
+    } else if m < 60 {
         (format!("{m} 分钟后"), format!("in {m} min"))
-    } else if secs < 86_400 {
-        let h = (secs as f64 / 3600.0).round() as u64;
+    } else if h < 24 {
         (format!("{h} 小时后"), format!("in {h} h"))
     } else {
-        let d = (secs as f64 / 86_400.0).round() as u64;
         (
             format!("{d} 天后"),
             if d == 1 {
@@ -943,43 +985,55 @@ pub fn resets_in(secs: u64) -> String {
     tr!(format!("{zh}重置"), format!("Resets {en}"))
 }
 
-/// 菜单栏上的 token 数，和概览的写法一样：`845`、`9.8k`、`123k`、`3.1M`
+/// `x` 按 `digits` 位小数写出来。**写出来的数到了 `limit` 就不算**（进位进到了下一档）：
+/// 比的是写出来的那个数，所以和它怎么舍入永远一致
+fn below(x: f64, digits: usize, limit: f64) -> Option<String> {
+    let s = format!("{x:.digits$}");
+    s.parse::<f64>().is_ok_and(|v| v < limit).then_some(s)
+}
+
+/// 菜单栏上的 token 数，和概览的写法一样：`845`、`9.8k`、`123k`、`3.1M`。
+///
+/// **先按这一档的精度取整，再看落在哪一档**：9,960 写一位小数是「10.0k」，那已经是下一档
+/// 的「10k」；999,600 取整是「1000k」，那是「1.0M」
 pub fn tokens_short(n: i64) -> String {
     let n = n.max(0);
     if n < 1_000 {
-        n.to_string()
-    } else if n < 10_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else if n < 1_000_000 {
-        format!("{}k", (n as f64 / 1_000.0).round() as i64)
-    } else if n < 1_000_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else {
-        format!("{:.1}B", n as f64 / 1_000_000_000.0)
+        return n.to_string();
+    }
+    let k = n as f64 / 1_000.0;
+    if let Some(s) = below(k, 1, 10.0) {
+        return format!("{s}k");
+    }
+    if k.round() < 1_000.0 {
+        return format!("{}k", k.round() as i64);
+    }
+    match below(n as f64 / 1_000_000.0, 1, 1_000.0) {
+        Some(s) => format!("{s}M"),
+        None => format!("{:.1}B", n as f64 / 1_000_000_000.0),
     }
 }
 
-/// 菜单栏上的费用。**位数少才放得下**：满 $100 去掉小数，满 $1000 写成 k
+/// 菜单栏上的费用。**位数少才放得下**：满 $100 去掉小数，满 $1000 写成 k。和 token 数
+/// 一样取整之后再定单位：$99.996 是「$100」，$9,960 是「$10k」
 pub fn cost_short(micros: i64) -> String {
     let d = micros.max(0) as f64 / 1_000_000.0;
-    if d < 100.0 {
-        format!("${d:.2}")
-    } else if d < 1_000.0 {
-        format!("${d:.0}")
-    } else if d < 10_000.0 {
-        format!("${:.1}k", d / 1_000.0)
-    } else {
-        format!("${:.0}k", d / 1_000.0)
+    if let Some(s) = below(d, 2, 100.0).or_else(|| below(d, 0, 1_000.0)) {
+        return format!("${s}");
+    }
+    match below(d / 1_000.0, 1, 10.0) {
+        Some(s) => format!("${s}k"),
+        None => format!("${:.0}k", d / 1_000.0),
     }
 }
 
-/// 菜单里的费用：地方够，满 $1000 之前都写到分
+/// 菜单里的费用：地方够，满 $1000 之前都写到分。$999.996 写到分是「$1000.00」，那已经是
+/// 满 $1000 的「$1,000」
 pub fn cost_long(micros: i64) -> String {
     let d = micros.max(0) as f64 / 1_000_000.0;
-    if d < 1_000.0 {
-        format!("${d:.2}")
-    } else {
-        format!("${}", grouped(d.round() as i64))
+    match below(d, 2, 1_000.0) {
+        Some(s) => format!("${s}"),
+        None => format!("${}", grouped(d.round() as i64)),
     }
 }
 
@@ -1039,6 +1093,7 @@ mod tests {
                 failed: 0,
                 tokens: 3_100_000,
                 cost_micros: 41_200_000,
+                ..Default::default()
             }),
             notices_on: true,
             now_ms: NOW,
@@ -1203,6 +1258,65 @@ mod tests {
         assert!(!bar.dim && !bar.alert && !bar.dot);
     }
 
+    /// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单栏上
+    /// 那个数是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面
+    #[test]
+    fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
+        use crate::i18n::{Lang, with_lang};
+        let cost = |t: Today| {
+            let mut s = running();
+            s.today = Some(t);
+            let (bar, rows) = build(&s, Style::Full);
+            let cell = rows
+                .iter()
+                .find_map(|r| match r {
+                    Row::Stats { cells, .. } => cells.get(2).cloned(),
+                    _ => None,
+                })
+                .unwrap();
+            (bar.numbers.unwrap().1, cell.value, cell.note, bar.tooltip)
+        };
+        let base = Today {
+            requests: 10,
+            tokens: 1_000,
+            cost_micros: 2_500_000,
+            ..Default::default()
+        };
+        with_lang(Lang::En, || {
+            let (short, long, note, _) = cost(base.clone());
+            assert_eq!(
+                (short.as_str(), long.as_str(), note),
+                ("$2.50", "$2.50", None)
+            );
+
+            let (short, long, note, tip) = cost(Today {
+                estimated_micros: 500_000,
+                ..base.clone()
+            });
+            assert_eq!(
+                (short.as_str(), long.as_str(), note),
+                ("~$2.50", "~$2.50", None)
+            );
+            assert!(tip.contains("~$2.50 cost"), "{tip}");
+
+            let (short, _, note, _) = cost(Today {
+                unpriced: 3,
+                ..base.clone()
+            });
+            assert_eq!(short, "≥$2.50");
+            assert_eq!(note.as_deref(), Some("3 unpriced"));
+
+            // 一条都没算出钱：不是「今天花了 $0」
+            let (short, _, note, _) = cost(Today {
+                cost_micros: 0,
+                no_usage: 2,
+                ..base.clone()
+            });
+            assert_eq!(short, "≥$0.00");
+            assert_eq!(note.as_deref(), Some("2 with no usage"));
+        });
+    }
+
     #[test]
     fn an_unknown_day_is_two_dashes_and_a_quiet_day_is_zero() {
         // 0 是一个值，破折号不是：问到了、今天还没有请求，就写 0
@@ -1244,6 +1358,45 @@ mod tests {
         assert_eq!(elapsed(3_800_000), "1:03:20");
     }
 
+    /// **取整之后再定单位。**先定单位再取整，就会写出「10.0k」「1000k」「$10.0k」「60 分钟」
+    /// 这样多出一位、或者该进位却没进的数
+    #[test]
+    fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
+        for (n, want) in [
+            (9_949, "9.9k"),
+            (9_960, "10k"),
+            (9_999, "10k"),
+            (999_499, "999k"),
+            (999_500, "1.0M"),
+            (999_999, "1.0M"),
+            (999_949_999, "999.9M"),
+            (999_950_001, "1.0B"),
+        ] {
+            assert_eq!(tokens_short(n), want, "{n}");
+        }
+        for (micros, want) in [
+            (99_994_999, "$99.99"),
+            (99_996_000, "$100"),
+            (999_499_999, "$999"),
+            (999_600_000, "$1.0k"),
+            (9_949_000_000, "$9.9k"),
+            (9_960_000_000, "$10k"),
+        ] {
+            assert_eq!(cost_short(micros), want, "{micros}");
+        }
+        assert_eq!(cost_long(999_994_000), "$999.99");
+        assert_eq!(cost_long(999_996_000), "$1,000");
+        // 59.5 分钟往上是「1 小时」，23.5 小时往上是「1 天」，和上游页一样
+        assert_eq!(resets_in(3_569), "59 分钟后重置");
+        assert_eq!(resets_in(3_570), "1 小时后重置");
+        assert_eq!(resets_in(84_599), "23 小时后重置");
+        assert_eq!(resets_in(84_600), "1 天后重置");
+        with_lang(Lang::En, || {
+            assert_eq!(resets_in(3_570), "Resets in 1 h");
+            assert_eq!(resets_in(84_600), "Resets in 1 day");
+        });
+    }
+
     #[test]
     fn a_tight_quota_turns_the_numbers_orange_and_a_used_up_one_red() {
         let mut s = running();
@@ -1264,6 +1417,55 @@ mod tests {
         assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
         s.quotas[0].windows[0].status = Some("rejected".into());
         assert_eq!(build(&s, Style::Full).0.tone, Tone::Full);
+    }
+
+    /// 颜色看**最要紧**的那个窗口，不是用得最多的那个：每周的用了 95%，5 小时的上游已经
+    /// 拒绝了，菜单栏是红的；用得最多的那个没事、另一家上游说快到了，是橙的。悬停提示说的
+    /// 也是定了颜色的那个窗口
+    #[test]
+    fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
+        let mut s = running();
+        s.quotas = vec![Quota {
+            provider: "chatgpt".into(),
+            windows: vec![
+                window("weekly", 95.0, 86_400_000),
+                Window {
+                    status: Some("rejected".into()),
+                    ..window("5h", 40.0, 3_600_000)
+                },
+            ],
+            reset_credits: None,
+        }];
+        let (bar, _) = build(&s, Style::Full);
+        assert_eq!(bar.tone, Tone::Full);
+        assert!(
+            bar.tooltip.ends_with("chatgpt 5 小时额度已用 40%"),
+            "{}",
+            bar.tooltip
+        );
+
+        s.quotas = vec![
+            Quota {
+                provider: "chatgpt".into(),
+                windows: vec![window("5h", 60.0, 3_600_000)],
+                reset_credits: None,
+            },
+            Quota {
+                provider: "glm".into(),
+                windows: vec![Window {
+                    status: Some("allowed_warning".into()),
+                    ..window("weekly", 30.0, 86_400_000)
+                }],
+                reset_credits: None,
+            },
+        ];
+        let (bar, _) = build(&s, Style::Full);
+        assert_eq!(bar.tone, Tone::Warn);
+        assert!(
+            bar.tooltip.ends_with("glm 每周额度已用 30%"),
+            "{}",
+            bar.tooltip
+        );
     }
 
     #[test]

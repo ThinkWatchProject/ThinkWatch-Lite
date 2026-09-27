@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sessionsText } from "./Sessions.i18n";
 import type { SessionView } from "@/types";
-import { costCell } from "./costCell";
+import { costCell, turnCost, type TurnCost } from "./costCell";
 
 const t = sessionsText.zh;
 
@@ -67,5 +67,40 @@ describe("会话费用那一格", () => {
     expect(c.text).toBe(t.unpriced);
     expect(c.muted).toBe(true);
     expect(c.notes).toEqual([t.noPricedTurnsTip, t.unpricedTurnsTip(8), t.noUsageTurnsTip(2)]);
+  });
+});
+
+/**
+ * 会话瀑布里每一轮的费用。**「无法计价」只给有用量、模型却没有价格的那几轮** —— 配个
+ * 价格就有金额的那一种，和 core 数「无法计价」同一个条件。失败在响应之前的、没报用量
+ * 的，配了价格照样没有金额：写「—」，不说成「去补个价」。
+ */
+describe("瀑布里一轮的费用", () => {
+  /** 一轮落了库、按量计费、有用量、算出了价钱 */
+  const turn = (x: Partial<TurnCost>): TurnCost => ({
+    cost: 1_800,
+    estimated: false,
+    usage: true,
+    billing: "per-token",
+    recorded: true,
+    ...x,
+  });
+
+  it("有金额写金额，估算的带记号", () => {
+    expect(turnCost(turn({}), t)).toEqual({ text: "$0.0018", muted: false });
+    expect(turnCost(turn({ estimated: true }), t).text).toBe("~$0.0018");
+  });
+
+  it("有用量却没有价格：无法计价", () => {
+    expect(turnCost(turn({ cost: null }), t)).toEqual({ text: t.unpriced, muted: true });
+  });
+
+  it("没有用量的（失败在响应之前、上游没报用量）：「—」，不是无法计价", () => {
+    expect(turnCost(turn({ cost: null, usage: false }), t)).toEqual({ text: "—", muted: true });
+  });
+
+  it("不计费的上游、表里还没落库的那几轮：「—」", () => {
+    expect(turnCost(turn({ cost: null, billing: "free" }), t).text).toBe("—");
+    expect(turnCost(turn({ cost: null, recorded: false }), t).text).toBe("—");
   });
 });

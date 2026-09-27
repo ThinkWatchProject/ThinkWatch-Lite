@@ -104,6 +104,10 @@ export function CacheSection({ d, scope, scoped }: { d: Dashboard; scope: string
 
             <div className="min-w-0">
               <ColumnHead>{t.hitByModel}</ColumnHead>
+              {/* 按模型的那份取数失败：不是「没有模型」，总账照常 */}
+              {d.buckets_by_model === null && (
+                <p className="flex h-7 items-center tw-body text-muted-foreground">{t.cacheModelsUnavailable}</p>
+              )}
               {shown.map(({ item: r, key, presence }) => (
                 <LinkRow
                   key={key}

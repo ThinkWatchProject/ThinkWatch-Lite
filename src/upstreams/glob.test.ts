@@ -27,6 +27,13 @@ describe("模型名通配", () => {
   });
 
   /** 和 core 一起修的那个错：结尾那一段在前面也出现过 */
+  /** core 的 `glob_match` 用 `to_ascii_lowercase`：只折叠 ASCII 字母，别的字母原样比 */
+  it("只忽略 ASCII 字母的大小写，和 core 一样", () => {
+    expect(globMatch("CLAUDE-*", "claude-opus-5")).toBe(true);
+    expect(globMatch("Σ*", "σ-model")).toBe(false);
+    expect(globMatch("*ｍｉｎｉ", "gpt-ＭＩＮＩ")).toBe(false);
+  });
+
   it("最后一个 * 之后的部分锚定在结尾", () => {
     expect(globMatch("*-mini", "gpt-4o-mini-2024-mini")).toBe(true);
     expect(globMatch("a*b", "abxb")).toBe(true);

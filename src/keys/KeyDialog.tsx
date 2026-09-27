@@ -59,7 +59,7 @@ export function KeyDialog({
   defaultRoute: string;
   /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
   catalog: KnownModel[];
-  /** 写配置时带的版本号 */
+  /** 这一页最后知道的配置版本。**打开时读一次**，保存带的是那一个（见下面的 `base`） */
   version: { get: () => string };
   onClose: () => void;
   /** 保存好了：密钥名，和配置的新版本 */
@@ -77,6 +77,12 @@ export function KeyDialog({
   const [enabled, setEnabled] = useState(!editing?.disabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+    **打开时的版本号，保存时带它。**表单是照打开那一刻的配置填的：对话框开着的时候别处
+    改了配置（另一个窗口、直接改文件），保存时再去读最新的版本号，core 的冲突检查就
+    永远通过，旧表单把别人的改动悄悄盖掉。带打开时的那一个，core 会说「版本不一致」
+  */
+  const [base] = useState(() => version.get());
 
   const owner = editing ? takeoverOf(editing, clients, manual) : null;
   const taken = keys.some((k) => k.name === name.trim() && k.name !== editing?.name);
@@ -100,7 +106,7 @@ export function KeyDialog({
         max_concurrent: limit.trim() ? Number(limit.trim()) : null,
         disabled: !enabled,
       },
-      base_version: version.get(),
+      base_version: base,
     };
     try {
       const w = editing ? await api.updateKey(editing.name, body) : await api.createKey(body);

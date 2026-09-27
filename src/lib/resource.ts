@@ -9,7 +9,8 @@ import type { CoreEvent, LocalEvent } from "@/types";
  * 重新开始 —— 每次切页都闪一下。这里的缓存在模块里，不跟组件走：
  *
  * · 回到一页时立刻画上一次的数据，同时在后台重取，取到了再无声替换；
- * · 同一个键同时只有一个请求在飞（两处挂同一份数据只取一次）；
+ * · 同一个键同时只有一个请求在飞（两处挂同一份数据只取一次）；飞着的时候又要重取
+ *   （数据变了），等它落地**再取一次**，见 `fetchInto`；
  * · `events` 里的 core 事件到了就重取（节流，和 `useCoreEvent` 同一个节奏）；
  * · `mutate` 先改缓存（乐观更新），返回撤回函数，配 `undoable` 用；
  * · 换了连接（另一个 core）整份缓存清掉：两个 core 的数据不能混（`resetResources`，
@@ -46,6 +47,8 @@ interface Entry {
   error: unknown;
   /** 正在飞的那个请求 */
   inflight: Promise<unknown> | null;
+  /** 飞着的时候又被要求重取：它落地之后再取的那一次（见 `fetchInto`） */
+  next: Again | null;
   /** 最近一次成功的时刻 */
   at: number;
   listeners: Set<() => void>;
@@ -60,6 +63,13 @@ interface Snapshot {
   fetching: boolean;
 }
 
+/** 排着的那一次重取：用哪个取数函数，和交给要求它的那几处的结果 */
+interface Again {
+  fetcher: () => Promise<unknown>;
+  promise: Promise<unknown>;
+  resolve: (v: unknown) => void;
+}
+
 const cache = new Map<string, Entry>();
 /** 每换一次连接加一。换之前发出去、换之后才回来的结果不写进新缓存 */
 let epoch = 0;
@@ -71,6 +81,7 @@ function entry(key: string): Entry {
       data: undefined,
       error: undefined,
       inflight: null,
+      next: null,
       at: 0,
       listeners: new Set(),
       fetchers: new Set(),
@@ -86,9 +97,32 @@ function publish(e: Entry) {
   for (const f of e.listeners) f();
 }
 
-function fetchInto<T>(key: string, fetcher: () => Promise<T>): Promise<T | undefined> {
+/**
+ * 取一次，写进缓存。返回取到的数据（失败时 `undefined`）。
+ *
+ * **已经有一个在飞的时候**，要看这一次是为什么要取：
+ *
+ * · `join`：只是又有一处挂上了这份数据（两处挂同一份数据只取一次）。搭上飞着的那一个。
+ * · 否则是**数据变了**要重取：刚改完配置、事件说库里多了东西、筛选条件换了。飞着的
+ *   那一个是在这之前发出去的，它带回来的可能正是改之前的样子。原来这里也是搭上它，
+ *   最后那一次要求就这么丢了 —— 页面停在改之前的数上，直到下一个事件再来。现在等它
+ *   落地**再取一次**；飞着的时候要求了好几次也只补这一次，用最后那个取数函数（筛选
+ *   条件以最后一次为准）。要求的几处拿到的都是补取的那一份。
+ *
+ * 导出给测试用。
+ */
+export function fetchInto<T>(key: string, fetcher: () => Promise<T>, join = false): Promise<T | undefined> {
   const e = entry(key);
-  if (e.inflight) return e.inflight as Promise<T | undefined>;
+  if (e.inflight) {
+    if (join) return e.inflight as Promise<T | undefined>;
+    if (!e.next) {
+      let resolve: (v: unknown) => void = () => {};
+      const promise = new Promise<unknown>((r) => (resolve = r));
+      e.next = { fetcher, promise, resolve };
+    }
+    e.next.fetcher = fetcher;
+    return e.next.promise as Promise<T | undefined>;
+  }
   const mine = epoch;
   const p: Promise<T | undefined> = fetcher().then(
     (data) => {
@@ -106,6 +140,14 @@ function fetchInto<T>(key: string, fetcher: () => Promise<T>): Promise<T | undef
   );
   const tracked: Promise<unknown> = p.finally(() => {
     if (e.inflight === tracked) e.inflight = null;
+    const next = e.next;
+    e.next = null;
+    // 排着的那一次接着取。**先接上再广播**：中间不出现「没在取」的一刻，刷新的小转圈不闪
+    if (next) {
+      // 换过连接的话这一份缓存已经作废，补取也作废
+      if (mine === epoch) void fetchInto(key, next.fetcher).then(next.resolve);
+      else next.resolve(undefined);
+    }
     publish(e);
   });
   e.inflight = tracked;
@@ -147,7 +189,8 @@ export function useResource<T>(
     [key],
   );
 
-  // 挂上、换键、依赖变了：取一次（刚取过的不重复取）
+  // 挂上、换键、依赖变了：取一次（刚取过的不重复取）。只是挂上的话，搭上飞着的那一个；
+  // 依赖变了的话，飞着的那一个是按旧的依赖取的，落地之后要再取（见 `fetchInto`）
   const depKey = JSON.stringify(opts.deps ?? []);
   const lastDeps = useRef<string | null>(null);
   useEffect(() => {
@@ -156,7 +199,7 @@ export function useResource<T>(
     const changed = lastDeps.current !== null && lastDeps.current !== depKey;
     lastDeps.current = depKey;
     if (!changed && e.inflight === null && Date.now() - e.at < DEDUPE_MS && e.data !== undefined) return;
-    void fetchInto(key, () => f.current());
+    void fetchInto(key, () => f.current(), !changed);
   }, [key, depKey]);
 
   // 让 `invalidate` 找得到一个活着的取数函数

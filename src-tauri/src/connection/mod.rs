@@ -84,9 +84,44 @@ pub struct Link {
     lost: Arc<Notify>,
     /// 连远程的那条循环
     task: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    /// 换过几代连接。那条循环只替起它的那一代写状态，见 [`Generation`]
+    generations: Generation,
     /// 切换一次做完再做下一次。**停本机 core 的那一步也拿它**：切走之后又马上切
     /// 回来时，不能出现「刚拉起来的 core 被上一次切换停掉」
     switching: tokio::sync::Mutex<()>,
+}
+
+/// 换过几次连接。
+///
+/// **切走之后，连远程的那条循环手上的结果一律作废。**停它用的是 `abort`，而 `abort`
+/// 要等它下一次让出才生效：它要是正在另一个线程上跑、刚拿到试连的结果，这一轮会接着
+/// 跑完 —— 把「已连接」「连不上」写回去，盖掉新连接的状态（切到本机之后界面还说连着
+/// 服务器，或者挂着另一台的错误）。所以循环记着自己是哪一代起的，写之前对一下。
+/// **换代和对代拿的是同一把锁**：对上了就写完再放手，写不到换代之后去
+#[derive(Default)]
+struct Generation(std::sync::Mutex<u64>);
+
+impl Generation {
+    /// 换一代，返回新的这一代
+    fn advance(&self) -> u64 {
+        let mut g = self.0.lock().expect("锁未中毒");
+        *g += 1;
+        *g
+    }
+
+    fn is(&self, generation: u64) -> bool {
+        *self.0.lock().expect("锁未中毒") == generation
+    }
+
+    /// 还是 `generation` 这一代，就趁换代进不来的时候做 `f`，返回 true；已经换了代就什么都不做
+    fn run_if_current(&self, generation: u64, f: impl FnOnce()) -> bool {
+        let g = self.0.lock().expect("锁未中毒");
+        if *g != generation {
+            return false;
+        }
+        f();
+        true
+    }
 }
 
 /// 远程断线重连的间隔：第几次失败之后等多久
@@ -109,6 +144,7 @@ impl Link {
             retry: Arc::new(Notify::new()),
             lost: Arc::new(Notify::new()),
             task: std::sync::Mutex::new(None),
+            generations: Generation::default(),
             switching: tokio::sync::Mutex::new(()),
         }
     }
@@ -134,6 +170,17 @@ impl Link {
         announce(&self.app);
     }
 
+    /// 连远程的那条循环写状态走这里：它是 `generation` 那一代起的，**换了代就不写**，返回 false
+    fn set_for(&self, generation: u64, s: LinkState) -> bool {
+        let wrote = self.generations.run_if_current(generation, || {
+            self.state.send_replace(s);
+        });
+        if wrote {
+            announce(&self.app);
+        }
+        wrote
+    }
+
     /// 「立即重试」：连着远程时马上再连一次，不等退避
     pub fn retry_now(&self) {
         self.retry.notify_one();
@@ -146,10 +193,13 @@ impl Link {
         }
     }
 
-    fn stop_task(&self) {
+    /// 停掉连远程的那条循环、换下一代：它手上还没写回来的结果从此作废。返回新的这一代
+    fn stop_task(&self) -> u64 {
+        let generation = self.generations.advance();
         if let Some(h) = self.task.lock().expect("锁未中毒").take() {
             h.abort();
         }
+        generation
     }
 
     /// 启动时先让人选：什么都不连，等选好
@@ -325,7 +375,7 @@ fn begin_local(app: &tauri::AppHandle, link: &Link) {
 /// 开始连一个远程。`first`：切换时刚试连成功的结果，不再连第二遍
 fn begin_remote(app: &tauri::AppHandle, link: &Link, r: Remote, first: Option<ServerInfo>) {
     close_picker(app);
-    link.stop_task();
+    let generation = link.stop_task();
     *link.current.lock().expect("锁未中毒") = Current::Remote(r.clone());
     let key = secrets::load(&data_dir(), &r.id).unwrap_or_default();
     let target = RemoteTarget {
@@ -341,16 +391,22 @@ fn begin_remote(app: &tauri::AppHandle, link: &Link, r: Remote, first: Option<Se
         ever: false,
     });
     let app2 = app.clone();
-    let h = tauri::async_runtime::spawn(async move { remote_loop(app2, r, target, first).await });
+    let h = tauri::async_runtime::spawn(async move {
+        remote_loop(app2, r, target, first, generation).await;
+    });
     *link.task.lock().expect("锁未中毒") = Some(h);
 }
 
-/// 连着一个远程：连上、看着、断了再连。**不会自己退回本机**
+/// 连着一个远程：连上、看着、断了再连。**不会自己退回本机**。
+///
+/// `generation` 是起它的那一代（见 [`Generation`]）：切走之后它手上的结果一个都不写回去 ——
+/// 状态不写，「上次连接」不记，断线提醒不发，自己就此结束
 async fn remote_loop(
     app: tauri::AppHandle,
     remote: Remote,
     target: RemoteTarget,
     mut first: Option<ServerInfo>,
+    generation: u64,
 ) {
     let Some(st) = app.try_state::<AppState>() else {
         return;
@@ -363,32 +419,47 @@ async fn remote_loop(
             Some(info) => Ok(info),
             None => {
                 attempt += 1;
-                link.set(LinkState::Connecting { attempt, ever });
-                connector::test(&Target::Remote(target.clone())).await
+                if !link.set_for(generation, LinkState::Connecting { attempt, ever }) {
+                    return;
+                }
+                connector::test(&target).await
             }
         };
         match tried {
             Ok(info) => {
                 attempt = 0;
                 ever = true;
+                if !link.generations.is(generation) {
+                    return;
+                }
                 connected(&app, &remote.id);
-                link.set(LinkState::Connected { info });
+                if !link.set_for(generation, LinkState::Connected { info }) {
+                    return;
+                }
                 watch_until_lost(link, &st.control).await;
                 tracing::warn!("与 {} 的连接断开", remote.name);
-                if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
-                    n.ingest(notices::rules::remote_lost(&remote.name), notices::now_ms());
+                let told = link.generations.run_if_current(generation, || {
+                    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+                        n.ingest(notices::rules::remote_lost(&remote.name), notices::now_ms());
+                    }
+                });
+                if !told {
+                    return;
                 }
             }
             Err(error) => {
                 let wait = backoff(attempt);
                 tracing::info!(?error, attempt, ?wait, "连不上 {}", remote.name);
-                link.set(LinkState::Down {
+                let down = LinkState::Down {
                     error,
                     attempt,
                     at_ms: notices::now_ms(),
                     retry_in_ms: wait.as_millis() as u64,
                     ever,
-                });
+                };
+                if !link.set_for(generation, down) {
+                    return;
+                }
                 tokio::select! {
                     _ = tokio::time::sleep(wait) => {}
                     _ = link.retry.notified() => {}
@@ -466,7 +537,7 @@ pub async fn switch(
         port: r.port,
         key,
     };
-    let info = connector::test(&Target::Remote(target))
+    let info = connector::test(&target)
         .await
         .map_err(|error| SwitchError::Connect { error })?;
     {
@@ -607,7 +678,7 @@ pub async fn test_connection(input: ProfileInput) -> Out<Tested> {
         port: input.port,
         key,
     };
-    Ok(match connector::test(&Target::Remote(target)).await {
+    Ok(match connector::test(&target).await {
         Ok(info) => Tested::Ok { info },
         Err(error) => Tested::Failed { error },
     })
@@ -770,8 +841,11 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
 pub(crate) const PICKER_WIDTH: f64 = 420.0;
 
 /// 连接选择里选好了：连它，打开主界面（`settings`：落到设置页的「连接」一节）
+///
+/// **`async`**：这时主窗口多半还不存在，要在这里建出来。同步命令在 Windows 上跑在
+/// WebView2 的回调里，在那里建窗口会死锁（Tauri 的 `WebviewWindowBuilder::new` 写明了）
 #[tauri::command]
-pub fn pick_connection(app: tauri::AppHandle, id: String, then: Option<String>) -> Out<()> {
+pub async fn pick_connection(app: tauri::AppHandle, id: String, then: Option<String>) -> Out<()> {
     remember(&data_dir(), &id);
     start(&app, &id);
     match then {
@@ -822,6 +896,43 @@ mod tests {
         })
         .unwrap();
         assert_eq!(v["invalid"]["field"], "name");
+    }
+
+    /// **切走之前起的那条循环，写不回它的结果。**它还在等试连，结果回来的时候用户已经
+    /// 切到了本机：那一句「已连接」不能盖掉「本机」。当前这一代照常写得进去
+    #[tokio::test]
+    async fn a_result_that_arrives_after_a_switch_is_dropped() {
+        let gens = Arc::new(Generation::default());
+        let state = Arc::new(watch::channel(LinkState::Local).0);
+        let old = gens.advance(); // 开始连远程
+        let (arrive, arrived) = tokio::sync::oneshot::channel::<ServerInfo>();
+        let task = {
+            let (gens, state) = (gens.clone(), state.clone());
+            tokio::spawn(async move {
+                let info = arrived.await.unwrap();
+                gens.run_if_current(old, || {
+                    state.send_replace(LinkState::Connected { info });
+                })
+            })
+        };
+        // 切到本机：换代，写本机的状态
+        gens.advance();
+        state.send_replace(LinkState::Local);
+        // 试连的结果这时才回来
+        let info = ServerInfo {
+            core_version: "0.48.0".into(),
+            gateway_addr: None,
+        };
+        arrive.send(info).unwrap();
+        assert!(!task.await.unwrap(), "切走之后还写了");
+        assert_eq!(*state.borrow(), LinkState::Local);
+
+        let now = gens.advance();
+        assert!(gens.is(now));
+        assert!(gens.run_if_current(now, || {
+            state.send_replace(LinkState::Waiting);
+        }));
+        assert_eq!(*state.borrow(), LinkState::Waiting);
     }
 
     #[test]

@@ -61,6 +61,8 @@ export const mcpText = messages(
     removeTitle: (name: string, from: string) => `从 ${from} 移除 ${name}`,
     modifies: "将修改",
     noop: "配置已是目标状态，无需修改。",
+    /** 确认时发现目标文件在看改动的这段时间里被改过：什么都没写，下面是重算的那一份 */
+    stale: "目标文件在查看改动期间已被修改，未写入任何内容。以下改动已按当前内容重新计算，核对后请再次确认。",
     backup: "写入前将完整备份原文件，除此项外不做任何改动。",
     envCopied: "env 中可能含有密钥，将一并复制。",
     applyFailed: "未能写入",
@@ -147,6 +149,8 @@ export const mcpText = messages(
     removeTitle: (name: string, from: string) => `Remove ${name} from ${from}`,
     modifies: "Modifies",
     noop: "The configuration is already in the target state; nothing needs to change.",
+    stale:
+      "The target file changed while the change was being reviewed, so nothing was written. The change below was recomputed from the current file; review it and confirm again.",
     // 后面可能紧跟一句提醒，句号之后要自带空格
     backup: "The original file is backed up in full before writing, and nothing else is changed. ",
     envCopied: "The env field may contain secrets and is copied as well.",

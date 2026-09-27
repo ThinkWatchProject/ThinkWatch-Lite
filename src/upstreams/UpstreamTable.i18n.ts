@@ -49,7 +49,6 @@ export const upstreamTableText = messages(
     dayFailed: (n: number, success: number) => `失败 ${n.toLocaleString()} 次，成功率 ${rate(success)}%`,
     dayNoFailures: "无失败",
     dayCost: (cost: string) => `费用 ${cost}`,
-    unpricedTip: (n: number) => `${n.toLocaleString()} 次无法计价，未计入费用`,
     ms: (n: number) => `${n.toLocaleString()} ms`,
     latencyTip: (p95: number, samples: number) =>
       `P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} 个样本`,
@@ -98,8 +97,6 @@ export const upstreamTableText = messages(
       `${n.toLocaleString()} failed, ${rate(success)}% succeeded`,
     dayNoFailures: "No failures",
     dayCost: (cost: string) => `Cost ${cost}`,
-    unpricedTip: (n: number) =>
-      n === 1 ? "1 request unpriced, not included in the cost" : `${n.toLocaleString()} requests unpriced, not included in the cost`,
     ms: (n: number) => `${n.toLocaleString()} ms`,
     latencyTip: (p95: number, samples: number) =>
       `P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,

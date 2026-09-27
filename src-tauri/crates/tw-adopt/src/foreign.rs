@@ -48,6 +48,19 @@ pub enum ForeignError {
     Readback { path: PathBuf },
     #[error("{}", self.msg())]
     LinkLoop { path: PathBuf },
+    /// 写到一半停下来，这个文件**没能放回原样**：它停在改过的样子上
+    #[error("{}", self.msg())]
+    NotRestored {
+        path: PathBuf,
+        backup: PathBuf,
+        source: std::io::Error,
+    },
+    /// 写到一半停下来，这个我们新建的文件**没能删掉**
+    #[error("{}", self.msg())]
+    NotRemoved {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl ForeignError {
@@ -79,6 +92,23 @@ impl ForeignError {
             ForeignError::LinkLoop { path } => msg!(
                 "adopt.file.link_loop", path = path.display() =>
                 "too many levels of symbolic link: {path}"
+            ),
+            // **比让它停下来的那个原因更要紧**：文件停在改过的样子上，用户得知道
+            // 是哪一个、原来的内容在哪儿
+            ForeignError::NotRestored {
+                path,
+                backup,
+                source,
+            } => msg!(
+                "adopt.file.not_restored", path = path.display(), backup = backup.display(),
+                detail = source =>
+                "writing stopped part-way, and {path} could not be put back as it was: {detail}. \
+                 What it was before is in {backup}"
+            ),
+            ForeignError::NotRemoved { path, source } => msg!(
+                "adopt.file.not_removed", path = path.display(), detail = source =>
+                "writing stopped part-way, and {path}, which was created here, could not be \
+                 removed again: {detail}"
             ),
         }
     }
@@ -133,6 +163,25 @@ pub fn resolve(path: &Path) -> Result<PathBuf, ForeignError> {
     })
 }
 
+/// `real` 上面、`home` 以下（不含 home）的目录里，最靠近 home 的那个符号链接，
+/// 连同 `real` 实际落在哪儿。[`resolve`] 只跟文件本身那一层；整个目录链过去的
+/// （GNU stow：`~/.config/opencode -> ~/dotfiles/opencode`）它看不出来。
+///
+/// **只看 home 以下。**再往上是系统的事（Fedora Silverblue 的 `/home -> var/home`、
+/// macOS 的 `/var -> private/var`）：每个文件都会命中，说了等于没说。
+fn linked_dir(real: &Path, home: &Path) -> Option<(PathBuf, PathBuf)> {
+    let link = real
+        .ancestors()
+        .skip(1)
+        .take_while(|a| *a != home && a.starts_with(home))
+        .filter(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink()))
+        .last()?;
+    let at = std::fs::canonicalize(link)
+        .ok()?
+        .join(real.strip_prefix(link).ok()?);
+    Some((link.to_path_buf(), at))
+}
+
 /// 现在的内容。文件不存在返回 `None` —— 和「内容是空串」是两回事，
 /// 还原的时候这个区别决定了是写回空文件还是把文件删掉。
 pub fn read(path: &Path) -> Result<Option<String>, ForeignError> {
@@ -177,7 +226,9 @@ fn mode_of(path: &Path) -> Option<u32> {
 ///
 /// 不强行改成 0600：那超出了「只改 endpoint 和 key 字段」的边界。权限
 /// 太松就报告给用户，让他自己决定 —— 报告是我们的职责，修改是他的权利。
-fn write_atomic(
+///
+/// `keep_mode` 是 `None` 时新文件就是临时文件生来的 `0600`（我们自己的接管记录走这条）。
+pub(crate) fn write_atomic(
     real: &Path,
     text: impl AsRef<[u8]>,
     keep_mode: Option<u32>,
@@ -203,25 +254,46 @@ fn write_atomic(
         real.file_name().and_then(|s| s.to_str()).unwrap_or("cfg"),
         std::process::id()
     ));
-    let w = |source| ForeignError::Write {
-        path: tmp.clone(),
-        source,
-    };
     // 临时文件**生来就是 0600**：里面已经是换上的网关密钥。写完再放宽成原文件
     // 的权限位（用户自己给的，`chmod` 不受 umask 影响，照原样还回去）。
+    //
+    // **先落盘再挪过去。**rename 是原子的，可它不管内容写没写到盘上：断电之后可能
+    // 是名字已经换过来了，内容却是空的 —— 用户的配置没了，备份也救不了一个我们说
+    // 「写好了」的文件。所以临时文件同步完才挪（[`write_private`]），挪完再同步一次
+    // 目录，让「换过来了」这件事本身也落盘。
     let _ = std::fs::remove_file(&tmp);
-    write_private(&tmp, text).map_err(w)?;
-    #[cfg(unix)]
-    if let Some(mode) = keep_mode.filter(|m| *m != 0o600) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode)).map_err(w)?;
+    let written = write_private(&tmp, text, keep_mode)
+        .map_err(|source| ForeignError::Write {
+            path: tmp.clone(),
+            source,
+        })
+        .and_then(|()| {
+            replace(&tmp, real).map_err(|source| ForeignError::Write {
+                path: real.to_path_buf(),
+                source,
+            })
+        });
+    // 没挪成（目标只读、被别的程序占着）就把临时文件收掉：里面是换上的网关密钥，
+    // 而它就躺在用户的配置旁边 —— 那个目录可能正是一个 git 管着的 dotfiles 仓库。
+    // 名字带着进程号，不收的话每失败一次就多留一份
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    } else {
+        sync_dir(dir);
     }
+    written
+}
+
+/// 把目录项的改动（刚挪过来的那个名字）同步到盘上。**尽力而为**：有的文件系统
+/// 不让同步目录，那时内容已经落盘，差的只是这个名字，不值得为它报错。
+fn sync_dir(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
+    }
+    // Windows 上的 `MOVEFILE_WRITE_THROUGH` 已经等挪动落盘了才返回，见 [`replace`]
     #[cfg(not(unix))]
-    let _ = keep_mode;
-    replace(&tmp, real).map_err(|source| ForeignError::Write {
-        path: real.to_path_buf(),
-        source,
-    })
+    let _ = dir;
 }
 
 #[cfg(windows)]
@@ -251,10 +323,11 @@ fn write_in_place(real: &Path, text: impl AsRef<[u8]>) -> Result<(), ForeignErro
     f.sync_all().map_err(w)
 }
 
-/// 写一个只给自己看的文件：**新建时带着 `0600` 建出来**，不是建完再 `chmod`
-/// —— 那中间有一个按 umask 给的 0644 窗口。文件已经在的话 `mode` 不生效，
-/// 权限保持原样（调用方要收紧就自己再 `chmod`）。
-pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// 写一个只给自己看的文件，**落盘了再返回**：新建时带着 `0600` 建出来，不是建完
+/// 再 `chmod` —— 那中间有一个按 umask 给的 0644 窗口。`mode` 给了就在落盘之前换成
+/// 它（照原文件的权限位还回去）。文件已经在的话新建时那个 `0600` 不生效，调用方
+/// 要的是新文件（[`write_atomic`] 先删掉了残留的那个）。
+fn write_private(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create(true).truncate(true);
@@ -263,7 +336,16 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    opts.open(path)?.write_all(bytes)
+    let mut f = opts.open(path)?;
+    f.write_all(bytes)?;
+    #[cfg(unix)]
+    if let Some(m) = mode.filter(|m| *m != 0o600) {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(m))?;
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    f.sync_all()
 }
 
 /// 把 `tmp` 挪成 `real`，**目标已经存在也照挪**。
@@ -405,10 +487,19 @@ fn backup_at(
 ) -> Result<PathBuf, ForeignError> {
     // 目录名里带上来源路径的形状，一眼能看出这是谁的备份
     let flat = flat_name(real);
-    std::fs::create_dir_all(root).map_err(|source| ForeignError::Write {
+    // **备份只给自己看：目录 0700，文件 0600。**里面是原样的配置文件，也就是
+    // 用户自己的 API key 和我们换上的网关密钥；按 umask 建出来的 0755 / 0644 谁都
+    // 读得到。建出来就是这个权限，不是建完再收（那中间有一个窗口）；根目录是以前
+    // 按默认权限建的，就收一次 —— 进不去根目录，里面那些旧备份也就读不到了
+    private_dir(root, true).map_err(|source| ForeignError::Write {
         path: root.to_path_buf(),
         source,
     })?;
+    #[cfg(unix)]
+    if mode_of(root).is_some_and(|m| m & 0o077 != 0) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700));
+    }
     // **同一毫秒里连着接管两次，第二份备份不能盖掉第一份。**第二次备份
     // 的内容里已经是我们写的密钥了；盖掉之后还原只能找回我们的密钥，
     // 用户自己的那个就再也没有了。所以用 `create_dir`（不是 `_all`）
@@ -416,7 +507,7 @@ fn backup_at(
     let mut seq = 0;
     let dir = loop {
         let dir = root.join(format!("{ms}-{seq:04}"));
-        match std::fs::create_dir(&dir) {
+        match private_dir(&dir, false) {
             Ok(()) => break dir,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && seq < BACKUP_SEQ_MAX => {
                 seq += 1;
@@ -426,19 +517,35 @@ fn backup_at(
     };
     let file = dir.join(flat);
     // 目录是刚建的，按说不会有同名文件；万一有，也宁可失败不覆盖。
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&file)
-        .map_err(|source| ForeignError::Write {
-            path: file.clone(),
-            source,
-        })?;
-    std::io::Write::write_all(&mut f, text.as_ref()).map_err(|source| ForeignError::Write {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let w = |source| ForeignError::Write {
         path: file.clone(),
         source,
-    })?;
+    };
+    let mut f = opts.open(&file).map_err(w)?;
+    std::io::Write::write_all(&mut f, text.as_ref()).map_err(w)?;
+    // 备份是出事之后唯一的退路：配置换上去之前，它得先落盘
+    f.sync_all().map_err(w)?;
+    sync_dir(&dir);
     Ok(file)
+}
+
+/// 建一个只给自己用的目录（unix 上 `0700`）。`all` 连缺的上层一起建，已经在不算错。
+fn private_dir(dir: &Path, all: bool) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(all);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
 }
 
 /// 一次写入的完整请求。
@@ -484,6 +591,16 @@ pub fn apply_bytes(
     root: &Path,
     verify: impl Fn(&[u8]) -> Result<(), String>,
 ) -> Result<Applied, ForeignError> {
+    apply_bytes_in(ch, root, verify, crate::paths::env_home().as_deref())
+}
+
+/// [`apply_bytes`]，home 从外面给（测试传一个临时目录）：找链过去的目录找到它为止。
+fn apply_bytes_in(
+    ch: &Bytes<'_>,
+    root: &Path,
+    verify: impl Fn(&[u8]) -> Result<(), String>,
+    home: Option<&Path>,
+) -> Result<Applied, ForeignError> {
     let real = resolve(ch.path)?;
     let mut warnings = Vec::new();
     if real != ch.path {
@@ -495,6 +612,17 @@ pub fn apply_bytes(
             path = ch.path.display(),
             real = real.display()
             => "{path} is a symbolic link; the file actually written is {real}."
+        ));
+    } else if let Some((dir, at)) = home.and_then(|h| linked_dir(&real, h)) {
+        // 文件本身不是链接，它所在的目录是：GNU stow 就是这么摆的
+        // （`~/.config/opencode -> ~/dotfiles/opencode`）。写进去的同样是那个
+        // 会被提交的仓库，一样要说
+        warnings.push(msg!(
+            "adopt.warn.symlink_dir",
+            path = ch.path.display(),
+            dir = dir.display(),
+            real = at.display()
+            => "{dir} is a symbolic link, so {path} is actually written at {real}."
         ));
     }
 
@@ -556,11 +684,8 @@ pub fn apply_bytes(
         source,
     })?;
     if back != ch.after {
-        if created {
-            let _ = std::fs::remove_file(&real);
-        } else if let Some(text) = &now {
-            let _ = write_atomic(&real, text, keep);
-        }
+        // 那一句说的是「已经从备份还原」：**还原不成就不能那么说**
+        put_back(&real, now.as_deref(), &backup)?;
         return Err(ForeignError::Readback { path: real });
     }
 
@@ -571,6 +696,36 @@ pub fn apply_bytes(
         created,
         warnings,
     })
+}
+
+/// 把一个刚写过的文件放回写之前的样子：`before` 是 `None`（原来没有这个文件）就
+/// 删掉它，否则写回原文，权限位照旧。`backup` 是那份原文的全文备份，放不回去时
+/// 告诉用户去哪儿找。
+///
+/// **放不回去要说出来**，不能当成已经放回去了：调用方接下来说的正是「已经退回去了」，
+/// 而那时文件其实停在改过的样子上。已经不在了的新文件算删掉了。
+pub(crate) fn put_back(
+    real: &Path,
+    before: Option<&[u8]>,
+    backup: &Path,
+) -> Result<(), ForeignError> {
+    match before {
+        None => match std::fs::remove_file(real) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ForeignError::NotRemoved {
+                path: real.to_path_buf(),
+                source: e,
+            }),
+            _ => Ok(()),
+        },
+        Some(text) => write_atomic(real, text, mode_of(real)).map_err(|e| match e {
+            ForeignError::Write { source, .. } => ForeignError::NotRestored {
+                path: real.to_path_buf(),
+                backup: backup.to_path_buf(),
+                source,
+            },
+            other => other,
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -618,6 +773,25 @@ mod tests {
         write_atomic(&p, "after", None).expect("覆盖一个已存在的文件");
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "after");
         // 临时文件没留下
+        let strays: Vec<_> = std::fs::read_dir(d.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("thinkwatch-"))
+            .collect();
+        assert!(strays.is_empty(), "留下了临时文件：{strays:?}");
+    }
+
+    /// 挪不过去的时候，装着网关密钥的临时文件不能留在用户的配置旁边
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_replace_leaves_no_temp_file_behind() {
+        let d = tempfile::tempdir().unwrap();
+        // 目标是个不空的目录：`rename` 一定失败
+        let p = d.path().join("c.json");
+        std::fs::create_dir(&p).unwrap();
+        std::fs::write(p.join("inside"), "x").unwrap();
+        assert!(write_atomic(&p, "tw-secret", None).is_err());
         let strays: Vec<_> = std::fs::read_dir(d.path())
             .unwrap()
             .filter_map(|e| e.ok())
@@ -686,6 +860,51 @@ mod tests {
             "{:?}",
             a.warnings
         );
+    }
+
+    /// GNU stow 的摆法：文件本身不是链接，它所在的目录是
+    /// （`~/.config/opencode -> ../dotfiles/opencode`）。写进去的一样是那个会被提交的
+    /// 仓库，一样要说；链接留着，还是链接
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_folder_under_home_is_reported_like_a_symlinked_file() {
+        let (d, root) = dirs();
+        let home = d.path().join("home");
+        let repo = home.join("dotfiles").join("opencode");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("opencode.json"), "old").unwrap();
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        let link = home.join(".config").join("opencode");
+        std::os::unix::fs::symlink("../dotfiles/opencode", &link).unwrap();
+        let path = link.join("opencode.json");
+        let write = |before: &'static [u8], after: &'static [u8], home: &Path| {
+            let ch = Bytes {
+                path: &path,
+                before: Some(before),
+                after,
+                carries_secret: false,
+            };
+            apply_bytes_in(&ch, &root, |_| Ok(()), Some(home)).unwrap()
+        };
+
+        let a = write(b"old", b"new", &home);
+        assert_eq!(
+            std::fs::read_to_string(repo.join("opencode.json")).unwrap(),
+            "new"
+        );
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        let w = a
+            .warnings
+            .iter()
+            .find(|w| w.code == "adopt.warn.symlink_dir")
+            .unwrap_or_else(|| panic!("没说目录是链接：{:?}", a.warnings));
+        assert_eq!(w.arg("dir"), link.display().to_string());
+        let at = repo.canonicalize().unwrap().join("opencode.json");
+        assert_eq!(w.arg("real"), at.display().to_string());
+
+        // home 自己、home 上面的链接不归我们说（`/home -> var/home` 那种）
+        let a = write(b"new", b"newer", &link);
+        assert!(a.warnings.is_empty(), "{:?}", a.warnings);
     }
 
     #[test]
@@ -816,6 +1035,52 @@ mod tests {
         let first = backup_at(&root, &p, "第一次", 1_700_000_000_001).unwrap();
         backup_at(&root, &other, "别人的", 1_700_000_000_000).unwrap();
         assert_eq!(backups_of(&root, &p), vec![first, second]);
+    }
+
+    /// 备份里是原样的配置：用户自己的 API key、换上的网关密钥。**只给自己看**：
+    /// 目录 0700、文件 0600；以前按默认权限建的根目录收一次
+    #[cfg(unix)]
+    #[test]
+    fn backups_are_readable_only_by_their_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let (d, root) = dirs();
+        let p = d.path().join("c.json");
+        let f = backup_at(&root, &p, "sk-用户自己的", 1_700_000_000_000).unwrap();
+        assert_eq!(mode(&root), 0o700);
+        assert_eq!(mode(f.parent().unwrap()), 0o700);
+        assert_eq!(mode(&f), 0o600);
+
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        backup_at(&root, &p, "tw-我们写的", 1_700_000_000_001).unwrap();
+        assert_eq!(mode(&root), 0o700, "旧的根目录没收紧");
+    }
+
+    /// 写到一半要退回去、却退不回去：**说出来**（是哪个文件、原文在哪儿），不能当成
+    /// 已经退回去了。已经不在了的新文件算删掉了
+    #[test]
+    fn a_file_that_cannot_be_put_back_is_an_error_not_a_silent_success() {
+        let d = tempfile::tempdir().unwrap();
+        let backup = d.path().join("backup-of-c.json");
+        // 写回原文：它所在的「目录」其实是个普通文件
+        let blocker = d.path().join("not-a-folder");
+        std::fs::write(&blocker, "x").unwrap();
+        let e = put_back(&blocker.join("c.json"), Some(b"old"), &backup).unwrap_err();
+        assert!(matches!(e, ForeignError::NotRestored { .. }), "{e}");
+        assert_eq!(e.msg().code, "adopt.file.not_restored");
+        assert!(e.to_string().contains(&backup.display().to_string()), "{e}");
+        // 删掉新建的：那儿其实是个不空的目录
+        let dir = d.path().join("c.json");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("inside"), "x").unwrap();
+        let e = put_back(&dir, None, &backup).unwrap_err();
+        assert!(matches!(e, ForeignError::NotRemoved { .. }), "{e}");
+
+        assert!(put_back(&d.path().join("gone.json"), None, &backup).is_ok());
+        let p = d.path().join("ok.json");
+        std::fs::write(&p, "new").unwrap();
+        put_back(&p, Some(b"old"), &backup).unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "old");
     }
 
     #[test]

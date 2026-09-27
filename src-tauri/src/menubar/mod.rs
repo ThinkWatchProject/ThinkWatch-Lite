@@ -23,7 +23,7 @@ use tauri::Manager;
 pub use model::Style;
 use model::{Action, Gateway, Snapshot};
 
-use crate::{AppState, notices, supervisor::CoreState};
+use crate::{AppState, error::CmdError, notices, supervisor::CoreState};
 
 /// 攒多久再收一次数。一串请求只换来一次重收，而不是一条一次；也给存储层留出
 /// 把这一条落库、算出费用的时间
@@ -31,6 +31,15 @@ const SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// 菜单开着时隔多久走一次秒数和倒计时。**只在开着时走**，关上就停
 const TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 问 core 的一句最多等多久。**core 接了连接却不回话**（卡在存储层上、远程那台半死不活）
+/// 时，菜单栏不能跟着停在这一问上：收数是一轮一轮来的，这一问不回，后面就再也不刷新了。
+/// 比心跳的 3 秒宽一点：汇总要查库，连远程时每一问还要重新连上、握手
+const ASK: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 问额度重置卡最多等多久。这一问 core 要转去问 ChatGPT 的后端，它自己给那边 15 秒，
+/// token 过期时还要换一个再问一遍：不在它答上来之前先放弃 —— 每次用完只问一次
+const ASK_CHATGPT: std::time::Duration = std::time::Duration::from_secs(35);
 
 /// 设置里选的那一档。**改了立刻生效**：不重启，也不等下一次收数
 static STYLE: AtomicU8 = AtomicU8::new(0);
@@ -137,7 +146,11 @@ async fn run(app: tauri::AppHandle) {
         };
         let mut snap = collect(&app, &state, &mut credits).await;
         present(&snap);
-        let reset = next_reset_in(&snap).map(|d| tokio::time::Instant::now() + d);
+        let day_end = snap
+            .today
+            .is_some()
+            .then(|| day_of(&chrono::Local, snap.now_ms).1);
+        let reset = next_reset_in(&snap, day_end).map(|d| tokio::time::Instant::now() + d);
         let mut due = None;
         // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
         // 汇总和额度不问
@@ -160,9 +173,9 @@ enum Woke {
 }
 
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
-/// core 换了状态、额度到了重置时刻（那份额度作废），立刻收。菜单开着时每秒回来
-/// 一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的
-/// 菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
+/// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
+/// 菜单开着时每秒回来一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个
+/// 落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
 async fn wait(
     wake: &tokio::sync::Notify,
     now: &tokio::sync::Notify,
@@ -203,15 +216,25 @@ fn present(snap: &Snapshot) {
 
 /// 只更新随时间走的那几样：现在几点、谁在跑、速率。**问 core 要**（`/live`）：
 /// 在跑的和最近的生成速率是 core 的事件总线数的，这边不再自己听事件去数。
-/// 问不到时留着上一次的
+/// 问不到（或者 [`ASK`] 之内没回话）时留着上一次的
 async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     snap.now_ms = notices::now_ms();
     if snap.gateway != Gateway::Running {
         return;
     }
-    if let Ok(live) = state.control.call::<ep::Live>(&[], &()).await {
+    if let Ok(live) = ask(ASK, state.control.call::<ep::Live>(&[], &())).await {
         apply_live(snap, live);
     }
+}
+
+/// 问 core 一句，最多等 `within`。**等不到就当没问到**，和问了被拒一样处理
+async fn ask<T>(
+    within: std::time::Duration,
+    question: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::time::timeout(within, question)
+        .await
+        .unwrap_or_else(|_| Err(anyhow::anyhow!("core {within:?} 内没回话")))
 }
 
 /// **开始的时刻按 core 报的「已经跑了多久」往回推**，推到这台机器的时钟上（`snap.now_ms`
@@ -233,15 +256,66 @@ fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
     snap.rate = live.tokens_per_sec;
 }
 
-/// 最近的一个额度重置时刻还有多久
-fn next_reset_in(snap: &Snapshot) -> Option<std::time::Duration> {
+/// 最近的一个该整个重收的时刻还有多久：额度重置（那份额度作废），或者显示着的「今日」
+/// 过完了（`day_end_ms`，本地的下一个零点 —— 过了零点还挂着昨天的数，那就不是「今日」）
+fn next_reset_in(snap: &Snapshot, day_end_ms: Option<i64>) -> Option<std::time::Duration> {
     snap.quotas
         .iter()
         .flat_map(|q| q.windows.iter())
         .filter_map(|w| w.resets_at_ms)
+        .chain(day_end_ms.and_then(|at| u64::try_from(at).ok()))
         .filter(|at| *at > snap.now_ms)
         .min()
         .map(|at| std::time::Duration::from_millis(at - snap.now_ms))
+}
+
+/// 「今日」的时间窗：这台机器的本地零点起，到现在。
+///
+/// **零点在这边按本机的时区算好了交给 core**：core 只收 Unix 毫秒的时间窗。不给起点，
+/// core 就按它自己那台机器的零点算 —— 连着一台跑在 UTC 容器里的远程 core、人在东八区
+/// 时，「今日」每天早上八点才归零；它还是拿此刻的 UTC 偏移去推零点的，夏令时切换的
+/// 那一天差一个小时。终点不给，就是到现在
+fn today_window<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> tw_api::Window {
+    tw_api::Window {
+        from_ms: Some(day_of(tz, now_ms).0),
+        to_ms: None,
+    }
+}
+
+/// `now_ms` 所在的那一天，按 `tz` 的日历：`[零点, 下一个零点)`，Unix 毫秒。
+///
+/// **按日期去找零点，不拿此刻的偏移往回推**：夏令时切换的那一天，零点时的偏移和此刻的
+/// 不是同一个
+fn day_of<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> (i64, i64) {
+    let now_ms = now_ms as i64;
+    let Some(now) = chrono::DateTime::from_timestamp_millis(now_ms) else {
+        // 日历表示不了的时刻：不会遇到，也不值得为它编一个日子
+        return (now_ms, now_ms);
+    };
+    let date = now.with_timezone(tz).date_naive();
+    let next = date.succ_opt().unwrap_or(date);
+    (day_start(tz, date), day_start(tz, next))
+}
+
+/// 这一天从哪一刻起。**零点不一定正好有一个**：
+///
+/// - 在零点把表往前拨的地方（智利、古巴、黎巴嫩），时钟从 23:59:59 直接跳到 01:00，这一天
+///   没有零点 —— 取跳过去之后的第一刻；
+/// - 在一点把表拨回零点的地方（古巴入冬），零点有两个 —— 取前一个：两个零点之间那一小时
+///   已经是这一天了
+fn day_start<Tz: chrono::TimeZone>(tz: &Tz, date: chrono::NaiveDate) -> i64 {
+    let midnight = date.and_time(chrono::NaiveTime::MIN);
+    // 跳过的那一段按分钟往后找。拨表都落在整分钟上，所以找到的就是跳过去的那一刻；
+    // 一天里总有存在的时刻，最多找一天
+    (0..=24 * 60)
+        .find_map(|m| {
+            let local = midnight.checked_add_signed(chrono::TimeDelta::minutes(m))?;
+            tz.from_local_datetime(&local).earliest()
+        })
+        .map_or_else(
+            || midnight.and_utc().timestamp_millis(),
+            |t| t.timestamp_millis(),
+        )
 }
 
 /// 额度用完之后问到的重置卡张数。**每次用完只问一次**：问的是 ChatGPT 的后端
@@ -267,7 +341,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         _ if state.core_missing.is_some() => Gateway::Failed,
         CoreState::Running { .. } => Gateway::Running,
         CoreState::Starting | CoreState::Restarting { .. } => Gateway::Starting,
-        CoreState::SafeMode => Gateway::SafeMode,
+        CoreState::SafeMode { .. } => Gateway::SafeMode,
         CoreState::Failed { .. } => Gateway::Failed,
         CoreState::Stopped => Gateway::Stopped,
     };
@@ -296,13 +370,14 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         return snap;
     }
     let c = &state.control;
-    let today = tw_api::Window::default();
+    let today = today_window(&chrono::Local, now_ms);
+    // 每一问各自限时：一问不回，别的照常画，没问到的那几样是「不知道」
     let (status, quota, summary, overview, live) = tokio::join!(
-        c.status(),
-        c.call::<ep::Quota>(&[], &()),
-        c.call::<ep::Summary>(&[], &today),
-        c.call::<ep::Overview>(&[], &()),
-        c.call::<ep::Live>(&[], &())
+        ask(ASK, c.status()),
+        ask(ASK, c.call::<ep::Quota>(&[], &())),
+        ask(ASK, c.call::<ep::Summary>(&[], &today)),
+        ask(ASK, c.call::<ep::Overview>(&[], &())),
+        ask(ASK, c.call::<ep::Live>(&[], &()))
     );
     if let Ok(l) = live {
         apply_live(&mut snap, l);
@@ -317,6 +392,9 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             failed: s.failed,
             tokens: s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens,
             cost_micros: s.cost_micros_exact + s.cost_micros_estimated,
+            estimated_micros: s.cost_micros_estimated,
+            unpriced: s.unpriced_requests,
+            no_usage: s.no_usage_requests,
         });
     }
     let accounts: Vec<String> = overview
@@ -368,8 +446,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
                 match known {
                     Some((at, n)) if *at == w.resets_at_ms => *n,
                     _ => {
-                        let n = c
-                            .call::<ep::ChatgptUsage>(&[&q.provider], &())
+                        let n = ask(ASK_CHATGPT, c.call::<ep::ChatgptUsage>(&[&q.provider], &()))
                             .await
                             .ok()
                             .and_then(|u| u.reset_credits);
@@ -456,17 +533,16 @@ async fn background(app: &tauri::AppHandle, action: Action) {
     let Some(st) = app.try_state::<AppState>() else {
         return;
     };
-    let result: Result<(), String> = match action {
+    // **失败留着码**（`CmdError`）：core 拒绝的，说给用户之前要按码翻，见 [`why`]
+    let result: Result<(), CmdError> = match action {
         Action::CopyAddress => copy_address(app, &st).await,
         Action::CopyKey => copy_default_key(app, &st).await,
         Action::SelectGroup { group, provider } => st
             .control
             .select_group(&group, &provider)
             .await
-            .map_err(|e| format!("{e:#}")),
-        Action::RestartGateway => crate::gateway::restart_gateway(app)
-            .await
-            .map_err(|e| e.to_string()),
+            .map_err(CmdError::from),
+        Action::RestartGateway => crate::gateway::restart_gateway(app).await,
         Action::RetryConnection => {
             st.link.retry_now();
             Ok(())
@@ -474,7 +550,7 @@ async fn background(app: &tauri::AppHandle, action: Action) {
         Action::SwitchConnection(id) => crate::connection::switch(app, &id, false)
             .await
             .map(|_| ())
-            .map_err(|e| format!("{e:?}")),
+            .map_err(|e| CmdError::plain(format!("{e:?}"))),
         Action::CheckUpdates => {
             check_updates(app).await;
             Ok(())
@@ -483,40 +559,45 @@ async fn background(app: &tauri::AppHandle, action: Action) {
     };
     if let Err(e) = result {
         tracing::warn!("菜单里的操作没做成：{e}");
-        say(app, tr!("操作未完成", "The Action Did Not Complete"), &e);
+        say(
+            app,
+            tr!("操作未完成", "The Action Did Not Complete"),
+            &why(e),
+        );
     }
     st.menubar.notify_one();
 }
 
-async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+/// 没做成的原因，说给用户的那一句。**core 拒绝的按码说成界面的语言**：和界面、系统通知
+/// 读同一张表（`core_text`），不把 core 的英文原句直接摆在中文界面上。这一层自己的失败
+/// 没有码，本来就是一句话，照原样
+fn why(e: CmdError) -> String {
+    crate::core_text::text(&e.into_msg())
+}
+
+async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), CmdError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     // 客户端该连的地址，和客户端页、密钥页复制的是同一个
-    let base = crate::clients::gateway_base(&st.control, &crate::clients::gateway_host(st))
-        .await
-        .map_err(|e| e.to_string())?;
-    app.clipboard().write_text(base).map_err(|e| e.to_string())
+    let base = crate::clients::gateway_base(&st.control, &crate::clients::gateway_host(st)).await?;
+    app.clipboard()
+        .write_text(base)
+        .map_err(|e| CmdError::plain(e.to_string()))
 }
 
 /// **明文不经过界面**：和密钥页的「复制」同一条路，在 Rust 这边直接写剪贴板
-async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), CmdError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let keys = st
-        .control
-        .call::<ep::Keys>(&[], &())
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+    let keys = st.control.call::<ep::Keys>(&[], &()).await?;
     let name = keys
         .iter()
         .find(|k| k.default)
         .or_else(|| keys.first())
         .map(|k| k.name.clone())
-        .ok_or_else(|| tr!("尚无网关密钥。", "There is no gateway key yet.").to_string())?;
-    let v = st
-        .control
-        .call::<ep::KeyValue>(&[&name], &())
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    app.clipboard().write_text(v.key).map_err(|e| e.to_string())
+        .ok_or_else(|| CmdError::plain(tr!("尚无网关密钥。", "There is no gateway key yet.")))?;
+    let v = st.control.call::<ep::KeyValue>(&[&name], &()).await?;
+    app.clipboard()
+        .write_text(v.key)
+        .map_err(|e| CmdError::plain(e.to_string()))
 }
 
 /// 检查更新。查到了就拉起更新窗口；没查到要说一声 —— 用户点了，就该看到结果
@@ -575,7 +656,7 @@ fn quit(app: &tauri::AppHandle) {
     });
 }
 
-/// 一句话的提示
+/// 一句话的提示：检查更新的结果，菜单里的操作为什么没做成。**用户点了，就该看到结果**
 fn say(app: &tauri::AppHandle, title: &str, body: &str) {
     #[cfg(target_os = "macos")]
     {
@@ -584,8 +665,34 @@ fn say(app: &tauri::AppHandle, title: &str, body: &str) {
         macos::on_main(move |mtm| macos::inform(mtm, &title, &body));
     }
     #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, title, body);
+    notify(app, title, body);
+}
+
+/// 托盘那一句提示在系统通知里的键。**只有一个**：新的一句顶掉上一句，不在通知中心里
+/// 越堆越多。点开落在设置页（按键的种类，见 `notices::rules::default_view`），检查更新
+/// 和网关的状态都在那一页
+#[cfg(not(target_os = "macos"))]
+const SAID: &str = "menubar";
+
+/// 托盘没有自己的提示框，这一句只能是一条系统通知。
+///
+/// **提醒设成「系统通知」时走通知总线**（`Notices::announce`）：投给这个平台原生的那一端，
+/// 点开回到应用；Linux 上那一端一直连着会话总线 —— 通知插件每条通知开一个连接、发完就断，
+/// 而 GNOME 在发送方断开时会把这个应用的通知一起收走（见 `notices::linux`）。
+///
+/// 设成「仅在应用内」或「关闭」时总线不弹，可这一句是对用户这一下点击的回答，不是一条
+/// 提醒：那一档管的是要不要被打断，而用户正等着这个结果（macOS 上它是一个对话框，也不
+/// 看那一档）。这时交给通知插件
+#[cfg(not(target_os = "macos"))]
+fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    match app.try_state::<Arc<notices::Notices>>() {
+        Some(n) if n.mode() == notices::Mode::System => n.announce(SAID, title, body),
+        _ => {
+            if let Err(e) = app.notification().builder().title(title).body(body).show() {
+                tracing::debug!("托盘的提示没发出去：{e}");
+            }
+        }
     }
 }
 
@@ -740,6 +847,48 @@ mod tests {
         assert_eq!(snap.rate, None);
     }
 
+    /// core 接了连接却一直不回话：问一句最多等 [`ASK`]，等不到就当没问到。收数和每秒的
+    /// `/live` 都是一问接一问的，一问挂住，菜单栏就再也不刷新
+    #[tokio::test(start_paused = true)]
+    async fn a_core_that_never_answers_holds_up_the_menu_bar_only_for_a_while() {
+        let start = tokio::time::Instant::now();
+        let stalled = std::future::pending::<anyhow::Result<tw_api::LiveView>>();
+        let asked = tokio::time::timeout(ASK * 10, ask(ASK, stalled)).await;
+        let Ok(answer) = asked else {
+            panic!("一直在等一个不回话的 core");
+        };
+        assert!(answer.is_err());
+        assert_eq!(start.elapsed(), ASK);
+        // 答得上来的照常拿到
+        let live = ask(ASK, async { Ok(tw_api::LiveView::default()) }).await;
+        assert!(live.is_ok());
+    }
+
+    /// 菜单里的操作被 core 拒绝了（切策略组时配置刚被别处改过）：说给用户的是界面语言的
+    /// 那一句，不是 core 的英文原句。这一层自己的失败本来就是一句话，照原样
+    #[test]
+    fn a_refusal_from_core_is_said_in_the_interface_language() {
+        use crate::i18n::{Lang, with_lang};
+        let text = "version mismatch: this edit is based on v1, and the current version is v2. \
+                    Refresh and edit again";
+        let refused = || -> CmdError {
+            anyhow::Error::new(crate::control::Refused(tw_api::Msg {
+                code: "control.config_stale".into(),
+                args: [("base", "v1"), ("current", "v2")]
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .into(),
+                text: text.into(),
+            }))
+            .into()
+        };
+        assert_eq!(
+            why(refused()),
+            "版本不一致：本次修改基于 v1，当前版本为 v2。请刷新后重新修改。"
+        );
+        with_lang(Lang::En, || assert_eq!(why(refused()), text));
+        assert_eq!(why(CmdError::plain("剪贴板不可用")), "剪贴板不可用");
+    }
+
     #[test]
     fn the_style_survives_a_round_trip() {
         for s in [Style::Full, Style::Icon, Style::Numbers] {
@@ -747,5 +896,161 @@ mod tests {
             assert_eq!(style(), s);
         }
         set_style(Style::Full);
+    }
+
+    use chrono::{FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+
+    /// UTC 的这一刻，Unix 毫秒
+    fn utc_ms(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> i64 {
+        NaiveDate::from_ymd_opt(y, mo, d)
+            .and_then(|d| d.and_hms_opt(h, mi, 0))
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
+    }
+
+    /// 测试用的时区：`at`（UTC 毫秒）之前是 `before`，之后是 `after` —— 夏令时的一次拨表
+    #[derive(Debug, Clone, Copy)]
+    struct Shift {
+        at: i64,
+        before: FixedOffset,
+        after: FixedOffset,
+    }
+
+    fn shift(at: i64, before_h: i32, after_h: i32) -> Shift {
+        let hours = |h: i32| FixedOffset::east_opt(h * 3600).unwrap();
+        Shift {
+            at,
+            before: hours(before_h),
+            after: hours(after_h),
+        }
+    }
+
+    impl TimeZone for Shift {
+        type Offset = FixedOffset;
+
+        fn from_offset(o: &FixedOffset) -> Self {
+            Shift {
+                at: i64::MAX,
+                before: *o,
+                after: *o,
+            }
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            if utc.and_utc().timestamp_millis() < self.at {
+                self.before
+            } else {
+                self.after
+            }
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+            self.offset_from_utc_datetime(&utc.and_time(NaiveTime::MIN))
+        }
+
+        /// 同一个钟面按两边的偏移各换回一刻，落在自己那一边的才算数
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<FixedOffset> {
+            let utc = |o: FixedOffset| {
+                local.and_utc().timestamp_millis() - i64::from(o.local_minus_utc()) * 1000
+            };
+            match (utc(self.before) < self.at, utc(self.after) >= self.at) {
+                (true, true) => MappedLocalTime::Ambiguous(self.before, self.after),
+                (true, false) => MappedLocalTime::Single(self.before),
+                (false, true) => MappedLocalTime::Single(self.after),
+                (false, false) => MappedLocalTime::None,
+            }
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<FixedOffset> {
+            self.offset_from_local_datetime(&local.and_time(NaiveTime::MIN))
+        }
+    }
+
+    /// 人在东八区，早上七点半（UTC 前一天 23:30）看「今日」：从东八区的零点算起。**不给
+    /// 起点，就是 core 那台机器的零点** —— 跑在 UTC 容器里的 core，「今日」到早上八点才归零
+    #[test]
+    fn today_starts_at_this_machines_midnight() {
+        let now = utc_ms(2026, 9, 26, 23, 30) as u64;
+        let east8 = FixedOffset::east_opt(8 * 3600).unwrap();
+        let w = today_window(&east8, now);
+        assert_eq!(w.from_ms, Some(utc_ms(2026, 9, 26, 16, 0)));
+        assert_eq!(w.to_ms, None, "终点不给，就是到现在");
+        // 同一刻在西五区是 9/26 的傍晚
+        let west5 = FixedOffset::west_opt(5 * 3600).unwrap();
+        assert_eq!(
+            today_window(&west5, now).from_ms,
+            Some(utc_ms(2026, 9, 26, 5, 0))
+        );
+    }
+
+    /// 夏令时开始的那一天（纽约 2026-03-08，两点拨到三点）中午：零点是拨表之前的那个
+    /// （-05:00）。拿此刻的偏移（-04:00）往回推，会早一个小时
+    #[test]
+    fn a_dst_day_starts_at_its_own_midnight() {
+        let new_york = shift(utc_ms(2026, 3, 8, 7, 0), -5, -4);
+        let noon = utc_ms(2026, 3, 8, 16, 0) as u64;
+        assert_eq!(
+            day_of(&new_york, noon),
+            (utc_ms(2026, 3, 8, 5, 0), utc_ms(2026, 3, 9, 4, 0))
+        );
+    }
+
+    /// 在零点拨表的地方（圣地亚哥 2026-09-06，零点直接跳到一点）：这一天没有零点，从跳过去
+    /// 的那一刻算起；前一天也正好到那一刻为止
+    #[test]
+    fn a_day_without_a_midnight_starts_where_the_clock_lands() {
+        let santiago = shift(utc_ms(2026, 9, 6, 4, 0), -4, -3);
+        let noon = utc_ms(2026, 9, 6, 15, 0) as u64;
+        assert_eq!(
+            day_of(&santiago, noon),
+            (utc_ms(2026, 9, 6, 4, 0), utc_ms(2026, 9, 7, 3, 0))
+        );
+        let day_before = utc_ms(2026, 9, 5, 16, 0) as u64;
+        assert_eq!(
+            day_of(&santiago, day_before),
+            (utc_ms(2026, 9, 5, 4, 0), utc_ms(2026, 9, 6, 4, 0))
+        );
+    }
+
+    /// 在一点拨回零点的地方（哈瓦那 2026-11-01）：零点有两个，从前一个算起 —— 两个零点
+    /// 之间那一小时已经是这一天了
+    #[test]
+    fn a_day_with_two_midnights_starts_at_the_first() {
+        let havana = shift(utc_ms(2026, 11, 1, 5, 0), -4, -5);
+        let noon = utc_ms(2026, 11, 1, 17, 0) as u64;
+        assert_eq!(
+            day_of(&havana, noon),
+            (utc_ms(2026, 11, 1, 4, 0), utc_ms(2026, 11, 2, 5, 0))
+        );
+    }
+
+    /// 显示着「今日」时，到了本地的下一个零点就整个重收一次，不等下一个事件：不然过了零点，
+    /// 菜单栏上挂着的还是昨天的数
+    #[test]
+    fn the_day_is_collected_again_when_it_ends() {
+        const HOUR: u64 = 3_600_000;
+        let now = 1_800_000_000_000;
+        let snap = Snapshot {
+            now_ms: now,
+            quotas: vec![model::Quota {
+                provider: "chatgpt".into(),
+                windows: vec![model::Window {
+                    resets_at_ms: Some(now + 10 * HOUR),
+                    ..Default::default()
+                }],
+                reset_credits: None,
+            }],
+            ..Default::default()
+        };
+        let hours = |h: u64| Some(std::time::Duration::from_millis(h * HOUR));
+        let at = |h: u64| Some((now + h * HOUR) as i64);
+        assert_eq!(next_reset_in(&snap, at(2)), hours(2));
+        // 额度先重置的，先按额度来
+        assert_eq!(next_reset_in(&snap, at(20)), hours(10));
+        assert_eq!(next_reset_in(&snap, None), hours(10));
     }
 }
