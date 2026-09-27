@@ -9,7 +9,7 @@
  * —— 因为聚合目录可能有几百个模型：逐个勾不现实，而勾一下就把规则展开成
  * 明细会往配置里写几百行。两者并存，互不摧毁。
  */
-import { globMatch } from "@/upstreams/glob";
+import { asciiLower, globMatch } from "@/upstreams/glob";
 import type { KnownModel } from "@/types";
 
 export type Scope = "all" | "some" | "none";
@@ -45,8 +45,7 @@ export function splitEntries(entries: string[]): { patterns: string[]; picked: s
  * 的，勾一下还会再写进去一条。只转 ASCII 字母，和 Rust 的 `to_ascii_lowercase` 一致
  */
 export function sameModel(a: string, b: string): boolean {
-  const lower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
-  return a.length === b.length && lower(a) === lower(b);
+  return a.length === b.length && asciiLower(a) === asciiLower(b);
 }
 
 /** 这个模型为什么可见：被某条规则命中，还是单独选中的 */
