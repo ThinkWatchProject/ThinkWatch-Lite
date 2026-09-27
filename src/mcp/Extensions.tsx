@@ -12,16 +12,54 @@ import { mcpText } from "./McpPage.i18n";
 import { copyText, Level, rank, worst } from "./parts";
 
 /**
- * 一个钩子命中了哪些发现。
- *
- * 发现按文件和行记，而一个配置文件里有好几个钩子 —— 按命中的那一行里有没有
- * 这条命令来认。那一行是 JSON，命令在里面是转义过的样子，两种写法都比一下。
+ * 这个字符在扫描摘录里会不会被换成可见记号。和 tw-guard 的 `hidden::classify` 同一张表：
+ * 零宽字符、标签字符、双向控制符、私用区
  */
-function hookFindings(h: HookView, findings: ScanFinding[]): ScanFinding[] {
-  const escaped = JSON.stringify(h.command).slice(1, -1);
-  return findings.filter(
-    (f) => f.kind === "hooks" && f.path === h.source && (f.excerpt.includes(escaped) || f.excerpt.includes(h.command)),
+function marked(cp: number): boolean {
+  return (
+    (cp >= 0x200b && cp <= 0x200d) ||
+    cp === 0xfeff ||
+    cp === 0x2060 ||
+    cp === 0x180e ||
+    (cp >= 0xe0000 && cp <= 0xe007f) ||
+    (cp >= 0x202a && cp <= 0x202e) ||
+    (cp >= 0x2066 && cp <= 0x2069) ||
+    (cp >= 0xe000 && cp <= 0xf8ff) ||
+    (cp >= 0xf0000 && cp <= 0xffffd) ||
+    (cp >= 0x100000 && cp <= 0x10fffd)
   );
+}
+
+/** 一段字在隐藏字符那一类发现的摘录里的样子：不可见字符写成 `‹U+200B›`（tw-guard `hidden::visible`） */
+function visible(s: string): string {
+  let out = "";
+  for (const c of s) {
+    const cp = c.codePointAt(0) ?? 0;
+    out += marked(cp) ? `‹U+${cp.toString(16).toUpperCase().padStart(4, "0")}›` : c;
+  }
+  return out;
+}
+
+/**
+ * 一个钩子命中了哪些发现：**同一个文件、同一行**。
+ *
+ * 发现按文件和行记，而一个配置文件里有好几个钩子，钩子自己又不带行号（`HookView` 只有
+ * 文件）—— 它在哪一行，从发现的摘录里认：摘录就是命中的那一行，里面有这条命令，那一行
+ * 就是它的。命令在摘录里有几种写法：那一行是 JSON，命令在里面是转义过的样子；**隐藏
+ * 字符那一类的摘录还把不可见字符换成了可见记号**。原来只比原样和转义后的两种，藏在
+ * 钩子命令里的零宽字符 —— 偏偏是最该挂到这一行上的那一处 —— 永远对不上：那一行不标
+ * 级别，也点不开。
+ *
+ * 认出了行，那一行上的发现都算它的。没有行号的（`0`，命中的那一段在文件里没找到）只按
+ * 它自己的摘录认。导出给测试用。
+ */
+export function hookFindings(h: HookView, findings: ScanFinding[]): ScanFinding[] {
+  const here = findings.filter((f) => f.kind === "hooks" && f.path === h.source);
+  const escaped = JSON.stringify(h.command).slice(1, -1);
+  const forms = [h.command, escaped, visible(h.command), visible(escaped)];
+  const own = here.filter((f) => forms.some((c) => f.excerpt.includes(c)));
+  const lines = new Set(own.filter((f) => f.line > 0).map((f) => f.line));
+  return here.filter((f) => own.includes(f) || lines.has(f.line));
 }
 
 /** 一个技能命中了哪些发现：技能就是一个 SKILL.md，按文件认 */
