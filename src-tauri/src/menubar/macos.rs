@@ -34,7 +34,7 @@ use objc2_foundation::{
     NSAttributedString, NSDictionary, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
-use super::model::{Action, Bar, Level, Row, StateTone, Style, Tone, WindowRow};
+use super::model::{Action, Bar, Level, Row, StateTone, Style, SubItem, Tone, WindowRow};
 
 /// 菜单栏往下这么宽。自定义的几行按它画，标准的菜单项跟着撑满
 const MENU_WIDTH: f64 = 308.0;
@@ -62,6 +62,8 @@ struct Ui {
     shapes: Vec<String>,
     /// 和 `shapes` 一一对应的菜单项
     items: Vec<Retained<NSMenuItem>>,
+    /// 这些菜单项现在画的是哪一份模型。就地改的时候拿它比：没变的（图标、子菜单的样子）不动
+    rows: Vec<Row>,
     /// 按菜单项的 tag 找到它做什么
     actions: Vec<Action>,
     bar: Option<Bar>,
@@ -101,6 +103,7 @@ pub fn install(
             target,
             shapes: Vec::new(),
             items: Vec::new(),
+            rows: Vec::new(),
             actions: Vec::new(),
             bar: None,
         });
@@ -315,16 +318,24 @@ fn rebuild(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
         ui.menu.addItem(&item);
         ui.items.push(item);
     }
+    ui.rows = rows.to_vec();
 }
 
-/// 样子没变：只换文字和数据。**不删不加**，开着的菜单不跳
+/// 样子没变：只换文字和数据。**不删不加**，开着的菜单不跳 —— 子菜单里的项也一样
 fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
     ui.actions.clear();
     let quota = quota_text(rows);
-    for (row, item) in rows.iter().zip(ui.items.clone()) {
+    let drawn = std::mem::take(&mut ui.rows);
+    for (n, (row, item)) in rows.iter().zip(ui.items.clone()).enumerate() {
         match row {
             Row::Separator => {}
-            Row::Item(i) => fill_item(mtm, ui, &item, i),
+            Row::Item(i) => {
+                let was = match drawn.get(n) {
+                    Some(Row::Item(was)) => Some(was),
+                    _ => None,
+                };
+                fill_item(mtm, ui, &item, i, was);
+            }
             _ => {
                 let tag = row_action(row).map(|a| push_action(ui, a.clone()));
                 if let Some(view) = item.view().and_then(|v| v.downcast::<InfoView>().ok()) {
@@ -333,6 +344,7 @@ fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
             }
         }
     }
+    ui.rows = rows.to_vec();
 }
 
 fn row_action(row: &Row) -> Option<&Action> {
@@ -360,7 +372,7 @@ fn make_item(
         Row::Separator => NSMenuItem::separatorItem(mtm),
         Row::Item(i) => {
             let item = NSMenuItem::new(mtm);
-            fill_item(mtm, ui, &item, i);
+            fill_item(mtm, ui, &item, i, None);
             item
         }
         _ => {
@@ -374,15 +386,27 @@ fn make_item(
     }
 }
 
-fn fill_item(mtm: MainThreadMarker, ui: &mut Ui, item: &NSMenuItem, i: &super::model::Item) {
+/// 按模型填一个标准菜单项。`was` 是它现在画着的那一份（就地改时才有）：和它一样的部分
+/// 不再动
+fn fill_item(
+    mtm: MainThreadMarker,
+    ui: &mut Ui,
+    item: &NSMenuItem,
+    i: &super::model::Item,
+    was: Option<&super::model::Item>,
+) {
     item.setAttributedTitle(Some(&item_title(&i.title, i.right.as_deref())));
     item.setEnabled(i.enabled);
-    if let Some(icon) = i.icon.filter(|s| !s.is_empty()) {
-        item.setImage(
-            symbol(icon, i.accent.then(NSColor::controlAccentColor).as_deref()).as_deref(),
-        );
-    } else {
-        item.setImage(None);
+    // **图标变了才换**：菜单开着时每秒填一遍，每一遍都去取一次 SF Symbol 再设回去，是主线程
+    // 上的白功夫
+    if was.is_none_or(|w| (w.icon, w.accent) != (i.icon, i.accent)) {
+        if let Some(icon) = i.icon.filter(|s| !s.is_empty()) {
+            item.setImage(
+                symbol(icon, i.accent.then(NSColor::controlAccentColor).as_deref()).as_deref(),
+            );
+        } else {
+            item.setImage(None);
+        }
     }
     if let Some(key) = i.key {
         item.setKeyEquivalent(&NSString::from_str(key));
@@ -405,38 +429,69 @@ fn fill_item(mtm: MainThreadMarker, ui: &mut Ui, item: &NSMenuItem, i: &super::m
     }
     if i.submenu.is_empty() {
         item.setSubmenu(None);
-    } else {
-        let sub = match item.submenu() {
-            Some(s) => {
-                s.removeAllItems();
-                s
-            }
-            None => {
-                let s = NSMenu::new(mtm);
-                s.setAutoenablesItems(false);
-                item.setSubmenu(Some(&s));
-                s
-            }
-        };
-        for m in &i.submenu {
-            if m.sep_before {
-                sub.addItem(&NSMenuItem::separatorItem(mtm));
-            }
-            let one = NSMenuItem::new(mtm);
-            one.setTitle(&NSString::from_str(&m.title));
-            one.setState(if m.checked {
-                NSControlStateValueOn
-            } else {
-                NSControlStateValueOff
-            });
-            one.setTag(push_action(ui, m.action.clone()));
-            unsafe {
-                one.setTarget(Some(target));
-                one.setAction(Some(sel!(pick:)));
-            }
-            sub.addItem(&one);
-        }
+        return;
     }
+    // 子菜单的样子没变（一样多的项，线隔在一样的地方）：**就地改**每一项的字、勾和动作。
+    // 整份删了再加的话，开着的子菜单每秒跳一下，鼠标停着的那一项也跟着没了
+    if let Some(sub) = item.submenu()
+        && was.is_some_and(|w| same_layout(&w.submenu, &i.submenu))
+        && sub.numberOfItems() == layout_len(&i.submenu)
+    {
+        let mut at = 0;
+        for m in &i.submenu {
+            at += isize::from(m.sep_before);
+            if let Some(one) = sub.itemAtIndex(at) {
+                fill_sub(ui, &one, m, target);
+            }
+            at += 1;
+        }
+        return;
+    }
+    let sub = match item.submenu() {
+        Some(s) => {
+            s.removeAllItems();
+            s
+        }
+        None => {
+            let s = NSMenu::new(mtm);
+            s.setAutoenablesItems(false);
+            item.setSubmenu(Some(&s));
+            s
+        }
+    };
+    for m in &i.submenu {
+        if m.sep_before {
+            sub.addItem(&NSMenuItem::separatorItem(mtm));
+        }
+        let one = NSMenuItem::new(mtm);
+        fill_sub(ui, &one, m, target);
+        sub.addItem(&one);
+    }
+}
+
+/// 子菜单里的一项：字、勾、点了做什么
+fn fill_sub(ui: &mut Ui, one: &NSMenuItem, m: &SubItem, target: &AnyObject) {
+    one.setTitle(&NSString::from_str(&m.title));
+    one.setState(if m.checked {
+        NSControlStateValueOn
+    } else {
+        NSControlStateValueOff
+    });
+    one.setTag(push_action(ui, m.action.clone()));
+    unsafe {
+        one.setTarget(Some(target));
+        one.setAction(Some(sel!(pick:)));
+    }
+}
+
+/// 两份子菜单的样子一样：一样多的项，线隔在一样的地方
+fn same_layout(a: &[SubItem], b: &[SubItem]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.sep_before == y.sep_before)
+}
+
+/// 子菜单里一共有几项：每一项，再加上隔在它前面的线
+fn layout_len(items: &[SubItem]) -> isize {
+    items.iter().map(|m| 1 + isize::from(m.sep_before)).sum()
 }
 
 /// 标题，右边跟一段淡色的字（时刻、当前选中的成员）。**用系统的语义颜色**：菜单项
@@ -998,8 +1053,8 @@ fn draw_clipped(s: &NSAttributedString, x: f64, y: f64, max_w: f64) {
 /// 放不下 —— 否则正好放得下的字会被截成「4 fai…」
 const FIT_SLACK: f64 = 0.001;
 
-/// 放得下就是它本身；放不下就从尾巴上去字、末尾加「…」，直到放得下。一个字都放不下
-/// 是 None。**要右对齐的先拿它，再按它的宽定位置**
+/// 放得下就是它本身；放不下就从尾巴上去字、末尾加「…」，留下放得下的最多的字。连一个
+/// 「…」都放不下是 None。**要右对齐的先拿它，再按它的宽定位置**
 fn fit(s: &NSAttributedString, max_w: f64) -> Option<Retained<NSAttributedString>> {
     if max_w <= 0.0 {
         return None;
@@ -1010,22 +1065,37 @@ fn fit(s: &NSAttributedString, max_w: f64) -> Option<Retained<NSAttributedString
     let text = s.string().to_string();
     // SAFETY: 第 0 个字符一定在（上面已经量过它比 max_w 宽），不要范围就传空指针
     let attrs = unsafe { s.attributesAtIndex_effectiveRange(0, std::ptr::null_mut()) };
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let candidate: String = chars.iter().collect::<String>() + "…";
-        let a = unsafe {
+    let chars: Vec<char> = text.chars().collect();
+    // 留前 n 个字再接「…」
+    let cut = |n: usize| {
+        let candidate: String = chars[..n].iter().collect::<String>() + "…";
+        unsafe {
             NSAttributedString::initWithString_attributes(
                 NSAttributedString::alloc(),
                 &NSString::from_str(&candidate),
                 Some(&attrs),
             )
-        };
-        if a.size().width <= max_w + FIT_SLACK {
-            return Some(a);
+        }
+    };
+    let fits = |a: &NSAttributedString| a.size().width <= max_w + FIT_SLACK;
+    // 留的字越多越宽，所以**二分找放得下的最多的那个 n**。一个字一个字地往回退、每退
+    // 一个量一次，长的服务器名、提醒正文要在主线程上量上百次，菜单开着时每秒一遍。
+    // 整段放不下，所以至多留 len - 1 个字
+    let mut best = cut(0);
+    if !fits(&best) {
+        return None;
+    }
+    let (mut lo, mut hi) = (0, chars.len().saturating_sub(1));
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        let a = cut(mid);
+        if fits(&a) {
+            (lo, best) = (mid, a);
+        } else {
+            hi = mid - 1;
         }
     }
-    None
+    Some(best)
 }
 
 // ------------------------------------------------------------------ 点击与开合
@@ -1619,5 +1689,32 @@ mod tests {
         assert!(cut.string().to_string().ends_with('…'), "{}", cut.string());
         assert!(cut.size().width <= 50.0);
         assert!(fit(&s, 0.0).is_none());
+    }
+
+    /// 截断留下的是放得下的最多的字：和一个字一个字往回退、第一个放得下的那一截一样。
+    /// 二分只是找得快，每一种宽度下结果都不变
+    #[test]
+    fn cutting_keeps_as_many_characters_as_fit() {
+        let _appkit = appkit();
+        let font = sys(11.5, weight(Weight::Regular));
+        let body = "5 小时额度已用完，42 分钟后重置。Requests through this upstream are refused.";
+        let s = attributed(body, &font, &NSColor::labelColor());
+        let chars: Vec<char> = body.chars().collect();
+        let whole = s.size().width;
+        let mut w = 1.0;
+        while w < whole + 10.0 {
+            let one_by_one = (0..chars.len()).rev().find_map(|n| {
+                let t = chars[..n].iter().collect::<String>() + "…";
+                let a = attributed(&t, &font, &NSColor::labelColor());
+                (a.size().width <= w + FIT_SLACK).then_some(t)
+            });
+            let want = if whole <= w + FIT_SLACK {
+                Some(body.to_string())
+            } else {
+                one_by_one
+            };
+            assert_eq!(fit(&s, w).map(|a| a.string().to_string()), want, "宽 {w}");
+            w += 3.0;
+        }
     }
 }
