@@ -3,6 +3,7 @@ import { setLang } from "@/i18n";
 import type { ConditionView, RouteView, RuleView } from "@/types";
 import {
   blankRule,
+  canLift,
   draftFromView,
   draftNotes,
   draftToInput,
@@ -77,6 +78,11 @@ describe("规则草稿", () => {
     ).toContain("不能转发");
     expect(ruleProblem(rule("a"), [])).toBeNull();
   });
+
+  it("max_tokens 要是正整数：0 写回去会被当成没填", () => {
+    expect(ruleProblem(rule("a", { action: "continue", maxTokens: "0" }), [])).toContain("max_tokens");
+    expect(ruleProblem(rule("a", { action: "continue", maxTokens: "4096" }), [])).toBeNull();
+  });
 });
 
 describe("规则在路由里的处境", () => {
@@ -101,6 +107,13 @@ describe("规则在路由里的处境", () => {
     const b = rule("b", { conditions: [model("b-*")] });
     const out = liftShadowed([rewrite, catchAll, gemini, b]);
     expect(out.map((r) => r.name)).toEqual(["限制输出", "Gemini", "b", "兜底"]);
+  });
+
+  it("被挡住的兜底规则不挪：两条兜底怎么排都是一条挡住另一条", () => {
+    const copy = rule("兜底 副本");
+    expect(liftShadowed([catchAll, copy]).map((r) => r.name)).toEqual(["兜底", "兜底 副本"]);
+    expect(canLift([catchAll, copy])).toBe(false);
+    expect(canLift([catchAll, gemini])).toBe(true);
   });
 
   it("移动一项", () => {

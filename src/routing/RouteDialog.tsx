@@ -30,6 +30,7 @@ import { ToggleChips, onOpenFocus } from "./fields";
 import {
   addOnsText,
   blankRule,
+  canLift,
   copyDraft,
   describeTarget,
   draftFromView,
@@ -119,7 +120,13 @@ export function RouteDialog({
   const [rules, setRules] = useState<RuleDraft[]>(() =>
     source ? source.rules.map(draftFromView) : [{ ...blankRule(ALL_UPSTREAMS), name: t.catchAllName }],
   );
-  const [probes, setProbes] = useState<string[]>([]);
+  /**
+   * 每条规则保存时要一并「交给路由」的辅助请求类别，按规则的 `key` 记。**保存那条规则时
+   * 整个换掉**：重开之后取消了勾选、去掉了那个条件，都要算数；删掉的规则不算。以前这里
+   * 只加不减，取消勾选之后保存路由，那几类照样被改成交给路由 —— 连通性检查、预热从
+   * 网关本地应答变成发给付费的上游
+   */
+  const [probes, setProbes] = useState<ReadonlyMap<string, string[]>>(() => new Map());
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -160,7 +167,7 @@ export function RouteDialog({
         base_version: configVersion,
         // 默认路由的使用者是「没指定路由的密钥」，这里不改
         keys: isDefault ? undefined : keys,
-        route_probes: probes,
+        route_probes: [...new Set(rules.flatMap((r) => probes.get(r.key) ?? []))],
       };
       if (mode.kind === "edit") await api.updateRoute(mode.name, save);
       else await api.createRoute(save);
@@ -182,11 +189,13 @@ export function RouteDialog({
       {
         kind: "item",
         label: t.duplicate,
-        onSelect: () =>
-          setRules((r) => {
-            const c = { ...copyDraft(r[i]!), name: uniqueName(rt.copyName(r[i]!.name), r) };
-            return [...r.slice(0, i + 1), c, ...r.slice(i + 1)];
-          }),
+        onSelect: () => {
+          const c = { ...copyDraft(rules[i]!), name: uniqueName(rt.copyName(rules[i]!.name), rules) };
+          setRules((r) => [...r.slice(0, i + 1), c, ...r.slice(i + 1)]);
+          // 复制出来的那条带着同样的条件，也带着「交给路由」的那个选择
+          const chosen = probes.get(rules[i]!.key);
+          if (chosen) setProbes((m) => new Map(m).set(c.key, chosen));
+        },
       },
       { kind: "sep" },
       { kind: "item", label: t.moveUp, disabled: i === 0, onSelect: () => setRules((r) => move(r, i, i - 1)) },
@@ -384,9 +393,11 @@ export function RouteDialog({
               tone="warning"
               show={shadowed.length > 0}
               actions={
-                <Button variant="outline" size="sm" onClick={() => setRules(liftShadowed)}>
-                  {t.liftShadowed}
-                </Button>
+                canLift(rules) && (
+                  <Button variant="outline" size="sm" onClick={() => setRules(liftShadowed)}>
+                    {t.liftShadowed}
+                  </Button>
+                )
               }
             >
               {t.shadowed(shadowed.map((r) => r.name))}
@@ -442,7 +453,7 @@ export function RouteDialog({
                   ? [...r.slice(0, editing.at), d, ...r.slice(editing.at)]
                   : r.map((x, j) => (j === editing.index ? d : x)),
               );
-              if (routeProbes.length) setProbes((p) => [...new Set([...p, ...routeProbes])]);
+              setProbes((m) => new Map(m).set(d.key, routeProbes));
               setEditing(null);
             }}
           />
