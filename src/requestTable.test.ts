@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTER, facets, filterRows, sortRows } from "./requestTable";
+import { EMPTY_FILTER, facets, filterRows, sortRows, upstreamText } from "./requestTable";
 import type { RequestRow } from "./types";
+import { setLang } from "@/i18n";
 import { plain } from "@/i18n/core.i18n";
 
 function row(p: Partial<RequestRow> & { id: number }): RequestRow {
@@ -146,6 +147,34 @@ describe("过滤下拉的取值", () => {
     ]);
     expect(f.clients).toEqual(["codex"]);
     expect(f.providers).toEqual(["relay"]);
+  });
+});
+
+/**
+ * 本地应答的那几行**没有上游**：`provider` 是空的，`local` 标着。「上游」那一格的那句
+ * 说明是按此刻的语言取的 —— 原来它作为上游名写进行里，换了语言还是原来那种，上游
+ * 下拉框里还多出一个叫「本地应答」的上游。
+ */
+describe("本地应答的那几行", () => {
+  const local = row({ id: 7, provider: "", local: true, path: "titling" });
+
+  it("不是一个上游：不进上游下拉框", () => {
+    expect(facets([local, row({ id: 8 })]).providers).toEqual(["relay"]);
+  });
+
+  it("「上游」那一格按此刻的语言写", () => {
+    expect(upstreamText(local)).toBe("本地应答");
+    setLang("en");
+    expect(upstreamText(local)).toBe("Answered locally");
+    expect(upstreamText(row({ id: 8 }))).toBe("relay");
+  });
+
+  it("按格子里写的字搜得到，换了语言按新的搜", () => {
+    const rows = [local, row({ id: 8 })];
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "本地" }).map((r) => r.id)).toEqual([7]);
+    setLang("en");
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "locally" }).map((r) => r.id)).toEqual([7]);
+    expect(filterRows(rows, { ...EMPTY_FILTER, q: "本地" })).toEqual([]);
   });
 });
 

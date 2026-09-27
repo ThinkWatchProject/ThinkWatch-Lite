@@ -429,7 +429,7 @@ describe("丢了结局的行，由库里补上", () => {
   it("还在进行中的行按库里记上结局", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ provider: "relay" }));
-    mergeHistory(rows, [stored()], "本地应答");
+    mergeHistory(rows, [stored()]);
     const r = rows.get(1);
     expect(r?.state).toBe("done");
     expect(r?.durationMs).toBe(4_000);
@@ -443,7 +443,7 @@ describe("丢了结局的行，由库里补上", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     const why = { code: "gw.upstream.status", args: {}, text: "Upstream `relay` answered 503." };
-    mergeHistory(rows, [stored({ status: null, error: why, input_tokens: null })], "本地应答");
+    mergeHistory(rows, [stored({ status: null, error: why, input_tokens: null })]);
     expect(rows.get(1)?.state).toBe("failed");
     expect(rows.get(1)?.error).toEqual(why);
   });
@@ -457,7 +457,7 @@ describe("丢了结局的行，由库里补上", () => {
     applyEvent(rows, started());
     interruptInFlight(rows);
     expect(rows.get(1)?.state).toBe("failed");
-    mergeHistory(rows, [stored()], "本地应答");
+    mergeHistory(rows, [stored()]);
     expect(rows.get(1)?.state).toBe("done");
     expect(rows.get(1)?.error).toBeUndefined();
     expect(rows.get(1)?.status).toBe(200);
@@ -468,7 +468,7 @@ describe("丢了结局的行，由库里补上", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started({ path: "/v1/old" }));
     interruptInFlight(rows);
-    mergeHistory(rows, [stored({ at_ms: 2_000_000, path: "/v1/messages", model: "gpt-5" })], "本地应答");
+    mergeHistory(rows, [stored({ at_ms: 2_000_000, path: "/v1/messages", model: "gpt-5" })]);
     const r = rows.get(1);
     expect(r?.atMs).toBe(2_000_000);
     expect(r?.path).toBe("/v1/messages");
@@ -487,7 +487,7 @@ describe("丢了结局的行，由库里补上", () => {
       bytes: 10,
       duration_ms: 300,
     });
-    mergeHistory(rows, [stored({ cancelled: true })], "本地应答");
+    mergeHistory(rows, [stored({ cancelled: true })]);
     expect(rows.get(1)?.state).toBe("cancelled");
     expect(rows.get(1)?.durationMs).toBe(300);
   });
@@ -501,9 +501,9 @@ describe("丢了结局的行，由库里补上", () => {
 describe("对账时行对象换不换", () => {
   it("库里和列表里一样的行，保留原来的对象", () => {
     const rows = new Map<number, RequestRow>();
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     const before = rows.get(1);
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     expect(rows.get(1)).toBe(before);
   });
 
@@ -511,7 +511,7 @@ describe("对账时行对象换不换", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     const before = rows.get(1);
-    mergeHistory(rows, [stored({ session: "s1" })], "本地应答");
+    mergeHistory(rows, [stored({ session: "s1" })]);
     expect(rows.get(1)).not.toBe(before);
     expect(rows.get(1)?.session).toBe("s1");
     expect(before?.state).toBe("in_flight");
@@ -565,8 +565,21 @@ describe("缓存读写跟着用量走", () => {
 
   it("库里读回来的行带上缓存读写", () => {
     const rows = new Map<number, RequestRow>();
-    mergeHistory(rows, [stored({ cache_read_tokens: 48_000, cache_write_tokens: 2_000 })], "本地应答");
+    mergeHistory(rows, [stored({ cache_read_tokens: 48_000, cache_write_tokens: 2_000 })]);
     expect(rows.get(1)?.cacheReadTokens).toBe(48_000);
     expect(rows.get(1)?.cacheWriteTokens).toBe(2_000);
+  });
+});
+
+/**
+ * **本地应答的那一行没有上游。**「上游」那一格的那句说明画的时候才按语言取
+ * （`upstreamText`）；原来这里把当时那种语言的「本地应答」当上游名写进行里，换了
+ * 语言它不跟着换，筛选和上游下拉框还把它当成一个上游。
+ */
+describe("库里读回来的本地应答", () => {
+  it("上游是空的，另有本地应答的标记", () => {
+    const rows = new Map<number, RequestRow>();
+    mergeHistory(rows, [stored({ local: true, provider: "", model: "", path: "titling", billing: "free" })]);
+    expect(rows.get(1)).toMatchObject({ provider: "", local: true });
   });
 });

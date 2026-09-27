@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { call } from "@/control";
-import { textOf } from "@/i18n";
 import {
   applyEvent,
   applyInFlight,
@@ -16,7 +15,6 @@ import {
 } from "./types";
 import { marksFromEvents } from "./security/marks";
 import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
-import { requestsText } from "./useRequests.i18n";
 
 /**
  * 库里读回来的记录并进当前列表。
@@ -29,13 +27,11 @@ import { requestsText } from "./useRequests.i18n";
  * 重画那一行（见 `RequestTable` 的 `Row`）：每次对账都把两千行换成新对象的话，一条
  * 请求落地就要整表重画一遍。
  *
- * `localLabel`：本地应答那几行的「上游」一栏写什么。
+ * **本地应答的那几行没有上游**：`provider` 是空的，`local` 标着。「上游」那一格写的
+ * 那句说明是画的时候才按语言取的（`upstreamText`）。原来这里把「本地应答」当成上游名
+ * 写进行里：换了语言它还是原来那种，上游下拉框里多出一个叫「本地应答」的上游。
  */
-export function mergeHistory(
-  rows: Map<number, RequestRow>,
-  history: HistoryRow[],
-  localLabel: string,
-): void {
+export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[]): void {
   for (const h of history) {
     const cur = rows.get(h.id);
     /*
@@ -86,7 +82,7 @@ export function mergeHistory(
     rows.set(h.id, {
       id: h.id,
       client: h.client,
-      provider: h.local ? localLabel : h.provider,
+      provider: h.local ? "" : h.provider,
       local: h.local || undefined,
       model: h.model || undefined,
       path: h.path,
@@ -287,7 +283,7 @@ export function useRequests(ready: boolean) {
       开始搜，等于在一个本来就不大的集合上加一道门。
     */
     const history = await call("History", { limit: LIST_LIMIT });
-    mergeHistory(store.current, history, textOf(requestsText).answeredLocally);
+    mergeHistory(store.current, history);
     publish();
     setSeedError(undefined);
   }, [publish]);
