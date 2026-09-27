@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlaskConicalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { IconRoute } from "@/ui/icons";
@@ -10,6 +10,7 @@ import { StatusDot } from "@/ui/status-dot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Count } from "@/ui/count";
 import { useResource } from "@/lib/resource";
+import { useWriteQueue } from "@/lib/writeQueue";
 import { useText } from "@/i18n";
 import type { ConfigFocus } from "@/configLocate";
 import { targetLabel } from "@/labels";
@@ -117,13 +118,10 @@ export default function RoutingPage({
   }, [ov]);
 
   /**
-   * 写配置用的版本号。**跟着写入的回执走**：撤销那一下要带的是刚写完的版本，而概览
-   * 还没来得及读回来。
+   * 「优先使用」的写入排成一队，版本号**跟着写入的回执走**：撤销那一下、紧接着改另一个
+   * 策略组，要带的是刚写完的版本，而概览还没来得及读回来（见 writeQueue）。
    */
-  const version = useRef(ov.config_version);
-  useEffect(() => {
-    version.current = ov.config_version;
-  }, [ov.config_version]);
+  const queue = useWriteQueue(ov.config_version);
 
   useEffect(() => {
     if (!flash) return;
@@ -154,11 +152,12 @@ export default function RoutingPage({
         return rest;
       });
     const write = async (selected: string | null) => {
-      const res = await api.updateGroup(g.name, {
-        group: { name: g.name, kind: g.kind, providers: g.providers, selected, session_affinity: g.session_affinity },
-        base_version: version.current,
-      });
-      version.current = res.version;
+      await queue((base) =>
+        api.updateGroup(g.name, {
+          group: { name: g.name, kind: g.kind, providers: g.providers, selected, session_affinity: g.session_affinity },
+          base_version: base,
+        }),
+      );
     };
     mark(true);
     await undoable({

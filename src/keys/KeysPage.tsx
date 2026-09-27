@@ -15,6 +15,7 @@ import { CostFigure } from "@/CostFigure";
 import { useText } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { useClients } from "@/clients/data";
+import { writeQueue } from "@/lib/writeQueue";
 import { api } from "./api";
 import { CreatedDialog } from "./CreatedDialog";
 import { useConfigVersion, useGatewayBase, useKeys, useKeyUsage, useKnownModels, type KeyUse } from "./data";
@@ -66,6 +67,8 @@ export default function KeysPage({
   const title = useText(appText).surfaces.keys;
   const nav = useNav();
   const version = useConfigVersion(ov.config_version);
+  /** 这一页上的写入排成一队：连着停用两把，第二次带第一次写完的版本（见 writeQueue） */
+  const queue = useMemo(() => writeQueue(version), [version]);
   const keys = useKeys(ov.config_version);
   const usage = useKeyUsage();
   const clients = useClients();
@@ -122,7 +125,7 @@ export default function KeysPage({
   function toggle(k: ClientView) {
     const next = !k.disabled;
     const write = async (disabled: boolean) => {
-      const w = await api.updateKey(k.name, { key: inputOf(k, { disabled }), base_version: version.get() });
+      const w = await queue((base) => api.updateKey(k.name, { key: inputOf(k, { disabled }), base_version: base }));
       wrote(w.version);
     };
     void undoable({
@@ -137,7 +140,7 @@ export default function KeysPage({
   function makeDefault(name: string) {
     const before = list?.find((k) => k.default)?.name;
     const write = async (to: string) => {
-      const w = await api.setDefaultKey(to, version.get());
+      const w = await queue((base) => api.setDefaultKey(to, base));
       wrote(w.version);
     };
     const mark = (to: string) => (ks: ClientView[] | undefined) => (ks ?? []).map((k) => ({ ...k, default: k.name === to }));
@@ -287,7 +290,7 @@ export default function KeysPage({
           target={deleting}
           owner={takeoverOf(deleting, detected, manual)}
           onDelete={async () => {
-            const w = await api.deleteKey(deleting.name, version.get());
+            const w = await queue((base) => api.deleteKey(deleting.name, base));
             // 先从列表里拿掉（那一行淡出），再去取真值
             keys.mutate((ks) => (ks ?? []).filter((k) => k.name !== deleting.name));
             wrote(w.version);
