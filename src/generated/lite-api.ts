@@ -157,7 +157,12 @@ export type FindingView = { level: FindingLevel, title: Msg, detail: Msg,
  */
 fix: Msg | null, };
 
-export type HookView = { client: string, event: string, command: string, source: string, };
+export type HookView = { client: string, event: string, command: string, source: string, 
+/**
+ * 这条命令在 `source` 的第几行（1 起），找不到是 0。**发现按文件和行记**，
+ * 清单上的一行靠它认出哪些发现是自己的
+ */
+line: number, };
 
 /**
  * 换完之后的结果：core 换好的那把，加上**这台机器上**跟着改好、或者没能改好的客户端。

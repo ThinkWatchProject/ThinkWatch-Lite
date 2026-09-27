@@ -92,6 +92,7 @@ pub fn scan(home: &Path) -> wire::ScanReport {
                 event: h.event.clone(),
                 command: h.command.clone(),
                 source: h.source.display().to_string(),
+                line: h.line,
             })
             .collect(),
         unreadable: r.unreadable,

@@ -136,6 +136,12 @@ pub struct HookEntry {
     pub event: String,
     pub command: String,
     pub source: PathBuf,
+    /// 这条命令在 `source` 的第几行（1 起），找不到是 0（见 [`command_line`]）。
+    ///
+    /// 发现按文件和行记：清单上的一行要知道哪些发现是它的，就得知道自己在哪一行。
+    /// 按摘录里有没有这条命令去认的话，隐藏字符那一类对不上 —— 它的摘录把不可见字符
+    /// 换成了可见记号，偏偏藏在命令里的零宽字符最该挂到这一行上
+    pub line: usize,
 }
 
 #[derive(Debug, Default)]
@@ -333,6 +339,7 @@ fn auto_commands(src: &Source, v: &Val, for_list: bool) -> Vec<HookEntry> {
         event: event.to_string(),
         command,
         source: src.path.clone(),
+        line: 0,
     };
     let mut out = Vec::new();
     if src.kind == sources::Kind::Hooks {
@@ -398,6 +405,7 @@ fn hooks_from(src: &Source, v: &Val) -> Vec<HookEntry> {
                 event: event.clone(),
                 command: c,
                 source: src.path.clone(),
+                line: 0,
             });
         }
     }
@@ -441,6 +449,35 @@ fn allowed_tools(text: &str) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// 一条自动执行的命令在文件里的第几行（1 起），找不到是 0。
+///
+/// 配置文件里的命令是 JSON 字符串：引号、反斜杠是转义过的，原样和转义后的样子各找一次。
+/// Codex 的 `notify` 是 argv 数组，拼起来的那一句不在文件里，认 `notify =` 那一行。同一条
+/// 命令写了两遍的，都算第一次出现的那一行
+fn command_line(text: &str, h: &HookEntry) -> usize {
+    let escaped = h.command.replace('\\', "\\\\").replace('"', "\\\"");
+    for needle in [h.command.as_str(), escaped.as_str()] {
+        if needle.trim().is_empty() {
+            continue;
+        }
+        let (line, _) = line_of(text, needle);
+        if line > 0 {
+            return line;
+        }
+    }
+    if h.event == "notify" {
+        return text
+            .lines()
+            .position(|l| {
+                l.trim_start()
+                    .strip_prefix("notify")
+                    .is_some_and(|rest| rest.trim_start().starts_with('='))
+            })
+            .map_or(0, |i| i + 1);
+    }
+    0
 }
 
 fn line_of(text: &str, needle: &str) -> (usize, String) {
@@ -680,7 +717,11 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                 r.mcp
                     .sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
             }
-            r.hooks.extend(auto_commands(src, v, true));
+            let mut hooks = auto_commands(src, v, true);
+            for h in &mut hooks {
+                h.line = command_line(&text, h);
+            }
+            r.hooks.extend(hooks);
         }
         if src.kind == sources::Kind::Skill {
             let name = src

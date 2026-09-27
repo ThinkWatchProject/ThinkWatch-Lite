@@ -529,6 +529,9 @@ pub struct HookView {
     pub event: String,
     pub command: String,
     pub source: String,
+    /// 这条命令在 `source` 的第几行（1 起），找不到是 0。**发现按文件和行记**，
+    /// 清单上的一行靠它认出哪些发现是自己的
+    pub line: usize,
 }
 
 /// 扫一次的结果：用户级的配置面，此刻磁盘上的样子。
