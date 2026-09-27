@@ -16,7 +16,7 @@ import { Checkbox } from "@/ui/checkbox";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
-import type { UninstallStep } from "@/types";
+import type { DetectedClient, UninstallStep, WslGroup } from "@/types";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { isWindows } from "@/platform";
@@ -91,6 +91,29 @@ type Stage =
   | { kind: "done"; log: UninstallStep[] }
   | { kind: "failed"; error: unknown };
 
+/**
+ * 确认框里列出来的、会被还原的客户端：这台电脑上接管着的，和 **WSL 各发行版里接管着的**
+ * —— 卸载同样还原它们（`restore_all` 逐个发行版读一遍）。原来只列这台电脑上的，WSL 里的
+ * 在按下去之前一个字都没提，结果里却一条条出现。WSL 里的名字和结果里那一行一样
+ * （`Claude Code (WSL · Ubuntu)`）。
+ *
+ * **有一处没读到就不列名字**（`null`，只说「还原已接管的客户端」）：列一半等于说另一半
+ * 不会被还原；读不到也不该挡住卸载。读不动的发行版也算没读到 —— 它里面接管着谁说不上来。
+ * 不在 Windows 上没有 WSL，传空的。导出给测试用。
+ */
+export function restoreNames(
+  clients: readonly DetectedClient[] | undefined,
+  distros: readonly WslGroup[] | undefined,
+  t: (typeof settingsText)["zh"],
+): string[] | null {
+  if (!clients || !distros || distros.some((g) => g.error)) return null;
+  const adopted = (c: DetectedClient) => c.adopted_at_ms !== null;
+  return [
+    ...clients.filter(adopted).map((c) => c.name),
+    ...distros.flatMap((g) => g.clients.filter(adopted).map((c) => t.wslClient(c.name, g.distro))),
+  ];
+}
+
 function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (log: UninstallStep[]) => void }) {
   const t = useText(settingsText);
   const common = useText(commonText);
@@ -102,7 +125,13 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
    * 列表读不出来不该挡住卸载
    */
   const clients = useResource("settings:uninstall-clients", clientsApi.list);
-  const adopted = clients.data?.clients.filter((c) => c.adopted_at_ms !== null).map((c) => c.name);
+  /**
+   * WSL 里的那几组：卸载也还原它们（见 `restoreNames`）。读 WSL 会唤醒发行版 —— 卸载
+   * 本来就要逐个唤醒它们。只在 Windows 上有
+   */
+  const wsl = useResource(isWindows ? "settings:uninstall-wsl" : null, clientsApi.wsl);
+  const restored = restoreNames(clients.data?.clients, isWindows ? wsl.data?.distros : [], t);
+  const listing = (clients.data === undefined && clients.loading) || (isWindows && wsl.data === undefined && wsl.loading);
   /**
    * 客户端页上改成 mirrored 的 `.wslconfig`。**卸载不改回它**：那是 WSL 自己的设置，
    * 改回 NAT 会让别的东西跟着变 —— 这件事在按下去之前说
@@ -125,7 +154,7 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
     }
   }
 
-  const names = adopted ? adopted.join(t.sep) : null;
+  const names = restored ? restored.join(t.sep) : null;
   return (
     <AlertDialog open onOpenChange={(o) => !o && !running && onClose()}>
       <AlertDialogContent className="data-[size=default]:sm:max-w-[440px]">
@@ -155,7 +184,7 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
               <RotateCcwIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
               <div className="min-w-0">
                 <p>{t.restoreClients}</p>
-                {clients.data === undefined && clients.loading ? (
+                {listing ? (
                   <Skeleton className="mt-1.5 h-2.5 w-40 rounded-sm" />
                 ) : names !== null ? (
                   <p className="tw-label text-muted-foreground">{names || t.restoreNone}</p>
