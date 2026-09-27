@@ -201,6 +201,12 @@ impl Place {
         }
     }
 
+    /// [`Place::of`]，放在阻塞线程上：唤醒一个发行版要好几秒，命令里直接调会一直占着
+    /// 异步运行时的一个工作线程
+    pub async fn open(env: Option<String>) -> Out<Place> {
+        blocking(move || Place::of(env.as_deref())).await?
+    }
+
     pub fn home(&self) -> PathBuf {
         match self {
             Place::Here => home_dir(),
@@ -234,6 +240,15 @@ impl Place {
     }
 }
 
+/// 在阻塞线程上跑。读 `\\wsl.localhost\…`（会唤醒发行版）、读用户填的路径（可能是一个
+/// 离线的网络位置）都可能卡上好几秒：同步命令在主线程上跑，卡住的是整个界面；异步命令
+/// 里直接调，占着的是运行时的工作线程
+pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Out<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| CmdError::plain(e.to_string()))
+}
+
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
@@ -265,7 +280,7 @@ pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::Client
 /// WSL 2 发行版在同一台虚拟机里，问一个开着的就够。
 #[tauri::command]
 pub async fn list_wsl(state: tauri::State<'_, AppState>) -> Out<wire::WslResponse> {
-    let distros = wsl::distros();
+    let distros = blocking(wsl::distros).await?;
     if distros.is_empty() {
         return Ok(wire::WslResponse {
             distros: Vec::new(),
@@ -273,10 +288,14 @@ pub async fn list_wsl(state: tauri::State<'_, AppState>) -> Out<wire::WslRespons
     }
     let gw = gateway(&state).await?;
     let remote = state.link.is_remote();
-    let opened: Vec<(tw_adopt::wsl::Distro, Result<WslHome, Msg>)> = distros
-        .into_iter()
-        .map(|d| (d.clone(), wsl::open(d)))
-        .collect();
+    // 读每个发行版会把它唤醒，一个要好几秒：放在阻塞线程上
+    let opened: Vec<(tw_adopt::wsl::Distro, Result<WslHome, Msg>)> = blocking(move || {
+        distros
+            .into_iter()
+            .map(|d| (d.clone(), wsl::open(d)))
+            .collect()
+    })
+    .await?;
     // 问一个读得到的（此刻开着的）WSL 2 发行版
     let probe = opened
         .iter()
@@ -375,7 +394,7 @@ pub async fn plan_adopt(
     id: String,
     env: Option<String>,
 ) -> Out<wire::PlanView> {
-    let place = Place::of(env.as_deref())?;
+    let place = Place::open(env).await?;
     let c = place.find(&id)?;
     match &place {
         Place::Here => {
@@ -418,7 +437,7 @@ pub async fn adopt_client(
     id: String,
     env: Option<String>,
 ) -> Out<wire::AdoptResponse> {
-    let place = Place::of(env.as_deref())?;
+    let place = Place::open(env).await?;
     let c = place.find(&id)?;
     let base = match &place {
         Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
@@ -440,7 +459,7 @@ pub async fn plan_restore(
     id: String,
     env: Option<String>,
 ) -> Out<wire::PlanView> {
-    let place = Place::of(env.as_deref())?;
+    let place = Place::open(env).await?;
     place.find(&id)?;
     let keys = keys(&state.control).await.unwrap_or_default();
     let mut v = ops::plan_restore_as(&place.home(), &id, &place.owner(&id), &keys)?;
@@ -453,7 +472,7 @@ pub async fn plan_restore(
 /// 还原。**不问 core**：退路不该依赖网关还在不在
 #[tauri::command]
 pub async fn restore_client(id: String, env: Option<String>) -> Out<wire::AdoptResponse> {
-    let place = Place::of(env.as_deref())?;
+    let place = Place::open(env).await?;
     place.find(&id)?;
     Ok(ops::restore(&place.home(), &backups(), &id)?)
 }
@@ -461,7 +480,7 @@ pub async fn restore_client(id: String, env: Option<String>) -> Out<wire::AdoptR
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
 #[tauri::command]
 pub async fn diagnose_client(id: String, env: Option<String>) -> Out<Vec<wire::FindingView>> {
-    match Place::of(env.as_deref())? {
+    match Place::open(env).await? {
         Place::Here => Ok(ops::diagnose(&home_dir(), &id)?),
         Place::Wsl(w) => Ok(ops::diagnose_wsl(&w, &id)?),
     }
@@ -492,7 +511,7 @@ pub async fn copy_client_endpoint(
     env: Option<String>,
 ) -> Out<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let base = match Place::of(env.as_deref())? {
+    let base = match Place::open(env).await? {
         Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
         Place::Wsl(w) => wsl::target(&state, &w).await?,
     };
@@ -518,31 +537,34 @@ pub async fn copy_client_endpoint(
 }
 
 /// 一个客户端的配置位置（接管、MCP 管理、安全扫描）：客户端页、MCP 页「更改路径…」那个
-/// 对话框。只管这台电脑上的
+/// 对话框。只管这台电脑上的。
+///
+/// 这三个命令**是异步的、读写放在阻塞线程上**：它们会碰用户填的路径，那可能是一个
+/// 离线的网络位置，一卡好几秒；同步命令在主线程上跑，卡住的是整个界面
 #[tauri::command]
-pub fn client_locations(id: String) -> Out<wire::ClientLocations> {
-    Ok(locations::view(&home_dir(), &id)?)
+pub async fn client_locations(id: String) -> Out<wire::ClientLocations> {
+    Ok(blocking(move || locations::view(&home_dir(), &id)).await??)
 }
 
 /// 改一项之后哪几处跟着换到哪儿（`edit` 为空是全部回到默认位置）。**不写任何东西** ——
 /// 界面拿它在改之前一起列出来
 #[tauri::command]
-pub fn plan_client_locations(
+pub async fn plan_client_locations(
     id: String,
     edit: Option<wire::LocationEdit>,
 ) -> Out<Vec<wire::LocationChange>> {
-    Ok(locations::plan(&home_dir(), &id, edit.as_ref())?)
+    Ok(blocking(move || locations::plan(&home_dir(), &id, edit.as_ref())).await??)
 }
 
 /// 换位置：三处一起生效。换完客户端页、MCP 页都要跟上（`clients_changed`），文件监视
 /// 按新的位置重起
 #[tauri::command]
-pub fn set_client_locations(
+pub async fn set_client_locations(
     app: tauri::AppHandle,
     id: String,
     edit: Option<wire::LocationEdit>,
 ) -> Out<()> {
-    locations::set(&home_dir(), &crate::data_dir(), &id, edit.as_ref())?;
+    blocking(move || locations::set(&home_dir(), &crate::data_dir(), &id, edit.as_ref())).await??;
     crate::scan::restart_client_watch(&app);
     let _ = app.emit(
         "local-event",
@@ -557,7 +579,7 @@ pub fn set_client_locations(
 /// 真正会被改的。WSL 里的在资源管理器里打开的是 `\\wsl.localhost\…` 那条路径。
 #[tauri::command]
 pub async fn reveal_client_config(id: String, env: Option<String>) -> Out<()> {
-    let place = Place::of(env.as_deref())?;
+    let place = Place::open(env).await?;
     let c = place.find(&id)?;
     let d = tw_adopt::detect::detect_one(&c, &place.home());
     Ok(reveal::reveal(&d.real.display().to_string())?)

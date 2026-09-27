@@ -15,24 +15,29 @@ use crate::{autostart, data_dir, error::Out, wire::UninstallStep};
 ///
 /// **WSL 里的也还原。**每个发行版都要读一遍（会把它们唤醒），读不到的那一个记一条
 /// 失败：它里面有没有接管着的客户端，这时说不上来，不能当成「没有」。
+///
+/// 整个放在阻塞线程上：每个发行版要唤醒好几秒，逐个读写它们的文件
 #[tauri::command]
 pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
-    let backups = tw_adopt::foreign::backup_root();
-    let mut out = restore_all_in(&crate::clients::home_dir(), &backups, |n| n.to_string());
-    for d in crate::clients::wsl::distros() {
-        let name = d.name.clone();
-        match crate::clients::wsl::open(d) {
-            Ok(w) => out.extend(restore_all_in(&w.home, &backups, |n| {
-                crate::clients::wsl::display_name(n, &w)
-            })),
-            Err(e) => out.push(RestoreOutcome {
-                client: crate::clients::wsl::place_name(&name),
-                ok: false,
-                detail: crate::core_text::text(&e),
-            }),
+    crate::clients::blocking(|| {
+        let backups = tw_adopt::foreign::backup_root();
+        let mut out = restore_all_in(&crate::clients::home_dir(), &backups, |n| n.to_string());
+        for d in crate::clients::wsl::distros() {
+            let name = d.name.clone();
+            match crate::clients::wsl::open(d) {
+                Ok(w) => out.extend(restore_all_in(&w.home, &backups, |n| {
+                    crate::clients::wsl::display_name(n, &w)
+                })),
+                Err(e) => out.push(RestoreOutcome {
+                    client: crate::clients::wsl::place_name(&name),
+                    ok: false,
+                    detail: crate::core_text::text(&e),
+                }),
+            }
         }
-    }
-    Ok(out)
+        out
+    })
+    .await
 }
 
 fn restore_all_in(
