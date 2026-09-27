@@ -524,6 +524,7 @@ export function useRequests(ready: boolean) {
     alerts,
     rotated,
     clearAlerts: () => setAlerts([]),
-    clearRotated: () => setRotated([]),
+    /** 关掉一家的那一条。**不是全部**：关一条告知，不该顺手把另一家「重启前必须处理」的那条也关了 */
+    clearRotated: (provider: string) => setRotated((p) => p.filter((x) => x.provider !== provider)),
   };
 }

@@ -150,9 +150,12 @@ export function ZaiLoginDialog({
     onClose();
   }
 
-  // 同名的上游已经是这一家的话，登录换的是它的密钥 —— 那不是冲突，要说清是替换
+  // 同名的上游已经是这一家的话，登录换的是它的密钥 —— 那不是冲突，要说清是替换。
+  // **末尾的 `/` 不算**，和 core 认这件事时一样：差一个斜杠就判成「名字被占用」的话，
+  // 按钮点不了，而 core 其实会接受
   const existing = ov.providers.find((p) => p.name === name.trim());
-  const replaces = existing != null && existing.base_url === ZAI_ENDPOINTS[family];
+  const replaces =
+    existing != null && existing.base_url.replace(/\/+$/, "") === ZAI_ENDPOINTS[family].replace(/\/+$/, "");
   const nameTaken = !replaces && existing != null && phase.at === "form";
   const canStart = name.trim().length > 0 && !nameTaken && understood && !busy;
 

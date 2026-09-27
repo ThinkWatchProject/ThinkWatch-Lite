@@ -99,11 +99,15 @@ export function UpstreamDialog({
   /** 登的是哪个账号。core 从凭据的令牌里读，和列表那一行是同一份 */
   const email = editing?.oauth?.account?.email;
   const sections = (account ? ACCOUNT_SECTIONS : SECTIONS).map((id) => ({ id, label: t.sections[id] }));
-  const [section, setSection] = useState<Section>(
-    mode.kind === "edit"
-      ? (mode.section ?? (account ? "account" : "connection"))
-      : "connection",
-  );
+  const [section, setSection] = useState<Section>(() => {
+    if (mode.kind !== "edit") return "connection";
+    const own = account ? ACCOUNT_SECTIONS : SECTIONS;
+    // 账号上游没有「连接」这一节，出站连接（代理）在「账号」那一节里：从删代理的对话框
+    // 点「查看」过来时落到那里。**不在这一套里的节一律不画** —— 画出来的是这种上游
+    // 不该有的地址、协议、凭据表单，改了就坏
+    const want = account && mode.section === "connection" ? "account" : mode.section;
+    return want && own.includes(want) ? want : own[0]!;
+  });
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(["connection"]));
 
   const [preview, setPreview] = useState<ProviderPreview | null>(null);
@@ -453,6 +457,13 @@ export function UpstreamDialog({
             onSaved={(name) => {
               setNested(null);
               set({ pricing: name });
+              onChanged();
+            }}
+            // 在这里删掉了一张价目表：对话框关上，表单里选着它的话退回默认的那张 ——
+            // 留着一个已经不存在的名字，保存这个上游只会得到「没有这张价目表」
+            onDeleted={() => {
+              if (nested.name && form.pricing === nested.name) set({ pricing: "" });
+              setNested(null);
               onChanged();
             }}
           />

@@ -517,7 +517,8 @@ export function SpeedTestDialog({
           <Button variant="outline" onClick={onClose}>
             {results ? common.close : common.cancel}
           </Button>
-          <Button onClick={run} pending={running} disabled={runnable.length === 0 || !model}>
+          {/* 报价在路上时不让开始：那时屏幕上的合计还是上一个模型、上一组上游的 */}
+          <Button onClick={run} pending={running} disabled={runnable.length === 0 || !model || quoting}>
             {!running && <ZapIcon />}
             {results ? t.speed.again : t.speed.start}
           </Button>

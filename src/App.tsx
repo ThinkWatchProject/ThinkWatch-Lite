@@ -888,7 +888,7 @@ function Shell({ first }: { first: boolean }) {
                       <Banner
                         tone="info"
                         actions={
-                          <Button variant="ghost" size="xs" onClick={clearRotated}>
+                          <Button variant="ghost" size="xs" onClick={() => clearRotated(r.provider)}>
                             {common.close}
                           </Button>
                         }
@@ -905,7 +905,7 @@ function Shell({ first }: { first: boolean }) {
                         tone="error"
                         title={t.rotatedUnsaved(r.provider)}
                         actions={
-                          <Button variant="ghost" size="sm" onClick={clearRotated}>
+                          <Button variant="ghost" size="sm" onClick={() => clearRotated(r.provider)}>
                             {common.close}
                           </Button>
                         }
