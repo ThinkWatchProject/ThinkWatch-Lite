@@ -1,5 +1,5 @@
 import type { sessionsText } from "./Sessions.i18n";
-import { usd, type SessionView } from "@/types";
+import { usd, type Billing, type SessionView } from "@/types";
 
 type Text = (typeof sessionsText)["zh"];
 
@@ -41,4 +41,35 @@ export function costCell(
     muted: false,
     notes: [...(estimated ? [t.estimatedTip(usd(s.cost_micros_estimated))] : []), ...outside],
   };
+}
+
+/** 会话瀑布里一轮的费用：落了库的那一轮，或者表里还没落库的那一行 */
+export interface TurnCost {
+  cost: number | null;
+  estimated: boolean;
+  /** 拿到用量了没有 */
+  usage: boolean;
+  billing: Billing;
+  /** 落了库的。没落库的那几轮价钱还没算出来 */
+  recorded: boolean;
+}
+
+/**
+ * 瀑布里一轮的费用那一格写什么（在跑的那一轮另写「进行中」）。**和会话合计、概览排行
+ * 同一套三态**（`costCell`、`rankCost`）：
+ *
+ * · 有金额写金额，估算的带「~」。
+ * · 落了库、按量计费、有用量却没有金额：「无法计价」—— 模型不在价目表里，配个价格就
+ *   有了。和 core 数「无法计价」的条件一样（有用量才算）。
+ * · 其余写「—」：没有用量的（失败在响应之前的、上游没报用量的），和表里还没落库、价钱
+ *   还没算出来的那几轮。没有用量的**不写成「无用量」**：一轮里没有状态码，上游回了 4xx
+ *   （不计费）和回了 200 却没报用量（多半计了费）分不开，「—」对两种都是真的。
+ *
+ * 原来没有金额的落库轮次一律写「无法计价」：失败的那几轮、没报用量的那几轮都说成了
+ * 「去价目表里补个价就好」，而补了价它们照样没有金额。
+ */
+export function turnCost(x: TurnCost, t: Text): { text: string; muted: boolean } {
+  if (x.cost != null) return { text: (x.estimated ? "~" : "") + usd(x.cost), muted: false };
+  if (x.recorded && x.billing === "per-token" && x.usage) return { text: t.unpriced, muted: true };
+  return { text: "—", muted: true };
 }

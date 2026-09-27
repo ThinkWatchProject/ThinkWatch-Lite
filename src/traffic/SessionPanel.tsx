@@ -3,7 +3,7 @@ import { call } from "@/control";
 import { useText } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
-import { usd, type RequestRow, type SessionDetail, type TurnView } from "@/types";
+import type { RequestRow, SessionDetail, TurnView } from "@/types";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
 import { AnimatedNumber } from "@/ui/motion";
@@ -15,6 +15,7 @@ import { Tip } from "@/ui/tip";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "./PanelHeader";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
+import { turnCost, type TurnCost } from "./costCell";
 import { dur, tokens, when } from "./format";
 import { tally } from "./grouping";
 
@@ -243,16 +244,12 @@ function Swatch({ className, children }: { className: string; children: ReactNod
 
 /**
  * 瀑布里的一轮：落了库的（`TurnView`），或者表里的一行 —— 还在跑的，刚落地、详情还
- * 没重读的。
+ * 没重读的。费用那一格写什么见 `turnCost`。
  */
-interface Step {
+interface Step extends TurnCost {
   id: number;
   model: string;
-  cost: number | null;
-  estimated: boolean;
   state: RequestRow["state"];
-  /** 落了库的。没有金额时：落了库的是没有价格，表里的那几轮是还没算出来 */
-  recorded: boolean;
 }
 
 const fromTurn = (x: TurnView): Step => ({
@@ -261,6 +258,8 @@ const fromTurn = (x: TurnView): Step => ({
   cost: x.cost_micros,
   estimated: x.cost_estimated,
   state: x.error ? "failed" : x.cancelled ? "cancelled" : "done",
+  usage: x.input_tokens != null,
+  billing: x.billing,
   recorded: true,
 });
 
@@ -270,6 +269,9 @@ const fromRow = (r: RequestRow): Step => ({
   cost: r.costMicros ?? null,
   estimated: r.costEstimated === true,
   state: r.state,
+  usage: r.inputTokens != null,
+  // 表里的那几轮还没落库，费用那一格只看它有没有金额（见 `turnCost`）
+  billing: "per-token",
   recorded: false,
 });
 
@@ -306,15 +308,13 @@ function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => v
               </span>
               {/* 两格的宽度按最长的那个词定：英文的「In progress」「Canceled」，Windows 上字大 1px 也放得下 */}
               <span className="w-24 shrink-0 text-right">
-                {/* **没有价格就说没有价格，不写 $0**；估算的金额带记号 */}
+                {/* **没有价格就说没有价格，不写 $0**；估算的金额带记号；没有用量的不是「没有价格」 */}
                 {x.state === "in_flight" ? (
                   <StatusLabel tone="pending" muted>
                     {t.turnRunning}
                   </StatusLabel>
-                ) : x.cost == null ? (
-                  <span className="text-muted-foreground">{x.recorded ? t.unpriced : "—"}</span>
                 ) : (
-                  (x.estimated ? "~" : "") + usd(x.cost)
+                  <TurnCostText x={x} />
                 )}
               </span>
               {marks && (
@@ -334,6 +334,11 @@ function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => v
       </ol>
     </section>
   );
+}
+
+function TurnCostText({ x }: { x: TurnCost }) {
+  const c = turnCost(x, useText(sessionsText));
+  return <span className={c.muted ? "text-muted-foreground" : undefined}>{c.text}</span>;
 }
 
 /** 取数时的样子：和内容同样的几块，落进来时不跳 */
