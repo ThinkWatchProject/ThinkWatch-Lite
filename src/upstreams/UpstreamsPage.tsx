@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
 import type { ConfigFocus } from "@/configLocate";
 import { invalidate, type Resource } from "@/lib/resource";
+import { useWriteQueue } from "@/lib/writeQueue";
 import { useNav, useNavParams } from "@/nav";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -82,6 +83,8 @@ export default function UpstreamsPage({
   const c = useText(commonText);
   const nav = useNav();
   const configVersion = ov.config_version;
+  /** 这一页上的启停排成一队，见 `toggle` */
+  const queue = useWriteQueue(configVersion);
   const [tab, setTabState] = useState<UpstreamTab>(lastTab);
   const setTab = (next: UpstreamTab) => {
     lastTab = next;
@@ -162,17 +165,16 @@ export default function UpstreamsPage({
     const saved = ov.providers.find((x) => x.name === p.name);
     if (!saved) return;
     const next = !p.disabled;
-    // 撤销要基于这一次写入之后的版本，不然会被当成冲突
-    let version = configVersion;
+    // **排队写**（`useWriteQueue`）：连着停用两个上游，第二次等第一次写完、带它回的版本号；
+    // 撤销也排在后面，基于这一次写入之后的版本 —— 都带着同一个旧版本的话，后到的那次会
+    // 被当成冲突拒掉，开关弹回去
     const write = (disabled: boolean) =>
-      api
-        .updateProvider(saved.name, {
+      queue((base) =>
+        api.updateProvider(saved.name, {
           provider: { ...toInput(formFromView(saved)), disabled },
-          base_version: version,
-        })
-        .then((w) => {
-          version = w.version;
-        });
+          base_version: base,
+        }),
+      ).then(() => undefined);
     await undoable({
       message: next ? t.disabledToast(p.name) : t.enabledToast(p.name),
       apply: () => {
