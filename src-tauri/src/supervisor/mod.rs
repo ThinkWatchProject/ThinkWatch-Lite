@@ -147,6 +147,14 @@ pub struct Supervisor {
 /// —— 是在等守护循环收到子进程的退出。
 const KILL_GRACE: Duration = Duration::from_secs(3);
 
+/// 请它退出时，控制面最多等这么久。
+///
+/// **必须有。**握手还过得去、请求却没人答的 core，会让「请它退出」一直挂着 —— 而要
+/// 请它退的几处（心跳换掉卡死的 core、装更新、退出应用）正赶上它不正常的时候，挂住
+/// 的是那一处自己：心跳循环从此不再探，更新停在「正在重启」。等不到就当没请动，走
+/// 下一档
+const ASK_WITHIN: Duration = Duration::from_secs(3);
+
 /// 等到有人要它停。**先看当下**（`wait_for` 就是这样），要求可能早就到了
 async fn until_stopped(rx: &mut watch::Receiver<bool>) {
     // 拿到的那个借用当场放掉：它握着 watch 的读锁
@@ -227,9 +235,10 @@ impl Supervisor {
     /// 请到了返回 true：控制面应了，或者信号送出去了。**Windows 上控制面不应就是没请到**：
     /// 那里没有信号这条退路，core 照旧跑着，调用方要知道
     async fn ask_to_exit(&self, pid: u32) -> bool {
-        match self.control.shutdown().await {
-            Ok(()) => return true,
-            Err(e) => tracing::debug!("控制面请不动 core：{e:#}"),
+        match tokio::time::timeout(ASK_WITHIN, self.control.shutdown()).await {
+            Ok(Ok(())) => return true,
+            Ok(Err(e)) => tracing::debug!("控制面请不动 core：{e:#}"),
+            Err(_) => tracing::debug!(?ASK_WITHIN, "控制面没有回话"),
         }
         #[cfg(unix)]
         {
@@ -1326,5 +1335,45 @@ mod tests {
             "接回来之后的崩溃被当成了按要求重启：{:?}",
             s.state()
         );
+    }
+
+    /// 一个握了手就一声不吭的控制面。走回环端口：两个平台都认这一种传输
+    async fn silent_control_plane(name: &str) -> (tw_api::control::Address, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = "ab".repeat(32);
+        let config = dir.join("config.yaml");
+        std::fs::write(
+            &config,
+            format!("listen:\n  control:\n    key: \"{key}\"\n"),
+        )
+        .unwrap();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port_file = dir.join("control.port");
+        std::fs::write(&port_file, l.local_addr().unwrap().port().to_string()).unwrap();
+        tokio::spawn(async move {
+            let key = tw_link::ControlKey::parse(&key).unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "9.9.9");
+            let mut held = Vec::new();
+            while let Ok((s, _)) = l.accept().await {
+                // 握手，然后拿着这条连接，请求来了也不答
+                if let Ok(accepted) = acceptor.accept(s).await {
+                    held.push(accepted);
+                }
+            }
+        });
+        (tw_api::control::Address::Loopback { port_file }, config)
+    }
+
+    /// 控制面握了手却一直不答：**请它退出这一步不能跟着挂住**。心跳换掉卡死的 core、
+    /// 装更新、退出应用都要先走这一步
+    #[tokio::test]
+    async fn asking_a_core_whose_control_plane_never_answers_gives_up() {
+        let (at, config) = silent_control_plane("silent").await;
+        let s = Supervisor::new(PathBuf::from("/x"), None, always_ready(), at, config);
+        let asked = tokio::time::timeout(Duration::from_secs(10), s.ask_to_exit(NO_SUCH_PID))
+            .await
+            .expect("请它退出挂住了");
+        assert!(!asked, "控制面没答、信号也没处送，却说请到了");
     }
 }
