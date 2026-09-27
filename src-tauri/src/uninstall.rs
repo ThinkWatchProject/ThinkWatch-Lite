@@ -1,5 +1,7 @@
 //! 还原全部接管，以及卸载。
 
+use tauri::Manager;
+
 use crate::{autostart, data_dir, error::Out, wire::UninstallStep};
 
 /// 把所有接管过的客户端一次性还原（第二层的第二个入口）。
@@ -79,7 +81,9 @@ pub struct RestoreOutcome {
 #[tauri::command]
 pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<UninstallStep>> {
     let mut log = Vec::new();
-    for r in restore_all().await? {
+    let restored = restore_all().await?;
+    let restored_all = restored.iter().all(|r| r.ok);
+    for r in restored {
         log.push(UninstallStep {
             ok: r.ok,
             text: tr!(
@@ -127,7 +131,29 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<Uninst
     // 说出是哪个文件；这之后应用还开着，重新启动会再写一份
     #[cfg(target_os = "linux")]
     log.extend(crate::desktop_entry::remove(&app));
-    if drop_data {
+    if drop_data && !restored_all {
+        // **有客户端没还原成，数据目录就不删。**它还指着本机的网关，而它的全文备份就在
+        // 这个目录里：这时删掉，它剩下的只是一份指着不存在的端口的配置、再没有退路 ——
+        // 正是「先还原、最后才删数据」这个顺序要防的那种状态
+        let dir = data_dir();
+        log.push(UninstallStep::failed(tr!(
+            format!(
+                "数据目录已保留：{}。上面有客户端没能还原，它们的备份在这个目录里；处理好之后再删除它",
+                dir.display()
+            ),
+            format!(
+                "Data directory kept: {}. Some clients above could not be restored, and their backups are in it; delete it once they are sorted out.",
+                dir.display()
+            )
+        )));
+    } else if drop_data {
+        // 先停掉本机的 core：它开着数据库和日志，Windows 上删到一半就会失败，而且留下
+        // 一个没有数据目录还在跑的网关。连着远程时它本来就停着，这一步什么都不做
+        if let Some(st) = app.try_state::<crate::AppState>() {
+            st.supervisor
+                .stop_and_wait(std::time::Duration::from_secs(5))
+                .await;
+        }
         let dir = data_dir();
         match std::fs::remove_dir_all(&dir) {
             Ok(_) => log.push(UninstallStep::done(tr!(
