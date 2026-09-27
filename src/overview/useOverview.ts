@@ -12,7 +12,7 @@ const HOUR = 3_600_000;
  */
 export function rangeId(r: Range): string {
   if (r.live) return "live";
-  if (r.custom) return `from:${new Date(Date.now() - r.ms).toDateString()}`;
+  if (r.custom) return `from:${new Date(r.from ?? Date.now() - r.ms).toDateString()}`;
   return `last:${r.ms}`;
 }
 

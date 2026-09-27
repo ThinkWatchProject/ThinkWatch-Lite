@@ -41,6 +41,12 @@ export type Range = {
   compare: string;
   /** 自定义区间。跨度恰好等于某个预设时，那个预设也不算选中 */
   custom?: boolean;
+  /**
+   * 自定义区间从哪一刻起（选的那一天的零点）。**窗口按它算，不按 `ms`**：`ms` 是
+   * 建这个区间那一刻量出来的跨度，页面开着的时候拿「现在减去它」当起点，起点就一路
+   * 往后挪，标签还写着「9/8 至今」，最早那一段却悄悄掉出了合计
+   */
+  from?: number;
 };
 
 /*
@@ -89,7 +95,8 @@ export function bucketFor(rangeMs: number): number {
  * 实时档的汇总按 24 小时算（见 `LIVE_RANGE`），起点也按 24 小时取。
  */
 export function windowStart(r: Range, now = Date.now()): number {
-  return r.live ? bucketStart(now - DAY, HOUR) : bucketStart(now - r.ms, bucketFor(r.ms));
+  if (r.live) return bucketStart(now - DAY, HOUR);
+  return bucketStart(r.from ?? now - r.ms, bucketFor(r.ms));
 }
 
 /**
@@ -102,6 +109,7 @@ export function windowStart(r: Range, now = Date.now()): number {
 export function customRange(d: Date): Range {
   return {
     ms: Math.max(60_000, Date.now() - d.getTime()),
+    from: d.getTime(),
     get label() {
       return textOf(rangeText).since(d.toLocaleDateString());
     },
@@ -188,7 +196,7 @@ export function useRange(
       const id = r.live
         ? "live"
         : r.custom
-          ? `from:${new Date(Date.now() - r.ms).toISOString()}`
+          ? `from:${new Date(r.from ?? Date.now() - r.ms).toISOString()}`
           : (PRESETS.find((x) => x.ms === r.ms)?.id ?? "");
       if (id) window.localStorage.setItem(key, id);
     } catch {

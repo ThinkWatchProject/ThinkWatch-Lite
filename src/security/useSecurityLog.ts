@@ -33,7 +33,8 @@ export interface SecurityLog {
  * 那几个数之和。
  */
 export function useSecurityLog(range: Range, tick: number): SecurityLog {
-  const scope = `${range.ms}|${range.live ? 1 : 0}|${range.custom ? 1 : 0}`;
+  // 自定义区间按起点认：它的 `ms` 是建它那一刻量的，同一天再选一次就是另一个数
+  const scope = `${range.from ?? range.ms}|${range.live ? 1 : 0}|${range.custom ? 1 : 0}`;
   /** 已经翻出来多少条。重读时照这个数读，翻过的不丢 */
   const loaded = useRef(0);
   const r = useResource<SecurityEventsPage>(
