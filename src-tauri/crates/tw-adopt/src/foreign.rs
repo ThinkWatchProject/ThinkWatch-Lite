@@ -468,10 +468,19 @@ fn backup_at(
 ) -> Result<PathBuf, ForeignError> {
     // 目录名里带上来源路径的形状，一眼能看出这是谁的备份
     let flat = flat_name(real);
-    std::fs::create_dir_all(root).map_err(|source| ForeignError::Write {
+    // **备份只给自己看：目录 0700，文件 0600。**里面是原样的配置文件，也就是
+    // 用户自己的 API key 和我们换上的网关密钥；按 umask 建出来的 0755 / 0644 谁都
+    // 读得到。建出来就是这个权限，不是建完再收（那中间有一个窗口）；根目录是以前
+    // 按默认权限建的，就收一次 —— 进不去根目录，里面那些旧备份也就读不到了
+    private_dir(root, true).map_err(|source| ForeignError::Write {
         path: root.to_path_buf(),
         source,
     })?;
+    #[cfg(unix)]
+    if mode_of(root).is_some_and(|m| m & 0o077 != 0) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700));
+    }
     // **同一毫秒里连着接管两次，第二份备份不能盖掉第一份。**第二次备份
     // 的内容里已经是我们写的密钥了；盖掉之后还原只能找回我们的密钥，
     // 用户自己的那个就再也没有了。所以用 `create_dir`（不是 `_all`）
@@ -479,7 +488,7 @@ fn backup_at(
     let mut seq = 0;
     let dir = loop {
         let dir = root.join(format!("{ms}-{seq:04}"));
-        match std::fs::create_dir(&dir) {
+        match private_dir(&dir, false) {
             Ok(()) => break dir,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && seq < BACKUP_SEQ_MAX => {
                 seq += 1;
@@ -489,19 +498,35 @@ fn backup_at(
     };
     let file = dir.join(flat);
     // 目录是刚建的，按说不会有同名文件；万一有，也宁可失败不覆盖。
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&file)
-        .map_err(|source| ForeignError::Write {
-            path: file.clone(),
-            source,
-        })?;
-    std::io::Write::write_all(&mut f, text.as_ref()).map_err(|source| ForeignError::Write {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let w = |source| ForeignError::Write {
         path: file.clone(),
         source,
-    })?;
+    };
+    let mut f = opts.open(&file).map_err(w)?;
+    std::io::Write::write_all(&mut f, text.as_ref()).map_err(w)?;
+    // 备份是出事之后唯一的退路：配置换上去之前，它得先落盘
+    f.sync_all().map_err(w)?;
+    sync_dir(&dir);
     Ok(file)
+}
+
+/// 建一个只给自己用的目录（unix 上 `0700`）。`all` 连缺的上层一起建，已经在不算错。
+fn private_dir(dir: &Path, all: bool) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(all);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
 }
 
 /// 一次写入的完整请求。
@@ -925,6 +950,25 @@ mod tests {
         let first = backup_at(&root, &p, "第一次", 1_700_000_000_001).unwrap();
         backup_at(&root, &other, "别人的", 1_700_000_000_000).unwrap();
         assert_eq!(backups_of(&root, &p), vec![first, second]);
+    }
+
+    /// 备份里是原样的配置：用户自己的 API key、换上的网关密钥。**只给自己看**：
+    /// 目录 0700、文件 0600；以前按默认权限建的根目录收一次
+    #[cfg(unix)]
+    #[test]
+    fn backups_are_readable_only_by_their_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let (d, root) = dirs();
+        let p = d.path().join("c.json");
+        let f = backup_at(&root, &p, "sk-用户自己的", 1_700_000_000_000).unwrap();
+        assert_eq!(mode(&root), 0o700);
+        assert_eq!(mode(f.parent().unwrap()), 0o700);
+        assert_eq!(mode(&f), 0o600);
+
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        backup_at(&root, &p, "tw-我们写的", 1_700_000_000_001).unwrap();
+        assert_eq!(mode(&root), 0o700, "旧的根目录没收紧");
     }
 
     /// 写到一半要退回去、却退不回去：**说出来**（是哪个文件、原文在哪儿），不能当成
