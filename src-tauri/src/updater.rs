@@ -535,10 +535,8 @@ pub(crate) async fn resume_after_failed_update(app: &tauri::AppHandle) {
     }
 }
 
-/// 上一次是被更新重启的话，说一声换到了哪一版。
-///
-/// **只在版本真的变了时说。**标记是重启之前写下的；替换没成功、起来的
-/// 还是原来那一版的话，这句话就是假的。
+/// 上一次是被更新重启的话，说一声换到了哪一版。标记读过就删：不说的时候也删，不然
+/// 下次启动还会翻出这一句。
 pub(crate) fn announce_update(app: &tauri::AppHandle) {
     use tauri_plugin_notification::NotificationExt;
     let marker = data_dir().join(UPDATED_FROM);
@@ -547,19 +545,36 @@ pub(crate) fn announce_update(app: &tauri::AppHandle) {
     };
     let _ = std::fs::remove_file(&marker);
     let now = app.package_info().version.to_string();
-    let from = from.trim();
-    if from.is_empty() || from == now {
+    // 和别的提醒同一个开关。总线已经建起来的话问它；启动时它还没建（这一句说在它之前），
+    // 就读设置 —— 总线一会儿用的也正是这一档
+    let mode = app
+        .try_state::<Arc<notices::Notices>>()
+        .map(|n| n.mode())
+        .unwrap_or_else(|| prefs::load(&data_dir()).notices);
+    let Some((title, body)) = updated_notice(from.trim(), &now, mode) else {
         return;
+    };
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// 「已更新到 x」那一条的标题和正文；不该说就是 `None`。
+///
+/// **只在版本真的变了时说。**标记是重启之前写下的；替换没成功、起来的还是原来那一版
+/// 的话，这句话就是假的。
+///
+/// **用户选了「仅在应用内」或者关掉了提醒，就不弹**，和别的告知一样（见
+/// [`notices::Notices::announce`]）：它不是一件待处理的事，应用内的列表也不收它
+fn updated_notice(from: &str, now: &str, mode: notices::Mode) -> Option<(String, String)> {
+    if from.is_empty() || from == now || mode != notices::Mode::System {
+        return None;
     }
-    let _ = app
-        .notification()
-        .builder()
-        .title(tr!(format!("已更新到 {now}"), format!("Updated to {now}")))
-        .body(tr!(
+    Some((
+        tr!(format!("已更新到 {now}"), format!("Updated to {now}")),
+        tr!(
             format!("ThinkWatch Lite 已从 {from} 更新到 {now}。"),
             format!("ThinkWatch Lite was updated from {from} to {now}.")
-        ))
-        .show();
+        ),
+    ))
 }
 
 /// 第一次检查之前先等一会儿。
@@ -592,5 +607,36 @@ pub(crate) async fn update_loop(app: tauri::AppHandle) {
             }
         }
         tokio::time::sleep(UPDATE_EVERY).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Lang, with_lang};
+    use notices::Mode;
+
+    /// 「已更新到 x」和别的告知同一个开关：**只在「系统通知」那一档弹**
+    #[test]
+    fn the_updated_notice_follows_the_notification_setting() {
+        assert!(updated_notice("2026.9.18", "2026.9.19", Mode::System).is_some());
+        assert_eq!(updated_notice("2026.9.18", "2026.9.19", Mode::App), None);
+        assert_eq!(updated_notice("2026.9.18", "2026.9.19", Mode::Off), None);
+    }
+
+    /// 替换没成功（起来的还是原来那一版）、标记是空的：不说
+    #[test]
+    fn the_updated_notice_is_only_said_when_the_version_changed() {
+        assert_eq!(updated_notice("2026.9.19", "2026.9.19", Mode::System), None);
+        assert_eq!(updated_notice("", "2026.9.19", Mode::System), None);
+        with_lang(Lang::En, || {
+            assert_eq!(
+                updated_notice("2026.9.18", "2026.9.19", Mode::System),
+                Some((
+                    "Updated to 2026.9.19".to_string(),
+                    "ThinkWatch Lite was updated from 2026.9.18 to 2026.9.19.".to_string()
+                ))
+            );
+        });
     }
 }
