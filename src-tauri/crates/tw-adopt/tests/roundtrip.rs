@@ -220,6 +220,45 @@ fn a_file_the_user_has_since_written_into_is_never_deleted_by_a_restore() {
     assert!(!after.contains("127.0.0.1"), "{after}");
 }
 
+/// `env` 是接管时我们建的，之后用户往里加了自己的变量：还原收走我们那几项，
+/// 他的那一项留着 —— 不是连同整个 `env` 一起删掉
+#[test]
+fn a_variable_the_user_added_to_a_section_we_created_survives_a_restore() {
+    const SEED: &str = "{\n  \"model\": \"opus\"\n}\n";
+    let b = bed("claude-code", SEED);
+    let c = client("claude-code");
+    let path = b.home.join(".claude/settings.json");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let mine = tw_adopt::json::set(
+        &read(&path),
+        &["env", "MY_OWN_VAR"],
+        &tw_adopt::json::Val::s("别动我"),
+    )
+    .unwrap();
+    std::fs::write(&path, mine).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let after = read(&path);
+    assert!(
+        after.contains("\"MY_OWN_VAR\": \"别动我\""),
+        "把用户后来加的变量连同 env 一起删了：{after}"
+    );
+    assert!(after.contains("\"model\": \"opus\""), "{after}");
+    assert!(!after.contains("127.0.0.1"), "{after}");
+    assert!(!after.contains("tw-用户的专属密钥"), "{after}");
+
+    // 没人往里加东西的话，那一段照旧整个收走：还原之后一个字节都不差
+    let b = bed("claude-code", SEED);
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&b.home.join(".claude/settings.json")), SEED);
+}
+
 // ---- Codex：TOML，有注释，几十条项目授权 -------------------------------
 
 const CODEX: &str = r#"model = "gpt-5.6-sol"
@@ -664,6 +703,34 @@ fn dsh_shapes_dsh_writes_itself_come_back_exactly() {
         assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), patch);
         assert_eq!(read(&dsh_home(&b).join(".credentials.yaml")), creds);
     }
+}
+
+/// 凭据文件原来没有 `refs`，是接管时建的；之后用户在里面加了自己的引用（联网搜索
+/// 要用）。还原收走我们那一条，他的留着 —— 而不是去删整个 `refs`、再因为它不是
+/// 一个标量而整个还原失败
+#[test]
+fn dsh_keeps_a_reference_the_user_added_to_the_refs_we_created() {
+    let b = bed("dsh", DSH_PATCH);
+    let creds_path = dsh_home(&b).join(".credentials.yaml");
+    std::fs::write(&creds_path, "version: 1\n").unwrap();
+    let c = client("dsh");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let mut creds = read(&creds_path);
+    assert!(
+        creds.ends_with("refs:\n  THINKWATCH_API_KEY: tw-用户的专属密钥\n"),
+        "{creds}"
+    );
+    creds.push_str("  DEEPSEEK_API_KEY: sk-我自己的\n");
+    std::fs::write(&creds_path, creds).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        read(&creds_path),
+        "version: 1\nrefs:\n  DEEPSEEK_API_KEY: sk-我自己的\n"
+    );
+    assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
 }
 
 /// 接管期间用户在我们那一行后面加了一条 `insert:`：还原照样过得去，那一条留着

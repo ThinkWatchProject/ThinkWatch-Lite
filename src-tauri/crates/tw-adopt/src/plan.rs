@@ -781,27 +781,9 @@ pub(crate) fn restore_file_plan(
         }
     }
 
-    // 我们凭空造出来的容器（比如原本没有的 `env`）要跟着收走，
-    // 否则「还原」之后会留下一个用户从来没有过的空段落。
-    if let Some(bv) = &backed_val {
-        for f in &rec.originals {
-            let p = f.path.clone();
-            for cut in (1..p.len()).rev() {
-                let anc = &p[..cut];
-                if lookup(bv, &refs(anc)).is_none()
-                    && !targets
-                        .iter()
-                        .any(|t| matches!(t, Target::Remove(x) if x == anc))
-                {
-                    targets.push(Target::Remove(anc.to_vec()));
-                }
-            }
-        }
-    }
-
     // 有的字段还原之后得留下（Codex 那一段影子 OpenAI，见
-    // `clients::leaves_behind`）。**它们的容器也就不能收走**，删它们的那几条
-    // 让给写它们的那一条。
+    // `clients::leaves_behind`）。删它们的那几条让给写它们的那一条；它们的容器
+    // 因此不空，下面也就不会被收走。
     let now = semantic(fmt, &text, client)?;
     for Edit { path: p, value, .. } in crate::clients::leaves_behind(client, &now) {
         targets.retain(|t| !matches!(t, Target::Remove(x) if p.starts_with(x)));
@@ -816,6 +798,42 @@ pub(crate) fn restore_file_plan(
             Target::Set(p, v) => put(fmt, &text, &refs(p), v, client)?,
             Target::Remove(p) => drop_(fmt, &text, &refs(p), client)?,
         };
+    }
+
+    // 我们凭空造出来的容器（比如原本没有的 `env`）要跟着收走，
+    // 否则「还原」之后会留下一个用户从来没有过的空段落。
+    //
+    // **只收空了的。**接管之后用户可能往这个容器里加了自己的东西（`env` 里的另一个
+    // 变量、opencode 里另一家 provider、dsh 凭据里另一条引用）：整段删掉就是替他删了
+    // 配置。所以等上面那几个字段都改回去之后再看，从最深的一层往外收。
+    if let Some(bv) = &backed_val {
+        let mut created: Vec<Vec<String>> = rec
+            .originals
+            .iter()
+            .flat_map(|f| (1..f.path.len()).map(|cut| f.path[..cut].to_vec()))
+            .filter(|anc| lookup(bv, &refs(anc)).is_none())
+            .collect();
+        created.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        created.dedup();
+        for anc in created {
+            if targets.iter().any(|t| match t {
+                Target::Set(x, _) | Target::Remove(x) => *x == anc,
+            }) {
+                continue;
+            }
+            match lookup(&semantic(fmt, &text, client)?, &refs(&anc)) {
+                // 删掉最后一个字段时容器已经跟着没了（YAML 的嵌套映射）。照样记一条：
+                // 写回校验按这几条改动推算还原之后该是什么样
+                None => {}
+                Some(Val::Null) => text = drop_(fmt, &text, &refs(&anc), client)?,
+                Some(Val::Obj(ms)) if ms.is_empty() => {
+                    text = drop_(fmt, &text, &refs(&anc), client)?
+                }
+                // 里面有用户自己的东西：留着
+                Some(_) => continue,
+            }
+            targets.push(Target::Remove(anc));
+        }
     }
     if let Some(prefix) = crate::clients::comment_prefix(fmt) {
         text = sentinel::strip(&text, prefix);
