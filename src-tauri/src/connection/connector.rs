@@ -108,7 +108,7 @@ impl std::error::Error for ConnectError {}
 /// 这一版应用配的是哪一版 core。**来自 `Cargo.lock` 里 tw-api 锁的 tag**，见 build.rs
 pub const REQUIRED_CORE: &str = env!("TW_CORE_TAG");
 
-/// 连一次 TCP、握手，最多等这么久
+/// 连一次 TCP、握手、握手之后问一次 `/status`，每一步最多等这么久
 const CONNECT_WITHIN: Duration = Duration::from_secs(5);
 
 /// 握手的结果：对面说自己是哪一版
@@ -122,13 +122,24 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// 试连一个远程的 core：连上、握手、问一次 `/status`。**切换之前、启动时、断线重连都走它。**
 pub async fn test(r: &RemoteTarget) -> Result<ServerInfo, ConnectError> {
+    test_within(r, CONNECT_WITHIN).await
+}
+
+/// 同 [`test`]，握手之后问 `/status` 那一步限时自己定：测试里等不起五秒
+async fn test_within(r: &RemoteTarget, within: Duration) -> Result<ServerInfo, ConnectError> {
     let (_, hello) = open(r).await?;
     // 握手过了，剩下的是一次普通的控制面请求。**失败按「连接被关闭」说**：
-    // 握手刚通过就断，是对面在这一瞬间没了
-    let s = ControlClient::to(Target::Remote(r.clone()))
-        .status()
-        .await
-        .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
+    // 握手刚通过就断，是对面在这一瞬间没了。
+    //
+    // **这一问也限时，超时按「超时」说。**握了手却一直不答的服务器（卡住了），不限时的
+    // 话「测试连接」、切换、断线重连都会一直等下去
+    let s = tokio::time::timeout(
+        within,
+        ControlClient::to(Target::Remote(r.clone())).status(),
+    )
+    .await
+    .map_err(|_| ConnectError::Timeout { addr: r.addr() })?
+    .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
     Ok(ServerInfo {
         gateway_addr: remote_gateway(&r.host, &s),
         core_version: if s.version.is_empty() {
@@ -391,6 +402,38 @@ mod tests {
             test(&at(port, "short".into())).await.unwrap_err(),
             ConnectError::WrongKey
         );
+    }
+
+    /// 一个握了手就一声不吭的「core」：连接拿在手里，请求来了也不答
+    async fn silent_core() -> u16 {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let key = tw_link::ControlKey::parse(&key()).unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "9.9.9");
+            let mut held = Vec::new();
+            while let Ok((s, _)) = l.accept().await {
+                if let Ok(accepted) = acceptor.accept(s).await {
+                    held.push(accepted);
+                }
+            }
+        });
+        port
+    }
+
+    /// 握了手、问 `/status` 却一直不答：**说超时，不一直等下去**。以前握手之后那一问
+    /// 不限时，「测试连接」、切换、断线重连都会停在那里
+    #[tokio::test]
+    async fn a_server_that_shakes_hands_and_then_says_nothing_times_out() {
+        let r = at(silent_core().await, key());
+        let e = tokio::time::timeout(
+            Duration::from_secs(10),
+            test_within(&r, Duration::from_millis(300)),
+        )
+        .await
+        .expect("一直等下去了")
+        .unwrap_err();
+        assert_eq!(e, ConnectError::Timeout { addr: r.addr() });
     }
 
     /// 同一把钥匙：握手通过，问到服务器 core 自己报的版本
