@@ -11,17 +11,18 @@ import { retentionText } from "./RetentionSection.i18n";
 
 const GIB = 1024 * 1024 * 1024;
 
-interface Draft {
+export interface Draft {
   body_days: string;
   row_days: string;
   /** 按 GB 写：配置里是字节，而人读的是「几个 G」 */
   body_max_gb: string;
 }
 
-const draftOf = (r: RetentionView): Draft => ({
+/** 导出给测试用 */
+export const draftOf = (r: RetentionView): Draft => ({
   body_days: String(r.body_days),
   row_days: String(r.row_days),
-  body_max_gb: gib(r.body_max_bytes),
+  body_max_gb: capText(r.body_max_bytes),
 });
 
 const same = (a: Draft, b: Draft) =>
@@ -29,6 +30,21 @@ const same = (a: Draft, b: Draft) =>
 
 /** 一位小数以内的正数 */
 const gbOk = (v: string) => /^\d+(\.\d)?$/.test(v) && Number(v) > 0;
+
+/**
+ * 每一格填得对不对。
+ *
+ * **没动过的那一格不查**：它就是配置里现在的值，保存时也不会发出去（见 `save`）。配置
+ * 文件里手写的值不一定落在这几格的规矩里（50 MB 的上限写不成一位小数的 GB），原来照样
+ * 查，那一格判成不合法，整节就存不了了 —— 连改一个期限都不行。导出给测试用。
+ */
+export function checks(draft: Draft, saved: Draft) {
+  return {
+    body_days: draft.body_days === saved.body_days || intIn(draft.body_days, 1, 3_650),
+    row_days: draft.row_days === saved.row_days || intIn(draft.row_days, 1, 36_500),
+    body_max_gb: draft.body_max_gb === saved.body_max_gb || gbOk(draft.body_max_gb),
+  };
+}
 
 /**
  * 日志留多久。
@@ -58,11 +74,7 @@ export function RetentionSection({
   const [justSaved, flash] = useSavedFlash();
   useDirtyMark("retention", dirty);
 
-  const ok = {
-    body_days: intIn(draft.body_days, 1, 3_650),
-    row_days: intIn(draft.row_days, 1, 36_500),
-    body_max_gb: gbOk(draft.body_max_gb),
-  };
+  const ok = checks(draft, saved);
   const valid = ok.body_days && ok.row_days && ok.body_max_gb;
 
   async function save() {
@@ -96,8 +108,11 @@ export function RetentionSection({
     setDraft((d) => ({ ...d, [k]: v }));
   };
 
-  // 条按正在填的上限画；格子里写的不是个数时按配置里的
-  const cap = ok.body_max_gb ? Number(draft.body_max_gb) * GIB : retention.body_max_bytes;
+  // 条按正在填的上限画；没动过、或者格子里写的不是个数时按配置里的（格子里的字不一定是精确值）
+  const cap =
+    draft.body_max_gb !== saved.body_max_gb && ok.body_max_gb
+      ? Number(draft.body_max_gb) * GIB
+      : retention.body_max_bytes;
   const bad = (msg: string) => <span className="text-destructive">{msg}</span>;
 
   return (
@@ -218,6 +233,21 @@ function Usage({ used, cap, label }: { used: number; cap: number; label: string 
 function gib(n: number): string {
   const g = n / GIB;
   return Number.isInteger(g) ? String(g) : String(Math.round(g * 10) / 10);
+}
+
+/**
+ * 上限写进格子里的样子（GB）。
+ *
+ * **写得出一位小数的写一位**（2、1.5 —— 这一格存进去的就是这样的数）。写不出的（配置
+ * 文件里手写的 50 MB、1.25 GB）照实写到三位有效数字，**不取整成一位小数**：原来一律取
+ * 一位，50 MB 取成「0」，那一格不合法，整节表单就存不了了；1.25 GB 取成「1.3」，格子里
+ * 写的不是配置里的数。导出给测试用。
+ */
+export function capText(n: number): string {
+  const g = n / GIB;
+  const tenths = Math.round(g * 10) / 10;
+  if (Math.round(tenths * GIB) === n) return String(tenths);
+  return String(Number(g.toPrecision(3)));
 }
 
 function bytes(n: number): string {
