@@ -9,7 +9,8 @@ import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, Loadable } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { useNav, useNavParams } from "@/nav";
-import { usd, type ClientView, type KeyInput, type Overview } from "@/types";
+import type { ClientView, KeyInput, Overview } from "@/types";
+import { CostFigure } from "@/CostFigure";
 import { useText } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { useClients } from "@/clients/data";
@@ -316,14 +317,17 @@ function Summary({
   const totals = useMemo(() => {
     if (!keys || !usage) return null;
     let requests = 0;
-    let cost = 0;
     let active = 0;
+    const cost = { cost: 0, estimated: 0, unpriced: 0, noUsage: 0 };
     for (const k of keys) {
       const u = usage.get(k.name);
       if (!u || u.requests === 0) continue;
       active += 1;
       requests += u.requests;
-      cost += u.cost;
+      cost.cost += u.cost;
+      cost.estimated += u.estimated;
+      cost.unpriced += u.unpriced;
+      cost.noUsage += u.noUsage;
     }
     return { requests, cost, active };
   }, [keys, usage]);
@@ -348,11 +352,7 @@ function Summary({
             </span>
             <span className="motion-fade inline-flex items-center gap-1.5 whitespace-nowrap">
               {t.cost}
-              <AnimatedNumber
-                value={totals.cost}
-                format={(v) => usd(Math.round(v))}
-                className="font-medium text-foreground"
-              />
+              <CostFigure c={totals.cost} className="font-medium text-foreground" />
             </span>
           </>
         ) : (

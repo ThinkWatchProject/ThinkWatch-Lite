@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type Overview, type PricingStatus, type ProviderView } from "@/types";
+import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import { patch, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
@@ -30,6 +30,7 @@ import { LinkTestDialog, SpeedTestDialog, TestConnectionDialog } from "./TestDia
 import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
 import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
+import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 
@@ -593,10 +594,23 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
   const enabled = providers.filter((p) => !p.disabled);
   const attention = enabled.filter((p) => problemsOf(p).length > 0).length;
   const disabled = providers.length - enabled.length;
+  // 费用三态分开加：估算的部分合计里没有分出来，按格子加回来（同一个时间窗）
   const day = stats.data
     ? stats.data.costs.reduce(
-        (a, c) => ({ requests: a.requests + c.requests, cost: a.cost + c.cost_micros }),
-        { requests: 0, cost: 0 },
+        (a, c) => ({
+          ...a,
+          requests: a.requests + c.requests,
+          cost: a.cost + c.cost_micros,
+          unpriced: a.unpriced + c.unpriced_requests,
+          noUsage: a.noUsage + c.no_usage_requests,
+        }),
+        {
+          requests: 0,
+          cost: 0,
+          estimated: stats.data.buckets.reduce((n, b) => n + b.cost_micros_estimated, 0),
+          unpriced: 0,
+          noUsage: 0,
+        },
       )
     : null;
   return (
@@ -608,7 +622,7 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
       {day ? (
         <>
           <Fact>{t.hero.requests(<Num value={day.requests} />, day.requests)}</Fact>
-          <Fact>{t.hero.cost(<Num value={day.cost} format={(n) => usd(Math.round(n))} />)}</Fact>
+          <Fact>{t.hero.cost(<CostFigure c={day} className="font-medium text-foreground" />)}</Fact>
         </>
       ) : (
         stats.loading && <Skeleton className="h-3 w-40 rounded-sm" />

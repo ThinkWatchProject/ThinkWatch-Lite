@@ -9,8 +9,8 @@ import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
+import { CostFigure } from "@/CostFigure";
 import { when } from "@/format";
-import { usd } from "@/types";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { BARS, type KeyUse } from "./usage";
@@ -139,10 +139,13 @@ export function LastSeen({ at }: { at: number | null | undefined }) {
   return <>{at ? when(at) : t.neverUsed}</>;
 }
 
-/** 金额那一格：有费用写金额，没有写「—」（没有请求、或者都不计费时不写「$0」） */
+/**
+ * 金额那一格：没有请求写「—」；有请求的照概览排行那一格的写法（`CostFigure`）——
+ * 算不出钱的写成一个词、不写「$0」，含估算的带「~」，缺了算不出来的带「≥」
+ */
 export function CostCell({ use, loaded }: { use: KeyUse | undefined; loaded: boolean }) {
   if (!loaded || !use || use.requests === 0) return <span className="text-muted-foreground">—</span>;
-  return <AnimatedNumber value={use.cost} format={(v) => usd(Math.round(v))} />;
+  return <CostFigure c={use} />;
 }
 
 /**
