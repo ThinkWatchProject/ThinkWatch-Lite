@@ -122,10 +122,15 @@ export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
     if (f.failedOnly && r.state !== "failed") return false;
     /*
       **没算出金额，不等于金额是零。**跑完了、也报了用量，却没有单价
-      的那些才是「无法计价」；还在跑的和失败的没有金额是另一回事，
-      混进来会让「哪些模型该补价」这个问题答不出来。
+      的那些才是「无法计价」；还在跑的、失败的、上游回了 4xx 或者压根
+      没报用量的，没有金额是另一回事（core 的 `unpriced_requests` 也不
+      数它们）。混进来会让「哪些模型该补价」这个问题答不出来，从概览
+      点进来的条数也和那个数对不上。
     */
-    if (f.unpricedOnly && (r.costMicros != null || r.state !== "done"))
+    if (
+      f.unpricedOnly &&
+      (r.costMicros != null || r.state !== "done" || (r.inputTokens == null && r.outputTokens == null))
+    )
       return false;
     if (f.client && r.client !== f.client) return false;
     if (f.provider && r.provider !== f.provider) return false;

@@ -448,6 +448,34 @@ describe("丢了结局的行，由库里补上", () => {
     expect(rows.get(1)?.error).toEqual(why);
   });
 
+  /**
+   * **连着远程时断了一下**：这边把跑着的记成「core 停了」，那边照常跑完、落了库。
+   * 重连之后按库里的改回来 —— 不然一个成功的请求一直挂着失败，还算进失败数里
+   */
+  it("被记成 core 停了、库里却跑完了的，按库里改回来", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    interruptInFlight(rows);
+    expect(rows.get(1)?.state).toBe("failed");
+    mergeHistory(rows, [stored()], "本地应答");
+    expect(rows.get(1)?.state).toBe("done");
+    expect(rows.get(1)?.error).toBeUndefined();
+    expect(rows.get(1)?.status).toBe(200);
+  });
+
+  /** core 崩过之后号会被重新用上：同一个号、另一个时刻开始的，是另一个请求 */
+  it("号被重新用上时，整行换成库里的那一条", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ path: "/v1/old" }));
+    interruptInFlight(rows);
+    mergeHistory(rows, [stored({ at_ms: 2_000_000, path: "/v1/messages", model: "gpt-5" })], "本地应答");
+    const r = rows.get(1);
+    expect(r?.atMs).toBe(2_000_000);
+    expect(r?.path).toBe("/v1/messages");
+    expect(r?.model).toBe("gpt-5");
+    expect(r?.state).toBe("done");
+  });
+
   /** 已经有结局的行不动它的结局：实时那一份和库里是同一个结局 */
   it("已经结束的行不改结局", () => {
     const rows = new Map<number, RequestRow>();

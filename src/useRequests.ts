@@ -5,6 +5,7 @@ import { textOf } from "@/i18n";
 import {
   applyEvent,
   applyInFlight,
+  CORE_STOPPED,
   interruptInFlight,
   type CoreEvent,
   type HistoryRow,
@@ -37,14 +38,21 @@ export function mergeHistory(
 ): void {
   for (const h of history) {
     const cur = rows.get(h.id);
-    if (cur) {
+    /*
+      **被记成「core 停了」的那一行，库里却有它。**两种可能：连着远程时断的只是这边
+      的连接，那边照常跑完、落了库 —— 结局按库里的改回来，和还在跑的那种一样；或者
+      这个号被重新用上了（core 崩过之后，没落库的号接着发，见 `applyInFlight`）——
+      那是另一个请求，开始的时刻不一样，整行换成库里这一条，不往旧行上补
+    */
+    const cut = cur?.state === "failed" && cur.error?.code === CORE_STOPPED.code;
+    if (cur && !(cut && cur.atMs !== h.at_ms)) {
       const next = { ...cur };
       /*
         **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
         确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
         按库里的补上结局，不然这一行永远在跑。
       */
-      if (next.state === "in_flight") {
+      if (next.state === "in_flight" || cut) {
         next.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
         if (h.status != null) next.status = h.status;
         next.durationMs = h.duration_ms ?? undefined;

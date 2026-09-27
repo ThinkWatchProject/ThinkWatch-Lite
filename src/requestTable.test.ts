@@ -184,10 +184,18 @@ describe("只看无法计价的", () => {
 
   it("留下跑完了却没有金额的那些", () => {
     const rows = [
-      row({ id: 1, costMicros: 120 }),
-      row({ id: 2 }),
-      row({ id: 3, costMicros: 0 }),
+      row({ id: 1, costMicros: 120, inputTokens: 100, outputTokens: 20 }),
+      row({ id: 2, inputTokens: 100, outputTokens: 20 }),
+      row({ id: 3, costMicros: 0, inputTokens: 100, outputTokens: 20 }),
     ];
+    const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
+    expect(got.map((r) => r.id)).toEqual([2]);
+  });
+
+  it("没报用量的不算无法计价：配了价格也算不出它的钱", () => {
+    // 上游回了 429、或者响应里就没有用量 —— core 的 `unpriced_requests` 不数它们，
+    // 从概览点进来的条数要和那个数对得上
+    const rows = [row({ id: 1, status: 429 }), row({ id: 2, inputTokens: 100, outputTokens: 20 })];
     const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
     expect(got.map((r) => r.id)).toEqual([2]);
   });
@@ -195,11 +203,12 @@ describe("只看无法计价的", () => {
   it("进行中和失败的不算无法计价", () => {
     // **没算出金额和「还没有金额」不是一回事** —— 混进来会让
     // 「哪些模型该补价」这个问题答不出来
+    const used = { inputTokens: 100, outputTokens: 20 };
     const rows = [
-      row({ id: 1, state: "in_flight" }),
-      row({ id: 2, state: "failed" }),
-      row({ id: 3, state: "cancelled" }),
-      row({ id: 4 }),
+      row({ id: 1, state: "in_flight", ...used }),
+      row({ id: 2, state: "failed", ...used }),
+      row({ id: 3, state: "cancelled", ...used }),
+      row({ id: 4, ...used }),
     ];
     const got = filterRows(rows, { ...EMPTY_FILTER, unpricedOnly: true });
     expect(got.map((r) => r.id)).toEqual([4]);
