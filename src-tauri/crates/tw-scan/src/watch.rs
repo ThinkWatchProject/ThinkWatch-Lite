@@ -56,7 +56,10 @@ pub fn dirs_for(sources: &[crate::sources::Source]) -> Vec<PathBuf> {
 /// `$HOME` —— 那是全机器最忙的目录之一（每个应用都在往那儿写点东西）。
 /// 不过滤的话，别人写一次 `.zsh_history` 我们就重扫一遍几十个文件，
 /// 而目标是「空闲时接近零」。
-const INTERESTING: &[&str] = &["md", "json", "toml", "yaml", "yml"];
+///
+/// `jsonc` 也在里面：刚装好的 opencode 手里就是一份 `opencode.jsonc`（扫描本来就读它，
+/// 见 `report::structured`），不收它的事件，那份文件改了界面不跟、可疑的新内容也不提醒
+const INTERESTING: &[&str] = &["md", "json", "jsonc", "toml", "yaml", "yml"];
 
 fn interesting(p: &Path) -> bool {
     p.extension()

@@ -97,10 +97,27 @@ impl McpServer {
     }
     /// 远端型，而且不在本机。
     pub fn is_third_party(&self) -> bool {
-        self.url.as_deref().is_some_and(|u| {
-            !u.contains("://localhost") && !u.contains("://127.0.0.1") && !u.contains("://[::1]")
-        })
+        self.url.as_deref().is_some_and(|u| !is_local(u))
     }
+}
+
+/// 地址指着本机。**按主机名比，不按子串**：`https://localhost.evil.example/` 不是本机，
+/// `https://evil.example/?r=http://127.0.0.1` 也不是 —— 子串比的话，这两个都被当成
+/// 本机，远程 server 的提醒就没了
+fn is_local(url: &str) -> bool {
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = match host_port.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => host_port.split(':').next().unwrap_or_default(),
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,7 +149,17 @@ pub struct Report {
     pub unreadable: Vec<String>,
 }
 
+/// 一份要扫的文件最多读多大。宽到装得下攒了很久的 `~/.claude.json`
+const MAX_SCAN_BYTES: u64 = 32 << 20;
+
+/// 读一份要扫的文件。**只读普通文件，而且有上限**：一条指向 `/dev/zero` 的链接会一直
+/// 读下去、一个命名管道会一直等下去，启动时的那一次扫描就卡在那里。读不了的由调用方
+/// 记进 `unreadable`，照样说出来
 fn read(p: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(p).ok()?;
+    if !meta.is_file() || meta.len() > MAX_SCAN_BYTES {
+        return None;
+    }
     std::fs::read_to_string(p).ok()
 }
 
@@ -285,17 +312,24 @@ fn hooks_from(src: &Source, v: &Val) -> Vec<HookEntry> {
 }
 
 /// `---` 之间的 frontmatter。
-fn frontmatter(text: &str) -> Option<&str> {
+///
+/// **CRLF 和开头的 BOM 也认**：Git for Windows 默认按 CRLF 检出，记事本存的 UTF-8 带
+/// BOM。认不出来的话 `allowed-tools` 读成空的，放得太宽的那一条就查不出来
+fn frontmatter(text: &str) -> Option<String> {
+    let text = text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .replace("\r\n", "\n");
     let rest = text.strip_prefix("---\n")?;
     let end = rest.find("\n---")?;
-    Some(&rest[..end])
+    Some(rest[..end].to_string())
 }
 
 fn allowed_tools(text: &str) -> Vec<String> {
     let Some(fm) = frontmatter(text) else {
         return Vec::new();
     };
-    let Ok(v) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(fm) else {
+    let Ok(v) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&fm) else {
         return Vec::new();
     };
     let get = |k: &str| v.get(k).cloned();
@@ -526,4 +560,57 @@ pub fn conflicting(mcp: &[McpServer]) -> Vec<String> {
         })
         .map(|(n, _)| n.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_means_the_host_is_this_machine_not_that_the_url_mentions_it() {
+        for local in [
+            "http://localhost:3000/mcp",
+            "http://LOCALHOST/mcp",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.2:8080/x",
+            "http://[::1]:3000/mcp",
+            "http://0.0.0.0:3000",
+            "http://user:pass@localhost:3000/mcp",
+        ] {
+            assert!(is_local(local), "{local}");
+        }
+        for remote in [
+            "https://mcp.example.com/mcp",
+            "https://localhost.evil.example/mcp",
+            "https://evil.example/?r=http://127.0.0.1",
+            "https://evil.example/#http://[::1]",
+            "https://127.0.0.1.evil.example/",
+            "https://localhost@evil.example/",
+            "localhost:3000/mcp",
+        ] {
+            assert!(!is_local(remote), "{remote}");
+        }
+    }
+
+    /// 不是普通文件的（设备、命名管道）不读：读下去就不回来了
+    #[cfg(unix)]
+    #[test]
+    fn only_regular_files_are_read() {
+        let d = tempfile::tempdir().unwrap();
+        let link = d.path().join("SKILL.md");
+        std::os::unix::fs::symlink("/dev/zero", &link).unwrap();
+        assert_eq!(read(&link), None);
+        let file = d.path().join("ok.md");
+        std::fs::write(&file, "hi").unwrap();
+        assert_eq!(read(&file).as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn frontmatter_is_read_with_crlf_line_ends_and_a_bom() {
+        let lf = "---\nname: x\nallowed-tools: [\"*\"]\n---\n\nbody\n";
+        assert_eq!(allowed_tools(lf), ["*"]);
+        let crlf = lf.replace('\n', "\r\n");
+        assert_eq!(allowed_tools(&crlf), ["*"]);
+        assert_eq!(allowed_tools(&format!("\u{feff}{crlf}")), ["*"]);
+    }
 }
