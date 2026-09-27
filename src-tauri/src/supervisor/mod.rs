@@ -57,7 +57,13 @@ pub enum CoreState {
     },
     /// 只起控制面。用户还能改配置、回滚、还原接管 —— 那正是这时候最
     /// 需要的能力。
-    SafeMode,
+    ///
+    /// **只起控制面的那个 core 跑着的整段时间都是它**，控制面答应了也不变成
+    /// `Running`：那时网关并不转发，报「运行中」的话界面、菜单栏都说一切正常，
+    /// 「网关未在转发」那条提醒也被撤掉。`pid` 是那个 core，它起来之前是 `None`
+    SafeMode {
+        pid: Option<u32>,
+    },
     /// UI 主动停的，不再重启
     Stopped,
     /// 拉不起来：程序运行不了（找不到、没有执行权限、不是这台机器能跑的）。
@@ -259,16 +265,20 @@ impl Supervisor {
     ///
     /// 做法是标记意图然后杀掉它，让守护循环自己把它拉起来 —— 而不是在
     /// 这里再写一遍启动逻辑。两处启动逻辑就是两处会漂移。
+    ///
+    /// 安全模式下也走这里：那个只起控制面的 core 退出之后，守护循环按正常模式再起
     pub async fn request_restart(&self) -> anyhow::Result<()> {
         let pid = match self.state() {
-            CoreState::Running { pid } => pid,
-            CoreState::Starting | CoreState::Restarting { .. } => {
+            CoreState::Running { pid } | CoreState::SafeMode { pid: Some(pid) } => pid,
+            CoreState::Starting
+            | CoreState::Restarting { .. }
+            | CoreState::SafeMode { pid: None } => {
                 anyhow::bail!(tr!(
                     "core 正在启动，请稍后再试",
                     "Core is starting; try again in a moment"
                 ))
             }
-            CoreState::SafeMode | CoreState::Stopped | CoreState::Failed { .. } => {
+            CoreState::Stopped | CoreState::Failed { .. } => {
                 anyhow::bail!(tr!(
                     "core 未运行，无法重启",
                     "Core is not running and cannot be restarted"
@@ -290,7 +300,8 @@ impl Supervisor {
     ///
     /// 超时还没退就强杀。**不在跑就什么都不做。**
     pub async fn stop_and_wait(&self, timeout: Duration) {
-        let CoreState::Running { pid } = self.state() else {
+        let (CoreState::Running { pid } | CoreState::SafeMode { pid: Some(pid) }) = self.state()
+        else {
             return;
         };
         self.stopping.store(true, Ordering::SeqCst);
@@ -326,7 +337,10 @@ impl Supervisor {
     async fn wait_gone(&self, pid: u32, timeout: Duration) -> bool {
         let mut rx = self.watch();
         let gone = async {
-            while matches!(*rx.borrow_and_update(), CoreState::Running { pid: p } if p == pid) {
+            while matches!(
+                *rx.borrow_and_update(),
+                CoreState::Running { pid: p } | CoreState::SafeMode { pid: Some(p) } if p == pid
+            ) {
                 if rx.changed().await.is_err() {
                     break;
                 }
@@ -386,7 +400,11 @@ impl Supervisor {
 
     /// 一次「起、看着、它死了、决定下一步」的完整循环。
     pub async fn run_once(&self, safe: bool) -> anyhow::Result<Next> {
-        self.set(CoreState::Starting);
+        self.set(if safe {
+            CoreState::SafeMode { pid: None }
+        } else {
+            CoreState::Starting
+        });
         let args = self.command_args(safe);
         let started = Instant::now();
 
@@ -450,7 +468,11 @@ impl Supervisor {
             Ok(ready) => {
                 match (ready, child.id()) {
                     (true, Some(pid)) => {
-                        self.set(CoreState::Running { pid });
+                        self.set(if safe {
+                            CoreState::SafeMode { pid: Some(pid) }
+                        } else {
+                            CoreState::Running { pid }
+                        });
                         tracing::info!(pid, safe, elapsed = ?started.elapsed(), "core 已就绪");
                     }
                     (true, None) => {}
@@ -474,12 +496,9 @@ impl Supervisor {
         }
         tracing::warn!(?status, ?ran_for, "core 退出");
 
-        if safe {
-            // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
-            self.set(CoreState::Stopped);
-            return Ok(Next::Stop);
-        }
-
+        // **排在安全模式那一条前面**：在安全模式里点「重新启动」，要的是按正常模式
+        // 再起一次（守护循环见到 `Again` 就离开安全模式）。排在后面的话，那一下只把
+        // core 停了，要重启的记号还留着，之后第一次真崩溃会被当成按要求重启
         if self.intentional.swap(false, Ordering::SeqCst) {
             // 我们自己要求的退出。立刻重起，不计入失败。
             tracing::info!("按要求重启 core");
@@ -488,6 +507,12 @@ impl Supervisor {
                 in_ms: 0,
             });
             return Ok(Next::Again);
+        }
+
+        if safe {
+            // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
+            self.set(CoreState::Stopped);
+            return Ok(Next::Stop);
         }
 
         let mut policy = self.policy.lock().await;
@@ -511,7 +536,7 @@ impl Supervisor {
                 Ok(Next::Again)
             }
             Decision::SafeMode => {
-                self.set(CoreState::SafeMode);
+                self.set(CoreState::SafeMode { pid: None });
                 tracing::error!(failures, "连续失败太多，进安全模式");
                 Ok(Next::SafeMode)
             }
@@ -707,6 +732,52 @@ mod tests {
         // 两个平台都要成立的是这一条：它确实停了，而且没被再拉起来。
         assert_eq!(s.state(), CoreState::Stopped);
         assert_eq!(looped.await.unwrap(), Next::Stop, "停下之后不再起");
+    }
+
+    /// **安全模式里的 core 答应了控制面，也还是安全模式。**报成「运行中」的话，界面、
+    /// 菜单栏都说网关好好的，「网关未在转发」那条提醒也被撤掉 —— 而这时网关根本不
+    /// 转发。停它、在安全模式里点「重新启动」，都要够得着这个 core
+    #[tokio::test]
+    async fn a_safe_mode_core_stays_in_safe_mode_until_restarted() {
+        let s = Arc::new(Supervisor::new(
+            long_runner("safe"),
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(true).await.unwrap() })
+        };
+        let mut rx = s.watch();
+        let mut began = false;
+        loop {
+            match *rx.borrow_and_update() {
+                CoreState::SafeMode { pid: Some(_) } => break,
+                CoreState::SafeMode { pid: None } => began = true,
+                // 那个任务还没跑到第一行
+                CoreState::Stopped if !began => {}
+                ref other => panic!("安全模式里不该出现 {other:?}"),
+            }
+            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+                .await
+                .expect("迟迟没起来")
+                .unwrap();
+        }
+
+        #[cfg(unix)]
+        {
+            // 点「重新启动」：这个 core 退出，守护按正常模式再起（温和那一档在这里只能
+            // 走信号，Windows 上没有，所以只在 unix 上看）
+            s.request_restart().await.unwrap();
+            assert_eq!(looped.await.unwrap(), Next::Again);
+        }
+        #[cfg(not(unix))]
+        {
+            s.stop_and_wait(Duration::from_secs(5)).await;
+            assert_eq!(looped.await.unwrap(), Next::Stop);
+        }
     }
 
     #[tokio::test]

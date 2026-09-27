@@ -267,7 +267,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         _ if state.core_missing.is_some() => Gateway::Failed,
         CoreState::Running { .. } => Gateway::Running,
         CoreState::Starting | CoreState::Restarting { .. } => Gateway::Starting,
-        CoreState::SafeMode => Gateway::SafeMode,
+        CoreState::SafeMode { .. } => Gateway::SafeMode,
         CoreState::Failed { .. } => Gateway::Failed,
         CoreState::Stopped => Gateway::Stopped,
     };

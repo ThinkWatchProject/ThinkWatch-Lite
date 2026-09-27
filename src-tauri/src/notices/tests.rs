@@ -756,7 +756,7 @@ fn in_english_no_rule_writes_a_chinese_word() {
         flagged(false),
     ];
     let states = [
-        CoreState::SafeMode,
+        CoreState::SafeMode { pid: None },
         CoreState::Restarting {
             attempt: 3,
             in_ms: 1_000,

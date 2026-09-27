@@ -264,7 +264,7 @@ pub(crate) fn describe_state(s: &CoreState) -> String {
         CoreState::Starting => "starting".into(),
         CoreState::Running { pid } => format!("running:{pid}"),
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
-        CoreState::SafeMode => "safe_mode".into(),
+        CoreState::SafeMode { .. } => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
         CoreState::Failed { reason } => format!("failed:{reason}"),
     }
@@ -488,16 +488,20 @@ pub(crate) async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
     loop {
         // 每一次转换都随 `core-state` 推给界面（见 setup 里那一段），这里不再另发
         match sup.run_once(safe).await {
-            Ok(supervisor::Next::Again) => continue,
+            // 再起一个就是按正常模式起：安全模式里只会因为用户点了「重新启动」走到这里
+            Ok(supervisor::Next::Again) => {
+                safe = false;
+                continue;
+            }
             Ok(supervisor::Next::Stop) => break,
             Ok(supervisor::Next::SafeMode) => {
                 // 进安全模式：**必须打断用户并自动开窗**。这时候网关
                 // 已经不转发了，他所有的 AI 客户端都在瞎。
+                //
+                // **窗口不在就建一个**：关窗即销毁，开机自启时也从没建过 —— 只去找
+                // 现成的那个的话，这两种情况下什么都不会出现
                 safe = true;
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                let _ = crate::window::show_main_window(&app);
                 continue;
             }
             Err(e) => {

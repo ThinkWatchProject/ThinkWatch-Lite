@@ -582,7 +582,7 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
     match state {
         // 用户自己停掉的也算「这件事过去了」：界面上那一条说得清清楚楚
         CoreState::Running { .. } | CoreState::Stopped => vec![Signal::cleared("gateway")],
-        CoreState::SafeMode => vec![
+        CoreState::SafeMode { .. } => vec![
             Signal::raised(
                 "gateway",
                 Level::Critical,
