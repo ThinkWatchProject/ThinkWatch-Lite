@@ -163,6 +163,25 @@ pub fn resolve(path: &Path) -> Result<PathBuf, ForeignError> {
     })
 }
 
+/// `real` 上面、`home` 以下（不含 home）的目录里，最靠近 home 的那个符号链接，
+/// 连同 `real` 实际落在哪儿。[`resolve`] 只跟文件本身那一层；整个目录链过去的
+/// （GNU stow：`~/.config/opencode -> ~/dotfiles/opencode`）它看不出来。
+///
+/// **只看 home 以下。**再往上是系统的事（Fedora Silverblue 的 `/home -> var/home`、
+/// macOS 的 `/var -> private/var`）：每个文件都会命中，说了等于没说。
+fn linked_dir(real: &Path, home: &Path) -> Option<(PathBuf, PathBuf)> {
+    let link = real
+        .ancestors()
+        .skip(1)
+        .take_while(|a| *a != home && a.starts_with(home))
+        .filter(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink()))
+        .last()?;
+    let at = std::fs::canonicalize(link)
+        .ok()?
+        .join(real.strip_prefix(link).ok()?);
+    Some((link.to_path_buf(), at))
+}
+
 /// 现在的内容。文件不存在返回 `None` —— 和「内容是空串」是两回事，
 /// 还原的时候这个区别决定了是写回空文件还是把文件删掉。
 pub fn read(path: &Path) -> Result<Option<String>, ForeignError> {
@@ -572,6 +591,16 @@ pub fn apply_bytes(
     root: &Path,
     verify: impl Fn(&[u8]) -> Result<(), String>,
 ) -> Result<Applied, ForeignError> {
+    apply_bytes_in(ch, root, verify, crate::paths::env_home().as_deref())
+}
+
+/// [`apply_bytes`]，home 从外面给（测试传一个临时目录）：找链过去的目录找到它为止。
+fn apply_bytes_in(
+    ch: &Bytes<'_>,
+    root: &Path,
+    verify: impl Fn(&[u8]) -> Result<(), String>,
+    home: Option<&Path>,
+) -> Result<Applied, ForeignError> {
     let real = resolve(ch.path)?;
     let mut warnings = Vec::new();
     if real != ch.path {
@@ -583,6 +612,17 @@ pub fn apply_bytes(
             path = ch.path.display(),
             real = real.display()
             => "{path} is a symbolic link; the file actually written is {real}."
+        ));
+    } else if let Some((dir, at)) = home.and_then(|h| linked_dir(&real, h)) {
+        // 文件本身不是链接，它所在的目录是：GNU stow 就是这么摆的
+        // （`~/.config/opencode -> ~/dotfiles/opencode`）。写进去的同样是那个
+        // 会被提交的仓库，一样要说
+        warnings.push(msg!(
+            "adopt.warn.symlink_dir",
+            path = ch.path.display(),
+            dir = dir.display(),
+            real = at.display()
+            => "{dir} is a symbolic link, so {path} is actually written at {real}."
         ));
     }
 
@@ -820,6 +860,51 @@ mod tests {
             "{:?}",
             a.warnings
         );
+    }
+
+    /// GNU stow 的摆法：文件本身不是链接，它所在的目录是
+    /// （`~/.config/opencode -> ../dotfiles/opencode`）。写进去的一样是那个会被提交的
+    /// 仓库，一样要说；链接留着，还是链接
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_folder_under_home_is_reported_like_a_symlinked_file() {
+        let (d, root) = dirs();
+        let home = d.path().join("home");
+        let repo = home.join("dotfiles").join("opencode");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("opencode.json"), "old").unwrap();
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        let link = home.join(".config").join("opencode");
+        std::os::unix::fs::symlink("../dotfiles/opencode", &link).unwrap();
+        let path = link.join("opencode.json");
+        let write = |before: &'static [u8], after: &'static [u8], home: &Path| {
+            let ch = Bytes {
+                path: &path,
+                before: Some(before),
+                after,
+                carries_secret: false,
+            };
+            apply_bytes_in(&ch, &root, |_| Ok(()), Some(home)).unwrap()
+        };
+
+        let a = write(b"old", b"new", &home);
+        assert_eq!(
+            std::fs::read_to_string(repo.join("opencode.json")).unwrap(),
+            "new"
+        );
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        let w = a
+            .warnings
+            .iter()
+            .find(|w| w.code == "adopt.warn.symlink_dir")
+            .unwrap_or_else(|| panic!("没说目录是链接：{:?}", a.warnings));
+        assert_eq!(w.arg("dir"), link.display().to_string());
+        let at = repo.canonicalize().unwrap().join("opencode.json");
+        assert_eq!(w.arg("real"), at.display().to_string());
+
+        // home 自己、home 上面的链接不归我们说（`/home -> var/home` 那种）
+        let a = write(b"new", b"newer", &link);
+        assert!(a.warnings.is_empty(), "{:?}", a.warnings);
     }
 
     #[test]

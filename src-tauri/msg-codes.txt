@@ -137,6 +137,7 @@ adopt.restore.file_removed
 adopt.restore.secret_lost
 adopt.takes_effect
 adopt.warn.symlink
+adopt.warn.symlink_dir
 adopt.warn.world_readable
 adopt.warn.wsl_private
 control.client_unknown
