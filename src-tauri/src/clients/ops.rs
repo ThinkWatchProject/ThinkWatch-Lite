@@ -719,7 +719,9 @@ pub fn repoint(
         key: Some(key.to_string()),
         models,
     };
-    plan::plan_adopt(c, home, &target)
+    // **和接管走同一个入口**（[`plan_for`]）：Claude Desktop 一次改四个文件、模型清单
+    // 从 `models` 里挑，按单个文件的通用那一套算的话，它的模型列表和另外几份都不跟着换
+    plan_for(c, home, &target)
         .and_then(|p| plan::apply(c, &p, backups))
         .map(|a| wire::KeySynced {
             client: c.id.to_string(),
@@ -1271,6 +1273,50 @@ pub(crate) mod tests {
         assert!(
             text.contains("tw-fresh") && !text.contains("tw-old"),
             "{text}"
+        );
+    }
+
+    /// 重新指向 Claude Desktop：**模型列表按新网关此刻答的换**，和接管同一个入口。
+    /// 按单个文件的通用那一套算的话，列表还是旧网关那一份
+    #[test]
+    fn repointing_claude_desktop_rewrites_its_model_list_too() {
+        let home = tempfile::tempdir().unwrap();
+        if tw_adopt::desktop::managed(home.path()).is_some() {
+            // 这台跑测试的机器上的 Claude Desktop 由组织托管：接管本来就会被拒
+            return;
+        }
+        let first = tw_adopt::desktop::first_party_config(home.path());
+        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+        std::fs::write(&first, "{\n  \"globalShortcut\": \"Alt+Space\"\n}\n").unwrap();
+        let base = "http://127.0.0.1:8788";
+        let id = tw_adopt::desktop::ID;
+        adopt(
+            home.path(),
+            &backups(&home),
+            id,
+            base,
+            "tw-old",
+            vec!["claude-sonnet-5".into()],
+        )
+        .unwrap();
+        let c = find(id, home.path()).unwrap();
+        repoint(
+            home.path(),
+            &backups(&home),
+            &c,
+            "http://10.0.0.2:8788",
+            "tw-fresh",
+            vec!["claude-opus-5".into(), "gpt-5".into()],
+        )
+        .unwrap();
+        let profile: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tw_adopt::desktop::profile_path(home.path())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(profile["inferenceGatewayApiKey"], "tw-fresh");
+        assert_eq!(
+            profile["inferenceModels"],
+            serde_json::json!(["claude-opus-5"])
         );
     }
 }
