@@ -215,8 +215,8 @@ pub enum Action {
     Quit,
 }
 
-/// 数字和标识染什么颜色
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// 数字和标识染什么颜色。**越往下越要紧**：比较的顺序就是这个顺序
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tone {
     #[default]
     Normal,
@@ -430,14 +430,20 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
     }
 }
 
-/// 还在当前的窗口里最紧张的那个。**过了重置时刻的不算**：手上的百分比是重置
-/// 之前的，下一个请求才会带来新的
+/// 还在当前的窗口里最紧张的那个。**先比颜色，再比用了多少**：上游说快到了、说已经
+/// 拒绝的那个窗口，用得再少也比一个用了 89% 的要紧 —— 只比百分比的话，菜单栏就不变色，
+/// 悬停提示说的也是另一个窗口。**过了重置时刻的不算**：手上的百分比是重置之前的，
+/// 下一个请求才会带来新的
 fn tightest(s: &Snapshot) -> Option<(&str, &Window)> {
     s.quotas
         .iter()
         .flat_map(|q| q.windows.iter().map(move |w| (q.provider.as_str(), w)))
         .filter(|(_, w)| current(w, s.now_ms))
-        .max_by(|a, b| a.1.used_percent.total_cmp(&b.1.used_percent))
+        .max_by(|a, b| {
+            bar_tone(a.1)
+                .cmp(&bar_tone(b.1))
+                .then(a.1.used_percent.total_cmp(&b.1.used_percent))
+        })
 }
 
 fn current(w: &Window, now_ms: u64) -> bool {
@@ -1362,6 +1368,55 @@ mod tests {
         assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
         s.quotas[0].windows[0].status = Some("rejected".into());
         assert_eq!(build(&s, Style::Full).0.tone, Tone::Full);
+    }
+
+    /// 颜色看**最要紧**的那个窗口，不是用得最多的那个：每周的用了 95%，5 小时的上游已经
+    /// 拒绝了，菜单栏是红的；用得最多的那个没事、另一家上游说快到了，是橙的。悬停提示说的
+    /// 也是定了颜色的那个窗口
+    #[test]
+    fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
+        let mut s = running();
+        s.quotas = vec![Quota {
+            provider: "chatgpt".into(),
+            windows: vec![
+                window("weekly", 95.0, 86_400_000),
+                Window {
+                    status: Some("rejected".into()),
+                    ..window("5h", 40.0, 3_600_000)
+                },
+            ],
+            reset_credits: None,
+        }];
+        let (bar, _) = build(&s, Style::Full);
+        assert_eq!(bar.tone, Tone::Full);
+        assert!(
+            bar.tooltip.ends_with("chatgpt 5 小时额度已用 40%"),
+            "{}",
+            bar.tooltip
+        );
+
+        s.quotas = vec![
+            Quota {
+                provider: "chatgpt".into(),
+                windows: vec![window("5h", 60.0, 3_600_000)],
+                reset_credits: None,
+            },
+            Quota {
+                provider: "glm".into(),
+                windows: vec![Window {
+                    status: Some("allowed_warning".into()),
+                    ..window("weekly", 30.0, 86_400_000)
+                }],
+                reset_credits: None,
+            },
+        ];
+        let (bar, _) = build(&s, Style::Full);
+        assert_eq!(bar.tone, Tone::Warn);
+        assert!(
+            bar.tooltip.ends_with("glm 每周额度已用 30%"),
+            "{}",
+            bar.tooltip
+        );
     }
 
     #[test]
