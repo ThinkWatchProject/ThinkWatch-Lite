@@ -175,9 +175,18 @@ pub fn set(text: &str, path: &[&str], v: &Val) -> Result<String, TErr> {
     match tbl.get_mut(leaf) {
         Some(slot) => {
             let keep_table = slot.is_table();
+            // **值自己也挂着东西**：`=` 后面那段空白，和行尾的 `# 注释`。新值不带上
+            // 它们，那句注释就跟着旧值一起没了 —— 还原换回原值也找不回来
+            let decor = slot.as_value().map(|old| old.decor().clone());
             *slot = match v {
                 Val::Obj(ms) if keep_table && !ms.is_empty() => Item::Table(to_table(ms)),
-                _ => Item::Value(to_toml(v)),
+                _ => {
+                    let mut new = to_toml(v);
+                    if let Some(d) = decor {
+                        *new.decor_mut() = d;
+                    }
+                    Item::Value(new)
+                }
             };
         }
         None => {
@@ -271,6 +280,39 @@ trust_level = "trusted"
         assert!(out.contains("# 别动这行"), "{out}");
         assert!(out.contains("thinkwatch"), "{out}");
         assert!(!out.contains("\"openai\""), "{out}");
+    }
+
+    /// 行尾的注释挂在值上：换值的时候它得留着，还原换回原值之后一个字节都不差
+    #[test]
+    fn a_comment_at_the_end_of_the_line_survives_a_new_value() {
+        let src = "model_provider = \"openai\"  # 我自己选的\n\n[model_providers.x]\nbase_url = \"http://a\" # 旧的\nname = \"x\"\n";
+        let out = set(src, &["model_provider"], &Val::s("thinkwatch")).unwrap();
+        let out = set(
+            &out,
+            &["model_providers", "x", "base_url"],
+            &Val::s("http://127.0.0.1:8080/v1"),
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "model_provider = \"thinkwatch\"  # 我自己选的\n\n[model_providers.x]\nbase_url = \"http://127.0.0.1:8080/v1\" # 旧的\nname = \"x\"\n"
+        );
+        let back = set(&out, &["model_provider"], &Val::s("openai")).unwrap();
+        let back = set(
+            &back,
+            &["model_providers", "x", "base_url"],
+            &Val::s("http://a"),
+        )
+        .unwrap();
+        assert_eq!(back, src);
+        // 行内表也是一个值
+        let out = set(
+            "x = { a = 1 } # 行内的\n",
+            &["x"],
+            &Val::Obj(vec![("a".into(), Val::Num("2".into()))]),
+        )
+        .unwrap();
+        assert_eq!(out, "x = { a = 2 } # 行内的\n");
     }
 
     #[test]
