@@ -301,12 +301,16 @@ fn project_mcp(src: &Source, v: &Val) -> Vec<McpServer> {
 /// Claude Code 设置里另外几个**不经模型就执行命令**的键（设置文档里的名字）：状态栏
 /// 每刷新一次跑一遍，取密钥、刷新云凭据、生成遥测请求头的脚本在要用的时候跑。和 hook
 /// 一样，模型什么都没决定，命令就执行了。
-const CLAUDE_CODE_COMMANDS: &[&[&str]] = &[
-    &["statusLine", "command"],
-    &["apiKeyHelper"],
-    &["awsAuthRefresh"],
-    &["awsCredentialExport"],
-    &["otelHeadersHelper"],
+///
+/// 第二项说它打印出来的是不是凭据（密钥、云凭据、带鉴权的请求头）。**这几个只按规则
+/// 扫，不进清单**：`"apiKeyHelper": "echo sk-…"` 是把中转站的密钥交给 Claude Code 的
+/// 常见写法，清单上的命令是原样显示的，列出来就是把密钥摆在界面上
+const CLAUDE_CODE_COMMANDS: &[(&[&str], bool)] = &[
+    (&["statusLine", "command"], false),
+    (&["apiKeyHelper"], true),
+    (&["awsAuthRefresh"], false),
+    (&["awsCredentialExport"], true),
+    (&["otelHeadersHelper"], true),
 ];
 
 /// 顺着路径往下走。
@@ -321,7 +325,9 @@ fn at<'a>(v: &'a Val, path: &[&str]) -> Option<&'a Val> {
 /// （[`CLAUDE_CODE_COMMANDS`]），和 Codex 的 `notify`（每一轮结束就执行的那条命令，写成
 /// argv 数组）。**和 hook 一样对待**：清单里列在 hooks 那一栏（事件就是那个键名），规则
 /// 按「会被执行」扫它们。
-fn auto_commands(src: &Source, v: &Val) -> Vec<HookEntry> {
+///
+/// `for_list`：给清单的。打印凭据的那几个不给（见 [`CLAUDE_CODE_COMMANDS`]），规则照扫
+fn auto_commands(src: &Source, v: &Val, for_list: bool) -> Vec<HookEntry> {
     let entry = |event: &str, command: String| HookEntry {
         client: src.client.to_string(),
         event: event.to_string(),
@@ -332,9 +338,10 @@ fn auto_commands(src: &Source, v: &Val) -> Vec<HookEntry> {
     if src.kind == sources::Kind::Hooks {
         out.extend(hooks_from(src, v));
         if src.client == "claude-code" {
-            for path in CLAUDE_CODE_COMMANDS {
+            for (path, prints_secret) in CLAUDE_CODE_COMMANDS {
                 if let Some(Val::Str(c)) = at(v, path)
                     && !c.trim().is_empty()
+                    && !(for_list && *prints_secret)
                 {
                     out.push(entry(path[0], c.clone()));
                 }
@@ -673,7 +680,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                 r.mcp
                     .sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
             }
-            r.hooks.extend(auto_commands(src, v));
+            r.hooks.extend(auto_commands(src, v, true));
         }
         if src.kind == sources::Kind::Skill {
             let name = src
@@ -714,7 +721,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         // 可它是一条和 hook 一样不经模型就执行的命令
         let v = parsed.as_ref().unwrap_or(&Val::Null);
         let commands = || {
-            auto_commands(src, v)
+            auto_commands(src, v, false)
                 .into_iter()
                 .map(|h| (h.command, true, sources::Kind::Hooks))
         };
