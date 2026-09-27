@@ -211,6 +211,8 @@ struct Open {
     due: Option<Instant>,
     /// 因为抖动被静音到什么时候
     muted_until: Option<Instant>,
+    /// 这一条是抖动之后留下的那句「（时断时续）」说明，不是一件还开着的事
+    intermittent: bool,
 }
 
 #[derive(Debug, Default)]
@@ -259,6 +261,7 @@ impl Notices {
                                 notice: n,
                                 due: None,
                                 muted_until: None,
+                                intermittent: false,
                             },
                         )
                     })
@@ -506,6 +509,7 @@ impl Notices {
                     notice: notice.clone(),
                     due,
                     muted_until: muted,
+                    intermittent: false,
                 },
             );
             (notice, deliver, due)
@@ -589,32 +593,45 @@ impl Notices {
                 return;
             };
             let now = Instant::now();
-            let times = g.flaps.entry(key.to_string()).or_default();
-            times.push_back(now);
-            while times.front().is_some_and(|t| now - *t > FLAP_WINDOW) {
-                times.pop_front();
-            }
-            let flapping = times.len() >= FLAP_TIMES;
-            if flapping {
-                // 时断时续：下一次别再弹了，直到它稳定一段时间
-                g.open.insert(
-                    key.to_string(),
-                    Open {
-                        notice: Notice {
-                            level: Level::Info,
-                            title: tr!(
-                                format!("{}（时断时续）", o.notice.title),
-                                format!("{} (Intermittent)", o.notice.title)
-                            ),
-                            at_ms,
-                            ..o.notice.clone()
+            if o.intermittent {
+                // 「时断时续」那一条是一句说明，不是一件开着的事：它收到的「好了」**不算又
+                // 一次开合**。算的话，每来一个「好了」就给标题再接一段「（时断时续）」、把
+                // 整个列表重写一遍落盘 —— 而上游的「好了」是它每接下一个请求就来一次。
+                // 静音期里留着它；过了静音期还没再出事，就收起来
+                if o.muted_until.is_some_and(|until| now < until) {
+                    g.open.insert(key.to_string(), o);
+                    return;
+                }
+                (o, false)
+            } else {
+                let times = g.flaps.entry(key.to_string()).or_default();
+                times.push_back(now);
+                while times.front().is_some_and(|t| now - *t > FLAP_WINDOW) {
+                    times.pop_front();
+                }
+                let flapping = times.len() >= FLAP_TIMES;
+                if flapping {
+                    // 时断时续：下一次别再弹了，直到它稳定一段时间
+                    g.open.insert(
+                        key.to_string(),
+                        Open {
+                            notice: Notice {
+                                level: Level::Info,
+                                title: tr!(
+                                    format!("{}（时断时续）", o.notice.title),
+                                    format!("{} (Intermittent)", o.notice.title)
+                                ),
+                                at_ms,
+                                ..o.notice.clone()
+                            },
+                            due: None,
+                            muted_until: Some(now + FLAP_WINDOW),
+                            intermittent: true,
                         },
-                        due: None,
-                        muted_until: Some(now + FLAP_WINDOW),
-                    },
-                );
+                    );
+                }
+                (o, flapping)
             }
-            (o, flapping)
         };
         for s in &self.sinks {
             s.withdraw(key);

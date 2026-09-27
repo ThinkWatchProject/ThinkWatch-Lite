@@ -170,6 +170,40 @@ async fn something_flapping_is_said_once_and_then_muted() {
     );
 }
 
+/// 抖过之后，上游每接下一个请求就来一次「好了」：那一条说明留着，**不跟着一次次
+/// 接长标题、重写列表**
+#[tokio::test]
+async fn a_flapping_notice_does_not_grow_with_every_request_that_goes_through() {
+    let b = bed();
+    for i in 0..3 {
+        let t = T0 + i * 1_000;
+        b.bus.ingest(quota("relay"), t);
+        b.bus.ingest(Signal::cleared("quota:relay:weekly"), t + 500);
+    }
+    let titles = |b: &Bed| -> Vec<String> { b.bus.list().into_iter().map(|n| n.title).collect() };
+    let once = titles(&b);
+    assert_eq!(once.len(), 1, "{once:?}");
+    assert_eq!(once[0].matches("时断时续").count(), 1, "{once:?}");
+    let withdrawn = b.withdrawn.lock().unwrap().len();
+    for i in 0..5 {
+        b.bus
+            .ingest(Signal::cleared("quota:relay:weekly"), T0 + 10_000 + i);
+    }
+    assert_eq!(titles(&b), once);
+    assert_eq!(
+        b.withdrawn.lock().unwrap().len(),
+        withdrawn,
+        "说明那一条没动，不该撤了又放"
+    );
+
+    // 又出事了：照旧是那一件事，标题回到原样，还在静音期里所以不弹
+    b.bus.ingest(quota("relay"), T0 + 20_000);
+    let now = titles(&b);
+    assert_eq!(now.len(), 1, "{now:?}");
+    assert!(!now[0].contains("时断时续"), "{now:?}");
+    assert_eq!(b.titles().len(), 3, "{:?}", b.titles());
+}
+
 #[tokio::test]
 async fn only_a_long_critical_says_that_it_is_over() {
     let b = bed();
