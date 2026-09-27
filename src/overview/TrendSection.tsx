@@ -11,7 +11,7 @@ import { compact } from "@/format";
 import { usd, type CostBucket, type Dashboard } from "@/types";
 import { useText } from "@/i18n";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, useLiveWindow } from "./useLive";
-import { buildTrend, fmtBucket, historyTicks, holdY, liveTicks, type Metric, type Tick } from "./series";
+import { axisLabel, buildTrend, fmtBucket, historyTicks, holdY, liveTicks, type Metric, type Tick } from "./series";
 import { ModelRanking } from "./ModelRanking";
 import { LiveBadge, Scope } from "./parts";
 import { overviewText } from "./overview.i18n";
@@ -141,7 +141,7 @@ export function TrendSection({
             **纵轴的单位跟着口径走，和悬停里那句一致。**费用那一路的图值是千分之一
             美元（见 `buildTrend`），刻度要换回微分再格式化。
           */
-          tickFormat={(v) => (tokensMode ? compact(v) : usd(v * 1000))}
+          tickFormat={(v) => axisLabel(tokensMode ? compact(v) : usd(v * 1000))}
           // 悬停里每个模型那一行**和刻度同一种写法**，先取整：实时档的速率是摊出来的浮点
           valueFormat={(v) => (tokensMode ? compact(Math.round(v)) : usd(Math.round(v * 1000)))}
           yMax={yMax}

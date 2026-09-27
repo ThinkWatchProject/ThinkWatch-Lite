@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CostBucket, CostBucketGroup, Dashboard, Summary } from "@/types";
 import {
+  axisLabel,
   buildTrend,
   cacheByModel,
   fmtBucket,
@@ -172,6 +173,21 @@ describe("纵轴上界", () => {
   it("口径或区间一换，从头取", () => {
     const y = holdY({ key: "token/last:1d", v: 5_000_000 }, "cost/last:1d", 3_000);
     expect(y).toEqual({ key: "cost/last:1d", v: 5_000 });
+  });
+
+  /**
+   * 纵轴那一栏只有 46px：「100.0M」「$120.00」塞不下，而按周分格的长区间里一格的量大，
+   * 这样的刻度最常见。刻度是取整过的数，小数点后全是 0 的不写
+   */
+  it("刻度上的字：小数点后全是 0 的不写", () => {
+    expect(axisLabel("100.0M")).toBe("100M");
+    expect(axisLabel("$120.00")).toBe("$120");
+    expect(axisLabel("1.0k")).toBe("1k");
+    // 有意义的小数照写
+    expect(axisLabel("1.2k")).toBe("1.2k");
+    expect(axisLabel("$0.500")).toBe("$0.500");
+    expect(axisLabel("$0.0050")).toBe("$0.0050");
+    expect(axisLabel("$0")).toBe("$0");
   });
 });
 

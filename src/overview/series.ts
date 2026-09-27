@@ -464,6 +464,15 @@ export function holdY(
   return base;
 }
 
+/**
+ * 纵轴刻度上的字。刻度是取整过的数（`holdY` 的上界和它的一半），**小数点后全是 0 的
+ * 不写**：「100.0M」「$120.00」塞不进纵轴那一栏（`Y_AXIS_WIDTH`），而它们说的就是
+ * 「100M」「$120」。按天、按周分格的长区间里一格的量大，这样的刻度最常见。
+ */
+export function axisLabel(text: string): string {
+  return text.replace(/\.0+(?=\D*$)/, "");
+}
+
 /** 图下面的一个刻度：`at` 是它在画图区域里的横向位置（0…1） */
 export interface Tick {
   at: number;
