@@ -386,6 +386,50 @@ fn hide_quoted(text: &str, v: &str) -> String {
     out.replace(&format!("'{v}'"), &format!("'{HIDDEN}'"))
 }
 
+/// 改之前那几份原文的指纹：确认框里给人看的改动是按它们算的。
+///
+/// **落盘时按那一刻的文件重算一遍计划**（密钥这一刻才发、模型清单这一刻才问），所以
+/// 文件要是在人看改动的这段时间里被改过 —— 客户端自己改了一项设置、用户手改了一行 ——
+/// 写下去的就不是确认过的那一份，而写入那一步自己的核对（`adopt.file.changed`）只管
+/// 重算和写入之间，管不到这一段。确认时界面把它原样带回来，重算出来的对不上就什么都
+/// 不写（[`still_as_reviewed`]）。
+///
+/// 种子是**这个进程里随机的**：交给界面的是一个只在本进程里有意义的数。原文里有密钥，
+/// 指纹不该能拿去和猜测的内容对照。
+pub fn fingerprint<'a>(files: impl IntoIterator<Item = (&'a Path, Option<&'a [u8]>)>) -> String {
+    use std::hash::{BuildHasher, Hash, Hasher};
+    static SEED: std::sync::OnceLock<std::hash::RandomState> = std::sync::OnceLock::new();
+    let mut h = SEED.get_or_init(std::hash::RandomState::new).build_hasher();
+    for (path, before) in files {
+        path.hash(&mut h);
+        before.hash(&mut h);
+    }
+    format!("{:016x}", h.finish())
+}
+
+/// 一份接管、还原计划读到的那几份原文：它自己的文件，加上同一次改动里的另外几份
+pub fn plan_fingerprint(p: &plan::Plan) -> String {
+    fingerprint(
+        std::iter::once(p)
+            .chain(&p.also)
+            .map(|x| (x.path.as_path(), x.before.as_deref().map(str::as_bytes))),
+    )
+}
+
+/// 落盘之前核对：重算出来的计划读到的原文，还是确认框里那一份（[`fingerprint`]）。
+///
+/// 界面没带（`None`）就不核对 —— 全部还原、卸载时的还原走的是没有差异可看的那条路。
+pub fn still_as_reviewed(expect: Option<&str>, now: &str, client: &str) -> Result<(), Msg> {
+    match expect {
+        Some(e) if e != now => Err(msg!(
+            "adopt.plan.stale", client = client =>
+            "{client}'s configuration changed while the change was being reviewed, so \
+             nothing was written. Look at the change again"
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn view(
     p: &plan::Plan,
     secrets: &[Vec<String>],
@@ -407,6 +451,7 @@ fn view(
         fields: fields_of(p, secrets),
         key: None,
         key_created: false,
+        digest: plan_fingerprint(p),
         also: p
             .also
             .iter()
@@ -516,6 +561,8 @@ fn no_keys() -> Msg {
 ///
 /// `key` 是 core 此刻为它发的那把（为它留着的，或者这一刻新建的）：**先有钥匙再写
 /// 对方的配置** —— 反过来的话，中间那一刻对方配置里写着一把网关不认识的钥匙。
+///
+/// `expect` 是确认框里那份改动的 [`fingerprint`]：这中间文件被改过就什么都不写。
 pub fn adopt(
     home: &Path,
     backups: &Path,
@@ -523,6 +570,7 @@ pub fn adopt(
     base: &str,
     key: &str,
     models: Vec<String>,
+    expect: Option<&str>,
 ) -> Result<wire::AdoptResponse, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
     let c = find(id, home)?.here(home);
@@ -532,6 +580,7 @@ pub fn adopt(
         models,
     };
     let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
+    still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),
@@ -576,9 +625,17 @@ pub fn plan_restore_as(
 /// **走的是「把我们写的那几个字段改回去」，不是「拿全文备份覆盖」**
 /// —— 后者会把用户这三个月里加的 MCP server、调的权限、写的 hook 全部
 /// 抹掉。不问 core：还原用不着密钥，core 不在的时候也要能退回去。
-pub fn restore(home: &Path, backups: &Path, id: &str) -> Result<wire::AdoptResponse, Msg> {
+///
+/// `expect` 和 [`adopt`] 的一样：确认框里那份改动的指纹，不带就不核对。
+pub fn restore(
+    home: &Path,
+    backups: &Path,
+    id: &str,
+    expect: Option<&str>,
+) -> Result<wire::AdoptResponse, Msg> {
     let c = find(id, home)?.here(home);
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
+    still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply_restore(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),
@@ -928,6 +985,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-new",
             Vec::new(),
+            None,
         )
         .unwrap();
         assert_eq!(a.takes_effect, wire::TakesEffect::Immediately);
@@ -947,7 +1005,7 @@ pub(crate) mod tests {
         assert!(!offline.before.as_deref().unwrap().contains("tw-new"));
         assert!(!offline.after.contains("users-own"), "{}", offline.after);
 
-        restore(home.path(), &backups(&home), "claude-code").unwrap();
+        restore(home.path(), &backups(&home), "claude-code", None).unwrap();
         let back: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
@@ -984,6 +1042,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-o",
             vec!["a".into(), "b".into()],
+            None,
         )
         .unwrap();
         assert!(!stale(&now(&["b", "a"])));
@@ -1015,7 +1074,7 @@ pub(crate) mod tests {
     #[test]
     fn restoring_something_we_never_adopted_refuses_instead_of_guessing() {
         let home = home_with_claude();
-        assert!(restore(home.path(), &backups(&home), "claude-code").is_err());
+        assert!(restore(home.path(), &backups(&home), "claude-code", None).is_err());
     }
 
     /// 接管着的客户端的密钥删不得；它的主人是哪个，只有这台机器答得上来
@@ -1034,6 +1093,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
@@ -1078,6 +1138,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         adopt(
@@ -1087,6 +1148,7 @@ pub(crate) mod tests {
             "http://192.168.1.20:8788",
             "tw-x",
             Vec::new(),
+            None,
         )
         .unwrap();
         let here: Vec<_> = adopted_on_this_machine(home.path())
@@ -1183,6 +1245,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         adopt(
@@ -1192,6 +1255,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-x",
             Vec::new(),
+            None,
         )
         .unwrap();
         let listed = list_wsl(
@@ -1207,8 +1271,8 @@ pub(crate) mod tests {
             assert!(is_loopback(e));
         }
 
-        restore(&w.home, &b, "claude-code").unwrap();
-        restore(&w.home, &b, "codex").unwrap();
+        restore(&w.home, &b, "claude-code", None).unwrap();
+        restore(&w.home, &b, "codex", None).unwrap();
         let back: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
@@ -1229,6 +1293,7 @@ pub(crate) mod tests {
             "http://172.27.96.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         let gw = Gateway {
@@ -1241,7 +1306,7 @@ pub(crate) mod tests {
             .unwrap();
         assert!(cc.adopted_at_ms.is_some());
         assert_eq!(cc.endpoint.as_deref(), Some("http://172.27.96.1:8788"));
-        restore(&w.home, &b, "claude-code").unwrap();
+        restore(&w.home, &b, "claude-code", None).unwrap();
         assert!(adopted(&w.home).is_empty());
     }
 
@@ -1256,6 +1321,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-old",
             Vec::new(),
+            None,
         )
         .unwrap();
         let c = find("claude-code", home.path()).unwrap();
@@ -1297,6 +1363,7 @@ pub(crate) mod tests {
             base,
             "tw-old",
             vec!["claude-sonnet-5".into()],
+            None,
         )
         .unwrap();
         let c = find(id, home.path()).unwrap();
@@ -1318,5 +1385,82 @@ pub(crate) mod tests {
             profile["inferenceModels"],
             serde_json::json!(["claude-opus-5"])
         );
+    }
+
+    /// 同一份原文同一个指纹；原文、路径、有没有这个文件，任何一样不同都不同
+    #[test]
+    fn the_fingerprint_follows_every_file_the_plan_read() {
+        let a = Path::new("/h/a.json");
+        let b = Path::new("/h/b.json");
+        let f = |xs: &[(&Path, Option<&[u8]>)]| fingerprint(xs.iter().copied());
+        assert_eq!(f(&[(a, Some(b"x"))]), f(&[(a, Some(b"x"))]));
+        assert_ne!(f(&[(a, Some(b"x"))]), f(&[(a, Some(b"y"))]));
+        assert_ne!(f(&[(a, Some(b"x"))]), f(&[(b, Some(b"x"))]));
+        assert_ne!(f(&[(a, None)]), f(&[(a, Some(b""))]));
+        assert_ne!(
+            f(&[(a, Some(b"x"))]),
+            f(&[(a, Some(b"x")), (b, None)]),
+            "多一份文件也算"
+        );
+    }
+
+    /// 看着差异的时候文件被改了：**什么都不写**，按此刻的文件重算的那一份才写得进去
+    #[test]
+    fn a_file_changed_while_its_diff_was_shown_is_not_written() {
+        let home = home_with_claude();
+        let settings = home.path().join(".claude/settings.json");
+        std::fs::write(&settings, "{\n  \"model\": \"opus\"\n}\n").unwrap();
+        let g = gw(vec![key("default", "tw-d", None, true)]);
+        let shown = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+
+        // 客户端自己在这时改了一项设置
+        let changed = "{\n  \"model\": \"sonnet\"\n}\n";
+        std::fs::write(&settings, changed).unwrap();
+        let adopt_now = |expect: &str| {
+            adopt(
+                home.path(),
+                &backups(&home),
+                "claude-code",
+                "http://127.0.0.1:8788",
+                "tw-d",
+                Vec::new(),
+                Some(expect),
+            )
+        };
+        let e = adopt_now(&shown.digest).unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), changed);
+        assert!(adopted(home.path()).is_empty());
+
+        // 重新算一份给人看，照那一份就写得进去
+        let again = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+        assert_ne!(again.digest, shown.digest);
+        adopt_now(&again.digest).unwrap();
+        assert_eq!(adopted(home.path()).len(), 1);
+
+        // 还原也一样
+        let shown = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        let edited = std::fs::read_to_string(&settings)
+            .unwrap()
+            .replace("sonnet", "haiku");
+        std::fs::write(&settings, &edited).unwrap();
+        let e = restore(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            Some(&shown.digest),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), edited);
+        let again = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        restore(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            Some(&again.digest),
+        )
+        .unwrap();
+        assert!(adopted(home.path()).is_empty());
     }
 }

@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
@@ -33,11 +34,14 @@ const MIRRORED = "mirrored";
  */
 export function MirroredDialog({
   plan,
+  stale = false,
   pending,
   onCancel,
   onConfirm,
 }: {
   plan: WslConfigPlan;
+  /** 刚才确认时文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
+  stale?: boolean;
   pending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -54,6 +58,10 @@ export function MirroredDialog({
           <DialogTitle>{t.mirroredTitle}</DialogTitle>
           <DialogDescription>{plan.before == null ? t.creates(path) : t.modifies(path)}</DialogDescription>
         </DialogHeader>
+
+        <Banner layout="inline" tone="warning" show={stale}>
+          {t.stale}
+        </Banner>
 
         {plan.noop ? (
           <p className="tw-body">{t.mirroredNoop}</p>

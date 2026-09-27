@@ -21,6 +21,16 @@ import type {
   WslResponse,
 } from "@/types";
 
+/**
+ * 落盘时发现：文件在人看改动的这段时间里被改过，什么都没写（`adopt.plan.stale`）。
+ *
+ * 落盘那一步按那一刻的文件重算计划，再和确认框里那一份的指纹（`PlanView.digest`）
+ * 比；对不上时界面重新算一份，还在原来的对话框里给人看。
+ */
+export function isStalePlan(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "adopt.plan.stale";
+}
+
 export interface RestoreOutcome {
   client: string;
   ok: boolean;
@@ -37,8 +47,11 @@ export const api = {
   wsl: () => invoke<WslResponse>("list_wsl"),
   planAdopt: (id: string, env?: string) => invoke<PlanView>("plan_adopt", { id, env }),
   planRestore: (id: string, env?: string) => invoke<PlanView>("plan_restore", { id, env }),
-  adopt: (id: string, env?: string) => invoke<AdoptResponse>("adopt_client", { id, env }),
-  restore: (id: string, env?: string) => invoke<AdoptResponse>("restore_client", { id, env }),
+  /** `expect`：确认的那一份改动的 `digest`。文件在这之后被改过就不写（见 `isStalePlan`） */
+  adopt: (id: string, expect: string, env?: string) =>
+    invoke<AdoptResponse>("adopt_client", { id, env, expect }),
+  restore: (id: string, expect: string, env?: string) =>
+    invoke<AdoptResponse>("restore_client", { id, env, expect }),
   restoreAll: () => invoke<RestoreOutcome[]>("restore_all"),
   /**
    * 连着远程时：还指着本机网关的，改为指向此刻连着的 core。`env` 和别的命令一样：
@@ -53,8 +66,8 @@ export const api = {
   copyKey: (name: string) => invoke<void>("copy_key", { name }),
   /** 把 WSL 2 改成 mirrored 网络：`.wslconfig` 的改动，确认之前不写 */
   planMirrored: () => invoke<WslConfigPlan>("plan_wsl_mirrored"),
-  /** 落盘上面那一份（全文备份之后）。交回不至于失败、但该说一声的事 */
-  setMirrored: () => invoke<Msg[]>("set_wsl_mirrored"),
+  /** 落盘上面那一份（全文备份之后）。交回不至于失败、但该说一声的事。`expect` 同 `adopt` */
+  setMirrored: (expect: string) => invoke<Msg[]>("set_wsl_mirrored", { expect }),
   /** `wsl --shutdown`：所有正在运行的发行版都会停下 */
   shutdownWsl: () => invoke<void>("shutdown_wsl"),
   /** 卸载不改回的 `.wslconfig`（是在这里改成 mirrored 的）。没改过就是 null */

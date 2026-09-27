@@ -234,6 +234,8 @@ pub struct WslConfigPlan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     pub after: String,
+    /// 这份改动是按哪一份原文算的。确认时原样带回来，见 [`PlanView::digest`]
+    pub digest: String,
     /// 改的是哪一项：`wsl2.networkingMode`（写在旧位置的是 `experimental.networkingMode`）
     pub field: String,
     /// 已经是 mirrored 了，什么都不用改
@@ -275,6 +277,9 @@ pub struct PlanView {
     /// 那把密钥要在接管的那一刻新建（此前没有为这个客户端留着的）
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub key_created: bool,
+    /// 这份改动是按哪几份原文算的（`clients::ops::fingerprint`）。**确认时原样带回来**：
+    /// 落盘时按那一刻的文件重算，原文在人看差异的时候被改过就什么都不写
+    pub digest: String,
     /// 同一次改动还要写的另外几份文件，和上面那一份一起落盘、一起失败，按落盘的
     /// 顺序。DeepSeek Harness 的密钥在它自己的凭据文件里；Claude Desktop 一次改
     /// 四个，`path` 那一个是它配置库里的那一份，其余三个在这里

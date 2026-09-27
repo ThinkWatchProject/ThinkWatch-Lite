@@ -729,6 +729,7 @@
     "adopt.plan.foreign_record": "{path} 旁的接管记录属于 {other}，而不是 {client}，未做任何修改。",
     "adopt.plan.no_record": "没有 {client} 的接管记录，无法还原。如需手动还原，请查看 {path}。",
     "adopt.plan.managed": "这台电脑的 {client} 由组织统一管理（{by}），无法接管，未做任何修改。",
+    "adopt.plan.stale": "{client} 的配置在查看改动期间已被修改，未写入任何内容。请重新查看改动。",
     "adopt.mcp.unknown_client": "未知的客户端「{client}」。",
     "adopt.mcp.parse_failed": "无法解析 {client} 的 MCP 配置，未做任何修改：{detail}",
     "adopt.mcp.not_there": "{client} 中没有名为「{name}」的 MCP server。",

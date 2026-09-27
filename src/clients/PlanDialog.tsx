@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
@@ -26,6 +27,7 @@ export function PlanDialog({
   plan,
   client,
   restore,
+  stale = false,
   pending,
   onCancel,
   onConfirm,
@@ -33,6 +35,8 @@ export function PlanDialog({
   plan: PlanView;
   client: DetectedClient;
   restore: boolean;
+  /** 刚才确认时文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
+  stale?: boolean;
   pending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -68,6 +72,10 @@ export function PlanDialog({
             </DialogDescription>
           </div>
         </DialogHeader>
+
+        <Banner layout="inline" tone="warning" show={stale}>
+          {t.stale}
+        </Banner>
 
         {plan.noop ? (
           <p className="tw-body">{t.noop}</p>

@@ -56,6 +56,7 @@ pub fn targets(home: &Path) -> Vec<wire::McpTargetView> {
 /// 算一份改动。**不写任何东西。**
 pub fn plan_op(home: &Path, req: &wire::McpOpRequest) -> Result<wire::PlanView, Msg> {
     let p = plan(home, req)?;
+    let digest = digest(&p);
     let format = target(&req.to, home)?.format;
     // diff 画的是**整份目标文件**：里面每一个 server 的环境变量、请求头都要盖住，
     // 不只是这次搬的那一个（`~/.claude.json` 里还有每个项目下的 server）
@@ -90,18 +91,28 @@ pub fn plan_op(home: &Path, req: &wire::McpOpRequest) -> Result<wire::PlanView, 
         }],
         key: None,
         key_created: false,
+        digest,
         also: Vec::new(),
     })
 }
 
+/// 目标文件改之前那一份的指纹（`clients::ops::fingerprint`）
+fn digest(p: &mcp::Plan) -> String {
+    crate::clients::ops::fingerprint([(p.path.as_path(), p.before.as_deref().map(str::as_bytes))])
+}
+
 /// 落盘。**用户在 diff 上点过确认之后才该到这里。**
+///
+/// `expect` 是确认框里那份改动的指纹：目标文件在人看差异的时候被改过，就什么都不写
 pub fn apply(
     home: &Path,
     backups: &Path,
     req: &wire::McpOpRequest,
+    expect: Option<&str>,
 ) -> Result<wire::AdoptResponse, Msg> {
     let to = target(&req.to, home)?;
     let p = plan(home, req)?;
+    crate::clients::ops::still_as_reviewed(expect, &digest(&p), to.name)?;
     let a = mcp::apply(&to, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
         real: a.real.display().to_string(),
@@ -124,8 +135,16 @@ pub async fn plan_mcp(req: wire::McpOpRequest) -> Out<wire::PlanView> {
 }
 
 #[tauri::command]
-pub async fn apply_mcp(req: wire::McpOpRequest) -> Out<wire::AdoptResponse> {
-    Ok(apply(&home_dir(), &tw_adopt::foreign::backup_root(), &req)?)
+pub async fn apply_mcp(
+    req: wire::McpOpRequest,
+    expect: Option<String>,
+) -> Out<wire::AdoptResponse> {
+    Ok(apply(
+        &home_dir(),
+        &tw_adopt::foreign::backup_root(),
+        &req,
+        expect.as_deref(),
+    )?)
 }
 
 #[cfg(test)]
@@ -164,10 +183,35 @@ mod tests {
         // 算的那一步不写
         assert!(!h.path().join(".cursor/mcp.json").exists());
 
-        let a = apply(h.path(), &h.path().join("backups"), &r).unwrap();
+        let a = apply(h.path(), &h.path().join("backups"), &r, None).unwrap();
         assert_eq!(a.takes_effect, wire::TakesEffect::OnRestart);
         let text = std::fs::read_to_string(h.path().join(".cursor/mcp.json")).unwrap();
         assert!(text.contains("\"fs\""), "{text}");
+    }
+
+    /// 看着差异的时候目标文件被改了（客户端自己加了一个 server）：什么都不写，
+    /// 按此刻的文件重算的那一份才写得进去
+    #[test]
+    fn a_target_changed_while_its_diff_was_shown_is_not_written() {
+        let h = home();
+        let r = req(wire::McpOp::Copy, "fs", Some("claude-code"), "cursor");
+        let shown = plan_op(h.path(), &r).unwrap();
+        let target = h.path().join(".cursor/mcp.json");
+        let theirs = r#"{ "mcpServers": { "git": { "command": "git-mcp" } } }"#;
+        std::fs::write(&target, theirs).unwrap();
+
+        let backups = h.path().join("backups");
+        let e = apply(h.path(), &backups, &r, Some(&shown.digest)).unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), theirs);
+
+        let again = plan_op(h.path(), &r).unwrap();
+        apply(h.path(), &backups, &r, Some(&again.digest)).unwrap();
+        let text = std::fs::read_to_string(&target).unwrap();
+        assert!(
+            text.contains("\"git\"") && text.contains("\"fs\""),
+            "{text}"
+        );
     }
 
     /// diff 画的是整份目标文件：每一个 server 的令牌都要盖住 —— 搬的那个、没动的那个、
@@ -212,7 +256,7 @@ mod tests {
         assert!(p.after.contains("\"fs\""), "{}", p.after);
 
         // 落盘写的是真值
-        apply(h.path(), &h.path().join("backups"), &r).unwrap();
+        apply(h.path(), &h.path().join("backups"), &r, None).unwrap();
         let text = std::fs::read_to_string(h.path().join(".claude.json")).unwrap();
         assert!(text.contains("fs-0123456789"), "{text}");
     }
@@ -221,7 +265,7 @@ mod tests {
     fn removing_a_server_is_the_emergency_switch_and_it_really_deletes() {
         let h = home();
         let r = req(wire::McpOp::Remove, "fs", None, "claude-code");
-        apply(h.path(), &h.path().join("backups"), &r).unwrap();
+        apply(h.path(), &h.path().join("backups"), &r, None).unwrap();
         let text = std::fs::read_to_string(h.path().join(".claude.json")).unwrap();
         assert!(!text.contains("\"fs\""), "{text}");
     }

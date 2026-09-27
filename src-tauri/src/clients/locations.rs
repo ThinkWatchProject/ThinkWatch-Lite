@@ -381,6 +381,7 @@ mod tests {
             "http://127.0.0.1:8788",
             "tw-k",
             Vec::new(),
+            None,
         )
         .unwrap();
         assert_eq!(

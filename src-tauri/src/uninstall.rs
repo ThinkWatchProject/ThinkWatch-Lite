@@ -49,7 +49,7 @@ fn restore_all_in(
     ops::adopted(home)
         .into_iter()
         .map(|c| {
-            let r = ops::restore(home, backups, c.id);
+            let r = ops::restore(home, backups, c.id, None);
             RestoreOutcome {
                 client: name(c.name),
                 ok: r.is_ok(),
@@ -225,6 +225,7 @@ mod tests {
             "http://127.0.0.1:8788",
             "tw-c",
             Vec::new(),
+            None,
         )
         .unwrap();
         let out = restore_all_in(home.path(), &backups, |n| n.to_string());

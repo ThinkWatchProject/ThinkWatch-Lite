@@ -129,6 +129,7 @@ adopt.plan.no_record
 adopt.plan.parse_failed
 adopt.plan.read_failed
 adopt.plan.shadowed
+adopt.plan.stale
 adopt.restore.config_gone
 adopt.restore.file_removed
 adopt.restore.secret_lost

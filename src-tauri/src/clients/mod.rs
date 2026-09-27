@@ -350,17 +350,26 @@ pub async fn plan_wsl_mirrored() -> Out<wire::WslConfigPlan> {
         noop: p.is_noop(),
         before: p.before_text.as_deref().map(lf),
         after: lf(&p.after_text),
+        digest: ops::fingerprint([(p.path.as_path(), p.before.as_deref())]),
         field: p.field,
     })
 }
 
 /// 落盘 [`plan_wsl_mirrored`] 那一份。**用户在差异上点过确认之后才该到这里。**
 /// 写之前全文备份（和接管客户端同一个备份目录）；交回不至于失败、但该说一声的事
-/// （`.wslconfig` 是个符号链接）。重启 WSL 之后才生效，那一步另有按钮
+/// （`.wslconfig` 是个符号链接）。重启 WSL 之后才生效，那一步另有按钮。
+///
+/// `expect` 是确认框里那份改动的指纹（[`ops::fingerprint`]）：文件在人看差异的时候
+/// 被改过，就什么都不写
 #[tauri::command]
-pub async fn set_wsl_mirrored() -> Out<Vec<Msg>> {
+pub async fn set_wsl_mirrored(expect: Option<String>) -> Out<Vec<Msg>> {
     wsl::ensure_any()?;
     let p = tw_adopt::wslconfig::plan_mirrored(&wsl::wslconfig())?;
+    ops::still_as_reviewed(
+        expect.as_deref(),
+        &ops::fingerprint([(p.path.as_path(), p.before.as_deref())]),
+        ".wslconfig",
+    )?;
     if p.is_noop() {
         return Ok(Vec::new());
     }
@@ -431,11 +440,15 @@ pub async fn plan_adopt(
 /// 落盘这一步才要钥匙：**先有钥匙再写对方的配置** —— 反过来的话，中间那一刻
 /// 对方配置里写着一把 config.yaml 里没有的钥匙。WSL 里的那一份此刻够不着网关的
 /// 拒绝（确认框打开之后网络可能变了），不留一把没人用的钥匙。
+///
+/// `expect` 是确认框里那份改动的指纹（[`ops::fingerprint`]）：文件在人看差异的时候
+/// 被改过，就什么都不写，由界面重新算一份给人看。
 #[tauri::command]
 pub async fn adopt_client(
     state: tauri::State<'_, AppState>,
     id: String,
     env: Option<String>,
+    expect: Option<String>,
 ) -> Out<wire::AdoptResponse> {
     let place = Place::open(env).await?;
     let c = place.find(&id)?;
@@ -445,7 +458,15 @@ pub async fn adopt_client(
     };
     let key = prepare_key(&state.control, &place.owner(&id)).await?;
     let models = models_for(&c, &base, &key.key).await?;
-    let mut r = ops::adopt(&place.home(), &backups(), &id, &base, &key.key, models)?;
+    let mut r = ops::adopt(
+        &place.home(),
+        &backups(),
+        &id,
+        &base,
+        &key.key,
+        models,
+        expect.as_deref(),
+    )?;
     if let Place::Wsl(w) = &place {
         r.real = w.shown(Path::new(&r.real));
     }
@@ -469,12 +490,21 @@ pub async fn plan_restore(
     Ok(v)
 }
 
-/// 还原。**不问 core**：退路不该依赖网关还在不在
+/// 还原。**不问 core**：退路不该依赖网关还在不在。`expect` 和 [`adopt_client`] 的一样
 #[tauri::command]
-pub async fn restore_client(id: String, env: Option<String>) -> Out<wire::AdoptResponse> {
+pub async fn restore_client(
+    id: String,
+    env: Option<String>,
+    expect: Option<String>,
+) -> Out<wire::AdoptResponse> {
     let place = Place::open(env).await?;
     place.find(&id)?;
-    Ok(ops::restore(&place.home(), &backups(), &id)?)
+    Ok(ops::restore(
+        &place.home(),
+        &backups(),
+        &id,
+        expect.as_deref(),
+    )?)
 }
 
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
@@ -1024,7 +1054,16 @@ mod tests {
         let original =
             r#"{ "model": "opus", "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com" } }"#;
         std::fs::write(&settings, original).unwrap();
-        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-local", Vec::new()).unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "claude-code",
+            LOCAL,
+            "tw-local",
+            Vec::new(),
+            None,
+        )
+        .unwrap();
         ops::adopt(
             here.path(),
             &b,
@@ -1032,6 +1071,7 @@ mod tests {
             LOCAL,
             "tw-local",
             Vec::new(),
+            None,
         )
         .unwrap();
         let adopted = read(&settings);
@@ -1090,7 +1130,7 @@ mod tests {
         assert!(p.noop, "{}", p.after);
         assert_eq!(p.key.as_deref(), Some("claude-code-wsl-ubuntu"));
         // 接管记录里的原值没被服务器的地址盖掉：还原回到接管之前
-        ops::restore(&w.home, &b, "claude-code").unwrap();
+        ops::restore(&w.home, &b, "claude-code", None).unwrap();
         let back: serde_json::Value = serde_json::from_str(&read(&settings)).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
         assert_eq!(back, want);
@@ -1108,9 +1148,10 @@ mod tests {
             SERVER,
             "tw-claude-code-wsl-ubuntu",
             Vec::new(),
+            None,
         )
         .unwrap();
-        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new()).unwrap();
+        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new(), None).unwrap();
         let settings = w.home.join(".claude").join("settings.json");
         let before = read(&settings);
         let real = tw_adopt::foreign::resolve(&settings).unwrap();
@@ -1139,7 +1180,7 @@ mod tests {
     async fn an_unreadable_distro_is_skipped_and_reported_with_the_reason() {
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new()).unwrap();
+        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new(), None).unwrap();
         let found = || LeftBehind::of(None, vec![Err(unreadable(d.path())), Ok(w.clone())]);
 
         // 数不出来的不算进确认框里的数
@@ -1174,8 +1215,8 @@ mod tests {
         let here = here_home();
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new()).unwrap();
-        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-c", Vec::new()).unwrap();
+        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new(), None).unwrap();
+        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-c", Vec::new(), None).unwrap();
         let why = CmdError::plain("core is not running").into_msg();
         let r = LeftBehind::of(
             Some(here.path().to_path_buf()),
@@ -1219,10 +1260,19 @@ mod tests {
         let here = here_home();
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        ops::adopt(here.path(), &b, "claude-code", LOCAL, "tw-c", Vec::new()).unwrap();
-        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new()).unwrap();
-        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-w", Vec::new()).unwrap();
-        ops::adopt(&w.home, &b, "codex", SERVER, "tw-s", Vec::new()).unwrap();
+        ops::adopt(
+            here.path(),
+            &b,
+            "claude-code",
+            LOCAL,
+            "tw-c",
+            Vec::new(),
+            None,
+        )
+        .unwrap();
+        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new(), None).unwrap();
+        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-w", Vec::new(), None).unwrap();
+        ops::adopt(&w.home, &b, "codex", SERVER, "tw-s", Vec::new(), None).unwrap();
         let a = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w)]).adopted();
         assert_eq!(a.count, 3);
         assert_eq!(a.local_addr.as_deref(), Some("127.0.0.1:8788"));

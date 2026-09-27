@@ -360,6 +360,7 @@ export function plan(id: string, restore: boolean): PlanView {
     fields: c.manual.fields,
     key: c.key ?? c.id,
     key_created: false,
+    digest: "0000000000000000",
     also: [],
   };
 }

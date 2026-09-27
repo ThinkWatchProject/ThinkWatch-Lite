@@ -379,6 +379,7 @@ export function ServerDialog({
 export function McpConfirm({
   plan,
   req,
+  stale = false,
   nameOf,
   applying,
   error,
@@ -387,6 +388,8 @@ export function McpConfirm({
 }: {
   plan: PlanView;
   req: McpOpRequest;
+  /** 刚才确认时目标文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
+  stale?: boolean;
   nameOf: (client: string) => string;
   applying: boolean;
   error: unknown;
@@ -406,6 +409,9 @@ export function McpConfirm({
             {t.modifies} <code className="font-mono text-foreground">{plan.path}</code>
           </DialogDescription>
         </DialogHeader>
+        <Banner layout="inline" tone="warning" show={stale}>
+          {t.stale}
+        </Banner>
         {plan.noop ? (
           <p className="tw-body">{t.noop}</p>
         ) : (
