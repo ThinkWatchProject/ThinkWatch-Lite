@@ -239,32 +239,118 @@ fn mcp_from(src: &Source, v: &Val) -> Vec<McpServer> {
     for key in MCP_KEYS {
         let Some(servers) = obj(v, key) else { continue };
         for (name, cfg) in servers {
-            out.push(McpServer {
-                name: name.clone(),
-                client: src.client.to_string(),
-                command: s(cfg, "command").unwrap_or_default(),
-                args: strings(cfg, "args"),
-                // agy 的远程 server 写 `serverUrl`（也认 `url`）
-                url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
-                // **只取键名，不取值。**值里常常就是密钥本身
-                env_keys: match obj(cfg, "env") {
-                    Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
-                    None => Vec::new(),
-                },
-                // 没写就是开着 —— 各家的默认都是这样。关掉的写法有两种：
-                // `enabled: false`，以及 agy 的 `disabled: true`
-                enabled: !matches!(
-                    cfg,
-                    Val::Obj(ms) if ms.iter().any(|(k, v)| {
-                        (k == "enabled" && *v == Val::Bool(false))
-                            || (k == "disabled" && *v == Val::Bool(true))
-                    })
-                ),
-                source: src.path.clone(),
-            });
+            out.push(server(src, name.clone(), cfg));
         }
     }
     out.sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
+    out
+}
+
+/// 一个 `command` / `args` / `env` 形状的 server。
+fn server(src: &Source, name: String, cfg: &Val) -> McpServer {
+    McpServer {
+        name,
+        client: src.client.to_string(),
+        command: s(cfg, "command").unwrap_or_default(),
+        args: strings(cfg, "args"),
+        // agy 的远程 server 写 `serverUrl`（也认 `url`）
+        url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
+        // **只取键名，不取值。**值里常常就是密钥本身
+        env_keys: match obj(cfg, "env") {
+            Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
+            None => Vec::new(),
+        },
+        // 没写就是开着 —— 各家的默认都是这样。关掉的写法有两种：
+        // `enabled: false`，以及 agy 的 `disabled: true`
+        enabled: !matches!(
+            cfg,
+            Val::Obj(ms) if ms.iter().any(|(k, v)| {
+                (k == "enabled" && *v == Val::Bool(false))
+                    || (k == "disabled" && *v == Val::Bool(true))
+            })
+        ),
+        source: src.path.clone(),
+    }
+}
+
+/// Claude Code 按项目配的 MCP server：`~/.claude.json` 里 `projects.<项目路径>.mcpServers`。
+/// 在那个项目里打开 Claude Code，它们和用户级的一样会跑起来，所以一样要扫。
+///
+/// **只进发现，不进清单**：MCP 页的矩阵一行一个名字、一列一个客户端，复制和移除改的是
+/// 用户级那一段（`mcpServers`）。项目里的列进去，点它改到的会是用户级的同名那一个，
+/// 或者什么都改不到。名字后面带上项目，发现里说得出是哪一个项目的。
+fn project_mcp(src: &Source, v: &Val) -> Vec<McpServer> {
+    if src.client != "claude-code" {
+        return Vec::new();
+    }
+    let Some(projects) = obj(v, "projects") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (project, cfg) in projects {
+        let Some(servers) = obj(cfg, "mcpServers") else {
+            continue;
+        };
+        for (name, s) in servers {
+            out.push(server(src, format!("{name} ({project})"), s));
+        }
+    }
+    out
+}
+
+/// Claude Code 设置里另外几个**不经模型就执行命令**的键（设置文档里的名字）：状态栏
+/// 每刷新一次跑一遍，取密钥、刷新云凭据、生成遥测请求头的脚本在要用的时候跑。和 hook
+/// 一样，模型什么都没决定，命令就执行了。
+const CLAUDE_CODE_COMMANDS: &[&[&str]] = &[
+    &["statusLine", "command"],
+    &["apiKeyHelper"],
+    &["awsAuthRefresh"],
+    &["awsCredentialExport"],
+    &["otelHeadersHelper"],
+];
+
+/// 顺着路径往下走。
+fn at<'a>(v: &'a Val, path: &[&str]) -> Option<&'a Val> {
+    path.iter().try_fold(v, |cur, k| match cur {
+        Val::Obj(ms) => ms.iter().find(|(mk, _)| mk == k).map(|(_, x)| x),
+        _ => None,
+    })
+}
+
+/// 不经模型就会执行的命令：hooks，加上几个同样会执行命令的设置 —— Claude Code 的那几个
+/// （[`CLAUDE_CODE_COMMANDS`]），和 Codex 的 `notify`（每一轮结束就执行的那条命令，写成
+/// argv 数组）。**和 hook 一样对待**：清单里列在 hooks 那一栏（事件就是那个键名），规则
+/// 按「会被执行」扫它们。
+fn auto_commands(src: &Source, v: &Val) -> Vec<HookEntry> {
+    let entry = |event: &str, command: String| HookEntry {
+        client: src.client.to_string(),
+        event: event.to_string(),
+        command,
+        source: src.path.clone(),
+    };
+    let mut out = Vec::new();
+    if src.kind == sources::Kind::Hooks {
+        out.extend(hooks_from(src, v));
+        if src.client == "claude-code" {
+            for path in CLAUDE_CODE_COMMANDS {
+                if let Some(Val::Str(c)) = at(v, path)
+                    && !c.trim().is_empty()
+                {
+                    out.push(entry(path[0], c.clone()));
+                }
+            }
+        }
+    }
+    if src.client == "codex" {
+        let cmd = match at(v, &["notify"]) {
+            Some(Val::Arr(args)) => args.iter().map(Val::to_line).collect::<Vec<_>>().join(" "),
+            Some(Val::Str(c)) => c.clone(),
+            _ => String::new(),
+        };
+        if !cmd.trim().is_empty() {
+            out.push(entry("notify", cmd));
+        }
+    }
     out
 }
 
@@ -558,7 +644,9 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         let parsed = parse_any(src, &text);
         if let Some(v) = &parsed {
             if src.kind == sources::Kind::Mcp {
-                for m in mcp_from(src, v) {
+                let listed = mcp_from(src, v);
+                // 按项目配的只进发现（见 `project_mcp`）
+                for m in listed.iter().chain(&project_mcp(src, v)) {
                     // **远端型不是「运行一个二进制」，而是「把上下文发
                     // 出去」。**级别定成 low：它多半是用户自己有意加的，
                     // 喊高危就是狼来了；但他有权知道有这么一条出境路径。
@@ -580,14 +668,12 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                             excerpt,
                         });
                     }
-                    r.mcp.push(m);
                 }
+                r.mcp.extend(listed);
                 r.mcp
                     .sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
             }
-            if src.kind == sources::Kind::Hooks {
-                r.hooks.extend(hooks_from(src, v));
-            }
+            r.hooks.extend(auto_commands(src, v));
         }
         if src.kind == sources::Kind::Skill {
             let name = src
@@ -622,33 +708,47 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
         }
 
         // 三、规则集。**指令类文件扫全文**，配置类只扫命令字段 ——
-        // 拿注入规则去扫一份 JSON 会把里面正常的英文说明全报一遍
-        let targets: Vec<(String, bool)> = match src.kind {
+        // 拿注入规则去扫一份 JSON 会把里面正常的英文说明全报一遍。
+        //
+        // 每一段带着它自己是哪一类：Codex 的 `notify` 在 config.toml 里（这份文件算 MCP），
+        // 可它是一条和 hook 一样不经模型就执行的命令
+        let v = parsed.as_ref().unwrap_or(&Val::Null);
+        let commands = || {
+            auto_commands(src, v)
+                .into_iter()
+                .map(|h| (h.command, true, sources::Kind::Hooks))
+        };
+        let targets: Vec<(String, bool, sources::Kind)> = match src.kind {
             sources::Kind::Skill
             | sources::Kind::Command
             | sources::Kind::Agent
-            | sources::Kind::Instructions => vec![(text.clone(), false)],
-            sources::Kind::Hooks => hooks_from(src, parsed.as_ref().unwrap_or(&Val::Null))
+            | sources::Kind::Instructions => vec![(text.clone(), false, src.kind)],
+            sources::Kind::Hooks => commands().collect(),
+            sources::Kind::Mcp => mcp_from(src, v)
                 .into_iter()
-                .map(|h| (h.command, true))
-                .collect(),
-            sources::Kind::Mcp => mcp_from(src, parsed.as_ref().unwrap_or(&Val::Null))
-                .into_iter()
+                .chain(project_mcp(src, v))
                 // 关掉的那些跑不起来，规则不扫它们；它们仍然在清单里
                 .filter(|m| m.enabled)
-                .map(|m| (format!("{} {}", m.command, m.args.join(" ")), true))
+                .map(|m| {
+                    (
+                        format!("{} {}", m.command, m.args.join(" ")),
+                        true,
+                        sources::Kind::Mcp,
+                    )
+                })
+                .chain(commands())
                 .collect(),
         };
-        for (hay, executes) in targets {
+        for (hay, executes, of) in targets {
             for rule in &rules.rules {
                 let Some(m) = rule.re.find(&hay) else {
                     continue;
                 };
                 let (line, excerpt) = line_of(&text, m.as_str());
-                // `msg!` 会把 `rule` 遮住，所以句子要用到的几段先取出来
+                // `msg!` 会把 `rule`、`kind` 遮住，所以句子要用到的几段先取出来
                 let why = rule.why.clone();
                 let name = rule.name.clone();
-                let kind_why = src.kind.why();
+                let (slug, label, kind_why) = (of.slug(), of.label(), of.why());
                 r.findings.push(Finding {
                     // **hook 和 MCP 里的危险命令是最高级**：它们不需要
                     // 模型参与就会被执行
@@ -658,21 +758,21 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                         Level::Medium
                     },
                     rule: rule.id.clone(),
-                    kind: src.kind,
+                    kind: of,
                     client: src.client.to_string(),
                     path: src.path.clone(),
                     line,
                     title: msg!(
                         "scan.rule",
-                        kind = src.kind.slug(),
+                        kind = slug,
                         rule = rule.id.clone()
                         => "{} matched rule “{}”",
-                        src.kind.label(),
+                        label,
                         name
                     ),
                     detail: msg!(
                         "scan.rule.detail",
-                        kind = src.kind.slug(),
+                        kind = slug,
                         rule = rule.id.clone()
                         => "{}. {}",
                         why,
