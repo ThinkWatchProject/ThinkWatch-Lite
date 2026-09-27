@@ -240,6 +240,13 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            // **数据目录先建出来，建成只有自己能读的**（见 `private_dir`）。下面头一个往里
+            // 写东西的（启动记号、提醒、连接列表）用的是 `create_dir_all`，新装的机器上
+            // 由它建出来的目录是默认权限；而 core 和 `private_dir` 都不动已经在的目录，
+            // 这份宽松就一直留着 —— 目录里的 config.yaml 放着上游的密钥和控制面的钥匙
+            if let Err(e) = private_dir::create(&data_dir()) {
+                tracing::warn!("建不出数据目录：{e:#}");
+            }
             // **语言最先定。**托盘、通知、窗口都要用它，而它们在下面陆续出现
             let saved = prefs::load(&data_dir());
             i18n::set(i18n::effective(saved.language));
