@@ -961,20 +961,18 @@ fn count(n: f64) -> String {
 }
 
 /// 多久之后重置。**只给一个量级**，和上游页的写法一样：读它是为了知道今天还够
-/// 不够用，不是为了对表
+/// 不够用，不是为了对表。**取整之后再定单位**：59.5 分钟是「1 小时」，不是「60 分钟」
 pub fn resets_in(secs: u64) -> String {
+    let [m, h, d] = [60.0, 3600.0, 86_400.0].map(|unit| (secs as f64 / unit).round() as u64);
     let (zh, en) = if secs == 0 {
         ("刚刚".to_string(), "now".to_string())
     } else if secs < 60 {
         ("1 分钟内".to_string(), "within 1 min".to_string())
-    } else if secs < 3600 {
-        let m = (secs as f64 / 60.0).round() as u64;
+    } else if m < 60 {
         (format!("{m} 分钟后"), format!("in {m} min"))
-    } else if secs < 86_400 {
-        let h = (secs as f64 / 3600.0).round() as u64;
+    } else if h < 24 {
         (format!("{h} 小时后"), format!("in {h} h"))
     } else {
-        let d = (secs as f64 / 86_400.0).round() as u64;
         (
             format!("{d} 天后"),
             if d == 1 {
@@ -987,43 +985,55 @@ pub fn resets_in(secs: u64) -> String {
     tr!(format!("{zh}重置"), format!("Resets {en}"))
 }
 
-/// 菜单栏上的 token 数，和概览的写法一样：`845`、`9.8k`、`123k`、`3.1M`
+/// `x` 按 `digits` 位小数写出来。**写出来的数到了 `limit` 就不算**（进位进到了下一档）：
+/// 比的是写出来的那个数，所以和它怎么舍入永远一致
+fn below(x: f64, digits: usize, limit: f64) -> Option<String> {
+    let s = format!("{x:.digits$}");
+    s.parse::<f64>().is_ok_and(|v| v < limit).then_some(s)
+}
+
+/// 菜单栏上的 token 数，和概览的写法一样：`845`、`9.8k`、`123k`、`3.1M`。
+///
+/// **先按这一档的精度取整，再看落在哪一档**：9,960 写一位小数是「10.0k」，那已经是下一档
+/// 的「10k」；999,600 取整是「1000k」，那是「1.0M」
 pub fn tokens_short(n: i64) -> String {
     let n = n.max(0);
     if n < 1_000 {
-        n.to_string()
-    } else if n < 10_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else if n < 1_000_000 {
-        format!("{}k", (n as f64 / 1_000.0).round() as i64)
-    } else if n < 1_000_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else {
-        format!("{:.1}B", n as f64 / 1_000_000_000.0)
+        return n.to_string();
+    }
+    let k = n as f64 / 1_000.0;
+    if let Some(s) = below(k, 1, 10.0) {
+        return format!("{s}k");
+    }
+    if k.round() < 1_000.0 {
+        return format!("{}k", k.round() as i64);
+    }
+    match below(n as f64 / 1_000_000.0, 1, 1_000.0) {
+        Some(s) => format!("{s}M"),
+        None => format!("{:.1}B", n as f64 / 1_000_000_000.0),
     }
 }
 
-/// 菜单栏上的费用。**位数少才放得下**：满 $100 去掉小数，满 $1000 写成 k
+/// 菜单栏上的费用。**位数少才放得下**：满 $100 去掉小数，满 $1000 写成 k。和 token 数
+/// 一样取整之后再定单位：$99.996 是「$100」，$9,960 是「$10k」
 pub fn cost_short(micros: i64) -> String {
     let d = micros.max(0) as f64 / 1_000_000.0;
-    if d < 100.0 {
-        format!("${d:.2}")
-    } else if d < 1_000.0 {
-        format!("${d:.0}")
-    } else if d < 10_000.0 {
-        format!("${:.1}k", d / 1_000.0)
-    } else {
-        format!("${:.0}k", d / 1_000.0)
+    if let Some(s) = below(d, 2, 100.0).or_else(|| below(d, 0, 1_000.0)) {
+        return format!("${s}");
+    }
+    match below(d / 1_000.0, 1, 10.0) {
+        Some(s) => format!("${s}k"),
+        None => format!("${:.0}k", d / 1_000.0),
     }
 }
 
-/// 菜单里的费用：地方够，满 $1000 之前都写到分
+/// 菜单里的费用：地方够，满 $1000 之前都写到分。$999.996 写到分是「$1000.00」，那已经是
+/// 满 $1000 的「$1,000」
 pub fn cost_long(micros: i64) -> String {
     let d = micros.max(0) as f64 / 1_000_000.0;
-    if d < 1_000.0 {
-        format!("${d:.2}")
-    } else {
-        format!("${}", grouped(d.round() as i64))
+    match below(d, 2, 1_000.0) {
+        Some(s) => format!("${s}"),
+        None => format!("${}", grouped(d.round() as i64)),
     }
 }
 
@@ -1346,6 +1356,45 @@ mod tests {
         assert_eq!(grouped(1234), "1,234");
         assert_eq!(elapsed(102_000), "1:42");
         assert_eq!(elapsed(3_800_000), "1:03:20");
+    }
+
+    /// **取整之后再定单位。**先定单位再取整，就会写出「10.0k」「1000k」「$10.0k」「60 分钟」
+    /// 这样多出一位、或者该进位却没进的数
+    #[test]
+    fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
+        for (n, want) in [
+            (9_949, "9.9k"),
+            (9_960, "10k"),
+            (9_999, "10k"),
+            (999_499, "999k"),
+            (999_500, "1.0M"),
+            (999_999, "1.0M"),
+            (999_949_999, "999.9M"),
+            (999_950_001, "1.0B"),
+        ] {
+            assert_eq!(tokens_short(n), want, "{n}");
+        }
+        for (micros, want) in [
+            (99_994_999, "$99.99"),
+            (99_996_000, "$100"),
+            (999_499_999, "$999"),
+            (999_600_000, "$1.0k"),
+            (9_949_000_000, "$9.9k"),
+            (9_960_000_000, "$10k"),
+        ] {
+            assert_eq!(cost_short(micros), want, "{micros}");
+        }
+        assert_eq!(cost_long(999_994_000), "$999.99");
+        assert_eq!(cost_long(999_996_000), "$1,000");
+        // 59.5 分钟往上是「1 小时」，23.5 小时往上是「1 天」，和上游页一样
+        assert_eq!(resets_in(3_569), "59 分钟后重置");
+        assert_eq!(resets_in(3_570), "1 小时后重置");
+        assert_eq!(resets_in(84_599), "23 小时后重置");
+        assert_eq!(resets_in(84_600), "1 天后重置");
+        with_lang(Lang::En, || {
+            assert_eq!(resets_in(3_570), "Resets in 1 h");
+            assert_eq!(resets_in(84_600), "Resets in 1 day");
+        });
     }
 
     #[test]
