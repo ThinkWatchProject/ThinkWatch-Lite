@@ -19,9 +19,11 @@ export function dur(ms: number) {
 }
 
 export function tokens(n: number) {
-  // 带缓存的长会话，缓存读取动辄几百万：写成「2698k」要数位数
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
-  return String(n);
+  // 带缓存的长会话，缓存读取动辄几百万：写成「2698k」要数位数。**先取整再定单位**：
+  // 999_600 取整是「1000k」，进了位就该写成「1.0M」
+  if (n < 1000) return String(n);
+  const k = (n / 1000).toFixed(0);
+  if (Number(k) < 1000) return `${k}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
 }
 

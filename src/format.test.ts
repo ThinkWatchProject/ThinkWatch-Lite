@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
 import {
   bucketStart,
+  compact,
   densify,
   latency,
   money,
@@ -69,6 +70,20 @@ describe("token", () => {
     // 还在跑的行、以及上游没报用量的行。0 会让它在排序里冒充一个测量结果
     expect(tokens(undefined, undefined)).toBe("—");
     expect(tokens(100, undefined)).toBe("—");
+  });
+
+  /**
+   * **先取整，再定单位。**按取整之前的值挑单位，9_960 写成「10.0k」、999_600 写成
+   * 「1000k」—— 同一列里别的数都是「12k」「1.2M」的写法，这两个读起来像另一种量。
+   */
+  it("取整进了位的，按下一档写", () => {
+    expect(compact(9_949)).toBe("9.9k");
+    expect(compact(9_960)).toBe("10k");
+    expect(compact(10_000)).toBe("10k");
+    expect(compact(999_499)).toBe("999k");
+    expect(compact(999_600)).toBe("1.0M");
+    expect(compact(999_950)).toBe("1.0M");
+    expect(compact(1_000_000)).toBe("1.0M");
   });
 });
 

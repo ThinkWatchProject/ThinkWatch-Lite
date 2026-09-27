@@ -476,6 +476,14 @@ describe("延迟", () => {
     expect(fmtMs(12_345)).toBe("12.3s");
     expect(fmtMs(123_456)).toBe("123s");
   });
+
+  /** 取整进了位的，按下一档的位数写：不是「10.00s」「100.0s」 */
+  it("取整之后再定位数", () => {
+    expect(fmtMs(9_994)).toBe("9.99s");
+    expect(fmtMs(9_996)).toBe("10.0s");
+    expect(fmtMs(99_949)).toBe("99.9s");
+    expect(fmtMs(99_960)).toBe("100s");
+  });
 });
 
 describe("模型的厂商标志", () => {

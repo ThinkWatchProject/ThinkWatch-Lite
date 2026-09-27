@@ -566,12 +566,17 @@ export function latencyRows(rows: readonly LatencyView[]): LatencyView[] {
  *
  * **不写成 `1,182ms`**：并排两列四位数的毫秒要逐位读，而「1.18s」一眼就是一秒出头
  * —— 这一栏要比的是快慢的量级和差距，不是个位上的那几毫秒（精确值在流量里）。
+ *
+ * **先取整再定位数**：9_996ms 按两位小数是「10.00s」，进了位就该按下一档写成「10.0s」；
+ * 99_960ms 同理是「100s」，不是「100.0s」。
  */
 export function fmtMs(ms: number): string {
   const n = Math.max(0, Math.round(ms));
   if (n < 1000) return `${n}ms`;
-  if (n < 10_000) return `${(n / 1000).toFixed(2)}s`;
-  if (n < 100_000) return `${(n / 1000).toFixed(1)}s`;
+  const two = (n / 1000).toFixed(2);
+  if (Number(two) < 10) return `${two}s`;
+  const one = (n / 1000).toFixed(1);
+  if (Number(one) < 100) return `${one}s`;
   return `${Math.round(n / 1000)}s`;
 }
 

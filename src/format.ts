@@ -56,11 +56,17 @@ export function when(atMs: number, now = Date.now()): string {
  * 四位数以上换 k：一列 `128000` 和 `463` 混排时，位数差本身会被误读成
  * 数量级差。而一个逗号分隔的 `514,567` 读起来是账本上的条目，不是一个
  * 能一眼掂量的量 —— 精确值留给悬停。
+ *
+ * **先按这一档的精度取整，再看它还在不在这一档。**按取整之前的值挑单位的话，
+ * 9_960 落在「一位小数的 k」那一档，写出来是「10.0k」；999_600 落在「整数 k」
+ * 那一档，写出来是「1000k」。取整之后进了位的，交给下一档去写（「10k」「1.0M」）。
  */
 export function compact(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  const tenths = (n / 1000).toFixed(1);
+  if (Number(tenths) < 10) return `${tenths}k`;
+  const k = Math.round(n / 1000);
+  if (k < 1000) return `${k}k`;
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
