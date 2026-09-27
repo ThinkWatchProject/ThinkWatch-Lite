@@ -279,8 +279,13 @@ impl Supervisor {
         // 先请后杀。一个卡死的进程可能连信号处理器都跑不了，也可能连控制面
         // 都不应答了 —— 只用温和那一档的话，它会一直留着。
         self.ask_to_exit(pid).await;
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        self.kill_now(pid);
+        // **等它走，走了就不杀。**以前是干等三秒、再按这个 pid 强杀：它听了请求早就退了
+        // 的话，守护循环已经在起下一个，这个号可能已经给了系统里别的进程。`wait_gone`
+        // 看的是守护循环报的状态：还是「运行中、这个 pid」，就是它手里那个子进程还没
+        // 退出、没被收走（收走之后它紧接着就换状态），这个号还是那个 core 的
+        if !self.wait_gone(pid, Duration::from_secs(3)).await {
+            self.kill_now(pid);
+        }
         Ok(())
     }
 
@@ -997,6 +1002,8 @@ mod tests {
     enum Acts {
         /// 一直跑到被杀掉
         Stays,
+        /// 一直跑，请它退出也不理（unix 上不理 SIGTERM；Windows 上本来就只能强杀）
+        IgnoresTheAsk,
         /// 当场退出：启动就崩
         Crashes,
     }
@@ -1013,6 +1020,8 @@ mod tests {
             let bin = dir.join("fake-core");
             let then = match acts {
                 Acts::Stays => "exec sleep 30",
+                // 忽略掉的信号在 exec 之后还是忽略的
+                Acts::IgnoresTheAsk => "trap '' TERM\nexec sleep 30",
                 Acts::Crashes => "exit 1",
             };
             let script = format!("#!/bin/sh\necho $$ >> '{}'\n{then}\n", starts.display());
@@ -1025,7 +1034,7 @@ mod tests {
         {
             let bin = dir.join("fake-core.cmd");
             let then = match acts {
-                Acts::Stays => "@ping -n 30 127.0.0.1 >nul",
+                Acts::Stays | Acts::IgnoresTheAsk => "@ping -n 30 127.0.0.1 >nul",
                 Acts::Crashes => "@exit /b 1",
             };
             let script = format!("@echo x>> \"{}\"\r\n{then}\r\n", starts.display());
@@ -1171,5 +1180,65 @@ mod tests {
         assert_eq!(next, Next::Stop);
         assert_eq!(s.state(), CoreState::Stopped);
         assert_eq!(starts(&started), 0);
+    }
+
+    /// 卡死的 core 听了请求自己退了：**等到它走就收手**，不再干等三秒、再按那个 pid 强杀 ——
+    /// 那时守护循环已经在起下一个，这个号可能已经是系统里别的进程的了。
+    ///
+    /// 只在 unix 上：这里的假 core 没有控制面，温和那一档只能走信号
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_wedged_core_that_leaves_when_asked_is_not_killed_afterwards() {
+        let s = Arc::new(Supervisor::new(
+            long_runner("wedged-leaves"),
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+
+        let t0 = Instant::now();
+        s.report_wedged().await.unwrap();
+        assert!(
+            t0.elapsed() < Duration::from_secs(2),
+            "它走了还等了 {:?} 才回来",
+            t0.elapsed()
+        );
+        // 照一次失败算，守护循环接着起下一个
+        assert_eq!(looped.await.unwrap(), Next::Again);
+        assert!(
+            matches!(s.state(), CoreState::Restarting { attempt: 1, .. }),
+            "{:?}",
+            s.state()
+        );
+    }
+
+    /// 请它退出也不走的，**照样强杀、换掉**：收手只收在它自己走了的时候
+    #[tokio::test]
+    async fn a_wedged_core_that_ignores_the_ask_is_still_killed() {
+        let (bin, _) = counting_core("wedged-stays", Acts::IgnoresTheAsk);
+        let s = Arc::new(Supervisor::new(
+            bin,
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        ));
+        let looped = {
+            let s = s.clone();
+            tokio::spawn(async move { s.run_once(false).await.unwrap() })
+        };
+        until_running(&s).await;
+        s.report_wedged().await.unwrap();
+        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+            .await
+            .expect("强杀之后它还在")
+            .unwrap();
+        assert_eq!(next, Next::Again);
     }
 }
