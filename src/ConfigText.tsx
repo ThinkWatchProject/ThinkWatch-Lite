@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { call } from "@/control";
-import YamlEditor from "./YamlEditor";
 import { locateEntry, type ConfigFocus } from "./configLocate";
 import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
@@ -11,6 +10,13 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configTextText } from "./ConfigText.i18n";
 import { errorText } from "@/i18n/core.i18n";
+
+/**
+ * 编辑器**打开这个对话框时才加载**。CodeMirror 连同 YAML 语法有几百 KB，整个应用
+ * 只有这里用：放进主包的话，每次打开主窗口都要多解析一遍它。框由下面先画出来，
+ * 加载完编辑器填进去，版面不跳。
+ */
+const YamlEditor = lazy(() => import("./YamlEditor"));
 
 /**
  * 直接编辑 config.yaml。
@@ -147,14 +153,16 @@ export default function ConfigTextMode({
         </Alert>
       )}
 
-      <div className="min-h-0 flex-1">
-        <YamlEditor
-          value={draft}
-          onChange={setDraft}
-          onCursor={setCursor}
-          focusRange={range}
-          errorLine={errorLine}
-        />
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900">
+        <Suspense fallback={null}>
+          <YamlEditor
+            value={draft}
+            onChange={setDraft}
+            onCursor={setCursor}
+            focusRange={range}
+            errorLine={errorLine}
+          />
+        </Suspense>
       </div>
 
       {/*

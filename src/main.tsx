@@ -2,9 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import App from "./App";
-import UpdateWindow from "./UpdateWindow";
-import PickerWindow from "./connection/PickerWindow";
 import { setLang, type Lang } from "./i18n";
 import "./index.css";
 
@@ -25,7 +22,20 @@ function windowLabel(): string {
 }
 
 const label = windowLabel();
-const Root = label === "update" ? UpdateWindow : label === "picker" ? PickerWindow : App;
+
+/*
+  **每个窗口只加载自己要画的那一份。**同一份页面、按窗口名分三种，以前三种全打在一个
+  包里：更新窗口、连接选择窗口都要把整个主界面（图表、日历、配置编辑器……）下载、解析
+  一遍，才画得出一个小窗。
+
+  **等加载完再挂，不用 `lazy` + `Suspense`**：挂上去的第一帧就是那个窗口本身，中间没有
+  一个空白的占位帧。截图页（scripts/shots）`await import` 这个入口时也就等到了它。
+*/
+const { default: Root } = await (label === "update"
+  ? import("./UpdateWindow")
+  : label === "picker"
+    ? import("./connection/PickerWindow")
+    : import("./App"));
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

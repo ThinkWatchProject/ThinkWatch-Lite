@@ -174,10 +174,6 @@ export default function YamlEditor({
     });
   }, [errorLine]);
 
-  return (
-    <div
-      ref={host}
-      className="h-full min-h-0 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900"
-    />
-  );
+  // 边框、底色由外面的框画：这个组件是按需加载的，加载完之前那个框就得在（见 ConfigText）
+  return <div ref={host} className="h-full min-h-0" />;
 }
