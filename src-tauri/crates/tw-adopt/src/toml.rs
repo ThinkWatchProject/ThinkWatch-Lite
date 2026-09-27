@@ -22,7 +22,20 @@ pub enum TErr {
 
 fn parse(text: &str) -> Result<DocumentMut, TErr> {
     text.parse::<DocumentMut>()
-        .map_err(|e| TErr::Syntax(e.to_string()))
+        .map_err(|e| TErr::Syntax(describe(text, &e)))
+}
+
+/// 解析错误的说法：**第几行第几列、为什么，不带原文。**`toml_edit` 自己的说法会把
+/// 出错的那一行整行抄进来，而忘了加引号的那一行多半正是一把密钥
+/// （`experimental_bearer_token = sk-…`）—— 这句话会一路显示到界面上
+fn describe(text: &str, e: &toml_edit::TomlError) -> String {
+    let why = e.message().trim().replace('\n', "; ");
+    let Some(before) = e.span().and_then(|s| text.get(..s.start)) else {
+        return why;
+    };
+    let line = before.matches('\n').count() + 1;
+    let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+    format!("line {line}, column {column}: {why}")
 }
 
 fn to_toml(v: &Val) -> TValue {
@@ -357,6 +370,17 @@ trust_level = "trusted"
             set("[[[", &["a"], &Val::s("v")),
             Err(TErr::Syntax(_))
         ));
+    }
+
+    #[test]
+    fn a_syntax_error_says_where_without_quoting_the_line() {
+        // 忘了加引号的一把密钥：报错会显示在界面上，不能把它抄进去
+        let src = "model = \"gpt-5\"\nexperimental_bearer_token = sk-proj-SECRET123\n";
+        let Err(TErr::Syntax(why)) = set(src, &["a"], &Val::s("v")) else {
+            panic!("该是语法错误");
+        };
+        assert!(!why.contains("SECRET"), "{why}");
+        assert!(why.starts_with("line 2, column 29: "), "{why}");
     }
 
     #[test]

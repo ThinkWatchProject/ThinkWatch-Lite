@@ -210,18 +210,27 @@ fn write_atomic(
     // 临时文件**生来就是 0600**：里面已经是换上的网关密钥。写完再放宽成原文件
     // 的权限位（用户自己给的，`chmod` 不受 umask 影响，照原样还回去）。
     let _ = std::fs::remove_file(&tmp);
-    write_private(&tmp, text).map_err(w)?;
-    #[cfg(unix)]
-    if let Some(mode) = keep_mode.filter(|m| *m != 0o600) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode)).map_err(w)?;
+    let written = (|| {
+        write_private(&tmp, text).map_err(w)?;
+        #[cfg(unix)]
+        if let Some(mode) = keep_mode.filter(|m| *m != 0o600) {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode)).map_err(w)?;
+        }
+        #[cfg(not(unix))]
+        let _ = keep_mode;
+        replace(&tmp, real).map_err(|source| ForeignError::Write {
+            path: real.to_path_buf(),
+            source,
+        })
+    })();
+    // 没挪成（目标只读、被别的程序占着）就把临时文件收掉：里面是换上的网关密钥，
+    // 而它就躺在用户的配置旁边 —— 那个目录可能正是一个 git 管着的 dotfiles 仓库。
+    // 名字带着进程号，不收的话每失败一次就多留一份
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
-    #[cfg(not(unix))]
-    let _ = keep_mode;
-    replace(&tmp, real).map_err(|source| ForeignError::Write {
-        path: real.to_path_buf(),
-        source,
-    })
+    written
 }
 
 #[cfg(windows)]
@@ -618,6 +627,25 @@ mod tests {
         write_atomic(&p, "after", None).expect("覆盖一个已存在的文件");
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "after");
         // 临时文件没留下
+        let strays: Vec<_> = std::fs::read_dir(d.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("thinkwatch-"))
+            .collect();
+        assert!(strays.is_empty(), "留下了临时文件：{strays:?}");
+    }
+
+    /// 挪不过去的时候，装着网关密钥的临时文件不能留在用户的配置旁边
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_replace_leaves_no_temp_file_behind() {
+        let d = tempfile::tempdir().unwrap();
+        // 目标是个不空的目录：`rename` 一定失败
+        let p = d.path().join("c.json");
+        std::fs::create_dir(&p).unwrap();
+        std::fs::write(p.join("inside"), "x").unwrap();
+        assert!(write_atomic(&p, "tw-secret", None).is_err());
         let strays: Vec<_> = std::fs::read_dir(d.path())
             .unwrap()
             .filter_map(|e| e.ok())

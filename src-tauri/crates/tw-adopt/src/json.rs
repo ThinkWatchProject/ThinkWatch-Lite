@@ -248,13 +248,20 @@ fn scan_str(b: &[u8], i: usize) -> Result<(String, usize), JErr> {
                             // 代理对。落单的高代理没法变成 char，用替换符
                             // 兜住 —— 解码只服务于比较和展示，原字节永远
                             // 还在文件里。
-                            if b.get(j) == Some(&b'\\') && b.get(j + 1) == Some(&b'u') {
-                                let lo = hex(b, j + 2)?;
-                                j += 6;
-                                char::from_u32(0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00))
-                                    .unwrap_or('\u{fffd}')
-                            } else {
-                                '\u{fffd}'
+                            //
+                            // 后面跟着的 `\u` 不是低代理（高代理后面紧跟一个普通字符的
+                            // 转义）时也一样：高代理换成替换符，那个 `\u` 留给下一轮照常解
+                            let lo = (b.get(j) == Some(&b'\\') && b.get(j + 1) == Some(&b'u'))
+                                .then(|| hex(b, j + 2))
+                                .transpose()?
+                                .filter(|lo| (0xDC00..0xE000).contains(lo));
+                            match lo {
+                                Some(lo) => {
+                                    j += 6;
+                                    char::from_u32(0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00))
+                                        .unwrap_or('\u{fffd}')
+                                }
+                                None => '\u{fffd}',
                             }
                         } else {
                             char::from_u32(hi).unwrap_or('\u{fffd}')
@@ -384,11 +391,10 @@ fn parse_value(b: &[u8], i: usize) -> Result<(Node, usize), JErr> {
                 "null" => Body::Null,
                 "" => return Err(err(i, "a value is missing here")),
                 n if n.parse::<f64>().is_ok() => Body::Num(n.to_string()),
-                other => {
-                    return Err(err(
-                        start,
-                        &format!("a literal that is not recognized: {other}"),
-                    ));
+                // **不把那段字面量写进报错**：它会显示在界面上，而一个没加引号
+                // （或者用了单引号）的值多半正是一把密钥。位置在 `at` 里
+                _ => {
+                    return Err(err(start, "a literal that is not recognized"));
                 }
             };
             Ok((
@@ -617,13 +623,11 @@ fn insert_member(
         );
         Ok(splice(text, at..at, &piece))
     } else {
-        let inner = &text[at..obj.span.end - 1];
+        // 花括号之间只可能是空白或注释（一个成员都没有）：不加逗号。`{ }` 里补成
+        // `{"k": v, }` 的话，宽松的解析器照收、写回校验照过，而 Claude Code、
+        // Claude Desktop 用的 `JSON.parse` 整个文件都不认
         let piece = format!("{}: {}", escape(key), render(v, &base, unit));
-        if inner.is_empty() {
-            Ok(splice(text, at..at, &piece))
-        } else {
-            Ok(splice(text, at..at, &format!("{piece},")))
-        }
+        Ok(splice(text, at..at, &piece))
     }
 }
 
@@ -921,6 +925,30 @@ mod tests {
             set("{\n}\n", &["a"], &Val::Num("1".into())).unwrap(),
             "{\n  \"a\": 1\n}\n"
         );
+    }
+
+    #[test]
+    fn an_empty_object_with_space_inside_gets_no_trailing_comma() {
+        let out = set("{\"env\": { }}", &["env", "A"], &Val::s("1")).unwrap();
+        assert_eq!(out, "{\"env\": {\"A\": \"1\" }}");
+        // Claude Code、Claude Desktop 读配置用的是严格的 JSON
+        serde_json::from_str::<serde_json::Value>(&out).unwrap();
+        assert_eq!(remove(&out, &["env", "A"]).unwrap(), "{\"env\": { }}");
+    }
+
+    /// 一个 `\u` 转义。运行时拼：直接写进源码的话，有的编辑工具会先把它解成字符
+    fn u(hex: &str) -> String {
+        format!("\\u{hex}")
+    }
+
+    #[test]
+    fn a_lone_high_surrogate_does_not_swallow_the_next_escape() {
+        let src = format!("{{\"u\": \"{}{}\"}}", u("d800"), u("0041"));
+        assert_eq!(get(&src, &["u"]).unwrap(), Some(Val::s("\u{fffd}A")));
+        let src = format!("{{\"u\": \"{}x\"}}", u("d800"));
+        assert_eq!(get(&src, &["u"]).unwrap(), Some(Val::s("\u{fffd}x")));
+        let src = format!("{{\"u\": \"{}{}\"}}", u("d83d"), u("de00"));
+        assert_eq!(get(&src, &["u"]).unwrap(), Some(Val::s("😀")));
     }
 
     #[test]
