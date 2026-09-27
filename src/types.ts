@@ -374,7 +374,12 @@ export interface Dashboard {
 export function usd(micros: number): string {
   const v = micros / 1e6;
   if (v === 0) return "$0";
-  if (v < 0.01) return `$${v.toFixed(4)}`;
-  if (v < 1) return `$${v.toFixed(3)}`;
+  if (v < 0) return `-${usd(-micros)}`;
+  // 四位小数也写不下：写「不到 $0.0001」。**写成 $0.0000 一样是在说它免费** ——
+  // 一次两百个 token 的小调用就在这一档
+  if (v < 0.00005) return "<$0.0001";
+  // 挡位按四舍五入之后的数挑，不然 $0.009996 写成「$0.0100」、$0.9996 写成「$1.000」
+  if (v < 0.00995) return `$${v.toFixed(4)}`;
+  if (v < 0.9995) return `$${v.toFixed(3)}`;
   return `$${v.toFixed(2)}`;
 }
