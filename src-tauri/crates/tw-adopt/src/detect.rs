@@ -323,7 +323,7 @@ fn running_since(markers: &[&str]) -> Vec<u64> {
         let name = String::from_utf16_lossy(
             &e.szExeFile[..e.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)],
         );
-        if markers.iter().any(|m| name.contains(m))
+        if markers.iter().any(|m| exe_matches(&name, m))
             && let Some(ms) = started_ms(e.th32ProcessID)
         {
             out.push(ms);
@@ -334,6 +334,26 @@ fn running_since(markers: &[&str]) -> Vec<u64> {
     // SAFETY: 快照句柄，只关这一次。
     unsafe { CloseHandle(snap) };
     out
+}
+
+/// Windows 的进程表里这个可执行文件（`claude.exe`、`codex-x86_64-pc-windows-msvc.exe`）
+/// 是不是这个标记的。
+///
+/// **认名字本身，不认「里面有这几个字母」**：`TombRaider.exe` 里有 `aider`，但它不是
+/// Aider。名字去掉扩展名（`.exe`、`.EXE` 都算）之后，要么就是标记，要么以标记开头、
+/// 紧跟一个分隔符 —— 带目标三元组的 npm 二进制是后一种。
+///
+/// **名字本身的大小写照原样比。**Windows 的文件名不分大小写，可 Claude Desktop 是
+/// `Claude.exe`、Claude Code 是 `claude.exe`，这两个客户端靠的正是这一点区分（见表里的
+/// `process`）；不分的话，诊断会拿另一个应用的进程去判断「重启过没有」。
+#[cfg(any(windows, test))]
+fn exe_matches(exe: &str, marker: &str) -> bool {
+    let stem = match exe.len().checked_sub(4) {
+        Some(i) if exe.is_char_boundary(i) && exe[i..].eq_ignore_ascii_case(".exe") => &exe[..i],
+        _ => exe,
+    };
+    stem.strip_prefix(marker)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['-', '_', '.', ' ']))
 }
 
 /// 「查过了，没有同名变量」那一条的标题和正文。
@@ -1184,6 +1204,42 @@ mod tests {
             // 「Zed」大写认不出 Linux 上的编辑器，「zed」包含又会认下 zeitgeist
             assert_eq!(hits(by("zed").process), ["zed-editor"]);
         }
+    }
+
+    /// Windows 的进程名是可执行文件的文件名。**认名字本身，不认「里面有这几个字母」**：
+    /// `TombRaider.exe` 不是 Aider；Claude Desktop 和 Claude Code 只差一个大写字母
+    #[test]
+    fn a_windows_executable_is_matched_by_its_own_name() {
+        let by = |id: &str| adoptable().into_iter().find(|c| c.id == id).unwrap();
+        let is = |exe: &str, id: &str| by(id).process.iter().any(|m| exe_matches(exe, m));
+        for (exe, id) in [
+            ("aider.exe", "aider"),
+            ("aider.EXE", "aider"),
+            ("aider", "aider"),
+            ("claude.exe", "claude-code"),
+            ("Claude.exe", "claude-desktop"),
+            ("codex.exe", "codex"),
+            ("codex-x86_64-pc-windows-msvc.exe", "codex"),
+            ("opencode.exe", "opencode"),
+            ("dsh.exe", "dsh"),
+        ] {
+            assert!(is(exe, id), "{exe} 该认作 {id}");
+        }
+        for (exe, id) in [
+            ("TombRaider.exe", "aider"),
+            ("raider.exe", "aider"),
+            ("Claude.exe", "claude-code"),
+            ("claude.exe", "claude-desktop"),
+            ("myclaude.exe", "claude-code"),
+            ("codexbar.exe", "codex"),
+            ("node.exe", "codex"),
+        ] {
+            assert!(!is(exe, id), "{exe} 不是 {id}");
+        }
+        // 表里 Zed 的标记按平台不同；Windows 上是 `Zed`，它的命令行前端 `zed.exe` 不算
+        assert!(exe_matches("Zed.exe", "Zed"));
+        assert!(!exe_matches("zed.exe", "Zed"));
+        assert!(!exe_matches("中文.exe", "aider"), "多字节的名字不该切坏");
     }
 
     /// macOS 的 `comm` 是完整路径，可以带空格。
