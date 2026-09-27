@@ -520,28 +520,61 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Tauri 起不来")
         .run(|app, event| {
-            // Dock 和 ⌘Tab 是 macOS 的概念，下面那一段只在那里有事做。
-            #[cfg(not(target_os = "macos"))]
-            let _ = app;
             // 点 Dock 图标 / 从 ⌘Tab 回来时把窗口叫回来。没有这条，一个
             // 已经隐藏窗口的菜单栏应用在 Dock 上点了没反应。
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 let _ = show_main_window(app);
             }
-            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
-                // 没有存活窗口不等于要退出 —— 那正是「关窗口留菜单栏」
-                // 的状态。只有真的收到退出码才走清理。
-                if code.is_none() {
-                    api.prevent_exit();
-                } else {
-                    // core 是我们 spawn 的子进程，`kill_on_drop` 会带走它。
-                    // 但显式说一句，因为这条是「一个程序」原则的另一半。
-                    tracing::info!("退出，core 跟着走");
+            match event {
+                tauri::RunEvent::ExitRequested { code, api, .. } => {
+                    // 没有存活窗口不等于要退出 —— 那正是「关窗口留菜单栏」
+                    // 的状态。只有真的收到退出码才走清理。
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
                 }
+                // 真要退了：「一个程序」原则的另一半，core 跟着走
+                tauri::RunEvent::Exit => stop_core_on_exit(app),
+                _ => {}
             }
         });
 }
+
+/// 退出前先请本机的 core 退出、等它走，**至多等 [`EXIT_WAIT`]**。
+///
+/// 靠别的都带不走它：进程是 `exit` 退的，运行时不会被析构，守护手上那个子进程的
+/// `kill_on_drop` 轮不到（以前这里的注释以为轮得到）。真正让它跟着退的是它自己的
+/// `--parent` 守望：每两秒看一次父进程还在不在，没了就当场 `exit` —— 不收尾，锁文件
+/// 留在原地。这里请它照正常的路子退（控制面，unix 上再加信号），它自己收好尾；等不到
+/// 就强杀。再等不到也不拖着退出，交给那条守望。
+///
+/// 已经停着（连着远程、装更新前停过）就立刻回来。
+fn stop_core_on_exit(app: &tauri::AppHandle) {
+    let Some(st) = app.try_state::<AppState>() else {
+        return;
+    };
+    // 这个回调跑在主线程的事件循环上，不在运行时里。万一在，`block_on` 会 panic ——
+    // 那就不等了，交给守望
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return;
+    }
+    let sup = st.supervisor.clone();
+    // 在主线程上等：停它的是守护循环（在运行时的工作线程上）和控制面的一次请求，
+    // 都不需要主线程
+    tauri::async_runtime::block_on(async move {
+        let stopped = tokio::time::timeout(EXIT_WAIT, sup.stop_and_wait(EXIT_GRACE)).await;
+        if stopped.is_err() {
+            tracing::warn!(?EXIT_WAIT, "退出时 core 没按时停下，交给它的 --parent 守望");
+        }
+    });
+}
+
+/// 退出时请 core 退出之后，等它自己走多久，过了就强杀
+const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 退出时为停 core 最多拖多久。卡死的 core 不该让「退出」也跟着卡住
+const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// 盯住客户端的配置面（`scan::spawn_watcher`）。事件交给界面（`local-event`），
 /// 新出现的可疑内容同时进通知总线。监视本身放进应用的状态里拿着，放掉它就停了。
