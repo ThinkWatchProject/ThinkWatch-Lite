@@ -177,7 +177,9 @@ fn mode_of(path: &Path) -> Option<u32> {
 ///
 /// 不强行改成 0600：那超出了「只改 endpoint 和 key 字段」的边界。权限
 /// 太松就报告给用户，让他自己决定 —— 报告是我们的职责，修改是他的权利。
-fn write_atomic(
+///
+/// `keep_mode` 是 `None` 时新文件就是临时文件生来的 `0600`（我们自己的接管记录走这条）。
+pub(crate) fn write_atomic(
     real: &Path,
     text: impl AsRef<[u8]>,
     keep_mode: Option<u32>,

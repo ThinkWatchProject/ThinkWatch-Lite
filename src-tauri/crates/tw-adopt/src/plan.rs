@@ -347,10 +347,18 @@ pub(crate) fn adopt_file(
     // —— 现在文件里的正是我们上次写进去的。
     let real = foreign::resolve(&path)?;
     let side = sentinel::sidecar_path(&real);
-    let prior_rec: Option<SidecarRecord> = std::fs::read_to_string(&side)
-        .ok()
-        .and_then(|t| serde_json::from_str::<SidecarRecord>(&t).ok())
-        .filter(|r| r.client == client);
+    // **记录在、却读不出来或者是别人的，就不接管**，和还原一样拒绝：当成「没接管过」
+    // 的话，此刻文件里的网关地址和密钥会被记成「原值」（见 [`Plan::prior`]）
+    let prior_rec = match read_record(client, &side)? {
+        Some(r) if r.client != client => {
+            return Err(PlanError::ForeignSidecar {
+                path: side,
+                other: r.client,
+                client: client.into(),
+            });
+        }
+        r => r,
+    };
     let prior_originals = match &prior_rec {
         Some(r) => Some(originals_from(r, fmt, client)?),
         None => None,
@@ -727,14 +735,11 @@ pub(crate) fn restore_file_plan(
         source,
     })?;
     let side = sentinel::sidecar_path(&real);
-    let rec: SidecarRecord = match std::fs::read_to_string(&side) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| parse_err(client, e))?,
-        Err(_) => {
-            return Err(PlanError::NoRecord {
-                client: client.into(),
-                path: side,
-            });
-        }
+    let Some(rec) = read_record(client, &side)? else {
+        return Err(PlanError::NoRecord {
+            client: client.into(),
+            path: side,
+        });
     };
     if rec.client != client {
         return Err(PlanError::ForeignSidecar {
@@ -904,18 +909,36 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 一份文件旁边的接管记录。**没有是 `None`；在却读不出来、解析不了是错**，不是「没有」。
+///
+/// 接管和还原都从这里读，所以两边对一份坏记录说的是同一句话（解析不了的那一句带上
+/// 记录的路径：用户要去看、去删的是它，不是配置文件本身）。当成「没有」对还原来说是
+/// 找不到原值，对接管来说更糟 —— 见 [`Plan::prior`]。
+pub(crate) fn read_record(client: &str, side: &Path) -> Result<Option<SidecarRecord>, PlanError> {
+    let text = match std::fs::read_to_string(side) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(PlanError::Read {
+                client: client.into(),
+                source: ForeignError::Read {
+                    path: side.to_path_buf(),
+                    source,
+                },
+            });
+        }
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| parse_err(client, format!("{}: {e}", side.display())))
+}
+
+/// 写接管记录。**原子地换上去**（临时文件 + rename，和配置文件同一条路）：写到一半
+/// 断电的话，留下的是上一份完整的记录，而不是半截 —— 半截的记录读不出来，那个文件
+/// 就既还原不了、也不能再接管。临时文件生来就是 `0600`，换上去之后仍然是。
 fn write_sidecar(path: &Path, rec: &SidecarRecord) -> Result<(), ForeignError> {
     let text = serde_json::to_string_pretty(rec).unwrap_or_default();
-    crate::foreign::write_private(path, text.as_bytes()).map_err(|source| ForeignError::Write {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+    crate::foreign::write_atomic(path, text.as_bytes(), None)
 }
 
 fn rollback(a: &Applied) -> std::io::Result<()> {

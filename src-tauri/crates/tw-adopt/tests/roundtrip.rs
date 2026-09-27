@@ -981,6 +981,100 @@ fn re_adopting_codex_also_keeps_the_first_record() {
     );
 }
 
+/// 接管记录在、却读不出来（写到一半断了电、被别的工具改坏了）：**不接管**，和还原
+/// 一样拒绝。当成「没接管过」的话，此刻文件里我们写的网关地址和密钥会被记成原值，
+/// 之后的还原把用户还原到网关上 —— 每一步看起来都成功了
+#[test]
+fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    let broken = "{ \"what_this_file_is\": \"半截";
+    std::fs::write(&side, broken).unwrap();
+    let path = b.home.join(".claude/settings.json");
+    let before = read(&path);
+
+    let g = Gateway {
+        base: "http://127.0.0.1:9999".into(),
+        ..gw()
+    };
+    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    // 还原早就这么说，界面有这一句的译文；说的是记录那个文件
+    let r = plan_restore(&c, &b.home).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.parse_failed");
+    assert_eq!(r.msg().code, e.msg().code);
+    assert!(
+        e.to_string().contains("settings.json.thinkwatch.json"),
+        "{e}"
+    );
+    assert_eq!(read(&path), before, "拒绝了还是改了配置");
+    assert_eq!(read(&side), broken, "拒绝了还是盖掉了那份记录");
+}
+
+/// 记录是另一个客户端的（两个客户端被指到了同一个文件上）：不接管，也不盖掉它 ——
+/// 那一个的还原全靠这份记录
+#[test]
+fn a_record_that_belongs_to_another_client_stops_a_takeover() {
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let theirs = serde_json::to_string_pretty(&tw_adopt::sentinel::SidecarRecord::new(
+        "codex",
+        1,
+        "/nowhere/backup",
+        false,
+        &[tw_adopt::sentinel::Original::missing("model_provider")],
+    ))
+    .unwrap();
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    std::fs::write(&side, &theirs).unwrap();
+
+    let e = plan_adopt(&c, &b.home, &gw()).unwrap_err();
+    assert!(
+        matches!(e, tw_adopt::plan::PlanError::ForeignSidecar { .. }),
+        "{e}"
+    );
+    assert_eq!(e.msg().code, "adopt.plan.foreign_record");
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE);
+    assert_eq!(read(&side), theirs);
+}
+
+/// 接管记录是**换上去**的，不是原地截断重写：写到一半断了电，留下的是上一份完整的
+/// 记录。换上去的那一份仍然只有自己能读
+#[cfg(unix)]
+#[test]
+fn the_record_is_replaced_whole_rather_than_rewritten_in_place() {
+    use std::os::unix::fs::MetadataExt;
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let side = b.home.join(".claude/settings.json.thinkwatch.json");
+    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let first = std::fs::metadata(&side).unwrap().ino();
+
+    let g = Gateway {
+        base: "http://127.0.0.1:9999".into(),
+        ..gw()
+    };
+    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let meta = std::fs::metadata(&side).unwrap();
+    assert_ne!(meta.ino(), first, "记录是在原文件上截断重写的");
+    assert_eq!(meta.mode() & 0o777, 0o600);
+    let strays: Vec<_> = std::fs::read_dir(b.home.join(".claude"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(strays.is_empty(), "留下了临时文件：{strays:?}");
+    // 重复接管照常：还原回到的是第一次之前的样子
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE);
+}
+
 // ---- opencode：v1 的写法两个版本都认，v2 原生的那一条在就改它 ----------
 
 /// 刚装好、用过一阵的 `opencode.jsonc`：带注释、别的 provider、MCP。
