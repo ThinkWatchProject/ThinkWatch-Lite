@@ -221,6 +221,12 @@ describe("趋势图和模型排行", () => {
   const d = dashboard(since, groups);
   const base = { d, live: false, bucketMs: HOUR, rangeMs: DAY, samples: [], fails: [], now, prevStack: [], t };
 
+  it("趋势那两样取不到（null）时不报错，也排不出任何模型", () => {
+    const tr = buildTrend({ ...base, d: { ...d, buckets: null, buckets_by_model: null }, by: "cost" });
+    expect(tr.ranking).toEqual([]);
+    expect(tr.keys).toEqual([]);
+  });
+
   it("按 token 排：前五项各一层，其余合并成「其他」，排行从大到小", () => {
     const tr = buildTrend({ ...base, by: "token" });
     expect(tr.ranking.map((r) => r.name)).toEqual(["a", "b", "c", "d", "e", t.other]);
@@ -445,6 +451,10 @@ describe("各模型的缓存", () => {
     expect(rows.map((r) => r.name)).toEqual(["b", "a", t.unknownModel]);
     expect(rows[0]).toMatchObject({ ctx: 1000, hit: 0.9 });
     expect(rows[1]).toMatchObject({ read: 80, plain: 110, write: 10, ctx: 200, hit: 0.4 });
+  });
+
+  it("按模型那份取不到（null）时一行也不列，不报错", () => {
+    expect(cacheByModel({ ...dashboard(0, []), buckets_by_model: null }, t.unknownModel)).toEqual([]);
   });
 });
 

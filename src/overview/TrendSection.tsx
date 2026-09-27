@@ -91,9 +91,15 @@ export function TrendSection({
   const ticks: Tick[] = live
     ? liveTicks(t.liveTicks, t.now)
     : historyTicks(d.since_ms, bucketMs, trend.grid.length, t.now);
+  /*
+    **取不到不是没有。**历史档那两样取数失败（`null`）时照样补空桶的话，画出来是一张
+    全零的图、排行里一个模型也没有 —— 读作「这段时间没有请求」，是编出来的零。这时
+    图和排行都写「暂时取不到」。实时档的图来自事件流，不受影响
+  */
+  const unavailable = !live && (d.buckets === null || d.buckets_by_model === null);
   /** 图画出来了才有纵轴那一栏（见 `StackedArea` 的空态） */
-  const axis = trend.keys.length > 0 && trend.rows.length > 0 ? Y_AXIS_WIDTH : 0;
-  const failures = trend.grid.some((g) => g.failed > 0);
+  const axis = !unavailable && trend.keys.length > 0 && trend.rows.length > 0 ? Y_AXIS_WIDTH : 0;
+  const failures = !unavailable && trend.grid.some((g) => g.failed > 0);
   const openFailed = () => nav.open("requests", { grouped: false, filter: { failedOnly: true } });
 
   return (
@@ -122,14 +128,14 @@ export function TrendSection({
         }
       >
         <StackedArea
-          data={trend.rows}
+          data={unavailable ? [] : trend.rows}
           keys={trend.keys}
           colors={trend.colors}
           tips={trend.tips}
           // 指着的那一项被挤出了前几名（实时档）：不再突出谁，免得整张图一起淡下去
           highlight={focus !== null && trend.keys.includes(focus) ? focus : null}
           height={CHART_H}
-          empty={live ? t.waiting : t.noRequests}
+          empty={unavailable ? t.trendUnavailable : live ? t.waiting : t.noRequests}
           /*
             **纵轴的单位跟着口径走，和悬停里那句一致。**费用那一路的图值是千分之一
             美元（见 `buildTrend`），刻度要换回微分再格式化。
@@ -147,7 +153,7 @@ export function TrendSection({
           （见 `Y_AXIS_WIDTH`）。图空着的时候没有纵轴，就铺满。
         */}
         <div style={{ marginRight: axis }}>
-          <FailureStrip grid={trend.grid} stepMs={live ? LIVE_BUCKET_MS : bucketMs} onOpen={openFailed} />
+          <FailureStrip grid={unavailable ? [] : trend.grid} stepMs={live ? LIVE_BUCKET_MS : bucketMs} onOpen={openFailed} />
           <TickRow ticks={ticks} live={live} axis={axis} />
         </div>
         {/* 这一行有没有话说都占一行高：少一句就把下面整块往上提，正是切换时的那种来回动 */}
@@ -163,11 +169,11 @@ export function TrendSection({
 
       <PageSection title={t.models} actions={live ? <Scope>{t.liveWindow}</Scope> : undefined}>
         <ModelRanking
-          rows={trend.ranking}
+          rows={unavailable ? [] : trend.ranking}
           by={by}
           topBar={trend.topBar}
           scope={scope}
-          empty={live ? t.waiting : t.noRequests}
+          empty={unavailable ? t.rankingUnavailable : live ? t.waiting : t.noRequests}
           onFocus={setFocus}
         />
       </PageSection>

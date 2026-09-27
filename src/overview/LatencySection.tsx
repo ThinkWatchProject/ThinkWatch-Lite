@@ -48,9 +48,13 @@ export function LatencySection({
 }) {
   const t = useText(overviewText);
   const nav = useNav();
+  // 取不到（`null`）不是样本不足：按模型那份取不到，整块写「暂时取不到」；按上游那份
+  // 取不到，就只画按模型的那一栏
+  const byModel = d.latency ?? [];
+  const byUpstream = d.latency_by_provider ?? [];
   // 两栏的条按同一把尺子画，才能横着比
-  const max = Math.max(1, ...d.latency.map((l) => l.p95), ...d.latency_by_provider.map((l) => l.p95)) * 1.04;
-  const upstreams = d.latency_by_provider.length >= 2;
+  const max = Math.max(1, ...byModel.map((l) => l.p95), ...byUpstream.map((l) => l.p95)) * 1.04;
+  const upstreams = byUpstream.length >= 2;
   const providers = new Map((ov?.providers ?? []).map((p) => [p.name, p]));
   return (
     <PageSection
@@ -62,15 +66,17 @@ export function LatencySection({
         </Scope>
       }
     >
-      {d.latency.length === 0 ? (
-        <p className="flex h-8 items-center tw-body text-muted-foreground">{t.notEnoughSamples}</p>
+      {byModel.length === 0 ? (
+        <p className="flex h-8 items-center tw-body text-muted-foreground">
+          {d.latency === null ? t.latencyUnavailable : t.notEnoughSamples}
+        </p>
       ) : (
         // 并排按这一块自己的宽度判断，不按窗口：源列表收起、展开时内容区宽度不一样
         <div className="@container">
         <div className={cn("grid gap-x-10 gap-y-6", upstreams && "@min-[800px]:grid-cols-2")}>
           <Spreads
             head={t.byModel}
-            rows={d.latency}
+            rows={byModel}
             max={max}
             scope={scope}
             mark={(name) => <ModelMark name={name} />}
@@ -79,7 +85,7 @@ export function LatencySection({
           {upstreams && (
             <Spreads
               head={t.byUpstream}
-              rows={d.latency_by_provider}
+              rows={byUpstream}
               max={max}
               scope={scope}
               mark={(name) => {

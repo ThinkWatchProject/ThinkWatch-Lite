@@ -11,18 +11,20 @@ use crate::error::Out;
 /// 时间按上游分格的请求数（每一行的走势）。
 ///
 /// **一起取。**列表上它们是同一行的几格，分几次 invoke 会让一行数字分几次
-/// 跳变。拿不到的就是空的 —— 存储层不在的时候网关照常转发，列表也该照常打开。
+/// 跳变。拿不到的那一样是 `None`，不让整张列表打不开 —— 存储层不在的时候网关照常
+/// 转发，列表也该照常打开。**但不是空的**：空的在界面上读作「24 小时里 0 次请求、
+/// $0」，那是一个编出来的零（同一条见 `keys::key_usage`）。
 ///
 /// **四样同时问，不排队。**额度那一问可能要等几秒：GLM Coding Plan 的额度不在响应头
 /// 里，core 答 `/quota` 时现去问账号的额度接口（最多等 5 秒）。排着队问的话，费用和
 /// 走势要白白跟着等。
 #[derive(serde::Serialize)]
 pub struct UpstreamStats {
-    costs: Vec<tw_api::CostGroup>,
-    latency: Vec<tw_api::LatencyView>,
-    quotas: Vec<tw_api::ProviderQuota>,
+    costs: Option<Vec<tw_api::CostGroup>>,
+    latency: Option<Vec<tw_api::LatencyView>>,
+    quotas: Option<Vec<tw_api::ProviderQuota>>,
     /// 按界面给的格宽、按上游分格。**稀疏的** —— 没有请求的格子不在里面，由界面补
-    buckets: Vec<tw_api::CostBucketGroup>,
+    buckets: Option<Vec<tw_api::CostBucketGroup>>,
 }
 
 /// 格宽的下限。和概览同一条：再细就是把噪声当细节，而这一条查询还要乘上上游个数
@@ -56,10 +58,10 @@ pub async fn upstream_stats(
         c.call::<ep::CostBucketsBy>(&[], &buckets),
     );
     Ok(UpstreamStats {
-        costs: costs.unwrap_or_default(),
-        latency: latency.unwrap_or_default(),
-        quotas: quotas.unwrap_or_default(),
-        buckets: buckets.unwrap_or_default(),
+        costs: costs.ok(),
+        latency: latency.ok(),
+        quotas: quotas.ok(),
+        buckets: buckets.ok(),
     })
 }
 

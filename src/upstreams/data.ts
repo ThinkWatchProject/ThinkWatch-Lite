@@ -51,8 +51,9 @@ export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: num
       mutate(
         patch((s) => ({
           ...s,
+          // 统计那一问没取到额度（`null`）也照样换上这一家的：事件里就是它此刻的全部窗口
           quotas: [
-            ...s.quotas.filter((q) => q.provider !== ev.provider),
+            ...(s.quotas ?? []).filter((q) => q.provider !== ev.provider),
             { provider: ev.provider, windows: ev.windows },
           ],
         })),
@@ -73,6 +74,17 @@ export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: num
 /** 给 `mutate` 用：手里还没有数据时什么都不改（`mutate` 要的是一个新值，拿不出就原样还回去） */
 export function patch<T>(f: (s: T) => T): (s: T | undefined) => T {
   return (s) => (s === undefined ? (s as unknown as T) : f(s));
+}
+
+/**
+ * 统计读到了，但其中有几样取不到（`null`）：那几格写「—」，页上要说一声 —— 一列「—」
+ * 读起来像是这些上游都没有请求。
+ *
+ * **额度不算**：取不到额度时那一格退回说计费方式，和「没报过额度」一样，本来就是
+ * 「不知道」的写法，不会读成一个数。
+ */
+export function statsPartial(s: UpstreamStats | undefined): boolean {
+  return s !== undefined && (s.costs === null || s.buckets === null || s.latency === null);
 }
 
 /** 一个小时格：请求数、其中失败的 */

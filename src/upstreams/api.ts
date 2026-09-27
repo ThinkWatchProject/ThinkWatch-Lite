@@ -27,13 +27,18 @@ import type {
   ZaiLoginStatus,
 } from "@/types";
 
-/** `upstream_stats`：一段时间里每个上游的请求与费用、首字节耗时、订阅额度和走势 */
+/**
+ * `upstream_stats`：一段时间里每个上游的请求与费用、首字节耗时、订阅额度和走势。
+ *
+ * 每一样**取不到是 `null`，不是空的**：空的读作「24 小时里 0 次请求、$0」，取数失败
+ * 时那样写就是编了一个零。见到 `null` 那几格写「—」，页上给一条「统计取不到」。
+ */
 export interface UpstreamStats {
-  costs: CostGroup[];
-  latency: LatencyView[];
-  quotas: ProviderQuota[];
+  costs: CostGroup[] | null;
+  latency: LatencyView[] | null;
+  quotas: ProviderQuota[] | null;
   /** 按 `bucketMs` 分格、按上游分开的请求数。**稀疏的**：没有请求的格子不在里面 */
-  buckets: CostBucketGroup[];
+  buckets: CostBucketGroup[] | null;
 }
 
 export const api = {

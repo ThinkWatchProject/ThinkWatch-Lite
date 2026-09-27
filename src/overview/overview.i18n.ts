@@ -74,6 +74,10 @@ export const overviewText = messages(
     tipNone: "无请求",
     waiting: "等待请求",
     noRequests: "所选区间内无请求记录",
+    /** 趋势那两样取数失败：**不是没有请求**，不能画成一张全零的图 */
+    trendUnavailable: "趋势数据暂时取不到",
+    /** 同一份数据：排行就是趋势图的图例 */
+    rankingUnavailable: "模型排行暂时取不到",
     liveTicks: ["10 分钟前", "8 分钟", "6 分钟", "4 分钟", "2 分钟"],
     now: "现在",
     failureMarks: "存在失败的时段",
@@ -99,6 +103,8 @@ export const overviewText = messages(
     // 缓存
     cache: "缓存",
     noTokens: "所选区间内无 token 记录",
+    /** 按模型分的那份取数失败：总账照常，右边那一栏不能写成「没有模型」 */
+    cacheModelsUnavailable: "按模型的构成暂时取不到",
     hitRate: "命中",
     netCost: "净增费用",
     netSavings: "净节省",
@@ -112,6 +118,8 @@ export const overviewText = messages(
     latency: "延迟",
     latencyWhat: "首字节时间",
     notEnoughSamples: "所选区间内样本不足，暂无分位数据",
+    /** 取数失败，**不是样本不足** */
+    latencyUnavailable: "延迟数据暂时取不到",
     byModel: "按模型",
     byUpstream: "按上游",
     /** 延迟表头的最后一列：每一行的分位数由几个请求算出 */
@@ -212,6 +220,8 @@ export const overviewText = messages(
     tipNone: "No requests",
     waiting: "Waiting for requests",
     noRequests: "No requests recorded in the selected range",
+    trendUnavailable: "Trend data is unavailable right now",
+    rankingUnavailable: "The model ranking is unavailable right now",
     liveTicks: ["10 min ago", "8 min", "6 min", "4 min", "2 min"],
     now: "Now",
     failureMarks: "Periods with failures",
@@ -235,6 +245,7 @@ export const overviewText = messages(
 
     cache: "Cache",
     noTokens: "No tokens recorded in the selected range",
+    cacheModelsUnavailable: "The per-model breakdown is unavailable right now",
     hitRate: "hit rate",
     netCost: "Net cost increase",
     netSavings: "Net savings",
@@ -247,6 +258,7 @@ export const overviewText = messages(
     latency: "Latency",
     latencyWhat: "Time to first byte",
     notEnoughSamples: "Not enough samples in the selected range; no percentiles yet",
+    latencyUnavailable: "Latency data is unavailable right now",
     byModel: "By model",
     byUpstream: "By upstream",
     samples: "Samples",

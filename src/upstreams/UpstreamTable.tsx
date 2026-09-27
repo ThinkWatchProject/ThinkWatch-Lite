@@ -88,7 +88,7 @@ export function UpstreamTable({
   // 额度的「多久后重置」随时间走：重画就行，不用再问 core
   const now = useNow();
   const shown = usePresentList(providers, (p) => p.name);
-  const slots = useMemo(() => slotsByUpstream(stats.data?.buckets, since), [stats.data, since]);
+  const slots = useMemo(() => slotsByUpstream(stats.data?.buckets ?? undefined, since), [stats.data, since]);
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
     if (!focus) return;
@@ -339,7 +339,7 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
   const t = useText(upstreamTableText);
   // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会带来
   // 新的。拿它画一根满格的条，说的是一件已经不成立的事
-  const windows = (stats.data?.quotas.find((q) => q.provider === p.name)?.windows ?? []).filter(
+  const windows = (stats.data?.quotas?.find((q) => q.provider === p.name)?.windows ?? []).filter(
     (w) => w.resets_at_ms == null || w.resets_at_ms > now,
   );
   // 最紧张的那个窗口：先到的那条线决定什么时候用完
@@ -443,6 +443,11 @@ function DayCell({
       </TableCell>
     );
   }
+  // 取不到（`null`）不是没有请求：写「—」，页上另有一条「统计取不到」。**费用要两样
+  // 都在** —— 估算的部分只在格子里，缺了它就分不出哪些是估的，写出来的数会冒充实测
+  if (stats.data.costs === null || stats.data.buckets === null) {
+    return <TableCell className="text-right text-muted-foreground">—</TableCell>;
+  }
   const cost = stats.data.costs.find((c) => c.name === p.name);
   if (!cost || cost.requests === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
@@ -516,7 +521,7 @@ function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamSt
       </TableCell>
     );
   }
-  const lat = stats.data.latency.find((l) => l.model === p.name);
+  const lat = stats.data.latency?.find((l) => l.model === p.name);
   if (!lat || lat.samples === 0) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }

@@ -342,23 +342,28 @@ export function interruptInFlight(rows: Map<number, RequestRow>): boolean {
 /** 概览要的全部数据，Rust 侧 `dashboard` 命令一次拼好 */
 export interface Dashboard {
   summary: Summary;
-  /** 首字节时间的分位，按模型分。和 `summary` 同一个时间窗 */
-  latency: LatencyView[];
+  /**
+   * 首字节时间的分位，按模型分。和 `summary` 同一个时间窗。
+   *
+   * 这一样和下面几样**取不到是 `null`，不是空的**：空的是「没有样本、没有请求」，
+   * 取数失败时照那样画就是编了一个零。见到 `null` 写「暂时取不到」。
+   */
+  latency: LatencyView[] | null;
   /** 按上游分。**和按模型分是两个问题** */
-  latency_by_provider: LatencyView[];
+  latency_by_provider: LatencyView[] | null;
   storage: StorageStatus | null;
   /**
    * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
-  buckets: CostBucket[];
+  buckets: CostBucket[] | null;
   /**
    * 同样的格子，再按模型分层。
    *
    * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
    * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
    */
-  buckets_by_model: CostBucketGroup[];
+  buckets_by_model: CostBucketGroup[] | null;
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
   prev: Summary | null;
   /** 上面几样的时间窗起点，补空桶要用 */

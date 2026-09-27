@@ -19,7 +19,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
-import { patch, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
+import { patch, statsPartial, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
@@ -353,7 +353,9 @@ export default function UpstreamsPage({
 
         <TabsContent value="upstreams" className="flex flex-col gap-3 pt-4">
           <Banner
-            show={stats.error !== undefined && stats.data === undefined}
+            // 整份没读到，或者读到了但其中几样取不到（`null`，那几格写「—」）：都要说一声，
+            // 否则一列「—」读起来像是这些上游都没有请求
+            show={(stats.error !== undefined && stats.data === undefined) || statsPartial(stats.data)}
             layout="inline"
             tone="warning"
             title={t.statsFailed}
@@ -594,25 +596,30 @@ function Hero({ providers, stats }: { providers: ProviderView[]; stats: Resource
   const enabled = providers.filter((p) => !p.disabled);
   const attention = enabled.filter((p) => problemsOf(p).length > 0).length;
   const disabled = providers.length - enabled.length;
-  // 费用三态分开加：估算的部分合计里没有分出来，按格子加回来（同一个时间窗）
-  const day = stats.data
-    ? stats.data.costs.reduce(
-        (a, c) => ({
-          ...a,
-          requests: a.requests + c.requests,
-          cost: a.cost + c.cost_micros,
-          unpriced: a.unpriced + c.unpriced_requests,
-          noUsage: a.noUsage + c.no_usage_requests,
-        }),
-        {
-          requests: 0,
-          cost: 0,
-          estimated: stats.data.buckets.reduce((n, b) => n + b.cost_micros_estimated, 0),
-          unpriced: 0,
-          noUsage: 0,
-        },
-      )
-    : null;
+  // 费用三态分开加：估算的部分合计里没有分出来，按格子加回来（同一个时间窗）。
+  // **两样都要在**：合计取不到时写 0 是编出来的；格子取不到就分不出哪些是估的，
+  // 写出来的数会冒充实测。缺一样就不写这两个数（页上另有一条「统计取不到」）
+  const costs = stats.data?.costs;
+  const buckets = stats.data?.buckets;
+  const day =
+    costs && buckets
+      ? costs.reduce(
+          (a, c) => ({
+            ...a,
+            requests: a.requests + c.requests,
+            cost: a.cost + c.cost_micros,
+            unpriced: a.unpriced + c.unpriced_requests,
+            noUsage: a.noUsage + c.no_usage_requests,
+          }),
+          {
+            requests: 0,
+            cost: 0,
+            estimated: buckets.reduce((n, b) => n + b.cost_micros_estimated, 0),
+            unpriced: 0,
+            noUsage: 0,
+          },
+        )
+      : null;
   return (
     <>
       <Fact>{t.hero.upstreams(<Num value={providers.length} />, providers.length)}</Fact>

@@ -255,7 +255,8 @@ export function buildTrend({
       }
     }
   } else {
-    for (const b of d.buckets_by_model) {
+    // 取不到（`null`）时这一块写「暂时取不到」，不画这张图（见 `TrendSection`）
+    for (const b of d.buckets_by_model ?? []) {
       const name = b.name || t.unknownModel;
       const cost = b.cost_micros_exact + b.cost_micros_estimated;
       const tok = tokensOf(b);
@@ -277,7 +278,7 @@ export function buildTrend({
   */
   const steady = new Map<string, number>();
   if (live) {
-    for (const b of d.buckets_by_model) {
+    for (const b of d.buckets_by_model ?? []) {
       const name = b.name || t.unknownModel;
       const v = tokensMode ? tokensOf(b) : b.cost_micros_exact + b.cost_micros_estimated;
       steady.set(name, (steady.get(name) ?? 0) + v);
@@ -365,7 +366,7 @@ export function buildTrend({
         unpriced_requests: 0,
         no_usage_requests: 0,
       }))
-    : densify(d.buckets, d.since_ms, now, bucketMs);
+    : densify(d.buckets ?? [], d.since_ms, now, bucketMs);
   if (live) {
     const from = liveAt[0] ?? 0;
     for (const f of fails) {
@@ -538,7 +539,7 @@ export interface CacheRow {
  */
 export function cacheByModel(d: Dashboard, unknownModel: string): CacheRow[] {
   const by = new Map<string, { read: number; plain: number; write: number }>();
-  for (const b of d.buckets_by_model) {
+  for (const b of d.buckets_by_model ?? []) {
     const name = b.name || unknownModel;
     const x = by.get(name) ?? { read: 0, plain: 0, write: 0 };
     x.read += b.cache_read_tokens;
