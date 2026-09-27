@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
+import { isTyping } from "@/palette/keys"
 import { Button } from "@/ui/button"
 import { Input } from "@/ui/input"
 import { Separator } from "@/ui/separator"
@@ -64,6 +65,23 @@ type SidebarContextProps = {
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
+
+/**
+ * 这一下是不是收起、展开侧栏的快捷键（⌘B / Ctrl+B）。
+ *
+ * **焦点在能打字的地方时不是**（`isTyping`）：那一下归输入框和编辑器 —— macOS 上
+ * Ctrl+B 是光标左移一格，编辑器里 ⌘B 常是加粗。原来一律接管，在配置编辑器里按一下，
+ * 光标没动，侧栏收起来了。导出给测试用。
+ */
+export function isSidebarShortcut(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "target">
+): boolean {
+  return (
+    event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
+    (event.metaKey || event.ctrlKey) &&
+    !isTyping(event.target)
+  )
+}
 
 function useSidebar() {
   const context = React.useContext(SidebarContext)
@@ -117,10 +135,7 @@ function SidebarProvider({
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
+      if (isSidebarShortcut(event)) {
         event.preventDefault()
         toggleSidebar()
       }
