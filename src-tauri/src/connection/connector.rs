@@ -110,8 +110,6 @@ pub const REQUIRED_CORE: &str = env!("TW_CORE_TAG");
 
 /// 连一次 TCP、握手，最多等这么久
 const CONNECT_WITHIN: Duration = Duration::from_secs(5);
-/// 本机那一档问一次 `/status` 最多等多久
-const LOCAL_WITHIN: Duration = Duration::from_secs(3);
 
 /// 握手的结果：对面说自己是哪一版
 #[derive(Debug, Clone)]
@@ -122,42 +120,23 @@ pub struct Handshake {
 /// 应用自己的版本，握手时报给 core（只进它的日志）
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// 试连：连上、握手、问一次 `/status`。**切换之前、启动时、断线重连都走它。**
-pub async fn test(target: &Target) -> Result<ServerInfo, ConnectError> {
-    match target {
-        Target::Local { .. } => {
-            let c = ControlClient::to(target.clone());
-            let s = tokio::time::timeout(LOCAL_WITHIN, c.status())
-                .await
-                .map_err(|_| ConnectError::Timeout {
-                    addr: super::store::local_name().into(),
-                })?
-                .map_err(|_| ConnectError::Unreachable {
-                    addr: super::store::local_name().into(),
-                })?;
-            Ok(ServerInfo {
-                core_version: s.version,
-                gateway_addr: s.gateway_addr,
-            })
-        }
-        Target::Remote(r) => {
-            let (_, hello) = open(r).await?;
-            // 握手过了，剩下的是一次普通的控制面请求。**失败按「连接被关闭」说**：
-            // 握手刚通过就断，是对面在这一瞬间没了
-            let s = ControlClient::to(target.clone())
-                .status()
-                .await
-                .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
-            Ok(ServerInfo {
-                gateway_addr: remote_gateway(&r.host, &s),
-                core_version: if s.version.is_empty() {
-                    hello.core_version
-                } else {
-                    s.version
-                },
-            })
-        }
-    }
+/// 试连一个远程的 core：连上、握手、问一次 `/status`。**切换之前、启动时、断线重连都走它。**
+pub async fn test(r: &RemoteTarget) -> Result<ServerInfo, ConnectError> {
+    let (_, hello) = open(r).await?;
+    // 握手过了，剩下的是一次普通的控制面请求。**失败按「连接被关闭」说**：
+    // 握手刚通过就断，是对面在这一瞬间没了
+    let s = ControlClient::to(Target::Remote(r.clone()))
+        .status()
+        .await
+        .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
+    Ok(ServerInfo {
+        gateway_addr: remote_gateway(&r.host, &s),
+        core_version: if s.version.is_empty() {
+            hello.core_version
+        } else {
+            s.version
+        },
+    })
 }
 
 /// 客户端连服务器网关用的地址：**这台电脑拨通控制端口的那个主机名**，加上网关的端口。
@@ -350,7 +329,7 @@ mod tests {
             port,
             key: "k".into(),
         };
-        let e = test(&Target::Remote(r)).await.unwrap_err();
+        let e = test(&r).await.unwrap_err();
         assert!(
             matches!(
                 e,
@@ -378,12 +357,12 @@ mod tests {
         port
     }
 
-    fn at(port: u16, key: String) -> Target {
-        Target::Remote(RemoteTarget {
+    fn at(port: u16, key: String) -> RemoteTarget {
+        RemoteTarget {
             host: "127.0.0.1".into(),
             port,
             key,
-        })
+        }
     }
 
     /// 对面一个字节不回就关：被关闭（不在允许列表里时就是这样）

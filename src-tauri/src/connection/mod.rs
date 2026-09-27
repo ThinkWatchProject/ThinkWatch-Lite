@@ -364,7 +364,7 @@ async fn remote_loop(
             None => {
                 attempt += 1;
                 link.set(LinkState::Connecting { attempt, ever });
-                connector::test(&Target::Remote(target.clone())).await
+                connector::test(&target).await
             }
         };
         match tried {
@@ -466,7 +466,7 @@ pub async fn switch(
         port: r.port,
         key,
     };
-    let info = connector::test(&Target::Remote(target))
+    let info = connector::test(&target)
         .await
         .map_err(|error| SwitchError::Connect { error })?;
     {
@@ -607,7 +607,7 @@ pub async fn test_connection(input: ProfileInput) -> Out<Tested> {
         port: input.port,
         key,
     };
-    Ok(match connector::test(&Target::Remote(target)).await {
+    Ok(match connector::test(&target).await {
         Ok(info) => Tested::Ok { info },
         Err(error) => Tested::Failed { error },
     })

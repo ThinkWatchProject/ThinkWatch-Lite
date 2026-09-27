@@ -18,7 +18,7 @@ pub mod policy;
 pub mod user_env;
 
 pub use health::{HealthTracker, Verdict};
-pub use policy::{Decision, RestartPolicy, should_interrupt};
+pub use policy::{Decision, RestartPolicy};
 
 /// 跑多久算「这次起来是健康的」。短于这个时间就死，说明是启动就崩，
 /// 不该重置退避阶梯。

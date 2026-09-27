@@ -221,11 +221,6 @@ impl ControlClient {
         self.moved.send_modify(|n| *n += 1);
     }
 
-    /// 连的是不是别的机器
-    pub fn is_remote(&self) -> bool {
-        matches!(*self.target.read().expect("锁未中毒"), Target::Remote(_))
-    }
-
     /// 换地方的通知
     pub fn moved(&self) -> tokio::sync::watch::Receiver<u64> {
         self.moved.subscribe()
