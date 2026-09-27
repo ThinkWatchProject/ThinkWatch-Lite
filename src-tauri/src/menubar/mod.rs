@@ -317,6 +317,9 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             failed: s.failed,
             tokens: s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens,
             cost_micros: s.cost_micros_exact + s.cost_micros_estimated,
+            estimated_micros: s.cost_micros_estimated,
+            unpriced: s.unpriced_requests,
+            no_usage: s.no_usage_requests,
         });
     }
     let accounts: Vec<String> = overview

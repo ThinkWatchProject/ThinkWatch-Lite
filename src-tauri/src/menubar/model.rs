@@ -83,6 +83,44 @@ pub struct Today {
     pub tokens: i64,
     /// 实测加估算，微分
     pub cost_micros: i64,
+    /// 其中估算的那部分，微分
+    pub estimated_micros: i64,
+    /// 有用量、模型却不在价目表里的请求。**它们的费用不在 `cost_micros` 里**
+    pub unpriced: i64,
+    /// 没有拿到用量的请求：费用同样算不出来，也不在 `cost_micros` 里
+    pub no_usage: i64,
+}
+
+impl Today {
+    /// 费用写出来的样子，和界面上同一套记号：有算不出钱的请求时，金额只是下限
+    /// （「≥」）；**估算不能冒充实测**，含估算的带「~」
+    fn cost(&self, amount: fn(i64) -> String) -> String {
+        let lower_bound = if self.unpriced + self.no_usage > 0 {
+            "≥"
+        } else {
+            ""
+        };
+        let estimated = if self.estimated_micros > 0 { "~" } else { "" };
+        format!("{lower_bound}{estimated}{}", amount(self.cost_micros))
+    }
+
+    /// 费用那一格旁边的小字：金额里缺着的请求，先说能补上的（配个价格）。含估算的
+    /// 不在这里说，金额前面那个「~」就是界面上各处说估算的记号
+    fn cost_note(&self) -> Option<String> {
+        if self.unpriced > 0 {
+            Some(tr!(
+                format!("{} 条无法计价", self.unpriced),
+                format!("{} unpriced", self.unpriced)
+            ))
+        } else if self.no_usage > 0 {
+            Some(tr!(
+                format!("{} 条无用量", self.no_usage),
+                format!("{} with no usage", self.no_usage)
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -230,7 +268,7 @@ pub struct WindowRow {
 pub struct StatCell {
     pub value: String,
     pub label: String,
-    /// 标签旁的橙色小字（失败数）
+    /// 标签旁的橙色小字（失败数、算不出钱的请求数）
     pub note: Option<String>,
 }
 
@@ -375,7 +413,7 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
         numbers: if running {
             s.today
                 .as_ref()
-                .map(|t| (tokens_short(t.tokens), cost_short(t.cost_micros)))
+                .map(|t| (tokens_short(t.tokens), t.cost(cost_short)))
         } else {
             // 不在运行时，上一次的数字已经不代表现在：画破折号，不画一个凝固的旧值
             None
@@ -441,12 +479,12 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                 format!(
                     "今日 {} token，费用 {}",
                     tokens_short(t.tokens),
-                    cost_long(t.cost_micros)
+                    t.cost(cost_long)
                 ),
                 format!(
                     "{} tokens today, {} cost",
                     tokens_short(t.tokens),
-                    cost_long(t.cost_micros)
+                    t.cost(cost_long)
                 )
             ));
         }
@@ -566,9 +604,9 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     note: None,
                 },
                 StatCell {
-                    value: cost_long(t.cost_micros),
+                    value: t.cost(cost_long),
                     label: tr!("费用", "Cost").to_string(),
-                    note: None,
+                    note: t.cost_note(),
                 },
             ],
             action: Action::Open("dashboard"),
@@ -1039,6 +1077,7 @@ mod tests {
                 failed: 0,
                 tokens: 3_100_000,
                 cost_micros: 41_200_000,
+                ..Default::default()
             }),
             notices_on: true,
             now_ms: NOW,
@@ -1201,6 +1240,65 @@ mod tests {
         let (bar, _) = build(&running(), Style::Full);
         assert_eq!(bar.numbers, Some(("3.1M".into(), "$41.20".into())));
         assert!(!bar.dim && !bar.alert && !bar.dot);
+    }
+
+    /// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单栏上
+    /// 那个数是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面
+    #[test]
+    fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
+        use crate::i18n::{Lang, with_lang};
+        let cost = |t: Today| {
+            let mut s = running();
+            s.today = Some(t);
+            let (bar, rows) = build(&s, Style::Full);
+            let cell = rows
+                .iter()
+                .find_map(|r| match r {
+                    Row::Stats { cells, .. } => cells.get(2).cloned(),
+                    _ => None,
+                })
+                .unwrap();
+            (bar.numbers.unwrap().1, cell.value, cell.note, bar.tooltip)
+        };
+        let base = Today {
+            requests: 10,
+            tokens: 1_000,
+            cost_micros: 2_500_000,
+            ..Default::default()
+        };
+        with_lang(Lang::En, || {
+            let (short, long, note, _) = cost(base.clone());
+            assert_eq!(
+                (short.as_str(), long.as_str(), note),
+                ("$2.50", "$2.50", None)
+            );
+
+            let (short, long, note, tip) = cost(Today {
+                estimated_micros: 500_000,
+                ..base.clone()
+            });
+            assert_eq!(
+                (short.as_str(), long.as_str(), note),
+                ("~$2.50", "~$2.50", None)
+            );
+            assert!(tip.contains("~$2.50 cost"), "{tip}");
+
+            let (short, _, note, _) = cost(Today {
+                unpriced: 3,
+                ..base.clone()
+            });
+            assert_eq!(short, "≥$2.50");
+            assert_eq!(note.as_deref(), Some("3 unpriced"));
+
+            // 一条都没算出钱：不是「今天花了 $0」
+            let (short, _, note, _) = cost(Today {
+                cost_micros: 0,
+                no_usage: 2,
+                ..base.clone()
+            });
+            assert_eq!(short, "≥$0.00");
+            assert_eq!(note.as_deref(), Some("2 with no usage"));
+        });
     }
 
     #[test]

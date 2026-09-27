@@ -1453,6 +1453,7 @@ mod tests {
                 failed,
                 tokens: 4_200_000,
                 cost_micros: 40_260_000,
+                ..Default::default()
             }),
             quotas: vec![Quota {
                 provider: "chatgpt".into(),

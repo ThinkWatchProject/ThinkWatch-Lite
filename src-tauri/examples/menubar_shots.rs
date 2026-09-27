@@ -83,6 +83,7 @@ fn main() {
             cost_micros: today[1],
             requests: today[2],
             failed: today[3],
+            ..Default::default()
         }),
         quotas: vec![model::Quota {
             provider: "chatgpt".into(),
