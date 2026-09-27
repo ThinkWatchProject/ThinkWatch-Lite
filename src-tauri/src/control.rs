@@ -256,76 +256,8 @@ impl ControlClient {
     /// 带来的复杂度（连接死了怎么办、什么时候重建）换不来任何东西。
     /// **事件流是例外**，它走 `subscribe_events`，本来就是长连接。
     pub async fn call<E: Endpoint>(&self, params: &[&str], req: &E::Req) -> Result<E::Res> {
-        anyhow::ensure!(
-            params.len() == E::PARAMS.len(),
-            "{} takes {} path parameters, got {}",
-            E::NAME,
-            E::PARAMS.len(),
-            params.len()
-        );
-        anyhow::ensure!(
-            E::FORMAT != Format::Events,
-            "{} is an event stream; use subscribe_events",
-            E::NAME
-        );
-        let filled: Vec<(&str, &str)> = E::PARAMS
-            .iter()
-            .copied()
-            .zip(params.iter().copied())
-            .collect();
-        let mut path = tw_api::fill(E::PATH, &filled);
-        let req = serde_json::to_value(req)?;
-        let mut body = None;
-        if E::METHOD.query() {
-            let q = query_string(&req)?;
-            if !q.is_empty() {
-                path.push('?');
-                path.push_str(&q);
-            }
-        } else if !req.is_null() {
-            body = Some(serde_json::to_string(&req)?);
-        }
-        let bytes = self.send(E::METHOD, &path, body).await?;
-        Ok(match E::FORMAT {
-            Format::Text => {
-                serde_json::from_value(serde_json::Value::String(String::from_utf8(bytes)?))?
-            }
-            _ => serde_json::from_slice(&bytes)?,
-        })
-    }
-
-    /// 发出去，把成功的响应体整个读回来。非 2xx 是 [`Refused`]。
-    async fn send(
-        &self,
-        method: tw_api::Method,
-        path: &str,
-        body: Option<String>,
-    ) -> Result<Vec<u8>> {
-        let stream = self.connect().await?;
-        let io = TokioIo::new(stream);
-        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
-        tokio::spawn(async move {
-            if let Err(e) = conn.await {
-                tracing::debug!("控制面连接结束：{e}");
-            }
-        });
-        let mut req = hyper::Request::builder()
-            .method(method.as_str())
-            .uri(path)
-            // unix socket 上没有真正的 host，但 HTTP/1.1 要求这个头存在
-            .header(hyper::header::HOST, "localhost");
-        if body.is_some() {
-            req = req.header(hyper::header::CONTENT_TYPE, "application/json");
-        }
-        let resp = sender
-            .send_request(req.body(body.unwrap_or_default())?)
-            .await?;
-        let status = resp.status();
-        let bytes = resp.into_body().collect().await?.to_bytes();
-        if !status.is_success() {
-            return Err(refused(status, &bytes));
-        }
-        Ok(bytes.to_vec())
+        let (path, body) = request::<E>(params, req)?;
+        decode::<E>(send(self.connect().await?, E::METHOD, &path, body).await?)
     }
 
     /// 带超时的心跳探测。
@@ -341,26 +273,7 @@ impl ControlClient {
     }
 
     pub async fn status(&self) -> Result<tw_api::Status> {
-        let s = self.call::<ep::Status>(&[], &()).await?;
-        // 版本不匹配要明确提示「请升级客户端」，而不是以奇怪的方式失败。
-        // 这里 UI 和 core 是一起打包的，理论上不该发生 ——
-        // 但开发时会（一边改 core 一边跑旧 UI），而那正是最需要一句
-        // 人话的时候。
-        if s.api_version != tw_api::CONTROL_API_VERSION {
-            anyhow::bail!(tr!(
-                format!(
-                    "控制面协议版本不一致：core 为 {}，界面为 {}。请重新构建。",
-                    s.api_version,
-                    tw_api::CONTROL_API_VERSION
-                ),
-                format!(
-                    "Control plane protocol versions differ: core uses {}, the interface uses {}. Rebuild the app.",
-                    s.api_version,
-                    tw_api::CONTROL_API_VERSION
-                )
-            ));
-        }
-        Ok(s)
+        same_protocol(self.call::<ep::Status>(&[], &()).await?)
     }
 
     /// 请网关自己退出。
@@ -463,6 +376,117 @@ impl ControlClient {
         }
         Ok(())
     }
+}
+
+/// 在一条已经连上、握过手的流上问一次 `/status`。
+///
+/// 试连远程时用（`connection::connector::test`）：**握手的那条连接接着问**，不再为这
+/// 一问另连一遍、另握一遍手
+pub(crate) async fn status_on(stream: Box<dyn Stream>) -> Result<tw_api::Status> {
+    let (path, body) = request::<ep::Status>(&[], &())?;
+    same_protocol(decode::<ep::Status>(
+        send(stream, ep::Status::METHOD, &path, body).await?,
+    )?)
+}
+
+/// 版本不匹配要明确提示「请升级客户端」，而不是以奇怪的方式失败。
+/// 这里 UI 和 core 是一起打包的，理论上不该发生 ——
+/// 但开发时会（一边改 core 一边跑旧 UI），而那正是最需要一句
+/// 人话的时候。
+fn same_protocol(s: tw_api::Status) -> Result<tw_api::Status> {
+    if s.api_version != tw_api::CONTROL_API_VERSION {
+        anyhow::bail!(tr!(
+            format!(
+                "控制面协议版本不一致：core 为 {}，界面为 {}。请重新构建。",
+                s.api_version,
+                tw_api::CONTROL_API_VERSION
+            ),
+            format!(
+                "Control plane protocol versions differ: core uses {}, the interface uses {}. Rebuild the app.",
+                s.api_version,
+                tw_api::CONTROL_API_VERSION
+            )
+        ));
+    }
+    Ok(s)
+}
+
+/// 一个端点的请求：填好参数、拼上查询串的路径，和请求体（怎么填见
+/// [`ControlClient::call`]）。
+fn request<E: Endpoint>(params: &[&str], req: &E::Req) -> Result<(String, Option<String>)> {
+    anyhow::ensure!(
+        params.len() == E::PARAMS.len(),
+        "{} takes {} path parameters, got {}",
+        E::NAME,
+        E::PARAMS.len(),
+        params.len()
+    );
+    anyhow::ensure!(
+        E::FORMAT != Format::Events,
+        "{} is an event stream; use subscribe_events",
+        E::NAME
+    );
+    let filled: Vec<(&str, &str)> = E::PARAMS
+        .iter()
+        .copied()
+        .zip(params.iter().copied())
+        .collect();
+    let mut path = tw_api::fill(E::PATH, &filled);
+    let req = serde_json::to_value(req)?;
+    let mut body = None;
+    if E::METHOD.query() {
+        let q = query_string(&req)?;
+        if !q.is_empty() {
+            path.push('?');
+            path.push_str(&q);
+        }
+    } else if !req.is_null() {
+        body = Some(serde_json::to_string(&req)?);
+    }
+    Ok((path, body))
+}
+
+/// 成功的响应体按端点的格式解出来。
+fn decode<E: Endpoint>(bytes: Vec<u8>) -> Result<E::Res> {
+    Ok(match E::FORMAT {
+        Format::Text => {
+            serde_json::from_value(serde_json::Value::String(String::from_utf8(bytes)?))?
+        }
+        _ => serde_json::from_slice(&bytes)?,
+    })
+}
+
+/// 在这条流上发出去，把成功的响应体整个读回来。非 2xx 是 [`Refused`]。
+async fn send(
+    stream: Box<dyn Stream>,
+    method: tw_api::Method,
+    path: &str,
+    body: Option<String>,
+) -> Result<Vec<u8>> {
+    let io = TokioIo::new(stream);
+    let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            tracing::debug!("控制面连接结束：{e}");
+        }
+    });
+    let mut req = hyper::Request::builder()
+        .method(method.as_str())
+        .uri(path)
+        // unix socket 上没有真正的 host，但 HTTP/1.1 要求这个头存在
+        .header(hyper::header::HOST, "localhost");
+    if body.is_some() {
+        req = req.header(hyper::header::CONTENT_TYPE, "application/json");
+    }
+    let resp = sender
+        .send_request(req.body(body.unwrap_or_default())?)
+        .await?;
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await?.to_bytes();
+    if !status.is_success() {
+        return Err(refused(status, &bytes));
+    }
+    Ok(bytes.to_vec())
 }
 
 /// GET 和 DELETE 的请求拼成查询串。

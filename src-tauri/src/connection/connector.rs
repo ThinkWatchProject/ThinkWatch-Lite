@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::control::{ControlClient, Stream, Target};
+use crate::control::Stream;
 
 /// 远程的 core 在哪、拿什么进门。**密钥不进连接列表**：存盘在 `secrets` 那个只有
 /// 自己能读的文件里；编辑这条连接时才按 id 单独取一次给界面，由界面默认隐藏
@@ -127,19 +127,17 @@ pub async fn test(r: &RemoteTarget) -> Result<ServerInfo, ConnectError> {
 
 /// 同 [`test`]，握手之后问 `/status` 那一步限时自己定：测试里等不起五秒
 async fn test_within(r: &RemoteTarget, within: Duration) -> Result<ServerInfo, ConnectError> {
-    let (_, hello) = open(r).await?;
-    // 握手过了，剩下的是一次普通的控制面请求。**失败按「连接被关闭」说**：
+    let (stream, hello) = open(r).await?;
+    // 握手过了，剩下的是一次普通的控制面请求，**就在握手的这条连接上问**：以前另开一条，
+    // 每次试连、每次断线重连都要连两遍 TCP、握两遍手。**失败按「连接被关闭」说**：
     // 握手刚通过就断，是对面在这一瞬间没了。
     //
     // **这一问也限时，超时按「超时」说。**握了手却一直不答的服务器（卡住了），不限时的
     // 话「测试连接」、切换、断线重连都会一直等下去
-    let s = tokio::time::timeout(
-        within,
-        ControlClient::to(Target::Remote(r.clone())).status(),
-    )
-    .await
-    .map_err(|_| ConnectError::Timeout { addr: r.addr() })?
-    .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
+    let s = tokio::time::timeout(within, crate::control::status_on(stream))
+        .await
+        .map_err(|_| ConnectError::Timeout { addr: r.addr() })?
+        .map_err(|_| ConnectError::Closed { addr: r.addr() })?;
     Ok(ServerInfo {
         gateway_addr: remote_gateway(&r.host, &s),
         core_version: if s.version.is_empty() {
@@ -259,15 +257,19 @@ fn link_error(e: tw_link::LinkError, addr: &str) -> ConnectError {
 mod tests {
     use super::*;
 
-    fn status(gateway: Option<&str>, reachable: &[&str]) -> tw_api::Status {
-        serde_json::from_value(serde_json::json!({
+    /// core 答 `/status` 的那份 JSON
+    fn status_json(gateway: Option<&str>, reachable: &[&str]) -> serde_json::Value {
+        serde_json::json!({
             "api_version": tw_api::CONTROL_API_VERSION, "version": "x", "pid": 1,
             "gateway_addr": gateway, "config_path": "/x", "clients": 0, "providers": 0,
             "uptime_secs": 0, "in_flight": 0,
             "remote_control": { "enabled": true, "addr": null, "allow_from": [], "reachable": [] },
             "gateway_reachable": reachable,
-        }))
-        .unwrap()
+        })
+    }
+
+    fn status(gateway: Option<&str>, reachable: &[&str]) -> tw_api::Status {
+        serde_json::from_value(status_json(gateway, reachable)).unwrap()
     }
 
     /// 网关绑在 0.0.0.0 上：客户端要连的是拨通控制端口的那个主机名，不是 0.0.0.0
@@ -434,6 +436,62 @@ mod tests {
         .expect("一直等下去了")
         .unwrap_err();
         assert_eq!(e, ConnectError::Timeout { addr: r.addr() });
+    }
+
+    /// 一个答得上 `/status` 的「core」：握手之后读一个请求，回一份状态（自称 7.7.7，
+    /// 网关绑在 0.0.0.0:8788）。数着接了几条连接
+    async fn answering_core() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = accepted.clone();
+        tokio::spawn(async move {
+            let key = tw_link::ControlKey::parse(&key()).unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "9.9.9");
+            while let Ok((s, _)) = l.accept().await {
+                counted.fetch_add(1, Ordering::SeqCst);
+                let Ok(mut a) = acceptor.accept(s).await else {
+                    continue;
+                };
+                tokio::spawn(async move {
+                    // 读到请求头结束的那个空行
+                    let mut got = Vec::new();
+                    let mut buf = [0u8; 1024];
+                    while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                        match a.stream.read(&mut buf).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => got.extend_from_slice(&buf[..n]),
+                        }
+                    }
+                    let mut body = status_json(Some("0.0.0.0:8788"), &[]);
+                    body["version"] = "7.7.7".into();
+                    let body = body.to_string();
+                    let answer = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = a.stream.write_all(answer.as_bytes()).await;
+                    let _ = a.stream.flush().await;
+                    // 连接留到对面关掉
+                    let _ = a.stream.read(&mut buf).await;
+                });
+            }
+        });
+        (port, accepted)
+    }
+
+    /// **一条连接就够**：握手的那条接着问 `/status`。以前另开一条，每次试连、每次断线
+    /// 重连都要连两遍 TCP、握两遍手
+    #[tokio::test]
+    async fn one_connection_is_enough_to_test_a_server() {
+        let (port, accepted) = answering_core().await;
+        let info = test(&at(port, key())).await.unwrap();
+        // 版本是 `/status` 报的，不是握手时那个
+        assert_eq!(info.core_version, "7.7.7");
+        assert_eq!(info.gateway_addr.as_deref(), Some("127.0.0.1:8788"));
+        assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     /// 同一把钥匙：握手通过，问到服务器 core 自己报的版本
