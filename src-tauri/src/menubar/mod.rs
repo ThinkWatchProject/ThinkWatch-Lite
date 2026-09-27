@@ -23,7 +23,7 @@ use tauri::Manager;
 pub use model::Style;
 use model::{Action, Gateway, Snapshot};
 
-use crate::{AppState, notices, supervisor::CoreState};
+use crate::{AppState, error::CmdError, notices, supervisor::CoreState};
 
 /// 攒多久再收一次数。一串请求只换来一次重收，而不是一条一次；也给存储层留出
 /// 把这一条落库、算出费用的时间
@@ -533,17 +533,16 @@ async fn background(app: &tauri::AppHandle, action: Action) {
     let Some(st) = app.try_state::<AppState>() else {
         return;
     };
-    let result: Result<(), String> = match action {
+    // **失败留着码**（`CmdError`）：core 拒绝的，说给用户之前要按码翻，见 [`why`]
+    let result: Result<(), CmdError> = match action {
         Action::CopyAddress => copy_address(app, &st).await,
         Action::CopyKey => copy_default_key(app, &st).await,
         Action::SelectGroup { group, provider } => st
             .control
             .select_group(&group, &provider)
             .await
-            .map_err(|e| format!("{e:#}")),
-        Action::RestartGateway => crate::gateway::restart_gateway(app)
-            .await
-            .map_err(|e| e.to_string()),
+            .map_err(CmdError::from),
+        Action::RestartGateway => crate::gateway::restart_gateway(app).await,
         Action::RetryConnection => {
             st.link.retry_now();
             Ok(())
@@ -551,7 +550,7 @@ async fn background(app: &tauri::AppHandle, action: Action) {
         Action::SwitchConnection(id) => crate::connection::switch(app, &id, false)
             .await
             .map(|_| ())
-            .map_err(|e| format!("{e:?}")),
+            .map_err(|e| CmdError::plain(format!("{e:?}"))),
         Action::CheckUpdates => {
             check_updates(app).await;
             Ok(())
@@ -560,40 +559,45 @@ async fn background(app: &tauri::AppHandle, action: Action) {
     };
     if let Err(e) = result {
         tracing::warn!("菜单里的操作没做成：{e}");
-        say(app, tr!("操作未完成", "The Action Did Not Complete"), &e);
+        say(
+            app,
+            tr!("操作未完成", "The Action Did Not Complete"),
+            &why(e),
+        );
     }
     st.menubar.notify_one();
 }
 
-async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+/// 没做成的原因，说给用户的那一句。**core 拒绝的按码说成界面的语言**：和界面、系统通知
+/// 读同一张表（`core_text`），不把 core 的英文原句直接摆在中文界面上。这一层自己的失败
+/// 没有码，本来就是一句话，照原样
+fn why(e: CmdError) -> String {
+    crate::core_text::text(&e.into_msg())
+}
+
+async fn copy_address(app: &tauri::AppHandle, st: &AppState) -> Result<(), CmdError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     // 客户端该连的地址，和客户端页、密钥页复制的是同一个
-    let base = crate::clients::gateway_base(&st.control, &crate::clients::gateway_host(st))
-        .await
-        .map_err(|e| e.to_string())?;
-    app.clipboard().write_text(base).map_err(|e| e.to_string())
+    let base = crate::clients::gateway_base(&st.control, &crate::clients::gateway_host(st)).await?;
+    app.clipboard()
+        .write_text(base)
+        .map_err(|e| CmdError::plain(e.to_string()))
 }
 
 /// **明文不经过界面**：和密钥页的「复制」同一条路，在 Rust 这边直接写剪贴板
-async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), String> {
+async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), CmdError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let keys = st
-        .control
-        .call::<ep::Keys>(&[], &())
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+    let keys = st.control.call::<ep::Keys>(&[], &()).await?;
     let name = keys
         .iter()
         .find(|k| k.default)
         .or_else(|| keys.first())
         .map(|k| k.name.clone())
-        .ok_or_else(|| tr!("尚无网关密钥。", "There is no gateway key yet.").to_string())?;
-    let v = st
-        .control
-        .call::<ep::KeyValue>(&[&name], &())
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    app.clipboard().write_text(v.key).map_err(|e| e.to_string())
+        .ok_or_else(|| CmdError::plain(tr!("尚无网关密钥。", "There is no gateway key yet.")))?;
+    let v = st.control.call::<ep::KeyValue>(&[&name], &()).await?;
+    app.clipboard()
+        .write_text(v.key)
+        .map_err(|e| CmdError::plain(e.to_string()))
 }
 
 /// 检查更新。查到了就拉起更新窗口；没查到要说一声 —— 用户点了，就该看到结果
@@ -652,7 +656,7 @@ fn quit(app: &tauri::AppHandle) {
     });
 }
 
-/// 一句话的提示
+/// 一句话的提示：检查更新的结果，菜单里的操作为什么没做成。**用户点了，就该看到结果**
 fn say(app: &tauri::AppHandle, title: &str, body: &str) {
     #[cfg(target_os = "macos")]
     {
@@ -661,8 +665,34 @@ fn say(app: &tauri::AppHandle, title: &str, body: &str) {
         macos::on_main(move |mtm| macos::inform(mtm, &title, &body));
     }
     #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, title, body);
+    notify(app, title, body);
+}
+
+/// 托盘那一句提示在系统通知里的键。**只有一个**：新的一句顶掉上一句，不在通知中心里
+/// 越堆越多。点开落在设置页（按键的种类，见 `notices::rules::default_view`），检查更新
+/// 和网关的状态都在那一页
+#[cfg(not(target_os = "macos"))]
+const SAID: &str = "menubar";
+
+/// 托盘没有自己的提示框，这一句只能是一条系统通知。
+///
+/// **提醒设成「系统通知」时走通知总线**（`Notices::announce`）：投给这个平台原生的那一端，
+/// 点开回到应用；Linux 上那一端一直连着会话总线 —— 通知插件每条通知开一个连接、发完就断，
+/// 而 GNOME 在发送方断开时会把这个应用的通知一起收走（见 `notices::linux`）。
+///
+/// 设成「仅在应用内」或「关闭」时总线不弹，可这一句是对用户这一下点击的回答，不是一条
+/// 提醒：那一档管的是要不要被打断，而用户正等着这个结果（macOS 上它是一个对话框，也不
+/// 看那一档）。这时交给通知插件
+#[cfg(not(target_os = "macos"))]
+fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    match app.try_state::<Arc<notices::Notices>>() {
+        Some(n) if n.mode() == notices::Mode::System => n.announce(SAID, title, body),
+        _ => {
+            if let Err(e) = app.notification().builder().title(title).body(body).show() {
+                tracing::debug!("托盘的提示没发出去：{e}");
+            }
+        }
     }
 }
 
@@ -832,6 +862,31 @@ mod tests {
         // 答得上来的照常拿到
         let live = ask(ASK, async { Ok(tw_api::LiveView::default()) }).await;
         assert!(live.is_ok());
+    }
+
+    /// 菜单里的操作被 core 拒绝了（切策略组时配置刚被别处改过）：说给用户的是界面语言的
+    /// 那一句，不是 core 的英文原句。这一层自己的失败本来就是一句话，照原样
+    #[test]
+    fn a_refusal_from_core_is_said_in_the_interface_language() {
+        use crate::i18n::{Lang, with_lang};
+        let text = "version mismatch: this edit is based on v1, and the current version is v2. \
+                    Refresh and edit again";
+        let refused = || -> CmdError {
+            anyhow::Error::new(crate::control::Refused(tw_api::Msg {
+                code: "control.config_stale".into(),
+                args: [("base", "v1"), ("current", "v2")]
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .into(),
+                text: text.into(),
+            }))
+            .into()
+        };
+        assert_eq!(
+            why(refused()),
+            "版本不一致：本次修改基于 v1，当前版本为 v2。请刷新后重新修改。"
+        );
+        with_lang(Lang::En, || assert_eq!(why(refused()), text));
+        assert_eq!(why(CmdError::plain("剪贴板不可用")), "剪贴板不可用");
     }
 
     #[test]
