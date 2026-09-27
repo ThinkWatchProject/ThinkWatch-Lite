@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Count } from "@/ui/count";
 import { useResource } from "@/lib/resource";
 import { useText } from "@/i18n";
+import type { ConfigFocus } from "@/configLocate";
 import { targetLabel } from "@/labels";
 import { useNav, useNavParams } from "@/nav";
 import type { GroupView, Overview, RouteInput } from "@/types";
@@ -61,7 +62,7 @@ export default function RoutingPage({
 }: {
   ov: Overview;
   onChanged: () => void;
-  onOpenConfigFile: (focus: string | null) => void;
+  onOpenConfigFile: (focus: ConfigFocus | null) => void;
 }) {
   const t = useText(routingPageText);
   const rt = useText(routingText);
@@ -307,7 +308,7 @@ export default function RoutingPage({
               dryRun: (name) => setDryRun({ kind: "route", name }),
               duplicate: (name) => setDialog({ kind: "route", mode: { kind: "duplicate", from: name } }),
               setDefault: (name) => setDialog({ kind: "set-default", name }),
-              locate: (name) => onOpenConfigFile(name),
+              locate: (name) => onOpenConfigFile({ section: "routes", name }),
               remove: (name) => setDialog({ kind: "delete-route", name }),
             }}
           />
@@ -326,7 +327,7 @@ export default function RoutingPage({
               edit: (name) => setDialog({ kind: "group", mode: { kind: "edit", name } }),
               prefer: (g, p) => void prefer(g, p),
               duplicate: (name) => setDialog({ kind: "group", mode: { kind: "duplicate", from: name } }),
-              locate: (name) => onOpenConfigFile(name),
+              locate: (name) => onOpenConfigFile({ section: "groups", name }),
               remove: (name) => setDialog({ kind: "delete-group", name }),
               showUpstreams: () => nav.open("upstreams"),
             }}

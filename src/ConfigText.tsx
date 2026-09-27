@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { call } from "@/control";
 import YamlEditor from "./YamlEditor";
+import { locateEntry, type ConfigFocus } from "./configLocate";
 import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
@@ -29,13 +30,13 @@ export default function ConfigTextMode({
   /** 保存成功。外层拿它去重新拉配置和概览 */
   onSaved: () => void;
   /**
-   * 从表单跳过来时要定位的那个名字。
+   * 从表单跳过来时要定位的那一项：哪一段、叫什么。
    *
    * **这个联动的价值不只是方便**：它让用户亲眼看到「我在表单里改一个
    * 字段，文件里只有那一行变了」，而那比任何文档都更能建立对最小文本
    * 替换的信任。
    */
-  focus?: string | null;
+  focus?: ConfigFocus | null;
   /** 最近一次校验失败指到的行号。**没有就是 null**，不是 0 */
   rejectedLine?: number | null;
   /** 点「在界面中查看」时跳到管理这一段的页面（反向那条） */
@@ -61,12 +62,6 @@ export default function ConfigTextMode({
   }, [doc.version]);
 
   /**
-   * 从表单跳过来时要选中的区间（字符下标，CodeMirror 用的就是它）。
-   *
-   * **选中整块而不是只把光标放过去** —— 用户按「在文件里看」是想确认
-   * 「这一段就是刚才表单里那个东西」，而一个看不见的光标回答不了这个。
-   */
-  /**
    * 光标停在哪一段上（反向联动）。
    *
    * **问后端，不在前端猜。**猜错的表现是「我明明点在中转上，右边显示
@@ -87,31 +82,19 @@ export default function ConfigTextMode({
   /** 校验报错指到的那一行。外层把最近一次拒绝传进来 */
   const errorLine = rejectedLine ?? null;
 
-  const range = useMemo<[number, number] | null>(() => {
-    if (!focus) return null;
-    const at = draft.indexOf(`name: ${focus}`);
-    if (at < 0) return null;
-    const lineStart = draft.lastIndexOf("\n", at) + 1;
-    const indent = draft.slice(lineStart).match(/^\s*(- )?/)?.[0].length ?? 0;
-    let end = draft.length;
-    let p = draft.indexOf("\n", at);
-    while (p >= 0) {
-      const next = draft.indexOf("\n", p + 1);
-      const line = draft.slice(p + 1, next < 0 ? draft.length : next);
-      // 空行不算结束 —— 一段配置里夹一个空行是很常见的写法
-      if (line.trim() !== "") {
-        const lead = line.match(/^\s*/)?.[0].length ?? 0;
-        if (lead < indent || (lead === indent && line.trimStart().startsWith("- "))) {
-          end = p + 1;
-          break;
-        }
-      }
-      p = next;
-    }
-    return [lineStart, end];
+  /**
+   * 从表单跳过来时要选中的区间（按文件原文算的字符下标，编辑器自己换成它的位置）。
+   *
+   * **选中整块而不是只把光标放过去** —— 用户按「在文件里看」是想确认
+   * 「这一段就是刚才表单里那个东西」，而一个看不见的光标回答不了这个。
+   */
+  const range = useMemo<[number, number] | null>(
+    // 在那一段里找，名字按整个值比：同名的密钥和路由、规则和上游各是各的（见 configLocate）
+    () => (focus ? locateEntry(draft, focus) : null),
     // 只在 focus 变的时候重算 —— 跟着 draft 变会让用户一打字就被拉回去
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus]);
+    [focus],
+  );
 
   const stale = base.current !== doc.version;
 

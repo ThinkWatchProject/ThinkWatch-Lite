@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
+import type { ConfigFocus } from "@/configLocate";
 import { invalidate, type Resource } from "@/lib/resource";
 import { useNav, useNavParams } from "@/nav";
 import { Banner } from "@/ui/banner";
@@ -74,8 +75,8 @@ export default function UpstreamsPage({
   ov: Overview;
   /** 写入之后让外面立刻重读概览 */
   onChanged: () => void;
-  /** 打开配置文件，并定位到这个名字 */
-  onOpenConfigFile: (focus: string | null) => void;
+  /** 打开配置文件，并定位到这一项 */
+  onOpenConfigFile: (focus: ConfigFocus | null) => void;
 }) {
   const t = useText(upstreamsPageText);
   const c = useText(commonText);
@@ -399,7 +400,7 @@ export default function UpstreamsPage({
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
                 traffic: (name) => nav.open("requests", { filter: { provider: name } }),
                 toggle: (p) => void toggle(p),
-                locate: (name) => onOpenConfigFile(name),
+                locate: (name) => onOpenConfigFile({ section: "providers", name }),
                 remove: (name) => setDialog({ kind: "delete-upstream", name }),
               }}
             />

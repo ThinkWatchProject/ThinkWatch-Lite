@@ -9,6 +9,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, Loadable } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { useNav, useNavParams } from "@/nav";
+import type { ConfigFocus } from "@/configLocate";
 import type { ClientView, KeyInput, Overview } from "@/types";
 import { CostFigure } from "@/CostFigure";
 import { useText } from "@/i18n";
@@ -59,7 +60,7 @@ export default function KeysPage({
   /** 此刻有请求在跑的密钥 */
   busy: ReadonlySet<string>;
   onChanged: () => void;
-  onOpenConfigFile: (focus: string | null) => void;
+  onOpenConfigFile: (focus: ConfigFocus | null) => void;
 }) {
   const t = useText(keysPageText);
   const title = useText(appText).surfaces.keys;
@@ -217,7 +218,8 @@ export default function KeysPage({
                 copy,
                 toggle,
                 makeDefault,
-                locate: (name) => onOpenConfigFile(name),
+                // 密钥在配置里叫 clients
+                locate: (name) => onOpenConfigFile({ section: "clients", name }),
               }}
             />
             <Reveal show={onlyDefault}>

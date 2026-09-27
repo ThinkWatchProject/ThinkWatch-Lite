@@ -8,6 +8,7 @@ import { useStableState } from "./useStable";
 import { EMPTY_FILTER } from "./requestTable";
 import { SettingsPage } from "./settings/SettingsPage";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
+import type { ConfigFocus } from "./configLocate";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import ClientsPage from "./clients/ClientsPage";
 import KeysPage from "./keys/KeysPage";
@@ -352,8 +353,8 @@ function Shell({ first }: { first: boolean }) {
   const [ov, setOv] = useStableState<Overview | null>(null);
   /** 概览最近一次读失败的原因。还没读到过概览时，配置那几页拿它画「读取失败」 */
   const [ovError, setOvError] = useState<unknown>(null);
-  /** 配置文件对话框。`focus`：打开时选中的名字 */
-  const [configFile, setConfigFile] = useState<{ focus: string | null } | null>(null);
+  /** 配置文件对话框。`focus`：打开时选中的那一项 */
+  const [configFile, setConfigFile] = useState<{ focus: ConfigFocus | null } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [palette, setPalette] = useState(false);
   /** 快捷键一览（`?`，或者命令面板左下角） */
@@ -615,7 +616,7 @@ function Shell({ first }: { first: boolean }) {
   }, [handover]);
 
   const changed = useCallback(() => setNudge((n) => n + 1), []);
-  const openConfigFile = useCallback((focus: string | null) => setConfigFile({ focus }), []);
+  const openConfigFile = useCallback((focus: ConfigFocus | null) => setConfigFile({ focus }), []);
   /** 页面、提醒要落到别的页时用。`settings:listen`：设置页并滚到那一节 */
   const go = useCallback(
     (to: string) => {
