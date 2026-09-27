@@ -417,14 +417,14 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 let _ = a.emit("core-event", &ev);
             },
         );
-        let switched = tokio::select! {
-            r = sub => {
+        let switched = match until_switched(sub, &mut moved).await {
+            Some(r) => {
                 if let Err(e) = r {
                     tracing::debug!("事件流断开：{e:#}");
                 }
                 false
             }
-            _ = moved.changed() => true,
+            None => true,
         };
         let was_open = opened.load(std::sync::atomic::Ordering::SeqCst);
         if was_open && !switched {
@@ -443,6 +443,22 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 _ = moved.changed() => {}
             }
         }
+    }
+}
+
+/// 跑着这条事件流，直到它自己结束（`Some`，带着它的结果），或者换了连接（`None`）。
+///
+/// **先看换没换连接**（`biased`，那一支排在前面）：切换之后，旧的那条流可能还攒着
+/// 几条没交出去的事件。两支不分先后的话，每一轮都有一半的机会先去读它们 —— 旧 core
+/// 的事件就这样在切换之后落到界面上、菜单栏上
+async fn until_switched<F: std::future::Future>(
+    sub: F,
+    moved: &mut tokio::sync::watch::Receiver<u64>,
+) -> Option<F::Output> {
+    tokio::select! {
+        biased;
+        _ = moved.changed() => None,
+        r = sub => Some(r),
     }
 }
 
@@ -517,5 +533,27 @@ async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **换了连接，先认换连接**：旧的那条流此刻也还有东西可交（两支同时就绪），也不再
+    /// 去读它。不分先后的话，这里每一次都有一半的机会先读旧的
+    #[tokio::test]
+    async fn a_switch_wins_over_what_the_old_stream_still_has() {
+        let (tx, mut moved) = tokio::sync::watch::channel(0u64);
+        for _ in 0..64 {
+            tx.send_modify(|n| *n += 1);
+            let got = until_switched(std::future::ready("旧 core 的事件"), &mut moved).await;
+            assert_eq!(got, None, "切换之后还读了旧的那条流");
+        }
+        // 没换连接的时候，流照常交出它的结果
+        assert_eq!(
+            until_switched(std::future::ready(7), &mut moved).await,
+            Some(7)
+        );
     }
 }
