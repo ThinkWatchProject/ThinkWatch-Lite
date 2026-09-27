@@ -291,31 +291,115 @@ fn fields_of(p: &plan::Plan, secrets: &[Vec<String>]) -> Vec<wire::FieldChange> 
 /// 字段的文档里写清了这一点。
 const MASK: &str = "«the gateway key from config.yaml»";
 
-fn mask(text: &str, key: Option<&str>) -> String {
-    match key {
-        // 空 key 会把每个字符之间都插一遍，那不是脱敏是毁掉整份 diff
-        Some(k) if !k.is_empty() => text.replace(k, MASK),
-        _ => text.to_string(),
+/// 别的密钥在界面上的样子：用户自己的（接管时被换下来的、还原时要放回去的），
+/// 和 MCP server 的环境变量、请求头
+const HIDDEN: &str = "«hidden secret»";
+
+/// 不带引号地出现在别处（哨兵注释里）时，比这还短的值不去盖：盖一个 `1` 会把整份
+/// diff 里的每一个 `1` 都换掉
+const SHORTEST_SECRET: usize = 8;
+
+/// 一份改动在界面上要盖住的值。
+///
+/// **diff 画的是整份文件**，里面除了我们写进去的网关那把，还有用户自己的密钥
+/// —— 只盖网关那把的话，其余的全都原样出现在这一屏上。
+pub(crate) struct Hide {
+    /// 网关的那几把，出现在哪儿都换成 [`MASK`]
+    gateway: Vec<String>,
+    /// 密钥字段上的值（用户自己的，也可能是网关那把），换成 [`HIDDEN`]：带引号的
+    /// 整串一律换；不带引号的 —— 哨兵注释里抄着的那一份（`# was …: sk-…`）、YAML
+    /// 里的裸值 —— 够长的才换
+    fields: Vec<String>,
+    /// **只换整个带引号的字符串**：MCP server 的环境变量和请求头。里面也会有
+    /// `production` 这种平常的词，写在别处的那些不该跟着被盖住
+    quoted: Vec<String>,
+}
+
+impl Hide {
+    pub(crate) fn new(
+        gateway: impl IntoIterator<Item = String>,
+        fields: impl IntoIterator<Item = String>,
+        quoted: impl IntoIterator<Item = String>,
+    ) -> Hide {
+        // 长的先换：一个值是另一个的一段时，先换短的会把长的拆成两截，剩下那截就漏了
+        fn tidy(v: impl IntoIterator<Item = String>, shortest: usize) -> Vec<String> {
+            let mut v: Vec<String> = v
+                .into_iter()
+                .filter(|s| s.chars().count() >= shortest)
+                .collect();
+            v.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+            v.dedup();
+            v
+        }
+        Hide {
+            // 空的会在每个字符之间插一遍，那不是脱敏是毁掉整份 diff
+            gateway: tidy(gateway, 1),
+            fields: tidy(fields, 1),
+            quoted: tidy(quoted, SHORTEST_SECRET),
+        }
+    }
+
+    /// 这份改动（连同另外那几份文件）要盖住的：网关的那几把、`secrets` 这几条路径上
+    /// 的值、MCP server 的环境变量和请求头
+    fn of(p: &plan::Plan, secrets: &[Vec<String>], gateway: &[&str]) -> Hide {
+        let quoted: Vec<String> = std::iter::once(p)
+            .chain(&p.also)
+            .flat_map(|x| {
+                x.before
+                    .iter()
+                    .chain([&x.after])
+                    .flat_map(|t| tw_adopt::mcp::server_secrets(x.format, t))
+            })
+            .collect();
+        Hide::new(
+            gateway.iter().map(|k| k.to_string()),
+            p.values_at(secrets),
+            quoted,
+        )
+    }
+
+    pub(crate) fn apply(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        for k in &self.gateway {
+            out = out.replace(k.as_str(), MASK);
+        }
+        for v in &self.fields {
+            out = hide_quoted(&out, v);
+            if v.chars().count() >= SHORTEST_SECRET {
+                out = out.replace(v.as_str(), HIDDEN);
+            }
+        }
+        for v in &self.quoted {
+            out = hide_quoted(&out, v);
+        }
+        out
     }
 }
 
-/// 另一份文件里整段是密钥的那几节（dsh 凭据文件的 `refs`、`records`）整段打码，
-/// 其余照 [`mask`]
-fn mask_file(text: &str, roots: &[&str], key: Option<&str>) -> String {
-    mask(&tw_adopt::yaml::mask_under(text, roots, MASK), key)
+/// 把 `v` 作为一整个带引号的字符串出现的地方换成 [`HIDDEN`]：JSON、TOML、YAML 的双引号
+/// 字符串（引号、反斜杠的转义几家一样），和单引号的那种
+fn hide_quoted(text: &str, v: &str) -> String {
+    let mut out = text.to_string();
+    if let Ok(q) = serde_json::to_string(v) {
+        out = out.replace(&q, &format!("\"{HIDDEN}\""));
+    }
+    out.replace(&format!("'{v}'"), &format!("'{HIDDEN}'"))
 }
 
 fn view(
     p: &plan::Plan,
     secrets: &[Vec<String>],
     roots: &[&str],
-    key: Option<&str>,
+    gateway: &[&str],
 ) -> wire::PlanView {
+    let hide = Hide::of(p, secrets, gateway);
+    // 另一份文件里整段是密钥的那几节（dsh 凭据文件的 `refs`、`records`）整段打码
+    let file = |t: &str| hide.apply(&tw_adopt::yaml::mask_under(t, roots, MASK));
     wire::PlanView {
         client: p.client.clone(),
         path: p.path.display().to_string(),
-        before: p.before.as_deref().map(|t| mask(t, key)),
-        after: mask(&p.after, key),
+        before: p.before.as_deref().map(|t| hide.apply(t)),
+        after: hide.apply(&p.after),
         notes: p.notes.clone(),
         shadows: p.shadows.iter().map(|x| x.display().to_string()).collect(),
         noop: p.is_noop(),
@@ -328,8 +412,8 @@ fn view(
             .iter()
             .map(|a| wire::FilePlanView {
                 path: a.path.display().to_string(),
-                before: a.before.as_deref().map(|t| mask_file(t, roots, key)),
-                after: mask_file(&a.after, roots, key),
+                before: a.before.as_deref().map(file),
+                after: file(&a.after),
                 fields: fields_of(a, secrets),
                 noop: a.is_noop(),
                 deletes: a.delete_file,
@@ -389,7 +473,7 @@ pub fn plan_adopt_as(
         &p,
         &secret_paths(&c),
         secret_roots(&c),
-        target.key.as_deref(),
+        target.key.as_deref().as_slice(),
     );
     v.key = Some(name);
     v.key_created = created;
@@ -473,17 +557,12 @@ pub fn plan_restore_as(
 ) -> Result<wire::PlanView, Msg> {
     let c = find(id, home)?;
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
-    // 还原的 diff 里，**要打码的是用户自己的原始密钥** —— 它正要被写
-    // 回去，而它比我们那把更不该出现在截图里
-    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), None);
-    for k in keys {
-        v.before = v.before.as_deref().map(|t| mask(t, Some(&k.key)));
-        v.after = mask(&v.after, Some(&k.key));
-        for a in &mut v.also {
-            a.before = a.before.as_deref().map(|t| mask(t, Some(&k.key)));
-            a.after = mask(&a.after, Some(&k.key));
-        }
-    }
+    // 还原的 diff 里，**要打码的还有用户自己的原始密钥** —— 它正要被写
+    // 回去，而它比我们那把更不该出现在截图里。`view` 按密钥字段上的值盖住它；
+    // 网关那几把也是按字段盖的，core 不在、连着远程（这里拿到的密钥清单是空的、
+    // 或者是别的机器上的）时照样盖得住
+    let gateway: Vec<&str> = keys.iter().map(|k| k.key.as_str()).collect();
+    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), &gateway);
     // 还原不删密钥：说清留下的是哪一把，下次接管直接用它
     v.key = keys
         .iter()
@@ -821,6 +900,25 @@ pub(crate) mod tests {
         let original = r#"{ "env": { "ANTHROPIC_BASE_URL": "https://example.com", "ANTHROPIC_AUTH_TOKEN": "users-own" } }"#;
         std::fs::write(&settings, original).unwrap();
 
+        // 接管的 diff：被换下来的是用户自己的那把，改之前那一栏里也不能有它
+        let p = plan_adopt(
+            home.path(),
+            "claude-code",
+            &gw(vec![key("default", "tw-new", None, true)]),
+            Vec::new(),
+        )
+        .unwrap();
+        let before = p.before.as_deref().unwrap();
+        assert!(!before.contains("users-own"), "{before}");
+        assert!(before.contains(HIDDEN), "{before}");
+        assert!(
+            p.after.contains(MASK) && !p.after.contains("tw-new"),
+            "{}",
+            p.after
+        );
+        // 不是密钥的照常显示
+        assert!(before.contains("https://example.com"), "{before}");
+
         let a = adopt(
             home.path(),
             &backups(&home),
@@ -839,8 +937,13 @@ pub(crate) mod tests {
         let p = plan_restore(home.path(), "claude-code", &keys).unwrap();
         assert!(!p.before.as_deref().unwrap().contains("tw-new"));
         assert_eq!(p.key.as_deref(), Some("claude-code"));
-        // 用户自己的那把正要被写回去：它也不出现在 diff 里（写的是旁文件里记下的值）
+        // 用户自己的那把正要被写回去：它也不出现在 diff 里
         assert!(!p.after.contains("tw-new"));
+        assert!(!p.after.contains("users-own"), "{}", p.after);
+        // core 不在（拿不到密钥清单）时，网关那把照样盖得住：它在密钥字段上
+        let offline = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        assert!(!offline.before.as_deref().unwrap().contains("tw-new"));
+        assert!(!offline.after.contains("users-own"), "{}", offline.after);
 
         restore(home.path(), &backups(&home), "claude-code").unwrap();
         let back: serde_json::Value =

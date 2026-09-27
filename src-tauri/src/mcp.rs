@@ -56,11 +56,22 @@ pub fn targets(home: &Path) -> Vec<wire::McpTargetView> {
 /// 算一份改动。**不写任何东西。**
 pub fn plan_op(home: &Path, req: &wire::McpOpRequest) -> Result<wire::PlanView, Msg> {
     let p = plan(home, req)?;
+    let format = target(&req.to, home)?.format;
+    // diff 画的是**整份目标文件**：里面每一个 server 的环境变量、请求头都要盖住，
+    // 不只是这次搬的那一个（`~/.claude.json` 里还有每个项目下的 server）
+    let hide = crate::clients::ops::Hide::new(
+        [],
+        [],
+        p.before
+            .iter()
+            .chain([&p.after])
+            .flat_map(|t| mcp::server_secrets(format, t)),
+    );
     Ok(wire::PlanView {
         client: p.client,
         path: p.path.display().to_string(),
-        before: p.before,
-        after: p.after,
+        before: p.before.as_deref().map(|t| hide.apply(t)),
+        after: hide.apply(&p.after),
         notes: Vec::new(),
         shadows: Vec::new(),
         noop: p.noop,
@@ -73,7 +84,7 @@ pub fn plan_op(home: &Path, req: &wire::McpOpRequest) -> Result<wire::PlanView, 
                 wire::FieldOp::Set
             },
             path: p.field.join("."),
-            // 值是一整段 server 配置，里面可能有密钥，diff 里已经能看到打过码的样子
+            // 值是一整段 server 配置，里面可能有密钥；diff 里看得到打过码的样子
             value: None,
             secret: false,
         }],
@@ -157,6 +168,53 @@ mod tests {
         assert_eq!(a.takes_effect, wire::TakesEffect::OnRestart);
         let text = std::fs::read_to_string(h.path().join(".cursor/mcp.json")).unwrap();
         assert!(text.contains("\"fs\""), "{text}");
+    }
+
+    /// diff 画的是整份目标文件：每一个 server 的令牌都要盖住 —— 搬的那个、没动的那个、
+    /// 挂在项目下面的那个
+    #[test]
+    fn the_diff_hides_every_servers_tokens_not_only_the_moved_one() {
+        let h = tempfile::tempdir().unwrap();
+        std::fs::write(
+            h.path().join(".claude.json"),
+            r#"{
+  "mcpServers": {
+    "github": { "command": "npx", "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_0123456789abcdef" } }
+  },
+  "projects": {
+    "/work/app": {
+      "mcpServers": {
+        "api": { "type": "http", "url": "https://mcp.example.com", "headers": { "Authorization": "Bearer proj-secret-token" } }
+      }
+    }
+  }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(h.path().join(".cursor")).unwrap();
+        std::fs::write(
+            h.path().join(".cursor/mcp.json"),
+            r#"{ "mcpServers": { "fs": { "command": "npx", "env": { "FS_TOKEN": "fs-0123456789" } } } }"#,
+        )
+        .unwrap();
+
+        let r = req(wire::McpOp::Copy, "fs", Some("cursor"), "claude-code");
+        let p = plan_op(h.path(), &r).unwrap();
+        for text in [p.before.as_deref().unwrap(), p.after.as_str()] {
+            for secret in ["ghp_0123456789abcdef", "proj-secret-token", "fs-0123456789"] {
+                assert!(!text.contains(secret), "{secret} 出现在 diff 里：\n{text}");
+            }
+            // 不是密钥的照常显示
+            assert!(text.contains("https://mcp.example.com"), "{text}");
+            assert!(text.contains("GITHUB_PERSONAL_ACCESS_TOKEN"), "{text}");
+        }
+        assert!(p.after.contains("\"fs\""), "{}", p.after);
+
+        // 落盘写的是真值
+        apply(h.path(), &h.path().join("backups"), &r).unwrap();
+        let text = std::fs::read_to_string(h.path().join(".claude.json")).unwrap();
+        assert!(text.contains("fs-0123456789"), "{text}");
     }
 
     #[test]

@@ -296,6 +296,59 @@ fn empty(f: Format) -> &'static str {
     }
 }
 
+/// 放 MCP server 的那几个键，各家的写法（见 [`targets`]）
+const SERVER_ROOTS: &[&str] = &["mcpServers", "mcp_servers", "mcp", "context_servers"];
+
+/// server 里装着令牌的那几个键：环境变量和请求头
+const SECRET_KEYS: &[&str] = &[
+    "env",
+    "environment",
+    "headers",
+    "http_headers",
+    "env_http_headers",
+];
+
+/// 一份配置里 MCP server 的环境变量和请求头的值。
+///
+/// **画 diff 之前拿它们打码**：它们多半是令牌（`GITHUB_PERSONAL_ACCESS_TOKEN`、
+/// `Authorization: Bearer …`），而界面上画的是整份文件 —— `~/.claude.json` 里每一个
+/// server、每个项目下的 server 都在里面。认不出的格式、解析不了的文件就当没有
+pub fn server_secrets(format: Format, text: &str) -> Vec<String> {
+    fn strings(v: &Val, out: &mut Vec<String>) {
+        match v {
+            Val::Str(s) => out.push(s.clone()),
+            Val::Arr(es) => es.iter().for_each(|x| strings(x, out)),
+            Val::Obj(ms) => ms.iter().for_each(|(_, x)| strings(x, out)),
+            _ => {}
+        }
+    }
+    fn walk(v: &Val, in_servers: bool, out: &mut Vec<String>) {
+        match v {
+            Val::Obj(ms) => {
+                for (k, x) in ms {
+                    if in_servers && SECRET_KEYS.contains(&k.as_str()) {
+                        strings(x, out);
+                    } else {
+                        walk(x, in_servers || SERVER_ROOTS.contains(&k.as_str()), out);
+                    }
+                }
+            }
+            Val::Arr(es) => es.iter().for_each(|x| walk(x, in_servers, out)),
+            _ => {}
+        }
+    }
+    let v = match format {
+        Format::Json => crate::json::value(text).ok(),
+        Format::Toml => crate::toml::value(text).ok(),
+        Format::Yaml | Format::Rows => None,
+    };
+    let mut out = Vec::new();
+    if let Some(v) = v {
+        walk(&v, false, &mut out);
+    }
+    out
+}
+
 /// 一次改动，算好了还没落盘。
 #[derive(Debug, Clone)]
 pub struct Plan {

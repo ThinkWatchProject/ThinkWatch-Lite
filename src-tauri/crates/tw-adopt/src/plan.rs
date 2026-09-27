@@ -146,6 +146,28 @@ impl Plan {
     pub fn is_noop(&self) -> bool {
         self.before.as_deref() == Some(self.after.as_str()) && self.also.iter().all(Plan::is_noop)
     }
+
+    /// `paths` 上的字符串值：改之前的、改之后的，另外那几份文件里的也算。
+    ///
+    /// 给界面画 diff 之前打码用。密钥字段上除了网关那把，还有**用户自己的** ——
+    /// 接管时被换下来的、还原时要放回去的，而画出来的是整份文件。解析不了的那一份
+    /// 不算（它本来就算不出改动）
+    pub fn values_at(&self, paths: &[Vec<String>]) -> Vec<String> {
+        let mut out = Vec::new();
+        for p in std::iter::once(self).chain(&self.also) {
+            for text in p.before.iter().chain(std::iter::once(&p.after)) {
+                let Ok(v) = semantic(p.format, text, &p.client) else {
+                    continue;
+                };
+                for path in paths {
+                    if let Some(Val::Str(s)) = lookup(&v, &refs(path)) {
+                        out.push(s);
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 fn parse_err(client: &str, e: impl std::fmt::Display) -> PlanError {
