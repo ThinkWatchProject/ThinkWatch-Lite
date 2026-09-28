@@ -60,7 +60,7 @@ import { invalidateAll, resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { Palette } from "./palette/Palette";
 import { paletteText } from "./palette/palette.i18n";
-import { COMBOS, Keys, isTyping, modalOpen, pageCombo } from "./palette/keys";
+import { COMBOS, Keys, comboText, isTyping, modalOpen, pageCombo } from "./palette/keys";
 import {
   Sidebar,
   SidebarContent,
@@ -69,7 +69,6 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -692,8 +691,8 @@ function Shell({ first }: { first: boolean }) {
                       <SidebarMenu className="gap-px">
                         {g.items.map((it) => {
                           const on = tab === it.id;
-                          /** 在源列表里排第几，⌘1…⌘9 按它数 */
-                          const index = SURFACES.indexOf(it.id);
+                          /** 这一页的快捷键：按在源列表里的位置数，⌘1…⌘9 */
+                          const combo = pageCombo(SURFACES.indexOf(it.id));
                           // 客户端配置里出现了新东西：挂个角标，直到去看过
                           const badge = it.id === "mcp" ? alerts.length : 0;
                           const Icon = it.icon;
@@ -708,15 +707,15 @@ function Shell({ first }: { first: boolean }) {
                                 onClick={() => open(it.id)}
                                 aria-current={on ? "page" : undefined}
                                 /*
-                                  悬浮说明写上这一页的快捷键。**展开时也显示**（shadcn 默认只在收起时
-                                  显示）：名字看得见，但 ⌘1…⌘9 只有在这里才学得到
+                                  悬浮说明**只在收起时出来**（shadcn 的默认）：那时只剩图标，名字和快捷键
+                                  都靠它。展开时名字就在图标旁边，再弹一个写着同一个名字的气泡是重复，
+                                  快捷键改写在这一行的末尾
                                 */
                                 tooltip={{
-                                  hidden: false,
                                   children: (
                                     <>
                                       {badge > 0 ? t.newFindings(label, badge) : label}
-                                      <Keys combo={pageCombo(index)} />
+                                      <Keys combo={combo} />
                                     </>
                                   ),
                                 }}
@@ -730,12 +729,27 @@ function Shell({ first }: { first: boolean }) {
                               >
                                 <Icon size={16} />
                                 <span className="truncate">{label}</span>
+                                {/*
+                                  行尾：快捷键和新发现的个数，收起时整段藏掉。**快捷键悬停、键盘聚焦时
+                                  才出来**，和悬停底色一起淡入：常显的话右边多出一列 ⌘1…⌘9，读起来像
+                                  计数。写成字不用键帽：这一行悬停时已经有底色，键帽是框中框。
+                                  个数排在快捷键后面、同在一行里，两位数也不会压上去。快捷键不进按钮
+                                  的名字（`aria-hidden`）：读屏从悬浮说明拿，说明收着也还是按钮的描述。
+                                */}
+                                <span className="ms-auto flex shrink-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
+                                  <span
+                                    aria-hidden
+                                    className="tw-label text-(--chrome-dim) tw-num opacity-0 transition-opacity duration-(--motion-fast) group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
+                                  >
+                                    {comboText(combo)}
+                                  </span>
+                                  {badge > 0 && (
+                                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 tw-label font-medium text-white tw-num">
+                                      {badge}
+                                    </span>
+                                  )}
+                                </span>
                               </SidebarMenuButton>
-                              {badge > 0 && (
-                                <SidebarMenuBadge className="h-4 min-w-4 rounded-full bg-destructive px-1 leading-none text-white peer-hover/menu-button:text-white peer-data-active/menu-button:text-white">
-                                  {badge}
-                                </SidebarMenuBadge>
-                              )}
                               {/* 收起时数字塞不下，只留一个点：它回答的是「那边有没有新东西」 */}
                               {badge > 0 && (
                                 <span className="pointer-events-none absolute top-[7px] right-[7px] hidden size-[7px] rounded-full bg-destructive ring-2 ring-(--chrome-ground) group-data-[collapsible=icon]:block" />
