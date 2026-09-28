@@ -172,7 +172,7 @@ enum Woke {
     Tick,
 }
 
-/// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言）、
+/// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言、钟跳了）、
 /// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
 /// 菜单开着时每秒回来一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个
 /// 落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
@@ -257,7 +257,11 @@ fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
 }
 
 /// 最近的一个该整个重收的时刻还有多久：额度重置（那份额度作废），或者显示着的「今日」
-/// 过完了（`day_end_ms`，本地的下一个零点 —— 过了零点还挂着昨天的数，那就不是「今日」）
+/// 过完了（`day_end_ms`，本地的下一个零点 —— 过了零点还挂着昨天的数，那就不是「今日」）。
+///
+/// **等这一段的定时器走的是 tokio 的钟**，macOS、Linux 上系统睡着时它不走：合上盖子睡过了
+/// 零点，醒来还要再等睡前剩下的那一段。睡醒、改时钟、换时区由 [`crate::clock`] 另外叫醒
+/// （`menubar_now`），重收时按此刻的钟重新算这一段
 fn next_reset_in(snap: &Snapshot, day_end_ms: Option<i64>) -> Option<std::time::Duration> {
     snap.quotas
         .iter()

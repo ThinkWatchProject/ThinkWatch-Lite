@@ -238,9 +238,9 @@ buckets: Array<CostBucketGroup>, };
  * 这台机器上发生的、界面要跟上的事（Tauri 事件 `local-event`）。
  *
  * **和 core 的事件流是两条路**：core 的说网关里的事，这条说这台机器上客户端的
- * 配置文件。连着哪个 core 都一样，这些文件总在这台机器上。
+ * 配置文件，和这台机器的钟。连着哪个 core 都一样，这些总在这台机器上。
  */
-export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind": "scan_alert", alerts: Array<ScanFinding>, at_ms: number, };
+export type LocalEvent = { "kind": "clients_changed", at_ms: number, } | { "kind": "scan_alert", alerts: Array<ScanFinding>, at_ms: number, } | { "kind": "clock_changed", at_ms: number, };
 
 /**
  * 改之前要说的一处：从哪儿换到哪儿。

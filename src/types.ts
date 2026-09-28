@@ -33,7 +33,7 @@ export type * from "./generated/lite-api";
 export type CoreEvent = Event;
 
 /** 这台机器上的事的全部种类（Tauri 事件 `local-event`，不是 core 说的） */
-export const LOCAL_KINDS: readonly LocalEvent["kind"][] = ["clients_changed", "scan_alert"];
+export const LOCAL_KINDS: readonly LocalEvent["kind"][] = ["clients_changed", "scan_alert", "clock_changed"];
 
 /** core 的 `/status` */
 export type CoreStatus = Status;
