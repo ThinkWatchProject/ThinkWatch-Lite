@@ -646,15 +646,19 @@ fn quit(app: &tauri::AppHandle) {
             }
             _ => 0,
         };
+        // **用户自己退出的**：之后再打开是用户要打开，不按「更新之后重新打开」恢复
+        // （见 `updater::record_exit`）
         #[cfg(target_os = "macos")]
         macos::on_main(move |mtm| {
             if macos::confirm_quit(mtm, in_flight) {
+                crate::updater::quitting_by_user();
                 app.exit(0);
             }
         });
         #[cfg(not(target_os = "macos"))]
         {
             let _ = in_flight;
+            crate::updater::quitting_by_user();
             app.exit(0);
         }
     });

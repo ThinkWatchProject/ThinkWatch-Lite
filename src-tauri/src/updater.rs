@@ -308,9 +308,6 @@ pub fn update_copy_command(app: tauri::AppHandle) -> Out<()> {
         .map_err(|e| e.to_string().into())
 }
 
-/// 重启之前在数据目录里留一句「从哪一版换过来的」，起来之后读它。
-pub(crate) const UPDATED_FROM: &str = ".updated-from";
-
 /// 等手上的请求结束，最多等多久。
 ///
 /// 一次带长思考的回答流上一两分钟是常事；等得比这更久，多半是一直有新
@@ -459,17 +456,15 @@ pub async fn update_install(
     .await;
 
     let _ = app.emit("update-step", Step::Installing);
-    // 起来之后说一声换到了哪一版。写不进去不影响更新本身。
-    let marker = data_dir().join(UPDATED_FROM);
-    let from = app.package_info().version.to_string();
 
     // **Windows 上 `install` 不回来。**插件拉起新版本的安装程序之后当场
-    // `exit(0)`，排在它后面的每一步都轮不到 —— 所以标记和停 core 都得挪到
-    // 它前面。停 core 在那边还是硬要求：`twcore.exe` 还在跑的话，安装程序
-    // 覆盖不了一个被占用的文件。
+    // `exit(0)`，排在它后面的每一步都轮不到，退出时的那一套（记下窗口开没开、
+    // 停 core）也轮不到 —— 所以都得挪到它前面。停 core 在那边还是硬要求：
+    // `twcore.exe` 还在跑的话，安装程序覆盖不了一个被占用的文件。装不成的话这条
+    // 记录留着也不碍事：版本没变，下次启动不会把它当成更新之后重开
     #[cfg(windows)]
     {
-        let _ = std::fs::write(&marker, &from);
+        record_exit(&app);
         let _ = app.emit("update-step", Step::Restarting);
         state
             .supervisor
@@ -479,9 +474,8 @@ pub async fn update_install(
             .await
             .and_then(|r| r.map_err(|e| e.to_string()));
         if let Err(e) = installed {
-            // 最常见的是 UAC 那一下点了「否」。**把刚才做的两件事都撤回来**：
-            // 不撤的话，网关就这么停着，而下次启动还会说一句没发生过的「已更新」。
-            let _ = std::fs::remove_file(&marker);
+            // 最常见的是 UAC 那一下点了「否」。**把停掉的网关接回来**：不接的话，
+            // 它就这么停着
             resume_after_failed_update(&app).await;
             return Err(tr!(
                 format!("安装失败：{e}"),
@@ -505,7 +499,6 @@ pub async fn update_install(
                 format!("Installation failed: {e}")
             )
         })?;
-        let _ = std::fs::write(&marker, &from);
         let _ = app.emit("update-step", Step::Restarting);
         // 先停掉 core、等它真的退出，再重启应用 —— 否则新起来的应用会先撞上
         // 旧 core 手里的锁。见 `Supervisor::stop_and_wait`。
@@ -557,15 +550,90 @@ pub(crate) async fn resume_after_failed_update(app: &tauri::AppHandle) {
     }
 }
 
-/// 上一次是被更新重启的话，说一声换到了哪一版。标记读过就删：不说的时候也删，不然
-/// 下次启动还会翻出这一句。
-pub(crate) fn announce_update(app: &tauri::AppHandle) {
-    use tauri_plugin_notification::NotificationExt;
-    let marker = data_dir().join(UPDATED_FROM);
-    let Ok(from) = std::fs::read_to_string(&marker) else {
+/// 上一个实例是怎么结束的：哪一版、什么时候、窗口开着没有。**被更新换下来、又被重新打开时，
+/// 照它恢复窗口**（见 [`relaunched`]）
+pub(crate) const LAST_EXIT: &str = ".last-exit";
+
+/// 从退出到被重新打开，隔多久以内还算「更新换下来之后重开」。Homebrew 在让应用退出之前
+/// 就下好了新版，退出之后只是换掉应用、再用 `open -b` 打开，前后几秒；应用自己装的更新
+/// 是当场重启
+const RELAUNCH_WITHIN_MS: u64 = 5 * 60 * 1000;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct LastExit {
+    version: String,
+    at_ms: u64,
+    /// 主窗口开着吗
+    window: bool,
+}
+
+/// 被更新换下来之后重新打开：换之前是哪一版，那时主窗口开着没有
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Relaunch {
+    pub from: String,
+    pub window: bool,
+}
+
+/// 这次退出是用户自己点的「退出」
+static QUIT_BY_USER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 用户确认了「退出」。之后的 [`record_exit`] 不记这个实例
+pub(crate) fn quitting_by_user() {
+    QUIT_BY_USER.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 退出时记下这个实例的样子，**只在退出的那一刻看得到**：Homebrew 重新打开应用时什么都
+/// 不带（`open -b`，连环境变量都清空），应用自己装完更新是把原进程原样再跑一遍 —— 起来的
+/// 那一份分不出自己是被更新重新打开的，还是用户点开的。
+///
+/// **用户自己点的「退出」不记**（旧的记录也删掉）：之后再打开是用户要打开，照常开窗口。
+/// 别的退出都记 —— Homebrew 升级时用 Apple Event 让应用退出，和在 Dock 上点「退出」、注销时
+/// 系统让它退出是同一条路；应用自己装完更新是先正常退出再重启
+pub(crate) fn record_exit(app: &tauri::AppHandle) {
+    let path = data_dir().join(LAST_EXIT);
+    if QUIT_BY_USER.load(std::sync::atomic::Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&path);
         return;
+    }
+    let exit = LastExit {
+        version: app.package_info().version.to_string(),
+        at_ms: notices::now_ms(),
+        window: app
+            .get_webview_window("main")
+            .is_some_and(|w| w.is_visible().unwrap_or(false)),
     };
-    let _ = std::fs::remove_file(&marker);
+    let written = serde_json::to_vec(&exit)
+        .map_err(std::io::Error::other)
+        .and_then(|bytes| crate::atomic_file::write(&path, &bytes));
+    if let Err(e) = written {
+        tracing::warn!("记不下这次退出：{e}");
+    }
+}
+
+/// 这次启动是不是更新之后被重新打开的。启动时调一次，**读完就删**。
+///
+/// 三条都要满足：上一个实例不是用户自己退出的（[`record_exit`] 记下了它）、那之后版本变了、
+/// 离它退出没多久（[`RELAUNCH_WITHIN_MS`]）。之前没在跑的，Homebrew 不会重新打开它，
+/// 之后是用户自己点开的
+pub(crate) fn relaunched(dir: &std::path::Path, version: &str, now_ms: u64) -> Option<Relaunch> {
+    let path = dir.join(LAST_EXIT);
+    let raw = std::fs::read(&path).ok();
+    let _ = std::fs::remove_file(&path);
+    let exit: LastExit = serde_json::from_slice(&raw?).ok()?;
+    after_update(exit, version, now_ms)
+}
+
+fn after_update(exit: LastExit, version: &str, now_ms: u64) -> Option<Relaunch> {
+    let recent = now_ms.saturating_sub(exit.at_ms) <= RELAUNCH_WITHIN_MS;
+    (exit.version != version && recent).then_some(Relaunch {
+        from: exit.version,
+        window: exit.window,
+    })
+}
+
+/// 更新之后被重新打开（见 [`relaunched`]）时说一声换到了哪一版
+pub(crate) fn announce_update(app: &tauri::AppHandle, from: &str) {
+    use tauri_plugin_notification::NotificationExt;
     let now = app.package_info().version.to_string();
     // 和别的提醒同一个开关。总线已经建起来的话问它；启动时它还没建（这一句说在它之前），
     // 就读设置 —— 总线一会儿用的也正是这一档
@@ -573,7 +641,7 @@ pub(crate) fn announce_update(app: &tauri::AppHandle) {
         .try_state::<Arc<notices::Notices>>()
         .map(|n| n.mode())
         .unwrap_or_else(|| prefs::load(&data_dir()).notices);
-    let Some((title, body)) = updated_notice(from.trim(), &now, mode) else {
+    let Some((title, body)) = updated_notice(from, &now, mode) else {
         return;
     };
     let _ = app.notification().builder().title(title).body(body).show();
@@ -581,8 +649,7 @@ pub(crate) fn announce_update(app: &tauri::AppHandle) {
 
 /// 「已更新到 x」那一条的标题和正文；不该说就是 `None`。
 ///
-/// **只在版本真的变了时说。**标记是重启之前写下的；替换没成功、起来的还是原来那一版
-/// 的话，这句话就是假的。
+/// **只在版本真的变了时说**（[`relaunched`] 已经筛过一遍，这里再守一道）。
 ///
 /// **用户选了「仅在应用内」或者关掉了提醒，就不弹**，和别的告知一样（见
 /// [`notices::Notices::announce`]）：它不是一件待处理的事，应用内的列表也不收它
@@ -646,7 +713,7 @@ mod tests {
         assert_eq!(updated_notice("2026.9.18", "2026.9.19", Mode::Off), None);
     }
 
-    /// 替换没成功（起来的还是原来那一版）、标记是空的：不说
+    /// 替换没成功（起来的还是原来那一版）、没有版本：不说
     #[test]
     fn the_updated_notice_is_only_said_when_the_version_changed() {
         assert_eq!(updated_notice("2026.9.19", "2026.9.19", Mode::System), None);
@@ -660,5 +727,72 @@ mod tests {
                 ))
             );
         });
+    }
+
+    const EXITED: u64 = 1_800_000_000_000;
+
+    fn exit(version: &str, window: bool) -> LastExit {
+        LastExit {
+            version: version.into(),
+            at_ms: EXITED,
+            window,
+        }
+    }
+
+    /// Homebrew 退出应用、换上新版、几秒后重新打开：照退出时的样子，窗口关着的还关着，开着
+    /// 的还开着
+    #[test]
+    fn a_relaunch_after_an_update_keeps_the_window_as_it_was() {
+        let soon = EXITED + 8_000;
+        assert_eq!(
+            after_update(exit("2026.9.22", false), "2026.9.23", soon),
+            Some(Relaunch {
+                from: "2026.9.22".into(),
+                window: false
+            })
+        );
+        assert_eq!(
+            after_update(exit("2026.9.22", true), "2026.9.23", soon).map(|r| r.window),
+            Some(true)
+        );
+    }
+
+    /// 不算更新之后重开的：版本没变（替换没成功，或者只是退出又打开）、离退出太久（关着的
+    /// 应用过后被用户点开）。**这时照常：用户点开就开窗口**
+    #[test]
+    fn a_launch_is_a_relaunch_only_right_after_an_update() {
+        assert_eq!(
+            after_update(exit("2026.9.23", false), "2026.9.23", EXITED + 8_000),
+            None
+        );
+        assert_eq!(
+            after_update(
+                exit("2026.9.22", false),
+                "2026.9.23",
+                EXITED + RELAUNCH_WITHIN_MS + 1
+            ),
+            None
+        );
+        // 时钟往回拨过：退出的时刻在「将来」，当作刚退出
+        assert!(after_update(exit("2026.9.22", false), "2026.9.23", EXITED - 5_000).is_some());
+    }
+
+    /// 退出的记录只用一次：读过就删，下一次启动不再当成更新之后重开。读不懂的也删
+    #[test]
+    fn the_exit_record_is_used_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(LAST_EXIT);
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&exit("2026.9.22", false)).unwrap(),
+        )
+        .unwrap();
+        let first = relaunched(dir.path(), "2026.9.23", EXITED + 8_000);
+        assert_eq!(first.map(|r| r.window), Some(false));
+        assert!(!path.exists());
+        assert_eq!(relaunched(dir.path(), "2026.9.23", EXITED + 9_000), None);
+        std::fs::write(&path, "not json").unwrap();
+        assert_eq!(relaunched(dir.path(), "2026.9.23", EXITED + 9_000), None);
+        assert!(!path.exists());
     }
 }
