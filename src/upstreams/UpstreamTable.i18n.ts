@@ -12,7 +12,8 @@ export const upstreamTableText = messages(
     models: "模型",
     quota: "额度 / 计费",
     day: "24 小时",
-    ttfb: "首字节 P50",
+    /** 上面一行是首 token 的 P50，下面一行是生成速度的中位数 */
+    timing: "首 token / 速度",
     actionsColumn: "操作",
     disabled: "已停用",
     disabledTip: "已停用的上游不参与转发。",
@@ -51,14 +52,16 @@ export const upstreamTableText = messages(
     dayCost: (cost: string) => `费用 ${cost}`,
     ms: (n: number) => `${n.toLocaleString()} ms`,
     latencyTip: (p95: number, samples: number) =>
-      `P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} 个样本`,
+      `首 token P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} 个样本`,
+    speedValue: (n: number) => `${n.toLocaleString()} token/秒`,
+    speedTip: (samples: number) => `生成速度 · ${samples.toLocaleString()} 个样本`,
   },
   {
     upstream: "Upstream",
     models: "Models",
     quota: "Quota / billing",
     day: "24 hours",
-    ttfb: "TTFB P50",
+    timing: "TTFT / speed",
     actionsColumn: "Actions",
     disabled: "Disabled",
     disabledTip: "A disabled upstream receives no requests.",
@@ -99,6 +102,9 @@ export const upstreamTableText = messages(
     dayCost: (cost: string) => `Cost ${cost}`,
     ms: (n: number) => `${n.toLocaleString()} ms`,
     latencyTip: (p95: number, samples: number) =>
-      `P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,
+      `First token P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,
+    speedValue: (n: number) => `${n.toLocaleString()} tokens/s`,
+    speedTip: (samples: number) =>
+      `Speed · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,
   },
 );

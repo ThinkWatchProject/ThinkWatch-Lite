@@ -78,6 +78,13 @@ export const trafficText = messages(
     model: "模型",
     upstream: "上游",
     latency: "延迟",
+    /** 延迟那一格的悬停：首 token、总耗时、生成用时，和生成速度（有的话） */
+    latencyTip: (ttft: string, total: string, gen: string, speed: string | null) => [
+      `首 token ${ttft}`,
+      `总耗时 ${total}`,
+      `生成用时 ${gen}`,
+      ...(speed != null ? [`生成速度 ${speed} token/秒`] : []),
+    ],
     tokens: "token",
     cost: "费用",
 
@@ -188,6 +195,12 @@ export const trafficText = messages(
     model: "Model",
     upstream: "Upstream",
     latency: "Latency",
+    latencyTip: (ttft: string, total: string, gen: string, speed: string | null) => [
+      `First token ${ttft}`,
+      `Total ${total}`,
+      `Generation ${gen}`,
+      ...(speed != null ? [`Speed ${speed} tokens/s`] : []),
+    ],
     tokens: "Tokens",
     cost: "Cost",
 

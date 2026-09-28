@@ -7,21 +7,22 @@ use tw_api::ep;
 use crate::AppState;
 use crate::error::Out;
 
-/// 上游列表那几列统计：一段时间里的请求与费用、首字节耗时、订阅额度，以及同一段
-/// 时间按上游分格的请求数（每一行的走势）。
+/// 上游列表那几列统计：一段时间里的请求与费用、第一个 token 到的时刻、生成速度、订阅
+/// 额度，以及同一段时间按上游分格的请求数（每一行的走势）。
 ///
 /// **一起取。**列表上它们是同一行的几格，分几次 invoke 会让一行数字分几次
 /// 跳变。拿不到的那一样是 `None`，不让整张列表打不开 —— 存储层不在的时候网关照常
 /// 转发，列表也该照常打开。**但不是空的**：空的在界面上读作「24 小时里 0 次请求、
 /// $0」，那是一个编出来的零（同一条见 `keys::key_usage`）。
 ///
-/// **四样同时问，不排队。**额度那一问可能要等几秒：GLM Coding Plan 的额度不在响应头
+/// **几样同时问，不排队。**额度那一问可能要等几秒：GLM Coding Plan 的额度不在响应头
 /// 里，core 答 `/quota` 时现去问账号的额度接口（最多等 5 秒）。排着队问的话，费用和
 /// 走势要白白跟着等。
 #[derive(serde::Serialize)]
 pub struct UpstreamStats {
     costs: Option<Vec<tw_api::CostGroup>>,
     latency: Option<Vec<tw_api::LatencyView>>,
+    token_rate: Option<Vec<tw_api::TokenRateView>>,
     quotas: Option<Vec<tw_api::ProviderQuota>>,
     /// 按界面给的格宽、按上游分格。**稀疏的** —— 没有请求的格子不在里面，由界面补
     buckets: Option<Vec<tw_api::CostBucketGroup>>,
@@ -51,15 +52,17 @@ pub async fn upstream_stats(
         bucket_ms: Some(bucket_ms.max(MIN_BUCKET_MS)),
         dim: tw_api::CostDim::Provider,
     };
-    let (costs, latency, quotas, buckets) = tokio::join!(
+    let (costs, latency, token_rate, quotas, buckets) = tokio::join!(
         c.call::<ep::CostBy>(&[], &costs),
         c.call::<ep::LatencyByProvider>(&[], &window),
+        c.call::<ep::TokenRateByProvider>(&[], &window),
         c.call::<ep::Quota>(&[], &()),
         c.call::<ep::CostBucketsBy>(&[], &buckets),
     );
     Ok(UpstreamStats {
         costs: costs.ok(),
         latency: latency.ok(),
+        token_rate: token_rate.ok(),
         quotas: quotas.ok(),
         buckets: buckets.ok(),
     })

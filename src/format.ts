@@ -10,22 +10,22 @@ import { formatText } from "./format.i18n";
 import { usd } from "./types";
 
 /**
- * 首字节和总耗时合成一列。
+ * 首 token 和总耗时合成一列。
  *
- * 非流式请求两者几乎相同（`253ms / 254ms`），两列占着宽度却只有一个
- * 信息。**只在它们真的差得开时才显示两个数** —— 那时差值本身就是结论：
- * 首字节快而总耗时长 = 模型在慢慢吐；两者都长 = 卡在网络或排队。
+ * 非流式请求没有首 token（整段一起到），只写总耗时。**两个数只在真的差得开时才都
+ * 显示** —— 那时差值本身就是结论：首 token 快而总耗时长 = 模型在慢慢吐；首 token 就
+ * 慢 = 卡在排队或读输入。
  *
  * 阈值 50ms：低于这个差别在感知上不存在，显示出来只是噪音。
  */
 export function latency(
-  ttfbMs: number | undefined,
+  ttftMs: number | undefined,
   durationMs: number | undefined,
 ): string {
-  if (durationMs == null) return ttfbMs != null ? `${ttfbMs}ms` : "—";
-  if (ttfbMs == null) return `${durationMs}ms`;
-  if (durationMs - ttfbMs < 50) return `${durationMs}ms`;
-  return `${ttfbMs}→${durationMs}ms`;
+  if (durationMs == null) return ttftMs != null ? `${ttftMs}ms` : "—";
+  if (ttftMs == null) return `${durationMs}ms`;
+  if (durationMs - ttftMs < 50) return `${durationMs}ms`;
+  return `${ttftMs}→${durationMs}ms`;
 }
 
 /**

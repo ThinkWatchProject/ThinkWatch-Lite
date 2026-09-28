@@ -66,7 +66,7 @@ describe("slotsByUpstream", () => {
 });
 
 describe("statsPartial", () => {
-  const full: UpstreamStats = { costs: [], latency: [], quotas: [], buckets: [] };
+  const full: UpstreamStats = { costs: [], latency: [], token_rate: [], quotas: [], buckets: [] };
 
   it("says nothing before the stats arrive, or when every part was read", () => {
     expect(statsPartial(undefined)).toBe(false);
@@ -74,10 +74,11 @@ describe("statsPartial", () => {
     expect(statsPartial(full)).toBe(false);
   });
 
-  it("speaks up when costs, the trend or latency could not be read, but not for quotas", () => {
+  it("speaks up when costs, the trend, latency or speed could not be read, but not for quotas", () => {
     expect(statsPartial({ ...full, costs: null })).toBe(true);
     expect(statsPartial({ ...full, buckets: null })).toBe(true);
     expect(statsPartial({ ...full, latency: null })).toBe(true);
+    expect(statsPartial({ ...full, token_rate: null })).toBe(true);
     expect(statsPartial({ ...full, quotas: null })).toBe(false);
   });
 });

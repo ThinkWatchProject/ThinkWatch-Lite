@@ -1,4 +1,4 @@
-//! 概览页：一次取齐的汇总、趋势和延迟。
+//! 概览页：一次取齐的汇总、趋势、延迟和生成速度。
 
 use tw_api::ep;
 
@@ -7,7 +7,7 @@ use crate::{
     error::{Out, text},
 };
 
-/// 一段时间的汇总、趋势、延迟、存储状态，和上一个等长区间的汇总。
+/// 一段时间的汇总、趋势、延迟、生成速度、存储状态，和上一个等长区间的汇总。
 ///
 /// **一起取。**界面上它们是同一块，分几次 invoke 会让那一块在几十毫秒里分几次
 /// 跳变。
@@ -52,6 +52,14 @@ pub async fn dashboard(
             .call::<ep::LatencyByProvider>(&[], &window(Some(since), None))
             .await
             .ok(),
+        token_rate: c
+            .call::<ep::TokenRate>(&[], &window(Some(since), None))
+            .await
+            .ok(),
+        token_rate_by_provider: c
+            .call::<ep::TokenRateByProvider>(&[], &window(Some(since), None))
+            .await
+            .ok(),
         storage: c.call::<ep::Storage>(&[], &()).await.ok(),
         // 趋势和分组。**拿不到不该让整页失败** —— 这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。但拿不到是 `None`，**不是空的**：空的在界面上就是
@@ -93,13 +101,17 @@ pub async fn dashboard(
 #[derive(serde::Serialize)]
 pub struct Dashboard {
     summary: tw_api::Summary,
-    /// 首字节时间的分位，按模型分。和 `summary` 同一个时间窗。
+    /// 第一个 token 到的时刻的分位，按模型分。和 `summary` 同一个时间窗。
     ///
     /// 下面这几样**拿不到是 `None`，不是空的**：空的是「没有样本、没有请求」，
     /// 取数失败时那样说就是编了一个零。界面见到 `None` 写「暂时取不到」
     latency: Option<Vec<tw_api::LatencyView>>,
     /// 按上游分。**和按模型分是两个问题**
     latency_by_provider: Option<Vec<tw_api::LatencyView>>,
+    /// 生成速度的中位数，按模型分。同一个时间窗
+    token_rate: Option<Vec<tw_api::TokenRateView>>,
+    /// 按上游分
+    token_rate_by_provider: Option<Vec<tw_api::TokenRateView>>,
     /// 拿不到就是没有 —— 存储层不在的时候网关照常跑
     storage: Option<tw_api::StorageStatus>,
     /// 按界面给的格宽分格。**稀疏的** —— 空桶由界面补

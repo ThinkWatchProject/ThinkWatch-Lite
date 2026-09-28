@@ -17,6 +17,7 @@ import { HeroStats } from "./HeroStats";
 import { TrendSection } from "./TrendSection";
 import { CacheSection } from "./CacheSection";
 import { LatencySection } from "./LatencySection";
+import { SpeedSection } from "./SpeedSection";
 import { SecuritySection } from "./SecuritySection";
 import type { Metric } from "./series";
 import { overviewText } from "./overview.i18n";
@@ -202,6 +203,7 @@ function Body({
           <TrendSection d={d} range={range} scope={id} by={by} onBy={onBy} />
           <CacheSection d={d} scope={id} scoped={scoped} />
           <LatencySection d={d} ov={ov} scope={id} scoped={scoped} />
+          <SpeedSection d={d} ov={ov} scope={id} scoped={scoped} />
         </>
       )}
       <SecuritySection d={d} ov={ov} range={range} scoped={scoped} />

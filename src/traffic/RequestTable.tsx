@@ -109,7 +109,7 @@ export function RequestTable({
     >
       {/*
         **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
-        两列毫秒数，不看列名根本分不出哪个是首字节哪个是总耗时 ——
+        两列毫秒数，不看列名根本分不出哪个是首 token 哪个是总耗时 ——
         那恰恰是排查时唯一要看的区别。
 
         钉在页面的滚动层上，所以上面的 `scroll={false}` 不能去掉：表外
@@ -128,7 +128,7 @@ export function RequestTable({
           {showClient && <TableHead>{t.client}</TableHead>}
           <TableHead>{t.model}</TableHead>
           <TableHead>{t.upstream}</TableHead>
-          {/* 首字节和总耗时合成一列 —— 非流式请求两者几乎相同 */}
+          {/* 首 token 和总耗时合成一列，生成速度在它的悬停里 —— 非流式请求没有首 token */}
           <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
           <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
           <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
@@ -502,7 +502,7 @@ const Row = memo(function Row({
           扫出极值。
         */}
         <TableCell className="text-right">
-          {r.state === "in_flight" ? <Running r={r} /> : latency(r.ttfbMs, r.durationMs)}
+          {r.state === "in_flight" ? <Running r={r} /> : <LatencyCell r={r} />}
         </TableCell>
         <TableCell className="text-right text-muted-foreground">
           <TokensCell r={r} />
@@ -527,18 +527,48 @@ const Row = memo(function Row({
 });
 
 /**
- * 在跑的那一条的延迟：首字节到了就先写它，后面是已经跑了多久，每秒走一格
+ * 在跑的那一条的延迟：第一个 token 到了就先写它，后面是已经跑了多久，每秒走一格
  * （`1180→0:42`）。灰的，而且写成时钟的样子 —— 别让它看起来像已经结束的总耗时；
- * 结局一到换成「首字节→总耗时」。
+ * 结局一到换成「首 token→总耗时」。
  *
  * 秒针只改这一格里的字（`Elapsed`），行和表都不重画。
  */
 function Running({ r }: { r: RequestRow }) {
   return (
     <span className="text-muted-foreground">
-      {r.ttfbMs != null && `${r.ttfbMs}→`}
+      {r.ttftMs != null && `${r.ttftMs}→`}
       <Elapsed at={r.atMs} />
     </span>
+  );
+}
+
+/**
+ * 跑完的那一条的延迟：首 token→总耗时。
+ *
+ * **生成速度在悬停里，不另占一列。**默认窗口下这张表已经放满了，再加一列，英文
+ * 界面里最右边的费用就出了视野。悬停写全四个数：首 token、总耗时、生成用时、生成
+ * 速度（core 算好的，没有就不写那一行）。非流式的没有首 token，只写总耗时、没有悬停。
+ */
+function LatencyCell({ r }: { r: RequestRow }) {
+  const t = useText(trafficText);
+  const text = latency(r.ttftMs, r.durationMs);
+  if (r.ttftMs == null || r.durationMs == null) return <>{text}</>;
+  const ms = (n: number) => `${n.toLocaleString()}ms`;
+  return (
+    <Tip
+      text={
+        <Lines
+          lines={t.latencyTip(
+            ms(r.ttftMs),
+            ms(r.durationMs),
+            ms(Math.max(0, r.durationMs - r.ttftMs)),
+            r.tokensPerSec != null ? r.tokensPerSec.toLocaleString() : null,
+          )}
+        />
+      }
+    >
+      <span className="underline decoration-dotted underline-offset-2">{text}</span>
+    </Tip>
   );
 }
 

@@ -30,6 +30,9 @@ export const requestDrawerText = messages(
 
     // 时间线。左边那一列标签只有 80px 宽
     ttfb: "首字节",
+    ttft: "首 token",
+    speed: "生成速度",
+    speedValue: (n: string) => `${n} token/秒`,
     totalTime: "总耗时",
     generationTime: "生成用时",
     upstream: "上游",
@@ -59,10 +62,10 @@ export const requestDrawerText = messages(
     bytes: "字节",
     /** 顶上那一排数字 */
     tokens: "token",
-    /** 首字节和生成的比例条：两段的名字，和读屏念的那一句 */
-    waiting: "等待首字节",
+    /** 首 token 和生成的比例条：两段的名字，和读屏念的那一句 */
+    waiting: "等待首 token",
     generating: "生成",
-    timingLabel: (ttfb: string, gen: string) => `等待首字节 ${ttfb}，生成 ${gen}`,
+    timingLabel: (ttft: string, gen: string) => `等待首 token ${ttft}，生成 ${gen}`,
 
     /** 选定上游之后被规则拒绝的请求，「上游」那一行名字后面的标记 */
     notSentSuffix: "（未发送）",
@@ -162,6 +165,9 @@ export const requestDrawerText = messages(
 
     // 标签列放不下术语表里的全称时用短的那半：Generation、Conversion、Dropped
     ttfb: "TTFB",
+    ttft: "First token",
+    speed: "Speed",
+    speedValue: (n: string) => `${n} tokens/s`,
     totalTime: "Total time",
     generationTime: "Generation",
     upstream: "Upstream",
@@ -185,9 +191,9 @@ export const requestDrawerText = messages(
     cancelled: "Canceled: the client disconnected before the response finished",
     bytes: "Bytes",
     tokens: "Tokens",
-    waiting: "Waiting for first byte",
+    waiting: "Waiting for first token",
     generating: "Generating",
-    timingLabel: (ttfb: string, gen: string) => `Waiting for first byte ${ttfb}, generating ${gen}`,
+    timingLabel: (ttft: string, gen: string) => `Waiting for first token ${ttft}, generating ${gen}`,
 
     notSentSuffix: " (not sent)",
 

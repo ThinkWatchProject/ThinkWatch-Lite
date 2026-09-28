@@ -151,8 +151,9 @@ The Overview page reports tokens, cost and requests for the last 24 hours,
 follows the last ten minutes. A trend chart stacks tokens or cost by model, and
 the model ranking beneath it opens the matching requests. Further sections
 cover the prompt cache (hit rate, the net savings it brought and the hit rate
-per model), latency (median and 95th-percentile time to first byte, per model
-and per upstream) and what each protection found.
+per model), latency (median and 95th-percentile time to first token, per model
+and per upstream), generation speed (median tokens per second, per model and
+per upstream) and what each protection found.
 
 The cost figure states how much of it is estimated, for instance for a
 response that was cut off before it finished. Requests whose model has no
@@ -169,7 +170,8 @@ and the date of the prices it was costed with.
 ### Traffic and sessions
 
 The Traffic page lists requests as they arrive: status, key, model, upstream,
-time to first byte and total time, tokens and cost, with marks for a converted
+time to first token and total time (with the generation speed on hover), tokens
+and cost, with marks for a converted
 API format, redacted keys and a blocked or suspicious tool call. The list can
 be filtered by key, upstream and model, or narrowed to failed or unpriced
 requests. The Sessions view groups the requests of one conversation into
@@ -426,7 +428,8 @@ Settings can reduce the item to the icon or to the numbers.
   </picture>
 </p>
 
-Clicking it opens a native menu with the gateway's address and state, unread
+Clicking it opens a native menu with the gateway's address, its generation speed
+over the last minute and its state, unread
 notices, today's requests, tokens and cost, the quotas and reset times of each
 subscription account and GLM Coding Plan upstream (with the credits left under
 the bar on a plan billed in credits), and the requests in progress, followed by

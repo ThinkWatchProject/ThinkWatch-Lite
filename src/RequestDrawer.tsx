@@ -157,7 +157,10 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
     const un = listen<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       const mine =
-        (ev.kind === "request_headers" || ev.kind === "request_routed" || ev.kind === "request_priced") &&
+        (ev.kind === "request_headers" ||
+          ev.kind === "request_first_token" ||
+          ev.kind === "request_routed" ||
+          ev.kind === "request_priced") &&
         ev.id === id;
       // 事件流丢过事件的话，结局可能就在里面
       if (mine || ev.kind === "events_dropped") void load(() => alive);
@@ -352,11 +355,14 @@ function Stat({ label, value, muted }: { label: string; value: ReactNode; muted?
 const ms = (n: number) => `${Math.round(n).toLocaleString()}ms`;
 
 /**
- * 时间线：首字节、总耗时、token、费用四个数，一条「等首字节 / 生成」的比例条，
- * 下面是这一条的身份和经过（上游、密钥、路径、转换、防护、状态、字节）。
+ * 时间线：首 token、总耗时、生成速度、token、费用五个数，一条「等首 token / 生成」的
+ * 比例条，下面是这一条的身份和经过（上游、密钥、路径、转换、防护、状态、字节）。
  *
- * **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的一切 —— 一眼看出慢在网络还是
- * 慢在模型。比例条回答的是同一件事：灰的那段是在等，蓝的那段是在生成。
+ * **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的一切 —— 一眼看出慢在排队、读输入
+ * 还是慢在生成。比例条回答的是同一件事：灰的那段是在等，蓝的那段是在生成。首字节
+ * （响应头到的时刻）在下面的明细里：流式响应的响应头一般马上就回，它说的是连没连上。
+ *
+ * 非流式的没有首 token（整段一起到），也就没有速度和比例条。
  */
 function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof stateOf> }) {
   const t = useText(requestDrawerText);
@@ -365,11 +371,11 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
   const sent = notSent(r);
   const prompt =
     r.input_tokens != null ? r.input_tokens + (r.cache_read_tokens ?? 0) + (r.cache_write_tokens ?? 0) : undefined;
-  const gen = r.duration_ms != null && r.ttfb_ms != null ? r.duration_ms - r.ttfb_ms : null;
+  const gen = r.duration_ms != null && r.ttft_ms != null ? r.duration_ms - r.ttft_ms : null;
   return (
     <div>
-      <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
-        <Stat label={t.ttfb} value={r.ttfb_ms != null ? <AnimatedNumber value={r.ttfb_ms} format={ms} /> : "—"} muted={r.ttfb_ms == null} />
+      <dl className="grid grid-cols-5 overflow-hidden rounded-lg border border-border">
+        <Stat label={t.ttft} value={r.ttft_ms != null ? <AnimatedNumber value={r.ttft_ms} format={ms} /> : "—"} muted={r.ttft_ms == null} />
         {/* 还在跑的，总耗时是到现在为止跑了多久，每秒走一格；和流量表那一格同一个写法 */}
         <Stat
           label={t.totalTime}
@@ -384,15 +390,21 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
           }
           muted={r.duration_ms == null}
         />
+        <Stat
+          label={t.speed}
+          value={r.tokens_per_sec != null ? t.speedValue(r.tokens_per_sec.toLocaleString()) : "—"}
+          muted={r.tokens_per_sec == null}
+        />
         <Stat label={t.tokens} value={tokenPair(prompt, r.output_tokens ?? undefined)} muted={prompt == null} />
         <Stat label={t.cost} value={<CostText r={r} running={running} short />} muted={r.cost_micros == null} />
       </dl>
-      {r.duration_ms != null && r.ttfb_ms != null && r.duration_ms > 0 && gen !== null && (
-        <TimingBar ttfb={r.ttfb_ms} gen={Math.max(0, gen)} />
+      {r.duration_ms != null && r.ttft_ms != null && r.duration_ms > 0 && gen !== null && (
+        <TimingBar ttft={r.ttft_ms} gen={Math.max(0, gen)} />
       )}
 
       <Rows className="mt-4">
         <Row label={t.generationTime} value={gen !== null ? ms(gen) : running ? t.inProgress : "—"} />
+        <Row label={t.ttfb} value={r.ttfb_ms != null ? ms(r.ttfb_ms) : "—"} />
         <Row
           label={t.upstream}
           value={
@@ -524,20 +536,20 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
 }
 
 /**
- * 首字节和生成的比例。**只画两段，不画刻度**：数字在上面那一排里，这里只要一眼看出
+ * 首 token 和生成的比例。**只画两段，不画刻度**：数字在上面那一排里，这里只要一眼看出
  * 时间花在哪一头。生成那段不到 1% 时也留 2px，免得看起来像没有生成。
  */
-function TimingBar({ ttfb, gen }: { ttfb: number; gen: number }) {
+function TimingBar({ ttft, gen }: { ttft: number; gen: number }) {
   const t = useText(requestDrawerText);
-  const total = Math.max(1, ttfb + gen);
+  const total = Math.max(1, ttft + gen);
   return (
     <div className="mt-3">
       <div
         role="img"
-        aria-label={t.timingLabel(ms(ttfb), ms(gen))}
+        aria-label={t.timingLabel(ms(ttft), ms(gen))}
         className="flex h-1.5 gap-0.5 overflow-hidden rounded-full"
       >
-        <span className="motion-bar rounded-l-full bg-chart-3" style={{ width: `${(ttfb / total) * 100}%` }} />
+        <span className="motion-bar rounded-l-full bg-chart-3" style={{ width: `${(ttft / total) * 100}%` }} />
         <span className="motion-bar min-w-0.5 flex-1 rounded-r-full bg-chart-1" />
       </div>
       <div className="mt-1.5 flex items-center gap-4 tw-label text-muted-foreground">

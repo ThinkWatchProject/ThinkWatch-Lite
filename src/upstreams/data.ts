@@ -84,7 +84,9 @@ export function patch<T>(f: (s: T) => T): (s: T | undefined) => T {
  * 「不知道」的写法，不会读成一个数。
  */
 export function statsPartial(s: UpstreamStats | undefined): boolean {
-  return s !== undefined && (s.costs === null || s.buckets === null || s.latency === null);
+  return (
+    s !== undefined && (s.costs === null || s.buckets === null || s.latency === null || s.token_rate === null)
+  );
 }
 
 /** 一个小时格：请求数、其中失败的 */

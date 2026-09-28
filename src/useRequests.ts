@@ -56,12 +56,14 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
         next.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
         if (h.status != null) next.status = h.status;
         next.durationMs = h.duration_ms ?? undefined;
+        next.tokensPerSec = h.tokens_per_sec ?? undefined;
         next.bytes = h.bytes ?? undefined;
         next.error = h.error ?? undefined;
       }
       // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
       if (!h.local) next.provider = h.provider;
       next.model ??= h.model || undefined;
+      next.ttftMs ??= h.ttft_ms ?? undefined;
       if (h.input_tokens != null) next.inputTokens = h.input_tokens;
       if (h.output_tokens != null) next.outputTokens = h.output_tokens;
       if (h.cache_read_tokens != null) next.cacheReadTokens = h.cache_read_tokens;
@@ -98,7 +100,9 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
       status: h.status ?? undefined,
       ttfbMs: h.ttfb_ms ?? undefined,
+      ttftMs: h.ttft_ms ?? undefined,
       durationMs: h.duration_ms ?? undefined,
+      tokensPerSec: h.tokens_per_sec ?? undefined,
       bytes: h.bytes ?? undefined,
       inputTokens: h.input_tokens ?? undefined,
       outputTokens: h.output_tokens ?? undefined,
@@ -137,6 +141,7 @@ function changed(a: RequestRow, b: RequestRow): boolean {
 function touches(ev: CoreEvent): number | null {
   switch (ev.kind) {
     case "request_headers":
+    case "request_first_token":
     case "request_finished":
     case "request_cancelled":
     case "request_failed":

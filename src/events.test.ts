@@ -122,6 +122,44 @@ describe("从事件缝出一行", () => {
   });
 
   /**
+   * 第一个 token 一到就记在行上（在跑的那一格要写它），速度跟着结局来。**非流式的两个
+   * 都没有**：响应头要等生成完才到，没有「第一个」
+   */
+  it("首 token 在跑的时候就记上，生成速度跟着结局来", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, { kind: "request_headers", id: 1, status: 200, ttfb_ms: 300 });
+    applyEvent(rows, { kind: "request_first_token", id: 1, ttft_ms: 1_200 });
+    expect(rows.get(1)?.state).toBe("in_flight");
+    expect(rows.get(1)?.ttftMs).toBe(1_200);
+    applyEvent(rows, {
+      kind: "request_finished",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      status: 200,
+      bytes: 10,
+      duration_ms: 4_000,
+      usage: { input: 10, output: 280, cache_read: 0, cache_write: 0 },
+      tokens_per_sec: 100,
+    });
+    expect(rows.get(1)?.tokensPerSec).toBe(100);
+
+    applyEvent(rows, started({ id: 2 }));
+    applyEvent(rows, { kind: "request_headers", id: 2, status: 200, ttfb_ms: 3_990 });
+    applyEvent(rows, {
+      kind: "request_finished",
+      id: 2,
+      model: "claude-sonnet-4-5",
+      status: 200,
+      bytes: 10,
+      duration_ms: 4_000,
+      usage: { input: 10, output: 280, cache_read: 0, cache_write: 0 },
+    });
+    expect(rows.get(2)?.ttftMs).toBeUndefined();
+    expect(rows.get(2)?.tokensPerSec).toBeUndefined();
+  });
+
+  /**
    * 客户端先断开了（Claude Code 里按 Esc）。**这一行不能停在「进行中」**，
    * 也不能算成失败 —— 上游已经为它计了费，到断开为止的用量要接上。
    */
@@ -404,8 +442,10 @@ function stored(over: Partial<HistoryRow> = {}): HistoryRow {
     model: "claude-sonnet-4-5",
     path: "/v1/messages",
     status: 200,
-    ttfb_ms: 800,
+    ttfb_ms: 300,
+    ttft_ms: 800,
     duration_ms: 4_000,
+    tokens_per_sec: 6,
     bytes: 1_234,
     input_tokens: 100,
     output_tokens: 20,
