@@ -647,7 +647,7 @@ pub struct LocationChange {
 /// 这台机器上发生的、界面要跟上的事（Tauri 事件 `local-event`）。
 ///
 /// **和 core 的事件流是两条路**：core 的说网关里的事，这条说这台机器上客户端的
-/// 配置文件。连着哪个 core 都一样，这些文件总在这台机器上。
+/// 配置文件，和这台机器的钟。连着哪个 core 都一样，这些总在这台机器上。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LocalEvent {
@@ -659,4 +659,7 @@ pub enum LocalEvent {
         alerts: Vec<ScanFinding>,
         at_ms: u64,
     },
+    /// 钟跳了：系统睡醒、时钟被改、时区换了（见 `clock`）。定在某个钟点上的定时器
+    /// 要按此刻的钟重新定
+    ClockChanged { at_ms: u64 },
 }

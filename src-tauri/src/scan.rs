@@ -298,6 +298,7 @@ mod tests {
             match ev {
                 wire::LocalEvent::ClientsChanged { .. } => changed = true,
                 wire::LocalEvent::ScanAlert { alerts, .. } => break alerts,
+                wire::LocalEvent::ClockChanged { .. } => unreachable!("客户端的监视不报钟"),
             }
         };
         // 文件动了先说一声；只报新出现的那一条，本来就有的那条不再报一遍

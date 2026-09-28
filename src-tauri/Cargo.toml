@@ -171,6 +171,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
+    # 系统睡醒时叫醒定在钟点上的几处（`clock`）。注册函数在前一个里，它的参数类型和
+    # 醒来的那个常量在后一个里
+    "Win32_System_Power",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套

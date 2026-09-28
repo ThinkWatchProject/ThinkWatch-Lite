@@ -3,7 +3,6 @@ import { FunnelXIcon } from "lucide-react";
 import { useText } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { bucketStart } from "@/format";
 import { EMPTY_FILTER, facets, filterRows, hasAnyFilter, sortRows } from "@/requestTable";
 import type { CoreStatus, RequestRow, SessionView } from "@/types";
 import RequestDrawer from "@/RequestDrawer";
@@ -20,6 +19,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, ErrorState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Toggle } from "@/ui/toggle";
+import { useStartOf } from "@/useNow";
 import { useArrivals } from "./arrivals";
 import { copyText } from "./cells";
 import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
@@ -165,17 +165,9 @@ export default function TrafficPage({
 
   /**
    * 今天从哪一刻算起。时间那一列今天的记录给到秒，更早的带上日期；那条界线一天
-   * 只过一次，定时器就定在下一个零点。跨零点用 `setDate(+1)` 再归零，不加
-   * 86400000：夏令时那两天一天不是 24 小时。
+   * 只过一次，到了零点、钟跳了（睡醒、改时钟、换时区）时才换。
    */
-  const [today, setToday] = useState(() => bucketStart(Date.now(), DAY_MS));
-  useEffect(() => {
-    const next = new Date(today);
-    next.setDate(next.getDate() + 1);
-    next.setHours(0, 0, 0, 0);
-    const h = setTimeout(() => setToday(bucketStart(Date.now(), DAY_MS)), Math.max(1_000, next.getTime() - Date.now()));
-    return () => clearTimeout(h);
-  }, [today]);
+  const today = useStartOf(DAY_MS);
 
   /**
    * 行内的键盘导航。`↑↓` 按屏幕上的顺序走，`Enter` 或空格打开（空格和访达里的

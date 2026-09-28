@@ -17,6 +17,8 @@ pub mod autostart;
 pub mod call;
 pub mod chatgpt;
 pub mod clients;
+/// 系统睡醒、改时钟、换时区时叫醒定在钟点上的几处，见模块头上
+pub mod clock;
 pub mod connection;
 pub mod control;
 pub mod core_text;
@@ -98,7 +100,8 @@ pub struct AppState {
     /// 现在由事件叫醒。`Notify` 攒一个许可，所以一串请求只会换来一次
     /// 重收，不是一串。
     pub menubar: Arc<tokio::sync::Notify>,
-    /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言
+    /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言、
+    /// 钟跳了（睡醒、改时钟、换时区，见 `clock`）
     pub menubar_now: Arc<tokio::sync::Notify>,
 }
 
@@ -405,6 +408,8 @@ pub fn run() {
             // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
             // 用户就已经看到它了 —— 开机自启时尤其重要。
             menubar::install(&handle)?;
+            // 睡醒、改时钟、换时区时菜单栏的「今日」当场对上，不等睡前排好的那个定时器
+            clock::watch(&handle);
 
             // 心跳。三信号里最慢的那条，但**唯一能抓到「活着但卡死」**
             // —— 一个死锁的进程既不退出也不关 socket，前两条信号都看
