@@ -296,8 +296,16 @@ pub fn run() {
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(Updates::default());
-            // 上一次是被更新重启的话，现在说一声
-            announce_update(&handle);
+            // 被更新换下来之后又被重新打开的：说一声换到了哪一版，窗口照更新之前的样子
+            // （见下面的静默启动）
+            let relaunch = updater::relaunched(
+                &data_dir(),
+                &handle.package_info().version.to_string(),
+                notices::now_ms(),
+            );
+            if let Some(r) = &relaunch {
+                announce_update(&handle, &r.from);
+            }
 
             // 通知总线。**判定在这里，不在界面** —— 关窗即销毁 webview
             // 系统通知：装好的应用用原生的（能原地更新、撤回、点开落到对应页面），
@@ -428,6 +436,18 @@ pub fn run() {
                 // 连着两次没走到就绪才会走到这里，那时再悄悄撞一次不如问一句
                 tracing::info!(?why, "启动时先显示连接选择");
                 connection::show_picker(&handle, why)?;
+            } else if let Some(r) = &relaunch {
+                // **更新之后被重新打开的，照更新之前的样子**：之前只在菜单栏，现在也只在
+                // 菜单栏；之前窗口开着，现在也开着。Homebrew 升级完用 `open -b` 打开、应用
+                // 自己装完重启，都不带说得出这一点的参数，靠的是退出那一刻记下的（见
+                // `updater::record_exit`）
+                if r.window {
+                    show_main_window(&handle)?;
+                } else {
+                    tracing::info!("更新之前只在菜单栏，更新之后也不开窗口");
+                    #[cfg(target_os = "macos")]
+                    become_accessory(&handle);
+                }
             } else if autostart::launched_by_autostart(std::env::args()) {
                 tracing::info!("开机自启，不开窗口");
                 #[cfg(target_os = "macos")]
@@ -539,8 +559,12 @@ pub fn run() {
                         api.prevent_exit();
                     }
                 }
-                // 真要退了：「一个程序」原则的另一半，core 跟着走
-                tauri::RunEvent::Exit => stop_core_on_exit(app),
+                // 真要退了：先记下这个实例的样子（更新之后重新打开时照它恢复窗口），
+                // 再让 core 跟着走 —— 「一个程序」原则的另一半
+                tauri::RunEvent::Exit => {
+                    updater::record_exit(app);
+                    stop_core_on_exit(app);
+                }
                 _ => {}
             }
         });
