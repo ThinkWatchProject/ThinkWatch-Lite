@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import {
-  Combobox,
+  Autocomplete,
   ComboboxContent,
   ComboboxEmpty,
   ComboboxInput,
@@ -32,6 +32,10 @@ export function onOpenFocus(e: Event, onDialog: boolean) {
 /**
  * 模型名：**自由输入 + 建议**。模型可能是刚发布的、也可能是中转自己起的，
  * 建议里没有的照样得能写进去。
+ *
+ * **所以是 Autocomplete，不是 Combobox。**Combobox 在列表收起时把输入框改回选中的
+ * 那一项、没选过就清空：建议里没有的名字，和比建议短的名字（列表里只有
+ * `openai.gpt-5.6-sol` 时写 `gpt-5.6-sol`），都在列表收起后被换掉。
  */
 export function ModelInput({
   value,
@@ -72,12 +76,14 @@ export function ModelInput({
   }, [open]);
   return (
     <div ref={anchor} className="contents">
-      <Combobox
+      <Autocomplete
         items={models}
-        inputValue={value}
-        onInputValueChange={onChange}
+        value={value}
+        onValueChange={onChange}
         open={open}
         onOpenChange={(next) => setOpen(next)}
+        // 点进输入框就给建议，和点右边的箭头一样
+        openOnInputClick
       >
         <ComboboxInput id={id} placeholder={placeholder ?? t.modelName} className={cn("w-full font-mono", className)} />
         <ComboboxContent container={container ?? undefined}>
@@ -90,7 +96,7 @@ export function ModelInput({
             )}
           </ComboboxList>
         </ComboboxContent>
-      </Combobox>
+      </Autocomplete>
     </div>
   );
 }

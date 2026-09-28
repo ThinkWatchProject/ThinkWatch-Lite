@@ -1,5 +1,8 @@
 import * as React from "react"
-import { Combobox as ComboboxPrimitive } from "@base-ui/react"
+import {
+  Autocomplete as AutocompletePrimitive,
+  Combobox as ComboboxPrimitive,
+} from "@base-ui/react"
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/ui/button"
@@ -11,7 +14,18 @@ import {
 } from "@/ui/input-group"
 import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react"
 
+/**
+ * 从列表里选一个。**列表收起时，输入框改回选中的那一项，没选过就清空** ——
+ * 输入框里的字只是筛选列表用的，列表之外的值留不住。要能写任意值，用 `Autocomplete`
+ */
 const Combobox = ComboboxPrimitive.Root
+
+/**
+ * 输入框里的字就是值，列表只是建议：点一项是把它填进输入框，没有「选中」一说。
+ * 零件和 Combobox 是同一套（Base UI 的 Autocomplete 直接沿用），下面的
+ * `ComboboxInput`、`ComboboxContent`、`ComboboxItem` 等照用
+ */
+const Autocomplete = AutocompletePrimitive.Root
 
 function ComboboxValue({ ...props }: ComboboxPrimitive.Value.Props) {
   return <ComboboxPrimitive.Value data-slot="combobox-value" {...props} />
@@ -284,6 +298,7 @@ function useComboboxAnchor() {
 }
 
 export {
+  Autocomplete,
   Combobox,
   ComboboxInput,
   ComboboxContent,
