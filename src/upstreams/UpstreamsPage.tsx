@@ -135,8 +135,11 @@ export default function UpstreamsPage({
     if (p.edit && ov.providers.some((x) => x.name === p.edit)) {
       setTab("upstreams");
       setDialog({ kind: "upstream", mode: { kind: "edit", name: p.edit } });
+    } else if (p.create === "upstream") {
+      setTab("upstreams");
+      setDialog({ kind: "upstream", mode: { kind: "create", draft: p.draft } });
     } else if (p.create) {
-      setTab(p.create === "proxy" ? "proxies" : p.create === "sheet" ? "pricing" : "upstreams");
+      setTab(p.create === "proxy" ? "proxies" : "pricing");
       setDialog({ kind: p.create, mode: { kind: "create" } });
     } else if (p.test) {
       setTab("upstreams");

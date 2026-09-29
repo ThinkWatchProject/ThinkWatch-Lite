@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef } from "react";
 import type { Filter } from "./requestTable";
+import type { BedrockDraft } from "./types";
 import type { LogFocus } from "./security/SecurityPage";
 
 /**
@@ -34,7 +35,8 @@ export type Surface = (typeof SURFACES)[number];
  * 和点页面上的按钮、点那一行一模一样 —— 对话框只有一份，在页面里。
  *
  * · `edit` / `editRoute` / `editGroup` / `detail`：打开这一项的编辑或详情（点那一行）。
- * · `create`：新建。`upstreams` 的新建分上游、代理、价目表。
+ * · `create`：新建。`upstreams` 的新建分上游、代理、价目表；新建上游可以带一份 `draft`
+ *   预填（接管确认框里的「新建 Bedrock 上游」）。
  * · `upstreams.test`：推理测速、链路测速；`routing.dryRun`：试算。
  * · `clients.setup`：手动配置（未安装的、不能接管的客户端，点那一行就是它）。
  *
@@ -49,6 +51,8 @@ export interface NavParams {
     upstream?: string;
     edit?: string;
     create?: "upstream" | "proxy" | "sheet";
+    /** 新建上游时按它预填：客户端原来直连 Bedrock 时的设置（接管确认框里带过来的） */
+    draft?: BedrockDraft;
     test?: "speed" | "link";
   };
   routing: { editRoute?: string; editGroup?: string; create?: "route" | "group"; dryRun?: boolean };

@@ -12,6 +12,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { latestOnly } from "@/lib/latestOnly";
 import type {
+  BedrockDraft,
   Overview,
   ProviderPreview,
   ProviderTestResult,
@@ -34,6 +35,7 @@ import {
   connectionChanged,
   connectionMissing,
   describeModelList,
+  formFromDraft,
   formFromView,
   modelsMissing,
   toInput,
@@ -54,7 +56,8 @@ const SECTIONS: Section[] = ["connection", "models", "billing"];
 const ACCOUNT_SECTIONS: Section[] = ["account", "models", "billing"];
 
 export type UpstreamDialogMode =
-  | { kind: "create" }
+  /** `draft`：按客户端原来直连 Bedrock 时的设置预填（接管确认框里的「新建 Bedrock 上游」） */
+  | { kind: "create"; draft?: BedrockDraft }
   | { kind: "edit"; name: string; section?: Section };
 
 /**
@@ -93,7 +96,11 @@ export function UpstreamDialog({
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
   const taken = ov.providers.map((p) => p.name);
   const [form, setForm] = useState<UpstreamForm>(() =>
-    editing ? formFromView(editing) : blankForm(),
+    editing
+      ? formFromView(editing)
+      : mode.kind === "create" && mode.draft
+        ? formFromDraft(mode.draft, taken)
+        : blankForm(),
   );
   /**
    * 保存时带的版本号：**表单填进来的那一版**，不是保存那一刻的。

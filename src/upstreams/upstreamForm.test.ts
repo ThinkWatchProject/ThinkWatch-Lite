@@ -5,6 +5,7 @@ import {
   blankForm,
   connectionChanged,
   connectionMissing,
+  formFromDraft,
   formFromView,
   headerRow,
   oauthKept,
@@ -262,5 +263,53 @@ describe("Bedrock 上游", () => {
     const f = formFromView(v);
     expect(connectionChanged(f, v)).toBe(false);
     expect(connectionChanged({ ...f, awsSecret: "s2" }, v)).toBe(true);
+  });
+});
+
+describe("按客户端原来的 Bedrock 设置新建", () => {
+  it("API 密钥：标准地址、变量引用原样交出去", () => {
+    const f = formFromDraft(
+      { region: "us-west-2", auth: { kind: "key", key: "${AWS_BEARER_TOKEN_BEDROCK}" } },
+      ["bedrock"],
+    );
+    expect(f.preset).toBe("bedrock");
+    expect(f.name).toBe("bedrock-2");
+    const input = toInput(f);
+    expect(input.protocol).toBe("bedrock");
+    expect(input.base_url).toBe("https://bedrock-runtime.us-west-2.amazonaws.com");
+    expect(input.key).toBe("${AWS_BEARER_TOKEN_BEDROCK}");
+    expect(input.aws).toBeUndefined();
+  });
+
+  it("访问密钥加自己的地址：区域另写", () => {
+    const f = formFromDraft(
+      {
+        region: "eu-central-1",
+        base_url: "https://vpce-1.bedrock-runtime.eu-central-1.vpce.amazonaws.com",
+        auth: {
+          kind: "keys",
+          access_key_id: "${AWS_ACCESS_KEY_ID}",
+          secret_access_key: "${AWS_SECRET_ACCESS_KEY}",
+          session_token: "${AWS_SESSION_TOKEN}",
+        },
+      },
+      [],
+    );
+    expect(f.name).toBe("bedrock");
+    expect(toInput(f).aws).toEqual({
+      access_key_id: "${AWS_ACCESS_KEY_ID}",
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}",
+      session_token: "${AWS_SESSION_TOKEN}",
+      region: "eu-central-1",
+    });
+    expect(toInput(f).key).toBeUndefined();
+  });
+
+  it("profile 只交名字；没找到凭据的留空给人填", () => {
+    const p = toInput(formFromDraft({ region: "us-east-1", auth: { kind: "profile", profile: "dev" } }, []));
+    expect(p.aws).toEqual({ profile: "dev", region: undefined });
+    const none = formFromDraft({ region: "ap-northeast-1", auth: { kind: "none" } }, []);
+    expect(none.authMode).toBe("key");
+    expect(toInput(none).key).toBeUndefined();
   });
 });

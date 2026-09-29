@@ -114,6 +114,17 @@ export const clientsText = messages(
     secretMasked: "改动中的密钥已遮盖，写入的是配置中的密钥原文。",
     confirmAdopt: "接管",
     confirmRestore: "还原",
+    // 原来直连 Bedrock：按原来的设置新建上游
+    bedrockNone: (client: string) => `网关中尚无 Amazon Bedrock 上游，接管后 ${client} 的请求需要它。`,
+    bedrockSome: (names: string[]) => `网关中已有 Amazon Bedrock 上游：${names.join("、")}。`,
+    bedrockDraft: (client: string, parts: string[]) => `按 ${client} 原来的设置新建：${parts.join("，")}。`,
+    bedrockRegion: (region: string) => `区域 ${region}`,
+    bedrockAddress: (url: string) => `地址 ${url}`,
+    bedrockKey: (ref: string) => `API 密钥 ${ref}`,
+    bedrockKeys: (ref: string) => `访问密钥 ${ref}`,
+    bedrockProfile: (name: string) => `AWS profile ${name}`,
+    bedrockNoCredential: "凭据在新建时填写",
+    bedrockCreate: "新建 Bedrock 上游…",
 
     // 手动配置
     manualDialogTitle: (name: string) => `配置 ${name}`,
@@ -289,6 +300,17 @@ export const clientsText = messages(
     secretMasked: "Keys are masked in the change; the key from the configuration is what gets written.",
     confirmAdopt: "Connect",
     confirmRestore: "Restore",
+    bedrockNone: (client: string) =>
+      `The gateway has no Amazon Bedrock upstream yet, and ${client}'s requests need one once connected.`,
+    bedrockSome: (names: string[]) => `The gateway has Amazon Bedrock upstreams: ${names.join(", ")}.`,
+    bedrockDraft: (client: string, parts: string[]) => `From ${client}'s previous settings: ${parts.join(", ")}.`,
+    bedrockRegion: (region: string) => `region ${region}`,
+    bedrockAddress: (url: string) => `address ${url}`,
+    bedrockKey: (ref: string) => `API key ${ref}`,
+    bedrockKeys: (ref: string) => `access keys ${ref}`,
+    bedrockProfile: (name: string) => `AWS profile ${name}`,
+    bedrockNoCredential: "credentials to be entered",
+    bedrockCreate: "New Bedrock upstream…",
 
     manualDialogTitle: (name: string) => `Set up ${name}`,
     keyGoesBelow: "The key (below)",

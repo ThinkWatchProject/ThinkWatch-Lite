@@ -90,21 +90,28 @@ pub struct Around {
     /// 组织托管的配置文件，按 Claude Code 读的顺序（`managed-settings.json`，再是分片），
     /// 同一个键后读的赢
     pub managed: Vec<PathBuf>,
+    /// core 解析 `${变量名}` 用的环境：本机的 core 起的时候拿到的那一份。**`None` = 不知道**
+    /// （连着远程 core，变量在服务器上解析）—— 那时不说哪个变量网关看不见
+    pub core_env: Option<BTreeMap<String, String>>,
 }
 
 impl Around {
-    /// 这台电脑上的：托管策略在系统的位置（[`crate::paths::managed_settings`]）
-    pub fn here(env: impl IntoIterator<Item = (String, String)>) -> Around {
+    /// 这台电脑上的：托管策略在系统的位置（[`crate::paths::managed_settings`]）。`remote`：
+    /// 连着远程 core，`${变量名}` 在服务器上解析
+    pub fn here(env: impl IntoIterator<Item = (String, String)>, remote: bool) -> Around {
         let mut managed = vec![crate::paths::managed_settings()];
         managed.extend(crate::paths::managed_settings_dropins());
+        let env: BTreeMap<String, String> = env.into_iter().collect();
         Around {
-            env: env.into_iter().collect(),
+            core_env: (!remote).then(|| env.clone()),
+            env,
             managed,
         }
     }
 
-    /// WSL 里的：托管策略在那个发行版里，用户环境从 Windows 这边看不到
-    pub fn wsl(w: &crate::wsl::WslHome) -> Around {
+    /// WSL 里的：托管策略在那个发行版里，用户环境从 Windows 这边看不到。`core_env` 是这台
+    /// 电脑上的 core 的环境（WSL 里设的变量它看不见），连着远程 core 时是 `None`
+    pub fn wsl(w: &crate::wsl::WslHome, core_env: Option<BTreeMap<String, String>>) -> Around {
         let file = w.managed_settings();
         let mut managed = vec![file.clone()];
         if let Some(dir) = file.parent() {
@@ -113,6 +120,7 @@ impl Around {
         Around {
             env: BTreeMap::new(),
             managed,
+            core_env,
         }
     }
 }
@@ -329,6 +337,505 @@ pub fn env_secrets(text: &str) -> Vec<String> {
         .collect()
 }
 
+// ---------------------------------------------------------------- 按原来的设置新建 Bedrock 上游
+
+/// 按一个客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
+///
+/// **凭据只写成 `${变量名}` 或 profile 的名字**，明文一个字都不抄：客户端配置里写着的密钥
+/// 留在那里，网关要用的话由用户自己填进上游对话框。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BedrockDraft {
+    pub region: String,
+    /// 客户端写了自己的 Bedrock 地址（VPC 端点、代理）：上游用它，区域另写
+    pub base_url: Option<String>,
+    pub auth: DraftAuth,
+}
+
+/// 新建的上游用哪种凭据。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DraftAuth {
+    /// Bedrock API key，写成 `${AWS_BEARER_TOKEN_BEDROCK}` 这样
+    Key(String),
+    /// 访问密钥，每一项都写成 `${变量名}`
+    Keys {
+        access_key_id: String,
+        secret_access_key: String,
+        session_token: Option<String>,
+    },
+    /// AWS 凭证文件里的 profile
+    Profile(String),
+    /// 没找到网关用得上的：新建时自己填
+    None,
+}
+
+/// 写进上游配置的变量引用
+fn var_ref(name: &str) -> String {
+    format!("${{{name}}}")
+}
+
+/// 像不像一个区域名（`us-east-1`、`us-gov-west-1`）。Claude Code 把不像的当没写
+fn is_region(v: &str) -> bool {
+    let v = v.trim();
+    v.contains('-')
+        && v.ends_with(|c: char| c.is_ascii_digit())
+        && v.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// AWS 那种 INI：节名 → 键 → 值。
+///
+/// 和 core 读 `aws.profile` 时一样认：节名里的空白压成一个空格，键不分大小写，值去掉两头
+/// 空白，行尾的 `#` 不是注释，缩进的行是上一个键的子项（不是这一节的键）
+type Ini = std::collections::HashMap<String, std::collections::HashMap<String, String>>;
+
+fn parse_ini(text: &str) -> Ini {
+    let mut out = Ini::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') || l.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = l.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+            out.entry(name.clone()).or_default();
+            current = Some(name);
+            continue;
+        }
+        if line.starts_with(char::is_whitespace) {
+            continue;
+        }
+        if let (Some(sec), Some((k, v))) = (current.as_ref(), l.split_once('='))
+            && let Some(s) = out.get_mut(sec)
+        {
+            s.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
+        }
+    }
+    out
+}
+
+/// AWS 的两个凭证文件，解析好了。
+struct AwsFiles {
+    credentials: Ini,
+    config: Ini,
+}
+
+impl AwsFiles {
+    /// 和 AWS CLI 一样找：`AWS_SHARED_CREDENTIALS_FILE`、`AWS_CONFIG_FILE` 给了就用，否则是
+    /// `dir`（默认 `~/.aws`）下的 `credentials` 和 `config`。读不到的当空的
+    fn read(dir: &Path, lookup: impl Fn(&str) -> Option<String>) -> AwsFiles {
+        let file = |var: &str, name: &str| {
+            let p = lookup(var)
+                .filter(|v| !v.trim().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| dir.join(name));
+            parse_ini(&std::fs::read_to_string(p).unwrap_or_default())
+        };
+        AwsFiles {
+            credentials: file("AWS_SHARED_CREDENTIALS_FILE", "credentials"),
+            config: file("AWS_CONFIG_FILE", "config"),
+        }
+    }
+
+    /// 这个 profile 在两个文件里的那两节：凭证文件里写 `[名字]`，配置文件里写
+    /// `[profile 名字]`，只有 default 是 `[default]`
+    fn sections(&self, profile: &str) -> [Option<&std::collections::HashMap<String, String>>; 2] {
+        [
+            self.credentials.get(profile),
+            self.config
+                .get(&format!("profile {profile}"))
+                .or_else(|| self.config.get(profile).filter(|_| profile == "default")),
+        ]
+    }
+
+    /// 这个 profile 里的区域：先凭证文件，后配置文件（和 Claude Code 的顺序一样）
+    fn region(&self, profile: &str) -> Option<String> {
+        self.sections(profile)
+            .into_iter()
+            .flatten()
+            .find_map(|s| s.get("region").filter(|r| is_region(r)).cloned())
+    }
+
+    /// core 用得上这个 profile 吗。规则和 core 读 `aws.profile` 时一样：扮演角色、Web 身份、
+    /// IAM Identity Center 排在文件里的密钥前面，`credential_process` 排在凭证文件的密钥之后
+    fn usable(&self, profile: &str) -> Profile {
+        const BEFORE_KEYS: &[&str] = &[
+            "role_arn",
+            "web_identity_token_file",
+            "sso_session",
+            "sso_start_url",
+            "sso_account_id",
+        ];
+        let [creds, config] = self.sections(profile);
+        if creds.is_none() && config.is_none() {
+            return Profile::Missing;
+        }
+        let secs = || [creds, config].into_iter().flatten();
+        if let Some(s) = BEFORE_KEYS
+            .iter()
+            .find(|k| secs().any(|sec| sec.contains_key(**k)))
+        {
+            return Profile::Unusable(s);
+        }
+        let keys = |sec: &std::collections::HashMap<String, String>| {
+            ["aws_access_key_id", "aws_secret_access_key"]
+                .iter()
+                .all(|k| sec.get(*k).is_some_and(|v| !v.is_empty()))
+        };
+        if creds.is_some_and(keys) {
+            return Profile::Keys;
+        }
+        if secs().any(|sec| sec.contains_key("credential_process")) {
+            return Profile::Unusable("credential_process");
+        }
+        if config.is_some_and(keys) {
+            Profile::Keys
+        } else {
+            Profile::NoKeys
+        }
+    }
+}
+
+/// 一个 profile 对 core 来说是什么样
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Profile {
+    /// 文件里写着访问密钥
+    Keys,
+    /// 要跑程序、要登录才拿得到：是哪一项设置
+    Unusable(&'static str),
+    NoKeys,
+    Missing,
+}
+
+/// 客户端拿凭据的一种网关用不了的办法，词表（`core.zh.json` 的 `aws_how`）按它说
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum How {
+    /// Claude Code 的 `awsCredentialExport`
+    CredentialExport,
+    /// IAM Identity Center 登录（Claude Desktop 应用里登录）
+    Sso,
+    /// 凭据脚本（Claude Desktop 的 `inferenceCredentialHelper`）
+    CredentialHelper,
+    /// 经代理的身份提供方登录（Claude Desktop 的 `inferenceIdpOidc`）
+    Idp,
+}
+
+impl How {
+    fn slug(self) -> &'static str {
+        match self {
+            How::CredentialExport => "credential_export",
+            How::Sso => "sso",
+            How::CredentialHelper => "credential_helper",
+            How::Idp => "idp",
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            How::CredentialExport => "awsCredentialExport, a command Claude Code runs",
+            How::Sso => "an IAM Identity Center sign-in",
+            How::CredentialHelper => "a credential helper script",
+            How::Idp => "an identity provider sign-in through a proxy",
+        }
+    }
+}
+
+/// 「这种拿凭据的办法网关用不了」那一句
+pub(crate) fn unusable(client: &str, how: How) -> tw_types::Msg {
+    let label = how.name();
+    tw_types::msg!(
+        "adopt.plan.bedrock_unusable", client = client, how = how.slug()
+        => "{client} gets its AWS credentials through {label}, which the gateway cannot use: it \
+            runs no commands and signs in nowhere. The new upstream needs a Bedrock API key, access \
+            keys, or an AWS profile that holds access keys."
+    )
+}
+
+/// 这个 profile 用不了、或者没找到能用的：说一句，凭据留给用户填
+fn profile_note(client: &str, profile: &str, p: Profile) -> tw_types::Msg {
+    match p {
+        Profile::Unusable(setting) => tw_types::msg!(
+            "adopt.plan.bedrock_profile_unusable", profile = profile, setting = setting
+            => "AWS profile {profile} gets its credentials through {setting}, which the gateway \
+                does not run. The new upstream needs a Bedrock API key, access keys, or an AWS \
+                profile that holds access keys."
+        ),
+        _ => no_credential(client),
+    }
+}
+
+/// 「没找到网关用得上的凭据」那一句
+pub(crate) fn no_credential(client: &str) -> tw_types::Msg {
+    tw_types::msg!(
+        "adopt.plan.bedrock_no_credential", client = client
+        => "No AWS credential of {client}'s that the gateway can use was found; the credentials of \
+            the new upstream have to be entered when creating it."
+    )
+}
+
+/// 草稿里引用的变量，core 的环境里没有的那几个，各说一句：只写在 settings.json 里的
+/// （`/setup-bedrock` 就写在那里）点名那个文件，别的只说网关的环境里没有
+fn unseen_notes(
+    settings_path: &Path,
+    settings: &str,
+    around: &Around,
+    names: &[&str],
+) -> Vec<tw_types::Msg> {
+    let Some(core) = &around.core_env else {
+        return Vec::new();
+    };
+    let missing: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|n| !core.contains_key(*n))
+        .collect();
+    let (only_here, elsewhere): (Vec<&str>, Vec<&str>) = missing
+        .into_iter()
+        .partition(|n| env_val(settings, n).is_some());
+    let mut out = Vec::new();
+    if !only_here.is_empty() {
+        out.push(tw_types::msg!(
+            "adopt.plan.bedrock_settings_only",
+            vars = only_here.join(", "),
+            path = settings_path.display()
+            => "{vars} is set only in {path}, which the gateway does not read: the new upstream can \
+                use it once the gateway's environment has it, or the value can be entered when \
+                creating the upstream."
+        ));
+    }
+    if !elsewhere.is_empty() {
+        out.push(tw_types::msg!(
+            "adopt.plan.bedrock_unseen", vars = elsewhere.join(", ")
+            => "The gateway's environment has no {vars}: the new upstream can use it once the \
+                gateway's environment has it, or the value can be entered when creating the \
+                upstream."
+        ));
+    }
+    out
+}
+
+/// 按 Claude Code 原来直连 Bedrock 时的设置，新建 Bedrock 上游要填的，和关于凭据要说的话。
+///
+/// 找法照它自己的（Claude Code 文档 Amazon Bedrock 一页）：
+/// - **区域**：`AWS_REGION`、`AWS_DEFAULT_REGION`、正在用的 profile（`AWS_PROFILE`，没有就是
+///   `default`）里的 `region`（先凭证文件后配置文件），都没有就是 `us-east-1`；不像区域名的
+///   当没写。
+/// - **地址**：`ANTHROPIC_BEDROCK_BASE_URL`（打开的是 `CLAUDE_CODE_USE_BEDROCK` 才看：Mantle
+///   的地址是另一套接口）。
+/// - **凭据**：设了 `AWS_BEARER_TOKEN_BEDROCK` 就是它（Bedrock API key）；`awsCredentialExport`
+///   是它自己跑的命令，网关不跑；再是环境里的访问密钥；再是 profile。
+///
+/// 变量的值按 [`effective`] 取：settings.json 的 `env` 盖过用户环境和 shell 配置。
+pub fn claude_code_draft(
+    home: &Path,
+    settings_path: &Path,
+    settings: &str,
+    around: &Around,
+    runtime: bool,
+) -> (BedrockDraft, Vec<tw_types::Msg>) {
+    const CLIENT: &str = "Claude Code";
+    let get = |n: &str| effective(home, settings, around, n).filter(|v| !v.trim().is_empty());
+    let files = AwsFiles::read(&home.join(".aws"), get);
+    let profile = get("AWS_PROFILE");
+    let region = ["AWS_REGION", "AWS_DEFAULT_REGION"]
+        .into_iter()
+        .find_map(|n| get(n).filter(|r| is_region(r)))
+        .or_else(|| files.region(profile.as_deref().unwrap_or("default")))
+        .unwrap_or_else(|| "us-east-1".to_string());
+    let base_url = runtime.then(|| get("ANTHROPIC_BEDROCK_BASE_URL")).flatten();
+    let setting = |k: &str| {
+        crate::json::get(settings, &[k])
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .filter(|v| !v.trim().is_empty())
+    };
+
+    let mut notes = Vec::new();
+    let mut used: Vec<&str> = Vec::new();
+    let auth = if get("AWS_BEARER_TOKEN_BEDROCK").is_some() {
+        used.push("AWS_BEARER_TOKEN_BEDROCK");
+        DraftAuth::Key(var_ref("AWS_BEARER_TOKEN_BEDROCK"))
+    } else if setting("awsCredentialExport").is_some() {
+        notes.push(unusable(CLIENT, How::CredentialExport));
+        DraftAuth::None
+    } else if get("AWS_ACCESS_KEY_ID").is_some() && get("AWS_SECRET_ACCESS_KEY").is_some() {
+        used.extend(["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]);
+        let token = get("AWS_SESSION_TOKEN").is_some();
+        if token {
+            used.push("AWS_SESSION_TOKEN");
+        }
+        DraftAuth::Keys {
+            access_key_id: var_ref("AWS_ACCESS_KEY_ID"),
+            secret_access_key: var_ref("AWS_SECRET_ACCESS_KEY"),
+            session_token: token.then(|| var_ref("AWS_SESSION_TOKEN")),
+        }
+    } else {
+        let name = profile.clone().unwrap_or_else(|| "default".to_string());
+        match files.usable(&name) {
+            Profile::Keys => {
+                if setting("awsAuthRefresh").is_some() {
+                    notes.push(tw_types::msg!(
+                        "adopt.plan.bedrock_refresh", path = settings_path.display()
+                        => "{path} sets awsAuthRefresh, a command Claude Code runs when its AWS \
+                            credentials expire. The gateway does not run it; it reads the AWS \
+                            credential files again whenever they change."
+                    ));
+                }
+                DraftAuth::Profile(name)
+            }
+            p => {
+                notes.push(profile_note(CLIENT, &name, p));
+                DraftAuth::None
+            }
+        }
+    };
+    notes.extend(unseen_notes(settings_path, settings, around, &used));
+    (
+        BedrockDraft {
+            region,
+            base_url,
+            auth,
+        },
+        notes,
+    )
+}
+
+/// 按 Claude Desktop 接管前那一份第三方推理配置（`profile` 是它的原文），新建 Bedrock 上游要
+/// 填的，和关于凭据要说的话。
+///
+/// 键名照 Claude Desktop 的官方文档（third-party 的 configuration、bedrock、mantle 三页）：
+/// - **区域** `inferenceBedrockRegion`，**地址** `inferenceBedrockBaseUrl`（Mantle 的地址是另一套
+///   接口，不用）。
+/// - **凭据**：`inferenceCredentialKind` 写了就只看它；没写就按应用自己的顺序找第一个在的 ——
+///   身份提供方登录、应用里的 AWS 登录（四个 `inferenceBedrockSso*` 都写了才算）、profile、
+///   凭据脚本、bearer token。Mantle 只认后两样。
+/// - **bearer token 是明文写在这份配置里的**：不抄，上游写成 `${AWS_BEARER_TOKEN_BEDROCK}`，
+///   说清楚要么让网关的环境里有这个变量，要么新建时自己填。
+pub(crate) fn claude_desktop_draft(
+    home: &Path,
+    profile_path: &Path,
+    profile: &str,
+    cloud: Cloud,
+    around: &Around,
+) -> (BedrockDraft, Vec<tw_types::Msg>) {
+    const CLIENT: &str = "Claude Desktop";
+    let s = |k: &str| {
+        crate::json::get(profile, &[k])
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .filter(|v| !v.trim().is_empty())
+    };
+    // 写了、而且不是空的（对象、列表也算）
+    let present = |k: &str| match crate::json::get(profile, &[k]).ok().flatten() {
+        None | Some(Val::Null) => false,
+        Some(Val::Str(v)) => !v.trim().is_empty(),
+        Some(_) => true,
+    };
+    let region = s("inferenceBedrockRegion")
+        .filter(|r| is_region(r))
+        .unwrap_or_else(|| "us-east-1".to_string());
+    let base_url = (cloud == Cloud::Bedrock)
+        .then(|| s("inferenceBedrockBaseUrl"))
+        .flatten();
+
+    #[derive(PartialEq)]
+    enum Source {
+        Idp,
+        Sso,
+        Profile,
+        Helper,
+        Bearer,
+        Nothing,
+    }
+    let runtime = cloud == Cloud::Bedrock;
+    let sso = runtime
+        && [
+            "inferenceBedrockSsoStartUrl",
+            "inferenceBedrockSsoRegion",
+            "inferenceBedrockSsoAccountId",
+            "inferenceBedrockSsoRoleName",
+        ]
+        .iter()
+        .all(|k| present(k));
+    let source = match s("inferenceCredentialKind").as_deref() {
+        Some("static") => Source::Bearer,
+        Some("helper-script") => Source::Helper,
+        Some("interactive") => Source::Sso,
+        Some("vendor-profile") => Source::Profile,
+        Some("external-idp") => Source::Idp,
+        _ if runtime && present("inferenceIdpOidc") => Source::Idp,
+        _ if sso => Source::Sso,
+        _ if runtime && present("inferenceBedrockProfile") => Source::Profile,
+        _ if present("inferenceCredentialHelper") => Source::Helper,
+        _ if present("inferenceBedrockBearerToken") => Source::Bearer,
+        _ => Source::Nothing,
+    };
+
+    let mut notes = Vec::new();
+    let auth = match source {
+        Source::Bearer => {
+            notes.push(tw_types::msg!(
+                "adopt.plan.claude_desktop.bedrock_key", path = profile_path.display()
+                => "Claude Desktop keeps its Bedrock API key in {path}, which the gateway does not \
+                    read. The new upstream reads the key from AWS_BEARER_TOKEN_BEDROCK, which has \
+                    to hold it in the gateway's environment; otherwise the key can be entered when \
+                    creating the upstream."
+            ));
+            DraftAuth::Key(var_ref("AWS_BEARER_TOKEN_BEDROCK"))
+        }
+        Source::Profile => {
+            let name = s("inferenceBedrockProfile").unwrap_or_else(|| "default".to_string());
+            // 网关读的是它自己环境里说的那两个文件
+            let core = |n: &str| around.core_env.as_ref().and_then(|e| e.get(n).cloned());
+            let aws = home.join(".aws");
+            match AwsFiles::read(&aws, core).usable(&name) {
+                Profile::Keys => {
+                    if let Some(dir) =
+                        s("inferenceBedrockAwsDir").filter(|d| Path::new(d.trim()) != aws.as_path())
+                    {
+                        notes.push(tw_types::msg!(
+                            "adopt.plan.claude_desktop.aws_dir", dir = dir, profile = name.clone()
+                            => "Claude Desktop reads AWS profile {profile} from {dir}, while the \
+                                gateway reads the AWS credential files in ~/.aws unless \
+                                AWS_SHARED_CREDENTIALS_FILE and AWS_CONFIG_FILE name other files."
+                        ));
+                    }
+                    DraftAuth::Profile(name)
+                }
+                p => {
+                    notes.push(profile_note(CLIENT, &name, p));
+                    DraftAuth::None
+                }
+            }
+        }
+        Source::Helper => {
+            notes.push(unusable(CLIENT, How::CredentialHelper));
+            DraftAuth::None
+        }
+        Source::Sso => {
+            notes.push(unusable(CLIENT, How::Sso));
+            DraftAuth::None
+        }
+        Source::Idp => {
+            notes.push(unusable(CLIENT, How::Idp));
+            DraftAuth::None
+        }
+        Source::Nothing => {
+            notes.push(no_credential(CLIENT));
+            DraftAuth::None
+        }
+    };
+    (
+        BedrockDraft {
+            region,
+            base_url,
+            auth,
+        },
+        notes,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,7 +922,7 @@ mod tests {
         let h = home();
         let around = Around {
             env: [("CLAUDE_CODE_USE_BEDROCK".into(), "1".into())].into(),
-            managed: Vec::new(),
+            ..Default::default()
         };
         let on = switches(h.path(), &settings_at(h.path()), "{}", &[], &around);
         assert_eq!(on[0].at, Where::Environment);
@@ -436,8 +943,8 @@ mod tests {
         )
         .unwrap();
         let around = Around {
-            env: BTreeMap::new(),
             managed: vec![m, d.clone()],
+            ..Default::default()
         };
         let s = r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#;
         let on = switches(h.path(), &settings_at(h.path()), s, &[], &around);
@@ -488,7 +995,7 @@ mod tests {
         // 主模型写成了 Anthropic 的名字：它也会原样发出去
         let around = Around {
             env: [("ANTHROPIC_MODEL".into(), "claude-sonnet-4-5".into())].into(),
-            managed: Vec::new(),
+            ..Default::default()
         };
         assert_eq!(
             unpinned_models(h.path(), s, &around),
@@ -527,5 +1034,255 @@ mod tests {
             ]
         );
         assert!(env_secrets("not json").is_empty());
+    }
+
+    // ---- 按原来的设置新建 Bedrock 上游 ----
+
+    fn draft(h: &Path, settings: &str, around: &Around) -> (BedrockDraft, Vec<tw_types::Msg>) {
+        claude_code_draft(h, &settings_at(h), settings, around, true)
+    }
+
+    fn codes(notes: &[tw_types::Msg]) -> Vec<&str> {
+        notes.iter().map(|n| n.code.as_str()).collect()
+    }
+
+    fn aws(h: &Path, file: &str, text: &str) {
+        std::fs::create_dir_all(h.join(".aws")).unwrap();
+        std::fs::write(h.join(".aws").join(file), text).unwrap();
+    }
+
+    /// `/setup-bedrock` 写出来的那种：API key 在 settings.json 里。**上游只写变量引用**；
+    /// 网关的环境里没有这个变量时，点名它只写在那个文件里
+    #[test]
+    fn an_api_key_in_settings_json_becomes_a_reference_the_gateway_may_not_see() {
+        let h = home();
+        let s = r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1", "AWS_REGION": "us-west-2",
+            "AWS_BEARER_TOKEN_BEDROCK": "ABSK-明文密钥"}}"#;
+        let local = Around {
+            core_env: Some(BTreeMap::new()),
+            ..Default::default()
+        };
+        let (d, notes) = draft(h.path(), s, &local);
+        assert_eq!(
+            d,
+            BedrockDraft {
+                region: "us-west-2".into(),
+                base_url: None,
+                auth: DraftAuth::Key("${AWS_BEARER_TOKEN_BEDROCK}".into()),
+            }
+        );
+        assert_eq!(codes(&notes), ["adopt.plan.bedrock_settings_only"]);
+        assert_eq!(notes[0].args["vars"], "AWS_BEARER_TOKEN_BEDROCK");
+        assert!(!format!("{d:?}{notes:?}").contains("ABSK-明文密钥"));
+        // 网关的环境里有它：不用说；连着远程 core（不知道）：也不说
+        let seen = Around {
+            core_env: Some([("AWS_BEARER_TOKEN_BEDROCK".into(), "x".into())].into()),
+            ..Default::default()
+        };
+        assert!(draft(h.path(), s, &seen).1.is_empty());
+        assert!(draft(h.path(), s, &Around::default()).1.is_empty());
+    }
+
+    /// 区域的找法和 Claude Code 一样：两个变量、正在用的 profile 里的、`us-east-1`；
+    /// 不像区域名的当没写
+    #[test]
+    fn the_region_is_found_the_way_claude_code_finds_it() {
+        let h = home();
+        aws(
+            h.path(),
+            "config",
+            "[default]\nregion = eu-west-3\n[profile dev]\nregion = ap-northeast-1\n",
+        );
+        let region = |s: &str| draft(h.path(), s, &Around::default()).0.region;
+        assert_eq!(
+            region(r#"{"env": {"AWS_REGION": "us east", "AWS_DEFAULT_REGION": "eu-central-1"}}"#),
+            "eu-central-1"
+        );
+        assert_eq!(
+            region(r#"{"env": {"AWS_PROFILE": "dev"}}"#),
+            "ap-northeast-1"
+        );
+        assert_eq!(region("{}"), "eu-west-3");
+        let bare = home();
+        assert_eq!(
+            draft(bare.path(), "{}", &Around::default()).0.region,
+            "us-east-1"
+        );
+    }
+
+    /// 凭据的先后：API key、`awsCredentialExport`（网关不跑命令）、环境里的访问密钥、profile
+    #[test]
+    fn credentials_are_picked_in_claude_codes_order() {
+        let h = home();
+        let env = |pairs: &[(&str, &str)]| Around {
+            env: pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ..Default::default()
+        };
+        let keys = env(&[
+            ("AWS_ACCESS_KEY_ID", "AKIA"),
+            ("AWS_SECRET_ACCESS_KEY", "s"),
+            ("AWS_SESSION_TOKEN", "t"),
+        ]);
+        assert_eq!(
+            draft(h.path(), "{}", &keys).0.auth,
+            DraftAuth::Keys {
+                access_key_id: "${AWS_ACCESS_KEY_ID}".into(),
+                secret_access_key: "${AWS_SECRET_ACCESS_KEY}".into(),
+                session_token: Some("${AWS_SESSION_TOKEN}".into()),
+            }
+        );
+        let export = r#"{"awsCredentialExport": "/bin/generate_aws_grant.sh"}"#;
+        let (d, notes) = draft(h.path(), export, &keys);
+        assert_eq!(d.auth, DraftAuth::None);
+        assert_eq!(codes(&notes), ["adopt.plan.bedrock_unusable"]);
+        assert_eq!(notes[0].args["how"], "credential_export");
+        let with_key = env(&[("AWS_BEARER_TOKEN_BEDROCK", "k")]);
+        assert_eq!(
+            draft(h.path(), export, &with_key).0.auth,
+            DraftAuth::Key("${AWS_BEARER_TOKEN_BEDROCK}".into())
+        );
+    }
+
+    /// profile：写着访问密钥的能用；要登录、要跑命令的说清是哪一项；`awsAuthRefresh` 说一声
+    /// 网关不跑它、但文件变了会重读
+    #[test]
+    fn a_profile_is_used_only_when_it_holds_access_keys() {
+        let h = home();
+        aws(
+            h.path(),
+            "credentials",
+            "[dev]\naws_access_key_id = AKIA\naws_secret_access_key = s\n",
+        );
+        aws(
+            h.path(),
+            "config",
+            "[profile sso]\nsso_session = corp\n[profile proc]\ncredential_process = /bin/creds\n",
+        );
+        let with = |p: &str, extra: &str| {
+            draft(
+                h.path(),
+                &format!(r#"{{{extra}"env": {{"AWS_PROFILE": "{p}"}}}}"#),
+                &Around::default(),
+            )
+        };
+        let (d, notes) = with("dev", r#""awsAuthRefresh": "aws sso login", "#);
+        assert_eq!(d.auth, DraftAuth::Profile("dev".into()));
+        assert_eq!(codes(&notes), ["adopt.plan.bedrock_refresh"]);
+        for (p, setting) in [("sso", "sso_session"), ("proc", "credential_process")] {
+            let (d, notes) = with(p, "");
+            assert_eq!(d.auth, DraftAuth::None, "{p}");
+            assert_eq!(codes(&notes), ["adopt.plan.bedrock_profile_unusable"]);
+            assert_eq!(notes[0].args["setting"], setting);
+        }
+        let (d, notes) = with("nowhere", "");
+        assert_eq!(d.auth, DraftAuth::None);
+        assert_eq!(codes(&notes), ["adopt.plan.bedrock_no_credential"]);
+    }
+
+    /// 自己的 Bedrock 地址（VPC 端点、代理）带过去；只开了 Mantle 的不带 —— 那是另一套接口
+    #[test]
+    fn a_custom_bedrock_address_is_kept_for_the_invoke_api_only() {
+        let h = home();
+        let s = r#"{"env": {"ANTHROPIC_BEDROCK_BASE_URL": "https://vpce-1.bedrock-runtime.us-east-1.vpce.amazonaws.com"}}"#;
+        let (d, _) = draft(h.path(), s, &Around::default());
+        assert_eq!(
+            d.base_url.as_deref(),
+            Some("https://vpce-1.bedrock-runtime.us-east-1.vpce.amazonaws.com")
+        );
+        let (mantle, _) = claude_code_draft(
+            h.path(),
+            &settings_at(h.path()),
+            s,
+            &Around::default(),
+            false,
+        );
+        assert_eq!(mantle.base_url, None);
+    }
+
+    fn desktop(h: &Path, profile: &str, cloud: Cloud) -> (BedrockDraft, Vec<tw_types::Msg>) {
+        claude_desktop_draft(
+            h,
+            Path::new("/lib/p.json"),
+            profile,
+            cloud,
+            &Around::default(),
+        )
+    }
+
+    /// Claude Desktop 的 bearer token 明文写在它的配置里：不抄，写成变量引用并说清楚
+    #[test]
+    fn claude_desktops_bearer_token_is_never_copied() {
+        let h = home();
+        let p = r#"{"inferenceProvider": "bedrock", "inferenceBedrockRegion": "eu-west-1",
+            "inferenceBedrockBaseUrl": "https://bedrock-proxy.corp.example",
+            "inferenceBedrockBearerToken": "ABSK-明文"}"#;
+        let (d, notes) = desktop(h.path(), p, Cloud::Bedrock);
+        assert_eq!(
+            d,
+            BedrockDraft {
+                region: "eu-west-1".into(),
+                base_url: Some("https://bedrock-proxy.corp.example".into()),
+                auth: DraftAuth::Key("${AWS_BEARER_TOKEN_BEDROCK}".into()),
+            }
+        );
+        assert_eq!(codes(&notes), ["adopt.plan.claude_desktop.bedrock_key"]);
+        assert!(!format!("{d:?}{notes:?}").contains("ABSK-明文"));
+    }
+
+    /// 凭据按应用自己的顺序：写了 `inferenceCredentialKind` 就只看它，没写就找第一个在的
+    #[test]
+    fn claude_desktops_credential_follows_its_own_order() {
+        let h = home();
+        aws(
+            h.path(),
+            "credentials",
+            "[team]\naws_access_key_id = AKIA\naws_secret_access_key = s\n",
+        );
+        let sso = r#""inferenceBedrockSsoStartUrl": "https://corp.awsapps.com/start",
+            "inferenceBedrockSsoRegion": "us-east-1", "inferenceBedrockSsoAccountId": "123456789012",
+            "inferenceBedrockSsoRoleName": "Bedrock""#;
+        // 四个 SSO 键都在，排在 profile 前面
+        let (d, notes) = desktop(
+            h.path(),
+            &format!(r#"{{{sso}, "inferenceBedrockProfile": "team"}}"#),
+            Cloud::Bedrock,
+        );
+        assert_eq!(d.auth, DraftAuth::None);
+        assert_eq!(notes[0].args["how"], "sso");
+        // 明说用 profile
+        let (d, _) = desktop(
+            h.path(),
+            &format!(
+                r#"{{{sso}, "inferenceCredentialKind": "vendor-profile", "inferenceBedrockProfile": "team"}}"#
+            ),
+            Cloud::Bedrock,
+        );
+        assert_eq!(d.auth, DraftAuth::Profile("team".into()));
+        // profile 在别的目录里：网关看的是 ~/.aws
+        let (_, notes) = desktop(
+            h.path(),
+            r#"{"inferenceBedrockProfile": "team", "inferenceBedrockAwsDir": "/Volumes/corp/aws"}"#,
+            Cloud::Bedrock,
+        );
+        assert_eq!(codes(&notes), ["adopt.plan.claude_desktop.aws_dir"]);
+        // 凭据脚本
+        let (d, notes) = desktop(
+            h.path(),
+            r#"{"inferenceCredentialHelper": "/usr/local/bin/tok"}"#,
+            Cloud::Bedrock,
+        );
+        assert_eq!(d.auth, DraftAuth::None);
+        assert_eq!(notes[0].args["how"], "credential_helper");
+        // Mantle 不认 profile
+        let (d, notes) = desktop(
+            h.path(),
+            r#"{"inferenceBedrockProfile": "team"}"#,
+            Cloud::Mantle,
+        );
+        assert_eq!(d.auth, DraftAuth::None);
+        assert_eq!(codes(&notes), ["adopt.plan.bedrock_no_credential"]);
     }
 }

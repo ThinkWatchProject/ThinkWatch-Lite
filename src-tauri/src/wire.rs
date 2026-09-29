@@ -285,6 +285,65 @@ pub struct PlanView {
     /// 四个，`path` 那一个是它配置库里的那一份，其余三个在这里
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also: Vec<FilePlanView>,
+    /// 客户端原来直连 Bedrock：按它原来的设置新建 Bedrock 上游要填的。界面据此给一个
+    /// 「新建上游」的入口；还原时没有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bedrock: Option<BedrockDraft>,
+}
+
+/// 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
+///
+/// **凭据只有 `${变量名}` 和 profile 的名字**：客户端配置里写着的明文密钥不抄，也不经过这里
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct BedrockDraft {
+    pub region: String,
+    /// 客户端自己写的 Bedrock 地址（VPC 端点、代理）。没写就是那个区域的标准地址
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    pub auth: DraftAuth,
+}
+
+/// 新建的上游用哪种凭据
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DraftAuth {
+    /// Bedrock API key，写成 `${AWS_BEARER_TOKEN_BEDROCK}` 这样
+    Key { key: String },
+    /// 访问密钥，每一项都是 `${变量名}`
+    Keys {
+        access_key_id: String,
+        secret_access_key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_token: Option<String>,
+    },
+    /// AWS 凭证文件里的 profile
+    Profile { profile: String },
+    /// 没找到网关用得上的：新建时自己填
+    None,
+}
+
+impl From<tw_adopt::cloud::BedrockDraft> for BedrockDraft {
+    fn from(d: tw_adopt::cloud::BedrockDraft) -> Self {
+        use tw_adopt::cloud::DraftAuth as A;
+        BedrockDraft {
+            region: d.region,
+            base_url: d.base_url,
+            auth: match d.auth {
+                A::Key(key) => DraftAuth::Key { key },
+                A::Keys {
+                    access_key_id,
+                    secret_access_key,
+                    session_token,
+                } => DraftAuth::Keys {
+                    access_key_id,
+                    secret_access_key,
+                    session_token,
+                },
+                A::Profile(profile) => DraftAuth::Profile { profile },
+                A::None => DraftAuth::None,
+            },
+        }
+    }
 }
 
 /// 一次改动里的另一份文件：改哪个、改哪几项、完整的前后原文。**密钥已打码。**
