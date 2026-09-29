@@ -222,10 +222,9 @@ mod tests {
             home.path(),
             &backups,
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-c", Vec::new()),
             None,
+            &tw_adopt::cloud::Around::default(),
         )
         .unwrap();
         let out = restore_all_in(home.path(), &backups, |n| n.to_string());

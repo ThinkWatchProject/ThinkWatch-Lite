@@ -30,6 +30,12 @@ adopt.diag.claude_desktop.mode
 adopt.diag.claude_desktop.mode.detail
 adopt.diag.claude_desktop.not_applied
 adopt.diag.claude_desktop.not_applied.detail
+adopt.diag.cloud
+adopt.diag.cloud.above
+adopt.diag.cloud.env
+adopt.diag.cloud.managed
+adopt.diag.cloud.settings
+adopt.diag.cloud.shell
 adopt.diag.delete_line
 adopt.diag.delete_line_gnu
 adopt.diag.endpoint_ok
@@ -42,6 +48,8 @@ adopt.diag.managed
 adopt.diag.managed.detail
 adopt.diag.managed_dropin
 adopt.diag.managed_dropin.detail
+adopt.diag.no_cloud
+adopt.diag.no_cloud.detail
 adopt.diag.no_exports
 adopt.diag.no_exports.detail
 adopt.diag.no_managed
@@ -124,6 +132,12 @@ adopt.path.not_absolute
 adopt.path.not_folder
 adopt.path.unsaved
 adopt.plan.claude_desktop.no_claude_model
+adopt.plan.cloud_above
+adopt.plan.cloud_managed
+adopt.plan.cloud_models
+adopt.plan.cloud_off.env
+adopt.plan.cloud_off.settings
+adopt.plan.cloud_off.shell
 adopt.plan.fields_only
 adopt.plan.foreign_record
 adopt.plan.managed
@@ -133,6 +147,8 @@ adopt.plan.parse_failed
 adopt.plan.read_failed
 adopt.plan.shadowed
 adopt.plan.stale
+adopt.restore.cloud_env
+adopt.restore.cloud_on
 adopt.restore.config_gone
 adopt.restore.file_removed
 adopt.restore.secret_lost

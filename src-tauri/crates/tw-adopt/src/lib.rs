@@ -11,6 +11,7 @@ macro_rules! code {
 }
 
 pub mod clients;
+pub mod cloud;
 pub mod desktop;
 pub mod detect;
 pub mod foreign;

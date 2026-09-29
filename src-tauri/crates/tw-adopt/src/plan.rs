@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use tw_types::{Msg, msg};
 
 use crate::clients::{Client, Edit, Format, Gateway};
+use crate::cloud::{self, Around, Cloud, Where};
 use crate::foreign::{self, Applied, Change, ForeignError};
 use crate::json::Val;
 use crate::sentinel::{self, Original, SidecarRecord, Was};
@@ -50,6 +51,15 @@ pub enum PlanError {
     /// 这个客户端由组织统一管理（MDM）：本机的配置不起作用，写了也白写
     #[error("{}", self.msg())]
     Managed { client: String, by: String },
+    /// 组织托管的配置打开了 Claude Code 的云服务商开关（[`crate::cloud`]）：它盖过
+    /// 用户自己的配置，接管关不掉它，写了也白写
+    #[error("{}", self.msg())]
+    CloudManaged {
+        client: String,
+        name: String,
+        cloud: Cloud,
+        path: PathBuf,
+    },
 }
 
 impl PlanError {
@@ -84,6 +94,25 @@ impl PlanError {
                 "{client} on this computer is managed by an organization ({by}), so it cannot be \
                  pointed at the gateway. Nothing was changed."
             ),
+            PlanError::CloudManaged {
+                client,
+                name,
+                cloud,
+                path,
+            } => {
+                // 英文里是那一家的名字；参数给的是词，中文按词表说
+                let label = cloud.name();
+                msg!(
+                    "adopt.plan.cloud_managed",
+                    client = client,
+                    name = name,
+                    cloud = cloud.slug(),
+                    path = path.display()
+                    => "{path} is an organization's managed configuration, and it turns on {name}, \
+                        so {client} connects to {label} directly and cannot be pointed at the \
+                        gateway. Nothing was changed."
+                )
+            }
             PlanError::NoRecord { client, path } => msg!(
                 "adopt.plan.no_record", client = client, path = path.display() =>
                 "there is no record for {client}, so there is nothing to restore from. To restore \
@@ -236,7 +265,6 @@ fn refs(path: &[String]) -> Vec<&str> {
 
 // ---------------------------------------------------------------- 接管
 
-/// 算一份接管改动。**不写任何东西。**
 /// 「什么时候生效」那一句。
 ///
 /// 码里带上 `takes_effect` 那个词，因为界面上的两句话措辞完全不同，
@@ -249,7 +277,16 @@ fn takes_effect_note(c: &Client) -> Msg {
     )
 }
 
-pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanError> {
+/// 算一份接管改动。**不写任何东西。**
+///
+/// `around` 是配置文件以外还要看的地方：用户环境、组织托管的配置。Claude Code 打开着的
+/// 云服务商开关要从那里找（[`crate::cloud`]）。
+pub fn plan_adopt(
+    c: &Client,
+    home: &Path,
+    gw: &Gateway,
+    around: &Around,
+) -> Result<Plan, PlanError> {
     if c.id == crate::desktop::ID {
         return crate::desktop::plan_adopt(c, home, gw, None);
     }
@@ -259,7 +296,29 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
     // 写哪些字段要看文件此刻的样子（opencode 有没有原生的 `providers.thinkwatch`）；
     // 读不出来的由 adopt_file 去报
     let current = foreign::read(&path).ok().flatten().unwrap_or_default();
-    let edits = crate::clients::edits_for(c, gw, &current);
+    let mut edits = crate::clients::edits_for(c, gw, &current);
+    // Claude Code 打开着的云服务商开关：接管期间在 `env` 里写成空串。托管配置打开的
+    // 关不掉，写了也白写 —— 不接管
+    let on = match c.id {
+        "claude-code" => cloud::switches(home, &path, &current, &c.shadow_paths(home), around),
+        _ => Vec::new(),
+    };
+    if let Some((o, by)) = on.iter().find_map(|o| match &o.at {
+        Where::Managed(p) => Some((o, p)),
+        _ => None,
+    }) {
+        return Err(PlanError::CloudManaged {
+            client: c.name.into(),
+            name: o.name.into(),
+            cloud: o.cloud,
+            path: by.clone(),
+        });
+    }
+    edits.extend(on.iter().filter(|o| o.at.turned_off_here()).map(|o| Edit {
+        path: vec!["env".into(), o.name.into()],
+        value: Val::s(""),
+        secret: false,
+    }));
     let mut plan = adopt_file(c.id, path, c.format, &edits)?;
     if let Some(also) = crate::clients::also(c) {
         let edits = crate::clients::also_edits(c, gw);
@@ -271,10 +330,88 @@ pub fn plan_adopt(c: &Client, home: &Path, gw: &Gateway) -> Result<Plan, PlanErr
         )?);
     }
     plan.carries_secret |= plan.also.iter().any(|p| p.carries_secret);
-    let (notes, shadows) = adopt_notes(c, home, gw);
+    let (mut notes, shadows) = adopt_notes(c, home, gw);
+    notes.extend(cloud_notes(c, home, &current, &on, around));
     plan.notes = notes;
     plan.shadows = shadows;
     Ok(plan)
+}
+
+/// 关于云服务商开关要说的话：每个开关在哪儿打开着、接管期间关掉；比 settings.json 优先
+/// 的文件里打开着的，在那个目录里开的会话照样直连；走 Bedrock 的，哪些模型接管之后会用
+/// Anthropic 的名字向网关要 —— 路由里得有规则把它们改写到 Bedrock 上。
+fn cloud_notes(
+    c: &Client,
+    home: &Path,
+    settings: &str,
+    on: &[cloud::On],
+    around: &Around,
+) -> Vec<Msg> {
+    let mut out = Vec::new();
+    for o in on {
+        let (name, slug) = (o.name, o.cloud.slug());
+        // 英文里是那一家的名字；参数给的是词，中文按词表说
+        let label = o.cloud.name();
+        out.push(match &o.at {
+            Where::Settings(p) => msg!(
+                "adopt.plan.cloud_off.settings",
+                client = c.name,
+                name = name,
+                cloud = slug,
+                path = p.display()
+                => "{path} turns on {name}, so {client} connects to {label} directly. It is turned \
+                    off while {client} points at the gateway, and turned back on when it is restored."
+            ),
+            Where::Shell { path, line } => msg!(
+                "adopt.plan.cloud_off.shell",
+                client = c.name,
+                name = name,
+                cloud = slug,
+                path = path.display(),
+                line = line
+                => "{path} exports {name} on line {line}, so {client} connects to {label} directly. \
+                    It is turned off while {client} points at the gateway, and turned back on when it \
+                    is restored."
+            ),
+            Where::Environment => msg!(
+                "adopt.plan.cloud_off.env",
+                client = c.name,
+                name = name,
+                cloud = slug
+                => "The environment sets {name}, so {client} connects to {label} directly. It is \
+                    turned off while {client} points at the gateway, and turned back on when it is \
+                    restored."
+            ),
+            Where::Above(p) => msg!(
+                "adopt.plan.cloud_above",
+                client = c.name,
+                name = name,
+                cloud = slug,
+                path = p.display()
+                => "{path} turns on {name} and takes precedence over what is written here, so \
+                    {client} started in that directory still connects to {label} directly."
+            ),
+            // 托管配置打开的已经拒绝了，走不到这里
+            Where::Managed(_) => continue,
+        });
+    }
+    if on
+        .iter()
+        .any(|o| o.cloud.is_bedrock() && o.at.turned_off_here())
+    {
+        let names = cloud::unpinned_models(home, settings, around);
+        if !names.is_empty() {
+            out.push(msg!(
+                "adopt.plan.cloud_models",
+                client = c.name,
+                names = names.join(", ")
+                => "No Bedrock model is set in {names}, so for those models {client} asks the \
+                    gateway by Anthropic's model names; a routing rule has to rewrite those names to \
+                    a Bedrock model."
+            ));
+        }
+    }
+    out
 }
 
 /// 接管完成那一屏要说的话（什么时候生效、有什么代价、查证到什么程度），和
@@ -717,6 +854,7 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
     }
     let c = &c.clone().here(home);
     let mut plan = restore_file_plan(c.id, c.config_path(home), c.format)?;
+    plan.notes.extend(restore_cloud_notes(c, &plan));
     if let Some(also) = crate::clients::also(c) {
         // 另外那一份没有记录（接管那时还没有它、或者记录被删了）就不动它：
         // 主配置照样还原，**不因为它拦住整个还原**
@@ -731,6 +869,47 @@ pub fn plan_restore(c: &Client, home: &Path) -> Result<Plan, PlanError> {
     }
     plan.notes.insert(0, takes_effect_note(c));
     Ok(plan)
+}
+
+/// 还原时关于云服务商开关要说的话：接管时关掉的那几个，改回原来的样子之后 Claude Code
+/// 会不会又直连那一家（[`crate::cloud`]）。原来写着「打开」的，重新打开；原来 settings.json
+/// 里没有它的（shell 里 export 的），拿掉空串之后又由环境说了算。
+fn restore_cloud_notes(c: &Client, plan: &Plan) -> Vec<Msg> {
+    plan.targets
+        .iter()
+        .filter_map(|t| {
+            let (path, back) = match t {
+                Target::Set(p, v) => (p, Some(v)),
+                Target::Remove(p) => (p, None),
+            };
+            let [env, name] = path.as_slice() else {
+                return None;
+            };
+            let &(name, cloud) = cloud::SWITCHES
+                .iter()
+                .find(|(n, _)| env == "env" && *n == name.as_str())?;
+            let (slug, label) = (cloud.slug(), cloud.name());
+            match back {
+                Some(v) if cloud::val_on(v) => Some(msg!(
+                    "adopt.restore.cloud_on",
+                    client = c.name,
+                    name = name,
+                    cloud = slug
+                    => "{name} is turned back on, so {client} connects to {label} directly again."
+                )),
+                // 改回的是一个「关着」的值：没什么要说的
+                Some(_) => None,
+                None => Some(msg!(
+                    "adopt.restore.cloud_env",
+                    client = c.name,
+                    name = name,
+                    cloud = slug
+                    => "{name} is taken out of this file again, so the environment decides again \
+                        whether {client} connects to {label} directly."
+                )),
+            }
+        })
+        .collect()
 }
 
 /// 一份文件的还原改动。**不写任何东西。**没有接管记录就是 [`PlanError::NoRecord`]。

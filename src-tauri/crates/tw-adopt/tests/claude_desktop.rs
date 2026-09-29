@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use tw_adopt::clients::{Client, Gateway, adoptable};
+use tw_adopt::cloud::Around;
 use tw_adopt::desktop::{self, PROFILE_ID};
 use tw_adopt::plan::{PlanError, apply, apply_restore, plan_adopt, plan_restore};
 
@@ -207,7 +208,7 @@ fn adopting_twice_changes_nothing_and_still_restores_to_the_original() {
         key: Some("tw-换过的钥匙".into()),
         models: Vec::new(),
     };
-    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
     assert!(!p.is_noop());
     apply(&c, &p, &b.backups).unwrap();
     let profile = json(&desktop::profile_path(&b.home));
@@ -301,7 +302,7 @@ fn adopting_again_registers_the_configuration_only_once() {
             key: Some(key.into()),
             models: Vec::new(),
         };
-        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
 

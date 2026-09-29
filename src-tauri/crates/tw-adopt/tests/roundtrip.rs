@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use tw_adopt::clients::{Gateway, adoptable};
+use tw_adopt::cloud::Around;
 use tw_adopt::plan::{apply, apply_restore, plan_adopt, plan_restore};
 
 fn gw() -> Gateway {
@@ -75,7 +76,7 @@ const CLAUDE: &str = r#"{
 fn adopting_claude_code_touches_only_the_fields_we_named() {
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let after = read(&b.home.join(".claude/settings.json"));
@@ -105,7 +106,7 @@ fn adopting_claude_code_touches_only_the_fields_we_named() {
 fn restoring_claude_code_puts_the_file_back_byte_for_byte() {
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let r = plan_restore(&c, &b.home).unwrap();
@@ -130,7 +131,7 @@ fn the_sidecar_never_holds_the_users_own_key() {
     // 提交进 git。原值是密钥的，只留一个指向全文备份的指针。
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let side = read(&b.home.join(".claude/settings.json.thinkwatch.json"));
     assert!(
@@ -145,7 +146,7 @@ fn the_sidecar_never_holds_the_users_own_key() {
 fn a_secret_original_comes_back_from_the_full_backup() {
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -158,7 +159,7 @@ fn losing_the_backup_removes_our_key_and_says_so_out_loud() {
     // 之后还在替他发请求。
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     std::fs::remove_dir_all(&b.backups).unwrap();
 
@@ -186,7 +187,7 @@ fn adopting_a_client_with_no_config_file_creates_one_and_restore_takes_it_away()
     let path = b.home.join(".claude/settings.json");
     assert!(!path.exists());
 
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     assert!(path.exists());
 
@@ -202,7 +203,7 @@ fn a_file_the_user_has_since_written_into_is_never_deleted_by_a_restore() {
     let b = bed("claude-code", "");
     let c = client("claude-code");
     let path = b.home.join(".claude/settings.json");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let mine =
@@ -228,7 +229,7 @@ fn a_variable_the_user_added_to_a_section_we_created_survives_a_restore() {
     let b = bed("claude-code", SEED);
     let c = client("claude-code");
     let path = b.home.join(".claude/settings.json");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let mine = tw_adopt::json::set(
@@ -252,7 +253,7 @@ fn a_variable_the_user_added_to_a_section_we_created_survives_a_restore() {
 
     // 没人往里加东西的话，那一段照旧整个收走：还原之后一个字节都不差
     let b = bed("claude-code", SEED);
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -305,7 +306,7 @@ fn assert_nothing_of_ours_is_left(after: &str) {
 fn adopting_codex_keeps_every_project_trust_and_mcp_server() {
     let b = bed("codex", CODEX);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let after = read(&b.home.join(".codex/config.toml"));
@@ -331,7 +332,7 @@ fn codex_gets_a_sentinel_comment_because_toml_can_hold_one() {
     // 用户打开文件就该看见「这是谁改的、原来是什么」。
     let b = bed("codex", CODEX);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let after = read(&b.home.join(".codex/config.toml"));
     assert!(after.contains(tw_adopt::sentinel::BEGIN), "{after}");
@@ -343,7 +344,7 @@ fn codex_gets_a_sentinel_comment_because_toml_can_hold_one() {
 fn restoring_codex_puts_the_file_back_plus_only_the_shadow_openai() {
     let b = bed("codex", CODEX);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -359,7 +360,7 @@ fn the_shadow_openai_follows_the_users_own_openai_base_url() {
     let seed = format!("openai_base_url = \"http://127.0.0.1:18081/v1\"\n{CODEX}");
     let b = bed("codex", &seed);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -383,7 +384,7 @@ fn re_adopting_codex_after_a_restore_points_the_shadow_back_at_the_gateway() {
     let b = bed("codex", CODEX);
     let c = client("codex");
     let path = b.home.join(".codex/config.toml");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -395,7 +396,7 @@ fn re_adopting_codex_after_a_restore_points_the_shadow_back_at_the_gateway() {
 
     // 再接管一次：影子那一段要整个改回指向网关。**尤其是那两个 true** ——
     // 留着 `requires_openai_auth` 会把用户自己的 OpenAI 登录送给网关
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let after = read(&path);
     let got = |k: &str| {
@@ -438,7 +439,7 @@ fn a_codex_config_created_here_keeps_the_shadow_after_a_restore() {
     let b = bed("codex", "");
     let c = client("codex");
     let path = b.home.join(".codex/config.toml");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     assert!(!r.delete_file);
@@ -453,7 +454,7 @@ fn adopting_twice_does_not_stack_up_sentinels() {
     let b = bed("codex", CODEX);
     let c = client("codex");
     for _ in 0..3 {
-        let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let after = read(&b.home.join(".codex/config.toml"));
@@ -483,7 +484,7 @@ fn a_config_file_somewhere_else_is_adopted_and_restored_where_it_is() {
     let mut c = client("claude-code");
     c.custom_config = Some(custom.clone());
 
-    let p = plan_adopt(&c, &home, &gw()).unwrap();
+    let p = plan_adopt(&c, &home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &backups).unwrap();
     assert!(
         read(&custom).contains("127.0.0.1:8080"),
@@ -513,7 +514,7 @@ const AIDER: &str = "# 我的 aider 配置\nmodel: gpt-4o\ndark-mode: true\nauto
 fn aider_round_trips_too() {
     let b = bed("aider", AIDER);
     let c = client("aider");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let after = read(&b.home.join(".aider.conf.yml"));
     assert!(after.contains("# 我的 aider 配置"), "{after}");
@@ -566,7 +567,7 @@ fn dsh_gets_one_row_and_one_reference_and_nothing_else() {
     let b = bed("dsh", DSH_PATCH);
     std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert_eq!(p.also.len(), 1, "凭据文件也在这一次改动里");
     assert!(p.carries_secret);
     apply(&c, &p, &b.backups).unwrap();
@@ -616,7 +617,7 @@ fn dsh_gets_one_row_and_one_reference_and_nothing_else() {
 fn dsh_files_created_here_are_removed_again() {
     let b = bed("dsh", "");
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert!(p.before.is_none() && p.also[0].before.is_none());
     apply(&c, &p, &b.backups).unwrap();
 
@@ -657,9 +658,9 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
     let b = bed("dsh", DSH_PATCH);
     std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
-    let again = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert!(again.is_noop(), "第二次接管应该是空操作");
     // 换一把密钥再接管一次，还原回的仍然是用户原来那一份
     let other = Gateway {
@@ -667,7 +668,7 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
         key: Some("tw-换过的".into()),
         models: Vec::new(),
     };
-    let p = plan_adopt(&c, &b.home, &other).unwrap();
+    let p = plan_adopt(&c, &b.home, &other, &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -681,7 +682,7 @@ fn dsh_adopted_twice_keeps_the_first_originals() {
 fn a_credentials_file_dsh_has_written_into_keeps_its_version_after_a_restore() {
     let b = bed("dsh", "");
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let creds = dsh_home(&b).join(".credentials.yaml");
     let mut t = read(&creds);
@@ -705,7 +706,7 @@ fn a_credentials_file_dsh_has_written_into_keeps_its_version_after_a_restore() {
 fn a_credentials_file_created_here_keeps_its_version_and_the_keys_dsh_added() {
     let b = bed("dsh", "");
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let creds = dsh_home(&b).join(".credentials.yaml");
     let t = tw_adopt::yaml::set(
@@ -743,7 +744,7 @@ fn dsh_shapes_dsh_writes_itself_come_back_exactly() {
         let b = bed("dsh", patch);
         std::fs::write(dsh_home(&b).join(".credentials.yaml"), creds).unwrap();
         let c = client("dsh");
-        let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
         assert!(read(&dsh_home(&b).join(".credentials.yaml")).contains("THINKWATCH_API_KEY"));
 
@@ -763,7 +764,7 @@ fn dsh_keeps_a_reference_the_user_added_to_the_refs_we_created() {
     let creds_path = dsh_home(&b).join(".credentials.yaml");
     std::fs::write(&creds_path, "version: 1\n").unwrap();
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let mut creds = read(&creds_path);
     assert!(
@@ -788,7 +789,7 @@ fn dsh_restores_with_a_row_the_user_added_after_ours() {
     let b = bed("dsh", "- id: a\n");
     std::fs::write(dsh_home(&b).join(".credentials.yaml"), DSH_CREDS).unwrap();
     let c = client("dsh");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let path = dsh_home(&b).join("cordis.patch.yml");
     let mut t = read(&path);
@@ -809,7 +810,7 @@ fn dsh_is_left_untouched_when_the_second_file_cannot_be_written() {
     let b = bed("dsh", DSH_PATCH);
     std::fs::write(dsh_home(&b).join(".credentials.yaml"), "- 不是映射\n").unwrap();
     let c = client("dsh");
-    assert!(plan_adopt(&c, &b.home, &gw()).is_err());
+    assert!(plan_adopt(&c, &b.home, &gw(), &Around::default()).is_err());
     assert_eq!(read(&dsh_home(&b).join("cordis.patch.yml")), DSH_PATCH);
 }
 
@@ -831,19 +832,29 @@ fn dsh_settings_yaml_counts_as_shadowing_only_when_it_sets_the_base_url() {
         "llm-deepseek:\n  thinking: high\nui:\n  theme: dark\n",
     )
     .unwrap();
-    assert!(plan_adopt(&c, &b.home, &gw()).unwrap().shadows.is_empty());
+    assert!(
+        plan_adopt(&c, &b.home, &gw(), &Around::default())
+            .unwrap()
+            .shadows
+            .is_empty()
+    );
     // 0.1.5 的设置页写了 baseURL：它压过补丁层
     std::fs::write(
         &settings,
         "llm-deepseek:\n  baseURL: https://api.deepseek.com\n",
     )
     .unwrap();
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert_eq!(p.shadows, vec![settings.clone()]);
     assert!(p.notes.iter().any(|n| n.code == "adopt.plan.shadowed"));
     // 0.1.7 导入之后改了名，就不再读它了
     std::fs::rename(&settings, dsh_home(&b).join("settings.yaml.imported")).unwrap();
-    assert!(plan_adopt(&c, &b.home, &gw()).unwrap().shadows.is_empty());
+    assert!(
+        plan_adopt(&c, &b.home, &gw(), &Around::default())
+            .unwrap()
+            .shadows
+            .is_empty()
+    );
 }
 
 // ---- 跨格式的规矩 ------------------------------------------------------
@@ -859,7 +870,7 @@ fn every_adoptable_client_survives_a_round_trip() {
             tw_adopt::clients::Format::Rows => "- id: 我自己的\n  config:\n    k: 别动\n",
         };
         let b = bed(c.id, seed);
-        let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
         let after = read(&c.config_path(&b.home));
         assert!(
@@ -898,7 +909,7 @@ fn a_gateway_without_a_key_writes_no_key_field() {
             _ => "",
         };
         let b = bed(c.id, seed);
-        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         assert!(!p.carries_secret, "{} 说自己要写密钥，可是没有密钥", c.id);
         apply(&c, &p, &b.backups).unwrap();
         let after = read(&c.config_path(&b.home));
@@ -920,7 +931,7 @@ fn a_plan_is_just_a_plan_until_it_is_applied() {
     // 「算改动」和「落盘」分成两步，是因为中间必须夹一次人的确认。
     let b = bed("codex", CODEX);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert_ne!(p.before.as_deref(), Some(p.after.as_str()));
     assert_eq!(
         read(&b.home.join(".codex/config.toml")),
@@ -934,9 +945,9 @@ fn a_plan_is_just_a_plan_until_it_is_applied() {
 fn adopting_the_same_thing_twice_is_recognised_as_a_no_op() {
     let b = bed("codex", CODEX);
     let c = client("codex");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
-    let again = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert!(again.is_noop(), "第二次接管应该是空操作");
 }
 
@@ -962,7 +973,7 @@ fn the_shadow_file_that_bit_cc_switch_is_reported_at_plan_time() {
     )
     .unwrap();
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert_eq!(p.shadows.len(), 1, "{:?}", p.shadows);
     assert!(
         p.notes
@@ -986,7 +997,7 @@ fn re_adopting_does_not_overwrite_what_the_original_was() {
             key: Some("tw-新密钥".into()),
             models: Vec::new(),
         };
-        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let side = read(&b.home.join(".claude/settings.json.thinkwatch.json"));
@@ -1014,7 +1025,7 @@ fn re_adopting_codex_also_keeps_the_first_record() {
             key: None,
             models: Vec::new(),
         };
-        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let after = read(&b.home.join(".codex/config.toml"));
@@ -1037,7 +1048,7 @@ fn re_adopting_codex_also_keeps_the_first_record() {
 fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let side = b.home.join(".claude/settings.json.thinkwatch.json");
     let broken = "{ \"what_this_file_is\": \"半截";
@@ -1049,7 +1060,7 @@ fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
         base: "http://127.0.0.1:9999".into(),
         ..gw()
     };
-    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    let e = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap_err();
     // 还原早就这么说，界面有这一句的译文；说的是记录那个文件
     let r = plan_restore(&c, &b.home).unwrap_err();
     assert_eq!(e.msg().code, "adopt.plan.parse_failed");
@@ -1063,7 +1074,7 @@ fn a_record_that_cannot_be_parsed_stops_a_takeover_like_it_stops_a_restore() {
 
     // 是 JSON、却不是我们写的那种：一样拒绝，**报错里不抄原文**（它会显示在界面上）
     std::fs::write(&side, "{ \"file_created_by_us\": \"sk-别抄到界面上\" }").unwrap();
-    let e = plan_adopt(&c, &b.home, &g).unwrap_err();
+    let e = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap_err();
     assert_eq!(e.msg().code, "adopt.plan.parse_failed");
     assert!(!e.to_string().contains("sk-别抄到界面上"), "{e}");
     assert_eq!(read(&path), before);
@@ -1086,7 +1097,7 @@ fn a_record_that_belongs_to_another_client_stops_a_takeover() {
     let side = b.home.join(".claude/settings.json.thinkwatch.json");
     std::fs::write(&side, &theirs).unwrap();
 
-    let e = plan_adopt(&c, &b.home, &gw()).unwrap_err();
+    let e = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap_err();
     assert!(
         matches!(e, tw_adopt::plan::PlanError::ForeignSidecar { .. }),
         "{e}"
@@ -1105,7 +1116,7 @@ fn the_record_is_replaced_whole_rather_than_rewritten_in_place() {
     let b = bed("claude-code", CLAUDE);
     let c = client("claude-code");
     let side = b.home.join(".claude/settings.json.thinkwatch.json");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let first = std::fs::metadata(&side).unwrap().ino();
 
@@ -1113,7 +1124,7 @@ fn the_record_is_replaced_whole_rather_than_rewritten_in_place() {
         base: "http://127.0.0.1:9999".into(),
         ..gw()
     };
-    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let meta = std::fs::metadata(&side).unwrap();
     assert_ne!(meta.ino(), first, "记录是在原文件上截断重写的");
@@ -1160,7 +1171,7 @@ fn adopting_opencode_writes_a_provider_both_versions_can_use() {
     use tw_adopt::json::Val;
     let b = bed("opencode", OPENCODE_V1);
     let c = client("opencode");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let after = read(&opencode_path(&b.home));
@@ -1212,7 +1223,7 @@ fn adopting_opencode_edits_the_native_v2_entry_when_there_is_one() {
     use tw_adopt::json::Val;
     let b = bed("opencode", OPENCODE_V2);
     let c = client("opencode");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let after = read(&opencode_path(&b.home));
@@ -1264,7 +1275,7 @@ fn rewriting_the_opencode_model_list_keeps_the_first_record() {
             models: models.into_iter().map(str::to_string).collect(),
             ..gw()
         };
-        let p = plan_adopt(&c, &b.home, &g).unwrap();
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let d = tw_adopt::detect::detect_one(&c, &b.home);
@@ -1283,7 +1294,7 @@ fn restoring_opencode_after_the_shape_changed_removes_both_entries() {
     use tw_adopt::json::Val;
     let b = bed("opencode", OPENCODE_V1);
     let c = client("opencode");
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 
     let path = opencode_path(&b.home);
@@ -1295,7 +1306,7 @@ fn restoring_opencode_after_the_shape_changed_removes_both_entries() {
     .unwrap();
     std::fs::write(&path, native).unwrap();
 
-    let p = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -1313,12 +1324,188 @@ fn adopting_opencode_with_no_models_says_so_before_confirming() {
         models: Vec::new(),
         ..gw()
     };
-    let p = plan_adopt(&c, &b.home, &g).unwrap();
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
     assert!(
         p.notes.iter().any(|n| n.code == "adopt.plan.no_models"),
         "{:?}",
         p.notes
     );
-    let with = plan_adopt(&c, &b.home, &gw()).unwrap();
+    let with = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
     assert!(!with.notes.iter().any(|n| n.code == "adopt.plan.no_models"));
+}
+
+// ---- Claude Code 直连云服务商：`CLAUDE_CODE_USE_BEDROCK` 这一类开关 ------------
+
+/// `/setup-bedrock` 写出来的那种 settings.json：开关、区域、API key、钉好的模型都在 `env` 里
+const CLAUDE_BEDROCK: &str = r#"{
+  "model": "opusplan",
+  "env": {
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "AWS_REGION": "us-west-2",
+    "AWS_BEARER_TOKEN_BEDROCK": "ABSK-我的Bedrock密钥",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-4-6"
+  },
+  "awsAuthRefresh": "aws sso login --profile dev"
+}
+"#;
+
+/// 开关打开着，Claude Code 就不看 `ANTHROPIC_BASE_URL` —— 接管要把它关掉，还原时一个
+/// 字节不差地打开回去
+#[test]
+fn a_bedrock_switch_in_settings_is_turned_off_and_restored_byte_for_byte() {
+    let b = bed("claude-code", CLAUDE_BEDROCK);
+    let c = client("claude-code");
+    let path = b.home.join(".claude/settings.json");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    let codes: Vec<&str> = p.notes.iter().map(|n| n.code.as_str()).collect();
+    assert!(
+        codes.contains(&"adopt.plan.cloud_off.settings"),
+        "{codes:?}"
+    );
+    // 只钉了 opus 和 sonnet：haiku 那一类（后台任务）会用 Anthropic 的名字发给网关
+    let models = p
+        .notes
+        .iter()
+        .find(|n| n.code == "adopt.plan.cloud_models")
+        .expect("没说哪些模型会用 Anthropic 的名字");
+    assert_eq!(models.args["names"], "ANTHROPIC_DEFAULT_HAIKU_MODEL");
+    apply(&c, &p, &b.backups).unwrap();
+
+    let after = read(&path);
+    assert_eq!(
+        tw_adopt::json::get(&after, &["env", "CLAUDE_CODE_USE_BEDROCK"]).unwrap(),
+        Some(tw_adopt::json::Val::s(""))
+    );
+    for keep in [
+        "\"AWS_REGION\": \"us-west-2\"",
+        "ABSK-我的Bedrock密钥",
+        "us.anthropic.claude-sonnet-4-6",
+        "aws sso login --profile dev",
+    ] {
+        assert!(after.contains(keep), "接管把 {keep} 弄丢了：\n{after}");
+    }
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(
+        r.notes.iter().any(|n| n.code == "adopt.restore.cloud_on"),
+        "{:?}",
+        r.notes
+    );
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), CLAUDE_BEDROCK, "还原之后不是原来那份文件");
+}
+
+/// 开关是 shell 里 export 的：shell 配置是用户的，不去改它；在 settings.json 里写一个
+/// 空串盖住它，还原时拿掉这个空串，shell 里的那一行就又起作用
+#[test]
+#[cfg(not(windows))]
+fn a_switch_the_shell_exports_is_overridden_here_and_the_override_goes_on_restore() {
+    let b = bed("claude-code", CLAUDE);
+    std::fs::write(
+        b.home.join(".zshrc"),
+        "export PATH=$HOME/bin:$PATH\nexport CLAUDE_CODE_USE_BEDROCK=1\n",
+    )
+    .unwrap();
+    let c = client("claude-code");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    let off = p
+        .notes
+        .iter()
+        .find(|n| n.code == "adopt.plan.cloud_off.shell")
+        .expect("没说 shell 里打开着");
+    assert_eq!(off.args["line"], "2");
+    apply(&c, &p, &b.backups).unwrap();
+    let path = b.home.join(".claude/settings.json");
+    assert!(
+        read(&path).contains("\"CLAUDE_CODE_USE_BEDROCK\": \"\""),
+        "{}",
+        read(&path)
+    );
+    // shell 配置一个字节都没动
+    assert_eq!(
+        read(&b.home.join(".zshrc")),
+        "export PATH=$HOME/bin:$PATH\nexport CLAUDE_CODE_USE_BEDROCK=1\n"
+    );
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    assert!(
+        r.notes.iter().any(|n| n.code == "adopt.restore.cloud_env"),
+        "{:?}",
+        r.notes
+    );
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), CLAUDE, "还原之后留下了那个空串");
+}
+
+/// 只在用户环境里（`source` 进来的文件、注册表）打开的，一样关掉
+#[test]
+fn a_switch_only_the_environment_has_is_turned_off_too() {
+    let b = bed("claude-code", CLAUDE);
+    let c = client("claude-code");
+    let around = Around {
+        env: [("CLAUDE_CODE_USE_VERTEX".to_string(), "true".to_string())].into(),
+        managed: Vec::new(),
+    };
+    let p = plan_adopt(&c, &b.home, &gw(), &around).unwrap();
+    assert!(
+        p.notes.iter().any(|n| n.code == "adopt.plan.cloud_off.env"),
+        "{:?}",
+        p.notes
+    );
+    // 不是 Bedrock：没有「哪些模型会用 Anthropic 的名字」那一句
+    assert!(!p.notes.iter().any(|n| n.code == "adopt.plan.cloud_models"));
+    apply(&c, &p, &b.backups).unwrap();
+    let path = b.home.join(".claude/settings.json");
+    assert!(read(&path).contains("\"CLAUDE_CODE_USE_VERTEX\": \"\""));
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), CLAUDE);
+}
+
+/// 第二次接管时文件里已经是我们写的空串了：原值照第一次的记录，还原回 "1"
+#[test]
+fn re_adopting_keeps_the_switch_as_it_first_was() {
+    let b = bed("claude-code", CLAUDE_BEDROCK);
+    let c = client("claude-code");
+    for _ in 0..2 {
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+    }
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE_BEDROCK);
+}
+
+/// 组织托管的配置打开的开关盖过一切：接管写了也白写，所以拒绝，一个字节都不写
+#[test]
+fn a_switch_a_managed_configuration_turns_on_stops_the_takeover() {
+    let b = bed("claude-code", CLAUDE);
+    let managed = b.home.join("managed-settings.json");
+    std::fs::write(&managed, r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#).unwrap();
+    let c = client("claude-code");
+    let around = Around {
+        env: Default::default(),
+        managed: vec![managed.clone()],
+    };
+    let e = plan_adopt(&c, &b.home, &gw(), &around).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.cloud_managed", "{e}");
+    assert_eq!(e.msg().args["path"], managed.display().to_string());
+    assert_eq!(read(&b.home.join(".claude/settings.json")), CLAUDE);
+}
+
+/// 别的客户端不看这些开关：它们是 Claude Code 的
+#[test]
+#[cfg(not(windows))]
+fn the_switches_are_claude_codes_alone() {
+    let b = bed("codex", CODEX);
+    std::fs::write(b.home.join(".zshrc"), "export CLAUDE_CODE_USE_BEDROCK=1\n").unwrap();
+    let c = client("codex");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(!p.after.contains("CLAUDE_CODE_USE_BEDROCK"), "{}", p.after);
+    assert!(
+        !p.notes
+            .iter()
+            .any(|n| n.code.starts_with("adopt.plan.cloud"))
+    );
 }
