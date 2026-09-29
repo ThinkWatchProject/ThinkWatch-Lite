@@ -37,6 +37,7 @@ export const PROTOCOLS: { id: Protocol; label: string }[] = [
   { id: "openai-chat", label: "OpenAI Chat Completions" },
   { id: "openai-responses", label: "OpenAI Responses" },
   { id: "gemini", label: "Google Gemini" },
+  { id: "bedrock", label: "Bedrock Converse" },
 ];
 
 /** 登录得来的上游，协议不在上面那张表里：它不能在新建表单里选 */
@@ -106,6 +107,82 @@ export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
   },
   { id: "oauth", label: "OAuth" },
 ];
+
+/**
+ * Bedrock 上游的认证方式：Bedrock 的 API 密钥（放进 `Authorization: Bearer`），或者
+ * AWS 访问密钥（每个请求签名），访问密钥可以写在这里，也可以从 AWS 的 profile 读
+ */
+export const BEDROCK_AUTH_MODES: { id: "key" | "aws-keys" | "aws-profile"; label: string }[] = [
+  {
+    id: "key",
+    get label() {
+      return textOf(labelsText).apiKey;
+    },
+  },
+  {
+    id: "aws-keys",
+    get label() {
+      return textOf(labelsText).accessKeys;
+    },
+  },
+  { id: "aws-profile", label: "AWS profile" },
+];
+
+/**
+ * 有 Bedrock 推理地址的区域，下拉里的顺序。**只用来生成标准地址** —— 列表外的区域
+ * 直接改地址；VPC 端点、代理这些非标准地址另写签名用的区域
+ */
+export const BEDROCK_REGIONS = [
+  "us-east-1",
+  "us-east-2",
+  "us-west-1",
+  "us-west-2",
+  "us-gov-east-1",
+  "us-gov-west-1",
+  "ca-central-1",
+  "ca-west-1",
+  "mx-central-1",
+  "sa-east-1",
+  "eu-central-1",
+  "eu-central-2",
+  "eu-north-1",
+  "eu-south-1",
+  "eu-south-2",
+  "eu-west-1",
+  "eu-west-2",
+  "eu-west-3",
+  "il-central-1",
+  "me-central-1",
+  "me-south-1",
+  "af-south-1",
+  "ap-east-2",
+  "ap-northeast-1",
+  "ap-northeast-2",
+  "ap-northeast-3",
+  "ap-south-1",
+  "ap-south-2",
+  "ap-southeast-1",
+  "ap-southeast-2",
+  "ap-southeast-3",
+  "ap-southeast-4",
+  "ap-southeast-5",
+  "ap-southeast-7",
+] as const;
+
+/** 区域的标准推理地址 */
+export function bedrockUrl(region: string): string {
+  return `https://bedrock-runtime.${region}.amazonaws.com`;
+}
+
+/** 标准推理地址里的区域；别的地址（VPC 端点、代理）是 null。和 core 认的是同一种写法 */
+export function bedrockRegionOf(url: string): string | null {
+  try {
+    const m = /^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com$/.exec(new URL(url).hostname);
+    return m?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 密钥所在的请求头，按 HTTP 报文里的写法：名字，和值前面拼的东西。

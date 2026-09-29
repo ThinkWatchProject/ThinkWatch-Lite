@@ -4,9 +4,13 @@
  * **回填的是配置里写的原样**（地址、密钥、请求头），保存交回整份定义。只有 OAuth
  * 凭据没改时交「保持原样」：网关随时会换发 token、把新的 refresh token 写回，
  * 回填的那一把可能已经作废了。
+ *
+ * Bedrock 上游的凭据有三种：API 密钥（走 `key`），写在这里的访问密钥，或者从 AWS 的
+ * profile 读访问密钥（后两种都在 `aws` 里）。
  */
 import { textOf } from "@/i18n";
 import type {
+  AwsKeys,
   Billing,
   HeaderInput,
   ModelList,
@@ -16,10 +20,12 @@ import type {
   ProviderInput,
   ProviderView,
 } from "@/types";
+import { bedrockRegionOf } from "./labels";
 import { CUSTOM } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
-export type AuthMode = "key" | "oauth";
+/** `aws-keys` / `aws-profile` 只给 Bedrock 上游 */
+export type AuthMode = "key" | "oauth" | "aws-keys" | "aws-profile";
 
 /** 请求头表里的一行 */
 export interface HeaderRow {
@@ -60,6 +66,15 @@ export interface UpstreamForm {
   oauthClientId: string;
   oauthClientSecret: string;
   oauthAccess: string;
+  /** Bedrock 的访问密钥，可以写 `${变量名}` */
+  awsKeyId: string;
+  awsSecret: string;
+  /** 会话令牌：临时凭证才有。空 = 没有 */
+  awsToken: string;
+  /** AWS 凭证文件里的 profile 名 */
+  awsProfile: string;
+  /** 签名用的区域。标准地址不用写（从地址读）；VPC 端点、代理这些地址要写 */
+  awsRegion: string;
   /** 把客户端自己的 User-Agent 和身份信息发给这家。只给按客户端放行的上游打开 */
   forwardClientIdentity: boolean;
   proxy: string;
@@ -104,6 +119,11 @@ export function blankForm(): UpstreamForm {
     oauthClientId: "",
     oauthClientSecret: "",
     oauthAccess: "",
+    awsKeyId: "",
+    awsSecret: "",
+    awsToken: "",
+    awsProfile: "",
+    awsRegion: "",
     forwardClientIdentity: false,
     proxy: "direct",
     onProxyFail: "fail",
@@ -122,7 +142,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     name: p.name,
     baseUrl: p.base_url,
     protocol: p.protocol_explicit ? (p.protocol ?? "") : "",
-    authMode: p.oauth ? "oauth" : "key",
+    authMode: p.oauth ? "oauth" : p.aws?.profile ? "aws-profile" : p.aws ? "aws-keys" : "key",
     key: p.key ?? "",
     headers: (p.headers ?? []).map((h) => headerRow(h.name, h.value)),
     oauthSaved: p.oauth
@@ -138,6 +158,11 @@ export function formFromView(p: ProviderView): UpstreamForm {
     oauthClientId: p.oauth?.client_id ?? "",
     oauthClientSecret: p.oauth?.client_secret ?? "",
     oauthAccess: "",
+    awsKeyId: p.aws?.access_key_id ?? "",
+    awsSecret: p.aws?.secret_access_key ?? "",
+    awsToken: p.aws?.session_token ?? "",
+    awsProfile: p.aws?.profile ?? "",
+    awsRegion: p.aws?.region ?? "",
     forwardClientIdentity: p.forward_client_identity,
     proxy: p.proxy,
     onProxyFail: p.on_proxy_fail,
@@ -148,6 +173,24 @@ export function formFromView(p: ProviderView): UpstreamForm {
     pricing: p.pricing ?? "",
     disabled: p.disabled,
   };
+}
+
+/**
+ * 这一家是 Bedrock：协议选的就是它，或者自动识别、地址是标准的 Bedrock 地址（core 按
+ * 同一个规矩认）。**不等识别结果**：那是异步的，换地址的一瞬间会闪一下
+ */
+export function isBedrock(f: UpstreamForm): boolean {
+  return f.protocol === "bedrock" || (f.protocol === "" && bedrockRegionOf(f.baseUrl) !== null);
+}
+
+/**
+ * 实际生效的认证方式。换了协议之后原来那种不再适用（Bedrock 不收 OAuth，访问密钥
+ * 只给 Bedrock）：按 API 密钥算。**表单里填过的留着**，切回来还在
+ */
+export function authModeOf(f: UpstreamForm): AuthMode {
+  const aws = f.authMode === "aws-keys" || f.authMode === "aws-profile";
+  if (isBedrock(f) ? f.authMode === "oauth" : aws) return "key";
+  return f.authMode;
 }
 
 /** OAuth 凭据和回填的一样：保存时交「保持原样」，检测时用网关现有的 token */
@@ -169,7 +212,7 @@ function headerInputs(f: UpstreamForm): HeaderInput[] {
 }
 
 function oauthChange(f: UpstreamForm): OAuthChange {
-  if (f.authMode === "key") return { mode: "none" };
+  if (authModeOf(f) !== "oauth") return { mode: "none" };
   if (oauthKept(f)) return { mode: "keep" };
   return {
     mode: "set",
@@ -181,13 +224,30 @@ function oauthChange(f: UpstreamForm): OAuthChange {
   };
 }
 
+/** 访问密钥或 profile。**只交当前这种认证方式的**：切走之后留在表单里的不算 */
+function awsInput(f: UpstreamForm): AwsKeys | undefined {
+  const region = f.awsRegion.trim() || undefined;
+  const mode = authModeOf(f);
+  if (mode === "aws-keys") {
+    return {
+      access_key_id: f.awsKeyId.trim(),
+      secret_access_key: f.awsSecret.trim(),
+      session_token: f.awsToken.trim() || undefined,
+      region,
+    };
+  }
+  if (mode === "aws-profile") return { profile: f.awsProfile.trim(), region };
+  return undefined;
+}
+
 export function toInput(f: UpstreamForm): ProviderInput {
   return {
     name: f.name,
     base_url: f.baseUrl.trim(),
-    key: f.authMode === "key" ? f.key.trim() || undefined : undefined,
+    key: authModeOf(f) === "key" ? f.key.trim() || undefined : undefined,
     headers: headerInputs(f),
     oauth: oauthChange(f),
+    aws: awsInput(f),
     protocol: f.protocol || undefined,
     forward_client_identity: f.forwardClientIdentity,
     proxy: f.proxy,
@@ -206,7 +266,7 @@ export function toInput(f: UpstreamForm): ProviderInput {
  */
 export function connectionChanged(f: UpstreamForm, p: ProviderView): boolean {
   const pick = (i: ProviderInput) =>
-    JSON.stringify([i.base_url, i.protocol, i.key, i.headers, i.oauth, i.proxy]);
+    JSON.stringify([i.base_url, i.protocol, i.key, i.headers, i.oauth, i.aws, i.proxy]);
   return pick(toInput(f)) !== pick(toInput(formFromView(p)));
 }
 
@@ -225,12 +285,15 @@ export function connectionMissing(
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);
   if (f.baseUrl.trim() === "") return t.baseUrl;
+  const mode = authModeOf(f);
   if (
-    f.authMode === "oauth" &&
+    mode === "oauth" &&
     !oauthKept(f) &&
     (f.oauthRefresh.trim() === "" || f.oauthEndpoint.trim() === "")
   )
     return t.oauth;
+  if (mode === "aws-keys" && (f.awsKeyId.trim() === "" || f.awsSecret.trim() === "")) return t.accessKeys;
+  if (mode === "aws-profile" && f.awsProfile.trim() === "") return t.profile;
   for (const r of f.headers) {
     const header = r.name.trim();
     if (header === "" && r.value.trim() === "") continue;

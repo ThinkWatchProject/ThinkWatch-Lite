@@ -49,6 +49,9 @@ export const remoteText = messages(
       `浏览器登录完成后会回到运行 core 的那台机器，而当前连接的是 ${name}，因此只能用设备码登录。`,
     signInWithCode: "用设备码登录",
     headersHint: "随每个请求发送。值中的 ${变量名} 读取服务器上 core 进程的环境变量。",
+    keyHint: "${变量名} 读取服务器上 core 进程的环境变量。",
+    profileHint:
+      "读取服务器上运行 core 的用户的 AWS 凭证文件（~/.aws/credentials、~/.aws/config）中的这个 profile，只支持写有访问密钥的 profile。",
     systemProxy: "服务器的系统代理",
   },
   {
@@ -83,6 +86,9 @@ export const remoteText = messages(
       `A browser sign-in returns to the machine that runs core, and this app is connected to ${name}, so only the device code sign-in is available.`,
     signInWithCode: "Sign in with a device code",
     headersHint: "Sent with every request. ${NAME} in a value reads an environment variable of the core process on the server.",
+    keyHint: "${NAME} reads an environment variable of the core process on the server.",
+    profileHint:
+      "Reads this profile from the AWS credential files of the user running core on the server (~/.aws/credentials, ~/.aws/config). Only profiles that hold access keys are supported.",
     systemProxy: "The server's system proxy",
   },
 );

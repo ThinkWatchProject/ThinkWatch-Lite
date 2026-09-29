@@ -13,10 +13,11 @@ import { headerRow, type HeaderRow, type UpstreamForm } from "./upstreamForm";
  * 名称和值写得对不对（保留头、重名、占位符）由 core 在检测和保存时说。
  *
  * **第一行是鉴权头**（有的话），和企业版一样把密钥当成请求头里的一行给人看。
- * 它由 API 密钥或 OAuth 凭据生成、跟着协议换名字，这里只显示不能改。
+ * 它由 API 密钥或 OAuth 凭据生成、跟着协议换名字，这里只显示不能改。Bedrock 用访问
+ * 密钥时这一行是签名：每个请求发出时才签得出来。
  */
 export interface AuthRow {
-  source: "key" | "oauth";
+  source: "key" | "oauth" | "signed";
   /** 头的名字。地址还没填、不知道协议时是 null，显示 `unknownName` */
   name: string | null;
   unknownName: string;
@@ -51,6 +52,8 @@ export function HeaderEditor({
     set({ headers: [...rows, row] });
   }
 
+  const from = auth?.source === "key" ? t.fromKey : auth?.source === "signed" ? t.fromSignature : t.fromOauth;
+
   // 和输入框同高同圆角，但不是输入框：不能聚焦、不能改
   const locked =
     "flex h-8 min-w-0 items-center gap-1.5 rounded-lg border border-input/60 bg-muted/50 px-2.5 font-mono tw-body";
@@ -74,10 +77,10 @@ export function HeaderEditor({
               <span className="truncate font-sans text-muted-foreground">{auth.placeholder}</span>
             )}
           </div>
-          <Tip text={auth.source === "key" ? t.fromKey : t.fromOauth}>
+          <Tip text={from}>
             <span
               className="flex size-7 items-center justify-center text-muted-foreground"
-              aria-label={auth.source === "key" ? t.fromKey : t.fromOauth}
+              aria-label={from}
             >
               <LockIcon className="size-3.5" />
             </span>

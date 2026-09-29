@@ -350,3 +350,95 @@ async fn the_generic_call_speaks_every_shape() {
         .await;
     assert!(w.is_ok(), "{:?}", w.err());
 }
+
+/// Bedrock 上游照对话框交上去的样子存得进去：API 密钥、访问密钥、AWS profile 三种
+/// 都行；密钥和 profile 混着写被拒并带码。标准地址认得出协议和区域
+#[tokio::test]
+async fn a_bedrock_upstream_is_saved_the_way_the_dialog_sends_it() {
+    use tw_api::{AwsKeys, OAuthChange, OnProxyFail, Protocol, ProviderInput, ProviderSave, ep};
+
+    const URL: &str = "https://bedrock-runtime.us-west-2.amazonaws.com";
+    let core = Core::start();
+    core.wait_ready().await;
+    let c = core.ok();
+
+    let preview = c
+        .call::<ep::PreviewProvider>(
+            &[],
+            &tw_api::ProviderPreviewRequest {
+                base_url: URL.into(),
+                protocol: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(preview.protocol, Some(Protocol::Bedrock));
+    assert_eq!(preview.region.as_deref(), Some("us-west-2"));
+    assert_eq!(preview.auth_header, "authorization");
+
+    let input = |name: &str, key: Option<&str>, aws: Option<AwsKeys>| ProviderSave {
+        provider: ProviderInput {
+            name: name.into(),
+            base_url: URL.into(),
+            key: key.map(Into::into),
+            headers: vec![],
+            oauth: OAuthChange::default(),
+            aws,
+            protocol: None,
+            forward_client_identity: false,
+            proxy: "direct".into(),
+            on_proxy_fail: OnProxyFail::Fail,
+            models: vec![],
+            models_only: None,
+            billing: None,
+            pricing: None,
+            disabled: false,
+        },
+        base_version: None,
+    };
+    let keys = AwsKeys {
+        access_key_id: Some("${AWS_ACCESS_KEY_ID}".into()),
+        secret_access_key: Some("${AWS_SECRET_ACCESS_KEY}".into()),
+        ..Default::default()
+    };
+    let profile = AwsKeys {
+        profile: Some("dev".into()),
+        ..Default::default()
+    };
+    for (name, key, aws) in [
+        ("br-key", Some("${AWS_BEARER_TOKEN_BEDROCK}"), None),
+        ("br-keys", None, Some(keys.clone())),
+        ("br-profile", None, Some(profile.clone())),
+    ] {
+        let r = c
+            .call::<ep::CreateProvider>(&[], &input(name, key, aws))
+            .await;
+        assert!(r.is_ok(), "{name}: {:?}", r.err());
+    }
+    let ov = c.call::<ep::Overview>(&[], &()).await.unwrap();
+    let find = |n: &str| ov.providers.iter().find(|p| p.name == n).unwrap();
+    assert_eq!(find("br-keys").aws.as_ref(), Some(&keys));
+    assert_eq!(find("br-profile").aws.as_ref(), Some(&profile));
+    assert_eq!(
+        find("br-key").key.as_deref(),
+        Some("${AWS_BEARER_TOKEN_BEDROCK}")
+    );
+    for n in ["br-key", "br-keys", "br-profile"] {
+        assert_eq!(find(n).protocol, Some(Protocol::Bedrock), "{n}");
+        assert_eq!(find(n).region.as_deref(), Some("us-west-2"), "{n}");
+    }
+
+    let mixed = AwsKeys {
+        profile: Some("dev".into()),
+        ..keys.clone()
+    };
+    let e = c
+        .call::<ep::CreateProvider>(&[], &input("br-mixed", None, Some(mixed)))
+        .await
+        .unwrap_err();
+    let m = &e
+        .downcast_ref::<thinkwatch_lite_lib::control::Refused>()
+        .expect("写错了要带码")
+        .0;
+    assert_eq!(m.code, "config.credential.aws_profile_and_keys", "{m:?}");
+}

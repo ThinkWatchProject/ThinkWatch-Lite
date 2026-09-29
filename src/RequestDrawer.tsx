@@ -649,6 +649,14 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
                     <UpstreamLogo name={a.provider} className="opacity-70" />
                     <span className="truncate">{a.provider}</span>
                   </span>
+                  {/* 规则改写过模型名：这一跳发出去的是这个，费用也按它算 */}
+                  {a.model && (
+                    <Tip text={t.sentModel(a.model)}>
+                      <span className="min-w-0 max-w-[40%] shrink truncate font-mono tw-label text-muted-foreground">
+                        {a.model}
+                      </span>
+                    </Tip>
+                  )}
                   {denied ? (
                     // 选定上游之后的规则在这一跳拒绝了它：没有发给这个上游，不是上游的失败
                     <Denied className="min-w-0 flex-1">

@@ -12,6 +12,14 @@ describe("上游和客户端的标志", () => {
     expect(upstreamGlyph({ name: "x", baseUrl: "https://api.z.ai/api/anthropic" })).toBe("zai");
     expect(upstreamGlyph({ name: "x", baseUrl: "https://generativelanguage.googleapis.com" })).toBe("gemini");
     expect(upstreamGlyph({ name: "local", baseUrl: "http://127.0.0.1:11434" })).toBe("ollama");
+    expect(upstreamGlyph({ name: "x", baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com" })).toBe("bedrock");
+    expect(upstreamGlyph({ name: "x", baseUrl: "https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com" })).toBe(
+      "bedrock",
+    );
+    // VPC 端点认不出，协议是 Bedrock 就是它
+    expect(upstreamGlyph({ name: "x", baseUrl: "https://vpce-1.example.internal", protocol: "bedrock" })).toBe(
+      "bedrock",
+    );
   });
 
   it("地址认不出时看名字，再认不出就是 null", () => {

@@ -133,8 +133,9 @@
       "base_url": "https://api.anthropic.com",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
-      "key": "sk-ant-mock-7Kq2pV9xQ3xA",
+      "key": "sk-anEXAMPLEQ3xA",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -145,7 +146,6 @@
       "pricing": null,
       "protocol": "anthropic",
       "protocol_explicit": false,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -168,8 +168,9 @@
       "base_url": "https://relay.example.com",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
-      "key": "sk-rl-mock-4fT8wN2cGa7e",
+      "key": "sk-rlEXAMPLEGa7e",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -180,7 +181,6 @@
       "pricing": "relay-discount",
       "protocol": "anthropic",
       "protocol_explicit": true,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -198,6 +198,7 @@
       "base_url": "https://chatgpt.com/backend-api/codex",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
       "model_count": 0,
       "model_fetching": false,
@@ -213,13 +214,12 @@
         "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
         "endpoint": "https://auth.openai.com/oauth/token",
         "expires_at": "2026-10-04T08:12:40Z",
-        "refresh": "rt-mock-chatgpt-refresh-token"
+        "refresh": "rt_7HEXAMPLEMnB2"
       },
       "on_proxy_fail": "fail",
       "pricing": null,
       "protocol": "chatgpt",
       "protocol_explicit": true,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -231,9 +231,10 @@
     },
     {
       "auth_header": "authorization",
-      "base_url": "https://openrouter.ai/api",
+      "base_url": "https://openrouter.ai/api/v1",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
       "key": "${OPENROUTER_API_KEY}",
       "model_count": 0,
@@ -250,7 +251,6 @@
       "pricing": null,
       "protocol": "openai-chat",
       "protocol_explicit": true,
-      "forward_client_identity": false,
       "proxy": "clash",
       "references": [
         {
@@ -265,8 +265,9 @@
       "base_url": "https://api.deepseek.com/anthropic",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
-      "key": "sk-3f5c2e8a1d7b4f0e9c6a2d8b5e19f2c",
+      "key": "sk-3fEXAMPLE9f2c",
       "model_count": 0,
       "model_fetching": false,
       "model_source": "none",
@@ -277,7 +278,6 @@
       "pricing": null,
       "protocol": "anthropic",
       "protocol_explicit": true,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -292,6 +292,7 @@
       "base_url": "https://generativelanguage.googleapis.com",
       "billing": "per-token",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
       "key": "${GEMINI_API_KEY}",
       "model_count": 0,
@@ -304,7 +305,6 @@
       "pricing": null,
       "protocol": "gemini",
       "protocol_explicit": false,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {
@@ -321,9 +321,10 @@
     },
     {
       "auth_header": "authorization",
-      "base_url": "http://127.0.0.1:11434",
+      "base_url": "http://127.0.0.1:11434/v1",
       "billing": "free",
       "disabled": false,
+      "forward_client_identity": false,
       "health": "ok",
       "model_count": 1,
       "model_fetching": false,
@@ -337,7 +338,6 @@
       "pricing": null,
       "protocol": "openai-chat",
       "protocol_explicit": true,
-      "forward_client_identity": false,
       "proxy": "direct",
       "references": [
         {

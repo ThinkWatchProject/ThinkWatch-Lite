@@ -16,8 +16,12 @@ import { remoteText } from "@/connection/remote.i18n";
 import { HeaderEditor, type AuthRow } from "./HeaderEditor";
 import {
   AUTH_MODES,
+  BEDROCK_AUTH_MODES,
+  BEDROCK_REGIONS,
   PROTOCOLS,
   authHeaderParts,
+  bedrockRegionOf,
+  bedrockUrl,
   coreText,
   egressLabel,
   protocolLabel,
@@ -26,7 +30,14 @@ import {
 import { FormItem, Note } from "./parts";
 import { CHATGPT, ZAI, nameFromUrl, presetById } from "./presets";
 import { ServicePicker } from "./ServicePicker";
-import { describeModelList, freeName, oauthKept, type UpstreamForm } from "./upstreamForm";
+import {
+  authModeOf,
+  describeModelList,
+  freeName,
+  isBedrock,
+  oauthKept,
+  type UpstreamForm,
+} from "./upstreamForm";
 
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
 const NEW_PROXY = " new-proxy";
@@ -67,6 +78,10 @@ export function ConnectionSection({
   const taken = ov.providers.map((p) => p.name);
   /** 密钥显示与否：输入框和请求头第一行是同一个值，跟着同一个开关 */
   const [showKey, setShowKey] = useState(false);
+  const bedrock = isBedrock(form);
+  const mode = authModeOf(form);
+  /** 标准 Bedrock 地址里的区域；别的地址是 null */
+  const region = bedrockRegionOf(form.baseUrl.trim());
   const autoProtocol = !form.baseUrl.trim()
     ? t.auto
     : preview?.protocol
@@ -148,30 +163,60 @@ export function ConnectionSection({
         <FormItem label={t.auth}>
           {/* 和旁边的下拉框等高 */}
           <div className="flex h-8 items-center">
-            <Segmented
-              value={form.authMode}
-              options={AUTH_MODES}
-              onChange={(authMode) => set({ authMode })}
-            />
+            {bedrock ? (
+              <Segmented value={mode} options={BEDROCK_AUTH_MODES} onChange={(authMode) => set({ authMode })} />
+            ) : (
+              <Segmented value={mode} options={AUTH_MODES} onChange={(authMode) => set({ authMode })} />
+            )}
           </div>
         </FormItem>
       </div>
 
-      {form.authMode === "key" ? (
-        <FormItem label={t.apiKey} htmlFor="up-key">
+      {/* 标准地址按区域生成；VPC 端点、代理这些地址，签名用的区域另写。只用 API 密钥时
+          不签名，非标准地址也就用不着区域 */}
+      {bedrock && (region !== null || mode !== "key") && (
+        <div className="grid grid-cols-2 gap-4">
+          <FormItem
+            label={t.region}
+            htmlFor="up-region"
+            desc={region === null ? t.signingRegionDesc : undefined}
+          >
+            <RegionSelect
+              value={region ?? form.awsRegion.trim()}
+              onChange={(r) =>
+                region !== null ? set({ baseUrl: bedrockUrl(r) }) : set({ awsRegion: r })
+              }
+            />
+          </FormItem>
+        </div>
+      )}
+
+      {mode === "key" && (
+        <FormItem label={t.apiKey} htmlFor="up-key" desc={remote ? rt.keyHint : undefined}>
           <SecretInput
             id="up-key"
             className="font-mono"
             value={form.key}
-            placeholder={t.keyPlaceholder}
+            placeholder={bedrock ? "${AWS_BEARER_TOKEN_BEDROCK}" : t.keyPlaceholder}
             plain={ENV_REF.test(form.key.trim())}
             revealed={showKey}
             onRevealedChange={setShowKey}
             onChange={(e) => set({ key: e.target.value })}
           />
         </FormItem>
-      ) : (
-        <OAuth form={form} set={set} />
+      )}
+      {mode === "oauth" && <OAuth form={form} set={set} />}
+      {mode === "aws-keys" && <AccessKeys form={form} set={set} remote={remote != null} />}
+      {mode === "aws-profile" && (
+        <FormItem label="AWS profile" htmlFor="up-profile" desc={remote ? rt.profileHint : t.profileDesc}>
+          <Input
+            id="up-profile"
+            className="font-mono"
+            value={form.awsProfile}
+            placeholder="default"
+            onChange={(e) => set({ awsProfile: e.target.value })}
+          />
+        </FormItem>
       )}
 
       <FormItem label={t.headers} hint={remote ? rt.headersHint : t.headersHint}>
@@ -181,6 +226,7 @@ export function ConnectionSection({
           auth={authRow(form, preview?.auth_header ?? editing?.auth_header ?? null, showKey, {
             unknown: t.authUnknown,
             token: t.renewedToken,
+            signed: t.signedPerRequest,
           })}
         />
       </FormItem>
@@ -297,19 +343,106 @@ function authRow(
   header: string | null,
   /** 密钥那一栏此刻显示着没有 */
   revealed: boolean,
-  text: { unknown: string; token: string },
+  text: { unknown: string; token: string; signed: string },
 ): AuthRow | null {
   const parts = header ? authHeaderParts(header) : null;
   const name = parts?.name ?? null;
   const prefix = parts?.prefix ?? "";
-  if (form.authMode === "oauth") {
+  const mode = authModeOf(form);
+  if (mode === "oauth") {
     return { source: "oauth", name, unknownName: text.unknown, prefix, value: null, placeholder: text.token };
+  }
+  // 访问密钥不放进哪个头：每个请求在发出时签名，签出来的是 `Authorization` 那一行
+  if (mode === "aws-keys" || mode === "aws-profile") {
+    return {
+      source: "signed",
+      name: "Authorization",
+      unknownName: text.unknown,
+      prefix: "",
+      value: null,
+      placeholder: text.signed,
+    };
   }
   const key = form.key.trim();
   if (!key) return null;
   // 环境变量引用不是秘密，照写；密钥跟着那一栏显示或隐藏，隐藏时不管多长都是十个点
   const value = revealed || ENV_REF.test(key) ? key : "●".repeat(10);
   return { source: "key", name, unknownName: text.unknown, prefix, value, placeholder: "" };
+}
+
+/** Bedrock 的区域。列表外的区域（地址里写的、配置里写的）也照样显示成选中 */
+function RegionSelect({ value, onChange }: { value: string; onChange: (region: string) => void }) {
+  const t = useText(connectionSectionText);
+  const known = (BEDROCK_REGIONS as readonly string[]).includes(value);
+  return (
+    <NativeSelect
+      id="up-region"
+      className="w-full font-mono"
+      value={value}
+      onChange={(e) => e.target.value && onChange(e.target.value)}
+    >
+      {value === "" && <NativeSelectOption value="">{t.pickRegion}</NativeSelectOption>}
+      {!known && value !== "" && <NativeSelectOption value={value}>{value}</NativeSelectOption>}
+      {BEDROCK_REGIONS.map((r) => (
+        <NativeSelectOption key={r} value={r}>
+          {r}
+        </NativeSelectOption>
+      ))}
+    </NativeSelect>
+  );
+}
+
+/** AWS 访问密钥：写在这里，每一项都可以写 `${变量名}` */
+function AccessKeys({
+  form,
+  set,
+  remote,
+}: {
+  form: UpstreamForm;
+  set: (patch: Partial<UpstreamForm>) => void;
+  remote: boolean;
+}) {
+  const t = useText(connectionSectionText);
+  const rt = useText(remoteText);
+  const env = (v: string) => ENV_REF.test(v.trim());
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <FormItem label={t.accessKeyId} htmlFor="up-aws-id">
+        <Input
+          id="up-aws-id"
+          className="font-mono"
+          value={form.awsKeyId}
+          placeholder="${AWS_ACCESS_KEY_ID}"
+          onChange={(e) => set({ awsKeyId: e.target.value })}
+        />
+      </FormItem>
+      <FormItem label={t.secretAccessKey} htmlFor="up-aws-secret">
+        <SecretInput
+          id="up-aws-secret"
+          className="font-mono"
+          value={form.awsSecret}
+          placeholder="${AWS_SECRET_ACCESS_KEY}"
+          plain={env(form.awsSecret)}
+          onChange={(e) => set({ awsSecret: e.target.value })}
+        />
+      </FormItem>
+      <FormItem
+        label={t.sessionToken}
+        htmlFor="up-aws-token"
+        className="col-span-2"
+        desc={remote ? rt.keyHint : t.sessionTokenDesc}
+      >
+        <SecretInput
+          id="up-aws-token"
+          className="font-mono"
+          value={form.awsToken}
+          placeholder="${AWS_SESSION_TOKEN}"
+          plain={env(form.awsToken)}
+          onChange={(e) => set({ awsToken: e.target.value })}
+        />
+      </FormItem>
+    </div>
+  );
 }
 
 function OAuth({

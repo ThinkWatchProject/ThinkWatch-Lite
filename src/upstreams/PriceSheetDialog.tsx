@@ -63,10 +63,18 @@ type Ratios = Partial<Record<keyof PriceFields, number>>;
 
 const LONG_KEYS = ["input_above_200k", "output_above_200k"] as const;
 
-/** 模型不在默认价目表里时，按上游的接口协议给一组常见比例 */
-function protocolRatios(protocol: string | null | undefined): Ratios {
+/**
+ * 模型不在默认价目表里时，按上游的接口协议给一组常见比例。
+ *
+ * Bedrock 上什么厂商的模型都有：只有 Claude 用 Anthropic 那一组，别的（包括看不出是哪个
+ * 模型的应用推理配置 ARN）不预设折扣 —— 猜错了的折扣是一个看起来很确定的错数字
+ */
+function protocolRatios(protocol: string | null | undefined, model: string): Ratios {
   if (protocol?.startsWith("openai")) return { cache_read: 0.5, cache_write_5m: 1, cache_write_1h: 1 };
   if (protocol === "gemini") return { cache_read: 0.25, cache_write_5m: 1, cache_write_1h: 1 };
+  if (protocol === "bedrock" && !model.includes("anthropic.claude")) {
+    return { cache_read: 1, cache_write_5m: 1, cache_write_1h: 1 };
+  }
   return { cache_read: 0.1, cache_write_5m: 1.25, cache_write_1h: 2 };
 }
 
@@ -254,7 +262,7 @@ export function PriceSheetDialog({
       };
     } else {
       const protocol = context?.protocol ?? ov.providers.find((p) => usedBy.includes(p.name))?.protocol;
-      r = protocolRatios(protocol);
+      r = protocolRatios(protocol, id);
       base = { input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 };
     }
     setOverrides((o) => ({ ...o, [id]: base! }));

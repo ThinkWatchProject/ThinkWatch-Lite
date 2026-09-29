@@ -83,6 +83,7 @@ export const requestDrawerText = messages(
     /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
     reason: "原因",
     attempts: "尝试链",
+    sentModel: (model: string) => `规则改写了模型名：这一跳发给上游的是 ${model}，费用按它计算`,
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
     failoverDenied: (failed: number, rule: string) =>
@@ -205,6 +206,7 @@ export const requestDrawerText = messages(
     deniedBy: "Denied by",
     reason: "Reason",
     attempts: "Attempts",
+    sentModel: (model: string) => `A rule rewrote the model: this attempt sent ${model}, and the cost is priced by it`,
     failover: (failed: number) =>
       failed === 1
         ? "Failover occurred: the first upstream failed, and the request was switched to the next upstream automatically."
