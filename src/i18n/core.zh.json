@@ -332,6 +332,8 @@
     "gw.count_tokens.bedrock_model": "无法计算模型 {model} 的 token 数：只有 AWS Bedrock 上游提供该模型。",
     "gw.count_tokens.bedrock_upstream": "无法通过 AWS Bedrock 上游「{upstream}」计算 token 数。",
     "gw.convert.failed": "无法转换为上游「{upstream}」的格式：{detail}",
+    "gw.convert.tool_unsendable": "请求要求使用工具 {tool}，但无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
+    "gw.convert.tools_unsendable": "请求要求调用工具，但其中的工具都无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
     "gw.files.unsupported": "网关不托管文件，图片和文档请直接放在请求中发送。",
     "gw.request.body_too_large": "请求体大小为 {size} 字节，超过上限 {max} 字节。",
     "gw.upstream.timeout": "上游响应超时。",
