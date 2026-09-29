@@ -9,9 +9,6 @@ export const groupDialogText = messages(
     referencedBy: (refs: { route: string; rule: string }[]) =>
       `被${refs.map((r) => `「${r.route} · ${r.rule}」`).join("、")}引用。`,
     intro: "规则可以转发至策略组，由策略决定使用其中哪个上游。",
-    sticky: "会话粘滞",
-    stickyOn: "同一会话固定使用同一上游，prompt cache 保持命中。",
-    stickyOff: "长会话的 prompt cache 将频繁失效，费用上升。",
     selectedCount: (n: number) => `已选 ${n} 个`,
     noUpstreams: "尚无上游",
     upstream: "上游",
@@ -31,9 +28,6 @@ export const groupDialogText = messages(
     referencedBy: (refs: { route: string; rule: string }[]) =>
       `Referenced by ${andList(refs.map((r) => `“${r.route} · ${r.rule}”`))}.`,
     intro: "Rules can forward to a group, and its strategy decides which of its upstreams is used.",
-    sticky: "Sticky sessions",
-    stickyOn: "Each session stays on the same upstream, so prompt cache hits are preserved.",
-    stickyOff: "The prompt cache of long sessions will be invalidated often, raising costs.",
     selectedCount: (n: number) => `${n} selected`,
     noUpstreams: "No upstreams yet",
     upstream: "Upstream",

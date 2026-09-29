@@ -58,6 +58,21 @@ describe("路由那一页", () => {
     expect(f.rewrittenBy).toEqual(["long-context", "relay-no-thinking"]);
   });
 
+  it("对话延续：沿用本轮路由、留在上次回答的上游才有这一项", () => {
+    expect(routingFacts(row({ attempts: [served("anthropic")] }), false)?.continuity).toBeNull();
+    expect(
+      routingFacts(row({ attempts: [served("anthropic")], affinity: { held_route: false } }), false)?.continuity,
+    ).toBeNull();
+    expect(
+      routingFacts(row({ attempts: [served("anthropic")], affinity: { held_route: true, stayed: "turn" } }), false)
+        ?.continuity,
+    ).toEqual({ heldRoute: true, stayed: "turn" });
+    expect(
+      routingFacts(row({ attempts: [served("anthropic")], affinity: { held_route: false, stayed: "cache" } }), false)
+        ?.continuity,
+    ).toEqual({ heldRoute: false, stayed: "cache" });
+  });
+
   it("故障转移：前几个上游失败、换到下一个", () => {
     const f = routingFacts(row({ attempts: [overloaded("anthropic"), served("openrouter")] }, { provider: "openrouter" }), false)!;
     expect(f.note).toEqual({ kind: "failover", failed: 1 });

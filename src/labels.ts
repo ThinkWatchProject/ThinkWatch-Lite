@@ -159,6 +159,9 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean } {
       return { text: t.rejected(a.status), ok: false };
     case "status":
       return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
+    // 数 token 由网关自己估：上游不是这种格式（没问过它），或者问过、它没实现这个接口
+    case "estimated":
+      return { text: a.status == null ? t.estimated : t.estimatedAfter(a.status), ok: true };
     default:
       return { text: a.error ? coreText(a.error) : t.noResponse, ok: false };
   }

@@ -114,7 +114,6 @@ export function GroupTable({
                   </TableCell>
                   <TableCell className="py-2.5 align-top">
                     <div>{groupKindLabel(g.kind)}</div>
-                    {g.hurts_cache && <div className="tw-label text-warning">{rt.affectsCache}</div>}
                   </TableCell>
                   <TableCell className="py-2.5 align-top whitespace-normal">
                     <Members g={g} ov={ov} busy={busy.has(g.name)} />

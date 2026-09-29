@@ -19,7 +19,7 @@ const afterEn = isMac
 
 /**
  * 设置页：页头、目录、「关于」和「卸载」两节。其余各节的文案在各自的词表里
- * （`GeneralSection.i18n.ts`、`ListenSection.i18n.ts`、`RetentionSection.i18n.ts`、
+ * （`GeneralSection.i18n.ts`、`ListenSection.i18n.ts`、`FailoverSection.i18n.ts`、`RetentionSection.i18n.ts`、
  * `connection/connection.i18n.tsx`）。
  */
 export const settingsText = messages(

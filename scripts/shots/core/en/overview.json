@@ -60,32 +60,36 @@
   ],
   "config_version": "blake3:99aaf5e60d80",
   "default_route": "default",
+  "failover": {
+    "failures_to_pause": 3,
+    "max_pause_secs": 600,
+    "no_balance_pause_secs": 1800,
+    "pause_secs": 60,
+    "quota_pause_secs": 3600,
+    "rate_limit_max_pause_secs": 3600,
+    "stream_start_wait_secs": 15
+  },
   "groups": [
     {
       "builtin": false,
-      "hurts_cache": false,
       "kind": "fallback",
       "name": "main",
       "providers": [
         "anthropic",
         "relay"
-      ],
-      "session_affinity": true
+      ]
     },
     {
       "builtin": false,
-      "hurts_cache": false,
       "kind": "cheapest",
       "name": "budget",
       "providers": [
         "anthropic",
         "relay"
-      ],
-      "session_affinity": true
+      ]
     },
     {
       "builtin": true,
-      "hurts_cache": false,
       "kind": "fallback",
       "name": "__all__",
       "providers": [
@@ -96,8 +100,7 @@
         "deepseek",
         "gemini",
         "ollama"
-      ],
-      "session_affinity": false
+      ]
     }
   ],
   "listen": {

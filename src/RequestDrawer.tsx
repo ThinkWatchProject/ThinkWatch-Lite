@@ -626,6 +626,18 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
         {f.group && <Row label={t.viaGroup} value={targetLabel(f.group)} />}
         {/* 按求值的顺序：先是选定上游之前的，再是每一跳之后的 */}
         {f.rewrittenBy.length > 0 && <Row label={t.rewrittenBy} value={f.rewrittenBy.join(t.listSep)} />}
+        {f.continuity && (
+          <Row
+            label={t.continuity}
+            value={
+              <span className="flex flex-col gap-0.5">
+                {f.continuity.heldRoute && <span>{t.heldRoute}</span>}
+                {f.continuity.stayed === "turn" && <span>{t.stayedTurn}</span>}
+                {f.continuity.stayed === "cache" && <span>{t.stayedCache}</span>}
+              </span>
+            }
+          />
+        )}
         {f.deniedBy && <Row label={t.deniedBy} value={<Denied>{f.deniedBy}</Denied>} />}
         {f.reason && (
           <Row label={t.reason} value={"text" in f.reason ? f.reason.text : coreText(f.reason.msg)} />

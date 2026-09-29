@@ -633,6 +633,7 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
         group: None,
         rewritten_by: vec![],
         denied_by: None,
+        affinity: None,
         attempts: vec![tw_api::AttemptView {
             provider: "relay".into(),
             model: None,
