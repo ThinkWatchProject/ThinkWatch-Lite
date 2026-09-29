@@ -34,6 +34,7 @@ pub mod diagnostics;
 pub mod dmg;
 pub mod error;
 pub mod gateway;
+pub mod import_link;
 pub mod keys;
 pub mod mcp;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
@@ -191,6 +192,8 @@ pub fn run() {
             settings::menubar_style,
             settings::set_menubar_style,
             notices::commands::take_pending_view,
+            import_link::take_import_link,
+            import_link::import_link_closed,
             keys::copy_key,
             keys::copy_gateway_base,
             keys::gateway_base,
@@ -466,7 +469,8 @@ pub fn run() {
             }
 
             // `thinkwatch://` 被点开：浏览器里授权完成之后的「返回 ThinkWatch」，
-            // 和 Windows 上点了一条 toast（`thinkwatch://notice/<键>`）。
+            // Windows 上点了一条 toast（`thinkwatch://notice/<键>`），以及导入链接
+            // （`thinkwatch://import?…`，见 `import_link`）。
             // **窗口这时可能根本不存在**（菜单栏模式下关窗即销毁）
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -531,6 +535,10 @@ pub fn run() {
                 let app = window.app_handle().clone();
                 let closing = window.label().to_string();
                 let _ = window.destroy();
+                // 开着的导入对话框跟着窗口没了：下一条导入链接可以进来
+                if closing == "main" {
+                    import_link::window_destroyed();
+                }
                 // **只有最后一个窗口关掉时才退回菜单栏应用。**更新窗口关掉
                 // 的时候主窗口可能还开着 —— 那时把 Dock 图标收掉，用户就没法
                 // 用 ⌘Tab 切回那个窗口了。

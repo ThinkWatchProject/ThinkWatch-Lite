@@ -290,6 +290,16 @@ reopening the app picks it up. Proxy variables such as `HTTPS_PROXY`, and
   <img src="docs/screenshots/en/upstreams-light.png" alt="The upstreams page: API-key upstreams for Anthropic, DeepSeek and Gemini, a relay priced with its own price sheet, a ChatGPT Plus account with 58% of its 5-hour limit used, OpenRouter through a proxy and a local Ollama set to free, each with its requests, cost and median time to first byte over 24 hours">
 </picture>
 
+A relay or vendor can hand out an import link, `thinkwatch://import?…` or its
+web form `https://thinkwat.ch/import#…`, that pre-fills a new upstream with a
+name, base URL, protocol, API key and model list. The app shows the settings
+and the host that will receive requests and the key in a confirmation dialog,
+and writes nothing and contacts nothing before Create is chosen. A link only
+ever adds one upstream: it cannot change existing ones, headers, proxies,
+pricing or routing, and a key that refers to an environment variable is
+rejected. The parameters and a link builder are in
+[Import links](https://thinkwat.ch/docs/lite/import-links).
+
 ### Routing and failover
 
 Each key follows a route, and keys without one follow the default route. A

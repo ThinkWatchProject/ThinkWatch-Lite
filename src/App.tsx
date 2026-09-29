@@ -8,6 +8,9 @@ import { useStableState } from "./useStable";
 import { EMPTY_FILTER } from "./requestTable";
 import { SettingsPage } from "./settings/SettingsPage";
 import { ConfigFileDialog, VersionHistoryDialog } from "./ConfigDialogs";
+import { ImportDialog } from "./import/ImportDialog";
+import { importDialogText } from "./import/ImportDialog.i18n";
+import { notify } from "@/ui/notify";
 import type { ConfigFocus } from "./configLocate";
 import UpstreamsPage from "./upstreams/UpstreamsPage";
 import ClientsPage from "./clients/ClientsPage";
@@ -34,7 +37,7 @@ import {
 } from "./ui/icons";
 import { isMac, isMod } from "@/platform";
 import OverviewPage from "./overview/OverviewPage";
-import type { CoreStatus, Overview } from "./types";
+import type { CoreStatus, ImportProposal, Overview } from "./types";
 import { stageLabel } from "./labels";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -384,6 +387,32 @@ function Shell({ first }: { first: boolean }) {
   switchTo.current = conn.switchTo;
   const openRef = useRef(open);
   openRef.current = open;
+
+  /*
+    导入链接（`thinkwatch://import?…`）：Rust 那边校验过、一次只留一份，这里取走、弹确认框。
+    和落页一样，窗口可能是为它新建的，所以挂上时先取一次。**挂上时先报「关了」**：网页
+    重新加载过的话，之前开着的那个对话框已经不在了，不报的话之后的链接一直进不来
+  */
+  const [importing, setImporting] = useState<ImportProposal | null>(null);
+  useEffect(() => {
+    const take = () =>
+      invoke<ImportProposal | null>("take_import_link")
+        .then((p) => {
+          if (p) setImporting((cur) => cur ?? p);
+        })
+        .catch(() => {});
+    void invoke("import_link_closed")
+      .catch(() => {})
+      .then(take);
+    const un = listen("import-link", () => void take());
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+  const closeImport = useCallback(() => {
+    setImporting(null);
+    void invoke("import_link_closed").catch(() => {});
+  }, []);
 
   /*
     点了系统通知、或者菜单栏里的一行：落到能处理那件事的那一页。**窗口可能是为
@@ -1084,6 +1113,20 @@ function Shell({ first }: { first: boolean }) {
               />
             )}
             {historyOpen && <VersionHistoryDialog reloads={reloads} onClose={() => setHistoryOpen(false)} />}
+            {/* 等连上 core、拿到概览再弹：名称是否重名、保存基于哪一版都要它 */}
+            {importing && ov && !remoteLost && (
+              <ImportDialog
+                proposal={importing}
+                ov={ov}
+                onClose={closeImport}
+                onCreated={(name) => {
+                  closeImport();
+                  notify.success(textOf(importDialogText).created(name));
+                  changed();
+                  open("upstreams", { upstream: name });
+                }}
+              />
+            )}
             <Palette
               open={palette}
               onOpenChange={setPalette}

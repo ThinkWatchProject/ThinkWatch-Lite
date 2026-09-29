@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg, Protocol } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -179,6 +179,36 @@ export type HookView = { client: string, event: string, command: string, source:
  * 清单上的一行靠它认出哪些发现是自己的
  */
 line: number, };
+
+/**
+ * 一条导入链接（`thinkwatch://import?…`）提议新建的上游。**已经在 Rust 侧逐项校验过**
+ * （`import_link::parse`），界面只负责给人确认；确认之前不写配置、不发任何请求。
+ */
+export type ImportProposal = { 
+/**
+ * 链接给的名称。没给是空，界面按地址起一个
+ */
+name?: string | null, 
+/**
+ * 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`
+ */
+base_url: string, 
+/**
+ * 请求和密钥会发往的主机（带端口时带上端口），ASCII
+ */
+host: string, 
+/**
+ * 没给就是自动识别
+ */
+protocol?: Protocol | null, 
+/**
+ * API 密钥，原样。保证不含 `$`、`{`、`}`：不会被当成 `${变量名}` 展开
+ */
+key?: string | null, 
+/**
+ * 服务不提供模型列表时的手动清单
+ */
+models: Array<string>, };
 
 /**
  * 换完之后的结果：core 换好的那把，加上**这台机器上**跟着改好、或者没能改好的客户端。
