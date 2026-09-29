@@ -78,6 +78,11 @@ export const requestDrawerText = messages(
     viaGroup: "经过策略组",
     /** 改写了参数的规则，按求值的顺序 */
     rewrittenBy: "参数改写",
+    /** 这段对话之前的去向起的作用 */
+    continuity: "对话延续",
+    heldRoute: "沿用本轮开头的路由决定",
+    stayedTurn: "同一轮内留在上次回答的上游",
+    stayedCache: "上次回答的缓存仍有效，留在该上游",
     /** 选定上游之后才判断、拒绝了此请求的规则 */
     deniedBy: "拒绝规则",
     /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
@@ -203,6 +208,10 @@ export const requestDrawerText = messages(
     denied: "Denied",
     viaGroup: "Via group",
     rewrittenBy: "Rewritten by",
+    continuity: "Conversation",
+    heldRoute: "Kept the route decided at the start of this turn",
+    stayedTurn: "Stayed with the upstream that answered earlier in this turn",
+    stayedCache: "Stayed with the upstream that answered last, while its cache is warm",
     deniedBy: "Denied by",
     reason: "Reason",
     attempts: "Attempts",

@@ -99,11 +99,9 @@
     "name": "__all__",
     "builtin": true,
     "kind": "fallback",
-    "session_affinity": false,
     "providers": [
      "官方"
-    ],
-    "hurts_cache": false
+    ]
    }
   ],
   "clients": [
@@ -168,6 +166,15 @@
    "row_days": 90,
    "body_max_bytes": 2147483648,
    "body_bytes_now": 0
+  },
+  "failover": {
+   "failures_to_pause": 3,
+   "pause_secs": 60,
+   "max_pause_secs": 600,
+   "no_balance_pause_secs": 1800,
+   "quota_pause_secs": 3600,
+   "rate_limit_max_pause_secs": 3600,
+   "stream_start_wait_secs": 15
   },
   "price_sheets": []
  },

@@ -506,11 +506,6 @@ function Result({
           )}
         </dl>
       )}
-      {r.hurts_cache && (
-        <Banner layout="inline" tone="warning">
-          {t.hurtsCache}
-        </Banner>
-      )}
 
       {/* 一条规则都没求值时不画这个框 —— 空框比不画更像出了错 */}
       {r.trace.length > 0 && (

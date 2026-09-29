@@ -154,7 +154,7 @@ export default function RoutingPage({
     const write = async (selected: string | null) => {
       await queue((base) =>
         api.updateGroup(g.name, {
-          group: { name: g.name, kind: g.kind, providers: g.providers, selected, session_affinity: g.session_affinity },
+          group: { name: g.name, kind: g.kind, providers: g.providers, selected },
           base_version: base,
         }),
       );

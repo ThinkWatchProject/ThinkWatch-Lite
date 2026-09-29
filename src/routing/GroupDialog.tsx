@@ -17,7 +17,6 @@ import { Input } from "@/ui/input";
 import { Segmented } from "@/ui/segmented";
 import { EmptyState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
-import { Switch } from "@/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
@@ -84,7 +83,6 @@ export function GroupDialog({
   });
   const [members, setMembers] = useState<string[]>(source?.providers ?? []);
   const [selected, setSelected] = useState<string | null>(source?.selected ?? null);
-  const [sticky, setSticky] = useState(source?.session_affinity ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const reorder = useReorder((from, to) => setOrder((o) => move(o, from, to)));
@@ -118,7 +116,6 @@ export function GroupDialog({
           kind,
           providers: chosen,
           selected: preferred,
-          session_affinity: kind === "load-balance" ? sticky : true,
         },
         base_version: base,
       };
@@ -164,17 +161,7 @@ export function GroupDialog({
             />
             <p key={kind} className="flex flex-wrap items-center gap-x-1.5 tw-label text-muted-foreground motion-fade">
               {strategy?.desc}
-              {kind === "url-test" && <Badge variant="warning">{rt.affectsCache}</Badge>}
             </p>
-            {kind === "load-balance" && (
-              <div className="mt-1 flex flex-col gap-1">
-                <label className="flex w-fit items-center gap-2 tw-body">
-                  <Switch checked={sticky} onCheckedChange={setSticky} />
-                  {t.sticky}
-                </label>
-                <Note tone={sticky ? "muted" : "warning"}>{sticky ? t.stickyOn : t.stickyOff}</Note>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

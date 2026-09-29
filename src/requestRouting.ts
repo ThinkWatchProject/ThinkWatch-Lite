@@ -1,4 +1,4 @@
-import type { AttemptView, HistoryRow, Msg } from "./types";
+import type { AttemptView, HistoryRow, Msg, Stay } from "./types";
 
 /**
  * 一条请求的路由结论，给详情抽屉的「路由」那一页和几处列表用。全是 core 记下的事实
@@ -73,6 +73,11 @@ export interface RoutingFacts {
   reason: RoutingReason | null;
   hops: Hop[];
   note: RoutingNote | null;
+  /**
+   * 这段对话之前的去向起的作用：沿用了这一轮开头定下的路由（`heldRoute`），排在最前面的
+   * 是上次回答它的那一家、为什么留下（`stayed`）。都没有的是 `null`
+   */
+  continuity: { heldRoute: boolean; stayed: Stay | null } | null;
 }
 
 /** `gw.route.denied` 里规则写的那句理由。规则没写理由时是空的，当作没有 */
@@ -134,5 +139,9 @@ export function routingFacts(
     reason,
     hops: attempts.map((attempt, i) => ({ attempt, denied: deniedBy !== null && i === n - 1 })),
     note,
+    continuity:
+      routing.affinity && (routing.affinity.held_route || routing.affinity.stayed)
+        ? { heldRoute: routing.affinity.held_route, stayed: routing.affinity.stayed ?? null }
+        : null,
   };
 }

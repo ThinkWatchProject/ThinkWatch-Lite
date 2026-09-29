@@ -33,6 +33,8 @@ import {
 } from "./kit";
 import { ListenSection, levelOf } from "./ListenSection";
 import { listenText } from "./ListenSection.i18n";
+import { FailoverSection } from "./FailoverSection";
+import { failoverText } from "./FailoverSection.i18n";
 import { RetentionSection } from "./RetentionSection";
 import { retentionText } from "./RetentionSection.i18n";
 import { settingsText } from "./SettingsPage.i18n";
@@ -78,6 +80,7 @@ export function SettingsPage({
   const gt = useText(generalText);
   const lt = useText(listenText);
   const et = useText(retentionText);
+  const ft = useText(failoverText);
   const remote = useRemote();
   const local = linkStatus(localCore);
 
@@ -109,12 +112,14 @@ export function SettingsPage({
         { id: "about", label: t.about },
         { id: "uninstall", label: t.uninstall },
         { id: "listen", label: lt.title, caption: remote.name },
+        { id: "failover", label: ft.title },
         { id: "retention", label: et.title },
       ]
     : [
         { id: "connections", label: ct.title },
         { id: "general", label: gt.title },
         { id: "listen", label: lt.title },
+        { id: "failover", label: ft.title },
         { id: "retention", label: et.title },
         { id: "about", label: t.about },
         { id: "uninstall", label: t.uninstall },
@@ -139,6 +144,11 @@ export function SettingsPage({
         />
       ) : (
         <Placeholder id="listen" title={lt.title} state={pending} rows={3} />
+      )}
+      {view ? (
+        <FailoverSection failover={view.failover} configVersion={view.config_version} onChanged={onChanged} />
+      ) : (
+        <Placeholder id="failover" title={ft.title} description={ft.intro} state={pending} rows={7} />
       )}
       {view ? (
         <RetentionSection retention={view.retention} configVersion={view.config_version} onChanged={onChanged} />

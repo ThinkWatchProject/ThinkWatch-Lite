@@ -43,13 +43,11 @@ const group = (name: string, providers: string[], x: Partial<GroupView> = {}): G
   name,
   builtin: false,
   kind: "fallback",
-  session_affinity: true,
   selected: null,
   providers,
-  hurts_cache: false,
   ...x,
 });
-const ALL = group("__all__", [], { builtin: true, session_affinity: false });
+const ALL = group("__all__", [], { builtin: true });
 const up = (name: string, x: Partial<ProviderView> = {}) => ({ name, disabled: false, health: "ok", ...x }) as ProviderView;
 
 const ids = (c: Chain, layer: number) => c.nodes.filter((n) => n.layer === layer).map((n) => n.id);

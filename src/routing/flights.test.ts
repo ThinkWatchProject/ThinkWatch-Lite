@@ -32,10 +32,8 @@ const group = (name: string, providers: string[], x: Partial<GroupView> = {}): G
   name,
   builtin: false,
   kind: "fallback",
-  session_affinity: true,
   selected: null,
   providers,
-  hurts_cache: false,
   ...x,
 });
 const up = (name: string) => ({ name, disabled: false, health: "ok" }) as ProviderView;

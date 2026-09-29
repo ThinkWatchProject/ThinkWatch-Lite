@@ -42,7 +42,6 @@ export const routingText = messages(
     deny: "拒绝",
     continueMatching: "继续匹配",
     allRequests: "全部请求（兜底）",
-    affectsCache: "影响 prompt cache",
     /**
      * 命中数：一列数的表头、一次都没命中、一条路由走了多少请求。`span` 是这些数说的
      * 那一段 —— 通常是 7 天，记录开始得晚时是记录开始以来的那一段
@@ -80,7 +79,6 @@ export const routingText = messages(
     deny: "Deny",
     continueMatching: "Continue matching",
     allRequests: "All requests (catch-all)",
-    affectsCache: "Affects prompt cache",
     hitsIn: ({ n, unit }: HitSpan) => `${n}-${unit} hits`,
     noHits: "No hits",
     requestsIn: (span: HitSpan, n: number) =>

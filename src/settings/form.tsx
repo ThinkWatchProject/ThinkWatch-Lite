@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { useConnections } from "@/connection/ConnectionProvider";
@@ -90,11 +91,14 @@ export function NumberInput({
   invalid,
   disabled,
   decimal,
+  unitWidth = "min-w-6",
 }: {
   id?: string;
   value: string;
   onChange: (v: string) => void;
   unit?: string;
+  /** 单位那一格至少多宽。一节里单位长短不一（英文的 `times` 和 `s`）时给同一个宽度，输入框才对得齐 */
+  unitWidth?: string;
   invalid?: boolean;
   disabled?: boolean;
   /** 允许一位小数（报文上限按 GB 写，1.5 是正当的值） */
@@ -118,7 +122,7 @@ export function NumberInput({
         spellCheck={false}
         onChange={(e) => onChange(e.target.value.trim())}
       />
-      {unit && <span className="min-w-6 tw-body text-muted-foreground">{unit}</span>}
+      {unit && <span className={cn(unitWidth, "tw-body text-muted-foreground")}>{unit}</span>}
     </span>
   );
 }

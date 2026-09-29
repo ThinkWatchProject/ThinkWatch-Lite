@@ -17,7 +17,6 @@
         "to": "anthropic"
       }
     ],
-    "hurts_cache": false,
     "outcome": "route",
     "reason": null,
     "route": "cursor",
