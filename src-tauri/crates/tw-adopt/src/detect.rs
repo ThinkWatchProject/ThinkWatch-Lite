@@ -635,8 +635,58 @@ fn exported_names(line: &str, fish: bool) -> Vec<&str> {
     }
 }
 
-/// shell 配置里 export 了同名变量的那些行。
-fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
+/// 这一行给 `name` 导出的值，认得出的话：引号里的一段，或者到空白为止的一段。
+///
+/// **认不出就是 `None`**：只写了 `export NAME`（值在前面别处赋的）、值里有要展开的
+/// `$`、反引号（单引号里的不展开，照字面算）。
+fn exported_value(line: &str, fish: bool, name: &str) -> Option<String> {
+    let t = line.trim_start();
+    let rest = if fish {
+        // `set -gx NAME 值`：名字后面那一段
+        let mut words = t.split_whitespace().skip(1);
+        let at = words.find(|w| !w.starts_with('-'))?;
+        if at != name {
+            return None;
+        }
+        let start = t.find(&format!(" {name}"))? + name.len() + 1;
+        t[start..].trim_start()
+    } else {
+        // `export A=1 NAME=值`：整个词以 `NAME=` 开头的那一处
+        let key = format!("{name}=");
+        let start = t
+            .match_indices(&key)
+            .find(|(i, _)| t[..*i].ends_with(char::is_whitespace))?
+            .0;
+        &t[start + key.len()..]
+    };
+    let (v, literal) = if let Some(r) = rest.strip_prefix('\'') {
+        (&r[..r.find('\'')?], true)
+    } else if let Some(r) = rest.strip_prefix('"') {
+        (&r[..r.find('"')?], false)
+    } else {
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == ';' || c == '#')
+            .unwrap_or(rest.len());
+        (&rest[..end], false)
+    };
+    if !literal && (v.contains('$') || v.contains('`') || v.contains('(')) {
+        return None;
+    }
+    Some(v.to_string())
+}
+
+/// shell 配置里的一处 `export`：哪个文件、第几行、哪个变量，和写的值（认得出的话，
+/// 见 [`exported_value`]）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Export {
+    pub path: PathBuf,
+    pub line: usize,
+    pub name: String,
+    pub value: Option<String>,
+}
+
+/// shell 配置里 export 了这些变量的那些行，连同值。
+pub(crate) fn shell_exports_valued(home: &Path, names: &[&str]) -> Vec<Export> {
     let mut out = Vec::new();
     for &(f, fish) in SHELL_FILES {
         let p = crate::paths::under(home, f);
@@ -647,12 +697,25 @@ fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
             let set = exported_names(line, fish);
             for n in names {
                 if set.contains(n) {
-                    out.push((p.clone(), i + 1, n.to_string()));
+                    out.push(Export {
+                        path: p.clone(),
+                        line: i + 1,
+                        name: n.to_string(),
+                        value: exported_value(line, fish, n),
+                    });
                 }
             }
         }
     }
     out
+}
+
+/// shell 配置里 export 了同名变量的那些行。
+fn shell_exports(home: &Path, names: &[&str]) -> Vec<(PathBuf, usize, String)> {
+    shell_exports_valued(home, names)
+        .into_iter()
+        .map(|e| (e.path, e.line, e.name))
+        .collect()
 }
 
 /// 一份优先级更高的文件里，会盖住我们写的那些字段。
@@ -725,9 +788,100 @@ fn desktop_findings(home: &Path, managed: Option<&str>, adopted: bool) -> Vec<Fi
     out
 }
 
-/// 走一遍优先级链。`project` 是当前项目目录（有的话）。
-pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding> {
-    diagnose_in(c, home, project, None)
+/// 接管着的 Claude Code 此刻打开着的云服务商开关，每个一条；一个都没有就说一声没有。
+///
+/// 接管时关掉的，之后又被打开了（`/setup-bedrock` 把 `"1"` 写回 settings.json、shell 配置
+/// 里新加了一行而 settings.json 里没有盖住它的空串）：重新接管一次就会再关掉。比
+/// settings.json 优先的文件里打开的，要用户自己去改那个文件；组织托管的，本机改不了。
+fn cloud_findings(
+    c: &Client,
+    home: &Path,
+    d: &Detected,
+    around: &crate::cloud::Around,
+    wsl: Option<&WslHome>,
+) -> Vec<Finding> {
+    use crate::cloud::Where;
+    let text = std::fs::read_to_string(&d.real).unwrap_or_default();
+    let on = crate::cloud::switches(home, &d.path, &text, &c.shadow_paths(home), around);
+    if on.is_empty() {
+        return vec![Finding {
+            level: Level::Clear,
+            title: msg!("adopt.diag.no_cloud", client = c.name => "{client} is not set to connect to a cloud provider directly"),
+            detail: msg!("adopt.diag.no_cloud.detail" => "None of the CLAUDE_CODE_USE_* switches is on."),
+            fix: None,
+        }];
+    }
+    // WSL 里的文件按 Linux 那一侧的写法说
+    let shown = |p: &Path| match wsl {
+        Some(w) => w.linux_path(p),
+        None => p.display().to_string(),
+    };
+    on.into_iter()
+        .map(|o| {
+            let (name, slug) = (o.name, o.cloud.slug());
+            // 英文里是那一家的名字；参数给的是词，中文按词表说
+            let label = o.cloud.name();
+            let title = msg!(
+                "adopt.diag.cloud", client = c.name, cloud = slug
+                => "{client} is set to connect to {label} directly"
+            );
+            let again = || Some(msg!("adopt.diag.adopt_again" => "Point this client at the gateway again"));
+            let (detail, fix) = match &o.at {
+                Where::Settings(p) => (
+                    msg!(
+                        "adopt.diag.cloud.settings", client = c.name, name = name, path = shown(p)
+                        => "{name} in {path} is on, so {client} does not read ANTHROPIC_BASE_URL and never reaches the gateway."
+                    ),
+                    again(),
+                ),
+                Where::Shell { path, line } => (
+                    msg!(
+                        "adopt.diag.cloud.shell", client = c.name, name = name, path = shown(path), line = line
+                        => "{path} exports {name} on line {line}, and nothing written here turns it off, so {client} does not read ANTHROPIC_BASE_URL and never reaches the gateway."
+                    ),
+                    again(),
+                ),
+                Where::Environment => (
+                    msg!(
+                        "adopt.diag.cloud.env", client = c.name, name = name
+                        => "The environment sets {name}, and nothing written here turns it off, so {client} does not read ANTHROPIC_BASE_URL and never reaches the gateway."
+                    ),
+                    again(),
+                ),
+                Where::Above(p) => (
+                    msg!(
+                        "adopt.diag.cloud.above", client = c.name, name = name, path = shown(p)
+                        => "{path} turns on {name} and takes precedence over what is written here, so {client} started in that directory never reaches the gateway."
+                    ),
+                    Some(msg!("adopt.diag.look_at", path = shown(p) => "Look at {path}")),
+                ),
+                Where::Managed(p) => (
+                    msg!(
+                        "adopt.diag.cloud.managed", client = c.name, name = name, path = shown(p)
+                        => "{path} is an organization's managed configuration and turns on {name}, so {client} never reaches the gateway."
+                    ),
+                    None,
+                ),
+            };
+            Finding {
+                level: Level::Blocking,
+                title,
+                detail,
+                fix,
+            }
+        })
+        .collect()
+}
+
+/// 走一遍优先级链。`project` 是当前项目目录（有的话），`around` 是配置文件以外还要看
+/// 的地方（用户环境、组织托管的配置，见 [`crate::cloud::Around`]）。
+pub fn diagnose(
+    c: &Client,
+    home: &Path,
+    project: Option<&Path>,
+    around: &crate::cloud::Around,
+) -> Vec<Finding> {
+    diagnose_in(c, home, project, None, around)
 }
 
 /// WSL 里的那一份走一遍同样的链。
@@ -737,7 +891,7 @@ pub fn diagnose(c: &Client, home: &Path, project: Option<&Path>) -> Vec<Finding>
 /// 在 WSL 里的 shell 配置里，不在 Windows 的注册表里 —— 路径和 `sed` 命令都写成
 /// WSL 终端里能直接用的样子。
 pub fn diagnose_wsl(c: &Client, w: &WslHome) -> Vec<Finding> {
-    diagnose_in(c, &w.home, None, Some(w))
+    diagnose_in(c, &w.home, None, Some(w), &crate::cloud::Around::wsl(w))
 }
 
 fn diagnose_in(
@@ -745,6 +899,7 @@ fn diagnose_in(
     home: &Path,
     project: Option<&Path>,
     wsl: Option<&WslHome>,
+    around: &crate::cloud::Around,
 ) -> Vec<Finding> {
     // 什么时候生效按装着的版本说（opencode v2 自己重载）
     let c = &c.clone().here(home);
@@ -1005,6 +1160,12 @@ fn diagnose_in(
         }
     }
 
+    // 五之二、Claude Code 的云服务商开关。**打开着它就不看 `ANTHROPIC_BASE_URL`**，接管
+    // 写的地址形同虚设（见 [`crate::cloud`]）。没接管的不说：接管时自会关掉它
+    if c.id == "claude-code" && d.adopted_at_ms.is_some() {
+        out.extend(cloud_findings(c, home, &d, around, wsl));
+    }
+
     // 六、我们写的字段被别的工具改回去了
     match (&d.adopted_at_ms, &d.endpoint) {
         (Some(_), None) => out.push(Finding {
@@ -1100,7 +1261,12 @@ mod tests {
         )
         .unwrap();
 
-        let cc = diagnose(&c("claude-code"), home, None);
+        let cc = diagnose(
+            &c("claude-code"),
+            home,
+            None,
+            &crate::cloud::Around::default(),
+        );
         let f = cc
             .iter()
             .find(|f| f.title.text.contains("ANTHROPIC_BASE_URL"))
@@ -1108,7 +1274,7 @@ mod tests {
         assert_eq!(f.level, Level::Suspect, "{:?}", f);
         assert!(f.detail.text.contains("takes precedence"), "{}", f.detail);
 
-        let cx = diagnose(&c("codex"), home, None);
+        let cx = diagnose(&c("codex"), home, None, &crate::cloud::Around::default());
         let f = cx
             .iter()
             .find(|f| f.title.text.contains("OPENAI_BASE_URL"))
@@ -1120,7 +1286,12 @@ mod tests {
     fn a_clean_machine_still_says_something_rather_than_showing_nothing() {
         // 没风险的时候要说「安全」，而不是让这一项消失。
         let d = tempfile::tempdir().unwrap();
-        let out = diagnose(&c("claude-code"), d.path(), None);
+        let out = diagnose(
+            &c("claude-code"),
+            d.path(),
+            None,
+            &crate::cloud::Around::default(),
+        );
         assert!(out.iter().any(|f| f.level == Level::Clear), "{out:?}");
         assert!(out.len() >= 4, "查了几条就该说几条：{out:?}");
     }
@@ -1129,7 +1300,12 @@ mod tests {
     fn the_report_never_claims_a_static_check_proves_it_works() {
         // 优先级链有五层。一屏绿色不等于「生效了」。
         let d = tempfile::tempdir().unwrap();
-        let out = diagnose(&c("claude-code"), d.path(), None);
+        let out = diagnose(
+            &c("claude-code"),
+            d.path(),
+            None,
+            &crate::cloud::Around::default(),
+        );
         assert!(
             out.iter().any(|f| f.detail.text.contains("real request")),
             "结论里没留下这句话：{out:?}"
@@ -1146,7 +1322,12 @@ mod tests {
             "export OPENAI_BASE_URL=https://old\n",
         )
         .unwrap();
-        let out = diagnose(&c("codex"), d.path(), None);
+        let out = diagnose(
+            &c("codex"),
+            d.path(),
+            None,
+            &crate::cloud::Around::default(),
+        );
         let f = out
             .iter()
             .find(|f| f.title.text.contains("OPENAI_BASE_URL"))
@@ -1342,7 +1523,7 @@ mod tests {
         std::fs::create_dir_all(proj.join(".codex")).unwrap();
         std::fs::write(proj.join(".codex/config.toml"), "").unwrap();
         let has = |id: &str| {
-            diagnose(&c(id), &home, Some(&proj))
+            diagnose(&c(id), &home, Some(&proj), &crate::cloud::Around::default())
                 .iter()
                 .any(|f| f.title.code == "adopt.diag.project_config")
         };
@@ -1356,8 +1537,70 @@ mod tests {
             key: None,
             models: vec!["m".into()],
         };
-        let p = crate::plan::plan_adopt(&c(id), home, &gw).unwrap();
+        let p =
+            crate::plan::plan_adopt(&c(id), home, &gw, &crate::cloud::Around::default()).unwrap();
         crate::plan::apply(&c(id), &p, backups).unwrap();
+    }
+
+    /// 接管之后 Bedrock 的开关又被打开了（`/setup-bedrock` 把 "1" 写回 settings.json）：
+    /// 请求根本到不了网关，这是原因本身；重新接管一次就会再关掉。没打开的说一声没有
+    #[test]
+    fn a_switch_turned_back_on_after_the_takeover_is_the_reason() {
+        let d = tempfile::tempdir().unwrap();
+        let (home, backups) = (d.path().join("home"), d.path().join("b"));
+        let settings = home.join(".claude/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(&settings, r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#).unwrap();
+        adopt("claude-code", &home, &backups);
+        let none = crate::cloud::Around::default();
+        let clear = diagnose(&c("claude-code"), &home, None, &none);
+        assert!(
+            clear
+                .iter()
+                .any(|f| f.title.code == "adopt.diag.no_cloud" && f.level == Level::Clear),
+            "{clear:?}"
+        );
+
+        let text = std::fs::read_to_string(&settings).unwrap();
+        let back = crate::json::set(
+            &text,
+            &["env", "CLAUDE_CODE_USE_BEDROCK"],
+            &crate::json::Val::s("1"),
+        )
+        .unwrap();
+        std::fs::write(&settings, back).unwrap();
+        let out = diagnose(&c("claude-code"), &home, None, &none);
+        let f = out
+            .iter()
+            .find(|f| f.title.code == "adopt.diag.cloud")
+            .expect("没报又打开的开关");
+        assert_eq!(f.level, Level::Blocking);
+        assert_eq!(f.detail.code, "adopt.diag.cloud.settings");
+        assert_eq!(f.title.arg("cloud"), "bedrock");
+        assert_eq!(
+            f.fix.as_ref().map(|m| m.code.as_str()),
+            Some("adopt.diag.adopt_again")
+        );
+    }
+
+    /// 没接管的不说开关的事：接管时自会关掉它
+    #[test]
+    fn a_client_not_taken_over_says_nothing_about_the_switches() {
+        let d = tempfile::tempdir().unwrap();
+        let settings = d.path().join(".claude/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(&settings, r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#).unwrap();
+        let out = diagnose(
+            &c("claude-code"),
+            d.path(),
+            None,
+            &crate::cloud::Around::default(),
+        );
+        assert!(
+            !out.iter()
+                .any(|f| f.title.code.starts_with("adopt.diag.") && f.title.code.contains("cloud")),
+            "{out:?}"
+        );
     }
 
     /// WSL 里的那一份：进程如实说看不见；同名变量从 WSL 的 shell 配置里找，
@@ -1462,10 +1705,15 @@ mod tests {
         let shadow = |jsonc_text: &str| {
             std::fs::write(&jsonc, jsonc_text).unwrap();
             assert_eq!(c("opencode").config_path(&home), json, "换了文件就还原不了");
-            diagnose(&c("opencode"), &home, None)
-                .into_iter()
-                .find(|f| f.title.code == "adopt.diag.shadowed")
-                .expect("没报被盖住")
+            diagnose(
+                &c("opencode"),
+                &home,
+                None,
+                &crate::cloud::Around::default(),
+            )
+            .into_iter()
+            .find(|f| f.title.code == "adopt.diag.shadowed")
+            .expect("没报被盖住")
         };
         // 别的键和我们并存，只是提一句
         let f = shadow("{ // 我的\n  \"theme\": \"x\" }");
@@ -1530,7 +1778,7 @@ mod tests {
         .unwrap();
         let mut n = 0;
         for c in adoptable() {
-            for f in diagnose(&c, home, Some(home)) {
+            for f in diagnose(&c, home, Some(home), &crate::cloud::Around::default()) {
                 n += 1;
                 assert!(!f.title.code.is_empty(), "{}：「{}」没有码", c.id, f.title);
                 assert!(

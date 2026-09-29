@@ -378,10 +378,9 @@ mod tests {
             home.path(),
             &backups,
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-k",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-k", Vec::new()),
             None,
+            &tw_adopt::cloud::Around::default(),
         )
         .unwrap();
         assert_eq!(

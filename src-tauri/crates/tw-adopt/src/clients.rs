@@ -195,6 +195,15 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    /// 接管时写进去的那一份：地址、为它发的那把密钥、这把密钥能用的模型
+    pub fn keyed(base: &str, key: &str, models: Vec<String>) -> Gateway {
+        Gateway {
+            base: base.to_string(),
+            key: Some(key.to_string()),
+            models,
+        }
+    }
+
     fn v1(&self) -> String {
         format!("{}/v1", self.base.trim_end_matches('/'))
     }

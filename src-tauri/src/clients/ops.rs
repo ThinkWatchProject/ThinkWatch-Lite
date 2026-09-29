@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use tw_adopt::clients::{self, Client};
+use tw_adopt::cloud::Around;
 use tw_adopt::{detect, plan};
 use tw_api::ClientView;
 use tw_types::{Msg, msg};
@@ -340,15 +341,20 @@ impl Hide {
     }
 
     /// 这份改动（连同另外那几份文件）要盖住的：网关的那几把、`secrets` 这几条路径上
-    /// 的值、MCP server 的环境变量和请求头
+    /// 的值、MCP server 的环境变量和请求头、Claude Code `env` 里装着凭据的变量
     fn of(p: &plan::Plan, secrets: &[Vec<String>], gateway: &[&str]) -> Hide {
         let quoted: Vec<String> = std::iter::once(p)
             .chain(&p.also)
             .flat_map(|x| {
-                x.before
-                    .iter()
-                    .chain([&x.after])
-                    .flat_map(|t| tw_adopt::mcp::server_secrets(x.format, t))
+                x.before.iter().chain([&x.after]).flat_map(|t| {
+                    let mut v = tw_adopt::mcp::server_secrets(x.format, t);
+                    // Claude Code 的 `env` 里用户自己的凭据：`/setup-bedrock` 写在这里的
+                    // Bedrock API key、访问密钥，别家的 API key
+                    if x.client == "claude-code" {
+                        v.extend(tw_adopt::cloud::env_secrets(t));
+                    }
+                    v
+                })
             })
             .collect();
         Hide::new(
@@ -397,6 +403,14 @@ fn hide_quoted(text: &str, v: &str) -> String {
 /// 种子是**这个进程里随机的**：交给界面的是一个只在本进程里有意义的数。原文里有密钥，
 /// 指纹不该能拿去和猜测的内容对照。
 pub fn fingerprint<'a>(files: impl IntoIterator<Item = (&'a Path, Option<&'a [u8]>)>) -> String {
+    fingerprint_with(files, std::iter::empty())
+}
+
+/// [`fingerprint`]，再加上几个字段名
+fn fingerprint_with<'a>(
+    files: impl IntoIterator<Item = (&'a Path, Option<&'a [u8]>)>,
+    fields: impl IntoIterator<Item = &'a [String]>,
+) -> String {
     use std::hash::{BuildHasher, Hash, Hasher};
     static SEED: std::sync::OnceLock<std::hash::RandomState> = std::sync::OnceLock::new();
     let mut h = SEED.get_or_init(std::hash::RandomState::new).build_hasher();
@@ -404,15 +418,33 @@ pub fn fingerprint<'a>(files: impl IntoIterator<Item = (&'a Path, Option<&'a [u8
         path.hash(&mut h);
         before.hash(&mut h);
     }
+    for f in fields {
+        f.hash(&mut h);
+    }
     format!("{:016x}", h.finish())
 }
 
-/// 一份接管、还原计划读到的那几份原文：它自己的文件，加上同一次改动里的另外几份
+/// 一份接管、还原计划读到的那几份原文：它自己的文件，加上同一次改动里的另外几份。
+///
+/// **再加上关掉的云服务商开关**（`tw_adopt::cloud`）：关哪几个除了看这几份文件，还看
+/// shell 配置和用户环境。两次之间那边变了，写下去的就会多一项或少一项确认框里没有的
+/// 改动 —— 这样的也当「改过了」，重新给人看
 pub fn plan_fingerprint(p: &plan::Plan) -> String {
-    fingerprint(
+    let switches = p.targets.iter().filter_map(|t| match t {
+        plan::Target::Set(path, _)
+            if path.len() == 2
+                && path[0] == "env"
+                && tw_adopt::cloud::SWITCHES.iter().any(|(n, _)| path[1] == *n) =>
+        {
+            Some(path.as_slice())
+        }
+        _ => None,
+    });
+    fingerprint_with(
         std::iter::once(p)
             .chain(&p.also)
             .map(|x| (x.path.as_path(), x.before.as_deref().map(str::as_bytes))),
+        switches,
     )
 }
 
@@ -493,8 +525,9 @@ pub fn plan_adopt(
     id: &str,
     gw: &Gateway,
     models: Vec<String>,
+    around: &Around,
 ) -> Result<wire::PlanView, Msg> {
-    plan_adopt_as(home, id, id, gw, models)
+    plan_adopt_as(home, id, id, gw, models, around)
 }
 
 /// [`plan_adopt`]，密钥归在 `owner` 名下。WSL 里的那一份用它自己的一把
@@ -505,6 +538,7 @@ pub fn plan_adopt_as(
     owner: &str,
     gw: &Gateway,
     models: Vec<String>,
+    around: &Around,
 ) -> Result<wire::PlanView, Msg> {
     let c = find(id, home)?;
     let (name, value, created) = key_for(gw, owner)?;
@@ -513,7 +547,7 @@ pub fn plan_adopt_as(
         key: Some(value),
         models,
     };
-    let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
+    let p = plan_for(&c, home, &target, around).map_err(|e| e.msg())?;
     let mut v = view(
         &p,
         &secret_paths(&c),
@@ -539,11 +573,16 @@ pub fn key_for(gw: &Gateway, owner: &str) -> Result<(String, String, bool), Msg>
 
 /// Claude Desktop 一次改四个文件，交给 `tw_adopt::desktop`；模型清单从 `gw.models`
 /// 里挑它认的那些
-fn plan_for(c: &Client, home: &Path, gw: &clients::Gateway) -> Result<plan::Plan, plan::PlanError> {
+fn plan_for(
+    c: &Client,
+    home: &Path,
+    gw: &clients::Gateway,
+    around: &Around,
+) -> Result<plan::Plan, plan::PlanError> {
     if c.id == tw_adopt::desktop::ID {
         tw_adopt::desktop::plan_adopt(c, home, gw, Some(&gw.models))
     } else {
-        plan::plan_adopt(c, home, gw)
+        plan::plan_adopt(c, home, gw, around)
     }
 }
 
@@ -559,27 +598,21 @@ fn no_keys() -> Msg {
 
 /// 落盘。**用户在 diff 上点过确认之后才该到这里。**
 ///
-/// `key` 是 core 此刻为它发的那把（为它留着的，或者这一刻新建的）：**先有钥匙再写
-/// 对方的配置** —— 反过来的话，中间那一刻对方配置里写着一把网关不认识的钥匙。
+/// `target` 里的密钥是 core 此刻为它发的那把（为它留着的，或者这一刻新建的）：**先有
+/// 钥匙再写对方的配置** —— 反过来的话，中间那一刻对方配置里写着一把网关不认识的钥匙。
 ///
 /// `expect` 是确认框里那份改动的 [`fingerprint`]：这中间文件被改过就什么都不写。
 pub fn adopt(
     home: &Path,
     backups: &Path,
     id: &str,
-    base: &str,
-    key: &str,
-    models: Vec<String>,
+    target: &clients::Gateway,
     expect: Option<&str>,
+    around: &Around,
 ) -> Result<wire::AdoptResponse, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
     let c = find(id, home)?.here(home);
-    let target = clients::Gateway {
-        base: base.to_string(),
-        key: Some(key.to_string()),
-        models,
-    };
-    let p = plan_for(&c, home, &target).map_err(|e| e.msg())?;
+    let p = plan_for(&c, home, target, around).map_err(|e| e.msg())?;
     still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
     Ok(wire::AdoptResponse {
@@ -647,9 +680,9 @@ pub fn restore(
 }
 
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
-pub fn diagnose(home: &Path, id: &str) -> Result<Vec<wire::FindingView>, Msg> {
+pub fn diagnose(home: &Path, id: &str, around: &Around) -> Result<Vec<wire::FindingView>, Msg> {
     let c = find(id, home)?;
-    Ok(findings(detect::diagnose(&c, home, None)))
+    Ok(findings(detect::diagnose(&c, home, None, around)))
 }
 
 /// WSL 里的那一份走一遍同样的链
@@ -769,6 +802,7 @@ pub fn repoint(
     base: &str,
     key: &str,
     models: Vec<String>,
+    around: &Around,
 ) -> Result<wire::KeySynced, wire::KeySyncFailed> {
     let c = &c.clone().here(home);
     let target = clients::Gateway {
@@ -778,7 +812,7 @@ pub fn repoint(
     };
     // **和接管走同一个入口**（[`plan_for`]）：Claude Desktop 一次改四个文件、模型清单
     // 从 `models` 里挑，按单个文件的通用那一套算的话，它的模型列表和另外几份都不跟着换
-    plan_for(c, home, &target)
+    plan_for(c, home, &target, around)
         .and_then(|p| plan::apply(c, &p, backups))
         .map(|a| wire::KeySynced {
             client: c.id.to_string(),
@@ -895,6 +929,7 @@ pub(crate) mod tests {
             "claude-code",
             &gw(vec![key("default", "tw-secret-value", None, true)]),
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         assert!(!home.path().join(".claude/settings.json").exists());
@@ -917,6 +952,7 @@ pub(crate) mod tests {
                 key("mine", "tw-m", Some("claude-code"), false),
             ]),
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         assert_eq!(kept.key.as_deref(), Some("mine"));
@@ -930,6 +966,7 @@ pub(crate) mod tests {
                 key("claude-code", "tw-x", None, false),
             ]),
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         assert_eq!(taken.key.as_deref(), Some("claude-code-2"));
@@ -939,17 +976,130 @@ pub(crate) mod tests {
     #[test]
     fn without_any_key_there_is_nothing_to_point_a_client_with() {
         let home = home_with_claude();
-        let e = plan_adopt(home.path(), "claude-code", &gw(Vec::new()), Vec::new()).unwrap_err();
+        let e = plan_adopt(
+            home.path(),
+            "claude-code",
+            &gw(Vec::new()),
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code, "control.no_keys");
     }
 
     #[test]
     fn a_client_we_do_not_know_is_refused_by_name() {
         let home = tempfile::tempdir().unwrap();
-        let e = plan_adopt(home.path(), "../etc", &gw(Vec::new()), Vec::new()).unwrap_err();
+        let e = plan_adopt(
+            home.path(),
+            "../etc",
+            &gw(Vec::new()),
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code, "control.client_unknown");
         assert!(!known("../etc"));
         assert!(known("claude-code") && known("cursor"));
+    }
+
+    /// `/setup-bedrock` 把 Bedrock 的 API key、访问密钥写在 settings.json 的 `env` 里：
+    /// diff 画的是整份文件，它们一律打码；区域、开关这些照常显示
+    #[test]
+    fn aws_credentials_in_claude_codes_env_never_show_in_the_diff() {
+        let home = home_with_claude();
+        let settings = home.path().join(".claude/settings.json");
+        std::fs::write(
+            &settings,
+            r#"{ "env": {
+  "CLAUDE_CODE_USE_BEDROCK": "1",
+  "AWS_REGION": "us-west-2",
+  "AWS_BEARER_TOKEN_BEDROCK": "ABSKQmVkcm9ja0FQSUtleS1leGFtcGxl",
+  "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
+  "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+} }"#,
+        )
+        .unwrap();
+        let secrets = [
+            "ABSKQmVkcm9ja0FQSUtleS1leGFtcGxl",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        ];
+        let p = plan_adopt(
+            home.path(),
+            "claude-code",
+            &gw(vec![key("default", "tw-new", None, true)]),
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap();
+        for text in [p.before.as_deref().unwrap(), p.after.as_str()] {
+            for s in secrets {
+                assert!(!text.contains(s), "{s} shows in:\n{text}");
+            }
+            assert!(text.contains("us-west-2"), "{text}");
+        }
+        assert!(
+            p.after.contains("\"CLAUDE_CODE_USE_BEDROCK\": \"\""),
+            "{}",
+            p.after
+        );
+        assert!(
+            p.fields
+                .iter()
+                .any(|f| f.path == "env.CLAUDE_CODE_USE_BEDROCK" && f.value.as_deref() == Some("")),
+            "{:?}",
+            p.fields
+        );
+
+        adopt(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-new", Vec::new()),
+            Some(&p.digest),
+            &Around::default(),
+        )
+        .unwrap();
+        let r = plan_restore(home.path(), "claude-code", &[]).unwrap();
+        for text in [r.before.as_deref().unwrap(), r.after.as_str()] {
+            for s in secrets {
+                assert!(!text.contains(s), "{s} shows in:\n{text}");
+            }
+        }
+    }
+
+    /// 关哪几个开关还看 shell 配置和用户环境：确认框和落盘之间那边变了，写下去的就会多
+    /// 一项确认框里没有的改动 —— 当成「改过了」，什么都不写
+    #[test]
+    fn a_switch_that_appears_after_the_review_stops_the_write() {
+        let home = home_with_claude();
+        let settings = home.path().join(".claude/settings.json");
+        std::fs::write(&settings, "{}\n").unwrap();
+        let g = gw(vec![key("default", "tw-new", None, true)]);
+        let reviewed = plan_adopt(
+            home.path(),
+            "claude-code",
+            &g,
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap();
+        let later = Around {
+            env: [("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string())].into(),
+            managed: Vec::new(),
+        };
+        let e = adopt(
+            home.path(),
+            &backups(&home),
+            "claude-code",
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-new", Vec::new()),
+            Some(&reviewed.digest),
+            &later,
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "adopt.plan.stale");
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), "{}\n");
     }
 
     #[test]
@@ -965,6 +1115,7 @@ pub(crate) mod tests {
             "claude-code",
             &gw(vec![key("default", "tw-new", None, true)]),
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         let before = p.before.as_deref().unwrap();
@@ -982,10 +1133,9 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-new",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-new", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         assert_eq!(a.takes_effect, wire::TakesEffect::Immediately);
@@ -1039,10 +1189,13 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             "opencode",
-            "http://127.0.0.1:8788",
-            "tw-o",
-            vec!["a".into(), "b".into()],
+            &tw_adopt::clients::Gateway::keyed(
+                "http://127.0.0.1:8788",
+                "tw-o",
+                vec!["a".into(), "b".into()],
+            ),
             None,
+            &Around::default(),
         )
         .unwrap();
         assert!(!stale(&now(&["b", "a"])));
@@ -1090,10 +1243,9 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-c", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
@@ -1135,20 +1287,18 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-c", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         adopt(
             home.path(),
             &backups(&home),
             "codex",
-            "http://192.168.1.20:8788",
-            "tw-x",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://192.168.1.20:8788", "tw-x", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let here: Vec<_> = adopted_on_this_machine(home.path())
@@ -1219,7 +1369,15 @@ pub(crate) mod tests {
         assert_eq!(cc.manual.steps[0].arg("file"), "~/.claude/settings.json");
         assert_eq!(r[1].key, None);
         // 接管的方案：新建的那把叫 WSL 那一份的名字
-        let p = plan_adopt_as(&w.home, "codex", "codex-wsl-ubuntu", &gw, Vec::new()).unwrap();
+        let p = plan_adopt_as(
+            &w.home,
+            "codex",
+            "codex-wsl-ubuntu",
+            &gw,
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap();
         assert_eq!(p.key.as_deref(), Some("codex-wsl-ubuntu"));
         assert!(p.key_created);
         assert!(known("codex-wsl-ubuntu"));
@@ -1242,20 +1400,18 @@ pub(crate) mod tests {
             &w.home,
             &b,
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-c", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         adopt(
             &w.home,
             &b,
             "codex",
-            "http://127.0.0.1:8788",
-            "tw-x",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-x", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let listed = list_wsl(
@@ -1290,10 +1446,9 @@ pub(crate) mod tests {
             &w.home,
             &b,
             "claude-code",
-            "http://172.27.96.1:8788",
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://172.27.96.1:8788", "tw-c", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let gw = Gateway {
@@ -1318,10 +1473,9 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             "claude-code",
-            "http://127.0.0.1:8788",
-            "tw-old",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-old", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let c = find("claude-code", home.path()).unwrap();
@@ -1332,6 +1486,7 @@ pub(crate) mod tests {
             "http://127.0.0.1:8788",
             "tw-fresh",
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         assert_eq!(s.client, "claude-code");
@@ -1360,10 +1515,9 @@ pub(crate) mod tests {
             home.path(),
             &backups(&home),
             id,
-            base,
-            "tw-old",
-            vec!["claude-sonnet-5".into()],
+            &tw_adopt::clients::Gateway::keyed(base, "tw-old", vec!["claude-sonnet-5".into()]),
             None,
+            &Around::default(),
         )
         .unwrap();
         let c = find(id, home.path()).unwrap();
@@ -1374,6 +1528,7 @@ pub(crate) mod tests {
             "http://10.0.0.2:8788",
             "tw-fresh",
             vec!["claude-opus-5".into(), "gpt-5".into()],
+            &Around::default(),
         )
         .unwrap();
         let profile: serde_json::Value = serde_json::from_str(
@@ -1411,7 +1566,14 @@ pub(crate) mod tests {
         let settings = home.path().join(".claude/settings.json");
         std::fs::write(&settings, "{\n  \"model\": \"opus\"\n}\n").unwrap();
         let g = gw(vec![key("default", "tw-d", None, true)]);
-        let shown = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+        let shown = plan_adopt(
+            home.path(),
+            "claude-code",
+            &g,
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap();
 
         // 客户端自己在这时改了一项设置
         let changed = "{\n  \"model\": \"sonnet\"\n}\n";
@@ -1421,10 +1583,9 @@ pub(crate) mod tests {
                 home.path(),
                 &backups(&home),
                 "claude-code",
-                "http://127.0.0.1:8788",
-                "tw-d",
-                Vec::new(),
+                &tw_adopt::clients::Gateway::keyed("http://127.0.0.1:8788", "tw-d", Vec::new()),
                 Some(expect),
+                &Around::default(),
             )
         };
         let e = adopt_now(&shown.digest).unwrap_err();
@@ -1433,7 +1594,14 @@ pub(crate) mod tests {
         assert!(adopted(home.path()).is_empty());
 
         // 重新算一份给人看，照那一份就写得进去
-        let again = plan_adopt(home.path(), "claude-code", &g, Vec::new()).unwrap();
+        let again = plan_adopt(
+            home.path(),
+            "claude-code",
+            &g,
+            Vec::new(),
+            &Around::default(),
+        )
+        .unwrap();
         assert_ne!(again.digest, shown.digest);
         adopt_now(&again.digest).unwrap();
         assert_eq!(adopted(home.path()).len(), 1);

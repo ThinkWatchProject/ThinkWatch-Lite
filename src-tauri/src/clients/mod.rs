@@ -16,6 +16,7 @@ pub mod wsl;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use tw_adopt::cloud::Around;
 use tw_adopt::wsl::WslHome;
 
 use tw_api::ep;
@@ -26,6 +27,7 @@ use tauri::Emitter;
 use crate::AppState;
 use crate::control::ControlClient;
 use crate::error::{CmdError, Out, text};
+use crate::supervisor::user_env;
 use crate::wire;
 
 /// 用户的 home。各家客户端的配置都顺着它去找：`~/.claude`、`~/.codex`、
@@ -211,6 +213,15 @@ impl Place {
         match self {
             Place::Here => home_dir(),
             Place::Wsl(w) => w.home.clone(),
+        }
+    }
+
+    /// 配置文件以外还要看的地方（`tw_adopt::cloud::Around`）：这台电脑上的是用户环境和
+    /// 系统里的托管策略，WSL 里的是那个发行版里的托管策略
+    pub async fn around(&self) -> Around {
+        match self {
+            Place::Here => Around::here(user_env::last().await),
+            Place::Wsl(w) => Around::wsl(w),
         }
     }
 
@@ -413,7 +424,13 @@ pub async fn plan_adopt(
                 Ok((_, key, _)) => models_for(&c, &gw.base, &key).await?,
                 Err(_) => Vec::new(),
             };
-            Ok(ops::plan_adopt(&home_dir(), &id, &gw, models)?)
+            Ok(ops::plan_adopt(
+                &home_dir(),
+                &id,
+                &gw,
+                models,
+                &Around::here(user_env::last().await),
+            )?)
         }
         Place::Wsl(w) => {
             let gw = ops::Gateway {
@@ -426,7 +443,7 @@ pub async fn plan_adopt(
                 Ok((_, key, _)) => models_for(&c, &gw.base, &key).await?,
                 Err(_) => Vec::new(),
             };
-            let mut v = ops::plan_adopt_as(&w.home, &id, &owner, &gw, models)?;
+            let mut v = ops::plan_adopt_as(&w.home, &id, &owner, &gw, models, &Around::wsl(w))?;
             v.path = w.shown(Path::new(&v.path));
             v.notes
                 .extend(wsl::plan_notes(c.name, w, state.link.is_remote()));
@@ -458,14 +475,14 @@ pub async fn adopt_client(
     };
     let key = prepare_key(&state.control, &place.owner(&id)).await?;
     let models = models_for(&c, &base, &key.key).await?;
+    let around = place.around().await;
     let mut r = ops::adopt(
         &place.home(),
         &backups(),
         &id,
-        &base,
-        &key.key,
-        models,
+        &tw_adopt::clients::Gateway::keyed(&base, &key.key, models),
         expect.as_deref(),
+        &around,
     )?;
     if let Place::Wsl(w) = &place {
         r.real = w.shown(Path::new(&r.real));
@@ -511,7 +528,11 @@ pub async fn restore_client(
 #[tauri::command]
 pub async fn diagnose_client(id: String, env: Option<String>) -> Out<Vec<wire::FindingView>> {
     match Place::open(env).await? {
-        Place::Here => Ok(ops::diagnose(&home_dir(), &id)?),
+        Place::Here => Ok(ops::diagnose(
+            &home_dir(),
+            &id,
+            &Around::here(user_env::last().await),
+        )?),
         Place::Wsl(w) => Ok(ops::diagnose_wsl(&w, &id)?),
     }
 }
@@ -762,7 +783,8 @@ impl LeftBehind {
                 let name = b.place.name(&c);
                 match prepare(b.place.owner(c.id), c.clone()).await {
                     Ok((key, models)) => {
-                        match ops::repoint(&b.home, backups, &c, base, &key, models) {
+                        let around = b.place.around().await;
+                        match ops::repoint(&b.home, backups, &c, base, &key, models, &around) {
                             Ok(s) => out.synced.push(wire::KeySynced { name, ..s }),
                             Err(f) => out.failed.push(wire::KeySyncFailed { name, ..f }),
                         }
@@ -926,15 +948,24 @@ pub(crate) async fn sync_rotated(
         .await
         .map_err(|e| failed(e.into_msg()))?;
     let models = models_for(c, &base, fresh).await.map_err(failed)?;
-    ops::repoint(&owner.place.home(), &backups(), c, &base, fresh, models)
-        .map(|mut s| {
-            s.name = owner.name();
-            s
-        })
-        .map_err(|mut f| {
-            f.name = owner.name();
-            f
-        })
+    let around = owner.place.around().await;
+    ops::repoint(
+        &owner.place.home(),
+        &backups(),
+        c,
+        &base,
+        fresh,
+        models,
+        &around,
+    )
+    .map(|mut s| {
+        s.name = owner.name();
+        s
+    })
+    .map_err(|mut f| {
+        f.name = owner.name();
+        f
+    })
 }
 
 /// 删之前、换之前要知道：这把密钥的主人此刻接管着吗
@@ -1058,20 +1089,18 @@ mod tests {
             &w.home,
             &b,
             "claude-code",
-            LOCAL,
-            "tw-local",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-local", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         ops::adopt(
             here.path(),
             &b,
             "claude-code",
-            LOCAL,
-            "tw-local",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-local", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
         let adopted = read(&settings);
@@ -1125,6 +1154,7 @@ mod tests {
             "claude-code-wsl-ubuntu",
             &gw,
             Vec::new(),
+            &Around::default(),
         )
         .unwrap();
         assert!(p.noop, "{}", p.after);
@@ -1145,13 +1175,20 @@ mod tests {
             &w.home,
             &b,
             "claude-code",
-            SERVER,
-            "tw-claude-code-wsl-ubuntu",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed(SERVER, "tw-claude-code-wsl-ubuntu", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
-        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new(), None).unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "codex",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-local", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
         let settings = w.home.join(".claude").join("settings.json");
         let before = read(&settings);
         let real = tw_adopt::foreign::resolve(&settings).unwrap();
@@ -1180,7 +1217,15 @@ mod tests {
     async fn an_unreadable_distro_is_skipped_and_reported_with_the_reason() {
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        ops::adopt(&w.home, &b, "codex", LOCAL, "tw-local", Vec::new(), None).unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "codex",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-local", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
         let found = || LeftBehind::of(None, vec![Err(unreadable(d.path())), Ok(w.clone())]);
 
         // 数不出来的不算进确认框里的数
@@ -1215,8 +1260,24 @@ mod tests {
         let here = here_home();
         let (d, w) = wsl_home();
         let b = d.path().join("backups");
-        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new(), None).unwrap();
-        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-c", Vec::new(), None).unwrap();
+        ops::adopt(
+            here.path(),
+            &b,
+            "codex",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-x", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "claude-code",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-c", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
         let why = CmdError::plain("core is not running").into_msg();
         let r = LeftBehind::of(
             Some(here.path().to_path_buf()),
@@ -1264,15 +1325,38 @@ mod tests {
             here.path(),
             &b,
             "claude-code",
-            LOCAL,
-            "tw-c",
-            Vec::new(),
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-c", Vec::new()),
             None,
+            &Around::default(),
         )
         .unwrap();
-        ops::adopt(here.path(), &b, "codex", LOCAL, "tw-x", Vec::new(), None).unwrap();
-        ops::adopt(&w.home, &b, "claude-code", LOCAL, "tw-w", Vec::new(), None).unwrap();
-        ops::adopt(&w.home, &b, "codex", SERVER, "tw-s", Vec::new(), None).unwrap();
+        ops::adopt(
+            here.path(),
+            &b,
+            "codex",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-x", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "claude-code",
+            &tw_adopt::clients::Gateway::keyed(LOCAL, "tw-w", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        ops::adopt(
+            &w.home,
+            &b,
+            "codex",
+            &tw_adopt::clients::Gateway::keyed(SERVER, "tw-s", Vec::new()),
+            None,
+            &Around::default(),
+        )
+        .unwrap();
         let a = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w)]).adopted();
         assert_eq!(a.count, 3);
         assert_eq!(a.local_addr.as_deref(), Some("127.0.0.1:8788"));

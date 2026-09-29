@@ -21,8 +21,28 @@
 
 /// 取一份，过滤好了，直接交给 `Command::envs`。取不到就是空的：那时 core 仍然
 /// 继承应用自己的环境，和以前一样。
+///
+/// 取到的这一份记下来（[`last`]）：接管 Claude Code 时要看用户环境里打开没打开
+/// `CLAUDE_CODE_USE_BEDROCK` 这类开关，不为这个再跑一次登录 shell。
 pub async fn load() -> Vec<(String, String)> {
-    read().await.into_iter().filter(|(k, _)| keep(k)).collect()
+    let env: Vec<(String, String)> = read().await.into_iter().filter(|(k, _)| keep(k)).collect();
+    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(env.clone());
+    env
+}
+
+/// 最近一次取到的那一份（[`load`]）。
+static LAST: std::sync::Mutex<Option<Vec<(String, String)>>> = std::sync::Mutex::new(None);
+
+/// 最近一次取到的用户环境，还没取过（本机的 core 还没起过、连着远程）就现取一次。
+///
+/// **接管的确认框和落盘两次算的是同一份改动**，所以都从这里拿：两次之间 core 没重启，
+/// 拿到的就是同一份，不会一次看见一个开关、一次看不见。
+pub async fn last() -> Vec<(String, String)> {
+    let known = LAST.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match known {
+        Some(env) => env,
+        None => load().await,
+    }
 }
 
 /// 这个变量能不能从用户环境带给 core。
