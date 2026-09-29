@@ -4800,6 +4800,7 @@ dependencies = [
  "tw-link",
  "tw-scan",
  "tw-types",
+ "url",
  "windows",
  "windows-sys 0.61.2",
  "zbus",

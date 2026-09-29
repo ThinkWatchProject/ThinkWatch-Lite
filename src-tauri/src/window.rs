@@ -2,12 +2,17 @@
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{AppState, chatgpt, i18n, notices, supervisor::CoreState};
+use crate::{AppState, chatgpt, i18n, import_link, notices, supervisor::CoreState};
 
-/// 分拣一批 `thinkwatch://` 链接：点开通知的落到那一条的页面，其余的交给授权回调
+/// 分拣一批 `thinkwatch://` 链接：导入链接单走一路（`import_link`，校验不过就丢掉、
+/// 不拉窗口），点开通知的落到那一条的页面，其余的交给授权回调
 pub(crate) fn open_urls(app: &tauri::AppHandle, urls: &[String]) {
     let mut rest = Vec::new();
     for url in urls {
+        if import_link::is_import(url) {
+            import_link::receive(app, url);
+            continue;
+        }
         match notices::key_from_url(url) {
             Some(key) => notices::open_from_notification(app, &key),
             None => rest.push(url.clone()),

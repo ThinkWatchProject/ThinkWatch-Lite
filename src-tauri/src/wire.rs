@@ -722,3 +722,26 @@ pub enum LocalEvent {
     /// 要按此刻的钟重新定
     ClockChanged { at_ms: u64 },
 }
+
+// ---------------------------------------------------------- 导入链接
+
+/// 一条导入链接（`thinkwatch://import?…`）提议新建的上游。**已经在 Rust 侧逐项校验过**
+/// （`import_link::parse`），界面只负责给人确认；确认之前不写配置、不发任何请求。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ImportProposal {
+    /// 链接给的名称。没给是空，界面按地址起一个
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`
+    pub base_url: String,
+    /// 请求和密钥会发往的主机（带端口时带上端口），ASCII
+    pub host: String,
+    /// 没给就是自动识别
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<tw_api::Protocol>,
+    /// API 密钥，原样。保证不含 `$`、`{`、`}`：不会被当成 `${变量名}` 展开
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// 服务不提供模型列表时的手动清单
+    pub models: Vec<String>,
+}

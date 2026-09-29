@@ -45,6 +45,8 @@ interface Commands {
   core_state: [void, string];
   core_status: [void, CoreStatus];
   take_pending_view: [void, string | null];
+  take_import_link: [void, null];
+  import_link_closed: [void, null];
   connections: [void, ConnView];
   test_connection: [void, Tested];
   switch_preflight: [void, Adopted];
@@ -99,6 +101,8 @@ const COMMANDS: Table = {
   core_state: () => "running:48213",
   core_status: coreStatus,
   take_pending_view: () => takeView(),
+  take_import_link: () => null,
+  import_link_closed: () => null,
   connections: connView,
   // 停一下再答，和真的握手一样先转一圈；场景等结果那一行出来之后才拍
   test_connection: async () => {

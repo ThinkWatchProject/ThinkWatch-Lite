@@ -80,6 +80,8 @@ hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "client", "client-legacy"] }
 http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }
+# 导入链接（`import_link`）里的接口地址：解析、IDN 转成 ASCII。tauri 本来就依赖它
+url = "2"
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "io-util"] }
