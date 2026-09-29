@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -241,7 +242,11 @@ export function ModelsSection({
                               onCheckedChange={(v) => toggle(m, v === true)}
                             />
                           </TableCell>
-                          <TableCell className={on ? "font-mono" : "font-mono text-muted-foreground"}>
+                          {/* Bedrock 应用推理配置的 ARN 有八十来个字符：截断，悬停看全 */}
+                          <TableCell
+                            title={m}
+                            className={cn("w-full max-w-0 truncate font-mono", !on && "text-muted-foreground")}
+                          >
                             {m}
                           </TableCell>
                           <TableCell className="tw-num text-muted-foreground">

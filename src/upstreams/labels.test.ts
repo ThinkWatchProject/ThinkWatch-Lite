@@ -1,7 +1,18 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView, QuotaWindow } from "@/types";
-import { l1ErrorText, modelFace, planLabel, quotaLeft, quotaWindowBefore, quotaWindowLabel } from "./labels";
+import {
+  BEDROCK_REGIONS,
+  bedrockRegionOf,
+  bedrockUrl,
+  l1ErrorText,
+  modelFace,
+  planLabel,
+  protocolLabel,
+  quotaLeft,
+  quotaWindowBefore,
+  quotaWindowLabel,
+} from "./labels";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -188,5 +199,23 @@ describe("额度窗口", () => {
     } finally {
       setLang("zh");
     }
+  });
+});
+
+describe("Bedrock 的地址", () => {
+  it("标准地址里的区域，和 core 认的一样；别的地址没有", () => {
+    expect(bedrockRegionOf("https://bedrock-runtime.eu-west-1.amazonaws.com")).toBe("eu-west-1");
+    expect(bedrockRegionOf("https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com/")).toBe("us-gov-west-1");
+    expect(bedrockRegionOf("https://vpce-0a1b.bedrock-runtime.us-east-1.vpce.amazonaws.com")).toBeNull();
+    expect(bedrockRegionOf("https://bedrock.us-east-1.amazonaws.com")).toBeNull();
+    expect(bedrockRegionOf("")).toBeNull();
+  });
+
+  it("区域生成的地址认得回来", () => {
+    for (const r of BEDROCK_REGIONS) expect(bedrockRegionOf(bedrockUrl(r))).toBe(r);
+  });
+
+  it("格式名：Bedrock 是 Converse", () => {
+    expect(protocolLabel("bedrock")).toBe("Bedrock Converse");
   });
 });

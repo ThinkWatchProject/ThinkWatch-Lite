@@ -11,6 +11,7 @@ export const headerEditorText = messages(
     add: "添加请求头",
     fromKey: "由 API 密钥生成",
     fromOauth: "由 OAuth 凭据生成",
+    fromSignature: "由访问密钥签名生成",
   },
   {
     name: "Header name",
@@ -22,5 +23,6 @@ export const headerEditorText = messages(
     add: "Add header",
     fromKey: "Set by the API key",
     fromOauth: "Set by the OAuth credentials",
+    fromSignature: "Set by signing with the access keys",
   },
 );

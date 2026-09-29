@@ -5,7 +5,8 @@ import { presetsText } from "./presets.i18n";
 /**
  * 新建上游时的「服务类型」。
  *
- * 预设只填三样：名称、接口地址、接口协议（本地服务再加一个「不计费」）。
+ * 预设只填三样：名称、接口地址、接口协议（本地服务再加一个「不计费」）。Amazon Bedrock
+ * 的地址按区域生成，选了它之后表单里换区域就换地址。
  * **地址不含 `/v1`** —— 网关把客户端请求的路径原样接在后面，写成
  * `…/v1` 会拼出 `…/v1/v1/messages`。
  */
@@ -75,6 +76,13 @@ export const PRESETS: Preset[] = [
     name: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com",
     protocol: "gemini",
+  },
+  {
+    id: "bedrock",
+    label: "Amazon Bedrock",
+    name: "bedrock",
+    baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+    protocol: "bedrock",
   },
   {
     id: "deepseek",

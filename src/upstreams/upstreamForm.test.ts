@@ -174,3 +174,93 @@ describe("新建时的凭据", () => {
     );
   });
 });
+
+describe("Bedrock 上游", () => {
+  const bedrockView = (aws: ProviderView["aws"]) =>
+    view({
+      name: "bedrock",
+      base_url: "https://bedrock-runtime.us-west-2.amazonaws.com",
+      key: null,
+      auth_header: "authorization",
+      headers: [],
+      protocol: "bedrock",
+      protocol_explicit: false,
+      aws,
+      region: "us-west-2",
+    });
+
+  it("访问密钥原样回填，原样交回；空着的会话令牌不交", () => {
+    const f = formFromView(
+      bedrockView({ access_key_id: "${AWS_ACCESS_KEY_ID}", secret_access_key: "${AWS_SECRET_ACCESS_KEY}" }),
+    );
+    expect(f.authMode).toBe("aws-keys");
+    const input = toInput(f);
+    expect(input.aws).toEqual({
+      access_key_id: "${AWS_ACCESS_KEY_ID}",
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}",
+      session_token: undefined,
+      region: undefined,
+    });
+    expect(input.key).toBeUndefined();
+    expect(input.oauth).toEqual({ mode: "none" });
+  });
+
+  it("profile 只交名字", () => {
+    const f = formFromView(bedrockView({ profile: "dev" }));
+    expect(f.authMode).toBe("aws-profile");
+    expect(toInput(f).aws).toEqual({ profile: "dev", region: undefined });
+  });
+
+  it("只交当前这种认证方式的：切到 API 密钥，访问密钥不交", () => {
+    const f: UpstreamForm = {
+      ...formFromView(bedrockView({ access_key_id: "AKIA", secret_access_key: "s" })),
+      authMode: "key",
+      key: "${AWS_BEARER_TOKEN_BEDROCK}",
+    };
+    const input = toInput(f);
+    expect(input.aws).toBeUndefined();
+    expect(input.key).toBe("${AWS_BEARER_TOKEN_BEDROCK}");
+  });
+
+  it("换成别的协议之后，访问密钥这种认证方式不再生效；Bedrock 不收 OAuth", () => {
+    const keys: UpstreamForm = {
+      ...blankForm(),
+      name: "x",
+      baseUrl: "https://api.openai.com",
+      protocol: "openai-chat",
+      authMode: "aws-keys",
+      awsKeyId: "AKIA",
+      awsSecret: "s",
+    };
+    expect(toInput(keys).aws).toBeUndefined();
+    const oauth: UpstreamForm = {
+      ...blankForm(),
+      name: "x",
+      baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+      authMode: "oauth",
+      oauthRefresh: "rt",
+      oauthEndpoint: "https://auth.example/token",
+    };
+    expect(toInput(oauth).oauth).toEqual({ mode: "none" });
+  });
+
+  it("缺的是哪一样说清楚", () => {
+    const base: UpstreamForm = {
+      ...blankForm(),
+      name: "b",
+      baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+    };
+    expect(connectionMissing({ ...base, authMode: "aws-keys", awsKeyId: "AKIA" }, null, [])).toBe(
+      "填写访问密钥 ID 与私有访问密钥",
+    );
+    expect(connectionMissing({ ...base, authMode: "aws-profile" }, null, [])).toBe("填写 AWS profile 的名称");
+    expect(connectionMissing({ ...base, authMode: "aws-profile", awsProfile: "dev" }, null, [])).toBeNull();
+  });
+
+  it("改了访问密钥就是改了连接", () => {
+    const v = bedrockView({ access_key_id: "AKIA", secret_access_key: "s" });
+    const f = formFromView(v);
+    expect(connectionChanged(f, v)).toBe(false);
+    expect(connectionChanged({ ...f, awsSecret: "s2" }, v)).toBe(true);
+  });
+});

@@ -635,6 +635,7 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
         denied_by: None,
         attempts: vec![tw_api::AttemptView {
             provider: "relay".into(),
+            model: None,
             outcome: tw_api::AttemptOutcome::Served,
             status: Some(200),
             error: None,

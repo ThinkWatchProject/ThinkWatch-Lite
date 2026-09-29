@@ -169,6 +169,11 @@ export function UpstreamDialog({
     form.oauthRefresh,
     form.oauthEndpoint,
     form.oauthAccess,
+    form.awsKeyId,
+    form.awsSecret,
+    form.awsToken,
+    form.awsProfile,
+    form.awsRegion,
     form.proxy,
   ]);
   const [tests] = useState(latestOnly);

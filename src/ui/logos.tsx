@@ -87,7 +87,7 @@ const HOSTS: [RegExp, GlyphId][] = [
   [/(^|\.)x\.ai$/, "xai"],
   [/(^|\.)mistral\.ai$/, "mistral"],
   [/(^|\.)groq\.com$/, "groq"],
-  [/(^|\.)bedrock(-runtime)?\.[a-z0-9-]+\.amazonaws\.com$/, "bedrock"],
+  [/(^|\.)bedrock(-runtime)?(-fips)?\.[a-z0-9-]+\.amazonaws\.com$/, "bedrock"],
 ];
 
 /** 名字里的特征 → 厂商。只在地址认不出（中转、自建）时用 */

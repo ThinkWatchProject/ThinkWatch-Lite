@@ -17,6 +17,7 @@ export const labelsText = messages(
     direct: "直连",
     systemProxy: "系统代理",
     apiKey: "API 密钥",
+    accessKeys: "访问密钥",
     models: {
       discovered: "自动发现",
       manual: "手动清单",
@@ -96,6 +97,7 @@ export const labelsText = messages(
     direct: "Direct",
     systemProxy: "System proxy",
     apiKey: "API key",
+    accessKeys: "Access keys",
     models: {
       discovered: "Discovered",
       manual: "Manual list",
