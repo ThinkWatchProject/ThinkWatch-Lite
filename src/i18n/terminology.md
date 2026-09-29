@@ -116,3 +116,8 @@ known colloquialisms.
 | 账号 / 登录 / 重新登录 | account / sign in / sign in again | |
 | 凭据 | credential | |
 | 请求头 | headers | |
+| 区域 | region | an AWS region; the code (us-east-1) is not translated |
+| 访问密钥 / 访问密钥 ID / 私有访问密钥 / 会话令牌 | access keys / access key ID / secret access key / session token | AWS's own names |
+| AWS profile | AWS profile | not 配置文件, which is config.yaml |
+| 推理配置 | inference profile | Bedrock's `us.…` / `global.…` ids and application profile ARNs |
+| 每个请求单独签名 | signed per request | the auth header of an upstream that uses access keys |
