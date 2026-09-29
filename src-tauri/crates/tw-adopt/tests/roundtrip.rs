@@ -1370,6 +1370,13 @@ fn a_bedrock_switch_in_settings_is_turned_off_and_restored_byte_for_byte() {
         .find(|n| n.code == "adopt.plan.cloud_models")
         .expect("没说哪些模型会用 Anthropic 的名字");
     assert_eq!(models.args["names"], "ANTHROPIC_DEFAULT_HAIKU_MODEL");
+    // 按原来的设置新建 Bedrock 上游要填的：区域、API key 的变量引用 —— 不是明文
+    let draft = p.bedrock.clone().expect("没备好新建上游要填的");
+    assert_eq!(draft.region, "us-west-2");
+    assert_eq!(
+        draft.auth,
+        tw_adopt::cloud::DraftAuth::Key("${AWS_BEARER_TOKEN_BEDROCK}".into())
+    );
     apply(&c, &p, &b.backups).unwrap();
 
     let after = read(&path);
@@ -1445,7 +1452,7 @@ fn a_switch_only_the_environment_has_is_turned_off_too() {
     let c = client("claude-code");
     let around = Around {
         env: [("CLAUDE_CODE_USE_VERTEX".to_string(), "true".to_string())].into(),
-        managed: Vec::new(),
+        ..Default::default()
     };
     let p = plan_adopt(&c, &b.home, &gw(), &around).unwrap();
     assert!(
@@ -1453,8 +1460,9 @@ fn a_switch_only_the_environment_has_is_turned_off_too() {
         "{:?}",
         p.notes
     );
-    // 不是 Bedrock：没有「哪些模型会用 Anthropic 的名字」那一句
+    // 不是 Bedrock：没有「哪些模型会用 Anthropic 的名字」那一句，也没有新建上游的草稿
     assert!(!p.notes.iter().any(|n| n.code == "adopt.plan.cloud_models"));
+    assert!(p.bedrock.is_none());
     apply(&c, &p, &b.backups).unwrap();
     let path = b.home.join(".claude/settings.json");
     assert!(read(&path).contains("\"CLAUDE_CODE_USE_VERTEX\": \"\""));
@@ -1485,8 +1493,8 @@ fn a_switch_a_managed_configuration_turns_on_stops_the_takeover() {
     std::fs::write(&managed, r#"{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}"#).unwrap();
     let c = client("claude-code");
     let around = Around {
-        env: Default::default(),
         managed: vec![managed.clone()],
+        ..Default::default()
     };
     let e = plan_adopt(&c, &b.home, &gw(), &around).unwrap_err();
     assert_eq!(e.msg().code, "adopt.plan.cloud_managed", "{e}");

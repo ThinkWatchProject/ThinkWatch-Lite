@@ -12,7 +12,15 @@ import { useNav, useNavParams } from "@/nav";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { appText } from "@/App.i18n";
-import type { ClientsResponse, DetectedClient, PlanView, Retargeted, WslConfigPlan, WslGroup } from "@/types";
+import type {
+  ClientsResponse,
+  DetectedClient,
+  PlanView,
+  ProviderView,
+  Retargeted,
+  WslConfigPlan,
+  WslGroup,
+} from "@/types";
 import { useRemote } from "@/connection/useRemote";
 import { RetargetFailures } from "@/connection/Remote";
 import { remoteText } from "@/connection/remote.i18n";
@@ -84,9 +92,12 @@ const leftBehindOf = (cs: DetectedClient[]) =>
  */
 export default function ClientsPage({
   busy,
+  providers,
 }: {
   /** 此刻有请求在跑的密钥 */
   busy: ReadonlySet<string>;
+  /** 网关的上游（概览还没读到时没有）。接管原来直连 Bedrock 的客户端时要说有没有 Bedrock 上游 */
+  providers?: ProviderView[];
 }) {
   const t = useText(clientsText);
   const rt = useText(remoteText);
@@ -442,6 +453,7 @@ export default function ClientsPage({
           restore={dialog.restore}
           stale={dialog.stale}
           pending={confirming}
+          bedrockUpstreams={(providers ?? []).filter((p) => p.protocol === "bedrock").map((p) => p.name)}
           onCancel={() => setDialog(null)}
           onConfirm={() => apply(dialog.id, dialog.restore, dialog.plan.digest, dialog.env)}
         />

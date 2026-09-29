@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 use tw_types::{Msg, msg};
 
 use crate::clients::{Client, Edit, Format, Gateway};
+use crate::cloud::{Around, Cloud};
 use crate::json::Val;
 use crate::paths::Loc;
 use crate::plan::{self, Plan, PlanError, Target};
@@ -222,13 +223,16 @@ pub const FALLBACK_MODEL: &str = "claude-sonnet-5";
 ///
 /// `models` 是网关用这把钥匙列出来的模型（`GET /v1/models`），`None` = 没问
 /// 或者没问到：这时不动配置里已有的那一份模型列表。
+///
+/// `around` 里只用得上 core 的环境：原来用的是 Bedrock 时，新建上游引用的变量网关看不看得见。
 pub fn plan_adopt(
     c: &Client,
     home: &Path,
     gw: &Gateway,
     models: Option<&[String]>,
+    around: &Around,
 ) -> Result<Plan, PlanError> {
-    plan_adopt_in(c, home, gw, models, managed(home))
+    plan_adopt_in(c, home, gw, models, managed(home), around)
 }
 
 /// [`plan_adopt`] 去掉「这台电脑是不是被托管」那一问，测试直接喂。
@@ -238,6 +242,7 @@ pub fn plan_adopt_in(
     gw: &Gateway,
     models: Option<&[String]>,
     managed: Option<String>,
+    around: &Around,
 ) -> Result<Plan, PlanError> {
     if let Some(by) = managed {
         return Err(PlanError::Managed {
@@ -284,8 +289,18 @@ pub fn plan_adopt_in(
         notes.push(plan::fields_only_note(c));
     }
 
+    // 原来正在用的那一份走的是云服务商：说一声接管期间改用我们这一份；是 Bedrock 的，
+    // 按它新建上游要填的也备好
+    let mut bedrock = None;
+    if let Some(used) = cloud_in_use(home, around) {
+        notes.push(used.note);
+        notes.extend(used.more);
+        bedrock = used.draft;
+    }
+
     let mut main = plan::adopt_file(c.id, profile.clone(), Format::Json, &edits)?;
     main.notes = notes;
+    main.bedrock = bedrock;
     main.also = vec![
         adopt_meta(c.id, home)?,
         plan::adopt_file(
@@ -302,6 +317,93 @@ pub fn plan_adopt_in(
         )?,
     ];
     Ok(main)
+}
+
+/// Claude Desktop 接管前正在用的那一份第三方推理配置走的是云服务商时，关于它要说的。
+pub struct CloudInUse {
+    pub cloud: Cloud,
+    /// 「原来用的是它，接管期间改用我们这一份，还原时切回去」
+    pub note: Msg,
+    /// Bedrock 和 Mantle 才有：按它新建 Bedrock 上游要填的
+    pub draft: Option<crate::cloud::BedrockDraft>,
+    /// 凭据上要说的话（[`crate::cloud::claude_desktop_draft`]）
+    pub more: Vec<Msg>,
+}
+
+/// 接管前正在用的那一份配置（`_meta.json` 的 `appliedId`）走的是不是云服务商。**正在用的
+/// 已经是我们这一份时**（重复接管），看接管记录里 `appliedId` 原来指着谁。
+///
+/// 网关那一种（`inferenceProvider: "gateway"`，比如 CC Switch 写的）和直连 Claude API 的不算：
+/// 接管换掉它们不会让谁绕开网关。
+pub fn cloud_in_use(home: &Path, around: &Around) -> Option<CloudInUse> {
+    let meta_file = meta_path(home);
+    let meta = std::fs::read_to_string(&meta_file).ok()?;
+    let applied = crate::json::get(&meta, &["appliedId"])
+        .ok()
+        .flatten()?
+        .as_str()?
+        .to_string();
+    let id = if applied == PROFILE_ID {
+        match prior_was(ID, &meta_file, "appliedId")? {
+            sentinel::Was::Value(v) => v,
+            _ => return None,
+        }
+    } else {
+        applied
+    };
+    // 文件名就是它的 id：带路径的不认
+    if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
+        return None;
+    }
+    let path = THIRD_PARTY_DIR
+        .resolve(home)
+        .join(LIBRARY_DIR)
+        .join(format!("{id}.json"));
+    let text = std::fs::read_to_string(&path).ok()?;
+    let provider = crate::json::get(&text, &["inferenceProvider"])
+        .ok()
+        .flatten()?;
+    let cloud = match provider.as_str()? {
+        "bedrock" => Cloud::Bedrock,
+        "mantle" => Cloud::Mantle,
+        "vertex" => Cloud::Vertex,
+        "foundry" => Cloud::Foundry,
+        _ => return None,
+    };
+    let name = entries_of(ID, &meta)
+        .ok()
+        .and_then(|es| {
+            es.iter()
+                .find(|e| entry_id(e) == Some(id.as_str()))
+                .and_then(|e| match e {
+                    Val::Obj(ms) => ms
+                        .iter()
+                        .find(|(k, _)| k == "name")
+                        .and_then(|(_, v)| v.as_str().map(str::to_string)),
+                    _ => None,
+                })
+        })
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| id.clone());
+    // 英文里是那一家的名字；参数给的是词，中文按词表说
+    let label = cloud.name();
+    let note = msg!(
+        "adopt.plan.claude_desktop.was_cloud", name = name.clone(), cloud = cloud.slug()
+        => "Claude Desktop uses {label} through the configuration {name}. While it points at the \
+            gateway, the ThinkWatch configuration is used instead; restoring switches back to {name}."
+    );
+    let (draft, more) = if cloud.is_bedrock() {
+        let (d, m) = crate::cloud::claude_desktop_draft(home, &path, &text, cloud, around);
+        (Some(d), m)
+    } else {
+        (None, Vec::new())
+    };
+    Some(CloudInUse {
+        cloud,
+        note,
+        draft,
+        more,
+    })
 }
 
 fn deployment_mode() -> Edit {
@@ -490,6 +592,7 @@ fn restore_meta(client: &str, home: &Path) -> Result<Option<Plan>, PlanError> {
             format: Format::Json,
             also: Vec::new(),
             prior: None,
+            bedrock: None,
         }));
     };
 
@@ -561,6 +664,7 @@ fn restore_meta(client: &str, home: &Path) -> Result<Option<Plan>, PlanError> {
         format: Format::Json,
         also: Vec::new(),
         prior: None,
+        bedrock: None,
     }))
 }
 

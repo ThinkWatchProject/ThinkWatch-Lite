@@ -11,6 +11,7 @@
 import { textOf } from "@/i18n";
 import type {
   AwsKeys,
+  BedrockDraft,
   Billing,
   HeaderInput,
   ModelList,
@@ -20,7 +21,7 @@ import type {
   ProviderInput,
   ProviderView,
 } from "@/types";
-import { bedrockRegionOf } from "./labels";
+import { bedrockRegionOf, bedrockUrl } from "./labels";
 import { CUSTOM } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
@@ -133,6 +134,32 @@ export function blankForm(): UpstreamForm {
     billing: "per-token",
     pricing: "",
     disabled: false,
+  };
+}
+
+/**
+ * 按客户端原来直连 Bedrock 时的设置新建：接管确认框里「新建 Bedrock 上游」带过来的那一份
+ * （`BedrockDraft`，tw-adopt 按客户端自己的找法算的）。
+ *
+ * 凭据是 `${变量名}` 或 profile 的名字，照原样填；没找到能用的就空着，由人来填。地址没给
+ * 就是那个区域的标准地址，给了（VPC 端点、代理）区域另写。
+ */
+export function formFromDraft(d: BedrockDraft, taken: string[]): UpstreamForm {
+  const baseUrl = d.base_url ?? bedrockUrl(d.region);
+  const a = d.auth;
+  return {
+    ...blankForm(),
+    preset: "bedrock",
+    name: freeName("bedrock", taken),
+    baseUrl,
+    protocol: "bedrock",
+    awsRegion: bedrockRegionOf(baseUrl) === null ? d.region : "",
+    authMode: a.kind === "keys" ? "aws-keys" : a.kind === "profile" ? "aws-profile" : "key",
+    key: a.kind === "key" ? a.key : "",
+    awsKeyId: a.kind === "keys" ? a.access_key_id : "",
+    awsSecret: a.kind === "keys" ? a.secret_access_key : "",
+    awsToken: a.kind === "keys" ? (a.session_token ?? "") : "",
+    awsProfile: a.kind === "profile" ? a.profile : "",
   };
 }
 

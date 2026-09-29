@@ -69,7 +69,7 @@ fn json(p: &Path) -> serde_json::Value {
 
 fn adopt(b: &Bed, models: Option<&[String]>) {
     let c = client();
-    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), models, None).unwrap();
+    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), models, None, &Around::default()).unwrap();
     apply(&c, &p, &b.backups).unwrap();
 }
 
@@ -198,7 +198,8 @@ fn adopting_twice_changes_nothing_and_still_restores_to_the_original() {
     adopt(&b, Some(&models));
 
     let c = client();
-    let again = desktop::plan_adopt_in(&c, &b.home, &gw(), Some(&models), None).unwrap();
+    let again = desktop::plan_adopt_in(&c, &b.home, &gw(), Some(&models), None, &Around::default())
+        .unwrap();
     assert!(again.is_noop(), "第二次接管应该是空操作");
 
     // 换了一把钥匙、换了网关地址再接管一次（更换密钥之后的同步走的就是这条，
@@ -235,6 +236,7 @@ fn a_managed_machine_is_refused_and_nothing_is_written() {
         &gw(),
         None,
         Some("/Library/Managed Preferences/com.anthropic.claudefordesktop.plist".into()),
+        &Around::default(),
     )
     .unwrap_err();
     assert!(matches!(e, PlanError::Managed { .. }), "{e}");
@@ -376,6 +378,7 @@ fn without_a_claude_model_the_fallback_is_written_and_the_rule_is_spelled_out() 
         &gw(),
         Some(&names(&["deepseek-chat", "gpt-5"])),
         None,
+        &Around::default(),
     )
     .unwrap();
     let note = p
@@ -399,7 +402,7 @@ fn without_a_claude_model_the_fallback_is_written_and_the_rule_is_spelled_out() 
 fn the_plan_names_all_four_files_and_the_costs_before_anything_is_written() {
     let b = bed();
     let c = client();
-    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), None, None).unwrap();
+    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), None, None, &Around::default()).unwrap();
     let mut files = vec![p.path.clone()];
     files.extend(p.also.iter().map(|a| a.path.clone()));
     assert_eq!(
@@ -430,7 +433,7 @@ fn the_plan_names_all_four_files_and_the_costs_before_anything_is_written() {
 fn a_failure_halfway_leaves_every_file_as_it_was() {
     let b = bed();
     let c = client();
-    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), None, None).unwrap();
+    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), None, None, &Around::default()).unwrap();
     // 算完之后、落盘之前，MCP 页改了平常那一份：最后一个文件写不成
     let changed = FIRST.replace("Alt+Space", "Ctrl+Space");
     std::fs::write(desktop::first_party_config(&b.home), &changed).unwrap();
@@ -522,4 +525,91 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// 正在用的是用户自己的 Bedrock 配置：接管说清楚原来用的是哪一份、接管期间换成我们这一份；
+/// 按它新建 Bedrock 上游要填的也备好 —— 明文的 bearer token 不抄
+#[test]
+fn a_bedrock_configuration_in_use_is_named_and_offered_as_an_upstream() {
+    let b = bed();
+    let meta = r#"{
+  "appliedId": "b1c2d3e4-0000-4000-8000-000000000001",
+  "entries": [{ "id": "b1c2d3e4-0000-4000-8000-000000000001", "name": "My Bedrock" }]
+}
+"#;
+    write(&desktop::meta_path(&b.home), meta);
+    let theirs =
+        desktop::meta_path(&b.home).with_file_name("b1c2d3e4-0000-4000-8000-000000000001.json");
+    write(
+        &theirs,
+        r#"{"inferenceProvider": "bedrock", "inferenceBedrockRegion": "us-west-2",
+  "inferenceBedrockBearerToken": "ABSK-明文的密钥", "inferenceModels": ["us.anthropic.claude-sonnet-5"]}"#,
+    );
+    let c = client();
+    let p = desktop::plan_adopt_in(
+        &c,
+        &b.home,
+        &gw(),
+        Some(&names(&["claude-sonnet-5"])),
+        None,
+        &Around::default(),
+    )
+    .unwrap();
+    let was = p
+        .notes
+        .iter()
+        .find(|n| n.code == "adopt.plan.claude_desktop.was_cloud")
+        .expect("没说原来用的是哪一份");
+    assert_eq!(was.args["name"], "My Bedrock");
+    assert_eq!(was.args["cloud"], "bedrock");
+    assert!(
+        p.notes
+            .iter()
+            .any(|n| n.code == "adopt.plan.claude_desktop.bedrock_key")
+    );
+    let d = p.bedrock.clone().expect("没备好新建上游要填的");
+    assert_eq!(d.region, "us-west-2");
+    assert_eq!(
+        d.auth,
+        tw_adopt::cloud::DraftAuth::Key("${AWS_BEARER_TOKEN_BEDROCK}".into())
+    );
+    assert!(!format!("{:?}", p.notes).contains("ABSK-明文的密钥"));
+
+    // 重复接管时正在用的已经是我们这一份：照接管记录里原来那一份说
+    apply(&c, &p, &b.backups).unwrap();
+    let again = desktop::plan_adopt_in(
+        &c,
+        &b.home,
+        &gw(),
+        Some(&names(&["claude-sonnet-5"])),
+        None,
+        &Around::default(),
+    )
+    .unwrap();
+    assert!(again.bedrock.is_some());
+    assert!(
+        again
+            .notes
+            .iter()
+            .any(|n| n.code == "adopt.plan.claude_desktop.was_cloud")
+    );
+}
+
+/// 正在用的是网关那一种（CC Switch 写的那份）：换掉它不会让谁绕开网关，不用多说
+#[test]
+fn a_gateway_configuration_in_use_needs_no_word() {
+    let b = bed();
+    write(&desktop::meta_path(&b.home), META);
+    write(
+        &desktop::meta_path(&b.home).with_file_name("00000000-0000-4000-8000-000000157210.json"),
+        r#"{"inferenceProvider": "gateway", "inferenceGatewayBaseUrl": "http://127.0.0.1:15721"}"#,
+    );
+    let c = client();
+    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), None, None, &Around::default()).unwrap();
+    assert!(p.bedrock.is_none());
+    assert!(
+        !p.notes
+            .iter()
+            .any(|n| n.code == "adopt.plan.claude_desktop.was_cloud")
+    );
 }

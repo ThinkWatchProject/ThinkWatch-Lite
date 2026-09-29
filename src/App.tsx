@@ -1010,7 +1010,7 @@ function Shell({ first }: { first: boolean }) {
                     ) : tab === "dashboard" ? (
                       <OverviewPage tick={dashTick} ov={ov} onLanded={() => setLanded(true)} />
                     ) : tab === "clients" ? (
-                      <ClientsPage busy={busyKeys} />
+                      <ClientsPage busy={busyKeys} providers={ov?.providers} />
                     ) : tab === "mcp" ? (
                       <McpPage alerts={alerts} onSeen={clearAlerts} />
                     ) : tab === "security" ? (

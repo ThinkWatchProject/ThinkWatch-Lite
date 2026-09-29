@@ -167,6 +167,9 @@ pub struct Plan {
     /// 把用户还原到我们这儿，而不是还原回他原来的样子。这是最隐蔽的一
     /// 种数据丢失：每一步看起来都成功了。
     pub prior: Option<(String, bool)>,
+    /// 客户端原来直连 Bedrock：按它原来的设置新建 Bedrock 上游要填的（[`crate::cloud`]）。
+    /// 界面据此给一个「新建上游」的入口
+    pub bedrock: Option<cloud::BedrockDraft>,
 }
 
 impl Plan {
@@ -288,7 +291,7 @@ pub fn plan_adopt(
     around: &Around,
 ) -> Result<Plan, PlanError> {
     if c.id == crate::desktop::ID {
-        return crate::desktop::plan_adopt(c, home, gw, None);
+        return crate::desktop::plan_adopt(c, home, gw, None, around);
     }
     // 什么时候生效、有什么代价，按装着的版本说
     let c = &c.clone().here(home);
@@ -332,6 +335,18 @@ pub fn plan_adopt(
     plan.carries_secret |= plan.also.iter().any(|p| p.carries_secret);
     let (mut notes, shadows) = adopt_notes(c, home, gw);
     notes.extend(cloud_notes(c, home, &current, &on, around));
+    // 原来直连 Bedrock 的：按那一套设置新建上游要填的，和凭据上要说的话
+    let off = |cloud: Cloud| {
+        on.iter()
+            .any(|o| o.cloud == cloud && o.at.turned_off_here())
+    };
+    if off(Cloud::Bedrock) || off(Cloud::Mantle) {
+        let path = c.config_path(home);
+        let (draft, more) =
+            cloud::claude_code_draft(home, &path, &current, around, off(Cloud::Bedrock));
+        notes.extend(more);
+        plan.bedrock = Some(draft);
+    }
     plan.notes = notes;
     plan.shadows = shadows;
     Ok(plan)
@@ -570,6 +585,7 @@ pub(crate) fn adopt_file(
         format: fmt,
         also: Vec::new(),
         prior: prior_rec.map(|r| (r.backup, r.created_file)),
+        bedrock: None,
     })
 }
 
@@ -957,6 +973,7 @@ pub(crate) fn restore_file_plan(
             format: fmt,
             also: Vec::new(),
             prior: None,
+            bedrock: None,
         });
     };
 
@@ -1104,6 +1121,7 @@ pub(crate) fn restore_file_plan(
         format: fmt,
         also: Vec::new(),
         prior: None,
+        bedrock: None,
     })
 }
 

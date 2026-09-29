@@ -131,7 +131,16 @@ adopt.path.no_folder
 adopt.path.not_absolute
 adopt.path.not_folder
 adopt.path.unsaved
+adopt.plan.bedrock_no_credential
+adopt.plan.bedrock_profile_unusable
+adopt.plan.bedrock_refresh
+adopt.plan.bedrock_settings_only
+adopt.plan.bedrock_unseen
+adopt.plan.bedrock_unusable
+adopt.plan.claude_desktop.aws_dir
+adopt.plan.claude_desktop.bedrock_key
 adopt.plan.claude_desktop.no_claude_model
+adopt.plan.claude_desktop.was_cloud
 adopt.plan.cloud_above
 adopt.plan.cloud_managed
 adopt.plan.cloud_models

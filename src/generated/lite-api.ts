@@ -13,6 +13,17 @@ warnings: Array<Msg>,
 takes_effect: TakesEffect, };
 
 /**
+ * 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
+ *
+ * **凭据只有 `${变量名}` 和 profile 的名字**：客户端配置里写着的明文密钥不抄，也不经过这里
+ */
+export type BedrockDraft = { region: string, 
+/**
+ * 客户端自己写的 Bedrock 地址（VPC 端点、代理）。没写就是那个区域的标准地址
+ */
+base_url?: string | null, auth: DraftAuth, };
+
+/**
  * 一个客户端的配置位置：「更改路径…」那个对话框。
  *
  * **三处跟着同一个目录一起换**（`tw_adopt::locations`）：改一处，其余几处按这个
@@ -99,6 +110,11 @@ manual: ManualSetup,
  * 接管按钮**。只有 Claude Desktop 会有
  */
 managed?: Msg | null, };
+
+/**
+ * 新建的上游用哪种凭据
+ */
+export type DraftAuth = { "kind": "key", key: string, } | { "kind": "keys", access_key_id: string, secret_access_key: string, session_token?: string | null, } | { "kind": "profile", profile: string, } | { "kind": "none" };
 
 /**
  * 配置文件里的一处改动。
@@ -411,7 +427,12 @@ digest: string,
  * 顺序。DeepSeek Harness 的密钥在它自己的凭据文件里；Claude Desktop 一次改
  * 四个，`path` 那一个是它配置库里的那一份，其余三个在这里
  */
-also?: Array<FilePlanView>, };
+also?: Array<FilePlanView>, 
+/**
+ * 客户端原来直连 Bedrock：按它原来的设置新建 Bedrock 上游要填的。界面据此给一个
+ * 「新建上游」的入口；还原时没有
+ */
+bedrock?: BedrockDraft | null, };
 
 /**
  * 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的

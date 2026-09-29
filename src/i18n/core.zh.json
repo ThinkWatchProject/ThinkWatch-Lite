@@ -48,6 +48,12 @@
       "foundry": "Microsoft Foundry",
       "anthropic_aws": "Claude Platform on AWS"
     },
+    "aws_how": {
+      "credential_export": "awsCredentialExport 命令",
+      "sso": "IAM Identity Center 登录",
+      "credential_helper": "凭据脚本",
+      "idp": "经代理的身份提供方登录"
+    },
     "rule_why": {
       "ignore-previous": "典型的提示注入开头",
       "disregard": "典型的提示注入开头，使用 disregard 一类的动词",
@@ -766,6 +772,15 @@
     "adopt.plan.cloud_off.env": "环境变量中设置了 {name}，{client} 因此直连 {cloud:cloud}。接管期间关闭这个开关，还原时重新打开。",
     "adopt.plan.cloud_above": "{path} 打开了 {name}，其优先级高于接管写入的配置：在该目录中启动的 {client} 仍会直连 {cloud:cloud}。",
     "adopt.plan.cloud_models": "{names} 中没有设置 Bedrock 模型：用到这几类模型时，{client} 会以 Anthropic 的模型名向网关请求，需要在路由中添加规则，把这些名字改写为 Bedrock 上的模型。",
+    "adopt.plan.bedrock_unusable": "{client} 通过{how:aws_how}获取 AWS 凭据，网关无法使用这种方式：网关不执行命令，也不代为登录。新建的上游需要 Bedrock API 密钥、访问密钥，或写有访问密钥的 AWS profile。",
+    "adopt.plan.bedrock_profile_unusable": "AWS profile {profile} 通过 {setting} 获取凭据，网关不执行这类设置。新建的上游需要 Bedrock API 密钥、访问密钥，或写有访问密钥的 AWS profile。",
+    "adopt.plan.bedrock_no_credential": "未找到网关可用的 {client} AWS 凭据，新建上游时需要填写凭据。",
+    "adopt.plan.bedrock_settings_only": "{vars} 只写在 {path} 中，网关无法读取：网关的运行环境中有这个变量后，新建的上游才能使用；也可以在新建上游时直接填写。",
+    "adopt.plan.bedrock_unseen": "网关的运行环境中没有 {vars}：环境中有这个变量后，新建的上游才能使用；也可以在新建上游时直接填写。",
+    "adopt.plan.bedrock_refresh": "{path} 设置了 awsAuthRefresh，这是 Claude Code 在 AWS 凭据过期时执行的命令。网关不执行该命令；AWS 凭证文件发生变化时，网关会重新读取。",
+    "adopt.plan.claude_desktop.was_cloud": "Claude Desktop 当前通过配置「{name}」使用 {cloud:cloud}。接管期间改用 ThinkWatch 的配置，还原时切回「{name}」。",
+    "adopt.plan.claude_desktop.bedrock_key": "Claude Desktop 的 Bedrock API 密钥保存在 {path} 中，网关无法读取。新建的上游从环境变量 AWS_BEARER_TOKEN_BEDROCK 读取密钥，需要网关的运行环境中有这个变量；也可以在新建上游时直接填写密钥。",
+    "adopt.plan.claude_desktop.aws_dir": "Claude Desktop 从 {dir} 读取 AWS profile {profile}，而网关读取 ~/.aws 中的凭证文件（除非 AWS_SHARED_CREDENTIALS_FILE 和 AWS_CONFIG_FILE 指定了其他文件）。",
     "adopt.restore.config_gone": "配置文件已不存在，仅删除接管记录。",
     "adopt.restore.secret_lost": "{field} 的原值是密钥，仅保存在全文备份中，而 {backup} 已不存在。该字段已删除，需要手动重新填写。",
     "adopt.restore.file_removed": "该文件在接管时新建，还原后内容为空，已一并删除。",

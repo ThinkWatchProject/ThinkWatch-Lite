@@ -217,11 +217,23 @@ impl Place {
     }
 
     /// 配置文件以外还要看的地方（`tw_adopt::cloud::Around`）：这台电脑上的是用户环境和
-    /// 系统里的托管策略，WSL 里的是那个发行版里的托管策略
-    pub async fn around(&self) -> Around {
+    /// 系统里的托管策略，WSL 里的是那个发行版里的托管策略。
+    ///
+    /// `local_core`：core 就在这台电脑上，`${变量名}` 按它起的时候拿到的那一份用户环境解析。
+    /// 连着远程 core、或者用不着（诊断、重新指向）时不给，那时不说哪个变量网关看不见
+    pub async fn around(&self, local_core: bool) -> Around {
+        let core_env = if local_core {
+            Some(user_env::last().await.into_iter().collect())
+        } else {
+            None
+        };
         match self {
-            Place::Here => Around::here(user_env::last().await),
-            Place::Wsl(w) => Around::wsl(w),
+            Place::Here => {
+                let mut a = Around::here(user_env::last().await, true);
+                a.core_env = core_env;
+                a
+            }
+            Place::Wsl(w) => Around::wsl(w, core_env),
         }
     }
 
@@ -429,7 +441,7 @@ pub async fn plan_adopt(
                 &id,
                 &gw,
                 models,
-                &Around::here(user_env::last().await),
+                &place.around(!state.link.is_remote()).await,
             )?)
         }
         Place::Wsl(w) => {
@@ -443,7 +455,8 @@ pub async fn plan_adopt(
                 Ok((_, key, _)) => models_for(&c, &gw.base, &key).await?,
                 Err(_) => Vec::new(),
             };
-            let mut v = ops::plan_adopt_as(&w.home, &id, &owner, &gw, models, &Around::wsl(w))?;
+            let around = place.around(!state.link.is_remote()).await;
+            let mut v = ops::plan_adopt_as(&w.home, &id, &owner, &gw, models, &around)?;
             v.path = w.shown(Path::new(&v.path));
             v.notes
                 .extend(wsl::plan_notes(c.name, w, state.link.is_remote()));
@@ -475,7 +488,7 @@ pub async fn adopt_client(
     };
     let key = prepare_key(&state.control, &place.owner(&id)).await?;
     let models = models_for(&c, &base, &key.key).await?;
-    let around = place.around().await;
+    let around = place.around(!state.link.is_remote()).await;
     let mut r = ops::adopt(
         &place.home(),
         &backups(),
@@ -531,7 +544,7 @@ pub async fn diagnose_client(id: String, env: Option<String>) -> Out<Vec<wire::F
         Place::Here => Ok(ops::diagnose(
             &home_dir(),
             &id,
-            &Around::here(user_env::last().await),
+            &Place::Here.around(false).await,
         )?),
         Place::Wsl(w) => Ok(ops::diagnose_wsl(&w, &id)?),
     }
@@ -783,7 +796,7 @@ impl LeftBehind {
                 let name = b.place.name(&c);
                 match prepare(b.place.owner(c.id), c.clone()).await {
                     Ok((key, models)) => {
-                        let around = b.place.around().await;
+                        let around = b.place.around(false).await;
                         match ops::repoint(&b.home, backups, &c, base, &key, models, &around) {
                             Ok(s) => out.synced.push(wire::KeySynced { name, ..s }),
                             Err(f) => out.failed.push(wire::KeySyncFailed { name, ..f }),
@@ -948,7 +961,7 @@ pub(crate) async fn sync_rotated(
         .await
         .map_err(|e| failed(e.into_msg()))?;
     let models = models_for(c, &base, fresh).await.map_err(failed)?;
-    let around = owner.place.around().await;
+    let around = owner.place.around(false).await;
     ops::repoint(
         &owner.place.home(),
         &backups(),

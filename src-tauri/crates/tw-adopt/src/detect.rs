@@ -891,7 +891,13 @@ pub fn diagnose(
 /// 在 WSL 里的 shell 配置里，不在 Windows 的注册表里 —— 路径和 `sed` 命令都写成
 /// WSL 终端里能直接用的样子。
 pub fn diagnose_wsl(c: &Client, w: &WslHome) -> Vec<Finding> {
-    diagnose_in(c, &w.home, None, Some(w), &crate::cloud::Around::wsl(w))
+    diagnose_in(
+        c,
+        &w.home,
+        None,
+        Some(w),
+        &crate::cloud::Around::wsl(w, None),
+    )
 }
 
 fn diagnose_in(

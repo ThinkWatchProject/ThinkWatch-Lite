@@ -6,10 +6,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Reveal } from "@/ui/motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
+import { useNav } from "@/nav";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
-import type { DetectedClient, FieldChange, PlanView } from "@/types";
+import type { BedrockDraft, DetectedClient, FieldChange, PlanView } from "@/types";
 import { ClientMark, DISCLOSURE, Tile, useDialogFocus } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 
@@ -29,6 +30,7 @@ export function PlanDialog({
   restore,
   stale = false,
   pending,
+  bedrockUpstreams = [],
   onCancel,
   onConfirm,
 }: {
@@ -38,6 +40,8 @@ export function PlanDialog({
   /** 刚才确认时文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
   stale?: boolean;
   pending: boolean;
+  /** 网关里已有的 Bedrock 上游（名字）。客户端原来直连 Bedrock 时要说有没有 */
+  bedrockUpstreams?: string[];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -105,6 +109,15 @@ export function PlanDialog({
               </div>
             )}
 
+            {!restore && plan.bedrock && (
+              <BedrockOffer
+                draft={plan.bedrock}
+                client={client.name}
+                existing={bedrockUpstreams}
+                disabled={pending}
+              />
+            )}
+
             {(plan.notes.length > 0 || (restore && plan.key)) && (
               <div className="flex flex-col gap-1">
                 <p className="tw-head">{t.notes}</p>
@@ -158,6 +171,56 @@ export function PlanDialog({
   );
 }
 
+/**
+ * 客户端原来直连 Bedrock：网关里有没有 Bedrock 上游，和按它原来的设置新建一个的入口。
+ *
+ * 新建走上游页自己的那个对话框（深链带上 `draft` 预填），**不在这里另开一个**：对话框只有
+ * 一份，在上游页里。凭据只有 `${变量名}` 和 profile 的名字，这里照原样显示。
+ */
+function BedrockOffer({
+  draft,
+  client,
+  existing,
+  disabled,
+}: {
+  draft: BedrockDraft;
+  client: string;
+  existing: string[];
+  disabled: boolean;
+}) {
+  const t = useText(clientsText);
+  const nav = useNav();
+  const a = draft.auth;
+  const parts = [
+    t.bedrockRegion(draft.region),
+    ...(draft.base_url ? [t.bedrockAddress(draft.base_url)] : []),
+    a.kind === "key"
+      ? t.bedrockKey(a.key)
+      : a.kind === "keys"
+        ? t.bedrockKeys(a.access_key_id)
+        : a.kind === "profile"
+          ? t.bedrockProfile(a.profile)
+          : t.bedrockNoCredential,
+  ];
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+      <div className="flex min-w-0 flex-col gap-1 tw-body">
+        <p>{existing.length > 0 ? t.bedrockSome(existing) : t.bedrockNone(client)}</p>
+        <p className="break-words text-muted-foreground">{t.bedrockDraft(client, parts)}</p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        disabled={disabled}
+        onClick={() => nav.open("upstreams", { create: "upstream", draft })}
+      >
+        {t.bedrockCreate}
+      </Button>
+    </div>
+  );
+}
+
 /** 一项改动写成什么：密钥写名字，删除写「删除」，其余写值 */
 function FieldValue({ f, plan, restore }: { f: FieldChange; plan: PlanView; restore: boolean }) {
   const t = useText(clientsText);
@@ -166,8 +229,16 @@ function FieldValue({ f, plan, restore }: { f: FieldChange; plan: PlanView; rest
     const name = plan.key ?? "";
     return <span>{plan.key_created && !restore ? t.newKey(name) : t.keyNamed(name)}</span>;
   }
-  if (restore) return <span className="font-mono tw-label">{t.restoreTo(f.value ?? "")}</span>;
-  return <span className="font-mono tw-label">{f.value}</span>;
+  if (restore) return <span className="font-mono tw-label">{t.restoreTo(literal(f.value ?? ""))}</span>;
+  return <span className="font-mono tw-label">{literal(f.value ?? "")}</span>;
+}
+
+/**
+ * 写进去的值怎么显示。**空串写成 `""`**：Claude Code 的云服务商开关接管时写成空串，
+ * 照原样画出来是一格空白，看不出写了什么
+ */
+function literal(v: string): string {
+  return v === "" ? '""' : v;
 }
 
 /**

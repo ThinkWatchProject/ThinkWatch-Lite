@@ -496,6 +496,7 @@ fn view(
                 deletes: a.delete_file,
             })
             .collect(),
+        bedrock: p.bedrock.clone().map(Into::into),
     }
 }
 
@@ -580,7 +581,7 @@ fn plan_for(
     around: &Around,
 ) -> Result<plan::Plan, plan::PlanError> {
     if c.id == tw_adopt::desktop::ID {
-        tw_adopt::desktop::plan_adopt(c, home, gw, Some(&gw.models))
+        tw_adopt::desktop::plan_adopt(c, home, gw, Some(&gw.models), around)
     } else {
         plan::plan_adopt(c, home, gw, around)
     }
@@ -1051,6 +1052,17 @@ pub(crate) mod tests {
             "{:?}",
             p.fields
         );
+        // 交给界面的整份（说明、新建上游的草稿）里也没有：草稿里只有变量引用
+        let sent = serde_json::to_string(&p).unwrap();
+        for s in secrets {
+            assert!(!sent.contains(s), "{s} goes to the UI:\n{sent}");
+        }
+        assert!(
+            matches!(&p.bedrock, Some(d) if d.region == "us-west-2"
+                && matches!(&d.auth, wire::DraftAuth::Key { key } if key == "${AWS_BEARER_TOKEN_BEDROCK}")),
+            "{:?}",
+            p.bedrock
+        );
 
         adopt(
             home.path(),
@@ -1087,7 +1099,7 @@ pub(crate) mod tests {
         .unwrap();
         let later = Around {
             env: [("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string())].into(),
-            managed: Vec::new(),
+            ..Default::default()
         };
         let e = adopt(
             home.path(),
