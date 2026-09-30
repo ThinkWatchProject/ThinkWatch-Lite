@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FunnelXIcon } from "lucide-react";
 import { useText } from "@/i18n";
-import { appText } from "@/App.i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { EMPTY_FILTER, facets, filterRows, hasAnyFilter, sortRows } from "@/requestTable";
 import type { CoreStatus, RequestRow, SessionView } from "@/types";
@@ -79,7 +78,6 @@ export default function TrafficPage({
   view: TrafficView;
 }) {
   const t = useText(trafficText);
-  const pages = useText(appText).surfaces;
   const common = useText(commonText);
   const nav = useNav();
   const { filter, setFilter, sortKey, sortDir, toggleSort, grouped, setGrouped, openGroups, setOpenGroups } = view;
@@ -255,7 +253,6 @@ export default function TrafficPage({
     <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
       <div className="sticky left-0 px-5">
         <PageHeader
-          title={pages.requests}
           actions={
             /*
               **归组是个视角，不是一个筛子**：它不改变哪些行在表里，只改变怎么摆。所以

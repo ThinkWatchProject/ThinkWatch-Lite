@@ -131,7 +131,6 @@ export default function McpPage({
     <Tabs value={tab} onValueChange={(v) => setTab(v as McpTab)} className="gap-0">
       <Page>
         <PageHeader
-          title={t.title}
           summary={data.data ? <Summary of={data.data} /> : data.loading ? <Skeleton className="my-1 h-3 w-56 rounded-sm" /> : null}
           actions={
             <Button size="sm" variant="outline" pending={rescanning} disabled={!data.data} onClick={rescan}>

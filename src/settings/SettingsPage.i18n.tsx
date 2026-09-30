@@ -24,7 +24,6 @@ const afterEn = isMac
  */
 export const settingsText = messages(
   {
-    title: "设置",
 
     // 页头的摘要
     running: "运行中",
@@ -106,7 +105,6 @@ export const settingsText = messages(
     uninstalledRow: "已完成卸载。",
   },
   {
-    title: "Settings",
 
     running: "Running",
     gateway: "Gateway",

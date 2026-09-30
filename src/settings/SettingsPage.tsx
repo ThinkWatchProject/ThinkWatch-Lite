@@ -163,7 +163,7 @@ export function SettingsPage({
       <SettingsShell
         items={items}
         header={
-          <PageHeader title={t.title} summary={<Summary local={local} status={status} ov={view} linked={linked} />} />
+          <PageHeader summary={<Summary local={local} status={status} ov={view} linked={linked} />} />
         }
       >
         {remote ? (

@@ -8,7 +8,6 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 export const securityPageText = messages(
   {
     /** 和源列表里那一项同一个词 */
-    title: "安全",
     log: "日志",
     /** 页头上几项防护各在哪一档：「2 项拦截」 */
     modes: {
@@ -48,7 +47,6 @@ export const securityPageText = messages(
     ruleCreated: (name: string) => `已创建规则「${name}」`,
   },
   {
-    title: "Security",
     log: "Log",
     modes: {
       enforce: "enforcing",

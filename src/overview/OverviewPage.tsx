@@ -99,7 +99,6 @@ export default function OverviewPage({
   return (
     <Page>
       <PageHeader
-        title={t.title}
         summary={<OverviewStatus ov={ov} />}
         actions={<RangePicker value={range} onChange={setRange} align="end" />}
       />

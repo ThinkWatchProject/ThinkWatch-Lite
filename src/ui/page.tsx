@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
  * 规则见 src/ui/README.md 的「Layout」。
  *
  *   <Page width="wide">
- *     <PageHeader title={t.title} summary={t.summary(n)} actions={<Button size="sm">…</Button>} />
+ *     <PageHeader summary={t.summary(n)} actions={<Button size="sm">…</Button>} />
  *     …内容…
  *   </Page>
  */
@@ -50,68 +50,45 @@ export function Page({
 }
 
 /**
- * 外壳和页头之间的约定：页头的标题在不在视野里。
+ * 每一页顶上那一块：一行摘要、右侧的操作，可选的一排标签。
  *
- * **标题只写一次。**页头里有大标题时，窗口顶上那条 38px 的工具栏不再重复页名；
- * 往下滚、页头的标题滚出视野之后，工具栏上淡入一个小标题 —— 和 macOS 的系统
- * 设置、访达一样。还没有页头的页，工具栏照旧一直显示页名。
- */
-export const PageTitleContext = createContext<((visible: boolean | null) => void) | null>(null);
-
-/**
- * 每一页顶上那一块：标题、一行摘要、右侧的操作，可选的一排标签。
+ * **页名不在这里。**页名只写一次，写在窗口顶上那条 38px 的工具栏里、收起源列表的
+ * 按钮右边（App.tsx），和 macOS 的访达、系统设置一样。页头从摘要开始。
  *
- * · `title`：页名，和源列表里那一项同一个词。
  * · `summary`：一行，说这一页现在的总体状态 —— 数字（`12 个上游 · 1 个不可用`）、
  *   状态点（`StatusLabel`）。**不写说明文字**：界面不解释机制。
  * · `actions`：这一页的主要动作。`Button size="sm"`；最多一个 `default` 变体（主
  *   动作，放最右），其余 `outline` / `ghost`。
  * · `tabs`：页内的标签（`Tabs` 的 `TabsList`）。有标签时页头下面带一条分隔线。
+ *
+ * 三样都没有时只留顶上的边距，内容照样从同一条线开始。
  */
 export function PageHeader({
-  title,
   summary,
   actions,
   tabs,
   className,
 }: {
-  title: ReactNode;
   summary?: ReactNode;
   actions?: ReactNode;
   tabs?: ReactNode;
   className?: string;
 }) {
-  const report = useContext(PageTitleContext);
-  const ref = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!report || !el) return;
-    report(true);
-    if (typeof IntersectionObserver === "undefined") return () => report(null);
-    const io = new IntersectionObserver(([e]) => report(e?.isIntersecting ?? true), { threshold: 0 });
-    io.observe(el);
-    return () => {
-      io.disconnect();
-      report(null);
-    };
-  }, [report]);
-
+  const row = summary || actions;
   return (
-    <header data-slot="page-header" className={cn("flex flex-col pt-5", tabs ? "pb-0" : "pb-4", className)}>
-      <div className="flex min-h-7 items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 ref={ref} className="truncate tw-title text-foreground">
-            {title}
-          </h1>
-          {summary && (
-            <div data-slot="page-summary" className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 tw-body text-muted-foreground">
-              {summary}
-            </div>
-          )}
+    <header data-slot="page-header" className={cn("flex flex-col pt-4", row && !tabs ? "pb-4" : "pb-0", className)}>
+      {row && (
+        <div className="flex min-h-7 items-center gap-4">
+          <div
+            data-slot="page-summary"
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 tw-body text-muted-foreground"
+          >
+            {summary}
+          </div>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </div>
-      {tabs && <div className="mt-3 border-b border-border">{tabs}</div>}
+      )}
+      {tabs && <div className={cn("border-b border-border", row && "mt-3")}>{tabs}</div>}
     </header>
   );
 }

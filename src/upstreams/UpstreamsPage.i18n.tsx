@@ -8,7 +8,6 @@ import { messages } from "@/i18n";
  */
 export const upstreamsPageText = messages(
   {
-    title: "上游",
     hero: {
       upstreams: (n: ReactNode, _count: number) => <>{n} 个上游</>,
       healthy: (n: ReactNode) => <>{n} 正常</>,
@@ -56,7 +55,6 @@ export const upstreamsPageText = messages(
     sheetGone: "删除后，此价目表的倍率与模型覆盖将从配置文件中移除，可在版本历史中恢复。",
   },
   {
-    title: "Upstreams",
     hero: {
       upstreams: (n: ReactNode, count: number) => <>{n} {count === 1 ? "upstream" : "upstreams"}</>,
       healthy: (n: ReactNode) => <>{n} healthy</>,

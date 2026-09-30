@@ -46,7 +46,6 @@ export default function KeysPage() {
   return (
     <Page width="wide">
       <PageHeader
-        title={t.title}                       // same word as the sidebar item
         summary={<>
           <SummaryItem value={keys.length} label={t.keysUnit} />
           <SummaryItem lead={<StatusDot tone="idle" />} value={disabled} label={t.disabled} />
@@ -72,7 +71,7 @@ export default function KeysPage() {
 - The shell owns scrolling: each page is mounted inside its own `overflow-y-auto`
   container (Traffic scrolls itself). Do not add another scroll container around the
   whole page; inner scroll areas (a long list in a dialog) are fine.
-- **`PageHeader`**: `title` (tw-title), one-line `summary` (numbers and status only,
+- **`PageHeader`**: one-line `summary` (numbers and status only,
   no explanations), `actions` on the right (`size="sm"`; at most one `default`-variant
   primary button, placed last), optional `tabs` (a `TabsList`; the header then draws a
   divider under it).
@@ -83,7 +82,7 @@ export default function KeysPage() {
   ```tsx
   <Tabs value={tab} onValueChange={setTab}>
     <Page>
-      <PageHeader title={t.title} tabs={
+      <PageHeader tabs={
         <TabsList variant="line">
           <TabsTrigger value="upstreams">{t.upstreams}<Count n={n} /></TabsTrigger>
           <TabsTrigger value="proxies">{t.proxies}</TabsTrigger>
@@ -94,10 +93,9 @@ export default function KeysPage() {
     </Page>
   </Tabs>
   ```
-- **The page name is written once.** When a page renders a `PageHeader`, the 38px window
-  toolbar hides its page name, and fades a small title back in when the header scrolls out
-  of view (macOS behaviour). Pages without a header keep the toolbar title. Do not render
-  a second title anywhere.
+- **The page name is written once, in the toolbar.** The 38px window toolbar shows the
+  page name right of the sidebar toggle, always. `PageHeader` has no title: it starts with
+  the summary line. Do not render a second title anywhere.
 - **`PageSection`**: a titled block inside the page (tw-head title, optional one-line
   description and actions). Sections are 32px apart; the first one after the header
   is 4px below it.
@@ -127,8 +125,8 @@ Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outsi
 | Class | Size | Use |
 | --- | --- | --- |
 | `tw-display` | 34px/600 | The one headline figure on Overview. Nowhere else. |
-| `tw-title` | 15px/600 | Page title (`PageHeader`), dialog title. One per screen. |
-| `tw-head` | 13px/500 | Section titles, table headers, emphasised labels. |
+| `tw-title` | 15px/600 | Dialog title, standalone-window title. One per screen. |
+| `tw-head` | 13px/500 | Page name in the toolbar, section titles, table headers, emphasised labels. |
 | `tw-body` | 13px | Body text, table cells. |
 | `tw-label` | 11px | Secondary notes, units, timestamps, captions. |
 

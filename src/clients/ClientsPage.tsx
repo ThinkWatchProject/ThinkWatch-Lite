@@ -11,7 +11,6 @@ import { StatusDot } from "@/ui/status-dot";
 import { useNav, useNavParams } from "@/nav";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
-import { appText } from "@/App.i18n";
 import type {
   ClientsResponse,
   DetectedClient,
@@ -101,7 +100,6 @@ export default function ClientsPage({
 }) {
   const t = useText(clientsText);
   const rt = useText(remoteText);
-  const title = useText(appText).surfaces.clients;
   const nav = useNav();
   /** 连着远程 core：这一页改的仍是这台机器，写进去的是服务器的网关 */
   const remote = useRemote();
@@ -321,7 +319,6 @@ export default function ClientsPage({
   return (
     <Page className="@container/page">
       <PageHeader
-        title={title}
         summary={<Summary data={data} groups={groups} loading={clients.loading} remote={remote !== null} />}
         actions={
           // **退路要一直看得见。**用户敢按下「接管」的前提，就是看得见怎么退回去

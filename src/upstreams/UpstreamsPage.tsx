@@ -339,7 +339,6 @@ export default function UpstreamsPage({
       {/* 具名容器：窄了之后页头的次要操作只画图标、表格收起走势（和密钥页同一个断点） */}
       <Page className="@container/page">
         <PageHeader
-          title={t.title}
           summary={providers.length > 0 ? <Hero providers={providers} stats={stats} /> : undefined}
           actions={actions}
           tabs={
