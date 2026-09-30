@@ -48,6 +48,7 @@ pub fn targets(home: &Path) -> Vec<wire::McpTargetView> {
                 copyable: t.copyable,
                 why_not: t.why_not(),
                 movable: tw_adopt::locations::layout(t.client).is_some(),
+                present: t.present(home),
             }
         })
         .collect()

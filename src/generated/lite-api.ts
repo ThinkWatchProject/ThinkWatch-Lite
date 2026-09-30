@@ -400,7 +400,12 @@ why_not?: Msg | null,
 /**
  * 配置位置能换（MCP 页的右键菜单里给「更改路径…」），见 [`ClientLocations`]
  */
-movable: boolean, };
+movable: boolean, 
+/**
+ * 这台电脑上有它（见 `tw_adopt::mcp::Target::present`）。没有的不占矩阵的一列，
+ * 列在矩阵下方，能换位置的可以就地指定
+ */
+present: boolean, };
 
 export type McpView = { name: string, client: string, command: string, args: Array<string>, 
 /**

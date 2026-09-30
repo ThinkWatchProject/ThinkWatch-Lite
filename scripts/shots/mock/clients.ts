@@ -367,13 +367,13 @@ export function plan(id: string, restore: boolean): PlanView {
 
 // ───────────────────────────────────────── MCP 与扫描
 
-/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少） */
+/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少）。Zed、Antigravity CLI 与 DeepSeek Harness 这台机器上没有，画在矩阵下方 */
 export function mcpTargets(): McpTargetView[] {
   return [
-    { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null, movable: true },
-    { client: "claude-desktop", name: "Claude Desktop", path: "~/Library/Application Support/Claude/claude_desktop_config.json", copyable: true, why_not: null, movable: false },
-    { client: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", copyable: true, why_not: null, movable: true },
-    { client: "codex", name: "Codex", path: "~/.codex/config.toml", copyable: true, why_not: null, movable: true },
+    { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null, movable: true, present: true },
+    { client: "claude-desktop", name: "Claude Desktop", path: "~/Library/Application Support/Claude/claude_desktop_config.json", copyable: true, why_not: null, movable: false, present: true },
+    { client: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", copyable: true, why_not: null, movable: true, present: true },
+    { client: "codex", name: "Codex", path: "~/.codex/config.toml", copyable: true, why_not: null, movable: true, present: true },
     {
       client: "opencode",
       name: "opencode",
@@ -383,7 +383,7 @@ export function mcpTargets(): McpTargetView[] {
         "adopt.mcp.unverified_format",
         "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
       ),
-      movable: true,
+      movable: true, present: true,
     },
     {
       client: "antigravity-cli",
@@ -394,7 +394,7 @@ export function mcpTargets(): McpTargetView[] {
         "adopt.mcp.unverified_format",
         "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
       ),
-      movable: true,
+      movable: true, present: false,
     },
     {
       client: "zed",
@@ -402,7 +402,19 @@ export function mcpTargets(): McpTargetView[] {
       path: "~/.config/zed/settings.json",
       copyable: false,
       why_not: msg("adopt.mcp.zed_structure", "Zed's context servers use a different structure and do not take the command/args form"),
-      movable: true,
+      movable: true, present: false,
+    },
+    {
+      client: "dsh",
+      name: "DeepSeek Harness",
+      path: "~/.dsh/cordis.patch.yml",
+      copyable: false,
+      why_not: msg(
+        "adopt.mcp.dsh_rows",
+        "DeepSeek Harness keeps each MCP server as a plugin row in its patch file, which is listed here but not written to",
+      ),
+      movable: false,
+      present: false,
     },
   ];
 }

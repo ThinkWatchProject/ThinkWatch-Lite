@@ -646,6 +646,9 @@ pub struct McpTargetView {
     pub why_not: Option<Msg>,
     /// 配置位置能换（MCP 页的右键菜单里给「更改路径…」），见 [`ClientLocations`]
     pub movable: bool,
+    /// 这台电脑上有它（见 `tw_adopt::mcp::Target::present`）。没有的不占矩阵的一列，
+    /// 列在矩阵下方，能换位置的可以就地指定
+    pub present: bool,
 }
 
 /// 客户端配置位置里的一项。

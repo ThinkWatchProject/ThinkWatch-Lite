@@ -3,6 +3,7 @@ import { Badge } from "@/ui/badge";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/ui/dropdown-menu";
 import { ClientLogo } from "@/ui/logos";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
@@ -23,6 +24,8 @@ import { shortPath } from "./parts";
 /**
  * MCP 服务器矩阵：行是服务器，列是客户端（带各自的标志）。
  *
+ * **列只给这台电脑上有的客户端**（`present`）：没人把八个客户端全装上，全画出来
+ * 表格只会横着撑出窗口。没检测到的列在矩阵下方一行，能换位置的就地指定。
  * **不能写的客户端也在表里** —— 看得见是第一目标，只是它的格子点不动。
  * 点空格从已配置它的客户端复制过来（悬停时是「+」），点已配置的格子从那个
  * 客户端移除（悬停时是「−」）；两样都先算出改动给用户确认，不直接写。点一行
@@ -53,8 +56,12 @@ export function Matrix({
   onMove: (client: string) => void;
 }) {
   const t = useText(mcpText);
-  // 列 = 所有能写的位置 ∪ 已经配了东西的位置
-  const clients = [...new Set([...targets.map((x) => x.client), ...mcp.map((m) => m.client)])];
+  // 列 = 这台电脑上有的客户端 ∪ 已经配了东西的（配了东西就一定有）
+  const clients = [
+    ...new Set([...targets.filter((x) => x.present).map((x) => x.client), ...mcp.map((m) => m.client)]),
+  ];
+  const absent = targets.filter((x) => !clients.includes(x.client));
+  const absentLine = absent.length > 0 && <Absent targets={absent} onMove={onMove} />;
   const nameOf = (c: string) => targets.find((x) => x.client === c)?.name ?? c;
   const canWrite = (c: string) => targets.find((x) => x.client === c)?.copyable ?? false;
   const whyNot = (c: string) => coreText(targets.find((x) => x.client === c)?.why_not) || t.cannotWrite;
@@ -64,18 +71,22 @@ export function Matrix({
   const shown = usePresentList(names, (n) => n);
 
   if (names.length === 0) {
+    const none = clients.length === 0;
     return (
-      <EmptyState
-        icon={<PlugIcon />}
-        title={t.noMcp}
-        description={t.noMcpHint}
-        action={
-          <Button size="sm" variant="outline" pending={rescanning} onClick={onRescan}>
-            {!rescanning && <RefreshCwIcon />}
-            {t.rescan}
-          </Button>
-        }
-      />
+      <div className="flex flex-col gap-3">
+        <EmptyState
+          icon={<PlugIcon />}
+          title={none ? t.noClients : t.noMcp}
+          description={none ? t.noClientsHint : t.noMcpHint}
+          action={
+            <Button size="sm" variant="outline" pending={rescanning} onClick={onRescan}>
+              {!rescanning && <RefreshCwIcon />}
+              {t.rescan}
+            </Button>
+          }
+        />
+        {absentLine}
+      </div>
     );
   }
 
@@ -214,7 +225,47 @@ export function Matrix({
         </span>
         <span>{t.legendNote}</span>
       </p>
+      {absentLine}
     </div>
+  );
+}
+
+/**
+ * 矩阵下方一行：这台电脑上没检测到的客户端。**装在别处的由用户指定**：能换位置的
+ * 给「指定位置…」，一个就直接打开，几个就先选是哪一个。指定之后重扫，它就有了一列
+ */
+function Absent({ targets, onMove }: { targets: McpTargetView[]; onMove: (client: string) => void }) {
+  const t = useText(mcpText);
+  const movable = targets.filter((x) => x.movable);
+  const only = movable.length === 1 ? movable[0] : undefined;
+  const link = "h-auto p-0 tw-label text-muted-foreground hover:text-foreground";
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 tw-label text-muted-foreground">
+      <span>{t.absent(targets.map((x) => x.name))}</span>
+      {only ? (
+        <Button variant="link" className={link} onClick={() => onMove(only.client)}>
+          {t.locate}
+        </Button>
+      ) : (
+        movable.length > 1 && (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="link" className={link}>
+                {t.locate}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {movable.map((x) => (
+                <DropdownMenuItem key={x.client} onSelect={() => onMove(x.client)}>
+                  <ClientLogo id={x.client} name={x.name} size={14} className="text-muted-foreground" />
+                  {x.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      )}
+    </p>
   );
 }
 

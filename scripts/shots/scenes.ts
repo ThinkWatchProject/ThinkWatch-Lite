@@ -43,8 +43,7 @@ export const SCENES: Scene[] = [
   { id: "upstreams", page: "upstreams" },
   { id: "routing", page: "routing" },
   { id: "security", page: "security" },
-  // 侧栏收起来：六个客户端一列一个，展开侧栏时这张表比内容区宽，右边两列要横着滚才看得到
-  { id: "mcp", page: "mcp", storage: { rail: "collapsed" } },
+  { id: "mcp", page: "mcp" },
   { id: "settings", page: "settings" },
   {
     // 路由页的试算：Cursor 那把密钥用 OpenAI 的格式要 Sonnet，会走到哪儿、为什么、
