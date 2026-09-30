@@ -12,6 +12,25 @@ pre-fills a new PR's base with the repo's default branch, which is
 opened against `main`, click *Edit* next to the PR title and change the
 base — the commits and the discussion carry over. A bot will remind you.
 
+## Layout
+
+```
+src/              React 19 + Tailwind 4 interface
+src-tauri/        Tauri 2 shell: supervises the local core, connects to a
+                  local or remote core, draws the menu bar item and the tray
+                  menu, sends system notifications, installs updates
+src-tauri/crates/ tw-adopt (pointing clients at the gateway, MCP configuration)
+                  and tw-scan (scanning client configuration)
+scripts/shots/    the product screenshot pipeline (see CONTRIBUTING.md)
+```
+
+The gateway itself lives in ThinkWatch Core; this repository holds no routing,
+forwarding, or accounting logic. The app reaches core's control channel over a
+unix socket on macOS and Linux and over a loopback port on Windows, or over a
+TCP port when core runs on a server. Every connection begins with an encrypted
+handshake (Noise `NNpsk0`) keyed with the control key from core's
+configuration (`listen.control.key`); no TLS certificates are involved.
+
 ## Scope, so you don't build something that gets declined
 
 These decisions are settled and not up for a PR:
