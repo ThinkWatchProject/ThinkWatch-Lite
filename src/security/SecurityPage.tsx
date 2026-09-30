@@ -261,7 +261,6 @@ export default function SecurityPage({
     <Tabs value={tab} onValueChange={(v) => setTab(v as SecurityTab)} className="gap-0">
       <Page>
         <PageHeader
-          title={t.title}
           summary={<Summary detail={d} loading={detail.loading} log={log} range={range} />}
           tabs={
             <TabsList variant="line">

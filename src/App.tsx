@@ -57,7 +57,7 @@ import { connText } from "./connection/connection.i18n";
 import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type Surface } from "./nav";
 import { Banner } from "@/ui/banner";
 import { Reveal } from "@/ui/motion";
-import { Page, PageHeader, PageTitleContext } from "@/ui/page";
+import { Page, PageHeader } from "@/ui/page";
 import { ErrorState, TableSkeleton } from "@/ui/states";
 import { invalidateAll, resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
@@ -331,14 +331,6 @@ function Shell({ first }: { first: boolean }) {
   );
   const nav = useMemo<Nav>(() => ({ surface: tab, open }), [tab, open]);
   const navValue = useMemo(() => ({ nav, delivery }), [nav, delivery]);
-
-  /*
-    页头的标题在不在视野里（见 `PageTitleContext`）。`null`：这一页没有页头，工具栏
-    一直写页名；`true`：页头的大标题看得见，工具栏不重复；`false`：滚出去了，工具栏
-    淡入小标题。
-  */
-  const [headerSeen, setHeaderSeen] = useState<boolean | null>(null);
-  const reportHeader = useCallback((v: boolean | null) => setHeaderSeen(v), []);
 
   // ⌘R 和配置改动之后立刻重读一次。等下一次事件的话，刚点完「保存」还看着旧值
   const [nudge, setNudge] = useState(0);
@@ -667,10 +659,10 @@ function Shell({ first }: { first: boolean }) {
     [refreshAll],
   );
 
-  /** 还没取到概览时的占位：页头照常，内容是表格骨架；读失败了是「读取失败」和重试 */
+  /** 还没取到概览时的占位：空页头占住边距，内容是表格骨架；读失败了是「读取失败」和重试 */
   const skeleton = (
     <Page>
-      <PageHeader title={t.surfaces[tab]} />
+      <PageHeader />
       {ovError !== null ? (
         <ErrorState error={ovError} onRetry={() => setNudge((n) => n + 1)} />
       ) : (
@@ -682,471 +674,460 @@ function Shell({ first }: { first: boolean }) {
   return (
     <TooltipRoot>
       <NavContext.Provider value={navValue}>
-        <PageTitleContext.Provider value={reportHeader}>
-          <SidebarProvider
-            open={railOpen}
-            onOpenChange={setRailOpen}
-            className="h-screen min-h-0 text-foreground"
-            style={
-              {
-                // 覆盖掉 shadcn 的 16rem / 3rem。展开 196px：这里只放一列短词。收起 80px
-                // 是红绿灯定的：最右那颗的右边缘在约 71pt，窄于这个数右边框就从灯上穿过去
-                "--sidebar-width": "196px",
-                "--sidebar-width-icon": "80px",
-                "--sidebar": "var(--chrome-rail)",
-                "--sidebar-border": "var(--chrome-hair)",
-              } as React.CSSProperties
-            }
+        <SidebarProvider
+          open={railOpen}
+          onOpenChange={setRailOpen}
+          className="h-screen min-h-0 text-foreground"
+          style={
+            {
+              // 覆盖掉 shadcn 的 16rem / 3rem。展开 196px：这里只放一列短词。收起 80px
+              // 是红绿灯定的：最右那颗的右边缘在约 71pt，窄于这个数右边框就从灯上穿过去
+              "--sidebar-width": "196px",
+              "--sidebar-width-icon": "80px",
+              "--sidebar": "var(--chrome-rail)",
+              "--sidebar-border": "var(--chrome-hair)",
+            } as React.CSSProperties
+          }
+        >
+          {/*
+            源列表。**在 macOS 上整条都是拖拽区**，是半透的系统材质（`data-vibrant`，
+            见 index.css）；别的平台是实色。可以收起：收起之后只剩图标，名字进悬浮说明。
+          */}
+          <Sidebar
+            collapsible="icon"
+            className="border-r border-sidebar-border"
+            style={{ color: "var(--chrome-text)" }}
+            {...drag}
           >
+            {/* 红绿灯占掉左上角，内容从它下面开始。Windows、Linux 上是系统标题栏，没有这一块 */}
+            {isMac && <SidebarHeader className="h-[38px] p-0" {...drag} />}
+
+            <SidebarContent className={cn("gap-0", !isMac && "pt-2")}>
+              {SOURCES.map((g, gi) => (
+                <SidebarGroup key={g.group} className="px-2.5 py-0">
+                  {/* 没有分组标题，只有细分隔线：四个标题会吃掉列表约三分之一的高度 */}
+                  {gi > 0 && <SidebarSeparator className="mx-1.5 my-2.5 opacity-70" />}
+                  <SidebarGroupContent>
+                    <SidebarMenu className="gap-px">
+                      {g.items.map((it) => {
+                        const on = tab === it.id;
+                        /** 这一页的快捷键：按在源列表里的位置数，⌘1…⌘9 */
+                        const combo = pageCombo(SURFACES.indexOf(it.id));
+                        // 客户端配置里出现了新东西：挂个角标，直到去看过
+                        const badge = it.id === "mcp" ? alerts.length : 0;
+                        const Icon = it.icon;
+                        const label = t.surfaces[it.id];
+                        // 没连上时需要 core 数据的几页置灰；设置始终可用，连接管理在那里
+                        const off = !linked && it.id !== "settings";
+                        return (
+                          <SidebarMenuItem key={it.id}>
+                            <SidebarMenuButton
+                              disabled={off}
+                              isActive={on}
+                              onClick={() => open(it.id)}
+                              aria-current={on ? "page" : undefined}
+                              /*
+                                悬浮说明**只在收起时出来**（shadcn 的默认）：那时只剩图标，名字和快捷键
+                                都靠它。展开时名字就在图标旁边，再弹一个写着同一个名字的气泡是重复，
+                                快捷键改写在这一行的末尾
+                              */
+                              tooltip={{
+                                children: (
+                                  <>
+                                    {badge > 0 ? t.newFindings(label, badge) : label}
+                                    <Keys combo={combo} />
+                                  </>
+                                ),
+                              }}
+                              className={cn(
+                                "h-7 gap-2.5 px-2 text-(--chrome-text) transition-colors duration-(--motion-fast)",
+                                "hover:bg-(--chrome-hover) hover:text-(--chrome-strong) active:bg-(--chrome-selected)",
+                                "data-active:bg-(--chrome-selected) data-active:text-(--chrome-strong) data-active:font-medium",
+                                "[&>svg]:opacity-65 data-active:[&>svg]:opacity-100 hover:[&>svg]:opacity-100",
+                                off && "opacity-45",
+                              )}
+                            >
+                              <Icon size={16} />
+                              <span className="truncate">{label}</span>
+                              {/*
+                                行尾：快捷键和新发现的个数，收起时整段藏掉。**快捷键悬停、键盘聚焦时
+                                才出来**，和悬停底色一起淡入：常显的话右边多出一列 ⌘1…⌘9，读起来像
+                                计数。写成字不用键帽：这一行悬停时已经有底色，键帽是框中框。
+                                个数排在快捷键后面、同在一行里，两位数也不会压上去。快捷键不进按钮
+                                的名字（`aria-hidden`）：读屏从悬浮说明拿，说明收着也还是按钮的描述。
+                              */}
+                              <span className="ms-auto flex shrink-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
+                                <span
+                                  aria-hidden
+                                  className="tw-label text-(--chrome-dim) tw-num opacity-0 transition-opacity duration-(--motion-fast) group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
+                                >
+                                  {comboText(combo)}
+                                </span>
+                                {badge > 0 && (
+                                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 tw-label font-medium text-white tw-num">
+                                    {badge}
+                                  </span>
+                                )}
+                              </span>
+                            </SidebarMenuButton>
+                            {/* 收起时数字塞不下，只留一个点：它回答的是「那边有没有新东西」 */}
+                            {badge > 0 && (
+                              <span className="pointer-events-none absolute top-[7px] right-[7px] hidden size-[7px] rounded-full bg-destructive ring-2 ring-(--chrome-ground) group-data-[collapsible=icon]:block" />
+                            )}
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              ))}
+            </SidebarContent>
+
             {/*
-              源列表。**在 macOS 上整条都是拖拽区**，是半透的系统材质（`data-vibrant`，
-              见 index.css）；别的平台是实色。可以收起：收起之后只剩图标，名字进悬浮说明。
+              状态钉在源列表底部。**它要一直看得见** —— core 挂了是这个应用唯一「什么都
+              不工作」的状态。连接名在状态点和网关地址上面，点开是连接列表（`Switcher`）
             */}
-            <Sidebar
-              collapsible="icon"
-              className="border-r border-sidebar-border"
-              style={{ color: "var(--chrome-text)" }}
+            <SidebarFooter className="border-t px-3.5 py-2.5" style={{ borderColor: "var(--chrome-hair)" }}>
+              <Switcher
+                local={{
+                  text: c.text,
+                  short: c.short,
+                  tone: c.tone,
+                  addr: status?.gateway_addr ?? null,
+                  tip: (
+                    <>
+                      {status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text}
+                      {/* 监听设置没换成：上面的地址是还在服务的旧地址，原因写在这里 */}
+                      {status?.listen_error && <div>{t.listenStale(coreText(status.listen_error))}</div>}
+                    </>
+                  ),
+                }}
+              />
+            </SidebarFooter>
+          </Sidebar>
+
+          {/* 右侧：工具栏、横幅、内容。**这一列铺实色**：macOS 上窗口底是透明的 */}
+          <div className="flex min-w-0 flex-1 flex-col bg-background">
+            {/*
+              工具栏。整条是拖拽区，按钮不是。**在滚动容器外面**，钉住不动。收起源列表的
+              按钮放在这儿：收起之后源列表只有 80px，放不下；在内容这一侧两种状态下都在
+              同一个位置（访达、邮件也这么放）。
+            */}
+            <div
+              className="flex h-[38px] shrink-0 items-center gap-1.5 border-b border-sidebar-border px-3"
               {...drag}
             >
-              {/* 红绿灯占掉左上角，内容从它下面开始。Windows、Linux 上是系统标题栏，没有这一块 */}
-              {isMac && <SidebarHeader className="h-[38px] p-0" {...drag} />}
-
-              <SidebarContent className={cn("gap-0", !isMac && "pt-2")}>
-                {SOURCES.map((g, gi) => (
-                  <SidebarGroup key={g.group} className="px-2.5 py-0">
-                    {/* 没有分组标题，只有细分隔线：四个标题会吃掉列表约三分之一的高度 */}
-                    {gi > 0 && <SidebarSeparator className="mx-1.5 my-2.5 opacity-70" />}
-                    <SidebarGroupContent>
-                      <SidebarMenu className="gap-px">
-                        {g.items.map((it) => {
-                          const on = tab === it.id;
-                          /** 这一页的快捷键：按在源列表里的位置数，⌘1…⌘9 */
-                          const combo = pageCombo(SURFACES.indexOf(it.id));
-                          // 客户端配置里出现了新东西：挂个角标，直到去看过
-                          const badge = it.id === "mcp" ? alerts.length : 0;
-                          const Icon = it.icon;
-                          const label = t.surfaces[it.id];
-                          // 没连上时需要 core 数据的几页置灰；设置始终可用，连接管理在那里
-                          const off = !linked && it.id !== "settings";
-                          return (
-                            <SidebarMenuItem key={it.id}>
-                              <SidebarMenuButton
-                                disabled={off}
-                                isActive={on}
-                                onClick={() => open(it.id)}
-                                aria-current={on ? "page" : undefined}
-                                /*
-                                  悬浮说明**只在收起时出来**（shadcn 的默认）：那时只剩图标，名字和快捷键
-                                  都靠它。展开时名字就在图标旁边，再弹一个写着同一个名字的气泡是重复，
-                                  快捷键改写在这一行的末尾
-                                */
-                                tooltip={{
-                                  children: (
-                                    <>
-                                      {badge > 0 ? t.newFindings(label, badge) : label}
-                                      <Keys combo={combo} />
-                                    </>
-                                  ),
-                                }}
-                                className={cn(
-                                  "h-7 gap-2.5 px-2 text-(--chrome-text) transition-colors duration-(--motion-fast)",
-                                  "hover:bg-(--chrome-hover) hover:text-(--chrome-strong) active:bg-(--chrome-selected)",
-                                  "data-active:bg-(--chrome-selected) data-active:text-(--chrome-strong) data-active:font-medium",
-                                  "[&>svg]:opacity-65 data-active:[&>svg]:opacity-100 hover:[&>svg]:opacity-100",
-                                  off && "opacity-45",
-                                )}
-                              >
-                                <Icon size={16} />
-                                <span className="truncate">{label}</span>
-                                {/*
-                                  行尾：快捷键和新发现的个数，收起时整段藏掉。**快捷键悬停、键盘聚焦时
-                                  才出来**，和悬停底色一起淡入：常显的话右边多出一列 ⌘1…⌘9，读起来像
-                                  计数。写成字不用键帽：这一行悬停时已经有底色，键帽是框中框。
-                                  个数排在快捷键后面、同在一行里，两位数也不会压上去。快捷键不进按钮
-                                  的名字（`aria-hidden`）：读屏从悬浮说明拿，说明收着也还是按钮的描述。
-                                */}
-                                <span className="ms-auto flex shrink-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
-                                  <span
-                                    aria-hidden
-                                    className="tw-label text-(--chrome-dim) tw-num opacity-0 transition-opacity duration-(--motion-fast) group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
-                                  >
-                                    {comboText(combo)}
-                                  </span>
-                                  {badge > 0 && (
-                                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 tw-label font-medium text-white tw-num">
-                                      {badge}
-                                    </span>
-                                  )}
-                                </span>
-                              </SidebarMenuButton>
-                              {/* 收起时数字塞不下，只留一个点：它回答的是「那边有没有新东西」 */}
-                              {badge > 0 && (
-                                <span className="pointer-events-none absolute top-[7px] right-[7px] hidden size-[7px] rounded-full bg-destructive ring-2 ring-(--chrome-ground) group-data-[collapsible=icon]:block" />
-                              )}
-                            </SidebarMenuItem>
-                          );
-                        })}
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  </SidebarGroup>
-                ))}
-              </SidebarContent>
-
-              {/*
-                状态钉在源列表底部。**它要一直看得见** —— core 挂了是这个应用唯一「什么都
-                不工作」的状态。连接名在状态点和网关地址上面，点开是连接列表（`Switcher`）
-              */}
-              <SidebarFooter className="border-t px-3.5 py-2.5" style={{ borderColor: "var(--chrome-hair)" }}>
-                <Switcher
-                  local={{
-                    text: c.text,
-                    short: c.short,
-                    tone: c.tone,
-                    addr: status?.gateway_addr ?? null,
-                    tip: (
-                      <>
-                        {status?.gateway_addr ? `${c.text} · ${status.gateway_addr}` : c.text}
-                        {/* 监听设置没换成：上面的地址是还在服务的旧地址，原因写在这里 */}
-                        {status?.listen_error && <div>{t.listenStale(coreText(status.listen_error))}</div>}
-                      </>
-                    ),
-                  }}
-                />
-              </SidebarFooter>
-            </Sidebar>
-
-            {/* 右侧：工具栏、横幅、内容。**这一列铺实色**：macOS 上窗口底是透明的 */}
-            <div className="flex min-w-0 flex-1 flex-col bg-background">
-              {/*
-                工具栏。整条是拖拽区，按钮不是。**在滚动容器外面**，钉住不动。收起源列表的
-                按钮放在这儿：收起之后源列表只有 80px，放不下；在内容这一侧两种状态下都在
-                同一个位置（访达、邮件也这么放）。
-              */}
-              <div
-                className="flex h-[38px] shrink-0 items-center gap-1.5 border-b border-sidebar-border px-3"
-                {...drag}
+              <Tip
+                side="bottom"
+                text={
+                  <>
+                    {railOpen ? t.collapseRail : t.expandRail}
+                    <Keys combo={COMBOS.rail} />
+                  </>
+                }
               >
+                {/*
+                  **不要给它 `aria-expanded`。**`ghost` 变体里有一条 `aria-expanded:bg-muted`，
+                  挂上之后源列表展开时这个按钮常驻一块底色，比悬停还深：看起来是反的。
+                */}
+                <SidebarTrigger
+                  aria-label={railOpen ? t.collapseRail : t.expandRail}
+                  style={{ color: "var(--chrome-dim)" }}
+                />
+              </Tip>
+
+              {/*
+                当前在哪一页。**页名只写在这儿**，各页的页头从摘要开始（见 `PageHeader`）。
+              */}
+              <h1 className="min-w-0 truncate tw-head" style={{ color: "var(--chrome-text)" }} {...drag}>
+                {t.surfaces[tab]}
+              </h1>
+              <div className="ml-auto flex items-center gap-1">
+                {/*
+                  配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
+                  所以入口放在工具栏，而不是每页各放一套。
+                */}
+                {linked && CONFIG_PAGES.has(tab) && (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
+                      {t.configFile}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                      {t.versionHistory}
+                    </Button>
+                  </>
+                )}
                 <Tip
                   side="bottom"
                   text={
                     <>
-                      {railOpen ? t.collapseRail : t.expandRail}
-                      <Keys combo={COMBOS.rail} />
+                      {pt.title}
+                      <Keys combo={COMBOS.palette} />
                     </>
                   }
                 >
-                  {/*
-                    **不要给它 `aria-expanded`。**`ghost` 变体里有一条 `aria-expanded:bg-muted`，
-                    挂上之后源列表展开时这个按钮常驻一块底色，比悬停还深：看起来是反的。
-                  */}
-                  <SidebarTrigger
-                    aria-label={railOpen ? t.collapseRail : t.expandRail}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={pt.title}
+                    onClick={() => setPalette(true)}
                     style={{ color: "var(--chrome-dim)" }}
-                  />
+                  >
+                    <SearchIcon />
+                  </Button>
                 </Tip>
-
-                {/*
-                  当前在哪一页。**页头里有大标题时这里不重复**；页头滚出视野（或者这一页
-                  还没有页头）时淡入。见 `PageTitleContext`。
-                */}
-                <span
-                  className={cn(
-                    "truncate tw-head transition-opacity duration-(--motion-base) ease-(--motion-ease)",
-                    headerSeen === true ? "opacity-0" : "opacity-100",
-                  )}
-                  style={{ color: "var(--chrome-text)" }}
-                  aria-hidden={headerSeen === true}
-                  {...drag}
-                >
-                  {t.surfaces[tab]}
-                </span>
-                <div className="ml-auto flex items-center gap-1">
-                  {/*
-                    配置页共用的两个入口。**文件只有一份**，各页的表单是它的几种视图 ——
-                    所以入口放在工具栏，而不是每页各放一套。
-                  */}
-                  {linked && CONFIG_PAGES.has(tab) && (
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
-                        {t.configFile}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                        {t.versionHistory}
-                      </Button>
-                    </>
-                  )}
-                  <Tip
-                    side="bottom"
-                    text={
-                      <>
-                        {pt.title}
-                        <Keys combo={COMBOS.palette} />
-                      </>
-                    }
-                  >
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={pt.title}
-                      onClick={() => setPalette(true)}
-                      style={{ color: "var(--chrome-dim)" }}
-                    >
-                      <SearchIcon />
-                    </Button>
-                  </Tip>
-                  {/* 提醒在每一页都在：它说的事不属于任何一页 */}
-                  <Notices onNavigate={go} asked={noticesAsked} />
-                </div>
-              </div>
-
-              {/* 工具栏之下这一层。**滚动不在这儿**：每一页在自己的容器里滚 */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {/*
-                  配置没通过校验。**一直挂着，直到下一次成功换入** —— 一闪而过的提示等于
-                  没提示。第一句先说「还在按旧配置转发」：那是最想知道的，会不会断。
-                */}
-                <Banner show={rejected !== null} tone="warning" title={t.rejectedTitle}>
-                  {rejected && (
-                    <>
-                      <p>
-                        {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}
-                        {coreText(rejected.message)}
-                      </p>
-                      {rejected.excerpt && (
-                        <pre className="mt-1.5 overflow-x-auto rounded-md bg-warning/10 px-2 py-1 font-mono tw-label">
-                          {rejected.line}│ {rejected.excerpt}
-                        </pre>
-                      )}
-                    </>
-                  )}
-                </Banner>
-
-                {/*
-                  token 端点换发了新的 refresh token。**两种完全不同的话，长得也要不一样**：
-                  写回成功只是告知（编辑器会弹「文件已更改」，该知道是谁改的）；写回失败是
-                  必须处理的问题：重启之前不解决，该上游就不可用了。
-                */}
-                {rotated.map((r) => (
-                  <Reveal key={r.provider} show>
-                    {r.persisted ? (
-                      <Banner
-                        tone="info"
-                        actions={
-                          <Button variant="ghost" size="xs" onClick={() => clearRotated(r.provider)}>
-                            {common.close}
-                          </Button>
-                        }
-                      >
-                        {t.rotatedSaved(<span className="font-medium">{r.provider}</span>)}
-                        <Tip text={t.reloadTip}>
-                          <span className="ml-1 text-muted-foreground underline decoration-dotted underline-offset-2">
-                            {t.reload}
-                          </span>
-                        </Tip>
-                      </Banner>
-                    ) : (
-                      <Banner
-                        tone="error"
-                        title={t.rotatedUnsaved(r.provider)}
-                        actions={
-                          <Button variant="ghost" size="sm" onClick={() => clearRotated(r.provider)}>
-                            {common.close}
-                          </Button>
-                        }
-                      >
-                        <p>{coreText(r.detail)}</p>
-                        <p className="mt-0.5">{t.oldRevoked((s) => <span className="font-medium">{s}</span>)}</p>
-                      </Banner>
-                    )}
-                  </Reveal>
-                ))}
-
-                {/*
-                  断线。**不是 toast，也不清空页面**：数字留着，旁边写着它们为什么不动了。
-                  连着远程时是另一条（内容置为只读），见 `remoteLost`。
-                */}
-                <Banner
-                  show={remoteLost && profile !== undefined}
-                  tone="warning"
-                  role="status"
-                  actions={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      pending={link?.kind === "connecting"}
-                      onClick={() => void invoke("retry_connection").catch(() => {})}
-                    >
-                      {ct.retryNow}
-                    </Button>
-                  }
-                >
-                  {profile && ct.lostBanner(profile.name, remoteAttempt)}
-                </Banner>
-
-                <Banner
-                  show={lost !== null}
-                  tone="warning"
-                  title={lost && t.staleData(lost.what)}
-                  actions={
-                    lost?.retry && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void invoke("restart_core").catch(() => setNudge((n) => n + 1))}
-                      >
-                        {t.restart}
-                      </Button>
-                    )
-                  }
-                >
-                  {lost?.next}
-                </Banner>
-
-                {/*
-                  断线时整块只读：`fieldset disabled` 让里面的按钮、输入框、下拉一起失效，
-                  读、滚动、悬停说明照旧。设置页不整页只读：连接管理在那里，断线时正要来
-                  这里（换密钥、切回本机）；那一页里改服务器配置的几节自己只读，见 `SettingsPage`
-                */}
-                <fieldset
-                  disabled={remoteLost && tab !== "settings"}
-                  className={cn(
-                    "m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 transition-opacity",
-                    remoteLost && tab !== "settings" && "opacity-60",
-                  )}
-                >
-                  {/*
-                    每一页自己的滚动层，换页时淡入并上移 4px（`motion-page`）。流量页在
-                    自己那一层里横竖都滚（表头靠它吸顶），这一层不能再滚。
-                  */}
-                  <div
-                    key={linked ? tab : `unlinked-${tab}`}
-                    className={cn(
-                      "flex min-h-0 flex-1 flex-col motion-page",
-                      tab === "requests" && linked ? "overflow-hidden" : "overflow-y-auto",
-                    )}
-                  >
-                    {/*
-                      **还没连上时这里什么都不画**：整窗盖着启动画面。连上之后各页在它下面
-                      挂上、开始取数，交接时数据已经在了（见 `handover`）。**控制面一答应就
-                      交接** —— 哪怕网关还没起来（安全模式下配置、回滚都能用）。
-                    */}
-                    {!linked ? (
-                      launching ? null : tab === "settings" ? (
-                        <SettingsPage ov={null} status={null} local={c} linked={false} onChanged={changed} />
-                      ) : (
-                        <Unlinked core={core} />
-                      )
-                    ) : tab === "dashboard" ? (
-                      <OverviewPage tick={dashTick} ov={ov} onLanded={() => setLanded(true)} />
-                    ) : tab === "clients" ? (
-                      <ClientsPage busy={busyKeys} providers={ov?.providers} />
-                    ) : tab === "mcp" ? (
-                      <McpPage alerts={alerts} onSeen={clearAlerts} />
-                    ) : tab === "security" ? (
-                      ov ? (
-                        <SecurityPage
-                          configVersion={ov.config_version}
-                          tick={dashTick}
-                          focus={securityFocus}
-                          onChanged={changed}
-                        />
-                      ) : (
-                        skeleton
-                      )
-                    ) : tab === "keys" ? (
-                      ov ? (
-                        <KeysPage ov={ov} busy={busyKeys} onChanged={changed} onOpenConfigFile={openConfigFile} />
-                      ) : (
-                        skeleton
-                      )
-                    ) : tab === "routing" ? (
-                      ov ? (
-                        <RoutingPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
-                      ) : (
-                        skeleton
-                      )
-                    ) : tab === "upstreams" ? (
-                      ov ? (
-                        <UpstreamsPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
-                      ) : (
-                        skeleton
-                      )
-                    ) : tab === "settings" ? (
-                      <SettingsPage
-                        ov={ov}
-                        status={status}
-                        local={c}
-                        linked
-                        coreReadOnly={remoteLost}
-                        onChanged={changed}
-                      />
-                    ) : (
-                      <TrafficPage
-                        rows={allRows}
-                        seeded={seeded}
-                        seedError={seedError}
-                        onRetry={reseed}
-                        locallyAnswered={locallyAnswered}
-                        sessions={sessions}
-                        status={status}
-                        view={traffic}
-                      />
-                    )}
-                  </div>
-                </fieldset>
+                {/* 提醒在每一页都在：它说的事不属于任何一页 */}
+                <Notices onNavigate={go} asked={noticesAsked} />
               </div>
             </div>
 
-            {/* 浮层挂在最外层，不跟着右列滚动 */}
-            {configFile && (
-              <ConfigFileDialog
-                reloads={reloads}
-                focus={configFile.focus}
-                rejectedLine={rejected?.line ?? null}
-                onClose={() => setConfigFile(null)}
-                onJump={(section) => {
-                  setConfigFile(null);
-                  // 监听、日志保留是设置页里的两节：直接滚到那一节
-                  if (section === "listen" || section === "retention") open("settings", { section });
-                  else open(surfaceOf(section));
-                }}
-              />
-            )}
-            {historyOpen && <VersionHistoryDialog reloads={reloads} onClose={() => setHistoryOpen(false)} />}
-            {/* 等连上 core、拿到概览再弹：名称是否重名、保存基于哪一版都要它 */}
-            {importing && ov && !remoteLost && (
-              <ImportDialog
-                proposal={importing}
-                ov={ov}
-                onClose={closeImport}
-                onCreated={(name) => {
-                  closeImport();
-                  notify.success(textOf(importDialogText).created(name));
-                  changed();
-                  open("upstreams", { upstream: name });
-                }}
-              />
-            )}
-            <Palette
-              open={palette}
-              onOpenChange={setPalette}
-              shortcuts={shortcuts}
-              onShortcutsChange={setShortcuts}
-              linked={linked}
-              readOnly={remoteLost}
-              remote={remote}
-              ov={ov}
-              rows={allRows}
-              railOpen={railOpen}
-              shell={paletteShell}
+            {/* 工具栏之下这一层。**滚动不在这儿**：每一页在自己的容器里滚 */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {/*
+                配置没通过校验。**一直挂着，直到下一次成功换入** —— 一闪而过的提示等于
+                没提示。第一句先说「还在按旧配置转发」：那是最想知道的，会不会断。
+              */}
+              <Banner show={rejected !== null} tone="warning" title={t.rejectedTitle}>
+                {rejected && (
+                  <>
+                    <p>
+                      {t.rejectedAt(stageLabel(rejected.stage), rejected.line)}
+                      {coreText(rejected.message)}
+                    </p>
+                    {rejected.excerpt && (
+                      <pre className="mt-1.5 overflow-x-auto rounded-md bg-warning/10 px-2 py-1 font-mono tw-label">
+                        {rejected.line}│ {rejected.excerpt}
+                      </pre>
+                    )}
+                  </>
+                )}
+              </Banner>
+
+              {/*
+                token 端点换发了新的 refresh token。**两种完全不同的话，长得也要不一样**：
+                写回成功只是告知（编辑器会弹「文件已更改」，该知道是谁改的）；写回失败是
+                必须处理的问题：重启之前不解决，该上游就不可用了。
+              */}
+              {rotated.map((r) => (
+                <Reveal key={r.provider} show>
+                  {r.persisted ? (
+                    <Banner
+                      tone="info"
+                      actions={
+                        <Button variant="ghost" size="xs" onClick={() => clearRotated(r.provider)}>
+                          {common.close}
+                        </Button>
+                      }
+                    >
+                      {t.rotatedSaved(<span className="font-medium">{r.provider}</span>)}
+                      <Tip text={t.reloadTip}>
+                        <span className="ml-1 text-muted-foreground underline decoration-dotted underline-offset-2">
+                          {t.reload}
+                        </span>
+                      </Tip>
+                    </Banner>
+                  ) : (
+                    <Banner
+                      tone="error"
+                      title={t.rotatedUnsaved(r.provider)}
+                      actions={
+                        <Button variant="ghost" size="sm" onClick={() => clearRotated(r.provider)}>
+                          {common.close}
+                        </Button>
+                      }
+                    >
+                      <p>{coreText(r.detail)}</p>
+                      <p className="mt-0.5">{t.oldRevoked((s) => <span className="font-medium">{s}</span>)}</p>
+                    </Banner>
+                  )}
+                </Reveal>
+              ))}
+
+              {/*
+                断线。**不是 toast，也不清空页面**：数字留着，旁边写着它们为什么不动了。
+                连着远程时是另一条（内容置为只读），见 `remoteLost`。
+              */}
+              <Banner
+                show={remoteLost && profile !== undefined}
+                tone="warning"
+                role="status"
+                actions={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    pending={link?.kind === "connecting"}
+                    onClick={() => void invoke("retry_connection").catch(() => {})}
+                  >
+                    {ct.retryNow}
+                  </Button>
+                }
+              >
+                {profile && ct.lostBanner(profile.name, remoteAttempt)}
+              </Banner>
+
+              <Banner
+                show={lost !== null}
+                tone="warning"
+                title={lost && t.staleData(lost.what)}
+                actions={
+                  lost?.retry && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void invoke("restart_core").catch(() => setNudge((n) => n + 1))}
+                    >
+                      {t.restart}
+                    </Button>
+                  )
+                }
+              >
+                {lost?.next}
+              </Banner>
+
+              {/*
+                断线时整块只读：`fieldset disabled` 让里面的按钮、输入框、下拉一起失效，
+                读、滚动、悬停说明照旧。设置页不整页只读：连接管理在那里，断线时正要来
+                这里（换密钥、切回本机）；那一页里改服务器配置的几节自己只读，见 `SettingsPage`
+              */}
+              <fieldset
+                disabled={remoteLost && tab !== "settings"}
+                className={cn(
+                  "m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0 transition-opacity",
+                  remoteLost && tab !== "settings" && "opacity-60",
+                )}
+              >
+                {/*
+                  每一页自己的滚动层，换页时淡入并上移 4px（`motion-page`）。流量页在
+                  自己那一层里横竖都滚（表头靠它吸顶），这一层不能再滚。
+                */}
+                <div
+                  key={linked ? tab : `unlinked-${tab}`}
+                  className={cn(
+                    "flex min-h-0 flex-1 flex-col motion-page",
+                    tab === "requests" && linked ? "overflow-hidden" : "overflow-y-auto",
+                  )}
+                >
+                  {/*
+                    **还没连上时这里什么都不画**：整窗盖着启动画面。连上之后各页在它下面
+                    挂上、开始取数，交接时数据已经在了（见 `handover`）。**控制面一答应就
+                    交接** —— 哪怕网关还没起来（安全模式下配置、回滚都能用）。
+                  */}
+                  {!linked ? (
+                    launching ? null : tab === "settings" ? (
+                      <SettingsPage ov={null} status={null} local={c} linked={false} onChanged={changed} />
+                    ) : (
+                      <Unlinked core={core} />
+                    )
+                  ) : tab === "dashboard" ? (
+                    <OverviewPage tick={dashTick} ov={ov} onLanded={() => setLanded(true)} />
+                  ) : tab === "clients" ? (
+                    <ClientsPage busy={busyKeys} providers={ov?.providers} />
+                  ) : tab === "mcp" ? (
+                    <McpPage alerts={alerts} onSeen={clearAlerts} />
+                  ) : tab === "security" ? (
+                    ov ? (
+                      <SecurityPage
+                        configVersion={ov.config_version}
+                        tick={dashTick}
+                        focus={securityFocus}
+                        onChanged={changed}
+                      />
+                    ) : (
+                      skeleton
+                    )
+                  ) : tab === "keys" ? (
+                    ov ? (
+                      <KeysPage ov={ov} busy={busyKeys} onChanged={changed} onOpenConfigFile={openConfigFile} />
+                    ) : (
+                      skeleton
+                    )
+                  ) : tab === "routing" ? (
+                    ov ? (
+                      <RoutingPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
+                    ) : (
+                      skeleton
+                    )
+                  ) : tab === "upstreams" ? (
+                    ov ? (
+                      <UpstreamsPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
+                    ) : (
+                      skeleton
+                    )
+                  ) : tab === "settings" ? (
+                    <SettingsPage
+                      ov={ov}
+                      status={status}
+                      local={c}
+                      linked
+                      coreReadOnly={remoteLost}
+                      onChanged={changed}
+                    />
+                  ) : (
+                    <TrafficPage
+                      rows={allRows}
+                      seeded={seeded}
+                      seedError={seedError}
+                      onRetry={reseed}
+                      locallyAnswered={locallyAnswered}
+                      sessions={sessions}
+                      status={status}
+                      view={traffic}
+                    />
+                  )}
+                </div>
+              </fieldset>
+            </div>
+          </div>
+
+          {/* 浮层挂在最外层，不跟着右列滚动 */}
+          {configFile && (
+            <ConfigFileDialog
+              reloads={reloads}
+              focus={configFile.focus}
+              rejectedLine={rejected?.line ?? null}
+              onClose={() => setConfigFile(null)}
+              onJump={(section) => {
+                setConfigFile(null);
+                // 监听、日志保留是设置页里的两节：直接滚到那一节
+                if (section === "listen" || section === "retention") open("settings", { section });
+                else open(surfaceOf(section));
+              }}
             />
-            {/*
-              **所有出错都走这里**（`notify`）。吐司统一在右下角，谁触发的都一样；状态类的
-              事走横幅，不走吐司。
-            */}
-            <Toaster position="bottom-right" closeButton />
-          </SidebarProvider>
-        </PageTitleContext.Provider>
+          )}
+          {historyOpen && <VersionHistoryDialog reloads={reloads} onClose={() => setHistoryOpen(false)} />}
+          {/* 等连上 core、拿到概览再弹：名称是否重名、保存基于哪一版都要它 */}
+          {importing && ov && !remoteLost && (
+            <ImportDialog
+              proposal={importing}
+              ov={ov}
+              onClose={closeImport}
+              onCreated={(name) => {
+                closeImport();
+                notify.success(textOf(importDialogText).created(name));
+                changed();
+                open("upstreams", { upstream: name });
+              }}
+            />
+          )}
+          <Palette
+            open={palette}
+            onOpenChange={setPalette}
+            shortcuts={shortcuts}
+            onShortcutsChange={setShortcuts}
+            linked={linked}
+            readOnly={remoteLost}
+            remote={remote}
+            ov={ov}
+            rows={allRows}
+            railOpen={railOpen}
+            shell={paletteShell}
+          />
+          {/*
+            **所有出错都走这里**（`notify`）。吐司统一在右下角，谁触发的都一样；状态类的
+            事走横幅，不走吐司。
+          */}
+          <Toaster position="bottom-right" closeButton />
+        </SidebarProvider>
       </NavContext.Provider>
       {launching && (
         <LaunchScreen

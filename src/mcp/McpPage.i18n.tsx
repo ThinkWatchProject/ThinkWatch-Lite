@@ -9,7 +9,6 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export const mcpText = messages(
   {
     /** 和源列表里那一项同一个词 */
-    title: "MCP",
     tabServers: "服务器",
     tabExtensions: "技能与钩子",
     tabFindings: "发现",
@@ -101,7 +100,6 @@ export const mcpText = messages(
     viewDetail: "查看详情",
   },
   {
-    title: "MCP",
     tabServers: "Servers",
     tabExtensions: "Skills and hooks",
     tabFindings: "Findings",

@@ -3,7 +3,6 @@ import { messages } from "@/i18n";
 /** 概览页的文案。 */
 export const overviewText = messages(
   {
-    title: "概览",
     /** 读取失败时 ErrorState 的标题 */
     loadFailed: "概览数据读取失败",
 
@@ -176,7 +175,6 @@ export const overviewText = messages(
     addUpstream: "添加上游",
   },
   {
-    title: "Overview",
     loadFailed: "Could not load the overview",
 
     inFlight: (_n: number) => "in progress",

@@ -204,7 +204,7 @@ export default function RoutingPage({
   if (ov.providers.length === 0) {
     return (
       <Page>
-        <PageHeader title={t.title} />
+        <PageHeader />
         <EmptyState
           icon={<IconRoute />}
           title={t.noUpstreams}
@@ -227,7 +227,6 @@ export default function RoutingPage({
     <Tabs value={tab} onValueChange={(v) => setTab(v as RoutingTab)} className="gap-0">
       <Page>
         <PageHeader
-          title={t.title}
           summary={
             <>
               <SummaryItem value={<AnimatedNumber value={view.routes.length} />} label={t.routesUnit(view.routes.length)} />

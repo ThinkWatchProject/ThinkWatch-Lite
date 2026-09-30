@@ -13,7 +13,6 @@ import type { ConfigFocus } from "@/configLocate";
 import type { ClientView, KeyInput, Overview } from "@/types";
 import { CostFigure } from "@/CostFigure";
 import { useText } from "@/i18n";
-import { appText } from "@/App.i18n";
 import { useClients } from "@/clients/data";
 import { writeQueue } from "@/lib/writeQueue";
 import { api } from "./api";
@@ -64,7 +63,6 @@ export default function KeysPage({
   onOpenConfigFile: (focus: ConfigFocus | null) => void;
 }) {
   const t = useText(keysPageText);
-  const title = useText(appText).surfaces.keys;
   const nav = useNav();
   const version = useConfigVersion(ov.config_version);
   /** 这一页上的写入排成一队：连着停用两把，第二次带第一次写完的版本（见 writeQueue） */
@@ -166,7 +164,6 @@ export default function KeysPage({
   return (
     <Page className="@container/page">
       <PageHeader
-        title={title}
         summary={<Summary keys={list} loading={keys.loading} usage={usage.byKey} />}
         actions={
           <>

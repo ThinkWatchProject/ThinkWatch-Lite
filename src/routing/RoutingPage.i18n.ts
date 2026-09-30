@@ -3,7 +3,6 @@ import { messages } from "@/i18n";
 export const routingPageText = messages(
   {
     /** 和源列表里那一项同一个词 */
-    title: "路由",
     noUpstreams: "尚无上游",
     noUpstreamsDesc: "路由规则将请求转发至上游或策略组。添加上游后，默认路由将请求依次转发至全部上游。",
     routes: "路由",
@@ -22,7 +21,6 @@ export const routingPageText = messages(
     preferred: (group: string, provider: string) => `「${group}」优先使用 ${provider}`,
   },
   {
-    title: "Routing",
     noUpstreams: "No upstreams yet",
     noUpstreamsDesc:
       "Routing rules forward requests to upstreams or groups. Once an upstream is added, the default route forwards requests to all upstreams in order.",
