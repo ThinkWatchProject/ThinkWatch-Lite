@@ -235,6 +235,27 @@ impl Target {
             crate::paths::env_home().map_or(0, |h| crate::paths::first_existing(self.config, &h));
         self.config[i].shown()
     }
+    /// 这台电脑上有没有这个客户端：MCP 页只给有的客户端画一列。
+    ///
+    /// 三条里占一条就算有：用户给它指定过 MCP 文件（他说有就有）、MCP 文件在、
+    /// 客户端自己的目录在。目录用接管那张表的标记，不在那张表里的（Cursor、
+    /// Antigravity CLI）用配置位置的默认目录。**没有 MCP 文件不等于没装** ——
+    /// 装了 Cursor 还没配过 MCP 的人，也要能把服务器复制过去
+    pub fn present(&self, home: &Path) -> bool {
+        if self.custom_path.is_some() || self.path(home).exists() {
+            return true;
+        }
+        let markers: Vec<Loc> = match crate::clients::adoptable()
+            .into_iter()
+            .find(|c| c.id == self.client)
+        {
+            Some(c) => c.marker.to_vec(),
+            None => crate::locations::layout(self.client)
+                .map(|l| vec![l.dir])
+                .unwrap_or_default(),
+        };
+        markers.iter().any(|m| m.resolve(home).exists())
+    }
     fn check(&self) -> Result<(), McpError> {
         if self.copyable {
             Ok(())
@@ -558,6 +579,33 @@ mod tests {
   }
 }
 "#;
+
+    #[test]
+    fn only_clients_found_on_this_computer_are_present() {
+        let (_d, home) = home_with(&[]);
+        for c in ["claude-code", "cursor", "codex", "antigravity-cli"] {
+            assert!(!target(c).unwrap().present(&home), "{c} 什么都没有");
+        }
+
+        // 装了 Cursor、还没配过 MCP：目录在就算有，好把服务器复制过去
+        std::fs::create_dir_all(home.join(".cursor")).unwrap();
+        // Claude Code 只有 ~/.claude.json、没有 ~/.claude：MCP 文件在也算
+        std::fs::write(home.join(".claude.json"), "{}\n").unwrap();
+        // Codex 走接管那张表的标记
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        for c in ["claude-code", "cursor", "codex"] {
+            assert!(target(c).unwrap().present(&home), "{c}");
+        }
+        assert!(!target("antigravity-cli").unwrap().present(&home));
+    }
+
+    #[test]
+    fn a_client_whose_mcp_file_the_user_named_is_present() {
+        let (_d, home) = home_with(&[]);
+        let mut t = target("antigravity-cli").unwrap();
+        t.custom_path = Some(home.join("elsewhere/mcp_config.json"));
+        assert!(t.present(&home));
+    }
 
     #[test]
     fn copying_a_server_leaves_the_rest_of_the_file_alone() {

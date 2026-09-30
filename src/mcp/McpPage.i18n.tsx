@@ -26,6 +26,10 @@ export const mcpText = messages(
     // 服务器
     server: "服务器",
     noMcp: "未配置 MCP 服务器",
+    noClients: "未检测到支持 MCP 的客户端",
+    noClientsHint: "客户端装在别处或改过配置目录时，可以指定它的配置位置。",
+    absent: (names: string[]) => `未检测到：${names.join("、")}`,
+    locate: "指定位置…",
     noMcpHint: "在客户端中添加 MCP 服务器后，各客户端的配置将并列在此。",
     enabled: "已启用",
     disabled: "已停用",
@@ -114,6 +118,10 @@ export const mcpText = messages(
 
     server: "Server",
     noMcp: "No MCP servers",
+    noClients: "No clients with MCP support found",
+    noClientsHint: "A client installed elsewhere, or with its configuration directory moved, can be given its location.",
+    absent: (names: string[]) => `Not detected: ${names.join(", ")}`,
+    locate: "Choose location…",
     noMcpHint: "Once MCP servers are added in a client, each client's configuration is listed here side by side.",
     enabled: "Enabled",
     disabled: "Disabled",
