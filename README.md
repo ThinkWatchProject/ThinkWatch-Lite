@@ -14,8 +14,9 @@
 A local gateway for Claude Code, Codex and other AI clients, on macOS, Windows
 and Linux. Each client is connected once; after that, upstreams and models
 change without touching its configuration. Every request is recorded with its
-cost and route, and the API keys in it can be replaced before it leaves the
-machine.
+cost and route; the API keys in it can be replaced before it leaves the
+machine, and dangerous tool calls a relay slips into an answer can be cut off
+before the client runs them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
@@ -29,12 +30,15 @@ machine.
   step, with the change previewed, the original file backed up and a restore
   always available; Cursor, Continue and Antigravity CLI come with
   instructions. Switching upstreams then happens in the gateway alone.
-- **Keys replaced before sending, dangerous commands stopped.** Outbound
-  redaction swaps API keys, private keys, JWTs and connection-string passwords
-  for placeholders before a request leaves, so a relay never sees them.
-  Tool-call inspection cuts off download-and-run commands and the like, and
-  hidden characters and prompt injection can be refused. The protections start
-  in Observe and switch to Enforce one by one.
+- **Protection against relays.** A relay sees every request in full and can
+  rewrite every answer. Outbound redaction swaps API keys, private keys, JWTs
+  and connection-string passwords for placeholders before a request leaves, so
+  the relay never holds the real values. When an answer carries a tool call
+  that downloads and runs code, sends out environment variables or credential
+  files, reads private keys or installs a startup item or scheduled job,
+  tool-call inspection cuts the answer off before the client can run it.
+  Hidden characters and prompt injection can be refused as well. The
+  protections start in Observe and switch to Enforce one by one.
 - **MCP servers, skills and hooks, scanned.** The MCP servers of eight clients
   side by side, with third-party servers marked, and a scan of client
   configuration, skills, hooks and project instructions for hidden characters,
@@ -64,9 +68,9 @@ machine.
 
 | Platform | Install |
 |---|---|
-| macOS 12+, Apple silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2+, x64 | [`ThinkWatch-Lite-<version>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2+, ARM64 | [`ThinkWatch-Lite-<version>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| macOS 12 or later, Apple silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later, x64 | [`ThinkWatch-Lite-<version>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later, ARM64 | [`ThinkWatch-Lite-<version>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 | Linux, x86_64 or aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
