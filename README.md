@@ -33,10 +33,11 @@ before the client runs them.
 ## Highlights
 
 - **Connect once, switch freely.** Claude Code, Claude Desktop, Codex,
-  opencode, Pi, oh-my-pi, Zed, Aider and DeepSeek Harness are pointed at the
-  gateway in one step, with the change previewed, the original file backed up
-  and a restore always available; Cursor, Continue and Antigravity CLI come
-  with instructions. Switching upstreams then happens in the gateway alone.
+  opencode, Pi, oh-my-pi, Grok Build, Qwen Code, Hermes Agent, Zed, Aider and
+  DeepSeek Harness are pointed at the gateway in one step, with the change
+  previewed, the original file backed up and a restore always available;
+  Cursor, Continue and Antigravity CLI come with instructions. Switching
+  upstreams then happens in the gateway alone.
 - **Protection against relays.** A relay sees every request in full and can
   rewrite every answer. Outbound redaction swaps API keys, private keys, JWTs,
   connection-string passwords, Chinese resident ID numbers and bank card numbers
@@ -50,8 +51,8 @@ before the client runs them.
 - **Upstream check-up.** Each upstream is compared with the others serving the
   same model: answers naming a different model, reported input well above or
   below theirs and low prompt-cache reads are marked, with sample sizes.
-- **MCP servers, skills and hooks, scanned.** The MCP servers of ten clients
-  side by side, with third-party servers marked, and a scan of client
+- **MCP servers, skills and hooks, scanned.** The MCP servers of thirteen
+  clients side by side, with third-party servers marked, and a scan of client
   configuration, skills, hooks and project instructions for hidden characters,
   prompt injection, dangerous commands and overly broad permissions.
 - **Every request traceable.** The rule a request matched, each upstream it

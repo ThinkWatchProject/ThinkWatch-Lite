@@ -1761,3 +1761,454 @@ fn the_switches_are_claude_codes_alone() {
             .any(|n| n.code.starts_with("adopt.plan.cloud"))
     );
 }
+
+// ---- Grok Build：每个模型一张表，每张表都带自己的密钥 ------------------------
+
+/// 用过一阵的 config.toml：自己的模型表（带发给 Anthropic 的头）、MCP、权限。
+const GROK: &str = r#"# 我的 Grok 配置
+[models]
+default = "grok-4.6"
+
+[model.my-claude]
+model = "claude-opus-4-6"
+base_url = "https://api.anthropic.com/v1"
+api_backend = "messages"
+extra_headers = { "x-api-key" = "sk-ant-我自己的" }
+
+[mcp_servers.fs]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem"]
+
+[permission]
+allow = ["Bash(git status)"]
+"#;
+
+fn grok_path(home: &Path) -> PathBuf {
+    client("grok-build").config_path(home)
+}
+
+fn toml_get(text: &str, path: &[&str]) -> Option<tw_adopt::json::Val> {
+    tw_adopt::toml::get(text, path).unwrap()
+}
+
+#[test]
+fn adopting_grok_writes_a_keyed_table_per_model_and_restores_byte_for_byte() {
+    let b = bed("grok-build", GROK);
+    let c = client("grok-build");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(p.carries_secret);
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&grok_path(&b.home));
+    for m in ["claude-sonnet", "gpt-5"] {
+        let key = format!("thinkwatch/{m}");
+        let at = |f: &str| toml_get(&after, &["model", key.as_str(), f]);
+        assert_eq!(at("model"), Some(tw_adopt::json::Val::s(m)), "{after}");
+        assert_eq!(
+            at("base_url"),
+            Some(tw_adopt::json::Val::s("http://127.0.0.1:8080/v1"))
+        );
+        // **每一张都带自己的密钥**：没有的话 Grok 会拿 xAI 的会话令牌去请求它
+        assert_eq!(
+            at("api_key"),
+            Some(tw_adopt::json::Val::s("tw-用户的专属密钥"))
+        );
+    }
+    assert_eq!(
+        toml_get(
+            &after,
+            &["model", "thinkwatch/claude-sonnet", "api_backend"]
+        ),
+        Some(tw_adopt::json::Val::s("messages"))
+    );
+    assert_eq!(
+        toml_get(&after, &["model", "thinkwatch/gpt-5", "api_backend"]),
+        Some(tw_adopt::json::Val::s("responses"))
+    );
+    // 选着的 grok-4.6 网关没有：换成清单里的第一个；campaign 关掉
+    assert_eq!(
+        toml_get(&after, &["models", "default"]),
+        Some(tw_adopt::json::Val::s("thinkwatch/claude-sonnet"))
+    );
+    assert_eq!(
+        toml_get(&after, &["features", "campaigns"]),
+        Some(tw_adopt::json::Val::Bool(false))
+    );
+    // 用户自己的表、MCP、权限一样不少，自己的表一个字段都没被碰
+    assert!(after.contains("sk-ant-我自己的"), "{after}");
+    assert!(after.contains("[mcp_servers.fs]"), "{after}");
+    assert!(after.contains("Bash(git status)"), "{after}");
+    let detected = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(
+        detected.endpoint.as_deref(),
+        Some("http://127.0.0.1:8080/v1")
+    );
+    assert_eq!(
+        detected.models,
+        Some(vec!["claude-sonnet".into(), "gpt-5".into()])
+    );
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&grok_path(&b.home)), GROK);
+}
+
+/// 网关不再列出某个模型：重新接管时它那张表整个拿掉（留着就是一张选得到、用不了的表，
+/// 模型清单也永远对不上），第一次记下的原值不变，还原照样一个字节不差
+#[test]
+fn re_adopting_grok_with_a_changed_model_list_drops_the_stale_table() {
+    let b = bed("grok-build", GROK);
+    let c = client("grok-build");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let mut g = gw();
+    g.models = vec!["gpt-5".into(), "deepseek-chat".into()];
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&grok_path(&b.home));
+    assert!(!after.contains("thinkwatch/claude-sonnet"), "{after}");
+    assert_eq!(
+        toml_get(
+            &after,
+            &["model", "thinkwatch/deepseek-chat", "api_backend"]
+        ),
+        Some(tw_adopt::json::Val::s("chat_completions"))
+    );
+    // 默认模型选的那一张没了：换成新清单的第一个
+    assert_eq!(
+        toml_get(&after, &["models", "default"]),
+        Some(tw_adopt::json::Val::s("thinkwatch/gpt-5"))
+    );
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert!(
+        !tw_adopt::opencode::models_stale(d.models.as_deref().unwrap(), &g.models),
+        "{:?}",
+        d.models
+    );
+    // 原值还是第一次的：默认模型是 grok-4.6
+    assert!(after.contains("# was models.default: grok-4.6"), "{after}");
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&grok_path(&b.home)), GROK);
+}
+
+/// Grok 自己写这份文件时注释全丢（`/model`、自动更新之后）：哨兵没了，旁文件里的记录
+/// 还在，还原照样把我们写的收走
+#[test]
+fn grok_rewriting_the_file_without_our_comment_still_restores() {
+    let b = bed("grok-build", GROK);
+    let c = client("grok-build");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let path = grok_path(&b.home);
+    let stripped: String = read(&path)
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(&path, &stripped).unwrap();
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let back = read(&path);
+    assert!(!back.contains("thinkwatch"), "{back}");
+    assert!(!back.contains("campaigns"), "{back}");
+    assert_eq!(
+        toml_get(&back, &["models", "default"]),
+        Some(tw_adopt::json::Val::s("grok-4.6"))
+    );
+    assert!(back.contains("sk-ant-我自己的"), "{back}");
+}
+
+/// 一个模型都没有的网关：什么表都不写，接管之前就说
+#[test]
+fn adopting_grok_with_no_models_writes_no_table_and_says_so() {
+    let b = bed("grok-build", GROK);
+    let c = client("grok-build");
+    let mut g = gw();
+    g.models = Vec::new();
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+    assert!(!p.after.contains("thinkwatch/"), "{}", p.after);
+    // 什么都不写就是空操作：不凭空多出一段哨兵注释
+    assert!(p.is_noop(), "{}", p.after);
+    assert!(
+        p.notes
+            .iter()
+            .any(|n| n.code == "adopt.plan.no_models_nothing_written"),
+        "{:?}",
+        p.notes
+    );
+}
+
+/// 同一份清单再接管一次：什么都不用改（不留备份、不记历史）
+#[test]
+fn re_adopting_grok_with_the_same_models_is_a_no_op() {
+    let b = bed("grok-build", GROK);
+    let c = client("grok-build");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(again.is_noop(), "{}", again.after);
+}
+
+// ---- Qwen Code：自己的一组 provider，密钥经 settings.env 交给它 ----------------
+
+/// 用过一阵的 settings.json：带注释、用户自己的 openai 那一组、`/auth` 写下的密钥、MCP。
+const QWEN: &str = r#"{
+  // Qwen 自己维护的版本号
+  "$version": 4,
+  "modelProviders": {
+    "openai": [
+      { "id": "qwen3-coder-plus", "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1", "envKey": "DASHSCOPE_API_KEY" }
+    ]
+  },
+  "env": {
+    "DASHSCOPE_API_KEY": "sk-dash-我自己的"
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
+  "model": {
+    "name": "qwen3-coder-plus"
+  },
+  "mcpServers": {
+    "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"] }
+  }
+}
+"#;
+
+fn qwen_path(home: &Path) -> PathBuf {
+    client("qwen-code").config_path(home)
+}
+
+#[test]
+fn adopting_qwen_adds_a_provider_of_our_own_and_restores_byte_for_byte() {
+    let b = bed("qwen-code", QWEN);
+    let c = client("qwen-code");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(p.carries_secret);
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&qwen_path(&b.home));
+    let ours = get(&after, &["modelProviders", "thinkwatch"]).unwrap();
+    let tw_adopt::json::Val::Arr(es) = ours else {
+        panic!("{after}")
+    };
+    assert_eq!(es.len(), 2, "{after}");
+    assert_eq!(
+        get(&after, &["providerProtocol", "thinkwatch"]),
+        Some(tw_adopt::json::Val::s("openai"))
+    );
+    assert_eq!(
+        get(&after, &["env", tw_adopt::qwen::KEY_ENV]),
+        Some(tw_adopt::json::Val::s("tw-用户的专属密钥"))
+    );
+    // 选着的 qwen3-coder-plus 网关没有：换成清单里的第一个，地址跟着写
+    assert_eq!(
+        get(&after, &["model", "name"]),
+        Some(tw_adopt::json::Val::s("claude-sonnet"))
+    );
+    assert_eq!(
+        get(&after, &["model", "baseUrl"]),
+        Some(tw_adopt::json::Val::s("http://127.0.0.1:8080/v1"))
+    );
+    // 用户自己的那一组、`/auth` 写下的密钥、注释、MCP 一样不少
+    assert!(after.contains("// Qwen 自己维护的版本号"), "{after}");
+    assert!(after.contains("sk-dash-我自己的"), "{after}");
+    assert_eq!(
+        get(&after, &["modelProviders", "openai"]),
+        get(QWEN, &["modelProviders", "openai"])
+    );
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
+    assert_eq!(d.models, Some(vec!["claude-sonnet".into(), "gpt-5".into()]));
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&qwen_path(&b.home)), QWEN);
+}
+
+/// 新的模型清单整组换掉，第一次记下的原值不变
+#[test]
+fn re_adopting_qwen_with_a_changed_model_list_replaces_the_group() {
+    let b = bed("qwen-code", QWEN);
+    let c = client("qwen-code");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let mut g = gw();
+    g.models = vec!["gpt-5".into()];
+    let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&qwen_path(&b.home));
+    assert_eq!(
+        tw_adopt::qwen::models_in(&after),
+        Some(vec!["gpt-5".into()])
+    );
+    assert_eq!(
+        get(&after, &["model", "name"]),
+        Some(tw_adopt::json::Val::s("gpt-5"))
+    );
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&qwen_path(&b.home)), QWEN);
+}
+
+/// 还没有 settings.json：建出来，还原时它空了就收走
+#[test]
+fn a_qwen_settings_file_created_here_is_removed_again() {
+    let b = bed("qwen-code", "");
+    let c = client("qwen-code");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    assert!(qwen_path(&b.home).exists());
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert!(!qwen_path(&b.home).exists());
+}
+
+// ---- Hermes Agent：`model` 那一节换成指向网关的自定义 provider ----------------
+
+/// 照它安装时铺下的那一份写的：大段注释、带引号的值、MCP、`_config_version`。
+const HERMES: &str = r#"# Hermes Agent CLI Configuration
+_config_version: 49
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  # Default model to use (can be overridden with --model flag)
+  default: "anthropic/claude-opus-4.6"
+
+  # Inference provider selection
+  provider: "auto"
+
+  # API configuration (falls back to OPENROUTER_API_KEY env var)
+  base_url: "https://openrouter.ai/api/v1"
+
+mcp_servers:
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_我自己的"
+"#;
+
+fn hermes_path(home: &Path) -> PathBuf {
+    client("hermes-agent").config_path(home)
+}
+
+fn yget(text: &str, path: &[&str]) -> Option<String> {
+    tw_adopt::yaml::get(text, path).unwrap()
+}
+
+#[test]
+fn adopting_hermes_points_its_model_section_at_the_gateway_and_restores_byte_for_byte() {
+    let b = bed("hermes-agent", HERMES);
+    let c = client("hermes-agent");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(p.carries_secret);
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&hermes_path(&b.home));
+    assert_eq!(
+        yget(&after, &["model", "provider"]).as_deref(),
+        Some("custom")
+    );
+    assert_eq!(
+        yget(&after, &["model", "base_url"]).as_deref(),
+        Some("http://127.0.0.1:8080/v1")
+    );
+    assert_eq!(
+        yget(&after, &["model", "api_key"]).as_deref(),
+        Some("tw-用户的专属密钥")
+    );
+    // 选着的模型网关没有：用清单里的第一个，Claude 走 Messages
+    assert_eq!(
+        yget(&after, &["model", "default"]).as_deref(),
+        Some("claude-sonnet")
+    );
+    assert_eq!(
+        yget(&after, &["model", "api_mode"]).as_deref(),
+        Some("anthropic_messages")
+    );
+    // 注释、版本号、MCP 一样不少
+    assert!(after.contains("# Default model to use"), "{after}");
+    assert!(after.contains("_config_version: 49"), "{after}");
+    assert!(after.contains("ghp_我自己的"), "{after}");
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&hermes_path(&b.home)), HERMES);
+}
+
+/// 只改默认的 profile：别的 profile 在、粘住了别的 profile、`.env` 里写了
+/// `CUSTOM_BASE_URL`，都在确认之前说
+#[test]
+fn hermes_profiles_and_an_overriding_env_file_are_stated_before_confirming() {
+    let b = bed("hermes-agent", HERMES);
+    let c = client("hermes-agent");
+    let dir = hermes_path(&b.home).parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("profiles/work")).unwrap();
+    std::fs::write(dir.join("profiles/work/config.yaml"), "model: {}\n").unwrap();
+    std::fs::write(dir.join("active_profile"), "work\n").unwrap();
+    std::fs::write(
+        dir.join(".env"),
+        "CUSTOM_BASE_URL=https://relay.example.com/v1\n",
+    )
+    .unwrap();
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    let codes: Vec<_> = p.notes.iter().map(|n| n.code.as_str()).collect();
+    assert!(
+        codes.contains(&"adopt.plan.hermes_agent.other_profiles"),
+        "{codes:?}"
+    );
+    assert!(
+        codes.contains(&"adopt.plan.hermes_agent.active_profile"),
+        "{codes:?}"
+    );
+    assert!(codes.contains(&"adopt.plan.shadowed"), "{codes:?}");
+    assert_eq!(p.shadows, vec![dir.join(".env")]);
+    // 别的 profile 一个字节都不动
+    assert_eq!(read(&dir.join("profiles/work/config.yaml")), "model: {}\n");
+
+    apply(&c, &p, &b.backups).unwrap();
+    let f = tw_adopt::detect::diagnose(&c, &b.home, None, &Around::default());
+    assert!(
+        f.iter()
+            .any(|x| x.title.code == "adopt.diag.hermes_agent.active_profile"),
+        "{f:?}"
+    );
+    let shadow = f
+        .iter()
+        .find(|x| x.title.code == "adopt.diag.shadowed")
+        .expect("`.env` 里的 CUSTOM_BASE_URL 要报");
+    assert_eq!(shadow.detail.arg("fields"), "CUSTOM_BASE_URL");
+}
+
+/// 还没有 config.yaml：建出来，还原时它空了就收走
+#[test]
+fn a_hermes_config_created_here_is_removed_again() {
+    let b = bed("hermes-agent", "");
+    let c = client("hermes-agent");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    assert!(hermes_path(&b.home).exists());
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert!(!hermes_path(&b.home).exists());
+}
+
+/// 老写法 `model: "名字"`（一个字符串，不是一节）：往下面写不进去，**什么都不改、说出来**，
+/// 而不是把这一行改坏
+#[test]
+fn a_hermes_model_written_as_a_plain_string_is_refused_without_a_change() {
+    let old = "model: \"anthropic/claude-opus-4.6\"\n";
+    let b = bed("hermes-agent", old);
+    let c = client("hermes-agent");
+    let e = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap_err();
+    assert_eq!(e.msg().code, "adopt.plan.parse_failed", "{e}");
+    assert_eq!(read(&hermes_path(&b.home)), old);
+}

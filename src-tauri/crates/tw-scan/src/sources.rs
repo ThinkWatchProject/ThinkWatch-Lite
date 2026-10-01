@@ -107,7 +107,8 @@ pub const SIDECAR_MARK: &str = ".thinkwatch.json";
 /// `~/.agents/skills`（和项目里的 `.agents/skills`）算在谁名下：**谁都不是**。
 ///
 /// 它是 Agent Skills 约定的共用目录，Pi、oh-my-pi、DeepSeek Harness、Antigravity CLI、
-/// Copilot、Kimi、Goose、Crush、Kilo、Cline、MiMo 都读它。算在其中一家名下，清单上就像是
+/// Grok Build、Qwen Code、Copilot、Kimi、Goose、Crush、Kilo、Cline、MiMo 都读它（Hermes Agent
+/// 只读信任了的项目里的那一个）。算在其中一家名下，清单上就像是
 /// 那一家独有的，删掉那一家的人会以为它也跟着没了。界面按这个标识显示成「共用目录」。
 pub const SHARED_SKILLS: &str = "agents";
 
@@ -135,6 +136,26 @@ fn md_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// 目录下这几种后缀的文件（不递归）。Grok Build 的 `hooks/*.json`、Qwen Code 的
+/// `commands/*.toml`
+fn files_in(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<_> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .filter(|p| {
+            p.extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| exts.contains(&x))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 /// `skills/<名字>/SKILL.md`。
 fn skills_in(dir: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir) else {
@@ -148,6 +169,44 @@ fn skills_in(dir: &Path) -> Vec<PathBuf> {
     out.sort();
     out
 }
+
+/// 任意深度下的 `SKILL.md`（最多往下找 [`SKILL_DEPTH`] 层）：Hermes Agent 的 skill 按类别再分
+/// 一层（`skills/<类别>/<名>/SKILL.md`）。一个目录里有 `SKILL.md` 就是一个 skill，它底下的
+/// 资源目录不再往下找；点开头的、`node_modules` 这类不找，和 Hermes 自己跳过的一样
+fn skills_deep(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if !p.is_dir()
+                || name.starts_with('.')
+                || matches!(
+                    name.as_ref(),
+                    "node_modules" | "venv" | "__pycache__" | "_org"
+                )
+            {
+                continue;
+            }
+            let skill = p.join("SKILL.md");
+            if skill.is_file() {
+                out.push(skill);
+            } else if depth > 1 {
+                walk(&p, depth - 1, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, SKILL_DEPTH, &mut out);
+    out.sort();
+    out
+}
+
+/// [`skills_deep`] 往下找几层
+const SKILL_DEPTH: usize = 3;
 
 /// dsh 每个 profile 的补丁：`profiles/<名>/cordis.patch.yml`。
 fn profile_patches(dsh: &Path) -> Vec<PathBuf> {
@@ -185,6 +244,12 @@ struct Dirs {
     omp: PathBuf,
     /// 各家共用的那一个，见 [`SHARED_SKILLS`]
     shared_skills: PathBuf,
+    /// Grok Build 的 `~/.grok`：hooks、skills、commands、agents、rules、AGENTS.md
+    grok: PathBuf,
+    /// Qwen Code 的 `~/.qwen`：skills、commands、agents、rules、QWEN.md
+    qwen: PathBuf,
+    /// Hermes Agent 默认 profile 的 `~/.hermes`：按类别分层的 skills、SOUL.md
+    hermes: PathBuf,
 }
 
 fn scan_dirs(home: &Path, moved: &BTreeMap<String, Places>) -> Dirs {
@@ -204,7 +269,17 @@ fn scan_dirs(home: &Path, moved: &BTreeMap<String, Places>) -> Dirs {
         pi: at("pi", tw_adopt::paths::PI_DIR),
         omp: at("omp", tw_adopt::paths::OMP_DIR),
         shared_skills: under(home, ".agents/skills"),
+        grok: at("grok-build", tw_adopt::paths::GROK_DIR),
+        qwen: at("qwen-code", tw_adopt::paths::QWEN_DIR),
+        hermes: at("hermes-agent", tw_adopt::paths::HERMES_DIR),
     }
+}
+
+/// Cursor 的 `hooks.json`：和它的 MCP 那一份在同一个目录里（换过位置的跟着换）。Cursor
+/// 自己执行它，Grok Build 默认也执行
+fn cursor_hooks(home: &Path, moved: &BTreeMap<String, Places>) -> PathBuf {
+    let mcp = placed(moved, "cursor", Role::Mcp, under(home, ".cursor/mcp.json"));
+    mcp.with_file_name("hooks.json")
 }
 
 /// 用户级的那一小撮。**数量有限**，所以可以无条件全看一遍。
@@ -231,6 +306,9 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
         pi,
         omp,
         shared_skills,
+        grok,
+        qwen,
+        hermes,
     } = scan_dirs(home, moved);
     let mut v = vec![
         // 危险度第一：hooks 直接执行 shell
@@ -241,6 +319,7 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
             claude.join("settings.local.json"),
         ),
         f("antigravity-cli", Kind::Hooks, agy.join("hooks.json")),
+        f("cursor", Kind::Hooks, cursor_hooks(home, moved)),
         // 危险度第二：MCP
         f(
             "claude-code",
@@ -295,9 +374,42 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
             at("omp", Role::Mcp, tw_adopt::paths::OMP_MCP.resolve(home)),
         ),
         f("omp", Kind::Mcp, omp.join(".mcp.json")),
+        // Grok Build、Qwen Code、Hermes Agent 的 MCP server 和模型写在同一份配置里
+        f(
+            "grok-build",
+            Kind::Mcp,
+            at(
+                "grok-build",
+                Role::Mcp,
+                tw_adopt::paths::GROK_CONFIG.resolve(home),
+            ),
+        ),
+        f(
+            "qwen-code",
+            Kind::Mcp,
+            at(
+                "qwen-code",
+                Role::Mcp,
+                tw_adopt::paths::QWEN_SETTINGS.resolve(home),
+            ),
+        ),
+        f(
+            "hermes-agent",
+            Kind::Mcp,
+            at(
+                "hermes-agent",
+                Role::Mcp,
+                tw_adopt::paths::HERMES_CONFIG.resolve(home),
+            ),
+        ),
         // 指令类
         f("claude-code", Kind::Instructions, claude.join("CLAUDE.md")),
         f("codex", Kind::Instructions, codex.join("AGENTS.md")),
+        f("grok-build", Kind::Instructions, grok.join("AGENTS.md")),
+        f("qwen-code", Kind::Instructions, qwen.join("QWEN.md")),
+        f("qwen-code", Kind::Instructions, qwen.join("AGENTS.md")),
+        // Hermes Agent 每一轮都带上它
+        f("hermes-agent", Kind::Instructions, hermes.join("SOUL.md")),
     ];
     // Pi 和 oh-my-pi 每次都读进上下文的：用户级的指令、换掉或补在系统提示词后面的那一份
     for name in [
@@ -369,6 +481,40 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
     for p in md_in(&agy.join("agents")) {
         v.push(f("antigravity-cli", Kind::Agent, p));
     }
+    // Grok Build：自己的钩子是 `hooks/*.json`（config.toml 里的 `[hooks]` 跟着 MCP 那一份扫），
+    // 另外它默认还执行 Claude Code 和 Cursor 的钩子 —— 那两份各自算在它们名下
+    for p in files_in(&grok.join("hooks"), &["json"]) {
+        v.push(f("grok-build", Kind::Hooks, p));
+    }
+    for p in skills_in(&grok.join("skills")) {
+        v.push(f("grok-build", Kind::Skill, p));
+    }
+    for p in md_in(&grok.join("commands")) {
+        v.push(f("grok-build", Kind::Command, p));
+    }
+    for p in md_in(&grok.join("agents")) {
+        v.push(f("grok-build", Kind::Agent, p));
+    }
+    for p in md_in(&grok.join("rules")) {
+        v.push(f("grok-build", Kind::Instructions, p));
+    }
+    // Qwen Code：钩子写在 settings.json 里，跟着 MCP 那一份扫
+    for p in skills_in(&qwen.join("skills")) {
+        v.push(f("qwen-code", Kind::Skill, p));
+    }
+    for p in files_in(&qwen.join("commands"), &["md", "toml"]) {
+        v.push(f("qwen-code", Kind::Command, p));
+    }
+    for p in md_in(&qwen.join("agents")) {
+        v.push(f("qwen-code", Kind::Agent, p));
+    }
+    for p in md_in(&qwen.join("rules")) {
+        v.push(f("qwen-code", Kind::Instructions, p));
+    }
+    // Hermes Agent：钩子写在 config.yaml 里，跟着 MCP 那一份扫；skill 按类别分了层
+    for p in skills_deep(&hermes.join("skills")) {
+        v.push(f("hermes-agent", Kind::Skill, p));
+    }
     v
 }
 
@@ -386,7 +532,22 @@ pub struct Root {
 pub fn roots(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Root> {
     let d = scan_dirs(home, moved);
     let root = |dir: PathBuf, nested: bool| Root { dir, nested };
-    vec![
+    // Hermes Agent 的 skill 在类别那一层下面：每个类别目录各盯一次，新装的 skill 才等得到
+    let hermes_skills = d.hermes.join("skills");
+    let categories: Vec<Root> = std::fs::read_dir(&hermes_skills)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !p.join("SKILL.md").is_file())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| !n.starts_with('.'))
+        })
+        .map(|p| root(p, true))
+        .collect();
+    let mut v = vec![
         root(d.claude.join("skills"), true),
         root(d.claude.join("commands"), false),
         root(d.claude.join("agents"), false),
@@ -400,7 +561,19 @@ pub fn roots(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Root> {
         root(d.omp.join("skills"), true),
         root(d.omp.join("commands"), false),
         root(d.omp.join("prompts"), false),
-    ]
+        root(d.grok.join("hooks"), false),
+        root(d.grok.join("skills"), true),
+        root(d.grok.join("commands"), false),
+        root(d.grok.join("agents"), false),
+        root(d.grok.join("rules"), false),
+        root(d.qwen.join("skills"), true),
+        root(d.qwen.join("commands"), false),
+        root(d.qwen.join("agents"), false),
+        root(d.qwen.join("rules"), false),
+        root(hermes_skills, true),
+    ];
+    v.extend(categories);
+    v
 }
 
 /// 一个**用户显式添加的**项目目录。
@@ -462,6 +635,48 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
             v.push(f(client, Kind::Skill, p));
         }
     }
+    // Cursor 的项目钩子：Cursor 自己执行，Grok Build 在信任了的目录里也执行
+    v.push(f("cursor", Kind::Hooks, under(dir, ".cursor/hooks.json")));
+    // Grok Build：项目里的 `.grok/config.toml` 只装 MCP、插件和权限
+    v.push(f("grok-build", Kind::Mcp, under(dir, ".grok/config.toml")));
+    for p in files_in(&under(dir, ".grok/hooks"), &["json"]) {
+        v.push(f("grok-build", Kind::Hooks, p));
+    }
+    for p in skills_in(&under(dir, ".grok/skills")) {
+        v.push(f("grok-build", Kind::Skill, p));
+    }
+    for p in md_in(&under(dir, ".grok/commands")) {
+        v.push(f("grok-build", Kind::Command, p));
+    }
+    for p in md_in(&under(dir, ".grok/agents")) {
+        v.push(f("grok-build", Kind::Agent, p));
+    }
+    // Qwen Code：项目里的 settings.json 有 MCP 也有钩子
+    v.push(f("qwen-code", Kind::Mcp, under(dir, ".qwen/settings.json")));
+    v.push(f("qwen-code", Kind::Instructions, under(dir, "QWEN.md")));
+    for p in skills_in(&under(dir, ".qwen/skills")) {
+        v.push(f("qwen-code", Kind::Skill, p));
+    }
+    for p in files_in(&under(dir, ".qwen/commands"), &["md", "toml"]) {
+        v.push(f("qwen-code", Kind::Command, p));
+    }
+    for p in md_in(&under(dir, ".qwen/agents")) {
+        v.push(f("qwen-code", Kind::Agent, p));
+    }
+    // Hermes Agent：项目里的指令文件；项目 skill 要列进它的信任名单才读，在的照样扫
+    v.push(f(
+        "hermes-agent",
+        Kind::Instructions,
+        under(dir, ".hermes.md"),
+    ));
+    v.push(f(
+        "hermes-agent",
+        Kind::Instructions,
+        under(dir, "HERMES.md"),
+    ));
+    for p in skills_deep(&under(dir, ".hermes/skills")) {
+        v.push(f("hermes-agent", Kind::Skill, p));
+    }
     v.retain(|s| s.path.exists());
     for s in &mut v {
         s.project = Some(dir.to_path_buf());
@@ -508,11 +723,20 @@ mod tests {
         let home = d.path();
         let dsh = tw_adopt::paths::DSH_DIR.resolve(home);
         let profile = dsh.join("profiles/work/cordis.patch.yml");
+        let grok = tw_adopt::paths::GROK_DIR.resolve(home);
+        let qwen = tw_adopt::paths::QWEN_DIR.resolve(home);
+        let hermes = tw_adopt::paths::HERMES_DIR.resolve(home);
+        // 按形状找的，但不是 skill、命令、subagent 的那几种：也要等得到
+        let other = [
+            profile.clone(),
+            grok.join("hooks/h.json"),
+            grok.join("rules/r.md"),
+            qwen.join("rules/r.md"),
+        ];
         for p in [
             home.join(".claude/skills/a/SKILL.md"),
             home.join(".claude/commands/b.md"),
             home.join(".claude/agents/c.md"),
-            profile.clone(),
             dsh.join("skills/d/SKILL.md"),
             home.join(".agents/skills/e/SKILL.md"),
             home.join(".gemini/config/skills/f/SKILL.md"),
@@ -522,17 +746,30 @@ mod tests {
             home.join(".omp/agent/skills/j/SKILL.md"),
             home.join(".omp/agent/commands/k.md"),
             home.join(".omp/agent/prompts/l.md"),
-        ] {
-            touch(&p);
+            grok.join("skills/m/SKILL.md"),
+            grok.join("commands/n.md"),
+            grok.join("agents/o.md"),
+            qwen.join("skills/p/SKILL.md"),
+            qwen.join("commands/q.toml"),
+            qwen.join("agents/r.md"),
+            // Hermes Agent 的 skill 一层的、按类别分两层的都有
+            hermes.join("skills/s/SKILL.md"),
+            hermes.join("skills/cat/t/SKILL.md"),
+        ]
+        .iter()
+        .chain(&other)
+        {
+            touch(p);
         }
         let roots = roots(home, &BTreeMap::new());
         let found: Vec<_> = user_level(home, &BTreeMap::new())
             .into_iter()
             .filter(|s| {
-                matches!(s.kind, Kind::Skill | Kind::Command | Kind::Agent) || s.path == profile
+                matches!(s.kind, Kind::Skill | Kind::Command | Kind::Agent)
+                    || other.contains(&s.path)
             })
             .collect();
-        assert_eq!(found.len(), 13, "{found:?}");
+        assert_eq!(found.len(), 24, "{found:?}");
         for s in found {
             let dir = s.path.parent().unwrap();
             assert!(

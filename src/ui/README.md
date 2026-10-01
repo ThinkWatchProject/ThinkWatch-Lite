@@ -354,8 +354,9 @@ sit in the grey palette. Unknown ones render a letter tile of the same size.
 - Colour: `text-muted-foreground` in tables, `text-foreground` when selected or in a title.
 - Covered: Anthropic, Claude, OpenAI/ChatGPT, OpenRouter, DeepSeek, Gemini, Ollama, Z.ai,
   Zhipu, Moonshot, Kimi, Qwen, xAI, Mistral, Groq, Bedrock, Azure; clients Claude Code,
-  Claude Desktop, Codex, opencode, Cursor, Antigravity CLI, Cline, Zed, Windsurf. VS Code,
-  Aider and Continue use the letter tile (no permissive source).
+  Claude Desktop, Codex, opencode, Cursor, Antigravity CLI, Cline, Zed, Windsurf, Pi,
+  Hermes Agent (Grok Build and Qwen Code use the xAI and Qwen marks). VS Code, Aider and
+  Continue use the letter tile (no permissive source), as does oh-my-pi (no mark of its own).
 - Sources and licences: `src/ui/logo-data.ts` header and `/NOTICE`. Add new marks only from
   MIT/CC0 sets (Lobe Icons, Simple Icons); never from LGPL projects.
 

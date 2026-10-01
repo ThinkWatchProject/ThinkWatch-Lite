@@ -30,6 +30,9 @@ const set = (path: string, value: string): FieldChange => ({ op: "set", path, va
 const secret = (path: string): FieldChange => ({ op: "set", path, value: null, secret: true });
 const file = (f: string) => msg("adopt.manual.file", `Open ${f} and set the fields below.`, { file: f });
 
+/** 网关给这台机器上的密钥列出来的模型，和 opencode 那一条写进去的是同一份 */
+const MOCK_MODELS = ["claude-sonnet-5", "gpt-5.5", "deepseek-chat"] as const;
+
 /** 接管时写哪几项（tw-adopt 的 `edits`），也是手动配置那一页列的字段 */
 function setup(id: string, path: string): ManualSetup {
   switch (id) {
@@ -134,6 +137,51 @@ function setup(id: string, path: string): ManualSetup {
             "providers.thinkwatch.models",
             `[{id: claude-sonnet-5, api: anthropic-messages, baseUrl: ${base()}}, {id: gpt-5.5, api: openai-responses}, {id: deepseek-chat}]`,
           ),
+        ],
+      };
+    case "grok-build":
+      // 一个模型一张表，每张都带自己的密钥（tw-adopt grok.rs 的 `fields`）
+      return {
+        steps: [file(path)],
+        endpoint: v1(),
+        fields: [
+          ...MOCK_MODELS.flatMap((m) => [
+            set(`model.thinkwatch/${m}.model`, m),
+            set(`model.thinkwatch/${m}.name`, `${m} (ThinkWatch)`),
+            set(`model.thinkwatch/${m}.base_url`, v1()),
+            set(`model.thinkwatch/${m}.api_backend`, m.startsWith("claude") ? "messages" : m.startsWith("gpt-") ? "responses" : "chat_completions"),
+            secret(`model.thinkwatch/${m}.api_key`),
+          ]),
+          set("models.default", `thinkwatch/${MOCK_MODELS[0]}`),
+          set("features.campaigns", "false"),
+        ],
+      };
+    case "qwen-code":
+      return {
+        steps: [file(path)],
+        endpoint: v1(),
+        fields: [
+          set(
+            "modelProviders.thinkwatch",
+            `[${MOCK_MODELS.map((m) => `{id: ${m}, name: ${m} (ThinkWatch), baseUrl: ${v1()}, envKey: THINKWATCH_QWEN_API_KEY}`).join(", ")}]`,
+          ),
+          set("providerProtocol.thinkwatch", "openai"),
+          secret("env.THINKWATCH_QWEN_API_KEY"),
+          set("security.auth.selectedType", "openai"),
+          set("model.name", MOCK_MODELS[0]),
+          set("model.baseUrl", v1()),
+        ],
+      };
+    case "hermes-agent":
+      return {
+        steps: [file(path)],
+        endpoint: v1(),
+        fields: [
+          set("model.provider", "custom"),
+          set("model.base_url", v1()),
+          secret("model.api_key"),
+          set("model.api_mode", "anthropic_messages"),
+          set("model.default", MOCK_MODELS[0]),
         ],
       };
     default:
@@ -315,6 +363,68 @@ function clientsNow(): DetectedClient[] {
         ),
       ],
     }),
+    // 这台机器上同样没装的三个：照默认位置给出手动配置的方法（tw-adopt clients.rs 的原句）
+    detected({
+      id: "grok-build",
+      name: "Grok Build",
+      path: "~/.grok/config.toml",
+      installed: false,
+      has_config: false,
+      costs: [
+        msg(
+          "adopt.cost.grok_build.builtin_models",
+          "Grok's built-in models stay in the model picker and still connect to xAI directly; the gateway's models are listed as thinkwatch/<model>.",
+        ),
+        msg(
+          "adopt.cost.grok_build.helper_models",
+          "Web search, image descriptions, session titles and prompt suggestions still use Grok's built-in models, which connect to xAI directly.",
+        ),
+        msg(
+          "adopt.cost.grok_build.campaigns",
+          "Grok's remote campaigns, which can change the default model, are turned off while this is in place.",
+        ),
+      ],
+    }),
+    detected({
+      id: "qwen-code",
+      name: "Qwen Code",
+      path: "~/.qwen/settings.json",
+      installed: false,
+      has_config: false,
+      takes_effect: "on_restart",
+      warns_when_silent: false,
+      costs: [
+        msg("adopt.cost.qwen_code.restart", "Qwen Code has to be restarted afterwards."),
+        msg("adopt.cost.qwen_code.version", "This needs Qwen Code 0.19.3 or later; earlier versions ignore the gateway's models."),
+        msg(
+          "adopt.cost.qwen_code.other_models",
+          "Models set separately for fast replies, vision, compaction and similar tasks keep their own providers.",
+        ),
+        msg(
+          "adopt.cost.qwen_code.proxy",
+          "When Qwen Code uses a proxy, the gateway address has to be listed in NO_PROXY, or requests to the gateway go through the proxy.",
+        ),
+      ],
+    }),
+    detected({
+      id: "hermes-agent",
+      name: "Hermes Agent",
+      path: "~/.hermes/config.yaml",
+      installed: false,
+      has_config: false,
+      takes_effect: "on_restart",
+      warns_when_silent: false,
+      costs: [
+        msg(
+          "adopt.cost.hermes_agent.restart",
+          "Hermes Agent sessions that are already open keep their provider until they are restarted; the messaging gateway picks up the change with the next message.",
+        ),
+        msg(
+          "adopt.cost.hermes_agent.probes",
+          "Hermes Agent checks whether the gateway is a local model server such as LM Studio or Ollama; those checks appear in Traffic as failed requests.",
+        ),
+      ],
+    }),
   ];
 }
 
@@ -414,7 +524,7 @@ export function plan(id: string, restore: boolean): PlanView {
 
 // ───────────────────────────────────────── MCP 与扫描
 
-/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少）。Zed、Antigravity CLI、Pi、oh-my-pi 与 DeepSeek Harness 这台机器上没有，画在矩阵下方 */
+/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少）。Zed、Antigravity CLI、Pi、oh-my-pi、Grok Build、Qwen Code、Hermes Agent 与 DeepSeek Harness 这台机器上没有，画在矩阵下方 */
 export function mcpTargets(): McpTargetView[] {
   return [
     { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null, movable: true, present: true },
@@ -473,6 +583,24 @@ export function mcpTargets(): McpTargetView[] {
       ),
       movable: true, present: false,
     },
+    ...(
+      [
+        ["grok-build", "Grok Build", "~/.grok/config.toml"],
+        ["qwen-code", "Qwen Code", "~/.qwen/settings.json"],
+        ["hermes-agent", "Hermes Agent", "~/.hermes/config.yaml"],
+      ] as const
+    ).map(([client, name, path]) => ({
+      client,
+      name,
+      path,
+      copyable: false,
+      why_not: msg(
+        "adopt.mcp.unverified_format",
+        "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+      ),
+      movable: true,
+      present: false,
+    })),
     {
       client: "dsh",
       name: "DeepSeek Harness",

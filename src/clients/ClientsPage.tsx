@@ -148,7 +148,7 @@ export default function ClientsPage({
         })),
     ),
   ];
-  /** 配置里的模型清单跟网关对不上了（opencode）：更新走的是接管那一遍「差异 → 确认 → 写入」 */
+  /** 配置里的模型清单跟网关对不上了（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）：更新走的是接管那一遍「差异 → 确认 → 写入」 */
   const staleModels = data?.clients.filter((c) => c.models_stale) ?? [];
   /** 连着远程时，这台电脑上接管着却还指着本机网关的。WSL 里的在各自那一组里说 */
   const leftBehind = remote ? leftBehindOf(adopted) : [];

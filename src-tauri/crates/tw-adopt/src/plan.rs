@@ -438,13 +438,40 @@ pub(crate) fn adopt_notes(c: &Client, home: &Path, gw: &Gateway) -> (Vec<Msg>, V
     notes.extend(cost_notes(c));
     // 一个模型都没写进去：opencode 里不会出现网关的模型。**在确认之前说**，
     // 而不是让用户接管完了在模型列表里找不到
-    if c.writes_models && gw.models.is_empty() {
+    if crate::clients::picks_model(c) && gw.models.is_empty() {
+        // 要挑一个默认模型的那几个这时什么都不写（见 `clients::picks_model`）
+        notes.push(msg!(
+            "adopt.plan.no_models_nothing_written", client = c.name =>
+            "The gateway has no model available to this key yet, so nothing is written to \
+             {client}. Point it at the gateway again once models are available."
+        ));
+    } else if c.writes_models && gw.models.is_empty() {
         notes.push(msg!(
             "adopt.plan.no_models", client = c.name =>
             "The gateway has no model available to this key yet, so no ThinkWatch model \
              shows up in {client}. Once models are available, update the model list on the \
              Clients page."
         ));
+    }
+    // Hermes Agent 只改默认的 profile：别的 profile 各有各的配置，粘住了别的 profile 的，
+    // 平常启动就读不到这一份。**都在确认之前说**
+    if c.id == "hermes-agent"
+        && let Some(dir) = c.config_path(home).parent()
+    {
+        let others = crate::hermes::other_profiles(dir);
+        if !others.is_empty() {
+            notes.push(msg!(
+                "adopt.plan.hermes_agent.other_profiles", profiles = others.join(", ") =>
+                "Only the default profile is changed; {profiles} keep their own configuration."
+            ));
+        }
+        if let Some(p) = crate::hermes::active_profile(dir) {
+            notes.push(msg!(
+                "adopt.plan.hermes_agent.active_profile", profile = p =>
+                "The active profile is {profile}, so Hermes Agent started without -p reads that \
+                 profile's configuration rather than the default one changed here."
+            ));
+        }
     }
     if c.verified == crate::clients::Verified::FieldsOnly {
         notes.push(fields_only_note(c));
@@ -564,17 +591,44 @@ pub(crate) fn adopt_file(
     // 上一次写过、这一次不写的字段**照样记着**：它们还在文件里（opencode 两次
     // 接管之间换了写法时，v1 那一条连同密钥都还在），记录里没了，还原就不会
     // 收走它们
+    //
+    // 例外是整段都是我们建的、这一次又一个字段都不写的那一段（Grok Build 里网关不再列出的
+    // 模型那张表，见 `clients::stale_container`）：**现在就整段拿掉**，记录里也不再留它
     if let Some(os) = prior_originals {
+        let mut stale: Vec<Vec<String>> = Vec::new();
         for o in os {
-            if !originals.iter().any(|n: &Original| n.path == o.path) {
-                originals.push(o);
+            if originals.iter().any(|n: &Original| n.path == o.path) {
+                continue;
             }
+            let gone = match crate::clients::stale_container(client, &o.path) {
+                Some(c) if o.was == Was::Missing => {
+                    (!originals.iter().any(|n| n.path.starts_with(&c))).then_some(c)
+                }
+                _ => None,
+            };
+            match gone {
+                Some(c) => {
+                    if !stale.contains(&c) {
+                        stale.push(c);
+                    }
+                }
+                None => originals.push(o),
+            }
+        }
+        for c in stale {
+            text = drop_(fmt, &text, &refs(&c), client)?;
+            targets.push(Target::Remove(c));
         }
     }
 
     // 哨兵注释放在最前面 —— 要的是**用户打开文件就看见**。
     // 严格 JSON 装不下注释，那时只有旁文件。
-    if let Some(prefix) = crate::clients::comment_prefix(fmt) {
+    //
+    // 一个字段都不写的时候不放（网关还没有模型，Grok Build、Qwen Code 什么都不用写）：
+    // 那时什么都没改，不该凭空多出一段注释，接管也就是一次空操作
+    if let Some(prefix) = crate::clients::comment_prefix(fmt)
+        && !originals.is_empty()
+    {
         let block = sentinel::comment_block(prefix, &originals);
         // 重复接管不该叠一堆哨兵
         text = format!("{block}{}", sentinel::strip(&text, prefix));

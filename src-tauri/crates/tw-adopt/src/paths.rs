@@ -51,6 +51,13 @@ pub enum Loc {
     XdgData(&'static str),
     /// 相对 DeepSeek Harness 的家目录：`$DSH_HOME`，没设就是 `~/.dsh`
     DshHome(&'static str),
+    /// 相对 Grok Build 的家目录：`$GROK_HOME`，没设就是 `~/.grok`
+    GrokHome(&'static str),
+    /// 相对 Qwen Code 的家目录：`$QWEN_HOME`，没设就是 `~/.qwen`
+    QwenHome(&'static str),
+    /// 相对 Hermes Agent 的家目录：`$HERMES_HOME`，没设就是 `~/.hermes`（Windows 上是
+    /// `%LOCALAPPDATA%\hermes`）。这是它的默认 profile，别的 profile 在 `profiles/<名>/` 下
+    HermesHome(&'static str),
 }
 
 impl Loc {
@@ -81,29 +88,32 @@ impl Loc {
                 .unwrap_or_else(|| under(home, default));
             under(&base, rel)
         };
+        // 跟着自己的变量走的家目录：只在 `home` 就是这个进程自己的 home 时才认那个变量，
+        // 理由同上
+        let own = |name: &str| var(name).filter(|_| proc_home == Some(home));
         match *self {
             Loc::Home(rel) => under(home, rel),
             Loc::XdgConfig(rel) => xdg("XDG_CONFIG_HOME", ".config", rel),
             Loc::XdgData(rel) => xdg("XDG_DATA_HOME", ".local/share", rel),
-            Loc::DshHome(rel) => {
-                // dsh 自己的 `resolveDshHome()`：变量设了（去掉空白后不为空）就用它，
-                // `~` 开头的按 home 展开；没设就是 `~/.dsh`。**相对路径不认** —— dsh
-                // 拿它对着自己启动时的工作目录解析，那个目录这里不知道
-                let set = var("DSH_HOME")
-                    .filter(|_| proc_home == Some(home))
+            // dsh 自己的 `resolveDshHome()`
+            Loc::DshHome(rel) => under(&env_dir(own("DSH_HOME"), home, ".dsh", true), rel),
+            // Grok Build 的 `resolve_grok_home()` 原样用这个值，`~` 不展开
+            Loc::GrokHome(rel) => under(&env_dir(own("GROK_HOME"), home, ".grok", false), rel),
+            // Qwen Code 的 `Storage.getGlobalQwenDir()`
+            Loc::QwenHome(rel) => under(&env_dir(own("QWEN_HOME"), home, ".qwen", true), rel),
+            Loc::HermesHome(rel) => {
+                // Hermes 的 `_get_platform_default_hermes_home()`：Windows 上在本机的
+                // AppData 下（和 Zed 一样按相对 home 算，见文件开头），别处是 `~/.hermes`；
+                // 设了 `HERMES_DATA_DIR_SUFFIX` 的，目录名后面接上它
+                let suffix = own("HERMES_DATA_DIR_SUFFIX")
                     .and_then(|v| v.into_string().ok())
-                    .map(|v| v.trim().to_string())
-                    .filter(|v| !v.is_empty());
-                let base = match set.as_deref() {
-                    Some("~") => Some(home.to_path_buf()),
-                    Some(v) if v.starts_with("~/") || v.starts_with("~\\") => {
-                        Some(under(home, &v[2..].replace('\\', "/")))
-                    }
-                    Some(v) => Some(PathBuf::from(v)).filter(|p| p.is_absolute()),
-                    None => None,
-                }
-                .unwrap_or_else(|| under(home, ".dsh"));
-                under(&base, rel)
+                    .unwrap_or_default();
+                let default = if cfg!(windows) {
+                    format!("AppData/Local/hermes{suffix}")
+                } else {
+                    format!(".hermes{suffix}")
+                };
+                under(&env_dir(own("HERMES_HOME"), home, &default, true), rel)
             }
         }
     }
@@ -114,7 +124,12 @@ impl Loc {
     pub fn home_rel(&self) -> Option<&'static str> {
         match *self {
             Loc::Home(rel) => Some(rel),
-            Loc::XdgConfig(_) | Loc::XdgData(_) | Loc::DshHome(_) => None,
+            Loc::XdgConfig(_)
+            | Loc::XdgData(_)
+            | Loc::DshHome(_)
+            | Loc::GrokHome(_)
+            | Loc::QwenHome(_)
+            | Loc::HermesHome(_) => None,
         }
     }
 
@@ -148,6 +163,28 @@ pub fn shown_path(p: &Path) -> String {
     {
         format!("~/{}", parts.join("/"))
     }
+}
+
+/// 一个由环境变量指定的家目录（dsh 的 `DSH_HOME`、Grok Build 的 `GROK_HOME`、Qwen Code 的
+/// `QWEN_HOME`、Hermes Agent 的 `HERMES_HOME`）：变量设了（去掉空白后不为空）就用它；没设就是
+/// home 底下的 `default`。`tilde`：`~` 开头的按 home 展开（Grok Build 原样用这个值，不展开）。
+///
+/// **相对路径不认**：客户端拿它对着自己启动时的工作目录解析，那个目录这里不知道。认不了的值
+/// 退回默认位置，用户在客户端页里指定配置文件就能改过来。
+fn env_dir(set: Option<std::ffi::OsString>, home: &Path, default: &str, tilde: bool) -> PathBuf {
+    let set = set
+        .and_then(|v| v.into_string().ok())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    match set.as_deref() {
+        Some("~") if tilde => Some(home.to_path_buf()),
+        Some(v) if tilde && (v.starts_with("~/") || v.starts_with("~\\")) => {
+            Some(under(home, &v[2..].replace('\\', "/")))
+        }
+        Some(v) => Some(PathBuf::from(v)).filter(|p| p.is_absolute()),
+        None => None,
+    }
+    .unwrap_or_else(|| under(home, default))
 }
 
 /// 这个进程自己的 home。和 tw-control 的 `home_dir` 读的是同一个变量。
@@ -274,6 +311,24 @@ pub const OMP_MODELS: &[Loc] = &[
 
 /// oh-my-pi 自己的 MCP 配置，顶层 `mcpServers`。
 pub const OMP_MCP: Loc = Loc::Home(".omp/agent/mcp.json");
+
+/// Grok Build 的家目录本身。**它在就算装了**：登录、会话和这份配置都在里面。
+pub const GROK_DIR: Loc = Loc::GrokHome("");
+
+/// Grok Build 的用户配置。模型、MCP server 都在这一份里
+pub const GROK_CONFIG: Loc = Loc::GrokHome("config.toml");
+
+/// Qwen Code 的家目录。**它在就算装了**：登录、会话和这份设置都在里面
+pub const QWEN_DIR: Loc = Loc::QwenHome("");
+
+/// Qwen Code 的用户设置。模型、MCP server、钩子都在这一份里
+pub const QWEN_SETTINGS: Loc = Loc::QwenHome("settings.json");
+
+/// Hermes Agent 的家目录（默认 profile）。**它在就算装了**
+pub const HERMES_DIR: Loc = Loc::HermesHome("");
+
+/// Hermes Agent 默认 profile 的配置。模型、MCP server 都在这一份里
+pub const HERMES_CONFIG: Loc = Loc::HermesHome("config.yaml");
 
 /// 按优先级从高到低排好的几个位置里，第一个存在的是第几个；都不在就是
 /// 第一个（该新建的那一个）。
@@ -566,6 +621,63 @@ mod tests {
         assert_eq!(
             DSH_DIR.resolve_with(h, Some(Path::new("/other")), with("/srv/dsh")),
             Path::new("/home/u/.dsh")
+        );
+    }
+
+    /// Grok Build、Qwen Code 和 Hermes Agent 的家目录同样跟着各自的变量走
+    #[test]
+    #[cfg(unix)]
+    fn grok_qwen_and_hermes_homes_follow_their_variables() {
+        let h = Path::new("/home/u");
+        let none = |_: &str| None;
+        assert_eq!(
+            GROK_CONFIG.resolve_with(h, Some(h), none),
+            Path::new("/home/u/.grok/config.toml")
+        );
+        let grok = |n: &str| (n == "GROK_HOME").then(|| "/srv/grok".into());
+        assert_eq!(
+            GROK_CONFIG.resolve_with(h, Some(h), grok),
+            Path::new("/srv/grok/config.toml")
+        );
+        // Grok Build 不展开 `~`：那是一个相对路径，认不了
+        let tilde = |n: &str| (n == "GROK_HOME").then(|| "~/cfg/grok".into());
+        assert_eq!(
+            GROK_CONFIG.resolve_with(h, Some(h), tilde),
+            Path::new("/home/u/.grok/config.toml")
+        );
+        assert_eq!(
+            HERMES_CONFIG.resolve_with(h, Some(h), none),
+            Path::new("/home/u/.hermes/config.yaml")
+        );
+        let hermes = |n: &str| (n == "HERMES_HOME").then(|| "/srv/hermes".into());
+        assert_eq!(
+            HERMES_CONFIG.resolve_with(h, Some(h), hermes),
+            Path::new("/srv/hermes/config.yaml")
+        );
+        // 目录名后缀只接在默认位置上；别人的 home 不认这个进程的变量
+        let suffix = |n: &str| (n == "HERMES_DATA_DIR_SUFFIX").then(|| "-dev".into());
+        assert_eq!(
+            HERMES_DIR.resolve_with(h, Some(h), suffix),
+            Path::new("/home/u/.hermes-dev")
+        );
+        assert_eq!(
+            HERMES_DIR.resolve_with(h, Some(Path::new("/other")), hermes),
+            Path::new("/home/u/.hermes")
+        );
+        let qwen = |n: &str| (n == "QWEN_HOME").then(|| "/opt/qwen".into());
+        assert_eq!(
+            QWEN_SETTINGS.resolve_with(h, Some(h), qwen),
+            Path::new("/opt/qwen/settings.json")
+        );
+        assert_eq!(
+            QWEN_SETTINGS.resolve_with(h, Some(h), none),
+            Path::new("/home/u/.qwen/settings.json")
+        );
+        // 相对路径不认
+        let rel = |n: &str| (n == "GROK_HOME").then(|| "grok".into());
+        assert_eq!(
+            GROK_DIR.resolve_with(h, Some(h), rel),
+            Path::new("/home/u/.grok")
         );
     }
 }

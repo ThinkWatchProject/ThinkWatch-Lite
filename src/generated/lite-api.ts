@@ -81,8 +81,8 @@ verified: Verification,
 costs: Array<Msg>, 
 /**
  * 配置里写着的模型清单和网关此刻对它那把密钥答的不一样了（上游或路由变了）。
- * 只有把模型写进配置的客户端（opencode、Pi、oh-my-pi）会是 `true`；点一下走一遍接管的
- * 「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
+ * 只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）会是
+ * `true`；点一下走一遍接管的「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
  */
 models_stale: boolean, 
 /**
