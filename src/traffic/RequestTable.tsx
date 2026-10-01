@@ -7,7 +7,7 @@ import { notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
 import { promptTokens, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
-import type { RequestRow } from "@/types";
+import type { ContentHit, RequestRow } from "@/types";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
@@ -38,6 +38,7 @@ const FIRST_PAINT = 60;
  */
 export function RequestTable({
   rows,
+  hits,
   groups,
   openGroups,
   selectedSession,
@@ -57,6 +58,8 @@ export function RequestTable({
   onFilter,
 }: {
   rows: RequestRow[];
+  /** 按内容搜到的那些各自对上了哪一段：那一行下面跟一行片段 */
+  hits?: ReadonlyMap<number, ContentHit>;
   /** 给了就是归组形态。不给就是平表 */
   groups?: Group[];
   /** 展开着的那几个会话 */
@@ -162,6 +165,7 @@ export function RequestTable({
         */
         <RequestRows
           rows={shownRows}
+          hits={hits}
           groups={shownGroups}
           openGroups={openGroups}
           showClient={showClient}
@@ -260,6 +264,7 @@ function BodySkeleton({ widths }: { widths: string[] }) {
  */
 function RequestRows({
   rows,
+  hits,
   groups,
   openGroups,
   showClient,
@@ -276,6 +281,7 @@ function RequestRows({
   onOpenSession,
 }: {
   rows: RequestRow[];
+  hits?: ReadonlyMap<number, ContentHit>;
   groups?: Group[];
   openGroups: ReadonlySet<string>;
   showClient: boolean;
@@ -303,6 +309,7 @@ function RequestRows({
     <Row
       key={r.id}
       r={r}
+      hit={hits?.get(r.id)}
       sameClient={prev !== undefined && clientKey(prev) === clientKey(r)}
       sameModel={prev !== undefined && (prev.model ?? "") === (r.model ?? "")}
       sameProvider={prev !== undefined && upstreamText(prev) === upstreamText(r)}
@@ -372,6 +379,7 @@ const TONE: Record<ReturnType<typeof statusTone>, StatusTone> = {
  */
 const Row = memo(function Row({
   r,
+  hit,
   sameClient,
   sameModel,
   sameProvider,
@@ -386,6 +394,8 @@ const Row = memo(function Row({
   onFilter,
 }: {
   r: RequestRow;
+  /** 按内容搜到的：对上的那一段，在这一行下面另起一行 */
+  hit?: ContentHit;
   sameClient: boolean;
   sameModel: boolean;
   sameProvider: boolean;
@@ -443,21 +453,24 @@ const Row = memo(function Row({
         ),
     },
   ];
-  return (
+  // 点一行和键盘选中一行是同一件事：之后的方向键从这一行接着走
+  const activate = () => {
+    onCursor({ kind: "request", id: r.id });
+    onOpen(r.id);
+  };
+  const row = (
     <RowMenu items={items}>
       <TableRow
         data-row={r.id}
         data-state={selected ? "selected" : undefined}
         aria-selected={selected}
-        onClick={() => {
-          // 点一行和键盘选中一行是同一件事：之后的方向键从这一行接着走
-          onCursor({ kind: "request", id: r.id });
-          onOpen(r.id);
-        }}
+        onClick={activate}
         className={cn(
           ROW,
           fresh ? "motion-row-in" : inGroup === "open" && "motion-fade",
           inGroup && "[&>td:first-child]:pl-7",
+          // 下面跟着片段那一行：分隔线画在片段下面，悬停到片段上时这一行也亮
+          hit && "border-b-0 [&:has(+tr:hover)]:bg-foreground/[0.035]",
         )}
       >
         {/*
@@ -524,7 +537,47 @@ const Row = memo(function Row({
       </TableRow>
     </RowMenu>
   );
+  if (!hit) return row;
+  /*
+    **片段另起一行，跨过状态以外的各列。**放进哪一格里都太窄（模型一格最宽 13rem），
+    而这一段话正是按内容搜索的人要看的。它不是表里的一行请求：没有 `data-row`，键盘
+    不停在它上面；点它和点上面那一行一样。
+  */
+  return (
+    <>
+      {row}
+      <TableRow
+        data-state={selected ? "selected" : undefined}
+        onClick={activate}
+        className={cn(ROW, "[tr:hover+&]:bg-foreground/[0.035]", fresh ? "motion-row-in" : inGroup === "open" && "motion-fade")}
+      >
+        <TableCell className="pt-0" />
+        <TableCell colSpan={showClient ? 8 : 7} className="pt-0 pb-2">
+          <HitText hit={hit} />
+        </TableCell>
+      </TableRow>
+    </>
+  );
 });
+
+/**
+ * 按内容对上的那一段：前面一个词说是请求里的还是回答里的，对上的字标出来。
+ *
+ * **不撑宽表格。**片段有一百来个字，表格按内容定列宽，放开写会把各列都撑开；里面
+ * 一层零宽、`min-w-full` 的块，宽度只跟着格子走，放不下的截掉（core 给的片段前后
+ * 已经带着「…」）。
+ */
+function HitText({ hit }: { hit: ContentHit }) {
+  const t = useText(trafficText);
+  return (
+    <div className="w-0 min-w-full truncate text-muted-foreground" title={hit.before + hit.matched + hit.after}>
+      <span className="mr-2 text-foreground/70">{hit.side === "request" ? t.hitRequest : t.hitAnswer}</span>
+      {hit.before}
+      <mark className="rounded-[3px] bg-foreground/10 text-foreground">{hit.matched}</mark>
+      {hit.after}
+    </div>
+  );
+}
 
 /**
  * 在跑的那一条的延迟：第一个 token 到了就先写它，后面是已经跑了多久，每秒走一格

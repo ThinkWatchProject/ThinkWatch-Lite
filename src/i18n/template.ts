@@ -180,3 +180,28 @@ function run(nodes: Node[], args: Args, tables: Tables): string | undefined {
 export function render(src: string, args: Args, tables: Tables): string | undefined {
   return run(compile(src), args, tables);
 }
+
+/**
+ * 一段写法填出来的句子里，**可能出现的那些字**：写死的字，和查表可能查到的每一个词
+ * （两个分支、退路都算）。原样填进去的参数不在里面。
+ *
+ * 搜索用（见 `core.i18n.ts` 的 `codesMatching`）。一段一项，搜索词不会跨段对上 ——
+ * 跨过一个参数对上的，那个参数填进去之后多半就对不上了。
+ */
+export function wordsOf(src: string, tables: Tables): string[] {
+  const out: string[] = [];
+  const walk = (nodes: Node[]) => {
+    for (const n of nodes) {
+      if (n.t === "text") out.push(n.s);
+      else if (n.t === "if") {
+        walk(n.then);
+        walk(n.else);
+      } else {
+        if (n.table !== undefined) out.push(...Object.values(tables[n.table] ?? {}));
+        if (n.fallback) walk(n.fallback);
+      }
+    }
+  };
+  walk(compile(src));
+  return out;
+}

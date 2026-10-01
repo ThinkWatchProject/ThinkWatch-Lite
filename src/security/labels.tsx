@@ -145,6 +145,10 @@ export function MatcherText({ m }: { m: Matcher }) {
       return t.privateIp(code);
     case "domain-suffix":
       return t.domainSuffix(code, m.suffixes);
+    case "cn-resident-id":
+      return t.cnResidentId(m.born_since);
+    case "bank-card":
+      return t.bankCard(m.networks.map((n) => n.name));
     case "regex":
       return t.regex(code, m.pattern);
     case "contains":

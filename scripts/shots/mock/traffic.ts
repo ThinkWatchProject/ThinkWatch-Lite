@@ -10,11 +10,15 @@
 // 更早的由带种子的随机数铺开，每次拍出来都一样。
 import type {
   AttemptView,
+  CacheTally,
+  ContentHit,
   CostBucket,
   CostBucketGroup,
   CostGroup,
   Dialect,
   HistoryRow,
+  HistorySearchPage,
+  HistorySearchQuery,
   InFlightRequest,
   LatencyView,
   TokenRateView,
@@ -27,10 +31,12 @@ import type {
   SessionView,
   Summary,
   TurnView,
+  UpstreamCheckup,
+  UpstreamHealth,
 } from "@/types";
 import type { Dashboard } from "@/types";
 import { AS_OF, N, priceFor, priceSource } from "./config";
-import { DAY, HOUR, MIN, NOW, SEC, L, msg, rng } from "./util";
+import { DAY, HOUR, MIN, NOW, SEC, L, clone, msg, rng } from "./util";
 import OV_EN from "../core/en/overview.json";
 
 // ───────────────────────────────────────── 谁在发请求
@@ -884,4 +890,135 @@ export function turns(id: string): TurnView[] {
 export function bodies(h: HistoryRow) {
   const text = JSON.stringify({ model: h.model, stream: true, messages: [{ role: "user", content: L("修复登录页的表单校验", "Fix the form validation on the sign-in page") }] }, null, 2);
   return { request_body: { text, original_len: text.length, truncated: false }, response_body: null };
+}
+
+// ───────────────────────────────────────── 在整份记录里搜索、上游体检（core 0.57）
+
+/**
+ * `POST /history/search`，照 tw-store 的 `search::run`：新的在前；按记录对（路径、密钥、应用、来源、
+ * 上游、模型、失败原因和它的码、本地应答那句话），按内容找时再看请求和回答的正文。截图的记录
+ * 不多，不设读正文的量，一页凑满或者找完就停
+ */
+export function historySearch(req: HistorySearchQuery): HistorySearchPage {
+  const q = (req.q ?? "").trim().toLowerCase();
+  const limit = Math.min(Math.max(req.limit ?? 100, 1), 500);
+  const b = req.before ?? null;
+  const codes = req.error_codes ?? [];
+  const reads = req.content === true && q !== "";
+  const byRecord = (h: HistoryRow) =>
+    q === "" ||
+    (h.local && req.local_matches === true) ||
+    (h.error != null && codes.includes(h.error.code)) ||
+    [h.path, h.client, h.client_hint ?? "", h.peer ?? "", h.local ? "" : h.provider, h.model, h.error?.text ?? ""].some((s) =>
+      s.toLowerCase().includes(q),
+    );
+  const rows = HISTORY.filter(
+    (h) =>
+      (req.from_ms == null || h.at_ms >= req.from_ms) &&
+      (req.to_ms == null || h.at_ms <= req.to_ms) &&
+      (!b || h.at_ms < b.at_ms || (h.at_ms === b.at_ms && h.id < b.id)) &&
+      (!req.failed || h.error != null) &&
+      (!req.unpriced || (unpriced(h) && !h.cancelled && h.input_tokens != null)) &&
+      (!req.client || h.client === req.client) &&
+      (!req.provider || (!h.local && h.provider === req.provider)) &&
+      (!req.model || h.model === req.model),
+  ).sort((x, y) => y.at_ms - x.at_ms || y.id - x.id);
+  const out: HistoryRow[] = [];
+  const hits: ContentHit[] = [];
+  for (const h of rows) {
+    if (byRecord(h)) out.push(h);
+    else if (reads && !h.local) {
+      // 截图的记录只带请求的正文（`bodies`），回答那一边没有
+      const text = bodies(h).request_body.text;
+      const at = text.toLowerCase().indexOf(q);
+      if (at >= 0) {
+        const from = Math.max(0, at - 40);
+        const to = Math.min(text.length, at + q.length + 40);
+        const flat = (s: string) => s.replace(/\s+/g, " ");
+        hits.push({
+          id: h.id,
+          side: "request",
+          before: (from > 0 ? "…" : "") + flat(text.slice(from, at)),
+          matched: text.slice(at, at + q.length),
+          after: flat(text.slice(at + q.length, to)) + (to < text.length ? "…" : ""),
+        });
+        out.push(h);
+      }
+    }
+    if (out.length >= limit) {
+      const last = out[out.length - 1]!;
+      return { rows: clone(out), hits, next: { at_ms: last.at_ms, id: last.id }, bodies_since_ms: reads ? oldestDay() : null, stopped: "full" };
+    }
+  }
+  return { rows: clone(out), hits, next: null, bodies_since_ms: reads ? oldestDay() : null, stopped: "end" };
+}
+
+/** 正文最早留到哪一天的零点（UTC）：截图的记录都带着正文，就是最老那条请求的那一天 */
+function oldestDay(): number | null {
+  if (HISTORY.length === 0) return null;
+  const d = new Date(Math.min(...HISTORY.map((h) => h.at_ms)));
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * `GET /upstreams/health`，照 tw-store 的 `upstream_health`：本地应答的、一家都没去的不算；请求数
+ * 不含取消的。截图的记录里回答写的模型名都和发出去的一样，报的输入就按本地估算记（比值 1），
+ * 缓存按同一会话里的轮次数
+ */
+export function upstreamHealth(from: number, to: number): UpstreamHealth {
+  const rows = rowsBetween(from, to).filter((h) => !h.local && h.provider);
+  const by = new Map<string, HistoryRow[]>();
+  for (const h of rows) by.set(h.provider, [...(by.get(h.provider) ?? []), h]);
+  const ok = (h: HistoryRow) => !h.error && !h.cancelled && h.input_tokens != null;
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor((xs.length - 1) / 2)]!;
+  const tally = (xs: HistoryRow[]): CacheTally => {
+    const t: CacheTally = { turns: 0, zero_read_turns: 0, input_tokens: 0, cache_read_tokens: 0 };
+    for (const h of xs.filter((x) => ok(x) && x.session)) {
+      t.turns += 1;
+      t.input_tokens += (h.input_tokens ?? 0) + (h.cache_read_tokens ?? 0) + (h.cache_write_tokens ?? 0);
+      t.cache_read_tokens += h.cache_read_tokens ?? 0;
+      if (!h.cache_read_tokens) t.zero_read_turns += 1;
+    }
+    return t;
+  };
+  const upstreams: UpstreamCheckup[] = [...by.entries()].map(([p, xs]) => {
+    const done = xs.filter((h) => !h.cancelled);
+    const models = [...new Set(xs.filter(ok).map((h) => h.model))];
+    const servedBy = (m: string, who: (o: string) => boolean) =>
+      [...by.entries()].filter(([o]) => who(o)).flatMap(([, ys]) => ys.filter((h) => ok(h) && h.model === m));
+    const ttft = xs.flatMap((h) => (h.ttft_ms != null ? [h.ttft_ms] : []));
+    const tps = xs.flatMap((h) => (h.tokens_per_sec != null ? [h.tokens_per_sec] : []));
+    const samples = xs.filter(ok).length;
+    return {
+      upstream: p,
+      requests: done.length,
+      failed: done.filter((h) => h.error).length,
+      cancelled: xs.length - done.length,
+      models: { named: done.filter((h) => h.model).length, differed: 0, examples: [] },
+      input: {
+        all: samples ? { median: 1, samples } : null,
+        by_model: models.map((m) => {
+          const others = servedBy(m, (o) => o !== p);
+          const k = new Set(others.map((h) => h.provider)).size;
+          return { model: m, here: { median: 1, samples: servedBy(m, (o) => o === p).length }, others: k ? { median: 1, samples: others.length } : null, other_upstreams: k };
+        }),
+      },
+      cache: {
+        all: tally(xs),
+        by_model: models.flatMap((m) => {
+          const here = tally(servedBy(m, (o) => o === p));
+          if (here.turns === 0) return [];
+          const others = servedBy(m, (o) => o !== p);
+          const k = new Set(others.map((h) => h.provider)).size;
+          return [{ model: m, here, others: k ? tally(others) : null, other_upstreams: k }];
+        }),
+      },
+      ttft_ms: ttft.length ? { p50: median(ttft), samples: ttft.length } : null,
+      tokens_per_sec: tps.length ? { p50: median(tps), samples: tps.length } : null,
+    };
+  });
+  upstreams.sort((a, b) => b.requests - a.requests);
+  const oldest = HISTORY.length ? Math.min(...HISTORY.map((h) => h.at_ms)) : null;
+  const covered = oldest == null ? null : Math.max(oldest, from);
+  return { from_ms: from, to_ms: to, covered_since_ms: covered != null && covered < to ? covered : null, upstreams };
 }

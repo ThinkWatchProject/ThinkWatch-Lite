@@ -63,8 +63,9 @@ webview_endpoints![
     ConfigAt,
     ConfigRollback,
     SaveListen,
-    // 记录
+    // 记录。搜索翻的是整个库，界面自己发起、自己翻页
     History,
+    HistorySearch,
     RequestDetail,
     Sessions,
     SessionDetail,
@@ -103,6 +104,8 @@ webview_endpoints![
     KnownModels,
     // 各条路由、各条规则命中了多少：路由图按它给线加权、标出从没命中过的规则
     RouteStats,
+    // 上游体检：各家上游的事实和样本数，界面按它写成自己的话
+    UpstreamHealth,
     // 价目表
     Pricing,
     RefreshPricing,

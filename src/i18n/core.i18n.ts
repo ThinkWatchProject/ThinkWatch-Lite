@@ -1,7 +1,7 @@
 import type { Msg } from "@/types";
 import { getLang } from "./index";
 import CORE_ZH from "./core.zh.json";
-import { render, type Args, type Tables } from "./template";
+import { render, wordsOf, type Args, type Tables } from "./template";
 
 /**
  * core 发来的那些码，中文怎么说。
@@ -106,6 +106,27 @@ export function zhOf(m: Msg): string | undefined {
   }
   const zh = render(say, args, CORE_TABLES);
   return zh === undefined ? undefined : leads.join("") + zh;
+}
+
+/**
+ * 中文界面上，**译文里可能含着 `q` 的那些码**。在整份记录里搜索时交给 core
+ * （`HistorySearchQuery::error_codes`）：库里存的是英文原句，界面上看到的是按码翻出来
+ * 的中文 —— 照着看到的那半句话搜，英文原句里没有它。
+ *
+ * 只看句子里写死的字和查表的词（`wordsOf`）。原样填进去的参数是上游名、模型名这类，
+ * 英文原句里本来就有，core 按 `q` 对原句就对上了。**宁可多给**：多给的那几条，界面拿到
+ * 之后照着屏幕上的那句话再筛一遍（见 `traffic/historySearch.ts`）。
+ *
+ * 英文界面上看到的就是原句，交空的。`q` 已经去掉首尾空白、转了小写。
+ */
+export function codesMatching(q: string): string[] {
+  if (!q || getLang() === "en") return [];
+  const out: string[] = [];
+  for (const [code, say] of Object.entries(MESSAGES)) {
+    if (code.startsWith("//")) continue;
+    if (wordsOf(say, CORE_TABLES).some((w) => w.toLowerCase().includes(q))) out.push(code);
+  }
+  return out;
 }
 
 /**

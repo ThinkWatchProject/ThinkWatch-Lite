@@ -1,27 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FunnelXIcon } from "lucide-react";
+import { FunnelXIcon, TextSearchIcon } from "lucide-react";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { EMPTY_FILTER, facets, filterRows, hasAnyFilter, sortRows } from "@/requestTable";
+import { errorText } from "@/i18n/core.i18n";
+import { when } from "@/format";
+import { EMPTY_FILTER, facets, hasAnyFilter, sortRows } from "@/requestTable";
 import type { CoreStatus, RequestRow, SessionView } from "@/types";
 import RequestDrawer from "@/RequestDrawer";
 import { useNav, useNavParams } from "@/nav";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { IconCopy, IconFlow } from "@/ui/icons";
-import { Input } from "@/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { usePending } from "@/ui/notify";
 import { PageHeader } from "@/ui/page";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
+import { Spinner } from "@/ui/spinner";
 import { EmptyState, ErrorState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
+import { Tip } from "@/ui/tip";
 import { Toggle } from "@/ui/toggle";
 import { useStartOf } from "@/useNow";
+import { LIST_LIMIT } from "@/useRequests";
 import { useArrivals } from "./arrivals";
 import { copyText } from "./cells";
 import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
+import { mergeFound, useHistorySearch, type HistorySearch } from "./historySearch";
 import { RequestTable } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
 import { TrafficSummary } from "./TrafficSummary";
@@ -84,10 +90,24 @@ export default function TrafficPage({
   const { filter, setFilter, sortKey, sortDir, toggleSort, grouped, setGrouped, openGroups, setOpenGroups } = view;
   const [retrying, retry] = usePending();
 
-  const rows = useMemo(
-    () => sortRows(filterRows(allRows, filter), sortKey, sortDir),
-    [allRows, filter, sortKey, sortDir],
+  /*
+    **筛选伸到整份记录里。**读进来的只有最近两千条：列表装满了、或者要按内容找时，
+    同样的条件交给 core 在库里找，找到的并进来（见 `historySearch.ts`）。没有请求时
+    库里也没有，不去问。
+  */
+  const search = useHistorySearch(
+    filter,
+    allRows,
+    allRows.length >= LIST_LIMIT,
+    seeded && seedError === undefined && allRows.length > 0,
   );
+  const found = search.found;
+  const rows = useMemo(
+    () => sortRows(mergeFound(allRows, filter, found), sortKey, sortDir),
+    [allRows, filter, found, sortKey, sortDir],
+  );
+  /** 库里那一页还没回来，表里一条都还没有：画骨架，不说「没有符合条件的」 */
+  const searching = search.mode !== "off" && (found === null || (found.busy && found.stopped === null));
   const facet = useMemo(() => facets(allRows), [allRows]);
   /** 上一次归出来的组：没变的组沿用原来的对象，组头就不重画（见 `groupBySession`） */
   const lastGroups = useRef<Group[]>([]);
@@ -103,14 +123,18 @@ export default function TrafficPage({
     const dir = sortDir === "asc" ? 1 : -1;
     return sortKey === "time" ? [...gs].sort((a, b) => (groupAt(a) - groupAt(b)) * dir) : gs;
   }, [grouped, rows, sessions, sortKey, sortDir]);
+  /** 全集：读进来的，加上库里找到的（它们可能来自别的密钥、别的应用） */
+  const universe = useMemo(() => (found ? [...allRows, ...found.rows, ...found.kept] : allRows), [allRows, found]);
   /**
    * 「密钥」这一列只在真的分得开的时候才出现：一把密钥时整列是同一个值。按实际
    * 出现过的算；推测出的应用、非本机的来源分得开也算（格子里也写它们）。
    */
   const showClient =
-    facet.clients.length > 1 || new Set(allRows.map((r) => r.hint ?? "")).size > 1 || allRows.some((r) => r.peer);
+    new Set(universe.flatMap((r) => (r.client ? [r.client] : []))).size > 1 ||
+    new Set(universe.map((r) => r.hint ?? "")).size > 1 ||
+    universe.some((r) => r.peer);
   /** 有哪一行带着推测出的应用。按全集算：筛选一变，密钥那一格的缩进不该跟着跳 */
-  const hints = useMemo(() => allRows.some((r) => r.hint), [allRows]);
+  const hints = useMemo(() => universe.some((r) => r.hint), [universe]);
 
   /*
     刚到的请求和刚出现的会话，滑进来。**按全集算**，见 `useArrivals`。
@@ -289,15 +313,37 @@ export default function TrafficPage({
           重新找它在哪儿；⌘F 也要一直有地方落。没有请求时除了搜索框都是禁用的。
         */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Input
-            variant="sm"
-            className="w-64"
-            ref={searchRef}
-            value={filter.q}
-            onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-            placeholder={t.search}
-            spellCheck={false}
-          />
+          {/*
+            **「搜索内容」是框里的一个图标开关，不和筛选并排**：它改的是怎么搜，不是筛掉
+            哪些（编辑器搜索框里「区分大小写」那一类开关也在框里，也是图标）。写成字的话，
+            英文的「Content」在 Windows 上把占位文字挤掉一截，并排放则默认窗口宽度下过滤
+            条右端的条数和「清空」要折到第二行。内容只有 core 读得到，按下之后搜索词交给它
+            在请求和回答里找；没有搜索词时它什么也不做
+          */}
+          <InputGroup className="h-7 w-[17.25rem] rounded-[min(var(--radius-md),10px)]">
+            <InputGroupInput
+              className="h-full py-0.5"
+              ref={searchRef}
+              value={filter.q}
+              onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+              placeholder={t.search}
+              spellCheck={false}
+            />
+            <InputGroupAddon align="inline-end">
+              <Tip text={t.searchContentTip}>
+                <Toggle
+                  size="sm"
+                  aria-label={t.searchContent}
+                  className="size-5 min-w-0 rounded-[5px] p-0 text-muted-foreground aria-pressed:bg-foreground/10 aria-pressed:text-foreground data-[state=on]:bg-foreground/10"
+                  disabled={none}
+                  pressed={filter.content}
+                  onPressedChange={(v) => setFilter((f) => ({ ...f, content: v }))}
+                >
+                  <TextSearchIcon />
+                </Toggle>
+              </Tip>
+            </InputGroupAddon>
+          </InputGroup>
           <Toggle
             variant="outline"
             size="sm"
@@ -371,7 +417,10 @@ export default function TrafficPage({
           */}
           {filtered && !none && (
             <span className="ml-auto flex items-center gap-1 motion-fade">
-              <span className="tw-label tw-num text-muted-foreground">{t.shownOf(rows.length, allRows.length)}</span>
+              <span className="tw-label tw-num text-muted-foreground">
+                {/* 在库里找过就说不出「一共几条」了：只说找到几条，搜到了哪儿写在表下面 */}
+                {found ? t.found(rows.length) : t.shownOf(rows.length, allRows.length)}
+              </span>
               <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setFilter(EMPTY_FILTER)}>
                 {t.clear}
               </Button>
@@ -416,17 +465,40 @@ export default function TrafficPage({
       <div className="w-fit min-w-full px-5">
         {failedEmpty ? (
           <ErrorState title={t.historyFailed} error={seedError} onRetry={() => void retry(onRetry)} retrying={retrying} />
-        ) : seeded && rows.length === 0 ? (
+        ) : seeded && rows.length === 0 && !searching ? (
           !none ? (
             // 有记录，只是全被筛掉了。这时说「暂无请求记录」是错的
             <EmptyState
               icon={<FunnelXIcon />}
               title={t.noMatchTitle}
-              description={t.noMatch(allRows.length)}
+              description={
+                found ? (
+                  <>
+                    {found.error !== undefined
+                      ? t.searchFailed(errorText(found.error))
+                      : t.noMatchSearched(found.next ? when(found.next.at_ms, today) : null)}
+                    {found.mode === "content" && found.stopped !== null && (
+                      <>
+                        <br />
+                        {found.bodiesSinceMs !== null ? t.bodiesSince(found.bodiesSinceMs) : t.noBodies}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  t.noMatch(allRows.length)
+                )
+              }
               action={
-                <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
-                  {t.clearFilters}
-                </Button>
+                <>
+                  {found && (found.error !== undefined || found.next) && (
+                    <Button variant="outline" size="sm" pending={found.busy} onClick={search.more}>
+                      {found.error !== undefined ? common.retry : t.searchMore}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setFilter(EMPTY_FILTER)}>
+                    {t.clearFilters}
+                  </Button>
+                </>
               }
             />
           ) : (
@@ -466,6 +538,7 @@ export default function TrafficPage({
         ) : (
           <RequestTable
             rows={rows}
+            hits={found?.hits}
             showClient={showClient}
             hints={hints}
             cursor={cursor}
@@ -487,6 +560,7 @@ export default function TrafficPage({
         )}
       </div>
       <div className="sticky left-0 px-5 pb-8">
+        {rows.length > 0 && <SearchStatus search={search} today={today} />}
         {locallyAnswered > 0 && rows.length > 0 && (
           <p className="mt-3 tw-label text-muted-foreground">{t.probesElsewhere(locallyAnswered)}</p>
         )}
@@ -501,6 +575,57 @@ export default function TrafficPage({
         onOpenTurn={setOpen}
       />
     </div>
+  );
+}
+
+/**
+ * 表下面那一行：在整份记录里搜到了哪一刻、还能不能往前接着找；按内容找时再说一句
+ * 报文留到哪一天 —— 比那更早的请求只按记录对，搜不到内容不等于内容里没有。
+ */
+function SearchStatus({ search, today }: { search: HistorySearch; today: number }) {
+  const t = useText(trafficText);
+  const common = useText(commonText);
+  const f = search.found;
+  if (search.mode === "off") return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 tw-label text-muted-foreground motion-fade">
+      {f === null || f.stopped === null ? (
+        f?.error !== undefined ? (
+          <SearchFailed error={f.error} onRetry={search.more} retry={common.retry} />
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <Spinner className="size-3.5" />
+            {search.mode === "content" ? t.searchingContent : t.searchingOlder}
+          </span>
+        )
+      ) : f.error !== undefined ? (
+        <SearchFailed error={f.error} onRetry={search.more} retry={common.retry} />
+      ) : f.next ? (
+        <span className="flex items-center gap-2">
+          <span className="tw-num">{t.searchedTo(when(f.next.at_ms, today))}</span>
+          <Button variant="outline" size="sm" pending={f.busy} onClick={search.more}>
+            {t.searchMore}
+          </Button>
+        </span>
+      ) : (
+        <span>{t.searchedAll}</span>
+      )}
+      {f && f.mode === "content" && f.stopped !== null && (
+        <span>{f.bodiesSinceMs !== null ? t.bodiesSince(f.bodiesSinceMs) : t.noBodies}</span>
+      )}
+    </div>
+  );
+}
+
+function SearchFailed({ error, onRetry, retry }: { error: unknown; onRetry: () => void; retry: string }) {
+  const t = useText(trafficText);
+  return (
+    <span className="flex items-center gap-2">
+      <span className="text-destructive">{t.searchFailed(errorText(error))}</span>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        {retry}
+      </Button>
+    </span>
   );
 }
 

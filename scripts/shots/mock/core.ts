@@ -18,7 +18,20 @@ import {
   security,
   keys,
 } from "./config";
-import { HISTORY, IN_FLIGHT, SEC_EVENTS, bodies, lastSeen, routeStats, sessionView, sessions, turns, unpricedModels } from "./traffic";
+import {
+  HISTORY,
+  IN_FLIGHT,
+  SEC_EVENTS,
+  bodies,
+  historySearch,
+  lastSeen,
+  routeStats,
+  sessionView,
+  sessions,
+  turns,
+  unpricedModels,
+  upstreamHealth,
+} from "./traffic";
 import { DAY, HOUR, NOW, clone, msg } from "./util";
 
 type Handler<N extends WebviewEndpoint> = (req: Endpoints[N]["req"], params: string[]) => Endpoints[N]["res"];
@@ -80,6 +93,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
         .reverse(),
     );
   },
+  HistorySearch: (req) => historySearch(req),
   RequestDetail: (_req, [id]) => {
     const h = HISTORY.find((x) => x.id === Number(id)) ?? notFound(`Request #${id}`);
     return { row: clone(h), ...bodies(h), in_flight: false };
@@ -120,6 +134,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   DeleteGroup: refuse,
   KnownModels: () => knownModels(),
   // 没给时间窗就是今天：本地零点到现在（`Window` 的默认）
+  // 没给时间窗就是最近 7 天（`UpstreamHealth` 的默认）
+  UpstreamHealth: (req) => upstreamHealth(req.from_ms ?? NOW - 7 * DAY, req.to_ms ?? Date.now()),
   RouteStats: (req) => routeStats(req.from_ms ?? new Date(NOW).setHours(0, 0, 0, 0), req.to_ms ?? Date.now()),
 
   Pricing: () => pricing(unpricedModels()),
