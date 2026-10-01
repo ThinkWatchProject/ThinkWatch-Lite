@@ -27,6 +27,7 @@ import { SessionSheet } from "./SessionPanel";
 import { TrafficSummary } from "./TrafficSummary";
 import { trafficText } from "./Traffic.i18n";
 import type { TrafficView } from "./view";
+import { OpenRowHint } from "@/guide/PageHints";
 
 const DAY_MS = 24 * 3_600_000;
 
@@ -409,6 +410,8 @@ export default function TrafficPage({
             </Button>
           }
         />
+        {/* 有请求了：说一句点开能看到什么 */}
+        <OpenRowHint when={allRows.length > 0} className="mb-3" />
       </div>
       <div className="w-fit min-w-full px-5">
         {failedEmpty ? (
