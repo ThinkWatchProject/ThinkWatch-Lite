@@ -25,6 +25,10 @@ cost and route; the API keys in it can be replaced before it leaves the
 machine, and dangerous tool calls a relay slips into an answer can be cut off
 before the client runs them.
 
+**Sponsors:** relays and providers that support
+[import links](https://thinkwat.ch/docs/lite/import-links/) can become
+sponsors. Contact [fylorn@outlook.com](mailto:fylorn@outlook.com).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
   <img src="docs/screenshots/en/overview-light.png" alt="The overview for the last seven days: tokens, cost and requests against the seven days before, with the estimated part of the cost and the unpriced requests stated; a trend chart stacked by model with the periods that had failures marked; and the models ranked by tokens and cost">
