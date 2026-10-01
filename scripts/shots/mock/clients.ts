@@ -419,10 +419,6 @@ function clientsNow(): DetectedClient[] {
           "adopt.cost.hermes_agent.restart",
           "Hermes Agent sessions that are already open keep their provider until they are restarted; the messaging gateway picks up the change with the next message.",
         ),
-        msg(
-          "adopt.cost.hermes_agent.probes",
-          "Hermes Agent checks whether the gateway is a local model server such as LM Studio or Ollama; those checks appear in Traffic as failed requests.",
-        ),
       ],
     }),
   ];

@@ -666,11 +666,8 @@ pub fn adoptable() -> Vec<Client> {
                     code!("adopt.cost.hermes_agent.restart"),
                     "Hermes Agent sessions that are already open keep their provider until they are restarted; the messaging gateway picks up the change with the next message.",
                 ),
-                // 指向本机的地址，它会挨个问几个本地模型服务的路径，网关把这些请求转给上游
-                (
-                    code!("adopt.cost.hermes_agent.probes"),
-                    "Hermes Agent checks whether the gateway is a local model server such as LM Studio or Ollama; those checks appear in Traffic as failed requests.",
-                ),
+                // 它起来时还会拿 GET 问几个本机模型服务的路径（`/api/tags`、`/version` …），看网关
+                // 是不是 Ollama、LM Studio：core 0.57.1 起网关就地回 404，不转发、不记录，用不着说
             ],
             verified: Verified::FieldsOnly,
             marker: &[crate::paths::HERMES_DIR],
