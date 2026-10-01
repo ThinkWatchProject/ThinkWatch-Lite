@@ -35,6 +35,7 @@ import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
+import { NextClientsHint } from "@/guide/PageHints";
 
 export type UpstreamTab = "upstreams" | "proxies" | "pricing";
 
@@ -372,6 +373,7 @@ export default function UpstreamsPage({
           >
             {stats.error !== undefined ? errorText(stats.error) : null}
           </Banner>
+          <NextClientsHint upstreams={providers.length} />
           {providers.length === 0 ? (
             <EmptyState
               icon={<ServerIcon />}

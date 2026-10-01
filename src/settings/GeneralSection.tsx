@@ -3,6 +3,10 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Reveal } from "@/ui/motion";
 import { Segmented } from "@/ui/segmented";
 import { Switch } from "@/ui/switch";
+import { Button } from "@/ui/button";
+import { notify } from "@/ui/notify";
+import { guideText } from "@/guide/guide.i18n";
+import { resetHints, useAnyDismissed } from "@/guide/hints";
 import { useResource } from "@/lib/resource";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
@@ -38,6 +42,7 @@ export function GeneralSection() {
         {isMac && <MenubarRow />}
         <AutostartRow />
         <NoticesRow />
+        <GuideRow />
       </SettingsCard>
     </SettingsGroup>
   );
@@ -235,6 +240,36 @@ function NoticesRow() {
             />
           )}
         </Loaded>
+      }
+    />
+  );
+}
+
+/**
+ * 引导提示：点过「不再显示」的那几条重新显示。**只动这台电脑上的记录**（见
+ * `guide/hints.ts`），不写配置文件，所以和这一节别的行一样点一下就生效。一条都没
+ * 关过时按钮置灰 —— 按了也不会有任何变化。
+ */
+function GuideRow() {
+  const t = useText(guideText);
+  const any = useAnyDismissed();
+  return (
+    <SettingsRow
+      anchor="guide"
+      label={t.hintsLabel}
+      description={t.hintsHint}
+      control={
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!any}
+          onClick={() => {
+            resetHints();
+            notify.success(t.hintsResetDone);
+          }}
+        >
+          {t.hintsReset}
+        </Button>
       }
     />
   );

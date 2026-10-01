@@ -27,6 +27,7 @@ import { OutputLimitTab } from "./OutputLimitTab";
 import { BuiltinRuleDialog, DeleteRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { securityPageText } from "./SecurityPage.i18n";
 import { useSecurityLog, type SecurityLog } from "./useSecurityLog";
+import { ObserveHint } from "@/guide/PageHints";
 
 export type SecurityTab = "log" | Guard;
 
@@ -274,6 +275,9 @@ export default function SecurityPage({
             </TabsList>
           }
         />
+
+        {/* 有防护停在「观察」：说一句确认没有误报之后可以改为拦截 */}
+        <ObserveHint count={d ? GUARDS.filter((g) => d[g].mode === "observe").length : 0} className="mt-4" />
 
         <TabsContent value="log" className="pt-4">
           <LogTab log={log} range={range} onRange={setRange} detail={d} actions={logActions} />

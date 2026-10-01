@@ -36,6 +36,7 @@ import { PlanDialog } from "./PlanDialog";
 import { RestoreAllDialog } from "./RestoreAllDialog";
 import { MirroredDialog, RestartWslDialog } from "./WslDialogs";
 import { hostOf, isLoopback, manualStatusOf, statusOf, type ClientState, type Status, type WslPlace } from "./status";
+import { ClientsPageHints } from "@/guide/PageHints";
 
 /** `env`：在哪个 WSL 发行版里（发行版的名字）；这台电脑上的不带 */
 type DialogState =
@@ -330,6 +331,7 @@ export default function ClientsPage({
         }
       />
 
+      <ClientsPageHints upstreams={providers?.length} className="mb-3" />
       {remote && data && (
         <Banner layout="inline" tone="info" icon={<IconRemote />} className="mb-3">
           {rt.clientsNote(remote.name, hostOf(data.gateway_base))}

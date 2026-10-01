@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/ui/page";
 import { Banner } from "@/ui/banner";
-import { Button } from "@/ui/button";
-import { EmptyState, ErrorState } from "@/ui/states";
+import { ErrorState } from "@/ui/states";
 import { RangePicker, useRange } from "@/ui/range";
-import { IconDashboard } from "@/ui/icons";
 import { rangeText } from "@/ui/range.i18n";
-import { useNav } from "@/nav";
 import type { Dashboard, Overview } from "@/types";
 import { useText } from "@/i18n";
+import { FirstRequestHint } from "@/guide/FirstRequestHint";
+import { SetupGuide } from "@/guide/SetupGuide";
 import { useOverview, type Shown } from "./useOverview";
 import { OverviewStatus } from "./OverviewStatus";
 import { OverviewSkeleton } from "./OverviewSkeleton";
@@ -84,7 +83,6 @@ export default function OverviewPage({
 }) {
   const t = useText(overviewText);
   const rt = useText(rangeText);
-  const nav = useNav();
   const [range, setRange] = useRange();
   const [by, setBy] = useMetric();
   const o = useOverview(range, tick);
@@ -114,10 +112,6 @@ export default function OverviewPage({
           onBy={setBy}
           switching={o.switching}
           day={rt.preset["1d"]}
-          // 按钮写的是「添加上游」：直接打开上游页的新建对话框，不是只把页面打开
-          onSetUp={() =>
-            ov && ov.providers.length === 0 ? nav.open("upstreams", { create: "upstream" }) : nav.open("clients")
-          }
         />
       )}
     </Page>
@@ -131,7 +125,6 @@ function Body({
   onBy,
   switching,
   day,
-  onSetUp,
 }: {
   shown: Shown;
   ov: Overview | null;
@@ -141,7 +134,6 @@ function Body({
   switching: boolean;
   /** 「24 小时」：实时档下不跟着图走的那几节按它算 */
   day: string;
-  onSetUp: () => void;
 }) {
   const t = useText(overviewText);
   const { data: d, range, id } = shown;
@@ -149,7 +141,7 @@ function Body({
   // 实时档下，不跟着图走的那几节标出它们的口径
   const scoped = live ? day : undefined;
   const recording = d.storage === null || d.storage.recording;
-  const noUpstreams = ov !== null && ov.providers.length === 0;
+  const fresh = neverUsed(d);
   return (
     <div
       /*
@@ -174,28 +166,11 @@ function Body({
         {d.storage && !d.storage.forwarding_affected && t.forwardingUnaffected}
       </Banner>
 
-      {neverUsed(d) ? (
-        <EmptyState
-          variant="outlined"
-          icon={<IconDashboard />}
-          title={t.emptyTitle}
-          description={
-            <>
-              {noUpstreams ? t.emptyHintNoUpstream : t.emptyHint}
-              {d.summary.locally_answered > 0 && (
-                <>
-                  <br />
-                  {t.probesAnswered(d.summary.locally_answered)}
-                </>
-              )}
-            </>
-          }
-          action={
-            <Button size="sm" onClick={onSetUp}>
-              {noUpstreams ? t.addUpstream : t.setUpClients}
-            </Button>
-          }
-        />
+      {/* 第一条请求到了：指给人去看它。只对走过「开始使用」的人说 */}
+      <FirstRequestHint when={!fresh} className="mb-5" />
+
+      {fresh ? (
+        <SetupGuide upstreams={ov?.providers.length ?? 0} probes={d.summary.locally_answered} />
       ) : (
         <>
           <HeroStats d={d} range={range} scope={id} />

@@ -165,14 +165,6 @@ export const overviewText = messages(
     // 请求记录没起来。正常时不显示
     recordingUnavailable: "请求记录未能启动",
     forwardingUnaffected: "转发不受影响。",
-
-    // 还没有任何请求时
-    emptyTitle: "尚无请求记录",
-    emptyHint: "将客户端指向本机网关后，用量与费用将在此处显示。",
-    emptyHintNoUpstream: "添加上游并将客户端指向本机网关后，用量与费用将在此处显示。",
-    probesAnswered: (n: number) => `已本地应答 ${n} 次客户端探测，客户端已连接网关。`,
-    setUpClients: "设置客户端",
-    addUpstream: "添加上游",
   },
   {
     loadFailed: "Could not load the overview",
@@ -312,16 +304,5 @@ export const overviewText = messages(
 
     recordingUnavailable: "Request recording could not start",
     forwardingUnaffected: "Forwarding is not affected.",
-
-    emptyTitle: "No requests yet",
-    emptyHint: "Usage and cost appear here once clients point to the local gateway.",
-    emptyHintNoUpstream:
-      "Usage and cost appear here once an upstream is added and clients point to the local gateway.",
-    probesAnswered: (n: number) =>
-      n === 1
-        ? "1 client probe was answered locally; a client is already connected to the gateway."
-        : `${n} client probes were answered locally; a client is already connected to the gateway.`,
-    setUpClients: "Set up clients",
-    addUpstream: "Add upstream",
   },
 );
