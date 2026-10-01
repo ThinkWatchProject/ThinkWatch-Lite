@@ -63,6 +63,8 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
         ],
         "aider" => vec!["openai-api-base"],
         "dsh" => vec!["llm-deepseek", "config", "baseURL"],
+        // provider 本身的地址。Claude 那几个模型自己另写的不带 /v1 的地址不算在这里
+        "pi" | "omp" => vec!["providers", crate::clients::PROVIDER_ID, "baseUrl"],
         "claude-desktop" => vec!["inferenceGatewayBaseUrl"],
         _ => return None,
     };
@@ -103,7 +105,7 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
     Detected {
         id: c.id,
         name: c.name,
-        installed: c.marker.iter().any(|m| m.resolve(home).exists()) || text.is_some(),
+        installed: c.installed(home) || text.is_some(),
         has_config: text.is_some(),
         adopted_at_ms: rec
             .filter(|r: &SidecarRecord| r.client == c.id)
@@ -112,7 +114,7 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
         models: text
             .as_deref()
             .filter(|_| c.writes_models)
-            .and_then(crate::opencode::models_in),
+            .and_then(|t| c.models_in(t)),
         shadows: c.live_shadows(home),
         takes_effect: c.takes_effect,
         verified: c.verified,
@@ -1005,8 +1007,10 @@ fn diagnose_in(
         for s in &d.shadows {
             let text = std::fs::read_to_string(s).unwrap_or_default();
             let hits = overriding_fields(c, &text);
+            // oh-my-pi 只读在的第一个文件：它在，这里写的就整个没人读，不看里面写了什么
+            let whole = c.reads_first_only();
             out.push(Finding {
-                level: if hits.is_empty() {
+                level: if hits.is_empty() && !whole {
                     Level::Suspect
                 } else {
                     Level::Blocking
@@ -1016,7 +1020,12 @@ fn diagnose_in(
                     path = s.display()
                     => "{path} takes precedence over what was written here"
                 ),
-                detail: if hits.is_empty() {
+                detail: if whole {
+                    msg!(
+                        "adopt.diag.shadowed.whole_file", client = c.name
+                        => "{client} reads only this file when it exists, so nothing written here is used."
+                    )
+                } else if hits.is_empty() {
                     msg!("adopt.diag.shadowed.no_fields" => "The file exists, but carries none of the fields in question.")
                 } else {
                     msg!(
@@ -1263,7 +1272,7 @@ mod tests {
         std::fs::create_dir_all(home.join(".codex")).unwrap();
         std::fs::write(
             home.join(".zshrc"),
-            "export ANTHROPIC_BASE_URL=https://old\nexport OPENAI_BASE_URL=https://old\n",
+            "export ANTHROPIC_BASE_URL=https://old\nexport OPENAI_API_KEY=sk-old\nexport OPENAI_BASE_URL=https://old\n",
         )
         .unwrap();
 
@@ -1283,9 +1292,14 @@ mod tests {
         let cx = diagnose(&c("codex"), home, None, &crate::cloud::Around::default());
         let f = cx
             .iter()
-            .find(|f| f.title.text.contains("OPENAI_BASE_URL"))
+            .find(|f| f.title.text.contains("OPENAI_API_KEY"))
             .unwrap();
         assert_eq!(f.level, Level::Blocking, "{:?}", f);
+        // Codex 2026-04 起不读 OPENAI_BASE_URL：那一行和它无关
+        assert!(
+            !cx.iter().any(|f| f.title.text.contains("OPENAI_BASE_URL")),
+            "{cx:?}"
+        );
     }
 
     #[test]
@@ -1323,11 +1337,7 @@ mod tests {
     fn the_fix_is_a_command_we_hand_over_not_one_we_run() {
         // 报告是我们的职责，修改是他的权利。
         let d = tempfile::tempdir().unwrap();
-        std::fs::write(
-            d.path().join(".zshrc"),
-            "export OPENAI_BASE_URL=https://old\n",
-        )
-        .unwrap();
+        std::fs::write(d.path().join(".zshrc"), "export OPENAI_API_KEY=sk-old\n").unwrap();
         let out = diagnose(
             &c("codex"),
             d.path(),
@@ -1336,7 +1346,7 @@ mod tests {
         );
         let f = out
             .iter()
-            .find(|f| f.title.text.contains("OPENAI_BASE_URL"))
+            .find(|f| f.title.text.contains("OPENAI_API_KEY"))
             .unwrap();
         let fix = &f.fix.as_ref().unwrap().text;
         // 各平台自己那个 sed 的写法，见 `delete_line`
@@ -1626,7 +1636,7 @@ mod tests {
         std::fs::create_dir_all(root.join("home/u/.codex")).unwrap();
         std::fs::write(
             root.join("home/u/.bashrc"),
-            "# x\nexport OPENAI_BASE_URL=http://x\n",
+            "# x\nexport OPENAI_API_KEY=sk-x\n",
         )
         .unwrap();
         let w = crate::wsl::WslHome::read(

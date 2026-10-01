@@ -1,6 +1,6 @@
 //! YAML 的外科手术，靠 [`tw_yaml`] 的 span-to-patch。
 //!
-//! 覆盖面比 JSON 和 TOML 窄，而且是**故意**的：这里只改映射里的标量键。
+//! 覆盖面比 JSON 和 TOML 窄，而且是**故意**的：这里只改映射里的键，不在列表里增删项。
 //! 顶层的扁平键（Aider 的 `.aider.conf.yml`，`openai-api-base` 这类）走最
 //! 早那条路：原地替换或者追加一行。嵌套的键（dsh 凭据文件里的
 //! `refs.THINKWATCH_API_KEY`）交给 [`tw_yaml::insert`] / [`tw_yaml::remove_key`]
@@ -10,6 +10,11 @@
 //! Continue 那种「往 `models:` 列表里塞一个新条目」仍然不在这条路上（见
 //! [`crate::clients`] 里它为什么只给指引）；按 `id` 定位列表行的是
 //! [`crate::rows`]，那是 dsh 补丁文件专用的一种形状。
+//!
+//! **整个换掉一个键的值**是另一回事：oh-my-pi 的 `providers.thinkwatch.models` 是我们
+//! 自己那个 provider 底下的一张清单，写的时候整张换、还原时整张拿走，不在用户的列表里插
+//! 一项。这一步交给 [`tw_yaml::put`] —— core 改 config.yaml 用的就是它：只动那个键那一段，
+//! 写完重新解析，核对目标读回来就是给的那一段、目标之外一个节点都没变。
 //!
 //! **宁可少支持一个客户端，也不要写一个我们自己没把握的结构性改写。**
 //! 这个文件会去改用户的配置，出错的代价不是「功能没做」而是「他的东西
@@ -46,10 +51,110 @@ fn scalar(path: &[&str], v: &Val) -> Result<Scalar, YErr> {
     }
 }
 
+/// 一个容器值写成零缩进的块式 YAML，交给 [`tw_yaml::put`]。空的写成 `[]` / `{}`。
+///
+/// ```yaml
+/// - id: claude-sonnet-5
+///   api: anthropic-messages
+/// - id: deepseek-chat
+/// ```
+fn block(v: &Val) -> String {
+    fn inline(v: &Val) -> String {
+        match v {
+            Val::Str(s) => text(s),
+            Val::Num(n) => n.clone(),
+            Val::Bool(b) => b.to_string(),
+            Val::Null => "~".into(),
+            Val::Arr(_) => "[]".into(),
+            Val::Obj(_) => "{}".into(),
+        }
+    }
+    // 一个非空的容器：一行一项
+    fn lines(v: &Val) -> Vec<String> {
+        let nested = |head: String, x: &Val| -> Vec<String> {
+            match x {
+                Val::Arr(es) if !es.is_empty() => nest(head, x),
+                Val::Obj(ms) if !ms.is_empty() => nest(head, x),
+                _ => vec![format!("{head} {}", inline(x))],
+            }
+        };
+        match v {
+            Val::Obj(ms) => ms
+                .iter()
+                .flat_map(|(k, x)| nested(format!("{}:", text(k)), x))
+                .collect(),
+            Val::Arr(es) => es
+                .iter()
+                .flat_map(|x| match x {
+                    // `- id: a` 接着 `  api: b`：第一行跟在短横后面，其余缩进两格
+                    Val::Obj(ms) if !ms.is_empty() => dash(lines(x)),
+                    Val::Arr(es) if !es.is_empty() => dash(lines(x)),
+                    _ => vec![format!("- {}", inline(x))],
+                })
+                .collect(),
+            _ => vec![inline(v)],
+        }
+    }
+    // `键:` 下一行起缩进两格
+    fn nest(head: String, x: &Val) -> Vec<String> {
+        std::iter::once(head)
+            .chain(lines(x).into_iter().map(|l| format!("  {l}")))
+            .collect()
+    }
+    fn dash(ls: Vec<String>) -> Vec<String> {
+        ls.into_iter()
+            .enumerate()
+            .map(|(i, l)| {
+                if i == 0 {
+                    format!("- {l}")
+                } else {
+                    format!("  {l}")
+                }
+            })
+            .collect()
+    }
+    match v {
+        Val::Arr(es) if es.is_empty() => "[]".into(),
+        Val::Obj(ms) if ms.is_empty() => "{}".into(),
+        _ => lines(v).join("\n"),
+    }
+}
+
+/// 一个字符串在块里的写法：一眼看得出是安全的纯量就裸写（`anthropic-messages`、
+/// `http://127.0.0.1:8788`），否则加单引号，带控制字符的用双引号转义。
+///
+/// **宁可多加引号。**裸写错了的代价是一份意思变了的文件：`yes`、`on` 会被读成布尔，
+/// `0x10` 读成数，`1:30` 读成六十进制。所以只放行字母开头、只有字母数字和 `-_./:@+`
+/// 的，看起来像布尔、空值、数的一律加引号；冒号后面跟空格的，这个字符集里本来就没有。
+fn text(s: &str) -> String {
+    const LOOKALIKE: &[&str] = &[
+        "true", "false", "yes", "no", "on", "off", "y", "n", "null", "nil",
+    ];
+    let plain = s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_./:@+".contains(&b))
+        && !s.ends_with(':')
+        && !LOOKALIKE.contains(&s.to_ascii_lowercase().as_str())
+        && s.parse::<f64>().is_err();
+    if plain {
+        s.to_string()
+    } else if s.chars().any(char::is_control) {
+        // JSON 的双引号字符串也是 YAML 的双引号字符串
+        serde_json::to_string(s).unwrap_or_else(|_| format!("'{}'", s.replace('\'', "''")))
+    } else {
+        format!("'{}'", s.replace('\'', "''"))
+    }
+}
+
 pub fn get(text: &str, path: &[&str]) -> Result<Option<String>, YErr> {
     match tw_yaml::find(text, &steps(path)) {
         Ok(f) => Ok(Some(f.value)),
         Err(PatchError::NotFound { .. }) => Ok(None),
+        // 一个容器（清单、映射）：给它的单行写法。接管记原值时要它 —— 原来就有一张同名
+        // 清单的话，那是要还回去的东西
+        Err(PatchError::NotScalar(_)) => {
+            Ok(crate::plan::lookup(&crate::yamlval::value(text)?, path).map(|v| v.to_line()))
+        }
         Err(e) => Err(e.into()),
     }
 }
@@ -57,7 +162,34 @@ pub fn get(text: &str, path: &[&str]) -> Result<Option<String>, YErr> {
 /// 写一个字段。已经有就原地替换，没有就**追加** —— 顶层的键追加到文件末尾，
 /// 嵌套的键追加到父映射末尾。不去猜该插在哪一行之间，那样只会打乱用户自己
 /// 排的顺序。
+///
+/// 值是一个容器的，整个换掉那个键的值（见开头那段），渲染见 [`block`]。
 pub fn set(text: &str, path: &[&str], value: &Val) -> Result<String, YErr> {
+    // 一个节点都没有的文件（空的、只有注释）：tw_yaml 找不到可以往里插的根。嵌套的键整段
+    // 从顶层写出来，接在原文后面 —— oh-my-pi 的 `models.yml` 新建时第一项就是
+    // `providers.thinkwatch.baseUrl`
+    if path.len() > 1 && crate::yamlval::tree(text)?.is_none() {
+        let nested = path
+            .iter()
+            .rev()
+            .fold(value.clone(), |v, k| Val::Obj(vec![(k.to_string(), v)]));
+        let mut out = text.to_string();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&block(&nested));
+        out.push('\n');
+        return Ok(out);
+    }
+    if let Val::Arr(_) | Val::Obj(_) = value {
+        let rendered = block(value);
+        let put = if rendered.contains('\n') {
+            tw_yaml::Put::Block(&rendered)
+        } else {
+            tw_yaml::Put::Inline(&rendered)
+        };
+        return Ok(tw_yaml::put(text, &steps(path), put)?);
+    }
     let v = scalar(path, value)?;
     if path.len() > 1 {
         return Ok(tw_yaml::insert(text, &steps(path), &v)?);
@@ -399,13 +531,94 @@ mod tests {
         assert_eq!(back, "version: 1\n");
     }
 
+    /// oh-my-pi 的模型清单：整张写在我们自己那个键底下，还原时整张拿走，别的一个字节不动
     #[test]
-    fn a_container_is_refused_out_loud_instead_of_half_done() {
-        // 这一层只写标量。**说出来**，而不是写出一个我们没把握的结构。
-        assert!(matches!(
-            set("a: 1\n", &["a"], &Val::Obj(Vec::new())),
-            Err(YErr::NotScalar(_))
-        ));
+    fn a_list_is_written_as_a_whole_value_and_taken_away_with_its_key() {
+        let src = "# 我的 provider\nproviders:\n  mine:\n    apiKey: '!op read x'  # 注释\n";
+        let models = Val::Arr(vec![
+            Val::Obj(vec![
+                ("id".into(), Val::s("claude-sonnet-5")),
+                ("api".into(), Val::s("anthropic-messages")),
+                ("baseUrl".into(), Val::s("http://127.0.0.1:8788")),
+            ]),
+            Val::Obj(vec![("id".into(), Val::s("deepseek-chat"))]),
+        ]);
+        let path = ["providers", "thinkwatch", "models"];
+        let out = set(src, &path, &models).unwrap();
+        assert!(out.starts_with(src), "{out}");
+        assert!(
+            out.ends_with(
+                "  thinkwatch:\n    models:\n      - id: claude-sonnet-5\n        api: anthropic-messages\n        baseUrl: http://127.0.0.1:8788\n      - id: deepseek-chat\n"
+            ),
+            "{out}"
+        );
+        assert_eq!(
+            crate::plan::lookup(&crate::yamlval::value(&out).unwrap(), &path),
+            Some(models.clone())
+        );
+        // 已经有了就整张换掉；读的时候给单行的写法
+        let again = set(&out, &path, &Val::Arr(vec![])).unwrap();
+        assert!(again.contains("models: []"), "{again}");
+        assert_eq!(get(&out, &path).unwrap(), Some(models.to_line()));
+        // 拿走它，空了的 `thinkwatch:` 一起走
+        assert_eq!(remove(&out, &path).unwrap(), src);
+    }
+
+    /// 空文件、只有注释的文件里写一个嵌套的键：整段从顶层写出来，删掉又回到原样
+    #[test]
+    fn a_nested_key_goes_into_an_empty_file_too() {
+        for src in ["", "# 只有注释\n", "# 没有换行"] {
+            let out = set(
+                src,
+                &["providers", "thinkwatch", "baseUrl"],
+                &Val::s("http://h:1/v1"),
+            )
+            .unwrap();
+            assert_eq!(
+                get(&out, &["providers", "thinkwatch", "baseUrl"])
+                    .unwrap()
+                    .as_deref(),
+                Some("http://h:1/v1"),
+                "{out}"
+            );
+            let out = set(
+                &out,
+                &["providers", "thinkwatch", "api"],
+                &Val::s("openai-completions"),
+            )
+            .unwrap();
+            let back = remove(&out, &["providers", "thinkwatch", "api"]).unwrap();
+            let back = remove(&back, &["providers", "thinkwatch", "baseUrl"]).unwrap();
+            assert_eq!(crate::yamlval::tree(&back).unwrap(), None, "{back}");
+            assert!(back.starts_with(src.trim_end()), "{back}");
+        }
+    }
+
+    /// 裸写会变意思的字符串一律加引号
+    #[test]
+    fn a_string_that_would_read_as_something_else_is_quoted() {
+        for (s, want) in [
+            ("anthropic-messages", "anthropic-messages"),
+            ("http://127.0.0.1:8788/v1", "http://127.0.0.1:8788/v1"),
+            ("openai/gpt-5", "openai/gpt-5"),
+            ("yes", "'yes'"),
+            ("On", "'On'"),
+            ("null", "'null'"),
+            ("1:30", "'1:30'"),
+            ("0x10", "'0x10'"),
+            ("nan", "'nan'"),
+            ("inf", "'inf'"),
+            ("-dash", "'-dash'"),
+            ("a: b", "'a: b'"),
+            ("it's", "'it''s'"),
+            ("", "''"),
+            ("a\nb", "\"a\\nb\""),
+        ] {
+            assert_eq!(text(s), want, "{s:?}");
+            // 读回来还是这个字符串
+            let doc = format!("k: {}\n", text(s));
+            assert_eq!(get(&doc, &["k"]).unwrap().as_deref(), Some(s), "{doc}");
+        }
     }
 
     #[test]

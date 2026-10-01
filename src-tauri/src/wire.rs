@@ -88,7 +88,7 @@ pub struct DetectedClient {
     /// 接管之后会失去或改变的功能
     pub costs: Vec<Msg>,
     /// 配置里写着的模型清单和网关此刻对它那把密钥答的不一样了（上游或路由变了）。
-    /// 只有把模型写进配置的客户端（opencode）会是 `true`；点一下走一遍接管的
+    /// 只有把模型写进配置的客户端（opencode、Pi、oh-my-pi）会是 `true`；点一下走一遍接管的
     /// 「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
     pub models_stale: bool,
     /// 配置位置能换（行菜单里给「更改路径…」，见 [`ClientLocations`]）。Claude Desktop、

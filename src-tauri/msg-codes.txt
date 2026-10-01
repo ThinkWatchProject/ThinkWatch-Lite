@@ -17,11 +17,14 @@ adopt.cost.codex.reopen_terminal
 adopt.cost.codex.resume_through_gateway
 adopt.cost.codex.sessions_after_restore
 adopt.cost.codex.sessions_split
+adopt.cost.dsh.account_direct
 adopt.cost.dsh.every_entry
 adopt.cost.dsh.models
 adopt.cost.dsh.settings_page
 adopt.cost.dsh.web_search
+adopt.cost.omp.default_model
 adopt.cost.opencode.restart
+adopt.cost.pi.default_model
 adopt.cost.zed.key_store
 adopt.diag.adopt_again
 adopt.diag.claude_desktop.managed
@@ -74,6 +77,7 @@ adopt.diag.restart
 adopt.diag.shadowed
 adopt.diag.shadowed.fields
 adopt.diag.shadowed.no_fields
+adopt.diag.shadowed.whole_file
 adopt.diag.shell_export
 adopt.diag.shell_export.harmless
 adopt.diag.shell_export.overrides
@@ -153,8 +157,11 @@ adopt.plan.managed
 adopt.plan.no_models
 adopt.plan.no_record
 adopt.plan.parse_failed
+adopt.plan.pi.proxy_env
+adopt.plan.pi.proxy_setting
 adopt.plan.read_failed
 adopt.plan.shadowed
+adopt.plan.shadowed.whole_file
 adopt.plan.stale
 adopt.restore.cloud_env
 adopt.restore.cloud_on

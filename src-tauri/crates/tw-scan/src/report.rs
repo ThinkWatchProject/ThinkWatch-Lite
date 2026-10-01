@@ -248,6 +248,18 @@ fn mcp_from(src: &Source, v: &Val) -> Vec<McpServer> {
             out.push(server(src, name.clone(), cfg));
         }
     }
+    // oh-my-pi 的 `mcp.json` 顶层还有两张名单：`disabledServers` 里的不管条目自己怎么写都
+    // 关着，`enabledServers` 里的哪怕条目写了 `enabled: false` 也开着；两张都有的，关着赢
+    if src.client == "omp" {
+        let (off, on) = (strings(v, "disabledServers"), strings(v, "enabledServers"));
+        for m in &mut out {
+            if off.contains(&m.name) {
+                m.enabled = false;
+            } else if on.contains(&m.name) {
+                m.enabled = true;
+            }
+        }
+    }
     out.sort_by(|a, b| (&a.name, &a.client).cmp(&(&b.name, &b.client)));
     out
 }

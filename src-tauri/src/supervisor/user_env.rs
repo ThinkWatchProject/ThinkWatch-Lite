@@ -25,13 +25,48 @@
 /// 取到的这一份记下来（[`last`]）：接管 Claude Code 时要看用户环境里打开没打开
 /// `CLAUDE_CODE_USE_BEDROCK` 这类开关，不为这个再跑一次登录 shell。
 pub async fn load() -> Vec<(String, String)> {
-    let env: Vec<(String, String)> = read().await.into_iter().filter(|(k, _)| keep(k)).collect();
+    let (env, proxy): (Vars, Vars) = read().await.into_iter().partition(|(k, _)| keep(k));
     *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(env.clone());
+    // 滤掉的那些里，代理变量另外记着：不带给 core，可接管 Pi 时要看它访问网关会不会经过
+    // 代理（`tw_adopt::pi::proxy_notes`）
+    *PROXY.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(proxy.into_iter().filter(|(k, _)| is_proxy(k)).collect());
     env
 }
 
+/// 一份环境变量：名字和值
+type Vars = Vec<(String, String)>;
+
 /// 最近一次取到的那一份（[`load`]）。
-static LAST: std::sync::Mutex<Option<Vec<(String, String)>>> = std::sync::Mutex::new(None);
+static LAST: std::sync::Mutex<Option<Vars>> = std::sync::Mutex::new(None);
+
+/// 同一次取到的代理变量（[`proxy`]）。
+static PROXY: std::sync::Mutex<Option<Vars>> = std::sync::Mutex::new(None);
+
+/// 用户环境里的代理变量（`http_proxy`、`HTTPS_PROXY`、`NO_PROXY` 这些，大小写照原样），和
+/// [`last`] 出自同一次读取；还没取过就现取一次。
+pub async fn proxy() -> Vec<(String, String)> {
+    let known = PROXY.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match known {
+        Some(vars) => vars,
+        None => {
+            load().await;
+            PROXY
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+                .unwrap_or_default()
+        }
+    }
+}
+
+/// 是不是一个代理变量。比较不分大小写，同 [`keep`]
+fn is_proxy(name: &str) -> bool {
+    matches!(
+        name.to_ascii_uppercase().as_str(),
+        "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "NO_PROXY"
+    )
+}
 
 /// 最近一次取到的用户环境，还没取过（本机的 core 还没起过、连着远程）就现取一次。
 ///
@@ -343,6 +378,17 @@ mod tests {
         }
         for name in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HOME", "MY_ORG"] {
             assert!(keep(name), "{name} should be carried over");
+        }
+    }
+
+    /// 代理变量不带给 core，另外记着给接管 Pi 时用
+    #[test]
+    fn proxy_variables_are_set_aside_rather_than_carried_over() {
+        for name in ["http_proxy", "HTTPS_PROXY", "no_proxy", "All_Proxy"] {
+            assert!(is_proxy(name) && !keep(name), "{name}");
+        }
+        for name in ["PATH", "HOME", "THINKWATCH_HOME"] {
+            assert!(!is_proxy(name), "{name}");
         }
     }
 

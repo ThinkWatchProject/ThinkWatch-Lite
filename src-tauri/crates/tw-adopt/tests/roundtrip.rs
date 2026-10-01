@@ -1334,6 +1334,250 @@ fn adopting_opencode_with_no_models_says_so_before_confirming() {
     assert!(!with.notes.iter().any(|n| n.code == "adopt.plan.no_models"));
 }
 
+// ---- Pi 和 oh-my-pi：自己的一个 provider，模型清单里每个模型挑本家的 API ----------
+
+/// 用过一阵的 Pi `models.json`：注释（Pi 读之前会去掉）、一个本机的 ollama
+const PI: &str = r#"{
+  // 本机的 ollama
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "models": [{ "id": "qwen2.5-coder:7b" }]
+    }
+  }
+}
+"#;
+
+#[test]
+fn adopting_pi_adds_a_provider_with_each_models_own_api() {
+    use tw_adopt::json::Val;
+    let b = bed("pi", PI);
+    let c = client("pi");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    // 默认模型不动：要说清去哪儿选；只查证过字段名也要说
+    let codes: Vec<&str> = p.notes.iter().map(|n| n.code.as_str()).collect();
+    assert!(codes.contains(&"adopt.cost.pi.default_model"), "{codes:?}");
+    assert!(codes.contains(&"adopt.plan.fields_only"), "{codes:?}");
+    apply(&c, &p, &b.backups).unwrap();
+
+    let path = c.config_path(&b.home);
+    assert!(
+        path.ends_with(".pi/agent/models.json"),
+        "{}",
+        path.display()
+    );
+    let after = read(&path);
+    let at = |k: &[&str]| {
+        let mut p = vec!["providers", "thinkwatch"];
+        p.extend_from_slice(k);
+        get(&after, &p)
+    };
+    assert_eq!(at(&["baseUrl"]), Some(Val::s("http://127.0.0.1:8080/v1")));
+    assert_eq!(at(&["api"]), Some(Val::s("openai-completions")));
+    assert_eq!(at(&["apiKey"]), Some(Val::s("tw-用户的专属密钥")));
+    // Claude 走 Anthropic Messages、地址不带 /v1；GPT 走 Responses
+    let models = tw_adopt::json::value(
+        r#"[
+      {"id": "claude-sonnet", "api": "anthropic-messages", "baseUrl": "http://127.0.0.1:8080"},
+      {"id": "gpt-5", "api": "openai-responses"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(at(&["models"]), Some(models), "{after}");
+    // 别的一个字都不动：注释、ollama
+    assert!(after.contains("// 本机的 ollama"), "{after}");
+    assert!(after.contains("\"qwen2.5-coder:7b\""), "{after}");
+
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
+    assert_eq!(
+        d.models,
+        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
+    );
+    assert!(d.installed);
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), PI);
+}
+
+/// 网关上的模型变了，重新写一遍清单：还原仍然回到最初的样子
+#[test]
+fn rewriting_the_pi_model_list_keeps_the_first_record() {
+    let b = bed("pi", PI);
+    let c = client("pi");
+    for models in [vec!["a"], vec!["a", "claude-b"]] {
+        let g = Gateway {
+            models: models.into_iter().map(str::to_string).collect(),
+            ..gw()
+        };
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+    }
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(
+        d.models,
+        Some(vec!["a".to_string(), "claude-b".to_string()])
+    );
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&c.config_path(&b.home)), PI);
+}
+
+/// Pi 访问 127.0.0.1 也走代理：`NO_PROXY` 不列它的话，接管之前说
+#[test]
+fn a_proxy_in_the_way_of_pi_is_said_before_connecting() {
+    let b = bed("pi", PI);
+    let c = client("pi");
+    let around = |no_proxy: Option<&str>| Around {
+        env: [("HOME".to_string(), b.home.display().to_string())].into(),
+        proxy: std::iter::once(("HTTPS_PROXY", "http://proxy:3128"))
+            .chain(std::iter::once(("HTTP_PROXY", "http://proxy:3128")))
+            .chain(no_proxy.map(|v| ("NO_PROXY", v)))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        ..Default::default()
+    };
+    let p = plan_adopt(&c, &b.home, &gw(), &around(None)).unwrap();
+    let n = p
+        .notes
+        .iter()
+        .find(|n| n.code == "adopt.plan.pi.proxy_env")
+        .expect("没说代理的事");
+    assert_eq!(n.args["name"], "HTTP_PROXY");
+    assert_eq!(n.args["host"], "127.0.0.1");
+    let p = plan_adopt(&c, &b.home, &gw(), &around(Some("localhost,127.0.0.1"))).unwrap();
+    assert!(
+        !p.notes
+            .iter()
+            .any(|n| n.code.starts_with("adopt.plan.pi.proxy"))
+    );
+    // 别的客户端不说这件事
+    let o = bed("omp", "");
+    let p = plan_adopt(&client("omp"), &o.home, &gw(), &around(None)).unwrap();
+    assert!(
+        !p.notes
+            .iter()
+            .any(|n| n.code.starts_with("adopt.plan.pi.proxy"))
+    );
+}
+
+/// 用过一阵的 oh-my-pi `models.yml`：注释、一个按 discovery 找模型的 ollama
+const OMP: &str = "# 我的 omp 模型\nproviders:\n  ollama:\n    baseUrl: http://127.0.0.1:11434\n    api: openai-completions\n    auth: none  # 本机的不要密钥\n    discovery:\n      type: ollama\n";
+
+#[test]
+fn adopting_omp_says_it_authenticates_with_a_key() {
+    let b = bed("omp", OMP);
+    let c = client("omp");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+
+    let path = c.config_path(&b.home);
+    assert!(
+        path.ends_with(".omp/agent/models.yml"),
+        "{}",
+        path.display()
+    );
+    let after = read(&path);
+    let at = |k: &str| {
+        tw_adopt::yaml::get(&after, &["providers", "thinkwatch", k])
+            .unwrap()
+            .unwrap_or_default()
+    };
+    // **不写 `auth: apiKey` 的话，Anthropic 的那几个模型会伪装成 Claude Code 发出去**
+    assert_eq!(at("auth"), "apiKey");
+    assert_eq!(at("baseUrl"), "http://127.0.0.1:8080/v1");
+    assert_eq!(at("api"), "openai-completions");
+    assert_eq!(at("apiKey"), "tw-用户的专属密钥");
+    // YAML 读回来标量都是字符串，和同一张 JSON 写法的清单比
+    let models = tw_adopt::json::value(
+        r#"[
+      {"id": "claude-sonnet", "api": "anthropic-messages", "baseUrl": "http://127.0.0.1:8080"},
+      {"id": "gpt-5", "api": "openai-responses"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(at("models"), models.to_line(), "{after}");
+    assert!(
+        after.contains("    models:\n      - id: claude-sonnet\n        api: anthropic-messages\n"),
+        "{after}"
+    );
+    // 用户的东西一个字节不动：原文整个还在（哨兵注释放在最前面）
+    assert!(after.contains(OMP), "{after}");
+    assert!(after.starts_with("# === ThinkWatch: begin ==="), "{after}");
+
+    let d = tw_adopt::detect::detect_one(&c, &b.home);
+    assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
+    assert_eq!(
+        d.models,
+        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
+    );
+
+    // 再接管一次是空操作
+    let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(again.is_noop(), "{}", again.after);
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), OMP);
+}
+
+/// 没有 `models.yml` 只有 `models.yaml`：oh-my-pi 读的是后者，就写进后者，不另建一份把它盖住
+#[test]
+fn omp_is_written_into_the_one_file_it_reads() {
+    let b = bed("omp", "");
+    let c = client("omp");
+    let yml = c.config_path(&b.home);
+    let yaml = yml.with_file_name("models.yaml");
+    std::fs::write(&yaml, OMP).unwrap();
+    assert_eq!(c.config_path(&b.home), yaml);
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    assert!(!yml.exists());
+    assert!(read(&yaml).contains("thinkwatch"));
+
+    // 之后才建了 `models.yml`：它一在，写进 `models.yaml` 的就整个没人读了
+    std::fs::write(&yml, "providers: {}\n").unwrap();
+    assert_eq!(c.config_path(&b.home), yaml, "换了文件就还原不了");
+    let f = tw_adopt::detect::diagnose(&c, &b.home, None, &Around::default())
+        .into_iter()
+        .find(|f| f.title.code == "adopt.diag.shadowed")
+        .expect("没报被盖住");
+    assert_eq!(f.level, tw_adopt::detect::Level::Blocking);
+    assert_eq!(f.detail.code, "adopt.diag.shadowed.whole_file");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(
+        p.notes
+            .iter()
+            .any(|n| n.code == "adopt.plan.shadowed.whole_file"),
+        "{:?}",
+        p.notes
+    );
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&yaml), OMP);
+}
+
+/// 两边都还没有配置文件：新建的，还原时删掉
+#[test]
+fn a_pi_or_omp_file_created_here_is_removed_again() {
+    for id in ["pi", "omp"] {
+        let b = bed(id, "");
+        let c = client(id);
+        let path = c.config_path(&b.home);
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+        assert!(p.before.is_none(), "{id}");
+        apply(&c, &p, &b.backups).unwrap();
+        assert!(read(&path).contains("tw-用户的专属密钥"), "{id}");
+        let r = plan_restore(&c, &b.home).unwrap();
+        apply_restore(&c, &r, &b.backups).unwrap();
+        assert!(!path.exists(), "{id}：{}", read(&path));
+    }
+}
+
 // ---- Claude Code 直连云服务商：`CLAUDE_CODE_USE_BEDROCK` 这一类开关 ------------
 
 /// `/setup-bedrock` 写出来的那种 settings.json：开关、区域、API key、钉好的模型都在 `env` 里

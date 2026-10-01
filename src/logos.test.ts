@@ -35,6 +35,11 @@ describe("上游和客户端的标志", () => {
     expect(clientGlyph("gemini-cli")).toBeNull();
     expect(clientGlyph("zed-editor")).toBe("zed");
     expect(clientGlyph("aider")).toBeNull();
+    expect(clientGlyph("pi")).toBe("pi");
+    expect(clientGlyph("Pi")).toBe("pi");
+    // 分支不借用 Pi 的标志
+    expect(clientGlyph("omp")).toBeNull();
+    expect(clientGlyph("oh-my-pi")).toBeNull();
   });
 
   it("图形是单色的：数据里没有颜色", () => {

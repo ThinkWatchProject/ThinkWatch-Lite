@@ -813,3 +813,87 @@ fn opencode_jsonc_with_comments_and_trailing_commas_is_scanned() {
     assert_eq!(ms[0].command, "npx");
     assert_eq!(ms[0].args, ["-y", "server-fs"]);
 }
+
+/// Pi 和 oh-my-pi 的 `mcp.json`：顶层 `mcpServers`，和别家列在同一张矩阵上
+#[test]
+fn pi_and_omp_servers_show_up_next_to_everyone_elses() {
+    let b = bed();
+    write(
+        &tw_adopt::paths::PI_MCP.resolve(&b.home),
+        r#"{
+  "mcpServers": {
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "docs": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" }, "enabled": false }
+  }
+}"#,
+    );
+    let r = run(&b.home);
+    let pi: Vec<_> = r.mcp.iter().filter(|m| m.client == "pi").collect();
+    assert_eq!(pi.len(), 2, "{:?}", r.mcp);
+    let docs = pi.iter().find(|m| m.name == "docs").unwrap();
+    assert!(docs.is_third_party());
+    assert!(!docs.enabled, "enabled: false 是关着的");
+    // 关着的远端 server 不报（它此刻跑不起来），开着的那个和 Claude Code 的同名、配置不同
+    assert!(
+        !r.findings
+            .iter()
+            .any(|f| f.client == "pi" && f.rule == "remote-mcp")
+    );
+    assert!(tw_scan::report::conflicting(&r.mcp).contains(&"filesystem".to_string()));
+}
+
+/// oh-my-pi 顶层的两张名单：`disabledServers` 关着赢，`enabledServers` 打开写了关的
+#[test]
+fn omp_server_lists_decide_which_servers_are_on() {
+    let b = bed();
+    write(
+        &tw_adopt::paths::OMP_MCP.resolve(&b.home),
+        r#"{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "far": { "type": "http", "url": "https://mcp.example.com/mcp" },
+    "both": { "type": "stdio", "command": "x", "enabled": false },
+    "back": { "type": "stdio", "command": "y", "enabled": false }
+  },
+  "disabledServers": ["far", "both"],
+  "enabledServers": ["both", "back"]
+}"#,
+    );
+    let r = run(&b.home);
+    let on = |name: &str| {
+        r.mcp
+            .iter()
+            .find(|m| m.client == "omp" && m.name == name)
+            .unwrap_or_else(|| panic!("{name} 不在：{:?}", r.mcp))
+            .enabled
+    };
+    assert!(!on("far"));
+    assert!(!on("both"), "两张名单都有的，关着赢");
+    assert!(on("back"));
+    // 关着的远端 server 不报
+    assert!(
+        !r.findings
+            .iter()
+            .any(|f| f.client == "omp" && f.rule == "remote-mcp")
+    );
+}
+
+/// `~/.agents/skills` 里的 skill：清单上算在共用目录名下，规则照扫
+#[test]
+fn a_skill_in_the_shared_folder_is_listed_and_scanned_as_shared() {
+    let b = bed();
+    write(
+        &b.home.join(".agents/skills/全都要/SKILL.md"),
+        "---\nname: 全都要\nallowed-tools: [\"*\"]\n---\n\n随便用。\n",
+    );
+    let r = run(&b.home);
+    let s = r.skills.iter().find(|s| s.name == "全都要").unwrap();
+    assert_eq!(s.client, sources::SHARED_SKILLS);
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.client == sources::SHARED_SKILLS && f.rule == "over-broad-tools"),
+        "{:?}",
+        r.findings
+    );
+}
