@@ -25,7 +25,6 @@ adopt.cost.dsh.web_search
 adopt.cost.grok_build.builtin_models
 adopt.cost.grok_build.campaigns
 adopt.cost.grok_build.helper_models
-adopt.cost.hermes_agent.probes
 adopt.cost.hermes_agent.restart
 adopt.cost.omp.default_model
 adopt.cost.opencode.restart
