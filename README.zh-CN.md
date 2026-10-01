@@ -20,6 +20,8 @@
 
 Claude Code、Codex 等 AI 客户端的本地网关，支持 macOS、Windows 与 Linux。客户端只需接入一次，此后更换上游或模型无需改动客户端配置。每个请求的费用与去向都有记录；发出前可替换其中的 API 密钥，中转站在回答中塞入的危险工具调用也可以在客户端执行前拦下。
 
+**赞助商**：支持[导入链接](https://thinkwat.ch/zh-CN/docs/lite/import-links/)的中转站和服务商可以成为赞助商，联系 [fylorn@outlook.com](mailto:fylorn@outlook.com)。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/overview-dark.png">
   <img src="docs/screenshots/zh/overview-light.png" alt="最近 7 天的概览：token、费用与请求数及其与前 7 天的对比，注明费用中的估算部分和无法计价的请求；按模型分层的趋势图，标出有失败的时段；以及按 token 与费用排列的模型">
