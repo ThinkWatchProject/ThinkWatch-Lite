@@ -26,6 +26,9 @@ import { LEVELS, levelTone } from "./parts";
 
 type McpTab = "servers" | "extensions" | "findings";
 
+/** 扫描报告里共用技能目录（`~/.agents/skills`、项目里的 `.agents/skills`）的归属标识 */
+const SHARED_SKILLS = "agents";
+
 /** 一次扫描：各客户端的配置面，和哪些客户端能写。`at` 是扫完的时刻 */
 interface Scan {
   report: ScanReport;
@@ -123,7 +126,8 @@ export default function McpPage({
 
   const report = data.data?.report;
   const targets = data.data?.targets ?? [];
-  const nameOf = (c: string) => targets.find((x) => x.client === c)?.name ?? c;
+  // 技能所在的 `~/.agents/skills` 是各家共用的，不算在哪一个客户端名下（tw-scan 的 `SHARED_SKILLS`）
+  const nameOf = (c: string) => (c === SHARED_SKILLS ? t.sharedSkills : (targets.find((x) => x.client === c)?.name ?? c));
   const movable = (c: string) => targets.find((x) => x.client === c)?.movable ?? false;
   const servers = report ? new Set(report.mcp.map((m) => m.name)).size : null;
 

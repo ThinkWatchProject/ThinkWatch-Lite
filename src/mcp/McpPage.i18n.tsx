@@ -76,6 +76,8 @@ export const mcpText = messages(
     skills: "技能",
     skillsNote: "仅列出，不支持跨客户端复制：技能的跨客户端格式尚无通行标准。",
     client: "客户端",
+    // ~/.agents/skills：各客户端共用的技能目录，不属于某一个客户端
+    sharedSkills: "共用目录",
     event: "事件",
     command: "命令",
     name: "名称",
@@ -167,6 +169,7 @@ export const mcpText = messages(
     skills: "Skills",
     skillsNote: "Listed only. Copying between clients is not supported: there is no common format for skills across clients yet.",
     client: "Client",
+    sharedSkills: "Shared folder",
     event: "Event",
     command: "Command",
     name: "Name",

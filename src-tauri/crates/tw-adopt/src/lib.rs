@@ -20,6 +20,7 @@ pub mod locations;
 pub mod mcp;
 pub mod opencode;
 pub mod paths;
+pub mod pi;
 pub mod plan;
 pub mod rows;
 pub mod sentinel;

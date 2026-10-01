@@ -94,7 +94,7 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
 /// 这把密钥在网关上能用哪些模型：网关的 `GET /v1/models` 对它答的。
 ///
 /// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
-/// 网关按它的 `allow` 答得准。opencode 要把这份清单写进配置（它不自己去问）。
+/// 网关按它的 `allow` 答得准。opencode、Pi、oh-my-pi 要把这份清单写进配置（它们不自己去问）。
 async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
     fetch_models(base, key, false).await
 }
@@ -231,6 +231,8 @@ impl Place {
             Place::Here => {
                 let mut a = Around::here(user_env::last().await, true);
                 a.core_env = core_env;
+                // Pi 访问网关会不会经过代理，看这几个（带给 core 的那一份里没有它们）
+                a.proxy = user_env::proxy().await.into_iter().collect();
                 a
             }
             Place::Wsl(w) => Around::wsl(w, core_env),
@@ -275,7 +277,7 @@ pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + '
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
-    // 把模型写进配置的那几个（opencode），问一下网关此刻给它那把密钥答什么：拿来
+    // 把模型写进配置的那几个（opencode、Pi、oh-my-pi），问一下网关此刻给它那把密钥答什么：拿来
     // 判断配置里的清单过没过期，也给手动配置那一栏照着写。还没有它自己的密钥就按
     // 接管时会用的那把问。**问不到就不说** —— 网关停着的时候客户端页照样要打得开
     let mut models = BTreeMap::new();

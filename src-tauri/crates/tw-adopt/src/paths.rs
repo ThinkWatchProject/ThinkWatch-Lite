@@ -217,6 +217,64 @@ pub const DSH_CREDENTIALS: Loc = Loc::DshHome(".credentials.yaml");
 /// 第一次启动时把它导入 profile、改名成 `settings.yaml.imported`。
 pub const DSH_SETTINGS: Loc = Loc::DshHome("settings.yaml");
 
+/// DeepSeek Harness 桌面版装在哪，找得到就是那个路径。
+///
+/// 照它的打包配置（electron-builder，`productName: 'DeepSeek Harness'`）：macOS 上是从
+/// DMG 拖进「应用程序」的 `DeepSeek Harness.app`，用户自己的 `~/Applications` 也算；
+/// Windows 上是只给当前用户装的 NSIS 安装包，默认装在
+/// `%LOCALAPPDATA%\Programs\DeepSeek Harness\`（安装时改过目录的找不到）。Linux 版没有发布。
+///
+/// **它也读 dsh 的家目录**：桌面版用的是 `$DSH_HOME/profiles/desktop`，家目录那一层补丁
+/// 照样压在上面，所以它不是另一个客户端，只是让 dsh 那一行在家目录还没建出来时（装好
+/// 还没打开过）也算装了。系统的「应用程序」只在问的就是这个进程自己的 home 时才看
+/// （同 `opencode::candidates`）。
+pub fn dsh_desktop_app(home: &Path) -> Option<PathBuf> {
+    let mut at = Vec::new();
+    if cfg!(target_os = "macos") {
+        at.push(under(home, "Applications/DeepSeek Harness.app"));
+        if env_home().as_deref() == Some(home) {
+            at.push(PathBuf::from("/Applications/DeepSeek Harness.app"));
+        }
+    } else if cfg!(windows) {
+        at.push(under(
+            home,
+            "AppData/Local/Programs/DeepSeek Harness/DeepSeek Harness.exe",
+        ));
+    }
+    at.into_iter().find(|p| p.exists())
+}
+
+/// Pi（`pi`）的配置目录。
+///
+/// `PI_CODING_AGENT_DIR` 能把它整个挪走：挪过的在客户端页指定位置，和 Claude Code 的
+/// `CLAUDE_CONFIG_DIR` 一样 —— 从访达打开的应用本来就看不见 shell 里 export 的变量。
+pub const PI_DIR: Loc = Loc::Home(".pi/agent");
+
+/// Pi 的自定义 provider 和模型：`providers.<id>.{baseUrl, api, apiKey, models[]}`。
+pub const PI_MODELS: Loc = Loc::Home(".pi/agent/models.json");
+
+/// Pi 的全局设置。只看里面的 `httpProxy`（见 [`crate::pi::proxy_notes`]）。
+pub const PI_SETTINGS: Loc = Loc::Home(".pi/agent/settings.json");
+
+/// Pi 0.99 起的 MCP 配置，顶层 `mcpServers`。
+pub const PI_MCP: Loc = Loc::Home(".pi/agent/mcp.json");
+
+/// oh-my-pi（`omp`）的配置目录。它是 Pi 的分支，挪目录的变量是 `PI_CODING_AGENT_DIR`、
+/// `PI_CONFIG_DIR`，具名 profile（`OMP_PROFILE`）另有自己的目录 —— 同 [`PI_DIR`]，挪过的
+/// 在客户端页指定位置。
+pub const OMP_DIR: Loc = Loc::Home(".omp/agent");
+
+/// oh-my-pi 的自定义 provider 和模型。**两个文件、它只读一个**：`models.yml` 在就读它，
+/// 不在才读 `models.yaml`（`ConfigFile#resolveReadPath`），不合并。所以写进在的那一个，
+/// 都不在就新建 `models.yml` —— 照它自己的挑法，见 [`first_existing`]。
+pub const OMP_MODELS: &[Loc] = &[
+    Loc::Home(".omp/agent/models.yml"),
+    Loc::Home(".omp/agent/models.yaml"),
+];
+
+/// oh-my-pi 自己的 MCP 配置，顶层 `mcpServers`。
+pub const OMP_MCP: Loc = Loc::Home(".omp/agent/mcp.json");
+
 /// 按优先级从高到低排好的几个位置里，第一个存在的是第几个；都不在就是
 /// 第一个（该新建的那一个）。
 pub fn first_existing(locs: &[Loc], home: &Path) -> usize {

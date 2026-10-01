@@ -160,8 +160,8 @@ pub struct Client {
     /// 密钥不在配置文件里、要在客户端自己的界面里填时，手动配置多出来的那一步
     /// （「码，英文原句」）。只有 Zed 是这样：它的密钥走自己的凭据存储。
     pub key_elsewhere: Option<(&'static str, &'static str)>,
-    /// 模型清单要写进它的配置（opencode）：接管时写一份网关对这把密钥答的清单，
-    /// 上游或路由变了之后客户端页提示更新。别的客户端自己去问网关。
+    /// 模型清单要写进它的配置（opencode、Pi、oh-my-pi）：接管时写一份网关对这把密钥答的
+    /// 清单，上游或路由变了之后客户端页提示更新。别的客户端自己去问网关。
     pub writes_models: bool,
     /// 它自己会重读配置，改完不用重启。**装着的版本说了算**，见 [`Client::here`]
     pub reloads: bool,
@@ -349,7 +349,10 @@ pub fn adoptable() -> Vec<Client> {
             verified: Verified::Measured,
             marker: &[Loc::Home(".codex")],
             process: &["codex"],
-            env_vars: &["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"],
+            // **没有 `OPENAI_BASE_URL`**：Codex 2026-04 起不再读它（openai/codex 4b8bab6，
+            // 换成了 config.toml 里的 `openai_base_url`）。shell 里还 export 着它的用户，
+            // 诊断再说「这一行盖住了接管写的值」就是误报
+            env_vars: &["OPENAI_API_KEY", "CODEX_HOME"],
             key_elsewhere: None,
             writes_models: false,
             reloads: false,
@@ -462,6 +465,12 @@ pub fn adoptable() -> Vec<Client> {
                     code!("adopt.cost.dsh.every_entry"),
                     "The web app, the desktop app and headless runs all go through the gateway, without a restart.",
                 ),
+                // 桌面版能用 DeepSeek 账号登录：那条线路是另一行插件（`llm-deepseek-account`），
+                // 令牌只交给 DeepSeek 自己的地址（`resolveToken` 认目的地），改不到网关上来
+                (
+                    code!("adopt.cost.dsh.account_direct"),
+                    "Models used through a DeepSeek account signed in to the desktop app go straight to api.deepseek.com and do not pass through the gateway.",
+                ),
                 (
                     code!("adopt.cost.dsh.web_search"),
                     "Web search still goes straight to DeepSeek rather than through the gateway.",
@@ -476,6 +485,8 @@ pub fn adoptable() -> Vec<Client> {
                 ),
             ],
             verified: Verified::FieldsOnly,
+            // 桌面版装好、还没打开过时家目录还不在：那时认它的应用本身，见
+            // [`Client::installed`]
             marker: &[crate::paths::DSH_DIR],
             process: &["dsh"],
             // 继承下来的环境变量压过凭据文件：shell 里 export 了同名的，
@@ -484,6 +495,73 @@ pub fn adoptable() -> Vec<Client> {
             key_elsewhere: None,
             writes_models: false,
             reloads: false,
+            config_beats_env: false,
+            custom_config: None,
+        },
+        // Pi（earendil-works/pi，原来的 badlogic/pi-mono）。写的是 `models.json` 里一个
+        // 自己的 provider 和模型清单，见 `crate::pi`。
+        //
+        // 字段名照 Pi 0.99.2 的源码（`model-config.ts` 的 schema、`provider-composer.ts`
+        // 的 `modelFromJson`），没有在本机实跑过
+        Client {
+            id: "pi",
+            name: "Pi",
+            config: &[crate::paths::PI_MODELS],
+            format: Format::Json,
+            // 打开 /model 就重读 models.json（`model-runtime.ts` 的 `refresh`），跑着的 Pi
+            // 不用重启
+            takes_effect: TakesEffect::Immediately,
+            shadowed_by: &[],
+            // **默认模型不动**（见 `crate::pi`）：接管之后它还用原来那个，要说清去哪儿选
+            costs: &[(
+                code!("adopt.cost.pi.default_model"),
+                "The default model stays as it is; ThinkWatch models are chosen in /model, where Ctrl+S makes one the default.",
+            )],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::PI_DIR],
+            // npm 装的 Pi 进程名就是 node，认不出它；它自己重读配置（`reloads`），诊断用不着
+            // 这一项
+            process: &[],
+            // 它把整个配置目录挪走：shell 里 export 了它，Pi 读的就不是这里写的那一份
+            env_vars: &["PI_CODING_AGENT_DIR"],
+            key_elsewhere: None,
+            writes_models: true,
+            reloads: true,
+            config_beats_env: false,
+            custom_config: None,
+        },
+        // oh-my-pi（`omp`，can1357/oh-my-pi），Pi 的分支：同样的 provider 写法，换成了
+        // YAML 的 `models.yml`，而且必须写明 `auth: apiKey`（见 `crate::pi::edits`）。
+        //
+        // 字段名照它的源码（`models-config-schema-bundle.ts`、`custom-models.ts`）和
+        // docs/models.md，没有在本机实跑过
+        Client {
+            id: "omp",
+            name: "oh-my-pi",
+            config: crate::paths::OMP_MODELS,
+            format: Format::Yaml,
+            // 模型选择器打开时，models.yml 改过就重读（`model-picker.ts` 的
+            // `refreshIfStale`）
+            takes_effect: TakesEffect::Immediately,
+            shadowed_by: &[],
+            costs: &[(
+                code!("adopt.cost.omp.default_model"),
+                "The default model stays as it is; ThinkWatch models are chosen in /model, where assigning the default role makes one the default.",
+            )],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::OMP_DIR],
+            process: &["omp"],
+            // 这几个都换它读的目录：前两个挪整个配置目录，后两个选一个具名 profile
+            // （`~/.omp/profiles/<名>/agent`）
+            env_vars: &[
+                "PI_CODING_AGENT_DIR",
+                "PI_CONFIG_DIR",
+                "OMP_PROFILE",
+                "PI_PROFILE",
+            ],
+            key_elsewhere: None,
+            writes_models: true,
+            reloads: true,
             config_beats_env: false,
             custom_config: None,
         },
@@ -888,6 +966,9 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
                 Val::s(DSH_KEY_REF),
             ),
         ],
+        // 一个自己的 provider 加上模型清单，每个模型挑它本家的 API。见 `crate::pi`
+        "pi" => crate::pi::edits(gw, crate::pi::Flavor::Pi),
+        "omp" => crate::pi::edits(gw, crate::pi::Flavor::Omp),
         _ => Vec::new(),
     }
 }
@@ -966,6 +1047,32 @@ impl Client {
             self.reloads = true;
         }
         self
+    }
+
+    /// 这台机器上装了它：痕迹在（[`Client::marker`]），或者找得到它的桌面应用。
+    ///
+    /// 后一种只有 DeepSeek Harness：桌面版装好、还没打开过的时候，它的家目录还不在，
+    /// 可它确实装了（[`crate::paths::dsh_desktop_app`]）。
+    pub fn installed(&self, home: &std::path::Path) -> bool {
+        self.marker.iter().any(|m| m.resolve(home).exists())
+            || (self.id == "dsh" && crate::paths::dsh_desktop_app(home).is_some())
+    }
+
+    /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）。没有那一条
+    /// provider 就是 `None`。
+    pub fn models_in(&self, text: &str) -> Option<Vec<String>> {
+        match self.id {
+            "opencode" => crate::opencode::models_in(text),
+            id => crate::pi::models_in(text, crate::pi::Flavor::of(id)?),
+        }
+    }
+
+    /// 几个候选文件（[`Client::config`]）里它只读在的第一个，不合并。
+    ///
+    /// oh-my-pi 是这样：`models.yml` 一在，`models.yaml` 就整个没人读 —— 排在前面的那一份
+    /// 盖住的不是同名的几项，是这里写的全部。opencode 是逐层合并的，不一样。
+    pub fn reads_first_only(&self) -> bool {
+        self.id == "omp"
     }
 
     /// 手动配置的几步：打开哪个文件、写下面那几项（就是接管时写的那几项，
@@ -1280,10 +1387,11 @@ mod tests {
             models: Vec::new(),
         };
         let by = |id: &str| adoptable().into_iter().find(|c| c.id == id).unwrap();
-        // 各要各的写法：Claude Code 和 Claude Desktop 不带 /v1，其余带
+        // 各要各的写法：Claude Code 和 Claude Desktop 不带 /v1，其余带（Pi 和 oh-my-pi 的
+        // provider 带 /v1，Claude 那几个模型自己另写不带的）
         assert_eq!(by("claude-code").endpoint(&gw), "http://127.0.0.1:18790");
         assert_eq!(by("claude-desktop").endpoint(&gw), "http://127.0.0.1:18790");
-        for id in ["codex", "opencode", "zed", "aider", "dsh"] {
+        for id in ["codex", "opencode", "zed", "aider", "dsh", "pi", "omp"] {
             assert_eq!(by(id).endpoint(&gw), "http://127.0.0.1:18790/v1", "{id}");
         }
         for c in adoptable() {
@@ -1369,6 +1477,55 @@ mod tests {
                 c.id
             );
         }
+    }
+
+    /// Codex 2026-04 起不读 `OPENAI_BASE_URL` 了（openai/codex 4b8bab6）：shell 里 export 着
+    /// 它不该再被说成盖住了接管写的值
+    #[test]
+    fn codex_no_longer_watches_openai_base_url() {
+        let codex = adoptable().into_iter().find(|c| c.id == "codex").unwrap();
+        assert!(!codex.env_vars.contains(&"OPENAI_BASE_URL"));
+        assert!(codex.env_vars.contains(&"CODEX_HOME"));
+    }
+
+    /// Pi 和 oh-my-pi 只写自己那一个 provider：改内置的，`/login` 的凭据就跟着发到网关去了
+    #[test]
+    fn pi_and_omp_write_a_provider_of_their_own() {
+        let gw = Gateway::keyed("http://127.0.0.1:8788", "tw-k", vec!["claude-x".into()]);
+        for id in ["pi", "omp"] {
+            let c = adoptable().into_iter().find(|c| c.id == id).unwrap();
+            for e in edits(&c, &gw) {
+                assert_eq!(
+                    e.path[..2],
+                    ["providers".to_string(), PROVIDER_ID.to_string()],
+                    "{id}：{:?}",
+                    e.path
+                );
+            }
+            assert!(c.writes_models && c.reloads, "{id}");
+            assert_eq!(c.verified, Verified::FieldsOnly, "{id}");
+        }
+    }
+
+    /// DeepSeek Harness 桌面版装好还没打开过：家目录还不在，那一行照样算装了
+    #[test]
+    fn the_dsh_desktop_app_counts_as_dsh_installed() {
+        let d = tempfile::tempdir().unwrap();
+        let dsh = adoptable().into_iter().find(|c| c.id == "dsh").unwrap();
+        assert!(!dsh.installed(d.path()));
+        let app = if cfg!(target_os = "macos") {
+            "Applications/DeepSeek Harness.app"
+        } else if cfg!(windows) {
+            "AppData/Local/Programs/DeepSeek Harness/DeepSeek Harness.exe"
+        } else {
+            // Linux 版没有发布，没有可认的位置
+            return;
+        };
+        let p = crate::paths::under(d.path(), app);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "").unwrap();
+        assert!(dsh.installed(d.path()));
+        assert_eq!(crate::paths::dsh_desktop_app(d.path()), Some(p));
     }
 
     /// 码重了等于两句不同的话共用一条译文 —— 改其中一句，另一句会跟着

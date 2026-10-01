@@ -93,6 +93,10 @@ pub struct Around {
     /// core 解析 `${变量名}` 用的环境：本机的 core 起的时候拿到的那一份。**`None` = 不知道**
     /// （连着远程 core，变量在服务器上解析）—— 那时不说哪个变量网关看不见
     pub core_env: Option<BTreeMap<String, String>>,
+    /// 用户环境里的代理变量（`http_proxy`、`NO_PROXY` 这些，大小写照原样）。`env` 里没有
+    /// 它们：带给 core 的那一份特意滤掉了代理，见桌面端的 `user_env`。Pi 访问网关会不会经过
+    /// 代理要看它们（[`crate::pi::proxy_notes`]）
+    pub proxy: BTreeMap<String, String>,
 }
 
 impl Around {
@@ -106,6 +110,8 @@ impl Around {
             core_env: (!remote).then(|| env.clone()),
             env,
             managed,
+            // 代理变量另外给（桌面端的 `user_env` 从同一份用户环境里取出来）
+            proxy: BTreeMap::new(),
         }
     }
 
@@ -121,6 +127,7 @@ impl Around {
             env: BTreeMap::new(),
             managed,
             core_env,
+            proxy: BTreeMap::new(),
         }
     }
 }

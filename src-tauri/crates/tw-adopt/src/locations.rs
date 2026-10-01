@@ -130,6 +130,20 @@ pub fn layouts() -> Vec<Layout> {
             shared: false,
             scan_dir: true,
         },
+        // 接管写 `models.json` / `models.yml`，MCP 在同一目录的 `mcp.json`，skills 和指令文件
+        // 也在这个目录下：`PI_CODING_AGENT_DIR` 挪的是整个目录
+        Layout {
+            client: "pi",
+            dir: crate::paths::PI_DIR,
+            shared: false,
+            scan_dir: true,
+        },
+        Layout {
+            client: "omp",
+            dir: crate::paths::OMP_DIR,
+            shared: false,
+            scan_dir: true,
+        },
     ]
 }
 
