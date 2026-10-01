@@ -74,7 +74,7 @@ pub fn unknown(id: &str) -> Msg {
 
 /// 客户端页的那一张表。
 ///
-/// `models` 是要把模型写进配置的客户端（opencode）此刻从网关问到的模型清单，按
+/// `models` 是要把模型写进配置的客户端（opencode、Pi、oh-my-pi）此刻从网关问到的模型清单，按
 /// 客户端 id：拿它和配置里写着的比，不一样就提示更新；手动配置的那几项也照它写。
 /// 问不到的不在里面。
 pub fn list(
@@ -1226,6 +1226,58 @@ pub(crate) mod tests {
             "{:?}",
             oc.manual.fields
         );
+    }
+
+    /// Pi 和 oh-my-pi 也把模型写进配置：清单跟网关对不上了一样提示更新；diff 里看不到密钥
+    #[test]
+    fn a_stale_pi_or_omp_model_list_is_flagged_too() {
+        for id in ["pi", "omp"] {
+            let home = tempfile::tempdir().unwrap();
+            let keys = vec![key(id, "tw-p", Some(id), false)];
+            let now = |ms: &[&str]| {
+                BTreeMap::from([(
+                    id.to_string(),
+                    ms.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+                )])
+            };
+            let stale = |models: &BTreeMap<String, Vec<String>>| {
+                list(home.path(), &gw(keys.clone()), models)
+                    .clients
+                    .into_iter()
+                    .find(|c| c.id == id)
+                    .unwrap()
+                    .models_stale
+            };
+            let target = tw_adopt::clients::Gateway::keyed(
+                "http://127.0.0.1:8788",
+                "tw-p",
+                vec!["claude-a".into(), "b".into()],
+            );
+            let v = plan_adopt(
+                home.path(),
+                id,
+                &gw(keys.clone()),
+                target.models.clone(),
+                &Around::default(),
+            )
+            .unwrap();
+            assert!(!v.after.contains("tw-p"), "{id}：{}", v.after);
+            assert!(
+                v.fields.iter().any(|f| f.secret && f.value.is_none()),
+                "{id}"
+            );
+            adopt(
+                home.path(),
+                &backups(&home),
+                id,
+                &target,
+                None,
+                &Around::default(),
+            )
+            .unwrap();
+            assert!(!stale(&now(&["b", "claude-a"])), "{id}");
+            assert!(stale(&now(&["claude-a"])), "{id}");
+        }
     }
 
     /// 别处的 home（WSL 里的、测试的临时目录）不带用户指定的配置文件：那份设置只管

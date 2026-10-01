@@ -104,6 +104,13 @@ pub struct Source {
 /// 我们自己留下的文件名里都有这一段。监听要跳过它们（见 [`crate::watch`]）。
 pub const SIDECAR_MARK: &str = ".thinkwatch.json";
 
+/// `~/.agents/skills`（和项目里的 `.agents/skills`）算在谁名下：**谁都不是**。
+///
+/// 它是 Agent Skills 约定的共用目录，Pi、oh-my-pi、DeepSeek Harness、Antigravity CLI、
+/// Copilot、Kimi、Goose、Crush、Kilo、Cline、MiMo 都读它。算在其中一家名下，清单上就像是
+/// 那一家独有的，删掉那一家的人会以为它也跟着没了。界面按这个标识显示成「共用目录」。
+pub const SHARED_SKILLS: &str = "agents";
+
 fn f(client: &'static str, kind: Kind, path: PathBuf) -> Source {
     Source {
         client,
@@ -164,21 +171,40 @@ fn placed(moved: &BTreeMap<String, Places>, client: &str, role: Role, default: P
         .unwrap_or(default)
 }
 
-/// 扫描要看的几个目录：Claude Code、Codex、agy 的（换过位置的按换过的），和 dsh 的。
-/// [`candidates`] 和 [`roots`] 从同一处取，两边说的才是同一批目录
-fn scan_dirs(home: &Path, moved: &BTreeMap<String, Places>) -> [PathBuf; 4] {
-    [
-        placed(moved, "claude-code", Role::Scan, under(home, ".claude")),
-        placed(moved, "codex", Role::Scan, under(home, ".codex")),
-        // agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
-        placed(
+/// 扫描要看的几个目录（换过位置的按换过的）。[`candidates`] 和 [`roots`] 从同一处取，
+/// 两边说的才是同一批目录
+struct Dirs {
+    claude: PathBuf,
+    codex: PathBuf,
+    /// agy 的全局配置都在 `~/.gemini/config/` 下：hooks、MCP、subagent
+    agy: PathBuf,
+    dsh: PathBuf,
+    /// Pi 的 `~/.pi/agent`：skills、prompts（斜杠命令）、AGENTS.md
+    pi: PathBuf,
+    /// oh-my-pi 的 `~/.omp/agent`：skills、commands、prompts、AGENTS.md
+    omp: PathBuf,
+    /// 各家共用的那一个，见 [`SHARED_SKILLS`]
+    shared_skills: PathBuf,
+}
+
+fn scan_dirs(home: &Path, moved: &BTreeMap<String, Places>) -> Dirs {
+    let at = |client: &str, default: tw_adopt::paths::Loc| {
+        placed(moved, client, Role::Scan, default.resolve(home))
+    };
+    Dirs {
+        claude: placed(moved, "claude-code", Role::Scan, under(home, ".claude")),
+        codex: placed(moved, "codex", Role::Scan, under(home, ".codex")),
+        agy: placed(
             moved,
             "antigravity-cli",
             Role::Scan,
             under(home, ".gemini/config"),
         ),
-        tw_adopt::paths::DSH_DIR.resolve(home),
-    ]
+        dsh: tw_adopt::paths::DSH_DIR.resolve(home),
+        pi: at("pi", tw_adopt::paths::PI_DIR),
+        omp: at("omp", tw_adopt::paths::OMP_DIR),
+        shared_skills: under(home, ".agents/skills"),
+    }
 }
 
 /// 用户级的那一小撮。**数量有限**，所以可以无条件全看一遍。
@@ -197,7 +223,15 @@ pub fn user_level(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
 /// 哪儿冒出来，见 [`roots`]。
 pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> {
     let at = |client: &str, role: Role, default: PathBuf| placed(moved, client, role, default);
-    let [claude, codex, agy, dsh] = scan_dirs(home, moved);
+    let Dirs {
+        claude,
+        codex,
+        agy,
+        dsh,
+        pi,
+        omp,
+        shared_skills,
+    } = scan_dirs(home, moved);
     let mut v = vec![
         // 危险度第一：hooks 直接执行 shell
         f("claude-code", Kind::Hooks, claude.join("settings.json")),
@@ -249,10 +283,35 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
                 tw_adopt::paths::ZED_SETTINGS.resolve(home),
             ),
         ),
+        // Pi 0.99 起的 MCP，和 oh-my-pi 自己的那两份（`.mcp.json` 是它为兼容也读的）
+        f(
+            "pi",
+            Kind::Mcp,
+            at("pi", Role::Mcp, tw_adopt::paths::PI_MCP.resolve(home)),
+        ),
+        f(
+            "omp",
+            Kind::Mcp,
+            at("omp", Role::Mcp, tw_adopt::paths::OMP_MCP.resolve(home)),
+        ),
+        f("omp", Kind::Mcp, omp.join(".mcp.json")),
         // 指令类
         f("claude-code", Kind::Instructions, claude.join("CLAUDE.md")),
         f("codex", Kind::Instructions, codex.join("AGENTS.md")),
     ];
+    // Pi 和 oh-my-pi 每次都读进上下文的：用户级的指令、换掉或补在系统提示词后面的那一份
+    for name in [
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "CLAUDE.md",
+        "SYSTEM.md",
+        "APPEND_SYSTEM.md",
+    ] {
+        v.push(f("pi", Kind::Instructions, pi.join(name)));
+    }
+    for name in ["AGENTS.md", "SYSTEM.md", "RULES.md"] {
+        v.push(f("omp", Kind::Instructions, omp.join(name)));
+    }
     // opencode 两个文件都读、逐层合并，哪个里都可能有 MCP；指定了就只看那一个
     match moved.get("opencode").and_then(|p| p.mcp.clone()) {
         Some(p) => v.push(f("opencode", Kind::Mcp, p)),
@@ -275,12 +334,28 @@ pub fn candidates(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Source> 
     for p in profile_patches(&dsh) {
         v.push(f("dsh", Kind::Mcp, p));
     }
-    // 它的 skills 目录：自己的一个，加上各家共用的 `~/.agents/skills`
-    for p in skills_in(&dsh.join("skills"))
-        .into_iter()
-        .chain(skills_in(&under(home, ".agents/skills")))
-    {
+    for p in skills_in(&dsh.join("skills")) {
         v.push(f("dsh", Kind::Skill, p));
+    }
+    // 各家共用的那一个，不算在哪一家名下
+    for p in skills_in(&shared_skills) {
+        v.push(f(SHARED_SKILLS, Kind::Skill, p));
+    }
+    for p in skills_in(&pi.join("skills")) {
+        v.push(f("pi", Kind::Skill, p));
+    }
+    for p in skills_in(&omp.join("skills")) {
+        v.push(f("omp", Kind::Skill, p));
+    }
+    // Pi 的 prompt 模板就是它的斜杠命令；oh-my-pi 两样都有
+    for p in md_in(&pi.join("prompts")) {
+        v.push(f("pi", Kind::Command, p));
+    }
+    for p in md_in(&omp.join("commands"))
+        .into_iter()
+        .chain(md_in(&omp.join("prompts")))
+    {
+        v.push(f("omp", Kind::Command, p));
     }
     for p in md_in(&claude.join("commands")) {
         v.push(f("claude-code", Kind::Command, p));
@@ -309,17 +384,22 @@ pub struct Root {
 }
 
 pub fn roots(home: &Path, moved: &BTreeMap<String, Places>) -> Vec<Root> {
-    let [claude, _, agy, dsh] = scan_dirs(home, moved);
+    let d = scan_dirs(home, moved);
     let root = |dir: PathBuf, nested: bool| Root { dir, nested };
     vec![
-        root(claude.join("skills"), true),
-        root(claude.join("commands"), false),
-        root(claude.join("agents"), false),
-        root(dsh.join("profiles"), true),
-        root(dsh.join("skills"), true),
-        root(under(home, ".agents/skills"), true),
-        root(agy.join("skills"), true),
-        root(agy.join("agents"), false),
+        root(d.claude.join("skills"), true),
+        root(d.claude.join("commands"), false),
+        root(d.claude.join("agents"), false),
+        root(d.dsh.join("profiles"), true),
+        root(d.dsh.join("skills"), true),
+        root(d.shared_skills, true),
+        root(d.agy.join("skills"), true),
+        root(d.agy.join("agents"), false),
+        root(d.pi.join("skills"), true),
+        root(d.pi.join("prompts"), false),
+        root(d.omp.join("skills"), true),
+        root(d.omp.join("commands"), false),
+        root(d.omp.join("prompts"), false),
     ]
 }
 
@@ -354,6 +434,8 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
             Kind::Mcp,
             under(dir, ".agents/mcp_config.json"),
         ),
+        f("pi", Kind::Mcp, under(dir, ".pi/mcp.json")),
+        f("omp", Kind::Mcp, under(dir, ".omp/mcp.json")),
     ];
     for p in md_in(&under(dir, ".claude/commands")) {
         v.push(f("claude-code", Kind::Command, p));
@@ -364,15 +446,21 @@ pub fn in_project(dir: &Path) -> Vec<Source> {
     for p in skills_in(&under(dir, ".claude/skills")) {
         v.push(f("claude-code", Kind::Skill, p));
     }
+    // 项目里共用的 `.agents/skills`：和用户级的那一个一样，谁都不是
     for p in skills_in(&under(dir, ".agents/skills")) {
-        v.push(f("antigravity-cli", Kind::Skill, p));
+        v.push(f(SHARED_SKILLS, Kind::Skill, p));
     }
     for p in md_in(&under(dir, ".agents/agents")) {
         v.push(f("antigravity-cli", Kind::Agent, p));
     }
-    // 项目里共用的 `.agents/skills` 上面已经算在 agy 名下，dsh 这里只加它自己的
-    for p in skills_in(&under(dir, ".dsh/skills")) {
-        v.push(f("dsh", Kind::Skill, p));
+    for (client, sub) in [
+        ("dsh", ".dsh/skills"),
+        ("pi", ".pi/skills"),
+        ("omp", ".omp/skills"),
+    ] {
+        for p in skills_in(&under(dir, sub)) {
+            v.push(f(client, Kind::Skill, p));
+        }
     }
     v.retain(|s| s.path.exists());
     for s in &mut v {
@@ -429,6 +517,11 @@ mod tests {
             home.join(".agents/skills/e/SKILL.md"),
             home.join(".gemini/config/skills/f/SKILL.md"),
             home.join(".gemini/config/agents/g.md"),
+            home.join(".pi/agent/skills/h/SKILL.md"),
+            home.join(".pi/agent/prompts/i.md"),
+            home.join(".omp/agent/skills/j/SKILL.md"),
+            home.join(".omp/agent/commands/k.md"),
+            home.join(".omp/agent/prompts/l.md"),
         ] {
             touch(&p);
         }
@@ -439,7 +532,7 @@ mod tests {
                 matches!(s.kind, Kind::Skill | Kind::Command | Kind::Agent) || s.path == profile
             })
             .collect();
-        assert_eq!(found.len(), 8, "{found:?}");
+        assert_eq!(found.len(), 13, "{found:?}");
         for s in found {
             let dir = s.path.parent().unwrap();
             assert!(
@@ -509,7 +602,15 @@ mod tests {
         touch(&p.path().join(".agents/agents/b.md"));
         let got = in_project(p.path());
         assert_eq!(got.len(), 4, "{got:?}");
-        assert!(got.iter().all(|s| s.client == "antigravity-cli"));
+        // `.agents/skills` 是各家共用的，不算在 agy 名下
+        for s in &got {
+            let want = if s.kind == Kind::Skill {
+                SHARED_SKILLS
+            } else {
+                "antigravity-cli"
+            };
+            assert_eq!(s.client, want, "{s:?}");
+        }
     }
 
     #[test]
@@ -564,13 +665,88 @@ mod tests {
                 ("dsh", Kind::Mcp),
                 ("dsh", Kind::Mcp),
                 ("dsh", Kind::Skill),
-                ("dsh", Kind::Skill),
+                // `~/.agents/skills` 不是 dsh 独有的
+                (SHARED_SKILLS, Kind::Skill),
             ]
         );
         let p = tempfile::tempdir().unwrap();
         touch(&p.path().join(".dsh/skills/a/SKILL.md"));
         touch(&p.path().join(".agents/skills/b/SKILL.md"));
         assert_eq!(in_project(p.path()).len(), 2);
+    }
+
+    /// Pi 和 oh-my-pi：MCP、skills、斜杠命令、每次读进上下文的指令文件
+    #[test]
+    fn pi_and_omp_are_scanned_at_both_levels() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        for p in [
+            ".pi/agent/mcp.json",
+            ".pi/agent/AGENTS.md",
+            ".pi/agent/SYSTEM.md",
+            ".pi/agent/skills/审查/SKILL.md",
+            ".pi/agent/prompts/fix.md",
+            ".omp/agent/mcp.json",
+            ".omp/agent/.mcp.json",
+            ".omp/agent/RULES.md",
+            ".omp/agent/skills/a/SKILL.md",
+            ".omp/agent/commands/b.md",
+            // 不是它读的：models.json 不在扫描里
+            ".pi/agent/models.json",
+        ] {
+            touch(&home.join(p));
+        }
+        let got: Vec<_> = user_level(home, &BTreeMap::new())
+            .into_iter()
+            .map(|s| (s.client, s.kind))
+            .collect();
+        let count = |client: &str, kind: Kind| got.iter().filter(|g| **g == (client, kind)).count();
+        assert_eq!(count("pi", Kind::Mcp), 1, "{got:?}");
+        assert_eq!(count("pi", Kind::Instructions), 2, "{got:?}");
+        assert_eq!(count("pi", Kind::Skill), 1, "{got:?}");
+        assert_eq!(count("pi", Kind::Command), 1, "{got:?}");
+        assert_eq!(count("omp", Kind::Mcp), 2, "{got:?}");
+        assert_eq!(count("omp", Kind::Instructions), 1, "{got:?}");
+        assert_eq!(count("omp", Kind::Skill), 1, "{got:?}");
+        assert_eq!(count("omp", Kind::Command), 1, "{got:?}");
+        assert_eq!(got.len(), 10, "{got:?}");
+
+        let p = tempfile::tempdir().unwrap();
+        touch(&p.path().join(".pi/mcp.json"));
+        touch(&p.path().join(".pi/skills/x/SKILL.md"));
+        touch(&p.path().join(".omp/mcp.json"));
+        touch(&p.path().join(".omp/skills/y/SKILL.md"));
+        let got: Vec<_> = in_project(p.path())
+            .into_iter()
+            .map(|s| (s.client, s.kind))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("pi", Kind::Mcp),
+                ("omp", Kind::Mcp),
+                ("pi", Kind::Skill),
+                ("omp", Kind::Skill),
+            ]
+        );
+    }
+
+    /// `~/.agents/skills` 谁都读：清单上不算在哪一家名下
+    #[test]
+    fn the_shared_skills_folder_belongs_to_no_single_client() {
+        let d = tempfile::tempdir().unwrap();
+        touch(&d.path().join(".agents/skills/共用/SKILL.md"));
+        let got = user_level(d.path(), &BTreeMap::new());
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].client, SHARED_SKILLS);
+        assert_eq!(got[0].kind, Kind::Skill);
+        // 这个标识不是哪个客户端的 id
+        assert!(
+            !tw_adopt::clients::adoptable()
+                .iter()
+                .any(|c| c.id == SHARED_SKILLS)
+                && tw_adopt::mcp::target(SHARED_SKILLS).is_err()
+        );
     }
 
     /// 换过位置的客户端：扫描看的目录和 MCP 那一份都按换过的找，默认位置的不再看

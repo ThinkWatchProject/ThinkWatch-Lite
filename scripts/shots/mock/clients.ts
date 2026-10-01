@@ -119,6 +119,23 @@ function setup(id: string, path: string): ManualSetup {
           secret("refs.THINKWATCH_API_KEY"),
         ],
       };
+    case "pi":
+    case "omp":
+      return {
+        steps: [file(path)],
+        endpoint: v1(),
+        fields: [
+          ...(id === "pi" ? [set("providers.thinkwatch.name", "ThinkWatch")] : []),
+          set("providers.thinkwatch.baseUrl", v1()),
+          set("providers.thinkwatch.api", "openai-completions"),
+          secret("providers.thinkwatch.apiKey"),
+          ...(id === "omp" ? [set("providers.thinkwatch.auth", "apiKey")] : []),
+          set(
+            "providers.thinkwatch.models",
+            `[{id: claude-sonnet-5, api: anthropic-messages, baseUrl: ${base()}}, {id: gpt-5.5, api: openai-responses}, {id: deepseek-chat}]`,
+          ),
+        ],
+      };
     default:
       return { steps: [file(path)], endpoint: v1(), fields: [set("openai-api-base", v1()), secret("openai-api-key")] };
   }
@@ -257,6 +274,10 @@ function clientsNow(): DetectedClient[] {
           "adopt.cost.dsh.every_entry",
           "The web app, the desktop app and headless runs all go through the gateway, without a restart.",
         ),
+        msg(
+          "adopt.cost.dsh.account_direct",
+          "Models used through a DeepSeek account signed in to the desktop app go straight to api.deepseek.com and do not pass through the gateway.",
+        ),
         msg("adopt.cost.dsh.web_search", "Web search still goes straight to DeepSeek rather than through the gateway."),
         msg(
           "adopt.cost.dsh.settings_page",
@@ -265,6 +286,32 @@ function clientsNow(): DetectedClient[] {
         msg(
           "adopt.cost.dsh.models",
           "DeepSeek Harness asks for deepseek-flash, deepseek-v4-pro and deepseek-v4-flash; a route has to send these names to a DeepSeek upstream or rewrite them for another one.",
+        ),
+      ],
+    }),
+    detected({
+      id: "pi",
+      name: "Pi",
+      path: "~/.pi/agent/models.json",
+      installed: false,
+      has_config: false,
+      costs: [
+        msg(
+          "adopt.cost.pi.default_model",
+          "The default model stays as it is; ThinkWatch models are chosen in /model, where Ctrl+S makes one the default.",
+        ),
+      ],
+    }),
+    detected({
+      id: "omp",
+      name: "oh-my-pi",
+      path: "~/.omp/agent/models.yml",
+      installed: false,
+      has_config: false,
+      costs: [
+        msg(
+          "adopt.cost.omp.default_model",
+          "The default model stays as it is; ThinkWatch models are chosen in /model, where assigning the default role makes one the default.",
         ),
       ],
     }),
@@ -367,7 +414,7 @@ export function plan(id: string, restore: boolean): PlanView {
 
 // ───────────────────────────────────────── MCP 与扫描
 
-/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少）。Zed、Antigravity CLI 与 DeepSeek Harness 这台机器上没有，画在矩阵下方 */
+/** MCP 能写进哪几个客户端（tw-adopt mcp.rs 的 `targets`，一个不少）。Zed、Antigravity CLI、Pi、oh-my-pi 与 DeepSeek Harness 这台机器上没有，画在矩阵下方 */
 export function mcpTargets(): McpTargetView[] {
   return [
     { client: "claude-code", name: "Claude Code", path: "~/.claude.json", copyable: true, why_not: null, movable: true, present: true },
@@ -402,6 +449,28 @@ export function mcpTargets(): McpTargetView[] {
       path: "~/.config/zed/settings.json",
       copyable: false,
       why_not: msg("adopt.mcp.zed_structure", "Zed's context servers use a different structure and do not take the command/args form"),
+      movable: true, present: false,
+    },
+    {
+      client: "pi",
+      name: "Pi",
+      path: "~/.pi/agent/mcp.json",
+      copyable: false,
+      why_not: msg(
+        "adopt.mcp.unverified_format",
+        "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+      ),
+      movable: true, present: false,
+    },
+    {
+      client: "omp",
+      name: "oh-my-pi",
+      path: "~/.omp/agent/mcp.json",
+      copyable: false,
+      why_not: msg(
+        "adopt.mcp.unverified_format",
+        "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+      ),
       movable: true, present: false,
     },
     {

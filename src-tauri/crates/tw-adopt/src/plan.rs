@@ -335,6 +335,8 @@ pub fn plan_adopt(
     plan.carries_secret |= plan.also.iter().any(|p| p.carries_secret);
     let (mut notes, shadows) = adopt_notes(c, home, gw);
     notes.extend(cloud_notes(c, home, &current, &on, around));
+    // Pi 访问网关也会走代理（NO_PROXY 不列这个地址的话）：接管之前说
+    notes.extend(crate::pi::proxy_notes(c.id, home, &gw.base, around));
     // 原来直连 Bedrock 的：按那一套设置新建上游要填的，和凭据上要说的话
     let off = |cloud: Cloud| {
         on.iter()
@@ -450,15 +452,23 @@ pub(crate) fn adopt_notes(c: &Client, home: &Path, gw: &Gateway) -> (Vec<Msg>, V
 
     let shadows = c.live_shadows(home);
     if !shadows.is_empty() {
-        notes.push(msg!(
-            "adopt.plan.shadowed",
-            paths = shadows
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-            => "{paths} was found, and it takes precedence over what was written here, so a setting of the same name there wins."
-        ));
+        let paths = shadows
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        // oh-my-pi 只读在的第一个文件：盖住的是这里写的全部，不只是同名的几项
+        notes.push(if c.reads_first_only() {
+            msg!(
+                "adopt.plan.shadowed.whole_file", paths = paths, client = c.name
+                => "{paths} was found; {client} reads only that file, so nothing written here is used."
+            )
+        } else {
+            msg!(
+                "adopt.plan.shadowed", paths = paths
+                => "{paths} was found, and it takes precedence over what was written here, so a setting of the same name there wins."
+            )
+        });
     }
     (notes, shadows)
 }

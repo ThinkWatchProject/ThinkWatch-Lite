@@ -189,6 +189,34 @@ pub fn targets() -> Vec<Target> {
             )),
             custom_path: None,
         },
+        // Pi 0.99 起的 MCP 和 oh-my-pi 自己的那一份：顶层 `mcpServers`，写法照 Claude 的
+        // （两边的文档都说可以原样抄过来）。只从源码和文档里查证过、本机没有样本 —— 先只读
+        Target {
+            client: "pi",
+            name: "Pi",
+            config: &[crate::paths::PI_MCP],
+            format: Format::Json,
+            key: &["mcpServers"],
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+            custom_path: None,
+        },
+        Target {
+            client: "omp",
+            name: "oh-my-pi",
+            config: &[crate::paths::OMP_MCP],
+            format: Format::Json,
+            key: &["mcpServers"],
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+            custom_path: None,
+        },
         // **只读**：dsh 的 MCP server 是补丁里的一行 `@deepseek-ai/dsh-mcp-client`，
         // 扫描把它们列出来（见 tw-scan）。往里写要按 id 插一行插件，那是另一种结构
         Target {
@@ -245,16 +273,15 @@ impl Target {
         if self.custom_path.is_some() || self.path(home).exists() {
             return true;
         }
-        let markers: Vec<Loc> = match crate::clients::adoptable()
+        match crate::clients::adoptable()
             .into_iter()
             .find(|c| c.id == self.client)
         {
-            Some(c) => c.marker.to_vec(),
-            None => crate::locations::layout(self.client)
-                .map(|l| vec![l.dir])
-                .unwrap_or_default(),
-        };
-        markers.iter().any(|m| m.resolve(home).exists())
+            Some(c) => c.installed(home),
+            None => {
+                crate::locations::layout(self.client).is_some_and(|l| l.dir.resolve(home).exists())
+            }
+        }
     }
     fn check(&self) -> Result<(), McpError> {
         if self.copyable {
@@ -730,7 +757,7 @@ mod tests {
         // 那比不提供这个功能糟得多。
         let (_d, home) = home_with(&[(".claude.json", CLAUDE)]);
         let v = read_server(&target("claude-code").unwrap(), &home, "filesystem").unwrap();
-        for c in ["zed", "opencode", "antigravity-cli"] {
+        for c in ["zed", "opencode", "antigravity-cli", "pi", "omp"] {
             let t = target(c).unwrap();
             let e = plan_copy(&t, &home, "filesystem", &v).unwrap_err();
             assert!(matches!(e, McpError::NotCopyable { .. }), "{e}");
