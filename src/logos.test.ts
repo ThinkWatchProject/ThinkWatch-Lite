@@ -40,6 +40,9 @@ describe("上游和客户端的标志", () => {
     // 分支不借用 Pi 的标志
     expect(clientGlyph("omp")).toBeNull();
     expect(clientGlyph("oh-my-pi")).toBeNull();
+    expect(clientGlyph("grok-build")).toBe("xai");
+    expect(clientGlyph("Qwen Code")).toBe("qwen");
+    expect(clientGlyph("hermes-agent")).toBe("hermesagent");
   });
 
   it("图形是单色的：数据里没有颜色", () => {

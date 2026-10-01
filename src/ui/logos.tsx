@@ -177,6 +177,13 @@ const CLIENTS: Record<string, GlyphId> = {
   deepseekharness: "deepseek",
   // Lobe Icons 的 Pi Agent（pi.dev）。它的分支 oh-my-pi 没有标志，画首字母方块
   pi: "pi",
+  // xAI 的 Grok Build 用 Grok 的标志；Qwen Code 用通义千问的；Hermes Agent 有它自己的
+  grokbuild: "xai",
+  grok: "xai",
+  qwencode: "qwen",
+  qwen: "qwen",
+  hermesagent: "hermesagent",
+  hermes: "hermesagent",
 };
 
 /** 客户端是哪个。`claude-code`、`Claude Code`、`claude_code` 都认。认不出来返回 `null` */

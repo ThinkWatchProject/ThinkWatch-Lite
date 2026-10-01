@@ -180,8 +180,47 @@ fn parse_any(src: &Source, text: &str) -> Option<Val> {
         Some("json" | "jsonc") => tw_adopt::json::value(text).ok(),
         // dsh 的补丁是一张插件行的列表，MCP server 是其中的一种行。摊成
         // `mcpServers` 的形状，后面和别家走同一条路
-        Some("yml") if src.kind == sources::Kind::Mcp => tw_adopt::rows::mcp_servers(text).ok(),
+        Some("yml") if src.client == "dsh" => match src.kind {
+            sources::Kind::Mcp => tw_adopt::rows::mcp_servers(text).ok(),
+            _ => None,
+        },
+        // Hermes Agent 的 config.yaml：`mcp_servers` 和别家的 `mcpServers` 是同一种形状
+        Some("yml" | "yaml") => yaml_value(text),
         _ => None,
+    }
+}
+
+/// 一份 YAML 读成同一种值。**标量按 YAML 自己的类型读**：`enabled: false` 是布尔 ——
+/// 读成字符串的话，关掉的 server 会被当成开着的，跟着报一遍。
+///
+/// 严格的解析器不收的文件（同一层里写了两遍的键，Hermes 用的 PyYAML 照收、后写的赢），
+/// 退回 tw-yaml 那一种只认结构的读法：标量都是字符串，server 照样列得出来
+fn yaml_value(text: &str) -> Option<Val> {
+    fn val(v: &serde_yaml_ng::Value) -> Val {
+        use serde_yaml_ng::Value as Y;
+        match v {
+            Y::Null => Val::Null,
+            Y::Bool(b) => Val::Bool(*b),
+            Y::Number(n) => Val::Num(n.to_string()),
+            Y::String(s) => Val::Str(s.clone()),
+            Y::Sequence(xs) => Val::Arr(xs.iter().map(val).collect()),
+            Y::Mapping(m) => Val::Obj(
+                m.iter()
+                    .map(|(k, v)| {
+                        let k = match val(k) {
+                            Val::Str(s) => s,
+                            other => other.to_line(),
+                        };
+                        (k, val(v))
+                    })
+                    .collect(),
+            ),
+            Y::Tagged(t) => val(&t.value),
+        }
+    }
+    match serde_yaml_ng::from_str::<serde_yaml_ng::Value>(text) {
+        Ok(v) => Some(val(&v)),
+        Err(_) => tw_adopt::yamlval::value(text).ok(),
     }
 }
 
@@ -271,8 +310,11 @@ fn server(src: &Source, name: String, cfg: &Val) -> McpServer {
         client: src.client.to_string(),
         command: s(cfg, "command").unwrap_or_default(),
         args: strings(cfg, "args"),
-        // agy 的远程 server 写 `serverUrl`（也认 `url`）
-        url: s(cfg, "url").or_else(|| s(cfg, "serverUrl")),
+        // agy 的远程 server 写 `serverUrl`（也认 `url`）；Qwen Code 的 streamable HTTP 写
+        // `httpUrl`
+        url: s(cfg, "url")
+            .or_else(|| s(cfg, "serverUrl"))
+            .or_else(|| s(cfg, "httpUrl")),
         // **只取键名，不取值。**值里常常就是密钥本身
         env_keys: match obj(cfg, "env") {
             Some(e) => e.iter().map(|(k, _)| k.clone()).collect(),
@@ -344,6 +386,11 @@ fn at<'a>(v: &'a Val, path: &[&str]) -> Option<&'a Val> {
 /// argv 数组）。**和 hook 一样对待**：清单里列在 hooks 那一栏（事件就是那个键名），规则
 /// 按「会被执行」扫它们。
 ///
+/// 钩子和 MCP 写在同一份配置里的客户端：Grok Build 的 config.toml（`[hooks]`）、Qwen Code 的
+/// settings.json（`hooks`）、Hermes Agent 的 config.yaml（`hooks`）。那份文件按 MCP 列在来源
+/// 里，钩子也从它里面找
+const HOOKS_WITH_MCP: &[&str] = &["grok-build", "qwen-code", "hermes-agent"];
+
 /// `for_list`：给清单的。打印凭据的那几个不给（见 [`CLAUDE_CODE_COMMANDS`]），规则照扫
 fn auto_commands(src: &Source, v: &Val, for_list: bool) -> Vec<HookEntry> {
     let entry = |event: &str, command: String| HookEntry {
@@ -354,6 +401,9 @@ fn auto_commands(src: &Source, v: &Val, for_list: bool) -> Vec<HookEntry> {
         line: 0,
     };
     let mut out = Vec::new();
+    if src.kind == sources::Kind::Mcp && HOOKS_WITH_MCP.contains(&src.client) {
+        out.extend(hooks_from(src, v));
+    }
     if src.kind == sources::Kind::Hooks {
         out.extend(hooks_from(src, v));
         if src.client == "claude-code" {

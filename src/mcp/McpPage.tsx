@@ -194,6 +194,7 @@ export default function McpPage({
                     onFinding={setFinding}
                     movable={movable}
                     onMove={setMoving}
+                    grokPresent={d.targets.some((x) => x.client === "grok-build" && x.present)}
                   />
                 ) : (
                   <Findings

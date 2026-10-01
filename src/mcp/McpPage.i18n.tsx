@@ -73,6 +73,9 @@ export const mcpText = messages(
     // 技能与钩子
     hooks: "钩子",
     hooksNote: "钩子在工具调用前后直接执行命令，无需模型参与即可获得执行权限。",
+    /** 装了 Grok Build 时接在上一句后面：它默认还执行另外两家的钩子，那些列在它们各自名下。
+     * 中文句号自带停顿，两句之间不加空格；英文要加 */
+    hooksRunByGrok: (note: string) => `${note}Grok Build 默认还会执行 Claude Code 与 Cursor 的钩子。`,
     skills: "技能",
     skillsNote: "仅列出，不支持跨客户端复制：技能的跨客户端格式尚无通行标准。",
     client: "客户端",
@@ -166,6 +169,7 @@ export const mcpText = messages(
 
     hooks: "Hooks",
     hooksNote: "Hooks run commands directly before and after tool calls, gaining execution rights without involving the model.",
+    hooksRunByGrok: (note: string) => `${note} Grok Build also runs the hooks of Claude Code and Cursor by default.`,
     skills: "Skills",
     skillsNote: "Listed only. Copying between clients is not supported: there is no common format for skills across clients yet.",
     client: "Client",

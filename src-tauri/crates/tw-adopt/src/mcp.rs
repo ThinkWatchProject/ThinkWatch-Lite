@@ -103,8 +103,9 @@ impl Target {
 ///
 /// 判据是**我们有没有实际见过那个形状**。`mcpServers` 那三家和 Codex 的
 /// `mcp_servers` 在本机都有真实样本，字段名一致（`command` / `args` /
-/// `env`）；opencode、Zed、Antigravity CLI、Pi 和 oh-my-pi 的 MCP 段本机没有样本，
-/// **照着猜写进去，用户拿到的是一份客户端读不懂的配置** —— 那比不提供这个功能糟得多。
+/// `env`）；opencode、Zed、Antigravity CLI、Pi、oh-my-pi、Grok Build、Qwen Code 和
+/// Hermes Agent 的 MCP 段本机没有样本，**照着猜写进去，用户拿到的是一份客户端读不懂的
+/// 配置** —— 那比不提供这个功能糟得多。
 pub fn targets() -> Vec<Target> {
     vec![
         Target {
@@ -211,6 +212,49 @@ pub fn targets() -> Vec<Target> {
             config: &[crate::paths::OMP_MCP],
             format: Format::Json,
             key: &["mcpServers"],
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+            custom_path: None,
+        },
+        // 下面三家的 MCP 段只从源码里查过字段，本机没有样本：先只读，理由和 opencode 一样。
+        // Grok Build 的在 config.toml 的 `[mcp_servers.<名>]`
+        Target {
+            client: "grok-build",
+            name: "Grok Build",
+            config: &[crate::paths::GROK_CONFIG],
+            format: Format::Toml,
+            key: &["mcp_servers"],
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+            custom_path: None,
+        },
+        // Qwen Code 的在 settings.json 的 `mcpServers`
+        Target {
+            client: "qwen-code",
+            name: "Qwen Code",
+            config: &[crate::paths::QWEN_SETTINGS],
+            format: Format::Json,
+            key: &["mcpServers"],
+            copyable: false,
+            why_not: Some((
+                code!("adopt.mcp.unverified_format"),
+                "this client's MCP configuration format is not verified yet, and writing to it could leave the client unable to read its own configuration",
+            )),
+            custom_path: None,
+        },
+        // Hermes Agent 的在 config.yaml 的 `mcp_servers`
+        Target {
+            client: "hermes-agent",
+            name: "Hermes Agent",
+            config: &[crate::paths::HERMES_CONFIG],
+            format: Format::Yaml,
+            key: &["mcp_servers"],
             copyable: false,
             why_not: Some((
                 code!("adopt.mcp.unverified_format"),
@@ -401,7 +445,9 @@ pub fn server_secrets(format: Format, text: &str) -> Vec<String> {
     let v = match format {
         Format::Json => crate::json::value(text).ok(),
         Format::Toml => crate::toml::value(text).ok(),
-        Format::Yaml | Format::Rows => None,
+        // Hermes Agent 的 config.yaml：接管画的是整份文件，`mcp_servers` 里的令牌一样要盖住
+        Format::Yaml => crate::yamlval::value(text).ok(),
+        Format::Rows => None,
     };
     let mut out = Vec::new();
     if let Some(v) = v {
@@ -758,13 +804,33 @@ mod tests {
         // 那比不提供这个功能糟得多。
         let (_d, home) = home_with(&[(".claude.json", CLAUDE)]);
         let v = read_server(&target("claude-code").unwrap(), &home, "filesystem").unwrap();
-        for c in ["zed", "opencode", "antigravity-cli", "pi", "omp"] {
+        for c in [
+            "zed",
+            "opencode",
+            "antigravity-cli",
+            "pi",
+            "omp",
+            "grok-build",
+            "qwen-code",
+            "hermes-agent",
+        ] {
             let t = target(c).unwrap();
             let e = plan_copy(&t, &home, "filesystem", &v).unwrap_err();
             assert!(matches!(e, McpError::NotCopyable { .. }), "{e}");
             // 而且要说清为什么
             assert!(e.to_string().len() > 20, "{e}");
         }
+    }
+
+    /// Hermes Agent 的 config.yaml 里，server 的环境变量和请求头一样当成令牌（画 diff
+    /// 之前盖住），别处的值不算
+    #[test]
+    fn yaml_server_tokens_are_found_for_the_diff() {
+        let text = "model:\n  default: m\nmcp_servers:\n  github:\n    command: npx\n    env:\n      GITHUB_PERSONAL_ACCESS_TOKEN: ghp_0123456789\n  notion:\n    url: https://mcp.notion.com/mcp\n    headers:\n      Authorization: \"Bearer ntn-secret\"\n";
+        let got = server_secrets(Format::Yaml, text);
+        assert!(got.contains(&"ghp_0123456789".to_string()), "{got:?}");
+        assert!(got.contains(&"Bearer ntn-secret".to_string()), "{got:?}");
+        assert!(!got.iter().any(|s| s == "npx" || s == "m"), "{got:?}");
     }
 
     /// opencode 的两种写法都读得出来，交出去的是别的客户端认的样子；同名的

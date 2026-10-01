@@ -94,7 +94,8 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
 /// 这把密钥在网关上能用哪些模型：网关的 `GET /v1/models` 对它答的。
 ///
 /// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
-/// 网关按它的 `allow` 答得准。opencode、Pi、oh-my-pi 要把这份清单写进配置（它们不自己去问）。
+/// 网关按它的 `allow` 答得准。opencode、Pi、oh-my-pi、Grok Build、Qwen Code 要把这份清单写进
+/// 配置（它们不自己去问），Hermes Agent 要从里面挑一个默认模型。
 async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
     fetch_models(base, key, false).await
 }
@@ -155,13 +156,14 @@ fn model_ids(body: &serde_json::Value) -> Vec<String> {
 /// 接管这个客户端要写进它配置的模型清单。不写模型的客户端不问网关。
 ///
 /// Claude Desktop 只认名字像 Claude 的模型，写进它配置的那份从这里挑
-/// （`tw_adopt::desktop`），按它自己问的方式问
+/// （`tw_adopt::desktop`），按它自己问的方式问。Hermes Agent 只写一个默认模型，也从这份
+/// 清单里挑（`tw_adopt::clients::picks_model`）
 async fn models_for(
     c: &tw_adopt::clients::Client,
     base: &str,
     key: &str,
 ) -> Result<Vec<String>, Msg> {
-    if c.writes_models {
+    if c.writes_models || tw_adopt::clients::picks_model(c) {
         models_of(base, key).await
     } else if c.id == tw_adopt::desktop::ID {
         fetch_models(base, key, true).await
@@ -277,13 +279,14 @@ pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + '
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
-    // 把模型写进配置的那几个（opencode、Pi、oh-my-pi），问一下网关此刻给它那把密钥答什么：拿来
-    // 判断配置里的清单过没过期，也给手动配置那一栏照着写。还没有它自己的密钥就按
-    // 接管时会用的那把问。**问不到就不说** —— 网关停着的时候客户端页照样要打得开
+    // 把模型写进配置的那几个（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）和要挑一个默认
+    // 模型的（Hermes Agent），问一下网关此刻给它那把密钥答什么：拿来判断配置里的清单过没过期，
+    // 也给手动配置那一栏照着写。还没有它自己的密钥就按接管时会用的那把问。**问不到就不说**
+    // —— 网关停着的时候客户端页照样要打得开
     let mut models = BTreeMap::new();
     for c in tw_adopt::clients::adoptable()
         .iter()
-        .filter(|c| c.writes_models)
+        .filter(|c| c.writes_models || tw_adopt::clients::picks_model(c))
     {
         if let Ok((_, key, _)) = ops::key_for(&gw, c.id)
             && let Ok(ms) = models_of(&gw.base, &key).await

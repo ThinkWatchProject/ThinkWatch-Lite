@@ -565,6 +565,126 @@ pub fn adoptable() -> Vec<Client> {
             config_beats_env: false,
             custom_config: None,
         },
+        // Grok Build（xAI）。网关的每个模型在 config.toml 里各写一张表，每张都带自己的密钥，
+        // 见 `crate::grok`；MCP server 也在这一份里
+        Client {
+            id: "grok-build",
+            name: "Grok Build",
+            config: &[crate::paths::GROK_CONFIG],
+            format: Format::Toml,
+            // 它盯着 config.toml：模型表和默认模型一改就重新读，不用重启
+            takes_effect: TakesEffect::Immediately,
+            // 项目里的 `.grok/config.toml` 只管 MCP、插件和权限，模型只从家目录这一份读；压过
+            // 它的是组织下发的 `requirements.toml`，**写了模型那几节才算**（`live_shadows`）
+            shadowed_by: &[Loc::GrokHome("requirements.toml")],
+            costs: &[
+                (
+                    code!("adopt.cost.grok_build.builtin_models"),
+                    "Grok's built-in models stay in the model picker and still connect to xAI directly; the gateway's models are listed as thinkwatch/<model>.",
+                ),
+                // 这几样各有自己的模型设置，默认是 xAI 的内置模型
+                (
+                    code!("adopt.cost.grok_build.helper_models"),
+                    "Web search, image descriptions, session titles and prompt suggestions still use Grok's built-in models, which connect to xAI directly.",
+                ),
+                (
+                    code!("adopt.cost.grok_build.campaigns"),
+                    "Grok's remote campaigns, which can change the default model, are turned off while this is in place.",
+                ),
+            ],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::GROK_DIR],
+            // 官方安装脚本放在 `$GROK_HOME/bin/grok`
+            process: &["grok"],
+            // 每张表自己的 `api_key` 压过 `XAI_API_KEY`，那个变量不用查。这两个盖得住：
+            // `GROK_DEFAULT_MODEL` 压过 `[models] default`，`GROK_HOME` 换掉的是整个家目录
+            env_vars: &["GROK_DEFAULT_MODEL", "GROK_HOME"],
+            key_elsewhere: None,
+            writes_models: true,
+            reloads: true,
+            config_beats_env: false,
+            custom_config: None,
+        },
+        // Qwen Code（阿里 Qwen，Gemini CLI 的分支）。网关的模型写成它自己的一组 provider，
+        // 密钥经 `settings.env` 交给它，见 `crate::qwen`；MCP server 和钩子也在这一份里
+        Client {
+            id: "qwen-code",
+            name: "Qwen Code",
+            config: &[crate::paths::QWEN_SETTINGS],
+            format: Format::Json,
+            // `settings.env` 和 `providerProtocol` 只在启动时读
+            takes_effect: TakesEffect::OnRestart,
+            // 项目里的 `.qwen/settings.json` 压过它（诊断里的「项目级配置」那一条）；机器级的
+            // 系统设置也压过它，那是组织管的
+            shadowed_by: &[],
+            costs: &[
+                (
+                    code!("adopt.cost.qwen_code.restart"),
+                    "Qwen Code has to be restarted afterwards.",
+                ),
+                (
+                    code!("adopt.cost.qwen_code.version"),
+                    "This needs Qwen Code 0.19.3 or later; earlier versions ignore the gateway's models.",
+                ),
+                (
+                    code!("adopt.cost.qwen_code.other_models"),
+                    "Models set separately for fast replies, vision, compaction and similar tasks keep their own providers.",
+                ),
+                // 它连 http 的地址也走代理，只有 NO_PROXY 里写了的才直连
+                (
+                    code!("adopt.cost.qwen_code.proxy"),
+                    "When Qwen Code uses a proxy, the gateway address has to be listed in NO_PROXY, or requests to the gateway go through the proxy.",
+                ),
+            ],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::QWEN_DIR],
+            // 跑起来的进程是 node，认不出是它（诊断里如实说查不了）
+            process: &[],
+            // `QWEN_HOME` 换掉整个目录；shell 里 export 了同名的密钥变量，`settings.env` 里那一个
+            // 就不用了（它优先级最低）
+            env_vars: &["QWEN_HOME", crate::qwen::KEY_ENV],
+            key_elsewhere: None,
+            writes_models: true,
+            reloads: false,
+            config_beats_env: false,
+            custom_config: None,
+        },
+        // Hermes Agent（Nous Research）。`model` 那一节换成指向网关的自定义 provider，见
+        // `crate::hermes`；MCP server 和钩子也在这一份 config.yaml 里。只改默认的 profile
+        Client {
+            id: "hermes-agent",
+            name: "Hermes Agent",
+            config: &[crate::paths::HERMES_CONFIG],
+            format: Format::Yaml,
+            // 命令行的会话启动时就定下了 provider 和模型；消息网关每条消息重读，见下面的代价
+            takes_effect: TakesEffect::OnRestart,
+            // 家目录里的 `.env` 压过 shell 里 export 的变量，其中的 `CUSTOM_BASE_URL` 又压过
+            // `model.base_url`：**写了它才算盖住**（`live_shadows`）
+            shadowed_by: &[Loc::HermesHome(".env")],
+            costs: &[
+                (
+                    code!("adopt.cost.hermes_agent.restart"),
+                    "Hermes Agent sessions that are already open keep their provider until they are restarted; the messaging gateway picks up the change with the next message.",
+                ),
+                // 指向本机的地址，它会挨个问几个本地模型服务的路径，网关把这些请求转给上游
+                (
+                    code!("adopt.cost.hermes_agent.probes"),
+                    "Hermes Agent checks whether the gateway is a local model server such as LM Studio or Ollama; those checks appear in Traffic as failed requests.",
+                ),
+            ],
+            verified: Verified::FieldsOnly,
+            marker: &[crate::paths::HERMES_DIR],
+            // 跑起来的进程是 python3，认不出是它（诊断里如实说查不了）
+            process: &[],
+            // `HERMES_HOME` 换掉整个目录；`CUSTOM_BASE_URL` 压过 `model.base_url`
+            env_vars: &["HERMES_HOME", "CUSTOM_BASE_URL"],
+            key_elsewhere: None,
+            // 只写一个默认模型，清单变了不提示更新（它自己会问网关要清单）
+            writes_models: false,
+            reloads: false,
+            config_beats_env: false,
+            custom_config: None,
+        },
         // 官方的「第三方推理」模式。**一次改四个文件**，写哪几个、为什么，见
         // `crate::desktop`；这里的 `config` 是其中的主文件，我们在它配置库里的那一份。
         Client {
@@ -969,18 +1089,70 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
         // 一个自己的 provider 加上模型清单，每个模型挑它本家的 API。见 `crate::pi`
         "pi" => crate::pi::edits(gw, crate::pi::Flavor::Pi),
         "omp" => crate::pi::edits(gw, crate::pi::Flavor::Omp),
+        // 每个模型一张表。手动配置那一页要照着写：网关还一个模型都没列出来时，拿一个
+        // 占位的模型名写出一张样子给人看；接管只写真有的模型，见 [`edits_for`]
+        "grok-build" => crate::grok::fields(&with_some_model(gw)),
+        // 同上：没有模型时拿占位的模型名写出样子
+        "qwen-code" => crate::qwen::edits(&with_some_model(gw), ""),
+        "hermes-agent" => crate::hermes::edits(&with_some_model(gw), ""),
         _ => Vec::new(),
     }
 }
 
+/// 一份配置里用户自己的凭据（别家的 API key、令牌）：画 diff 之前要盖住，界面上画的是整份
+/// 文件。MCP server 的环境变量和请求头另算（[`crate::mcp::server_secrets`]）。认不出的格式、
+/// 解析不了的文件当没有
+pub fn credential_values(client: &str, text: &str) -> Vec<String> {
+    match client {
+        // `/setup-bedrock` 写在 `env` 里的 Bedrock API key、访问密钥，别家的 API key
+        "claude-code" => crate::cloud::env_secrets(text),
+        "grok-build" => crate::grok::secrets(text),
+        "qwen-code" => crate::qwen::secrets(text),
+        "hermes-agent" => crate::hermes::secrets(text),
+        _ => Vec::new(),
+    }
+}
+
+/// 手动配置那一页要写出样子：网关还没有模型时，换成一个占位的模型名
+fn with_some_model(gw: &Gateway) -> Gateway {
+    let mut g = gw.clone();
+    if g.models.is_empty() {
+        g.models = vec![MODEL_PLACEHOLDER.to_string()];
+    }
+    g
+}
+
+/// 要从网关的模型清单里挑一个当默认模型的客户端：接管之前先问网关，一个模型都没有就什么
+/// 都不写（写一个网关服务不了的模型名进去，每个请求都会失败）
+pub fn picks_model(c: &Client) -> bool {
+    matches!(c.id, "grok-build" | "qwen-code" | "hermes-agent")
+}
+
+/// 手动配置的字段里，网关还没有模型时代替模型名的那一段
+pub const MODEL_PLACEHOLDER: &str = "<model>";
+
 /// 接管这个客户端要写哪些字段，按它配置此刻的样子。
 ///
-/// 只有 opencode 看样子：文件里已经有一条 v2 原生的 `providers.thinkwatch` 时，
-/// 改那一条 —— v1 写法的那一条会被它整条盖掉。
+/// opencode 看样子：文件里已经有一条 v2 原生的 `providers.thinkwatch` 时，改那一条 ——
+/// v1 写法的那一条会被它整条盖掉。Grok Build 看此刻选着哪个模型，好挑默认模型。
 pub fn edits_for(client: &Client, gw: &Gateway, current: &str) -> Vec<Edit> {
     match client.id {
         "opencode" => crate::opencode::edits(gw, crate::opencode::shape_in(current)),
+        "grok-build" => crate::grok::edits(gw, current),
+        "qwen-code" => crate::qwen::edits(gw, current),
+        "hermes-agent" => crate::hermes::edits(gw, current),
         _ => edits(client, gw),
+    }
+}
+
+/// 上一次接管写过、这一次不写了的字段，要连同它所在的那一段整个拿掉时，是哪一段。
+///
+/// 只有 Grok Build 有：网关不再列出某个模型，它那张表留着就是一张选得到、用不了的表
+/// （见 [`crate::grok::stale_table`]）。别的客户端照旧记着这样的字段，还原时再收走
+pub fn stale_container(client: &str, path: &[String]) -> Option<Vec<String>> {
+    match client {
+        "grok-build" => crate::grok::stale_table(path),
+        _ => None,
     }
 }
 
@@ -1063,6 +1235,8 @@ impl Client {
     pub fn models_in(&self, text: &str) -> Option<Vec<String>> {
         match self.id {
             "opencode" => crate::opencode::models_in(text),
+            "grok-build" => crate::grok::models_in(text),
+            "qwen-code" => crate::qwen::models_in(text),
             id => crate::pi::models_in(text, crate::pi::Flavor::of(id)?),
         }
     }
@@ -1210,6 +1384,12 @@ impl Client {
                 "dsh" => std::fs::read_to_string(p).is_ok_and(|t| {
                     crate::yaml::get(&t, &["llm-deepseek", "baseURL"]).is_ok_and(|v| v.is_some())
                 }),
+                // Grok Build 的 `requirements.toml`：写了 `[models]` 或 `[model.*]` 才压得住我们
+                "grok-build" => std::fs::read_to_string(p)
+                    .is_ok_and(|t| !crate::grok::overriding(&t).is_empty()),
+                // Hermes Agent 的 `.env`：写了 `CUSTOM_BASE_URL` 才算
+                "hermes-agent" => std::fs::read_to_string(p)
+                    .is_ok_and(|t| !crate::hermes::overriding_env(&t).is_empty()),
                 _ => p.exists(),
             })
             .collect()

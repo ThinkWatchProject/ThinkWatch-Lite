@@ -55,6 +55,12 @@ fn endpoint_of(c: &Client, text: &str) -> Option<String> {
         "codex" => vec!["model_providers", crate::clients::PROVIDER_ID, "base_url"],
         // 两种写法都认，v2 原生的那一条优先
         "opencode" => return crate::opencode::endpoint(text),
+        // 默认模型选着的是我们的那一张才算
+        "grok-build" => return crate::grok::endpoint(text),
+        // 选着的模型是我们那一组里的一条才算
+        "qwen-code" => return crate::qwen::endpoint(text),
+        // provider 还是 `custom` 才算
+        "hermes-agent" => return crate::hermes::endpoint(text),
         "zed" => vec![
             "language_models",
             "openai_compatible",
@@ -734,6 +740,8 @@ fn overriding_fields(c: &Client, text: &str) -> Vec<String> {
             _ => Vec::new(),
         },
         "opencode" => crate::opencode::overriding(text),
+        "grok-build" => crate::grok::overriding(text),
+        "hermes-agent" => crate::hermes::overriding_env(text),
         _ => c
             .env_vars
             .iter()
@@ -930,6 +938,22 @@ fn diagnose_in(
             ),
             fix: Some(msg!("adopt.diag.restart", client = c.name => "Quit {client} and open it again")),
         }),
+        // 进程认不出是它（Qwen Code 跑起来是 node，Hermes Agent 是 Python）：说不准重启过
+        // 没有，**如实说查不了**，不说「没在跑」
+        Some(_) if c.process.is_empty() && !c.reloads => out.push(Finding {
+            level: Level::Suspect,
+            title: msg!(
+                "adopt.diag.process_unknown", client = c.name =>
+                "Whether {client} was restarted cannot be told"
+            ),
+            detail: msg!(
+                "adopt.diag.process_unknown.detail",
+                takes_effect = c.takes_effect.slug(),
+                => "Its process cannot be told apart from other programs. A copy started before the change is still on the old configuration. {}",
+                c.takes_effect.note()
+            ),
+            fix: Some(msg!("adopt.diag.restart", client = c.name => "Quit {client} and open it again")),
+        }),
         // 它自己重读配置（opencode v2）：改之前就在跑的进程也已经换上了新配置，
         // 这时候喊「要重启」是狼来了
         Some(_) if c.reloads => out.push(Finding {
@@ -1039,11 +1063,44 @@ fn diagnose_in(
         }
     }
 
+    // 二之二、Hermes Agent 粘住了别的 profile：不带 `-p` 启动时读的是那个 profile 的配置，
+    // 写在默认 profile 里的这一份它根本不看
+    if c.id == "hermes-agent"
+        && let Some(dir) = d.path.parent()
+        && let Some(p) = crate::hermes::active_profile(dir)
+    {
+        let sticky = dir.join("active_profile");
+        out.push(Finding {
+            level: Level::Blocking,
+            title: msg!(
+                "adopt.diag.hermes_agent.active_profile", profile = p.clone() =>
+                "Hermes Agent is set to use the {profile} profile"
+            ),
+            detail: msg!(
+                "adopt.diag.hermes_agent.active_profile.detail",
+                path = sticky.display(),
+                profile = p
+                => "{path} names {profile}, so Hermes Agent started without -p reads that profile's configuration rather than the one written here."
+            ),
+            fix: Some(msg!(
+                "adopt.diag.hermes_agent.use_default" =>
+                "hermes profile use default"
+            )),
+        });
+    }
+
     // 三、项目级配置盖住了用户级
     if let Some(proj) = project {
         // 只有跟着 home 走的那几种说得上「项目里有一份同名的」；XDG 目录下的
-        // 全局配置在项目里没有对应的位置
-        let local = c.config[0].home_rel().map(|r| crate::paths::under(proj, r));
+        // 全局配置在项目里没有对应的位置。Qwen Code 的家目录跟着 `QWEN_HOME` 走，项目里那一份
+        // 照旧是 `.qwen/settings.json`，同样压过用户级的
+        let local = c.config[0]
+            .home_rel()
+            .or(match c.id {
+                "qwen-code" => Some(".qwen/settings.json"),
+                _ => None,
+            })
+            .map(|r| crate::paths::under(proj, r));
         if let Some(local) = local.filter(|p| p.exists()) {
             out.push(Finding {
                 level: Level::Suspect,
@@ -1680,6 +1737,38 @@ mod tests {
         // 手动配置的文件写成 WSL 里的样子
         let steps = c("claude-code").manual_steps_wsl(&w);
         assert_eq!(steps[0].arg("file"), "~/.claude/settings.json");
+    }
+
+    /// 进程认不出是它的客户端（Qwen Code 跑起来是 node）：说查不了，不说「没在跑」；
+    /// 项目里的 `.qwen/settings.json` 照样算「项目级配置」
+    #[test]
+    fn a_client_whose_process_cannot_be_told_apart_says_so() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path().join("home");
+        let proj = d.path().join("proj");
+        std::fs::create_dir_all(proj.join(".qwen")).unwrap();
+        std::fs::write(proj.join(".qwen/settings.json"), "{}").unwrap();
+        adopt("qwen-code", &home, &d.path().join("b"));
+        let out = diagnose(
+            &c("qwen-code"),
+            &home,
+            Some(&proj),
+            &crate::cloud::Around::default(),
+        );
+        let f = out
+            .iter()
+            .find(|f| f.title.code == "adopt.diag.process_unknown")
+            .expect("没说查不了");
+        assert_eq!(f.level, Level::Suspect);
+        assert!(
+            !out.iter().any(|f| f.title.code == "adopt.diag.not_running"),
+            "{out:?}"
+        );
+        assert!(
+            out.iter()
+                .any(|f| f.title.code == "adopt.diag.project_config"),
+            "{out:?}"
+        );
     }
 
     /// 刚装好的 opencode 自己建的是 `opencode.jsonc`：写进它，而不是另起一份

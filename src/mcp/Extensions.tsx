@@ -57,6 +57,7 @@ export function Extensions({
   onFinding,
   movable,
   onMove,
+  grokPresent = false,
 }: {
   data: ScanReport;
   nameOf: (client: string) => string;
@@ -66,6 +67,11 @@ export function Extensions({
   movable: (client: string) => boolean;
   /** 更改这个客户端的配置位置 */
   onMove: (client: string) => void;
+  /**
+   * 这台电脑上装着 Grok Build：它默认还执行 Claude Code 和 Cursor 的钩子。清单一行一个客户端，
+   * 那些钩子列在它们各自名下，所以在说明里补一句
+   */
+  grokPresent?: boolean;
 }) {
   const t = useText(mcpText);
 
@@ -94,7 +100,7 @@ export function Extensions({
             {t.hooks} <span className="ml-1 tw-label tw-num text-muted-foreground">{data.hooks.length}</span>
           </>
         }
-        description={t.hooksNote}
+        description={grokPresent ? t.hooksRunByGrok(t.hooksNote) : t.hooksNote}
       >
         {data.hooks.length === 0 ? (
           <EmptyState variant="outlined" icon={<WebhookIcon />} title={t.noHooks} className="py-8" />

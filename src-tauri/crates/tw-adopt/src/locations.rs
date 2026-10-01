@@ -144,6 +144,26 @@ pub fn layouts() -> Vec<Layout> {
             shared: false,
             scan_dir: true,
         },
+        // 下面三家跟着各自的 `*_HOME` 走（见 `crate::paths`）；从访达打开的应用看不到只在
+        // shell 里设的变量，这时用户在这里指给它
+        Layout {
+            client: "grok-build",
+            dir: crate::paths::GROK_DIR,
+            shared: true,
+            scan_dir: true,
+        },
+        Layout {
+            client: "qwen-code",
+            dir: crate::paths::QWEN_DIR,
+            shared: true,
+            scan_dir: true,
+        },
+        Layout {
+            client: "hermes-agent",
+            dir: crate::paths::HERMES_DIR,
+            shared: true,
+            scan_dir: true,
+        },
     ]
 }
 

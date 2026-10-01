@@ -74,9 +74,9 @@ pub fn unknown(id: &str) -> Msg {
 
 /// 客户端页的那一张表。
 ///
-/// `models` 是要把模型写进配置的客户端（opencode、Pi、oh-my-pi）此刻从网关问到的模型清单，按
-/// 客户端 id：拿它和配置里写着的比，不一样就提示更新；手动配置的那几项也照它写。
-/// 问不到的不在里面。
+/// `models` 是要把模型写进配置的客户端（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）和要从中
+/// 挑一个默认模型的（Hermes Agent）此刻从网关问到的模型清单，按客户端 id：拿它和配置里写着的
+/// 比，不一样就提示更新；手动配置的那几项也照它写。问不到的不在里面。
 pub fn list(
     home: &Path,
     gw: &Gateway,
@@ -247,12 +247,14 @@ fn field(
 }
 
 /// 接管这个客户端时哪几项是密钥。按一把占位的密钥算 —— 只看路径。
-/// 主配置和另一份文件的路径不会撞（一个以行 id 开头，一个以 `refs` 开头）
-fn secret_paths(c: &Client) -> Vec<Vec<String>> {
+/// 主配置和另一份文件的路径不会撞（一个以行 id 开头，一个以 `refs` 开头）。
+///
+/// `models` 是这次写进去的模型：Grok Build 一个模型一张表，整张表算密钥，路径跟着模型走
+fn secret_paths(c: &Client, models: &[String]) -> Vec<Vec<String>> {
     let gw = clients::Gateway {
         base: String::new(),
         key: Some(String::new()),
-        models: Vec::new(),
+        models: models.to_vec(),
     };
     // opencode 的两种写法（`provider` 和 v2 原生的 `providers`）的密钥路径都算进来
     let native = clients::edits_for(c, &gw, r#"{"providers": {"thinkwatch": {}}}"#);
@@ -260,6 +262,7 @@ fn secret_paths(c: &Client) -> Vec<Vec<String>> {
         .into_iter()
         .chain(clients::also_edits(c, &gw))
         .chain(native)
+        .chain(clients::edits_for(c, &gw, ""))
         .filter(|e| e.secret)
         .map(|e| e.path)
         .collect();
@@ -343,23 +346,24 @@ impl Hide {
     /// 这份改动（连同另外那几份文件）要盖住的：网关的那几把、`secrets` 这几条路径上
     /// 的值、MCP server 的环境变量和请求头、Claude Code `env` 里装着凭据的变量
     fn of(p: &plan::Plan, secrets: &[Vec<String>], gateway: &[&str]) -> Hide {
-        let quoted: Vec<String> = std::iter::once(p)
-            .chain(&p.also)
-            .flat_map(|x| {
-                x.before.iter().chain([&x.after]).flat_map(|t| {
-                    let mut v = tw_adopt::mcp::server_secrets(x.format, t);
-                    // Claude Code 的 `env` 里用户自己的凭据：`/setup-bedrock` 写在这里的
-                    // Bedrock API key、访问密钥，别家的 API key
-                    if x.client == "claude-code" {
-                        v.extend(tw_adopt::cloud::env_secrets(t));
-                    }
-                    v
-                })
-            })
+        let texts = || {
+            std::iter::once(p)
+                .chain(&p.also)
+                .flat_map(|x| x.before.iter().chain([&x.after]).map(move |t| (x, t)))
+        };
+        let quoted: Vec<String> = texts()
+            .flat_map(|(x, t)| tw_adopt::mcp::server_secrets(x.format, t))
             .collect();
+        // 用户自己的凭据：Claude Code `env` 里 `/setup-bedrock` 写下的、Grok Build 别的模型表
+        // 里的 `api_key`、Qwen Code `/auth` 写在 `env` 里的…（`clients::credential_values`）。
+        // 和密钥字段上的值一样，带引号的、不带引号的都换 —— YAML 里它们常常不带引号。太短的
+        // 不算：盖一个 `none` 会把整份 diff 里的每一个 `"none"` 都换掉
+        let creds = texts()
+            .flat_map(|(x, t)| clients::credential_values(&x.client, t))
+            .filter(|v| v.chars().count() >= SHORTEST_SECRET);
         Hide::new(
             gateway.iter().map(|k| k.to_string()),
-            p.values_at(secrets),
+            p.values_at(secrets).into_iter().chain(creds),
             quoted,
         )
     }
@@ -551,7 +555,7 @@ pub fn plan_adopt_as(
     let p = plan_for(&c, home, &target, around).map_err(|e| e.msg())?;
     let mut v = view(
         &p,
-        &secret_paths(&c),
+        &secret_paths(&c, &target.models),
         secret_roots(&c),
         target.key.as_deref().as_slice(),
     );
@@ -645,7 +649,7 @@ pub fn plan_restore_as(
     // 网关那几把也是按字段盖的，core 不在、连着远程（这里拿到的密钥清单是空的、
     // 或者是别的机器上的）时照样盖得住
     let gateway: Vec<&str> = keys.iter().map(|k| k.key.as_str()).collect();
-    let mut v = view(&p, &secret_paths(&c), secret_roots(&c), &gateway);
+    let mut v = view(&p, &secret_paths(&c, &[]), secret_roots(&c), &gateway);
     // 还原不删密钥：说清留下的是哪一把，下次接管直接用它
     v.key = keys
         .iter()
@@ -1079,6 +1083,57 @@ pub(crate) mod tests {
                 assert!(!text.contains(s), "{s} shows in:\n{text}");
             }
         }
+    }
+
+    /// Grok Build 一个模型一张表，整张表算密钥：字段列表里不给值，diff 里网关那把打码；
+    /// 用户自己那张表里发给别家的 `api_key`、Qwen Code `/auth` 写在 `env` 里的密钥，diff 里
+    /// 同样看不到
+    #[test]
+    fn grok_and_qwen_diffs_show_no_key_of_anyone() {
+        let home = tempfile::tempdir().unwrap();
+        let grok = tw_adopt::paths::GROK_CONFIG.resolve(home.path());
+        std::fs::create_dir_all(grok.parent().unwrap()).unwrap();
+        std::fs::write(
+            &grok,
+            "[model.mine]\nmodel = \"x\"\nbase_url = \"https://api.example.com/v1\"\napi_key = \"sk-mine-0123456789\"\n",
+        )
+        .unwrap();
+        let qwen = tw_adopt::paths::QWEN_SETTINGS.resolve(home.path());
+        std::fs::create_dir_all(qwen.parent().unwrap()).unwrap();
+        std::fs::write(
+            &qwen,
+            r#"{ "env": { "DASHSCOPE_API_KEY": "sk-dash-0123456789" } }"#,
+        )
+        .unwrap();
+        let g = gw(vec![key("default", "tw-secret-value", None, true)]);
+        let models = vec!["claude-sonnet-5".to_string(), "gpt-5.5".to_string()];
+        for (id, theirs) in [
+            ("grok-build", "sk-mine-0123456789"),
+            ("qwen-code", "sk-dash-0123456789"),
+        ] {
+            let p = plan_adopt(home.path(), id, &g, models.clone(), &Around::default()).unwrap();
+            for text in [p.before.as_deref().unwrap(), p.after.as_str()] {
+                assert!(!text.contains(theirs), "{id}: {text}");
+                assert!(!text.contains("tw-secret-value"), "{id}: {text}");
+            }
+            assert!(p.after.contains(MASK), "{id}: {}", p.after);
+            let sent = serde_json::to_string(&p).unwrap();
+            assert!(!sent.contains("tw-secret-value"), "{id}: {sent}");
+        }
+        let p = plan_adopt(home.path(), "grok-build", &g, models, &Around::default()).unwrap();
+        let table = p
+            .fields
+            .iter()
+            .find(|f| f.path == "model.thinkwatch/gpt-5.5")
+            .expect("一个模型一张表");
+        assert!(table.secret && table.value.is_none(), "{table:?}");
+        assert!(
+            p.fields
+                .iter()
+                .any(|f| f.path == "models.default" && f.value.is_some()),
+            "{:?}",
+            p.fields
+        );
     }
 
     /// 关哪几个开关还看 shell 配置和用户环境：确认框和落盘之间那边变了，写下去的就会多
