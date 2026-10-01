@@ -37,6 +37,12 @@ export interface Filter {
    * 「533 条无法计价」告诉你有一批请求没进账，却不告诉你是哪些模型。
    */
   unpricedOnly: boolean;
+  /**
+   * 搜索词也在请求和回答的内容里找（只有 core 做得到：内容不在读进来的行上，见
+   * `traffic/historySearch.ts`）。**它不是一个筛子**：没有搜索词时什么也不做，
+   * `hasAnyFilter` 不数它。
+   */
+  content: boolean;
 }
 
 export const EMPTY_FILTER: Filter = {
@@ -46,6 +52,7 @@ export const EMPTY_FILTER: Filter = {
   provider: "",
   model: "",
   unpricedOnly: false,
+  content: false,
 };
 
 export function hasAnyFilter(f: Filter): boolean {
@@ -129,37 +136,44 @@ export function sortRows(
 
 export function filterRows(rows: RequestRow[], f: Filter): RequestRow[] {
   const q = f.q.trim().toLowerCase();
-  return rows.filter((r) => {
-    if (f.failedOnly && r.state !== "failed") return false;
-    /*
-      **没算出金额，不等于金额是零。**跑完了、也报了用量，却没有单价
-      的那些才是「无法计价」；还在跑的、失败的、上游回了 4xx 或者压根
-      没报用量的，没有金额是另一回事（core 的 `unpriced_requests` 也不
-      数它们）。混进来会让「哪些模型该补价」这个问题答不出来，从概览
-      点进来的条数也和那个数对不上。
-    */
-    if (
-      f.unpricedOnly &&
-      (r.costMicros != null || r.state !== "done" || (r.inputTokens == null && r.outputTokens == null))
-    )
-      return false;
-    if (f.client && r.client !== f.client) return false;
-    if (f.provider && r.provider !== f.provider) return false;
-    if (f.model && r.model !== f.model) return false;
-    if (!q) return true;
-    // 路径、密钥、应用、来源、上游、模型、错误信息都算 —— 排查时记得住的
-    // 往往是错误里的那半句话，而不是哪个字段装着它。上游那一格写的是什么就按什么搜
-    //（本地应答的那句说明，按此刻的语言）
-    return (
-      r.path.toLowerCase().includes(q) ||
-      r.client.toLowerCase().includes(q) ||
-      (r.hint ?? "").toLowerCase().includes(q) ||
-      (r.peer ?? "").includes(q) ||
-      upstreamText(r).toLowerCase().includes(q) ||
-      (r.model ?? "").toLowerCase().includes(q) ||
-      coreText(r.error).toLowerCase().includes(q)
-    );
-  });
+  return rows.filter((r) => matches(r, f, q));
+}
+
+/**
+ * 一行对不对得上筛选条件。`q` 是整理过的搜索词（去掉首尾空白、转了小写），一批行
+ * 一起筛时只整理一次。**core 在库里照抄的是这一段**（`tw-store` 的 `search`），改了
+ * 这里那边也要跟着改。
+ */
+export function matches(r: RequestRow, f: Filter, q = f.q.trim().toLowerCase()): boolean {
+  if (f.failedOnly && r.state !== "failed") return false;
+  /*
+    **没算出金额，不等于金额是零。**跑完了、也报了用量，却没有单价
+    的那些才是「无法计价」；还在跑的、失败的、上游回了 4xx 或者压根
+    没报用量的，没有金额是另一回事（core 的 `unpriced_requests` 也不
+    数它们）。混进来会让「哪些模型该补价」这个问题答不出来，从概览
+    点进来的条数也和那个数对不上。
+  */
+  if (
+    f.unpricedOnly &&
+    (r.costMicros != null || r.state !== "done" || (r.inputTokens == null && r.outputTokens == null))
+  )
+    return false;
+  if (f.client && r.client !== f.client) return false;
+  if (f.provider && r.provider !== f.provider) return false;
+  if (f.model && r.model !== f.model) return false;
+  if (!q) return true;
+  // 路径、密钥、应用、来源、上游、模型、错误信息都算 —— 排查时记得住的
+  // 往往是错误里的那半句话，而不是哪个字段装着它。上游那一格写的是什么就按什么搜
+  //（本地应答的那句说明，按此刻的语言）
+  return (
+    r.path.toLowerCase().includes(q) ||
+    r.client.toLowerCase().includes(q) ||
+    (r.hint ?? "").toLowerCase().includes(q) ||
+    (r.peer ?? "").includes(q) ||
+    upstreamText(r).toLowerCase().includes(q) ||
+    (r.model ?? "").toLowerCase().includes(q) ||
+    coreText(r.error).toLowerCase().includes(q)
+  );
 }
 
 /** 出现过的客户端/上游，用来填过滤下拉。**按出现过的，不是按配置里的** */

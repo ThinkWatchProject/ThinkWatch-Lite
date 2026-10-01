@@ -20,7 +20,7 @@ export const upstreamsPageText = messages(
     modelsFetched: (name: string, n: number) => `${name}：已获取 ${n} 个模型`,
     pricesUpdated: (changed: number) => `默认价目表已更新，${changed} 个模型的价格有变化`,
     pricesCurrent: "默认价目表已是最新",
-    tabs: { upstreams: "上游", proxies: "代理", pricing: "价目表" },
+    tabs: { upstreams: "上游", proxies: "代理", pricing: "价目表", checkup: "体检" },
     linkTest: "链路测速",
     speedTest: "推理测速",
     newUpstream: "新建上游",
@@ -70,7 +70,7 @@ export const upstreamsPageText = messages(
         ? "Default price sheet updated; 1 model's price changed"
         : `Default price sheet updated; ${changed} models' prices changed`,
     pricesCurrent: "Default price sheet is up to date",
-    tabs: { upstreams: "Upstreams", proxies: "Proxies", pricing: "Price sheets" },
+    tabs: { upstreams: "Upstreams", proxies: "Proxies", pricing: "Price sheets", checkup: "Check-up" },
     linkTest: "Connection test",
     speedTest: "Inference test",
     newUpstream: "New upstream",

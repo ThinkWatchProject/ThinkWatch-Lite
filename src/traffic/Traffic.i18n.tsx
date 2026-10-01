@@ -45,6 +45,27 @@ export const trafficText = messages(
     allModels: "全部模型",
     shownOf: (shown: number, total: number) => `${shown} / ${total} 条`,
     clear: "清空",
+    /** 搜索框里的图标开关：搜索词也在请求和回答的内容里找。读屏念的是前一句，悬停是后一句 */
+    searchContent: "搜索内容",
+    searchContentTip: "同时搜索请求与回答的内容",
+
+    // 在整份记录里搜索（读进来的只有最近两千条）
+    /** 搜索伸到了库里，表里一共找到几条 */
+    found: (n: number) => `找到 ${n} 条`,
+    searchingOlder: "正在搜索更早的记录…",
+    searchingContent: "正在搜索内容…",
+    /** 搜到了哪一刻：今天的给到秒，更早的带日期 */
+    searchedTo: (at: string) => `已搜索至 ${at}`,
+    searchedAll: "已搜索全部记录",
+    searchMore: "继续搜索",
+    searchFailed: (why: string) => `搜索失败：${why}`,
+    /** 按内容找时，报文最早留到哪一天（UTC 的日子：报文按天存放） */
+    bodiesSince: (ms: number) =>
+      `报文保留自 ${new Date(ms).toLocaleDateString("zh-CN", { month: "long", day: "numeric", timeZone: "UTC" })}，更早的请求不按内容匹配。`,
+    noBodies: "没有保留的报文，请求不按内容匹配。",
+    /** 片段前面那个词：对上的是请求里的，还是回答里的 */
+    hitRequest: "请求",
+    hitAnswer: "回答",
 
     // 还没有上游
     noUpstreams: "尚未配置上游",
@@ -54,6 +75,9 @@ export const trafficText = messages(
     // 空状态
     noMatchTitle: "没有符合条件的请求",
     noMatch: (n: number) => `共 ${n} 条记录，当前筛选条件下没有匹配项。`,
+    /** 全被筛掉了，库里也找过了。`at`：搜到了哪一刻；`null` 是找完了 */
+    noMatchSearched: (at: string | null) =>
+      at === null ? "已搜索全部记录，当前筛选条件下没有匹配项。" : `已搜索至 ${at}，当前筛选条件下没有匹配项。`,
     clearFilters: "清除筛选条件",
     emptyTitle: "暂无请求记录",
     pointClients: (endpoint: ReactNode) => <>将客户端的端点设为 {endpoint}，并使用以 tw- 开头的客户端密钥。</>,
@@ -156,6 +180,21 @@ export const trafficText = messages(
     allModels: "All models",
     shownOf: (shown: number, total: number) => `${shown} / ${count(total, "request", "requests")}`,
     clear: "Clear",
+    searchContent: "Search content",
+    searchContentTip: "Also search the content of requests and answers",
+
+    found: (n: number) => `${n} found`,
+    searchingOlder: "Searching earlier records…",
+    searchingContent: "Searching content…",
+    searchedTo: (at: string) => `Searched back to ${at}`,
+    searchedAll: "All records searched",
+    searchMore: "Search further",
+    searchFailed: (why: string) => `Search failed: ${why}`,
+    bodiesSince: (ms: number) =>
+      `Payloads are kept from ${new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}; earlier requests are not matched by content.`,
+    noBodies: "No payloads are kept; requests are not matched by content.",
+    hitRequest: "Request",
+    hitAnswer: "Answer",
 
     noUpstreams: "No upstreams configured yet",
     listening: (addr: ReactNode) => (
@@ -168,6 +207,10 @@ export const trafficText = messages(
       n === 1
         ? "1 request recorded; it does not match the current filters."
         : `${n} requests recorded; none match the current filters.`,
+    noMatchSearched: (at: string | null) =>
+      at === null
+        ? "All records searched; none match the current filters."
+        : `Searched back to ${at}; nothing matches the current filters.`,
     clearFilters: "Clear filters",
     emptyTitle: "No requests yet",
     pointClients: (endpoint: ReactNode) => (

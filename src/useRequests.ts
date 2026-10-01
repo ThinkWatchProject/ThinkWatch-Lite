@@ -89,37 +89,46 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       continue;
     }
     dirty = true;
-    rows.set(h.id, {
-      id: h.id,
-      client: h.client,
-      provider: h.local ? "" : h.provider,
-      local: h.local || undefined,
-      model: h.model || undefined,
-      path: h.path,
-      atMs: h.at_ms,
-      state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
-      status: h.status ?? undefined,
-      ttfbMs: h.ttfb_ms ?? undefined,
-      ttftMs: h.ttft_ms ?? undefined,
-      durationMs: h.duration_ms ?? undefined,
-      tokensPerSec: h.tokens_per_sec ?? undefined,
-      bytes: h.bytes ?? undefined,
-      inputTokens: h.input_tokens ?? undefined,
-      outputTokens: h.output_tokens ?? undefined,
-      cacheReadTokens: h.cache_read_tokens ?? undefined,
-      cacheWriteTokens: h.cache_write_tokens ?? undefined,
-      costMicros: h.cost_micros ?? undefined,
-      costEstimated: h.cost_estimated,
-      error: h.error ?? undefined,
-      translated: h.translated ?? undefined,
-      session: h.session ?? undefined,
-      hint: h.client_hint ?? undefined,
-      peer: h.peer ?? undefined,
-      keyMasked: h.key_masked ?? undefined,
-      ...marksFromEvents(h.security),
-    });
+    rows.set(h.id, rowFromHistory(h));
   }
   return dirty;
+}
+
+/**
+ * 库里的一条记录变成表格的一行。读历史、在整份记录里搜索都走它。
+ *
+ * 本地应答的那几行没有上游（`provider` 是空的，`local` 标着），见 `mergeHistory`。
+ */
+export function rowFromHistory(h: HistoryRow): RequestRow {
+  return {
+    id: h.id,
+    client: h.client,
+    provider: h.local ? "" : h.provider,
+    local: h.local || undefined,
+    model: h.model || undefined,
+    path: h.path,
+    atMs: h.at_ms,
+    state: h.error ? "failed" : h.cancelled ? "cancelled" : "done",
+    status: h.status ?? undefined,
+    ttfbMs: h.ttfb_ms ?? undefined,
+    ttftMs: h.ttft_ms ?? undefined,
+    durationMs: h.duration_ms ?? undefined,
+    tokensPerSec: h.tokens_per_sec ?? undefined,
+    bytes: h.bytes ?? undefined,
+    inputTokens: h.input_tokens ?? undefined,
+    outputTokens: h.output_tokens ?? undefined,
+    cacheReadTokens: h.cache_read_tokens ?? undefined,
+    cacheWriteTokens: h.cache_write_tokens ?? undefined,
+    costMicros: h.cost_micros ?? undefined,
+    costEstimated: h.cost_estimated,
+    error: h.error ?? undefined,
+    translated: h.translated ?? undefined,
+    session: h.session ?? undefined,
+    hint: h.client_hint ?? undefined,
+    peer: h.peer ?? undefined,
+    keyMasked: h.key_masked ?? undefined,
+    ...marksFromEvents(h.security),
+  };
 }
 
 /**

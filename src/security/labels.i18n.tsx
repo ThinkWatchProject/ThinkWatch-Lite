@@ -6,6 +6,9 @@ import CORE_ZH from "@/i18n/core.zh.json";
 /** 句子里要按代码样式画的那一段。怎么画由组件决定，这里只管是哪几个字 */
 type Code = (text: string) => ReactNode;
 
+/** 卡组织在中文里的名字。只有银联有通行的中文名，别家照写英文 */
+const CARD_NETWORK_ZH: Record<string, string> = { UnionPay: "银联" };
+
 const or = (xs: ReactNode[], sep: ReactNode, last: ReactNode) =>
   xs.flatMap((x, i) => (i === 0 ? [x] : [i === xs.length - 1 ? last : sep, x]));
 
@@ -49,6 +52,7 @@ export const securityLabelsText = messages(
       "private-keys": "私钥",
       jwt: "JWT",
       "conn-strings": "连接串",
+      personal: "个人信息",
       internal: "内网地址",
       command: "内置",
       injection: "指令覆盖",
@@ -109,6 +113,13 @@ export const securityLabelsText = messages(
       domainSuffix: (code: Code, suffixes: string[]) => (
         <>以 {or(suffixes.map(code), "、", "、")} 结尾的域名</>
       ),
+      cnResidentId: (bornSince: number) => (
+        <>18 位居民身份证号：地区码、{bornSince} 年以来的出生日期和校验码都对得上</>
+      ),
+      /** 卡组织的名字按英文名查，查不到的照写 */
+      bankCard: (networks: string[]) => (
+        <>{or(networks.map((n) => CARD_NETWORK_ZH[n] ?? n), "、", "、")} 的卡号：号段、位数对得上并通过 Luhn 校验；公开的测试卡号除外</>
+      ),
       regex: (code: Code, pattern: string) => <>正则 {code(pattern)}</>,
       contains: (code: Code, text: string) => <>包含 {code(text)}，不区分大小写</>,
       codepoints: (code: Code, ranges: string[]) => <>码位 {or(ranges.map(code), "、", "、")}</>,
@@ -150,6 +161,7 @@ export const securityLabelsText = messages(
       "private-keys": "Private keys",
       jwt: "JWTs",
       "conn-strings": "Connection strings",
+      personal: "Personal information",
       internal: "Internal addresses",
       command: "Built-in",
       injection: "Instruction override",
@@ -243,6 +255,12 @@ export const securityLabelsText = messages(
       ),
       domainSuffix: (code: Code, suffixes: string[]) => (
         <>Domains ending in {or(suffixes.map(code), ", ", " or ")}</>
+      ),
+      cnResidentId: (bornSince: number) => (
+        <>An 18-character resident ID number whose region code, birth date since {bornSince} and check character all check out</>
+      ),
+      bankCard: (networks: string[]) => (
+        <>A {or(networks, ", ", " or ")} card number whose prefix and length match and that passes the Luhn check; public test card numbers excepted</>
       ),
       regex: (code: Code, pattern: string) => <>Regex {code(pattern)}</>,
       contains: (code: Code, text: string) => <>Contains {code(text)}, ignoring case</>,

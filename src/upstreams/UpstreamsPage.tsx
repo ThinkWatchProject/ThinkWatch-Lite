@@ -14,6 +14,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { EmptyState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
+import { RangePicker, useRange } from "@/ui/range";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
@@ -21,6 +22,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
+import { CheckupTab } from "./CheckupTab";
 import { patch, statsPartial, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { coreText, errorText, plain } from "./labels";
@@ -37,7 +39,7 @@ import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { NextClientsHint } from "@/guide/PageHints";
 
-export type UpstreamTab = "upstreams" | "proxies" | "pricing";
+export type UpstreamTab = "upstreams" | "proxies" | "pricing" | "checkup";
 
 /**
  * 这次打开应用以来最后看的那个标签。切到别的页再回来，还停在那一个。
@@ -61,11 +63,12 @@ type DialogState =
   | { kind: "delete-sheet"; name: string };
 
 /**
- * 上游页：上游、代理、价目表三个标签。
+ * 上游页：上游、代理、价目表、体检四个标签。
  *
- * 三者描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、按什么
+ * 前三者描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、按什么
  * 价格结算 —— 而代理和价目表只被上游引用，所以放在同一页里，引用关系在
  * 页内闭合。**列表只读**，新建与编辑都在对话框里完成，一次保存一个版本。
+ * 体检回答的是「这些上游实际表现如何」：一段时间里各上游的几项事实和相互参照。
  *
  * 页头的摘要说上游的整体状况：几个、几个正常、几个要处理，24 小时的请求与费用。
  */
@@ -92,6 +95,8 @@ export default function UpstreamsPage({
     setTabState(next);
   };
   const [dialog, setDialog] = useState<DialogState>(null);
+  /** 体检看多长一段。各页各记各的，出厂是 7 天：一天里的样本撑不起比较 */
+  const [checkupRange, setCheckupRange] = useRange("tw-checkup-range", "7d");
   const { stats, since } = useUpstreamStats();
   const pricing = usePricingStatus(configVersion);
   useAccountQuotas(ov.providers, () => void stats.reload());
@@ -311,6 +316,8 @@ export default function UpstreamsPage({
           {t.newProxy}
         </Button>
       </>
+    ) : tab === "checkup" ? (
+      <RangePicker value={checkupRange} onChange={setCheckupRange} live={false} />
     ) : (
       <>
         <label className="mr-1 flex items-center gap-2 tw-body">
@@ -353,6 +360,7 @@ export default function UpstreamsPage({
               <TabsTrigger value="pricing">
                 {t.tabs.pricing} <Count n={ov.price_sheets.length + 1} />
               </TabsTrigger>
+              <TabsTrigger value="checkup">{t.tabs.checkup}</TabsTrigger>
             </TabsList>
           }
         />
@@ -454,6 +462,10 @@ export default function UpstreamsPage({
             onDuplicate={(name) => setDialog({ kind: "sheet", mode: { kind: "duplicate", from: name } })}
             onRemove={(name) => setDialog({ kind: "delete-sheet", name })}
           />
+        </TabsContent>
+
+        <TabsContent value="checkup" className="pt-4">
+          <CheckupTab range={checkupRange} providers={providers} />
         </TabsContent>
       </Page>
 

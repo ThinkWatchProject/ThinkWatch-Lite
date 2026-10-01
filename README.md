@@ -38,14 +38,18 @@ before the client runs them.
   and a restore always available; Cursor, Continue and Antigravity CLI come
   with instructions. Switching upstreams then happens in the gateway alone.
 - **Protection against relays.** A relay sees every request in full and can
-  rewrite every answer. Outbound redaction swaps API keys, private keys, JWTs
-  and connection-string passwords for placeholders before a request leaves, so
-  the relay never holds the real values. When an answer carries a tool call
+  rewrite every answer. Outbound redaction swaps API keys, private keys, JWTs,
+  connection-string passwords, Chinese resident ID numbers and bank card numbers
+  for placeholders before a request leaves, so the relay never holds the real
+  values. When an answer carries a tool call
   that downloads and runs code, sends out environment variables or credential
   files, reads private keys or installs a startup item or scheduled job,
   tool-call inspection cuts the answer off before the client can run it.
   Hidden characters and prompt injection can be refused as well. The
   protections start in Observe and switch to Enforce one by one.
+- **Upstream check-up.** Each upstream is compared with the others serving the
+  same model: answers naming a different model, reported input well above or
+  below theirs and low prompt-cache reads are marked, with sample sizes.
 - **MCP servers, skills and hooks, scanned.** The MCP servers of ten clients
   side by side, with third-party servers marked, and a scan of client
   configuration, skills, hooks and project instructions for hidden characters,
@@ -53,7 +57,8 @@ before the client runs them.
 - **Every request traceable.** The rule a request matched, each upstream it
   tried, any conversion between API formats and how its cost was calculated;
   a finished request can be replayed against another upstream and compared
-  side by side.
+  side by side. The whole history can be searched, including the text of
+  requests and answers.
 - **Routing and failover.** Rules by model, tools, images, extended thinking
   and more. When an upstream fails before the answer begins the next one takes
   over, and each session stays on one upstream so its prompt cache keeps
