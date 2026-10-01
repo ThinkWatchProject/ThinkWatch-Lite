@@ -103,8 +103,8 @@ impl Target {
 ///
 /// 判据是**我们有没有实际见过那个形状**。`mcpServers` 那三家和 Codex 的
 /// `mcp_servers` 在本机都有真实样本，字段名一致（`command` / `args` /
-/// `env`）；opencode、Zed 和 Antigravity CLI 的 MCP 段本机没有样本，**照着猜写进去，
-/// 用户拿到的是一份客户端读不懂的配置** —— 那比不提供这个功能糟得多。
+/// `env`）；opencode、Zed、Antigravity CLI、Pi 和 oh-my-pi 的 MCP 段本机没有样本，
+/// **照着猜写进去，用户拿到的是一份客户端读不懂的配置** —— 那比不提供这个功能糟得多。
 pub fn targets() -> Vec<Target> {
     vec![
         Target {
@@ -189,8 +189,9 @@ pub fn targets() -> Vec<Target> {
             )),
             custom_path: None,
         },
-        // Pi 0.99 起的 MCP 和 oh-my-pi 自己的那一份：顶层 `mcpServers`，写法照 Claude 的
-        // （两边的文档都说可以原样抄过来）。只从源码和文档里查证过、本机没有样本 —— 先只读
+        // Pi 0.99 起的 MCP 和 oh-my-pi 自己的那一份：顶层 `mcpServers`，写法和 Claude 的一样
+        // （Pi 的文档说 Claude 那几家的条目原样抄过来就行）。只从文档和源码里查证过、本机没有
+        // 样本 —— 先只读
         Target {
             client: "pi",
             name: "Pi",
