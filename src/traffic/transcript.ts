@@ -135,7 +135,28 @@ export function quiet(t: TranscriptTurn): boolean {
   );
 }
 
-/** 这一轮什么都显示不出来：请求和响应都已超过保留期限 */
+const DAY_MS = 86_400_000;
+
+/**
+ * 一轮的正文为什么不在。core 只说缺了（`request_missing`、`response_missing`），不说为什么，
+ * 而两种原因是两种说法：
+ *
+ * · `expired`：早于报文的保留期限（`retention.body_days`），按期删除了。
+ * · `unkept`：期限之内也没有，是没有保留下来 —— 报文超出总量上限时从最早的一天删起，不等
+ *   期限；写盘跟不上时 core 宁可丢下也不让请求等；期限改长之前删掉的也回不来。这些说
+ *   「已超过保留期限」是错的。
+ */
+export type Missing = "expired" | "unkept";
+
+/**
+ * 按这一轮的时刻（`TurnView.at_ms`）和报文的保留天数判断。**有一样不知道就不下结论**（会话
+ * 详情里还没有这一轮、概览没有取到）：「未保留」在两种情况下都成立，「已超过保留期限」不一定。
+ */
+export function missingWhy(at: number | null, bodyDays: number | null, now: number): Missing {
+  return at !== null && bodyDays !== null && now - at > bodyDays * DAY_MS ? "expired" : "unkept";
+}
+
+/** 这一轮什么都显示不出来：请求和响应的正文都不在 */
 export function lost(t: TranscriptTurn): boolean {
   return (
     t.gaps.includes("request_missing") &&
@@ -147,69 +168,81 @@ export function lost(t: TranscriptTurn): boolean {
 }
 
 /**
- * 要画的一项：一轮，或者连着好几轮都已超过保留期限 —— 那几轮并成一行。
+ * 要画的一项：一轮，或者连着好几轮什么都显示不出来 —— 那几轮并成一行。
  *
  * 保留期限按时间算，跨过界线的会话前面一截全是空的：一轮一个「已超过保留期限」，
  * 几十行一模一样的话把能看的那几轮挤到了后面。只有一轮的不并：单独一轮照样有它的头。
+ * **原因不同的不并**（`why`，见 `Missing`）：一行只说一种原因。
  *
  * `n` 是第几轮，从 1 数起。对话里的轮次和会话详情的是同一批、同一个顺序，所以和
  * 「每轮费用」里的序号对得上。
  */
 export type Item =
   | { kind: "turn"; turn: TranscriptTurn; n: number }
-  | { kind: "lost"; from: number; to: number; key: string };
+  | { kind: "lost"; from: number; to: number; why: Missing; key: string };
 
-export function items(turns: readonly TranscriptTurn[]): Item[] {
+export function items(turns: readonly TranscriptTurn[], why: (t: TranscriptTurn) => Missing): Item[] {
   const out: Item[] = [];
   let i = 0;
   while (i < turns.length) {
-    let j = i;
-    while (j < turns.length && lost(turns[j]!)) j++;
-    if (j - i >= 2) {
-      out.push({ kind: "lost", from: i + 1, to: j, key: `lost:${turns[i]!.id}` });
+    const first = turns[i]!;
+    const reason = lost(first) ? why(first) : null;
+    let j = i + 1;
+    while (reason !== null && j < turns.length && lost(turns[j]!) && why(turns[j]!) === reason) j++;
+    if (reason !== null && j - i >= 2) {
+      out.push({ kind: "lost", from: i + 1, to: j, why: reason, key: `lost:${first.id}` });
       i = j;
     } else {
-      out.push({ kind: "turn", turn: turns[i]!, n: i + 1 });
+      out.push({ kind: "turn", turn: first, n: i + 1 });
       i++;
     }
   }
   return out;
 }
 
-/** 整次会话的内容都已超过保留期限 */
-export function allLost(turns: readonly TranscriptTurn[]): boolean {
-  return turns.length > 0 && turns.every(lost);
+/**
+ * 整次会话什么都显示不出来时，说哪一种原因：每一轮都过了保留期限才说过了期限，否则说
+ * 未保留。不是整次都这样的是 `null`。
+ */
+export function allLost(turns: readonly TranscriptTurn[], why: (t: TranscriptTurn) => Missing): Missing | null {
+  if (turns.length === 0 || !turns.every(lost)) return null;
+  return turns.every((t) => why(t) === "expired") ? "expired" : "unkept";
 }
 
 /**
  * 一轮里显示不出来的部分，写成哪几句话、写在哪儿（请求的写在输入前面，响应的写在
  * 回答后面）。
  *
- * · 请求和响应都没有了：并成一句「此轮内容已超过保留期限」。
+ * · 正文不在的，按 `why` 说已超过保留期限还是未保留（见 `Missing`）。请求和响应都不在，
+ *   并成一句。
  * · **失败的、客户端先断开的，说的是结局，不是缺口**：没有响应是因为根本没有，不是
- *   超过了保留期限 —— 写失败的原因。回答写了一半就断的，也要在那一半后面说一句，不然
+ *   正文没有留下 —— 写失败的原因。回答写了一半就断的，也要在那一半后面说一句，不然
  *   读起来像是模型话说到一半自己停了。
  */
 export type Note =
-  | "lost"
-  | "request_missing"
+  | "expired"
+  | "unkept"
+  | "request_expired"
+  | "request_unkept"
   | "request_truncated"
-  | "response_missing"
+  | "response_expired"
+  | "response_unkept"
   | "response_failed"
   | "response_cancelled"
   | "response_truncated"
   | "response_unreadable";
 
-export function notesOf(t: TranscriptTurn, outcome: Outcome): { request: Note[]; response: Note[] } {
+export function notesOf(t: TranscriptTurn, outcome: Outcome, why: Missing): { request: Note[]; response: Note[] } {
   const has = (g: TranscriptGap) => t.gaps.includes(g);
-  if (has("request_missing") && has("response_missing")) return { request: ["lost"], response: [] };
+  const expired = why === "expired";
+  if (has("request_missing") && has("response_missing")) return { request: [expired ? "expired" : "unkept"], response: [] };
   const request: Note[] = [];
-  if (has("request_missing")) request.push("request_missing");
+  if (has("request_missing")) request.push(expired ? "request_expired" : "request_unkept");
   if (has("request_truncated")) request.push("request_truncated");
   const response: Note[] = [];
   if (outcome === "failed") response.push("response_failed");
   else if (outcome === "cancelled") response.push("response_cancelled");
-  else if (has("response_missing")) response.push("response_missing");
+  else if (has("response_missing")) response.push(expired ? "response_expired" : "response_unkept");
   if (has("response_truncated")) response.push("response_truncated");
   if (has("response_unreadable")) response.push("response_unreadable");
   return { request, response };

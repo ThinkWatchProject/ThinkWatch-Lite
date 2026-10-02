@@ -7,6 +7,7 @@ import {
   clip,
   items,
   keepTurns,
+  missingWhy,
   notesOf,
   outcomeOf,
   quiet,
@@ -15,6 +16,7 @@ import {
   toolNames,
   unrecorded,
   viewsById,
+  type Missing,
 } from "./transcript";
 
 const text = (t: string): TranscriptPart => ({ kind: "text", text: t });
@@ -31,8 +33,11 @@ function turn(id: string, x: Partial<TranscriptTurn> = {}): TranscriptTurn {
   return { id, restart: false, system_changed: null, input: [], output: [], gaps: [], ...x };
 }
 
-/** 一轮什么都显示不出来：请求和响应都已超过保留期限 */
+/** 一轮什么都显示不出来：请求和响应的正文都不在 */
 const gone = (id: string) => turn(id, { gaps: ["request_missing", "response_missing"] });
+
+/** 正文不在的原因：每一轮都过了保留期限 */
+const expired = (): Missing => "expired";
 
 function view(id: number, x: Partial<TurnView> = {}): TurnView {
   return {
@@ -125,7 +130,7 @@ describe("工具结果找回工具名", () => {
 
 describe("连着几轮都超过保留期限", () => {
   it("两轮以上并成一行，序号按原来的轮次", () => {
-    const list = items([gone("1"), gone("2"), gone("3"), turn("4"), gone("5"), turn("6")]);
+    const list = items([gone("1"), gone("2"), gone("3"), turn("4"), gone("5"), turn("6")], expired);
     expect(list.map((x) => (x.kind === "lost" ? `lost ${x.from}-${x.to}` : `turn ${x.n}`))).toEqual([
       "lost 1-3",
       "turn 4",
@@ -137,47 +142,102 @@ describe("连着几轮都超过保留期限", () => {
 
   it("系统提示变了的那一轮不算什么都没有", () => {
     const changed = turn("2", { gaps: ["request_missing", "response_missing"], system_changed: "新的" });
-    expect(items([gone("1"), changed, gone("3")]).map((x) => x.kind)).toEqual(["turn", "turn", "turn"]);
+    expect(items([gone("1"), changed, gone("3")], expired).map((x) => x.kind)).toEqual(["turn", "turn", "turn"]);
   });
 
   it("整次会话都超过保留期限", () => {
-    expect(allLost([gone("1"), gone("2")])).toBe(true);
-    expect(allLost([gone("1"), turn("2")])).toBe(false);
-    expect(allLost([])).toBe(false);
+    expect(allLost([gone("1"), gone("2")], expired)).toBe("expired");
+    expect(allLost([gone("1"), turn("2")], expired)).toBeNull();
+    expect(allLost([], expired)).toBeNull();
   });
 });
 
 describe("显示不出来的部分写成哪几句", () => {
   it("请求和响应都没有了，并成一句", () => {
-    expect(notesOf(gone("1"), "done")).toEqual({ request: ["lost"], response: [] });
+    expect(notesOf(gone("1"), "done", "expired")).toEqual({ request: ["expired"], response: [] });
     // 失败与否写在头上，这里只说内容没有了
-    expect(notesOf(gone("1"), "failed")).toEqual({ request: ["lost"], response: [] });
+    expect(notesOf(gone("1"), "failed", "expired")).toEqual({ request: ["expired"], response: [] });
   });
 
   /** 没有响应是因为根本没有，不是超过了保留期限 */
   it("失败的、取消的说结局，不说缺口", () => {
     const t = turn("1", { gaps: ["response_missing"] });
-    expect(notesOf(t, "failed").response).toEqual(["response_failed"]);
-    expect(notesOf(t, "cancelled").response).toEqual(["response_cancelled"]);
-    expect(notesOf(t, "done").response).toEqual(["response_missing"]);
+    expect(notesOf(t, "failed", "expired").response).toEqual(["response_failed"]);
+    expect(notesOf(t, "cancelled", "expired").response).toEqual(["response_cancelled"]);
+    expect(notesOf(t, "done", "expired").response).toEqual(["response_expired"]);
   });
 
   /** 回答写了一半就断了：后面要说一句，不然像是模型自己停了 */
   it("回答写了一半的失败、取消也要说", () => {
     const half = turn("1", { output: [text("先看")] });
-    expect(notesOf(half, "failed").response).toEqual(["response_failed"]);
-    expect(notesOf(half, "cancelled").response).toEqual(["response_cancelled"]);
-    expect(notesOf(half, "done").response).toEqual([]);
+    expect(notesOf(half, "failed", "unkept").response).toEqual(["response_failed"]);
+    expect(notesOf(half, "cancelled", "unkept").response).toEqual(["response_cancelled"]);
+    expect(notesOf(half, "done", "unkept").response).toEqual([]);
   });
 
   it("其余的缺口一一对上", () => {
     const t = turn("1", {
       gaps: ["request_missing", "request_truncated", "response_truncated", "response_unreadable"],
     });
-    expect(notesOf(t, "done")).toEqual({
-      request: ["request_missing", "request_truncated"],
+    expect(notesOf(t, "done", "expired")).toEqual({
+      request: ["request_expired", "request_truncated"],
       response: ["response_truncated", "response_unreadable"],
     });
+  });
+});
+
+/**
+ * 正文不在，是过了保留期限，还是没有保留下来（超出总量上限提前删掉的、写盘跟不上丢下的）。
+ * 后一种说「已超过保留期限」是错的：按这一轮的时刻和报文的保留天数分开说。
+ */
+describe("正文为什么不在", () => {
+  const DAY = 86_400_000;
+  const now = Date.UTC(2026, 9, 2, 12);
+
+  it("早于保留期限的是过了期限，期限之内的是未保留", () => {
+    expect(missingWhy(now - 8 * DAY, 7, now)).toBe("expired");
+    expect(missingWhy(now - 6 * DAY, 7, now)).toBe("unkept");
+    expect(missingWhy(now - 60_000, 7, now)).toBe("unkept");
+    // 刚满期限的还没到删除的时候（core 删的是早于期限的那几天）
+    expect(missingWhy(now - 7 * DAY, 7, now)).toBe("unkept");
+  });
+
+  /** 会话详情里还没有这一轮、概览没取到：「未保留」两种情况下都成立 */
+  it("时刻或期限不知道时不说过了期限", () => {
+    expect(missingWhy(null, 7, now)).toBe("unkept");
+    expect(missingWhy(now - 30 * DAY, null, now)).toBe("unkept");
+  });
+
+  it("会话详情里那一轮的时刻，按字符串的 id 找到", () => {
+    const views = viewsById([view(1, { at_ms: now - 10 * DAY }), view(2, { at_ms: now - DAY })]);
+    const why = (t: TranscriptTurn) => missingWhy(views.get(t.id)?.at_ms ?? null, 7, now);
+    expect([gone("1"), gone("2"), gone("3")].map(why)).toEqual(["expired", "unkept", "unkept"]);
+  });
+
+  it("每一处的说法跟着原因走", () => {
+    expect(notesOf(gone("1"), "done", "unkept")).toEqual({ request: ["unkept"], response: [] });
+    const request = turn("1", { gaps: ["request_missing"], output: [text("答")] });
+    expect(notesOf(request, "done", "expired").request).toEqual(["request_expired"]);
+    expect(notesOf(request, "done", "unkept").request).toEqual(["request_unkept"]);
+    const response = turn("1", { gaps: ["response_missing"] });
+    expect(notesOf(response, "done", "unkept").response).toEqual(["response_unkept"]);
+  });
+
+  it("连着的几轮原因不同就不并在一起", () => {
+    const why = (t: TranscriptTurn): Missing => (Number(t.id) <= 2 ? "expired" : "unkept");
+    const list = items([gone("1"), gone("2"), gone("3"), gone("4"), gone("5"), gone("6")], why);
+    expect(list.map((x) => (x.kind === "lost" ? `${x.why} ${x.from}-${x.to}` : `turn ${x.n}`))).toEqual([
+      "expired 1-2",
+      "unkept 3-6",
+    ]);
+    // 原因交替的，一轮一轮各有各的头
+    const alternate = (t: TranscriptTurn): Missing => (Number(t.id) % 2 === 0 ? "expired" : "unkept");
+    expect(items([gone("1"), gone("2"), gone("3")], alternate).map((x) => x.kind)).toEqual(["turn", "turn", "turn"]);
+  });
+
+  it("整次会话都显示不出来时，每一轮都过了期限才说过了期限", () => {
+    expect(allLost([gone("1"), gone("2")], () => "unkept")).toBe("unkept");
+    expect(allLost([gone("1"), gone("2")], (t) => (t.id === "1" ? "expired" : "unkept"))).toBe("unkept");
   });
 });
 

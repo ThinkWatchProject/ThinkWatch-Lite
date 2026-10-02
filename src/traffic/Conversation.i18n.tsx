@@ -10,8 +10,9 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
  * `.tsx`：「Read 的结果」里工具名是加粗的片段，它在中英文句子里的位置不同，由句子
  * 自己决定放在哪儿。
  *
- * 缺口那几句和请求详情的说法一致：内容没有了说「已超过保留期限」（请求详情「未保存」
- * 的悬停说明），客户端先断开的那一句和「时间线」状态那一行是同一句。
+ * 正文不在的那几句分两种（`missingWhy`）：早于保留期限的说「已超过保留期限」，和请求详情
+ * 「未保存」的悬停说明一致；期限之内的说「未保留」，不说原因。客户端先断开的那一句和「时间线」
+ * 状态那一行是同一句。
  */
 export const conversationText = messages(
   {
@@ -19,8 +20,10 @@ export const conversationText = messages(
     /** 会话的轮次一轮都还没落库 */
     emptyTitle: "尚无已记录的轮次",
     emptyHint: "每轮结束后显示在此处",
-    /** 每一轮的内容都已超过保留期限 */
-    allLostTitle: "对话内容已超过保留期限",
+    /** 每一轮的正文都不在：都已超过保留期限 */
+    allExpiredTitle: "对话内容已超过保留期限",
+    /** 每一轮的正文都不在，至少有一轮在保留期限之内 */
+    allUnkeptTitle: "对话正文未保留",
     allLostHint: "费用与用量仍可在概况中查看",
     showSummary: "查看概况",
 
@@ -56,12 +59,16 @@ export const conversationText = messages(
     /** 那一轮带着的、此前已显示过的历史，收起 */
     earlier: (n: number) => `此前的对话 · ${n} 条消息`,
 
-    // 显示不出来的部分
-    lost: "此轮内容已超过保留期限",
-    lostRun: (from: number, to: number) => `第 ${from}–${to} 轮的内容已超过保留期限`,
-    requestMissing: "请求内容已超过保留期限",
+    // 显示不出来的部分。正文不在的，早于保留期限的是 `expired*`，期限之内的是 `unkept*`
+    expired: "此轮内容已超过保留期限",
+    unkept: "此轮正文未保留",
+    expiredRun: (from: number, to: number) => `第 ${from}–${to} 轮的内容已超过保留期限`,
+    unkeptRun: (from: number, to: number) => `第 ${from}–${to} 轮的正文未保留`,
+    requestExpired: "请求内容已超过保留期限",
+    requestUnkept: "请求正文未保留",
     requestTruncated: "请求过大，未完整保存",
-    responseMissing: "响应内容已超过保留期限",
+    responseExpired: "响应内容已超过保留期限",
+    responseUnkept: "响应正文未保留",
     /** `reason` 是 core 说的失败原因，一整句 */
     responseFailed: (reason: string) => `请求失败：${reason}`,
     responseCancelled: "已取消：客户端在响应结束前断开连接",
@@ -74,7 +81,8 @@ export const conversationText = messages(
     loadFailed: "Could not load the conversation",
     emptyTitle: "No turns recorded yet",
     emptyHint: "Each turn appears here when it ends",
-    allLostTitle: "The conversation is past the retention period",
+    allExpiredTitle: "The conversation is past the retention period",
+    allUnkeptTitle: "The conversation's content was not kept",
     allLostHint: "Cost and usage are still in the summary",
     showSummary: "Show summary",
 
@@ -103,11 +111,15 @@ export const conversationText = messages(
     restart: "The conversation history starts over here",
     earlier: (n: number) => `Earlier conversation · ${count(n, "message", "messages")}`,
 
-    lost: "This turn is past the retention period",
-    lostRun: (from: number, to: number) => `Turns ${from}–${to} are past the retention period`,
-    requestMissing: "The request is past the retention period",
+    expired: "This turn is past the retention period",
+    unkept: "This turn's content was not kept",
+    expiredRun: (from: number, to: number) => `Turns ${from}–${to} are past the retention period`,
+    unkeptRun: (from: number, to: number) => `The content of turns ${from}–${to} was not kept`,
+    requestExpired: "The request is past the retention period",
+    requestUnkept: "The request body was not kept",
     requestTruncated: "The request was too large to save in full",
-    responseMissing: "The response is past the retention period",
+    responseExpired: "The response is past the retention period",
+    responseUnkept: "The response body was not kept",
     responseFailed: (reason: string) => `The request failed: ${reason}`,
     responseCancelled: "Canceled: the client disconnected before the response finished",
     responseTruncated: "The response was too large to save in full",

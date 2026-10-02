@@ -1,6 +1,7 @@
 import {
   createContext,
   memo,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -27,6 +28,7 @@ import type {
   TranscriptTurn,
   TurnView,
 } from "@/types";
+import { useNow } from "@/useNow";
 import { Button } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
@@ -45,6 +47,7 @@ import {
   idKey,
   items,
   keepTurns,
+  missingWhy,
   notesOf,
   outcomeOf,
   quiet,
@@ -55,6 +58,7 @@ import {
   viewsById,
   visibleParts,
   type Block,
+  type Missing,
   type Note,
   type Outcome,
   type ToolCall,
@@ -69,6 +73,9 @@ const CHUNK = 40;
 const PROSE = { chars: 2000, lines: 40 };
 /** 等宽的那几样（工具参数、工具结果）：框子自己会滚，收的是画进页面的量 */
 const MONO = { chars: 12_000, lines: 300 };
+
+/** 保留期限按天算，判断正文为什么不在（`missingWhy`）用的时刻一小时更新一次就够 */
+const HOUR_MS = 3_600_000;
 
 /**
  * 左边一列写这一块是谁说的，右边是内容。**列宽固定**：每一轮各自按内容定宽的话，
@@ -124,6 +131,9 @@ interface Head {
  *
  * 轮次头上的时刻、模型、费用、失败与否来自会话详情的那一轮（`turns`，按请求 id 对上）。
  * 还在跑的那几轮库里还没有，对话里也没有，末尾各写一行「进行中」。
+ *
+ * 正文不在的那几轮，按那一轮的时刻和报文的保留天数（概览里的 `retention`）说是已超过保留
+ * 期限，还是未保留（见 `missingWhy`）。
  */
 export function Conversation({
   id,
@@ -151,11 +161,19 @@ export function Conversation({
   });
   prev.current = r.data;
   const data = r.data ?? (unrecorded(r.error) ? null : undefined);
+  // 报文留几天。和请求详情的「重放」同一份概览；没取到时不说「已超过保留期限」
+  const ov = useResource("overview", () => call("Overview", null), { events: ["config_reloaded"] });
+  const bodyDays = ov.data?.retention.body_days ?? null;
+  const now = useNow(HOUR_MS);
+  const views = useMemo(() => viewsById(turns), [turns]);
+  const why = useCallback(
+    (x: TranscriptTurn) => missingWhy(views.get(idKey(x.id))?.at_ms ?? null, bodyDays, now),
+    [views, bodyDays, now],
+  );
 
-  const list = useMemo(() => (data ? items(data.turns) : []), [data]);
+  const list = useMemo(() => (data ? items(data.turns, why) : []), [data, why]);
   const names = useMemo(() => (data ? toolNames(data.turns) : new Map<string, string>()), [data]);
   const shown = useProgressive(list);
-  const views = useMemo(() => viewsById(turns), [turns]);
 
   if (data === undefined) {
     return r.error !== undefined ? (
@@ -164,11 +182,12 @@ export function Conversation({
       <ConversationSkeleton />
     );
   }
-  if (data !== null && allLost(data.turns)) {
+  const gone = data !== null ? allLost(data.turns, why) : null;
+  if (gone !== null) {
     return (
       <EmptyState
         icon={<IconSession />}
-        title={t.allLostTitle}
+        title={gone === "expired" ? t.allExpiredTitle : t.allUnkeptTitle}
         description={t.allLostHint}
         action={
           <Button size="sm" variant="outline" onClick={onShowSummary}>
@@ -228,7 +247,7 @@ export function Conversation({
             if (it.kind === "lost") {
               return (
                 <li key={it.key} className={cn(!first && "mt-4 border-t border-border pt-4")}>
-                  <Pill>{t.lostRun(it.from, it.to)}</Pill>
+                  <Pill>{it.why === "expired" ? t.expiredRun(it.from, it.to) : t.unkeptRun(it.from, it.to)}</Pill>
                 </li>
               );
             }
@@ -237,7 +256,7 @@ export function Conversation({
                 key={it.turn.id}
                 className={cn(!first && (it.turn.restart ? "mt-4" : "mt-4 border-t border-border pt-4"))}
               >
-                <Turn turn={it.turn} n={it.n} head={headOf(it.turn.id)} onOpen={onOpenTurn} />
+                <Turn turn={it.turn} n={it.n} head={headOf(it.turn.id)} why={why(it.turn)} onOpen={onOpenTurn} />
               </li>
             );
           })}
@@ -310,6 +329,8 @@ function sameHead(a: Head, b: Head): boolean {
  *
  * 不生成回答的调用（数 token、压缩上下文，见 `quiet`）只有一行头，写「无对话内容」。
  *
+ * 正文不在时说哪一种原因，看 `why`（见 `missingWhy`）。
+ *
  * **`memo`，比的是这一轮的对象和头上那几项**：会话在进行时，每落一轮整段对话重取一次，
  * 没变的轮次沿用原来的对象（`keepTurns`），这里就不重画。
  */
@@ -318,18 +339,20 @@ const Turn = memo(
     turn,
     n,
     head,
+    why,
     onOpen,
   }: {
     turn: TranscriptTurn;
     n: number;
     head: Head;
+    why: Missing;
     onOpen: (id: number) => void;
   }) {
     const t = useText(conversationText);
     const restart = useMemo(() => (turn.restart ? splitRestart(turn.input) : null), [turn]);
     const blocks = useMemo(() => blocksOf(restart ? restart.latest : turn.input), [turn, restart]);
     const output = useMemo(() => visibleParts(turn.output), [turn]);
-    const notes = notesOf(turn, head.outcome);
+    const notes = notesOf(turn, head.outcome, why);
     const reply = output.length > 0 || notes.response.length > 0;
     // 失败了的不算：失败的原因要写出来
     if (quiet(turn) && !reply) {
@@ -370,7 +393,7 @@ const Turn = memo(
       </article>
     );
   },
-  (a, b) => a.turn === b.turn && a.n === b.n && a.onOpen === b.onOpen && sameHead(a.head, b.head),
+  (a, b) => a.turn === b.turn && a.n === b.n && a.why === b.why && a.onOpen === b.onOpen && sameHead(a.head, b.head),
 );
 
 /**
@@ -817,16 +840,23 @@ function Pill({ tone = "gap", children }: { tone?: "gap" | "error"; children: Re
 
 function noteText(n: Note, failure: string | null, t: (typeof conversationText)["zh"]): string {
   switch (n) {
-    case "lost":
-      return t.lost;
-    case "request_missing":
-      return t.requestMissing;
+    case "expired":
+      return t.expired;
+    case "unkept":
+      return t.unkept;
+    case "request_expired":
+      return t.requestExpired;
+    case "request_unkept":
+      return t.requestUnkept;
     case "request_truncated":
       return t.requestTruncated;
-    case "response_missing":
-      return t.responseMissing;
+    case "response_expired":
+      return t.responseExpired;
+    case "response_unkept":
+      return t.responseUnkept;
     case "response_failed":
-      return failure !== null ? t.responseFailed(failure) : t.responseMissing;
+      // 失败的那一轮会话详情里一定带着原因；万一没有，也不说是过了保留期限
+      return failure !== null ? t.responseFailed(failure) : t.responseUnkept;
     case "response_cancelled":
       return t.responseCancelled;
     case "response_truncated":
