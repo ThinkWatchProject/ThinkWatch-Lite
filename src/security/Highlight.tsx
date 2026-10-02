@@ -2,18 +2,52 @@
 export interface Mark {
   start: number;
   end: number;
-  /** `bad`：会被切断；`warn`：会被替换或记录 */
-  tone: "warn" | "bad";
+  /** `bad`：会被切断、拒绝；`strip`：会被删掉；`warn`：会被替换或只记录 */
+  tone: "warn" | "bad" | "strip";
 }
 
 /**
  * 标记的底色：状态色压到低透明度，底边一道实色 —— 不加内边距（等宽字里一格
- * 内边距会把后面的字全推歪），跨行时每一行各自带着底色和底边。
+ * 内边距会把后面的字全推歪），跨行时每一行各自带着底色和底边。会被删掉的那几处
+ * 再划一道线：删掉之后发出去的样子里没有它们。
  */
 const TONE: Record<Mark["tone"], string> = {
   warn: "rounded-[3px] bg-warning/25 text-foreground shadow-[inset_0_-1.5px_0_0_var(--warning)] box-decoration-clone",
   bad: "rounded-[3px] bg-destructive/20 text-foreground shadow-[inset_0_-1.5px_0_0_var(--destructive)] box-decoration-clone",
+  strip:
+    "rounded-[3px] bg-destructive/10 text-muted-foreground line-through decoration-destructive/70 shadow-[inset_0_-1.5px_0_0_color-mix(in_oklab,var(--destructive)_60%,transparent)] box-decoration-clone",
 };
+
+/**
+ * 看不见的字符：Unicode 说默认不显示的那些（零宽、双向控制、标签字符、变体选择符…），
+ * 以及私用区（没有标准字形，多数字体里是空白）
+ */
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Co}]/u;
+
+const hex = (cp: number) => cp.toString(16).toUpperCase().padStart(4, "0");
+
+/**
+ * 标出来的那一段里，**看不见的字符画成码位**：一个画成 `‹U+200B›`，连着一串画成第一个的
+ * 码位加省略号（`‹U+E0049…›`）。不画的话，命中了码位规则的那一处是一块空的底色 ——
+ * 正是要找的东西看不见。没标出来的字照原样。
+ */
+export function drawInvisible(text: string): string {
+  let out = "";
+  let run: number[] = [];
+  const flush = () => {
+    if (run.length > 0) out += `‹U+${hex(run[0]!)}${run.length > 1 ? "…" : ""}›`;
+    run = [];
+  };
+  for (const ch of text) {
+    if (INVISIBLE.test(ch)) run.push(ch.codePointAt(0)!);
+    else {
+      flush();
+      out += ch;
+    }
+  }
+  flush();
+  return out;
+}
 
 /**
  * 一段测试文本，命中的地方标出来。
@@ -34,7 +68,7 @@ export function Highlight({ text, marks }: { text: string; marks: Mark[] }) {
     if (start > at) parts.push(text.slice(at, start));
     parts.push(
       <mark key={start} className={TONE[m.tone]}>
-        {text.slice(start, end)}
+        {drawInvisible(text.slice(start, end))}
       </mark>,
     );
     at = end;

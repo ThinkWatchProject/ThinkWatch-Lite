@@ -14,9 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { Guard, GuardDetail, GuardMode, RuleGuard, SecurityRuleView } from "@/types";
-import { hasAction, hasCustom, type ActionGuard } from "./api";
-import { Code, MatcherText, modeTone, ruleWhy, viewName } from "./labels";
+import type { Guard, GuardDetail, GuardMode, SecurityRuleView } from "@/types";
+import { hasAction, type ActionGuard } from "./api";
+import { Code, MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText } from "./GuardTab.i18n";
 import { GroupRow, ROW_FOCUS, rowNav, stop } from "./rows";
@@ -43,7 +43,9 @@ const keyOf = (r: SecurityRuleView) => `${r.custom ? "c" : "b"}:${r.id}`;
 
 /**
  * 一项防护的档位：名字、一句它做什么，右边三档；下面一行是现在的样子（状态点
- * 和页头、标签上的同色），再下面把「切到拦截」的代价说在切之前。
+ * 和页头、标签上的同色），再下面把切到第三档的代价说在切之前。
+ *
+ * **第三档按这一项做的事命名**（替换、切断、处置），见 `modeName`。
  */
 export function ModeCard({
   guard,
@@ -72,7 +74,7 @@ export function ModeCard({
           <Segmented<GuardMode>
             label={t.modeFor(lt.guards[guard])}
             value={mode}
-            options={MODES.map((m) => ({ id: m, label: lt.modes[m] }))}
+            options={MODES.map((m) => ({ id: m, label: modeName(guard, m) }))}
             onChange={(v) => v !== mode && onMode(v)}
           />
         </div>
@@ -85,7 +87,7 @@ export function ModeCard({
           </span>
         </p>
         <p className="mt-1 pl-3.5 tw-label text-muted-foreground">
-          {mode === "enforce" ? copy.risk : t.ifEnforced(copy.effect, copy.risk)}
+          {mode === "enforce" ? copy.risk : t.ifEnforced(modeName(guard, "enforce"), copy.effect, copy.risk)}
         </p>
       </div>
     </section>
@@ -93,7 +95,7 @@ export function ModeCard({
 }
 
 /** 档位那一块和规则表还没读到时的样子：和读到之后同一个形状，不跳 */
-export function GuardSkeleton({ rules }: { rules: boolean }) {
+export function GuardSkeleton() {
   return (
     <div className="flex flex-col" role="status" aria-busy="true">
       <div className="rounded-lg border border-border bg-surface/40 px-4 py-3.5">
@@ -109,32 +111,29 @@ export function GuardSkeleton({ rules }: { rules: boolean }) {
           <Skeleton className="h-2.5 w-4/5 rounded-sm opacity-70" />
         </div>
       </div>
-      {rules && (
-        <div className="mt-8">
-          <div className="mb-3 flex items-end justify-between">
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-3.5 w-12 rounded-sm" />
-              <Skeleton className="h-3 w-32 rounded-sm opacity-70" />
-            </div>
-            <Skeleton className="h-7 w-44 rounded-lg" />
+      <div className="mt-8">
+        <div className="mb-3 flex items-end justify-between">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-3.5 w-12 rounded-sm" />
+            <Skeleton className="h-3 w-32 rounded-sm opacity-70" />
           </div>
-          <TableSkeleton rows={6} cols={3} />
+          <Skeleton className="h-7 w-44 rounded-lg" />
         </div>
-      )}
+        <TableSkeleton rows={6} cols={3} />
+      </div>
     </div>
   );
 }
 
 /**
- * 一项有规则的防护：上面是档位，下面是全部规则。
+ * 一项防护：上面是档位，下面是全部规则。
  *
  * **档位和规则都是全局的**，对所有上游、所有密钥一样。这一页没有「按上游」
  * 的任何设置 —— 同一个请求走哪家，不该决定它里面的密钥会不会被换掉。
  *
- * 内置规则可以启停；工具调用和内容规则还能改拦截时的处置，改写法要先复制成
- * 自定义规则。自定义规则在对话框里改。隐藏字符只有那两种，没有自定义规则。
- * 每次改动由 core 写成一个配置版本。点一行打开它（内置的查看或改处置，
- * 自定义的编辑）。
+ * 内置规则可以启停；工具调用和内容规则还能改第三档下的处置，改写法要先复制成
+ * 自定义规则。自定义规则在对话框里改。每次改动由 core 写成一个配置版本。点一行
+ * 打开它（内置的查看或改处置，自定义的编辑）。
  */
 export function GuardTab({
   guard,
@@ -142,7 +141,7 @@ export function GuardTab({
   modePending,
   actions,
 }: {
-  guard: RuleGuard;
+  guard: Guard;
   detail: GuardDetail;
   modePending: boolean;
   actions: RuleActions;
@@ -163,19 +162,15 @@ export function GuardTab({
               <FlaskConicalIcon />
               {t.test}
             </Button>
-            {hasCustom(guard) && (
-              <Button size="sm" onClick={actions.create}>
-                <PlusIcon />
-                {t.newRule}
-              </Button>
-            )}
+            <Button size="sm" onClick={actions.create}>
+              <PlusIcon />
+              {t.newRule}
+            </Button>
           </>
         }
       >
         {guard === "redact" ? (
           <RedactRules rules={detail.rules} actions={actions} />
-        ) : guard === "hidden_text" ? (
-          <HiddenRules rules={detail.rules} actions={actions} />
         ) : (
           <ActionRules guard={guard} rules={detail.rules} actions={actions} />
         )}
@@ -185,7 +180,7 @@ export function GuardTab({
 }
 
 /** 行菜单：内置的查看或编辑、复制；自定义的编辑、删除 */
-function useMenu(guard: RuleGuard, actions: RuleActions) {
+function useMenu(guard: Guard, actions: RuleActions) {
   const t = useText(guardTabText);
   const common = useText(commonText);
   return (r: SecurityRuleView): MenuItems => {
@@ -202,11 +197,11 @@ function useMenu(guard: RuleGuard, actions: RuleActions) {
         { kind: "sep" },
         { kind: "item", label: common.delete, onSelect: () => actions.remove(r), danger: true },
       ];
-    // 出站脱敏、隐藏字符的内置规则只能启停，也写不出等价的自定义规则
+    // 出站脱敏的内置规则只能启停，也写不出等价的自定义规则
     if (!hasAction(guard)) return [{ kind: "item", label: t.view, onSelect: () => actions.open(r) }, toggle];
     const copy = actions.copy;
     return [
-      // 内置的工具调用和内容规则能改拦截时的处置，所以是「编辑」不是「查看」
+      // 内置的工具调用和内容规则能改第三档下的处置，所以是「编辑」不是「查看」
       { kind: "item", label: common.edit, onSelect: () => actions.open(r) },
       toggle,
       ...(copy ? [{ kind: "sep" as const }, { kind: "item" as const, label: t.copyAsCustom, onSelect: () => copy(r) }] : []),
@@ -342,10 +337,13 @@ function RedactRules({ rules, actions }: { rules: SecurityRuleView[]; actions: R
 }
 
 /**
- * 工具调用审查、内容过滤：规则、写法、拦截时做什么。
+ * 工具调用审查、内容过滤：规则、写法、第三档下做什么。
  *
- * 工具调用的内置规则一组；内容规则按 core 给的类别分组（指令覆盖、身份与
- * 提示词、中文说法），自定义的在最后。
+ * 工具调用的内置规则一组；内容规则按 core 给的类别分组（隐藏字符、指令覆盖、
+ * 身份与提示词、中文说法），自定义的在最后。码位规则的「匹配」写出码位范围。
+ *
+ * **处置一列三种颜色**：拒绝、切断是红的（请求或回答的结局变了），删除是正文色（改了
+ * 内容照常发出），仅记录是次要色。
  */
 function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: SecurityRuleView[]; actions: RuleActions }) {
   const t = useText(guardTabText);
@@ -367,7 +365,7 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
         <TableRow>
           <TableHead>{t.rule}</TableHead>
           <TableHead>{content ? t.match : t.regex}</TableHead>
-          <TableHead>{t.whenEnforced}</TableHead>
+          <TableHead>{t.action}</TableHead>
           <TableHead className="text-right">{t.enabled}</TableHead>
           <TableHead />
         </TableRow>
@@ -385,10 +383,11 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
               const name = viewName(guard, r);
               const pattern = r.matcher.kind === "regex" ? r.matcher.pattern : "";
               const hard = r.action === "cut" || r.action === "block";
+              const soft = r.action === "record" || r.action == null;
               return (
                 <RuleRow key={k} r={r} presence={presence} items={items} actions={actions}>
                   <TableCell className="py-2">
-                    <RuleName r={r} name={name} why={ruleWhy(r)} />
+                    <RuleName r={r} name={name} why={ruleWhy(guard, r)} />
                   </TableCell>
                   {content ? (
                     <TableCell className="truncate text-muted-foreground">
@@ -400,7 +399,7 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
                       {pattern}
                     </TableCell>
                   )}
-                  <TableCell className={hard ? "text-destructive" : "text-muted-foreground"}>
+                  <TableCell className={hard ? "text-destructive" : soft ? "text-muted-foreground" : "text-foreground"}>
                     {lt.ruleActions[r.action ?? "record"] ?? r.action}
                   </TableCell>
                   <RuleTail r={r} name={name} items={items} actions={actions} />
@@ -409,47 +408,6 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
             })}
           </Fragment>
         ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-/** 隐藏字符：那两种字符，各是哪几段码位、为什么值得查 */
-function HiddenRules({ rules, actions }: { rules: SecurityRuleView[]; actions: RuleActions }) {
-  const t = useText(guardTabText);
-  const menu = useMenu("hidden_text", actions);
-  const shown = usePresentList(rules, keyOf);
-  return (
-    <Table className="table-fixed min-w-[560px]">
-      <colgroup>
-        <col />
-        <col className="w-[230px]" />
-        <col className="w-14" />
-        <col className="w-9" />
-      </colgroup>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t.rule}</TableHead>
-          <TableHead>{t.codepoints}</TableHead>
-          <TableHead className="text-right">{t.enabled}</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {shown.map(({ item: r, key, presence }) => {
-          const items = menu(r);
-          const name = viewName("hidden_text", r);
-          const ranges = r.matcher.kind === "codepoints" ? r.matcher.ranges : [];
-          return (
-            <RuleRow key={key} r={r} presence={presence} items={items} actions={actions}>
-              <TableCell className="py-2">
-                <RuleName r={r} name={name} why={ruleWhy(r)} />
-              </TableCell>
-              <TableCell className="truncate font-mono tw-label text-muted-foreground">{ranges.join(", ")}</TableCell>
-              <RuleTail r={r} name={name} items={items} actions={actions} />
-            </RuleRow>
-          );
-        })}
       </TableBody>
     </Table>
   );

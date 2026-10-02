@@ -14,8 +14,8 @@ import { appLabel } from "@/labels";
 import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import RequestDrawer from "@/RequestDrawer";
-import { GUARDS, isRuleGuard, type Guard, type RuleGuard, type SecurityDetail, type SecurityEventView } from "@/types";
-import { ActionBadge, clock, dayHead, dayKey, EventDetail, ruleName, whereOf } from "./labels";
+import { GUARDS, type Guard, type SecurityDetail, type SecurityEventView } from "@/types";
+import { ActionBadge, byCodepoints, clock, dayHead, dayKey, EventDetail, ruleName, whereOf } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { logTabText } from "./LogTab.i18n";
 import { GroupRow, ROW_FOCUS, rowNav, stop } from "./rows";
@@ -25,17 +25,17 @@ const DAY = 24 * 3_600_000;
 
 /** 日志行上的菜单能做的事，由页面接住：它们要切标签、要写配置 */
 export interface LogActions {
-  viewRule: (guard: RuleGuard, id: string, custom: boolean) => void;
-  disableRule: (guard: RuleGuard, id: string, custom: boolean) => void;
+  viewRule: (guard: Guard, id: string, custom: boolean) => void;
+  disableRule: (guard: Guard, id: string, custom: boolean) => void;
   /** 切到某一项防护的标签（空状态里的入口） */
   showGuard: (guard: Guard) => void;
 }
 
 /**
- * 安全日志：一行是一次命中，各项防护的都在一张表里，「类型」一列分得开。
+ * 安全日志：一行是一次命中，三项防护的都在一张表里，「类型」一列分得开。
  *
  * **按天分组，读起来是一条时间线**：一天一个标题（今天、昨天、9月23日周三），
- * 行上只写时刻。每行先说处置（状态点：切断、拒绝红，替换绿，仅记录琥珀），
+ * 行上只写时刻。每行先说处置（状态点：切断、拒绝红，删除、替换绿，仅记录琥珀），
  * 再说是哪一项、命中了什么、是哪次请求。
  *
  * 点一行打开那次请求的详情 —— 日志说的是「命中了什么」，请求详情说的是
@@ -160,14 +160,9 @@ function LogTable({
     }
   }
 
-  /**
-   * 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉；
-   * 输出长度没有规则，那两项也是灰的
-   */
+  /** 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉 */
   const ruleOf = (e: SecurityEventView) =>
-    isRuleGuard(e.guard)
-      ? detail?.[e.guard].rules.find((r) => r.id === e.rule && r.custom === e.custom)
-      : undefined;
+    detail?.[e.guard].rules.find((r) => r.id === e.rule && r.custom === e.custom);
 
   function menu(e: SecurityEventView): MenuItems {
     const r = ruleOf(e);
@@ -176,14 +171,14 @@ function LogTable({
       {
         kind: "item",
         label: t.viewRule,
-        onSelect: () => isRuleGuard(e.guard) && actions.viewRule(e.guard, e.rule, e.custom),
+        onSelect: () => actions.viewRule(e.guard, e.rule, e.custom),
         disabled: !r,
       },
       { kind: "sep" },
       {
         kind: "item",
         label: t.disableRule,
-        onSelect: () => isRuleGuard(e.guard) && actions.disableRule(e.guard, e.rule, e.custom),
+        onSelect: () => actions.disableRule(e.guard, e.rule, e.custom),
         disabled: !r || !r.enabled,
       },
     ];
@@ -197,7 +192,7 @@ function LogTable({
           <col className="w-[76px]" />
           {/* 「● Recorded」要 86 */}
           <col className="w-[92px]" />
-          {/* 「Hidden text」要 88 */}
+          {/* 类型：英文的「Redaction」「Tool call」 */}
           <col className="w-[92px]" />
           <col />
           <col className="w-[304px]" />
@@ -255,7 +250,7 @@ function LogTable({
                           </div>
                           {/* 值只剩头尾：日志截一张图就能带出去 */}
                           <div className="truncate tw-label text-muted-foreground">
-                            <EventDetail e={e} />
+                            <EventDetail e={e} codepoints={byCodepoints(e, detail?.content.rules)} />
                           </div>
                         </TableCell>
                         <TableCell className="py-2">

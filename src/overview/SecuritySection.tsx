@@ -3,13 +3,15 @@ import { PageSection } from "@/ui/page";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { presetRange, type Range } from "@/ui/range";
 import { useNav } from "@/nav";
-import type { Dashboard, Guard, Overview } from "@/types";
+import { modeName } from "@/security/labels";
+import type { Dashboard, Guard, GuardMode, Overview } from "@/types";
 import { useText } from "@/i18n";
 import { LinkRow, Scope } from "./parts";
 import { overviewText } from "./overview.i18n";
 
 /**
- * 安全：各项防护现在各在哪一档，以及这段时间各自看见了什么。
+ * 安全：三项防护现在各在哪一档，以及这段时间各自看见了什么。档位的第三档按各项做的事
+ * 命名（替换、切断、处置），和安全页一样。
  *
  * **档位和所见要一起说。**只说所见的话，「未发现」在关闭档下是句空话；只说档位
  * 的话，不知道它到底拦下过什么。
@@ -37,16 +39,15 @@ export function SecuritySection({
   const sec = ov?.security;
   if (!sec) return null;
   const c = d.summary.security;
-  const mode = (m: string) => (m === "enforce" ? t.modeEnforce : m === "off" ? t.modeOff : t.modeObserve);
   const guards: {
     key: Guard;
     name: string;
-    mode: string;
+    mode: GuardMode;
     hits: number;
     /**
-     * 没被处置、照常放行了的那几处。**有它才标琥珀** —— 全换掉了、全切断了，说明防护
-     * 在起作用。和安全日志同一套语气（`outcomeTone`）：仅记录的是琥珀，值得看一眼；
-     * 红色留给「请求的结局变了」，而概览这一行说的不是某一次请求。
+     * 没被处置、照常放行了的那几处。**有它才标琥珀** —— 全换掉了、全切断了、全拒绝或
+     * 删除了，说明防护在起作用。和安全日志同一套语气（`outcomeTone`）：仅记录的是琥珀，
+     * 值得看一眼；红色留给「请求的结局变了」，而概览这一行说的不是某一次请求。
      */
     open: number;
     saw: string;
@@ -73,39 +74,17 @@ export function SecuritySection({
             : t.noToolCalls,
     },
     {
-      key: "hidden_text",
-      name: t.hiddenText,
-      mode: sec.hidden_text,
-      hits: c.hidden_text,
-      open: c.hidden_text - c.hidden_text_blocked,
-      saw:
-        c.hidden_text > 0
-          ? t.hiddenFound(c.hidden_text, c.hidden_text_blocked)
-          : sec.hidden_text === "off"
-            ? t.notChecked
-            : t.noHidden,
-    },
-    {
       key: "content",
       name: t.content,
       mode: sec.content,
       hits: c.content,
-      open: c.content - c.content_blocked,
+      open: c.content - c.content_blocked - c.content_stripped,
       saw:
-        c.content > 0 ? t.contentMatched(c.content, c.content_blocked) : sec.content === "off" ? t.notChecked : t.noContent,
-    },
-    {
-      key: "output_limit",
-      name: t.outputLimit,
-      mode: sec.output_limit,
-      hits: c.output_limit,
-      open: c.output_limit - c.output_limit_cut,
-      saw:
-        c.output_limit > 0
-          ? t.overLimit(c.output_limit, c.output_limit_cut)
-          : sec.output_limit === "off"
+        c.content > 0
+          ? t.contentMatched(c.content, c.content_blocked, c.content_stripped)
+          : sec.content === "off"
             ? t.notChecked
-            : t.noOverLimit,
+            : t.noContent,
     },
   ];
   // 实时档的计数按 24 小时算（见 `windowStart`），日志也按 24 小时看
@@ -121,7 +100,7 @@ export function SecuritySection({
             <StatusDot tone={tone} size="md" />
             <span className="w-40 shrink-0 truncate">{g.name}</span>
             {/* 56px：Observe 要 51，44 的话会压到后面那一列上 */}
-            <span className="w-14 shrink-0 text-muted-foreground">{mode(g.mode)}</span>
+            <span className="w-14 shrink-0 text-muted-foreground">{modeName(g.key, g.mode)}</span>
             {/* 颜色只在点上。有发现的那句用正文色 —— 一整句染色读起来像报错 */}
             <span className={cn("min-w-0 flex-1 truncate", g.hits === 0 ? "text-muted-foreground" : "text-foreground")}>
               {g.saw}

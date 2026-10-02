@@ -19,7 +19,7 @@ const ev = (x: Partial<SecurityEventView>): SecurityEventView => ({
 });
 
 /**
- * 历史记录上的安全记录 → 流量页的两个徽标。
+ * 历史记录上的安全记录 → 流量页的徽标（脱敏、可疑调用、已删除）。
  *
  * **和实时事件给出同一个形状**：关窗再开，徽标不该变样。
  */
@@ -39,8 +39,22 @@ describe("历史记录的安全徽标", () => {
     expect(m.flagged).toBeUndefined();
   });
 
-  it("拦截档替换过：已脱敏", () => {
+  it("替换档替换过：已脱敏", () => {
     expect(marksFromEvents([ev({ action: "replaced" })]).secrets?.replaced).toBe(true);
+  });
+
+  it("内容过滤：只有删过文字的挂「已删除」", () => {
+    const m = marksFromEvents([
+      ev({ guard: "content", rule: "unicode-tags", action: "stripped", tool: "tool_result", excerpt: "a‹U+E0049…›b", count: 74 }),
+      ev({ id: 2, guard: "content", rule: "act-as", action: "recorded", excerpt: "act as", count: 1 }),
+      ev({ id: 3, guard: "content", rule: "项目代号", custom: true, action: "stripped", excerpt: "project falcon", count: 2 }),
+    ]);
+    expect(m.stripped).toEqual([
+      { rule: "unicode-tags", custom: false, count: 74 },
+      { rule: "项目代号", custom: true, count: 2 },
+    ]);
+    expect(m.secrets).toBeUndefined();
+    expect(marksFromEvents([ev({ guard: "content", rule: "jailbreak", action: "blocked" })]).stripped).toBeUndefined();
   });
 
   it("工具调用：切断的算拦截，只记录的不算", () => {

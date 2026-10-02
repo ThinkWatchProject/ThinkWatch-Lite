@@ -107,9 +107,7 @@
     "guard": {
       "redact": "出站脱敏",
       "inspect_tools": "工具调用审查",
-      "hidden_text": "隐藏字符",
-      "content": "内容过滤",
-      "output_limit": "输出长度"
+      "content": "内容过滤"
     },
     "scan_rule": {
       "ignore-previous": "要求忽略先前的指令",
@@ -132,6 +130,10 @@
       "chmod-777": "开放全部写权限"
     },
     "content_rule": {
+      "unicode-tags": "Unicode 标签字符",
+      "bidi-controls": "双向控制符",
+      "zero-width": "零宽字符",
+      "private-use": "私用区字符",
       "ignore-previous-instructions": "要求忽略先前的指令",
       "ignore-all-previous": "要求忽略之前的全部内容",
       "disregard-your-instructions": "要求无视指令",
@@ -154,6 +156,12 @@
       "zh-reveal-your": "要求透露指令（中文）",
       "zh-system-prompt": "系统提示词（中文）",
       "zh-jailbreak": "越狱（中文）"
+    },
+    "content_why": {
+      "unicode-tags": "在编辑器中完全不可见，但会原样进入模型上下文，可用于隐藏整段指令。",
+      "bidi-controls": "可使屏幕上的显示顺序与实际字符顺序不一致。",
+      "zero-width": "在编辑器中不可见，但会被模型读到。表情符号、波斯文等正常文字也会用到。",
+      "private-use": "没有标准含义。部分图标字体会用到。"
     },
     "zai_step": {
       "authorize_url": "获取授权地址",
@@ -350,11 +358,9 @@
     "gw.upstream.aws_profile_expired": "上游「{upstream}」的 AWS 临时凭证已过期。请刷新 AWS profile「{profile}」，下一个请求会重新读取。",
     "gw.upstream.bedrock_refused": "AWS 拒绝了上游「{upstream}」的凭证（HTTP {status}，{kind}）。请检查凭证是否有效、是否有权使用此模型。AWS 的原话包含账号信息，因此不予转发。",
     "gw.upstream.bedrock_refused_unnamed": "AWS 拒绝了上游「{upstream}」的凭证（HTTP {status}）。请检查凭证是否有效、是否有权使用此模型。AWS 的原话包含账号信息，因此不予转发。",
-    "gw.hidden_text.refused_message": "消息中含有可向读者隐藏指令的不可见字符（{kinds:hidden_name*}），请求未发出。",
-    "gw.hidden_text.refused_tool_result": "请求中的工具结果含有可向读者隐藏指令的不可见字符（{kinds:hidden_name*}），请求未发出。",
     "gw.content.refused": "请求命中内容规则「{rule:content_rule|{name}}」（「{excerpt}」），未发出。",
-    "gw.output_limit.cut": "上游「{upstream}」的回答超过输出长度上限 {max} 个字符，已切断。",
-    "gw.output_limit.withheld": "上游「{upstream}」的回答有 {seen} 个字符，超过输出长度上限 {max}，未返回。",
+    "gw.content.refused_invisible_message": "消息中有 {count} 个字符命中内容规则「{rule:content_rule|{name}}」，请求未发出。",
+    "gw.content.refused_invisible_tool_result": "请求中的工具结果有 {count} 个字符命中内容规则「{rule:content_rule|{name}}」，请求未发出。",
     "gw.toolcall.cut": "上游「{upstream}」返回的 {tool} 调用命中规则「{?why:{rule:scan_rule}|{name}}」{?why:（{rule:rule_why}）}，已切断响应。",
     "gw.toolcall.blocked": "上游「{upstream}」返回的 {tool} 调用命中规则「{?why:{rule:scan_rule}|{name}}」{?why:（{rule:rule_why}）}，整份响应已扣下。",
     "gw.ws.bad_url": "上游地址不是合法的 WebSocket 地址：{detail}",
@@ -381,18 +387,16 @@
     "gw.listen.nic_offline": "网卡 {name} 当前未连接网络，请检查网线或 Wi-Fi 连接。",
     "control.request_not_found": "未找到第 {id} 号请求。",
     "// ── security：安全页的规则与档位 ──────────────────────────────────": "",
-    "security.guard_unknown": "「{guard}」不是一项防护，只能是 redact、inspect_tools、hidden_text、content 或 output_limit。",
+    "security.unknown_guard": "「{guard}」不是一项防护，只能是 redact、inspect_tools 或 content。",
     "security.unknown_rule": "没有名为「{rule}」的内置规则。",
     "security.rule_name_empty": "规则需要一个名称。",
     "security.bad_pattern": "正则表达式有误：{detail}",
     "security.unknown_action": "「{action}」不是一种处置，只能是 cut 或 record。",
-    "security.unknown_content_action": "「{action}」不是一种处置，只能是 block 或 record。",
+    "security.content_action_unknown": "「{action}」不是一种处置，只能是 block、strip 或 record。",
     "security.bad_content_pattern": "匹配内容无法使用：{detail}",
+    "security.bad_codepoints": "码位写法有误：{detail}",
+    "security.bad_label": "占位符名称「{label}」不可用：须以大写字母开头，只能使用大写字母、数字和下划线，最多 24 个字符。",
     "security.no_action_of_its_own": "{guard:guard}的规则不单独设处置，命中后的处理由档位决定。",
-    "security.no_custom_rules": "{guard:guard}没有自定义规则。",
-    "security.no_limit": "{guard:guard}没有上限，只有输出长度有。",
-    "security.limit_range": "输出长度上限为 {max}，须在 1 到 {ceiling} 个字符之间。",
-    "security.nothing_to_test": "输出长度没有可供测试的规则。",
     "control.session_not_found": "未找到会话 {id}。",
     "control.client_unknown": "未知的客户端「{client}」。",
     "control.store_off": "请求记录未启动。",
@@ -532,7 +536,6 @@
     "config.rule_pattern_empty": "自定义{what:rule_line}规则「{name}」的{what:pattern_of}为空。",
     "config.rule_pattern_bad": "自定义{what:rule_line}规则「{name}」的{what:pattern_of}有误：{detail}",
     "config.unknown_rule": "security.{guard} 中的「{rule}」不是内置规则。",
-    "config.output_limit_range": "security.output_limit.max_chars 为 {max}，须在 1 到 {ceiling} 之间。",
     "config.failover_range": "failover.{field} 为 {value}，须在 {min} 到 {max} 之间。",
     "config.store.read_failed": "无法读取 {path}：{detail}",
     "config.store.missing": "{path} 不存在。",

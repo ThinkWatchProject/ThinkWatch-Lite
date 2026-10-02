@@ -9,9 +9,12 @@ export const securityPageText = messages(
   {
     /** 和源列表里那一项同一个词 */
     log: "日志",
-    /** 页头上几项防护各在哪一档：「2 项拦截」 */
+    /**
+     * 页头上几项防护各在哪一档：「2 项处置」。第三档在各项上叫法不同（替换、切断、处置），
+     * 合在一起数时统称「处置」
+     */
     modes: {
-      enforce: "项拦截",
+      enforce: "项处置",
       observe: "项观察",
       off: "项关闭",
     },
@@ -28,6 +31,7 @@ export const securityPageText = messages(
     outcomes: {
       cut: "已切断",
       blocked: "已拒绝",
+      stripped: "已删除",
       replaced: "已替换",
       recorded: "仅记录",
     } satisfies Record<SecurityOutcome, string>,
@@ -35,9 +39,7 @@ export const securityPageText = messages(
     tabs: {
       redact: "出站脱敏",
       inspect_tools: "工具调用审查",
-      hidden_text: "隐藏字符",
       content: "内容过滤",
-      output_limit: "输出长度",
     },
     loadFailed: "安全设置读取失败",
     /** 撤销提示 */
@@ -61,6 +63,7 @@ export const securityPageText = messages(
     outcomes: {
       cut: "cut off",
       blocked: "refused",
+      stripped: "deleted",
       replaced: "replaced",
       recorded: "recorded",
     },
@@ -68,9 +71,7 @@ export const securityPageText = messages(
     tabs: {
       redact: "Redaction",
       inspect_tools: "Tool calls",
-      hidden_text: "Hidden text",
       content: "Content",
-      output_limit: "Output limit",
     },
     loadFailed: "The security settings could not be loaded",
     ruleOn: (name: string) => `“${name}” turned on`,

@@ -36,7 +36,7 @@ import {
 import { prettyJson } from "./prettyJson";
 import { requestDrawerText } from "./RequestDrawer.i18n";
 import { notSent, routingFacts, type RoutingNote } from "./requestRouting";
-import { ActionBadge, EventDetail, ruleName, whereOf } from "./security/labels";
+import { ActionBadge, byCodepoints, EventDetail, ruleName, whereOf } from "./security/labels";
 import {
   usd,
   type BodyView,
@@ -502,7 +502,7 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
                     <span>{ruleName(e.guard, e.rule, e.custom)}</span>
                     {whereOf(e) && <span className="text-muted-foreground">· {whereOf(e)}</span>}
                     <span className="tw-label text-muted-foreground">
-                      <EventDetail e={e} />
+                      <EventDetail e={e} codepoints={byCodepoints(e)} />
                     </span>
                     <ActionBadge action={e.action} />
                   </span>

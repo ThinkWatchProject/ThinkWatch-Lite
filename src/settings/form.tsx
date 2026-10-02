@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
-import { useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
 import { useConnections } from "@/connection/ConnectionProvider";
-import { formText } from "./form.i18n";
 
 /**
- * 两列表单：左边标签右对齐成一列，右边控件，控件下面一行说明。连接的添加与编辑、
- * 安全页「输出长度」的上限用它。设置页本身是一行一项的面板，见 `kit.tsx`。
+ * 两列表单：左边标签右对齐成一列，右边控件，控件下面一行说明。连接的添加与编辑用它。
+ * 设置页本身是一行一项的面板，见 `kit.tsx`。
  */
 export function FormRows({ children }: { children: ReactNode }) {
   return (
@@ -41,42 +37,6 @@ export function FormRow({
       <dd className="flex min-w-0 flex-col items-start gap-1">
         {children}
         {hint && <p className="tw-label text-muted-foreground">{hint}</p>}
-      </dd>
-    </>
-  );
-}
-
-/**
- * 两列表单下面的保存和放弃更改。**改过才出现**：没改的时候两个灰按钮摆在那儿，看起来
- * 像是有什么没存。`invalid` 时保存灰着：哪一格不对，那一格下面自己会说。设置页里
- * 一行一项的面板用的是 `kit.tsx` 的 `SaveBar`。
- */
-export function FormActions({
-  dirty,
-  busy,
-  invalid,
-  onSave,
-  onDiscard,
-}: {
-  dirty: boolean;
-  busy: boolean;
-  invalid?: boolean;
-  onSave: () => void;
-  onDiscard: () => void;
-}) {
-  const t = useText(formText);
-  const common = useText(commonText);
-  if (!dirty && !busy) return null;
-  return (
-    <>
-      <dt />
-      <dd className="flex items-center gap-2 pt-1">
-        <Button size="sm" pending={busy} disabled={invalid} onClick={onSave}>
-          {common.save}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onDiscard}>
-          {t.discard}
-        </Button>
       </dd>
     </>
   );

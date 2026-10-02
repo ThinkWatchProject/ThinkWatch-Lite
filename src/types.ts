@@ -12,22 +12,54 @@
 import type {
   CostBucket,
   CostBucketGroup,
-  Event,
-  Guard,
-  InFlightRequest,
   LatencyView,
   Msg,
   SecretItem,
   Status,
   StorageStatus,
-  Summary,
   TokenRateView,
   TranslatedView,
 } from "./generated/tw-api";
+// 临时：安全防护统一之后的形状，core 发版前先从这里取（见 `./security/api.provisional.ts`）
+import type { Event, Guard, InFlightRequest, Summary } from "./security/api.provisional";
 import type { LocalEvent } from "./generated/lite-api";
 
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
+
+// 临时：用安全防护统一之后的形状盖住生成的同名类型（显式转出优先于上面的 `export type *`）。
+// core 发版、`tw-api.ts` 重新生成之后整段删掉，步骤见 `./security/api.provisional.ts`
+export type {
+  ActionSave,
+  ContentMatch,
+  ContentMatchedEvent,
+  CustomRuleSave,
+  Endpoints,
+  Event,
+  Guard,
+  GuardDetail,
+  HistoryRow,
+  HistorySearchPage,
+  InFlight,
+  InFlightRequest,
+  Matcher,
+  Overview,
+  RequestDetail,
+  RuleAction,
+  SecurityCounts,
+  SecurityDetail,
+  SecurityEventView,
+  SecurityEventsPage,
+  SecurityEventsQuery,
+  SecurityOutcome,
+  SecurityOutcomeCounts,
+  SecurityRuleView,
+  SecurityTestHit,
+  SecurityTestRequest,
+  SecurityTestResult,
+  SecurityView,
+  Summary,
+} from "./security/api.provisional";
 
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;
@@ -41,13 +73,10 @@ export type CoreStatus = Status;
 // ─── 几个封闭集合的全部取值 ───
 //
 // 类型本身在协议里（`slug_enum!` 导出的字符串联合），这里只补界面要在运行时
-// 遍历的取值，和「有规则表的那几项」这一个子集。
+// 遍历的取值。
 
-export const GUARDS: readonly Guard[] = ["redact", "inspect_tools", "hidden_text", "content", "output_limit"];
-
-/** 有规则表的那几项。输出长度只有一个上限 */
-export type RuleGuard = Exclude<Guard, "output_limit">;
-export const isRuleGuard = (g: Guard): g is RuleGuard => g !== "output_limit";
+/** 三项防护，按安全页标签的顺序。每一项都有规则表 */
+export const GUARDS: readonly Guard[] = ["redact", "inspect_tools", "content"];
 
 /** 命中了工具调用规则的一个调用 */
 export interface FlaggedCall {
@@ -58,6 +87,13 @@ export interface FlaggedCall {
   excerpt: string;
   /** 真的切断了吗 */
   blocked: boolean;
+}
+
+/** 内容过滤从这次请求里删掉了命中的文字：哪条规则、几处（码位规则是几个字符） */
+export interface StrippedHit {
+  rule: string;
+  custom: boolean;
+  count: number;
 }
 
 /** 一行请求，由四类事件缝出来。 */
@@ -128,6 +164,11 @@ export interface RequestRow {
   translated?: TranslatedView;
   /** 命中了工具调用规则的调用 */
   flagged?: FlaggedCall[];
+  /**
+   * 内容过滤删掉过命中的文字（第三档下「删除」规则命中）。**只记删过的** —— 拒绝的那一行
+   * 本来就标成失败，只记录的照常发出，没有要在列表上说的
+   */
+  stripped?: StrippedHit[];
   /**
    * 它属于哪次会话，和 `SessionView.id` 同一个值。
    *
@@ -227,15 +268,17 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "auth_changed":
     case "credential_expired":
     case "events_dropped":
-    case "hidden_text_found":
-    case "content_matched":
-    case "output_limited":
-      // 都不进请求列表。三项请求和输出防护的命中在安全日志和请求详情里；拦下的
-      // 请求随后有一条失败事件，那一行照常标成失败。
-      //
-      // 其余几种也不进。配置事件、熔断、额度、凭据、代理说的都是
-      // 「现在什么情况」，而这张表装的是「刚才发生过什么」。App 单独接。
+      // 都不进请求列表。配置事件、熔断、额度、凭据、代理说的都是「现在什么情况」，
+      // 而这张表装的是「刚才发生过什么」。App 单独接。
       break;
+    case "content_matched": {
+      // 只有删过文字的进列表（「已删除」徽标）。拒绝的请求随后有一条失败事件，那一行
+      // 照常标成失败；只记录的在安全日志和请求详情里
+      const r = rows.get(ev.id);
+      if (r && ev.outcome === "stripped")
+        r.stripped = [...(r.stripped ?? []), { rule: ev.rule, custom: ev.custom, count: ev.count }];
+      break;
+    }
     case "secrets_found": {
       const r = rows.get(ev.id);
       if (r) r.secrets = { replaced: ev.replaced, items: ev.items };

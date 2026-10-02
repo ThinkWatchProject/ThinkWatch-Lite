@@ -34,13 +34,15 @@
   },
   {
     "msg": {
-      "code": "gw.hidden_text.refused_tool_result",
+      "code": "gw.content.refused_invisible_tool_result",
       "args": {
-        "kinds": "tag, bidi"
+        "rule": "unicode-tags",
+        "name": "Unicode tag characters",
+        "count": "74"
       },
-      "text": "A tool result in this request contains invisible characters that can hide instructions from a reader (tag, bidi), so the request was not sent."
+      "text": "74 characters in a tool result in this request match content rule “Unicode tag characters”, so the request was not sent."
     },
-    "zh": "请求中的工具结果含有可向读者隐藏指令的不可见字符（Unicode 标签字符、双向控制符），请求未发出。"
+    "zh": "请求中的工具结果有 74 个字符命中内容规则「Unicode 标签字符」，请求未发出。"
   },
   {
     "msg": {
