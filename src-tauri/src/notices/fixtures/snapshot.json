@@ -134,9 +134,7 @@
   "security": {
    "redact": "observe",
    "inspect_tools": "observe",
-   "hidden_text": "observe",
-   "content": "observe",
-   "output_limit": "off"
+   "content": "observe"
   },
   "default_route": "default",
   "client_probes": [

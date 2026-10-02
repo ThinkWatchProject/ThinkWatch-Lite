@@ -57,7 +57,7 @@ export const guideText = messages(
     // 安全页
     /** 此刻停在「观察」的有几项 */
     observeTitle: (n: number) => `${n} 项防护处于「观察」`,
-    observeBody: "命中时只记录，不拦截。在日志中确认没有误报后，可将其改为「拦截」。",
+    observeBody: "命中时只记录。在日志中确认没有误报后，再切换到「替换」「切断」或「处置」。",
 
     // 设置
     hintsLabel: "引导提示",
@@ -106,7 +106,8 @@ export const guideText = messages(
     openRowBody: "The routing rule it matched, the upstreams it tried, its usage and cost, and any redacted values.",
 
     observeTitle: (n: number) => (n === 1 ? "1 protection is set to Observe" : `${n} protections are set to Observe`),
-    observeBody: "Matches are recorded, not blocked. Once the log shows no false positives, a protection can be set to Enforce.",
+    observeBody:
+      "Matches are only recorded. Once the log shows no false positives, switch to Replace, Cut off or Enforce.",
 
     hintsLabel: "Guidance",
     hintsHint: "Hints set to “Don’t show again” reappear.",

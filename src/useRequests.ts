@@ -19,7 +19,7 @@ import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
 /**
  * 库里读回来的记录并进当前列表。
  *
- * **只补，不覆盖。**实时那一行更全 —— 脱敏和可疑工具调用只在事件里有，库里没有。
+ * **只补，不覆盖。**实时那一行更全 —— 脱敏、可疑工具调用和删除只在事件里有，库里没有。
  * 合并的方向是「历史只添信息」，两个例外：还在「进行中」的行按库里记上结局，上游
  * 以库里的为准（理由写在循环里）。
  *
@@ -74,10 +74,11 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       }
       next.translated ??= h.translated ?? undefined;
       next.session ??= h.session ?? undefined;
-      if (!next.secrets || !next.flagged) {
+      if (!next.secrets || !next.flagged || !next.stripped) {
         const marks = marksFromEvents(h.security);
         next.secrets ??= marks.secrets;
         next.flagged ??= marks.flagged;
+        next.stripped ??= marks.stripped;
       }
       next.hint ??= h.client_hint ?? undefined;
       next.peer ??= h.peer ?? undefined;
@@ -160,6 +161,9 @@ function touches(ev: CoreEvent): number | null {
     case "tool_call_flagged":
     case "translated":
       return ev.id;
+    // 内容过滤只有删过文字的那一条会改这一行（「已删除」徽标）
+    case "content_matched":
+      return ev.outcome === "stripped" ? ev.id : null;
     default:
       return null;
   }

@@ -17,6 +17,8 @@ const or = (xs: ReactNode[], sep: ReactNode, last: ReactNode) =>
  *
  * **规则名只收内置的。**自定义规则的名字就是用户起的，原样显示；表里没有
  * 的，退回 core 给的英文名或 id。
+ *
+ * **第三档按各项做的事命名**（替换、切断、处置），前两档各项一样。
  */
 export const securityLabelsText = messages(
   {
@@ -25,26 +27,32 @@ export const securityLabelsText = messages(
     guardShort: {
       redact: "出站脱敏",
       inspect_tools: "工具调用",
-      hidden_text: "隐藏字符",
       content: "内容过滤",
-      output_limit: "输出长度",
     },
+    /** 前两档，各项一样 */
     modes: {
       off: "关闭",
       observe: "观察",
-      enforce: "拦截",
-    } as Record<string, string>,
+    },
+    /** 第三档，按这一项做的事命名：命中的换成占位符、调用切断、规则各自拒绝或删除 */
+    enforce: {
+      redact: "替换",
+      inspect_tools: "切断",
+      content: "处置",
+    },
     /** 日志里每一条做了什么 */
     actions: {
       recorded: "仅记录",
       replaced: "已替换",
       cut: "已切断",
+      stripped: "已删除",
       blocked: "已拒绝",
     } as Record<string, string>,
-    /** 工具调用规则、内容规则在拦截档下做什么 */
+    /** 工具调用规则、内容规则在第三档下做什么 */
     ruleActions: {
       cut: "切断",
       block: "拒绝",
+      strip: "删除",
       record: "仅记录",
     } as Record<string, string>,
     kinds: {
@@ -65,10 +73,6 @@ export const securityLabelsText = messages(
     builtin: "内置",
     /** 命中处在工具结果里（日志的 `tool` 是 `tool_result`） */
     toolResult: "工具结果",
-    /** 隐藏字符的两种。和 core 消息、扫描发现用的是同一对名字 */
-    hiddenKinds: CORE_ZH.tables.hidden_name as Record<string, string>,
-    /** 输出长度只有一条「规则」，日志里 `rule` 是 `max_chars` */
-    outputLimit: "超过输出长度",
     /** 日志按天分组时，一天的标题 */
     day: {
       today: "今天",
@@ -76,13 +80,12 @@ export const securityLabelsText = messages(
     },
     /** 日志一条的第二行 */
     detail: {
-      /** 出站脱敏：同一个值在一个请求里出现了几次 */
+      /** 出站脱敏：同一个值在一个请求里出现了几次；内容过滤：这条规则命中了几处 */
       times: (n: number) => `出现 ${n} 次`,
-      /** 隐藏字符：标签字符解出来的原文 */
+      /** 码位规则命中标签字符时，解出来的原文 */
       revealed: (text: string) => `隐藏内容「${text}」`,
+      /** 码位规则：命中了几个字符 */
       chars: (n: number) => `共 ${n.toLocaleString()} 个字符`,
-      limit: (max: number, seen: number) =>
-        `上限 ${max.toLocaleString()} 个字符，超出时为 ${seen.toLocaleString()} 个字符`,
     },
     /** 内容过滤的内置规则 */
     contentRules: CORE_ZH.tables.content_rule as Record<string, string>,
@@ -120,6 +123,19 @@ export const securityLabelsText = messages(
       bankCard: (networks: string[]) => (
         <>{or(networks.map((n) => CARD_NETWORK_ZH[n] ?? n), "、", "、")} 的卡号：号段、位数对得上并通过 Luhn 校验；公开的测试卡号除外</>
       ),
+      email: (code: Code) => <>邮箱地址：{code("名称@域名")}</>,
+      /** 代码里做的检查（`builtin`），按检查名说它查什么 */
+      builtin: {
+        "credential-to-network": "凭据发往本机和该凭据的服务商以外的主机",
+        "file-to-network": "本地文件的内容上传到外部主机",
+      } as Record<string, string>,
+      /** 没见过的检查名 */
+      builtinOther: "由内置检查判断",
+      cnMobilePhone: (code: Code) => (
+        <>
+          中国大陆手机号：{code("1")} 开头的 11 位数字，第二位为 3 到 9，前后不紧挨其他数字
+        </>
+      ),
       regex: (code: Code, pattern: string) => <>正则 {code(pattern)}</>,
       contains: (code: Code, text: string) => <>包含 {code(text)}，不区分大小写</>,
       codepoints: (code: Code, ranges: string[]) => <>码位 {or(ranges.map(code), "、", "、")}</>,
@@ -129,31 +145,33 @@ export const securityLabelsText = messages(
     guards: {
       redact: "Outbound redaction",
       inspect_tools: "Tool-call inspection",
-      hidden_text: "Hidden characters",
       content: "Content filter",
-      output_limit: "Output limit",
     },
     guardShort: {
       redact: "Redaction",
       inspect_tools: "Tool call",
-      hidden_text: "Hidden text",
       content: "Content",
-      output_limit: "Output",
     },
     modes: {
       off: "Off",
       observe: "Observe",
-      enforce: "Enforce",
+    },
+    enforce: {
+      redact: "Replace",
+      inspect_tools: "Cut off",
+      content: "Enforce",
     },
     actions: {
       recorded: "Recorded",
       replaced: "Replaced",
       cut: "Cut off",
+      stripped: "Deleted",
       blocked: "Refused",
     },
     ruleActions: {
       cut: "Cut off",
       block: "Refuse",
+      strip: "Delete",
       record: "Record only",
     },
     kinds: {
@@ -173,11 +191,6 @@ export const securityLabelsText = messages(
     custom: "Custom",
     builtin: "Built-in",
     toolResult: "tool result",
-    hiddenKinds: {
-      tag: "Unicode tag characters",
-      bidi: "Bidirectional controls",
-    },
-    outputLimit: "Over the output limit",
     day: {
       today: "Today",
       yesterday: "Yesterday",
@@ -186,10 +199,12 @@ export const securityLabelsText = messages(
       times: (n: number) => `${n} times`,
       revealed: (text: string) => `hidden text “${text}”`,
       chars: (n: number) => (n === 1 ? "1 character" : `${n.toLocaleString()} characters`),
-      limit: (max: number, seen: number) =>
-        `Limit ${max.toLocaleString()} characters; ${seen.toLocaleString()} when it was passed`,
     },
     contentRules: {
+      "unicode-tags": "Unicode tag characters",
+      "bidi-controls": "Bidirectional controls",
+      "zero-width": "Zero-width characters",
+      "private-use": "Private-use characters",
       "ignore-previous-instructions": "Ignore previous instructions",
       "ignore-all-previous": "Ignore all previous",
       "disregard-your-instructions": "Disregard your instructions",
@@ -232,6 +247,8 @@ export const securityLabelsText = messages(
       "crontab-install": "Install a scheduled job",
       "rm-rf-root": "Delete home or root",
       "chmod-777": "World-writable permissions",
+      "secret-to-unknown-host": "Send a credential to an unknown host",
+      "upload-file-to-host": "Upload a local file to an external host",
     },
     matcher: {
       prefix: (code: Code, prefix: string, n: number) => (
@@ -261,6 +278,17 @@ export const securityLabelsText = messages(
       ),
       bankCard: (networks: string[]) => (
         <>A {or(networks, ", ", " or ")} card number whose prefix and length match and that passes the Luhn check; public test card numbers excepted</>
+      ),
+      email: (code: Code) => <>Email addresses: {code("name@domain")}</>,
+      builtin: {
+        "credential-to-network": "A credential sent to a host other than this machine and the credential's provider",
+        "file-to-network": "The contents of a local file uploaded to an external host",
+      },
+      builtinOther: "Decided by a built-in check",
+      cnMobilePhone: (code: Code) => (
+        <>
+          Chinese mainland mobile numbers: 11 digits starting with {code("1")}, the second 3 to 9, not run together with other digits
+        </>
       ),
       regex: (code: Code, pattern: string) => <>Regex {code(pattern)}</>,
       contains: (code: Code, text: string) => <>Contains {code(text)}, ignoring case</>,

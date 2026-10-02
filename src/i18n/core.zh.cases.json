@@ -34,13 +34,15 @@
   },
   {
     "msg": {
-      "code": "gw.hidden_text.refused_tool_result",
+      "code": "gw.content.refused_invisible_tool_result",
       "args": {
-        "kinds": "tag, bidi"
+        "rule": "unicode-tags",
+        "name": "Unicode tag characters",
+        "count": "74"
       },
-      "text": "A tool result in this request contains invisible characters that can hide instructions from a reader (tag, bidi), so the request was not sent."
+      "text": "A tool result in this request contains 74 invisible characters that content rule “Unicode tag characters” refuses, so the request was not sent."
     },
-    "zh": "请求中的工具结果含有可向读者隐藏指令的不可见字符（Unicode 标签字符、双向控制符），请求未发出。"
+    "zh": "请求中的工具结果含有 74 个不可见字符，命中内容规则「Unicode 标签字符」，请求未发出。"
   },
   {
     "msg": {
@@ -68,7 +70,7 @@
   },
   {
     "msg": {
-      "code": "gw.toolcall.cut",
+      "code": "gw.toolcall.response_cut",
       "args": {
         "upstream": "relay",
         "tool": "Bash",
@@ -76,13 +78,13 @@
         "name": "Download and run",
         "why": "Downloads and runs it"
       },
-      "text": "The Bash call returned by upstream `relay` matched rule “Download and run” (Downloads and runs it), so the response was cut off."
+      "text": "The answer contained a Bash call that matched rule “Download and run” (Downloads and runs it), so the response was cut off."
     },
-    "zh": "上游「relay」返回的 Bash 调用命中规则「下载即执行」（下载后直接执行，执行的内容由远端决定且无法预先查看），已切断响应。"
+    "zh": "回答中的 Bash 调用命中规则「下载即执行」（下载后直接执行，执行的内容由远端决定且无法预先查看），已切断响应。"
   },
   {
     "msg": {
-      "code": "gw.toolcall.cut",
+      "code": "gw.toolcall.response_cut",
       "args": {
         "upstream": "relay",
         "tool": "Bash",
@@ -90,9 +92,9 @@
         "name": "删除集群资源",
         "why": ""
       },
-      "text": "The Bash call returned by upstream `relay` matched rule “删除集群资源”, so the response was cut off."
+      "text": "The answer contained a Bash call that matched rule “删除集群资源”, so the response was cut off."
     },
-    "zh": "上游「relay」返回的 Bash 调用命中规则「删除集群资源」，已切断响应。"
+    "zh": "回答中的 Bash 调用命中规则「删除集群资源」，已切断响应。"
   },
   {
     "msg": {

@@ -165,18 +165,17 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
     );
     const xs = window.filter((e) => req.before == null || e.id < req.before);
     const limit = req.limit ?? 100;
-    const by_outcome = { recorded: 0, replaced: 0, cut: 0, blocked: 0 };
+    const by_outcome = { recorded: 0, replaced: 0, cut: 0, stripped: 0, blocked: 0 };
     for (const e of window) by_outcome[e.action] += 1;
     return { events: clone(xs.slice(0, limit)), more: xs.length > limit, total: window.length, by_outcome };
   },
   SetSecurityMode: refuse,
   ToggleBuiltinRule: refuse,
   SetBuiltinRuleAction: refuse,
-  SetSecurityLimit: refuse,
   CreateCustomRule: refuse,
   UpdateCustomRule: refuse,
   DeleteCustomRule: refuse,
-  TestSecurity: () => ({ hits: [] }),
+  TestSecurity: () => ({ hits: [], output: null, refused: false }),
 
   ChatgptLoginStatus: refuse,
   // 登的是谁不在这里：core 从凭据的令牌里读，在上游视图的 `oauth.account`（overview.json）

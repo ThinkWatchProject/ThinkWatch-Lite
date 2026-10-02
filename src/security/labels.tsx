@@ -1,6 +1,6 @@
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { getLang, textOf, useText } from "@/i18n";
-import { hiddenWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
+import { contentWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
 import { secretLabel } from "@/labels";
 import type { Guard, GuardMode, Matcher, SecurityEventView, SecurityOutcome, SecurityRuleView } from "@/types";
 import { securityLabelsText } from "./labels.i18n";
@@ -8,7 +8,7 @@ import { securityLabelsText } from "./labels.i18n";
 /**
  * 一项防护的档位，画成状态点的语气。
  *
- * **拦截是绿的**（防护在起作用），**观察是琥珀的**（命中照常放行，只记下来 ——
+ * **第三档是绿的**（防护在起作用），**观察是琥珀的**（命中照常放行，只记下来 ——
  * 要留意，但它在工作），**关闭是灰的**（没有在工作，也不是故障）。页头、标签、
  * 档位那一块用同一套，一眼对得上。
  */
@@ -17,27 +17,40 @@ export function modeTone(mode: GuardMode): StatusTone {
 }
 
 /**
- * 一次命中最后怎么处置的，画成状态点的语气。
- *
- * **三种颜色说三件事**：切断、拒绝是红的（请求的结局变了），替换是绿的（防护在
- * 起作用，请求照常完成），仅记录是琥珀的（命中的东西照常放行了，值得看一眼）。
+ * 一项防护的一档叫什么。前两档各项一样（关闭、观察）；**第三档按这一项做的事命名**：
+ * 出站脱敏「替换」、工具调用审查「切断」、内容过滤「处置」（规则各自拒绝或删除）。
  */
-export function outcomeTone(action: SecurityOutcome): StatusTone {
-  return action === "cut" || action === "blocked" ? "error" : action === "replaced" ? "ok" : "warn";
+export function modeName(guard: Guard, mode: GuardMode): string {
+  const t = textOf(securityLabelsText);
+  return mode === "enforce" ? t.enforce[guard] : t.modes[mode];
 }
 
 /**
- * 几种处置一起列时的先后（页头）：先说改变了请求结局的切断、拒绝，再说替换、
- * 仅记录。和规则「拦截时」的选项同一个先后。
+ * 一次命中最后怎么处置的，画成状态点的语气。
+ *
+ * **三种颜色说三件事**：切断、拒绝是红的（请求的结局变了），替换、删除是绿的（防护在
+ * 起作用，请求照常完成），仅记录是琥珀的（命中的东西照常放行了，值得看一眼）。
  */
-export const OUTCOMES: readonly SecurityOutcome[] = ["cut", "blocked", "replaced", "recorded"];
+export function outcomeTone(action: SecurityOutcome): StatusTone {
+  return action === "cut" || action === "blocked"
+    ? "error"
+    : action === "replaced" || action === "stripped"
+      ? "ok"
+      : "warn";
+}
+
+/**
+ * 几种处置一起列时的先后（页头）：先说改变了请求结局的切断、拒绝，再说改了内容照常
+ * 发出的删除、替换，最后是仅记录。
+ */
+export const OUTCOMES: readonly SecurityOutcome[] = ["cut", "blocked", "stripped", "replaced", "recorded"];
 
 /**
  * 一条规则叫什么。
  *
  * 出站脱敏的内置规则 id 就是凭据种类（`anthropic-api-key` …），和流量页上
- * 那张名称表是同一张；其余几项各查这里的一张表：工具调用审查查扫描规则那张，
- * 内容过滤查内容规则那张，隐藏字符的「规则」是那一种字符，输出长度只有一条。
+ * 那张名称表是同一张；另两项各查这里的一张表：工具调用审查查扫描规则那张，
+ * 内容过滤查内容规则那张（隐藏字符那一组也在里面）。
  * **自定义规则的 id 就是用户起的名字**，原样显示。表里都没有的，退回 core
  * 给的英文名，再没有就是 id。
  */
@@ -51,10 +64,6 @@ export function ruleName(guard: string, id: string, custom?: boolean, fallback?:
     }
     case "content":
       return t.contentRules[id] ?? fallback ?? id;
-    case "hidden_text":
-      return t.hiddenKinds[id] ?? fallback ?? id;
-    case "output_limit":
-      return t.outputLimit;
     default:
       return t.rules[id] ?? fallback ?? id;
   }
@@ -65,54 +74,56 @@ export function viewName(guard: Guard, r: SecurityRuleView): string {
   return ruleName(guard, r.id, r.custom, r.name);
 }
 
-/** 内置规则为什么值得看一眼。中文查词表，查不到就用 core 的原话 */
-export function ruleWhy(r: SecurityRuleView): string {
+/**
+ * 内置规则为什么值得看一眼。中文查词表，查不到就用 core 的原话。
+ *
+ * 内容规则（隐藏字符那一组有）和工具调用规则各查各的表：两边的 id 是各起各的。
+ */
+export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
   if (r.custom || !r.why) return "";
-  if (r.kind !== "invisible") return coreRuleWhy(r.id, r.why);
-  // 那句话以名字开头（「双向控制符：……」），名字已经在上一行了
-  const why = hiddenWhy(r.id, r.why);
-  const rest = /^[^：:]+[：:]\s*(.+)$/s.exec(why)?.[1];
-  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : why;
+  if (guard !== "content") return coreRuleWhy(r.id, r.why);
+  const why = contentWhy(r.id, r.why);
+  // 英文那句可能以名字开头（「Bidirectional controls: …」），名字已经在上一行了
+  const lead = `${r.name}:`.toLowerCase();
+  if (!why.toLowerCase().startsWith(lead)) return why;
+  const rest = why.slice(lead.length).trimStart();
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
-/** 命中在哪儿：工具调用审查是哪个工具，另两项请求防护是「工具结果」 */
+/** 命中在哪儿：工具调用审查是哪个工具，内容过滤是「工具结果」 */
 export function whereOf(e: SecurityEventView): string | null {
   if (!e.tool) return null;
   return e.tool === "tool_result" ? textOf(securityLabelsText).toolResult : e.tool;
+}
+
+/** 一条内容过滤的命中是不是码位规则的（日志里带着规则怎么认）。是的话 `count` 数的是字符，不是几处 */
+export function byCodepoints(e: SecurityEventView): boolean {
+  return e.guard === "content" && e.match === "codepoints";
 }
 
 /**
  * 一次命中的细节，日志和请求详情里的第二行。
  *
  * **各项防护的 `excerpt` 和 `count` 说的不是一回事**：出站脱敏是打码的值和出现
- * 几次；隐藏字符是第一个的码位（标签字符后面跟着解出来的原文）和几个字符；
- * 输出长度是上限和超出时数到了多少。
+ * 几次；工具调用审查、内容过滤是命中的那一小段，内容过滤还有命中了几处。**码位规则
+ * 数的是字符**，几个字符写在前面（这一行放不下时截掉的是后面），后面是标签字符解出来
+ * 的原文 —— 藏的是什么比藏在哪儿要紧；解不出原文的是画出码位的那一小段。
  */
-export function EventDetail({ e }: { e: SecurityEventView }) {
+export function EventDetail({ e, codepoints = false }: { e: SecurityEventView; codepoints?: boolean }) {
   const t = useText(securityLabelsText).detail;
-  switch (e.guard) {
-    case "hidden_text": {
-      const at = e.excerpt.indexOf(" ");
-      const code = at < 0 ? e.excerpt : e.excerpt.slice(0, at);
-      const revealed = at < 0 ? "" : e.excerpt.slice(at + 1);
-      return (
-        <>
-          <span className="font-mono">{code}</span>
-          {revealed && ` · ${t.revealed(revealed)}`}
-          {` · ${t.chars(e.count)}`}
-        </>
-      );
-    }
-    case "output_limit":
-      return <>{t.limit(Number(e.excerpt), e.count)}</>;
-    default:
-      return (
-        <>
-          <span className="font-mono">{e.excerpt}</span>
-          {e.count > 1 && ` · ${t.times(e.count)}`}
-        </>
-      );
-  }
+  if (codepoints)
+    return (
+      <>
+        {`${t.chars(e.count)} · `}
+        {e.revealed ? t.revealed(e.revealed) : <span className="font-mono">{e.excerpt}</span>}
+      </>
+    );
+  return (
+    <>
+      <span className="font-mono">{e.excerpt}</span>
+      {e.count > 1 && ` · ${t.times(e.count)}`}
+    </>
+  );
 }
 
 /** 按代码样式画的一小段 */
@@ -149,6 +160,13 @@ export function MatcherText({ m }: { m: Matcher }) {
       return t.cnResidentId(m.born_since);
     case "bank-card":
       return t.bankCard(m.networks.map((n) => n.name));
+    case "email":
+      return t.email(code);
+    case "cn-mobile-phone":
+      return t.cnMobilePhone(code);
+    // 代码里做的检查没有可展示的写法：按检查名说它查什么，不说怎么查
+    case "builtin":
+      return <>{t.builtin[m.check] ?? t.builtinOther}</>;
     case "regex":
       return t.regex(code, m.pattern);
     case "contains":
