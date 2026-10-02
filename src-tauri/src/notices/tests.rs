@@ -603,6 +603,7 @@ fn every_key_lands_on_the_page_that_handles_it() {
         ("proxy:hk", "upstreams"),
         ("toolwall:relay", "security"),
         ("scan", "mcp"),
+        ("plugin:add-date", "plugins"),
     ] {
         assert_eq!(rules::default_view(key), view, "{key}");
     }
@@ -674,6 +675,18 @@ fn a_flagged_tool_call_never_carries_the_call_itself() {
         "{}",
         s.body
     );
+}
+
+#[test]
+fn a_plugin_failure_never_carries_what_the_plugin_said() {
+    let s = rules::plugin_failed("add-date", "日期\n权限：无", Some("50463"));
+    assert_eq!(s.key, "plugin:add-date");
+    assert!(s.event, "每出错一次都是一件新的事");
+    assert!(!s.hold);
+    assert!(s.body.contains("50463"), "{}", s.body);
+    // 插件名里的换行伪造不出第二行
+    assert!(!s.title.contains('\n'), "{}", s.title);
+    assert_eq!(s.view, Some("plugins"));
 }
 
 #[test]

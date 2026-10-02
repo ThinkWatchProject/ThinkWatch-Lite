@@ -288,6 +288,7 @@
     "gw.config.proxy_unusable": "上游「{upstream}」的代理「{proxy}」不可用：{detail}",
     "gw.config.http_client": "无法创建 HTTP 客户端：{detail}",
     "gw.config.allow_from": "listen.gateway.allow_from：{detail}",
+    "// ── gw.plugin：插件拒绝请求、插件出错（TODO：core 定下码之后，照 tw_api::MSG_CODES 里的 gw.plugin.* 补中文；在那之前按英文原句显示）": "",
     "// ── gw.oauth / gw.chatgpt：换访问令牌 ──────────────────────────────": "",
     "gw.oauth.not_configured": "上游「{upstream}」未配置 OAuth。",
     "gw.oauth.unreachable": "无法连接令牌端点 {endpoint}：{detail}",

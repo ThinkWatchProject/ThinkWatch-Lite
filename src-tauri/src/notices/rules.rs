@@ -47,6 +47,7 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
 const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const MCP: &str = "mcp";
+const PLUGINS: &str = "plugins";
 const SETTINGS: &str = "settings";
 /// 设置页的「网关监听」一节（`settings:<节>`，界面滚到那一节）
 const LISTEN_SETTINGS: &str = "settings:listen";
@@ -58,6 +59,7 @@ pub fn default_view(key: &str) -> &'static str {
         "toolwall" => SECURITY,
         // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
         "scan" => MCP,
+        "plugin" => PLUGINS,
         // 网关、配置文件、监听，以及认不出来的：设置页至少能看到网关在不在跑
         _ => SETTINGS,
     }
@@ -424,6 +426,44 @@ pub fn scan_alert(n: usize) -> Option<Signal> {
         .view(MCP)
         .event()
     })
+}
+
+/// 一个插件运行出错了（core 的 `plugin_failed`）。
+///
+/// **正文不带插件报的那句话**：那是插件自己写的字，可能带着提示词里的内容，而系统通知在
+/// 锁屏上也看得见。原因在插件页的日志里，点开这一条就落在那一页。插件名同样是插件写的，
+/// 去掉能伪造换行、倒转文字的字符（`clean_name`）。
+///
+/// **每出错一次都是一件新的事**（`event`）：看过上一次之后再出错，照样要说；一个每个请求
+/// 都出错的插件，由冷却合成一条，不刷屏。
+///
+/// PROVISIONAL：现在由 `gateway::bridge_events` 从事件原文里认出来交给这里；core 发版之后
+/// 改成 [`from_event`] 里 `Event::PluginFailed` 的一支。
+pub fn plugin_failed(id: &str, name: &str, request: Option<&str>) -> Signal {
+    let name = crate::plugins::words::clean_name(name);
+    let body = match request {
+        Some(r) => tr!(
+            format!("处理请求 #{r} 时出错。详情见插件页的日志。"),
+            format!(
+                "It failed while handling request #{r}. Details are in the plugin's log on the Plugins page."
+            )
+        ),
+        None => tr!(
+            "详情见插件页的日志。".to_string(),
+            "Details are in the plugin's log on the Plugins page.".to_string()
+        ),
+    };
+    Signal::raised(
+        format!("plugin:{id}"),
+        Level::Warning,
+        tr!(
+            format!("插件「{name}」运行出错"),
+            format!("Plugin “{name}” Failed")
+        ),
+    )
+    .body(body)
+    .view(PLUGINS)
+    .event()
 }
 
 /// 此刻的样子，按对账的需要从 core 问来：`/status`、`/overview`、`/quota`。

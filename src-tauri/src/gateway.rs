@@ -363,9 +363,9 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
             }
         }
         let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (a, b, o) = (app.clone(), app.clone(), opened.clone());
+        let (a, b, c, o) = (app.clone(), app.clone(), app.clone(), opened.clone());
         let resumed = connected_before;
-        let sub = client.subscribe_events(
+        let sub = client.subscribe_events_with(
             move || {
                 o.store(true, std::sync::atomic::Ordering::SeqCst);
                 // **每次接上都按现状对一次账**：接上之前 core 报过的（启动时的凭据
@@ -415,6 +415,26 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                     reconcile_notices(&a);
                 }
                 let _ = a.emit("core-event", &ev);
+            },
+            // PROVISIONAL：插件出错（`plugin_failed`）。钉着的 tw-api 还认不得它，事件原文从这里来；
+            // core 发版之后它是 `tw_api::Event::PluginFailed`，并进上面那一支（通知规则见
+            // `notices::rules::plugin_failed`），这一支删掉
+            move |raw| {
+                let Some(f) = crate::plugins::wire::PluginFailed::parse(&raw) else {
+                    return;
+                };
+                if let Some(n) = c.try_state::<Arc<notices::Notices>>() {
+                    n.ingest(
+                        notices::rules::plugin_failed(
+                            &f.plugin_id,
+                            &f.plugin_name,
+                            f.request().as_deref(),
+                        ),
+                        notices::now_ms(),
+                    );
+                }
+                // 插件页的统计、日志跟着它重读
+                let _ = c.emit("core-event", &raw);
             },
         );
         let switched = match until_switched(sub, &mut moved).await {
