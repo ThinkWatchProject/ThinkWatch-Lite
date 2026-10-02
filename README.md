@@ -25,9 +25,7 @@ cost and route; the API keys in it can be replaced before it leaves the
 machine, and dangerous tool calls a relay slips into an answer can be cut off
 before the client runs them.
 
-**Sponsors:** relays and providers that support
-[import links](https://thinkwat.ch/docs/lite/import-links/) can become
-sponsors. Contact [fylorn@outlook.com](mailto:fylorn@outlook.com).
+**Sponsors:** [Want to appear here?](mailto:fylorn@outlook.com?subject=ThinkWatch%20Lite%20Sponsorship)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
