@@ -1,6 +1,7 @@
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { cn } from "@/lib/utils";
 import { isMac } from "@/platform";
+import { SURFACES, type Surface } from "@/nav";
 
 /**
  * 快捷键：**一处定义，三处显示**（命令面板每一项右端的键帽、快捷键一览、源列表 ——
@@ -68,9 +69,20 @@ export const COMBOS = {
   shortcuts: ["?"],
 } as const satisfies Record<string, Combo>;
 
-/** 源列表第 i 项（从 0 数）的键：⌘1…⌘9 */
-export function pageCombo(i: number): Combo {
-  return ["mod", String(i + 1)];
+/**
+ * 占数字键的那几页：源列表从上往下，**设置除外**，最多九页。
+ *
+ * 页数过了九（加了插件页之后是十页），数字不够分。设置让出来：它有自己的键 ⌘,
+ * （macOS 上每个应用的「设置…」都在这个键上，Windows、Linux 上是 Ctrl+,），而且是源列表
+ * 最后一项，挪走它不会让别的页换键。于是 ⌘1…⌘9 仍是从上往下数，一页一个。
+ */
+export const DIGIT_PAGES: readonly Surface[] = SURFACES.filter((s) => s !== "settings").slice(0, 9);
+
+/** 一页的键：前九页 ⌘1…⌘9，设置 ⌘,。再往后加的页没有键（`undefined`） */
+export function pageCombo(surface: Surface): Combo | undefined {
+  if (surface === "settings") return COMBOS.settings;
+  const i = DIGIT_PAGES.indexOf(surface);
+  return i >= 0 ? ["mod", String(i + 1)] : undefined;
 }
 
 /**

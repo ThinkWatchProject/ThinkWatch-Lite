@@ -249,6 +249,7 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     peer: null,
     key_masked: MASKED[s.who],
     security: [],
+    plugin_changed: false,
   };
   if (provider === "ollama") row.cost_micros = 0;
   if (outcome.kind === "failed") {
@@ -321,6 +322,7 @@ function localRow(who: Who, at: number, probe: "health_check" | "warmup"): Histo
     peer: null,
     key_masked: MASKED[who],
     security: [],
+    plugin_changed: false,
   };
 }
 

@@ -55,13 +55,10 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
               <Line label={t.shortcuts} combos={[COMBOS.shortcuts]} />
             </Section>
             <Section title={t.pages}>
-              {SURFACES.map((s, i) => (
-                <Line
-                  key={s}
-                  label={app.surfaces[s]}
-                  combos={s === "settings" ? [pageCombo(i), COMBOS.settings] : [pageCombo(i)]}
-                />
-              ))}
+              {SURFACES.map((s) => {
+                const combo = pageCombo(s);
+                return <Line key={s} label={app.surfaces[s]} combos={combo ? [combo] : []} />;
+              })}
             </Section>
           </div>
           <div className="flex flex-col gap-5">

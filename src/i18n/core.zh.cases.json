@@ -238,5 +238,27 @@
       "text": "Upstream `中转` answered 400: prompt is too long: 212000 tokens > 200000 maximum"
     },
     "zh": "上游「中转」返回 400：prompt is too long: 212000 tokens > 200000 maximum"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.setting_type",
+      "args": {
+        "key": "offset",
+        "kind": "number"
+      },
+      "text": "Setting `offset` has to be a number."
+    },
+    "zh": "设置项 offset 须为数字。"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.reply_busy",
+      "args": {
+        "plugin": "统一用词",
+        "max": "8"
+      },
+      "text": "Plugin `统一用词` was not started for this answer: the limit of 8 plugins running on answers at the same time was reached."
+    },
+    "zh": "插件「统一用词」未处理此回答：同时处理回答的插件已达上限（8 个）。"
   }
 ]

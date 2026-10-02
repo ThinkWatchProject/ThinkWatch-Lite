@@ -442,3 +442,60 @@ async fn a_bedrock_upstream_is_saved_the_way_the_dialog_sends_it() {
         .0;
     assert_eq!(m.code, "config.credential.aws_profile_and_keys", "{m:?}");
 }
+
+/// 改得了工具调用的插件，网页那条路（`UpdatePlugin`）打不开它：core 答
+/// `control.plugin.needs_confirmation`，界面据此请 Rust 弹系统的确认框。确认过的那一条
+/// （`UpdatePluginConfirmed`，桌面端点过头才发）打得开；停用照常走网页那条。
+///
+/// core 第一次起来时装上的默认插件里就有这样一个（`wsl-paths`），停用着
+#[tokio::test]
+async fn a_tool_call_plugin_is_turned_on_only_through_the_confirmed_update() {
+    use thinkwatch_lite_lib::control::Refused;
+    use tw_api::{Permission, PluginUpdate, ep};
+
+    let core = Core::start();
+    core.wait_ready().await;
+    let c = core.ok();
+
+    // 默认插件在启动时装上：等它出现在单子上
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let wsl = loop {
+        let all = c.call::<ep::Plugins>(&[], &()).await.unwrap();
+        if let Some(p) = all.into_iter().find(|p| p.id == "wsl-paths") {
+            break p;
+        }
+        assert!(Instant::now() < deadline, "默认插件没有装上");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(!wsl.enabled, "默认插件装上时停用着");
+    assert!(
+        wsl.permissions.is_empty() || wsl.permissions.contains(&Permission::ReplyToolCalls),
+        "{:?}",
+        wsl.permissions
+    );
+
+    let on = PluginUpdate {
+        enabled: true,
+        on_error: wsl.on_error,
+        scope: wsl.scope.clone(),
+        settings: wsl.settings.clone(),
+        base_version: None,
+    };
+    let e = c
+        .call::<ep::UpdatePlugin>(&["wsl-paths"], &on)
+        .await
+        .unwrap_err();
+    let m = &e.downcast_ref::<Refused>().expect("被拒时要带码").0;
+    assert_eq!(m.code, "control.plugin.needs_confirmation", "{m:?}");
+
+    c.call::<ep::UpdatePluginConfirmed>(&["wsl-paths"], &on)
+        .await
+        .unwrap();
+    let off = PluginUpdate {
+        enabled: false,
+        ..on
+    };
+    c.call::<ep::UpdatePlugin>(&["wsl-paths"], &off)
+        .await
+        .unwrap();
+}

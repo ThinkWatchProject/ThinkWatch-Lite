@@ -24,6 +24,7 @@ export { Split as IconRoute } from "lucide-react"; // 路由 —— 一条进来
 export { Router as IconGateway } from "lucide-react"; // 网关 —— 一台路由器
 export { Laptop as IconClient } from "lucide-react"; // 客户端 —— 一台笔电
 export { Plug as IconMcp } from "lucide-react"; // MCP —— 给客户端接上的插头
+export { Puzzle as IconPlugin } from "lucide-react"; // 插件 —— 拼进链路里的一块（插头已经是 MCP）
 export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机器
 export { ServerOff as IconNoUpstream } from "lucide-react"; // 没有可用的上游 —— 那一摞机器划掉
 export { Ban as IconDenied } from "lucide-react"; // 被规则拒绝 —— 禁止符号

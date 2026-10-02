@@ -47,6 +47,7 @@ fn l1_step(s: &tw_api::L1Stage) -> String {
 const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const MCP: &str = "mcp";
+const PLUGINS: &str = "plugins";
 const SETTINGS: &str = "settings";
 /// 设置页的「网关监听」一节（`settings:<节>`，界面滚到那一节）
 const LISTEN_SETTINGS: &str = "settings:listen";
@@ -58,6 +59,7 @@ pub fn default_view(key: &str) -> &'static str {
         "toolwall" => SECURITY,
         // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
         "scan" => MCP,
+        "plugin" => PLUGINS,
         // 网关、配置文件、监听，以及认不出来的：设置页至少能看到网关在不在跑
         _ => SETTINGS,
     }
@@ -394,8 +396,104 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     .event(),
             ]
         }
+        Event::PluginFailed {
+            plugin_id,
+            plugin_name,
+            request_id,
+            message,
+            ..
+        } => vec![plugin_failed(plugin_id, plugin_name, *request_id, message)],
         _ => Vec::new(),
     }
+}
+
+/// 一个插件没能把事情做成（core 的 `plugin_failed`）：在一个请求上运行出错（`request` 有），
+/// 或者文件变了、加载不了，从此不再运行（没有）。
+///
+/// **正文不带插件写的字**：插件抛出的那句话、交回来的东西可能带着提示词里的内容，而系统
+/// 通知在锁屏上也看得见。只说 core 自己定下的那几种原因（[`plugin_reason`]），别的只说在
+/// 哪个请求上出的错，原因在那个请求的详情里。插件名同样是插件写的，去掉能伪造换行、倒转
+/// 文字的字符；默认插件按界面语言叫，和插件页上一样。
+///
+/// **每出错一次都是一件新的事**（`event`）：看过上一次之后再出错，照样要说。一个每个回答
+/// 都出错的插件（尤其是同时跑的插件到了上限，`gw.plugin.reply_busy`，每个回答一次），
+/// 一阵子里的合成一次进总线（`gathered`），系统通知再由冷却限着
+pub fn plugin_failed(id: &str, name: &str, request: Option<u64>, why: &tw_api::Msg) -> Signal {
+    let name = crate::plugins::words::clean_name(&crate::plugins::defaults::name(Some(id), name));
+    let reason = plugin_reason(why);
+    let (title, body) = match request {
+        Some(r) => (
+            tr!(
+                format!("插件「{name}」运行出错"),
+                format!("Plugin “{name}” Failed")
+            ),
+            match reason {
+                Some(why) => tr!(
+                    format!("处理请求 #{r} 时出错：{why}。"),
+                    format!("It failed while handling request #{r}: {why}.")
+                ),
+                None => tr!(
+                    format!("处理请求 #{r} 时出错。"),
+                    format!("It failed while handling request #{r}.")
+                ),
+            },
+        ),
+        None => (
+            tr!(
+                format!("插件「{name}」已停止运行"),
+                format!("Plugin “{name}” Stopped Running")
+            ),
+            match reason {
+                Some(why) => tr!(format!("{why}。"), format!("{why}.")),
+                None => tr!(
+                    "在插件页处理之前，此插件不再运行。".to_string(),
+                    "Until it is dealt with on the Plugins page, the plugin does not run."
+                        .to_string()
+                ),
+            },
+        ),
+    };
+    Signal::raised(format!("plugin:{id}"), Level::Warning, title)
+        .body(body)
+        .view(PLUGINS)
+        .event()
+        .gathered()
+}
+
+/// core 自己定下的那几种原因，说成一小句。**参数里没有插件写的字的才说**；别的（插件抛出的
+/// 错、交回的东西不合规矩）是 None
+fn plugin_reason(m: &tw_api::Msg) -> Option<String> {
+    Some(match m.code.as_str() {
+        "gw.plugin.cpu_limit" => tr!("CPU 时间超出上限", "it used more CPU time than allowed").into(),
+        "gw.plugin.memory_limit" => {
+            tr!("内存超出上限", "it used more memory than allowed").into()
+        }
+        "gw.plugin.output_limit" => tr!(
+            "返回的内容超出上限",
+            "it returned more output than allowed"
+        )
+        .into(),
+        // 不是插件的错：同时跑在回答上的插件到了上限，这一个没起来
+        "gw.plugin.reply_busy" => match m.args.get("max") {
+            Some(max) => tr!(
+                format!("同时处理回答的插件已达上限（{max} 个），此回答未经此插件处理"),
+                format!(
+                    "the limit of {max} plugins running on answers at once was reached, so it did not run on this answer"
+                )
+            ),
+            None => tr!(
+                "同时处理回答的插件已达上限，此回答未经此插件处理",
+                "the limit of plugins running on answers at once was reached, so it did not run on this answer"
+            )
+            .into(),
+        },
+        "gw.plugin.file_changed" | "gw.plugin.changed" => tr!(
+            "插件文件已更改，在插件页审核并确认之前不再运行",
+            "its file changed, and it does not run until the change is reviewed and approved on the Plugins page"
+        )
+        .into(),
+        _ => return None,
+    })
 }
 
 /// 客户端的配置文件里新出现了可疑的东西（`n` 项）。**不是 core 说的**：这台机器

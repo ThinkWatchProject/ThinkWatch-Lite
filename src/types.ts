@@ -132,6 +132,8 @@ export interface RequestRow {
   translated?: TranslatedView;
   /** 命中了工具调用规则的调用 */
   flagged?: FlaggedCall[];
+  /** 插件改写过这次请求或回答（库里那一行的 `plugin_changed`）。只来自历史：实时事件里没有它 */
+  pluginChanged?: boolean;
   /**
    * 内容过滤删掉过命中的文字（第三档下「删除」规则命中）。**只记删过的** —— 拒绝的那一行
    * 本来就标成失败，只记录的照常发出，没有要在列表上说的

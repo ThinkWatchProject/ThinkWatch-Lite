@@ -70,7 +70,7 @@ function sources(over: Partial<Sources> = {}): Sources {
 const ids = (s: Sources) => buildItems(s).map((i) => i.id);
 
 describe("命令面板的条目", () => {
-  it("页面按源列表的顺序，带 ⌘1…⌘9", () => {
+  it("页面按源列表的顺序，带 ⌘1…⌘9 和 ⌘,", () => {
     const pages = buildItems(sources()).filter((i) => i.group === "pages");
     expect(pages.map((p) => p.id)).toEqual([
       "page:dashboard",
@@ -81,9 +81,13 @@ describe("命令面板的条目", () => {
       "page:routing",
       "page:security",
       "page:mcp",
+      "page:plugins",
       "page:settings",
     ]);
     expect(pages[3]!.combo).toEqual(["mod", "4"]);
+    // 十页：前九页占数字，设置是 ⌘,
+    expect(pages[8]!.combo).toEqual(["mod", "9"]);
+    expect(pages[9]!.combo).toEqual(["mod", ","]);
   });
 
   it("连着、可写：新建和测速都在", () => {

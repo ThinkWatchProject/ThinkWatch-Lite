@@ -748,3 +748,63 @@ pub struct ImportProposal {
     /// 服务不提供模型列表时的手动清单
     pub models: Vec<String>,
 }
+
+// ---------------------------------------------------------- 插件：在系统的确认框里点头的几步
+//
+// 装插件、换代码、批准改过的文件、打开改得了工具调用的插件（或者改它的设置、范围），
+// 这几个端点**不在网页的白名单里**（`call.rs`）。网页只能请 Rust 去做：Rust 自己把插件
+// 再读一遍，在系统的确认框里写明它是谁、能做什么、这次改什么，点了头才写配置
+// （`plugins` 模块）。
+
+/// 装一个插件（`plugin_install`）：代码，和审核窗口里选的。
+///
+/// **没有 manifest**：名字、权限、处理哪几种请求由 Rust 把代码交给 core 再读一遍，网页
+/// 说的不算。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PluginInstallRequest {
+    pub source: String,
+    /// 审核窗口里填的 ID。不给由 core 按名字起
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub enabled: bool,
+    pub on_error: tw_api::OnError,
+    pub scope: tw_api::PluginScope,
+    pub settings: std::collections::BTreeMap<String, tw_api::SettingValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_version: Option<String>,
+}
+
+/// 换一个插件的代码（`plugin_replace_source`）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PluginReplaceRequest {
+    pub id: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_version: Option<String>,
+}
+
+/// 批准一个插件改过的文件（`plugin_approve`）。**文件由 Rust 自己去取**：读的、给人看的、
+/// 交给 core 认的是同一个 SHA-256
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PluginApproveRequest {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_version: Option<String>,
+}
+
+/// 一次要点头的改动（`plugin_update_confirmed`）：和 `UpdatePlugin` 一样整份交，交上来的
+/// 就是保存之后的样子
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PluginUpdateRequest {
+    pub id: String,
+    pub update: tw_api::PluginUpdate,
+}
+
+/// 写成了（配置的新版本），或者在系统的确认框里点了取消 —— **取消不是失败**，什么都
+/// 没写，界面照原样
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PluginWrite {
+    Done { version: String },
+    Cancelled,
+}

@@ -13,7 +13,8 @@
 //! 2. **去抖**：故障类要持续一会儿才说 —— 一次网络抖动自己就好了。
 //! 3. **去重**：同一件事（同一个去重键）只说一次，后续只更新计数。**一次性的事**
 //!    （一次拦截、一次扫描发现）每发生一次都是新的一件，由冷却限着不刷屏
-//!    （[`Signal::event`]）。
+//!    （[`Signal::event`]）。可能一秒来好几次的（一个每个回答都出错的插件），一阵子里的
+//!    先攒起来、合成一次再进来（[`Signal::gathered`]）。
 //! 4. **抑制**：网关整个不在服务时，不必再说它下面每一家上游怎么了。
 //! 5. **限流**：令牌桶。用完了的只进应用内，并合并成一句「另有 N 项」。
 //!
@@ -73,6 +74,14 @@ const SAY_RECOVERED_AFTER: Duration = Duration::from_secs(300);
 /// 每隔几秒重试一次的循环，每 5 分钟最多再多一条
 const COOLDOWN: Duration = Duration::from_secs(300);
 
+/// 接连发生的同一件事（[`Signal::gathered`]）：头一次照常走五关，之后这么久里再来的只攒
+/// 着，到点合成一次（次数照实加）。
+///
+/// **10 秒**：一个每个回答都出错的插件（同时跑的插件到了上限，就是每个回答一次），并发高
+/// 的时候一秒好几次。每一次都走一遍总线就是每一次都落一次盘、把整张列表推给界面一次、在
+/// 通知中心里原地贴一次。10 秒里合成一次，列表上的次数晚几秒跟上，没有别的代价
+const GATHER: Duration = Duration::from_secs(10);
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
@@ -131,6 +140,10 @@ pub struct Signal {
     pub hold: bool,
     /// 一次性的事，不是一种持续的状态（见 [`Signal::event`]）
     pub event: bool,
+    /// 接连来的先攒一阵再进来（见 [`Signal::gathered`]）
+    pub gather: bool,
+    /// 这一条算几次。攒过一阵合成的那一条是攒下的次数，别的都是 1
+    pub times: u32,
 }
 
 impl Signal {
@@ -145,6 +158,8 @@ impl Signal {
             suppresses: &[],
             hold: true,
             event: false,
+            gather: false,
+            times: 1,
         }
     }
 
@@ -159,6 +174,8 @@ impl Signal {
             suppresses: &[],
             hold: false,
             event: false,
+            gather: false,
+            times: 1,
         }
     }
 
@@ -203,6 +220,23 @@ impl Signal {
     pub fn event(mut self) -> Self {
         self.event = true;
         self.hold = false;
+        self
+    }
+
+    /// 可能一秒来好几次的事（一个每个回答都出错的插件）：**头一次照常进来**，之后同一个键
+    /// 在 [`GATHER`] 里再来的先攒着，到点合成一条进来，次数照实加（[`Signal::times`]）。攒下
+    /// 的那一阵过去之后还在来，就再攒一阵。
+    ///
+    /// 这一关在五关之前：合成的那一条照样去重、照样受冷却和限流管着，只是总线不再为每一次
+    /// 都落一次盘、推一次列表、在通知中心里原地贴一次
+    pub fn gathered(mut self) -> Self {
+        self.gather = true;
+        self
+    }
+
+    /// 这一条算几次
+    pub fn times(mut self, n: u32) -> Self {
+        self.times = n.max(1);
         self
     }
 
@@ -279,6 +313,17 @@ pub struct Notices {
     mode: Mutex<Mode>,
     /// 落盘的那一份。关窗期间发生的事要留得住
     store: Option<store::Store>,
+    /// 正在攒的那几件事，按键（[`Signal::gathered`]）。**和 `state` 分开一把锁**：攒只是
+    /// 记一笔，不碰列表
+    gathering: Mutex<HashMap<String, Gathering>>,
+}
+
+/// 一个键这一阵攒下的
+struct Gathering {
+    /// 这一阵到什么时候。用 tokio 的钟：测试里拨得动
+    until: tokio::time::Instant,
+    /// 攒下的：最近的那一条、它的时刻、一共几次。还没攒到是 `None`
+    held: Option<(Signal, u64, u32)>,
 }
 
 const OPEN_FILE: &str = "notices.json";
@@ -316,6 +361,7 @@ impl Notices {
             sinks,
             mode: Mutex::new(mode),
             store,
+            gathering: Mutex::new(HashMap::new()),
         })
     }
 
@@ -483,8 +529,68 @@ impl Notices {
                     self.clear(&key, at_ms);
                 }
             }
+            Change::Raised if signal.gather => self.gather(signal, at_ms),
             Change::Raised => self.raise(signal, at_ms),
         }
+    }
+
+    /// 接连来的同一件事（[`Signal::gathered`]）：这一阵的头一次照常进来，之后的攒着，到点
+    /// 合成一次（[`Self::flush`]）
+    fn gather(self: &Arc<Self>, signal: Signal, at_ms: u64) {
+        if self.mode() == Mode::Off {
+            return;
+        }
+        let key = signal.key.clone();
+        let now = tokio::time::Instant::now();
+        let mut g = self.gathering.lock().expect("锁未中毒");
+        if let Some(w) = g.get_mut(&key).filter(|w| now < w.until) {
+            let first = w.held.is_none();
+            let times = w.held.as_ref().map_or(0, |h| h.2) + signal.times;
+            w.held = Some((signal, at_ms, times));
+            let until = w.until;
+            drop(g);
+            // 这一阵头一次攒下：排上合成的那个时刻
+            if first {
+                self.flush(key, until);
+            }
+            return;
+        }
+        g.insert(
+            key,
+            Gathering {
+                until: now + GATHER,
+                held: None,
+            },
+        );
+        drop(g);
+        self.raise(signal, at_ms);
+    }
+
+    /// 一阵过去（`at`）：攒下的合成一条进来，次数照实加，**再开一阵** —— 还在接连发生的，
+    /// 下一阵接着攒。这一阵什么都没攒到，就不再记着这个键，下一次又是头一次
+    fn flush(self: &Arc<Self>, key: String, at: tokio::time::Instant) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(at).await;
+            let held = {
+                let mut g = me.gathering.lock().expect("锁未中毒");
+                let Some(w) = g.get_mut(&key) else {
+                    return;
+                };
+                match w.held.take() {
+                    Some(h) => {
+                        w.until = tokio::time::Instant::now() + GATHER;
+                        h
+                    }
+                    None => {
+                        g.remove(&key);
+                        return;
+                    }
+                }
+            };
+            let (signal, at_ms, times) = held;
+            me.raise(signal.times(times), at_ms);
+        });
     }
 
     /// 开着的、键是 `parent` 再接一段（这一段里没有冒号）的那几条
@@ -526,7 +632,7 @@ impl Notices {
                     title: signal.title.clone(),
                     body: signal.body.clone(),
                     at_ms,
-                    count: o.notice.count + 1,
+                    count: o.notice.count.saturating_add(signal.times),
                     read: false,
                     ..o.notice
                 },
@@ -536,7 +642,7 @@ impl Notices {
                     title: signal.title.clone(),
                     body: signal.body.clone(),
                     at_ms,
-                    count: o.notice.count + 1,
+                    count: o.notice.count.saturating_add(signal.times),
                     notified: o.notice.notified && !escalated,
                     // 看过的还是那一件事；变得更要紧了才重新算没看过
                     read: o.notice.read && !escalated,
@@ -550,7 +656,7 @@ impl Notices {
                     view: signal.view.map(str::to_string),
                     first_at_ms: at_ms,
                     at_ms,
-                    count: 1,
+                    count: signal.times,
                     notified: false,
                     read: false,
                 },
@@ -575,10 +681,10 @@ impl Notices {
                     unsaid = 0;
                 } else if interrupts && !hush && cooling {
                     // 只差冷却这一条：记下，冷却结束时合成一条说。头一次记下时排上那个时刻
-                    unsaid += 1;
-                    if unsaid == 1 {
+                    if unsaid == 0 {
                         sum_up = cool_until;
                     }
+                    unsaid = unsaid.saturating_add(signal.times);
                 }
             }
             g.open.insert(

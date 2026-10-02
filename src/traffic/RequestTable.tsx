@@ -724,6 +724,12 @@ function UpstreamCell({ r }: { r: RequestRow }) {
           {r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious}
         </Mark>
       )}
+      {/* 插件改写过的。**改动要看得见**：改写前后在请求详情里对比 */}
+      {r.pluginChanged && (
+        <Mark variant="secondary" tip={t.pluginChangedTip}>
+          {t.pluginChanged}
+        </Mark>
+      )}
     </div>
   );
 }

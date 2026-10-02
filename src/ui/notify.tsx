@@ -41,11 +41,18 @@ export const notify = {
 };
 
 /**
+ * `undoable` 的 `do()` / `undo()` 交回它：用户在系统的确认框里点了取消。**不是失败**：界面
+ * 退回原样，不报错，也不说「已撤销」。
+ */
+export const DECLINED = Symbol("declined");
+
+/**
  * 可撤销的动作。
  *
  * 1. `apply()`（可选）先把界面改成做完之后的样子 —— 乐观更新，返回撤回用的函数。
  *    和 `useResource` 的 `mutate` 正好接上：`mutate` 返回的就是撤回函数。
- * 2. 发出 `do()`。失败：撤回界面、报错。
+ * 2. 发出 `do()`。失败：撤回界面、报错。交回 [`DECLINED`]（系统的确认框里点了取消）：
+ *    撤回界面，什么都不说。
  * 3. 成功：toast 写 `message`，带「撤销」。点了就跑 `undo()`（同样先撤回界面），
  *    失败再报错。
  *
@@ -77,11 +84,17 @@ export async function undoable({
 }): Promise<boolean> {
   const t = textOf(uiText);
   const rollback = apply?.();
+  let done: unknown;
   try {
-    await run();
+    done = await run();
   } catch (e) {
     rollback?.();
     notify.error(e);
+    void after?.();
+    return false;
+  }
+  if (done === DECLINED) {
+    rollback?.();
     void after?.();
     return false;
   }
@@ -93,7 +106,11 @@ export async function undoable({
       onClick: () => {
         rollback?.();
         undo()
-          .then(() => toast(t.undone, { duration: 2_000 }))
+          .then((r) => {
+            // 撤销在系统的确认框里被取消了：做过的那一步还在，界面也回到做完的样子
+            if (r === DECLINED) apply?.();
+            else toast(t.undone, { duration: 2_000 });
+          })
           .catch((e) => notify.error(e))
           .finally(() => void after?.());
       },

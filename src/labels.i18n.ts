@@ -87,6 +87,8 @@ export const labelsText = messages(
       external: "外部编辑",
       rollback: "回滚",
       rotation: "凭据轮换",
+      /** core 装上它自带的默认插件，或者把没动过的默认插件换成新版 */
+      defaults: "默认插件",
     },
     /** 后面接「错误」 */
     stages: {
@@ -219,6 +221,7 @@ export const labelsText = messages(
       external: "External edit",
       rollback: "Rollback",
       rotation: "Credential rotation",
+      defaults: "Default plugins",
     },
     stages: {
       syntax: "Syntax",

@@ -4,7 +4,8 @@ import type { BedrockDraft } from "./types";
 import type { LogFocus } from "./security/SecurityPage";
 
 /**
- * 主窗口的几个面，按源列表从上到下的顺序。**⌘1…⌘9 也按这个顺序**（见 App.tsx）。
+ * 主窗口的几个面，按源列表从上到下的顺序。**⌘1…⌘9 也按这个顺序**（见 App.tsx）：
+ * 前九页各占一个数字，排在最后的设置是 ⌘,（macOS 的惯例），不占数字。
  */
 export const SURFACES = [
   "dashboard",
@@ -15,6 +16,7 @@ export const SURFACES = [
   "routing",
   "security",
   "mcp",
+  "plugins",
   "settings",
 ] as const;
 
@@ -30,6 +32,7 @@ export type Surface = (typeof SURFACES)[number];
  * · `security`：日志定位到某个时间段。
  * · `upstreams`：定位某个上游（`upstream`，页面接上之前忽略）。
  * · `settings`：滚到某一节（`section`，设置页自己认；命令面板送的见 palette/sections.ts）。
+ * · `plugins`：定位某个插件（`plugin`）。
  *
  * **打开对话框**（命令面板、别的页上的入口用）：页面收到就打开它自己的那个对话框，
  * 和点页面上的按钮、点那一行一模一样 —— 对话框只有一份，在页面里。
@@ -39,6 +42,7 @@ export type Surface = (typeof SURFACES)[number];
  *   预填（接管确认框里的「新建 Bedrock 上游」）。
  * · `upstreams.test`：推理测速、链路测速；`routing.dryRun`：试算。
  * · `clients.setup`：手动配置（未安装的、不能接管的客户端，点那一行就是它）。
+ * · `plugins.add`：添加插件；`plugins.review`：审核这个插件变了的文件。
  *
  * 加新的深链：在这里加字段，在目标页用 `useNavParams` 读。
  */
@@ -58,6 +62,7 @@ export interface NavParams {
   routing: { editRoute?: string; editGroup?: string; create?: "route" | "group"; dryRun?: boolean };
   security: { focus?: LogFocus };
   mcp: undefined;
+  plugins: { plugin?: string; add?: boolean; review?: string };
   settings: { section?: string };
 }
 
