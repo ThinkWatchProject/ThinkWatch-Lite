@@ -12,54 +12,22 @@
 import type {
   CostBucket,
   CostBucketGroup,
+  Event,
+  Guard,
+  InFlightRequest,
   LatencyView,
   Msg,
   SecretItem,
   Status,
   StorageStatus,
+  Summary,
   TokenRateView,
   TranslatedView,
 } from "./generated/tw-api";
-// 临时：安全防护统一之后的形状，core 发版前先从这里取（见 `./security/api.provisional.ts`）
-import type { Event, Guard, InFlightRequest, Summary } from "./security/api.provisional";
 import type { LocalEvent } from "./generated/lite-api";
 
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
-
-// 临时：用安全防护统一之后的形状盖住生成的同名类型（显式转出优先于上面的 `export type *`）。
-// core 发版、`tw-api.ts` 重新生成之后整段删掉，步骤见 `./security/api.provisional.ts`
-export type {
-  ActionSave,
-  ContentMatch,
-  ContentMatchedEvent,
-  CustomRuleSave,
-  Endpoints,
-  Event,
-  Guard,
-  GuardDetail,
-  HistoryRow,
-  HistorySearchPage,
-  InFlight,
-  InFlightRequest,
-  Matcher,
-  Overview,
-  RequestDetail,
-  RuleAction,
-  SecurityCounts,
-  SecurityDetail,
-  SecurityEventView,
-  SecurityEventsPage,
-  SecurityEventsQuery,
-  SecurityOutcome,
-  SecurityOutcomeCounts,
-  SecurityRuleView,
-  SecurityTestHit,
-  SecurityTestRequest,
-  SecurityTestResult,
-  SecurityView,
-  Summary,
-} from "./security/api.provisional";
 
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;

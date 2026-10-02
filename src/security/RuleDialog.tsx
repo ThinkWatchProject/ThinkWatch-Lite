@@ -49,7 +49,12 @@ const ACTIONS: Record<ActionGuard, readonly RuleAction[]> = {
 /** 内容规则的三种写法 */
 const MATCHES: readonly ContentMatch[] = ["contains", "regex", "codepoints"];
 
-/** 一条规则写的是什么，以及怎么认。码位写成一行，和输入框里的写法一样 */
+/**
+ * 一条规则写的是什么，以及怎么认。码位写成一行，和输入框里的写法一样。
+ *
+ * **写不出来的是 `null`**：出站脱敏那几种（前缀、PEM、身份证号…）和代码里做的检查
+ * （`builtin`）没有一条能填进自定义规则的写法，所以也没有「复制为自定义规则」。
+ */
 export function patternOf(r: SecurityRuleView): { pattern: string; match: ContentMatch } | null {
   switch (r.matcher.kind) {
     case "regex":

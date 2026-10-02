@@ -250,7 +250,7 @@ function LogTable({
                           </div>
                           {/* 值只剩头尾：日志截一张图就能带出去 */}
                           <div className="truncate tw-label text-muted-foreground">
-                            <EventDetail e={e} codepoints={byCodepoints(e, detail?.content.rules)} />
+                            <EventDetail e={e} codepoints={byCodepoints(e)} />
                           </div>
                         </TableCell>
                         <TableCell className="py-2">

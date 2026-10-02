@@ -124,6 +124,13 @@ export const securityLabelsText = messages(
         <>{or(networks.map((n) => CARD_NETWORK_ZH[n] ?? n), "、", "、")} 的卡号：号段、位数对得上并通过 Luhn 校验；公开的测试卡号除外</>
       ),
       email: (code: Code) => <>邮箱地址：{code("名称@域名")}</>,
+      /** 代码里做的检查（`builtin`），按检查名说它查什么 */
+      builtin: {
+        "credential-to-network": "凭据发往本机和该凭据的服务商以外的主机",
+        "file-to-network": "本地文件的内容上传到外部主机",
+      } as Record<string, string>,
+      /** 没见过的检查名 */
+      builtinOther: "由内置检查判断",
       cnMobilePhone: (code: Code) => (
         <>
           中国大陆手机号：{code("1")} 开头的 11 位数字，第二位为 3 到 9，前后不紧挨其他数字
@@ -240,6 +247,8 @@ export const securityLabelsText = messages(
       "crontab-install": "Install a scheduled job",
       "rm-rf-root": "Delete home or root",
       "chmod-777": "World-writable permissions",
+      "secret-to-unknown-host": "Send a credential to an unknown host",
+      "upload-file-to-host": "Upload a local file to an external host",
     },
     matcher: {
       prefix: (code: Code, prefix: string, n: number) => (
@@ -271,6 +280,11 @@ export const securityLabelsText = messages(
         <>A {or(networks, ", ", " or ")} card number whose prefix and length match and that passes the Luhn check; public test card numbers excepted</>
       ),
       email: (code: Code) => <>Email addresses: {code("name@domain")}</>,
+      builtin: {
+        "credential-to-network": "A credential sent to a host other than this machine and the credential's provider",
+        "file-to-network": "The contents of a local file uploaded to an external host",
+      },
+      builtinOther: "Decided by a built-in check",
       cnMobilePhone: (code: Code) => (
         <>
           Chinese mainland mobile numbers: 11 digits starting with {code("1")}, the second 3 to 9, not run together with other digits

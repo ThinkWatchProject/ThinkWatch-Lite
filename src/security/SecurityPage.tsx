@@ -248,7 +248,7 @@ export default function SecurityPage({
   /** 内置规则对话框里的「复制为自定义规则」。写不出等价写法的不给 */
   const copyOf = (guard: Guard, r: SecurityRuleView) => {
     const copy = actions(guard).copy;
-    return copy && (() => copy(r));
+    return copy && patternOf(r) ? () => copy(r) : undefined;
   };
 
   const d = detail.data;

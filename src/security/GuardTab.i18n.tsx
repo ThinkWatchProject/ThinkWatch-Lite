@@ -56,7 +56,6 @@ export const guardTabText = messages(
     newRule: "新建规则",
     rule: "规则",
     match: "匹配",
-    regex: "匹配（正则表达式）",
     /** 规则在第三档下做什么 */
     action: "处置",
     enabled: "启用",
@@ -112,7 +111,6 @@ export const guardTabText = messages(
     newRule: "New rule",
     rule: "Rule",
     match: "Match",
-    regex: "Match (regular expression)",
     action: "Action",
     enabled: "On",
     builtinGroup: "Built-in",

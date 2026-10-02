@@ -96,22 +96,9 @@ export function whereOf(e: SecurityEventView): string | null {
   return e.tool === "tool_result" ? textOf(securityLabelsText).toolResult : e.tool;
 }
 
-/** 内置的码位规则：隐藏字符那一组 */
-const INVISIBLE = new Set(["unicode-tags", "bidi-controls", "zero-width", "private-use"]);
-/** 码位规则的片段里，命中的字符画成的样子：`‹U+200B›`，连成一串的 `‹U+E0049 ×12›` */
-const DRAWN = /‹U\+[0-9A-F]{4,6}(?: ×\d+)?›/;
-
-/**
- * 一条内容过滤的命中是不是码位规则的。是的话 `count` 数的是字符，不是几处。
- *
- * 日志里只有规则名：有规则表（安全页）就照表认；没有（请求详情）或者这条规则已经删了，
- * 内置的按 id 认，自定义的看片段里有没有画出来的码位。
- */
-export function byCodepoints(e: SecurityEventView, rules?: SecurityRuleView[]): boolean {
-  if (e.guard !== "content") return false;
-  const r = rules?.find((x) => x.id === e.rule && x.custom === e.custom);
-  if (r) return r.matcher.kind === "codepoints";
-  return e.custom ? DRAWN.test(e.excerpt) : INVISIBLE.has(e.rule);
+/** 一条内容过滤的命中是不是码位规则的（日志里带着规则怎么认）。是的话 `count` 数的是字符，不是几处 */
+export function byCodepoints(e: SecurityEventView): boolean {
+  return e.guard === "content" && e.match === "codepoints";
 }
 
 /**
@@ -177,6 +164,9 @@ export function MatcherText({ m }: { m: Matcher }) {
       return t.email(code);
     case "cn-mobile-phone":
       return t.cnMobilePhone(code);
+    // 代码里做的检查没有可展示的写法：按检查名说它查什么，不说怎么查
+    case "builtin":
+      return <>{t.builtin[m.check] ?? t.builtinOther}</>;
     case "regex":
       return t.regex(code, m.pattern);
     case "contains":

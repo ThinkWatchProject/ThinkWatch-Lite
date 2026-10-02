@@ -108,34 +108,25 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   model: "claude-sonnet-4",
   excerpt: "summarize ‹U+E0049 ×74› the diff",
   count: 74,
+  match: "codepoints",
   ...x,
 });
 
 /**
- * 内容过滤的一条命中是不是码位规则的：是的话 `count` 是字符数。日志里只有规则名，
- * 有规则表就照表认，没有就按内置的 id、自定义的片段认。
+ * 内容过滤的一条命中是不是码位规则的：是的话 `count` 是字符数，不是几处。日志里带着
+ * 规则怎么认（`match`），照它说。
  */
 describe("码位规则的命中", () => {
-  it("内置的按 id 认", () => {
+  it("照日志里的 match 认", () => {
     expect(byCodepoints(hit({}))).toBe(true);
-    expect(byCodepoints(hit({ rule: "jailbreak", excerpt: "a jailbreak", count: 1 }))).toBe(false);
+    expect(byCodepoints(hit({ rule: "项目符号", custom: true, excerpt: "• 第一条", count: 3 }))).toBe(true);
+    expect(byCodepoints(hit({ rule: "jailbreak", excerpt: "a jailbreak", count: 1, match: "contains" }))).toBe(false);
+    expect(byCodepoints(hit({ rule: "代号", custom: true, excerpt: "project falcon", match: "regex" }))).toBe(false);
   });
 
-  it("自定义的有规则表就照表认", () => {
-    const rules: SecurityRuleView[] = [
-      { id: "项目符号", custom: true, name: "项目符号", kind: "custom", matcher: { kind: "codepoints", ranges: ["U+2022"] }, enabled: true, on_by_default: true },
-    ];
-    expect(byCodepoints(hit({ rule: "项目符号", custom: true, excerpt: "• 第一条", count: 3 }), rules)).toBe(true);
-  });
-
-  it("没有规则表时看片段里有没有画出来的码位", () => {
-    expect(byCodepoints(hit({ rule: "零宽", custom: true, excerpt: "a‹U+200B›b" }))).toBe(true);
-    expect(byCodepoints(hit({ rule: "标签", custom: true, excerpt: "a‹U+E0049 ×12›b" }))).toBe(true);
-    expect(byCodepoints(hit({ rule: "代号", custom: true, excerpt: "project falcon" }))).toBe(false);
-  });
-
-  it("别的防护不算", () => {
-    expect(byCodepoints(hit({ guard: "redact", rule: "unicode-tags" }))).toBe(false);
+  it("没写 match 的、别的防护的不算", () => {
+    expect(byCodepoints(hit({ match: null }))).toBe(false);
+    expect(byCodepoints(hit({ guard: "redact", rule: "anthropic-api-key", match: undefined }))).toBe(false);
   });
 });
 

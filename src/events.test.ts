@@ -623,6 +623,7 @@ describe("对账时行对象换不换", () => {
         provider: "relay",
         rule,
         custom: false,
+        match: "codepoints",
         action: outcome === "stripped" ? "strip" : outcome === "blocked" ? "block" : "record",
         outcome,
         in_tool_result: true,

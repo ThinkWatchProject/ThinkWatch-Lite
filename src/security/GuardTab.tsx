@@ -19,6 +19,7 @@ import { hasAction, type ActionGuard } from "./api";
 import { Code, MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText } from "./GuardTab.i18n";
+import { patternOf } from "./RuleDialog";
 import { GroupRow, ROW_FOCUS, rowNav, stop } from "./rows";
 
 const MODES: readonly GuardMode[] = ["off", "observe", "enforce"];
@@ -31,7 +32,7 @@ export interface RuleActions {
   pending: (r: SecurityRuleView) => boolean;
   /** 内置规则：只读查看；自定义规则：编辑 */
   open: (r: SecurityRuleView) => void;
-  /** 复制成自定义规则。只有写得出等价写法的那几项有 */
+  /** 复制成自定义规则。只有写得出等价写法的那几项有，而且只给写得出来的规则（见 `patternOf`） */
   copy?: (r: SecurityRuleView) => void;
   remove: (r: SecurityRuleView) => void;
   create: () => void;
@@ -199,7 +200,8 @@ function useMenu(guard: Guard, actions: RuleActions) {
       ];
     // 出站脱敏的内置规则只能启停，也写不出等价的自定义规则
     if (!hasAction(guard)) return [{ kind: "item", label: t.view, onSelect: () => actions.open(r) }, toggle];
-    const copy = actions.copy;
+    // 代码里做的检查没有写法可抄
+    const copy = patternOf(r) ? actions.copy : undefined;
     return [
       // 内置的工具调用和内容规则能改第三档下的处置，所以是「编辑」不是「查看」
       { kind: "item", label: common.edit, onSelect: () => actions.open(r) },
@@ -340,7 +342,8 @@ function RedactRules({ rules, actions }: { rules: SecurityRuleView[]; actions: R
  * 工具调用审查、内容过滤：规则、写法、第三档下做什么。
  *
  * 工具调用的内置规则一组；内容规则按 core 给的类别分组（隐藏字符、指令覆盖、
- * 身份与提示词、中文说法），自定义的在最后。码位规则的「匹配」写出码位范围。
+ * 身份与提示词、中文说法），自定义的在最后。「匹配」一列：工具调用的正则照写，代码里
+ * 做的检查（凭据发往陌生主机这类）说一句它查什么；码位规则写出码位范围。
  *
  * **处置一列三种颜色**：拒绝、切断是红的（请求或回答的结局变了），删除是正文色（改了
  * 内容照常发出），仅记录是次要色。
@@ -364,7 +367,7 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
       <TableHeader>
         <TableRow>
           <TableHead>{t.rule}</TableHead>
-          <TableHead>{content ? t.match : t.regex}</TableHead>
+          <TableHead>{t.match}</TableHead>
           <TableHead>{t.action}</TableHead>
           <TableHead className="text-right">{t.enabled}</TableHead>
           <TableHead />
@@ -394,9 +397,14 @@ function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: Sec
                       {/* 表里只写那段文字；「不区分大小写」对每一条都一样，在对话框里说 */}
                       {r.matcher.kind === "contains" ? <Code>{r.matcher.text}</Code> : <MatcherText m={r.matcher} />}
                     </TableCell>
-                  ) : (
+                  ) : r.matcher.kind === "regex" ? (
                     <TableCell className="truncate font-mono tw-label text-muted-foreground" title={pattern}>
                       {pattern}
+                    </TableCell>
+                  ) : (
+                    // 代码里做的检查：说它查什么
+                    <TableCell className="truncate text-muted-foreground">
+                      <MatcherText m={r.matcher} />
                     </TableCell>
                   )}
                   <TableCell className={hard ? "text-destructive" : soft ? "text-muted-foreground" : "text-foreground"}>
