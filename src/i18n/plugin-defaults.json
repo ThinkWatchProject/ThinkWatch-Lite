@@ -18,7 +18,7 @@
       "manifest_name": "Convert WSL and Windows paths",
       "zh": {
         "name": "WSL 路径转换",
-        "description": "将工具调用参数中的盘符路径改写为客户端能打开的写法（WSL 的 /mnt/c/… 或 Windows 的 C:\\…），回答和对话历史中的都会改写。",
+        "description": "将工具调用参数中的盘符路径改写为客户端能打开的写法（WSL 的 /mnt/c/… 或 Windows 的 C:\\…），回答和对话历史中的工具调用均适用。",
         "settings": { "windows_client": "客户端运行在 Windows 上（关闭时按 WSL 处理）" }
       },
       "en": {
