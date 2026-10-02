@@ -63,9 +63,9 @@ describe("占位符名称", () => {
 
 /** 测试框里标出来的那一段，看不见的字符画成码位 */
 describe("看不见的字符", () => {
-  it("一个画成码位，连着一串画成第一个加省略号", () => {
+  it("一个画成码位，连成一串的写第一个和一共几个，和 core 的片段一样", () => {
     expect(drawInvisible("a\u200bb")).toBe("a‹U+200B›b");
-    expect(drawInvisible("\u{E0049}\u{E0067}\u{E006E}")).toBe("‹U+E0049…›");
+    expect(drawInvisible("\u{E0049}\u{E0067}\u{E006E}")).toBe("‹U+E0049 ×3›");
     expect(drawInvisible("x\u202Ey\u2066")).toBe("x‹U+202E›y‹U+2066›");
     // 变体选择符也看不见
     expect(drawInvisible("ok 👍\uFE0F")).toBe("ok 👍‹U+FE0F›");

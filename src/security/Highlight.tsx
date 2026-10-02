@@ -27,15 +27,15 @@ const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Co}]/u;
 const hex = (cp: number) => cp.toString(16).toUpperCase().padStart(4, "0");
 
 /**
- * 标出来的那一段里，**看不见的字符画成码位**：一个画成 `‹U+200B›`，连着一串画成第一个的
- * 码位加省略号（`‹U+E0049…›`）。不画的话，命中了码位规则的那一处是一块空的底色 ——
- * 正是要找的东西看不见。没标出来的字照原样。
+ * 标出来的那一段里，**看不见的字符画成码位**：一个画成 `‹U+200B›`，连成一串的写第一个的
+ * 码位和一共几个（`‹U+E0049 ×12›`），和 core 给的片段同一种写法。不画的话，命中了码位
+ * 规则的那一处是一块空的底色 —— 正是要找的东西看不见。没标出来的字照原样。
  */
 export function drawInvisible(text: string): string {
   let out = "";
   let run: number[] = [];
   const flush = () => {
-    if (run.length > 0) out += `‹U+${hex(run[0]!)}${run.length > 1 ? "…" : ""}›`;
+    if (run.length > 0) out += `‹U+${hex(run[0]!)}${run.length > 1 ? ` ×${run.length}` : ""}›`;
     run = [];
   };
   for (const ch of text) {

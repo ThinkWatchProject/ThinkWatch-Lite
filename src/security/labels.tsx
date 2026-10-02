@@ -98,8 +98,8 @@ export function whereOf(e: SecurityEventView): string | null {
 
 /** 内置的码位规则：隐藏字符那一组 */
 const INVISIBLE = new Set(["unicode-tags", "bidi-controls", "zero-width", "private-use"]);
-/** 码位规则的片段里，不可见字符画成的样子 */
-const DRAWN = /‹U\+[0-9A-F]{4,6}›/;
+/** 码位规则的片段里，命中的字符画成的样子：`‹U+200B›`，连成一串的 `‹U+E0049 ×12›` */
+const DRAWN = /‹U\+[0-9A-F]{4,6}(?: ×\d+)?›/;
 
 /**
  * 一条内容过滤的命中是不是码位规则的。是的话 `count` 数的是字符，不是几处。

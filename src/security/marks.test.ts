@@ -45,7 +45,7 @@ describe("历史记录的安全徽标", () => {
 
   it("内容过滤：只有删过文字的挂「已删除」", () => {
     const m = marksFromEvents([
-      ev({ guard: "content", rule: "unicode-tags", action: "stripped", tool: "tool_result", excerpt: "a‹U+E0049…›b", count: 74 }),
+      ev({ guard: "content", rule: "unicode-tags", action: "stripped", tool: "tool_result", excerpt: "a‹U+E0049 ×74›b", count: 74 }),
       ev({ id: 2, guard: "content", rule: "act-as", action: "recorded", excerpt: "act as", count: 1 }),
       ev({ id: 3, guard: "content", rule: "项目代号", custom: true, action: "stripped", excerpt: "project falcon", count: 2 }),
     ]);

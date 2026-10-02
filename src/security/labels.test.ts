@@ -106,7 +106,7 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   provider: "relay",
   client: "claude-code",
   model: "claude-sonnet-4",
-  excerpt: "summarize ‹U+E0049…› the diff",
+  excerpt: "summarize ‹U+E0049 ×74› the diff",
   count: 74,
   ...x,
 });
@@ -130,6 +130,7 @@ describe("码位规则的命中", () => {
 
   it("没有规则表时看片段里有没有画出来的码位", () => {
     expect(byCodepoints(hit({ rule: "零宽", custom: true, excerpt: "a‹U+200B›b" }))).toBe(true);
+    expect(byCodepoints(hit({ rule: "标签", custom: true, excerpt: "a‹U+E0049 ×12›b" }))).toBe(true);
     expect(byCodepoints(hit({ rule: "代号", custom: true, excerpt: "project falcon" }))).toBe(false);
   });
 

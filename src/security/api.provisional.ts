@@ -22,6 +22,8 @@
  * 3. `src/control.ts` 的 `Endpoints` 改回从 `./generated/tw-api` 取；
  * 4. 删掉这个文件，`pnpm typecheck`：名字或形状和这里不一样的地方会在用到它的那一处报错。
  *
+ * 规则视图和测试那几样（`Guard` … `SecurityTestResult`）和 core 第一段用 ts-rs 生成的那一份
+ * 逐项对过：名字、字段、可选性一样。事件和日志那几样 core 第二段才生成，照接口约定 §3.3 写。
  * 约定里没写、这里先补上的只有一样：概览计数里内容过滤删除过几次（`content_stripped`）。
  */
 import type * as G from "@/generated/tw-api";
@@ -119,19 +121,24 @@ export type SecurityTestRequest = {
   label?: string | null;
   /**
    * 试一条还没保存的规则、或者改过处置还没保存的内置规则时，对话框里选着的那一种处置：
-   * `output` 和 `refused` 按它算。不给就按规则存着的处置（`pattern` 试的是只记录）
+   * `output` 和 `refused` 按它算。试 `pattern` 不给的话，工具调用审查按 `cut`、内容过滤
+   * 按 `record` 算；试内置规则不给就按它存着的处置
    */
   action?: RuleAction | null;
 };
 
-/** 试出来的一处 */
+/** 试出来的一处。内容过滤列出每一处（连成一串的码位字符算一处），按在样本里的位置排 */
 export type SecurityTestHit = {
+  /** 内置规则的 id、自定义规则的名字，或者 `trial`（试的是 `pattern`） */
   rule: string;
   custom: boolean;
   /** 在样本里的位置，**按 UTF-16 码元计** */
   start: number;
   end: number;
-  /** 出站脱敏：打码后的值；另两项：命中的那一小段（码位规则把不可见字符画成 `‹U+E0049›`） */
+  /**
+   * 出站脱敏：打码后的值；另两项：命中的那一小段。码位规则命中的字符画成 `‹U+200B›`，
+   * 连成一串的写成 `‹U+E0049 ×12›`
+   */
   excerpt: string;
   /** 工具调用审查、内容过滤：第三档下做什么 */
   action?: RuleAction | null;
@@ -139,7 +146,10 @@ export type SecurityTestHit = {
 
 export type SecurityTestResult = {
   hits: SecurityTestHit[];
-  /** 发出去的样子：脱敏是替换后的样本，内容过滤是删除后的样本。都没变化是 `null` */
+  /**
+   * 第三档下发出去的样子：脱敏是替换后的样本，内容过滤是删除后的样本。没有变化（或者
+   * 内容过滤会拒绝这个请求）是 `null`
+   */
   output: string | null;
   /** 内容过滤：第三档下这个请求会被拒（有「拒绝」规则命中）。别的两项总是 `false` */
   refused: boolean;
