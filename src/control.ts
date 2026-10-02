@@ -90,9 +90,35 @@ export const WEBVIEW_ENDPOINTS = [
   "ChatgptResets",
   "UseChatgptReset",
   "ZaiLoginStatus",
+  "Plugins",
+  "PluginInspect",
+  "UpdatePlugin",
+  "PluginSourceDiff",
+  "DeletePlugin",
+  "ReorderPlugins",
+  "TrialPlugin",
+  "PluginLogs",
 ] as const;
 
-export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];
+/**
+ * PROVISIONAL：插件的端点在白名单里，类型还不在生成的 `tw-api.ts` 里（core 发版之前）。
+ * 它们走 `src/plugins/api.provisional.ts` 的 `pluginCall`。core 发版、重新生成之后删掉
+ * 这一行和下面的 `Exclude`，插件页改用 `call`。
+ *
+ * 安装、更换代码、确认文件变更（`CreatePlugin`、`ReplacePluginSource`、`ApprovePluginFile`）
+ * **有意不在白名单里**：只能经过 Rust 的原生确认（`plugin_install` 等命令）。
+ */
+type Provisional =
+  | "Plugins"
+  | "PluginInspect"
+  | "UpdatePlugin"
+  | "PluginSourceDiff"
+  | "DeletePlugin"
+  | "ReorderPlugins"
+  | "TrialPlugin"
+  | "PluginLogs";
+
+export type WebviewEndpoint = Exclude<(typeof WEBVIEW_ENDPOINTS)[number], Provisional>;
 
 /** 模板里每个参数名换成一个值 */
 type Values<T> = T extends readonly [unknown, ...infer Rest] ? [string | number, ...Values<Rest>] : [];

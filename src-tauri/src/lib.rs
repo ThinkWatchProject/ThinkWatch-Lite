@@ -45,6 +45,7 @@ pub mod mcp;
 pub mod memcheck;
 pub mod menubar;
 pub mod notices;
+pub mod plugins;
 pub mod prefs;
 /// 建只有自己能读的数据目录，见模块头上
 pub mod private_dir;
@@ -245,6 +246,9 @@ pub fn run() {
             mcp::mcp_targets,
             mcp::plan_mcp,
             mcp::apply_mcp,
+            plugins::plugin_install,
+            plugins::plugin_replace_source,
+            plugins::plugin_approve,
             scan::scan_clients,
             diagnostics::save_diagnostics,
         ])

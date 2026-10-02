@@ -11,6 +11,10 @@
 //! 命令拼好再给）。路径参数由 `tw_api::fill` 做百分号编码，所以界面给的名字
 //! 只能是一段，拼不出别的路径。
 //!
+//! **插件的三步有意不给**：安装（`CreatePlugin`）、更换代码（`ReplacePluginSource`）、确认变了
+//! 的文件（`ApprovePluginFile`）。界面里的脚本自己就能点网页上的「确定」，所以这三步只能
+//! 经过 `plugins` 里的命令，在系统原生对话框里确认（I12）。
+//!
 //! 做的事不止转发的命令（打开浏览器、写剪贴板、拼概览）仍然各是一个命令。
 //! 其中有三个端点**只能经过那些命令**，因为这台机器上的客户端要一起照顾到：删密钥
 //! （接管着的客户端的那把删不得）、换密钥（新值要同步进它的配置）、为客户端发密钥
@@ -24,10 +28,10 @@ use crate::control::ControlClient;
 use crate::error::{CmdError, Out};
 
 macro_rules! webview_endpoints {
-    ($($name:ident),* $(,)?) => {
+    (core: [$($name:ident),* $(,)?], provisional: [$($p:ident),* $(,)?] $(,)?) => {
         /// 界面能直接调的端点，按名字。和 `src/control.ts` 的
         /// `WEBVIEW_ENDPOINTS` 是同一份（测试核对）。
-        pub const ALLOWED: &[&str] = &[$(stringify!($name)),*];
+        pub const ALLOWED: &[&str] = &[$(stringify!($name),)* $(stringify!($p),)*];
 
         /// 调一个控制面端点。`params` 按顺序填路径参数，`req` 是请求（没有就是
         /// `null`）。
@@ -41,6 +45,7 @@ macro_rules! webview_endpoints {
             let params: Vec<&str> = params.iter().map(String::as_str).collect();
             match endpoint.as_str() {
                 $(stringify!($name) => relay::<ep::$name>(&state.control, &params, req).await,)*
+                $(stringify!($p) => relay::<crate::plugins::wire::$p>(&state.control, &params, req).await,)*
                 _ => Err(CmdError::plain(format!(
                     "The interface cannot call the control-plane endpoint `{endpoint}`."
                 ))),
@@ -49,7 +54,8 @@ macro_rules! webview_endpoints {
     };
 }
 
-webview_endpoints![
+webview_endpoints! {
+    core: [
     // 进程与概览
     Interfaces,
     Overview,
@@ -132,7 +138,20 @@ webview_endpoints![
     ChatgptResets,
     UseChatgptReset,
     ZaiLoginStatus,
-];
+    ],
+    // PROVISIONAL：插件。钉着的 tw-api 里还没有这几个端点，描述在 `plugins::wire`；core 发版、
+    // 钉点升上去之后挪进上面那一组（`ep::Plugins` …），删掉这一组和 `plugins::wire` 里的端点
+    provisional: [
+        Plugins,
+        PluginInspect,
+        UpdatePlugin,
+        PluginSourceDiff,
+        DeletePlugin,
+        ReorderPlugins,
+        TrialPlugin,
+        PluginLogs,
+    ],
+}
 
 /// 请求按这个端点的类型读一遍再发：**界面发来的形状不对，在这里就停下**，
 /// 不把一个 core 读不了的请求送过去。
@@ -169,6 +188,10 @@ mod tests {
             "DeleteKey",
             "RotateKey",
             "ClientKey",
+            // 插件的三步要在原生对话框里确认（I12），见模块说明
+            "CreatePlugin",
+            "ReplacePluginSource",
+            "ApprovePluginFile",
         ] {
             assert!(!ALLOWED.contains(&name), "{name}");
         }
