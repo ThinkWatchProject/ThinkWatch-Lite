@@ -1,3 +1,5 @@
+import { textOf } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
 import type {
   Transcript,
   TranscriptGap,
@@ -7,6 +9,7 @@ import type {
   TranscriptTurn,
   TurnView,
 } from "@/types";
+import { conversationText } from "./Conversation.i18n";
 
 /**
  * 会话「对话」那一页的纯逻辑：把 core 给的一轮一轮排成要画的样子。界面在 `Conversation.tsx`。
@@ -41,6 +44,22 @@ export type Outcome = "done" | "failed" | "cancelled";
 export function outcomeOf(v: TurnView | undefined): Outcome {
   if (!v) return "done";
   return v.error ? "failed" : v.cancelled ? "cancelled" : "done";
+}
+
+/**
+ * 失败的那一轮，回答的位置上写的那一句。没有失败的是 `null`。
+ *
+ * **写 core 给的原因**（`TurnView.error`）。上游回了错误、原样交给客户端的，原因就是上游的
+ * 原话，状态码已经在里面（它的 `status` 参数）：「上游「中转」返回 400：prompt is too long」，
+ * 不再说一遍。这一轮有个不是 2xx 的状态码、原因里却没有它的（错误交到一半断了），写在前面
+ * —— 上游回了什么，读的人要知道。
+ */
+export function failureLine(v: TurnView | undefined): string | null {
+  if (!v?.error) return null;
+  const reason = coreText(v.error);
+  const s = v.status;
+  if (s === null || (s >= 200 && s < 300) || v.error.args?.status === String(s)) return reason;
+  return textOf(conversationText).failedWithStatus(s, reason);
 }
 
 /** 打开请求详情用的 id：库里那一轮的，没有就按对话里的那个读 */

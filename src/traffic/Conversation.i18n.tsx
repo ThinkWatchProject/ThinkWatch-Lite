@@ -10,9 +10,9 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
  * `.tsx`：「Read 的结果」里工具名是加粗的片段，它在中英文句子里的位置不同，由句子
  * 自己决定放在哪儿。
  *
- * 正文不在的那几句分两种（`missingWhy`）：早于保留期限的说「已超过保留期限」，和请求详情
- * 「未保存」的悬停说明一致；期限之内的说「未保留」，不说原因。客户端先断开的那一句和「时间线」
- * 状态那一行是同一句。
+ * 正文不在的那几句分两种（`missingWhy`）：早于保留期限的说「已超过保留期限」，期限之内的说
+ * 「未保留」，不说原因。请求详情「未保存」的悬停说明照同一个判断说同样的话。客户端先断开的那一句
+ * 和「时间线」状态那一行是同一句。失败的那一轮写 core 给的原因（`failureLine`）。
  */
 export const conversationText = messages(
   {
@@ -69,8 +69,11 @@ export const conversationText = messages(
     requestTruncated: "请求过大，未完整保存",
     responseExpired: "响应内容已超过保留期限",
     responseUnkept: "响应正文未保留",
-    /** `reason` 是 core 说的失败原因，一整句 */
-    responseFailed: (reason: string) => `请求失败：${reason}`,
+    /**
+     * 失败的那一轮，原因里没说到的上游状态码写在前面（`failureLine`）。`reason` 是 core 说的
+     * 失败原因，一整句；说到了的（上游回了错误、原样交给客户端的）只写原因
+     */
+    failedWithStatus: (status: number, reason: string) => `上游返回 ${status}：${reason}`,
     responseCancelled: "已取消：客户端在响应结束前断开连接",
     responseTruncated: "响应过大，未完整保存",
     responseUnreadable: "响应格式无法识别，原文见请求详情",
@@ -120,7 +123,7 @@ export const conversationText = messages(
     requestTruncated: "The request was too large to save in full",
     responseExpired: "The response is past the retention period",
     responseUnkept: "The response body was not kept",
-    responseFailed: (reason: string) => `The request failed: ${reason}`,
+    failedWithStatus: (status: number, reason: string) => `The upstream answered ${status}: ${reason}`,
     responseCancelled: "Canceled: the client disconnected before the response finished",
     responseTruncated: "The response was too large to save in full",
     responseUnreadable: "The response format is not recognized; the raw body is in the request details",

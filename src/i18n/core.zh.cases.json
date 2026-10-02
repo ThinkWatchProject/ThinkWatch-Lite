@@ -224,5 +224,17 @@
       "text": "The ChatGPT backend could not be reached: Could not connect to https://chatgpt.com/backend-api/wham/usage; check the address, the network and the proxy settings."
     },
     "zh": "无法连接 ChatGPT 后端：无法连接上游 https://chatgpt.com/backend-api/wham/usage，请检查接口地址、网络和代理设置。"
+  },
+  {
+    "msg": {
+      "code": "gw.upstream.status_message",
+      "args": {
+        "upstream": "中转",
+        "status": "400",
+        "message": "prompt is too long: 212000 tokens > 200000 maximum"
+      },
+      "text": "Upstream `中转` answered 400: prompt is too long: 212000 tokens > 200000 maximum"
+    },
+    "zh": "上游「中转」返回 400：prompt is too long: 212000 tokens > 200000 maximum"
   }
 ]

@@ -13,7 +13,6 @@ import { ChevronRightIcon, ImageIcon } from "lucide-react";
 import { call } from "@/control";
 import { size, when } from "@/format";
 import { useText } from "@/i18n";
-import { coreText } from "@/i18n/core.i18n";
 import { DISCLOSURE } from "@/keys/parts";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
@@ -44,6 +43,7 @@ import {
   argsPreview,
   blocksOf,
   clip,
+  failureLine,
   idKey,
   items,
   keepTurns,
@@ -112,7 +112,7 @@ interface Head {
   cost: string | null;
   costMuted: boolean;
   outcome: Outcome;
-  /** 失败的原因，一整句 */
+  /** 失败的那一轮，回答的位置上写的那一句（`failureLine`） */
   failure: string | null;
   /** 点「请求详情」打开哪一条 */
   rid: number | null;
@@ -223,7 +223,7 @@ export function Conversation({
       cost: cost && cost.text !== "—" ? cost.text : null,
       costMuted: cost?.muted ?? false,
       outcome: outcomeOf(v),
-      failure: v?.error ? coreText(v.error) : null,
+      failure: failureLine(v),
       rid: requestIdOf(turnId, v),
     };
   };
@@ -856,7 +856,7 @@ function noteText(n: Note, failure: string | null, t: (typeof conversationText)[
       return t.responseUnkept;
     case "response_failed":
       // 失败的那一轮会话详情里一定带着原因；万一没有，也不说是过了保留期限
-      return failure !== null ? t.responseFailed(failure) : t.responseUnkept;
+      return failure ?? t.responseUnkept;
     case "response_cancelled":
       return t.responseCancelled;
     case "response_truncated":

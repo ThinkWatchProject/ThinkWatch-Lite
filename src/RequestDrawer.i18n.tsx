@@ -105,7 +105,11 @@ export const requestDrawerText = messages(
     response: "响应",
     notSaved: "未保存",
     afterEnd: "请求结束后可查看",
-    notSavedTip: "此记录已超过保留期限。",
+    /** 「未保存」的说明：早于报文的保留期限的 */
+    pastRetentionTip: "此记录已超过保留期限。",
+    /** 「未保存」的说明：期限之内也没有的（WebSocket、本地应答从来不存），不说原因 */
+    requestNotKeptTip: "请求正文未保留。",
+    responseNotKeptTip: "响应正文未保留。",
     size: (n: number) => `${n.toLocaleString()} 字节`,
     truncated: "仅保存开头部分",
     collapse: "折叠",
@@ -237,7 +241,9 @@ export const requestDrawerText = messages(
     response: "Response",
     notSaved: "Not saved",
     afterEnd: "Available when the request ends",
-    notSavedTip: "This record is past its retention period.",
+    pastRetentionTip: "This record is past its retention period.",
+    requestNotKeptTip: "The request body was not kept.",
+    responseNotKeptTip: "The response body was not kept.",
     size: (n: number) => (n === 1 ? "1 byte" : `${n.toLocaleString()} bytes`),
     truncated: "only the beginning was saved",
     collapse: "Collapse",

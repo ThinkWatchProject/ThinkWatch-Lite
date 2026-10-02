@@ -880,6 +880,7 @@ export function turns(id: string): TurnView[] {
     cache_read_tokens: h.cache_read_tokens,
     cost_micros: h.cost_micros,
     duration_ms: h.duration_ms,
+    status: h.status,
     error: h.error,
     cancelled: h.cancelled,
     cost_estimated: h.cost_estimated,

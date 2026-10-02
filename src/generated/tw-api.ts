@@ -1330,7 +1330,11 @@ tokens_per_sec: number | null, bytes: number | null, input_tokens: number | null
  */
 cost_estimated: boolean, 
 /**
- * 失败的原因。**带着码** —— 翻历史时界面照样能说自己那句话；
+ * 失败的原因。**带着码** —— 翻历史时界面照样能说自己那句话。
+ *
+ * **有它就是失败**，数失败的地方都按它数（概览、会话、上游体检、搜索的筛选）：网关
+ * 没转发成的（连不上、被拒、断在半路），和上游回了错误（不是 2xx）、原样交给客户端
+ * 的 —— 那时 `status` 是上游回的那个状态码，这一句是它在错误正文里说的话
  */
 error: Msg | null, 
 /**
@@ -3586,7 +3590,12 @@ blob_bytes: number,
  */
 forwarding_affected: boolean, };
 
-export type Summary = { requests: number, failed: number, 
+export type Summary = { requests: number, 
+/**
+ * 失败的请求（[`HistoryRow::error`] 有值的）：网关没转发成的，和上游回了错误、原样
+ * 交给客户端的。客户端先走了的不算（见 [`HistoryRow::cancelled`]）
+ */
+failed: number, 
 /**
  * 本地应答的次数。**是个正向数字**，单独显示
  */
@@ -3608,7 +3617,7 @@ unpriced_requests: number,
  *
  * 和 `unpriced_requests` 一样让金额合计偏低，但配价格解决不了它 ——
  * 界面上是两句不同的话。上游确实接下了的才算：成功的响应和客户端
- * 取消的，失败的和上游回了 4xx 的不算。
+ * 取消的，失败的不算（上游回了错误的也是失败，那种响应不计费）。
  */
 no_usage_requests: number, 
 /**
@@ -3744,7 +3753,20 @@ export type TurnView = { id: number, at_ms: number, model: string, provider: str
 /**
  * **没有价格就是 None，不是 0**
  */
-cost_micros: number | null, duration_ms: number | null, error: Msg | null, 
+cost_micros: number | null, duration_ms: number | null, 
+/**
+ * 上游回的状态码，和 [`HistoryRow::status`] 同一个。没走到上游的没有：连不上、
+ * 被规则拒绝、客户端在响应头到之前就走了
+ */
+status: number | null, 
+/**
+ * 这一轮为什么失败（见 [`HistoryRow::error`]）。没失败是 None。
+ *
+ * **上游回了错误、原样交给客户端的也在这里**：`status` 是那个状态码，这一句是
+ * 上游在错误正文里说的话（`gw.upstream.status_message`，读不出来的是
+ * `gw.upstream.status`）。网关自己没转发成的没有 `status`，原因只在这一句里
+ */
+error: Msg | null, 
 /**
  * 客户端没等到这一轮结束就走了（见 `HistoryRow::cancelled`）
  */

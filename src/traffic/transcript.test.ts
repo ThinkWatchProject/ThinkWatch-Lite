@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Transcript, TranscriptMessage, TranscriptPart, TranscriptTurn, TurnView } from "@/types";
+import { setLang } from "@/i18n";
+import type { Msg, Transcript, TranscriptMessage, TranscriptPart, TranscriptTurn, TurnView } from "@/types";
 import {
   allLost,
   argsPreview,
   blocksOf,
   clip,
+  failureLine,
   items,
   keepTurns,
   missingWhy,
@@ -50,6 +52,7 @@ function view(id: number, x: Partial<TurnView> = {}): TurnView {
     cache_read_tokens: 0,
     cost_micros: 1,
     duration_ms: 1,
+    status: 200,
     error: null,
     cancelled: false,
     cost_estimated: false,
@@ -393,5 +396,62 @@ describe("轮次头", () => {
     expect(requestIdOf("48123", undefined)).toBe(48123);
     expect(requestIdOf("not-a-number", undefined)).toBeNull();
     expect(requestIdOf("", undefined)).toBeNull();
+  });
+});
+
+/**
+ * 失败的那一轮，回答的位置上写什么。上游回了 4xx、原样交给客户端的那一轮，以前会话详情里
+ * 没有原因，对话里只剩用户的那句话；现在 core 给原因（上游的原话）和状态码。
+ */
+describe("失败的那一轮写什么", () => {
+  /** core 给的：上游回了错误、原样交给客户端（`gw.upstream.status_message`） */
+  const said: Msg = {
+    code: "gw.upstream.status_message",
+    args: { upstream: "中转", status: "400", message: "prompt is too long: 212000 tokens > 200000 maximum" },
+    text: "Upstream `中转` answered 400: prompt is too long: 212000 tokens > 200000 maximum",
+  };
+
+  it("上游回了错误：写上游的原话，状态码已经在里面，不再说一遍", () => {
+    const v = view(1, { status: 400, error: said });
+    expect(failureLine(v)).toBe("上游「中转」返回 400：prompt is too long: 212000 tokens > 200000 maximum");
+    setLang("en");
+    expect(failureLine(v)).toBe("Upstream `中转` answered 400: prompt is too long: 212000 tokens > 200000 maximum");
+  });
+
+  it("正文里读不出一句话的，只有状态码", () => {
+    const bare: Msg = { code: "gw.upstream.status", args: { upstream: "中转", status: "403" }, text: "Upstream `中转` answered 403." };
+    expect(failureLine(view(1, { status: 403, error: bare }))).toBe("上游「中转」返回 403。");
+  });
+
+  /** 错误交到一半断了：原因说的是断了，上游回的那个状态码要写出来 */
+  it("原因里没说到的状态码写在前面", () => {
+    const broke: Msg = { code: "gw.upstream.timeout", args: {}, text: "the response stream broke: The upstream did not respond in time." };
+    const v = view(1, { status: 400, error: broke });
+    expect(failureLine(v)).toBe("上游返回 400：上游响应超时。");
+    setLang("en");
+    expect(failureLine(v)).toBe("The upstream answered 400: the response stream broke: The upstream did not respond in time.");
+  });
+
+  it("没走到上游的、回了 2xx 之后才出错的，只写原因", () => {
+    const unreachable: Msg = {
+      code: "gw.upstream.unreachable",
+      args: { url: "https://relay.example.com/v1/messages" },
+      text: "Could not connect to https://relay.example.com/v1/messages; check the address, the network and the proxy settings.",
+    };
+    expect(failureLine(view(1, { status: null, error: unreachable }))).toBe(
+      "无法连接上游 https://relay.example.com/v1/messages，请检查接口地址、网络和代理设置。",
+    );
+    const midway: Msg = {
+      code: "gw.upstream.stream_error",
+      args: { upstream: "官方", message: "Overloaded" },
+      text: "Upstream `官方` reported an error partway through the response: Overloaded",
+    };
+    expect(failureLine(view(1, { status: 200, error: midway }))).toBe("上游「官方」在回答过程中报错：Overloaded");
+  });
+
+  it("没有失败的没有这一句：成功的、取消的、会话详情里还没有的", () => {
+    expect(failureLine(view(1))).toBeNull();
+    expect(failureLine(view(1, { cancelled: true, status: 400 }))).toBeNull();
+    expect(failureLine(undefined)).toBeNull();
   });
 });
