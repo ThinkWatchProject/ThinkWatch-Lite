@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { call } from "@/control";
-import { useText } from "@/i18n";
+import { textOf, useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { Elapsed, NotSentIcon } from "@/traffic/cells";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "@/traffic/PanelHeader";
+import { missingWhy } from "@/traffic/transcript";
+import { useNow } from "@/useNow";
 import { KeyLabel } from "./KeyLabel";
 import {
   appLabel,
@@ -240,8 +242,8 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         </TabsContent>
         <TabsContent value="payload">
           <div className="space-y-5">
-            <Body b={d.request_body} title={t.request} />
-            <Body b={d.response_body} title={t.response} pending={running} />
+            <Body b={d.request_body} title={t.request} which="request" at={r.at_ms} />
+            <Body b={d.response_body} title={t.response} which="response" at={r.at_ms} pending={running} />
           </div>
         </TabsContent>
         <TabsContent value="usage">
@@ -792,6 +794,38 @@ function Usage({ r, running }: { r: HistoryRow; running: boolean }) {
   );
 }
 
+/** 保留期限按天算，判断正文为什么不在用的时刻一小时更新一次就够 */
+const HOUR_MS = 3_600_000;
+
+/**
+ * 正文不在时「说明」里那一句。
+ *
+ * 早于报文的保留期限（`retention.body_days`）的，说已超过保留期限；期限之内也没有的不说
+ * 原因，只说未保留 —— WebSocket、本地应答的请求从来不存正文，总量超了从最早的一天删起，
+ * 写盘跟不上时 core 宁可丢下。期限不知道（概览没取到）时也不说过了期限。和对话那一页
+ * 同一个判断（`missingWhy`）。
+ */
+export function notSavedTip(at: number, bodyDays: number | null, now: number, which: "request" | "response"): string {
+  const t = textOf(requestDrawerText);
+  if (missingWhy(at, bodyDays, now) === "expired") return t.pastRetentionTip;
+  return which === "request" ? t.requestNotKeptTip : t.responseNotKeptTip;
+}
+
+/** 正文不在：「未保存」，悬停说为什么（`notSavedTip`）。报文留几天看概览，和「重放」同一份 */
+function NotSaved({ which, at }: { which: "request" | "response"; at: number }) {
+  const t = useText(requestDrawerText);
+  const ov = useResource("overview", () => call("Overview", null), { events: ["config_reloaded"] });
+  const now = useNow(HOUR_MS);
+  return (
+    <p className="mt-1 text-muted-foreground">
+      {t.notSaved}
+      <Tip text={notSavedTip(at, ov.data?.retention.body_days ?? null, now, which)}>
+        <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
+      </Tip>
+    </p>
+  );
+}
+
 /**
  * 一段 body。
  *
@@ -801,10 +835,15 @@ function Usage({ r, running }: { r: HistoryRow; running: boolean }) {
 function Body({
   b,
   title,
+  which,
+  at,
   pending = false,
 }: {
   b: BodyView | null;
   title: string;
+  which: "request" | "response";
+  /** 这条请求开始的时刻：正文不在时，按它说是不是过了保留期限 */
+  at: number;
   /** 请求还在跑：没有它是因为还没到，不是过了保留期 */
   pending?: boolean;
 }) {
@@ -815,16 +854,7 @@ function Body({
     return (
       <section>
         <h3 className="tw-head text-foreground">{title}</h3>
-        {pending ? (
-          <p className="mt-1 text-muted-foreground">{t.afterEnd}</p>
-        ) : (
-          <p className="mt-1 text-muted-foreground">
-            {t.notSaved}
-            <Tip text={t.notSavedTip}>
-              <span className="ml-1 underline decoration-dotted underline-offset-2">{t.details}</span>
-            </Tip>
-          </p>
-        )}
+        {pending ? <p className="mt-1 text-muted-foreground">{t.afterEnd}</p> : <NotSaved which={which} at={at} />}
       </section>
     );
   }
@@ -872,8 +902,10 @@ function Body({
  *
  * **JSON 按词折，原文见字就断。**SSE 那种 `data: {…}` 按词折会在冒号后面断开，
  * 第一行只剩一个 `data:`。
+ *
+ * 会话的「对话」那一页也用它画工具的参数和结果，两处的等宽正文是同一个样子。
  */
-function BodyText({
+export function BodyText({
   text,
   json,
   more = false,

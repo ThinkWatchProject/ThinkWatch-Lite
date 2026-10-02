@@ -69,6 +69,7 @@ webview_endpoints![
     RequestDetail,
     Sessions,
     SessionDetail,
+    SessionTranscript,
     // 测速、回放、试路由
     SpeedQuote,
     SpeedRun,

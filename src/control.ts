@@ -36,6 +36,7 @@ export const WEBVIEW_ENDPOINTS = [
   "RequestDetail",
   "Sessions",
   "SessionDetail",
+  "SessionTranscript",
   "SpeedQuote",
   "SpeedRun",
   "ReplayQuote",

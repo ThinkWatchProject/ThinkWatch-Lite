@@ -56,6 +56,13 @@ known colloquialisms.
 | 流量 | Traffic | sidebar; the list of requests |
 | 会话 | Sessions / session | |
 | 轮次 / 轮 | turns / turn | one request within a session |
+| 概况 / 对话 | Summary / Conversation | the two tabs of a session: totals and cost per turn; the session replayed turn by turn |
+| 用户 / 助手 / 工具 / 系统 | User / Assistant / Tool / System | who said a message in a conversation |
+| 系统提示 | system prompt | |
+| 思考 | thinking | |
+| 工具调用 / 工具结果 | tool call / tool result | 「Read 的结果」 = "Read result" |
+| 保留期限 | retention period | how long request and response bodies are kept |
+| 正文未保留 | content / body was not kept | a body missing inside the retention period (never stored, or dropped); older ones are past the retention period |
 | 上下文峰值 | peak context | |
 | 缓存节省 | cache savings | |
 | 发现 | Findings | sidebar |

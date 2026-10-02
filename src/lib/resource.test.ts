@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { fetchInto, resetResources } from "./resource";
+import { fetchInto, forget, resetResources } from "./resource";
 
 /** 一个手动放行的取数：`fetch` 交给 `fetchInto`，`land` 让它带着某个值落地 */
 function gate<T>() {
@@ -85,5 +85,35 @@ describe("飞着的时候又要重取", () => {
     inflight.land("旧连接的");
     expect(await queued).toBeUndefined();
     expect(again.calls).toBe(0);
+  });
+});
+
+/**
+ * 用完就丢的大数据（一次会话的对话）。**正在取的不丢**：取回来的要写进那一条，丢了就
+ * 写丢了，挂着它的地方会一直停在读取中。
+ */
+describe("丢掉一份缓存", () => {
+  it("取完了可以丢，丢过一次就没有了", async () => {
+    const g = gate<string>();
+    const p = fetchInto("big", g.fetch);
+    g.land("几 MB");
+    await p;
+    await settle();
+    expect(forget("big")).toBe(true);
+    expect(forget("big")).toBe(false);
+  });
+
+  it("正在取的不丢", async () => {
+    const g = gate<string>();
+    const p = fetchInto("big", g.fetch);
+    expect(forget("big")).toBe(false);
+    g.land("几 MB");
+    expect(await p).toBe("几 MB");
+    await settle();
+    expect(forget("big")).toBe(true);
+  });
+
+  it("没有的键不算丢掉", () => {
+    expect(forget("never")).toBe(false);
   });
 });

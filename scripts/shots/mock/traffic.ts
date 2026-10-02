@@ -30,6 +30,7 @@ import type {
   SecurityEventView,
   SessionView,
   Summary,
+  Transcript,
   TurnView,
   UpstreamCheckup,
   UpstreamHealth,
@@ -884,6 +885,31 @@ export function turns(id: string): TurnView[] {
     cost_estimated: h.cost_estimated,
     billing: h.billing,
   }));
+}
+
+/**
+ * 会话的对话（`GET /sessions/{id}/transcript`）。截图里不打开「对话」那一页，给一段读得通的：
+ * 第一轮是用户的话，之后每一轮一句回答。失败、取消的那一轮没有回答，和 core 一样不算缺口
+ */
+export function transcript(id: string): Transcript {
+  return {
+    session: id,
+    system: null,
+    turns: HISTORY.filter((h) => h.session === id).map((h, i) => ({
+      id: String(h.id),
+      restart: false,
+      system_changed: null,
+      input:
+        i === 0
+          ? [{ role: "user", parts: [{ kind: "text", text: L("修复登录页的表单校验", "Fix the form validation on the sign-in page") }] }]
+          : [],
+      output:
+        h.error || h.cancelled
+          ? []
+          : [{ kind: "text", text: L("表单校验已修复，测试全部通过。", "The form validation is fixed and the tests pass.") }],
+      gaps: [],
+    })),
+  };
 }
 
 /** 请求详情里的正文。截图里不打开详情，给一段读得通的 */
