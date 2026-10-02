@@ -147,6 +147,9 @@ export const trafficText = messages(
     /** 转换时丢了字段：只说丢了几个，转换本身不用再说一遍（只有转换才会丢），细节在悬停 */
     convertedDropped: (n: number) => `丢弃 ${n} 个字段`,
     flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
+    /** 插件改写过这次请求或回答 */
+    pluginChanged: "插件",
+    pluginChangedTip: "经插件改写。在请求详情中可以对比改写前后。",
     blocked: "已拦截",
     suspicious: "可疑调用",
 
@@ -278,6 +281,8 @@ export const trafficText = messages(
     converted: "Converted",
     convertedDropped: (n: number) => (n === 1 ? "1 field dropped" : `${n} fields dropped`),
     flaggedTip: (tool: string, rule: string, excerpt: string) => `${tool} · ${rule}\n${excerpt}`,
+    pluginChanged: "Plugin",
+    pluginChangedTip: "Changed by a plugin. Compare before and after in the request details.",
     blocked: "Blocked",
     suspicious: "Suspicious call",
 

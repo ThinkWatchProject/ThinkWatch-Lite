@@ -49,6 +49,8 @@ export const requestDrawerText = messages(
     dropped: "丢弃字段",
     /** 两项防护在这次请求上的全部命中 */
     security: "安全",
+    /** 这次请求上运行过的插件 */
+    plugins: "插件",
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     /** DeepSeek Harness 随请求附带的会话日志：标签，和大小下面那一句 */
     sessionLog: "会话日志",
@@ -103,6 +105,8 @@ export const requestDrawerText = messages(
     // 内容
     request: "请求",
     response: "响应",
+    /** 插件改写过的请求：看原始的、改写后的，或者对比两者 */
+    payloadViews: { compare: "对比", original: "原始请求", after: "插件改写后" },
     notSaved: "未保存",
     afterEnd: "请求结束后可查看",
     notSavedTip: "此记录已超过保留期限。",
@@ -186,6 +190,7 @@ export const requestDrawerText = messages(
     conversion: "Conversion",
     dropped: "Dropped",
     security: "Security",
+    plugins: "Plugins",
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     sessionLog: "Session log",
     sessionLogNote:
@@ -235,6 +240,7 @@ export const requestDrawerText = messages(
 
     request: "Request",
     response: "Response",
+    payloadViews: { compare: "Compare", original: "Original", after: "After plugins" },
     notSaved: "Not saved",
     afterEnd: "Available when the request ends",
     notSavedTip: "This record is past its retention period.",

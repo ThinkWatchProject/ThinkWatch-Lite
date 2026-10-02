@@ -128,6 +128,8 @@ export interface RequestRow {
   translated?: TranslatedView;
   /** 命中了工具调用规则的调用 */
   flagged?: FlaggedCall[];
+  /** 插件改写过这次请求或回答（库里那一行的 `plugin_changed`）。只来自历史：实时事件里没有它 */
+  pluginChanged?: boolean;
   /**
    * 它属于哪次会话，和 `SessionView.id` 同一个值。
    *

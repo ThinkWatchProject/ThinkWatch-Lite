@@ -47,6 +47,11 @@ import {
   type RequestDetail,
 } from "./types";
 import { priceSourceDetail } from "./upstreams/labels";
+import { Segmented } from "@/ui/segmented";
+import { pluginsOf, type PluginRunView } from "./plugins/api.provisional";
+import { pluginLabelsText } from "./plugins/labels.i18n";
+import { cpuMs } from "./plugins/model";
+import { OutcomeOf, PluginText, SourceDiff } from "./plugins/parts";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -240,7 +245,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         </TabsContent>
         <TabsContent value="payload">
           <div className="space-y-5">
-            <Body b={d.request_body} title={t.request} />
+            <RequestBody d={d} />
             <Body b={d.response_body} title={t.response} pending={running} />
           </div>
         </TabsContent>
@@ -511,6 +516,8 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
             }
           />
         )}
+        {/* 这次请求上跑过的插件：哪一个、请求还是回答、结果、CPU 时间、出错的原因 */}
+        {pluginsOf(d).runs.length > 0 && <Row label={t.plugins} value={<PluginRuns runs={pluginsOf(d).runs} />} />}
         <Row
           label={t.status}
           value={
@@ -793,6 +800,83 @@ function Usage({ r, running }: { r: HistoryRow; running: boolean }) {
 }
 
 /**
+ * 这次请求上每一次插件运行，按运行的顺序。**插件的名字和报错是插件写的**，只按纯文本画。
+ */
+function PluginRuns({ runs }: { runs: PluginRunView[] }) {
+  const lt = useText(pluginLabelsText);
+  return (
+    <span className="flex flex-col gap-1">
+      {runs.map((run, i) => {
+        const cpu = cpuMs(run.cpu_us);
+        return (
+          <span key={i} className="flex flex-col">
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <PluginText text={run.plugin_name} />
+              <span className="text-muted-foreground">· {lt.hooks[run.hook] ?? run.hook}</span>
+              <OutcomeOf outcome={run.outcome} />
+              <span className="tw-label tw-num text-muted-foreground">{cpu ? lt.cpu(cpu) : lt.lessThanMs}</span>
+            </span>
+            {run.error && (
+              <span className="tw-label break-words text-destructive">
+                <PluginText text={run.error} />
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * 请求那一段。**插件改写过的请求有两份**：客户端发来的原样，和插件改写之后的
+ * （`request_after_plugins`，同样替换过密钥）。默认看对比 —— 点开一条带「插件」标记的
+ * 请求，要知道的就是它改了哪里；两份全文也都看得到。
+ */
+function RequestBody({ d }: { d: RequestDetail }) {
+  const t = useText(requestDrawerText);
+  const after = pluginsOf(d).after;
+  const original = d.request_body;
+  // 原始的那份过了保留期就没得比：直接看改写后的
+  const [view, setView] = useState<"compare" | "original" | "after">(original ? "compare" : "after");
+  const pretty = useMemo(
+    () =>
+      after && original
+        ? {
+            before: prettyJson(original.text, original.truncated) ?? original.text,
+            after: prettyJson(after.text, after.truncated) ?? after.text,
+          }
+        : null,
+    [after, original],
+  );
+  if (!after) return <Body b={original} title={t.request} />;
+  const switcher = (
+    <Segmented<"compare" | "original" | "after">
+      label={t.request}
+      value={view}
+      options={[
+        { id: "compare", label: t.payloadViews.compare, disabled: !original },
+        { id: "original", label: t.payloadViews.original },
+        { id: "after", label: t.payloadViews.after },
+      ]}
+      onChange={setView}
+    />
+  );
+  if (view === "compare" && pretty) {
+    return (
+      <section>
+        <div className="flex items-center gap-2">
+          <h3 className="tw-head text-foreground">{t.request}</h3>
+          <span className="ml-auto">{switcher}</span>
+        </div>
+        <SourceDiff before={pretty.before} after={pretty.after} className="mt-2" />
+      </section>
+    );
+  }
+  return <Body b={view === "after" ? after : original} title={t.request} extra={switcher} />;
+}
+
+/**
  * 一段 body。
  *
  * **长的默认折叠。**Claude Code 的 system prompt 有几千 token，展开会淹没一切 ——
@@ -802,11 +886,14 @@ function Body({
   b,
   title,
   pending = false,
+  extra,
 }: {
   b: BodyView | null;
   title: string;
   /** 请求还在跑：没有它是因为还没到，不是过了保留期 */
   pending?: boolean;
+  /** 标题行右端的东西（插件改写过的请求：看哪一份） */
+  extra?: ReactNode;
 }) {
   const t = useText(requestDrawerText);
   const [open, setOpen] = useState(false);
@@ -814,7 +901,10 @@ function Body({
   if (!b) {
     return (
       <section>
-        <h3 className="tw-head text-foreground">{title}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="tw-head text-foreground">{title}</h3>
+          {extra && <span className="ml-auto">{extra}</span>}
+        </div>
         {pending ? (
           <p className="mt-1 text-muted-foreground">{t.afterEnd}</p>
         ) : (
@@ -847,11 +937,12 @@ function Body({
         </span>
         {big && (
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground">
+            <Button variant="ghost" size="xs" className={cn("text-muted-foreground", !extra && "ml-auto")}>
               {open ? t.collapse : t.showAll}
             </Button>
           </CollapsibleTrigger>
         )}
+        {extra && <span className={cn(!big && "ml-auto")}>{extra}</span>}
       </div>
       <BodyText
         text={shown}
