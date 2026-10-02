@@ -39,16 +39,18 @@ import { notSent, routingFacts, type RoutingNote } from "./requestRouting";
 import { ActionBadge, EventDetail, ruleName, whereOf } from "./security/labels";
 import {
   usd,
+  type AttemptView,
   type BodyView,
   type CoreEvent,
   type HistoryRow,
+  type PluginRunView,
   type ReplayQuote,
   type ReplayResult,
   type RequestDetail,
 } from "./types";
 import { priceSourceDetail } from "./upstreams/labels";
 import { Segmented } from "@/ui/segmented";
-import { pluginsOf, type PluginRunView } from "./plugins/api.provisional";
+import { pluginName } from "./plugins/defaults";
 import { pluginLabelsText } from "./plugins/labels.i18n";
 import { cpuMs } from "./plugins/model";
 import { OutcomeOf, PluginText, SourceDiff } from "./plugins/parts";
@@ -516,8 +518,11 @@ function Timeline({ d, state }: { d: RequestDetail; state: ReturnType<typeof sta
             }
           />
         )}
-        {/* 这次请求上跑过的插件：哪一个、请求还是回答、结果、CPU 时间、出错的原因 */}
-        {pluginsOf(d).runs.length > 0 && <Row label={t.plugins} value={<PluginRuns runs={pluginsOf(d).runs} />} />}
+        {/* 这次请求上跑过的插件：哪一个、请求还是回答、结果、CPU 时间、出错的原因；试过不止
+            一跳的按跳分组 */}
+        {d.plugins.length > 0 && (
+          <Row label={t.plugins} value={<PluginRuns runs={d.plugins} attempts={r.routing?.attempts ?? []} />} />
+        )}
         <Row
           label={t.status}
           value={
@@ -800,30 +805,49 @@ function Usage({ r, running }: { r: HistoryRow; running: boolean }) {
 }
 
 /**
- * 这次请求上每一次插件运行，按运行的顺序。**插件的名字和报错是插件写的**，只按纯文本画。
+ * 这次请求上每一次插件运行，按运行的顺序。**插件的名字和报错是插件写的**，只按纯文本画
+ * （报错是 core 的一句话，按码说，里面嵌着的插件写的字照样只是字）。
+ *
+ * 请求钩子每发往一个上游跑一次（故障转移换了上游就多一组），回答钩子跑在回答的那一跳上。
+ * **试过不止一跳的按跳分组**，组头是第几跳、发往哪个上游，和「路由」页的尝试链对得上。
  */
-function PluginRuns({ runs }: { runs: PluginRunView[] }) {
+function PluginRuns({ runs, attempts }: { runs: PluginRunView[]; attempts: AttemptView[] }) {
+  const t = useText(requestDrawerText);
   const lt = useText(pluginLabelsText);
-  return (
-    <span className="flex flex-col gap-1">
-      {runs.map((run, i) => {
-        const cpu = cpuMs(run.cpu_us);
-        return (
-          <span key={i} className="flex flex-col">
-            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              <PluginText text={run.plugin_name} />
-              <span className="text-muted-foreground">· {lt.hooks[run.hook] ?? run.hook}</span>
-              <OutcomeOf outcome={run.outcome} />
-              <span className="tw-label tw-num text-muted-foreground">{cpu ? lt.cpu(cpu) : lt.lessThanMs}</span>
-            </span>
-            {run.error && (
-              <span className="tw-label break-words text-destructive">
-                <PluginText text={run.error} />
-              </span>
-            )}
+  const groups = new Map<number, PluginRunView[]>();
+  for (const run of runs) groups.set(run.attempt, [...(groups.get(run.attempt) ?? []), run]);
+  const lines = (list: PluginRunView[]) =>
+    list.map((run, i) => {
+      const cpu = cpuMs(run.cpu_us);
+      return (
+        <span key={i} className="flex flex-col">
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <PluginText text={pluginName(run.plugin_id, run.plugin_name)} />
+            <span className="text-muted-foreground">· {lt.hooks[run.hook] ?? run.hook}</span>
+            <OutcomeOf outcome={run.outcome} />
+            <span className="tw-label tw-num text-muted-foreground">{cpu ? lt.cpu(cpu) : lt.lessThanMs}</span>
           </span>
-        );
-      })}
+          {run.error && (
+            <span className="tw-label break-words text-destructive">
+              <PluginText text={coreText(run.error)} />
+            </span>
+          )}
+        </span>
+      );
+    });
+  if (attempts.length <= 1 && groups.size <= 1) return <span className="flex flex-col gap-1">{lines(runs)}</span>;
+  return (
+    <span className="flex flex-col gap-2">
+      {[...groups.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([attempt, list]) => (
+          <span key={attempt} data-attempt={attempt} className="flex flex-col gap-1">
+            <span className="tw-label text-muted-foreground">
+              {t.attemptGroup(attempt + 1, attempts[attempt]?.provider ?? null)}
+            </span>
+            {lines(list)}
+          </span>
+        ))}
     </span>
   );
 }
@@ -832,11 +856,16 @@ function PluginRuns({ runs }: { runs: PluginRunView[] }) {
  * 请求那一段。**插件改写过的请求有两份**：客户端发来的原样，和插件改写之后的
  * （`request_after_plugins`，同样替换过密钥）。默认看对比 —— 点开一条带「插件」标记的
  * 请求，要知道的就是它改了哪里；两份全文也都看得到。
+ *
+ * 改写后的那一份是**最后一跳发出去的**：故障转移过的写明是第几跳、发往哪儿。回答的那一跳
+ * 收到的就是原样时（插件只改了先前那一跳）没有它，只看原样 —— 流量表上的标记照样在。
  */
 function RequestBody({ d }: { d: RequestDetail }) {
   const t = useText(requestDrawerText);
-  const after = pluginsOf(d).after;
+  const after = d.request_after_plugins;
   const original = d.request_body;
+  const hops = d.row.routing?.attempts ?? [];
+  const sentBy = hops.length > 1 ? t.afterPluginsSentBy(hops.length, hops[hops.length - 1]!.provider) : null;
   // 原始的那份过了保留期就没得比：直接看改写后的
   const [view, setView] = useState<"compare" | "original" | "after">(original ? "compare" : "after");
   const pretty = useMemo(
@@ -869,11 +898,19 @@ function RequestBody({ d }: { d: RequestDetail }) {
           <h3 className="tw-head text-foreground">{t.request}</h3>
           <span className="ml-auto">{switcher}</span>
         </div>
+        {sentBy && <p className="mt-1 tw-label text-muted-foreground">{sentBy}</p>}
         <SourceDiff before={pretty.before} after={pretty.after} className="mt-2" />
       </section>
     );
   }
-  return <Body b={view === "after" ? after : original} title={t.request} extra={switcher} />;
+  return (
+    <Body
+      b={view === "after" ? after : original}
+      title={t.request}
+      extra={switcher}
+      note={view === "after" ? sentBy : null}
+    />
+  );
 }
 
 /**
@@ -887,6 +924,7 @@ function Body({
   title,
   pending = false,
   extra,
+  note,
 }: {
   b: BodyView | null;
   title: string;
@@ -894,6 +932,8 @@ function Body({
   pending?: boolean;
   /** 标题行右端的东西（插件改写过的请求：看哪一份） */
   extra?: ReactNode;
+  /** 标题下的一句（插件改写后的那一份是哪一跳发出的） */
+  note?: ReactNode;
 }) {
   const t = useText(requestDrawerText);
   const [open, setOpen] = useState(false);
@@ -944,6 +984,7 @@ function Body({
         )}
         {extra && <span className={cn(!big && "ml-auto")}>{extra}</span>}
       </div>
+      {note && <p className="mt-1 tw-label text-muted-foreground">{note}</p>}
       <BodyText
         text={shown}
         json={pretty != null}

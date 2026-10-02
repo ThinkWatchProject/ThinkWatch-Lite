@@ -1,8 +1,18 @@
 /**
- * 插件页的纯逻辑：权限分成请求和回答两头、适用范围的通配、插件 ID、文本里看不见的字符。
- * 没有界面，测试在 `model.test.ts`。
+ * 插件页的纯逻辑：权限分成请求和回答两头、处理哪几种请求、适用范围的通配、插件 ID、要不要
+ * 在系统的确认框里点头、文本里看不见的字符。没有界面，测试在 `model.test.ts`。
  */
-import type { Permission, PluginScope } from "./api.provisional";
+import type { HistoryRow, Permission, PluginScope, PluginUpdate, PluginView, RequestKind, SettingValue } from "@/types";
+
+/** 插件申请的权限。**这张表的顺序就是界面上列权限的顺序**（和 core 的 `Permission::ALL` 一样） */
+export const PERMISSIONS: readonly Permission[] = [
+  "system",
+  "messages",
+  "tools",
+  "params",
+  "reply_text",
+  "reply_tool_calls",
+];
 
 /** 改请求的那几项权限：有其中之一，插件就有请求钩子 */
 const REQUEST_PERMISSIONS: readonly Permission[] = ["system", "messages", "tools", "params"];
@@ -11,6 +21,64 @@ const REPLY_PERMISSIONS: readonly Permission[] = ["reply_text", "reply_tool_call
 
 export const touchesRequests = (perms: readonly Permission[]) => perms.some((p) => REQUEST_PERMISSIONS.includes(p));
 export const touchesReplies = (perms: readonly Permission[]) => perms.some((p) => REPLY_PERMISSIONS.includes(p));
+
+/** 几种请求，按 core 的 `RequestKind::ALL` 的顺序 */
+export const REQUEST_KINDS: readonly RequestKind[] = ["conversation", "embeddings", "completions"];
+
+/**
+ * 除了对话还处理的那几种（「也处理：向量化、补全」），和对话本身在不在里面。**只处理对话的
+ * （出厂就是这样）是 `null`**：那一行不必出现
+ */
+export function extraKinds(kinds: readonly RequestKind[]): { extra: RequestKind[]; withConversation: boolean } | null {
+  const extra = REQUEST_KINDS.filter((k) => k !== "conversation" && kinds.includes(k));
+  return extra.length > 0 ? { extra, withConversation: kinds.includes("conversation") } : null;
+}
+
+/**
+ * core 那边读不出这个插件的 manifest（停用着、显示用的缓存又没有它）：名字就是 id，权限、
+ * 设置项都是空的。**这时只画 id 和状态** —— 没有权限的标签，不是「没申请权限」，是不知道
+ */
+export const manifestUnknown = (p: Pick<PluginView, "permissions">) => p.permissions.length === 0;
+
+/**
+ * 改它要不要在系统的确认框里点头：权限里有 `reply_tool_calls`（改得了客户端要执行的命令），
+ * 或者读不出权限（core 按改得了算）。这样的插件，打开它、改设置、改范围都只能经过
+ * `plugin_update_confirmed`；停用、改出错时怎么办照常（core 那边同一条规矩）
+ */
+export const guarded = (p: Pick<PluginView, "permissions">) =>
+  p.permissions.length === 0 || p.permissions.includes("reply_tool_calls");
+
+/** 范围的一张名单比较之前：去掉两头的空白，排好、去重（和 core 比的方式一样） */
+const norm = (list: readonly string[]) => [...new Set(list.map((x) => x.trim()))].sort();
+
+const sameList = (a: readonly string[], b: readonly string[]) => {
+  const [x, y] = [norm(a), norm(b)];
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
+
+/**
+ * 这次改动里有没有要点头的：打开它、改设置（按生效的值比，没写的按默认值算）、改范围。
+ * **只是提示**：判定在 core，它说要点头（`control.plugin.needs_confirmation`）也走同一条路
+ */
+export function changesWhatItDoes(p: PluginView, next: PluginUpdate): boolean {
+  if (next.enabled && !p.enabled) return true;
+  if ((["clients", "models", "upstreams"] as const).some((k) => !sameList(p.scope[k], next.scope[k]))) return true;
+  const effective = (given: Partial<Record<string, SettingValue>>) => {
+    const all: Record<string, SettingValue> = {};
+    for (const s of p.settings_schema) all[s.key] = given[s.key] ?? s.default;
+    for (const [k, v] of Object.entries(given)) if (v !== undefined && !(k in all)) all[k] = v;
+    return all;
+  };
+  const [a, b] = [effective(p.settings), effective(next.settings)];
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].some((k) => a[k] !== b[k]);
+}
+
+/** 一条记录下来的请求发给上游的模型：路由规则改写过的，按回答的那一跳发出的名字 */
+export function sentModel(r: { model: string; routing?: HistoryRow["routing"] }): string {
+  const hops = r.routing?.attempts ?? [];
+  return hops[hops.length - 1]?.model ?? r.model;
+}
 
 /** 适用范围的三项，按界面上的顺序 */
 export const SCOPE_PARTS = ["clients", "models", "upstreams"] as const;
@@ -41,24 +109,24 @@ export function globMatch(pattern: string, value: string): boolean {
   return true;
 }
 
-/** 一项名单（空 = 全部）对不对得上这几个值里的任何一个 */
+/** 一项名单（空 = 全部）对不对得上这几个值里的任何一个。不分大小写，和 core 一样 */
 function partMatches(list: readonly string[], values: readonly (string | null | undefined)[]): boolean {
   if (list.length === 0) return true;
-  return list.some((p) => values.some((v) => v != null && v !== "" && globMatch(p, v)));
+  return list.some((p) => values.some((v) => v != null && v !== "" && globMatch(p.toLowerCase(), v.toLowerCase())));
 }
 
 /**
  * 一条记录下来的请求在不在插件的适用范围里。客户端按密钥名和推测出的应用都比
- * （记录上两样都有，插件看到的 `ctx.client` 是其中之一）；上游只约束回答，
- * 试运行两头都跑，所以也比。
+ * （记录上两样都有，插件看到的 `ctx.client` 是其中之一）；模型按发给上游的那个比（路由
+ * 改写过的按改写之后的），上游按回答的那一家比 —— 和 core 一样，请求和回答都按它。
  */
 export function requestInScope(
   scope: PluginScope,
-  r: { client: string; client_hint?: string | null; model: string; provider: string },
+  r: { client: string; client_hint?: string | null; model: string; provider: string; routing?: HistoryRow["routing"] },
 ): boolean {
   return (
     partMatches(scope.clients, [r.client, r.client_hint]) &&
-    partMatches(scope.models, [r.model]) &&
+    partMatches(scope.models, [sentModel(r)]) &&
     partMatches(scope.upstreams, [r.provider])
   );
 }

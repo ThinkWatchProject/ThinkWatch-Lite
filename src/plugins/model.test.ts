@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { setLang } from "@/i18n";
+import type { PluginView } from "@/types";
+import { localSchema, pluginDescription, pluginName } from "./defaults";
 import { hunks, lineDiff, tally } from "./diff";
-import { cpuMs, globMatch, ID_RE, requestInScope, shaPrefix, splitInvisible, suggestId, touchesReplies, touchesRequests } from "./model";
+import {
+  changesWhatItDoes,
+  cpuMs,
+  extraKinds,
+  globMatch,
+  guarded,
+  ID_RE,
+  manifestUnknown,
+  requestInScope,
+  shaPrefix,
+  splitInvisible,
+  suggestId,
+  touchesReplies,
+  touchesRequests,
+} from "./model";
 import { draftOf, scopeOf, scopeProblem, settingsDraftOf, settingsOf } from "./fields";
 
 describe("通配", () => {
@@ -20,6 +37,114 @@ describe("通配", () => {
     expect(requestInScope({ clients: ["claude-code"], models: ["claude-*"], upstreams: [] }, row)).toBe(true);
     expect(requestInScope({ clients: ["codex"], models: [], upstreams: [] }, row)).toBe(false);
     expect(requestInScope({ clients: [], models: [], upstreams: ["openrouter"] }, row)).toBe(false);
+  });
+
+  it("模型按发给上游的那个比：路由改写过的按改写之后的；不分大小写", () => {
+    const row = {
+      client: "default",
+      model: "smart",
+      provider: "deepseek",
+      routing: {
+        route: "default",
+        rule: "r",
+        rewritten_by: [],
+        attempts: [{ provider: "deepseek", model: "DeepSeek-Chat", outcome: "served" as const, ms: 10 }],
+      },
+    };
+    expect(requestInScope({ clients: [], models: ["deepseek*"], upstreams: [] }, row)).toBe(true);
+    expect(requestInScope({ clients: [], models: ["smart"], upstreams: [] }, row)).toBe(false);
+  });
+});
+
+/** 一个装着的插件，按需改几项 */
+function plugin(over: Partial<PluginView> = {}): PluginView {
+  return {
+    id: "wsl-paths",
+    name: "Convert WSL and Windows paths",
+    description: "Rewrites drive paths in tool-call arguments.",
+    enabled: false,
+    on_error: "reject",
+    permissions: ["messages", "reply_tool_calls"],
+    requests: ["conversation"],
+    scope: { clients: [], models: [], upstreams: [] },
+    reply_mode: "block",
+    settings_schema: [{ key: "windows_client", kind: "boolean", label: "客户端运行在 Windows 上（关闭时按 WSL 处理）", default: false }],
+    settings: { windows_client: false },
+    sha256: "aa",
+    status: { kind: "disabled" },
+    stats: { calls: 0, changed: 0, rejected: 0, errors: 0, avg_cpu_us: 0, last_error: null },
+    ...over,
+  };
+}
+
+const updateOf = (p: PluginView) => ({ enabled: p.enabled, on_error: p.on_error, scope: p.scope, settings: p.settings });
+
+describe("要在系统的确认框里点头的改动", () => {
+  it("改得了工具调用的、读不出权限的要；别的不要", () => {
+    expect(guarded(plugin())).toBe(true);
+    expect(guarded(plugin({ permissions: [] }))).toBe(true);
+    expect(guarded(plugin({ permissions: ["system"] }))).toBe(false);
+  });
+
+  it("打开它、改设置、改范围算；停用、改出错时、照原样交回的默认值不算", () => {
+    const p = plugin();
+    expect(changesWhatItDoes(p, { ...updateOf(p), enabled: true })).toBe(true);
+    expect(changesWhatItDoes(p, { ...updateOf(p), settings: { windows_client: true } })).toBe(true);
+    expect(changesWhatItDoes(p, { ...updateOf(p), scope: { ...p.scope, upstreams: ["deepseek"] } })).toBe(true);
+    expect(changesWhatItDoes(p, { ...updateOf(p), on_error: "skip" })).toBe(false);
+    expect(changesWhatItDoes({ ...p, enabled: true }, { ...updateOf(p), enabled: false })).toBe(false);
+    // 不交的设置按默认值算；范围不看顺序和空白
+    expect(changesWhatItDoes(p, { ...updateOf(p), settings: {} })).toBe(false);
+    const scoped = plugin({ scope: { clients: [], models: ["b*", "a*"], upstreams: [] } });
+    expect(changesWhatItDoes(scoped, { ...updateOf(scoped), scope: { clients: [], models: [" a*", "b*"], upstreams: [] } })).toBe(
+      false,
+    );
+  });
+
+  it("读不出 manifest 的只有 id 和状态", () => {
+    expect(manifestUnknown(plugin({ permissions: [], settings_schema: [] }))).toBe(true);
+    expect(manifestUnknown(plugin())).toBe(false);
+  });
+});
+
+describe("处理的请求种类", () => {
+  it("只处理对话的不写；多出来的列出来，不处理对话的说「仅」", () => {
+    expect(extraKinds(["conversation"])).toBeNull();
+    expect(extraKinds(["completions", "conversation", "embeddings"])).toEqual({
+      extra: ["embeddings", "completions"],
+      withConversation: true,
+    });
+    expect(extraKinds(["embeddings"])).toEqual({ extra: ["embeddings"], withConversation: false });
+  });
+});
+
+describe("默认插件的说法", () => {
+  it("按 id 和 core 发的名字认，中文界面用中文名、说明和标签", () => {
+    setLang("zh");
+    const p = plugin();
+    expect(pluginName(p.id, p.name)).toBe("WSL 路径转换");
+    expect(pluginDescription(p)).toContain("/mnt/c/");
+    expect(localSchema(p.id, p.name, p.settings_schema)[0]!.label).toBe("客户端运行在 Windows 上（关闭时按 WSL 处理）");
+    expect(pluginName("deepseek-flags", "Avoid DeepSeek request rejections")).toBe("避免 DeepSeek 拒收请求");
+    expect(pluginName("reply-language", "Answer in a chosen language")).toBe("指定回答语言");
+  });
+
+  it("英文界面名字和说明照 manifest，标签另有英文", () => {
+    setLang("en");
+    const p = plugin();
+    expect(pluginName(p.id, p.name)).toBe(p.name);
+    expect(pluginDescription(p)).toBe(p.description);
+    expect(localSchema(p.id, p.name, p.settings_schema)[0]!.label).toBe("The client runs on Windows (otherwise WSL)");
+    setLang("zh");
+  });
+
+  it("同一个 id、别人写的插件照它自己写的显示", () => {
+    setLang("zh");
+    const theirs = plugin({ name: "路径小工具", description: "别人写的" });
+    expect(pluginName(theirs.id, theirs.name)).toBe("路径小工具");
+    expect(pluginDescription(theirs)).toBe("别人写的");
+    expect(localSchema(theirs.id, theirs.name, theirs.settings_schema)).toBe(theirs.settings_schema);
+    expect(pluginName(null, "Answer in a chosen language")).toBe("Answer in a chosen language");
   });
 });
 

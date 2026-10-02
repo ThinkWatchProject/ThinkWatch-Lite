@@ -5,20 +5,13 @@ import { Spinner } from "@/ui/spinner";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
 import { appLabel } from "@/labels";
 import { when } from "@/format";
-import {
-  PERMISSIONS,
-  type Permission,
-  type PluginOutcome,
-  type PluginScope,
-  type PluginStats,
-  type PluginStatus,
-  type ReplyMode,
-} from "./api.provisional";
+import type { Permission, PluginOutcome, PluginScope, PluginStats, PluginStatus, ReplyMode, RequestKind } from "@/types";
 import { hunks, lineDiff, tally } from "./diff";
 import { pluginLabelsText, pluginStatsText } from "./labels.i18n";
-import { cpuMs, splitInvisible, touchesReplies, SCOPE_PARTS } from "./model";
+import { cpuMs, extraKinds, PERMISSIONS, splitInvisible, SCOPE_PARTS } from "./model";
 import { pluginPartsText } from "./parts.i18n";
 
 /** 代码框按需加载：CodeMirror 只在这几个对话框里用（见 `CodeView`） */
@@ -190,6 +183,18 @@ export function PermissionList({
   );
 }
 
+/**
+ * 插件除了对话还处理哪几种请求：「也处理：向量化、补全」。**只处理对话的（出厂就是这样）
+ * 什么都不画**；不处理对话、只处理别的几种的，写「仅处理」
+ */
+export function RequestKinds({ kinds, className }: { kinds: readonly RequestKind[]; className?: string }) {
+  const t = useText(pluginLabelsText);
+  const k = extraKinds(kinds);
+  if (!k) return null;
+  const list = k.extra.map((x) => t.kinds[x] ?? x).join(t.listSep);
+  return <span className={className}>{k.withConversation ? t.alsoHandles(list) : t.onlyHandles(list)}</span>;
+}
+
 /** 适用范围里一项名单写成一句：客户端按应用的名字，别的原样 */
 function partText(part: (typeof SCOPE_PARTS)[number], list: readonly string[], sep: string): string {
   return list.map((x) => (part === "clients" ? appLabel(x) : x)).join(sep);
@@ -197,16 +202,15 @@ function partText(part: (typeof SCOPE_PARTS)[number], list: readonly string[], s
 
 /**
  * 适用范围的一行摘要：「Claude Code、Codex · claude-*」，什么都没限的是「全部请求」。
- * 上游只约束回答，**只改请求的插件不写上游**（写了也不起作用）。悬停是三项各自的名单。
+ * 悬停是三项各自的名单（上游对请求和回答都管，和别的两项一样列出来）。
  */
-export function ScopeSummary({ scope, permissions }: { scope: PluginScope; permissions: readonly Permission[] }) {
+export function ScopeSummary({ scope }: { scope: PluginScope }) {
   const t = useText(pluginLabelsText);
-  const parts = SCOPE_PARTS.filter((p) => p !== "upstreams" || touchesReplies(permissions));
-  const set = parts.filter((p) => scope[p].length > 0);
+  const set = SCOPE_PARTS.filter((p) => scope[p].length > 0);
   if (set.length === 0) return <span className="text-muted-foreground">{t.allRequests}</span>;
   const tip = (
     <span className="flex flex-col gap-0.5">
-      {parts.map((p) => (
+      {SCOPE_PARTS.map((p) => (
         <span key={p}>{t.scopeLine(t.scopeParts[p], scope[p].length > 0 ? partText(p, scope[p], t.listSep) : t.all)}</span>
       ))}
     </span>
@@ -249,7 +253,8 @@ export function StatsCell({ stats }: { stats: PluginStats }) {
           <span>
             {t.lines.lastError} · {when(stats.last_error.at_ms)}
           </span>
-          <PluginText text={stats.last_error.message} className="break-words text-muted-foreground" />
+          {/* core 的那一句按码说，里面嵌着的插件写的字照样只是字 */}
+          <PluginText text={coreText(stats.last_error.message)} className="break-words text-muted-foreground" />
         </span>
       )}
     </span>

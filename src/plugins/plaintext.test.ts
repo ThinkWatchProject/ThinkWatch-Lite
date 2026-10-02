@@ -31,9 +31,9 @@ describe("插件写的字只当纯文本", () => {
 
   it("插件的名字、说明、日志经过 PluginText 画", () => {
     const page = readFileSync("src/plugins/PluginsPage.tsx", "utf8");
-    // 列表上的名字和说明
-    expect(page).toMatch(/<PluginText\s+text=\{p\.name\}/);
-    expect(page).toMatch(/<PluginText\s+text=\{p\.description\}/);
+    // 列表上的名字和说明（默认插件换成界面语言之后的那一份，见 `defaults.ts`）
+    expect(page).toMatch(/<PluginText\s+text=\{w\.name\}/);
+    expect(page).toMatch(/<PluginText\s+text=\{w\.description\}/);
     const logs = readFileSync("src/plugins/LogsDialog.tsx", "utf8");
     expect(logs).toMatch(/<PluginText\s+text=\{l\.text\}/);
   });

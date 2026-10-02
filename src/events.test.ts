@@ -457,6 +457,7 @@ function stored(over: Partial<HistoryRow> = {}): HistoryRow {
     local: false,
     cancelled: false,
     billing: "per-token",
+    plugin_changed: false,
     ...over,
   };
 }

@@ -96,7 +96,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   HistorySearch: (req) => historySearch(req),
   RequestDetail: (_req, [id]) => {
     const h = HISTORY.find((x) => x.id === Number(id)) ?? notFound(`Request #${id}`);
-    return { row: clone(h), ...bodies(h), in_flight: false };
+    return { row: clone(h), ...bodies(h), request_after_plugins: null, plugins: [], in_flight: false };
   },
   Sessions: (req) => sessions(req.limit ?? 200),
   SessionDetail: (_req, [id]) => ({ session: sessionView(id!) ?? notFound(`Session ${id}`), turns: turns(id!) }),
@@ -187,6 +187,15 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ChatgptResets: () => ({ available_count: 1, credits: [] }),
   UseChatgptReset: refuse,
   ZaiLoginStatus: refuse,
+  // 产品图里没有插件：插件页是空的，写入一律拒绝
+  Plugins: () => [],
+  PluginInspect: refuse,
+  UpdatePlugin: refuse,
+  PluginSourceDiff: refuse,
+  DeletePlugin: refuse,
+  ReorderPlugins: refuse,
+  TrialPlugin: refuse,
+  PluginLogs: () => [],
 };
 
 /** ChatGPT Plus 的两个额度窗口：5 小时用了一半多，每周的三成 */

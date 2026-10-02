@@ -29,7 +29,9 @@ function copyFiles(dir: string): string[] {
       e.name === "labels.ts" ||
       e.name.endsWith(".i18n.ts") ||
       // core 消息码的中文：界面和系统通知都显示它
-      e.name === "core.zh.json"
+      e.name === "core.zh.json" ||
+      // 默认插件的名字、说明、设置项标签：插件页、系统的确认框、通知都显示它
+      e.name === "plugin-defaults.json"
     )
       out.push(p);
   }

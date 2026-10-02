@@ -17,9 +17,14 @@ import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ConfirmAction, focusSelf } from "@/keys/parts";
 import { DialogError } from "@/upstreams/parts";
-import type { PluginView } from "./api.provisional";
+import type { PluginView } from "@/types";
+import { pluginName } from "./defaults";
+import { manifestUnknown } from "./model";
 import { PluginText, StatusOf } from "./parts";
 import { pluginsPageText } from "./PluginsPage.i18n";
+
+/** 列表以外的地方怎么叫它：默认插件按界面语言，读不出 manifest 的是 id */
+const nameOf = (p: PluginView) => (manifestUnknown(p) ? p.id : pluginName(p.id, p.name));
 
 /**
  * 删除一个插件的确认。按下「删除」之后对话框留着、按钮转圈，直到 core 回话：成功了才关
@@ -55,7 +60,7 @@ export function DeleteDialog({
     <AlertDialog open onOpenChange={(o) => !o && !pending && onClose()}>
       <AlertDialogContent onOpenAutoFocus={focusSelf}>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t.deleteTitle(<PluginText text={target.name} />)}</AlertDialogTitle>
+          <AlertDialogTitle>{t.deleteTitle(<PluginText text={nameOf(target)} />)}</AlertDialogTitle>
           <AlertDialogDescription>{t.deleteDescription}</AlertDialogDescription>
         </AlertDialogHeader>
         <Banner show={error !== null} layout="inline" tone="error">
@@ -127,13 +132,13 @@ export function ReorderDialog({
             return (
               <li key={id} className="flex h-10 items-center gap-3 border-b border-border pr-1.5 pl-3 last:border-b-0">
                 <span className="w-4 shrink-0 text-right tw-num text-muted-foreground">{i + 1}</span>
-                <PluginText text={p.name} className="min-w-0 flex-1 truncate tw-body" />
+                <PluginText text={nameOf(p)} className="min-w-0 flex-1 truncate tw-body" />
                 <StatusOf status={p.status} />
                 <span className="flex shrink-0 items-center">
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={t.moveUp(p.name)}
+                    aria-label={t.moveUp(nameOf(p))}
                     disabled={i === 0 || saving}
                     onClick={() => move(i, -1)}
                   >
@@ -142,7 +147,7 @@ export function ReorderDialog({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={t.moveDown(p.name)}
+                    aria-label={t.moveDown(nameOf(p))}
                     disabled={i === order.length - 1 || saving}
                     onClick={() => move(i, 1)}
                   >

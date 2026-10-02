@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { Segmented } from "@/ui/segmented";
 import { Switch } from "@/ui/switch";
+import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { appLabel } from "@/labels";
 import { Boxed, FormItem } from "@/upstreams/parts";
-import type { Permission, PluginScope, SettingSpecView } from "./api.provisional";
+import type { PluginScope, SettingSpecView, SettingValue } from "@/types";
 import { pluginFieldsText } from "./fields.i18n";
 import { pluginLabelsText } from "./labels.i18n";
-import { SCOPE_PARTS, touchesReplies, touchesRequests, type ScopePart } from "./model";
+import { SCOPE_PARTS, type ScopePart } from "./model";
 import { PluginText } from "./parts";
 
 // ─────────────────────────────────────────────── 适用范围
@@ -41,30 +42,18 @@ export function scopeProblem(d: ScopeDraft): ScopePart | null {
 }
 
 /**
- * 适用范围的三项。上游只约束回答：**只改请求的插件不给这一项**；两头都改的，写明只对
- * 回答生效 —— 不说的话，限了上游的人会以为请求那一头也跟着限了。
+ * 适用范围的三项。**模型和上游各说一句按什么匹配**：模型比的是发给上游的那个名字（路由改写
+ * 过的按改写之后的），上游对请求和回答都管 —— 不说的话，按客户端发的模型名写范围的人会
+ * 以为没生效，以为上游只管回答的人会漏掉请求那一头。
  */
-export function ScopeFields({
-  value,
-  onChange,
-  permissions,
-}: {
-  value: ScopeDraft;
-  onChange: (next: ScopeDraft) => void;
-  permissions: readonly Permission[];
-}) {
+export function ScopeFields({ value, onChange }: { value: ScopeDraft; onChange: (next: ScopeDraft) => void }) {
   const t = useText(pluginFieldsText);
   const lt = useText(pluginLabelsText);
-  const parts = SCOPE_PARTS.filter((p) => p !== "upstreams" || touchesReplies(permissions));
   const set = (p: ScopePart, next: Partial<ScopeDraft[ScopePart]>) => onChange({ ...value, [p]: { ...value[p], ...next } });
   return (
     <div className="flex flex-col gap-4">
-      {parts.map((p) => (
-        <FormItem
-          key={p}
-          label={lt.scopeParts[p]}
-          desc={p === "upstreams" && touchesRequests(permissions) ? t.upstreamsReplyOnly : undefined}
-        >
+      {SCOPE_PARTS.map((p) => (
+        <FormItem key={p} label={lt.scopeParts[p]} hint={t.matches[p] || undefined}>
           <Segmented<"all" | "some">
             label={lt.scopeParts[p]}
             value={value[p].mode}
@@ -173,11 +162,14 @@ function PatternList({
 /** 设置项在表单里的值：数字先按输入的原样存着，保存时才换成数 */
 export type SettingsDraft = Record<string, string | boolean>;
 
-export function settingsDraftOf(schema: readonly SettingSpecView[], values: Record<string, unknown>): SettingsDraft {
+export function settingsDraftOf(
+  schema: readonly SettingSpecView[],
+  values: Partial<Record<string, SettingValue>>,
+): SettingsDraft {
   const out: SettingsDraft = {};
   for (const s of schema) {
-    const v = s.key in values ? values[s.key] : s.default;
-    out[s.key] = s.kind === "boolean" ? v === true : v == null ? "" : String(v);
+    const v = values[s.key] ?? s.default;
+    out[s.key] = s.kind === "boolean" ? v === true : typeof v === "boolean" ? "" : String(v);
   }
   return out;
 }
@@ -186,8 +178,8 @@ export function settingsDraftOf(schema: readonly SettingSpecView[], values: Reco
 export function settingsOf(
   schema: readonly SettingSpecView[],
   draft: SettingsDraft,
-): { values: Record<string, unknown>; bad: string[] } {
-  const values: Record<string, unknown> = {};
+): { values: Record<string, SettingValue>; bad: string[] } {
+  const values: Record<string, SettingValue> = {};
   const bad: string[] = [];
   for (const s of schema) {
     const v = draft[s.key];
@@ -205,6 +197,9 @@ export function settingsOf(
 /**
  * 插件声明的设置项。**标签是插件自己写的**，只按纯文本画（`PluginText`）；默认值写在下面，
  * 改过之后对照得上。
+ *
+ * 字符串一项一行、可以写多行（一行一条的替换表这类），输入框随内容长高；数字两个一行；开关
+ * 一项一行排在最后 —— 开关和输入框并排时，两边的高度对不齐。
  */
 export function SettingsFields({
   schema,
@@ -217,7 +212,6 @@ export function SettingsFields({
 }) {
   const t = useText(pluginFieldsText);
   if (schema.length === 0) return null;
-  // 要填的两列排，开关一项一行排在后面：开关和输入框并排时，两边的高度对不齐
   const fields = schema.filter((s) => s.kind !== "boolean");
   const switches = schema.filter((s) => s.kind === "boolean");
   return (
@@ -228,21 +222,27 @@ export function SettingsFields({
             const id = `plugin-setting-${s.key}`;
             const label = s.label || s.key;
             const v = value[s.key];
-            const def = s.default == null || s.default === "" ? t.emptyDefault : t.defaultIs(String(s.default));
-            const bad = s.kind === "number" && typeof v === "string" && v.trim() !== "" && !Number.isFinite(Number(v.trim()));
+            const text = typeof v === "string" ? v : "";
+            const def = s.default === "" ? t.emptyDefault : t.defaultIs(String(s.default));
+            const bad = s.kind === "number" && text.trim() !== "" && !Number.isFinite(Number(text.trim()));
+            const set = (next: string) => onChange({ ...value, [s.key]: next });
             return (
-              <div key={s.key} className="flex min-w-0 flex-col gap-1.5">
+              <div key={s.key} className={cn("flex min-w-0 flex-col gap-1.5", s.kind === "string" && "sm:col-span-2")}>
                 <label htmlFor={id} className="tw-body font-medium">
                   <PluginText text={label} />
                 </label>
-                <Input
-                  id={id}
-                  value={typeof v === "string" ? v : ""}
-                  inputMode={s.kind === "number" ? "decimal" : undefined}
-                  className={s.kind === "number" ? "font-mono" : undefined}
-                  aria-invalid={bad || undefined}
-                  onChange={(e) => onChange({ ...value, [s.key]: e.target.value })}
-                />
+                {s.kind === "string" ? (
+                  <GrowingText id={id} value={text} onChange={set} />
+                ) : (
+                  <Input
+                    id={id}
+                    value={text}
+                    inputMode="decimal"
+                    className="font-mono"
+                    aria-invalid={bad || undefined}
+                    onChange={(e) => set(e.target.value)}
+                  />
+                )}
                 {bad ? (
                   <p className="tw-label text-destructive">{t.numberBad(label)}</p>
                 ) : (
@@ -267,5 +267,36 @@ export function SettingsFields({
         );
       })}
     </div>
+  );
+}
+
+/** 这个引擎自己会让输入框随内容长高（CSS 的 `field-sizing: content`） */
+const SIZES_ITSELF = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("field-sizing", "content");
+
+/**
+ * 一段可以写多行的设置值：**一行高起步，随内容长高**，长到九行左右之后在框里滚动。回车是
+ * 换行（对话框不把回车当提交）。高度交给 CSS 的 `field-sizing`；不支持它的引擎（旧的
+ * WebKitGTK）每次改动时按内容量一次
+ */
+function GrowingText({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || SIZES_ITSELF) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
+  }, [value]);
+  return (
+    <Textarea
+      ref={ref}
+      id={id}
+      rows={1}
+      value={value}
+      spellCheck={false}
+      autoCorrect="off"
+      autoCapitalize="off"
+      className="max-h-48 min-h-8 resize-none py-1.5 leading-5"
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }

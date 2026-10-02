@@ -5,16 +5,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
+import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 import { focusSelf } from "@/keys/parts";
 import { DialogError } from "@/upstreams/parts";
-import { approvePluginFile, pluginCall, type PluginView } from "./api.provisional";
+import type { PluginView } from "@/types";
 import { changedDialogText } from "./ChangedDialog.i18n";
+import { pluginName } from "./defaults";
 import { shaPrefix } from "./model";
-import { CodeBox, PermissionList, PluginText, SourceDiff } from "./parts";
+import { approvePluginFile } from "./native";
+import { CodeBox, PermissionList, PluginText, RequestKinds, SourceDiff } from "./parts";
 import { pluginPartsText } from "./parts.i18n";
 import type { NativeWrite } from "./SourceDialog";
 
@@ -43,10 +46,10 @@ export function ChangedDialog({
   const t = useText(changedDialogText);
   const pt = useText(pluginPartsText);
   const common = useText(commonText);
-  const diff = useResource(`plugin-source:${plugin.id}`, () => pluginCall("PluginSourceDiff", null, plugin.id));
+  const diff = useResource(`plugin-source:${plugin.id}`, () => call("PluginSourceDiff", null, plugin.id));
   const current = diff.data?.current ?? null;
   const read = useResource(current != null ? `plugin-inspect:${plugin.id}:${diff.data?.current_sha256 ?? ""}` : null, () =>
-    pluginCall("PluginInspect", { source: current! }),
+    call("PluginInspect", { source: current! }),
   );
   const [view, setView] = useState<"changes" | "code">("changes");
   const [writing, setWriting] = useState(false);
@@ -77,7 +80,7 @@ export function ChangedDialog({
       <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-3xl" onOpenAutoFocus={focusSelf}>
         <DialogHeader>
           <DialogTitle>{t.title}</DialogTitle>
-          <DialogDescription>{t.lead(<PluginText text={plugin.name} />)}</DialogDescription>
+          <DialogDescription>{t.lead(<PluginText text={pluginName(plugin.id, plugin.name)} />)}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-1">
@@ -112,7 +115,7 @@ export function ChangedDialog({
               {loadError && (
                 <Banner layout="inline" tone="error" title={t.cannotLoad}>
                   <p className="break-words select-text">
-                    <PluginText text={loadError.message} />
+                    <PluginText text={coreText(loadError.message)} />
                   </p>
                   {loadError.line != null && <p className="mt-0.5">{t.at(pt.errorAt(loadError.line, loadError.column ?? null))}</p>}
                 </Banner>
@@ -121,7 +124,13 @@ export function ChangedDialog({
               {manifest && (
                 <section className="flex flex-col gap-2">
                   <h3 className="tw-head text-foreground">{pt.permissions}</h3>
-                  <PermissionList permissions={manifest.permissions} previous={plugin.permissions} replyMode={manifest.reply_mode} />
+                  <PermissionList
+                    permissions={manifest.permissions}
+                    // 原来那一版读不出权限时不比：不知道哪一项是新的
+                    previous={plugin.permissions.length > 0 ? plugin.permissions : undefined}
+                    replyMode={manifest.reply_mode}
+                  />
+                  <RequestKinds kinds={manifest.requests} className="tw-label text-muted-foreground" />
                 </section>
               )}
               {read.error !== undefined && !read.loading && !read.data && <DialogError error={errorText(read.error)} />}

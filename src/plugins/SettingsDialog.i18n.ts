@@ -8,6 +8,8 @@ export const settingsDialogText = messages(
     id: (id: string) => `ID ${id}`,
     sha: (prefix: string) => `SHA-256 ${prefix}`,
     replace: "更换代码…",
+    /** 系统的确认框里点了「取消」：什么都没写 */
+    cancelled: "已取消，配置未改动。",
   },
   {
     title: "Plugin settings",
@@ -16,5 +18,6 @@ export const settingsDialogText = messages(
     id: (id: string) => `ID ${id}`,
     sha: (prefix: string) => `SHA-256 ${prefix}`,
     replace: "Replace code…",
+    cancelled: "Cancelled. The configuration was not changed.",
   },
 );

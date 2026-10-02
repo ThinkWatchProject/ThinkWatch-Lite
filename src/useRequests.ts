@@ -14,7 +14,6 @@ import {
   type SeenSince,
 } from "./types";
 import { marksFromEvents } from "./security/marks";
-import { pluginChangedOf } from "./plugins/api.provisional";
 import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
 
 /**
@@ -74,8 +73,8 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
         next.costEstimated = h.cost_estimated;
       }
       next.translated ??= h.translated ?? undefined;
-      // 插件改没改过只在库里有：请求钩子在路由之前就跑完了，可事件流不说
-      if (pluginChangedOf(h)) next.pluginChanged = true;
+      // 插件改没改过只在库里有：事件流不说
+      if (h.plugin_changed) next.pluginChanged = true;
       next.session ??= h.session ?? undefined;
       if (!next.secrets || !next.flagged) {
         const marks = marksFromEvents(h.security);
@@ -126,7 +125,7 @@ export function rowFromHistory(h: HistoryRow): RequestRow {
     costEstimated: h.cost_estimated,
     error: h.error ?? undefined,
     translated: h.translated ?? undefined,
-    pluginChanged: pluginChangedOf(h) || undefined,
+    pluginChanged: h.plugin_changed || undefined,
     session: h.session ?? undefined,
     hint: h.client_hint ?? undefined,
     peer: h.peer ?? undefined,

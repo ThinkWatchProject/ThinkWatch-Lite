@@ -22,7 +22,7 @@ export const pluginLabelsText = messages(
       params: {
         short: "请求参数",
         what: "读取和修改模型名、max_tokens、温度等参数",
-        note: "可能改变处理请求的上游和产生的费用",
+        note: "可能改变发给上游的模型和产生的费用",
       },
       reply_text: { short: "回答文字", what: "读取和修改回答中的文字", note: "" },
       reply_tool_calls: {
@@ -37,6 +37,11 @@ export const pluginLabelsText = messages(
     removed: "已移除",
     /** 改回答文字的插件，整段模式下文字到齐才交给客户端 */
     blockMode: "回答文字整段到齐后才显示",
+
+    /** 插件处理的请求种类。只处理对话的（出厂就是这样）不写 */
+    kinds: { conversation: "对话", embeddings: "向量化", completions: "补全" } as Record<string, string>,
+    alsoHandles: (list: string) => `也处理：${list}`,
+    onlyHandles: (list: string) => `仅处理：${list}`,
 
     status: {
       ok: "生效中",
@@ -81,7 +86,7 @@ export const pluginLabelsText = messages(
       params: {
         short: "Parameters",
         what: "Read and change the model, max_tokens, temperature and other parameters",
-        note: "May change which upstream serves the request and what it costs",
+        note: "May change the model sent upstream and what it costs",
       },
       reply_text: { short: "Reply text", what: "Read and change the text of replies", note: "" },
       reply_tool_calls: {
@@ -95,6 +100,10 @@ export const pluginLabelsText = messages(
     added: "New",
     removed: "Removed",
     blockMode: "Reply text appears once each block is complete",
+
+    kinds: { conversation: "conversations", embeddings: "embeddings", completions: "completions" } as Record<string, string>,
+    alsoHandles: (list: string) => `Also handles: ${list}`,
+    onlyHandles: (list: string) => `Handles only: ${list}`,
 
     status: {
       ok: "Active",

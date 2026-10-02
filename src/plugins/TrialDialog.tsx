@@ -9,13 +9,13 @@ import { ErrorState } from "@/ui/states";
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { useText } from "@/i18n";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 import { when } from "@/format";
 import { appLabel } from "@/labels";
 import { focusSelf } from "@/keys/parts";
 import { DialogError, FormItem } from "@/upstreams/parts";
-import type { HistoryRow } from "@/types";
-import { pluginCall, type PluginTrialResult, type PluginView, type TrialSide } from "./api.provisional";
+import type { HistoryRow, PluginTrialResult, PluginView, TrialSide } from "@/types";
+import { pluginName } from "./defaults";
 import { LogLines } from "./LogsDialog";
 import { requestInScope } from "./model";
 import { OutcomeOf, PluginText, SourceDiff } from "./parts";
@@ -48,7 +48,7 @@ export function TrialDialog({ plugin, onClose }: { plugin: PluginView; onClose: 
     setRunning(true);
     setError(null);
     try {
-      const r = await pluginCall("TrialPlugin", { request_id: selected }, plugin.id);
+      const r = await call("TrialPlugin", { request_id: selected }, plugin.id);
       setResult({ id: selected, r });
     } catch (e) {
       setError(errorText(e));
@@ -62,7 +62,7 @@ export function TrialDialog({ plugin, onClose }: { plugin: PluginView; onClose: 
       <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-3xl" onOpenAutoFocus={focusSelf}>
         <DialogHeader>
           <DialogTitle>{t.title}</DialogTitle>
-          <DialogDescription>{t.lead(<PluginText text={plugin.name} />)}</DialogDescription>
+          <DialogDescription>{t.lead(<PluginText text={pluginName(plugin.id, plugin.name)} />)}</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-1">
@@ -143,7 +143,7 @@ function Result({ r }: { r: PluginTrialResult }) {
       {r.error && (
         <Banner layout="inline" tone="error" title={t.failed}>
           <p className="break-words select-text">
-            <PluginText text={r.error} />
+            <PluginText text={coreText(r.error)} />
           </p>
         </Banner>
       )}

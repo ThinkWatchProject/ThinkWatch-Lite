@@ -4,7 +4,7 @@ import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { IconPlugin } from "@/ui/icons";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
-import { undoable } from "@/ui/notify";
+import { DECLINED, undoable } from "@/ui/notify";
 import { Page, PageHeader, SummaryItem } from "@/ui/page";
 import { RowMenu, type MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
@@ -12,18 +12,22 @@ import { EmptyState, ListSkeleton, Loadable } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { Tip } from "@/ui/tip";
+import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { writeQueue } from "@/lib/writeQueue";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
 import { useNav, useNavParams } from "@/nav";
 import { useConfigVersion } from "@/keys/data";
-import type { Overview } from "@/types";
-import { PLUGIN_FAILED, pluginCall, type PluginView, type PluginWrite } from "./api.provisional";
+import type { Overview, PluginUpdate, PluginView, PluginWrite } from "@/types";
 import { ChangedDialog } from "./ChangedDialog";
+import { pluginDescription, pluginName } from "./defaults";
 import { DeleteDialog, ReorderDialog } from "./ListDialogs";
 import { LogsDialog } from "./LogsDialog";
-import { PermissionChips, PluginText, ScopeSummary, StatsCell, StatusOf } from "./parts";
+import { guarded, manifestUnknown } from "./model";
+import { savePlugin } from "./native";
+import { PermissionChips, PluginText, RequestKinds, ScopeSummary, StatsCell, StatusOf } from "./parts";
 import { pluginsPageText } from "./PluginsPage.i18n";
 import { SettingsDialog } from "./SettingsDialog";
 import { SourceDialog, type NativeWrite } from "./SourceDialog";
@@ -42,7 +46,7 @@ type DialogState =
   | { kind: "delete"; target: PluginView };
 
 /** 插件写回去时的样子：照原样，改其中几项 */
-export function updateOf(p: PluginView) {
+export function updateOf(p: PluginView): PluginUpdate {
   return { enabled: p.enabled, on_error: p.on_error, scope: p.scope, settings: p.settings };
 }
 
@@ -56,8 +60,10 @@ export function updateOf(p: PluginView) {
  * 几条纪律：
  *
  * - **插件写的字一律按纯文本画**（名字、说明、设置项的标签、日志、报错），见 `PluginText`。
+ *   core 自带的默认插件按界面语言说（`defaults.ts`）。
  * - **安装、更换代码、确认文件变更要在系统原生对话框里点头**：这三步的端点不在网页的
- *   白名单里，只能请 Rust 去做（`plugin_install` 等）。网页里的「安装」只是发起。
+ *   白名单里，只能请 Rust 去做（`plugin_install` 等）。网页里的「安装」只是发起。**改得了
+ *   工具调用的插件**（或者读不出权限的），打开它、改设置、改范围也一样（`savePlugin`）。
  * - 配置的改动都进对话框；启用、停用可以撤销，一按就写；删除要确认。
  * - **不在运行、又会拒绝请求的插件挂一条横幅**：文件变了或者加载不了的插件不运行，出错时
  *   选了「拒绝」的，适用范围内的请求全部被拒 —— 这件事要一直看得见，直到处理掉。
@@ -72,8 +78,8 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
     **统计跟着请求走。**运行次数、改写次数在请求落地时变，所以请求事件也让它重读（节流
     2.5 秒）；core 那边是内存里的数，读一次很便宜。
   */
-  const plugins = useResource("plugins", () => pluginCall("Plugins", null), {
-    events: ["config_reloaded", "request_finished", "request_failed", PLUGIN_FAILED],
+  const plugins = useResource("plugins", () => call("Plugins", null), {
+    events: ["config_reloaded", "request_finished", "request_failed", "plugin_failed"],
     deps: [ov.config_version],
   });
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -141,19 +147,25 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
     }
   }
 
-  /** 启用、停用。**可以撤销**：先拨过去，写完给「撤销」 */
+  /**
+   * 启用、停用。**可以撤销**：先拨过去，写完给「撤销」。
+   *
+   * 改得了工具调用的插件（或者读不出权限的），打开它要在系统的确认框里点头：**开关不先拨
+   * 过去**，转着圈等那个框，点了头才是开。点了取消，开关原样，什么都不说
+   */
   function toggle(p: PluginView, enabled: boolean) {
     const send = (on: boolean) =>
       tracked(p.id, async () => {
-        const w = await queue((base) =>
-          pluginCall("UpdatePlugin", { ...updateOf(p), enabled: on, base_version: base }, p.id),
-        );
-        wrote(w.version);
+        const r = await native((base) => savePlugin(p, { ...updateOf(p), enabled: on, base_version: base }));
+        return r === "cancelled" ? DECLINED : r;
       });
-    const name = <PluginText text={p.name} />;
+    const name = <PluginText text={pluginName(p.id, p.name)} />;
+    const asks = enabled && guarded(p);
     void undoable({
       message: enabled ? t.turnedOn(name) : t.turnedOff(name),
-      apply: () => plugins.mutate((ps) => (ps ?? []).map((x) => (x.id === p.id ? { ...x, enabled } : x))),
+      apply: asks
+        ? undefined
+        : () => plugins.mutate((ps) => (ps ?? []).map((x) => (x.id === p.id ? { ...x, enabled } : x))),
       do: () => send(enabled),
       undo: () => send(!enabled),
     });
@@ -272,7 +284,7 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
           list={list}
           onClose={() => setDialog(null)}
           onSave={async (ids) => {
-            const w = await queue((base) => pluginCall("ReorderPlugins", { ids, base_version: base }));
+            const w = await queue((base) => call("ReorderPlugins", { ids, base_version: base }));
             plugins.mutate((ps) => ids.map((id) => (ps ?? []).find((p) => p.id === id)!).filter(Boolean));
             wrote(w.version);
             setDialog(null);
@@ -284,7 +296,7 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
           target={dialog.target}
           onClose={() => setDialog(null)}
           onDelete={async () => {
-            const w = await queue((base) => pluginCall("DeletePlugin", { base_version: base }, dialog.target.id));
+            const w = await queue((base) => call("DeletePlugin", { base_version: base }, dialog.target.id));
             // 先从列表里拿掉（那一行淡出），再去取真值
             plugins.mutate((ps) => (ps ?? []).filter((p) => p.id !== dialog.target.id));
             wrote(w.version);
@@ -341,7 +353,7 @@ function Stopped({
     <div className="flex flex-col gap-2">
       {stopped.map((p) => {
         const reject = p.on_error === "reject";
-        const name = <PluginText text={p.name} />;
+        const name = <PluginText text={pluginName(p.id, p.name)} />;
         if (p.status.kind === "changed") {
           return (
             <Banner
@@ -373,7 +385,7 @@ function Stopped({
           >
             {p.status.kind === "error" && (
               <p className="break-words select-text">
-                <PluginText text={p.status.message} />
+                <PluginText text={coreText(p.status.message)} />
               </p>
             )}
             <p>{reject ? t.failedRejecting : t.failedSkipping}</p>
@@ -389,10 +401,13 @@ type RowAction = "settings" | "trial" | "logs" | "review" | "replace" | "delete"
 /**
  * 插件列表，**按运行的顺序**：前一个改过的内容交给后一个，所以行首写着它是第几个。
  *
- * 每一行三行字：名字和状态；说明（加载失败的是原因）；权限、适用范围、运行统计。右边是
- * 启用的开关，和**写成字的几个操作**（设置、试运行、日志、删除）—— 不用图标：这一页上
- * 每个操作都要一眼认得出，`…` 里藏着的东西用户想不到去找。文件变了的、加载不了的，
- * 处理它的那个操作排在最前面。点一行（或回车）打开设置；右键是同一份操作。
+ * 每一行三行字：名字和状态；说明（加载失败的是原因）；权限、还处理哪几种请求、适用范围、
+ * 运行统计。右边是启用的开关，和**写成字的几个操作**（设置、试运行、日志、删除）—— 不用
+ * 图标：这一页上每个操作都要一眼认得出，`…` 里藏着的东西用户想不到去找。文件变了的、加载
+ * 不了的，处理它的那个操作排在最前面。点一行（或回车）打开设置；右键是同一份操作。
+ *
+ * **core 读不出 manifest 的**（停用着、缓存里又没有它）只画 id 和状态：权限、说明、范围
+ * 都不知道，空着的标签会读成「没申请任何权限」。
  */
 function PluginList({
   list,
@@ -420,7 +435,11 @@ function PluginList({
   ];
   return (
     <ul className="flex flex-col overflow-hidden rounded-lg border border-border">
-      {rows.map(({ item: p, key, presence }, i) => (
+      {rows.map(({ item: p, key, presence }, i) => {
+        const unknown = manifestUnknown(p);
+        // 默认插件按界面语言说；读不出 manifest 的只有 id
+        const w = { name: pluginName(p.id, p.name), description: unknown ? null : pluginDescription(p) };
+        return (
         <RowMenu key={key} items={menu(p)}>
           <li
             data-plugin={p.id}
@@ -438,34 +457,45 @@ function PluginList({
             </Tip>
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2.5">
-                <PluginText
-                  text={p.name}
-                  className={cn("min-w-0 truncate tw-head", p.enabled ? "text-foreground" : "text-muted-foreground")}
-                />
+                {unknown ? (
+                  <span className={cn("min-w-0 truncate font-mono tw-head", p.enabled ? "text-foreground" : "text-muted-foreground")}>
+                    {p.id}
+                  </span>
+                ) : (
+                  <PluginText
+                    text={w.name}
+                    className={cn("min-w-0 truncate tw-head", p.enabled ? "text-foreground" : "text-muted-foreground")}
+                  />
+                )}
                 <StatusOf status={p.status} />
               </div>
               {p.status.kind === "error" ? (
                 <p className="mt-0.5 truncate tw-body text-destructive">
-                  <PluginText text={p.status.message} />
+                  <PluginText text={coreText(p.status.message)} />
                 </p>
               ) : (
-                p.description && (
+                w.description && (
                   <p className="mt-0.5 truncate tw-body text-muted-foreground">
-                    <PluginText text={p.description} />
+                    <PluginText text={w.description} />
                   </p>
                 )
               )}
               {/*
-                权限、适用范围、统计在左，写成字的操作在右。**窗口窄时操作整组折到下一行**（靠右），
-                不去挤名字和状态
+                权限、还处理哪几种请求、适用范围、统计在左，写成字的操作在右。**窗口窄时操作整组
+                折到下一行**（靠右），不去挤名字和状态
               */}
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 tw-label">
-                <PermissionChips permissions={p.permissions} />
-                <span className="flex min-w-0 max-w-[260px] items-center gap-1">
-                  <span className="shrink-0 text-muted-foreground/80">{t.appliesTo}</span>
-                  <ScopeSummary scope={p.scope} permissions={p.permissions} />
-                </span>
-                <StatsCell stats={p.stats} />
+                {!unknown && (
+                  <>
+                    <PermissionChips permissions={p.permissions} />
+                    <RequestKinds kinds={p.requests} className="text-muted-foreground" />
+                    <span className="flex min-w-0 max-w-[260px] items-center gap-1">
+                      <span className="shrink-0 text-muted-foreground/80">{t.appliesTo}</span>
+                      <ScopeSummary scope={p.scope} />
+                    </span>
+                    <StatsCell stats={p.stats} />
+                  </>
+                )}
                 <span className="-my-1 -mr-2 ml-auto flex shrink-0 items-center" {...keepInRow}>
                   {p.status.kind === "changed" && (
                     <Button size="xs" variant="outline" className="mr-1" onClick={() => onOpen("review", p)}>
@@ -493,13 +523,14 @@ function PluginList({
                 size="sm"
                 checked={p.enabled}
                 pending={pending(p.id)}
-                aria-label={t.toggleFor(p.name)}
+                aria-label={t.toggleFor(unknown ? p.id : w.name)}
                 onCheckedChange={(v) => onToggle(p, v)}
               />
             </div>
           </li>
         </RowMenu>
-      ))}
+        );
+      })}
     </ul>
   );
 }

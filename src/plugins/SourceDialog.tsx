@@ -6,28 +6,23 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/ui/input";
 import { Segmented } from "@/ui/segmented";
 import { Textarea } from "@/ui/textarea";
+import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { errorText } from "@/i18n/core.i18n";
+import { coreText, errorText } from "@/i18n/core.i18n";
 import { size } from "@/format";
 import { focusSelf } from "@/keys/parts";
 import { DialogError, FormItem } from "@/upstreams/parts";
-import {
-  installPlugin,
-  pluginCall,
-  replacePluginSource,
-  type OnError,
-  type PluginInspection,
-  type PluginView,
-  type PluginWrite,
-} from "./api.provisional";
+import type { OnError, PluginInspection, PluginView, PluginWrite } from "@/types";
+import { localSchema, pluginDescription, pluginName } from "./defaults";
 import { draftOf, scopeOf, scopeProblem, ScopeFields, settingsDraftOf, settingsOf, SettingsFields, type ScopeDraft, type SettingsDraft } from "./fields";
 import { pluginFieldsText } from "./fields.i18n";
 import { pluginLabelsText } from "./labels.i18n";
 import { ID_RE, shaPrefix, suggestId } from "./model";
-import { CodeBox, PermissionList, PluginText, SourceDiff } from "./parts";
+import { installPlugin, replacePluginSource } from "./native";
+import { CodeBox, PermissionList, PluginText, RequestKinds, SourceDiff } from "./parts";
 import { pluginPartsText } from "./parts.i18n";
 import { sourceDialogText } from "./SourceDialog.i18n";
 
@@ -121,7 +116,7 @@ export function SourceDialog({
     setInspecting(true);
     setError(null);
     try {
-      const result = await pluginCall("PluginInspect", { source });
+      const result = await call("PluginInspect", { source });
       const fileName = how === "file" ? (file?.name ?? null) : null;
       setRead({ result, source, fileName });
       const m = result.manifest;
@@ -142,7 +137,9 @@ export function SourceDialog({
   const manifest = read?.result.manifest ?? null;
   const loadError = read?.result.error ?? null;
   const idProblem = replacing ? null : !ID_RE.test(id) ? t.idBad : taken.includes(id) ? t.idTaken : null;
-  const settingsCheck = manifest ? settingsOf(manifest.settings_schema, settings) : { values: {}, bad: [] };
+  // 装的是 core 自带的那个默认插件（id 和名字都对得上）时，标签按界面语言说
+  const schema = manifest ? localSchema(replacing?.id ?? id, manifest.name, manifest.settings_schema) : [];
+  const settingsCheck = manifest ? settingsOf(schema, settings) : { values: {}, bad: [] };
   const blocked =
     !manifest || loadError != null || idProblem != null || (!replacing && scopeProblem(scope) != null) || settingsCheck.bad.length > 0;
 
@@ -175,7 +172,11 @@ export function SourceDialog({
   }
 
   // 名字是插件写的：按纯文本画（`PluginText`），不拼进字符串
-  const title = replacing ? t.replaceTitle(<PluginText text={replacing.name} />) : step === "source" ? t.addTitle : t.reviewTitle;
+  const title = replacing
+    ? t.replaceTitle(<PluginText text={pluginName(replacing.id, replacing.name)} />)
+    : step === "source"
+      ? t.addTitle
+      : t.reviewTitle;
 
   return (
     <Dialog open onOpenChange={(o) => !o && !writing && onClose()}>
@@ -287,11 +288,11 @@ export function SourceDialog({
                         </FormItem>
                         <OnErrorField value={onError} onChange={setOnError} />
                       </div>
-                      <ScopeFields value={scope} onChange={setScope} permissions={manifest.permissions} />
-                      {manifest.settings_schema.length > 0 && (
+                      <ScopeFields value={scope} onChange={setScope} />
+                      {schema.length > 0 && (
                         <div className="flex flex-col gap-3">
                           <h4 className="tw-body font-medium text-foreground">{ft.settings}</h4>
-                          <SettingsFields schema={manifest.settings_schema} value={settings} onChange={setSettings} />
+                          <SettingsFields schema={schema} value={settings} onChange={setSettings} />
                         </div>
                       )}
                     </>
@@ -366,27 +367,32 @@ function Review({
   const lines = source.split("\n").length;
   const [view, setView] = useState<"code" | "compare">("code");
   const current = useResource(replacing ? `plugin-source:${replacing.id}` : null, () =>
-    pluginCall("PluginSourceDiff", null, replacing!.id),
+    call("PluginSourceDiff", null, replacing!.id),
   );
+  // 换上来的是 core 自带的那个默认插件（id 和名字都对得上）：按界面语言说
+  const words = m && {
+    name: pluginName(replacing?.id, m.name),
+    description: replacing ? pluginDescription({ id: replacing.id, name: m.name, description: m.description }) : m.description,
+  };
   return (
     <div className="flex flex-col gap-5 pb-1">
       {err && (
         <Banner layout="inline" tone="error" title={t.cannotLoad}>
           <p className="break-words select-text">
-            <PluginText text={err.message} />
+            <PluginText text={coreText(err.message)} />
           </p>
           {err.line != null && <p className="mt-0.5">{t.at(pt.errorAt(err.line, err.column ?? null))}</p>}
         </Banner>
       )}
 
-      {m && (
+      {m && words && (
         <section className="flex flex-col gap-1">
           <h3 className="tw-head text-foreground">
-            <PluginText text={m.name} />
+            <PluginText text={words.name} />
           </h3>
-          {m.description && (
+          {words.description && (
             <p className="tw-body text-muted-foreground">
-              <PluginText text={m.description} />
+              <PluginText text={words.description} />
             </p>
           )}
           <p className="flex flex-wrap items-center gap-x-3 tw-label text-muted-foreground">
@@ -403,10 +409,16 @@ function Review({
         <section className="flex flex-col gap-2">
           <h3 className="tw-head text-foreground">{pt.permissions}</h3>
           {m.permissions.length > 0 ? (
-            <PermissionList permissions={m.permissions} previous={replacing?.permissions} replyMode={m.reply_mode} />
+            <PermissionList
+              permissions={m.permissions}
+              // 装着的那一版读不出权限时不比：不知道哪一项是新的
+              previous={replacing && replacing.permissions.length > 0 ? replacing.permissions : undefined}
+              replyMode={m.reply_mode}
+            />
           ) : (
             <p className="tw-body text-muted-foreground">{t.noPermissions}</p>
           )}
+          <RequestKinds kinds={m.requests} className="tw-label text-muted-foreground" />
         </section>
       )}
 

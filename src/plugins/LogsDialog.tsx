@@ -3,12 +3,14 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { EmptyState, ListSkeleton, Loadable } from "@/ui/states";
+import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { clock } from "@/security/labels";
 import { focusSelf } from "@/keys/parts";
-import { PLUGIN_FAILED, pluginCall, type PluginLogEntry, type PluginView } from "./api.provisional";
+import type { PluginLogEntry, PluginView } from "@/types";
+import { pluginName } from "./defaults";
 import { logsDialogText } from "./LogsDialog.i18n";
 import { PluginText } from "./parts";
 
@@ -27,15 +29,15 @@ export function LogsDialog({
   onOpenRequest: (id: number) => void;
 }) {
   const t = useText(logsDialogText);
-  const logs = useResource(`plugin-logs:${plugin.id}`, () => pluginCall("PluginLogs", null, plugin.id), {
-    events: [PLUGIN_FAILED],
+  const logs = useResource(`plugin-logs:${plugin.id}`, () => call("PluginLogs", null, plugin.id), {
+    events: ["plugin_failed"],
   });
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-3xl" onOpenAutoFocus={focusSelf}>
         <DialogHeader>
           <DialogTitle>{t.title}</DialogTitle>
-          <DialogDescription>{t.lead(<PluginText text={plugin.name} />)}</DialogDescription>
+          <DialogDescription>{t.lead(<PluginText text={pluginName(plugin.id, plugin.name)} />)}</DialogDescription>
         </DialogHeader>
         <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
           <Loadable
@@ -87,7 +89,7 @@ export function LogLines({
   return (
     <ul className="flex flex-col overflow-hidden rounded-lg border border-border">
       {logs.map((l, i) => {
-        const id = l.request_id != null && /^\d+$/.test(String(l.request_id)) ? String(l.request_id) : null;
+        const id = l.request_id != null ? String(l.request_id) : null;
         return (
           <li key={i} className="flex flex-col gap-1 border-b border-border px-3 py-2 last:border-b-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 tw-label text-muted-foreground">

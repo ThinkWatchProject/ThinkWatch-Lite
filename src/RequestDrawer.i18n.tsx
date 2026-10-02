@@ -51,6 +51,8 @@ export const requestDrawerText = messages(
     security: "安全",
     /** 这次请求上运行过的插件 */
     plugins: "插件",
+    /** 插件运行按跳分组：组头 */
+    attemptGroup: (n: number, upstream: string | null) => (upstream ? `第 ${n} 跳 · ${upstream}` : `第 ${n} 跳`),
     droppedTip: "目标格式不支持这些字段，发送前已移除。",
     /** DeepSeek Harness 随请求附带的会话日志：标签，和大小下面那一句 */
     sessionLog: "会话日志",
@@ -107,6 +109,8 @@ export const requestDrawerText = messages(
     response: "响应",
     /** 插件改写过的请求：看原始的、改写后的，或者对比两者 */
     payloadViews: { compare: "对比", original: "原始请求", after: "插件改写后" },
+    /** 试过不止一跳时，改写后的那一份是哪一跳发出的 */
+    afterPluginsSentBy: (n: number, upstream: string) => `插件改写后的请求：第 ${n} 跳发往 ${upstream} 的那一份`,
     notSaved: "未保存",
     afterEnd: "请求结束后可查看",
     notSavedTip: "此记录已超过保留期限。",
@@ -191,6 +195,7 @@ export const requestDrawerText = messages(
     dropped: "Dropped",
     security: "Security",
     plugins: "Plugins",
+    attemptGroup: (n: number, upstream: string | null) => (upstream ? `Attempt ${n} · ${upstream}` : `Attempt ${n}`),
     droppedTip: "The target format does not support these fields; they were removed before sending.",
     sessionLog: "Session log",
     sessionLogNote:
@@ -241,6 +246,7 @@ export const requestDrawerText = messages(
     request: "Request",
     response: "Response",
     payloadViews: { compare: "Compare", original: "Original", after: "After plugins" },
+    afterPluginsSentBy: (n: number, upstream: string) => `After plugins: what attempt ${n} sent to ${upstream}`,
     notSaved: "Not saved",
     afterEnd: "Available when the request ends",
     notSavedTip: "This record is past its retention period.",
