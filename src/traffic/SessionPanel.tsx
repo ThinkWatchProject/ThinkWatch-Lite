@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import { call } from "@/control";
 import { useText } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -11,10 +11,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
 import { StatusDot, StatusLabel } from "@/ui/status-dot";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "./PanelHeader";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
+import { Conversation } from "./Conversation";
+import { unrecorded } from "./transcript";
 import { turnCost, type TurnCost } from "./costCell";
 import { dur, tokens, when } from "./format";
 import { tally } from "./grouping";
@@ -52,7 +55,7 @@ export function SessionSheet({
     events: ["request_finished", "request_failed", "request_cancelled"],
   });
   const early = r.data === undefined && rows.length > 0 && unrecorded(r.error);
-  const now = r.data ? { d: r.data, rows } : early ? { d: null, rows } : undefined;
+  const now = id === null ? undefined : r.data ? { id, d: r.data, rows } : early ? { id, d: null, rows } : undefined;
   /** 关上的那一下还要画着刚才那一份：浮层是滑出去的，不是一下没了 */
   const last = useRef(now);
   if (now) last.current = now;
@@ -74,7 +77,15 @@ export function SessionSheet({
           <SheetTitle>{t.title}</SheetTitle>
         </SheetHeader>
         {shown ? (
-          <SessionPanel d={shown.d} rows={shown.rows} onOpenTurn={onOpenTurn} onClose={onClose} />
+          // 换一次会话从「概况」看起，和请求详情换一条从「时间线」看起一样
+          <SessionPanel
+            key={shown.id}
+            id={shown.id}
+            d={shown.d}
+            rows={shown.rows}
+            onOpenTurn={onOpenTurn}
+            onClose={onClose}
+          />
         ) : r.error !== undefined ? (
           // 重试的时候留在这里，按钮转着 —— 换回骨架的话，看起来像是点了没反应
           <>
@@ -89,13 +100,9 @@ export function SessionSheet({
   );
 }
 
-/** core 说没有这次会话：它的轮次还一轮都没落库 */
-function unrecorded(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "control.session_not_found";
-}
-
 /**
- * 会话详情：几个总数、每轮的输入、每轮的费用。
+ * 会话详情，两个标签：「概况」是几个总数、每轮的输入、每轮的费用；「对话」把这次会话按
+ * 对话的样子重放出来（`Conversation`）。
  *
  * 瀑布里的一轮就是一条请求（`TurnView.id` 就是请求 id）：从「这次任务第 12 轮
  * 特别贵」走到「那一条请求到底发了什么」，点一下就到。
@@ -106,11 +113,13 @@ function unrecorded(e: unknown): boolean {
  * 会话，全靠行。
  */
 export function SessionPanel({
+  id,
   d,
   rows,
   onOpenTurn,
   onClose,
 }: {
+  id: string;
   d: SessionDetail | null;
   rows: readonly RequestRow[];
   onOpenTurn: (id: number) => void;
@@ -118,18 +127,36 @@ export function SessionPanel({
 }) {
   const t = useText(sessionsText);
   const s = d?.session ?? null;
-  const turns = d?.turns ?? [];
-  const recorded = new Set(turns.map((x) => x.id));
-  const pending = rows.filter((r) => !recorded.has(r.id)).sort((a, b) => a.atMs - b.atMs);
+  const turns = d?.turns ?? NO_TURNS;
+  const pending = useMemo(() => unrecordedRows(turns, rows), [turns, rows]);
   const n = tally(s, rows, pending);
   // 走过哪几个上游，按第一次出现的先后。一次任务中途换过上游，这里能看出来。
   // 没有发往任何上游的那几轮（被规则拒绝）上游是空的，不算
   const providers = [...new Set([...turns.map((x) => x.provider), ...pending.map((r) => r.provider)].filter(Boolean))];
   const client = s?.client ?? pending[0]?.client;
+  const [tab, setTab] = useState<Tab>("summary");
+  /** 「对话」打开过：之后切走也留着（读到哪儿、展开了哪几条都在），见 `PANE` */
+  const [seen, setSeen] = useState(false);
+  const show = (v: Tab) => {
+    setTab(v);
+    if (v === "conversation") setSeen(true);
+  };
+  /** 还在跑的那几轮在「对话」末尾各占一行。序号和瀑布里一样：接在落了库的那几轮后面 */
+  const running = pending.flatMap((r, i) => (r.state === "in_flight" ? [{ row: r, n: turns.length + i + 1 }] : []));
   return (
-    <>
+    <Tabs value={tab} onValueChange={(v) => show(v as Tab)} className="flex min-h-0 flex-1 flex-col gap-0">
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}
-      <PanelHeader title={t.title} meta={t.startedAt(when(n.started))} onClose={onClose}>
+      <PanelHeader
+        title={t.title}
+        meta={t.startedAt(when(n.started))}
+        onClose={onClose}
+        tabs={
+          <TabsList variant="line">
+            <TabsTrigger value="summary">{t.tabSummary}</TabsTrigger>
+            <TabsTrigger value="conversation">{t.tabConversation}</TabsTrigger>
+          </TabsList>
+        }
+      >
         {providers.length > 0 && (
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <UpstreamLogo name={providers[0] ?? ""} className="opacity-70" />
@@ -139,38 +166,98 @@ export function SessionPanel({
         {client && <span className="min-w-0 truncate">{client}</span>}
         <span className="min-w-0 truncate">{n.models.join(t.modelSep)}</span>
       </PanelHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6">
-        <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
-          <Stat label={t.turns} value={<AnimatedNumber value={n.turns} />} />
-          <Stat label={t.duration} value={dur(n.ended - n.started)} />
-          {/* 库里还没有这次会话：一轮费用都还没算出来 */}
-          <Stat label={t.cost} value={s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>} />
-          <Stat
-            label={t.failedTurns}
-            value={
-              n.failed > 0 ? (
-                <span className="inline-flex items-center gap-1.5 text-destructive">
-                  <StatusDot tone="error" />
-                  <AnimatedNumber value={n.failed} />
-                </span>
-              ) : (
-                <span className="text-muted-foreground">0</span>
-              )
-            }
-          />
-        </dl>
-        {s && (
-          <p className="mt-2 tw-label text-muted-foreground">
-            {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
-          </p>
-        )}
-
-        {turns.length > 0 && <Growth turns={turns} />}
-        <Waterfall steps={[...turns.map(fromTurn), ...pending.map(fromRow)]} onOpen={onOpenTurn} />
+      <div className="relative min-h-0 flex-1">
+        <TabsContent value="summary" forceMount className={PANE}>
+          <Summary d={d} rows={rows} pending={pending} onOpenTurn={onOpenTurn} />
+        </TabsContent>
+        <TabsContent value="conversation" forceMount className={PANE}>
+          {seen && (
+            <Conversation
+              id={id}
+              turns={turns}
+              running={running}
+              onOpenTurn={onOpenTurn}
+              onShowSummary={() => setTab("summary")}
+            />
+          )}
+        </TabsContent>
       </div>
-    </>
+    </Tabs>
   );
 }
+
+type Tab = "summary" | "conversation";
+
+const NO_TURNS: TurnView[] = [];
+
+/** 表里这次会话的行里，详情里还没有的那几轮（在跑的、刚落地还没重读的），按时间排 */
+function unrecordedRows(turns: readonly TurnView[], rows: readonly RequestRow[]): RequestRow[] {
+  const recorded = new Set(turns.map((x) => x.id));
+  return rows.filter((r) => !recorded.has(r.id)).sort((a, b) => a.atMs - b.atMs);
+}
+
+/**
+ * 「概况」：几个总数、每轮的输入、每轮的费用。
+ *
+ * **`memo`**：切到「对话」再切回来时它不重画。几百轮的会话，每轮输入的柱子和每轮费用的
+ * 行各几百个，切一次标签就整页重画一遍，那一下是卡的。
+ */
+const Summary = memo(function Summary({
+  d,
+  rows,
+  pending,
+  onOpenTurn,
+}: {
+  d: SessionDetail | null;
+  rows: readonly RequestRow[];
+  pending: readonly RequestRow[];
+  onOpenTurn: (id: number) => void;
+}) {
+  const t = useText(sessionsText);
+  const s = d?.session ?? null;
+  const turns = d?.turns ?? NO_TURNS;
+  const n = tally(s, rows, pending);
+  return (
+    <>
+      <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
+        <Stat label={t.turns} value={<AnimatedNumber value={n.turns} />} />
+        <Stat label={t.duration} value={dur(n.ended - n.started)} />
+        {/* 库里还没有这次会话：一轮费用都还没算出来 */}
+        <Stat label={t.cost} value={s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>} />
+        <Stat
+          label={t.failedTurns}
+          value={
+            n.failed > 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-destructive">
+                <StatusDot tone="error" />
+                <AnimatedNumber value={n.failed} />
+              </span>
+            ) : (
+              <span className="text-muted-foreground">0</span>
+            )
+          }
+        />
+      </dl>
+      {s && (
+        <p className="mt-2 tw-label text-muted-foreground">
+          {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
+        </p>
+      )}
+
+      {turns.length > 0 && <Growth turns={turns} />}
+      <Waterfall steps={[...turns.map(fromTurn), ...pending.map(fromRow)]} onOpen={onOpenTurn} />
+    </>
+  );
+});
+
+/**
+ * 两个标签页**叠在一起，切走的那一页只是藏起来**（`forceMount` 加 `invisible`），不卸掉。
+ * 一次几百轮的对话，读到一半切去看费用再回来，还停在原来那一轮、展开的还展开着；
+ * 卸掉的话从头开始。藏起来用 `visibility` 而不是 `display: none`：后者会丢掉滚动位置。
+ * 每一页自己滚。切回来的那一页照常淡入（`motion-fade` 在藏起来时摘掉，回来时重新播一次）。
+ */
+const PANE =
+  "absolute inset-0 overflow-y-auto px-4 pt-4 pb-6 data-[state=inactive]:invisible data-[state=inactive]:animate-none";
 
 function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -346,7 +433,7 @@ function SessionSkeleton({ onClose }: { onClose: () => void }) {
   const t = useText(sessionsText);
   return (
     <PanelSkeleton>
-      <PanelHeaderSkeleton title={t.title} onClose={onClose} />
+      <PanelHeaderSkeleton title={t.title} onClose={onClose} tabs={2} />
       <div className="px-4 pt-4">
         <div className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
           {Array.from({ length: 4 }, (_, i) => (

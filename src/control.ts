@@ -18,6 +18,12 @@ import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
  * （那边的测试核对）：不在这里的端点，界面够不着。
+ *
+ * TODO(core SessionTranscript): core 发版、`src/generated/tw-api.ts` 重新生成之后，在
+ * `"SessionDetail"` 后面加上 `"SessionTranscript"`（`call.rs` 那边同时加），步骤见
+ * `src/traffic/transcript.provisional.ts`。生成的类型里还没有它之前加不了：`call` 的类型
+ * 按端点名查 `Endpoints`，查不到就编译不过。（写在这里不写进数组：Rust 那条测试按逗号切
+ * 这个数组，数组里的注释会被当成一个端点名。）
  */
 export const WEBVIEW_ENDPOINTS = [
   "Interfaces",

@@ -872,8 +872,10 @@ function Body({
  *
  * **JSON 按词折，原文见字就断。**SSE 那种 `data: {…}` 按词折会在冒号后面断开，
  * 第一行只剩一个 `data:`。
+ *
+ * 会话的「对话」那一页也用它画工具的参数和结果，两处的等宽正文是同一个样子。
  */
-function BodyText({
+export function BodyText({
   text,
   json,
   more = false,
