@@ -1,4 +1,3 @@
-import type { TurnView } from "@/types";
 import type {
   Transcript,
   TranscriptGap,
@@ -6,7 +5,8 @@ import type {
   TranscriptPart,
   TranscriptRole,
   TranscriptTurn,
-} from "./transcript.provisional";
+  TurnView,
+} from "@/types";
 
 /**
  * 会话「对话」那一页的纯逻辑：把 core 给的一轮一轮排成要画的样子。界面在 `Conversation.tsx`。

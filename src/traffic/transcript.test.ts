@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TurnView } from "@/types";
+import type { Transcript, TranscriptMessage, TranscriptPart, TranscriptTurn, TurnView } from "@/types";
 import {
   allLost,
   argsPreview,
@@ -16,7 +16,6 @@ import {
   unrecorded,
   viewsById,
 } from "./transcript";
-import type { Transcript, TranscriptMessage, TranscriptPart, TranscriptTurn } from "./transcript.provisional";
 
 const text = (t: string): TranscriptPart => ({ kind: "text", text: t });
 const call = (id: string, name: string, input = "{}"): TranscriptPart => ({ kind: "tool_call", id, name, input });

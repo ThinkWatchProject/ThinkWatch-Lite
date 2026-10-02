@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronRightIcon, ImageIcon } from "lucide-react";
+import { call } from "@/control";
 import { size, when } from "@/format";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
@@ -17,7 +18,15 @@ import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { prettyJson } from "@/prettyJson";
 import { BodyText } from "@/RequestDrawer";
-import type { RequestRow, TurnView } from "@/types";
+import type {
+  RequestRow,
+  Transcript,
+  TranscriptMessage,
+  TranscriptPart,
+  TranscriptRole,
+  TranscriptTurn,
+  TurnView,
+} from "@/types";
 import { Button } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
@@ -51,14 +60,6 @@ import {
   type ToolCall,
   type ToolResult,
 } from "./transcript";
-import {
-  fetchTranscript,
-  type Transcript,
-  type TranscriptMessage,
-  type TranscriptPart,
-  type TranscriptRole,
-  type TranscriptTurn,
-} from "./transcript.provisional";
 
 /** 第一次画多少轮，够铺满一屏还有富余；其余的一批一批补上（见 `useProgressive`） */
 const FIRST_PAINT = 30;
@@ -145,7 +146,7 @@ export function Conversation({
   useEffect(() => remember(key), [key]);
   /** 上一次取到的那一份：重取回来的轮次没变就换回它（`keepTurns`） */
   const prev = useRef<Transcript | undefined>(undefined);
-  const r = useResource(key, async () => keepTurns(prev.current, await fetchTranscript(id)), {
+  const r = useResource(key, async () => keepTurns(prev.current, await call("SessionTranscript", null, id)), {
     deps: [turns.length, turns[turns.length - 1]?.id ?? null],
   });
   prev.current = r.data;

@@ -69,9 +69,7 @@ webview_endpoints![
     RequestDetail,
     Sessions,
     SessionDetail,
-    // TODO(core SessionTranscript): 钉点升到带 `ep::SessionTranscript` 的 core 之后在这里加上
-    // `SessionTranscript,`（`src/control.ts` 的 `WEBVIEW_ENDPOINTS` 同时加），步骤见
-    // `src/traffic/transcript.provisional.ts`。现在钉着的 tw-api 里没有这个端点，加了编译不过。
+    SessionTranscript,
     // 测速、回放、试路由
     SpeedQuote,
     SpeedRun,
