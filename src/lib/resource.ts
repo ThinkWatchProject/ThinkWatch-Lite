@@ -260,6 +260,20 @@ export function invalidate(prefix: string) {
 }
 
 /**
+ * 不再要的一份数据：没人挂着、也没在取的时候，从缓存里拿掉。
+ *
+ * 缓存不会自己清：平常的数据都不大，留着换来的是切回来立刻有。**大的那几样用完要丢**
+ * —— 一次长会话的对话就有几 MB，看过几十次会话的话全都留在内存里。还挂着的不动（拿掉
+ * 了它也会马上再取一次），正在取的也不动（取回来的要写进这一条，拿掉了就写丢了）。
+ * 返回拿掉了没有。
+ */
+export function forget(key: string): boolean {
+  const e = cache.get(key);
+  if (!e || e.listeners.size > 0 || e.inflight !== null) return false;
+  return cache.delete(key);
+}
+
+/**
  * 全部重取：⌘R、命令面板的「刷新数据」。和 `invalidate` 一样，挂着的立刻重取，没人
  * 挂着的只标成过时 —— 刷新的是眼前这一页的全部数据，不只是外壳读的状态和概览。
  */
