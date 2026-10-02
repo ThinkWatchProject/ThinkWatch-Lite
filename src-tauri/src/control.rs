@@ -313,29 +313,10 @@ impl ControlClient {
     ///
     /// 断开就返回 —— **重连由调用方决定**。守护那边已经有退避逻辑了，
     /// 这里再来一套会变成两套互相不知道对方存在的重试。
-    pub async fn subscribe_events<O, F>(&self, on_open: O, on_event: F) -> Result<()>
+    pub async fn subscribe_events<O, F>(&self, on_open: O, mut on_event: F) -> Result<()>
     where
         O: FnOnce() + Send,
         F: FnMut(tw_api::Event) + Send,
-    {
-        self.subscribe_events_with(on_open, on_event, |_| {}).await
-    }
-
-    /// 同 [`Self::subscribe_events`]，**钉着的 `tw_api::Event` 认不得的事件也交出来**（原文，
-    /// `on_other`）：core 比这一版应用新时多出来的那几种。
-    ///
-    /// PROVISIONAL：现在只为插件出错的事件（`plugin_failed`，见 `plugins::wire`）。core 带着它
-    /// 发版、钉点升上去之后，它就是 `tw_api::Event` 里的一种，这个方法连同 `on_other` 删掉。
-    pub async fn subscribe_events_with<O, F, U>(
-        &self,
-        on_open: O,
-        mut on_event: F,
-        mut on_other: U,
-    ) -> Result<()>
-    where
-        O: FnOnce() + Send,
-        F: FnMut(tw_api::Event) + Send,
-        U: FnMut(serde_json::Value) + Send,
     {
         let stream = self.connect().await?;
         let io = TokioIo::new(stream);
@@ -385,16 +366,10 @@ impl ControlClient {
                 let raw = String::from_utf8_lossy(&buf[..idx]).into_owned();
                 buf.drain(..idx + 2);
                 for line in raw.lines() {
-                    let Some(data) = line.strip_prefix("data:") else {
-                        continue;
-                    };
-                    match serde_json::from_str::<tw_api::Event>(data.trim()) {
-                        Ok(ev) => on_event(ev),
-                        Err(_) => {
-                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data.trim()) {
-                                on_other(v);
-                            }
-                        }
+                    if let Some(data) = line.strip_prefix("data:")
+                        && let Ok(ev) = serde_json::from_str::<tw_api::Event>(data.trim())
+                    {
+                        on_event(ev);
                     }
                 }
             }

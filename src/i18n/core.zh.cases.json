@@ -224,5 +224,27 @@
       "text": "The ChatGPT backend could not be reached: Could not connect to https://chatgpt.com/backend-api/wham/usage; check the address, the network and the proxy settings."
     },
     "zh": "无法连接 ChatGPT 后端：无法连接上游 https://chatgpt.com/backend-api/wham/usage，请检查接口地址、网络和代理设置。"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.setting_type",
+      "args": {
+        "key": "offset",
+        "kind": "number"
+      },
+      "text": "Setting `offset` has to be a number."
+    },
+    "zh": "设置项 offset 须为数字。"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.reply_busy",
+      "args": {
+        "plugin": "统一用词",
+        "max": "8"
+      },
+      "text": "Plugin `统一用词` was not started for this answer: the limit of 8 plugins running on answers at the same time was reached."
+    },
+    "zh": "插件「统一用词」未处理此回答：同时处理回答的插件已达上限（8 个）。"
   }
 ]

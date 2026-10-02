@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg, Protocol } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg, OnError, PluginScope, PluginUpdate, Protocol, SettingValue } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -468,6 +468,41 @@ also?: Array<FilePlanView>,
  * 「新建上游」的入口；还原时没有
  */
 bedrock?: BedrockDraft | null, };
+
+/**
+ * 批准一个插件改过的文件（`plugin_approve`）。**文件由 Rust 自己去取**：读的、给人看的、
+ * 交给 core 认的是同一个 SHA-256
+ */
+export type PluginApproveRequest = { id: string, base_version?: string | null, };
+
+/**
+ * 装一个插件（`plugin_install`）：代码，和审核窗口里选的。
+ *
+ * **没有 manifest**：名字、权限、处理哪几种请求由 Rust 把代码交给 core 再读一遍，网页
+ * 说的不算。
+ */
+export type PluginInstallRequest = { source: string, 
+/**
+ * 审核窗口里填的 ID。不给由 core 按名字起
+ */
+id?: string | null, enabled: boolean, on_error: OnError, scope: PluginScope, settings: { [key in string]: SettingValue }, base_version?: string | null, };
+
+/**
+ * 换一个插件的代码（`plugin_replace_source`）
+ */
+export type PluginReplaceRequest = { id: string, source: string, base_version?: string | null, };
+
+/**
+ * 一次要点头的改动（`plugin_update_confirmed`）：和 `UpdatePlugin` 一样整份交，交上来的
+ * 就是保存之后的样子
+ */
+export type PluginUpdateRequest = { id: string, update: PluginUpdate, };
+
+/**
+ * 写成了（配置的新版本），或者在系统的确认框里点了取消 —— **取消不是失败**，什么都
+ * 没写，界面照原样
+ */
+export type PluginWrite = { "kind": "done", version: string, } | { "kind": "cancelled" };
 
 /**
  * 把接管着的客户端改为指向另一个 core 之后：改好的、没改成的

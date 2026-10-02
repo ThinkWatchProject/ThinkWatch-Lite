@@ -249,6 +249,7 @@ pub fn run() {
             plugins::plugin_install,
             plugins::plugin_replace_source,
             plugins::plugin_approve,
+            plugins::plugin_update_confirmed,
             scan::scan_clients,
             diagnostics::save_diagnostics,
         ])

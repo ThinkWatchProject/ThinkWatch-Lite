@@ -18,6 +18,10 @@ import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
  * （那边的测试核对）：不在这里的端点，界面够不着。
+ *
+ * 插件的装、换代码、批准改过的文件、确认过的改动（`CreatePlugin`、`ReplacePluginSource`、
+ * `ApprovePluginFile`、`UpdatePluginConfirmed`）**有意不在这里**：只能请 Rust 弹系统的确认框
+ * （`src/plugins/native.ts`）。
  */
 export const WEBVIEW_ENDPOINTS = [
   "Interfaces",
@@ -100,25 +104,7 @@ export const WEBVIEW_ENDPOINTS = [
   "PluginLogs",
 ] as const;
 
-/**
- * PROVISIONAL：插件的端点在白名单里，类型还不在生成的 `tw-api.ts` 里（core 发版之前）。
- * 它们走 `src/plugins/api.provisional.ts` 的 `pluginCall`。core 发版、重新生成之后删掉
- * 这一行和下面的 `Exclude`，插件页改用 `call`。
- *
- * 安装、更换代码、确认文件变更（`CreatePlugin`、`ReplacePluginSource`、`ApprovePluginFile`）
- * **有意不在白名单里**：只能经过 Rust 的原生确认（`plugin_install` 等命令）。
- */
-type Provisional =
-  | "Plugins"
-  | "PluginInspect"
-  | "UpdatePlugin"
-  | "PluginSourceDiff"
-  | "DeletePlugin"
-  | "ReorderPlugins"
-  | "TrialPlugin"
-  | "PluginLogs";
-
-export type WebviewEndpoint = Exclude<(typeof WEBVIEW_ENDPOINTS)[number], Provisional>;
+export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];
 
 /** 模板里每个参数名换成一个值 */
 type Values<T> = T extends readonly [unknown, ...infer Rest] ? [string | number, ...Values<Rest>] : [];
