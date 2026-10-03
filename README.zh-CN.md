@@ -12,6 +12,7 @@
   <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
   <img alt="Linux" src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
+  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX_DO-Community-1A1A1A?style=for-the-badge" /></a>
 </p>
 
 # ThinkWatch Lite
