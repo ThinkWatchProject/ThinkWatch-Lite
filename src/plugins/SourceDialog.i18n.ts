@@ -1,10 +1,8 @@
-import type { ReactNode } from "react";
 import { messages } from "@/i18n";
 
 export const sourceDialogText = messages(
   {
     addTitle: "添加插件",
-    replaceTitle: (name: ReactNode) => <>更换「{name}」的代码</>,
     sourceDescription: "选择本地的 .js 文件，或粘贴代码。",
     fromFile: "选择文件",
     fromPaste: "粘贴代码",
@@ -22,15 +20,11 @@ export const sourceDialogText = messages(
     at: (where: string) => `位置：${where}`,
     sha: "SHA-256",
     code: "代码",
-    fullCode: "完整代码",
-    compare: "与当前代码对比",
-    options: "安装选项",
     id: "插件 ID",
     idHint: "小写字母、数字和连字符，最多 40 个。",
     idBad: "只能使用小写字母、数字和连字符，最多 40 个。",
     idTaken: "已有插件使用此 ID。",
     install: "安装",
-    replace: "更换代码",
     /** 原生对话框里点了「取消」：什么都没写 */
     cancelled: "已取消，配置未改动。",
     /** 只有回答钩子的插件，没有申请改请求的权限 */
@@ -38,7 +32,6 @@ export const sourceDialogText = messages(
   },
   {
     addTitle: "Add plugin",
-    replaceTitle: (name: ReactNode) => <>Replace the code of “{name}”</>,
     sourceDescription: "Choose a local .js file, or paste the code.",
     fromFile: "Choose a file",
     fromPaste: "Paste code",
@@ -56,15 +49,11 @@ export const sourceDialogText = messages(
     at: (where: string) => `At ${where}.`,
     sha: "SHA-256",
     code: "Code",
-    fullCode: "Full code",
-    compare: "Compare with current code",
-    options: "Install options",
     id: "Plugin ID",
     idHint: "Lowercase letters, digits and hyphens, up to 40.",
     idBad: "Use only lowercase letters, digits and hyphens, up to 40.",
     idTaken: "Another plugin already uses this ID.",
     install: "Install",
-    replace: "Replace code",
     cancelled: "Cancelled. The configuration was not changed.",
     noPermissions: "No permissions requested.",
   },

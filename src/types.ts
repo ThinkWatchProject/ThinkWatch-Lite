@@ -29,6 +29,21 @@ import type { LocalEvent } from "./generated/lite-api";
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
 
+// 临时：插件的文件即真相（约定附录 4）之后的形状，盖住生成的同名类型（显式转出优先于上面的
+// `export type *`）。core v0.59.0 发版、`tw-api.ts` 重新生成之后整段删掉，步骤见
+// `./plugins/api.provisional.ts`
+export type {
+  Endpoints,
+  ManifestView,
+  PluginCreate,
+  PluginInspection,
+  PluginRewrite,
+  PluginRewritten,
+  PluginSave,
+  PluginView,
+  SettingSpecView,
+} from "./plugins/api.provisional";
+
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;
 

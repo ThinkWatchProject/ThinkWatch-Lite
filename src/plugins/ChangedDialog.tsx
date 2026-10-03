@@ -16,32 +16,33 @@ import type { PluginView } from "@/types";
 import { changedDialogText } from "./ChangedDialog.i18n";
 import { pluginName } from "./defaults";
 import { shaPrefix } from "./model";
-import { approvePluginFile } from "./native";
-import { CodeBox, PermissionList, PluginText, RequestKinds, SourceDiff } from "./parts";
+import { CodeBox, codeErrorOf, PermissionList, PluginText, RequestKinds, SourceDiff } from "./parts";
 import { pluginPartsText } from "./parts.i18n";
-import type { NativeWrite } from "./SourceDialog";
+import { approvePlugin, type NativeWrite } from "./write";
 
 /**
  * 插件文件在确认之后被改过（状态「文件已更改」）：看清改了什么，再确认。
  *
  * 给人看的三样：**和确认过的那一份逐行对比**（也可以看全文）；**这一版申请的权限**，比原来
- * 多要的标成「新增」；两个 SHA-256。确认由 Rust 去做（`plugin_approve`）：它自己再取一次
- * 文件、再读一遍，在系统原生对话框里写明插件名、权限和新的 SHA-256，点了才算数（I12）。
+ * 多要的标成「新增」；两个 SHA-256。改得了回答里工具调用的插件（原来的或者改过的文件里），
+ * 确认要在系统的确认框里点头（Rust 自己再取一次文件、再读一遍，写明插件名、权限和新的
+ * SHA-256）；别的插件按一下就确认了（`write.ts`）。
  *
- * 文件没了、或者改坏了读不了的，确认不了：给「更换代码」。
+ * 文件没了、或者改坏了读不了的，确认不了：给「编辑代码」，在编辑器里改好再保存。
  */
 export function ChangedDialog({
   plugin,
   native,
   onClose,
   onApproved,
-  onReplace,
+  onEdit,
 }: {
   plugin: PluginView;
   native: NativeWrite;
   onClose: () => void;
   onApproved: () => void;
-  onReplace: () => void;
+  /** 打开编辑器改代码：`current` 是改磁盘上那一份（读不了的），`approved` 是从确认过的那一份起头（文件没了） */
+  onEdit: (from: "approved" | "current") => void;
 }) {
   const t = useText(changedDialogText);
   const pt = useText(pluginPartsText);
@@ -65,7 +66,9 @@ export function ChangedDialog({
     setError(null);
     setCancelled(false);
     try {
-      const r = await native((base) => approvePluginFile({ id: plugin.id, base_version: base }));
+      const sha = diff.data?.current_sha256;
+      if (!sha) return;
+      const r = await native((base) => approvePlugin(plugin, sha, manifest, base));
       if (r === "done") onApproved();
       else setCancelled(true);
     } catch (e) {
@@ -151,7 +154,7 @@ export function ChangedDialog({
                 {view === "changes" ? (
                   <SourceDiff before={diff.data.approved} after={current} />
                 ) : (
-                  <CodeBox code={current} errorAt={loadError?.line ?? null} />
+                  <CodeBox code={current} error={codeErrorOf(loadError)} />
                 )}
               </section>
             </>
@@ -163,8 +166,13 @@ export function ChangedDialog({
 
         <DialogFooter className="items-center">
           {(current == null || loadError != null) && diff.data !== undefined && (
-            <Button variant="outline" className="sm:mr-auto" disabled={writing} onClick={onReplace}>
-              {t.replace}
+            <Button
+              variant="outline"
+              className="sm:mr-auto"
+              disabled={writing}
+              onClick={() => onEdit(current == null ? "approved" : "current")}
+            >
+              {t.edit}
             </Button>
           )}
           <Button variant="outline" onClick={onClose} disabled={writing}>

@@ -11,10 +11,11 @@
 //! 命令拼好再给）。路径参数由 `tw_api::fill` 做百分号编码，所以界面给的名字
 //! 只能是一段，拼不出别的路径。
 //!
-//! **插件的四步有意不给**：安装（`CreatePlugin`）、更换代码（`ReplacePluginSource`）、确认变了
-//! 的文件（`ApprovePluginFile`），以及确认过的改动（`UpdatePluginConfirmed`：打开改得了回答
-//! 里工具调用的插件、改它的设置或范围）。界面里的脚本自己就能点网页上的「确定」，所以这
-//! 几步只能经过 `plugins` 里的命令，在系统原生对话框里确认（I12）。
+//! **插件要点头的三步有意不给**：`CreatePluginConfirmed`、`SavePluginConfirmed`、
+//! `ApprovePluginFileConfirmed`（约定附录 4 §3：装上、打开改得了回答里工具调用的插件，改它的
+//! 代码，批准它磁盘上改过的文件）。界面里的脚本自己就能点网页上的「确定」，所以这几步只能
+//! 经过 `plugins` 里的命令，在系统原生对话框里确认。不必点头的装、存、批准（`CreatePlugin`、
+//! `SavePlugin`、`ApprovePluginFile`）在这里：要点头时 core 答 403。
 //!
 //! 做的事不止转发的命令（打开浏览器、写剪贴板、拼概览）仍然各是一个命令。
 //! 其中有三个端点**只能经过那些命令**，因为这台机器上的客户端要一起照顾到：删密钥
@@ -29,10 +30,10 @@ use crate::control::ControlClient;
 use crate::error::{CmdError, Out};
 
 macro_rules! webview_endpoints {
-    ($($name:ident),* $(,)?) => {
+    (core: [$($name:ident),* $(,)?], provisional: [$($p:ident),* $(,)?] $(,)?) => {
         /// 界面能直接调的端点，按名字。和 `src/control.ts` 的
         /// `WEBVIEW_ENDPOINTS` 是同一份（测试核对）。
-        pub const ALLOWED: &[&str] = &[$(stringify!($name)),*];
+        pub const ALLOWED: &[&str] = &[$(stringify!($name),)* $(stringify!($p),)*];
 
         /// 调一个控制面端点。`params` 按顺序填路径参数，`req` 是请求（没有就是
         /// `null`）。
@@ -46,6 +47,7 @@ macro_rules! webview_endpoints {
             let params: Vec<&str> = params.iter().map(String::as_str).collect();
             match endpoint.as_str() {
                 $(stringify!($name) => relay::<ep::$name>(&state.control, &params, req).await,)*
+                $(stringify!($p) => relay::<crate::plugins::wire::$p>(&state.control, &params, req).await,)*
                 _ => Err(CmdError::plain(format!(
                     "The interface cannot call the control-plane endpoint `{endpoint}`."
                 ))),
@@ -54,7 +56,8 @@ macro_rules! webview_endpoints {
     };
 }
 
-webview_endpoints![
+webview_endpoints! {
+    core: [
     // 进程与概览
     Interfaces,
     Overview,
@@ -137,17 +140,24 @@ webview_endpoints![
     ChatgptResets,
     UseChatgptReset,
     ZaiLoginStatus,
-    // 插件。装、换代码、批准、确认过的改动走 Rust 这边的命令，见下面的测试。改得了工具调用
-    // 的插件，`UpdatePlugin` 在 core 那边只许停用、改出错时怎么办
-    Plugins,
-    PluginInspect,
-    UpdatePlugin,
+    // 插件。要点头的三步（`…Confirmed`）走 Rust 这边的命令，见下面的测试
+    ApprovePluginFile,
     PluginSourceDiff,
     DeletePlugin,
     ReorderPlugins,
     TrialPlugin,
     PluginLogs,
-];
+    ],
+    // PROVISIONAL：core v0.59.0 才有（或者形状变了）的插件端点，描述在 `plugins/wire.rs`，
+    // 接上正式版时并进上面那一组
+    provisional: [
+    Plugins,
+    PluginInspect,
+    PluginRewrite,
+    CreatePlugin,
+    SavePlugin,
+    ],
+}
 
 /// 请求按这个端点的类型读一遍再发：**界面发来的形状不对，在这里就停下**，
 /// 不把一个 core 读不了的请求送过去。
@@ -184,30 +194,49 @@ mod tests {
             "DeleteKey",
             "RotateKey",
             "ClientKey",
-            // 插件的这几步要在原生对话框里确认（I12），见模块说明
-            "CreatePlugin",
-            "ReplacePluginSource",
-            "ApprovePluginFile",
-            "UpdatePluginConfirmed",
+            // 插件要点头的三步只能在原生对话框里确认，见模块说明
+            "CreatePluginConfirmed",
+            "SavePluginConfirmed",
+            "ApprovePluginFileConfirmed",
         ] {
             assert!(!ALLOWED.contains(&name), "{name}");
         }
     }
 
-    /// 确认过的插件改动只有一条路：`plugin_update_confirmed` 先弹系统的确认框。界面的清单
-    /// 里连这个名字都不该有 —— 有了，网页里的脚本就能替用户打开一个改工具调用的插件
+    /// 要点头的插件写入只有一条路：`plugins` 里的命令先弹系统的确认框。界面的清单里连这几个
+    /// 名字都不该有 —— 有了，网页里的脚本就能替用户装上、打开、改写一个改工具调用的插件
     #[test]
-    fn a_confirmed_plugin_update_only_goes_through_the_native_dialog() {
-        assert!(!ALLOWED.contains(&"UpdatePluginConfirmed"));
-        // 它确实是 core 的一个端点（不是拼错了名字才「不在清单里」）
-        assert!(
-            ep::ALL
-                .iter()
-                .any(|e| e.name == "UpdatePluginConfirmed" && e.path == "/plugins/{id}/confirmed")
-        );
+    fn the_confirmed_plugin_writes_only_go_through_the_native_dialog() {
         let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/control.ts"))
             .unwrap();
-        assert!(!ts.contains("\"UpdatePluginConfirmed\""));
+        for (name, path) in [
+            ("CreatePluginConfirmed", "/plugins/confirmed"),
+            ("SavePluginConfirmed", "/plugins/{id}/confirmed"),
+            (
+                "ApprovePluginFileConfirmed",
+                "/plugins/{id}/approve/confirmed",
+            ),
+        ] {
+            assert!(!ALLOWED.contains(&name), "{name}");
+            assert!(!ts.contains(&format!("\"{name}\"")), "{name}");
+            // 它确实是一个端点（不是拼错了名字才「不在清单里」）。PROVISIONAL：接上 core
+            // v0.59.0 之后改成查 `ep::ALL`
+            assert!(
+                crate::plugins::wire::ALL
+                    .iter()
+                    .any(|(n, _, p)| *n == name && *p == path),
+                "{name}"
+            );
+        }
+        // 不必点头的那几步在清单里：要点头时 core 答 403，界面再请 Rust
+        for name in [
+            "CreatePlugin",
+            "SavePlugin",
+            "ApprovePluginFile",
+            "PluginRewrite",
+        ] {
+            assert!(ALLOWED.contains(&name), "{name}");
+        }
     }
 
     /// 前端那份清单和这里一样。多一个，界面调了会被拒；少一个，界面上的类型

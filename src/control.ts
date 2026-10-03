@@ -13,15 +13,18 @@
  * 失败时抛出的是一条 `Msg` 形状的对象，交给 `errorText`。
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
+// 临时：插件的文件即真相（约定附录 4）之后的端点，core v0.59.0 发版后改回从 `./generated/tw-api` 取
+// （`EndpointTable` 换回 `typeof ENDPOINTS`），步骤见 `./plugins/api.provisional.ts`
+import type { EndpointTable, Endpoints } from "./plugins/api.provisional";
 
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
  * （那边的测试核对）：不在这里的端点，界面够不着。
  *
- * 插件的装、换代码、批准改过的文件、确认过的改动（`CreatePlugin`、`ReplacePluginSource`、
- * `ApprovePluginFile`、`UpdatePluginConfirmed`）**有意不在这里**：只能请 Rust 弹系统的确认框
- * （`src/plugins/native.ts`）。
+ * 插件要在系统的确认框里点头的三步（`CreatePluginConfirmed`、`SavePluginConfirmed`、
+ * `ApprovePluginFileConfirmed`）**有意不在这里**：只能请 Rust 弹系统的确认框
+ * （`src/plugins/write.ts`）。不必点头的装、存、批准（`CreatePlugin`、`SavePlugin`、
+ * `ApprovePluginFile`）在这里，core 说要点头时答 403。
  */
 export const WEBVIEW_ENDPOINTS = [
   "Interfaces",
@@ -96,7 +99,10 @@ export const WEBVIEW_ENDPOINTS = [
   "ZaiLoginStatus",
   "Plugins",
   "PluginInspect",
-  "UpdatePlugin",
+  "PluginRewrite",
+  "CreatePlugin",
+  "SavePlugin",
+  "ApprovePluginFile",
   "PluginSourceDiff",
   "DeletePlugin",
   "ReorderPlugins",
@@ -110,7 +116,7 @@ export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];
 type Values<T> = T extends readonly [unknown, ...infer Rest] ? [string | number, ...Values<Rest>] : [];
 
 /** 这个端点的路径参数，按模板里的顺序 */
-type Params<N extends WebviewEndpoint> = Values<(typeof ENDPOINTS)[N]["params"]>;
+type Params<N extends WebviewEndpoint> = Values<EndpointTable[N]["params"]>;
 
 export function call<N extends WebviewEndpoint>(
   endpoint: N,

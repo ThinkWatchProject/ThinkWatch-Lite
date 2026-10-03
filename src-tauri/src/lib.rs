@@ -246,10 +246,9 @@ pub fn run() {
             mcp::mcp_targets,
             mcp::plan_mcp,
             mcp::apply_mcp,
-            plugins::plugin_install,
-            plugins::plugin_replace_source,
-            plugins::plugin_approve,
-            plugins::plugin_update_confirmed,
+            plugins::plugin_install_confirmed,
+            plugins::plugin_save_confirmed,
+            plugins::plugin_approve_confirmed,
             scan::scan_clients,
             diagnostics::save_diagnostics,
         ])

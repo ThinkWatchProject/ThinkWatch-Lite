@@ -6,6 +6,7 @@ import {
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/ui/button"
+import { Input } from "@/ui/input"
 import {
   InputGroup,
   InputGroupAddon,
@@ -95,6 +96,23 @@ function ComboboxInput({
       </InputGroupAddon>
       {children}
     </InputGroup>
+  )
+}
+
+/**
+ * 不带外框的输入框：放进一张自己有边框的列表，当最后一行（插件适用范围的名单）。外框、
+ * 焦点环都由那张列表画
+ */
+function ComboboxBareInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
+  return (
+    <ComboboxPrimitive.Input
+      render={<Input />}
+      className={cn(
+        "h-7 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent",
+        className
+      )}
+      {...props}
+    />
   )
 }
 
@@ -300,6 +318,7 @@ function useComboboxAnchor() {
 export {
   Autocomplete,
   Combobox,
+  ComboboxBareInput,
   ComboboxInput,
   ComboboxContent,
   ComboboxList,

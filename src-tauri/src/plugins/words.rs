@@ -239,8 +239,8 @@ fn scope_line(scope: &PluginScope) -> String {
 
 fn check_line() -> &'static str {
     tr!(
-        "请核对 SHA-256 与审核窗口中显示的一致。",
-        "Check that the SHA-256 matches the one shown in the review window."
+        "请核对 SHA-256 与应用中显示的一致。",
+        "Check that the SHA-256 matches the one shown in the app."
     )
 }
 
@@ -285,8 +285,8 @@ pub fn install(
     }
 }
 
-/// 换了代码之后插件改了名字：正文第一行说出新名字。标题里写的是**现在装着的那个名字**
-/// —— 用户点开的是它，换上来的代码自称什么由它自己说
+/// 改了代码之后插件改了名字：正文第一行说出新名字。标题里写的是**现在装着的那个名字**
+/// —— 用户点开的是它，新代码自称什么由它自己说
 fn renamed(current: &str, next: &str) -> String {
     if current == next {
         return String::new();
@@ -297,45 +297,9 @@ fn renamed(current: &str, next: &str) -> String {
     )
 }
 
-/// 更换一个插件的代码。`name`：现在装着的那个的名字；`new_name`、`perms`、`kinds`：新代码
-/// 里的；`previous`：原来那一版申请的权限（读不出来是 `None`，就不标新增）
-pub fn replace(
-    name: &str,
-    new_name: &str,
-    perms: &[Permission],
-    kinds: &[RequestKind],
-    previous: Option<&[Permission]>,
-    sha256: &str,
-) -> Ask {
-    let (name, new_name) = (clean_name(name), clean_name(new_name));
-    let renamed = renamed(&name, &new_name);
-    let can = abilities(perms, previous, kinds);
-    let detail = tr!(
-        format!(
-            "{renamed}新的代码可以：\n{can}\n\nSHA-256：{}\n\n{}",
-            sha_prefix(sha256),
-            check_line()
-        ),
-        format!(
-            "{renamed}The new code can:\n{can}\n\nSHA-256: {}\n\n{}",
-            sha_prefix(sha256),
-            check_line()
-        )
-    );
-    Ask {
-        title: tr!("更换插件代码", "Replace Plugin Code").to_string(),
-        message: tr!(
-            format!("更换插件「{name}」的代码"),
-            format!("Replace the Code of Plugin “{name}”")
-        ),
-        detail,
-        accept: tr!("更换", "Replace").to_string(),
-        ok_hint: tr!("选择「确定」更换代码。", "Choose OK to replace the code.").to_string(),
-        danger: perms.contains(&Permission::ReplyToolCalls),
-    }
-}
-
-/// 确认一个插件变了的文件。参数同 [`replace`]，`from` / `to` 是确认过的和现在的 SHA-256
+/// 确认一个插件磁盘上变了的文件。`name`：现在装着的那个的名字；`new_name`、`perms`、`kinds`：
+/// 改过的文件里的；`previous`：原来那一版申请的权限（读不出来是 `None`，就不标新增）；
+/// `from` / `to` 是确认过的和现在的 SHA-256
 pub fn approve(
     name: &str,
     new_name: &str,
@@ -375,22 +339,16 @@ pub fn approve(
     }
 }
 
-/// 插件能做什么。**读不出来的**（core 那边没有它的 manifest，再读一遍也读不成）按改得了
-/// 工具调用对待 —— core 拦它的理由正是这个
-#[derive(Debug, Clone, Copy)]
-pub enum Can<'a> {
-    Known {
-        perms: &'a [Permission],
-        kinds: &'a [RequestKind],
-    },
-    Unknown,
-}
-
-/// 一次改动里的一项。值都已经写成给人看的样子（[`setting_value`]）
+/// 一次保存里的一项。值都已经写成给人看的样子（[`setting_value`]）
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     TurnOn,
     TurnOff,
+    /// 改了代码（不只是出错时、范围、设置的值）：确认过的和新的 SHA-256
+    Code {
+        from: String,
+        to: String,
+    },
     OnError {
         from: OnError,
         to: OnError,
@@ -431,6 +389,18 @@ fn change_line(c: &Change) -> String {
     match c {
         Change::TurnOn => tr!("启用此插件", "Turn on the plugin").to_string(),
         Change::TurnOff => tr!("停用此插件", "Turn off the plugin").to_string(),
+        Change::Code { from, to } => tr!(
+            format!(
+                "修改代码（SHA-256：{} → {}）",
+                sha_prefix(from),
+                sha_prefix(to)
+            ),
+            format!(
+                "Change the code (SHA-256: {} → {})",
+                sha_prefix(from),
+                sha_prefix(to)
+            )
+        ),
         Change::OnError { from, to } => tr!(
             format!("出错时：{} → {}", on_error_text(*from), on_error_text(*to)),
             format!(
@@ -463,44 +433,46 @@ fn change_line(c: &Change) -> String {
     }
 }
 
-/// 打开一个改得了工具调用的插件，或者改它的设置、范围（`UpdatePluginConfirmed`）。
+/// 保存一个改得了工具调用的插件：打开它，或者改了它的代码（`SavePluginConfirmed`）。
 ///
-/// 先写**这次改什么**，再写**它能做什么**：用户点开的是一次改动，要确认的是这一次。
-/// 只是打开它的，标题和按钮都说「启用」
-pub fn update(name: &str, can: Can<'_>, changes: &[Change]) -> Ask {
-    let name = clean_name(name);
+/// 先写**这次改什么**，再写**它能做什么**：用户点开的是一次保存，要确认的是这一次。只是
+/// 打开它的，标题和按钮都说「启用」。`name`：现在装着的那个的名字；`new_name`、`perms`、
+/// `kinds`：要保存的代码里的；`previous`：确认过的那一版申请的权限（读不出来是 `None`：
+/// 不标新增，按改得了工具调用对待）
+pub fn save(
+    name: &str,
+    new_name: &str,
+    perms: &[Permission],
+    kinds: &[RequestKind],
+    previous: Option<&[Permission]>,
+    changes: &[Change],
+) -> Ask {
+    let (name, new_name) = (clean_name(name), clean_name(new_name));
     let only_on = changes == [Change::TurnOn];
+    let code = changes.iter().any(|c| matches!(c, Change::Code { .. }));
+    let renamed = if code {
+        renamed(&name, &new_name)
+    } else {
+        String::new()
+    };
     let mut lines: Vec<String> = changes
         .iter()
         .map(|c| format!("• {}", change_line(c)))
         .collect();
     if lines.is_empty() {
-        // core 认为有要点头的改动、这里比不出来：照实说是一次保存
-        lines.push(format!(
-            "• {}",
-            tr!("保存此插件的设置", "Save the plugin's settings")
-        ));
+        // core 认为要点头、这里比不出改了什么：照实说是一次保存
+        lines.push(format!("• {}", tr!("保存此插件", "Save the plugin")));
     }
-    let (can_text, danger) = match can {
-        Can::Known { perms, kinds } => (
-            abilities(perms, None, kinds),
-            perms.contains(&Permission::ReplyToolCalls),
-        ),
-        Can::Unknown => (
-            format!(
-                "• {}",
-                tr!(
-                    "申请的权限无法读取，可能包括修改回答中的工具调用（高风险）",
-                    "Its permissions cannot be read; they may include changing tool calls in replies (high risk)"
-                )
-            ),
-            true,
-        ),
+    let changes_text = lines.join("\n");
+    let can = abilities(perms, previous, kinds);
+    let check = if code {
+        format!("\n\n{}", check_line())
+    } else {
+        String::new()
     };
-    let changes = lines.join("\n");
     let detail = tr!(
-        format!("本次改动：\n{changes}\n\n此插件可以：\n{can_text}"),
-        format!("Changes:\n{changes}\n\nThis plugin can:\n{can_text}")
+        format!("{renamed}本次改动：\n{changes_text}\n\n此插件可以：\n{can}{check}"),
+        format!("{renamed}Changes:\n{changes_text}\n\nThis plugin can:\n{can}{check}")
     );
     Ask {
         title: tr!("确认插件改动", "Confirm Plugin Changes").to_string(),
@@ -511,8 +483,8 @@ pub fn update(name: &str, can: Can<'_>, changes: &[Change]) -> Ask {
             )
         } else {
             tr!(
-                format!("更改插件「{name}」"),
-                format!("Change Plugin “{name}”")
+                format!("保存插件「{name}」"),
+                format!("Save Plugin “{name}”")
             )
         },
         detail,
@@ -530,7 +502,8 @@ pub fn update(name: &str, can: Can<'_>, changes: &[Change]) -> Ask {
         } else {
             tr!("选择「确定」保存改动。", "Choose OK to save the changes.").to_string()
         },
-        danger,
+        danger: perms.contains(&Permission::ReplyToolCalls)
+            || previous.is_none_or(|p| p.contains(&Permission::ReplyToolCalls)),
     }
 }
 
@@ -606,7 +579,7 @@ mod tests {
         let perms = [Permission::Messages];
         let asks = [
             install("p", &perms, &all, &PluginScope::default(), "aa"),
-            replace("p", "p", &perms, &all, Some(&perms), "aa"),
+            save("p", "p", &perms, &all, Some(&perms), &[Change::TurnOn]),
             approve("p", "p", &perms, &all, Some(&perms), "aa", "bb"),
         ];
         for a in &asks {
@@ -645,30 +618,38 @@ mod tests {
         assert!(!a.danger);
     }
 
-    /// 原来那一版的权限读不出来：不标新增（不知道哪一项是新的）
+    /// 原来那一版的权限读不出来：不标新增（不知道哪一项是新的），按改得了工具调用对待
     #[test]
     fn nothing_is_marked_new_when_the_old_permissions_are_unknown() {
-        let a = replace(
+        let a = save(
             "p",
             "p",
             &[Permission::System],
             &[RequestKind::Conversation],
             None,
-            "aa",
+            &[Change::TurnOn],
         );
         assert!(!a.detail.contains("新增"), "{}", a.detail);
+        assert!(a.danger);
     }
 
     #[test]
     fn new_code_under_another_name_says_so() {
         let kinds = [RequestKind::Conversation];
         let sys = [Permission::System];
-        let same = replace("附加日期", "附加日期", &sys, &kinds, Some(&sys), "aa");
-        let other = replace("附加日期", "清空系统提示", &sys, &kinds, Some(&sys), "aa");
+        let code = [Change::Code {
+            from: "aaaa".into(),
+            to: "bbbb".into(),
+        }];
+        let same = save("附加日期", "附加日期", &sys, &kinds, Some(&sys), &code);
+        let other = save("附加日期", "清空系统提示", &sys, &kinds, Some(&sys), &code);
         // 标题是装着的那个名字，新名字写在正文里
         assert!(other.message.contains("附加日期"), "{}", other.message);
         assert!(other.detail.contains("清空系统提示"), "{}", other.detail);
         assert!(!same.detail.contains("附加日期"), "{}", same.detail);
+        // 改了代码：写新旧两个 SHA-256，请人核对
+        assert!(same.detail.contains("aaaa → bbbb"), "{}", same.detail);
+        assert!(same.detail.contains(check_line()), "{}", same.detail);
     }
 
     #[test]
@@ -691,12 +672,12 @@ mod tests {
     fn turning_a_tool_call_plugin_on_says_what_changes_and_what_it_can_do() {
         let perms = [Permission::Messages, Permission::ReplyToolCalls];
         let kinds = [RequestKind::Conversation];
-        let a = update(
+        let a = save(
             "WSL 路径转换",
-            Can::Known {
-                perms: &perms,
-                kinds: &kinds,
-            },
+            "WSL 路径转换",
+            &perms,
+            &kinds,
+            Some(&perms),
             &[Change::TurnOn],
         );
         assert_eq!(a.message, "启用插件「WSL 路径转换」");
@@ -708,14 +689,21 @@ mod tests {
             .find(permission_text(Permission::ReplyToolCalls))
             .unwrap();
         assert!(change < can, "{}", a.detail);
+        // 没改代码：不用核对 SHA-256
+        assert!(!a.detail.contains(check_line()), "{}", a.detail);
     }
 
     #[test]
-    fn a_settings_change_lists_each_change_and_the_values_stay_on_one_line() {
-        let a = update(
+    fn a_data_change_lists_each_change_and_the_values_stay_on_one_line() {
+        let perms = [Permission::Messages, Permission::ReplyToolCalls];
+        let a = save(
             "p",
-            Can::Unknown,
+            "p",
+            &perms,
+            &[RequestKind::Conversation],
+            Some(&perms),
             &[
+                Change::TurnOn,
                 Change::Setting {
                     label: "替换表\n伪造的一行".into(),
                     from: setting_value(&tw_api::SettingValue::String("a=b\nc=d".into())),
@@ -729,7 +717,6 @@ mod tests {
             ],
         );
         assert_eq!(a.accept, "保存");
-        // 读不出权限的按高风险对待
         assert!(a.danger);
         assert!(
             a.detail
@@ -742,6 +729,29 @@ mod tests {
             "{}",
             a.detail
         );
+    }
+
+    /// 新代码多要了工具调用：标「新增」，警示的样子
+    #[test]
+    fn new_code_that_adds_tool_calls_is_marked() {
+        let a = save(
+            "p",
+            "p",
+            &[Permission::System, Permission::ReplyToolCalls],
+            &[RequestKind::Conversation],
+            Some(&[Permission::System]),
+            &[Change::Code {
+                from: "aa".into(),
+                to: "bb".into(),
+            }],
+        );
+        let line = a
+            .detail
+            .lines()
+            .find(|l| l.contains(permission_text(Permission::ReplyToolCalls)))
+            .unwrap();
+        assert!(line.contains("新增"), "{line}");
+        assert!(a.danger);
     }
 
     #[test]

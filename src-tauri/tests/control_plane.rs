@@ -443,15 +443,20 @@ async fn a_bedrock_upstream_is_saved_the_way_the_dialog_sends_it() {
     assert_eq!(m.code, "config.credential.aws_profile_and_keys", "{m:?}");
 }
 
-/// 改得了工具调用的插件，网页那条路（`UpdatePlugin`）打不开它：core 答
+/// 改得了工具调用的插件，网页那条路（`SavePlugin`）打不开它：core 答
 /// `control.plugin.needs_confirmation`，界面据此请 Rust 弹系统的确认框。确认过的那一条
-/// （`UpdatePluginConfirmed`，桌面端点过头才发）打得开；停用照常走网页那条。
+/// （`SavePluginConfirmed`，桌面端点过头才发）打得开；只改数据（按表单改写的设置值）、
+/// 停用照常走网页那条（约定附录 4 §3）。
 ///
-/// core 第一次起来时装上的默认插件里就有这样一个（`wsl-paths`），停用着
+/// core 第一次起来时装上的默认插件里就有这样一个（`wsl-paths`），停用着。
+///
+/// PROVISIONAL：端点是 core v0.59.0 的（`plugins::wire`），钉点升上去之后去掉 `#[ignore]`
 #[tokio::test]
-async fn a_tool_call_plugin_is_turned_on_only_through_the_confirmed_update() {
+#[ignore = "needs core v0.59.0 (plugins contract addendum 4)"]
+async fn a_tool_call_plugin_is_turned_on_only_through_the_confirmed_save() {
     use thinkwatch_lite_lib::control::Refused;
-    use tw_api::{Permission, PluginUpdate, ep};
+    use thinkwatch_lite_lib::plugins::wire;
+    use tw_api::{SettingValue, ep};
 
     let core = Core::start();
     core.wait_ready().await;
@@ -459,43 +464,91 @@ async fn a_tool_call_plugin_is_turned_on_only_through_the_confirmed_update() {
 
     // 默认插件在启动时装上：等它出现在单子上
     let deadline = Instant::now() + Duration::from_secs(10);
-    let wsl = loop {
-        let all = c.call::<ep::Plugins>(&[], &()).await.unwrap();
+    loop {
+        let all = c.call::<wire::Plugins>(&[], &()).await.unwrap();
+        let all: Vec<wire::Installed> = serde_json::from_value(all).unwrap();
         if let Some(p) = all.into_iter().find(|p| p.id == "wsl-paths") {
-            break p;
+            assert!(!p.enabled, "默认插件装上时停用着");
+            break;
         }
         assert!(Instant::now() < deadline, "默认插件没有装上");
         tokio::time::sleep(Duration::from_millis(100)).await;
-    };
-    assert!(!wsl.enabled, "默认插件装上时停用着");
-    assert!(
-        wsl.permissions.is_empty() || wsl.permissions.contains(&Permission::ReplyToolCalls),
-        "{:?}",
-        wsl.permissions
-    );
+    }
+    let source = c
+        .call::<ep::PluginSourceDiff>(&["wsl-paths"], &())
+        .await
+        .unwrap()
+        .approved;
 
-    let on = PluginUpdate {
+    let on = wire::PluginSave {
+        source: source.clone(),
         enabled: true,
-        on_error: wsl.on_error,
-        scope: wsl.scope.clone(),
-        settings: wsl.settings.clone(),
         base_version: None,
     };
     let e = c
-        .call::<ep::UpdatePlugin>(&["wsl-paths"], &on)
+        .call::<wire::SavePlugin>(&["wsl-paths"], &on)
         .await
         .unwrap_err();
     let m = &e.downcast_ref::<Refused>().expect("被拒时要带码").0;
     assert_eq!(m.code, "control.plugin.needs_confirmation", "{m:?}");
+    c.call::<wire::SavePluginConfirmed>(&["wsl-paths"], &on)
+        .await
+        .unwrap();
 
-    c.call::<ep::UpdatePluginConfirmed>(&["wsl-paths"], &on)
+    // 开着的时候只改一个设置的值：网页那条就够
+    let read = c
+        .call::<wire::PluginInspect>(
+            &[],
+            &tw_api::PluginSource {
+                source: source.clone(),
+            },
+        )
         .await
         .unwrap();
-    let off = PluginUpdate {
-        enabled: false,
-        ..on
-    };
-    c.call::<ep::UpdatePlugin>(&["wsl-paths"], &off)
+    let read: wire::Inspection = serde_json::from_value(read).unwrap();
+    let m = read.manifest.expect("默认插件读得出 manifest");
+    let rewritten = c
+        .call::<wire::PluginRewrite>(
+            &[],
+            &wire::PluginRewriteRequest {
+                source,
+                on_error: m.on_error,
+                scope: m.scope.clone(),
+                settings: m
+                    .settings_schema
+                    .iter()
+                    .map(|s| {
+                        let v = match s.value {
+                            SettingValue::Bool(b) => SettingValue::Bool(!b),
+                            ref other => other.clone(),
+                        };
+                        (s.key.clone(), v)
+                    })
+                    .collect(),
+            },
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .source;
+    c.call::<wire::SavePlugin>(
+        &["wsl-paths"],
+        &wire::PluginSave {
+            source: rewritten.clone(),
+            enabled: true,
+            base_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    // 停用照常走网页那条
+    c.call::<wire::SavePlugin>(
+        &["wsl-paths"],
+        &wire::PluginSave {
+            source: rewritten,
+            enabled: false,
+            base_version: None,
+        },
+    )
+    .await
+    .unwrap();
 }
