@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellIcon, XIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { when } from "@/format";
@@ -62,8 +62,8 @@ export function Notices({
 
   useEffect(() => {
     load();
-    const un = listen<Notice[]>("notices-changed", (e) => setList(e.payload));
-    return () => void un.then((f) => f());
+    const un = subscribe<Notice[]>("notices-changed", (e) => setList(e.payload));
+    return un;
   }, [load]);
 
   useEffect(() => {
@@ -74,8 +74,8 @@ export function Notices({
     invoke<NoticeMode>("notice_mode")
       .then(setMode)
       .catch(() => setMode("system"));
-    const un = listen<NoticeMode>("notice-mode-changed", (e) => setMode(e.payload));
-    return () => void un.then((f) => f());
+    const un = subscribe<NoticeMode>("notice-mode-changed", (e) => setMode(e.payload));
+    return un;
   }, []);
 
   function markRead(key: string) {

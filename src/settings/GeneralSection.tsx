@@ -8,6 +8,7 @@ import { notify } from "@/ui/notify";
 import { guideText } from "@/guide/guide.i18n";
 import { resetHints, useAnyDismissed } from "@/guide/hints";
 import { useResource } from "@/lib/resource";
+import { useTauriEvent } from "@/lib/tauriEvent";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
 import {
@@ -20,7 +21,7 @@ import {
   type ThemeView,
 } from "./api";
 import { generalText } from "./GeneralSection.i18n";
-import { Loaded, SettingsCard, SettingsGroup, SettingsRow, useAppEvent, useWrite } from "./kit";
+import { Loaded, SettingsCard, SettingsGroup, SettingsRow, useWrite } from "./kit";
 
 /**
  * 设置 → 通用。**改的是这个应用自己，点一下就换**，不走配置文件的「保存」：这几项
@@ -62,7 +63,7 @@ function LanguageRow() {
     return v;
   });
   // 别的窗口（或者系统语言）换了：跟着重读
-  useAppEvent<Lang>("language-changed", () => void r.reload());
+  useTauriEvent<Lang>("language-changed", () => void r.reload());
   return (
     <SettingsRow
       anchor="language"
@@ -154,7 +155,7 @@ function MenubarRow() {
   const r = useResource(APP_KEYS.menubar, settingsApi.menubar);
   const [, set] = useWrite(r, settingsApi.setMenubar);
   const { mutate } = r;
-  useAppEvent<MenubarStyle>("menubar-style-changed", (s) => void mutate(s));
+  useTauriEvent<MenubarStyle>("menubar-style-changed", (e) => void mutate(e.payload));
   return (
     <SettingsRow
       anchor="menubar"
@@ -220,7 +221,7 @@ function NoticesRow() {
   const r = useResource(APP_KEYS.noticeMode, settingsApi.noticeMode);
   const [, set] = useWrite(r, settingsApi.setNoticeMode);
   const { mutate } = r;
-  useAppEvent<NoticeMode>("notice-mode-changed", (m) => void mutate(m));
+  useTauriEvent<NoticeMode>("notice-mode-changed", (e) => void mutate(e.payload));
   return (
     <SettingsRow
       anchor="notices"

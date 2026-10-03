@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { call } from "@/control";
 import {
   applyEvent,
@@ -459,7 +459,7 @@ export function useRequests(ready: boolean) {
       那一刻记，不等下一帧落地。
     */
     resetCoreClock();
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") noteCoreTime(ev.at_ms, Date.now());
       if (since) {
@@ -489,7 +489,7 @@ export function useRequests(ready: boolean) {
       try {
         // **等订阅真的挂上再问**：`listen` 是异步注册的，先问的话，快照和
         // 订阅之间结束的请求，结局谁都没收到
-        await un;
+        await un.ready;
         const sentAt = Date.now();
         const open = await call("InFlight", null);
         const gotAt = Date.now();
@@ -509,7 +509,7 @@ export function useRequests(ready: boolean) {
       再也等不到结局（见 `interruptInFlight`）。回来的时候（`running:<pid>`）
       再对一次账，补上重连之前就开始了的。
     */
-    const unState = listen<string>("core-state", (e) => {
+    const unState = subscribe<string>("core-state", (e) => {
       if (e.payload.startsWith("running")) {
         void resync();
         return;
@@ -526,7 +526,7 @@ export function useRequests(ready: boolean) {
       客户端配置里新出现的可疑内容。**这台机器上的文件监视说的，不是 core**：
       连着哪个 core 都一样。MCP 页有新发现时直接落在「发现」上要用它。
     */
-    const unLocal = listen<LocalEvent>("local-event", (e) => {
+    const unLocal = subscribe<LocalEvent>("local-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
     });
@@ -535,9 +535,9 @@ export function useRequests(ready: boolean) {
     // 但显式断掉能省下事件堆积。
     return () => {
       alive = false;
-      un.then((f) => f());
-      void unState.then((f) => f());
-      void unLocal.then((f) => f());
+      un();
+      unState();
+      unLocal();
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (settle.current) clearTimeout(settle.current);
     };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import appIcon from "../src-tauri/icons/128x128.png";
 import { Banner } from "@/ui/banner";
@@ -59,22 +59,22 @@ export default function UpdateWindow() {
 
   // 窗口开着的时候又查到了更新的一版 —— 换成新的那一版
   useEffect(() => {
-    const un = listen("update-found", load);
+    const un = subscribe("update-found", load);
     return () => {
-      void un.then((f) => f());
+      un();
     };
   }, [load]);
 
   useEffect(() => {
-    const a = listen<Step>("update-step", (e) => setStep(e.payload));
+    const a = subscribe<Step>("update-step", (e) => setStep(e.payload));
     // 事件报的是**这一块多大**，不是已下载总量，要自己累加
-    const b = listen<[number, number | null]>("update-progress", (e) => {
+    const b = subscribe<[number, number | null]>("update-progress", (e) => {
       const [chunk, total] = e.payload;
       setProgress(([done, t]) => [done + chunk, total ?? t]);
     });
     return () => {
-      void a.then((f) => f());
-      void b.then((f) => f());
+      a();
+      b();
     };
   }, []);
 

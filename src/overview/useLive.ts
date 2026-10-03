@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from "react";
 import { call } from "@/control";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { textOf } from "@/i18n";
 import type { CoreEvent, HistoryRow } from "@/types";
 import { liveText } from "./useLive.i18n";
@@ -207,7 +207,7 @@ export function useInFlight(): number {
       flying.current.delete(id);
       since?.ended.add(id);
     };
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_started") start(ev.id);
       else if (
@@ -229,7 +229,7 @@ export function useInFlight(): number {
       try {
         // **等订阅真的挂上再问。**`listen` 是异步注册的：先问的话，快照和
         // 订阅之间结束的请求，它的结局谁都没收到，就一直挂在「进行中」
-        await un;
+        await un.ready;
         const open = await call("InFlight", null);
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
@@ -249,7 +249,7 @@ export function useInFlight(): number {
       **core 不在跑的时候，谁都不在「进行中」。**它一停，正在跑的请求就断
       了，而它们再也不会有结局；回来的时候（`running:<pid>`）重新对一遍。
     */
-    const unState = listen<string>("core-state", (e) => {
+    const unState = subscribe<string>("core-state", (e) => {
       if (e.payload.startsWith("running")) {
         void resync();
       } else {
@@ -260,8 +260,8 @@ export function useInFlight(): number {
     });
     return () => {
       alive = false;
-      void un.then((f) => f());
-      void unState.then((f) => f());
+      un();
+      unState();
     };
   }, [soon]);
 
@@ -324,7 +324,7 @@ export function useLiveWindow(active: boolean, windowMs: number) {
       });
       arrived.current += 1;
     };
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
@@ -362,7 +362,7 @@ export function useLiveWindow(active: boolean, windowMs: number) {
     const seed = async () => {
       try {
         // 挂上了再补 —— `listen` 是异步注册的
-        await un;
+        await un.ready;
         /*
           **库里的时刻是 core 的时钟，图的横轴是这边的时钟。**连的是另一台机器上
           的 core 时，两边不一定对得上：差出一分钟，补回来的这一段就整段错开一分钟，
@@ -407,7 +407,7 @@ export function useLiveWindow(active: boolean, windowMs: number) {
     }, LIVE_FRAME_MS);
     return () => {
       alive = false;
-      void un.then((f) => f());
+      un();
       clearInterval(h);
     };
   }, [active, windowMs, frame, soon]);

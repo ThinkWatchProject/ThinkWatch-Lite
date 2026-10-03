@@ -11,7 +11,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { CircleAlertIcon, PlugZapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Resource } from "@/lib/resource";
@@ -637,27 +636,4 @@ export function useWrite<T>(r: Resource<T>, write: (next: T) => Promise<T>): [bo
     [mutate],
   );
   return [pending, set];
-}
-
-/**
- * 听一个 Rust 那边发的应用事件（`language-changed`、`notice-mode-changed`…）。它们
- * 不是 core 的事件，`useResource` 的 `events` 管不到。不在应用里时什么都不做。
- */
-export function useAppEvent<T>(name: string, cb: (payload: T) => void) {
-  const f = useRef(cb);
-  f.current = cb;
-  useEffect(() => {
-    let off: (() => void) | null = null;
-    let dead = false;
-    listen<T>(name, (e) => f.current(e.payload))
-      .then((un) => {
-        if (dead) un();
-        else off = un;
-      })
-      .catch(() => {});
-    return () => {
-      dead = true;
-      off?.();
-    };
-  }, [name]);
 }
