@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { connApi, type ConnView } from "./api";
 
 /**
@@ -11,10 +11,10 @@ export function useConnection(): ConnView | null {
   const [view, setView] = useState<ConnView | null>(null);
   useEffect(() => {
     let alive = true;
-    const un = listen<ConnView>("connection", (e) => {
+    const un = subscribe<ConnView>("connection", (e) => {
       if (alive) setView(e.payload);
     });
-    void un
+    void un.ready
       .then(() => connApi.view())
       .then((v) => {
         if (alive) setView(v);
@@ -24,7 +24,7 @@ export function useConnection(): ConnView | null {
       });
     return () => {
       alive = false;
-      void un.then((f) => f());
+      un();
     };
   }, []);
   return view;

@@ -5,7 +5,7 @@
  * 跟着事件流走的一份现状，不缓存。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { bucketStart } from "@/format";
 import { useResource, type Resource } from "@/lib/resource";
 import type { CoreEvent, CostBucketGroup, ProviderView } from "@/types";
@@ -45,7 +45,7 @@ export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: num
   const { mutate, reload } = stats;
 
   useEffect(() => {
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind !== "quota_seen") return;
       mutate(
@@ -59,7 +59,7 @@ export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: num
         })),
       );
     });
-    return () => void un.then((f) => f());
+    return un;
   }, [mutate]);
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
         if (oldest !== undefined) ended.current.delete(oldest);
       }
     };
-    const unEvents = listen<CoreEvent>("core-event", (e) => {
+    const unEvents = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       switch (ev.kind) {
         case "request_started":
@@ -236,7 +236,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
       }
       bump();
     });
-    const unState = listen<string>("core-state", (e) => {
+    const unState = subscribe<string>("core-state", (e) => {
       live.current.clear();
       bump();
       if (e.payload.startsWith("running:")) seed();
@@ -244,8 +244,8 @@ export function useInFlight(): ReadonlyMap<string, number> {
     seed();
     return () => {
       alive = false;
-      void unEvents.then((f) => f());
-      void unState.then((f) => f());
+      unEvents();
+      unState();
     };
   }, []);
 

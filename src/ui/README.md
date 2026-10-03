@@ -241,6 +241,11 @@ r.mutate(next | (prev) => next, { revalidate? })  // optimistic update; returns 
   the last change is never answered with data from before it.
 - `events`: core / local event kinds that make the data stale (throttled 2.5s, like
   `useCoreEvent`). Prefer this over polling — never add `setInterval`.
+- Any other event pushed from Rust (`language-changed`, `update-found`, …):
+  `useTauriEvent(name, handler)`, or `subscribe()` inside an effect that needs the
+  unsubscribe or `.ready` — both from `@/lib/tauriEvent`. Never `listen` from
+  `@tauri-apps/api/event` directly: unlistening right after it resolves throws and can
+  leave the listener registered (`src/source.test.ts` fails on it).
 - `deps`: values that change the answer (config version, a filter). The old data stays
   on screen while the new one loads.
 - `invalidate("keys")` / `invalidate("upstream:")` (prefix) from anywhere after a

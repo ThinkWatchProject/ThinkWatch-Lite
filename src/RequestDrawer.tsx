@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { call } from "@/control";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
@@ -154,7 +154,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   useEffect(() => {
     if (!running) return;
     let alive = true;
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       const mine =
         (ev.kind === "request_headers" ||
@@ -167,7 +167,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
     });
     return () => {
       alive = false;
-      void un.then((f) => f());
+      un();
     };
   }, [running, id, load]);
 

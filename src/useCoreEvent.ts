@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { LOCAL_KINDS, type CoreEvent, type LocalEvent } from "./types";
 
 /**
@@ -46,14 +46,14 @@ export function useCoreEvent(
       }, throttleMs);
     };
     const local = new Set<string>(LOCAL_KINDS);
-    const unCore = listen<CoreEvent>("core-event", (e) => {
+    const unCore = subscribe<CoreEvent>("core-event", (e) => {
       // 这台机器上的事只认 `local-event` 那一路：旧版 core 自己也发同名的两种
       if (!local.has(e.payload.kind)) soon(e.payload.kind);
     });
-    const unLocal = listen<LocalEvent>("local-event", (e) => soon(e.payload.kind));
+    const unLocal = subscribe<LocalEvent>("local-event", (e) => soon(e.payload.kind));
     return () => {
-      void unCore.then((f) => f());
-      void unLocal.then((f) => f());
+      unCore();
+      unLocal();
       if (timer) clearTimeout(timer);
     };
   }, [want, throttleMs]);

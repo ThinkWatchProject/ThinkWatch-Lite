@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CopyIcon, ExternalLinkIcon, SmartphoneIcon } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -114,7 +114,7 @@ export function ChatgptLoginDialog({
   // 结果由 core 发事件，不必一直问；问一遍是为了事件漏掉时也能收尾
   useEffect(() => {
     if (!waiting) return;
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind !== "login_finished" || ev.login !== waiting) return;
       // 事件只报结果，不带登上的是哪个账号：那一项只在这次登录的状态里。立刻问一次，
@@ -137,7 +137,7 @@ export function ChatgptLoginDialog({
         });
     }, POLL_MS);
     return () => {
-      void un.then((f) => f());
+      un();
       clearInterval(timer);
     };
     // settle 每次渲染都是新的，但订阅只该跟着这次登录重建

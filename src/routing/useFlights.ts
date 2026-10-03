@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { call } from "@/control";
 import type { CoreEvent } from "@/types";
 import { applyFlightEvent, type Flight } from "./flights";
@@ -43,7 +43,7 @@ export function useFlights(): ReadonlyMap<number, Flight> {
       timers.add(h);
     };
 
-    const un = listen<CoreEvent>("core-event", (e) => {
+    const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "events_dropped") {
         // 结局可能正在丢掉的那几条里：清掉，按快照重来
@@ -62,7 +62,7 @@ export function useFlights(): ReadonlyMap<number, Flight> {
       seen = mark;
       try {
         // 等订阅真的挂上再问：`listen` 是异步注册的
-        await un;
+        await un.ready;
         const open = await call("InFlight", null);
         if (!alive || seen !== mark) return;
         // 每个请求到目前为止的事件按原来的顺序重放：已经路由了的，一打开就画到上游
@@ -78,7 +78,7 @@ export function useFlights(): ReadonlyMap<number, Flight> {
       }
     }
     void resync();
-    const unState = listen<string>("core-state", (e) => {
+    const unState = subscribe<string>("core-state", (e) => {
       if (e.payload.startsWith("running")) {
         void resync();
         return;
@@ -90,8 +90,8 @@ export function useFlights(): ReadonlyMap<number, Flight> {
 
     return () => {
       alive = false;
-      void un.then((f) => f());
-      void unState.then((f) => f());
+      un();
+      unState();
       if (batch) clearTimeout(batch);
       for (const h of timers) clearTimeout(h);
     };
