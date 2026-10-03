@@ -12,7 +12,9 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    # TEMP (Windows portable work): the integration branch and its per-path
+    # branches run the full CI on every push. Remove before merging into dev.
+    branches: [main, dev, feat/windows-portable, "portable/**"]
   pull_request:
     branches: [main, dev]
 

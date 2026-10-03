@@ -16,6 +16,7 @@ pub mod atomic_file;
 pub mod autostart;
 pub mod call;
 pub mod chatgpt;
+pub mod cleanup;
 pub mod clients;
 /// 系统睡醒、改时钟、换时区时叫醒定在钟点上的几处，见模块头上
 pub mod clock;
@@ -27,6 +28,7 @@ pub mod dashboard;
 #[cfg(target_os = "linux")]
 pub mod desktop_entry;
 pub mod diagnostics;
+pub mod dialog;
 #[cfg(target_os = "macos")]
 /// 从 DMG 里取出 `.app`，给更新器用。**只有 macOS 有** —— 它整个是 `hdiutil`，
 /// 而发布页上那个 DMG 本来就只给那个平台。Windows 上更新器直接装 NSIS 包。
@@ -46,18 +48,22 @@ pub mod memcheck;
 pub mod menubar;
 pub mod notices;
 pub mod plugins;
+pub mod portable;
 pub mod prefs;
 /// 建只有自己能读的数据目录，见模块头上
 pub mod private_dir;
 pub mod scan;
 pub mod settings;
+pub mod single;
 pub mod supervisor;
 pub mod theme;
 pub mod uninstall;
 pub mod update;
 pub mod updater;
 pub mod upstreams;
+pub mod webview2;
 pub mod window;
+pub mod winreg;
 pub mod wire;
 pub mod zai;
 
@@ -119,6 +125,16 @@ pub fn run() {
     // 在单实例插件把这个进程判成「第二个」之前放下激活令牌
     #[cfg(target_os = "linux")]
     window::relaunch_token::stash();
+    // 绿色版的数据目录要在一切之前定下来（见 `portable`）：下面每一步都要读写它
+    portable::prepare();
+    // 下面几步都可能弹系统对话框，语言要先定
+    i18n::set(i18n::effective(prefs::load(&data_dir()).language));
+    // 系统卸载程序调用的无界面清理（见 `cleanup`）：做完就退出，不起界面
+    cleanup::dispatch();
+    // 已经有一个实例在运行（见 `single`）：转交、提示，或者等它退出后接着启动
+    single::precheck();
+    // 缺 WebView2 就开不了窗口（见 `webview2`）
+    webview2::ensure();
     let builder = tauri::Builder::default();
     // **单实例要第一个注册**，插件自己的文档如此要求：它得在别的插件把端口、
     // socket、注册表项占上之前就判断出「已经有一个在跑」。
@@ -266,6 +282,9 @@ pub fn run() {
             i18n::set(i18n::effective(saved.language));
             // 外观在窗口出现之前就设好，不然会先画一帧系统那一档的颜色
             theme::init(&handle, saved.theme);
+            // 链接、开机自启、通知登记改成指向正在运行的这个 exe（见 `winreg`）。
+            // 要在下面判断系统通知能不能用之前
+            winreg::claim(&handle);
             // **找不到 core 也要把窗口开起来。**这里原来是 `?` ——
             // 而它把「找不到一个文件」变成了「应用打不开」。
             let located = locate_core(&handle);
@@ -374,6 +393,8 @@ pub fn run() {
                 menubar: menubar_wake,
                 menubar_now: Arc::new(tokio::sync::Notify::new()),
             });
+            // 等另一个位置的程序请求切换（见 `single`）
+            single::listen(&handle);
 
             // **状态变化推给界面，不要让它来问。**「core 起来没、是不是
             // 在重启、有没有进安全模式」一天变不了几次，而界面原来是每
