@@ -690,19 +690,20 @@ mod native {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "tw-linux-notices-{}-{name}-{}",
-            std::process::id(),
-            super::super::now_ms()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        d.join(STORE_FILE)
+    /// The table's file in a directory that does not exist yet, inside a scratch
+    /// directory removed when the test ends (passed or failed). Keep the guard
+    fn tmp(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new()
+            .prefix(&format!("tw-linux-notices-{name}-"))
+            .tempdir()
+            .unwrap();
+        let f = root.path().join("d").join(STORE_FILE);
+        (root, f)
     }
 
     #[test]
     fn a_saved_table_comes_back_in_the_same_session() {
-        let f = tmp("same");
+        let (_tmp, f) = tmp("same");
         let mut t = Table::new(stamp("boot", "2", ":1.40"));
         assert!(t.set("upstream:甲", 7));
         assert!(!t.set("upstream:甲", 7));
@@ -716,7 +717,7 @@ mod tests {
 
     #[test]
     fn another_boot_session_or_server_drops_the_whole_table() {
-        let f = tmp("other");
+        let (_tmp, f) = tmp("other");
         let mut t = Table::new(stamp("boot", "2", ":1.40"));
         t.set("core", 9);
         t.save(&f);
@@ -734,7 +735,7 @@ mod tests {
 
     #[test]
     fn a_missing_or_broken_file_is_an_empty_table() {
-        let f = tmp("broken");
+        let (_tmp, f) = tmp("broken");
         assert_eq!(Table::load(&f, "s"), Table::new("s".into()));
         std::fs::create_dir_all(f.parent().unwrap()).unwrap();
         std::fs::write(&f, "{not json").unwrap();
@@ -922,9 +923,14 @@ mod tests {
                     return;
                 }
             };
-            let dir = std::env::temp_dir().join(format!("tw-dbus-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            let store = dir.join(STORE_FILE);
+            // The notifier tasks write the table in here: removed at the end, once they
+            // have finished (a write after the removal would create it again). The
+            // guard also removes it when the test fails part-way
+            let dir = tempfile::Builder::new()
+                .prefix("tw-dbus-")
+                .tempdir()
+                .unwrap();
+            let store = dir.path().join("d").join(STORE_FILE);
             let clicks: Clicks = Arc::default();
             let spawn = |clicks: Clicks| {
                 let (tx, task) = start(Config {
@@ -1091,7 +1097,7 @@ mod tests {
             drop(tx);
             task.await.unwrap();
             drop(srv);
-            let _ = std::fs::remove_dir_all(&dir);
+            drop(dir);
         }
 
         async fn wait_for(cond: impl Fn() -> bool) {

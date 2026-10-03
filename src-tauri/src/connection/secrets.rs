@@ -86,10 +86,15 @@ pub fn remove(dir: &Path, id: &str) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("tw-secrets-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        p
+    /// 一个还不存在的目录（由被测代码建），放在测试结束（过了、没过）就删掉的临时
+    /// 目录里。拿着返回的第一项到测试结束
+    fn tmp(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new()
+            .prefix(&format!("tw-secrets-{name}-"))
+            .tempdir()
+            .unwrap();
+        let p = root.path().join("d");
+        (root, p)
     }
 
     #[test]
@@ -103,7 +108,7 @@ mod tests {
 
     #[test]
     fn keys_are_stored_per_connection_and_removed() {
-        let dir = tmp("trip");
+        let (_tmp, dir) = tmp("trip");
         store(&dir, "a1", &"a".repeat(64)).unwrap();
         store(&dir, "b2", &"b".repeat(64)).unwrap();
         store(&dir, "a1", &"c".repeat(64)).unwrap();
@@ -120,7 +125,8 @@ mod tests {
     #[test]
     fn the_file_is_private_from_the_start() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = tmp("mode").join("data");
+        let (_tmp, dir) = tmp("mode");
+        let dir = dir.join("data");
         store(&dir, "a1", &"a".repeat(64)).unwrap();
         store(&dir, "a2", &"b".repeat(64)).unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
@@ -132,7 +138,7 @@ mod tests {
     /// 连接列表那份文件里没有密钥：两份分开放
     #[test]
     fn the_list_file_never_sees_a_key() {
-        let dir = tmp("apart");
+        let (_tmp, dir) = tmp("apart");
         store(&dir, "a1", &"e".repeat(64)).unwrap();
         crate::connection::store::save(&dir, &crate::connection::store::Connections::default())
             .unwrap();

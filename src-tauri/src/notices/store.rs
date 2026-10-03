@@ -66,14 +66,15 @@ mod tests {
     use super::super::{Level, Mode, Notices, Signal};
     use super::*;
 
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "tw-notice-store-{}-{name}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    /// 一个还不存在的目录（写的时候建出来），放在测试结束（过了、没过）就删掉的临时
+    /// 目录里。拿着返回的第一项到测试结束
+    fn tmp(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new()
+            .prefix(&format!("tw-notice-store-{name}-"))
+            .tempdir()
+            .unwrap();
+        let d = root.path().join("d");
+        (root, d)
     }
 
     fn notice(key: &str) -> Notice {
@@ -100,20 +101,19 @@ mod tests {
     /// 先取的那一份后排到：它比盘上的旧，**不该盖掉**
     #[test]
     fn an_older_snapshot_never_overwrites_a_newer_one() {
-        let dir = tmp("order");
+        let (_tmp, dir) = tmp("order");
         let s = Store::new(dir.join("notices.json"));
         s.save(2, &[notice("b")]);
         s.save(1, &[notice("a")]);
         assert_eq!(keys(&s.load()), ["b"]);
         s.save(3, &[notice("c")]);
         assert_eq!(keys(&Store::new(dir.join("notices.json")).load()), ["c"]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 几个线程同时往总线上报：**最后落盘的就是列表此刻的样子**，一条不少
     #[test]
     fn after_changes_from_many_threads_the_file_is_what_is_listed() {
-        let dir = tmp("threads");
+        let (_tmp, dir) = tmp("threads");
         let bus: Arc<Notices> = Notices::new(Vec::new(), Some(dir.clone()), Mode::App);
         std::thread::scope(|scope| {
             for t in 0..8 {
@@ -131,17 +131,15 @@ mod tests {
         let on_disk = Store::new(dir.join("notices.json")).load();
         assert_eq!(on_disk.len(), 160);
         assert_eq!(keys(&on_disk), keys(&bus.list()));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 读不出来（写到一半的旧文件、别的东西）按空的算，不挡启动
     #[test]
     fn a_broken_file_reads_as_empty() {
-        let dir = tmp("broken");
+        let (_tmp, dir) = tmp("broken");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("notices.json"), "[{\"key\":\"a\",").unwrap();
         assert!(Store::new(dir.join("notices.json")).load().is_empty());
         assert!(Store::new(dir.join("missing.json")).load().is_empty());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

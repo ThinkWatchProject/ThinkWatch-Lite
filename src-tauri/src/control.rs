@@ -554,23 +554,32 @@ mod tests {
         assert_eq!(ops.len(), 6);
     }
 
-    /// 一份写着钥匙的配置。**钥匙是在的**：下面几条要测的是建连那一步，不是读钥匙
-    fn key_file(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("tw-key-{}-{name}.yaml", std::process::id()));
+    /// 一份写着钥匙的配置。**钥匙是在的**：下面几条要测的是建连那一步，不是读钥匙。
+    ///
+    /// 放在一个测试结束（过了、没过）就删掉的临时目录里，拿着返回的第一项到测试结束
+    fn key_file(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix(&format!("tw-key-{name}-"))
+            .tempdir()
+            .unwrap();
+        let p = d.path().join("config.yaml");
         std::fs::write(
             &p,
             format!("listen:\n  control:\n    key: \"{}\"\n", "ab".repeat(32)),
         )
         .unwrap();
-        p
+        (d, p)
     }
 
     /// 一个一定连不上的客户端：这个平台默认的那种传输，指向一个不存在的地方。
-    fn unreachable() -> ControlClient {
-        ControlClient::new(
+    /// 第二项是钥匙所在的临时目录，拿着它到测试结束
+    fn unreachable() -> (ControlClient, tempfile::TempDir) {
+        let (dir, key) = key_file("unreachable");
+        let c = ControlClient::new(
             tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
-            key_file("unreachable"),
-        )
+            key,
+        );
+        (c, dir)
     }
 
     /// 配置还没写出来（或者还没写进钥匙）：**和 socket 不在同一句话** —— core 起来时
@@ -585,7 +594,11 @@ mod tests {
         assert!(msg.contains("core"), "{msg}");
         assert!(!msg.contains("tw-no-such-config"), "{msg}");
 
-        let p = std::env::temp_dir().join(format!("tw-key-{}-nokey.yaml", std::process::id()));
+        let dir = tempfile::Builder::new()
+            .prefix("tw-key-nokey-")
+            .tempdir()
+            .unwrap();
+        let p = dir.path().join("config.yaml");
         std::fs::write(&p, "listen:\n  gateway:\n    port: 1\n").unwrap();
         let no_key = ControlClient::new(
             tw_api::control::Address::in_dir(Path::new("/tmp/tw-definitely-not-there-xyz")),
@@ -593,14 +606,13 @@ mod tests {
         );
         let msg = format!("{:#}", no_key.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
-        let _ = std::fs::remove_file(p);
     }
 
     /// 连不上时说 core 不在，**不带地址和系统原话**：几乎每个命令在
     /// core 不在的时候回给界面的都是这一句
     #[tokio::test]
     async fn connecting_to_a_missing_socket_says_core_is_not_there() {
-        let c = unreachable();
+        let (c, _key) = unreachable();
         let msg = format!("{:#}", c.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
         assert!(!msg.contains("os error"), "{msg}");
@@ -614,11 +626,12 @@ mod tests {
     /// 先要把端口读出来，而「文件还没写」正是刚把 core 拉起来那一小段的常态。
     #[tokio::test]
     async fn a_missing_port_file_also_says_core_is_not_there() {
+        let (_key, key) = key_file("noport");
         let c = ControlClient::new(
             tw_api::control::Address::Loopback {
                 port_file: PathBuf::from("/tmp/tw-no-such-port-file-xyz"),
             },
-            key_file("noport"),
+            key,
         );
         let msg = format!("{:#}", c.status().await.unwrap_err());
         assert!(msg.contains("core"), "{msg}");
@@ -629,13 +642,14 @@ mod tests {
     /// 写了一半的端口文件也算「还没好」，不是一个要报给用户的错。
     #[tokio::test]
     async fn a_half_written_port_file_counts_as_not_ready() {
-        let d = std::env::temp_dir().join(format!("tw-port-{}", std::process::id()));
+        let (dir, key) = key_file("halfport");
+        let d = dir.path().join("control.port");
         std::fs::write(&d, "12").unwrap();
         let c = ControlClient::new(
             tw_api::control::Address::Loopback {
                 port_file: d.clone(),
             },
-            key_file("halfport"),
+            key,
         );
         // 12 是个能解析的端口号，但没人听 —— 连接失败，同一句话
         let msg = format!("{:#}", c.status().await.unwrap_err());
@@ -648,14 +662,13 @@ mod tests {
             !msg.contains("invalid digit"),
             "别把 parse 的原话给用户：{msg}"
         );
-        let _ = std::fs::remove_file(&d);
     }
 
     /// 同一句话按界面语言说
     #[test]
     fn the_unreachable_message_follows_the_interface_language() {
         use crate::i18n::{Lang, with_lang};
-        let c = unreachable();
+        let (c, _key) = unreachable();
         // 跑在当前线程上：`with_lang` 只改这一个线程看到的语言
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

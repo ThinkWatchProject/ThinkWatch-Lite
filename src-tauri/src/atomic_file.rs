@@ -54,14 +54,15 @@ fn beside(path: &Path, dir: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "tw-atomic-{}-{name}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    /// 一个还不存在的目录（`write` 要自己把它建出来），放在一个测试结束就删掉的临时
+    /// 目录里：过了、没过都删
+    fn tmp(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new()
+            .prefix(&format!("tw-atomic-{name}-"))
+            .tempdir()
+            .unwrap();
+        let d = root.path().join("d");
+        (root, d)
     }
 
     fn names(dir: &Path) -> Vec<String> {
@@ -75,25 +76,23 @@ mod tests {
 
     #[test]
     fn the_new_content_replaces_the_old_and_nothing_else_is_left_behind() {
-        let dir = tmp("replace");
+        let (_root, dir) = tmp("replace");
         let file = dir.join("app.json");
         // 目录不在就建出来
         write(&file, b"{\"a\":1}").unwrap();
         write(&file, b"{\"b\":2}").unwrap();
         assert_eq!(std::fs::read(&file).unwrap(), b"{\"b\":2}");
         assert_eq!(names(&dir), ["app.json"]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 换不上去（这里是目标位置上有一个目录）：报错，临时文件不留下
     #[test]
     fn a_failed_replace_leaves_no_temp_file_behind() {
-        let dir = tmp("failed");
+        let (_root, dir) = tmp("failed");
         std::fs::create_dir_all(dir.join("notices.json")).unwrap();
         assert!(write(&dir.join("notices.json"), b"[]").is_err());
         assert_eq!(names(&dir), ["notices.json"]);
         assert!(dir.join("notices.json").is_dir());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 换上去的是一个新文件，不是在原处重写：**在那之前打开它的，读到的还是完整的
@@ -102,7 +101,7 @@ mod tests {
     #[test]
     fn a_reader_that_opened_the_old_file_still_reads_all_of_it() {
         use std::io::Read;
-        let dir = tmp("reader");
+        let (_root, dir) = tmp("reader");
         let file = dir.join("notices.json");
         write(&file, b"[\"old\"]").unwrap();
         let mut before = std::fs::File::open(&file).unwrap();
@@ -111,6 +110,5 @@ mod tests {
         before.read_to_string(&mut text).unwrap();
         assert_eq!(text, "[\"old\"]");
         assert_eq!(std::fs::read(&file).unwrap(), b"[\"new\",\"longer\"]");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

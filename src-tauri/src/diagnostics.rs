@@ -69,10 +69,11 @@ mod tests {
     /// 诊断包从建出来那一刻就只有属主能读；同一秒再写一次也照样是 0600、内容是新的
     #[test]
     fn the_diagnostics_file_is_private_from_the_start_and_can_be_rewritten() {
-        let dir =
-            std::env::temp_dir().join(format!("tw-diag-{}", crate::connection::store::new_id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("diagnostics-1.md");
+        let dir = tempfile::Builder::new()
+            .prefix("tw-diag-")
+            .tempdir()
+            .unwrap();
+        let path = dir.path().join("diagnostics-1.md");
         write_private(&path, b"first").unwrap();
         write_private(&path, b"second").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
@@ -82,6 +83,5 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
