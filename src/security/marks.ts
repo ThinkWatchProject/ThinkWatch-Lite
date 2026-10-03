@@ -1,7 +1,8 @@
 import type { FlaggedCall, RequestRow, SecurityEventView } from "@/types";
 
 /**
- * 一条请求的安全记录 → 流量页上那两个徽标要的样子。
+ * 一条请求的安全记录 → 流量页上那几个徽标要的样子：已脱敏 / 含凭据、已拦截 / 可疑调用、
+ * 已删除。
  *
  * 实时事件和历史记录说的是同一件事，只是来路不同：刚发生的那条由事件填，
  * 翻历史时由这里填。**两条路给出同一个形状**，徽标才不会因为关窗再开而
@@ -9,10 +10,12 @@ import type { FlaggedCall, RequestRow, SecurityEventView } from "@/types";
  */
 export function marksFromEvents(
   events: SecurityEventView[] | undefined,
-): Pick<RequestRow, "secrets" | "flagged"> {
+): Pick<RequestRow, "secrets" | "flagged" | "stripped"> {
   if (!events || events.length === 0) return {};
   const redact = events.filter((e) => e.guard === "redact");
   const tools = events.filter((e) => e.guard === "inspect_tools");
+  // 内容过滤只有删过文字的上徽标，和实时那一路（`applyEvent`）一样
+  const stripped = events.filter((e) => e.guard === "content" && e.action === "stripped");
   return {
     secrets:
       redact.length > 0
@@ -37,6 +40,10 @@ export function marksFromEvents(
               blocked: e.action === "cut",
             }),
           )
+        : undefined,
+    stripped:
+      stripped.length > 0
+        ? stripped.map((e) => ({ rule: e.rule, custom: e.custom === true, count: e.count }))
         : undefined,
   };
 }

@@ -647,7 +647,7 @@ function StatusCell({ r }: { r: RequestRow }) {
 }
 
 /**
- * 上游那一格：标志、名字，和这次请求上发生过的事（脱敏、格式转换、可疑调用）。
+ * 上游那一格：标志、名字，和这次请求上发生过的事（脱敏、删除、格式转换、可疑调用）。
  *
  * **徽标宁可折到第二行，也不能把表撑宽。**格子一律不换行的话，一行同时带
  * 「已脱敏」和「已转换 · 丢弃 n 项」，这一格就有 240px，默认窗口下表比容器
@@ -694,6 +694,13 @@ function UpstreamCell({ r }: { r: RequestRow }) {
           {(r.secrets.replaced ? t.redacted : t.withSecrets)(r.secrets.items.reduce((a, x) => a + x.count, 0))}
         </Mark>
       )}
+      {/* 内容过滤删掉过命中的文字：和脱敏一样，改了请求就要在列表这一层看得见。灰的 ——
+          防护在起作用，请求照常发出 */}
+      {r.stripped && r.stripped.length > 0 && (
+        <Mark variant="secondary" tip={t.strippedTip(r.stripped.map((x) => ruleName("content", x.rule, x.custom)))}>
+          {t.stripped}
+        </Mark>
+      )}
       {/* 格式转换。**转了就要看得见，丢了字段更要看得见** —— 「扩展思考开了却
           没生效」这个症状在客户端那头完全无从下手，只有这里知道原因 */}
       {r.translated && (
@@ -715,6 +722,12 @@ function UpstreamCell({ r }: { r: RequestRow }) {
             .join("\n\n")}
         >
           {r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious}
+        </Mark>
+      )}
+      {/* 插件改写过的。**改动要看得见**：改写前后在请求详情里对比 */}
+      {r.pluginChanged && (
+        <Mark variant="secondary" tip={t.pluginChangedTip}>
+          {t.pluginChanged}
         </Mark>
       )}
     </div>

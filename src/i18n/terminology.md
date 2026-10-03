@@ -56,6 +56,13 @@ known colloquialisms.
 | 流量 | Traffic | sidebar; the list of requests |
 | 会话 | Sessions / session | |
 | 轮次 / 轮 | turns / turn | one request within a session |
+| 概况 / 对话 | Summary / Conversation | the two tabs of a session: totals and cost per turn; the session replayed turn by turn |
+| 用户 / 助手 / 工具 / 系统 | User / Assistant / Tool / System | who said a message in a conversation |
+| 系统提示 | system prompt | |
+| 思考 | thinking | |
+| 工具调用 / 工具结果 | tool call / tool result | 「Read 的结果」 = "Read result" |
+| 保留期限 | retention period | how long request and response bodies are kept |
+| 正文未保留 | content / body was not kept | a body missing inside the retention period (never stored, or dropped); older ones are past the retention period |
 | 上下文峰值 | peak context | |
 | 缓存节省 | cache savings | |
 | 发现 | Findings | sidebar |
@@ -94,9 +101,15 @@ known colloquialisms.
 | 格式转换 / 丢弃字段 | format conversion / dropped fields | |
 | 出站脱敏 / 脱敏 / 已脱敏 | outbound redaction / redaction / Redacted | |
 | 工具调用审查 | tool-call inspection | |
-| 可疑工具调用 / 已拦截 | suspicious tool call / Blocked | |
+| 内容过滤 | content filter | hidden characters are one group of its built-in rules |
+| 可疑工具调用 / 已拦截 | suspicious tool call / Blocked | traffic badges |
 | 配置面扫描 | config scan | scanning client configuration files |
-| 关闭 / 观察 / 拦截 | Off / Observe / Enforce | the three modes of every defense |
+| 关闭 / 观察 | Off / Observe | the first two modes of every protection |
+| 替换 / 切断 / 处置 | Replace / Cut off / Enforce | the third mode, named per protection: redaction / tool-call inspection / content filter; counted together in the page header as 处置 (enforcing) |
+| 拒绝 / 删除 / 仅记录 / 切断 | Refuse / Delete / Record only / Cut off | what a rule does in the third mode (column 处置 / Action) |
+| 已拒绝 / 已删除 / 已替换 / 已切断 / 仅记录 | Refused / Deleted / Replaced / Cut off / Recorded | what happened, in the security log |
+| 匹配方式：包含 / 正则 / 码位 | Match by: Contains / Regex / Code points | content rules |
+| 占位符名称 | placeholder name | `<<TW_NAME_n>>` in redaction |
 | 官方端点 / 非官方端点 | Official endpoint / Unofficial endpoint | |
 | 熔断中 / 已停用 | Circuit open / Disabled | upstream state |
 | 链路测速 / 推理测速 | Connection test / Inference test | |

@@ -19,6 +19,7 @@ import { useBusyKeys } from "./keys/live";
 import RoutingPage from "./routing/RoutingPage";
 import SecurityPage, { type LogFocus } from "./security/SecurityPage";
 import McpPage from "./mcp/McpPage";
+import PluginsPage from "./plugins/PluginsPage";
 import TrafficPage from "./traffic/TrafficPage";
 import { useTrafficView } from "./traffic/view";
 import { useSessions } from "./traffic/useSessions";
@@ -31,6 +32,7 @@ import {
   IconGuard,
   IconKey,
   IconMcp,
+  IconPlugin,
   IconRoute,
   IconServer,
   IconSettings,
@@ -63,7 +65,7 @@ import { invalidateAll, resetResources } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { Palette } from "./palette/Palette";
 import { paletteText } from "./palette/palette.i18n";
-import { COMBOS, Keys, comboText, isTyping, modalOpen, pageCombo } from "./palette/keys";
+import { COMBOS, DIGIT_PAGES, Keys, comboText, isTyping, modalOpen, pageCombo } from "./palette/keys";
 import {
   Sidebar,
   SidebarContent,
@@ -99,7 +101,7 @@ const COALESCE_MS = 100;
 const LAUNCH_CAP_MS = 8_000;
 
 /** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
-const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "security"]);
+const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "security", "plugins"]);
 
 /** 配置文件里的一段由哪一页管理 */
 function surfaceOf(section: string | null): Surface {
@@ -116,6 +118,8 @@ function surfaceOf(section: string | null): Surface {
       return "routing";
     case "security":
       return "security";
+    case "plugins":
+      return "plugins";
     default:
       // 监听、日志保留在设置页；辅助请求在路由页，但它没有自己的段名
       return "settings";
@@ -127,7 +131,7 @@ function surfaceOf(section: string | null): Surface {
  *
  * **源列表，不是标签栏。**原生客户端用左侧源列表：它能分组、能挂角标，加一项
  * 不会把别的挤窄。分组的判据是打开频率：上面那组每天看，越往下越是配一次就不动的。
- * 顺序和 `SURFACES` 一致，⌘1…⌘9 按它数。
+ * 顺序和 `SURFACES` 一致，⌘1…⌘9 按它数（设置是 ⌘,，见 `palette/keys.tsx` 的 `DIGIT_PAGES`）。
  */
 const SOURCES: { group: string; items: { id: Surface; icon: LucideIcon }[] }[] = [
   {
@@ -148,13 +152,14 @@ const SOURCES: { group: string; items: { id: Surface; icon: LucideIcon }[] }[] =
     ],
   },
   {
-    // 网关的配置。安全和 MCP 也在这一组：它们是要去动的开关和规则，不是看板
+    // 网关的配置。安全、MCP 和插件也在这一组：它们是要去动的开关和规则，不是看板
     group: "config",
     items: [
       { id: "upstreams", icon: IconServer },
       { id: "routing", icon: IconRoute },
       { id: "security", icon: IconGuard },
       { id: "mcp", icon: IconMcp },
+      { id: "plugins", icon: IconPlugin },
     ],
   },
   {
@@ -453,7 +458,8 @@ function Shell({ first }: { first: boolean }) {
    * 搜索框，在输入框里按它该重选。行内的方向键导航在流量页里（`TrafficPage`）。
    * 键位和界面上显示的键帽在 `palette/keys.tsx`，改一边要改另一边。
    *
-   * · ⌘K 命令面板 · ⌘1…⌘9 按源列表的顺序换页 · ⌘F 流量搜索 · ⌘, 设置 · ⌘R 刷新
+   * · ⌘K 命令面板 · ⌘1…⌘9 按源列表的顺序换页（设置之外的前九页，`DIGIT_PAGES`）
+   * · ⌘F 流量搜索 · ⌘, 设置 · ⌘R 刷新
    * · `?` 快捷键一览（在打字时不接管）
    * · ⌘⌥S 收起/展开源列表（访达、邮件、备忘录都是这个键；判 `code` 不判 `key`：
    *   ⌥ 会把 s 变成 ß）。**只在 macOS 上有**：Windows 上 Ctrl+Alt 常是 AltGr，
@@ -495,7 +501,7 @@ function Shell({ first }: { first: boolean }) {
         return;
       }
       if (/^[1-9]$/.test(e.key) && !e.shiftKey) {
-        const s = SURFACES[Number(e.key) - 1];
+        const s = DIGIT_PAGES[Number(e.key) - 1];
         if (!s) return;
         e.preventDefault();
         if (!busy && (linked || s === "settings")) go(s);
@@ -711,8 +717,8 @@ function Shell({ first }: { first: boolean }) {
                     <SidebarMenu className="gap-px">
                       {g.items.map((it) => {
                         const on = tab === it.id;
-                        /** 这一页的快捷键：按在源列表里的位置数，⌘1…⌘9 */
-                        const combo = pageCombo(SURFACES.indexOf(it.id));
+                        /** 这一页的快捷键：⌘1…⌘9 按在源列表里的位置数，设置是 ⌘, */
+                        const combo = pageCombo(it.id);
                         // 客户端配置里出现了新东西：挂个角标，直到去看过
                         const badge = it.id === "mcp" ? alerts.length : 0;
                         const Icon = it.icon;
@@ -735,7 +741,7 @@ function Shell({ first }: { first: boolean }) {
                                 children: (
                                   <>
                                     {badge > 0 ? t.newFindings(label, badge) : label}
-                                    <Keys combo={combo} />
+                                    {combo && <Keys combo={combo} />}
                                   </>
                                 ),
                               }}
@@ -757,12 +763,14 @@ function Shell({ first }: { first: boolean }) {
                                 的名字（`aria-hidden`）：读屏从悬浮说明拿，说明收着也还是按钮的描述。
                               */}
                               <span className="ms-auto flex shrink-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
-                                <span
-                                  aria-hidden
-                                  className="tw-label text-(--chrome-dim) tw-num opacity-0 transition-opacity duration-(--motion-fast) group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
-                                >
-                                  {comboText(combo)}
-                                </span>
+                                {combo && (
+                                  <span
+                                    aria-hidden
+                                    className="tw-label text-(--chrome-dim) tw-num opacity-0 transition-opacity duration-(--motion-fast) group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
+                                  >
+                                    {comboText(combo)}
+                                  </span>
+                                )}
                                 {badge > 0 && (
                                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 tw-label font-medium text-white tw-num">
                                     {badge}
@@ -1050,6 +1058,12 @@ function Shell({ first }: { first: boolean }) {
                   ) : tab === "upstreams" ? (
                     ov ? (
                       <UpstreamsPage ov={ov} onChanged={changed} onOpenConfigFile={openConfigFile} />
+                    ) : (
+                      skeleton
+                    )
+                  ) : tab === "plugins" ? (
+                    ov ? (
+                      <PluginsPage ov={ov} onChanged={changed} />
                     ) : (
                       skeleton
                     )

@@ -18,6 +18,10 @@ import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
  * （那边的测试核对）：不在这里的端点，界面够不着。
+ *
+ * 插件的装、换代码、批准改过的文件、确认过的改动（`CreatePlugin`、`ReplacePluginSource`、
+ * `ApprovePluginFile`、`UpdatePluginConfirmed`）**有意不在这里**：只能请 Rust 弹系统的确认框
+ * （`src/plugins/native.ts`）。
  */
 export const WEBVIEW_ENDPOINTS = [
   "Interfaces",
@@ -36,6 +40,7 @@ export const WEBVIEW_ENDPOINTS = [
   "RequestDetail",
   "Sessions",
   "SessionDetail",
+  "SessionTranscript",
   "SpeedQuote",
   "SpeedRun",
   "ReplayQuote",
@@ -80,7 +85,6 @@ export const WEBVIEW_ENDPOINTS = [
   "SetSecurityMode",
   "ToggleBuiltinRule",
   "SetBuiltinRuleAction",
-  "SetSecurityLimit",
   "CreateCustomRule",
   "UpdateCustomRule",
   "DeleteCustomRule",
@@ -90,6 +94,14 @@ export const WEBVIEW_ENDPOINTS = [
   "ChatgptResets",
   "UseChatgptReset",
   "ZaiLoginStatus",
+  "Plugins",
+  "PluginInspect",
+  "UpdatePlugin",
+  "PluginSourceDiff",
+  "DeletePlugin",
+  "ReorderPlugins",
+  "TrialPlugin",
+  "PluginLogs",
 ] as const;
 
 export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];

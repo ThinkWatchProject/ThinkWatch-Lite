@@ -382,8 +382,10 @@ useNavParams("keys", (p) => setHighlight(p.key ?? null));
 ```
 
 Add new deep-link parameters to `NavParams` in `src/nav.tsx`. Keyboard: ⌘1…⌘9 follow
-the sidebar order (`SURFACES`), ⌘K opens the command palette, ⌘F focuses Traffic search,
-⌘, opens Settings, ⌘R refreshes, `?` (outside text fields) shows the shortcut sheet.
+the sidebar order (`SURFACES`) for the first nine pages other than Settings
+(`DIGIT_PAGES` in `palette/keys.tsx`); Settings is ⌘, (the macOS convention), so it gives
+up its digit once there are ten pages. ⌘K opens the command palette, ⌘F focuses Traffic
+search, ⌘R refreshes, `?` (outside text fields) shows the shortcut sheet.
 
 **Opening a page's dialog from elsewhere.** A dialog lives in exactly one place, its page.
 Other places (the command palette, another page) open it through `NavParams`, and the page
@@ -397,6 +399,7 @@ nav.open("keys", { create: true });   nav.open("keys", { edit: "codex" });
 nav.open("routing", { create: "route" });           // or "group"; { editRoute }, { editGroup }, { dryRun: true }
 nav.open("clients", { detail: "codex" });           // installed; { setup: id } = manual setup
 nav.open("settings", { section: "appearance" });    // the Settings page scrolls there
+nav.open("plugins", { add: true });                 // { review: id } = review a changed file; { plugin: id } = highlight
 
 // in the page, next to its dialog state:
 useNavParams("keys", (p) => {

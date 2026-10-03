@@ -3,6 +3,79 @@
     "mode": "observe",
     "rules": [
       {
+        "action": "strip",
+        "custom": false,
+        "default_action": "strip",
+        "enabled": true,
+        "id": "unicode-tags",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+E0000–U+E007F"
+          ]
+        },
+        "name": "Unicode tag characters",
+        "on_by_default": true,
+        "why": "Entirely invisible in an editor, yet carried into the model's context as they are, so they can hide a whole instruction."
+      },
+      {
+        "action": "strip",
+        "custom": false,
+        "default_action": "strip",
+        "enabled": true,
+        "id": "bidi-controls",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+202A–U+202E",
+            "U+2066–U+2069"
+          ]
+        },
+        "name": "Bidirectional controls",
+        "on_by_default": true,
+        "why": "They can make the order shown on screen differ from the actual order of the characters."
+      },
+      {
+        "action": "strip",
+        "custom": false,
+        "default_action": "strip",
+        "enabled": false,
+        "id": "zero-width",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+200B–U+200D",
+            "U+2060",
+            "U+FEFF"
+          ]
+        },
+        "name": "Zero-width characters",
+        "on_by_default": false,
+        "why": "Invisible in an editor, and read by the model. Emoji, Persian and other ordinary writing use them too."
+      },
+      {
+        "action": "strip",
+        "custom": false,
+        "default_action": "strip",
+        "enabled": false,
+        "id": "private-use",
+        "kind": "invisible",
+        "matcher": {
+          "kind": "codepoints",
+          "ranges": [
+            "U+E000–U+F8FF",
+            "U+F0000–U+FFFFD",
+            "U+100000–U+10FFFD"
+          ]
+        },
+        "name": "Private-use characters",
+        "on_by_default": false,
+        "why": "They have no standard meaning. Some icon fonts use them."
+      },
+      {
         "action": "block",
         "custom": false,
         "default_action": "block",
@@ -312,42 +385,6 @@
       }
     ]
   },
-  "hidden_text": {
-    "mode": "observe",
-    "rules": [
-      {
-        "custom": false,
-        "enabled": true,
-        "id": "tag",
-        "kind": "invisible",
-        "matcher": {
-          "kind": "codepoints",
-          "ranges": [
-            "U+E0000–U+E007F"
-          ]
-        },
-        "name": "tag",
-        "on_by_default": true,
-        "why": "Unicode tag characters: entirely invisible in an editor, carried into the model's context as they are, and able to hide a whole instruction."
-      },
-      {
-        "custom": false,
-        "enabled": true,
-        "id": "bidi",
-        "kind": "invisible",
-        "matcher": {
-          "kind": "codepoints",
-          "ranges": [
-            "U+202A–U+202E",
-            "U+2066–U+2069"
-          ]
-        },
-        "name": "bidi",
-        "on_by_default": true,
-        "why": "Bidirectional controls: they make what is on screen read in a different order than the characters actually are."
-      }
-    ]
-  },
   "inspect_tools": {
     "mode": "enforce",
     "rules": [
@@ -446,6 +483,21 @@
         "custom": false,
         "default_action": "cut",
         "enabled": true,
+        "id": "secret-to-unknown-host",
+        "kind": "command",
+        "matcher": {
+          "check": "credential-to-network",
+          "kind": "builtin"
+        },
+        "name": "Send a credential to an unknown host",
+        "on_by_default": true,
+        "why": "Sends a credential to a host that is neither local nor the credential's own provider"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
         "id": "write-startup-item",
         "kind": "command",
         "matcher": {
@@ -500,14 +552,23 @@
         "name": "World-writable permissions",
         "on_by_default": true,
         "why": "Makes a file writable by everyone"
+      },
+      {
+        "action": "record",
+        "custom": false,
+        "default_action": "record",
+        "enabled": true,
+        "id": "upload-file-to-host",
+        "kind": "command",
+        "matcher": {
+          "check": "file-to-network",
+          "kind": "builtin"
+        },
+        "name": "Upload a local file to an external host",
+        "on_by_default": true,
+        "why": "Uploads the contents of a local file to an external host"
       }
     ]
-  },
-  "output_limit": {
-    "ceiling": 1000000,
-    "default_max_chars": 100000,
-    "max_chars": 100000,
-    "mode": "off"
   },
   "redact": {
     "mode": "enforce",
@@ -517,6 +578,7 @@
         "enabled": true,
         "id": "anthropic-api-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -530,6 +592,7 @@
         "enabled": true,
         "id": "openai-project-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -543,6 +606,7 @@
         "enabled": true,
         "id": "openai-api-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "openai-legacy",
           "min_len": 40
@@ -555,6 +619,7 @@
         "enabled": true,
         "id": "github-personal-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -568,6 +633,7 @@
         "enabled": true,
         "id": "github-oauth-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -581,6 +647,7 @@
         "enabled": true,
         "id": "github-server-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -594,6 +661,7 @@
         "enabled": true,
         "id": "github-user-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -607,6 +675,7 @@
         "enabled": true,
         "id": "github-fine-grained-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -620,6 +689,7 @@
         "enabled": true,
         "id": "slack-bot-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -633,6 +703,7 @@
         "enabled": true,
         "id": "slack-user-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -646,6 +717,7 @@
         "enabled": true,
         "id": "slack-app-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -659,6 +731,7 @@
         "enabled": true,
         "id": "aws-access-key-id",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 12,
@@ -672,6 +745,7 @@
         "enabled": true,
         "id": "aws-temporary-key-id",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 12,
@@ -685,6 +759,7 @@
         "enabled": true,
         "id": "google-api-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -698,6 +773,7 @@
         "enabled": true,
         "id": "google-oauth-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -711,6 +787,7 @@
         "enabled": true,
         "id": "gitlab-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 15,
@@ -724,6 +801,7 @@
         "enabled": true,
         "id": "stripe-live-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -737,6 +815,7 @@
         "enabled": true,
         "id": "stripe-restricted-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 20,
@@ -750,6 +829,7 @@
         "enabled": true,
         "id": "npm-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -763,6 +843,7 @@
         "enabled": true,
         "id": "digitalocean-token",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -776,6 +857,7 @@
         "enabled": true,
         "id": "sendgrid-key",
         "kind": "api-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "prefix",
           "min_tail": 30,
@@ -789,6 +871,7 @@
         "enabled": true,
         "id": "private-key",
         "kind": "private-keys",
+        "label": "SECRET",
         "matcher": {
           "kind": "pem"
         },
@@ -800,6 +883,7 @@
         "enabled": true,
         "id": "jwt",
         "kind": "jwt",
+        "label": "SECRET",
         "matcher": {
           "kind": "jwt"
         },
@@ -811,6 +895,7 @@
         "enabled": true,
         "id": "conn-string-password",
         "kind": "conn-strings",
+        "label": "SECRET",
         "matcher": {
           "kind": "conn-string"
         },
@@ -819,9 +904,173 @@
       },
       {
         "custom": false,
+        "enabled": true,
+        "id": "cn-resident-id",
+        "kind": "personal",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "born_since": 1900,
+          "kind": "cn-resident-id"
+        },
+        "name": "Chinese resident ID number",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": true,
+        "id": "bank-card",
+        "kind": "personal",
+        "label": "CARD_NUMBER",
+        "matcher": {
+          "kind": "bank-card",
+          "networks": [
+            {
+              "lengths": [
+                16,
+                17,
+                18,
+                19
+              ],
+              "name": "UnionPay",
+              "prefixes": [
+                {
+                  "from": 62,
+                  "to": 62
+                }
+              ]
+            },
+            {
+              "lengths": [
+                16,
+                19
+              ],
+              "name": "Visa",
+              "prefixes": [
+                {
+                  "from": 4,
+                  "to": 4
+                }
+              ]
+            },
+            {
+              "lengths": [
+                16
+              ],
+              "name": "Mastercard",
+              "prefixes": [
+                {
+                  "from": 51,
+                  "to": 55
+                },
+                {
+                  "from": 2221,
+                  "to": 2720
+                }
+              ]
+            },
+            {
+              "lengths": [
+                15
+              ],
+              "name": "American Express",
+              "prefixes": [
+                {
+                  "from": 34,
+                  "to": 34
+                },
+                {
+                  "from": 37,
+                  "to": 37
+                }
+              ]
+            },
+            {
+              "lengths": [
+                16
+              ],
+              "name": "JCB",
+              "prefixes": [
+                {
+                  "from": 3528,
+                  "to": 3589
+                }
+              ]
+            },
+            {
+              "lengths": [
+                16
+              ],
+              "name": "Discover",
+              "prefixes": [
+                {
+                  "from": 6011,
+                  "to": 6011
+                },
+                {
+                  "from": 644,
+                  "to": 649
+                },
+                {
+                  "from": 65,
+                  "to": 65
+                }
+              ]
+            },
+            {
+              "lengths": [
+                14
+              ],
+              "name": "Diners Club",
+              "prefixes": [
+                {
+                  "from": 300,
+                  "to": 305
+                },
+                {
+                  "from": 36,
+                  "to": 36
+                },
+                {
+                  "from": 38,
+                  "to": 38
+                }
+              ]
+            }
+          ]
+        },
+        "name": "Bank card number",
+        "on_by_default": true
+      },
+      {
+        "custom": false,
+        "enabled": false,
+        "id": "email",
+        "kind": "personal",
+        "label": "EMAIL",
+        "matcher": {
+          "kind": "email"
+        },
+        "name": "Email address",
+        "on_by_default": false
+      },
+      {
+        "custom": false,
+        "enabled": false,
+        "id": "cn-mobile-phone",
+        "kind": "personal",
+        "label": "PHONE",
+        "matcher": {
+          "kind": "cn-mobile-phone"
+        },
+        "name": "Chinese mainland mobile number",
+        "on_by_default": false
+      },
+      {
+        "custom": false,
         "enabled": false,
         "id": "internal-ip",
         "kind": "internal",
+        "label": "SECRET",
         "matcher": {
           "kind": "private-ip"
         },
@@ -833,6 +1082,7 @@
         "enabled": false,
         "id": "internal-domain",
         "kind": "internal",
+        "label": "SECRET",
         "matcher": {
           "kind": "domain-suffix",
           "suffixes": [
@@ -849,6 +1099,7 @@
         "enabled": true,
         "id": "客户编号",
         "kind": "custom",
+        "label": "SECRET",
         "matcher": {
           "kind": "regex",
           "pattern": "CUST-\\d{6}"

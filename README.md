@@ -48,8 +48,9 @@ before the client runs them.
   that downloads and runs code, sends out environment variables or credential
   files, reads private keys or installs a startup item or scheduled job,
   tool-call inspection cuts the answer off before the client can run it.
-  Hidden characters and prompt injection can be refused as well. The
-  protections start in Observe and switch to Enforce one by one.
+  The content filter deletes instructions hidden in invisible characters before
+  a request leaves and can refuse prompt injection. Each protection starts in
+  Observe, which only records, and is switched over one at a time.
 - **Upstream check-up.** Each upstream is compared with the others serving the
   same model: answers naming a different model, reported input well above or
   below theirs and low prompt-cache reads are marked, with sample sizes.

@@ -28,6 +28,7 @@ import {
   routeStats,
   sessionView,
   sessions,
+  transcript,
   turns,
   unpricedModels,
   upstreamHealth,
@@ -96,10 +97,11 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   HistorySearch: (req) => historySearch(req),
   RequestDetail: (_req, [id]) => {
     const h = HISTORY.find((x) => x.id === Number(id)) ?? notFound(`Request #${id}`);
-    return { row: clone(h), ...bodies(h), in_flight: false };
+    return { row: clone(h), ...bodies(h), request_after_plugins: null, plugins: [], in_flight: false };
   },
   Sessions: (req) => sessions(req.limit ?? 200),
   SessionDetail: (_req, [id]) => ({ session: sessionView(id!) ?? notFound(`Session ${id}`), turns: turns(id!) }),
+  SessionTranscript: (_req, [id]) => (sessionView(id!) ? transcript(id!) : notFound(`Session ${id}`)),
   SpeedQuote: refuse,
   SpeedRun: refuse,
   ReplayQuote: refuse,
@@ -165,18 +167,17 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
     );
     const xs = window.filter((e) => req.before == null || e.id < req.before);
     const limit = req.limit ?? 100;
-    const by_outcome = { recorded: 0, replaced: 0, cut: 0, blocked: 0 };
+    const by_outcome = { recorded: 0, replaced: 0, cut: 0, stripped: 0, blocked: 0 };
     for (const e of window) by_outcome[e.action] += 1;
     return { events: clone(xs.slice(0, limit)), more: xs.length > limit, total: window.length, by_outcome };
   },
   SetSecurityMode: refuse,
   ToggleBuiltinRule: refuse,
   SetBuiltinRuleAction: refuse,
-  SetSecurityLimit: refuse,
   CreateCustomRule: refuse,
   UpdateCustomRule: refuse,
   DeleteCustomRule: refuse,
-  TestSecurity: () => ({ hits: [] }),
+  TestSecurity: () => ({ hits: [], output: null, refused: false }),
 
   ChatgptLoginStatus: refuse,
   // 登的是谁不在这里：core 从凭据的令牌里读，在上游视图的 `oauth.account`（overview.json）
@@ -187,6 +188,15 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ChatgptResets: () => ({ available_count: 1, credits: [] }),
   UseChatgptReset: refuse,
   ZaiLoginStatus: refuse,
+  // 产品图里没有插件：插件页是空的，写入一律拒绝
+  Plugins: () => [],
+  PluginInspect: refuse,
+  UpdatePlugin: refuse,
+  PluginSourceDiff: refuse,
+  DeletePlugin: refuse,
+  ReorderPlugins: refuse,
+  TrialPlugin: refuse,
+  PluginLogs: () => [],
 };
 
 /** ChatGPT Plus 的两个额度窗口：5 小时用了一半多，每周的三成 */

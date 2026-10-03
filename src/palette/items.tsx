@@ -26,6 +26,7 @@ import {
   IconKey,
   IconLocal,
   IconMcp,
+  IconPlugin,
   IconRemote,
   IconRoute,
   IconServer,
@@ -97,6 +98,7 @@ const PAGE_ICONS: Record<Surface, ReactNode> = {
   routing: <IconRoute />,
   security: <IconGuard />,
   mcp: <IconMcp />,
+  plugins: <IconPlugin />,
   settings: <IconSettings />,
 };
 
@@ -145,7 +147,7 @@ export function buildItems(s: Sources): Item[] {
   const items: Item[] = [];
 
   // ── 页面：源列表的顺序，⌘1…⌘9
-  SURFACES.forEach((surface, i) => {
+  SURFACES.forEach((surface) => {
     if (!linked && surface !== "settings") return;
     items.push({
       id: `page:${surface}`,
@@ -153,7 +155,7 @@ export function buildItems(s: Sources): Item[] {
       title: app.surfaces[surface],
       keywords: [appText.zh.surfaces[surface], appText.en.surfaces[surface], ...both((x) => x.pageAliases[surface])],
       icon: PAGE_ICONS[surface],
-      combo: pageCombo(i),
+      combo: pageCombo(surface),
       verb: "open",
       run: () => nav.open(surface),
     });
@@ -266,6 +268,11 @@ export function buildItems(s: Sources): Item[] {
     });
     action("new-sheet", t.newSheet, <PlusIcon />, () => nav.open("upstreams", { create: "sheet" }), {
       keywords: other((x) => x.newSheet),
+      searchOnly: true,
+    });
+    action("new-plugin", t.newPlugin, <PlusIcon />, () => nav.open("plugins", { add: true }), {
+      keywords: other((x) => x.newPlugin),
+      alias: "newPlugin",
       searchOnly: true,
     });
   }

@@ -41,6 +41,9 @@ export const sessionsText = messages(
 
     // 详情
     title: "会话",
+    /** 详情的两个标签：几个总数和每轮的费用；按对话重放的每一轮 */
+    tabSummary: "概况",
+    tabConversation: "对话",
     /** `at` 是开始时刻写出来的样子 */
     startedAt: (at: string) => `${at} 开始`,
     turns: "轮次",
@@ -99,6 +102,8 @@ export const sessionsText = messages(
         : `${n} turns have no usage data: the upstream did not report it, or the connection ended before it was reported. Their cost cannot be calculated and is not included in the total.`,
 
     title: "Session",
+    tabSummary: "Summary",
+    tabConversation: "Conversation",
     startedAt: (at: string) => `Started ${at}`,
     turns: "Turns",
     duration: "Duration",

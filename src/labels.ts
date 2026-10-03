@@ -206,6 +206,8 @@ export function originLabel(origin: ConfigOrigin): string {
       return t.rollback;
     case "rotation":
       return t.rotation;
+    case "defaults":
+      return t.defaults;
   }
 }
 

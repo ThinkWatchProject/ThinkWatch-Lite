@@ -47,6 +47,7 @@ export const paletteText = messages(
     newUpstream: "新建上游…",
     newProxy: "新建代理…",
     newSheet: "新建价目表…",
+    newPlugin: "添加插件…",
     speedTest: "推理测速…",
     linkTest: "链路测速…",
     newKey: "新建密钥…",
@@ -96,6 +97,7 @@ export const paletteText = messages(
       routing: "规则 策略组 试算 辅助请求",
       security: "防护 脱敏 扫描 日志",
       mcp: "扩展 服务器 工具",
+      plugins: "脚本 改写 扩展",
       settings: "偏好 选项",
     } as Record<string, string>,
     sectionAliases: {
@@ -126,6 +128,7 @@ export const paletteText = messages(
       addConnection: "远程 服务器",
       searchTraffic: "查找 请求",
       notices: "通知 铃铛",
+      newPlugin: "脚本 javascript",
     } as Record<string, string>,
 
     // 快捷键一览
@@ -185,6 +188,7 @@ export const paletteText = messages(
     newUpstream: "New upstream…",
     newProxy: "New proxy…",
     newSheet: "New price sheet…",
+    newPlugin: "Add plugin…",
     speedTest: "Inference test…",
     linkTest: "Connection test…",
     newKey: "New key…",
@@ -231,6 +235,7 @@ export const paletteText = messages(
       routing: "rules groups dry run probes",
       security: "guard redaction scan log",
       mcp: "extensions servers tools",
+      plugins: "scripts rewrite javascript",
       settings: "preferences options",
     } as Record<string, string>,
     sectionAliases: {
@@ -261,6 +266,7 @@ export const paletteText = messages(
       addConnection: "remote server",
       searchTraffic: "find requests",
       notices: "notifications bell",
+      newPlugin: "script javascript",
     } as Record<string, string>,
 
     sheet: {

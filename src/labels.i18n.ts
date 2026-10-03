@@ -87,6 +87,8 @@ export const labelsText = messages(
       external: "外部编辑",
       rollback: "回滚",
       rotation: "凭据轮换",
+      /** core 装上它自带的默认插件，或者把没动过的默认插件换成新版 */
+      defaults: "默认插件",
     },
     /** 后面接「错误」 */
     stages: {
@@ -123,6 +125,8 @@ export const labelsText = messages(
       "conn-string-password": "连接串口令",
       "cn-resident-id": "居民身份证号",
       "bank-card": "银行卡号",
+      email: "邮箱地址",
+      "cn-mobile-phone": "中国大陆手机号",
       "internal-ip": "内网地址",
       "internal-domain": "内部域名",
     },
@@ -217,6 +221,7 @@ export const labelsText = messages(
       external: "External edit",
       rollback: "Rollback",
       rotation: "Credential rotation",
+      defaults: "Default plugins",
     },
     stages: {
       syntax: "Syntax",
@@ -251,6 +256,8 @@ export const labelsText = messages(
       "conn-string-password": "Connection string password",
       "cn-resident-id": "Chinese resident ID number",
       "bank-card": "Bank card number",
+      email: "Email address",
+      "cn-mobile-phone": "Chinese mainland mobile number",
       "internal-ip": "Internal IP address",
       "internal-domain": "Internal domain",
     },

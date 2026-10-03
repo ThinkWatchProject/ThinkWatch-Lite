@@ -38,10 +38,15 @@ const MESSAGES: Record<string, string> = CORE_ZH.messages;
  */
 const CONTEXTS: { arg: string; en: string; zh: string }[] = CORE_ZH.contexts;
 
-/** 藏起来的那几类字符为什么值得看一眼。查不到就用 core 的原话 */
-export function hiddenWhy(kind: string, text: string): string {
+/**
+ * 内置内容规则为什么值得看一眼（隐藏字符那一组有）。按规则 id 查，查不到就用 core 的原话。
+ *
+ * **和工具调用规则的那一句（`ruleWhy`）分两张表**：两项的规则 id 是各起各的，同一个 id
+ * （`you-are-now`）在两边说的不是一件事
+ */
+export function contentWhy(rule: string, text: string): string {
   if (getLang() === "en") return text;
-  return CORE_TABLES.hidden_why?.[kind] ?? text;
+  return CORE_TABLES.content_why?.[rule] ?? text;
 }
 
 /**

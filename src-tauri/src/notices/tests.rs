@@ -6,11 +6,12 @@ use std::sync::{Arc, Mutex};
 use super::*;
 use crate::i18n::{Lang, with_lang};
 
-/// 记下被投递出去的标题
+/// 记下被投递出去的标题，和整张列表推了几次
 #[derive(Default)]
 struct Rec {
     shown: Arc<Mutex<Vec<String>>>,
     withdrawn: Arc<Mutex<Vec<String>>>,
+    listed: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Sink for Rec {
@@ -22,6 +23,10 @@ impl Sink for Rec {
     }
     fn withdraw(&self, key: &str) {
         self.withdrawn.lock().unwrap().push(key.to_string());
+    }
+    fn listed(&self, _all: &[Notice]) {
+        self.listed
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -603,6 +608,7 @@ fn every_key_lands_on_the_page_that_handles_it() {
         ("proxy:hk", "upstreams"),
         ("toolwall:relay", "security"),
         ("scan", "mcp"),
+        ("plugin:add-date", "plugins"),
     ] {
         assert_eq!(rules::default_view(key), view, "{key}");
     }
@@ -674,6 +680,136 @@ fn a_flagged_tool_call_never_carries_the_call_itself() {
         "{}",
         s.body
     );
+}
+
+/// 一个插件出错，和 core 发来的一样走规则。`code` 是原因的码；插件抛出的那句话里带着一段
+/// 提示词（`PROMPT-TEXT`），看它会不会被带进通知
+fn plugin_failed(request: Option<u64>, code: &str, args: &[(&str, &str)]) -> Signal {
+    let mut all: std::collections::BTreeMap<String, String> = args
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    all.insert("message".into(), "PROMPT-TEXT".into());
+    rules::from_event(&tw_api::Event::PluginFailed {
+        id: 1,
+        plugin_id: "add-date".into(),
+        plugin_name: "日期\n权限：无".into(),
+        request_id: request,
+        message: tw_api::Msg {
+            code: code.into(),
+            args: all,
+            text: "The plugin threw an error: PROMPT-TEXT".into(),
+        },
+        at_ms: T0,
+    })
+    .remove(0)
+}
+
+#[test]
+fn a_plugin_failure_never_carries_what_the_plugin_said() {
+    with_lang(Lang::Zh, || {
+        let s = plugin_failed(Some(50463), "gw.plugin.threw", &[]);
+        assert_eq!(s.key, "plugin:add-date");
+        assert!(s.event, "每出错一次都是一件新的事");
+        assert!(s.gather, "可能每个回答一次：要先攒一阵");
+        assert!(!s.hold);
+        assert!(s.body.contains("50463"), "{}", s.body);
+        assert!(!s.body.contains("PROMPT-TEXT"), "{}", s.body);
+        // 插件名里的换行伪造不出第二行
+        assert!(!s.title.contains('\n'), "{}", s.title);
+        assert_eq!(s.view, Some("plugins"));
+        // core 自己定下的原因照说：同时跑的插件到了上限不是插件的错
+        let busy = plugin_failed(Some(7), "gw.plugin.reply_busy", &[("max", "8")]);
+        assert!(busy.body.contains("8 个"), "{}", busy.body);
+        // 不挂在请求上的是停止运行了
+        let stopped = plugin_failed(None, "gw.plugin.file_changed", &[]);
+        assert!(stopped.title.contains("已停止运行"), "{}", stopped.title);
+        assert!(stopped.body.contains("审核"), "{}", stopped.body);
+    });
+}
+
+/// 默认插件在通知里的名字和插件页上一样（按界面语言），别人的照它自己写的
+#[test]
+fn a_default_plugin_is_named_in_its_notice_like_on_the_plugins_page() {
+    with_lang(Lang::Zh, || {
+        let s = rules::plugin_failed(
+            "wsl-paths",
+            "Convert WSL and Windows paths",
+            Some(3),
+            &tw_api::Msg {
+                code: "gw.plugin.cpu_limit".into(),
+                args: Default::default(),
+                text: "The plugin used more CPU time than it is allowed.".into(),
+            },
+        );
+        assert!(s.title.contains("WSL 路径转换"), "{}", s.title);
+        assert!(s.body.contains("CPU"), "{}", s.body);
+    });
+}
+
+/// 每个回答都出错（同时跑的插件到了上限）：**头一次立刻说**，之后一阵子里的攒着，到点合成
+/// 一次进列表，次数照实加 —— 总线不为每一次都落盘、推一次整张列表
+#[tokio::test(start_paused = true)]
+async fn a_plugin_failing_on_every_answer_is_gathered_not_flooded() {
+    let rec = Rec::default();
+    let shown = rec.shown.clone();
+    let listed = rec.listed.clone();
+    let bus = Notices::new(vec![Box::new(rec)], None, Mode::System);
+    let busy = |r: u64| plugin_failed(Some(r), "gw.plugin.reply_busy", &[("max", "8")]);
+    let pushes = || listed.load(std::sync::atomic::Ordering::SeqCst);
+
+    bus.ingest(busy(1), T0);
+    assert_eq!(shown.lock().unwrap().len(), 1, "头一次立刻说");
+    let after_first = pushes();
+    for i in 0..50 {
+        bus.ingest(busy(2 + i), T0 + 100 * i);
+        wait(Duration::from_millis(100)).await;
+    }
+    assert_eq!(pushes(), after_first, "攒着的时候一次都不推");
+    assert_eq!(bus.list()[0].count, 1);
+
+    wait(GATHER).await;
+    let n = bus.list()[0].clone();
+    assert_eq!(n.count, 51, "次数照实加");
+    assert!(n.body.contains("#51"), "说的是最近的那一次：{}", n.body);
+    assert_eq!(pushes(), after_first + 1, "合成一次进来");
+    assert_eq!(shown.lock().unwrap().len(), 1, "系统通知仍由冷却限着");
+
+    // 不再出错：安静，不再推
+    wait(GATHER * 3).await;
+    assert_eq!(pushes(), after_first + 1);
+    // 隔了一阵又出错：又是头一次，立刻进列表
+    bus.ingest(busy(99), T0 + 60_000);
+    assert_eq!(bus.list()[0].count, 52);
+    assert_eq!(pushes(), after_first + 2);
+
+    // 冷却结束时合成一条说，带上这期间又发生的次数
+    wait(COOLDOWN).await;
+    let all = shown.lock().unwrap().clone();
+    assert_eq!(all.len(), 2, "{all:?}");
+    assert!(all[1].contains("51"), "{}", all[1]);
+}
+
+/// 两个插件各攒各的：一个在攒着，另一个的头一次照样立刻说
+#[tokio::test(start_paused = true)]
+async fn each_plugin_is_gathered_on_its_own() {
+    let b = bed();
+    let of = |id: &str| {
+        rules::plugin_failed(
+            id,
+            id,
+            Some(1),
+            &tw_api::Msg {
+                code: "gw.plugin.cpu_limit".into(),
+                args: Default::default(),
+                text: String::new(),
+            },
+        )
+    };
+    b.bus.ingest(of("a"), T0);
+    b.bus.ingest(of("a"), T0 + 1);
+    b.bus.ingest(of("b"), T0 + 2);
+    assert_eq!(b.titles().len(), 2, "{:?}", b.titles());
 }
 
 #[test]

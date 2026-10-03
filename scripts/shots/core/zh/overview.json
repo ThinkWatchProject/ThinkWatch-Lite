@@ -364,7 +364,7 @@
   "retention": {
     "body_bytes_now": 0,
     "body_days": 7,
-    "body_max_bytes": 2147483648,
+    "body_max_bytes": 5368709120,
     "row_days": 90
   },
   "routes": [
@@ -548,9 +548,7 @@
   ],
   "security": {
     "content": "observe",
-    "hidden_text": "observe",
     "inspect_tools": "enforce",
-    "output_limit": "off",
     "redact": "enforce"
   }
 }
