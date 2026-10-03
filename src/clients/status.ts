@@ -8,9 +8,11 @@ import type { DetectedClient, ManualClient } from "@/types";
  * - `broken` 未生效：地址被改走了、被更高优先级的配置覆盖，或者即时生效的
  *   客户端接管五分钟仍无请求
  * - `idle` 未接管：装了，没指向本网关
+ * - `other` 由另一个 ThinkWatch Lite 接管：安装版和绿色版各有一份数据目录，接管它的
+ *   是另一份。这一份不还原它、也不接管它
  * - `absent` 未检测到：没找到它
  */
-export type ClientState = "in_use" | "waiting" | "broken" | "idle" | "absent";
+export type ClientState = "in_use" | "waiting" | "broken" | "idle" | "other" | "absent";
 
 export type Reason =
   /** 配置里的地址已经不是本网关了（用户在编辑器里改回去了） */
@@ -26,7 +28,9 @@ export type Reason =
   /** WSL 里的：此刻从 WSL 里够不着网关（NAT 这些，那一组上面说了为什么） */
   | { kind: "unreachable" }
   /** WSL 里的：指着的不是 127.0.0.1（以前按 NAT 的做法接管的，指着 WSL 虚拟网卡的地址） */
-  | { kind: "elsewhere"; endpoint: string };
+  | { kind: "elsewhere"; endpoint: string }
+  /** 由另一个 ThinkWatch Lite 接管：要在那一份里还原 */
+  | { kind: "other" };
 
 export interface Status {
   state: ClientState;
@@ -61,6 +65,8 @@ export function statusOf(
   wsl?: WslPlace,
 ): Status {
   if (!c.installed) return { state: "absent" };
+  // 接管记录是另一份的：它的请求、地址对不对都是那一份的事，这里只说找谁还原
+  if (c.other_instance) return { state: "other", reason: { kind: "other" } };
   const adoptedAt = c.adopted_at_ms;
   if (adoptedAt == null) return { state: "idle" };
   if (wsl && !wsl.adoptable) return { state: "broken", reason: { kind: "unreachable" } };

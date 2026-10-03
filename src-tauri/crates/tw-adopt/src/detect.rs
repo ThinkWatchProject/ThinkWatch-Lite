@@ -35,6 +35,9 @@ pub struct Detected {
     pub has_config: bool,
     /// 接管过，时间戳来自旁文件
     pub adopted_at_ms: Option<u64>,
+    /// 接管时留的那份全文备份，旁文件里记的路径。它在哪个数据目录里，就是哪一份
+    /// ThinkWatch Lite 接管的（[`foreign::is_ours`]）。没接管着就没有
+    pub backup: Option<PathBuf>,
     /// 配置里此刻的端点。**读出来的，不是我们记的** —— 「我们写过」
     /// 和「现在还是那样」是两回事
     pub endpoint: Option<String>,
@@ -107,15 +110,15 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
     let text = std::fs::read_to_string(&real).ok();
     let rec: Option<SidecarRecord> = std::fs::read_to_string(sentinel::sidecar_path(&real))
         .ok()
-        .and_then(|t| serde_json::from_str(&t).ok());
+        .and_then(|t| serde_json::from_str::<SidecarRecord>(&t).ok())
+        .filter(|r| r.client == c.id);
     Detected {
         id: c.id,
         name: c.name,
         installed: c.installed(home) || text.is_some(),
         has_config: text.is_some(),
-        adopted_at_ms: rec
-            .filter(|r: &SidecarRecord| r.client == c.id)
-            .map(|r| r.adopted_at_ms),
+        adopted_at_ms: rec.as_ref().map(|r| r.adopted_at_ms),
+        backup: rec.map(|r| PathBuf::from(r.backup)),
         endpoint: text.as_deref().and_then(|t| endpoint_of(c, t)),
         models: text
             .as_deref()

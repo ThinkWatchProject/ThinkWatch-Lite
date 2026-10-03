@@ -41,6 +41,8 @@ export interface AppInfo {
   data_dir: string;
   /** core 二进制的位置；找不到时是那条错误（里面列着找过的位置） */
   core_bin: string;
+  /** Windows 的绿色版（解压即用的那一份，数据在 exe 旁边的 `data\`）。别的都是 false */
+  portable: boolean;
 }
 
 export const settingsApi = {

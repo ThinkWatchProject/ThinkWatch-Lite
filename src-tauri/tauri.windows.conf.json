@@ -11,7 +11,12 @@
         "installMode": "perMachine",
         "installerIcon": "icons/icon.ico",
         "displayLanguageSelector": false,
-        "languages": ["English", "SimpChinese"]
+        "languages": ["English", "SimpChinese"],
+        "customLanguageFiles": {
+          "English": "windows/English.nsh",
+          "SimpChinese": "windows/SimpChinese.nsh"
+        },
+        "installerHooks": "windows/hooks.nsh"
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"

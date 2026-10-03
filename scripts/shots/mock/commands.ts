@@ -149,6 +149,7 @@ const COMMANDS: Table = {
     identifier: "app.thinkwatch.lite",
     data_dir: "/Users/alex/.thinkwatch",
     core_bin: "/Applications/ThinkWatch Lite.app/Contents/Resources/twcore",
+    portable: false,
   }),
   app_language: langView,
   app_theme: themeView,
