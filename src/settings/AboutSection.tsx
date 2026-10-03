@@ -10,6 +10,7 @@ import { StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { Tip } from "@/ui/tip";
 import { useResource } from "@/lib/resource";
+import { useTauriEvent } from "@/lib/tauriEvent";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -17,7 +18,7 @@ import { remoteText } from "@/connection/remote.i18n";
 import type { RemoteCore } from "@/connection/api";
 import type { Found, UpdateView } from "@/updateFlow";
 import { APP_KEYS, settingsApi } from "./api";
-import { FLASH, Loaded, RowError, SettingsCard, SettingsGroup, SettingsRow, anchorId, useAppEvent, useWrite } from "./kit";
+import { FLASH, Loaded, RowError, SettingsCard, SettingsGroup, SettingsRow, anchorId, useWrite } from "./kit";
 import { settingsText } from "./SettingsPage.i18n";
 
 /** 「检查更新」按下去之后的结果。`idle`：这次打开设置页之后还没查过 */
@@ -55,7 +56,7 @@ export function AboutSection({ remote, linked }: { remote: RemoteCore | null; li
   };
 
   // 后台那轮自动检查查到了：这里也跟着显示
-  useAppEvent<Found>("update-found", withOffer);
+  useTauriEvent<Found>("update-found", (e) => withOffer(e.payload));
 
   async function look() {
     setCheck({ kind: "checking" });

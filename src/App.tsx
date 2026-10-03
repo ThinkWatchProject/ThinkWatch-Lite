@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { subscribe } from "@/lib/tauriEvent";
 import { SearchIcon } from "lucide-react";
 import { call } from "@/control";
 import { useRequests } from "./useRequests";
@@ -401,9 +401,9 @@ function Shell({ first }: { first: boolean }) {
     void invoke("import_link_closed")
       .catch(() => {})
       .then(take);
-    const un = listen("import-link", () => void take());
+    const un = subscribe("import-link", () => void take());
     return () => {
-      void un.then((f) => f());
+      un();
     };
   }, []);
   const closeImport = useCallback(() => {
@@ -440,7 +440,7 @@ function Shell({ first }: { first: boolean }) {
     void invoke<string | null>("take_pending_view")
       .then(go)
       .catch(() => {});
-    const un = listen<string>("open-view", (e) => {
+    const un = subscribe<string>("open-view", (e) => {
       go(e.payload);
       void invoke("take_pending_view").catch(() => {});
     });
@@ -448,7 +448,7 @@ function Shell({ first }: { first: boolean }) {
     const local = (e: Event) => go((e as CustomEvent<string>).detail);
     window.addEventListener("tw-open-view", local);
     return () => {
-      void un.then((f) => f());
+      un();
       window.removeEventListener("tw-open-view", local);
     };
   }, []);
@@ -532,7 +532,7 @@ function Shell({ first }: { first: boolean }) {
    */
   useEffect(() => {
     let alive = true;
-    const un = listen<string>("core-state", (e) => {
+    const un = subscribe<string>("core-state", (e) => {
       if (!alive) return;
       setCore(e.payload);
       // 又起来了：之前读状态失败的次数和原因作废，这一回重新数
@@ -541,7 +541,7 @@ function Shell({ first }: { first: boolean }) {
         setLinkError(null);
       }
     });
-    void un
+    void un.ready
       .then(() => invoke<string>("core_state"))
       .then((c) => {
         if (alive) setCore(c);
@@ -551,7 +551,7 @@ function Shell({ first }: { first: boolean }) {
       });
     return () => {
       alive = false;
-      void un.then((f) => f());
+      un();
     };
   }, []);
 
