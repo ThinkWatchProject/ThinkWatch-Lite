@@ -185,6 +185,8 @@ windows-sys = { version = "0.61", features = [
     # 用的时候现从 comctl32 里取，所以还要后一个
     "Win32_UI_Controls",
     "Win32_System_LibraryLoader",
+    # 卸载程序删文件之前，等这一份的 core 退出：按进程表找它（`cleanup`）
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
 # HKCU 下的链接、开机自启、通知登记（`winreg`）。版本是 reqwest 的系统代理在 Windows 上
 # 已经拉进来的那一份，不多编一套

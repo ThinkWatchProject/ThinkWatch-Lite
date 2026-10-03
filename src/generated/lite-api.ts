@@ -58,7 +58,16 @@ path: string,
  * 在改 ~/.claude/settings.json，实际写的可能是他 dotfiles 仓库里
  * 的那份，而那是个会被 git 提交的地方
  */
-real: string, installed: boolean, has_config: boolean, adopted_at_ms: number | null, 
+real: string, installed: boolean, has_config: boolean, 
+/**
+ * **这一份**接管它的时间。另一个 ThinkWatch Lite 接管着的没有（见 `other_instance`）
+ */
+adopted_at_ms: number | null, 
+/**
+ * 接管着它的是另一个 ThinkWatch Lite：安装版和绿色版各有各的数据目录，接管时的
+ * 备份不在这一份的数据目录里。这时不给还原、也不给接管，要在接管它的那一份里还原
+ */
+other_instance: boolean, 
 /**
  * 配置里此刻的端点。**读出来的**，不是拿我们自己的记录充数
  */

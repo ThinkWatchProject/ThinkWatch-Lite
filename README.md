@@ -85,10 +85,10 @@ before the client runs them.
 
 | Platform | Install |
 |---|---|
-| macOS 12 or later, Apple silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 or later, x64 | [`ThinkWatch-Lite-<version>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 or later, ARM64 | [`ThinkWatch-Lite-<version>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Linux, x86_64 or aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| macOS 12 or later, Apple silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later, x64 | Installer [`ThinkWatch-Lite-<version>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later, ARM64 | Installer [`ThinkWatch-Lite-<version>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux, x86_64 or aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-linux-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
 ships inside the app. The app is not signed by Apple or Microsoft, so the
@@ -96,6 +96,37 @@ first launch needs one extra step; [Install and update](https://thinkwat.ch/docs
 covers it, along with how updates arrive. The interface is in English and
 Simplified Chinese, and the app updates itself (a Homebrew installation
 updates through Homebrew).
+
+### Windows portable
+
+Unzip and run: no installation and no administrator rights. Configuration, keys
+and request history stay in the `data\` folder next to the program, apart from
+the installed copy's data, so the two keep separate settings. The folder has to
+be writable.
+
+Only one of the installed and portable copies runs at a time; opening the other
+one offers to stop the running one and start it instead. `thinkwatch://` links
+and launch at login always point to the copy that is running.
+
+The portable copy has no system uninstaller. Uninstall it in Settings › Full
+uninstall first, which restores connected clients and removes its launch at
+login and other registry entries, then delete the whole folder.
+
+### Uninstall
+
+Uninstalling in Settings › Full uninstall restores connected clients, turns off
+launch at login and can delete the data directory as well. Afterwards, move the
+app to the Trash on macOS, or delete the AppImage file on Linux.
+
+The installed copy on Windows can also be uninstalled through the system: the
+uninstaller closes ThinkWatch Lite and does the same restoring and cleanup
+first. With "Also delete data (configuration, API keys, request history)"
+ticked it deletes `%APPDATA%\ThinkWatch` too, except when a client could not be
+restored, in which case the data directory, with that client's backup, is kept.
+The uninstaller runs as an administrator: when a standard account uninstalls
+with an administrator's password, it restores the administrator's clients and
+deletes the administrator's data instead, so uninstall in the app first in that
+case.
 
 ## Documentation
 

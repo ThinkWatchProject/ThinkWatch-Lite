@@ -53,6 +53,8 @@ export function UninstallSection({ remote }: { remote: RemoteCore | null }) {
   const rt = useText(remoteText);
   const [open, setOpen] = useState(false);
   const [log, setLog] = useState(lastLog);
+  /** 绿色版：最后一步是删整个文件夹，说明里也按它说 */
+  const portable = useResource(APP_KEYS.info, settingsApi.info).data?.portable ?? false;
   const em = (text: string) => <span className="font-medium text-foreground">{text}</span>;
   return (
     <SettingsGroup id="uninstall" title={t.uninstall}>
@@ -61,7 +63,7 @@ export function UninstallSection({ remote }: { remote: RemoteCore | null }) {
           label={t.uninstallTitle}
           description={
             <>
-              {log ? (log.at(-1)?.text ?? t.uninstalledRow) : t.uninstallIntro(em)}
+              {log ? (log.at(-1)?.text ?? t.uninstalledRow) : t.uninstallIntro(em, portable)}
               {remote && !log && <span className="mt-1 block">{rt.uninstallServer(remote.name)}</span>}
             </>
           }
@@ -162,7 +164,7 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
           <AlertDialogTitle className="tw-title">
             {!done ? t.uninstallTitle : failed > 0 ? t.uninstalledWithFailures(failed) : t.uninstalled}
           </AlertDialogTitle>
-          {!done && <AlertDialogDescription>{t.willDo}</AlertDialogDescription>}
+          {!done && <AlertDialogDescription>{t.willDo(info.data?.portable ?? false)}</AlertDialogDescription>}
         </AlertDialogHeader>
 
         {stage.kind === "done" ? (

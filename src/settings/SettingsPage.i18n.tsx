@@ -9,13 +9,47 @@ type Wrap = (text: string) => ReactNode;
 const hereZh = isMac ? "这台 Mac" : "这台电脑";
 const hereEn = isMac ? "This Mac" : "This computer";
 
-/** 卸载做完之后用户还要做的那一步，按平台说 */
-const afterZh = isMac ? "完成后即可将应用移到废纸篓。" : isWindows ? "完成后即可卸载或删除应用。" : "完成后即可删除应用。";
-const afterEn = isMac
-  ? "Once it finishes, the app can be moved to the Trash."
-  : isWindows
-    ? "Once it finishes, the app can be uninstalled or deleted."
-    : "Once it finishes, the app can be deleted.";
+/**
+ * 卸载做完之后用户还要做的那一步，按平台说。`portable`：Windows 的绿色版，数据也在那个
+ * 文件夹里，删掉整个文件夹就行
+ */
+const afterZh = (portable: boolean) =>
+  isMac
+    ? "完成后即可将应用移到废纸篓。"
+    : portable
+      ? "完成后即可删除整个文件夹。"
+      : isWindows
+        ? "完成后即可卸载或删除应用。"
+        : "完成后即可删除应用。";
+const afterEn = (portable: boolean) =>
+  isMac
+    ? "Once it finishes, the app can be moved to the Trash."
+    : portable
+      ? "Once it finishes, the whole folder can be deleted."
+      : isWindows
+        ? "Once it finishes, the app can be uninstalled or deleted."
+        : "Once it finishes, the app can be deleted.";
+
+/**
+ * 「完全卸载」那一行的说明里，哪种删法**不会**还原客户端。Windows 的安装版不在里面：
+ * 系统卸载程序会先做同样的几步（`src-tauri/windows/hooks.nsh`）
+ */
+const skippedByZh = (portable: boolean) =>
+  isMac
+    ? "直接将应用移到废纸篓不会执行这些操作"
+    : portable
+      ? "直接删除文件夹不会执行这些操作"
+      : isWindows
+        ? null
+        : "直接删除应用不会执行这些操作";
+const skippedByEn = (portable: boolean) =>
+  isMac
+    ? "Moving the app straight to the Trash does neither"
+    : portable
+      ? "Deleting the folder directly does neither"
+      : isWindows
+        ? null
+        : "Deleting the app directly does neither";
 
 /**
  * 设置页：页头、目录、「关于」和「卸载」两节。其余各节的文案在各自的词表里
@@ -73,14 +107,19 @@ export const settingsText = messages(
     // 卸载
     uninstall: "卸载",
     uninstallTitle: "完全卸载",
-    uninstallIntro: (em: Wrap) => (
-      <>
-        还原所有已接管的客户端，并取消开机启动。
-        {em(isMac ? "直接将应用移到废纸篓不会执行这些操作" : "通过系统卸载或直接删除应用不会执行这些操作")}，已接管的客户端将指向一个无人监听的端口。
-      </>
-    ),
+    uninstallIntro: (em: Wrap, portable: boolean) => {
+      const skipped = skippedByZh(portable);
+      return skipped ? (
+        <>
+          还原所有已接管的客户端，并取消开机启动。
+          {em(skipped)}，已接管的客户端将指向一个无人监听的端口。
+        </>
+      ) : (
+        <>还原所有已接管的客户端，并取消开机启动。通过系统卸载 ThinkWatch Lite 时也会执行这些操作。</>
+      );
+    },
     uninstallAction: "卸载…",
-    willDo: `将执行以下操作。${afterZh}`,
+    willDo: (portable: boolean) => `将执行以下操作。${afterZh(portable)}`,
     restoreClients: "还原已接管的客户端",
     restoreNone: "当前无已接管的客户端",
     /** 列名字时的分隔 */
@@ -147,15 +186,22 @@ export const settingsText = messages(
 
     uninstall: "Uninstall",
     uninstallTitle: "Full uninstall",
-    uninstallIntro: (em: Wrap) => (
-      <>
-        Restores every connected client and turns off launch at login.{" "}
-        {em(isMac ? "Moving the app straight to the Trash does neither" : "Uninstalling or deleting the app through the system does neither")}, leaving connected clients pointed at a port
-        where nothing is listening.
-      </>
-    ),
+    uninstallIntro: (em: Wrap, portable: boolean) => {
+      const skipped = skippedByEn(portable);
+      return skipped ? (
+        <>
+          Restores every connected client and turns off launch at login. {em(skipped)}, leaving connected clients
+          pointed at a port where nothing is listening.
+        </>
+      ) : (
+        <>
+          Restores every connected client and turns off launch at login. Uninstalling ThinkWatch Lite through the system
+          does the same.
+        </>
+      );
+    },
     uninstallAction: "Uninstall…",
-    willDo: `The following is done. ${afterEn}`,
+    willDo: (portable: boolean) => `The following is done. ${afterEn(portable)}`,
     restoreClients: "Restore connected clients",
     restoreNone: "No client is connected at the moment",
     sep: ", ",

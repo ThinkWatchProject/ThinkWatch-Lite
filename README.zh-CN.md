@@ -49,12 +49,26 @@ Claude Code、Codex 等 AI 客户端的本地网关，支持 macOS、Windows 与
 
 | 平台 | 安装 |
 |---|---|
-| macOS 12 及以上，Apple 芯片 | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 及以上，x64 | [`ThinkWatch-Lite-<版本>-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 及以上，ARM64 | [`ThinkWatch-Lite-<版本>-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Linux，x86_64 或 aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`，或 [`ThinkWatch-Lite-<版本>-<架构>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| macOS 12 及以上，Apple 芯片 | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 及以上，x64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 及以上，ARM64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux，x86_64 或 aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`，或 [`ThinkWatch-Lite-<版本>-linux-<架构>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) 随应用一同安装。应用未经 Apple 与 Microsoft 签名，首次打开需要多一步操作，见[安装与更新](https://thinkwat.ch/zh-CN/docs/lite/install)，其中也说明了各种安装方式如何更新。界面提供英文与简体中文，应用自动更新（通过 Homebrew 安装的随 Homebrew 更新）。
+
+### Windows 绿色版
+
+解压即用，无需安装，也不需要管理员权限。配置、密钥与请求记录保存在程序旁边的 `data\` 文件夹中，与安装版的数据互不相干，是两套独立的设置。程序所在的文件夹需要可以写入。
+
+安装版与绿色版同一时间只运行一个，打开另一个时可以停止正在运行的那一个、改为启动它。`thinkwatch://` 链接与开机启动始终指向正在运行的那一个。
+
+绿色版不经过系统卸载：先在应用的「设置 › 完全卸载」中完成卸载，还原已接管的客户端、移除开机启动等注册项，再删除整个文件夹。
+
+### 卸载
+
+在应用的「设置 › 完全卸载」中卸载，会还原已接管的客户端、取消开机启动，并可同时删除数据目录。之后在 macOS 上将应用移到废纸篓，在 Linux 上删除 AppImage 文件。
+
+Windows 安装版也可以直接通过系统卸载：卸载程序先关闭 ThinkWatch Lite，完成同样的还原与清理。勾选「同时删除数据（配置、API 密钥、请求记录）」时一并删除 `%APPDATA%\ThinkWatch`；有客户端未能还原时数据目录保留，它的备份仍在其中。卸载程序以管理员身份运行，标准账户输入管理员密码卸载时，还原与删除的是管理员账户的客户端和数据，这种情况应先在应用内卸载。
 
 ## 文档
 
