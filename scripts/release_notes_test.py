@@ -19,6 +19,7 @@ sys.path.insert(0, str(HERE))
 # 不在仓库里留 __pycache__
 sys.dont_write_bytecode = True
 
+import manifest  # noqa: E402
 import release_notes as rn  # noqa: E402
 
 ROOT = HERE.parent
@@ -70,11 +71,13 @@ class Body(unittest.TestCase):
         self.assertEqual(
             files,
             [
-                "ThinkWatch-Lite-2026.9.16-arm64.dmg",
-                "ThinkWatch-Lite-2026.9.16-x64-setup.exe",
-                "ThinkWatch-Lite-2026.9.16-arm64-setup.exe",
-                "ThinkWatch-Lite-2026.9.16-x86_64.AppImage",
-                "ThinkWatch-Lite-2026.9.16-aarch64.AppImage",
+                "ThinkWatch-Lite-2026.9.16-darwin-arm64.dmg",
+                "ThinkWatch-Lite-2026.9.16-windows-x64-setup.exe",
+                "ThinkWatch-Lite-2026.9.16-windows-x64-portable.zip",
+                "ThinkWatch-Lite-2026.9.16-windows-arm64-setup.exe",
+                "ThinkWatch-Lite-2026.9.16-windows-arm64-portable.zip",
+                "ThinkWatch-Lite-2026.9.16-linux-x86_64.AppImage",
+                "ThinkWatch-Lite-2026.9.16-linux-aarch64.AppImage",
             ],
         )
 
@@ -82,8 +85,18 @@ class Body(unittest.TestCase):
         # 写 latest.json 的那一步逐个点名每个平台的文件：`平台=dist/<文件>`
         published = set(re.findall(r"=dist/(ThinkWatch-Lite-\$VERSION-[A-Za-z0-9_.-]+)\"", WORKFLOW))
         listed = {name.format(v="$VERSION") for _, name in rn.DOWNLOADS}
-        self.assertEqual(len(published), 5, published)
+        self.assertEqual(len(published), 7, published)
         self.assertEqual(listed, published)
+
+    def test_every_name_says_its_system_and_architecture(self):
+        # `ThinkWatch-Lite-<版本>-<系统>-<架构>…`，系统名是 darwin / windows / linux
+        for _, name in rn.DOWNLOADS:
+            self.assertRegex(name, r"^ThinkWatch-Lite-\{v\}-(darwin|windows|linux)-(arm64|x64|x86_64|aarch64)[-.]")
+
+    def test_the_portable_zip_is_described(self):
+        body = rn.render("2026.9.16", CHANGES, None)
+        self.assertIn("portable ZIP runs without installation or administrator rights", body)
+        self.assertIn("`data` folder beside it", body)
 
     def test_the_install_commands(self):
         body = rn.render("2026.9.16", CHANGES, None)
@@ -97,11 +110,11 @@ class Body(unittest.TestCase):
 
     def test_the_checksum_commands_name_real_files(self):
         body = rn.render("2026.9.16", CHANGES, None)
-        self.assertIn("shasum -a 256 -c ThinkWatch-Lite-2026.9.16-arm64.dmg.sha256\n", body)
-        self.assertIn("sha256sum -c ThinkWatch-Lite-2026.9.16-x86_64.AppImage.sha256\n", body)
+        self.assertIn("shasum -a 256 -c ThinkWatch-Lite-2026.9.16-darwin-arm64.dmg.sha256\n", body)
+        self.assertIn("sha256sum -c ThinkWatch-Lite-2026.9.16-linux-x86_64.AppImage.sha256\n", body)
         self.assertIn(
-            "(Get-FileHash .\\ThinkWatch-Lite-2026.9.16-x64-setup.exe).Hash -eq "
-            "(Get-Content .\\ThinkWatch-Lite-2026.9.16-x64-setup.exe.sha256).Split()[0]\n",
+            "(Get-FileHash .\\ThinkWatch-Lite-2026.9.16-windows-x64-setup.exe).Hash -eq "
+            "(Get-Content .\\ThinkWatch-Lite-2026.9.16-windows-x64-setup.exe.sha256).Split()[0]\n",
             body,
         )
 
@@ -112,6 +125,36 @@ class Body(unittest.TestCase):
         for bad in ["v2026.9.16", "2026.9", "0.47.0", ""]:
             with self.assertRaises(rn.NotesError, msg=bad):
                 rn.render(bad, CHANGES, None)
+
+
+class Manifest(unittest.TestCase):
+    """latest.json 的键和文件（manifest.py），对着 release.yml 写清单的那一步核对。"""
+
+    def pairs(self) -> dict[str, str]:
+        found = re.findall(r'"([a-z0-9_-]+)=dist/(ThinkWatch-Lite-\$VERSION-[A-Za-z0-9_.-]+)"', WORKFLOW)
+        return dict(found)
+
+    def test_every_platform_gets_the_file_it_expects(self):
+        pairs = self.pairs()
+        self.assertEqual(set(pairs), set(manifest.PLATFORMS))
+        for platform, file in pairs.items():
+            with self.subTest(platform):
+                self.assertTrue(file.endswith(manifest.PLATFORMS[platform]), file)
+
+    def test_the_keys_installed_copies_already_read_are_kept(self):
+        # 已经装着的旧版本只认这几个键，改了名它们就再也问不到新版本
+        for key in [
+            "darwin-aarch64",
+            "windows-x86_64",
+            "windows-aarch64",
+            "linux-x86_64-appimage",
+            "linux-aarch64-appimage",
+        ]:
+            self.assertIn(key, manifest.PLATFORMS)
+
+    def test_the_portable_build_has_its_own_keys(self):
+        self.assertEqual(manifest.PLATFORMS["windows-x86_64-portable"], "-windows-x64-portable.zip")
+        self.assertEqual(manifest.PLATFORMS["windows-aarch64-portable"], "-windows-arm64-portable.zip")
 
 
 class Summary(unittest.TestCase):
@@ -170,7 +213,7 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         out = r.stdout
         self.assertTrue(out.startswith("## Downloads\n"))
-        self.assertIn("ThinkWatch-Lite-2099.1.1-arm64.dmg", out)
+        self.assertIn("ThinkWatch-Lite-2099.1.1-darwin-arm64.dmg", out)
 
     def test_a_bad_version_fails(self):
         r = self.run_script("v2099.1.1")

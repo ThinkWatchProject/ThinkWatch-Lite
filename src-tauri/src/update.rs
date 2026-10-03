@@ -12,7 +12,8 @@
 //! **Windows 上没有 Homebrew 那一档。**winget 装的和网页下载的是同一个安装
 //! 程序，已装版本记在「添加/删除程序」的注册表项里；自己更新时跑的是新版本
 //! 的安装程序，它会把那一项一起改掉，所以 winget 之后看到的就是新版本，不会
-//! 拿旧的盖回来。
+//! 拿旧的盖回来。**绿色版**（解压即用的 zip）也自己更新，换的是自己文件夹里的
+//! 两个 exe，不跑安装程序（见 `portable`）。
 //!
 //! **Linux 上只发 AppImage，看打包时写进二进制的那个标记，不按路径猜。**打包器
 //! 给 AppImage 打了补丁（`tauri::utils::platform::bundle_type()` 读的就是它），
@@ -57,6 +58,9 @@ pub enum Install {
     /// 手工下载解压的 `.app`（Windows 上是安装程序装的，Linux 上是 AppImage）。
     /// 这一种可以自己更新。
     Standalone,
+    /// Windows 的绿色版：zip 解压出来的文件夹（见 `portable`）。也自己更新，
+    /// 换的是文件夹里的两个 exe。
+    Portable,
     /// 根本不在一个 `.app` 里 —— `tauri dev`。
     Dev,
 }
@@ -64,7 +68,7 @@ pub enum Install {
 impl Install {
     /// 这一份能不能自己把自己换掉。
     pub fn can_self_update(self) -> bool {
-        self == Install::Standalone
+        matches!(self, Install::Standalone | Install::Portable)
     }
 }
 
@@ -145,6 +149,25 @@ pub fn nsis_installed(exe: &Path) -> Install {
     }
 }
 
+/// Windows 上这一份是怎么装上来的：安装程序装的、绿色版，还是开发构建。
+///
+/// **旁边有卸载程序的是安装版**（见 [`nsis_installed`]）；没有的，正式构建就是
+/// 绿色版 —— 发出去的 exe 只有这两种去处，zip 里没有卸载程序。开发构建（`tauri
+/// dev`、`cargo build`）旁边也没有，靠 `release` 分开：它们不该把数据放到
+/// `target\` 里，也不该去替换自己。
+///
+/// `cargo build --release` 出来的那一份因此也算绿色版，数据在 `target\release\data\`
+/// —— 和用户解压出来的那一份行为一致，正好用来试。
+// 判断本身和平台无关，所以在哪都测；只有 Windows 上真的拿它来用
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn windows_kind(exe: &Path, release: bool) -> Install {
+    match nsis_installed(exe) {
+        Install::Standalone => Install::Standalone,
+        _ if release => Install::Portable,
+        _ => Install::Dev,
+    }
+}
+
 /// Linux 上这一份是怎么装上来的。
 ///
 /// **AppImage 还要看 `APPIMAGE` 在不在。**同一个打过补丁的二进制，用户用
@@ -207,7 +230,7 @@ pub fn kind() -> Install {
         };
         #[cfg(windows)]
         {
-            nsis_installed(&exe)
+            windows_kind(&exe, !cfg!(debug_assertions))
         }
         #[cfg(target_os = "macos")]
         {
@@ -217,8 +240,10 @@ pub fn kind() -> Install {
 }
 
 /// 发布页。自动更新装不上时，从这里手动下载新版本。
-#[cfg(target_os = "linux")]
-const RELEASES_URL: &str = "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest";
+// macOS 上装不上时插件自己说原因，用不到它
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub(crate) const RELEASES_URL: &str =
+    "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest";
 
 /// 插件替换 AppImage 失败时的那一句。
 ///
@@ -250,6 +275,22 @@ pub fn appimage_failure(e: &tauri_plugin_updater::Error) -> String {
             format!("Installation failed: {e}")
         )
     }
+}
+
+/// 绿色版没换成时的那一句（见 `updater::install_portable`）。
+///
+/// 走到这里时改过名的文件已经改回去、网关也接回来了，用的还是原来那一版。拆包、
+/// 改名、写入失败都不是重试能解决的（包不对、文件夹被别的程序占着、杀毒软件拦了
+/// 写入），说清楚去哪下载新版本，解压覆盖就行。
+// 判断本身和平台无关，所以在哪都测；只有 Windows 上真的拿它来用
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn portable_failure(e: &str) -> String {
+    tr!(
+        format!("更新未安装：{e}。新版本可从 {RELEASES_URL} 下载。"),
+        format!(
+            "The update was not installed: {e}. The new version can be downloaded from {RELEASES_URL}."
+        )
+    )
 }
 
 /// 从 cask 文件里读出版本号。
@@ -402,6 +443,32 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
+    /// 旁边没有卸载程序的正式构建是绿色版；开发构建不管放在哪都是开发构建；
+    /// 有卸载程序的永远是安装版。
+    #[test]
+    fn a_release_build_without_an_uninstaller_is_the_portable_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("thinkwatch-lite.exe");
+        std::fs::write(&exe, b"").unwrap();
+
+        assert_eq!(windows_kind(&exe, true), Install::Portable);
+        assert!(windows_kind(&exe, true).can_self_update());
+        assert_eq!(windows_kind(&exe, false), Install::Dev);
+
+        std::fs::write(dir.path().join("uninstall.exe"), b"").unwrap();
+        assert_eq!(windows_kind(&exe, true), Install::Standalone);
+        assert_eq!(windows_kind(&exe, false), Install::Standalone);
+    }
+
+    /// 界面认的是这个词（`src/updateFlow.ts` 的 `Install`）
+    #[test]
+    fn the_portable_copy_is_called_portable_on_the_wire() {
+        assert_eq!(
+            serde_json::to_string(&Install::Portable).unwrap(),
+            "\"portable\""
+        );
+    }
+
     /// Linux 上信打包时写进去的标记，不信路径和环境变量。
     #[cfg(target_os = "linux")]
     #[test]
@@ -448,6 +515,22 @@ mod tests {
         assert!(!appimage_failure(&Error::BinaryNotFoundInArchive).contains(RELEASES_URL));
     }
 
+    /// 绿色版没换成：说原因，也说去哪下载
+    #[test]
+    fn a_failed_portable_update_says_where_to_download() {
+        let said = portable_failure("拒绝访问。 (os error 5)");
+        assert!(said.starts_with("更新未安装：拒绝访问。"), "{said}");
+        assert!(said.contains(RELEASES_URL));
+        crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            let said = portable_failure("Access is denied. (os error 5)");
+            assert!(
+                said.starts_with("The update was not installed: Access"),
+                "{said}"
+            );
+            assert!(said.ends_with(&format!("{RELEASES_URL}.")));
+        });
+    }
+
     /// 读的是 tap 里真实的那份 cask —— 格式变了，这条先红。
     #[test]
     fn the_version_comes_out_of_a_real_cask() {
@@ -455,7 +538,7 @@ mod tests {
   version "2026.9.2"
   sha256 "bccc9014b1b1df1fb4e33fa5534f1ccb7c431ac41a1b415aa932090c4dfd0cf4"
 
-  url "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/download/v#{version}/ThinkWatch-Lite-#{version}-arm64.dmg"
+  url "https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/download/v#{version}/ThinkWatch-Lite-#{version}-darwin-arm64.dmg"
 end
 "#;
         assert_eq!(cask_version(cask), Some("2026.9.2"));
