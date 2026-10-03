@@ -37,7 +37,7 @@
 #
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出安装包并且
-# 在发出去之前拆开看一眼。
+# 在发出去之前拆开看一眼；Windows 的还要装上跑一遍（`windows-e2e`）。
 #
 # **推到 `rehearse/` 开头的分支是演练**：全部照做，只是不发布 —— 各个安装
 # 包留在这次运行的产物里，可以下载下来装到真机上看。改了这条流水线，先演练
@@ -469,6 +469,51 @@ jobs:
             dist/ThinkWatch-Lite-*-portable.zip.sig
           if-no-files-found: error
 
+  # **装到一台真的 Windows 上用一遍再发。**上面只拆开看了包里有什么；这里把 x64 的
+  # 绿色版和安装程序当成用户那样用：解压启动、再开一份（切换、取消、同一个程序）、
+  # 没有写入权限的文件夹、静默安装、静默卸载，核对数据目录、注册表、进程和系统对话框。
+  # 每一条查什么写在 `scripts/windows-e2e.ps1` 的开头。
+  #
+  # 用 Windows 自带的 PowerShell 5.1（`shell: powershell`）：用户机器上一定有的就是它。
+  # 截图在这次运行的 `e2e-shots` 里，应用自己的日志在 `e2e-logs` 里。`publish` 下载
+  # 产物时这两份也会落进 dist/，文件名都以 `e2e-` 开头，不会被当成要发的文件挂上去。
+  #
+  # **它不过，`publish` 不跑**：没在 Windows 上真的跑起来过的版本不发。
+  windows-e2e:
+    name: Windows end to end (x64)
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: e2e-input
+
+      - name: Portable and installed copies, end to end
+        shell: powershell
+        run: |
+          $setup = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-setup.exe)
+          $zip = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-portable.zip)
+          if ($setup.Count -ne 1 -or $zip.Count -ne 1) { throw "expected one setup.exe and one portable.zip in e2e-input" }
+          & .\scripts\windows-e2e.ps1 -Setup $setup[0].FullName -Zip $zip[0].FullName -Out "$env:RUNNER_TEMP\e2e" -SkipUninstall
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-shots
+          path: ${{ runner.temp }}/e2e/shots
+          if-no-files-found: warn
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e/logs
+          if-no-files-found: warn
+
   linux:
     name: ThinkWatch Lite (${{ matrix.target }})
     strategy:
@@ -661,7 +706,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [app, windows, linux, release-body]
+    needs: [app, windows, windows-e2e, linux, release-body]
     # 演练到上面为止
     if: github.ref_type == 'tag'
     runs-on: macos-latest
