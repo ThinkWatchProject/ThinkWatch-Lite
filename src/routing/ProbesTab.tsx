@@ -10,11 +10,11 @@ import type { Overview, ProbeMode } from "@/types";
 import { probesTabText } from "./ProbesTab.i18n";
 
 /**
- * 客户端自己发的辅助请求，以及每一类怎么处理。
+ * 客户端自己发的辅助请求，以及每一类怎么处理：本地应答，或者转发。
  *
- * **它属于路由，不属于网关。**三档里有一档就叫「交给路由」，而规则的
- * `intent` 条件只对那一档成立 —— 写规则的地方和决定它能不能命中的地方
- * 隔着一个导航项时，规则会静悄悄地永远不命中。
+ * **它属于路由，不属于网关。**转发的那几类带着类别走规则，规则的 `intent`
+ * 条件只对它们成立 —— 写规则的地方和决定它能不能命中的地方隔着一个导航项
+ * 时，规则会静悄悄地永远不命中。
  *
  * 换档是一次配置写入：**先按新档画**，写入期间那一类旁边转圈、分段控件失效；
  * 失败时拨回原档并报错。成功不弹提示 —— 分段控件已经停在新档上了。
@@ -40,8 +40,7 @@ export function ProbesTab({ ov }: { ov: Overview }) {
 
   const modes: { id: ProbeMode; label: string; what: string }[] = [
     { id: "intercept", label: t.intercept, what: t.interceptWhat },
-    { id: "passthrough", label: t.passthrough, what: t.passthroughWhat },
-    { id: "route", label: t.routed, what: t.routedWhat },
+    { id: "forward", label: t.forward, what: t.forwardWhat },
   ];
 
   async function set(id: string, mode: ProbeMode) {

@@ -1,5 +1,6 @@
 ; 从 Tauri CLI 2.11.4 自带的同名语言文件原样复制（crates/tauri-bundler/src/bundle/windows/nsis/languages），
-; 只改了 deleteAppData 那一句：卸载程序里那个勾选框删的是什么要说清楚（见 hooks.nsh）。
+; 改了 deleteAppData 那一句（卸载程序里那个勾选框删的是什么要说清楚），末尾加了
+; cleanupIncomplete（卸载前的清理有一步没做成时的提示），见 hooks.nsh。
 ; 升级 Tauri CLI 时和新版的对一遍：新版加的句子这里也要补上。
 LangString addOrReinstall ${LANG_SIMPCHINESE} "添加/重新安装组件"
 LangString alreadyInstalled ${LANG_SIMPCHINESE} "已安装"
@@ -28,3 +29,4 @@ LangString webview2Downloading ${LANG_SIMPCHINESE} "正在下载 WebView2 引导
 LangString webview2InstallError ${LANG_SIMPCHINESE} "错误：安装 WebView2 时失败，错误代码：$1"
 LangString webview2InstallSuccess ${LANG_SIMPCHINESE} "成功安装 WebView2"
 LangString deleteAppData ${LANG_SIMPCHINESE} "同时删除数据（配置、API 密钥、请求记录）"
+LangString cleanupIncomplete ${LANG_SIMPCHINESE} "部分清理步骤未完成。重新安装 ThinkWatch Lite 后，可在应用内的「卸载」中查看并完成剩余步骤。"

@@ -8,8 +8,8 @@ export const ruleDialogText = messages(
     namePlaceholder: "例如 长上下文",
     conditions: "条件",
     allOf: "同时满足以下条件",
-    unrouted: (probes: string[]) => `${probes.join("、")}当前未设为交给路由，此条件不会满足。`,
-    routeProbes: "保存时将这些类别改为交给路由",
+    intercepted: (probes: string[]) => `${probes.join("、")}当前由网关本地应答，不会进入路由，此条件对其不成立。`,
+    toForward: "可在「辅助请求」中改为转发。",
     onMatch: "命中后",
     forward: "转发",
     forwardTo: "转发至",
@@ -49,9 +49,9 @@ export const ruleDialogText = messages(
     namePlaceholder: "e.g. Long context",
     conditions: "Conditions",
     allOf: "All of the following must be met",
-    unrouted: (probes: string[]) =>
-      `${andList(probes)} ${probes.length === 1 ? "is" : "are"} not set to be routed, so this condition is never met.`,
-    routeProbes: "Set these categories to be routed on save",
+    intercepted: (probes: string[]) =>
+      `${andList(probes)} ${probes.length === 1 ? "is" : "are"} answered locally by the gateway and never ${probes.length === 1 ? "reaches" : "reach"} routing, so this condition never holds for ${probes.length === 1 ? "it" : "them"}.`,
+    toForward: "This can be changed to “Forward” under Auxiliary.",
     onMatch: "On match",
     forward: "Forward",
     forwardTo: "Forward to",

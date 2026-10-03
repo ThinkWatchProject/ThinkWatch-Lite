@@ -13,6 +13,8 @@
 
 ; 开机自启那一项，指向的不是这个安装目录时，卸载前的原值（见下面两个钩子）
 Var TWKeptAutostart
+; 清理进程的退出码：0 是每一步都做成了（src-tauri/src/cleanup.rs）
+Var TWCleanupExit
 
 !macro NSIS_HOOK_PREUNINSTALL
   StrCpy $TWKeptAutostart ""
@@ -22,10 +24,20 @@ Var TWKeptAutostart
     ; 注册项改回指向自己。用户在提示框里取消就整个不卸载。模板紧接着会再查一次，
     ; 那时已经没有在运行的了（两次插入的标签带着各自的行号，不会重名）
     !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+    ClearErrors
     ${If} $DeleteAppDataCheckboxState = 1
-      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup --delete-data'
+      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup --delete-data' $TWCleanupExit
     ${Else}
-      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup'
+      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup' $TWCleanupExit
+    ${EndIf}
+    ; 有一步没做成（退出码不是 0），或者程序根本没起来（出错标志；这时退出码没有定义，
+    ; 先看它）：说一声，接着卸载。静默卸载（winget 之类）不弹框，弹了就没人点、一直卡着
+    ${If} ${Errors}
+      StrCpy $TWCleanupExit 1
+    ${EndIf}
+    ${If} $TWCleanupExit <> 0
+    ${AndIfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "$(cleanupIncomplete)"
     ${EndIf}
 
     ; **模板随后不论指向哪里都删开机自启那一项**（HKCU\…\Run 里值名是产品名的那个）。
