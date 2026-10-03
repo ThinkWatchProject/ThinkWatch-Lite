@@ -368,9 +368,23 @@ function Get-Texts($element) {
     return $names.ToArray()
 }
 
-function Get-Buttons($element) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-    try { return @($element.FindAll($TS::Descendants, $cond)) } catch { return @() }
+# 窗口里所有元素：（控件类型、类名、名字、元素）。按名字找按钮时不限控件类型 ——
+# TaskDialog 里的按钮在 UI 自动化里不一定报成 Button
+function Get-Parts($element) {
+    $parts = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($d in $element.FindAll($TS::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+            try {
+                $c = $d.Current
+                $parts.Add([pscustomobject]@{ Type = $c.ControlType.ProgrammaticName; Class = $c.ClassName; Name = $c.Name; Element = $d })
+            } catch {}
+        }
+    } catch {}
+    return $parts.ToArray()
+}
+
+function Describe($element) {
+    return ((Get-Parts $element | ForEach-Object { '{0} [{1}] "{2}"' -f $_.Type, $_.Class, $_.Name }) -join '; ')
 }
 
 # 放到最上层再截图：从后台进程拉起来的对话框不一定在前面
@@ -389,8 +403,10 @@ function Wait-Dialog($proc, [string] $label, [double] $seconds = 60) {
     while ((Get-Date) -lt $until) {
         $d = Get-Dialog $proc.Id
         if ($d) {
-            [void](Wait-For { @(Get-Buttons $d).Count -gt 0 } 5 100)
+            # 窗口先出来、里面的字和按钮后画：等到有几样东西了再往下
+            [void](Wait-For { @(Get-Parts $d | Where-Object { $_.Name }).Count -ge 3 } 5 100)
             Say ('{0} 的对话框：{1}' -f $label, ((Get-Texts $d) -join ' | '))
+            Say ('  UI 自动化里的样子：{0}' -f (Describe $d))
             return $d
         }
         if ($proc.HasExited) { Fail ('{0} 没有弹出对话框就退出了（退出码 {1}）' -f $label, $proc.ExitCode) }
@@ -408,17 +424,20 @@ function Assert-Contains([string[]] $texts, [string] $needle, [string] $what) {
 
 # 用 UI 自动化按下对话框里写着 `label` 的按钮；按不下去时退回 TDM_CLICK_BUTTON
 function Press($dialog, [string] $label, [int] $index) {
-    $button = $null
-    foreach ($b in (Get-Buttons $dialog)) {
-        try { if ($b.Current.Name.Trim() -eq $label) { $button = $b; break } } catch {}
+    $named = @(Get-Parts $dialog | Where-Object { $_.Name -and $_.Name.Trim() -eq $label })
+    if ($named.Count -eq 0) {
+        Fail ('对话框里没有「{0}」按钮。对话框里有：{1}' -f $label, (Describe $dialog))
     }
-    if (-not $button) {
-        $names = @(Get-Buttons $dialog | ForEach-Object { try { $_.Current.Name } catch {} })
-        Fail ('对话框里没有「{0}」按钮，只有：{1}' -f $label, ($names -join ' | '))
+    # 同名的几个里挑能「按」的那个（文字标签和按钮可能同名）
+    $button = $null
+    foreach ($n in $named) {
+        $pattern = $null
+        if ($n.Element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $button = $n; break }
     }
     try {
-        $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-        Say ('按下了「{0}」' -f $label)
+        if (-not $button) { throw ('「{0}」都不支持 Invoke：{1}' -f $label, (($named | ForEach-Object { $_.Type }) -join ', ')) }
+        $button.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        Say ('按下了「{0}」（{1}）' -f $label, $button.Type)
     } catch {
         Warn ('UI 自动化按不下「{0}」（{1}），改发 TDM_CLICK_BUTTON' -f $label, $_.Exception.Message)
         $h = [IntPtr]$dialog.Current.NativeWindowHandle
