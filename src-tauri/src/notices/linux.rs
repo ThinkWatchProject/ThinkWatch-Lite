@@ -923,15 +923,21 @@ mod tests {
                     return;
                 }
             };
-            // The notifier tasks write the table in here: removed at the end, once they
-            // have finished (a write after the removal would create it again). The
-            // guard also removes it when the test fails part-way
-            let dir = tempfile::Builder::new()
-                .prefix("tw-dbus-")
-                .tempdir()
-                .unwrap();
-            let store = dir.path().join("d").join(STORE_FILE);
+            // The notifier tasks write the table in here. Removed at the end, once they
+            // have finished (a write after the removal would create it again); when the
+            // test fails part-way, the guard stops them first (see `Scratch`)
+            let scratch = Scratch {
+                tasks: Arc::default(),
+                dir: Some(
+                    tempfile::Builder::new()
+                        .prefix("tw-dbus-")
+                        .tempdir()
+                        .unwrap(),
+                ),
+            };
+            let store = scratch.path().join("d").join(STORE_FILE);
             let clicks: Clicks = Arc::default();
+            let running = scratch.tasks.clone();
             let spawn = |clicks: Clicks| {
                 let (tx, task) = start(Config {
                     app_name: "ThinkWatch Lite".into(),
@@ -941,7 +947,9 @@ mod tests {
                     store: Some(store.clone()),
                     on_click: Box::new(move |k, t| clicks.lock().unwrap().push((k, t))),
                 });
-                (tx, tokio::spawn(task))
+                let task = tokio::spawn(task);
+                running.lock().unwrap().push(task.abort_handle());
+                (tx, task)
             };
             let (tx, task) = spawn(clicks.clone());
 
@@ -1097,7 +1105,43 @@ mod tests {
             drop(tx);
             task.await.unwrap();
             drop(srv);
-            drop(dir);
+            drop(scratch);
+        }
+
+        /// The test's temporary directory, and the notifier tasks that write into it.
+        ///
+        /// **A failing assertion unwinds while those tasks still run**, and one of them
+        /// may be halfway through saving the table: removing the directory first lets
+        /// that write create it again. So on drop the tasks are aborted and waited for
+        /// (an abort lands at their next await, after any write in progress), and only
+        /// then is the directory removed. On the passing path every task has already
+        /// been awaited and this is just the removal
+        struct Scratch {
+            tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+            dir: Option<tempfile::TempDir>,
+        }
+
+        impl Scratch {
+            fn path(&self) -> &std::path::Path {
+                self.dir.as_ref().expect("removed only on drop").path()
+            }
+        }
+
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let tasks =
+                    std::mem::take(&mut *self.tasks.lock().unwrap_or_else(|e| e.into_inner()));
+                for t in &tasks {
+                    t.abort();
+                }
+                // Blocking here is fine: the test runs on the multi-threaded runtime, so
+                // the other workers finish the aborted tasks meanwhile
+                let until = std::time::Instant::now() + Duration::from_secs(5);
+                while tasks.iter().any(|t| !t.is_finished()) && std::time::Instant::now() < until {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                drop(self.dir.take());
+            }
         }
 
         async fn wait_for(cond: impl Fn() -> bool) {
