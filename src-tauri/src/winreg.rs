@@ -492,7 +492,8 @@ mod imp {
         }
 
         const EXE: &str = r"C:\Program Files\ThinkWatch Lite\thinkwatch-lite.exe";
-        const OTHER: &str = r"D:\Tools\ThinkWatch Lite\thinkwatch-lite.exe";
+        // 绿色版：文件名里也有空格（`portable::APP_EXE`）
+        const OTHER: &str = r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe";
 
         fn command(hive: &Hive) -> Option<String> {
             read_string(hive, &format!(r"{}\shell\open\command", link_key()), "").unwrap()
@@ -707,6 +708,11 @@ mod tests {
             command_exe(r"C:\Tools\THINKWATCH-LITE.EXE"),
             Some(r"C:\Tools\THINKWATCH-LITE.EXE")
         );
+        // 文件名里也有空格的（绿色版）
+        assert_eq!(
+            command_exe(r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe --autostart"),
+            Some(r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe")
+        );
         // 文件夹名里带 .exe 的不算到那里为止
         assert_eq!(
             command_exe(r"C:\a.exe.d\thinkwatch-lite.exe --autostart"),
@@ -762,6 +768,19 @@ mod tests {
             &autostart_command(exe),
             r"D:\x\thinkwatch-lite.exe"
         ));
+        // 绿色版的文件名里也有空格（`portable::APP_EXE`）：整个路径都在引号里
+        let portable = r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe";
+        assert_eq!(
+            open_command(portable),
+            r#""D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe" "%1""#
+        );
+        assert_eq!(
+            autostart_command(portable),
+            r#""D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe" --autostart"#
+        );
+        assert!(command_runs(&open_command(portable), portable));
+        assert!(command_runs(&autostart_command(portable), portable));
+        assert!(!command_runs(&autostart_command(portable), exe));
     }
 
     /// 不是 Windows（或者开发构建）时清理什么都不做、什么都不说

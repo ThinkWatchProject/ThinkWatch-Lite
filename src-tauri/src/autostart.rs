@@ -77,13 +77,23 @@ pub fn plist_path(bundle_id: &str) -> Option<std::path::PathBuf> {
     })
 }
 
-/// 开发构建里禁用自启。
+/// 开发构建里禁用自启（Windows 上连同链接、通知的登记，见 `winreg`）。
 ///
 /// `cargo tauri dev` 期间调 `enable()` 会把 `target/debug/…` 写进 plist，
 /// 然后每次开机 launchd 都会去启动一个可能已经被 `cargo clean` 掉的
 /// 二进制。**这是个只在开发者自己机器上发作的坑**，所以更容易被忽略。
+///
+/// Windows 上自己编的 release 构建也算开发构建（见 `update::windows_kind`）：否则在
+/// 开发机上跑一次 `target\release\…`，装好的那一份的链接和开机自启就改指向了它。
 pub fn allowed_in_this_build() -> bool {
-    !cfg!(debug_assertions)
+    #[cfg(windows)]
+    {
+        !cfg!(debug_assertions) && crate::update::kind() != crate::update::Install::Dev
+    }
+    #[cfg(not(windows))]
+    {
+        !cfg!(debug_assertions)
+    }
 }
 
 // **Windows 上开关不经插件**，读写的是 `HKCU\…\Run` 里那一项，见 `winreg`。
@@ -169,6 +179,14 @@ mod tests {
     fn dev_builds_refuse_to_register() {
         // debug 构建注册的话，plist 里会写 target/debug/…，然后每次开机
         // launchd 去启动一个可能已经 cargo clean 掉的二进制。
+        if cfg!(debug_assertions) {
+            assert!(!allowed_in_this_build());
+        }
+        // Windows 上测试程序（`target\…\deps` 里，旁边没有卸载程序、不是发版构建）
+        // 怎么编都不算
+        #[cfg(windows)]
+        assert!(!allowed_in_this_build());
+        #[cfg(not(windows))]
         assert_eq!(allowed_in_this_build(), !cfg!(debug_assertions));
     }
 

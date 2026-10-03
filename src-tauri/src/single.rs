@@ -657,7 +657,7 @@ mod tests {
     use super::*;
 
     const HERE: &str = r"C:\Program Files\ThinkWatch Lite\thinkwatch-lite.exe";
-    const THERE: &str = r"D:\Tools\ThinkWatch Lite\thinkwatch-lite.exe";
+    const THERE: &str = r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe";
 
     #[test]
     fn another_location_is_asked_about() {

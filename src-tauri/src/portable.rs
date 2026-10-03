@@ -14,9 +14,16 @@
 
 use std::path::{Path, PathBuf};
 
-/// 绿色版 zip 里的应用本体。和 NSIS 装进安装目录的是同一个名字，也是 Tauri 按
-/// `Cargo.toml` 的包名起的那个
-pub const APP_EXE: &str = "thinkwatch-lite.exe";
+/// 绿色版 zip 里的应用本体，**用产品名，和安装版的 `thinkwatch-lite.exe` 不同名**。
+///
+/// 内容就是安装程序里的那一个 exe（release.yml 打包时改的名）。不同名是因为安装程序和
+/// 卸载程序要关掉运行中的程序时按**文件名**找进程、一律结束（Tauri 的 NSIS 模板里的
+/// `CheckIfAppIsRunning`，按机器安装时连别的账户的也结束）：同名的话，装一次、卸一次
+/// 安装版，正在运行的绿色版就被悄悄关掉了。解压出来的文件夹里，这个名字也更好认。
+///
+/// 自更新只认 zip 里的这个名字；换进来时写到**正在运行的那个路径**上（见 [`install`]），
+/// 用户改过名也一样
+pub const APP_EXE: &str = "ThinkWatch Lite.exe";
 
 /// 绿色版 zip 里的网关，放在应用本体旁边（见 `gateway::bundled_core`）
 pub const CORE_EXE: &str = "twcore.exe";
@@ -206,7 +213,7 @@ fn listed_dir(folder: &Path, dir: &Path) -> bool {
     })
 }
 
-/// 这一份是不是绿色版：Windows、正式构建、旁边没有卸载程序（见
+/// 这一份是不是绿色版：Windows、发版流水线打的构建、旁边没有卸载程序（见
 /// [`crate::update::windows_kind`]）。
 ///
 /// 答案在进程的一生里不会变，问一次记下来。
@@ -339,7 +346,7 @@ pub struct Package {
 }
 
 /// 拆开更新包（发布页上的 `…-portable.zip`），**只认根目录下的
-/// `thinkwatch-lite.exe` 和 `twcore.exe`，恰好这两个**。
+/// [`APP_EXE`] 和 [`CORE_EXE`]，恰好这两个**。
 ///
 /// 签名在这之前已经验过了（`Update::download` 验的是下载下来的原始字节，也就是
 /// 这个 zip），这里看的是形状：多一个、少一个、放在子目录里，都说明这不是绿色
@@ -573,14 +580,14 @@ mod tests {
     /// （更新完重启自己）：留着；没有记号（用户自己设的 `THINKWATCH_HOME`）：留着
     #[test]
     fn only_a_home_inherited_from_another_portable_copy_is_dropped() {
-        let portable = r"D:\Tools\ThinkWatch Lite\thinkwatch-lite.exe";
+        let portable = r"D:\Tools\ThinkWatch Lite\ThinkWatch Lite.exe";
         let installed = r"C:\Program Files\ThinkWatch Lite\thinkwatch-lite.exe";
         assert!(inherited(Some(portable), Some(installed)));
         assert!(inherited(Some(portable), None));
         assert!(!inherited(Some(portable), Some(portable)));
         assert!(!inherited(
             Some(portable),
-            Some(r"\\?\d:\tools\thinkwatch lite\THINKWATCH-LITE.EXE")
+            Some(r"\\?\d:\tools\thinkwatch lite\THINKWATCH LITE.EXE")
         ));
         assert!(!inherited(None, Some(installed)));
         assert!(!inherited(None, None));
@@ -736,15 +743,20 @@ mod tests {
         assert_eq!(why, Refusal::NotWritable, "{e}");
     }
 
+    /// 应用本体按正在运行的那个名字找（用户可能改过名），网关的名字是定的
     #[test]
     fn leftovers_are_the_two_files_the_update_renamed() {
         let folder = Path::new("C:/ThinkWatch");
         assert_eq!(
-            leftovers(folder, std::ffi::OsStr::new("thinkwatch-lite.exe")),
+            leftovers(folder, std::ffi::OsStr::new("ThinkWatch Lite.exe")),
             [
-                folder.join("thinkwatch-lite.exe.old"),
+                folder.join("ThinkWatch Lite.exe.old"),
                 folder.join("twcore.exe.old")
             ]
+        );
+        assert_eq!(
+            leftovers(folder, std::ffi::OsStr::new("tw.exe"))[0],
+            folder.join("tw.exe.old")
         );
     }
 
@@ -781,8 +793,9 @@ mod tests {
 
     #[test]
     fn a_portable_package_holds_the_two_executables() {
+        assert_eq!(APP_EXE, "ThinkWatch Lite.exe");
         let zip = zip_of(&[
-            ("thinkwatch-lite.exe", b"MZ app".repeat(1000).as_slice()),
+            ("ThinkWatch Lite.exe", b"MZ app".repeat(1000).as_slice()),
             ("twcore.exe", b"MZ core"),
         ]);
         let p = unpack(&zip).unwrap();
@@ -790,26 +803,28 @@ mod tests {
         assert_eq!(p.core, b"MZ core");
     }
 
-    /// 多一个、少一个、放进了子目录、不是 zip、不是可执行文件：都不装
+    /// 多一个、少一个、放进了子目录、应用本体用的是安装版的名字、不是 zip、不是可执行
+    /// 文件：都不装
     #[test]
     fn anything_else_is_refused_before_it_is_written() {
         let refused = [
-            zip_of(&[("thinkwatch-lite.exe", b"MZ")]),
+            zip_of(&[("ThinkWatch Lite.exe", b"MZ")]),
             zip_of(&[
-                ("thinkwatch-lite.exe", b"MZ"),
+                ("ThinkWatch Lite.exe", b"MZ"),
                 ("twcore.exe", b"MZ"),
                 ("README.txt", b"hi"),
             ]),
             zip_of(&[
-                ("ThinkWatch Lite/thinkwatch-lite.exe", b"MZ"),
+                ("ThinkWatch Lite/ThinkWatch Lite.exe", b"MZ"),
                 ("ThinkWatch Lite/twcore.exe", b"MZ"),
             ]),
             zip_of(&[
                 ("data/", b""),
-                ("thinkwatch-lite.exe", b"MZ"),
+                ("ThinkWatch Lite.exe", b"MZ"),
                 ("twcore.exe", b"MZ"),
             ]),
-            zip_of(&[("thinkwatch-lite.exe", b"MZ"), ("twcore.exe", b"")]),
+            zip_of(&[("ThinkWatch Lite.exe", b"MZ"), ("twcore.exe", b"")]),
+            zip_of(&[("thinkwatch-lite.exe", b"MZ"), ("twcore.exe", b"MZ")]),
             b"MZ not a zip".to_vec(),
         ];
         for (i, zip) in refused.iter().enumerate() {
@@ -818,7 +833,7 @@ mod tests {
         with_lang(Lang::En, || {
             let e = unpack(&refused[2]).err().unwrap();
             assert!(
-                e.contains("exactly thinkwatch-lite.exe and twcore.exe"),
+                e.contains("exactly ThinkWatch Lite.exe and twcore.exe"),
                 "{e}"
             );
             assert!(e.contains("ThinkWatch Lite/twcore.exe"), "{e}");

@@ -107,7 +107,7 @@ def render(version: str, changes: str, summary_text: str | None) -> str:
 
 Each file is published with a `.sha256` file beside it. `latest.json` is the manifest for in-app updates, and `install.sh` is the Linux install script.
 
-On Windows, the portable ZIP runs without installation or administrator rights: extract it to any writable folder and start `thinkwatch-lite.exe`. Its settings stay in the `data` folder beside it, separate from an installed copy, and it updates itself in place.
+On Windows, the portable ZIP runs without installation or administrator rights: extract it to any writable folder and start `ThinkWatch Lite.exe`. Its settings stay in the `data` folder beside it, separate from an installed copy, and it updates itself in place.
 
 On macOS, Homebrew installs the same disk image:
 

@@ -1,5 +1,8 @@
 fn main() {
     core_tag();
+    // 发版流水线打的 Windows 构建带着它（见 `update::official_build`）：没有它，旁边没有卸载
+    // 程序的 release 构建不算绿色版。代码里用 `option_env!` 读，变了要重编
+    println!("cargo:rerun-if-env-changed=TW_OFFICIAL_BUILD");
     // **Windows 的程序清单自己给**（`app.manifest`），比 tauri-build 默认的那份多一项：
     // 按每个显示器的 DPI 绘制。
     //
