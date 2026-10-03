@@ -338,7 +338,6 @@ function verdictTone(r: DryRunResult): StatusTone {
     case "route":
       return "ok";
     case "intercepted":
-    case "passthrough":
       return "idle";
     default:
       return "error";
@@ -368,7 +367,7 @@ function Result({
    * **那时下面每一格都不适用** —— 路由、候选、改写说的都是规则走完之后
    * 的事，而一条规则都没走。留着它们只会让人以为它真的去了那儿。
    */
-  const short = r.outcome === "intercepted" || r.outcome === "passthrough";
+  const short = r.outcome === "intercepted";
   const target = r.outcome === "route" ? (r.via_group ?? r.candidates[0] ?? null) : null;
 
   // 这一趟经过的路：密钥 → 路由 → 规则 → 去向。和路由图同一套标志
@@ -427,7 +426,7 @@ function Result({
         {r.outcome === "deny" && r.reason && <p className="tw-body text-muted-foreground">{t.reason(r.reason)}</p>}
         {short && (
           <div className="flex flex-col gap-1 tw-body text-muted-foreground">
-            <span>{r.outcome === "intercepted" ? t.interceptedWhat : t.passedThroughWhat}</span>
+            <span>{t.interceptedWhat}</span>
             <span>{t.howToRoute}</span>
           </div>
         )}
@@ -577,8 +576,6 @@ function headline(r: DryRunResult): string {
       return m.unavailable;
     case "intercepted":
       return m.intercepted;
-    case "passthrough":
-      return m.passedThrough;
     default:
       return m.noMatch;
   }

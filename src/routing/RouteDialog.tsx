@@ -122,13 +122,6 @@ export function RouteDialog({
     source ? source.rules.map(draftFromView) : [{ ...blankRule(ALL_UPSTREAMS), name: t.catchAllName }],
   );
   /**
-   * 每条规则保存时要一并「交给路由」的辅助请求类别，按规则的 `key` 记。**保存那条规则时
-   * 整个换掉**：重开之后取消了勾选、去掉了那个条件，都要算数；删掉的规则不算。以前这里
-   * 只加不减，取消勾选之后保存路由，那几类照样被改成交给路由 —— 连通性检查、预热从
-   * 网关本地应答变成发给付费的上游
-   */
-  const [probes, setProbes] = useState<ReadonlyMap<string, string[]>>(() => new Map());
-  /**
    * 保存时带的版本号：**草稿起步的那一版**，不是保存那一刻的。
    *
    * 开着对话框的时候配置可能被改过（另一个窗口、直接改文件）。带着保存那一刻的版本号，
@@ -177,7 +170,6 @@ export function RouteDialog({
         base_version: base,
         // 默认路由的使用者是「没指定路由的密钥」，这里不改
         keys: isDefault ? undefined : keys,
-        route_probes: [...new Set(rules.flatMap((r) => probes.get(r.key) ?? []))],
       };
       if (mode.kind === "edit") await api.updateRoute(mode.name, save);
       else await api.createRoute(save);
@@ -202,9 +194,6 @@ export function RouteDialog({
         onSelect: () => {
           const c = { ...copyDraft(rules[i]!), name: uniqueName(rt.copyName(rules[i]!.name), rules) };
           setRules((r) => [...r.slice(0, i + 1), c, ...r.slice(i + 1)]);
-          // 复制出来的那条带着同样的条件，也带着「交给路由」的那个选择
-          const chosen = probes.get(rules[i]!.key);
-          if (chosen) setProbes((m) => new Map(m).set(c.key, chosen));
         },
       },
       { kind: "sep" },
@@ -460,13 +449,12 @@ export function RouteDialog({
               onChanged();
             }}
             onClose={() => setEditing(null)}
-            onSave={(d, routeProbes) => {
+            onSave={(d) => {
               setRules((r) =>
                 editing.index == null
                   ? [...r.slice(0, editing.at), d, ...r.slice(editing.at)]
                   : r.map((x, j) => (j === editing.index ? d : x)),
               );
-              setProbes((m) => new Map(m).set(d.key, routeProbes));
               setEditing(null);
             }}
           />
