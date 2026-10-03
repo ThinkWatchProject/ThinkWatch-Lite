@@ -23,13 +23,12 @@ import { useConfigVersion } from "@/keys/data";
 import type { Overview, PluginView, PluginWrite } from "@/types";
 import { ChangedDialog } from "./ChangedDialog";
 import { pluginDescription, pluginName } from "./defaults";
-import { PluginEditor, type EditorTab } from "./Editor";
+import { NewPluginEditor, PluginEditor, type EditorTab } from "./Editor";
 import { DeleteDialog, ReorderDialog } from "./ListDialogs";
 import { LogsDialog } from "./LogsDialog";
 import { holdsToolCalls, manifestUnknown } from "./model";
 import { PermissionChips, PluginText, RequestKinds, ScopeSummary, StatsCell, StatusOf } from "./parts";
 import { pluginsPageText } from "./PluginsPage.i18n";
-import { SourceDialog } from "./SourceDialog";
 import { TrialDialog } from "./TrialDialog";
 import { setEnabled, type NativeWrite } from "./write";
 
@@ -57,7 +56,8 @@ type DialogState =
  * - **插件写的字一律按纯文本画**（名字、说明、设置项的标签、日志、报错），见 `PluginText`。
  *   core 自带的默认插件按界面语言说（`defaults.ts`）。
  * - **插件的 JS 文件是唯一的真相**：出错时怎么办、适用范围、设置都写在代码里。点一个插件
- *   打开它的编辑器（`Editor`），「设置」和「代码」两页、一个保存。
+ *   打开它的编辑器（`Editor`），「设置」和「代码」两页、一个保存。添加插件用的是同一个编辑器，
+ *   从一段模板起头，按钮是「安装」。
  * - **只有改得了回答里工具调用的插件**，装上它、打开它、改它的代码、批准它改过的文件，要在
  *   系统原生对话框里点头（`write.ts`）。别的写入不问；删除在应用里确认一次。
  * - 启用、停用可以撤销，一按就写。
@@ -235,11 +235,12 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
       </Loadable>
 
       {dialog?.kind === "add" && (
-        <SourceDialog
+        <NewPluginEditor
           taken={taken}
+          ov={ov}
           native={native}
           onClose={() => setDialog(null)}
-          onDone={(id) => {
+          onInstalled={(id) => {
             setDialog(null);
             setFocus(id);
           }}

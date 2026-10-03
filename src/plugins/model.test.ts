@@ -9,6 +9,7 @@ import {
   globMatch,
   holdsToolCalls,
   ID_RE,
+  idProblem,
   manifestUnknown,
   requestInScope,
   saveAsks,
@@ -214,10 +215,26 @@ describe("插件 ID", () => {
     expect(suggestId("x", "add-date.mjs", ["add-date", "add-date-2"])).toBe("add-date-3");
   });
 
-  it("建议的 ID 都合 core 的写法", () => {
-    for (const id of [suggestId("A".repeat(80), null, []), suggestId("—", "My Plugin (v2).js", [])]) {
-      expect(ID_RE.test(id)).toBe(true);
+  it("建议的 ID 都合 core 的写法，也不是保留词", () => {
+    for (const id of [
+      suggestId("A".repeat(80), null, []),
+      suggestId("—", "My Plugin (v2).js", []),
+      suggestId("Rewrite", null, []),
+      suggestId("x", "order.js", ["order-plugin"]),
+    ]) {
+      expect(idProblem(id, [])).toBeNull();
     }
+    // 保留词和 core 一样接 `-plugin`
+    expect(suggestId("Rewrite", null, [])).toBe("rewrite-plugin");
+    expect(suggestId("x", "order.js", ["order-plugin"])).toBe("order-plugin-2");
+  });
+
+  it("新插件的 ID 哪里不对：写法、保留词、重名", () => {
+    expect(idProblem("add-date", ["mask"])).toBeNull();
+    for (const bad of ["", "Add-Date", "add date", "日期", "a".repeat(41)]) expect(idProblem(bad, [])).toBe("bad");
+    for (const word of ["order", "inspect", "rewrite", "confirmed"]) expect(idProblem(word, [])).toBe("reserved");
+    expect(idProblem("mask", ["mask"])).toBe("taken");
+    expect(ID_RE.test("a".repeat(40))).toBe(true);
   });
 });
 

@@ -18,7 +18,8 @@ export interface Form {
   schema: SettingSpecView[];
 }
 
-export function formOf(id: string, m: ManifestView): Form {
+/** 代码里的 manifest 变成表单。`id`：装着的插件的（默认插件的标签按界面语言），新插件是 `null` */
+export function formOf(id: string | null, m: ManifestView): Form {
   const schema = localSchema(id, m.name, m.settings_schema);
   return { onError: m.on_error, scope: draftOf(m.scope), settings: settingsDraftOf(schema), schema };
 }
@@ -70,7 +71,7 @@ function withValues(m: ManifestView, v: Values): ManifestView {
  * `flush()` 把等着的那一次马上发出去，并等所有在路上的回答落地：切换标签、保存之前调用，
  * 让两头一致。
  */
-export function useEditing(id: string, start: { source: string; inspection: PluginInspection }) {
+export function useEditing(id: string | null, start: { source: string; inspection: PluginInspection }) {
   const first = start.inspection.manifest;
   const [source, setSourceState] = useState(start.source);
   const [manifest, setManifestState] = useState<ManifestView | null>(first);

@@ -763,7 +763,7 @@ pub struct ImportProposal {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct PluginInstallRequest {
     pub source: String,
-    /// 审核窗口里填的 ID。不给由 core 按名字起
+    /// 添加插件时「设置」页上的插件 ID。不给由 core 按名字起
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub enabled: bool,

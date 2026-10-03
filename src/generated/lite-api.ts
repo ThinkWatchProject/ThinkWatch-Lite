@@ -483,7 +483,7 @@ export type PluginApproveRequest = { id: string, base_version?: string | null, }
  */
 export type PluginInstallRequest = { source: string, 
 /**
- * 审核窗口里填的 ID。不给由 core 按名字起
+ * 添加插件时「设置」页上的插件 ID。不给由 core 按名字起
  */
 id?: string | null, enabled: boolean, base_version?: string | null, };
 

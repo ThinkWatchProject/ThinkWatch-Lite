@@ -142,7 +142,8 @@ fn invisible(c: char) -> bool {
     matches!(c as u32, 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x2069 | 0xFEFF)
 }
 
-/// SHA-256 的前 16 位，四个一组。审核窗口里写的是同一段，对得上就是同一份代码
+/// SHA-256 的前 16 位，四个一组。应用里（插件编辑器的标题栏、审核更改）写的是同一段，对得上就是
+/// 同一份代码
 pub fn sha_prefix(hex: &str) -> String {
     let head: Vec<char> = hex.chars().take(16).collect();
     head.chunks(4)

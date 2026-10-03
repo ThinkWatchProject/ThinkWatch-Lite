@@ -61,7 +61,7 @@ async function plainThenNative(
   }
 }
 
-/** 装一个插件。`manifest` 是审核时读出来的那一份（判断用，Rust 不信它，自己再读） */
+/** 装一个插件。`manifest` 是编辑器里读出来的那一份（判断用，Rust 不信它，自己再读） */
 export function installPlugin(req: PluginInstallRequest, manifest: ManifestView): Promise<PluginWrite> {
   const native = () => confirmed.install(req);
   if (holdsToolCalls(manifest.permissions)) return native();

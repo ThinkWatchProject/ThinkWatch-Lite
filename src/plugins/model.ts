@@ -152,8 +152,20 @@ export const MAX_SOURCE = 1024 * 1024;
 /** 插件 ID 的写法，和 core 一样：小写字母、数字、连字符，1 到 40 个 */
 export const ID_RE = /^[a-z0-9-]{1,40}$/;
 
+/** 不能当插件 ID 的词，和 core 一样：控制面上 `/plugins/` 底下固定的几个端点 */
+export const RESERVED_IDS: readonly string[] = ["order", "inspect", "rewrite", "confirmed"];
+
+/** 新插件的 ID 哪里不对：写法、保留词、和已有的重名。能用是 `null` */
+export function idProblem(id: string, taken: readonly string[]): "bad" | "reserved" | "taken" | null {
+  if (!ID_RE.test(id)) return "bad";
+  if (RESERVED_IDS.includes(id)) return "reserved";
+  if (taken.includes(id)) return "taken";
+  return null;
+}
+
 /**
- * 新插件的 ID：先按文件名，再按插件名，都拼不出来就是 `plugin`，和已有的重名就接 `-2`、`-3`。
+ * 新插件的 ID：先按文件名，再按插件名，都拼不出来就是 `plugin`；是保留词的接 `-plugin`（和
+ * core 一样），和已有的重名就接 `-2`、`-3`。
  *
  * **默认值要写在输入框里**，不能留空让 core 去起：留空的话界面上看到的是一个空格子，
  * 装上之后配置里却是另一个名字。
@@ -167,7 +179,8 @@ export function suggestId(name: string, fileName: string | null, taken: readonly
       .replace(/^-+|-+$/g, "")
       .slice(0, 36)
       .replace(/-+$/, "");
-  const base = (fileName && slug(fileName)) || slug(name) || "plugin";
+  const found = (fileName && slug(fileName)) || slug(name) || "plugin";
+  const base = RESERVED_IDS.includes(found) ? `${found}-plugin` : found;
   if (!taken.includes(base)) return base;
   for (let n = 2; ; n++) {
     const id = `${base}-${n}`;

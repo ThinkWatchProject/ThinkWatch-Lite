@@ -12,6 +12,7 @@ import {
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { Input } from "@/ui/input";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
@@ -24,42 +25,55 @@ import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import { size } from "@/format";
 import { ConfirmAction, focusSelf, useDialogFocus } from "@/keys/parts";
-import { DialogError } from "@/upstreams/parts";
+import { DialogError, FormItem } from "@/upstreams/parts";
 import type { ManifestView, Overview, PluginInspection, PluginView } from "@/types";
 import { pluginName } from "./defaults";
 import { editorText } from "./Editor.i18n";
 import { OnErrorField, ScopeFields, SettingsFields } from "./fields";
 import { pluginFieldsText } from "./fields.i18n";
 import { pluginLabelsText } from "./labels.i18n";
-import { manifestUnknown, MAX_SOURCE, saveAsks, shaPrefix, shapeChanged } from "./model";
+import { idProblem, manifestUnknown, MAX_SOURCE, saveAsks, shaPrefix, shapeChanged, suggestId } from "./model";
 import { CodeLoading, CodeView, codeErrorOf, PermissionChips, PluginText, RequestKinds } from "./parts";
 import { pluginPartsText } from "./parts.i18n";
 import { useScopeSuggestions } from "./suggestions";
 import { useEditing, valuesOf, type Form } from "./useEditing";
-import { savePlugin, type NativeWrite } from "./write";
+import { installPlugin, savePlugin, type NativeWrite } from "./write";
 
 export type EditorTab = "settings" | "code";
 
+/**
+ * 编辑器开着的是哪一个：装着的插件（`from` 是从哪一份代码起头），或者一个还没装上的新插件
+ * （`taken` 是已有的插件 ID）
+ */
+export type Target =
+  | { kind: "edit"; plugin: PluginView; from: "approved" | "current" }
+  | { kind: "new"; taken: readonly string[] };
+
 /** 编辑器打开时手上的东西 */
-interface Loaded {
-  /** core 拿来比的那一份：确认过的代码。读不到是 `null` */
+export interface Loaded {
+  /** core 拿来比的那一份：确认过的代码。读不到（和新插件）是 `null` */
   approved: string | null;
-  /** 确认过的那一份读出来的 manifest。读不了是 `null` */
+  /** 确认过的那一份读出来的 manifest。读不了（和新插件）是 `null` */
   approvedManifest: ManifestView | null;
   /** 编辑器起头的那一份代码，和读它的结果 */
   start: { source: string; inspection: PluginInspection };
 }
 
 /**
- * 取编辑器起头的代码：一般是确认过的那一份；从「审核更改」过来改磁盘上那一份的（`current`），
- * 是磁盘上现在的那一份。两份都交给 core 读一遍：起头的那一份填表单，确认过的那一份用来
- * 判断保存时要不要在系统的确认框里点头。
+ * 取编辑器起头的代码。新插件是一段装得上的模板（按界面语言）。装着的插件一般是确认过的
+ * 那一份；从「审核更改」过来改磁盘上那一份的（`current`），是磁盘上现在的那一份。都交给
+ * core 读一遍：起头的那一份填表单，确认过的那一份用来判断保存时要不要在系统的确认框里点头。
  */
-async function load(id: string, from: "approved" | "current"): Promise<Loaded> {
-  const s = await call("PluginSourceDiff", null, id);
+async function load(target: Target): Promise<Loaded> {
+  if (target.kind === "new") {
+    const source = textOf(editorText).template;
+    const inspection = await call("PluginInspect", { source });
+    return { approved: null, approvedManifest: null, start: { source, inspection } };
+  }
+  const s = await call("PluginSourceDiff", null, target.plugin.id);
   const approved =
     s.approved !== "" ? s.approved : s.current != null && s.current_sha256 === s.approved_sha256 ? s.current : null;
-  const source = from === "current" && s.current != null ? s.current : (approved ?? s.current);
+  const source = target.from === "current" && s.current != null ? s.current : (approved ?? s.current);
   if (source == null) throw { code: "", args: {}, text: textOf(editorText).noCode };
   const [a, b] = await Promise.all([
     approved != null ? call("PluginInspect", { source: approved }) : Promise.resolve(null),
@@ -83,7 +97,7 @@ async function load(id: string, from: "approved" | "current"): Promise<Loaded> {
  */
 export function PluginEditor({
   plugin,
-  tab: initialTab,
+  tab,
   from = "approved",
   ov,
   native,
@@ -102,6 +116,76 @@ export function PluginEditor({
   /** 打开「审核更改」（磁盘上的文件改过时） */
   onReview: () => void;
 }) {
+  return (
+    <EditorDialog
+      target={{ kind: "edit", plugin, from }}
+      tab={tab}
+      ov={ov}
+      native={native}
+      onClose={onClose}
+      onDone={onSaved}
+      onReview={onReview}
+    />
+  );
+}
+
+/**
+ * 添加插件：**和编辑同一个编辑器**，从一段装得上的模板起头，先开着「代码」页。
+ *
+ * 代码可以就地改、粘贴，也可以从本地的 `.js` 文件导入（只从本地来：不从链接装，没有插件
+ * 市场）。「设置」页和标题栏跟着代码走，和编辑时一样；「设置」页多一个插件 ID，按导入的
+ * 文件名或代码里的名字给好，可以改。启用默认关着。
+ *
+ * **按一次「安装」就装上**，没有另外的审核一步：改得了回答里工具调用的插件，紧接着在系统的
+ * 确认框里点头（`plugin_install_confirmed`，Rust 再读一遍这份代码，写明插件名、权限和 SHA-256
+ * 的前几位，和标题栏上的是同一段）；别的插件直接装上（`CreatePlugin`）。
+ */
+export function NewPluginEditor({
+  taken,
+  ov,
+  native,
+  onClose,
+  onInstalled,
+}: {
+  /** 已有的插件 ID */
+  taken: readonly string[];
+  ov: Overview;
+  native: NativeWrite;
+  onClose: () => void;
+  /** 装上了：插件的 ID */
+  onInstalled: (id: string) => void;
+}) {
+  return (
+    <EditorDialog
+      target={{ kind: "new", taken }}
+      tab="code"
+      ov={ov}
+      native={native}
+      onClose={onClose}
+      onDone={onInstalled}
+    />
+  );
+}
+
+/** 编辑器的对话框：先取代码（取的时候是骨架），取到了交给 `Editing`；带着改动关掉时问一次 */
+function EditorDialog({
+  target,
+  tab: initialTab,
+  ov,
+  native,
+  onClose,
+  onDone,
+  onReview,
+}: {
+  target: Target;
+  tab: EditorTab;
+  ov: Overview;
+  native: NativeWrite;
+  onClose: () => void;
+  /** 保存了、装上了：插件的 ID */
+  onDone: (id: string) => void;
+  onReview?: () => void;
+}) {
   const t = useText(editorText);
   const common = useText(commonText);
   const dialogFocus = useDialogFocus();
@@ -111,7 +195,7 @@ export function PluginEditor({
   useEffect(() => {
     let live = true;
     setLoadError(null);
-    load(plugin.id, from).then(
+    load(target).then(
       (l) => live && setLoaded(l),
       (e) => live && setLoadError(e),
     );
@@ -132,9 +216,7 @@ export function PluginEditor({
     else then();
   };
   const requestClose = () => leave(onClose);
-
-  const unknown = manifestUnknown(plugin);
-  const name = unknown ? <span className="font-mono">{plugin.id}</span> : <PluginText text={pluginName(plugin.id, plugin.name)} />;
+  const isNew = target.kind === "new";
 
   return (
     <Dialog open onOpenChange={(o) => !o && requestClose()}>
@@ -152,26 +234,29 @@ export function PluginEditor({
       >
         {loaded ? (
           <Editing
-            plugin={plugin}
+            target={target}
             loaded={loaded}
             initialTab={initialTab}
-            from={from}
             ov={ov}
             native={native}
-            title={name}
             onState={(s) => {
               state.current = s;
             }}
             onCancel={requestClose}
-            onSaved={onSaved}
-            onReview={() => leave(onReview)}
+            onDone={onDone}
+            onReview={onReview && (() => leave(onReview))}
           />
         ) : (
           <>
-            <Header title={name} />
+            <Header title={target.kind === "edit" ? <InstalledName plugin={target.plugin} /> : t.newTitle} />
             <div className="min-h-0 flex-1 px-4 py-4">
               {loadError != null ? (
-                <ErrorState title={t.loadFailed} error={loadError} onRetry={() => setAttempt((n) => n + 1)} compact />
+                <ErrorState
+                  title={isNew ? t.templateFailed : t.loadFailed}
+                  error={loadError}
+                  onRetry={() => setAttempt((n) => n + 1)}
+                  compact
+                />
               ) : (
                 <div className="flex flex-col gap-3" role="status" aria-busy="true">
                   <Skeleton className="h-7 w-full rounded-lg" />
@@ -184,7 +269,7 @@ export function PluginEditor({
               <Button variant="outline" onClick={onClose}>
                 {common.cancel}
               </Button>
-              <Button disabled>{common.save}</Button>
+              <Button disabled>{isNew ? t.install : common.save}</Button>
             </DialogFooter>
           </>
         )}
@@ -194,7 +279,7 @@ export function PluginEditor({
         <AlertDialogContent onOpenAutoFocus={focusSelf}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t.discardTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{t.discardDescription}</AlertDialogDescription>
+            <AlertDialogDescription>{isNew ? t.discardNewDescription : t.discardDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t.keepEditing}</AlertDialogCancel>
@@ -213,6 +298,15 @@ export function PluginEditor({
         </AlertDialogContent>
       </AlertDialog>
     </Dialog>
+  );
+}
+
+/** 装着的插件叫什么：默认插件按界面语言说；读不出 manifest 的只有 id */
+function InstalledName({ plugin }: { plugin: PluginView }) {
+  return manifestUnknown(plugin) ? (
+    <span className="font-mono">{plugin.id}</span>
+  ) : (
+    <PluginText text={pluginName(plugin.id, plugin.name)} />
   );
 }
 
@@ -246,49 +340,70 @@ function useSha256(text: string): string | null {
   return sha?.text === text ? sha.hex : null;
 }
 
-function Editing({
-  plugin,
+/**
+ * 取到代码之后的编辑器。**编辑和添加是同一个**，只差在几处：
+ *
+ * - 标题：装着的插件写它现在的名字；新插件写代码里的名字（照它自己写的），跟着代码变。
+ * - 新插件的「设置」页多一个插件 ID（`idProblem` 查写法、保留词、重名）；启用默认关着。
+ * - 按钮：「保存」（`SavePlugin`，有改动才能按）和「安装」（`CreatePlugin`）。
+ *
+ * 导出给测试用。
+ */
+export function Editing({
+  target,
   loaded,
   initialTab,
-  from,
   ov,
   native,
-  title,
   onState,
   onCancel,
-  onSaved,
+  onDone,
   onReview,
 }: {
-  plugin: PluginView;
+  target: Target;
   loaded: Loaded;
   initialTab: EditorTab;
-  from: "approved" | "current";
   ov: Overview;
   native: NativeWrite;
-  title: ReactNode;
   onState: (s: { dirty: boolean; busy: boolean }) => void;
   onCancel: () => void;
-  onSaved: () => void;
-  onReview: () => void;
+  onDone: (id: string) => void;
+  onReview?: () => void;
 }) {
   const t = useText(editorText);
   const lt = useText(pluginLabelsText);
   const ft = useText(pluginFieldsText);
   const common = useText(commonText);
-  const ed = useEditing(plugin.id, loaded.start);
+  const plugin = target.kind === "edit" ? target.plugin : null;
+  const taken = target.kind === "new" ? target.taken : null;
+  const ed = useEditing(plugin?.id ?? null, loaded.start);
   const [tab, setTab] = useState<EditorTab>(
     // 代码读不了、也没有可以填的表单：直接看代码
     initialTab === "settings" && !loaded.start.inspection.manifest ? "code" : initialTab,
   );
-  const [enabled, setEnabled] = useState(plugin.enabled);
+  const [enabled, setEnabled] = useState(plugin?.enabled ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const suggestions = useScopeSuggestions(ov);
+  /** 新插件自己改过的 ID。没改过（`null`）就跟着建议走 */
+  const [idDraft, setIdDraft] = useState<string | null>(null);
+  /** 新插件最近一次从哪个文件导入的：建议的 ID 先按文件名 */
+  const [fileName, setFileName] = useState<string | null>(null);
 
-  const dirty = ed.source !== loaded.start.source || enabled !== plugin.enabled;
+  const m = ed.manifest;
+  const idOf = (name: string) => plugin?.id ?? idDraft ?? suggestId(name, fileName, taken ?? []);
+  const id = idOf(m?.name ?? "");
+  const badId = taken ? idProblem(id, taken) : null;
+  const dirty = ed.source !== loaded.start.source || enabled !== (plugin?.enabled ?? false) || idDraft !== null;
   const problem = ed.form ? valuesOf(ed.form).problem : null;
-  const problemText = !problem ? null : problem.kind === "scope" ? ft.needOne(lt.scopeParts[problem.part]) : ft.numberBad(problem.label);
+  const problemText = problem
+    ? problem.kind === "scope"
+      ? ft.needOne(lt.scopeParts[problem.part])
+      : ft.numberBad(problem.label)
+    : badId
+      ? t.idProblems[badId]
+      : null;
   useEffect(() => onState({ dirty, busy: saving }), [dirty, saving, onState]);
 
   const switchTab = (next: EditorTab) => {
@@ -297,39 +412,50 @@ function Editing({
     setTab(next);
   };
 
-  async function save() {
+  async function commit() {
     setSaving(true);
     setError(null);
     setCancelled(false);
+    /** 写的是哪一个插件 */
+    let wrote = id;
     try {
       await ed.flush();
-      // 刚打的字可能刚读完：按「现在」的判断，不按点下保存那一刻渲染的样子
+      // 刚打的字可能刚读完：按「现在」的判断，不按点下按钮那一刻渲染的样子
       const { source, manifest: next, error: broken } = ed.now();
       if (broken || !next) return;
-      const old = loaded.approvedManifest;
-      const asks = saveAsks({
-        old: old?.permissions ?? (plugin.permissions.length > 0 ? plugin.permissions : null),
-        next: next.permissions,
-        turningOn: enabled && !plugin.enabled,
-        // 一定改了代码：manifest 里数据以外的东西变了，或者确认过的那一份读不了而代码不一样。
-        // 别的（manifest 以外改了没有）交给 core 判断，它说要点头再请 Rust
-        codeChanged: source !== loaded.approved && (old == null || shapeChanged(old, next)),
-      });
-      const r = await native((base) => savePlugin({ id: plugin.id, source, enabled, base_version: base }, asks));
+      let r: "done" | "cancelled";
+      if (plugin) {
+        const old = loaded.approvedManifest;
+        const asks = saveAsks({
+          old: old?.permissions ?? (plugin.permissions.length > 0 ? plugin.permissions : null),
+          next: next.permissions,
+          turningOn: enabled && !plugin.enabled,
+          // 一定改了代码：manifest 里数据以外的东西变了，或者确认过的那一份读不了而代码不一样。
+          // 别的（manifest 以外改了没有）交给 core 判断，它说要点头再请 Rust
+          codeChanged: source !== loaded.approved && (old == null || shapeChanged(old, next)),
+        });
+        r = await native((base) => savePlugin({ id: plugin.id, source, enabled, base_version: base }, asks));
+      } else {
+        // 代码里的名字可能刚变：跟着建议走的 ID 按现在的名字给
+        wrote = idOf(next.name);
+        if (idProblem(wrote, taken ?? [])) return;
+        // 改得了工具调用的直接请 Rust（一个系统的确认框），别的直接装上
+        const newId = wrote;
+        r = await native((base) => installPlugin({ source, id: newId, enabled, base_version: base }, next));
+      }
       if (r === "cancelled") setCancelled(true);
-      else onSaved();
+      else onDone(wrote);
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, wrote));
     } finally {
       setSaving(false);
     }
   }
 
-  const m = ed.manifest;
   const sha = useSha256(ed.source);
   const meta = (
     <>
-      <span className="font-mono select-text">{t.id(plugin.id)}</span>
+      {id && <span className="font-mono select-text">{t.id(id)}</span>}
       {sha && <span className="font-mono select-text">{t.sha(shaPrefix(sha))}</span>}
       {m && (
         <PermissionChips
@@ -340,6 +466,8 @@ function Editing({
       {m && <RequestKinds kinds={m.requests} />}
     </>
   );
+  // 新插件的名字照代码里写的，跟着代码变（还没读出来时说这是在添加插件）
+  const title = plugin ? <InstalledName plugin={plugin} /> : m ? <PluginText text={m.name} /> : t.newTitle;
 
   return (
     <Tabs value={tab} onValueChange={(v) => switchTab(v as EditorTab)} className="flex min-h-0 flex-1 flex-col gap-0">
@@ -360,11 +488,12 @@ function Editing({
       <div className="relative min-h-0 flex-1">
         <TabsContent value="settings" forceMount className={cn(PANE, "flex flex-col")}>
           <SettingsPane
-            plugin={plugin}
+            switchId={`plugin-enabled-${plugin?.id ?? "new"}`}
+            idField={taken ? { value: id, problem: badId ? t.idProblems[badId] : null, onChange: setIdDraft } : null}
             form={ed.form}
             onForm={ed.editForm}
             codeError={ed.error != null}
-            diskChanged={from === "approved" && plugin.status.kind === "changed"}
+            diskChanged={target.kind === "edit" && target.from === "approved" && target.plugin.status.kind === "changed"}
             enabled={enabled}
             onEnabled={setEnabled}
             suggestions={suggestions}
@@ -376,7 +505,10 @@ function Editing({
           <CodePane
             source={ed.source}
             onChange={(s) => ed.editCode(s)}
-            onImport={(s) => ed.editCode(s, true)}
+            onImport={(s, name) => {
+              ed.editCode(s, true);
+              setFileName(name);
+            }}
             error={ed.error}
             checking={ed.checking}
           />
@@ -392,17 +524,17 @@ function Editing({
         {problemText ? (
           <span className="mr-auto tw-label text-warning">{problemText}</span>
         ) : (
-          dirty && <span className="mr-auto tw-label text-muted-foreground">{t.unsaved}</span>
+          plugin && dirty && <span className="mr-auto tw-label text-muted-foreground">{t.unsaved}</span>
         )}
         <Button variant="outline" onClick={onCancel} disabled={saving}>
           {common.cancel}
         </Button>
         <Button
-          onClick={() => void save()}
+          onClick={() => void commit()}
           pending={saving}
-          disabled={!dirty || ed.error != null || !m || problem != null}
+          disabled={(plugin != null && !dirty) || ed.error != null || !m || problem != null || badId != null}
         >
-          {common.save}
+          {plugin ? common.save : t.install}
         </Button>
       </DialogFooter>
     </Tabs>
@@ -413,7 +545,8 @@ function Editing({
 const PANE = "absolute inset-0 data-[state=inactive]:hidden";
 
 function SettingsPane({
-  plugin,
+  switchId,
+  idField,
   form,
   onForm,
   codeError,
@@ -424,7 +557,10 @@ function SettingsPane({
   onViewCode,
   onReview,
 }: {
-  plugin: PluginView;
+  /** 启用开关的 id（标签用） */
+  switchId: string;
+  /** 新插件的 ID：输入框里的值、哪里不对、改了 */
+  idField: { value: string; problem: string | null; onChange: (id: string) => void } | null;
   form: Form | null;
   onForm: (f: Form) => void;
   codeError: boolean;
@@ -433,7 +569,7 @@ function SettingsPane({
   onEnabled: (on: boolean) => void;
   suggestions: ReturnType<typeof useScopeSuggestions>;
   onViewCode: () => void;
-  onReview: () => void;
+  onReview?: () => void;
 }) {
   const t = useText(editorText);
   const lt = useText(pluginLabelsText);
@@ -447,9 +583,11 @@ function SettingsPane({
           tone="warning"
           title={t.diskChanged}
           actions={
-            <Button size="sm" variant="outline" onClick={onReview}>
-              {t.reviewChanges}
-            </Button>
+            onReview && (
+              <Button size="sm" variant="outline" onClick={onReview}>
+                {t.reviewChanges}
+              </Button>
+            )
           }
         >
           {t.diskChangedHint}
@@ -475,14 +613,30 @@ function SettingsPane({
     <>
       {banners}
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
+        {idField && (
+          <FormItem label={t.idLabel} htmlFor="plugin-new-id" desc={idField.problem ?? t.idHint} className="sm:max-w-sm">
+            <Input
+              id="plugin-new-id"
+              className="font-mono"
+              value={idField.value}
+              aria-invalid={idField.problem != null || undefined}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              onChange={(e) => idField.onChange(e.target.value.trim())}
+            />
+          </FormItem>
+        )}
+
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
           <div>
-            <label className="tw-body font-medium" htmlFor={`plugin-enabled-${plugin.id}`}>
+            <label className="tw-body font-medium" htmlFor={switchId}>
               {t.enabled}
             </label>
             <p className="tw-label text-muted-foreground">{t.enabledHint}</p>
           </div>
-          <Switch id={`plugin-enabled-${plugin.id}`} checked={enabled} onCheckedChange={onEnabled} />
+          <Switch id={switchId} checked={enabled} onCheckedChange={onEnabled} />
         </div>
 
         {form && (
@@ -519,7 +673,8 @@ function CodePane({
 }: {
   source: string;
   onChange: (s: string) => void;
-  onImport: (s: string) => void;
+  /** 从文件导入的整份代码，和文件名 */
+  onImport: (s: string, fileName: string) => void;
   error: ReturnType<typeof useEditing>["error"];
   checking: boolean;
 }) {
@@ -549,7 +704,7 @@ function CodePane({
       return;
     }
     try {
-      onImport(await f.text());
+      onImport(await f.text(), f.name);
     } catch {
       setImportError(t.readFailed);
     }

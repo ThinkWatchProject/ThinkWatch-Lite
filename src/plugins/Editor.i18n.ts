@@ -1,5 +1,12 @@
 import { messages } from "@/i18n";
 
+/**
+ * 添加插件时编辑器里的那一段模板：**装得上**（manifest 是纯数据，写成 core 改写它时的样子，
+ * 权限和钩子对得上），附加内容为空时什么都不改。注释写在 manifest 外面：core 改写 manifest
+ * 时不保留它里面的注释。
+ */
+const template = (lines: string[]) => `${lines.join("\n")}\n`;
+
 export const editorText = messages(
   {
     tabSettings: "设置",
@@ -9,6 +16,40 @@ export const editorText = messages(
 
     id: (id: string) => `ID ${id}`,
     sha: (prefix: string) => `SHA-256 ${prefix}`,
+
+    /** 添加插件：代码里的名字还没读出来时的标题 */
+    newTitle: "添加插件",
+    install: "安装",
+    idLabel: "插件 ID",
+    idHint: "小写字母、数字和连字符，最多 40 个；安装后不可修改。",
+    idProblems: {
+      bad: "只能使用小写字母、数字和连字符，最多 40 个。",
+      reserved: "此 ID 为保留词，不能使用。",
+      taken: "已有插件使用此 ID。",
+    },
+    templateFailed: "无法打开插件模板",
+    template: template([
+      "// 插件在请求发往上游之前改写请求，也可以在回答交给客户端之前改写回答。",
+      "// manifest 须为纯数据；「设置」页中的修改写回 manifest。",
+      "",
+      "export const manifest = {",
+      '  name: "新插件",',
+      "  api: 1,",
+      '  description: "在系统提示词末尾附加「附加内容」中的文字。",',
+      '  permissions: ["system"],',
+      '  on_error: "reject",',
+      '  settings: { note: { type: "string", label: "附加内容", value: "" } },',
+      "};",
+      "",
+      "// 请求发往上游之前调用：req.system 为系统提示词，ctx.settings 为设置项的值。",
+      "// 返回修改后的 req；返回 undefined 表示不修改。",
+      "export function onRequest(req, ctx) {",
+      '  const note = String(ctx.settings.note ?? "").trim();',
+      '  if (note === "" || req.system.includes(note)) return undefined;',
+      '  req.system = req.system ? req.system + "\\n\\n" + note : note;',
+      "  return req;",
+      "}",
+    ]),
 
     enabled: "启用",
     enabledHint: "停用后此插件不运行，适用范围内的请求照常转发。",
@@ -39,6 +80,8 @@ export const editorText = messages(
 
     discardTitle: "放弃未保存的更改",
     discardDescription: "关闭之后，对设置和代码的更改都不会保存。",
+    /** 添加插件时关掉 */
+    discardNewDescription: "关闭之后，此插件不会安装，代码和设置都不会保留。",
     keepEditing: "继续编辑",
     discard: "放弃更改",
   },
@@ -49,6 +92,41 @@ export const editorText = messages(
 
     id: (id: string) => `ID ${id}`,
     sha: (prefix: string) => `SHA-256 ${prefix}`,
+
+    newTitle: "Add plugin",
+    install: "Install",
+    idLabel: "Plugin ID",
+    idHint: "Lowercase letters, digits and hyphens, up to 40. It cannot be changed after installing.",
+    idProblems: {
+      bad: "Use only lowercase letters, digits and hyphens, up to 40.",
+      reserved: "This ID is reserved and cannot be used.",
+      taken: "Another plugin already uses this ID.",
+    },
+    templateFailed: "The plugin template could not be opened",
+    template: template([
+      "// A plugin changes requests before they reach an upstream, and can change answers before",
+      "// they reach the client. The manifest must be plain data: the Settings tab writes its",
+      "// changes into it.",
+      "",
+      "export const manifest = {",
+      '  name: "New plugin",',
+      "  api: 1,",
+      '  description: "Adds the text of the Note setting to the end of the system prompt.",',
+      '  permissions: ["system"],',
+      '  on_error: "reject",',
+      '  settings: { note: { type: "string", label: "Note", value: "" } },',
+      "};",
+      "",
+      "// Runs before a request goes to the upstream: req.system is the system prompt, and",
+      "// ctx.settings holds the values of the settings. Return the changed req, or undefined",
+      "// to leave the request unchanged.",
+      "export function onRequest(req, ctx) {",
+      '  const note = String(ctx.settings.note ?? "").trim();',
+      '  if (note === "" || req.system.includes(note)) return undefined;',
+      '  req.system = req.system ? req.system + "\\n\\n" + note : note;',
+      "  return req;",
+      "}",
+    ]),
 
     enabled: "Enabled",
     enabledHint: "When disabled, the plugin does not run and the requests it applies to are forwarded as usual.",
@@ -76,6 +154,7 @@ export const editorText = messages(
 
     discardTitle: "Discard unsaved changes",
     discardDescription: "Once the editor closes, the changes to the settings and the code are not saved.",
+    discardNewDescription: "Once the editor closes, the plugin is not installed and the code and settings are not kept.",
     keepEditing: "Keep editing",
     discard: "Discard changes",
   },
