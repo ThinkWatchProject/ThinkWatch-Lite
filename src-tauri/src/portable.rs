@@ -353,6 +353,20 @@ mod tests {
     use super::*;
     use crate::i18n::{Lang, with_lang};
 
+    /// 测试文件夹建在哪个目录下。不设就是系统的临时目录
+    const TEST_DIR: &str = "TW_PORTABLE_TEST_DIR";
+
+    /// 一个测试用的空文件夹，建在 [`TEST_DIR`] 指的目录下。
+    ///
+    /// 绿色版会被放在 U 盘（FAT32、exFAT）和网络共享上，自更新在那里也得换得动、
+    /// 改得回。Windows 的 CI 把这一组测试在这几种卷上各跑一遍（ci.yml）
+    fn scratch() -> tempfile::TempDir {
+        match std::env::var_os(TEST_DIR) {
+            Some(base) => tempfile::tempdir_in(base).unwrap(),
+            None => tempfile::tempdir().unwrap(),
+        }
+    }
+
     /// 和 latest.json 里的键一字不差（`scripts/manifest.py` 的 `PLATFORMS`）：
     /// 拼错一个字母，绿色版就永远问不到新版本，而清单看起来完好
     #[test]
@@ -381,7 +395,7 @@ mod tests {
 
     #[test]
     fn a_writable_folder_gets_its_data_directory() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = scratch();
         let data = data_dir_in(dir.path());
         writable(&data).unwrap();
         assert!(data.is_dir());
@@ -422,7 +436,7 @@ mod tests {
 
     #[test]
     fn removing_leftovers_counts_missing_files_as_removed() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = scratch();
         let a = dir.path().join("a.exe.old");
         std::fs::write(&a, b"x").unwrap();
         let b = dir.path().join("b.exe.old");
@@ -499,7 +513,7 @@ mod tests {
 
     /// 一个文件夹：应用本体和网关，内容是 `old`
     fn folder_with_old_copies() -> (tempfile::TempDir, PathBuf, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = scratch();
         let app = dir.path().join(APP_EXE);
         let core = dir.path().join(CORE_EXE);
         std::fs::write(&app, b"old app").unwrap();
@@ -551,7 +565,7 @@ mod tests {
     /// 原来没有网关（被用户删了）：照样写进去；失败时把写进去的删掉
     #[test]
     fn a_missing_file_is_written_and_removed_again_on_failure() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = scratch();
         let core = dir.path().join(CORE_EXE);
         swap_in(&[(core.clone(), b"new core")]).unwrap();
         assert_eq!(std::fs::read(&core).unwrap(), b"new core");
@@ -585,7 +599,7 @@ mod tests {
     fn running_executables_are_renamed_aside_and_put_back() {
         let original = std::fs::read(std::env::current_exe().unwrap()).unwrap();
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = scratch();
         let app = dir.path().join(APP_EXE);
         let core = dir.path().join(CORE_EXE);
         let mut running = Vec::new();
