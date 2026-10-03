@@ -99,10 +99,10 @@ updates through Homebrew).
 
 ### Windows portable
 
-Unzip and run: no installation and no administrator rights. Configuration, keys
-and request history stay in the `data\` folder next to the program, apart from
-the installed copy's data, so the two keep separate settings. The folder has to
-be writable.
+Unzip and run `ThinkWatch Lite.exe`: no installation and no administrator
+rights. Configuration, keys and request history stay in the `data\` folder next
+to the program, apart from the installed copy's data, so the two keep separate
+settings. The folder has to be writable.
 
 Only one of the installed and portable copies runs at a time; opening the other
 one offers to stop the running one and start it instead. `thinkwatch://` links

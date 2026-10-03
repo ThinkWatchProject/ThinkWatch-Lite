@@ -12,8 +12,8 @@
 #   Linux x86_64         ThinkWatch-Lite-<版本>-linux-x86_64.AppImage
 #   Linux aarch64        ThinkWatch-Lite-<版本>-linux-aarch64.AppImage
 #
-# 绿色版的 zip 里只有根目录下的 `thinkwatch-lite.exe` 和 `twcore.exe`，就是安装
-# 程序里装的那两个。
+# 绿色版的 zip 里只有根目录下的 `ThinkWatch Lite.exe` 和 `twcore.exe`，就是安装
+# 程序里装的那两个（应用本体换成了产品名，理由见 `The portable package` 那一步）。
 #
 # Linux 另外挂一份 `install.sh`（`scripts/install.sh`）：一行命令读 latest.json、
 # 下载本架构的 AppImage、核对 sha256、放进 `~/Applications`。
@@ -363,6 +363,10 @@ jobs:
       # 用 7-Zip 解出来、已经核对过的那一份，放在 zip 的根目录，别的什么都不放 ——
       # 应用自更新时只认这个形状（`portable::unpack`）。
       #
+      # **应用本体改叫 `ThinkWatch Lite.exe`**（`portable::APP_EXE`）。安装程序和卸载程序
+      # 关运行中的程序时按文件名 `thinkwatch-lite.exe` 找进程、一律结束（Tauri 的 NSIS
+      # 模板），同名的话装、卸安装版会把运行中的绿色版也关掉。网关不改名
+      #
       # 用 .NET 的 ZipArchive 一个一个加，条目名就是文件名：`Compress-Archive` 之类
       # 按目录打包的写法会把目录名、或者别的文件一起带进去
       - name: The portable package
@@ -375,11 +379,12 @@ jobs:
           $zip = Join-Path $PWD "dist\ThinkWatch-Lite-$env:VERSION-windows-${{ matrix.arch }}-portable.zip"
           $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
           try {
-            foreach ($name in @("thinkwatch-lite.exe", "twcore.exe")) {
-              $f = Get-ChildItem -Recurse "$x\$name" | Select-Object -First 1
-              if (-not $f) { throw "安装程序里没有 $name" }
+            # 安装程序里的名字 → zip 里的名字
+            foreach ($pair in @(@("thinkwatch-lite.exe", "ThinkWatch Lite.exe"), @("twcore.exe", "twcore.exe"))) {
+              $f = Get-ChildItem -Recurse "$x\$($pair[0])" | Select-Object -First 1
+              if (-not $f) { throw "安装程序里没有 $($pair[0])" }
               [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $archive, $f.FullName, $name, [IO.Compression.CompressionLevel]::Optimal)
+                $archive, $f.FullName, $pair[1], [IO.Compression.CompressionLevel]::Optimal)
             }
           } finally {
             $archive.Dispose()
@@ -402,12 +407,12 @@ jobs:
           $zip = Join-Path $PWD "dist\ThinkWatch-Lite-$env:VERSION-windows-${{ matrix.arch }}-portable.zip"
           $read = [IO.Compression.ZipFile]::OpenRead($zip)
           try { $names = @($read.Entries | ForEach-Object { $_.FullName } | Sort-Object) } finally { $read.Dispose() }
-          if (($names -join ",") -ne "thinkwatch-lite.exe,twcore.exe") {
-            throw "zip 里应当恰好是 thinkwatch-lite.exe 和 twcore.exe，实际是：$($names -join ', ')"
+          if (($names -join ",") -ne "ThinkWatch Lite.exe,twcore.exe") {
+            throw "zip 里应当恰好是 ThinkWatch Lite.exe 和 twcore.exe，实际是：$($names -join ', ')"
           }
           $x = "$env:RUNNER_TEMP\portable"
           Expand-Archive -Path $zip -DestinationPath $x -Force
-          $app = Get-Item "$x\thinkwatch-lite.exe"
+          $app = Get-Item -LiteralPath "$x\ThinkWatch Lite.exe"
           $core = Get-Item "$x\twcore.exe"
 
           $v = $app.VersionInfo.ProductVersion

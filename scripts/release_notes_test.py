@@ -97,6 +97,9 @@ class Body(unittest.TestCase):
         body = rn.render("2026.9.16", CHANGES, None)
         self.assertIn("portable ZIP runs without installation or administrator rights", body)
         self.assertIn("`data` folder beside it", body)
+        # zip 里的应用本体叫产品名，和安装版的 thinkwatch-lite.exe 不同名（portable::APP_EXE）
+        self.assertIn("start `ThinkWatch Lite.exe`", body)
+        self.assertNotIn("thinkwatch-lite.exe", body)
 
     def test_the_install_commands(self):
         body = rn.render("2026.9.16", CHANGES, None)

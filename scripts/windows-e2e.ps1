@@ -16,6 +16,10 @@ Windows 上的端到端检查：把 x64 的绿色版和安装程序当成用户�
     按「OK」后退出码是 1，没有建出 `data`。
  6. 安装版：P2 正常退出后静默安装（/S），启动装好的那一份：数据在 `%APPDATA%\ThinkWatch`，
     链接指向安装目录里的 exe，登记了 `app.thinkwatch.lite`。
+ 6b. 安装、卸载不碰运行中的绿色版：安装版装着、P2 在运行，再静默安装一次、静默卸载一次，
+    P2 和它的网关都还在（同一个进程），链接仍指向 P2。NSIS 关运行中的程序时按文件名找
+    进程，绿色版因此叫 `ThinkWatch Lite.exe`（portable::APP_EXE）。之后重新装上、启动一次
+    安装版，给第 7 条用。
  7. 卸载：开机自启指向 P2，关掉安装版、静默卸载：指向安装版
     的链接和通知登记删掉了，指向 P2 的开机自启还在，`%APPDATA%\ThinkWatch` 还在（静默
     卸载不勾「同时删除数据」）。再对 P2 跑 `--uninstall-cleanup --delete-data`：退出码 0，
@@ -25,6 +29,8 @@ Windows 上的端到端检查：把 x64 的绿色版和安装程序当成用户�
 
 界面是英文的（runner 的系统语言），所以对的是 `tr!` 里的英文句子：single.rs、
 portable.rs、webview2.rs。文件名照 tw-api 的 `control::CONFIG_FILE` / `PORT_FILE`。
+绿色版的 exe 叫 `ThinkWatch Lite.exe`、安装版的叫 `thinkwatch-lite.exe`，路径里都有空格
+（P2 放在 `portable two` 里），对话框、注册表、命令行都要经得起。
 
 每一次等待都有上限；失败时打印找到了什么（窗口、进程、注册表、数据目录、应用日志），
 截一张全屏图。结束时（不论成败）关掉留下的进程。应用的标准输出（tracing 日志）
@@ -99,7 +105,8 @@ $TS = [System.Windows.Automation.TreeScope]
 
 $Identifier = 'app.thinkwatch.lite'          # tauri.conf.json 的 identifier
 $Product = 'ThinkWatch Lite'                 # productName：开机自启的值名、通知上的名字
-$ExeName = 'thinkwatch-lite.exe'
+$ExeName = 'thinkwatch-lite.exe'           # 安装版的应用本体
+$PortableExeName = 'ThinkWatch Lite.exe'     # 绿色版 zip 里的应用本体（portable::APP_EXE）
 $CoreName = 'twcore.exe'
 $ConfigFile = 'config.yaml'                  # tw_api::control::CONFIG_FILE
 $PortFile = 'control.port'                   # tw_api::control::PORT_FILE
@@ -142,9 +149,9 @@ $P1 = Join-Path $Root 'P1'
 # 第二份的路径里带空格：对话框里的路径、注册表里的引号都要经得起
 $P2 = Join-Path $Root 'portable two'
 $P3 = Join-Path $Root 'P3'
-$P1exe = Join-Path $P1 $ExeName
-$P2exe = Join-Path $P2 $ExeName
-$P3exe = Join-Path $P3 $ExeName
+$P1exe = Join-Path $P1 $PortableExeName
+$P2exe = Join-Path $P2 $PortableExeName
+$P3exe = Join-Path $P3 $PortableExeName
 
 # ---- 记录 ----
 
@@ -590,7 +597,7 @@ function Dump-State {
     Say ''
     Say '---- 进程 ----'
     Get-CimInstance Win32_Process |
-        Where-Object { $_.Name -in @('thinkwatch-lite.exe', 'twcore.exe', 'uninstall.exe', 'msedgewebview2.exe') -or $_.Name -like 'Un_*.exe' -or $_.Name -like 'Au_*.exe' } |
+        Where-Object { $_.Name -in @($ExeName, $PortableExeName, 'twcore.exe', 'uninstall.exe', 'msedgewebview2.exe') -or $_.Name -like 'Un_*.exe' -or $_.Name -like 'Au_*.exe' } |
         ForEach-Object { Say ('  pid {0}（父 {1}）{2} | {3}' -f $_.ProcessId, $_.ParentProcessId, $_.ExecutablePath, $_.CommandLine) }
     Say '---- 顶层窗口 ----'
     try {
@@ -626,7 +633,7 @@ function Dump-State {
 # ---- 收尾 ----
 
 function Stop-Leftovers {
-    foreach ($name in 'thinkwatch-lite.exe', 'twcore.exe') {
+    foreach ($name in $ExeName, $PortableExeName, 'twcore.exe') {
         foreach ($p in @(Get-CimInstance Win32_Process -Filter ("Name='{0}'" -f $name))) {
             Say ('结束留下的进程：pid {0} {1}' -f $p.ProcessId, $p.ExecutablePath)
             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
@@ -718,8 +725,8 @@ function Check-Prerequisites {
     Pass ('WebView2 运行时 {0}' -f $wv)
 
     # 干净的起点：runner 是一次性的，有旧东西就清掉并说一声
-    foreach ($n in 'thinkwatch-lite', 'twcore') {
-        if (Get-Process -Name $n -ErrorAction SilentlyContinue) { Fail ('开始之前已经有 {0} 在运行' -f $n) }
+    foreach ($n in $ExeName, $PortableExeName, $CoreName) {
+        if (@(Get-CimInstance Win32_Process -Filter ("Name='{0}'" -f $n)).Count -gt 0) { Fail ('开始之前已经有 {0} 在运行' -f $n) }
     }
     if (Test-Path -LiteralPath $InstalledData) {
         Warn ('开始之前就有 {0}（{1}），删掉' -f $InstalledData, (List-Dir $InstalledData))
@@ -737,6 +744,11 @@ function Check-Prerequisites {
         Expand-Archive -LiteralPath $Zip -DestinationPath $dir -Force
         Say ('解压到 {0}：{1}' -f $dir, (List-Dir $dir))
     }
+    $inside = @(Get-ChildItem -LiteralPath $P1 -Force | ForEach-Object { $_.Name } | Sort-Object)
+    if (($inside -join ',') -ne ('{0},{1}' -f $PortableExeName, $CoreName)) {
+        Fail ('绿色版的 zip 里应当恰好是 {0} 和 {1}，实际是：{2}' -f $PortableExeName, $CoreName, ($inside -join ', '))
+    }
+    Pass ('zip 里是 {0} 和 {1}' -f $PortableExeName, $CoreName)
     # 绿色版在文件夹之外留没留下东西：先记下这几处原来在不在
     $script:Outside = @{}
     foreach ($d in (Join-Path $env:LOCALAPPDATA $Identifier), (Join-Path $env:APPDATA $Identifier)) {
@@ -904,10 +916,7 @@ function Check-Installed {
     }
     Pass ('绿色版跑完，{0} 仍不存在' -f $InstalledData)
 
-    $installer = Start-Process -FilePath $Setup -ArgumentList '/S' -PassThru
-    $null = $installer.Handle
-    if (-not $installer.WaitForExit(600000)) { Fail '静默安装 10 分钟没有结束' }
-    if ($installer.ExitCode -ne 0) { Fail ('静默安装的退出码是 {0}' -f $installer.ExitCode) }
+    Install-Silently
     $script:InstDir = Find-InstallDir
     if (-not $script:InstDir) { Fail '装完找不到安装目录（卸载项里没有 ThinkWatch Lite）' }
     foreach ($f in $ExeName, $CoreName, 'uninstall.exe') {
@@ -929,6 +938,27 @@ function Check-Installed {
     Shot-Main $script:procInst 'installed-running'
 }
 
+# 静默安装（/S），等它结束，退出码要是 0
+function Install-Silently {
+    $installer = Start-Process -FilePath $Setup -ArgumentList '/S' -PassThru
+    $null = $installer.Handle
+    if (-not $installer.WaitForExit(600000)) { Fail '静默安装 10 分钟没有结束' }
+    if ($installer.ExitCode -ne 0) { Fail ('静默安装的退出码是 {0}' -f $installer.ExitCode) }
+}
+
+# 静默卸载，等它结束，退出码要是 0。
+#
+# `_?=` 让卸载程序就地运行、等得到它结束（不带的话它把自己拷到 %TEMP% 再起一份，
+# 这个进程马上就退出了）。代价是它删不掉自己和安装目录，那不在检查之内
+function Uninstall-Silently {
+    $uninstaller = Join-Path $script:InstDir 'uninstall.exe'
+    $u = Start-Process -FilePath $uninstaller -ArgumentList ('/S _?={0}' -f $script:InstDir) -PassThru
+    $null = $u.Handle
+    if (-not $u.WaitForExit(300000)) { Fail '静默卸载 5 分钟没有结束' }
+    if ($u.ExitCode -ne 0) { Fail ('静默卸载的退出码是 {0}' -f $u.ExitCode) }
+    if (Test-Path -LiteralPath $script:InstExe) { Fail ('卸载之后 {0} 还在' -f $script:InstExe) }
+}
+
 function Find-InstallDir {
     foreach ($r in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
@@ -941,6 +971,46 @@ function Find-InstallDir {
         }
     }
     return $null
+}
+
+# 安装程序、卸载程序关运行中的程序时按文件名找进程、一律结束（Tauri 的 NSIS 模板里的
+# CheckIfAppIsRunning）。绿色版换了名字，它们就不该碰到它
+function Check-InstallerSparesPortable {
+    Start-Check '6b setup and uninstall leave a running portable copy alone'
+    Stop-Gracefully $script:procInst 'installed'
+    Wait-Gone (Join-Path $script:InstDir $CoreName) '安装版的 twcore.exe'
+    $P2core = Join-Path $P2 $CoreName
+    $script:proc2 = Start-App $P2exe 'p2-during-setup'
+    Wait-Ready $script:proc2 (Join-Path $P2 'data') $P2 'P2'
+    Assert-Link $P2exe 'P2'
+    $corePid = @(Get-ProcsAt $P2core)[0].ProcessId
+
+    foreach ($step in 'install', 'uninstall') {
+        if ($step -eq 'install') { Install-Silently } else { Uninstall-Silently }
+        Start-Sleep -Seconds 2
+        if ($script:proc2.HasExited) {
+            Fail ('静默{0}把运行中的绿色版关掉了（退出码 {1}）' -f @{ install = '安装'; uninstall = '卸载' }[$step], $script:proc2.ExitCode)
+        }
+        $cores = @(Get-ProcsAt $P2core)
+        if ($cores.Count -ne 1 -or $cores[0].ProcessId -ne $corePid) {
+            Fail ('静默{0}之后 P2 的网关不是原来那个（pid {1}）：{2}' -f @{ install = '安装'; uninstall = '卸载' }[$step], $corePid, (($cores | ForEach-Object { $_.ProcessId }) -join ', '))
+        }
+        Pass ('静默{0}之后 P2（pid {1}）和它的网关（pid {2}）都还在运行' -f @{ install = '安装'; uninstall = '卸载' }[$step], $script:proc2.Id, $corePid)
+    }
+    if (-not (Same (Link-Exe) $P2exe)) {
+        Fail ('卸载安装版不该动运行中的绿色版的链接，现在是 {0}' -f (Get-Reg $LinkCommandKey ''))
+    }
+    Pass '卸载安装版之后链接仍指向 P2'
+    Shot 'p2-survived-setup'
+
+    # 第 7 条要一个装着、跑过的安装版：P2 退出，重新装上，启动一次
+    Stop-Gracefully $script:proc2 'P2'
+    Wait-Gone $P2core 'P2 的 twcore.exe'
+    Install-Silently
+    $script:procInst = Start-App $script:InstExe 'installed-again'
+    Wait-Ready $script:procInst $InstalledData $script:InstDir 'installed'
+    Assert-Link $script:InstExe '安装版'
+    Assert-Aumid $AumidInstalled $InstalledData
 }
 
 function Check-Uninstall {
@@ -956,14 +1026,7 @@ function Check-Uninstall {
     Set-ItemProperty -LiteralPath $RunKey -Name $Product -Value $run
     Say ('开机自启指向 P2：{0}' -f $run)
 
-    # `_?=` 让卸载程序就地运行、等得到它结束（不带的话它把自己拷到 %TEMP% 再起一份，
-    # 这个进程马上就退出了）。代价是它删不掉自己和安装目录，那不在检查之内
-    $uninstaller = Join-Path $script:InstDir 'uninstall.exe'
-    $u = Start-Process -FilePath $uninstaller -ArgumentList ('/S _?={0}' -f $script:InstDir) -PassThru
-    $null = $u.Handle
-    if (-not $u.WaitForExit(300000)) { Fail '静默卸载 5 分钟没有结束' }
-    if ($u.ExitCode -ne 0) { Fail ('静默卸载的退出码是 {0}' -f $u.ExitCode) }
-    if (Test-Path -LiteralPath $script:InstExe) { Fail ('卸载之后 {0} 还在' -f $script:InstExe) }
+    Uninstall-Silently
     Pass ('静默卸载结束（退出码 0），安装目录里剩下：{0}' -f (List-Dir $script:InstDir))
 
     $link = Get-Reg $LinkCommandKey ''
@@ -1010,6 +1073,7 @@ try {
     Check-SameExe
     Check-NotWritable
     Check-Installed
+    Check-InstallerSparesPortable
     Check-Uninstall
 } catch {
     $failure = $_.Exception.Message
