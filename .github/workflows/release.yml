@@ -305,7 +305,14 @@ jobs:
 
       # `--target` 写出来，产物路径才是定死的。取哪一份 twcore 也跟着它走：
       # Tauri 把它交给 `beforeBuildCommand`，见 `fetch-core.sh`。
+      #
+      # `TW_OFFICIAL_BUILD`：**这是发出去的那一份。**旁边没有卸载程序的 release 构建，
+      # 带着它才算绿色版（`update::official_build`）；开发者自己编的不带，不会把数据
+      # 写进 `target\release\data\`、把链接和开机自启改指向 `target\…`。安装版用的是
+      # 同一个 exe，旁边有卸载程序，照样是安装版
       - name: Build
+        env:
+          TW_OFFICIAL_BUILD: "1"
         run: pnpm tauri build --target ${{ matrix.target }}
 
       # **拆开看一眼再发。**和 macOS 那边同一个理由：一个缺了网关、或者

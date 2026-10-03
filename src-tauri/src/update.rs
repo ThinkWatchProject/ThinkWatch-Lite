@@ -151,21 +151,31 @@ pub fn nsis_installed(exe: &Path) -> Install {
 
 /// Windows 上这一份是怎么装上来的：安装程序装的、绿色版，还是开发构建。
 ///
-/// **旁边有卸载程序的是安装版**（见 [`nsis_installed`]）；没有的，正式构建就是
-/// 绿色版 —— 发出去的 exe 只有这两种去处，zip 里没有卸载程序。开发构建（`tauri
-/// dev`、`cargo build`）旁边也没有，靠 `release` 分开：它们不该把数据放到
-/// `target\` 里，也不该去替换自己。
+/// **旁边有卸载程序的是安装版**（见 [`nsis_installed`]）；没有的，发版流水线打出来的
+/// 就是绿色版 —— 发出去的 exe 只有这两种去处，zip 里没有卸载程序。开发构建旁边也没有：
+/// `tauri dev`、`cargo build` 靠 `release` 分开，自己编的 release 构建（`cargo build
+/// --release`、本机的 `tauri build`）靠 `official` 分开（见 [`official_build`]）。它们
+/// 不该把数据放到 `target\` 里、把链接和开机自启改指向 `target\…`，也不该去替换自己。
 ///
-/// `cargo build --release` 出来的那一份因此也算绿色版，数据在 `target\release\data\`
-/// —— 和用户解压出来的那一份行为一致，正好用来试。
+/// 自己编的那一份装上之后（旁边有了卸载程序）照样是安装版。
 // 判断本身和平台无关，所以在哪都测；只有 Windows 上真的拿它来用
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn windows_kind(exe: &Path, release: bool) -> Install {
+pub fn windows_kind(exe: &Path, release: bool, official: bool) -> Install {
     match nsis_installed(exe) {
         Install::Standalone => Install::Standalone,
-        _ if release => Install::Portable,
+        _ if release && official => Install::Portable,
         _ => Install::Dev,
     }
+}
+
+/// 这个二进制是不是发版流水线打出来的：`release.yml` 在 Windows 的构建那一步设
+/// `TW_OFFICIAL_BUILD=1`（`build.rs` 让它一变就重编）。
+///
+/// 只有 Windows 上用得到：绿色版和自己编的 release 构建长得一模一样（见 [`windows_kind`]）。
+/// 想在本机试绿色版，构建时自己设上这个变量。
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn official_build() -> bool {
+    option_env!("TW_OFFICIAL_BUILD") == Some("1")
 }
 
 /// Linux 上这一份是怎么装上来的。
@@ -230,7 +240,7 @@ pub fn kind() -> Install {
         };
         #[cfg(windows)]
         {
-            windows_kind(&exe, !cfg!(debug_assertions))
+            windows_kind(&exe, !cfg!(debug_assertions), official_build())
         }
         #[cfg(target_os = "macos")]
         {
@@ -443,21 +453,30 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// 旁边没有卸载程序的正式构建是绿色版；开发构建不管放在哪都是开发构建；
-    /// 有卸载程序的永远是安装版。
+    /// 旁边没有卸载程序的发版构建是绿色版；自己编的 release 构建、开发构建不管放在哪
+    /// 都是开发构建；有卸载程序的永远是安装版。
     #[test]
-    fn a_release_build_without_an_uninstaller_is_the_portable_copy() {
+    fn only_an_official_release_build_without_an_uninstaller_is_the_portable_copy() {
         let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("thinkwatch-lite.exe");
+        let exe = dir.path().join("ThinkWatch Lite.exe");
         std::fs::write(&exe, b"").unwrap();
 
-        assert_eq!(windows_kind(&exe, true), Install::Portable);
-        assert!(windows_kind(&exe, true).can_self_update());
-        assert_eq!(windows_kind(&exe, false), Install::Dev);
+        assert_eq!(windows_kind(&exe, true, true), Install::Portable);
+        assert!(windows_kind(&exe, true, true).can_self_update());
+        // `cargo build --release` 出来的：不写 `target\release\data\`、不碰注册表、不替换自己
+        assert_eq!(windows_kind(&exe, true, false), Install::Dev);
+        assert!(!windows_kind(&exe, true, false).can_self_update());
+        assert_eq!(windows_kind(&exe, false, false), Install::Dev);
+        assert_eq!(windows_kind(&exe, false, true), Install::Dev);
 
         std::fs::write(dir.path().join("uninstall.exe"), b"").unwrap();
-        assert_eq!(windows_kind(&exe, true), Install::Standalone);
-        assert_eq!(windows_kind(&exe, false), Install::Standalone);
+        for (release, official) in [(true, true), (true, false), (false, true), (false, false)] {
+            assert_eq!(
+                windows_kind(&exe, release, official),
+                Install::Standalone,
+                "release={release} official={official}"
+            );
+        }
     }
 
     /// 界面认的是这个词（`src/updateFlow.ts` 的 `Install`）
