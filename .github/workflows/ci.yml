@@ -54,6 +54,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck
         run: pnpm typecheck
+      # 前端单元测试原来只在本机跑。其中有守规矩的测试（比如不许绕过
+      # `src/lib/tauriEvent.ts` 直接订阅 Tauri 事件），不进 CI 就形同虚设。
+      - name: Unit tests
+        run: pnpm test
       - name: Build
         run: pnpm build
 
