@@ -148,15 +148,15 @@
    },
    {
     "id": "titling",
-    "mode": "passthrough"
+    "mode": "forward"
    },
    {
     "id": "topic_detect",
-    "mode": "passthrough"
+    "mode": "forward"
    },
    {
     "id": "suggestion",
-    "mode": "passthrough"
+    "mode": "forward"
    }
   ],
   "retention": {
