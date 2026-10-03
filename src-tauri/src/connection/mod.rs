@@ -821,7 +821,7 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
         launch::Why::Option => "option",
         launch::Why::Unfinished => "unfinished",
     };
-    tauri::WebviewWindowBuilder::new(app, PICKER_WINDOW, tauri::WebviewUrl::default())
+    let b = tauri::WebviewWindowBuilder::new(app, PICKER_WINDOW, tauri::WebviewUrl::default())
         .title(tr!("选择连接", "Choose a Connection"))
         .initialization_script(format!(
             "{} window.__TW_PICK__ = {:?};",
@@ -833,8 +833,13 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
         .minimizable(false)
         .maximizable(false)
         .center()
-        .visible(false)
-        .build()?;
+        .visible(false);
+    // 和主窗口同一个 WebView2 数据目录，见 `window::show_main_window`
+    let b = match crate::portable::webview_data_dir() {
+        Some(dir) => b.data_directory(dir),
+        None => b,
+    };
+    b.build()?;
     Ok(())
 }
 
