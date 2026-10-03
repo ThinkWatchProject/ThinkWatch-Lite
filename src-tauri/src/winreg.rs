@@ -293,22 +293,20 @@ mod imp {
         Ok(())
     }
 
-    /// 系统通知的名字和图标。图标从二进制里写出来；写不出来也照样登记名字（只是没有图标）
+    /// 系统通知的名字和图标。图标从二进制里写出来。
+    ///
+    /// **图标写不出来，`IconUri` 也照样填这一份该有的路径**：系统找不到文件就用默认的
+    /// 图标，名字照常显示；而清理时认「这份登记是不是自己的」靠的正是这个路径（见
+    /// `release_notifications`）—— 不填的话，这份登记卸载时就没人认领了
     fn register_notifications(hive: &Hive, dir: &Path, aumid: &str) -> Result<()> {
         let icon = dir.join(NOTIFICATION_ICON);
-        let icon_ok = write_icon(&icon)
-            .inspect_err(|e| tracing::warn!(icon = %icon.display(), "通知图标写不出来：{e}"))
-            .is_ok();
+        if let Err(e) = write_icon(&icon) {
+            tracing::warn!(icon = %icon.display(), "通知图标写不出来，通知上用默认的图标：{e}");
+        }
         let key = hive.create(&aumid_key(aumid))?;
         // 两个都写成 REG_EXPAND_SZ，和 Windows App SDK 给未打包应用登记时一样
         key.set_expand_string("DisplayName", PRODUCT_NAME)?;
-        if icon_ok {
-            key.set_expand_string("IconUri", icon.to_string_lossy())?;
-        } else {
-            // 别留着一个指向不存在的文件的旧值
-            let _ = key.remove_value("IconUri");
-        }
-        Ok(())
+        key.set_expand_string("IconUri", icon.to_string_lossy())
     }
 
     /// 内容没变就不重写
@@ -456,7 +454,12 @@ mod imp {
         }
         match std::fs::remove_file(&icon) {
             Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            // 本来就没有：从没写出来过（数据目录不在，或者那个位置不是目录）
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) => {}
             Err(e) => out.push(UninstallStep::failed(tr!(
                 format!("未能删除通知图标：{}（{e}）", icon.display()),
                 format!(
@@ -593,6 +596,28 @@ mod imp {
             ));
             let png = std::fs::read(&icon).unwrap();
             assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        }
+
+        /// 图标写不出来（这里「数据目录」其实是一个文件）：登记照样指向这一份该有的图标
+        /// 路径，清理时也照样认得出是自己的
+        #[test]
+        fn a_missing_icon_still_leaves_a_registration_this_copy_owns() {
+            let s = Scratch::new("noicon");
+            let dir = tempfile::tempdir().unwrap();
+            let not_a_dir = dir.path().join("data");
+            std::fs::write(&not_a_dir, b"").unwrap();
+            assert!(claim(&s.0, EXE, &not_a_dir, "a.test"));
+            let key = s.0.open(&aumid_key("a.test")).unwrap().unwrap();
+            assert!(same_path(
+                &key.get_string("IconUri").unwrap(),
+                &not_a_dir.join(NOTIFICATION_ICON).to_string_lossy()
+            ));
+            let steps = crate::i18n::with_lang(crate::i18n::Lang::Zh, || {
+                release_all(&s.0, EXE, &not_a_dir, "a.test")
+            });
+            assert!(steps.iter().all(|s| s.ok), "{:?}", texts(&steps));
+            assert!(texts(&steps).contains(&"已移除系统通知的登记".to_string()));
+            assert!(s.0.open(&aumid_key("a.test")).unwrap().is_none());
         }
 
         /// 只删指向自己的；指向别处的留着，并且说一声开机启动还在

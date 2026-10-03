@@ -10,6 +10,10 @@
 
 use std::path::Path;
 
+/// 带着一份 SDDL 写的安全描述符做一件事。测试拿它造「别的账户的」目录和锁
+#[cfg(all(windows, test))]
+pub(crate) use imp::with_security_attributes;
+
 /// 建出数据目录。已经在了就什么都不做。
 pub fn create(dir: &Path) -> std::io::Result<()> {
     if dir.exists() {
@@ -149,7 +153,7 @@ mod imp {
     }
 
     /// 把一段 SDDL 变成 `SECURITY_ATTRIBUTES`，用完释放。
-    fn with_security_attributes<T>(
+    pub(crate) fn with_security_attributes<T>(
         sddl: &str,
         f: impl FnOnce(*const SECURITY_ATTRIBUTES) -> std::io::Result<T>,
     ) -> std::io::Result<T> {

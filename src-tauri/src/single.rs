@@ -9,9 +9,12 @@
 //! 1. 新开的这一个（[`precheck`]，Tauri 起来之前）看见锁被占着、占着它的程序在别的位置，
 //!    问一句；选了切换，就置位运行中那一个建的命名事件（[`handoff_name`]）。
 //! 2. 运行中的那一个（[`listen`]）收到事件：等手上的请求结束（最多三分钟，和装更新时同一套）、
-//!    停掉 core、退出。退出时插件放开那把锁。
+//!    停掉 core、退出，全程不超过 [`STEP_ASIDE_LIMIT`]。退出时插件放开那把锁。
 //! 3. 新开的这一个一直等到锁被放开（[`WAIT_LIMIT`]），**关掉自己手里的锁句柄**，接着
 //!    正常启动 —— 插件随后建锁时看到的是一把没人用的新锁。
+//!
+//! 运行中的那一个以管理员身份运行时，这一边打不开它的锁、也置不了它的事件：说明之后
+//! 退出，不让两个实例同时跑起来（插件自己在这种情况下认不出它）。
 //!
 //! 锁和窗口的名字以 `tauri-plugin-single-instance` 2.4.5 的 `platform_impl/windows.rs`
 //! 为准：锁 `<标识>-sim`、接收转交的窗口类 `<标识>-sic`、窗口名 `<标识>-siw`
@@ -27,6 +30,13 @@ use crate::winreg::{IDENTIFIER, SCHEME, same_path};
 /// 等运行中的程序退出，最多等多久。它那边等请求结束最多三分钟
 /// （`updater::DRAIN_LIMIT`），再加上停 core 的几秒
 pub(crate) const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(200);
+
+/// 运行中的那一个让位，从收到请求到退出最多花多久：比请求的那一边等的 [`WAIT_LIMIT`]
+/// 短，它等得到
+pub(crate) const STEP_ASIDE_LIMIT: std::time::Duration = std::time::Duration::from_secs(190);
+
+/// 让位时留给停 core 的时间：`stop_and_wait` 请它退、等它、强杀、再等，都在这里面
+pub(crate) const STOP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// 单实例插件建的锁
 pub(crate) fn mutex_name() -> String {
@@ -129,6 +139,14 @@ pub(crate) fn unsupported_text() -> &'static str {
     )
 }
 
+/// 运行中的那一个权限更高（以管理员身份运行）：这里打不开它的锁、置不了它的事件
+pub(crate) fn elevated_text() -> &'static str {
+    tr!(
+        "运行中的程序以管理员身份运行，无法从此处停止。请先退出该程序。",
+        "The running program runs as administrator and cannot be stopped from here. Quit it first."
+    )
+}
+
 /// 等到上限它还没退
 pub(crate) fn timeout_text() -> &'static str {
     tr!(
@@ -157,11 +175,14 @@ pub fn listen(app: &tauri::AppHandle) {
 mod imp {
     use std::time::{Duration, Instant};
 
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, GetLastError,
+        HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0,
+    };
     use windows_sys::Win32::System::Threading::{
         CreateEventW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, OpenMutexW, OpenProcess,
         PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-        ReleaseMutex, SYNCHRONIZATION_SYNCHRONIZE, SetEvent, WaitForSingleObject,
+        ReleaseMutex, ResetEvent, SYNCHRONIZATION_SYNCHRONIZE, SetEvent, WaitForSingleObject,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowThreadProcessId};
 
@@ -193,9 +214,22 @@ mod imp {
     }
 
     pub fn precheck() {
-        // 锁不在：没有在运行的实例
-        let Some(lock) = open_mutex(&mutex_name()) else {
-            return;
+        let lock = match open_mutex(&mutex_name()) {
+            Ok(lock) => lock,
+            // 锁不在：没有在运行的实例
+            Err(ERROR_FILE_NOT_FOUND) => return,
+            // **锁在，但打不开**：运行中的那一个权限更高（以管理员身份运行），它建的锁
+            // 不让这里碰。插件自己这时也认不出它：`CreateMutexW` 失败、报的不是「已经存在」，
+            // 插件就当自己是第一个接着启动（它的参数也转不过去 —— 低权限的进程发给高权限
+            // 窗口的消息会被系统拦下）。放过去就是两个实例抢同一个端口
+            Err(ERROR_ACCESS_DENIED) => {
+                tell(elevated_text());
+                std::process::exit(1);
+            }
+            Err(e) => {
+                tracing::warn!(code = e, "打不开单实例的锁，交给插件判断");
+                return;
+            }
         };
         let args: Vec<String> = std::env::args_os()
             .skip(1)
@@ -213,8 +247,18 @@ mod imp {
             // 取消、关掉对话框：照插件的老样子，运行中的那个到前面来，这一个退出
             return;
         }
-        if !signal(&handoff_name(), Duration::from_secs(2)) {
-            tell(unsupported_text());
+        if let Err(code) = signal(&handoff_name(), Duration::from_secs(2)) {
+            // 对话框开着的时候，运行中的那一个可能已经自己退出了（事件跟着它没了）：
+            // 锁放开了，就照常启动
+            if wait_released(lock, Duration::ZERO) {
+                tracing::info!("运行中的程序已经退出，照常启动");
+                return;
+            }
+            tell(if code == ERROR_ACCESS_DENIED {
+                elevated_text()
+            } else {
+                unsupported_text()
+            });
             std::process::exit(1);
         }
         tracing::info!(%running, "已请运行中的程序退出，等它放开单实例的锁");
@@ -233,14 +277,17 @@ mod imp {
         dialog::show(TITLE, running_text(), content, &[tr!("确定", "OK")]);
     }
 
-    /// 打开一把已经在的命名锁（只要能等它的权限）；不在是 `None`
-    pub(super) fn open_mutex(name: &str) -> Option<Handle> {
+    /// 打开一把已经在的命名锁（只要能等它的权限）。打不开时是系统给的错误码：不在是
+    /// `ERROR_FILE_NOT_FOUND`，在但没有权限是 `ERROR_ACCESS_DENIED`
+    pub(super) fn open_mutex(name: &str) -> Result<Handle, u32> {
         let name = wide(name);
         // SAFETY: 名字以 0 结尾
-        Handle::new(unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, name.as_ptr()) })
+        let raw = unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, name.as_ptr()) };
+        // SAFETY: 紧跟在上一个调用之后，中间没有别的系统调用
+        Handle::new(raw).ok_or_else(|| unsafe { GetLastError() })
     }
 
-    /// 等这把锁被放开，至多 `limit`。放开了是 `true`。
+    /// 等这把锁被放开，至多 `limit`（零就是只看一眼）。放开了是 `true`。
     ///
     /// 等到了，这个线程就**拿到了**这把锁：先还回去，再关句柄 —— 两样都在返回之前做完，
     /// 而且在等它的同一个线程上（锁属于线程）。不然插件随后 `CreateMutexW` 时这把锁还在、
@@ -259,20 +306,30 @@ mod imp {
         released
     }
 
-    /// 置位运行中那一个建的事件。它刚启动、还没建好的话，等一小会儿再试（`patience`）；
-    /// 一直打不开是 `false`：那是不支持切换的旧版本
-    pub(super) fn signal(name: &str, patience: Duration) -> bool {
+    /// 置位运行中那一个建的事件。打不开时是系统给的错误码：
+    ///
+    /// - `ERROR_FILE_NOT_FOUND`：没有这个事件。它刚启动、还没建好的话等一小会儿再试
+    ///   （`patience`）；一直没有，那是不支持切换的旧版本（或者它已经退出了）。
+    /// - `ERROR_ACCESS_DENIED`：事件在，但它是以管理员身份运行的那一个建的，这里没有
+    ///   权限置位。不再等
+    pub(super) fn signal(name: &str, patience: Duration) -> Result<(), u32> {
         let name = wide(name);
         let deadline = Instant::now() + patience;
         loop {
             // SAFETY: 名字以 0 结尾
-            let event = Handle::new(unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr()) });
-            if let Some(event) = event {
+            let raw = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr()) };
+            // SAFETY: 紧跟在上一个调用之后
+            let code = unsafe { GetLastError() };
+            if let Some(event) = Handle::new(raw) {
                 // SAFETY: 句柄有效，有 EVENT_MODIFY_STATE 权限
-                return unsafe { SetEvent(event.0) } != 0;
+                if unsafe { SetEvent(event.0) } != 0 {
+                    return Ok(());
+                }
+                // SAFETY: 紧跟在上一个调用之后
+                return Err(unsafe { GetLastError() });
             }
-            if Instant::now() >= deadline {
-                return false;
+            if code != ERROR_FILE_NOT_FOUND || Instant::now() >= deadline {
+                return Err(code);
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -315,12 +372,7 @@ mod imp {
     }
 
     pub fn listen(app: &tauri::AppHandle) {
-        let name = wide(&handoff_name());
-        // 自动复位、一开始没置位
-        // SAFETY: 名字以 0 结尾；安全属性用默认的
-        let Some(event) =
-            Handle::new(unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) })
-        else {
+        let Some(event) = create_handoff_event(&handoff_name()) else {
             tracing::warn!("建不了切换用的事件，另一个位置的程序将无法切换过来");
             return;
         };
@@ -343,22 +395,58 @@ mod imp {
         }
     }
 
-    /// 让位：等手上的请求结束（最多三分钟，和装更新时同一套）→ 记成用户自己退出的 →
-    /// 停掉 core、等它真的走 → 退出。
+    /// 建切换用的事件：自动复位、一开始没置位。
+    ///
+    /// **已经有了就先复位。**上一个实例让位时把事件留到了它退出（见 `listen`），这期间
+    /// 又有人置位过的话，它就一直是置位的；新起来的这一个要是接着用，一启动就会以为有人
+    /// 请它让位
+    pub(super) fn create_handoff_event(name: &str) -> Option<Handle> {
+        let name = wide(name);
+        // SAFETY: 名字以 0 结尾；安全属性用默认的
+        let raw = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
+        // SAFETY: 紧跟在上一个调用之后
+        let existed = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+        let event = Handle::new(raw)?;
+        if existed {
+            // SAFETY: 句柄有效，建的时候拿到的是全部权限
+            unsafe { ResetEvent(event.0) };
+        }
+        Some(event)
+    }
+
+    /// 让位：记成用户自己退出的 → 等手上的请求结束（最多三分钟，和装更新时同一套）→
+    /// 停掉 core、等它真的走 → 退出。**整个过程有一个总时限**（[`STEP_ASIDE_LIMIT`]），
+    /// 比请求的那一边等的短：到点了不管走到哪一步都退出。
     ///
     /// **core 要在退出之前停干净**：插件在退出的那一刻放开锁，新的那一个马上起来拉它自己的
     /// core，旧的还占着网关的端口就会撞上
     async fn step_aside(app: tauri::AppHandle) {
         use tauri::Manager;
+        // 用户在另一个程序里选了「停止运行中的程序」：和菜单里点「退出」一样，退出时
+        // 删掉 `.last-exit`，之后再打开这一份不当成更新之后的重开
+        crate::updater::quitting_by_user();
         let sup = app
             .try_state::<crate::AppState>()
             .map(|st| st.supervisor.clone());
         if let Some(sup) = sup {
-            crate::updater::wait_for_quiet(sup.control(), |_| {}).await;
-            // 用户在另一个程序里选了「停止运行中的程序」：和菜单里点「退出」一样，退出时
-            // 删掉 `.last-exit`，之后再打开这一份不当成更新之后的重开
-            crate::updater::quitting_by_user();
-            sup.stop_and_wait(Duration::from_secs(5)).await;
+            let deadline = tokio::time::Instant::now() + STEP_ASIDE_LIMIT;
+            // 停 core 的时间留出来：等请求最多等到总时限前 `STOP_BUDGET`
+            let quiet = tokio::time::timeout_at(
+                deadline - STOP_BUDGET,
+                crate::updater::wait_for_quiet(sup.control(), |_| {}),
+            )
+            .await;
+            if quiet.is_err() {
+                // **到点了照样走**：请求切换的那一个还开着等待的对话框，它等的就是这里
+                // 退出；它最多等 `WAIT_LIMIT`，过了就报「未能退出」，两边都落空
+                tracing::warn!("让位：请求没在时限内结束，照样退出");
+            }
+            if tokio::time::timeout_at(deadline, sup.stop_and_wait(Duration::from_secs(5)))
+                .await
+                .is_err()
+            {
+                tracing::warn!("让位：core 没在时限内停下，照样退出（它的 --parent 守望会跟着走）");
+            }
         }
         app.exit(0);
     }
@@ -367,13 +455,20 @@ mod imp {
     /// 正在跑的 ThinkWatch Lite 撞
     #[cfg(test)]
     mod tests {
-        use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+        use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+        use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
         use windows_sys::Win32::System::Threading::CreateMutexW;
 
         use super::*;
 
         fn unique(what: &str) -> String {
             format!(r"Local\thinkwatch-test-{}-{what}", std::process::id())
+        }
+
+        /// 带着一份安全描述符（SDDL）建对象。`D:P` 是一份空的受保护 DACL：谁都打不开它，
+        /// 建它的这一个句柄除外 —— 和管理员身份的实例建的锁、事件在这里的样子一样
+        fn with_sddl<T>(sddl: &str, f: impl FnOnce(*const SECURITY_ATTRIBUTES) -> T) -> T {
+            crate::private_dir::with_security_attributes(sddl, |sa| Ok(f(sa))).unwrap()
         }
 
         /// 建一把锁并占着它，像插件那样
@@ -407,7 +502,11 @@ mod imp {
             let lock = open_mutex(&name).expect("锁在");
             assert!(wait_released(lock, Duration::from_secs(10)));
             owner.join().unwrap();
-            assert!(open_mutex(&name).is_none(), "等完之后不该还有句柄留着它");
+            assert_eq!(
+                open_mutex(&name).err(),
+                Some(ERROR_FILE_NOT_FOUND),
+                "等完之后不该还有句柄留着它"
+            );
             let (_h, existed) = create_owned(&name);
             assert!(!existed, "插件随后建锁时应当是一把新锁");
         }
@@ -452,19 +551,90 @@ mod imp {
             assert!(!lock.join().unwrap());
         }
 
-        /// 运行中的那一边建了事件，这一边置得上；没建（旧版本）就置不上
+        /// 只看一眼（问过之后打不开事件时）：还被占着是 `false`，已经放开了是 `true`
         #[test]
-        fn the_handoff_reaches_the_listener_or_reports_an_old_version() {
-            let name = unique("handoff");
-            assert!(!signal(&name, Duration::from_millis(200)));
+        fn a_glance_tells_a_held_lock_from_one_let_go() {
+            let name = unique("glance");
+            let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+            let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+            let owner = std::thread::spawn({
+                let name = name.clone();
+                move || {
+                    let (h, _) = create_owned(&name);
+                    ready_tx.send(()).unwrap();
+                    go_rx.recv().unwrap();
+                    // SAFETY: 这个线程是它的主人
+                    unsafe { ReleaseMutex(h.0) };
+                }
+            });
+            ready_rx.recv().unwrap();
+            assert!(!wait_released(open_mutex(&name).unwrap(), Duration::ZERO));
+            let lock = open_mutex(&name).unwrap();
+            go_tx.send(()).unwrap();
+            owner.join().unwrap();
+            assert!(wait_released(lock, Duration::ZERO));
+        }
 
+        /// 管理员身份的实例建的锁（这里用一份谁都不让进的 DACL 代替）：打开时报的是没有
+        /// 权限，不是不在 —— `precheck` 靠这个区分「没在运行」和「在运行但够不着」
+        #[test]
+        fn a_lock_without_access_is_told_apart_from_no_lock() {
+            let name = unique("denied-lock");
             let w = wide(&name);
-            // SAFETY: 同 `listen`
-            let event =
-                Handle::new(unsafe { CreateEventW(std::ptr::null(), 0, 0, w.as_ptr()) }).unwrap();
-            assert!(signal(&name, Duration::from_millis(200)));
+            let _h = with_sddl("D:P", |sa| {
+                // SAFETY: 名字以 0 结尾，`sa` 在调用期间有效
+                Handle::new(unsafe { CreateMutexW(sa, 1, w.as_ptr()) }).unwrap()
+            });
+            assert_eq!(open_mutex(&name).err(), Some(ERROR_ACCESS_DENIED));
+            assert_eq!(
+                open_mutex(&unique("no-lock")).err(),
+                Some(ERROR_FILE_NOT_FOUND)
+            );
+        }
+
+        /// 运行中的那一边建了事件，这一边置得上；没建（旧版本）报不在；没有权限（管理员
+        /// 身份的实例建的）当场报没有权限，不干等
+        #[test]
+        fn the_handoff_reaches_the_listener_or_says_why_not() {
+            let name = unique("handoff");
+            assert_eq!(
+                signal(&name, Duration::from_millis(200)),
+                Err(ERROR_FILE_NOT_FOUND)
+            );
+
+            let event = create_handoff_event(&name).unwrap();
+            assert_eq!(signal(&name, Duration::from_millis(200)), Ok(()));
             // SAFETY: 句柄有效
             assert_eq!(unsafe { WaitForSingleObject(event.0, 1000) }, WAIT_OBJECT_0);
+
+            let denied = unique("denied-event");
+            let w = wide(&denied);
+            let _e = with_sddl("D:P", |sa| {
+                // SAFETY: 名字以 0 结尾，`sa` 在调用期间有效
+                Handle::new(unsafe { CreateEventW(sa, 0, 0, w.as_ptr()) }).unwrap()
+            });
+            let started = Instant::now();
+            assert_eq!(
+                signal(&denied, Duration::from_secs(5)),
+                Err(ERROR_ACCESS_DENIED)
+            );
+            assert!(started.elapsed() < Duration::from_secs(2));
+        }
+
+        /// 上一个实例留下的、已经置位的事件：新的这一个建的时候复位，不会一启动就让位
+        #[test]
+        fn a_stale_signal_is_cleared_when_the_event_is_created_again() {
+            let name = unique("stale");
+            let old = create_handoff_event(&name).unwrap();
+            // SAFETY: 句柄有效
+            assert_ne!(unsafe { SetEvent(old.0) }, 0);
+            let fresh = create_handoff_event(&name).unwrap();
+            // SAFETY: 句柄有效
+            assert_eq!(unsafe { WaitForSingleObject(fresh.0, 0) }, WAIT_TIMEOUT);
+            assert_eq!(signal(&name, Duration::ZERO), Ok(()));
+            // SAFETY: 句柄有效
+            assert_eq!(unsafe { WaitForSingleObject(fresh.0, 0) }, WAIT_OBJECT_0);
+            drop(old);
         }
 
         #[test]
@@ -543,6 +713,14 @@ mod tests {
         );
     }
 
+    /// 让位的一方要在请求的一方放弃之前走完；等请求之外还要留出停 core 的时间
+    #[test]
+    fn the_running_side_finishes_before_the_requester_gives_up() {
+        assert!(STEP_ASIDE_LIMIT < WAIT_LIMIT);
+        assert!(STOP_BUDGET < STEP_ASIDE_LIMIT);
+        assert!(STEP_ASIDE_LIMIT - STOP_BUDGET >= crate::updater::DRAIN_LIMIT);
+    }
+
     #[test]
     fn names_follow_the_plugin() {
         assert_eq!(mutex_name(), "app.thinkwatch.lite-sim");
@@ -588,5 +766,13 @@ mod tests {
             "运行中的程序不支持切换，请先退出该程序。"
         );
         assert_eq!(with_lang(Lang::Zh, timeout_text), "运行中的程序未能退出。");
+        assert_eq!(
+            with_lang(Lang::Zh, elevated_text),
+            "运行中的程序以管理员身份运行，无法从此处停止。请先退出该程序。"
+        );
+        assert_eq!(
+            with_lang(Lang::En, elevated_text),
+            "The running program runs as administrator and cannot be stopped from here. Quit it first."
+        );
     }
 }
