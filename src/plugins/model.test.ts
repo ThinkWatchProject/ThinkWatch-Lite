@@ -20,6 +20,7 @@ import {
   touchesRequests,
 } from "./model";
 import { draftOf, scopeOf, scopeProblem, settingsDraftOf, settingsOf, suggestionMatches } from "./fields";
+import { moved } from "./ListDialogs";
 
 describe("通配", () => {
   it("* 是任意一段，可以为空", () => {
@@ -276,5 +277,13 @@ describe("表单", () => {
     expect(suggestionMatches("*-mini", "GPT-5-Mini")).toBe(true);
     expect(suggestionMatches("sonnet", "claude-sonnet-4-5")).toBe(true);
     expect(suggestionMatches("", "anything")).toBe(true);
+  });
+});
+
+describe("调整顺序", () => {
+  it("挪到拿走之后的那个位置，别的顺次让开", () => {
+    expect(moved(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
+    expect(moved(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
+    expect(moved(["a", "b"], 1, 0)).toEqual(["b", "a"]);
   });
 });

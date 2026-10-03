@@ -53,9 +53,10 @@ export const pluginsPageText = messages(
     deleteDescription: "插件和它的设置将从配置中删除，此后不再运行。",
 
     reorderTitle: "调整顺序",
-    reorderDescription: "插件按此顺序依次运行，后一个插件处理的是前一个改写后的内容。",
+    reorderDescription: "插件按此顺序依次运行，后一个插件处理的是前一个改写后的内容。拖动或用箭头调整位置。",
     moveUp: (name: string) => `上移「${name}」`,
     moveDown: (name: string) => `下移「${name}」`,
+    dragPlugin: (name: string) => `拖动调整「${name}」的位置`,
   },
   {
     pluginsUnit: (n: number) => (n === 1 ? "plugin" : "plugins"),
@@ -105,9 +106,11 @@ export const pluginsPageText = messages(
     deleteDescription: "The plugin and its settings are removed from the configuration and it no longer runs.",
 
     reorderTitle: "Reorder",
-    reorderDescription: "Plugins run in this order. Each plugin works on what the one before it produced.",
+    reorderDescription:
+      "Plugins run in this order. Each plugin works on what the one before it produced. Drag a plugin or use the arrows to move it.",
     moveUp: (name: string) => `Move “${name}” up`,
     moveDown: (name: string) => `Move “${name}” down`,
+    dragPlugin: (name: string) => `Drag to reorder “${name}”`,
   },
 );
 

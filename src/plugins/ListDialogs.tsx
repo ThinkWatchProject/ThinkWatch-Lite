@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -12,10 +12,12 @@ import {
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ConfirmAction, focusSelf } from "@/keys/parts";
+import { useReorder } from "@/routing/useReorder";
 import { DialogError } from "@/upstreams/parts";
 import type { PluginView } from "@/types";
 import { pluginName } from "./defaults";
@@ -78,8 +80,9 @@ export function DeleteDialog({
 }
 
 /**
- * 调整运行顺序。**顺序有意义**：前一个插件改过的内容交给后一个。上下移好了一次保存，写成
- * 一个配置版本（`ReorderPlugins`），不是每挪一下写一次。
+ * 调整运行顺序。**顺序有意义**：前一个插件改过的内容交给后一个。拖动一行（按住左边的把手，
+ * 或者整行的空白处）放到别处，也可以用每行右边的上移、下移（键盘用这两个）。排好了一次保存，
+ * 写成一个配置版本（`ReorderPlugins`），不是每挪一下写一次。
  */
 export function ReorderDialog({
   list,
@@ -97,15 +100,27 @@ export function ReorderDialog({
   const [error, setError] = useState<string | null>(null);
   const byId = new Map(list.map((p) => [p.id, p]));
   const dirty = order.some((id, i) => id !== list[i]?.id);
+  const reorder = useReorder((from, to) => setOrder((o) => moved(o, from, to)));
+  /** 按钮挪到头之后自己失效了：焦点交给同一行的另一个按钮，键盘接着能按 */
+  const [refocus, setRefocus] = useState<{ id: string; dir: "up" | "down" } | null>(null);
+  const list$ = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    if (!refocus) return;
+    list$.current
+      ?.querySelector<HTMLButtonElement>(`[data-row="${CSS.escape(refocus.id)}"] [data-move="${refocus.dir}"]`)
+      ?.focus();
+    setRefocus(null);
+  }, [refocus]);
 
-  const move = (i: number, d: -1 | 1) =>
-    setOrder((o) => {
-      const j = i + d;
-      if (j < 0 || j >= o.length) return o;
-      const next = [...o];
-      [next[i], next[j]] = [next[j]!, next[i]!];
-      return next;
-    });
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= order.length) return;
+    const id = order[i]!;
+    setOrder((o) => moved(o, i, j));
+    // 挪到了头（或尾）：这个方向的按钮失效，焦点换到另一个
+    if (j === 0) setRefocus({ id, dir: "down" });
+    else if (j === order.length - 1) setRefocus({ id, dir: "up" });
+  };
 
   async function save() {
     setSaving(true);
@@ -125,19 +140,39 @@ export function ReorderDialog({
           <DialogTitle>{t.reorderTitle}</DialogTitle>
           <DialogDescription>{t.reorderDescription}</DialogDescription>
         </DialogHeader>
-        <ol className="flex flex-col overflow-hidden rounded-lg border border-border">
+        <ol ref={list$} className="flex flex-col overflow-hidden rounded-lg border border-border select-none">
           {order.map((id, i) => {
             const p = byId.get(id);
             if (!p) return null;
+            const mark = reorder.marker(i, order.length);
             return (
-              <li key={id} className="flex h-10 items-center gap-3 border-b border-border pr-1.5 pl-3 last:border-b-0">
-                <span className="w-4 shrink-0 text-right tw-num text-muted-foreground">{i + 1}</span>
-                <PluginText text={nameOf(p)} className="min-w-0 flex-1 truncate tw-body" />
-                <StatusOf status={p.status} />
+              <li
+                key={id}
+                data-row={id}
+                data-reorder-row={i}
+                className={cn(
+                  "flex h-10 items-center gap-1 border-b border-border pr-1.5 last:border-b-0",
+                  reorder.dragging === i && "bg-muted/60 opacity-60",
+                  mark === "before" && "shadow-[inset_0_2px_0_var(--color-foreground)]",
+                  mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
+                )}
+              >
+                {/* 把手和名字这一段都能拖；右边的按钮不在里面，点它们不会开始拖动 */}
+                <span
+                  className="flex h-full min-w-0 flex-1 items-center gap-3 pl-2"
+                  aria-label={t.dragPlugin(nameOf(p))}
+                  {...(saving ? {} : reorder.handle(i))}
+                >
+                  <GripVerticalIcon className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                  <span className="w-4 shrink-0 text-right tw-num text-muted-foreground">{i + 1}</span>
+                  <PluginText text={nameOf(p)} className="min-w-0 flex-1 truncate tw-body" />
+                  <StatusOf status={p.status} />
+                </span>
                 <span className="flex shrink-0 items-center">
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    data-move="up"
                     aria-label={t.moveUp(nameOf(p))}
                     disabled={i === 0 || saving}
                     onClick={() => move(i, -1)}
@@ -147,6 +182,7 @@ export function ReorderDialog({
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    data-move="down"
                     aria-label={t.moveDown(nameOf(p))}
                     disabled={i === order.length - 1 || saving}
                     onClick={() => move(i, 1)}
@@ -170,4 +206,12 @@ export function ReorderDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 把第 `from` 个挪到第 `to` 个的位置（拿走之后的下标），别的顺次让开 */
+export function moved<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [x] = next.splice(from, 1);
+  next.splice(to, 0, x!);
+  return next;
 }
