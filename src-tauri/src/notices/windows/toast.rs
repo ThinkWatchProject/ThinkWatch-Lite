@@ -5,34 +5,16 @@
 //! 有 C 依赖，交叉编译不了），也能在真机上换一个 AUMID 单独验证。
 //!
 //! 不用初始化 COM：`windows` crate 取激活工厂时发现线程没进单元，会自己进隐式 MTA。
-
-use std::path::Path;
+//!
+//! 给哪个 AUMID 发都行，**登记是另一回事**：名字和图标靠注册表里的那一项（见
+//! `winreg`），没登记的 AUMID 照样弹得出来，只是名字是原始的 ID、没有图标。别调
+//! `ToastNotifier.Setting` 去探「能不能发」：一个 AUMID 第一次发通知之前它报 0x80070490。
 
 use ::windows::Data::Xml::Dom::XmlDocument;
 use ::windows::UI::Notifications::{
     NotificationData, NotificationUpdateResult, ToastNotification, ToastNotificationManager,
 };
 use ::windows::core::{HSTRING, Result};
-
-/// 能不能用：**是装过的那一份，而且开始菜单里有它的快捷方式**。
-///
-/// 快捷方式是 AUMID 唯一的来处（NSIS 建它的时候写上去），没有它 toast 静默不出现。
-/// 只看快捷方式还不够：机器上装过一份、又在跑 `tauri dev` 的时候，快捷方式在，但点开
-/// 通知拉起的是装好的那一份。所以还要当前这个 exe 就是装好的那一份 —— 这个判断
-/// 自更新也要，由调用方用 `update::kind()` 回答后传进来，两处不各写一遍
-pub fn available(installed: bool, product_name: &str) -> bool {
-    let lnk = format!("{product_name}.lnk");
-    let shortcut = ["ProgramData", "APPDATA"]
-        .into_iter()
-        .filter_map(std::env::var_os)
-        .map(|base| {
-            Path::new(&base)
-                .join(r"Microsoft\Windows\Start Menu\Programs")
-                .join(&lnk)
-        })
-        .any(|p| p.is_file());
-    installed && shortcut
-}
 
 /// 标题和正文：XML 里的 `{title}`、`{body}` 从这里取值
 fn data(title: &str, body: &str) -> Result<NotificationData> {
@@ -88,4 +70,10 @@ pub fn withdraw(aumid: &str, tag: &str, group: &str) -> Result<()> {
         &HSTRING::from(group),
         &HSTRING::from(aumid),
     )
+}
+
+/// 清掉通知中心里这个 AUMID 的全部通知。卸载时用：登记删掉之后，留下的那几条只剩
+/// 一个原始的 ID，点开也落不到任何地方
+pub fn clear(aumid: &str) -> Result<()> {
+    ToastNotificationManager::History()?.ClearWithId(&HSTRING::from(aumid))
 }
