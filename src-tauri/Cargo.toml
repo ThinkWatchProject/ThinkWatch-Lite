@@ -177,6 +177,8 @@ windows-sys = { version = "0.61", features = [
     # 醒来的那个常量在后一个里
     "Win32_System_Power",
     "Win32_UI_WindowsAndMessaging",
+    # 卸载程序删文件之前，等这一份的 core 退出：按进程表找它（`cleanup`）
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套

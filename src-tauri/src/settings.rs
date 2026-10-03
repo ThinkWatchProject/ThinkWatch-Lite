@@ -20,6 +20,8 @@ pub fn app_info(app: tauri::AppHandle) -> serde_json::Value {
         "version": app.package_info().version.to_string(),
         "identifier": app.config().identifier,
         "data_dir": data_dir().display().to_string(),
+        // 绿色版（见 `portable`）：卸载一节按它说最后一步是删文件夹、还是走系统卸载
+        "portable": crate::portable::is_portable(),
         // core 二进制的实际位置。找不到的时候把错误原样给出来 ——
         // 那条错误里列着找过哪些位置，正是这时候要看的东西。
         "core_bin": match locate_core(&app) {

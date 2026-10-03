@@ -140,6 +140,7 @@ adopt.mcp.toml_null
 adopt.mcp.unknown_client
 adopt.mcp.unverified_format
 adopt.mcp.zed_structure
+adopt.other_instance
 adopt.path.adopted
 adopt.path.fixed
 adopt.path.folder

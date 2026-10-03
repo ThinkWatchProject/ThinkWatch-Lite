@@ -474,6 +474,45 @@ pub fn backups_of(root: &Path, real: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// 接管记录（旁文件）里那份全文备份是不是 `root` 这个备份目录里的，也就是：这个客户端
+/// 是不是**这一份** ThinkWatch Lite 接管的。
+///
+/// 安装版和绿色版各有各的数据目录，也就各有各的备份目录；而接管记录写在客户端配置
+/// 旁边，两份都看得见。记录里存的是接管那一刻备份的绝对路径（重复接管也指着第一次那份，
+/// 见 `plan::apply`），按它认：
+///
+/// - 在 `root` 下面：这一份接管的；
+/// - 不在，但 `root` 下面有同一份（`<毫秒>-<序号>/<压平的路径>`）：也是这一份的，只是数据
+///   目录挪过地方 —— 绿色版的整个文件夹可以被挪走。目录名里有毫秒时间戳，两份数据目录
+///   撞上同一个名字，得是同一毫秒接管了同一个文件；
+/// - 都不是：另一个 ThinkWatch Lite 接管的。它的备份不在这里，还原也该由它来做。
+///
+/// 记录里没有备份路径的，说不上是谁的，算这一份的：照旧能还原。
+///
+/// **不分大小写**：Windows 上同一个目录可能写成 `C:\Users` 或 `c:\users`。别的平台上
+/// 两个只差大小写的数据目录不会同时存在。
+pub fn is_ours(root: &Path, backup: &Path) -> bool {
+    if backup.as_os_str().is_empty() {
+        return true;
+    }
+    let parts = |p: &Path| -> Vec<String> {
+        p.components()
+            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+            .collect()
+    };
+    let (r, b) = (parts(root), parts(backup));
+    if b.len() > r.len() && b[..r.len()] == r[..] {
+        return true;
+    }
+    match (
+        backup.parent().and_then(|d| d.file_name()),
+        backup.file_name(),
+    ) {
+        (Some(dir), Some(file)) => root.join(dir).join(file).is_file(),
+        _ => false,
+    }
+}
+
 fn backup_to(root: &Path, real: &Path, text: impl AsRef<[u8]>) -> Result<PathBuf, ForeignError> {
     backup_at(root, real, text, now_ms())
 }
@@ -1035,6 +1074,49 @@ mod tests {
         let first = backup_at(&root, &p, "第一次", 1_700_000_000_001).unwrap();
         backup_at(&root, &other, "别人的", 1_700_000_000_000).unwrap();
         assert_eq!(backups_of(&root, &p), vec![first, second]);
+    }
+
+    /// 接管记录里的备份在哪一份的备份目录里，就是哪一份接管的。安装版和绿色版
+    /// 各有一个数据目录，同一台机器上的客户端两边都看得见
+    #[test]
+    fn a_backup_belongs_to_the_backup_directory_it_is_in() {
+        let d = tempfile::tempdir().unwrap();
+        let (mine, theirs) = (d.path().join("a/backups"), d.path().join("b/backups"));
+        let p = d.path().join("settings.json");
+        let b = backup_at(&mine, &p, "原来的", 1_700_000_000_000).unwrap();
+        assert!(is_ours(&mine, &b));
+        assert!(!is_ours(&theirs, &b), "另一份的备份目录里没有它");
+        // 备份文件被删了也还是这一份的：认的是路径
+        std::fs::remove_file(&b).unwrap();
+        assert!(is_ours(&mine, &b));
+        // 记录里没有备份路径：说不上是谁的，照旧当成这一份的
+        assert!(is_ours(&theirs, Path::new("")));
+    }
+
+    /// 不分大小写：Windows 上同一个目录可能写成 `C:\Users` 或 `c:\users`
+    #[test]
+    fn the_backup_directory_is_compared_without_case() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("Data/backups");
+        let b = d.path().join("data/BACKUPS/1700000000000-0000/x.json");
+        assert!(is_ours(&root, &b));
+    }
+
+    /// 整个数据目录挪过地方（绿色版的文件夹被挪走）：记录里还是旧路径，而同一份备份
+    /// 跟着到了新的目录下 —— 仍是这一份接管的
+    #[test]
+    fn a_moved_data_directory_still_owns_its_backups() {
+        let d = tempfile::tempdir().unwrap();
+        let (old, new) = (d.path().join("old/backups"), d.path().join("new/backups"));
+        let p = d.path().join("settings.json");
+        let b = backup_at(&old, &p, "原来的", 1_700_000_000_000).unwrap();
+        std::fs::create_dir_all(d.path().join("new")).unwrap();
+        std::fs::rename(&old, &new).unwrap();
+        assert!(is_ours(&new, &b), "{}", b.display());
+        // 另一份有自己的备份，但不是记录里的这一份
+        let other = d.path().join("other/backups");
+        backup_at(&other, &p, "别人那次的", 1_700_000_000_001).unwrap();
+        assert!(!is_ours(&other, &b));
     }
 
     /// 备份里是原样的配置：用户自己的 API key、换上的网关密钥。**只给自己看**：

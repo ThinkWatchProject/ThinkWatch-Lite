@@ -273,6 +273,8 @@ export function DetailDialog({
               {t.restore}
             </Button>
           ) : (
+            // 另一个 ThinkWatch Lite 接管的：标题下面说了去哪儿还原，这里不给接管
+            !client.other_instance &&
             !client.managed &&
             (wsl?.adoptable ?? true) && (
               <Button pending={asking} onClick={onAdopt}>

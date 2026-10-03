@@ -30,6 +30,7 @@ export const clientsText = messages(
     nWaiting: "等待首个请求",
     nBroken: "未生效",
     nIdle: "未接管",
+    nOther: "由另一个 ThinkWatch Lite 接管",
 
     // 表头
     client: "客户端",
@@ -45,6 +46,9 @@ export const clientsText = messages(
     idle: "未接管",
     absent: "未检测到",
     notSet: "未配置",
+    /** 安装版和绿色版各有一份数据目录：接管它的是另一份，这一份不还原它 */
+    otherInstance: "由另一个 ThinkWatch Lite 接管",
+    otherInstanceHint: "需在接管它的 ThinkWatch Lite 中还原",
     moved: (host: string) => `配置中的地址已改为 ${host}`,
     pointsAtLocal: (host: string) => `指向本机网关 ${host}`,
     shadowed: (file: string) => `被 ${file} 覆盖`,
@@ -70,6 +74,8 @@ export const clientsText = messages(
     restoredAll: (n: number) => `已还原 ${n} 个客户端`,
     restoreFailed: (failures: { client: string; detail: string }[]) =>
       `${failures.length} 个客户端还原失败：` + failures.map((r) => `${r.client}（${r.detail}）`).join("；"),
+    restoreSkipped: (names: string[]) =>
+      `未还原由另一个 ThinkWatch Lite 接管的客户端：${names.join("、")}。需在接管它们的 ThinkWatch Lite 中还原。`,
 
     // 详情
     file: "配置文件",
@@ -219,6 +225,7 @@ export const clientsText = messages(
     nWaiting: "waiting for first request",
     nBroken: "not in effect",
     nIdle: "not connected",
+    nOther: "connected by another ThinkWatch Lite",
 
     client: "Client",
     status: "Status",
@@ -232,6 +239,8 @@ export const clientsText = messages(
     idle: "Not connected",
     absent: "Not detected",
     notSet: "Not set up",
+    otherInstance: "Connected by another ThinkWatch Lite",
+    otherInstanceHint: "Restore it from the ThinkWatch Lite that connected it",
     moved: (host: string) => `The address in its configuration is now ${host}`,
     pointsAtLocal: (host: string) => `Points to the local gateway ${host}`,
     shadowed: (file: string) => `Overridden by ${file}`,
@@ -257,6 +266,8 @@ export const clientsText = messages(
     restoreFailed: (failures: { client: string; detail: string }[]) =>
       `${count(failures.length, "client", "clients")} could not be restored: ` +
       failures.map((r) => `${r.client} (${r.detail})`).join("; "),
+    restoreSkipped: (names: string[]) =>
+      `Not restored, connected by another ThinkWatch Lite: ${names.join(", ")}. Restore them from the ThinkWatch Lite that connected them.`,
 
     file: "Configuration",
     realFile: (path: string) => `Actual file: ${path}`,

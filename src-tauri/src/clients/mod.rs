@@ -294,7 +294,7 @@ pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::Client
             models.insert(c.id.to_string(), ms);
         }
     }
-    Ok(ops::list(&home_dir(), &gw, &models))
+    Ok(ops::list(&home_dir(), &backups(), &gw, &models))
 }
 
 /// 客户端页的 WSL 部分：每个发行版一组。
@@ -347,7 +347,7 @@ pub async fn list_wsl(state: tauri::State<'_, AppState>) -> Out<wire::WslRespons
                     .unwrap_or(tw_adopt::wsl::Wsl2::Nat { version: None })
             });
             let (clients, error) = match w {
-                Ok(w) => (ops::list_wsl(&w, &gw), None),
+                Ok(w) => (ops::list_wsl(&w, &backups(), &gw), None),
                 Err(e) => (Vec::new(), Some(e)),
             };
             wire::WslGroup {
@@ -727,22 +727,23 @@ impl LeftBehind {
                 error,
             })],
         };
-        Self::of(here, opened)
+        Self::of(here, opened, &backups())
     }
 
     /// [`find`](Self::find) 的本体：这台电脑的 home（不看这台电脑时不给），和读过的
-    /// 发行版
-    fn of(here: Option<PathBuf>, wsl: Vec<Result<WslHome, Unread>>) -> LeftBehind {
+    /// 发行版。`backups` 是这一份的备份目录：另一个 ThinkWatch Lite 接管的不算
+    /// （[`ops::theirs`]）
+    fn of(here: Option<PathBuf>, wsl: Vec<Result<WslHome, Unread>>, backups: &Path) -> LeftBehind {
         let here = here.map(|home| {
             Ok(Behind {
-                clients: ops::adopted_on_this_machine(&home),
+                clients: ops::adopted_on_this_machine(&home, backups),
                 place: Place::Here,
                 home,
             })
         });
         let wsl = wsl.into_iter().map(|w| {
             w.map(|w| Behind {
-                clients: ops::adopted_on_this_machine_wsl(&w),
+                clients: ops::adopted_on_this_machine_wsl(&w, backups),
                 home: w.home.clone(),
                 place: Place::Wsl(w),
             })
@@ -992,7 +993,7 @@ pub(crate) async fn sync_rotated(
 /// —— 这会唤醒它，而用户此刻正要删、换这把密钥。**读不出来就说读不出来**，不当
 /// 成「没接管」：那样删掉的是它配置里正写着的钥匙，换掉的新值也同步不过去。
 pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<Option<Owner>, Msg> {
-    if let Some(client) = ops::adopted_owner(&home_dir(), keys, name) {
+    if let Some(client) = ops::adopted_owner(&home_dir(), &backups(), keys, name) {
         return Ok(Some(Owner {
             client,
             place: Place::Here,
@@ -1019,12 +1020,13 @@ pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<O
     let Ok(c) = ops::find(client, &w.home) else {
         return Ok(None);
     };
-    Ok(tw_adopt::detect::detect_one(&c, &w.home)
-        .adopted_at_ms
-        .map(|_| Owner {
+    // 只算这一份接管着的，和这台电脑上的一样（`ops::adopted_owner`）
+    Ok(
+        ops::ours(&tw_adopt::detect::detect_one(&c, &w.home), &backups()).then_some(Owner {
             client: c,
             place: Place::Wsl(w),
-        }))
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -1123,7 +1125,7 @@ mod tests {
         .unwrap();
         let adopted = read(&settings);
 
-        let found = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w.clone())]);
+        let found = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w.clone())], &b);
         let r = found.retarget(SERVER, &b, issued).await;
         assert!(r.failed.is_empty(), "{:?}", r.failed);
         let names: Vec<_> = r
@@ -1213,7 +1215,7 @@ mod tests {
         let backups_of = || tw_adopt::foreign::backups_of(&b, &real).len();
         let kept = backups_of();
 
-        let found = LeftBehind::of(None, vec![Ok(w.clone())]);
+        let found = LeftBehind::of(None, vec![Ok(w.clone())], &b);
         // 切换确认框里数的也只有还指着本机的那一个
         let a = found.adopted();
         assert_eq!((a.count, a.places.len()), (1, 1));
@@ -1224,7 +1226,7 @@ mod tests {
         assert_eq!(read(&settings), before);
         assert_eq!(backups_of(), kept);
 
-        let again = LeftBehind::of(None, vec![Ok(w)])
+        let again = LeftBehind::of(None, vec![Ok(w)], &b)
             .retarget(SERVER, &b, issued)
             .await;
         assert!(again.synced.is_empty() && again.failed.is_empty());
@@ -1244,7 +1246,7 @@ mod tests {
             &Around::default(),
         )
         .unwrap();
-        let found = || LeftBehind::of(None, vec![Err(unreadable(d.path())), Ok(w.clone())]);
+        let found = || LeftBehind::of(None, vec![Err(unreadable(d.path())), Ok(w.clone())], &b);
 
         // 数不出来的不算进确认框里的数
         let a = found().adopted();
@@ -1300,6 +1302,7 @@ mod tests {
         let r = LeftBehind::of(
             Some(here.path().to_path_buf()),
             vec![Ok(w), Err(unreadable(d.path()))],
+            &b,
         )
         .all_failed(why);
         assert!(r.synced.is_empty());
@@ -1375,7 +1378,7 @@ mod tests {
             &Around::default(),
         )
         .unwrap();
-        let a = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w)]).adopted();
+        let a = LeftBehind::of(Some(here.path().to_path_buf()), vec![Ok(w)], &b).adopted();
         assert_eq!(a.count, 3);
         assert_eq!(a.local_addr.as_deref(), Some("127.0.0.1:8788"));
         let places: Vec<_> = a
@@ -1390,7 +1393,7 @@ mod tests {
         assert_eq!(json["places"][1]["distro"], "Ubuntu");
 
         let (_d, empty) = wsl_home();
-        let a = LeftBehind::of(None, vec![Ok(empty)]).adopted();
+        let a = LeftBehind::of(None, vec![Ok(empty)], &b).adopted();
         assert_eq!((a.count, a.places.len(), a.local_addr), (0, 0, None));
     }
 }

@@ -77,8 +77,11 @@ pub fn unknown(id: &str) -> Msg {
 /// `models` 是要把模型写进配置的客户端（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）和要从中
 /// 挑一个默认模型的（Hermes Agent）此刻从网关问到的模型清单，按客户端 id：拿它和配置里写着的
 /// 比，不一样就提示更新；手动配置的那几项也照它写。问不到的不在里面。
+///
+/// `backups` 是这一份的备份目录：接管着的客户端按它分出是不是这一份接管的（[`ours`]）。
 pub fn list(
     home: &Path,
+    backups: &Path,
     gw: &Gateway,
     models: &BTreeMap<String, Vec<String>>,
 ) -> wire::ClientsResponse {
@@ -103,14 +106,14 @@ pub fn list(
                 ..placeholder.clone()
             };
             let manual = setup_of(c, c.manual_steps(), &gw);
-            // 接管着、而且两边都读得到才比：没接管的没有清单可比，问不到的
+            // 这一份接管着、而且两边都读得到才比：没接管的没有清单可比，问不到的
             // 不知道该是什么
-            let stale = d.adopted_at_ms.is_some()
+            let stale = ours(&d, backups)
                 && matches!(
                     (&d.models, now),
                     (Some(written), Some(now)) if tw_adopt::opencode::models_stale(written, now)
                 );
-            let mut v = detected_view(d, key, last_seen_ms.flatten(), manual, |p| {
+            let mut v = detected_view(d, backups, key, last_seen_ms.flatten(), manual, |p| {
                 p.display().to_string()
             });
             v.models_stale = stale;
@@ -147,13 +150,19 @@ pub fn list(
 
 /// 一个检测结果在界面上的样子。`shown` 决定路径怎么写：这台电脑上原样，WSL
 /// 里的写成 WSL 终端里的样子
+///
+/// **`adopted_at_ms` 只给这一份接管的。**另一个 ThinkWatch Lite 接管的（[`theirs`]）标成
+/// `other_instance`，界面上不给还原、也不给接管 —— 它的备份在那一份的数据目录里，
+/// 从这里动它，那一份的接管记录就对不上了。
 fn detected_view(
     d: detect::Detected,
+    backups: &Path,
     key: Option<String>,
     last_seen_ms: Option<u64>,
     manual: wire::ManualSetup,
     shown: impl Fn(&Path) -> String,
 ) -> wire::DetectedClient {
+    let (mine, other) = (ours(&d, backups), theirs(&d, backups));
     wire::DetectedClient {
         last_seen_ms,
         key,
@@ -164,7 +173,8 @@ fn detected_view(
         real: shown(&d.real),
         installed: d.installed,
         has_config: d.has_config,
-        adopted_at_ms: d.adopted_at_ms,
+        adopted_at_ms: d.adopted_at_ms.filter(|_| mine),
+        other_instance: other,
         endpoint: d.endpoint,
         shadows: d.shadows.iter().map(|p| shown(p)).collect(),
         takes_effect: d.takes_effect.into(),
@@ -187,7 +197,11 @@ fn detected_view(
 ///
 /// 和这台电脑上的一样检测、一样给手动配置的方法，只是 home 是 WSL 里的，密钥是
 /// 为 WSL 里这一份单独发的那把（`tw_adopt::wsl::key_id`）。
-pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedClient> {
+pub fn list_wsl(
+    w: &tw_adopt::wsl::WslHome,
+    backups: &Path,
+    gw: &Gateway,
+) -> Vec<wire::DetectedClient> {
     let placeholder = clients::Gateway {
         base: gw.base.clone(),
         key: Some(String::new()),
@@ -203,6 +217,7 @@ pub fn list_wsl(w: &tw_adopt::wsl::WslHome, gw: &Gateway) -> Vec<wire::DetectedC
             let manual = setup_of(c, c.manual_steps_wsl(w), &placeholder);
             detected_view(
                 d,
+                backups,
                 k.map(|k| k.name.clone()),
                 k.and_then(|k| k.last_seen_ms),
                 manual,
@@ -617,6 +632,7 @@ pub fn adopt(
 ) -> Result<wire::AdoptResponse, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
     let c = find(id, home)?.here(home);
+    not_theirs(&c, home, backups)?;
     let p = plan_for(&c, home, target, around).map_err(|e| e.msg())?;
     still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
@@ -672,6 +688,7 @@ pub fn restore(
     expect: Option<&str>,
 ) -> Result<wire::AdoptResponse, Msg> {
     let c = find(id, home)?.here(home);
+    not_theirs(&c, home, backups)?;
     let p = plan::plan_restore(&c, home).map_err(|e| e.msg())?;
     still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
     let a = plan::apply_restore(&c, &p, backups).map_err(|e| e.msg())?;
@@ -711,11 +728,52 @@ fn findings(f: Vec<detect::Finding>) -> Vec<wire::FindingView> {
         .collect()
 }
 
-/// 此刻接管着的客户端。
-pub fn adopted(home: &Path) -> Vec<Client> {
+/// 这一份接管着它：接管着，而且接管时那份全文备份在这一份的备份目录 `backups` 里
+/// （[`tw_adopt::foreign::is_ours`]）。
+pub fn ours(d: &detect::Detected, backups: &Path) -> bool {
+    d.adopted_at_ms.is_some()
+        && d.backup
+            .as_deref()
+            .is_none_or(|b| tw_adopt::foreign::is_ours(backups, b))
+}
+
+/// 接管着它的是另一个 ThinkWatch Lite（安装版和绿色版各有一份数据目录）。**这一份
+/// 不还原它、也不改它**：备份在那一份那里，接管记录也归那一份管
+pub fn theirs(d: &detect::Detected, backups: &Path) -> bool {
+    d.adopted_at_ms.is_some() && !ours(d, backups)
+}
+
+/// 另一个 ThinkWatch Lite 接管着它时，动它之前说的那一句
+pub fn other_instance(client: &str) -> Msg {
+    msg!(
+        "adopt.other_instance", client = client =>
+        "{client} is connected by another ThinkWatch Lite. Restore it from the ThinkWatch Lite \
+         that connected it."
+    )
+}
+
+/// 动之前先看一眼：另一个 ThinkWatch Lite 接管着的不动
+fn not_theirs(c: &Client, home: &Path, backups: &Path) -> Result<(), Msg> {
+    if theirs(&detect::detect_one(c, home), backups) {
+        return Err(other_instance(c.name));
+    }
+    Ok(())
+}
+
+/// 此刻**这一份**接管着的客户端。
+pub fn adopted(home: &Path, backups: &Path) -> Vec<Client> {
     all(home)
         .into_iter()
-        .filter(|c| detect::detect_one(c, home).adopted_at_ms.is_some())
+        .filter(|c| ours(&detect::detect_one(c, home), backups))
+        .collect()
+}
+
+/// 此刻由另一个 ThinkWatch Lite 接管着的客户端（[`theirs`]）。「全部还原」跳过它们，
+/// 结果里列出来
+pub fn adopted_elsewhere(home: &Path, backups: &Path) -> Vec<Client> {
+    all(home)
+        .into_iter()
+        .filter(|c| theirs(&detect::detect_one(c, home), backups))
         .collect()
 }
 
@@ -724,27 +782,38 @@ pub fn adopted(home: &Path) -> Vec<Client> {
 /// 连着远程 core 时，它们的请求落到一个已经停了的网关上：客户端页把它们单独标出来，
 /// 切换确认里说有几个，「改为指向服务器」改的也正是这几个。指着别处的（已经改过去
 /// 了、或者用户自己指到了别的机器）不在里面。
-pub fn adopted_on_this_machine(home: &Path) -> Vec<(Client, String)> {
-    pointing_here(home, all(home))
+pub fn adopted_on_this_machine(home: &Path, backups: &Path) -> Vec<(Client, String)> {
+    pointing_here(home, backups, all(home))
 }
 
 /// [`adopted_on_this_machine`]，WSL 里的那一份：只看第一批的那几个
 /// （`tw_adopt::wsl::CLIENTS`）。本机时 WSL 里的客户端写的也是 `127.0.0.1`，
 /// 指的是 Windows 上的网关
-pub fn adopted_on_this_machine_wsl(w: &tw_adopt::wsl::WslHome) -> Vec<(Client, String)> {
+pub fn adopted_on_this_machine_wsl(
+    w: &tw_adopt::wsl::WslHome,
+    backups: &Path,
+) -> Vec<(Client, String)> {
     pointing_here(
         &w.home,
+        backups,
         all(&w.home)
             .into_iter()
             .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id)),
     )
 }
 
-fn pointing_here(home: &Path, cs: impl IntoIterator<Item = Client>) -> Vec<(Client, String)> {
+/// 另一个 ThinkWatch Lite 接管的不算：改为指向服务器也不该改它们
+fn pointing_here(
+    home: &Path,
+    backups: &Path,
+    cs: impl IntoIterator<Item = Client>,
+) -> Vec<(Client, String)> {
     cs.into_iter()
         .filter_map(|c| {
             let d = detect::detect_one(&c, home);
-            d.adopted_at_ms?;
+            if !ours(&d, backups) {
+                return None;
+            }
             let endpoint = d.endpoint?;
             is_loopback(&endpoint).then_some((c, endpoint))
         })
@@ -778,11 +847,19 @@ pub fn host_port(endpoint: &str) -> Option<&str> {
 /// 这把密钥是为某个客户端生成的，而那个客户端此刻正被接管着吗。返回那个客户端。
 ///
 /// 接管状态在对方配置旁边的记录里，读它要走文件系统 —— 所以这件事只有这台机器
-/// 答得上来，core 答不上
-pub fn adopted_owner(home: &Path, keys: &[ClientView], key: &str) -> Option<Client> {
+/// 答得上来，core 答不上。
+///
+/// 只算**这一份**接管着的：另一个 ThinkWatch Lite 接管的，配置里写的是那一份的密钥，
+/// 删、换这一份的密钥都碍不着它
+pub fn adopted_owner(
+    home: &Path,
+    backups: &Path,
+    keys: &[ClientView],
+    key: &str,
+) -> Option<Client> {
     let id = keys.iter().find(|k| k.name == key)?.client.as_deref()?;
     let c = find(id, home).ok()?;
-    detect::detect_one(&c, home).adopted_at_ms.map(|_| c)
+    ours(&detect::detect_one(&c, home), backups).then_some(c)
 }
 
 /// 接管着的这个客户端里还写着这把密钥：先还原它，才能删这把密钥。和 core 以前
@@ -810,6 +887,13 @@ pub fn repoint(
     around: &Around,
 ) -> Result<wire::KeySynced, wire::KeySyncFailed> {
     let c = &c.clone().here(home);
+    if let Err(error) = not_theirs(c, home, backups) {
+        return Err(wire::KeySyncFailed {
+            client: c.id.to_string(),
+            name: c.name.to_string(),
+            error,
+        });
+    }
     let target = clients::Gateway {
         base: base.to_string(),
         key: Some(key.to_string()),
@@ -875,6 +959,7 @@ pub(crate) mod tests {
         let home = home_with_claude();
         let r = list(
             home.path(),
+            &backups(&home),
             &gw(vec![key("default", "tw-d", None, true)]),
             &BTreeMap::new(),
         );
@@ -894,6 +979,7 @@ pub(crate) mod tests {
         mine.last_seen_ms = Some(42);
         let r = list(
             home.path(),
+            &backups(&home),
             &gw(vec![key("default", "tw-d", None, true), mine]),
             &BTreeMap::new(),
         );
@@ -911,6 +997,7 @@ pub(crate) mod tests {
         let home = tempfile::tempdir().unwrap();
         let r = list(
             home.path(),
+            &backups(&home),
             &gw(vec![key("default", "tw-d", None, true)]),
             &BTreeMap::new(),
         );
@@ -1208,7 +1295,11 @@ pub(crate) mod tests {
         assert_eq!(a.takes_effect, wire::TakesEffect::Immediately);
         let written = std::fs::read_to_string(&settings).unwrap();
         assert!(written.contains("tw-new") && written.contains("127.0.0.1:8788"));
-        assert!(adopted(home.path()).iter().any(|c| c.id == "claude-code"));
+        assert!(
+            adopted(home.path(), &backups(&home))
+                .iter()
+                .any(|c| c.id == "claude-code")
+        );
 
         let keys = vec![key("claude-code", "tw-new", Some("claude-code"), false)];
         let p = plan_restore(home.path(), "claude-code", &keys).unwrap();
@@ -1227,7 +1318,7 @@ pub(crate) mod tests {
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
         assert_eq!(back, want);
-        assert!(adopted(home.path()).is_empty());
+        assert!(adopted(home.path(), &backups(&home)).is_empty());
     }
 
     /// opencode 的模型清单跟网关对不上了才提示更新；顺序不算，没接管的不提示
@@ -1243,7 +1334,7 @@ pub(crate) mod tests {
             )])
         };
         let stale = |models: &BTreeMap<String, Vec<String>>| {
-            list(home.path(), &gw(keys.clone()), models)
+            list(home.path(), &backups(&home), &gw(keys.clone()), models)
                 .clients
                 .into_iter()
                 .find(|c| c.id == "opencode")
@@ -1270,7 +1361,12 @@ pub(crate) mod tests {
         assert!(!stale(&BTreeMap::new()), "问不到网关就不说");
 
         // 手动配置那一栏照网关此刻答的写
-        let r = list(home.path(), &gw(keys.clone()), &now(&["m1"]));
+        let r = list(
+            home.path(),
+            &backups(&home),
+            &gw(keys.clone()),
+            &now(&["m1"]),
+        );
         let oc = r.clients.iter().find(|c| c.id == "opencode").unwrap();
         assert!(
             oc.manual
@@ -1296,7 +1392,7 @@ pub(crate) mod tests {
                 )])
             };
             let stale = |models: &BTreeMap<String, Vec<String>>| {
-                list(home.path(), &gw(keys.clone()), models)
+                list(home.path(), &backups(&home), &gw(keys.clone()), models)
                     .clients
                     .into_iter()
                     .find(|c| c.id == id)
@@ -1357,7 +1453,7 @@ pub(crate) mod tests {
             key("default", "tw-d", None, true),
             key("claude-code", "tw-c", Some("claude-code"), false),
         ];
-        assert!(adopted_owner(home.path(), &keys, "claude-code").is_none());
+        assert!(adopted_owner(home.path(), &backups(&home), &keys, "claude-code").is_none());
         adopt(
             home.path(),
             &backups(&home),
@@ -1367,10 +1463,10 @@ pub(crate) mod tests {
             &Around::default(),
         )
         .unwrap();
-        let owner = adopted_owner(home.path(), &keys, "claude-code").unwrap();
+        let owner = adopted_owner(home.path(), &backups(&home), &keys, "claude-code").unwrap();
         assert_eq!(owner.id, "claude-code");
         assert_eq!(key_used_by(owner.name).code, "control.key_used_by_client");
-        assert!(adopted_owner(home.path(), &keys, "default").is_none());
+        assert!(adopted_owner(home.path(), &backups(&home), &keys, "default").is_none());
     }
 
     #[test]
@@ -1420,7 +1516,7 @@ pub(crate) mod tests {
             &Around::default(),
         )
         .unwrap();
-        let here: Vec<_> = adopted_on_this_machine(home.path())
+        let here: Vec<_> = adopted_on_this_machine(home.path(), &backups(&home))
             .into_iter()
             .map(|(c, e)| (c.id, e))
             .collect();
@@ -1459,7 +1555,8 @@ pub(crate) mod tests {
     /// 这一份发的那把，不是这台电脑上同一个客户端的那把
     #[test]
     fn a_wsl_distro_lists_its_own_copies_with_their_own_keys() {
-        let (_d, w) = wsl_home();
+        let (d, w) = wsl_home();
+        let b = d.path().join("backups");
         let mut mine = key(
             "claude-code-wsl-ubuntu",
             "tw-w",
@@ -1475,7 +1572,7 @@ pub(crate) mod tests {
                 mine,
             ],
         };
-        let r = list_wsl(&w, &gw);
+        let r = list_wsl(&w, &b, &gw);
         let ids: Vec<_> = r.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(ids, ["claude-code", "codex"]);
         let cc = &r[0];
@@ -1535,6 +1632,7 @@ pub(crate) mod tests {
         .unwrap();
         let listed = list_wsl(
             &w,
+            &b,
             &Gateway {
                 base: "http://127.0.0.1:8788".into(),
                 keys: Vec::new(),
@@ -1552,7 +1650,7 @@ pub(crate) mod tests {
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         let want: serde_json::Value = serde_json::from_str(original).unwrap();
         assert_eq!(back, want);
-        assert!(adopted(&w.home).is_empty());
+        assert!(adopted(&w.home, &b).is_empty());
     }
 
     /// 按 NAT 的做法接管过的（指着 WSL 虚拟网卡的地址）不迁移：列出来的就是它
@@ -1574,14 +1672,14 @@ pub(crate) mod tests {
             base: "http://127.0.0.1:8788".into(),
             keys: Vec::new(),
         };
-        let cc = list_wsl(&w, &gw)
+        let cc = list_wsl(&w, &b, &gw)
             .into_iter()
             .find(|c| c.id == "claude-code")
             .unwrap();
         assert!(cc.adopted_at_ms.is_some());
         assert_eq!(cc.endpoint.as_deref(), Some("http://172.27.96.1:8788"));
         restore(&w.home, &b, "claude-code", None).unwrap();
-        assert!(adopted(&w.home).is_empty());
+        assert!(adopted(&w.home, &b).is_empty());
     }
 
     /// 换了密钥之后重新指一次：新值写进它的配置
@@ -1710,7 +1808,7 @@ pub(crate) mod tests {
         let e = adopt_now(&shown.digest).unwrap_err();
         assert_eq!(e.code, "adopt.plan.stale");
         assert_eq!(std::fs::read_to_string(&settings).unwrap(), changed);
-        assert!(adopted(home.path()).is_empty());
+        assert!(adopted(home.path(), &backups(&home)).is_empty());
 
         // 重新算一份给人看，照那一份就写得进去
         let again = plan_adopt(
@@ -1723,7 +1821,7 @@ pub(crate) mod tests {
         .unwrap();
         assert_ne!(again.digest, shown.digest);
         adopt_now(&again.digest).unwrap();
-        assert_eq!(adopted(home.path()).len(), 1);
+        assert_eq!(adopted(home.path(), &backups(&home)).len(), 1);
 
         // 还原也一样
         let shown = plan_restore(home.path(), "claude-code", &[]).unwrap();
@@ -1748,6 +1846,6 @@ pub(crate) mod tests {
             Some(&again.digest),
         )
         .unwrap();
-        assert!(adopted(home.path()).is_empty());
+        assert!(adopted(home.path(), &backups(&home)).is_empty());
     }
 }

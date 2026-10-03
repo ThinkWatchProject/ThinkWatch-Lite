@@ -34,6 +34,8 @@ export function isStalePlan(e: unknown): boolean {
 export interface RestoreOutcome {
   client: string;
   ok: boolean;
+  /** 由另一个 ThinkWatch Lite 接管，没动它（不算失败） */
+  skipped: boolean;
   detail: string;
 }
 
