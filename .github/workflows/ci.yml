@@ -18,6 +18,13 @@ on:
   pull_request:
     branches: [main, dev]
 
+# **同一个分支、同一个 PR 上新的一次推送，把还在跑的旧一次取消掉。**结果只看最新的那次，
+# 旧的跑完也没人看，只会占着并发名额（免费组织同时最多 20 个任务、其中 5 个 macOS）。
+# main 和 dev 上的不取消：那里每一笔都要有自己的结果。
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 env:
   CARGO_TERM_COLOR: always
 
