@@ -3,7 +3,8 @@
 
 应用去问「有没有新版本」时读的就是这一份清单，下载的是它指向的那个文件
 —— 和网页上给人下载的是同一个：macOS 上是 DMG（应用怎么从 DMG 更新自己，
-见 `src-tauri/src/dmg.rs`），Windows 上是 NSIS 安装程序，更新器直接跑它；
+见 `src-tauri/src/dmg.rs`），Windows 上安装版是 NSIS 安装程序，更新器直接跑它，
+绿色版是 zip，应用自己换掉文件夹里的两个 exe（见 `src-tauri/src/portable.rs`）；
 Linux 上只发 AppImage，它原地换掉自己（见 `src-tauri/src/update.rs`）；
 `scripts/install.sh` 也从这一份里找本架构的 AppImage。
 
@@ -33,12 +34,22 @@ REPO = "ThinkWatchProject/ThinkWatch-Lite"
 # 到 `<系统>-<架构>`（插件的 `get_urls`）；安装方式来自打包时写进二进制的标记。
 # **只给带 `-appimage` 的那个。**AppImage 第一下就找到它；不带后缀的键是所有
 # 构建的退路，给了它，一个自己打出来的 deb 或 rpm 也会被递上 AppImage 的字节。
+#
+# Windows 的绿色版**自己点名要 `-portable` 那个键**（`portable::updater_target`）：
+# 它的 exe 就是安装程序里的那一个，打包标记是 NSIS，按标记找会找到安装程序。安装版
+# 照旧找 `windows-<架构>-nsis`、再退到 `windows-<架构>` —— 已经装着的旧版本也是这样
+# 找的，新加的两个键它们看不见，文件改名也不影响它们：地址只从这一份清单里读。
+#
+# 每个键指向的文件**以什么结尾**也定死：键和文件对错了（x64 的键指着 arm64 的包、
+# 绿色版的键指着安装程序），装下去就是一个起不来的应用。
 PLATFORMS = {
-    "darwin-aarch64",
-    "windows-x86_64",
-    "windows-aarch64",
-    "linux-x86_64-appimage",
-    "linux-aarch64-appimage",
+    "darwin-aarch64": "-darwin-arm64.dmg",
+    "windows-x86_64": "-windows-x64-setup.exe",
+    "windows-aarch64": "-windows-arm64-setup.exe",
+    "windows-x86_64-portable": "-windows-x64-portable.zip",
+    "windows-aarch64-portable": "-windows-arm64-portable.zip",
+    "linux-x86_64-appimage": "-linux-x86_64.AppImage",
+    "linux-aarch64-appimage": "-linux-aarch64.AppImage",
 }
 
 
@@ -93,13 +104,13 @@ def main() -> None:
             sys.exit(f"不认识的平台或写法：{pair}（要的是 <平台>=<文件>，平台是 {sorted(PLATFORMS)} 之一）")
         if platform in platforms:
             sys.exit(f"{platform} 给了两次")
-        # AppImage 会被原地换成这个文件：换成别的东西就再也起不来了
-        if platform.endswith("-appimage") and not file.endswith(".AppImage"):
-            sys.exit(f"{platform} 要的是 .AppImage，给的是 {file}")
+        # AppImage、绿色版的 exe 会被原地换成这个文件里的东西：换成别的就再也起不来了
+        if not file.endswith(PLATFORMS[platform]):
+            sys.exit(f"{platform} 要的是 …{PLATFORMS[platform]}，给的是 {file}")
         platforms[platform] = entry(pathlib.Path(file), version, want)
     # **少一个平台就不发。**缺掉的那个平台上，已经装好的每一份都会停在旧版本，
     # 而发布页上看起来一切正常
-    missing = PLATFORMS - platforms.keys()
+    missing = PLATFORMS.keys() - platforms.keys()
     if missing:
         sys.exit(f"这一版缺了这些平台：{sorted(missing)}")
 
@@ -118,7 +129,7 @@ def main() -> None:
     out = pathlib.Path(pairs[0].partition("=")[2]).parent / "latest.json"
     out.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     for p, e in sorted(platforms.items()):
-        print(f"{p:23} {e['url'].rsplit('/', 1)[1]}")
+        print(f"{p:25} {e['url'].rsplit('/', 1)[1]}")
     print(f"签名密钥 {want.hex()}，和应用里的公钥是同一把")
 
 
