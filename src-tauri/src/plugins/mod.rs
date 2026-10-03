@@ -15,12 +15,10 @@
 //! 3. 用户点了确认，才把**给人看过的那同一份**交给 core。
 //!
 //! 用户在对话框里取消不是失败：回执是 `cancelled`，网页那边什么都不用报，界面照原样。
-//!
-//! 端点和类型暂时是手写的（`wire`，PROVISIONAL）：钉着的 core 还没有它们。
 
 use std::collections::BTreeMap;
 
-use tw_api::{Permission, SettingValue, ep};
+use tw_api::{ManifestView, Permission, PluginInspection, PluginView, SettingValue, ep};
 
 use crate::AppState;
 use crate::control::ControlClient;
@@ -29,10 +27,8 @@ use crate::wire::{PluginApproveRequest, PluginInstallRequest, PluginSaveRequest,
 
 mod confirm;
 pub mod defaults;
-pub mod wire;
 pub mod words;
 
-use wire::{Inspection, Installed, Manifest};
 use words::{Change, ScopePart};
 
 /// 插件文件的上限，和 core 一样
@@ -59,9 +55,9 @@ pub async fn plugin_install_confirmed(
         return Ok(PluginWrite::Cancelled);
     }
     let w = c
-        .call::<wire::CreatePluginConfirmed>(
+        .call::<ep::CreatePluginConfirmed>(
             &[],
-            &wire::PluginCreate {
+            &tw_api::PluginCreate {
                 source: req.source,
                 id: req.id,
                 enabled: req.enabled,
@@ -132,9 +128,9 @@ pub async fn plugin_save_confirmed(
         return Ok(PluginWrite::Cancelled);
     }
     let w = c
-        .call::<wire::SavePluginConfirmed>(
+        .call::<ep::SavePluginConfirmed>(
             &[&req.id],
-            &wire::PluginSave {
+            &tw_api::PluginSave {
                 source: req.source,
                 enabled: req.enabled,
                 base_version: req.base_version,
@@ -184,7 +180,7 @@ pub async fn plugin_approve_confirmed(
         return Ok(PluginWrite::Cancelled);
     }
     let w = c
-        .call::<wire::ApprovePluginFileConfirmed>(
+        .call::<ep::ApprovePluginFileConfirmed>(
             &[&req.id],
             &tw_api::PluginApprove {
                 sha256: sha,
@@ -199,7 +195,7 @@ pub async fn plugin_approve_confirmed(
 /// 两份 manifest 的数据改了什么，按确认框里的先后：设置（按声明的顺序）、适用范围（每一项
 /// 单独说）、出错时怎么办。设置的标签按新代码里写的（默认插件按界面语言）；范围不看顺序、
 /// 空白和重复
-fn data_changes(id: &str, old: &Manifest, new: &Manifest) -> Vec<Change> {
+fn data_changes(id: &str, old: &ManifestView, new: &ManifestView) -> Vec<Change> {
     let mut out = Vec::new();
     let was: BTreeMap<&str, &SettingValue> = old
         .settings_schema
@@ -248,7 +244,7 @@ fn norm(list: &[String]) -> Vec<String> {
 
 /// core 读过一遍的代码：manifest 和 SHA-256（都是 core 读出来的，不是网页说的）
 struct Read {
-    manifest: Manifest,
+    manifest: ManifestView,
     sha256: String,
 }
 
@@ -261,8 +257,8 @@ async fn inspect(c: &ControlClient, source: &str) -> Out<Read> {
             "The plugin file is over the 1 MB limit."
         )));
     }
-    let raw = c
-        .call::<wire::PluginInspect>(
+    let i: PluginInspection = c
+        .call::<ep::PluginInspect>(
             &[],
             &tw_api::PluginSource {
                 source: source.to_string(),
@@ -270,7 +266,6 @@ async fn inspect(c: &ControlClient, source: &str) -> Out<Read> {
         )
         .await
         .map_err(text)?;
-    let i: Inspection = serde_json::from_value(raw).map_err(|e| CmdError::plain(e.to_string()))?;
     if let Some(e) = i.error {
         // core 的那一句带着码（语法错还带行列），界面照码说
         return Err(e.message.into());
@@ -288,7 +283,7 @@ async fn inspect(c: &ControlClient, source: &str) -> Out<Read> {
 }
 
 /// 确认过的那一份代码：底稿，或者没被改过的插件文件（哈希和配置里确认的一样）。都没有是 `None`
-async fn approved_code(c: &ControlClient, p: &Installed) -> Option<String> {
+async fn approved_code(c: &ControlClient, p: &PluginView) -> Option<String> {
     let src = c.call::<ep::PluginSourceDiff>(&[&p.id], &()).await.ok()?;
     if !src.approved.is_empty() && src.approved_sha256 == p.sha256 {
         Some(src.approved)
@@ -299,9 +294,9 @@ async fn approved_code(c: &ControlClient, p: &Installed) -> Option<String> {
     }
 }
 
-/// 按这份 manifest 里的值改写一段代码。没成是 `None`
-async fn rewrite(c: &ControlClient, source: &str, m: &Manifest) -> Option<String> {
-    let req = wire::PluginRewriteRequest {
+/// 按这份 manifest 里的值改写一段代码（每一个设置项都给）。没成是 `None`
+async fn rewrite(c: &ControlClient, source: &str, m: &ManifestView) -> Option<String> {
+    let req = tw_api::PluginRewriteRequest {
         source: source.to_string(),
         on_error: m.on_error,
         scope: m.scope.clone(),
@@ -311,17 +306,15 @@ async fn rewrite(c: &ControlClient, source: &str, m: &Manifest) -> Option<String
             .map(|s| (s.key.clone(), s.value.clone()))
             .collect(),
     };
-    c.call::<wire::PluginRewrite>(&[], &req)
+    c.call::<ep::PluginRewrite>(&[], &req)
         .await
         .ok()
         .map(|r| r.source)
 }
 
 /// 装着的那一个插件现在的样子（core 说的）
-async fn installed(c: &ControlClient, id: &str) -> Out<Installed> {
-    let raw = c.call::<wire::Plugins>(&[], &()).await.map_err(text)?;
-    let all: Vec<Installed> =
-        serde_json::from_value(raw).map_err(|e| CmdError::plain(e.to_string()))?;
+async fn installed(c: &ControlClient, id: &str) -> Out<PluginView> {
+    let all = c.call::<ep::Plugins>(&[], &()).await.map_err(text)?;
     all.into_iter().find(|p| p.id == id).ok_or_else(|| {
         CmdError::plain(tr!(
             format!("插件「{id}」不存在，可能已被删除。"),
@@ -331,13 +324,13 @@ async fn installed(c: &ControlClient, id: &str) -> Out<Installed> {
 }
 
 /// 装着的插件在确认框里叫什么：默认插件按界面语言说（和插件页上一样），别的照它自己写的
-fn shown_name(p: &Installed) -> String {
+fn shown_name(p: &PluginView) -> String {
     defaults::name(Some(&p.id), &p.name)
 }
 
 /// 装着的那一版申请的权限。读不出来（core 那边没有它的 manifest）是 `None`：不知道哪一项
 /// 是新的，就不标「新增」
-fn known(p: &Installed) -> Option<&[Permission]> {
+fn known(p: &PluginView) -> Option<&[Permission]> {
     (!p.permissions.is_empty()).then_some(p.permissions.as_slice())
 }
 
@@ -361,8 +354,9 @@ fn changed_meanwhile() -> CmdError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tw_api::{OnError, PluginScope, RequestKind, SettingKind};
-    use wire::SettingSpec;
+    use tw_api::{
+        OnError, PluginHooks, PluginScope, ReplyMode, RequestKind, SettingKind, SettingSpecView,
+    };
 
     #[test]
     fn the_receipt_says_done_or_cancelled() {
@@ -395,14 +389,20 @@ mod tests {
         );
     }
 
-    fn manifest() -> Manifest {
-        Manifest {
+    fn manifest() -> ManifestView {
+        ManifestView {
             name: "Answer in a chosen language".into(),
+            description: None,
             permissions: vec![Permission::System],
             requests: vec![RequestKind::Conversation],
             scope: PluginScope::default(),
             on_error: OnError::Reject,
-            settings_schema: vec![SettingSpec {
+            reply_mode: ReplyMode::Block,
+            hooks: PluginHooks {
+                request: true,
+                ..PluginHooks::default()
+            },
+            settings_schema: vec![SettingSpecView {
                 key: "language".into(),
                 kind: SettingKind::String,
                 label: "Answer language".into(),
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn data_changes_name_each_setting_scope_part_and_on_error() {
         crate::i18n::with_lang(crate::i18n::Lang::Zh, || {
-            let old = Manifest {
+            let old = ManifestView {
                 scope: PluginScope {
                     models: vec!["b*".into(), "a*".into()],
                     ..PluginScope::default()
@@ -457,7 +457,7 @@ mod tests {
     fn a_new_setting_is_part_of_the_code_change() {
         let old = manifest();
         let mut new = manifest();
-        new.settings_schema.push(SettingSpec {
+        new.settings_schema.push(SettingSpecView {
             key: "tone".into(),
             kind: SettingKind::String,
             label: "Tone".into(),

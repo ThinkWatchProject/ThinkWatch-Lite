@@ -13,9 +13,7 @@
  * 失败时抛出的是一条 `Msg` 形状的对象，交给 `errorText`。
  */
 import { invoke } from "@tauri-apps/api/core";
-// 临时：插件的文件即真相（约定附录 4）之后的端点，core v0.59.0 发版后改回从 `./generated/tw-api` 取
-// （`EndpointTable` 换回 `typeof ENDPOINTS`），步骤见 `./plugins/api.provisional.ts`
-import type { EndpointTable, Endpoints } from "./plugins/api.provisional";
+import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
 
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
@@ -116,7 +114,7 @@ export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];
 type Values<T> = T extends readonly [unknown, ...infer Rest] ? [string | number, ...Values<Rest>] : [];
 
 /** 这个端点的路径参数，按模板里的顺序 */
-type Params<N extends WebviewEndpoint> = Values<EndpointTable[N]["params"]>;
+type Params<N extends WebviewEndpoint> = Values<(typeof ENDPOINTS)[N]["params"]>;
 
 export function call<N extends WebviewEndpoint>(
   endpoint: N,

@@ -30,10 +30,10 @@ use crate::control::ControlClient;
 use crate::error::{CmdError, Out};
 
 macro_rules! webview_endpoints {
-    (core: [$($name:ident),* $(,)?], provisional: [$($p:ident),* $(,)?] $(,)?) => {
+    ($($name:ident),* $(,)?) => {
         /// 界面能直接调的端点，按名字。和 `src/control.ts` 的
         /// `WEBVIEW_ENDPOINTS` 是同一份（测试核对）。
-        pub const ALLOWED: &[&str] = &[$(stringify!($name),)* $(stringify!($p),)*];
+        pub const ALLOWED: &[&str] = &[$(stringify!($name)),*];
 
         /// 调一个控制面端点。`params` 按顺序填路径参数，`req` 是请求（没有就是
         /// `null`）。
@@ -47,7 +47,6 @@ macro_rules! webview_endpoints {
             let params: Vec<&str> = params.iter().map(String::as_str).collect();
             match endpoint.as_str() {
                 $(stringify!($name) => relay::<ep::$name>(&state.control, &params, req).await,)*
-                $(stringify!($p) => relay::<crate::plugins::wire::$p>(&state.control, &params, req).await,)*
                 _ => Err(CmdError::plain(format!(
                     "The interface cannot call the control-plane endpoint `{endpoint}`."
                 ))),
@@ -56,8 +55,7 @@ macro_rules! webview_endpoints {
     };
 }
 
-webview_endpoints! {
-    core: [
+webview_endpoints![
     // 进程与概览
     Interfaces,
     Overview,
@@ -141,23 +139,18 @@ webview_endpoints! {
     UseChatgptReset,
     ZaiLoginStatus,
     // 插件。要点头的三步（`…Confirmed`）走 Rust 这边的命令，见下面的测试
+    Plugins,
+    PluginInspect,
+    PluginRewrite,
+    CreatePlugin,
+    SavePlugin,
     ApprovePluginFile,
     PluginSourceDiff,
     DeletePlugin,
     ReorderPlugins,
     TrialPlugin,
     PluginLogs,
-    ],
-    // PROVISIONAL：core v0.59.0 才有（或者形状变了）的插件端点，描述在 `plugins/wire.rs`，
-    // 接上正式版时并进上面那一组
-    provisional: [
-    Plugins,
-    PluginInspect,
-    PluginRewrite,
-    CreatePlugin,
-    SavePlugin,
-    ],
-}
+];
 
 /// 请求按这个端点的类型读一遍再发：**界面发来的形状不对，在这里就停下**，
 /// 不把一个 core 读不了的请求送过去。
@@ -219,12 +212,9 @@ mod tests {
         ] {
             assert!(!ALLOWED.contains(&name), "{name}");
             assert!(!ts.contains(&format!("\"{name}\"")), "{name}");
-            // 它确实是一个端点（不是拼错了名字才「不在清单里」）。PROVISIONAL：接上 core
-            // v0.59.0 之后改成查 `ep::ALL`
+            // 它确实是 core 的一个端点（不是拼错了名字才「不在清单里」）
             assert!(
-                crate::plugins::wire::ALL
-                    .iter()
-                    .any(|(n, _, p)| *n == name && *p == path),
+                ep::ALL.iter().any(|e| e.name == name && e.path == path),
                 "{name}"
             );
         }
