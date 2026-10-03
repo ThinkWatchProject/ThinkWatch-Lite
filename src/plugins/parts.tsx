@@ -8,14 +8,24 @@ import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { appLabel } from "@/labels";
 import { when } from "@/format";
-import type { Permission, PluginOutcome, PluginScope, PluginStats, PluginStatus, ReplyMode, RequestKind } from "@/types";
+import type {
+  Permission,
+  PluginLoadError,
+  PluginOutcome,
+  PluginScope,
+  PluginStats,
+  PluginStatus,
+  ReplyMode,
+  RequestKind,
+} from "@/types";
+import type { CodeError } from "./CodeView";
 import { hunks, lineDiff, tally } from "./diff";
 import { pluginLabelsText, pluginStatsText } from "./labels.i18n";
 import { cpuMs, extraKinds, PERMISSIONS, splitInvisible, SCOPE_PARTS } from "./model";
 import { pluginPartsText } from "./parts.i18n";
 
 /** 代码框按需加载：CodeMirror 只在这几个对话框里用（见 `CodeView`） */
-const CodeView = lazy(() => import("./CodeView"));
+export const CodeView = lazy(() => import("./CodeView"));
 
 /**
  * 插件自己写的字：名字、说明、设置项的标签、日志、报错（I11）。
@@ -103,18 +113,36 @@ export function PermissionChip({ p }: { p: Permission }) {
   );
 }
 
-export function PermissionChips({ permissions }: { permissions: readonly Permission[] }) {
+/**
+ * 一排权限标签。`previous` 给了的话，这一版**新增**的那几项后面跟一个「新增」（编辑器里改了
+ * 代码、多要了一项权限时，保存之前就看得见）
+ */
+export function PermissionChips({
+  permissions,
+  previous,
+}: {
+  permissions: readonly Permission[];
+  previous?: readonly Permission[];
+}) {
+  const t = useText(pluginLabelsText);
   return (
     <span className="flex flex-wrap items-center gap-1">
       {ordered(permissions).map((p) => (
-        <PermissionChip key={p} p={p} />
+        <span key={p} className="inline-flex items-center gap-1">
+          <PermissionChip p={p} />
+          {previous && !previous.includes(p) && (
+            <Badge variant="warning" className="h-[18px] rounded-[5px] px-1.5 font-normal">
+              {t.added}
+            </Badge>
+          )}
+        </span>
       ))}
     </span>
   );
 }
 
 /**
- * 申请的每一项权限：能做什么，和要留意的后果。安装、更换代码、确认文件变更时给人看。
+ * 申请的每一项权限：能做什么，和要留意的后果。安装、确认文件变更时给人看。
  *
  * `previous`：原来那一版申请的。这一版**新增**的标出来，不再申请的列在最后、灰着 ——
  * 一次文件变更里多要了一项权限，正是确认之前最该看见的事。
@@ -226,8 +254,9 @@ export function ScopeSummary({ scope }: { scope: PluginScope }) {
 
 /**
  * 运行统计的一格：运行几次、改写几次，出错的标红。悬停是全部的数（core 启动以来）。
+ * `pluginId`：是哪个插件的（最近一次出错的那一句里有插件名，见 `coreText`）
  */
-export function StatsCell({ stats }: { stats: PluginStats }) {
+export function StatsCell({ stats, pluginId }: { stats: PluginStats; pluginId: string }) {
   const t = useText(pluginStatsText);
   const lt = useText(pluginLabelsText);
   if (stats.calls === 0) return <span className="text-muted-foreground">{t.noRuns}</span>;
@@ -254,7 +283,7 @@ export function StatsCell({ stats }: { stats: PluginStats }) {
             {t.lines.lastError} · {when(stats.last_error.at_ms)}
           </span>
           {/* core 的那一句按码说，里面嵌着的插件写的字照样只是字 */}
-          <PluginText text={coreText(stats.last_error.message)} className="break-words text-muted-foreground" />
+          <PluginText text={coreText(stats.last_error.message, pluginId)} className="break-words text-muted-foreground" />
         </span>
       )}
     </span>
@@ -270,23 +299,32 @@ export function StatsCell({ stats }: { stats: PluginStats }) {
   );
 }
 
-/** 代码框：边框先画出来，编辑器加载完填进去，版面不跳 */
-export function CodeBox({ code, errorAt, maxHeight }: { code: string; errorAt?: number | null; maxHeight?: number }) {
+/** 代码框（只读）：边框先画出来，编辑器加载完填进去，版面不跳 */
+export function CodeBox({ code, error, maxHeight }: { code: string; error?: CodeError | null; maxHeight?: number }) {
   const t = useText(pluginPartsText);
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface/40">
-      <Suspense
-        fallback={
-          <div className="flex h-24 items-center justify-center gap-2 tw-label text-muted-foreground">
-            <Spinner className="size-3.5" aria-hidden />
-            {t.loadingCode}
-          </div>
-        }
-      >
-        <CodeView code={code} errorAt={errorAt} maxHeight={maxHeight} />
+      <Suspense fallback={<CodeLoading label={t.loadingCode} />}>
+        <CodeView code={code} error={error} maxHeight={maxHeight} label={t.codeLabel} />
       </Suspense>
     </div>
   );
+}
+
+/** 编辑器还没加载完时那一块 */
+export function CodeLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-24 items-center justify-center gap-2 tw-label text-muted-foreground">
+      <Spinner className="size-3.5" aria-hidden />
+      {label}
+    </div>
+  );
+}
+
+/** core 说的读不了的原因，换成代码框里标位置的那一份。没有行号的标不出来，是 `null` */
+export function codeErrorOf(e: PluginLoadError | null | undefined): CodeError | null {
+  if (!e || e.line == null) return null;
+  return { line: e.line, column: e.column ?? null, message: coreText(e.message) };
 }
 
 /**

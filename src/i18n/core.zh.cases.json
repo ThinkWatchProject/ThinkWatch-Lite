@@ -260,5 +260,46 @@
       "text": "Plugin `统一用词` was not started for this answer: the limit of 8 plugins running on answers at the same time was reached."
     },
     "zh": "插件「统一用词」未处理此回答：同时处理回答的插件已达上限（8 个）。"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.rejected",
+      "args": {
+        "plugin": "Convert WSL and Windows paths",
+        "reason": "the path is outside the workspace"
+      },
+      "text": "Plugin `Convert WSL and Windows paths` refused this request: the path is outside the workspace"
+    },
+    "zh": "插件「WSL 路径转换」拒绝了此请求：the path is outside the workspace"
+  },
+  {
+    "msg": {
+      "code": "control.plugin.needs_confirmation",
+      "args": {
+        "plugin": "Answer in a chosen language"
+      },
+      "text": "Plugin `Answer in a chosen language` can change the tool calls in replies, so installing it, turning it on, changing its code or approving a change to its file has to be confirmed in the app."
+    },
+    "zh": "插件「指定回答语言」可以修改回答中的工具调用，因此安装、启用此插件，修改其代码或确认其文件的更改，都需要在应用中确认。"
+  },
+  {
+    "msg": {
+      "code": "gw.plugin.file_changed",
+      "args": {
+        "plugin": "convert wsl and windows paths"
+      },
+      "text": "The file of plugin `convert wsl and windows paths` changed on disk, so it no longer runs. Review the change and approve it in the app."
+    },
+    "zh": "插件「convert wsl and windows paths」的文件已更改，此插件不再运行。请在应用中审核并确认更改。"
+  },
+  {
+    "msg": {
+      "code": "control.plugin.not_found",
+      "args": {
+        "plugin": "wsl-paths"
+      },
+      "text": "There is no plugin `wsl-paths`."
+    },
+    "zh": "插件「wsl-paths」不存在。"
   }
 ]

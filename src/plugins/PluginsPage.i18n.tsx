@@ -26,14 +26,14 @@ export const pluginsPageText = messages(
     logs: "日志",
     remove: "删除",
     review: "审核更改",
-    replace: "更换代码",
+    editCode: "编辑代码",
     // 同一份操作在右键菜单里：打开对话框的带「…」
     menu: {
       settings: "设置…",
+      code: "代码…",
       trial: "试运行…",
       logs: "日志…",
       review: "审核更改…",
-      replace: "更换代码…",
       remove: "删除…",
     },
     actionsFor: (name: string) => `「${name}」的操作`,
@@ -53,9 +53,10 @@ export const pluginsPageText = messages(
     deleteDescription: "插件和它的设置将从配置中删除，此后不再运行。",
 
     reorderTitle: "调整顺序",
-    reorderDescription: "插件按此顺序依次运行，后一个插件处理的是前一个改写后的内容。",
+    reorderDescription: "插件按此顺序依次运行，后一个插件处理的是前一个改写后的内容。拖动或用箭头调整位置。",
     moveUp: (name: string) => `上移「${name}」`,
     moveDown: (name: string) => `下移「${name}」`,
+    dragPlugin: (name: string) => `拖动调整「${name}」的位置`,
   },
   {
     pluginsUnit: (n: number) => (n === 1 ? "plugin" : "plugins"),
@@ -80,13 +81,13 @@ export const pluginsPageText = messages(
     logs: "Logs",
     remove: "Delete",
     review: "Review changes",
-    replace: "Replace code",
+    editCode: "Edit code",
     menu: {
       settings: "Settings…",
+      code: "Code…",
       trial: "Trial run…",
       logs: "Logs…",
       review: "Review changes…",
-      replace: "Replace code…",
       remove: "Delete…",
     },
     actionsFor: (name: string) => `Actions for “${name}”`,
@@ -105,9 +106,11 @@ export const pluginsPageText = messages(
     deleteDescription: "The plugin and its settings are removed from the configuration and it no longer runs.",
 
     reorderTitle: "Reorder",
-    reorderDescription: "Plugins run in this order. Each plugin works on what the one before it produced.",
+    reorderDescription:
+      "Plugins run in this order. Each plugin works on what the one before it produced. Drag a plugin or use the arrows to move it.",
     moveUp: (name: string) => `Move “${name}” up`,
     moveDown: (name: string) => `Move “${name}” down`,
+    dragPlugin: (name: string) => `Drag to reorder “${name}”`,
   },
 );
 

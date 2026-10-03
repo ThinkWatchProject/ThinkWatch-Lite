@@ -51,7 +51,7 @@ export function TrialDialog({ plugin, onClose }: { plugin: PluginView; onClose: 
       const r = await call("TrialPlugin", { request_id: selected }, plugin.id);
       setResult({ id: selected, r });
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, plugin.id));
     } finally {
       setRunning(false);
     }
@@ -98,7 +98,7 @@ export function TrialDialog({ plugin, onClose }: { plugin: PluginView; onClose: 
 
           <DialogError error={error} />
 
-          {result && <Result key={result.id} r={result.r} />}
+          {result && <Result key={result.id} r={result.r} pluginId={plugin.id} />}
         </div>
 
         <DialogFooter>
@@ -120,7 +120,7 @@ function pick(rows: HistoryRow[], plugin: PluginView): { rows: HistoryRow[]; out
 }
 
 /** 一次试运行的结果：两头的改动、报错，和日志 */
-function Result({ r }: { r: PluginTrialResult }) {
+function Result({ r, pluginId }: { r: PluginTrialResult; pluginId: string }) {
   const t = useText(trialDialogText);
   const sides = (["request", "reply"] as const).filter((s) => r[s] != null);
   // 先看改了的那一头：两头都跑了、只有回答被改写时，落在「请求」上看到的是「未改动」
@@ -143,7 +143,7 @@ function Result({ r }: { r: PluginTrialResult }) {
       {r.error && (
         <Banner layout="inline" tone="error" title={t.failed}>
           <p className="break-words select-text">
-            <PluginText text={coreText(r.error)} />
+            <PluginText text={coreText(r.error, pluginId)} />
           </p>
         </Banner>
       )}

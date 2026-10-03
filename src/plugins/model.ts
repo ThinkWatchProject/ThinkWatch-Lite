@@ -2,7 +2,7 @@
  * 插件页的纯逻辑：权限分成请求和回答两头、处理哪几种请求、适用范围的通配、插件 ID、要不要
  * 在系统的确认框里点头、文本里看不见的字符。没有界面，测试在 `model.test.ts`。
  */
-import type { HistoryRow, Permission, PluginScope, PluginUpdate, PluginView, RequestKind, SettingValue } from "@/types";
+import type { HistoryRow, ManifestView, Permission, PluginScope, PluginView, RequestKind } from "@/types";
 
 /** 插件申请的权限。**这张表的顺序就是界面上列权限的顺序**（和 core 的 `Permission::ALL` 一样） */
 export const PERMISSIONS: readonly Permission[] = [
@@ -41,37 +41,51 @@ export function extraKinds(kinds: readonly RequestKind[]): { extra: RequestKind[
 export const manifestUnknown = (p: Pick<PluginView, "permissions">) => p.permissions.length === 0;
 
 /**
- * 改它要不要在系统的确认框里点头：权限里有 `reply_tool_calls`（改得了客户端要执行的命令），
- * 或者读不出权限（core 按改得了算）。这样的插件，打开它、改设置、改范围都只能经过
- * `plugin_update_confirmed`；停用、改出错时怎么办照常（core 那边同一条规矩）
+ * 改得了回答里的工具调用：权限里有 `reply_tool_calls`（改得了客户端要执行的命令），或者
+ * **读不出权限**（空的、不知道 —— core 按改得了算）。
  */
-export const guarded = (p: Pick<PluginView, "permissions">) =>
-  p.permissions.length === 0 || p.permissions.includes("reply_tool_calls");
-
-/** 范围的一张名单比较之前：去掉两头的空白，排好、去重（和 core 比的方式一样） */
-const norm = (list: readonly string[]) => [...new Set(list.map((x) => x.trim()))].sort();
-
-const sameList = (a: readonly string[], b: readonly string[]) => {
-  const [x, y] = [norm(a), norm(b)];
-  return x.length === y.length && x.every((v, i) => v === y[i]);
-};
+export const holdsToolCalls = (perms: readonly Permission[] | null | undefined): boolean =>
+  !perms || perms.length === 0 || perms.includes("reply_tool_calls");
 
 /**
- * 这次改动里有没有要点头的：打开它、改设置（按生效的值比，没写的按默认值算）、改范围。
- * **只是提示**：判定在 core，它说要点头（`control.plugin.needs_confirmation`）也走同一条路
+ * 两份 manifest 除了数据（出错时、适用范围、设置项的值）之外有没有不一样：名字、说明、
+ * 权限、处理的请求种类、回答的方式、导出的钩子、设置项的键、类型和标签。**不一样就一定是
+ * 改了代码**（core 的「只改了数据」要求这些全都一样）；一样的不一定没改代码 —— manifest
+ * 以外的代码界面比不出来，交给 core 判断。
  */
-export function changesWhatItDoes(p: PluginView, next: PluginUpdate): boolean {
-  if (next.enabled && !p.enabled) return true;
-  if ((["clients", "models", "upstreams"] as const).some((k) => !sameList(p.scope[k], next.scope[k]))) return true;
-  const effective = (given: Partial<Record<string, SettingValue>>) => {
-    const all: Record<string, SettingValue> = {};
-    for (const s of p.settings_schema) all[s.key] = given[s.key] ?? s.default;
-    for (const [k, v] of Object.entries(given)) if (v !== undefined && !(k in all)) all[k] = v;
-    return all;
-  };
-  const [a, b] = [effective(p.settings), effective(next.settings)];
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  return [...keys].some((k) => a[k] !== b[k]);
+export function shapeChanged(a: ManifestView, b: ManifestView): boolean {
+  const set = (xs: readonly string[]) => [...new Set(xs)].sort().join("\n");
+  const settings = (m: ManifestView) => JSON.stringify(m.settings_schema.map((s) => [s.key, s.kind, s.label]));
+  return (
+    a.name !== b.name ||
+    (a.description ?? null) !== (b.description ?? null) ||
+    set(a.permissions) !== set(b.permissions) ||
+    set(a.requests) !== set(b.requests) ||
+    a.reply_mode !== b.reply_mode ||
+    a.hooks.request !== b.hooks.request ||
+    a.hooks.reply_text !== b.hooks.reply_text ||
+    a.hooks.tool_call !== b.hooks.tool_call ||
+    settings(a) !== settings(b)
+  );
+}
+
+/**
+ * 保存时要不要**直接**请 Rust 弹系统的确认框（约定附录 4 §3）：插件改得了工具调用（原来的
+ * 或者新的代码里），而这次要打开它，或者一定改了代码。
+ *
+ * 只有界面确定要点头时才直接去：省下一次注定被拒的请求。确定不了的（代码在 manifest 以外
+ * 改了没有，界面看不出来）照常走网页那条 —— core 说要点头（403）再请 Rust，见 `write.ts`。
+ */
+export function saveAsks(x: {
+  /** 确认过的那一版的权限。读不出来是 `null` */
+  old: readonly Permission[] | null;
+  /** 这次的代码的权限 */
+  next: readonly Permission[] | null;
+  turningOn: boolean;
+  /** 一定改了代码（`shapeChanged`，或者确认过的那一版读不出来而代码不一样） */
+  codeChanged: boolean;
+}): boolean {
+  return (holdsToolCalls(x.old) || holdsToolCalls(x.next)) && (x.turningOn || x.codeChanged);
 }
 
 /** 一条记录下来的请求发给上游的模型：路由规则改写过的，按回答的那一跳发出的名字 */
@@ -89,8 +103,9 @@ export const EMPTY_SCOPE: PluginScope = { clients: [], models: [], upstreams: []
 /**
  * 一条通配规则对不对得上：`*` 是任意一段（可以为空），别的字符原样比。
  *
- * **只给界面挑「最近哪几条请求在范围内」用**（试运行的候选），不决定插件跑不跑 ——
- * 那是 core 的事，这里写错了顶多是候选的排序不对。
+ * **只给界面用**：挑「最近哪几条请求在范围内」（试运行的候选），列出一条通配对得上的已知
+ * 名字（适用范围的建议）。不决定插件跑不跑 —— 那是 core 的事，这里写错了顶多是候选的
+ * 排序、建议的多少不对。
  */
 export function globMatch(pattern: string, value: string): boolean {
   const parts = pattern.split("*");
@@ -131,11 +146,26 @@ export function requestInScope(
   );
 }
 
+/** 插件文件的上限，和 core 一样 */
+export const MAX_SOURCE = 1024 * 1024;
+
 /** 插件 ID 的写法，和 core 一样：小写字母、数字、连字符，1 到 40 个 */
 export const ID_RE = /^[a-z0-9-]{1,40}$/;
 
+/** 不能当插件 ID 的词，和 core 一样：控制面上 `/plugins/` 底下固定的几个端点 */
+export const RESERVED_IDS: readonly string[] = ["order", "inspect", "rewrite", "confirmed"];
+
+/** 新插件的 ID 哪里不对：写法、保留词、和已有的重名。能用是 `null` */
+export function idProblem(id: string, taken: readonly string[]): "bad" | "reserved" | "taken" | null {
+  if (!ID_RE.test(id)) return "bad";
+  if (RESERVED_IDS.includes(id)) return "reserved";
+  if (taken.includes(id)) return "taken";
+  return null;
+}
+
 /**
- * 新插件的 ID：先按文件名，再按插件名，都拼不出来就是 `plugin`，和已有的重名就接 `-2`、`-3`。
+ * 新插件的 ID：先按文件名，再按插件名，都拼不出来就是 `plugin`；是保留词的接 `-plugin`（和
+ * core 一样），和已有的重名就接 `-2`、`-3`。
  *
  * **默认值要写在输入框里**，不能留空让 core 去起：留空的话界面上看到的是一个空格子，
  * 装上之后配置里却是另一个名字。
@@ -149,7 +179,8 @@ export function suggestId(name: string, fileName: string | null, taken: readonly
       .replace(/^-+|-+$/g, "")
       .slice(0, 36)
       .replace(/-+$/, "");
-  const base = (fileName && slug(fileName)) || slug(name) || "plugin";
+  const found = (fileName && slug(fileName)) || slug(name) || "plugin";
+  const base = RESERVED_IDS.includes(found) ? `${found}-plugin` : found;
   if (!taken.includes(base)) return base;
   for (let n = 2; ; n++) {
     const id = `${base}-${n}`;

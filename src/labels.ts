@@ -265,3 +265,6 @@ const APPS: Record<string, string> = {
 export function appLabel(hint: string): string {
   return APPS[hint] ?? hint;
 }
+
+/** 认得出名字的那几个应用（插件适用范围里给的建议） */
+export const KNOWN_APPS: readonly string[] = Object.keys(APPS);

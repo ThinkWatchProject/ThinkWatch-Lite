@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg, OnError, PluginScope, PluginUpdate, Protocol, SettingValue } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg, Protocol } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -470,33 +470,28 @@ also?: Array<FilePlanView>,
 bedrock?: BedrockDraft | null, };
 
 /**
- * 批准一个插件改过的文件（`plugin_approve`）。**文件由 Rust 自己去取**：读的、给人看的、
- * 交给 core 认的是同一个 SHA-256
+ * 批准一个插件磁盘上改过的文件（`plugin_approve_confirmed`）。**文件由 Rust 自己去取**：
+ * 读的、给人看的、交给 core 认的是同一个 SHA-256
  */
 export type PluginApproveRequest = { id: string, base_version?: string | null, };
 
 /**
- * 装一个插件（`plugin_install`）：代码，和审核窗口里选的。
+ * 装一个插件（`plugin_install_confirmed`）：代码、ID 和开关，和 `CreatePlugin` 一样。
  *
- * **没有 manifest**：名字、权限、处理哪几种请求由 Rust 把代码交给 core 再读一遍，网页
- * 说的不算。
+ * **没有 manifest**：名字、权限、处理哪几种请求、适用范围由 Rust 把代码交给 core 再读一遍，
+ * 网页说的不算。出错时怎么办、适用范围、设置都写在代码里
  */
 export type PluginInstallRequest = { source: string, 
 /**
- * 审核窗口里填的 ID。不给由 core 按名字起
+ * 添加插件时「设置」页上的插件 ID。不给由 core 按名字起
  */
-id?: string | null, enabled: boolean, on_error: OnError, scope: PluginScope, settings: { [key in string]: SettingValue }, base_version?: string | null, };
+id?: string | null, enabled: boolean, base_version?: string | null, };
 
 /**
- * 换一个插件的代码（`plugin_replace_source`）
+ * 保存一个插件（`plugin_save_confirmed`）：整份代码和开关，和 `SavePlugin` 一样。这次改
+ * 什么由 Rust 和 core 那边确认过的那一份比出来
  */
-export type PluginReplaceRequest = { id: string, source: string, base_version?: string | null, };
-
-/**
- * 一次要点头的改动（`plugin_update_confirmed`）：和 `UpdatePlugin` 一样整份交，交上来的
- * 就是保存之后的样子
- */
-export type PluginUpdateRequest = { id: string, update: PluginUpdate, };
+export type PluginSaveRequest = { id: string, source: string, enabled: boolean, base_version?: string | null, };
 
 /**
  * 写成了（配置的新版本），或者在系统的确认框里点了取消 —— **取消不是失败**，什么都

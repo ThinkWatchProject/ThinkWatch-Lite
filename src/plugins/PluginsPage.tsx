@@ -20,35 +20,29 @@ import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { useNav, useNavParams } from "@/nav";
 import { useConfigVersion } from "@/keys/data";
-import type { Overview, PluginUpdate, PluginView, PluginWrite } from "@/types";
+import type { Overview, PluginView, PluginWrite } from "@/types";
 import { ChangedDialog } from "./ChangedDialog";
 import { pluginDescription, pluginName } from "./defaults";
+import { NewPluginEditor, PluginEditor, type EditorTab } from "./Editor";
 import { DeleteDialog, ReorderDialog } from "./ListDialogs";
 import { LogsDialog } from "./LogsDialog";
-import { guarded, manifestUnknown } from "./model";
-import { savePlugin } from "./native";
+import { holdsToolCalls, manifestUnknown } from "./model";
 import { PermissionChips, PluginText, RequestKinds, ScopeSummary, StatsCell, StatusOf } from "./parts";
 import { pluginsPageText } from "./PluginsPage.i18n";
-import { SettingsDialog } from "./SettingsDialog";
-import { SourceDialog, type NativeWrite } from "./SourceDialog";
 import { TrialDialog } from "./TrialDialog";
+import { setEnabled, type NativeWrite } from "./write";
 
 type DialogState =
   | null
   | { kind: "add" }
-  | { kind: "settings"; id: string }
-  | { kind: "replace"; id: string }
+  /** 编辑器：哪一页先开着；`current` 是从磁盘上那一份起头（审核更改时文件读不了，去修它） */
+  | { kind: "edit"; id: string; tab: EditorTab; from?: "approved" | "current" }
   | { kind: "review"; id: string }
   | { kind: "trial"; id: string }
   | { kind: "logs"; id: string }
   | { kind: "reorder" }
   /** 删的那一个连同它的样子一起记下：删成功之后它从列表里拿掉了，对话框还要放完收起动画 */
   | { kind: "delete"; target: PluginView };
-
-/** 插件写回去时的样子：照原样，改其中几项 */
-export function updateOf(p: PluginView): PluginUpdate {
-  return { enabled: p.enabled, on_error: p.on_error, scope: p.scope, settings: p.settings };
-}
 
 /**
  * 插件页。
@@ -61,10 +55,12 @@ export function updateOf(p: PluginView): PluginUpdate {
  *
  * - **插件写的字一律按纯文本画**（名字、说明、设置项的标签、日志、报错），见 `PluginText`。
  *   core 自带的默认插件按界面语言说（`defaults.ts`）。
- * - **安装、更换代码、确认文件变更要在系统原生对话框里点头**：这三步的端点不在网页的
- *   白名单里，只能请 Rust 去做（`plugin_install` 等）。网页里的「安装」只是发起。**改得了
- *   工具调用的插件**（或者读不出权限的），打开它、改设置、改范围也一样（`savePlugin`）。
- * - 配置的改动都进对话框；启用、停用可以撤销，一按就写；删除要确认。
+ * - **插件的 JS 文件是唯一的真相**：出错时怎么办、适用范围、设置都写在代码里。点一个插件
+ *   打开它的编辑器（`Editor`），「设置」和「代码」两页、一个保存。添加插件用的是同一个编辑器，
+ *   从一段模板起头，按钮是「安装」。
+ * - **只有改得了回答里工具调用的插件**，装上它、打开它、改它的代码、批准它改过的文件，要在
+ *   系统原生对话框里点头（`write.ts`）。别的写入不问；删除在应用里确认一次。
+ * - 启用、停用可以撤销，一按就写。
  * - **不在运行、又会拒绝请求的插件挂一条横幅**：文件变了或者加载不了的插件不运行，出错时
  *   选了「拒绝」的，适用范围内的请求全部被拒 —— 这件事要一直看得见，直到处理掉。
  */
@@ -148,26 +144,26 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
   }
 
   /**
-   * 启用、停用。**可以撤销**：先拨过去，写完给「撤销」。
+   * 启用、停用。**可以撤销**：先拨过去，写完给「撤销」。开关和确认过的代码一起交（`setEnabled`）。
    *
    * 改得了工具调用的插件（或者读不出权限的），打开它要在系统的确认框里点头：**开关不先拨
    * 过去**，转着圈等那个框，点了头才是开。点了取消，开关原样，什么都不说
    */
   function toggle(p: PluginView, enabled: boolean) {
-    const send = (on: boolean) =>
+    const send = (on: boolean, from: boolean) =>
       tracked(p.id, async () => {
-        const r = await native((base) => savePlugin(p, { ...updateOf(p), enabled: on, base_version: base }));
+        const r = await native((base) => setEnabled(p, on, from, base));
         return r === "cancelled" ? DECLINED : r;
       });
     const name = <PluginText text={pluginName(p.id, p.name)} />;
-    const asks = enabled && guarded(p);
+    const asks = enabled && holdsToolCalls(p.permissions);
     void undoable({
       message: enabled ? t.turnedOn(name) : t.turnedOff(name),
       apply: asks
         ? undefined
         : () => plugins.mutate((ps) => (ps ?? []).map((x) => (x.id === p.id ? { ...x, enabled } : x))),
-      do: () => send(enabled),
-      undo: () => send(!enabled),
+      do: () => send(enabled, p.enabled),
+      undo: () => send(!enabled, enabled),
     });
   }
 
@@ -214,49 +210,54 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
       >
         {(data) => (
           <div className="flex flex-col gap-4">
-            <Stopped list={data} onReview={(id) => setDialog({ kind: "review", id })} onReplace={(id) => setDialog({ kind: "replace", id })} />
+            <Stopped
+              list={data}
+              onReview={(id) => setDialog({ kind: "review", id })}
+              onEdit={(id) => setDialog({ kind: "edit", id, tab: "code" })}
+            />
             <PluginList
               list={data}
               highlight={highlight}
               pending={(id) => (pending[id] ?? 0) > 0}
               onToggle={toggle}
-              onOpen={(kind, p) => setDialog(kind === "delete" ? { kind, target: p } : { kind, id: p.id })}
+              onOpen={(kind, p) =>
+                setDialog(
+                  kind === "delete"
+                    ? { kind, target: p }
+                    : kind === "settings" || kind === "code"
+                      ? { kind: "edit", id: p.id, tab: kind }
+                      : { kind, id: p.id },
+                )
+              }
             />
           </div>
         )}
       </Loadable>
 
       {dialog?.kind === "add" && (
-        <SourceDialog
-          mode={{ kind: "add" }}
+        <NewPluginEditor
           taken={taken}
+          ov={ov}
           native={native}
           onClose={() => setDialog(null)}
-          onDone={(id) => {
+          onInstalled={(id) => {
             setDialog(null);
             setFocus(id);
           }}
         />
       )}
-      {dialog?.kind === "replace" && at(dialog) && (
-        <SourceDialog
-          mode={{ kind: "replace", plugin: at(dialog)! }}
-          taken={taken}
+      {dialog?.kind === "edit" && at(dialog) && (
+        <PluginEditor
+          // 换一个插件、换一份起头的代码就是另一个编辑器
+          key={`${dialog.id}:${dialog.from ?? "approved"}`}
+          plugin={at(dialog)!}
+          tab={dialog.tab}
+          from={dialog.from}
+          ov={ov}
           native={native}
           onClose={() => setDialog(null)}
-          onDone={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "settings" && at(dialog) && (
-        <SettingsDialog
-          plugin={at(dialog)!}
-          version={version}
-          onClose={() => setDialog(null)}
-          onSaved={(v) => {
-            wrote(v);
-            setDialog(null);
-          }}
-          onReplace={() => setDialog({ kind: "replace", id: dialog.id })}
+          onSaved={() => setDialog(null)}
+          onReview={() => setDialog({ kind: "review", id: dialog.id })}
         />
       )}
       {dialog?.kind === "review" && at(dialog) && (
@@ -265,7 +266,7 @@ export default function PluginsPage({ ov, onChanged }: { ov: Overview; onChanged
           native={native}
           onClose={() => setDialog(null)}
           onApproved={() => setDialog(null)}
-          onReplace={() => setDialog({ kind: "replace", id: dialog.id })}
+          onEdit={(from) => setDialog({ kind: "edit", id: dialog.id, tab: "code", from })}
         />
       )}
       {dialog?.kind === "trial" && at(dialog) && <TrialDialog plugin={at(dialog)!} onClose={() => setDialog(null)} />}
@@ -340,11 +341,11 @@ function Summary({ list, loading }: { list: PluginView[] | undefined; loading: b
 function Stopped({
   list,
   onReview,
-  onReplace,
+  onEdit,
 }: {
   list: PluginView[];
   onReview: (id: string) => void;
-  onReplace: (id: string) => void;
+  onEdit: (id: string) => void;
 }) {
   const t = useText(pluginsPageText);
   const stopped = list.filter((p) => p.enabled && (p.status.kind === "changed" || p.status.kind === "error"));
@@ -378,14 +379,14 @@ function Stopped({
             tone={reject ? "error" : "info"}
             title={t.failedTitle(name)}
             actions={
-              <Button size="sm" variant="outline" onClick={() => onReplace(p.id)}>
-                {t.replace}
+              <Button size="sm" variant="outline" onClick={() => onEdit(p.id)}>
+                {t.editCode}
               </Button>
             }
           >
             {p.status.kind === "error" && (
               <p className="break-words select-text">
-                <PluginText text={coreText(p.status.message)} />
+                <PluginText text={coreText(p.status.message, p.id)} />
               </p>
             )}
             <p>{reject ? t.failedRejecting : t.failedSkipping}</p>
@@ -396,7 +397,7 @@ function Stopped({
   );
 }
 
-type RowAction = "settings" | "trial" | "logs" | "review" | "replace" | "delete";
+type RowAction = "settings" | "code" | "trial" | "logs" | "review" | "delete";
 
 /**
  * 插件列表，**按运行的顺序**：前一个改过的内容交给后一个，所以行首写着它是第几个。
@@ -427,9 +428,9 @@ function PluginList({
   const menu = (p: PluginView): MenuItems => [
     ...(p.status.kind === "changed" ? [{ kind: "item" as const, label: t.menu.review, onSelect: () => onOpen("review", p) }] : []),
     { kind: "item", label: t.menu.settings, onSelect: () => onOpen("settings", p) },
+    { kind: "item", label: t.menu.code, onSelect: () => onOpen("code", p) },
     { kind: "item", label: t.menu.trial, onSelect: () => onOpen("trial", p), disabled: p.status.kind === "error" },
     { kind: "item", label: t.menu.logs, onSelect: () => onOpen("logs", p) },
-    { kind: "item", label: t.menu.replace, onSelect: () => onOpen("replace", p) },
     { kind: "sep" },
     { kind: "item", label: t.menu.remove, onSelect: () => onOpen("delete", p), danger: true },
   ];
@@ -450,7 +451,8 @@ function PluginList({
               highlight === p.id && "bg-muted/60",
               rowMotion(presence),
             )}
-            {...openable(() => onOpen("settings", p))}
+            // 加载失败的：点开先看代码（设置读不出来）
+            {...openable(() => onOpen(p.status.kind === "error" ? "code" : "settings", p))}
           >
             <Tip text={t.order(i + 1)}>
               <span className="mt-px w-4 shrink-0 text-right tw-num tw-body text-muted-foreground">{i + 1}</span>
@@ -471,7 +473,7 @@ function PluginList({
               </div>
               {p.status.kind === "error" ? (
                 <p className="mt-0.5 truncate tw-body text-destructive">
-                  <PluginText text={coreText(p.status.message)} />
+                  <PluginText text={coreText(p.status.message, p.id)} />
                 </p>
               ) : (
                 w.description && (
@@ -493,7 +495,7 @@ function PluginList({
                       <span className="shrink-0 text-muted-foreground/80">{t.appliesTo}</span>
                       <ScopeSummary scope={p.scope} />
                     </span>
-                    <StatsCell stats={p.stats} />
+                    <StatsCell stats={p.stats} pluginId={p.id} />
                   </>
                 )}
                 <span className="-my-1 -mr-2 ml-auto flex shrink-0 items-center" {...keepInRow}>
@@ -503,8 +505,8 @@ function PluginList({
                     </Button>
                   )}
                   {p.status.kind === "error" && (
-                    <Button size="xs" variant="outline" className="mr-1" onClick={() => onOpen("replace", p)}>
-                      {t.replace}
+                    <Button size="xs" variant="outline" className="mr-1" onClick={() => onOpen("code", p)}>
+                      {t.editCode}
                     </Button>
                   )}
                   <RowWord onClick={() => onOpen("settings", p)}>{t.settings}</RowWord>

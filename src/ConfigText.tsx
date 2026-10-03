@@ -10,6 +10,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configTextText } from "./ConfigText.i18n";
 import { errorText } from "@/i18n/core.i18n";
+import { needsConfirmation } from "@/plugins/write";
 
 /**
  * 编辑器**打开这个对话框时才加载**。CodeMirror 连同 YAML 语法有几百 KB，整个应用
@@ -53,6 +54,8 @@ export default function ConfigTextMode({
   const sections: Record<string, string | undefined> = t.sections;
   const [draft, setDraft] = useState(doc.text);
   const [busy, setBusy] = useState(false);
+  /** core 不让这次保存装上、启用、换掉批准的代码的那个插件（它的那句话） */
+  const [pluginRefusal, setPluginRefusal] = useState<string | null>(null);
   /** 打开这一版时文件是什么样。**保存时带的就是它** */
   const base = useRef(doc.version);
   const dirty = draft !== doc.text;
@@ -106,12 +109,16 @@ export default function ConfigTextMode({
 
   async function save() {
     setBusy(true);
+    setPluginRefusal(null);
     try {
       await call("PutConfig", { text: draft, base_version: base.current });
       base.current = "";
       onSaved();
     } catch (e) {
-      toast.error(errorText(e));
+      // 改得了工具调用的插件：这条路没有点过头的那一条，只能去插件页。几秒就消失的
+      // toast 说不清去哪儿，这一句留在编辑器上
+      if (needsConfirmation(e)) setPluginRefusal(errorText(e));
+      else toast.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -151,6 +158,14 @@ export default function ConfigTextMode({
           </div>
         </AlertDescription>
         </Alert>
+      )}
+
+      {pluginRefusal && (
+        <PluginConfirmNotice
+          reason={pluginRefusal}
+          result="notSaved"
+          onOpenPlugins={onJumpToForm && (() => onJumpToForm({ name: "", section: "plugins" }))}
+        />
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900">
@@ -199,5 +214,39 @@ export default function ConfigTextMode({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * 写配置原文（保存文件、恢复版本）被 core 拒了：这次会装上、启用一个改得了回答里工具调用的
+ * 插件，或者换掉它批准的代码（403 `control.plugin.needs_confirmation`）。这条路没有点过头的
+ * 那一条，**只能在插件页里做**，那里会弹系统的确认框。写明没写成、为什么、去哪儿
+ */
+export function PluginConfirmNotice({
+  reason,
+  result,
+  onOpenPlugins,
+}: {
+  /** core 的那句话（按界面语言） */
+  reason: string;
+  /** 没做成的是什么 */
+  result: "notSaved" | "notRestored";
+  onOpenPlugins?: () => void;
+}) {
+  const t = useText(configTextText).pluginConfirm;
+  return (
+    <Alert variant="destructive" className="px-3 py-2">
+      <AlertTitle>{t.title}</AlertTitle>
+      <AlertDescription>
+        <p className="mt-1">{t[result](reason)}</p>
+        {onOpenPlugins && (
+          <div className="mt-2">
+            <Button variant="ghost" size="sm" onClick={onOpenPlugins}>
+              {t.open}
+            </Button>
+          </div>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

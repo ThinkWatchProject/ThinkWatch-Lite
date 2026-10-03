@@ -191,7 +191,10 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   // 产品图里没有插件：插件页是空的，写入一律拒绝
   Plugins: () => [],
   PluginInspect: refuse,
-  UpdatePlugin: refuse,
+  PluginRewrite: refuse,
+  CreatePlugin: refuse,
+  SavePlugin: refuse,
+  ApprovePluginFile: refuse,
   PluginSourceDiff: refuse,
   DeletePlugin: refuse,
   ReorderPlugins: refuse,

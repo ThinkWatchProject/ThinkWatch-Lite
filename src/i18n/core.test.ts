@@ -136,6 +136,39 @@ describe("core 的错误：码加参数", () => {
   });
 });
 
+describe("消息里的插件名", () => {
+  const refusal = (plugin: string) => ({
+    code: "control.plugin.needs_confirmation",
+    args: { plugin },
+    text: `Plugin \`${plugin}\` can change the tool calls in replies, so …`,
+  });
+  const WSL = "Convert WSL and Windows paths";
+
+  it("默认插件 core 发的英文名，中文界面说插件页上的名字", () => {
+    expect(inLang("zh", () => coreText(refusal(WSL)))).toMatch(/^插件「WSL 路径转换」可以修改回答中的工具调用/);
+    expect(inLang("zh", () => errorText(refusal(WSL)))).toMatch(/^插件「WSL 路径转换」/);
+    // 英文界面照 core 的原句
+    expect(inLang("en", () => coreText(refusal(WSL)))).toBe(refusal(WSL).text);
+  });
+
+  it("只有名字时一字不差才换；别人写的插件照它自己写的", () => {
+    for (const name of ["convert wsl and windows paths", `${WSL} `, "Rename tools"]) {
+      expect(inLang("zh", () => coreText(refusal(name)))).toMatch(new RegExp(`^插件「${name}」`));
+    }
+  });
+
+  it("知道是哪个插件的按 id 认：用了默认插件英文名的别的插件照它自己写的", () => {
+    expect(inLang("zh", () => coreText(refusal(WSL), "wsl-paths"))).toMatch(/^插件「WSL 路径转换」/);
+    expect(inLang("zh", () => coreText(refusal(WSL), "my-paths"))).toMatch(/^插件「Convert WSL and Windows paths」/);
+    expect(inLang("zh", () => errorText(refusal(WSL), "my-paths"))).toMatch(/^插件「Convert WSL and Windows paths」/);
+  });
+
+  it("参数是 ID 的那几句照原样", () => {
+    const m = { code: "control.plugin.id_taken", args: { plugin: "wsl-paths" }, text: "There is already a plugin `wsl-paths`." };
+    expect(inLang("zh", () => coreText(m, "wsl-paths"))).toBe("已存在 ID 为「wsl-paths」的插件。");
+  });
+});
+
 describe("扫描发现：句子由词拼出来", () => {
   it("按 kind 和 rule 拼出中文", () => {
     const m = {

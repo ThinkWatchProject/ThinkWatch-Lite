@@ -20,13 +20,14 @@ import {
   TableRow,
 } from "@/ui/table";
 import { useText } from "@/i18n";
-import ConfigTextMode from "./ConfigText";
+import ConfigTextMode, { PluginConfirmNotice } from "./ConfigText";
 import type { ConfigFocus } from "./configLocate";
 import { configDialogsText } from "./ConfigDialogs.i18n";
 import { when } from "./format";
 import type { ConfigText, ConfigVersion } from "./types";
 import { originLabel } from "./labels";
 import { errorText } from "@/i18n/core.i18n";
+import { needsConfirmation } from "@/plugins/write";
 
 /**
  * 配置文件。**各配置页共用这一个入口** —— 文件只有一份，表单是它的几种
@@ -97,14 +98,19 @@ export function ConfigFileDialog({
 export function VersionHistoryDialog({
   reloads,
   onClose,
+  onOpenPlugins,
 }: {
   /** 配置换入过几次。换了就重读 */
   reloads: number;
   onClose: () => void;
+  /** 关掉这里、去插件页（恢复的版本要装上、启用改得了工具调用的插件时） */
+  onOpenPlugins?: () => void;
 }) {
   const t = useText(configDialogsText);
   const [versions, setVersions] = useState<ConfigVersion[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** core 不让这次恢复装上、启用、换掉批准的代码的那个插件（它的那句话） */
+  const [pluginRefusal, setPluginRefusal] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -118,10 +124,13 @@ export function VersionHistoryDialog({
 
   async function restore(version: string) {
     setBusy(version);
+    setPluginRefusal(null);
     try {
       await call("ConfigRollback", { version });
     } catch (e) {
-      toast.error(errorText(e));
+      // 和保存配置文件一样：恢复这条路没有点过头的那一条，只能去插件页
+      if (needsConfirmation(e)) setPluginRefusal(errorText(e));
+      else toast.error(errorText(e));
     } finally {
       setBusy(null);
     }
@@ -134,6 +143,9 @@ export function VersionHistoryDialog({
           <DialogTitle className="tw-title">{t.historyTitle}</DialogTitle>
           <DialogDescription>{t.historyDescription}</DialogDescription>
         </DialogHeader>
+        {pluginRefusal && (
+          <PluginConfirmNotice reason={pluginRefusal} result="notRestored" onOpenPlugins={onOpenPlugins} />
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {versions == null ? (
             <p className="flex items-center gap-2 tw-body text-muted-foreground">

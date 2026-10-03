@@ -1,24 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { PluginView } from "@/types";
-import { localSchema, pluginDescription, pluginName } from "./defaults";
+import type { ManifestView, PluginView } from "@/types";
+import { localizedPluginNames, localSchema, pluginDescription, pluginName } from "./defaults";
 import { hunks, lineDiff, tally } from "./diff";
 import {
-  changesWhatItDoes,
   cpuMs,
   extraKinds,
   globMatch,
-  guarded,
+  holdsToolCalls,
   ID_RE,
+  idProblem,
   manifestUnknown,
   requestInScope,
+  saveAsks,
   shaPrefix,
+  shapeChanged,
   splitInvisible,
   suggestId,
   touchesReplies,
   touchesRequests,
 } from "./model";
-import { draftOf, scopeOf, scopeProblem, settingsDraftOf, settingsOf } from "./fields";
+import { draftOf, scopeOf, scopeProblem, settingsDraftOf, settingsOf, suggestionMatches } from "./fields";
+import { moved } from "./ListDialogs";
 
 describe("通配", () => {
   it("* 是任意一段，可以为空", () => {
@@ -68,8 +71,7 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
     requests: ["conversation"],
     scope: { clients: [], models: [], upstreams: [] },
     reply_mode: "block",
-    settings_schema: [{ key: "windows_client", kind: "boolean", label: "客户端运行在 Windows 上（关闭时按 WSL 处理）", default: false }],
-    settings: { windows_client: false },
+    settings_schema: [{ key: "windows_client", kind: "boolean", label: "The client runs on Windows (otherwise WSL)", value: false }],
     sha256: "aa",
     status: { kind: "disabled" },
     stats: { calls: 0, changed: 0, rejected: 0, errors: 0, avg_cpu_us: 0, last_error: null },
@@ -77,28 +79,57 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
   };
 }
 
-const updateOf = (p: PluginView) => ({ enabled: p.enabled, on_error: p.on_error, scope: p.scope, settings: p.settings });
+/** 一份 manifest，按需改几项 */
+function manifest(over: Partial<ManifestView> = {}): ManifestView {
+  return {
+    name: "Convert WSL and Windows paths",
+    description: "Rewrites drive paths in tool-call arguments.",
+    permissions: ["messages", "reply_tool_calls"],
+    requests: ["conversation"],
+    scope: { clients: [], models: [], upstreams: [] },
+    reply_mode: "block",
+    on_error: "reject",
+    settings_schema: [{ key: "windows_client", kind: "boolean", label: "The client runs on Windows (otherwise WSL)", value: false }],
+    hooks: { request: true, reply_text: false, tool_call: true },
+    ...over,
+  };
+}
 
-describe("要在系统的确认框里点头的改动", () => {
-  it("改得了工具调用的、读不出权限的要；别的不要", () => {
-    expect(guarded(plugin())).toBe(true);
-    expect(guarded(plugin({ permissions: [] }))).toBe(true);
-    expect(guarded(plugin({ permissions: ["system"] }))).toBe(false);
+describe("要在系统的确认框里点头的改动（约定附录 4 §3）", () => {
+  it("改得了工具调用的、读不出权限的算；别的不算", () => {
+    expect(holdsToolCalls(["messages", "reply_tool_calls"])).toBe(true);
+    expect(holdsToolCalls([])).toBe(true);
+    expect(holdsToolCalls(null)).toBe(true);
+    expect(holdsToolCalls(["system", "reply_text"])).toBe(false);
   });
 
-  it("打开它、改设置、改范围算；停用、改出错时、照原样交回的默认值不算", () => {
-    const p = plugin();
-    expect(changesWhatItDoes(p, { ...updateOf(p), enabled: true })).toBe(true);
-    expect(changesWhatItDoes(p, { ...updateOf(p), settings: { windows_client: true } })).toBe(true);
-    expect(changesWhatItDoes(p, { ...updateOf(p), scope: { ...p.scope, upstreams: ["deepseek"] } })).toBe(true);
-    expect(changesWhatItDoes(p, { ...updateOf(p), on_error: "skip" })).toBe(false);
-    expect(changesWhatItDoes({ ...p, enabled: true }, { ...updateOf(p), enabled: false })).toBe(false);
-    // 不交的设置按默认值算；范围不看顺序和空白
-    expect(changesWhatItDoes(p, { ...updateOf(p), settings: {} })).toBe(false);
-    const scoped = plugin({ scope: { clients: [], models: ["b*", "a*"], upstreams: [] } });
-    expect(changesWhatItDoes(scoped, { ...updateOf(scoped), scope: { clients: [], models: [" a*", "b*"], upstreams: [] } })).toBe(
-      false,
-    );
+  it("只改了数据（出错时、范围、设置的值）不是代码改动；别的都是", () => {
+    const m = manifest();
+    expect(shapeChanged(m, manifest({ on_error: "skip", scope: { clients: ["codex"], models: [], upstreams: [] } }))).toBe(false);
+    expect(
+      shapeChanged(m, manifest({ settings_schema: [{ ...m.settings_schema[0]!, value: true }] })),
+    ).toBe(false);
+    // 权限的顺序不算
+    expect(shapeChanged(m, manifest({ permissions: ["reply_tool_calls", "messages"] }))).toBe(false);
+    expect(shapeChanged(m, manifest({ permissions: ["messages"] }))).toBe(true);
+    expect(shapeChanged(m, manifest({ name: "Paths" }))).toBe(true);
+    expect(shapeChanged(m, manifest({ settings_schema: [{ ...m.settings_schema[0]!, label: "Windows" }] }))).toBe(true);
+    expect(shapeChanged(m, manifest({ hooks: { request: true, reply_text: true, tool_call: true } }))).toBe(true);
+  });
+
+  it("改得了工具调用的插件：打开它、一定改了代码才直接去点头", () => {
+    const tools = ["messages", "reply_tool_calls"] as const;
+    const plain = ["system"] as const;
+    expect(saveAsks({ old: [...tools], next: [...tools], turningOn: true, codeChanged: false })).toBe(true);
+    expect(saveAsks({ old: [...tools], next: [...tools], turningOn: false, codeChanged: true })).toBe(true);
+    // 只改了数据、停用：不问
+    expect(saveAsks({ old: [...tools], next: [...tools], turningOn: false, codeChanged: false })).toBe(false);
+    // 不碰工具调用的插件什么都不问
+    expect(saveAsks({ old: [...plain], next: [...plain], turningOn: true, codeChanged: true })).toBe(false);
+    // 新代码多要了工具调用：改代码要问
+    expect(saveAsks({ old: [...plain], next: [...tools], turningOn: false, codeChanged: true })).toBe(true);
+    // 原来那一版读不出权限：按改得了算
+    expect(saveAsks({ old: null, next: [...plain], turningOn: true, codeChanged: false })).toBe(true);
   });
 
   it("读不出 manifest 的只有 id 和状态", () => {
@@ -143,7 +174,27 @@ describe("默认插件的说法", () => {
     expect(pluginName(theirs.id, theirs.name)).toBe("路径小工具");
     expect(pluginDescription(theirs)).toBe("别人写的");
     expect(localSchema(theirs.id, theirs.name, theirs.settings_schema)).toBe(theirs.settings_schema);
-    expect(pluginName(null, "Answer in a chosen language")).toBe("Answer in a chosen language");
+    // 用了默认插件的英文名、id 不一样的：知道 id 时照它自己写的，说明和标签也不换
+    const copy = plugin({ id: "my-paths" });
+    expect(pluginName(copy.id, copy.name)).toBe(copy.name);
+    expect(pluginDescription(copy)).toBe(copy.description);
+    expect(localSchema(copy.id, copy.name, copy.settings_schema)).toBe(copy.settings_schema);
+  });
+
+  it("只知道名字（core 消息里的 `{plugin}`）：按 core 发的英文名认，一字不差才算", () => {
+    setLang("zh");
+    expect(pluginName(null, "Answer in a chosen language")).toBe("指定回答语言");
+    expect(pluginName(undefined, "Convert WSL and Windows paths")).toBe("WSL 路径转换");
+    for (const near of ["answer in a chosen language", "Answer in a chosen language.", "指定回答语言", "wsl-paths"]) {
+      expect(pluginName(null, near)).toBe(near);
+    }
+    // 语言可以指定：按码说中文时不看此刻的界面语言
+    setLang("en");
+    expect(pluginName(null, "Convert WSL and Windows paths")).toBe("Convert WSL and Windows paths");
+    expect(pluginName(null, "Convert WSL and Windows paths", "zh")).toBe("WSL 路径转换");
+    expect(localizedPluginNames()).toEqual([]);
+    expect(localizedPluginNames("zh")).toEqual(["指定回答语言", "WSL 路径转换"]);
+    setLang("zh");
   });
 });
 
@@ -164,10 +215,26 @@ describe("插件 ID", () => {
     expect(suggestId("x", "add-date.mjs", ["add-date", "add-date-2"])).toBe("add-date-3");
   });
 
-  it("建议的 ID 都合 core 的写法", () => {
-    for (const id of [suggestId("A".repeat(80), null, []), suggestId("—", "My Plugin (v2).js", [])]) {
-      expect(ID_RE.test(id)).toBe(true);
+  it("建议的 ID 都合 core 的写法，也不是保留词", () => {
+    for (const id of [
+      suggestId("A".repeat(80), null, []),
+      suggestId("—", "My Plugin (v2).js", []),
+      suggestId("Rewrite", null, []),
+      suggestId("x", "order.js", ["order-plugin"]),
+    ]) {
+      expect(idProblem(id, [])).toBeNull();
     }
+    // 保留词和 core 一样接 `-plugin`
+    expect(suggestId("Rewrite", null, [])).toBe("rewrite-plugin");
+    expect(suggestId("x", "order.js", ["order-plugin"])).toBe("order-plugin-2");
+  });
+
+  it("新插件的 ID 哪里不对：写法、保留词、重名", () => {
+    expect(idProblem("add-date", ["mask"])).toBeNull();
+    for (const bad of ["", "Add-Date", "add date", "日期", "a".repeat(41)]) expect(idProblem(bad, [])).toBe("bad");
+    for (const word of ["order", "inspect", "rewrite", "confirmed"]) expect(idProblem(word, [])).toBe("reserved");
+    expect(idProblem("mask", ["mask"])).toBe("taken");
+    expect(ID_RE.test("a".repeat(40))).toBe(true);
   });
 });
 
@@ -229,15 +296,31 @@ describe("表单", () => {
     expect(scopeProblem(d)).toBeNull();
   });
 
-  it("设置项：数字按原样存着，保存时才换成数；填错的按标签报", () => {
+  it("设置项：值从代码里来，数字按原样存着，交出去时才换成数；填错的按标签报", () => {
     const schema = [
-      { key: "note", kind: "string" as const, label: "附加内容", default: "" },
-      { key: "days", kind: "number" as const, label: "天数", default: 7 },
-      { key: "on", kind: "boolean" as const, label: "开关", default: true },
+      { key: "note", kind: "string" as const, label: "附加内容", value: "x" },
+      { key: "days", kind: "number" as const, label: "天数", value: 7 },
+      { key: "on", kind: "boolean" as const, label: "开关", value: true },
     ];
-    const draft = settingsDraftOf(schema, { note: "x" });
+    const draft = settingsDraftOf(schema);
     expect(draft).toEqual({ note: "x", days: "7", on: true });
     expect(settingsOf(schema, draft)).toEqual({ values: { note: "x", days: 7, on: true }, bad: [] });
     expect(settingsOf(schema, { ...draft, days: "seven" }).bad).toEqual(["天数"]);
+  });
+
+  it("适用范围的建议：带 * 的按通配挑，不带的按包含挑，都不分大小写", () => {
+    expect(suggestionMatches("claude-*", "claude-sonnet-4-5")).toBe(true);
+    expect(suggestionMatches("claude-*", "gpt-5")).toBe(false);
+    expect(suggestionMatches("*-mini", "GPT-5-Mini")).toBe(true);
+    expect(suggestionMatches("sonnet", "claude-sonnet-4-5")).toBe(true);
+    expect(suggestionMatches("", "anything")).toBe(true);
+  });
+});
+
+describe("调整顺序", () => {
+  it("挪到拿走之后的那个位置，别的顺次让开", () => {
+    expect(moved(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
+    expect(moved(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
+    expect(moved(["a", "b"], 1, 0)).toEqual(["b", "a"]);
   });
 });

@@ -1108,7 +1108,16 @@ function Shell({ first }: { first: boolean }) {
               }}
             />
           )}
-          {historyOpen && <VersionHistoryDialog reloads={reloads} onClose={() => setHistoryOpen(false)} />}
+          {historyOpen && (
+            <VersionHistoryDialog
+              reloads={reloads}
+              onClose={() => setHistoryOpen(false)}
+              onOpenPlugins={() => {
+                setHistoryOpen(false);
+                open("plugins");
+              }}
+            />
+          )}
           {/* 等连上 core、拿到概览再弹：名称是否重名、保存基于哪一版都要它 */}
           {importing && ov && !remoteLost && (
             <ImportDialog

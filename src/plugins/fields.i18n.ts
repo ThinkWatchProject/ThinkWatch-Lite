@@ -22,8 +22,6 @@ export const pluginFieldsText = messages(
     needOne: (part: string) => `${part}选了「指定」，至少添加一项。`,
     settings: "设置项",
     numberBad: (label: string) => `「${label}」需要填写数字。`,
-    defaultIs: (v: string) => `默认值：${v}`,
-    emptyDefault: "默认值为空",
   },
   {
     all: "All",
@@ -45,7 +43,5 @@ export const pluginFieldsText = messages(
     needOne: (part: string) => `${part} is set to Specific: add at least one.`,
     settings: "Settings",
     numberBad: (label: string) => `“${label}” needs a number.`,
-    defaultIs: (v: string) => `Default: ${v}`,
-    emptyDefault: "Empty by default",
   },
 );

@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
+import { Autocomplete, ComboboxBareInput, ComboboxContent, ComboboxItem, ComboboxList } from "@/ui/combobox";
 import { Input } from "@/ui/input";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { Segmented } from "@/ui/segmented";
@@ -9,10 +10,10 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { appLabel } from "@/labels";
 import { Boxed, FormItem } from "@/upstreams/parts";
-import type { PluginScope, SettingSpecView, SettingValue } from "@/types";
+import type { OnError, PluginScope, SettingSpecView, SettingValue } from "@/types";
 import { pluginFieldsText } from "./fields.i18n";
 import { pluginLabelsText } from "./labels.i18n";
-import { SCOPE_PARTS, type ScopePart } from "./model";
+import { globMatch, SCOPE_PARTS, type ScopePart } from "./model";
 import { PluginText } from "./parts";
 
 // ─────────────────────────────────────────────── 适用范围
@@ -41,12 +42,39 @@ export function scopeProblem(d: ScopeDraft): ScopePart | null {
   return SCOPE_PARTS.find((p) => d[p].mode === "some" && d[p].list.length === 0) ?? null;
 }
 
+/** 输入时给的一条建议：已知的客户端、模型或上游。`note` 写在右边（客户端的产品名） */
+export interface Suggestion {
+  value: string;
+  note?: string;
+}
+
+export type ScopeSuggestions = Record<ScopePart, readonly Suggestion[]>;
+
+/**
+ * 输入的这一段对得上哪几条建议：带 `*` 的按通配比（输入 `claude-*` 就列出它会对上的那些），
+ * 不带的按包含比；都不分大小写，和 core 一样
+ */
+export function suggestionMatches(query: string, value: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  const v = value.toLowerCase();
+  return q.includes("*") ? globMatch(q, v) : v.includes(q);
+}
+
 /**
  * 适用范围的三项。**模型和上游各说一句按什么匹配**：模型比的是发给上游的那个名字（路由改写
  * 过的按改写之后的），上游对请求和回答都管 —— 不说的话，按客户端发的模型名写范围的人会
  * 以为没生效，以为上游只管回答的人会漏掉请求那一头。
  */
-export function ScopeFields({ value, onChange }: { value: ScopeDraft; onChange: (next: ScopeDraft) => void }) {
+export function ScopeFields({
+  value,
+  onChange,
+  suggestions,
+}: {
+  value: ScopeDraft;
+  onChange: (next: ScopeDraft) => void;
+  suggestions?: ScopeSuggestions;
+}) {
   const t = useText(pluginFieldsText);
   const lt = useText(pluginLabelsText);
   const set = (p: ScopePart, next: Partial<ScopeDraft[ScopePart]>) => onChange({ ...value, [p]: { ...value[p], ...next } });
@@ -69,6 +97,7 @@ export function ScopeFields({ value, onChange }: { value: ScopeDraft; onChange: 
               value={value[p].list}
               onChange={(list) => set(p, { list })}
               invalid={value[p].list.length === 0}
+              suggestions={suggestions?.[p] ?? []}
             />
           )}
         </FormItem>
@@ -86,21 +115,22 @@ function PatternList({
   value,
   onChange,
   invalid,
+  suggestions,
 }: {
   part: ScopePart;
   value: string[];
   onChange: (next: string[]) => void;
   invalid: boolean;
+  suggestions: readonly Suggestion[];
 }) {
   const t = useText(pluginFieldsText);
   const lt = useText(pluginLabelsText);
   const rows = usePresentList(value, (x) => x);
   const [draft, setDraft] = useState("");
 
-  function commit() {
-    const x = draft.trim();
-    if (!x) return;
-    if (!value.includes(x)) onChange([...value, x]);
+  function add(x: string) {
+    const v = x.trim();
+    if (v && !value.includes(v)) onChange([...value, v]);
     setDraft("");
   }
 
@@ -128,27 +158,13 @@ function PatternList({
             </Button>
           </div>
         ))}
-        <div className="flex h-8 items-center gap-2.5 bg-background px-3">
-          <Input
-            aria-label={lt.scopeParts[part]}
-            className="h-7 flex-1 border-0 bg-transparent px-0 font-mono shadow-none focus-visible:ring-0 dark:bg-transparent"
-            value={draft}
-            placeholder={t.placeholder[part]}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-              // 对话框会把回车当成提交
-              e.preventDefault();
-              commit();
-            }}
-            onBlur={commit}
-          />
-          <span className="shrink-0 tw-label text-muted-foreground">{t.enterToAdd}</span>
-        </div>
+        <PatternInput
+          part={part}
+          draft={draft}
+          onDraft={setDraft}
+          onAdd={add}
+          suggestions={suggestions.filter((s) => !value.includes(s.value))}
+        />
       </Boxed>
       <p className={cn("tw-label", invalid ? "text-warning" : "text-muted-foreground")}>
         {invalid ? t.needOne(lt.scopeParts[part]) : t.hint[part]}
@@ -157,24 +173,145 @@ function PatternList({
   );
 }
 
+/** 建议列表最多列几条 */
+const MAX_SUGGESTIONS = 50;
+
+/**
+ * 名单的最后一行：**自由输入 + 建议**。写的可以是一个名字，也可以是带 `*` 的通配
+ * （`claude-*`）；建议是已知的客户端、模型和上游，输入通配时列出它对得上的那些。
+ *
+ * 所以是 Autocomplete，不是 Combobox（和路由规则的模型名同一个道理）：建议之外的名字、
+ * 通配都要留得住。点一条建议、或者用方向键选中再回车，直接加进名单；没选中建议时回车加的
+ * 是输入的原样。
+ */
+function PatternInput({
+  part,
+  draft,
+  onDraft,
+  onAdd,
+  suggestions,
+}: {
+  part: ScopePart;
+  draft: string;
+  onDraft: (v: string) => void;
+  onAdd: (v: string) => void;
+  suggestions: readonly Suggestion[];
+}) {
+  const t = useText(pluginFieldsText);
+  const lt = useText(pluginLabelsText);
+  // **建议列表挂进所在的对话框，不挂在 body 上**：Radix 的模态对话框把 body 设成
+  // pointer-events: none，挂在 body 上的列表看得见、点不中（见路由的 `ModelInput`）
+  const anchor = useRef<HTMLDivElement>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setContainer(anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null);
+  }, []);
+  const [open, setOpen] = useState(false);
+  // **Esc 只收起列表**，不连同对话框（和里面没保存的改动）一起关掉
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open]);
+  /** 方向键选中了一条建议：回车交给列表（加那一条），不是加输入的原样 */
+  const highlighted = useRef<string | undefined>(undefined);
+  const notes = useMemo(() => new Map(suggestions.map((s) => [s.value, s.note])), [suggestions]);
+  const items = useMemo(() => suggestions.map((s) => s.value), [suggestions]);
+  const shown = useMemo(() => items.filter((v) => suggestionMatches(draft, v)).slice(0, MAX_SUGGESTIONS), [items, draft]);
+
+  return (
+    <div ref={anchor} className="flex h-8 items-center gap-2.5 bg-background px-3">
+      <Autocomplete
+        items={items}
+        filteredItems={shown}
+        value={draft}
+        onValueChange={(v, d) => {
+          if (d.reason === "item-press") onAdd(v);
+          else onDraft(v);
+        }}
+        open={open && shown.length > 0}
+        onOpenChange={setOpen}
+        onItemHighlighted={(v) => {
+          highlighted.current = v as string | undefined;
+        }}
+        openOnInputClick
+      >
+        <ComboboxBareInput
+          aria-label={lt.scopeParts[part]}
+          placeholder={t.placeholder[part]}
+          className="font-mono"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+            // 对话框会把回车当成提交
+            e.preventDefault();
+            if (open && highlighted.current !== undefined) return;
+            onAdd(draft);
+          }}
+          onBlur={() => {
+            if (!open) onAdd(draft);
+          }}
+        />
+        <ComboboxContent container={container ?? undefined}>
+          <ComboboxList>
+            {(v: string) => (
+              <ComboboxItem key={v} value={v} className="pr-2">
+                <span className="min-w-0 flex-1 truncate font-mono">{v}</span>
+                {notes.get(v) && <span className="shrink-0 tw-label text-muted-foreground">{notes.get(v)}</span>}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Autocomplete>
+      <span className="shrink-0 tw-label text-muted-foreground">{t.enterToAdd}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────── 出错时
+
+/** 出错时：拒绝这次请求（默认），或者跳过这个插件 */
+export function OnErrorField({ value, onChange }: { value: OnError; onChange: (v: OnError) => void }) {
+  const lt = useText(pluginLabelsText);
+  return (
+    <FormItem label={lt.onError}>
+      <Segmented<OnError>
+        label={lt.onError}
+        value={value}
+        options={[
+          { id: "reject", label: lt.onErrorOptions.reject },
+          { id: "skip", label: lt.onErrorOptions.skip },
+        ]}
+        onChange={onChange}
+      />
+    </FormItem>
+  );
+}
+
 // ─────────────────────────────────────────────── 插件的设置项
 
-/** 设置项在表单里的值：数字先按输入的原样存着，保存时才换成数 */
+/** 设置项在表单里的值：数字先按输入的原样存着，交出去时才换成数 */
 export type SettingsDraft = Record<string, string | boolean>;
 
-export function settingsDraftOf(
-  schema: readonly SettingSpecView[],
-  values: Partial<Record<string, SettingValue>>,
-): SettingsDraft {
+/** 表单从 manifest 里的值起头。值写在插件文件里（`value`） */
+export function settingsDraftOf(schema: readonly SettingSpecView[]): SettingsDraft {
   const out: SettingsDraft = {};
   for (const s of schema) {
-    const v = values[s.key] ?? s.default;
+    const v = s.value;
     out[s.key] = s.kind === "boolean" ? v === true : typeof v === "boolean" ? "" : String(v);
   }
   return out;
 }
 
-/** 写回去的值，和填错的那几项（按标签） */
+/** 交出去的值，和填错的那几项（按标签） */
 export function settingsOf(
   schema: readonly SettingSpecView[],
   draft: SettingsDraft,
@@ -195,8 +332,8 @@ export function settingsOf(
 }
 
 /**
- * 插件声明的设置项。**标签是插件自己写的**，只按纯文本画（`PluginText`）；默认值写在下面，
- * 改过之后对照得上。
+ * 插件声明的设置项。**标签是插件自己写的**，只按纯文本画（`PluginText`）；core 自带的默认
+ * 插件按界面语言说（`localSchema`）。
  *
  * 字符串一项一行、可以写多行（一行一条的替换表这类），输入框随内容长高；数字两个一行；开关
  * 一项一行排在最后 —— 开关和输入框并排时，两边的高度对不齐。
@@ -223,7 +360,6 @@ export function SettingsFields({
             const label = s.label || s.key;
             const v = value[s.key];
             const text = typeof v === "string" ? v : "";
-            const def = s.default === "" ? t.emptyDefault : t.defaultIs(String(s.default));
             const bad = s.kind === "number" && text.trim() !== "" && !Number.isFinite(Number(text.trim()));
             const set = (next: string) => onChange({ ...value, [s.key]: next });
             return (
@@ -243,13 +379,7 @@ export function SettingsFields({
                     onChange={(e) => set(e.target.value)}
                   />
                 )}
-                {bad ? (
-                  <p className="tw-label text-destructive">{t.numberBad(label)}</p>
-                ) : (
-                  <p className="truncate tw-label text-muted-foreground">
-                    <PluginText text={def} />
-                  </p>
-                )}
+                {bad && <p className="tw-label text-destructive">{t.numberBad(label)}</p>}
               </div>
             );
           })}

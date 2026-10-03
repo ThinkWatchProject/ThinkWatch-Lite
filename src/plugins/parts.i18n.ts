@@ -8,6 +8,8 @@ export const pluginPartsText = messages(
     noDifference: "内容相同",
     invisible: (code: string) => `看不见的字符 ${code}`,
     loadingCode: "正在打开代码",
+    /** 读屏读出来的代码框 */
+    codeLabel: "插件代码",
     permissions: "申请的权限",
     /** 这一项权限这一版没有了 */
     permissionRemoved: "不再申请",
@@ -21,6 +23,7 @@ export const pluginPartsText = messages(
     noDifference: "The contents are the same",
     invisible: (code: string) => `Invisible character ${code}`,
     loadingCode: "Opening the code",
+    codeLabel: "Plugin code",
     permissions: "Requested permissions",
     permissionRemoved: "No longer requested",
     statsTitle: "Runs",

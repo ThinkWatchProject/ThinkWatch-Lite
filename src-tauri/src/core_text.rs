@@ -54,12 +54,20 @@ pub fn clause(m: &Msg) -> String {
 }
 
 /// 按码说中文，连同外面套的场合。说不出来是 None
+///
+/// **插件名按中文说**：`{plugin}` 是默认插件 core 发的英文名时，换成它的中文名（和插件页上
+/// 一样，见 `plugins::defaults::name_in`）。消息里只有名字，按名字认
 pub fn zh(m: &Msg) -> Option<String> {
     let t = table();
     if m.code.starts_with("//") {
         return None;
     }
     let say = t.messages.get(&m.code)?;
+    // 填进中文句子的参数。认场合比的是英文原句，那边照旧用原样的参数
+    let mut zh_args = m.args.clone();
+    if let Some(p) = zh_args.get_mut("plugin") {
+        *p = crate::plugins::defaults::name_in(crate::i18n::Lang::Zh, None, p);
+    }
     let mut leads = String::new();
     let mut rest = m.text.as_str();
     'peel: loop {
@@ -76,14 +84,14 @@ pub fn zh(m: &Msg) -> Option<String> {
             else {
                 continue;
             };
-            leads.push_str(&render(&c.zh, &m.args, &t.tables)?);
+            leads.push_str(&render(&c.zh, &zh_args, &t.tables)?);
             leads.push('：');
             rest = after;
             continue 'peel;
         }
         break;
     }
-    Some(leads + &render(say, &m.args, &t.tables)?)
+    Some(leads + &render(say, &zh_args, &t.tables)?)
 }
 
 // ------------------------------------------------------------ 写法
@@ -315,6 +323,35 @@ mod tests {
     struct Case {
         msg: Msg,
         zh: String,
+    }
+
+    /// 默认插件的英文名在中文里换成插件页上的名字；英文照 core 的原句。别人的插件照它写的
+    #[test]
+    fn a_default_plugin_is_named_like_on_the_plugins_page() {
+        let m = |plugin: &str| Msg {
+            code: "control.plugin.needs_confirmation".into(),
+            args: BTreeMap::from([("plugin".into(), plugin.into())]),
+            text: format!("Plugin `{plugin}` can change the tool calls in replies, so …"),
+        };
+        let wsl = m("Convert WSL and Windows paths");
+        crate::i18n::with_lang(crate::i18n::Lang::Zh, || {
+            assert!(
+                text(&wsl).starts_with("插件「WSL 路径转换」可以修改"),
+                "{}",
+                text(&wsl)
+            );
+            let theirs = m("Rename tools");
+            assert!(
+                text(&theirs).starts_with("插件「Rename tools」"),
+                "{}",
+                text(&theirs)
+            );
+        });
+        crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            assert_eq!(text(&wsl), wsl.text);
+            // 中文那一句不看当前语言
+            assert!(zh(&wsl).unwrap().contains("「WSL 路径转换」"));
+        });
     }
 
     /// 和界面跑同一份用例：两份实现对同一条消息说同一句话

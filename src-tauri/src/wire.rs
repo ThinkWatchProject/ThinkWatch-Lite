@@ -751,53 +751,44 @@ pub struct ImportProposal {
 
 // ---------------------------------------------------------- 插件：在系统的确认框里点头的几步
 //
-// 装插件、换代码、批准改过的文件、打开改得了工具调用的插件（或者改它的设置、范围），
-// 这几个端点**不在网页的白名单里**（`call.rs`）。网页只能请 Rust 去做：Rust 自己把插件
-// 再读一遍，在系统的确认框里写明它是谁、能做什么、这次改什么，点了头才写配置
-// （`plugins` 模块）。
+// 改得了回答里工具调用的插件，装上它、打开它、改它的代码、批准它磁盘上改过的文件，要在系统
+// 的确认框里点头（约定附录 4 §3）。点头之后发的那几个端点（`…Confirmed`）**不在网页的白名单
+// 里**（`call.rs`）：网页只能请 Rust 去做，Rust 自己把插件再读一遍，在系统的确认框里写明它是
+// 谁、能做什么、这次改什么，点了头才写配置（`plugins` 模块）。
 
-/// 装一个插件（`plugin_install`）：代码，和审核窗口里选的。
+/// 装一个插件（`plugin_install_confirmed`）：代码、ID 和开关，和 `CreatePlugin` 一样。
 ///
-/// **没有 manifest**：名字、权限、处理哪几种请求由 Rust 把代码交给 core 再读一遍，网页
-/// 说的不算。
+/// **没有 manifest**：名字、权限、处理哪几种请求、适用范围由 Rust 把代码交给 core 再读一遍，
+/// 网页说的不算。出错时怎么办、适用范围、设置都写在代码里
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct PluginInstallRequest {
     pub source: String,
-    /// 审核窗口里填的 ID。不给由 core 按名字起
+    /// 添加插件时「设置」页上的插件 ID。不给由 core 按名字起
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub enabled: bool,
-    pub on_error: tw_api::OnError,
-    pub scope: tw_api::PluginScope,
-    pub settings: std::collections::BTreeMap<String, tw_api::SettingValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_version: Option<String>,
 }
 
-/// 换一个插件的代码（`plugin_replace_source`）
+/// 保存一个插件（`plugin_save_confirmed`）：整份代码和开关，和 `SavePlugin` 一样。这次改
+/// 什么由 Rust 和 core 那边确认过的那一份比出来
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct PluginReplaceRequest {
+pub struct PluginSaveRequest {
     pub id: String,
     pub source: String,
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_version: Option<String>,
 }
 
-/// 批准一个插件改过的文件（`plugin_approve`）。**文件由 Rust 自己去取**：读的、给人看的、
-/// 交给 core 认的是同一个 SHA-256
+/// 批准一个插件磁盘上改过的文件（`plugin_approve_confirmed`）。**文件由 Rust 自己去取**：
+/// 读的、给人看的、交给 core 认的是同一个 SHA-256
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct PluginApproveRequest {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_version: Option<String>,
-}
-
-/// 一次要点头的改动（`plugin_update_confirmed`）：和 `UpdatePlugin` 一样整份交，交上来的
-/// 就是保存之后的样子
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct PluginUpdateRequest {
-    pub id: String,
-    pub update: tw_api::PluginUpdate,
 }
 
 /// 写成了（配置的新版本），或者在系统的确认框里点了取消 —— **取消不是失败**，什么都
