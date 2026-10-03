@@ -125,7 +125,6 @@ describe("默认插件的说法", () => {
     expect(pluginName(p.id, p.name)).toBe("WSL 路径转换");
     expect(pluginDescription(p)).toContain("/mnt/c/");
     expect(localSchema(p.id, p.name, p.settings_schema)[0]!.label).toBe("客户端运行在 Windows 上（关闭时按 WSL 处理）");
-    expect(pluginName("deepseek-flags", "Avoid DeepSeek request rejections")).toBe("避免 DeepSeek 拒收请求");
     expect(pluginName("reply-language", "Answer in a chosen language")).toBe("指定回答语言");
   });
 

@@ -733,8 +733,8 @@ fn a_plugin_failure_never_carries_what_the_plugin_said() {
 fn a_default_plugin_is_named_in_its_notice_like_on_the_plugins_page() {
     with_lang(Lang::Zh, || {
         let s = rules::plugin_failed(
-            "deepseek-flags",
-            "Avoid DeepSeek request rejections",
+            "wsl-paths",
+            "Convert WSL and Windows paths",
             Some(3),
             &tw_api::Msg {
                 code: "gw.plugin.cpu_limit".into(),
@@ -742,7 +742,7 @@ fn a_default_plugin_is_named_in_its_notice_like_on_the_plugins_page() {
                 text: "The plugin used more CPU time than it is allowed.".into(),
             },
         );
-        assert!(s.title.contains("避免 DeepSeek 拒收请求"), "{}", s.title);
+        assert!(s.title.contains("WSL 路径转换"), "{}", s.title);
         assert!(s.body.contains("CPU"), "{}", s.body);
     });
 }

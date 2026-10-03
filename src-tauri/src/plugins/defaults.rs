@@ -1,9 +1,9 @@
 //! core 自带的默认插件在这一侧的说法：系统的确认框、通知里的名字和设置项的标签。
 //!
 //! **表只有一张，在 `src/i18n/plugin-defaults.json`**，界面（`src/plugins/defaults.ts`）
-//! 读的是同一份，这里 `include_str!`。默认插件的 manifest 里名字和说明是英文、标签是
-//! 中文；界面上看到「指定回答语言」，系统的确认框里也得是这几个字，用户才认得出是同
-//! 一个插件。
+//! 读的是同一份，这里 `include_str!`。默认插件的 manifest 里名字、说明和标签都是英文；
+//! 界面上看到「指定回答语言」，系统的确认框里也得是这几个字，用户才认得出是同一个
+//! 插件。
 //!
 //! **按 id 认，manifest 的名字也得对得上**（core 发的那一个）：用户删掉默认插件之后自己
 //! 装了一个、恰好用了同一个 id 的，照它自己写的名字说 —— 不能拿默认插件的名字替一个
@@ -94,7 +94,7 @@ mod tests {
             assert_eq!(name(Some("reply-language"), REPLY), "指定回答语言");
             assert_eq!(label("reply-language", REPLY, "language", "x"), "回答语言");
         });
-        // 英文界面的名字照 manifest，标签另有英文（manifest 里的标签是中文）
+        // 英文界面的名字照 manifest，标签取表里的英文（不看 manifest 写的是什么）
         with_lang(Lang::En, || {
             assert_eq!(name(Some("reply-language"), REPLY), REPLY);
             assert_eq!(

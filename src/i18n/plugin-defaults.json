@@ -1,5 +1,5 @@
 {
-  "//": "core 自带的默认插件（core 的 crates/tw-gateway/src/plugin/defaults/）在界面上的说法。manifest 里名字和说明是英文、设置项的标签是中文，界面按当前语言从这里取：中文取名字、说明和标签，英文只取标签（名字和说明照 manifest）。按 id 认，manifest 的名字也得是 core 发的那一个（manifest_name）：用户自己装、恰好用了这个 id 的插件照它自己写的显示。界面（src/plugins/defaults.ts）和 Rust（src-tauri/src/plugins/defaults.rs：系统的确认框、通知）读的是这同一份。",
+  "//": "core 自带的默认插件（core 的 crates/tw-gateway/src/plugin/defaults/）在界面上的说法。manifest 里名字、说明和设置项的标签都是英文，界面按当前语言从这里取：中文取名字、说明和标签，英文只取标签（名字和说明照 manifest）。按 id 认，manifest 的名字也得是 core 发的那一个（manifest_name）：用户自己装、恰好用了这个 id 的插件照它自己写的显示。界面（src/plugins/defaults.ts）和 Rust（src-tauri/src/plugins/defaults.rs：系统的确认框、通知）读的是这同一份。",
   "plugins": [
     {
       "id": "reply-language",
@@ -23,18 +23,6 @@
       },
       "en": {
         "settings": { "windows_client": "The client runs on Windows (otherwise WSL)" }
-      }
-    },
-    {
-      "id": "deepseek-flags",
-      "manifest_name": "Avoid DeepSeek request rejections",
-      "zh": {
-        "name": "避免 DeepSeek 拒收请求",
-        "description": "DeepSeek 接口会拒收含特定地区旗帜表情的请求（Content Exists Risk），此后整个会话无法继续。此插件在发送前将这类表情替换为占位文字，并在回答和工具调用中还原。",
-        "settings": {}
-      },
-      "en": {
-        "settings": {}
       }
     }
   ]
