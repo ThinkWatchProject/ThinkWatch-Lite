@@ -22,6 +22,17 @@ export const configTextText = messages(
     cursorAt: (section: string) => `光标位于${section}`,
     showInApp: "在界面中查看",
     unsaved: "有未保存的修改",
+    /**
+     * 写配置原文（保存文件、恢复版本）要装上、启用、换掉批准的代码的那个插件改得了回答里的
+     * 工具调用：这条路做不了，只能在插件页里做（那里会弹系统的确认框）
+     */
+    pluginConfirm: {
+      title: "此更改须在插件页中确认",
+      /** `reason` 是 core 的那句话 */
+      notSaved: (reason: string) => `配置文件未保存。${reason}`,
+      notRestored: (reason: string) => `未恢复此版本。${reason}`,
+      open: "打开插件页",
+    },
   },
   {
     sections: {
@@ -43,5 +54,11 @@ export const configTextText = messages(
     cursorAt: (section: string) => `Cursor in ${section}`,
     showInApp: "Show in app",
     unsaved: "Unsaved changes",
+    pluginConfirm: {
+      title: "This change has to be confirmed on the Plugins page",
+      notSaved: (reason: string) => `The config file was not saved. ${reason}`,
+      notRestored: (reason: string) => `This version was not restored. ${reason}`,
+      open: "Open Plugins",
+    },
   },
 );
