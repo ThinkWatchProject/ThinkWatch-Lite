@@ -1,4 +1,5 @@
 import type { Msg } from "@/types";
+import { localizedPluginNames, pluginName } from "@/plugins/defaults";
 import { getLang } from "./index";
 import CORE_ZH from "./core.zh.json";
 import { render, wordsOf, type Args, type Tables } from "./template";
@@ -75,24 +76,29 @@ export function plain(text: string): Msg {
  * 一条 core 消息在界面上怎么说。
  *
  * 传字符串进来也行：控制面之外的错误（连不上 socket 之类）本来就是
- * 一句现成的话。
+ * 一句现成的话。`pluginId`：知道这句话说的是哪个插件时给（见 `zhOf`）。
  */
-export function coreText(m: Msg | string | null | undefined): string {
+export function coreText(m: Msg | string | null | undefined, pluginId?: string | null): string {
   if (m == null) return "";
   if (typeof m === "string") return m;
   if (getLang() === "en") return m.text;
-  return zhOf(m) ?? m.text;
+  return zhOf(m, pluginId) ?? m.text;
 }
 
 /**
  * 按码说中文，连同外面套的场合。**说不出来是 `undefined`**：码不在表里，或者
  * 缺参数、词表里查不到。少一个参数时不能写出半句中文或一个「undefined」——
  * core 改了参数名而这张表还没跟上时，一句完整的英文比一句缺了主语的中文好。
+ *
+ * **插件名按界面说**：`{plugin}` 是默认插件 core 发的英文名时，换成它的中文名（`pluginName`，
+ * 插件页上也叫这个名字）。知道是哪个插件的（`pluginId`）按 id 认，不知道的按名字认。
  */
-export function zhOf(m: Msg): string | undefined {
+export function zhOf(m: Msg, pluginId?: string | null): string | undefined {
   const say = MESSAGES[m.code];
   if (!say || m.code.startsWith("//")) return undefined;
   const args: Args = m.args ?? {};
+  // 填进中文句子的参数。认场合比的是英文原句，那边照旧用原样的参数
+  const zhArgs: Args = args.plugin === undefined ? args : { ...args, plugin: pluginName(pluginId, args.plugin, "zh") };
   const leads: string[] = [];
   for (let rest = m.text; ; ) {
     let hit: { zh: string; en: string } | undefined;
@@ -100,7 +106,7 @@ export function zhOf(m: Msg): string | undefined {
       if (args[c.arg] === undefined) continue;
       const en = render(c.en, args, CORE_TABLES);
       if (en === undefined || !rest.startsWith(`${en}: `)) continue;
-      const zh = render(c.zh, args, CORE_TABLES);
+      const zh = render(c.zh, zhArgs, CORE_TABLES);
       if (zh === undefined) return undefined;
       hit = { zh, en };
       break;
@@ -109,7 +115,7 @@ export function zhOf(m: Msg): string | undefined {
     leads.push(`${hit.zh}：`);
     rest = rest.slice(hit.en.length + 2);
   }
-  const zh = render(say, args, CORE_TABLES);
+  const zh = render(say, zhArgs, CORE_TABLES);
   return zh === undefined ? undefined : leads.join("") + zh;
 }
 
@@ -122,14 +128,19 @@ export function zhOf(m: Msg): string | undefined {
  * 英文原句里本来就有，core 按 `q` 对原句就对上了。**宁可多给**：多给的那几条，界面拿到
  * 之后照着屏幕上的那句话再筛一遍（见 `traffic/historySearch.ts`）。
  *
+ * **默认插件的中文名也算**：句子里的插件名换成了它（见 `zhOf`），英文原句里却是 core 发的
+ * 英文名。搜的是其中一个中文名的，句子里有插件名的码都交过去。
+ *
  * 英文界面上看到的就是原句，交空的。`q` 已经去掉首尾空白、转了小写。
  */
 export function codesMatching(q: string): string[] {
   if (!q || getLang() === "en") return [];
+  const pluginNamed = localizedPluginNames("zh").some((n) => n.toLowerCase().includes(q));
   const out: string[] = [];
   for (const [code, say] of Object.entries(MESSAGES)) {
     if (code.startsWith("//")) continue;
-    if (wordsOf(say, CORE_TABLES).some((w) => w.toLowerCase().includes(q))) out.push(code);
+    if (wordsOf(say, CORE_TABLES).some((w) => w.toLowerCase().includes(q)) || (pluginNamed && say.includes("{plugin}")))
+      out.push(code);
   }
   return out;
 }
@@ -140,9 +151,10 @@ export function codesMatching(q: string): string[] {
  * **命令失败时交出来的是一条 `Msg` 形状的对象**（src-tauri 的 `CmdError`）：
  * 控制面的失败带着 core 的码，按码翻；桌面端自己的失败码是空串，照 `text`
  * 显示。Tauri 自己拒掉的调用（命令不存在、没有权限）仍然是一句字符串。
+ * `pluginId` 同 `coreText`。
  */
-export function errorText(e: unknown): string {
-  if (isMsg(e)) return coreText(e);
+export function errorText(e: unknown, pluginId?: string | null): string {
+  if (isMsg(e)) return coreText(e, pluginId);
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;
   return String(e);

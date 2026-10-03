@@ -66,7 +66,7 @@ export function DeleteDialog({
           <AlertDialogDescription>{t.deleteDescription}</AlertDialogDescription>
         </AlertDialogHeader>
         <Banner show={error !== null} layout="inline" tone="error">
-          {error !== null && errorText(error)}
+          {error !== null && errorText(error, target.id)}
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{common.cancel}</AlertDialogCancel>

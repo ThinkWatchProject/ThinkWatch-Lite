@@ -135,6 +135,17 @@ describe("译文里可能含着搜索词的码", () => {
   it("没有搜索词时一个都不给", () => {
     expect(codesMatching("")).toEqual([]);
   });
+
+  /** 句子里默认插件的英文名换成了中文名，库里的英文原句里没有它 */
+  it("默认插件的中文名：带插件名的码都交", () => {
+    const codes = codesMatching("wsl 路径");
+    expect(codes).toContain("gw.plugin.rejected");
+    expect(codes).toContain("control.plugin.needs_confirmation");
+    expect(codes).not.toContain("gw.upstream.timeout");
+    expect(codesMatching("指定回答语言")).toContain("gw.plugin.request_failed");
+    setLang("en");
+    expect(codesMatching("wsl 路径")).toEqual([]);
+  });
 });
 
 describe("表里该有的行", () => {

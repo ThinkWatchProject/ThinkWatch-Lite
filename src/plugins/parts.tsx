@@ -254,8 +254,9 @@ export function ScopeSummary({ scope }: { scope: PluginScope }) {
 
 /**
  * 运行统计的一格：运行几次、改写几次，出错的标红。悬停是全部的数（core 启动以来）。
+ * `pluginId`：是哪个插件的（最近一次出错的那一句里有插件名，见 `coreText`）
  */
-export function StatsCell({ stats }: { stats: PluginStats }) {
+export function StatsCell({ stats, pluginId }: { stats: PluginStats; pluginId: string }) {
   const t = useText(pluginStatsText);
   const lt = useText(pluginLabelsText);
   if (stats.calls === 0) return <span className="text-muted-foreground">{t.noRuns}</span>;
@@ -282,7 +283,7 @@ export function StatsCell({ stats }: { stats: PluginStats }) {
             {t.lines.lastError} · {when(stats.last_error.at_ms)}
           </span>
           {/* core 的那一句按码说，里面嵌着的插件写的字照样只是字 */}
-          <PluginText text={coreText(stats.last_error.message)} className="break-words text-muted-foreground" />
+          <PluginText text={coreText(stats.last_error.message, pluginId)} className="break-words text-muted-foreground" />
         </span>
       )}
     </span>

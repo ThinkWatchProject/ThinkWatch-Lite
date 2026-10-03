@@ -863,7 +863,7 @@ function PluginRuns({ runs, attempts }: { runs: PluginRunView[]; attempts: Attem
           </span>
           {run.error && (
             <span className="tw-label break-words text-destructive">
-              <PluginText text={coreText(run.error)} />
+              <PluginText text={coreText(run.error, run.plugin_id)} />
             </span>
           )}
         </span>

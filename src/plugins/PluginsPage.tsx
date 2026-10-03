@@ -385,7 +385,7 @@ function Stopped({
           >
             {p.status.kind === "error" && (
               <p className="break-words select-text">
-                <PluginText text={coreText(p.status.message)} />
+                <PluginText text={coreText(p.status.message, p.id)} />
               </p>
             )}
             <p>{reject ? t.failedRejecting : t.failedSkipping}</p>
@@ -472,7 +472,7 @@ function PluginList({
               </div>
               {p.status.kind === "error" ? (
                 <p className="mt-0.5 truncate tw-body text-destructive">
-                  <PluginText text={coreText(p.status.message)} />
+                  <PluginText text={coreText(p.status.message, p.id)} />
                 </p>
               ) : (
                 w.description && (
@@ -494,7 +494,7 @@ function PluginList({
                       <span className="shrink-0 text-muted-foreground/80">{t.appliesTo}</span>
                       <ScopeSummary scope={p.scope} />
                     </span>
-                    <StatsCell stats={p.stats} />
+                    <StatsCell stats={p.stats} pluginId={p.id} />
                   </>
                 )}
                 <span className="-my-1 -mr-2 ml-auto flex shrink-0 items-center" {...keepInRow}>

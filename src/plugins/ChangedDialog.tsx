@@ -72,7 +72,7 @@ export function ChangedDialog({
       if (r === "done") onApproved();
       else setCancelled(true);
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, plugin.id));
     } finally {
       setWriting(false);
     }
@@ -118,7 +118,7 @@ export function ChangedDialog({
               {loadError && (
                 <Banner layout="inline" tone="error" title={t.cannotLoad}>
                   <p className="break-words select-text">
-                    <PluginText text={coreText(loadError.message)} />
+                    <PluginText text={coreText(loadError.message, plugin.id)} />
                   </p>
                   {loadError.line != null && <p className="mt-0.5">{t.at(pt.errorAt(loadError.line, loadError.column ?? null))}</p>}
                 </Banner>
@@ -136,7 +136,7 @@ export function ChangedDialog({
                   <RequestKinds kinds={manifest.requests} className="tw-label text-muted-foreground" />
                 </section>
               )}
-              {read.error !== undefined && !read.loading && !read.data && <DialogError error={errorText(read.error)} />}
+              {read.error !== undefined && !read.loading && !read.data && <DialogError error={errorText(read.error, plugin.id)} />}
 
               <section className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">

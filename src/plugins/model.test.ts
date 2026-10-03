@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ManifestView, PluginView } from "@/types";
-import { localSchema, pluginDescription, pluginName } from "./defaults";
+import { localizedPluginNames, localSchema, pluginDescription, pluginName } from "./defaults";
 import { hunks, lineDiff, tally } from "./diff";
 import {
   cpuMs,
@@ -173,7 +173,27 @@ describe("默认插件的说法", () => {
     expect(pluginName(theirs.id, theirs.name)).toBe("路径小工具");
     expect(pluginDescription(theirs)).toBe("别人写的");
     expect(localSchema(theirs.id, theirs.name, theirs.settings_schema)).toBe(theirs.settings_schema);
-    expect(pluginName(null, "Answer in a chosen language")).toBe("Answer in a chosen language");
+    // 用了默认插件的英文名、id 不一样的：知道 id 时照它自己写的，说明和标签也不换
+    const copy = plugin({ id: "my-paths" });
+    expect(pluginName(copy.id, copy.name)).toBe(copy.name);
+    expect(pluginDescription(copy)).toBe(copy.description);
+    expect(localSchema(copy.id, copy.name, copy.settings_schema)).toBe(copy.settings_schema);
+  });
+
+  it("只知道名字（core 消息里的 `{plugin}`）：按 core 发的英文名认，一字不差才算", () => {
+    setLang("zh");
+    expect(pluginName(null, "Answer in a chosen language")).toBe("指定回答语言");
+    expect(pluginName(undefined, "Convert WSL and Windows paths")).toBe("WSL 路径转换");
+    for (const near of ["answer in a chosen language", "Answer in a chosen language.", "指定回答语言", "wsl-paths"]) {
+      expect(pluginName(null, near)).toBe(near);
+    }
+    // 语言可以指定：按码说中文时不看此刻的界面语言
+    setLang("en");
+    expect(pluginName(null, "Convert WSL and Windows paths")).toBe("Convert WSL and Windows paths");
+    expect(pluginName(null, "Convert WSL and Windows paths", "zh")).toBe("WSL 路径转换");
+    expect(localizedPluginNames()).toEqual([]);
+    expect(localizedPluginNames("zh")).toEqual(["指定回答语言", "WSL 路径转换"]);
+    setLang("zh");
   });
 });
 
