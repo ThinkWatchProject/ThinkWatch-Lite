@@ -201,8 +201,11 @@ mod imp {
     unsafe impl Send for Handle {}
 
     impl Handle {
+        /// **空句柄连包都不包。**写成 `then_some(Self(h))` 的话，包着空句柄的那一个先建出来
+        /// 再丢掉，`Drop` 对空句柄调一次 `CloseHandle`，把调用方接着要读的 `GetLastError`
+        /// 改成「句柄无效」
         fn new(h: HANDLE) -> Option<Self> {
-            (!h.is_null()).then_some(Self(h))
+            if h.is_null() { None } else { Some(Self(h)) }
         }
     }
 
