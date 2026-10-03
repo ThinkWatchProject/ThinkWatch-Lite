@@ -343,8 +343,8 @@ pub fn run() {
             } else {
                 Box::new(notices::SystemSink::new(handle.clone()))
             };
-            // Windows 上「装好的」是指开始菜单里有带 AUMID 的快捷方式，见 `notices::windows`。
-            // 点开走协议激活（下面的 `on_open_url`），不用在这里接回调
+            // Windows 上看这次启动有没有登记上通知的 AUMID（上面的 `winreg::claim`），见
+            // `notices::windows`。点开走协议激活（下面的 `on_open_url`），不用在这里接回调
             #[cfg(windows)]
             let system: Box<dyn notices::Sink> = if notices::windows::available(&handle) {
                 Box::new(notices::windows::NativeSink::new(handle.clone()))

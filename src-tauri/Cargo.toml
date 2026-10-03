@@ -177,7 +177,14 @@ windows-sys = { version = "0.61", features = [
     # 醒来的那个常量在后一个里
     "Win32_System_Power",
     "Win32_UI_WindowsAndMessaging",
+    # 应用起来之前的系统对话框（`dialog`）：TaskDialog 的结构和常量在前一个里，函数本身
+    # 用的时候现从 comctl32 里取，所以还要后一个
+    "Win32_UI_Controls",
+    "Win32_System_LibraryLoader",
 ] }
+# HKCU 下的链接、开机自启、通知登记（`winreg`）。版本是 reqwest 的系统代理在 Windows 上
+# 已经拉进来的那一份，不多编一套
+windows-registry = "0.6"
 # 系统通知走 WinRT 的 toast：能原地更新、撤回、点开落到对应页面（见
 # `notices/windows/`）。版本跟着 Tauri 在 Windows 上已经拉进来的那一份，不多编一套
 windows = { version = "0.61", features = [
