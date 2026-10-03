@@ -203,3 +203,7 @@ windows = { version = "0.61", features = [
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
 # 接管、扫描的测试在一台假机器（临时目录）上做
 tempfile = "3.20"
+
+# 测程序清单系统认不认（`dialog` 的测试）：照它建一个激活上下文
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ApplicationInstallationAndServicing"] }

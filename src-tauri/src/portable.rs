@@ -27,41 +27,183 @@ const DATA: &str = "data";
 /// WebView2 的数据（缓存、本地存储）放在数据目录下的哪里
 const WEBVIEW: &str = "webview";
 
+/// 绿色版把数据目录交给 core 和别处用的那个变量（`tw_api::data::dir` 最先看它）
+const HOME_VAR: &str = "THINKWATCH_HOME";
+
+/// 和 [`HOME_VAR`] 一起设的记号：**是哪个 exe 设的**。见 [`forget_inherited`]
+pub const MARKER_VAR: &str = "THINKWATCH_PORTABLE_EXE";
+
 /// 启动最早的一步：绿色版把数据目录定在 exe 旁边的 `data\`，并确认能写。
 ///
-/// 写不进时弹系统对话框，然后退出进程。不是绿色版什么都不做。
+/// 用不了时弹系统对话框说清楚是哪一种（见 [`Refusal`]），然后退出进程。不是绿色版的话，
+/// 只做第一件事：丢掉从别的绿色版继承来的数据目录（[`forget_inherited`]）。
 /// **必须在任何线程起来之前调用**：它要改进程的环境变量（`THINKWATCH_HOME`）。
 pub fn prepare() {
+    forget_inherited();
     if !is_portable() {
         return;
     }
-    let Some(dir) = folder() else {
-        return;
+    // **找不到自己在哪也不往下走。**那样数据会落到默认的 `%APPDATA%\ThinkWatch`，也就是
+    // 安装版的那一套设置 —— 两套本该互不相干，混在一起比起不来更糟
+    let Ok(exe) = std::env::current_exe() else {
+        refuse(&Refusal::NoFolder);
+    };
+    let Some(dir) = exe.parent().map(Path::to_path_buf) else {
+        refuse(&Refusal::NoFolder);
     };
     let data = data_dir_in(&dir);
     if let Err(e) = writable(&data) {
-        tracing::error!("绿色版的数据目录写不进（{}）：{e}", data.display());
-        // 设置在写不进的那个目录里，读不到；只能按系统的语言说
-        crate::i18n::set(crate::i18n::system());
-        crate::dialog::show(
-            "ThinkWatch Lite",
-            tr!("当前文件夹没有写入权限", "This folder is not writable"),
-            tr!(
-                "请将 ThinkWatch Lite 解压到可写入的位置后再运行。",
-                "Extract ThinkWatch Lite to a writable location and run it again."
-            ),
-            &[tr!("确定", "OK")],
-        );
-        std::process::exit(1);
+        tracing::error!("绿色版的数据目录用不了（{}）：{e}", data.display());
+        refuse(&refusal(&dir, &data, &e));
     }
     // **core 是子进程，继承这个变量**：界面和网关看的是同一个目录。从用户环境
     // 带给 core 的那一份变量里不含它（`supervisor::user_env::keep`），不会被盖掉。
+    // 记号一起设，见 `forget_inherited`
     //
     // SAFETY: `run()` 的第一步就是这里，在 Tauri、tokio、任何插件起线程之前；`main`
     // 在这之前只装了日志订阅器，它不起线程。进程里此刻只有主线程，没有别的线程
     // 可能同时读写环境变量。
-    unsafe { std::env::set_var("THINKWATCH_HOME", &data) };
+    unsafe {
+        std::env::set_var(HOME_VAR, &data);
+        std::env::set_var(MARKER_VAR, &exe);
+    }
     sweep(dir);
+}
+
+/// 丢掉**从另一个绿色版继承来的**数据目录。
+///
+/// 绿色版把 `THINKWATCH_HOME` 设在整个进程上，它拉起的每个程序都继承这个变量：core
+/// （正要它这样），还有比如由这里第一次打开的浏览器。之后从那个浏览器点一个
+/// `thinkwatch://` 链接拉起安装版，安装版就会用上绿色版的数据目录 —— 两套设置混成一套。
+///
+/// 所以绿色版设它的时候带上记号（[`MARKER_VAR`] = 自己的 exe）。启动时记号在、而且不是
+/// 当前这个 exe 的，两个变量都丢掉，用这一份自己的位置。**没有记号的 `THINKWATCH_HOME`
+/// 照旧算数**：那是用户自己设的（测试隔离、换数据目录）。各种构建都做
+fn forget_inherited() {
+    let marker = std::env::var_os(MARKER_VAR).map(|m| m.to_string_lossy().into_owned());
+    let exe = std::env::current_exe()
+        .ok()
+        .map(|e| e.to_string_lossy().into_owned());
+    if inherited(marker.as_deref(), exe.as_deref()) {
+        tracing::info!(
+            marker = marker.as_deref().unwrap_or_default(),
+            "数据目录是另一份绿色版传下来的，不用它"
+        );
+        // SAFETY: 同 `prepare` —— 这是它的第一步，进程里只有主线程
+        unsafe {
+            std::env::remove_var(HOME_VAR);
+            std::env::remove_var(MARKER_VAR);
+        }
+    }
+}
+
+/// 继承来的数据目录要不要丢掉：有记号、而记号不是当前这个 exe（不知道自己是谁也丢）。
+/// 路径的比法见 `winreg::same_path`
+fn inherited(marker: Option<&str>, current: Option<&str>) -> bool {
+    match (marker, current) {
+        (None, _) => false,
+        (Some(marker), Some(current)) => !crate::winreg::same_path(marker, current),
+        (Some(_), None) => true,
+    }
+}
+
+/// 绿色版用不了数据目录的几种情况
+#[derive(Debug, PartialEq, Eq)]
+enum Refusal {
+    /// 连自己在哪个文件夹都不知道
+    NoFolder,
+    /// 文件夹写不进（解压到了 Program Files、只读的盘）
+    NotWritable,
+    /// 文件夹写得进，`data\` 却打不开：它是另一个 Windows 账户建的（重装了系统、硬盘换到
+    /// 了另一台机器）。建的时候给了只有那个账户能进的 DACL（见 `private_dir`），这里
+    /// 不去放宽它 —— 里面有 API 密钥
+    OtherAccount(PathBuf),
+}
+
+/// 主句、正文
+fn refusal_text(why: &Refusal) -> (&'static str, String) {
+    let extract = || -> String {
+        tr!(
+            "请将 ThinkWatch Lite 解压到可写入的位置后再运行。",
+            "Extract ThinkWatch Lite to a writable location and run it again."
+        )
+        .into()
+    };
+    match why {
+        Refusal::NoFolder => (
+            tr!(
+                "无法确定程序所在的文件夹",
+                "The program folder could not be determined"
+            ),
+            extract(),
+        ),
+        Refusal::NotWritable => (
+            tr!("当前文件夹没有写入权限", "This folder is not writable"),
+            extract(),
+        ),
+        Refusal::OtherAccount(data) => (
+            tr!(
+                "数据文件夹属于另一个 Windows 账户",
+                "The data folder belongs to another Windows account"
+            ),
+            tr!(
+                format!(
+                    "当前账户无法访问 {}。可在该文件夹属性的「安全」页取得所有权后再运行，或将 ThinkWatch Lite 解压到新的位置。",
+                    data.display()
+                ),
+                format!(
+                    "The current account cannot access {}. Take ownership of the folder on its Properties › Security page and run ThinkWatch Lite again, or extract ThinkWatch Lite to a new location.",
+                    data.display()
+                )
+            ),
+        ),
+    }
+}
+
+/// 说清楚，然后退出
+fn refuse(why: &Refusal) -> ! {
+    // 设置在用不了的那个目录里，读不到；只能按系统的语言说
+    crate::i18n::set(crate::i18n::system());
+    let (instruction, content) = refusal_text(why);
+    crate::dialog::show(
+        "ThinkWatch Lite",
+        instruction,
+        &content,
+        &[tr!("确定", "OK")],
+    );
+    std::process::exit(1);
+}
+
+/// 数据目录用不了（`writable` 报了 `error`）的时候，是哪一种。
+///
+/// **三样都对上才说是另一个账户的**：`data\` 在（从文件夹的目录列表里看，不碰它本身）、
+/// 打它不开（没有权限；或者连它在不在都看不了、建的时候才撞上「已经存在」）、文件夹
+/// 本身写得进。别的一律按「文件夹写不进」说
+fn refusal(folder: &Path, data: &Path, error: &std::io::Error) -> Refusal {
+    let denied = matches!(
+        error.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AlreadyExists
+    );
+    if denied && listed_dir(folder, data) && probe(folder).is_ok() {
+        Refusal::OtherAccount(data.to_path_buf())
+    } else {
+        Refusal::NotWritable
+    }
+}
+
+/// 文件夹的目录列表里有没有 `dir` 这个子目录。**只读文件夹的列表**：`dir` 本身打不开
+/// 时，问它自己（`exists`、`metadata`）答不准
+fn listed_dir(folder: &Path, dir: &Path) -> bool {
+    let Some(name) = dir.file_name() else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.file_name().to_string_lossy().to_lowercase() == name.to_string_lossy().to_lowercase()
+            && e.file_type().is_ok_and(|t| t.is_dir())
+    })
 }
 
 /// 这一份是不是绿色版：Windows、正式构建、旁边没有卸载程序（见
@@ -120,7 +262,12 @@ fn data_dir_in(folder: &Path) -> PathBuf {
 fn writable(data: &Path) -> std::io::Result<()> {
     // 和安装版的数据目录一样只有本人能读：里面有 API 密钥
     crate::private_dir::create(data)?;
-    let probe = data.join(format!(".write-test-{}", std::process::id()));
+    probe(data)
+}
+
+/// 在 `dir` 里写一个文件再删掉
+fn probe(dir: &Path) -> std::io::Result<()> {
+    let probe = dir.join(format!(".write-test-{}", std::process::id()));
     std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -420,6 +567,173 @@ mod tests {
         if unsafe { libc::geteuid() } != 0 {
             assert!(refused.is_err());
         }
+    }
+
+    /// 记号是别的 exe 的（另一份绿色版拉起的浏览器又拉起了这一个）：丢掉；是自己的
+    /// （更新完重启自己）：留着；没有记号（用户自己设的 `THINKWATCH_HOME`）：留着
+    #[test]
+    fn only_a_home_inherited_from_another_portable_copy_is_dropped() {
+        let portable = r"D:\Tools\ThinkWatch Lite\thinkwatch-lite.exe";
+        let installed = r"C:\Program Files\ThinkWatch Lite\thinkwatch-lite.exe";
+        assert!(inherited(Some(portable), Some(installed)));
+        assert!(inherited(Some(portable), None));
+        assert!(!inherited(Some(portable), Some(portable)));
+        assert!(!inherited(
+            Some(portable),
+            Some(r"\\?\d:\tools\thinkwatch lite\THINKWATCH-LITE.EXE")
+        ));
+        assert!(!inherited(None, Some(installed)));
+        assert!(!inherited(None, None));
+    }
+
+    #[test]
+    fn each_refusal_says_what_is_wrong() {
+        let data = PathBuf::from(r"E:\ThinkWatch Lite\data");
+        let other = Refusal::OtherAccount(data.clone());
+        with_lang(Lang::Zh, || {
+            assert_eq!(
+                refusal_text(&Refusal::NotWritable),
+                (
+                    "当前文件夹没有写入权限",
+                    "请将 ThinkWatch Lite 解压到可写入的位置后再运行。".to_string()
+                )
+            );
+            assert_eq!(
+                refusal_text(&Refusal::NoFolder).0,
+                "无法确定程序所在的文件夹"
+            );
+            assert_eq!(
+                refusal_text(&other),
+                (
+                    "数据文件夹属于另一个 Windows 账户",
+                    format!(
+                        "当前账户无法访问 {}。可在该文件夹属性的「安全」页取得所有权后再运行，或将 ThinkWatch Lite 解压到新的位置。",
+                        data.display()
+                    )
+                )
+            );
+        });
+        with_lang(Lang::En, || {
+            assert_eq!(
+                refusal_text(&other),
+                (
+                    "The data folder belongs to another Windows account",
+                    format!(
+                        "The current account cannot access {}. Take ownership of the folder on its Properties › Security page and run ThinkWatch Lite again, or extract ThinkWatch Lite to a new location.",
+                        data.display()
+                    )
+                )
+            );
+            assert_eq!(
+                refusal_text(&Refusal::NoFolder).0,
+                "The program folder could not be determined"
+            );
+        });
+    }
+
+    #[test]
+    fn a_directory_is_found_in_its_folder_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = data_dir_in(dir.path());
+        assert!(!listed_dir(dir.path(), &data));
+        std::fs::write(&data, b"").unwrap();
+        assert!(!listed_dir(dir.path(), &data), "同名的文件不算");
+        std::fs::remove_file(&data).unwrap();
+        std::fs::create_dir(&data).unwrap();
+        assert!(listed_dir(dir.path(), &data));
+    }
+
+    /// 文件夹写得进、`data` 却打不开：是另一个账户的；文件夹本身写不进：照旧是写不进。
+    /// unix 上用权限位代替 Windows 的 DACL，判断走的是同一段
+    #[cfg(unix)]
+    #[test]
+    fn a_locked_data_folder_is_told_apart_from_a_read_only_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        // root 不受权限位约束，那种环境下这条说明不了什么
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let data = data_dir_in(dir.path());
+        std::fs::create_dir(&data).unwrap();
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let e = writable(&data).unwrap_err();
+        let why = refusal(dir.path(), &data, &e);
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(why, Refusal::OtherAccount(data.clone()));
+
+        let ro = dir.path().join("ro");
+        std::fs::create_dir(&ro).unwrap();
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let data = data_dir_in(&ro);
+        let e = writable(&data).unwrap_err();
+        let why = refusal(&ro, &data, &e);
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(why, Refusal::NotWritable);
+    }
+
+    /// 真的 DACL：`data` 只给 SYSTEM（像是另一个账户建的、只给那个账户），文件夹照常
+    /// 可写 → 是另一个账户的；文件夹本身只给 SYSTEM → 写不进
+    #[cfg(windows)]
+    #[test]
+    fn a_data_folder_of_another_account_is_recognised() {
+        use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, SetFileSecurityW};
+        use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+
+        fn wide(p: &Path) -> Vec<u16> {
+            use std::os::windows::ffi::OsStrExt;
+            p.as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        }
+        /// 建一个只有 SYSTEM 能进的目录
+        fn locked(dir: &Path) {
+            crate::private_dir::with_security_attributes("D:P(A;OICI;FA;;;SY)", |sa| {
+                let w = wide(dir);
+                // SAFETY: 路径以 0 结尾，`sa` 在调用期间有效
+                if unsafe { CreateDirectoryW(w.as_ptr(), sa) } == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            })
+            .unwrap();
+        }
+        /// 放开，好让临时目录删得掉（建它的人是所有者，改得了 DACL）
+        fn unlock(dir: &Path) {
+            crate::private_dir::with_security_attributes("D:(A;OICI;FA;;;WD)", |sa| {
+                let w = wide(dir);
+                // SAFETY: 路径以 0 结尾；安全描述符来自 `sa`，在调用期间有效
+                let ok = unsafe {
+                    SetFileSecurityW(
+                        w.as_ptr(),
+                        DACL_SECURITY_INFORMATION,
+                        (*sa).lpSecurityDescriptor,
+                    )
+                };
+                if ok == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let data = data_dir_in(dir.path());
+        locked(&data);
+        let e = writable(&data).unwrap_err();
+        let why = refusal(dir.path(), &data, &e);
+        unlock(&data);
+        assert_eq!(why, Refusal::OtherAccount(data.clone()), "{e}");
+
+        let ro = dir.path().join("ro");
+        locked(&ro);
+        let data = data_dir_in(&ro);
+        let e = writable(&data).unwrap_err();
+        let why = refusal(&ro, &data, &e);
+        unlock(&ro);
+        assert_eq!(why, Refusal::NotWritable, "{e}");
     }
 
     #[test]
