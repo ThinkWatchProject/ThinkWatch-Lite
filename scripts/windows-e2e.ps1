@@ -694,8 +694,8 @@ function Check-Prerequisites {
 
 function Check-PortableStart {
     Start-Check '1 portable start'
-    $script:p1 = Start-App $P1exe 'p1'
-    Wait-Ready $script:p1 (Join-Path $P1 'data') $P1 'P1'
+    $script:proc1 = Start-App $P1exe 'p1'
+    Wait-Ready $script:proc1 (Join-Path $P1 'data') $P1 'P1'
     if (Test-Path -LiteralPath $InstalledData) {
         Fail ('绿色版建出了 {0}：{1}' -f $InstalledData, (List-Dir $InstalledData))
     }
@@ -705,14 +705,14 @@ function Check-PortableStart {
     $webview = Join-Path $P1 'data\webview'
     if (Test-Path -LiteralPath $webview) { Pass ('WebView2 的数据在 {0}' -f $webview) }
     else { Warn ('没有 {0}：WebView2 的数据不在绿色版的文件夹里？' -f $webview) }
-    Shot-Main $script:p1 'p1-running'
+    Shot-Main $script:proc1 'p1-running'
 }
 
 function Check-Switch {
     Start-Check '2 second copy: switch'
     $P1core = Join-Path $P1 $CoreName
-    $script:p2 = Start-App $P2exe 'p2'
-    $dialog = Wait-Dialog $script:p2 'P2'
+    $script:proc2 = Start-App $P2exe 'p2'
+    $dialog = Wait-Dialog $script:proc2 'P2'
     Raise $dialog
     Shot 'p2-asks-to-switch'
     $texts = Get-Texts $dialog
@@ -729,8 +729,8 @@ function Check-Switch {
     # 等待对话框只在 P1 收尾的那一两秒里出现：赶上了就截一张，赶不上不算失败
     $caught = $false
     $until = (Get-Date).AddSeconds(20)
-    while ((Get-Date) -lt $until -and -not $script:p1.HasExited) {
-        $d = Get-Dialog $script:p2.Id
+    while ((Get-Date) -lt $until -and -not $script:proc1.HasExited) {
+        $d = Get-Dialog $script:proc2.Id
         if ($d) {
             $t = Get-Texts $d
             if (($t -join ' ') -like ('*{0}*' -f $Text.Waiting)) {
@@ -745,16 +745,16 @@ function Check-Switch {
     }
     if (-not $caught) { Say '没赶上等待对话框（P1 退得快），不影响结果' }
 
-    if (-not $script:p1.WaitForExit(120000)) { Fail 'P1 在 120 秒内没有退出' }
-    Pass ('P1 退出了（退出码 {0}）' -f $script:p1.ExitCode)
-    if ($script:p1.ExitCode -ne 0) { Warn ('P1 让位时的退出码是 {0}' -f $script:p1.ExitCode) }
+    if (-not $script:proc1.WaitForExit(120000)) { Fail 'P1 在 120 秒内没有退出' }
+    Pass ('P1 退出了（退出码 {0}）' -f $script:proc1.ExitCode)
+    if ($script:proc1.ExitCode -ne 0) { Warn ('P1 让位时的退出码是 {0}' -f $script:proc1.ExitCode) }
     Wait-Gone $P1core 'P1 的 twcore.exe'
     Pass 'P1 的 twcore.exe 退出了'
-    Wait-Ready $script:p2 (Join-Path $P2 'data') $P2 'P2'
+    Wait-Ready $script:proc2 (Join-Path $P2 'data') $P2 'P2'
     Assert-Link $P2exe 'P2'
     Assert-Aumid $AumidPortable (Join-Path $P2 'data')
-    if ($script:p2.HasExited) { Fail 'P2 起来之后又退出了' }
-    Shot-Main $script:p2 'p2-running'
+    if ($script:proc2.HasExited) { Fail 'P2 起来之后又退出了' }
+    Shot-Main $script:proc2 'p2-running'
 }
 
 function Check-Cancel {
@@ -773,7 +773,7 @@ function Check-Cancel {
     if (-not $again.WaitForExit(30000)) { Fail '按了取消，P1 在 30 秒内没有退出' }
     Pass ('按了取消，P1 退出了（退出码 {0}）' -f $again.ExitCode)
     Start-Sleep -Seconds 2
-    if ($script:p2.HasExited) { Fail ('P2 不该退出，退出码 {0}' -f $script:p2.ExitCode) }
+    if ($script:proc2.HasExited) { Fail ('P2 不该退出，退出码 {0}' -f $script:proc2.ExitCode) }
     if (@(Get-ProcsAt (Join-Path $P2 $CoreName)).Count -lt 1) { Fail 'P2 的 twcore.exe 不在了' }
     if (-not (Same (Link-Exe) $P2exe)) { Fail ('取消之后链接不该改，现在是 {0}' -f (Get-Reg $LinkCommandKey '')) }
     Pass 'P2 和它的网关照常运行，链接仍指向 P2'
@@ -796,7 +796,7 @@ function Check-SameExe {
     if (-not $again.HasExited) { Fail '第二个进程 30 秒内没有退出' }
     Pass ('没有弹框，第二个进程 {0:N1} 秒后退出（退出码 {1}）' -f $sw.Elapsed.TotalSeconds, $again.ExitCode)
     Start-Sleep -Seconds 1
-    if ($script:p2.HasExited) { Fail ('P2 不该退出，退出码 {0}' -f $script:p2.ExitCode) }
+    if ($script:proc2.HasExited) { Fail ('P2 不该退出，退出码 {0}' -f $script:proc2.ExitCode) }
     Pass 'P2 照常运行'
     Shot 'p2-brought-to-front'
 }
@@ -817,8 +817,8 @@ function Check-NotWritable {
     if (-not $denied) { Remove-Item -LiteralPath $probe -Force; Fail '拒绝写入之后这里照样写得进，模拟不了没有写入权限的文件夹' }
     Say ('已拒绝 {0} 写入 {1}' -f $sid, $P3)
 
-    $p3 = Start-App $P3exe 'p3'
-    $dialog = Wait-Dialog $p3 'P3'
+    $proc3 = Start-App $P3exe 'p3'
+    $dialog = Wait-Dialog $proc3 'P3'
     Raise $dialog
     Shot 'p3-not-writable'
     $texts = Get-Texts $dialog
@@ -826,18 +826,18 @@ function Check-NotWritable {
     Assert-Contains $texts $Text.NotWritableBody '正文'
     Pass '弹了「This folder is not writable」'
     Press $dialog $Text.OK 0
-    if (-not $p3.WaitForExit(30000)) { Fail '按了 OK，P3 在 30 秒内没有退出' }
-    if ($p3.ExitCode -ne 1) { Fail ('退出码应为 1，实际是 {0}' -f $p3.ExitCode) }
+    if (-not $proc3.WaitForExit(30000)) { Fail '按了 OK，P3 在 30 秒内没有退出' }
+    if ($proc3.ExitCode -ne 1) { Fail ('退出码应为 1，实际是 {0}' -f $proc3.ExitCode) }
     if (Test-Path -LiteralPath (Join-Path $P3 'data')) { Fail ('不该建出 {0}' -f (Join-Path $P3 'data')) }
     Pass '退出码 1，没有建出 data'
-    if ($script:p2.HasExited) { Fail 'P2 不该退出' }
+    if ($script:proc2.HasExited) { Fail 'P2 不该退出' }
     & icacls.exe $P3 /remove:d ('*' + $sid) | Out-Null
     $script:DenySid = $null
 }
 
 function Check-Installed {
     Start-Check '6 installed copy'
-    Stop-Gracefully $script:p2 'P2'
+    Stop-Gracefully $script:proc2 'P2'
     Wait-Gone (Join-Path $P2 $CoreName) 'P2 的 twcore.exe'
     Pass 'P2 和它的网关退出了'
 
@@ -866,15 +866,15 @@ function Check-Installed {
     Pass ('静默安装到了 {0}：{1}' -f $script:InstDir, (List-Dir $script:InstDir))
 
     $script:InstExe = Join-Path $script:InstDir $ExeName
-    $script:pi = Start-App $script:InstExe 'installed'
-    Wait-Ready $script:pi $InstalledData $script:InstDir 'installed'
+    $script:procInst = Start-App $script:InstExe 'installed'
+    Wait-Ready $script:procInst $InstalledData $script:InstDir 'installed'
     Assert-Link $script:InstExe '安装版'
     Assert-Aumid $AumidInstalled $InstalledData
     if (Test-Path -LiteralPath (Join-Path $script:InstDir 'data')) {
         Fail ('安装版不该在安装目录里建 data：{0}' -f (Join-Path $script:InstDir 'data'))
     }
     Pass '安装版没有把自己当成绿色版'
-    Shot-Main $script:pi 'installed-running'
+    Shot-Main $script:procInst 'installed-running'
 }
 
 function Find-InstallDir {
@@ -893,7 +893,7 @@ function Find-InstallDir {
 
 function Check-Uninstall {
     Start-Check '7 uninstall'
-    Stop-Gracefully $script:pi '安装版'
+    Stop-Gracefully $script:procInst '安装版'
     Wait-Gone (Join-Path $script:InstDir $CoreName) '安装版的 twcore.exe'
     Pass '安装版和它的网关退出了'
 
