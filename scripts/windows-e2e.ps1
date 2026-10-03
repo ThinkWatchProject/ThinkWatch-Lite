@@ -16,7 +16,7 @@ Windows 上的端到端检查：把 x64 的绿色版和安装程序当成用户�
     按「OK」后退出码是 1，没有建出 `data`。
  6. 安装版：P2 正常退出后静默安装（/S），启动装好的那一份：数据在 `%APPDATA%\ThinkWatch`，
     链接指向安装目录里的 exe，登记了 `app.thinkwatch.lite`。
- 7. 卸载（`-SkipUninstall` 时跳过）：开机自启指向 P2，关掉安装版、静默卸载：指向安装版
+ 7. 卸载：开机自启指向 P2，关掉安装版、静默卸载：指向安装版
     的链接和通知登记删掉了，指向 P2 的开机自启还在，`%APPDATA%\ThinkWatch` 还在（静默
     卸载不勾「同时删除数据」）。再对 P2 跑 `--uninstall-cleanup --delete-data`：退出码 0，
     `P2\data` 没了，HKCU 里没有指向 P2 的项。
@@ -37,8 +37,7 @@ portable.rs、webview2.rs。文件名照 tw-api 的 `control::CONFIG_FILE` / `PO
 param(
     [Parameter(Mandatory = $true)] [string] $Setup,
     [Parameter(Mandatory = $true)] [string] $Zip,
-    [Parameter(Mandatory = $true)] [string] $Out,
-    [switch] $SkipUninstall
+    [Parameter(Mandatory = $true)] [string] $Out
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +54,16 @@ public static class TwE2E {
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+
+    // 鼠标移过去、左键按下再抬起，和人点一下一样
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
@@ -117,7 +126,7 @@ $Text = @{
     WebView2        = 'WebView2'
 }
 
-# 对话框按钮的编号：dialog.rs 的 FIRST_BUTTON 起。UI 自动化按不下去时，退回给对话框
+# 对话框按钮的编号：dialog.rs 的 FIRST_BUTTON 起。鼠标点不下去时，退回给对话框
 # 发 TDM_CLICK_BUTTON
 $FirstButton = 100
 $TDM_CLICK_BUTTON = 0x0466   # WM_USER + 102
@@ -422,26 +431,50 @@ function Assert-Contains([string[]] $texts, [string] $needle, [string] $what) {
     }
 }
 
-# 用 UI 自动化按下对话框里写着 `label` 的按钮；按不下去时退回 TDM_CLICK_BUTTON
+# 按下对话框里写着 `label` 的按钮，确认对话框随之关掉。
+#
+# TaskDialog 的按钮在 UI 自动化里是 `Pane [CCPushButton]`，没有 Invoke：那就照它的位置
+# 用鼠标点一下，和人点的一样。点了对话框没关，才退回给它发 TDM_CLICK_BUTTON（按编号，
+# `index` 是按钮在 dialog::show 里的下标）并记一条提醒；那样也没关，算失败
 function Press($dialog, [string] $label, [int] $index) {
     $named = @(Get-Parts $dialog | Where-Object { $_.Name -and $_.Name.Trim() -eq $label })
     if ($named.Count -eq 0) {
         Fail ('对话框里没有「{0}」按钮。对话框里有：{1}' -f $label, (Describe $dialog))
     }
-    # 同名的几个里挑能「按」的那个（文字标签和按钮可能同名）
+    $hwnd = [IntPtr]$dialog.Current.NativeWindowHandle
+    # 同名的几个里挑按钮：能 Invoke 的，其次是 CCPushButton / Button（正文里可能有同样的字）
     $button = $null
+    $invoke = $false
     foreach ($n in $named) {
         $pattern = $null
-        if ($n.Element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $button = $n; break }
+        if ($n.Element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $button = $n; $invoke = $true; break }
     }
+    if (-not $button) {
+        $button = @($named | Where-Object { $_.Class -eq 'CCPushButton' -or $_.Type -eq 'ControlType.Button' }) + $named | Select-Object -First 1
+    }
+    $how = ''
     try {
-        if (-not $button) { throw ('「{0}」都不支持 Invoke：{1}' -f $label, (($named | ForEach-Object { $_.Type }) -join ', ')) }
-        $button.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-        Say ('按下了「{0}」（{1}）' -f $label, $button.Type)
+        if ($invoke) {
+            $button.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            $how = 'Invoke'
+        } else {
+            $r = $button.Element.Current.BoundingRectangle
+            if ($r.IsEmpty -or $r.Width -le 0) { throw '按钮没有位置' }
+            Raise $dialog
+            [TwE2E]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+            $how = '鼠标'
+        }
     } catch {
-        Warn ('UI 自动化按不下「{0}」（{1}），改发 TDM_CLICK_BUTTON' -f $label, $_.Exception.Message)
-        $h = [IntPtr]$dialog.Current.NativeWindowHandle
-        [void][TwE2E]::PostMessage($h, $TDM_CLICK_BUTTON, [IntPtr]($FirstButton + $index), [IntPtr]::Zero)
+        $how = '失败：' + $_.Exception.Message
+    }
+    if (Wait-For { -not [TwE2E]::IsWindow($hwnd) } 5 100) {
+        Say ('按下了「{0}」（{1}，{2}）' -f $label, $button.Type, $how)
+        return
+    }
+    Warn ('「{0}」按下去对话框没关（{1}），改发 TDM_CLICK_BUTTON' -f $label, $how)
+    [void][TwE2E]::PostMessage($hwnd, $TDM_CLICK_BUTTON, [IntPtr]($FirstButton + $index), [IntPtr]::Zero)
+    if (-not (Wait-For { -not [TwE2E]::IsWindow($hwnd) } 5 100)) {
+        Fail ('「{0}」怎么按对话框都不关' -f $label)
     }
 }
 
@@ -945,6 +978,12 @@ function Check-Uninstall {
     if (-not (Test-Path -LiteralPath $InstalledData)) { Fail ('静默卸载不该删 {0}' -f $InstalledData) }
     Pass ('{0} 还在：{1}' -f $InstalledData, (List-Dir $InstalledData))
 
+    # 和用户退出程序之后再清理一样：P2 的 WebView2 子进程也走了。还占着 `data\webview` 的话
+    # 清理会把它留下（见 uninstall::drop_data）
+    $p2webview = Join-Path $P2 'data\webview'
+    $left = Wait-For { @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { "$($_.CommandLine)".IndexOf($p2webview, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -eq 0 } 30
+    if (-not $left) { Warn 'P2 的 WebView2 子进程 30 秒后还在' }
+
     $cleanup = Start-App $P2exe 'p2-cleanup' @('--uninstall-cleanup', '--delete-data')
     if (-not $cleanup.WaitForExit(120000)) { Fail '--uninstall-cleanup 在 120 秒内没有结束' }
     foreach ($l in (Read-Log (Join-Path $Logs 'e2e-p2-cleanup.out.log'))) { Say ('  ' + $l) }
@@ -969,12 +1008,7 @@ try {
     Check-SameExe
     Check-NotWritable
     Check-Installed
-    if ($SkipUninstall) {
-        Start-Check '7 uninstall'
-        Warn '跳过（-SkipUninstall）'
-    } else {
-        Check-Uninstall
-    }
+    Check-Uninstall
 } catch {
     $failure = $_.Exception.Message
     $script:Results.Add([pscustomobject]@{ Check = $script:Check; Result = 'FAIL'; What = $failure })

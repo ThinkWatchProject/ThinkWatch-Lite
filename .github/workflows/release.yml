@@ -498,7 +498,7 @@ jobs:
           $setup = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-setup.exe)
           $zip = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-portable.zip)
           if ($setup.Count -ne 1 -or $zip.Count -ne 1) { throw "expected one setup.exe and one portable.zip in e2e-input" }
-          & .\scripts\windows-e2e.ps1 -Setup $setup[0].FullName -Zip $zip[0].FullName -Out "$env:RUNNER_TEMP\e2e" -SkipUninstall
+          & .\scripts\windows-e2e.ps1 -Setup $setup[0].FullName -Zip $zip[0].FullName -Out "$env:RUNNER_TEMP\e2e"
 
       - if: always()
         uses: actions/upload-artifact@v4
