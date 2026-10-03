@@ -195,16 +195,29 @@ fn remove_retrying(dir: &Path, keep: Option<&Path>, retry: Retry) -> std::io::Re
 }
 
 fn remove(dir: &Path, keep: Option<&Path>) -> std::io::Result<()> {
-    let Some(keep) = keep.filter(|k| k.parent() == Some(dir)) else {
+    // `keep` 得是 `dir` 下面的一项才算数。两边可能是不同的写法（一个带 `\\?\` 前缀），
+    // 对不上字面时按磁盘上的真实路径比
+    let same = |a: &Path| {
+        a == dir
+            || matches!(
+                (std::fs::canonicalize(a), std::fs::canonicalize(dir)),
+                (Ok(x), Ok(y)) if x == y
+            )
+    };
+    let Some(name) = keep
+        .filter(|k| k.parent().is_some_and(same))
+        .and_then(|k| k.file_name())
+    else {
         return std::fs::remove_dir_all(dir);
     };
     // 一项一项删，删不掉的记下第一个原因、接着删别的
     let mut first = None;
     for e in std::fs::read_dir(dir)? {
-        let p = e?.path();
-        if p == keep {
+        let e = e?;
+        if e.file_name() == name {
             continue;
         }
+        let p = e.path();
         let r = if p.is_dir() && !p.is_symlink() {
             std::fs::remove_dir_all(&p)
         } else {
@@ -479,6 +492,11 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(left, ["webview"]);
+        // 换一种写法（Windows 上 `canonicalize` 给的是带 `\\?\` 的那种）也认得出是它
+        std::fs::write(dir.join("config.yaml"), "x").unwrap();
+        let spelled = std::fs::canonicalize(&dir).unwrap().join("webview");
+        let step = drop_data(&dir, true, true, Some(&spelled), ONCE);
+        assert!(step.ok && webview.exists() && !dir.join("config.yaml").exists());
         // 不在数据目录里的 `keep` 不算数：整个删
         let other = d.path().join("elsewhere");
         let step = drop_data(&dir, true, true, Some(&other), ONCE);
