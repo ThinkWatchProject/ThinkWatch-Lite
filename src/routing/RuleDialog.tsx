@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collapsible";
 import {
   Dialog,
@@ -19,7 +18,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
-import { Field, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/ui/native-select";
 import { cn } from "@/lib/utils";
@@ -36,7 +34,6 @@ import { TargetIcon } from "./parts";
 import {
   COND_FIELDS,
   DIALECTS,
-  PROBE_IDS,
   addOnsText,
   blankCondition,
   compareOps,
@@ -88,8 +85,7 @@ export function RuleDialog({
   /** 在这里新建了策略组：外面要重读概览，路由对话框接着用写完的版本 `version` */
   onChanged: (version: string) => void;
   onClose: () => void;
-  /** `routeProbes`：保存路由时一并设为「交给路由」的辅助请求类别 */
-  onSave: (rule: RuleDraft, routeProbes: string[]) => void;
+  onSave: (rule: RuleDraft) => void;
 }) {
   const t = useText(ruleDialogText);
   const rt = useText(routingText);
@@ -99,21 +95,22 @@ export function RuleDialog({
   const [rewriteOpen, setRewriteOpen] = useState(
     () => initial.model !== "" || initial.maxTokens !== "" || initial.thinking !== "keep",
   );
-  const [routeProbes, setRouteProbes] = useState<boolean | null>(null);
   const [newGroup, setNewGroup] = useState(false);
 
   const modelIds = useMemo(() => models.map((m) => m.id), [models]);
   const phaseTwo = isPhaseTwo(d);
   const problem = ruleProblem(d, takenNames);
 
-  // 辅助请求条件里还没交给路由的类别：不交给路由，这个条件永远不满足
+  /**
+   * 辅助请求条件里点名的、设为本地应答的类别：它们到不了路由，这个条件对它们永远不成立。
+   * 选了「任一辅助请求」就不提 —— 那是在说「转发的那几类里随便哪一类」，本地应答的连通性
+   * 检查、预热本来就不在里面
+   */
   const intent = d.conditions.find((c) => c.field === "intent");
   const anyProbe = intent?.values.includes("assistant_internal") ?? false;
-  const unrouted = (anyProbe ? PROBE_IDS : (intent?.values ?? [])).filter(
-    (id) => ov.client_probes.find((p) => p.id === id)?.mode !== "route",
-  );
-  // 「任一辅助请求」时不默认勾选：连通性检查和预热原本由网关本地应答，改为交给路由会产生费用
-  const routing = routeProbes ?? !anyProbe;
+  const intercepted = anyProbe
+    ? []
+    : (intent?.values ?? []).filter((id) => ov.client_probes.find((p) => p.id === id)?.mode === "intercept");
 
   const rewriteSummary = addOnsText(d);
 
@@ -160,17 +157,13 @@ export function RuleDialog({
                   onRemove={() => set({ conditions: d.conditions.filter((_, j) => j !== i) })}
                 />
               ))}
-              <Banner layout="inline" tone="warning" show={unrouted.length > 0} title={t.unrouted(unrouted.map(probeLabel))}>
-                <Field orientation="horizontal" className="mt-1.5 w-auto">
-                  <Checkbox
-                    id="rule-route-probes"
-                    checked={routing}
-                    onCheckedChange={(v) => setRouteProbes(v === true)}
-                  />
-                  <FieldLabel htmlFor="rule-route-probes" className="font-normal text-foreground">
-                    {t.routeProbes}
-                  </FieldLabel>
-                </Field>
+              <Banner
+                layout="inline"
+                tone="warning"
+                show={intercepted.length > 0}
+                title={t.intercepted(intercepted.map(probeLabel))}
+              >
+                {t.toForward}
               </Banner>
               <AddCondition
                 used={d.conditions.map((c) => c.field)}
@@ -291,7 +284,7 @@ export function RuleDialog({
           <Button variant="outline" onClick={onClose}>
             {ct.cancel}
           </Button>
-          <Button disabled={problem != null} onClick={() => onSave(d, routing ? unrouted : [])}>
+          <Button disabled={problem != null} onClick={() => onSave(d)}>
             {create ? t.add : ct.save}
           </Button>
         </DialogFooter>

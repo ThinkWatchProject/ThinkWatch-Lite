@@ -526,7 +526,6 @@
     "control.sheet_in_use": "价目表「{sheet}」仍被上游{upstreams!names}使用，请先解除关联再删除。",
     "control.default_route_cannot_delete": "路由「{route}」是默认路由，不能删除。请先将其他路由设为默认路由。",
     "control.reassign_to_deleted_route": "网关密钥不能改用正在删除的路由「{route}」。",
-    "control.unknown_probe_class": "没有「{class}」这一类辅助请求。",
     "control.builtin_group_fixed": "每个上游的内置策略组随上游列表自动生成，不能编辑或删除。",
     "control.route.duplicate_rule": "路由中有两条名为「{rule}」的规则。",
     "control.rule.condition_no_value": "规则「{rule}」：条件 {field} 没有值。",
