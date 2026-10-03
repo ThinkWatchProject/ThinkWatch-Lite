@@ -43,6 +43,13 @@
 # 包留在这次运行的产物里，可以下载下来装到真机上看。改了这条流水线，先演练
 # 一遍，不要拿一个 tag 去试。
 #
+# **`rehearse/windows/` 开头的只演练 Windows**：两个 Windows 构建、`windows-e2e`
+# 和发布页正文照做，macOS 和 Linux 的构建跳过（各自 job 上的 `if`）。只改了 Windows
+# 那一块时用它，省下另外三台机器；发版之前仍要在别的 `rehearse/` 分支上完整演练一遍。
+#
+# 同一个分支再推一次，还在跑的那次演练就取消（`concurrency`）。**tag 不取消**：
+# 发版的那次运行跑到一半被打断，可能只挂上了一部分文件。
+#
 # 不用手工触发（`workflow_dispatch`）：那只认默认分支上的这份文件，而改动
 # 要先进 dev、过很久才到 main —— 等于改完的流水线没法在合并之前演练。
 name: Release
@@ -54,6 +61,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -75,6 +86,8 @@ env:
 jobs:
   app:
     name: ThinkWatch Lite (aarch64-apple-darwin)
+    # 只演练 Windows 的分支不打它，见文件开头
+    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
     # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
     # 拿到的是一个能下载但打不开的文件，那比没有更糟。
     runs-on: macos-latest
@@ -528,6 +541,8 @@ jobs:
 
   linux:
     name: ThinkWatch Lite (${{ matrix.target }})
+    # 只演练 Windows 的分支不打它，见文件开头
+    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
     strategy:
       fail-fast: false
       matrix:
