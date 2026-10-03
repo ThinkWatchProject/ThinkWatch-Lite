@@ -26,6 +26,12 @@ describe("卸载会还原哪些客户端", () => {
     expect(names).toEqual(["Claude Code", "Claude Code (WSL · Ubuntu)"]);
   });
 
+  /** 另一个 ThinkWatch Lite 接管的（`adopted_at_ms` 为空、`other_instance` 为真）卸载不还原，不列 */
+  it("另一个 ThinkWatch Lite 接管的不列", () => {
+    const other = { name: "Codex", adopted_at_ms: null, other_instance: true } as DetectedClient;
+    expect(restoreNames([client("Claude Code", true), other], [], t)).toEqual(["Claude Code"]);
+  });
+
   it("不在 Windows 上：没有 WSL，只列这台电脑上的", () => {
     expect(restoreNames([client("Codex", true)], [], t)).toEqual(["Codex"]);
   });

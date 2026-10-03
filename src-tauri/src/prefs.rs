@@ -146,41 +146,38 @@ pub fn update(dir: &Path, f: impl FnOnce(&mut Prefs)) -> anyhow::Result<Prefs> {
 mod tests {
     use super::*;
 
-    fn tmp() -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "tw-prefs-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// 一个空目录，测试结束（过了、没过）就删掉。拿着返回的第一项到测试结束
+    fn tmp() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix("tw-prefs-")
+            .tempdir()
+            .unwrap();
+        let p = d.path().to_path_buf();
+        (d, p)
     }
 
     #[test]
     fn with_no_settings_file_the_check_is_on_and_the_language_and_theme_follow_the_system() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         let p = load(&dir);
         assert!(p.check_updates);
         assert_eq!(p.language, None);
         assert_eq!(p.theme, None);
         assert_eq!(p.notices, Mode::System);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 关掉之后存得住：出厂是开的，用户写下的 `false` 必须照样被读成 `false`。
     #[test]
     fn turning_the_check_off_is_remembered() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         update(&dir, |p| p.check_updates = false).unwrap();
         assert!(!load(&dir).check_updates);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 改一项不能把另一项冲掉。
     #[test]
     fn changing_one_setting_keeps_the_others() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         update(&dir, |p| p.language = Some(Lang::En)).unwrap();
         update(&dir, |p| p.check_updates = false).unwrap();
         update(&dir, |p| p.notices = Mode::Off).unwrap();
@@ -188,13 +185,12 @@ mod tests {
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
         assert_eq!(p.notices, Mode::Off);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// **每一项都不是出厂值**：哪一项没被读回来，这里就对不上
     #[test]
     fn settings_survive_a_round_trip() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         let want = Prefs {
             check_updates: false,
             language: Some(Lang::Zh),
@@ -212,13 +208,12 @@ mod tests {
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 旧的设置文件里没有菜单栏这一项：**别的设置照旧**，菜单栏按出厂那一档
     #[test]
     fn a_file_without_the_menubar_setting_keeps_everything_else() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
             br#"{"check_updates":false,"language":"en","theme":null,"notices":"app"}"#,
@@ -229,26 +224,24 @@ mod tests {
         assert!(!p.check_updates);
         assert_eq!(p.menubar, crate::menubar::Style::Full);
         assert!(p.client_locations.is_empty());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 文件坏了按出厂设置。
     #[test]
     fn a_corrupt_settings_file_falls_back_to_the_default() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         std::fs::write(prefs_path(&dir), b"{ not json").unwrap();
         assert_eq!(load(&dir), Prefs::default());
         // 是 JSON，但不是一份设置
         std::fs::write(prefs_path(&dir), b"[\"en\"]").unwrap();
         assert_eq!(load(&dir), Prefs::default());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 降级之后：新版本写下的、这一版不认识的值（提醒多了一档、菜单栏多了一种样式、
     /// 位置换了写法），**只有那一项按出厂值**，语言、外观、别的客户端的位置照旧
     #[test]
     fn a_value_this_version_does_not_know_resets_only_that_setting() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
             br#"{
@@ -276,13 +269,12 @@ mod tests {
             ["claude-code"],
             "读不懂的只丢那一个客户端"
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 写法没变：**旧版本（整份按一个结构体读）照样读得懂这一版写下的文件**
     #[test]
     fn what_this_version_writes_an_older_one_still_reads() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         update(&dir, |p| {
             p.language = Some(Lang::En);
             p.notices = Mode::App;
@@ -291,13 +283,12 @@ mod tests {
         let strict: Prefs =
             serde_json::from_slice(&std::fs::read(prefs_path(&dir)).unwrap()).unwrap();
         assert_eq!(strict, load(&dir));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 类型不对的一项（手改坏的）：同样只有那一项按出厂值
     #[test]
     fn a_value_of_the_wrong_type_resets_only_that_setting() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
             br#"{"check_updates":"no","language":"ja","theme":1,"notices":"off","menubar":"icon"}"#,
@@ -309,13 +300,12 @@ mod tests {
         assert_eq!(p.theme, None);
         assert_eq!(p.notices, Mode::Off);
         assert_eq!(p.menubar, crate::menubar::Style::Icon);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 写到一半的文件（以前不是整份换上去的）：按出厂设置，不崩
     #[test]
     fn a_truncated_settings_file_falls_back_to_the_default() {
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         let full = serde_json::to_vec_pretty(&Prefs {
             language: Some(Lang::En),
             ..Prefs::default()
@@ -323,7 +313,6 @@ mod tests {
         .unwrap();
         std::fs::write(prefs_path(&dir), &full[..full.len() / 2]).unwrap();
         assert_eq!(load(&dir), Prefs::default());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 存设置是**整份换上去**，不是在原处截断重写：写到一半退出，留下的是上一份完整的，
@@ -332,7 +321,7 @@ mod tests {
     #[test]
     fn saving_replaces_the_file_instead_of_rewriting_it_in_place() {
         use std::io::Read;
-        let dir = tmp();
+        let (_tmp, dir) = tmp();
         update(&dir, |p| p.language = Some(Lang::En)).unwrap();
         let mut before = std::fs::File::open(prefs_path(&dir)).unwrap();
         update(&dir, |p| p.language = Some(Lang::Zh)).unwrap();
@@ -345,6 +334,5 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(files, [PREFS_FILE]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

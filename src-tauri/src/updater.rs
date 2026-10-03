@@ -82,12 +82,26 @@ pub struct OfferView {
 ///
 /// 读的是一份几百字节的 JSON，不下载任何别的东西。
 pub(crate) async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let u = app.updater().map_err(|e| e.to_string())?;
-    let found = u.check().await.map_err(|e| e.to_string())?;
+    let found = updater(app)?.check().await.map_err(|e| e.to_string())?;
     Ok(found.map(|up| Found {
         version: up.version.clone(),
     }))
+}
+
+/// 更新器。查和装用的是同一个，**两处必须找 latest.json 里的同一个键**。
+///
+/// 绿色版指定自己的键（见 `portable::updater_target`）：它的 exe 就是安装程序里
+/// 那一个，不指定的话插件按打包标记找到的是安装程序 —— 查到的版本对，下下来的却
+/// 是 setup.exe，拆包这一步才失败。
+fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let builder = app.updater_builder();
+    let builder = if crate::portable::is_portable() {
+        builder.target(crate::portable::updater_target())
+    } else {
+        builder
+    };
+    builder.build().map_err(|e| e.to_string())
 }
 
 /// 从网上读一段文本。
@@ -165,7 +179,7 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         w.set_focus()?;
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
+    let b = WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
         .title(tr!("软件更新", "Software Update"))
         .initialization_script(i18n::init_script())
         // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来
@@ -174,8 +188,13 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .minimizable(false)
         .maximizable(false)
         .center()
-        .visible(false)
-        .build()?;
+        .visible(false);
+    // 和主窗口同一个 WebView2 数据目录，见 `window::show_main_window`
+    let b = match crate::portable::webview_data_dir() {
+        Some(dir) => b.data_directory(dir),
+        None => b,
+    };
+    b.build()?;
     Ok(())
 }
 
@@ -325,22 +344,30 @@ pub(crate) enum Step {
     Restarting,
 }
 
+/// 等请求结束时问一次网关的状态最多等多久。**答不上来就当问不到**：卡住的 core 不该
+/// 让等它的那一方（装更新、让位给另一个位置的程序）也跟着卡住
+const STATUS_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// 等网关手上的请求都结束。
 ///
 /// **重启会掐断所有还没结束的流**：一个正在吐字的 Claude Code 任务，那段
 /// 输出就没了，那个请求得从头再发一次。等计数归零，重启就落在两个请求
 /// 之间的空档里。
 ///
-/// 问不到（core 不在跑、控制面没答应）就不等 —— 没有网关，也就没有要保护
-/// 的请求。
+/// 问不到（core 不在跑、控制面没答应、[`STATUS_WAIT`] 内没回话）就不等 —— 没有
+/// 网关，也就没有要保护的请求。
 pub(crate) async fn wait_for_quiet(control: &ControlClient, on_wait: impl Fn(usize)) {
     let started = std::time::Instant::now();
     let mut waited = false;
     loop {
-        let s = match control.status().await {
-            Ok(s) => s,
-            Err(e) => {
+        let s = match tokio::time::timeout(STATUS_WAIT, control.status()).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
                 tracing::info!("等请求结束：问不到网关的状态，不等（{e:#}）");
+                return;
+            }
+            Err(_) => {
+                tracing::warn!("等请求结束：网关 {STATUS_WAIT:?} 内没回话，不等");
                 return;
             }
         };
@@ -382,7 +409,6 @@ pub async fn update_install(
     hub: tauri::State<'_, Updates>,
 ) -> Out<()> {
     use std::sync::atomic::Ordering;
-    use tauri_plugin_updater::UpdaterExt;
 
     let install = update::kind();
     if !install.can_self_update() {
@@ -417,9 +443,7 @@ pub async fn update_install(
     }
     let _release = Release(&hub.installing);
 
-    let up = app
-        .updater()
-        .map_err(|e| e.to_string())?
+    let up = updater(&app)?
         .check()
         .await
         .map_err(|e| e.to_string())?
@@ -436,6 +460,11 @@ pub async fn update_install(
         )
         .await
         .map_err(|e| tr!(format!("下载失败：{e}"), format!("Download failed: {e}")))?;
+    // 绿色版不跑安装程序，自己换文件夹里的两个 exe —— 见 `install_portable`
+    #[cfg(windows)]
+    if install == update::Install::Portable {
+        return install_portable(&app, &state, bytes).await;
+    }
     // 发布页上只有 DMG，插件只装 `.app.tar.gz` —— 见 `dmg`。放在等请求之前：
     // 包打不开的话，不该先让用户白等几分钟
     #[cfg(target_os = "macos")]
@@ -510,6 +539,48 @@ pub async fn update_install(
     app.restart()
 }
 
+/// 绿色版的安装：拆包、等请求结束、停网关、换掉文件夹里的两个 exe、重启。**不弹
+/// UAC**：文件夹是用户自己解压的，启动时已经确认过能写（`portable::prepare`）。
+///
+/// **包先拆开看。**形状不对（见 `portable::unpack`）不该先让用户白等几分钟，网关
+/// 也还没停。
+///
+/// 换文件之前先记下退出时的样子（[`record_exit`]），和其他平台一样：重启之后照它
+/// 恢复窗口。换不成就把改过名的文件改回来（`portable::swap_in` 自己做）、把停掉的
+/// 网关接回来，说清楚去哪下载。
+#[cfg(windows)]
+async fn install_portable(app: &tauri::AppHandle, state: &AppState, zip: Vec<u8>) -> Out<()> {
+    use crate::portable;
+    let package = tauri::async_runtime::spawn_blocking(move || portable::unpack(&zip))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| update::portable_failure(&e))?;
+
+    // 问的是本机的 core：要重启的是它。连着远程时它本来就停着，不用等
+    wait_for_quiet(state.supervisor.control(), |in_flight| {
+        let _ = app.emit("update-step", Step::Waiting { in_flight });
+    })
+    .await;
+
+    let _ = app.emit("update-step", Step::Installing);
+    record_exit(app);
+    // `twcore.exe` 也要换：先停下，等它真的退出
+    state
+        .supervisor
+        .stop_and_wait(std::time::Duration::from_secs(5))
+        .await;
+    let swapped = tauri::async_runtime::spawn_blocking(move || portable::install(package))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
+    if let Err(e) = swapped {
+        resume_after_failed_update(app).await;
+        return Err(update::portable_failure(&e).into());
+    }
+    let _ = app.emit("update-step", Step::Restarting);
+    app.restart()
+}
+
 /// 装下载好的那一份，**在阻塞线程上**。
 ///
 /// `install` 从头到尾都是阻塞的活：macOS 上要替换的位置写不进去时，插件把管理员密码
@@ -534,7 +605,7 @@ async fn install_blocking(
 /// 返回了，而循环要再走一步才把「正在守护」放下；这之间去拉，会被当成
 /// 「守护还在，重启一下」，然后因为 core 不在跑而什么也不做。
 ///
-/// Windows 的安装程序是先停网关再装，装不成走这里。
+/// Windows 的安装程序是先停网关再装，装不成走这里；绿色版换文件没换成也走这里。
 #[cfg(windows)]
 pub(crate) async fn resume_after_failed_update(app: &tauri::AppHandle) {
     use std::sync::atomic::Ordering;

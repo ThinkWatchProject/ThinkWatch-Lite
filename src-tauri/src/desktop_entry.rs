@@ -317,8 +317,11 @@ mod tests {
 
     #[test]
     fn uninstall_removes_both_files_and_says_so_once() {
-        let dir = std::env::temp_dir().join(format!("tw-desktop-rm-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::Builder::new()
+            .prefix("tw-desktop-rm-")
+            .tempdir()
+            .unwrap();
+        let dir = tmp.path().join("share");
         let f = Files::under(&dir, "app.thinkwatch.lite");
         // Nothing there (a development build): nothing to say
         assert!(f.remove().is_empty());
@@ -328,18 +331,18 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(out[0].ok, "{}", out[0].text);
         assert!(!f.desktop.exists() && !f.icon.exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn an_unchanged_file_is_not_rewritten() {
-        let dir = std::env::temp_dir().join(format!("tw-desktop-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let f = dir.join("a/b.desktop");
+        let tmp = tempfile::Builder::new()
+            .prefix("tw-desktop-")
+            .tempdir()
+            .unwrap();
+        let f = tmp.path().join("a/b.desktop");
         assert!(write_if_changed(&f, b"one").unwrap());
         assert!(!write_if_changed(&f, b"one").unwrap());
         assert!(write_if_changed(&f, b"two").unwrap());
         assert_eq!(std::fs::read(&f).unwrap(), b"two");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

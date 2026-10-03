@@ -811,6 +811,7 @@
     "adopt.manual.file": "打开 {file}，写入下面几项。",
     "adopt.path.fixed": "{client} 的配置文件位置不能更改。",
     "adopt.path.adopted": "{client} 已接管，需先还原才能更改路径。",
+    "adopt.other_instance": "{client} 由另一个 ThinkWatch Lite 接管，需在接管它的 ThinkWatch Lite 中还原。",
     "adopt.path.not_absolute": "{path} 不是完整路径。",
     "adopt.path.folder": "{path} 是一个文件夹，需填写配置文件的路径。",
     "adopt.path.no_folder": "文件夹 {folder} 不存在。",

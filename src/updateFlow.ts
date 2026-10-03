@@ -7,8 +7,13 @@
 import { textOf } from "@/i18n";
 import { updateText } from "./Update.i18n";
 
-/** 这一份是怎么装上来的。决定更新由谁做。 */
-export type Install = "homebrew" | "standalone" | "dev";
+/**
+ * 这一份是怎么装上来的。决定更新由谁做。
+ *
+ * `portable` 是 Windows 的绿色版（解压即用的 zip）：和 `standalone` 一样在窗口里
+ * 一键装好，换的是它自己文件夹里的文件。
+ */
+export type Install = "homebrew" | "standalone" | "portable" | "dev";
 
 /** 查到的新版本。 */
 export interface Found {
@@ -48,7 +53,7 @@ export type Step =
  * 的 —— 它承诺了一件做不到的事，用户要点下去才知道。
  */
 export function canInstall(install: Install): boolean {
-  return install === "standalone";
+  return install === "standalone" || install === "portable";
 }
 
 const MB = 1_048_576;

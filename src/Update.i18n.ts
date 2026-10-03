@@ -10,6 +10,7 @@ export const updateText = messages(
     current: (version: string) => `当前版本 ${version}`,
     available: (version: string) => `ThinkWatch Lite ${version} 可用`,
     closeWhileWaiting: "关闭此窗口不影响更新，更新完成后将发送通知。",
+    /** 能在窗口里直接装的那几档（网页下载的、Windows 的绿色版）都是这一句 */
     standalone: "下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。",
     later: "稍后",
     install: "下载并安装",

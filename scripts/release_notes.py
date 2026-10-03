@@ -6,8 +6,9 @@
 正文是英文的，依次是：
 
 1. `release-notes/<版本>.md`：这一版的说明。**可以没有**，没有就从下载表开始。
-2. 下载表：每个平台一行，文件名和 release.yml 挂上去的一字不差；再给 Homebrew
-   和 Linux 安装脚本的命令。
+2. 下载表：每个文件一行（Windows 每个架构两行：安装程序、绿色版 zip），文件名和
+   release.yml 挂上去的一字不差；再给 Homebrew 和 Linux 安装脚本的命令、绿色版的
+   用法。
 3. 怎样用 `.sha256` 核对下载的文件。
 4. 第二个参数的内容：GitHub 按上一版以来合并的 PR 生成的「What's Changed」，由
    调用方用 `gh api repos/<仓库>/releases/generate-notes` 取来。拆成参数传进来，
@@ -34,11 +35,13 @@ NOTES_DIR = ROOT / "release-notes"
 # 每个平台发的那一个文件。**和 release.yml 起的名字一字不差** ——
 # release_notes_test.py 拿 release.yml 核对这张表，对不上的话发布页上的链接就是 404。
 DOWNLOADS = [
-    ("macOS, Apple silicon", "ThinkWatch-Lite-{v}-arm64.dmg"),
-    ("Windows, x64", "ThinkWatch-Lite-{v}-x64-setup.exe"),
-    ("Windows, ARM64", "ThinkWatch-Lite-{v}-arm64-setup.exe"),
-    ("Linux, x86_64", "ThinkWatch-Lite-{v}-x86_64.AppImage"),
-    ("Linux, aarch64", "ThinkWatch-Lite-{v}-aarch64.AppImage"),
+    ("macOS, Apple silicon", "ThinkWatch-Lite-{v}-darwin-arm64.dmg"),
+    ("Windows, x64, installer", "ThinkWatch-Lite-{v}-windows-x64-setup.exe"),
+    ("Windows, x64, portable", "ThinkWatch-Lite-{v}-windows-x64-portable.zip"),
+    ("Windows, ARM64, installer", "ThinkWatch-Lite-{v}-windows-arm64-setup.exe"),
+    ("Windows, ARM64, portable", "ThinkWatch-Lite-{v}-windows-arm64-portable.zip"),
+    ("Linux, x86_64", "ThinkWatch-Lite-{v}-linux-x86_64.AppImage"),
+    ("Linux, aarch64", "ThinkWatch-Lite-{v}-linux-aarch64.AppImage"),
 ]
 
 BREW = "brew install --cask thinkwatchproject/tap/thinkwatch-lite"
@@ -81,8 +84,14 @@ def render(version: str, changes: str, summary_text: str | None) -> str:
         raise NotesError(f"版本号的写法不对：{version}（要的是 2026.9.16 这样的）")
     base = f"https://github.com/{REPO}/releases/download/v{version}"
     files = [(platform, name.format(v=version)) for platform, name in DOWNLOADS]
-    dmg, x64 = files[0][1], files[1][1]
-    appimage = files[3][1]
+
+    def named(suffix: str) -> str:
+        """下载表里以这一段结尾的那个文件。按名字找，表里加一行、换个顺序都不跟着错"""
+        (name,) = [n for _, n in files if n.endswith(suffix)]
+        return name
+
+    dmg, x64 = named("-darwin-arm64.dmg"), named("-windows-x64-setup.exe")
+    appimage = named("-linux-x86_64.AppImage")
 
     parts = []
     if summary_text:
@@ -97,6 +106,8 @@ def render(version: str, changes: str, summary_text: str | None) -> str:
 {rows}
 
 Each file is published with a `.sha256` file beside it. `latest.json` is the manifest for in-app updates, and `install.sh` is the Linux install script.
+
+On Windows, the portable ZIP runs without installation or administrator rights: extract it to any writable folder and start `ThinkWatch Lite.exe`. Its settings stay in the `data` folder beside it, separate from an installed copy, and it updates itself in place.
 
 On macOS, Homebrew installs the same disk image:
 

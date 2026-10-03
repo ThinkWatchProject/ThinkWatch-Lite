@@ -75,17 +75,20 @@ pub fn option_held() -> bool {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("tw-launch-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// 一个空目录，测试结束（过了、没过）就删掉。拿着返回的第一项到测试结束
+    fn tmp(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix(&format!("tw-launch-{name}-"))
+            .tempdir()
+            .unwrap();
+        let p = d.path().to_path_buf();
+        (d, p)
     }
 
     /// 连着两次没走到就绪，第三次先让人选；走到过一次就从头数
     #[test]
     fn two_unfinished_launches_make_the_third_one_ask() {
-        let dir = tmp("guard");
+        let (_tmp, dir) = tmp("guard");
         assert_eq!(why(begin(&dir), false), None);
         assert_eq!(why(begin(&dir), false), None);
         assert_eq!(why(begin(&dir), false), Some(Why::Unfinished));

@@ -781,28 +781,94 @@ mod tests {
         tw_api::control::Address::in_dir(std::path::Path::new("/tw-no-such-dir-xyz"))
     }
 
-    /// 一个不管参数、一直跑到被杀掉的「core」。
+    /// 等「迟早该发生的事」最多等多久：core 起来、停下、守护循环收尾。
+    ///
+    /// **这是活性的上限，不是快慢的要求**：只为了出错时报错而不是挂住。平时几毫秒
+    /// 的事，机器满载时慢上几秒不算错；「根本不会发生」的错，等多久都抓得到。
+    /// 和被测代码自己的超时比快慢的断言（「没等到超时那一档」）比的是传进去的那个
+    /// 超时，不是它
+    const PATIENCE: Duration = Duration::from_secs(30);
+
+    /// 假 core 认的第一个参数：带着它就当场退出，什么都不做（见 [`warmed`]）。守护
+    /// 起它时第一个参数是 `serve`
+    const WARM: &str = "warm";
+
+    /// 刚写出来的假 core 先空跑一次，再交给测试。
+    ///
+    /// **新写出来的可执行文件，第一次运行要等系统先看过它。**macOS 上这类文件带着
+    /// `com.apple.provenance`，第一次 exec 时子进程在跑到第一行之前停住：闲的时候
+    /// 零点几秒，几个会话同时在编的时候实测停过 49 秒；同一个文件第二次运行不到
+    /// 一毫秒。以前这一段算在测试「core 起来没有」的那五秒里，机器一忙，看
+    /// 「起过几次」的两条（`a_core_that_is_still_starting_…`、
+    /// `a_core_waiting_out_its_backoff_…`）就超时。慢的是系统、不是守护：放在
+    /// 计时之前，不设上限。
+    ///
+    /// 刚写完就运行在 Linux 上可能碰上「文本文件忙」，和守护自己一样等一下再试
+    /// （见 `run_once`）
+    fn warmed(bin: PathBuf) -> PathBuf {
+        let t0 = Instant::now();
+        loop {
+            let ran = std::process::Command::new(&bin)
+                .arg(WARM)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            match ran {
+                Ok(status) => {
+                    assert!(status.success(), "假 core 空跑失败：{status}");
+                    return bin;
+                }
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && t0.elapsed() < PATIENCE =>
+                {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => panic!("假 core 起不来：{e}"),
+            }
+        }
+    }
+
+    /// 放假 core 的目录，测试结束（过了、没过）就删掉。
+    ///
+    /// **拿着它的变量要比守护活得久**：守护起的假 core 就在这里面，计数的那种每起一次
+    /// 还往里写一行。所以每条测试在守护之前声明它（在守护之后析构）；测试走到结尾时
+    /// 守护循环都已经跑完、假 core 都已经退出。测试没过、提前 panic 时它先被删掉，但
+    /// 单线程的运行时不会再往下跑守护循环，不会再起一个、把目录写回来
+    fn fake_core_dir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("tw-sup-{name}-"))
+            .tempdir()
+            .unwrap()
+    }
+
+    /// 一个不管参数、一直跑到被杀掉的「core」（除了 [`WARM`]）。返回它所在的目录
+    /// （见 [`fake_core_dir`]）和它自己。
     ///
     /// **两个平台各写一份。**shebang 和执行位是 unix 的东西；Windows 上
     /// 写一个 `.cmd`，`std::process::Command` 认得它。
-    fn long_runner(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    fn long_runner(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let tmp = fake_core_dir(name);
+        let dir = tmp.path();
         #[cfg(unix)]
-        {
+        let bin = {
             let bin = dir.join("fake-core");
-            std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
+            let script = format!("#!/bin/sh\n[ \"$1\" = {WARM} ] && exit 0\nexec sleep 30\n");
+            std::fs::write(&bin, script).unwrap();
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
             bin
-        }
+        };
         #[cfg(windows)]
-        {
+        let bin = {
             let bin = dir.join("fake-core.cmd");
             // `timeout` 要一个控制台，测试进程里没有；`ping` 不要。
-            std::fs::write(&bin, "@ping -n 30 127.0.0.1 >nul\r\n").unwrap();
+            let script =
+                format!("@if \"%~1\"==\"{WARM}\" exit /b 0\r\n@ping -n 30 127.0.0.1 >nul\r\n");
+            std::fs::write(&bin, script).unwrap();
             bin
-        }
+        };
+        (tmp, warmed(bin))
     }
 
     async fn until_running(s: &Supervisor) -> u32 {
@@ -811,7 +877,7 @@ mod tests {
             if let CoreState::Running { pid } = *rx.borrow_and_update() {
                 return pid;
             }
-            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+            tokio::time::timeout(PATIENCE, rx.changed())
                 .await
                 .expect("core 迟迟没起来")
                 .unwrap();
@@ -823,8 +889,9 @@ mod tests {
     /// 要么进安全模式、把主窗口弹到正在重启的应用上。
     #[tokio::test]
     async fn a_core_stopped_for_exit_is_not_restarted() {
+        let (_dir, bin) = long_runner("stop");
         let s = Arc::new(Supervisor::new(
-            long_runner("stop"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -859,8 +926,9 @@ mod tests {
     /// 转发。停它、在安全模式里点「重新启动」，都要够得着这个 core
     #[tokio::test]
     async fn a_safe_mode_core_stays_in_safe_mode_until_restarted() {
+        let (_dir, bin) = long_runner("safe");
         let s = Arc::new(Supervisor::new(
-            long_runner("safe"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -880,7 +948,7 @@ mod tests {
                 CoreState::Stopped if !began => {}
                 ref other => panic!("安全模式里不该出现 {other:?}"),
             }
-            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+            tokio::time::timeout(PATIENCE, rx.changed())
                 .await
                 .expect("迟迟没起来")
                 .unwrap();
@@ -900,12 +968,17 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    /// 没在跑就当场返回，**一点都不等**。
+    ///
+    /// 用暂停的时钟量：它只在运行时无事可做、等着计时器的时候才往前跳，等了那个超时
+    /// 就量出整整五秒，一点没等就是零。以前看墙上时钟、限一百毫秒，机器满载时线程
+    /// 被晾上一会儿就会误报
+    #[tokio::test(start_paused = true)]
     async fn stopping_what_is_not_running_returns_at_once() {
         let s = sup();
-        let t0 = Instant::now();
+        let t0 = tokio::time::Instant::now();
         s.stop_and_wait(Duration::from_secs(5)).await;
-        assert!(t0.elapsed() < Duration::from_millis(100));
+        assert_eq!(t0.elapsed(), Duration::ZERO);
     }
 
     /// **控制面答应之前是「启动中」，不是「运行中」。**界面见到「运行中」就去
@@ -920,8 +993,9 @@ mod tests {
                 async move { n >= 3 }
             })
         };
+        let (_dir, bin) = long_runner("ready");
         let s = Arc::new(Supervisor::new(
-            long_runner("ready"),
+            bin,
             None,
             third_time,
             test_address(),
@@ -934,7 +1008,7 @@ mod tests {
         };
         let mut seen = Vec::new();
         loop {
-            tokio::time::timeout(Duration::from_secs(5), rx.changed())
+            tokio::time::timeout(PATIENCE, rx.changed())
                 .await
                 .expect("迟迟没有就绪")
                 .unwrap();
@@ -954,8 +1028,9 @@ mod tests {
     /// 换掉它再起 —— 和启动就崩一个待遇，连着几次就进安全模式
     #[tokio::test(start_paused = true)]
     async fn a_core_that_never_answers_is_replaced() {
+        let (_dir, bin) = long_runner("never");
         let s = Supervisor::new(
-            long_runner("never"),
+            bin,
             None,
             probe(|| async { false }),
             test_address(),
@@ -976,8 +1051,9 @@ mod tests {
     /// core，没装成又接回来。记号要是留着，从那以后网关崩了不会再起。
     #[tokio::test]
     async fn after_resuming_a_crash_is_a_crash_again() {
+        let (_dir, bin) = long_runner("resume");
         let s = Arc::new(Supervisor::new(
-            long_runner("resume"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -1013,8 +1089,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_requested_restart_still_comes_back() {
+        let (_dir, bin) = long_runner("restart");
         let s = Arc::new(Supervisor::new(
-            long_runner("restart"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -1041,14 +1118,13 @@ mod tests {
     }
 
     /// 一个每起一次就往 `starts` 那个文件里记一行的「core」（unix 上记的是它的 pid）。
-    /// 返回程序和那个文件
-    fn counting_core(name: &str, acts: Acts) -> (PathBuf, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// 返回它所在的目录（见 [`fake_core_dir`]）、程序和那个文件。空跑（[`warmed`]）不记
+    fn counting_core(name: &str, acts: Acts) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = fake_core_dir(name);
+        let dir = tmp.path();
         let starts = dir.join("starts");
         #[cfg(unix)]
-        {
+        let bin = {
             let bin = dir.join("fake-core");
             let then = match acts {
                 Acts::Stays => "exec sleep 30",
@@ -1056,23 +1132,30 @@ mod tests {
                 Acts::IgnoresTheAsk => "trap '' TERM\nexec sleep 30",
                 Acts::Crashes => "exit 1",
             };
-            let script = format!("#!/bin/sh\necho $$ >> '{}'\n{then}\n", starts.display());
+            let script = format!(
+                "#!/bin/sh\n[ \"$1\" = {WARM} ] && exit 0\necho $$ >> '{}'\n{then}\n",
+                starts.display()
+            );
             std::fs::write(&bin, script).unwrap();
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-            (bin, starts)
-        }
+            bin
+        };
         #[cfg(windows)]
-        {
+        let bin = {
             let bin = dir.join("fake-core.cmd");
             let then = match acts {
                 Acts::Stays | Acts::IgnoresTheAsk => "@ping -n 30 127.0.0.1 >nul",
                 Acts::Crashes => "@exit /b 1",
             };
-            let script = format!("@echo x>> \"{}\"\r\n{then}\r\n", starts.display());
+            let script = format!(
+                "@if \"%~1\"==\"{WARM}\" exit /b 0\r\n@echo x>> \"{}\"\r\n{then}\r\n",
+                starts.display()
+            );
             std::fs::write(&bin, script).unwrap();
-            (bin, starts)
-        }
+            bin
+        };
+        (tmp, warmed(bin), starts)
     }
 
     /// 起过几次
@@ -1080,12 +1163,16 @@ mod tests {
         std::fs::read_to_string(file).map_or(0, |s| s.lines().count())
     }
 
+    /// 等到起过 `times` 次。只能看文件，所以隔一会儿看一眼
     async fn until_started(file: &std::path::Path, times: usize) {
-        let t0 = Instant::now();
-        while starts(file) < times {
-            assert!(t0.elapsed() < Duration::from_secs(5), "core 迟迟没起来");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        let started = async {
+            while starts(file) < times {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        tokio::time::timeout(PATIENCE, started)
+            .await
+            .expect("core 迟迟没起来");
     }
 
     /// **还在启动的 core 也停得下来。**以前只认「运行中」：切到远程的那一刻本机的 core
@@ -1100,7 +1187,7 @@ mod tests {
                 async move { yes }
             })
         };
-        let (bin, started) = counting_core("starting", Acts::Stays);
+        let (_dir, bin, started) = counting_core("starting", Acts::Stays);
         let s = Arc::new(Supervisor::new(
             bin,
             None,
@@ -1116,11 +1203,12 @@ mod tests {
         until_started(&started, 1).await;
         assert_eq!(s.state(), CoreState::Starting);
 
+        // 停还在启动的 core 不走控制面（按句柄直接杀），两个平台上都不该等到超时
         let t0 = Instant::now();
-        s.stop_and_wait(Duration::from_secs(5)).await;
+        s.stop_and_wait(PATIENCE).await;
         assert_eq!(s.state(), CoreState::Stopped, "还在启动的 core 没被停下");
-        assert!(t0.elapsed() < Duration::from_secs(5), "等到超时才停下");
-        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+        assert!(t0.elapsed() < PATIENCE, "等到超时才停下");
+        let next = tokio::time::timeout(PATIENCE, looped)
             .await
             .expect("守护循环没有停下")
             .unwrap();
@@ -1153,7 +1241,7 @@ mod tests {
     /// **在退避里等着重起的 core 也停得下来**：不会睡醒了再起一个
     #[tokio::test]
     async fn a_core_waiting_out_its_backoff_is_not_started_again() {
-        let (bin, started) = counting_core("backoff", Acts::Crashes);
+        let (_dir, bin, started) = counting_core("backoff", Acts::Crashes);
         let s = Arc::new(Supervisor::new(
             bin,
             None,
@@ -1177,14 +1265,14 @@ mod tests {
         let mut rx = s.watch();
         let backing_off =
             rx.wait_for(|st| matches!(st, CoreState::Restarting { in_ms, .. } if *in_ms > 0));
-        let _ = tokio::time::timeout(Duration::from_secs(5), backing_off)
+        let _ = tokio::time::timeout(PATIENCE, backing_off)
             .await
             .expect("迟迟没进退避")
             .unwrap();
 
         s.stop_and_wait(Duration::from_secs(5)).await;
         assert_eq!(s.state(), CoreState::Stopped, "退避里的 core 没被停下");
-        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+        let next = tokio::time::timeout(PATIENCE, looped)
             .await
             .expect("守护循环没有停下")
             .unwrap();
@@ -1195,7 +1283,7 @@ mod tests {
     /// 要停的请求落在两轮之间（比如按要求重启的那一下）：**下一轮不起**
     #[tokio::test]
     async fn a_stop_between_two_rounds_keeps_the_next_one_from_starting() {
-        let (bin, started) = counting_core("between", Acts::Stays);
+        let (_dir, bin, started) = counting_core("between", Acts::Stays);
         let s = Supervisor::new(
             bin,
             None,
@@ -1205,7 +1293,7 @@ mod tests {
         );
         // 此刻没有在跑的：只是把记号立起来
         s.stop_and_wait(Duration::from_secs(5)).await;
-        let next = tokio::time::timeout(Duration::from_secs(5), s.run_once(false))
+        let next = tokio::time::timeout(PATIENCE, s.run_once(false))
             .await
             .expect("要停的时候又起了一个")
             .unwrap();
@@ -1221,8 +1309,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_wedged_core_that_leaves_when_asked_is_not_killed_afterwards() {
+        let (_dir, bin) = long_runner("wedged-leaves");
         let s = Arc::new(Supervisor::new(
-            long_runner("wedged-leaves"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -1253,7 +1342,7 @@ mod tests {
     /// 请它退出也不走的，**照样强杀、换掉**：收手只收在它自己走了的时候
     #[tokio::test]
     async fn a_wedged_core_that_ignores_the_ask_is_still_killed() {
-        let (bin, _) = counting_core("wedged-stays", Acts::IgnoresTheAsk);
+        let (_dir, bin, _) = counting_core("wedged-stays", Acts::IgnoresTheAsk);
         let s = Arc::new(Supervisor::new(
             bin,
             None,
@@ -1267,7 +1356,7 @@ mod tests {
         };
         until_running(&s).await;
         s.report_wedged().await.unwrap();
-        let next = tokio::time::timeout(Duration::from_secs(5), looped)
+        let next = tokio::time::timeout(PATIENCE, looped)
             .await
             .expect("强杀之后它还在")
             .unwrap();
@@ -1283,7 +1372,7 @@ mod tests {
     /// 也进不了安全模式
     #[tokio::test]
     async fn a_restart_that_could_not_be_asked_for_leaves_no_mark() {
-        let (bin, _) = counting_core("restart-unasked", Acts::Crashes);
+        let (_dir, bin, _) = counting_core("restart-unasked", Acts::Crashes);
         let s = Supervisor::new(
             bin,
             None,
@@ -1308,8 +1397,9 @@ mod tests {
     /// 那个重启的记号**不能带进下一轮**，不然接回来之后第一次真崩溃会被当成按要求重启
     #[tokio::test]
     async fn a_restart_cut_short_by_a_stop_does_not_carry_into_the_next_round() {
+        let (_dir, bin) = long_runner("restart-then-stop");
         let s = Arc::new(Supervisor::new(
-            long_runner("restart-then-stop"),
+            bin,
             None,
             always_ready(),
             test_address(),
@@ -1342,10 +1432,13 @@ mod tests {
         );
     }
 
-    /// 一个握了手就一声不吭的控制面。走回环端口：两个平台都认这一种传输
-    async fn silent_control_plane(name: &str) -> (tw_api::control::Address, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("tw-sup-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// 一个握了手就一声不吭的控制面。走回环端口：两个平台都认这一种传输。第一项是放
+    /// 配置和端口文件的目录（见 [`fake_core_dir`]），拿着它到测试结束
+    async fn silent_control_plane(
+        name: &str,
+    ) -> (tempfile::TempDir, tw_api::control::Address, PathBuf) {
+        let tmp = fake_core_dir(name);
+        let dir = tmp.path();
         let key = "ab".repeat(32);
         let config = dir.join("config.yaml");
         std::fs::write(
@@ -1367,14 +1460,18 @@ mod tests {
                 }
             }
         });
-        (tw_api::control::Address::Loopback { port_file }, config)
+        (
+            tmp,
+            tw_api::control::Address::Loopback { port_file },
+            config,
+        )
     }
 
     /// 控制面握了手却一直不答：**请它退出这一步不能跟着挂住**。心跳换掉卡死的 core、
     /// 装更新、退出应用都要先走这一步
     #[tokio::test]
     async fn asking_a_core_whose_control_plane_never_answers_gives_up() {
-        let (at, config) = silent_control_plane("silent").await;
+        let (_dir, at, config) = silent_control_plane("silent").await;
         let s = Supervisor::new(PathBuf::from("/x"), None, always_ready(), at, config);
         let asked = tokio::time::timeout(Duration::from_secs(10), s.ask_to_exit(NO_SUCH_PID))
             .await

@@ -198,6 +198,7 @@ function detected(x: Partial<DetectedClient> & { id: string; name: string; path:
     installed: true,
     has_config: true,
     adopted_at_ms: null,
+    other_instance: false,
     endpoint: null,
     shadows: [],
     takes_effect: "immediately",

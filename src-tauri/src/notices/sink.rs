@@ -69,7 +69,7 @@ impl Sink for AppSink {
 /// D-Bus 不要求发送方是装好的应用，而这个插件在 Linux 上走的也是同一条总线，
 /// 总线不通时它一样发不出去）。这个插件在桌面端只能「发出即不管」—— 不能按 id
 /// 原地更新、不能撤回、点了没有回调，所以 `update` 和 `withdraw` 是空的。留着它是给
-/// `tauri dev`（macOS 上不在应用包里，Windows 上没有带 AUMID 的开始菜单快捷方式）
+/// `tauri dev`（macOS 上不在应用包里，Windows 上开发构建不登记通知的 AUMID）
 /// 和还没有原生实现的平台用。
 pub struct SystemSink {
     app: tauri::AppHandle,

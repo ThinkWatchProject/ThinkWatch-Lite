@@ -1,13 +1,19 @@
 # 发一版桌面端。
 #
 # **每一种安装方式只发一个文件**，外加它的 sha256，和一份所有平台共用的
-# latest.json：
+# latest.json。名字一律是 `ThinkWatch-Lite-<版本>-<系统>-<架构>…`，系统名用
+# darwin / windows / linux：
 #
-#   macOS           ThinkWatch-Lite-<版本>-arm64.dmg
-#   Windows x64     ThinkWatch-Lite-<版本>-x64-setup.exe
-#   Windows arm64   ThinkWatch-Lite-<版本>-arm64-setup.exe
-#   Linux x86_64    ThinkWatch-Lite-<版本>-x86_64.AppImage
-#   Linux aarch64   ThinkWatch-Lite-<版本>-aarch64.AppImage
+#   macOS                ThinkWatch-Lite-<版本>-darwin-arm64.dmg
+#   Windows x64          ThinkWatch-Lite-<版本>-windows-x64-setup.exe
+#   Windows x64 绿色版   ThinkWatch-Lite-<版本>-windows-x64-portable.zip
+#   Windows arm64        ThinkWatch-Lite-<版本>-windows-arm64-setup.exe
+#   Windows arm64 绿色版 ThinkWatch-Lite-<版本>-windows-arm64-portable.zip
+#   Linux x86_64         ThinkWatch-Lite-<版本>-linux-x86_64.AppImage
+#   Linux aarch64        ThinkWatch-Lite-<版本>-linux-aarch64.AppImage
+#
+# 绿色版的 zip 里只有根目录下的 `ThinkWatch Lite.exe` 和 `twcore.exe`，就是安装
+# 程序里装的那两个（应用本体换成了产品名，理由见 `The portable package` 那一步）。
 #
 # Linux 另外挂一份 `install.sh`（`scripts/install.sh`）：一行命令读 latest.json、
 # 下载本架构的 AppImage、核对 sha256、放进 `~/Applications`。
@@ -15,7 +21,11 @@
 # 网页上下载的是它，Homebrew 的 cask / winget 的清单吃的是它，已经装上的
 # 应用自己更新下的也是它：latest.json 指向它，签名签的也是它（应用怎么从
 # DMG 更新自己，见 `src-tauri/src/dmg.rs`；Windows 上更新器直接跑新的安装
-# 程序；Linux 上 AppImage 原地换掉自己）。
+# 程序，绿色版换掉自己文件夹里的两个 exe（`src-tauri/src/portable.rs`）；Linux
+# 上 AppImage 原地换掉自己）。
+#
+# **已经装着的旧版本不受改名影响**：它们只读 latest.json，按键找地址，键名一个
+# 没改（见 `scripts/manifest.py`）。
 #
 # **所有平台一起发，或者都不发。**各自构建、拆开看过，最后一个 job 才把
 # 它们一起挂上去 —— 只发出一部分的话，latest.json 要么缺平台，要么指向
@@ -27,11 +37,18 @@
 #
 # 这条流水线不重跑 `ci.yml` 那几道门：tag 是从 main 上打的，main 上
 # 每个 commit 都过过。这里只做 CI 做不了的那件事 —— 打出安装包并且
-# 在发出去之前拆开看一眼。
+# 在发出去之前拆开看一眼；Windows 的还要装上跑一遍（`windows-e2e`）。
 #
 # **推到 `rehearse/` 开头的分支是演练**：全部照做，只是不发布 —— 各个安装
 # 包留在这次运行的产物里，可以下载下来装到真机上看。改了这条流水线，先演练
 # 一遍，不要拿一个 tag 去试。
+#
+# **`rehearse/windows/` 开头的只演练 Windows**：两个 Windows 构建、`windows-e2e`
+# 和发布页正文照做，macOS 和 Linux 的构建跳过（各自 job 上的 `if`）。只改了 Windows
+# 那一块时用它，省下另外三台机器；发版之前仍要在别的 `rehearse/` 分支上完整演练一遍。
+#
+# 同一个分支再推一次，还在跑的那次演练就取消（`concurrency`）。**tag 不取消**：
+# 发版的那次运行跑到一半被打断，可能只挂上了一部分文件。
 #
 # 不用手工触发（`workflow_dispatch`）：那只认默认分支上的这份文件，而改动
 # 要先进 dev、过很久才到 main —— 等于改完的流水线没法在合并之前演练。
@@ -44,6 +61,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -65,6 +86,8 @@ env:
 jobs:
   app:
     name: ThinkWatch Lite (aarch64-apple-darwin)
+    # 只演练 Windows 的分支不打它，见文件开头
+    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
     # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
     # 拿到的是一个能下载但打不开的文件，那比没有更糟。
     runs-on: macos-latest
@@ -185,7 +208,7 @@ jobs:
           "$RUNNER_TEMP/dmgbuild/bin/dmgbuild" -s src-tauri/dmg/settings.py \
             -D app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ThinkWatch Lite.app" \
             -D dir=src-tauri/dmg -D icon=src-tauri/icons/icon.icns \
-            "ThinkWatch Lite" "dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+            "ThinkWatch Lite" "dist/ThinkWatch-Lite-$VERSION-darwin-arm64.dmg"
 
       # 签的是 DMG 本身：应用自己更新时下的就是它，验签验的是下载下来的
       # 原始字节。**私钥没传进来这一步就失败** —— 那正是要让它失败的地方，
@@ -196,7 +219,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          DMG="dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+          DMG="dist/ThinkWatch-Lite-$VERSION-darwin-arm64.dmg"
           ( cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
           cat "$DMG.sha256"
 
@@ -210,7 +233,7 @@ jobs:
           set -euo pipefail
           MNT=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" \
-            "dist/ThinkWatch-Lite-$VERSION-arm64.dmg"
+            "dist/ThinkWatch-Lite-$VERSION-darwin-arm64.dmg"
           APP="$MNT/ThinkWatch Lite.app"
           codesign --verify --deep --strict "$APP"
           test -x "$APP/Contents/MacOS/thinkwatch-lite"
@@ -231,9 +254,9 @@ jobs:
         with:
           name: macos-arm64
           path: |
-            dist/ThinkWatch-Lite-*-arm64.dmg
-            dist/ThinkWatch-Lite-*-arm64.dmg.sha256
-            dist/ThinkWatch-Lite-*-arm64.dmg.sig
+            dist/ThinkWatch-Lite-*-darwin-arm64.dmg
+            dist/ThinkWatch-Lite-*-darwin-arm64.dmg.sha256
+            dist/ThinkWatch-Lite-*-darwin-arm64.dmg.sig
           if-no-files-found: error
 
   windows:
@@ -295,7 +318,14 @@ jobs:
 
       # `--target` 写出来，产物路径才是定死的。取哪一份 twcore 也跟着它走：
       # Tauri 把它交给 `beforeBuildCommand`，见 `fetch-core.sh`。
+      #
+      # `TW_OFFICIAL_BUILD`：**这是发出去的那一份。**旁边没有卸载程序的 release 构建，
+      # 带着它才算绿色版（`update::official_build`）；开发者自己编的不带，不会把数据
+      # 写进 `target\release\data\`、把链接和开机自启改指向 `target\…`。安装版用的是
+      # 同一个 exe，旁边有卸载程序，照样是安装版
       - name: Build
+        env:
+          TW_OFFICIAL_BUILD: "1"
         run: pnpm tauri build --target ${{ matrix.target }}
 
       # **拆开看一眼再发。**和 macOS 那边同一个理由：一个缺了网关、或者
@@ -315,7 +345,7 @@ jobs:
           # 名字里有空格，而 GitHub 会把资源名里的空格换成点，latest.json
           # 里的地址就对不上了
           New-Item -ItemType Directory -Force dist | Out-Null
-          $exe = "dist\ThinkWatch-Lite-$env:VERSION-${{ matrix.arch }}-setup.exe"
+          $exe = "dist\ThinkWatch-Lite-$env:VERSION-windows-${{ matrix.arch }}-setup.exe"
           Copy-Item $built[0].FullName $exe
 
           $x = "$env:RUNNER_TEMP\inside"
@@ -341,19 +371,116 @@ jobs:
           Write-Host "包里的网关：$(& $core.FullName --version)"
           if ($LASTEXITCODE -ne 0) { throw "包里的网关跑不起来" }
 
-      # 签的是安装程序本身：更新器下载的就是它，验签验的是原始字节。
-      # **私钥没传进来这一步就失败** —— 理由和 macOS 那边一样。
+      # 绿色版：解压即用，不要管理员权限，数据在 exe 旁边的 `data\`（见
+      # `src-tauri/src/portable.rs`）。**zip 里就是安装程序里的那两个 exe**，上一步
+      # 用 7-Zip 解出来、已经核对过的那一份，放在 zip 的根目录，别的什么都不放 ——
+      # 应用自更新时只认这个形状（`portable::unpack`）。
+      #
+      # **应用本体改叫 `ThinkWatch Lite.exe`**（`portable::APP_EXE`）。安装程序和卸载程序
+      # 关运行中的程序时按文件名 `thinkwatch-lite.exe` 找进程、一律结束（Tauri 的 NSIS
+      # 模板），同名的话装、卸安装版会把运行中的绿色版也关掉。网关不改名
+      #
+      # 用 .NET 的 ZipArchive 一个一个加，条目名就是文件名：`Compress-Archive` 之类
+      # 按目录打包的写法会把目录名、或者别的文件一起带进去
+      - name: The portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $x = "$env:RUNNER_TEMP\inside"
+          # .NET 按进程的当前目录解析相对路径，那不一定是 PowerShell 的当前位置
+          $zip = Join-Path $PWD "dist\ThinkWatch-Lite-$env:VERSION-windows-${{ matrix.arch }}-portable.zip"
+          $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+          try {
+            # 安装程序里的名字 → zip 里的名字
+            foreach ($pair in @(@("thinkwatch-lite.exe", "ThinkWatch Lite.exe"), @("twcore.exe", "twcore.exe"))) {
+              $f = Get-ChildItem -Recurse "$x\$($pair[0])" | Select-Object -First 1
+              if (-not $f) { throw "安装程序里没有 $($pair[0])" }
+              [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $f.FullName, $pair[1], [IO.Compression.CompressionLevel]::Optimal)
+            }
+          } finally {
+            $archive.Dispose()
+          }
+          Get-Item $zip | Format-Table Name, Length
+
+      # **拆开看一眼再发**，看的是用户会下载的那个 zip：恰好两个条目、都在根目录，
+      # 架构、版本都对，网关跑得起来。
+      #
+      # **不要用户另装 VC 运行库。**绿色版没有安装程序，缺了什么不会有人替它装，
+      # 所以两个 exe 的导入表里都不许有 Windows 不自带的那几个 DLL。这台 runner 上
+      # 装着运行库，exe 照样跑得起来 —— 只有导入表看得出来。dumpbin 取的是这台
+      # 机器上那套 MSVC 里的，什么架构的 exe 它都读得了（照 core 的 release.yml）
+      - name: Look inside the portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          # .NET 按进程的当前目录解析相对路径，那不一定是 PowerShell 的当前位置
+          $zip = Join-Path $PWD "dist\ThinkWatch-Lite-$env:VERSION-windows-${{ matrix.arch }}-portable.zip"
+          $read = [IO.Compression.ZipFile]::OpenRead($zip)
+          try { $names = @($read.Entries | ForEach-Object { $_.FullName } | Sort-Object) } finally { $read.Dispose() }
+          if (($names -join ",") -ne "ThinkWatch Lite.exe,twcore.exe") {
+            throw "zip 里应当恰好是 ThinkWatch Lite.exe 和 twcore.exe，实际是：$($names -join ', ')"
+          }
+          $x = "$env:RUNNER_TEMP\portable"
+          Expand-Archive -Path $zip -DestinationPath $x -Force
+          $app = Get-Item -LiteralPath "$x\ThinkWatch Lite.exe"
+          $core = Get-Item "$x\twcore.exe"
+
+          $v = $app.VersionInfo.ProductVersion
+          if (-not $v.StartsWith($env:VERSION)) { throw "exe 里的版本是 $v，而这一版是 $env:VERSION" }
+
+          $want = @{ "x64" = 0x8664; "arm64" = 0xAA64 }["${{ matrix.arch }}"]
+          foreach ($f in @($app.FullName, $core.FullName)) {
+            $b = [IO.File]::ReadAllBytes($f)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $m = [BitConverter]::ToUInt16($b, $pe + 4)
+            if ($m -ne $want) { throw ("{0} 的架构是 0x{1:X4}，要的是 0x{2:X4}" -f $f, $m, $want) }
+          }
+
+          # 网关是 Cargo.toml 钉住的那一版 core（fetch-core.sh 按同一个 tag 取的）
+          $tag = (Select-String -Path src-tauri\Cargo.toml -Pattern '^tw-api = .*tag = "v([^"]+)"').Matches[0].Groups[1].Value
+          $said = (& $core.FullName --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "zip 里的网关跑不起来" }
+          if ($said -ne "twcore $tag") { throw "zip 里的网关说自己是「$said」，要的是 twcore $tag" }
+          Write-Host "zip 里的网关：$said"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          # 挑和这台机器同架构的那一份，没有就用 x64 的（arm64 的 Windows 能跑它）
+          $hostDir = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "Hostarm64" } else { "Hostx64" }
+          $dumpbin = (@(& $vswhere -latest -products * -find "VC\Tools\MSVC\**\bin\$hostDir\*\dumpbin.exe") +
+            @(& $vswhere -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe")) |
+            Where-Object { $_ } | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          foreach ($f in @($app.FullName, $core.FullName)) {
+            $deps = & $dumpbin /nologo /dependents $f |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -match '\.dll$' }
+            if ($LASTEXITCODE -ne 0 -or -not $deps) { throw "读不出 $f 的导入表" }
+            Write-Host "$($f | Split-Path -Leaf): $($deps -join ', ')"
+            $redist = @($deps | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|vccorlib|vcomp)\d' })
+            if ($redist.Count -gt 0) {
+              throw "$f 要 Visual C++ 运行库（$($redist -join ', ')）：绿色版没有安装程序替它装"
+            }
+          }
+
+      # 签的是安装程序和 zip 本身：更新器下载的就是它们（安装版下安装程序、绿色版
+      # 下 zip），验签验的是原始字节。**私钥没传进来这一步就失败** —— 理由和 macOS
+      # 那边一样。
       - name: Package
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          EXE="dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}-setup.exe"
-          # Git Bash 带的是 sha256sum，输出和 shasum 是同一种两列格式
-          ( cd dist && sha256sum "$(basename "$EXE")" > "$(basename "$EXE").sha256" )
-          cat "$EXE.sha256"
-          pnpm tauri signer sign "$EXE"
+          for F in "dist/ThinkWatch-Lite-$VERSION-windows-${{ matrix.arch }}-setup.exe" \
+                   "dist/ThinkWatch-Lite-$VERSION-windows-${{ matrix.arch }}-portable.zip"; do
+            # Git Bash 带的是 sha256sum，输出和 shasum 是同一种两列格式
+            ( cd dist && sha256sum "$(basename "$F")" > "$(basename "$F").sha256" )
+            cat "$F.sha256"
+            pnpm tauri signer sign "$F"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -362,10 +489,60 @@ jobs:
             dist/ThinkWatch-Lite-*-setup.exe
             dist/ThinkWatch-Lite-*-setup.exe.sha256
             dist/ThinkWatch-Lite-*-setup.exe.sig
+            dist/ThinkWatch-Lite-*-portable.zip
+            dist/ThinkWatch-Lite-*-portable.zip.sha256
+            dist/ThinkWatch-Lite-*-portable.zip.sig
           if-no-files-found: error
+
+  # **装到一台真的 Windows 上用一遍再发。**上面只拆开看了包里有什么；这里把 x64 的
+  # 绿色版和安装程序当成用户那样用：解压启动、再开一份（切换、取消、同一个程序）、
+  # 没有写入权限的文件夹、静默安装、静默卸载，核对数据目录、注册表、进程和系统对话框。
+  # 每一条查什么写在 `scripts/windows-e2e.ps1` 的开头。
+  #
+  # 用 Windows 自带的 PowerShell 5.1（`shell: powershell`）：用户机器上一定有的就是它。
+  # 截图在这次运行的 `e2e-shots` 里，应用自己的日志在 `e2e-logs` 里。`publish` 下载
+  # 产物时这两份也会落进 dist/，文件名都以 `e2e-` 开头，不会被当成要发的文件挂上去。
+  #
+  # **它不过，`publish` 不跑**：没在 Windows 上真的跑起来过的版本不发。
+  windows-e2e:
+    name: Windows end to end (x64)
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: e2e-input
+
+      - name: Portable and installed copies, end to end
+        shell: powershell
+        run: |
+          $setup = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-setup.exe)
+          $zip = @(Get-ChildItem e2e-input\ThinkWatch-Lite-*-windows-x64-portable.zip)
+          if ($setup.Count -ne 1 -or $zip.Count -ne 1) { throw "expected one setup.exe and one portable.zip in e2e-input" }
+          & .\scripts\windows-e2e.ps1 -Setup $setup[0].FullName -Zip $zip[0].FullName -Out "$env:RUNNER_TEMP\e2e"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-shots
+          path: ${{ runner.temp }}/e2e/shots
+          if-no-files-found: warn
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e/logs
+          if-no-files-found: warn
 
   linux:
     name: ThinkWatch Lite (${{ matrix.target }})
+    # 只演练 Windows 的分支不打它，见文件开头
+    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -443,8 +620,8 @@ jobs:
           IMAGES=("$B"/appimage/*.AppImage)
           [ "${#IMAGES[@]}" -eq 1 ] || { echo "要一个 AppImage，打出来的是 ${#IMAGES[@]} 个" >&2; exit 1; }
           mkdir -p dist
-          cp "${IMAGES[0]}" "dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}.AppImage"
-          echo "APPIMAGE=dist/ThinkWatch-Lite-$VERSION-${{ matrix.arch }}.AppImage" >> "$GITHUB_ENV"
+          cp "${IMAGES[0]}" "dist/ThinkWatch-Lite-$VERSION-linux-${{ matrix.arch }}.AppImage"
+          echo "APPIMAGE=dist/ThinkWatch-Lite-$VERSION-linux-${{ matrix.arch }}.AppImage" >> "$GITHUB_ENV"
 
       # **拆开看一眼再发。**和另外两个平台同一个理由：缺了网关、网关是别的
       # 架构、或者更新器认不出这是哪种包，从文件列表上都看不出来。
@@ -556,7 +733,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [app, windows, linux, release-body]
+    needs: [app, windows, windows-e2e, linux, release-body]
     # 演练到上面为止
     if: github.ref_type == 'tag'
     runs-on: macos-latest
@@ -606,11 +783,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/manifest.py "$VERSION" notes.txt \
-            "darwin-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64.dmg" \
-            "windows-x86_64=dist/ThinkWatch-Lite-$VERSION-x64-setup.exe" \
-            "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-arm64-setup.exe" \
-            "linux-x86_64-appimage=dist/ThinkWatch-Lite-$VERSION-x86_64.AppImage" \
-            "linux-aarch64-appimage=dist/ThinkWatch-Lite-$VERSION-aarch64.AppImage"
+            "darwin-aarch64=dist/ThinkWatch-Lite-$VERSION-darwin-arm64.dmg" \
+            "windows-x86_64=dist/ThinkWatch-Lite-$VERSION-windows-x64-setup.exe" \
+            "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-windows-arm64-setup.exe" \
+            "windows-x86_64-portable=dist/ThinkWatch-Lite-$VERSION-windows-x64-portable.zip" \
+            "windows-aarch64-portable=dist/ThinkWatch-Lite-$VERSION-windows-arm64-portable.zip" \
+            "linux-x86_64-appimage=dist/ThinkWatch-Lite-$VERSION-linux-x86_64.AppImage" \
+            "linux-aarch64-appimage=dist/ThinkWatch-Lite-$VERSION-linux-aarch64.AppImage"
 
       # **正文只在建 Release 时写一次。**Release 已经在了 —— 重跑这个 job（比如
       # 挂文件挂到一半断了），或者有人先手工建好了 —— 就不动它的正文：那可能是
@@ -642,10 +821,12 @@ jobs:
           # 不知道该下哪个的文件。`install.sh` 挂上去是为了一个固定的地址
           # （`releases/latest/download/install.sh`），它读的是同一版的 latest.json
           files: |
-            dist/ThinkWatch-Lite-*-arm64.dmg
-            dist/ThinkWatch-Lite-*-arm64.dmg.sha256
+            dist/ThinkWatch-Lite-*-darwin-arm64.dmg
+            dist/ThinkWatch-Lite-*-darwin-arm64.dmg.sha256
             dist/ThinkWatch-Lite-*-setup.exe
             dist/ThinkWatch-Lite-*-setup.exe.sha256
+            dist/ThinkWatch-Lite-*-portable.zip
+            dist/ThinkWatch-Lite-*-portable.zip.sha256
             dist/ThinkWatch-Lite-*.AppImage
             dist/ThinkWatch-Lite-*.AppImage.sha256
             dist/latest.json

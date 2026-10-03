@@ -15,6 +15,7 @@ function client(over: Partial<DetectedClient> = {}): DetectedClient {
     installed: true,
     has_config: true,
     adopted_at_ms: null,
+    other_instance: false,
     endpoint: null,
     shadows: [],
     takes_effect: "immediately",
@@ -35,6 +36,16 @@ describe("客户端的状态", () => {
 
   it("装了没接管是未接管", () => {
     expect(statusOf(client(), BASE, NOW).state).toBe("idle");
+  });
+
+  /** 安装版和绿色版各有一份数据目录：另一份接管的，这一份只说去那里还原 */
+  it("另一个 ThinkWatch Lite 接管的单独一档，不管它指着哪里、有没有请求", () => {
+    const other = { state: "other", reason: { kind: "other" } };
+    expect(statusOf(client({ other_instance: true, endpoint: BASE }), BASE, NOW)).toEqual(other);
+    expect(statusOf(client({ other_instance: true, endpoint: BASE }), BASE, NOW, true)).toEqual(other);
+    expect(statusOf(client({ other_instance: true }), BASE, NOW, false, { adoptable: false })).toEqual(other);
+    // 没检测到仍然是没检测到
+    expect(statusOf(client({ other_instance: true, installed: false }), BASE, NOW).state).toBe("absent");
   });
 
   it("接管之后收到过它那把密钥的请求才是使用中", () => {

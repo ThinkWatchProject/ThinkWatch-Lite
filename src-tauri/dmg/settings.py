@@ -3,7 +3,7 @@
 # 用法（release.yml 里就是这么调的）：
 #   dmgbuild -s src-tauri/dmg/settings.py \
 #     -D app="…/ThinkWatch Lite.app" -D dir=src-tauri/dmg -D icon=src-tauri/icons/icon.icns \
-#     "ThinkWatch Lite" ThinkWatch-Lite-<版本>-arm64.dmg
+#     "ThinkWatch Lite" ThinkWatch-Lite-<版本>-darwin-arm64.dmg
 #
 # **为什么不让 Tauri 打这个映像。**Tauri 摆图标、贴背景靠一段驱动 Finder 的
 # AppleScript，而在 CI 上它会自己跳过那一段（`CI=true` 时加 `--skip-jenkins`）

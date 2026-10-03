@@ -143,11 +143,14 @@ pub fn new_id() -> String {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("tw-conns-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// 一个空目录，测试结束（过了、没过）就删掉。拿着返回的第一项到测试结束
+    fn tmp(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix(&format!("tw-conns-{name}-"))
+            .tempdir()
+            .unwrap();
+        let p = d.path().to_path_buf();
+        (d, p)
     }
 
     fn remote(id: &str, name: &str) -> Remote {
@@ -162,7 +165,7 @@ mod tests {
 
     #[test]
     fn with_no_file_there_is_only_this_mac() {
-        let dir = tmp("none");
+        let (_tmp, dir) = tmp("none");
         let c = load(&dir);
         assert!(c.remotes.is_empty());
         assert_eq!(c.startup_target(), LOCAL);
@@ -170,14 +173,14 @@ mod tests {
 
     #[test]
     fn a_corrupt_file_falls_back_to_this_mac() {
-        let dir = tmp("corrupt");
+        let (_tmp, dir) = tmp("corrupt");
         std::fs::write(path(&dir), b"{ nope").unwrap();
         assert_eq!(load(&dir), Connections::default());
     }
 
     #[test]
     fn the_list_survives_a_round_trip() {
-        let dir = tmp("trip");
+        let (_tmp, dir) = tmp("trip");
         let want = Connections {
             remotes: vec![remote("a1", "home-server")],
             last_used: "a1".into(),

@@ -124,6 +124,12 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .inner_size(1100.0, 720.0)
         .min_inner_size(820.0, 560.0)
         .visible(!warm);
+    // 绿色版的 WebView2 数据放在它自己的文件夹里（见 `portable::webview_data_dir`）。
+    // 三扇窗（这里、更新窗口、连接选择）要一致：同一个进程里的 WebView2 共用一个数据目录
+    let b = match crate::portable::webview_data_dir() {
+        Some(dir) => b.data_directory(dir),
+        None => b,
+    };
     // 把内容顶到标题栏里、藏掉标题：**这两样只有 macOS 有**，那里红绿灯
     // 浮在内容上，界面顶部那几处 `data-tauri-drag-region` 就是为它留的。
     // Windows 上用系统标题栏，所以那些留白按平台去掉了（见 App.tsx 里用

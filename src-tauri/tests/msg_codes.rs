@@ -611,12 +611,14 @@ mod tests {
     fn h() { msg!("t.only" => "x"); }
 }
 "####;
-    let dir = std::env::temp_dir().join(format!("tw-msg-codes-{}", std::process::id()));
-    let crate_src = dir.join("crates/x/src");
+    let dir = tempfile::Builder::new()
+        .prefix("tw-msg-codes-")
+        .tempdir()
+        .unwrap();
+    let crate_src = dir.path().join("crates/x/src");
     std::fs::create_dir_all(&crate_src).unwrap();
     std::fs::write(crate_src.join("lib.rs"), src).unwrap();
-    let got = manifest(&dir);
-    std::fs::remove_dir_all(&dir).unwrap();
+    let got = manifest(dir.path());
     let body: Vec<&str> = got.lines().filter(|l| !l.starts_with('#')).collect();
     assert_eq!(
         body,

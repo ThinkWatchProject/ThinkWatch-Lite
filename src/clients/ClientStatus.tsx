@@ -12,6 +12,8 @@ const TONE: Record<ClientState, StatusTone> = {
   waiting: "warn",
   broken: "error",
   idle: "idle",
+  // 这一份的网关不认它配置里的那把密钥：要留意，但不是这一份能修好的
+  other: "warn",
   absent: "idle",
 };
 
@@ -30,6 +32,7 @@ export function ClientStatus({ status, manual, live }: { status: Status; manual?
     waiting: t.waiting,
     broken: t.broken,
     idle: manual ? t.notSet : t.idle,
+    other: t.otherInstance,
     absent: t.absent,
   }[status.state];
   return (
@@ -57,5 +60,7 @@ export function reasonText(reason: Reason | undefined, t: typeof clientsText.zh)
       return t.unreachable;
     case "elsewhere":
       return t.pointsTo(hostOf(reason.endpoint));
+    case "other":
+      return t.otherInstanceHint;
   }
 }

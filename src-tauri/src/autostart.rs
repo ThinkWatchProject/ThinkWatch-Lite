@@ -9,7 +9,8 @@
 //!
 //! **Linux 上连插件都不用**，自启项整个自己写（理由见 `linux` 子模块头上）。
 //! 调用方一律经 [`launcher`] 拿开关、不直接碰插件 —— 这样 Linux 上不会有
-//! 哪一处漏走插件那条路。
+//! 哪一处漏走插件那条路。**Windows 上设置里的开关也不经插件**，理由见
+//! `approved_from_bytes` 上面那一段。
 
 /// 纯文本的编码和解析在每个平台都编译，测试因此在哪都跑（和
 /// `approved_from_bytes` 同一条理由）；读写文件那几样只有 Linux 调。
@@ -76,55 +77,36 @@ pub fn plist_path(bundle_id: &str) -> Option<std::path::PathBuf> {
     })
 }
 
-/// 开发构建里禁用自启。
+/// 开发构建里禁用自启（Windows 上连同链接、通知的登记，见 `winreg`）。
 ///
 /// `cargo tauri dev` 期间调 `enable()` 会把 `target/debug/…` 写进 plist，
 /// 然后每次开机 launchd 都会去启动一个可能已经被 `cargo clean` 掉的
 /// 二进制。**这是个只在开发者自己机器上发作的坑**，所以更容易被忽略。
+///
+/// Windows 上自己编的 release 构建也算开发构建（见 `update::windows_kind`）：否则在
+/// 开发机上跑一次 `target\release\…`，装好的那一份的链接和开机自启就改指向了它。
 pub fn allowed_in_this_build() -> bool {
-    !cfg!(debug_assertions)
+    #[cfg(windows)]
+    {
+        !cfg!(debug_assertions) && crate::update::kind() != crate::update::Install::Dev
+    }
+    #[cfg(not(windows))]
+    {
+        !cfg!(debug_assertions)
+    }
 }
 
-/// 用户在「设置 → 应用 → 启动」里把它关掉了吗。
-///
-/// **这是 Windows 上那第三件插件给不了的事**（前两件见模块头）。在那个开关里
-/// 关掉之后，Windows 写的是 `StartupApproved\Run` 里的一个标志，而
-/// **我们在 `Run` 下的那一项原封不动** —— 于是插件的 `is_enabled()`（它只看
-/// `Run` 里那一项在不在）会说「开着呢」，而实际上开机时它不会被拉起来。
-/// 界面上那个勾选框因此在撒谎，和 macOS 那个 plist 路径漂移是完全同一类。
-///
-/// `None` = 这个开关没碰过它（多数情况），按插件说的算。
-#[cfg(windows)]
-pub fn disabled_by_windows(app_name: &str) -> Option<bool> {
-    use windows_sys::Win32::System::Registry::{
-        HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RegGetValueW,
-    };
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
-    let sub = wide(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
-    let name = wide(app_name);
-    let mut buf = [0u8; 32];
-    let mut len = buf.len() as u32;
-    // SAFETY: 两个字符串都以 NUL 结尾；`len` 一开始是缓冲区的大小，函数不会
-    // 写超过它。
-    let rc = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            sub.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_BINARY,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut len,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    approved_from_bytes(&buf[..len as usize]).map(|on| !on)
-}
+// **Windows 上开关不经插件**，读写的是 `HKCU\…\Run` 里那一项，见 `winreg`。
+//
+// 那一项全机只有一条、安装版和绿色版共用，开关的意思随之变成「这台机器上开机时拉起
+// ThinkWatch Lite」：指向哪一份都算开着，打开时写指向自己的，启动时把开着的那一条改成
+// 指向正在运行的这一份（谁运行就听谁的）。插件做不到这些：它只认自己的路径，写的路径
+// 还不加引号。
+//
+// 还有一件插件给不了的事：用户在「设置 → 应用 → 启动」里把它关掉之后，Windows 写的是
+// `StartupApproved\Run` 里的一个标志，而 **`Run` 下的那一项原封不动** —— 只看那一项
+// 在不在的话，界面上的开关会说「开着」，而开机时它不会被拉起来。所以「开着」还要看
+// 这个标志，见下面的 `approved_from_bytes`。
 
 /// `StartupApproved\Run` 里那串字节说的是「开着」还是「被关掉了」。
 ///
@@ -145,7 +127,7 @@ pub fn disabled_by_windows(app_name: &str) -> Option<bool> {
 /// （顺带：`clippy --all-targets` 看不出它在别处是死代码，因为测试目标用了
 /// 它。单独编 lib 才会报。）
 #[cfg_attr(not(windows), allow(dead_code))]
-fn approved_from_bytes(v: &[u8]) -> Option<bool> {
+pub(crate) fn approved_from_bytes(v: &[u8]) -> Option<bool> {
     Some(v.first()? & 1 == 0)
 }
 
@@ -197,13 +179,19 @@ mod tests {
     fn dev_builds_refuse_to_register() {
         // debug 构建注册的话，plist 里会写 target/debug/…，然后每次开机
         // launchd 去启动一个可能已经 cargo clean 掉的二进制。
+        if cfg!(debug_assertions) {
+            assert!(!allowed_in_this_build());
+        }
+        // Windows 上测试程序（`target\…\deps` 里，旁边没有卸载程序、不是发版构建）
+        // 怎么编都不算
+        #[cfg(windows)]
+        assert!(!allowed_in_this_build());
+        #[cfg(not(windows))]
         assert_eq!(allowed_in_this_build(), !cfg!(debug_assertions));
     }
 
     /// **只在 macOS 上**：LaunchAgent 和 plist 是那个平台的机制。Windows 上
-    /// 自启走 `HKCU\Run`，对应的那道检查（用户在「设置 → 应用 → 启动」里关掉
-    /// 之后，Run 键还在、插件仍然说「开着」）是 `disabled_by_windows`，它自己
-    /// 带着测试。
+    /// 自启走 `HKCU\Run`，读写和路径跟随都在 `winreg`，测试也在那里。
     #[cfg(target_os = "macos")]
     #[test]
     fn the_plist_lives_next_to_the_other_launch_agents() {

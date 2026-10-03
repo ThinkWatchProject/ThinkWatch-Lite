@@ -13,15 +13,19 @@
 //! | 点开 | delegate 回调 | 协议激活 `thinkwatch://notice/<键>` |
 //! | 窗口在前台 | delegate 只给 `List` | `SuppressPopup`：直接进操作中心，不弹横幅 |
 //!
-//! # 前提：AUMID
+//! # 前提：AUMID 的登记
 //!
-//! 未打包的应用发 toast，要一个开始菜单快捷方式带着 `System.AppUserModel.ID`，
-//! 值等于发 toast 时给的 AUMID。**对不上是静默失败** —— 调用全都成功，通知就是不出现。
-//! Tauri 的 NSIS 模板建快捷方式时把它设成 bundle identifier（`SetLnkAppUserModelId`），
-//! 所以这里的 AUMID 就是 `tauri.conf.json` 的 `identifier`。
+//! 未打包的应用发 toast 要给一个 AUMID，系统按它找通知上显示的名字和图标。这里在当前
+//! 用户名下登记：`HKCU\Software\Classes\AppUserModelId\<AUMID>` 的 `DisplayName` 和
+//! `IconUri`（数据目录里的一张 png，不能是 exe），由 `winreg::claim` 每次启动时写。
+//! **不靠开始菜单快捷方式**：绿色版没有快捷方式。Windows App SDK 和社区工具包对未打包
+//! 应用也是这么做的。没登记的 AUMID 一样弹得出来，只是名字是原始的 ID、没有图标。
 //!
-//! `tauri dev` 那种没装过的没有快捷方式，[`available`] 探不到就退回 `SystemSink` ——
-//! 那个插件在开发时借 PowerShell 的 AUMID，至少弹得出来。
+//! 安装版和绿色版各用各的 AUMID（见 [`aumid`]）：两份是两套独立的设置，通知各进各的
+//! 分组，清理时也只删自己那一份的登记。
+//!
+//! 开发构建不登记（不碰注册表），[`available`] 说不能用，退回 `SystemSink` —— 那个插件
+//! 在开发时借 PowerShell 的 AUMID，至少弹得出来。
 //!
 //! 真正调 WinRT 的那几行在 [`toast`]，这里只是把它接到总线上。下面这些纯函数**哪个
 //! 平台都编**，测试在 macOS 的 CI 上也跑。
@@ -31,6 +35,18 @@ pub mod toast;
 
 use super::NOTICE_URL;
 use super::sink::thread_of;
+
+/// 发通知用的 AUMID：安装版是应用标识，绿色版在后面加 `.portable`。
+///
+/// **两份不共用一个**：数据、设置互不相干，通知中心里也该是两组 —— 不然撤回、原地更新
+/// 按 tag 找到的可能是另一份发的那一条，清理时删登记也会删掉另一份的名字和图标
+pub fn aumid(portable: bool) -> String {
+    if portable {
+        format!("{}.portable", crate::winreg::IDENTIFIER)
+    } else {
+        crate::winreg::IDENTIFIER.to_string()
+    }
+}
 
 /// 键 → tag。**必须哈希**：tag 最长 64 个字符（老一些的系统上只有 16），而键是
 /// `upstream:<名字>`，名字是用户起的、可以任意长、多半是中文。
@@ -74,8 +90,8 @@ pub fn launch_url(key: &str) -> String {
 /// 初值和后来的更新都从 `NotificationData` 给 —— 要用 `Update` 原地改，只能这样写。
 /// 顺带，用户起的上游名字从头到尾没有机会被当成 XML 解析。
 ///
-/// 没有 `appLogoOverride` 图标：安装目录里没有单独的 png，toast 的标题栏本来就用
-/// 快捷方式（也就是 exe）的图标
+/// 没有 `appLogoOverride` 图标：toast 标题栏上的图标来自 AUMID 登记里的 `IconUri`
+/// （见模块说明），每一条都一样，不必在 XML 里再给
 pub fn toast_xml(key: &str) -> String {
     format!(
         concat!(
@@ -114,24 +130,23 @@ mod native {
 
     use super::super::sink::counted_title;
     use super::super::{Notice, Sink};
-    use super::{group_of, tag_of, toast, toast_xml};
+    use super::{aumid, group_of, tag_of, toast, toast_xml};
 
-    /// 能不能用：装过的才行（见模块说明里的 AUMID）
-    pub fn available(app: &tauri::AppHandle) -> bool {
-        let installed = crate::update::kind() == crate::update::Install::Standalone;
-        toast::available(installed, &app.package_info().name)
+    /// 能不能用：这次启动登记上了才行（见模块说明里的 AUMID）。开发构建不登记
+    pub fn available(_app: &tauri::AppHandle) -> bool {
+        crate::winreg::notifications_registered()
     }
 
     /// Windows 原生的系统通知
     pub struct NativeSink {
         app: tauri::AppHandle,
-        /// 和开始菜单快捷方式上的那一个是同一个值：bundle identifier
+        /// 这一份登记的那一个，见 [`aumid`]
         aumid: String,
     }
 
     impl NativeSink {
         pub fn new(app: tauri::AppHandle) -> Self {
-            let aumid = app.config().identifier.clone();
+            let aumid = aumid(crate::portable::is_portable());
             Self { app, aumid }
         }
 
@@ -267,6 +282,13 @@ mod tests {
         assert!(xml.contains(r#"activationType="protocol""#));
         assert!(xml.contains(r#"launch="thinkwatch://notice/upstream%3A%3Cb%3E%26%27%22""#));
         assert!(!xml.contains("<b>"));
+    }
+
+    /// 安装版就是应用标识（开始菜单快捷方式上写的也是它），绿色版另起一个
+    #[test]
+    fn each_kind_has_its_own_aumid() {
+        assert_eq!(aumid(false), "app.thinkwatch.lite");
+        assert_eq!(aumid(true), "app.thinkwatch.lite.portable");
     }
 
     #[test]

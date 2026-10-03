@@ -20,6 +20,8 @@ pub fn app_info(app: tauri::AppHandle) -> serde_json::Value {
         "version": app.package_info().version.to_string(),
         "identifier": app.config().identifier,
         "data_dir": data_dir().display().to_string(),
+        // 绿色版（见 `portable`）：卸载一节按它说最后一步是删文件夹、还是走系统卸载
+        "portable": crate::portable::is_portable(),
         // core 二进制的实际位置。找不到的时候把错误原样给出来 ——
         // 那条错误里列着找过哪些位置，正是这时候要看的东西。
         "core_bin": match locate_core(&app) {
@@ -127,22 +129,19 @@ pub fn autostart_enabled(app: tauri::AppHandle) -> bool {
     if !autostart::allowed_in_this_build() {
         return false;
     }
+    // Windows 上是全机共用的那一条 Run 项，指向哪一份都算开着；被「设置 → 应用 →
+    // 启动」关掉的不算。见 `winreg` 和 `autostart` 里 `approved_from_bytes` 上面那段
+    #[cfg(windows)]
+    {
+        let _ = app;
+        crate::winreg::autostart_on()
+    }
     // Linux 上的 `is_enabled` 自己就认桌面「关掉了」的那两种写法，见
     // `autostart::linux::disabled_by_desktop`
-    if !matches!(autostart::launcher(&app).is_enabled(), Ok(true)) {
-        return false;
+    #[cfg(not(windows))]
+    {
+        matches!(autostart::launcher(&app).is_enabled(), Ok(true))
     }
-    // **插件说「开着」还不够。**Windows 的「设置 → 应用 → 启动」里关掉之后，
-    // 我们在 `Run` 下那一项原封不动，而插件只看那一项在不在 —— 见
-    // `autostart::disabled_by_windows`。
-    //
-    // 键名问 `package_info().name` 要，**和插件写进去时用的是同一个来源**
-    // （它就是这么取的），不是照着猜一个。
-    #[cfg(windows)]
-    if autostart::disabled_by_windows(&app.package_info().name) == Some(true) {
-        return false;
-    }
-    true
 }
 
 /// 开或关开机自启。
@@ -159,29 +158,38 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
         )
         .into());
     }
-    // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
-    // 而那个目录在一台从没注册过登录项的 Mac 上根本不存在 —— 写文件
-    // 得到的是 `No such file or directory (os error 2)`，一句既不说
-    // 哪个文件、也不说该怎么办的话。
-    //
-    // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
-    // 环境都会撞上。所以自己先建。（只有 macOS 写 plist；Linux 那份自己建目录）
-    #[cfg(target_os = "macos")]
-    if on
-        && let Some(plist) = autostart::plist_path(&app.config().identifier)
-        && let Some(dir) = plist.parent()
+    // Windows 上打开 = 写一条指向自己的，关掉 = 删掉那一条（不管它指向哪一份），见 `winreg`
+    #[cfg(windows)]
     {
-        std::fs::create_dir_all(dir).map_err(|e| {
-            tr!(
-                format!("无法创建目录 {}：{e}", dir.display()),
-                format!("The directory {} could not be created: {e}", dir.display())
-            )
-        })?;
+        let _ = app;
+        crate::winreg::set_autostart(on).map_err(Into::into)
     }
-    let mgr = autostart::launcher(&app);
-    let r = if on { mgr.enable() } else { mgr.disable() };
-    r.map_err(|e| format!("{e}"))?;
-    Ok(matches!(mgr.is_enabled(), Ok(true)))
+    #[cfg(not(windows))]
+    {
+        // **插件不建目录。**它把 plist 直接写进 `~/Library/LaunchAgents/`，
+        // 而那个目录在一台从没注册过登录项的 Mac 上根本不存在 —— 写文件
+        // 得到的是 `No such file or directory (os error 2)`，一句既不说
+        // 哪个文件、也不说该怎么办的话。
+        //
+        // 这不是边角情况：全新系统、新建用户、以及任何 HOME 被换掉的运行
+        // 环境都会撞上。所以自己先建。（只有 macOS 写 plist；Linux 那份自己建目录）
+        #[cfg(target_os = "macos")]
+        if on
+            && let Some(plist) = autostart::plist_path(&app.config().identifier)
+            && let Some(dir) = plist.parent()
+        {
+            std::fs::create_dir_all(dir).map_err(|e| {
+                tr!(
+                    format!("无法创建目录 {}：{e}", dir.display()),
+                    format!("The directory {} could not be created: {e}", dir.display())
+                )
+            })?;
+        }
+        let mgr = autostart::launcher(&app);
+        let r = if on { mgr.enable() } else { mgr.disable() };
+        r.map_err(|e| format!("{e}"))?;
+        Ok(matches!(mgr.is_enabled(), Ok(true)))
+    }
 }
 
 /// 提醒现在是哪一档
@@ -301,6 +309,11 @@ pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
     }
 }
 
+/// Windows 上 Run 里那一项在启动时就改成指向正在运行的这个 exe 了（`winreg::claim`），
+/// 这里没有要补的
+#[cfg(windows)]
+pub(crate) fn check_autostart_path(_app: &tauri::AppHandle) {}
+
 /// plist 里的路径还指着现在这个二进制吗。
 ///
 /// 不一致就重新注册一次。这件事插件不做，而它的失败模式是**静默的**：
@@ -309,7 +322,7 @@ pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
 /// **开发构建不碰**，和 Linux 那一份一样：装好的应用开着自启的机器上跑一次
 /// `cargo tauri dev`，这里会觉得「路径不对」，把 plist 改指向 `target/debug/…`
 /// —— 之后每次开机拉起的是一个开发构建，或者一个已经被 `cargo clean` 掉的文件
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn check_autostart_path(app: &tauri::AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
     if !autostart::allowed_in_this_build() {

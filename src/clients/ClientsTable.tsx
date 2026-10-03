@@ -187,7 +187,8 @@ function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext
         </TableCell>
         <TableCell className="text-right" onClick={stop} onKeyDown={stop}>
           <div className="flex items-center justify-end gap-1">
-            {!(c.managed && !adopted && !absent) && (adopted || reachable) && (
+            {/* 另一个 ThinkWatch Lite 接管的：还原、接管都不在这里做 */}
+            {status.state !== "other" && !(c.managed && !adopted && !absent) && (adopted || reachable) && (
               <Button
                 variant="outline"
                 size="xs"

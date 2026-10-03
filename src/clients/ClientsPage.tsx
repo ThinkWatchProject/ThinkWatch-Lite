@@ -193,9 +193,12 @@ export default function ClientsPage({
     void restoreAllRun(async () => {
       const rs = await api.restoreAll();
       const bad = rs.filter((r) => !r.ok);
+      // 另一个 ThinkWatch Lite 接管的跳过了：说是哪几个、该去哪儿还原
+      const skipped = rs.filter((r) => r.skipped).map((r) => r.client);
       // **一个失败不影响其余的**，所以逐条报，不能只说「失败了」
-      if (bad.length === 0) notify.success(t.restoredAll(rs.length));
+      if (bad.length === 0) notify.success(t.restoredAll(rs.length - skipped.length));
       else notify.error(t.restoreFailed(bad));
+      if (skipped.length > 0) notify.info(t.restoreSkipped(skipped));
       setDialog(null);
       await Promise.all([clients.reload(), groups.length > 0 ? wsl.reload() : undefined]);
     });
@@ -733,7 +736,7 @@ function Summary({
 }) {
   const t = useText(clientsText);
   const counts = useMemo(() => {
-    const n: Record<ClientState, number> = { in_use: 0, waiting: 0, broken: 0, idle: 0, absent: 0 };
+    const n: Record<ClientState, number> = { in_use: 0, waiting: 0, broken: 0, idle: 0, other: 0, absent: 0 };
     if (!data) return n;
     const now = Date.now();
     for (const c of data.clients) n[statusOf(c, data.gateway_base, now, remote).state] += 1;
@@ -749,6 +752,10 @@ function Summary({
   }, [data, groups, remote]);
   if (!data) return loading ? <Skeleton className="my-1 h-3 w-56 rounded-sm" /> : null;
   const connected = counts.in_use + counts.waiting + counts.broken;
+  /** 另一个 ThinkWatch Lite 接管的：不算这一份接上的，两种情况下都单说 */
+  const other = counts.other > 0 && (
+    <SummaryItem lead={<StatusDot tone="warn" />} value={<AnimatedNumber value={counts.other} />} label={t.nOther} />
+  );
   if (connected === 0) {
     const detected =
       data.clients.filter((c) => c.installed).length +
@@ -761,6 +768,7 @@ function Summary({
             {t.nDetected(detected, <AnimatedNumber value={detected} className="tw-num font-medium text-foreground" />)}
           </span>
         )}
+        {other}
       </>
     );
   }
@@ -775,6 +783,7 @@ function Summary({
       {counts.broken > 0 && (
         <SummaryItem lead={<StatusDot tone="error" />} value={<AnimatedNumber value={counts.broken} />} label={t.nBroken} />
       )}
+      {other}
       {counts.idle > 0 && (
         <SummaryItem lead={<StatusDot tone="idle" />} value={<AnimatedNumber value={counts.idle} />} label={t.nIdle} />
       )}

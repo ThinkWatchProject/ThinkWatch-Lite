@@ -39,27 +39,25 @@ fn core_binary() -> PathBuf {
 /// `~/.thinkwatch`，也不碰这台机器上正开着的那个实例。**
 struct Core {
     child: std::sync::Mutex<Child>,
-    home: PathBuf,
+    /// **每个 core 都要自己的目录。**同一个进程里的测试是并行跑的，而两个 core 共用
+    /// 一个 `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来 —— 表现为
+    /// 「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
+    ///
+    /// 字段在 `drop` 之后才析构：core 先停下、等它退出，目录再删
+    home: tempfile::TempDir,
 }
-
-/// 同一个测试二进制里的第几个 core。
-///
-/// **每个都要自己的目录。**同一个进程里的测试是并行跑的，而两个 core 共用一个
-/// `THINKWATCH_HOME` 时，先到的那个拿走单实例锁、后到的根本起不来 —— 表现为
-/// 「core 三十秒都没答应」，一个看上去完全不像是测试自己造成的失败。
-static NTH: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 
 impl Core {
     fn start() -> Self {
-        let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // 短路径：unix socket 的 `sun_path` 只有一百来字节，而 macOS 的
-        // `TMPDIR` 本身就很长。
-        let home = std::env::temp_dir().join(format!("tw-ctl-{}-{nth}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
-        std::fs::create_dir_all(&home).unwrap();
+        // 短名字：unix socket 的 `sun_path` 只有一百来字节，而 macOS 的
+        // `TMPDIR` 本身就很长。起不来、测试没过，目录都跟着删掉
+        let home = tempfile::Builder::new()
+            .prefix("tw-ctl-")
+            .tempdir()
+            .unwrap();
         let child = Command::new(core_binary())
             .args(["serve", "--config"])
-            .arg(home.join("config.yaml"))
+            .arg(home.path().join("config.yaml"))
             // 这条测试不打数据面，端口只是不能撞上：同一个测试二进制里的另一个
             // core、另一个检出里同时在跑的这条测试、这台机器上别的什么。
             //
@@ -68,10 +66,10 @@ impl Core {
             // 跑几份测试时真撞上过，core 报「already in use」退出，而这边只看得到
             // 「三十秒都没答应」
             .args(["--port", "0"])
-            .env("THINKWATCH_HOME", &home)
+            .env("THINKWATCH_HOME", home.path())
             // 输出留在它自己的目录里：起不来时 `wait_ready` 把它和退出状态一起报出来
-            .stdout(std::fs::File::create(home.join("core.out")).unwrap())
-            .stderr(std::fs::File::create(home.join("core.err")).unwrap())
+            .stdout(std::fs::File::create(home.path().join("core.out")).unwrap())
+            .stderr(std::fs::File::create(home.path().join("core.err")).unwrap())
             .spawn()
             .expect("起不来 twcore");
         Self {
@@ -82,12 +80,12 @@ impl Core {
 
     /// core 的配置。**钥匙由 core 写进去**，桌面端从这里读
     fn config(&self) -> PathBuf {
-        self.home.join("config.yaml")
+        self.home.path().join("config.yaml")
     }
 
     /// 一份写着另一把钥匙的配置：拿它去连，就是「钥匙不对」
     fn wrong_key(&self) -> PathBuf {
-        let p = self.home.join("wrong.yaml");
+        let p = self.home.path().join("wrong.yaml");
         std::fs::write(
             &p,
             format!("listen:\n  control:\n    key: \"{}\"\n", "0f".repeat(32)),
@@ -97,7 +95,7 @@ impl Core {
     }
 
     fn address(&self) -> Address {
-        Address::in_dir(&self.home)
+        Address::in_dir(self.home.path())
     }
 
     fn client(&self, key_file: PathBuf) -> ControlClient {
@@ -122,7 +120,8 @@ impl Core {
             // 只报一句「没答应」的话，端口被占、配置被拒、二进制不对都长一个样
             if Instant::now() >= deadline {
                 let exited = self.child.lock().unwrap().try_wait();
-                let log = |f: &str| std::fs::read_to_string(self.home.join(f)).unwrap_or_default();
+                let log =
+                    |f: &str| std::fs::read_to_string(self.home.path().join(f)).unwrap_or_default();
                 panic!(
                     "core 三十秒都没答应\n最后一次：{last}\n退出状态：{exited:?}\n--- stdout\n{}\n--- stderr\n{}",
                     log("core.out"),
@@ -139,7 +138,6 @@ impl Drop for Core {
         let mut c = self.child.lock().unwrap();
         let _ = c.kill();
         let _ = c.wait();
-        let _ = std::fs::remove_dir_all(&self.home);
     }
 }
 
@@ -219,7 +217,7 @@ async fn after_the_key_is_rotated_the_next_connection_gets_in() {
     let rotated = Command::new(core_binary())
         .args(["control-key", "--rotate", "--config"])
         .arg(core.config())
-        .env("THINKWATCH_HOME", &core.home)
+        .env("THINKWATCH_HOME", core.home.path())
         .output()
         .expect("twcore control-key 跑不起来");
     assert!(rotated.status.success(), "{rotated:?}");
@@ -236,7 +234,7 @@ async fn after_the_key_is_rotated_the_next_connection_gets_in() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     // 旧钥匙进不去了
-    let old = core.home.join("old.yaml");
+    let old = core.home.path().join("old.yaml");
     std::fs::write(
         &old,
         format!("listen:\n  control:\n    key: \"{}\"\n", before.to_hex()),

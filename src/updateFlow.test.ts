@@ -15,6 +15,10 @@ describe("谁能在窗口里直接装", () => {
     expect(canInstall("standalone")).toBe(true);
   });
 
+  it("Windows 的绿色版也可以", () => {
+    expect(canInstall("portable")).toBe(true);
+  });
+
   it("开发构建不自己更新", () => {
     expect(canInstall("dev")).toBe(false);
   });
