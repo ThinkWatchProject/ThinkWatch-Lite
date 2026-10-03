@@ -10,6 +10,9 @@
 //! 嵌的默认清单里有（`common-controls-v6`），**测试程序没有**。所以不静态链接它，用的时候
 //! 现取：取不到（没有清单的进程）就退回 `MessageBoxW`。静态链接的话，测试程序会因为
 //! 缺这个入口点根本起不来。
+//!
+//! 清单里同时声明了按每个显示器的 DPI 绘制（见 `build.rs`），这几个对话框在缩放过的
+//! 屏幕上因此不发糊 —— 它们出现的时候 Tauri 还没起来，没人替进程设这一项。
 
 /// 弹一个对话框，返回按下的按钮的下标；关掉对话框、或者这个平台不支持时是 `None`。
 ///
@@ -56,13 +59,27 @@ pub fn wait<T: Send>(
     }
 }
 
+/// 退路对话框（`MessageBoxW`）的正文：主句、正文，有两个按钮时再加一句问句 ——
+/// 第一个按钮的字加上问号，对应「是」；「否」是第二个
+#[cfg_attr(not(windows), allow(dead_code))]
+fn fallback_text(instruction: &str, content: &str, buttons: &[&str]) -> String {
+    let mut parts = vec![instruction.to_string()];
+    if !content.is_empty() {
+        parts.push(content.to_string());
+    }
+    if buttons.len() >= 2 {
+        parts.push(format!("{}{}", buttons[0], tr!("？", "?")));
+    }
+    parts.join("\n\n")
+}
+
 #[cfg(windows)]
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use windows_sys::Win32::Foundation::{HWND, LPARAM, S_FALSE, S_OK, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::{
-        GetModuleHandleW, GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
+        GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
     };
     use windows_sys::Win32::UI::Controls::{
         TASKDIALOG_BUTTON, TASKDIALOGCONFIG, TDF_ALLOW_DIALOG_CANCELLATION, TDF_CALLBACK_TIMER,
@@ -70,7 +87,7 @@ mod imp {
         TDM_SET_PROGRESS_BAR_MARQUEE, TDN_BUTTON_CLICKED, TDN_CREATED, TDN_TIMER,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        IDCANCEL, IDOK, MB_ICONINFORMATION, MB_OK, MB_OKCANCEL, MessageBoxW, PostMessageW,
+        IDNO, IDOK, IDYES, MB_ICONINFORMATION, MB_OK, MB_YESNO, MessageBoxW, PostMessageW,
         SendMessageW,
     };
     use windows_sys::core::{BOOL, HRESULT};
@@ -112,53 +129,10 @@ mod imp {
         })
     }
 
-    /// 对话框所在的线程按每个显示器的 DPI 画。**不设的话在缩放过的屏幕上是糊的**：这时
-    /// Tauri 还没把进程设成感知 DPI。只改这个线程，用完改回去，不动整个进程的设置
-    /// （那是 Tauri 起来时自己要设的）。系统太旧、没有这个函数就算了
-    struct SharpText(Option<(SetContext, isize)>);
-
-    type SetContext = unsafe extern "system" fn(isize) -> isize;
-
-    impl SharpText {
-        fn on() -> Self {
-            // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-            const PER_MONITOR_V2: isize = -4;
-            let user32 = wide("user32.dll");
-            // SAFETY: 名字以 0 结尾；user32 一定已经加载（`MessageBoxW` 就从它导入）
-            let set = unsafe {
-                let module = GetModuleHandleW(user32.as_ptr());
-                if module.is_null() {
-                    return Self(None);
-                }
-                GetProcAddress(module, c"SetThreadDpiAwarenessContext".as_ptr().cast())
-            };
-            let Some(set) = set else {
-                return Self(None);
-            };
-            // SAFETY: 签名见 winuser.h，DPI_AWARENESS_CONTEXT 是一个指针大小的句柄
-            let set = unsafe {
-                std::mem::transmute::<unsafe extern "system" fn() -> isize, SetContext>(set)
-            };
-            // SAFETY: 传的是系统定义的伪句柄；返回原来的设置，失败是 0
-            let before = unsafe { set(PER_MONITOR_V2) };
-            Self((before != 0).then_some((set, before)))
-        }
-    }
-
-    impl Drop for SharpText {
-        fn drop(&mut self) {
-            if let Some((set, before)) = self.0 {
-                // SAFETY: 还原成 `on` 时拿到的那个设置
-                unsafe { set(before) };
-            }
-        }
-    }
-
     pub fn show(title: &str, instruction: &str, content: &str, buttons: &[&str]) -> Option<usize> {
         let Some(dialog) = task_dialog() else {
             return message_box(title, instruction, content, buttons);
         };
-        let _sharp = SharpText::on();
         let title_w = wide(title);
         let instruction_w = wide(instruction);
         let content_w = wide(content);
@@ -232,7 +206,6 @@ mod imp {
                 work()
             });
 
-            let _sharp = SharpText::on();
             let title_w = wide(title);
             let instruction_w = wide(instruction);
             let content_w = wide(content);
@@ -318,25 +291,19 @@ mod imp {
         }
     }
 
-    /// 取不到 `TaskDialogIndirect` 时的退路：按钮上的字由系统定，最多两个 ——
-    /// 第一个对「确定」，第二个对「取消」
+    /// 取不到 `TaskDialogIndirect`、或者它没弹出来时的退路：`MessageBoxW`，按钮上的字由
+    /// 系统定。两个按钮的时候用「是」「否」，把第一个按钮的字接在正文后面当问句（见
+    /// [`super::fallback_text`]）—— 只给「确定」「取消」的话，「确定」到底是哪个选择谁也
+    /// 看不出来
     fn message_box(
         title: &str,
         instruction: &str,
         content: &str,
         buttons: &[&str],
     ) -> Option<usize> {
-        let text = if content.is_empty() {
-            wide(instruction)
-        } else {
-            wide(&format!("{instruction}\n\n{content}"))
-        };
+        let text = wide(&super::fallback_text(instruction, content, buttons));
         let caption = wide(title);
-        let kind = if buttons.len() >= 2 {
-            MB_OKCANCEL
-        } else {
-            MB_OK
-        };
+        let kind = if buttons.len() >= 2 { MB_YESNO } else { MB_OK };
         // SAFETY: 两个指针都指向以 0 结尾、在调用期间一直活着的 UTF-16 缓冲区
         let r = unsafe {
             MessageBoxW(
@@ -347,9 +314,89 @@ mod imp {
             )
         };
         match r {
-            IDOK if !buttons.is_empty() => Some(0),
-            IDCANCEL if buttons.len() >= 2 => Some(1),
+            IDOK | IDYES if !buttons.is_empty() => Some(0),
+            IDNO if buttons.len() >= 2 => Some(1),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Lang, with_lang};
+
+    /// 退路对话框只有「是」「否」：选「是」就是第一个按钮，所以问的正是它
+    #[test]
+    fn the_fallback_asks_the_first_button_as_a_question() {
+        let zh = with_lang(Lang::Zh, || {
+            fallback_text(
+                "缺少 Microsoft Edge WebView2 运行时",
+                "ThinkWatch Lite 无法启动。",
+                &["前往下载", "退出"],
+            )
+        });
+        assert_eq!(
+            zh,
+            "缺少 Microsoft Edge WebView2 运行时\n\nThinkWatch Lite 无法启动。\n\n前往下载？"
+        );
+        let en = with_lang(Lang::En, || {
+            fallback_text(
+                "ThinkWatch Lite is already running",
+                "",
+                &["Stop the running program and start this one", "Cancel"],
+            )
+        });
+        assert_eq!(
+            en,
+            "ThinkWatch Lite is already running\n\nStop the running program and start this one?"
+        );
+        // 一个按钮（「确定」）不问
+        assert_eq!(fallback_text("甲", "乙", &["确定"]), "甲\n\n乙");
+    }
+
+    /// 程序清单（`app.manifest`，见 `build.rs`）：comctl32 第 6 版的依赖一定在
+    /// （`TaskDialogIndirect` 靠它），DPI 那一项也在
+    #[test]
+    fn the_manifest_keeps_common_controls_and_declares_dpi() {
+        let manifest = include_str!("../app.manifest");
+        assert!(manifest.contains(r#"name="Microsoft.Windows.Common-Controls""#));
+        assert!(manifest.contains(r#"version="6.0.0.0""#));
+        assert!(manifest.contains(">PerMonitorV2, PerMonitor</dpiAwareness>"));
+        assert!(manifest.contains(">true/pm</dpiAware>"));
+    }
+
+    /// **清单写坏了，应用根本起不来**（「并行配置不正确」），而测试程序不带清单，别处
+    /// 看不出来。这里让系统照它建一个激活上下文：格式不对、依赖的程序集找不到都会失败
+    #[cfg(windows)]
+    #[test]
+    fn windows_accepts_the_manifest() {
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+        use windows_sys::Win32::System::ApplicationInstallationAndServicing::{
+            ACTCTXW, CreateActCtxW, ReleaseActCtx,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("app.manifest");
+        std::fs::write(&file, include_str!("../app.manifest")).unwrap();
+        let path: Vec<u16> = file
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let ctx = ACTCTXW {
+            cbSize: std::mem::size_of::<ACTCTXW>() as u32,
+            lpSource: path.as_ptr(),
+            ..Default::default()
+        };
+        // SAFETY: 结构里的路径以 0 结尾、在调用期间活着
+        let handle = unsafe { CreateActCtxW(&ctx) };
+        assert_ne!(
+            handle,
+            INVALID_HANDLE_VALUE,
+            "{}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: 上面建出来的
+        unsafe { ReleaseActCtx(handle) };
     }
 }

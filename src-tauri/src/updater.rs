@@ -344,22 +344,30 @@ pub(crate) enum Step {
     Restarting,
 }
 
+/// 等请求结束时问一次网关的状态最多等多久。**答不上来就当问不到**：卡住的 core 不该
+/// 让等它的那一方（装更新、让位给另一个位置的程序）也跟着卡住
+const STATUS_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// 等网关手上的请求都结束。
 ///
 /// **重启会掐断所有还没结束的流**：一个正在吐字的 Claude Code 任务，那段
 /// 输出就没了，那个请求得从头再发一次。等计数归零，重启就落在两个请求
 /// 之间的空档里。
 ///
-/// 问不到（core 不在跑、控制面没答应）就不等 —— 没有网关，也就没有要保护
-/// 的请求。
+/// 问不到（core 不在跑、控制面没答应、[`STATUS_WAIT`] 内没回话）就不等 —— 没有
+/// 网关，也就没有要保护的请求。
 pub(crate) async fn wait_for_quiet(control: &ControlClient, on_wait: impl Fn(usize)) {
     let started = std::time::Instant::now();
     let mut waited = false;
     loop {
-        let s = match control.status().await {
-            Ok(s) => s,
-            Err(e) => {
+        let s = match tokio::time::timeout(STATUS_WAIT, control.status()).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
                 tracing::info!("等请求结束：问不到网关的状态，不等（{e:#}）");
+                return;
+            }
+            Err(_) => {
+                tracing::warn!("等请求结束：网关 {STATUS_WAIT:?} 内没回话，不等");
                 return;
             }
         };
