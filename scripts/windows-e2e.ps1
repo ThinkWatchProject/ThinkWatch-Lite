@@ -572,7 +572,7 @@ function Find-RegRefs([string] $folder) {
             $keys += @(Get-ChildItem -LiteralPath $k.PSPath -Recurse)
         }
     }
-    $keys += Get-Item -LiteralPath $RunKey
+    if (Test-Path -LiteralPath $RunKey) { $keys += Get-Item -LiteralPath $RunKey }
     foreach ($k in $keys) {
         foreach ($n in $k.GetValueNames()) {
             $v = "$($k.GetValue($n))"
@@ -951,6 +951,8 @@ function Check-Uninstall {
 
     # 一份绿色版开着开机自启的样子（winreg::autostart_command）
     $run = '"{0}" --autostart' -f $P2exe
+    # 新机器上 Run 这个键可能还没有。只在没有时建：对已有的键 `New-Item -Force` 会清空它的值
+    if (-not (Test-Path -LiteralPath $RunKey)) { New-Item -Path $RunKey | Out-Null }
     Set-ItemProperty -LiteralPath $RunKey -Name $Product -Value $run
     Say ('开机自启指向 P2：{0}' -f $run)
 
