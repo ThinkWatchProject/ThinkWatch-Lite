@@ -322,18 +322,18 @@ pub fn newer(candidate: &str, current: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// 一个空目录，测试结束（过了、没过）就删掉。拿着返回的第一项到测试结束。
+    ///
     /// 只有上面那两个 macOS 专有的测试用它 —— 跟着它们一起分平台，
     /// 否则在别处是一段没人调的死代码。
     #[cfg(target_os = "macos")]
-    fn tmp() -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "tw-update-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmp() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix("tw-update-")
+            .tempdir()
+            .unwrap();
+        let p = d.path().to_path_buf();
+        (d, p)
     }
 
     #[cfg(target_os = "macos")]
@@ -364,7 +364,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn a_caskroom_link_pointing_here_means_homebrew_put_it_here() {
-        let root = tmp();
+        let (_tmp, root) = tmp();
         let apps = root.join("Applications");
         let bundle = apps.join("ThinkWatch Lite.app");
         std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
@@ -388,15 +388,13 @@ mod tests {
             Install::Homebrew
         );
         assert!(!kind_at(&exe, std::slice::from_ref(&prefix)).can_self_update());
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// 别人的 cask 里有个同名链接，指向的却是另一个包 —— 不算。
     #[cfg(target_os = "macos")]
     #[test]
     fn a_link_to_a_different_bundle_does_not_count() {
-        let root = tmp();
+        let (_tmp, root) = tmp();
         let mine = root.join("Applications/ThinkWatch Lite.app");
         std::fs::create_dir_all(mine.join("Contents/MacOS")).unwrap();
         let exe = mine.join("Contents/MacOS/thinkwatch-lite");
@@ -414,18 +412,16 @@ mod tests {
             kind_at(&exe, std::slice::from_ref(&prefix)),
             Install::Standalone
         );
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// 装好的那一份旁边有卸载程序，开发构建旁边没有。
     #[test]
     fn an_installed_copy_sits_next_to_its_uninstaller() {
-        let root = std::env::temp_dir().join(format!(
-            "tw-nsis-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
+        let tmp = tempfile::Builder::new()
+            .prefix("tw-nsis-")
+            .tempdir()
+            .unwrap();
+        let root = tmp.path();
         let dir = root.join("ThinkWatch Lite");
         std::fs::create_dir_all(&dir).unwrap();
         let exe = dir.join("thinkwatch-lite.exe");
@@ -439,8 +435,6 @@ mod tests {
         let other = root.join("dev");
         std::fs::create_dir_all(other.join("uninstall.exe")).unwrap();
         assert_eq!(nsis_installed(&other.join("x.exe")), Install::Dev);
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// 旁边没有卸载程序的正式构建是绿色版；开发构建不管放在哪都是开发构建；

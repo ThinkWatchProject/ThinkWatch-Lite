@@ -187,15 +187,21 @@ mod imp {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("tw-private-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        p
+    /// 一个还不存在的目录（由 `create` 建），放在测试结束（过了、没过）就删掉的临时
+    /// 目录里。拿着返回的第一项到测试结束
+    fn tmp(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new()
+            .prefix(&format!("tw-private-{name}-"))
+            .tempdir()
+            .unwrap();
+        let p = root.path().join("d");
+        (root, p)
     }
 
     #[test]
     fn it_creates_the_directory_and_its_parents() {
-        let dir = tmp("parents").join("a/b/data");
+        let (_tmp, dir) = tmp("parents");
+        let dir = dir.join("a/b/data");
         create(&dir).unwrap();
         assert!(dir.is_dir());
     }
@@ -203,7 +209,7 @@ mod tests {
     /// 已经在了就不动它
     #[test]
     fn creating_one_that_is_already_there_is_not_an_error() {
-        let dir = tmp("again");
+        let (_tmp, dir) = tmp("again");
         create(&dir).unwrap();
         std::fs::write(dir.join("x"), "1").unwrap();
         create(&dir).unwrap();
@@ -214,7 +220,8 @@ mod tests {
     #[test]
     fn a_new_directory_is_private_on_unix() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = tmp("mode").join("data");
+        let (_tmp, dir) = tmp("mode");
+        let dir = dir.join("data");
         create(&dir).unwrap();
         let mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "{mode:o}");

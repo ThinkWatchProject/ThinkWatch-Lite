@@ -638,7 +638,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn enable_disable_and_repair_work_on_a_real_file() {
-        let dir = tempdir();
+        let (_tmp, dir) = tempdir();
         let file = dir.join("autostart/app.thinkwatch.lite.desktop");
         let at = |program: &str| Autostart {
             file: file.clone(),
@@ -689,7 +689,6 @@ mod tests {
 
         a.disable().unwrap();
         assert!(!file.exists());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// What desktop-file-utils thinks of the entry, for every nasty path. Skipped
@@ -697,7 +696,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn desktop_file_validate_accepts_the_entry() {
-        let dir = tempdir();
+        let (_tmp, dir) = tempdir();
         std::fs::create_dir_all(&dir).unwrap();
         for (i, p) in NASTY.iter().filter(|p| !p.contains('%')).enumerate() {
             let file = dir.join(format!("e{i}.desktop"));
@@ -728,20 +727,17 @@ mod tests {
                 String::from_utf8_lossy(&out.stderr)
             );
         }
-        let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// A scratch directory, removed when the test ends (passed or failed). Keep the
+    /// guard alive for the whole test
     #[cfg(unix)]
-    fn tempdir() -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "tw-autostart-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tempdir() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::Builder::new()
+            .prefix("tw-autostart-test-")
+            .tempdir()
+            .unwrap();
+        let p = d.path().to_path_buf();
+        (d, p)
     }
 }

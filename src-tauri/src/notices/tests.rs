@@ -509,12 +509,12 @@ async fn suspicious_content_appearing_again_after_being_read_is_news_again() {
 /// （这一条用一个临时目录：要的正是存下来又读回来的那一份）
 #[tokio::test]
 async fn a_block_read_before_a_restart_does_not_silence_the_next_one() {
-    let dir = std::env::temp_dir().join(format!(
-        "tw-notices-restart-{}-{}",
-        std::process::id(),
-        now_ms()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
+    // 删掉它的是这个守卫：过了、没过都删。声明在两条总线之前，比它们活得久
+    let root = tempfile::Builder::new()
+        .prefix("tw-notices-restart-")
+        .tempdir()
+        .unwrap();
+    let dir = root.path().join("d");
     let before = Notices::new(
         vec![Box::new(Rec::default())],
         Some(dir.clone()),
@@ -531,7 +531,6 @@ async fn a_block_read_before_a_restart_does_not_silence_the_next_one() {
     after.ingest(blocked("relay"), T0 + 60_000);
     assert_eq!(shown.lock().unwrap().len(), 1, "重启之后再拦下，要说");
     assert!(!after.list()[0].read);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ---------------------------------------------------------------- 开关
