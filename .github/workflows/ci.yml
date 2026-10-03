@@ -18,6 +18,13 @@ on:
   pull_request:
     branches: [main, dev]
 
+# **同一个分支、同一个 PR 上新的一次推送，把还在跑的旧一次取消掉。**结果只看最新的那次，
+# 旧的跑完也没人看，只会占着并发名额（免费组织同时最多 20 个任务、其中 5 个 macOS）。
+# main 和 dev 上的不取消：那里每一笔都要有自己的结果。
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -139,6 +146,61 @@ jobs:
       # 成立，只有这台机器答得出来。
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # **绿色版会被放在 U 盘和网络共享上。**它的自更新靠「正在运行的 exe 能改名、
+      # 腾出来的名字上能写新的」（`portable::swap_in`），上一步只在 NTFS 上证明过。
+      # 这里建两块小虚拟盘、格式化成 FAT32 和 exFAT，再开一个本机的 SMB 共享，把
+      # portable 那一组测试（含改名正在运行的 exe 那一条）在这三处各跑一遍：
+      # `TW_PORTABLE_TEST_DIR` 指定测试文件夹建在哪。
+      #
+      # diskpart、New-SmbShare 要管理员身份。GitHub 的 Windows 机器上步骤本来就以
+      # 管理员身份运行（UAC 关着），先核实一遍，不是的话直接报错，不让它悄悄跳过。
+      # 测试程序上一步已经编好，这里不重编
+      - name: Portable tests on FAT32, exFAT and an SMB share
+        shell: pwsh
+        run: |
+          $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+          if (-not ([Security.Principal.WindowsPrincipal]$me).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            throw "This step needs an elevated shell"
+          }
+
+          $dirs = @()
+          foreach ($v in @(@{ fs = 'fat32'; letter = 'R' }, @{ fs = 'exfat'; letter = 'S' })) {
+            $vhd = Join-Path $env:RUNNER_TEMP "tw-$($v.fs).vhdx"
+            $script = Join-Path $env:RUNNER_TEMP "tw-$($v.fs).diskpart"
+            @(
+              "create vdisk file=""$vhd"" maximum=2048 type=expandable"
+              "select vdisk file=""$vhd"""
+              "attach vdisk"
+              "convert mbr"
+              "create partition primary"
+              "format fs=$($v.fs) quick label=TW$($v.fs.ToUpper())"
+              "assign letter=$($v.letter)"
+            ) | Set-Content -Encoding ascii $script
+            diskpart /s $script
+            if ($LASTEXITCODE -ne 0) { throw "diskpart could not make the $($v.fs) volume" }
+            $vol = Get-Volume -DriveLetter $v.letter
+            if ($vol.FileSystem -ne $v.fs) { throw "$($v.letter): is $($vol.FileSystem), not $($v.fs)" }
+            $dirs += "$($v.letter):\"
+          }
+
+          $share = Join-Path $env:RUNNER_TEMP 'tw-share'
+          New-Item -ItemType Directory $share | Out-Null
+          New-SmbShare -Name tw-share -Path $share -FullAccess $me.Name | Out-Null
+          $dirs += '\\localhost\tw-share'
+
+          Get-Volume -DriveLetter R, S | Format-Table DriveLetter, FileSystem, FileSystemLabel, Size
+          Get-SmbShare -Name tw-share | Format-Table Name, Path
+
+          $failed = @()
+          foreach ($dir in $dirs) {
+            Write-Host "::group::portable tests in $dir"
+            $env:TW_PORTABLE_TEST_DIR = $dir
+            cargo test --manifest-path src-tauri/Cargo.toml --lib -- portable::tests --nocapture
+            if ($LASTEXITCODE -ne 0) { $failed += $dir }
+            Write-Host "::endgroup::"
+          }
+          if ($failed) { throw "portable tests failed in: $($failed -join ', ')" }
 
   # 理由同 Windows 那一档：一个 `#[cfg(target_os = "linux")]` 分支「检查通过」
   # 和「根本没人编过它」长得一模一样。跟随系统的深浅色（portal）、登录 shell
