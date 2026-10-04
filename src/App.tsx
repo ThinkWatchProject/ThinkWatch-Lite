@@ -53,7 +53,8 @@ import { LaunchScreen } from "./launch/LaunchScreen";
 import { warm } from "./launch/warm";
 import { ConnectionProvider, useConnections } from "./connection/ConnectionProvider";
 import { Switcher } from "./connection/Switcher";
-import { Unlinked } from "./connection/Unlinked";
+import { ConfigBroken, Unlinked } from "./connection/Unlinked";
+import { FixList, repairText, useRepair } from "./repair";
 import { currentProfile } from "./connection/api";
 import { connText } from "./connection/connection.i18n";
 import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type Surface } from "./nav";
@@ -188,9 +189,10 @@ function describeCore(raw: string): {
     return { text: t.restarting(`${attempt}`), short: t.restartingShort, tone: "warn" };
   }
   // 安全模式必须显眼：这时候网关不转发了，所有 AI 客户端都停着
-  if (raw === "safe_mode") return { text: t.safeMode, short: t.safeModeShort, tone: "bad" };
+  if (raw.startsWith("safe_mode")) return { text: t.safeMode, short: t.safeModeShort, tone: "bad" };
   // 程序运行不了。原因在启动画面上说（见 launch/trouble.ts）
-  if (raw.startsWith("failed:")) return { text: t.cannotStart, short: t.cannotStart, tone: "bad" };
+  if (raw.startsWith("failed:") || raw.startsWith("exited:"))
+    return { text: t.cannotStart, short: t.cannotStart, tone: "bad" };
   return { text: t.stopped, short: t.stopped, tone: "bad" };
 }
 
@@ -562,8 +564,11 @@ function Shell({ first }: { first: boolean }) {
    * （`nudge`）。**一串触发只读一次**（`COALESCE_MS`）。
    */
   useEffect(() => {
-    // 头一次连上之前，core 不在跑就不去读：读回来的只有一句「连不上」
-    if (!linkedRef.current && !core.startsWith("running:")) return;
+    /*
+      头一次连上之前，控制面没答应就不去读：读回来的只有一句「连不上」。**安全模式的控制面
+      也算**（`safe_mode:<pid>`）：一启动就进了安全模式的那次，界面要连上它，才说得出哪儿错了
+    */
+    if (!linkedRef.current && !core.startsWith("running:") && !core.startsWith("safe_mode:")) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let n = 0;
@@ -615,6 +620,14 @@ function Shell({ first }: { first: boolean }) {
   }, [reloads, nudge, health, models, listening, upstreamState, core, setStatus, setOv]);
 
   const c = describeCore(core);
+  /**
+   * 安全模式、配置文件读不了。core 只起了控制面，配置是它临时顶上的空配置 —— 各页画出来
+   * 的都不是用户的东西，所以内容区换成说明这件事的那一页（设置页除外，同未连接时）
+   */
+  const broken = linked && core.startsWith("safe_mode") ? (status?.config_rejected ?? null) : null;
+  /** 出错页和配置被拒的横幅在的时候，问一下能不能一键修复。被拒的那一处、配置换了一份，重问 */
+  const repair = useRepair(broken !== null || rejected !== null, `${broken?.at_ms}:${rejected?.at_ms}:${reloads}`);
+  const rt = useText(repairText);
   /** 连上过、又断了。**只在这时候挂那条横幅**。连着远程时断线另有一条（见下面） */
   const lost = linked && tries > 0 && !remote ? trouble(core, tries) : null;
   /**
@@ -895,7 +908,18 @@ function Shell({ first }: { first: boolean }) {
                 配置没通过校验。**一直挂着，直到下一次成功换入** —— 一闪而过的提示等于
                 没提示。第一句先说「还在按旧配置转发」：那是最想知道的，会不会断。
               */}
-              <Banner show={rejected !== null} tone="warning" title={t.rejectedTitle}>
+              <Banner
+                show={rejected !== null && broken === null}
+                tone="warning"
+                title={t.rejectedTitle}
+                actions={
+                  repair.fixes.length > 0 && (
+                    <Button variant="outline" size="sm" pending={repair.repairing} onClick={repair.repair}>
+                      {rt.action}
+                    </Button>
+                  )
+                }
+              >
                 {rejected && (
                   <>
                     <p>
@@ -906,6 +930,12 @@ function Shell({ first }: { first: boolean }) {
                       <pre className="mt-1.5 overflow-x-auto rounded-md bg-warning/10 px-2 py-1 font-mono tw-label">
                         {rejected.line}│ {rejected.excerpt}
                       </pre>
+                    )}
+                    {repair.fixes.length > 0 && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        <p className="font-medium">{rt.title}</p>
+                        <FixList fixes={repair.fixes} />
+                      </div>
                     )}
                   </>
                 )}
@@ -1026,6 +1056,18 @@ function Shell({ first }: { first: boolean }) {
                     ) : (
                       <Unlinked core={core} />
                     )
+                  ) : broken && tab !== "settings" ? (
+                    <ConfigBroken
+                      rejection={broken}
+                      path={status?.config_path ?? ""}
+                      fixes={repair.fixes}
+                      repairing={repair.repairing}
+                      onRepair={repair.repair}
+                      onOpenFile={() => setConfigFile({ focus: null })}
+                      onHistory={() => setHistoryOpen(true)}
+                    />
+                  ) : broken ? (
+                    <SettingsPage ov={null} status={null} local={c} linked={false} onChanged={changed} />
                   ) : tab === "dashboard" ? (
                     <OverviewPage tick={dashTick} ov={ov} onLanded={() => setLanded(true)} />
                   ) : tab === "clients" ? (
@@ -1098,7 +1140,7 @@ function Shell({ first }: { first: boolean }) {
             <ConfigFileDialog
               reloads={reloads}
               focus={configFile.focus}
-              rejectedLine={rejected?.line ?? null}
+              rejectedLine={broken?.line ?? rejected?.line ?? null}
               onClose={() => setConfigFile(null)}
               onJump={(section) => {
                 setConfigFile(null);

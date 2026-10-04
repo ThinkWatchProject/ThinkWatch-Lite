@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PlugZapIcon, TriangleAlertIcon } from "lucide-react";
+import { FileWarningIcon, PlugZapIcon, TriangleAlertIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/ui/button";
 import { Page } from "@/ui/page";
@@ -7,6 +7,10 @@ import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { usePending } from "@/ui/notify";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
+import { coreText } from "@/i18n/core.i18n";
+import { stageLabel } from "@/labels";
+import type { ConfigFix, ConfigRejection } from "@/types";
+import { FixList, repairText } from "@/repair";
 import { useNow } from "@/useNow";
 import { trouble } from "@/launch/trouble";
 import { troubleText } from "@/launch/trouble.i18n";
@@ -170,6 +174,83 @@ export function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string;
           {t.switchToLocal}
         </Button>
       </div>
+    </Frame>
+  );
+}
+
+/**
+ * 安全模式、配置文件读不了：core 只起了控制面，网关不转发。
+ *
+ * **说清是哪一行、原文是什么**，再给两条出路：打开配置文件改（编辑器里那一行是标出来的），
+ * 或者回滚到能用的一版。保存了一份能用的配置之后，外壳自动按正常模式重启 core（见 App）。
+ * 这时候别的页面画的都是 core 临时顶上的空配置，所以整个内容区只有这一页。
+ */
+export function ConfigBroken({
+  rejection,
+  path,
+  fixes,
+  repairing,
+  onRepair,
+  onOpenFile,
+  onHistory,
+}: {
+  rejection: ConfigRejection;
+  path: string;
+  /** 一键修复要改的几处（见 `useRepair`）。空的就是修不了，只剩另外两条路 */
+  fixes: ConfigFix[];
+  repairing: boolean;
+  onRepair: () => void;
+  onOpenFile: () => void;
+  onHistory: () => void;
+}) {
+  const t = useText(connText);
+  const tt = useText(troubleText);
+  const rt = useText(repairText);
+  const fixable = fixes.length > 0;
+  const [restarting, run] = usePending();
+  const stage = stageLabel(rejection.stage);
+  return (
+    <Frame icon={<FileWarningIcon />} tone="error" title={t.configBroken} status={t.safeMode}>
+      <p className="tw-body text-muted-foreground">{t.configBrokenLead}</p>
+      <div className="flex flex-col gap-2">
+        <Facts
+          rows={[
+            [t.file, <code className="font-mono break-all">{path}</code>],
+            [t.location, rejection.line != null ? t.lineAt(rejection.line, stage) : t.stageOnly(stage)],
+            [t.reason, coreText(rejection.message)],
+          ]}
+        />
+        {rejection.excerpt && (
+          <pre className="overflow-x-auto rounded-md border border-border bg-surface px-3 py-2 font-mono tw-body select-text">
+            <span className="text-muted-foreground">{rejection.line} │ </span>
+            {rejection.excerpt}
+          </pre>
+        )}
+      </div>
+      {fixable && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface/60 px-3.5 py-3">
+          <p className="tw-body font-medium text-foreground">{rt.title}</p>
+          <FixList fixes={fixes} />
+          <p className="tw-label text-muted-foreground">{rt.history}</p>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {fixable && (
+          <Button size="sm" pending={repairing} onClick={onRepair}>
+            {rt.action}
+          </Button>
+        )}
+        <Button size="sm" variant={fixable ? "outline" : "default"} onClick={onOpenFile}>
+          {t.openConfigFile}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onHistory}>
+          {t.versionHistory}
+        </Button>
+        <Button size="sm" variant="ghost" pending={restarting} onClick={() => void run(() => invoke("restart_core"))}>
+          {tt.restart}
+        </Button>
+      </div>
+      <p className="tw-label text-muted-foreground">{t.configBrokenResume}</p>
     </Frame>
   );
 }

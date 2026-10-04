@@ -346,7 +346,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         CoreState::Running { .. } => Gateway::Running,
         CoreState::Starting | CoreState::Restarting { .. } => Gateway::Starting,
         CoreState::SafeMode { .. } => Gateway::SafeMode,
-        CoreState::Failed { .. } => Gateway::Failed,
+        CoreState::Failed { .. } | CoreState::Exited { .. } => Gateway::Failed,
         CoreState::Stopped => Gateway::Stopped,
     };
     let notices = app.try_state::<Arc<notices::Notices>>();

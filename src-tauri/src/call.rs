@@ -68,6 +68,9 @@ webview_endpoints![
     ConfigHistory,
     ConfigAt,
     ConfigRollback,
+    // 一键修复：修的是磁盘上那一份，界面只交版本号
+    ConfigRepairPlan,
+    RepairConfig,
     SaveListen,
     // 记录。搜索翻的是整个库，界面自己发起、自己翻页
     History,
