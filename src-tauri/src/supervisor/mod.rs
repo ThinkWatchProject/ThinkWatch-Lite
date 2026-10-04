@@ -66,6 +66,14 @@ pub enum CoreState {
     },
     /// UI 主动停的，不再重启
     Stopped,
+    /// 安全模式里的 core 也退出了：起不来的原因不在配置的某一行（那种情况 core 顶着一份
+    /// 临时配置照样起控制面），而在别处 —— 另一个 core 占着、配置坏到连 YAML 都读不了。
+    ///
+    /// **原因是 core 自己最后说的话**（它的 stderr）。以前这里报的是 `Stopped`，界面上
+    /// 只有一句「已停止」，原因只在日志里。守护停下，等用户点「重新启动」
+    Exited {
+        reason: String,
+    },
     /// 拉不起来：程序运行不了（找不到、没有执行权限、不是这台机器能跑的）。
     ///
     /// **这不是「core 在崩」**，重启循环掩盖不了它，所以守护停下来等用户点重试。
@@ -98,6 +106,81 @@ fn why_not(e: &std::io::Error) -> String {
             }
         }
     }
+}
+
+/// core 的 stderr：读到的每一行照写到我们自己的 stderr，最后几行留着。
+struct Tail {
+    lines: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    reader: tokio::task::JoinHandle<()>,
+}
+
+/// 留多少行。`Error:` 连同 `Caused by:` 下面那几层，十几行足够
+const TAIL_LINES: usize = 40;
+
+fn tail_of(stderr: tokio::process::ChildStderr) -> Tail {
+    use tokio::io::AsyncBufReadExt;
+    let lines = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let keep = lines.clone();
+    let reader = tokio::spawn(async move {
+        let mut r = tokio::io::BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = r.next_line().await {
+            eprintln!("{line}");
+            if let Ok(mut l) = keep.lock() {
+                if l.len() == TAIL_LINES {
+                    l.pop_front();
+                }
+                l.push_back(line);
+            }
+        }
+    });
+    Tail { lines, reader }
+}
+
+impl Tail {
+    /// 进程退出之后它说的最后那件事。管道在进程退出时关上，读的那一头随即读完；
+    /// **最多等一会儿**，读不完也不能把守护循环挂住
+    async fn reason(self) -> Option<String> {
+        let _ = tokio::time::timeout(Duration::from_millis(500), self.reader).await;
+        let lines: Vec<String> = self.lines.lock().ok()?.iter().cloned().collect();
+        last_error(&lines)
+    }
+}
+
+/// 从 core 的 stderr 里取出它最后报的那个错。
+///
+/// twcore 的 `main` 返回错误时，Rust 打的是 `Error: 那句话`，带着上下文的再跟一段
+/// `Caused by:` 和编了号的几层。**整段连起来**：外层说在做什么（「loading …/config.yaml」），
+/// 里层说为什么。没有 `Error:` 的（被信号杀掉、崩溃）取最后几行非空的
+pub(crate) fn last_error(lines: &[String]) -> Option<String> {
+    let start = lines.iter().rposition(|l| l.starts_with("Error: "));
+    let Some(start) = start else {
+        let tail: Vec<&str> = lines
+            .iter()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
+        let from = tail.len().saturating_sub(3);
+        return (!tail.is_empty()).then(|| tail[from..].join("\n"));
+    };
+    let mut parts = Vec::new();
+    for (i, l) in lines[start..].iter().enumerate() {
+        let l = if i == 0 {
+            &l["Error: ".len()..]
+        } else {
+            l.as_str()
+        };
+        let l = l.trim();
+        if l.is_empty() || l == "Caused by:" {
+            continue;
+        }
+        // 「0: 」「1: 」这种层号
+        let l = match l.split_once(": ") {
+            Some((n, rest)) if n.chars().all(|c| c.is_ascii_digit()) => rest,
+            _ => l,
+        };
+        parts.push(l.to_string());
+    }
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 /// 一次 core 退出之后，守护循环下一步做什么。
@@ -321,7 +404,7 @@ impl Supervisor {
                     "Core is starting; try again in a moment"
                 ))
             }
-            CoreState::Stopped | CoreState::Failed { .. } => {
+            CoreState::Stopped | CoreState::Exited { .. } | CoreState::Failed { .. } => {
                 anyhow::bail!(tr!(
                     "core 未运行，无法重启",
                     "Core is not running and cannot be restarted"
@@ -366,7 +449,7 @@ impl Supervisor {
             // 先取出来再看：`borrow` 握着读锁，不能带过下面的 await
             let now = rx.borrow_and_update().clone();
             match now {
-                CoreState::Stopped | CoreState::Failed { .. } => return,
+                CoreState::Stopped | CoreState::Exited { .. } | CoreState::Failed { .. } => return,
                 CoreState::Running { pid } | CoreState::SafeMode { pid: Some(pid) } => {
                     return self.stop_running(pid, timeout).await;
                 }
@@ -520,7 +603,10 @@ impl Supervisor {
         // **不交凭据。**控制面的钥匙在 config.yaml 里，由 core 自己生成、补上；
         // 这一侧连接时从同一个文件读（见 `crate::control`）
         cmd.args(&args)
-            // core 的日志走它自己的 stderr；UI 侧只需要知道它活着。
+            // **stderr 接过来**：退出时 core 最后说的那几句（`Error: …`）就是起不来的原因，
+            // 安全模式里的 core 也退出时要拿它给界面看（`Exited`）。读到的每一行照样写到
+            // 我们自己的 stderr，开发时在终端里看到的和以前一样
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
         // **不给它开控制台窗口。**twcore 是个命令行程序，Windows 上起一个控制台
         // 子系统的程序、父进程自己又没有控制台时，系统会给它新开一个 —— 用户
@@ -543,8 +629,11 @@ impl Supervisor {
                 _ => break,
             }
         }
-        let mut child = match spawned {
-            Ok(c) => c,
+        let (mut child, last_words) = match spawned {
+            Ok(mut c) => {
+                let t = c.stderr.take().map(tail_of);
+                (c, t)
+            }
             Err(e) => {
                 let path = self.binary.display();
                 let why = why_not(&e);
@@ -626,8 +715,16 @@ impl Supervisor {
         }
 
         if safe {
-            // 安全模式下的 core 退出了，说明用户主动停的或者更严重的问题。
-            self.set(CoreState::Stopped);
+            // 安全模式下的 core 也退出了：配置哪一行错了的话它会顶着临时配置起来，走到这里
+            // 是更根本的问题。**把它最后说的话交给界面**，说不出什么才报「已停止」
+            let reason = match last_words {
+                Some(t) => t.reason().await,
+                None => None,
+            };
+            self.set(match reason {
+                Some(reason) => CoreState::Exited { reason },
+                None => CoreState::Stopped,
+            });
             return Ok(Next::Stop);
         }
 
@@ -1156,6 +1253,79 @@ mod tests {
             bin
         };
         (tmp, warmed(bin), starts)
+    }
+
+    /// **安全模式里的 core 也退出了，界面拿到的是它最后说的那句话**，不是一句「已停止」
+    #[tokio::test]
+    async fn a_safe_mode_core_that_exits_reports_what_it_said() {
+        let tmp = fake_core_dir("exits");
+        let dir = tmp.path();
+        #[cfg(unix)]
+        let bin = {
+            let bin = dir.join("fake-core");
+            let script = format!(
+                "#!/bin/sh\n[ \"$1\" = {WARM} ] && exit 0\necho 'Error: loading /x/config.yaml' >&2\necho '' >&2\necho 'Caused by:' >&2\necho '    已有 twcore 实例正在运行（pid 7）。' >&2\nexit 1\n"
+            );
+            std::fs::write(&bin, script).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            bin
+        };
+        #[cfg(windows)]
+        let bin = {
+            let bin = dir.join("fake-core.cmd");
+            let script = format!(
+                "@if \"%~1\"==\"{WARM}\" exit /b 0\r\n@echo Error: loading /x/config.yaml 1>&2\r\n@echo Caused by: 1>&2\r\n@echo     another twcore is running 1>&2\r\n@exit /b 1\r\n"
+            );
+            std::fs::write(&bin, script).unwrap();
+            bin
+        };
+        let s = Supervisor::new(
+            warmed(bin),
+            None,
+            always_ready(),
+            test_address(),
+            PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+        );
+        assert_eq!(s.run_once(true).await.unwrap(), Next::Stop);
+        let CoreState::Exited { reason } = s.state() else {
+            panic!("该报 Exited，实际是 {:?}", s.state());
+        };
+        assert!(reason.starts_with("loading /x/config.yaml\n"), "{reason}");
+        #[cfg(unix)]
+        assert!(
+            reason.ends_with("已有 twcore 实例正在运行（pid 7）。"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn the_last_error_is_the_whole_chain_without_numbers() {
+        let lines: Vec<String> = [
+            "some earlier noise",
+            "Error: loading /x/config.yaml",
+            "",
+            "Caused by:",
+            "    0: schema error (line 3): bad",
+            "    1: deeper",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(
+            last_error(&lines).as_deref(),
+            Some("loading /x/config.yaml\nschema error (line 3): bad\ndeeper")
+        );
+        // 没有 `Error:`（被信号杀掉、崩溃）就取最后几行
+        let crash: Vec<String> = ["a", "", "thread 'main' panicked at x", "boom"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            last_error(&crash).as_deref(),
+            Some("a\nthread 'main' panicked at x\nboom")
+        );
+        assert_eq!(last_error(&[]), None);
     }
 
     /// 起过几次

@@ -31,6 +31,15 @@ export function trouble(raw: string, tries: number): Trouble {
       retry: true,
     };
   }
+  // core 起来了又退出，安全模式也一样：**原因是 core 自己最后说的话**，给重试
+  if (raw.startsWith("exited:")) {
+    return {
+      what: t.exited,
+      next: raw.slice("exited:".length),
+      bad: true,
+      retry: true,
+    };
+  }
   if (raw.startsWith("missing:")) {
     return {
       what: t.missing,
@@ -49,7 +58,7 @@ export function trouble(raw: string, tries: number): Trouble {
       retry: false,
     };
   }
-  if (raw === "safe_mode") {
+  if (raw.startsWith("safe_mode")) {
     return {
       what: t.safeMode,
       next: t.safeModeNext,

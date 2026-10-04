@@ -83,6 +83,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ConfigHistory: () => [{ version: configVersion(), at_ms: NOW - 2 * DAY, origin: "ui", bytes: 2_714, current: true }],
   ConfigAt: () => ({ section: null, name: null }),
   ConfigRollback: refuse,
+  ConfigRepairPlan: () => ({ base_version: configVersion(), fixes: [] }),
+  RepairConfig: refuse,
   SaveListen: refuse,
 
   History: (req) => {

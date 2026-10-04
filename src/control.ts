@@ -35,6 +35,8 @@ export const WEBVIEW_ENDPOINTS = [
   "ConfigHistory",
   "ConfigAt",
   "ConfigRollback",
+  "ConfigRepairPlan",
+  "RepairConfig",
   "SaveListen",
   "History",
   "HistorySearch",

@@ -285,8 +285,12 @@ pub(crate) fn describe_state(s: &CoreState) -> String {
         CoreState::Starting => "starting".into(),
         CoreState::Running { pid } => format!("running:{pid}"),
         CoreState::Restarting { attempt, in_ms } => format!("restarting:{attempt}:{in_ms}"),
-        CoreState::SafeMode { .. } => "safe_mode".into(),
+        // 控制面答应了就带上 pid：界面见到它才去连（安全模式下也能改配置、一键修复）。
+        // 还没答应的时候连了也是白连
+        CoreState::SafeMode { pid: Some(pid) } => format!("safe_mode:{pid}"),
+        CoreState::SafeMode { pid: None } => "safe_mode".into(),
         CoreState::Stopped => "stopped".into(),
+        CoreState::Exited { reason } => format!("exited:{reason}"),
         CoreState::Failed { reason } => format!("failed:{reason}"),
     }
 }
@@ -425,6 +429,24 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 // core 说这个订阅者掉过队：掉的那几条里可能有该提醒的事
                 if matches!(ev, tw_api::Event::EventsDropped { .. }) {
                     reconcile_notices(&a);
+                }
+                // **安全模式下换进了一份能用的配置**（界面里改好保存、一键修复、回滚、在
+                // 编辑器里改好）：按正常模式重启，网关自己恢复，不用再去点「重新启动」
+                if matches!(ev, tw_api::Event::ConfigReloaded { .. })
+                    && let Some(st) = a.try_state::<AppState>()
+                    && !st.link.is_remote()
+                    && matches!(
+                        *st.supervisor.watch().borrow(),
+                        CoreState::SafeMode { pid: Some(_) }
+                    )
+                {
+                    tracing::info!("安全模式下配置已能读进来，按正常模式重启 core");
+                    let app = a.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = restart_gateway(&app).await {
+                            tracing::warn!("安全模式之后重启 core 没成：{e:?}");
+                        }
+                    });
                 }
                 let _ = a.emit("core-event", &ev);
             },

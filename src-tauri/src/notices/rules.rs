@@ -702,6 +702,24 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             .now()
             .suppressing(suppresses("gateway")),
         ],
+        // 程序本身运行不了、或者安全模式里也起不来：不会自己好，转发已经停了
+        CoreState::Exited { .. } => vec![
+            Signal::raised(
+                "gateway",
+                Level::Critical,
+                tr!("网关无法启动", "Gateway Cannot Start"),
+            )
+            .body(
+                tr!(
+                    "core 启动后退出，转发已停止。打开窗口可以查看原因并重试。",
+                    "core exited right after starting, so forwarding has stopped. Open the window to see why and try again."
+                )
+                .to_string(),
+            )
+            .view(SETTINGS)
+            .now()
+            .suppressing(suppresses("gateway")),
+        ],
         // 程序本身运行不了：不会自己好，转发已经停了
         CoreState::Failed { .. } => vec![
             Signal::raised(
