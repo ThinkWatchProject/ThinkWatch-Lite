@@ -670,10 +670,19 @@ fn tool_rule_name(rule: &str) -> String {
             "Send out a credential file (verb first)",
         ),
         "ssh-key-read" => ("读取私钥或云凭据", "Read a private key or cloud credential"),
+        "secret-to-unknown-host" => ("凭据发往陌生主机", "Send a credential to an unknown host"),
+        "thinkwatch-data" => (
+            "读写 ThinkWatch 自己的数据",
+            "Read or change ThinkWatch's own data",
+        ),
         "write-startup-item" => ("写入启动项", "Write a startup item"),
         "crontab-install" => ("安装定时任务", "Install a scheduled job"),
         "rm-rf-root" => ("删除主目录或根目录", "Delete home or root"),
         "chmod-777" => ("开放全部写权限", "World-writable permissions"),
+        "upload-file-to-host" => (
+            "上传本地文件到外部主机",
+            "Upload a local file to an external host",
+        ),
         other => return other.to_string(),
     };
     tr!(zh, en).to_string()

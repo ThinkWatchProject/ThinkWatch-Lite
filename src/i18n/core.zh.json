@@ -80,6 +80,7 @@
       "crontab-install": "安装定时任务，或删除全部现有定时任务",
       "ssh-key-read": "读取私钥或云服务凭据",
       "secret-to-unknown-host": "将凭据发往既非本机、也不是该凭据服务商的主机",
+      "thinkwatch-data": "读写 ThinkWatch 的数据目录，其中以明文保存全部上游密钥和这几项防护的设置",
       "upload-file-to-host": "将本地文件的内容上传到外部主机"
     },
     "source_in": {
@@ -137,6 +138,7 @@
       "rm-rf-root": "删除主目录或根目录",
       "chmod-777": "开放全部写权限",
       "secret-to-unknown-host": "凭据发往陌生主机",
+      "thinkwatch-data": "读写 ThinkWatch 自己的数据",
       "upload-file-to-host": "上传本地文件到外部主机"
     },
     "content_rule": {
