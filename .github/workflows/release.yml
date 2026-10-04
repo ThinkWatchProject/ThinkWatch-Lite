@@ -580,8 +580,8 @@ jobs:
 
       # Tauri 在 Linux 上的构建依赖（https://v2.tauri.app/start/prerequisites/）。
       # 托盘走 ayatana 那一套：打包器看到它才会把那个库放进 AppImage。
-      # `xdg-utils`：配了深链接的应用，打 AppImage 时要把 `/usr/bin/xdg-mime`
-      # 拷进包里，没有它打包直接失败
+      # 不装 `xdg-utils`：Tauri 2.12 起打包器不再把 `xdg-mime` 放进 AppImage，
+      # 应用注册 `thinkwatch://` 时用的是用户系统上的那一份
       - name: System libraries
         run: |
           set -euo pipefail
@@ -589,7 +589,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential file libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev \
-            xdg-utils desktop-file-utils
+            desktop-file-utils
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -656,6 +656,12 @@ jobs:
           printf '%s\n' "$TOP" GLIBC_2.35 | sort -V -C \
             || { echo "要的 glibc 是 $TOP，超过了 2.35" >&2; exit 1; }
           echo "包里的网关：$("$CORE" --version)"
+          # **Wayland 的库不能进包。**AppRun 把包里的库排在系统的前面，构建机
+          # （22.04）上的旧 libwayland 碰上新系统的 Mesa，EGL 拿不到显示，窗口
+          # 一片空白（Arch 上有人报过）。Tauri 2.12 的打包器已经不放它们了，
+          # 这里防的是以后升级或换打包器时又带回来
+          WAYLAND=$(find "$ROOT" -name 'libwayland-*.so*' | sed "s|^$ROOT/||")
+          [ -z "$WAYLAND" ] || { echo "包里带了 Wayland 的库：" >&2; echo "$WAYLAND" >&2; exit 1; }
           # 包里自带的那份 .desktop（AppImage 的集成工具读它；用户看到的菜单条目
           # 由应用自己写，见 `src-tauri/src/desktop_entry.rs`）
           DESKTOP="$ROOT/usr/share/applications/ThinkWatch Lite.desktop"

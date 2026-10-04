@@ -6,7 +6,7 @@ edition = "2024"
 # 版本编得动的依赖：写 1.85 的时候，`cargo update` 一直停在旧的 time 和
 # serde_with 上，两处安全修复（都要 1.88）就这样进不来。CI 和发布用的是
 # stable，把它往回调不会让谁编译得更顺，只会把修复挡在外面。
-rust-version = "1.88"
+rust-version = "1.90"
 license = "MIT"
 description = "Desktop app for a local AI API gateway on macOS, Windows and Linux"
 
@@ -18,7 +18,7 @@ default-members = [".", "crates/*"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.90"
 license = "MIT"
 
 # core 的几个 crate。**钉在 tag 上，不是分支，而且全部钉同一个 tag。**跟着 `main`
@@ -44,7 +44,7 @@ tauri-build = { version = "2", features = [] }
 # **默认特性里去掉了 `dbus`**，其余照抄 tauri 的默认。那一项让 tao 自己监听
 # portal 的深浅色，并在系统切换时无条件改掉整个进程的外观 —— 用户强制选的
 # 那一档会被冲掉。Linux 的跟随系统由 `theme.rs` 自己做
-tauri = { version = "2", default-features = false, features = [
+tauri = { version = "2.12.1", default-features = false, features = [
     "wry",
     "compression",
     "common-controls-v6",
