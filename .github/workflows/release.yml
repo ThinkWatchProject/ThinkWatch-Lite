@@ -609,6 +609,11 @@ jobs:
       # 只打 AppImage，写在 `tauri.linux.conf.json` 里。取哪一份 twcore 跟着
       # `--target` 走，见 `fetch-core.sh`
       - name: Build
+        # **Wayland 的库一个都不放。**Tauri 2.12 换的新 linuxdeploy 按 AppImage
+        # 的排除名单去掉了 libwayland-client，但同一套库里的 egl、cursor、server
+        # 还会进包；新旧混用的风险和白屏是同一类，交给用户系统上的那一套
+        env:
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: "libwayland-*"
         run: pnpm tauri build --target ${{ matrix.target }}
 
       # 发出去的名字**不带空格**，理由和 Windows 那边一样。
@@ -658,8 +663,8 @@ jobs:
           echo "包里的网关：$("$CORE" --version)"
           # **Wayland 的库不能进包。**AppRun 把包里的库排在系统的前面，构建机
           # （22.04）上的旧 libwayland 碰上新系统的 Mesa，EGL 拿不到显示，窗口
-          # 一片空白（Arch 上有人报过）。Tauri 2.12 的打包器已经不放它们了，
-          # 这里防的是以后升级或换打包器时又带回来
+          # 一片空白（Arch 上有人报过）。打包那一步已经排除了它们，这里防的是
+          # 以后升级或换打包器时排除悄悄失效
           WAYLAND=$(find "$ROOT" -name 'libwayland-*.so*' | sed "s|^$ROOT/||")
           [ -z "$WAYLAND" ] || { echo "包里带了 Wayland 的库：" >&2; echo "$WAYLAND" >&2; exit 1; }
           # 包里自带的那份 .desktop（AppImage 的集成工具读它；用户看到的菜单条目
