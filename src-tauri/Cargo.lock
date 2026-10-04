@@ -4756,7 +4756,7 @@ dependencies = [
 
 [[package]]
 name = "thinkwatch-lite"
-version = "2026.10.2"
+version = "2026.10.3"
 dependencies = [
  "anyhow",
  "block2",
