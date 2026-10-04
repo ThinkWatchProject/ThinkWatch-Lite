@@ -128,6 +128,7 @@ export const securityLabelsText = messages(
       builtin: {
         "credential-to-network": "凭据发往本机和该凭据的服务商以外的主机",
         "file-to-network": "本地文件的内容上传到外部主机",
+        "thinkwatch-data": "路径或命令指向 ThinkWatch 的数据目录；只是提到不算",
       } as Record<string, string>,
       /** 没见过的检查名 */
       builtinOther: "由内置检查判断",
@@ -248,6 +249,7 @@ export const securityLabelsText = messages(
       "rm-rf-root": "Delete home or root",
       "chmod-777": "World-writable permissions",
       "secret-to-unknown-host": "Send a credential to an unknown host",
+      "thinkwatch-data": "Read or change ThinkWatch's own data",
       "upload-file-to-host": "Upload a local file to an external host",
     },
     matcher: {
@@ -283,6 +285,7 @@ export const securityLabelsText = messages(
       builtin: {
         "credential-to-network": "A credential sent to a host other than this machine and the credential's provider",
         "file-to-network": "The contents of a local file uploaded to an external host",
+        "thinkwatch-data": "A path or command that points into ThinkWatch's data directory; a mention does not count",
       },
       builtinOther: "Decided by a built-in check",
       cnMobilePhone: (code: Code) => (
