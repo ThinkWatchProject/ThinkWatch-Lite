@@ -101,6 +101,11 @@ class Body(unittest.TestCase):
         self.assertIn("start `ThinkWatch Lite.exe`", body)
         self.assertNotIn("thinkwatch-lite.exe", body)
 
+    def test_the_website_is_linked(self):
+        body = rn.render("2026.10.4", "", None)
+        self.assertIn("(https://thinkwat.ch/lite/)", body)
+        self.assertIn("(https://thinkwat.ch/docs/lite/)", body)
+
     def test_the_install_commands(self):
         body = rn.render("2026.9.16", CHANGES, None)
         self.assertIn("\nbrew install --cask thinkwatchproject/tap/thinkwatch-lite\n", body)

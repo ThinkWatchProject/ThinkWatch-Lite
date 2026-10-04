@@ -45,6 +45,8 @@ DOWNLOADS = [
 ]
 
 BREW = "brew install --cask thinkwatchproject/tap/thinkwatch-lite"
+SITE = "https://thinkwat.ch/lite/"
+DOCS = "https://thinkwat.ch/docs/lite/"
 INSTALL_SH = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/install.sh | sh"
 
 # CalVer：2026.9.16
@@ -121,7 +123,9 @@ On Linux, the install script downloads the AppImage for the machine's architectu
 {INSTALL_SH}
 ```
 
-Both commands install the latest release. First-launch steps for each platform, such as removing the quarantine attribute from a copy downloaded on macOS, are described in the [README](https://github.com/{REPO}#install)."""
+Both commands install the latest release. First-launch steps for each platform, such as removing the quarantine attribute from a copy downloaded on macOS, are described in the [README](https://github.com/{REPO}#install).
+
+The [ThinkWatch Lite page]({SITE}) describes each feature, and the [documentation]({DOCS}) covers installing, connecting clients and routing."""
     )
 
     parts.append(
