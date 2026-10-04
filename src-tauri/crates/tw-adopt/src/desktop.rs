@@ -33,6 +33,7 @@
 //!   替用户拆掉一道安全边界，和「指向网关」无关。
 
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use tw_types::{Msg, msg};
 
@@ -192,29 +193,56 @@ fn managed_in_registry() -> Option<String> {
 
 // ---------------------------------------------------------------- 模型
 
-/// 这个模型名 Claude Desktop 收不收。
-///
-/// 它只认看起来像 Claude 的名字：自动发现时只留这样的，写进 `inferenceModels`
-/// 的名字里只要有一个不像，**整张列表都会被拒掉**（社区报告，anthropics/claude-code
-/// #56990；CC Switch 实测过的规则是 `claude-` 之后紧跟 sonnet、opus、haiku、fable
-/// 之一，再跟一段版本）。所以这里取严不取宽。带 `[1m]` 的写法它也不认 ——
-/// 1M 上下文在它那里是单独的一个字段。
-pub fn looks_like_claude(model: &str) -> bool {
-    let m = model.trim().to_ascii_lowercase();
-    if m.contains("[1m]") {
-        return false;
-    }
-    let tail = m.strip_prefix("anthropic/").unwrap_or(&m);
-    let Some(tail) = tail.strip_prefix("claude-") else {
-        return false;
-    };
-    ["sonnet-", "opus-", "haiku-", "fable-"]
-        .iter()
-        .any(|role| tail.strip_prefix(role).is_some_and(|rest| !rest.is_empty()))
+/// Claude 的几档
+const TIERS: [&str; 5] = ["sonnet", "opus", "haiku", "fable", "mythos"];
+
+/// 别家模型的名字片段。**照抄 Claude Desktop 2.19675.0 的原文**，它换了就整段换掉：
+/// 解开 `Claude.app/Contents/Resources/app.asar`，在 `.vite/build/index.chunk-*.js` 里搜
+/// `ark-code|astron`，档位表和判断函数就在它旁边。
+const OTHER_VENDORS: &str = r"ark-code|astron|command-r|deepseek|doubao|gemini|gemma|glm|gpt|grok|hermes|hy3|kimi|lfm|\bling\b|llama|longcat|mimo|minimax|mistral|mixtral|moonshot|nemotron|openai|phi-|qianfan|qwen|tc-code|\bunic\b|yi-|stepfun|step-3|seed-|bytedance|hunyuan|granite|amazon\.nova|nova-|devstral|ministral|ernie|codex|arcee|trinity|abab|phi\d|\bk2\.|\bm2\.|jamba|arctic|solar|mercury|zamba|kat-coder|\bds-|dpsk";
+
+/// JS 的正则写成 Rust 的：没有 `u` 标志的 JS 正则里，`\b` 和 `\d` 只认 ASCII，Rust 的
+/// 默认认 Unicode（`é` 在 JS 里不算单词字符，`claude-éling` 要被 `\bling\b` 拦下）
+fn js_regex(src: &str) -> regex::Regex {
+    regex::Regex::new(&src.replace(r"\b", r"(?-u:\b)").replace(r"\d", "[0-9]"))
+        .expect("Claude Desktop's model-name pattern")
 }
 
-/// 网关一个像 Claude 的模型都没列出来时写进去的那一个。路由里要有一条规则把它
-/// 改写到上游真正在用的模型 —— 接管说明里给出那条规则。
+static OTHER_VENDOR: LazyLock<regex::Regex> = LazyLock::new(|| js_regex(OTHER_VENDORS));
+
+/// 光一个档位名、可以带版本：`sonnet`、`opus-4.8`
+static BARE_TIER: LazyLock<regex::Regex> =
+    LazyLock::new(|| js_regex(&format!(r"^({})(-[\d.]+)?$", TIERS.join("|"))));
+
+/// 这个模型名 Claude Desktop 收不收。照它网关模式的规则，名字先转小写：
+///
+/// 1. 含 `OTHER_VENDORS` 里任一片段的**不收** —— 名字里有 Claude 也一样，
+///    `claude-deepseek-v3` 不收；
+/// 2. 否则光一个档位名（`BARE_TIER`）的收，名字里有 `claude`、`anthropic` 或任一档位名
+///    的也收。
+///
+/// `inferenceModels` 里的名字它先去掉首尾空白，结尾的 `[1m]`（不分大小写）也先去掉，
+/// 再按这条判断 —— `claude-sonnet-5[1m]` 是「`claude-sonnet-5`，另给一个 1M 上下文的
+/// 版本」的简写。判断不过的那一条**单独去掉**并报一条配置错误，别的照用；一条都不剩
+/// 就没有模型可选。网关自己列出模型（`GET /v1/models`）时它也用同一条规则筛。
+pub fn looks_like_claude(model: &str) -> bool {
+    let m = model.trim().to_lowercase();
+    let m = match m.strip_suffix("[1m]") {
+        Some(base) if !base.is_empty() => base.trim(),
+        _ => m.as_str(),
+    };
+    if OTHER_VENDOR.is_match(m) {
+        return false;
+    }
+    BARE_TIER.is_match(m)
+        || ["claude", "anthropic"]
+            .iter()
+            .chain(TIERS.iter())
+            .any(|w| m.contains(w))
+}
+
+/// 网关列出的模型它一个都不收时写进去的那一个（一条都不剩，它就没有模型可选）。
+/// 路由里要有一条规则把它改写到上游真正在用的模型 —— 接管说明里给出那条规则。
 pub const FALLBACK_MODEL: &str = "claude-sonnet-5";
 
 // ---------------------------------------------------------------- 接管
@@ -255,6 +283,8 @@ pub fn plan_adopt_in(
     let mut notes: Vec<Msg> = plan::cost_notes(c).collect();
     match models {
         Some(all) => {
+            // 它不收的名字它自己会去掉，但每一条都报一个配置错误：不写进去。带 `[1m]` 的
+            // 照写 —— 网关同时列出 `X` 和 `X[1m]` 时，它在选择器里合成一个带 1M 版本的模型
             let claude: Vec<String> = all
                 .iter()
                 .filter(|m| looks_like_claude(m))
@@ -414,7 +444,7 @@ fn deployment_mode() -> Edit {
     }
 }
 
-/// 网关没列出像 Claude 的模型：要在路由里加一条规则，把 [`FALLBACK_MODEL`] 改写到
+/// 网关列出的模型它一个都不收：要在路由里加一条规则，把 [`FALLBACK_MODEL`] 改写到
 /// 上游真正在用的那个模型。`upstream` 是网关列出的第一个模型，拿来填示例。
 fn no_claude_model(upstream: Option<&String>) -> Msg {
     let target = upstream.map_or("<model>", |s| s.as_str());
@@ -731,6 +761,7 @@ mod tests {
         assert!(p.starts_with(THIRD_PARTY_DIR.resolve(home)));
     }
 
+    /// 每一个都拿 Claude Desktop 2.19675.0 自己的判断（从 app.asar 里原样取出来跑）核对过
     #[test]
     fn only_names_claude_desktop_accepts_make_the_list() {
         for ok in [
@@ -738,19 +769,67 @@ mod tests {
             "claude-opus-4-8",
             "claude-haiku-4-5-20251001",
             "claude-fable-5",
+            "claude-mythos-1",
             "anthropic/claude-sonnet-5",
             "Claude-Sonnet-5",
+            "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "  claude-sonnet-5  ",
+            // 1M 上下文的写法
+            "claude-sonnet-5[1m]",
+            "claude-opus-4-8[1M]",
+            // 光一个档位名
+            "sonnet",
+            "Sonnet",
+            "opus-4.8",
+            "haiku-4.5",
+            "fable",
+            "mythos-1",
+            // 名字里有 claude、anthropic 或档位名就收，在哪儿都行
+            "claude",
+            "claude-sonnet-",
+            "my-claude-proxy",
+            "claude-3-5-sonnet-latest",
+            "anthropic-router",
+            "opus-proxy",
+            // `\bling\b`、`\bunic\b` 要整个词：sibling、unicorn 里的不算
+            "claude-sibling",
+            "claude-unicorn",
+            // `\d` 只认 ASCII 数字：阿拉伯-印度数字的 3 不算
+            "claude-phi\u{663}",
         ] {
             assert!(looks_like_claude(ok), "{ok}");
         }
         for no in [
             "deepseek-chat",
             "gpt-5",
-            "claude-sonnet-",
-            "claude-sonnet-5[1m]",
-            "claude",
-            "my-claude-sonnet-5",
-            "claude-3-5-sonnet-latest",
+            "gemini-2.5-pro",
+            "qwen3-coder-plus",
+            "kimi-k2",
+            "glm-4.6",
+            // 有别家的片段，名字里有 Claude 也不收
+            "claude-deepseek-v3",
+            "DeepSeek-Claude",
+            "claude-gpt-proxy",
+            "gpt-5-codex",
+            "claude-codex",
+            "anthropic/kimi-k2",
+            "sonnet-qwen",
+            "claude-sonnet-5-gpt[1m]",
+            "claude-ling",
+            "claude-unic",
+            // JS 的 `\b` 只认 ASCII：é 不是单词字符，ling 前面就是词的边界
+            "claude-\u{e9}ling",
+            "claude-phi4",
+            "claude-k2.5",
+            "claude-m2.1",
+            "claude-yi-34b",
+            "claude-seed-2",
+            "opus-ds-1",
+            "claude-dpsk",
+            // 什么都不像
+            "[1m]",
+            "",
+            "   ",
         ] {
             assert!(!looks_like_claude(no), "{no}");
         }

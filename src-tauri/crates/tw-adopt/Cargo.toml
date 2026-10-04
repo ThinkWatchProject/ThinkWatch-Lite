@@ -18,6 +18,8 @@ serde_json = "1"
 # 会把用户的注释和排版一起抹掉
 toml_edit = "0.25"
 thiserror = "2"
+# Claude Desktop 收哪些模型名是一条正则，照抄它的原文，见 desktop.rs
+regex = "1"
 
 [target.'cfg(windows)'.dependencies]
 # 原子替换一个已存在的文件：`rename` 在这个平台上做不到，见 foreign.rs

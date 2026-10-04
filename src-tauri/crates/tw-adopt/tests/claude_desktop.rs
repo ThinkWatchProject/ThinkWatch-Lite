@@ -177,6 +177,28 @@ fn restoring_puts_every_file_back_byte_for_byte() {
     );
 }
 
+/// 带 `[1m]` 的照写：网关同时列出 `X` 和 `X[1m]` 时，Claude Desktop 在选择器里把它们
+/// 合成一个带 1M 版本的模型。名字里有别家片段的不写，名字里有 Claude 也一样 —— 它会
+/// 去掉这一条，并报一个配置错误
+#[test]
+fn one_m_spellings_are_written_and_other_vendors_are_left_out() {
+    let b = bed();
+    adopt(
+        &b,
+        Some(&names(&[
+            "claude-sonnet-5",
+            "claude-sonnet-5[1m]",
+            "claude-deepseek-v3",
+            "gpt-5-codex",
+            "claude-opus-5",
+        ])),
+    );
+    assert_eq!(
+        json(&desktop::profile_path(&b.home))["inferenceModels"],
+        serde_json::json!(["claude-sonnet-5", "claude-sonnet-5[1m]", "claude-opus-5"])
+    );
+}
+
 #[test]
 fn a_deployment_mode_that_was_there_goes_back_to_its_old_value() {
     let b = bed();
@@ -376,7 +398,7 @@ fn without_a_claude_model_the_fallback_is_written_and_the_rule_is_spelled_out() 
         &c,
         &b.home,
         &gw(),
-        Some(&names(&["deepseek-chat", "gpt-5"])),
+        Some(&names(&["deepseek-chat", "claude-deepseek-v3", "gpt-5"])),
         None,
         &Around::default(),
     )
