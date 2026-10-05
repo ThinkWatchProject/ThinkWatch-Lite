@@ -97,11 +97,21 @@ describe("当场校验", () => {
     expect(rows.map((r) => p.get(r.id) ?? null)).toEqual([null, null, "duplicate"]);
   });
 
-  it("每月的上限要求记录留够 31 天；不知道留几天就不拦", () => {
-    const rows = [row({ per: "month" })];
-    expect(limitProblems(rows, 30).get(rows[0]!.id)).toBe("monthRetention");
-    expect(limitProblems(rows, 31).size).toBe(0);
-    expect(limitProblems(rows, null).size).toBe(0);
+  it("天、周、月的上限要求记录留够 1、7、31 天；分钟、小时不要；不知道留几天就不拦", () => {
+    for (const [per, need] of [["day", 1], ["week", 7], ["month", 31]] as const) {
+      const rows = [row({ per })];
+      expect(limitProblems(rows, need - 1).get(rows[0]!.id)).toBe("retention");
+      expect(limitProblems(rows, need).size).toBe(0);
+      expect(limitProblems(rows, null).size).toBe(0);
+    }
+    expect(limitProblems([row({ per: "minute" }), row({ per: "hour" })], 0).size).toBe(0);
+  });
+
+  it("费用上限至少 $0.01，和 core 一样排在重复之前", () => {
+    const rows = [row({ max: "0.009999" }), row({ per: "week", max: "0.01" }), row({ per: "week", max: "0.001" })];
+    const p = limitProblems(rows, 90);
+    expect(rows.map((r) => p.get(r.id) ?? null)).toEqual(["costTooSmall", null, "costTooSmall"]);
+    expect(limitProblems([row({ measure: "requests", max: "1" })], 90).size).toBe(0);
   });
 
   it("加一行先给还没有的那一种，不一加上就重复", () => {

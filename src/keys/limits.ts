@@ -2,8 +2,9 @@
  * 一把密钥的用量上限：对话框里一行一条，和 core 的 `KeyLimitView` / `KeyLimitInput` 来回换。
  *
  * **写得对不对由 core 的配置校验说**（`config.key_limit_*`）。这里当场查的是同一套规则里
- * 填的时候就看得出来的几条：要填、要大于 0、同一个周期同一种量（token 再分算不算缓存
- * 读取）只能有一条、每月的要求请求记录至少留 31 天 —— 免得填完整张对话框，保存时才被拒。
+ * 填的时候就看得出来的几条，顺序也和 core 一样：要填、要大于 0、费用至少 $0.01、同一个周期
+ * 同一种量（token 再分算不算缓存读取）只能有一条、天 / 周 / 月的上限要求请求记录至少留
+ * 1 / 7 / 31 天 —— 免得填完整张对话框，保存时才被拒。
  *
  * 费用在 core 那边是微分（`max`、`used`），输入框里是美元。
  */
@@ -15,8 +16,14 @@ import { limitsText } from "./limits.i18n";
 export const PERS: readonly LimitPer[] = ["minute", "hour", "day", "week", "month"];
 export const MEASURES: readonly LimitMeasure[] = ["requests", "tokens", "cost"];
 
-/** 每月上限要求请求记录至少留这么多天：重启之后当月的用量从记录里加回来 */
-export const MONTH_ROW_DAYS = 31;
+/**
+ * 天、周、月的上限要求请求记录至少留几天：重启之后这一期的用量从记录里加回来，留得比一期
+ * 短就加不全（core 的 `row_days_needed`）。分钟、小时的从空的开始，不要记录
+ */
+export const ROW_DAYS_NEEDED: Readonly<Partial<Record<LimitPer, number>>> = { day: 1, week: 7, month: 31 };
+
+/** 费用上限最少多少，微分（$0.01，core 的 `COST_MIN`） */
+export const COST_MIN_MICROS = 10_000;
 
 /** 对话框里的一行 */
 export interface LimitRow {
@@ -97,11 +104,12 @@ export function newRow(rows: readonly LimitRow[]): LimitRow {
   return limitRow({ per: "day", measure: "cost", max: "", cacheReads: false });
 }
 
-export type LimitProblem = "required" | "notPositive" | "duplicate" | "monthRetention";
+export type LimitProblem = "required" | "notPositive" | "costTooSmall" | "duplicate" | "retention";
 
 /**
- * 每一行有什么不对，按行的 id。**一行只说一件**：先说要填，再说要大于 0，再说重复（和
- * 前面哪一行一样，就标在后面那一行上），最后说每月的上限要记录留够天数。
+ * 每一行有什么不对，按行的 id。**一行只说一件**，和 core 查的先后一样：先说要填，再说要
+ * 大于 0，再说费用不到 $0.01，再说重复（和前面哪一行一样，就标在后面那一行上），最后说
+ * 天、周、月的上限要记录留够天数（`ROW_DAYS_NEEDED`）。
  *
  * `rowDays`：此刻请求记录留几天（概览里的 `retention.row_days`）。不知道就不查这一条，
  * 保存时由 core 说
@@ -111,10 +119,13 @@ export function limitProblems(rows: readonly LimitRow[], rowDays: number | null)
   const seen = new Set<string>();
   for (const r of rows) {
     const id = identity(r.per, r.measure, r.cacheReads);
+    const max = parseMax(r.measure, r.max);
+    const need = ROW_DAYS_NEEDED[r.per];
     if (r.max.trim() === "") out.set(r.id, "required");
-    else if (parseMax(r.measure, r.max) == null) out.set(r.id, "notPositive");
+    else if (max == null) out.set(r.id, "notPositive");
+    else if (r.measure === "cost" && max < COST_MIN_MICROS) out.set(r.id, "costTooSmall");
     else if (seen.has(id)) out.set(r.id, "duplicate");
-    else if (r.per === "month" && rowDays != null && rowDays < MONTH_ROW_DAYS) out.set(r.id, "monthRetention");
+    else if (need != null && rowDays != null && rowDays < need) out.set(r.id, "retention");
     seen.add(id);
   }
   return out;

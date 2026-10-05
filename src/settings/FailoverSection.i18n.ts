@@ -12,7 +12,7 @@ export const failoverText = messages(
       quota_pause_secs: "额度用完",
       rate_limit_max_pause_secs: "限流",
       stream_start_wait_secs: "等待回答开头",
-      slot_wait_secs: "并发已满时最多等待",
+      slot_wait_secs: "最多等待空位",
     },
     what: {
       failures_to_pause: "服务器错误、无法连接等未说明原因的失败，连续达到此次数后暂停。",
@@ -22,7 +22,7 @@ export const failoverText = messages(
       quota_pause_secs: "上游报告额度用完、但未给出重置时间时暂停的时长。给出重置时间的，暂停到重置为止。",
       rate_limit_max_pause_secs: "上游限流时按其要求的等待时间暂停，最长为此值。",
       stream_start_wait_secs: "流式回答在第一段内容到达前报错时，请求交给下一个上游。等待超过此时长后不再等待。",
-      slot_wait_secs: "上游达到并发上限时，请求等待空位的最长时间。0 表示不等待。",
+      slot_wait_secs: "上游达到并发上限、或密钥达到每分钟或每小时上限时，一个请求合计最多等待的时长。0 表示不等待。",
     },
     nextOnSlowStart: "开头超时时转到下一个上游",
     nextOnSlowStartWhat: "最后一个上游照常等待。开启时，等待时长宜在 30 秒以上。",
@@ -62,7 +62,7 @@ export const failoverText = messages(
       stream_start_wait_secs:
         "An error before the first content of a streamed answer sends the request to the next upstream. After this long, the wait ends.",
       slot_wait_secs:
-        "How long a request waits for a free slot when upstreams are at their concurrency limit. 0 means no wait.",
+        "How long a request waits in total when upstreams are at their concurrency limit or its key is at a per-minute or per-hour limit. 0 means no wait.",
     },
     nextOnSlowStart: "Move to the next upstream when the start times out",
     nextOnSlowStartWhat: "The last upstream keeps waiting. With this on, a wait of 30 s or more is advisable.",

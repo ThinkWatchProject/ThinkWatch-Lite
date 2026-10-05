@@ -16,8 +16,11 @@ export const limitsEditorText = messages(
     removeLabel: (n: number) => `删除第 ${n} 条上限`,
     required: "请填写上限",
     notPositive: (cost: boolean): string => (cost ? "须为大于 0 的金额" : "须为大于 0 的整数"),
+    costTooSmall: "金额须至少为 $0.01",
     duplicate: "与前面的一条上限重复",
-    monthRetention: (days: number) => `每月上限要求请求记录至少保留 31 天，当前为 ${days} 天`,
+    /** `per` 是周期的字（天、周、月），`need` 是它要求的天数 */
+    retention: (per: string, need: number, days: number) =>
+      `每${per}的上限要求请求记录至少保留 ${need} 天，当前为 ${days} 天`,
     unpriced: (n: number) => `${n} 个可用模型没有价格，其费用按 0 计入上限：`,
     more: (n: number) => `另有 ${n} 个`,
     fewer: "收起",
@@ -37,9 +40,10 @@ export const limitsEditorText = messages(
     removeLabel: (n: number) => `Remove limit ${n}`,
     required: "Enter a limit",
     notPositive: (cost: boolean): string => (cost ? "Must be an amount above 0" : "Must be a whole number above 0"),
+    costTooSmall: "Must be at least $0.01",
     duplicate: "Same as a limit above",
-    monthRetention: (days: number) =>
-      `A monthly limit needs request records kept for at least 31 days; they are kept for ${days}`,
+    retention: (per: string, need: number, days: number) =>
+      `A limit per ${per} needs request records kept for at least ${need === 1 ? "1 day" : `${need} days`}; they are kept for ${days === 1 ? "1 day" : `${days} days`}`,
     unpriced: (n: number) =>
       n === 1
         ? "1 model this key can use has no price and counts as $0 toward the limit:"

@@ -14,6 +14,7 @@ import type { KeyLimitView } from "@/types";
 import {
   MEASURES,
   PERS,
+  ROW_DAYS_NEEDED,
   amount,
   cleanMax,
   newRow,
@@ -154,11 +155,13 @@ function LimitLine({
       ? t.required
       : problem === "notPositive"
         ? t.notPositive(r.measure === "cost")
-        : problem === "duplicate"
-          ? t.duplicate
-          : problem === "monthRetention"
-            ? t.monthRetention(rowDays ?? 0)
-            : null;
+        : problem === "costTooSmall"
+          ? t.costTooSmall
+          : problem === "duplicate"
+            ? t.duplicate
+            : problem === "retention"
+              ? t.retention(w.per[r.per], ROW_DAYS_NEEDED[r.per] ?? 0, rowDays ?? 0)
+              : null;
   return (
     <div className={cn("flex flex-col gap-1 border-b border-border px-3 py-2 last:border-b-0", className)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -177,7 +180,7 @@ function LimitLine({
         <span className="tw-body">{t.atMost}</span>
         <Input
           aria-label={t.maxLabel(n)}
-          aria-invalid={problem === "required" || problem === "notPositive" ? true : undefined}
+          aria-invalid={problem === "required" || problem === "notPositive" || problem === "costTooSmall" ? true : undefined}
           autoFocus={autoFocus}
           autoComplete="off"
           spellCheck={false}
