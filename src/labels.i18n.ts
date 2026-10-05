@@ -11,6 +11,13 @@ export const labelsText = messages(
       "url-test": "延迟最低",
       cheapest: "费用最低",
     },
+    /** 轮询组按什么分新对话（`balance_by`） */
+    balanceBy: {
+      weights: "按比例",
+      latency: "按速度",
+      health: "按稳定性",
+      "latency-health": "按速度和稳定性",
+    },
     allUpstreams: "全部上游",
     probes: {
       health_check: {
@@ -145,6 +152,12 @@ export const labelsText = messages(
       "load-balance": "Round robin",
       "url-test": "Lowest latency",
       cheapest: "Lowest cost",
+    },
+    balanceBy: {
+      weights: "By ratio",
+      latency: "By speed",
+      health: "By reliability",
+      "latency-health": "By speed and reliability",
     },
     allUpstreams: "All upstreams",
     probes: {

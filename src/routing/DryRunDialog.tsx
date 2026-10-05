@@ -25,6 +25,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import {
   PROBES,
+  balanceByLabel,
   formatLabel,
   groupKindLabel,
   mismatchText,
@@ -32,13 +33,22 @@ import {
   targetLabel,
   translatedText,
 } from "@/labels";
-import type { Dialect, DryRunResult, KnownModel, Overview, RouteInput, RuleTrace } from "@/types";
+import type {
+  BalanceBy,
+  Dialect,
+  DryRunCandidate,
+  DryRunResult,
+  KnownModel,
+  Overview,
+  RouteInput,
+  RuleTrace,
+} from "@/types";
 import { skipLabel } from "@/upstreams/labels";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
 import { dryRunText } from "./DryRunDialog.i18n";
 import { ModelInput, onOpenFocus } from "./fields";
-import { DIALECTS, usersOf } from "./model";
+import { DIALECTS, balanceShares, usersOf } from "./model";
 import { KeyIcon, TargetIcon } from "./parts";
 import { routingText } from "./routing.i18n";
 import { modelViaOf, type ModelVia } from "./target";
@@ -58,7 +68,8 @@ export type DryRunTarget =
  * 旧结果淡一档留着，不闪成空白。
  *
  * 尝试顺序里每个上游写出发给它的模型名和来历（别名、规则改写、指定模型）：客户端写的
- * 名称和发出的不同，正是要在这里看清的事。
+ * 名称和发出的不同，正是要在这里看清的事。经过轮询组时再写它的权重；按速度、稳定性
+ * 分配时还写首字节时间、成功率和算下来的占比 —— 「为什么轮到它」要从这里看得出来。
  */
 export function DryRunDialog({
   target,
@@ -366,6 +377,7 @@ function Result({
    */
   const short = r.outcome === "intercepted";
   const candidates = r.candidate_models;
+  const shares = balanceShares(r);
   const target = r.outcome === "route" ? (r.via_group ?? candidates[0]?.provider ?? null) : null;
 
   // 这一趟经过的路：密钥 → 路由 → 规则 → 去向。和路由图同一套标志
@@ -409,7 +421,12 @@ function Result({
         <div className="flex flex-wrap items-center gap-2">
           <StatusDot tone={verdictTone(r)} size="md" />
           <span className="tw-title">{headline(r)}</span>
-          {r.outcome === "route" && r.strategy && <Badge variant="outline">{groupKindLabel(r.strategy)}</Badge>}
+          {r.outcome === "route" && r.strategy && (
+            <Badge variant="outline">
+              {groupKindLabel(r.strategy)}
+              {r.balance_by && r.balance_by !== "weights" && ` · ${balanceByLabel(r.balance_by)}`}
+            </Badge>
+          )}
         </div>
         {steps.length > 1 && (
           <div className="flex flex-wrap items-center gap-1 tw-body">
@@ -464,6 +481,9 @@ function Result({
                       <TargetIcon name={c} providers={ov.providers} size={13} />
                       <span className={cn("font-medium", open && "text-muted-foreground line-through")}>{c}</span>
                       {cv.sent_model && via && <SentModel model={cv.sent_model} via={via} />}
+                      {cv.weight != null && (
+                        <BalanceFacts c={cv} by={r.balance_by ?? "weights"} share={open ? null : (shares[i] ?? null)} />
+                      )}
                       {open && (
                         <span className="inline-flex items-center gap-1 tw-label text-warning">
                           <StatusDot tone="warn" />
@@ -562,6 +582,29 @@ function SentModel({ model, via }: { model: string; via: ModelVia }) {
       {t.viaParen(t.via[via])}
     </span>
   );
+}
+
+/**
+ * 轮询组里一个候选的权重。按速度、稳定性分配时再写它看的数（没有样本的写明暂无数据）
+ * 和这一轮分到的占比；熔断着的这一轮不参加，不写占比
+ */
+function BalanceFacts({ c, by, share }: { c: DryRunCandidate; by: BalanceBy; share: number | null }) {
+  const t = useText(dryRunText);
+  const parts = [t.weight(c.weight ?? 1)];
+  if (by === "latency" || by === "latency-health") {
+    parts.push(c.ttfb_ms != null ? t.ttfb(`${Math.round(c.ttfb_ms).toLocaleString()}ms`) : t.ttfbNone);
+  }
+  if (by === "health" || by === "latency-health") {
+    parts.push(c.success_rate != null ? t.success(percent(c.success_rate)) : t.successNone);
+  }
+  if (by !== "weights" && share != null) parts.push(t.share(percent(share)));
+  return <span className="tw-label text-muted-foreground">{parts.join(" · ")}</span>;
+}
+
+/** 0 到 1 写成百分数。不是 0、却四舍五入成 0 的写「<1%」—— 它还在轮里 */
+function percent(v: number): string {
+  if (v > 0 && v < 0.005) return "<1%";
+  return `${Math.round(v * 100)}%`;
 }
 
 /** 路上的一站：标志加名字 */
