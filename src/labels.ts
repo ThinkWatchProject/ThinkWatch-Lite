@@ -22,7 +22,7 @@ import {
   type TakesEffect,
   type TranslatedView,
 } from "./types";
-import { PROTOCOLS } from "./upstreams/labels";
+import { PROTOCOLS, skipLabel } from "./upstreams/labels";
 import { labelsText } from "./labels.i18n";
 import type { NotSent } from "./requestRouting";
 
@@ -156,22 +156,32 @@ export function setText(s: SetView): string {
   }
 }
 
-/** 尝试链里的一跳。`ok` 决定颜色 */
-export function attemptText(a: AttemptView): { text: string; ok: boolean } {
+/**
+ * 尝试链里的一跳。`ok` 决定颜色。`tip`：短名后面悬停说的那一句（core 说的原话）；
+ * 字本身就是那一句的没有
+ */
+export function attemptText(a: AttemptView): { text: string; ok: boolean; tip: string | null } {
   const t = textOf(labelsText);
+  const said = a.error ? coreText(a.error) : null;
+  // 没有发出去的一跳：这家满着，换了下一家。短名说原因，悬停是 core 那一句（几个请求在
+  // 进行，也就是它的上限）
+  if (a.skipped) return { text: skipLabel(a.skipped), ok: false, tip: said };
   switch (a.outcome) {
     case "served":
       if (a.status == null || a.status < 400) {
-        return { text: a.status == null ? t.served : t.servedStatus(a.status), ok: true };
+        return { text: a.status == null ? t.served : t.servedStatus(a.status), ok: true, tip: null };
       }
-      return { text: t.rejected(a.status), ok: false };
+      return { text: t.rejected(a.status), ok: false, tip: null };
     case "status":
-      return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false };
+      return { text: a.status === 429 ? t.rateLimited : t.upstreamError(a.status ?? "—"), ok: false, tip: null };
     // 数 token 由网关自己估：上游不是这种格式（没问过它），或者问过、它没实现这个接口
     case "estimated":
-      return { text: a.status == null ? t.estimated : t.estimatedAfter(a.status), ok: true };
+      return { text: a.status == null ? t.estimated : t.estimatedAfter(a.status), ok: true, tip: null };
+    // 等过了开头的时限还没有内容，放弃了这一家、换了下一家。悬停说等了多久
+    case "slow_start":
+      return { text: t.slowStart, ok: false, tip: said };
     default:
-      return { text: a.error ? coreText(a.error) : t.noResponse, ok: false };
+      return { text: said ?? t.noResponse, ok: false, tip: null };
   }
 }
 
@@ -180,7 +190,10 @@ export function deniedHopText(rule: string): string {
   return textOf(labelsText).deniedHop(rule);
 }
 
-/** 没有发往任何上游的请求，在「上游」的位置上写什么：被规则拒绝，或者没有可用的上游 */
+/**
+ * 没有上游接下的请求，在「上游」的位置上写什么：被规则拒绝、没有可用的上游、密钥的用量
+ * 上限拒绝了它，或者上游都满着（见 `NotSent`）
+ */
 export function notSentText(kind: NotSent): string {
   return textOf(labelsText).notSent[kind];
 }

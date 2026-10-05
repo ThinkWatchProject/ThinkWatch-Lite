@@ -3,6 +3,7 @@ import { call } from "@/control";
 import { useText } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
+import { notSent } from "@/requestRouting";
 import type { RequestRow, SessionDetail, TurnView } from "@/types";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
@@ -131,8 +132,11 @@ export function SessionPanel({
   const pending = useMemo(() => unrecordedRows(turns, rows), [turns, rows]);
   const n = tally(s, rows, pending);
   // 走过哪几个上游，按第一次出现的先后。一次任务中途换过上游，这里能看出来。
-  // 没有发往任何上游的那几轮（被规则拒绝）上游是空的，不算
-  const providers = [...new Set([...turns.map((x) => x.provider), ...pending.map((r) => r.provider)].filter(Boolean))];
+  // 没有发往任何上游的那几轮（被规则拒绝）上游是空的，不算；上游都满着的那几轮记在最后
+  // 看过的那一家上，那一家没收到它，也不算（见 `notSent`）
+  const providers = [
+    ...new Set([...turns, ...pending].filter((x) => notSent(x) === null).map((x) => x.provider).filter(Boolean)),
+  ];
   const client = s?.client ?? pending[0]?.client;
   const [tab, setTab] = useState<Tab>("summary");
   /** 「对话」打开过：之后切走也留着（读到哪儿、展开了哪几条都在），见 `PANE` */

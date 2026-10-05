@@ -15,6 +15,35 @@ const unavailable: Msg = {
 };
 const served = (provider: string, ms = 900): AttemptView => ({ provider, outcome: "served", status: 200, ms });
 const overloaded = (provider: string): AttemptView => ({ provider, outcome: "status", status: 529, ms: 1_870 });
+/** 网关密钥的用量上限拒绝时的那一句（`gw.key_limit.*`） */
+const limited: Msg = {
+  code: "gw.key_limit.cost_per_period",
+  args: { key: "cursor", max: "$5.00", per: "day", used: "$5.03", resets: "2026-09-26 00:00 +08:00" },
+  text: "Gateway key `cursor` has reached its limit of $5.00 per day: $5.03 spent so far. It resets at 2026-09-26 00:00 +08:00.",
+};
+/** 能服务的上游都满着、等过了也没空出来（`gw.busy_all`） */
+const busyAll: Msg = {
+  code: "gw.busy_all",
+  args: { upstreams: "`anthropic`, `openrouter`" },
+  text: "Every upstream that can serve this request is at its concurrency limit (max_concurrent): `anthropic`, `openrouter`. None had a free slot in time; try again shortly.",
+};
+/** 满着、没发出去的一跳（core 的 `hop_busy`）。`queued`：它是这段对话留着的那一家，等过空位 */
+const busy = (provider: string, queued?: number): AttemptView => ({
+  provider,
+  outcome: "error",
+  error: { code: "gw.busy_upstream", args: { upstream: provider, limit: "2" }, text: "" },
+  ms: 0,
+  skipped: "busy",
+  queued_ms: queued ?? null,
+});
+/** 开头超时、放弃了的一跳 */
+const slow = (provider: string): AttemptView => ({
+  provider,
+  outcome: "slow_start",
+  error: { code: "gw.slow_start", args: { upstream: provider, secs: "30" }, text: "" },
+  ms: 30_004,
+  usage: { input: 48_210, cache_read: 0, cache_write: 0, estimated: true },
+});
 
 function row(routing: Partial<RoutingView>, over: Partial<Pick<HistoryRow, "error" | "provider" | "local">> = {}) {
   return {
@@ -31,6 +60,16 @@ describe("没有发往任何上游的请求", () => {
     expect(notSent({ provider: "", error: denied("no-opus", "Opus is not offered") })).toBe("denied");
     expect(notSent({ provider: "", error: unavailable })).toBe("unavailable");
     expect(notSent({ provider: "", error: { code: "gw.route.all_selected_disabled", args: {}, text: "" } })).toBe("unavailable");
+  });
+
+  it("密钥的用量上限拒绝的：上游是空的，失败的那一句是 gw.key_limit.*", () => {
+    expect(notSent({ provider: "", error: limited })).toBe("limited");
+    expect(notSent({ provider: "", error: { ...limited, code: "gw.key_limit.requests_rolling" } })).toBe("limited");
+  });
+
+  it("上游都满着：那一行归在最后看过的那一家，也不算它的失败", () => {
+    expect(notSent({ provider: "openrouter", error: busyAll })).toBe("busy");
+    expect(notSent({ provider: "", error: busyAll })).toBe("busy");
   });
 
   it("发往了上游的、本地应答的、还没有结局的都不算", () => {
@@ -77,6 +116,47 @@ describe("路由那一页", () => {
     const f = routingFacts(row({ attempts: [overloaded("anthropic"), served("openrouter")] }, { provider: "openrouter" }), false)!;
     expect(f.note).toEqual({ kind: "failover", failed: 1 });
     expect(f.hops.map((h) => h.denied)).toEqual([false, false]);
+  });
+
+  it("开头超时、满着跳过的不说成失败：换过上游，说前几次尝试没有接下", () => {
+    const f = routingFacts(row({ attempts: [slow("anthropic"), served("openrouter")] }, { provider: "openrouter" }), false)!;
+    expect(f.note).toEqual({ kind: "switched", count: 1 });
+    const g = routingFacts(
+      row({ attempts: [busy("anthropic"), overloaded("openrouter"), served("deepseek")] }, { provider: "deepseek" }),
+      false,
+    )!;
+    expect(g.note).toEqual({ kind: "switched", count: 2 });
+  });
+
+  it("等到了空位：只有一跳，排队的时间在那一跳上，不加说明", () => {
+    const f = routingFacts(row({ attempts: [{ ...served("anthropic"), queued_ms: 1_240 }] }), false)!;
+    expect(f.note).toBeNull();
+    expect(f.hops[0]!.attempt.queued_ms).toBe(1_240);
+  });
+
+  it("上游都满着：没有一跳发出去，原因是 core 说的那一句", () => {
+    const f = routingFacts(
+      row({ attempts: [busy("anthropic", 30_000), busy("openrouter")] }, { provider: "openrouter", error: busyAll }),
+      false,
+    )!;
+    expect(f.note).toEqual({ kind: "busy", tried: 0 });
+    expect(f.reason).toEqual({ msg: busyAll });
+    expect(f.hops.map((h) => h.denied)).toEqual([false, false]);
+  });
+
+  it("上游都满着：之前发出去、没成的几跳另说", () => {
+    const f = routingFacts(
+      row({ attempts: [overloaded("anthropic"), busy("openrouter")] }, { provider: "openrouter", error: busyAll }),
+      false,
+    )!;
+    expect(f.note).toEqual({ kind: "busy", tried: 1 });
+  });
+
+  it("密钥的用量上限拒绝了它：没有尝试，原因是 core 说的那一句", () => {
+    const f = routingFacts(row({ attempts: [] }, { provider: "", error: limited }), false)!;
+    expect(f.ruleDenied).toBe(false);
+    expect(f.note).toEqual({ kind: "limited" });
+    expect(f.reason).toEqual({ msg: limited });
   });
 
   it("选定上游之前被拒绝：没有尝试，原因是规则里写的那句", () => {

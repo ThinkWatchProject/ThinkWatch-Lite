@@ -98,6 +98,12 @@ export const requestDrawerText = messages(
     /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
     reason: "原因",
     attempts: "尝试链",
+    /** 这一跳等空位等了多久（上游满着）。秒数已经按一位小数写好 */
+    queued: (s: string) => `排队 ${s} 秒`,
+    /** 放弃了的一跳（开头超时）下面那一行：上游没报用量时，网关估的输入 */
+    abandonedEstimate: (n: string) => `输入约 ${n} token`,
+    mayBeBilled: "上游可能已计费",
+    mayBeBilledTip: "上游是否收取这部分费用无法得知，此请求的费用不含这部分。",
     // 尝试链里一跳发出的模型名和客户端写的不同：悬停按原因说
     sentModel: (model: string) => `规则改写了模型名：这一跳发给上游的是 ${model}，费用按它计算`,
     sentByAlias: (upstream: string, model: string) => `别名：这一跳发给 ${upstream} 的是 ${model}，费用按它计算`,
@@ -112,6 +118,11 @@ export const requestDrawerText = messages(
     deniedAfterPick: (rule: string) => `选定上游后，规则「${rule}」拒绝了此请求，未发往任何上游。`,
     deniedBeforePick: (rule: string) => `选定上游之前，规则「${rule}」已拒绝此请求，未发往任何上游。`,
     unavailable: "规则选中的上游均无法服务此请求，未发往任何上游。",
+    /** 前面几跳里有满着跳过的、开头超时放弃的：它们不是上游的失败 */
+    switched: (n: number) => `已自动切换上游：前 ${n} 次尝试未接下此请求。`,
+    limited: "网关密钥已达到用量上限，此请求未发往任何上游。",
+    busy: "上游均已达到并发上限，等待期间没有空出位置，此请求未发往任何上游。",
+    busyAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，其余上游均已达到并发上限，等待期间没有空出位置。`,
     noRouting: "此请求由网关本地应答，未经过路由。",
     routingPending: "路由尚未完成",
     noAttempts: "此请求没有上游尝试记录。",
@@ -245,6 +256,10 @@ export const requestDrawerText = messages(
     deniedBy: "Denied by",
     reason: "Reason",
     attempts: "Attempts",
+    queued: (s: string) => `Queued ${s} s`,
+    abandonedEstimate: (n: string) => `About ${n} input tokens`,
+    mayBeBilled: "may have been billed by the upstream",
+    mayBeBilledTip: "Whether the upstream charged for these tokens is unknown; they are not included in this request's cost.",
     sentModel: (model: string) => `A rule rewrote the model: this attempt sent ${model}, and the cost is priced by it`,
     sentByAlias: (upstream: string, model: string) =>
       `Alias: this attempt sent ${model} to ${upstream}, and the cost is priced by it`,
@@ -265,6 +280,16 @@ export const requestDrawerText = messages(
     deniedBeforePick: (rule: string) =>
       `Rule “${rule}” denied this request before an upstream was chosen; it was not sent to any upstream.`,
     unavailable: "No upstream the rule selected can serve this request; it was not sent to any upstream.",
+    switched: (n: number) =>
+      n === 1
+        ? "Switched upstreams automatically: the first attempt did not take this request."
+        : `Switched upstreams automatically: the first ${n} attempts did not take this request.`,
+    limited: "The gateway key had reached a usage limit; this request was not sent to any upstream.",
+    busy: "Every upstream was at its concurrency limit and none freed up in time; this request was not sent to any upstream.",
+    busyAfterTries: (n: number) =>
+      n === 1
+        ? "The attempt sent did not succeed, and the other upstreams were at their concurrency limits with none freeing up in time."
+        : `The ${n} attempts sent did not succeed, and the other upstreams were at their concurrency limits with none freeing up in time.`,
     noRouting: "The gateway answered this request locally; it did not go through routing.",
     routingPending: "Routing has not finished yet",
     noAttempts: "No upstream attempts were recorded for this request.",
