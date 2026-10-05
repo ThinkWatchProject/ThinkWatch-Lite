@@ -137,7 +137,6 @@ export const trafficText = messages(
 
     // 上游一列的徽标和它们的悬浮说明
     /** 客户端写的是别名，按这家上游换成了它的模型名。模型那一列照旧是客户端写的名称 */
-    alias: "别名",
     aliasTip: (model: string, upstream: string, sent: string) => `${model} 是别名，发往 ${upstream} 的模型名是 ${sent}。`,
     /** 决定去向的规则用了「指定模型」：上游和模型都是规则列出的 */
     pinned: "指定",
@@ -278,7 +277,6 @@ export const trafficText = messages(
     failed: "Failed",
     cancelled: "Canceled",
 
-    alias: "Alias",
     aliasTip: (model: string, upstream: string, sent: string) =>
       `${model} is an alias; the model sent to ${upstream} is ${sent}.`,
     pinned: "Pinned",

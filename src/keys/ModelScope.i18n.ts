@@ -28,7 +28,6 @@ export const modelScopeText = messages(
     picked: "单独选中",
     /** 别名随它列表里的某个模型一起可见 */
     inherited: (m: string) => `随 ${m} 放行`,
-    alias: "别名",
     aliasOf: (models: string[]) => `别名，指向 ${models.join("、")}`,
     /** 表格下面一句：继承只从上游模型名到别名 */
     aliasRule: "范围里有某个上游模型，指向它的别名也一起可见；只选别名，原来的名称不可见。",
@@ -68,7 +67,6 @@ export const modelScopeText = messages(
     byPattern: (p: string) => `matched by ${p}`,
     picked: "picked",
     inherited: (m: string) => `allowed with ${m}`,
-    alias: "alias",
     aliasOf: (models: string[]) => `Alias for ${models.join(", ")}`,
     aliasRule:
       "An alias is visible whenever a model it points to is in scope. Picking only the alias leaves the original names hidden.",

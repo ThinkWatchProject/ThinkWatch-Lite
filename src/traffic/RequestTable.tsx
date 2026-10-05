@@ -8,6 +8,7 @@ import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
 import { promptTokens, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
 import type { ContentHit, RequestRow } from "@/types";
+import { AliasMark } from "@/aliases/AliasMark";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
@@ -696,16 +697,15 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
       {/* 发出的模型名不是客户端写的那个（或者是规则指定的）：模型那一列照旧写客户端的名称，
           这里说一声，发出的名称在悬停和详情的路由页里 */}
       {mark && (
-        <Mark
-          variant="secondary"
-          tip={
+        <Tip
+          text={
             mark.via === "alias"
               ? t.aliasTip(r.model ?? "", r.provider, mark.sent)
               : t.pinnedTip(mark.rule, r.provider, mark.sent)
           }
         >
-          {mark.via === "alias" ? t.alias : t.pinned}
-        </Mark>
+          <AliasMark>{mark.via === "pinned" ? t.pinned : undefined}</AliasMark>
+        </Tip>
       )}
       {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑是脱敏搞坏了功能。
           所以脱敏发生了就要在列表这一层看得见，而不是藏在详情里 */}

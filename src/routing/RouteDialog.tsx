@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
+import { AliasMark } from "@/aliases/AliasMark";
 import { Badge } from "@/ui/badge";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -497,9 +498,7 @@ function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModel[] }
             {i > 0 && t.conditionJoin}
             {conditionText(c)}
             {c === model && alias && (
-              <Badge variant="outline" className="ml-1.5 h-4 px-1.5 align-[1px] font-normal">
-                {t.alias}
-              </Badge>
+              <AliasMark className="ml-1.5 align-[1px]" />
             )}
           </Fragment>
         ))}

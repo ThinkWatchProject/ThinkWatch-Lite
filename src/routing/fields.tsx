@@ -2,10 +2,10 @@
  * 路由页几个对话框共用的小件：带建议的模型输入、一排可切换的名称标签。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { asciiLower } from "@/upstreams/glob";
-import { Badge } from "@/ui/badge";
 import {
   Autocomplete,
   ComboboxContent,
@@ -101,7 +101,7 @@ export function ModelInput({
       >
         <ComboboxInput id={id} placeholder={placeholder ?? t.modelName} className={cn("w-full font-mono", className)}>
           {/* 排在输入框和右边的箭头之间：箭头那一格是 order-last */}
-          {valueIsAlias && <AliasMark />}
+          {valueIsAlias && <AliasMark className="pointer-events-none mr-1" />}
         </ComboboxInput>
         {/* 带灰字时列表至少这么宽：放在窄的输入框（「模型改为」）下面，名称和灰字都挤不下 */}
         <ComboboxContent container={container ?? undefined} className={options.size > 0 ? "min-w-80" : undefined}>
@@ -160,19 +160,6 @@ export function aliasNamed(value: string, options: ReadonlyMap<string, ModelOpti
   if (!v) return null;
   for (const m of options.values()) if (m.alias && asciiLower(m.id) === v) return m;
   return null;
-}
-
-function AliasMark() {
-  const t = useText(fieldsText);
-  return (
-    <Badge
-      variant="secondary"
-      className="pointer-events-none mr-1 h-4 shrink-0 rounded-[4px] px-1 font-sans font-normal"
-      style={{ fontSize: 11 }}
-    >
-      {t.alias}
-    </Badge>
-  );
 }
 
 /**

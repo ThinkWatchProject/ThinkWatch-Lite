@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { SearchIcon, Trash2Icon } from "lucide-react";
-import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Segmented } from "@/ui/segmented";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { AliasMark } from "@/aliases/AliasMark";
 import { useText } from "@/i18n";
 import { Boxed, FormItem, Note } from "@/upstreams/parts";
 import type { KnownModel } from "@/types";
@@ -198,14 +198,7 @@ export function ModelScope({
                         <TableCell className={r.source ? undefined : "text-muted-foreground"}>
                           <span className="font-mono">{r.id}</span>
                           {r.alias && (
-                            <Badge
-                              variant="secondary"
-                              title={t.aliasOf(r.alias)}
-                              className="ml-1.5 h-4 rounded-[4px] px-1 align-[1px] font-normal"
-                              style={{ fontSize: 11 }}
-                            >
-                              {t.alias}
-                            </Badge>
+                            <AliasMark title={t.aliasOf(r.alias)} className="ml-1.5 align-[1px]" />
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">

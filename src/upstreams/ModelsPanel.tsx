@@ -1,8 +1,8 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
-import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Skeleton } from "@/ui/skeleton";
@@ -251,15 +251,14 @@ function Row({
         {m.id}
       </span>
       {m.aliases.map((a) => (
-        <Badge
+        <AliasMark
           key={a}
-          variant="secondary"
           title={t.aliasTitle(a)}
           // 地方不够时先缩它：模型名比别名要紧。全名在悬停说明里
-          className="h-4 max-w-40 min-w-14 shrink-[50] rounded-[4px] px-1 font-normal"
+          className="max-w-40 min-w-14 shrink-[50]"
         >
           <span className="truncate">{t.aliasMark(a)}</span>
-        </Badge>
+        </AliasMark>
       ))}
       {/* 悬停时这一格让给「起别名…」：两样叠在同一个位置，行高不跳 */}
       <span
