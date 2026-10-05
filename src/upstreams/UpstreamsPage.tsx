@@ -39,6 +39,7 @@ import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { NextClientsHint } from "@/guide/PageHints";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
+import { AliasDialog } from "@/aliases/AliasDialog";
 import { aliasesText } from "@/aliases/aliases.i18n";
 import type { AliasInput } from "@/aliases/api.provisional";
 
@@ -64,7 +65,7 @@ type DialogState =
   | { kind: "delete-proxy"; name: string }
   | { kind: "sheet"; mode: PriceSheetDialogMode }
   | { kind: "delete-sheet"; name: string }
-  /** 新建、编辑别名（`AliasDialog`，集成时挂上，见页尾） */
+  /** 新建、编辑别名（`AliasDialog`） */
   | { kind: "alias"; mode: AliasDialogMode };
 
 /**
@@ -603,16 +604,20 @@ export default function UpstreamsPage({
           }}
         />
       )}
-      {/*
-        集成点（L2）：新建、编辑别名的对话框挂在这里 ——
-          {dialog?.kind === "alias" && (
-            <AliasDialog mode={dialog.mode} ov={ov} configVersion={configVersion}
-              onClose={() => setDialog(null)}
-              onSaved={() => { setDialog(null); changed(); }} />
-          )}
-        `dialog.mode` 是 `AliasDialogMode`（`@/aliases/AliasesTab`）：新建可带预填（建议、上游模型
-        弹窗的「起别名…」），编辑带别名的名称。保存之后 core 发 `config_reloaded`，别名表自己重读
-      */}
+      {dialog?.kind === "alias" && (
+        <AliasDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDialog(null);
+          }}
+          editing={dialog.mode.kind === "edit" ? dialog.mode.name : undefined}
+          initial={dialog.mode.kind === "create" ? dialog.mode.initial : undefined}
+          onSaved={() => {
+            setDialog(null);
+            changed();
+          }}
+        />
+      )}
       {dialog?.kind === "delete-sheet" && (
         <DeleteDialog
           what={t.what.sheet}
