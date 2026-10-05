@@ -69,7 +69,7 @@ export type DryRunTarget =
  *
  * 尝试顺序里每个上游写出发给它的模型名和来历（别名、规则改写、指定模型）：客户端写的
  * 名称和发出的不同，正是要在这里看清的事。经过轮询组时再写它的权重；按速度、稳定性
- * 分配时还写首字节时间、成功率和算下来的占比 —— 「为什么轮到它」要从这里看得出来。
+ * 分配时还写首 token 时间、成功率和算下来的占比 —— 「为什么轮到它」要从这里看得出来。
  */
 export function DryRunDialog({
   target,
@@ -592,7 +592,7 @@ function BalanceFacts({ c, by, share }: { c: DryRunCandidate; by: BalanceBy; sha
   const t = useText(dryRunText);
   const parts = [t.weight(c.weight ?? 1)];
   if (by === "latency" || by === "latency-health") {
-    parts.push(c.ttfb_ms != null ? t.ttfb(`${Math.round(c.ttfb_ms).toLocaleString()}ms`) : t.ttfbNone);
+    parts.push(c.ttfb_ms != null ? t.ttft(`${Math.round(c.ttfb_ms).toLocaleString()}ms`) : t.ttftNone);
   }
   if (by === "health" || by === "latency-health") {
     parts.push(c.success_rate != null ? t.success(percent(c.success_rate)) : t.successNone);

@@ -11,7 +11,7 @@ export const labelsText = messages(
       "url-test": "延迟最低",
       cheapest: "费用最低",
     },
-    /** 轮询组按什么分新对话（`balance_by`） */
+    /** 轮询组按什么分请求（`balance_by`） */
     balanceBy: {
       weights: "按比例",
       latency: "按速度",

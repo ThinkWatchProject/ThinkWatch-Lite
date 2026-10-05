@@ -27,10 +27,10 @@ export const groupDialogText = messages(
     weightInvalid: (name: string) => `${name} 的权重须为 1 到 100 的整数`,
     balanceBy: "分配依据",
     balanceDesc: {
-      weights: "新对话按成员权重的比例分配。",
-      latency: "以权重为基础，速度快的上游分到更多新对话。",
-      health: "以权重为基础，失败少的上游分到更多新对话。",
-      "latency-health": "以权重为基础，速度快、失败少的上游分到更多新对话。",
+      weights: "请求按成员权重的比例分配。",
+      latency: "以权重为基础，速度快的上游分到更多请求。",
+      health: "以权重为基础，失败少的上游分到更多请求。",
+      "latency-health": "以权重为基础，速度快、失败少的上游分到更多请求。",
     } satisfies Record<BalanceBy, string>,
   },
   {
@@ -57,10 +57,10 @@ export const groupDialogText = messages(
     weightInvalid: (name: string) => `The weight of ${name} must be a whole number from 1 to 100`,
     balanceBy: "Distribute by",
     balanceDesc: {
-      weights: "New conversations are split by the members' weights.",
-      latency: "Starting from the weights, faster upstreams get more new conversations.",
-      health: "Starting from the weights, upstreams that fail less get more new conversations.",
-      "latency-health": "Starting from the weights, faster upstreams that fail less get more new conversations.",
+      weights: "Requests are split by the members' weights.",
+      latency: "Starting from the weights, faster upstreams get more requests.",
+      health: "Starting from the weights, upstreams that fail less get more requests.",
+      "latency-health": "Starting from the weights, faster upstreams that fail less get more requests.",
     } satisfies Record<BalanceBy, string>,
   },
 );

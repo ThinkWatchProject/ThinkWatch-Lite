@@ -35,8 +35,8 @@ export const modelText = messages(
     strategies: {
       fallback: "依次使用成员，前一个不可用时使用下一个。",
       select: "使用选定的上游；它不可用时，按顺序使用其余成员。",
-      loadBalance: "在成员之间轮流分配新对话。",
-      urlTest: "优先使用首字节时间最短的上游。",
+      loadBalance: "在成员之间轮流分配请求。",
+      urlTest: "优先使用首 token 时间最短的上游。",
       cheapest: "优先使用输入单价最低的上游。",
     },
   },
@@ -76,8 +76,8 @@ export const modelText = messages(
     strategies: {
       fallback: "Uses the members in order, moving to the next when one is unavailable.",
       select: "Uses the selected upstream; when it is unavailable, uses the other members in order.",
-      loadBalance: "Distributes new conversations across the members in turn.",
-      urlTest: "Prefers the upstream with the shortest time to first byte.",
+      loadBalance: "Distributes requests across the members in turn.",
+      urlTest: "Prefers the upstream with the shortest time to first token.",
       cheapest: "Prefers the upstream with the lowest input price.",
     },
   },

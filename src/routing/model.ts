@@ -436,7 +436,7 @@ export function strategyText(g: Pick<GroupView, "kind" | "providers" | "weights"
 }
 
 /**
- * 试算里轮询组每个候选这一轮分到新对话的份额，0 到 1，和 `r.candidate_models` 一一对应；
+ * 试算里轮询组每个候选这一轮分到请求的份额，0 到 1，和 `r.candidate_models` 一一对应；
  * 不是轮询组（候选没有权重）的是 null。
  *
  * 和 core 排头用的同一个数：权重 × 系数（`balance_factor`，只看比例时是 1）。**熔断着的

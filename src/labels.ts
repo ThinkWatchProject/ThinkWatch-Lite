@@ -48,7 +48,7 @@ export function groupKindLabel(kind: GroupKind): string {
   return textOf(labelsText).groupKinds[kind];
 }
 
-/** 轮询组按什么分新对话，按界面上的先后：先是只看比例，再是自动的几种 */
+/** 轮询组按什么分请求，按界面上的先后：先是只看比例，再是自动的几种 */
 export const BALANCE_BY: readonly BalanceBy[] = ["weights", "latency", "health", "latency-health"];
 
 export function balanceByLabel(by: BalanceBy): string {

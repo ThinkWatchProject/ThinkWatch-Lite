@@ -93,7 +93,8 @@ known colloquialisms.
 | 积分 | credits | the unit of a GLM Coding Plan billed in credits: 剩余 1,976 / 2,000 积分 = 1,976 / 2,000 credits left; not the ChatGPT reset credits |
 | 会话日志 | session log | the whole conversation DeepSeek Harness attaches to each request |
 | 按量计费 / 不计费 | Per token / Free | billing: the only two modes; subscription accounts are billed per token |
-| 首字节 | time to first byte (TTFB) | column headers may use "TTFB" |
+| 首字节 | time to first byte (TTFB) | column headers may use "TTFB"; the response headers arriving, not the answer |
+| 首 token / 首 token 时间 | first token / time to first token | from sending to the first content of the answer; group ordering by speed (url-test, load-balance by speed) uses this |
 | 延迟 / 总耗时 / 生成用时 | latency / total time / generation time | |
 | 故障转移 | failover | |
 | 尝试链 | attempts | |
