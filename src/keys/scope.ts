@@ -8,9 +8,18 @@
  * 界面要把这一个列表讲成两件事 —— 「覆盖一组的规则」和「单独选中的模型」
  * —— 因为聚合目录可能有几百个模型：逐个勾不现实，而勾一下就把规则展开成
  * 明细会往配置里写几百行。两者并存，互不摧毁。
+ *
+ * **别名只从真名继承，不反过来。**目录里也列着别名（`alias` 是它的模型列表）。
+ * `allow` 里有一条放行了别名列表里的某个模型名，这个别名也可见（core 的
+ * `resolve_allowed` 同样这么算）；只放行别名，它的模型不跟着可见。继承是算出来的，
+ * **不写进 `allow`**：配置里只有用户自己写的那几条。
  */
 import { asciiLower, globMatch } from "@/upstreams/glob";
+import type { KnownModelAliasFields } from "@/aliases/api.provisional";
 import type { KnownModel } from "@/types";
+
+/** 目录里的一项。别名也在里面：`alias` 是它的模型列表，真名没有这个字段 */
+export type CatalogModel = KnownModel & Partial<KnownModelAliasFields>;
 
 export type Scope = "all" | "some" | "none";
 
@@ -48,15 +57,44 @@ export function sameModel(a: string, b: string): boolean {
   return a.length === b.length && asciiLower(a) === asciiLower(b);
 }
 
-/** 这个模型为什么可见：被某条规则命中，还是单独选中的 */
-export type Source = { kind: "pattern"; pattern: string } | { kind: "picked" } | null;
+/**
+ * 这个模型为什么可见：被某条规则命中、随它列表里的某个模型放行（只有别名会这样），
+ * 还是单独选中的
+ */
+export type Source =
+  | { kind: "pattern"; pattern: string }
+  | { kind: "inherited"; model: string }
+  | { kind: "picked" }
+  | null;
 
-export function sourceOf(entries: string[], model: string): Source {
-  // **规则优先。**同时成立时说「由规则命中」才有用：那一行取消不掉，
-  // 而原因是规则，不是那条重复的明细
+/**
+ * 别名随哪个模型放行：列表里第一个被某条条目放行的模型名。没有就是 null。
+ *
+ * **跳过和别名同名的那个模型。**别名常把自己的名字也列进去（`claude-sonnet-5` 指向
+ * 官方的 `claude-sonnet-5` 和 Bedrock 的长名称）：放行这个名字就是直接放行别名，算
+ * 「单独选中」或「由规则命中」，能取消；说成「随 claude-sonnet-5 放行」就锁死了
+ */
+export function inheritedFrom(entries: string[], name: string, models: readonly string[]): string | null {
+  return models.find((m) => !sameModel(m, name) && entries.some((e) => globMatch(e, m))) ?? null;
+}
+
+/**
+ * `alias` 给了就是别名，按它的模型列表算继承。
+ *
+ * **规则优先，其次继承，最后才是明细。**同时成立时说锁住这一行的那个原因才有用：
+ * 规则命中、随别的模型放行的行都取消不掉，原因不是那条重复的明细
+ */
+export function sourceOf(entries: string[], model: string, alias?: readonly string[] | null): Source {
   const hit = entries.find((e) => isPattern(e) && globMatch(e, model));
   if (hit != null) return { kind: "pattern", pattern: hit };
+  const via = alias ? inheritedFrom(entries, model, alias) : null;
+  if (via != null) return { kind: "inherited", model: via };
   return entries.some((e) => !isPattern(e) && sameModel(e, model)) ? { kind: "picked" } : null;
+}
+
+/** 这一行能不能点：规则命中的和随别的模型放行的都点不动 */
+export function locked(source: Source): boolean {
+  return source?.kind === "pattern" || source?.kind === "inherited";
 }
 
 /** 表格里要画哪些行：目录里的，加上选中了但目录里没有的 */
@@ -66,30 +104,43 @@ export interface ScopeRow {
   providers: string[];
   /** 目录里没有它 —— 上游改了名，或者当初手打错了。**照样列出来**，否则删不掉 */
   unknown: boolean;
+  /** 是别名时它的模型列表，否则 null */
+  alias: string[] | null;
   source: Source;
 }
 
-export function rowsOf(entries: string[], catalog: KnownModel[]): ScopeRow[] {
+export function rowsOf(entries: string[], catalog: CatalogModel[]): ScopeRow[] {
   const stale = splitEntries(entries)
     .picked.filter((e) => !catalog.some((m) => sameModel(e, m.id)))
-    .map<ScopeRow>((id) => ({ id, providers: [], unknown: true, source: { kind: "picked" } }));
+    .map<ScopeRow>((id) => ({ id, providers: [], unknown: true, alias: null, source: { kind: "picked" } }));
   const rest = catalog.map<ScopeRow>((m) => ({
     id: m.id,
     providers: m.providers,
     unknown: false,
-    source: sourceOf(entries, m.id),
+    alias: m.alias ?? null,
+    source: sourceOf(entries, m.id, m.alias),
   }));
   return [...stale, ...rest];
 }
 
-/** 目录里有几个模型对这把密钥可见 */
-export function visibleCount(entries: string[], catalog: KnownModel[]): number {
-  return catalog.filter((m) => sourceOf(entries, m.id) != null).length;
+/** 目录里有几个模型对这把密钥可见。别名算在里面，随它的模型放行的也算 */
+export function visibleCount(entries: string[], catalog: CatalogModel[]): number {
+  return catalog.filter((m) => sourceOf(entries, m.id, m.alias) != null).length;
 }
 
-/** 一条规则命中几个。目录还没有就答不上来 */
-export function patternHits(pattern: string, catalog: KnownModel[]): number {
+/**
+ * 一条规则命中几个。目录还没有就答不上来。
+ *
+ * **只按名称数**，别名也按它自己的名称：`claude-sonnet-*` 命中别名 `claude-sonnet-5`，
+ * 不命中只是列表里有个 `claude-sonnet-5` 的别名 `sonnet`（那一个算「随 … 放行」）
+ */
+export function patternHits(pattern: string, catalog: CatalogModel[]): number {
   return catalog.filter((m) => globMatch(pattern, m.id)).length;
+}
+
+/** 目录里有没有别名。没有就不必说明别名怎么算 */
+export function hasAliases(catalog: CatalogModel[]): boolean {
+  return catalog.some((m) => m.alias != null);
 }
 
 /**
