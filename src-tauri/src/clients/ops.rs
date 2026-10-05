@@ -182,6 +182,7 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
+        models: d.models,
         movable: false,
         managed: d.managed.as_ref().map(|by| {
             plan::PlanError::Managed {
