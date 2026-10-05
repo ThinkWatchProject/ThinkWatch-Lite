@@ -1119,12 +1119,11 @@ define_class!(
     unsafe impl NSMenuDelegate for Target {
         #[unsafe(method(menuWillOpen:))]
         fn menu_will_open(&self, menu: &NSMenu) {
-            // **菜单跟菜单栏的深浅走**，不跟应用内选的外观 —— 和系统其他菜单栏菜单一样
+            // **菜单跟应用内选的外观走**（跟随系统时就是系统的深浅模式），不跟菜单栏
+            // —— macOS 26 的菜单栏透明，深浅随壁纸变：深色模式配亮壁纸时它是浅的。
+            // 显式设上，不留给 AppKit 去推断状态栏菜单该继承谁
             let mtm = MainThreadMarker::from(self);
-            let bar = UI.with(|ui| ui.borrow().as_ref().and_then(|ui| ui.item.button(mtm)));
-            if let Some(button) = bar {
-                menu.setAppearance(Some(&button.effectiveAppearance()));
-            }
+            menu.setAppearance(Some(&NSApplication::sharedApplication(mtm).effectiveAppearance()));
             OPEN.with(|o| o.set(true));
             if let Some(f) = ON_OPEN.with(|o| o.borrow().clone()) {
                 f(true);
