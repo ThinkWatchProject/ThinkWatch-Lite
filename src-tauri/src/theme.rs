@@ -11,7 +11,8 @@
 //!
 //! 代价是它在 macOS 上是应用级的（Tauri 的 `set_theme` 文档写明了），不是
 //! 单个窗口的 —— 对一个只有一个窗口的应用来说，正是想要的那个范围。菜单栏
-//! 上那个图标不受影响：它是模板图，靠 alpha 跟随菜单栏自己的亮暗。
+//! 点开的那份菜单也跟着它（`menubar::macos` 打开时设上）；菜单栏上那个图标
+//! 不受影响：它是模板图，靠 alpha 跟随菜单栏自己的亮暗。
 //!
 //! **Linux 上换的是 GTK 的 `gtk-application-prefer-dark-theme`。**tao 的
 //! `set_theme` 写的就是这一项（进程级），WebKitGTK 按它定
