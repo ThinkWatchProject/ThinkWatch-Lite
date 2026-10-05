@@ -198,6 +198,36 @@ describe("走过的请求", () => {
     expect(flat.rules.get("default")?.get("catch-all")).toEqual(["up:a"]);
   });
 
+  it("指定模型连到列表里的每个上游，命中数记在首选那条线上", () => {
+    const c = buildChain({
+      clients: [key("default")],
+      routes: [
+        {
+          ...route("default", [], { default: true }),
+          rules: [
+            {
+              ...rule("opus"),
+              to: [
+                { provider: "b", model: "m1" },
+                { provider: "a", model: "m2" },
+                { provider: "b", model: "m3" },
+                // 不存在的上游不画
+                { provider: "gone", model: "m4" },
+              ],
+            },
+            catchAll("catch-all", "a"),
+          ],
+        },
+      ],
+      groups: [ALL],
+      providers: [up("a"), up("b")],
+    });
+    expect(c.rules.get("default")?.get("opus")).toEqual(["up:b"]);
+    expect(edge(c, "route:default", "up:b")).toBeDefined();
+    expect(edge(c, "route:default", "up:a")).toBeDefined();
+    expect(c.nodes.some((n) => n.id === "up:gone")).toBe(false);
+  });
+
   it("路由 → 第二列那一段按决定了去向的请求数；直连的线穿过去之后还是它们；连到同一站的规则相加", () => {
     const c = buildChain(sample());
     const t = trafficOf(c, [

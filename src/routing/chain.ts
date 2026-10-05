@@ -10,8 +10,12 @@
  * **只画决定去向的规则**：被兜底挡住的（`shadowed`）、选定上游之后才判断的
  * （`phase_two`）、只附加改写的（继续匹配）不改变请求去哪儿，画出来反而像
  * 多了几条路。和路由列表「规则」一栏同一个口径（`flowOf`）。
+ *
+ * 转发到指定模型的规则连到列表里的每一个上游（按顺序备用，和策略组连到它的成员一样）。
  */
-import type { ClientView, GroupView, Overview, RouteHits, RouteView, RuleView } from "@/types";
+import type { ClientView, GroupView, Overview, RouteHits } from "@/types";
+import type { RouteViewX, RuleViewX } from "./provisional";
+import { pinnedOf, targetNameOf } from "./target";
 
 export type ChainKind = "key" | "route" | "group" | "deny" | "via" | "upstream";
 
@@ -83,38 +87,48 @@ export function membersOf(g: GroupView, providers: readonly string[]): string[] 
 /** 规则把请求交给的去向 */
 type Target = { kind: "group" | "deny" | "upstream"; name: string };
 
-/** 一条规则的去向。不画的规则（见文件头）和指向不存在的去向的没有 */
-function targetOf(x: RuleView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target | null {
-  if (x.shadowed || x.phase_two) return null;
-  if (x.to) {
-    if (groups.has(x.to)) return { kind: "group", name: x.to };
-    if (providers.has(x.to)) return { kind: "upstream", name: x.to };
-    return null;
+/**
+ * 一条规则的去向。不画的规则（见文件头）和指向不存在的去向的没有；指定模型是列表里的
+ * 那几个上游，按顺序、去重
+ */
+function targetsOfRule(x: RuleViewX, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
+  if (x.shadowed || x.phase_two) return [];
+  const pinned = pinnedOf(x.to);
+  if (pinned) {
+    const names = [...new Set(pinned.map((p) => p.provider))].filter((p) => providers.has(p));
+    return names.map((name) => ({ kind: "upstream", name }));
   }
-  return x.deny != null ? { kind: "deny", name: "" } : null;
+  const to = targetNameOf(x.to);
+  if (to) {
+    if (groups.has(to)) return [{ kind: "group", name: to }];
+    if (providers.has(to)) return [{ kind: "upstream", name: to }];
+    return [];
+  }
+  return x.deny != null ? [{ kind: "deny", name: "" }] : [];
 }
 
 /** 一条路由把请求交给的去向，按规则顺序、去重 */
-export function targetsOf(r: RouteView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
+export function targetsOf(r: RouteViewX, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
   const out: Target[] = [];
   const seen = new Set<string>();
-  for (const x of r.rules) {
-    const t = targetOf(x, groups, providers);
-    if (!t) continue;
-    const k = `${t.kind}:${t.name}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(t);
-  }
+  for (const x of r.rules)
+    for (const t of targetsOfRule(x, groups, providers)) {
+      const k = `${t.kind}:${t.name}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t);
+    }
   return out;
 }
 
 /** 路由按列表里的顺序：默认路由在最前 */
-export function orderedRoutes(routes: readonly RouteView[]): RouteView[] {
+export function orderedRoutes<R extends { default: boolean }>(routes: readonly R[]): R[] {
   return [...routes].sort((a, b) => Number(b.default) - Number(a.default));
 }
 
-export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | "providers">): Chain {
+export function buildChain(
+  ov: Pick<Overview, "clients" | "groups" | "providers"> & { routes: readonly RouteViewX[] },
+): Chain {
   const routes = orderedRoutes(ov.routes);
   const routeIndex = new Map(routes.map((r, i) => [r.name, i]));
   const defaultRoute = routes.find((r) => r.default)?.name ?? null;
@@ -155,7 +169,8 @@ export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | 
       r.name,
       new Map(
         r.rules.flatMap((x) => {
-          const t = targetOf(x, groupNames, providerSet);
+          // 指定模型连到几个上游时，命中数记在第一个（首选）那条线上
+          const t = targetsOfRule(x, groupNames, providerSet)[0];
           return t ? [[x.name, stationsOf(t)] as const] : [];
         }),
       ),
@@ -174,7 +189,7 @@ export function buildChain(ov: Pick<Overview, "clients" | "routes" | "groups" | 
     }
     keysOf.set(r, [...(keysOf.get(r) ?? []), k]);
   }
-  const tailsOf = (r: RouteView): { ids: string[]; live: boolean }[] => {
+  const tailsOf = (r: RouteViewX): { ids: string[]; live: boolean }[] => {
     const out: { ids: string[]; live: boolean }[] = [];
     for (const t of targets.get(r.name) ?? []) {
       if (t.kind === "deny") out.push({ ids: stationsOf(t), live: true });

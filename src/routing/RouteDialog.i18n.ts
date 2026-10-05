@@ -42,6 +42,10 @@ export const routeDialogText = messages(
     addCatchAll: "添加兜底规则",
     untitled: "新路由",
     conditionJoin: " 且 ",
+    alias: "别名",
+    alsoAliasesOf: (aliases: string[]) => `也匹配指向它的别名 ${aliases.join("、")}`,
+    alsoAliases: (aliases: string[]) => `也匹配指向这些模型的别名 ${aliases.join("、")}`,
+    backups: (list: string[]) => `备用 ${list.join("、")}`,
   },
   {
     catchAllName: "Catch-all",
@@ -87,5 +91,11 @@ export const routeDialogText = messages(
     addCatchAll: "Add catch-all rule",
     untitled: "Untitled",
     conditionJoin: " and ",
+    alias: "Alias",
+    alsoAliasesOf: (aliases: string[]) =>
+      `Also matches the ${aliases.length === 1 ? "alias that points" : "aliases that point"} to it: ${aliases.join(", ")}`,
+    alsoAliases: (aliases: string[]) =>
+      `Also matches the ${aliases.length === 1 ? "alias that points" : "aliases that point"} to these models: ${aliases.join(", ")}`,
+    backups: (list: string[]) => `Backup: ${list.join(", ")}`,
   },
 );

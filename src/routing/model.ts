@@ -14,14 +14,15 @@ import type {
   GroupView,
   ProviderView,
   RouteView,
-  RuleInput,
-  RuleView,
 } from "@/types";
+import type { PinnedModel } from "@/aliases/api.provisional";
 import { textOf } from "@/i18n";
 import { ALL_UPSTREAMS, conditionName, groupKindLabel, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
 import { modelText } from "./model.i18n";
+import type { KnownModelX, RouteViewX, RuleInputX, RuleViewX } from "./provisional";
 import { routingText } from "./routing.i18n";
+import { aliasNamed, hasTarget, pinnedOf, pinnedText, targetNameOf } from "./target";
 
 // ---------------------------------------------------------------- 条件
 
@@ -121,6 +122,14 @@ export function conditionProblem(c: ConditionView): string | null {
 
 export type Action = "forward" | "deny" | "continue";
 
+/** 转发至：上游或策略组（`to` 是名称），或指定模型（`to` 是「上游 + 模型」的列表） */
+export type ToKind = "target" | "pinned";
+
+/** 指定模型列表里的一行。`key` 只给列表用：删掉中间一行时，后面几行的输入框不串 */
+export interface PinnedDraft extends PinnedModel {
+  key: string;
+}
+
 export interface RuleDraft {
   /** 列表里的稳定标识。规则名在编辑中会变，不能拿来当 key */
   key: string;
@@ -132,7 +141,11 @@ export interface RuleDraft {
   name: string;
   conditions: ConditionView[];
   action: Action;
+  toKind: ToKind;
+  /** 上游或策略组的名称 */
   to: string;
+  /** 指定模型，按顺序备用 */
+  pinned: PinnedDraft[];
   deny: string;
   model: string;
   maxTokens: string;
@@ -152,7 +165,9 @@ export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
     name: "",
     conditions: [],
     action: "forward",
+    toKind: "target",
     to,
+    pinned: [],
     deny: "",
     model: "",
     maxTokens: "",
@@ -160,14 +175,21 @@ export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
   };
 }
 
-export function draftFromView(r: RuleView): RuleDraft {
+export function blankPinned(provider = "", model = ""): PinnedDraft {
+  return { key: nextKey(), provider, model };
+}
+
+export function draftFromView(r: RuleViewX): RuleDraft {
+  const pinned = pinnedOf(r.to);
   return {
     key: nextKey(),
     saved: r.name,
     name: r.name,
     conditions: r.conditions.map((c) => ({ field: c.field, values: [...c.values] })),
-    action: r.to ? "forward" : r.deny != null ? "deny" : "continue",
-    to: r.to ?? "",
+    action: hasTarget(r.to) ? "forward" : r.deny != null ? "deny" : "continue",
+    toKind: pinned ? "pinned" : "target",
+    to: targetNameOf(r.to) ?? "",
+    pinned: (pinned ?? []).map((p) => blankPinned(p.provider, p.model)),
     deny: r.deny ?? "",
     model: r.set?.model ?? "",
     maxTokens: r.set?.max_tokens != null ? String(r.set.max_tokens) : "",
@@ -181,12 +203,23 @@ export function copyDraft(d: RuleDraft): RuleDraft {
     key: nextKey(),
     saved: null,
     conditions: d.conditions.map((c) => ({ ...c, values: [...c.values] })),
+    pinned: d.pinned.map((p) => blankPinned(p.provider, p.model)),
   };
+}
+
+/** 转发到指定模型：模型名原样发出，「模型改为」不起作用（界面上不出现，也不写进配置） */
+export function isPinned(d: RuleDraft): boolean {
+  return d.action === "forward" && d.toKind === "pinned";
+}
+
+/** 「模型改为」的值。转发到指定模型时不算 */
+function setModelOf(d: RuleDraft): string {
+  return isPinned(d) ? "" : d.model.trim();
 }
 
 /** 附加了改写 */
 export function hasAddOns(d: RuleDraft): boolean {
-  return d.model.trim() !== "" || d.maxTokens.trim() !== "" || d.thinking !== "keep";
+  return setModelOf(d) !== "" || d.maxTokens.trim() !== "" || d.thinking !== "keep";
 }
 
 /** 在选定上游之后才判断：条件里有「选定上游」 */
@@ -195,7 +228,7 @@ export function isPhaseTwo(d: RuleDraft): boolean {
 }
 
 /** 草稿 → 交给 core 的规则 */
-export function draftToInput(d: RuleDraft): RuleInput {
+export function draftToInput(d: RuleDraft): RuleInputX {
   const conditions = d.conditions.map((c) => {
     const values = c.values.map((v) => v.trim()).filter(Boolean);
     if (condField(c.field).kind === "compare") {
@@ -207,14 +240,19 @@ export function draftToInput(d: RuleDraft): RuleInput {
   const deny = d.action === "deny";
   const maxTokens = Number.parseInt(d.maxTokens.trim(), 10);
   const set = {
-    model: d.model.trim() || null,
+    model: setModelOf(d) || null,
     max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : null,
     thinking: d.thinking === "keep" ? null : d.thinking === "on",
   };
   return {
     name: d.name.trim(),
     conditions,
-    to: d.action === "forward" ? d.to : null,
+    to:
+      d.action !== "forward"
+        ? null
+        : d.toKind === "pinned"
+          ? d.pinned.map((p) => ({ provider: p.provider.trim(), model: p.model.trim() }))
+          : d.to,
     deny: deny ? d.deny.trim() : null,
     // 拒绝时附加项不起作用：不写进去
     set: !deny && (set.model || set.max_tokens || set.thinking != null) ? set : null,
@@ -233,7 +271,13 @@ export function ruleProblem(d: RuleDraft, takenNames: string[]): string | null {
   }
   if (d.action === "forward") {
     if (isPhaseTwo(d)) return t.phaseTwoForward;
-    if (!d.to) return t.targetMissing;
+    if (d.toKind === "pinned") {
+      if (d.pinned.length === 0) return t.pinnedMissing;
+      for (const [i, p] of d.pinned.entries()) {
+        if (!p.provider.trim()) return t.pinnedProviderMissing(i + 1);
+        if (!p.model.trim()) return t.pinnedModelMissing(i + 1);
+      }
+    } else if (!d.to) return t.targetMissing;
   }
   if (d.action === "deny" && !d.deny.trim()) return t.denyReasonMissing;
   if (d.action === "continue" && !hasAddOns(d)) return t.continueNeedsAddOns;
@@ -321,12 +365,26 @@ export function usersOf(route: RouteView, clients: ClientView[]): string[] {
 
 /**
  * 列表「规则」一栏：按顺序列出决定去向的规则。被挡住的、只附加的不列。
- * `name` 是配置里的去向（拿来认上游的标志），`target` 是显示的名字；拒绝时两个都是空。
+ * `name` 是配置里的去向（拿来认上游的标志；指定模型时是第一个上游），`target` 是显示的
+ * 名字；拒绝时两个都是空。
  */
-export function flowOf(route: RouteView): { rule: string; name: string | null; target: string | null }[] {
+export function flowOf(route: RouteViewX): { rule: string; name: string | null; target: string | null }[] {
   return route.rules
-    .filter((r) => !r.shadowed && !r.phase_two && (r.to || r.deny != null))
-    .map((r) => ({ rule: r.name, name: r.to ?? null, target: r.to ? targetLabel(r.to) : null }));
+    .filter((r) => !r.shadowed && !r.phase_two && (hasTarget(r.to) || r.deny != null))
+    .map((r) => {
+      const pinned = pinnedOf(r.to);
+      if (pinned?.length) return { rule: r.name, name: pinned[0]!.provider, target: pinnedSummary(pinned) };
+      const to = targetNameOf(r.to);
+      return { rule: r.name, name: to, target: to ? targetLabel(to) : null };
+    });
+}
+
+/** 指定模型写成一行：`bedrock · us.anthropic.claude-opus-5-v1:0，备用 1 个` */
+export function pinnedSummary(pinned: readonly PinnedModel[]): string {
+  const first = pinned[0];
+  if (!first) return "";
+  const rest = pinned.length - 1;
+  return rest > 0 ? textOf(modelText).withBackups(pinnedText(first), rest) : pinnedText(first);
 }
 
 /** 一条路由需要留意的事：有规则被兜底挡住、没有兜底规则。没有就是空 */
@@ -367,11 +425,15 @@ export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected"
   return g.providers.join(ordered ? " → " : textOf(routingText).listSep);
 }
 
-/** 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · max_tokens 4096` */
-export function addOnsText(d: RuleDraft): string {
+/**
+ * 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · max_tokens 4096`。改成的是别名时说明
+ * 它按别名表对应到各上游（`known` 是 `/models` 的目录，不给就不说）
+ */
+export function addOnsText(d: RuleDraft, known: readonly KnownModelX[] = []): string {
   const t = textOf(modelText);
   const parts: string[] = [];
-  if (d.model.trim()) parts.push(t.setModel(d.model.trim()));
+  const model = setModelOf(d);
+  if (model) parts.push(aliasNamed(model, known) ? t.setModelAlias(model) : t.setModel(model));
   if (d.maxTokens.trim()) parts.push(t.setMaxTokens(d.maxTokens.trim()));
   if (d.thinking !== "keep") parts.push(d.thinking === "on" ? t.thinkingOn : t.thinkingOff);
   return parts.join(" · ");
