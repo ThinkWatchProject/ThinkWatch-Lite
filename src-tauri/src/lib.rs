@@ -11,6 +11,8 @@ use tauri::Manager;
 // 第一个声明：`tr!` 要在后面每个模块里都能用
 #[macro_use]
 pub mod i18n;
+/// 新建、编辑模型别名时和这台机器上的客户端有关的提示
+pub mod aliases;
 /// 整份换掉应用自己的小文件（设置、提醒记录），见模块头上
 pub mod atomic_file;
 pub mod autostart;
@@ -200,6 +202,7 @@ pub fn run() {
             gateway::restart_core,
             dashboard::dashboard,
             upstreams::upstream_stats,
+            aliases::alias_hints,
             notices::commands::notices_list,
             notices::commands::mark_notice_read,
             notices::commands::mark_all_notices_read,

@@ -13,6 +13,12 @@ warnings: Array<Msg>,
 takes_effect: TakesEffect, };
 
 /**
+ * 新建、编辑模型别名时，名称下面的一条提示（`alias_hints`）。说的是**这台机器上检测到的
+ * 客户端**会怎么对待这个名称，所以由这一侧判断（`crate::aliases`）。只给码和参数，句子在界面
+ */
+export type AliasHint = { "code": "claude_code_reserved", name: string, } | { "code": "family_mismatch", family: string, model: string, clients: Array<string>, } | { "code": "claude_desktop_hidden", name: string, } | { "code": "claude_desktop_shown", name: string, } | { "code": "model_lists_update", clients: Array<string>, };
+
+/**
  * 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
  *
  * **凭据只有 `${变量名}` 和 profile 的名字**：客户端配置里写着的明文密钥不抄，也不经过这里

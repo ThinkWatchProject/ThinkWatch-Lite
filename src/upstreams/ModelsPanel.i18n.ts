@@ -27,6 +27,9 @@ export const modelsPanelText = messages(
     estimated: "（估）",
     priceTitle: "输入 / 输出，美元每百万 tokens",
     context: "上下文窗口",
+    aliasMark: (alias: string) => `别名 ${alias}`,
+    aliasTitle: (alias: string) => `别名 ${alias} 列着这个模型：客户端用 ${alias} 请求时可以发往这个模型`,
+    makeAlias: "起别名…",
   },
   {
     title: "Models",
@@ -58,5 +61,8 @@ export const modelsPanelText = messages(
     estimated: " (est.)",
     priceTitle: "Input / output, USD per million tokens",
     context: "Context window",
+    aliasMark: (alias: string) => `alias ${alias}`,
+    aliasTitle: (alias: string) => `Alias ${alias} lists this model: requests for ${alias} can go to it`,
+    makeAlias: "Add alias…",
   },
 );
