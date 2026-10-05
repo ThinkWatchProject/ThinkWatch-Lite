@@ -2,6 +2,7 @@ import { memo } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
+import { notSent } from "@/requestRouting";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
@@ -66,8 +67,9 @@ export const SessionRow = memo(function SessionRow({
   // 汇总加上汇总里还没有的那几轮：在跑的、刚落地的（见 `tally`）
   const n = tallyOf(g);
   // **上游从行里数，不从汇总里拿** —— `SessionView` 没有这一项，
-  // 而组里的每一条都知道自己走了哪个上游（没有发往任何上游的那几条是空的，不算）
-  const providers = [...new Set(rows.map((r) => r.provider).filter(Boolean))];
+  // 而组里的每一条都知道自己走了哪个上游（没有发往任何上游的那几条是空的，不算；上游都满着
+  // 的那几条记在最后看过的那一家上，可那一家没收到它，也不算 —— 见 `notSent`）
+  const providers = [...new Set(rows.filter((r) => notSent(r) === null).map((r) => r.provider).filter(Boolean))];
   const openIt = () => {
     // 点组头和点请求行一样，键盘接着从这一行往下走
     onCursor({ kind: "session", id });

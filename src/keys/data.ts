@@ -39,14 +39,16 @@ export function useKeyUsage(): Resource<KeyUsage> & { byKey: Map<string, KeyUse>
 
 /**
  * 全部网关密钥。配置换了一版就重取（密钥页拿着概览里的版本号，直接按它；别的页
- * 听 `config_reloaded`）；请求落地时也重取，「最近使用」跟着它走。
+ * 听 `config_reloaded`）；请求落地时也重取，「最近使用」和用量上限跟着它走。某条上限
+ * 到了八成、到了顶（`key_limit_alert`）也重取：那一刻请求可能还在跑，等它落地「已达上限」
+ * 就晚了。
  */
 export function useKeys(configVersion?: string): Resource<ClientView[]> {
   return useResource("keys", api.listKeys, {
     events:
       configVersion === undefined
-        ? ["config_reloaded", "request_finished", "request_failed", "request_cancelled"]
-        : ["request_finished", "request_failed", "request_cancelled"],
+        ? ["config_reloaded", "request_finished", "request_failed", "request_cancelled", "key_limit_alert"]
+        : ["request_finished", "request_failed", "request_cancelled", "key_limit_alert"],
     deps: configVersion === undefined ? undefined : [configVersion],
   });
 }

@@ -1,4 +1,5 @@
 import { messages } from "@/i18n";
+import type { BalanceBy } from "@/types";
 import { andList } from "./routing.i18n";
 
 export const groupDialogText = messages(
@@ -20,6 +21,17 @@ export const groupDialogText = messages(
     orderSelect: "拖动调整顺序。选定的上游不可用时，按顺序使用其余成员。",
     orderFallback: "拖动调整顺序：依次使用，前一个不可用时使用下一个。",
     orderOther: "拖动调整顺序。排序依据相同时按此顺序。",
+    orderBalance: "权重为 1 到 100 的整数。拖动调整顺序。排序依据相同时按此顺序。",
+    weight: "权重",
+    weightOf: (name: string) => `${name} 的权重`,
+    weightInvalid: (name: string) => `${name} 的权重须为 1 到 100 的整数`,
+    balanceBy: "分配依据",
+    balanceDesc: {
+      weights: "请求按成员权重的比例分配。",
+      latency: "以权重为基础，速度快的上游分到更多请求。",
+      health: "以权重为基础，失败少的上游分到更多请求。",
+      "latency-health": "以权重为基础，速度快、失败少的上游分到更多请求。",
+    } satisfies Record<BalanceBy, string>,
   },
   {
     noMembers: "Select at least one upstream",
@@ -39,5 +51,16 @@ export const groupDialogText = messages(
     orderSelect: "Drag to reorder. When the selected upstream is unavailable, the other members are used in order.",
     orderFallback: "Drag to reorder: members are used in turn, moving to the next when one is unavailable.",
     orderOther: "Drag to reorder. Ties are broken by this order.",
+    orderBalance: "Weights are whole numbers from 1 to 100. Drag to reorder. Ties are broken by this order.",
+    weight: "Weight",
+    weightOf: (name: string) => `Weight of ${name}`,
+    weightInvalid: (name: string) => `The weight of ${name} must be a whole number from 1 to 100`,
+    balanceBy: "Distribute by",
+    balanceDesc: {
+      weights: "Requests are split by the members' weights.",
+      latency: "Starting from the weights, faster upstreams get more requests.",
+      health: "Starting from the weights, upstreams that fail less get more requests.",
+      "latency-health": "Starting from the weights, faster upstreams that fail less get more requests.",
+    } satisfies Record<BalanceBy, string>,
   },
 );

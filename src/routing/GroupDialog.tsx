@@ -22,15 +22,15 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
-import { groupKindLabel } from "@/labels";
-import type { GroupKind, Overview } from "@/types";
+import { BALANCE_BY, balanceByLabel, groupKindLabel } from "@/labels";
+import type { BalanceBy, GroupKind, Overview } from "@/types";
 import { billingLabel, protocolLabel } from "@/upstreams/labels";
 import { FormItem, Note } from "@/upstreams/parts";
 import { api } from "./api";
 import { onOpenFocus } from "./fields";
 import { groupDialogText } from "./GroupDialog.i18n";
 import { groupRefs } from "./GroupTable";
-import { move, strategies } from "./model";
+import { move, parseWeight, strategies } from "./model";
 import { TargetIcon, upstreamState } from "./parts";
 import { routingText } from "./routing.i18n";
 import { useReorder } from "./useReorder";
@@ -46,6 +46,9 @@ export type GroupDialogMode =
  * 从上往下：名称、策略（几个里选一个，下面一句说它怎么选）、成员。成员的先后在
  * 「按顺序」「手动选择」里就是优先级，所以可以拖动；手动选择还要在已选成员里定
  * 一个优先使用的（行尾的「设为优先」）。
+ *
+ * 轮询多两样：分配依据（只看比例，或者再看速度、稳定性），和每个成员的权重（行尾，
+ * 1 到 100，没改过的明写 1）。别的策略不用它们，切走再切回来时还在，只是不交。
  */
 export function GroupDialog({
   mode,
@@ -83,11 +86,19 @@ export function GroupDialog({
   });
   const [members, setMembers] = useState<string[]>(source?.providers ?? []);
   const [selected, setSelected] = useState<string | null>(source?.selected ?? null);
+  const [balanceBy, setBalanceBy] = useState<BalanceBy>(source?.balance_by ?? "weights");
+  // 填的是文字：清空、打错的那一下也要留着让人改，交的时候才换成数
+  const [weights, setWeights] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(source?.weights ?? {}).map(([n, w]) => [n, String(w)])),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const reorder = useReorder((from, to) => setOrder((o) => move(o, from, to)));
 
   const chosen = order.filter((n) => members.includes(n));
+  const balanced = kind === "load-balance";
+  const weightText = (n: string) => weights[n] ?? "1";
+  const badWeight = balanced ? chosen.find((n) => parseWeight(weightText(n)) == null) : undefined;
   const preferred =
     kind === "select" ? (selected && chosen.includes(selected) ? selected : (chosen[0] ?? null)) : null;
   const refs = mode.kind === "edit" ? groupRefs(ov, mode.name) : [];
@@ -103,7 +114,9 @@ export function GroupDialog({
         ? rt.nameTaken(trimmed)
         : chosen.length === 0
           ? t.noMembers
-          : null;
+          : badWeight !== undefined
+            ? t.weightInvalid(badWeight)
+            : null;
   const strategy = strategies().find((s) => s.id === kind);
 
   async function save() {
@@ -116,6 +129,9 @@ export function GroupDialog({
           kind,
           providers: chosen,
           selected: preferred,
+          // 不交 = 都是 1、只看比例；别的策略只能这样
+          weights: balanced ? Object.fromEntries(chosen.map((n) => [n, parseWeight(weightText(n)) ?? 1])) : null,
+          balance_by: balanced ? balanceBy : null,
         },
         base_version: base,
       };
@@ -164,6 +180,21 @@ export function GroupDialog({
             </p>
           </div>
 
+          {balanced && (
+            <div className="flex flex-col gap-1.5">
+              <span className="tw-body font-medium">{t.balanceBy}</span>
+              <Segmented<BalanceBy>
+                label={t.balanceBy}
+                value={balanceBy}
+                onChange={setBalanceBy}
+                options={BALANCE_BY.map((b) => ({ id: b, label: balanceByLabel(b) }))}
+              />
+              <p key={balanceBy} className="tw-label text-muted-foreground motion-fade">
+                {t.balanceDesc[balanceBy]}
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <div className="flex items-baseline gap-2">
               <span className="tw-body font-medium">{rt.members}</span>
@@ -180,6 +211,7 @@ export function GroupDialog({
                       <TableHead className="w-7 px-0" />
                       <TableHead>{t.upstream}</TableHead>
                       {kind === "select" && <TableHead className="w-28 text-right">{t.preferred}</TableHead>}
+                      {balanced && <TableHead className="w-24 text-right">{t.weight}</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -256,6 +288,20 @@ export function GroupDialog({
                                 ))}
                             </TableCell>
                           )}
+                          {balanced && (
+                            <TableCell className="py-1 text-right">
+                              {on && (
+                                <Input
+                                  aria-label={t.weightOf(n)}
+                                  className="ml-auto w-16 text-right font-mono"
+                                  inputMode="numeric"
+                                  value={weightText(n)}
+                                  aria-invalid={parseWeight(weightText(n)) == null || undefined}
+                                  onChange={(e) => setWeights((w) => ({ ...w, [n]: e.target.value }))}
+                                />
+                              )}
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
@@ -264,7 +310,13 @@ export function GroupDialog({
               </div>
             )}
             <Note>
-              {kind === "select" ? t.orderSelect : kind === "fallback" ? t.orderFallback : t.orderOther}
+              {kind === "select"
+                ? t.orderSelect
+                : kind === "fallback"
+                  ? t.orderFallback
+                  : balanced
+                    ? t.orderBalance
+                    : t.orderOther}
             </Note>
           </div>
         </div>

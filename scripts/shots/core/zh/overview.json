@@ -26,6 +26,7 @@
       "allow": null,
       "default": true,
       "key": "tw-m9…j7ak",
+      "limits": [],
       "max_concurrent": null,
       "name": "default",
       "route": null
@@ -34,6 +35,7 @@
       "allow": null,
       "client": "claude-code",
       "key": "tw-5a…qmg8",
+      "limits": [],
       "max_concurrent": null,
       "name": "claude-code",
       "route": null
@@ -42,6 +44,7 @@
       "allow": null,
       "client": "codex",
       "key": "tw-h5…yrqn",
+      "limits": [],
       "max_concurrent": 4,
       "name": "codex",
       "route": "codex"
@@ -53,6 +56,7 @@
       ],
       "client": "cursor",
       "key": "tw-e6…6td6",
+      "limits": [],
       "max_concurrent": null,
       "name": "cursor",
       "route": "cursor"
@@ -63,32 +67,39 @@
   "failover": {
     "failures_to_pause": 3,
     "max_pause_secs": 600,
+    "next_on_slow_start": false,
     "no_balance_pause_secs": 1800,
     "pause_secs": 60,
     "quota_pause_secs": 3600,
     "rate_limit_max_pause_secs": 3600,
+    "slot_wait_secs": 30,
     "stream_start_wait_secs": 15
   },
   "groups": [
     {
+      "balance_by": "weights",
       "builtin": false,
       "kind": "fallback",
       "name": "主力",
       "providers": [
         "anthropic",
         "relay"
-      ]
+      ],
+      "weights": {}
     },
     {
+      "balance_by": "weights",
       "builtin": false,
       "kind": "cheapest",
       "name": "低价",
       "providers": [
         "anthropic",
         "relay"
-      ]
+      ],
+      "weights": {}
     },
     {
+      "balance_by": "weights",
       "builtin": true,
       "kind": "fallback",
       "name": "__all__",
@@ -100,7 +111,8 @@
         "deepseek",
         "gemini",
         "ollama"
-      ]
+      ],
+      "weights": {}
     }
   ],
   "listen": {

@@ -28,6 +28,8 @@ export { Puzzle as IconPlugin } from "lucide-react"; // 插件 —— 拼进链�
 export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机器
 export { ServerOff as IconNoUpstream } from "lucide-react"; // 没有可用的上游 —— 那一摞机器划掉
 export { Ban as IconDenied } from "lucide-react"; // 被规则拒绝 —— 禁止符号
+export { ArrowUpToLine as IconLimitReached } from "lucide-react"; // 密钥的用量到了上限 —— 顶到那条线
+export { Hourglass as IconBusy } from "lucide-react"; // 上游都满着、等不到空位 —— 沙漏
 export { KeyRound as IconKey } from "lucide-react"; // 密钥 —— 钥匙，不是锁
 export { SlidersHorizontal as IconSettings } from "lucide-react"; // 设置 —— 推子，齿轮留给系统设置
 export { PanelLeft as IconSidebar } from "lucide-react"; // 收起/展开源列表

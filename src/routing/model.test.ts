@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { ConditionView, RouteView, RuleView } from "@/types";
+import type { ConditionView, DryRunCandidate, GroupView, RouteView, RuleView } from "@/types";
 import {
   addOnsText,
+  balanceNotes,
+  balanceShares,
   blankPinned,
   blankRule,
   canLift,
@@ -14,9 +16,12 @@ import {
   insertIndex,
   liftShadowed,
   move,
+  parseWeight,
+  ratioText,
   routeProblems,
   ruleProblem,
   splitCompare,
+  strategyText,
   usersOf,
   type RuleDraft,
 } from "./model";
@@ -200,8 +205,8 @@ describe("路由列表", () => {
 
   it("默认路由的使用者包括没指定路由的密钥", () => {
     const clients = [
-      { name: "claude-code", key: "tw-a", max_concurrent: null, route: null, allow: null },
-      { name: "codex", key: "tw-b", max_concurrent: null, route: "codex", allow: null },
+      { name: "claude-code", key: "tw-a", max_concurrent: null, route: null, allow: null, limits: [] },
+      { name: "codex", key: "tw-b", max_concurrent: null, route: "codex", allow: null, limits: [] },
     ];
     expect(usersOf(route({ name: "默认", default: true }), clients)).toEqual(["claude-code"]);
     expect(usersOf(route({}), clients)).toEqual(["codex"]);
@@ -254,5 +259,64 @@ describe("路由列表", () => {
       "2 are after the catch-all rule and have no effect",
       "No catch-all rule yet",
     ]);
+  });
+});
+
+describe("轮询组的比例和分配依据", () => {
+  const group = (p: Partial<GroupView>): GroupView => ({
+    name: "分流",
+    builtin: false,
+    kind: "load-balance",
+    providers: ["anthropic", "openrouter"],
+    weights: { anthropic: 1, openrouter: 1 },
+    balance_by: "weights",
+    ...p,
+  });
+
+  it("权重只收 1 到 100 的整数", () => {
+    expect(parseWeight("1")).toBe(1);
+    expect(parseWeight(" 100 ")).toBe(100);
+    for (const bad of ["", "0", "101", "1.5", "-3", "7k", " "]) expect(parseWeight(bad)).toBeNull();
+  });
+
+  it("平均分时不写比例，按成员的顺序写出不平均的", () => {
+    expect(ratioText(group({}))).toBeNull();
+    expect(ratioText(group({ weights: { anthropic: 7, openrouter: 3 } }))).toBe("7 : 3");
+    // 别的类型不用权重
+    expect(ratioText(group({ kind: "fallback", weights: {} }))).toBeNull();
+  });
+
+  it("策略名后面补上比例和不是只看比例的分配依据", () => {
+    setLang("zh");
+    expect(balanceNotes(group({}))).toEqual([]);
+    expect(strategyText(group({}))).toBe("轮询");
+    expect(strategyText(group({ weights: { anthropic: 7, openrouter: 3 } }))).toBe("轮询（7 : 3）");
+    expect(strategyText(group({ balance_by: "latency" }))).toBe("轮询（按速度）");
+    expect(strategyText(group({ weights: { anthropic: 2, openrouter: 1 }, balance_by: "latency-health" }))).toBe(
+      "轮询（2 : 1 · 按速度和稳定性）",
+    );
+    setLang("en");
+    expect(strategyText(group({ weights: { anthropic: 7, openrouter: 3 }, balance_by: "health" }))).toBe(
+      "Round robin (7 : 3 · By reliability)",
+    );
+  });
+
+  it("试算的占比按权重 × 系数分，熔断着的不参加", () => {
+    const c = (provider: string, weight: number | null, balance_factor: number | null = null): DryRunCandidate => ({
+      provider,
+      weight,
+      balance_factor,
+    });
+    expect(balanceShares({ candidate_models: [c("a", 7), c("b", 3)], circuit_open: [] })).toEqual([0.7, 0.3]);
+    const auto = balanceShares({ candidate_models: [c("a", 2, 2.25), c("b", 1, 0.5)], circuit_open: [] });
+    expect(auto[0]).toBeCloseTo(0.9);
+    expect(auto[1]).toBeCloseTo(0.1);
+    expect(balanceShares({ candidate_models: [c("a", 1), c("b", 1), c("c", 2)], circuit_open: ["c"] })).toEqual([
+      0.5, 0.5, 0,
+    ]);
+    // 全都熔断着时都算：网关照样一家家试
+    expect(balanceShares({ candidate_models: [c("a", 3), c("b", 1)], circuit_open: ["a", "b"] })).toEqual([0.75, 0.25]);
+    // 不是轮询组：没有权重，也就没有占比
+    expect(balanceShares({ candidate_models: [c("a", null)], circuit_open: [] })).toEqual([null]);
   });
 });

@@ -121,6 +121,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   UpdateProvider: refuse,
   DeleteProvider: refuse,
   ProviderModels: (_req, [name]) => providerModels(name!) ?? notFound(`Upstream ${name}`),
+  SetModelSpec: refuse,
   RefreshProviderModels: (_req, [name]) => providerModels(name!) ?? notFound(`Upstream ${name}`),
   RefreshStaleModels: () => ({ providers: [] }),
 

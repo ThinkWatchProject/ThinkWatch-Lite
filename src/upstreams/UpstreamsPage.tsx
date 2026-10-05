@@ -424,6 +424,8 @@ export default function UpstreamsPage({
               inFlight={inFlight}
               refreshing={refreshing}
               focus={focus}
+              configVersion={configVersion}
+              onChanged={changed}
               actions={{
                 edit: (name) => setDialog({ kind: "upstream", mode: { kind: "edit", name } }),
                 test: (name) => setDialog({ kind: "test", name }),

@@ -356,6 +356,8 @@ export function skipLabel(reason: ServeSkip): string {
       return t.not_offered;
     case "not_allowed":
       return t.not_allowed;
+    case "busy":
+      return t.busy;
   }
 }
 

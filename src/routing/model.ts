@@ -5,9 +5,9 @@
  * 能不能用、条件写得对不对，最后由 core 说；这里只做对话框里需要实时给出
  * 的那几件事：保存按钮旁边缺什么、哪条规则被兜底挡住。
  */
-import type { ClientView, ConditionField, ConditionView, Dialect, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleView } from "@/types";
+import type { ClientView, ConditionField, ConditionView, Dialect, DryRunResult, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleView } from "@/types";
 import { textOf } from "@/i18n";
-import { ALL_UPSTREAMS, conditionName, groupKindLabel, targetLabel } from "@/labels";
+import { ALL_UPSTREAMS, balanceByLabel, conditionName, groupKindLabel, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
 import { modelText } from "./model.i18n";
 import { routingText } from "./routing.i18n";
@@ -386,6 +386,71 @@ export function routeProblems(route: RouteView): string[] {
   return out;
 }
 
+// ---------------------------------------------------------------- 轮询组的比例
+
+/** 权重的范围，和 core 的校验一样（`engine.group_weight_out_of_range`） */
+export const WEIGHT_MIN = 1;
+export const WEIGHT_MAX = 100;
+
+/** 对话框里填的权重：1 到 100 的整数，别的（空、小数、超出范围）是 null */
+export function parseWeight(text: string): number | null {
+  const s = text.trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return n >= WEIGHT_MIN && n <= WEIGHT_MAX ? n : null;
+}
+
+/** 成员在轮询组里的权重。core 给每个成员都列了，没列到的（别的类型）按 1 */
+export function weightOf(g: Pick<GroupView, "weights">, member: string): number {
+  return g.weights[member] ?? 1;
+}
+
+/**
+ * 轮询组的比例，按成员的顺序：`7 : 3`。**权重都是 1 时没有** —— 那就是平均分，
+ * 写出 `1 : 1 : 1` 只是噪音。别的类型不用权重，也没有
+ */
+export function ratioText(g: Pick<GroupView, "kind" | "providers" | "weights">): string | null {
+  if (g.kind !== "load-balance") return null;
+  const ws = g.providers.map((p) => weightOf(g, p));
+  return ws.some((w) => w !== 1) ? ws.join(" : ") : null;
+}
+
+/**
+ * 轮询组在策略名之外要说的：比例（不是平均分时）、分配依据（不是只看比例时）。
+ * 别的类型、两样都是默认值时是空的
+ */
+export function balanceNotes(g: Pick<GroupView, "kind" | "providers" | "weights" | "balance_by">): string[] {
+  if (g.kind !== "load-balance") return [];
+  const out: string[] = [];
+  const ratio = ratioText(g);
+  if (ratio) out.push(ratio);
+  if (g.balance_by !== "weights") out.push(balanceByLabel(g.balance_by));
+  return out;
+}
+
+/** 策略名，轮询组带上比例和分配依据：`轮询（7 : 3 · 按速度）` */
+export function strategyText(g: Pick<GroupView, "kind" | "providers" | "weights" | "balance_by">): string {
+  const kind = groupKindLabel(g.kind);
+  const notes = balanceNotes(g);
+  return notes.length ? textOf(modelText).withNotes(kind, notes.join(" · ")) : kind;
+}
+
+/**
+ * 试算里轮询组每个候选这一轮分到请求的份额，0 到 1，和 `r.candidate_models` 一一对应；
+ * 不是轮询组（候选没有权重）的是 null。
+ *
+ * 和 core 排头用的同一个数：权重 × 系数（`balance_factor`，只看比例时是 1）。**熔断着的
+ * 这一轮不参加**（份额是 0，排到它的那一次本来就会被跳过），全都熔断着时都算
+ */
+export function balanceShares(r: Pick<DryRunResult, "candidate_models" | "circuit_open">): (number | null)[] {
+  const members = r.candidate_models.filter((c) => c.weight != null);
+  const sitOut = members.every((c) => r.circuit_open.includes(c.provider)) ? [] : r.circuit_open;
+  const eff = (c: (typeof members)[number]) =>
+    sitOut.includes(c.provider) ? 0 : (c.weight ?? 0) * (c.balance_factor ?? 1);
+  const total = members.reduce((a, c) => a + eff(c), 0);
+  return r.candidate_models.map((c) => (c.weight == null ? null : total > 0 ? eff(c) / total : 0));
+}
+
 /** 去向的说明：策略组的策略与成员，或上游的协议 */
 export function describeTarget(
   name: string,
@@ -397,7 +462,7 @@ export function describeTarget(
   if (g) {
     if (g.builtin) return t.builtinGroup;
     const members = membersText(g);
-    return t.groupTarget(groupKindLabel(g.kind), members);
+    return t.groupTarget(strategyText(g), members);
   }
   const p = providers.find((x) => x.name === name);
   if (p) return t.upstreamTarget(protocolLabel(p.protocol), p.disabled);

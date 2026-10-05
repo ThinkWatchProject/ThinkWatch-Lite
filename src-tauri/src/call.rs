@@ -97,6 +97,8 @@ webview_endpoints![
     UpdateProvider,
     DeleteProvider,
     ProviderModels,
+    // 手写一个模型的上下文窗口、输出上限
+    SetModelSpec,
     RefreshProviderModels,
     RefreshStaleModels,
     CreateProxy,

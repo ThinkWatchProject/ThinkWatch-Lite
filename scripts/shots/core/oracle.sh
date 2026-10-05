@@ -8,15 +8,16 @@
 # 钉住的 core 之后。截图页的配置类数据（上游、密钥、路由、安全规则、试算）
 # 直接用这几份文件，所以它们必须是 core 真的答出来的，不是照着样子手写的。
 #
-# 用的是 src-tauri/Cargo.toml 钉住的那个 tag：从检出里 `git archive` 一份到临时
-# 目录，放进 oracle.rs 跑一次。**不改那个检出。**要先在那边 `git fetch --tags`。
+# 用的是 src-tauri/Cargo.toml 钉住的那个 tag（core 还没发版时临时钉的 rev 也认）：从检出里
+# `git archive` 一份到临时目录，放进 oracle.rs 跑一次。**不改那个检出。**要先在那边
+# `git fetch --tags`。
 set -euo pipefail
 
 core=${1:?用法：oracle.sh <thinkwatch-core 的本地检出>}
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../../.." && pwd)
-tag=$(sed -n 's/^tw-api = .*tag = "\([^"]*\)".*/\1/p' "$root/src-tauri/Cargo.toml")
-[ -n "$tag" ] || { echo "src-tauri/Cargo.toml 里找不到 tw-api 的 tag" >&2; exit 1; }
+tag=$(sed -nE 's/^tw-api = .*(tag|rev) = "([^"]*)".*/\2/p' "$root/src-tauri/Cargo.toml")
+[ -n "$tag" ] || { echo "src-tauri/Cargo.toml 里找不到 tw-api 的 tag 或 rev" >&2; exit 1; }
 
 src=$(mktemp -d)
 trap 'rm -rf "$src"' EXIT

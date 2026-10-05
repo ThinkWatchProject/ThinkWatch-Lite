@@ -981,6 +981,8 @@ pub(crate) mod tests {
             disabled: false,
             default,
             last_seen_ms: None,
+            limits: vec![],
+            unpriced_models: vec![],
         }
     }
 

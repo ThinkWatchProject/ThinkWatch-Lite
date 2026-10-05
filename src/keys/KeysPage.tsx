@@ -14,6 +14,7 @@ import type { ClientView, KeyInput, Overview } from "@/types";
 import { CostFigure } from "@/CostFigure";
 import { useText } from "@/i18n";
 import { useClients } from "@/clients/data";
+import { useCoreEvent } from "@/useCoreEvent";
 import { writeQueue } from "@/lib/writeQueue";
 import { api } from "./api";
 import { CreatedDialog } from "./CreatedDialog";
@@ -23,8 +24,12 @@ import { KeyDialog } from "./KeyDialog";
 import { KeysTable } from "./KeysTable";
 import { keysPageText } from "./KeysPage.i18n";
 import { takeoverOf } from "./labels";
+import { inputOfView, nextReset } from "./limits";
 import { RowsSkeleton } from "./parts";
 import { RotateDialog } from "./RotateDialog";
+
+/** setTimeout 能等的最长时间（2^31 − 1 毫秒）：再长会当成 0，立刻就响 */
+const MAX_TIMER_MS = 2_147_483_647;
 
 type DialogState =
   | null
@@ -101,6 +106,19 @@ export default function KeysPage({
     const h = setTimeout(() => setHighlight(null), 1600);
     return () => clearTimeout(h);
   }, [highlight]);
+
+  /*
+    用量上限按天、周、月重新算：到了那一刻重取一次，「已达上限」和对话框里的用量跟着
+    换（平时请求落地就会重取，这一次是给一直没有请求的时候）。定时器量的钟睡着时不走：
+    睡醒、改了时钟（`clock_changed`）也重取。setTimeout 最多等 24.8 天，再远的到时候再排
+  */
+  const reset = nextReset(list);
+  useEffect(() => {
+    if (reset == null) return;
+    const h = setTimeout(() => void keys.reload(), Math.min(MAX_TIMER_MS, Math.max(1_000, reset - Date.now() + 1_000)));
+    return () => clearTimeout(h);
+  }, [reset]);
+  useCoreEvent(["clock_changed"], () => void keys.reload());
 
   /** 写完一次：记下新版本，重读列表，告诉外壳（概览跟着重读） */
   function wrote(v: string) {
@@ -252,6 +270,7 @@ export default function KeysPage({
           routes={ov.routes}
           defaultRoute={ov.default_route}
           catalog={catalog.data ?? []}
+          rowDays={ov.retention.row_days}
           version={version}
           onClose={() => setDialog(null)}
           onSaved={(name, v) => {
@@ -372,6 +391,8 @@ function inputOf(k: ClientView, patch: Partial<KeyInput>): KeyInput {
     allow: k.allow ?? null,
     max_concurrent: k.max_concurrent,
     disabled: k.disabled ?? false,
+    // 上限是整份替换的：不带就是一条都不要了
+    limits: k.limits.map(inputOfView),
     ...patch,
   };
 }

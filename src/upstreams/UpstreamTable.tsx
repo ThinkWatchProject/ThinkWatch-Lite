@@ -14,7 +14,7 @@ import { resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
+import { usd, type ModelRow, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
 import type { UpstreamStats } from "./api";
 import { discrepancies, pct, signedPct, type Discrepancies } from "./checkup";
 import { slotsByUpstream, type Slot } from "./data";
@@ -31,6 +31,7 @@ import {
 } from "./labels";
 import { labelsText } from "./labels.i18n";
 import { ModelsPanel } from "./ModelsPanel";
+import { ModelSpecDialog } from "./ModelSpecDialog";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
@@ -76,6 +77,8 @@ export function UpstreamTable({
   inFlight,
   refreshing,
   focus,
+  configVersion,
+  onChanged,
   actions,
 }: {
   providers: ProviderView[];
@@ -90,6 +93,10 @@ export function UpstreamTable({
   refreshing: ReadonlySet<string>;
   /** 从别的页定位到的那一行：滚进视野、亮一下。`at` 让同一个名字再定位一次也生效 */
   focus: { name: string; at: number } | null;
+  /** 概览里的配置版本：模型弹窗里手写规格时带它 */
+  configVersion: string;
+  /** 在这张表里写了配置（手写模型规格）：外面重读概览 */
+  onChanged: () => void;
   actions: UpstreamActions;
 }) {
   const t = useText(upstreamTableText);
@@ -147,6 +154,8 @@ export function UpstreamTable({
                 <ModelsCell
                   p={p}
                   busy={refreshing.has(p.name)}
+                  configVersion={configVersion}
+                  onChanged={onChanged}
                   onEdit={() => actions.editModels(p.name)}
                 />
                 <QuotaCell p={p} stats={stats} now={now} />
@@ -304,7 +313,8 @@ function NameCell({
     <TableCell className="max-w-0 py-2">
       <div className="flex min-w-0 items-center gap-2.5">
         {live ? (
-          <Tip text={t.inFlight(liveCount)}>
+          // 设了并发上限的，连上限一起说：满没满一眼看得出
+          <Tip text={p.max_concurrent ? t.inFlightOf(liveCount, p.max_concurrent) : t.inFlight(liveCount)}>
             <span className="inline-flex">{tile}</span>
           </Tip>
         ) : (
@@ -387,12 +397,26 @@ function Where({ p }: { p: ProviderView }) {
  * **整格是一个按钮，什么状态都能点开** —— 数目单独回答不了「要的那个模型在不在
  * 里面」，而没拿到清单时，点开要能看到原因和下一步。停用的上游不提供模型。
  */
-function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdit: () => void }) {
+function ModelsCell({
+  p,
+  busy,
+  configVersion,
+  onChanged,
+  onEdit,
+}: {
+  p: ProviderView;
+  busy: boolean;
+  configVersion: string;
+  onChanged: () => void;
+  onEdit: () => void;
+}) {
   const t = useText(upstreamTableText);
   const l = useText(labelsText);
   const [open, setOpen] = useState(false);
   /** 「起别名…」点的那个模型。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了 */
   const [aliasFor, setAliasFor] = useState<string | null>(null);
+  /** 「规格…」点的那一行，同上 */
+  const [specFor, setSpecFor] = useState<ModelRow | null>(null);
   if (p.disabled) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
@@ -431,9 +455,21 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
               setOpen(false);
               setAliasFor(model);
             }}
+            onSpec={(row) => {
+              setOpen(false);
+              setSpecFor(row);
+            }}
           />
         </PopoverContent>
       </Popover>
+      <ModelSpecDialog
+        open={specFor !== null}
+        onOpenChange={(o) => !o && setSpecFor(null)}
+        provider={p.name}
+        row={specFor}
+        configVersion={configVersion}
+        onSaved={onChanged}
+      />
       <AliasDialog
         open={aliasFor !== null}
         onOpenChange={(o) => !o && setAliasFor(null)}

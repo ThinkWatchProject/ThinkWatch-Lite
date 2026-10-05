@@ -5,7 +5,7 @@ import { StatusDot } from "@/ui/status-dot";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
-import { groupKindLabel, targetLabel } from "@/labels";
+import { targetLabel } from "@/labels";
 import type { Overview } from "@/types";
 import {
   buildChain,
@@ -24,7 +24,7 @@ import {
 } from "./chain";
 import { chainMapText } from "./ChainMap.i18n";
 import { activityOf, type Flight } from "./flights";
-import { usersOf } from "./model";
+import { strategyText, usersOf } from "./model";
 import { KeyIcon, TargetIcon, upstreamState } from "./parts";
 import { partsText } from "./parts.i18n";
 import { routingText } from "./routing.i18n";
@@ -421,7 +421,7 @@ function describe(
         ov.providers.map((p) => p.name),
       );
       const ordered = g.kind === "fallback" || g.kind === "select";
-      const line = node.idle && !g.builtin ? t.unreferenced : (ordered ? t.members : t.membersUnordered)(groupKindLabel(g.kind), ms);
+      const line = node.idle && !g.builtin ? t.unreferenced : (ordered ? t.members : t.membersUnordered)(strategyText(g), ms);
       return {
         body: (
           <>

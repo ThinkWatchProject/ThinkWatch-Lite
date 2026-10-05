@@ -3,6 +3,7 @@ import { setLang } from "./i18n";
 import {
   GROUP_KINDS,
   PROBES,
+  attemptText,
   conditionName,
   conditionText,
   mismatchText,
@@ -63,5 +64,45 @@ describe("规则的条件与改写", () => {
       "Model set to claude-haiku-4-5; the entire prompt cache is invalidated",
     );
     expect(setText({ field: "max_tokens", value: "4096" })).toBe("max_tokens set to 4096");
+  });
+});
+
+describe("尝试链里的一跳", () => {
+  const slow = {
+    provider: "anthropic",
+    outcome: "slow_start" as const,
+    error: { code: "gw.slow_start", args: { upstream: "anthropic", secs: "30" }, text: "" },
+    ms: 30_004,
+  };
+  const busy = {
+    provider: "anthropic",
+    outcome: "error" as const,
+    error: { code: "gw.busy_upstream", args: { upstream: "anthropic", limit: "2" }, text: "" },
+    ms: 0,
+    skipped: "busy" as const,
+  };
+
+  it("开头超时、满着跳过：短名，悬停是 core 的原话", () => {
+    expect(attemptText(slow)).toEqual({
+      text: "开头超时",
+      ok: false,
+      tip: "上游「anthropic」在 30 秒内没有返回内容，请求已转到下一个上游。",
+    });
+    expect(attemptText(busy)).toEqual({
+      text: "并发已满",
+      ok: false,
+      tip: "上游「anthropic」已有 2 个请求在进行，达到其并发上限（max_concurrent）。",
+    });
+    setLang("en");
+    expect(attemptText(slow).text).toBe("Start timed out");
+    expect(attemptText(busy).text).toBe("At its concurrency limit");
+  });
+
+  it("别的结果照旧：字就是那一句，没有悬停", () => {
+    expect(attemptText({ provider: "openrouter", outcome: "served", status: 200, ms: 900 })).toEqual({
+      text: "成功 · 200",
+      ok: true,
+      tip: null,
+    });
   });
 });

@@ -32,6 +32,7 @@ import { CHATGPT, ZAI, nameFromUrl, presetById } from "./presets";
 import { ServicePicker } from "./ServicePicker";
 import {
   authModeOf,
+  concurrencyOf,
   describeModelList,
   freeName,
   isBedrock,
@@ -281,6 +282,10 @@ export function ConnectionSection({
         </FormItem>
       </div>
 
+      <div className="grid grid-cols-2 gap-4">
+        <ConcurrencyField form={form} set={set} />
+      </div>
+
       <div className="flex flex-col gap-2.5 rounded-lg border border-border p-3">
         <div className="flex items-center gap-2.5">
           <Button variant="outline" size="sm" onClick={onTest} pending={testing}>
@@ -298,6 +303,42 @@ export function ConnectionSection({
         {test && !testing && <TestLine result={test} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * 并发上限：同时最多发给这家几个请求。空着是不限，格子里写着「不限」。**写错了当场标红**，
+ * 保存按不下去（`connectionMissing`），不等 core 拒。账号上游的「账号」一节也用它
+ */
+export function ConcurrencyField({
+  form,
+  set,
+}: {
+  form: UpstreamForm;
+  set: (patch: Partial<UpstreamForm>) => void;
+}) {
+  const t = useText(connectionSectionText);
+  const bad = concurrencyOf(form) === undefined;
+  return (
+    <FormItem
+      label={t.concurrency}
+      htmlFor="up-concurrency"
+      desc={bad ? <span className="text-destructive">{t.badConcurrency}</span> : t.concurrencyDesc}
+    >
+      <Input
+        id="up-concurrency"
+        inputMode="numeric"
+        className="font-mono tabular-nums"
+        value={form.maxConcurrent}
+        placeholder={t.noLimit}
+        aria-invalid={bad || undefined}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        onChange={(e) => set({ maxConcurrent: e.target.value.trim() })}
+      />
+    </FormItem>
   );
 }
 

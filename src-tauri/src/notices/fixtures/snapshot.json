@@ -101,7 +101,9 @@
     "kind": "fallback",
     "providers": [
      "官方"
-    ]
+    ],
+    "weights": {},
+    "balance_by": "weights"
    }
   ],
   "clients": [
@@ -111,7 +113,8 @@
     "max_concurrent": null,
     "route": null,
     "allow": null,
-    "default": true
+    "default": true,
+    "limits": []
    }
   ],
   "listen": {
@@ -172,7 +175,9 @@
    "no_balance_pause_secs": 1800,
    "quota_pause_secs": 3600,
    "rate_limit_max_pause_secs": 3600,
-   "stream_start_wait_secs": 15
+   "stream_start_wait_secs": 15,
+   "next_on_slow_start": false,
+   "slot_wait_secs": 30
   },
   "price_sheets": []
  },
