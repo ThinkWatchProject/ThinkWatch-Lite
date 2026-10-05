@@ -213,7 +213,7 @@ mod tests {
         let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/control.ts"))
             .unwrap();
         for (name, path) in [
-            ("CreatePluginConfirmed", "/plugins/confirmed"),
+            ("CreatePluginConfirmed", "/plugin-confirmed"),
             ("SavePluginConfirmed", "/plugins/{id}/confirmed"),
             (
                 "ApprovePluginFileConfirmed",

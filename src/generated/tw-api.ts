@@ -81,7 +81,8 @@ problems: Array<Msg>,
  */
 served_by: Array<PinnedModel>, 
 /**
- * 列表里没有哪家上游的清单里有的名称
+ * 列表里没有哪家上游的清单里有的名称。准入会拒掉这个别名时（`served_by` 是空的）
+ * 是列表里的全部名称
  */
 unserved: Array<string>, 
 /**
@@ -96,7 +97,7 @@ shadows: Array<string>,
 same_model: Array<PinnedModel>, };
 
 /**
- * 预览一个还没保存的别名（`POST /aliases/preview`）。
+ * 预览一个还没保存的别名（`POST /alias-preview`）。
  */
 export type AliasPreviewRequest = { alias: AliasInput, 
 /**
@@ -162,7 +163,9 @@ export type AliasView = { name: string,
 models: Array<AliasModel>, 
 /**
  * 每家能服务它的上游实际发出的名称，按配置里的顺序。停用的上游不在里面；没有清单
- * 的上游当作能服务（取列表里第一个在它启用范围里的名称）
+ * 的上游当作能服务（取列表里第一个在它启用范围里的名称）。**和网关一致**：有上游
+ * 有清单、而有清单的上游谁都不提供列表里的名称时是空的 —— 请求在准入就被拒了，
+ * 没有清单的上游也轮不到
  */
 served_by: Array<PinnedModel>, 
 /**
@@ -188,7 +191,11 @@ cost_micros_24h?: number | null, };
  */
 export type AliasWritten = { version: string, 
 /**
- * 改名时在同一个版本里一起改掉的引用。没改名时是空的；`requests_24h` 总是 0
+ * 改名时在同一个版本里一起改掉的引用。没改名时是空的；`requests_24h` 总是 0。
+ *
+ * **旧名也是改名后列表里的一个模型名时**，密钥的 `allow` 和规则的 `when.model`
+ * 不改，也不在这里：改名之后旧名说的是那个真模型，写真名的放行和条件照样继承到
+ * 改名后的别名。`set.model` 照样改（它是要发的名称，不继承）
  */
 renamed_in: AliasUsage, };
 
@@ -1877,7 +1884,7 @@ export type L1Peer = "upstream" | "proxy";
  * L1 测速：只握手，不发业务请求。**零成本零副作用**。
  *
  * 给了名字就测那一家，不给就测所有上游。代理自己的检测走
- * `/proxies/test`，还没保存的上游走 `/providers/test`。
+ * `/proxy-test`，还没保存的上游走 `/provider-test`。
  *
  * **不接受一个「候选 URL 列表」。** cc-switch 有那么一张表，测完还得手动
  * 点一下填进去，运行时永远只认当前保存的那一个 —— 同一个概念在一个程序
@@ -2013,7 +2020,7 @@ export type LoginStatus = "pending" | "done" | "failed" | "expired" | "cancelled
  * **都是插件写的字**。
  *
  * 出错时怎么办、范围、设置的值**都在文件里**：这里读到的就是这份源码装上之后的样子。
- * 要改它们，用 `POST /plugins/rewrite` 改写源码
+ * 要改它们，用 `POST /plugin-rewrite` 改写源码
  */
 export type ManifestView = { name: string, description: string | null, permissions: Array<Permission>, 
 /**
@@ -2342,12 +2349,12 @@ export type PluginApprove = {
 sha256: string, base_version?: string | null, };
 
 /**
- * 装一个插件（`POST /plugins`、`POST /plugins/confirmed`）。出错时怎么办、范围、设置的值
- * 都在源码里（`POST /plugins/rewrite` 改写）。
+ * 装一个插件（`POST /plugins`、`POST /plugin-confirmed`）。出错时怎么办、范围、设置的值
+ * 都在源码里（`POST /plugin-rewrite` 改写）。
  *
  * 插件改得了回答里的工具调用（权限有 [`Permission::ReplyToolCalls`]）时，`POST /plugins`
  * 拒绝（403，`control.plugin.needs_confirmation`），要在系统的确认框里点过头、走
- * `POST /plugins/confirmed`。
+ * `POST /plugin-confirmed`。
  */
 export type PluginCreate = { source: string, 
 /**
@@ -2419,7 +2426,7 @@ request_id: number | null, hook: PluginHook, level: PluginLogLevel, text: string
 export type PluginLogLevel = "log" | "info" | "warn" | "error";
 
 /**
- * 排顺序（`PUT /plugins/order`）：**全部 id**，按新的顺序。
+ * 排顺序（`PUT /plugin-order`）：**全部 id**，按新的顺序。
  */
 export type PluginOrder = { ids: Array<string>, base_version?: string | null, };
 
@@ -2429,7 +2436,7 @@ export type PluginOrder = { ids: Array<string>, base_version?: string | null, };
 export type PluginOutcome = "unchanged" | "changed" | "rejected" | "error" | "skipped";
 
 /**
- * 改写一份源码里的数据（`POST /plugins/rewrite`）：出错时怎么办、范围、设置的值。**什么都不
+ * 改写一份源码里的数据（`POST /plugin-rewrite`）：出错时怎么办、范围、设置的值。**什么都不
  * 留下**，只交回改写之后的源码（[`PluginSource`]）—— 只换 manifest 字面量那一段，别的字节
  * 一个不动；字面量里的注释不保留。
  *
@@ -2489,7 +2496,7 @@ models: Array<string>,
 upstreams: Array<string>, };
 
 /**
- * 一份源码（`POST /plugins/inspect`）。
+ * 一份源码（`POST /plugin-inspect`）。
  */
 export type PluginSource = { source: string, };
 
@@ -4007,7 +4014,7 @@ export type SecurityView = { redact: GuardMode, inspect_tools: GuardMode, conten
 /**
  * 一个上游为什么服务不了这个模型。
  */
-export type ServeSkip = "disabled" | "out_of_scope" | "not_offered";
+export type ServeSkip = "disabled" | "out_of_scope" | "not_offered" | "not_allowed";
 
 export type SessionDetail = { session: SessionView, turns: Array<TurnView>, };
 
@@ -4095,7 +4102,7 @@ export type SheetRef = { "kind": "default" } | { "kind": "named", name: string, 
  */
 export type SkippedView = { provider: string, 
 /**
- * `disabled` / `out_of_scope` / `not_offered`
+ * `disabled` / `out_of_scope` / `not_offered` / `not_allowed`
  */
 reason: ServeSkip, };
 
@@ -4636,20 +4643,20 @@ export const ENDPOINTS = {
   RotateKey: { method: "POST", path: "/keys/{name}/rotate", params: ["name"], format: "json" },
   SetDefaultKey: { method: "PUT", path: "/default_key", params: [], format: "json" },
   CreateProvider: { method: "POST", path: "/providers", params: [], format: "json" },
-  TestProvider: { method: "POST", path: "/providers/test", params: [], format: "json" },
-  PreviewProvider: { method: "POST", path: "/providers/preview", params: [], format: "json" },
+  TestProvider: { method: "POST", path: "/provider-test", params: [], format: "json" },
+  PreviewProvider: { method: "POST", path: "/provider-preview", params: [], format: "json" },
   UpdateProvider: { method: "PUT", path: "/providers/{name}", params: ["name"], format: "json" },
   DeleteProvider: { method: "DELETE", path: "/providers/{name}", params: ["name"], format: "json" },
   ProviderModels: { method: "GET", path: "/providers/{name}/models", params: ["name"], format: "json" },
   RefreshProviderModels: { method: "POST", path: "/providers/{name}/models/refresh", params: ["name"], format: "json" },
   RefreshStaleModels: { method: "POST", path: "/models/refresh", params: [], format: "json" },
   CreateProxy: { method: "POST", path: "/proxies", params: [], format: "json" },
-  TestProxy: { method: "POST", path: "/proxies/test", params: [], format: "json" },
+  TestProxy: { method: "POST", path: "/proxy-test", params: [], format: "json" },
   UpdateProxy: { method: "PUT", path: "/proxies/{name}", params: ["name"], format: "json" },
   DeleteProxy: { method: "DELETE", path: "/proxies/{name}", params: ["name"], format: "json" },
   Aliases: { method: "GET", path: "/aliases", params: [], format: "json" },
   CreateAlias: { method: "POST", path: "/aliases", params: [], format: "json" },
-  PreviewAlias: { method: "POST", path: "/aliases/preview", params: [], format: "json" },
+  PreviewAlias: { method: "POST", path: "/alias-preview", params: [], format: "json" },
   UpdateAlias: { method: "PUT", path: "/aliases/{name}", params: ["name"], format: "json" },
   DeleteAlias: { method: "DELETE", path: "/aliases/{name}", params: ["name"], format: "json" },
   AliasUsage: { method: "GET", path: "/aliases/{name}/usage", params: ["name"], format: "json" },
@@ -4679,11 +4686,11 @@ export const ENDPOINTS = {
   DeleteCustomRule: { method: "DELETE", path: "/security/{guard}/custom/{name}", params: ["guard", "name"], format: "json" },
   TestSecurity: { method: "POST", path: "/security/{guard}/test", params: ["guard"], format: "json" },
   Plugins: { method: "GET", path: "/plugins", params: [], format: "json" },
-  PluginInspect: { method: "POST", path: "/plugins/inspect", params: [], format: "json" },
-  PluginRewrite: { method: "POST", path: "/plugins/rewrite", params: [], format: "json" },
+  PluginInspect: { method: "POST", path: "/plugin-inspect", params: [], format: "json" },
+  PluginRewrite: { method: "POST", path: "/plugin-rewrite", params: [], format: "json" },
   CreatePlugin: { method: "POST", path: "/plugins", params: [], format: "json" },
-  CreatePluginConfirmed: { method: "POST", path: "/plugins/confirmed", params: [], format: "json" },
-  ReorderPlugins: { method: "PUT", path: "/plugins/order", params: [], format: "json" },
+  CreatePluginConfirmed: { method: "POST", path: "/plugin-confirmed", params: [], format: "json" },
+  ReorderPlugins: { method: "PUT", path: "/plugin-order", params: [], format: "json" },
   SavePlugin: { method: "PUT", path: "/plugins/{id}", params: ["id"], format: "json" },
   SavePluginConfirmed: { method: "PUT", path: "/plugins/{id}/confirmed", params: ["id"], format: "json" },
   DeletePlugin: { method: "DELETE", path: "/plugins/{id}", params: ["id"], format: "json" },
