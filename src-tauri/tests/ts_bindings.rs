@@ -133,6 +133,7 @@ fn lite_typescript() -> String {
     c.root::<wire::PluginSaveRequest>();
     c.root::<wire::PluginApproveRequest>();
     c.root::<wire::PluginWrite>();
+    c.root::<wire::AliasHint>();
 
     // **契约里已经有的名字从那边引用**（`Msg`，以及 core 还在发的同名同形的类型），
     // 不另写一份：两份同名的声明在 `types.ts` 里一起转出去是歧义

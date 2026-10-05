@@ -2,6 +2,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Skeleton } from "@/ui/skeleton";
@@ -10,6 +11,7 @@ import { StatusLabel } from "@/ui/status-dot";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
+import type { ModelRowAliasFields } from "@/aliases/api.provisional";
 import { api } from "./api";
 import { contextWindow, coreText, errorText, perMillion } from "./labels";
 import { modelsPanelText } from "./ModelsPanel.i18n";
@@ -27,17 +29,23 @@ const FILTER_FROM = 10;
  * 清单按上游缓存（`upstream-models:<名字>`）：再点开一次先画上一次的，后台再读。
  * 概览里这一家的获取状态一变（开始问了、问完了）就重读 —— 开着面板等它问完，
  * 也能看到结果。读的是 core 记下的答案，不联网。
+ *
+ * 列进了别名的模型，名字后面标出别名；悬停一行给「起别名…」（`onAlias`），打开新建别名的
+ * 对话框，这个模型已经列为上游模型。
  */
 export function ModelsPanel({
   p,
   perToken,
   onEdit,
+  onAlias,
 }: {
   p: ProviderView;
   /** 按量计费：列出单价。别的计费方式不按单价算费用，列了也没意义 */
   perToken: boolean;
   /** 打开编辑对话框的「模型」一节 */
   onEdit: () => void;
+  /** 给这个模型起别名。不给就不出「起别名…」 */
+  onAlias?: (model: string) => void;
 }) {
   const t = useText(modelsPanelText);
   const c = useText(commonText);
@@ -166,7 +174,7 @@ export function ModelsPanel({
               )}
               <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 motion-fade">
                 {shownOn.map((m) => (
-                  <Row key={m.id} m={m} perToken={perToken} />
+                  <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} />
                 ))}
                 {off.length > 0 && (
                   <>
@@ -186,7 +194,7 @@ export function ModelsPanel({
                       {t.notEnabled(off.length)}
                     </Button>
                     {(showOff || q !== "") &&
-                      shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} />)}
+                      shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} />)}
                   </>
                 )}
                 {q !== "" && shownOn.length + shownOff.length === 0 && (
@@ -218,30 +226,69 @@ function summary(source: string, total: number, enabled: number, view: ProviderM
   return view.checked_at_ms ? t.lastTry(clock(view.checked_at_ms)) : t.notFetched;
 }
 
-function Row({ m, perToken }: { m: ModelRow; perToken: boolean }) {
+function Row({
+  m,
+  perToken,
+  onAlias,
+}: {
+  m: ModelRow & Partial<ModelRowAliasFields>;
+  perToken: boolean;
+  onAlias?: (model: string) => void;
+}) {
   const t = useText(modelsPanelText);
   const price =
     perToken && m.price
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
+  const aliases = m.aliases ?? [];
   return (
     <div
       className={cn(
-        "flex items-baseline gap-2 rounded-md px-1.5 py-1",
+        "group/model relative flex items-center gap-2 rounded-md px-1.5 py-1",
+        onAlias && "hover:bg-muted/60 focus-within:bg-muted/60",
         !m.enabled && "text-muted-foreground",
       )}
     >
-      <span className="min-w-0 flex-1 truncate font-mono tw-label" title={m.id}>
+      <span className="min-w-0 truncate font-mono tw-label" title={m.id}>
         {m.id}
       </span>
-      {price && (
-        <span className="shrink-0 tw-num tw-label text-muted-foreground" title={t.priceTitle}>
-          {price}
+      {aliases.map((a) => (
+        <Badge
+          key={a}
+          variant="secondary"
+          title={t.aliasTitle(a)}
+          // 地方不够时先缩它：模型名比别名要紧。全名在悬停说明里
+          className="h-4 max-w-40 min-w-14 shrink-[50] rounded-[4px] px-1 font-normal"
+        >
+          <span className="truncate">{t.aliasMark(a)}</span>
+        </Badge>
+      ))}
+      {/* 悬停时这一格让给「起别名…」：两样叠在同一个位置，行高不跳 */}
+      <span
+        className={cn(
+          "ml-auto flex shrink-0 items-baseline gap-2",
+          onAlias && "group-focus-within/model:invisible group-hover/model:invisible",
+        )}
+      >
+        {price && (
+          <span className="tw-num tw-label text-muted-foreground" title={t.priceTitle}>
+            {price}
+          </span>
+        )}
+        <span className="w-10 text-right tw-num tw-label text-muted-foreground" title={t.context}>
+          {m.context_window ? contextWindow(m.context_window) : ""}
         </span>
-      )}
-      <span className="w-10 shrink-0 text-right tw-num tw-label text-muted-foreground" title={t.context}>
-        {m.context_window ? contextWindow(m.context_window) : ""}
       </span>
+      {onAlias && (
+        <Button
+          size="xs"
+          variant="outline"
+          className="absolute top-1/2 right-1.5 h-5 -translate-y-1/2 bg-popover opacity-0 group-hover/model:opacity-100 focus-visible:opacity-100"
+          onClick={() => onAlias(m.id)}
+        >
+          {t.makeAlias}
+        </Button>
+      )}
     </div>
   );
 }

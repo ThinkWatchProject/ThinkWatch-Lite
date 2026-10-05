@@ -803,3 +803,29 @@ pub enum PluginWrite {
     Done { version: String },
     Cancelled,
 }
+
+// ---------------------------------------------------------- 模型别名：名称提示
+
+/// 新建、编辑模型别名时，名称下面的一条提示（`alias_hints`）。说的是**这台机器上检测到的
+/// 客户端**会怎么对待这个名称，所以由这一侧判断（`crate::aliases`）。只给码和参数，句子在界面
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum AliasHint {
+    /// 名称是 Claude Code 自己的档位名（`sonnet`、`opus`、`opusplan`……）：它请求之前先换成
+    /// 完整的模型名，它的请求里不会出现这个名称
+    ClaudeCodeReserved { name: String },
+    /// 名称像 `family` 这一家的模型，列出的上游模型却是别家的（`model` 是其中第一个）。
+    /// `clients`：检测到的、按模型名决定请求参数的客户端（产品名）
+    FamilyMismatch {
+        family: String,
+        model: String,
+        clients: Vec<String>,
+    },
+    /// 接管着的 Claude Desktop 只列出名称像 Claude 的模型：不会显示这个名称
+    ClaudeDesktopHidden { name: String },
+    /// 接管着的 Claude Desktop 会在模型列表里显示这个名称
+    ClaudeDesktopShown { name: String },
+    /// 这几个接管着的客户端把网关的模型列表写进了自己的配置（产品名）：多了、改了一个名称，
+    /// 客户端页会提示更新它们的模型列表
+    ModelListsUpdate { clients: Vec<String> },
+}
