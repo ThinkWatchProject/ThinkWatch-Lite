@@ -35,10 +35,11 @@ import {
 } from "@/ui/icons";
 import { ClientLogo, UpstreamLogo } from "@/ui/logos";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
-import { groupKindLabel, notSentText, probeLabel, targetLabel, ALL_UPSTREAMS } from "@/labels";
+import { notSentText, probeLabel, targetLabel, ALL_UPSTREAMS } from "@/labels";
 import { when } from "@/format";
 import { notSent } from "@/requestRouting";
 import { upstreamText } from "@/requestTable";
+import { strategyText } from "@/routing/model";
 import { NotSentIcon } from "@/traffic/cells";
 import type { ConnView } from "@/connection/api";
 import { connText } from "@/connection/connection.i18n";
@@ -348,7 +349,7 @@ export function buildItems(s: Sources): Item[] {
         id: `group:${g.name}`,
         group: "groups",
         title: targetLabel(g.name),
-        detail: `${groupKindLabel(g.kind)} · ${t.upstreamCount(g.providers.length)}`,
+        detail: `${strategyText(g)} · ${t.upstreamCount(g.providers.length)}`,
         // 显示的是译名（内置组），原名也能搜。里面的上游不算：打 `deep` 要的是 deepseek
         // 这个上游，不是每个含有它的组
         keywords: [g.name],

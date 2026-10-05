@@ -11,6 +11,7 @@ import { coreText } from "@/i18n/core.i18n";
 import {
   usd,
   type AttemptView,
+  type BalanceBy,
   type ConditionView,
   type ConfigOrigin,
   type ConfigStage,
@@ -45,6 +46,13 @@ export const GROUP_KINDS: { id: GroupKind; label: string }[] = (
 
 export function groupKindLabel(kind: GroupKind): string {
   return textOf(labelsText).groupKinds[kind];
+}
+
+/** 轮询组按什么分新对话，按界面上的先后：先是只看比例，再是自动的几种 */
+export const BALANCE_BY: readonly BalanceBy[] = ["weights", "latency", "health", "latency-health"];
+
+export function balanceByLabel(by: BalanceBy): string {
+  return textOf(labelsText).balanceBy[by];
 }
 
 /** 内置策略组在配置里的名字。**界面上不出现它**，显示为「全部上游」 */

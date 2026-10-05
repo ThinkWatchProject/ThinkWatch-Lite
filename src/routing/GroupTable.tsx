@@ -13,6 +13,7 @@ import { textOf, useText } from "@/i18n";
 import { groupKindLabel } from "@/labels";
 import type { GroupView, Overview } from "@/types";
 import { membersOf, type ChainFocus } from "./chain";
+import { balanceNotes } from "./model";
 import { groupTableText } from "./GroupTable.i18n";
 import { TargetIcon, upstreamState } from "./parts";
 import { routingText } from "./routing.i18n";
@@ -78,6 +79,9 @@ export function GroupTable({
           {shown.map(({ item: g, key, presence }) => {
             const items = menu(g, actions);
             const refs = groupRefs(ov, g.name);
+            // 轮询组的比例（不是平均分时）和分配依据（不是只看比例时），各占一行写在策略下面：
+            // 这一列窄，连成一行会从「按速度和稳定性」中间折开
+            const notes = balanceNotes(g);
             const label = g.builtin ? t.allUpstreams : g.name;
             const f: ChainFocus = { kind: "group", name: g.name };
             const lit = focus?.kind === "group" && focus.name === g.name;
@@ -112,8 +116,13 @@ export function GroupTable({
                       {g.builtin && <Badge variant="outline">{t.builtin}</Badge>}
                     </div>
                   </TableCell>
-                  <TableCell className="py-2.5 align-top">
+                  <TableCell className="py-2.5 align-top whitespace-normal">
                     <div>{groupKindLabel(g.kind)}</div>
+                    {notes.map((n) => (
+                      <div key={n} className="mt-0.5 tw-label text-muted-foreground">
+                        {n}
+                      </div>
+                    ))}
                   </TableCell>
                   <TableCell className="py-2.5 align-top whitespace-normal">
                     <Members g={g} ov={ov} busy={busy.has(g.name)} />

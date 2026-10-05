@@ -22,6 +22,8 @@ export const modelText = messages(
     noCatchAll: "尚无兜底规则",
     builtinGroup: "内置策略组 · 按上游列表顺序",
     groupTarget: (kind: string, members: string) => `策略组 · ${kind}${members ? `：${members}` : ""}`,
+    /** 策略名后面的补充：轮询组的比例和分配依据 */
+    withNotes: (kind: string, notes: string) => `${kind}（${notes}）`,
     upstreamTarget: (protocol: string, disabled: boolean) => `上游 · ${protocol}${disabled ? " · 已停用" : ""}`,
     unknownTarget: "不存在的去向",
     setModel: (model: string) => `模型改为 ${model}`,
@@ -33,7 +35,7 @@ export const modelText = messages(
     strategies: {
       fallback: "依次使用成员，前一个不可用时使用下一个。",
       select: "使用选定的上游；它不可用时，按顺序使用其余成员。",
-      loadBalance: "在成员之间轮流分配请求。",
+      loadBalance: "在成员之间轮流分配新对话。",
       urlTest: "优先使用首字节时间最短的上游。",
       cheapest: "优先使用输入单价最低的上游。",
     },
@@ -62,6 +64,7 @@ export const modelText = messages(
     noCatchAll: "No catch-all rule yet",
     builtinGroup: "Built-in group · In upstream list order",
     groupTarget: (kind: string, members: string) => `Group · ${kind}${members ? `: ${members}` : ""}`,
+    withNotes: (kind: string, notes: string) => `${kind} (${notes})`,
     upstreamTarget: (protocol: string, disabled: boolean) => `Upstream · ${protocol}${disabled ? " · Disabled" : ""}`,
     unknownTarget: "Destination not found",
     setModel: (model: string) => `Model set to ${model}`,
@@ -73,7 +76,7 @@ export const modelText = messages(
     strategies: {
       fallback: "Uses the members in order, moving to the next when one is unavailable.",
       select: "Uses the selected upstream; when it is unavailable, uses the other members in order.",
-      loadBalance: "Distributes requests across the members in turn.",
+      loadBalance: "Distributes new conversations across the members in turn.",
       urlTest: "Prefers the upstream with the shortest time to first byte.",
       cheapest: "Prefers the upstream with the lowest input price.",
     },
