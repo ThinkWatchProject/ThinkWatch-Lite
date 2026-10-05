@@ -52,9 +52,10 @@ before the client runs them.
   The content filter deletes instructions hidden in invisible characters before
   a request leaves and can refuse prompt injection. Each protection starts in
   Observe, which only records, and is switched over one at a time.
-- **Upstream check-up.** Each upstream is compared with the others serving the
-  same model: answers naming a different model, reported input well above or
-  below theirs and low prompt-cache reads are marked, with sample sizes.
+- **Upstreams, cross-checked.** Each upstream is compared with the others
+  serving the same model: answers naming a different model, reported input well
+  above or below theirs and low prompt-cache reads are marked on its row in the
+  upstream list, with the evidence and sample sizes on hover.
 - **MCP servers, skills and hooks, scanned.** The MCP servers of thirteen
   clients side by side, with third-party servers marked, and a scan of client
   configuration, skills, hooks and project instructions for hidden characters,

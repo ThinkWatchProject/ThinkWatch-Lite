@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Resource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
@@ -14,8 +14,9 @@ import { resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type ProviderView, type QuotaWindow } from "@/types";
+import { usd, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
 import type { UpstreamStats } from "./api";
+import { discrepancies, pct, signedPct, type Discrepancies } from "./checkup";
 import { slotsByUpstream, type Slot } from "./data";
 import {
   billingLabel,
@@ -60,6 +61,9 @@ export interface UpstreamActions {
  *
  * 单击一行（或 Enter）打开它的编辑对话框；行尾按钮和右键打开的是同一份操作。
  *
+ * 名字旁边的状态只在异常时出现：先是转发不了的（停用、凭据、熔断），再是最近 7 天的
+ * 体检标出的偏差（模型名、输入 token、缓存读取），证据在悬停里。
+ *
  * 五列是定过的（lite#46）：上游、模型、额度 / 计费、24 小时、首 token / 速度。「24 小时」
  * 一格里多了一条按小时的走势：请求在一天里怎么分布、失败落在哪几个小时，一眼看得出，
  * 数字留给右边和悬停。窗口窄到放不下时走势先让位（页面的容器查询），数字照常在。
@@ -67,6 +71,7 @@ export interface UpstreamActions {
 export function UpstreamTable({
   providers,
   stats,
+  health,
   since,
   inFlight,
   refreshing,
@@ -75,6 +80,8 @@ export function UpstreamTable({
 }: {
   providers: ProviderView[];
   stats: Resource<UpstreamStats>;
+  /** 最近 7 天的体检。还没取到、取不到时不标偏差 */
+  health: UpstreamHealth | undefined;
   /** 走势第一格的起点（对齐到整点） */
   since: number;
   /** 此刻每个上游在途的请求数 */
@@ -90,6 +97,10 @@ export function UpstreamTable({
   const now = useNow();
   const shown = usePresentList(providers, (p) => p.name);
   const slots = useMemo(() => slotsByUpstream(stats.data?.buckets ?? undefined, since), [stats.data, since]);
+  const found = useMemo(
+    () => new Map(health?.upstreams.map((c) => [c.upstream, discrepancies(c)])),
+    [health],
+  );
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
     if (!focus) return;
@@ -129,6 +140,7 @@ export function UpstreamTable({
               >
                 <NameCell
                   p={p}
+                  found={found.get(p.name)}
                   live={(inFlight.get(p.name) ?? 0) > 0 && !p.disabled}
                   liveCount={inFlight.get(p.name) ?? 0}
                 />
@@ -173,16 +185,23 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
   ];
 }
 
+/** 名字旁边的一条状态：几条同时成立时写第一条，悬停列出全部 */
+interface Note {
+  tone: StatusTone;
+  label: string;
+  tip: ReactNode;
+}
+
 /**
  * 这一行的状态。**只在异常时出现**：每行都写一遍「正常」是噪声。
  *
  * 熔断看不见凭据的问题（4xx 不算失败，凭据坏掉的上游永远不会熔断），所以凭据被拒、
  * 登录失效要自己说。几件同时成立时说最要紧的那一件，其余在悬停里。
  */
-export function problemsOf(p: ProviderView): { tone: StatusTone; label: string; tip: string }[] {
+export function problemsOf(p: ProviderView): Note[] {
   const t = textOf(upstreamTableText);
   if (p.disabled) return [{ tone: "idle", label: t.disabled, tip: t.disabledTip }];
-  const out: { tone: StatusTone; label: string; tip: string }[] = [];
+  const out: Note[] = [];
   if (p.oauth?.needs_login) out.push({ tone: "error", label: t.needsLogin, tip: t.needsLoginTip });
   if (p.auth_rejected != null)
     out.push({ tone: "error", label: t.authRejected, tip: t.authRejectedTip(p.auth_rejected) });
@@ -191,12 +210,93 @@ export function problemsOf(p: ProviderView): { tone: StatusTone; label: string; 
 }
 
 /**
+ * 体检标出的偏差，一处一条，琥珀色。**不是故障**：转发照常，页头也不算进「要处理」。
+ * 模型名不同的证据最直接，排第一；输入和缓存都是和服务同一模型的别家比出来的。
+ */
+function discrepancyNotes(d: Discrepancies | undefined): Note[] {
+  if (!d) return [];
+  const t = textOf(upstreamTableText);
+  const out: Note[] = [];
+  if (d.models) {
+    const m = d.models;
+    out.push({
+      tone: "warn",
+      label: t.modelDiffers,
+      tip: (
+        <>
+          <p>{t.modelDiffersTip(m.differed, m.named)}</p>
+          {m.examples.map((x) => (
+            <p key={`${x.sent}\n${x.answered}`} className="break-words">
+              {t.modelPair(x.sent, x.answered, x.count)}
+            </p>
+          ))}
+        </>
+      ),
+    });
+  }
+  // 差得最多的那个模型定方向；几个模型多少不一时，悬停里各写各的正负
+  const top = d.input[0];
+  if (top) {
+    out.push({
+      tone: "warn",
+      label: top.gap > 0 ? t.inputHigh : t.inputLow,
+      tip: (
+        <>
+          <p>{t.inputTip}</p>
+          {d.input.map((g) => (
+            <p key={g.model} className="break-words">
+              {t.inputLine(
+                g.model,
+                signedPct(g.gap),
+                t.ratio(g.here.median),
+                g.here.samples,
+                g.otherUpstreams,
+                t.ratio(g.others.median),
+                g.others.samples,
+              )}
+            </p>
+          ))}
+        </>
+      ),
+    });
+  }
+  if (d.cache.length > 0) {
+    out.push({
+      tone: "warn",
+      label: t.cacheLow,
+      tip: (
+        <>
+          <p>{t.cacheTip}</p>
+          {d.cache.map((g) => (
+            <p key={g.model} className="break-words">
+              {t.cacheLine(g.model, pct(g.hereShare), g.here.turns, g.otherUpstreams, pct(g.othersShare), g.others.turns)}
+            </p>
+          ))}
+        </>
+      ),
+    });
+  }
+  return out;
+}
+
+/**
  * 名称一格：标志、名字、套餐与状态，下面一行是协议、地址、出站方式 —— 这一家
  * 在哪、怎么连。地址可能很长（带路径的中转）：截断，悬停看全。
  */
-function NameCell({ p, live, liveCount }: { p: ProviderView; live: boolean; liveCount: number }) {
+function NameCell({
+  p,
+  found,
+  live,
+  liveCount,
+}: {
+  p: ProviderView;
+  found: Discrepancies | undefined;
+  live: boolean;
+  liveCount: number;
+}) {
   const t = useText(upstreamTableText);
-  const problems = problemsOf(p);
+  // 停用的上游只说「已停用」：它不再转发，过去 7 天的偏差这时不是要看的事
+  const problems = p.disabled ? problemsOf(p) : [...problemsOf(p), ...discrepancyNotes(found)];
   const problem = problems[0];
   const plan = planLabel(p.oauth?.account?.plan);
   const tile = <ProviderTile p={p} muted={p.disabled} live={live} />;
@@ -226,9 +326,13 @@ function NameCell({ p, live, liveCount }: { p: ProviderView; live: boolean; live
             {problem && (
               <Tip
                 text={
-                  <div className="flex max-w-72 flex-col gap-1">
+                  <div className="flex max-w-80 flex-col gap-2">
                     {problems.map((x) => (
-                      <p key={x.label}>{x.tip}</p>
+                      <div key={x.label} className="flex flex-col gap-0.5">
+                        {/* 几条叠在一起时各带标题：行上只写得下第一条，其余的名字只在这里 */}
+                        {problems.length > 1 && <p className="font-medium">{x.label}</p>}
+                        {typeof x.tip === "string" ? <p>{x.tip}</p> : x.tip}
+                      </div>
                     ))}
                   </div>
                 }

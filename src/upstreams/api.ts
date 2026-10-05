@@ -91,6 +91,8 @@ export const api = {
     call("UseChatgptReset", { credit_id: creditId, idempotency_key: idempotencyKey }, name),
 
   pricingStatus: () => call("Pricing", null),
+  /** 最近 7 天各上游的事实与参照（不给时间窗时 core 数的就是最近 7 天） */
+  upstreamHealth: () => call("UpstreamHealth", {}),
   refreshPricing: () => call("RefreshPricing", null),
   setPriceAutoUpdate: (on: boolean, baseVersion: string) =>
     call("SetPricingAutoUpdate", { on, base_version: baseVersion }),

@@ -14,7 +14,6 @@ import { Skeleton } from "@/ui/skeleton";
 import { EmptyState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
-import { RangePicker, useRange } from "@/ui/range";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
@@ -22,8 +21,15 @@ import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
-import { CheckupTab } from "./CheckupTab";
-import { patch, statsPartial, useAccountQuotas, useInFlight, usePricingStatus, useUpstreamStats } from "./data";
+import {
+  patch,
+  statsPartial,
+  useAccountQuotas,
+  useInFlight,
+  usePricingStatus,
+  useUpstreamHealth,
+  useUpstreamStats,
+} from "./data";
 import { DeleteDialog, type Referrer } from "./DeleteDialog";
 import { coreText, errorText, plain } from "./labels";
 import { PriceSheetDialog, type PriceSheetDialogMode } from "./PriceSheetDialog";
@@ -43,7 +49,7 @@ import { AliasDialog } from "@/aliases/AliasDialog";
 import { aliasesText } from "@/aliases/aliases.i18n";
 import type { AliasInput } from "@/types";
 
-export type UpstreamTab = "upstreams" | "aliases" | "proxies" | "pricing" | "checkup";
+export type UpstreamTab = "upstreams" | "aliases" | "proxies" | "pricing";
 
 /**
  * 这次打开应用以来最后看的那个标签。切到别的页再回来，还停在那一个。
@@ -69,13 +75,14 @@ type DialogState =
   | { kind: "alias"; mode: AliasDialogMode };
 
 /**
- * 上游页：上游、别名、代理、价目表、体检五个标签。
+ * 上游页：上游、别名、代理、价目表四个标签。
  *
  * 上游、代理、价目表描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、
  * 按什么价格结算 —— 而代理和价目表只被上游引用，所以放在同一页里，引用关系在
  * 页内闭合。别名是同一个模型在各个上游的不同名称，也只和上游的模型清单打交道。
  * **列表只读**，新建与编辑都在对话框里完成，一次保存一个版本。
- * 体检回答的是「这些上游实际表现如何」：一段时间里各上游的几项事实和相互参照。
+ * 「这些上游实际表现如何」不另起一个标签：最近 7 天体检标出的偏差直接写在上游表那一行，
+ * 判断一个上游去留的地方就看得到证据。
  *
  * 页头的摘要说上游的整体状况：几个、几个正常、几个要处理，24 小时的请求与费用。
  */
@@ -103,9 +110,8 @@ export default function UpstreamsPage({
     setTabState(next);
   };
   const [dialog, setDialog] = useState<DialogState>(null);
-  /** 体检看多长一段。各页各记各的，出厂是 7 天：一天里的样本撑不起比较 */
-  const [checkupRange, setCheckupRange] = useRange("tw-checkup-range", "7d");
   const { stats, since } = useUpstreamStats();
+  const health = useUpstreamHealth();
   const pricing = usePricingStatus(configVersion);
   useAccountQuotas(ov.providers, () => void stats.reload());
   const inFlight = useInFlight();
@@ -331,8 +337,6 @@ export default function UpstreamsPage({
           {t.newProxy}
         </Button>
       </>
-    ) : tab === "checkup" ? (
-      <RangePicker value={checkupRange} onChange={setCheckupRange} live={false} />
     ) : (
       <>
         <label className="mr-1 flex items-center gap-2 tw-body">
@@ -378,7 +382,6 @@ export default function UpstreamsPage({
               <TabsTrigger value="pricing">
                 {t.tabs.pricing} <Count n={ov.price_sheets.length + 1} />
               </TabsTrigger>
-              <TabsTrigger value="checkup">{t.tabs.checkup}</TabsTrigger>
             </TabsList>
           }
         />
@@ -416,6 +419,7 @@ export default function UpstreamsPage({
             <UpstreamTable
               providers={providers}
               stats={stats}
+              health={health.data}
               since={since}
               inFlight={inFlight}
               refreshing={refreshing}
@@ -490,10 +494,6 @@ export default function UpstreamsPage({
             onDuplicate={(name) => setDialog({ kind: "sheet", mode: { kind: "duplicate", from: name } })}
             onRemove={(name) => setDialog({ kind: "delete-sheet", name })}
           />
-        </TabsContent>
-
-        <TabsContent value="checkup" className="pt-4">
-          <CheckupTab range={checkupRange} providers={providers} />
         </TabsContent>
       </Page>
 
