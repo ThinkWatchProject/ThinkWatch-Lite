@@ -88,6 +88,28 @@ describe("编辑时回填原样", () => {
     expect(toInput({ ...f, forwardClientIdentity: false }).forward_client_identity).toBe(false);
   });
 
+  it("并发上限：回填、原样交回；清空就是不限。停用、启用走同一份，不会把它丢掉", () => {
+    const f = formFromView(view({ max_concurrent: 4 }));
+    expect(f.maxConcurrent).toBe("4");
+    expect(toInput(f).max_concurrent).toBe(4);
+    expect(toInput({ ...f, maxConcurrent: "" }).max_concurrent).toBeUndefined();
+    expect(formFromView(view()).maxConcurrent).toBe("");
+    expect(toInput(blankForm()).max_concurrent).toBeUndefined();
+  });
+
+  it("并发上限只收 1 到 1000 的整数，写错了保存不了", () => {
+    const f = formFromView(view());
+    for (const ok of ["1", "1000", " 12 "]) {
+      expect(connectionMissing({ ...f, maxConcurrent: ok }, "relay", ["relay"])).toBeNull();
+    }
+    for (const bad of ["0", "1001", "2.5", "-1", "abc"]) {
+      expect(connectionMissing({ ...f, maxConcurrent: bad }, "relay", ["relay"])).toBe(
+        "并发上限须为 1 到 1000 之间的整数",
+      );
+      expect(toInput({ ...f, maxConcurrent: bad }).max_concurrent).toBeUndefined();
+    }
+  });
+
   it("清空密钥就是不要密钥；清空请求头的值要补上", () => {
     const f = formFromView(view());
     expect(toInput({ ...f, key: " " }).key).toBeUndefined();

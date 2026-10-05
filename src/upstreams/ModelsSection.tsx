@@ -38,6 +38,11 @@ export interface ModelCatalog {
   status?: ModelListStatus;
   /** core 正在向上游问 */
   fetching?: boolean;
+  /**
+   * 这一家手写了上下文窗口的模型（`model_specs`）和那个数。手写的优先于价目表，这一节的
+   * 上下文窗口一列照它写，和模型弹窗里是同一个数
+   */
+  manualContext?: Record<string, number>;
 }
 
 /** core 记下的那一份 */
@@ -49,6 +54,11 @@ export function catalogOf(v: ProviderModelsView): ModelCatalog {
     error: v.error,
     status: v.status,
     fetching: v.fetching,
+    manualContext: Object.fromEntries(
+      v.models.flatMap((m) =>
+        m.context_window_source === "manual" && m.context_window != null ? [[m.id, m.context_window]] : [],
+      ),
+    ),
   };
 }
 
@@ -250,7 +260,7 @@ export function ModelsSection({
                             {m}
                           </TableCell>
                           <TableCell className="tw-num text-muted-foreground">
-                            {contextWindow(price?.max_input_tokens)}
+                            {contextWindow(catalog?.manualContext?.[m] ?? price?.max_input_tokens)}
                           </TableCell>
                           {perToken && (
                             <TableCell>
