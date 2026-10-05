@@ -516,6 +516,7 @@ fn view(
             })
             .collect(),
         bedrock: p.bedrock.clone().map(Into::into),
+        desktop_rule: None,
     }
 }
 
@@ -560,6 +561,20 @@ pub fn plan_adopt_as(
     models: Vec<String>,
     around: &Around,
 ) -> Result<wire::PlanView, Msg> {
+    plan_adopt_picking(home, id, owner, gw, models, around).map(|(v, _)| v)
+}
+
+/// [`plan_adopt_as`]，连同「要不要给 Claude Desktop 选模型」
+/// （`tw_adopt::desktop::model_pick`）：要选的话，网关上那条规则由调用方去问 core 再算
+/// （[`super::desktop_rule`]）
+pub fn plan_adopt_picking(
+    home: &Path,
+    id: &str,
+    owner: &str,
+    gw: &Gateway,
+    models: Vec<String>,
+    around: &Around,
+) -> Result<(wire::PlanView, Option<tw_adopt::desktop::ModelPick>), Msg> {
     let c = find(id, home)?;
     let (name, value, created) = key_for(gw, owner)?;
     let target = clients::Gateway {
@@ -576,7 +591,7 @@ pub fn plan_adopt_as(
     );
     v.key = Some(name);
     v.key_created = created;
-    Ok(v)
+    Ok((v, p.pick_model))
 }
 
 /// 接管时写进去的是哪一把：`owner` 名下留着的，没有就按默认那把算（落盘时才
@@ -630,20 +645,53 @@ pub fn adopt(
     expect: Option<&str>,
     around: &Around,
 ) -> Result<wire::AdoptResponse, Msg> {
+    prepare_adopt(home, backups, id, target, expect, around)?.write(backups)
+}
+
+/// 核对过、还没落盘的一份接管改动（[`prepare_adopt`]）。
+///
+/// 接管 Claude Desktop 时，网关上那条规则要**夹在核对和落盘之间**写：先有规则再写它的
+/// 配置（和「先有钥匙」同一个道理），而核对没过时一条规则都不该留下
+pub struct Prepared {
+    c: Client,
+    plan: plan::Plan,
+}
+
+impl Prepared {
+    /// 要给 Claude Desktop 选模型时，写进它配置的名称和网关列出的候选
+    pub fn pick_model(&self) -> Option<&tw_adopt::desktop::ModelPick> {
+        self.plan.pick_model.as_ref()
+    }
+
+    /// 落盘
+    pub fn write(self, backups: &Path) -> Result<wire::AdoptResponse, Msg> {
+        let a = plan::apply(&self.c, &self.plan, backups).map_err(|e| e.msg())?;
+        Ok(wire::AdoptResponse {
+            real: a.real.display().to_string(),
+            backup: a.backup.display().to_string(),
+            created: a.created,
+            warnings: a.warnings,
+            // **在接管完成那一屏说，不是等五分钟后再说**
+            takes_effect: self.c.takes_effect.into(),
+        })
+    }
+}
+
+/// [`adopt`] 的前一半：按此刻的文件重算、和确认框里那一份核对。**不写任何东西**
+pub fn prepare_adopt(
+    home: &Path,
+    backups: &Path,
+    id: &str,
+    target: &clients::Gateway,
+    expect: Option<&str>,
+    around: &Around,
+) -> Result<Prepared, Msg> {
     // 什么时候生效按装着的版本说（opencode v2 不用重启）
     let c = find(id, home)?.here(home);
     not_theirs(&c, home, backups)?;
-    let p = plan_for(&c, home, target, around).map_err(|e| e.msg())?;
-    still_as_reviewed(expect, &plan_fingerprint(&p), c.name)?;
-    let a = plan::apply(&c, &p, backups).map_err(|e| e.msg())?;
-    Ok(wire::AdoptResponse {
-        real: a.real.display().to_string(),
-        backup: a.backup.display().to_string(),
-        created: a.created,
-        warnings: a.warnings,
-        // **在接管完成那一屏说，不是等五分钟后再说**
-        takes_effect: c.takes_effect.into(),
-    })
+    let plan = plan_for(&c, home, target, around).map_err(|e| e.msg())?;
+    still_as_reviewed(expect, &plan_fingerprint(&plan), c.name)?;
+    Ok(Prepared { c, plan })
 }
 
 /// 算一份还原改动。**不写任何东西。**

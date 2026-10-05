@@ -242,8 +242,35 @@ pub fn looks_like_claude(model: &str) -> bool {
 }
 
 /// 网关列出的模型它一个都不收时写进去的那一个（一条都不剩，它就没有模型可选）。
-/// 路由里要有一条规则把它改写到上游真正在用的模型 —— 接管说明里给出那条规则。
+///
+/// 它发来的请求由它密钥上的一条「指定模型」规则接住，发给接管时选的那个上游模型
+/// （见 [`ModelPick`]）—— 它发什么 Claude 名称都接得住，别的客户端用这个名称不受影响。
 pub const FALLBACK_MODEL: &str = "claude-sonnet-5";
+
+/// 网关列出的模型 Claude Desktop 一个都不收：写进它配置的是 [`FALLBACK_MODEL`]，
+/// 要选一个上游模型给它用。
+///
+/// **这里只说要选、从哪些里选**：规则加在网关上（它的密钥、它所用的路由），那是
+/// 应用那一侧的事，这个 crate 只管文件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelPick {
+    /// 写进 `inferenceModels` 的那一个
+    pub written: String,
+    /// 网关为这把密钥列出的模型，按列出的顺序：选的那个从这里来
+    pub listed: Vec<String>,
+}
+
+/// 网关为这把密钥列出的模型里，Claude Desktop 一个都不收时，要选一个给它用。
+/// 有它收的就不用选（`None`）。一个都没列出时也要选，只是没得选
+pub fn model_pick(listed: &[String]) -> Option<ModelPick> {
+    if listed.iter().any(|m| looks_like_claude(m)) {
+        return None;
+    }
+    Some(ModelPick {
+        written: FALLBACK_MODEL.to_string(),
+        listed: listed.to_vec(),
+    })
+}
 
 // ---------------------------------------------------------------- 接管
 
@@ -281,20 +308,19 @@ pub fn plan_adopt_in(
     let profile = profile_path(home);
     let mut edits = crate::clients::edits(c, gw);
     let mut notes: Vec<Msg> = plan::cost_notes(c).collect();
+    let mut pick = None;
     match models {
         Some(all) => {
             // 它不收的名字它自己会去掉，但每一条都报一个配置错误：不写进去。带 `[1m]` 的
             // 照写 —— 网关同时列出 `X` 和 `X[1m]` 时，它在选择器里合成一个带 1M 版本的模型
-            let claude: Vec<String> = all
-                .iter()
-                .filter(|m| looks_like_claude(m))
-                .cloned()
-                .collect();
-            let names = if claude.is_empty() {
-                notes.push(no_claude_model(all.iter().find(|m| !looks_like_claude(m))));
-                vec![FALLBACK_MODEL.to_string()]
-            } else {
-                claude
+            pick = model_pick(all);
+            let names = match &pick {
+                Some(p) => vec![p.written.clone()],
+                None => all
+                    .iter()
+                    .filter(|m| looks_like_claude(m))
+                    .cloned()
+                    .collect(),
             };
             edits.push(Edit {
                 path: vec!["inferenceModels".into()],
@@ -331,6 +357,7 @@ pub fn plan_adopt_in(
     let mut main = plan::adopt_file(c.id, profile.clone(), Format::Json, &edits)?;
     main.notes = notes;
     main.bedrock = bedrock;
+    main.pick_model = pick;
     main.also = vec![
         adopt_meta(c.id, home)?,
         plan::adopt_file(
@@ -442,21 +469,6 @@ fn deployment_mode() -> Edit {
         value: Val::s("3p"),
         secret: false,
     }
-}
-
-/// 网关列出的模型它一个都不收：要在路由里加一条规则，把 [`FALLBACK_MODEL`] 改写到
-/// 上游真正在用的那个模型。`upstream` 是网关列出的第一个模型，拿来填示例。
-fn no_claude_model(upstream: Option<&String>) -> Msg {
-    let target = upstream.map_or("<model>", |s| s.as_str());
-    let rule = format!(
-        "{{ name: Claude Desktop, when: {{ model: {FALLBACK_MODEL} }}, set: {{ model: {target} }} }}"
-    );
-    msg!(
-        "adopt.plan.claude_desktop.no_claude_model",
-        model = FALLBACK_MODEL,
-        rule = rule
-        => "The gateway lists no model whose name looks like Claude, and Claude Desktop accepts no other names. {model} is written as its model; a route needs a rule that rewrites {model} to the model actually in use upstream, for example: {rule}"
-    )
 }
 
 /// 我们那一份在 `entries` 里长什么样
@@ -623,6 +635,7 @@ fn restore_meta(client: &str, home: &Path) -> Result<Option<Plan>, PlanError> {
             also: Vec::new(),
             prior: None,
             bedrock: None,
+            pick_model: None,
         }));
     };
 
@@ -695,6 +708,7 @@ fn restore_meta(client: &str, home: &Path) -> Result<Option<Plan>, PlanError> {
         also: Vec::new(),
         prior: None,
         bedrock: None,
+        pick_model: None,
     }))
 }
 
@@ -834,6 +848,29 @@ mod tests {
             assert!(!looks_like_claude(no), "{no}");
         }
         assert!(looks_like_claude(FALLBACK_MODEL));
+    }
+
+    fn names(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 网关列出的有一个它收的，就不用选；一个都不收（或者一个都没列出）才要选，
+    /// 候选是列出的全部，照列出的顺序
+    #[test]
+    fn a_model_is_picked_only_when_the_gateway_lists_nothing_it_accepts() {
+        assert_eq!(
+            model_pick(&names(&["glm-4.6", "claude-sonnet-5", "gpt-5"])),
+            None
+        );
+        assert_eq!(model_pick(&names(&["opus-proxy"])), None);
+        let p = model_pick(&names(&["glm-4.6", "claude-deepseek-v3", "kimi-k2"])).unwrap();
+        assert_eq!(p.written, FALLBACK_MODEL);
+        assert_eq!(
+            p.listed,
+            names(&["glm-4.6", "claude-deepseek-v3", "kimi-k2"])
+        );
+        let none = model_pick(&[]).unwrap();
+        assert!(none.listed.is_empty());
     }
 
     #[cfg(not(windows))]

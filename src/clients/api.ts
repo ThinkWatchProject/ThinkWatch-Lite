@@ -28,7 +28,20 @@ import type {
  * 比；对不上时界面重新算一份，还在原来的对话框里给人看。
  */
 export function isStalePlan(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "adopt.plan.stale";
+  return codeOf(e) === "adopt.plan.stale";
+}
+
+/**
+ * 落盘时发现：网关可用的模型在人看改动的这段时间里变了（`adopt.plan.gateway_changed`），
+ * 什么都没写。Claude Desktop 选的模型没有上游提供了、要选却没得选了、不用选了。和
+ * `isStalePlan` 一样处理：重新算一份，还在原来的对话框里给人看
+ */
+export function isGatewayChanged(e: unknown): boolean {
+  return codeOf(e) === "adopt.plan.gateway_changed";
+}
+
+function codeOf(e: unknown): unknown {
+  return typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
 }
 
 export interface RestoreOutcome {
@@ -37,6 +50,8 @@ export interface RestoreOutcome {
   /** 由另一个 ThinkWatch Lite 接管，没动它（不算失败） */
   skipped: boolean;
   detail: string;
+  /** 还原了、但该说一声的事：Claude Desktop 接管时加的路由规则没删成 */
+  warning?: string;
 }
 
 /**
@@ -49,9 +64,12 @@ export const api = {
   wsl: () => invoke<WslResponse>("list_wsl"),
   planAdopt: (id: string, env?: string) => invoke<PlanView>("plan_adopt", { id, env }),
   planRestore: (id: string, env?: string) => invoke<PlanView>("plan_restore", { id, env }),
-  /** `expect`：确认的那一份改动的 `digest`。文件在这之后被改过就不写（见 `isStalePlan`） */
-  adopt: (id: string, expect: string, env?: string) =>
-    invoke<AdoptResponse>("adopt_client", { id, env, expect }),
+  /**
+   * `expect`：确认的那一份改动的 `digest`。文件在这之后被改过就不写（见 `isStalePlan`）。
+   * `model`：Claude Desktop 要选模型时（`PlanView.desktop_rule.pick`）选的那个
+   */
+  adopt: (id: string, expect: string, env?: string, model?: string) =>
+    invoke<AdoptResponse>("adopt_client", { id, env, expect, model }),
   restore: (id: string, expect: string, env?: string) =>
     invoke<AdoptResponse>("restore_client", { id, env, expect }),
   restoreAll: () => invoke<RestoreOutcome[]>("restore_all"),

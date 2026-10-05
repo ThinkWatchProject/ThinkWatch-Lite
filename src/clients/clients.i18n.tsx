@@ -131,6 +131,30 @@ export const clientsText = messages(
     bedrockProfile: (name: string) => `AWS profile ${name}`,
     bedrockNoCredential: "凭据在新建时填写",
     bedrockCreate: "新建 Bedrock 上游…",
+    /** 确认时发现网关可用的模型变了：什么都没写，下面是重算的那一份 */
+    staleGateway: "网关可用的模型在查看改动期间发生了变化，未写入任何内容。以下改动已按当前情况重新计算，核对后请再次确认。",
+    // Claude Desktop：网关没有它认的模型时，选一个上游模型，在它的密钥上加一条规则
+    desktopModel: "Claude Desktop 使用的模型",
+    desktopModelHint:
+      "网关中没有上游提供 Claude 模型，而 Claude Desktop 只接受 Claude 的模型名。接管时在它的密钥上添加一条路由规则，它的请求都发给所选模型；其他客户端不受影响。",
+    desktopNoModels: "网关中没有该密钥可用的上游模型，接管后 Claude Desktop 的请求无法完成。添加上游后重新接管。",
+    desktopChoice: (model: string, providers: string[]) => `${model} · ${providers.join("、")}`,
+    gatewayChange: "网关配置",
+    rulePlace: (route: string, n: number) => `路由「${route}」第 ${n} 条`,
+    ruleText: (name: string, key: ReactNode, to: ReactNode) => (
+      <>
+        规则「{name}」：密钥 {key} → 指定模型 {to}
+      </>
+    ),
+    ruleDelete: (name: string, key: ReactNode, to: ReactNode) => (
+      <>
+        删除规则「{name}」：密钥 {key} → 指定模型 {to}
+      </>
+    ),
+    pinnedJoin: "、",
+    ruleAdded: "取消接管时删除这条规则。",
+    ruleChanged: "这条规则已存在，改为指定所选模型；取消接管时删除。",
+    ruleUnneeded: "网关中已有上游提供 Claude 模型，接管时添加的这条规则不再需要。",
 
     // 手动配置
     manualDialogTitle: (name: string) => `配置 ${name}`,
@@ -322,6 +346,30 @@ export const clientsText = messages(
     bedrockProfile: (name: string) => `AWS profile ${name}`,
     bedrockNoCredential: "credentials to be entered",
     bedrockCreate: "New Bedrock upstream…",
+    staleGateway:
+      "The models available in the gateway changed while the change was being reviewed, so nothing was written. The change below was recomputed; review it and confirm again.",
+    desktopModel: "Model for Claude Desktop",
+    desktopModelHint:
+      "No upstream in the gateway offers a Claude model, and Claude Desktop accepts only Claude model names. Connecting adds a routing rule on its key that sends all its requests to the selected model; other clients are not affected.",
+    desktopNoModels:
+      "The gateway has no upstream model for this key, so Claude Desktop's requests cannot be served once connected. Add an upstream, then connect it again.",
+    desktopChoice: (model: string, providers: string[]) => `${model} · ${providers.join(", ")}`,
+    gatewayChange: "Gateway configuration",
+    rulePlace: (route: string, n: number) => `Route “${route}”, rule ${n}`,
+    ruleText: (name: string, key: ReactNode, to: ReactNode) => (
+      <>
+        Rule “{name}”: key {key} → specified model {to}
+      </>
+    ),
+    ruleDelete: (name: string, key: ReactNode, to: ReactNode) => (
+      <>
+        Delete rule “{name}”: key {key} → specified model {to}
+      </>
+    ),
+    pinnedJoin: ", ",
+    ruleAdded: "The rule is deleted when the connection is restored.",
+    ruleChanged: "The rule already exists and now specifies the selected model; it is deleted when the connection is restored.",
+    ruleUnneeded: "Upstreams in the gateway now offer Claude models, so the rule added on connecting is no longer needed.",
 
     manualDialogTitle: (name: string) => `Set up ${name}`,
     keyGoesBelow: "The key (below)",

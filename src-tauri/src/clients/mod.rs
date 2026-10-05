@@ -8,6 +8,7 @@
 //! 这一层按 id 找出来再动手 —— 界面递一段任意文字进剪贴板、递一个任意路径给
 //! 访达，都是不该开的口子。
 
+pub mod desktop_rule;
 pub mod locations;
 pub mod ops;
 mod reveal;
@@ -441,13 +442,22 @@ pub async fn plan_adopt(
                 Ok((_, key, _)) => models_for(&c, &gw.base, &key).await?,
                 Err(_) => Vec::new(),
             };
-            Ok(ops::plan_adopt(
+            let (mut v, pick) = ops::plan_adopt_picking(
                 &home_dir(),
+                &id,
                 &id,
                 &gw,
                 models,
                 &place.around(!state.link.is_remote()).await,
-            )?)
+            )?;
+            // Claude Desktop：网关上那条规则（要加、要换、要删）一起给人看
+            if c.id == tw_adopt::desktop::ID
+                && let Some(key) = v.key.clone()
+            {
+                let s = desktop_rule::snapshot(&state.control).await?;
+                v.desktop_rule = desktop_rule::view(&s, &key, pick.as_ref())?;
+            }
+            Ok(v)
         }
         Place::Wsl(w) => {
             let gw = ops::Gateway {
@@ -478,12 +488,17 @@ pub async fn plan_adopt(
 ///
 /// `expect` 是确认框里那份改动的指纹（[`ops::fingerprint`]）：文件在人看差异的时候
 /// 被改过，就什么都不写，由界面重新算一份给人看。
+///
+/// `model`：接管 Claude Desktop 而网关没有它认的模型时，确认框里选的上游模型。网关上那条
+/// 规则**夹在核对和落盘之间**写（[`desktop_rule`]）：先有规则再写它的配置，配置没写成就
+/// 把规则改回去
 #[tauri::command]
 pub async fn adopt_client(
     state: tauri::State<'_, AppState>,
     id: String,
     env: Option<String>,
     expect: Option<String>,
+    model: Option<String>,
 ) -> Out<wire::AdoptResponse> {
     let place = Place::open(env).await?;
     let c = place.find(&id)?;
@@ -494,7 +509,7 @@ pub async fn adopt_client(
     let key = prepare_key(&state.control, &place.owner(&id)).await?;
     let models = models_for(&c, &base, &key.key).await?;
     let around = place.around(!state.link.is_remote()).await;
-    let mut r = ops::adopt(
+    let prepared = ops::prepare_adopt(
         &place.home(),
         &backups(),
         &id,
@@ -502,6 +517,36 @@ pub async fn adopt_client(
         expect.as_deref(),
         &around,
     )?;
+    let change = if c.id == tw_adopt::desktop::ID && matches!(place, Place::Here) {
+        let s = desktop_rule::snapshot(&state.control).await?;
+        desktop_rule::change(
+            &s,
+            c.name,
+            &key.name,
+            prepared.pick_model(),
+            model.as_deref(),
+        )?
+    } else if model.is_some() {
+        // 只有 Claude Desktop 要选模型
+        return Err(desktop_rule::gateway_changed(c.name).into());
+    } else {
+        None
+    };
+    let written = match &change {
+        Some(ch) => Some(desktop_rule::write(&state.control, ch).await?),
+        None => None,
+    };
+    let mut r = match prepared.write(&backups()) {
+        Ok(r) => r,
+        Err(e) => {
+            if let (Some(ch), Some(version)) = (&change, &written)
+                && let Err(again) = desktop_rule::revert(&state.control, ch, version).await
+            {
+                return Err(desktop_rule::not_reverted(ch, &e, &again).into());
+            }
+            return Err(e.into());
+        }
+    };
     if let Place::Wsl(w) = &place {
         r.real = w.shown(Path::new(&r.real));
     }
@@ -516,30 +561,45 @@ pub async fn plan_restore(
     env: Option<String>,
 ) -> Out<wire::PlanView> {
     let place = Place::open(env).await?;
-    place.find(&id)?;
+    let c = place.find(&id)?;
     let keys = keys(&state.control).await.unwrap_or_default();
     let mut v = ops::plan_restore_as(&place.home(), &id, &place.owner(&id), &keys)?;
     if let Place::Wsl(w) = &place {
         v.path = w.shown(Path::new(&v.path));
     }
+    // Claude Desktop：接管时在它的密钥上加的那条规则一起删。问不到 core 就不说 —— 还原
+    // 照样做得了，删不成的那一刻再提醒
+    if c.id == tw_adopt::desktop::ID
+        && matches!(place, Place::Here)
+        && let Some(key) = v.key.clone()
+        && let Ok(s) = desktop_rule::snapshot(&state.control).await
+    {
+        v.desktop_rule = desktop_rule::view(&s, &key, None).ok().flatten();
+    }
     Ok(v)
 }
 
-/// 还原。**不问 core**：退路不该依赖网关还在不在。`expect` 和 [`adopt_client`] 的一样
+/// 还原。**文件不问 core**：退路不该依赖网关还在不在。`expect` 和 [`adopt_client`] 的一样。
+///
+/// Claude Desktop 还原之后，再删接管时在它的密钥上加的那条规则（[`desktop_rule`]）：删不成、
+/// 问不到 core 时文件照样还原了，交回一句提醒
 #[tauri::command]
 pub async fn restore_client(
+    state: tauri::State<'_, AppState>,
     id: String,
     env: Option<String>,
     expect: Option<String>,
 ) -> Out<wire::AdoptResponse> {
     let place = Place::open(env).await?;
-    place.find(&id)?;
-    Ok(ops::restore(
-        &place.home(),
-        &backups(),
-        &id,
-        expect.as_deref(),
-    )?)
+    let c = place.find(&id)?;
+    let mut r = ops::restore(&place.home(), &backups(), &id, expect.as_deref())?;
+    if c.id == tw_adopt::desktop::ID
+        && matches!(place, Place::Here)
+        && let Some(w) = desktop_rule::remove_after_restore(&state.control, &place.owner(&id)).await
+    {
+        r.warnings.push(w);
+    }
+    Ok(r)
 }
 
 /// 「我明明配了，为什么没生效」—— 走一遍优先级链。
