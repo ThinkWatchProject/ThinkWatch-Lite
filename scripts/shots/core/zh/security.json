@@ -498,6 +498,21 @@
         "custom": false,
         "default_action": "cut",
         "enabled": true,
+        "id": "thinkwatch-data",
+        "kind": "command",
+        "matcher": {
+          "check": "thinkwatch-data",
+          "kind": "builtin"
+        },
+        "name": "Read or change ThinkWatch's own data",
+        "on_by_default": true,
+        "why": "Reads or changes ThinkWatch's data directory, which holds every upstream key in plain text and the settings of these protections"
+      },
+      {
+        "action": "cut",
+        "custom": false,
+        "default_action": "cut",
+        "enabled": true,
         "id": "write-startup-item",
         "kind": "command",
         "matcher": {

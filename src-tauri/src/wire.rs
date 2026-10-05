@@ -95,6 +95,10 @@ pub struct DetectedClient {
     /// 只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）会是
     /// `true`；点一下走一遍接管的「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
     pub models_stale: bool,
+    /// 配置里此刻写着的模型。只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、
+    /// Grok Build、Qwen Code）有；删除别名时据此说出哪几个已接管客户端的模型列表写着它
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<String>>,
     /// 配置位置能换（行菜单里给「更改路径…」，见 [`ClientLocations`]）。Claude Desktop、
     /// DeepSeek Harness 和 WSL 里的不能
     pub movable: bool,
@@ -293,6 +297,50 @@ pub struct PlanView {
     /// 「新建上游」的入口；还原时没有
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bedrock: Option<BedrockDraft>,
+    /// 接管、还原 Claude Desktop 时网关上要改的那条路由规则（`clients::desktop_rule`）。
+    /// 不用改的、别的客户端没有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop_rule: Option<DesktopRule>,
+}
+
+/// 接管 Claude Desktop 时在它的密钥上加的那条「指定模型」规则。
+///
+/// 网关列出的模型它一个都不收时（它只认名称像 Claude 的），接管时选一个上游模型，
+/// 这条规则把它的请求都发给那个模型：插在它的密钥所用路由的最前面，条件只有它的
+/// 密钥。取消接管时删掉。别的客户端不受影响。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct DesktopRule {
+    /// 规则在（或者要加进）哪条路由
+    pub route: String,
+    /// 是那条路由的第几条，从 1 起
+    pub position: u32,
+    /// 规则的名字
+    pub name: String,
+    /// 条件里的密钥：它的那把
+    pub key: String,
+    /// 要选模型（网关没有它认的模型）时：写进它配置的名称和可选的模型。没有就是
+    /// 不用选 —— 这时已有的那条规则要删掉（还原，或者网关已经有它认的模型了）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pick: Option<DesktopPick>,
+    /// 已经有这条规则时，它此刻指定的模型
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current: Option<Vec<tw_api::PinnedModel>>,
+}
+
+/// 给 Claude Desktop 选模型：写进它配置的那个名称，和它的密钥能用的上游模型
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct DesktopPick {
+    /// 写进它配置的模型名（它发来的就是这个）
+    pub written: String,
+    /// 可选的模型，按网关列出的顺序。选一个，规则按顺序指定提供它的每一家上游
+    pub choices: Vec<ModelChoice>,
+}
+
+/// 一个上游模型，和提供它的上游（按网关排的顺序）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ModelChoice {
+    pub model: String,
+    pub providers: Vec<String>,
 }
 
 /// 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
@@ -802,4 +850,30 @@ pub struct PluginApproveRequest {
 pub enum PluginWrite {
     Done { version: String },
     Cancelled,
+}
+
+// ---------------------------------------------------------- 模型别名：名称提示
+
+/// 新建、编辑模型别名时，名称下面的一条提示（`alias_hints`）。说的是**这台机器上检测到的
+/// 客户端**会怎么对待这个名称，所以由这一侧判断（`crate::aliases`）。只给码和参数，句子在界面
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum AliasHint {
+    /// 名称是 Claude Code 自己的档位名（`sonnet`、`opus`、`opusplan`……）：它请求之前先换成
+    /// 完整的模型名，它的请求里不会出现这个名称
+    ClaudeCodeReserved { name: String },
+    /// 名称像 `family` 这一家的模型，列出的上游模型却是别家的（`model` 是其中第一个）。
+    /// `clients`：接管着的、按模型名挑请求格式而这个名称和 `model` 格式不同的客户端（产品名）
+    FamilyMismatch {
+        family: String,
+        model: String,
+        clients: Vec<String>,
+    },
+    /// 接管着的 Claude Desktop 只列出名称像 Claude 的模型：不会显示这个名称
+    ClaudeDesktopHidden { name: String },
+    /// 接管着的 Claude Desktop 会在模型列表里显示这个名称
+    ClaudeDesktopShown { name: String },
+    /// 这几个接管着的客户端把网关的模型列表写进了自己的配置（产品名）：多了、改了一个名称，
+    /// 客户端页会提示更新它们的模型列表
+    ModelListsUpdate { clients: Vec<String> },
 }

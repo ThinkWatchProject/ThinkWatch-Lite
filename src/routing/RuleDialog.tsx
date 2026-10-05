@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -21,11 +21,10 @@ import {
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/ui/native-select";
 import { cn } from "@/lib/utils";
-import { useText } from "@/i18n";
+import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
 import type { ConditionField, ConditionView, KnownModel, Overview } from "@/types";
-import { globMatch } from "@/upstreams/glob";
 import { Segmented } from "@/ui/segmented";
 import { FormItem, Note } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
@@ -36,18 +35,23 @@ import {
   DIALECTS,
   addOnsText,
   blankCondition,
+  blankPinned,
   compareOps,
   condField,
   condGroupLabel,
   describeTarget,
   isPhaseTwo,
+  isPinned,
   ruleProblem,
   splitCompare,
   type Action,
   type RuleDraft,
+  type ToKind,
 } from "./model";
+import { PinnedModels } from "./PinnedModels";
 import { routingText } from "./routing.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
+import { modelHint, type ModelHint } from "./target";
 
 /** 目标下拉里「新建策略组…」那一项的值。只活在这个下拉里，不会写进配置 */
 const NEW_GROUP = "::new-group";
@@ -58,6 +62,9 @@ const NEW_GROUP = "::new-group";
  * **按读规则的顺序排**：条件（什么样的请求）→ 命中后（转发、拒绝，或继续
  * 匹配）→ 附加项（改写参数、安全要求）。保存只更新路由对话框里的草稿，
  * 路由对话框保存时才写入配置。
+ *
+ * 转发有两种去向：上游或策略组（发出的模型名按别名表对到各上游），或者指定模型（几个
+ * 「上游 + 模型」按顺序备用，模型名原样发出）。指定模型时「模型改为」不出现。
  */
 export function RuleDialog({
   initial,
@@ -97,8 +104,8 @@ export function RuleDialog({
   );
   const [newGroup, setNewGroup] = useState(false);
 
-  const modelIds = useMemo(() => models.map((m) => m.id), [models]);
   const phaseTwo = isPhaseTwo(d);
+  const pinned = isPinned(d);
   const problem = ruleProblem(d, takenNames);
 
   /**
@@ -112,7 +119,7 @@ export function RuleDialog({
     ? []
     : (intent?.values ?? []).filter((id) => ov.client_probes.find((p) => p.id === id)?.mode === "intercept");
 
-  const rewriteSummary = addOnsText(d);
+  const rewriteSummary = addOnsText(d, models);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -152,7 +159,7 @@ export function RuleDialog({
                   key={c.field}
                   c={c}
                   ov={ov}
-                  models={modelIds}
+                  models={models}
                   onChange={(nc) => set({ conditions: d.conditions.map((x, j) => (j === i ? nc : x)) })}
                   onRemove={() => set({ conditions: d.conditions.filter((_, j) => j !== i) })}
                 />
@@ -172,27 +179,54 @@ export function RuleDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4">
-            <FormItem label={t.onMatch}>
-              <Segmented<Action>
-                value={d.action}
-                onChange={(a) => set({ action: a })}
+          <FormItem label={t.onMatch}>
+            <Segmented<Action>
+              label={t.onMatch}
+              value={d.action}
+              onChange={(a) => set({ action: a })}
+              options={[
+                { id: "forward", label: t.forward, disabled: phaseTwo },
+                { id: "deny", label: rt.deny },
+                { id: "continue", label: rt.continueMatching },
+              ]}
+            />
+            {d.action === "continue" && <p className="tw-label text-muted-foreground">{t.continueDesc}</p>}
+          </FormItem>
+          {d.action === "forward" && (
+            <FormItem
+              label={t.forwardTo}
+              desc={!pinned && d.to ? describeTarget(d.to, ov.groups, ov.providers) : undefined}
+            >
+              <Segmented<ToKind>
+                label={t.forwardTo}
+                value={d.toKind}
+                onChange={(k) =>
+                  set({
+                    toKind: k,
+                    // 头一回切到指定模型：先给一行；原来指的是一个上游，就从它开始
+                    pinned:
+                      k === "pinned" && d.pinned.length === 0
+                        ? [blankPinned(ov.providers.some((p) => p.name === d.to) ? d.to : "")]
+                        : d.pinned,
+                  })
+                }
                 options={[
-                  { id: "forward", label: t.forward, disabled: phaseTwo },
-                  { id: "deny", label: rt.deny },
-                  { id: "continue", label: rt.continueMatching },
+                  { id: "target", label: t.toTarget },
+                  { id: "pinned", label: t.toPinned },
                 ]}
               />
-            </FormItem>
-            {d.action === "forward" && (
-              <FormItem
-                label={t.forwardTo}
-                htmlFor="rule-to"
-                desc={d.to ? describeTarget(d.to, ov.groups, ov.providers) : undefined}
-              >
+              {pinned ? (
+                <PinnedModels
+                  value={d.pinned}
+                  onChange={(p) => set({ pinned: p })}
+                  providers={ov.providers}
+                  known={models}
+                />
+              ) : (
                 <NativeSelect
                   id="rule-to"
-                  className="w-full"
+                  aria-label={t.forwardTo}
+                  className="w-80"
                   value={d.to}
                   onChange={(e) =>
                     e.target.value === NEW_GROUP ? setNewGroup(true) : set({ to: e.target.value })
@@ -215,22 +249,19 @@ export function RuleDialog({
                     ))}
                   </NativeSelectOptGroup>
                 </NativeSelect>
-              </FormItem>
-            )}
-            {d.action === "deny" && (
-              <FormItem label={t.denyReason} htmlFor="rule-deny" desc={t.denyReasonDesc}>
-                <Input
-                  id="rule-deny"
-                  value={d.deny}
-                  placeholder={t.denyPlaceholder}
-                  onChange={(e) => set({ deny: e.target.value })}
-                />
-              </FormItem>
-            )}
-            {d.action === "continue" && (
-              <p className="self-end pb-1.5 tw-label text-muted-foreground">{t.continueDesc}</p>
-            )}
-          </div>
+              )}
+            </FormItem>
+          )}
+          {d.action === "deny" && (
+            <FormItem label={t.denyReason} htmlFor="rule-deny" desc={t.denyReasonDesc}>
+              <Input
+                id="rule-deny"
+                value={d.deny}
+                placeholder={t.denyPlaceholder}
+                onChange={(e) => set({ deny: e.target.value })}
+              />
+            </FormItem>
+          )}
           {phaseTwo && <Note>{t.phaseTwo}</Note>}
 
           {d.action !== "deny" && (
@@ -241,16 +272,26 @@ export function RuleDialog({
                 open={rewriteOpen}
                 onToggle={() => setRewriteOpen((o) => !o)}
               >
-                <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] items-start gap-3">
-                  <FormItem label={t.setModel} htmlFor="rw-model">
-                    <ModelInput
-                      id="rw-model"
-                      value={d.model}
-                      onChange={(v) => set({ model: v })}
-                      models={modelIds}
-                      placeholder={t.unchanged}
-                    />
-                  </FormItem>
+                <div
+                  className={cn(
+                    "grid items-start gap-3",
+                    pinned
+                      ? "grid-cols-[minmax(0,180px)_auto]"
+                      : "grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]",
+                  )}
+                >
+                  {/* 指定模型：模型名原样发出，「模型改为」不起作用 */}
+                  {!pinned && (
+                    <FormItem label={t.setModel} htmlFor="rw-model">
+                      <ModelInput
+                        id="rw-model"
+                        value={d.model}
+                        onChange={(v) => set({ model: v })}
+                        models={models}
+                        placeholder={t.unchanged}
+                      />
+                    </FormItem>
+                  )}
                   <FormItem label="max_tokens" htmlFor="rw-max">
                     <Input
                       id="rw-max"
@@ -273,7 +314,7 @@ export function RuleDialog({
                     />
                   </FormItem>
                 </div>
-                {d.model.trim() && <Note>{t.modelChangeNote}</Note>}
+                {!pinned && d.model.trim() && <Note>{t.modelChangeNote}</Note>}
               </Section>
             </div>
           )}
@@ -387,7 +428,7 @@ function ConditionRow({
 }: {
   c: ConditionView;
   ov: Overview;
-  models: string[];
+  models: KnownModel[];
   onChange: (c: ConditionView) => void;
   onRemove: () => void;
 }) {
@@ -408,10 +449,8 @@ function ConditionRow({
           placeholder={t.globPlaceholder}
         />
       );
-      if (v0.trim() && models.length > 0) {
-        const n = models.filter((m) => globMatch(v0.trim(), m)).length;
-        hint = n > 0 ? t.globMatches(n) : t.globNone;
-      }
+      const h = modelHint(v0, models);
+      if (h) hint = modelHintText(h);
       break;
     }
     case "compare": {
@@ -520,4 +559,20 @@ function ConditionRow({
       {hint && <p className="pl-26 tw-label text-muted-foreground">{hint}</p>}
     </div>
   );
+}
+
+/**
+ * 模型条件下面的那一句。写别名：只匹配用这个别名的请求；写上游模型名：匹配几个已知模型，
+ * 以及指向它的别名（继承只从真名到别名）
+ */
+function modelHintText(h: ModelHint): string {
+  const t = textOf(ruleDialogText);
+  if (h.kind === "alias") return t.aliasOnly(h.alias);
+  const parts: string[] = [];
+  if (h.matches > 0) parts.push(t.globMatches(h.matches));
+  else if (h.inherited.length === 0) parts.push(t.globNone);
+  if (h.inherited.length > 0) parts.push(h.exact ? t.alsoAliasesOf(h.inherited) : t.alsoAliases(h.inherited));
+  // 英文里「也匹配……」可能排在第一句
+  const text = parts.join(t.hintSep);
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

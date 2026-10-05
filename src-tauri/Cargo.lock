@@ -82,7 +82,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -985,7 +985,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2566,7 +2566,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2661,7 +2661,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4095,7 +4095,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4740,7 +4740,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",
@@ -4766,7 +4766,7 @@ dependencies = [
 
 [[package]]
 name = "thinkwatch-lite"
-version = "2026.10.4"
+version = "2026.10.5"
 dependencies = [
  "anyhow",
  "block2",
@@ -5208,7 +5208,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5268,8 +5268,8 @@ dependencies = [
 
 [[package]]
 name = "tw-api"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "serde",
  "serde_json",
@@ -5280,8 +5280,8 @@ dependencies = [
 
 [[package]]
 name = "tw-dialect"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "serde",
  "serde_json",
@@ -5289,8 +5289,8 @@ dependencies = [
 
 [[package]]
 name = "tw-guard"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5305,8 +5305,8 @@ dependencies = [
 
 [[package]]
 name = "tw-link"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "serde",
  "serde_json",
@@ -5332,8 +5332,8 @@ dependencies = [
 
 [[package]]
 name = "tw-types"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "serde",
  "ts-rs",
@@ -5341,8 +5341,8 @@ dependencies = [
 
 [[package]]
 name = "tw-watch"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "notify",
  "thiserror 2.0.21",
@@ -5351,8 +5351,8 @@ dependencies = [
 
 [[package]]
 name = "tw-yaml"
-version = "0.61.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.61.0#57f0ac21afdced765c8cf4f3d841196e285507c8"
+version = "0.62.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.62.0#51ef803bee644e72668cb8725d7bc27f6bb77a3f"
 dependencies = [
  "saphyr-parser",
  "thiserror 2.0.21",
@@ -5379,7 +5379,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5837,7 +5837,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-quartz-core",
  "raw-window-handle",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
  "windows-version",
 ]
 

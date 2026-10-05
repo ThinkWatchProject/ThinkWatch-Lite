@@ -1,16 +1,17 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
 import { useNav } from "@/nav";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
-import type { BedrockDraft, DetectedClient, FieldChange, PlanView } from "@/types";
+import type { BedrockDraft, DesktopRule, DetectedClient, FieldChange, ModelChoice, PinnedModel, PlanView } from "@/types";
 import { ClientMark, DISCLOSURE, Tile, useDialogFocus } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 
@@ -23,12 +24,15 @@ import { clientsText } from "./clients.i18n";
  *
  * 按下确认之后对话框留着、按钮转圈，写完才关；失败时对话框还在，可以再试。
  * 确认之后不再弹第二个对话框：行上的状态会变成「等待首个请求」。
+ *
+ * Claude Desktop 在网关没有它认的模型时（`plan.desktop_rule.pick`），先选它用哪个上游模型，
+ * 再在「网关配置」里写明加在它密钥上的那条规则；还原时写明删掉它。
  */
 export function PlanDialog({
   plan,
   client,
   restore,
-  stale = false,
+  stale = null,
   pending,
   bedrockUpstreams = [],
   onCancel,
@@ -37,13 +41,17 @@ export function PlanDialog({
   plan: PlanView;
   client: DetectedClient;
   restore: boolean;
-  /** 刚才确认时文件已经被改过、什么都没写：这一份是按现在的内容重算的 */
-  stale?: boolean;
+  /**
+   * 刚才确认时什么都没写，这一份是重算的：`files` 是文件已经被改过，`gateway` 是网关
+   * 可用的模型变了
+   */
+  stale?: "files" | "gateway" | null;
   pending: boolean;
   /** 网关里已有的 Bedrock 上游（名字）。客户端原来直连 Bedrock 时要说有没有 */
   bedrockUpstreams?: string[];
   onCancel: () => void;
-  onConfirm: () => void;
+  /** `model`：给 Claude Desktop 选的模型（要选时） */
+  onConfirm: (model?: string) => void;
 }) {
   const t = useText(clientsText);
   const common = useText(commonText);
@@ -54,9 +62,29 @@ export function PlanDialog({
   const also = (plan.also ?? []).filter((a) => !a.noop);
   const fields = [...plan.fields, ...also.flatMap((a) => a.fields)];
   const path = <code className="font-mono text-foreground">{plan.path}</code>;
+  const rule = plan.desktop_rule ?? null;
+  const pick = restore ? null : (rule?.pick ?? null);
+  const choices = pick?.choices ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  // 重算过的一份里没有刚才选的那个：回到默认的那个
+  const choice = choices.find((c) => c.model === picked) ?? defaultChoice(rule, choices);
+  const to = choice ? pinnedOf(choice) : null;
+  // 网关上要不要改：还原删、要选时和已有的不一样才写、不用选时删已有的
+  const ruleChanges = restore ? rule != null : pick ? to != null && !samePinned(to, rule?.current) : rule?.current != null;
+  const noop = plan.noop && !ruleChanges;
+  const modelId = useId();
   return (
     <Dialog open onOpenChange={(o) => !o && !pending && onCancel()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl" {...dialogFocus}>
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        {...dialogFocus}
+        // 要选模型时焦点落在对话框本身：落进下拉框的话，它带一圈焦点框，方向键也会悄悄换掉模型
+        onOpenAutoFocus={(e) => {
+          if (!pick) return;
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus();
+        }}
+      >
         <DialogHeader className="flex-row items-center gap-3">
           <Tile className="size-9 rounded-lg [&_svg]:size-[18px]">
             <ClientMark id={client.id} name={client.name} size={18} />
@@ -77,14 +105,40 @@ export function PlanDialog({
           </div>
         </DialogHeader>
 
-        <Banner layout="inline" tone="warning" show={stale}>
-          {t.stale}
+        <Banner layout="inline" tone="warning" show={stale != null}>
+          {stale === "gateway" ? t.staleGateway : t.stale}
         </Banner>
 
-        {plan.noop ? (
+        {noop ? (
           <p className="tw-body">{t.noop}</p>
         ) : (
           <div className="flex flex-col gap-4">
+            {pick && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3.5 py-3">
+                <label className="tw-head" htmlFor={modelId}>
+                  {t.desktopModel}
+                </label>
+                <p className="tw-label text-muted-foreground">
+                  {choices.length > 0 ? t.desktopModelHint : t.desktopNoModels}
+                </p>
+                {choices.length > 0 && (
+                  <NativeSelect
+                    id={modelId}
+                    className="w-[360px] max-w-full"
+                    value={choice?.model ?? ""}
+                    disabled={pending}
+                    onChange={(e) => setPicked(e.target.value)}
+                  >
+                    {choices.map((c) => (
+                      <NativeSelectOption key={c.model} value={c.model}>
+                        {t.desktopChoice(c.model, c.providers)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                )}
+              </div>
+            )}
+
             {fields.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-border">
                 <Table>
@@ -107,6 +161,10 @@ export function PlanDialog({
                   </TableBody>
                 </Table>
               </div>
+            )}
+
+            {rule && (ruleChanges || (pick && to)) && (
+              <GatewayRule rule={rule} to={pick ? to : null} restore={restore} />
             )}
 
             {!restore && plan.bedrock && (
@@ -160,14 +218,71 @@ export function PlanDialog({
           <Button variant="outline" onClick={onCancel} disabled={pending}>
             {common.cancel}
           </Button>
-          {!plan.noop && (
-            <Button variant={restore ? "destructive" : "default"} pending={pending} onClick={onConfirm}>
+          {!noop && (
+            <Button
+              variant={restore ? "destructive" : "default"}
+              pending={pending}
+              onClick={() => onConfirm(pick && choice ? choice.model : undefined)}
+            >
               {restore ? t.confirmRestore : t.confirmAdopt}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 默认选哪个：已有的规则指定的那个还在就是它，否则是网关列出的第一个 */
+function defaultChoice(rule: DesktopRule | null, choices: ModelChoice[]): ModelChoice | null {
+  const now = rule?.current?.[0]?.model;
+  return choices.find((c) => c.model === now) ?? choices[0] ?? null;
+}
+
+/** 选了这个模型时规则的去向：提供它的每一家，按顺序备用（和 Rust 侧 `desktop_rule::pinned` 一样） */
+function pinnedOf(c: ModelChoice): PinnedModel[] {
+  return c.providers.map((provider) => ({ provider, model: c.model }));
+}
+
+function samePinned(a: PinnedModel[], b: PinnedModel[] | null | undefined): boolean {
+  return b != null && a.length === b.length && a.every((p, i) => p.provider === b[i]?.provider && p.model === b[i]?.model);
+}
+
+/**
+ * 「网关配置」：Claude Desktop 的密钥上那条规则在哪、写的什么。`to` 是接管时要指定的模型；
+ * 为空是删掉已有的那条（还原，或者网关已经有它认的模型了）
+ */
+function GatewayRule({ rule, to, restore }: { rule: DesktopRule; to: PinnedModel[] | null; restore: boolean }) {
+  const t = useText(clientsText);
+  const shown = to ?? rule.current ?? [];
+  const key = <code className="font-mono">{rule.key}</code>;
+  // 一个「上游 · 模型」不从中间折开，折在几个之间
+  const models = shown.map((p, i) => (
+    <span key={`${p.provider} ${p.model}`}>
+      {i > 0 && t.pinnedJoin}
+      <span className="whitespace-nowrap">
+        {p.provider} · <code className="font-mono">{p.model}</code>
+      </span>
+    </span>
+  ));
+  const foot = restore
+    ? null
+    : to == null
+      ? t.ruleUnneeded
+      : rule.current != null && !samePinned(to, rule.current)
+        ? t.ruleChanged
+        : t.ruleAdded;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="tw-head">{t.gatewayChange}</p>
+      <div className="grid grid-cols-[10rem_minmax(0,1fr)] gap-x-3 rounded-lg border border-border px-3 py-2 tw-body">
+        <span className="text-muted-foreground">{t.rulePlace(rule.route, rule.position)}</span>
+        <span className="break-words">
+          {to == null ? t.ruleDelete(rule.name, key, models) : t.ruleText(rule.name, key, models)}
+        </span>
+      </div>
+      {foot && <p className="tw-label text-muted-foreground">{foot}</p>}
+    </div>
   );
 }
 

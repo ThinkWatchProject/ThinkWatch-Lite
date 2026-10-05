@@ -304,8 +304,9 @@ pub fn unpinned_models(home: &Path, settings: &str, around: &Around) -> Vec<&'st
     out
 }
 
-/// Claude Code 的模型别名（model-config 一页的表）。带 `[1m]` 的也是
-fn is_alias(m: &str) -> bool {
+/// Claude Code 的模型别名（model-config 一页的表）。带 `[1m]` 的也是。它请求之前先换成完整的
+/// 模型名 —— 网关的模型别名起成这些名称，Claude Code 的请求用不到（Lite 的 `aliases` 据此提示）
+pub fn is_alias(m: &str) -> bool {
     let m = m.trim().to_ascii_lowercase();
     let m = m.strip_suffix("[1m]").unwrap_or(&m);
     matches!(

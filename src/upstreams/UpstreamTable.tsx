@@ -30,6 +30,7 @@ import {
 } from "./labels";
 import { labelsText } from "./labels.i18n";
 import { ModelsPanel } from "./ModelsPanel";
+import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
 import { SPARKLINE_WIDTH, Sparkline } from "./Sparkline";
@@ -286,6 +287,8 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
   const t = useText(upstreamTableText);
   const l = useText(labelsText);
   const [open, setOpen] = useState(false);
+  /** 「起别名…」点的那个模型。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了 */
+  const [aliasFor, setAliasFor] = useState<string | null>(null);
   if (p.disabled) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
@@ -312,7 +315,7 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
             </span>
           )}
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-96 gap-0 p-0">
+        <PopoverContent align="end" className="w-[26rem] gap-0 p-0">
           <ModelsPanel
             p={p}
             perToken={p.billing === "per-token"}
@@ -320,9 +323,18 @@ function ModelsCell({ p, busy, onEdit }: { p: ProviderView; busy: boolean; onEdi
               setOpen(false);
               onEdit();
             }}
+            onAlias={(model) => {
+              setOpen(false);
+              setAliasFor(model);
+            }}
           />
         </PopoverContent>
       </Popover>
+      <AliasDialog
+        open={aliasFor !== null}
+        onOpenChange={(o) => !o && setAliasFor(null)}
+        initial={{ models: aliasFor !== null ? [aliasFor] : [] }}
+      />
     </TableCell>
   );
 }

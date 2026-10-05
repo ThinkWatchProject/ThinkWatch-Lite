@@ -38,8 +38,12 @@ import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { NextClientsHint } from "@/guide/PageHints";
+import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
+import { AliasDialog } from "@/aliases/AliasDialog";
+import { aliasesText } from "@/aliases/aliases.i18n";
+import type { AliasInput } from "@/types";
 
-export type UpstreamTab = "upstreams" | "proxies" | "pricing" | "checkup";
+export type UpstreamTab = "upstreams" | "aliases" | "proxies" | "pricing" | "checkup";
 
 /**
  * 这次打开应用以来最后看的那个标签。切到别的页再回来，还停在那一个。
@@ -60,14 +64,17 @@ type DialogState =
   | { kind: "proxy"; mode: ProxyDialogMode }
   | { kind: "delete-proxy"; name: string }
   | { kind: "sheet"; mode: PriceSheetDialogMode }
-  | { kind: "delete-sheet"; name: string };
+  | { kind: "delete-sheet"; name: string }
+  /** 新建、编辑别名（`AliasDialog`） */
+  | { kind: "alias"; mode: AliasDialogMode };
 
 /**
- * 上游页：上游、代理、价目表、体检四个标签。
+ * 上游页：上游、别名、代理、价目表、体检五个标签。
  *
- * 前三者描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、按什么
- * 价格结算 —— 而代理和价目表只被上游引用，所以放在同一页里，引用关系在
- * 页内闭合。**列表只读**，新建与编辑都在对话框里完成，一次保存一个版本。
+ * 上游、代理、价目表描述出站侧的三个方面 —— 请求发往哪个服务、经过哪条网络路径、
+ * 按什么价格结算 —— 而代理和价目表只被上游引用，所以放在同一页里，引用关系在
+ * 页内闭合。别名是同一个模型在各个上游的不同名称，也只和上游的模型清单打交道。
+ * **列表只读**，新建与编辑都在对话框里完成，一次保存一个版本。
  * 体检回答的是「这些上游实际表现如何」：一段时间里各上游的几项事实和相互参照。
  *
  * 页头的摘要说上游的整体状况：几个、几个正常、几个要处理，24 小时的请求与费用。
@@ -85,6 +92,7 @@ export default function UpstreamsPage({
 }) {
   const t = useText(upstreamsPageText);
   const c = useText(commonText);
+  const at = useText(aliasesText);
   const nav = useNav();
   const configVersion = ov.config_version;
   /** 这一页上的启停排成一队，见 `toggle` */
@@ -273,6 +281,8 @@ export default function UpstreamsPage({
 
   const createUpstream = () => setDialog({ kind: "upstream", mode: { kind: "create" } });
   const createProxy = () => setDialog({ kind: "proxy", mode: { kind: "create" } });
+  const createAlias = (initial?: Partial<AliasInput>) =>
+    setDialog({ kind: "alias", mode: { kind: "create", initial } });
 
   const actions =
     tab === "upstreams" ? (
@@ -296,6 +306,11 @@ export default function UpstreamsPage({
           {t.newUpstream}
         </Button>
       </>
+    ) : tab === "aliases" ? (
+      <Button size="sm" onClick={() => createAlias()}>
+        <PlusIcon />
+        {at.newAlias}
+      </Button>
     ) : tab === "proxies" ? (
       <>
         {proxies.length > 0 && (
@@ -353,6 +368,9 @@ export default function UpstreamsPage({
             <TabsList variant="line">
               <TabsTrigger value="upstreams">
                 {t.tabs.upstreams} <Count n={providers.length} />
+              </TabsTrigger>
+              <TabsTrigger value="aliases">
+                <AliasTabLabel active={tab === "aliases"} />
               </TabsTrigger>
               <TabsTrigger value="proxies">
                 {t.tabs.proxies} <Count n={proxies.length} />
@@ -419,6 +437,16 @@ export default function UpstreamsPage({
               }}
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="aliases" className="pt-4">
+          <AliasesTab
+            providers={ov.providers}
+            configVersion={configVersion}
+            onCreate={createAlias}
+            onEdit={(name) => setDialog({ kind: "alias", mode: { kind: "edit", name } })}
+            onChanged={changed}
+          />
         </TabsContent>
 
         <TabsContent value="proxies" className="pt-4">
@@ -571,6 +599,20 @@ export default function UpstreamsPage({
             changed();
           }}
           onDeleted={() => {
+            setDialog(null);
+            changed();
+          }}
+        />
+      )}
+      {dialog?.kind === "alias" && (
+        <AliasDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDialog(null);
+          }}
+          editing={dialog.mode.kind === "edit" ? dialog.mode.name : undefined}
+          initial={dialog.mode.kind === "create" ? dialog.mode.initial : undefined}
+          onSaved={() => {
             setDialog(null);
             changed();
           }}

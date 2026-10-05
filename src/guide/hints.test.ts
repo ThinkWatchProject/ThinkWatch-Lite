@@ -63,6 +63,18 @@ describe("引导提示", () => {
     expect(JSON.parse(storage.raw()!)).toEqual({ dismissed: [], setupSeen: true });
   });
 
+  it("一次记下好几条（别名的建议「忽略」全部），记过的不重复，「重新显示」一起回来", async () => {
+    const storage = memoryStorage(JSON.stringify({ dismissed: ["next-clients"], setupSeen: false }));
+    const mod = await load(storage);
+    const Dismissed = () => mod.useDismissedHints().join(" ");
+    mod.dismissHints(["alias-suggestion:Claude Opus 5|a,b", "next-clients", "alias-suggestion:Claude Opus 5|a,b"]);
+    expect(renderToStaticMarkup(createElement(Dismissed))).toBe("next-clients alias-suggestion:Claude Opus 5|a,b");
+    const again = await load(memoryStorage(storage.raw()));
+    expect(renderToStaticMarkup(createElement(() => again.useDismissedHints().length))).toBe("2");
+    again.resetHints();
+    expect(renderToStaticMarkup(createElement(() => again.useDismissedHints().length))).toBe("0");
+  });
+
   it("「开始使用」出现过才记一笔，只记一次", async () => {
     const storage = memoryStorage();
     const mod = await load(storage);

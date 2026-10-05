@@ -80,6 +80,12 @@ export const requestDrawerText = messages(
     /** 命中规则后面的标记：决定去向的这一条就是拒绝 */
     denied: "拒绝",
     viaGroup: "经过策略组",
+    /** 客户端写的是别名：别名的名称，后面一句说它怎么对到各家 */
+    alias: "别名",
+    aliasNote: "按上游换成对应的模型名",
+    /** 决定去向的规则用了「指定模型」 */
+    pinnedModel: "指定模型",
+    pinnedBy: (rule: string) => `由规则「${rule}」指定，模型名原样发出`,
     /** 改写了参数的规则，按求值的顺序 */
     rewrittenBy: "参数改写",
     /** 这段对话之前的去向起的作用 */
@@ -92,7 +98,13 @@ export const requestDrawerText = messages(
     /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
     reason: "原因",
     attempts: "尝试链",
+    // 尝试链里一跳发出的模型名和客户端写的不同：悬停按原因说
     sentModel: (model: string) => `规则改写了模型名：这一跳发给上游的是 ${model}，费用按它计算`,
+    sentByAlias: (upstream: string, model: string) => `别名：这一跳发给 ${upstream} 的是 ${model}，费用按它计算`,
+    sentPinned: (upstream: string, model: string) => `指定模型：这一跳发给 ${upstream} 的是 ${model}，费用按它计算`,
+    sentByPlugin: (model: string) => `插件改写了模型名：这一跳发给上游的是 ${model}，费用按它计算`,
+    /** 原因对不上现在的配置（规则、别名在这次请求之后改过）：只说事实 */
+    sentOther: (model: string) => `这一跳发给上游的是 ${model}，费用按它计算`,
     failover: (failed: number) =>
       `已发生故障转移：前 ${failed} 个上游失败，已自动切换至下一个上游。`,
     failoverDenied: (failed: number, rule: string) =>
@@ -221,6 +233,10 @@ export const requestDrawerText = messages(
     matchedRule: "Matched rule",
     denied: "Denied",
     viaGroup: "Via group",
+    alias: "Alias",
+    aliasNote: "Resolved to each upstream's own model name",
+    pinnedModel: "Pinned model",
+    pinnedBy: (rule: string) => `Set by rule “${rule}”; the model name is sent as is`,
     rewrittenBy: "Rewritten by",
     continuity: "Conversation",
     heldRoute: "Kept the route decided at the start of this turn",
@@ -230,6 +246,12 @@ export const requestDrawerText = messages(
     reason: "Reason",
     attempts: "Attempts",
     sentModel: (model: string) => `A rule rewrote the model: this attempt sent ${model}, and the cost is priced by it`,
+    sentByAlias: (upstream: string, model: string) =>
+      `Alias: this attempt sent ${model} to ${upstream}, and the cost is priced by it`,
+    sentPinned: (upstream: string, model: string) =>
+      `Pinned model: this attempt sent ${model} to ${upstream}, and the cost is priced by it`,
+    sentByPlugin: (model: string) => `A plugin rewrote the model: this attempt sent ${model}, and the cost is priced by it`,
+    sentOther: (model: string) => `This attempt sent ${model}, and the cost is priced by it`,
     failover: (failed: number) =>
       failed === 1
         ? "Failover occurred: the first upstream failed, and the request was switched to the next upstream automatically."

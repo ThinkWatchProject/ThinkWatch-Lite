@@ -1,5 +1,6 @@
-import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Fragment, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
+import { AliasMark } from "@/aliases/AliasMark";
 import { Badge } from "@/ui/badge";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -19,7 +20,7 @@ import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { EmptyState } from "@/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
-import { textOf, useText } from "@/i18n";
+import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ALL_UPSTREAMS, conditionText, targetLabel } from "@/labels";
@@ -47,6 +48,7 @@ import { KeyChips, KeyIcon, TargetIcon } from "./parts";
 import { routeDialogText } from "./RouteDialog.i18n";
 import { routingText } from "./routing.i18n";
 import { RuleDialog } from "./RuleDialog";
+import { aliasNamed, inheritedAliases, pinnedText } from "./target";
 import { useReorder } from "./useReorder";
 import { hitsOfRoute, hitsOfRule, type HitSpan, type RouteHitsWindow } from "./useRouteHits";
 
@@ -365,15 +367,15 @@ export function RouteDialog({
                                 <RuleHitsLine n={hitsOfRule(routeHits, r.saved).requests} span={span} />
                               )}
                             </TableCell>
-                            <TableCell className="truncate">
+                            <TableCell className="py-2">
                               {r.conditions.length === 0 ? (
                                 <span className="text-muted-foreground">{rt.allRequests}</span>
                               ) : (
-                                conditionsText(r)
+                                <Conditions r={r} known={models} />
                               )}
                             </TableCell>
                             <TableCell className="py-2">
-                              <Action r={r} ov={ov} />
+                              <Action r={r} ov={ov} known={models} />
                             </TableCell>
                             <TableCell className="text-right" onClick={stop} onKeyDown={stop}>
                               <RowMenuButton items={items} label={t.ruleActions(r.name)} />
@@ -477,14 +479,48 @@ function RuleHitsLine({ n, span }: { n: number; span: HitSpan }) {
   );
 }
 
-function conditionsText(r: RuleDraft): string {
-  return r.conditions.map(conditionText).join(textOf(routeDialogText).conditionJoin);
+/**
+ * 「条件」一栏。模型条件写的是别名时标出来；写的是上游模型名、又有别名指向它时，次行写明
+ * 也匹配这些别名（继承只从真名到别名，和密钥的可见范围是同一条规矩）
+ */
+function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModel[] }) {
+  const t = useText(routeDialogText);
+  const model = r.conditions.find((c) => c.field === "model");
+  const values = model?.values.map((v) => v.trim()).filter(Boolean) ?? [];
+  const alias = values.length === 1 ? aliasNamed(values[0]!, known) : undefined;
+  const inherited = inheritedAliases(values, known);
+  const exact = values.length === 1 && !values[0]!.includes("*");
+  return (
+    <div className="min-w-0">
+      {/* 标记放在截断的文字外面：条件一长，行尾会被截掉，标记不能跟着丢 */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate">
+          {r.conditions.map((c, i) => (
+            <Fragment key={c.field}>
+              {i > 0 && t.conditionJoin}
+              {conditionText(c)}
+            </Fragment>
+          ))}
+        </span>
+        {alias && <AliasMark className="shrink-0" />}
+      </div>
+      {inherited.length > 0 && (
+        <div className="truncate tw-label text-muted-foreground">
+          {exact ? t.alsoAliasesOf(inherited) : t.alsoAliases(inherited)}
+        </div>
+      )}
+    </div>
+  );
 }
 
-/** 「命中后」一栏：去向（或拒绝、继续匹配），次行是去向的说明或附加项 */
-function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
+/**
+ * 「命中后」一栏：去向（或拒绝、继续匹配），次行是去向的说明或附加项。指定模型写成
+ * 「上游 · 模型」，备用的写在次行
+ */
+function Action({ r, ov, known }: { r: RuleDraft; ov: Overview; known: readonly KnownModel[] }) {
   const rt = useText(routingText);
-  const addOns = addOnsText(r);
+  const t = useText(routeDialogText);
+  const addOns = addOnsText(r, known);
   if (r.action === "deny") {
     return (
       <div className="min-w-0">
@@ -501,6 +537,23 @@ function Action({ r, ov }: { r: RuleDraft; ov: Overview }) {
       <div className="min-w-0">
         <div className="text-muted-foreground">{rt.continueMatching}</div>
         <div className="truncate tw-label text-muted-foreground">{addOns}</div>
+      </div>
+    );
+  }
+  if (r.toKind === "pinned") {
+    const [first, ...rest] = r.pinned;
+    const sub = [rest.length ? t.backups(rest.map(pinnedText)) : "", addOns].filter(Boolean).join(" · ");
+    return (
+      <div className="min-w-0">
+        {first && (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <TargetIcon name={first.provider} providers={ov.providers} size={13} />
+            <span className="truncate font-medium">
+              {first.provider} · {first.model}
+            </span>
+          </div>
+        )}
+        {sub && <div className="truncate tw-label text-muted-foreground">{sub}</div>}
       </div>
     );
   }

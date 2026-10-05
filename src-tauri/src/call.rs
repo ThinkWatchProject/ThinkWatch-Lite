@@ -112,6 +112,13 @@ webview_endpoints![
     UpdateGroup,
     DeleteGroup,
     KnownModels,
+    // 模型别名：同一个模型在各个上游的不同名称
+    Aliases,
+    CreateAlias,
+    UpdateAlias,
+    DeleteAlias,
+    PreviewAlias,
+    AliasUsage,
     // 各条路由、各条规则命中了多少：路由图按它给线加权、标出从没命中过的规则
     RouteStats,
     // 上游体检：各家上游的事实和样本数，界面按它写成自己的话
@@ -206,7 +213,7 @@ mod tests {
         let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/control.ts"))
             .unwrap();
         for (name, path) in [
-            ("CreatePluginConfirmed", "/plugins/confirmed"),
+            ("CreatePluginConfirmed", "/plugin-confirmed"),
             ("SavePluginConfirmed", "/plugins/{id}/confirmed"),
             (
                 "ApprovePluginFileConfirmed",

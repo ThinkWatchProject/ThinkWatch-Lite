@@ -19,9 +19,23 @@ use crate::{data_dir, error::Out, wire::UninstallStep};
 /// —— 藏起来的退路等于没有退路，他会在心里给接管打上「不可逆」的标签。
 ///
 /// 整个放在阻塞线程上：每个发行版要唤醒好几秒，逐个读写它们的文件
+///
+/// 还原了这台电脑上的 Claude Desktop 时，接着删接管时在它的密钥上加的那条路由规则
+/// （`clients::desktop_rule`）。删不成照样算还原了，那一条带上提醒（[`RestoreOutcome::warning`]）
 #[tauri::command]
-pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
-    crate::clients::blocking(|| restore_everywhere(&tw_adopt::foreign::backup_root())).await
+pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<RestoreOutcome>> {
+    let mut out =
+        crate::clients::blocking(|| restore_everywhere(&tw_adopt::foreign::backup_root())).await?;
+    let desktop = tw_adopt::desktop::ID;
+    if let Some(r) = out
+        .iter_mut()
+        .find(|r| r.here && r.id == desktop && r.ok && !r.skipped)
+    {
+        r.warning = crate::clients::desktop_rule::remove_after_restore(&state.control, desktop)
+            .await
+            .map(|w| crate::core_text::text(&w));
+    }
+    Ok(out)
 }
 
 /// 还原这一份接管着的每一个客户端：这台电脑上的，和每个 WSL 发行版里的。阻塞。
@@ -38,11 +52,13 @@ pub async fn restore_all() -> Out<Vec<RestoreOutcome>> {
 ///
 /// `backups` 是这一份的备份目录（`tw_adopt::foreign::backup_root`），测试里换成临时的
 pub fn restore_everywhere(backups: &Path) -> Vec<RestoreOutcome> {
-    let mut out = restore_all_in(&crate::clients::home_dir(), backups, |n| n.to_string());
+    let mut out = restore_all_in(&crate::clients::home_dir(), backups, true, |n| {
+        n.to_string()
+    });
     for d in crate::clients::wsl::distros() {
         let name = d.name.clone();
         match crate::clients::wsl::open(d) {
-            Ok(w) => out.extend(restore_all_in(&w.home, backups, |n| {
+            Ok(w) => out.extend(restore_all_in(&w.home, backups, false, |n| {
                 crate::clients::wsl::display_name(n, &w)
             })),
             Err(e) => out.push(RestoreOutcome {
@@ -50,15 +66,20 @@ pub fn restore_everywhere(backups: &Path) -> Vec<RestoreOutcome> {
                 ok: false,
                 skipped: false,
                 detail: crate::core_text::text(&e),
+                warning: None,
+                id: String::new(),
+                here: false,
             }),
         }
     }
     out
 }
 
+/// `here`：这台电脑上的（不是某个 WSL 发行版里的）
 fn restore_all_in(
     home: &Path,
     backups: &Path,
+    here: bool,
     name: impl Fn(&str) -> String,
 ) -> Vec<RestoreOutcome> {
     use crate::clients::ops;
@@ -72,6 +93,9 @@ fn restore_all_in(
                 Ok(_) => tr!("已还原", "Restored").to_string(),
                 Err(e) => crate::core_text::text(&e),
             },
+            warning: None,
+            id: c.id.to_string(),
+            here,
         }
     });
     let skipped = ops::adopted_elsewhere(home, backups)
@@ -85,6 +109,9 @@ fn restore_all_in(
                 "Connected by another ThinkWatch Lite. Restore it from the ThinkWatch Lite that connected it"
             )
             .to_string(),
+            warning: None,
+            id: c.id.to_string(),
+            here,
         });
     restored.chain(skipped).collect()
 }
@@ -97,6 +124,14 @@ pub struct RestoreOutcome {
     /// 也就谈不上还原不了
     skipped: bool,
     detail: String,
+    /// 还原了、但该说一声的事：Claude Desktop 接管时加的那条路由规则没删成
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+    /// 客户端的 id、是不是这台电脑上的：只在这一侧用
+    #[serde(skip)]
+    id: String,
+    #[serde(skip)]
+    here: bool,
 }
 
 /// 还原的结果写成卸载的步骤，一个客户端一行。第二个值：这一份接管的是不是全部
@@ -105,12 +140,19 @@ pub fn restore_steps(restored: Vec<RestoreOutcome>) -> (Vec<UninstallStep>, bool
     let all = restored.iter().all(|r| r.ok);
     let log = restored
         .into_iter()
-        .map(|r| UninstallStep {
-            ok: r.ok,
-            text: tr!(
-                format!("{}：{}", r.client, r.detail),
-                format!("{}: {}", r.client, r.detail)
-            ),
+        .map(|r| {
+            // 还原了、但还有一句要说的：接在后面
+            let detail = match &r.warning {
+                Some(w) => w.clone(),
+                None => r.detail.clone(),
+            };
+            UninstallStep {
+                ok: r.ok,
+                text: tr!(
+                    format!("{}：{}", r.client, detail),
+                    format!("{}: {}", r.client, detail)
+                ),
+            }
         })
         .collect();
     (log, all)
@@ -281,7 +323,7 @@ pub fn last_line() -> String {
 #[tauri::command]
 pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<UninstallStep>> {
     use tauri::Manager;
-    let (mut log, restored_all) = restore_steps(restore_all().await?);
+    let (mut log, restored_all) = restore_steps(restore_all(app.state()).await?);
     // 注销 LaunchAgent。**失败只记一句**：它不该挡住卸载，而留下一个
     // 开机自启项的后果，用户在系统设置里看得见、也删得掉
     #[cfg(not(windows))]
@@ -370,7 +412,7 @@ mod tests {
             &tw_adopt::cloud::Around::default(),
         )
         .unwrap();
-        let out = restore_all_in(home.path(), &backups, |n| n.to_string());
+        let out = restore_all_in(home.path(), &backups, true, |n| n.to_string());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].client, "Claude Code");
         assert!(out[0].ok, "{}", out[0].detail);
@@ -403,7 +445,7 @@ mod tests {
         let settings = home.path().join(".claude/settings.json");
         let before = std::fs::read_to_string(&settings).unwrap();
 
-        let out = restore_all_in(home.path(), &mine, |n| n.to_string());
+        let out = restore_all_in(home.path(), &mine, true, |n| n.to_string());
         let got: Vec<_> = out
             .iter()
             .map(|r| (r.client.as_str(), r.ok, r.skipped))
@@ -444,6 +486,9 @@ mod tests {
             ok,
             skipped,
             detail: String::new(),
+            warning: None,
+            id: String::new(),
+            here: true,
         };
         assert!(restore_steps(vec![r(true, false), r(true, true)]).1);
         let (log, all) = restore_steps(vec![r(true, false), r(false, false)]);

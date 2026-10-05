@@ -32,14 +32,7 @@ import {
   targetLabel,
   translatedText,
 } from "@/labels";
-import type {
-  Dialect,
-  DryRunResult,
-  KnownModel,
-  Overview,
-  RouteInput,
-  RuleTrace,
-} from "@/types";
+import type { Dialect, DryRunResult, KnownModel, Overview, RouteInput, RuleTrace } from "@/types";
 import { skipLabel } from "@/upstreams/labels";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
@@ -48,6 +41,7 @@ import { ModelInput, onOpenFocus } from "./fields";
 import { DIALECTS, usersOf } from "./model";
 import { KeyIcon, TargetIcon } from "./parts";
 import { routingText } from "./routing.i18n";
+import { modelViaOf, type ModelVia } from "./target";
 
 /** 按什么求值：密钥使用的路由、指定的路由、路由对话框里还没保存的草稿 */
 export type DryRunTarget =
@@ -62,6 +56,9 @@ export type DryRunTarget =
  * 右边从上往下：结论（一句话 + 状态点）、这一趟经过的路（密钥 → 路由 → 规则 →
  * 去向，和页上的路由图同一套标志）、细节、逐条匹配明细。输入一变就重算，重算时
  * 旧结果淡一档留着，不闪成空白。
+ *
+ * 尝试顺序里每个上游写出发给它的模型名和来历（别名、规则改写、指定模型）：客户端写的
+ * 名称和发出的不同，正是要在这里看清的事。
  */
 export function DryRunDialog({
   target,
@@ -200,7 +197,7 @@ export function DryRunDialog({
               </NativeSelect>
             </FormItem>
             <FormItem label={t.model} htmlFor={`${uid}-model`}>
-              <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models.map((m) => m.id)} />
+              <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models} />
             </FormItem>
             <FormItem label={t.dialect} htmlFor={`${uid}-dialect`}>
               <NativeSelect
@@ -368,7 +365,8 @@ function Result({
    * 的事，而一条规则都没走。留着它们只会让人以为它真的去了那儿。
    */
   const short = r.outcome === "intercepted";
-  const target = r.outcome === "route" ? (r.via_group ?? r.candidates[0] ?? null) : null;
+  const candidates = r.candidate_models;
+  const target = r.outcome === "route" ? (r.via_group ?? candidates[0]?.provider ?? null) : null;
 
   // 这一趟经过的路：密钥 → 路由 → 规则 → 去向。和路由图同一套标志
   const steps: ReactNode[] = [];
@@ -454,14 +452,18 @@ function Result({
             <>
               <dt className="text-muted-foreground">{t.attempts}</dt>
               <dd className="flex flex-col gap-1">
-                {r.candidates.map((c, i) => {
+                {candidates.map((cv, i) => {
+                  const c = cv.provider;
                   const open = r.circuit_open.includes(c);
                   const conv = r.converted.find((x) => x.provider === c);
+                  const via = modelViaOf(cv);
                   return (
-                    <div key={c} className="flex flex-wrap items-center gap-x-2">
+                    // 指定模型可以在同一个上游上列两个模型：上游名不唯一
+                    <div key={`${i}:${c}`} className="flex flex-wrap items-center gap-x-2">
                       <span className="w-3 tw-num text-muted-foreground">{i + 1}</span>
                       <TargetIcon name={c} providers={ov.providers} size={13} />
                       <span className={cn("font-medium", open && "text-muted-foreground line-through")}>{c}</span>
+                      {cv.sent_model && via && <SentModel model={cv.sent_model} via={via} />}
                       {open && (
                         <span className="inline-flex items-center gap-1 tw-label text-warning">
                           <StatusDot tone="warn" />
@@ -550,6 +552,18 @@ function Result({
   );
 }
 
+/** 发给这个上游的模型名，和它从哪儿来。和请求里写的一样时不写（core 照样给 `sent_model`） */
+function SentModel({ model, via }: { model: string; via: ModelVia }) {
+  const t = useText(dryRunText);
+  return (
+    <span className="tw-label text-muted-foreground">
+      {t.sends}
+      <span className="font-mono text-foreground">{model}</span>
+      {t.viaParen(t.via[via])}
+    </span>
+  );
+}
+
 /** 路上的一站：标志加名字 */
 function Step({ children, strong, className }: { children: ReactNode; strong?: boolean; className?: string }) {
   return (
@@ -567,9 +581,13 @@ function Step({ children, strong, className }: { children: ReactNode; strong?: b
 
 function headline(r: DryRunResult): string {
   const m = textOf(dryRunText);
+  const first = r.candidate_models[0];
   switch (r.outcome) {
     case "route":
-      return r.via_group ? m.viaGroup(targetLabel(r.via_group)) : m.toUpstream(r.candidates[0] ?? "");
+      if (r.via_group) return m.viaGroup(targetLabel(r.via_group));
+      return first?.model_via === "pinned" && first.sent_model
+        ? m.toPinned(first.provider, first.sent_model)
+        : m.toUpstream(first?.provider ?? "");
     case "deny":
       return m.denied;
     case "unavailable":

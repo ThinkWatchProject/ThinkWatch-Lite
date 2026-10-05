@@ -6,12 +6,15 @@ import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Segmented } from "@/ui/segmented";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { AliasMark } from "@/aliases/AliasMark";
 import { useText } from "@/i18n";
-import type { KnownModel } from "@/types";
 import { Boxed, FormItem, Note } from "@/upstreams/parts";
+import type { KnownModel } from "@/types";
 import { modelScopeText } from "./ModelScope.i18n";
 import {
   addPattern,
+  hasAliases,
+  locked,
   patternHits,
   removeEntry,
   rowsOf,
@@ -19,6 +22,7 @@ import {
   toggleModel,
   visibleCount,
   type Scope,
+  type Source,
 } from "./scope";
 
 /** 一次画多少行。几百个模型全渲染出来，打开对话框会卡一下 */
@@ -30,6 +34,9 @@ const PAGE = 60;
  * **模型清单来自网关聚合后的目录，不按这把密钥的路由过滤。**core 的准入
  * （`resolve_allowed`）只看客户端方言和 `allow`，不看路由 —— 按路由删掉
  * 一半，显示的就不是客户端真会看到的那一份。每行写明来自哪个上游。
+ *
+ * **别名也列在里面**，名称旁一个「别名」标记。范围里有它列表里的某个模型时，它跟着
+ * 可见：勾上、点不动，来源写「随 … 放行」。反过来不成立 —— 只选别名，它的模型不可见。
  */
 export function ModelScope({
   scope,
@@ -40,7 +47,7 @@ export function ModelScope({
 }: {
   scope: Scope;
   entries: string[];
-  /** 网关知道的全部模型。尚未获取到时是空的 */
+  /** 网关知道的全部模型，含别名。尚未获取到时是空的 */
   catalog: KnownModel[];
   onScope: (s: Scope) => void;
   onEntries: (e: string[]) => void;
@@ -173,44 +180,33 @@ export function ModelScope({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {matched.slice(0, shown).map((r) => {
-                      const byPattern = r.source?.kind === "pattern";
-                      return (
-                        <TableRow key={r.id}>
-                          {/* 点不动的那些，把原因挂在格子上 —— 一个禁用的
-                              勾选框自己不会说明为什么 */}
-                          <TableCell
-                            title={
-                              r.source?.kind === "pattern" ? t.lockedHint(r.source.pattern) : undefined
-                            }
-                          >
-                            <Checkbox
-                              aria-label={r.id}
-                              checked={r.source != null}
-                              // 规则命中的点不动：一次勾选把规则展开成几百条明细，
-                              // 是用户看不出原因的一次大改
-                              disabled={byPattern}
-                              onCheckedChange={(v) => onEntries(toggleModel(entries, r.id, v === true))}
-                            />
-                          </TableCell>
-                          <TableCell
-                            className={r.source ? "font-mono" : "font-mono text-muted-foreground"}
-                          >
-                            {r.id}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {r.unknown ? "—" : t.providers(r.providers)}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {r.source?.kind === "pattern"
-                              ? t.byPattern(r.source.pattern)
-                              : r.source
-                                ? t.picked
-                                : ""}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {matched.slice(0, shown).map((r) => (
+                      <TableRow key={r.id}>
+                        {/* 点不动的那些，把原因挂在格子上 —— 一个禁用的
+                            勾选框自己不会说明为什么 */}
+                        <TableCell title={lockedTitle(r.source, t) ?? undefined}>
+                          <Checkbox
+                            aria-label={r.id}
+                            checked={r.source != null}
+                            // 规则命中的点不动：一次勾选把规则展开成几百条明细，
+                            // 是用户看不出原因的一次大改。随别的模型放行的别名
+                            // 同理：取消它要先去掉那个模型
+                            disabled={locked(r.source)}
+                            onCheckedChange={(v) => onEntries(toggleModel(entries, r.id, v === true))}
+                          />
+                        </TableCell>
+                        <TableCell className={r.source ? undefined : "text-muted-foreground"}>
+                          <span className="font-mono">{r.id}</span>
+                          {r.alias && (
+                            <AliasMark title={t.aliasOf(r.alias)} className="ml-1.5 align-[1px]" />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {r.unknown ? "—" : t.providers(r.providers)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{sourceText(r.source, t)}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
                 {matched.length === 0 && (
@@ -227,10 +223,34 @@ export function ModelScope({
                   </Button>
                 )}
               </Boxed>
+              {hasAliases(catalog) && <Note>{t.aliasRule}</Note>}
             </>
           )}
         </>
       )}
     </div>
   );
+}
+
+type ScopeText = (typeof modelScopeText)["zh"];
+
+/** 「来源」那一格 */
+function sourceText(source: Source, t: ScopeText): string {
+  switch (source?.kind) {
+    case "pattern":
+      return t.byPattern(source.pattern);
+    case "inherited":
+      return t.inherited(source.model);
+    case "picked":
+      return t.picked;
+    default:
+      return "";
+  }
+}
+
+/** 点不动的那一行为什么点不动 */
+function lockedTitle(source: Source, t: ScopeText): string | null {
+  if (source?.kind === "pattern") return t.lockedHint(source.pattern);
+  if (source?.kind === "inherited") return t.inheritedHint(source.model);
+  return null;
 }

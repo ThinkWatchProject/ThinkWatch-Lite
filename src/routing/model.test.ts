@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ConditionView, RouteView, RuleView } from "@/types";
 import {
+  addOnsText,
+  blankPinned,
   blankRule,
   canLift,
+  copyDraft,
   draftFromView,
   draftNotes,
   draftToInput,
@@ -64,6 +67,68 @@ describe("规则草稿", () => {
     expect(splitCompare("==0")).toEqual(["=", "0"]);
     const d = rule("x", { conditions: [{ field: "input_tokens", values: ["<=32k"] }] });
     expect(draftToInput(d).conditions).toEqual([{ field: "input_tokens", values: ["<=32k"] }]);
+  });
+
+  it("指定模型：读进来、交回去是同一个列表，顺序不变", () => {
+    const to = [
+      { provider: "bedrock", model: "us.anthropic.claude-opus-5-v1:0" },
+      { provider: "anthropic", model: "claude-opus-5" },
+    ];
+    const v: RuleView = {
+      name: "Opus 走 Bedrock",
+      conditions: [model("claude-opus-5")],
+      to,
+      set: { max_tokens: 8192 },
+      catch_all: false,
+      phase_two: false,
+      shadowed: false,
+    };
+    const d = draftFromView(v);
+    expect(d.action).toBe("forward");
+    expect(d.toKind).toBe("pinned");
+    expect(d.to).toBe("");
+    expect(d.pinned.map((p) => [p.provider, p.model])).toEqual(to.map((p) => [p.provider, p.model]));
+    expect(draftToInput(d)).toEqual({
+      name: "Opus 走 Bedrock",
+      conditions: v.conditions,
+      to,
+      deny: null,
+      set: { model: null, max_tokens: 8192, thinking: null },
+    });
+    // 上游或策略组照旧是一个名称
+    expect(draftFromView(view({ name: "兜底", to: "__all__" })).toKind).toBe("target");
+  });
+
+  it("指定模型时「模型改为」不起作用：不写进配置，也不算附加项", () => {
+    const d = rule("a", { toKind: "pinned", pinned: [blankPinned("anthropic", "claude-opus-5")], model: "x", maxTokens: "4096" });
+    expect(draftToInput(d).set).toEqual({ model: null, max_tokens: 4096, thinking: null });
+    expect(addOnsText(d)).toBe("max_tokens 改为 4096");
+    // 切回上游或策略组，留着的「模型改为」照常生效
+    expect(draftToInput({ ...d, toKind: "target" }).set?.model).toBe("x");
+    // 只有转发才有指定模型：继续匹配的规则照常改模型
+    expect(draftToInput({ ...d, action: "continue" }).set?.model).toBe("x");
+    expect(draftToInput({ ...d, action: "continue" }).to).toBeNull();
+  });
+
+  it("指定模型交回去时去掉两头的空白；复制出来的草稿不共用行", () => {
+    const d = rule("a", { toKind: "pinned", pinned: [blankPinned(" anthropic ", " claude-opus-5 ")] });
+    expect(draftToInput(d).to).toEqual([{ provider: "anthropic", model: "claude-opus-5" }]);
+    const c = copyDraft(d);
+    expect(c.pinned[0]).not.toBe(d.pinned[0]);
+    expect(c.pinned[0]!.key).not.toBe(d.pinned[0]!.key);
+  });
+
+  it("指定模型缺什么", () => {
+    const pinned = (...rows: [string, string][]) =>
+      rule("a", { toKind: "pinned", pinned: rows.map(([p, m]) => blankPinned(p, m)) });
+    expect(ruleProblem(pinned(), [])).toBe("添加至少一个指定模型");
+    expect(ruleProblem(pinned(["anthropic", "claude-opus-5"], ["", "x"]), [])).toBe("选择第 2 个指定模型的上游");
+    expect(ruleProblem(pinned(["anthropic", " "]), [])).toBe("填写第 1 个指定模型的模型名");
+    expect(ruleProblem(pinned(["anthropic", "claude-opus-5"]), [])).toBeNull();
+    // 选定上游之后才判断的规则不能转发，指定模型也一样
+    expect(
+      ruleProblem({ ...pinned(["a", "b"]), conditions: [{ field: "provider_would_be", values: ["a"] }] }, []),
+    ).toContain("不能转发");
   });
 
   it("保存按钮旁边说出还缺什么", () => {
@@ -158,6 +223,28 @@ describe("路由列表", () => {
     expect(routeProblems(r)).toEqual(["1 条位于兜底规则之后，不会生效"]);
     expect(routeProblems(route({ has_catch_all: false, rules: [] }))).toEqual(["尚无兜底规则"]);
     expect(routeProblems(route({ rules: [view({ name: "兜底", to: "x", catch_all: true })] }))).toEqual([]);
+  });
+
+  it("规则一栏里指定模型写成「上游 · 模型」，备用的只说个数", () => {
+    const r: RouteView = {
+      ...route({}),
+      rules: [
+        {
+          ...view({ name: "Opus 走 Bedrock" }),
+          to: [
+            { provider: "bedrock", model: "us.anthropic.claude-opus-5-v1:0" },
+            { provider: "anthropic", model: "claude-opus-5" },
+          ],
+        },
+        { ...view({ name: "官方 Sonnet" }), to: [{ provider: "anthropic", model: "claude-sonnet-5" }] },
+        // 空列表不是去向（core 的校验拦得住，这里只求不当成转发）
+        { ...view({ name: "空" }), to: [] },
+      ],
+    };
+    expect(flowOf(r)).toEqual([
+      { rule: "Opus 走 Bedrock", name: "bedrock", target: "bedrock · us.anthropic.claude-opus-5-v1:0，备用 1 个" },
+      { rule: "官方 Sonnet", name: "anthropic", target: "anthropic · claude-sonnet-5" },
+    ]);
   });
 
   it("英文的数量分单复数", () => {

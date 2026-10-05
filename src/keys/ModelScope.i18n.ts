@@ -26,10 +26,16 @@ export const modelScopeText = messages(
     source: "来源",
     byPattern: (p: string) => `由 ${p} 命中`,
     picked: "单独选中",
+    /** 别名随它列表里的某个模型一起可见 */
+    inherited: (m: string) => `随 ${m} 放行`,
+    aliasOf: (models: string[]) => `别名，指向 ${models.join("、")}`,
+    /** 表格下面一句：继承只从上游模型名到别名 */
+    aliasRule: "范围里有某个上游模型，指向它的别名也一起可见；只选别名，原来的名称不可见。",
     rest: (n: number) => `其余 ${n} 个`,
     noMatch: "没有匹配的模型",
     /** 规则命中的行点不动，说明为什么 */
     lockedHint: (p: string) => `由 ${p} 命中，取消请修改该规则`,
+    inheritedHint: (m: string) => `随 ${m} 放行，${m} 不在范围里时才可单独取消`,
   },
   {
     scope: "Visible models",
@@ -60,8 +66,13 @@ export const modelScopeText = messages(
     source: "From",
     byPattern: (p: string) => `matched by ${p}`,
     picked: "picked",
+    inherited: (m: string) => `allowed with ${m}`,
+    aliasOf: (models: string[]) => `Alias for ${models.join(", ")}`,
+    aliasRule:
+      "An alias is visible whenever a model it points to is in scope. Picking only the alias leaves the original names hidden.",
     rest: (n: number) => (n === 1 ? "1 more" : `${n} more`),
     noMatch: "No model matches",
     lockedHint: (p: string) => `Matched by ${p}; edit that pattern to drop it`,
+    inheritedHint: (m: string) => `Allowed with ${m}; it can be dropped on its own once ${m} is out of scope`,
   },
 );

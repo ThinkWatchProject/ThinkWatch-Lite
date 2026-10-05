@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg, Protocol } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg, PinnedModel, Protocol } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -11,6 +11,12 @@ warnings: Array<Msg>,
  * 改动什么时候生效
  */
 takes_effect: TakesEffect, };
+
+/**
+ * 新建、编辑模型别名时，名称下面的一条提示（`alias_hints`）。说的是**这台机器上检测到的
+ * 客户端**会怎么对待这个名称，所以由这一侧判断（`crate::aliases`）。只给码和参数，句子在界面
+ */
+export type AliasHint = { "code": "claude_code_reserved", name: string, } | { "code": "family_mismatch", family: string, model: string, clients: Array<string>, } | { "code": "claude_desktop_hidden", name: string, } | { "code": "claude_desktop_shown", name: string, } | { "code": "model_lists_update", clients: Array<string>, };
 
 /**
  * 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。
@@ -44,6 +50,53 @@ gateway_base: string,
  * config.yaml 里有哪几把网关密钥可选
  */
 keys: Array<string>, };
+
+/**
+ * 给 Claude Desktop 选模型：写进它配置的那个名称，和它的密钥能用的上游模型
+ */
+export type DesktopPick = { 
+/**
+ * 写进它配置的模型名（它发来的就是这个）
+ */
+written: string, 
+/**
+ * 可选的模型，按网关列出的顺序。选一个，规则按顺序指定提供它的每一家上游
+ */
+choices: Array<ModelChoice>, };
+
+/**
+ * 接管 Claude Desktop 时在它的密钥上加的那条「指定模型」规则。
+ *
+ * 网关列出的模型它一个都不收时（它只认名称像 Claude 的），接管时选一个上游模型，
+ * 这条规则把它的请求都发给那个模型：插在它的密钥所用路由的最前面，条件只有它的
+ * 密钥。取消接管时删掉。别的客户端不受影响。
+ */
+export type DesktopRule = { 
+/**
+ * 规则在（或者要加进）哪条路由
+ */
+route: string, 
+/**
+ * 是那条路由的第几条，从 1 起
+ */
+position: number, 
+/**
+ * 规则的名字
+ */
+name: string, 
+/**
+ * 条件里的密钥：它的那把
+ */
+key: string, 
+/**
+ * 要选模型（网关没有它认的模型）时：写进它配置的名称和可选的模型。没有就是
+ * 不用选 —— 这时已有的那条规则要删掉（还原，或者网关已经有它认的模型了）
+ */
+pick?: DesktopPick | null, 
+/**
+ * 已经有这条规则时，它此刻指定的模型
+ */
+current?: Array<PinnedModel> | null, };
 
 /**
  * 一个客户端此刻的样子。
@@ -94,6 +147,11 @@ costs: Array<Msg>,
  * `true`；点一下走一遍接管的「差异 → 确认 → 写入」重写它，**不在后台悄悄改**
  */
 models_stale: boolean, 
+/**
+ * 配置里此刻写着的模型。只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、
+ * Grok Build、Qwen Code）有；删除别名时据此说出哪几个已接管客户端的模型列表写着它
+ */
+models?: Array<string> | null, 
 /**
  * 配置位置能换（行菜单里给「更改路径…」，见 [`ClientLocations`]）。Claude Desktop、
  * DeepSeek Harness 和 WSL 里的不能
@@ -431,6 +489,11 @@ env_keys: Array<string>, enabled: boolean, source: string,
 third_party: boolean, };
 
 /**
+ * 一个上游模型，和提供它的上游（按网关排的顺序）
+ */
+export type ModelChoice = { model: string, providers: Array<string>, };
+
+/**
  * 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**
  */
 export type PlanView = { client: string, path: string, 
@@ -476,7 +539,12 @@ also?: Array<FilePlanView>,
  * 客户端原来直连 Bedrock：按它原来的设置新建 Bedrock 上游要填的。界面据此给一个
  * 「新建上游」的入口；还原时没有
  */
-bedrock?: BedrockDraft | null, };
+bedrock?: BedrockDraft | null, 
+/**
+ * 接管、还原 Claude Desktop 时网关上要改的那条路由规则（`clients::desktop_rule`）。
+ * 不用改的、别的客户端没有
+ */
+desktop_rule?: DesktopRule | null, };
 
 /**
  * 批准一个插件磁盘上改过的文件（`plugin_approve_confirmed`）。**文件由 Rust 自己去取**：

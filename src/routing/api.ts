@@ -5,7 +5,6 @@
 import { call } from "@/control";
 import type { DryRunRequest, GroupSave, RouteSave } from "@/types";
 
-
 export const api = {
   createRoute: (save: RouteSave) => call("CreateRoute", save),
   updateRoute: (name: string, save: RouteSave) => call("UpdateRoute", save, name),
@@ -19,6 +18,8 @@ export const api = {
   deleteGroup: (name: string, baseVersion: string) =>
     call("DeleteGroup", { base_version: baseVersion }, name),
   knownModels: () => call("KnownModels", null),
+  /** 一个上游的模型清单（指定模型时从这里选，带上下文窗口） */
+  providerModels: (name: string) => call("ProviderModels", null, name),
   dryRun: (req: DryRunRequest) => call("DryRun", req),
   /** 从 `fromMs` 到现在，各条路由、各条规则命中了多少，以及记录从哪一刻起是全的 */
   routeStats: (fromMs: number) => call("RouteStats", { from_ms: fromMs }),

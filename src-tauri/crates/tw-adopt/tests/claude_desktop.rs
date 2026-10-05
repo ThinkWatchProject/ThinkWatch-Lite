@@ -390,34 +390,72 @@ fn a_configuration_switched_in_the_app_is_left_as_the_user_chose() {
     assert!(!read(&meta).contains(PROFILE_ID));
 }
 
+/// 网关列出的它一个都不收：写进去的是兜底的那一个，计划里说要选一个上游模型给它用，
+/// 候选是网关列出的那些。**说明里不再教人手写规则** —— 规则在接管时加在它的密钥上
 #[test]
-fn without_a_claude_model_the_fallback_is_written_and_the_rule_is_spelled_out() {
+fn without_a_claude_model_the_fallback_is_written_and_a_model_is_asked_for() {
     let b = bed();
     let c = client();
-    let p = desktop::plan_adopt_in(
-        &c,
-        &b.home,
-        &gw(),
-        Some(&names(&["deepseek-chat", "claude-deepseek-v3", "gpt-5"])),
-        None,
-        &Around::default(),
-    )
-    .unwrap();
-    let note = p
-        .notes
-        .iter()
-        .find(|n| n.code == "adopt.plan.claude_desktop.no_claude_model")
-        .expect("没有说要加一条规则");
-    assert!(
-        note.text.contains("set: { model: deepseek-chat }"),
-        "{note}"
+    let listed = names(&["deepseek-chat", "claude-deepseek-v3", "gpt-5"]);
+    let p = desktop::plan_adopt_in(&c, &b.home, &gw(), Some(&listed), None, &Around::default())
+        .unwrap();
+    assert_eq!(
+        p.pick_model,
+        Some(desktop::ModelPick {
+            written: desktop::FALLBACK_MODEL.into(),
+            listed,
+        })
     );
-    assert!(note.text.contains(desktop::FALLBACK_MODEL), "{note}");
+    assert!(
+        p.notes.iter().all(|n| !n.code.contains("no_claude_model")),
+        "{:?}",
+        p.notes
+    );
+    assert!(p.also.iter().all(|a| a.pick_model.is_none()));
     apply(&c, &p, &b.backups).unwrap();
     assert_eq!(
         json(&desktop::profile_path(&b.home))["inferenceModels"],
         serde_json::json!([desktop::FALLBACK_MODEL])
     );
+    // 选不选、选了哪个，文件都是这样：再算一次是空操作
+    let again = desktop::plan_adopt_in(
+        &c,
+        &b.home,
+        &gw(),
+        Some(&names(&["deepseek-chat"])),
+        None,
+        &Around::default(),
+    )
+    .unwrap();
+    assert!(again.is_noop());
+    assert!(again.pick_model.is_some());
+}
+
+/// 有它收的模型就不用选；不问模型（`None`）时也不问
+#[test]
+fn with_a_claude_model_or_without_a_listing_nothing_is_asked_for() {
+    let b = bed();
+    let c = client();
+    let with = desktop::plan_adopt_in(
+        &c,
+        &b.home,
+        &gw(),
+        Some(&names(&["glm-4.6", "claude-sonnet-5"])),
+        None,
+        &Around::default(),
+    )
+    .unwrap();
+    assert_eq!(with.pick_model, None);
+    let unasked =
+        desktop::plan_adopt_in(&c, &b.home, &gw(), None, None, &Around::default()).unwrap();
+    assert_eq!(unasked.pick_model, None);
+    // 一个都没列出：要选，但没得选
+    let empty =
+        desktop::plan_adopt_in(&c, &b.home, &gw(), Some(&[]), None, &Around::default()).unwrap();
+    assert_eq!(empty.pick_model.map(|p| p.listed), Some(Vec::new()));
+    // 还原的计划里没有
+    adopt(&b, Some(&names(&["glm-4.6"])));
+    assert_eq!(plan_restore(&c, &b.home).unwrap().pick_model, None);
 }
 
 #[test]

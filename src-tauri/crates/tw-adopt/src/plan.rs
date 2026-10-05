@@ -170,6 +170,9 @@ pub struct Plan {
     /// 客户端原来直连 Bedrock：按它原来的设置新建 Bedrock 上游要填的（[`crate::cloud`]）。
     /// 界面据此给一个「新建上游」的入口
     pub bedrock: Option<cloud::BedrockDraft>,
+    /// 接管 Claude Desktop 而网关列出的模型它一个都不收：要选一个上游模型给它用
+    /// （[`crate::desktop::model_pick`]）。别的客户端、还原时没有
+    pub pick_model: Option<crate::desktop::ModelPick>,
 }
 
 impl Plan {
@@ -650,6 +653,7 @@ pub(crate) fn adopt_file(
         also: Vec::new(),
         prior: prior_rec.map(|r| (r.backup, r.created_file)),
         bedrock: None,
+        pick_model: None,
     })
 }
 
@@ -1038,6 +1042,7 @@ pub(crate) fn restore_file_plan(
             also: Vec::new(),
             prior: None,
             bedrock: None,
+            pick_model: None,
         });
     };
 
@@ -1186,6 +1191,7 @@ pub(crate) fn restore_file_plan(
         also: Vec::new(),
         prior: None,
         bedrock: None,
+        pick_model: None,
     })
 }
 
