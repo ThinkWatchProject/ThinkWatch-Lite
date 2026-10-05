@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -105,7 +105,6 @@ export function RuleDialog({
   );
   const [newGroup, setNewGroup] = useState(false);
 
-  const modelIds = useMemo(() => models.map((m) => m.id), [models]);
   const phaseTwo = isPhaseTwo(d);
   const pinned = isPinned(d);
   const problem = ruleProblem(d, takenNames);
@@ -285,12 +284,11 @@ export function RuleDialog({
                   {/* 指定模型：模型名原样发出，「模型改为」不起作用 */}
                   {!pinned && (
                     <FormItem label={t.setModel} htmlFor="rw-model">
-                      {/* 集成（L3）：ModelInput 的别名标记 prop 落地后，在这里把 models 的别名信息传进去 */}
                       <ModelInput
                         id="rw-model"
                         value={d.model}
                         onChange={(v) => set({ model: v })}
-                        models={modelIds}
+                        models={models}
                         placeholder={t.unchanged}
                       />
                     </FormItem>
@@ -445,11 +443,10 @@ function ConditionRow({
   switch (f.kind) {
     case "glob": {
       control = (
-        // 集成（L3）：ModelInput 的别名标记 prop 落地后，在这里把 models 的别名信息传进去
         <ModelInput
           value={v0}
           onChange={(v) => onChange({ ...c, values: [v] })}
-          models={models.map((m) => m.id)}
+          models={models}
           placeholder={t.globPlaceholder}
         />
       );

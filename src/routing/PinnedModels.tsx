@@ -120,7 +120,6 @@ function PinnedRow({
           </NativeSelectOption>
         ))}
       </NativeSelect>
-      {/* 集成（L3）：ModelInput 加了别名/上游说明的 prop 之后，这里不用传 —— 指定模型只列真名 */}
       <ModelInput
         className="min-w-0 flex-1"
         value={p.model}

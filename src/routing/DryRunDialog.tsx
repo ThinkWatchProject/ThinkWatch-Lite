@@ -198,8 +198,7 @@ export function DryRunDialog({
               </NativeSelect>
             </FormItem>
             <FormItem label={t.model} htmlFor={`${uid}-model`}>
-              {/* 集成（L3）：ModelInput 的别名标记 prop 落地后，在这里把 models 的别名信息传进去 */}
-              <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models.map((m) => m.id)} />
+              <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models} />
             </FormItem>
             <FormItem label={t.dialect} htmlFor={`${uid}-dialect`}>
               <NativeSelect
