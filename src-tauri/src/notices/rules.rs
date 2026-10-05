@@ -48,6 +48,7 @@ const UPSTREAMS: &str = "upstreams";
 const SECURITY: &str = "security";
 const MCP: &str = "mcp";
 const PLUGINS: &str = "plugins";
+const KEYS: &str = "keys";
 const SETTINGS: &str = "settings";
 /// 设置页的「网关监听」一节（`settings:<节>`，界面滚到那一节）
 const LISTEN_SETTINGS: &str = "settings:listen";
@@ -60,6 +61,7 @@ pub fn default_view(key: &str) -> &'static str {
         // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
         "scan" => MCP,
         "plugin" => PLUGINS,
+        "keylimit" => KEYS,
         // 网关、配置文件、监听，以及认不出来的：设置页至少能看到网关在不在跑
         _ => SETTINGS,
     }
@@ -396,6 +398,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     .event(),
             ]
         }
+        Event::KeyLimitAlert { .. } => key_limit(ev),
         Event::PluginFailed {
             plugin_id,
             plugin_name,
@@ -404,6 +407,134 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             ..
         } => vec![plugin_failed(plugin_id, plugin_name, *request_id, message)],
         _ => Vec::new(),
+    }
+}
+
+/// 一把网关密钥这一期（天、周、月）的用量到了一条上限的八成，或者到了上限。
+///
+/// **每一期都是新的一件**（`event`）：core 每一期、每一档只报一次，昨天看过的那一条不该
+/// 压住今天的。**同一条上限只留一条**：到顶时收起这一期八成的那条；新的一期到了八成，
+/// 上一期到顶的那条也不再是现状，一并收起。正文写密钥的名字（不写它的值）、哪一条、
+/// 什么时候重置
+fn key_limit(ev: &Event) -> Vec<Signal> {
+    let &Event::KeyLimitAlert {
+        ref key,
+        per,
+        measure,
+        max,
+        used,
+        cache_reads,
+        reached,
+        resets_at_ms,
+        ..
+    } = ev
+    else {
+        return Vec::new();
+    };
+    // 同一条上限：同一个周期、同一种量、缓存读取算法相同（和 core 认重复的规矩一样）
+    let limit = format!(
+        "keylimit:{key}:{per}-{measure}{}",
+        if cache_reads { "-cache" } else { "" }
+    );
+    let near = format!("{limit}:near");
+    let phrase = limit_phrase(per, measure, max, cache_reads);
+    let secs = resets_at_ms.saturating_sub(super::now_ms()) / 1000;
+    let reset = after(secs);
+    if reached {
+        return vec![
+            Signal::cleared(near),
+            Signal::raised(
+                limit,
+                Level::Warning,
+                tr!(
+                    format!("密钥「{key}」已达用量上限"),
+                    format!("Key “{key}” Reached Its Usage Limit")
+                ),
+            )
+            .body(tr!(
+                format!("上限「{phrase}」已用满{reset}。使用此密钥的请求会被拒绝。"),
+                format!(
+                    "The limit of {phrase} has been reached{reset}. Requests with this key will be rejected."
+                )
+            ))
+            .view(KEYS)
+            .event(),
+        ];
+    }
+    let percent = (used.saturating_mul(100) / max.max(1)).min(99);
+    let n = limit_amount(measure, used);
+    let spent = match measure {
+        tw_api::LimitMeasure::Requests => tr!(format!("{n} 次"), format!("{n} requests")),
+        tw_api::LimitMeasure::Tokens => tr!(format!("{n} token"), format!("{n} tokens")),
+        tw_api::LimitMeasure::Cost => n,
+    };
+    vec![
+        Signal::cleared(limit.clone()),
+        Signal::raised(
+            near,
+            Level::Warning,
+            tr!(
+                format!("密钥「{key}」的用量接近上限"),
+                format!("Key “{key}” Is Nearing Its Usage Limit")
+            ),
+        )
+        .body(tr!(
+            format!(
+                "上限「{phrase}」已使用 {percent}%（{spent}）{reset}。达到上限后，使用此密钥的请求会被拒绝。"
+            ),
+            format!(
+                "The limit of {phrase} is {percent}% used ({spent}){reset}. Once it is reached, requests with this key will be rejected."
+            )
+        ))
+        .view(KEYS)
+        .event(),
+    ]
+}
+
+/// 一条上限说成一句：「每天 $5.00 费用」「每天 1,000,000 token（含缓存读取）」；英文是
+/// 「$5.00 per day」「1,000,000 tokens per day (cache reads included)」。和密钥对话框里的同一种说法
+fn limit_phrase(
+    per: tw_api::LimitPer,
+    measure: tw_api::LimitMeasure,
+    max: u64,
+    cache_reads: bool,
+) -> String {
+    use tw_api::{LimitMeasure, LimitPer};
+    let (zh, en) = match per {
+        LimitPer::Minute => ("分钟", "minute"),
+        LimitPer::Hour => ("小时", "hour"),
+        LimitPer::Day => ("天", "day"),
+        LimitPer::Week => ("周", "week"),
+        LimitPer::Month => ("月", "month"),
+    };
+    let n = limit_amount(measure, max);
+    match measure {
+        LimitMeasure::Requests => tr!(
+            format!("每{zh} {n} 次请求"),
+            format!("{n} requests per {en}")
+        ),
+        LimitMeasure::Tokens => {
+            let cache = if cache_reads {
+                tr!("（含缓存读取）", " (cache reads included)")
+            } else {
+                ""
+            };
+            tr!(
+                format!("每{zh} {n} token{cache}"),
+                format!("{n} tokens per {en}{cache}")
+            )
+        }
+        LimitMeasure::Cost => tr!(format!("每{zh} {n} 费用"), format!("{n} per {en}")),
+    }
+}
+
+/// 用量或上限写成字：费用是微分，写到分；请求数、token 数带千分位
+fn limit_amount(measure: tw_api::LimitMeasure, n: u64) -> String {
+    use crate::menubar::model::{cost_long, grouped};
+    let n = i64::try_from(n).unwrap_or(i64::MAX);
+    match measure {
+        tw_api::LimitMeasure::Cost => cost_long(n),
+        _ => grouped(n),
     }
 }
 

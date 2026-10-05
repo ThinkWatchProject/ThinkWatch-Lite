@@ -13,6 +13,7 @@ import type { KeyUse } from "./data";
 import { keysTableText } from "./KeysTable.i18n";
 import { labelsText } from "./labels.i18n";
 import { routeLabel, scopeLabel, takeoverOf, type KeyOwner } from "./labels";
+import { limitPhrase, resetText } from "./limits";
 import { ClientMark, CopyIconButton, CostCell, OPENABLE_ROW, Tile, UsageCell, openable, stop } from "./parts";
 
 export interface KeyActions {
@@ -123,6 +124,7 @@ export function KeysTable({
                             {t.disabled}
                           </Badge>
                         )}
+                        <LimitReached limits={k.limits} />
                         {owner && <TakeoverBadge owner={owner} />}
                       </div>
                       <KeyValue value={k.key} label={t.copyKey} onCopy={() => actions.copy(k.name, true)} />
@@ -150,6 +152,37 @@ export function KeysTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * 用到上限的那几把：「已达上限」，悬停写是哪一条、什么时候重置。**没到就不出现** ——
+ * 状态只在异常时出现
+ */
+function LimitReached({ limits }: { limits: ClientView["limits"] }) {
+  const t = useText(keysTableText);
+  const reached = limits.filter((l) => l.reached);
+  if (reached.length === 0) return null;
+  const now = Date.now();
+  return (
+    <Tip
+      text={
+        <div className="space-y-1">
+          {reached.map((l) => (
+            <p key={`${l.per}:${l.measure}:${l.cache_reads}`}>
+              {l.resets_at_ms != null && l.resets_at_ms > now
+                ? t.reachedUntil(limitPhrase(l), resetText(l.resets_at_ms, now))
+                : limitPhrase(l)}
+            </p>
+          ))}
+        </div>
+      }
+    >
+      <Badge variant="outline">
+        <StatusDot tone="warn" />
+        {t.limitReached}
+      </Badge>
+    </Tip>
   );
 }
 

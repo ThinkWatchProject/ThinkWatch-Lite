@@ -608,6 +608,7 @@ fn every_key_lands_on_the_page_that_handles_it() {
         ("toolwall:relay", "security"),
         ("scan", "mcp"),
         ("plugin:add-date", "plugins"),
+        ("keylimit:codex:day-cost", "keys"),
     ] {
         assert_eq!(rules::default_view(key), view, "{key}");
     }
@@ -1530,4 +1531,146 @@ async fn reconciling_fills_in_what_was_missed_without_saying_anything_twice() {
         !shown.iter().any(|t| t.contains("需要重新登录")),
         "{shown:?}"
     );
+}
+
+/// 一把网关密钥的一条上限到了八成（`reached` 为假）或者到顶，`secs` 秒之后重置
+fn key_limit_alert(
+    measure: tw_api::LimitMeasure,
+    max: u64,
+    used: u64,
+    cache_reads: bool,
+    reached: bool,
+    secs: u64,
+) -> tw_api::Event {
+    tw_api::Event::KeyLimitAlert {
+        id: 1,
+        key: "codex".into(),
+        per: tw_api::LimitPer::Day,
+        measure,
+        max,
+        used,
+        cache_reads,
+        reached,
+        resets_at_ms: resets_in(secs).unwrap(),
+        at_ms: T0,
+    }
+}
+
+/// 通知写明是哪把密钥（名字，不是值）、哪一条上限、什么时候重置
+#[test]
+fn a_key_limit_names_the_key_the_limit_and_the_reset() {
+    use tw_api::LimitMeasure::{Cost, Requests, Tokens};
+    let said = |ev: &tw_api::Event| {
+        let s = rules::from_event(ev)
+            .into_iter()
+            .find(|s| s.change == Change::Raised)
+            .expect("要说");
+        (s.title, s.body)
+    };
+    with_lang(Lang::Zh, || {
+        assert_eq!(
+            said(&key_limit_alert(
+                Cost,
+                5_000_000,
+                5_020_000,
+                false,
+                true,
+                5 * 3600
+            )),
+            (
+                "密钥「codex」已达用量上限".to_string(),
+                "上限「每天 $5.00 费用」已用满，约 5 小时后重置。使用此密钥的请求会被拒绝。"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            said(&key_limit_alert(
+                Tokens, 1_000_000, 812_345, true, false, 600
+            ))
+            .1,
+            "上限「每天 1,000,000 token（含缓存读取）」已使用 81%（812,345 token），约 10 分钟后重置。\
+             达到上限后，使用此密钥的请求会被拒绝。"
+        );
+        assert_eq!(
+            said(&key_limit_alert(
+                Requests,
+                500,
+                400,
+                false,
+                false,
+                3 * 86_400
+            ))
+            .1,
+            "上限「每天 500 次请求」已使用 80%（400 次），约 3 天后重置。达到上限后，使用此密钥的请求会被拒绝。"
+        );
+    });
+    with_lang(Lang::En, || {
+        assert_eq!(
+            said(&key_limit_alert(
+                Cost,
+                5_000_000,
+                5_020_000,
+                false,
+                true,
+                5 * 3600
+            )),
+            (
+                "Key “codex” Reached Its Usage Limit".to_string(),
+                "The limit of $5.00 per day has been reached and resets in about 5 hours. \
+                 Requests with this key will be rejected."
+                    .to_string()
+            )
+        );
+        let (title, body) = said(&key_limit_alert(
+            Tokens, 1_000_000, 812_345, true, false, 600,
+        ));
+        assert_eq!(title, "Key “codex” Is Nearing Its Usage Limit");
+        assert_eq!(
+            body,
+            "The limit of 1,000,000 tokens per day (cache reads included) is 81% used \
+             (812,345 tokens) and resets in about 10 minutes. Once it is reached, requests with \
+             this key will be rejected."
+        );
+    });
+}
+
+/// 八成说一次、到顶再说一次；**同一条上限只留一条**。新的一期到八成时，上一期到顶的那条
+/// 收起、八成那条重新说（每一期都是新的一件，昨天看过的不压住今天的）
+#[tokio::test]
+async fn a_key_limit_is_told_at_80_percent_and_at_the_limit_once_per_period() {
+    use tw_api::LimitMeasure::Cost;
+    let b = bed();
+    let near = key_limit_alert(Cost, 5_000_000, 4_100_000, false, false, 3600);
+    let reached = key_limit_alert(Cost, 5_000_000, 5_000_000, false, true, 3600);
+    b.bus.on_event(&near);
+    b.bus.on_event(&reached);
+    assert_eq!(b.titles().len(), 2, "两档都弹系统通知：{:?}", b.titles());
+    let keys = |b: &Bed| b.bus.list().into_iter().map(|n| n.key).collect::<Vec<_>>();
+    assert_eq!(keys(&b), ["keylimit:codex:day-cost"], "到顶时收起八成那条");
+    assert_eq!(
+        *b.withdrawn.lock().unwrap(),
+        ["keylimit:codex:day-cost:near"]
+    );
+
+    b.bus.mark_all_read();
+    // 第二天
+    b.bus.on_event(&near);
+    assert_eq!(
+        keys(&b),
+        ["keylimit:codex:day-cost:near"],
+        "上一期到顶的那条收起"
+    );
+    assert!(!b.bus.list()[0].read, "新的一期是新的一件");
+    assert_eq!(b.titles().len(), 3);
+
+    // 算缓存读取的 token 上限和不算的是两条
+    b.bus.on_event(&key_limit_alert(
+        tw_api::LimitMeasure::Tokens,
+        100,
+        100,
+        true,
+        true,
+        3600,
+    ));
+    assert!(keys(&b).contains(&"keylimit:codex:day-tokens-cache".to_string()));
 }

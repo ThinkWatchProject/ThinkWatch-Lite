@@ -5,6 +5,8 @@ export const keyDialogText = messages(
     nameRequired: "请填写名称",
     nameTaken: "这个名称已被占用",
     patternsRequired: "请至少添加一条规则或选中一个模型",
+    limitRequired: "请填写用量上限的数值",
+    limitsInvalid: "请修正用量上限",
     editTitle: "编辑密钥",
     newTitle: "新建密钥",
     newDescription: "新密钥立即可用。客户端把它填进请求头即可连接网关。",
@@ -28,6 +30,8 @@ export const keyDialogText = messages(
     nameRequired: "A name is required",
     nameTaken: "This name is already in use",
     patternsRequired: "At least one pattern or one model is required",
+    limitRequired: "Enter an amount for each usage limit",
+    limitsInvalid: "Fix the usage limits",
     editTitle: "Edit key",
     newTitle: "New key",
     newDescription:
