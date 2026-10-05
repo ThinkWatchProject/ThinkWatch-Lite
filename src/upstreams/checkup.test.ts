@@ -3,7 +3,7 @@ import type { CacheTally, UpstreamCheckup } from "@/types";
 import {
   cacheFlagged,
   cacheGaps,
-  failFlagged,
+  discrepancies,
   inputFlagged,
   inputGaps,
   MIN_SAMPLES,
@@ -143,12 +143,35 @@ describe("缓存和别的上游比", () => {
   });
 });
 
-describe("失败率", () => {
-  it("请求够多、失败率够高才标", () => {
-    expect(failFlagged(checkup({ requests: 100, failed: 12 }))).toBe(true);
-    expect(failFlagged(checkup({ requests: 100, failed: 5 }))).toBe(false);
-    // 三次里失败一次：样本太少
-    expect(failFlagged(checkup({ requests: 3, failed: 1 }))).toBe(false);
+describe("一行上标出的偏差", () => {
+  it("模型名不同、输入差得多、缓存读得少，各自标出", () => {
+    const d = discrepancies(
+      checkup({
+        models: { named: 200, differed: 12, examples: [{ sent: "a", answered: "a-mini", count: 12 }] },
+        input: {
+          all: null,
+          by_model: [
+            { model: "a", here: { median: 1.4, samples: 100 }, others: { median: 1.0, samples: 100 }, other_upstreams: 1 },
+            { model: "b", here: { median: 1.05, samples: 100 }, others: { median: 1.0, samples: 100 }, other_upstreams: 1 },
+          ],
+        },
+        cache: {
+          all: tally(60, 1_000_000, 100_000),
+          by_model: [
+            { model: "a", here: tally(30, 500_000, 20_000), others: tally(200, 2_000_000, 1_200_000), other_upstreams: 1 },
+          ],
+        },
+      }),
+    );
+    expect(d.models?.differed).toBe(12);
+    // 只留标出来的那几个模型
+    expect(d.input.map((g) => g.model)).toEqual(["a"]);
+    expect(d.cache.map((g) => g.model)).toEqual(["a"]);
+  });
+
+  it("都对得上时什么都不标", () => {
+    const d = discrepancies(checkup({ models: { named: 200, differed: 0, examples: [] } }));
+    expect(d).toEqual({ models: null, input: [], cache: [] });
   });
 });
 

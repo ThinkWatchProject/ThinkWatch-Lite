@@ -1,7 +1,8 @@
 /**
- * 上游页的几份数据：24 小时统计、默认价目表的状态、账号类上游的额度、在途请求。
+ * 上游页的几份数据：24 小时统计、最近 7 天的体检、默认价目表的状态、账号类上游的额度、
+ * 在途请求。
  *
- * 前三份走 `useResource`：切走再回来先画上一次的数，后台再取，不闪。在途请求是
+ * 前四份走 `useResource`：切走再回来先画上一次的数，后台再取，不闪。在途请求是
  * 跟着事件流走的一份现状，不缓存。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -114,6 +115,18 @@ export function slotsByUpstream(buckets: CostBucketGroup[] | undefined, since: n
     row[i]!.failed += b.failed;
   }
   return out;
+}
+
+/**
+ * 最近 7 天的体检：上游表那一行的偏差标签由它来（见 `checkup.ts`）。一天里的样本撑不起
+ * 比较，所以是 7 天，不跟「24 小时」那一格走。**请求落地之后重读**，但最多半分钟一次 ——
+ * 7 天的数，多一条请求几乎不动，而这一问要把整段时间的记录过一遍。
+ */
+export function useUpstreamHealth() {
+  return useResource("upstream-health", () => api.upstreamHealth(), {
+    events: ["request_finished", "request_failed", "request_cancelled"],
+    throttleMs: 30_000,
+  });
 }
 
 /** 默认价目表的状态。配置换了一版（改了价目表、开关了自动更新）就重读 */

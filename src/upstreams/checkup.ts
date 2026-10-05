@@ -1,11 +1,14 @@
-import type { CacheTally, RatioView, UpstreamCheckup } from "@/types";
+import type { CacheTally, ModelConsistency, RatioView, UpstreamCheckup } from "@/types";
 
 /**
- * 上游体检怎么读 core 给的数（`GET /upstreams/health`）。
+ * 上游体检怎么读 core 给的数（`GET /upstreams/health`）：哪几处偏差要在上游表那一行标出来。
  *
  * **core 只给事实和参照，标不标出来是这里的事**，规则都在这一处：样本要多少、差多少
  * 才值得看一眼。标出来的只是琥珀色的字，不写结论 —— 模型名是上游自己写的，本地估算
  * 有两三成的误差，缓存读不读得到也看客户端。一处偏差是一条线索，不是一个判决。
+ *
+ * 请求数、失败率、首 token 和速度不在这里：上游表的「24 小时」「首 token / 速度」两格
+ * 已经写着，再标一遍是重复。
  *
  * **单看一家的数说明不了什么**，所以输入和缓存都拿同一个模型在别的上游上的数来比：
  * 估法一样、模型一样，差出来的才是上游自己的事。
@@ -22,8 +25,6 @@ export const MIN_TURNS = 10;
 export const INPUT_GAP = 0.25;
 /** 缓存：别的上游读到至少这么多，而它读到的不到别家的一半，才标出来 */
 export const CACHE_FLOOR = 0.3;
-/** 失败率到这么高、请求也够多，才标出来 */
-export const FAIL_RATE = 0.1;
 
 /** 一个模型上，这一家和别家的输入之比 */
 export interface InputGap {
@@ -87,12 +88,23 @@ export function cacheGaps(c: UpstreamCheckup): CacheGap[] {
 
 export const cacheFlagged = (g: CacheGap) => g.othersShare >= CACHE_FLOOR && g.hereShare <= g.othersShare / 2;
 
-/** 失败率。没有请求时说不出 */
-export function failRate(c: UpstreamCheckup): number | null {
-  return c.requests > 0 ? c.failed / c.requests : null;
+/** 一个上游要标出来的几处偏差。三样都空就是没有要标的 */
+export interface Discrepancies {
+  /** 回答中写的模型名与发出的不同 */
+  models: ModelConsistency | null;
+  /** 报告的输入与别家差得多、而且离本地估算更远的模型，差得多的在前 */
+  input: InputGap[];
+  /** 别家读得到缓存、它读到的不到一半的模型 */
+  cache: CacheGap[];
 }
 
-export const failFlagged = (c: UpstreamCheckup) => c.requests >= MIN_SAMPLES && (failRate(c) ?? 0) >= FAIL_RATE;
+export function discrepancies(c: UpstreamCheckup): Discrepancies {
+  return {
+    models: c.models.differed > 0 ? c.models : null,
+    input: inputGaps(c).filter(inputFlagged),
+    cache: cacheGaps(c).filter(cacheFlagged),
+  };
+}
 
 /** 百分比，取整。不是零却不到 1% 的写「<1%」：写成 0% 会读成一点都没有 */
 export function pct(x: number): string {

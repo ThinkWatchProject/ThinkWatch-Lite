@@ -6,6 +6,9 @@ function rate(v: number): string {
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
 
+/** 英文的单复数 */
+const count = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
 export const upstreamTableText = messages(
   {
     upstream: "上游",
@@ -24,6 +27,23 @@ export const upstreamTableText = messages(
       `上游返回未授权（${status}），该上游的凭据可能已失效。`,
     needsLogin: "需要重新登录",
     needsLoginTip: "账号的登录已失效。重新登录之前，经此上游的请求都会失败。",
+    // 体检标出的偏差（最近 7 天，规则在 checkup.ts）。**只说事实和参照**：「12 次不同」
+    // 「+31%」，不说「虚报」「掺假」 —— 标出来是请人看一眼，不是替人判断
+    modelDiffers: "模型名不符",
+    inputHigh: "输入 token 偏多",
+    inputLow: "输入 token 偏少",
+    cacheLow: "缓存读取偏低",
+    modelDiffersTip: (n: number, of: number) =>
+      `最近 7 天的 ${of.toLocaleString()} 次回答中，${n.toLocaleString()} 次写的模型名与发出的不同：`,
+    modelPair: (sent: string, answered: string, n: number) =>
+      `发出 ${sent}，回答 ${answered} · ${n.toLocaleString()} 次`,
+    inputTip: "最近 7 天，上游报告的输入 token 为本地估算的倍数，与服务同一模型的其他上游相比：",
+    inputLine: (model: string, gap: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
+      `${model} ${gap}：本上游 ${here}（${hereN.toLocaleString()} 次）· 其他 ${k} 个上游 ${others}（${othersN.toLocaleString()} 次）`,
+    ratio: (x: number) => `${x.toFixed(2)} 倍`,
+    cacheTip: "最近 7 天，可命中缓存的轮次中输入从缓存读取的比例，与服务同一模型的其他上游相比：",
+    cacheLine: (model: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
+      `${model}：本上游 ${here}（${hereN.toLocaleString()} 轮）· 其他 ${k} 个上游 ${others}（${othersN.toLocaleString()} 轮）`,
     inFlight: (n: number) => `${n} 个请求进行中`,
     actions: (name: string) => `${name} 的操作`,
     check: "检测连接",
@@ -73,6 +93,23 @@ export const upstreamTableText = messages(
     needsLogin: "Sign in again",
     needsLoginTip:
       "The account's sign-in has expired. Until the account is signed in again, requests through this upstream will fail.",
+    modelDiffers: "Model name differs",
+    inputHigh: "Input reported high",
+    inputLow: "Input reported low",
+    cacheLow: "Low cache reads",
+    modelDiffersTip: (n: number, of: number) =>
+      `Over the last 7 days, in ${n.toLocaleString()} of ${count(of, "answer", "answers")}, the model named differs from the one sent:`,
+    modelPair: (sent: string, answered: string, n: number) =>
+      `Sent ${sent}, answered ${answered} · ${n.toLocaleString()}×`,
+    inputTip:
+      "Over the last 7 days, input tokens reported by the upstream as a multiple of the local estimate, compared with other upstreams serving the same model:",
+    inputLine: (model: string, gap: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
+      `${model} ${gap}: this upstream ${here} (${count(hereN, "request", "requests")}) · ${count(k, "other upstream", "other upstreams")} ${others} (${count(othersN, "request", "requests")})`,
+    ratio: (x: number) => `${x.toFixed(2)}×`,
+    cacheTip:
+      "Over the last 7 days, the share of input read from the prompt cache over turns that could read it, compared with other upstreams serving the same model:",
+    cacheLine: (model: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
+      `${model}: this upstream ${here} (${count(hereN, "turn", "turns")}) · ${count(k, "other upstream", "other upstreams")} ${others} (${count(othersN, "turn", "turns")})`,
     inFlight: (n: number) => (n === 1 ? "1 request in progress" : `${n} requests in progress`),
     actions: (name: string) => `Actions for ${name}`,
     check: "Check connection",
