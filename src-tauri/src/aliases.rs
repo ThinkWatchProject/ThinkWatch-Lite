@@ -3,8 +3,8 @@
 //! 别名怎么解析、挡不挡保存，是 core 的事（`/aliases/preview`）。这几条说的是**这台机器上的
 //! 客户端**会怎么对待这个名称：只有这一侧知道装了哪些、接管着哪些，所以在这里判断。
 //!
-//! **只说检测到的客户端。**没装的客户端会怎样，用户不关心；Claude Desktop 只在这一份接管着
-//! 它的时候说 —— 只有接管着，它才从网关取模型列表。
+//! **只说检测到的客户端。**没装的客户端会怎样，用户不关心；Claude Desktop、按名称挑请求格式
+//! 的那几个只在这一份接管着它们的时候说 —— 只有接管着，它们才用得上网关的模型。
 //!
 //! 给界面的是码和参数（[`AliasHint`]），句子在界面那边（`src/aliases/AliasDialog.i18n.ts`）。
 
@@ -66,9 +66,10 @@ pub fn hints(name: &str, models: &[String], seen: &Seen) -> Vec<AliasHint> {
             out.push(AliasHint::ClaudeCodeReserved { name: name.into() });
         }
         if let Some((family, model)) = mismatch(name, models) {
-            let clients: Vec<String> = readers(family)
+            let clients: Vec<String> = seen
+                .adopted
                 .iter()
-                .filter_map(|id| seen.installed.iter().find(|c| c.id == *id))
+                .filter(|c| format_differs(c.id, name, model))
                 .map(|c| c.name.to_string())
                 .collect();
             if !clients.is_empty() {
@@ -176,20 +177,19 @@ fn mismatch<'a>(name: &str, models: &'a [String]) -> Option<(&'static str, &'a s
     other.map(|m| (want, m))
 }
 
-/// 按模型名决定请求参数的客户端（id），按家：名字像这一家，它就照这一家的参数发。
+/// 这个客户端发这个名称的请求和发 `model` 用的格式不同。
 ///
-/// - Claude Code：上下文长度、思考、Claude 专有的请求头和字段都看模型名；
-/// - Codex：按模型名的前缀（`gpt-5`、`o3`、`codex-`）挑工具的写法、推理参数和上下文长度；
-/// - Qwen Code：按 `qwen` 系列的名字定上下文长度；
-/// - opencode：按模型名里的 `claude`、`gpt`、`gemini`、`qwen`、`glm`、`kimi`、`minimax` 定
-///   温度、top_p 和各家专有的选项。
-fn readers(family: &str) -> &'static [&'static str] {
-    match family {
-        "Claude" => &["claude-code", "opencode"],
-        "GPT" => &["codex", "opencode"],
-        "Qwen" => &["qwen-code", "opencode"],
-        "Gemini" | "GLM" | "Kimi" | "MiniMax" => &["opencode"],
-        _ => &[],
+/// 网关的模型清单不说一个模型背后是哪种上游，接管时写进客户端配置的请求格式**只看模型名**：
+/// Pi、oh-my-pi 按 [`tw_adopt::pi::api_for`]，Grok Build 按 [`tw_adopt::grok::backend_for`]。
+/// 别名的名称像别家的模型，它就照那一家的格式发出、由网关转换。Hermes Agent 也按名字挑
+/// （[`tw_adopt::hermes::api_mode_for`]），但只给接管时选定的默认模型挑，不算；别的客户端
+/// 整个 provider 一种格式，和名称无关
+fn format_differs(client: &str, name: &str, model: &str) -> bool {
+    use tw_adopt::{grok, pi};
+    match client {
+        "pi" | "omp" => pi::api_for(name) != pi::api_for(model),
+        "grok-build" => grok::backend_for(name) != grok::backend_for(model),
+        _ => false,
     }
 }
 
@@ -263,56 +263,75 @@ mod tests {
         }
     }
 
+    /// 接管着的、按名称挑请求格式的客户端：Pi、oh-my-pi、Grok Build
+    fn by_name() -> Seen {
+        let ids = ["claude-code", "codex", "pi", "omp", "grok-build"];
+        seen(&ids, &ids)
+    }
+
+    /// 和名称有关的那几条：接管着的这几个都写模型清单，「更新清单」那条另有测试
+    fn about_name(name: &str, models: &[String], seen: &Seen) -> Vec<AliasHint> {
+        hints(name, models, seen)
+            .into_iter()
+            .filter(|h| !matches!(h, AliasHint::ModelListsUpdate { .. }))
+            .collect()
+    }
+
     #[test]
-    fn a_claude_name_for_another_model_names_the_detected_clients() {
-        let all = seen(&["claude-code", "opencode", "codex"], &[]);
+    fn a_claude_name_for_another_model_names_the_clients_that_pick_formats_by_name() {
         assert_eq!(
-            hints("claude-sonnet-5", &models(&["glm-4.6"]), &all),
+            about_name("claude-sonnet-5", &models(&["glm-4.6"]), &by_name()),
             vec![AliasHint::FamilyMismatch {
                 family: "Claude".into(),
                 model: "glm-4.6".into(),
-                clients: vec!["Claude Code".into(), "opencode".into()],
+                clients: vec!["Pi".into(), "oh-my-pi".into(), "Grok Build".into()],
             }]
         );
-        // 只装了 Claude Code：只说它
-        assert_eq!(
-            hints(
-                "claude-sonnet-5",
-                &models(&["glm-4.6"]),
-                &seen(&["claude-code"], &[])
-            ),
-            vec![AliasHint::FamilyMismatch {
-                family: "Claude".into(),
-                model: "glm-4.6".into(),
-                clients: vec!["Claude Code".into()],
-            }]
-        );
-        // 一个看模型名的客户端都没装：不说
+        // 只是装着、没接管：它们的配置里没有网关的模型，不说
+        let installed = ["claude-code", "pi", "omp", "grok-build"];
         assert!(
-            hints(
+            about_name(
                 "claude-sonnet-5",
                 &models(&["glm-4.6"]),
-                &seen(&["zed"], &[])
+                &seen(&installed, &[])
             )
             .is_empty()
         );
-        // GPT 的名字给 DeepSeek：Codex 和 opencode
+        // 接管着的都不按名称挑格式：不说
+        assert!(
+            about_name(
+                "claude-sonnet-5",
+                &models(&["glm-4.6"]),
+                &seen(&["claude-code", "codex"], &["claude-code", "codex"])
+            )
+            .is_empty()
+        );
+        // GPT 的名字给 DeepSeek：三个都把它当 Responses 发
         assert_eq!(
-            hints("gpt-5", &models(&["deepseek-chat"]), &all),
+            about_name("gpt-5", &models(&["deepseek-chat"]), &by_name()),
             vec![AliasHint::FamilyMismatch {
                 family: "GPT".into(),
                 model: "deepseek-chat".into(),
-                clients: vec!["Codex".into(), "opencode".into()],
+                clients: vec!["Pi".into(), "oh-my-pi".into(), "Grok Build".into()],
+            }]
+        );
+        // Grok 的名字给 GPT：Grok Build 两个都发 Responses，只有 Pi 那两个格式不同
+        assert_eq!(
+            about_name("grok-4", &models(&["gpt-5"]), &by_name()),
+            vec![AliasHint::FamilyMismatch {
+                family: "Grok".into(),
+                model: "gpt-5".into(),
+                clients: vec!["Pi".into(), "oh-my-pi".into()],
             }]
         );
     }
 
     #[test]
-    fn the_same_family_or_an_unknown_model_is_not_a_mismatch() {
-        let all = seen(&["claude-code", "opencode", "codex", "qwen-code"], &[]);
+    fn the_same_family_the_same_format_or_an_unknown_model_is_not_a_mismatch() {
+        let all = by_name();
         // 几家上游的同一个 Claude
         assert!(
-            hints(
+            about_name(
                 "claude-sonnet-5",
                 &models(&[
                     "claude-sonnet-5",
@@ -325,7 +344,7 @@ mod tests {
         );
         // 列出的里有一个是这一家的就不说，哪怕还列了别家的
         assert!(
-            hints(
+            about_name(
                 "claude-sonnet-5",
                 &models(&["glm-4.6", "claude-sonnet-5"]),
                 &all
@@ -333,22 +352,24 @@ mod tests {
             .is_empty()
         );
         // 名字认不出、模型认不出：不说
-        assert!(hints("my-coder", &models(&["glm-4.6"]), &all).is_empty());
-        assert!(hints("claude-sonnet-5", &models(&["local-model"]), &all).is_empty());
-        assert!(hints("deepseek-v4.1", &models(&["DeepSeek-v4.1-flash"]), &all).is_empty());
+        assert!(about_name("my-coder", &models(&["glm-4.6"]), &all).is_empty());
+        assert!(about_name("claude-sonnet-5", &models(&["local-model"]), &all).is_empty());
+        assert!(about_name("deepseek-v4.1", &models(&["DeepSeek-v4.1-flash"]), &all).is_empty());
+        // 两家都走 Chat Completions：格式一样，不说
+        assert!(about_name("qwen-max", &models(&["glm-4.6"]), &all).is_empty());
         // 还没列模型
-        assert!(hints("claude-sonnet-5", &[], &all).is_empty());
+        assert!(about_name("claude-sonnet-5", &[], &all).is_empty());
         // 第一个认得出的别家模型
         assert_eq!(
-            hints(
-                "qwen-max",
+            about_name(
+                "gemini-2.5-pro",
                 &models(&["local-model", "glm-4.6", "kimi-k2"]),
                 &all
             ),
             vec![AliasHint::FamilyMismatch {
-                family: "Qwen".into(),
+                family: "Gemini".into(),
                 model: "glm-4.6".into(),
-                clients: vec!["Qwen Code".into(), "opencode".into()],
+                clients: vec!["Pi".into(), "oh-my-pi".into()],
             }]
         );
     }
@@ -392,19 +413,12 @@ mod tests {
             )
             .is_empty()
         );
-        // 档位名指向别家的模型：两条都说
+        // 档位名指向别家的模型：Pi 和 Grok Build 不把 `opus` 当 Claude 发，只说档位名
         assert_eq!(
-            hints("opus", &models(&["glm-4.6"]), &seen(&["claude-code"], &[])),
-            vec![
-                AliasHint::ClaudeCodeReserved {
-                    name: "opus".into()
-                },
-                AliasHint::FamilyMismatch {
-                    family: "Claude".into(),
-                    model: "glm-4.6".into(),
-                    clients: vec!["Claude Code".into()],
-                },
-            ]
+            about_name("opus", &models(&["glm-4.6"]), &by_name()),
+            vec![AliasHint::ClaudeCodeReserved {
+                name: "opus".into()
+            }]
         );
     }
 
@@ -471,7 +485,7 @@ mod tests {
         let v = serde_json::to_value(AliasHint::FamilyMismatch {
             family: "Claude".into(),
             model: "glm-4.6".into(),
-            clients: vec!["Claude Code".into()],
+            clients: vec!["Pi".into()],
         })
         .unwrap();
         assert_eq!(
@@ -480,7 +494,7 @@ mod tests {
                 "code": "family_mismatch",
                 "family": "Claude",
                 "model": "glm-4.6",
-                "clients": ["Claude Code"],
+                "clients": ["Pi"],
             })
         );
     }

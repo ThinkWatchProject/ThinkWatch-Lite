@@ -863,7 +863,7 @@ pub enum AliasHint {
     /// 完整的模型名，它的请求里不会出现这个名称
     ClaudeCodeReserved { name: String },
     /// 名称像 `family` 这一家的模型，列出的上游模型却是别家的（`model` 是其中第一个）。
-    /// `clients`：检测到的、按模型名决定请求参数的客户端（产品名）
+    /// `clients`：接管着的、按模型名挑请求格式而这个名称和 `model` 格式不同的客户端（产品名）
     FamilyMismatch {
         family: String,
         model: String,

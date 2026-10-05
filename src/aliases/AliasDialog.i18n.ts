@@ -20,7 +20,7 @@ export const aliasDialogText = messages(
     claudeCodeReserved: (name: string) =>
       `Claude Code 把 ${name} 当作自己的档位名，请求前换成完整的模型名，它的请求用不到这个别名。`,
     familyMismatch: (family: string, model: string, clients: string) =>
-      `名称像 ${family} 模型，上游模型却是 ${model}：${clients} 会按 ${family} 模型的上下文长度和参数发请求。`,
+      `名称像 ${family} 模型，上游模型却是 ${model}：${clients} 会按 ${family} 模型的格式发出这个名称的请求，由网关转换后发给上游。`,
     desktopHidden: (name: string) => `Claude Desktop 只列出名称像 Claude 的模型，不会显示 ${name}。`,
     desktopShown: (name: string) => `Claude Desktop 会在模型列表里显示 ${name}。`,
     /** 改名前：哪些引用会一起改 */
@@ -82,7 +82,7 @@ export const aliasDialogText = messages(
     claudeCodeReserved: (name: string) =>
       `Claude Code treats ${name} as its own tier name and swaps in the full model name before requesting, so its requests never use this alias.`,
     familyMismatch: (family: string, model: string, clients: string) =>
-      `The name looks like a ${family} model but the upstream model is ${model}: ${clients} will send requests with ${family} context lengths and parameters.`,
+      `The name looks like a ${family} model but the upstream model is ${model}: ${clients} will send requests for it in the ${family} format, and the gateway converts them for the upstream.`,
     desktopHidden: (name: string) => `Claude Desktop lists only models whose names look like Claude, so it will not show ${name}.`,
     desktopShown: (name: string) => `Claude Desktop will show ${name} in its model list.`,
     renameRefs: (old: string, refs: string) => `Renaming also changes ${old} to the new name in ${refs}.`,
