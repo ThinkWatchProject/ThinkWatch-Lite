@@ -136,6 +136,12 @@ export const trafficText = messages(
     cancelled: "已取消",
 
     // 上游一列的徽标和它们的悬浮说明
+    /** 客户端写的是别名，按这家上游换成了它的模型名。模型那一列照旧是客户端写的名称 */
+    alias: "别名",
+    aliasTip: (model: string, upstream: string, sent: string) => `${model} 是别名，发往 ${upstream} 的模型名是 ${sent}。`,
+    /** 决定去向的规则用了「指定模型」：上游和模型都是规则列出的 */
+    pinned: "指定",
+    pinnedTip: (rule: string, upstream: string, sent: string) => `规则「${rule}」指定了发往 ${upstream} 的模型：${sent}。`,
     redactedTip: (items: string[]) => `发送前已替换：${items.join("、")}\n模型回显的内容将自动还原。`,
     redacted: (n: number) => `已脱敏 ${n}`,
     secretsTip: (items: string[]) => `请求中含有凭据，已原样发出：${items.join("、")}`,
@@ -272,6 +278,12 @@ export const trafficText = messages(
     failed: "Failed",
     cancelled: "Canceled",
 
+    alias: "Alias",
+    aliasTip: (model: string, upstream: string, sent: string) =>
+      `${model} is an alias; the model sent to ${upstream} is ${sent}.`,
+    pinned: "Pinned",
+    pinnedTip: (rule: string, upstream: string, sent: string) =>
+      `Rule “${rule}” pins the model sent to ${upstream}: ${sent}.`,
     redactedTip: (items: string[]) =>
       `Replaced before sending: ${items.join(", ")}\nContent echoed by the model is restored automatically.`,
     redacted: (n: number) => `Redacted ${n}`,

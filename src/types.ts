@@ -76,8 +76,19 @@ export interface RequestRow {
   /** 请求带的那把密钥打码后的样子（`tw-re…wb4e`），请求那一刻的 */
   keyMasked?: string;
   provider: string;
-  /** 哪个模型。**决定这次多贵、多慢的就是它** */
+  /** 客户端要的模型名。别名、规则改名、指定模型、插件改名之前的那一个 */
   model?: string;
+  /**
+   * 服务它的那一跳（尝试链的最后一跳）发出的模型名。**和 `model` 相同时没有**（core 只在不同
+   * 时记）。还没有路由结论的也没有
+   */
+  sentModel?: string;
+  /** 走的哪条路由。开始时就有；本地应答的没有 */
+  route?: string;
+  /** 决定去向的那条规则 */
+  rule?: string;
+  /** 改写了参数的规则，按求值的顺序。没有就没有这一项 */
+  rewrittenBy?: string[];
   path: string;
   atMs: number;
   /**
@@ -151,6 +162,11 @@ export interface RequestRow {
   session?: string;
 }
 
+/** 空的列表当作没有：行上少一项，对账时不会因为又来了一个空数组而算作「变了」 */
+export function nonEmpty<T>(xs: readonly T[] | null | undefined): T[] | undefined {
+  return xs && xs.length > 0 ? [...xs] : undefined;
+}
+
 export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
   switch (ev.kind) {
     case "request_started":
@@ -167,6 +183,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         atMs: ev.at_ms,
         state: "in_flight",
         session: ev.session ?? undefined,
+        // 路由的第一阶段在开始之前就走完了：路由、规则、改写开始时就有
+        route: ev.route,
+        rule: ev.rule,
+        rewrittenBy: nonEmpty(ev.rewritten_by),
       });
       break;
     case "request_headers": {
@@ -223,7 +243,16 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       // 最后一跳，和落库那一行归的是同一家
       const r = rows.get(ev.id);
       const last = ev.attempts[ev.attempts.length - 1];
-      if (r && last) r.provider = last.provider;
+      if (r && last) {
+        r.provider = last.provider;
+        r.sentModel = last.model ?? undefined;
+      }
+      if (r) {
+        r.route = ev.route;
+        r.rule = ev.rule;
+        // 选定上游之后才判断的改写在这里才有
+        r.rewrittenBy = nonEmpty(ev.rewritten_by);
+      }
       break;
     }
     case "locally_answered":
