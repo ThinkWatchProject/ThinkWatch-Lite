@@ -324,7 +324,7 @@ pub struct DesktopRule {
     pub pick: Option<DesktopPick>,
     /// 已经有这条规则时，它此刻指定的模型
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current: Option<Vec<PinnedModel>>,
+    pub current: Option<Vec<tw_api::PinnedModel>>,
 }
 
 /// 给 Claude Desktop 选模型：写进它配置的那个名称，和它的密钥能用的上游模型
@@ -341,13 +341,6 @@ pub struct DesktopPick {
 pub struct ModelChoice {
     pub model: String,
     pub providers: Vec<String>,
-}
-
-/// 规则去向里的一个「指定模型」：发到这家上游的这个模型，模型名原样发出
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct PinnedModel {
-    pub provider: String,
-    pub model: String,
 }
 
 /// 按客户端原来直连 Bedrock 时的设置新建 Bedrock 上游，要填的那几项。

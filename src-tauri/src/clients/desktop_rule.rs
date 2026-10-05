@@ -24,136 +24,33 @@
 //!
 //! 先有规则再写它的配置（和「先有钥匙」同一个道理）；配置没写成就把规则改回去。还原时先
 //! 还原文件、再删规则 —— 退路不依赖网关，删不成就提醒去路由页删。
-//!
-//! **临时类型**：规则的去向（`RuleView.to` / `RuleInput.to`）在 core 的模型别名
-//! （ThinkWatch-Core#283，协议 38）里变成「名称，或者指定模型的列表」；钉着的那版 tw-api
-//! 还读不了列表，所以这里按约定的 JSON 自己读写 `/overview`、`/models`、`PUT /routes/{name}`
-//! 用到的那几个字段（[`Rule`]、[`RuleTarget`]）。core 发版后换成 `tw_api::RuleTarget`、
-//! `tw_api::PinnedModel` 和 `ep::Overview` / `ep::KnownModels` / `ep::UpdateRoute`。
 
-use serde::{Deserialize, Serialize};
-use tw_api::{Endpoint, ep};
+use tw_api::{
+    ConditionField, ConditionView, KnownModel, Overview, PinnedModel, RouteInput, RouteSave,
+    RouteView, RuleInput, RuleTarget, RuleView, ep,
+};
 use tw_types::{Msg, msg};
 
 use crate::control::ControlClient;
-use crate::wire::{DesktopPick, DesktopRule, ModelChoice, PinnedModel};
+use crate::wire::{DesktopPick, DesktopRule, ModelChoice};
 
 /// 那条规则的名字
 pub const RULE_NAME: &str = "Claude Desktop";
 
-// ---------------------------------------------------------------- 临时类型
-
-/// 规则的去向：上游或策略组的名称，或者指定模型的列表（约定里的 `RuleTarget`）
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RuleTarget {
-    Name(String),
-    Models(Vec<PinnedModel>),
-}
-
-/// 规则里的一个条件（`tw_api::ConditionView`）。字段按字符串读：新版 core 多了
-/// 条件种类时照样读得进来、原样写回去
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Condition {
-    pub field: String,
-    pub values: Vec<String>,
-}
-
-/// 一条规则。**读 `RuleView`、写 `RuleInput` 是同一套字段**（路由页也是这样往返的），
-/// 只读视图里的那几项（`catch_all`、`phase_two`、`shadowed`）不要。改写原样往返
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Rule {
-    pub name: String,
-    #[serde(default)]
-    pub conditions: Vec<Condition>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<RuleTarget>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deny: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub set: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Route {
-    pub name: String,
-    pub rules: Vec<Rule>,
-}
-
-/// 一把网关密钥：名字、为哪个客户端发的、绑的哪条路由
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Key {
-    pub name: String,
-    #[serde(default)]
-    pub client: Option<String>,
-    #[serde(default)]
-    pub route: Option<String>,
-}
-
-/// `/overview` 里用得上的那几项
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Overview {
-    pub config_version: String,
-    pub routes: Vec<Route>,
-    pub clients: Vec<Key>,
-    pub default_route: String,
-}
-
-/// `/models` 的一项。`alias` 有值的是别名，不是哪家上游的模型
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Known {
-    pub id: String,
-    pub providers: Vec<String>,
-    #[serde(default)]
-    pub alias: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct RouteSave<'a> {
-    route: RouteInput<'a>,
-    base_version: &'a str,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct RouteInput<'a> {
-    name: &'a str,
-    rules: &'a [Rule],
-}
-
-/// `ep::*` 那个端点的方法和路径，请求和响应换成这里的临时类型
-macro_rules! provisional {
-    ($name:ident = $real:ty, $req:ty => $res:ty) => {
-        struct $name;
-        impl Endpoint for $name {
-            const METHOD: tw_api::Method = <$real as Endpoint>::METHOD;
-            const PATH: &'static str = <$real as Endpoint>::PATH;
-            const PARAMS: &'static [&'static str] = <$real as Endpoint>::PARAMS;
-            const FORMAT: tw_api::Format = <$real as Endpoint>::FORMAT;
-            const NAME: &'static str = <$real as Endpoint>::NAME;
-            type Req = $req;
-            type Res = $res;
-        }
-    };
-}
-
-provisional!(OverviewNow = ep::Overview, () => Overview);
-provisional!(KnownNow = ep::KnownModels, () => Vec<Known>);
-provisional!(SaveRoute = ep::UpdateRoute, serde_json::Value => tw_api::ConfigWritten);
-
 // ---------------------------------------------------------------- 网关此刻的样子
 
-/// 算这条规则要知道的：路由、密钥（[`Overview`]）和各家上游提供的模型（[`Known`]）
+/// 算这条规则要知道的：路由、密钥（`/overview`）和各家上游提供的模型（`/models`）
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub overview: Overview,
-    pub known: Vec<Known>,
+    pub known: Vec<KnownModel>,
 }
 
 /// 一起问
 pub async fn snapshot(control: &ControlClient) -> Result<Snapshot, Msg> {
     let (overview, known) = tokio::join!(
-        control.call::<OverviewNow>(&[], &()),
-        control.call::<KnownNow>(&[], &())
+        control.call::<ep::Overview>(&[], &()),
+        control.call::<ep::KnownModels>(&[], &())
     );
     Ok(Snapshot {
         overview: overview.map_err(failed)?,
@@ -176,7 +73,7 @@ impl Snapshot {
             .unwrap_or(&self.overview.default_route)
     }
 
-    fn route(&self, name: &str) -> Option<&Route> {
+    fn route(&self, name: &str) -> Option<&RouteView> {
         self.overview.routes.iter().find(|r| r.name == name)
     }
 
@@ -203,13 +100,30 @@ impl Snapshot {
     }
 }
 
+/// 读到的一条规则写回去的样子。**读 `RuleView`、写 `RuleInput` 是同一套字段**（路由页也是
+/// 这样往返的），只读视图里的那几项（`catch_all`、`phase_two`、`shadowed`）不要。改写原样往返
+fn input(r: &RuleView) -> RuleInput {
+    RuleInput {
+        name: r.name.clone(),
+        conditions: r.conditions.clone(),
+        to: r.to.clone(),
+        deny: r.deny.clone(),
+        set: r.set.clone(),
+    }
+}
+
+/// 一条路由此刻的规则，按写回去的样子
+fn rules_of(route: &RouteView) -> Vec<RuleInput> {
+    route.rules.iter().map(input).collect()
+}
+
 /// 这把密钥的那条规则：只有它的密钥这一个条件
-fn key_only(rule: &Rule, key: &str) -> bool {
-    matches!(rule.conditions.as_slice(), [c] if c.field == "client" && c.values == [key])
+fn key_only(rule: &RuleInput, key: &str) -> bool {
+    matches!(rule.conditions.as_slice(), [c] if c.field == ConditionField::Client && c.values == [key])
 }
 
 /// 是接管时加的那一条（见文件头）：名字、条件对得上，仍是指定模型、没有拒绝和改写
-pub fn is_ours(rule: &Rule, key: &str) -> bool {
+pub fn is_ours(rule: &RuleInput, key: &str) -> bool {
     rule.name == RULE_NAME
         && key_only(rule, key)
         && matches!(&rule.to, Some(RuleTarget::Models(ms)) if !ms.is_empty())
@@ -229,7 +143,7 @@ pub fn pinned(choice: &ModelChoice) -> Vec<PinnedModel> {
         .collect()
 }
 
-fn models_of(rule: &Rule) -> Option<Vec<PinnedModel>> {
+fn models_of(rule: &RuleInput) -> Option<Vec<PinnedModel>> {
     match &rule.to {
         Some(RuleTarget::Models(ms)) => Some(ms.clone()),
         _ => None,
@@ -268,7 +182,7 @@ pub fn view(
     pick: Option<&tw_adopt::desktop::ModelPick>,
 ) -> Result<Option<DesktopRule>, Msg> {
     let shown =
-        |route: &str, i: usize, rule: Option<&Rule>, pick: Option<DesktopPick>| DesktopRule {
+        |route: &str, i: usize, rule: Option<&RuleInput>, pick: Option<DesktopPick>| DesktopRule {
             route: route.to_string(),
             position: u32::try_from(i + 1).unwrap_or(u32::MAX),
             name: RULE_NAME.to_string(),
@@ -282,8 +196,9 @@ pub fn view(
             let Some(route) = s.route(name) else {
                 return Ok(None);
             };
-            let ours = route.rules.iter().position(|r| is_ours(r, key));
-            if ours.is_none() && route.rules.iter().any(|r| r.name == RULE_NAME) {
+            let rules = rules_of(route);
+            let ours = rules.iter().position(|r| is_ours(r, key));
+            if ours.is_none() && rules.iter().any(|r| r.name == RULE_NAME) {
                 return Err(name_taken(name));
             }
             let pick = DesktopPick {
@@ -291,41 +206,38 @@ pub fn view(
                 choices: s.choices(&p.listed),
             };
             let i = ours.unwrap_or(0);
-            Ok(Some(shown(
-                name,
-                i,
-                ours.map(|i| &route.rules[i]),
-                Some(pick),
-            )))
+            Ok(Some(shown(name, i, ours.map(|i| &rules[i]), Some(pick))))
         }
         None => {
             Ok(find_ours(s, key)
-                .map(|(route, i)| shown(&route.name, i, Some(&route.rules[i]), None)))
+                .map(|(route, rules, i)| shown(&route.name, i, Some(&rules[i]), None)))
         }
     }
 }
 
-/// 我们那条在哪：这把密钥所用的路由先找，再找别的（密钥后来换了路由）
-fn find_ours<'a>(s: &'a Snapshot, key: &str) -> Option<(&'a Route, usize)> {
+/// 我们那条在哪：这把密钥所用的路由先找，再找别的（密钥后来换了路由）。交回那条路由、
+/// 它写回去的规则和我们那条的位置
+fn find_ours<'a>(s: &'a Snapshot, key: &str) -> Option<(&'a RouteView, Vec<RuleInput>, usize)> {
     let mine = s.route_of(key);
     let routes = s
         .route(mine)
         .into_iter()
         .chain(s.overview.routes.iter().filter(|r| r.name != mine));
     for r in routes {
-        if let Some(i) = r.rules.iter().position(|x| is_ours(x, key)) {
-            return Some((r, i));
+        let rules = rules_of(r);
+        if let Some(i) = rules.iter().position(|x| is_ours(x, key)) {
+            return Some((r, rules, i));
         }
     }
     None
 }
 
 /// 要写的一处：一条路由的规则从 `before` 换成 `after`，按 `base_version` 那一版改
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Change {
     pub route: String,
-    pub before: Vec<Rule>,
-    pub after: Vec<Rule>,
+    pub before: Vec<RuleInput>,
+    pub after: Vec<RuleInput>,
     pub base_version: String,
 }
 
@@ -361,7 +273,8 @@ pub fn change(
     let to = pinned(choice);
     let name = s.route_of(key);
     let route = s.route(name).ok_or_else(|| route_missing(name))?;
-    let mut after = route.rules.clone();
+    let before = rules_of(route);
+    let mut after = before.clone();
     match after.iter().position(|r| is_ours(r, key)) {
         Some(i) if models_of(&after[i]).as_ref() == Some(&to) => return Ok(None),
         // 用户挪过它的位置：留在原处，只换模型
@@ -369,10 +282,10 @@ pub fn change(
         None if after.iter().any(|r| r.name == RULE_NAME) => return Err(name_taken(name)),
         None => after.insert(
             0,
-            Rule {
+            RuleInput {
                 name: RULE_NAME.to_string(),
-                conditions: vec![Condition {
-                    field: "client".into(),
+                conditions: vec![ConditionView {
+                    field: ConditionField::Client,
                     values: vec![key.to_string()],
                 }],
                 to: Some(RuleTarget::Models(to)),
@@ -383,7 +296,7 @@ pub fn change(
     }
     Ok(Some(Change {
         route: name.to_string(),
-        before: route.rules.clone(),
+        before,
         after,
         base_version: version,
     }))
@@ -392,16 +305,16 @@ pub fn change(
 /// 删掉我们那条（还原时，或者不再需要它时）：一次一条路由，先找这把密钥所用的那条。
 /// 那条路由里我们的规则一起删。没有就是 `None`
 pub fn removal(s: &Snapshot, key: &str) -> Option<Change> {
-    let (route, _) = find_ours(s, key)?;
+    let (route, before, _) = find_ours(s, key)?;
+    let after = before
+        .iter()
+        .filter(|r| !is_ours(r, key))
+        .cloned()
+        .collect();
     Some(Change {
         route: route.name.clone(),
-        before: route.rules.clone(),
-        after: route
-            .rules
-            .iter()
-            .filter(|r| !is_ours(r, key))
-            .cloned()
-            .collect(),
+        before,
+        after,
         base_version: s.overview.config_version.clone(),
     })
 }
@@ -412,20 +325,23 @@ fn route_missing(route: &str) -> Msg {
 
 // ---------------------------------------------------------------- 写
 
+/// 只换这条路由的规则。**不带 `keys`**：密钥用哪条路由不动
 async fn save(
     control: &ControlClient,
     route: &str,
-    rules: &[Rule],
+    rules: &[RuleInput],
     base_version: &str,
 ) -> Result<String, Msg> {
     let save = RouteSave {
-        route: RouteInput { name: route, rules },
-        base_version,
+        route: RouteInput {
+            name: route.to_string(),
+            rules: rules.to_vec(),
+        },
+        base_version: Some(base_version.to_string()),
+        keys: None,
     };
-    let req = serde_json::to_value(&save)
-        .map_err(|e| crate::error::CmdError::plain(e.to_string()).into_msg())?;
     Ok(control
-        .call::<SaveRoute>(&[route], &req)
+        .call::<ep::UpdateRoute>(&[route], &save)
         .await
         .map_err(failed)?
         .version)
@@ -507,13 +423,13 @@ mod tests {
     use super::*;
     use tw_adopt::desktop::ModelPick;
 
-    fn rule(name: &str, key: Option<&str>, to: Option<RuleTarget>) -> Rule {
-        Rule {
+    fn rule(name: &str, key: Option<&str>, to: Option<RuleTarget>) -> RuleInput {
+        RuleInput {
             name: name.into(),
             conditions: key
                 .map(|k| {
-                    vec![Condition {
-                        field: "client".into(),
+                    vec![ConditionView {
+                        field: ConditionField::Client,
                         values: vec![k.into()],
                     }]
                 })
@@ -522,6 +438,47 @@ mod tests {
             deny: None,
             set: None,
         }
+    }
+
+    /// 写进配置之后 `/overview` 里读到的样子
+    fn view_of(r: RuleInput) -> RuleView {
+        RuleView {
+            catch_all: r.conditions.is_empty(),
+            phase_two: false,
+            shadowed: false,
+            name: r.name,
+            conditions: r.conditions,
+            to: r.to,
+            deny: r.deny,
+            set: r.set,
+        }
+    }
+
+    /// 规则和改动按线上的 JSON 比：core 的这几个类型不带 `PartialEq`
+    fn json<T: serde::Serialize + ?Sized>(x: &T) -> serde_json::Value {
+        serde_json::to_value(x).unwrap()
+    }
+
+    fn change_json(c: &Change) -> serde_json::Value {
+        serde_json::json!({
+            "route": c.route, "before": c.before, "after": c.after, "base_version": c.base_version
+        })
+    }
+
+    /// 一份 `/overview`：路由和密钥之外的几项照一个空网关填
+    fn overview(routes: serde_json::Value, clients: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "config_version": "v1",
+            "default_route": "default",
+            "routes": routes,
+            "clients": clients,
+            "providers": [], "proxies": [], "groups": [], "client_probes": [], "price_sheets": [],
+            "listen": {"bind": "loopback", "port": 8788, "allow_from": [], "default_allow_from": [], "exposed": false},
+            "security": {"redact": "observe", "inspect_tools": "observe", "content": "observe"},
+            "retention": {"body_days": 7, "row_days": 90, "body_max_bytes": 0, "body_bytes_now": 0},
+            "failover": {"failures_to_pause": 3, "pause_secs": 60, "max_pause_secs": 600, "no_balance_pause_secs": 1800,
+                         "quota_pause_secs": 3600, "rate_limit_max_pause_secs": 3600, "stream_start_wait_secs": 15}
+        })
     }
 
     fn pin(provider: &str, model: &str) -> PinnedModel {
@@ -535,10 +492,8 @@ mod tests {
     /// 没绑路由，`cd-2` 绑了 `codex`；glm-4.6 由 zai、bigmodel 提供，kimi-k2 由 moonshot，
     /// `fast` 是别名
     fn gateway() -> Snapshot {
-        let json = serde_json::json!({
-            "config_version": "v1",
-            "default_route": "default",
-            "routes": [
+        let json = overview(
+            serde_json::json!([
                 {"name": "default", "default": true, "builtin": false, "has_catch_all": true, "clients": [],
                  "rules": [
                     {"name": "no-opus", "conditions": [{"field": "model", "values": ["claude-opus-*"]}],
@@ -548,21 +503,20 @@ mod tests {
                     {"name": "rest", "conditions": [], "to": "__all__", "catch_all": true, "phase_two": false, "shadowed": false}
                  ]},
                 {"name": "codex", "default": false, "builtin": false, "has_catch_all": true, "clients": ["cd-2"],
-                 "rules": [{"name": "rest", "conditions": [], "to": "chatgpt"}]}
-            ],
-            "clients": [
+                 "rules": [{"name": "rest", "conditions": [], "to": "chatgpt", "catch_all": true, "phase_two": false, "shadowed": false}]}
+            ]),
+            serde_json::json!([
                 {"name": "claude-desktop", "key": "tw-x", "client": "claude-desktop", "disabled": false, "default": false},
                 {"name": "cd-2", "key": "tw-y", "client": "claude-desktop@Ubuntu", "route": "codex", "disabled": false, "default": false}
-            ],
-            "providers": [], "listen": {}
-        });
+            ]),
+        );
         Snapshot {
             overview: serde_json::from_value(json).unwrap(),
             known: serde_json::from_value(serde_json::json!([
                 {"id": "glm-4.6", "providers": ["zai", "bigmodel"], "aliases": []},
                 {"id": "kimi-k2", "providers": ["moonshot"], "aliases": []},
                 {"id": "fast", "providers": ["zai"], "alias": ["glm-4.6"], "aliases": []},
-                {"id": "orphan", "providers": []}
+                {"id": "orphan", "providers": [], "aliases": []}
             ]))
             .unwrap(),
         }
@@ -627,7 +581,7 @@ mod tests {
         assert_eq!(c.route, "default");
         assert_eq!(c.base_version, "v1");
         assert_eq!(c.after.len(), 4);
-        assert_eq!(&c.after[1..], &c.before[..]);
+        assert_eq!(json(&c.after[1..]), json(&c.before));
         assert_eq!(
             serde_json::to_value(&c.after[0]).unwrap(),
             serde_json::json!({
@@ -662,11 +616,11 @@ mod tests {
     fn with_ours(s: &mut Snapshot, at: usize, to: Vec<PinnedModel>) {
         s.overview.routes[0].rules.insert(
             at,
-            rule(
+            view_of(rule(
                 RULE_NAME,
                 Some("claude-desktop"),
                 Some(RuleTarget::Models(to)),
-            ),
+            )),
         );
     }
 
@@ -681,9 +635,10 @@ mod tests {
         assert_eq!(v.position, 2);
         assert_eq!(v.current, Some(vec![pin("moonshot", "kimi-k2")]));
         let p = pick(&["glm-4.6", "kimi-k2"]);
-        assert_eq!(
-            change(&s, "x", "claude-desktop", Some(&p), Some("kimi-k2")).unwrap(),
-            None
+        assert!(
+            change(&s, "x", "claude-desktop", Some(&p), Some("kimi-k2"))
+                .unwrap()
+                .is_none()
         );
         let c = change(&s, "x", "claude-desktop", Some(&p), Some("glm-4.6"))
             .unwrap()
@@ -698,7 +653,11 @@ mod tests {
     fn without_a_pick_the_rule_is_taken_out() {
         let s = gateway();
         assert_eq!(view(&s, "claude-desktop", None).unwrap(), None);
-        assert_eq!(change(&s, "x", "claude-desktop", None, None).unwrap(), None);
+        assert!(
+            change(&s, "x", "claude-desktop", None, None)
+                .unwrap()
+                .is_none()
+        );
 
         let mut s = gateway();
         with_ours(&mut s, 0, vec![pin("zai", "glm-4.6")]);
@@ -708,8 +667,14 @@ mod tests {
         let c = change(&s, "x", "claude-desktop", None, None)
             .unwrap()
             .unwrap();
-        assert_eq!(c.after, gateway().overview.routes[0].rules);
-        assert_eq!(removal(&s, "claude-desktop"), Some(c));
+        assert_eq!(
+            json(&c.after),
+            json(&rules_of(&gateway().overview.routes[0]))
+        );
+        assert_eq!(
+            removal(&s, "claude-desktop").map(|r| change_json(&r)),
+            Some(change_json(&c))
+        );
     }
 
     /// 用户改过的不算我们的：改了名字、条件、改成转发到上游、加了改写或拒绝的都不删；
@@ -739,19 +704,22 @@ mod tests {
             key
         ));
         let mut more = rule(RULE_NAME, Some(key), models());
-        more.conditions.push(Condition {
-            field: "model".into(),
+        more.conditions.push(ConditionView {
+            field: ConditionField::Model,
             values: vec!["claude-*".into()],
         });
         assert!(!is_ours(&more, key));
         let mut set = rule(RULE_NAME, Some(key), models());
-        set.set = Some(serde_json::json!({"max_tokens": 1000}));
+        set.set = Some(tw_api::RuleRewrite {
+            max_tokens: Some(1000),
+            ..Default::default()
+        });
         assert!(!is_ours(&set, key));
 
         // 还原时不删它
         let mut s = gateway();
-        s.overview.routes[0].rules.insert(0, set.clone());
-        assert_eq!(removal(&s, key), None);
+        s.overview.routes[0].rules.insert(0, view_of(set.clone()));
+        assert!(removal(&s, key).is_none());
         // 接管时也不覆盖它：同名，请用户先处理
         let p = pick(&["glm-4.6"]);
         assert_eq!(
@@ -766,7 +734,7 @@ mod tests {
         );
         // 另一条路由里的同名规则碍不着
         let mut s = gateway();
-        s.overview.routes[1].rules.insert(0, set);
+        s.overview.routes[1].rules.insert(0, view_of(set));
         assert!(
             change(&s, "x", key, Some(&p), Some("glm-4.6"))
                 .unwrap()
@@ -780,17 +748,17 @@ mod tests {
         let mut s = gateway();
         s.overview.routes[1].rules.insert(
             0,
-            rule(
+            view_of(rule(
                 RULE_NAME,
                 Some("claude-desktop"),
                 Some(RuleTarget::Models(vec![pin("zai", "glm-4.6")])),
-            ),
+            )),
         );
         let c = removal(&s, "claude-desktop").unwrap();
         assert_eq!(c.route, "codex");
         assert_eq!(
-            c.after,
-            vec![rule("rest", None, Some(RuleTarget::Name("chatgpt".into())))]
+            json(&c.after),
+            json(&[rule("rest", None, Some(RuleTarget::Name("chatgpt".into())))])
         );
         with_ours(&mut s, 0, vec![pin("zai", "glm-4.6")]);
         assert_eq!(removal(&s, "claude-desktop").unwrap().route, "default");
@@ -815,23 +783,11 @@ mod tests {
             );
         }
         // 一个都没得选：照写兜底的名字，不加规则
-        assert_eq!(
-            change(&s, "x", "claude-desktop", Some(&pick(&["nope"])), None).unwrap(),
-            None
+        assert!(
+            change(&s, "x", "claude-desktop", Some(&pick(&["nope"])), None)
+                .unwrap()
+                .is_none()
         );
-    }
-
-    /// 去向两种写法都读得进来：名称是字符串，指定模型是列表
-    #[test]
-    fn both_shapes_of_a_target_are_read() {
-        let r: Rule = serde_json::from_value(serde_json::json!({
-            "name": "a", "conditions": [], "to": [{"provider": "p", "model": "m"}], "catch_all": true
-        }))
-        .unwrap();
-        assert_eq!(r.to, Some(RuleTarget::Models(vec![pin("p", "m")])));
-        let r: Rule =
-            serde_json::from_value(serde_json::json!({"name": "b", "to": "main"})).unwrap();
-        assert_eq!(r.to, Some(RuleTarget::Name("main".into())));
     }
 
     // ------------------------------------------------------------ 对着一个假的 core
@@ -852,10 +808,7 @@ mod tests {
     const KEY: &str = "abababababababababababababababababababababababababababababababab";
 
     fn json_of(s: &Snapshot) -> (serde_json::Value, serde_json::Value) {
-        (
-            serde_json::to_value(&s.overview).unwrap(),
-            serde_json::to_value(&s.known).unwrap(),
-        )
+        (json(&s.overview), json(&s.known))
     }
 
     /// 握手照真的来（`tw_link`），之后按 HTTP/1.1 一问一答：控制面客户端每次调用新建一条连接
@@ -973,7 +926,15 @@ mod tests {
                 c.writes.push(body.clone());
                 let routes = c.overview["routes"].as_array_mut().unwrap();
                 let r = routes.iter_mut().find(|r| r["name"] == name).unwrap();
-                r["rules"] = body["route"]["rules"].clone();
+                // 存进去的是 `RuleInput`，读出来的 `RuleView` 多几项
+                let mut rules = body["route"]["rules"].clone();
+                for x in rules.as_array_mut().unwrap() {
+                    let all = x["conditions"].as_array().is_none_or(|c| c.is_empty());
+                    x["catch_all"] = serde_json::json!(all);
+                    x["phase_two"] = serde_json::json!(false);
+                    x["shadowed"] = serde_json::json!(false);
+                }
+                r["rules"] = rules;
                 c.version += 1;
                 (
                     "200 OK",
@@ -998,7 +959,7 @@ mod tests {
         }))
     }
 
-    fn rules_now(c: &Arc<Mutex<Core>>, route: &str) -> Vec<Rule> {
+    fn rules_now(c: &Arc<Mutex<Core>>, route: &str) -> Vec<RuleInput> {
         let c = c.lock().unwrap();
         let r = c.overview["routes"]
             .as_array()
@@ -1043,7 +1004,7 @@ mod tests {
         assert!(sent.get("keys").is_none(), "不动密钥的路由选择");
         let now = rules_now(&fake, "default");
         assert!(is_ours(&now[0], "claude-desktop"));
-        assert_eq!(&now[1..], &before[..]);
+        assert_eq!(json(&now[1..]), json(&before));
 
         // 再看一遍：确认框里给的就是这一条
         let s = snapshot(&control).await.unwrap();
@@ -1051,7 +1012,7 @@ mod tests {
         assert_eq!((v.route.as_str(), v.position), ("default", 1));
 
         assert_eq!(remove_after_restore(&control, "claude-desktop").await, None);
-        assert_eq!(rules_now(&fake, "default"), before);
+        assert_eq!(json(&rules_now(&fake, "default")), json(&before));
         // 没有了就不再写
         let n = fake.lock().unwrap().writes.len();
         assert_eq!(remove_after_restore(&control, "claude-desktop").await, None);
@@ -1076,7 +1037,7 @@ mod tests {
         .unwrap();
         let v = write(&control, &c).await.unwrap();
         revert(&control, &c, &v).await.unwrap();
-        assert_eq!(rules_now(&fake, "default"), before);
+        assert_eq!(json(&rules_now(&fake, "default")), json(&before));
         // 那之后别人又改过：core 拒绝，不覆盖别人的改动
         let s = snapshot(&control).await.unwrap();
         let c = change(
