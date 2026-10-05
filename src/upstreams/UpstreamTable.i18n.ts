@@ -45,6 +45,7 @@ export const upstreamTableText = messages(
     cacheLine: (model: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
       `${model}：本上游 ${here}（${hereN.toLocaleString()} 轮）· 其他 ${k} 个上游 ${others}（${othersN.toLocaleString()} 轮）`,
     inFlight: (n: number) => `${n} 个请求进行中`,
+    inFlightOf: (n: number, max: number) => `${n} 个请求进行中，并发上限 ${max} 个`,
     actions: (name: string) => `${name} 的操作`,
     check: "检测连接",
     linkTest: "链路测速",
@@ -111,6 +112,8 @@ export const upstreamTableText = messages(
     cacheLine: (model: string, here: string, hereN: number, k: number, others: string, othersN: number) =>
       `${model}: this upstream ${here} (${count(hereN, "turn", "turns")}) · ${count(k, "other upstream", "other upstreams")} ${others} (${count(othersN, "turn", "turns")})`,
     inFlight: (n: number) => (n === 1 ? "1 request in progress" : `${n} requests in progress`),
+    inFlightOf: (n: number, max: number) =>
+      `${n === 1 ? "1 request" : `${n} requests`} in progress, concurrency limit ${max}`,
     actions: (name: string) => `Actions for ${name}`,
     check: "Check connection",
     linkTest: "Connection test",

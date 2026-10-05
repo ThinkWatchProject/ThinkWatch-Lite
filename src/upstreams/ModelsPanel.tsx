@@ -3,6 +3,7 @@ import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lu
 import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Skeleton } from "@/ui/skeleton";
@@ -13,6 +14,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
 import { contextWindow, coreText, errorText, perMillion } from "./labels";
+import { hasManual } from "./modelSpec";
 import { modelsPanelText } from "./ModelsPanel.i18n";
 
 /** 列表长过这个数才给筛选框。十来个一眼就扫完了 */
@@ -31,12 +33,16 @@ const FILTER_FROM = 10;
  *
  * 列进了别名的模型，名字后面标出别名；悬停一行给「起别名…」（`onAlias`），打开新建别名的
  * 对话框，这个模型已经列为上游模型。
+ *
+ * 右边的数是上下文窗口：在这一家手写过规格（上下文窗口或输出上限）的，名字后面标「手动
+ * 规格」，悬停说是哪几项。悬停一行还给「规格…」（`onSpec`），打开手写规格的对话框。
  */
 export function ModelsPanel({
   p,
   perToken,
   onEdit,
   onAlias,
+  onSpec,
 }: {
   p: ProviderView;
   /** 按量计费：列出单价。别的计费方式不按单价算费用，列了也没意义 */
@@ -45,6 +51,8 @@ export function ModelsPanel({
   onEdit: () => void;
   /** 给这个模型起别名。不给就不出「起别名…」 */
   onAlias?: (model: string) => void;
+  /** 手写这个模型的规格。不给就不出「规格…」 */
+  onSpec?: (model: ModelRow) => void;
 }) {
   const t = useText(modelsPanelText);
   const c = useText(commonText);
@@ -173,7 +181,7 @@ export function ModelsPanel({
               )}
               <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 motion-fade">
                 {shownOn.map((m) => (
-                  <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} />
+                  <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} onSpec={onSpec} />
                 ))}
                 {off.length > 0 && (
                   <>
@@ -193,7 +201,7 @@ export function ModelsPanel({
                       {t.notEnabled(off.length)}
                     </Button>
                     {(showOff || q !== "") &&
-                      shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} />)}
+                      shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} onSpec={onSpec} />)}
                   </>
                 )}
                 {q !== "" && shownOn.length + shownOff.length === 0 && (
@@ -229,21 +237,29 @@ function Row({
   m,
   perToken,
   onAlias,
+  onSpec,
 }: {
   m: ModelRow;
   perToken: boolean;
   onAlias?: (model: string) => void;
+  onSpec?: (model: ModelRow) => void;
 }) {
   const t = useText(modelsPanelText);
   const price =
     perToken && m.price
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
+  const actions = onAlias || onSpec;
+  /** 手写了哪几项：「上下文窗口 128K」「输出上限 16K」 */
+  const manual = [
+    m.context_window_source === "manual" ? t.manualContext(contextWindow(m.context_window)) : null,
+    m.max_output_tokens_source === "manual" ? t.manualOutput(contextWindow(m.max_output_tokens)) : null,
+  ].filter((x): x is string => x !== null);
   return (
     <div
       className={cn(
         "group/model relative flex items-center gap-2 rounded-md px-1.5 py-1",
-        onAlias && "hover:bg-muted/60 focus-within:bg-muted/60",
+        actions && "hover:bg-muted/60 focus-within:bg-muted/60",
         !m.enabled && "text-muted-foreground",
       )}
     >
@@ -260,11 +276,21 @@ function Row({
           <span className="truncate">{t.aliasMark(a)}</span>
         </AliasMark>
       ))}
-      {/* 悬停时这一格让给「起别名…」：两样叠在同一个位置，行高不跳 */}
+      {/* 放在名字这一边，不放在数旁边：悬停时右边让给按钮，这个标记和它的说明还看得见 */}
+      {hasManual(m) && (
+        <Badge
+          variant="secondary"
+          title={t.manualTitle(manual.join(t.listSep))}
+          className="h-4 shrink-0 rounded-[4px] px-1 font-sans font-normal"
+        >
+          {t.manualSpecs}
+        </Badge>
+      )}
+      {/* 悬停时这一格让给「规格…」「起别名…」：叠在同一个位置，行高不跳 */}
       <span
         className={cn(
           "ml-auto flex shrink-0 items-baseline gap-2",
-          onAlias && "group-focus-within/model:invisible group-hover/model:invisible",
+          actions && "group-focus-within/model:invisible group-hover/model:invisible",
         )}
       >
         {price && (
@@ -276,15 +302,19 @@ function Row({
           {m.context_window ? contextWindow(m.context_window) : ""}
         </span>
       </span>
-      {onAlias && (
-        <Button
-          size="xs"
-          variant="outline"
-          className="absolute top-1/2 right-1.5 h-5 -translate-y-1/2 bg-popover opacity-0 group-hover/model:opacity-100 focus-visible:opacity-100"
-          onClick={() => onAlias(m.id)}
-        >
-          {t.makeAlias}
-        </Button>
+      {actions && (
+        <span className="absolute top-1/2 right-1.5 flex -translate-y-1/2 gap-1 opacity-0 group-hover/model:opacity-100 has-focus-visible:opacity-100">
+          {onSpec && (
+            <Button size="xs" variant="outline" className="h-5 bg-popover" onClick={() => onSpec(m)}>
+              {t.specs}
+            </Button>
+          )}
+          {onAlias && (
+            <Button size="xs" variant="outline" className="h-5 bg-popover" onClick={() => onAlias(m.id)}>
+              {t.makeAlias}
+            </Button>
+          )}
+        </span>
       )}
     </div>
   );

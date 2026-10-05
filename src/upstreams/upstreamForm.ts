@@ -89,6 +89,8 @@ export interface UpstreamForm {
   billing: Billing;
   /** 空 = 默认价目表 */
   pricing: string;
+  /** 同时最多发给这家几个请求，1 到 1000。空 = 不限 */
+  maxConcurrent: string;
   disabled: boolean;
 }
 
@@ -133,6 +135,7 @@ export function blankForm(): UpstreamForm {
     scopeList: [],
     billing: "per-token",
     pricing: "",
+    maxConcurrent: "",
     disabled: false,
   };
 }
@@ -198,6 +201,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     scopeList: p.models_only ?? [],
     billing: p.billing === "free" ? "free" : "per-token",
     pricing: p.pricing ?? "",
+    maxConcurrent: p.max_concurrent != null ? String(p.max_concurrent) : "",
     disabled: p.disabled,
   };
 }
@@ -283,8 +287,21 @@ export function toInput(f: UpstreamForm): ProviderInput {
     models_only: f.scope === "some" ? f.scopeList : undefined,
     billing: f.billing,
     pricing: f.pricing || undefined,
+    max_concurrent: concurrencyOf(f) ?? undefined,
     disabled: f.disabled,
   };
+}
+
+/** 并发上限最多写多少（core 的 `MAX_PROVIDER_CONCURRENCY`） */
+export const MAX_CONCURRENCY = 1000;
+
+/** 格子里的并发上限：空是不限（`null`），写的不是 1 到 1000 的整数是 `undefined` */
+export function concurrencyOf(f: UpstreamForm): number | null | undefined {
+  const v = f.maxConcurrent.trim();
+  if (v === "") return null;
+  if (!/^\d+$/.test(v)) return undefined;
+  const n = Number(v);
+  return n >= 1 && n <= MAX_CONCURRENCY ? n : undefined;
 }
 
 /**
@@ -327,6 +344,7 @@ export function connectionMissing(
     if (header === "") return t.headerName;
     if (r.value.trim() === "") return t.headerValue(header);
   }
+  if (concurrencyOf(f) === undefined) return t.concurrency;
   return null;
 }
 
