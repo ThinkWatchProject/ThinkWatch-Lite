@@ -18,8 +18,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tip } from "@/ui/tip";
 import { copyText, DIM, Elapsed, Lines, MENU_REVEAL, NotSentIcon, ROW, RowKeyCell } from "./cells";
 import { sortWithin, type Cursor, type Group } from "./grouping";
+import { rowMark, type ViaConfig } from "./modelVia";
 import { SessionRow } from "./SessionRow";
 import { trafficText } from "./Traffic.i18n";
+import { useViaConfig } from "./useModelVia";
 
 /**
  * 第一帧先画多少行。**其余的在后台补齐**（`useDeferredValue`）：一进这一页就要
@@ -89,6 +91,8 @@ export function RequestTable({
   const t = useText(trafficText);
   const shownRows = useDeferredValue(rows, rows.slice(0, FIRST_PAINT));
   const shownGroups = useDeferredValue(groups, groups?.slice(0, FIRST_PAINT));
+  // 上游那一格的「别名」「指定」要对着现在的别名表和路由看：表头取一次，传给每一行
+  const via = useViaConfig();
   return (
     <Table
       /*
@@ -170,6 +174,7 @@ export function RequestTable({
           openGroups={openGroups}
           showClient={showClient}
           hints={hints}
+          via={via}
           today={today}
           cursor={cursor}
           fresh={fresh}
@@ -269,6 +274,7 @@ function RequestRows({
   openGroups,
   showClient,
   hints,
+  via,
   today,
   cursor,
   fresh,
@@ -286,6 +292,7 @@ function RequestRows({
   openGroups: ReadonlySet<string>;
   showClient: boolean;
   hints: boolean;
+  via: ViaConfig | null;
   today: number;
   cursor: Cursor | null;
   fresh: ReadonlySet<number>;
@@ -315,6 +322,7 @@ function RequestRows({
       sameProvider={prev !== undefined && upstreamText(prev) === upstreamText(r)}
       showClient={showClient}
       hints={hints}
+      via={via}
       today={today}
       selected={atRow === r.id}
       fresh={fresh.has(r.id)}
@@ -385,6 +393,7 @@ const Row = memo(function Row({
   sameProvider,
   showClient,
   hints,
+  via,
   today,
   selected,
   fresh,
@@ -401,6 +410,8 @@ const Row = memo(function Row({
   sameProvider: boolean;
   showClient: boolean;
   hints: boolean;
+  /** 对「别名」「指定」用的配置（见 `modelVia.ts`）。换了一版配置每一行重画一次 */
+  via: ViaConfig | null;
   today: number;
   selected: boolean;
   fresh: boolean;
@@ -507,7 +518,7 @@ const Row = memo(function Row({
           </div>
         </TableCell>
         <TableCell className={cn("whitespace-normal", sameProvider && DIM)}>
-          <UpstreamCell r={r} />
+          <UpstreamCell r={r} via={via} />
         </TableCell>
         {/*
           数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
@@ -655,9 +666,10 @@ function StatusCell({ r }: { r: RequestRow }) {
  * 其余各列都不换行，表格变窄时只有这一列收得动。只在徽标之间折，徽标自身
  * 不断开：窄了是这一行变高，不是哪一列看不见。
  */
-function UpstreamCell({ r }: { r: RequestRow }) {
+function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
   const t = useText(trafficText);
   const sent = notSent(r);
+  const mark = rowMark(r, via);
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       {/* 本地应答的那一句（英文两个词）可以在词间折行：它不是一个名字，别让它定这一列的最小宽度 */}
@@ -681,6 +693,20 @@ function UpstreamCell({ r }: { r: RequestRow }) {
           </>
         )}
       </span>
+      {/* 发出的模型名不是客户端写的那个（或者是规则指定的）：模型那一列照旧写客户端的名称，
+          这里说一声，发出的名称在悬停和详情的路由页里 */}
+      {mark && (
+        <Mark
+          variant="secondary"
+          tip={
+            mark.via === "alias"
+              ? t.aliasTip(r.model ?? "", r.provider, mark.sent)
+              : t.pinnedTip(mark.rule, r.provider, mark.sent)
+          }
+        >
+          {mark.via === "alias" ? t.alias : t.pinned}
+        </Mark>
+      )}
       {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑是脱敏搞坏了功能。
           所以脱敏发生了就要在列表这一层看得见，而不是藏在详情里 */}
       {r.secrets && r.secrets.items.length > 0 && (

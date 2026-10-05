@@ -6,6 +6,7 @@ import {
   applyInFlight,
   CORE_STOPPED,
   interruptInFlight,
+  nonEmpty,
   type CoreEvent,
   type HistoryRow,
   type LocalEvent,
@@ -63,6 +64,15 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
       // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
       if (!h.local) next.provider = h.provider;
       next.model ??= h.model || undefined;
+      // 路由也以库里的为准：服务它的那一跳和它发出的模型名是一对，跟着上游走。改写的规则
+      // 名单一样就留着原来那个数组，不然每次对账这一行都「变了」
+      if (h.routing) {
+        next.route = h.routing.route;
+        next.rule = h.routing.rule;
+        next.sentModel = lastSent(h);
+        if ((next.rewrittenBy ?? []).join("\n") !== h.routing.rewritten_by.join("\n"))
+          next.rewrittenBy = nonEmpty(h.routing.rewritten_by);
+      }
       next.ttftMs ??= h.ttft_ms ?? undefined;
       if (h.input_tokens != null) next.inputTokens = h.input_tokens;
       if (h.output_tokens != null) next.outputTokens = h.output_tokens;
@@ -97,6 +107,12 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
   return dirty;
 }
 
+/** 服务它的那一跳发出的模型名（和客户端要的不同才有） */
+function lastSent(h: HistoryRow): string | undefined {
+  const hops = h.routing?.attempts ?? [];
+  return hops[hops.length - 1]?.model ?? undefined;
+}
+
 /**
  * 库里的一条记录变成表格的一行。读历史、在整份记录里搜索都走它。
  *
@@ -128,6 +144,10 @@ export function rowFromHistory(h: HistoryRow): RequestRow {
     translated: h.translated ?? undefined,
     pluginChanged: h.plugin_changed || undefined,
     session: h.session ?? undefined,
+    route: h.routing?.route,
+    rule: h.routing?.rule,
+    rewrittenBy: nonEmpty(h.routing?.rewritten_by),
+    sentModel: lastSent(h),
     hint: h.client_hint ?? undefined,
     peer: h.peer ?? undefined,
     keyMasked: h.key_masked ?? undefined,

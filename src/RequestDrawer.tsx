@@ -22,7 +22,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { Elapsed, NotSentIcon } from "@/traffic/cells";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "@/traffic/PanelHeader";
+import { routingModels, type HopModel } from "@/traffic/modelVia";
 import { missingWhy } from "@/traffic/transcript";
+import { useViaConfig } from "@/traffic/useModelVia";
 import { useNow } from "@/useNow";
 import { KeyLabel } from "./KeyLabel";
 import {
@@ -245,7 +247,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
           <Timeline d={d} state={state} />
         </TabsContent>
         <TabsContent value="routing">
-          <Routing r={r} running={running} />
+          <Routing r={r} plugins={d.plugins} running={running} />
         </TabsContent>
         <TabsContent value="payload">
           <div className="space-y-5">
@@ -615,10 +617,14 @@ function CostText({ r, running, short }: { r: HistoryRow; running: boolean; shor
  * 路由：走的哪条路由、哪条规则决定了去向、经过的策略组、改写了参数的规则、拒绝了它的
  * 规则和理由，然后是尝试链。全是 core 记下的（`RoutingView` 和失败的那一句），排法在
  * `routingFacts`。
+ *
+ * 别名、指定模型两行和尝试链里每一跳的模型名为什么是那样，是拿记录对着现在的别名表和路由
+ * 看出来的（`routingModels`）：对不上就不写那一行，悬停只说发出的是什么。
  */
-function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
+function Routing({ r, plugins, running }: { r: HistoryRow; plugins: PluginRunView[]; running: boolean }) {
   const t = useText(requestDrawerText);
   const f = routingFacts(r, running);
+  const m = routingModels(r, plugins, useViaConfig());
   // 只有本地应答的没有：它没到规则那一层
   if (!f) return <p className="text-muted-foreground">{t.noRouting}</p>;
   const note = f.note && noteText(f.note, t);
@@ -638,6 +644,19 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
           }
         />
         {f.group && <Row label={t.viaGroup} value={targetLabel(f.group)} />}
+        {/* 模型那一列写的是客户端的名称：是别名、或者规则指定了模型，这里说一声 */}
+        {m.alias && (
+          <Row
+            label={t.alias}
+            value={
+              <span className="inline-flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono">{m.alias}</span>
+                <span className="text-muted-foreground">{t.aliasNote}</span>
+              </span>
+            }
+          />
+        )}
+        {m.pinnedBy && <Row label={t.pinnedModel} value={t.pinnedBy(m.pinnedBy)} />}
         {/* 按求值的顺序：先是选定上游之前的，再是每一跳之后的 */}
         {f.rewrittenBy.length > 0 && <Row label={t.rewrittenBy} value={f.rewrittenBy.join(t.listSep)} />}
         {f.continuity && (
@@ -675,14 +694,9 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
                     <UpstreamLogo name={a.provider} className="opacity-70" />
                     <span className="truncate">{a.provider}</span>
                   </span>
-                  {/* 规则改写过模型名：这一跳发出去的是这个，费用也按它算 */}
-                  {a.model && (
-                    <Tip text={t.sentModel(a.model)}>
-                      <span className="min-w-0 max-w-[40%] shrink truncate font-mono tw-label text-muted-foreground">
-                        {a.model}
-                      </span>
-                    </Tip>
-                  )}
+                  {/* 这一跳发出的模型名：有一跳改了名、或者用了别名、指定模型时每一跳都写，
+                      费用也按它算 */}
+                  {m.show && m.hops[i] && <SentModel hop={m.hops[i]} provider={a.provider} />}
                   {denied ? (
                     // 选定上游之后的规则在这一跳拒绝了它：没有发给这个上游，不是上游的失败
                     <Denied className="min-w-0 flex-1">
@@ -709,6 +723,31 @@ function Routing({ r, running }: { r: HistoryRow; running: boolean }) {
         {note && <p className={cn("text-muted-foreground", f.hops.length > 0 && "mt-2")}>{note}</p>}
       </section>
     </div>
+  );
+}
+
+/**
+ * 尝试链里一跳发出的模型名。和客户端写的不同时带虚线下划线，悬停按原因说（别名、规则改名、
+ * 指定模型、插件）；原因对不上现在的配置时只说发出的是什么。
+ */
+function SentModel({ hop, provider }: { hop: HopModel; provider: string }) {
+  const t = useText(requestDrawerText);
+  const cls = "min-w-0 max-w-[40%] shrink truncate font-mono tw-label text-muted-foreground";
+  if (!hop.changed) return <span className={cls}>{hop.sent}</span>;
+  const tip =
+    hop.via === "alias"
+      ? t.sentByAlias(provider, hop.sent)
+      : hop.via === "pinned"
+        ? t.sentPinned(provider, hop.sent)
+        : hop.via === "rule"
+          ? t.sentModel(hop.sent)
+          : hop.via === "plugin"
+            ? t.sentByPlugin(hop.sent)
+            : t.sentOther(hop.sent);
+  return (
+    <Tip text={tip}>
+      <span className={cn(cls, "underline decoration-dotted underline-offset-2")}>{hop.sent}</span>
+    </Tip>
   );
 }
 

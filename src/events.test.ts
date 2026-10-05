@@ -432,6 +432,82 @@ describe("故障转移之后的上游", () => {
   });
 });
 
+/**
+ * 流量表上游那一格的「别名」「指定」要看这一行走的路由、决定去向的规则、改写了参数的规则，
+ * 和服务它的那一跳发出的模型名（`traffic/modelVia.ts`）
+ */
+describe("行上的路由", () => {
+  it("开始时就有路由、规则、改写；路由结论补上第二阶段的改写和服务它的那一跳发出的模型名", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ model: "claude-sonnet-5", rewritten_by: ["long-context"] }));
+    expect(rows.get(1)).toMatchObject({ route: "default", rule: "catch-all", rewrittenBy: ["long-context"] });
+    expect(rows.get(1)?.sentModel).toBeUndefined();
+    applyEvent(rows, {
+      kind: "request_routed",
+      id: 1,
+      route: "default",
+      rule: "catch-all",
+      group: "__all__",
+      rewritten_by: ["long-context", "relay-no-thinking"],
+      attempts: [
+        { provider: "anthropic", outcome: "status", status: 529, ms: 40 },
+        { provider: "bedrock", model: "us.anthropic.claude-sonnet-5-v1:0", outcome: "served", status: 200, ms: 900 },
+      ],
+      billing: "per-token",
+    });
+    expect(rows.get(1)).toMatchObject({
+      provider: "bedrock",
+      sentModel: "us.anthropic.claude-sonnet-5-v1:0",
+      rewrittenBy: ["long-context", "relay-no-thinking"],
+    });
+  });
+
+  it("没有改写的规则就没有这一项；最后一跳发出的和客户端要的相同就没有发出的模型名", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, {
+      kind: "request_routed",
+      id: 1,
+      route: "default",
+      rule: "catch-all",
+      rewritten_by: [],
+      attempts: [
+        { provider: "bedrock", model: "us.anthropic.claude-sonnet-4-5-v1:0", outcome: "status", status: 503, ms: 40 },
+        { provider: "anthropic", outcome: "served", status: 200, ms: 900 },
+      ],
+      billing: "per-token",
+    });
+    expect(rows.get(1)?.rewrittenBy).toBeUndefined();
+    expect(rows.get(1)?.sentModel).toBeUndefined();
+  });
+
+  it("库里读回来的行带着路由；对账时路由以库里的为准，改写名单没变就不算改动", () => {
+    const routing = {
+      route: "default",
+      rule: "兜底",
+      rewritten_by: ["relay-no-thinking"],
+      attempts: [{ provider: "bedrock", model: "us.anthropic.claude-sonnet-5-v1:0", outcome: "served" as const, status: 200, ms: 900 }],
+    };
+    const rows = new Map<number, RequestRow>();
+    mergeHistory(rows, [stored({ provider: "bedrock", model: "claude-sonnet-5", routing })]);
+    expect(rows.get(1)).toMatchObject({
+      route: "default",
+      rule: "兜底",
+      rewrittenBy: ["relay-no-thinking"],
+      sentModel: "us.anthropic.claude-sonnet-5-v1:0",
+    });
+    const before = rows.get(1);
+    expect(mergeHistory(rows, [stored({ provider: "bedrock", model: "claude-sonnet-5", routing: { ...routing, rewritten_by: ["relay-no-thinking"] } })])).toBe(false);
+    expect(rows.get(1)).toBe(before);
+
+    // 事件流上的那一行没收到路由结论：库里的补上
+    const live = new Map<number, RequestRow>();
+    applyEvent(live, started({ model: "claude-sonnet-5", provider: "anthropic" }));
+    mergeHistory(live, [stored({ provider: "bedrock", model: "claude-sonnet-5", routing })]);
+    expect(live.get(1)).toMatchObject({ provider: "bedrock", sentModel: "us.anthropic.claude-sonnet-5-v1:0", rewrittenBy: ["relay-no-thinking"] });
+  });
+});
+
 /** 库里读回来的一行。默认是一次正常结束的请求 */
 function stored(over: Partial<HistoryRow> = {}): HistoryRow {
   return {
