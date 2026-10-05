@@ -13,7 +13,8 @@ const MAX_PAUSE = 7 * 24 * 3600;
 /** 流开头最多等多少秒（core 的 `MAX_STREAM_START_WAIT_SECS`） */
 const MAX_WAIT = 120;
 
-type Field = keyof FailoverView;
+/** 这一节里的格子。慢启动换下一家、等空位的秒数还没有放进来 */
+type Field = Exclude<keyof FailoverView, "next_on_slow_start" | "slot_wait_secs">;
 export type Draft = Record<Field, string>;
 
 /** 表单里的顺序 */

@@ -10,6 +10,8 @@ const failover: FailoverView = {
   quota_pause_secs: 3600,
   rate_limit_max_pause_secs: 3600,
   stream_start_wait_secs: 15,
+  next_on_slow_start: false,
+  slot_wait_secs: 30,
 };
 
 const allOk = (c: Record<string, boolean>) => Object.values(c).every(Boolean);

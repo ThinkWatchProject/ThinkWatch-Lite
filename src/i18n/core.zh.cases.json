@@ -301,5 +301,68 @@
       "text": "There is no plugin `wsl-paths`."
     },
     "zh": "插件「wsl-paths」不存在。"
+  },
+  {
+    "msg": {
+      "code": "gw.key_limit.cost_per_period",
+      "args": {
+        "key": "claude-code",
+        "max": "$5.00",
+        "per": "day",
+        "used": "$5.02",
+        "resets": "2026-10-06 00:00 +08:00",
+        "resets_at_ms": "1791216000000"
+      },
+      "text": "Gateway key `claude-code` has reached its limit of $5.00 per day: $5.02 spent so far. It resets at 2026-10-06 00:00 +08:00."
+    },
+    "zh": "网关密钥「claude-code」已达到每天 $5.00 的费用上限，已产生费用 $5.02，将于 2026-10-06 00:00 +08:00 重置。"
+  },
+  {
+    "msg": {
+      "code": "gw.key_limit.requests_rolling",
+      "args": {
+        "key": "codex",
+        "max": "30",
+        "per": "minute",
+        "used": "30",
+        "retry": "12"
+      },
+      "text": "Gateway key `codex` has reached its limit of 30 requests per minute: 30 in the last minute. Try again in 12 s."
+    },
+    "zh": "网关密钥「codex」已达到每分钟 30 次请求的上限，最近一分钟内已有 30 次，请于 12 秒后重试。"
+  },
+  {
+    "msg": {
+      "code": "config.key_limit_not_positive",
+      "args": {
+        "key": "codex",
+        "per": "week",
+        "measure": "tokens",
+        "value": "0"
+      },
+      "text": "the tokens limit per week of gateway key `codex` is 0; it has to be more than 0"
+    },
+    "zh": "网关密钥「codex」的一条用量上限（token 数，每周）为 0，须大于 0。"
+  },
+  {
+    "msg": {
+      "code": "config.key_limit_two_measures",
+      "args": {
+        "key": "codex",
+        "measures": "tokens and cost"
+      },
+      "text": "a limit of gateway key `codex` names tokens and cost together. Each entry takes one of requests, tokens or cost; write one entry for each"
+    },
+    "zh": "网关密钥「codex」的一条用量上限同时写了 tokens 和 cost。每一条只能写 requests、tokens、cost 之一，请分成多条。"
+  },
+  {
+    "msg": {
+      "code": "gw.busy_all",
+      "args": {
+        "upstreams": "`官方`, `中转`"
+      },
+      "text": "Every upstream that can serve this request is at its concurrency limit (max_concurrent): `官方`, `中转`. None had a free slot in time; try again shortly."
+    },
+    "zh": "可处理此请求的上游均已达到并发上限（max_concurrent）：「官方」、「中转」。等待期间没有空出位置，请稍后重试。"
   }
 ]

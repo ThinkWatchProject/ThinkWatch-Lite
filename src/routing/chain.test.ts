@@ -19,6 +19,7 @@ const key = (name: string, x: Partial<ClientView> = {}): ClientView => ({
   max_concurrent: null,
   route: null,
   allow: null,
+  limits: [],
   ...x,
 });
 const rule = (name: string, x: Partial<RuleView> = {}): RuleView => ({
@@ -45,6 +46,8 @@ const group = (name: string, providers: string[], x: Partial<GroupView> = {}): G
   kind: "fallback",
   selected: null,
   providers,
+  weights: {},
+  balance_by: "weights",
   ...x,
 });
 const ALL = group("__all__", [], { builtin: true });

@@ -390,6 +390,7 @@ async fn a_bedrock_upstream_is_saved_the_way_the_dialog_sends_it() {
             models_only: None,
             billing: None,
             pricing: None,
+            max_concurrent: None,
             disabled: false,
         },
         base_version: None,

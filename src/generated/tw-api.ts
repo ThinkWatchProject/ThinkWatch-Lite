@@ -174,7 +174,7 @@ served_by: Array<PinnedModel>,
  */
 shadows: Array<string>, 
 /**
- * 上下文窗口，来自默认价目表：第一家能服务它的上游发出的那个模型的
+ * 上下文窗口：第一家能服务它的上游发出的那个模型的，这一家手写的优先于价目表
  */
 context_window?: number | null, 
 /**
@@ -219,7 +219,26 @@ suggestions: Array<AliasSuggestion>, };
 /**
  * 尝试链里一跳的结果。
  */
-export type AttemptOutcome = "served" | "status" | "error" | "estimated";
+export type AttemptOutcome = "served" | "status" | "error" | "estimated" | "slow_start";
+
+/**
+ * 放弃了的一跳（[`AttemptOutcome::SlowStart`]）上游可能已经收了钱的输入。
+ *
+ * 上游在流开头报了的（Anthropic 的 `message_start`）是它报的数；没报的只有 `input`，是网关
+ * 估的（`estimated`，和 [`Event::RequestStarted`] 的 `input_estimate` 同一个数）。**输出不知道**：
+ * 先想好再输出的模型，放弃之前可能已经想了一阵，上游不说就看不到。
+ *
+ * **不算进这个请求的费用**：上游收没收、收了多少，网关看不到
+ */
+export type AttemptUsage = { 
+/**
+ * 输入 token，不含缓存读写
+ */
+input: number, cache_read: number, cache_write: number, 
+/**
+ * `input` 是网关估的，上游什么都没报
+ */
+estimated: boolean, };
 
 /**
  * 尝试链里的一跳。
@@ -246,9 +265,24 @@ outcome: AttemptOutcome,
  */
 status?: number | null, 
 /**
- * `error` 时的说明。和这一跳报给客户端的那条错误是同一句
+ * `error` 时的说明。和这一跳报给客户端的那条错误是同一句。`slow_start` 时说等了多久
  */
-error?: Msg | null, ms: number, };
+error?: Msg | null, ms: number, 
+/**
+ * 放弃了的这一跳（`slow_start`）上游可能已经收了钱的输入（见 [`AttemptUsage`]）。估不
+ * 出来的（请求解不开）没有。别的结果都没有：接下请求的那一跳的用量在结局里
+ */
+usage?: AttemptUsage | null, 
+/**
+ * 这一跳等了多少毫秒才轮到一个空位：这家设了 `max_concurrent` 而它满着。不算在 `ms`
+ * 里。没等的没有
+ */
+queued_ms?: number | null, 
+/**
+ * 这一跳为什么没发出去：`busy`（这家满着，换了下一家；等过它的话 `queued_ms` 是等了
+ * 多久）。这时 `outcome` 是 `error`，`error` 是同一件事的那句话。发出去了的没有
+ */
+skipped?: ServeSkip | null, };
 
 /**
  * 上游接不接受凭据。
@@ -289,6 +323,15 @@ profile?: string | null,
  * 时不用给，从地址读
  */
 region?: string | null, };
+
+/**
+ * `load-balance` 组按什么分新对话：配置里 `balance_by` 写的那个词。
+ *
+ * 成员的权重永远是底数，快慢、成败算出的系数乘在上面
+ * （[`DryRunCandidate::balance_factor`]）；进行中的对话照旧留在回答它的那一家。
+ * 没有测到的上游算中等。
+ */
+export type BalanceBy = "weights" | "latency" | "health" | "latency-health";
 
 /**
  * 删除时带上的版本。
@@ -550,7 +593,16 @@ default?: boolean,
  * 最后一次被用在什么时候。**按密钥算，不是按客户端自报的标识** ——
  * 那个可以伪造。从来没被用过时没有
  */
-last_seen_ms?: number | null, };
+last_seen_ms?: number | null, 
+/**
+ * 用量上限，按配置里的顺序，各带此刻用了多少。没设的是空的
+ */
+limits: Array<KeyLimitView>, 
+/**
+ * 这把密钥用得到、却没有价格的模型。**只有设了费用上限的密钥才算**：这些模型的
+ * 请求费用记 0，费用上限管不住它们，对话框里要提醒一句。没有就不带
+ */
+unpriced_models?: Array<string>, };
 
 /**
  * 路由规则 `when` 里的键。
@@ -894,7 +946,26 @@ sent_model?: string | null,
  * 发出的名字为什么和请求里写的不一样：`alias`（别名对到这一家的名称）、`rule`（规则
  * 改写了模型）、`pinned`（规则指定了这一家发什么模型）。一样时没有
  */
-model_via?: string | null, };
+model_via?: string | null, 
+/**
+ * 经过的是 `load-balance` 组时，它在组里的权重（没写权重的是 1）。别的时候没有
+ */
+weight?: number | null, 
+/**
+ * 它的典型首字节时间（最近样本的中位数），毫秒。只在顺序看它时有：`url-test`，
+ * 按快慢分的 `load-balance`。样本不够时没有
+ */
+ttfb_ms?: number | null, 
+/**
+ * 它最近的成功率，0 到 1（最近 50 次、30 分钟以内）。只在按成败分的 `load-balance`
+ * 里有；不到 5 次时没有
+ */
+success_rate?: number | null, 
+/**
+ * 按快慢、成败算出的系数，乘在权重（[`Self::weight`]）上：大于 1 分得多，小于 1
+ * 分得少，没有样本的那一项算 1。只在 `balance_by` 不是 `weights` 的 `load-balance` 里有
+ */
+balance_factor?: number | null, };
 
 /**
  * 一次试算的结论。
@@ -944,6 +1015,10 @@ route: string,
  * 写在第一个」。直指 provider 时是 None。
  */
 strategy?: GroupKind | null, 
+/**
+ * 经过的是 `load-balance` 组时，它按什么分新对话。别的时候没有
+ */
+balance_by?: BalanceBy | null, 
 /**
  * `route` | `deny` | `no_match` | `unavailable`（选中的上游都服务不了，
  * 见 `skipped`）| `intercepted`
@@ -1333,7 +1408,23 @@ window: string,
 /**
  * 什么时候重置（见 `QuotaWindow::resets_at_ms`）。上游没说就没有
  */
-resets_at_ms?: number | null, at_ms: number, } | { "kind": "listen_changed", id: number, 
+resets_at_ms?: number | null, at_ms: number, } | { "kind": "key_limit_alert", id: number, 
+/**
+ * 密钥的名字
+ */
+key: string, per: LimitPer, measure: LimitMeasure, 
+/**
+ * 上限，单位同 `KeyLimitView::max`
+ */
+max: number, 
+/**
+ * 报的时候用了多少，同上
+ */
+used: number, cache_reads?: boolean, 
+/**
+ * `true` = 到了上限，之后的请求被拒到 `resets_at_ms`；`false` = 到了八成
+ */
+reached: boolean, resets_at_ms: number, at_ms: number, } | { "kind": "listen_changed", id: number, 
 /**
  * 此刻在听的那个地址，同 `Status::gateway_addr`
  */
@@ -1431,7 +1522,15 @@ rate_limit_max_pause_secs: number,
 /**
  * 流式回答的开头最多等多少秒
  */
-stream_start_wait_secs: number, };
+stream_start_wait_secs: number, 
+/**
+ * 等过 `stream_start_wait_secs` 还没有内容就换下一家（最后一家照常等）
+ */
+next_on_slow_start: boolean, 
+/**
+ * 上游满着（`max_concurrent`）时，一个请求合计最多等多少秒空位。0 是不等
+ */
+slot_wait_secs: number, };
 
 /**
  * 一个请求失败在哪一方。和 HTTP 响应里的 `x-thinkwatch-error` 同一个词表，
@@ -1450,7 +1549,16 @@ providers: Array<string>,
 /**
  * `select` 组优先使用的成员
  */
-selected?: string | null, };
+selected?: string | null, 
+/**
+ * `load-balance` 组成员的权重，1 到 100。不给 = 都是 1；给了的话没写到的成员是 1。
+ * 别的类型只能不给、或者都是 1
+ */
+weights?: { [key in string]: number } | null, 
+/**
+ * `load-balance` 组按什么分新对话。不给 = `weights`；别的类型只能是 `weights`
+ */
+balance_by?: BalanceBy | null, };
 
 /**
  * 策略组按什么排候选：配置里 `type` 写的那个词。
@@ -1484,7 +1592,16 @@ kind: GroupKind,
  * **界面要能切它** —— 这个策略本身就是「UI 上点选或托盘里切」，
  * 而切不了的话它等于一个只能改 YAML 才能用的功能。
  */
-selected?: string | null, providers: Array<string>, };
+selected?: string | null, providers: Array<string>, 
+/**
+ * `load-balance` 组每个成员的权重，**每个成员都在**，没写权重的是 1：新对话按这个
+ * 比例分。别的类型不用权重，是空的
+ */
+weights: { [key in string]: number }, 
+/**
+ * `load-balance` 按什么分新对话。别的类型永远是 `weights`
+ */
+balance_by: BalanceBy, };
 
 /**
  * 哪一项防护。配置里 `security` 下的那个键，也是管理接口路径里的那一段。
@@ -1818,7 +1935,51 @@ route?: string | null,
 /**
  * 三态：不写 / 写非空 / 写 `[]`（一个都不给）
  */
-allow?: Array<string> | null, disabled?: boolean, };
+allow?: Array<string> | null, disabled?: boolean, 
+/**
+ * 用量上限，整份替换。不带 = 一条都没有
+ */
+limits?: Array<KeyLimitInput>, };
+
+/**
+ * 新建、保存密钥时的一条用量上限。
+ */
+export type KeyLimitInput = { per: LimitPer, measure: LimitMeasure, 
+/**
+ * 上限：请求数、token 数，费用是微分。要大于 0
+ */
+max: number, 
+/**
+ * 只有 token 上限能开
+ */
+cache_reads?: boolean, };
+
+/**
+ * 一条用量上限，和它此刻用了多少。
+ */
+export type KeyLimitView = { per: LimitPer, measure: LimitMeasure, 
+/**
+ * 上限：请求数、token 数，费用是微分
+ */
+max: number, 
+/**
+ * token 上限把从缓存读的也算进去
+ */
+cache_reads: boolean, 
+/**
+ * 用了多少，单位同 `max`。**在跑的请求也算**：按它们的输入估算占着，结束时换成
+ * 记下的实数 —— 准入看的就是这个数。滚动的是最近那一段时间里的，重启之后从空的
+ * 开始；自然的是这一期的，重启之后从请求记录里加回来
+ */
+used: number, 
+/**
+ * 这一期什么时候结束、重新算。只有天、周、月有
+ */
+resets_at_ms?: number | null, 
+/**
+ * 到了：`used` 不小于 `max`，新的请求此刻会被拒（滚动的会先等一会儿）
+ */
+reached: boolean, };
 
 /**
  * 换哪把密钥（`POST /keys/{name}/rotate`）。
@@ -1948,6 +2109,17 @@ export type LatencyView = { model: string, p50: number, p95: number,
  * **样本数要一起给。**「800ms」是 3 个样本还是 300 个，含义完全不同
  */
 samples: number, };
+
+/**
+ * 一条用量上限数的是什么。
+ */
+export type LimitMeasure = "requests" | "tokens" | "cost";
+
+/**
+ * 用量上限按多长一段时间算。分钟、小时是**滚动的**（最近 60 秒、最近 60 分钟）；
+ * 天、周、月是**自然的**，按 core 所在机器的本地时区：零点、周一零点、一号零点重新算。
+ */
+export type LimitPer = "minute" | "hour" | "day" | "week" | "month";
 
 /**
  * 一张列表要的两样：看哪一段，最多几条（`GET /history`、`/sessions`）。
@@ -2138,9 +2310,21 @@ export type ModelRow = { id: string,
  */
 enabled: boolean, 
 /**
- * 上下文窗口，来自默认价目表
+ * 上下文窗口：这一家手写的（`model_specs`），没写时来自价目表
  */
 context_window?: number | null, 
+/**
+ * `context_window` 从哪儿来。不知道上下文窗口时没有
+ */
+context_window_source?: SpecSource | null, 
+/**
+ * 一次最多输出多少 token：这一家手写的，没写时来自价目表
+ */
+max_output_tokens?: number | null, 
+/**
+ * `max_output_tokens` 从哪儿来。不知道输出上限时没有
+ */
+max_output_tokens_source?: SpecSource | null, 
 /**
  * 按这个上游选的价目表查到的价格。空 = 无法计价
  */
@@ -2159,6 +2343,28 @@ aliases: Array<string>, };
  * 一个上游的模型清单从哪儿来。
  */
 export type ModelSource = "discovered" | "manual" | "none";
+
+/**
+ * 设一家上游的一个模型的规格（`PUT /provider-model-spec`）：价目表不认识这个模型、
+ * 或者写错了时手写。**两项都空就是删掉这一项**，回到价目表。
+ */
+export type ModelSpecSave = { provider: string, 
+/**
+ * 模型 ID，和这家的清单里写的完全相等。去掉首尾空白
+ */
+model: string, 
+/**
+ * 上下文窗口（token）。空 = 用价目表的
+ */
+context_window?: number | null, 
+/**
+ * 输出上限（token）。空 = 用价目表的
+ */
+max_output_tokens?: number | null, 
+/**
+ * 你基于哪一版。**对不上就是 409**
+ */
+base_version?: string | null, };
 
 /**
  * 页面打开时补问模型清单：开始问的是哪几家。答案随 `models_changed` 到。
@@ -2844,6 +3050,10 @@ billing?: Billing | null,
  */
 pricing?: string | null, 
 /**
+ * 同时最多发给这家几个请求，1 到 1000。不给就是不限
+ */
+max_concurrent?: number | null, 
+/**
  * 停用
  */
 disabled: boolean, };
@@ -3057,7 +3267,11 @@ references: Array<ReferenceView>,
 /**
  * 选的价目表。空 = 默认价目表
  */
-pricing: string | null, };
+pricing: string | null, 
+/**
+ * 同时最多发给这家几个请求。不限是空
+ */
+max_concurrent?: number | null, };
 
 /**
  * 代理的用户名和密码。
@@ -4014,7 +4228,7 @@ export type SecurityView = { redact: GuardMode, inspect_tools: GuardMode, conten
 /**
  * 一个上游为什么服务不了这个模型。
  */
-export type ServeSkip = "disabled" | "out_of_scope" | "not_offered" | "not_allowed";
+export type ServeSkip = "disabled" | "out_of_scope" | "not_offered" | "not_allowed" | "busy";
 
 export type SessionDetail = { session: SessionView, turns: Array<TurnView>, };
 
@@ -4105,6 +4319,11 @@ export type SkippedView = { provider: string,
  * `disabled` / `out_of_scope` / `not_offered` / `not_allowed`
  */
 reason: ServeSkip, };
+
+/**
+ * 上下文窗口、输出上限这样的模型规格从哪儿来。
+ */
+export type SpecSource = "price_table" | "manual";
 
 /**
  * L3 测速要花多少。
@@ -4648,6 +4867,7 @@ export const ENDPOINTS = {
   UpdateProvider: { method: "PUT", path: "/providers/{name}", params: ["name"], format: "json" },
   DeleteProvider: { method: "DELETE", path: "/providers/{name}", params: ["name"], format: "json" },
   ProviderModels: { method: "GET", path: "/providers/{name}/models", params: ["name"], format: "json" },
+  SetModelSpec: { method: "PUT", path: "/provider-model-spec", params: [], format: "json" },
   RefreshProviderModels: { method: "POST", path: "/providers/{name}/models/refresh", params: ["name"], format: "json" },
   RefreshStaleModels: { method: "POST", path: "/models/refresh", params: [], format: "json" },
   CreateProxy: { method: "POST", path: "/proxies", params: [], format: "json" },
@@ -4769,6 +4989,7 @@ export type Endpoints = {
   UpdateProvider: { req: ProviderSave; res: ConfigWritten };
   DeleteProvider: { req: BaseVersion; res: ConfigWritten };
   ProviderModels: { req: null; res: ProviderModelsView };
+  SetModelSpec: { req: ModelSpecSave; res: ConfigWritten };
   RefreshProviderModels: { req: null; res: ProviderModelsView };
   RefreshStaleModels: { req: null; res: ModelsRefreshing };
   CreateProxy: { req: ProxySave; res: ConfigWritten };

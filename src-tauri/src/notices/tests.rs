@@ -646,6 +646,9 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
             status: Some(200),
             error: None,
             ms: 800,
+            usage: None,
+            queued_ms: None,
+            skipped: None,
         }],
         billing: tw_api::Billing::PerToken,
     });
