@@ -21,6 +21,8 @@ import { api } from "./api";
 import type { KeyUse } from "./data";
 import { keyDialogText } from "./KeyDialog.i18n";
 import { errorText, routeLabel, takeoverOf } from "./labels";
+import { inputsOf, limitProblems, rowsOf, type LimitRow } from "./limits";
+import { LimitsEditor } from "./LimitsEditor";
 import { TakeoverBadge } from "./KeysTable";
 import { ModelScope } from "./ModelScope";
 import { CopyButton, focusSelf, useDialogFocus } from "./parts";
@@ -42,6 +44,7 @@ export function KeyDialog({
   routes,
   defaultRoute,
   catalog,
+  rowDays,
   version,
   onClose,
   onSaved,
@@ -59,6 +62,8 @@ export function KeyDialog({
   defaultRoute: string;
   /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
   catalog: KnownModel[];
+  /** 请求记录留几天（概览里的）。每月的用量上限要求至少 31 天 */
+  rowDays: number | null;
   /** 这一页最后知道的配置版本。**打开时读一次**，保存带的是那一个（见下面的 `base`） */
   version: { get: () => string };
   onClose: () => void;
@@ -74,6 +79,7 @@ export function KeyDialog({
   const [scope, setScope] = useState<Scope>(scopeOf(editing?.allow));
   const [entries, setEntries] = useState<string[]>(editing?.allow ?? []);
   const [limit, setLimit] = useState(editing?.max_concurrent != null ? String(editing.max_concurrent) : "");
+  const [limits, setLimits] = useState<LimitRow[]>(() => rowsOf(editing?.limits));
   const [enabled, setEnabled] = useState(!editing?.disabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +92,19 @@ export function KeyDialog({
 
   const owner = editing ? takeoverOf(editing, clients, manual) : null;
   const taken = keys.some((k) => k.name === name.trim() && k.name !== editing?.name);
+  const problems = limitProblems(limits, rowDays);
   const missing =
     name.trim().length === 0
       ? t.nameRequired
       : taken
         ? t.nameTaken
-        : scope === "some" && entries.length === 0
-          ? t.patternsRequired
-          : null;
+        : problems.size > 0
+          ? [...problems.values()].every((p) => p === "required")
+            ? t.limitRequired
+            : t.limitsInvalid
+          : scope === "some" && entries.length === 0
+            ? t.patternsRequired
+            : null;
 
   async function save() {
     setSaving(true);
@@ -105,6 +116,7 @@ export function KeyDialog({
         allow: allowOf(scope, entries),
         max_concurrent: limit.trim() ? Number(limit.trim()) : null,
         disabled: !enabled,
+        limits: inputsOf(limits),
       },
       base_version: base,
     };
@@ -213,6 +225,15 @@ export function KeyDialog({
               onChange={(e) => setLimit(e.target.value.replace(/[^0-9]/g, ""))}
             />
           </div>
+
+          <LimitsEditor
+            rows={limits}
+            views={editing?.limits ?? []}
+            unpriced={editing?.unpriced_models ?? []}
+            problems={problems}
+            rowDays={rowDays}
+            onChange={setLimits}
+          />
 
           <ModelScope scope={scope} entries={entries} catalog={catalog} onScope={setScope} onEntries={setEntries} />
 
