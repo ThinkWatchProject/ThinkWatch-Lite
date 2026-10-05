@@ -6,7 +6,7 @@ import { keyText } from "@/KeyLabel";
 import { cn } from "@/lib/utils";
 import type { NotSent } from "@/requestRouting";
 import type { RequestRow } from "@/types";
-import { IconDenied, IconNoUpstream, IconRemote } from "@/ui/icons";
+import { IconBusy, IconDenied, IconLimitReached, IconNoUpstream, IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
 import { notify } from "@/ui/notify";
 import { Tip } from "@/ui/tip";
@@ -103,22 +103,25 @@ export function RowKeyCell({ r, hints }: { r: RequestRow; hints: boolean }) {
   return <KeyCell client={r.client} masked={r.keyMasked} hint={r.hint} peer={r.peer} hints={hints} />;
 }
 
+/** 每一种在上游标志的位置上画的图形和颜色 */
+const NOT_SENT: Record<NotSent, { Icon: typeof IconDenied; color: string }> = {
+  denied: { Icon: IconDenied, color: "text-destructive" },
+  unavailable: { Icon: IconNoUpstream, color: "text-muted-foreground" },
+  limited: { Icon: IconLimitReached, color: "text-warning" },
+  busy: { Icon: IconBusy, color: "text-muted-foreground" },
+};
+
 /**
- * 没有发往任何上游的请求在上游标志的位置上画什么：被规则拒绝是禁止符号（和路由图上
- * 「拒绝」那个节点同一个），没有可用的上游是划掉的上游。和上游标志一样大，名字对得齐。
+ * 没有上游接下的请求在上游标志的位置上画什么：被规则拒绝是禁止符号（和路由图上
+ * 「拒绝」那个节点同一个），没有可用的上游是划掉的上游，密钥的用量到了上限是顶到线的
+ * 箭头，上游都满着是沙漏。和上游标志一样大，名字对得齐。
  *
- * 拒绝带红色，和路由图一致；`plain` 时跟着周围的字色（命令面板里的图标都是单色）。
+ * 拒绝带红色，和路由图一致；用量上限是琥珀色：到了上限要留意，但不是故障。`plain` 时
+ * 跟着周围的字色（命令面板里的图标都是单色）。
  */
 export function NotSentIcon({ kind, plain }: { kind: NotSent; plain?: boolean }) {
-  const Icon = kind === "denied" ? IconDenied : IconNoUpstream;
-  return (
-    <Icon
-      aria-hidden
-      data-not-sent={kind}
-      size={16}
-      className={cn("shrink-0", !plain && (kind === "denied" ? "text-destructive" : "text-muted-foreground"))}
-    />
-  );
+  const { Icon, color } = NOT_SENT[kind];
+  return <Icon aria-hidden data-not-sent={kind} size={16} className={cn("shrink-0", !plain && color)} />;
 }
 
 /**
