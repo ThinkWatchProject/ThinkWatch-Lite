@@ -492,16 +492,17 @@ function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModel[] }
   const exact = values.length === 1 && !values[0]!.includes("*");
   return (
     <div className="min-w-0">
-      <div className="truncate">
-        {r.conditions.map((c, i) => (
-          <Fragment key={c.field}>
-            {i > 0 && t.conditionJoin}
-            {conditionText(c)}
-            {c === model && alias && (
-              <AliasMark className="ml-1.5 align-[1px]" />
-            )}
-          </Fragment>
-        ))}
+      {/* 标记放在截断的文字外面：条件一长，行尾会被截掉，标记不能跟着丢 */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate">
+          {r.conditions.map((c, i) => (
+            <Fragment key={c.field}>
+              {i > 0 && t.conditionJoin}
+              {conditionText(c)}
+            </Fragment>
+          ))}
+        </span>
+        {alias && <AliasMark className="shrink-0" />}
       </div>
       {inherited.length > 0 && (
         <div className="truncate tw-label text-muted-foreground">
