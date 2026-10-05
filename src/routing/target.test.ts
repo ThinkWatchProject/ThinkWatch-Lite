@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { KnownModelX } from "./provisional";
-import { aliasNamed, candidatesOf, hasTarget, inheritedAliases, modelHint, pinnedOf, targetNameOf } from "./target";
+import type { KnownModel } from "@/types";
+import { aliasNamed, hasTarget, inheritedAliases, modelHint, modelViaOf, pinnedOf, targetNameOf } from "./target";
 
 // `/models` 的目录：别名项带 `alias`（它的模型列表），真名带 `aliases`（指向它的别名）
-const real = (id: string, aliases: string[] = [], providers = ["p"]): KnownModelX => ({ id, providers, aliases });
-const alias = (id: string, models: string[], providers = ["p"]): KnownModelX => ({ id, providers, alias: models, aliases: [] });
+const real = (id: string, aliases: string[] = [], providers = ["p"]): KnownModel => ({ id, providers, aliases });
+const alias = (id: string, models: string[], providers = ["p"]): KnownModel => ({ id, providers, alias: models, aliases: [] });
 
-const KNOWN: KnownModelX[] = [
+const KNOWN: KnownModel[] = [
   alias("claude-opus-5", ["claude-opus-5", "anthropic/claude-opus-5"], ["anthropic", "openrouter"]),
   alias("deepseek-v4.1", ["DeepSeek-v4.1-flash"]),
   real("DeepSeek-v4.1-flash", ["deepseek-v4.1"]),
@@ -87,34 +87,14 @@ describe("模型条件的提示", () => {
 });
 
 describe("试算的候选", () => {
-  const base = {
-    route: "default",
-    outcome: "route" as const,
-    rule: "x",
-    reason: null,
-    via_group: null,
-    set: [],
-    trace: [],
-    circuit_open: [],
-    skipped: [],
-    converted: [],
-  };
-
-  it("和候选一一对应的发出模型", () => {
-    const r = {
-      ...base,
-      candidates: ["openrouter", "anthropic"],
-      candidate_models: [{ sent_model: "anthropic/claude-opus-5", model_via: "alias" }, null],
-    };
-    expect(candidatesOf(r)).toEqual([
-      { provider: "openrouter", sent_model: "anthropic/claude-opus-5", model_via: "alias" },
-      { provider: "anthropic" },
-    ]);
-    expect(candidatesOf({ ...base, candidates: ["a"] })).toEqual([{ provider: "a" }]);
-  });
-
-  it("候选本身带着发出模型的写法也认", () => {
-    const c = { provider: "bedrock", sent_model: "us.anthropic.claude-opus-5-v1:0", model_via: "pinned" };
-    expect(candidatesOf({ ...base, candidates: [c] as unknown as string[] })).toEqual([c]);
+  it("发出模型的来历只认识三种", () => {
+    expect(modelViaOf({ provider: "openrouter", sent_model: "anthropic/claude-opus-5", model_via: "alias" })).toBe(
+      "alias",
+    );
+    expect(modelViaOf({ provider: "bedrock", sent_model: "us.anthropic.claude-opus-5-v1:0", model_via: "pinned" })).toBe(
+      "pinned",
+    );
+    expect(modelViaOf({ provider: "anthropic", sent_model: "claude-opus-5" })).toBeNull();
+    expect(modelViaOf({ provider: "anthropic", sent_model: "claude-opus-5", model_via: "later" })).toBeNull();
   });
 });

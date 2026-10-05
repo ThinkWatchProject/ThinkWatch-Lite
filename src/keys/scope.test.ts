@@ -16,15 +16,14 @@ import {
   splitEntries,
   toggleModel,
   visibleCount,
-  type CatalogModel,
 } from "./scope";
 
 const CATALOG: KnownModel[] = [
-  { id: "claude-opus-5", providers: ["anthropic"] },
-  { id: "claude-sonnet-5", providers: ["anthropic", "openrouter"] },
-  { id: "claude-haiku-4-5", providers: ["anthropic"] },
-  { id: "deepseek-chat", providers: ["deepseek"] },
-  { id: "gpt-5.5", providers: ["openrouter"] },
+  { id: "claude-opus-5", providers: ["anthropic"], aliases: [] },
+  { id: "claude-sonnet-5", providers: ["anthropic", "openrouter"], aliases: [] },
+  { id: "claude-haiku-4-5", providers: ["anthropic"], aliases: [] },
+  { id: "deepseek-chat", providers: ["deepseek"], aliases: [] },
+  { id: "gpt-5.5", providers: ["openrouter"], aliases: [] },
 ];
 
 describe("可见模型的三态", () => {
@@ -136,7 +135,7 @@ describe("表格里「可见模型」那一栏", () => {
  * 目录里带别名的样子（core 的 `/models`）：别名和同名真模型只出现一次（就是别名），
  * 真名那一项的 `aliases` 是指向它的别名
  */
-const WITH_ALIASES: CatalogModel[] = [
+const WITH_ALIASES: KnownModel[] = [
   { id: "anthropic/claude-sonnet-5", providers: ["openrouter"], aliases: ["claude-sonnet-5"] },
   {
     id: "claude-sonnet-5",

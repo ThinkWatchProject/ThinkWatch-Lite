@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { PROBES, conditionName, formatLabel, probeLabel, targetLabel } from "@/labels";
-import type { ConditionField, ConditionView, Overview } from "@/types";
+import type { ConditionField, ConditionView, KnownModel, Overview } from "@/types";
 import { Segmented } from "@/ui/segmented";
 import { FormItem, Note } from "@/upstreams/parts";
 import { GroupDialog } from "./GroupDialog";
@@ -49,7 +49,6 @@ import {
   type ToKind,
 } from "./model";
 import { PinnedModels } from "./PinnedModels";
-import type { KnownModelX } from "./provisional";
 import { routingText } from "./routing.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { modelHint, type ModelHint } from "./target";
@@ -88,7 +87,7 @@ export function RuleDialog({
   /** 同一条路由里其余规则的名字 */
   takenNames: string[];
   ov: Overview;
-  models: KnownModelX[];
+  models: KnownModel[];
   configVersion: string;
   /** 在这里新建了策略组：外面要重读概览，路由对话框接着用写完的版本 `version` */
   onChanged: (version: string) => void;
@@ -429,7 +428,7 @@ function ConditionRow({
 }: {
   c: ConditionView;
   ov: Overview;
-  models: KnownModelX[];
+  models: KnownModel[];
   onChange: (c: ConditionView) => void;
   onRemove: () => void;
 }) {

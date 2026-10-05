@@ -5,22 +5,11 @@
  * 能不能用、条件写得对不对，最后由 core 说；这里只做对话框里需要实时给出
  * 的那几件事：保存按钮旁边缺什么、哪条规则被兜底挡住。
  */
-import type {
-  ClientView,
-  ConditionField,
-  ConditionView,
-  Dialect,
-  GroupKind,
-  GroupView,
-  ProviderView,
-  RouteView,
-} from "@/types";
-import type { PinnedModel } from "@/aliases/api.provisional";
+import type { ClientView, ConditionField, ConditionView, Dialect, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleView } from "@/types";
 import { textOf } from "@/i18n";
 import { ALL_UPSTREAMS, conditionName, groupKindLabel, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
 import { modelText } from "./model.i18n";
-import type { KnownModelX, RouteViewX, RuleInputX, RuleViewX } from "./provisional";
 import { routingText } from "./routing.i18n";
 import { aliasNamed, hasTarget, pinnedOf, pinnedText, targetNameOf } from "./target";
 
@@ -179,7 +168,7 @@ export function blankPinned(provider = "", model = ""): PinnedDraft {
   return { key: nextKey(), provider, model };
 }
 
-export function draftFromView(r: RuleViewX): RuleDraft {
+export function draftFromView(r: RuleView): RuleDraft {
   const pinned = pinnedOf(r.to);
   return {
     key: nextKey(),
@@ -228,7 +217,7 @@ export function isPhaseTwo(d: RuleDraft): boolean {
 }
 
 /** 草稿 → 交给 core 的规则 */
-export function draftToInput(d: RuleDraft): RuleInputX {
+export function draftToInput(d: RuleDraft): RuleInput {
   const conditions = d.conditions.map((c) => {
     const values = c.values.map((v) => v.trim()).filter(Boolean);
     if (condField(c.field).kind === "compare") {
@@ -368,7 +357,7 @@ export function usersOf(route: RouteView, clients: ClientView[]): string[] {
  * `name` 是配置里的去向（拿来认上游的标志；指定模型时是第一个上游），`target` 是显示的
  * 名字；拒绝时两个都是空。
  */
-export function flowOf(route: RouteViewX): { rule: string; name: string | null; target: string | null }[] {
+export function flowOf(route: RouteView): { rule: string; name: string | null; target: string | null }[] {
   return route.rules
     .filter((r) => !r.shadowed && !r.phase_two && (hasTarget(r.to) || r.deny != null))
     .map((r) => {
@@ -429,7 +418,7 @@ export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected"
  * 规则的附加项写成一句：`模型改为 claude-haiku-4-5 · max_tokens 4096`。改成的是别名时说明
  * 它按别名表对应到各上游（`known` 是 `/models` 的目录，不给就不说）
  */
-export function addOnsText(d: RuleDraft, known: readonly KnownModelX[] = []): string {
+export function addOnsText(d: RuleDraft, known: readonly KnownModel[] = []): string {
   const t = textOf(modelText);
   const parts: string[] = [];
   const model = setModelOf(d);

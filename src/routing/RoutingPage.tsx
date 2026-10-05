@@ -15,8 +15,7 @@ import { useText } from "@/i18n";
 import type { ConfigFocus } from "@/configLocate";
 import { targetLabel } from "@/labels";
 import { useNav, useNavParams } from "@/nav";
-import type { GroupView, Overview } from "@/types";
-import type { RouteInputX } from "./provisional";
+import type { GroupView, Overview, RouteInput } from "@/types";
 import { DeleteDialog } from "@/upstreams/DeleteDialog";
 import { api } from "./api";
 import type { ChainFocus } from "./chain";
@@ -348,7 +347,7 @@ export default function RoutingPage({
           onChanged={onChanged}
           onClose={() => setDialog(null)}
           onSaved={(name) => done({ kind: "route", name })}
-          onDryRun={(route: RouteInputX, keys: string[]) => setDryRun({ kind: "draft", route, keys })}
+          onDryRun={(route: RouteInput, keys: string[]) => setDryRun({ kind: "draft", route, keys })}
         />
       )}
       {dialog?.kind === "set-default" && (

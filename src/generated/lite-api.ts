@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg, Protocol } from "./tw-api";
+import type { CostBucketGroup, CostGroup, Msg, PinnedModel, Protocol } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -492,11 +492,6 @@ third_party: boolean, };
  * 一个上游模型，和提供它的上游（按网关排的顺序）
  */
 export type ModelChoice = { model: string, providers: Array<string>, };
-
-/**
- * 规则去向里的一个「指定模型」：发到这家上游的这个模型，模型名原样发出
- */
-export type PinnedModel = { provider: string, model: string, };
 
 /**
  * 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**

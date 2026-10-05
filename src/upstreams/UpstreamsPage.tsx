@@ -41,7 +41,7 @@ import { NextClientsHint } from "@/guide/PageHints";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { aliasesText } from "@/aliases/aliases.i18n";
-import type { AliasInput } from "@/aliases/api.provisional";
+import type { AliasInput } from "@/types";
 
 export type UpstreamTab = "upstreams" | "aliases" | "proxies" | "pricing" | "checkup";
 

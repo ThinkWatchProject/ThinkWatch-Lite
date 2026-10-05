@@ -4,7 +4,7 @@
 import { useResource, type Resource } from "@/lib/resource";
 import { dismissHints, useDismissedHints } from "@/guide/hints";
 import { api } from "./api";
-import type { AliasSuggestion, AliasesView } from "./api.provisional";
+import type { AliasSuggestion, AliasesView } from "@/types";
 import { suggestionKey, visibleSuggestions } from "./logic";
 
 /**

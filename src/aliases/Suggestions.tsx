@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import type { AliasSuggestion } from "./api.provisional";
+import type { AliasSuggestion } from "@/types";
 import { aliasesText } from "./aliases.i18n";
 import { Lines } from "./AliasTable";
 import { suggestionKey, suggestionProviders } from "./logic";

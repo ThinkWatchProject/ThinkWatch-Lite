@@ -23,7 +23,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ALL_UPSTREAMS, conditionText, targetLabel } from "@/labels";
-import type { Overview } from "@/types";
+import type { KnownModel, Overview, RouteInput } from "@/types";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
 import { ToggleChips, onOpenFocus } from "./fields";
@@ -44,7 +44,6 @@ import {
   type RuleDraft,
 } from "./model";
 import { KeyChips, KeyIcon, TargetIcon } from "./parts";
-import type { KnownModelX, RouteInputX } from "./provisional";
 import { routeDialogText } from "./RouteDialog.i18n";
 import { routingText } from "./routing.i18n";
 import { RuleDialog } from "./RuleDialog";
@@ -86,7 +85,7 @@ export function RouteDialog({
 }: {
   mode: RouteDialogMode;
   ov: Overview;
-  models: KnownModelX[];
+  models: KnownModel[];
   /** 最近一段时间的命中数（`useRouteHits`） */
   hits: RouteHitsWindow;
   /** 概览里的配置版本。**只取打开那一刻的**（见 `base`） */
@@ -96,7 +95,7 @@ export function RouteDialog({
   /** 保存成功，带着保存后的名字 */
   onSaved: (name: string) => void;
   /** 按对话框里还没保存的内容试算 */
-  onDryRun: (draft: RouteInputX, keys: string[]) => void;
+  onDryRun: (draft: RouteInput, keys: string[]) => void;
 }) {
   const t = useText(routeDialogText);
   const rt = useText(routingText);
@@ -159,7 +158,7 @@ export function RouteDialog({
   const leaving =
     mode.kind === "edit" && !isDefault ? original.filter((k) => !keys.includes(k)) : [];
 
-  function input(): RouteInputX {
+  function input(): RouteInput {
     return { name: trimmed, rules: rules.map(draftToInput) };
   }
 
@@ -483,7 +482,7 @@ function RuleHitsLine({ n, span }: { n: number; span: HitSpan }) {
  * 「条件」一栏。模型条件写的是别名时标出来；写的是上游模型名、又有别名指向它时，次行写明
  * 也匹配这些别名（继承只从真名到别名，和密钥的可见范围是同一条规矩）
  */
-function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModelX[] }) {
+function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModel[] }) {
   const t = useText(routeDialogText);
   const model = r.conditions.find((c) => c.field === "model");
   const values = model?.values.map((v) => v.trim()).filter(Boolean) ?? [];
@@ -518,7 +517,7 @@ function Conditions({ r, known }: { r: RuleDraft; known: readonly KnownModelX[] 
  * 「命中后」一栏：去向（或拒绝、继续匹配），次行是去向的说明或附加项。指定模型写成
  * 「上游 · 模型」，备用的写在次行
  */
-function Action({ r, ov, known }: { r: RuleDraft; ov: Overview; known: readonly KnownModelX[] }) {
+function Action({ r, ov, known }: { r: RuleDraft; ov: Overview; known: readonly KnownModel[] }) {
   const rt = useText(routingText);
   const t = useText(routeDialogText);
   const addOns = addOnsText(r, known);

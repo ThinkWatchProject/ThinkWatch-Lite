@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { KnownModelAliasFields } from "@/aliases/api.provisional";
 import type { AttemptView, HistoryRow, KnownModel, PluginRunView, RequestRow, RoutingView } from "@/types";
 import { aliasTable, hopVia, routingModels, rowMark, type HopFacts, type ViaConfig } from "./modelVia";
 
@@ -43,14 +42,13 @@ const hop = (over: Partial<HopFacts>): HopFacts => ({
 
 describe("别名表", () => {
   it("从 GET /models 里挑出带模型列表的那几项", () => {
-    const models: Array<KnownModel & Partial<KnownModelAliasFields>> = [
+    const models: KnownModel[] = [
       { id: "claude-sonnet-5", providers: ["anthropic", "bedrock"], alias: ["claude-sonnet-5", "us.x"], aliases: [] },
       { id: "claude-haiku-4-5", providers: ["anthropic"], aliases: ["haiku"] },
       { id: "empty", providers: [], alias: [], aliases: [] },
     ];
     expect([...aliasTable(models)]).toEqual([["claude-sonnet-5", ["claude-sonnet-5", "us.x"]]]);
-    // core 还没给这两个字段（现在的生成类型）、或者目录取不到：一个别名都没有
-    expect(aliasTable([{ id: "gpt-5.5", providers: ["chatgpt"] }]).size).toBe(0);
+    // 目录取不到：一个别名都没有
     expect(aliasTable(undefined).size).toBe(0);
   });
 });

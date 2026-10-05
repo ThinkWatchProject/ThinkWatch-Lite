@@ -9,6 +9,7 @@ import { Segmented } from "@/ui/segmented";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { useText } from "@/i18n";
 import { Boxed, FormItem, Note } from "@/upstreams/parts";
+import type { KnownModel } from "@/types";
 import { modelScopeText } from "./ModelScope.i18n";
 import {
   addPattern,
@@ -20,7 +21,6 @@ import {
   splitEntries,
   toggleModel,
   visibleCount,
-  type CatalogModel,
   type Scope,
   type Source,
 } from "./scope";
@@ -48,7 +48,7 @@ export function ModelScope({
   scope: Scope;
   entries: string[];
   /** 网关知道的全部模型，含别名。尚未获取到时是空的 */
-  catalog: CatalogModel[];
+  catalog: KnownModel[];
   onScope: (s: Scope) => void;
   onEntries: (e: string[]) => void;
 }) {

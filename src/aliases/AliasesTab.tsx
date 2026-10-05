@@ -7,7 +7,7 @@ import { Button } from "@/ui/button";
 import { Count } from "@/ui/count";
 import { EmptyState, Loadable, TableSkeleton } from "@/ui/states";
 import { useDismissedHints } from "@/guide/hints";
-import type { AliasInput, AliasSuggestion, AliasView } from "./api.provisional";
+import type { AliasInput, AliasSuggestion, AliasView } from "@/types";
 import { aliasesText } from "./aliases.i18n";
 import { AliasTable } from "./AliasTable";
 import { useAliases, useSuggestions } from "./data";

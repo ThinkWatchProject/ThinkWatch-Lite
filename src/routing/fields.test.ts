@@ -29,7 +29,7 @@ describe("模型建议右边的灰字", () => {
   });
 
   it("目录里的 KnownModel 直接当建议用", () => {
-    const m: KnownModel = { id: "gpt-5.5", providers: ["chatgpt"] };
+    const m: KnownModel = { id: "gpt-5.5", providers: ["chatgpt"], aliases: [] };
     const opt: ModelOption = m;
     expect(modelNote(opt)).toBe("chatgpt");
   });

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import { ModelScope } from "./ModelScope";
-import type { CatalogModel } from "./scope";
+import type { KnownModel } from "@/types";
 
 const noop = () => {};
 
@@ -28,7 +28,7 @@ describe("可见模型：指定范围", () => {
   });
 });
 
-const ALIASED: CatalogModel[] = [
+const ALIASED: KnownModel[] = [
   { id: "deepseek-v4.1", providers: ["relay-cn"], alias: ["DeepSeek-v4.1-flash"], aliases: [] },
   { id: "DeepSeek-v4.1-flash", providers: ["relay-cn"], aliases: ["deepseek-v4.1"] },
   { id: "glm-4.6", providers: ["zai", "bigmodel"], aliases: [] },
@@ -76,7 +76,7 @@ describe("可见模型：别名", () => {
       <ModelScope
         scope="some"
         entries={["glm-*"]}
-        catalog={[{ id: "glm-4.6", providers: ["zai"] }]}
+        catalog={[{ id: "glm-4.6", providers: ["zai"], aliases: [] }]}
         onScope={noop}
         onEntries={noop}
       />,

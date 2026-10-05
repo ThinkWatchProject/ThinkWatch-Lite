@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tip } from "@/ui/tip";
 import { contextWindow } from "@/upstreams/labels";
 import { keepInRow, openRow } from "@/upstreams/parts";
-import type { AliasView } from "./api.provisional";
+import type { AliasView } from "@/types";
 import { aliasesText } from "./aliases.i18n";
 import { aliasWarnings, modelLines, type AliasWarning, type ModelLine } from "./logic";
 

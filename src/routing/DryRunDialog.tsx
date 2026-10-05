@@ -32,7 +32,7 @@ import {
   targetLabel,
   translatedText,
 } from "@/labels";
-import type { Dialect, Overview, RuleTrace } from "@/types";
+import type { Dialect, DryRunResult, KnownModel, Overview, RouteInput, RuleTrace } from "@/types";
 import { skipLabel } from "@/upstreams/labels";
 import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
@@ -40,15 +40,14 @@ import { dryRunText } from "./DryRunDialog.i18n";
 import { ModelInput, onOpenFocus } from "./fields";
 import { DIALECTS, usersOf } from "./model";
 import { KeyIcon, TargetIcon } from "./parts";
-import type { DryRunResultX, KnownModelX, RouteInputX } from "./provisional";
 import { routingText } from "./routing.i18n";
-import { candidatesOf, type CandidateView } from "./target";
+import { modelViaOf, type ModelVia } from "./target";
 
 /** 按什么求值：密钥使用的路由、指定的路由、路由对话框里还没保存的草稿 */
 export type DryRunTarget =
   | { kind: "key" }
   | { kind: "route"; name: string }
-  | { kind: "draft"; route: RouteInputX; keys: string[] };
+  | { kind: "draft"; route: RouteInput; keys: string[] };
 
 /**
  * 试算。回答的不只是「会走到哪儿」，还有**「为什么没走我以为的那条」**：
@@ -69,7 +68,7 @@ export function DryRunDialog({
 }: {
   target: DryRunTarget;
   ov: Overview;
-  models: KnownModelX[];
+  models: KnownModel[];
   onClose: () => void;
 }) {
   const t = useText(dryRunText);
@@ -99,7 +98,7 @@ export function DryRunDialog({
   });
   const [toolCount, setToolCount] = useState("5");
   const [intent, setIntent] = useState("");
-  const [r, setR] = useState<DryRunResultX | null>(null);
+  const [r, setR] = useState<DryRunResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -331,7 +330,7 @@ function ResultSkeleton() {
 }
 
 /** 结论的语气：转发成了是 ok，拒绝和无路可走是 error，规则没参与的是 idle */
-function verdictTone(r: DryRunResultX): StatusTone {
+function verdictTone(r: DryRunResult): StatusTone {
   switch (r.outcome) {
     case "route":
       return "ok";
@@ -348,7 +347,7 @@ function Result({
   client,
   draft,
 }: {
-  r: DryRunResultX;
+  r: DryRunResult;
   ov: Overview;
   client: string;
   draft: boolean;
@@ -366,7 +365,7 @@ function Result({
    * 的事，而一条规则都没走。留着它们只会让人以为它真的去了那儿。
    */
   const short = r.outcome === "intercepted";
-  const candidates = candidatesOf(r);
+  const candidates = r.candidate_models;
   const target = r.outcome === "route" ? (r.via_group ?? candidates[0]?.provider ?? null) : null;
 
   // 这一趟经过的路：密钥 → 路由 → 规则 → 去向。和路由图同一套标志
@@ -457,13 +456,14 @@ function Result({
                   const c = cv.provider;
                   const open = r.circuit_open.includes(c);
                   const conv = r.converted.find((x) => x.provider === c);
+                  const via = modelViaOf(cv);
                   return (
                     // 指定模型可以在同一个上游上列两个模型：上游名不唯一
                     <div key={`${i}:${c}`} className="flex flex-wrap items-center gap-x-2">
                       <span className="w-3 tw-num text-muted-foreground">{i + 1}</span>
                       <TargetIcon name={c} providers={ov.providers} size={13} />
                       <span className={cn("font-medium", open && "text-muted-foreground line-through")}>{c}</span>
-                      {cv.sent_model && <SentModel c={cv} />}
+                      {cv.sent_model && via && <SentModel model={cv.sent_model} via={via} />}
                       {open && (
                         <span className="inline-flex items-center gap-1 tw-label text-warning">
                           <StatusDot tone="warn" />
@@ -552,15 +552,14 @@ function Result({
   );
 }
 
-/** 发给这个上游的模型名，和它从哪儿来 */
-function SentModel({ c }: { c: CandidateView }) {
+/** 发给这个上游的模型名，和它从哪儿来。和请求里写的一样时不写（core 照样给 `sent_model`） */
+function SentModel({ model, via }: { model: string; via: ModelVia }) {
   const t = useText(dryRunText);
-  const via = c.model_via === "alias" || c.model_via === "rule" || c.model_via === "pinned" ? t.via[c.model_via] : null;
   return (
     <span className="tw-label text-muted-foreground">
       {t.sends}
-      <span className="font-mono text-foreground">{c.sent_model}</span>
-      {via && t.viaParen(via)}
+      <span className="font-mono text-foreground">{model}</span>
+      {t.viaParen(t.via[via])}
     </span>
   );
 }
@@ -580,9 +579,9 @@ function Step({ children, strong, className }: { children: ReactNode; strong?: b
   );
 }
 
-function headline(r: DryRunResultX): string {
+function headline(r: DryRunResult): string {
   const m = textOf(dryRunText);
-  const first = candidatesOf(r)[0];
+  const first = r.candidate_models[0];
   switch (r.outcome) {
     case "route":
       if (r.via_group) return m.viaGroup(targetLabel(r.via_group));

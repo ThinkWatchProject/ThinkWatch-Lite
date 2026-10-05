@@ -11,7 +11,6 @@ import { StatusLabel } from "@/ui/status-dot";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
-import type { ModelRowAliasFields } from "@/aliases/api.provisional";
 import { api } from "./api";
 import { contextWindow, coreText, errorText, perMillion } from "./labels";
 import { modelsPanelText } from "./ModelsPanel.i18n";
@@ -231,7 +230,7 @@ function Row({
   perToken,
   onAlias,
 }: {
-  m: ModelRow & Partial<ModelRowAliasFields>;
+  m: ModelRow;
   perToken: boolean;
   onAlias?: (model: string) => void;
 }) {
@@ -240,7 +239,6 @@ function Row({
     perToken && m.price
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
-  const aliases = m.aliases ?? [];
   return (
     <div
       className={cn(
@@ -252,7 +250,7 @@ function Row({
       <span className="min-w-0 truncate font-mono tw-label" title={m.id}>
         {m.id}
       </span>
-      {aliases.map((a) => (
+      {m.aliases.map((a) => (
         <Badge
           key={a}
           variant="secondary"

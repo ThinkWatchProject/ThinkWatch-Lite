@@ -20,7 +20,6 @@ import {
   usersOf,
   type RuleDraft,
 } from "./model";
-import type { RouteViewX, RuleViewX } from "./provisional";
 
 function view(p: Partial<RuleView> & { name: string }): RuleView {
   return { conditions: [], catch_all: false, phase_two: false, shadowed: false, ...p };
@@ -75,7 +74,7 @@ describe("规则草稿", () => {
       { provider: "bedrock", model: "us.anthropic.claude-opus-5-v1:0" },
       { provider: "anthropic", model: "claude-opus-5" },
     ];
-    const v: RuleViewX = {
+    const v: RuleView = {
       name: "Opus 走 Bedrock",
       conditions: [model("claude-opus-5")],
       to,
@@ -227,7 +226,7 @@ describe("路由列表", () => {
   });
 
   it("规则一栏里指定模型写成「上游 · 模型」，备用的只说个数", () => {
-    const r: RouteViewX = {
+    const r: RouteView = {
       ...route({}),
       rules: [
         {

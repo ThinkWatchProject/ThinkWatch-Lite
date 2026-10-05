@@ -137,6 +137,13 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   UpdateGroup: refuse,
   DeleteGroup: refuse,
   KnownModels: () => knownModels(),
+  // 示例配置里没有别名
+  Aliases: () => ({ aliases: [], suggestions: [] }),
+  CreateAlias: refuse,
+  UpdateAlias: refuse,
+  DeleteAlias: refuse,
+  PreviewAlias: () => notFound("The alias preview"),
+  AliasUsage: (_req, [name]) => notFound(`The alias ${name}`),
   // 没给时间窗就是今天：本地零点到现在（`Window` 的默认）
   // 没给时间窗就是最近 7 天（`UpstreamHealth` 的默认）
   UpstreamHealth: (req) => upstreamHealth(req.from_ms ?? NOW - 7 * DAY, req.to_ms ?? Date.now()),

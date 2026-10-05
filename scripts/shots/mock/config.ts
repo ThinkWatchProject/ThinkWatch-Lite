@@ -193,6 +193,7 @@ export function providerModels(name: string): ProviderModelsView | null {
       price,
       price_source: price ? priceSource(name) : null,
       estimated: false,
+      aliases: [],
     };
   });
   return {
@@ -209,7 +210,10 @@ export function providerModels(name: string): ProviderModelsView | null {
 export function knownModels() {
   const by = new Map<string, string[]>();
   for (const p of providers()) for (const m of catalogOf(p)) by.set(m, [...(by.get(m) ?? []), p.name]);
-  return [...by.entries()].map(([id, ps]) => ({ id, providers: ps })).sort((a, b) => a.id.localeCompare(b.id));
+  // 示例配置里没有别名
+  return [...by.entries()]
+    .map(([id, ps]) => ({ id, providers: ps, aliases: [] }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 // ───────────────────────────────────────── 概览、密钥、安全、价格

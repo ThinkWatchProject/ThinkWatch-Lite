@@ -23,22 +23,12 @@ import { Skeleton } from "@/ui/skeleton";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
-import type { AliasHint, KnownModel } from "@/types";
+import type { AliasHint, AliasInput, AliasPreview, AliasSave, AliasUsage, KnownModel, PinnedModel } from "@/types";
 import { Boxed, DialogError, FormItem } from "@/upstreams/parts";
 import { aliasDialogText } from "./AliasDialog.i18n";
-import type {
-  AliasInput,
-  AliasPreview,
-  AliasSave,
-  AliasUsage,
-  KnownModelAliasFields,
-  PinnedModel,
-} from "./api.provisional";
-import { dialogApi } from "./dialogApi";
+import { api } from "./api";
 import { ONLY_ITSELF, draftOf, onlyAuto, shownProblems, withModel, withName, withoutModel, type Draft } from "./draft";
 
-/** `GET /models` 的一项，带上别名的两个新字段（core 发版前是临时的） */
-type Known = KnownModel & Partial<KnownModelAliasFields>;
 
 /** 输入停下来这么久再问 core 和 Rust */
 const PREVIEW_DELAY_MS = 250;
@@ -110,7 +100,7 @@ function Body({
   const known = useResource("known-models", () => call("KnownModels", null), {
     events: ["models_changed", "config_reloaded"],
   });
-  const catalog = useMemo(() => (known.data ?? []) as Known[], [known.data]);
+  const catalog = useMemo(() => known.data ?? [], [known.data]);
   /** 上游的真模型（不是别名）：名称 → 提供它的上游 */
   const offered = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -135,7 +125,7 @@ function Body({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    dialogApi
+    api
       .configVersion()
       .then(setBase)
       .catch(() => {});
@@ -145,7 +135,7 @@ function Body({
   useEffect(() => {
     if (editing == null || initial?.models !== undefined) return;
     let live = true;
-    dialogApi
+    api
       .aliases()
       .then((v) => {
         if (!live) return;
@@ -170,7 +160,7 @@ function Body({
   useEffect(() => {
     if (!renaming || usage || editing == null) return;
     let live = true;
-    dialogApi
+    api
       .aliasUsage(editing)
       .then((u) => live && setUsage(u))
       .catch(() => {});
@@ -187,7 +177,7 @@ function Body({
     if (loaded === null) return;
     const timer = setTimeout(() => {
       const fresh = hintSeq.current.start();
-      dialogApi
+      api
         .hints(trimmed, models)
         .then((h) => fresh() && setHints(h))
         .catch(() => fresh() && setHints([]));
@@ -199,7 +189,7 @@ function Body({
       }
       const current = previewSeq.current.start();
       const key = draftKey;
-      dialogApi
+      api
         .previewAlias({ alias: { name: trimmed, models }, original: editing })
         .then((p) => {
           if (!current()) return;
@@ -257,11 +247,11 @@ function Body({
     const body: AliasSave = { alias: { name: trimmed, models }, base_version: base };
     try {
       if (editing != null) {
-        const w = await dialogApi.updateAlias(editing, body);
+        const w = await api.updateAlias(editing, body);
         const refs = refsText(w.renamed_in, t);
         if (trimmed !== editing && refs) notify.success(t.renamed(editing, trimmed), t.renamedIn(refs));
       } else {
-        await dialogApi.createAlias(body);
+        await api.createAlias(body);
       }
       // 列着别名的几处（别名标签、模型建议、上游模型弹窗的别名标记）
       invalidate("aliases");
@@ -478,7 +468,7 @@ function ModelList({
   models: string[];
   providersOf: (m: string) => string[];
   unserved: Set<string>;
-  candidates: Known[];
+  candidates: KnownModel[];
   loading: boolean;
   onAdd: (m: string) => void;
   onRemove: (m: string) => void;
@@ -538,7 +528,7 @@ function ModelInput({
   onAdd,
   disabled,
 }: {
-  candidates: Known[];
+  candidates: KnownModel[];
   onAdd: (m: string) => void;
   disabled: boolean;
 }) {

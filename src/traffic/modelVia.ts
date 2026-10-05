@@ -1,5 +1,4 @@
-import type { KnownModelAliasFields, RuleTarget } from "@/aliases/api.provisional";
-import type { HistoryRow, KnownModel, PluginRunView, RequestRow } from "@/types";
+import type { HistoryRow, KnownModel, PluginRunView, RequestRow, RuleTarget } from "@/types";
 
 /**
  * 发给上游的模型名为什么和客户端写的不一样，或者为什么一样也值得一提。
@@ -32,13 +31,10 @@ export interface RouteLike {
   }[];
 }
 
-/** `GET /models` 里的一项。别名那一项带着它的模型名列表（core 合入别名之后生成的类型里才有） */
-type ModelItem = KnownModel & Partial<KnownModelAliasFields>;
-
 /** 从 `GET /models` 里挑出别名：别名 → 它的模型名 */
 export function aliasTable(models: readonly KnownModel[] | undefined): Map<string, readonly string[]> {
   const out = new Map<string, readonly string[]>();
-  for (const m of (models ?? []) as readonly ModelItem[]) {
+  for (const m of models ?? []) {
     if (m.alias && m.alias.length > 0) out.set(m.id, m.alias);
   }
   return out;

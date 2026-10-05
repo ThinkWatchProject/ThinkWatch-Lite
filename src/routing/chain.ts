@@ -13,8 +13,7 @@
  *
  * 转发到指定模型的规则连到列表里的每一个上游（按顺序备用，和策略组连到它的成员一样）。
  */
-import type { ClientView, GroupView, Overview, RouteHits } from "@/types";
-import type { RouteViewX, RuleViewX } from "./provisional";
+import type { ClientView, GroupView, Overview, RouteHits, RouteView, RuleView } from "@/types";
 import { pinnedOf, targetNameOf } from "./target";
 
 export type ChainKind = "key" | "route" | "group" | "deny" | "via" | "upstream";
@@ -91,7 +90,7 @@ type Target = { kind: "group" | "deny" | "upstream"; name: string };
  * 一条规则的去向。不画的规则（见文件头）和指向不存在的去向的没有；指定模型是列表里的
  * 那几个上游，按顺序、去重
  */
-function targetsOfRule(x: RuleViewX, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
+function targetsOfRule(x: RuleView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
   if (x.shadowed || x.phase_two) return [];
   const pinned = pinnedOf(x.to);
   if (pinned) {
@@ -108,7 +107,7 @@ function targetsOfRule(x: RuleViewX, groups: ReadonlySet<string>, providers: Rea
 }
 
 /** 一条路由把请求交给的去向，按规则顺序、去重 */
-export function targetsOf(r: RouteViewX, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
+export function targetsOf(r: RouteView, groups: ReadonlySet<string>, providers: ReadonlySet<string>): Target[] {
   const out: Target[] = [];
   const seen = new Set<string>();
   for (const x of r.rules)
@@ -127,7 +126,7 @@ export function orderedRoutes<R extends { default: boolean }>(routes: readonly R
 }
 
 export function buildChain(
-  ov: Pick<Overview, "clients" | "groups" | "providers"> & { routes: readonly RouteViewX[] },
+  ov: Pick<Overview, "clients" | "groups" | "providers"> & { routes: readonly RouteView[] },
 ): Chain {
   const routes = orderedRoutes(ov.routes);
   const routeIndex = new Map(routes.map((r, i) => [r.name, i]));
@@ -189,7 +188,7 @@ export function buildChain(
     }
     keysOf.set(r, [...(keysOf.get(r) ?? []), k]);
   }
-  const tailsOf = (r: RouteViewX): { ids: string[]; live: boolean }[] => {
+  const tailsOf = (r: RouteView): { ids: string[]; live: boolean }[] => {
     const out: { ids: string[]; live: boolean }[] = [];
     for (const t of targets.get(r.name) ?? []) {
       if (t.kind === "deny") out.push({ ids: stationsOf(t), live: true });

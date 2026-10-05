@@ -4,13 +4,12 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { useResource } from "@/lib/resource";
-import type { ProviderView } from "@/types";
+import type { KnownModel, ProviderView } from "@/types";
 import { contextWindow } from "@/upstreams/labels";
 import { api } from "./api";
 import { ModelInput } from "./fields";
 import { blankPinned, type PinnedDraft } from "./model";
 import { pinnedModelsText } from "./PinnedModels.i18n";
-import type { KnownModelX } from "./provisional";
 
 /**
  * 「转发至 → 指定模型」：几行「上游 + 模型」，按顺序备用。
@@ -28,7 +27,7 @@ export function PinnedModels({
   value: PinnedDraft[];
   onChange: (next: PinnedDraft[]) => void;
   providers: readonly ProviderView[];
-  known: readonly KnownModelX[];
+  known: readonly KnownModel[];
 }) {
   const t = useText(pinnedModelsText);
   const patch = (i: number, p: Partial<PinnedDraft>) =>
@@ -83,7 +82,7 @@ function PinnedRow({
   n: number;
   p: PinnedDraft;
   providers: readonly ProviderView[];
-  known: readonly KnownModelX[];
+  known: readonly KnownModel[];
   onProvider: (provider: string) => void;
   onModel: (model: string) => void;
   onRemove: () => void;

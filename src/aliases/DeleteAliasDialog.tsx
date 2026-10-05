@@ -23,7 +23,7 @@ import { Spinner } from "@/ui/spinner";
 import { errorText } from "@/upstreams/labels";
 import { DialogError } from "@/upstreams/parts";
 import { api } from "./api";
-import type { AliasRuleRef, AliasView } from "./api.provisional";
+import type { AliasRuleRef, AliasView } from "@/types";
 import { aliasesText } from "./aliases.i18n";
 import { clientsListing } from "./logic";
 

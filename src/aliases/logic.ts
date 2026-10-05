@@ -4,7 +4,7 @@
  */
 import type { HintId } from "@/guide/hints";
 import type { DetectedClient } from "@/types";
-import type { AliasInput, AliasSuggestion, AliasView } from "./api.provisional";
+import type { AliasInput, AliasSuggestion, AliasView } from "@/types";
 
 /**
  * 一条建议的标识，「忽略」按它记（`@/guide/hints`，和引导提示的「不再显示」同一处，

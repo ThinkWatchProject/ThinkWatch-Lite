@@ -4,12 +4,10 @@
  */
 import { call } from "@/control";
 import type { DryRunRequest, GroupSave, RouteSave } from "@/types";
-import type { DryRunRequestX, DryRunResultX, RouteSaveX } from "./provisional";
 
-// 规则的 `to` 可以是指定模型的列表：生成的类型换上之前，按 `provisional.ts` 里的写法交出去
 export const api = {
-  createRoute: (save: RouteSaveX) => call("CreateRoute", save as RouteSave),
-  updateRoute: (name: string, save: RouteSaveX) => call("UpdateRoute", save as RouteSave, name),
+  createRoute: (save: RouteSave) => call("CreateRoute", save),
+  updateRoute: (name: string, save: RouteSave) => call("UpdateRoute", save, name),
   /** `reassignTo` 为空：使用它的密钥改用默认路由 */
   deleteRoute: (name: string, baseVersion: string, reassignTo: string | null) =>
     call("DeleteRoute", { base_version: baseVersion, reassign_to: reassignTo }, name),
@@ -22,7 +20,7 @@ export const api = {
   knownModels: () => call("KnownModels", null),
   /** 一个上游的模型清单（指定模型时从这里选，带上下文窗口） */
   providerModels: (name: string) => call("ProviderModels", null, name),
-  dryRun: (req: DryRunRequestX): Promise<DryRunResultX> => call("DryRun", req as DryRunRequest),
+  dryRun: (req: DryRunRequest) => call("DryRun", req),
   /** 从 `fromMs` 到现在，各条路由、各条规则命中了多少，以及记录从哪一刻起是全的 */
   routeStats: (fromMs: number) => call("RouteStats", { from_ms: fromMs }),
 };

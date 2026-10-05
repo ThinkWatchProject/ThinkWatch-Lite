@@ -1,5 +1,15 @@
 [
   {
+    "candidate_models": [
+      {
+        "provider": "relay",
+        "sent_model": "claude-sonnet-5"
+      },
+      {
+        "provider": "anthropic",
+        "sent_model": "claude-sonnet-5"
+      }
+    ],
     "candidates": [
       "relay",
       "anthropic"

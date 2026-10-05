@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DetectedClient } from "@/types";
-import type { AliasSuggestion, AliasView } from "./api.provisional";
+import type { AliasSuggestion, AliasView } from "@/types";
 import {
   aliasWarnings,
   clientsListing,

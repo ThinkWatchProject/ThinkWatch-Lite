@@ -15,11 +15,7 @@
  * **不写进 `allow`**：配置里只有用户自己写的那几条。
  */
 import { asciiLower, globMatch } from "@/upstreams/glob";
-import type { KnownModelAliasFields } from "@/aliases/api.provisional";
 import type { KnownModel } from "@/types";
-
-/** 目录里的一项。别名也在里面：`alias` 是它的模型列表，真名没有这个字段 */
-export type CatalogModel = KnownModel & Partial<KnownModelAliasFields>;
 
 export type Scope = "all" | "some" | "none";
 
@@ -109,7 +105,7 @@ export interface ScopeRow {
   source: Source;
 }
 
-export function rowsOf(entries: string[], catalog: CatalogModel[]): ScopeRow[] {
+export function rowsOf(entries: string[], catalog: KnownModel[]): ScopeRow[] {
   const stale = splitEntries(entries)
     .picked.filter((e) => !catalog.some((m) => sameModel(e, m.id)))
     .map<ScopeRow>((id) => ({ id, providers: [], unknown: true, alias: null, source: { kind: "picked" } }));
@@ -124,7 +120,7 @@ export function rowsOf(entries: string[], catalog: CatalogModel[]): ScopeRow[] {
 }
 
 /** 目录里有几个模型对这把密钥可见。别名算在里面，随它的模型放行的也算 */
-export function visibleCount(entries: string[], catalog: CatalogModel[]): number {
+export function visibleCount(entries: string[], catalog: KnownModel[]): number {
   return catalog.filter((m) => sourceOf(entries, m.id, m.alias) != null).length;
 }
 
@@ -134,12 +130,12 @@ export function visibleCount(entries: string[], catalog: CatalogModel[]): number
  * **只按名称数**，别名也按它自己的名称：`claude-sonnet-*` 命中别名 `claude-sonnet-5`，
  * 不命中只是列表里有个 `claude-sonnet-5` 的别名 `sonnet`（那一个算「随 … 放行」）
  */
-export function patternHits(pattern: string, catalog: CatalogModel[]): number {
+export function patternHits(pattern: string, catalog: KnownModel[]): number {
   return catalog.filter((m) => globMatch(pattern, m.id)).length;
 }
 
 /** 目录里有没有别名。没有就不必说明别名怎么算 */
-export function hasAliases(catalog: CatalogModel[]): boolean {
+export function hasAliases(catalog: KnownModel[]): boolean {
   return catalog.some((m) => m.alias != null);
 }
 
