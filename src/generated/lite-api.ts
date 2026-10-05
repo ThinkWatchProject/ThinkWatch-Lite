@@ -95,6 +95,11 @@ costs: Array<Msg>,
  */
 models_stale: boolean, 
 /**
+ * 配置里此刻写着的模型。只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、
+ * Grok Build、Qwen Code）有；删除别名时据此说出哪几个已接管客户端的模型列表写着它
+ */
+models?: Array<string> | null, 
+/**
  * 配置位置能换（行菜单里给「更改路径…」，见 [`ClientLocations`]）。Claude Desktop、
  * DeepSeek Harness 和 WSL 里的不能
  */

@@ -19,7 +19,12 @@ export type HintId =
   /** 流量页：点开一条请求能看到什么 */
   | "traffic-open-row"
   /** 安全页：防护出厂是观察 */
-  | "security-observe";
+  | "security-observe"
+  /**
+   * 上游页「别名」标签：同一模型在几个上游名称不同的一条建议，点过「忽略」。
+   * 后面是这条建议的标识（`aliases/logic.ts` 的 `suggestionKey`）
+   */
+  | `alias-suggestion:${string}`;
 
 const KEY = "tw-guide";
 
@@ -87,6 +92,20 @@ export function useHint(id: HintId, when: boolean): { show: boolean; dismiss: ()
       if (!state.dismissed.includes(id)) commit({ ...state, dismissed: [...state.dismissed, id] });
     },
   };
+}
+
+/**
+ * 点过「不再显示」的全部提示。一处要看好几条的时候用（「别名」标签上的几条建议、
+ * 标签名旁的小圆点），一条一条的用 `useHint`
+ */
+export function useDismissedHints(): readonly string[] {
+  return useSyncExternalStore(subscribe, getDismissed, getDismissed);
+}
+
+/** 一次记下好几条「不再显示」（「忽略」全部建议） */
+export function dismissHints(ids: readonly HintId[]) {
+  const add = [...new Set(ids)].filter((id) => !state.dismissed.includes(id));
+  if (add.length > 0) commit({ ...state, dismissed: [...state.dismissed, ...add] });
 }
 
 /** 「开始使用」出现过没有（见 `Stored.setupSeen`） */
