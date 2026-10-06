@@ -1549,6 +1549,49 @@ fn omp_is_written_into_the_one_file_it_reads() {
     assert_eq!(read(&yaml), OMP);
 }
 
+/// 网关答了规格的模型：规格照各家的写法写进去、写回校验过得去（omp 的 YAML 读回来数和开关
+/// 都是字符串），读回来不提示更新、再接管是空操作；规格一变就提示，还原照样一个字节不差
+#[test]
+fn model_specs_are_written_read_back_and_restored() {
+    let card = |id: &str| ModelCard {
+        id: id.into(),
+        context_window: Some(200_000),
+        max_output_tokens: Some(64_000),
+        reasoning: Some(true),
+        image_input: Some(true),
+    };
+    let g = Gateway {
+        models: vec![card("claude-sonnet"), ModelCard::named("gpt-5")],
+        ..gw()
+    };
+    for (id, before) in [("pi", PI), ("omp", OMP), ("opencode", "{}\n")] {
+        let b = bed(id, before);
+        let c = client(id);
+        let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+        let after = read(&c.config_path(&b.home));
+        let field = match id {
+            "opencode" => "\"context\": 200000",
+            "pi" => "\"contextWindow\": 200000",
+            _ => "contextWindow: 200000",
+        };
+        assert!(after.contains(field), "{id}: {after}");
+
+        let d = tw_adopt::detect::detect_one(&c, &b.home);
+        let written = d.models.unwrap();
+        assert!(!c.models_stale(&written, &g.models), "{id}: {written:?}");
+        let again = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
+        assert!(again.is_noop(), "{id}: {}", again.after);
+        let mut changed = g.models.clone();
+        changed[0].context_window = Some(1_000_000);
+        assert!(c.models_stale(&written, &changed), "{id}");
+
+        let r = plan_restore(&c, &b.home).unwrap();
+        apply_restore(&c, &r, &b.backups).unwrap();
+        assert_eq!(read(&c.config_path(&b.home)), before, "{id}");
+    }
+}
+
 /// 两边都还没有配置文件：新建的，还原时删掉
 #[test]
 fn a_pi_or_omp_file_created_here_is_removed_again() {

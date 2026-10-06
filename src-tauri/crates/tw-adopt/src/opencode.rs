@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
 use crate::json::Val;
+use crate::plan::lookup;
 
 /// v1 写法里的包名。**不写它的话**：v1 默认也是这个包，但 v2 迁移时不补默认值，
 /// 用的时候报 `Unsupported package`（实测 v2.0.16）。
@@ -59,19 +60,101 @@ pub fn shape_in(text: &str) -> Shape {
     }
 }
 
-/// 模型清单的写法：`{ "模型": { "name": "模型" } }`。
+/// 模型清单的写法：`{ "模型": { "name": "模型", 规格… } }`，规格见 [`specs`]。
 ///
 /// **name 不留空**：opencode 的模型选择器显示的就是它，空着就是一行空白。
 /// 同名的只写一次：JSON 对象里重复的键，各家解析器取哪一个说法不一。
-pub fn models_val(models: &[ModelCard]) -> Val {
+pub fn models_val(models: &[ModelCard], shape: Shape) -> Val {
     let mut seen = std::collections::HashSet::new();
     Val::Obj(
         models
             .iter()
             .filter(|m| seen.insert(m.id.as_str()))
-            .map(|m| (m.id.clone(), Val::Obj(vec![("name".into(), Val::s(&m.id))])))
+            .map(|m| {
+                let mut fields = vec![("name".to_string(), Val::s(&m.id))];
+                fields.extend(specs(m, shape));
+                (m.id.clone(), Val::Obj(fields))
+            })
             .collect(),
     )
+}
+
+/// 一个模型的规格，按这一种写法写得下的写。网关没答的那一项不写。
+///
+/// **v1**（`config/provider.ts` 的 `Model`）：
+///
+/// - `limit: {context, output}`：两项都是必填的，只写一项整份配置读不进去。不写时两项都按
+///   0 算：上下文 0 是「不知道」，**自动压缩永远不触发**；输出 0 按 32000 发。所以上下文知道、
+///   输出不知道时输出写 0 —— 就是它自己不知道时的那个值。上下文不知道时整项不写：v2 读 v1
+///   写法时照搬 `limit`，写一个 0 进去会盖掉它自己的默认值 200000，压缩在 v2 上也不触发了。
+///   请求里的输出上限是 `min(output, 32000)`，写得再大也不会照着发
+/// - `reasoning`：会不会推理，决定有没有推理档位（`variants`）
+/// - 收不收图看的是 `modalities.input` 里有没有 `image`：没有的话，贴进去的图在发出去之前
+///   换成一句「这个模型不收图」（`transform.ts` 的 `unsupportedParts`）。`attachment` 只是
+///   同一件事的标记，一起写。**写 `modalities` 时连 `tool_call: true` 和 `output: [text]` 一起
+///   写**：两项都是 v1 本来的默认值，可 v2 迁移 v1 写法时，`modalities` 一在，没写的那两项
+///   就不按默认值补了（主干的 `v1/config/migrate.ts` 补成不能调工具、什么都不输出）
+///
+/// **原生**（v2 `schema/src/config/provider.ts`）：`limit.{context, output}` 两项各自可选；
+/// `capabilities.input` 单写，没写的 `tools`、`output` 照它自己的默认值补（`mergeCapabilities`）。
+/// 没有推理开关：推理档位按 `variants` 来，不写。
+pub fn specs(m: &ModelCard, shape: Shape) -> Vec<(String, Val)> {
+    let num = |n: u64| Val::Num(n.to_string());
+    let input = |image: bool| {
+        let mut v = vec![Val::s("text")];
+        if image {
+            v.push(Val::s("image"));
+        }
+        Val::Arr(v)
+    };
+    let (context, output) = (
+        m.context_window.filter(|n| *n > 0),
+        m.max_output_tokens.filter(|n| *n > 0),
+    );
+    let mut v = Vec::new();
+    match shape {
+        Shape::V1 => {
+            if let Some(c) = context {
+                v.push((
+                    "limit".into(),
+                    Val::Obj(vec![
+                        ("context".into(), num(c)),
+                        ("output".into(), num(output.unwrap_or(0))),
+                    ]),
+                ));
+            }
+            if let Some(b) = m.reasoning {
+                v.push(("reasoning".into(), Val::Bool(b)));
+            }
+            if let Some(image) = m.image_input {
+                v.push(("attachment".into(), Val::Bool(image)));
+                v.push(("tool_call".into(), Val::Bool(true)));
+                v.push((
+                    "modalities".into(),
+                    Val::Obj(vec![
+                        ("input".into(), input(image)),
+                        ("output".into(), Val::Arr(vec![Val::s("text")])),
+                    ]),
+                ));
+            }
+        }
+        Shape::Native => {
+            let limit: Vec<(String, Val)> = [("context", context), ("output", output)]
+                .into_iter()
+                .filter_map(|(k, n)| Some((k.to_string(), num(n?))))
+                .collect();
+            if !limit.is_empty() {
+                v.push(("limit".into(), Val::Obj(limit)));
+            }
+            if let Some(image) = m.image_input {
+                v.push((
+                    "capabilities".into(),
+                    Val::Obj(vec![("input".into(), input(image))]),
+                ));
+            }
+        }
+    }
+    v
 }
 
 /// 接管要写的那几项。
@@ -113,7 +196,7 @@ pub fn edits(gw: &Gateway, shape: Shape) -> Vec<Edit> {
     }
     v.push(Edit {
         path: at(&["models"]),
-        value: models_val(&gw.models),
+        value: models_val(&gw.models, shape),
         secret: false,
     });
     v
@@ -129,11 +212,28 @@ pub fn endpoint(text: &str) -> Option<String> {
     })
 }
 
-/// 配置里此刻写着的模型。没有那一条就是 `None`。
+/// 配置里此刻写着的模型，连同写着的规格（见 [`specs`]）。没有那一条就是 `None`。
 pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
+    use crate::pi::{count_of, flag_of, image_of};
     let s = shape_in(text);
+    let card = |id: String, m: &Val| {
+        let image = match s {
+            Shape::V1 => image_of(lookup(m, &["modalities", "input"])),
+            Shape::Native => image_of(lookup(m, &["capabilities", "input"])),
+        };
+        ModelCard {
+            id,
+            context_window: count_of(lookup(m, &["limit", "context"])),
+            max_output_tokens: count_of(lookup(m, &["limit", "output"])),
+            reasoning: match s {
+                Shape::V1 => flag_of(lookup(m, &["reasoning"])),
+                Shape::Native => None,
+            },
+            image_input: image,
+        }
+    };
     match crate::json::get(text, &[s.root(), PROVIDER_ID, "models"]).ok()?? {
-        Val::Obj(ms) => Some(ms.into_iter().map(|(k, _)| ModelCard::named(k)).collect()),
+        Val::Obj(ms) => Some(ms.into_iter().map(|(k, m)| card(k, &m)).collect()),
         _ => Some(Vec::new()),
     }
 }
@@ -148,9 +248,20 @@ pub fn overriding(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]。
+///
+/// 取的是两种写法都写得下的那几项（见 [`specs`]）：这里不知道文件是哪一种写法，而比的
+/// 两边（[`models_in`] 读回来的、网关答的）都要过一遍它，取交集两边就对得上。代价是原生
+/// 写法能单写的输出上限、v1 能写的推理开关单独变了不提示更新 —— 下一次接管照样写进去。
 pub fn as_written(m: &ModelCard) -> ModelCard {
-    ModelCard::named(&m.id)
+    let context_window = m.context_window.filter(|n| *n > 0);
+    ModelCard {
+        id: m.id.clone(),
+        context_window,
+        max_output_tokens: context_window.and(m.max_output_tokens.filter(|n| *n > 0)),
+        reasoning: None,
+        image_input: m.image_input,
+    }
 }
 
 // ---------------------------------------------------------------- 版本
@@ -484,7 +595,7 @@ mod tests {
         )));
         assert!(v1.contains(&(
             "provider.thinkwatch.models".into(),
-            models_val(&["a".into(), "b".into()]),
+            models_val(&["a".into(), "b".into()], Shape::V1),
             false
         )));
         let native = paths(Shape::Native);
@@ -499,12 +610,12 @@ mod tests {
                 .any(|(p, _, s)| p == "providers.thinkwatch.settings.apiKey" && *s)
         );
         // name 不留空
-        let Val::Obj(ms) = models_val(&["m".into()]) else {
+        let Val::Obj(ms) = models_val(&["m".into()], Shape::V1) else {
             unreachable!()
         };
         assert_eq!(ms[0].1, Val::Obj(vec![("name".into(), Val::s("m"))]));
         // 同名的只写一次，先后照原样
-        let Val::Obj(ms) = models_val(&["b".into(), "a".into(), "b".into()]) else {
+        let Val::Obj(ms) = models_val(&["b".into(), "a".into(), "b".into()], Shape::V1) else {
             unreachable!()
         };
         let keys: Vec<_> = ms.iter().map(|(k, _)| k.as_str()).collect();
@@ -527,6 +638,137 @@ mod tests {
         assert_eq!(endpoint(v1).as_deref(), Some("http://old/v1"));
         assert_eq!(models_in(v1), None);
         assert_eq!(models_in("{}"), None);
+    }
+
+    fn card(
+        id: &str,
+        context: Option<u64>,
+        output: Option<u64>,
+        reasoning: Option<bool>,
+        image: Option<bool>,
+    ) -> ModelCard {
+        ModelCard {
+            id: id.into(),
+            context_window: context,
+            max_output_tokens: output,
+            reasoning,
+            image_input: image,
+        }
+    }
+
+    /// 把一份清单照这一种写法写进一份空配置
+    fn written(models: &[ModelCard], shape: Shape) -> String {
+        let gw = Gateway {
+            models: models.to_vec(),
+            ..gw(&[])
+        };
+        let base = match shape {
+            Shape::V1 => "{}".to_string(),
+            Shape::Native => r#"{"providers": {"thinkwatch": {}}}"#.to_string(),
+        };
+        edits(&gw, shape).iter().fold(base, |t, e| {
+            let p: Vec<&str> = e.path.iter().map(String::as_str).collect();
+            crate::json::set(&t, &p, &e.value).unwrap()
+        })
+    }
+
+    #[test]
+    fn v1_carries_limits_reasoning_and_image_input() {
+        let full = card("m", Some(200_000), Some(64_000), Some(true), Some(true));
+        let Val::Obj(ms) = models_val(std::slice::from_ref(&full), Shape::V1) else {
+            unreachable!()
+        };
+        assert_eq!(
+            ms[0].1,
+            crate::json::value(
+                r#"{"name": "m", "limit": {"context": 200000, "output": 64000}, "reasoning": true,
+                    "attachment": true, "tool_call": true,
+                    "modalities": {"input": ["text", "image"], "output": ["text"]}}"#
+            )
+            .unwrap()
+        );
+        // 不知道的不写；只知道上下文时输出写 0（它自己不知道时的值），只知道输出时整个 limit 不写
+        let Val::Obj(ms) = models_val(
+            &[
+                card("a", None, None, None, None),
+                card("b", Some(128_000), None, Some(false), Some(false)),
+                card("c", None, Some(8_192), None, None),
+            ],
+            Shape::V1,
+        ) else {
+            unreachable!()
+        };
+        assert_eq!(ms[0].1, Val::Obj(vec![("name".into(), Val::s("a"))]));
+        assert_eq!(
+            ms[1].1,
+            crate::json::value(
+                r#"{"name": "b", "limit": {"context": 128000, "output": 0}, "reasoning": false,
+                    "attachment": false, "tool_call": true,
+                    "modalities": {"input": ["text"], "output": ["text"]}}"#
+            )
+            .unwrap()
+        );
+        assert_eq!(ms[2].1, Val::Obj(vec![("name".into(), Val::s("c"))]));
+    }
+
+    #[test]
+    fn native_carries_what_its_schema_holds() {
+        let Val::Obj(ms) = models_val(
+            &[
+                card("m", Some(200_000), Some(64_000), Some(true), Some(false)),
+                card("o", None, Some(8_192), None, None),
+            ],
+            Shape::Native,
+        ) else {
+            unreachable!()
+        };
+        // 没有推理开关
+        assert_eq!(
+            ms[0].1,
+            crate::json::value(
+                r#"{"name": "m", "limit": {"context": 200000, "output": 64000},
+                    "capabilities": {"input": ["text"]}}"#
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            ms[1].1,
+            crate::json::value(r#"{"name": "o", "limit": {"output": 8192}}"#).unwrap()
+        );
+    }
+
+    /// 写进去再读回来，过一遍 `as_written` 和网关答的对得上；规格变了就对不上
+    #[test]
+    fn specs_read_back_as_written_in_either_shape() {
+        let c = crate::clients::adoptable()
+            .into_iter()
+            .find(|c| c.id == "opencode")
+            .unwrap();
+        let now = vec![
+            card("full", Some(200_000), Some(64_000), Some(true), Some(true)),
+            card("ctx", Some(128_000), None, None, Some(false)),
+            card("out", None, Some(8_192), Some(false), None),
+            card("bare", None, None, None, None),
+        ];
+        for shape in [Shape::V1, Shape::Native] {
+            let text = written(&now, shape);
+            assert_eq!(shape_in(&text), shape);
+            let back = models_in(&text).unwrap();
+            assert!(!c.models_stale(&back, &now), "{shape:?}: {back:?}");
+            let mut changed = now.clone();
+            changed[0].context_window = Some(400_000);
+            assert!(c.models_stale(&back, &changed), "{shape:?}");
+            let mut changed = now.clone();
+            changed[1].image_input = Some(true);
+            assert!(c.models_stale(&back, &changed), "{shape:?}");
+        }
+        let back = models_in(&written(&now, Shape::V1)).unwrap();
+        assert_eq!(back[0], now[0]);
+        // 输出写的是 0，读回来是不知道
+        assert_eq!(back[1], now[1]);
+        let back = models_in(&written(&now, Shape::Native)).unwrap();
+        assert_eq!(back[2].max_output_tokens, Some(8_192));
+        assert_eq!(back[0].reasoning, None);
     }
 
     #[test]

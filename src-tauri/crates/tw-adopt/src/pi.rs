@@ -11,6 +11,10 @@
 //!       - id: claude-sonnet-5
 //!         api: anthropic-messages
 //!         baseUrl: http://127.0.0.1:8788
+//!         contextWindow: 200000     # 网关答了的规格才写，见 specs
+//!         maxTokens: 64000
+//!         reasoning: true
+//!         input: [text, image]
 //!       - id: deepseek-chat
 //! ```
 //!
@@ -122,8 +126,8 @@ pub fn api_for(model: &str) -> Api {
 /// 模型清单：一个模型一项，不走 provider 那一种的写上自己的 `api`，地址写法不一样的再写上
 /// 自己的 `baseUrl`（两边都是模型上的覆盖 provider 上的）。
 ///
-/// 别的元数据不写：Pi 照默认的上下文和输出长度跑，omp 按模型名从它自带的目录里补。同名的
-/// 只写一次，先后照网关答的。
+/// 网关答了的规格也写上（见 [`specs`]）；没答的那一项不写，Pi 照它的默认值跑，omp 按模型名
+/// 从它自带的目录里补。同名的只写一次，先后照网关答的。
 pub fn models_val(gw: &Gateway) -> Val {
     let mut seen = HashSet::new();
     Val::Arr(
@@ -139,10 +143,75 @@ pub fn models_val(gw: &Gateway) -> Val {
                         fields.push(("baseUrl".into(), Val::s(api.base(&gw.base))));
                     }
                 }
+                fields.extend(specs(m));
                 Val::Obj(fields)
             })
             .collect(),
     )
+}
+
+/// 一个模型的规格在两边的写法，两边的字段名一样（Pi 的 `model-config.ts`，omp 的
+/// `models-config-schema-bundle.ts`）：
+///
+/// - `contextWindow`、`maxTokens`：不写时 Pi 按 128000、16384 跑，omp 先查自带的目录、查不到
+///   也是这两个数。**`maxTokens` 是每次请求都带上的输出上限**，不只是一项能力说明：Pi 发出去
+///   的是它和上下文剩下的空间里小的那个，omp 原样发（OpenAI 的两种另外封顶 64000）。写的是
+///   网关答的这个模型真正的输出上限，上游收得下。两边都把 0 和负数当成写错了（Pi 直接报错），
+///   网关答 0 当没答
+/// - `reasoning`：会不会推理。不写是不会，`/model` 里就没有推理档位可选
+/// - `input`：收图写 `[text, image]`，不收写 `[text]`。不写是只收文字，贴进去的图发不出去
+pub fn specs(m: &ModelCard) -> Vec<(String, Val)> {
+    let m = as_written(m);
+    let mut v = Vec::new();
+    if let Some(n) = m.context_window {
+        v.push(("contextWindow".into(), Val::Num(n.to_string())));
+    }
+    if let Some(n) = m.max_output_tokens {
+        v.push(("maxTokens".into(), Val::Num(n.to_string())));
+    }
+    if let Some(b) = m.reasoning {
+        v.push(("reasoning".into(), Val::Bool(b)));
+    }
+    if let Some(image) = m.image_input {
+        v.push(("input".into(), input_val(image)));
+    }
+    v
+}
+
+/// 收不收图的写法：文字总是收的
+fn input_val(image: bool) -> Val {
+    let mut v = vec![Val::s("text")];
+    if image {
+        v.push(Val::s("image"));
+    }
+    Val::Arr(v)
+}
+
+/// 读回一个 token 数。JSON 里是数，YAML 的语义值里一律是字符串（见 [`crate::yamlval`]）；
+/// 0 和读不懂的当没写
+pub(crate) fn count_of(v: Option<Val>) -> Option<u64> {
+    match v? {
+        Val::Num(n) | Val::Str(n) => n.trim().parse().ok().filter(|n| *n > 0),
+        _ => None,
+    }
+}
+
+/// 读回一个开关，两种文件里的写法都认
+pub(crate) fn flag_of(v: Option<Val>) -> Option<bool> {
+    match v? {
+        Val::Bool(b) => Some(b),
+        Val::Str(s) if s == "true" => Some(true),
+        Val::Str(s) if s == "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// 读回收不收图：清单里有 `image` 就是收
+pub(crate) fn image_of(v: Option<Val>) -> Option<bool> {
+    match v? {
+        Val::Arr(es) => Some(es.iter().any(|e| e.as_str() == Some("image"))),
+        _ => None,
+    }
 }
 
 /// 写进 `apiKey` 的那一串：读回来要原样是这把密钥。
@@ -196,9 +265,16 @@ pub fn edits(gw: &Gateway, flavor: Flavor) -> Vec<Edit> {
     v
 }
 
-/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]。四项都写得
+/// 进去，只有 0 不写（见 [`specs`]）
 pub fn as_written(m: &ModelCard) -> ModelCard {
-    ModelCard::named(&m.id)
+    ModelCard {
+        id: m.id.clone(),
+        context_window: m.context_window.filter(|n| *n > 0),
+        max_output_tokens: m.max_output_tokens.filter(|n| *n > 0),
+        reasoning: m.reasoning,
+        image_input: m.image_input,
+    }
 }
 
 /// 配置里此刻写着的模型。没有那一条 provider 就是 `None`。
@@ -212,7 +288,13 @@ pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<ModelCard>> {
         Some(Val::Arr(ms)) => Some(
             ms.iter()
                 .filter_map(|m| match lookup(m, &["id"]) {
-                    Some(Val::Str(id)) => Some(ModelCard::named(id)),
+                    Some(Val::Str(id)) => Some(ModelCard {
+                        id,
+                        context_window: count_of(lookup(m, &["contextWindow"])),
+                        max_output_tokens: count_of(lookup(m, &["maxTokens"])),
+                        reasoning: flag_of(lookup(m, &["reasoning"])),
+                        image_input: image_of(lookup(m, &["input"])),
+                    }),
                     _ => None,
                 })
                 .collect(),
@@ -535,6 +617,136 @@ mod tests {
             false
         )));
         assert!(!pi.iter().any(|(p, _, _)| p == "providers.thinkwatch.auth"));
+    }
+
+    fn card(
+        id: &str,
+        context: Option<u64>,
+        output: Option<u64>,
+        reasoning: Option<bool>,
+        image: Option<bool>,
+    ) -> ModelCard {
+        ModelCard {
+            id: id.into(),
+            context_window: context,
+            max_output_tokens: output,
+            reasoning,
+            image_input: image,
+        }
+    }
+
+    #[test]
+    fn known_specs_are_written_and_unknown_ones_left_out() {
+        let g = Gateway {
+            models: vec![
+                card(
+                    "claude-x",
+                    Some(200_000),
+                    Some(64_000),
+                    Some(true),
+                    Some(true),
+                ),
+                card(
+                    "deepseek-chat",
+                    Some(128_000),
+                    None,
+                    Some(false),
+                    Some(false),
+                ),
+                card("bare", None, None, None, None),
+                // 0 是没答，不是上限为 0：Pi 遇到 0 整份文件报错
+                card("zero", Some(0), Some(0), None, None),
+            ],
+            ..gw(&[])
+        };
+        let Val::Arr(ms) = models_val(&g) else {
+            unreachable!()
+        };
+        let num = |k: &str, n: &str| (k.to_string(), Val::Num(n.into()));
+        let s = |k: &str, v: &str| (k.to_string(), Val::s(v));
+        let input = |xs: &[&str]| {
+            (
+                "input".to_string(),
+                Val::Arr(xs.iter().map(|x| Val::s(*x)).collect()),
+            )
+        };
+        assert_eq!(
+            ms,
+            vec![
+                Val::Obj(vec![
+                    s("id", "claude-x"),
+                    s("api", "anthropic-messages"),
+                    s("baseUrl", "http://127.0.0.1:8788"),
+                    num("contextWindow", "200000"),
+                    num("maxTokens", "64000"),
+                    ("reasoning".into(), Val::Bool(true)),
+                    input(&["text", "image"]),
+                ]),
+                Val::Obj(vec![
+                    s("id", "deepseek-chat"),
+                    num("contextWindow", "128000"),
+                    ("reasoning".into(), Val::Bool(false)),
+                    input(&["text"]),
+                ]),
+                Val::Obj(vec![s("id", "bare")]),
+                Val::Obj(vec![s("id", "zero")]),
+            ]
+        );
+    }
+
+    /// 写进两种文件再读回来，和网关答的一样；规格变了就要更新
+    #[test]
+    fn specs_read_back_from_either_file() {
+        let now = vec![
+            card(
+                "claude-x",
+                Some(200_000),
+                Some(64_000),
+                Some(true),
+                Some(true),
+            ),
+            card(
+                "deepseek-chat",
+                Some(128_000),
+                None,
+                Some(false),
+                Some(false),
+            ),
+            card("bare", None, None, None, None),
+        ];
+        let g = Gateway {
+            models: now.clone(),
+            ..gw(&[])
+        };
+        for (flavor, id) in [(Flavor::Pi, "pi"), (Flavor::Omp, "omp")] {
+            let text = edits(&g, flavor).iter().fold(String::new(), |t, e| {
+                let p: Vec<&str> = e.path.iter().map(String::as_str).collect();
+                match flavor {
+                    Flavor::Pi => {
+                        crate::json::set(if t.is_empty() { "{}" } else { &t }, &p, &e.value)
+                            .unwrap()
+                    }
+                    Flavor::Omp => crate::yaml::set(&t, &p, &e.value).unwrap(),
+                }
+            });
+            assert_eq!(models_in(&text, flavor), Some(now.clone()), "{text}");
+            let c = crate::clients::adoptable()
+                .into_iter()
+                .find(|c| c.id == id)
+                .unwrap();
+            let back = models_in(&text, flavor).unwrap();
+            assert!(!c.models_stale(&back, &now));
+            for change in [
+                |m: &mut ModelCard| m.context_window = Some(1_000_000),
+                |m: &mut ModelCard| m.max_output_tokens = Some(128_000),
+                |m: &mut ModelCard| m.reasoning = None,
+                |m: &mut ModelCard| m.image_input = Some(false),
+            ] {
+                let mut changed = now.clone();
+                change(&mut changed[0]);
+                assert!(c.models_stale(&back, &changed), "{id}: {changed:?}");
+            }
+        }
     }
 
     #[test]
