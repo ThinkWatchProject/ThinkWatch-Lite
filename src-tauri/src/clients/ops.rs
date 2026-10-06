@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use tw_adopt::clients::{self, Client};
+use tw_adopt::clients::{self, Client, ModelCard};
 use tw_adopt::cloud::Around;
 use tw_adopt::{detect, plan};
 use tw_api::ClientView;
@@ -83,7 +83,7 @@ pub fn list(
     home: &Path,
     backups: &Path,
     gw: &Gateway,
-    models: &BTreeMap<String, Vec<String>>,
+    models: &BTreeMap<String, Vec<ModelCard>>,
 ) -> wire::ClientsResponse {
     // 「使用中」的依据：**我们改了一个文件，但那个文件有没有被读到，只有请求能证明**
     // —— 而且是带着为它生成的那把密钥的请求。按请求头里自报的客户端标识算的话，
@@ -111,7 +111,7 @@ pub fn list(
             let stale = ours(&d, backups)
                 && matches!(
                     (&d.models, now),
-                    (Some(written), Some(now)) if tw_adopt::opencode::models_stale(written, now)
+                    (Some(written), Some(now)) if c.models_stale(written, now)
                 );
             let mut v = detected_view(d, backups, key, last_seen_ms.flatten(), manual, |p| {
                 p.display().to_string()
@@ -182,7 +182,7 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
-        models: d.models,
+        models: d.models.map(|ms| ms.into_iter().map(|m| m.id).collect()),
         movable: false,
         managed: d.managed.as_ref().map(|by| {
             plan::PlanError::Managed {
@@ -266,7 +266,7 @@ fn field(
 /// 主配置和另一份文件的路径不会撞（一个以行 id 开头，一个以 `refs` 开头）。
 ///
 /// `models` 是这次写进去的模型：Grok Build 一个模型一张表，整张表算密钥，路径跟着模型走
-fn secret_paths(c: &Client, models: &[String]) -> Vec<Vec<String>> {
+fn secret_paths(c: &Client, models: &[ModelCard]) -> Vec<Vec<String>> {
     let gw = clients::Gateway {
         base: String::new(),
         key: Some(String::new()),
@@ -546,7 +546,7 @@ pub fn plan_adopt(
     home: &Path,
     id: &str,
     gw: &Gateway,
-    models: Vec<String>,
+    models: Vec<ModelCard>,
     around: &Around,
 ) -> Result<wire::PlanView, Msg> {
     plan_adopt_as(home, id, id, gw, models, around)
@@ -559,7 +559,7 @@ pub fn plan_adopt_as(
     id: &str,
     owner: &str,
     gw: &Gateway,
-    models: Vec<String>,
+    models: Vec<ModelCard>,
     around: &Around,
 ) -> Result<wire::PlanView, Msg> {
     plan_adopt_picking(home, id, owner, gw, models, around).map(|(v, _)| v)
@@ -573,7 +573,7 @@ pub fn plan_adopt_picking(
     id: &str,
     owner: &str,
     gw: &Gateway,
-    models: Vec<String>,
+    models: Vec<ModelCard>,
     around: &Around,
 ) -> Result<(wire::PlanView, Option<tw_adopt::desktop::ModelPick>), Msg> {
     let c = find(id, home)?;
@@ -616,7 +616,8 @@ fn plan_for(
     around: &Around,
 ) -> Result<plan::Plan, plan::PlanError> {
     if c.id == tw_adopt::desktop::ID {
-        tw_adopt::desktop::plan_adopt(c, home, gw, Some(&gw.models), around)
+        let ids: Vec<String> = gw.models.iter().map(|m| m.id.clone()).collect();
+        tw_adopt::desktop::plan_adopt(c, home, gw, Some(&ids), around)
     } else {
         plan::plan_adopt(c, home, gw, around)
     }
@@ -932,7 +933,7 @@ pub fn repoint(
     c: &Client,
     base: &str,
     key: &str,
-    models: Vec<String>,
+    models: Vec<ModelCard>,
     around: &Around,
 ) -> Result<wire::KeySynced, wire::KeySyncFailed> {
     let c = &c.clone().here(home);
@@ -1244,7 +1245,7 @@ pub(crate) mod tests {
         )
         .unwrap();
         let g = gw(vec![key("default", "tw-secret-value", None, true)]);
-        let models = vec!["claude-sonnet-5".to_string(), "gpt-5.5".to_string()];
+        let models: Vec<ModelCard> = vec!["claude-sonnet-5".into(), "gpt-5.5".into()];
         for (id, theirs) in [
             ("grok-build", "sk-mine-0123456789"),
             ("qwen-code", "sk-dash-0123456789"),
@@ -1381,10 +1382,10 @@ pub(crate) mod tests {
         let now = |ms: &[&str]| {
             BTreeMap::from([(
                 "opencode".to_string(),
-                ms.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+                ms.iter().map(|m| ModelCard::named(*m)).collect::<Vec<_>>(),
             )])
         };
-        let stale = |models: &BTreeMap<String, Vec<String>>| {
+        let stale = |models: &BTreeMap<String, Vec<ModelCard>>| {
             list(home.path(), &backups(&home), &gw(keys.clone()), models)
                 .clients
                 .into_iter()
@@ -1439,10 +1440,10 @@ pub(crate) mod tests {
             let now = |ms: &[&str]| {
                 BTreeMap::from([(
                     id.to_string(),
-                    ms.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+                    ms.iter().map(|m| ModelCard::named(*m)).collect::<Vec<_>>(),
                 )])
             };
-            let stale = |models: &BTreeMap<String, Vec<String>>| {
+            let stale = |models: &BTreeMap<String, Vec<ModelCard>>| {
                 list(home.path(), &backups(&home), &gw(keys.clone()), models)
                     .clients
                     .into_iter()

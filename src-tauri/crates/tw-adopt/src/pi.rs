@@ -31,7 +31,7 @@ use std::path::Path;
 
 use tw_types::{Msg, msg};
 
-use crate::clients::{Edit, Gateway, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
 use crate::cloud::Around;
 use crate::json::Val;
 use crate::plan::lookup;
@@ -129,10 +129,10 @@ pub fn models_val(gw: &Gateway) -> Val {
     Val::Arr(
         gw.models
             .iter()
-            .filter(|m| seen.insert(m.as_str()))
+            .filter(|m| seen.insert(m.id.as_str()))
             .map(|m| {
-                let api = api_for(m);
-                let mut fields = vec![("id".to_string(), Val::s(m))];
+                let api = api_for(&m.id);
+                let mut fields = vec![("id".to_string(), Val::s(&m.id))];
                 if api != DEFAULT_API {
                     fields.push(("api".into(), Val::s(api.slug())));
                     if api.base(&gw.base) != DEFAULT_API.base(&gw.base) {
@@ -196,8 +196,13 @@ pub fn edits(gw: &Gateway, flavor: Flavor) -> Vec<Edit> {
     v
 }
 
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+pub fn as_written(m: &ModelCard) -> ModelCard {
+    ModelCard::named(&m.id)
+}
+
 /// 配置里此刻写着的模型。没有那一条 provider 就是 `None`。
-pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<String>> {
+pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<ModelCard>> {
     let v = match flavor {
         Flavor::Pi => crate::json::value(text).ok()?,
         Flavor::Omp => crate::yamlval::value(text).ok()?,
@@ -207,7 +212,7 @@ pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<String>> {
         Some(Val::Arr(ms)) => Some(
             ms.iter()
                 .filter_map(|m| match lookup(m, &["id"]) {
-                    Some(Val::Str(id)) => Some(id),
+                    Some(Val::Str(id)) => Some(ModelCard::named(id)),
                     _ => None,
                 })
                 .collect(),
@@ -391,7 +396,7 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models.iter().map(|m| ModelCard::named(*m)).collect(),
         }
     }
 
@@ -537,7 +542,7 @@ mod tests {
         let json = r#"{"providers": {"thinkwatch": {"models": [{"id": "a"}, {"id": "b", "api": "anthropic-messages"}]}}}"#;
         assert_eq!(
             models_in(json, Flavor::Pi),
-            Some(vec!["a".to_string(), "b".to_string()])
+            Some(vec!["a".into(), "b".into()])
         );
         assert_eq!(models_in(r#"{"providers": {}}"#, Flavor::Pi), None);
         assert_eq!(
@@ -547,7 +552,7 @@ mod tests {
         let yaml = "providers:\n  thinkwatch:\n    models:\n      - id: a\n      - id: b\n";
         assert_eq!(
             models_in(yaml, Flavor::Omp),
-            Some(vec!["a".to_string(), "b".to_string()])
+            Some(vec!["a".into(), "b".into()])
         );
     }
 

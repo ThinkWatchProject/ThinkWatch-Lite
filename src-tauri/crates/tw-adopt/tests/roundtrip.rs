@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tw_adopt::clients::{Gateway, adoptable};
+use tw_adopt::clients::{Gateway, ModelCard, adoptable};
 use tw_adopt::cloud::Around;
 use tw_adopt::plan::{apply, apply_restore, plan_adopt, plan_restore};
 
@@ -1255,10 +1255,7 @@ fn adopting_opencode_edits_the_native_v2_entry_when_there_is_one() {
     // 检测认的是原生的那一条
     let d = tw_adopt::detect::detect_one(&c, &b.home);
     assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
-    assert_eq!(
-        d.models,
-        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
-    );
+    assert_eq!(d.models, Some(vec!["claude-sonnet".into(), "gpt-5".into()]));
 
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -1272,14 +1269,14 @@ fn rewriting_the_opencode_model_list_keeps_the_first_record() {
     let c = client("opencode");
     for models in [vec!["a"], vec!["a", "b"]] {
         let g = Gateway {
-            models: models.into_iter().map(str::to_string).collect(),
+            models: models.into_iter().map(ModelCard::named).collect(),
             ..gw()
         };
         let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let d = tw_adopt::detect::detect_one(&c, &b.home);
-    assert_eq!(d.models, Some(vec!["a".to_string(), "b".to_string()]));
+    assert_eq!(d.models, Some(vec!["a".into(), "b".into()]));
 
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
@@ -1392,10 +1389,7 @@ fn adopting_pi_adds_a_provider_with_each_models_own_api() {
 
     let d = tw_adopt::detect::detect_one(&c, &b.home);
     assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
-    assert_eq!(
-        d.models,
-        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
-    );
+    assert_eq!(d.models, Some(vec!["claude-sonnet".into(), "gpt-5".into()]));
     assert!(d.installed);
 
     let r = plan_restore(&c, &b.home).unwrap();
@@ -1410,17 +1404,14 @@ fn rewriting_the_pi_model_list_keeps_the_first_record() {
     let c = client("pi");
     for models in [vec!["a"], vec!["a", "claude-b"]] {
         let g = Gateway {
-            models: models.into_iter().map(str::to_string).collect(),
+            models: models.into_iter().map(ModelCard::named).collect(),
             ..gw()
         };
         let p = plan_adopt(&c, &b.home, &g, &Around::default()).unwrap();
         apply(&c, &p, &b.backups).unwrap();
     }
     let d = tw_adopt::detect::detect_one(&c, &b.home);
-    assert_eq!(
-        d.models,
-        Some(vec!["a".to_string(), "claude-b".to_string()])
-    );
+    assert_eq!(d.models, Some(vec!["a".into(), "claude-b".into()]));
     let r = plan_restore(&c, &b.home).unwrap();
     apply_restore(&c, &r, &b.backups).unwrap();
     assert_eq!(read(&c.config_path(&b.home)), PI);
@@ -1510,10 +1501,7 @@ fn adopting_omp_says_it_authenticates_with_a_key() {
 
     let d = tw_adopt::detect::detect_one(&c, &b.home);
     assert_eq!(d.endpoint.as_deref(), Some("http://127.0.0.1:8080/v1"));
-    assert_eq!(
-        d.models,
-        Some(vec!["claude-sonnet".to_string(), "gpt-5".to_string()])
-    );
+    assert_eq!(d.models, Some(vec!["claude-sonnet".into(), "gpt-5".into()]));
 
     // 再接管一次是空操作
     let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
@@ -1881,7 +1869,7 @@ fn re_adopting_grok_with_a_changed_model_list_drops_the_stale_table() {
     );
     let d = tw_adopt::detect::detect_one(&c, &b.home);
     assert!(
-        !tw_adopt::opencode::models_stale(d.models.as_deref().unwrap(), &g.models),
+        !c.models_stale(d.models.as_deref().unwrap(), &g.models),
         "{:?}",
         d.models
     );

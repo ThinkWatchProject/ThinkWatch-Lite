@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::clients::{Edit, Gateway, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
 use crate::json::Val;
 
 /// v1 写法里的包名。**不写它的话**：v1 默认也是这个包，但 v2 迁移时不补默认值，
@@ -63,13 +63,13 @@ pub fn shape_in(text: &str) -> Shape {
 ///
 /// **name 不留空**：opencode 的模型选择器显示的就是它，空着就是一行空白。
 /// 同名的只写一次：JSON 对象里重复的键，各家解析器取哪一个说法不一。
-pub fn models_val(models: &[String]) -> Val {
+pub fn models_val(models: &[ModelCard]) -> Val {
     let mut seen = std::collections::HashSet::new();
     Val::Obj(
         models
             .iter()
-            .filter(|m| seen.insert(m.as_str()))
-            .map(|m| (m.clone(), Val::Obj(vec![("name".into(), Val::s(m))])))
+            .filter(|m| seen.insert(m.id.as_str()))
+            .map(|m| (m.id.clone(), Val::Obj(vec![("name".into(), Val::s(&m.id))])))
             .collect(),
     )
 }
@@ -130,10 +130,10 @@ pub fn endpoint(text: &str) -> Option<String> {
 }
 
 /// 配置里此刻写着的模型。没有那一条就是 `None`。
-pub fn models_in(text: &str) -> Option<Vec<String>> {
+pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
     let s = shape_in(text);
     match crate::json::get(text, &[s.root(), PROVIDER_ID, "models"]).ok()?? {
-        Val::Obj(ms) => Some(ms.into_iter().map(|(k, _)| k).collect()),
+        Val::Obj(ms) => Some(ms.into_iter().map(|(k, _)| ModelCard::named(k)).collect()),
         _ => Some(Vec::new()),
     }
 }
@@ -148,15 +148,9 @@ pub fn overriding(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 模型清单跟网关此刻答的不一样了（上游或路由变了）。顺序不算。
-pub fn models_stale(written: &[String], now: &[String]) -> bool {
-    let mut a: Vec<_> = written.iter().collect();
-    let mut b: Vec<_> = now.iter().collect();
-    a.sort();
-    a.dedup();
-    b.sort();
-    b.dedup();
-    a != b
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+pub fn as_written(m: &ModelCard) -> ModelCard {
+    ModelCard::named(&m.id)
 }
 
 // ---------------------------------------------------------------- 版本
@@ -442,7 +436,7 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models.iter().map(|m| ModelCard::named(*m)).collect(),
         }
     }
 
@@ -533,14 +527,6 @@ mod tests {
         assert_eq!(endpoint(v1).as_deref(), Some("http://old/v1"));
         assert_eq!(models_in(v1), None);
         assert_eq!(models_in("{}"), None);
-    }
-
-    #[test]
-    fn a_changed_model_list_is_stale_and_a_reordered_one_is_not() {
-        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert!(!models_stale(&s(&["a", "b"]), &s(&["b", "a"])));
-        assert!(models_stale(&s(&["a"]), &s(&["a", "b"])));
-        assert!(models_stale(&s(&["a", "b"]), &s(&[])));
     }
 
     #[test]

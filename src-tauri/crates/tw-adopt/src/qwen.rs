@@ -16,7 +16,7 @@
 //! 而这个产品的规矩是如实说明客户端是谁。Chat Completions 拼的是 `{baseUrl}/chat/completions`，
 //! 所以写带 `/v1` 的地址。
 
-use crate::clients::{Edit, Gateway, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
 use crate::json::Val;
 
 /// 装着网关密钥的那个环境变量：写进 `settings.env`，每一条模型用 `envKey` 指着它。
@@ -31,11 +31,11 @@ pub const KEY_ENV: &str = "THINKWATCH_QWEN_API_KEY";
 pub const NO_KEY: &str = "no-key";
 
 /// 网关列出来的模型，同名的只算一次
-fn unique(gw: &Gateway) -> Vec<&String> {
+fn unique(gw: &Gateway) -> Vec<&ModelCard> {
     let mut seen = std::collections::HashSet::new();
     gw.models
         .iter()
-        .filter(|m| seen.insert(m.as_str()))
+        .filter(|m| seen.insert(m.id.as_str()))
         .collect()
 }
 
@@ -63,8 +63,8 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         .iter()
         .map(|m| {
             Val::Obj(vec![
-                ("id".into(), Val::s(m.as_str())),
-                ("name".into(), Val::s(format!("{m} (ThinkWatch)"))),
+                ("id".into(), Val::s(&m.id)),
+                ("name".into(), Val::s(format!("{} (ThinkWatch)", m.id))),
                 ("baseUrl".into(), Val::s(&base)),
                 ("envKey".into(), Val::s(KEY_ENV)),
             ])
@@ -75,8 +75,8 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         _ => None,
     };
     let chosen = now
-        .filter(|n| models.iter().any(|m| m == &n))
-        .unwrap_or_else(|| first.to_string());
+        .filter(|n| models.iter().any(|m| &m.id == n))
+        .unwrap_or_else(|| first.id.clone());
     let plain = |path: &[&str], value: Val| Edit {
         path: at(path),
         value,
@@ -139,13 +139,19 @@ pub fn endpoint(text: &str) -> Option<String> {
         .find(|b| picked.as_ref().is_none_or(|p| p == b))
 }
 
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+pub fn as_written(m: &ModelCard) -> ModelCard {
+    ModelCard::named(&m.id)
+}
+
 /// 配置里此刻写着的模型：我们那一组里每一条的 `id`。没有那一组就是一份空的（接管时网关
 /// 一个模型都没有的话就是这样，等网关有了模型，客户端页拿它去比才提示得出要更新）
-pub fn models_in(text: &str) -> Option<Vec<String>> {
+pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
     Some(
         entries(text)
             .iter()
             .filter_map(|e| field(e, "id"))
+            .map(ModelCard::named)
             .collect(),
     )
 }
@@ -169,7 +175,7 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models.iter().map(|m| ModelCard::named(*m)).collect(),
         }
     }
 

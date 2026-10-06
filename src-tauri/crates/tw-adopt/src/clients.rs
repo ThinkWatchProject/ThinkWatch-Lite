@@ -191,12 +191,52 @@ pub struct Gateway {
     pub key: Option<String>,
     /// 这把密钥能用的模型：网关的 `GET /v1/models` 对它答的。只有要把模型写进
     /// 配置的客户端（[`Client::writes_models`]）用得上，别的留空。
-    pub models: Vec<String>,
+    pub models: Vec<ModelCard>,
+}
+
+/// 网关列出的一个模型：名字，加上客户端要照着跑的几项规格。
+///
+/// 规格只有网关答了才有（`GET /v1/models` 的 `context_window`、`max_output_tokens`、
+/// `supports_reasoning`、`input_modalities`），**不知道就是 `None`，写配置时整项不写** ——
+/// 客户端会用自己的默认值或者按名字查它自带的目录，一个编出来的数它却会照着截断对话。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ModelCard {
+    pub id: String,
+    /// 一次最多输入多少 token，也就是上下文窗口
+    pub context_window: Option<u64>,
+    /// 一次最多输出多少 token
+    pub max_output_tokens: Option<u64>,
+    /// 会不会推理
+    pub reasoning: Option<bool>,
+    /// 收不收图
+    pub image_input: Option<bool>,
+}
+
+impl ModelCard {
+    /// 只有名字、规格一项都不知道的
+    pub fn named(id: impl Into<String>) -> ModelCard {
+        ModelCard {
+            id: id.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&str> for ModelCard {
+    fn from(id: &str) -> Self {
+        ModelCard::named(id)
+    }
+}
+
+impl From<String> for ModelCard {
+    fn from(id: String) -> Self {
+        ModelCard::named(id)
+    }
 }
 
 impl Gateway {
     /// 接管时写进去的那一份：地址、为它发的那把密钥、这把密钥能用的模型
-    pub fn keyed(base: &str, key: &str, models: Vec<String>) -> Gateway {
+    pub fn keyed(base: &str, key: &str, models: Vec<ModelCard>) -> Gateway {
         Gateway {
             base: base.to_string(),
             key: Some(key.to_string()),
@@ -1114,7 +1154,7 @@ pub fn credential_values(client: &str, text: &str) -> Vec<String> {
 fn with_some_model(gw: &Gateway) -> Gateway {
     let mut g = gw.clone();
     if g.models.is_empty() {
-        g.models = vec![MODEL_PLACEHOLDER.to_string()];
+        g.models = vec![ModelCard::named(MODEL_PLACEHOLDER)];
     }
     g
 }
@@ -1227,9 +1267,37 @@ impl Client {
             || (self.id == "dsh" && crate::paths::dsh_desktop_app(home).is_some())
     }
 
+    /// 一个模型写进这个客户端的配置、再读回来的样子：它的配置里没有地方写的规格去掉
+    /// （Grok Build 没有收不收图这一项），我们特意不写的也去掉（Qwen Code 的输出上限是每次
+    /// 请求都带上的 `max_tokens`，不是能力上限）。拿网关答的去比之前先过一遍它
+    pub fn as_written(&self, m: &ModelCard) -> ModelCard {
+        match self.id {
+            "opencode" => crate::opencode::as_written(m),
+            "grok-build" => crate::grok::as_written(m),
+            "qwen-code" => crate::qwen::as_written(m),
+            _ => crate::pi::as_written(m),
+        }
+    }
+
+    /// 配置里的模型清单跟网关此刻答的对不上了：多了、少了模型，或者写得进去的规格变了
+    /// （上游、路由、手写的规格改过）。顺序不算，同名的只算第一个
+    pub fn models_stale(&self, written: &[ModelCard], now: &[ModelCard]) -> bool {
+        let norm = |xs: &[ModelCard]| {
+            let mut seen = std::collections::HashSet::new();
+            let mut v: Vec<ModelCard> = xs
+                .iter()
+                .filter(|m| seen.insert(m.id.as_str()))
+                .map(|m| self.as_written(m))
+                .collect();
+            v.sort();
+            v
+        };
+        norm(written) != norm(now)
+    }
+
     /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）。没有那一条
     /// provider 就是 `None`。
-    pub fn models_in(&self, text: &str) -> Option<Vec<String>> {
+    pub fn models_in(&self, text: &str) -> Option<Vec<ModelCard>> {
         match self.id {
             "opencode" => crate::opencode::models_in(text),
             "grok-build" => crate::grok::models_in(text),
@@ -1400,6 +1468,19 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 清单多了、少了模型才算对不上，顺序和同名的不算；写不进去的规格变了不算
+    #[test]
+    fn a_changed_model_list_is_stale_and_a_reordered_one_is_not() {
+        let c = adoptable()
+            .into_iter()
+            .find(|c| c.id == "opencode")
+            .unwrap();
+        let s = |xs: &[&str]| xs.iter().map(|x| ModelCard::named(*x)).collect::<Vec<_>>();
+        assert!(!c.models_stale(&s(&["a", "b"]), &s(&["b", "a", "a"])));
+        assert!(c.models_stale(&s(&["a"]), &s(&["a", "b"])));
+        assert!(c.models_stale(&s(&["a", "b"]), &s(&[])));
+    }
 
     #[test]
     fn every_client_has_a_distinct_id_and_a_real_path() {

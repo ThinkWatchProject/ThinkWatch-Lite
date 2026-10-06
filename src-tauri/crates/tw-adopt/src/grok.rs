@@ -12,7 +12,7 @@
 //! 它自己也写这份文件（`/model`、`/settings`、自动更新之后），用的是重新序列化，注释和排版
 //! 一律丢掉 —— 哨兵注释会跟着没了，旁文件里的记录还在，还原照样做得了。
 
-use crate::clients::{Edit, Gateway};
+use crate::clients::{Edit, Gateway, ModelCard};
 use crate::json::Val;
 
 /// 我们写的模型表的名字：`[model."thinkwatch/<模型>"]`。
@@ -52,17 +52,18 @@ pub fn backend_for(model: &str) -> &'static str {
 }
 
 /// 网关列出来的模型，同名的只算一次
-fn unique(gw: &Gateway) -> Vec<&String> {
+fn unique(gw: &Gateway) -> Vec<&ModelCard> {
     let mut seen = std::collections::HashSet::new();
     gw.models
         .iter()
-        .filter(|m| seen.insert(m.as_str()))
+        .filter(|m| seen.insert(m.id.as_str()))
         .collect()
 }
 
 /// 一张模型表里的字段。**没有网关密钥也要写一个不为空的 `api_key`**：空着的话 Grok 退回
 /// 用户的会话令牌，见文件开头；这个值什么都打不开，网关会以「没有这把密钥」拒绝
-fn table(gw: &Gateway, model: &str) -> Vec<(String, Val)> {
+fn table(gw: &Gateway, m: &ModelCard) -> Vec<(String, Val)> {
+    let model = m.id.as_str();
     vec![
         ("model".into(), Val::s(model)),
         ("name".into(), Val::s(format!("{model} (ThinkWatch)"))),
@@ -83,7 +84,7 @@ pub fn fields(gw: &Gateway) -> Vec<Edit> {
     let mut v: Vec<Edit> = unique(gw)
         .into_iter()
         .flat_map(|m| {
-            let k = key_of(m);
+            let k = key_of(&m.id);
             table(gw, m).into_iter().map(move |(f, value)| Edit {
                 secret: f == "api_key" && gw.key.is_some(),
                 path: vec!["model".into(), k.clone(), f],
@@ -117,20 +118,20 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
     let mut v: Vec<Edit> = models
         .iter()
         .map(|m| Edit {
-            path: vec!["model".into(), key_of(m)],
+            path: vec!["model".into(), key_of(&m.id)],
             value: Val::Obj(table(gw, m)),
             secret: gw.key.is_some(),
         })
         .collect();
-    let offered = |id: &str| models.iter().any(|m| m.as_str() == id);
+    let offered = |id: &str| models.iter().any(|m| m.id == id);
     let now = default_in(current);
     let chosen = match now.as_deref() {
         Some(d) if d.strip_prefix(KEY_PREFIX).is_some_and(offered) => d.to_string(),
         Some(d) => match model_id_of(current, d) {
             Some(id) if offered(&id) => key_of(&id),
-            _ => key_of(first),
+            _ => key_of(&first.id),
         },
-        None => key_of(first),
+        None => key_of(&first.id),
     };
     v.push(Edit {
         path: vec!["models".into(), "default".into()],
@@ -210,15 +211,21 @@ pub fn endpoint(text: &str) -> Option<String> {
     }
 }
 
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+pub fn as_written(m: &ModelCard) -> ModelCard {
+    ModelCard::named(&m.id)
+}
+
 /// 配置里此刻写着的模型（我们那几张表各自发出去的模型名）。
 ///
 /// **一张都没有也是一份清单（空的）**：网关一个模型都没列出来时接管什么表都不写，等网关有了
 /// 模型，客户端页拿这份空清单去比，才提示得出「要更新」。没接管过的不拿来比
-pub fn models_in(text: &str) -> Option<Vec<String>> {
+pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
     Some(
         ours(text)
             .iter()
             .map(|(k, t)| field(t, "model").unwrap_or_else(|| k[KEY_PREFIX.len()..].to_string()))
+            .map(ModelCard::named)
             .collect(),
     )
 }
@@ -270,7 +277,7 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models.iter().map(|m| ModelCard::named(*m)).collect(),
         }
     }
 
