@@ -652,7 +652,7 @@
     "config.alias_only_itself": "别名「{alias}」只列出了它自己，不起任何作用。请列出各上游使用的名称，或删除该别名。",
     "config.model_spec_blank_model": "上游「{upstream}」的模型规格（model_specs）中有一项的模型 ID 为空。",
     "config.model_spec_wildcard": "上游「{upstream}」的模型规格「{model}」含有 * 或 ?。模型规格只能对应一个确切的模型 ID。",
-    "config.model_spec_empty": "上游「{upstream}」的模型规格「{model}」既未设置 context_window，也未设置 max_output_tokens。请至少设置一项，或删除该规格。",
+    "config.model_spec_nothing_set": "上游「{upstream}」的模型规格「{model}」中 context_window、max_output_tokens、reasoning、image_input 均未设置。请至少设置一项，或删除该规格。",
     "config.model_spec_zero": "上游「{upstream}」的模型规格「{model}」中 {field} 为 0，须为大于 0 的 token 数。要使用价目表中的值，请删除该项。",
     "config.reserved_name": "{what:kind}名称「{name}」以 __ 开头，该前缀保留给内置项，请使用其他名称。",
     "config.rule_name_empty": "有一条自定义{what:rule_line}规则没有名称。",

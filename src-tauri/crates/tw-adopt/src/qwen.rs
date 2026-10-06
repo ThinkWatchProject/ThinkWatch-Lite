@@ -16,8 +16,9 @@
 //! 而这个产品的规矩是如实说明客户端是谁。Chat Completions 拼的是 `{baseUrl}/chat/completions`，
 //! 所以写带 `/v1` 的地址。
 
-use crate::clients::{Edit, Gateway, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
 use crate::json::Val;
+use crate::plan::lookup;
 
 /// 装着网关密钥的那个环境变量：写进 `settings.env`，每一条模型用 `envKey` 指着它。
 ///
@@ -31,11 +32,11 @@ pub const KEY_ENV: &str = "THINKWATCH_QWEN_API_KEY";
 pub const NO_KEY: &str = "no-key";
 
 /// 网关列出来的模型，同名的只算一次
-fn unique(gw: &Gateway) -> Vec<&String> {
+fn unique(gw: &Gateway) -> Vec<&ModelCard> {
     let mut seen = std::collections::HashSet::new();
     gw.models
         .iter()
-        .filter(|m| seen.insert(m.as_str()))
+        .filter(|m| seen.insert(m.id.as_str()))
         .collect()
 }
 
@@ -62,12 +63,17 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
     let entries: Vec<Val> = models
         .iter()
         .map(|m| {
-            Val::Obj(vec![
-                ("id".into(), Val::s(m.as_str())),
-                ("name".into(), Val::s(format!("{m} (ThinkWatch)"))),
+            let mut e = vec![
+                ("id".into(), Val::s(&m.id)),
+                ("name".into(), Val::s(format!("{} (ThinkWatch)", m.id))),
                 ("baseUrl".into(), Val::s(&base)),
                 ("envKey".into(), Val::s(KEY_ENV)),
-            ])
+            ];
+            let spec = generation(m);
+            if !spec.is_empty() {
+                e.push(("generationConfig".into(), Val::Obj(spec)));
+            }
+            Val::Obj(e)
         })
         .collect();
     let now = match crate::json::get(current, &["model", "name"]) {
@@ -75,8 +81,8 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         _ => None,
     };
     let chosen = now
-        .filter(|n| models.iter().any(|m| m == &n))
-        .unwrap_or_else(|| first.to_string());
+        .filter(|n| models.iter().any(|m| &m.id == n))
+        .unwrap_or_else(|| first.id.clone());
     let plain = |path: &[&str], value: Val| Edit {
         path: at(path),
         value,
@@ -97,6 +103,33 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         plain(&["model", "name"], Val::s(chosen)),
         plain(&["model", "baseUrl"], Val::s(base)),
     ]
+}
+
+/// 一个模型的 `generationConfig`：网关知道的规格里 Qwen 照着跑、又不会改动每次请求的那几项。
+/// 网关不知道的整项不写，Qwen 按名字查 models.dev、再按正则猜、最后取 200K。
+///
+/// - 上下文窗口写 `contextWindowSize`：压缩对话按它算阈值；
+/// - 收不收图写 `modalities.image`：不收的话，图换成一段文字占位再发。这一项一写，Qwen 就
+///   不再按名字补默认的模态（目录里的音频、视频跟着没了）—— 网关只说得出图这一项；
+/// - **输出上限不写。**`samplingParams.max_tokens` 每次请求都原样带上，不是能力上限；写上
+///   模型的上限（384000），每次请求就都要这么多。写了 `samplingParams`，Qwen 也就不再自己
+///   补 `max_tokens`；
+/// - **推理不写。**Qwen 没有只表示「会推理」的开关：`capabilities.reasoning` 要一份档位清单
+///   和默认档，默认档每次请求都带上（档位还得我们编）；`generationConfig.reasoning` 写了
+///   档位或预算，每次请求都带上；写 `false` 是关掉思考，`/effort` 从此不起作用，切走再切回来
+///   时用户选的档位也丢了。什么都不写，`/effort` 本来就对任何模型都给全部档位，不选就不带
+fn generation(m: &ModelCard) -> Vec<(String, Val)> {
+    let mut g = Vec::new();
+    if let Some(n) = m.context_window {
+        g.push(("contextWindowSize".into(), Val::Num(n.to_string())));
+    }
+    if let Some(image) = m.image_input {
+        g.push((
+            "modalities".into(),
+            Val::Obj(vec![("image".into(), Val::Bool(image))]),
+        ));
+    }
+    g
 }
 
 /// 我们那一组里的模型条目
@@ -139,13 +172,41 @@ pub fn endpoint(text: &str) -> Option<String> {
         .find(|b| picked.as_ref().is_none_or(|p| p == b))
 }
 
-/// 配置里此刻写着的模型：我们那一组里每一条的 `id`。没有那一组就是一份空的（接管时网关
-/// 一个模型都没有的话就是这样，等网关有了模型，客户端页拿它去比才提示得出要更新）
-pub fn models_in(text: &str) -> Option<Vec<String>> {
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]：输出上限和
+/// 推理不写（见 [`generation`]），只剩上下文窗口和收不收图
+pub fn as_written(m: &ModelCard) -> ModelCard {
+    ModelCard {
+        id: m.id.clone(),
+        context_window: m.context_window,
+        image_input: m.image_input,
+        ..Default::default()
+    }
+}
+
+/// 配置里此刻写着的模型：我们那一组里每一条的 `id`，连同 `generationConfig` 里写着的规格。
+/// 没有那一组就是一份空的（接管时网关一个模型都没有的话就是这样，等网关有了模型，客户端页
+/// 拿它去比才提示得出要更新）
+pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
     Some(
         entries(text)
             .iter()
-            .filter_map(|e| field(e, "id"))
+            .filter_map(|e| {
+                let id = field(e, "id")?;
+                let context_window = match lookup(e, &["generationConfig", "contextWindowSize"]) {
+                    Some(Val::Num(n)) => n.parse().ok(),
+                    _ => None,
+                };
+                let image_input = match lookup(e, &["generationConfig", "modalities", "image"]) {
+                    Some(Val::Bool(b)) => Some(b),
+                    _ => None,
+                };
+                Some(ModelCard {
+                    id,
+                    context_window,
+                    image_input,
+                    ..Default::default()
+                })
+            })
             .collect(),
     )
 }
@@ -169,7 +230,7 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models.iter().map(|m| ModelCard::named(*m)).collect(),
         }
     }
 
@@ -258,6 +319,123 @@ mod tests {
         );
         assert_eq!(endpoint(&theirs), None);
         assert_eq!(models_in("{}"), Some(Vec::new()));
+    }
+
+    fn card(
+        id: &str,
+        cw: Option<u64>,
+        out: Option<u64>,
+        reasoning: Option<bool>,
+        image: Option<bool>,
+    ) -> ModelCard {
+        ModelCard {
+            id: id.into(),
+            context_window: cw,
+            max_output_tokens: out,
+            reasoning,
+            image_input: image,
+        }
+    }
+
+    /// 把接管要写的几项写进一份 settings.json
+    fn written(g: &Gateway) -> String {
+        edits(g, "").iter().fold("{}".to_string(), |text, e| {
+            let path: Vec<&str> = e.path.iter().map(String::as_str).collect();
+            crate::json::set(&text, &path, &e.value).unwrap()
+        })
+    }
+
+    fn qwen() -> crate::clients::Client {
+        crate::clients::adoptable()
+            .into_iter()
+            .find(|c| c.id == "qwen-code")
+            .unwrap()
+    }
+
+    #[test]
+    fn known_specs_go_into_generation_config_and_read_back() {
+        let mut g = gw(&[]);
+        g.models = vec![
+            card(
+                "gpt-5",
+                Some(400_000),
+                Some(128_000),
+                Some(true),
+                Some(true),
+            ),
+            card(
+                "deepseek-chat",
+                Some(128_000),
+                None,
+                Some(false),
+                Some(false),
+            ),
+            ModelCard::named("mystery"),
+        ];
+        let text = written(&g);
+        let gc = |id: &str, path: &[&str]| {
+            let e = entries(&text)
+                .into_iter()
+                .find(|e| field(e, "id").as_deref() == Some(id))
+                .unwrap();
+            lookup(&e, &[&["generationConfig"], path].concat())
+        };
+        assert_eq!(
+            gc("gpt-5", &["contextWindowSize"]),
+            Some(Val::Num("400000".into()))
+        );
+        assert_eq!(
+            gc("gpt-5", &["modalities"]),
+            Some(Val::Obj(vec![("image".into(), Val::Bool(true))]))
+        );
+        assert_eq!(
+            gc("deepseek-chat", &["modalities", "image"]),
+            Some(Val::Bool(false))
+        );
+        // 网关不知道的模型：一项都不写，连 generationConfig 都没有
+        assert_eq!(gc("mystery", &[]), None);
+        // 读回来的就是写得进去的那几项
+        let back = models_in(&text).unwrap();
+        let want: Vec<ModelCard> = g.models.iter().map(as_written).collect();
+        assert_eq!(back, want);
+        assert!(!qwen().models_stale(&back, &g.models));
+    }
+
+    /// 输出上限是每次请求的 `max_tokens`，推理写什么都会改动每次请求，两样都不写
+    #[test]
+    fn max_output_and_reasoning_are_never_written() {
+        let mut g = gw(&[]);
+        g.models = vec![
+            card("a", None, Some(384_000), Some(true), None),
+            card("b", None, Some(8_192), Some(false), None),
+        ];
+        let text = written(&g);
+        assert!(!text.contains("samplingParams"), "{text}");
+        assert!(!text.contains("max_tokens"), "{text}");
+        assert!(!text.contains("reasoning"), "{text}");
+        assert!(!text.contains("generationConfig"), "{text}");
+        assert!(!text.contains("384000"), "{text}");
+        // 也就不因为它们变了提示更新
+        let back = models_in(&text).unwrap();
+        let mut now = g.models.clone();
+        now[0].max_output_tokens = Some(128_000);
+        now[1].reasoning = Some(true);
+        assert!(!qwen().models_stale(&back, &now));
+    }
+
+    #[test]
+    fn a_changed_window_or_image_input_is_stale() {
+        let mut g = gw(&[]);
+        g.models = vec![card("a", Some(200_000), None, None, Some(true))];
+        let back = models_in(&written(&g)).unwrap();
+        let c = qwen();
+        assert!(!c.models_stale(&back, &g.models));
+        let mut now = g.models.clone();
+        now[0].context_window = Some(1_000_000);
+        assert!(c.models_stale(&back, &now));
+        let mut now = g.models.clone();
+        now[0].image_input = None;
+        assert!(c.models_stale(&back, &now));
     }
 
     #[test]

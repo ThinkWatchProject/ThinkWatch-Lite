@@ -250,10 +250,12 @@ function Row({
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
   const actions = onAlias || onSpec;
-  /** 手写了哪几项：「上下文窗口 128K」「输出上限 16K」 */
+  /** 手写了哪几项：「上下文窗口 128K」「输出上限 16K」「支持推理」「不支持图片输入」 */
   const manual = [
     m.context_window_source === "manual" ? t.manualContext(contextWindow(m.context_window)) : null,
     m.max_output_tokens_source === "manual" ? t.manualOutput(contextWindow(m.max_output_tokens)) : null,
+    m.reasoning_source === "manual" && m.reasoning != null ? t.manualReasoning(m.reasoning) : null,
+    m.image_input_source === "manual" && m.image_input != null ? t.manualImageInput(m.image_input) : null,
   ].filter((x): x is string => x !== null);
   return (
     <div

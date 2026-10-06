@@ -50,8 +50,8 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         _ => None,
     };
     let chosen = now
-        .filter(|n| gw.models.iter().any(|m| m == n))
-        .unwrap_or_else(|| first.clone());
+        .filter(|n| gw.models.iter().any(|m| &m.id == n))
+        .unwrap_or_else(|| first.id.clone());
     let plain = |key: &str, value: &str| Edit {
         path: at(key),
         value: Val::s(value),
@@ -195,7 +195,10 @@ mod tests {
         Gateway {
             base: "http://127.0.0.1:8788".into(),
             key: Some("tw-k".into()),
-            models: models.iter().map(|m| m.to_string()).collect(),
+            models: models
+                .iter()
+                .map(|m| crate::clients::ModelCard::named(*m))
+                .collect(),
         }
     }
 

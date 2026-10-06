@@ -47,7 +47,7 @@ pub struct Detected {
     pub format: Format,
     pub costs: Vec<Msg>,
     /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）
-    pub models: Option<Vec<String>>,
+    pub models: Option<Vec<crate::clients::ModelCard>>,
     /// 这台电脑上它由组织统一管理，接管不了：托管配置在哪。只有 Claude Desktop 会有
     pub managed: Option<String>,
 }

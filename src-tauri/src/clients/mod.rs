@@ -17,6 +17,7 @@ pub mod wsl;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use tw_adopt::clients::ModelCard;
 use tw_adopt::cloud::Around;
 use tw_adopt::wsl::WslHome;
 
@@ -97,13 +98,13 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
 /// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
 /// 网关按它的 `allow` 答得准。opencode、Pi、oh-my-pi、Grok Build、Qwen Code 要把这份清单写进
 /// 配置（它们不自己去问），Hermes Agent 要从里面挑一个默认模型。
-async fn models_of(base: &str, key: &str) -> Result<Vec<String>, Msg> {
+async fn models_of(base: &str, key: &str) -> Result<Vec<ModelCard>, Msg> {
     fetch_models(base, key, false).await
 }
 
 /// [`models_of`]。`anthropic` = 按 Anthropic 的方式问（密钥放在 `x-api-key`、带
 /// `anthropic-version`）：Claude Desktop 就是这么问的，网关按这个答它说得通的那些
-async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<String>, Msg> {
+async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<ModelCard>, Msg> {
     let url = format!("{}/v1/models", base.trim_end_matches('/'));
     let failed = |detail: String| {
         msg!(
@@ -139,16 +140,33 @@ async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<Stri
         .await
         .map_err(|e| failed(e.to_string()))?;
     let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| failed(e.to_string()))?;
-    Ok(model_ids(&body))
+    Ok(model_cards(&body))
 }
 
-/// OpenAI 形状的 `/v1/models`：`data[].id`
-fn model_ids(body: &serde_json::Value) -> Vec<String> {
+/// OpenAI 形状的 `/v1/models`：`data[]` 的 `id`，连同网关给的规格。
+///
+/// 规格的字段名是 core 定的（`tw_gateway` 的 `listing.rs`）：上下文窗口 `context_window`、
+/// 输出上限 `max_output_tokens`、会不会推理 `supports_reasoning`、收不收图看
+/// `input_modalities` 里有没有 `image`。**网关不知道的那一项它就不给**，这里也就是 `None`
+fn model_cards(body: &serde_json::Value) -> Vec<ModelCard> {
     body.get("data")
         .and_then(|d| d.as_array())
         .map(|xs| {
             xs.iter()
-                .filter_map(|x| x.get("id")?.as_str().map(str::to_string))
+                .filter_map(|x| {
+                    let id = x.get("id")?.as_str()?;
+                    let tokens = |k: &str| x.get(k).and_then(|v| v.as_u64()).filter(|n| *n > 0);
+                    Some(ModelCard {
+                        id: id.to_string(),
+                        context_window: tokens("context_window"),
+                        max_output_tokens: tokens("max_output_tokens"),
+                        reasoning: x.get("supports_reasoning").and_then(|v| v.as_bool()),
+                        image_input: x
+                            .get("input_modalities")
+                            .and_then(|v| v.as_array())
+                            .map(|ms| ms.iter().any(|m| m.as_str() == Some("image"))),
+                    })
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -163,7 +181,7 @@ async fn models_for(
     c: &tw_adopt::clients::Client,
     base: &str,
     key: &str,
-) -> Result<Vec<String>, Msg> {
+) -> Result<Vec<ModelCard>, Msg> {
     if c.writes_models || tw_adopt::clients::picks_model(c) {
         models_of(base, key).await
     } else if c.id == tw_adopt::desktop::ID {
@@ -844,7 +862,7 @@ impl LeftBehind {
     async fn retarget<P, F>(self, base: &str, backups: &Path, prepare: P) -> wire::Retargeted
     where
         P: Fn(String, tw_adopt::clients::Client) -> F,
-        F: std::future::Future<Output = Result<(String, Vec<String>), Msg>>,
+        F: std::future::Future<Output = Result<(String, Vec<ModelCard>), Msg>>,
     {
         let mut out = wire::Retargeted {
             synced: Vec::new(),
@@ -907,7 +925,7 @@ async fn key_and_models(
     base: &str,
     owner: String,
     c: tw_adopt::clients::Client,
-) -> Result<(String, Vec<String>), Msg> {
+) -> Result<(String, Vec<ModelCard>), Msg> {
     let key = prepare_key(control, &owner)
         .await
         .map_err(CmdError::into_msg)?
@@ -1096,13 +1114,44 @@ mod tests {
     use tw_adopt::wsl::Distro;
 
     #[test]
-    fn the_model_list_is_the_ids_under_data() {
+    fn the_model_list_is_the_ids_under_data_with_what_the_gateway_knows() {
         let body = serde_json::json!({
             "object": "list",
-            "data": [{ "id": "gpt-5", "object": "model" }, { "id": "claude-sonnet" }, { "x": 1 }],
+            "data": [
+                {
+                    "id": "gpt-5",
+                    "object": "model",
+                    "context_window": 400000,
+                    "max_output_tokens": 128000,
+                    "supports_reasoning": true,
+                    "input_modalities": ["text", "image"],
+                },
+                { "id": "deepseek-chat", "context_window": 0, "supports_reasoning": false, "input_modalities": ["text"] },
+                { "id": "claude-sonnet" },
+                { "x": 1 },
+            ],
         });
-        assert_eq!(model_ids(&body), ["gpt-5", "claude-sonnet"]);
-        assert!(model_ids(&serde_json::json!({ "models": [] })).is_empty());
+        assert_eq!(
+            model_cards(&body),
+            [
+                ModelCard {
+                    id: "gpt-5".into(),
+                    context_window: Some(400_000),
+                    max_output_tokens: Some(128_000),
+                    reasoning: Some(true),
+                    image_input: Some(true),
+                },
+                // 0 不是一个窗口：当成不知道
+                ModelCard {
+                    id: "deepseek-chat".into(),
+                    reasoning: Some(false),
+                    image_input: Some(false),
+                    ..Default::default()
+                },
+                ModelCard::named("claude-sonnet"),
+            ]
+        );
+        assert!(model_cards(&serde_json::json!({ "models": [] })).is_empty());
     }
 
     #[test]
@@ -1124,7 +1173,7 @@ mod tests {
     async fn issued(
         owner: String,
         _c: tw_adopt::clients::Client,
-    ) -> Result<(String, Vec<String>), Msg> {
+    ) -> Result<(String, Vec<ModelCard>), Msg> {
         Ok((format!("tw-{owner}"), Vec::new()))
     }
 

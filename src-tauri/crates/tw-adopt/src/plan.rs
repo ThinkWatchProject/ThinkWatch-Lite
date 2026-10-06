@@ -814,10 +814,17 @@ fn is_empty(v: &Val) -> bool {
 }
 
 /// 一个值写进去之后再读出来是什么样。YAML 的语义值里标量都是字符串
-/// （见 [`crate::yamlval`]），`version: 1` 读回来是 `"1"`。
+/// （见 [`crate::yamlval`]），`version: 1` 读回来是 `"1"`。容器里的也一样：omp 模型清单
+/// 每一项的 `contextWindow`、`reasoning` 读回来也是字符串。
 fn as_read(fmt: Format, v: &Val) -> Val {
     match (fmt, v) {
         (Format::Yaml | Format::Rows, Val::Num(_) | Val::Bool(_)) => Val::s(v.to_line()),
+        (_, Val::Arr(es)) => Val::Arr(es.iter().map(|e| as_read(fmt, e)).collect()),
+        (_, Val::Obj(ms)) => Val::Obj(
+            ms.iter()
+                .map(|(k, x)| (k.clone(), as_read(fmt, x)))
+                .collect(),
+        ),
         _ => v.clone(),
     }
 }
