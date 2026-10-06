@@ -56,7 +56,7 @@ export const api = {
     call("PreviewProvider", { base_url: baseUrl, protocol }),
   providerModels: (name: string) => call("ProviderModels", null, name),
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),
-  /** 手写一个模型的上下文窗口、输出上限。两项都空 = 删掉手写的，回到价目表 */
+  /** 手写一个模型的上下文窗口、输出上限、推理、图片输入。四项都空 = 删掉手写的，回到价目表 */
   setModelSpec: (save: ModelSpecSave) => call("SetModelSpec", save),
   /** 补问缺失、失败、过期的清单。**立刻回**，答案随 `models_changed` 到 */
   refreshStaleModels: () => call("RefreshStaleModels", null),
