@@ -10,23 +10,25 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/ui/input-group";
+import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, SpecSource } from "@/types";
 import { api } from "./api";
 import { errorText } from "./labels";
-import { manualOf, tokensOf } from "./modelSpec";
+import { isEmptySpec, manualOf, sameSpec, specOf, tokensOf, type SpecFlag } from "./modelSpec";
 import { modelSpecDialogText } from "./ModelSpecDialog.i18n";
 import { DialogError, FormItem } from "./parts";
 
 /**
- * 手写一家上游的一个模型的上下文窗口、输出上限（`PUT /provider-model-spec`）。
+ * 手写一家上游的一个模型的上下文窗口、输出上限、推理、图片输入（`PUT /provider-model-spec`）。
  *
  * 价目表不认识的中转站模型说不出上下文窗口，价目表写错的也有：这里写的只管这一家的
- * 这一个模型，写了就优先于价目表。**两项都空就是删掉手写的**，回到价目表。
+ * 这一个模型，写了就优先于价目表。**四项都不写就是删掉手写的**，回到价目表。
  *
  * 格子里是手写的那个数；没手写的空着，占位写价目表给的数（没有就说价目表中没有）——
- * 留空是什么意思，看占位就知道。
+ * 留空是什么意思，看占位就知道。推理、图片输入是三段：价目表 / 支持 / 不支持，价目表怎么说
+ * 写在下面一行。
  *
  * 挂载方：上游表「模型」一格的弹窗（「规格…」）。对话框挂在弹窗外面：弹窗一收起，里面的
  * 东西就卸掉了。
@@ -85,6 +87,8 @@ function Body({
   const manual = manualOf(row);
   const [context, setContext] = useState(manual.context);
   const [output, setOutput] = useState(manual.output);
+  const [reasoning, setReasoning] = useState(manual.reasoning);
+  const [imageInput, setImageInput] = useState(manual.imageInput);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /*
@@ -93,26 +97,25 @@ function Body({
   */
   const [base] = useState(configVersion);
 
-  const ctx = tokensOf(context);
-  const out = tokensOf(output);
-  const valid = ctx !== undefined && out !== undefined;
-  const changed = ctx !== tokensOf(manual.context) || out !== tokensOf(manual.output);
-  /** 原来手写过、现在两项都清空了：保存就是删掉，回到价目表 */
-  const removing = valid && ctx === null && out === null && (manual.context !== "" || manual.output !== "");
+  const spec = specOf({ context, output, reasoning, imageInput });
+  /** 打开时的四项。打开时的值是 core 给的，一定写得对 */
+  const before = specOf(manual)!;
+  const changed = spec !== undefined && !sameSpec(spec, before);
+  /** 原来手写过、现在四项都不写了：保存就是删掉，回到价目表 */
+  const removing = spec !== undefined && isEmptySpec(spec) && !isEmptySpec(before);
 
   async function save() {
-    if (!valid) return;
+    if (!spec) return;
     setSaving(true);
     setError(null);
     try {
       await api.setModelSpec({
         provider,
         model: row.id,
-        context_window: ctx,
-        max_output_tokens: out,
+        ...spec,
         base_version: base,
       });
-      // 用到上下文窗口的几处：这家的模型清单（弹窗、路由里指定的模型）、别名、模型目录
+      // 用到规格的几处：这家的模型清单（弹窗、路由里指定的模型）、别名、模型目录
       invalidate(`upstream-models:${provider}`);
       invalidate("aliases");
       invalidate("known-models");
@@ -151,7 +154,7 @@ function Body({
           value={context}
           onChange={setContext}
           placeholder={placeholderOf(row.context_window, row.context_window_source, t)}
-          bad={ctx === undefined}
+          bad={tokensOf(context) === undefined}
         />
         <TokensField
           id="spec-output"
@@ -159,7 +162,21 @@ function Body({
           value={output}
           onChange={setOutput}
           placeholder={placeholderOf(row.max_output_tokens, row.max_output_tokens_source, t)}
-          bad={out === undefined}
+          bad={tokensOf(output) === undefined}
+        />
+        <FlagField
+          label={t.reasoning}
+          value={reasoning}
+          onChange={setReasoning}
+          table={row.reasoning}
+          source={row.reasoning_source}
+        />
+        <FlagField
+          label={t.imageInput}
+          value={imageInput}
+          onChange={setImageInput}
+          table={row.image_input}
+          source={row.image_input_source}
         />
       </div>
 
@@ -170,7 +187,7 @@ function Body({
         <Button type="button" variant="outline" onClick={onClose}>
           {c.cancel}
         </Button>
-        <Button type="submit" pending={saving} disabled={!valid || !changed}>
+        <Button type="submit" pending={saving} disabled={!changed}>
           {c.save}
         </Button>
       </DialogFooter>
@@ -190,6 +207,47 @@ function placeholderOf(
   if (source === "price_table" && value != null) return t.fromTable(value.toLocaleString());
   if (source === "manual") return t.useTable;
   return t.notInTable;
+}
+
+/**
+ * 推理、图片输入：价目表 / 支持 / 不支持。下面一行写价目表怎么说，和数的占位是同一个说法；
+ * 此刻是手写的，价目表怎么说这里不知道，就不写。
+ */
+function FlagField({
+  label,
+  value,
+  onChange,
+  table,
+  source,
+}: {
+  label: string;
+  value: SpecFlag;
+  onChange: (v: SpecFlag) => void;
+  /** 行里的值：来源是价目表时就是价目表说的 */
+  table: boolean | null | undefined;
+  source: SpecSource | null | undefined;
+}) {
+  const t = useText(modelSpecDialogText);
+  const desc =
+    source === "price_table" && table != null
+      ? t.fromTable(table ? t.yes : t.no)
+      : source === "manual"
+        ? undefined
+        : t.notInTable;
+  return (
+    <FormItem label={label} desc={desc}>
+      <Segmented<SpecFlag>
+        label={label}
+        value={value}
+        options={[
+          { id: "table", label: t.table },
+          { id: "yes", label: t.yes },
+          { id: "no", label: t.no },
+        ]}
+        onChange={onChange}
+      />
+    </FormItem>
+  );
 }
 
 function TokensField({

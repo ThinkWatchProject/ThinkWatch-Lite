@@ -2331,6 +2331,22 @@ max_output_tokens?: number | null,
  */
 max_output_tokens_source?: SpecSource | null, 
 /**
+ * 会不会推理：这一家手写的，没写时来自价目表
+ */
+reasoning?: boolean | null, 
+/**
+ * `reasoning` 从哪儿来。不知道会不会推理时没有
+ */
+reasoning_source?: SpecSource | null, 
+/**
+ * 收不收图片输入：这一家手写的，没写时来自价目表
+ */
+image_input?: boolean | null, 
+/**
+ * `image_input` 从哪儿来。不知道收不收图片时没有
+ */
+image_input_source?: SpecSource | null, 
+/**
  * 按这个上游选的价目表查到的价格。空 = 无法计价
  */
 price?: PriceFields | null, price_source?: PriceSourceView | null, 
@@ -2351,7 +2367,7 @@ export type ModelSource = "discovered" | "manual" | "none";
 
 /**
  * 设一家上游的一个模型的规格（`PUT /provider-model-spec`）：价目表不认识这个模型、
- * 或者写错了时手写。**两项都空就是删掉这一项**，回到价目表。
+ * 或者写错了时手写。**四项都空就是删掉这一项**，回到价目表。
  */
 export type ModelSpecSave = { provider: string, 
 /**
@@ -2366,6 +2382,14 @@ context_window?: number | null,
  * 输出上限（token）。空 = 用价目表的
  */
 max_output_tokens?: number | null, 
+/**
+ * 会不会推理。空 = 用价目表的
+ */
+reasoning?: boolean | null, 
+/**
+ * 收不收图片输入。空 = 用价目表的
+ */
+image_input?: boolean | null, 
 /**
  * 你基于哪一版。**对不上就是 409**
  */
