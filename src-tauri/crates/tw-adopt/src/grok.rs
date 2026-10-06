@@ -14,6 +14,7 @@
 
 use crate::clients::{Edit, Gateway, ModelCard};
 use crate::json::Val;
+use crate::plan::lookup;
 
 /// 我们写的模型表的名字：`[model."thinkwatch/<模型>"]`。
 ///
@@ -61,10 +62,12 @@ fn unique(gw: &Gateway) -> Vec<&ModelCard> {
 }
 
 /// 一张模型表里的字段。**没有网关密钥也要写一个不为空的 `api_key`**：空着的话 Grok 退回
-/// 用户的会话令牌，见文件开头；这个值什么都打不开，网关会以「没有这把密钥」拒绝
+/// 用户的会话令牌，见文件开头；这个值什么都打不开，网关会以「没有这把密钥」拒绝。
+///
+/// 规格只写网关知道的那几项（[`spec`]）
 fn table(gw: &Gateway, m: &ModelCard) -> Vec<(String, Val)> {
     let model = m.id.as_str();
-    vec![
+    let mut t = vec![
         ("model".into(), Val::s(model)),
         ("name".into(), Val::s(format!("{model} (ThinkWatch)"))),
         (
@@ -76,7 +79,32 @@ fn table(gw: &Gateway, m: &ModelCard) -> Vec<(String, Val)> {
             "api_key".into(),
             Val::s(gw.key.clone().unwrap_or_else(|| NO_KEY.to_string())),
         ),
-    ]
+    ];
+    t.extend(spec(m));
+    t
+}
+
+/// 一个模型的规格在表里的写法。网关不知道的整项不写：上下文窗口 Grok 先找发同一个模型名的
+/// 内置表借，借不到取 200000；推理档位同样从内置表借。
+///
+/// - 上下文窗口写 `context_window`：自动压缩按它算阈值；
+/// - 会不会推理写 `supports_reasoning_effort`。会推理的，界面上才给选推理档位，用户
+///   `[models] default_reasoning_effort` 设的默认档才用得上；**不选就什么都不带**。不会推理的
+///   写 `false`：不给选，Messages 协议的表也就不会被当成会推理。档位清单 `reasoning_efforts`
+///   不写 —— 清单一写，Grok 就拿它的第一档当默认、每次请求都带上，档位也得我们编；
+/// - **输出上限不写。**`max_completion_tokens` 每次请求都原样带上（Chat Completions 的
+///   `max_tokens`、Responses 的 `max_output_tokens`），不是能力上限；写上模型的上限，每次
+///   请求就都要这么多；
+/// - 收不收图 Grok 没有地方写
+fn spec(m: &ModelCard) -> Vec<(String, Val)> {
+    let mut v = Vec::new();
+    if let Some(n) = m.context_window {
+        v.push(("context_window".into(), Val::Num(n.to_string())));
+    }
+    if let Some(r) = m.reasoning {
+        v.push(("supports_reasoning_effort".into(), Val::Bool(r)));
+    }
+    v
 }
 
 /// 手动配置那一页列的字段：每张表拆成一项一项，照着就能写。接管写整张表，见 [`edits`]
@@ -211,12 +239,18 @@ pub fn endpoint(text: &str) -> Option<String> {
     }
 }
 
-/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]
+/// 一个模型写进配置再读回来的样子，见 [`crate::clients::Client::as_written`]：输出上限不写、
+/// 收不收图没有地方写（见 [`spec`]），只剩上下文窗口和会不会推理
 pub fn as_written(m: &ModelCard) -> ModelCard {
-    ModelCard::named(&m.id)
+    ModelCard {
+        id: m.id.clone(),
+        context_window: m.context_window,
+        reasoning: m.reasoning,
+        ..Default::default()
+    }
 }
 
-/// 配置里此刻写着的模型（我们那几张表各自发出去的模型名）。
+/// 配置里此刻写着的模型（我们那几张表各自发出去的模型名），连同表里写着的规格。
 ///
 /// **一张都没有也是一份清单（空的）**：网关一个模型都没列出来时接管什么表都不写，等网关有了
 /// 模型，客户端页拿这份空清单去比，才提示得出「要更新」。没接管过的不拿来比
@@ -224,8 +258,18 @@ pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
     Some(
         ours(text)
             .iter()
-            .map(|(k, t)| field(t, "model").unwrap_or_else(|| k[KEY_PREFIX.len()..].to_string()))
-            .map(ModelCard::named)
+            .map(|(k, t)| ModelCard {
+                id: field(t, "model").unwrap_or_else(|| k[KEY_PREFIX.len()..].to_string()),
+                context_window: match lookup(t, &["context_window"]) {
+                    Some(Val::Num(n)) => n.parse().ok(),
+                    _ => None,
+                },
+                reasoning: match lookup(t, &["supports_reasoning_effort"]) {
+                    Some(Val::Bool(b)) => Some(b),
+                    _ => None,
+                },
+                ..Default::default()
+            })
             .collect(),
     )
 }
@@ -398,6 +442,128 @@ mod tests {
         );
         assert_eq!(stale_table(&p(&["model", "mine", "api_key"])), None);
         assert_eq!(stale_table(&p(&["models", "default"])), None);
+    }
+
+    fn card(
+        id: &str,
+        cw: Option<u64>,
+        out: Option<u64>,
+        reasoning: Option<bool>,
+        image: Option<bool>,
+    ) -> ModelCard {
+        ModelCard {
+            id: id.into(),
+            context_window: cw,
+            max_output_tokens: out,
+            reasoning,
+            image_input: image,
+        }
+    }
+
+    /// 把接管要写的几项写进一份 config.toml
+    fn written(g: &Gateway) -> String {
+        edits(g, "").iter().fold(String::new(), |text, e| {
+            let path: Vec<&str> = e.path.iter().map(String::as_str).collect();
+            crate::toml::set(&text, &path, &e.value).unwrap()
+        })
+    }
+
+    fn grok() -> crate::clients::Client {
+        crate::clients::adoptable()
+            .into_iter()
+            .find(|c| c.id == "grok-build")
+            .unwrap()
+    }
+
+    #[test]
+    fn known_specs_go_into_the_table_and_read_back() {
+        let mut g = gw(&[]);
+        g.models = vec![
+            card(
+                "gpt-5",
+                Some(400_000),
+                Some(128_000),
+                Some(true),
+                Some(true),
+            ),
+            card(
+                "deepseek-chat",
+                Some(128_000),
+                None,
+                Some(false),
+                Some(false),
+            ),
+            ModelCard::named("mystery"),
+        ];
+        let text = written(&g);
+        let t = |m: &str, f: &str| crate::toml::get(&text, &["model", &key_of(m), f]).unwrap();
+        assert_eq!(
+            t("gpt-5", "context_window"),
+            Some(Val::Num("400000".into()))
+        );
+        assert_eq!(
+            t("gpt-5", "supports_reasoning_effort"),
+            Some(Val::Bool(true))
+        );
+        assert_eq!(
+            t("deepseek-chat", "supports_reasoning_effort"),
+            Some(Val::Bool(false))
+        );
+        // 网关不知道的：不写，Grok 用自己的默认值或者内置表的
+        assert_eq!(t("mystery", "context_window"), None);
+        assert_eq!(t("mystery", "supports_reasoning_effort"), None);
+        // 档位清单和默认档不写：一写每次请求都带上
+        assert!(!text.contains("reasoning_efforts"), "{text}");
+        assert!(
+            !text.lines().any(|l| l.starts_with("reasoning_effort ")),
+            "{text}"
+        );
+        // 手动配置那一页也一项一项列出来
+        let f = fields(&g);
+        assert_eq!(
+            get(&f, "model.thinkwatch/gpt-5.context_window"),
+            Some(Val::Num("400000".into()))
+        );
+        assert_eq!(get(&f, "model.thinkwatch/mystery.context_window"), None);
+        let back = models_in(&text).unwrap();
+        let want: Vec<ModelCard> = g.models.iter().map(as_written).collect();
+        assert_eq!(back, want);
+        assert!(!grok().models_stale(&back, &g.models));
+    }
+
+    /// 输出上限每次请求都原样带上，收不收图 Grok 没有地方写：两样都不写，变了也不提示
+    #[test]
+    fn max_output_and_image_input_are_never_written() {
+        let mut g = gw(&[]);
+        g.models = vec![card("a", None, Some(384_000), None, Some(true))];
+        let text = written(&g);
+        assert!(!text.contains("max_completion_tokens"), "{text}");
+        assert!(!text.contains("384000"), "{text}");
+        assert!(!text.contains("image"), "{text}");
+        assert!(!text.contains("modalit"), "{text}");
+        let back = models_in(&text).unwrap();
+        let mut now = g.models.clone();
+        now[0].max_output_tokens = Some(8_192);
+        now[0].image_input = Some(false);
+        assert!(!grok().models_stale(&back, &now));
+    }
+
+    #[test]
+    fn a_changed_window_or_reasoning_is_stale() {
+        let mut g = gw(&[]);
+        g.models = vec![card("a", Some(200_000), None, Some(true), None)];
+        let back = models_in(&written(&g)).unwrap();
+        let c = grok();
+        assert!(!c.models_stale(&back, &g.models));
+        let mut now = g.models.clone();
+        now[0].context_window = Some(256_000);
+        assert!(c.models_stale(&back, &now));
+        let mut now = g.models.clone();
+        now[0].reasoning = Some(false);
+        assert!(c.models_stale(&back, &now));
+        let mut now = g.models.clone();
+        now[0].reasoning = None;
+        assert!(c.models_stale(&back, &now));
     }
 
     #[test]
