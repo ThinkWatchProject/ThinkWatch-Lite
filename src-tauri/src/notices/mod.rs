@@ -144,6 +144,8 @@ pub struct Signal {
     pub gather: bool,
     /// 这一条算几次。攒过一阵合成的那一条是攒下的次数，别的都是 1
     pub times: u32,
+    /// 级别只是 info，也弹系统通知（见 [`Signal::tell`]）
+    pub tell: bool,
 }
 
 impl Signal {
@@ -160,6 +162,7 @@ impl Signal {
             event: false,
             gather: false,
             times: 1,
+            tell: false,
         }
     }
 
@@ -176,6 +179,7 @@ impl Signal {
             event: false,
             gather: false,
             times: 1,
+            tell: false,
         }
     }
 
@@ -231,6 +235,13 @@ impl Signal {
     /// 都落一次盘、推一次列表、在通知中心里原地贴一次
     pub fn gathered(mut self) -> Self {
         self.gather = true;
+        self
+    }
+
+    /// 不是一个问题，但该让用户知道（查到了新版本）：**列表里照 info 显示**（灰点，铃铛
+    /// 不标红），提醒设成系统通知时照样弹一条。去重、限流和别的一样
+    pub fn tell(mut self) -> Self {
+        self.tell = true;
         self
     }
 
@@ -670,7 +681,7 @@ impl Notices {
             };
             let quiet = hush || said;
             // 用户选了「仅在应用内」的，级别再高也不打断
-            let interrupts = mode == Mode::System && signal.level.interrupts();
+            let interrupts = mode == Mode::System && (signal.level.interrupts() || signal.tell);
             let wants = interrupts && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
             let deliver = wants && !signal.hold && take_token(&mut g, &signal.key, signal.level);
@@ -1001,12 +1012,15 @@ static PENDING_VIEW: Mutex<Option<String>> = Mutex::new(None);
 /// 点了系统通知（或者菜单里的那一条提醒）：把窗口带回来，落到能处理这件事的那一页
 pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     use tauri::Manager;
+    let notices = app.try_state::<Arc<Notices>>();
     // 新版本那一条不落在哪一页：它要的是更新窗口
-    if key == crate::updater::UPDATE_NOTICE {
+    if crate::updater::is_update_notice(key) {
+        if let Some(n) = &notices {
+            n.mark_read(key);
+        }
         crate::updater::show_pending_update(app);
         return;
     }
-    let notices = app.try_state::<Arc<Notices>>();
     let view = notices
         .as_ref()
         .map(|n| n.view_of(key))

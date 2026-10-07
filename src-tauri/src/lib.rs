@@ -372,6 +372,7 @@ pub fn run() {
                 saved.notices,
             );
             app.manage(notices.clone());
+            updater::forget_update_notices(&notices);
             // 这次连哪个。**按住 ⌥ 启动，或者上两次启动都没走到就绪**，先让人选
             let dir = data_dir();
             let attempts = connection::launch::begin(&dir);

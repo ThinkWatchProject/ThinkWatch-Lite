@@ -677,7 +677,7 @@ mod native {
         let Some(token) = token else { return };
         // Queued behind the main-thread work `open_from_notification` scheduled,
         // so the window exists by then (mapped, or mapping when revealed)
-        let label = if key == crate::updater::UPDATE_NOTICE {
+        let label = if crate::updater::is_update_notice(key) {
             crate::updater::UPDATE_WINDOW
         } else {
             "main"
