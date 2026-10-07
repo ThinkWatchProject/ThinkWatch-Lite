@@ -129,13 +129,19 @@ pub(crate) async fn fetch_text(url: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 这一份现在有没有该装的新版本。
+/// 这一份现在有没有该装的新版本。查完对一下提醒列表（[`settle_notices`]）。
 ///
 /// **Homebrew 那一档问的是 tap，不是发布页。**发版那一刻 latest.json 就有
 /// 了新版本，而 cask 要等 tap 的定时任务跟上；在那之前提示用户执行
 /// `brew upgrade`，他照做只会看到「已经是最新」。所以那一档以 cask 里的
 /// 版本为准。
 pub(crate) async fn find(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
+    let found = ask(app).await?;
+    settle_notices(app, found.as_ref().map(|f| f.version.as_str()));
+    Ok(found)
+}
+
+async fn ask(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     if update::kind() != update::Install::Homebrew {
         return look(app).await;
     }
@@ -204,8 +210,45 @@ pub fn update_fit(window: tauri::Window, height: f64) -> tauri::Result<()> {
     crate::window::fit(&window, UPDATE_WIDTH, height)
 }
 
-/// 更新那条系统通知的键。点开它拉起的是更新窗口，不是主界面的某一页
+/// 新版本那条提醒的种类。键是 `update:<版本号>`，一个版本一条：查到更新的一版是新的
+/// 一件事，要再说一次。点开它拉起的是更新窗口，不是主界面的某一页
 pub(crate) const UPDATE_NOTICE: &str = "update";
+
+fn update_key(version: &str) -> String {
+    format!("{UPDATE_NOTICE}:{version}")
+}
+
+/// 这条提醒是不是新版本那一条
+pub(crate) fn is_update_notice(key: &str) -> bool {
+    key.split(':').next() == Some(UPDATE_NOTICE)
+}
+
+/// 收起新版本的提醒，`keep` 那一版的除外。
+///
+/// **提醒跟着手上查到的那一版走**（[`Updates::offer`]，只在内存里）：点开它要拉得起
+/// 更新窗口，窗口里装的就是那一版。查到了更新的一版，旧的那条收起；查过没有新版本
+/// （装好了、发布撤了），全部收起
+fn settle_notices(app: &tauri::AppHandle, keep: Option<&str>) {
+    if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
+        forget_updates(&n, keep);
+    }
+}
+
+fn forget_updates(n: &Arc<notices::Notices>, keep: Option<&str>) {
+    let keep = keep.map(update_key);
+    let at = notices::now_ms();
+    for k in n.list().into_iter().map(|x| x.key) {
+        if is_update_notice(&k) && Some(&k) != keep.as_ref() {
+            n.ingest(notices::Signal::cleared(k), at);
+        }
+    }
+}
+
+/// 启动时收起上一次留下的新版本提醒：查到的那一版只在内存里，重启就没了，留着的那条
+/// 点开是一扇空的更新窗口。还没装的话，下一次检查（[`UPDATE_FIRST_LOOK`]）查到了再说
+pub(crate) fn forget_update_notices(n: &Arc<notices::Notices>) {
+    forget_updates(n, None);
+}
 
 /// 把查到的版本记下来。菜单里的「检查更新」跟着换成「安装新版本」
 pub(crate) fn record(app: &tauri::AppHandle, found: Found) {
@@ -224,23 +267,42 @@ pub(crate) fn present(app: &tauri::AppHandle, found: Found) {
     }
 }
 
-/// 自动检查查到了：**只发一条系统通知**，点开才拉起更新窗口。
+/// 自动检查查到了：**记一条提醒**，点开才拉起更新窗口。
 ///
-/// 这一刻用户在做别的事；一扇自己冒出来、抢走焦点的窗口是打断，通知不是。
-/// 选了「只在应用内」或关掉提醒的，就只剩菜单里那一项「安装新版本」和设置页。
+/// 这一刻用户在做别的事；一扇自己冒出来、抢走焦点的窗口是打断，通知不是。提醒设成
+/// 系统通知的，照样弹一条；只在应用内的，铃铛里有这一条。关掉提醒的，就只剩菜单里那一项
+/// 「安装新版本」和设置页。
+///
+/// **同一版只说一次**：每天查到它一次，列表里已经有这一条就不再动它 —— 不涨次数、
+/// 不挪到最前，看过的还是看过
 pub(crate) fn notify_update(app: &tauri::AppHandle, found: Found) {
     let version = found.version.clone();
     record(app, found);
     if let Some(n) = app.try_state::<Arc<notices::Notices>>() {
-        n.announce(
-            UPDATE_NOTICE,
-            &tr!(
-                format!("ThinkWatch Lite {version} 可用"),
-                format!("ThinkWatch Lite {version} Is Available")
-            ),
-            tr!("点按此通知进行更新。", "Click to update."),
-        );
+        tell_update(&n, &version);
     }
+}
+
+fn tell_update(n: &Arc<notices::Notices>, version: &str) {
+    let key = update_key(version);
+    if n.list().iter().any(|x| x.key == key) {
+        return;
+    }
+    n.ingest(update_signal(version), notices::now_ms());
+}
+
+fn update_signal(version: &str) -> notices::Signal {
+    notices::Signal::raised(
+        update_key(version),
+        notices::Level::Info,
+        tr!(
+            format!("ThinkWatch Lite {version} 可用"),
+            format!("ThinkWatch Lite {version} Is Available")
+        ),
+    )
+    .body(tr!("点按此提醒进行更新。", "Click to update."))
+    .tell()
+    .now()
 }
 
 /// 查到了、还没装的那一版（菜单里「安装新版本」要写版本号）
@@ -865,5 +927,93 @@ mod tests {
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(relaunched(dir.path(), "2026.9.23", EXITED + 9_000), None);
         assert!(!path.exists());
+    }
+
+    /// 记下弹出去的标题
+    #[derive(Default, Clone)]
+    struct Shown(Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl notices::Sink for Shown {
+        fn show(&self, n: &notices::Notice) {
+            self.0.lock().unwrap().push(n.title.clone());
+        }
+    }
+
+    fn bus(mode: Mode) -> (Arc<notices::Notices>, Shown) {
+        let shown = Shown::default();
+        (
+            notices::Notices::new(vec![Box::new(shown.clone())], None, mode),
+            shown,
+        )
+    }
+
+    /// 查到新版本：进列表（灰点，不标红），设成系统通知的也弹一条
+    #[tokio::test]
+    async fn a_new_version_is_listed_and_shown() {
+        with_lang(Lang::Zh, || {
+            let (n, shown) = bus(Mode::System);
+            tell_update(&n, "2026.10.8");
+            let list = n.list();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].key, "update:2026.10.8");
+            assert_eq!(list[0].level, notices::Level::Info);
+            assert!(list[0].notified);
+            assert_eq!(*shown.0.lock().unwrap(), ["ThinkWatch Lite 2026.10.8 可用"]);
+        });
+    }
+
+    /// 只在应用内：进列表，不弹
+    #[tokio::test]
+    async fn in_app_only_lists_the_new_version() {
+        let (n, shown) = bus(Mode::App);
+        tell_update(&n, "2026.10.8");
+        assert_eq!(n.list().len(), 1);
+        assert!(shown.0.lock().unwrap().is_empty());
+    }
+
+    /// 同一版第二天又查到：不再弹、不涨次数、看过的还是看过
+    #[tokio::test]
+    async fn the_same_version_is_said_once() {
+        let (n, shown) = bus(Mode::System);
+        tell_update(&n, "2026.10.8");
+        n.mark_read("update:2026.10.8");
+        tell_update(&n, "2026.10.8");
+        let list = n.list();
+        assert_eq!(list[0].count, 1);
+        assert!(list[0].read);
+        assert_eq!(shown.0.lock().unwrap().len(), 1);
+    }
+
+    /// 查到更新的一版：旧的那条收起，新的一版再说一次
+    #[tokio::test]
+    async fn a_newer_version_replaces_the_older_one() {
+        let (n, shown) = bus(Mode::System);
+        tell_update(&n, "2026.10.8");
+        forget_updates(&n, Some("2026.10.9"));
+        tell_update(&n, "2026.10.9");
+        let keys: Vec<String> = n.list().into_iter().map(|x| x.key).collect();
+        assert_eq!(keys, ["update:2026.10.9"]);
+        assert_eq!(shown.0.lock().unwrap().len(), 2);
+    }
+
+    /// 查过没有新版本、或者重启：新版本的提醒全部收起，别的不动
+    #[tokio::test]
+    async fn forgetting_updates_leaves_other_notices() {
+        let (n, _) = bus(Mode::App);
+        tell_update(&n, "2026.10.8");
+        n.ingest(
+            notices::Signal::raised("quota:glm:5h", notices::Level::Warning, "额度用完").now(),
+            notices::now_ms(),
+        );
+        forget_update_notices(&n);
+        let keys: Vec<String> = n.list().into_iter().map(|x| x.key).collect();
+        assert_eq!(keys, ["quota:glm:5h"]);
+    }
+
+    #[test]
+    fn update_notices_are_told_apart_by_kind() {
+        assert!(is_update_notice("update:2026.10.8"));
+        assert!(!is_update_notice("updates:x"));
+        assert!(!is_update_notice("quota:glm:5h"));
     }
 }

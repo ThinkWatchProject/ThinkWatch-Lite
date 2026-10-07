@@ -28,6 +28,16 @@ export interface Notice {
   read: boolean;
 }
 
+/** 新版本那一条（键是 `update:<版本号>`）。它不落在哪一页，点开拉起更新窗口 */
+function isUpdate(n: Notice): boolean {
+  return n.key.split(":")[0] === "update";
+}
+
+/** 点得开：落得到一页，或者是新版本那一条 */
+function opens(n: Notice): boolean {
+  return isUpdate(n) || !!n.view;
+}
+
 /**
  * 提醒。
  *
@@ -93,11 +103,12 @@ export function Notices({
     void invoke("clear_notices");
   }
 
-  /** 点开一条：落到能处理它的那一页。点开了就是看过了 */
+  /** 点开一条：落到能处理它的那一页，新版本那一条拉起更新窗口。点开了就是看过了 */
   function openNotice(n: Notice) {
-    if (!n.view) return;
+    if (!opens(n)) return;
     if (!n.read) markRead(n.key);
-    onNavigate(n.view);
+    if (isUpdate(n)) void invoke("update_show").catch(() => {});
+    else if (n.view) onNavigate(n.view);
     setOpen(false);
   }
 
@@ -207,7 +218,7 @@ export function Notices({
                   )}
                 />
                 <div
-                  className={cn("min-w-0 flex-1", n.view && "cursor-pointer")}
+                  className={cn("min-w-0 flex-1", opens(n) && "cursor-pointer")}
                   onClick={() => openNotice(n)}
                 >
                   <p className={cn("tw-body", n.read && "text-muted-foreground")}>
