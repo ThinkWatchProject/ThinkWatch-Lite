@@ -49,7 +49,7 @@ import { FormItem } from "@/upstreams/parts";
 import { api } from "./api";
 import { dryRunText } from "./DryRunDialog.i18n";
 import { ModelInput, onOpenFocus } from "./fields";
-import { DIALECTS, balanceShares, usersOf } from "./model";
+import { DIALECTS, usersOf } from "./model";
 import { KeyIcon, TargetIcon } from "./parts";
 import { routingText } from "./routing.i18n";
 import { modelViaOf, type ModelVia } from "./target";
@@ -378,7 +378,6 @@ function Result({
    */
   const short = r.outcome === "intercepted";
   const candidates = r.candidate_models;
-  const shares = balanceShares(r);
   const target = r.outcome === "route" ? (r.via_group ?? candidates[0]?.provider ?? null) : null;
 
   // 这一趟经过的路：密钥 → 路由 → 规则 → 去向。和路由图同一套标志
@@ -483,7 +482,7 @@ function Result({
                       <span className={cn("font-medium", open && "text-muted-foreground line-through")}>{c}</span>
                       {cv.sent_model && via && <SentModel model={cv.sent_model} via={via} />}
                       {cv.weight != null && (
-                        <BalanceFacts c={cv} by={r.balance_by ?? "weights"} share={open ? null : (shares[i] ?? null)} />
+                        <BalanceFacts c={cv} by={r.balance_by ?? "weights"} share={open ? null : (cv.share ?? null)} />
                       )}
                       {open && (
                         <span className="inline-flex items-center gap-1 tw-label text-warning">

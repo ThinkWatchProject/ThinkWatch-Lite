@@ -891,18 +891,22 @@ export function turns(id: string): TurnView[] {
 
 /**
  * 会话的对话（`GET /sessions/{id}/transcript`）。截图里不打开「对话」那一页，给一段读得通的：
- * 第一轮是用户的话，之后每一轮一句回答。失败、取消的那一轮没有回答，和 core 一样不算缺口
+ * 第一轮是用户的话，之后每一轮一句回答。失败、取消的那一轮没有回答，和 core 一样不算缺口。
+ * 都已落库，全部轮次都不会再变；`fromTurn` 照 core 的 `from_turn` 只给后面那些
  */
-export function transcript(id: string): Transcript {
+export function transcript(id: string, fromTurn = 0): Transcript {
+  const rows = HISTORY.filter((h) => h.session === id);
   return {
     session: id,
     system: null,
-    turns: HISTORY.filter((h) => h.session === id).map((h, i) => ({
+    total_turns: rows.length,
+    settled_turns: rows.length,
+    turns: rows.slice(fromTurn).map((h, j) => ({
       id: String(h.id),
       restart: false,
       system_changed: null,
       input:
-        i === 0
+        fromTurn + j === 0
           ? [{ role: "user", parts: [{ kind: "text", text: L("修复登录页的表单校验", "Fix the form validation on the sign-in page") }] }]
           : [],
       output:

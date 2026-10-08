@@ -370,6 +370,27 @@ function partSize(p: TranscriptPart): number {
 }
 
 /**
+ * 这一次从第几轮起要：手上那一份前 `settled_turns` 轮不会再变（core 说的），从那儿往后要。
+ * 手上没有、或者是别的会话的，就要整段（0）。
+ */
+export function askFrom(prev: Transcript | undefined, session: string): number {
+  if (!prev || prev.session !== session) return 0;
+  return Math.min(prev.settled_turns, prev.turns.length);
+}
+
+/**
+ * 把从第 `from` 轮起取回来的后半段接到手上那一份后面：前 `from` 轮照旧，后面换成新的。
+ *
+ * **接不上就是 null**，要整段重取：会话对不上，或者 core 那边总轮数已经不到 `from`
+ * （前面的请求过了保留期限被删了）。
+ */
+export function extendTranscript(prev: Transcript | undefined, next: Transcript, from: number): Transcript | null {
+  if (from === 0) return next;
+  if (!prev || prev.session !== next.session || next.total_turns < from || prev.turns.length < from) return null;
+  return { ...next, turns: [...prev.turns.slice(0, from), ...next.turns] };
+}
+
+/**
  * 重新取回来的对话里，**没变的轮次换回原来那个对象**。
  *
  * 会话还在进行时，每落一轮就重取一次整段对话；回来的每一轮都是新对象，按引用比较的
