@@ -136,30 +136,24 @@ pub async fn key_usage(
     since_ms: i64,
     bucket_ms: i64,
 ) -> Out<wire::KeyUsage> {
-    let c = &state.control;
-    let totals = c
-        .call::<ep::CostBy>(
-            &[],
-            &tw_api::GroupQuery {
-                from_ms: Some(since_ms),
-                to_ms: None,
-                dim: tw_api::CostDim::Client,
-            },
-        )
-        .await
-        .map_err(text)?;
-    let buckets = c
-        .call::<ep::CostBucketsBy>(
-            &[],
-            &tw_api::BucketGroupQuery {
-                from_ms: Some(since_ms),
-                to_ms: None,
-                bucket_ms: Some(bucket_ms),
-                dim: tw_api::CostDim::Client,
-            },
-        )
-        .await
-        .map_err(text)?;
+    // 两样同时问，钥匙读一次（同 `dashboard`）
+    let c = state.control.pin().map_err(text)?;
+    let totals = tw_api::GroupQuery {
+        from_ms: Some(since_ms),
+        to_ms: None,
+        dim: tw_api::CostDim::Client,
+    };
+    let buckets = tw_api::BucketGroupQuery {
+        from_ms: Some(since_ms),
+        to_ms: None,
+        bucket_ms: Some(bucket_ms),
+        dim: tw_api::CostDim::Client,
+    };
+    let (totals, buckets) = tokio::join!(
+        c.call::<ep::CostBy>(&[], &totals),
+        c.call::<ep::CostBucketsBy>(&[], &buckets),
+    );
+    let (totals, buckets) = (totals.map_err(text)?, buckets.map_err(text)?);
     Ok(wire::KeyUsage {
         since_ms,
         bucket_ms,
