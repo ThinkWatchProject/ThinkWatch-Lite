@@ -16,7 +16,7 @@ import { useText } from "@/i18n";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { prettyJson } from "@/prettyJson";
-import { BodyText } from "@/RequestDrawer";
+import { BodyText } from "./drawer/Payload";
 import type {
   RequestRow,
   Transcript,

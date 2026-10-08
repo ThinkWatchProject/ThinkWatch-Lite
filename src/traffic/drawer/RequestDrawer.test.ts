@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { setLang } from "./i18n";
-import type { ReplayQuote } from "./types";
-import { notSavedTip, quoteFor } from "./RequestDrawer";
+import { setLang } from "@/i18n";
+import type { ReplayQuote } from "@/types";
+import { notSavedTip } from "./Payload";
+import { quoteFor } from "./Replay";
 
 /** 给某一家报的价 */
 const quote = (provider: string): ReplayQuote => ({

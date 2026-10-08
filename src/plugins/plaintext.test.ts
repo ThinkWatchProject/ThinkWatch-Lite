@@ -13,7 +13,9 @@ const FILES = [
   ...readdirSync("src/plugins")
     .filter((f) => /\.tsx?$/.test(f) && !f.endsWith(".test.ts"))
     .map((f) => join("src/plugins", f)),
-  "src/RequestDrawer.tsx",
+  ...readdirSync("src/traffic/drawer")
+    .filter((f) => f.endsWith(".tsx"))
+    .map((f) => join("src/traffic/drawer", f)),
   "src/traffic/RequestTable.tsx",
 ];
 
