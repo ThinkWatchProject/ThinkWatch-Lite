@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subscribe } from "@/lib/tauriEvent";
 import { bucketStart } from "@/format";
+import { isRunning, parseCoreState } from "@/coreState";
 import { useResource, type Resource } from "@/lib/resource";
 import type { CoreEvent, CostBucketGroup, ProviderView } from "@/types";
 import { useNow } from "@/useNow";
@@ -252,7 +253,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
     const unState = subscribe<string>("core-state", (e) => {
       live.current.clear();
       bump();
-      if (e.payload.startsWith("running:")) seed();
+      if (isRunning(parseCoreState(e.payload))) seed();
     });
     seed();
     return () => {

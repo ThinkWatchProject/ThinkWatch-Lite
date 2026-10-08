@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { subscribe } from "@/lib/tauriEvent";
 import { call } from "@/control";
+import { isRunning, parseCoreState } from "@/coreState";
 import type { CoreEvent } from "@/types";
 import { applyFlightEvent, type Flight } from "./flights";
 
@@ -79,7 +80,7 @@ export function useFlights(): ReadonlyMap<number, Flight> {
     }
     void resync();
     const unState = subscribe<string>("core-state", (e) => {
-      if (e.payload.startsWith("running")) {
+      if (isRunning(parseCoreState(e.payload))) {
         void resync();
         return;
       }
