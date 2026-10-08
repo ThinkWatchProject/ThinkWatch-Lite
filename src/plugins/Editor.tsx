@@ -37,7 +37,8 @@ import { idProblem, manifestUnknown, MAX_SOURCE, saveAsks, shaPrefix, shapeChang
 import { CodeLoading, CodeView, codeErrorOf, PermissionChips, PluginText, RequestKinds } from "./parts";
 import { pluginPartsText } from "./parts.i18n";
 import { useScopeSuggestions } from "./suggestions";
-import { useEditing, valuesOf, type Form } from "./useEditing";
+import { valuesOf, type Form } from "./editing";
+import { useEditing } from "./useEditing";
 import { installPlugin, savePlugin, type NativeWrite } from "./write";
 
 export type EditorTab = "settings" | "code";
