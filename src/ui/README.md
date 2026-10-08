@@ -428,7 +428,7 @@ setting a user would search for and point its `id` at the section that now holds
   list (read when the palette opens).
 - **Key caps come from `palette/keys.tsx`** (`Keys`, `COMBOS`, `pageCombo`). The palette rows,
   the shortcut sheet and the sidebar tooltips all render from it; the handlers are in
-  `App.tsx` (global) and the pages (Traffic's row keys). Change a key in both places.
+  `shell/Workspace.tsx` (global) and the pages (Traffic's row keys). Change a key in both places.
 - Global shortcuts do nothing while a modal dialog is open (`modalOpen()`), so ⌘2 never
   throws away a half-edited form. The request drawer does not count as modal, and neither
   does a dialog marked `data-passive` (the palette and the shortcut sheet: nothing in them
@@ -466,4 +466,5 @@ Don't:
 - Don't animate with JS timers or `transition-all`; don't animate on every data refresh.
 
 Reference implementation: `src/connection/Unlinked.tsx` (Page, StatusLabel, Button
-pending with `usePending`) and the shell in `src/App.tsx` (Banner, nav, motion).
+pending with `usePending`) and the shell in `src/shell/` (`Banners.tsx`; nav in `Workspace.tsx`;
+the page switch and its motion in `Pages.tsx`).

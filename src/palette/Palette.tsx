@@ -11,7 +11,8 @@ import { notify } from "@/ui/notify";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/ui/command";
-import type { Overview, RequestRow } from "@/types";
+import type { Overview } from "@/types";
+import { useRequestRows } from "@/useRequests";
 import type { Found, UpdateView } from "@/updateFlow";
 import { arrange } from "./arrange";
 import { buildItems, requestItems, type GroupId, type Item, type Verb } from "./items";
@@ -34,8 +35,6 @@ export interface PaletteProps {
   /** 连着远程 core */
   remote: boolean;
   ov: Overview | null;
-  /** 流量页已经取回来的请求（新的在前）。按编号、模型搜 */
-  rows: readonly RequestRow[];
   railOpen: boolean;
   /** 只有外壳做得了的几件事 */
   shell: {
@@ -130,7 +129,6 @@ function PaletteBody({
   readOnly,
   remote,
   ov,
-  rows,
   railOpen,
   shell,
   onShortcutsChange,
@@ -146,6 +144,11 @@ function PaletteBody({
   /** 选中的那一项，和它是在哪一次查询（哪一级）里选的。见下面 `selected` */
   const [picked, setPicked] = useState<{ value: string; asked: string }>({ value: "", asked: "" });
   const [usage, setUsage] = useState<Usage>(loadUsage);
+  /**
+   * 流量页已经取回来的请求（新的在前），按编号、模型搜。**只在面板开着时订阅**：这一层只在
+   * 开着的时候挂着，请求列表每一帧的变动不惊动关着的面板
+   */
+  const rows = useRequestRows();
 
   // 客户端：这台机器上的应用。和客户端页、密钥页同一份缓存（`useClients` 的键和取数）：
   // 看过那两页就立刻有，面板打开时再在后台读一次。没连上 core 不读；读不到就少一组
