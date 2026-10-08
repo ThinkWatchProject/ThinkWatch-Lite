@@ -98,49 +98,110 @@ async fn gateway(state: &AppState) -> Out<ops::Gateway> {
 /// **问的是网关，不是 core 的控制面** —— 同一把密钥在网关上被允许用哪些模型，只有
 /// 网关按它的 `allow` 答得准。opencode、Pi、oh-my-pi、Grok Build、Qwen Code 要把这份清单写进
 /// 配置（它们不自己去问），Hermes Agent 要从里面挑一个默认模型。
-async fn models_of(base: &str, key: &str) -> Result<Vec<ModelCard>, Msg> {
-    fetch_models(base, key, false).await
+///
+/// `anthropic` = 按 Anthropic 的方式问（密钥放在 `x-api-key`、带 `anthropic-version`）：
+/// Claude Desktop 就是这么问的，网关按这个答它说得通的那些
+async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<ModelCard>, Msg> {
+    Lister::new(base)?.ask(key, anthropic).await
 }
 
-/// [`models_of`]。`anthropic` = 按 Anthropic 的方式问（密钥放在 `x-api-key`、带
-/// `anthropic-version`）：Claude Desktop 就是这么问的，网关按这个答它说得通的那些
-async fn fetch_models(base: &str, key: &str, anthropic: bool) -> Result<Vec<ModelCard>, Msg> {
-    let url = format!("{}/v1/models", base.trim_end_matches('/'));
-    let failed = |detail: String| {
-        msg!(
-            "control.models_unreadable", url = url.clone(), detail = detail =>
-            "The model list could not be read from {url}: {detail}"
-        )
-    };
-    // 和 updater::fetch_text 同一套 TLS：连远程 core 时网关可能在 https 后面
-    if rustls::crypto::CryptoProvider::get_default().is_none() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+/// 问一个网关的模型清单：地址，和问它用的 HTTP 客户端。
+///
+/// **几问共用一个**：建一个客户端要装 TLS、读一遍系统代理，客户端页每刷新一次要问好几把
+/// 密钥（[`listed_models`]）。克隆它只是多一个引用，连接池也是同一个
+#[derive(Clone)]
+struct Lister {
+    client: reqwest::Client,
+    url: String,
+}
+
+impl Lister {
+    fn new(base: &str) -> Result<Lister, Msg> {
+        let url = format!("{}/v1/models", base.trim_end_matches('/'));
+        // 和 updater::fetch_text 同一套 TLS：连远程 core 时网关可能在 https 后面
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
+        let mut builder = reqwest::Client::builder()
+            .user_agent("ThinkWatch-Lite")
+            .timeout(std::time::Duration::from_secs(5));
+        // 本机的网关不经过系统代理：代理那头够不到这台机器的回环地址
+        if ops::is_loopback(base) {
+            builder = builder.no_proxy();
+        }
+        match builder.build() {
+            Ok(client) => Ok(Lister { client, url }),
+            Err(e) => Err(models_unreadable(&url, e)),
+        }
     }
-    let mut builder = reqwest::Client::builder()
-        .user_agent("ThinkWatch-Lite")
-        .timeout(std::time::Duration::from_secs(5));
-    // 本机的网关不经过系统代理：代理那头够不到这台机器的回环地址
-    if ops::is_loopback(base) {
-        builder = builder.no_proxy();
+
+    /// 拿这把密钥问一次。`anthropic` 见 [`fetch_models`]
+    async fn ask(&self, key: &str, anthropic: bool) -> Result<Vec<ModelCard>, Msg> {
+        let failed = |e: &dyn std::fmt::Display| models_unreadable(&self.url, e);
+        let req = self.client.get(&self.url);
+        let req = if anthropic {
+            req.header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01")
+        } else {
+            req.bearer_auth(key)
+        };
+        let text = req
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| failed(&e))?
+            .text()
+            .await
+            .map_err(|e| failed(&e))?;
+        let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| failed(&e))?;
+        Ok(model_cards(&body))
     }
-    let client = builder.build().map_err(|e| failed(e.to_string()))?;
-    let req = client.get(&url);
-    let req = if anthropic {
-        req.header("x-api-key", key)
-            .header("anthropic-version", "2023-06-01")
-    } else {
-        req.bearer_auth(key)
+}
+
+fn models_unreadable(url: &str, e: impl std::fmt::Display) -> Msg {
+    msg!(
+        "control.models_unreadable", url = url.to_string(), detail = e.to_string() =>
+        "The model list could not be read from {url}: {detail}"
+    )
+}
+
+/// 客户端页上那几个要写模型的客户端（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）和要挑
+/// 一个默认模型的（Hermes Agent），网关此刻给它那把密钥答什么：拿来判断配置里的清单过没
+/// 过期，也给手动配置那一栏照着写（没装的那几个也有那一栏）。还没有它自己的密钥就按接管
+/// 时会用的那把问。**问不到的不在里面** —— 网关停着的时候客户端页照样要打得开。
+///
+/// **同一把密钥只问一次，几把同时问。**还没有自己密钥的都按默认的那把问，六个客户端多半
+/// 是同一问；以前是一个接一个、每问新建一个 HTTP 客户端，页面开着、有请求时每三秒一遍
+async fn listed_models(gw: &ops::Gateway) -> BTreeMap<String, Vec<ModelCard>> {
+    let mut by_key: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
+    for c in tw_adopt::clients::adoptable()
+        .iter()
+        .filter(|c| c.writes_models || tw_adopt::clients::picks_model(c))
+    {
+        if let Ok((_, key, _)) = ops::key_for(gw, c.id) {
+            by_key.entry(key).or_default().push(c.id);
+        }
+    }
+    let mut out = BTreeMap::new();
+    if by_key.is_empty() {
+        return out;
+    }
+    let Ok(lister) = Lister::new(&gw.base) else {
+        return out;
     };
-    let text = req
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| failed(e.to_string()))?
-        .text()
-        .await
-        .map_err(|e| failed(e.to_string()))?;
-    let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| failed(e.to_string()))?;
-    Ok(model_cards(&body))
+    let mut asks = tokio::task::JoinSet::new();
+    for (key, ids) in by_key {
+        let lister = lister.clone();
+        asks.spawn(async move { (ids, lister.ask(&key, false).await) });
+    }
+    while let Some(done) = asks.join_next().await {
+        if let Ok((ids, Ok(models))) = done {
+            for id in ids {
+                out.insert(id.to_string(), models.clone());
+            }
+        }
+    }
+    out
 }
 
 /// OpenAI 形状的 `/v1/models`：`data[]` 的 `id`，连同网关给的规格。
@@ -183,7 +244,7 @@ async fn models_for(
     key: &str,
 ) -> Result<Vec<ModelCard>, Msg> {
     if c.writes_models || tw_adopt::clients::picks_model(c) {
-        models_of(base, key).await
+        fetch_models(base, key, false).await
     } else if c.id == tw_adopt::desktop::ID {
         fetch_models(base, key, true).await
     } else {
@@ -298,22 +359,9 @@ pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + '
 #[tauri::command]
 pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::ClientsResponse> {
     let gw = gateway(&state).await?;
-    // 把模型写进配置的那几个（opencode、Pi、oh-my-pi、Grok Build、Qwen Code）和要挑一个默认
-    // 模型的（Hermes Agent），问一下网关此刻给它那把密钥答什么：拿来判断配置里的清单过没过期，
-    // 也给手动配置那一栏照着写。还没有它自己的密钥就按接管时会用的那把问。**问不到就不说**
-    // —— 网关停着的时候客户端页照样要打得开
-    let mut models = BTreeMap::new();
-    for c in tw_adopt::clients::adoptable()
-        .iter()
-        .filter(|c| c.writes_models || tw_adopt::clients::picks_model(c))
-    {
-        if let Ok((_, key, _)) = ops::key_for(&gw, c.id)
-            && let Ok(ms) = models_of(&gw.base, &key).await
-        {
-            models.insert(c.id.to_string(), ms);
-        }
-    }
-    Ok(ops::list(&home_dir(), &backups(), &gw, &models))
+    let models = listed_models(&gw).await;
+    // 检测要读每个客户端的配置文件（可能在一个离线的网络位置上）：放在阻塞线程上
+    blocking(move || ops::list(&home_dir(), &backups(), &gw, &models)).await
 }
 
 /// 客户端页的 WSL 部分：每个发行版一组。
@@ -357,28 +405,33 @@ pub async fn list_wsl(state: tauri::State<'_, AppState>) -> Out<wire::WslRespons
     } else {
         None
     };
-    let config = wsl::config_mode();
-    let out = opened
-        .into_iter()
-        .map(|(d, w)| {
-            let (network, adoptable) = wsl::network(remote, &d, config, || {
-                wsl2.clone()
-                    .unwrap_or(tw_adopt::wsl::Wsl2::Nat { version: None })
-            });
-            let (clients, error) = match w {
-                Ok(w) => (ops::list_wsl(&w, &backups(), &gw), None),
-                Err(e) => (Vec::new(), Some(e)),
-            };
-            wire::WslGroup {
-                distro: d.name,
-                network,
-                adoptable,
-                error,
-                clients,
-                gateway_base: gw.base.clone(),
-            }
-        })
-        .collect();
+    // 检测要读发行版里的配置文件，走的是 `\\wsl.localhost\…`，一个文件也要好一阵：
+    // 同样放在阻塞线程上
+    let out = blocking(move || {
+        let config = wsl::config_mode();
+        opened
+            .into_iter()
+            .map(|(d, w)| {
+                let (network, adoptable) = wsl::network(remote, &d, config, || {
+                    wsl2.clone()
+                        .unwrap_or(tw_adopt::wsl::Wsl2::Nat { version: None })
+                });
+                let (clients, error) = match w {
+                    Ok(w) => (ops::list_wsl(&w, &backups(), &gw), None),
+                    Err(e) => (Vec::new(), Some(e)),
+                };
+                wire::WslGroup {
+                    distro: d.name,
+                    network,
+                    adoptable,
+                    error,
+                    clients,
+                    gateway_base: gw.base.clone(),
+                }
+            })
+            .collect()
+    })
+    .await?;
     Ok(wire::WslResponse { distros: out })
 }
 
