@@ -412,6 +412,10 @@ impl Supervisor {
             }
         };
         self.intentional.store(true, Ordering::SeqCst);
+        // 下一个 core 要的用户环境现在就开始读，和这一个收尾叠在一起（见 `user_env::read_ahead`）
+        if self.user_env {
+            tokio::spawn(user_env::read_ahead());
+        }
         // 温和那一档就够：它自己退干净，守护循环看见就把它拉回来。
         if !self.ask_to_exit(pid).await {
             // **没请动就把记号收回来。**Windows 上控制面不应时再没有别的温和办法，core
@@ -744,6 +748,10 @@ impl Supervisor {
                     in_ms: d.as_millis() as u64,
                 });
                 if !d.is_zero() {
+                    // 下一个要的用户环境趁退避的这几秒读
+                    if self.user_env {
+                        tokio::spawn(user_env::read_ahead());
+                    }
                     // 退避最长睡八秒。这中间被要求停，就不必睡完、更不该再起一个
                     tokio::select! {
                         _ = tokio::time::sleep(d) => {}

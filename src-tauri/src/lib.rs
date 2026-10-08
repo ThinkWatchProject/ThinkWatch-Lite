@@ -137,6 +137,12 @@ pub fn run() {
     single::precheck();
     // 缺 WebView2 就开不了窗口（见 `webview2`）
     webview2::ensure();
+    // 本机 core 起之前要读的用户环境，现在就开始读（见 `user_env::read_ahead`）：要跑一次
+    // 登录 shell，和下面 Tauri 起来的那一段叠在一起。**放在上面几步之后**：改环境变量的
+    // 那几处都在前面，转交给另一个实例、做卸载清理的也用不着它。这次要连远程的不读
+    if !connection::store::load(&data_dir()).starts_remote() {
+        tauri::async_runtime::spawn(supervisor::user_env::read_ahead());
+    }
     let builder = tauri::Builder::default();
     // **单实例要第一个注册**，插件自己的文档如此要求：它得在别的插件把端口、
     // socket、注册表项占上之前就判断出「已经有一个在跑」。
@@ -426,7 +432,7 @@ pub fn run() {
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
             //
             // **只在连本机时起。**连远程时本机的 core 不跑；要先让人选的话，选好了再起
-            let remote_start = pick.is_some() || conns.remote(&start_id).is_some();
+            let remote_start = pick.is_some() || conns.starts_remote();
             if remote_start {
                 if pick.is_some() {
                     link.wait_for_pick();
