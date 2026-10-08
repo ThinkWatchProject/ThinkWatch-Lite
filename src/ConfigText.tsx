@@ -3,9 +3,8 @@ import { call } from "@/control";
 import { locateEntry, type ConfigFocus } from "./configLocate";
 import type { ConfigAt, ConfigText as Doc } from "./types";
 import { Button } from "@/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Spinner } from "@/ui/spinner";
-import { toast } from "sonner";
+import { Banner } from "@/ui/banner";
+import { notify } from "@/ui/notify";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { configTextText } from "./ConfigText.i18n";
@@ -118,7 +117,7 @@ export default function ConfigTextMode({
       // 改得了工具调用的插件：这条路没有点过头的那一条，只能去插件页。几秒就消失的
       // toast 说不清去哪儿，这一句留在编辑器上
       if (needsConfirmation(e)) setPluginRefusal(errorText(e));
-      else toast.error(errorText(e));
+      else notify.error(e);
     } finally {
       setBusy(false);
     }
@@ -128,37 +127,30 @@ export default function ConfigTextMode({
     <div className="flex h-full min-h-0 flex-col gap-2">
       {/* 文件在你编辑期间被改过了。**给选择，不替他做决定** ——
           两边都是真实的改动，只有他知道哪个该留 */}
-      {stale && (
-        <Alert variant="warning" className="px-3 py-2">
-          <AlertTitle>{t.staleTitle}</AlertTitle>
-          <AlertDescription>
-          <p className="mt-1 text-amber-800 dark:text-amber-300">
-            {t.staleBody}
-          </p>
-          <div className="mt-2 flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDraft(doc.text);
-                base.current = doc.version;
-              }}
-            >
-              {t.useFile}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                base.current = doc.version;
-              }}
-            >
-              {t.keepMine}
-            </Button>
-          </div>
-        </AlertDescription>
-        </Alert>
-      )}
+      <Banner show={stale} layout="inline" tone="warning" title={t.staleTitle}>
+        <p>{t.staleBody}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDraft(doc.text);
+              base.current = doc.version;
+            }}
+          >
+            {t.useFile}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              base.current = doc.version;
+            }}
+          >
+            {t.keepMine}
+          </Button>
+        </div>
+      </Banner>
 
       {pluginRefusal && (
         <PluginConfirmNotice
@@ -168,7 +160,7 @@ export default function ConfigTextMode({
         />
       )}
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-white dark:bg-neutral-900">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-popover">
         <Suspense fallback={null}>
           <YamlEditor
             value={draft}
@@ -208,8 +200,7 @@ export default function ConfigTextMode({
         <span className="min-w-0 truncate font-mono tw-label text-muted-foreground">{doc.path}</span>
         <div className="flex-1" />
         {dirty && !busy && <span className="text-warning">{t.unsaved}</span>}
-        <Button size="sm" onClick={save} disabled={busy || !dirty}>
-          {busy && <Spinner />}
+        <Button size="sm" onClick={save} disabled={!dirty} pending={busy}>
           {common.save}
         </Button>
       </div>
@@ -235,18 +226,19 @@ export function PluginConfirmNotice({
 }) {
   const t = useText(configTextText).pluginConfirm;
   return (
-    <Alert variant="destructive" className="px-3 py-2">
-      <AlertTitle>{t.title}</AlertTitle>
-      <AlertDescription>
-        <p className="mt-1">{t[result](reason)}</p>
-        {onOpenPlugins && (
-          <div className="mt-2">
-            <Button variant="ghost" size="sm" onClick={onOpenPlugins}>
-              {t.open}
-            </Button>
-          </div>
-        )}
-      </AlertDescription>
-    </Alert>
+    <Banner
+      layout="inline"
+      tone="error"
+      title={t.title}
+      actions={
+        onOpenPlugins && (
+          <Button variant="outline" size="sm" onClick={onOpenPlugins}>
+            {t.open}
+          </Button>
+        )
+      }
+    >
+      {t[result](reason)}
+    </Banner>
   );
 }

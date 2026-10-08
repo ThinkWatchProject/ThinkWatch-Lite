@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { HistoryIcon } from "lucide-react";
 import { call } from "@/control";
-import { toast } from "sonner";
+import { useResource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import {
@@ -10,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Spinner } from "@/ui/spinner";
+import { notify } from "@/ui/notify";
+import { EmptyState, Loadable, LoadingState, TableSkeleton } from "@/ui/states";
 import {
   Table,
   TableBody,
@@ -24,7 +26,6 @@ import ConfigTextMode, { PluginConfirmNotice } from "./ConfigText";
 import type { ConfigFocus } from "./configLocate";
 import { configDialogsText } from "./ConfigDialogs.i18n";
 import { when } from "./format";
-import type { ConfigText, ConfigVersion } from "./types";
 import { originLabel } from "./labels";
 import { errorText } from "@/i18n/core.i18n";
 import { needsConfirmation } from "@/plugins/write";
@@ -50,17 +51,9 @@ export function ConfigFileDialog({
   onJump: (section: string | null, name: string) => void;
 }) {
   const t = useText(configDialogsText);
-  const [doc, setDoc] = useState<ConfigText | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    call("GetConfig", null)
-      .then((d) => alive && setDoc(d))
-      .catch((e) => toast.error(errorText(e)));
-    return () => {
-      alive = false;
-    };
-  }, [reloads]);
+  // 配置换入一次就重读。**重读时编辑器照常画着**：没改过的草稿跟着新版本走，改过的
+  // 不动（见 ConfigText）
+  const doc = useResource("config-file", () => call("GetConfig", null), { deps: [reloads] });
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -72,22 +65,19 @@ export function ConfigFileDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1">
-          {doc ? (
-            <ConfigTextMode
-              doc={doc}
-              focus={focus}
-              rejectedLine={rejectedLine}
-              onSaved={() => {
-                // 版本号换了，外面的配置事件会让上面那个 effect 重新读
-              }}
-              onJumpToForm={({ name, section }) => onJump(section, name)}
-            />
-          ) : (
-            <p className="flex items-center gap-2 tw-body text-muted-foreground">
-              <Spinner />
-              {t.readingFile}
-            </p>
-          )}
+          <Loadable r={doc} loading={<LoadingState label={t.readingFile} className="h-full" />} errorTitle={t.fileFailed}>
+            {(d) => (
+              <ConfigTextMode
+                doc={d}
+                focus={focus}
+                rejectedLine={rejectedLine}
+                onSaved={() => {
+                  // 版本号换了，外面的配置事件会让上面那份数据重读
+                }}
+                onJumpToForm={({ name, section }) => onJump(section, name)}
+              />
+            )}
+          </Loadable>
         </div>
       </DialogContent>
     </Dialog>
@@ -107,20 +97,10 @@ export function VersionHistoryDialog({
   onOpenPlugins?: () => void;
 }) {
   const t = useText(configDialogsText);
-  const [versions, setVersions] = useState<ConfigVersion[] | null>(null);
+  const versions = useResource("config-history", () => call("ConfigHistory", null), { deps: [reloads] });
   const [busy, setBusy] = useState<string | null>(null);
   /** core 不让这次恢复装上、启用、换掉批准的代码的那个插件（它的那句话） */
   const [pluginRefusal, setPluginRefusal] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    call("ConfigHistory", null)
-      .then((v) => alive && setVersions(v))
-      .catch((e) => toast.error(errorText(e)));
-    return () => {
-      alive = false;
-    };
-  }, [reloads]);
 
   async function restore(version: string) {
     setBusy(version);
@@ -130,7 +110,7 @@ export function VersionHistoryDialog({
     } catch (e) {
       // 和保存配置文件一样：恢复这条路没有点过头的那一条，只能去插件页
       if (needsConfirmation(e)) setPluginRefusal(errorText(e));
-      else toast.error(errorText(e));
+      else notify.error(e);
     } finally {
       setBusy(null);
     }
@@ -147,49 +127,52 @@ export function VersionHistoryDialog({
           <PluginConfirmNotice reason={pluginRefusal} result="notRestored" onOpenPlugins={onOpenPlugins} />
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {versions == null ? (
-            <p className="flex items-center gap-2 tw-body text-muted-foreground">
-              <Spinner />
-              {t.readingHistory}
-            </p>
-          ) : versions.length === 0 ? (
-            <p className="tw-body text-muted-foreground">{t.noVersions}</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t.time}</TableHead>
-                  <TableHead>{t.origin}</TableHead>
-                  <TableHead>{t.version}</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {versions.map((v) => (
-                  <TableRow key={v.version}>
-                    <TableCell className="tabular-nums">{when(v.at_ms)}</TableCell>
-                    <TableCell className="text-muted-foreground">{originLabel(v.origin)}</TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{v.version.slice(7, 19)}</TableCell>
-                    <TableCell className="text-right">
-                      {v.current ? (
-                        <Badge variant="success">{t.current}</Badge>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={busy != null}
-                          onClick={() => restore(v.version)}
-                        >
-                          {busy === v.version && <Spinner />}
-                          {t.restore}
-                        </Button>
-                      )}
-                    </TableCell>
+          <Loadable
+            r={versions}
+            loading={<TableSkeleton rows={5} cols={4} />}
+            errorTitle={t.historyFailed}
+            isEmpty={(v) => v.length === 0}
+            empty={
+              <EmptyState variant="outlined" icon={<HistoryIcon />} title={t.noVersions} description={t.noVersionsHint} />
+            }
+          >
+            {(list) => (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t.time}</TableHead>
+                    <TableHead>{t.origin}</TableHead>
+                    <TableHead>{t.version}</TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                </TableHeader>
+                <TableBody>
+                  {list.map((v) => (
+                    <TableRow key={v.version}>
+                      <TableCell className="tabular-nums">{when(v.at_ms)}</TableCell>
+                      <TableCell className="text-muted-foreground">{originLabel(v.origin)}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{v.version.slice(7, 19)}</TableCell>
+                      <TableCell className="text-right">
+                        {v.current ? (
+                          <Badge variant="success">{t.current}</Badge>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            disabled={busy != null}
+                            pending={busy === v.version}
+                            onClick={() => restore(v.version)}
+                          >
+                            {t.restore}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Loadable>
         </div>
       </DialogContent>
     </Dialog>
