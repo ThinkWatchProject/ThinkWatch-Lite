@@ -1,34 +1,25 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceDot,
-  XAxis,
-  YAxis,
-  type TooltipContentProps,
-} from "recharts";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { ChartContainer, ChartTooltip } from "@/ui/chart";
 import { useText } from "@/i18n";
+import { prefersReducedMotion } from "@/ui/motion";
 import { chartsText } from "./charts.i18n";
 
 /**
  * 概览上的那张图。
  *
- * **从手写 SVG 换成了 recharts（经 shadcn 的 `ChartContainer`）。**
- * 原来那版的理由是「一百多 KB 里我们要的只有两个形状」—— 代价是真的：
- * 实测包从 858 KB 涨到 1171 KB。换回来的是坐标轴、刻度、自动留白、
- * 悬停命中区这些自己写永远差一口气的东西，以及一套跟着 token 走的配色。
+ * **手写的 SVG，不用图表库。**用过一阵 recharts（经 shadcn 的 `ChartContainer`）：
+ * 它连同 d3、immer、Redux Toolkit 一共 331 KB，只为画这一张图；实时档每半秒重画
+ * 一次，其中大半的时间花在它自己的状态机上。这里要的东西是有数的 —— 两道刻度、
+ * 三道格线、单调曲线、堆叠、一条竖线和一个浮层 —— 都在这个文件里，长相和交互与
+ * 原来一致（曲线的画法和 d3 的 `curveMonotoneX` 是同一个算法，浮层的定位规则也照旧）。
  *
- * 文件名是 `charts`（复数）：`chart.tsx` 是 shadcn 抄进来的那个，而
- * macOS 的文件系统不分大小写，`Chart.tsx` 会把它盖掉。
+ * 文件名是 `charts`（复数）：shadcn 的 `chart.tsx` 曾经占着那个名字，而 macOS 的
+ * 文件系统不分大小写。
  *
- * **动画默认关着，只在换了看法的那一下打开**（`animate`）：数据一换，
- * recharts 会把图形重新长一遍，而贴着图形边缘的标签跟着一起动 —— 刷新一次
- * 跳一次，看起来就是「数字一直在闪」；一张每次刷新都要重演一遍的图，读的人
- * 还得等它演完。所以后台刷新、实时档的每一帧都不动；换时间范围（整张图重画，
- * 从左往右铺开）和换口径（同一批格子，形状变过去）才动一次，250ms。
+ * **动画默认关着，只在换了看法的那一下打开**（`animate`）：每次刷新都重演一遍的
+ * 图，读的人得等它演完，贴着图形边缘的东西还跟着一起动。所以后台刷新、实时档的
+ * 每一帧都不动；换时间范围（整张图重画，从左往右铺开）和换口径（同一批格子，
+ * 形状变过去）才动一次，250ms。
  *
  * **没有数据的那一格要画出来，不能跳过。**跳过的话，一天里的空档会被
  * 两边的数据挤没，图上看起来就是连续在用 —— 而「昨天下午我根本没用」
@@ -45,6 +36,17 @@ import { chartsText } from "./charts.i18n";
  * 那个刻度会落在一分半的位置。
  */
 export const Y_AXIS_WIDTH = 46;
+
+/** 画图区域上面空出的一条：最高的那道格线不贴着顶 */
+const TOP = 6;
+/** 刻度字离画图区域右边多远 */
+const TICK_GAP = 8;
+/** 刻度字的半个行高（11px 字、1.5 倍行高）：顶上那个刻度往下挪到整个字露出来为止 */
+const TICK_HALF = 8.25;
+/** 悬停提示离那一点（横向）和指针（纵向）多远 */
+const TIP_GAP = 10;
+/** 换看法时那一下动画多长 */
+const ANIM_MS = 250;
 
 /**
  * 悬停提示的抬头，一格一份：这一格是什么时候、一共多少，以及一句补充（请求数、
@@ -72,23 +74,20 @@ export interface ChartTip {
  *
  * 每层顶部再描一条同色实线：三层相近的蓝叠在一起会失去分界。
  *
- * **填充是渐变不是平涂**，按 shadcn 那张堆叠面积图的写法：每层一条
- * 自己的纵向渐变（0.8 → 0.1）再乘 `fillOpacity`。
- *
- * 一度改成过 `userSpaceOnUse`、跨整张图的高度，**那是错的**：同一层
- * 在图的高处几乎不透明、在低处几乎全透，一层的浓淡随它在纵轴上的位置
- * 变。堆叠图的层是不可能交叉的，而那样画出来层与层看着在互相穿过，
- * 整张图读成了几条飘着的波。
+ * **填充是渐变不是平涂**：每层一条自己的纵向渐变（0.8 → 0.1）再乘 0.4 的不透明度。
+ * 渐变按**这一层自己的外框**铺（`objectBoundingBox`），不按整张图的高度：那样的话
+ * 同一层在图的高处几乎不透明、在低处几乎全透，一层的浓淡随它在纵轴上的位置变 ——
+ * 堆叠图的层是不可能交叉的，而那样画出来层与层看着在互相穿过，整张图读成了几条
+ * 飘着的波。
  *
  * **纵轴要有刻度。**没有刻度的曲线只是纹理 —— 峰高一倍还是十倍读不
  * 出来，而这正是看这张图的原因。两个刻度（一半和顶），细体弱色，不抢形状；
  * 零就是基线，不另写。
  *
- * **悬停的显隐由这一层说了算，不全交给 recharts。**recharts 只认送到
- * 它自己那个 wrapper 上的 `mouseleave`，而这个事件是会丢的：切走应用、
- * 截图工具接管指针、指针从窗口边缘快速离开 —— 都可能让它收不到，于是
- * 那条竖线和那个浮层就永远停在原地。实时档上这尤其明显：线不动，曲线
- * 从它下面走过去，框里的数字已经不描述屏幕上的任何东西了。
+ * **悬停的显隐不能只靠容器的 `mouseleave`**：这个事件是会丢的 —— 切走应用、截图
+ * 工具接管指针、指针从窗口边缘快速离开，都可能让它收不到，于是那条竖线和那个
+ * 浮层就永远停在原地。实时档上这尤其明显：线不动，曲线从它下面走过去，框里的
+ * 数字已经不描述屏幕上的任何东西了。
  */
 export function StackedArea({
   data,
@@ -120,7 +119,10 @@ export function StackedArea({
    * 的数，取整会把 0.5 写成 1；而图值可以是任意的浮点，要先取整再写。
    */
   valueFormat?: (v: number) => string;
-  /** 纵轴上界。由调用方钉住，**不让它每帧跟着峰值跑**（见 `holdY`） */
+  /**
+   * 纵轴上界。由调用方钉住，**不让它每帧跟着峰值跑**（见 `holdY`）。不给就按这一批
+   * 数据的峰值取一个整齐的数
+   */
   yMax?: number;
   /**
    * 突出哪一层（图例上指着的那一项）。其余几层淡下去，读的人不用在几层相近
@@ -138,15 +140,19 @@ export function StackedArea({
   animate?: boolean;
 }) {
   const t = useText(chartsText);
-  // 同一页上可能有几张图，渐变的 id 不能撞。**在提前 return 之前取** ——
-  // 空态那一支不走下面的代码，hook 数对不上整棵树就崩了
+  // hook 一律在提前 return 之前取 —— 空态那一支不走下面的代码，hook 数对不上整棵树就崩了。
+  // 同一页上可能有几张图，渐变的 id 不能撞
   const gid = useId().replace(/:/g, "");
-  const [over, setOver] = useState(false);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const width = useWidth(box);
+  /** 指着第几格，指针离图顶多远（取整，和浮层的定位同一个数） */
+  const [hover, setHover] = useState<{ i: number; y: number } | null>(null);
+  const hovering = hover !== null;
   useEffect(() => {
-    if (!over) return;
-    // 指针离开的方式不止「移到旁边去」一种，而只有那一种会让 recharts
-    // 收到 mouseleave。这几个是它收不到的那些。
-    const off = () => setOver(false);
+    if (!hovering) return;
+    // 指针离开的方式不止「移到旁边去」一种，而只有那一种会送来 mouseleave。
+    // 这几个是送不来的那些。
+    const off = () => setHover(null);
     /*
       **指针移出窗口、而焦点没变**，是第四种走法：用户把鼠标甩到另一块
       屏幕或另一个应用上，但没点它。那时 `blur` 不发（窗口还是焦点）、
@@ -157,7 +163,7 @@ export function StackedArea({
       `mouseout` 且 `relatedTarget` 为空，说的正是「指针去了文档外面」。
     */
     const out = (e: MouseEvent) => {
-      if (!e.relatedTarget) setOver(false);
+      if (!e.relatedTarget) setHover(null);
     };
     window.addEventListener("blur", off);
     document.addEventListener("mouseleave", off);
@@ -169,13 +175,27 @@ export function StackedArea({
       document.removeEventListener("mouseout", out);
       document.removeEventListener("visibilitychange", off);
     };
-  }, [over]);
+  }, [hovering]);
+
+  const plotW = Math.max(0, width - (tickFormat ? Y_AXIS_WIDTH : 0));
+  const plotH = height - TOP;
+  const none = data.length === 0 || keys.length === 0;
+  const geo = useMemo(
+    () => (none || plotW <= 0 ? null : layout(data, keys, plotW, plotH, yMax)),
+    [none, data, keys, plotW, plotH, yMax],
+  );
+  const shown = useTween(geo, animate);
+  const drawn = useMemo(
+    () => shown?.layers.map((l) => ({ ...l, area: areaPath(shown.xs, l.top, l.base), line: linePath(shown.xs, l.top) })),
+    [shown],
+  );
+
   /*
     **没数据时也要占住这块地方。**塌成一行字的话，数据一来整页往下弹
     一百多像素；而切换时间范围时，这一弹是每次都会发生的 —— 页面在
     「有没有数据」之间来回跳，读的人每次都要重新找位置。
   */
-  if (data.length === 0 || keys.length === 0) {
+  if (none) {
     return (
       <div
         className="flex w-full items-center justify-center rounded-md border border-dashed border-border motion-fade"
@@ -185,102 +205,110 @@ export function StackedArea({
       </div>
     );
   }
-  const last = data[data.length - 1];
-  // 活边那个点画在最上面一层的顶上 —— 也就是这一格的总量
-  const edge = last
-    ? keys.reduce((a, k) => a + (typeof last[k] === "number" ? last[k] : 0), 0)
-    : 0;
+  const n = data.length;
   const top = colors[keys.length - 1] ?? "var(--chart-1)";
+  // 指着的那一格可能已经不在了（实时档往左走、换了区间）
+  const row = hover && geo ? data[hover.i] : undefined;
+  const at = row && hover && geo ? geo.point(hover.i) : null;
   return (
-    <ChartContainer
-      className="w-full"
+    <div
+      ref={setBox}
+      data-slot="chart"
+      className="relative w-full text-xs"
       style={{ height }}
-      onMouseEnter={() => setOver(true)}
-      /*
-        **`mouseenter` 只在跨边界时发一次。**下面那几个补救把 `over` 关掉
-        的时候，指针往往还停在图上（切走应用再切回来就是这样）——只靠
-        `mouseenter` 的话，它要等用户把鼠标移出去再移回来才肯再亮。
-      */
-      onMouseMove={() => !over && setOver(true)}
-      onMouseLeave={() => setOver(false)}
+      onMouseMove={(e) => {
+        if (!geo) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        const x = Math.round(e.clientX - r.left);
+        const y = Math.round(e.clientY - r.top);
+        // 只在画图区域里算数：纵轴那一栏和顶上那一条不是哪一格
+        if (x < 0 || x > plotW || y < TOP || y >= height) return setHover(null);
+        const i = n > 1 ? Math.min(n - 1, Math.max(0, Math.round((x / plotW) * (n - 1)))) : 0;
+        if (hover?.i !== i || hover.y !== y) setHover({ i, y });
+      }}
+      onMouseLeave={() => setHover(null)}
     >
-      <AreaChart data={data} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
-        <defs>
-          {keys.map((k, i) => (
-            <linearGradient key={k} id={`${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={colors[i]} stopOpacity={0.8} />
-              <stop offset="95%" stopColor={colors[i]} stopOpacity={0.1} />
-            </linearGradient>
+      {geo && shown && drawn && (
+        <svg aria-hidden width={width} height={height} className="block">
+          <defs>
+            {keys.map((k, i) => (
+              <linearGradient key={k} id={`${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={colors[i]} stopOpacity={0.8} />
+                <stop offset="95%" stopColor={colors[i]} stopOpacity={0.1} />
+              </linearGradient>
+            ))}
+            {shown.sweep !== null && (
+              <clipPath id={`${gid}-sweep`}>
+                <rect x={0} y={0} width={plotW * shown.sweep} height={height} />
+              </clipPath>
+            )}
+          </defs>
+          {/* 格线：顶、一半、基线 */}
+          {[TOP, TOP + plotH / 2, height].map((y) => (
+            <line key={y} x1={0} x2={plotW} y1={y} y2={y} strokeDasharray="2 4" className="stroke-border/50" />
           ))}
-        </defs>
-        <CartesianGrid vertical={false} strokeDasharray="2 4" />
-        <XAxis dataKey="label" hide />
-        {tickFormat && (
-          <YAxis
-            orientation="right"
-            width={Y_AXIS_WIDTH}
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-            tickFormatter={tickFormat}
+          {/* 先画的在下面。**占得少的垫底、多的在上**：最重的那一层在视觉上也该最重 */}
+          <g clipPath={shown.sweep !== null ? `url(#${gid}-sweep)` : undefined}>
+            {drawn.map((l, i) => (
+              <g
+                key={l.key}
+                className={cn(
+                  "transition-opacity duration-(--motion-fast) ease-(--motion-ease) motion-reduce:transition-none",
+                  highlight !== null && highlight !== l.key && "opacity-25",
+                )}
+              >
+                <path d={l.area} fill={`url(#${gid}-${i})`} fillOpacity={0.4} />
+                <path d={l.line} fill="none" stroke={colors[i]} strokeWidth={1.6} />
+              </g>
+            ))}
+          </g>
+          {/*
+            「现在」那一头：一个静止的点，**不一直跳** —— 每秒都在动的东西比不动更难
+            读。只在新数据落地时向外闪一圈，说的是「刚到了一条」。
+          */}
+          {liveEdge && <EdgeDot {...geo.point(n - 1)} color={top} pulse={pulse} />}
+          {at !== null && (
+            <>
+              {/* 竖线用表格线的颜色、还压淡一档：它只是指出是哪一格，要读的是点和浮层 */}
+              <line x1={at.x} x2={at.x} y1={TOP} y2={height} stroke="var(--border)" strokeOpacity={0.55} strokeWidth={1} />
+              {/*
+                悬停时只在最上面那一层的顶上点一个点 —— 那是这一格的合计，和提示抬头
+                上的数是同一个。每一层都点的话，量小的几层的点挤在基线上叠成一团
+              */}
+              <circle cx={at.x} cy={at.y} r={3} fill={top} stroke="var(--background)" strokeWidth={2} />
+            </>
+          )}
+          {tickFormat &&
             /*
-              **刻度写死成上界和它的一半。**上界已经是取整过的数（`niceCeil` 的档位
-              保证一半也是整数）；交给 recharts 按 `tickCount` 去凑的话，刻度落在哪
-              几个数上由它自己的取整规则定，和档位不一定对得上。零是基线，不另写。
+              **刻度是上界和它的一半。**上界已经是取整过的数（`niceCeil` 的档位保证一半
+              也是整数）。零是基线，不另写。
             */
-            {...(yMax ? { domain: [0, yMax] as [number, number], ticks: [yMax / 2, yMax] } : { tickCount: 3 })}
-          />
-        )}
-        <ChartTooltip
-          // `false` = 一定不显示，`undefined` = 照常交给 recharts 判断
-          active={over ? undefined : false}
-          cursor={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.55, strokeWidth: 1 }}
-          animationDuration={120}
-          animationEasing="ease-out"
-          content={(p: TooltipContentProps) => <TipBox {...p} tips={tips} valueFormat={valueFormat} />}
+            [geo.max / 2, geo.max].map((v) => (
+              <text
+                key={v}
+                x={plotW + TICK_GAP}
+                y={Math.min(Math.max(geo.yAt(v), TICK_HALF), height - TICK_HALF)}
+                dy="0.355em"
+                fontSize={11}
+                fill="var(--muted-foreground)"
+              >
+                {tickFormat(v)}
+              </text>
+            ))}
+        </svg>
+      )}
+      {at !== null && row && hover && (
+        <TipBox
+          row={row}
+          keys={keys}
+          colors={colors}
+          tip={tips?.[hover.i]}
+          valueFormat={valueFormat}
+          anchor={{ x: at.x, y: hover.y }}
+          bounds={{ right: plotW, top: TOP, bottom: height }}
         />
-        {/* 先声明的在下面。**占得少的垫底、多的在上**：最重的那一层在视觉上也该最重 */}
-        {keys.map((k, i) => (
-          <Area
-            key={k}
-            dataKey={k}
-            stackId="a"
-            type="monotone"
-            fill={`url(#${gid}-${i})`}
-            fillOpacity={0.4}
-            stroke={colors[i]}
-            strokeWidth={1.6}
-            dot={false}
-            /*
-              悬停时只在最上面那一层的顶上点一个点 —— 那是这一格的合计，和提示抬头
-              上的数是同一个。每一层都点的话，量小的几层的点挤在基线上叠成一团
-            */
-            activeDot={i === keys.length - 1 ? { r: 3, fill: top, stroke: "var(--background)", strokeWidth: 2 } : false}
-            isAnimationActive={animate}
-            animationDuration={250}
-            animationEasing={EASE}
-            className={cn(
-              "transition-opacity duration-(--motion-fast) ease-(--motion-ease) motion-reduce:transition-none",
-              highlight !== null && highlight !== k && "opacity-25",
-            )}
-          />
-        ))}
-        {/*
-          「现在」那一头：一个静止的点，**不一直跳** —— 每秒都在动的东西比不动更难
-          读。只在新数据落地时向外闪一圈，说的是「刚到了一条」。
-        */}
-        {liveEdge && last && (
-          <ReferenceDot
-            x={String(last.label)}
-            y={edge}
-            r={3}
-            shape={(p: { cx?: number; cy?: number }) => (
-              <EdgeDot cx={p.cx ?? 0} cy={p.cy ?? 0} color={top} pulse={pulse} />
-            )}
-          />
-        )}
-      </AreaChart>
-    </ChartContainer>
+      )}
+    </div>
   );
 }
 
@@ -290,49 +318,74 @@ export function StackedArea({
  *
  * **这一格里是零的层不列。**一格里常常只有一两个模型在用，把另外四个写成一排
  * 「0」只是让要找的那一行更难找。
+ *
+ * **放在那一点的右下方，放不下就翻到左边、上边**，不出画图区域。框量出大小之后
+ * 才知道往哪放，所以位置在画出来之前（布局阶段）直接写到元素上。出现的那一下就在
+ * 原地；之后跟着指针换格子时滑过去（120ms，系统关了动效就直接跳）。
  */
 function TipBox({
-  active,
-  payload,
-  activeIndex,
-  tips,
+  row,
+  keys,
+  colors,
+  tip,
   valueFormat,
-}: TooltipContentProps & {
-  tips?: readonly ChartTip[];
+  anchor,
+  bounds,
+}: {
+  row: Record<string, number | string>;
+  keys: string[];
+  colors: string[];
+  tip?: ChartTip;
   valueFormat?: (v: number) => string;
+  anchor: { x: number; y: number };
+  bounds: { right: number; top: number; bottom: number };
 }) {
-  if (!active || !payload?.length) return null;
+  const ref = useRef<HTMLDivElement>(null);
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width: w, height: h } = el.getBoundingClientRect();
+    const x = anchor.x + TIP_GAP + w > bounds.right ? Math.max(anchor.x - w - TIP_GAP, 0) : anchor.x + TIP_GAP;
+    const y = anchor.y + TIP_GAP + h > bounds.bottom ? Math.max(anchor.y - h - TIP_GAP, bounds.top) : Math.max(anchor.y + TIP_GAP, bounds.top);
+    el.style.transition = placed.current && !prefersReducedMotion() ? "transform 120ms ease-out" : "none";
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.style.visibility = "visible";
+    placed.current = true;
+  });
   const fmt = valueFormat ?? ((v: number) => v.toLocaleString());
   const zero = fmt(0);
-  const tip = activeIndex == null ? undefined : tips?.[Number(activeIndex)];
-  const rows = [...payload]
+  const rows = keys
+    .map((k, i) => ({ k, v: row[k], color: colors[i] }))
     .reverse()
-    .filter((p) => typeof p.value === "number" && fmt(p.value) !== zero);
+    .filter((p): p is { k: string; v: number; color: string } => typeof p.v === "number" && fmt(p.v) !== zero);
   return (
-    <div className="grid min-w-44 max-w-72 gap-1.5 rounded-lg border border-border bg-popover px-3 py-2 tw-label text-popover-foreground shadow-lg">
-      {tip && (
-        <Line
-          left={<span className="tw-num text-muted-foreground">{tip.title}</span>}
-          right={tip.value && <span className="tw-num font-medium">{tip.value}</span>}
-        />
-      )}
-      {rows.length > 0 && (
-        <div className={cn("grid gap-1", tip && "border-t border-border/70 pt-1.5")}>
-          {rows.map((p) => (
-            <Line
-              key={String(p.dataKey ?? p.name)}
-              left={
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span aria-hidden className="h-2.5 w-1 shrink-0 rounded-[1px]" style={{ background: p.color }} />
-                  <span className="truncate text-muted-foreground">{String(p.name ?? p.dataKey)}</span>
-                </span>
-              }
-              right={<span className="tw-num">{fmt(Number(p.value))}</span>}
-            />
-          ))}
-        </div>
-      )}
-      {tip?.note && <p className="text-muted-foreground">{tip.note}</p>}
+    <div ref={ref} data-slot="chart-tip" className="pointer-events-none invisible absolute top-0 left-0">
+      <div className="grid min-w-44 max-w-72 gap-1.5 rounded-lg border border-border bg-popover px-3 py-2 tw-label text-popover-foreground shadow-lg">
+        {tip && (
+          <Line
+            left={<span className="tw-num text-muted-foreground">{tip.title}</span>}
+            right={tip.value && <span className="tw-num font-medium">{tip.value}</span>}
+          />
+        )}
+        {rows.length > 0 && (
+          <div className={cn("grid gap-1", tip && "border-t border-border/70 pt-1.5")}>
+            {rows.map((p) => (
+              <Line
+                key={p.k}
+                left={
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span aria-hidden className="h-2.5 w-1 shrink-0 rounded-[1px]" style={{ background: p.color }} />
+                    <span className="truncate text-muted-foreground">{p.k}</span>
+                  </span>
+                }
+                right={<span className="tw-num">{fmt(p.v)}</span>}
+              />
+            ))}
+          </div>
+        )}
+        {tip?.note && <p className="text-muted-foreground">{tip.note}</p>}
+      </div>
     </div>
   );
 }
@@ -347,21 +400,262 @@ function Line({ left, right }: { left: ReactNode; right?: ReactNode }) {
 }
 
 /**
- * 动画的缓动，和 `--motion-ease` 同一条曲线。recharts 运行时认 `cubic-bezier(…)`
- * （`animation/easing` 的 `configEasing`），只是属性的类型只列了几个具名曲线 ——
- * 而它的具名 `ease-out` 其实是一条两头慢的曲线，不是这里要的「开头快、末尾慢」。
- */
-const EASE = "cubic-bezier(0.22, 0.8, 0.24, 1)" as "ease-out";
-
-/**
  * 「现在」那一点。`pulse` 一变，底下那一圈重新挂上、放一次 `motion-ping`：
  * 按键重挂是让同一段 CSS 动画再放一遍的办法。
  */
-function EdgeDot({ cx, cy, color, pulse }: { cx: number; cy: number; color: string; pulse: number }) {
+function EdgeDot({ x, y, color, pulse }: { x: number; y: number; color: string; pulse: number }) {
   return (
     <g>
-      {pulse > 0 && <circle key={pulse} cx={cx} cy={cy} r={3} fill={color} className="motion-ping" />}
-      <circle cx={cx} cy={cy} r={3} fill={color} stroke="var(--background)" strokeWidth={2} />
+      {pulse > 0 && <circle key={pulse} cx={x} cy={y} r={3} fill={color} className="motion-ping" />}
+      <circle cx={x} cy={y} r={3} fill={color} stroke="var(--background)" strokeWidth={2} />
     </g>
   );
+}
+
+/** 容器有多宽。在画出来之前量（布局阶段），第一帧就是对的宽度 */
+function useWidth(el: HTMLElement | null): number {
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    if (!el) return;
+    setW(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver(() => setW(el.getBoundingClientRect().width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return w;
+}
+
+/** 一层画成什么样：每一格的顶和底（像素，纵向从图顶往下数） */
+interface Layer {
+  key: string;
+  top: number[];
+  base: number[];
+}
+
+interface Geometry {
+  /** 每一格的横向位置：等距排开，首尾顶格 */
+  xs: number[];
+  layers: Layer[];
+  /** 纵轴上界 */
+  max: number;
+  yAt: (v: number) => number;
+  /** 第几格最上面那一层的顶：这一格的合计画在哪 */
+  point: (i: number) => { x: number; y: number };
+}
+
+/** 堆叠：每一层垫在下面那几层的合计上。不是数的格子当 0 */
+function layout(
+  data: Record<string, number | string>[],
+  keys: string[],
+  plotW: number,
+  plotH: number,
+  yMax: number | undefined,
+): Geometry {
+  const n = data.length;
+  const xs = data.map((_, i) => (n > 1 ? (i * plotW) / (n - 1) : plotW / 2));
+  // 每一格从下往上的累计：第 j 个数是第 0…j 层加起来
+  const cum = data.map((row) => {
+    let sum = 0;
+    return keys.map((k) => {
+      const v = row[k];
+      return (sum += typeof v === "number" && Number.isFinite(v) ? v : 0);
+    });
+  });
+  const totals = cum.map((c) => c[c.length - 1] ?? 0);
+  const max = yMax && yMax > 0 ? yMax : niceMax(Math.max(0, ...totals));
+  const yAt = (v: number) => TOP + plotH * (1 - v / max);
+  return {
+    xs,
+    layers: keys.map((key, j) => ({
+      key,
+      top: cum.map((c) => yAt(c[j] ?? 0)),
+      base: cum.map((c) => yAt(c[j - 1] ?? 0)),
+    })),
+    max,
+    yAt,
+    point: (i) => ({ x: xs[i] ?? 0, y: yAt(totals[i] ?? 0) }),
+  };
+}
+
+/** 调用方没钉上界时取一个整齐的数（1/2/5 档）。全是 0 的时候给 2：刻度写 1 和 2，曲线贴底 */
+function niceMax(peak: number): number {
+  if (!(peak > 0)) return 2;
+  const e = Math.pow(10, Math.floor(Math.log10(peak)));
+  const m = peak / e;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e;
+}
+
+/** 画在屏幕上的那一份：动画中途是新旧之间的某一帧 */
+interface Shown {
+  xs: number[];
+  layers: Layer[];
+  /** 从左往右铺开到了几成；`null` = 不裁 */
+  sweep: number | null;
+}
+
+/**
+ * 换看法时的那一下动画。
+ *
+ * 新数据和屏幕上的不一样、而且这一次要动（`animate`）时：屏幕上原来没有图（挂上、
+ * 换了区间），整张图从左往右铺开；原来有（换口径），每一层从屏幕上那个样子变过去 ——
+ * 点数不同时按比例对上，新出现的层从它下面那一层长出来。不动的时候直接换。
+ *
+ * 逐帧算点的位置，不交给 CSS：路径形状的过渡 WebKit 不支持。
+ */
+function useTween(geo: Geometry | null, animate: boolean): Shown | null {
+  const [tween, setTween] = useState<{ from: Shown | null; start: number; p: number } | null>(null);
+  const last = useRef<Geometry | null>(null);
+  const onScreen = useRef<Shown | null>(null);
+  const shown = useMemo(() => frame(geo, tween), [geo, tween]);
+  useLayoutEffect(() => {
+    const before = last.current;
+    last.current = geo;
+    // 没变，或者还在铺开（中途来的新数据直接换上，接着铺）
+    const same = geo && before && (before === geo || sameShape(before, geo));
+    if (!same && !(geo && tween && tween.from === null)) {
+      if (geo && animate) setTween({ from: onScreen.current, start: performance.now(), p: 0 });
+      else if (tween) setTween(null);
+    }
+    onScreen.current = shown;
+  });
+  const start = tween?.start;
+  useEffect(() => {
+    if (start === undefined) return;
+    let h = requestAnimationFrame(function step(now) {
+      const p = Math.min(1, Math.max(0, (now - start) / ANIM_MS));
+      if (p >= 1) return setTween(null);
+      setTween((x) => (x && x.start === start ? { ...x, p } : x));
+      h = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(h);
+  }, [start]);
+  return shown;
+}
+
+function frame(geo: Geometry | null, tween: { from: Shown | null; p: number } | null): Shown | null {
+  if (!geo) return null;
+  if (!tween) return { xs: geo.xs, layers: geo.layers, sweep: null };
+  const e = ease(tween.p);
+  const from = tween.from;
+  if (!from) return { xs: geo.xs, layers: geo.layers, sweep: e };
+  const n = geo.xs.length;
+  const pick = (arr: number[], i: number) => arr[Math.min(arr.length - 1, Math.floor((i * arr.length) / n))] ?? 0;
+  const old = new Map(from.layers.map((l) => [l.key, l]));
+  // 最底下那层的下面是基线
+  let below = from.xs.map(() => geo.yAt(0));
+  return {
+    xs: geo.xs.map((x, i) => lerp(pick(from.xs, i), x, e)),
+    layers: geo.layers.map((l) => {
+      const f = old.get(l.key) ?? { key: l.key, top: below, base: below };
+      below = f.top;
+      return {
+        key: l.key,
+        top: l.top.map((y, i) => lerp(pick(f.top, i), y, e)),
+        base: l.base.map((y, i) => lerp(pick(f.base, i), y, e)),
+      };
+    }),
+    sweep: null,
+  };
+}
+
+function sameShape(a: Geometry, b: Geometry): boolean {
+  if (a.xs.length !== b.xs.length || a.layers.length !== b.layers.length) return false;
+  if (a.xs.some((x, i) => x !== b.xs[i])) return false;
+  return a.layers.every((l, j) => {
+    const m = b.layers[j];
+    return m !== undefined && l.key === m.key && l.top.every((y, i) => y === m.top[i]) && l.base.every((y, i) => y === m.base[i]);
+  });
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** `--motion-ease` 那条曲线：cubic-bezier(0.22, 0.8, 0.24, 1) */
+function ease(t: number): number {
+  const [x1, y1, x2, y2] = [0.22, 0.8, 0.24, 1];
+  const curve = (p1: number, p2: number) => (s: number) => {
+    const r = 1 - s;
+    return 3 * p1 * s * r * r + 3 * p2 * s * s * r + s * s * s;
+  };
+  const bx = curve(x1, x2);
+  const by = curve(y1, y2);
+  // x 随 s 单调增：二分找到 x(s) = t 的那个 s
+  let lo = 0;
+  let hi = 1;
+  for (let k = 0; k < 24; k++) {
+    const mid = (lo + hi) / 2;
+    if (bx(mid) < t) lo = mid;
+    else hi = mid;
+  }
+  return by((lo + hi) / 2);
+}
+
+/** 路径里的数留三位小数：再多屏幕上看不出来，只让字符串变长 */
+const num = (v: number) => Math.round(v * 1000) / 1000;
+
+type Pt = readonly [x: number, y: number];
+
+const zip = (xs: number[], ys: number[]): Pt[] => xs.map((x, i) => [x, ys[i] ?? 0]);
+
+/** 一层顶上那条线 */
+function linePath(xs: number[], ys: number[]): string {
+  const out: string[] = [];
+  monotone(zip(xs, ys), out, "M");
+  return out.join("");
+}
+
+/** 一层的填充：沿着顶往右走，再沿着底（下面那一层的顶）走回来 */
+function areaPath(xs: number[], top: number[], base: number[]): string {
+  const out: string[] = [];
+  monotone(zip(xs, top), out, "M");
+  monotone(zip(xs, base).reverse(), out, "L");
+  out.push("Z");
+  return out.join("");
+}
+
+/**
+ * 单调三次曲线（Steffen 1990，d3 的 `curveMonotoneX` 也是它）：每一段都不越过两端的值，
+ * 所以曲线不会冒出数据里没有的峰，也不会在空桶那里钻到基线下面去。
+ */
+function monotone(pts: Pt[], out: string[], start: "M" | "L"): void {
+  const [a, b] = pts;
+  if (!a) return;
+  out.push(`${start}${num(a[0])},${num(a[1])}`);
+  if (!b) return;
+  if (pts.length === 2) {
+    out.push(`L${num(b[0])},${num(b[1])}`);
+    return;
+  }
+  // 每一点的切线斜率：中间的看两边，两头的由相邻那一段推出来
+  const m = pts.map((p, i) => {
+    const prev = pts[i - 1];
+    const next = pts[i + 1];
+    return prev && next ? slope3(prev, p, next) : 0;
+  });
+  const n = pts.length;
+  m[0] = slope2(a, b, m[1] ?? 0);
+  m[n - 1] = slope2(pts[n - 2]!, pts[n - 1]!, m[n - 2] ?? 0);
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = pts[i]!;
+    const [x1, y1] = pts[i + 1]!;
+    const dx = (x1 - x0) / 3;
+    out.push(`C${num(x0 + dx)},${num(y0 + dx * m[i]!)},${num(x1 - dx)},${num(y1 - dx * m[i + 1]!)},${num(x1)},${num(y1)}`);
+  }
+}
+
+const sign = (v: number) => (v < 0 ? -1 : 1);
+
+/** 中间一点的切线斜率：两边割线斜率同号时取其中较缓的（再和两者的加权平均比），异号取 0 */
+function slope3([x0, y0]: Pt, [x1, y1]: Pt, [x2, y2]: Pt): number {
+  const h0 = x1 - x0;
+  const h1 = x2 - x1;
+  const s0 = (y1 - y0) / (h0 || (h1 < 0 ? -0 : 0));
+  const s1 = (y2 - y1) / (h1 || (h0 < 0 ? -0 : 0));
+  const p = (s0 * h1 + s1 * h0) / (h0 + h1);
+  return (sign(s0) + sign(s1)) * Math.min(Math.abs(s0), Math.abs(s1), 0.5 * Math.abs(p)) || 0;
+}
+
+/** 端点的切线斜率：由相邻那一段的割线和另一头的切线推出来 */
+function slope2([x0, y0]: Pt, [x1, y1]: Pt, t: number): number {
+  const h = x1 - x0;
+  return h ? ((3 * (y1 - y0)) / h - t) / 2 : t;
 }
