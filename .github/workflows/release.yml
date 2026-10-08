@@ -122,6 +122,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # **tag 上只读不存。**tag 上的运行读得到的缓存只有这个 tag 自己的和默认
+          # 分支（main）的；挂在 tag 名下的缓存下一个 tag 读不到，白占仓库 10 GB 的
+          # 缓存额度（v2026.10.7 一次占了 3.3 GB），还把 dev 上 CI 天天在用的挤掉。
+          # 演练分支照存：同一个演练分支常要连推几轮，后面几轮用得上
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -294,6 +299,8 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.target }}
+          # 见 macOS 那一档
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       # 取版本号、取 twcore 的两个脚本要 Python。Windows 的机器上不一定有，
       # 有也不一定叫 `python3` —— 脚本两个名字都认，这里保证至少有一个
@@ -603,6 +610,8 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.target }}
+          # 见 macOS 那一档
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - run: pnpm install --frozen-lockfile
 
