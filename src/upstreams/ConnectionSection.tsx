@@ -210,7 +210,7 @@ export function ConnectionSection({
       {mode === "oauth" && <OAuth form={form} set={set} />}
       {mode === "aws-keys" && <AccessKeys form={form} set={set} remote={remote != null} />}
       {mode === "aws-profile" && (
-        <FormItem label="AWS profile" htmlFor="up-profile" desc={remote ? rt.profileHint : t.profileDesc}>
+        <FormItem label={t.awsProfile} htmlFor="up-profile" desc={remote ? rt.profileHint : t.profileDesc}>
           <Input
             id="up-profile"
             className="font-mono"

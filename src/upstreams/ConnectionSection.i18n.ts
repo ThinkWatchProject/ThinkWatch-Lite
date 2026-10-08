@@ -28,6 +28,8 @@ export const connectionSectionText = messages(
     secretAccessKey: "私有访问密钥",
     sessionToken: "会话令牌（可选）",
     sessionTokenDesc: "临时凭证才有。",
+    /** 术语表：两种语言都写 AWS profile（「配置文件」是 config.yaml） */
+    awsProfile: "AWS profile",
     profileDesc: "读取本机 AWS 凭证文件（~/.aws/credentials、~/.aws/config）中的这个 profile，只支持写有访问密钥的 profile。",
     proxy: "出站代理",
     newProxy: "新建代理…",
@@ -81,6 +83,7 @@ export const connectionSectionText = messages(
     secretAccessKey: "Secret access key",
     sessionToken: "Session token (optional)",
     sessionTokenDesc: "Only temporary credentials have one.",
+    awsProfile: "AWS profile",
     profileDesc:
       "Reads this profile from the AWS credential files on this computer (~/.aws/credentials, ~/.aws/config). Only profiles that hold access keys are supported.",
     proxy: "Outbound proxy",

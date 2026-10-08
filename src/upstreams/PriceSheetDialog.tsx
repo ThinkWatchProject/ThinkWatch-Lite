@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -540,8 +540,9 @@ export function PriceSheetDialog({
                                 {o ? (
                                   <Button
                                     variant="ghost"
-                                    size="icon-xs"
+                                    size="xs"
                                     aria-label={t.removeOverride(r.model)}
+                                    className="text-muted-foreground"
                                     onClick={() =>
                                       setOverrides((all) => {
                                         const next = { ...all };
@@ -550,7 +551,7 @@ export function PriceSheetDialog({
                                       })
                                     }
                                   >
-                                    <XIcon />
+                                    {t.removeOverrideShort}
                                   </Button>
                                 ) : (
                                   <Button
