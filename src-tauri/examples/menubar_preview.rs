@@ -11,7 +11,7 @@
 //! 有新版本）、`down`（网关无法启动）、`starting`、`remote`（连着远程、断线重连中）。
 //! 另可加 `--en`、`--icon`、`--numbers`，以及 `--dump`（打出原生菜单里的项就退出）。
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", debug_assertions))]
 fn main() {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -43,7 +43,10 @@ fn main() {
                     "{name}-{}.png",
                     if dark { "dark" } else { "light" }
                 ));
-                let ok = macos::write_png(&macos::preview_image(&bar, &rows, dark), &path);
+                let ok = macos::preview::write_png(
+                    &macos::preview::preview_image(&bar, &rows, dark),
+                    &path,
+                );
                 println!("{} {}", if ok { "wrote" } else { "FAILED" }, path.display());
             }
         }
@@ -65,7 +68,7 @@ fn main() {
                     "bar-{i:02}-{}.png",
                     if dark { "dark" } else { "light" }
                 ));
-                macos::write_png(&macos::preview_image(bar, &[], dark), &path);
+                macos::preview::write_png(&macos::preview::preview_image(bar, &[], dark), &path);
             }
         }
         return;
@@ -85,7 +88,7 @@ fn main() {
     macos::apply(mtm, &bar, &rows);
     // `--dump`：把原生菜单里实际有的项打出来就退出（看子菜单、勾选、分隔线）
     if args.iter().any(|a| a == "--dump") {
-        for line in macos::describe_menu() {
+        for line in macos::preview::describe_menu() {
             println!("{line}");
         }
         return;
@@ -100,7 +103,7 @@ fn main() {
                     let (bar, rows) = model::build(&snap, style);
                     macos::apply(mtm, &bar, &rows);
                     // 菜单开着时主线程在事件跟踪模式：这一行打出来，就说明投递照样执行了
-                    if macos::is_open() {
+                    if macos::preview::is_open() {
                         println!("菜单开着时更新了一次");
                     }
                 });
@@ -110,11 +113,11 @@ fn main() {
     // `--open <秒>`：过一会儿自动把菜单打开，再过这么多秒退出（截图用）
     if let Some(i) = args.iter().position(|a| a == "--open") {
         let secs: u64 = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(6);
-        macos::open_menu_later(mtm, 1.2);
+        macos::preview::open_menu_later(mtm, 1.2);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(1200));
             std::thread::sleep(std::time::Duration::from_secs(secs));
-            macos::on_main(|_| macos::close_menu());
+            macos::on_main(|_| macos::preview::close_menu());
             std::thread::sleep(std::time::Duration::from_millis(300));
             std::process::exit(0);
         });
@@ -122,7 +125,7 @@ fn main() {
     app.run();
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", debug_assertions))]
 fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
     use thinkwatch_lite_lib::menubar::model::*;
     let now = std::time::SystemTime::now()
@@ -316,5 +319,6 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// 预览的那几样只在开发构建里（`menubar::macos::preview`）：`cargo run` 就是开发构建
+#[cfg(not(all(target_os = "macos", debug_assertions)))]
 fn main() {}

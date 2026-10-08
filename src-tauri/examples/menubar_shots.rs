@@ -11,7 +11,8 @@
 //! - `menubar-{light,dark}.png`：菜单栏上的那一块（标识和两行数字），放在一段菜单栏底色上。
 //!   和语言无关：上面只有数字。
 //! - `{zh,en}/menubar-menu-{light,dark}.png`：点开之后的菜单。**标准菜单项是近似画的**（真的
-//!   由 AppKit 画，离屏拿不到），自定义的几行和菜单栏那一块是真的，见 `macos::preview_image`。
+//!   由 AppKit 画，离屏拿不到），自定义的几行和菜单栏那一块是真的，见
+//!   `macos::preview::preview_image`。
 //!
 //! 数据和截图页（scripts/shots/）是同一个场景：今天的用量由 `--today` 传进来，就是概览上
 //! 的那几个数；ChatGPT 额度、正在跑的那一条请求、连接列表和截图页里的一致。
@@ -20,7 +21,7 @@
 //! `NOW`）：额度还有多久重置、正在跑的那一条跑了几秒，都从它算，所以哪天拍出来都一样。
 //! 不给就用同一刻（本地时间 2026-09-25 16:42:07）。
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", debug_assertions))]
 fn main() {
     use std::path::{Path, PathBuf};
 
@@ -136,8 +137,8 @@ fn main() {
     };
 
     /*
-      **正好按 2 倍写。**`macos::write_png` 按屏幕的倍数再乘 2，在视网膜屏上出来的是 4 倍，
-      换一台机器又不一样；这里自己开一块 2 倍的画布画进去，再转成 sRGB 存盘。
+      **正好按 2 倍写。**`macos::preview::write_png` 按屏幕的倍数再乘 2，在视网膜屏上出来的
+      是 4 倍，换一台机器又不一样；这里自己开一块 2 倍的画布画进去，再转成 sRGB 存盘。
     */
     let write = |image: &Retained<NSImage>, path: &Path| {
         let size = image.size();
@@ -235,12 +236,14 @@ fn main() {
         i18n::set(lang);
         let (bar, rows) = model::build(&snapshot(), model::Style::Full);
         for dark in [false, true] {
-            let image = macos::preview_image(&bar, &rows, dark);
+            let image = macos::preview::preview_image(&bar, &rows, dark);
             let name = format!("menubar-menu-{}.png", if dark { "dark" } else { "light" });
             write(&image, &out.join(dir).join(name));
         }
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// 离屏画图的那几样只在开发构建里（`menubar::macos::preview`）：`pnpm shots` 用 `cargo run`，
+/// 就是开发构建
+#[cfg(not(all(target_os = "macos", debug_assertions)))]
 fn main() {}
