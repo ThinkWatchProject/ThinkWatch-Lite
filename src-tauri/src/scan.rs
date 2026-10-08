@@ -48,14 +48,22 @@ pub fn finding_view(f: &tw_scan::report::Finding) -> wire::ScanFinding {
     }
 }
 
+/// 扫描用的规则：网关的内置规则全集。
+///
+/// **只用内置规则。**安全页上的规则只作用于经过网关的请求：在那边停用一条误报，不该让
+/// 这边悄悄少查一样东西。也因此它不会变，**编译一次**：二十来条正则每扫一遍都重新编译，
+/// 比扫描本身还慢好几倍
+fn rules() -> &'static tw_guard::tools::rules::Rules {
+    static RULES: std::sync::LazyLock<tw_guard::tools::rules::Rules> =
+        std::sync::LazyLock::new(tw_guard::tools::rules::scan_rules);
+    &RULES
+}
+
 /// 扫一遍用户级的配置面。
 pub fn scan(home: &Path) -> wire::ScanReport {
-    // **只用内置规则。**安全页上的规则只作用于经过网关的请求：在那边停用
-    // 一条误报，不该让这边悄悄少查一样东西
-    let rules = tw_guard::tools::rules::scan_rules();
     let sources = tw_scan::sources::user_level(home, &crate::clients::locations::moved(home));
     let scanned = sources.len();
-    let r = tw_scan::report::scan(&sources, &rules);
+    let r = tw_scan::report::scan(&sources, rules());
     wire::ScanReport {
         conflicting: tw_scan::report::conflicting(&r.mcp),
         findings: r.findings.iter().map(finding_view).collect(),
@@ -100,10 +108,11 @@ pub fn scan(home: &Path) -> wire::ScanReport {
     }
 }
 
-/// MCP 页打开时扫的那一遍。
+/// MCP 页打开时扫的那一遍。**读文件放在阻塞线程上**：几十个文件，配置位置还可能换到了一个
+/// 离线的网络位置上
 #[tauri::command]
 pub async fn scan_clients() -> Out<wire::ScanReport> {
-    Ok(scan(&crate::clients::home_dir()))
+    crate::clients::blocking(|| scan(&crate::clients::home_dir())).await
 }
 
 /// 此刻的来源和该盯的目录。位置按此刻的设置取：换过位置之后监视会重起
@@ -147,12 +156,10 @@ pub fn spawn_watcher(
 
     tauri::async_runtime::spawn(async move {
         let mut seen = tw_scan::watch::Seen::default();
-        // 内置规则，和打开页面时扫的是同一套
-        let rules = tw_guard::tools::rules::scan_rules();
-        // 扫一遍：这次新出现的可疑内容，和此刻该盯的目录
+        // 扫一遍：这次新出现的可疑内容，和此刻该盯的目录。规则和打开页面时扫的是同一套
         let scan_now = |seen: &mut tw_scan::watch::Seen| {
             let (sources, wanted) = look(&home);
-            let fresh = seen.diff(&tw_scan::report::scan(&sources, &rules).findings);
+            let fresh = seen.diff(&tw_scan::report::scan(&sources, rules()).findings);
             (fresh, wanted)
         };
         // 先垫一次底：把此刻已经存在的那些记下来，它们不算「新出现」
