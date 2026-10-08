@@ -1,7 +1,6 @@
-import { useCallback, useState } from "react";
+import { Suspense, lazy, useCallback, useState } from "react";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/ui/button";
-import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Segmented } from "@/ui/segmented";
 import { StatusDot } from "@/ui/status-dot";
@@ -11,6 +10,14 @@ import { rangeText } from "./range.i18n";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+
+/*
+  **日历用到时才载入。**它带着 react-day-picker 和 date-fns（六十多 kB），而点开「自定义」
+  的时候不多。指到按钮上（或者键盘聚焦到它）就开始载入，点开时多半已经在了。
+*/
+const loadCalendar = () => import("@/ui/calendar");
+const Calendar = lazy(() => loadCalendar().then((m) => ({ default: m.Calendar })));
+const preloadCalendar = () => void loadCalendar().catch(() => {});
 
 type Preset = { id: "1d" | "7d" | "30d"; ms: number };
 
@@ -275,23 +282,31 @@ export function RangePicker({
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant={preset || value.live ? "ghost" : "outline"} size="sm">
+          <Button
+            variant={preset || value.live ? "ghost" : "outline"}
+            size="sm"
+            onPointerEnter={preloadCalendar}
+            onFocus={preloadCalendar}
+          >
             <CalendarIcon />
             {preset || value.live ? t.custom : value.label}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align={align}>
-          <Calendar
-            mode="single"
-            selected={from}
-            disabled={{ after: new Date() }}
-            onSelect={(d) => {
-              if (!d) return;
-              setFrom(d);
-              onChange(customRange(d));
-              setOpen(false);
-            }}
-          />
+          {/* 还没载入完：先占住日历的大小，载入完不跳 */}
+          <Suspense fallback={<div className="h-[250px] w-[212px]" />}>
+            <Calendar
+              mode="single"
+              selected={from}
+              disabled={{ after: new Date() }}
+              onSelect={(d) => {
+                if (!d) return;
+                setFrom(d);
+                onChange(customRange(d));
+                setOpen(false);
+              }}
+            />
+          </Suspense>
         </PopoverContent>
       </Popover>
     </div>
