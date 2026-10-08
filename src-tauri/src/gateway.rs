@@ -305,8 +305,21 @@ pub(crate) async fn heartbeat_loop(
     use supervisor::{HealthTracker, Verdict, health};
     let client = ControlClient::new(at, key_file);
     let mut tracker = HealthTracker::new();
+    let mut state = sup.watch();
 
     loop {
+        // **不在运行就不醒**：等守护报「运行中」再开始数。core 没起来、连着远程（本机的
+        // core 停着）的时候，这里原来照样每五秒醒一次，醒了什么也不做
+        if !matches!(*state.borrow_and_update(), CoreState::Running { .. }) {
+            tracker.reset();
+            if state
+                .wait_for(|s| matches!(s, CoreState::Running { .. }))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
         tokio::time::sleep(health::INTERVAL).await;
 
         // 只在 core 应该在跑的时候探。启动中、重启中、安全模式下探测
@@ -347,9 +360,10 @@ pub(crate) async fn heartbeat_loop(
 
 /// 把控制面的事件流搬给前端。
 ///
-/// 断线就重连，但**退避要克制**：core 重启期间 socket 必然连不上，这是
-/// 预期状态而不是故障。1 秒一次的重试既不会刷屏，也不会让用户在 core
-/// 恢复后还盯着一个空列表等太久。
+/// 断线就重连。**core 不在的时候不去连**：重启期间 socket 必然连不上，这是预期状态
+/// 而不是故障 —— 等守护报它答应了控制面再订阅，答应的那一刻就接上，不用等下一次
+/// 重试。答应了却订阅不上的，隔 1 秒再试：既不会刷屏，也不会让用户在 core 恢复后还
+/// 盯着一个空列表等太久。
 ///
 /// **重新连上时补报一条「丢过事件」**（`EventsDropped`，条数记 0：丢了多少不知道）。
 /// 断开的那一段里发生的事，事件流不会再说一遍 —— 界面要对一次账，否则那段时间
@@ -365,17 +379,18 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
     let client = st.control.clone();
     let mut moved = client.moved();
     let mut link = st.link.watch();
+    let mut core = st.supervisor.watch();
     let mut connected_before = false;
     loop {
         moved.mark_unchanged();
-        // **连着远程、还没连上时不去订阅**：连接那一层自己在按退避重连，这里再每秒
-        // 连一次，就是往服务器上多打一份不带退避的连接。等它连上（或者换了连接）
-        while !matches!(
-            *link.borrow_and_update(),
-            crate::connection::LinkState::Local | crate::connection::LinkState::Connected { .. }
-        ) {
-            if link.changed().await.is_err() {
-                return;
+        // **订阅得上再去订阅。**连着远程、还没连上时，连接那一层自己在按退避重连，这里
+        // 再每秒连一次，就是往服务器上多打一份不带退避的连接；本机的 core 没起来时，每秒
+        // 去连一次 socket（每次还要读一遍配置里的钥匙）也只是在空转。等连接那一层连上、
+        // 等守护报 core 答应了（或者换了连接）
+        while !can_subscribe(&link.borrow_and_update(), &core.borrow_and_update()) {
+            tokio::select! {
+                r = link.changed() => if r.is_err() { return },
+                r = core.changed() => if r.is_err() { return },
             }
         }
         let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -480,6 +495,21 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
     }
 }
 
+/// 现在订阅不订阅得上：远程的，连接那一层连上了；本机的，守护报 core 答应了控制面
+/// （运行中，或者安全模式里起来了的那一个 —— 安全模式下也要接事件，见上面的
+/// `ConfigReloaded`）
+fn can_subscribe(link: &crate::connection::LinkState, core: &CoreState) -> bool {
+    use crate::connection::LinkState;
+    match link {
+        LinkState::Connected { .. } => true,
+        LinkState::Local => matches!(
+            core,
+            CoreState::Running { .. } | CoreState::SafeMode { pid: Some(_) }
+        ),
+        LinkState::Waiting | LinkState::Connecting { .. } | LinkState::Down { .. } => false,
+    }
+}
+
 /// 跑着这条事件流，直到它自己结束（`Some`，带着它的结果），或者换了连接（`None`）。
 ///
 /// **先看换没换连接**（`biased`，那一支排在前面）：切换之后，旧的那条流可能还攒着
@@ -573,6 +603,50 @@ async fn supervise(sup: Arc<Supervisor>, app: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 本机的 core 没答应控制面时不订阅（原来每秒去连一次 socket）；连着远程的看连接那一层
+    #[test]
+    fn the_event_stream_is_only_tried_when_it_can_be_had() {
+        use crate::connection::LinkState;
+        let up = [
+            CoreState::Running { pid: 1 },
+            CoreState::SafeMode { pid: Some(1) },
+        ];
+        let down = [
+            CoreState::Starting,
+            CoreState::Restarting {
+                attempt: 1,
+                in_ms: 500,
+            },
+            CoreState::SafeMode { pid: None },
+            CoreState::Stopped,
+            CoreState::Exited { reason: "x".into() },
+            CoreState::Failed { reason: "x".into() },
+        ];
+        for c in &up {
+            assert!(can_subscribe(&LinkState::Local, c), "{c:?}");
+        }
+        for c in &down {
+            assert!(!can_subscribe(&LinkState::Local, c), "{c:?}");
+        }
+        // 连着远程时本机的 core 停着：看的是连接那一层
+        let connected = LinkState::Connected {
+            info: crate::connection::connector::ServerInfo {
+                core_version: "0.0.0".into(),
+                gateway_addr: None,
+            },
+        };
+        assert!(can_subscribe(&connected, &CoreState::Stopped));
+        for l in [
+            LinkState::Waiting,
+            LinkState::Connecting {
+                attempt: 1,
+                ever: false,
+            },
+        ] {
+            assert!(!can_subscribe(&l, &CoreState::Running { pid: 1 }), "{l:?}");
+        }
+    }
 
     /// **换了连接，先认换连接**：旧的那条流此刻也还有东西可交（两支同时就绪），也不再
     /// 去读它。不分先后的话，这里每一次都有一半的机会先读旧的
