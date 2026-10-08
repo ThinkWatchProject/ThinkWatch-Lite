@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Banner } from "@/ui/banner";
+import { Meter } from "@/ui/meter";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { patchConfig } from "@/patch";
@@ -203,25 +204,18 @@ export function RetentionSection({
  * 以上），平时是灰的 —— 占用本身不是问题。
  */
 function Usage({ used, cap, label }: { used: number; cap: number; label: string }) {
-  const ratio = cap > 0 ? Math.min(1, used / cap) : 0;
-  const near = ratio >= 0.9;
+  const near = cap > 0 && used / cap >= 0.9;
   return (
     <span className="mt-2 flex items-center gap-2.5">
-      <span
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={cap}
-        aria-valuenow={Math.min(used, cap)}
-        aria-valuetext={`${bytes(used)} / ${bytes(cap)}`}
-        className="relative h-1 w-40 shrink-0 overflow-hidden rounded-full bg-foreground/10"
-      >
-        <span
-          className={cn("absolute inset-y-0 left-0 rounded-full motion-bar", near ? "bg-warning" : "bg-foreground/45")}
-          // 占用很小时也留一个看得见的头，不是一根空条
-          style={{ width: `${used > 0 ? Math.max(2, ratio * 100) : 0}%` }}
-        />
-      </span>
+      <Meter
+        size="sm"
+        value={used}
+        max={cap}
+        tone={near ? "warn" : "neutral"}
+        label={label}
+        valueText={`${bytes(used)} / ${bytes(cap)}`}
+        className="w-40 shrink-0"
+      />
       <span className={cn("tw-num", near && "text-warning-foreground")}>
         {bytes(used)} / {bytes(cap)}
       </span>

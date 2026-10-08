@@ -7,6 +7,7 @@ import { notSent } from "@/requestRouting";
 import type { RequestRow, SessionDetail, TurnView } from "@/types";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
+import { Meter } from "@/ui/meter";
 import { AnimatedNumber } from "@/ui/motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Skeleton } from "@/ui/skeleton";
@@ -391,12 +392,7 @@ function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => v
             >
               <span className="w-6 shrink-0 text-right tw-label text-muted-foreground">{i + 1}</span>
               <span className="w-32 shrink-0 truncate text-left text-muted-foreground">{x.model}</span>
-              <span className="relative h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-foreground/[0.06]">
-                <span
-                  className="motion-bar absolute inset-y-0 left-0 rounded-full bg-chart-2"
-                  style={{ width: `${((x.cost ?? 0) / max) * 100}%` }}
-                />
-              </span>
+              <Meter value={x.cost ?? 0} max={max} color="var(--chart-2)" className="min-w-8 flex-1" />
               {/* 两格的宽度按最长的那个词定：英文的「In progress」「Canceled」，Windows 上字大 1px 也放得下 */}
               <span className="w-24 shrink-0 text-right">
                 {/* **没有价格就说没有价格，不写 $0**；估算的金额带记号；没有用量的不是「没有价格」 */}

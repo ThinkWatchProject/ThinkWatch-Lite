@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Meter } from "@/ui/meter";
 import { PageSection } from "@/ui/page";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
@@ -146,14 +147,7 @@ function Bars({
             {l.model}
           </span>
           {/* 条的右端那道竖线是中位数，和延迟一节的 P50 竖线同一个记号 */}
-          <span aria-hidden className={cn(COL.bar, "relative flex h-1.5 shrink-0 rounded-full bg-foreground/[0.06]")}>
-            <span
-              className="motion-bar relative shrink-0 rounded-full bg-chart-3"
-              style={{ width: `${(l.p50 / max) * 100}%` }}
-            >
-              <span className="absolute -top-[3px] right-0 h-3 w-0.5 translate-x-1/2 rounded-full bg-chart-1" />
-            </span>
-          </span>
+          <Meter value={l.p50} max={max} color="var(--chart-3)" mark="end" className={cn(COL.bar, "shrink-0")} />
           <span className={cn(COL.p50, "shrink-0 text-right")}>
             <AnimatedNumber value={l.p50} format={(n) => Math.round(n).toLocaleString()} scope={scope} />
           </span>

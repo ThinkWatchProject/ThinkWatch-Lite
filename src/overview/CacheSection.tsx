@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Meter } from "@/ui/meter";
 import { PageSection } from "@/ui/page";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
@@ -7,7 +8,7 @@ import { compact } from "@/format";
 import { usd, type Dashboard } from "@/types";
 import { useText } from "@/i18n";
 import { cacheByModel, ROWS } from "./series";
-import { ColumnHead, LinkRow, Meter, ModelMark, Scope } from "./parts";
+import { ColumnHead, LinkRow, ModelMark, Scope } from "./parts";
 import { overviewText } from "./overview.i18n";
 
 const pct = (n: number) => `${Math.round(n)}%`;
@@ -121,7 +122,7 @@ export function CacheSection({ d, scope, scoped }: { d: Dashboard; scope: string
                   </span>
                   <Tip text={t.tokens(compact(r.ctx), r.ctx)}>
                     <span className="w-20 shrink-0">
-                      <Meter value={r.hit} max={1} color="var(--cache-hit)" />
+                      <Meter size="lg" value={r.hit} max={1} color="var(--cache-hit)" />
                     </span>
                   </Tip>
                   <AnimatedNumber value={r.hit * 100} format={pct} scope={scope} className="w-10 shrink-0 text-right" />
