@@ -24,11 +24,6 @@ export const sessionsText = messages(
     openSession: "打开会话",
     copySessionId: "复制会话 ID",
 
-    // 时长。会话短的按秒算，长的按小时算
-    seconds: (n: number) => `${n} 秒`,
-    minutes: (n: number) => `${n} 分`,
-    hours: (n: string) => `${n} 小时`,
-
     // 费用那一格。格子里只有一个数，合计缺了轮次时写成「≥」下限；
     // **估算、无法计价、无用量各说各的**，一句一段写在悬停里
     estimatedTip: (amount: string) =>
@@ -82,11 +77,6 @@ export const sessionsText = messages(
     sessionActions: "Actions for this session",
     openSession: "Open session",
     copySessionId: "Copy session ID",
-
-    // 和 format.i18n.ts 的单位写法一致：s、min、h
-    seconds: (n: number) => `${n} s`,
-    minutes: (n: number) => `${n} min`,
-    hours: (n: string) => `${n} h`,
 
     estimatedTip: (amount: string) =>
       `${amount} of this is estimated: requests disconnected or were interrupted before the response finished, and output usage is counted up to the disconnect; or the model's price was taken from another platform.`,

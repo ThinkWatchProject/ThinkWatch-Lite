@@ -8,17 +8,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
-import { Button } from "@/ui/button";
+import { Button, DISCLOSURE } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { WslConfigPlan } from "@/types";
-import { ConfirmAction, DISCLOSURE, focusSelf, useDialogFocus } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 import { Diff } from "./PlanDialog";
 
@@ -152,9 +153,9 @@ export function RestartWslDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{common.cancel}</AlertDialogCancel>
-          <ConfirmAction variant="destructive" pending={pending} onConfirm={onConfirm}>
+          <AlertDialogConfirm variant="destructive" pending={pending} onConfirm={onConfirm}>
             {t.confirmRestart}
-          </ConfirmAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

@@ -56,7 +56,6 @@ export const mcpText = messages(
     compareDesc: "各客户端中的配置不一致，不一致的字段已标出。",
     env: "环境变量",
     noEnv: "（无）",
-    file: "配置文件",
     unify: "如需统一：在矩阵中选择要保留的配置，复制到其他客户端。写入前将显示改动。",
 
     // 写入前的确认
@@ -152,7 +151,6 @@ export const mcpText = messages(
     compareDesc: "The configuration differs across clients; the fields that differ are highlighted.",
     env: "Environment variables",
     noEnv: "(none)",
-    file: "Configuration file",
     unify:
       "To make them consistent, choose the configuration to keep in the matrix and copy it to the other clients. The change is shown before anything is written.",
 

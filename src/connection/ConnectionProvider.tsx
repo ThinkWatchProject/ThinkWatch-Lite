@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { toast } from "sonner";
-import { errorText } from "@/i18n/core.i18n";
+import { notify } from "@/ui/notify";
 import { LOCAL, connApi, type ConnView, type Profile, type ServerInfo } from "./api";
 import { ProfileDialog } from "./ProfileDialog";
 import { SwitchDialog } from "./SwitchDialog";
@@ -74,7 +73,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         if (id === view.current) return;
         if (id === LOCAL) {
           // 切回本机不用确认：本机 core 拉起来，指着服务器的客户端不受影响
-          connApi.switchTo(LOCAL, false).catch((e) => toast.error(errorText(e)));
+          connApi.switchTo(LOCAL, false).catch((e) => notify.error(e));
           return;
         }
         const target = view.profiles.find((p) => p.id === id);

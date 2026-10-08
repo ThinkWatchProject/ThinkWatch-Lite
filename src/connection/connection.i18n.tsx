@@ -84,7 +84,6 @@ export const connText = messages(
       </>
     ),
     test: "测试连接",
-    testHint: "完成握手并读取服务器 core 的版本。",
     testOk: (version: string, gateway: string | null) =>
       `连接成功 · core ${version}${gateway ? ` · 网关 ${gateway}` : ""}`,
     saveAndSwitch: "保存并切换",
@@ -162,8 +161,6 @@ export const connText = messages(
     runOnServer: (version: string) =>
       `服务器需要运行 core ${version}。在服务器上执行以下命令安装此版本，服务器上现有的版本较新或较旧均适用：`,
     reconnect: "重新连接",
-    localDown: "本机 core 未在运行",
-    restartLocal: "重新启动",
 
     // 安全模式、配置文件读不了
     configBroken: "配置文件有误，网关未启动",
@@ -241,7 +238,6 @@ export const connText = messages(
       </>
     ),
     test: "Test connection",
-    testHint: "Completes the handshake and reads the server's core version.",
     testOk: (version: string, gateway: string | null) =>
       `Connected · core ${version}${gateway ? ` · gateway ${gateway}` : ""}`,
     saveAndSwitch: "Save and switch",
@@ -320,8 +316,6 @@ export const connText = messages(
     runOnServer: (version: string) =>
       `The server needs core ${version}. Run this command on the server to install that version, whether the installed one is newer or older:`,
     reconnect: "Reconnect",
-    localDown: "The local core is not running",
-    restartLocal: "Restart",
 
     configBroken: "The configuration file has an error; the gateway is not running",
     safeMode: "Safe mode",

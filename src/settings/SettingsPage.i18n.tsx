@@ -60,8 +60,6 @@ export const settingsText = messages(
   {
 
     // 页头的摘要
-    running: "运行中",
-    gateway: "网关",
     notListening: "未在监听",
     scopeLocal: "仅本机",
     scopeLan: "局域网",
@@ -145,8 +143,6 @@ export const settingsText = messages(
   },
   {
 
-    running: "Running",
-    gateway: "Gateway",
     notListening: "Not listening",
     scopeLocal: "This machine only",
     scopeLan: "Local network",

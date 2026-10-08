@@ -8,6 +8,7 @@ import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { cn } from "@/lib/utils";
+import { ms } from "@/format";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
@@ -209,7 +210,7 @@ export function ConnectionSection({
       {mode === "oauth" && <OAuth form={form} set={set} />}
       {mode === "aws-keys" && <AccessKeys form={form} set={set} remote={remote != null} />}
       {mode === "aws-profile" && (
-        <FormItem label="AWS profile" htmlFor="up-profile" desc={remote ? rt.profileHint : t.profileDesc}>
+        <FormItem label={t.awsProfile} htmlFor="up-profile" desc={remote ? rt.profileHint : t.profileDesc}>
           <Input
             id="up-profile"
             className="font-mono"
@@ -549,7 +550,7 @@ function OAuth({
   );
 }
 
-/** 「连接正常 · 认证通过 · 响应 312 ms · 经由 hk-socks · 发现 6 个模型」 */
+/** 「连接正常 · 认证通过 · 响应 312ms · 经由 hk-socks · 发现 6 个模型」 */
 export function TestLine({ result, bordered = true }: { result: ProviderTestResult; bordered?: boolean }) {
   const t = useText(connectionSectionText);
   if (!result.ok) {
@@ -565,7 +566,7 @@ export function TestLine({ result, bordered = true }: { result: ProviderTestResu
   }
   const parts = [
     t.authenticated,
-    t.responded(result.latency_ms),
+    t.responded(ms(result.latency_ms)),
     result.via ? t.via(result.via) : null,
     describeModelList(result.models),
   ].filter(Boolean);

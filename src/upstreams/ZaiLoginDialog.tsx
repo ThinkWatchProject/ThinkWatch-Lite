@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useSystemProxyLabel } from "@/connection/Remote";
 import { ExternalLinkIcon } from "lucide-react";
-import { subscribe } from "@/lib/tauriEvent";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -18,18 +17,16 @@ import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
-import type { CoreEvent, Overview, ZaiFamily, ZaiLoginStatus } from "@/types";
+import type { Overview, ZaiFamily, ZaiLoginStatus } from "@/types";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { zaiLoginText } from "./ZaiLoginDialog.i18n";
 import { coreText, errorText, proxyKindLabel, shortUrl } from "./labels";
 import { DialogError, FormItem } from "./parts";
+import { useLoginWait } from "./loginWait";
 import { ZAI_ENDPOINTS } from "./presets";
 import { freeName } from "./upstreamForm";
-
-/** 登录还没结果时，多久问一次 core。事件是主路，这是它的兜底 */
-const POLL_MS = 2_000;
 
 type Phase =
   | { at: "form" }
@@ -65,23 +62,10 @@ export function ZaiLoginDialog({
   const [phase, setPhase] = useState<Phase>({ at: "form" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 卸载之后不要再写状态：等待期间用户可能直接关掉对话框。
-  // **挂载时要置回来** —— 开发模式下 effect 会先跑一遍再清理再跑一遍
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
 
   const waiting = phase.at === "waiting" ? phase.id : null;
-  /** 已经收过尾的那次登录。事件和轮询都会报结果，只收一次 */
-  const settled = useRef<string | null>(null);
-
-  function settle(s: ZaiLoginStatus) {
-    if (!alive.current || s.status === "pending" || settled.current === s.id) return;
-    settled.current = s.id;
+  // 结果由 core 发事件，轮询兜底；对话框关掉就不再等（见 `useLoginWait`）
+  useLoginWait(waiting, api.zaiLoginStatus, (s: ZaiLoginStatus) => {
     if (s.status === "done" && s.provider) {
       setPhase({ at: "done", provider: s.provider, account: s.account ?? null });
       onSaved(s.provider);
@@ -90,47 +74,13 @@ export function ZaiLoginDialog({
     setPhase({ at: "form" });
     const text = textOf(zaiLoginText);
     setError(s.error ? coreText(s.error) : s.status === "expired" ? text.expired : text.cancelled);
-  }
-
-  // 结果由 core 发事件，不必一直问；问一遍是为了事件漏掉时也能收尾
-  useEffect(() => {
-    if (!waiting) return;
-    const un = subscribe<CoreEvent>("core-event", (e) => {
-      const ev = e.payload;
-      if (ev.kind !== "login_finished" || ev.login !== waiting) return;
-      // 事件只报结果，不带登上的是哪个账号：那一项只在这次登录的状态里。立刻问一次，
-      // 问不到就按事件收尾
-      api.zaiLoginStatus(ev.login).then(settle, () =>
-        settle({
-          id: ev.login,
-          status: ev.status,
-          provider: ev.provider ?? null,
-          error: ev.error ?? null,
-        }),
-      );
-    });
-    const timer = setInterval(() => {
-      api
-        .zaiLoginStatus(waiting)
-        .then(settle)
-        .catch(() => {
-          // 控制面一时不通：下一轮再问
-        });
-    }, POLL_MS);
-    return () => {
-      un();
-      clearInterval(timer);
-    };
-    // settle 每次渲染都是新的，但订阅只该跟着这次登录重建
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waiting]);
+  });
 
   async function start() {
     setBusy(true);
     setError(null);
     try {
       const login = await api.startZaiLogin(family, name.trim(), proxy);
-      if (!alive.current) return;
       setPhase({ at: "waiting", id: login.id });
     } catch (e) {
       setError(errorText(e));

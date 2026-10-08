@@ -6,7 +6,7 @@ import { AnimatedNumber, Reveal } from "@/ui/motion";
 import { notify, undoable } from "@/ui/notify";
 import { Page, PageHeader, SummaryItem } from "@/ui/page";
 import { Skeleton } from "@/ui/skeleton";
-import { EmptyState, Loadable } from "@/ui/states";
+import { EmptyState, Loadable, RowsSkeleton } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { useNav, useNavParams } from "@/nav";
 import type { ConfigFocus } from "@/configLocate";
@@ -25,7 +25,6 @@ import { KeysTable } from "./KeysTable";
 import { keysPageText } from "./KeysPage.i18n";
 import { takeoverOf } from "./labels";
 import { inputOfView, nextReset } from "./limits";
-import { RowsSkeleton } from "./parts";
 import { RotateDialog } from "./RotateDialog";
 
 /** setTimeout 能等的最长时间（2^31 − 1 毫秒）：再长会当成 0，立刻就响 */

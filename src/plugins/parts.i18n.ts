@@ -13,7 +13,6 @@ export const pluginPartsText = messages(
     permissions: "申请的权限",
     /** 这一项权限这一版没有了 */
     permissionRemoved: "不再申请",
-    statsTitle: "运行统计",
     errorAt: (line: number, column: number | null) => (column != null ? `第 ${line} 行第 ${column} 列` : `第 ${line} 行`),
   },
   {
@@ -26,7 +25,6 @@ export const pluginPartsText = messages(
     codeLabel: "Plugin code",
     permissions: "Requested permissions",
     permissionRemoved: "No longer requested",
-    statsTitle: "Runs",
     errorAt: (line: number, column: number | null) => (column != null ? `line ${line}, column ${column}` : `line ${line}`),
   },
 );

@@ -1,18 +1,20 @@
 import { useId, useMemo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
-import { Button } from "@/ui/button";
+import { Button, DISCLOSURE } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
+import { Tile } from "@/ui/tile";
+import { useDialogFocus } from "@/ui/dialog-focus";
 import { cn } from "@/lib/utils";
 import { useNav } from "@/nav";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { BedrockDraft, DesktopRule, DetectedClient, FieldChange, ModelChoice, PinnedModel, PlanView } from "@/types";
-import { ClientMark, DISCLOSURE, Tile, useDialogFocus } from "@/keys/parts";
+import { ClientMark } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 
 /**

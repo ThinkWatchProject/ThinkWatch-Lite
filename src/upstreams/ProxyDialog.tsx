@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIcon } from "lucide-react";
+import { ms } from "@/format";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -202,7 +203,7 @@ export function ProxyDialog({
             ) : result ? (
               result.ok ? (
                 <StatusLabel tone="ok" className="motion-fade">
-                  {t.ok(auth, result.total_ms)}
+                  {t.ok(auth, ms(result.total_ms))}
                 </StatusLabel>
               ) : (
                 // 失败的原因可能很长（卡在哪一步、为什么）：折行写全，不截断

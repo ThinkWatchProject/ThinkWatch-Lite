@@ -98,8 +98,6 @@ export function sentModel(r: { model: string; routing?: HistoryRow["routing"] })
 export const SCOPE_PARTS = ["clients", "models", "upstreams"] as const;
 export type ScopePart = (typeof SCOPE_PARTS)[number];
 
-export const EMPTY_SCOPE: PluginScope = { clients: [], models: [], upstreams: [] };
-
 /**
  * 一条通配规则对不对得上：`*` 是任意一段（可以为空），别的字符原样比。
  *

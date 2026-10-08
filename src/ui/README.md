@@ -133,6 +133,22 @@ Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outsi
 Numbers that line up (amounts, latency, counts) add `tw-num` (tabular figures).
 Windows and Linux shift every level up 1px automatically.
 
+### Numbers and times
+
+Every quantity has one way of being written, and its helper lives in `src/format.ts`.
+Never format these by hand in a page:
+
+| Quantity | Helper | Looks like |
+| --- | --- | --- |
+| Latency, a single duration in ms | `ms(n)`; the combined column `latency(ttft, total)` | `1182ms`, `492→1486ms` |
+| Latency in a side-by-side summary only | `msShort(n)` | `438ms`, `1.18s` |
+| Time of an event | `when(at)` (to the second), `whenMinute(at)` | `14:07:09`, `09-14 23:05` |
+| Day | `monthDay(at)` | `10-08` |
+| Tokens (usage, context windows, output limits) | `compact(n)`; a pair `tokens(in, out)` | `463`, `1.5k`, `128k`, `2.7M` |
+| A session's span | `span(n)` | `42 秒`, `1.5 h` |
+| Bytes | `size(n)` | `245 KB`, `1.4 MB` |
+| Money | `usd(micros)` (`@/types`), `money(micros, estimated)` | `$0.041`, `~$0.018` |
+
 ---
 
 ## Colour
@@ -261,7 +277,8 @@ import { notify, undoable, usePending } from "@/ui/notify";
 ```
 
 - `notify.success(msg)` — only when the result is not visible on screen (saved to disk,
-  copied, sent). If the row appears or the switch flips, no toast.
+  copied, sent). If the row appears or the switch flips, no toast. Copying text is
+  `copyText(text, done?)` from the same module.
 - `notify.error(e, title?)` — every failed action. Pass the caught value; it is
   translated with `errorText`. **Never call `toast` from sonner directly.**
 - **Persistent state is a `Banner`, not a toast.** Toasts float away; "config rejected",
@@ -280,7 +297,16 @@ await undoable({
 ```
 
 - Irreversible destructive actions (delete an upstream) keep an `AlertDialog`; its title
-  has no question mark.
+  has no question mark. Its confirm button is `AlertDialogConfirm` (`@/ui/alert-dialog`):
+  it shows `pending` and does not close on click, so a failure can be shown in the dialog;
+  the caller closes it on success. (`AlertDialogAction` has `pending` too, for the rare
+  action that may close at once.)
+
+```tsx
+<AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
+  {t.delete}
+</AlertDialogConfirm>
+```
 - **Pending buttons**: every async button shows it is working. `Button` has a `pending`
   prop (spinner, disabled, `aria-busy`, label unchanged so nothing shifts):
 
@@ -309,6 +335,19 @@ Tones: `info` (grey, tell), `warning` (amber, works but watch out), `error` (red
 act). `layout="strip"` (default) is a full-width strip under the toolbar or at the top of
 a region; `layout="inline"` is a rounded box inside a page, below the `PageHeader`.
 Passing `show` animates it in and out; without `show` it is static.
+
+### Shared pieces
+
+Small things several pages need live in `src/ui`, not in the page that had them first:
+
+| Piece | From | Use |
+| --- | --- | --- |
+| `focusSelf`, `useDialogFocus` | `@/ui/dialog-focus` | `onOpenAutoFocus={focusSelf}` keeps the focus ring off the first button; `{...useDialogFocus()}` returns focus to the row after Esc |
+| `CopyButton`, `CopyIconButton` | `@/ui/copy-button` | Copy with a check mark that flashes for 1.5s |
+| `Tile` | `@/ui/tile` | The 28px square at the start of a row (client mark, icon) |
+| `openable`, `OPENABLE_ROW`, `stop` | `@/ui/openable` | A table row that opens its dialog on click / Enter; `stop` on controls inside it |
+| `DISCLOSURE` | `@/ui/button` | A ghost button that expands a block (no fill while expanded) |
+| `RowsSkeleton` | `@/ui/states` | Skeleton for two-line rows with a `Tile` (Keys, Clients) |
 
 ---
 
@@ -410,9 +449,10 @@ useNavParams("keys", (p) => {
 
 Wait for the data a dialog needs before rendering it (an edit dialog opened by a deep link
 may mount before its row is loaded). The Settings page handles `section` itself
-(`revealSection` finds `data-section="<id>"`, or the heading whose text is the title in
-`palette/sections.ts`). When the Settings page is restructured, keep one palette entry per
-setting a user would search for and point its `id` at the section that now holds it.
+(`jump` in `settings/kit.tsx` scrolls to the `SettingsGroup` whose `id`, or the
+`SettingsRow` whose `anchor`, is that section). When the Settings page is restructured, keep
+one palette entry per setting a user would search for (`palette/sections.ts`) and point its
+`id` at the group or row that now holds it.
 
 ### Command palette and shortcuts
 

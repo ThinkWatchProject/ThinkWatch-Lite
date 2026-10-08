@@ -5,6 +5,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
+import { CopyIconButton } from "@/ui/copy-button";
+import { Tile } from "@/ui/tile";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { cn } from "@/lib/utils";
 import { when } from "@/format";
 import { takesEffectText } from "@/labels";
@@ -15,7 +18,7 @@ import { coreText } from "@/i18n/core.i18n";
 import type { ClientView, DetectedClient, FindingView } from "@/types";
 import type { KeyUse } from "@/keys/data";
 import { TakeoverBadge } from "@/keys/KeysTable";
-import { ClientMark, CopyIconButton, Tile, focusSelf, useDialogFocus } from "@/keys/parts";
+import { ClientMark } from "@/keys/parts";
 import { useRemote } from "@/connection/useRemote";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";

@@ -6,7 +6,7 @@ import { errorText } from "@/i18n/core.i18n";
 import { when } from "@/format";
 import { EMPTY_FILTER, facets, hasAnyFilter, sortRows } from "@/requestTable";
 import type { CoreStatus, RequestRow, SessionView } from "@/types";
-import RequestDrawer from "@/RequestDrawer";
+import RequestDrawer from "./drawer/RequestDrawer";
 import { useNav, useNavParams } from "@/nav";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";

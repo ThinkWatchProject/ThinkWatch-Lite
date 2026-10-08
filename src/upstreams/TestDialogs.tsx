@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIcon, ZapIcon } from "lucide-react";
+import { ms } from "@/format";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -34,6 +35,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { api } from "./api";
+import { enabledModels, useModelLists } from "./data";
 import { TestLine } from "./ConnectionSection";
 import {
   billingSummary,
@@ -192,7 +194,7 @@ export function LinkTestDialog({
                       <TableCell className="align-top whitespace-normal">
                         {r.ok ? (
                           <span className="tw-num">
-                            {r.segments.map((s) => `${l1StageLabel(s.stage)} ${s.ms} ms`).join(" · ")}
+                            {r.segments.map((s) => `${l1StageLabel(s.stage)} ${ms(s.ms)}`).join(" · ")}
                           </span>
                         ) : (
                           <span className="text-destructive">{l1ErrorText(r)}</span>
@@ -204,7 +206,7 @@ export function LinkTestDialog({
                         ))}
                       </TableCell>
                       <TableCell className="text-right align-top tw-num">
-                        {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
+                        {r.ok ? ms(r.total_ms) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -245,7 +247,6 @@ export function SpeedTestDialog({
 }) {
   const t = useText(testDialogsText);
   const common = useText(commonText);
-  const [models, setModels] = useState<string[] | null>(null);
   const [model, setModel] = useState("");
   const [chosen, setChosen] = useState<Set<string>>(
     () => new Set(preselect ? [preselect] : ov.providers.filter((p) => !p.disabled).map((p) => p.name)),
@@ -257,31 +258,25 @@ export function SpeedTestDialog({
   const [error, setError] = useState<string | null>(null);
 
   // 可选的模型：各上游启用范围内的模型并起来。**停用的上游也算** —— 启用
-  // 之前先测一次正是测速的用途
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      ov.providers.map((p) =>
-        api
-          .providerModels(p.name)
-          .then((v) => ({ name: p.name, ids: v.models.filter((m) => m.enabled).map((m) => m.id) }))
-          .catch(() => ({ name: p.name, ids: [] as string[] })),
-      ),
-    ).then((lists) => {
-      if (!alive) return;
-      const all = [...new Set(lists.flatMap((l) => l.ids))].sort();
-      // 默认选勾选的上游里能被最多家测到的模型 —— 测速的意义在于横向比较
-      const picked = lists.filter((l) => chosen.has(l.name));
-      const count = (m: string) => picked.filter((l) => l.ids.includes(m)).length;
-      const best = [...all].sort((a, b) => count(b) - count(a))[0] ?? "";
-      setModels(all);
-      setModel((m) => m || best);
-    });
-    return () => {
-      alive = false;
-    };
+  // 之前先测一次正是测速的用途。清单和上游页的模型弹窗共用一份缓存
+  const names = ov.providers.map((p) => p.name);
+  const lists = useModelLists(names);
+  const enabled = useMemo(
+    () => (lists.pending ? null : names.map((name, i) => ({ name, ids: enabledModels(lists.data[i]) }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    [lists],
+  );
+  const models = useMemo(() => enabled && [...new Set(enabled.flatMap((l) => l.ids))].sort(), [enabled]);
+  useEffect(() => {
+    if (!enabled || !models) return;
+    // 默认选勾选的上游里能被最多家测到的模型 —— 测速的意义在于横向比较
+    const picked = enabled.filter((l) => chosen.has(l.name));
+    const count = (m: string) => picked.filter((l) => l.ids.includes(m)).length;
+    const best = [...models].sort((a, b) => count(b) - count(a))[0] ?? "";
+    setModel((m) => m || best);
+    // 只在清单到了的时候选一次：之后换勾选不改用户看着的模型
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   // 报价覆盖全部上游：列表里每一家都要说清会不会被测、要花多少
   useEffect(() => {
@@ -492,10 +487,10 @@ export function SpeedTestDialog({
                           )}
                         </TableCell>
                         <TableCell className="text-right tw-num">
-                          {r.ttft_ms != null ? `${r.ttft_ms.toLocaleString()} ms` : "—"}
+                          {r.ttft_ms != null ? ms(r.ttft_ms) : "—"}
                         </TableCell>
                         <TableCell className="text-right tw-num">
-                          {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
+                          {r.ok ? ms(r.total_ms) : "—"}
                         </TableCell>
                         <TableCell className="text-right tw-num">
                           {r.input_tokens != null && r.output_tokens != null

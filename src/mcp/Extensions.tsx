@@ -1,5 +1,6 @@
 import { SparklesIcon, WebhookIcon } from "lucide-react";
 import { ClientLogo } from "@/ui/logos";
+import { copyText } from "@/ui/notify";
 import { PageSection } from "@/ui/page";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { EmptyState } from "@/ui/states";
@@ -9,7 +10,7 @@ import { useText } from "@/i18n";
 import { ROW_FOCUS, rowNav, stop } from "@/security/rows";
 import type { HookView, ScanFinding, ScanReport, SkillView } from "@/types";
 import { mcpText } from "./McpPage.i18n";
-import { copyText, Level, rank, worst } from "./parts";
+import { Level, rank, worst } from "./parts";
 
 /**
  * 一个钩子命中了哪些发现：**同一个文件、同一行**。

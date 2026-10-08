@@ -275,13 +275,14 @@ function Unpriced({ models }: { models: readonly string[] }) {
       {long && (
         <>
           {" "}
-          <button
+          <Button
             type="button"
-            className="underline decoration-dotted underline-offset-2"
+            variant="link"
+            className="h-auto p-0 align-baseline tw-label font-normal text-inherit underline decoration-dotted underline-offset-2"
             onClick={() => setAll((v) => !v)}
           >
             {all ? t.fewer : t.more(models.length - UNPRICED_SHOWN)}
-          </button>
+          </Button>
         </>
       )}
     </Note>

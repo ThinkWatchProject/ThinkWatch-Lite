@@ -2,8 +2,8 @@ import { useState } from "react";
 import { CopyIcon } from "lucide-react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -702,19 +702,9 @@ export function DeleteRuleDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{common.cancel}</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={busy}
-            aria-busy={busy || undefined}
-            onClick={(e) => {
-              // 等删完再关：失败时要留在这里说原因
-              e.preventDefault();
-              void run();
-            }}
-          >
-            {busy && <Spinner aria-hidden />}
+          <AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
             {common.delete}
-          </AlertDialogAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

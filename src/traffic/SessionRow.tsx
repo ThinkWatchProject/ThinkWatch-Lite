@@ -12,7 +12,7 @@ import { Tip } from "@/ui/tip";
 import { copyText, KeyCell, MENU_REVEAL, ROW } from "./cells";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
-import { dur, tokens as short, when } from "./format";
+import { compact as short, span as dur, whenMinute as when } from "@/format";
 import { tallyOf, type Cursor, type Group } from "./grouping";
 
 /**

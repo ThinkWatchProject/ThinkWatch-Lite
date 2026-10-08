@@ -411,13 +411,6 @@ export function formatMultiplier(m: number): string {
   return m.toFixed(2);
 }
 
-/** 上下文窗口：200000 → 200K */
-export function contextWindow(n: number | null | undefined): string {
-  if (!n) return "—";
-  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)}M`;
-  return `${Math.round(n / 1000)}K`;
-}
-
 export const PRICE_COLUMNS: { key: keyof PriceFields; label: string }[] = (
   ["input", "output", "cache_read", "cache_write_5m", "cache_write_1h"] as const
 ).map((key) => ({

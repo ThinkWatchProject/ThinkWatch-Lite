@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { LockIcon, PlusIcon, XIcon } from "lucide-react";
+import { LockIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tip } from "@/ui/tip";
 import { useText } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { headerEditorText } from "./HeaderEditor.i18n";
 import { headerRow, type HeaderRow, type UpstreamForm } from "./upstreamForm";
 
@@ -38,6 +39,7 @@ export function HeaderEditor({
   auth: AuthRow | null;
 }) {
   const t = useText(headerEditorText);
+  const common = useText(commonText);
   // 新加的那一行自动聚焦到名称
   const [focus, setFocus] = useState<number | null>(null);
   const rows = form.headers;
@@ -61,7 +63,7 @@ export function HeaderEditor({
   return (
     <div className="flex flex-col gap-2">
       {auth && (
-        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-2">
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_4rem] items-center gap-2">
           <div className={locked}>
             {auth.name ? (
               <span className="truncate">{auth.name}</span>
@@ -79,7 +81,7 @@ export function HeaderEditor({
           </div>
           <Tip text={from}>
             <span
-              className="flex size-7 items-center justify-center text-muted-foreground"
+              className="flex size-7 items-center justify-center justify-self-start text-muted-foreground"
               aria-label={from}
             >
               <LockIcon className="size-3.5" />
@@ -88,7 +90,7 @@ export function HeaderEditor({
         </div>
       )}
       {rows.map((r) => (
-        <div key={r.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-2">
+        <div key={r.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_4rem] items-center gap-2">
           <Input
             aria-label={t.name}
             autoFocus={r.id === focus}
@@ -110,11 +112,12 @@ export function HeaderEditor({
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="xs"
             aria-label={t.remove}
+            className="justify-self-start text-muted-foreground"
             onClick={() => set({ headers: rows.filter((x) => x.id !== r.id) })}
           >
-            <XIcon />
+            {common.delete}
           </Button>
         </div>
       ))}

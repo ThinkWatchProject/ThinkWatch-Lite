@@ -260,11 +260,6 @@ export function takesEffectText(t: TakesEffect): string {
   return t === "immediately" ? x.immediately : x.onRestart;
 }
 
-/** 只查证过字段名的客户端要说出来。实测过的不用说，接管后在本机收到过请求的也不用说 */
-export function fieldsOnlyText(): string {
-  return textOf(labelsText).fieldsOnly;
-}
-
 /**
  * 按请求头认出来的应用叫什么。**这是旁证，不是身份** —— core 按
  * User-Agent 之类猜的，能被伪造，只用来显示；身份是请求带的那把密钥。

@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -25,7 +25,6 @@ import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Logo, upstreamGlyph } from "@/ui/logos";
 import { Segmented } from "@/ui/segmented";
-import { Spinner } from "@/ui/spinner";
 import { TableSkeleton } from "@/ui/states";
 import {
   Table,
@@ -42,6 +41,7 @@ import { parseDecimal } from "@/lib/decimal";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
+import { enabledModels, useModelLists } from "./data";
 import { PRICE_COLUMNS, errorText, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, DialogError, FormItem, Note, UpstreamChips } from "./parts";
 import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
@@ -136,7 +136,6 @@ export function PriceSheetDialog({
   const [loading, setLoading] = useState(mode.kind === "edit" || mode.kind === "duplicate");
   const [filter, setFilter] = useState<Filter>("related");
   const [search, setSearch] = useState("");
-  const [related, setRelated] = useState<string[]>([]);
   const [rows, setRows] = useState<ResolvedPrice[]>([]);
   const [matched, setMatched] = useState(0);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -178,26 +177,15 @@ export function PriceSheetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 相关模型：使用这张价目表的上游启用范围内的模型，加上打开它的那一家的模型
-  const usedKey = usedBy.join("\n");
+  // 相关模型：使用这张价目表的上游启用范围内的模型，加上打开它的那一家的模型。清单和
+  // 上游页的模型弹窗共用一份缓存；几家都取到了再一起换上，单价只问一次
+  const lists = useModelLists(usedBy);
   const contextKey = context?.models.join("\n") ?? "";
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      usedBy.map((u) =>
-        api
-          .providerModels(u)
-          .then((v) => v.models.filter((m) => m.enabled).map((m) => m.id))
-          .catch(() => [] as string[]),
-      ),
-    ).then((lists) => {
-      if (alive) setRelated([...new Set([...(context?.models ?? []), ...lists.flat()])].sort());
-    });
-    return () => {
-      alive = false;
-    };
+  const related = useMemo(
+    () => (lists.pending ? [] : [...new Set([...(context?.models ?? []), ...lists.data.flatMap(enabledModels)])].sort()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usedKey, contextKey]);
+    [lists, contextKey],
+  );
 
   // 倍率和单价一样，`0,85` 也认
   const mult = parseDecimal(multiplier) ?? NaN;
@@ -552,8 +540,9 @@ export function PriceSheetDialog({
                                 {o ? (
                                   <Button
                                     variant="ghost"
-                                    size="icon-xs"
+                                    size="xs"
                                     aria-label={t.removeOverride(r.model)}
+                                    className="text-muted-foreground"
                                     onClick={() =>
                                       setOverrides((all) => {
                                         const next = { ...all };
@@ -562,7 +551,7 @@ export function PriceSheetDialog({
                                       })
                                     }
                                   >
-                                    <XIcon />
+                                    {t.removeOverrideShort}
                                   </Button>
                                 ) : (
                                   <Button
@@ -717,19 +706,10 @@ export function PriceSheetDialog({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleting}
-                aria-busy={deleting || undefined}
-                onClick={(e) => {
-                  // 删完由调用方关掉整个对话框；失败时原因写在外面这张对话框里
-                  e.preventDefault();
-                  void remove();
-                }}
-              >
-                {deleting && <Spinner data-icon="inline-start" aria-hidden />}
+              {/* 删完由调用方关掉整个对话框；失败时原因写在外面这张对话框里 */}
+              <AlertDialogConfirm variant="destructive" pending={deleting} onConfirm={() => void remove()}>
                 {common.delete}
-              </AlertDialogAction>
+              </AlertDialogConfirm>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

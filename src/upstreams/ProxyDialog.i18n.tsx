@@ -21,8 +21,7 @@ export const proxyDialogText = messages(
     pass: "密码",
     check: "检测代理",
     checking: "检测中",
-    ok: (auth: boolean, ms: number) =>
-      `连接正常 · ${auth ? "认证通过 · " : ""}响应 ${ms.toLocaleString()} ms`,
+    ok: (auth: boolean, ms: string) => `连接正常 · ${auth ? "认证通过 · " : ""}响应 ${ms}`,
     checkHint: "完成代理握手与认证。不产生费用。",
     create: "创建",
   },
@@ -45,8 +44,7 @@ export const proxyDialogText = messages(
     pass: "Password",
     check: "Check proxy",
     checking: "Checking",
-    ok: (auth: boolean, ms: number) =>
-      `Connected · ${auth ? "authenticated · " : ""}responded in ${ms.toLocaleString()} ms`,
+    ok: (auth: boolean, ms: string) => `Connected · ${auth ? "authenticated · " : ""}responded in ${ms}`,
     checkHint: "Completes the proxy handshake and authentication. Incurs no cost.",
     create: "Create",
   },

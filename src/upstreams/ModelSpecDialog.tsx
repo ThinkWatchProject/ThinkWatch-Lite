@@ -15,6 +15,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, SpecSource } from "@/types";
 import { api } from "./api";
+import { modelsKey } from "./data";
 import { errorText } from "./labels";
 import { isEmptySpec, manualOf, sameSpec, specOf, tokensOf, type SpecFlag } from "./modelSpec";
 import { modelSpecDialogText } from "./ModelSpecDialog.i18n";
@@ -116,7 +117,7 @@ function Body({
         base_version: base,
       });
       // 用到规格的几处：这家的模型清单（弹窗、路由里指定的模型）、别名、模型目录
-      invalidate(`upstream-models:${provider}`);
+      invalidate(modelsKey(provider));
       invalidate("aliases");
       invalidate("known-models");
       onSaved?.();
