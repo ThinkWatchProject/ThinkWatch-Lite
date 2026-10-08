@@ -1,7 +1,7 @@
-//! 菜单里自己画的那几行：头一行的状态、小节标题、提醒、额度条、今日的几格数字、在跑的
-//! 请求。标准菜单项由 AppKit 画（见上一层），这几行 AppKit 画不出来。
+//! 菜单里自己画的那几行：网关不在运行时的状态、「今日」那一块、额度、小节标题、提醒、在跑
+//! 的请求。标准菜单项由 AppKit 画（见上一层），这几行 AppKit 画不出来。
 //!
-//! 列宽按字量（见下面「自定义行的列宽」），量字和画字的小工具在上一层，菜单栏那一块也用。
+//! 量字和画字的小工具在上一层，菜单栏那一块也用。
 
 use std::cell::{Cell, RefCell};
 
@@ -10,111 +10,71 @@ use objc2::{
     AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
 };
 use objc2_app_kit::{
-    NSAttributedStringNSStringDrawing, NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSEvent,
-    NSFont, NSView,
+    NSAttributedStringNSExtendedStringDrawing, NSAttributedStringNSStringDrawing,
+    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSEvent, NSFont, NSStringDrawingOptions,
+    NSView,
 };
-use objc2_foundation::{NSAttributedString, NSPoint, NSRect, NSString};
+use objc2_foundation::{
+    NSAttributedString, NSMutableAttributedString, NSPoint, NSRect, NSSize, NSString,
+};
 
 use super::{
     MENU_WIDTH, PAD, TEXT_X, Weight, attributed, dispatch, fill_oval, mono, rect, symbol, sys,
     weight,
 };
-use crate::menubar::model::{Level, Row, StatCell, StateTone, Tone, WindowRow};
+use crate::menubar::model::{Dash, Level, Row, Spark, StateTone, Tone, WindowRow};
 
 // ------------------------------------------------------------------ 自定义的几行
 
-/// 自定义行要画的东西
-#[derive(Debug, Clone)]
-pub(super) enum Info {
-    Header {
-        title: String,
-        state: String,
-        tone: StateTone,
-        line2: String,
-        line2_warn: bool,
-    },
-    Section {
-        title: String,
-        right: Option<String>,
-    },
-    Notice {
-        level: Level,
-        title: String,
-        body: String,
-    },
-    Quota {
-        provider: String,
-        windows: Vec<WindowRow>,
-        /// 菜单里所有额度行共用的字宽，见 [`quota_text`]
-        text: QuotaText,
-    },
-    Stats {
-        cells: Vec<StatCell>,
-    },
-    Live {
-        app: String,
-        model: String,
-        elapsed: String,
-    },
+/// 这一行要多宽。**菜单按最宽的那一项撑开**：「今日」那一块左边的字整段放下、右边的柱子
+/// 照设计稿的粗细画，要的比菜单的最小宽度多（英文的「128 requests · 2 failed · $3.47」）
+/// 时，就让菜单宽一点，最多到 [`MAX_WIDTH`]。别的行跟着菜单走
+pub(super) fn row_width(row: &Row) -> f64 {
+    match row {
+        Row::Today(d) => {
+            let spark = d
+                .spark
+                .as_ref()
+                .map_or(0.0, |b| SPARK_FULL.width(b.len()) + SPARK_GAP);
+            (PAD * 2.0 + today_text(d).0 + spark)
+                .ceil()
+                .clamp(MENU_WIDTH, MAX_WIDTH)
+        }
+        _ => MENU_WIDTH,
+    }
 }
 
-/// `quota`：整份菜单的额度行一起量出来的字宽（[`quota_text`]），只有额度行用
-pub(super) fn info_of(row: &Row, quota: QuotaText) -> Info {
-    match row.clone() {
-        Row::Header {
-            title,
-            state,
-            tone,
-            line2,
-            line2_warn,
-        } => Info::Header {
-            title,
-            state,
-            tone,
-            line2,
-            line2_warn,
+/// 这一行有多高。**按菜单的最小宽度量**：菜单被别的项撑宽时，折行的字只会更少，底下多出
+/// 一点空，不会压到下一行
+pub(super) fn row_height(row: &Row) -> f64 {
+    let w = MENU_WIDTH;
+    match row {
+        Row::Status { reason, .. } => {
+            STATUS_ROW
+                + reason.as_deref().map_or(0.0, |r| {
+                    wrapped_height(r, &reason_font(), w - TEXT_X - PAD) + REASON_GAP
+                })
+                + STATUS_BOTTOM
+        }
+        Row::Today(d) => match d.warn.as_deref() {
+            Some(r) => TODAY_WARN_Y + wrapped_height(r, &reason_font(), w - PAD * 2.0) + 8.0,
+            None => TODAY_META_BASELINE + TODAY_BOTTOM,
         },
-        Row::Section { title, right } => Info::Section { title, right },
-        Row::Notice {
-            level, title, body, ..
-        } => Info::Notice { level, title, body },
-        Row::Quota {
-            provider, windows, ..
-        } => Info::Quota {
-            provider,
-            windows,
-            text: quota,
-        },
-        Row::Stats { cells, .. } => Info::Stats { cells },
-        Row::Live {
-            app,
-            model,
-            elapsed,
-            ..
-        } => Info::Live {
-            app,
-            model,
-            elapsed,
-        },
+        Row::Section { .. } => 21.0,
+        Row::Notice { .. } => 40.0,
+        Row::Quota { window, .. } => {
+            QUOTA_BAR_Y
+                + QUOTA_BAR_H
+                + window.detail.as_ref().map_or(0.0, |_| QUOTA_DETAIL)
+                + QUOTA_BOTTOM
+        }
+        Row::Live { .. } => 24.0,
         Row::Separator | Row::Item(_) => unreachable!("标准菜单项不走自定义视图"),
     }
 }
 
-pub(super) fn info_height(info: &Info) -> f64 {
-    match info {
-        Info::Header { .. } => 46.0,
-        Info::Section { .. } => 21.0,
-        Info::Notice { .. } => 40.0,
-        Info::Quota { windows, .. } => {
-            6.0 + 20.0 + windows.iter().map(quota_row_height).sum::<f64>() + 3.0
-        }
-        Info::Stats { .. } => 48.0,
-        Info::Live { .. } => 24.0,
-    }
-}
-
 pub struct ViewIvars {
-    info: RefCell<Info>,
+    row: RefCell<Row>,
     /// 点了做什么（`Ui::actions` 里的下标）。没有就是一行只读的
     tag: Cell<Option<isize>>,
 }
@@ -137,7 +97,7 @@ define_class!(
         fn draw_rect(&self, _dirty: NSRect) {
             let highlighted = self.ivars().tag.get().is_some()
                 && self.enclosingMenuItem().is_some_and(|i| i.isHighlighted());
-            draw_info(&self.ivars().info.borrow(), self.bounds(), highlighted);
+            draw_row(&self.ivars().row.borrow(), self.bounds(), highlighted);
         }
 
         #[unsafe(method(mouseUp:))]
@@ -152,10 +112,10 @@ define_class!(
 );
 
 impl InfoView {
-    pub(super) fn new(mtm: MainThreadMarker, info: Info, tag: Option<isize>) -> Retained<Self> {
-        let frame = rect(0.0, 0.0, MENU_WIDTH, info_height(&info));
+    pub(super) fn new(mtm: MainThreadMarker, row: Row, tag: Option<isize>) -> Retained<Self> {
+        let frame = rect(0.0, 0.0, row_width(&row), row_height(&row));
         let this = Self::alloc(mtm).set_ivars(ViewIvars {
-            info: RefCell::new(info),
+            row: RefCell::new(row),
             tag: Cell::new(tag),
         });
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -163,69 +123,109 @@ impl InfoView {
         view
     }
 
-    pub(super) fn set_info(&self, info: Info, tag: Option<isize>) {
-        *self.ivars().info.borrow_mut() = info;
+    /// 就地换上新的数据。**要的宽度变大了就跟着放宽**（「今日」那一块从破折号变成一行英文）：
+    /// 高度由样子定，样子没变就不变；变窄不收，菜单不在用户眼前缩一下
+    pub(super) fn set_row(&self, row: Row, tag: Option<isize>) {
+        let want = row_width(&row);
+        let frame = self.frame();
+        if want > frame.size.width {
+            self.setFrameSize(NSSize::new(want, frame.size.height));
+        }
+        *self.ivars().row.borrow_mut() = row;
         self.ivars().tag.set(tag);
         self.setNeedsDisplay(true);
     }
 }
 
-// ------------------------------------------------------------------ 自定义行的列宽
+// ------------------------------------------------------------------ 尺寸
 //
-// **列宽按字量，不按一种语言写死。**中文的字都落在下面的最小列宽里，排出来和原来
-// 写死的一样；英文的「Resets in 3 days」「Requests 4 failed」比那宽，写死的时候
-// 就压到了旁边那一列上。
+// 照着设计稿量的，换成了 AppKit 的系统字体和语义颜色。纵向的位置都按**基线**给：字号不同
+// 的几段字（大字和它后面的单位）要落在同一条线上，按行顶对齐是对不齐的。
 
 /// 同一行里两段字之间至少空这么多
 const TEXT_GAP: f64 = 10.0;
-/// 额度行：窗口名和条之间
-const LABEL_GAP: f64 = 8.0;
-/// 额度行：窗口名一列至少这么宽（含它和条之间的空）
-const QUOTA_LABEL: f64 = 50.0;
-/// 额度行：窗口名一列最多这么宽。上游给了很长的窗口名就截断，不把条挤没
-const QUOTA_LABEL_MAX: f64 = 96.0;
-/// 额度行：条和百分比之间
-const QUOTA_BAR_GAP: f64 = 8.0;
-/// 额度行：百分比一列，「100%」放得下
-const QUOTA_PCT: f64 = 40.0;
-/// 额度行：重置一列至少这么宽（含它和百分比之间的空）
-const QUOTA_RESET: f64 = 92.0;
-/// 额度行：条最短这么长
-const QUOTA_MIN_BAR: f64 = 40.0;
-/// 额度行：一个窗口占多高
-const QUOTA_ROW: f64 = 21.0;
+/// 自画的行最多把菜单撑到这么宽。再宽就收窄柱子、截字（见 [`today_fit`]）
+const MAX_WIDTH: f64 = 380.0;
+
+/// 状态那一块：点和状态那一行，和标准菜单项一样高
+const STATUS_ROW: f64 = 24.0;
+/// 状态那一块：原因和上面那一行之间
+const REASON_GAP: f64 = 1.0;
+/// 状态那一块：最下面留的空
+const STATUS_BOTTOM: f64 = 5.0;
+/// 原因、监听没换成的那一行橙字最多折成几行
+const REASON_LINES: f64 = 2.0;
+
+/// 「今日」：上面那一行（「今日」和状态）的基线
+const TODAY_TOP_BASELINE: f64 = 16.0;
+/// 「今日」：大字的基线
+const TODAY_HERO_BASELINE: f64 = 47.0;
+/// 「今日」：下面那一行（次数、失败、费用）的基线。小柱子的底也落在这条线上
+const TODAY_META_BASELINE: f64 = 68.0;
+/// 「今日」：最下面留的空（从那一行的基线算起，含字的下沿）
+const TODAY_BOTTOM: f64 = 11.0;
+/// 「今日」：监听没换成的那一行橙字从这里起（行顶）
+const TODAY_WARN_Y: f64 = TODAY_META_BASELINE + 6.0;
+/// 「今日」：状态前面那个点
+const TODAY_DOT: f64 = 6.0;
+/// 「今日」：大字和单位之间
+const UNIT_GAP: f64 = 5.0;
+/// 「今日」：左边的字和小柱子之间至少空这么多
+const SPARK_GAP: f64 = 14.0;
+/// 小柱子满格多高
+const SPARK_MAX_H: f64 = 26.0;
+/// 有用量的那一小时至少这么高：比没有用量的短线高出一截，分得清
+const SPARK_MIN_H: f64 = 3.0;
+/// 没有用量、还没到的那一小时：一截短线
+const SPARK_STUB_H: f64 = 2.0;
+
+/// 额度行：上面那一行的基线
+const QUOTA_BASELINE: f64 = 15.0;
+/// 额度行：条的顶
+const QUOTA_BAR_Y: f64 = 22.0;
+/// 额度行：条有多粗
+const QUOTA_BAR_H: f64 = 4.0;
 /// 额度行：条下面那一行小字（还剩多少积分）再占多高
 const QUOTA_DETAIL: f64 = 15.0;
-/// 「今日」：标签和旁边的橙色小字（失败数）之间
-const NOTE_GAP: f64 = 6.0;
+/// 额度行：最下面留的空
+const QUOTA_BOTTOM: f64 = 5.0;
 
-fn quota_label_font() -> Retained<NSFont> {
+fn reason_font() -> Retained<NSFont> {
+    sys(12.0, weight(Weight::Regular))
+}
+
+fn top_font() -> Retained<NSFont> {
+    sys(11.0, weight(Weight::Regular))
+}
+
+fn top_title_font() -> Retained<NSFont> {
+    sys(11.0, weight(Weight::Semibold))
+}
+
+/// 等宽数字：数在涨，同位数时宽度不变
+fn hero_font() -> Retained<NSFont> {
+    mono(28.0, weight(Weight::Semibold))
+}
+
+fn unit_font() -> Retained<NSFont> {
+    sys(13.0, weight(Weight::Regular))
+}
+
+fn meta_font() -> Retained<NSFont> {
+    mono(12.0, weight(Weight::Regular))
+}
+
+fn quota_font() -> Retained<NSFont> {
     sys(12.0, weight(Weight::Regular))
 }
 
 /// 等宽数字：倒计时在走，同位数时宽度不变
-fn quota_reset_font() -> Retained<NSFont> {
+fn quota_right_font() -> Retained<NSFont> {
     mono(12.0, weight(Weight::Regular))
 }
 
-/// 条下面那一行小字：比窗口名小一号，和「今日」的标签同一个字号
+/// 条下面那一行小字：比上面那一行小一号
 fn quota_detail_font() -> Retained<NSFont> {
-    sys(11.0, weight(Weight::Regular))
-}
-
-/// 一个窗口占多高：带小字的高一截
-fn quota_row_height(w: &WindowRow) -> f64 {
-    match w.detail {
-        Some(_) => QUOTA_ROW + QUOTA_DETAIL,
-        None => QUOTA_ROW,
-    }
-}
-
-fn stat_value_font() -> Retained<NSFont> {
-    mono(17.0, weight(Weight::Semibold))
-}
-
-fn stat_label_font() -> Retained<NSFont> {
     sys(11.0, weight(Weight::Regular))
 }
 
@@ -233,103 +233,196 @@ fn text_width(text: &str, font: &NSFont) -> f64 {
     attributed(text, font, &NSColor::labelColor()).size().width
 }
 
-/// 额度行里最宽的窗口名和最宽的重置时刻。**整份菜单的额度行一起量**：几家的额度
-/// 共用一套列，条的起止上下对齐
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub(super) struct QuotaText {
-    label: f64,
-    reset: f64,
+/// 排出来的一行有多高。**按排字的结果量**，不拿字体的上下沿去加：系统字体排出来的行比
+/// 上下沿之和高一点，按后者给的框装不下第二行，折行的字就只剩一行加「…」
+fn line_height(font: &NSFont) -> f64 {
+    attributed("Ag", font, &NSColor::labelColor())
+        .boundingRectWithSize_options_context(
+            NSSize::new(f64::MAX, f64::MAX),
+            NSStringDrawingOptions::UsesLineFragmentOrigin,
+            None,
+        )
+        .size
+        .height
 }
 
-pub(super) fn quota_text(rows: &[Row]) -> QuotaText {
-    let (label_font, reset_font) = (quota_label_font(), quota_reset_font());
-    rows.iter()
-        .flat_map(|r| match r {
-            Row::Quota { windows, .. } => windows.as_slice(),
-            _ => &[],
-        })
-        .fold(QuotaText::default(), |t, wr| QuotaText {
-            label: t.label.max(text_width(&wr.label, &label_font)),
-            reset: t.reset.max(text_width(&wr.reset, &reset_font)),
-        })
+/// 一段字折行之后有多高，最多 [`REASON_LINES`] 行
+fn wrapped_height(text: &str, font: &NSFont, max_w: f64) -> f64 {
+    let s = attributed(text, font, &NSColor::labelColor());
+    let h = s
+        .boundingRectWithSize_options_context(
+            NSSize::new(max_w, f64::MAX),
+            NSStringDrawingOptions::UsesLineFragmentOrigin,
+            None,
+        )
+        .size
+        .height;
+    h.min(line_height(font) * REASON_LINES).ceil()
 }
 
-/// 额度行横着怎么排：窗口名 · 条 · 百分比 · 重置
+/// 画一段会折行的字：最多 [`REASON_LINES`] 行，再多的截在最后一行末尾
+fn draw_wrapped(s: &NSAttributedString, font: &NSFont, x: f64, y: f64, max_w: f64) {
+    s.drawWithRect_options_context(
+        rect(x, y, max_w, (line_height(font) * REASON_LINES).ceil()),
+        NSStringDrawingOptions::UsesLineFragmentOrigin
+            | NSStringDrawingOptions::TruncatesLastVisibleLine,
+        None,
+    );
+}
+
+/// 让字的基线落在 `baseline` 上
+fn at_baseline(s: &NSAttributedString, font: &NSFont, x: f64, baseline: f64) {
+    s.drawAtPoint(NSPoint::new(x, baseline - font.ascender()));
+}
+
+/// 几段颜色不同的字接成一段
+fn joined(parts: &[(&str, &NSFont, &NSColor)]) -> Retained<NSAttributedString> {
+    let out = NSMutableAttributedString::new();
+    for (text, font, color) in parts {
+        out.appendAttributedString(&attributed(text, font, color));
+    }
+    Retained::into_super(out)
+}
+
+// ------------------------------------------------------------------ 「今日」怎么排
+
+/// 「今日」那一块左边的字要多宽：大字连单位和下面那一行里宽的那个；以及跟在那一行后面的
+/// 小字（连同前面的「 · 」）
+fn today_text(d: &Dash) -> (f64, Option<f64>) {
+    let hero = text_width(&d.value, &hero_font()) + UNIT_GAP + text_width(&d.unit, &unit_font());
+    let meta = text_width(&d.meta_line(), &meta_font());
+    let note = d
+        .note
+        .as_deref()
+        .map(|n| text_width(&format!(" · {n}"), &meta_font()));
+    (hero.max(meta), note)
+}
+
+/// 小柱子的粗细。**放不下时先收窄**，再放不下才不画
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct QuotaCols {
-    /// 窗口名一列，含它和条之间的空
-    label: f64,
-    bar_x: f64,
-    bar_w: f64,
-    /// 百分比右对齐到这里
-    pct_right: f64,
-    /// 重置一列，含它和百分比之间的空。右对齐到 `w - PAD`
-    reset: f64,
+pub(super) struct SparkSize {
+    pub bar: f64,
+    pub gap: f64,
 }
 
-/// 两头的字要多宽给多宽，条拿剩下的。条短到 [`QUOTA_MIN_BAR`] 还放不下时，重置一列
-/// 不再放宽，字截断
-fn quota_cols(w: f64, text: QuotaText) -> QuotaCols {
-    let label = (text.label + LABEL_GAP).clamp(QUOTA_LABEL, QUOTA_LABEL_MAX);
-    let bar_x = PAD + label;
-    let room = w - PAD - bar_x - QUOTA_MIN_BAR - QUOTA_BAR_GAP - QUOTA_PCT;
-    let reset = (text.reset + TEXT_GAP).max(QUOTA_RESET).min(room);
-    let bar_w = w - PAD - reset - QUOTA_PCT - QUOTA_BAR_GAP - bar_x;
-    QuotaCols {
-        label,
-        bar_x,
-        bar_w,
-        pct_right: bar_x + bar_w + QUOTA_BAR_GAP + QUOTA_PCT,
-        reset,
-    }
-}
+/// 设计稿上的粗细
+pub(super) const SPARK_FULL: SparkSize = SparkSize { bar: 3.0, gap: 1.5 };
+/// 地方不够时
+pub(super) const SPARK_COMPACT: SparkSize = SparkSize { bar: 2.0, gap: 1.0 };
 
-/// 「今日」几格各多宽：量出每一格的字，交给 [`share_columns`]
-fn stat_widths(w: f64, cells: &[StatCell]) -> Vec<f64> {
-    let (value_font, label_font) = (stat_value_font(), stat_label_font());
-    let needs: Vec<f64> = cells
-        .iter()
-        .map(|c| {
-            let line2 = text_width(&c.label, &label_font)
-                + c.note
-                    .as_deref()
-                    .map_or(0.0, |n| NOTE_GAP + text_width(n, &label_font));
-            text_width(&c.value, &value_font).max(line2) + TEXT_GAP
-        })
-        .collect();
-    share_columns(w - PAD * 2.0, &needs)
-}
-
-/// 把 `avail` 分给几格。**放得下时等分**；有一格要的比等分多（英文的「Requests
-/// 4 failed」），就给它要的那么多，其余几格平分剩下的 —— 那几格也不小于自己要的。
-/// 怎么分都放不下时按各自要的比例分，画的时候截断
-fn share_columns(avail: f64, needs: &[f64]) -> Vec<f64> {
-    let total: f64 = needs.iter().sum();
-    if total > avail && total > 0.0 {
-        return needs.iter().map(|n| avail * n / total).collect();
-    }
-    // 从要得最多的一格起：比「剩下的地方平分」还多，就照它要的给，剩下的接着平分
-    let mut order: Vec<usize> = (0..needs.len()).collect();
-    order.sort_by(|&a, &b| needs[b].total_cmp(&needs[a]));
-    let (mut left, mut rest) = (avail, needs.len());
-    let mut fixed = vec![false; needs.len()];
-    for i in order {
-        if needs[i] <= left / rest as f64 {
-            break;
+impl SparkSize {
+    /// `n` 根柱子一共多宽
+    pub fn width(self, n: usize) -> f64 {
+        if n == 0 {
+            return 0.0;
         }
-        fixed[i] = true;
-        left -= needs[i];
-        rest -= 1;
+        n as f64 * self.bar + (n - 1) as f64 * self.gap
     }
-    let share = left / rest.max(1) as f64;
-    needs
-        .iter()
-        .zip(fixed)
-        .map(|(&n, fixed)| if fixed { n } else { share })
-        .collect()
 }
 
-pub(super) fn draw_info(info: &Info, b: NSRect, hl: bool) {
+/// 「今日」那一块横着怎么排
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct TodayFit {
+    /// 小柱子画多粗。None：不画
+    pub spark: Option<SparkSize>,
+    /// 金额缺着什么那几个字跟不跟在那一行后面
+    pub note: bool,
+}
+
+/// 左边的字（大字和那一行，`text_w` 是两者里宽的那个；`note_w` 是跟在后面的小字连同前面
+/// 的「 · 」）和右边的小柱子（`bars` 根）怎么在 `w` 里排开。
+///
+/// **左边的字不让**：费用在那一行的最后，截掉的话截的正是要看的数。先不跟小字（它在悬停
+/// 提示里），再把柱子收窄，最后不画柱子；都放不下时才截字
+pub(super) fn today_fit(text_w: f64, note_w: Option<f64>, bars: Option<usize>, w: f64) -> TodayFit {
+    let avail = w - PAD * 2.0;
+    let fits = |spark: Option<SparkSize>, note: bool| {
+        let right = match (spark, bars) {
+            (Some(size), Some(n)) => size.width(n) + SPARK_GAP,
+            _ => 0.0,
+        };
+        let left = text_w + if note { note_w.unwrap_or(0.0) } else { 0.0 };
+        left + right <= avail
+    };
+    let mut tries = Vec::new();
+    if bars.is_some() {
+        tries.extend([
+            (Some(SPARK_FULL), true),
+            (Some(SPARK_FULL), false),
+            (Some(SPARK_COMPACT), false),
+        ]);
+    }
+    tries.extend([(None, true), (None, false)]);
+    tries
+        .into_iter()
+        .filter(|(_, note)| !*note || note_w.is_some())
+        .find(|(spark, note)| fits(*spark, *note))
+        .map_or(
+            TodayFit {
+                spark: None,
+                note: false,
+            },
+            |(spark, note)| TodayFit { spark, note },
+        )
+}
+
+/// 一根柱子多高
+pub(super) fn spark_height(s: Spark) -> f64 {
+    match s {
+        Spark::Empty => SPARK_STUB_H,
+        Spark::Past(f) | Spark::Now(f) => {
+            (f.clamp(0.0, 1.0) * SPARK_MAX_H).round().max(SPARK_MIN_H)
+        }
+    }
+}
+
+// ------------------------------------------------------------------ 画
+
+fn state_color(tone: StateTone) -> Retained<NSColor> {
+    match tone {
+        StateTone::Ok => NSColor::systemGreenColor(),
+        StateTone::Busy => NSColor::systemYellowColor(),
+        StateTone::Warn => NSColor::systemOrangeColor(),
+        StateTone::Bad => NSColor::systemRedColor(),
+    }
+}
+
+/// 一行里的几种字色。高亮时一律白字：底色是强调色
+struct Ink {
+    label: Retained<NSColor>,
+    secondary: Retained<NSColor>,
+    /// 分隔用的「·」，比次要的字再淡一档
+    tertiary: Retained<NSColor>,
+    hl: bool,
+}
+
+impl Ink {
+    fn new(hl: bool) -> Self {
+        if hl {
+            let white = NSColor::whiteColor();
+            Self {
+                secondary: white.colorWithAlphaComponent(0.8),
+                tertiary: white.colorWithAlphaComponent(0.6),
+                label: white,
+                hl,
+            }
+        } else {
+            Self {
+                label: NSColor::labelColor(),
+                secondary: NSColor::secondaryLabelColor(),
+                tertiary: NSColor::tertiaryLabelColor(),
+                hl,
+            }
+        }
+    }
+
+    /// 要紧的颜色（失败的红、要处理的橙）。高亮时也是白的
+    fn alert(&self, color: Retained<NSColor>) -> Retained<NSColor> {
+        if self.hl { self.label.clone() } else { color }
+    }
+}
+
+pub(super) fn draw_row(row: &Row, b: NSRect, hl: bool) {
     let w = b.size.width;
     if hl {
         NSColor::selectedContentBackgroundColor().setFill();
@@ -340,56 +433,26 @@ pub(super) fn draw_info(info: &Info, b: NSRect, hl: bool) {
         )
         .fill();
     }
-    // 高亮时一律白字：底色是强调色
-    let label = if hl {
-        NSColor::whiteColor()
-    } else {
-        NSColor::labelColor()
-    };
-    let secondary = if hl {
-        NSColor::whiteColor().colorWithAlphaComponent(0.8)
-    } else {
-        NSColor::secondaryLabelColor()
-    };
-    match info {
-        Info::Header {
-            title,
+    let ink = Ink::new(hl);
+    match row {
+        Row::Status {
             state,
             tone,
-            line2,
-            line2_warn,
-        } => {
-            let st = attributed(state, &sys(12.0, weight(Weight::Regular)), &secondary);
-            let sw = st.size().width;
-            st.drawAtPoint(NSPoint::new(w - PAD - sw, 7.0));
-            let dot = match tone {
-                StateTone::Ok => NSColor::systemGreenColor(),
-                StateTone::Busy => NSColor::systemYellowColor(),
-                StateTone::Warn => NSColor::systemOrangeColor(),
-                StateTone::Bad => NSColor::systemRedColor(),
-            };
-            let dot_x = w - PAD - sw - 12.0;
-            fill_oval(dot_x, 11.0, 7.0, &dot);
-            // 连着远程时标题是服务器的名字，多长都有：截断在状态前面，不压上去
-            let t = attributed(title, &sys(13.0, weight(Weight::Semibold)), &label);
-            draw_clipped(&t, PAD, 6.0, dot_x - TEXT_GAP - PAD);
-            let color = if *line2_warn {
-                NSColor::systemOrangeColor()
-            } else {
-                secondary.clone()
-            };
-            let l2 = attributed(line2, &mono(12.0, weight(Weight::Regular)), &color);
-            draw_clipped(&l2, PAD, 25.0, w - PAD * 2.0);
-        }
-        Info::Section { title, right } => {
+            server,
+            reason,
+        } => draw_status(state, *tone, server.as_deref(), reason.as_deref(), w, &ink),
+        Row::Today(d) => draw_today(d, w, &ink),
+        Row::Section { title, right } => {
             let font = sys(11.0, weight(Weight::Semibold));
-            attributed(title, &font, &secondary).drawAtPoint(NSPoint::new(PAD, 4.0));
+            attributed(title, &font, &ink.secondary).drawAtPoint(NSPoint::new(PAD, 4.0));
             if let Some(r) = right {
-                let a = attributed(r, &font, &secondary);
+                let a = attributed(r, &font, &ink.secondary);
                 a.drawAtPoint(NSPoint::new(w - PAD - a.size().width, 4.0));
             }
         }
-        Info::Notice { level, title, body } => {
+        Row::Notice {
+            level, title, body, ..
+        } => {
             let (name, color) = match level {
                 Level::Critical => ("xmark.octagon.fill", NSColor::systemRedColor()),
                 Level::Warning => (
@@ -398,125 +461,37 @@ pub(super) fn draw_info(info: &Info, b: NSRect, hl: bool) {
                 ),
                 Level::Info => ("info.circle.fill", NSColor::systemBlueColor()),
             };
-            let tint = if hl { NSColor::whiteColor() } else { color };
-            if let Some(img) = symbol(name, Some(&tint)) {
+            if let Some(img) = symbol(name, Some(&ink.alert(color))) {
                 img.drawInRect(rect(PAD, 5.0, 16.0, 16.0));
             }
-            let t = attributed(title, &NSFont::menuFontOfSize(0.0), &label);
+            let t = attributed(title, &NSFont::menuFontOfSize(0.0), &ink.label);
             draw_clipped(&t, TEXT_X, 3.0, w - TEXT_X - PAD);
-            let bd = attributed(body, &sys(11.5, weight(Weight::Regular)), &secondary);
+            let bd = attributed(body, &sys(11.5, weight(Weight::Regular)), &ink.secondary);
             draw_clipped(&bd, TEXT_X, 21.0, w - TEXT_X - PAD);
         }
-        Info::Quota {
-            provider,
-            windows,
-            text,
-        } => {
-            let name = attributed(provider, &sys(13.0, weight(Weight::Medium)), &label);
-            draw_clipped(&name, PAD, 4.0, w - PAD * 2.0);
-            let pct_font = mono(12.0, weight(Weight::Medium));
-            let QuotaCols {
-                label: label_col,
-                bar_x,
-                bar_w,
-                pct_right,
-                reset: reset_col,
-            } = quota_cols(w, *text);
-            let mut y = 26.0;
-            for wr in windows {
-                let lab = attributed(&wr.label, &quota_label_font(), &secondary);
-                draw_clipped(&lab, PAD, y, label_col - LABEL_GAP);
-                let track = if hl {
-                    NSColor::whiteColor().colorWithAlphaComponent(0.3)
-                } else {
-                    NSColor::quaternaryLabelColor()
-                };
-                track.setFill();
-                NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
-                    rect(bar_x, y + 6.0, bar_w, 5.0),
-                    2.5,
-                    2.5,
-                )
-                .fill();
-                let tone_color = match wr.tone {
-                    Tone::Normal => label.clone(),
-                    Tone::Warn => NSColor::systemOrangeColor(),
-                    Tone::Full => NSColor::systemRedColor(),
-                };
-                let tone_color = if hl {
-                    NSColor::whiteColor()
-                } else {
-                    tone_color
-                };
-                if let Some(p) = wr.percent {
-                    let fill = if matches!(wr.tone, Tone::Normal) && !hl {
-                        label.colorWithAlphaComponent(0.8)
-                    } else {
-                        tone_color.clone()
-                    };
-                    fill.setFill();
-                    let fw = (bar_w * p / 100.0).max(if p > 0.0 { 5.0 } else { 0.0 });
-                    if fw > 0.0 {
-                        NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
-                            rect(bar_x, y + 6.0, fw, 5.0),
-                            2.5,
-                            2.5,
-                        )
-                        .fill();
-                    }
-                    let pct = attributed(&format!("{}%", p.round() as i64), &pct_font, &tone_color);
-                    pct.drawAtPoint(NSPoint::new(pct_right - pct.size().width, y));
-                }
-                // 右对齐。列宽是按字量出来的，截断只在菜单窄得放不下条的时候才会发生
-                let rs = attributed(&wr.reset, &quota_reset_font(), &secondary);
-                if let Some(rs) = fit(&rs, reset_col - TEXT_GAP) {
-                    rs.drawAtPoint(NSPoint::new(w - PAD - rs.size().width, y));
-                }
-                // 还剩多少：贴在条的正下方、和条左对齐，读得出是这一个窗口的
-                if let Some(detail) = &wr.detail {
-                    let d = attributed(detail, &quota_detail_font(), &secondary);
-                    draw_clipped(&d, bar_x, y + 17.0, w - PAD - bar_x);
-                }
-                y += quota_row_height(wr);
-            }
-        }
-        Info::Stats { cells } => {
-            let note_color = if hl {
-                NSColor::whiteColor()
-            } else {
-                NSColor::systemOrangeColor()
-            };
-            let mut x = PAD;
-            for (c, col) in cells.iter().zip(stat_widths(w, cells)) {
-                // 格子右边留出和下一格之间的空；字只在这一格里画，放不下的截断
-                let right = x + col - TEXT_GAP;
-                let value = attributed(&c.value, &stat_value_font(), &label);
-                draw_clipped(&value, x, 3.0, right - x);
-                let lab = attributed(&c.label, &stat_label_font(), &secondary);
-                draw_clipped(&lab, x, 27.0, right - x);
-                if let Some(note) = &c.note {
-                    let nx = x + lab.size().width + NOTE_GAP;
-                    let note = attributed(note, &stat_label_font(), &note_color);
-                    draw_clipped(&note, nx, 27.0, right - nx);
-                }
-                x += col;
-            }
-        }
-        Info::Live {
+        Row::Quota {
+            provider, window, ..
+        } => draw_quota(provider, window, w, &ink),
+        Row::Live {
             app,
             model,
             elapsed,
+            ..
         } => {
-            if let Some(img) = symbol("circle.dashed", Some(&*secondary)) {
+            if let Some(img) = symbol("circle.dashed", Some(&*ink.secondary)) {
                 img.drawInRect(rect(PAD, 4.0, 16.0, 16.0));
             }
-            let el = attributed(elapsed, &mono(12.0, weight(Weight::Regular)), &secondary);
+            let el = attributed(
+                elapsed,
+                &mono(12.0, weight(Weight::Regular)),
+                &ink.secondary,
+            );
             let ew = el.size().width;
             el.drawAtPoint(NSPoint::new(w - PAD - ew, 4.5));
             // 应用名和模型都在时长左边。放不下先截模型；应用名（认不出应用时是密钥名，
             // 多长都有）再长也截在时长前面
             let right = w - PAD - ew - 10.0;
-            let a = attributed(app, &NSFont::menuFontOfSize(0.0), &label);
+            let a = attributed(app, &NSFont::menuFontOfSize(0.0), &ink.label);
             let aw = match fit(&a, right - TEXT_X) {
                 Some(a) => {
                     a.drawAtPoint(NSPoint::new(TEXT_X, 3.5));
@@ -525,9 +500,272 @@ pub(super) fn draw_info(info: &Info, b: NSRect, hl: bool) {
                 None => 0.0,
             };
             let mx = TEXT_X + aw + 8.0;
-            let m = attributed(model, &sys(12.0, weight(Weight::Regular)), &secondary);
+            let m = attributed(model, &sys(12.0, weight(Weight::Regular)), &ink.secondary);
             draw_clipped(&m, mx, 4.5, right - mx);
         }
+        Row::Separator | Row::Item(_) => {}
+    }
+}
+
+/// 网关不在运行：点在图标那一列，状态和标准菜单项的字对齐，服务器的名字在右边；下面是原因
+fn draw_status(
+    state: &str,
+    tone: StateTone,
+    server: Option<&str>,
+    reason: Option<&str>,
+    w: f64,
+    ink: &Ink,
+) {
+    fill_oval(PAD + 4.0, 8.0, 8.0, &state_color(tone));
+    let menu = NSFont::menuFontOfSize(0.0);
+    let right = server.map_or(0.0, |name| {
+        let a = attributed(name, &menu, &ink.secondary);
+        // 名字多长都有：最多占一半，截断
+        match fit(&a, (w - TEXT_X - PAD) / 2.0) {
+            Some(a) => {
+                let aw = a.size().width;
+                a.drawAtPoint(NSPoint::new(w - PAD - aw, 3.5));
+                aw + TEXT_GAP
+            }
+            None => 0.0,
+        }
+    });
+    let st = attributed(state, &menu, &ink.label);
+    draw_clipped(&st, TEXT_X, 3.5, w - TEXT_X - PAD - right);
+    if let Some(reason) = reason {
+        let font = reason_font();
+        let r = attributed(reason, &font, &ink.alert(NSColor::systemOrangeColor()));
+        draw_wrapped(
+            &r,
+            &font,
+            TEXT_X,
+            STATUS_ROW + REASON_GAP - 3.0,
+            w - TEXT_X - PAD,
+        );
+    }
+}
+
+fn draw_today(d: &Dash, w: f64, ink: &Ink) {
+    // 上面一行：左边「今日」，右边点和状态。状态太长时截服务器的名字：状态和速率要留着
+    let (title_font, top) = (top_title_font(), top_font());
+    let title = attributed(&d.title, &title_font, &ink.secondary);
+    at_baseline(&title, &title_font, PAD, TODAY_TOP_BASELINE);
+    let room = w - PAD * 2.0 - title.size().width - TEXT_GAP - TODAY_DOT - 5.0;
+    let line = state_text_fitting(d, &top, room);
+    let st = attributed(&line, &top, &ink.secondary);
+    let st = fit(&st, room).unwrap_or(st);
+    let sw = st.size().width;
+    at_baseline(&st, &top, w - PAD - sw, TODAY_TOP_BASELINE);
+    let dot_y = TODAY_TOP_BASELINE - top.capHeight() / 2.0 - TODAY_DOT / 2.0;
+    fill_oval(
+        w - PAD - sw - 5.0 - TODAY_DOT,
+        dot_y,
+        TODAY_DOT,
+        &state_color(d.tone),
+    );
+
+    // 大字和单位，基线对齐
+    let (hero_font, unit_font, meta_font) = (hero_font(), unit_font(), meta_font());
+    let hero = attributed(&d.value, &hero_font, &ink.label);
+    let unit = attributed(&d.unit, &unit_font, &ink.secondary);
+
+    // 下面那一行：几段用「 · 」连起来，失败数是红的
+    let sep = " · ";
+    let mut parts: Vec<(&str, Retained<NSColor>)> = Vec::new();
+    for (i, m) in d.meta.iter().enumerate() {
+        if i > 0 {
+            parts.push((sep, ink.tertiary.clone()));
+        }
+        let color = if m.failed {
+            ink.alert(NSColor::systemRedColor())
+        } else {
+            ink.secondary.clone()
+        };
+        parts.push((&m.text, color));
+    }
+    let meta = joined(
+        &parts
+            .iter()
+            .map(|(t, c)| (*t, &*meta_font, &**c))
+            .collect::<Vec<_>>(),
+    );
+    let note = d.note.as_deref().map(|n| {
+        joined(&[
+            (sep, &meta_font, &ink.tertiary),
+            (n, &meta_font, &ink.alert(NSColor::systemOrangeColor())),
+        ])
+    });
+    // 和 `row_width` 量的是同一份：菜单为它撑开多少，这里就按多少排
+    let (text_w, note_w) = today_text(d);
+    let layout = today_fit(text_w, note_w, d.spark.as_ref().map(Vec::len), w);
+
+    let spark_w = match (layout.spark, &d.spark) {
+        (Some(size), Some(bars)) => {
+            draw_spark(bars, size, w - PAD, TODAY_META_BASELINE, ink);
+            size.width(bars.len()) + SPARK_GAP
+        }
+        _ => 0.0,
+    };
+    let left_w = w - PAD * 2.0 - spark_w;
+    at_baseline(&hero, &hero_font, PAD, TODAY_HERO_BASELINE);
+    at_baseline(
+        &unit,
+        &unit_font,
+        PAD + hero.size().width + UNIT_GAP,
+        TODAY_HERO_BASELINE,
+    );
+    let meta = fit(&meta, left_w).unwrap_or(meta);
+    at_baseline(&meta, &meta_font, PAD, TODAY_META_BASELINE);
+    if let (true, Some(note)) = (layout.note, note) {
+        at_baseline(
+            &note,
+            &meta_font,
+            PAD + meta.size().width,
+            TODAY_META_BASELINE,
+        );
+    }
+
+    // 监听设置没换成：最后一行橙字
+    if let Some(warn) = &d.warn {
+        let font = reason_font();
+        let r = attributed(warn, &font, &ink.alert(NSColor::systemOrangeColor()));
+        draw_wrapped(&r, &font, PAD, TODAY_WARN_Y, w - PAD * 2.0);
+    }
+}
+
+/// 右上角那一句放得下的写法：放不下先把服务器的名字截短，状态和速率留着
+fn state_text_fitting(d: &Dash, font: &NSFont, room: f64) -> String {
+    let full = d.state_line();
+    let Some(server) = &d.server else {
+        return full;
+    };
+    if text_width(&full, font) <= room {
+        return full;
+    }
+    let without = Dash {
+        server: None,
+        ..d.clone()
+    }
+    .state_line();
+    // 名字那一段能占的宽：去掉名字之后剩下的，再去掉它前后的「 · 」
+    let name_room = room - text_width(&without, font) - text_width(" · ", font);
+    let name = attributed(server, font, &NSColor::labelColor());
+    match fit(&name, name_room) {
+        Some(cut) => Dash {
+            server: Some(cut.string().to_string()),
+            ..d.clone()
+        }
+        .state_line(),
+        None => without,
+    }
+}
+
+/// 小柱子：右边缘对齐到 `right`，底落在 `baseline` 上
+fn draw_spark(bars: &[Spark], size: SparkSize, right: f64, baseline: f64, ink: &Ink) {
+    // **`colorWithAlphaComponent` 是换掉透明度，不是乘上去**：系统的语义色本身就带着
+    // 透明度（深色下次要的字是白色 55%），这里给的就是画出来的透明度
+    let (past, now, empty) = if ink.hl {
+        let white = NSColor::whiteColor();
+        (
+            white.colorWithAlphaComponent(0.55),
+            white.clone(),
+            white.colorWithAlphaComponent(0.25),
+        )
+    } else {
+        (
+            NSColor::secondaryLabelColor().colorWithAlphaComponent(0.34),
+            NSColor::labelColor(),
+            NSColor::quaternaryLabelColor(),
+        )
+    };
+    let mut x = right - size.width(bars.len());
+    for b in bars {
+        let h = spark_height(*b);
+        let color = match b {
+            Spark::Empty => &empty,
+            Spark::Past(_) => &past,
+            Spark::Now(_) => &now,
+        };
+        color.setFill();
+        let r = (size.bar / 3.0).min(1.0);
+        NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
+            rect(x, baseline - h, size.bar, h),
+            r,
+            r,
+        )
+        .fill();
+        x += size.bar + size.gap;
+    }
+}
+
+/// 一个额度窗口：上面一行左边「ChatGPT · 每周」，右边「31% · 4 天后重置」；下面一根通栏的条
+fn draw_quota(provider: &str, wr: &WindowRow, w: f64, ink: &Ink) {
+    let (font, right_font) = (quota_font(), quota_right_font());
+    let tone = match wr.tone {
+        Tone::Normal => ink.label.clone(),
+        Tone::Warn => ink.alert(NSColor::systemOrangeColor()),
+        Tone::Full => ink.alert(NSColor::systemRedColor()),
+    };
+    // 右边：百分比是主色（紧张、用完时变色），重置时刻是次要的
+    let right = match wr.percent {
+        Some(p) => {
+            let pct = format!("{}%", p.round() as i64);
+            let rest = wr.right()[pct.len()..].to_string();
+            joined(&[
+                (&pct, &right_font, &tone),
+                (&rest, &right_font, &ink.secondary),
+            ])
+        }
+        None => attributed(&wr.reset, &right_font, &ink.secondary),
+    };
+    let rw = right.size().width;
+    at_baseline(&right, &right_font, w - PAD - rw, QUOTA_BASELINE);
+    // 左边：上游的名字多长都有，放不下截它，窗口名留着
+    let label = attributed(&format!(" · {}", wr.label), &font, &ink.secondary);
+    let lw = label.size().width;
+    let name = attributed(provider, &font, &ink.label);
+    let name_room = w - PAD * 2.0 - rw - TEXT_GAP - lw;
+    let nw = match fit(&name, name_room) {
+        Some(n) => {
+            at_baseline(&n, &font, PAD, QUOTA_BASELINE);
+            n.size().width
+        }
+        None => 0.0,
+    };
+    if let Some(label) = fit(&label, w - PAD * 2.0 - rw - TEXT_GAP - nw) {
+        at_baseline(&label, &font, PAD + nw, QUOTA_BASELINE);
+    }
+    // 通栏的条
+    let bar_w = w - PAD * 2.0;
+    let track = if ink.hl {
+        NSColor::whiteColor().colorWithAlphaComponent(0.3)
+    } else {
+        NSColor::quaternaryLabelColor()
+    };
+    let radius = QUOTA_BAR_H / 2.0;
+    track.setFill();
+    NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
+        rect(PAD, QUOTA_BAR_Y, bar_w, QUOTA_BAR_H),
+        radius,
+        radius,
+    )
+    .fill();
+    if let Some(p) = wr.percent {
+        let fw = (bar_w * p / 100.0).max(if p > 0.0 { QUOTA_BAR_H } else { 0.0 });
+        if fw > 0.0 {
+            tone.setFill();
+            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
+                rect(PAD, QUOTA_BAR_Y, fw, QUOTA_BAR_H),
+                radius,
+                radius,
+            )
+            .fill();
+        }
+    }
+    // 还剩多少：贴在条的正下方
+    if let Some(detail) = &wr.detail {
+        let d = attributed(detail, &quota_detail_font(), &ink.secondary);
+        draw_clipped(&d, PAD, QUOTA_BAR_Y + QUOTA_BAR_H + 2.0, bar_w);
     }
 }
 
@@ -591,7 +829,7 @@ fn fit(s: &NSAttributedString, max_w: f64) -> Option<Retained<NSAttributedString
 mod tests {
     use super::*;
     use crate::i18n::{Lang, with_lang};
-    use crate::menubar::model::{self, Gateway, Quota, Snapshot, StatCell, Today, Window};
+    use crate::menubar::model::{self, Gateway, Hourly, Snapshot, Today};
 
     /// 量字的几条测试一条一条来：AppKit 排字不必经得起几个线程同时量
     static APPKIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -602,172 +840,225 @@ mod tests {
     }
 
     const NOW: u64 = 1_800_000_000_000;
-    const MIN: u64 = 60_000;
-    const DAY: u64 = 86_400_000;
 
-    /// 截图里那一份菜单：ChatGPT 两个窗口，今天有几次失败
-    fn menu(lang: Lang, failed: i64) -> Vec<Row> {
-        let window = |name: &str, used: f64, in_ms: u64| Window {
-            window: name.into(),
-            used_percent: used,
-            resets_at_ms: Some(NOW + in_ms),
-            status: None,
-            credits: None,
-        };
+    /// 截图里那一份菜单的「今日」：128 次、失败几次、$3.47，有每小时的柱子
+    fn today(lang: Lang, t: Today) -> Dash {
         let s = Snapshot {
             gateway: Gateway::Running,
-            today: Some(Today {
-                requests: 244,
-                failed,
-                tokens: 4_200_000,
-                cost_micros: 40_260_000,
-                ..Default::default()
+            today: Some(t),
+            hourly: Some(Hourly {
+                from_ms: NOW as i64 - 21 * model::HOUR_MS,
+                tokens: (0..24).map(|h| h * 10_000).collect(),
             }),
-            quotas: vec![Quota {
-                provider: "chatgpt".into(),
-                windows: vec![
-                    window("5h", 58.0, 42 * MIN),
-                    window("weekly", 31.0, 3 * DAY),
-                ],
-                reset_credits: None,
-            }],
+            rate: Some(42),
             now_ms: NOW,
             ..Default::default()
         };
-        with_lang(lang, || model::build(&s, model::Style::Full).1)
+        with_lang(lang, || {
+            model::build(&s, model::Style::Full)
+                .1
+                .into_iter()
+                .find_map(|r| match r {
+                    Row::Today(d) => Some(*d),
+                    _ => None,
+                })
+                .expect("「今日」那一块不见了")
+        })
     }
 
-    fn windows(rows: &[Row]) -> Vec<WindowRow> {
-        rows.iter()
-            .flat_map(|r| match r {
-                Row::Quota { windows, .. } => windows.clone(),
-                _ => Vec::new(),
-            })
-            .collect()
-    }
-
-    fn cells(rows: &[Row]) -> Vec<StatCell> {
-        rows.iter()
-            .find_map(|r| match r {
-                Row::Stats { cells, .. } => Some(cells.clone()),
-                _ => None,
-            })
-            .expect("今日那一格不见了")
-    }
-
-    #[test]
-    fn chinese_quota_rows_keep_the_columns_they_always_had() {
-        let _appkit = appkit();
-        let cols = quota_cols(MENU_WIDTH, quota_text(&menu(Lang::Zh, 0)));
-        assert_eq!(
-            cols,
-            QuotaCols {
-                label: 50.0,
-                bar_x: 64.0,
-                bar_w: 90.0,
-                pct_right: 202.0,
-                reset: 92.0,
-            }
-        );
-    }
-
-    /// 英文的「Resets in 3 days」比写死的 92 宽：曾经压在「31%」上，画成「31%Resets in 3 days」
-    #[test]
-    fn english_reset_times_leave_room_after_the_percentage() {
-        let _appkit = appkit();
-        let rows = menu(Lang::En, 0);
-        let all = windows(&rows);
-        assert!(all.iter().any(|w| w.reset == "Resets in 3 days"), "{all:?}");
-        let cols = quota_cols(MENU_WIDTH, quota_text(&rows));
-        assert!(cols.bar_w >= QUOTA_MIN_BAR, "{cols:?}");
-        for w in &all {
-            let reset_left = MENU_WIDTH - PAD - text_width(&w.reset, &quota_reset_font());
-            assert!(
-                reset_left - cols.pct_right >= TEXT_GAP - 1e-9,
-                "「{}」离百分比只有 {:.1}",
-                w.reset,
-                reset_left - cols.pct_right
-            );
-            let label_right = PAD + text_width(&w.label, &quota_label_font());
-            assert!(label_right + LABEL_GAP <= cols.bar_x + 1e-9, "{w:?}");
+    fn busy() -> Today {
+        Today {
+            requests: 128,
+            failed: 2,
+            tokens: 1_240_000,
+            cost_micros: 3_470_000,
+            ..Default::default()
         }
     }
 
-    /// 英文的「Requests 4 failed」比三等分的一格宽：曾经画成「Requests 4 failedTokens」
+    /// 设计稿那一份：中文在菜单的最小宽度里就放得下；英文的那一行长，菜单宽一点。两种都是
+    /// 左边的字整段放下、柱子照设计稿的粗细画
     #[test]
-    fn the_failed_count_stays_inside_its_own_cell() {
+    fn the_busy_day_fits_beside_a_full_sparkline_in_both_languages() {
         let _appkit = appkit();
-        let avail = MENU_WIDTH - PAD * 2.0;
         for lang in [Lang::Zh, Lang::En] {
-            let cells = cells(&menu(lang, 4));
-            assert!(cells[0].note.is_some());
-            let widths = stat_widths(MENU_WIDTH, &cells);
-            assert!(
-                (widths.iter().sum::<f64>() - avail).abs() < 1e-9,
-                "{widths:?}"
+            let d = today(lang, busy());
+            let w = row_width(&Row::Today(Box::new(d.clone())));
+            let (text, note) = today_text(&d);
+            let fit = today_fit(text, note, d.spark.as_ref().map(Vec::len), w);
+            assert_eq!(
+                fit,
+                TodayFit {
+                    spark: Some(SPARK_FULL),
+                    note: false
+                },
+                "{lang:?} {} 宽 {w}",
+                d.meta_line()
             );
-            for (c, w) in cells.iter().zip(&widths) {
-                let line2 = text_width(&c.label, &stat_label_font())
-                    + c.note
-                        .as_deref()
-                        .map_or(0.0, |n| NOTE_GAP + text_width(n, &stat_label_font()));
-                let value = text_width(&c.value, &stat_value_font());
-                assert!(
-                    line2.max(value) + TEXT_GAP <= w + 1e-9,
-                    "{lang:?} {c:?} 放不进 {w:.1}"
-                );
+            if lang == Lang::Zh {
+                assert_eq!(w, MENU_WIDTH, "中文不用撑宽菜单");
+            } else {
+                assert!(w > MENU_WIDTH && w < MENU_WIDTH + 30.0, "{w}");
             }
         }
-        // 中文照旧三等分
-        let zh = stat_widths(MENU_WIDTH, &cells(&menu(Lang::Zh, 4)));
-        assert!(zh.iter().all(|w| (w - avail / 3.0).abs() < 1e-9), "{zh:?}");
+        // 别的行跟着菜单走
+        let section = Row::Section {
+            title: "提醒".into(),
+            right: None,
+        };
+        assert_eq!(row_width(&section), MENU_WIDTH);
     }
 
-    /// 积分制套餐的窗口在条下面多一行小字：那一块要高出这一行，不然最后一行被下一项压住
+    /// **费用不截**：那一行很长时（英文、上千次、上百刀），先把柱子收窄，再不画柱子
+    #[test]
+    fn a_long_line_narrows_the_sparkline_before_cutting_the_cost() {
+        let _appkit = appkit();
+        let d = today(
+            Lang::En,
+            Today {
+                requests: 12_345,
+                failed: 1_234,
+                tokens: 999_000_000,
+                cost_micros: 123_456_000,
+                unpriced: 3,
+                ..Default::default()
+            },
+        );
+        let (text, note) = today_text(&d);
+        let w = row_width(&Row::Today(Box::new(d.clone())));
+        assert_eq!(w, MAX_WIDTH, "撑到头了");
+        let fit = today_fit(text, note, Some(24), w);
+        assert!(!fit.note, "放不下的小字该进悬停提示");
+        assert_ne!(fit.spark, Some(SPARK_FULL), "{}", d.meta_line());
+        let spark = fit.spark.map_or(0.0, |s| s.width(24) + SPARK_GAP);
+        assert!(text + spark <= w - PAD * 2.0, "{}", d.meta_line());
+    }
+
+    #[test]
+    fn the_layout_gives_way_in_order() {
+        let avail = MENU_WIDTH - PAD * 2.0;
+        let full = SPARK_FULL.width(24) + SPARK_GAP;
+        let compact = SPARK_COMPACT.width(24) + SPARK_GAP;
+        let fit = |text: f64, note: Option<f64>, bars: Option<usize>| {
+            today_fit(text, note, bars, MENU_WIDTH)
+        };
+        let at = |spark, note| TodayFit { spark, note };
+        assert_eq!(fit(100.0, Some(40.0), Some(24)), at(Some(SPARK_FULL), true));
+        // 小字先让
+        assert_eq!(
+            fit(avail - full - 10.0, Some(40.0), Some(24)),
+            at(Some(SPARK_FULL), false)
+        );
+        // 再收窄柱子
+        assert_eq!(
+            fit(avail - compact - 1.0, Some(40.0), Some(24)),
+            at(Some(SPARK_COMPACT), false)
+        );
+        // 再不画柱子；没有柱子时小字放得下就跟着
+        assert_eq!(fit(avail - 30.0, Some(20.0), Some(24)), at(None, true));
+        assert_eq!(fit(avail - 30.0, Some(40.0), Some(24)), at(None, false));
+        // 什么都放不下：只剩截字
+        assert_eq!(fit(avail + 50.0, None, Some(24)), at(None, false));
+        // 没问到每小时的数：本来就没有柱子
+        assert_eq!(fit(100.0, None, None), at(None, false));
+        assert_eq!(SPARK_FULL.width(24), 24.0 * 3.0 + 23.0 * 1.5);
+        assert_eq!(SPARK_FULL.width(0), 0.0);
+    }
+
+    /// 没有用量的小时是一截短线；有用量的再少也比短线高一截，满格是 26
+    #[test]
+    fn bars_never_look_like_the_empty_stub() {
+        assert_eq!(spark_height(Spark::Empty), SPARK_STUB_H);
+        assert_eq!(spark_height(Spark::Past(0.001)), SPARK_MIN_H);
+        const { assert!(SPARK_MIN_H > SPARK_STUB_H) };
+        assert_eq!(spark_height(Spark::Now(1.0)), SPARK_MAX_H);
+        assert_eq!(spark_height(Spark::Past(0.5)), 13.0);
+        assert_eq!(spark_height(Spark::Past(2.0)), SPARK_MAX_H, "不画出格");
+    }
+
+    /// 英文的原因比一行长：折成两行，那一块跟着高一截，不截成「Startup failed several…」
+    #[test]
+    fn a_long_reason_wraps_and_makes_the_status_taller() {
+        let _appkit = appkit();
+        let status = |lang: Lang| {
+            let s = Snapshot {
+                gateway: Gateway::SafeMode,
+                ..Default::default()
+            };
+            with_lang(lang, || model::build(&s, model::Style::Full).1)
+                .into_iter()
+                .find(|r| matches!(r, Row::Status { .. }))
+                .unwrap()
+        };
+        let line = line_height(&reason_font());
+        let zh = row_height(&status(Lang::Zh));
+        let en = row_height(&status(Lang::En));
+        assert!(
+            (zh - (STATUS_ROW + REASON_GAP + line.ceil() + STATUS_BOTTOM)).abs() <= 1.0,
+            "{zh}"
+        );
+        assert!(en > zh + line * 0.5, "英文 {en}，中文 {zh}");
+        assert!(en <= STATUS_ROW + REASON_GAP + (line * REASON_LINES).ceil() + STATUS_BOTTOM);
+        // 正在启动：没有原因，就是一行
+        let starting = Row::Status {
+            state: "正在启动".into(),
+            tone: StateTone::Busy,
+            server: None,
+            reason: None,
+        };
+        assert_eq!(row_height(&starting), STATUS_ROW + STATUS_BOTTOM);
+    }
+
+    /// 积分制套餐的窗口在条下面多一行小字：那一行要高出这一截，不然被下一项压住
     #[test]
     fn a_line_under_a_bar_makes_the_quota_row_taller() {
-        let row = |detail: Option<&str>| WindowRow {
-            label: "5 小时".into(),
-            percent: Some(1.0),
-            reset: "3 小时后重置".into(),
-            tone: model::Tone::Normal,
-            detail: detail.map(str::to_string),
+        let row = |detail: Option<&str>| Row::Quota {
+            provider: "glm".into(),
+            window: WindowRow {
+                label: "5 小时".into(),
+                percent: Some(1.0),
+                reset: "3 小时后重置".into(),
+                tone: Tone::Normal,
+                detail: detail.map(str::to_string),
+            },
+            action: model::Action::Open("upstreams"),
         };
-        let height = |windows: Vec<WindowRow>| {
-            info_height(&Info::Quota {
-                provider: "glm".into(),
-                windows,
-                text: QuotaText::default(),
-            })
-        };
-        let plain = height(vec![row(None), row(None)]);
+        let plain = row_height(&row(None));
+        assert_eq!(plain, QUOTA_BAR_Y + QUOTA_BAR_H + QUOTA_BOTTOM);
         assert_eq!(
-            plain,
-            6.0 + 20.0 + 2.0 * QUOTA_ROW + 3.0,
-            "按百分比报的照旧"
-        );
-        assert_eq!(
-            height(vec![row(Some("剩余 1,976 / 2,000 积分")), row(None)]),
+            row_height(&row(Some("剩余 1,976 / 2,000 积分"))),
             plain + QUOTA_DETAIL
         );
     }
 
+    /// 监听没换成的那一行橙字让「今日」那一块高一截
     #[test]
-    fn columns_are_equal_until_one_cell_needs_more() {
-        assert_eq!(share_columns(300.0, &[50.0, 60.0, 70.0]), [100.0; 3]);
-        // 多要的那一格照它要的给，其余平分剩下的
+    fn a_listen_error_makes_today_taller() {
+        let _appkit = appkit();
+        let mut d = today(Lang::Zh, busy());
+        let plain = row_height(&Row::Today(Box::new(d.clone())));
+        assert_eq!(plain, TODAY_META_BASELINE + TODAY_BOTTOM);
+        d.warn = Some("端口 18790 已被占用。".into());
+        assert!(row_height(&Row::Today(Box::new(d))) > plain + 10.0);
+    }
+
+    /// 服务器的名字很长：截它，状态和速率留着
+    #[test]
+    fn a_long_server_name_is_cut_before_the_rate() {
+        let _appkit = appkit();
+        let mut d = today(Lang::Zh, busy());
+        d.server = Some("a-very-long-remote-server-name-that-never-ends.example.com".into());
+        let font = top_font();
+        let line = state_text_fitting(&d, &font, 200.0);
+        assert!(line.starts_with("运行中 · a-very"), "{line}");
+        assert!(line.ends_with("… · 42 token/秒"), "{line}");
+        assert!(text_width(&line, &font) <= 200.0 + 0.01);
+        // 放得下就原样
+        d.server = Some("office-mac".into());
         assert_eq!(
-            share_columns(300.0, &[150.0, 60.0, 70.0]),
-            [150.0, 75.0, 75.0]
+            state_text_fitting(&d, &font, 200.0),
+            "运行中 · office-mac · 42 token/秒"
         );
-        // 平分之后又有一格不够：它也照要的给
-        assert_eq!(
-            share_columns(300.0, &[150.0, 60.0, 85.0]),
-            [150.0, 65.0, 85.0]
-        );
-        // 怎么分都放不下：按比例
-        assert_eq!(share_columns(100.0, &[100.0, 100.0]), [50.0, 50.0]);
-        assert!(share_columns(100.0, &[]).is_empty());
     }
 
     #[test]
@@ -775,7 +1066,7 @@ mod tests {
         let _appkit = appkit();
         let s = attributed(
             "Resets in 3 days",
-            &quota_reset_font(),
+            &quota_right_font(),
             &NSColor::labelColor(),
         );
         let whole = fit(&s, 1000.0).unwrap();

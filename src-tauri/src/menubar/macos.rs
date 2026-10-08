@@ -11,7 +11,7 @@
 //! 所有 AppKit 调用都在主线程上。别处要改它，用 [`on_main`] 投递 —— 那走的是 GCD
 //! 的主队列：菜单展开时主线程处在事件跟踪模式，别的投递方式要等菜单关了才执行。
 //!
-//! 菜单里自己画的那几行（额度条、今日的几格数字……）在 `info`；只给预览程序用的几样
+//! 菜单里自己画的那几行（「今日」那一块、额度条……）在 `info`；只给预览程序用的几样
 //! （离屏画图、点开收起菜单）在 `preview`，只在开发构建里。
 
 use std::cell::{Cell, RefCell};
@@ -41,9 +41,10 @@ mod info;
 #[cfg(debug_assertions)]
 pub mod preview;
 
-use info::{InfoView, QuotaText, info_of, quota_text};
+use info::InfoView;
 
-/// 菜单栏往下这么宽。自定义的几行按它画，标准的菜单项跟着撑满
+/// 菜单至少这么宽。自定义的几行按它画，标准的菜单项跟着撑满；「今日」那一块放不下时
+/// 把菜单撑宽一点（见 `info::row_width`）
 const MENU_WIDTH: f64 = 308.0;
 /// 自定义行的左右留白：和标准菜单项的图标列对齐
 const PAD: f64 = 14.0;
@@ -290,9 +291,8 @@ fn rebuild(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
     ui.menu.removeAllItems();
     ui.items.clear();
     ui.actions.clear();
-    let quota = quota_text(rows);
     for row in rows {
-        let item = make_item(mtm, ui, row, quota);
+        let item = make_item(mtm, ui, row);
         ui.menu.addItem(&item);
         ui.items.push(item);
     }
@@ -302,7 +302,6 @@ fn rebuild(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
 /// 样子没变：只换文字和数据。**不删不加**，开着的菜单不跳 —— 子菜单里的项也一样
 fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
     ui.actions.clear();
-    let quota = quota_text(rows);
     let drawn = std::mem::take(&mut ui.rows);
     for (n, (row, item)) in rows.iter().zip(ui.items.clone()).enumerate() {
         match row {
@@ -316,8 +315,9 @@ fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
             }
             _ => {
                 let tag = row_action(row).map(|a| push_action(ui, a.clone()));
+                set_tooltip(&item, row);
                 if let Some(view) = item.view().and_then(|v| v.downcast::<InfoView>().ok()) {
-                    view.set_info(info_of(row, quota), tag);
+                    view.set_row(row.clone(), tag);
                 }
             }
         }
@@ -327,11 +327,24 @@ fn refresh(mtm: MainThreadMarker, ui: &mut Ui, rows: &[Row]) {
 
 fn row_action(row: &Row) -> Option<&Action> {
     match row {
-        Row::Notice { action, .. }
-        | Row::Quota { action, .. }
-        | Row::Stats { action, .. }
-        | Row::Live { action, .. } => Some(action),
+        Row::Today(d) => Some(&d.action),
+        Row::Notice { action, .. } | Row::Quota { action, .. } | Row::Live { action, .. } => {
+            Some(action)
+        }
         _ => None,
+    }
+}
+
+/// 自画的那几行的悬停提示：「今日」那一块的大字是取整过的，准数和那一行放不下的小字在这里
+fn set_tooltip(item: &NSMenuItem, row: &Row) {
+    let tip = match row {
+        Row::Today(d) => d.tooltip.as_deref().map(NSString::from_str),
+        _ => None,
+    };
+    item.setToolTip(tip.as_deref());
+    // 自画的那一行盖在菜单项上面，鼠标停在它身上：它自己也带一份
+    if let Some(view) = item.view() {
+        view.setToolTip(tip.as_deref());
     }
 }
 
@@ -340,12 +353,7 @@ fn push_action(ui: &mut Ui, action: Action) -> isize {
     (ui.actions.len() - 1) as isize
 }
 
-fn make_item(
-    mtm: MainThreadMarker,
-    ui: &mut Ui,
-    row: &Row,
-    quota: QuotaText,
-) -> Retained<NSMenuItem> {
+fn make_item(mtm: MainThreadMarker, ui: &mut Ui, row: &Row) -> Retained<NSMenuItem> {
     match row {
         Row::Separator => NSMenuItem::separatorItem(mtm),
         Row::Item(i) => {
@@ -356,9 +364,9 @@ fn make_item(
         _ => {
             let item = NSMenuItem::new(mtm);
             let tag = row_action(row).map(|a| push_action(ui, a.clone()));
-            let info = info_of(row, quota);
-            let view = InfoView::new(mtm, info, tag);
+            let view = InfoView::new(mtm, row.clone(), tag);
             item.setView(Some(&view));
+            set_tooltip(&item, row);
             item
         }
     }

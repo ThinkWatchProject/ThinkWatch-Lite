@@ -14,7 +14,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize};
 
-use super::info::{draw_info, info_height, info_of, quota_text};
+use super::info::{draw_row, row_height, row_width};
 use super::{MENU_WIDTH, OPEN, PAD, TEXT_X, UI, attributed, bar_image, rect, symbol, thickness};
 use crate::menubar::model::{Bar, Item, Row};
 
@@ -100,19 +100,24 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
     };
     use objc2_foundation::NSAffineTransform;
 
-    let quota = quota_text(rows);
     let heights: Vec<f64> = rows
         .iter()
         .map(|r| match r {
             Row::Separator => 11.0,
             Row::Item(_) => 24.0,
-            other => info_height(&info_of(other, quota)),
+            other => row_height(other),
         })
         .collect();
+    // 菜单按最宽的那一项撑开（见 `info::row_width`），和真的一样
+    let menu_w = rows
+        .iter()
+        .filter(|r| !matches!(r, Row::Separator | Row::Item(_)))
+        .map(row_width)
+        .fold(MENU_WIDTH, f64::max);
     let bar_img = bar_image(bar);
     let bar_h = thickness() + 8.0;
     let total = bar_h + 10.0 + heights.iter().sum::<f64>() + 10.0;
-    let width = MENU_WIDTH + 24.0;
+    let width = menu_w + 24.0;
     let rows = rows.to_vec();
     let block = RcBlock::new(move |_r: NSRect| -> Bool {
         let name = unsafe {
@@ -169,7 +174,7 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
             NSColor::colorWithSRGBRed_green_blue_alpha(menu_bg.0, menu_bg.1, menu_bg.2, 1.0)
                 .setFill();
             NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
-                rect(12.0, bar_h, MENU_WIDTH, total - bar_h - 4.0),
+                rect(12.0, bar_h, menu_w, total - bar_h - 4.0),
                 12.0,
                 12.0,
             )
@@ -183,14 +188,14 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
                 let t = NSAffineTransform::transform();
                 t.translateXBy_yBy(12.0, y);
                 t.concat();
-                let r = rect(0.0, 0.0, MENU_WIDTH, *h);
+                let r = rect(0.0, 0.0, menu_w, *h);
                 match row {
                     Row::Separator => {
                         NSColor::separatorColor().setFill();
-                        NSBezierPath::fillRect(rect(PAD, 5.0, MENU_WIDTH - PAD * 2.0, 1.0));
+                        NSBezierPath::fillRect(rect(PAD, 5.0, menu_w - PAD * 2.0, 1.0));
                     }
                     Row::Item(i) => preview_item(i, r),
-                    other => draw_info(&info_of(other, quota), r, false),
+                    other => draw_row(other, r, false),
                 }
                 ctx.restoreGraphicsState();
                 y += h;
