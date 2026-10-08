@@ -5,10 +5,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { notify } from "@/ui/notify";
 import { Table, TableBody, TableCell, TableRow } from "@/ui/table";
+import { CopyButton } from "@/ui/copy-button";
+import { Tile } from "@/ui/tile";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { ClientView, ManualSetup, Msg } from "@/types";
-import { ClientMark, CopyButton, Tile, focusSelf, useDialogFocus } from "@/keys/parts";
+import { ClientMark } from "@/keys/parts";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
 

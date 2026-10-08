@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -25,7 +25,6 @@ import { Input } from "@/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Logo, upstreamGlyph } from "@/ui/logos";
 import { Segmented } from "@/ui/segmented";
-import { Spinner } from "@/ui/spinner";
 import { TableSkeleton } from "@/ui/states";
 import {
   Table,
@@ -717,19 +716,10 @@ export function PriceSheetDialog({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleting}
-                aria-busy={deleting || undefined}
-                onClick={(e) => {
-                  // 删完由调用方关掉整个对话框；失败时原因写在外面这张对话框里
-                  e.preventDefault();
-                  void remove();
-                }}
-              >
-                {deleting && <Spinner data-icon="inline-start" aria-hidden />}
+              {/* 删完由调用方关掉整个对话框；失败时原因写在外面这张对话框里 */}
+              <AlertDialogConfirm variant="destructive" pending={deleting} onConfirm={() => void remove()}>
                 {common.delete}
-              </AlertDialogAction>
+              </AlertDialogConfirm>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

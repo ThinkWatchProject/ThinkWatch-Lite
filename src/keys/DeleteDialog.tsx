@@ -7,15 +7,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
+import { focusSelf } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import type { ClientView } from "@/types";
 import { deleteDialogText } from "./DeleteDialog.i18n";
 import type { KeyOwner } from "./labels";
-import { ConfirmAction, focusSelf } from "./parts";
 
 /**
  * 删除一把密钥的确认。
@@ -71,9 +72,9 @@ export function DeleteDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{common.cancel}</AlertDialogCancel>
-          <ConfirmAction variant="destructive" pending={pending} onConfirm={() => void run()}>
+          <AlertDialogConfirm variant="destructive" pending={pending} onConfirm={() => void run()}>
             {common.delete}
-          </ConfirmAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

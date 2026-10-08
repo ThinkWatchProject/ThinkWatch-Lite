@@ -1,10 +1,10 @@
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { copyText } from "@/traffic/cells";
 import { usd, type ProviderView } from "@/types";
 import { Logo, upstreamGlyph } from "@/ui/logos";
 import { rowMotion, usePresentList } from "@/ui/motion";
+import { copyText } from "@/ui/notify";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";

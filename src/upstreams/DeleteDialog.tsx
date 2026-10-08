@@ -2,8 +2,8 @@ import { useState } from "react";
 import { ArrowRightIcon, LayersIcon, SplitIcon } from "lucide-react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -11,7 +11,6 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
-import { Spinner } from "@/ui/spinner";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ReferenceView } from "@/types";
@@ -101,19 +100,9 @@ export function DeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>{blocked ? c.close : c.cancel}</AlertDialogCancel>
           {!blocked && (
-            <AlertDialogAction
-              variant="destructive"
-              disabled={busy}
-              aria-busy={busy || undefined}
-              onClick={(e) => {
-                // 结果要留在这张对话框里：成功时由调用方关掉，失败时在这里说原因
-                e.preventDefault();
-                void run();
-              }}
-            >
-              {busy && <Spinner data-icon="inline-start" aria-hidden />}
+            <AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
               {c.delete}
-            </AlertDialogAction>
+            </AlertDialogConfirm>
           )}
         </AlertDialogFooter>
       </AlertDialogContent>

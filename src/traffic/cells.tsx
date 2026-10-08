@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { textOf, useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
+import { useText } from "@/i18n";
 import { appLabel } from "@/labels";
 import { keyText } from "@/KeyLabel";
 import { cn } from "@/lib/utils";
@@ -8,7 +7,6 @@ import type { NotSent } from "@/requestRouting";
 import type { RequestRow } from "@/types";
 import { IconBusy, IconDenied, IconLimitReached, IconNoUpstream, IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
-import { notify } from "@/ui/notify";
 import { Tip } from "@/ui/tip";
 import { coreNow, onTick, stopwatch } from "./clock";
 import { trafficText } from "./Traffic.i18n";
@@ -33,15 +31,8 @@ export const DIM = "text-muted-foreground/60";
 export const MENU_REVEAL =
   "inline-flex opacity-0 transition-opacity duration-(--motion-fast) group-hover/row:opacity-100 group-data-[state=selected]/row:opacity-100 has-[[data-state=open]]:opacity-100 has-focus-visible:opacity-100";
 
-/** 复制一段文字，成了说一声：复制这件事在界面上看不出来。`done` 是成了之后那一句 */
-export async function copyText(text: string, done?: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    notify.success(done ?? textOf(commonText).copied);
-  } catch (e) {
-    notify.error(e);
-  }
-}
+/** 复制在 `@/ui/notify`。流量这几个文件还从这里取 */
+export { copyText } from "@/ui/notify";
 
 /**
  * 密钥那一格：推测出的应用的标志，加密钥的名字。

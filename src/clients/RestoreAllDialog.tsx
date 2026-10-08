@@ -6,12 +6,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { ClientLogo } from "@/ui/logos";
+import { focusSelf } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { DetectedClient } from "@/types";
-import { ConfirmAction, focusSelf } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 import type { Status } from "./status";
 import { ClientStatus } from "./ClientStatus";
@@ -57,9 +58,9 @@ export function RestoreAllDialog({
         <p className="tw-body text-muted-foreground">{t.keysKept}</p>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{common.cancel}</AlertDialogCancel>
-          <ConfirmAction variant="destructive" pending={pending} onConfirm={onConfirm}>
+          <AlertDialogConfirm variant="destructive" pending={pending} onConfirm={onConfirm}>
             {t.confirmRestoreAll}
-          </ConfirmAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

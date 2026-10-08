@@ -207,6 +207,42 @@ export function ListSkeleton({ rows = 4, className }: { rows?: number; className
 }
 
 /**
+ * 一行两行字、行首带小方块（`Tile`）的表格的骨架：表头一行，`rows` 行数据，和真实的
+ * 行一样高，数据到了之后不跳。密钥页、客户端页用它。
+ */
+export function RowsSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
+  return (
+    <div data-slot="rows-skeleton" role="status" aria-busy="true" className="w-full">
+      <div className="flex h-8 items-center gap-6 border-b border-border px-2">
+        <Skeleton className="h-2.5 w-12 rounded-sm opacity-60" />
+        <div className="flex-1" />
+        {Array.from({ length: cols - 1 }, (_, c) => (
+          <Skeleton key={c} className="h-2.5 w-14 rounded-sm opacity-60" />
+        ))}
+      </div>
+      {Array.from({ length: rows }, (_, r) => (
+        <div
+          key={r}
+          className="flex h-[53px] items-center gap-6 border-b border-border/60 px-2"
+          style={{ opacity: 1 - r * (0.5 / Math.max(1, rows)) }}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Skeleton className="size-7 rounded-md" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <Skeleton className={cn("h-3 rounded-sm", ["w-28", "w-36", "w-24", "w-32"][r % 4])} />
+              <Skeleton className={cn("h-2.5 rounded-sm opacity-70", ["w-56", "w-44", "w-60", "w-48"][r % 4])} />
+            </div>
+          </div>
+          {Array.from({ length: cols - 1 }, (_, c) => (
+            <Skeleton key={c} className={cn("h-3 rounded-sm", ["w-14", "w-20", "w-16"][(r + c) % 3])} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * 把一份 `useResource` 的结果画成三件套之一或内容本身。
  *
  * · 还没有数据、正在读：`loading`（缺省是 `LoadingState`，形状已知时传骨架）

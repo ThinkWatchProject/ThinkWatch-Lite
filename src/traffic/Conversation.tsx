@@ -13,7 +13,6 @@ import { ChevronRightIcon, ImageIcon } from "lucide-react";
 import { call } from "@/control";
 import { size, when } from "@/format";
 import { useText } from "@/i18n";
-import { DISCLOSURE } from "@/keys/parts";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
 import { prettyJson } from "@/prettyJson";
@@ -28,7 +27,7 @@ import type {
   TurnView,
 } from "@/types";
 import { useNow } from "@/useNow";
-import { Button } from "@/ui/button";
+import { Button, DISCLOSURE } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, ErrorState } from "@/ui/states";

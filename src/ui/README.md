@@ -261,7 +261,8 @@ import { notify, undoable, usePending } from "@/ui/notify";
 ```
 
 - `notify.success(msg)` — only when the result is not visible on screen (saved to disk,
-  copied, sent). If the row appears or the switch flips, no toast.
+  copied, sent). If the row appears or the switch flips, no toast. Copying text is
+  `copyText(text, done?)` from the same module.
 - `notify.error(e, title?)` — every failed action. Pass the caught value; it is
   translated with `errorText`. **Never call `toast` from sonner directly.**
 - **Persistent state is a `Banner`, not a toast.** Toasts float away; "config rejected",
@@ -280,7 +281,16 @@ await undoable({
 ```
 
 - Irreversible destructive actions (delete an upstream) keep an `AlertDialog`; its title
-  has no question mark.
+  has no question mark. Its confirm button is `AlertDialogConfirm` (`@/ui/alert-dialog`):
+  it shows `pending` and does not close on click, so a failure can be shown in the dialog;
+  the caller closes it on success. (`AlertDialogAction` has `pending` too, for the rare
+  action that may close at once.)
+
+```tsx
+<AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
+  {t.delete}
+</AlertDialogConfirm>
+```
 - **Pending buttons**: every async button shows it is working. `Button` has a `pending`
   prop (spinner, disabled, `aria-busy`, label unchanged so nothing shifts):
 
@@ -309,6 +319,19 @@ Tones: `info` (grey, tell), `warning` (amber, works but watch out), `error` (red
 act). `layout="strip"` (default) is a full-width strip under the toolbar or at the top of
 a region; `layout="inline"` is a rounded box inside a page, below the `PageHeader`.
 Passing `show` animates it in and out; without `show` it is static.
+
+### Shared pieces
+
+Small things several pages need live in `src/ui`, not in the page that had them first:
+
+| Piece | From | Use |
+| --- | --- | --- |
+| `focusSelf`, `useDialogFocus` | `@/ui/dialog-focus` | `onOpenAutoFocus={focusSelf}` keeps the focus ring off the first button; `{...useDialogFocus()}` returns focus to the row after Esc |
+| `CopyButton`, `CopyIconButton` | `@/ui/copy-button` | Copy with a check mark that flashes for 1.5s |
+| `Tile` | `@/ui/tile` | The 28px square at the start of a row (client mark, icon) |
+| `openable`, `OPENABLE_ROW`, `stop` | `@/ui/openable` | A table row that opens its dialog on click / Enter; `stop` on controls inside it |
+| `DISCLOSURE` | `@/ui/button` | A ghost button that expands a block (no fill while expanded) |
+| `RowsSkeleton` | `@/ui/states` | Skeleton for two-line rows with a `Tile` (Keys, Clients) |
 
 ---
 

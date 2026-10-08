@@ -13,6 +13,8 @@ import {
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Switch } from "@/ui/switch";
+import { CopyButton } from "@/ui/copy-button";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { when } from "@/format";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -25,7 +27,6 @@ import { inputsOf, limitProblems, rowsOf, type LimitRow } from "./limits";
 import { LimitsEditor } from "./LimitsEditor";
 import { TakeoverBadge } from "./KeysTable";
 import { ModelScope } from "./ModelScope";
-import { CopyButton, focusSelf, useDialogFocus } from "./parts";
 import { allowOf, scopeOf, type Scope } from "./scope";
 
 /**

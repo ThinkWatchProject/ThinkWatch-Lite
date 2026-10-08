@@ -8,6 +8,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -18,13 +19,13 @@ import { ErrorState } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { call } from "@/control";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
 import { size } from "@/format";
-import { ConfirmAction, focusSelf, useDialogFocus } from "@/keys/parts";
 import { DialogError, FormItem } from "@/upstreams/parts";
 import type { ManifestView, Overview, PluginInspection, PluginView } from "@/types";
 import { pluginName } from "./defaults";
@@ -283,7 +284,7 @@ function EditorDialog({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t.keepEditing}</AlertDialogCancel>
-            <ConfirmAction
+            <AlertDialogConfirm
               variant="destructive"
               pending={false}
               onConfirm={() => {
@@ -293,7 +294,7 @@ function EditorDialog({
               }}
             >
               {t.discard}
-            </ConfirmAction>
+            </AlertDialogConfirm>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

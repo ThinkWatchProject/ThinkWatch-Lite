@@ -5,12 +5,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
+import { focusSelf } from "@/ui/dialog-focus";
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
-import { focusSelf } from "@/keys/parts";
 import { DialogError } from "@/upstreams/parts";
 import type { PluginView } from "@/types";
 import { changedDialogText } from "./ChangedDialog.i18n";

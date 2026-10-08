@@ -4,6 +4,7 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -14,7 +15,6 @@ import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Skeleton } from "@/ui/skeleton";
-import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
 import type { DetectedClient, UninstallStep, WslGroup } from "@/types";
 import { useResource } from "@/lib/resource";
@@ -243,19 +243,9 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
           ) : (
             <>
               <AlertDialogCancel disabled={running}>{common.cancel}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={running}
-                aria-busy={running || undefined}
-                onClick={(e) => {
-                  // 做完之前不关：结果要在这个对话框里逐条说
-                  e.preventDefault();
-                  void run();
-                }}
-              >
-                {running && <Spinner data-icon="inline-start" aria-hidden />}
+              <AlertDialogConfirm variant="destructive" pending={running} onConfirm={() => void run()}>
                 {t.confirmUninstall}
-              </AlertDialogAction>
+              </AlertDialogConfirm>
             </>
           )}
         </AlertDialogFooter>

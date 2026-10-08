@@ -1,8 +1,6 @@
-import { textOf, useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
+import { useText } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
-import { notify } from "@/ui/notify";
 import type { ScanFinding, ScanLevel } from "@/types";
 import { mcpText } from "./McpPage.i18n";
 
@@ -55,12 +53,4 @@ export function Level({ level, className }: { level: ScanLevel; className?: stri
 /** 路径收成 `~/…`，一行放得下 */
 export function shortPath(p: string): string {
   return p.replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~");
-}
-
-/** 放进剪贴板，说一声。**界面上看不出来的结果才弹提示**，复制就是 */
-export function copyText(text: string) {
-  navigator.clipboard.writeText(text).then(
-    () => notify.success(textOf(commonText).copied),
-    (e) => notify.error(e),
-  );
 }

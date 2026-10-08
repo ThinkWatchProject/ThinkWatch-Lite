@@ -3,8 +3,8 @@ import { useSystemProxyLabel } from "@/connection/Remote";
 import { RefreshCwIcon } from "lucide-react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -17,7 +17,6 @@ import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
-import { Spinner } from "@/ui/spinner";
 import { StatusLabel } from "@/ui/status-dot";
 import { resetAt, resetIn } from "@/format";
 import { useNow } from "@/useNow";
@@ -248,18 +247,9 @@ export function ChatgptAccountSection({
           </Banner>
           <AlertDialogFooter>
             <AlertDialogCancel>{common.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={using}
-              aria-busy={using || undefined}
-              onClick={(e) => {
-                // 用完再关：结果和原因要等上游答复
-                e.preventDefault();
-                if (confirming) void use(confirming);
-              }}
-            >
-              {using && <Spinner data-icon="inline-start" aria-hidden />}
+            <AlertDialogConfirm pending={using} onConfirm={() => void (confirming && use(confirming))}>
               {t.use}
-            </AlertDialogAction>
+            </AlertDialogConfirm>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

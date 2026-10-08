@@ -3,10 +3,11 @@ import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
+import { CopyButton } from "@/ui/copy-button";
+import { useDialogFocus } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { api } from "./api";
 import { createdDialogText } from "./CreatedDialog.i18n";
-import { CopyButton, useDialogFocus } from "./parts";
 
 /**
  * 刚建好的一把密钥，下一步一定是拿去某个地方填上 —— 地址和密钥一起给，各带一个

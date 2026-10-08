@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { textOf } from "@/i18n";
+import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { uiText } from "./ui.i18n";
 
@@ -39,6 +40,19 @@ export const notify = {
     });
   },
 };
+
+/**
+ * 复制一段文字，成了说一声：复制这件事在界面上看不出来。`done` 是成了之后那一句，
+ * 缺省是「已复制」；失败照常 `notify.error`。
+ */
+export async function copyText(text: string, done?: ReactNode): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify.success(done ?? textOf(commonText).copied);
+  } catch (e) {
+    notify.error(e);
+  }
+}
 
 /**
  * `undoable` 的 `do()` / `undo()` 交回它：用户在系统的确认框里点了取消。**不是失败**：界面
