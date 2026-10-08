@@ -171,7 +171,7 @@ export type Line =
   | { kind: "request"; id: number; under: string | null; shown: boolean };
 
 /**
- * 表里从上到下有哪些行，和 `RequestRows` 摆的一样。
+ * 表里从上到下有哪些行，和表格画的一样（`itemsOf`，virtual.ts）。
  *
  * **键盘按这个顺序走，不按 `rows`。**平表两者相同；归组之后不一样：组按最新
  * 的一条排，组内按时间正序，折起来的组里的请求不在表里。按 `rows` 走的话，

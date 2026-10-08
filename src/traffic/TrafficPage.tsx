@@ -28,7 +28,7 @@ import { useArrivals } from "./arrivals";
 import { copyText } from "./cells";
 import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
 import { mergeFound, useHistorySearch, type HistorySearch } from "./historySearch";
-import { RequestTable } from "./RequestTable";
+import { RequestTable, type RequestTableHandle } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
 import { TrafficSummary } from "./TrafficSummary";
 import { trafficText } from "./Traffic.i18n";
@@ -145,8 +145,10 @@ export default function TrafficPage({
   const freshGroups = useArrivals(sessionIds, seeded);
 
   const searchRef = useRef<HTMLInputElement>(null);
-  /** 滚动层。键盘选中一行之后，在它里面找到那一行滚进视野 */
+  /** 滚动层。表格看它滚到了哪、画哪一段 */
   const listRef = useRef<HTMLDivElement>(null);
+  /** 表格。键盘选中一行之后叫它把那一行滚进视野 */
+  const tableRef = useRef<RequestTableHandle>(null);
   /** 打开的那条请求（右侧浮层） */
   const [open, setOpen] = useState<number | null>(null);
   /** 右侧开着的那次会话。请求可以叠在它上面，见 `SessionSheet` */
@@ -164,7 +166,7 @@ export default function TrafficPage({
 
   /*
     **交给表格的几个回调要稳定。**表格的行是 `memo` 的（见 `RequestTable`），每次
-    重画都换一个新函数的话，一条请求落地就是两千行一起重画 —— 新行要晚半秒才出现。
+    重画都换一个新函数的话，一条请求落地就是画着的每一行一起重画。
     一次只开一样：请求详情和会话详情共用右侧那一栏。
   */
   const openRequest = useCallback((id: number) => {
@@ -216,14 +218,8 @@ export default function TrafficPage({
       const activate = e.key === "Enter" || e.key === " ";
       if (el instanceof Element && el.closest(activate ? CONTROLS : ARROW_WIDGETS)) return;
       if (open !== null || openSession !== null) return;
-      /*
-        **选中的那一行要一直看得见。**只滚刚好够的距离（`nearest`）；让开吸顶的表头、
-        不横着滚，靠的是行上的 scroll-margin，见 `RequestTable`。
-      */
-      const reveal = (c: Cursor) =>
-        listRef.current
-          ?.querySelector(c.kind === "request" ? `[data-row="${c.id}"]` : `[data-session="${CSS.escape(c.id)}"]`)
-          ?.scrollIntoView({ block: "nearest" });
+      // **选中的那一行要一直看得见**：表格只画看得见的那一段，那一行可能还没画出来，交给它滚
+      const reveal = (c: Cursor) => tableRef.current?.reveal(c);
       // 表里从上到下的每一行。按它走，不按 `rows`：归组之后两者不一样，见 `lines`
       const ls = lines(rows, groups, openGroups);
       const here = ls.find((l) => isAt(l, cursor));
@@ -537,6 +533,8 @@ export default function TrafficPage({
           )
         ) : (
           <RequestTable
+            ref={tableRef}
+            scroller={listRef}
             rows={rows}
             hits={found?.hits}
             showClient={showClient}
