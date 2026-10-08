@@ -696,5 +696,12 @@ pub(crate) fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
 /// 落到当前目录下的 `.thinkwatch`，而 core 在 `%APPDATA%\ThinkWatch`：界面找不到
 /// 一个正在跑的网关。`THINKWATCH_HOME` 照旧最优先（测试靠它隔离）。
 pub(crate) fn data_dir() -> PathBuf {
+    // **测试里不许落到真的数据目录。**测试要的目录各自建在临时目录里、显式传进去；走到
+    // 这里就是哪条测试漏了 —— 以前就有，在 `~/.thinkwatch/backups` 里留下了几千个目录
+    #[cfg(test)]
+    assert!(
+        std::env::var_os("THINKWATCH_HOME").is_some(),
+        "a test reached the real data directory; give it a temporary one"
+    );
     tw_api::data::dir()
 }

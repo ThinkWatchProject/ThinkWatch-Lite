@@ -415,6 +415,13 @@ fn replace_in_wsl(
 /// 工具会把 mtime 全改成同一天）。序号补零到固定宽度，同一毫秒里的
 /// 几份也按先后排。
 pub fn backup_root() -> PathBuf {
+    // 测试里不许落到真的备份目录：测试的备份目录建在临时目录里、显式传进去（桌面端的 `data_dir`
+    // 有同样的检查）
+    #[cfg(test)]
+    assert!(
+        std::env::var_os("THINKWATCH_HOME").is_some(),
+        "a test reached the real backup directory; give it a temporary one"
+    );
     tw_api::data::dir().join("backups")
 }
 
