@@ -14,7 +14,7 @@
 //! # 范围仍然是那几个目录
 //!
 //! 监听的目录集合就是 [`crate::sources`] 划定的那一批，一个不多。无界的
-//! FSEvents 监听既是性能问题，也和「空闲时接近零」的目标冲突。
+//! 文件监听既是性能问题，也和「空闲时接近零」的目标冲突。
 //!
 //! **盯目录不盯文件、不递归、去抖**，和配置文件的监听是同一份（[`tw_watch`]）。
 
@@ -222,7 +222,8 @@ pub fn watch_plan(plan: &Plan) -> Result<(Watch, tokio::sync::mpsc::Receiver<()>
 /// 根不算（盯它等于什么都盯）。
 ///
 /// home 以外的（换过位置的目录）**只看上一层**：那个目录自己都不在的话，再往上找就要
-/// 盯到 `/Volumes` 这种地方去 —— macOS 上盯一个目录，其实是盯它底下的一整棵树。
+/// 盯到 `/Volumes` 这种地方去。macOS 上平时用 kqueue，只看那个目录自己的条目；但 fd
+/// 名额不够、退回 FSEvents 时，盯一个目录就是盯它底下的一整棵树（见 `tw_watch`）。
 fn nearest_dir(path: &Path, home: &Path) -> Option<PathBuf> {
     let inside = path.starts_with(home);
     path.ancestors()

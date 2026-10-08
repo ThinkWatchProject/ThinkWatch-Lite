@@ -8,6 +8,8 @@ import {
   clip,
   failureLine,
   items,
+  askFrom,
+  extendTranscript,
   keepTurns,
   missingWhy,
   notesOf,
@@ -303,6 +305,8 @@ describe("重新取回来的对话", () => {
   const base: Transcript = {
     session: "s1",
     system: "sys",
+    total_turns: 2,
+    settled_turns: 1,
     turns: [turn("1", { input: [msg("user", text("问"))], output: [text("答")] }), turn("2", { output: [text("又答")] })],
   };
   const fresh = (): Transcript => JSON.parse(JSON.stringify(base)) as Transcript;
@@ -453,5 +457,39 @@ describe("失败的那一轮写什么", () => {
     expect(failureLine(view(1))).toBeNull();
     expect(failureLine(view(1, { cancelled: true, status: 400 }))).toBeNull();
     expect(failureLine(undefined)).toBeNull();
+  });
+});
+
+describe("只取新的轮次", () => {
+  const t = (id: string) => turn(id, { output: [text(id)] });
+  const have: Transcript = { session: "s1", system: "sys", total_turns: 3, settled_turns: 2, turns: [t("1"), t("2"), t("3")] };
+
+  it("从不会再变的那几轮之后要；别的会话、没有手上那份时要整段", () => {
+    expect(askFrom(have, "s1")).toBe(2);
+    expect(askFrom(have, "s2")).toBe(0);
+    expect(askFrom(undefined, "s1")).toBe(0);
+    // 手上的比 core 说的少（不该发生）：只从手上有的那么多轮之后要
+    expect(askFrom({ ...have, turns: [t("1")] }, "s1")).toBe(1);
+  });
+
+  it("前面几轮照旧、后面换成新取回来的", () => {
+    const tail: Transcript = { session: "s1", system: "sys", total_turns: 4, settled_turns: 3, turns: [t("3"), t("4")] };
+    const got = extendTranscript(have, tail, 2)!;
+    expect(got.turns.map((x) => String(x.id))).toEqual(["1", "2", "3", "4"]);
+    expect(got.turns[0]).toBe(have.turns[0]);
+    expect(got.settled_turns).toBe(3);
+    expect(got.total_turns).toBe(4);
+  });
+
+  it("接不上的要整段重取", () => {
+    const tail: Transcript = { session: "s1", system: "sys", total_turns: 1, settled_turns: 1, turns: [] };
+    expect(extendTranscript(have, tail, 2)).toBeNull();
+    expect(extendTranscript(have, { ...tail, session: "s2", total_turns: 5 }, 2)).toBeNull();
+    expect(extendTranscript(undefined, tail, 2)).toBeNull();
+  });
+
+  it("从 0 起要的就是整段", () => {
+    const whole: Transcript = { ...have, turns: [t("9")] };
+    expect(extendTranscript(have, whole, 0)).toBe(whole);
   });
 });

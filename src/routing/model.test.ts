@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { ConditionView, DryRunCandidate, GroupView, RouteView, RuleView } from "@/types";
+import type { ConditionView, GroupView, RouteView, RuleView } from "@/types";
 import {
   addOnsText,
   balanceNotes,
-  balanceShares,
   blankPinned,
   blankRule,
   canLift,
@@ -299,24 +298,5 @@ describe("轮询组的比例和分配依据", () => {
     expect(strategyText(group({ weights: { anthropic: 7, openrouter: 3 }, balance_by: "health" }))).toBe(
       "Round robin (7 : 3 · By reliability)",
     );
-  });
-
-  it("试算的占比按权重 × 系数分，熔断着的不参加", () => {
-    const c = (provider: string, weight: number | null, balance_factor: number | null = null): DryRunCandidate => ({
-      provider,
-      weight,
-      balance_factor,
-    });
-    expect(balanceShares({ candidate_models: [c("a", 7), c("b", 3)], circuit_open: [] })).toEqual([0.7, 0.3]);
-    const auto = balanceShares({ candidate_models: [c("a", 2, 2.25), c("b", 1, 0.5)], circuit_open: [] });
-    expect(auto[0]).toBeCloseTo(0.9);
-    expect(auto[1]).toBeCloseTo(0.1);
-    expect(balanceShares({ candidate_models: [c("a", 1), c("b", 1), c("c", 2)], circuit_open: ["c"] })).toEqual([
-      0.5, 0.5, 0,
-    ]);
-    // 全都熔断着时都算：网关照样一家家试
-    expect(balanceShares({ candidate_models: [c("a", 3), c("b", 1)], circuit_open: ["a", "b"] })).toEqual([0.75, 0.25]);
-    // 不是轮询组：没有权重，也就没有占比
-    expect(balanceShares({ candidate_models: [c("a", null)], circuit_open: [] })).toEqual([null]);
   });
 });

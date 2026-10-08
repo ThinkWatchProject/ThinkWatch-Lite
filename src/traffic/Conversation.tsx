@@ -39,6 +39,8 @@ import { conversationText } from "./Conversation.i18n";
 import { turnCost } from "./costCell";
 import {
   allLost,
+  askFrom,
+  extendTranscript,
   argsPreview,
   blocksOf,
   clip,
@@ -103,6 +105,19 @@ function remember(key: string) {
   while (recent.length > KEEP) forget(recent.shift()!);
 }
 
+/**
+ * 取这次会话的对话：手上有一份就只要不会再变的那几轮之后的（`askFrom`），接到后面；
+ * 接不上（前面的请求过期被删了）就整段重取。长会话每落一轮不必再把几 MB 传一遍。
+ */
+async function fetchTranscript(id: string, prev: Transcript | undefined): Promise<Transcript> {
+  const from = askFrom(prev, id);
+  if (from > 0) {
+    const joined = extendTranscript(prev, await call("SessionTranscript", { from_turn: from }, id), from);
+    if (joined) return joined;
+  }
+  return call("SessionTranscript", {}, id);
+}
+
 /** 轮次头上的几项，从会话详情里那一轮来（`TurnView`） */
 interface Head {
   at: number | null;
@@ -155,7 +170,7 @@ export function Conversation({
   useEffect(() => remember(key), [key]);
   /** 上一次取到的那一份：重取回来的轮次没变就换回它（`keepTurns`） */
   const prev = useRef<Transcript | undefined>(undefined);
-  const r = useResource(key, async () => keepTurns(prev.current, await call("SessionTranscript", null, id)), {
+  const r = useResource(key, async () => keepTurns(prev.current, await fetchTranscript(id, prev.current)), {
     deps: [turns.length, turns[turns.length - 1]?.id ?? null],
   });
   prev.current = r.data;
