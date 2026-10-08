@@ -1,8 +1,10 @@
 import type { CostBucket } from "./generated/tw-api";
 /**
- * 表格里的显示格式。
+ * 数字、时刻、耗时的显示格式。**每一种量全应用只有一个写法，都在这里**：流量表、请求
+ * 详情、会话、概览、上游页写同一个量时写成同一个样子（耗时 `1182ms`、日期 `10-08`、
+ * token `1.5k`）。要短一点的写法时在这里另起一个有名字的（`msShort`），不在页面里另写。
  *
- * 抽出来是因为这几条都有「边界看起来对、其实不对」的地方，而它们错了
+ * 抽出来也是因为这几条都有「边界看起来对、其实不对」的地方，而它们错了
  * 不会报错，只会让一列数字读起来是错的。
  */
 import { textOf } from "@/i18n";
@@ -22,10 +24,49 @@ export function latency(
   ttftMs: number | undefined,
   durationMs: number | undefined,
 ): string {
-  if (durationMs == null) return ttftMs != null ? `${ttftMs}ms` : "—";
-  if (ttftMs == null) return `${durationMs}ms`;
-  if (durationMs - ttftMs < 50) return `${durationMs}ms`;
-  return `${ttftMs}→${durationMs}ms`;
+  if (durationMs == null) return ttftMs != null ? ms(ttftMs) : "—";
+  if (ttftMs == null) return ms(durationMs);
+  if (durationMs - ttftMs < 50) return ms(durationMs);
+  return `${Math.round(ttftMs)}→${ms(durationMs)}`;
+}
+
+/**
+ * 一段耗时：`1182ms`。取整，**不加千分位**，单位紧跟着数。流量表那一列、请求详情、
+ * 测速、连接测试写的都是它：同一个首 token 在两处写成「1182ms」和「1,182 ms」，读的人
+ * 会以为是两个数。
+ */
+export function ms(n: number): string {
+  return `${Math.max(0, Math.round(n))}ms`;
+}
+
+/**
+ * 耗时的短写法：一秒以内写毫秒，以上写秒、留两位有效的小数（`1.18s`）。**只给并排比
+ * 量级的汇总**（概览的延迟排行）：两列四位数的毫秒要逐位读，而「1.18s」一眼就是一秒
+ * 出头。精确值在流量里，用 `ms`。
+ *
+ * **先取整再定位数**：9_996ms 按两位小数是「10.00s」，进了位就该按下一档写成「10.0s」；
+ * 99_960ms 同理是「100s」，不是「100.0s」。
+ */
+export function msShort(n: number): string {
+  const v = Math.max(0, Math.round(n));
+  if (v < 1000) return `${v}ms`;
+  const two = (v / 1000).toFixed(2);
+  if (Number(two) < 10) return `${two}s`;
+  const one = (v / 1000).toFixed(1);
+  if (Number(one) < 100) return `${one}s`;
+  return `${Math.round(v / 1000)}s`;
+}
+
+/**
+ * 一段跨度（一次会话从头到尾）：`42 秒`、`7 分`、`1.5 小时`。和 `ms` 说的不是同一个量：
+ * 那是一个请求等了多久，要精确到毫秒；这是一次任务做了多久，读的是量级。
+ */
+export function span(n: number): string {
+  // 取文案要在调用的那一刻，不能提到模块级 —— 换了语言它不会跟着换
+  const t = textOf(formatText).span;
+  if (n < 60_000) return t.seconds(Math.round(n / 1000));
+  if (n < 3_600_000) return t.minutes(Math.round(n / 60_000));
+  return t.hours((n / 3_600_000).toFixed(1));
 }
 
 /**
@@ -40,18 +81,33 @@ export function latency(
  */
 export function when(atMs: number, now = Date.now()): string {
   const t = new Date(atMs);
-  const p = (n: number) => String(n).padStart(2, "0");
-  const today = new Date(now);
-  const sameDay =
-    t.getFullYear() === today.getFullYear() &&
-    t.getMonth() === today.getMonth() &&
-    t.getDate() === today.getDate();
-  if (sameDay) return `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
-  return `${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+  if (sameDay(t, new Date(now))) return `${hm(t)}:${pad(t.getSeconds())}`;
+  return `${monthDay(atMs)} ${hm(t)}`;
 }
 
 /**
- * 一个大数收成三四位。
+ * `when` 到分为止：今天的写「14:05」，更早的「09-14 23:05」。给说一段时间从哪儿开始的
+ * 地方（会话的开始、模型清单的更新时刻）：那里不用分开同一分钟里的几次。
+ */
+export function whenMinute(atMs: number, now = Date.now()): string {
+  const t = new Date(atMs);
+  return sameDay(t, new Date(now)) ? hm(t) : `${monthDay(atMs)} ${hm(t)}`;
+}
+
+/** 本地日历上的月日：`09-14`。图上按天的格子、刻度也写它 */
+export function monthDay(atMs: number): string {
+  const t = new Date(atMs);
+  return `${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const hm = (t: Date) => `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * 一个大数收成三四位。**token 数一律这样写**（用量、会话的峰值、上下文窗口和输出上限）。
  *
  * 四位数以上换 k：一列 `128000` 和 `463` 混排时，位数差本身会被误读成
  * 数量级差。而一个逗号分隔的 `514,567` 读起来是账本上的条目，不是一个

@@ -8,7 +8,7 @@ import { copyText } from "@/ui/notify";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { contextWindow } from "@/upstreams/labels";
+import { compact } from "@/format";
 import { keepInRow, openRow } from "@/upstreams/parts";
 import type { AliasView } from "@/types";
 import { aliasesText } from "./aliases.i18n";
@@ -77,7 +77,7 @@ export function AliasTable({
                   ))}
                 </TableCell>
                 <TableCell className="py-2 text-right align-top tw-num leading-5">
-                  {a.context_window ? contextWindow(a.context_window) : ""}
+                  {a.context_window ? compact(a.context_window) : ""}
                 </TableCell>
                 <TableCell className="py-2 text-right align-top">
                   <DayFigure a={a} />

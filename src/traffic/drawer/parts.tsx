@@ -58,9 +58,6 @@ export function Stat({ label, value, muted }: { label: string; value: ReactNode;
   );
 }
 
-/** 毫秒，千分位。和表格那一列一样写 `ms` */
-export const ms = (n: number) => `${Math.round(n).toLocaleString()}ms`;
-
 /**
  * 费用那一项。**「没有价格」「不计费」「估算」各说各的**，和 0 不是一回事。
  * `short`：放在数字那一排里，只写数和记号，理由留给「用量」那一页。

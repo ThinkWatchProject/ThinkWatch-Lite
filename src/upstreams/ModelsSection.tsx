@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { compact, whenMinute } from "@/format";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -22,7 +23,7 @@ import { useText } from "@/i18n";
 import type { ModelListStatus, ModelSource, Msg, ProviderModelsView, ResolvedPrice } from "@/types";
 import { coreText } from "@/i18n/core.i18n";
 import { globMatch } from "./glob";
-import { contextWindow, modelSourceLabel } from "./labels";
+import { modelSourceLabel } from "./labels";
 import { modelsSectionText } from "./ModelsSection.i18n";
 import { Boxed, FormItem, Note } from "./parts";
 import type { UpstreamForm } from "./upstreamForm";
@@ -144,7 +145,7 @@ export function ModelsSection({
         {catalog && (listed || models.length > 0) && (
           <span className="tw-label tw-num text-muted-foreground">
             {t.count(models.length)}
-            {listed && catalog.checkedAtMs ? ` · ${t.fetchedAt(clock(catalog.checkedAtMs))}` : ""}
+            {listed && catalog.checkedAtMs ? ` · ${t.fetchedAt(whenMinute(catalog.checkedAtMs))}` : ""}
           </span>
         )}
         <div className="flex-1" />
@@ -243,6 +244,7 @@ export function ModelsSection({
                     {shown.map((m) => {
                       const on = inScope(form, m);
                       const price = prices[m];
+                      const ctx = catalog?.manualContext?.[m] ?? price?.max_input_tokens;
                       return (
                         <TableRow key={m}>
                           <TableCell>
@@ -260,7 +262,7 @@ export function ModelsSection({
                             {m}
                           </TableCell>
                           <TableCell className="tw-num text-muted-foreground">
-                            {contextWindow(catalog?.manualContext?.[m] ?? price?.max_input_tokens)}
+                            {ctx ? compact(ctx) : "—"}
                           </TableCell>
                           {perToken && (
                             <TableCell>
@@ -294,14 +296,4 @@ export function ModelsSection({
       )}
     </div>
   );
-}
-
-function clock(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  const today = new Date();
-  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
-  return d.toDateString() === today.toDateString()
-    ? time
-    : `${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
 }

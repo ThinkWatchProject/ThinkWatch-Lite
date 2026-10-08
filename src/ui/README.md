@@ -133,6 +133,22 @@ Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outsi
 Numbers that line up (amounts, latency, counts) add `tw-num` (tabular figures).
 Windows and Linux shift every level up 1px automatically.
 
+### Numbers and times
+
+Every quantity has one way of being written, and its helper lives in `src/format.ts`.
+Never format these by hand in a page:
+
+| Quantity | Helper | Looks like |
+| --- | --- | --- |
+| Latency, a single duration in ms | `ms(n)`; the combined column `latency(ttft, total)` | `1182ms`, `492→1486ms` |
+| Latency in a side-by-side summary only | `msShort(n)` | `438ms`, `1.18s` |
+| Time of an event | `when(at)` (to the second), `whenMinute(at)` | `14:07:09`, `09-14 23:05` |
+| Day | `monthDay(at)` | `10-08` |
+| Tokens (usage, context windows, output limits) | `compact(n)`; a pair `tokens(in, out)` | `463`, `1.5k`, `128k`, `2.7M` |
+| A session's span | `span(n)` | `42 秒`, `1.5 h` |
+| Bytes | `size(n)` | `245 KB`, `1.4 MB` |
+| Money | `usd(micros)` (`@/types`), `money(micros, estimated)` | `$0.041`, `~$0.018` |
+
 ---
 
 ## Colour

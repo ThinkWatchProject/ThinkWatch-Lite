@@ -16,7 +16,6 @@ export const proxyTableText = messages(
     notChecked: "未检测",
     checking: "检测中",
     unreachable: "无法连接",
-    ms: (n: number) => `${n.toLocaleString()} ms`,
   },
   {
     proxy: "Proxy",
@@ -32,6 +31,5 @@ export const proxyTableText = messages(
     notChecked: "Not checked",
     checking: "Checking",
     unreachable: "Unreachable",
-    ms: (n: number) => `${n.toLocaleString()} ms`,
   },
 );

@@ -1,3 +1,4 @@
+import { ms } from "@/format";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { StatusLabel } from "@/ui/status-dot";
@@ -117,7 +118,7 @@ function Connectivity({
   if (!r.ok) return <Unreachable reason={l1ErrorText(r)} />;
   return (
     <StatusLabel tone="ok" muted className="tw-num">
-      {t.ms(r.total_ms)}
+      {ms(r.total_ms)}
     </StatusLabel>
   );
 }

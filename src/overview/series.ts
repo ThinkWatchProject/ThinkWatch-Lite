@@ -1,4 +1,4 @@
-import { compact, densify } from "@/format";
+import { compact, densify, monthDay } from "@/format";
 import type { ChartTip } from "@/ui/charts";
 import { upstreamGlyph, type GlyphId } from "@/ui/logos";
 import { usd, type CostBucket, type Dashboard, type LatencyView } from "@/types";
@@ -63,13 +63,10 @@ const pad = (n: number) => String(n).padStart(2, "0");
  * 日期，那一格就写成了前一天，和上一格撞成同一个标签。
  */
 export function fmtBucket(atMs: number, bucketMs: number): string {
-  if (bucketMs >= DAY) {
-    const d = new Date(atMs + 12 * HOUR);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
+  if (bucketMs >= DAY) return monthDay(atMs + 12 * HOUR);
   const t = new Date(atMs);
   if (bucketMs < 60_000) return `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
-  return `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  return `${monthDay(atMs)} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
 
 /** 一格里四类 token 的合计 */
@@ -527,18 +524,15 @@ export function historyTicks(sinceMs: number, bucketMs: number, n: number, nowLa
   if (h !== undefined) {
     for (let at = nextHour(sinceMs, h); at < sinceMs + span; at = nextHour(at, h)) {
       const d = new Date(at);
-      // 零点写日期：「00:00」不如「9/25」说得清是哪一天
-      push(at, d.getHours() === 0 ? `${d.getMonth() + 1}/${d.getDate()}` : `${pad(d.getHours())}:00`);
+      // 零点写日期：「00:00」不如「09-25」说得清是哪一天
+      push(at, d.getHours() === 0 ? monthDay(at) : `${pad(d.getHours())}:00`);
     }
   } else {
     const k = daySteps.find((s) => span / (s * DAY) <= 7) ?? Math.ceil(span / (7 * DAY));
     let at = nextMidnight(sinceMs);
     let i = 0;
     while (at < sinceMs + span) {
-      if (i % k === 0) {
-        const d = new Date(at);
-        push(at, `${d.getMonth() + 1}/${d.getDate()}`);
-      }
+      if (i % k === 0) push(at, monthDay(at));
       at = nextMidnight(at);
       i += 1;
     }
@@ -592,25 +586,6 @@ export function cacheByModel(d: Dashboard, unknownModel: string): CacheRow[] {
 /** 延迟排行：样本多的在前（样本少的分位数不可靠，放后面） */
 export function latencyRows(rows: readonly LatencyView[]): LatencyView[] {
   return [...rows].sort((a, b) => b.samples - a.samples || a.model.localeCompare(b.model));
-}
-
-/**
- * 一段延迟怎么写。一秒以内写毫秒，以上写秒、留两位有效的小数。
- *
- * **不写成 `1,182ms`**：并排两列四位数的毫秒要逐位读，而「1.18s」一眼就是一秒出头
- * —— 这一栏要比的是快慢的量级和差距，不是个位上的那几毫秒（精确值在流量里）。
- *
- * **先取整再定位数**：9_996ms 按两位小数是「10.00s」，进了位就该按下一档写成「10.0s」；
- * 99_960ms 同理是「100s」，不是「100.0s」。
- */
-export function fmtMs(ms: number): string {
-  const n = Math.max(0, Math.round(ms));
-  if (n < 1000) return `${n}ms`;
-  const two = (n / 1000).toFixed(2);
-  if (Number(two) < 10) return `${two}s`;
-  const one = (n / 1000).toFixed(1);
-  if (Number(one) < 100) return `${one}s`;
-  return `${Math.round(n / 1000)}s`;
 }
 
 /**

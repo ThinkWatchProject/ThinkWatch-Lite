@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
-import { size, tokens as tokenPair } from "@/format";
+import { ms, size, tokens as tokenPair } from "@/format";
 import { AnimatedNumber } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { KeyLabel } from "@/KeyLabel";
@@ -15,7 +15,7 @@ import { cpuMs } from "@/plugins/model";
 import { OutcomeOf, PluginText } from "@/plugins/parts";
 import type { AttemptView, PluginRunView, RequestDetail } from "@/types";
 import { Elapsed } from "../cells";
-import { CostText, ms, Row, Rows, Stat, type DrawerState } from "./parts";
+import { CostText, Row, Rows, Stat, type DrawerState } from "./parts";
 import { requestDrawerText } from "./RequestDrawer.i18n";
 
 /**

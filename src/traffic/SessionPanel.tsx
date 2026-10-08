@@ -20,7 +20,7 @@ import { sessionsText } from "./Sessions.i18n";
 import { Conversation } from "./Conversation";
 import { unrecorded } from "./transcript";
 import { turnCost, type TurnCost } from "./costCell";
-import { dur, tokens, when } from "./format";
+import { compact, span, whenMinute } from "@/format";
 import { tally } from "./grouping";
 
 /**
@@ -152,7 +152,7 @@ export function SessionPanel({
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}
       <PanelHeader
         title={t.title}
-        meta={t.startedAt(when(n.started))}
+        meta={t.startedAt(whenMinute(n.started))}
         onClose={onClose}
         tabs={
           <TabsList variant="line">
@@ -225,7 +225,7 @@ const Summary = memo(function Summary({
     <>
       <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
         <Stat label={t.turns} value={<AnimatedNumber value={n.turns} />} />
-        <Stat label={t.duration} value={dur(n.ended - n.started)} />
+        <Stat label={t.duration} value={span(n.ended - n.started)} />
         {/* 库里还没有这次会话：一轮费用都还没算出来 */}
         <Stat label={t.cost} value={s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>} />
         <Stat
@@ -244,7 +244,7 @@ const Summary = memo(function Summary({
       </dl>
       {s && (
         <p className="mt-2 tw-label text-muted-foreground">
-          {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
+          {t.usage(compact(s.input_tokens), compact(s.output_tokens), compact(s.cache_read_tokens))}
         </p>
       )}
 
@@ -292,7 +292,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
     <section className="mt-6">
       <div className="mb-2 flex items-baseline gap-3">
         <h3 className="tw-head text-foreground">{t.growthTitle}</h3>
-        <span className="tw-label text-muted-foreground">{t.peak(tokens(peak))}</span>
+        <span className="tw-label text-muted-foreground">{t.peak(compact(peak))}</span>
       </div>
       <div role="img" aria-label={t.growthTitle} className="flex h-20 items-end gap-px border-b border-border">
         {turns.map((x, i) => {

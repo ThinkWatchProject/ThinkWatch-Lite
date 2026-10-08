@@ -5,7 +5,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { useResource } from "@/lib/resource";
 import type { KnownModel, ProviderView } from "@/types";
-import { contextWindow } from "@/upstreams/labels";
+import { compact } from "@/format";
 import { modelsKey } from "@/upstreams/data";
 import { api } from "./api";
 import { ModelInput } from "./fields";
@@ -128,7 +128,7 @@ function PinnedRow({
         placeholder={t.model}
       />
       <span className="w-10 shrink-0 text-right tw-label tw-num text-muted-foreground">
-        {ctx ? contextWindow(ctx) : ""}
+        {ctx ? compact(ctx) : ""}
       </span>
       {/* 写成字：对话框右上角的 × 是关闭 */}
       <Button variant="ghost" size="xs" className="shrink-0 text-muted-foreground" aria-label={t.remove(n)} onClick={onRemove}>

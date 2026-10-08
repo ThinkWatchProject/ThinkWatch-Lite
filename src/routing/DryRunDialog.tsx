@@ -19,6 +19,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
+import { ms } from "@/format";
 import { parseDecimal } from "@/lib/decimal";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -592,7 +593,7 @@ function BalanceFacts({ c, by, share }: { c: DryRunCandidate; by: BalanceBy; sha
   const t = useText(dryRunText);
   const parts = [t.weight(c.weight ?? 1)];
   if (by === "latency" || by === "latency-health") {
-    parts.push(c.ttfb_ms != null ? t.ttft(`${Math.round(c.ttfb_ms).toLocaleString()}ms`) : t.ttftNone);
+    parts.push(c.ttfb_ms != null ? t.ttft(ms(c.ttfb_ms)) : t.ttftNone);
   }
   if (by === "health" || by === "latency-health") {
     parts.push(c.success_rate != null ? t.success(percent(c.success_rate)) : t.successNone);

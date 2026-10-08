@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIcon, ZapIcon } from "lucide-react";
+import { ms } from "@/format";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -193,7 +194,7 @@ export function LinkTestDialog({
                       <TableCell className="align-top whitespace-normal">
                         {r.ok ? (
                           <span className="tw-num">
-                            {r.segments.map((s) => `${l1StageLabel(s.stage)} ${s.ms} ms`).join(" · ")}
+                            {r.segments.map((s) => `${l1StageLabel(s.stage)} ${ms(s.ms)}`).join(" · ")}
                           </span>
                         ) : (
                           <span className="text-destructive">{l1ErrorText(r)}</span>
@@ -205,7 +206,7 @@ export function LinkTestDialog({
                         ))}
                       </TableCell>
                       <TableCell className="text-right align-top tw-num">
-                        {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
+                        {r.ok ? ms(r.total_ms) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -486,10 +487,10 @@ export function SpeedTestDialog({
                           )}
                         </TableCell>
                         <TableCell className="text-right tw-num">
-                          {r.ttft_ms != null ? `${r.ttft_ms.toLocaleString()} ms` : "—"}
+                          {r.ttft_ms != null ? ms(r.ttft_ms) : "—"}
                         </TableCell>
                         <TableCell className="text-right tw-num">
-                          {r.ok ? `${r.total_ms.toLocaleString()} ms` : "—"}
+                          {r.ok ? ms(r.total_ms) : "—"}
                         </TableCell>
                         <TableCell className="text-right tw-num">
                           {r.input_tokens != null && r.output_tokens != null

@@ -7,7 +7,8 @@ import { UpstreamLogo } from "@/ui/logos";
 import { useNav } from "@/nav";
 import type { Dashboard, LatencyView, Overview } from "@/types";
 import { useText } from "@/i18n";
-import { fmtMs, latencyRows, ROWS } from "./series";
+import { msShort } from "@/format";
+import { latencyRows, ROWS } from "./series";
 import { LinkRow, ModelMark, Scope } from "./parts";
 import { overviewText } from "./overview.i18n";
 
@@ -166,10 +167,10 @@ function Spreads({
             </span>
           </span>
           <span className={cn(COL.p50, "shrink-0 text-right")}>
-            <AnimatedNumber value={l.p50} format={fmtMs} scope={scope} />
+            <AnimatedNumber value={l.p50} format={msShort} scope={scope} />
           </span>
           <span className={cn(COL.p95, "shrink-0 text-right text-muted-foreground")}>
-            <AnimatedNumber value={l.p95} format={fmtMs} scope={scope} />
+            <AnimatedNumber value={l.p95} format={msShort} scope={scope} />
           </span>
           {/*
             **样本数要显示**：「800ms」是 3 个样本还是 300 个，含义完全不同。不可靠的

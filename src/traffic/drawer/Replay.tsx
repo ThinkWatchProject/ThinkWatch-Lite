@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { call } from "@/control";
 import { useText } from "@/i18n";
+import { ms } from "@/format";
 import { useResource } from "@/lib/resource";
 import { Button } from "@/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
@@ -157,9 +158,9 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
               </TableRow>
             </TableHeader>
             <TableBody className="tw-num">
-              <Cmp label={t.status} a={result.original.status} b={result.status} />
-              <Cmp label={t.ttfb} a={result.original.ttfb_ms} b={result.ttfb_ms} unit="ms" />
-              <Cmp label={t.duration} a={result.original.duration_ms} b={result.duration_ms} unit="ms" />
+              <Cmp label={t.status} a={result.original.status} b={result.status} format={String} />
+              <Cmp label={t.ttfb} a={result.original.ttfb_ms} b={result.ttfb_ms} format={ms} />
+              <Cmp label={t.duration} a={result.original.duration_ms} b={result.duration_ms} format={ms} />
               <Cmp label={t.bytes} a={result.original.bytes} b={result.bytes} />
             </TableBody>
           </Table>
@@ -174,16 +175,24 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
   );
 }
 
-function Cmp({ label, a, b, unit = "" }: { label: string; a: number | null | undefined; b: number; unit?: string }) {
+/** 对比表的一行。耗时按 `ms` 写，和流量表、时间线一样；字节、状态码照原数 */
+function Cmp({
+  label,
+  a,
+  b,
+  format = (n) => n.toLocaleString(),
+}: {
+  label: string;
+  a: number | null | undefined;
+  b: number;
+  format?: (n: number) => string;
+}) {
   return (
     <TableRow className="hover:bg-transparent">
       <TableCell className="text-muted-foreground">{label}</TableCell>
       {/* **原来那次可能没有这个数**（失败的请求没有耗时）。写「—」而不是 0 */}
-      <TableCell className="text-right">{a == null ? "—" : `${a.toLocaleString()}${unit}`}</TableCell>
-      <TableCell className="text-right font-medium">
-        {b.toLocaleString()}
-        {unit}
-      </TableCell>
+      <TableCell className="text-right">{a == null ? "—" : format(a)}</TableCell>
+      <TableCell className="text-right font-medium">{format(b)}</TableCell>
     </TableRow>
   );
 }

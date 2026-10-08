@@ -2,6 +2,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
+import { compact, whenMinute } from "@/format";
 import { useResource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -14,7 +15,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
 import { modelsKey } from "./data";
-import { contextWindow, coreText, errorText, perMillion } from "./labels";
+import { coreText, errorText, perMillion } from "./labels";
 import { hasManual } from "./modelSpec";
 import { modelsPanelText } from "./ModelsPanel.i18n";
 
@@ -227,11 +228,11 @@ function summary(source: string, total: number, enabled: number, view: ProviderM
   const t = textOf(modelsPanelText);
   const count = enabled === total ? t.countAll(total) : t.countSome(total, enabled);
   if (source === "discovered") {
-    return view.checked_at_ms ? t.listedAt(count, clock(view.checked_at_ms)) : t.listed(count);
+    return view.checked_at_ms ? t.listedAt(count, whenMinute(view.checked_at_ms)) : t.listed(count);
   }
   if (source === "manual") return t.manual(count);
   // 没拿到清单：那个时间是问的时间，不是拿到的时间
-  return view.checked_at_ms ? t.lastTry(clock(view.checked_at_ms)) : t.notFetched;
+  return view.checked_at_ms ? t.lastTry(whenMinute(view.checked_at_ms)) : t.notFetched;
 }
 
 function Row({
@@ -251,10 +252,12 @@ function Row({
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
   const actions = onAlias || onSpec;
-  /** 手写了哪几项：「上下文窗口 128K」「输出上限 16K」「支持推理」「不支持图片输入」 */
+  /** 手写了哪几项：「上下文窗口 128k」「输出上限 16k」「支持推理」「不支持图片输入」 */
   const manual = [
-    m.context_window_source === "manual" ? t.manualContext(contextWindow(m.context_window)) : null,
-    m.max_output_tokens_source === "manual" ? t.manualOutput(contextWindow(m.max_output_tokens)) : null,
+    m.context_window_source === "manual" && m.context_window ? t.manualContext(compact(m.context_window)) : null,
+    m.max_output_tokens_source === "manual" && m.max_output_tokens
+      ? t.manualOutput(compact(m.max_output_tokens))
+      : null,
     m.reasoning_source === "manual" && m.reasoning != null ? t.manualReasoning(m.reasoning) : null,
     m.image_input_source === "manual" && m.image_input != null ? t.manualImageInput(m.image_input) : null,
   ].filter((x): x is string => x !== null);
@@ -302,7 +305,7 @@ function Row({
           </span>
         )}
         <span className="w-10 text-right tw-num tw-label text-muted-foreground" title={t.context}>
-          {m.context_window ? contextWindow(m.context_window) : ""}
+          {m.context_window ? compact(m.context_window) : ""}
         </span>
       </span>
       {actions && (
@@ -363,14 +366,4 @@ function Problem({
       {after && <p className="tw-label text-muted-foreground">{after}</p>}
     </div>
   );
-}
-
-/** 今天只写时刻，别的日子带上月日 */
-function clock(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
-  return d.toDateString() === new Date().toDateString()
-    ? time
-    : `${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
 }

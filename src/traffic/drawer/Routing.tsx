@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
+import { ms } from "@/format";
 import { IconDenied } from "@/ui/icons";
 import { UpstreamLogo } from "@/ui/logos";
 import { StatusLabel } from "@/ui/status-dot";
@@ -11,7 +12,7 @@ import { routingFacts, skippedHop, type RoutingNote } from "@/requestRouting";
 import type { AttemptUsage, HistoryRow, PluginRunView } from "@/types";
 import { routingModels, type HopModel } from "../modelVia";
 import { useViaConfig } from "../useModelVia";
-import { ms, Row, Rows } from "./parts";
+import { Row, Rows } from "./parts";
 import { requestDrawerText } from "./RequestDrawer.i18n";
 
 /**
