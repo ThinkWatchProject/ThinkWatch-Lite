@@ -178,6 +178,44 @@ something happening right now (a request in flight, connecting).
 
 ---
 
+## Data visualisation
+
+Three primitives, all hand-written (no chart library). Colour comes from `--chart-*` /
+`--cache-*` for data and from the state tokens for state; nothing else.
+
+```tsx
+import { Meter } from "@/ui/meter";
+import { Sparkline, sparklineWidth } from "@/ui/sparkline";
+import { StackedArea } from "@/ui/charts";
+
+<Meter size="lg" value={r.tokens} max={top} color={r.color} />            // a share, data colour
+<Meter from={p50} value={p95} max={max} color="var(--chart-3)" mark="start" /> // a range with its median
+<Meter size="sm" value={used} max={cap} tone={near ? "warn" : "neutral"} label={t.usage} valueText="412 MB / 2 GB" />
+<Meter role="progressbar" value={pct} max={100} tone="strong" label={text} />  // the thing being waited on
+
+<Sparkline bars={slots.map((s) => ({ at: s.at, n: s.requests, failed: s.failed }))} />
+<Sparkline bars={bars} tip={barTip} label={t.sparkLabel(n, failed)} />     // hoverable, read out
+```
+
+- **`Meter`**: one track (foreground at 8%), `size` `sm` 4px next to a line of text, `md`
+  6px (default, and bars with a `mark`), `lg` 8px when the bar is the main thing in its
+  section. Fill is `color` for data, otherwise `tone`: `neutral` grey (usage that is not a
+  problem), `warn` / `error` only when it needs attention, `strong` for a progress bar the
+  user is waiting on. Any non-zero value shows at least 2px. Give `label` (and `valueText`)
+  only when no number sits next to it; otherwise it is hidden from screen readers.
+- **`Sparkline`**: one bar per time slot, the last one is "now" (`--chart-1`, others
+  `--chart-2`). Each row scales to its own peak but never below 4, so one request does not
+  fill it; a slot with requests is at least 3px; failures sit at the bottom in red; empty
+  slots keep a faint baseline. Without `tip` bars are 2px with 1px gaps (`sparklineWidth(n)`
+  for its skeleton); with `tip` each slot is a 4px hover cell. Keep `bars` and `tip`
+  referentially stable where the parent re-renders often (it is memoised).
+- **`StackedArea`** (`@/ui/charts`): the Overview trend chart. Monotone curves, the axis
+  on the right (`Y_AXIS_WIDTH`), the caller pins `yMax`. It animates only when told to
+  (`animate`, once per change of view) and never on a refresh.
+- Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
+
+---
+
 ## State trio: loading, error, empty
 
 **Every place that fetches data shows all three.** Use `useResource` + `Loadable`:
@@ -327,7 +365,7 @@ movement. Do not write your own `@keyframes` or `transition-all` in pages.
 | Removed row | Same hook: the row stays for 200ms with `motion-row-out` (fade, not clickable). |
 | Banner / inline notice appearing | `Banner show` or `<Reveal show>` (height + fade). |
 | Numbers that change | `<AnimatedNumber value format scope />` (`@/ui/motion`), built on `useCountUp`. Change `scope` when the meaning changes (time range) so it jumps instead of counting. |
-| Bars, meters, progress | `motion-bar` on the element whose width/height changes. |
+| Bars, meters, progress | Built into `Meter` and `Sparkline`. Anything else: `motion-bar` on the element whose width/height changes. |
 | Live / in-flight | `<StatusDot tone="pending" />` or `motion-live` on a dot. |
 | New data at a live edge | `motion-ping` on a dot (HTML or SVG): one ring, not looping. Re-key the element to play it again. |
 | Skeleton shimmer | Built into `Skeleton` (`motion-shimmer`). |
