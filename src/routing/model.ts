@@ -507,6 +507,3 @@ export function strategies(): { id: GroupKind; desc: string }[] {
 
 /** 客户端格式：规则条件和试算里可选的几种 */
 export const DIALECTS: readonly Dialect[] = ["anthropic", "openai-chat", "openai-responses", "gemini"];
-
-/** 辅助请求的类别（不含总称） */
-export const PROBE_IDS = ["health_check", "warmup", "titling", "topic_detect", "suggestion"];

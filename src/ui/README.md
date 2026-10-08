@@ -410,9 +410,10 @@ useNavParams("keys", (p) => {
 
 Wait for the data a dialog needs before rendering it (an edit dialog opened by a deep link
 may mount before its row is loaded). The Settings page handles `section` itself
-(`revealSection` finds `data-section="<id>"`, or the heading whose text is the title in
-`palette/sections.ts`). When the Settings page is restructured, keep one palette entry per
-setting a user would search for and point its `id` at the section that now holds it.
+(`jump` in `settings/kit.tsx` scrolls to the `SettingsGroup` whose `id`, or the
+`SettingsRow` whose `anchor`, is that section). When the Settings page is restructured, keep
+one palette entry per setting a user would search for (`palette/sections.ts`) and point its
+`id` at the group or row that now holds it.
 
 ### Command palette and shortcuts
 

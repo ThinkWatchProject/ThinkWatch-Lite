@@ -148,7 +148,6 @@ export const labelsText = messages(
       immediately: "下一个请求即使用新配置。",
       onRestart: "重新启动客户端后生效；通过环境变量读取配置的客户端需重新打开终端。",
     },
-    fieldsOnly: "字段名已查证，尚未在本机实际运行验证。",
   },
   {
     groupKinds: {
@@ -288,6 +287,5 @@ export const labelsText = messages(
       onRestart:
         "Takes effect after the client restarts; clients that read their configuration from environment variables also need the terminal reopened.",
     },
-    fieldsOnly: "Field names are verified; not yet confirmed by an actual run on this machine.",
   },
 );

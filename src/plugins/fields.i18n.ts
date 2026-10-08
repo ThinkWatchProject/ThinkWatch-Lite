@@ -2,7 +2,6 @@ import { messages } from "@/i18n";
 
 export const pluginFieldsText = messages(
   {
-    all: "全部",
     some: "指定",
     /** 标题下的一句：这一项按什么匹配。客户端不用说 */
     matches: {
@@ -24,7 +23,6 @@ export const pluginFieldsText = messages(
     numberBad: (label: string) => `「${label}」需要填写数字。`,
   },
   {
-    all: "All",
     some: "Specific",
     matches: {
       clients: "",

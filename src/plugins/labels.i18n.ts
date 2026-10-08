@@ -34,7 +34,6 @@ export const pluginLabelsText = messages(
     highRisk: "高风险",
     chipTip: (what: string, note: string) => (note ? `${what}。${note}。` : `${what}。`),
     added: "新增",
-    removed: "已移除",
     /** 改回答文字的插件，整段模式下文字到齐才交给客户端 */
     blockMode: "回答文字整段到齐后才显示",
 
@@ -98,7 +97,6 @@ export const pluginLabelsText = messages(
     highRisk: "High risk",
     chipTip: (what: string, note: string) => (note ? `${what}. ${note}.` : `${what}.`),
     added: "New",
-    removed: "Removed",
     blockMode: "Reply text appears once each block is complete",
 
     kinds: { conversation: "conversations", embeddings: "embeddings", completions: "completions" } as Record<string, string>,

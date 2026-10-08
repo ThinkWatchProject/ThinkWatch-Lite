@@ -272,6 +272,3 @@ export function Note({
     </p>
   );
 }
-
-// 挪到了 `@/ui/segmented`：全应用的单选都用它。设置里「外观」「提醒」两节还从这里取
-export { Segmented } from "@/ui/segmented";

@@ -182,11 +182,6 @@ export function resetText(atMs: number, nowMs: number): string {
   return t.resets(t.on(date, hm));
 }
 
-/** 一把密钥有没有哪一条已经到了 */
-export function anyReached(views: readonly KeyLimitView[] | undefined): boolean {
-  return (views ?? []).some((v) => v.reached);
-}
-
 /** 这几把密钥里最早要重新算的那一刻（天、周、月的上限才有）。没有就是 null */
 export function nextReset(keys: readonly { limits: readonly KeyLimitView[] }[] | undefined): number | null {
   let soonest: number | null = null;

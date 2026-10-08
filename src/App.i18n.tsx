@@ -19,7 +19,6 @@ export const appText = messages(
     surfaces: {
       dashboard: "概览",
       requests: "流量",
-      sessions: "会话",
       security: "安全",
       upstreams: "上游",
       routing: "路由",
@@ -68,7 +67,6 @@ export const appText = messages(
     surfaces: {
       dashboard: "Overview",
       requests: "Traffic",
-      sessions: "Sessions",
       security: "Security",
       upstreams: "Upstreams",
       routing: "Routing",

@@ -1,22 +1,9 @@
-import { MonitorIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { Retargeted } from "@/types";
 import { remoteText } from "./remote.i18n";
 import { useRemote } from "./useRemote";
-
-/**
- * 连着远程 core 时，客户端页、MCP 页顶上**固定**的那一条（设计稿 ⑧）：这里改的是这台
- * 机器上的文件，不是服务器上的。不能关 —— 它说的是这一页一直成立的事实。
- */
-export function RemoteNote({ children }: { children: string }) {
-  return (
-    <Banner layout="inline" tone="info" icon={<MonitorIcon />}>
-      {children}
-    </Banner>
-  );
-}
 
 /**
  * 把接管着的客户端改为指向服务器之后，**逐个说**：改好了哪几个，哪几个没改成、为什么。

@@ -12,8 +12,7 @@ import { connText } from "@/connection/connection.i18n";
  * `useNavParams("settings", …)` 里收 `section`）。
  *
  * **标题直接取各节自己的词表**，不在这里另写一份：命令面板里的「语言」和设置页上那
- * 一节的标题永远是同一个词，设置页按标题的字就找得到那一节（见 nav.tsx 的
- * `revealSection`）。
+ * 一节的标题永远是同一个词。
  *
  * **设置页改版时一起改这里**：一项是一件用户会去搜的设置（语言、外观、端口……），
  * `id` 是设置页认得的那一节。几件设置并进同一节时，它们照样各占一项，`id` 都指向
@@ -64,8 +63,3 @@ export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "diagnostics", title: pick(settingsText, (t) => t.diagnostics), local: true },
   { id: "uninstall", title: pick(settingsText, (t) => t.uninstallTitle) },
 ];
-
-/** 某一节现在的标题（当前语言）。不是这里列的节时是 `undefined` */
-export function sectionTitle(id: string, lang: "zh" | "en"): string | undefined {
-  return SETTINGS_SECTIONS.find((s) => s.id === id)?.title[lang];
-}

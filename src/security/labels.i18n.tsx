@@ -70,7 +70,6 @@ export const securityLabelsText = messages(
       custom: "自定义",
     } as Record<string, string>,
     custom: "自定义",
-    builtin: "内置",
     /** 命中处在工具结果里（日志的 `tool` 是 `tool_result`） */
     toolResult: "工具结果",
     /** 日志按天分组时，一天的标题 */
@@ -190,7 +189,6 @@ export const securityLabelsText = messages(
       custom: "Custom",
     },
     custom: "Custom",
-    builtin: "Built-in",
     toolResult: "tool result",
     day: {
       today: "Today",

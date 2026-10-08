@@ -18,7 +18,6 @@
 export { Gauge as IconDashboard } from "lucide-react"; // 概览 —— 仪表盘
 export { List as IconFlow } from "lucide-react"; // 流量 —— 一列记录
 export { MessagesSquare as IconSession } from "lucide-react"; // 会话 —— 叠起来的气泡
-export { Search as IconFindings } from "lucide-react"; // 发现 —— 放大镜（看证据）
 export { ShieldCheck as IconGuard } from "lucide-react"; // 防护 —— 盾牌（配策略）
 export { Split as IconRoute } from "lucide-react"; // 路由 —— 一条进来分叉出去
 export { Router as IconGateway } from "lucide-react"; // 网关 —— 一台路由器
