@@ -6,6 +6,7 @@ import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
+import { Sparkline, sparklineWidth } from "@/ui/sparkline";
 import { Spinner } from "@/ui/spinner";
 import { StatusDot, StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
@@ -17,7 +18,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { usd, type ModelRow, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
 import type { UpstreamStats } from "./api";
 import { discrepancies, pct, signedPct, type Discrepancies } from "./checkup";
-import { slotsByUpstream, type Slot } from "./data";
+import { SLOTS, slotsByUpstream, type Slot } from "./data";
 import {
   billingLabel,
   egressLabel,
@@ -35,7 +36,6 @@ import { ModelSpecDialog } from "./ModelSpecDialog";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
-import { SPARKLINE_WIDTH, Sparkline } from "./Sparkline";
 import { upstreamTableText } from "./UpstreamTable.i18n";
 import { overviewText } from "@/overview/overview.i18n";
 import { rankCost } from "@/overview/series";
@@ -586,7 +586,7 @@ function DayCell({
         {stats.loading ? (
           // 和读到之后一样宽：走势的位置先占上，数字到了列宽不跳
           <div className="flex items-center justify-between gap-3">
-            <Skeleton className="h-4 rounded-sm @max-3xl/page:hidden" style={{ width: SPARKLINE_WIDTH }} />
+            <Skeleton className="h-4 rounded-sm @max-3xl/page:hidden" style={{ width: sparklineWidth(SLOTS) }} />
             <CellSkeleton />
           </div>
         ) : (
@@ -642,7 +642,12 @@ function DayCell({
           不随「201 次」「7 次」的宽窄左右错开
         */}
         <div className="flex items-center justify-between gap-3">
-          {slots && <Sparkline slots={slots} className="@max-3xl/page:hidden" />}
+          {slots && (
+            <Sparkline
+              bars={slots.map((x) => ({ at: x.at, n: x.requests, failed: x.failed }))}
+              className="@max-3xl/page:hidden"
+            />
+          )}
           <div className="flex min-w-14 flex-col items-end">
             <AnimatedNumber value={cost.requests} format={(n) => t.requests(Math.round(n))} />
             <span className="tw-label tw-num text-muted-foreground">

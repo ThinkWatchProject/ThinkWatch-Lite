@@ -1,5 +1,6 @@
 import { Logo, clientGlyph } from "@/ui/logos";
 import { AnimatedNumber } from "@/ui/motion";
+import { Sparkline } from "@/ui/sparkline";
 import { StatusDot } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { CostFigure } from "@/CostFigure";
@@ -22,32 +23,6 @@ export function ClientMark({ id, name, size = 16 }: { id: string; name: string; 
   if (g) return <Logo id={g} size={size} />;
   const ch = Array.from(name.trim().replace(/^[^\p{L}\p{N}]+/u, ""))[0]?.toUpperCase() ?? "?";
   return <span className={cn("font-semibold leading-none", size === 18 ? "tw-title" : "tw-body")}>{ch}</span>;
-}
-
-/**
- * 24 小时的小柱图：一格一小时，最后一格是正在走的这一小时（时间窗见 `usageWindow`）。
- *
- * **每一行按自己的最大值画**：它回答的是「什么时候在用」，量有多大由旁边的
- * 数字说。空着的小时画一道很淡的底线 —— 一条什么都没有的空白读起来像是没取到。
- */
-export function Sparkline({ series, className }: { series: number[]; className?: string }) {
-  const max = Math.max(0, ...series);
-  // 读屏读旁边的次数就够了：一排柱子念出来是二十四个数
-  return (
-    <span aria-hidden className={cn("flex h-4 shrink-0 items-end gap-px", className)}>
-      {series.map((v, i) => (
-        <span
-          key={i}
-          className={cn(
-            "w-[2px] rounded-[1px] motion-bar",
-            v > 0 ? (i === series.length - 1 ? "bg-chart-1" : "bg-chart-2") : "bg-foreground/[0.08]",
-          )}
-          // 有请求的格子至少 3px 高：一次请求的那一格要看得见
-          style={{ height: v > 0 ? `max(3px, ${Math.round((v / max) * 100)}%)` : "1px" }}
-        />
-      ))}
-    </span>
-  );
 }
 
 /**
@@ -83,7 +58,7 @@ export function UsageCell({
   return (
     <div className="flex items-center justify-end gap-3">
       {loaded && (
-        <Sparkline series={use?.series ?? EMPTY} className="motion-fade @max-3xl/page:hidden" />
+        <Sparkline bars={(use?.series ?? EMPTY).map((n) => ({ n }))} className="motion-fade @max-3xl/page:hidden" />
       )}
       {/* 定宽：几行的小柱图才排成一列，不跟着右边字的长短左右错开 */}
       <div className="w-[5.5rem] shrink-0 text-right">

@@ -6,6 +6,7 @@ import appIcon from "../src-tauri/icons/128x128.png";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Meter } from "@/ui/meter";
 import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
 import { IconCopied, IconCopy } from "@/ui/icons";
@@ -243,16 +244,7 @@ function Progressing({ step, done, total }: { step: Step; done: number; total: n
     const pct = Math.min(100, (done / total) * 100);
     return (
       <div className="flex flex-col gap-2">
-        <div
-          role="progressbar"
-          aria-label={text}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(pct)}
-          className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
-        >
-          <div className="h-full rounded-full bg-foreground motion-bar" style={{ width: `${pct}%` }} />
-        </div>
+        <Meter role="progressbar" label={text} value={pct} max={100} tone="strong" />
         <p className="tw-num tw-body text-muted-foreground">{text}</p>
       </div>
     );
