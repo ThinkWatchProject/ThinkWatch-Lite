@@ -57,10 +57,7 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
         value: Val::s(value),
         secret: false,
     };
-    let mut v = vec![
-        plain("provider", "custom"),
-        plain("base_url", &format!("{}/v1", gw.base.trim_end_matches('/'))),
-    ];
+    let mut v = vec![plain("provider", "custom"), plain("base_url", &gw.v1())];
     if let Some(k) = &gw.key {
         v.push(Edit {
             path: at("api_key"),

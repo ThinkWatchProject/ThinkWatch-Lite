@@ -30,7 +30,6 @@
 //! **默认模型不动。**和 opencode 一样只加一个 provider：Pi 的 `settings.json`、omp 的
 //! `config.yml` 一个字节都不改，ThinkWatch 的模型由用户在 `/model` 里选。
 
-use std::collections::HashSet;
 use std::path::Path;
 
 use tw_types::{Msg, msg};
@@ -129,11 +128,9 @@ pub fn api_for(model: &str) -> Api {
 /// 网关答了的规格也写上（见 [`specs`]）；没答的那一项不写，Pi 照它的默认值跑，omp 按模型名
 /// 从它自带的目录里补。同名的只写一次，先后照网关答的。
 pub fn models_val(gw: &Gateway) -> Val {
-    let mut seen = HashSet::new();
     Val::Arr(
-        gw.models
-            .iter()
-            .filter(|m| seen.insert(m.id.as_str()))
+        crate::clients::unique(&gw.models)
+            .into_iter()
             .map(|m| {
                 let api = api_for(&m.id);
                 let mut fields = vec![("id".to_string(), Val::s(&m.id))];

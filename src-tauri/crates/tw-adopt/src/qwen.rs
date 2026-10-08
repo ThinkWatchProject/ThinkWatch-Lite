@@ -16,9 +16,10 @@
 //! 而这个产品的规矩是如实说明客户端是谁。Chat Completions 拼的是 `{baseUrl}/chat/completions`，
 //! 所以写带 `/v1` 的地址。
 
-use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, NO_KEY, PROVIDER_ID, unique};
 use crate::json::Val;
-use crate::plan::lookup;
+use crate::pi::{count_of, flag_of};
+use crate::plan::{lookup, lookup_str};
 
 /// 装着网关密钥的那个环境变量：写进 `settings.env`，每一条模型用 `envKey` 指着它。
 ///
@@ -26,23 +27,6 @@ use crate::plan::lookup;
 /// 里的。DeepSeek Harness 的引用名是 `THINKWATCH_API_KEY`，那把是给 dsh 发的 —— 共用一个
 /// 名字的话，Qwen 的请求会记在 dsh 那把密钥名下
 pub const KEY_ENV: &str = "THINKWATCH_QWEN_API_KEY";
-
-/// 网关不要密钥时写进那个变量的值。**不能留空**：变量是空的，Qwen 退回
-/// `OPENAI_API_KEY`，用户自己的密钥就发到了网关。这个值什么都打不开
-pub const NO_KEY: &str = "no-key";
-
-/// 网关列出来的模型，同名的只算一次
-fn unique(gw: &Gateway) -> Vec<&ModelCard> {
-    let mut seen = std::collections::HashSet::new();
-    gw.models
-        .iter()
-        .filter(|m| seen.insert(m.id.as_str()))
-        .collect()
-}
-
-fn v1(gw: &Gateway) -> String {
-    format!("{}/v1", gw.base.trim_end_matches('/'))
-}
 
 fn at(path: &[&str]) -> Vec<String> {
     path.iter().map(|s| s.to_string()).collect()
@@ -55,11 +39,11 @@ fn at(path: &[&str]) -> Vec<String> {
 ///
 /// 网关一个模型都没列出来时什么都不写，接管说明里会说（`adopt.plan.no_models`）
 pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
-    let models = unique(gw);
+    let models = unique(&gw.models);
     let Some(first) = models.first() else {
         return Vec::new();
     };
-    let base = v1(gw);
+    let base = gw.v1();
     let entries: Vec<Val> = models
         .iter()
         .map(|m| {
@@ -97,6 +81,7 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
                 value: Val::s(k),
                 secret: true,
             },
+            // **不能留空**：变量是空的，Qwen 退回 `OPENAI_API_KEY`，用户自己的密钥就发到了网关
             None => plain(&["env", KEY_ENV], Val::s(NO_KEY)),
         },
         plain(&["security", "auth", "selectedType"], Val::s("openai")),
@@ -140,19 +125,6 @@ fn entries(text: &str) -> Vec<Val> {
     }
 }
 
-fn field(v: &Val, key: &str) -> Option<String> {
-    match v {
-        Val::Obj(ms) => ms
-            .iter()
-            .find(|(k, _)| k == key)
-            .and_then(|(_, v)| match v {
-                Val::Str(s) => Some(s.clone()),
-                _ => None,
-            }),
-        _ => None,
-    }
-}
-
 /// 配置里此刻指向哪儿：`model.name` 选着的是我们那一组里的一条，就是它的地址。
 ///
 /// 用户在 `/model` 里换回了自己的模型，Qwen 就不走网关了 —— 那就是「我们写的不在了」
@@ -167,8 +139,8 @@ pub fn endpoint(text: &str) -> Option<String> {
     };
     entries(text)
         .iter()
-        .filter(|e| field(e, "id").as_deref() == Some(name.as_str()))
-        .filter_map(|e| field(e, "baseUrl"))
+        .filter(|e| lookup_str(e, &["id"]).as_deref() == Some(name.as_str()))
+        .filter_map(|e| lookup_str(e, &["baseUrl"]))
         .find(|b| picked.as_ref().is_none_or(|p| p == b))
 }
 
@@ -191,19 +163,10 @@ pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
         entries(text)
             .iter()
             .filter_map(|e| {
-                let id = field(e, "id")?;
-                let context_window = match lookup(e, &["generationConfig", "contextWindowSize"]) {
-                    Some(Val::Num(n)) => n.parse().ok(),
-                    _ => None,
-                };
-                let image_input = match lookup(e, &["generationConfig", "modalities", "image"]) {
-                    Some(Val::Bool(b)) => Some(b),
-                    _ => None,
-                };
                 Some(ModelCard {
-                    id,
-                    context_window,
-                    image_input,
+                    id: lookup_str(e, &["id"])?,
+                    context_window: count_of(lookup(e, &["generationConfig", "contextWindowSize"])),
+                    image_input: flag_of(lookup(e, &["generationConfig", "modalities", "image"])),
                     ..Default::default()
                 })
             })
@@ -248,6 +211,7 @@ mod tests {
             panic!("{e:?}")
         };
         assert_eq!(es.len(), 2);
+        let field = |e: &Val, k: &str| lookup_str(e, &[k]);
         assert_eq!(field(&es[0], "id").as_deref(), Some("qwen3-coder-plus"));
         assert_eq!(
             field(&es[0], "baseUrl").as_deref(),
@@ -376,7 +340,7 @@ mod tests {
         let gc = |id: &str, path: &[&str]| {
             let e = entries(&text)
                 .into_iter()
-                .find(|e| field(e, "id").as_deref() == Some(id))
+                .find(|e| lookup_str(e, &["id"]).as_deref() == Some(id))
                 .unwrap();
             lookup(&e, &[&["generationConfig"], path].concat())
         };

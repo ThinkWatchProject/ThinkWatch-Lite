@@ -176,16 +176,6 @@ pub struct Finding {
     pub fix: Option<Msg>,
 }
 
-/// 只有 `ps` 那一支要：它拿到的是「跑了多久」，得从现在往回倒。Windows
-/// 那一支直接拿到创建时刻。
-#[cfg(not(windows))]
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 /// `ps` 的 `etime`：`[[dd-]hh:]mm:ss`。
 ///
 /// macOS 的 `ps` 没有 `etimes`（整秒），只有这个格式；`lstart` 是本地化
@@ -253,7 +243,7 @@ fn running_since(markers: &[&str]) -> Vec<u64> {
     else {
         return Vec::new();
     };
-    let now = now_ms();
+    let now = crate::now_ms();
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(parse_ps_line)
@@ -474,9 +464,7 @@ fn env_conflicts(_home: &Path, names: &[&str]) -> Vec<EnvConflict> {
         HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_ANY, RegGetValueW,
     };
 
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
+    use crate::wide;
     fn is_set(root: HKEY, sub: &str, name: &str) -> bool {
         let (sub, name) = (wide(sub), wide(name));
         let mut len: u32 = 0;

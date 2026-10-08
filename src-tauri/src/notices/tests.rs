@@ -592,6 +592,19 @@ async fn a_notice_still_on_hold_does_not_pop_after_switching_to_the_app() {
     assert_eq!(b.bus.list().len(), 1, "列表里照样留着");
 }
 
+/// 启动时图标、窗口没建起来：**当场就说**（应用刚打开，用户正看着），窗口没开起来的时候
+/// 系统通知是唯一说得出来的地方；点开落在设置页
+#[tokio::test(start_paused = true)]
+async fn a_window_or_icon_that_failed_at_startup_is_said_at_once() {
+    let b = bed();
+    b.bus.ingest(rules::tray_failed(), T0);
+    b.bus.ingest(rules::window_failed(), T0);
+    assert_eq!(b.titles().len(), 2, "{:?}", b.titles());
+    for key in ["startup:tray", "startup:window", "startup:picker"] {
+        assert_eq!(b.bus.view_of(key), "settings", "{key}");
+    }
+}
+
 /// 点开一条已经不在列表里的通知，落到能处理它的那一页
 #[test]
 fn every_key_lands_on_the_page_that_handles_it() {
@@ -1143,9 +1156,13 @@ fn in_english_no_rule_writes_a_chinese_word() {
         signals.extend(states.iter().flat_map(rules::from_core_state));
         signals.push(rules::wedged());
         signals.extend(rules::scan_alert(2));
+        // 启动时图标、窗口没建起来
+        signals.push(rules::tray_failed());
+        signals.push(rules::window_failed());
+        signals.push(rules::picker_failed());
         assert_eq!(
             signals.len(),
-            events.len() + states.len() + 2,
+            events.len() + states.len() + 5,
             "每一件都该说一句"
         );
         for s in &signals {

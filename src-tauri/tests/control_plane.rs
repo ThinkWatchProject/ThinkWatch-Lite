@@ -213,6 +213,8 @@ async fn after_the_key_is_rotated_the_next_connection_gets_in() {
     let core = Core::start();
     core.wait_ready().await;
     let before = tw_link::read_key(&core.config()).unwrap();
+    // 换钥匙之前就取定了的一份（一个命令里接连几问用的那种）：手上是旧钥匙
+    let pinned = core.ok().pin().unwrap();
 
     let rotated = Command::new(core_binary())
         .args(["control-key", "--rotate", "--config"])
@@ -245,6 +247,11 @@ async fn after_the_key_is_rotated_the_next_connection_gets_in() {
         assert!(Instant::now() < deadline, "旧钥匙还进得去");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    // 取定时拿着旧钥匙的那一份照样进得去：握手说钥匙不对，它再读一次配置
+    pinned
+        .call::<tw_api::ep::Status>(&[], &())
+        .await
+        .expect("取定了旧钥匙的那一份没换上新的");
 }
 
 /// 控制面拒绝时，**带着 core 的码回来**，不是一段要界面再解析一遍的文本。
