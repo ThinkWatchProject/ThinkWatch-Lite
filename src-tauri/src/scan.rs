@@ -11,14 +11,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::error::Out;
+use crate::notices::now_ms;
 use crate::wire;
-
-pub(crate) fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
 
 /// 把一条发现变成给界面看的样子。
 pub fn finding_view(f: &tw_scan::report::Finding) -> wire::ScanFinding {
@@ -246,7 +240,7 @@ pub fn restart_client_watch(handle: &tauri::AppHandle) {
         if let wire::LocalEvent::ScanAlert { alerts, .. } = &ev
             && let Some(signal) = crate::notices::rules::scan_alert(alerts.len())
         {
-            notices.ingest(signal, crate::notices::now_ms());
+            notices.ingest(signal, now_ms());
         }
         let _ = h.emit("local-event", ev);
     };

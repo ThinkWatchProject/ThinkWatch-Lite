@@ -769,7 +769,7 @@ pub async fn set_client_locations(
     let _ = app.emit(
         "local-event",
         wire::LocalEvent::ClientsChanged {
-            at_ms: crate::scan::now_ms(),
+            at_ms: crate::notices::now_ms(),
         },
     );
     Ok(())

@@ -684,16 +684,9 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_data_folder_of_another_account_is_recognised() {
+        use crate::wide;
         use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, SetFileSecurityW};
         use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
-
-        fn wide(p: &Path) -> Vec<u16> {
-            use std::os::windows::ffi::OsStrExt;
-            p.as_os_str()
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect()
-        }
         /// 建一个只有 SYSTEM 能进的目录
         fn locked(dir: &Path) {
             crate::private_dir::with_security_attributes("D:P(A;OICI;FA;;;SY)", |sa| {

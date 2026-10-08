@@ -271,10 +271,8 @@ fn run(args: &[&str], limit: std::time::Duration) -> Option<Ran> {
 /// `GetVersionEx` —— 应用清单没声明兼容哪些版本时，那个函数报的是 Windows 8。
 #[cfg(windows)]
 pub fn windows_build() -> Option<u32> {
+    use crate::wide;
     use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
     let key = wide(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
     let name = wide("CurrentBuildNumber");
     let mut buf = [0u16; 32];
@@ -550,9 +548,7 @@ pub fn distros() -> Vec<Distro> {
         RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
     };
 
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
+    use crate::wide;
     fn dword(key: HKEY, sub: &[u16], name: &str) -> Option<u32> {
         let name = wide(name);
         let mut v: u32 = 0;

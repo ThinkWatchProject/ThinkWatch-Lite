@@ -681,6 +681,14 @@ fn start_client_watch(handle: &tauri::AppHandle, notices: Arc<notices::Notices>)
     scan::restart_client_watch(handle);
 }
 
+/// 以 0 结尾的 UTF-16，交给 Windows 的 `…W` 函数（路径、注册表的键和值名、对象名、对话框
+/// 上的字）。`supervisor::user_env` 自己另有一份：它要能单独摘出去交叉编译
+#[cfg(windows)]
+pub(crate) fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
+}
+
 /// 数据目录。
 ///
 /// **问契约层要，不自己算。**core 和这里必须落到同一个目录 —— 端口文件、凭据、

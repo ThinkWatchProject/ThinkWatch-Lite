@@ -244,10 +244,27 @@ impl Gateway {
         }
     }
 
-    fn v1(&self) -> String {
+    /// 带 `/v1` 的地址：OpenAI 形状的客户端拼的是 `{base}/chat/completions` 这种
+    pub(crate) fn v1(&self) -> String {
         format!("{}/v1", self.base.trim_end_matches('/'))
     }
 }
+
+/// 网关列出来的模型，同名的只算第一个，先后照网关答的。写进配置的清单都过一遍：JSON 对象
+/// 里重复的键、TOML 里两张同名的表，各家解析器认哪一个说法不一
+pub(crate) fn unique(models: &[ModelCard]) -> Vec<&ModelCard> {
+    let mut seen = std::collections::HashSet::new();
+    models
+        .iter()
+        .filter(|m| seen.insert(m.id.as_str()))
+        .collect()
+}
+
+/// 网关不要密钥时，在要写密钥的地方写的那个值（Qwen Code 的 `settings.env`、Grok Build 的
+/// `api_key`）。**不能留空**：留空的话这两个客户端都会退回用户自己的凭据（各自为什么见
+/// [`crate::qwen::edits`]、[`crate::grok`] 文件开头）。这个值什么都打不开，网关会以「没有
+/// 这把密钥」拒绝；打码时认得它，它不是谁的密钥
+pub(crate) const NO_KEY: &str = "no-key";
 
 /// 我们要往配置里写的一个字段。
 ///
@@ -1283,12 +1300,8 @@ impl Client {
     /// （上游、路由、手写的规格改过）。顺序不算，同名的只算第一个
     pub fn models_stale(&self, written: &[ModelCard], now: &[ModelCard]) -> bool {
         let norm = |xs: &[ModelCard]| {
-            let mut seen = std::collections::HashSet::new();
-            let mut v: Vec<ModelCard> = xs
-                .iter()
-                .filter(|m| seen.insert(m.id.as_str()))
-                .map(|m| self.as_written(m))
-                .collect();
+            let mut v: Vec<ModelCard> =
+                unique(xs).into_iter().map(|m| self.as_written(m)).collect();
             v.sort();
             v
         };

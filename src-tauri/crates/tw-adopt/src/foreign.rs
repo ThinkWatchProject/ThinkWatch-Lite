@@ -129,13 +129,6 @@ pub struct Applied {
     pub warnings: Vec<Msg>,
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 /// 跟着符号链接走到真身。
 ///
 /// 不用 `canonicalize`：文件还不存在时它直接失败，而「第一次接管、
@@ -368,17 +361,10 @@ fn replace(tmp: &Path, real: &Path) -> std::io::Result<()> {
 /// 也就是 unix 那条 `rename` 在这里的对应物。
 #[cfg(windows)]
 fn replace(tmp: &Path, real: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
+    use crate::wide;
     use windows_sys::Win32::Storage::FileSystem::{
         MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
     };
-
-    fn wide(p: &Path) -> Vec<u16> {
-        p.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
-    }
     let (from, to) = (wide(tmp), wide(real));
     let mv = |flags| {
         // SAFETY: 两个参数都是以 NUL 结尾的 UTF-16，函数只读它们。
@@ -514,7 +500,7 @@ pub fn is_ours(root: &Path, backup: &Path) -> bool {
 }
 
 fn backup_to(root: &Path, real: &Path, text: impl AsRef<[u8]>) -> Result<PathBuf, ForeignError> {
-    backup_at(root, real, text, now_ms())
+    backup_at(root, real, text, crate::now_ms())
 }
 
 /// 时间戳从外面传进来，测试才能稳定地造出「同一毫秒」。
