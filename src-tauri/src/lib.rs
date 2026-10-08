@@ -453,7 +453,14 @@ pub fn run() {
 
             // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
             // 用户就已经看到它了 —— 开机自启时尤其重要。
-            menubar::install(&handle)?;
+            //
+            // **建不起来不让整个应用退出**（Windows、Linux 上托盘是会失败的），下面开窗口
+            // 也一样：原来这里是 `?`，一路冒到 `.expect("Tauri 起不来")`，守护和网关跟着
+            // 一起没了 —— 用户的客户端全断，只因为少了一个图标。和找不到 core 一样：记下来、
+            // 说一声，别的照常
+            if let Err(e) = menubar::install(&handle) {
+                startup_failed(&notices, notices::rules::tray_failed(), &e);
+            }
             // 睡醒、改时钟、换时区时菜单栏的「今日」当场对上，不等睡前排好的那个定时器
             clock::watch(&handle);
 
@@ -473,14 +480,18 @@ pub fn run() {
                 // 连接选择先出来，主窗口等选好了再开。**开机自启时也出来**：只有
                 // 连着两次没走到就绪才会走到这里，那时再悄悄撞一次不如问一句
                 tracing::info!(?why, "启动时先显示连接选择");
-                connection::show_picker(&handle, why)?;
+                if let Err(e) = connection::show_picker(&handle, why) {
+                    startup_failed(&notices, notices::rules::picker_failed(), &e);
+                }
             } else if let Some(r) = &relaunch {
                 // **更新之后被重新打开的，照更新之前的样子**：之前只在菜单栏，现在也只在
                 // 菜单栏；之前窗口开着，现在也开着。Homebrew 升级完用 `open -b` 打开、应用
                 // 自己装完重启，都不带说得出这一点的参数，靠的是退出那一刻记下的（见
                 // `updater::record_exit`）
                 if r.window {
-                    show_main_window(&handle)?;
+                    if let Err(e) = show_main_window(&handle) {
+                        startup_failed(&notices, notices::rules::window_failed(), &e);
+                    }
                 } else {
                     tracing::info!("更新之前只在菜单栏，更新之后也不开窗口");
                     #[cfg(target_os = "macos")]
@@ -491,8 +502,8 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 become_accessory(&handle);
                 maybe_notify_first_autostart(&handle);
-            } else {
-                show_main_window(&handle)?;
+            } else if let Err(e) = show_main_window(&handle) {
+                startup_failed(&notices, notices::rules::window_failed(), &e);
             }
 
             // 量 webview 占多少。**它不是一个功能，是一个回答
@@ -611,6 +622,19 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+/// 启动时菜单栏图标、窗口没建起来：原话进日志，提醒里说一声（系统通知还在的话，窗口
+/// 没开起来也看得见）。应用照常跑
+fn startup_failed(
+    notices: &Arc<notices::Notices>,
+    signal: notices::Signal,
+    e: &dyn std::fmt::Display,
+) {
+    tracing::error!(key = %signal.key, "启动时没建起来：{e:#}");
+    // 交给运行时：总线要排定时器（`tokio::spawn`），而 setup 跑在主线程上、不在运行时里
+    let n = notices.clone();
+    tauri::async_runtime::spawn(async move { n.ingest(signal, notices::now_ms()) });
 }
 
 /// 退出前先请本机的 core 退出、等它走，**至多等 [`EXIT_WAIT`]**。
