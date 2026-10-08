@@ -434,7 +434,7 @@ export function buildTrend({
       if (top.includes(name)) row[name] = y;
       else other += y;
     }
-    // 没有值的那几层要显式给 0，否则 recharts 会把这一格整条断开
+    // 没有值的那几层显式给 0：每一层每一格都有数，叠起来的高度才对得上
     for (const k of top) row[k] ??= 0;
     if (rest.length > 0) row[otherKey] = other;
     peak = Math.max(peak, height);

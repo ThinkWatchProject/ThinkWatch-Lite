@@ -25,7 +25,7 @@ import { Toggle } from "@/ui/toggle";
 import { useStartOf } from "@/useNow";
 import { LIST_LIMIT } from "@/useRequests";
 import { useArrivals } from "./arrivals";
-import { copyText } from "./cells";
+import { copyText } from "@/ui/notify";
 import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
 import { mergeFound, useHistorySearch, type HistorySearch } from "./historySearch";
 import { RequestTable, type RequestTableHandle } from "./RequestTable";

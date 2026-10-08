@@ -56,7 +56,7 @@ const SETTLE_MS = 160;
 /** 深链落到一行时，那一行的底色亮多久 */
 const FLASH_MS = 1_200;
 
-/** 往上找第一个会竖着滚的祖先：外壳给每一页的那一层（App.tsx） */
+/** 往上找第一个会竖着滚的祖先：外壳给每一页的那一层（shell/Pages.tsx） */
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
   for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
     const o = getComputedStyle(p).overflowY;

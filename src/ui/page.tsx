@@ -31,7 +31,7 @@ const WIDTH: Record<PageWidth, string> = {
 
 /**
  * 一页的外层。左右 20px、底部 32px 的边距，按 `width` 限宽并居中。换页的进场
- * 动画在外壳上（App.tsx），这里不用再挂。
+ * 动画在外壳上（shell/Pages.tsx），这里不用再挂。
  */
 export function Page({
   width = "wide",
@@ -53,7 +53,7 @@ export function Page({
  * 每一页顶上那一块：一行摘要、右侧的操作，可选的一排标签。
  *
  * **页名不在这里。**页名只写一次，写在窗口顶上那条 38px 的工具栏里、收起源列表的
- * 按钮右边（App.tsx），和 macOS 的访达、系统设置一样。页头从摘要开始。
+ * 按钮右边（shell/Workspace.tsx），和 macOS 的访达、系统设置一样。页头从摘要开始。
  *
  * · `summary`：一行，说这一页现在的总体状态 —— 数字（`12 个上游 · 1 个不可用`）、
  *   状态点（`StatusLabel`）。**不写说明文字**：界面不解释机制。

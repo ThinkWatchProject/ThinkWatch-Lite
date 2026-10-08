@@ -323,7 +323,7 @@
  * 主窗口在 macOS 上是透明的网页叠在一层 NSVisualEffectView（sidebar 材质）
  * 上（见 src-tauri/src/window.rs）。`data-vibrant` 由 `platform.ts` 按 Rust
  * 注入的 `__TW_VIBRANT__` 挂上：只有这扇窗、只有 macOS 有。**页面底色这时
- * 必须是透明的**，侧栏才露得出材质；内容区自己铺 `--background`（见 App.tsx）。
+ * 必须是透明的**，侧栏才露得出材质；内容区自己铺 `--background`（见 shell/Workspace.tsx）。
  * 别的平台、别的窗口、隔离预览都不挂这个属性，侧栏照旧是实色。
  */
 :root[data-vibrant] {
@@ -416,7 +416,7 @@
   }
 }
 
-/* 换页：整页淡入并上移 4px。挂在每一页最外层（App.tsx 已经挂好） */
+/* 换页：整页淡入并上移 4px。挂在每一页最外层（shell/Pages.tsx 已经挂好） */
 @utility motion-page {
   animation: tw-enter var(--motion-slow) var(--motion-ease);
 }

@@ -15,7 +15,7 @@ import { flushSync } from "react-dom";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
-import { latency, money, statusTone, tokens, when } from "@/format";
+import { latency, money, ms, statusTone, tokens, when } from "@/format";
 import { notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
@@ -30,7 +30,8 @@ import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { copyText, DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell } from "./cells";
+import { copyText } from "@/ui/notify";
+import { DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell } from "./cells";
 import type { Cursor, Group } from "./grouping";
 import { rowMark, type ViaConfig } from "./modelVia";
 import { SessionRow, SessionSizerCell, sessionItems, sessionWidths } from "./SessionRow";
@@ -1073,8 +1074,6 @@ function LatencyCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
   const text = latency(r.ttftMs, r.durationMs);
   if (r.ttftMs == null || r.durationMs == null) return <>{text}</>;
-  // 和全应用写毫秒一样，不加千分位（`1182ms`）
-  const ms = (n: number) => `${n}ms`;
   return (
     <Tip
       lazy

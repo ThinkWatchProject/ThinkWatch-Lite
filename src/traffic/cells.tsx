@@ -31,9 +31,6 @@ export const DIM = "text-muted-foreground/60";
 export const MENU_REVEAL =
   "inline-flex opacity-0 transition-opacity duration-(--motion-fast) group-hover/row:opacity-100 group-data-[state=selected]/row:opacity-100 has-[[data-state=open]]:opacity-100 has-focus-visible:opacity-100";
 
-/** 复制在 `@/ui/notify`。流量这几个文件还从这里取 */
-export { copyText } from "@/ui/notify";
-
 /**
  * 密钥那一格：推测出的应用的标志，加密钥的名字。
  *
