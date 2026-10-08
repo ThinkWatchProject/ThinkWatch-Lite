@@ -41,6 +41,7 @@ import { parseDecimal } from "@/lib/decimal";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
+import { enabledModels, useModelLists } from "./data";
 import { PRICE_COLUMNS, errorText, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, DialogError, FormItem, Note, UpstreamChips } from "./parts";
 import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
@@ -135,7 +136,6 @@ export function PriceSheetDialog({
   const [loading, setLoading] = useState(mode.kind === "edit" || mode.kind === "duplicate");
   const [filter, setFilter] = useState<Filter>("related");
   const [search, setSearch] = useState("");
-  const [related, setRelated] = useState<string[]>([]);
   const [rows, setRows] = useState<ResolvedPrice[]>([]);
   const [matched, setMatched] = useState(0);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -177,26 +177,15 @@ export function PriceSheetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 相关模型：使用这张价目表的上游启用范围内的模型，加上打开它的那一家的模型
-  const usedKey = usedBy.join("\n");
+  // 相关模型：使用这张价目表的上游启用范围内的模型，加上打开它的那一家的模型。清单和
+  // 上游页的模型弹窗共用一份缓存；几家都取到了再一起换上，单价只问一次
+  const lists = useModelLists(usedBy);
   const contextKey = context?.models.join("\n") ?? "";
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      usedBy.map((u) =>
-        api
-          .providerModels(u)
-          .then((v) => v.models.filter((m) => m.enabled).map((m) => m.id))
-          .catch(() => [] as string[]),
-      ),
-    ).then((lists) => {
-      if (alive) setRelated([...new Set([...(context?.models ?? []), ...lists.flat()])].sort());
-    });
-    return () => {
-      alive = false;
-    };
+  const related = useMemo(
+    () => (lists.pending ? [] : [...new Set([...(context?.models ?? []), ...lists.data.flatMap(enabledModels)])].sort()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usedKey, contextKey]);
+    [lists, contextKey],
+  );
 
   // 倍率和单价一样，`0,85` 也认
   const mult = parseDecimal(multiplier) ?? NaN;

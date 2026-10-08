@@ -13,6 +13,7 @@ import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
+import { modelsKey } from "./data";
 import { contextWindow, coreText, errorText, perMillion } from "./labels";
 import { hasManual } from "./modelSpec";
 import { modelsPanelText } from "./ModelsPanel.i18n";
@@ -56,7 +57,7 @@ export function ModelsPanel({
 }) {
   const t = useText(modelsPanelText);
   const c = useText(commonText);
-  const r = useResource(`upstream-models:${p.name}`, () => api.providerModels(p.name), {
+  const r = useResource(modelsKey(p.name), () => api.providerModels(p.name), {
     deps: [p.model_checked_at_ms, p.model_fetching, p.model_count],
   });
   const [refreshing, setRefreshing] = useState(false);

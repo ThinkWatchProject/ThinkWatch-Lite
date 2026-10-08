@@ -6,6 +6,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { useResource } from "@/lib/resource";
 import type { KnownModel, ProviderView } from "@/types";
 import { contextWindow } from "@/upstreams/labels";
+import { modelsKey } from "@/upstreams/data";
 import { api } from "./api";
 import { ModelInput } from "./fields";
 import { blankPinned, type PinnedDraft } from "./model";
@@ -92,7 +93,7 @@ function PinnedRow({
   const pv = providers.find((x) => x.name === p.provider);
   // 和上游页的模型弹窗共用一份缓存；那边刷新了清单，这里跟着换
   const rows = useResource(
-    pv ? `upstream-models:${pv.name}` : null,
+    pv ? modelsKey(pv.name) : null,
     () => api.providerModels(p.provider),
     { deps: [pv?.model_checked_at_ms, pv?.model_fetching, pv?.model_count] },
   ).data?.models;
