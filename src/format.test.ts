@@ -6,13 +6,18 @@ import {
   densify,
   latency,
   money,
+  monthDay,
+  ms,
+  msShort,
   repeated,
   resetAt,
   resetIn,
   size,
+  span,
   statusTone,
   tokens,
   when,
+  whenMinute,
 } from "./format";
 import { usd } from "./types";
 
@@ -39,6 +44,51 @@ describe("延迟合成一列", () => {
   });
 });
 
+/**
+ * 耗时全应用一个写法。原来流量表写「1182ms」，请求详情写「1,182ms」（注释还说和表格
+ * 一样），上游页写「1,182 ms」，概览写「1.18s」—— 同一个首 token 读成了几个数。
+ */
+describe("耗时", () => {
+  it("取整、不加千分位、单位紧跟", () => {
+    expect(ms(0)).toBe("0ms");
+    expect(ms(438.4)).toBe("438ms");
+    expect(ms(1182)).toBe("1182ms");
+    expect(ms(17_442)).toBe("17442ms");
+  });
+
+  it("和流量表那一列是同一个写法", () => {
+    expect(latency(undefined, 1182)).toBe(ms(1182));
+  });
+
+  it("短写法：一秒以内写毫秒，以上写秒（只给并排比量级的汇总）", () => {
+    expect(msShort(0)).toBe("0ms");
+    expect(msShort(438.4)).toBe("438ms");
+    expect(msShort(999)).toBe("999ms");
+    expect(msShort(1182)).toBe("1.18s");
+    expect(msShort(12_345)).toBe("12.3s");
+    expect(msShort(123_456)).toBe("123s");
+  });
+
+  /** 取整进了位的，按下一档的位数写：不是「10.00s」「100.0s」 */
+  it("短写法取整之后再定位数", () => {
+    expect(msShort(9_994)).toBe("9.99s");
+    expect(msShort(9_996)).toBe("10.0s");
+    expect(msShort(99_949)).toBe("99.9s");
+    expect(msShort(99_960)).toBe("100s");
+  });
+});
+
+describe("会话的跨度", () => {
+  it("按秒、分、小时", () => {
+    expect(span(42_400)).toBe("42 秒");
+    expect(span(7 * 60_000)).toBe("7 分");
+    expect(span(5_400_000)).toBe("1.5 小时");
+    setLang("en");
+    expect(span(42_400)).toBe("42 s");
+    setLang("zh");
+  });
+});
+
 describe("绝对时间", () => {
   // 2026-09-15 14:07:09 本地时间
   const now = new Date(2026, 8, 15, 14, 7, 9).getTime();
@@ -56,6 +106,13 @@ describe("绝对时间", () => {
   it("零点两侧分属两天", () => {
     expect(when(new Date(2026, 8, 15, 0, 1, 0).getTime(), now)).toBe("00:01:00");
     expect(when(new Date(2026, 8, 14, 23, 59, 0).getTime(), now)).toBe("09-14 23:59");
+  });
+
+  /** 会话的开始、清单的更新时刻：到分为止，日期和 `when` 一个写法（不是「9/14」） */
+  it("到分为止的那一种", () => {
+    expect(whenMinute(new Date(2026, 8, 15, 9, 3, 4).getTime(), now)).toBe("09:03");
+    expect(whenMinute(new Date(2026, 8, 14, 23, 5).getTime(), now)).toBe("09-14 23:05");
+    expect(monthDay(new Date(2026, 9, 8, 12).getTime())).toBe("10-08");
   });
 });
 
@@ -84,6 +141,16 @@ describe("token", () => {
     expect(compact(999_600)).toBe("1.0M");
     expect(compact(999_950)).toBe("1.0M");
     expect(compact(1_000_000)).toBe("1.0M");
+  });
+
+  /**
+   * 会话的峰值、上下文窗口写的也是它：原来会话那边写「2k」、上游页写「200K」，和用量的
+   * 「1.5k」是三种写法
+   */
+  it("会话、上下文窗口同一个写法", () => {
+    expect(compact(1_500)).toBe("1.5k");
+    expect(compact(200_000)).toBe("200k");
+    expect(compact(2_698_000)).toBe("2.7M");
   });
 });
 

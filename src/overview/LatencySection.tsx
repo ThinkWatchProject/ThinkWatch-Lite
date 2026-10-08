@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Meter } from "@/ui/meter";
 import { PageSection } from "@/ui/page";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
@@ -7,7 +8,8 @@ import { UpstreamLogo } from "@/ui/logos";
 import { useNav } from "@/nav";
 import type { Dashboard, LatencyView, Overview } from "@/types";
 import { useText } from "@/i18n";
-import { fmtMs, latencyRows, ROWS } from "./series";
+import { msShort } from "@/format";
+import { latencyRows, ROWS } from "./series";
 import { LinkRow, ModelMark, Scope } from "./parts";
 import { overviewText } from "./overview.i18n";
 
@@ -156,20 +158,12 @@ function Spreads({
           <span className="min-w-0 flex-1 truncate" title={l.model}>
             {l.model}
           </span>
-          <span aria-hidden className={cn(COL.bar, "relative flex h-1.5 shrink-0 rounded-full bg-foreground/[0.06]")}>
-            <span className="motion-bar shrink-0" style={{ width: `${(l.p50 / max) * 100}%` }} />
-            <span
-              className="motion-bar relative shrink-0 rounded-full bg-chart-3"
-              style={{ width: `max(2px, ${((l.p95 - l.p50) / max) * 100}%)` }}
-            >
-              <span className="absolute -top-[3px] left-0 h-3 w-0.5 -translate-x-1/2 rounded-full bg-chart-1" />
-            </span>
-          </span>
+          <Meter from={l.p50} value={l.p95} max={max} color="var(--chart-3)" mark="start" className={cn(COL.bar, "shrink-0")} />
           <span className={cn(COL.p50, "shrink-0 text-right")}>
-            <AnimatedNumber value={l.p50} format={fmtMs} scope={scope} />
+            <AnimatedNumber value={l.p50} format={msShort} scope={scope} />
           </span>
           <span className={cn(COL.p95, "shrink-0 text-right text-muted-foreground")}>
-            <AnimatedNumber value={l.p95} format={fmtMs} scope={scope} />
+            <AnimatedNumber value={l.p95} format={msShort} scope={scope} />
           </span>
           {/*
             **样本数要显示**：「800ms」是 3 个样本还是 300 个，含义完全不同。不可靠的

@@ -273,17 +273,60 @@ fn next_reset_in(snap: &Snapshot, day_end_ms: Option<i64>) -> Option<std::time::
         .map(|at| std::time::Duration::from_millis(at - snap.now_ms))
 }
 
-/// 「今日」的时间窗：这台机器的本地零点起，到现在。
+/// 「今日」那一问：这台机器的本地零点起、到现在，一小时一格。
 ///
 /// **零点在这边按本机的时区算好了交给 core**：core 只收 Unix 毫秒的时间窗。不给起点，
 /// core 就按它自己那台机器的零点算 —— 连着一台跑在 UTC 容器里的远程 core、人在东八区
 /// 时，「今日」每天早上八点才归零；它还是拿此刻的 UTC 偏移去推零点的，夏令时切换的
-/// 那一天差一个小时。终点不给，就是到现在
-fn today_window<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> tw_api::Window {
-    tw_api::Window {
+/// 那一天差一个小时。终点不给，就是到现在。
+///
+/// **今天的合计和每小时的柱子出自这同一问**（`/summary/buckets/by`，概览的趋势图也是它）：
+/// 它和 `/summary` 是同一个时间窗、同一个筛选条件（`at_ms` 在窗里、不是本地应答），每一格
+/// 带着次数、失败、费用三态和四类 token，各格加起来就是 `/summary` 的那几个数。问一次
+/// 而不是两次，大数字和柱子也就永远对得上。按密钥分组：一小时里通常只有一两把密钥，
+/// 回来的行最少
+fn today_query<Tz: chrono::TimeZone>(tz: &Tz, now_ms: u64) -> tw_api::BucketGroupQuery {
+    tw_api::BucketGroupQuery {
         from_ms: Some(day_of(tz, now_ms).0),
         to_ms: None,
+        bucket_ms: Some(model::HOUR_MS),
+        dim: tw_api::CostDim::Client,
     }
+}
+
+/// 把那一问的回答加成今天的合计和每小时的 token。`day` 是问的那一天（[`day_of`]）：格数按
+/// 它有几个小时定（夏令时切换的那天 23 或 25 格）。**落在这一天之外的格子合计里也不算**：
+/// 连着的 core 时钟快几分钟、这边快到零点时，它会回一格明天的
+fn today_from(
+    groups: &[tw_api::CostBucketGroup],
+    day: (i64, i64),
+) -> (model::Today, model::Hourly) {
+    let (from, to) = day;
+    let slots = usize::try_from((to - from + model::HOUR_MS - 1) / model::HOUR_MS).unwrap_or(0);
+    let mut today = model::Today::default();
+    let mut tokens = vec![0; slots];
+    for g in groups {
+        let k = (g.at_ms - from).div_euclid(model::HOUR_MS);
+        let Some(slot) = usize::try_from(k).ok().and_then(|k| tokens.get_mut(k)) else {
+            continue;
+        };
+        let t = g.input_tokens + g.output_tokens + g.cache_read_tokens + g.cache_write_tokens;
+        *slot += t;
+        today.requests += g.requests;
+        today.failed += g.failed;
+        today.tokens += t;
+        today.cost_micros += g.cost_micros_exact + g.cost_micros_estimated;
+        today.estimated_micros += g.cost_micros_estimated;
+        today.unpriced += g.unpriced_requests;
+        today.no_usage += g.no_usage_requests;
+    }
+    (
+        today,
+        model::Hourly {
+            from_ms: from,
+            tokens,
+        },
+    )
 }
 
 /// `now_ms` 所在的那一天，按 `tz` 的日历：`[零点, 下一个零点)`，Unix 毫秒。
@@ -374,32 +417,34 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
         return snap;
     }
     let c = &state.control;
-    let today = today_window(&chrono::Local, now_ms);
+    let day = day_of(&chrono::Local, now_ms);
+    let today = today_query(&chrono::Local, now_ms);
     // 每一问各自限时：一问不回，别的照常画，没问到的那几样是「不知道」
-    let (status, quota, summary, overview, live) = tokio::join!(
+    let (status, quota, buckets, overview, live) = tokio::join!(
         ask(ASK, c.status()),
         ask(ASK, c.call::<ep::Quota>(&[], &())),
-        ask(ASK, c.call::<ep::Summary>(&[], &today)),
+        ask(ASK, c.call::<ep::CostBucketsBy>(&[], &today)),
         ask(ASK, c.call::<ep::Overview>(&[], &())),
         ask(ASK, c.call::<ep::Live>(&[], &()))
     );
     if let Ok(l) = live {
         apply_live(&mut snap, l);
     }
-    if let Ok(s) = status {
-        snap.addr = s.gateway_addr;
-        snap.listen_error = s.listen_error.map(|e| crate::core_text::text(&e));
+    if let Ok(s) = &status {
+        snap.listen_error = s.listen_error.clone().map(|e| crate::core_text::text(&e));
     }
-    if let Ok(s) = summary {
-        snap.today = Some(model::Today {
-            requests: s.requests,
-            failed: s.failed,
-            tokens: s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens,
-            cost_micros: s.cost_micros_exact + s.cost_micros_estimated,
-            estimated_micros: s.cost_micros_estimated,
-            unpriced: s.unpriced_requests,
-            no_usage: s.no_usage_requests,
-        });
+    // 右边写的是「复制网关地址」复制的那一个：主机按连接（本机是 127.0.0.1），端口按配置。
+    // 网关没在监听时不写
+    if let (Ok(s), Ok(o)) = (&status, &overview)
+        && s.gateway_addr.is_some()
+    {
+        let url = crate::clients::base_url(&crate::clients::gateway_host(state), o.listen.port);
+        snap.addr = Some(url.trim_start_matches("http://").to_string());
+    }
+    if let Ok(groups) = buckets {
+        let (t, hourly) = today_from(&groups, day);
+        snap.today = Some(t);
+        snap.hourly = Some(hourly);
     }
     let accounts: Vec<String> = overview
         .as_ref()
@@ -984,15 +1029,99 @@ mod tests {
     fn today_starts_at_this_machines_midnight() {
         let now = utc_ms(2026, 9, 26, 23, 30) as u64;
         let east8 = FixedOffset::east_opt(8 * 3600).unwrap();
-        let w = today_window(&east8, now);
-        assert_eq!(w.from_ms, Some(utc_ms(2026, 9, 26, 16, 0)));
-        assert_eq!(w.to_ms, None, "终点不给，就是到现在");
+        let q = today_query(&east8, now);
+        assert_eq!(q.from_ms, Some(utc_ms(2026, 9, 26, 16, 0)));
+        assert_eq!(q.to_ms, None, "终点不给，就是到现在");
+        assert_eq!(q.bucket_ms, Some(model::HOUR_MS), "一小时一格");
         // 同一刻在西五区是 9/26 的傍晚
         let west5 = FixedOffset::west_opt(5 * 3600).unwrap();
         assert_eq!(
-            today_window(&west5, now).from_ms,
+            today_query(&west5, now).from_ms,
             Some(utc_ms(2026, 9, 26, 5, 0))
         );
+    }
+
+    /// core 回的一格里的一把密钥
+    fn group(at_ms: i64, name: &str, requests: i64, tokens: [i64; 4]) -> tw_api::CostBucketGroup {
+        tw_api::CostBucketGroup {
+            at_ms,
+            name: name.into(),
+            requests,
+            failed: 0,
+            cost_micros_exact: 0,
+            cost_micros_estimated: 0,
+            unpriced_requests: 0,
+            no_usage_requests: 0,
+            input_tokens: tokens[0],
+            output_tokens: tokens[1],
+            cache_read_tokens: tokens[2],
+            cache_write_tokens: tokens[3],
+        }
+    }
+
+    /// 各格各把密钥加起来就是今天的合计（`/summary` 的那几个数），每一格的四类 token 加起来
+    /// 落在它那一小时上；**一个请求都没有的小时是 0**，core 不回空格子
+    #[test]
+    fn todays_total_and_hours_come_from_the_same_answer() {
+        const H: i64 = model::HOUR_MS;
+        let from = utc_ms(2026, 10, 8, 16, 0);
+        let day = (from, from + 24 * H);
+        let mut a = group(from, "default", 3, [1_000, 200, 5_000, 100]);
+        a.failed = 1;
+        a.cost_micros_exact = 1_500_000;
+        a.unpriced_requests = 1;
+        let mut b = group(from, "codex", 1, [10, 20, 0, 0]);
+        b.cost_micros_estimated = 250_000;
+        b.no_usage_requests = 2;
+        let c = group(from + 9 * H, "default", 2, [400, 600, 0, 0]);
+        let (today, hourly) = today_from(&[a, b, c], day);
+        assert_eq!(
+            today,
+            model::Today {
+                requests: 6,
+                failed: 1,
+                tokens: 6_300 + 30 + 1_000,
+                cost_micros: 1_750_000,
+                estimated_micros: 250_000,
+                unpriced: 1,
+                no_usage: 2,
+            }
+        );
+        assert_eq!(hourly.from_ms, from);
+        assert_eq!(hourly.tokens.len(), 24);
+        assert_eq!(hourly.tokens[0], 6_330);
+        assert_eq!(hourly.tokens[9], 1_000);
+        assert_eq!(
+            hourly.tokens.iter().sum::<i64>(),
+            today.tokens,
+            "柱子加起来就是大数字"
+        );
+        assert!(hourly.tokens[1..9].iter().all(|t| *t == 0));
+        // 一个请求都没有的一天：问到了，是 0，不是「不知道」
+        let (quiet, hours) = today_from(&[], day);
+        assert_eq!(quiet, model::Today::default());
+        assert_eq!(hours.tokens, vec![0; 24]);
+    }
+
+    /// 夏令时切换的那一天不是 24 小时：纽约 3 月 8 日只有 23 小时，11 月 1 日有 25 小时。
+    /// 格数跟着这一天走，最后一小时的请求不会因为「只有 24 格」被丢掉
+    #[test]
+    fn a_dst_day_has_as_many_hours_as_it_really_has() {
+        const H: i64 = model::HOUR_MS;
+        let spring = shift(utc_ms(2026, 3, 8, 7, 0), -5, -4);
+        let day = day_of(&spring, utc_ms(2026, 3, 8, 16, 0) as u64);
+        assert_eq!(today_from(&[], day).1.tokens.len(), 23);
+        let fall = shift(utc_ms(2026, 11, 1, 6, 0), -4, -5);
+        let day = day_of(&fall, utc_ms(2026, 11, 1, 16, 0) as u64);
+        let last = group(day.0 + 24 * H + 60_000, "default", 1, [7, 0, 0, 0]);
+        let (_, hourly) = today_from(&[last], day);
+        assert_eq!(hourly.tokens.len(), 25);
+        assert_eq!(hourly.tokens[24], 7);
+        // 落在这一天之外的格子：明天的那一格不算进今天，也不画到别的小时上
+        let tomorrow = group(day.1, "default", 1, [9, 0, 0, 0]);
+        let (today, hourly) = today_from(&[tomorrow], day);
+        assert_eq!(today, model::Today::default());
+        assert!(hourly.tokens.iter().all(|t| *t == 0));
     }
 
     /// 夏令时开始的那一天（纽约 2026-03-08，两点拨到三点）中午：零点是拨表之前的那个

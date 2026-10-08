@@ -7,6 +7,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
@@ -20,11 +21,13 @@ import {
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Skeleton } from "@/ui/skeleton";
+import { Tile } from "@/ui/tile";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import type { ClientLocations, LocationChange, LocationEdit, LocationRole } from "@/types";
-import { ClientMark, ConfirmAction, Tile, focusSelf, useDialogFocus } from "@/keys/parts";
+import { ClientMark } from "@/keys/parts";
 import { api } from "./api";
 import { clientsText } from "./clients.i18n";
 
@@ -218,9 +221,9 @@ export function LocationsDialog({
             </ul>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={applying}>{common.cancel}</AlertDialogCancel>
-              <ConfirmAction pending={applying} onConfirm={() => void apply()}>
+              <AlertDialogConfirm pending={applying} onConfirm={() => void apply()}>
                 {t.locConfirm}
-              </ConfirmAction>
+              </AlertDialogConfirm>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

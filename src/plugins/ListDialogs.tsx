@@ -8,15 +8,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { focusSelf } from "@/ui/dialog-focus";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
-import { ConfirmAction, focusSelf } from "@/keys/parts";
 import { useReorder } from "@/routing/useReorder";
 import { DialogError } from "@/upstreams/parts";
 import type { PluginView } from "@/types";
@@ -70,9 +71,9 @@ export function DeleteDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{common.cancel}</AlertDialogCancel>
-          <ConfirmAction variant="destructive" pending={pending} onConfirm={() => void run()}>
+          <AlertDialogConfirm variant="destructive" pending={pending} onConfirm={() => void run()}>
             {common.delete}
-          </ConfirmAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

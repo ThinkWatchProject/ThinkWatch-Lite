@@ -42,13 +42,8 @@ pub fn update_state(app: tauri::AppHandle) -> UpdateView {
 }
 
 #[tauri::command]
-pub fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView> {
-    prefs::update(&data_dir(), |p| p.check_updates = on).map_err(|e| {
-        tr!(
-            format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
-        )
-    })?;
+pub async fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView> {
+    prefs::change(move |p| p.check_updates = on).await?;
     Ok(update_view(&app))
 }
 

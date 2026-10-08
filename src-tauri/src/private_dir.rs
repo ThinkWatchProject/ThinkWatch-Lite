@@ -48,6 +48,7 @@ mod imp {
 mod imp {
     use std::path::Path;
 
+    use crate::wide;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
     use windows_sys::Win32::Security::Authorization::{
         ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -76,14 +77,6 @@ mod imp {
             }
             Ok(())
         })
-    }
-
-    fn wide(p: &Path) -> Vec<u16> {
-        use std::os::windows::ffi::OsStrExt;
-        p.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
     }
 
     /// 当前用户的 SID，写成 `S-1-5-21-…` 那种字符串。

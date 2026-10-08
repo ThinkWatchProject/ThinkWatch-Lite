@@ -1,8 +1,8 @@
 import { useState } from "react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -11,7 +11,6 @@ import {
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
-import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -98,18 +97,9 @@ export function SetDefaultDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{ct.cancel}</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={busy}
-            aria-busy={busy || undefined}
-            onClick={(e) => {
-              // 结果要在这张对话框里给出来：请求回来之前不让它自己关掉
-              e.preventDefault();
-              void run();
-            }}
-          >
-            {busy && <Spinner data-icon="inline-start" aria-hidden />}
+          <AlertDialogConfirm pending={busy} onConfirm={() => void run()}>
             {rt.setDefault}
-          </AlertDialogAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -175,18 +165,9 @@ export function DeleteRouteDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{ct.cancel}</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={busy}
-            aria-busy={busy || undefined}
-            onClick={(e) => {
-              e.preventDefault();
-              void run();
-            }}
-          >
-            {busy && <Spinner data-icon="inline-start" aria-hidden />}
+          <AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
             {ct.delete}
-          </AlertDialogAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

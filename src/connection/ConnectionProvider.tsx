@@ -1,10 +1,18 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { toast } from "sonner";
-import { errorText } from "@/i18n/core.i18n";
+import { Suspense, createContext, lazy, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LOCAL, connApi, type ConnView, type Profile, type ServerInfo } from "./api";
-import { ProfileDialog } from "./ProfileDialog";
-import { SwitchDialog } from "./SwitchDialog";
 import { useConnection } from "./useConnection";
+
+/*
+  **这一层和启动画面一起最先加载**（见 `App`），所以两个对话框和报错用的译文表都等用到时
+  才载入：它们带着表单、试连结果、core 的整张译文表，启动画面不该等它们。
+*/
+const ProfileDialog = lazy(() => import("./ProfileDialog").then((m) => ({ default: m.ProfileDialog })));
+const SwitchDialog = lazy(() => import("./SwitchDialog").then((m) => ({ default: m.SwitchDialog })));
+
+/** 切回本机没成：报一句 */
+function reportSwitchError(e: unknown) {
+  void import("@/ui/notify").then(({ notify }) => notify.error(e));
+}
 
 interface Actions {
   /** 连接列表和当前状态。还没读到是 null */
@@ -74,7 +82,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         if (id === view.current) return;
         if (id === LOCAL) {
           // 切回本机不用确认：本机 core 拉起来，指着服务器的客户端不受影响
-          connApi.switchTo(LOCAL, false).catch((e) => toast.error(errorText(e)));
+          connApi.switchTo(LOCAL, false).catch(reportSwitchError);
           return;
         }
         const target = view.profiles.find((p) => p.id === id);
@@ -101,32 +109,36 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         连接），对话框要整个重来。不然上一条的试连结果、填了一半的名字地址和密钥、「同时
         改指向」的勾都留在新的那一条上 —— 保存时写进的是另一条连接。
       */}
-      {editing && view && (
-        <ProfileDialog
-          key={editing.profile?.id ?? "new"}
-          editing={editing.profile}
-          isCurrent={editing.profile !== null && editing.profile.id === view.current}
-          required={view.required_core}
-          onClose={() => setEditing(null)}
-          onSaved={(p, andSwitch) => {
-            setEditing(null);
-            if (andSwitch) setSwitching({ target: p, tested: andSwitch });
-          }}
-        />
-      )}
-      {switching && view && (
-        <SwitchDialog
-          key={switching.target.id}
-          target={switching.target}
-          tested={switching.tested}
-          required={view.required_core}
-          onClose={() => setSwitching(null)}
-          onEdit={(p) => {
-            setSwitching(null);
-            setEditing({ profile: p });
-          }}
-        />
-      )}
+      <Suspense fallback={null}>
+        {editing && view && (
+          <ProfileDialog
+            key={editing.profile?.id ?? "new"}
+            editing={editing.profile}
+            isCurrent={editing.profile !== null && editing.profile.id === view.current}
+            required={view.required_core}
+            onClose={() => setEditing(null)}
+            onSaved={(p, andSwitch) => {
+              setEditing(null);
+              if (andSwitch) setSwitching({ target: p, tested: andSwitch });
+            }}
+          />
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        {switching && view && (
+          <SwitchDialog
+            key={switching.target.id}
+            target={switching.target}
+            tested={switching.tested}
+            required={view.required_core}
+            onClose={() => setSwitching(null)}
+            onEdit={(p) => {
+              setSwitching(null);
+              setEditing({ profile: p });
+            }}
+          />
+        )}
+      </Suspense>
     </Ctx.Provider>
   );
 }

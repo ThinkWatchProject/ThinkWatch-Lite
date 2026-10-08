@@ -137,6 +137,12 @@ pub fn run() {
     single::precheck();
     // 缺 WebView2 就开不了窗口（见 `webview2`）
     webview2::ensure();
+    // 本机 core 起之前要读的用户环境，现在就开始读（见 `user_env::read_ahead`）：要跑一次
+    // 登录 shell，和下面 Tauri 起来的那一段叠在一起。**放在上面几步之后**：改环境变量的
+    // 那几处都在前面，转交给另一个实例、做卸载清理的也用不着它。这次要连远程的不读
+    if !connection::store::load(&data_dir()).starts_remote() {
+        tauri::async_runtime::spawn(supervisor::user_env::read_ahead());
+    }
     let builder = tauri::Builder::default();
     // **单实例要第一个注册**，插件自己的文档如此要求：它得在别的插件把端口、
     // socket、注册表项占上之前就判断出「已经有一个在跑」。
@@ -426,7 +432,7 @@ pub fn run() {
             // 不来的时候，界面必须还能打开，否则用户连错误都看不到。
             //
             // **只在连本机时起。**连远程时本机的 core 不跑；要先让人选的话，选好了再起
-            let remote_start = pick.is_some() || conns.remote(&start_id).is_some();
+            let remote_start = pick.is_some() || conns.starts_remote();
             if remote_start {
                 if pick.is_some() {
                     link.wait_for_pick();
@@ -447,7 +453,14 @@ pub fn run() {
 
             // 菜单栏。**在守护之前建**，这样 core 还没起来的那几秒里
             // 用户就已经看到它了 —— 开机自启时尤其重要。
-            menubar::install(&handle)?;
+            //
+            // **建不起来不让整个应用退出**（Windows、Linux 上托盘是会失败的），下面开窗口
+            // 也一样：原来这里是 `?`，一路冒到 `.expect("Tauri 起不来")`，守护和网关跟着
+            // 一起没了 —— 用户的客户端全断，只因为少了一个图标。和找不到 core 一样：记下来、
+            // 说一声，别的照常
+            if let Err(e) = menubar::install(&handle) {
+                startup_failed(&notices, notices::rules::tray_failed(), &e);
+            }
             // 睡醒、改时钟、换时区时菜单栏的「今日」当场对上，不等睡前排好的那个定时器
             clock::watch(&handle);
 
@@ -467,14 +480,18 @@ pub fn run() {
                 // 连接选择先出来，主窗口等选好了再开。**开机自启时也出来**：只有
                 // 连着两次没走到就绪才会走到这里，那时再悄悄撞一次不如问一句
                 tracing::info!(?why, "启动时先显示连接选择");
-                connection::show_picker(&handle, why)?;
+                if let Err(e) = connection::show_picker(&handle, why) {
+                    startup_failed(&notices, notices::rules::picker_failed(), &e);
+                }
             } else if let Some(r) = &relaunch {
                 // **更新之后被重新打开的，照更新之前的样子**：之前只在菜单栏，现在也只在
                 // 菜单栏；之前窗口开着，现在也开着。Homebrew 升级完用 `open -b` 打开、应用
                 // 自己装完重启，都不带说得出这一点的参数，靠的是退出那一刻记下的（见
                 // `updater::record_exit`）
                 if r.window {
-                    show_main_window(&handle)?;
+                    if let Err(e) = show_main_window(&handle) {
+                        startup_failed(&notices, notices::rules::window_failed(), &e);
+                    }
                 } else {
                     tracing::info!("更新之前只在菜单栏，更新之后也不开窗口");
                     #[cfg(target_os = "macos")]
@@ -485,8 +502,8 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 become_accessory(&handle);
                 maybe_notify_first_autostart(&handle);
-            } else {
-                show_main_window(&handle)?;
+            } else if let Err(e) = show_main_window(&handle) {
+                startup_failed(&notices, notices::rules::window_failed(), &e);
             }
 
             // 量 webview 占多少。**它不是一个功能，是一个回答
@@ -607,6 +624,19 @@ pub fn run() {
         });
 }
 
+/// 启动时菜单栏图标、窗口没建起来：原话进日志，提醒里说一声（系统通知还在的话，窗口
+/// 没开起来也看得见）。应用照常跑
+fn startup_failed(
+    notices: &Arc<notices::Notices>,
+    signal: notices::Signal,
+    e: &dyn std::fmt::Display,
+) {
+    tracing::error!(key = %signal.key, "启动时没建起来：{e:#}");
+    // 交给运行时：总线要排定时器（`tokio::spawn`），而 setup 跑在主线程上、不在运行时里
+    let n = notices.clone();
+    tauri::async_runtime::spawn(async move { n.ingest(signal, notices::now_ms()) });
+}
+
 /// 退出前先请本机的 core 退出、等它走，**至多等 [`EXIT_WAIT`]**。
 ///
 /// 靠别的都带不走它：进程是 `exit` 退的，运行时不会被析构，守护手上那个子进程的
@@ -651,6 +681,14 @@ fn start_client_watch(handle: &tauri::AppHandle, notices: Arc<notices::Notices>)
     scan::restart_client_watch(handle);
 }
 
+/// 以 0 结尾的 UTF-16，交给 Windows 的 `…W` 函数（路径、注册表的键和值名、对象名、对话框
+/// 上的字）。`supervisor::user_env` 自己另有一份：它要能单独摘出去交叉编译
+#[cfg(windows)]
+pub(crate) fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
+}
+
 /// 数据目录。
 ///
 /// **问契约层要，不自己算。**core 和这里必须落到同一个目录 —— 端口文件、凭据、
@@ -658,5 +696,12 @@ fn start_client_watch(handle: &tauri::AppHandle, notices: Arc<notices::Notices>)
 /// 落到当前目录下的 `.thinkwatch`，而 core 在 `%APPDATA%\ThinkWatch`：界面找不到
 /// 一个正在跑的网关。`THINKWATCH_HOME` 照旧最优先（测试靠它隔离）。
 pub(crate) fn data_dir() -> PathBuf {
+    // **测试里不许落到真的数据目录。**测试要的目录各自建在临时目录里、显式传进去；走到
+    // 这里就是哪条测试漏了 —— 以前就有，在 `~/.thinkwatch/backups` 里留下了几千个目录
+    #[cfg(test)]
+    assert!(
+        std::env::var_os("THINKWATCH_HOME").is_some(),
+        "a test reached the real data directory; give it a temporary one"
+    );
     tw_api::data::dir()
 }

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils"
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
 import { Button } from "@/ui/button"
+import { Spinner } from "@/ui/spinner"
 
 function AlertDialog({
   ...props
@@ -145,21 +146,73 @@ function AlertDialogDescription({
   )
 }
 
+/**
+ * 加过一个 `pending`，和 `Button` 的一样：失效、前面转圈、`aria-busy`，文字不换。
+ * `Button` 的转圈在 `asChild` 时不画，所以这里自己画。
+ */
 function AlertDialogAction({
   className,
   variant = "default",
   size = "default",
+  pending = false,
+  disabled,
+  children,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action> &
-  Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
+  Pick<React.ComponentProps<typeof Button>, "variant" | "size" | "pending">) {
   return (
     <Button variant={variant} size={size} asChild>
       <AlertDialogPrimitive.Action
         data-slot="alert-dialog-action"
+        data-pending={pending || undefined}
+        aria-busy={pending || undefined}
+        disabled={disabled || pending}
         className={cn(className)}
         {...props}
-      />
+      >
+        {pending && <Spinner data-icon="inline-start" aria-hidden />}
+        {children}
+      </AlertDialogPrimitive.Action>
     </Button>
+  )
+}
+
+/**
+ * 确认框里的主按钮：按下去发请求，**结果出来之前不自己关**。
+ *
+ * `AlertDialogAction` 默认一按就关 —— 那样请求还在路上，对话框先没了，失败了也没处
+ * 说。这里拦下关闭（`preventDefault`），按钮转圈（`pending`）；失败时错误写在对话框
+ * 里，成功由调用方关。进行中再按不会再发一次。
+ *
+ *   <AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
+ *     {t.delete}
+ *   </AlertDialogConfirm>
+ */
+function AlertDialogConfirm({
+  pending,
+  onConfirm,
+  variant = "default",
+  disabled,
+  children,
+}: {
+  pending: boolean
+  onConfirm: () => void
+  variant?: "default" | "destructive"
+  disabled?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <AlertDialogAction
+      variant={variant}
+      pending={pending}
+      disabled={disabled}
+      onClick={(e) => {
+        e.preventDefault()
+        if (!pending) onConfirm()
+      }}
+    >
+      {children}
+    </AlertDialogAction>
   )
 }
 
@@ -185,6 +238,7 @@ export {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,

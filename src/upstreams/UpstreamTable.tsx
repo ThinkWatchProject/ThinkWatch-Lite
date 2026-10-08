@@ -6,18 +6,19 @@ import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
+import { Sparkline, sparklineWidth } from "@/ui/sparkline";
 import { Spinner } from "@/ui/spinner";
 import { StatusDot, StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { resetAt } from "@/format";
+import { ms, resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { usd, type ModelRow, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
 import type { UpstreamStats } from "./api";
 import { discrepancies, pct, signedPct, type Discrepancies } from "./checkup";
-import { slotsByUpstream, type Slot } from "./data";
+import { SLOTS, slotsByUpstream, type Slot } from "./data";
 import {
   billingLabel,
   egressLabel,
@@ -35,7 +36,6 @@ import { ModelSpecDialog } from "./ModelSpecDialog";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
-import { SPARKLINE_WIDTH, Sparkline } from "./Sparkline";
 import { upstreamTableText } from "./UpstreamTable.i18n";
 import { overviewText } from "@/overview/overview.i18n";
 import { rankCost } from "@/overview/series";
@@ -586,7 +586,7 @@ function DayCell({
         {stats.loading ? (
           // 和读到之后一样宽：走势的位置先占上，数字到了列宽不跳
           <div className="flex items-center justify-between gap-3">
-            <Skeleton className="h-4 rounded-sm @max-3xl/page:hidden" style={{ width: SPARKLINE_WIDTH }} />
+            <Skeleton className="h-4 rounded-sm @max-3xl/page:hidden" style={{ width: sparklineWidth(SLOTS) }} />
             <CellSkeleton />
           </div>
         ) : (
@@ -642,7 +642,12 @@ function DayCell({
           不随「201 次」「7 次」的宽窄左右错开
         */}
         <div className="flex items-center justify-between gap-3">
-          {slots && <Sparkline slots={slots} className="@max-3xl/page:hidden" />}
+          {slots && (
+            <Sparkline
+              bars={slots.map((x) => ({ at: x.at, n: x.requests, failed: x.failed }))}
+              className="@max-3xl/page:hidden"
+            />
+          )}
           <div className="flex min-w-14 flex-col items-end">
             <AnimatedNumber value={cost.requests} format={(n) => t.requests(Math.round(n))} />
             <span className="tw-label tw-num text-muted-foreground">
@@ -665,7 +670,7 @@ function DayCell({
 
 /**
  * 首 token 和生成速度，上下两行，和「24 小时」那一格同一个写法：上面是首 token 的 P50，
- * 下面淡一档的是生成速度的中位数。P95 与样本数在悬停里：「800 ms」是 3 个样本还是 300 个，
+ * 下面淡一档的是生成速度的中位数。P95 与样本数在悬停里：「800ms」是 3 个样本还是 300 个，
  * 含义完全不同。
  *
  * **速度不另占一列**：单起一列，上游名那一列要让出一百多像素，副行的地址被截得只剩开头。
@@ -691,13 +696,13 @@ function LatencyCell({ p, stats }: { p: ProviderView; stats: Resource<UpstreamSt
       <Tip
         text={
           <div className="flex flex-col gap-0.5 tw-num">
-            <div>{t.latencyTip(lat.p95, lat.samples)}</div>
+            <div>{t.latencyTip(ms(lat.p95), lat.samples)}</div>
             {speed && <div>{t.speedTip(speed.samples)}</div>}
           </div>
         }
       >
         <div className="flex flex-col items-end">
-          <span className="tw-num">{t.ms(lat.p50)}</span>
+          <span className="tw-num">{ms(lat.p50)}</span>
           <span className="tw-label tw-num text-muted-foreground">{speed ? t.speedValue(speed.p50) : "—"}</span>
         </div>
       </Tip>

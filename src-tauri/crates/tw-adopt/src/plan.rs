@@ -784,7 +784,13 @@ fn apply_file(plan: &Plan, backup_root: &Path) -> Result<(Applied, Option<String
         .prior
         .clone()
         .unwrap_or_else(|| (applied.backup.display().to_string(), applied.created));
-    let rec = SidecarRecord::new(&plan.client, now_ms(), &backup, created, &plan.originals);
+    let rec = SidecarRecord::new(
+        &plan.client,
+        crate::now_ms(),
+        &backup,
+        created,
+        &plan.originals,
+    );
     if let Err(e) = write_sidecar(&side, &rec) {
         // 配置也退不回去的话，说的是那一件：它停在改过的样子上，而且没有记录
         return Err(PlanError::Write(rollback(&applied).err().unwrap_or(e)));
@@ -1211,11 +1217,12 @@ pub(crate) fn lookup(v: &Val, path: &[&str]) -> Option<Val> {
     Some(cur.clone())
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+/// [`lookup`] 到的那一项，是字符串才算
+pub(crate) fn lookup_str(v: &Val, path: &[&str]) -> Option<String> {
+    match lookup(v, path)? {
+        Val::Str(s) => Some(s),
+        _ => None,
+    }
 }
 
 /// 一份文件旁边的接管记录。**没有是 `None`；在却读不出来、解析不了是错**，不是「没有」。

@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ClientLogo } from "@/ui/logos";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
+import { copyText } from "@/ui/notify";
 import { EmptyState } from "@/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,7 @@ import { coreText } from "@/i18n/core.i18n";
 import { ROW_FOCUS, rowNav, stop } from "@/security/rows";
 import type { ScanFinding, ScanReport } from "@/types";
 import { mcpText } from "./McpPage.i18n";
-import { copyText, Level, rank, shortPath, worst } from "./parts";
+import { Level, rank, shortPath, worst } from "./parts";
 
 /** 同一处发现：同一个文件、同一行、同一条规则 */
 const sameFinding = (a: ScanFinding, b: ScanFinding) =>

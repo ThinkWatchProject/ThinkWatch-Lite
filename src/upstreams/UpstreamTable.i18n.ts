@@ -71,9 +71,7 @@ export const upstreamTableText = messages(
     dayFailed: (n: number, success: number) => `失败 ${n.toLocaleString()} 次，成功率 ${rate(success)}%`,
     dayNoFailures: "无失败",
     dayCost: (cost: string) => `费用 ${cost}`,
-    ms: (n: number) => `${n.toLocaleString()} ms`,
-    latencyTip: (p95: number, samples: number) =>
-      `首 token P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} 个样本`,
+    latencyTip: (p95: string, samples: number) => `首 token P95 ${p95} · ${samples.toLocaleString()} 个样本`,
     speedValue: (n: number) => `${n.toLocaleString()} token/秒`,
     speedTip: (samples: number) => `生成速度 · ${samples.toLocaleString()} 个样本`,
   },
@@ -140,9 +138,8 @@ export const upstreamTableText = messages(
       `${n.toLocaleString()} failed, ${rate(success)}% succeeded`,
     dayNoFailures: "No failures",
     dayCost: (cost: string) => `Cost ${cost}`,
-    ms: (n: number) => `${n.toLocaleString()} ms`,
-    latencyTip: (p95: number, samples: number) =>
-      `First token P95 ${p95.toLocaleString()} ms · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,
+    latencyTip: (p95: string, samples: number) =>
+      `First token P95 ${p95} · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,
     speedValue: (n: number) => `${n.toLocaleString()} tokens/s`,
     speedTip: (samples: number) =>
       `Speed · ${samples.toLocaleString()} ${samples === 1 ? "sample" : "samples"}`,

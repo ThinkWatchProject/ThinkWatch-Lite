@@ -87,4 +87,11 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * 展开、收起一块内容的 ghost 按钮（带 `aria-expanded`）加上它。**展开时不铺底色**：
+ * ghost 按钮在 `aria-expanded` 时铺一层底，那是菜单按钮打开时的样子；展开的一节不是
+ * 一个按下去的按钮。悬停照常有底。
+ */
+const DISCLOSURE = "aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50"
+
+export { Button, buttonVariants, DISCLOSURE }

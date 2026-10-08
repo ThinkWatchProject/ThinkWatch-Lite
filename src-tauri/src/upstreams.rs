@@ -18,7 +18,7 @@ use crate::error::Out;
 /// **几样同时问，不排队。**额度那一问可能要等几秒：GLM Coding Plan 的额度不在响应头
 /// 里，core 答 `/quota` 时现去问账号的额度接口（最多等 5 秒）。排着队问的话，费用和
 /// 走势要白白跟着等。
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Default)]
 pub struct UpstreamStats {
     costs: Option<Vec<tw_api::CostGroup>>,
     latency: Option<Vec<tw_api::LatencyView>>,
@@ -39,7 +39,10 @@ pub async fn upstream_stats(
     since_ms: i64,
     bucket_ms: i64,
 ) -> Out<UpstreamStats> {
-    let c = &state.control;
+    // 钥匙读一次（见 `control::Pinned`）。读不到就是 core 不在：每一样都拿不到，不是报错
+    let Ok(c) = state.control.pin() else {
+        return Ok(UpstreamStats::default());
+    };
     let costs = tw_api::GroupQuery {
         from_ms: Some(since_ms),
         to_ms: None,

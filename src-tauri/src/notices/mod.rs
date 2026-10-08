@@ -1016,7 +1016,7 @@ pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
     // 新版本那一条不落在哪一页：它要的是更新窗口
     if crate::updater::is_update_notice(key) {
         if let Some(n) = &notices {
-            n.mark_read(key);
+            read_off_main(n, key);
         }
         crate::updater::show_pending_update(app);
         return;
@@ -1027,9 +1027,16 @@ pub fn open_from_notification(app: &tauri::AppHandle, key: &str) {
         .unwrap_or_else(|| rules::default_view(key).to_string());
     // 点了通知就是看过了：应用里那一条不必再数
     if let Some(n) = &notices {
-        n.mark_read(key);
+        read_off_main(n, key);
     }
     open_view(app, view);
+}
+
+/// 标为已读，**在阻塞线程上**：标了要落盘（整份换上去之前先落盘，macOS 上一次好几毫秒），
+/// 而点通知、点菜单里那一条都是在主线程上到这里的
+fn read_off_main(notices: &Arc<Notices>, key: &str) {
+    let (n, key) = (notices.clone(), key.to_string());
+    tauri::async_runtime::spawn_blocking(move || n.mark_read(&key));
 }
 
 /// 点开一条通知的链接：`thinkwatch://notice/<百分号编码的键>`。

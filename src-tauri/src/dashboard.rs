@@ -30,70 +30,68 @@ pub async fn dashboard(
     since_ms: i64,
     bucket_ms: i64,
 ) -> Out<Dashboard> {
-    let c = &state.control;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     let since = since_ms.min(now);
     let bucket = bucket_ms.max(60_000);
+    // **九样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
+    // 九问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
+    // 钥匙只读一次（`pin`）
+    let c = state.control.pin().map_err(text)?;
+    // 延迟、生成速度和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，
+    // 而界面上它们和上面的数字摆在一起，读的人会当成同一段时间
+    let win = window(Some(since), None);
+    let buckets = tw_api::BucketQuery {
+        from_ms: Some(since),
+        to_ms: None,
+        bucket_ms: Some(bucket),
+    };
+    let by_model = tw_api::BucketGroupQuery {
+        from_ms: Some(since),
+        to_ms: None,
+        bucket_ms: Some(bucket),
+        dim: tw_api::CostDim::Model,
+    };
+    // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
+    // ——「$4.05」是多还是少，只有和上一个七天比过才知道
+    let before = window(Some(since - (now - since)), Some(since));
+    let (
+        summary,
+        latency,
+        latency_by_provider,
+        token_rate,
+        token_rate_by_provider,
+        storage,
+        buckets,
+        buckets_by_model,
+        prev,
+    ) = tokio::join!(
+        c.call::<ep::Summary>(&[], &win),
+        c.call::<ep::Latency>(&[], &win),
+        c.call::<ep::LatencyByProvider>(&[], &win),
+        c.call::<ep::TokenRate>(&[], &win),
+        c.call::<ep::TokenRateByProvider>(&[], &win),
+        c.call::<ep::Storage>(&[], &()),
+        c.call::<ep::CostBuckets>(&[], &buckets),
+        c.call::<ep::CostBucketsBy>(&[], &by_model),
+        c.call::<ep::Summary>(&[], &before),
+    );
     Ok(Dashboard {
-        summary: c
-            .call::<ep::Summary>(&[], &window(Some(since), None))
-            .await
-            .map_err(text)?,
-        // 延迟和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，而
-        // 界面上它和上面的数字摆在一起，读的人会当成同一段时间
-        latency: c
-            .call::<ep::Latency>(&[], &window(Some(since), None))
-            .await
-            .ok(),
-        latency_by_provider: c
-            .call::<ep::LatencyByProvider>(&[], &window(Some(since), None))
-            .await
-            .ok(),
-        token_rate: c
-            .call::<ep::TokenRate>(&[], &window(Some(since), None))
-            .await
-            .ok(),
-        token_rate_by_provider: c
-            .call::<ep::TokenRateByProvider>(&[], &window(Some(since), None))
-            .await
-            .ok(),
-        storage: c.call::<ep::Storage>(&[], &()).await.ok(),
+        summary: summary.map_err(text)?,
+        latency: latency.ok(),
+        latency_by_provider: latency_by_provider.ok(),
+        token_rate: token_rate.ok(),
+        token_rate_by_provider: token_rate_by_provider.ok(),
+        storage: storage.ok(),
         // 趋势和分组。**拿不到不该让整页失败** —— 这一页别的部分照样有用（同一条：
         // 观测层的缺失不该扩散）。但拿不到是 `None`，**不是空的**：空的在界面上就是
         // 一张全零的图，读作「这段时间没有请求」，那是一个编出来的零
-        buckets: c
-            .call::<ep::CostBuckets>(
-                &[],
-                &tw_api::BucketQuery {
-                    from_ms: Some(since),
-                    to_ms: None,
-                    bucket_ms: Some(bucket),
-                },
-            )
-            .await
-            .ok(),
-        buckets_by_model: c
-            .call::<ep::CostBucketsBy>(
-                &[],
-                &tw_api::BucketGroupQuery {
-                    from_ms: Some(since),
-                    to_ms: None,
-                    bucket_ms: Some(bucket),
-                    dim: tw_api::CostDim::Model,
-                },
-            )
-            .await
-            .ok(),
-        // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
-        // ——「$4.05」是多还是少，只有和上一个七天比过才知道。
-        // 拿不到就不显示那句对比，不影响这一页别的部分。
-        prev: c
-            .call::<ep::Summary>(&[], &window(Some(since - (now - since)), Some(since)))
-            .await
-            .ok(),
+        buckets: buckets.ok(),
+        buckets_by_model: buckets_by_model.ok(),
+        // 拿不到就不显示那句对比，不影响这一页别的部分
+        prev: prev.ok(),
         since_ms: since,
     })
 }

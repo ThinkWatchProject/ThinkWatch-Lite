@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Meter } from "@/ui/meter";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { useNav } from "@/nav";
@@ -6,7 +7,7 @@ import { compact } from "@/format";
 import { usd } from "@/types";
 import { useText } from "@/i18n";
 import { rankCost, type Metric, type RankRow } from "./series";
-import { LinkRow, LinkText, MarkSpace, Meter, ModelMark } from "./parts";
+import { LinkRow, LinkText, MarkSpace, ModelMark } from "./parts";
 import { overviewText } from "./overview.i18n";
 
 const fmtTokens = (n: number) => compact(Math.round(n));
@@ -60,7 +61,7 @@ export function ModelRanking({
           <span className="w-40 shrink-0 truncate" title={r.merged ? undefined : r.name}>
             {r.merged ? t.otherCount(r.merged) : r.name}
           </span>
-          <Meter className="min-w-12 flex-1" value={tokensMode ? r.tokens : r.cost} max={topBar} color={r.color} />
+          <Meter size="lg" className="min-w-12 flex-1" value={tokensMode ? r.tokens : r.cost} max={topBar} color={r.color} />
           <Tip text={t.tokens(r.tokens.toLocaleString(), r.tokens)}>
             <span className={cn("w-16 shrink-0 text-right", tokensMode ? "font-medium" : "text-muted-foreground")}>
               <AnimatedNumber value={r.tokens} format={fmtTokens} scope={scope} />

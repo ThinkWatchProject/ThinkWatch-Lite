@@ -3,13 +3,12 @@ import { ArrowRightIcon } from "lucide-react";
 import { useClients } from "@/clients/data";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { focusSelf } from "@/keys/parts";
 import { useResource } from "@/lib/resource";
 import { useNav } from "@/nav";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogConfirm,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -19,7 +18,7 @@ import {
 import { Button } from "@/ui/button";
 import { IconClient, IconFlow, IconKey, IconRoute } from "@/ui/icons";
 import { Skeleton } from "@/ui/skeleton";
-import { Spinner } from "@/ui/spinner";
+import { focusSelf } from "@/ui/dialog-focus";
 import { errorText } from "@/upstreams/labels";
 import { DialogError } from "@/upstreams/parts";
 import { api } from "./api";
@@ -154,19 +153,9 @@ export function DeleteAliasDialog({
         <DialogError error={error} />
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{c.cancel}</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={busy}
-            aria-busy={busy || undefined}
-            onClick={(e) => {
-              // 结果要留在这张对话框里：成功时由调用方关掉，失败时在这里说原因
-              e.preventDefault();
-              void run();
-            }}
-          >
-            {busy && <Spinner data-icon="inline-start" aria-hidden />}
+          <AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
             {c.delete}
-          </AlertDialogAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

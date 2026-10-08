@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useMemo, type ReactNode } from "react";
 import { Badge } from "@/ui/badge";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
-import { Spinner } from "@/ui/spinner";
+import { LoadingState } from "@/ui/states";
 import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
@@ -313,12 +313,7 @@ export function CodeBox({ code, error, maxHeight }: { code: string; error?: Code
 
 /** 编辑器还没加载完时那一块 */
 export function CodeLoading({ label }: { label: string }) {
-  return (
-    <div className="flex h-24 items-center justify-center gap-2 tw-label text-muted-foreground">
-      <Spinner className="size-3.5" aria-hidden />
-      {label}
-    </div>
-  );
+  return <LoadingState label={label} className="h-24 flex-none py-0" />;
 }
 
 /** core 说的读不了的原因，换成代码框里标位置的那一份。没有行号的标不出来，是 `null` */

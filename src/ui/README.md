@@ -133,6 +133,22 @@ Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outsi
 Numbers that line up (amounts, latency, counts) add `tw-num` (tabular figures).
 Windows and Linux shift every level up 1px automatically.
 
+### Numbers and times
+
+Every quantity has one way of being written, and its helper lives in `src/format.ts`.
+Never format these by hand in a page:
+
+| Quantity | Helper | Looks like |
+| --- | --- | --- |
+| Latency, a single duration in ms | `ms(n)`; the combined column `latency(ttft, total)` | `1182ms`, `492→1486ms` |
+| Latency in a side-by-side summary only | `msShort(n)` | `438ms`, `1.18s` |
+| Time of an event | `when(at)` (to the second), `whenMinute(at)` | `14:07:09`, `09-14 23:05` |
+| Day | `monthDay(at)` | `10-08` |
+| Tokens (usage, context windows, output limits) | `compact(n)`; a pair `tokens(in, out)` | `463`, `1.5k`, `128k`, `2.7M` |
+| A session's span | `span(n)` | `42 秒`, `1.5 h` |
+| Bytes | `size(n)` | `245 KB`, `1.4 MB` |
+| Money | `usd(micros)` (`@/types`), `money(micros, estimated)` | `$0.041`, `~$0.018` |
+
 ---
 
 ## Colour
@@ -175,6 +191,44 @@ import { StatusDot, StatusLabel } from "@/ui/status-dot";
 Tones: `ok` | `warn` | `error` | `idle` | `pending`. Map every page-specific state to one
 of these; do not hand-write `rounded-full bg-emerald-500` dots. Use `pulse` only for
 something happening right now (a request in flight, connecting).
+
+---
+
+## Data visualisation
+
+Three primitives, all hand-written (no chart library). Colour comes from `--chart-*` /
+`--cache-*` for data and from the state tokens for state; nothing else.
+
+```tsx
+import { Meter } from "@/ui/meter";
+import { Sparkline, sparklineWidth } from "@/ui/sparkline";
+import { StackedArea } from "@/ui/charts";
+
+<Meter size="lg" value={r.tokens} max={top} color={r.color} />            // a share, data colour
+<Meter from={p50} value={p95} max={max} color="var(--chart-3)" mark="start" /> // a range with its median
+<Meter size="sm" value={used} max={cap} tone={near ? "warn" : "neutral"} label={t.usage} valueText="412 MB / 2 GB" />
+<Meter role="progressbar" value={pct} max={100} tone="strong" label={text} />  // the thing being waited on
+
+<Sparkline bars={slots.map((s) => ({ at: s.at, n: s.requests, failed: s.failed }))} />
+<Sparkline bars={bars} tip={barTip} label={t.sparkLabel(n, failed)} />     // hoverable, read out
+```
+
+- **`Meter`**: one track (foreground at 8%), `size` `sm` 4px next to a line of text, `md`
+  6px (default, and bars with a `mark`), `lg` 8px when the bar is the main thing in its
+  section. Fill is `color` for data, otherwise `tone`: `neutral` grey (usage that is not a
+  problem), `warn` / `error` only when it needs attention, `strong` for a progress bar the
+  user is waiting on. Any non-zero value shows at least 2px. Give `label` (and `valueText`)
+  only when no number sits next to it; otherwise it is hidden from screen readers.
+- **`Sparkline`**: one bar per time slot, the last one is "now" (`--chart-1`, others
+  `--chart-2`). Each row scales to its own peak but never below 4, so one request does not
+  fill it; a slot with requests is at least 3px; failures sit at the bottom in red; empty
+  slots keep a faint baseline. Without `tip` bars are 2px with 1px gaps (`sparklineWidth(n)`
+  for its skeleton); with `tip` each slot is a 4px hover cell. Keep `bars` and `tip`
+  referentially stable where the parent re-renders often (it is memoised).
+- **`StackedArea`** (`@/ui/charts`): the Overview trend chart. Monotone curves, the axis
+  on the right (`Y_AXIS_WIDTH`), the caller pins `yMax`. It animates only when told to
+  (`animate`, once per change of view) and never on a refresh.
+- Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
 
 ---
 
@@ -261,7 +315,8 @@ import { notify, undoable, usePending } from "@/ui/notify";
 ```
 
 - `notify.success(msg)` — only when the result is not visible on screen (saved to disk,
-  copied, sent). If the row appears or the switch flips, no toast.
+  copied, sent). If the row appears or the switch flips, no toast. Copying text is
+  `copyText(text, done?)` from the same module.
 - `notify.error(e, title?)` — every failed action. Pass the caught value; it is
   translated with `errorText`. **Never call `toast` from sonner directly.**
 - **Persistent state is a `Banner`, not a toast.** Toasts float away; "config rejected",
@@ -280,7 +335,16 @@ await undoable({
 ```
 
 - Irreversible destructive actions (delete an upstream) keep an `AlertDialog`; its title
-  has no question mark.
+  has no question mark. Its confirm button is `AlertDialogConfirm` (`@/ui/alert-dialog`):
+  it shows `pending` and does not close on click, so a failure can be shown in the dialog;
+  the caller closes it on success. (`AlertDialogAction` has `pending` too, for the rare
+  action that may close at once.)
+
+```tsx
+<AlertDialogConfirm variant="destructive" pending={busy} onConfirm={() => void run()}>
+  {t.delete}
+</AlertDialogConfirm>
+```
 - **Pending buttons**: every async button shows it is working. `Button` has a `pending`
   prop (spinner, disabled, `aria-busy`, label unchanged so nothing shifts):
 
@@ -310,6 +374,19 @@ act). `layout="strip"` (default) is a full-width strip under the toolbar or at t
 a region; `layout="inline"` is a rounded box inside a page, below the `PageHeader`.
 Passing `show` animates it in and out; without `show` it is static.
 
+### Shared pieces
+
+Small things several pages need live in `src/ui`, not in the page that had them first:
+
+| Piece | From | Use |
+| --- | --- | --- |
+| `focusSelf`, `useDialogFocus` | `@/ui/dialog-focus` | `onOpenAutoFocus={focusSelf}` keeps the focus ring off the first button; `{...useDialogFocus()}` returns focus to the row after Esc |
+| `CopyButton`, `CopyIconButton` | `@/ui/copy-button` | Copy with a check mark that flashes for 1.5s |
+| `Tile` | `@/ui/tile` | The 28px square at the start of a row (client mark, icon) |
+| `openable`, `OPENABLE_ROW`, `stop` | `@/ui/openable` | A table row that opens its dialog on click / Enter; `stop` on controls inside it |
+| `DISCLOSURE` | `@/ui/button` | A ghost button that expands a block (no fill while expanded) |
+| `RowsSkeleton` | `@/ui/states` | Skeleton for two-line rows with a `Tile` (Keys, Clients) |
+
 ---
 
 ## Motion
@@ -327,7 +404,7 @@ movement. Do not write your own `@keyframes` or `transition-all` in pages.
 | Removed row | Same hook: the row stays for 200ms with `motion-row-out` (fade, not clickable). |
 | Banner / inline notice appearing | `Banner show` or `<Reveal show>` (height + fade). |
 | Numbers that change | `<AnimatedNumber value format scope />` (`@/ui/motion`), built on `useCountUp`. Change `scope` when the meaning changes (time range) so it jumps instead of counting. |
-| Bars, meters, progress | `motion-bar` on the element whose width/height changes. |
+| Bars, meters, progress | Built into `Meter` and `Sparkline`. Anything else: `motion-bar` on the element whose width/height changes. |
 | Live / in-flight | `<StatusDot tone="pending" />` or `motion-live` on a dot. |
 | New data at a live edge | `motion-ping` on a dot (HTML or SVG): one ring, not looping. Re-key the element to play it again. |
 | Skeleton shimmer | Built into `Skeleton` (`motion-shimmer`). |
@@ -410,9 +487,10 @@ useNavParams("keys", (p) => {
 
 Wait for the data a dialog needs before rendering it (an edit dialog opened by a deep link
 may mount before its row is loaded). The Settings page handles `section` itself
-(`revealSection` finds `data-section="<id>"`, or the heading whose text is the title in
-`palette/sections.ts`). When the Settings page is restructured, keep one palette entry per
-setting a user would search for and point its `id` at the section that now holds it.
+(`jump` in `settings/kit.tsx` scrolls to the `SettingsGroup` whose `id`, or the
+`SettingsRow` whose `anchor`, is that section). When the Settings page is restructured, keep
+one palette entry per setting a user would search for (`palette/sections.ts`) and point its
+`id` at the group or row that now holds it.
 
 ### Command palette and shortcuts
 
@@ -428,7 +506,7 @@ setting a user would search for and point its `id` at the section that now holds
   list (read when the palette opens).
 - **Key caps come from `palette/keys.tsx`** (`Keys`, `COMBOS`, `pageCombo`). The palette rows,
   the shortcut sheet and the sidebar tooltips all render from it; the handlers are in
-  `App.tsx` (global) and the pages (Traffic's row keys). Change a key in both places.
+  `shell/Workspace.tsx` (global) and the pages (Traffic's row keys). Change a key in both places.
 - Global shortcuts do nothing while a modal dialog is open (`modalOpen()`), so ⌘2 never
   throws away a half-edited form. The request drawer does not count as modal, and neither
   does a dialog marked `data-passive` (the palette and the shortcut sheet: nothing in them
@@ -466,4 +544,5 @@ Don't:
 - Don't animate with JS timers or `transition-all`; don't animate on every data refresh.
 
 Reference implementation: `src/connection/Unlinked.tsx` (Page, StatusLabel, Button
-pending with `usePending`) and the shell in `src/App.tsx` (Banner, nav, motion).
+pending with `usePending`) and the shell in `src/shell/` (`Banners.tsx`; nav in `Workspace.tsx`;
+the page switch and its motion in `Pages.tsx`).

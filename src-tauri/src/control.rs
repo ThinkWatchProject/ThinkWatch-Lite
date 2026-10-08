@@ -75,15 +75,18 @@ fn local_key(config: &Path) -> Result<tw_link::ControlKey> {
     })
 }
 
-/// 连上本机的控制面：socket（Windows 上是回环端口），再握手。
-async fn local(at: &tw_api::control::Address, config: &Path) -> Result<Box<dyn Stream>> {
-    let key = local_key(config)?;
-    match handshake(at, &key).await {
+/// 连上本机的控制面：socket（Windows 上是回环端口），再拿 `key` 握手。
+async fn local(
+    at: &tw_api::control::Address,
+    config: &Path,
+    key: &tw_link::ControlKey,
+) -> Result<Box<dyn Stream>> {
+    match handshake(at, key).await {
         // **钥匙不对就再读一次。**读钥匙和握手之间 core 换了钥匙（`--rotate`），
         // 手上这一把就是旧的；再读到的还是同一把，才是真的不对
         Err(tw_link::LinkError::WrongKey) => {
             let again = local_key(config)?;
-            if again == key {
+            if &again == key {
                 return Err(link_failed(tw_link::LinkError::WrongKey));
             }
             handshake(at, &again).await.map_err(link_failed)
@@ -179,8 +182,9 @@ fn refused(status: hyper::StatusCode, body: &[u8]) -> anyhow::Error {
 /// 控制面在哪、凭什么进去。
 #[derive(Clone)]
 pub enum Target {
-    /// 本机的 core：数据目录里的 socket（Windows 上是回环端口）。钥匙每次连接时从
-    /// `config` 现读 —— 换过钥匙（`twcore control-key --rotate`），下一条连接就用新的
+    /// 本机的 core：数据目录里的 socket（Windows 上是回环端口）。钥匙每一问都从
+    /// `config` 现读（一个命令里接连几问的，读一次，见 [`Pinned`]）—— 换过钥匙
+    /// （`twcore control-key --rotate`），下一问就用新的
     Local {
         at: tw_api::control::Address,
         /// 本机那份 config.yaml
@@ -230,20 +234,20 @@ impl ControlClient {
         self.target.read().expect("锁未中毒").clone()
     }
 
-    /// 连上控制面：建连，再握手。
-    ///
-    /// **连不上时只说 core 现在不在。**socket 的路径和「No such file or
-    /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
-    /// 的时候回给界面的都是这一句。原话进日志
+    /// 取定此刻连哪、拿哪把钥匙（见 [`Pinned`]）。本机那一档在这里读一次钥匙：
+    /// 文件不在、还没有钥匙都说 core 不在
+    pub fn pin(&self) -> Result<Pinned> {
+        Ok(Pinned(match self.target() {
+            Target::Local { at, config } => {
+                let key = local_key(&config)?;
+                Resolved::Local { at, config, key }
+            }
+            Target::Remote(r) => Resolved::Remote(r),
+        }))
+    }
+
     async fn connect(&self) -> Result<Box<dyn Stream>> {
-        match self.target() {
-            Target::Local { at, config } => local(&at, &config).await,
-            // 远程那一档的建连和握手见 `connection::connector`
-            Target::Remote(r) => crate::connection::connector::open(&r)
-                .await
-                .map(|(stream, _)| stream)
-                .map_err(anyhow::Error::new),
-        }
+        self.pin()?.connect().await
     }
 
     /// 调一个端点。
@@ -255,9 +259,10 @@ impl ControlClient {
     /// 每次新建连接。控制面的调用频率是「用户点一下」的量级，连接复用
     /// 带来的复杂度（连接死了怎么办、什么时候重建）换不来任何东西。
     /// **事件流是例外**，它走 `subscribe_events`，本来就是长连接。
+    ///
+    /// 一个命令里要接连问好几样的，先 [`ControlClient::pin`] 一次，再同时问
     pub async fn call<E: Endpoint>(&self, params: &[&str], req: &E::Req) -> Result<E::Res> {
-        let (path, body) = request::<E>(params, req)?;
-        decode::<E>(send(self.connect().await?, E::METHOD, &path, body).await?)
+        self.pin()?.call::<E>(params, req).await
     }
 
     /// 带超时的心跳探测。
@@ -375,6 +380,51 @@ impl ControlClient {
             }
         }
         Ok(())
+    }
+}
+
+/// 连哪、拿哪把钥匙，取定了的一份（[`ControlClient::pin`]）。
+///
+/// **一个命令里接连问好几样时用它**：本机那一档每一问都要现读一遍 config.yaml、
+/// 解析一遍 YAML 才拿得到钥匙，概览一次问九样就是九遍。取定一次，几样同时问。
+/// 中途换了钥匙（`--rotate`）照样接得上：握手说钥匙不对就再读一次（见 [`local`]）。
+///
+/// **它不跟着切换连接走**：拿着它的那几问照旧问取定时的那个 core。一个命令的工夫里
+/// 切了连接，界面本来就要整个重新取一遍
+#[derive(Clone)]
+pub struct Pinned(Resolved);
+
+#[derive(Clone)]
+enum Resolved {
+    Local {
+        at: tw_api::control::Address,
+        config: std::path::PathBuf,
+        key: tw_link::ControlKey,
+    },
+    Remote(crate::connection::connector::RemoteTarget),
+}
+
+impl Pinned {
+    /// 连上控制面：建连，再握手。
+    ///
+    /// **连不上时只说 core 现在不在。**socket 的路径和「No such file or
+    /// directory (os error 2)」是给写代码的人看的，而几乎每个命令在 core 不在
+    /// 的时候回给界面的都是这一句。原话进日志
+    async fn connect(&self) -> Result<Box<dyn Stream>> {
+        match &self.0 {
+            Resolved::Local { at, config, key } => local(at, config, key).await,
+            // 远程那一档的建连和握手见 `connection::connector`
+            Resolved::Remote(r) => crate::connection::connector::open(r)
+                .await
+                .map(|(stream, _)| stream)
+                .map_err(anyhow::Error::new),
+        }
+    }
+
+    /// 调一个端点，同 [`ControlClient::call`]
+    pub async fn call<E: Endpoint>(&self, params: &[&str], req: &E::Req) -> Result<E::Res> {
+        let (path, body) = request::<E>(params, req)?;
+        decode::<E>(send(self.connect().await?, E::METHOD, &path, body).await?)
     }
 }
 

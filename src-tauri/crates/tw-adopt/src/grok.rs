@@ -12,9 +12,10 @@
 //! 它自己也写这份文件（`/model`、`/settings`、自动更新之后），用的是重新序列化，注释和排版
 //! 一律丢掉 —— 哨兵注释会跟着没了，旁文件里的记录还在，还原照样做得了。
 
-use crate::clients::{Edit, Gateway, ModelCard};
+use crate::clients::{Edit, Gateway, ModelCard, NO_KEY, unique};
 use crate::json::Val;
-use crate::plan::lookup;
+use crate::pi::{count_of, flag_of};
+use crate::plan::{lookup, lookup_str};
 
 /// 我们写的模型表的名字：`[model."thinkwatch/<模型>"]`。
 ///
@@ -52,15 +53,6 @@ pub fn backend_for(model: &str) -> &'static str {
     }
 }
 
-/// 网关列出来的模型，同名的只算一次
-fn unique(gw: &Gateway) -> Vec<&ModelCard> {
-    let mut seen = std::collections::HashSet::new();
-    gw.models
-        .iter()
-        .filter(|m| seen.insert(m.id.as_str()))
-        .collect()
-}
-
 /// 一张模型表里的字段。**没有网关密钥也要写一个不为空的 `api_key`**：空着的话 Grok 退回
 /// 用户的会话令牌，见文件开头；这个值什么都打不开，网关会以「没有这把密钥」拒绝。
 ///
@@ -70,10 +62,7 @@ fn table(gw: &Gateway, m: &ModelCard) -> Vec<(String, Val)> {
     let mut t = vec![
         ("model".into(), Val::s(model)),
         ("name".into(), Val::s(format!("{model} (ThinkWatch)"))),
-        (
-            "base_url".into(),
-            Val::s(format!("{}/v1", gw.base.trim_end_matches('/'))),
-        ),
+        ("base_url".into(), Val::s(gw.v1())),
         ("api_backend".into(), Val::s(backend_for(model))),
         (
             "api_key".into(),
@@ -109,7 +98,7 @@ fn spec(m: &ModelCard) -> Vec<(String, Val)> {
 
 /// 手动配置那一页列的字段：每张表拆成一项一项，照着就能写。接管写整张表，见 [`edits`]
 pub fn fields(gw: &Gateway) -> Vec<Edit> {
-    let mut v: Vec<Edit> = unique(gw)
+    let mut v: Vec<Edit> = unique(&gw.models)
         .into_iter()
         .flat_map(|m| {
             let k = key_of(&m.id);
@@ -139,7 +128,7 @@ pub fn fields(gw: &Gateway) -> Vec<Edit> {
 ///
 /// `current` 是此刻的 config.toml，读不出来就当空的
 pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
-    let models = unique(gw);
+    let models = unique(&gw.models);
     let Some(first) = models.first() else {
         return Vec::new();
     };
@@ -177,9 +166,6 @@ pub fn edits(gw: &Gateway, current: &str) -> Vec<Edit> {
     v
 }
 
-/// 网关不要密钥时写进 `api_key` 的那个值。见 [`edits`]
-pub const NO_KEY: &str = "no-key";
-
 /// 此刻 `[models] default` 选着的那一张
 fn default_in(text: &str) -> Option<String> {
     match crate::toml::get(text, &["models", "default"]).ok()?? {
@@ -208,19 +194,6 @@ fn ours(text: &str) -> Vec<(String, Val)> {
             .filter(|(k, _)| k.starts_with(KEY_PREFIX))
             .collect(),
         _ => Vec::new(),
-    }
-}
-
-fn field(v: &Val, key: &str) -> Option<String> {
-    match v {
-        Val::Obj(ms) => ms
-            .iter()
-            .find(|(k, _)| k == key)
-            .and_then(|(_, v)| match v {
-                Val::Str(s) => Some(s.clone()),
-                _ => None,
-            }),
-        _ => None,
     }
 }
 
@@ -259,15 +232,9 @@ pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
         ours(text)
             .iter()
             .map(|(k, t)| ModelCard {
-                id: field(t, "model").unwrap_or_else(|| k[KEY_PREFIX.len()..].to_string()),
-                context_window: match lookup(t, &["context_window"]) {
-                    Some(Val::Num(n)) => n.parse().ok(),
-                    _ => None,
-                },
-                reasoning: match lookup(t, &["supports_reasoning_effort"]) {
-                    Some(Val::Bool(b)) => Some(b),
-                    _ => None,
-                },
+                id: lookup_str(t, &["model"]).unwrap_or_else(|| k[KEY_PREFIX.len()..].to_string()),
+                context_window: count_of(lookup(t, &["context_window"])),
+                reasoning: flag_of(lookup(t, &["supports_reasoning_effort"])),
                 ..Default::default()
             })
             .collect(),
@@ -306,7 +273,7 @@ pub fn secrets(text: &str) -> Vec<String> {
     match crate::toml::get(text, &["model"]).ok().flatten() {
         Some(Val::Obj(ms)) => ms
             .iter()
-            .filter_map(|(_, t)| field(t, "api_key"))
+            .filter_map(|(_, t)| lookup_str(t, &["api_key"]))
             .filter(|k| k != NO_KEY)
             .collect(),
         _ => Vec::new(),

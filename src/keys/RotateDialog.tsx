@@ -7,17 +7,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogConfirm,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { CopyButton } from "@/ui/copy-button";
+import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText } from "@/i18n/core.i18n";
 import type { ClientView, DetectedClient, KeyRotation } from "@/types";
 import { api } from "./api";
 import { errorText } from "./labels";
-import { ConfirmAction, CopyButton, focusSelf, useDialogFocus } from "./parts";
 import { rotateDialogText } from "./RotateDialog.i18n";
 
 /**
@@ -146,9 +148,9 @@ export function RotateDialog({
         </Banner>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{common.cancel}</AlertDialogCancel>
-          <ConfirmAction pending={busy} onConfirm={() => void rotate()}>
+          <AlertDialogConfirm pending={busy} onConfirm={() => void rotate()}>
             {adopted ? t.rotateAndSync : t.rotate}
-          </ConfirmAction>
+          </AlertDialogConfirm>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

@@ -188,11 +188,8 @@ mod imp {
 
     use super::*;
     use crate::dialog;
+    use crate::wide;
     use crate::winreg::plain_path;
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
 
     /// 一个内核对象的句柄，离开作用域就关掉
     pub(super) struct Handle(HANDLE);

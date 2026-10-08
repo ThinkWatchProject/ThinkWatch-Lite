@@ -6,6 +6,9 @@ import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { StatusDot } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
+import { CopyIconButton } from "@/ui/copy-button";
+import { OPENABLE_ROW, openable, stop } from "@/ui/openable";
+import { Tile } from "@/ui/tile";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import type { ClientView, DetectedClient, KnownModel, ManualClient } from "@/types";
@@ -14,7 +17,7 @@ import { keysTableText } from "./KeysTable.i18n";
 import { labelsText } from "./labels.i18n";
 import { routeLabel, scopeLabel, takeoverOf, type KeyOwner } from "./labels";
 import { limitPhrase, resetText } from "./limits";
-import { ClientMark, CopyIconButton, CostCell, OPENABLE_ROW, Tile, UsageCell, openable, stop } from "./parts";
+import { ClientMark, CostCell, UsageCell } from "./parts";
 
 export interface KeyActions {
   edit: (name: string) => void;

@@ -88,6 +88,11 @@ impl Connections {
         }
     }
 
+    /// 这次启动是不是连远程（[`Connections::startup_target`] 是一条远程连接）
+    pub fn starts_remote(&self) -> bool {
+        self.remote(&self.startup_target()).is_some()
+    }
+
     /// 名字有没有被别的连接用掉（大小写不分）。「本机」也算一个名字
     pub fn name_taken(&self, name: &str, except: Option<&str>) -> bool {
         let n = name.trim().to_lowercase();

@@ -920,6 +920,75 @@ pub fn wedged() -> Signal {
     .now()
 }
 
+/// 应用常驻的那个图标在哪：macOS 的菜单栏、Windows 的通知区域、Linux 的系统托盘。
+/// 中文和英文各一份，英文是句中的写法（小写）
+fn tray_place() -> (&'static str, &'static str) {
+    if cfg!(target_os = "macos") {
+        ("菜单栏", "menu bar")
+    } else if cfg!(windows) {
+        ("通知区域", "notification area")
+    } else {
+        ("系统托盘", "system tray")
+    }
+}
+
+/// 启动时那个常驻图标没建起来（[`tray_place`]）。**应用照常跑**：网关、窗口都在，只是少了
+/// 那个入口。原因（系统的原话）只进日志，同 [`wedged`] 那几条：通知在锁屏上也看得见
+pub fn tray_failed() -> Signal {
+    let (zh, _) = tray_place();
+    // 英文标题每个词首字母大写，见模块头上
+    let title_en = if cfg!(target_os = "macos") {
+        "Menu Bar Icon Could Not Be Shown"
+    } else if cfg!(windows) {
+        "Notification Area Icon Could Not Be Shown"
+    } else {
+        "System Tray Icon Could Not Be Shown"
+    };
+    Signal::raised(
+        "startup:tray",
+        Level::Warning,
+        tr!(format!("{zh}图标未能显示"), title_en.to_string()),
+    )
+    .body(
+        tr!(
+            "网关照常运行。窗口关闭后，再次打开应用即可回到主界面。",
+            "The gateway keeps running. After the window is closed, opening the app again brings it back."
+        )
+        .to_string(),
+    )
+    .event()
+}
+
+/// 启动时主窗口没开起来。网关、常驻图标照常，从图标那里可以再开一次
+pub fn window_failed() -> Signal {
+    let (zh, en) = tray_place();
+    Signal::raised(
+        "startup:window",
+        Level::Warning,
+        tr!("主窗口未能打开", "Main Window Could Not Be Opened"),
+    )
+    .body(tr!(
+        format!("网关照常运行。可以从{zh}再次打开主界面。"),
+        format!("The gateway keeps running. The window can be opened again from the {en}.")
+    ))
+    .event()
+}
+
+/// 启动时要先选连接，连接选择却没开起来。这时什么都还没连；常驻图标的「连接」里照样选得了
+pub fn picker_failed() -> Signal {
+    let (zh, en) = tray_place();
+    Signal::raised(
+        "startup:picker",
+        Level::Warning,
+        tr!("连接选择未能打开", "Connection Picker Could Not Be Opened"),
+    )
+    .body(tr!(
+        format!("尚未连接 core。可以在{zh}的「连接」中选择要连接的 core。"),
+        format!("No core is connected yet. One can be chosen under Connection in the {en}.")
+    ))
+    .event()
+}
+
 /// 和远程 core 的连接断了。**只报一次**：总线按键去重，重连的每一次失败都不再说；
 /// 连上之后由 [`remote_back`] 收起
 pub fn remote_lost(name: &str) -> Signal {

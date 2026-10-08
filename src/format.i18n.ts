@@ -1,13 +1,19 @@
 import { messages } from "@/i18n";
 
 /**
- * 额度还有多久重置（`resetIn`）。
+ * `format.ts` 里要说成话的几样。
  *
- * 中文接在「重置」「过期」前面，英文跟在动词后面（resets in 3 h、
- * expires in 4 days）—— 两种语言都要能单独放。
+ * `resetIn`：额度还有多久重置。中文接在「重置」「过期」前面，英文跟在动词后面
+ * （resets in 3 h、expires in 4 days）—— 两种语言都要能单独放。
  */
 export const formatText = messages(
   {
+    /** 一次会话的跨度（`span`） */
+    span: {
+      seconds: (n: number) => `${n} 秒`,
+      minutes: (n: number) => `${n} 分`,
+      hours: (n: string) => `${n} 小时`,
+    },
     resetIn: {
       now: "刚刚",
       underMinute: "1 分钟内",
@@ -17,6 +23,11 @@ export const formatText = messages(
     },
   },
   {
+    span: {
+      seconds: (n: number) => `${n} s`,
+      minutes: (n: number) => `${n} min`,
+      hours: (n: string) => `${n} h`,
+    },
     resetIn: {
       now: "now",
       underMinute: "within 1 min",

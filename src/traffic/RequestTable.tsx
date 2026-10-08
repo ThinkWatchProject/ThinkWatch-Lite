@@ -1,8 +1,21 @@
-import { Fragment, memo, useDeferredValue, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
+import { flushSync } from "react-dom";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
-import { latency, money, statusTone, tokens, when } from "@/format";
+import { latency, money, ms, statusTone, tokens, when } from "@/format";
 import { notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
@@ -12,34 +25,60 @@ import { AliasMark } from "@/aliases/AliasMark";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
-import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
+import type { MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
-import { copyText, DIM, Elapsed, Lines, MENU_REVEAL, NotSentIcon, ROW, RowKeyCell } from "./cells";
-import { sortWithin, type Cursor, type Group } from "./grouping";
+import { copyText } from "@/ui/notify";
+import { DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell } from "./cells";
+import type { Cursor, Group } from "./grouping";
 import { rowMark, type ViaConfig } from "./modelVia";
-import { SessionRow } from "./SessionRow";
+import { SessionRow, SessionSizerCell, sessionItems, sessionWidths } from "./SessionRow";
+import { sessionsText } from "./Sessions.i18n";
+import { RowActions, TableMenus, type MenuTarget } from "./TableMenus";
 import { trafficText } from "./Traffic.i18n";
 import { useViaConfig } from "./useModelVia";
+import { indexAt, itemsOf, offsetsOf, textWidth, widest, type Col, type Item, type Widths } from "./virtual";
 
+type Text = (typeof trafficText)["zh"];
+
+/** 表头的高：排序钮 24px，加「状态」那一格的 `py-1.5`。行上的 `scroll-mt-9` 让出的就是它 */
+const HEAD_PX = 36;
+/** 看得见的那一段上下各多画多高：滚过这一截里的大半才重画一次 */
+const OVERSCAN_PX = 480;
+/** 画着的那一段离看得见的边不到这么多时，重新取一段 */
+const MARGIN_PX = 160;
+/** 第一次量到之前，一行按多高算：一行字的请求行、组头，和片段多出来的那一行 */
+const GUESS = { request: 32.5, session: 32.5, hit: 20 };
+/** 每一列在表头垫几格最宽的（见 `Sizer`） */
+const SIZER_K = 3;
 /**
- * 第一帧先画多少行。**其余的在后台补齐**（`useDeferredValue`）：一进这一页就要
- * 把两千行一次画完的话，切页要卡上一下，淡入的动画也被卡掉了。先画的这些够铺满
- * 一屏还有富余，补齐的那一下发生在视野外。
+ * 浏览器自己会不会稳住滚动位置（`overflow-anchor`）：上面的行换了高度，看着的那一行
+ * 不跟着跳。Chromium（Windows 的 WebView2）会；WebKit 不会，那里自己补（见 `Body`）。
  */
-const FIRST_PAINT = 60;
+const NATIVE_ANCHOR = typeof CSS !== "undefined" && CSS.supports("overflow-anchor", "auto");
+
+/** 键盘选中一行之后，流量页叫它把那一行滚进视野 */
+export type RequestTableHandle = { reveal: (c: Cursor) => void };
 
 /**
  * 流量页那张请求表。
  *
- * 平铺和按会话归组是同一张表的两个形态（`groups` 给了就是归组）。行是 `memo`
- * 的：键盘挪一格只重画离开和到达的两行，一条请求落地只重画那一行；在跑的请求每秒
- * 走一格的已跑时长不经过渲染（见 `Elapsed`）。这要求行对象不被原地修改 ——
+ * 平铺和按会话归组是同一张表的两个形态（`groups` 给了就是归组）。
+ *
+ * **只画看得见的那一段**，上下各多画一截，其余的用两行等高的空行垫着（见 `Body`）。
+ * 列宽靠表头里垫着的每一列最宽的那几格撑住，不随滚动跳（见 `Sizer`）。
+ *
+ * 行是 `memo` 的：键盘挪一格只重画离开和到达的两行，一条请求落地只重画那一行；在跑的
+ * 请求每秒走一格的已跑时长不经过渲染（见 `Elapsed`）。这要求行对象不被原地修改 ——
  * `useRequests` 改一行之前先换成新对象，见那边的 `touches`。
+ *
+ * `scroller` 是外面那层滚动层（流量页自己滚）：画哪一段看它滚到了哪。
  */
 export function RequestTable({
+  ref,
+  scroller,
   rows,
   hits,
   groups,
@@ -60,6 +99,8 @@ export function RequestTable({
   onOpen,
   onFilter,
 }: {
+  ref?: Ref<RequestTableHandle>;
+  scroller: RefObject<HTMLElement | null>;
   rows: RequestRow[];
   /** 按内容搜到的那些各自对上了哪一段：那一行下面跟一行片段 */
   hits?: ReadonlyMap<number, ContentHit>;
@@ -90,10 +131,12 @@ export function RequestTable({
   onFilter: (f: (prev: Filter) => Filter) => void;
 }) {
   const t = useText(trafficText);
-  const shownRows = useDeferredValue(rows, rows.slice(0, FIRST_PAINT));
-  const shownGroups = useDeferredValue(groups, groups?.slice(0, FIRST_PAINT));
+  const ts = useText(sessionsText);
   // 上游那一格的「别名」「指定」要对着现在的别名表和路由看：表头取一次，传给每一行
   const via = useViaConfig();
+  const items = useMemo(() => itemsOf(rows, groups, openGroups), [rows, groups, openGroups]);
+  const sizers = useSizers(items, t, ts, today, via);
+  const sizer = (col: Col) => <Sizer col={col} items={sizers[col]} hints={hints} via={via} today={today} />;
   return (
     <Table
       /*
@@ -130,16 +173,37 @@ export function RequestTable({
       */}
       <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
         <TableRow className="hover:bg-transparent">
-          <Th k="status" label={t.status} sort={sortKey} dir={sortDir} on={onSort} className="py-1.5" />
-          <Th k="time" label={t.time} sort={sortKey} dir={sortDir} on={onSort} />
+          <Th k="status" label={t.status} sort={sortKey} dir={sortDir} on={onSort} className="py-1.5">
+            {sizer("status")}
+          </Th>
+          <Th k="time" label={t.time} sort={sortKey} dir={sortDir} on={onSort}>
+            {sizer("time")}
+          </Th>
           {/* 只有一把密钥时这一列每行都一样 —— 那是零信息 */}
-          {showClient && <TableHead>{t.client}</TableHead>}
-          <TableHead>{t.model}</TableHead>
-          <TableHead>{t.upstream}</TableHead>
+          {showClient && (
+            <TableHead>
+              {t.client}
+              {sizer("client")}
+            </TableHead>
+          )}
+          <TableHead>
+            {t.model}
+            {sizer("model")}
+          </TableHead>
+          <TableHead>
+            {t.upstream}
+            {sizer("upstream")}
+          </TableHead>
           {/* 首 token 和总耗时合成一列，生成速度在它的悬停里 —— 非流式请求没有首 token */}
-          <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
-          <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
-          <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={onSort} className="text-right" />
+          <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
+            {sizer("latency")}
+          </Th>
+          <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
+            {sizer("tokens")}
+          </Th>
+          <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
+            {sizer("cost")}
+          </Th>
           {/* 行尾的「…」：和右键是同一份菜单 */}
           <TableHead className="w-6 px-0!" />
         </TableRow>
@@ -163,15 +227,13 @@ export function RequestTable({
           ]}
         />
       ) : (
-        /*
-          **`RequestRows` 自己就是 `<tbody>`，这里不能再套一层。**
-          套了的话 DOM 里是两个 tbody，外面那个空的 —— 而表头
-          会按那个空的算列宽，于是表头和表体的列完全对不上。
-        */
-        <RequestRows
-          rows={shownRows}
+        <Body
+          handle={ref}
+          scroller={scroller}
+          items={items}
+          rows={rows}
+          groups={groups}
           hits={hits}
-          groups={shownGroups}
           openGroups={openGroups}
           showClient={showClient}
           hints={hints}
@@ -199,6 +261,7 @@ function Th({
   dir,
   on,
   className = "",
+  children,
 }: {
   k: SortKey;
   label: string;
@@ -206,6 +269,8 @@ function Th({
   dir: SortDir;
   on: (k: SortKey) => void;
   className?: string;
+  /** 量列宽的那一块（`Sizer`） */
+  children?: ReactNode;
 }) {
   const active = sort === k;
   return (
@@ -216,8 +281,132 @@ function Th({
           {active ? (dir === "asc" ? "↑" : "↓") : ""}
         </span>
       </Button>
+      {children}
     </TableHead>
   );
+}
+
+/**
+ * 表头里垫的一块：这一列最宽的那几格，原样画出来，看不见、零高、点不到。
+ *
+ * **为什么要垫。**表格按内容定列宽，而只画一段的表只有画出来的那几十行在算：往下一滚，
+ * 进来一个长一点的模型名，整张表的列就往右一跳。表头一直都在，垫在它里面的格子一直
+ * 参与列宽 —— 每一列最宽的那几格都在，列宽就和整张表都画出来时一样，滚到哪都不动。
+ *
+ * 哪几格最宽是按字数估的（`useSizers`），每列取前三名，估差一点也落在里面；画的是和
+ * 行里一样的那一格（同一个组件），量出来的宽度就是真的。组头的字是中粗，请求行是常规；
+ * 组里的请求行第一格往里缩了 22px（`pl-7`），这里照样缩。上游那一格会折行，量它最窄
+ * 能收到多窄时也要能折。
+ */
+function Sizer({
+  col,
+  items,
+  hints,
+  via,
+  today,
+}: {
+  col: Col;
+  items: Item[];
+  hints: boolean;
+  via: ViaConfig | null;
+  today: number;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div aria-hidden inert className="invisible h-0 overflow-hidden">
+      {items.map((it) =>
+        it.kind === "session" ? (
+          <div key={it.key} className="font-medium">
+            <SessionSizerCell col={col} g={it.g} hints={hints} />
+          </div>
+        ) : (
+          <div
+            key={it.key}
+            className={cn(
+              "font-normal",
+              col === "upstream" && "whitespace-normal",
+              col === "status" && it.inGroup !== null && "pl-[22px]",
+            )}
+          >
+            {requestCell(col, it.r, { hints, via, today })}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+const COLS: Col[] = ["status", "time", "client", "model", "upstream", "latency", "tokens", "cost"];
+
+/**
+ * 每一列垫哪几项：按 `requestWidths` / `sessionWidths` 估出的宽度取前几名。上游那一列
+ * 两样都要：最宽的（一行写下时）和最窄能收到最宽的（窗口窄、它折行时）。
+ *
+ * 估宽按行对象记下（行对象不被原地修改，见 `RequestTable`）：来一条请求只估那一条。
+ * 换了语言、过了零点、换了别名表时整份重估。
+ */
+function useSizers(items: Item[], t: Text, ts: (typeof sessionsText)["zh"], today: number, via: ViaConfig | null) {
+  const cache = useMemo(() => {
+    void [t, ts, today, via];
+    return new WeakMap<object, Widths>();
+  }, [t, ts, today, via]);
+  return useMemo(() => {
+    const w = (it: Item): Widths => {
+      const obj = it.kind === "request" ? it.r : it.g;
+      let x = cache.get(obj);
+      if (!x) {
+        x = it.kind === "request" ? requestWidths(it.r, t, today, via) : sessionWidths(it.g, ts);
+        cache.set(obj, x);
+      }
+      return x;
+    };
+    // 组里的请求行第一格往里缩了 22px，按三个字宽算
+    const width = (col: Col | "upstreamMin") => (i: number) => {
+      const it = items[i]!;
+      return w(it)[col] + (col === "status" && it.kind === "request" && it.inGroup !== null ? 3 : 0);
+    };
+    const pick = (col: Col | "upstreamMin") => widest(items.length, SIZER_K, width(col));
+    const out = {} as Record<Col, Item[]>;
+    for (const col of COLS) {
+      const idx = col === "upstream" ? [...new Set([...pick("upstream"), ...pick("upstreamMin")])] : pick(col);
+      out[col] = idx.map((i) => items[i]!);
+    }
+    return out;
+  }, [items, cache, t, ts, today, via]);
+}
+
+/** 请求行各列大约多宽：和 `requestCell` 写的是同样的字；图标、徽标的边距按一两个字宽算 */
+function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | null): Widths {
+  const sent = notSent(r);
+  const mark = rowMark(r, via);
+  const text = sent ? notSentText(sent) : r.local || r.provider ? upstreamText(r) : "—";
+  const name = textWidth(text) + 3;
+  // 本地应答、没有发往上游的那一句可以在词间折行（见 `UpstreamCell`）：最窄是最长的那个词
+  const nameMin = r.local || sent ? Math.max(...text.split(/\s+/).map(textWidth)) + 3 : name;
+  const badges = [
+    ...(mark ? [textWidth(t.pinned) + 1] : []),
+    ...(r.secrets && r.secrets.items.length > 0
+      ? [textWidth((r.secrets.replaced ? t.redacted : t.withSecrets)(r.secrets.items.reduce((a, x) => a + x.count, 0))) + 2]
+      : []),
+    ...(r.stripped && r.stripped.length > 0 ? [textWidth(t.stripped) + 2] : []),
+    ...(r.translated
+      ? [textWidth(r.translated.dropped.length > 0 ? t.convertedDropped(r.translated.dropped.length) : t.converted) + 2]
+      : []),
+    ...(r.flagged && r.flagged.length > 0 ? [textWidth(r.flagged.some((f) => f.blocked) ? t.blocked : t.suspicious) + 2] : []),
+    ...(r.pluginChanged ? [textWidth(t.pluginChanged) + 2] : []),
+  ];
+  return {
+    status: 2 + textWidth(statusText(r, t)),
+    time: textWidth(when(r.atMs, today)),
+    client: Math.min(textWidth(r.client), 24) + (r.peer ? 2 : 0),
+    model: Math.min(textWidth(r.model ?? "—"), 32),
+    upstream: badges.reduce((a, b) => a + b + 1, name),
+    upstreamMin: Math.max(nameMin, ...badges),
+    // 在跑的：首 token 加上一个时钟（「0:42」）
+    latency: r.state === "in_flight" ? (r.ttftMs != null ? String(r.ttftMs).length + 1 : 0) + 4 : textWidth(latency(r.ttftMs, r.durationMs)),
+    tokens: textWidth(tokens(promptTokens(r), r.outputTokens)),
+    cost: textWidth(money(r.costMicros, r.costEstimated)),
+  };
 }
 
 /**
@@ -255,6 +444,14 @@ function BodySkeleton({ widths }: { widths: string[] }) {
   );
 }
 
+/** 一行在表里的标识：和 `itemsOf` 给的 `key` 一样。片段行、垫着的空行不是一项 */
+function keyOf(tr: Element): string | null {
+  const d = (tr as HTMLElement).dataset;
+  if (d.row) return `r${d.row}`;
+  if (d.session !== undefined) return `s${d.session}`;
+  return null;
+}
+
 /**
  * 表体。**平铺和归组是同一张表的两个形态，不是两张表。**
  *
@@ -265,13 +462,24 @@ function BodySkeleton({ widths }: { widths: string[] }) {
  * 上，归组只是把同一批行重新摆一遍。**组与组之间沿用表头的排序，组内
  * 永远按时间正序** —— 一次任务的第 1 轮到第 47 轮是有顺序的。
  *
- * 键盘按 `lines`（grouping.ts）给出的顺序走，那是照着这里的摆法写的：这里
+ * 键盘按 `lines`（grouping.ts）给出的顺序走，那是照着 `itemsOf` 的摆法写的：这里
  * 改了怎么摆，那边要跟着改。
+ *
+ * **只画看得见的那一段。**画哪一段记的是一个高度范围（`region`，表体里从上往下量），
+ * 每一项多高量过就用量到的（`sizes`），没量过的按 `GUESS` 算；范围外的用上下两行空行
+ * 垫出同样的高度，滚动条的长短、位置和整张表都画出来时一样。滚动时只在画着的那一段
+ * 快要露底时才重新取一段，取的时候当场画（`flushSync`），快速滚动也不露出空白。
+ *
+ * 往上滚时，上面新画出来的行要是和估的不一样高，下面看着的那一行会跟着跳一下：
+ * Chromium 自己会补（`overflow-anchor`），WebKit 不会，这里按差多少把滚动位置挪回去。
  */
-function RequestRows({
+function Body({
+  handle,
+  scroller,
+  items,
   rows,
-  hits,
   groups,
+  hits,
   openGroups,
   showClient,
   hints,
@@ -287,9 +495,12 @@ function RequestRows({
   onToggleGroup,
   onOpenSession,
 }: {
+  handle?: Ref<RequestTableHandle>;
+  scroller: RefObject<HTMLElement | null>;
+  items: Item[];
   rows: RequestRow[];
-  hits?: ReadonlyMap<number, ContentHit>;
   groups?: Group[];
+  hits?: ReadonlyMap<number, ContentHit>;
   openGroups: ReadonlySet<string>;
   showClient: boolean;
   hints: boolean;
@@ -305,71 +516,298 @@ function RequestRows({
   onToggleGroup: (id: string) => void;
   onOpenSession: (id: string) => void;
 }) {
-  const atRow = cursor?.kind === "request" ? cursor.id : null;
-  const atHead = cursor?.kind === "session" ? cursor.id : null;
-  /**
-   * 一条请求一行。**「上一行」是屏幕上的上一行，不是数组里的前一个**：归组之后
-   * 上一行可能是组头，也可能是另一个会话的最后一条 —— 拿下标去原数组里回看会把
-   * 相邻的两组连起来，而那几列（密钥、模型、上游）正是靠「和上一行相同就压暗」
-   * 来减噪的。
-   */
-  const one = (r: RequestRow, prev: RequestRow | undefined, inGroup: "open" | null) => (
-    <Row
-      key={r.id}
-      r={r}
-      hit={hits?.get(r.id)}
-      sameClient={prev !== undefined && clientKey(prev) === clientKey(r)}
-      sameModel={prev !== undefined && (prev.model ?? "") === (r.model ?? "")}
-      sameProvider={prev !== undefined && upstreamText(prev) === upstreamText(r)}
-      showClient={showClient}
-      hints={hints}
-      via={via}
-      today={today}
-      selected={atRow === r.id}
-      fresh={fresh.has(r.id)}
-      inGroup={inGroup}
-      onOpen={onOpen}
-      onCursor={onCursor}
-      onFilter={onFilter}
-    />
+  const t = useText(trafficText);
+  const ts = useText(sessionsText);
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  /** 量过的每一项的高度，按 `key` 记 */
+  const sizes = useRef(new Map<string, number>());
+  /** 还没量过的按多高算。每一种第一次量到时换成量到的 */
+  const guess = useRef({ ...GUESS, learned: new Set<keyof typeof GUESS>() });
+  /** 量到的高度变了：重算每一项的位置 */
+  const [measured, setMeasured] = useState(0);
+  const [region, setRegion] = useState({ top: 0, bottom: 1200 + OVERSCAN_PX });
+
+  const estimate = useCallback(
+    (it: Item) => {
+      const g = guess.current;
+      return it.kind === "session" ? g.session : g.request + (hits?.has(it.r.id) ? g.hit : 0);
+    },
+    [hits],
+  );
+  const offsets = useMemo(() => {
+    void measured;
+    return offsetsOf(items.length, (i) => sizes.current.get(items[i]!.key) ?? estimate(items[i]!));
+  }, [items, estimate, measured]);
+  const start = indexAt(offsets, region.top);
+  const end = items.length === 0 ? 0 : indexAt(offsets, region.bottom) + 1;
+
+  // 事件里要读的最新一版：滚动、量高度、键盘都在渲染之外
+  const live = useRef({ items, offsets, start, end, estimate });
+  useLayoutEffect(() => {
+    live.current = { items, offsets, start, end, estimate };
+  });
+
+  /** 看得见的那一段，在表体里从上往下量 */
+  const view = useCallback(() => {
+    const s = scroller.current;
+    const b = bodyRef.current;
+    if (!s || !b) return null;
+    const top = s.getBoundingClientRect().top - b.getBoundingClientRect().top;
+    return { top, bottom: top + s.clientHeight };
+  }, [scroller]);
+
+  /** 画着的那一段还罩得住看得见的那一段（上下各留一截）吗？罩不住就重新取一段 */
+  const check = useCallback(
+    (now: boolean) => {
+      const v = view();
+      if (!v) return;
+      const { items, offsets, start, end } = live.current;
+      const covered =
+        (start === 0 || offsets[start]! <= v.top - MARGIN_PX) &&
+        (end >= items.length || offsets[end]! >= v.bottom + MARGIN_PX);
+      if (covered) return;
+      const next = { top: v.top - OVERSCAN_PX, bottom: v.bottom + OVERSCAN_PX };
+      if (now) flushSync(() => setRegion(next));
+      else setRegion(next);
+    },
+    [view],
   );
 
-  if (!groups) {
-    return <TableBody>{rows.map((r, i) => one(r, rows[i - 1], null))}</TableBody>;
-  }
+  /*
+    每画完一次：量一遍画出来的每一项，再看画着的那一段够不够。
 
-  return (
-    <TableBody>
-      {groups.map((g) => {
-        // 无主的请求没有组头 —— 把它们凑成一组等于声称它们属于同一次任务
-        if (g.id === null) {
-          const r = g.rows[0];
-          return r ? one(r, undefined, null) : null;
+    一项的高是它和下一项上沿的差（片段行算在它上面那一项里），最后一项量到下面垫着的
+    空行、或者表体的底。合并边框的表里行的矩形和边框怎么分说不清，按上沿相减不会错。
+  */
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    const s = scroller.current;
+    // 没在显示（窗口藏起来时某些引擎量出来全是 0）：不量，量到的 0 会把位置全算错
+    if (!body || !s || s.clientHeight === 0) return;
+    const { items, start } = live.current;
+    const viewTop = s.getBoundingClientRect().top;
+    const byKey = new Map<string, Item>();
+    for (let i = start; i < live.current.end; i++) byKey.set(items[i]!.key, items[i]!);
+    const found: { it: Item; top: number; h: number }[] = [];
+    let open: { it: Item; top: number } | null = null;
+    const close = (top: number) => {
+      if (open) found.push({ ...open, h: top - open.top });
+      open = null;
+    };
+    for (const tr of body.children) {
+      const k = keyOf(tr);
+      if (k === null && (tr as HTMLElement).dataset.spacer === undefined) continue;
+      const top = tr.getBoundingClientRect().top;
+      close(top);
+      const it = k === null ? undefined : byKey.get(k);
+      if (it) open = { it, top };
+    }
+    close(body.getBoundingClientRect().bottom);
+
+    const g = guess.current;
+    const kindOf = (it: Item) => (it.kind === "session" ? "session" : hits?.has(it.r.id) ? "hit" : "request");
+    let changed = false;
+    /*
+      WebKit 不会自己稳住滚动位置：上面没画出来的那些按估的高垫着，估的一变、或者新画出来
+      的和估的不一样高，看着的那一行就跟着跳。差多少，把滚动位置挪多少。
+    */
+    let shift = 0;
+    for (const { it, top, h } of found) {
+      const old = sizes.current.get(it.key);
+      if (old !== undefined && Math.abs(old - h) < 0.5) continue;
+      if (old === undefined && !NATIVE_ANCHOR && top + h <= viewTop) shift += h - live.current.estimate(it);
+      sizes.current.set(it.key, h);
+      changed = true;
+    }
+    /*
+      第一次量到某一种（攒够三个）：取中位数 —— 多数行是一行字，折了行的更高，表里第一行
+      和最后一行各差半个、一个像素的边框。
+    */
+    for (const kind of ["request", "session", "hit"] as const) {
+      if (g.learned.has(kind) || (kind === "hit" && !g.learned.has("request"))) continue;
+      const hs = found.flatMap(({ it, h }) => (kindOf(it) === kind ? [kind === "hit" ? h - g.request : h] : []));
+      if (hs.length < 3) continue;
+      const was = g[kind];
+      g[kind] = hs.sort((a, b) => a - b)[hs.length >> 1]!;
+      g.learned.add(kind);
+      changed = true;
+      if (!NATIVE_ANCHOR)
+        for (let i = 0; i < start; i++) {
+          const it = items[i]!;
+          if (!sizes.current.has(it.key) && kindOf(it) === kind) shift += g[kind] - was;
         }
-        const id = g.id;
-        const open = openGroups.has(id);
-        const inside = open ? sortWithin(g) : [];
-        return (
-          <Fragment key={id}>
+    }
+    // 不在表里的项不再留着：攒到比表里多出一倍时清一次
+    if (sizes.current.size > 2 * items.length + 200) {
+      const keep = new Set(items.map((it) => it.key));
+      for (const k of sizes.current.keys()) if (!keep.has(k)) sizes.current.delete(k);
+    }
+    if (shift !== 0) s.scrollTop += shift;
+    if (changed) setMeasured((n) => n + 1);
+    else check(false);
+  });
+
+  useEffect(() => {
+    const s = scroller.current;
+    if (!s) return;
+    const onScroll = () => check(true);
+    s.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => check(false));
+    ro.observe(s);
+    return () => {
+      s.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [scroller, check]);
+
+  useImperativeHandle(
+    handle,
+    () => ({
+      /*
+        **选中的那一行要一直看得见。**只滚刚好够的距离（`nearest`）；让开吸顶的表头、
+        不横着滚，靠的是行上的 scroll-margin，见 `RequestTable`。
+
+        那一行可能还没画出来（滚到别处去了，再按方向键）：先按算出来的位置滚到它刚好
+        露出来，当场画出那一段，再交给 `scrollIntoView` 按真的位置收尾。
+      */
+      reveal(c) {
+        const body = bodyRef.current;
+        const s = scroller.current;
+        if (!body || !s) return;
+        const sel = c.kind === "request" ? `[data-row="${c.id}"]` : `[data-session="${CSS.escape(c.id)}"]`;
+        let el = body.querySelector(sel);
+        if (!el) {
+          const { items, offsets } = live.current;
+          const i = items.findIndex((it) => it.key === (c.kind === "request" ? `r${c.id}` : `s${c.id}`));
+          const v = view();
+          // 折起来的组里的那一条不在表里，和原来一样不滚
+          if (i < 0 || !v) return;
+          if (offsets[i]! - HEAD_PX < v.top) s.scrollTop += offsets[i]! - HEAD_PX - v.top;
+          else s.scrollTop += offsets[i + 1]! - v.bottom;
+          const w = view();
+          if (w) flushSync(() => setRegion({ top: w.top - OVERSCAN_PX, bottom: w.bottom + OVERSCAN_PX }));
+          el = body.querySelector(sel);
+        }
+        el?.scrollIntoView({ block: "nearest" });
+      },
+    }),
+    [scroller, view],
+  );
+
+  /*
+    右键和行尾「…」的条目。整张表共用一份菜单（`TableMenus`），打开时按点中的那一行填。
+    那一行已经不在表里了（被筛掉、被挤出上限）就不开。
+  */
+  const itemsFor = (m: MenuTarget): MenuItems | null => {
+    if (m.kind === "request") {
+      const r = rows.find((x) => x.id === m.id);
+      return r ? requestItems(r, t, showClient, onOpen, onFilter) : null;
+    }
+    const g = groups?.find((x) => x.id === m.id);
+    if (!g) return null;
+    return sessionItems(m.id, openGroups.has(m.id), ts, {
+      openIt: () => {
+        onCursor({ kind: "session", id: m.id });
+        onOpenSession(m.id);
+      },
+      toggle: () => onToggleGroup(m.id),
+    });
+  };
+
+  const opened = useJustOpened(openGroups);
+  const atRow = cursor?.kind === "request" ? cursor.id : null;
+  const atHead = cursor?.kind === "session" ? cursor.id : null;
+  const cols = showClient ? 9 : 8;
+  const above = offsets[start] ?? 0;
+  const below = (offsets[items.length] ?? 0) - (offsets[end] ?? 0);
+  return (
+    <TableMenus itemsFor={itemsFor}>
+      {/*
+        **`Body` 自己就是 `<tbody>`，外面不能再套一层。**套了的话 DOM 里是两个 tbody，
+        外面那个空的 —— 而表头会按那个空的算列宽，于是表头和表体的列完全对不上。
+      */}
+      <TableBody ref={bodyRef}>
+        {above > 0 && <Spacer height={above} cols={cols} />}
+        {items.slice(start, end).map((it) =>
+          it.kind === "request" ? (
+            /*
+              **「上一行」是屏幕上的上一行，不是数组里的前一个**：归组之后上一行可能是
+              组头，也可能是另一个会话的最后一条 —— 拿下标去原数组里回看会把相邻的两组
+              连起来，而那几列（密钥、模型、上游）正是靠「和上一行相同就压暗」来减噪的。
+            */
+            <Row
+              key={it.key}
+              r={it.r}
+              hit={hits?.get(it.r.id)}
+              sameClient={it.prev !== undefined && clientKey(it.prev) === clientKey(it.r)}
+              sameModel={it.prev !== undefined && (it.prev.model ?? "") === (it.r.model ?? "")}
+              sameProvider={it.prev !== undefined && upstreamText(it.prev) === upstreamText(it.r)}
+              showClient={showClient}
+              hints={hints}
+              via={via}
+              today={today}
+              selected={atRow === it.r.id}
+              fresh={fresh.has(it.r.id)}
+              inGroup={it.inGroup !== null}
+              fading={it.inGroup !== null && opened.has(it.inGroup)}
+              onOpen={onOpen}
+              onCursor={onCursor}
+            />
+          ) : (
             <SessionRow
-              g={g}
-              open={open}
+              key={it.key}
+              g={it.g}
+              open={it.open}
               showClient={showClient}
               hints={hints}
               // 右边开着的那次会话，或者键盘停在这个组头上
-              selected={selectedSession === id || atHead === id}
-              fresh={freshGroups.has(id)}
+              selected={selectedSession === it.g.id || atHead === it.g.id}
+              fresh={it.g.id !== null && freshGroups.has(it.g.id)}
               onToggle={onToggleGroup}
               onOpen={onOpenSession}
               onCursor={onCursor}
             />
-            {inside.map((r, i) => one(r, inside[i - 1], "open"))}
-          </Fragment>
-        );
-      })}
-    </TableBody>
+          ),
+        )}
+        {below > 0 && <Spacer height={below} cols={cols} />}
+      </TableBody>
+    </TableMenus>
   );
 }
+
+/**
+ * 没画出来的那些行占的高度。不当滚动的锚点（`overflow-anchor: none`）：Chromium 稳住
+ * 滚动位置时要盯着一行真的行，盯着它的话，换一段画它一变高，看着的行反而跳了。
+ */
+function Spacer({ height, cols }: { height: number; cols: number }) {
+  return (
+    <tr aria-hidden data-spacer="" className="border-b border-border/60 [overflow-anchor:none]" style={{ height }}>
+      <td colSpan={cols} className="p-0" />
+    </tr>
+  );
+}
+
+/** 「刚展开」算多久：和 `motion-fade` 一样长，多留一点 */
+const OPENED_MS = 300;
+
+/**
+ * 刚展开的那几个组。**组里的行只在展开的那一下淡入**：之后滚进视野的行是重新画出来的，
+ * 不是刚出现的，再淡一次就是一路滚一路闪。
+ *
+ * 在渲染时比上一次的展开集合：放到 effect 里的话，展开后的第一帧行已经画出来了，下一帧
+ * 才挂上淡入，等于先闪一下再淡入。
+ */
+function useJustOpened(open: ReadonlySet<string>): ReadonlySet<string> {
+  const last = useRef(open);
+  const fresh = useRef<{ ids: ReadonlySet<string>; at: number }>({ ids: new Set(), at: 0 });
+  if (last.current !== open) {
+    const prev = last.current;
+    fresh.current = { ids: new Set([...open].filter((id) => !prev.has(id))), at: Date.now() };
+    last.current = open;
+  }
+  return Date.now() - fresh.current.at < OPENED_MS ? fresh.current.ids : NONE;
+}
+const NONE: ReadonlySet<string> = new Set();
 
 /** 密钥那一格比的是这几样：密钥、推测的应用、来源 */
 const clientKey = (x: RequestRow) => `${x.client}|${x.keyMasked ?? ""}|${x.hint ?? ""}|${x.peer ?? ""}`;
@@ -383,49 +821,15 @@ const TONE: Record<ReturnType<typeof statusTone>, StatusTone> = {
   ok: "ok",
 };
 
-/**
- * 一条请求，一行。`memo`：属性不变就不重画，见 `RequestTable` 的注释。
- */
-const Row = memo(function Row({
-  r,
-  hit,
-  sameClient,
-  sameModel,
-  sameProvider,
-  showClient,
-  hints,
-  via,
-  today,
-  selected,
-  fresh,
-  inGroup,
-  onOpen,
-  onCursor,
-  onFilter,
-}: {
-  r: RequestRow;
-  /** 按内容搜到的：对上的那一段，在这一行下面另起一行 */
-  hit?: ContentHit;
-  sameClient: boolean;
-  sameModel: boolean;
-  sameProvider: boolean;
-  showClient: boolean;
-  hints: boolean;
-  /** 对「别名」「指定」用的配置（见 `modelVia.ts`）。换了一版配置每一行重画一次 */
-  via: ViaConfig | null;
-  today: number;
-  selected: boolean;
-  fresh: boolean;
-  /** 在一个展开了的组里：往里缩一格，它属于上面那个组头；展开时淡入 */
-  inGroup: "open" | null;
-  onOpen: (id: number) => void;
-  onCursor: (c: Cursor) => void;
-  onFilter: (f: (prev: Filter) => Filter) => void;
-}) {
-  const t = useText(trafficText);
-  const copy = copyText;
-  // 右键和行尾的「…」共用这一份
-  const items: MenuItems = [
+/** 一条请求的菜单条目：右键和行尾的「…」共用这一份 */
+function requestItems(
+  r: RequestRow,
+  t: Text,
+  showClient: boolean,
+  onOpen: (id: number) => void,
+  onFilter: (f: (prev: Filter) => Filter) => void,
+): MenuItems {
+  return [
     { kind: "item", label: t.openDetails, onSelect: () => onOpen(r.id) },
     { kind: "sep" },
     // **按这一行的值筛，不是打开一个筛选器。**排查时的动作是「这一个上游的」
@@ -442,12 +846,12 @@ const Row = memo(function Row({
         ] as const)
       : []),
     { kind: "sep" },
-    { kind: "item", label: t.copyId, onSelect: () => void copy(String(r.id)) },
+    { kind: "item", label: t.copyId, onSelect: () => void copyText(String(r.id)) },
     {
       kind: "item",
       label: t.copyRow,
       onSelect: () =>
-        void copy(
+        void copyText(
           [
             new Date(r.atMs).toLocaleString(),
             r.client,
@@ -465,103 +869,155 @@ const Row = memo(function Row({
         ),
     },
   ];
+}
+
+/** 一行的一格里画什么。行自己和表头量列宽的那一块（`Sizer`）都用它 */
+function requestCell(col: Col, r: RequestRow, c: { hints: boolean; via: ViaConfig | null; today: number }): ReactNode {
+  switch (col) {
+    case "status":
+      return <StatusCell r={r} />;
+    case "time":
+      return (
+        <Tip lazy text={new Date(r.atMs).toLocaleString()}>
+          <span>{when(r.atMs, c.today)}</span>
+        </Tip>
+      );
+    case "client":
+      return <RowKeyCell r={r} hints={c.hints} />;
+    case "model":
+      return (
+        // 截断要套在里面一层：`max-width` 加在 td 上会被表格自己的列宽算法吃掉，长名字照样把这一列撑开
+        <div className="max-w-[13rem] truncate" title={r.model}>
+          {r.model ?? "—"}
+        </div>
+      );
+    case "upstream":
+      return <UpstreamCell r={r} via={c.via} />;
+    case "latency":
+      return r.state === "in_flight" ? <Running r={r} /> : <LatencyCell r={r} />;
+    case "tokens":
+      return <TokensCell r={r} />;
+    case "cost":
+      return <CostCell r={r} />;
+  }
+}
+
+/**
+ * 一条请求，一行。`memo`：属性不变就不重画，见 `RequestTable` 的注释。
+ */
+const Row = memo(function Row({
+  r,
+  hit,
+  sameClient,
+  sameModel,
+  sameProvider,
+  showClient,
+  hints,
+  via,
+  today,
+  selected,
+  fresh,
+  inGroup,
+  fading,
+  onOpen,
+  onCursor,
+}: {
+  r: RequestRow;
+  /** 按内容搜到的：对上的那一段，在这一行下面另起一行 */
+  hit?: ContentHit;
+  sameClient: boolean;
+  sameModel: boolean;
+  sameProvider: boolean;
+  showClient: boolean;
+  hints: boolean;
+  /** 对「别名」「指定」用的配置（见 `modelVia.ts`）。换了一版配置每一行重画一次 */
+  via: ViaConfig | null;
+  today: number;
+  selected: boolean;
+  fresh: boolean;
+  /** 在一个展开了的组里：往里缩一格，它属于上面那个组头 */
+  inGroup: boolean;
+  /** 它的组刚展开：淡入（见 `useJustOpened`） */
+  fading: boolean;
+  onOpen: (id: number) => void;
+  onCursor: (c: Cursor) => void;
+}) {
+  const t = useText(trafficText);
+  const c = { hints, via, today };
   // 点一行和键盘选中一行是同一件事：之后的方向键从这一行接着走
   const activate = () => {
     onCursor({ kind: "request", id: r.id });
     onOpen(r.id);
   };
   const row = (
-    <RowMenu items={items}>
-      <TableRow
-        data-row={r.id}
-        data-state={selected ? "selected" : undefined}
-        aria-selected={selected}
-        onClick={activate}
-        className={cn(
-          ROW,
-          fresh ? "motion-row-in" : inGroup === "open" && "motion-fade",
-          inGroup && "[&>td:first-child]:pl-7",
-          // 下面跟着片段那一行：分隔线画在片段下面，悬停到片段上时这一行也亮
-          hit && "border-b-0 [&:has(+tr:hover)]:bg-foreground/[0.035]",
-        )}
-      >
-        {/*
-          状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
-          眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
-        */}
-        <TableCell>
-          <StatusCell r={r} />
-        </TableCell>
-        {/*
-          时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
-          看昨天那次时，整列全是「1d」，而这一列的用途就是把
-          某一行对上号。完整的日期和时间留给悬停。
-        */}
-        <TableCell className="text-muted-foreground">
-          <Tip text={new Date(r.atMs).toLocaleString()}>
-            <span>{when(r.atMs, today)}</span>
-          </Tip>
-        </TableCell>
-        {showClient && (
-          <TableCell className={cn(sameClient && DIM)}>
-            <RowKeyCell r={r} hints={hints} />
-          </TableCell>
-        )}
-        {/*
-          模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
-          连着发的两次请求，差别往往只在这里。
-        */}
-        <TableCell className={cn(sameModel && DIM)}>
-          {/* 截断要套在里面一层：`max-width` 加在 td 上会被表格
-              自己的列宽算法吃掉，长名字照样把这一列撑开 */}
-          <div className="max-w-[13rem] truncate" title={r.model}>
-            {r.model ?? "—"}
-          </div>
-        </TableCell>
-        <TableCell className={cn("whitespace-normal", sameProvider && DIM)}>
-          <UpstreamCell r={r} via={via} />
-        </TableCell>
-        {/*
-          数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
-          扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
-          扫出极值。
-        */}
-        <TableCell className="text-right">
-          {r.state === "in_flight" ? <Running r={r} /> : <LatencyCell r={r} />}
-        </TableCell>
-        <TableCell className="text-right text-muted-foreground">
-          <TokensCell r={r} />
-        </TableCell>
-        <TableCell className="text-right">
-          <CostCell r={r} />
-        </TableCell>
-        {/*
-          **点「…」不能连带打开这一行。**按钮上的点击会冒泡到行上，行一收到
-          就去开详情，菜单和抽屉会一起出来。只在悬停、选中、菜单开着时出现：
-          两千行各带一个常亮的「…」，整列就是一道噪点。Tab 也只停在选中的那一
-          行的「…」上（方向键挑行，Tab 进到它的菜单）。
-        */}
-        <TableCell className="w-6 px-0! py-0 text-center" onClick={(e) => e.stopPropagation()}>
-          <span className={MENU_REVEAL}>
-            <RowMenuButton items={items} label={t.rowActions(r.id)} tabIndex={selected ? 0 : -1} />
-          </span>
-        </TableCell>
-      </TableRow>
-    </RowMenu>
+    <TableRow
+      data-row={r.id}
+      data-state={selected ? "selected" : undefined}
+      aria-selected={selected}
+      onClick={activate}
+      className={cn(
+        ROW,
+        fresh ? "motion-row-in" : fading && "motion-fade",
+        inGroup && "[&>td:first-child]:pl-7",
+        // 下面跟着片段那一行：分隔线画在片段下面，悬停到片段上时这一行也亮
+        hit && "border-b-0 [&:has(+tr:hover)]:bg-foreground/[0.035]",
+      )}
+    >
+      {/*
+        状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
+        眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
+      */}
+      <TableCell>{requestCell("status", r, c)}</TableCell>
+      {/*
+        时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
+        看昨天那次时，整列全是「1d」，而这一列的用途就是把
+        某一行对上号。完整的日期和时间留给悬停。
+      */}
+      <TableCell className="text-muted-foreground">{requestCell("time", r, c)}</TableCell>
+      {showClient && <TableCell className={cn(sameClient && DIM)}>{requestCell("client", r, c)}</TableCell>}
+      {/*
+        模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
+        连着发的两次请求，差别往往只在这里。
+      */}
+      <TableCell className={cn(sameModel && DIM)}>{requestCell("model", r, c)}</TableCell>
+      <TableCell className={cn("whitespace-normal", sameProvider && DIM)}>{requestCell("upstream", r, c)}</TableCell>
+      {/*
+        数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
+        扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
+        扫出极值。
+      */}
+      <TableCell className="text-right">{requestCell("latency", r, c)}</TableCell>
+      <TableCell className="text-right text-muted-foreground">{requestCell("tokens", r, c)}</TableCell>
+      <TableCell className="text-right">{requestCell("cost", r, c)}</TableCell>
+      {/*
+        **点「…」不能连带打开这一行。**按钮上的点击会冒泡到行上，行一收到
+        就去开详情，菜单和抽屉会一起出来。只在悬停、选中、菜单开着时出现：
+        两千行各带一个常亮的「…」，整列就是一道噪点。
+      */}
+      <TableCell className="w-6 px-0! py-0 text-center" onClick={(e) => e.stopPropagation()}>
+        <RowActions target={{ kind: "request", id: r.id }} label={t.rowActions(r.id)} selected={selected} />
+      </TableCell>
+    </TableRow>
   );
   if (!hit) return row;
   /*
     **片段另起一行，跨过状态以外的各列。**放进哪一格里都太窄（模型一格最宽 13rem），
     而这一段话正是按内容搜索的人要看的。它不是表里的一行请求：没有 `data-row`，键盘
-    不停在它上面；点它和点上面那一行一样。
+    不停在它上面；点它、右键它和点上面那一行一样。字可以选（行上的字不能选：整张表体
+    是右键菜单的触发器）。
   */
   return (
     <>
       {row}
       <TableRow
+        data-hit={r.id}
         data-state={selected ? "selected" : undefined}
         onClick={activate}
-        className={cn(ROW, "[tr:hover+&]:bg-foreground/[0.035]", fresh ? "motion-row-in" : inGroup === "open" && "motion-fade")}
+        className={cn(
+          ROW,
+          "select-text [tr:hover+&]:bg-foreground/[0.035]",
+          fresh ? "motion-row-in" : fading && "motion-fade",
+        )}
       >
         <TableCell className="pt-0" />
         <TableCell colSpan={showClient ? 8 : 7} className="pt-0 pb-2">
@@ -618,9 +1074,9 @@ function LatencyCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
   const text = latency(r.ttftMs, r.durationMs);
   if (r.ttftMs == null || r.durationMs == null) return <>{text}</>;
-  const ms = (n: number) => `${n.toLocaleString()}ms`;
   return (
     <Tip
+      lazy
       text={
         <Lines
           lines={t.latencyTip(
@@ -637,6 +1093,14 @@ function LatencyCell({ r }: { r: RequestRow }) {
   );
 }
 
+/** 状态那一格的字：在跑的写状态码（响应头到了才有），失败、取消写成字 */
+function statusText(r: RequestRow, t: Text): string {
+  if (r.state === "in_flight") return r.status != null ? String(r.status) : "…";
+  if (r.state === "failed") return t.failed;
+  if (r.state === "cancelled") return t.cancelled;
+  return r.status != null ? String(r.status) : "";
+}
+
 function StatusCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
   const tone = TONE[statusTone(r.status, r.state)];
@@ -644,16 +1108,8 @@ function StatusCell({ r }: { r: RequestRow }) {
     <span className="flex items-center gap-1.5">
       {/* 成功的点压淡一点：一整列都是它，它不是要找的那个 */}
       <StatusDot tone={tone} className={tone === "ok" ? "opacity-70" : undefined} />
-      <span className={tone === "error" || tone === "warn" ? undefined : "text-muted-foreground"}>
-        {r.state === "in_flight"
-          ? // 响应头到了就有状态码，流还在往下走；点在跳，说的是请求尚未结束
-            (r.status ?? "…")
-          : r.state === "failed"
-            ? t.failed
-            : r.state === "cancelled"
-              ? t.cancelled
-              : r.status}
-      </span>
+      {/* 在跑的：响应头到了就有状态码，流还在往下走；点在跳，说的是请求尚未结束 */}
+      <span className={tone === "error" || tone === "warn" ? undefined : "text-muted-foreground"}>{statusText(r, t)}</span>
     </span>
   );
 }
@@ -698,6 +1154,7 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
           这里说一声，发出的名称在悬停和详情的路由页里 */}
       {mark && (
         <Tip
+          lazy
           text={
             mark.via === "alias"
               ? t.aliasTip(r.model ?? "", r.provider, mark.sent)
@@ -771,7 +1228,7 @@ function Mark({
   children: ReactNode;
 }) {
   return (
-    <Tip text={<span className="whitespace-pre-line">{tip}</span>}>
+    <Tip lazy text={<span className="whitespace-pre-line">{tip}</span>}>
       <Badge variant={variant} className="h-[18px] rounded-[5px] px-1.5 font-normal">
         {children}
       </Badge>
@@ -794,6 +1251,7 @@ function TokensCell({ r }: { r: RequestRow }) {
   const n = (v: number | undefined) => (v ?? 0).toLocaleString();
   return (
     <Tip
+      lazy
       text={
         <Lines
           lines={[
@@ -822,6 +1280,7 @@ function CostCell({ r }: { r: RequestRow }) {
   // 价目表 —— 这个模型的单价是从其他平台借来的
   return (
     <Tip
+      lazy
       text={
         r.state === "cancelled" ? t.estimatedCancelled : r.state === "failed" ? t.estimatedFailed : t.estimatedBorrowed
       }

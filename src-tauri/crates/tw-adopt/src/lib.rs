@@ -32,3 +32,18 @@ pub mod wsl;
 pub mod wslconfig;
 pub mod yaml;
 pub mod yamlval;
+
+/// 现在，Unix 毫秒：备份的目录名、接管记录的时刻、客户端进程起了多久
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 以 0 结尾的 UTF-16，交给 Windows 的 `…W` 函数（路径、注册表的键和值名）
+#[cfg(windows)]
+pub(crate) fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
+}

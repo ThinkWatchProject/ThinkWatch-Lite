@@ -14,7 +14,9 @@
 //!   设置里改了变量，它和它拉起的 core 都还拿着旧值。所以每次现读注册表。
 //!
 //! **每次起 core 都重新取**，不是应用启动时取一次：core 崩了被重新拉起、或者
-//! 被重启时，拿到的是那一刻的值，而不是应用打开那天的。
+//! 被重启时，拿到的是那一刻的值，而不是应用打开那天的。登录 shell 慢的机器上这一取
+//! 要好几秒，而它挡在 core 前面，所以能早的时候就早点开始（[`read_ahead`]）：应用一
+//! 启动、点了重启、崩溃后退避的那几秒 —— 取到的仍是这一次启动时的值。
 //!
 //! 这个文件只用 `std`、`tokio`、`libc` 和 `windows-sys`，不引 `crate::` —— Windows 那一支
 //! 要能摘进临时 crate 交叉编译。
@@ -25,7 +27,11 @@
 /// 取到的这一份记下来（[`last`]）：接管 Claude Code 时要看用户环境里打开没打开
 /// `CLAUDE_CODE_USE_BEDROCK` 这类开关，不为这个再跑一次登录 shell。
 pub async fn load() -> Vec<(String, String)> {
-    let (env, proxy): (Vars, Vars) = read().await.into_iter().partition(|(k, _)| keep(k));
+    let all = match ahead().await {
+        Some(all) => all,
+        None => read().await,
+    };
+    let (env, proxy): (Vars, Vars) = all.into_iter().partition(|(k, _)| keep(k));
     *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(env.clone());
     // 滤掉的那些里，代理变量另外记着：不带给 core，可接管 Pi 时要看它访问网关会不会经过
     // 代理（`tw_adopt::pi::proxy_notes`）
@@ -36,6 +42,44 @@ pub async fn load() -> Vec<(String, String)> {
 
 /// 一份环境变量：名字和值
 type Vars = Vec<(String, String)>;
+
+/// 现在就开始读，结果留给下一次 [`load`]。返回的那个 future 由调用方交给运行时（这个
+/// 文件不认识应用的运行时）。
+///
+/// 读要跑一次登录 shell，配置重的机器上好几秒，而 core 要等它读完才起得来。提前开始，
+/// 就和别的事叠在一起：应用启动时和 Tauri 起来的那一段，点了重启时和旧的 core 收尾的
+/// 那一段，崩溃之后和退避的那几秒。**拿到的仍是这一次启动时的值**：开始读之后过了
+/// [`AHEAD_FRESH`] 还没被用上的就不用了，到时候现读
+pub fn read_ahead() -> impl std::future::Future<Output = ()> + Send + 'static {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *AHEAD.lock().unwrap_or_else(|e| e.into_inner()) = Some((std::time::Instant::now(), rx));
+    async move {
+        let _ = tx.send(read().await);
+    }
+}
+
+/// 提前开始的那一次（[`read_ahead`]）：什么时候开始读的，和等结果的那一头。取走就没了，
+/// 一次读到的只给一次启动用
+static AHEAD: std::sync::Mutex<Option<Ahead>> = std::sync::Mutex::new(None);
+
+type Ahead = (std::time::Instant, tokio::sync::oneshot::Receiver<Vars>);
+
+/// 提前读的那一份从开始读算起多久之内还用得上。启动时要是先停在连接选择上，选好本机
+/// 已经是几分钟以后，那时的值要现读
+const AHEAD_FRESH: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// 提前读的那一份（[`AHEAD`]）。没有提前读、放久了、没读完就被丢下（应用在退出）都是 `None`
+async fn ahead() -> Option<Vars> {
+    take_ahead(&AHEAD).await
+}
+
+async fn take_ahead(slot: &std::sync::Mutex<Option<Ahead>>) -> Option<Vars> {
+    let (at, rx) = slot.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+    if at.elapsed() > AHEAD_FRESH {
+        return None;
+    }
+    rx.await.ok()
+}
 
 /// 最近一次取到的那一份（[`load`]）。
 static LAST: std::sync::Mutex<Option<Vars>> = std::sync::Mutex::new(None);
@@ -392,6 +436,34 @@ mod tests {
         for name in ["PATH", "HOME", "THINKWATCH_HOME"] {
             assert!(!is_proxy(name), "{name}");
         }
+    }
+
+    /// 提前读的那一份**只用一次**，**放久了不用**：用的是这一次启动时的值，不是应用打开那天的
+    #[tokio::test]
+    async fn a_read_ahead_is_used_once_and_only_while_fresh() {
+        let slot = std::sync::Mutex::new(None);
+        let ready = |at: std::time::Instant| {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            tx.send(vec![("OPENAI_API_KEY".to_string(), "sk-1".to_string())])
+                .unwrap();
+            Some((at, rx))
+        };
+        *slot.lock().unwrap() = ready(std::time::Instant::now());
+        assert_eq!(
+            take_ahead(&slot).await,
+            Some(vec![("OPENAI_API_KEY".into(), "sk-1".into())])
+        );
+        assert_eq!(take_ahead(&slot).await, None, "用过的又用了一次");
+
+        let long_ago = std::time::Instant::now() - AHEAD_FRESH - std::time::Duration::from_secs(1);
+        *slot.lock().unwrap() = ready(long_ago);
+        assert_eq!(take_ahead(&slot).await, None, "放久了的还在用");
+
+        // 读的那一头没读完就没了（应用在退出）：当没有，现读
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vars>();
+        drop(tx);
+        *slot.lock().unwrap() = Some((std::time::Instant::now(), rx));
+        assert_eq!(take_ahead(&slot).await, None);
     }
 
     /// 真跑一次登录 shell。**记号之间真的拿到了东西**，而不是超时或者被

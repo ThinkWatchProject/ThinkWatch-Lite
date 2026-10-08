@@ -86,11 +86,9 @@ pub fn system() -> Theme {
 /// 要跟的是应用那一档，因为这个应用就是一个应用。
 #[cfg(windows)]
 fn apps_use_light_theme() -> Option<u32> {
+    use crate::wide;
     use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
     let sub = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
     let name = wide("AppsUseLightTheme");
     let mut val: u32 = 0;

@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { textOf, useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
+import { useText } from "@/i18n";
 import { appLabel } from "@/labels";
 import { keyText } from "@/KeyLabel";
 import { cn } from "@/lib/utils";
@@ -8,7 +7,6 @@ import type { NotSent } from "@/requestRouting";
 import type { RequestRow } from "@/types";
 import { IconBusy, IconDenied, IconLimitReached, IconNoUpstream, IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
-import { notify } from "@/ui/notify";
 import { Tip } from "@/ui/tip";
 import { coreNow, onTick, stopwatch } from "./clock";
 import { trafficText } from "./Traffic.i18n";
@@ -32,16 +30,6 @@ export const DIM = "text-muted-foreground/60";
 /** 行尾「…」外面那一层：悬停、选中、菜单开着、键盘聚焦时才露出来 */
 export const MENU_REVEAL =
   "inline-flex opacity-0 transition-opacity duration-(--motion-fast) group-hover/row:opacity-100 group-data-[state=selected]/row:opacity-100 has-[[data-state=open]]:opacity-100 has-focus-visible:opacity-100";
-
-/** 复制一段文字，成了说一声：复制这件事在界面上看不出来。`done` 是成了之后那一句 */
-export async function copyText(text: string, done?: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    notify.success(done ?? textOf(commonText).copied);
-  } catch (e) {
-    notify.error(e);
-  }
-}
 
 /**
  * 密钥那一格：推测出的应用的标志，加密钥的名字。
@@ -73,7 +61,7 @@ export function KeyCell({
     ...(peer ? [t.fromPeer(peer)] : []),
   ];
   return (
-    <Tip text={<Lines lines={tip} />}>
+    <Tip lazy text={<Lines lines={tip} />}>
       <span className="flex max-w-40 items-center gap-1.5">
         {hints &&
           (hint ? (
@@ -128,10 +116,9 @@ export function NotSentIcon({ kind, plain }: { kind: NotSent; plain?: boolean })
  * 一个在跑的请求已经跑了多久（`0:42`），每秒走一格。`at` 是开始事件的 `at_ms`，core
  * 的钟；减的也是 core 的钟（见 `clock.ts`）。还没对过钟时写「…」。
  *
- * **秒针不经过 React：字直接写进这个 `<span>`。**秒针要是走 React 的状态，每一秒都是
- * 一次比后台渲染优先的更新，会打断流量表在后台补画那两千行（`useDeferredValue`，
- * 被打断就从头来）—— 补画一次要一秒以上的话，表就一直停在首屏那几行。直接写字，行、
- * 表都不重画。React 只管这个空的 `<span>`，里面的字它不碰。
+ * **秒针不经过 React：字直接写进这个 `<span>`。**秒针要是走 React 的状态，每一秒每一
+ * 条在跑的请求都要重画一次它那一行。直接写字，行、表都不重画。React 只管这个空的
+ * `<span>`，里面的字它不碰。
  */
 export function Elapsed({ at }: { at: number }) {
   const ref = useRef<HTMLSpanElement>(null);

@@ -5,7 +5,6 @@ import {
   buildTrend,
   cacheByModel,
   fmtBucket,
-  fmtMs,
   historyTicks,
   holdY,
   latencyRows,
@@ -194,7 +193,7 @@ describe("时间刻度", () => {
   it("24 小时：起点、每 4 小时一个整点（零点写日期）、现在", () => {
     const since = new Date(2026, 8, 24, 16, 0).getTime();
     const ticks = historyTicks(since, HOUR / 2, 49, t.now);
-    expect(ticks.map((x) => x.label)).toEqual(["9/24 16:00", "20:00", "9/25", "04:00", "08:00", "12:00", "现在"]);
+    expect(ticks.map((x) => x.label)).toEqual(["09-24 16:00", "20:00", "09-25", "04:00", "08:00", "12:00", "现在"]);
     expect(ticks[0]?.at).toBe(0);
     expect(ticks.at(-1)).toMatchObject({ at: 1, now: true });
     // 标在它说的那个时刻：20:00 是 24 小时里的第 4 个小时
@@ -204,8 +203,8 @@ describe("时间刻度", () => {
   it("7 天：按天写，离两头太近的不写", () => {
     const since = new Date(2026, 8, 18, 16, 0).getTime();
     const ticks = historyTicks(since, 2 * HOUR, 85, t.now);
-    // 9/19 零点离起点只有 8 小时（<12%），9/25 零点离「现在」太近
-    expect(ticks.map((x) => x.label)).toEqual(["9/18 16:00", "9/20", "9/21", "9/22", "9/23", "9/24", "现在"]);
+    // 9 月 19 日零点离起点只有 8 小时（<12%），25 日零点离「现在」太近
+    expect(ticks.map((x) => x.label)).toEqual(["09-18 16:00", "09-20", "09-21", "09-22", "09-23", "09-24", "现在"]);
   });
 
   it("只有一格时只写起点和现在", () => {
@@ -221,8 +220,8 @@ describe("时间刻度", () => {
 
   it("一格的时间标签：按天、按分钟、实时档到秒", () => {
     const at = new Date(2026, 8, 25, 7, 5, 9).getTime();
-    expect(fmtBucket(at, DAY)).toBe("9/25");
-    expect(fmtBucket(at, HOUR)).toBe("9/25 07:05");
+    expect(fmtBucket(at, DAY)).toBe("09-25");
+    expect(fmtBucket(at, HOUR)).toBe("09-25 07:05");
     expect(fmtBucket(at, LIVE_BUCKET_MS)).toBe("07:05:09");
   });
 
@@ -232,8 +231,8 @@ describe("时间刻度", () => {
    * 撞成同一个标签。
    */
   it("按天的格子起点偏了一小时，还是写那一天", () => {
-    expect(fmtBucket(new Date(2026, 10, 1, 23, 0).getTime(), DAY)).toBe("11/2");
-    expect(fmtBucket(new Date(2026, 2, 9, 1, 0).getTime(), 7 * DAY)).toBe("3/9");
+    expect(fmtBucket(new Date(2026, 10, 1, 23, 0).getTime(), DAY)).toBe("11-02");
+    expect(fmtBucket(new Date(2026, 2, 9, 1, 0).getTime(), 7 * DAY)).toBe("03-09");
   });
 
   /** 按周分格、跨度几年的自定义区间：零点刻度的间隔跟着放宽，中间不超过七个 */
@@ -515,23 +514,6 @@ describe("延迟", () => {
       { model: "c", p50: 1, p95: 2, samples: 3 },
     ]);
     expect(rows.map((r) => r.model)).toEqual(["a", "b", "c"]);
-  });
-
-  it("一秒以内写毫秒，以上写秒", () => {
-    expect(fmtMs(0)).toBe("0ms");
-    expect(fmtMs(438.4)).toBe("438ms");
-    expect(fmtMs(999)).toBe("999ms");
-    expect(fmtMs(1182)).toBe("1.18s");
-    expect(fmtMs(12_345)).toBe("12.3s");
-    expect(fmtMs(123_456)).toBe("123s");
-  });
-
-  /** 取整进了位的，按下一档的位数写：不是「10.00s」「100.0s」 */
-  it("取整之后再定位数", () => {
-    expect(fmtMs(9_994)).toBe("9.99s");
-    expect(fmtMs(9_996)).toBe("10.0s");
-    expect(fmtMs(99_949)).toBe("99.9s");
-    expect(fmtMs(99_960)).toBe("100s");
   });
 });
 

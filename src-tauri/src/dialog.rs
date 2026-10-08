@@ -77,6 +77,7 @@ fn fallback_text(instruction: &str, content: &str, buttons: &[&str]) -> String {
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use crate::wide;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, S_FALSE, S_OK, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::{
         GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
@@ -101,10 +102,6 @@ mod imp {
         radio: *mut i32,
         verified: *mut BOOL,
     ) -> HRESULT;
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
 
     /// 现取 `TaskDialogIndirect`，见模块说明。**只在系统目录里找**（和清单指定的并排
     /// 程序集）：绿色版的文件夹在哪都可能，不能让旁边一个同名的 dll 被加载进来
@@ -136,7 +133,7 @@ mod imp {
         let title_w = wide(title);
         let instruction_w = wide(instruction);
         let content_w = wide(content);
-        let labels: Vec<Vec<u16>> = buttons.iter().map(|b| wide(b)).collect();
+        let labels: Vec<Vec<u16>> = buttons.iter().map(wide).collect();
         let specs: Vec<TASKDIALOG_BUTTON> = labels
             .iter()
             .zip(FIRST_BUTTON..)
@@ -301,7 +298,7 @@ mod imp {
         content: &str,
         buttons: &[&str],
     ) -> Option<usize> {
-        let text = wide(&super::fallback_text(instruction, content, buttons));
+        let text = wide(super::fallback_text(instruction, content, buttons));
         let caption = wide(title);
         let kind = if buttons.len() >= 2 { MB_YESNO } else { MB_OK };
         // SAFETY: 两个指针都指向以 0 结尾、在调用期间一直活着的 UTF-16 缓冲区

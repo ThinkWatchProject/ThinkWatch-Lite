@@ -156,33 +156,6 @@ export function LiveBadge() {
   );
 }
 
-/**
- * 一根横条：底是一道浅灰的槽，按 `value / max` 填上颜色。宽度变化时走过去
- * （`motion-bar`），不跳。
- */
-export function Meter({
-  value,
-  max,
-  color,
-  className,
-}: {
-  value: number;
-  max: number;
-  /** 填充色。CSS 颜色值（`var(--chart-1)`） */
-  color: string;
-  className?: string;
-}) {
-  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
-  return (
-    <span className={cn("relative block h-2 overflow-hidden rounded-full bg-foreground/[0.06]", className)}>
-      <span
-        className="motion-bar absolute inset-y-0 left-0 rounded-full"
-        style={{ width: `${pct}%`, background: color }}
-      />
-    </span>
-  );
-}
-
 /** 一栏的小标题（「各模型命中率」）。和旁边那栏的抬头一样高：24px */
 export function ColumnHead({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (

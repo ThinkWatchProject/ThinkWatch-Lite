@@ -41,12 +41,16 @@ impl Gateway {
 #[derive(Debug, Clone, Default)]
 pub struct Snapshot {
     pub gateway: Gateway,
-    /// 网关此刻在哪儿监听，`127.0.0.1:18790`
+    /// 客户端该连的网关地址（主机:端口，`127.0.0.1:18790`），和「复制网关地址」复制的是同一个。
+    /// 网关没在监听、问不到时是 None
     pub addr: Option<String>,
     /// 监听设置没换成的原因，已经是给人看的一句话。旧地址还在服务
     pub listen_error: Option<String>,
     /// 今天的用量。**没问到是 None，不是 0** —— 0 是一个值
     pub today: Option<Today>,
+    /// 今天每个本地小时的 token，「今日」那一块右边的小柱子照它画。和 `today` 出自同一问，
+    /// 同样是没问到就 None
+    pub hourly: Option<Hourly>,
     /// 报过额度的上游
     pub quotas: Vec<Quota>,
     /// 进行中的请求，开始得早的在前
@@ -63,7 +67,7 @@ pub struct Snapshot {
     pub update: Option<String>,
     /// 连接列表，本机在最前。「连接」子菜单照它列
     pub connections: Vec<Connection>,
-    /// 连着远程时是那台服务器的名字。状态头写它，不写应用名
+    /// 连着远程时是那台服务器的名字。跟在状态后面写：菜单里的数字、提醒都是那台的
     pub remote: Option<String>,
     pub now_ms: u64,
 }
@@ -121,6 +125,65 @@ impl Today {
             None
         }
     }
+}
+
+/// 一小时，毫秒
+pub const HOUR_MS: i64 = 3_600_000;
+
+/// 今天按本地小时分的 token：第 k 格是 `[零点 + k 小时, 零点 + k + 1 小时)`，和 core 分格的
+/// 算法一样（从起点数，一格一个桶宽）
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Hourly {
+    /// 今天的本地零点，Unix 毫秒
+    pub from_ms: i64,
+    /// 每一格的 token，铺满今天：一般 24 格，夏令时切换的那天 23 或 25 格。还没到的那几格是 0
+    pub tokens: Vec<i64>,
+}
+
+/// 小柱子按多少 token 算满格，**至少这么多**：按当天最高的那一小时算满格的话，一天里只有
+/// 一个零星的请求时，那一小时就是满满一格，看着像用得很凶。两万差不多是一轮带着上下文的
+/// 编程助手对话
+pub const SPARK_MIN_PEAK: i64 = 20_000;
+
+/// 小柱子里的一根
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Spark {
+    /// 这一小时没有用量，或者还没到：画一截淡淡的短线，不画成一根柱子
+    Empty,
+    /// 过去的一小时。高度是满格的几分之几（`0..=1`）
+    Past(f64),
+    /// 此刻所在的这一小时，颜色最重
+    Now(f64),
+}
+
+/// 今天每小时的 token 画成几根小柱子。
+///
+/// **满格是当天最高的那一小时，但不低于 [`SPARK_MIN_PEAK`]。**哪一格是「此刻」按 `now_ms`
+/// 现算：菜单开着时每秒重画一次，过了整点就挪到下一格，不用等下一次收数。时钟走在 core
+/// 后面时（连着远程，那边快几分钟），「将来」的格子里也可能已经有数：那是真的数，照样画
+fn spark(h: &Hourly, now_ms: u64) -> Vec<Spark> {
+    let peak = h
+        .tokens
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(0)
+        .max(SPARK_MIN_PEAK) as f64;
+    let now = (now_ms as i64 - h.from_ms).div_euclid(HOUR_MS);
+    h.tokens
+        .iter()
+        .enumerate()
+        .map(|(k, &t)| {
+            let height = (t as f64 / peak).min(1.0);
+            if t <= 0 {
+                Spark::Empty
+            } else if k as i64 == now {
+                Spark::Now(height)
+            } else {
+                Spark::Past(height)
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -243,7 +306,7 @@ pub struct Bar {
     pub tooltip: String,
 }
 
-/// 状态头右上角那个点的颜色
+/// 状态前面那个点的颜色
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateTone {
     Ok,
@@ -255,7 +318,7 @@ pub enum StateTone {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowRow {
     pub label: String,
-    /// None：重置时刻已经过了，手上的百分比不再是现状，不画条
+    /// None：重置时刻已经过了，手上的百分比不再是现状，条是空的
     pub percent: Option<f64>,
     pub reset: String,
     pub tone: Tone,
@@ -264,12 +327,97 @@ pub struct WindowRow {
     pub detail: Option<String>,
 }
 
+impl WindowRow {
+    /// 右边那一段：「31% · 4 天后重置」。重置过的只有「已重置」，不知道几时重置的只有百分比
+    pub fn right(&self) -> String {
+        match (self.percent, self.reset.is_empty()) {
+            (Some(p), false) => format!("{}% · {}", p.round() as i64, self.reset),
+            (Some(p), true) => format!("{}%", p.round() as i64),
+            (None, _) => self.reset.clone(),
+        }
+    }
+
+    /// 只能写一行字的地方（别的平台的托盘）：「chatgpt 每周 31% · 4 天后重置」，积分制套餐
+    /// 的窗口在后面括上还剩多少
+    pub fn line(&self, provider: &str) -> String {
+        let line = format!("{provider} {} {}", self.label, self.right());
+        match &self.detail {
+            Some(d) => tr!(format!("{line}（{d}）"), format!("{line} ({d})")),
+            None => line,
+        }
+    }
+}
+
+/// 「今日」那一块大字下面那一行里的一段
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatCell {
+pub struct Meta {
+    pub text: String,
+    /// 失败数：用红字
+    pub failed: bool,
+}
+
+/// 「今日」那一块：网关在运行时，菜单里打开主界面之后的第一样东西。上面一行左边「今日」、
+/// 右边网关的状态；中间是今天的 token，大字；下面一行是次数、失败、费用，和菜单栏上两行
+/// 「token 在上、费用在下」同一个次序；右边是今天每小时的 token
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dash {
+    pub title: String,
+    /// 「运行中」，和它前面那个点的颜色
+    pub state: String,
+    pub tone: StateTone,
+    /// 连着远程时那台服务器的名字，跟在状态后面。原来写在状态头上，状态头没了
+    pub server: Option<String>,
+    /// 最近一分钟的生成速度「42 token/秒」，知道时才有
+    pub rate: Option<String>,
+    /// 今天的 token，大字。**没问到是破折号**，不是 0
     pub value: String,
-    pub label: String,
-    /// 标签旁的橙色小字（失败数、算不出钱的请求数）
+    pub unit: String,
+    /// 大字下面那一行，分段给：画的时候用「 · 」连起来，失败数是红的。没问到是空的
+    pub meta: Vec<Meta>,
+    /// 金额里缺着什么（「3 条无法计价」）。放得下才跟在那一行后面，放不下就只在悬停提示里
     pub note: Option<String>,
+    /// 今天每小时的 token。没问到不画
+    pub spark: Option<Vec<Spark>>,
+    /// 监听设置没换成的原因：这一块最后一行橙字
+    pub warn: Option<String>,
+    /// 悬停提示：大字是取整过的，这里写准数，和那一行可能放不下的小字
+    pub tooltip: Option<String>,
+    pub action: Action,
+}
+
+impl Dash {
+    /// 右上角那一句：「运行中 · office-mac · 42 token/秒」
+    pub fn state_line(&self) -> String {
+        [Some(&self.state), self.server.as_ref(), self.rate.as_ref()]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// 大字下面那一行：「128 次 · 失败 2 · $3.47」
+    pub fn meta_line(&self) -> String {
+        self.meta
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// 只能写一行字的地方（别的平台的托盘）：「今日 1.2M token · 128 次 · $3.47」。那边没有
+    /// 悬停提示，金额缺着什么括在后面
+    pub fn line(&self) -> String {
+        let mut line = format!("{} {} {}", self.title, self.value, self.unit);
+        if !self.meta.is_empty() {
+            line.push_str(" · ");
+            line.push_str(&self.meta_line());
+        }
+        match &self.note {
+            Some(n) => tr!(format!("{line}（{n}）"), format!("{line} ({n})")),
+            None => line,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,14 +477,16 @@ impl Item {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Row {
-    Header {
-        title: String,
+    /// 网关不在运行：点和状态，下面一行橙字说为什么
+    Status {
         state: String,
         tone: StateTone,
-        line2: String,
-        /// 第二行说的是一件要处理的事（监听没换成、安全模式）
-        line2_warn: bool,
+        /// 连着远程时那台服务器的名字
+        server: Option<String>,
+        reason: Option<String>,
     },
+    /// 网关在运行：「今日」那一块
+    Today(Box<Dash>),
     Separator,
     Section {
         title: String,
@@ -348,13 +498,10 @@ pub enum Row {
         body: String,
         action: Action,
     },
+    /// 一个额度窗口一行：上面是上游、窗口名、用了多少、几时重置，下面一根通栏的条
     Quota {
         provider: String,
-        windows: Vec<WindowRow>,
-        action: Action,
-    },
-    Stats {
-        cells: Vec<StatCell>,
+        window: WindowRow,
         action: Action,
     },
     Live {
@@ -370,21 +517,20 @@ impl Row {
     /// 行的样子：种类加稳定的名字。**样子没变就就地改**，变了才重建菜单
     pub fn shape(&self) -> String {
         match self {
-            Row::Header { .. } => "header".into(),
+            // 原因可能折成两行，行高跟着字走：字变了就重建（只在状态变了、换了语言时）
+            Row::Status { reason, .. } => format!("status:{}", reason.as_deref().unwrap_or("")),
+            Row::Today(d) => format!("today:{}", d.warn.as_deref().unwrap_or("")),
             Row::Separator => "sep".into(),
             Row::Section { title, .. } => format!("section:{title}"),
             Row::Notice { action, .. } => format!("notice:{action:?}"),
-            // 带小字的窗口高一截：哪几个窗口带着小字也是样子的一部分
+            // 带小字的窗口高一截：带不带小字也是样子的一部分
             Row::Quota {
-                provider, windows, ..
+                provider, window, ..
             } => format!(
-                "quota:{provider}:{}",
-                windows
-                    .iter()
-                    .map(|w| if w.detail.is_some() { '+' } else { '-' })
-                    .collect::<String>()
+                "quota:{provider}:{}:{}",
+                window.label,
+                if window.detail.is_some() { '+' } else { '-' }
             ),
-            Row::Stats { cells, .. } => format!("stats:{}", cells.len()),
             Row::Live { action, .. } => format!("live:{action:?}"),
             Row::Item(i) => format!("item:{}:{}", i.id, i.submenu.len()),
         }
@@ -533,40 +679,57 @@ fn live_count(n: usize) -> String {
     )
 }
 
+/// 菜单从上到下。**「打开主界面」永远是第一项**，每一种状态都是：用户点开菜单最常做的就是
+/// 这一件，它不该压在一堆数字下面。
+///
+/// 网关在运行时：打开主界面 ─ 提醒 ─ 今日、额度 ─ 进行中 ─ 策略组、复制地址和密钥 ─ 更新、
+/// 设置、连接 ─ 退出。不在运行时：打开主界面 ─ 状态和能做的事 ─ 更新、设置、连接 ─ 退出
 fn rows(s: &Snapshot) -> Vec<Row> {
-    let mut out = vec![header(s), Row::Separator];
+    let mut out = vec![
+        Row::Item(Item::new(
+            "open",
+            "macwindow",
+            tr!("打开主界面", "Open ThinkWatch Lite"),
+            Action::OpenMain,
+        )),
+        Row::Separator,
+    ];
     if !s.gateway.running() {
-        if s.gateway == Gateway::Unlinked {
-            out.push(Row::Item(Item::new(
-                "retry",
-                "arrow.clockwise",
-                tr!("立即重试", "Retry Now"),
-                Action::RetryConnection,
-            )));
-            out.push(Row::Item(Item::new(
-                "why",
-                "info.circle",
-                tr!("查看原因…", "Show Details…"),
-                Action::OpenMain,
-            )));
-            out.push(Row::Separator);
-        } else if !matches!(s.gateway, Gateway::Starting) {
-            out.push(Row::Item(Item::new(
-                "restart",
-                "arrow.clockwise",
-                tr!("重新启动网关", "Restart Gateway"),
-                Action::RestartGateway,
-            )));
-            out.push(Row::Item(Item::new(
-                "why",
-                "info.circle",
-                tr!("查看原因…", "Show Details…"),
-                Action::OpenMain,
-            )));
-            out.push(Row::Separator);
+        out.push(status(s));
+        // 地址、密钥、策略组都要问运行着的网关：这里只有让它重新跑起来的那几样
+        match s.gateway {
+            Gateway::Starting => {}
+            Gateway::Unlinked => {
+                out.push(Row::Item(Item::new(
+                    "retry",
+                    "arrow.clockwise",
+                    tr!("立即重试", "Retry Now"),
+                    Action::RetryConnection,
+                )));
+                out.push(Row::Item(Item::new(
+                    "why",
+                    "info.circle",
+                    tr!("查看原因…", "Show Details…"),
+                    Action::OpenMain,
+                )));
+            }
+            _ => {
+                out.push(Row::Item(Item::new(
+                    "restart",
+                    "arrow.clockwise",
+                    tr!("重新启动网关", "Restart Gateway"),
+                    Action::RestartGateway,
+                )));
+                out.push(Row::Item(Item::new(
+                    "why",
+                    "info.circle",
+                    tr!("查看原因…", "Show Details…"),
+                    Action::OpenMain,
+                )));
+            }
         }
-        // 地址、密钥、策略组都要问运行着的网关：动作区只剩「打开主界面」
-        app_items(s, Vec::new(), &mut out);
+        out.push(Row::Separator);
+        app_items(s, &mut out);
         return out;
     }
 
@@ -594,59 +757,33 @@ fn rows(s: &Snapshot) -> Vec<Row> {
         out.push(Row::Separator);
     }
 
-    if let Some(t) = &s.today {
-        out.push(section(tr!("今日", "Today"), None));
-        out.push(Row::Stats {
-            cells: vec![
-                StatCell {
-                    value: grouped(t.requests),
-                    label: tr!("请求", "Requests").to_string(),
-                    note: (t.failed > 0)
-                        .then(|| tr!(format!("失败 {}", t.failed), format!("{} failed", t.failed))),
-                },
-                StatCell {
-                    value: tokens_short(t.tokens),
-                    label: tr!("token", "Tokens").to_string(),
-                    note: None,
-                },
-                StatCell {
-                    value: t.cost(cost_long),
-                    label: tr!("费用", "Cost").to_string(),
-                    note: t.cost_note(),
-                },
-            ],
-            action: Action::Open("dashboard"),
-        });
-        out.push(Row::Separator);
-    }
-
-    let quotas: Vec<&Quota> = s.quotas.iter().filter(|q| !q.windows.is_empty()).collect();
-    if !quotas.is_empty() {
-        out.push(section(tr!("额度", "Quota"), None));
-        for q in quotas {
+    out.push(Row::Today(Box::new(dash(s))));
+    // **报了几个窗口就画几行**：ChatGPT 有时只报每周的那一个，不假定总有 5 小时的
+    for q in s.quotas.iter().filter(|q| !q.windows.is_empty()) {
+        for w in &q.windows {
             out.push(Row::Quota {
                 provider: q.provider.clone(),
-                windows: q.windows.iter().map(|w| window_row(w, s.now_ms)).collect(),
+                window: window_row(w, s.now_ms),
                 action: Action::Open("upstreams"),
             });
-            let used_up = q
-                .windows
-                .iter()
-                .any(|w| current(w, s.now_ms) && exhausted(w));
-            if let Some(n) = q.reset_credits.filter(|n| used_up && *n > 0) {
-                out.push(Row::Item(
-                    Item::new(
-                        &format!("resets:{}", q.provider),
-                        "arrow.counterclockwise.circle",
-                        tr!("额度重置卡…", "Quota Reset Credits…"),
-                        Action::Open("upstreams"),
-                    )
-                    .right(tr!(format!("可用 {n} 张"), format!("{n} available"))),
-                ));
-            }
         }
-        out.push(Row::Separator);
+        let used_up = q
+            .windows
+            .iter()
+            .any(|w| current(w, s.now_ms) && exhausted(w));
+        if let Some(n) = q.reset_credits.filter(|n| used_up && *n > 0) {
+            out.push(Row::Item(
+                Item::new(
+                    &format!("resets:{}", q.provider),
+                    "arrow.counterclockwise.circle",
+                    tr!("额度重置卡…", "Quota Reset Credits…"),
+                    Action::Open("upstreams"),
+                )
+                .right(tr!(format!("可用 {n} 张"), format!("{n} available"))),
+            ));
+        }
     }
+    out.push(Row::Separator);
 
     if !s.live.is_empty() {
         out.push(section(
@@ -681,108 +818,163 @@ fn rows(s: &Snapshot) -> Vec<Row> {
         out.push(Row::Separator);
     }
 
-    let mut actions: Vec<Row> = s
-        .groups
-        .iter()
-        .map(|g| {
-            let mut item = Item::new(
-                &format!("group:{}", g.name),
-                "arrow.left.arrow.right",
-                g.name.clone(),
-                Action::OpenMain,
-            );
-            item.action = None;
-            item.right = g.selected.clone();
-            item.submenu = g
-                .members
-                .iter()
-                .map(|m| SubItem {
-                    title: m.clone(),
-                    checked: g.selected.as_deref() == Some(m),
-                    action: Action::SelectGroup {
-                        group: g.name.clone(),
-                        provider: m.clone(),
-                    },
-                    sep_before: false,
-                })
-                .collect();
-            Row::Item(item)
-        })
-        .collect();
+    for g in &s.groups {
+        let mut item = Item::new(
+            &format!("group:{}", g.name),
+            "arrow.left.arrow.right",
+            g.name.clone(),
+            Action::OpenMain,
+        );
+        item.action = None;
+        item.right = g.selected.clone();
+        item.submenu = g
+            .members
+            .iter()
+            .map(|m| SubItem {
+                title: m.clone(),
+                checked: g.selected.as_deref() == Some(m),
+                action: Action::SelectGroup {
+                    group: g.name.clone(),
+                    provider: m.clone(),
+                },
+                sep_before: false,
+            })
+            .collect();
+        out.push(Row::Item(item));
+    }
+    // 右边写着要复制的那个地址：点之前就看得到
     let copy = Item::new(
         "copy-address",
         "doc.on.doc",
         tr!("复制网关地址", "Copy Gateway Address"),
         Action::CopyAddress,
     );
-    actions.push(Row::Item(if s.addr.is_some() {
-        copy
-    } else {
-        copy.disabled()
+    out.push(Row::Item(match &s.addr {
+        Some(addr) => copy.right(addr.clone()),
+        None => copy.disabled(),
     }));
-    actions.push(Row::Item(Item::new(
+    out.push(Row::Item(Item::new(
         "copy-key",
         "key",
         tr!("复制默认密钥", "Copy Default Key"),
         Action::CopyKey,
     )));
-    app_items(s, actions, &mut out);
+    out.push(Row::Separator);
+    app_items(s, &mut out);
     out
 }
 
-fn header(s: &Snapshot) -> Row {
-    let (tone, line2, line2_warn) = match &s.gateway {
-        Gateway::Running => match &s.listen_error {
-            Some(why) => (StateTone::Ok, why.clone(), true),
-            None => {
-                let addr = s.addr.clone().unwrap_or_else(|| "—".to_string());
-                let line = match s.rate {
-                    Some(r) => tr!(format!("{addr} · {r} token/秒"), format!("{addr} · {r} tokens/s")),
-                    None => addr,
-                };
-                (StateTone::Ok, line, false)
-            }
-        },
-        Gateway::Starting => (StateTone::Busy, s.addr.clone().unwrap_or_default(), false),
+/// 网关不在运行时的那一块：点、状态（连着远程时跟着服务器的名字），下面一行说为什么
+fn status(s: &Snapshot) -> Row {
+    let (tone, reason) = match &s.gateway {
+        Gateway::Running | Gateway::Starting => (StateTone::Busy, None),
         Gateway::SafeMode => (
             StateTone::Warn,
-            tr!(
+            Some(tr!(
                 "已连续启动失败，当前只有配置和历史可用。",
                 "Startup failed several times in a row. Only configuration and history are available."
-            )
-            .to_string(),
-            true,
+            )),
         ),
         Gateway::Failed => (
             StateTone::Bad,
-            tr!(
+            Some(tr!(
                 "core 程序未能运行，转发已停止。",
                 "The core program could not run, so forwarding has stopped."
-            )
-            .to_string(),
-            true,
+            )),
         ),
         Gateway::Stopped => (
             StateTone::Bad,
-            tr!("转发已停止。", "Forwarding has stopped.").to_string(),
-            true,
+            Some(tr!("转发已停止。", "Forwarding has stopped.")),
         ),
-        Gateway::Unlinked => (
-            StateTone::Bad,
-            tr!("正在重新连接。", "Reconnecting.").to_string(),
-            true,
-        ),
+        Gateway::Unlinked => (StateTone::Bad, Some(tr!("正在重新连接。", "Reconnecting."))),
     };
-    Row::Header {
-        // 连着远程时写服务器的名字：菜单里的数字、提醒都是那台的
-        title: s
-            .remote
-            .clone()
-            .unwrap_or_else(|| "ThinkWatch Lite".to_string()),
+    Row::Status {
         state: state_text(&s.gateway).to_string(),
         tone,
-        line2,
-        line2_warn,
+        server: s.remote.clone(),
+        reason: reason.map(str::to_string),
+    }
+}
+
+/// 「今日」那一块。**没问到时大字是破折号、下面那一行空着**：不写 0，0 是一个值
+fn dash(s: &Snapshot) -> Dash {
+    let t = s.today.as_ref();
+    let mut meta = Vec::new();
+    if let Some(t) = t {
+        let n = grouped(t.requests);
+        meta.push(Meta {
+            text: tr!(
+                format!("{n} 次"),
+                if t.requests == 1 {
+                    "1 request".to_string()
+                } else {
+                    format!("{n} requests")
+                }
+            ),
+            failed: false,
+        });
+        if t.failed > 0 {
+            meta.push(Meta {
+                text: tr!(format!("失败 {}", t.failed), format!("{} failed", t.failed)),
+                failed: true,
+            });
+        }
+        meta.push(Meta {
+            text: t.cost(cost_long),
+            failed: false,
+        });
+    }
+    Dash {
+        title: tr!("今日", "Today").to_string(),
+        state: state_text(&s.gateway).to_string(),
+        tone: StateTone::Ok,
+        server: s.remote.clone(),
+        rate: s
+            .rate
+            .map(|r| tr!(format!("{r} token/秒"), format!("{r} tokens/s"))),
+        value: t.map_or_else(|| "—".to_string(), |t| tokens_short(t.tokens)),
+        unit: tr!(
+            "token",
+            if t.is_some_and(|t| t.tokens == 1) {
+                "token"
+            } else {
+                "tokens"
+            }
+        )
+        .to_string(),
+        meta,
+        note: t.and_then(Today::cost_note),
+        spark: t.and(s.hourly.as_ref()).map(|h| spark(h, s.now_ms)),
+        warn: s.listen_error.clone(),
+        tooltip: t.map(|t| {
+            let tokens = grouped(t.tokens);
+            let requests = grouped(t.requests);
+            let cost = t.cost(cost_long);
+            let mut tip = tr!(
+                format!("今日 {tokens} token，{requests} 次请求"),
+                format!(
+                    "{tokens} {} today, {requests} {}",
+                    if t.tokens == 1 { "token" } else { "tokens" },
+                    if t.requests == 1 {
+                        "request"
+                    } else {
+                        "requests"
+                    }
+                )
+            );
+            if t.failed > 0 {
+                tip.push_str(&tr!(
+                    format!("，失败 {} 次", t.failed),
+                    format!(", {} failed", t.failed)
+                ));
+            }
+            tip.push_str(&tr!(format!("，费用 {cost}"), format!(", {cost} cost")));
+            if let Some(note) = t.cost_note() {
+                tip.push_str(&tr!(format!("（{note}）"), format!(" ({note})")));
+            }
+            tip
+        }),
+        action: Action::Open("dashboard"),
     }
 }
 
@@ -793,17 +985,20 @@ fn section(title: &str, right: Option<String>) -> Row {
     }
 }
 
-/// 菜单的后半截，每种状态都是这个样子：**「打开主界面」是动作区的第一项**，后面跟着
-/// 这个状态下能做的事（`actions`）；隔一条线是设置、连接、更新，最后隔一条线退出
-fn app_items(s: &Snapshot, actions: Vec<Row>, out: &mut Vec<Row>) {
-    out.push(Row::Item(Item::new(
-        "open",
-        "macwindow",
-        tr!("打开主界面", "Open ThinkWatch Lite"),
-        Action::OpenMain,
-    )));
-    out.extend(actions);
-    out.push(Row::Separator);
+/// 菜单的后半截，每种状态都是这个样子：更新、设置、连接，隔一条线退出。**有新版本时「安装
+/// 新版本」在这一组最前**，带强调色；没有时「检查更新」排在这一组最后
+fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
+    if let Some(v) = &s.update {
+        out.push(Row::Item(Item {
+            accent: true,
+            ..Item::new(
+                "update",
+                "arrow.down.circle",
+                tr!(format!("安装新版本 {v}…"), format!("Install Version {v}…")),
+                Action::InstallUpdate,
+            )
+        }));
+    }
     out.push(Row::Item(
         Item::new(
             "settings",
@@ -814,23 +1009,14 @@ fn app_items(s: &Snapshot, actions: Vec<Row>, out: &mut Vec<Row>) {
         .key(","),
     ));
     out.push(Row::Item(connections(s)));
-    out.push(Row::Item(match &s.update {
-        Some(v) => Item {
-            accent: true,
-            ..Item::new(
-                "update",
-                "arrow.down.circle",
-                tr!(format!("安装新版本 {v}…"), format!("Install Version {v}…")),
-                Action::InstallUpdate,
-            )
-        },
-        None => Item::new(
+    if s.update.is_none() {
+        out.push(Row::Item(Item::new(
             "update",
             "arrow.down.circle",
             tr!("检查更新…", "Check for Updates…"),
             Action::CheckUpdates,
-        ),
-    }));
+        )));
+    }
     out.push(Row::Separator);
     out.push(Row::Item(
         Item::new(
@@ -1078,811 +1264,4 @@ pub fn app_label(hint: &str) -> &str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::i18n::{Lang, with_lang};
-
-    const NOW: u64 = 1_800_000_000_000;
-
-    fn running() -> Snapshot {
-        Snapshot {
-            gateway: Gateway::Running,
-            addr: Some("127.0.0.1:18790".into()),
-            today: Some(Today {
-                requests: 186,
-                failed: 0,
-                tokens: 3_100_000,
-                cost_micros: 41_200_000,
-                ..Default::default()
-            }),
-            notices_on: true,
-            now_ms: NOW,
-            ..Default::default()
-        }
-    }
-
-    fn window(window: &str, used: f64, reset_in_ms: u64) -> Window {
-        Window {
-            window: window.into(),
-            used_percent: used,
-            resets_at_ms: Some(NOW + reset_in_ms),
-            status: None,
-            credits: None,
-        }
-    }
-
-    fn items(rows: &[Row]) -> Vec<&Item> {
-        rows.iter()
-            .filter_map(|r| match r {
-                Row::Item(i) => Some(i),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn item<'a>(rows: &'a [Row], id: &str) -> Option<&'a Item> {
-        items(rows).into_iter().find(|i| i.id == id)
-    }
-
-    /// 菜单从上到下：状态头、分隔线（`---`）、节的标题（`[今日]`）、各行，菜单项写 id
-    fn outline(rows: &[Row]) -> Vec<String> {
-        rows.iter()
-            .map(|r| match r {
-                Row::Header { .. } => "header".to_string(),
-                Row::Separator => "---".to_string(),
-                Row::Section { title, .. } => format!("[{title}]"),
-                Row::Notice { .. } => "notice".to_string(),
-                Row::Quota { provider, .. } => format!("quota:{provider}"),
-                Row::Stats { .. } => "stats".to_string(),
-                Row::Live { .. } => "live".to_string(),
-                Row::Item(i) => i.id.clone(),
-            })
-            .collect()
-    }
-
-    #[test]
-    fn a_full_menu_has_today_above_quota_and_open_first_among_the_actions() {
-        let mut s = running();
-        s.notices = vec![NoticeLine {
-            key: "k".into(),
-            level: Level::Warning,
-            title: "t".into(),
-            body: "b".into(),
-        }];
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![window("5h", 42.0, 3_600_000)],
-            reset_credits: None,
-        }];
-        s.live = vec![Live {
-            id: 1,
-            started_ms: NOW - 1_000,
-            ..Default::default()
-        }];
-        s.groups = vec![Group {
-            name: "主力".into(),
-            members: vec!["chatgpt".into(), "openai".into()],
-            selected: Some("chatgpt".into()),
-        }];
-        assert_eq!(
-            outline(&rows(&s)),
-            [
-                "header",
-                "---",
-                "[提醒]",
-                "notice",
-                "---",
-                "[今日]",
-                "stats",
-                "---",
-                "[额度]",
-                "quota:chatgpt",
-                "---",
-                "[进行中]",
-                "live",
-                "---",
-                "open",
-                "group:主力",
-                "copy-address",
-                "copy-key",
-                "---",
-                "settings",
-                "connections",
-                "update",
-                "---",
-                "quit",
-            ]
-        );
-        // 各节都空着：动作区紧跟在状态头后面
-        s.notices.clear();
-        s.today = None;
-        s.quotas.clear();
-        s.live.clear();
-        s.groups.clear();
-        assert_eq!(
-            outline(&rows(&s)),
-            [
-                "header",
-                "---",
-                "open",
-                "copy-address",
-                "copy-key",
-                "---",
-                "settings",
-                "connections",
-                "update",
-                "---",
-                "quit",
-            ]
-        );
-    }
-
-    /// 网关不在运行的每一种状态：「打开主界面」照样在，照样是动作区的第一项；设置、
-    /// 连接、更新的顺序和运行时一样。今天的用量不代表现在，不列
-    #[test]
-    fn every_state_keeps_open_first_and_the_app_items_in_one_order() {
-        let fix = ["restart", "why", "---"];
-        for (gateway, head) in [
-            (Gateway::Starting, &[][..]),
-            (Gateway::SafeMode, &fix[..]),
-            (Gateway::Failed, &fix[..]),
-            (Gateway::Stopped, &fix[..]),
-            (Gateway::Unlinked, &["retry", "why", "---"][..]),
-        ] {
-            let s = Snapshot {
-                gateway: gateway.clone(),
-                ..running()
-            };
-            let want: Vec<&str> = ["header", "---"]
-                .iter()
-                .chain(head)
-                .chain(&[
-                    "open",
-                    "---",
-                    "settings",
-                    "connections",
-                    "update",
-                    "---",
-                    "quit",
-                ])
-                .copied()
-                .collect();
-            assert_eq!(outline(&rows(&s)), want, "{gateway:?}");
-        }
-    }
-
-    #[test]
-    fn the_bar_shows_todays_tokens_over_todays_cost() {
-        let (bar, _) = build(&running(), Style::Full);
-        assert_eq!(bar.numbers, Some(("3.1M".into(), "$41.20".into())));
-        assert!(!bar.dim && !bar.alert && !bar.dot);
-    }
-
-    /// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单栏上
-    /// 那个数是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面
-    #[test]
-    fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
-        use crate::i18n::{Lang, with_lang};
-        let cost = |t: Today| {
-            let mut s = running();
-            s.today = Some(t);
-            let (bar, rows) = build(&s, Style::Full);
-            let cell = rows
-                .iter()
-                .find_map(|r| match r {
-                    Row::Stats { cells, .. } => cells.get(2).cloned(),
-                    _ => None,
-                })
-                .unwrap();
-            (bar.numbers.unwrap().1, cell.value, cell.note, bar.tooltip)
-        };
-        let base = Today {
-            requests: 10,
-            tokens: 1_000,
-            cost_micros: 2_500_000,
-            ..Default::default()
-        };
-        with_lang(Lang::En, || {
-            let (short, long, note, _) = cost(base.clone());
-            assert_eq!(
-                (short.as_str(), long.as_str(), note),
-                ("$2.50", "$2.50", None)
-            );
-
-            let (short, long, note, tip) = cost(Today {
-                estimated_micros: 500_000,
-                ..base.clone()
-            });
-            assert_eq!(
-                (short.as_str(), long.as_str(), note),
-                ("~$2.50", "~$2.50", None)
-            );
-            assert!(tip.contains("~$2.50 cost"), "{tip}");
-
-            let (short, _, note, _) = cost(Today {
-                unpriced: 3,
-                ..base.clone()
-            });
-            assert_eq!(short, "≥$2.50");
-            assert_eq!(note.as_deref(), Some("3 unpriced"));
-
-            // 一条都没算出钱：不是「今天花了 $0」
-            let (short, _, note, _) = cost(Today {
-                cost_micros: 0,
-                no_usage: 2,
-                ..base.clone()
-            });
-            assert_eq!(short, "≥$0.00");
-            assert_eq!(note.as_deref(), Some("2 with no usage"));
-        });
-    }
-
-    #[test]
-    fn an_unknown_day_is_two_dashes_and_a_quiet_day_is_zero() {
-        // 0 是一个值，破折号不是：问到了、今天还没有请求，就写 0
-        let mut s = running();
-        s.today = None;
-        assert_eq!(build(&s, Style::Full).0.numbers, None);
-        s.today = Some(Today::default());
-        assert_eq!(
-            build(&s, Style::Full).0.numbers,
-            Some(("0".into(), "$0.00".into()))
-        );
-    }
-
-    #[test]
-    fn numbers_are_written_the_way_the_overview_writes_them() {
-        for (n, want) in [
-            (0, "0"),
-            (845, "845"),
-            (9_800, "9.8k"),
-            (123_400, "123k"),
-            (3_100_000, "3.1M"),
-            (1_240_000_000, "1.2B"),
-        ] {
-            assert_eq!(tokens_short(n), want, "{n}");
-        }
-        for (micros, want) in [
-            (0, "$0.00"),
-            (3_420_000, "$3.42"),
-            (99_990_000, "$99.99"),
-            (123_400_000, "$123"),
-            (1_234_000_000, "$1.2k"),
-            (12_345_000_000, "$12k"),
-        ] {
-            assert_eq!(cost_short(micros), want, "{micros}");
-        }
-        assert_eq!(cost_long(1_234_567_000_000), "$1,234,567");
-        assert_eq!(grouped(1234), "1,234");
-        assert_eq!(elapsed(102_000), "1:42");
-        assert_eq!(elapsed(3_800_000), "1:03:20");
-    }
-
-    /// **取整之后再定单位。**先定单位再取整，就会写出「10.0k」「1000k」「$10.0k」「60 分钟」
-    /// 这样多出一位、或者该进位却没进的数
-    #[test]
-    fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
-        for (n, want) in [
-            (9_949, "9.9k"),
-            (9_960, "10k"),
-            (9_999, "10k"),
-            (999_499, "999k"),
-            (999_500, "1.0M"),
-            (999_999, "1.0M"),
-            (999_949_999, "999.9M"),
-            (999_950_001, "1.0B"),
-        ] {
-            assert_eq!(tokens_short(n), want, "{n}");
-        }
-        for (micros, want) in [
-            (99_994_999, "$99.99"),
-            (99_996_000, "$100"),
-            (999_499_999, "$999"),
-            (999_600_000, "$1.0k"),
-            (9_949_000_000, "$9.9k"),
-            (9_960_000_000, "$10k"),
-        ] {
-            assert_eq!(cost_short(micros), want, "{micros}");
-        }
-        assert_eq!(cost_long(999_994_000), "$999.99");
-        assert_eq!(cost_long(999_996_000), "$1,000");
-        // 59.5 分钟往上是「1 小时」，23.5 小时往上是「1 天」，和上游页一样
-        assert_eq!(resets_in(3_569), "59 分钟后重置");
-        assert_eq!(resets_in(3_570), "1 小时后重置");
-        assert_eq!(resets_in(84_599), "23 小时后重置");
-        assert_eq!(resets_in(84_600), "1 天后重置");
-        with_lang(Lang::En, || {
-            assert_eq!(resets_in(3_570), "Resets in 1 h");
-            assert_eq!(resets_in(84_600), "Resets in 1 day");
-        });
-    }
-
-    #[test]
-    fn a_tight_quota_turns_the_numbers_orange_and_a_used_up_one_red() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![
-                window("5h", 42.0, 3_600_000),
-                window("weekly", 18.0, 86_400_000),
-            ],
-            reset_credits: None,
-        }];
-        assert_eq!(build(&s, Style::Full).0.tone, Tone::Normal);
-        s.quotas[0].windows[0].used_percent = 91.0;
-        assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
-        // 上游说快到了的，不管用了多少都算
-        s.quotas[0].windows[0].used_percent = 50.0;
-        s.quotas[0].windows[0].status = Some("allowed_warning".into());
-        assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
-        s.quotas[0].windows[0].status = Some("rejected".into());
-        assert_eq!(build(&s, Style::Full).0.tone, Tone::Full);
-    }
-
-    /// 颜色看**最要紧**的那个窗口，不是用得最多的那个：每周的用了 95%，5 小时的上游已经
-    /// 拒绝了，菜单栏是红的；用得最多的那个没事、另一家上游说快到了，是橙的。悬停提示说的
-    /// 也是定了颜色的那个窗口
-    #[test]
-    fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![
-                window("weekly", 95.0, 86_400_000),
-                Window {
-                    status: Some("rejected".into()),
-                    ..window("5h", 40.0, 3_600_000)
-                },
-            ],
-            reset_credits: None,
-        }];
-        let (bar, _) = build(&s, Style::Full);
-        assert_eq!(bar.tone, Tone::Full);
-        assert!(
-            bar.tooltip.ends_with("chatgpt 5 小时额度已用 40%"),
-            "{}",
-            bar.tooltip
-        );
-
-        s.quotas = vec![
-            Quota {
-                provider: "chatgpt".into(),
-                windows: vec![window("5h", 60.0, 3_600_000)],
-                reset_credits: None,
-            },
-            Quota {
-                provider: "glm".into(),
-                windows: vec![Window {
-                    status: Some("allowed_warning".into()),
-                    ..window("weekly", 30.0, 86_400_000)
-                }],
-                reset_credits: None,
-            },
-        ];
-        let (bar, _) = build(&s, Style::Full);
-        assert_eq!(bar.tone, Tone::Warn);
-        assert!(
-            bar.tooltip.ends_with("glm 每周额度已用 30%"),
-            "{}",
-            bar.tooltip
-        );
-    }
-
-    #[test]
-    fn a_window_past_its_reset_is_not_the_current_state() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![Window {
-                window: "5h".into(),
-                used_percent: 100.0,
-                resets_at_ms: Some(NOW - 1),
-                status: Some("rejected".into()),
-                credits: None,
-            }],
-            reset_credits: Some(2),
-        }];
-        let (bar, rows) = build(&s, Style::Full);
-        assert_eq!(bar.tone, Tone::Normal, "已经重置过的窗口还在让菜单栏变红");
-        let Some(Row::Quota { windows, .. }) = rows.iter().find(|r| matches!(r, Row::Quota { .. }))
-        else {
-            panic!("额度那一块不见了");
-        };
-        assert_eq!(windows[0].percent, None, "重置过的窗口还在画条");
-        assert_eq!(windows[0].reset, "已重置");
-        assert!(
-            item(&rows, "resets:chatgpt").is_none(),
-            "额度没用完却给了重置卡"
-        );
-    }
-
-    #[test]
-    fn a_used_up_quota_offers_the_reset_credits_only_when_there_are_some() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![Window {
-                status: Some("rejected".into()),
-                ..window("5h", 100.0, 42 * 60_000)
-            }],
-            reset_credits: Some(2),
-        }];
-        let (_, rows) = build(&s, Style::Full);
-        let credits = item(&rows, "resets:chatgpt").expect("用完了、也有卡，却没给入口");
-        assert_eq!(credits.right.as_deref(), Some("可用 2 张"));
-        assert_eq!(
-            credits.action,
-            Some(Action::Open("upstreams")),
-            "菜单里不直接用卡"
-        );
-        s.quotas[0].reset_credits = Some(0);
-        assert!(item(&build(&s, Style::Full).1, "resets:chatgpt").is_none());
-    }
-
-    #[test]
-    fn quota_bars_turn_orange_at_eighty_percent() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![
-                window("5h", 79.0, 3_600_000),
-                window("weekly", 80.0, 86_400_000),
-            ],
-            reset_credits: None,
-        }];
-        let rows = rows(&s);
-        let Some(Row::Quota { windows, .. }) = rows.iter().find(|r| matches!(r, Row::Quota { .. }))
-        else {
-            panic!();
-        };
-        assert_eq!(
-            (windows[0].tone, windows[1].tone),
-            (Tone::Normal, Tone::Warn)
-        );
-        assert_eq!(windows[0].label, "5 小时");
-        assert_eq!(windows[0].reset, "1 小时后重置");
-        assert_eq!(windows[1].label, "每周");
-    }
-
-    /// `5h`、`weekly` 有自己的叫法；core 按长度起的名字（ChatGPT 账号的 `30d`）按长度说；
-    /// 认不出来的原样显示
-    #[test]
-    fn windows_named_by_their_length_are_said_in_words() {
-        let names = [
-            "5h", "weekly", "30d", "1d", "7d", "3h", "1h", "45m", "1m", "monthly", "d", "+5h",
-            "5 h", "",
-        ];
-        assert_eq!(
-            names.map(window_label),
-            [
-                "5 小时",
-                "每周",
-                "30 天",
-                "1 天",
-                "7 天",
-                "3 小时",
-                "1 小时",
-                "45 分钟",
-                "1 分钟",
-                "monthly",
-                "d",
-                "+5h",
-                "5 h",
-                "",
-            ]
-        );
-        with_lang(Lang::En, || {
-            assert_eq!(
-                names.map(window_label),
-                [
-                    "5h",
-                    "Weekly",
-                    "30 days",
-                    "1 day",
-                    "7 days",
-                    "3 hours",
-                    "1 hour",
-                    "45 minutes",
-                    "1 minute",
-                    "monthly",
-                    "d",
-                    "+5h",
-                    "5 h",
-                    "",
-                ]
-            );
-        });
-    }
-
-    #[test]
-    fn requests_in_progress_put_a_dot_on_the_mark_and_list_at_most_five() {
-        let mut s = running();
-        s.live = (1..=7)
-            .map(|i| Live {
-                id: i,
-                app: (i == 1).then(|| "codex".to_string()),
-                key: "default".into(),
-                model: "gpt-5-codex".into(),
-                started_ms: NOW - 102_000,
-            })
-            .collect();
-        let (bar, rows) = build(&s, Style::Full);
-        assert!(bar.dot);
-        let live: Vec<_> = rows
-            .iter()
-            .filter_map(|r| match r {
-                Row::Live { app, elapsed, .. } => Some((app.as_str(), elapsed.as_str())),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(live.len(), MAX_LIVE);
-        assert_eq!(live[0], ("Codex", "1:42"));
-        // 认不出应用的用密钥名
-        assert_eq!(live[1].0, "default");
-        assert_eq!(item(&rows, "live-more").unwrap().title, "另有 2 个");
-    }
-
-    #[test]
-    fn notices_come_first_and_stop_at_three() {
-        let mut s = running();
-        s.notices = (0..4)
-            .map(|i| NoticeLine {
-                key: format!("k{i}"),
-                level: Level::Warning,
-                title: format!("t{i}"),
-                body: "b".into(),
-            })
-            .collect();
-        let rows = rows(&s);
-        // 状态头、分隔线之后就是提醒
-        assert!(matches!(&rows[2], Row::Section { title, .. } if title == "提醒"));
-        let shown = rows
-            .iter()
-            .filter(|r| matches!(r, Row::Notice { .. }))
-            .count();
-        assert_eq!(shown, MAX_NOTICES);
-        assert_eq!(item(&rows, "all-notices").unwrap().title, "全部提醒（4）…");
-        // 提醒关掉了，这一节就不出现
-        s.notices_on = false;
-        assert!(
-            !super::rows(&s)
-                .iter()
-                .any(|r| matches!(r, Row::Notice { .. }))
-        );
-    }
-
-    #[test]
-    fn a_gateway_that_is_not_running_says_why_and_offers_a_restart() {
-        let mut s = running();
-        s.gateway = Gateway::Failed;
-        s.live = vec![Live::default()];
-        let (bar, rows) = build(&s, Style::Full);
-        assert_eq!(bar.numbers, None, "不在运行时还显示一个凝固的旧数字");
-        assert!(bar.dim && bar.alert && !bar.dot);
-        assert!(
-            matches!(&rows[0], Row::Header { state, tone: StateTone::Bad, .. } if state == "无法启动")
-        );
-        assert_eq!(
-            item(&rows, "restart").unwrap().action,
-            Some(Action::RestartGateway)
-        );
-        assert!(
-            !rows
-                .iter()
-                .any(|r| matches!(r, Row::Stats { .. } | Row::Live { .. }))
-        );
-        // 正在启动时没有什么可重启的，也不画红色角标
-        s.gateway = Gateway::Starting;
-        let (bar, rows) = build(&s, Style::Full);
-        assert!(bar.dim && !bar.alert);
-        assert!(item(&rows, "restart").is_none());
-    }
-
-    #[test]
-    fn a_listen_setting_that_did_not_take_replaces_the_address_line() {
-        let mut s = running();
-        s.rate = Some(52);
-        let Row::Header {
-            line2, line2_warn, ..
-        } = &rows(&s)[0]
-        else {
-            panic!()
-        };
-        assert_eq!(
-            (line2.as_str(), *line2_warn),
-            ("127.0.0.1:18790 · 52 token/秒", false)
-        );
-        s.listen_error = Some("端口 18790 已被占用。".into());
-        let Row::Header {
-            line2, line2_warn, ..
-        } = &rows(&s)[0]
-        else {
-            panic!()
-        };
-        assert_eq!(
-            (line2.as_str(), *line2_warn),
-            ("端口 18790 已被占用。", true)
-        );
-    }
-
-    #[test]
-    fn a_new_version_replaces_the_check() {
-        let mut s = running();
-        assert_eq!(
-            item(&rows(&s), "update").unwrap().action,
-            Some(Action::CheckUpdates)
-        );
-        s.update = Some("2026.9.8".into());
-        let rows = rows(&s);
-        let update = item(&rows, "update").unwrap();
-        assert_eq!(update.title, "安装新版本 2026.9.8…");
-        assert_eq!(update.action, Some(Action::InstallUpdate));
-        assert!(update.accent);
-    }
-
-    #[test]
-    fn a_select_group_is_a_submenu_with_the_current_member_checked() {
-        let mut s = running();
-        s.groups = vec![Group {
-            name: "主力".into(),
-            members: vec!["chatgpt".into(), "openai".into()],
-            selected: Some("chatgpt".into()),
-        }];
-        let rows = rows(&s);
-        let g = item(&rows, "group:主力").unwrap();
-        assert_eq!(g.right.as_deref(), Some("chatgpt"));
-        assert_eq!(
-            g.submenu.iter().map(|m| m.checked).collect::<Vec<_>>(),
-            [true, false]
-        );
-        assert_eq!(
-            g.submenu[1].action,
-            Action::SelectGroup {
-                group: "主力".into(),
-                provider: "openai".into()
-            }
-        );
-    }
-
-    #[test]
-    fn the_menu_follows_the_interface_language() {
-        with_lang(Lang::En, || {
-            let mut s = running();
-            s.quotas = vec![Quota {
-                provider: "chatgpt".into(),
-                windows: vec![window("weekly", 18.0, 4 * 86_400_000)],
-                reset_credits: None,
-            }];
-            let rows = rows(&s);
-            assert!(matches!(&rows[0], Row::Header { state, .. } if state == "Running"));
-            let Some(Row::Quota { windows, .. }) =
-                rows.iter().find(|r| matches!(r, Row::Quota { .. }))
-            else {
-                panic!()
-            };
-            assert_eq!(
-                (windows[0].label.as_str(), windows[0].reset.as_str()),
-                ("Weekly", "Resets in 4 days")
-            );
-            assert_eq!(item(&rows, "quit").unwrap().title, "Quit ThinkWatch Lite…");
-            let (bar, _) = build(&s, Style::Full);
-            assert!(
-                bar.tooltip
-                    .starts_with("ThinkWatch Lite, Running, 3.1M tokens today")
-            );
-        });
-    }
-
-    #[test]
-    fn the_tooltip_says_the_whole_state_in_one_sentence() {
-        let mut s = running();
-        s.quotas = vec![Quota {
-            provider: "chatgpt".into(),
-            windows: vec![window("5h", 42.0, 3 * 3_600_000)],
-            reset_credits: None,
-        }];
-        assert_eq!(
-            build(&s, Style::Full).0.tooltip,
-            "ThinkWatch Lite，运行中，今日 3.1M token，费用 $41.20，chatgpt 5 小时额度已用 42%"
-        );
-    }
-
-    #[test]
-    fn a_row_keeps_its_shape_while_only_its_text_changes() {
-        // 菜单开着时，秒数、倒计时每秒在变 —— 那不该让菜单整个重建
-        let mut s = running();
-        s.live = vec![Live {
-            id: 7,
-            started_ms: NOW - 1_000,
-            ..Default::default()
-        }];
-        let a: Vec<String> = rows(&s).iter().map(Row::shape).collect();
-        s.now_ms += 5_000;
-        let b: Vec<String> = rows(&s).iter().map(Row::shape).collect();
-        assert_eq!(a, b);
-    }
-
-    /// GLM Coding Plan 积分制套餐：5 小时和每周两个窗口，各带总额、已用、剩余
-    fn glm() -> Quota {
-        let credits = |total: f64, used: f64, remaining: f64| {
-            Some(QuotaCredits {
-                total,
-                used,
-                remaining,
-            })
-        };
-        Quota {
-            provider: "glm".into(),
-            windows: vec![
-                Window {
-                    credits: credits(2_000.0, 23.0, 1_976.0),
-                    ..window("5h", 1.0, 3_600_000)
-                },
-                Window {
-                    credits: credits(10_000.0, 268.0, 9_731.0),
-                    ..window("weekly", 2.0, 3 * 86_400_000)
-                },
-            ],
-            reset_credits: None,
-        }
-    }
-
-    fn quota_rows(s: &Snapshot) -> Vec<WindowRow> {
-        rows(s)
-            .into_iter()
-            .find_map(|r| match r {
-                Row::Quota { windows, .. } => Some(windows),
-                _ => None,
-            })
-            .expect("额度那一块不见了")
-    }
-
-    #[test]
-    fn a_credit_plan_says_what_is_left_under_each_bar() {
-        let mut s = running();
-        s.quotas = vec![glm()];
-        let w = quota_rows(&s);
-        assert_eq!(w[0].label, "5 小时");
-        // **剩余照上游说的写**：2000 − 23 是 1977，上游说的是 1976
-        assert_eq!(w[0].detail.as_deref(), Some("剩余 1,976 / 2,000 积分"));
-        assert_eq!(w[1].detail.as_deref(), Some("剩余 9,731 / 10,000 积分"));
-        with_lang(Lang::En, || {
-            assert_eq!(
-                quota_rows(&s)[0].detail.as_deref(),
-                Some("1,976 / 2,000 credits left")
-            );
-        });
-        // 按百分比报的窗口没有这一行
-        s.quotas[0].windows[0].credits = None;
-        assert_eq!(quota_rows(&s)[0].detail, None);
-    }
-
-    #[test]
-    fn what_was_left_before_a_reset_is_not_shown_after_it() {
-        let mut s = running();
-        s.quotas = vec![glm()];
-        s.now_ms = NOW + 3_600_000;
-        let w = quota_rows(&s);
-        assert_eq!((w[0].percent, w[0].detail.as_deref()), (None, None));
-        assert!(w[1].detail.is_some(), "没到重置时刻的窗口照常写");
-    }
-
-    #[test]
-    fn a_line_under_a_bar_changes_the_shape_of_the_row() {
-        // 带小字的窗口高一截：菜单开着时多了、少了这一行，要重建，不能就地改
-        let mut s = running();
-        s.quotas = vec![glm()];
-        let shape = |s: &Snapshot| -> Vec<String> { rows(s).iter().map(Row::shape).collect() };
-        let a = shape(&s);
-        assert!(a.contains(&"quota:glm:++".to_string()), "{a:?}");
-        s.quotas[0].windows[1].credits = None;
-        assert!(shape(&s).contains(&"quota:glm:+-".to_string()));
-        // 只是数变了：样子不变
-        s.quotas[0].windows[0].credits = Some(QuotaCredits {
-            total: 2_000.0,
-            used: 500.0,
-            remaining: 1_500.0,
-        });
-        assert!(shape(&s).contains(&"quota:glm:+-".to_string()));
-    }
-}
+mod tests;

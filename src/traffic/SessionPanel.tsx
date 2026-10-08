@@ -7,6 +7,7 @@ import { notSent } from "@/requestRouting";
 import type { RequestRow, SessionDetail, TurnView } from "@/types";
 import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
+import { Meter } from "@/ui/meter";
 import { AnimatedNumber } from "@/ui/motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/ui/sheet";
 import { Skeleton } from "@/ui/skeleton";
@@ -20,7 +21,7 @@ import { sessionsText } from "./Sessions.i18n";
 import { Conversation } from "./Conversation";
 import { unrecorded } from "./transcript";
 import { turnCost, type TurnCost } from "./costCell";
-import { dur, tokens, when } from "./format";
+import { compact, span, whenMinute } from "@/format";
 import { tally } from "./grouping";
 
 /**
@@ -152,7 +153,7 @@ export function SessionPanel({
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}
       <PanelHeader
         title={t.title}
-        meta={t.startedAt(when(n.started))}
+        meta={t.startedAt(whenMinute(n.started))}
         onClose={onClose}
         tabs={
           <TabsList variant="line">
@@ -225,7 +226,7 @@ const Summary = memo(function Summary({
     <>
       <dl className="grid grid-cols-4 overflow-hidden rounded-lg border border-border">
         <Stat label={t.turns} value={<AnimatedNumber value={n.turns} />} />
-        <Stat label={t.duration} value={dur(n.ended - n.started)} />
+        <Stat label={t.duration} value={span(n.ended - n.started)} />
         {/* 库里还没有这次会话：一轮费用都还没算出来 */}
         <Stat label={t.cost} value={s ? <SessionCost s={s} /> : <span className="text-muted-foreground">—</span>} />
         <Stat
@@ -244,7 +245,7 @@ const Summary = memo(function Summary({
       </dl>
       {s && (
         <p className="mt-2 tw-label text-muted-foreground">
-          {t.usage(tokens(s.input_tokens), tokens(s.output_tokens), tokens(s.cache_read_tokens))}
+          {t.usage(compact(s.input_tokens), compact(s.output_tokens), compact(s.cache_read_tokens))}
         </p>
       )}
 
@@ -292,7 +293,7 @@ function Growth({ turns }: { turns: TurnView[] }) {
     <section className="mt-6">
       <div className="mb-2 flex items-baseline gap-3">
         <h3 className="tw-head text-foreground">{t.growthTitle}</h3>
-        <span className="tw-label text-muted-foreground">{t.peak(tokens(peak))}</span>
+        <span className="tw-label text-muted-foreground">{t.peak(compact(peak))}</span>
       </div>
       <div role="img" aria-label={t.growthTitle} className="flex h-20 items-end gap-px border-b border-border">
         {turns.map((x, i) => {
@@ -391,12 +392,7 @@ function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => v
             >
               <span className="w-6 shrink-0 text-right tw-label text-muted-foreground">{i + 1}</span>
               <span className="w-32 shrink-0 truncate text-left text-muted-foreground">{x.model}</span>
-              <span className="relative h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-foreground/[0.06]">
-                <span
-                  className="motion-bar absolute inset-y-0 left-0 rounded-full bg-chart-2"
-                  style={{ width: `${((x.cost ?? 0) / max) * 100}%` }}
-                />
-              </span>
+              <Meter value={x.cost ?? 0} max={max} color="var(--chart-2)" className="min-w-8 flex-1" />
               {/* 两格的宽度按最长的那个词定：英文的「In progress」「Canceled」，Windows 上字大 1px 也放得下 */}
               <span className="w-24 shrink-0 text-right">
                 {/* **没有价格就说没有价格，不写 $0**；估算的金额带记号；没有用量的不是「没有价格」 */}

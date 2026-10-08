@@ -8,10 +8,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subscribe } from "@/lib/tauriEvent";
 import { bucketStart } from "@/format";
-import { useResource, type Resource } from "@/lib/resource";
-import type { CoreEvent, CostBucketGroup, ProviderView } from "@/types";
+import { isRunning, parseCoreState } from "@/coreState";
+import { useResource, useResources, type Resource } from "@/lib/resource";
+import type { CoreEvent, CostBucketGroup, ProviderModelsView, ProviderView } from "@/types";
 import { useNow } from "@/useNow";
 import { api, type UpstreamStats } from "./api";
+
+/**
+ * 一个上游的模型清单在共用缓存里的键。上游页的模型弹窗、路由的固定模型、测速、价目表
+ * 读的都是这一份：一处刷新了清单，别处跟着换。
+ */
+export function modelsKey(name: string): string {
+  return `upstream-models:${name}`;
+}
+
+/** 几个上游的模型清单（测速、价目表），和单个读的地方共用一份缓存 */
+export function useModelLists(names: readonly string[]) {
+  return useResources(names, modelsKey, api.providerModels);
+}
+
+/** 清单里启用的那些模型。没取到（失败）的当成空的 */
+export function enabledModels(v: ProviderModelsView | undefined): string[] {
+  return v?.models.filter((m) => m.enabled).map((m) => m.id) ?? [];
+}
 
 export const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -252,7 +271,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
     const unState = subscribe<string>("core-state", (e) => {
       live.current.clear();
       bump();
-      if (e.payload.startsWith("running:")) seed();
+      if (isRunning(parseCoreState(e.payload))) seed();
     });
     seed();
     return () => {

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { appLabel } from "@/labels";
 import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
-import RequestDrawer from "@/RequestDrawer";
+import RequestDrawer from "@/traffic/drawer/RequestDrawer";
 import { GUARDS, type Guard, type SecurityDetail, type SecurityEventView } from "@/types";
 import { ActionBadge, byCodepoints, clock, dayHead, dayKey, EventDetail, ruleName, whereOf } from "./labels";
 import { securityLabelsText } from "./labels.i18n";

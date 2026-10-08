@@ -22,6 +22,7 @@ import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import {
+  modelsKey,
   patch,
   statsPartial,
   useAccountQuotas,
@@ -217,7 +218,7 @@ export default function UpstreamsPage({
       const v = await api.refreshProviderModels(name);
       if (v.error) notify.error(v.error, t.modelsFailed(name));
       else notify.success(t.modelsFetched(name, v.models.length));
-      invalidate(`upstream-models:${name}`);
+      invalidate(modelsKey(name));
       changed();
     } catch (e) {
       notify.error(e, t.modelsFailed(name));

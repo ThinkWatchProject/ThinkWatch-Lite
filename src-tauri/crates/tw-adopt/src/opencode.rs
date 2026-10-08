@@ -65,11 +65,9 @@ pub fn shape_in(text: &str) -> Shape {
 /// **name 不留空**：opencode 的模型选择器显示的就是它，空着就是一行空白。
 /// 同名的只写一次：JSON 对象里重复的键，各家解析器取哪一个说法不一。
 pub fn models_val(models: &[ModelCard], shape: Shape) -> Val {
-    let mut seen = std::collections::HashSet::new();
     Val::Obj(
-        models
-            .iter()
-            .filter(|m| seen.insert(m.id.as_str()))
+        crate::clients::unique(models)
+            .into_iter()
             .map(|m| {
                 let mut fields = vec![("name".to_string(), Val::s(&m.id))];
                 fields.extend(specs(m, shape));
@@ -183,7 +181,7 @@ pub fn edits(gw: &Gateway, shape: Shape) -> Vec<Edit> {
         },
         Edit {
             path: at(&[shape.settings(), "baseURL"]),
-            value: Val::s(format!("{}/v1", gw.base.trim_end_matches('/'))),
+            value: Val::s(gw.v1()),
             secret: false,
         },
     ];

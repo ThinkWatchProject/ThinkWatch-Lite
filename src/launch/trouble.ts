@@ -1,4 +1,5 @@
 import { textOf } from "@/i18n";
+import { parseCoreState } from "@/coreState";
 import { troubleText } from "./trouble.i18n";
 
 /** 把守护状态翻成「现在怎么了、能做什么」。 */
@@ -22,62 +23,37 @@ export interface Trouble {
  */
 export function trouble(raw: string, tries: number): Trouble {
   const t = textOf(troubleText);
-  // core 程序运行不了：**原因要说出来**，等多久也不会自己好，所以给重试
-  if (raw.startsWith("failed:")) {
-    return {
-      what: t.failed,
-      next: raw.slice("failed:".length),
-      bad: true,
-      retry: true,
-    };
+  const s = parseCoreState(raw);
+  switch (s.kind) {
+    // core 程序运行不了：**原因要说出来**，等多久也不会自己好，所以给重试
+    case "failed":
+      return { what: t.failed, next: s.reason, bad: true, retry: true };
+    // core 起来了又退出，安全模式也一样：**原因是 core 自己最后说的话**，给重试
+    case "exited":
+      return { what: t.exited, next: s.reason, bad: true, retry: true };
+    case "missing":
+      return { what: t.missing, next: s.reason, bad: true, retry: false };
+    case "restarting":
+      return {
+        what: t.restarting(String(s.attempt)),
+        next: t.retryIn(Math.max(1, Math.round(s.inMs / 1000))),
+        bad: s.attempt >= 3,
+        retry: false,
+      };
+    case "safe_mode":
+      return { what: t.safeMode, next: t.safeModeNext, bad: true, retry: true };
+    case "stopped":
+      return { what: t.stopped, next: t.stoppedNext, bad: true, retry: true };
+    case "starting":
+      return { what: t.starting, next: t.wait, bad: false, retry: false };
+    default:
+      // running:pid —— 控制面答应过（守护要等到它答应才报「运行中」），却读不到
+      // 状态：多半是 core 刚好又停了，或者两边的协议对不上
+      return {
+        what: t.connecting,
+        next: tries > 1 ? t.attempt(tries) : t.wait,
+        bad: tries > 6,
+        retry: tries > 6,
+      };
   }
-  // core 起来了又退出，安全模式也一样：**原因是 core 自己最后说的话**，给重试
-  if (raw.startsWith("exited:")) {
-    return {
-      what: t.exited,
-      next: raw.slice("exited:".length),
-      bad: true,
-      retry: true,
-    };
-  }
-  if (raw.startsWith("missing:")) {
-    return {
-      what: t.missing,
-      next: raw.slice("missing:".length),
-      bad: true,
-      retry: false,
-    };
-  }
-  if (raw.startsWith("restarting:")) {
-    const [, attempt = "1", inMs = "0"] = raw.split(":");
-    const secs = Math.max(1, Math.round(Number(inMs) / 1000));
-    return {
-      what: t.restarting(attempt),
-      next: t.retryIn(secs),
-      bad: Number(attempt) >= 3,
-      retry: false,
-    };
-  }
-  if (raw.startsWith("safe_mode")) {
-    return {
-      what: t.safeMode,
-      next: t.safeModeNext,
-      bad: true,
-      retry: true,
-    };
-  }
-  if (raw === "stopped") {
-    return { what: t.stopped, next: t.stoppedNext, bad: true, retry: true };
-  }
-  if (raw === "starting") {
-    return { what: t.starting, next: t.wait, bad: false, retry: false };
-  }
-  // running:pid —— 控制面答应过（守护要等到它答应才报「运行中」），却读不到
-  // 状态：多半是 core 刚好又停了，或者两边的协议对不上
-  return {
-    what: t.connecting,
-    next: tries > 1 ? t.attempt(tries) : t.wait,
-    bad: tries > 6,
-    retry: tries > 6,
-  };
 }

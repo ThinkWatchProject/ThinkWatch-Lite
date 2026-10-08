@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useCoreEvent } from "@/useCoreEvent";
 import type { CoreEvent, LocalEvent } from "@/types";
 
@@ -244,6 +244,69 @@ export function useResource<T>(
 
 const IDLE: Snapshot = { data: undefined, error: undefined, fetching: false };
 const NO_EVENTS: readonly Kind[] = [];
+
+/**
+ * 份数不定的几份同类数据（测速要每个上游的模型清单）：每一份照样是 `useResource` 的那份
+ * 缓存，键和单份读的地方一样 —— 别处读过的先画、这里取到的别处跟着换、`invalidate` 照样
+ * 管用。
+ *
+ * `data` 按 `items` 的顺序；`pending`：还有哪一份没取到、也没失败（失败的那一份是
+ * `undefined`，由调用方当成空的）。
+ */
+export function useResources<I, T>(
+  items: readonly I[],
+  keyOf: (item: I) => string,
+  fetcher: (item: I) => Promise<T>,
+): { data: (T | undefined)[]; pending: boolean } {
+  const f = useRef(fetcher);
+  f.current = fetcher;
+  const keys = items.map(keyOf);
+  const joined = keys.join("\n");
+  const list = useRef({ joined, keys, items });
+  if (list.current.joined !== joined) list.current = { joined, keys, items };
+
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      const es = list.current.keys.map(entry);
+      for (const e of es) e.listeners.add(cb);
+      return () => {
+        for (const e of es) e.listeners.delete(cb);
+      };
+    },
+    [joined],
+  );
+  // 同一组快照要交回同一个数组，否则 `useSyncExternalStore` 每次都当成变了
+  const last = useRef<Snapshot[]>([]);
+  const snaps = useSyncExternalStore(subscribe, () => {
+    const next = list.current.keys.map((k) => entry(k).snap);
+    const same = next.length === last.current.length && next.every((s, i) => s === last.current[i]);
+    if (!same) last.current = next;
+    return last.current;
+  });
+
+  // 挂上、换了一组：每一份取一次（刚取过的不重复取，飞着的搭上）；并让 `invalidate` 找得到取数函数
+  useEffect(() => {
+    const { keys: ks, items: its } = list.current;
+    const off = ks.map((k, i) => {
+      const e = entry(k);
+      const run = () => f.current(its[i]!);
+      e.fetchers.add(run);
+      if (!(e.inflight === null && Date.now() - e.at < DEDUPE_MS && e.data !== undefined)) void fetchInto(k, run, true);
+      return () => e.fetchers.delete(run);
+    });
+    return () => {
+      for (const o of off) o();
+    };
+  }, [joined]);
+
+  return useMemo(
+    () => ({
+      data: snaps.map((s) => s.data as T | undefined),
+      pending: snaps.some((s) => s.data === undefined && (s.fetching || s.error === undefined)),
+    }),
+    [snaps],
+  );
+}
 
 /**
  * 在别处改了东西、知道某份数据过时了（比如密钥页改完，客户端页的那份也变了）：

@@ -45,7 +45,7 @@ const ICON: Record<BannerTone, typeof InfoIcon> = {
  * 什么」，会飘走；横幅说「现在是什么状态」，状态结束才消失。
  *
  * 两种摆法：
- * · `strip`（默认）：外壳顶上通栏的一条，只有下边线。App.tsx 的几条就是这种。
+ * · `strip`（默认）：外壳顶上通栏的一条，只有下边线。shell/Banners.tsx 的几条就是这种。
  * · `inline`：页面里的一块，四边圆角框。放在 PageHeader 下面、内容上面。
  *
  * `show` 传了就带进出场动画（`Reveal`）；不传就是一直在。

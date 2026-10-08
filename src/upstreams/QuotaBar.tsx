@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { Meter } from "@/ui/meter";
 
 /** 额度用到这个比例就算紧张（琥珀） */
 export const QUOTA_WARN = 80;
@@ -12,23 +12,15 @@ export const QUOTA_FULL = 100;
  * （用完）。宽度变化走过去（`motion-bar`），额度随请求涨的时候不跳。
  */
 export function QuotaBar({ percent, label, className }: { percent: number; label: string; className?: string }) {
-  const v = Math.max(0, Math.min(100, percent));
   return (
-    <div
+    <Meter
       role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(v)}
-      className={cn("h-1 overflow-hidden rounded-full bg-muted", className)}
-    >
-      <div
-        className={cn(
-          "h-full rounded-full motion-bar",
-          percent >= QUOTA_FULL ? "bg-destructive" : percent >= QUOTA_WARN ? "bg-warning" : "bg-foreground/50",
-        )}
-        style={{ width: `${v}%` }}
-      />
-    </div>
+      size="sm"
+      value={percent}
+      max={100}
+      tone={percent >= QUOTA_FULL ? "error" : percent >= QUOTA_WARN ? "warn" : "neutral"}
+      label={label}
+      className={className}
+    />
   );
 }

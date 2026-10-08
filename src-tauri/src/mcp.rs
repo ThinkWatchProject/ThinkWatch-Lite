@@ -8,7 +8,7 @@ use std::path::Path;
 use tw_adopt::mcp;
 use tw_types::Msg;
 
-use crate::clients::home_dir;
+use crate::clients::{blocking, home_dir};
 use crate::error::Out;
 use crate::wire;
 
@@ -127,14 +127,17 @@ pub fn apply(
     })
 }
 
+// 下面三个都要读（落盘时还要写、要备份）客户端的配置文件：**放在阻塞线程上**，同
+// `scan_clients`。配置位置可能换到了一个离线的网络位置上
+
 #[tauri::command]
 pub async fn mcp_targets() -> Out<Vec<wire::McpTargetView>> {
-    Ok(targets(&home_dir()))
+    blocking(|| targets(&home_dir())).await
 }
 
 #[tauri::command]
 pub async fn plan_mcp(req: wire::McpOpRequest) -> Out<wire::PlanView> {
-    Ok(plan_op(&home_dir(), &req)?)
+    Ok(blocking(move || plan_op(&home_dir(), &req)).await??)
 }
 
 #[tauri::command]
@@ -142,12 +145,15 @@ pub async fn apply_mcp(
     req: wire::McpOpRequest,
     expect: Option<String>,
 ) -> Out<wire::AdoptResponse> {
-    Ok(apply(
-        &home_dir(),
-        &tw_adopt::foreign::backup_root(),
-        &req,
-        expect.as_deref(),
-    )?)
+    Ok(blocking(move || {
+        apply(
+            &home_dir(),
+            &tw_adopt::foreign::backup_root(),
+            &req,
+            expect.as_deref(),
+        )
+    })
+    .await??)
 }
 
 #[cfg(test)]
