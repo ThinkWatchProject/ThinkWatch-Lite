@@ -73,7 +73,7 @@ export function KeyCell({
     ...(peer ? [t.fromPeer(peer)] : []),
   ];
   return (
-    <Tip text={<Lines lines={tip} />}>
+    <Tip lazy text={<Lines lines={tip} />}>
       <span className="flex max-w-40 items-center gap-1.5">
         {hints &&
           (hint ? (
@@ -128,10 +128,9 @@ export function NotSentIcon({ kind, plain }: { kind: NotSent; plain?: boolean })
  * 一个在跑的请求已经跑了多久（`0:42`），每秒走一格。`at` 是开始事件的 `at_ms`，core
  * 的钟；减的也是 core 的钟（见 `clock.ts`）。还没对过钟时写「…」。
  *
- * **秒针不经过 React：字直接写进这个 `<span>`。**秒针要是走 React 的状态，每一秒都是
- * 一次比后台渲染优先的更新，会打断流量表在后台补画那两千行（`useDeferredValue`，
- * 被打断就从头来）—— 补画一次要一秒以上的话，表就一直停在首屏那几行。直接写字，行、
- * 表都不重画。React 只管这个空的 `<span>`，里面的字它不碰。
+ * **秒针不经过 React：字直接写进这个 `<span>`。**秒针要是走 React 的状态，每一秒每一
+ * 条在跑的请求都要重画一次它那一行。直接写字，行、表都不重画。React 只管这个空的
+ * `<span>`，里面的字它不碰。
  */
 export function Elapsed({ at }: { at: number }) {
   const ref = useRef<HTMLSpanElement>(null);

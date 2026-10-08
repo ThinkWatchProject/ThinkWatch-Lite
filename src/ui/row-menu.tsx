@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import {
@@ -55,35 +55,7 @@ export function RowMenu({ children, items }: { children: ReactNode; items: MenuI
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="min-w-[180px]">
-        <ContextMenuGroup>
-          {items.map((it, i) =>
-            it.kind === "sep" ? (
-              <ContextMenuSeparator key={i} />
-            ) : it.kind === "sub" ? (
-              <ContextMenuSub key={i}>
-                <ContextMenuSubTrigger>{it.label}</ContextMenuSubTrigger>
-                <ContextMenuSubContent>
-                  {it.choices.map((c) => (
-                    <ContextMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
-                      {c.label}
-                    </ContextMenuCheckboxItem>
-                  ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-            ) : (
-              <ContextMenuItem
-                key={i}
-                onSelect={it.onSelect}
-                disabled={it.disabled}
-                variant={it.danger ? "destructive" : "default"}
-              >
-                {it.label}
-              </ContextMenuItem>
-            ),
-          )}
-        </ContextMenuGroup>
-      </ContextMenuContent>
+      <RowContextMenuContent items={items} />
     </ContextMenu>
   );
 }
@@ -91,11 +63,8 @@ export function RowMenu({ children, items }: { children: ReactNode; items: MenuI
 /**
  * 行尾的「…」按钮。和右键打开的是**同一份**菜单 —— 右键发现不了，按钮是
  * 给第一次用的人的入口。
- *
- * `tabIndex`：行多的表（流量）只让键盘选中的那一行的按钮进 Tab 顺序，别的给 -1，
- * 免得 Tab 要穿过两千个「…」。
  */
-export function RowMenuButton({ items, label, tabIndex }: { items: MenuItems; label: string; tabIndex?: number }) {
+export function RowMenuButton({ items, label }: { items: MenuItems; label: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -103,7 +72,6 @@ export function RowMenuButton({ items, label, tabIndex }: { items: MenuItems; la
           variant="ghost"
           size="icon-xs"
           aria-label={label}
-          tabIndex={tabIndex}
           className="text-muted-foreground"
           // 行本身双击打开编辑；按钮上的点击不该冒泡成那一下
           onDoubleClick={(e) => e.stopPropagation()}
@@ -111,35 +79,83 @@ export function RowMenuButton({ items, label, tabIndex }: { items: MenuItems; la
           <MoreHorizontalIcon />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[180px]">
-        <DropdownMenuGroup>
-          {items.map((it, i) =>
-            it.kind === "sep" ? (
-              <DropdownMenuSeparator key={i} />
-            ) : it.kind === "sub" ? (
-              <DropdownMenuSub key={i}>
-                <DropdownMenuSubTrigger>{it.label}</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {it.choices.map((c) => (
-                    <DropdownMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
-                      {c.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ) : (
-              <DropdownMenuItem
-                key={i}
-                onSelect={it.onSelect}
-                disabled={it.disabled}
-                variant={it.danger ? "destructive" : "default"}
-              >
-                {it.label}
-              </DropdownMenuItem>
-            ),
-          )}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
+      <RowDropdownMenuContent items={items} />
     </DropdownMenu>
+  );
+}
+
+/**
+ * 两份菜单的内容，单独拿出来给「整张表共用一份菜单」的地方（流量表）：那里的触发器
+ * 不是一行一个，菜单打开时才按点中的那一行填条目。
+ */
+export function RowContextMenuContent({ items }: { items: MenuItems }) {
+  return (
+    <ContextMenuContent className="min-w-[180px]">
+      <ContextMenuGroup>
+        {items.map((it, i) =>
+          it.kind === "sep" ? (
+            <ContextMenuSeparator key={i} />
+          ) : it.kind === "sub" ? (
+            <ContextMenuSub key={i}>
+              <ContextMenuSubTrigger>{it.label}</ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {it.choices.map((c) => (
+                  <ContextMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
+                    {c.label}
+                  </ContextMenuCheckboxItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          ) : (
+            <ContextMenuItem
+              key={i}
+              onSelect={it.onSelect}
+              disabled={it.disabled}
+              variant={it.danger ? "destructive" : "default"}
+            >
+              {it.label}
+            </ContextMenuItem>
+          ),
+        )}
+      </ContextMenuGroup>
+    </ContextMenuContent>
+  );
+}
+
+/** `props` 原样交给 `DropdownMenuContent`：共用一份菜单的地方要自己接焦点、换标签 */
+export function RowDropdownMenuContent({
+  items,
+  ...props
+}: { items: MenuItems } & Omit<ComponentProps<typeof DropdownMenuContent>, "children">) {
+  return (
+    <DropdownMenuContent align="end" className="min-w-[180px]" {...props}>
+      <DropdownMenuGroup>
+        {items.map((it, i) =>
+          it.kind === "sep" ? (
+            <DropdownMenuSeparator key={i} />
+          ) : it.kind === "sub" ? (
+            <DropdownMenuSub key={i}>
+              <DropdownMenuSubTrigger>{it.label}</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {it.choices.map((c) => (
+                  <DropdownMenuCheckboxItem key={c.label} checked={c.checked} onSelect={c.onSelect}>
+                    {c.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ) : (
+            <DropdownMenuItem
+              key={i}
+              onSelect={it.onSelect}
+              disabled={it.disabled}
+              variant={it.danger ? "destructive" : "default"}
+            >
+              {it.label}
+            </DropdownMenuItem>
+          ),
+        )}
+      </DropdownMenuGroup>
+    </DropdownMenuContent>
   );
 }
