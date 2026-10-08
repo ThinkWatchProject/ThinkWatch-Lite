@@ -1,4 +1,5 @@
 import { textOf } from "@/i18n";
+import { isRunning, parseCoreState } from "@/coreState";
 import { trouble, type Trouble } from "./trouble";
 import { launchText } from "./LaunchScreen.i18n";
 
@@ -16,9 +17,10 @@ export function launchPhase(
   linkError: string | null,
 ): { what: string; problem: Trouble | null } {
   const t = textOf(launchText);
-  const running = state.startsWith("running:");
+  const s = parseCoreState(state);
+  const running = isRunning(s);
   // 为改配置之类主动重启的那一下（第 0 次）照「在起」算，不是出了事
-  const starting = state === "starting" || state.startsWith("restarting:0:");
+  const starting = s.kind === "starting" || (s.kind === "restarting" && s.attempt === 0);
   const problem: Trouble | null =
     // 控制面答应过，状态却连着读不到：说读不到的原因（多半是两边版本对不上）
     running && !linked && tries >= 2 && linkError

@@ -65,7 +65,7 @@ export function SettingsPage({
 }: {
   ov: Overview | null;
   status: CoreStatus | null;
-  /** 本机 core 此刻怎么样，和侧栏左下角同一句（App 的 `describeCore`）。连本机时连接那一行和页头写它 */
+  /** 本机 core 此刻怎么样，和侧栏左下角同一句（`shell/describe.ts` 的 `describeCore`）。连本机时连接那一行和页头写它 */
   local: { text: string; tone: Tone };
   /** 控制面答应了。没有的话改配置文件的两节画成「连接后可修改」 */
   linked: boolean;

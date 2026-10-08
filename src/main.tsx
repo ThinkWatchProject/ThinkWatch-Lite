@@ -29,7 +29,8 @@ const label = windowLabel();
   一遍，才画得出一个小窗。
 
   **等加载完再挂，不用 `lazy` + `Suspense`**：挂上去的第一帧就是那个窗口本身，中间没有
-  一个空白的占位帧。截图页（scripts/shots）`await import` 这个入口时也就等到了它。
+  一个空白的占位帧。截图页（scripts/shots）`await import` 这个入口时也就等到了它。主窗口
+  这一份只有启动画面和连 core 的那一层，主界面是在它下面接着载入的另一块（见 `App`）。
 */
 const { default: Root } = await (label === "update"
   ? import("./UpdateWindow")

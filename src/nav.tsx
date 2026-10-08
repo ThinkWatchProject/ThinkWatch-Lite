@@ -4,7 +4,7 @@ import type { BedrockDraft } from "./types";
 import type { LogFocus } from "./security/SecurityPage";
 
 /**
- * 主窗口的几个面，按源列表从上到下的顺序。**⌘1…⌘9 也按这个顺序**（见 App.tsx）：
+ * 主窗口的几个面，按源列表从上到下的顺序。**⌘1…⌘9 也按这个顺序**（见 shell/Workspace.tsx）：
  * 前九页各占一个数字，排在最后的设置是 ⌘,（macOS 的惯例），不占数字。
  */
 export const SURFACES = [

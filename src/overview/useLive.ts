@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef } from "react";
 import { call } from "@/control";
 import { subscribe } from "@/lib/tauriEvent";
+import { isRunning, parseCoreState } from "@/coreState";
 import { textOf } from "@/i18n";
 import type { CoreEvent, HistoryRow } from "@/types";
 import { liveText } from "./useLive.i18n";
@@ -250,7 +251,7 @@ export function useInFlight(): number {
       了，而它们再也不会有结局；回来的时候（`running:<pid>`）重新对一遍。
     */
     const unState = subscribe<string>("core-state", (e) => {
-      if (e.payload.startsWith("running")) {
+      if (isRunning(parseCoreState(e.payload))) {
         void resync();
       } else {
         since = null;
@@ -286,6 +287,10 @@ export function useInFlight(): number {
  * 那个定时器**不是轮询**：它什么都不查，只是让曲线往左走。不走的话，
  * 一段没有请求的空闲看起来会像界面卡住了。只在这一档挂着。
  *
+ * **窗口藏着的时候它停下。**看不见的图每半秒重画一遍是白画（实时档是概览的默认档，
+ * 最小化一夜就是七万多次）。事件照样记、窗口外的照样丢，露面的那一刻按当下的时间
+ * 重铺一次，再接着走。
+ *
  * **进这一档先把已经发生过的那一段补上。**只挂事件流的话，曲线永远从切进来
  * 的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图加一句「等待
  * 请求」，而顶上的数字说有几十次。请求发生过，没人看着不等于没发生。
@@ -314,6 +319,13 @@ export function useLiveWindow(active: boolean, windowMs: number) {
     */
     const counted = (id: number) => samples.current.some((s) => s.id === id);
     const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
+    const hidden = () => document.visibilityState === "hidden";
+    /** 丢掉窗口外的 */
+    const trim = () => {
+      const cut = Date.now() - windowMs;
+      samples.current = samples.current.filter((s) => s.at >= cut);
+      fails.current = fails.current.filter((f) => f.at >= cut);
+    };
     const land = (id: number, model: string | null | undefined, u: { input: number; output: number; cache_read: number; cache_write: number }) => {
       if (counted(id)) return;
       samples.current.push({
@@ -354,6 +366,8 @@ export function useLiveWindow(active: boolean, windowMs: number) {
       } else {
         return;
       }
+      // 藏着的时候走的那个定时器停着，窗口外的没人丢：在这里丢，不攒
+      if (hidden()) trim();
       soon();
     });
     /*
@@ -399,16 +413,33 @@ export function useLiveWindow(active: boolean, windowMs: number) {
     };
     void seed();
 
-    const h = setInterval(() => {
-      const cut = Date.now() - windowMs;
-      samples.current = samples.current.filter((s) => s.at >= cut);
-      fails.current = fails.current.filter((f) => f.at >= cut);
+    const step = () => {
+      trim();
       frame();
-    }, LIVE_FRAME_MS);
+    };
+    let h: ReturnType<typeof setInterval> | null = null;
+    const walk = () => {
+      if (h === null) h = setInterval(step, LIVE_FRAME_MS);
+    };
+    const halt = () => {
+      if (h !== null) clearInterval(h);
+      h = null;
+    };
+    // 藏起来就停；露面时先按当下的时间重铺一次（这一下就把藏着的那段补齐了），再接着走
+    const onVisibility = () => {
+      if (hidden()) halt();
+      else if (h === null) {
+        step();
+        walk();
+      }
+    };
+    if (!hidden()) walk();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       alive = false;
       un();
-      clearInterval(h);
+      halt();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [active, windowMs, frame, soon]);
 

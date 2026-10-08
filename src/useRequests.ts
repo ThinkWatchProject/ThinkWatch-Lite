@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { subscribe } from "@/lib/tauriEvent";
 import { call } from "@/control";
+import { isRunning, parseCoreState } from "@/coreState";
 import {
   applyEvent,
   applyInFlight,
@@ -9,10 +19,12 @@ import {
   nonEmpty,
   type CoreEvent,
   type HistoryRow,
+  type ListQuery,
   type LocalEvent,
   type RequestRow,
   type ScanFinding,
   type SeenSince,
+  type SessionView,
 } from "./types";
 import { marksFromEvents } from "./security/marks";
 import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
@@ -35,7 +47,7 @@ import { noteCoreTime, resetCoreClock, syncCoreClock } from "./traffic/clock";
  * 返回有没有哪一行变了（换了对象、或者多了一行）。**没变就不用交给界面**（见 `publish`）：
  * 每批请求落地都要对一次账，而大多数时候两千行里只有刚落地的那几行不一样。
  */
-export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[]): boolean {
+export function mergeHistory(rows: Map<number, RequestRow>, history: readonly HistoryRow[]): boolean {
   let dirty = false;
   for (const h of history) {
     const cur = rows.get(h.id);
@@ -47,56 +59,9 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
     */
     const cut = cur?.state === "failed" && cur.error?.code === CORE_STOPPED.code;
     if (cur && !(cut && cur.atMs !== h.at_ms)) {
-      const next = { ...cur };
-      /*
-        **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
-        确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
-        按库里的补上结局，不然这一行永远在跑。
-      */
-      if (next.state === "in_flight" || cut) {
-        next.state = h.error ? "failed" : h.cancelled ? "cancelled" : "done";
-        if (h.status != null) next.status = h.status;
-        next.durationMs = h.duration_ms ?? undefined;
-        next.tokensPerSec = h.tokens_per_sec ?? undefined;
-        next.bytes = h.bytes ?? undefined;
-        next.error = h.error ?? undefined;
-      }
-      // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
-      if (!h.local) next.provider = h.provider;
-      next.model ??= h.model || undefined;
-      // 路由也以库里的为准：服务它的那一跳和它发出的模型名是一对，跟着上游走。改写的规则
-      // 名单一样就留着原来那个数组，不然每次对账这一行都「变了」
-      if (h.routing) {
-        next.route = h.routing.route;
-        next.rule = h.routing.rule;
-        next.sentModel = lastSent(h);
-        if ((next.rewrittenBy ?? []).join("\n") !== h.routing.rewritten_by.join("\n"))
-          next.rewrittenBy = nonEmpty(h.routing.rewritten_by);
-      }
-      next.ttftMs ??= h.ttft_ms ?? undefined;
-      if (h.input_tokens != null) next.inputTokens = h.input_tokens;
-      if (h.output_tokens != null) next.outputTokens = h.output_tokens;
-      if (h.cache_read_tokens != null) next.cacheReadTokens = h.cache_read_tokens;
-      if (h.cache_write_tokens != null) next.cacheWriteTokens = h.cache_write_tokens;
-      if (h.cost_micros != null) {
-        next.costMicros = h.cost_micros;
-        next.costEstimated = h.cost_estimated;
-      }
-      next.translated ??= h.translated ?? undefined;
-      // 插件改没改过只在库里有：事件流不说
-      if (h.plugin_changed) next.pluginChanged = true;
-      next.session ??= h.session ?? undefined;
-      if (!next.secrets || !next.flagged || !next.stripped) {
-        const marks = marksFromEvents(h.security);
-        next.secrets ??= marks.secrets;
-        next.flagged ??= marks.flagged;
-        next.stripped ??= marks.stripped;
-      }
-      next.hint ??= h.client_hint ?? undefined;
-      next.peer ??= h.peer ?? undefined;
-      next.keyMasked ??= h.key_masked ?? undefined;
-      if (changed(cur, next)) {
-        rows.set(h.id, next);
+      const patch = patchFromHistory(cur, h, cut);
+      if (patch) {
+        rows.set(h.id, { ...cur, ...patch });
         dirty = true;
       }
       continue;
@@ -105,6 +70,74 @@ export function mergeHistory(rows: Map<number, RequestRow>, history: HistoryRow[
     rows.set(h.id, rowFromHistory(h));
   }
   return dirty;
+}
+
+/**
+ * 库里这一条要往现有的那一行上补什么。**只收和现在不一样的那几项**，一项都没有就是 null。
+ *
+ * 原来先把整行抄一份、逐项改完再和原来的比：两千行的对账，每一次都要抄两千个对象、
+ * 每个再建一个键的集合，而绝大多数行一项都没变。
+ *
+ * **没有这一项和这一项是 `undefined` 算一样**（`Object.is(undefined, undefined)`）：
+ * 库里也没有的时候不算「变了」，不然每次对账整张表都跟着重画。
+ */
+function patchFromHistory(cur: RequestRow, h: HistoryRow, cut: boolean): Partial<RequestRow> | null {
+  let patch: Partial<RequestRow> | null = null;
+  const put = <K extends keyof RequestRow>(k: K, v: RequestRow[K]) => {
+    if (!Object.is(cur[k], v)) (patch ??= {})[k] = v;
+  };
+  /** 原来没有才补（`??=`）：实时那一行更全，有的不拿库里的覆盖 */
+  const fill = <K extends keyof RequestRow>(k: K, v: RequestRow[K]) => {
+    if (cur[k] == null) put(k, v);
+  };
+  /*
+    **还在「进行中」的行，库里已经有了它**：记录只在结局到了才落库，所以它
+    确实结束了，只是结局事件没送到（事件流丢过事件、或者在重连的间隙里）。
+    按库里的补上结局，不然这一行永远在跑。
+  */
+  if (cur.state === "in_flight" || cut) {
+    put("state", h.error ? "failed" : h.cancelled ? "cancelled" : "done");
+    if (h.status != null) put("status", h.status);
+    put("durationMs", h.duration_ms ?? undefined);
+    put("tokensPerSec", h.tokens_per_sec ?? undefined);
+    put("bytes", h.bytes ?? undefined);
+    put("error", h.error ?? undefined);
+  }
+  // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
+  if (!h.local) put("provider", h.provider);
+  fill("model", h.model || undefined);
+  // 路由也以库里的为准：服务它的那一跳和它发出的模型名是一对，跟着上游走。改写的规则
+  // 名单一样就留着原来那个数组，不然每次对账这一行都「变了」
+  if (h.routing) {
+    put("route", h.routing.route);
+    put("rule", h.routing.rule);
+    put("sentModel", lastSent(h));
+    if ((cur.rewrittenBy ?? []).join("\n") !== h.routing.rewritten_by.join("\n"))
+      put("rewrittenBy", nonEmpty(h.routing.rewritten_by));
+  }
+  fill("ttftMs", h.ttft_ms ?? undefined);
+  if (h.input_tokens != null) put("inputTokens", h.input_tokens);
+  if (h.output_tokens != null) put("outputTokens", h.output_tokens);
+  if (h.cache_read_tokens != null) put("cacheReadTokens", h.cache_read_tokens);
+  if (h.cache_write_tokens != null) put("cacheWriteTokens", h.cache_write_tokens);
+  if (h.cost_micros != null) {
+    put("costMicros", h.cost_micros);
+    put("costEstimated", h.cost_estimated);
+  }
+  fill("translated", h.translated ?? undefined);
+  // 插件改没改过只在库里有：事件流不说
+  if (h.plugin_changed) put("pluginChanged", true);
+  fill("session", h.session ?? undefined);
+  if (!cur.secrets || !cur.flagged || !cur.stripped) {
+    const marks = marksFromEvents(h.security);
+    fill("secrets", marks.secrets);
+    fill("flagged", marks.flagged);
+    fill("stripped", marks.stripped);
+  }
+  fill("hint", h.client_hint ?? undefined);
+  fill("peer", h.peer ?? undefined);
+  fill("keyMasked", h.key_masked ?? undefined);
+  return patch;
 }
 
 /** 服务它的那一跳发出的模型名（和客户端要的不同才有） */
@@ -153,18 +186,6 @@ export function rowFromHistory(h: HistoryRow): RequestRow {
     keyMasked: h.key_masked ?? undefined,
     ...marksFromEvents(h.security),
   };
-}
-
-/**
- * 两个行对象上有没有哪一项不一样（只比一层：嵌套的那几样只在原来没有时才换）。
- *
- * **没有这一项和这一项是 `undefined` 算一样。**上面的 `??=` 在库里也没有的时候
- * 会写上一个 `undefined`，按键数比的话每次对账都「变了」，整张表跟着重画。
- */
-function changed(a: RequestRow, b: RequestRow): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof RequestRow>;
-  for (const k of keys) if (!Object.is(a[k], b[k])) return true;
-  return false;
 }
 
 /**
@@ -241,21 +262,175 @@ export const LIST_LIMIT = 2000;
 const SETTLE_MS = 2_500;
 
 /**
+ * 落地的一行连着几次对账都没在库里对上，就不再等它。
+ *
+ * 库没在记（存储层起不来），或者那一行早被挤出了最近的两千条：一直等下去的话，每次对账
+ * 都要从它开始的那一刻读起。
+ */
+const MAX_MISSES = 3;
+
+/** 事件流上落地了、还没在库里对上的一行 */
+export interface Awaiting {
+  /** 开始的时刻（core 的钟，和库里的 `at_ms` 同一个） */
+  at: number;
+  /** 连着几次对账没对上 */
+  misses: number;
+}
+
+/**
+ * 这一次对账问库要什么。`full`：读整份（最近的两千条）；否则从等着对上的那几行里最早
+ * 开始的那一刻读起 —— 库里按开始的时刻记，落地晚的长请求也在里面。**没什么要对的是
+ * null**，这一次不问。导出给测试用。
+ */
+export function historyQuery(full: boolean, awaiting: Iterable<Awaiting>): ListQuery | null {
+  if (full) return { limit: LIST_LIMIT };
+  let from = Infinity;
+  for (const w of awaiting) from = Math.min(from, w.at);
+  return from === Infinity ? null : { limit: LIST_LIMIT, from_ms: from };
+}
+
+/**
+ * 对完一次账：问的时候在等的那几行，库里有了的不再等，连着 `MAX_MISSES` 次没对上的也
+ * 不等了。问的这会儿才落地的（同一个号又落地了一次也算）不动。导出给测试用。
+ */
+export function settleAwaiting(
+  awaiting: Map<number, Awaiting>,
+  asked: readonly (readonly [number, Awaiting])[],
+  found: ReadonlySet<number>,
+): void {
+  for (const [id, w] of asked) {
+    if (awaiting.get(id) !== w) continue;
+    w.misses += 1;
+    if (found.has(id) || w.misses >= MAX_MISSES) awaiting.delete(id);
+  }
+}
+
+/**
+ * 实时请求列表交给界面的那一份。
+ *
+ * **外壳不订阅它。**原来这些都是 App 的 state：流式请求每一帧都在改列表，外壳和眼前那一页
+ * 跟着整个重画 —— 概览页根本不画这张表，2 请求/秒下脚本时间却从 340 ms/10 s 涨到
+ * 1,160 ms/10 s。现在放在 React 外面（`useSyncExternalStore`），只有真用到的地方订阅：
+ * 流量页、命令面板、密钥页和客户端页上的「请求中」、概览和安全页的重取节拍。
+ */
+export interface RequestsView {
+  /** 新的在前。**交出去的这一份只读**：要改的话改 `useRequests` 里的那张表，再交一份新的 */
+  rows: RequestRow[];
+  /** 历史读过了吗。**读之前是骨架屏，读完没有才是空状态** */
+  seeded: boolean;
+  /**
+   * 开窗时那一次读历史失败的原因。**下一次读成了才清掉。**
+   *
+   * 原来读失败就当成「没有记录」：流量页说「暂无请求记录」，而库里明明有两千条。
+   * 现在流量页据此说「读取失败」并给「重试」；事件流照常，这之后收到的请求照样
+   * 进列表。
+   */
+  seedError: unknown;
+  /**
+   * 对过几次账了。
+   *
+   * **概览页靠它决定什么时候重新拉数。**那一页问的是库，而库只在请求
+   * 落地之后才变 —— 定时轮询等于在什么都没发生的时候反复重画一张一样
+   * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
+   */
+  settled: number;
+  /**
+   * 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
+   * 连上了，又说明那些探测一分钱都没花。
+   */
+  locallyAnswered: number;
+  /**
+   * 会话汇总，归组表的组头要用它。**不定时轮询**：会话是把落库的请求聚起来算的，只在
+   * 有请求落地之后才会变，所以和对账同一个节拍（`settled`）重读。读不到就留着上一份。
+   */
+  sessions: SessionView[];
+}
+
+export interface RequestsStore {
+  /** 现在这一份。**没变就是同一个对象**：`useSyncExternalStore` 按引用判断要不要重画 */
+  get: () => RequestsView;
+  subscribe: (listener: () => void) => () => void;
+  /** 「重试」：再读一遍历史 */
+  reseed: () => Promise<void>;
+}
+
+const EMPTY: RequestsView = {
+  rows: [],
+  seeded: false,
+  seedError: undefined,
+  settled: 0,
+  locallyAnswered: 0,
+  sessions: [],
+};
+
+function createStore(reseed: () => Promise<void>) {
+  let view = EMPTY;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => view,
+    subscribe: (l: () => void) => {
+      listeners.add(l);
+      return () => {
+        listeners.delete(l);
+      };
+    },
+    reseed,
+    /** 改几项。**一项都没变就不惊动谁** */
+    set: (patch: Partial<RequestsView>) => {
+      if ((Object.keys(patch) as (keyof RequestsView)[]).every((k) => Object.is(view[k], patch[k]))) return;
+      view = { ...view, ...patch };
+      for (const l of listeners) l();
+    },
+  };
+}
+
+const RequestsContext = createContext<RequestsStore | null>(null);
+
+/** 外壳把 `useRequests` 的那一份放进来，各页用下面几个钩子取 */
+export const RequestsProvider = RequestsContext.Provider;
+
+function useStore(): RequestsStore {
+  const store = useContext(RequestsContext);
+  if (!store) throw new Error("useRequestsView must be used inside the app shell");
+  return store;
+}
+
+/**
+ * 取实时请求列表里的一样。**只在取出来的那一样变了时重画。**
+ *
+ * `pick` 返回的要么是原样的一项（`(v) => v.rows`），要么是按值比较的字符串、数字：每次新建
+ * 一个对象或数组的话，每一次改动都算「变了」，订阅了等于没拆。
+ */
+export function useRequestsView<T>(pick: (v: RequestsView) => T): T {
+  const store = useStore();
+  const get = () => pick(store.get());
+  return useSyncExternalStore(store.subscribe, get, get);
+}
+
+/** 流量页的「重试」：再读一遍历史 */
+export function useReseed(): () => Promise<void> {
+  return useStore().reseed;
+}
+
+/**
  * 实时请求列表。
  *
  * **每条事件都 setState 会把 React 打死**：一个流式
  * 请求每秒几十条事件，十个并发就是每秒几百次重渲染。所以事件先进
  * `useRef` 的缓冲区，按帧 flush 一次 —— 60fps 下用户根本看不出区别，
- * 而重渲染次数降了一到两个数量级。
+ * 而重渲染次数降了一到两个数量级。列表本身交给 `RequestsStore`，谁用谁订阅（见 `RequestsView`）。
  *
- * `ready`：连上控制面了（App 的 `linked`）。**历史等它再读** —— 开窗那一刻 core
+ * **窗口藏着的时候不按帧攒。**最小化、被整个盖住、应用被隐藏时 rAF 不来，缓冲区原来就
+ * 一直涨，对账也停着。现在藏着的时候事件当场落进列表（照样按上限丢最老的），只是不交给
+ * 界面；露面的那一刻一次交出去，再对一次账。
+ *
+ * `ready`：连上控制面了（`useCoreLink` 的 `linked`）。**历史等它再读** —— 开窗那一刻 core
  * 多半还在起，读回来的只有一句「连不上」，而这一份只读一次。
  */
 export function useRequests(ready: boolean) {
-  const [rows, setRows] = useState<RequestRow[]>([]);
-  // 本地应答单独计数。**这是个正向数字** —— 它既证明客户端确实
-  // 连上了，又说明那些探测一分钱都没花。
-  const [locallyAnswered, setLocallyAnswered] = useState(0);
+  /** 「重试」走的那一下。store 在第一次渲染时就建好了，读历史的函数在下面，所以隔一层 */
+  const seedNow = useRef<() => Promise<void>>(() => Promise.resolve());
+  const [store] = useState(() => createStore(() => seedNow.current()));
   /**
    * 配置面上新出现的可疑内容。
    *
@@ -285,28 +460,6 @@ export function useRequests(ready: boolean) {
    * `Overview.config_version`），这里只报「换了」。
    */
   const [reloads, setReloads] = useState(0);
-  const store = useRef(new Map<number, RequestRow>());
-  const pending = useRef<CoreEvent[]>([]);
-  const frame = useRef<number | null>(null);
-  /** 历史读过了吗。**读之前是骨架屏，读完没有才是空状态** */
-  const [seeded, setSeeded] = useState(false);
-  /**
-   * 开窗时那一次读历史失败的原因。**下一次读成了才清掉。**
-   *
-   * 原来读失败就当成「没有记录」：流量页说「暂无请求记录」，而库里明明有两千条。
-   * 现在流量页据此说「读取失败」并给「重试」；事件流照常，这之后收到的请求照样
-   * 进列表。
-   */
-  const [seedError, setSeedError] = useState<unknown>(undefined);
-  /**
-   * 对过几次账了。
-   *
-   * **概览页靠它决定什么时候重新拉数。**那一页问的是库，而库只在请求
-   * 落地之后才变 —— 定时轮询等于在什么都没发生的时候反复重画一张一样
-   * 的图。这个计数每涨一次，就意味着「库里确实多了点东西」。
-   */
-  const [settled, setSettled] = useState(0);
-  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * 「现在什么情况」变了几次。
    *
@@ -331,10 +484,26 @@ export function useRequests(ready: boolean) {
    * 它们。
    */
   const [upstreamState, setUpstreamState] = useState(0);
+  const rows = useRef(new Map<number, RequestRow>());
+  const pending = useRef<CoreEvent[]>([]);
+  const frame = useRef<number | null>(null);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * 事件流上落地了、还没在库里对上的行：id → 开始的时刻（core 的钟，和库里的 `at_ms` 同一个）。
+   * 下一次对账从其中最早的那一刻读起，见 `pull`
+   */
+  const awaiting = useRef(new Map<number, Awaiting>());
+  /**
+   * 下一次对账读整份（最近的两千条），不只读落地的那一段。开窗时是；事件流说不全的时候
+   * 也是：丢过事件、core 停过、落地的那一行列表里没有
+   */
+  const whole = useRef(true);
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
 
   /** 超出上限时按 id 顺序丢最老的 */
   const prune = useCallback(() => {
-    const m = store.current;
+    const m = rows.current;
     if (m.size <= LIST_LIMIT) return;
     const ids = [...m.keys()].sort((a, b) => a - b);
     for (const id of ids.slice(0, m.size - LIST_LIMIT)) m.delete(id);
@@ -343,25 +512,42 @@ export function useRequests(ready: boolean) {
   /** 把存着的行按新的在前交给界面 */
   const publish = useCallback(() => {
     prune();
-    setRows([...store.current.values()].sort((a, b) => b.id - a.id));
-  }, [prune]);
+    store.set({ rows: [...rows.current.values()].sort((a, b) => b.id - a.id) });
+  }, [prune, store]);
 
   /**
    * 从库里读一遍最近的记录，并进当前列表。
    *
-   * 开窗时读一次；之后每批请求落地再读一次（`settled`），补上事件流没见全的行。
+   * 开窗时读一次；之后每批请求落地再读一次（`settled`），补上事件流没见全的行。**落地
+   * 之后只读落地的那一段**：从等着对上的那几行里最早开始的那一刻起（`from_ms`）。原来每次
+   * 都读整整两千条，连续有请求时每 2.5 秒一遍、两千行逐一比过，而要对的只是刚落地的几行。
+   * 事件流说不全的时候（见 `whole`）照旧读整份。
+   *
    * 怎么并见 `mergeHistory`：历史只添信息，结局没送到的行按库里补上。
    */
   const pull = useCallback(async () => {
+    const asked = [...awaiting.current];
+    const full = whole.current;
     /*
       **整份日志，不分段。**日志留多久是设置里的事（保留期），而这一页
       要回答的是「翻一翻最近发生过什么」—— 让人先选一个时间范围才能
-      开始搜，等于在一个本来就不大的集合上加一道门。
+      开始搜，等于在一个本来就不大的集合上加一道门。落地之后只读落地的那一段，
+      是对账的事，不是给这一页分段。
     */
-    const history = await call("History", { limit: LIST_LIMIT });
-    if (mergeHistory(store.current, history)) publish();
-    setSeedError(undefined);
-  }, [publish]);
+    const query = historyQuery(full, awaiting.current.values());
+    if (!query) return;
+    whole.current = false;
+    let history: HistoryRow[];
+    try {
+      history = await call("History", query);
+    } catch (e) {
+      if (full) whole.current = true;
+      throw e;
+    }
+    if (mergeHistory(rows.current, history)) publish();
+    settleAwaiting(awaiting.current, asked, new Set(history.map((h) => h.id)));
+    store.set({ seedError: undefined });
+  }, [publish, store]);
 
   /**
    * 读一遍历史，记下成没成。**成没成都算读过了**：这个标记决定「画骨架屏还是画
@@ -369,18 +555,26 @@ export function useRequests(ready: boolean) {
    */
   const seed = useCallback(
     async (alive: () => boolean = () => true) => {
+      whole.current = true;
       try {
         await pull();
       } catch (e) {
-        if (alive()) setSeedError(e);
+        if (alive()) store.set({ seedError: e });
       }
-      if (alive()) setSeeded(true);
+      if (alive()) store.set({ seeded: true });
     },
-    [pull],
+    [pull, store],
   );
+  seedNow.current = () => seed();
 
-  /** 「重试」：再读一遍历史 */
-  const reseed = useCallback(() => seed(), [seed]);
+  /** 重读会话汇总。读不到就留着上一份：下一批请求落地还会再读 */
+  const loadSessions = useCallback(async () => {
+    try {
+      store.set({ sessions: await call("Sessions", { limit: 200 }) });
+    } catch {
+      // 留着上一份
+    }
+  }, [store]);
 
   // **连上就先把最近的历史填进来。**关窗时窗口是被销毁的（那省下
   // 128 MB 的 WebKit，见 lib.rs 里那段实测），所以重开时这个 hook 是
@@ -389,40 +583,58 @@ export function useRequests(ready: boolean) {
     if (!ready) return;
     let alive = true;
     void seed(() => alive);
+    void loadSessions();
     return () => {
       alive = false;
     };
-  }, [seed, ready]);
-
-  /*
-    **落库之后再对一次账。**事件流没说全的，库里有：页面挂上之前就开始、又在
-    快照路上结束了的请求，事件流上只见过它的结局，列表里还没有这一行；事件流
-    丢过事件时，丢掉的那些结局也要从库里补。
-
-    `settled` 正是「刚落地的那几行已经在库里了」这个信号。
-  */
-  useEffect(() => {
-    if (settled === 0) return;
-    void pull().catch(() => {
-      // 对不上就保持原样。下一批落地还会再试
-    });
-  }, [settled, pull]);
+  }, [seed, loadSessions, ready]);
 
   useEffect(() => {
+    /** 窗口藏着：最小化、被整个盖住、应用被隐藏。**这时候 rAF 不来** */
+    const hidden = () => document.visibilityState === "hidden";
+    /** 藏着的时候落进列表、还没交给界面的 */
+    let stale = false;
+    /** 藏着的时候该发的「库里可以重算了」，露面时再发 */
+    let held = false;
+
+    /** 列表变了：交给界面。藏着的时候只落进列表（照样按上限丢最老的），露面时一次交出去 */
+    const commit = () => {
+      if (hidden()) {
+        prune();
+        stale = true;
+      } else publish();
+    };
+
+    /** 事件流上落地了一行：记下来，下一次对账去库里对上它（价钱、插件、路由以库里的为准） */
+    const landedRow = (id: number) => {
+      const r = rows.current.get(id);
+      if (!r) {
+        // 列表里没有这一行：开窗之前就开始、又在快照路上结束的。只有整份读才补得回来
+        whole.current = true;
+        return;
+      }
+      awaiting.current.set(id, { at: r.atMs, misses: 0 });
+      // 攒了一大堆（藏了很久）：不如读整份
+      if (awaiting.current.size > LIST_LIMIT) {
+        awaiting.current.clear();
+        whole.current = true;
+      }
+    };
+
     const flush = () => {
       frame.current = null;
       if (pending.current.length === 0) return;
       const batch = pending.current;
       pending.current = [];
       let local = 0;
-      let landed = false;
+      const ended: number[] = [];
       for (const ev of batch) {
         if (
           ev.kind === "request_finished" ||
           ev.kind === "request_failed" ||
           ev.kind === "request_cancelled"
         ) {
-          landed = true;
+          ended.push(ev.id);
         }
         if (ev.kind === "health_changed") setHealth((n) => n + 1);
         if (ev.kind === "models_changed") setModels((n) => n + 1);
@@ -446,11 +658,27 @@ export function useRequests(ready: boolean) {
           setReloads((n) => n + 1);
         }
       }
-      if (local > 0) setLocallyAnswered((n) => n + local);
+      if (local > 0) store.set({ locallyAnswered: store.get().locallyAnswered + local });
       // 一行都没动的批次不交给界面，见 `applyBatch`
-      if (applyBatch(store.current, batch)) publish();
+      if (applyBatch(rows.current, batch)) commit();
+      // 落地的行这时才都在列表里：开始和结局在同一批里的也算
+      for (const id of ended) landedRow(id);
       // 落地一批就发一次「可以重算聚合了」
-      if (landed) settleSoon();
+      if (ended.length > 0) settleSoon();
+    };
+
+    /** 「库里可以重算了」：计数加一，顺带对账、重读会话。藏着的时候不发，露面时再发 */
+    const settleNow = () => {
+      if (hidden()) {
+        held = true;
+        return;
+      }
+      store.set({ settled: store.get().settled + 1 });
+      if (!readyRef.current) return;
+      void pull().catch(() => {
+        // 对不上就保持原样。下一批落地还会再试
+      });
+      void loadSessions();
     };
 
     /** 过一会儿发一次「库里可以重算了」。**已经排上的不再往后推** */
@@ -458,13 +686,32 @@ export function useRequests(ready: boolean) {
       if (settle.current) return;
       settle.current = setTimeout(() => {
         settle.current = null;
-        setSettled((n) => n + 1);
+        settleNow();
       }, SETTLE_MS);
     };
 
     const schedule = () => {
-      if (frame.current === null) frame.current = requestAnimationFrame(flush);
+      // 藏着的时候 rAF 不来：当场落进列表，不往缓冲区里攒（见 `commit`）
+      if (hidden()) flush();
+      else if (frame.current === null) frame.current = requestAnimationFrame(flush);
     };
+
+    /*
+      **露面的那一刻补上藏着时落下的。**藏着的时候列表照样在更新，只是没交给界面；对账
+      也停着（读回来也没人看），这时补一次 —— 库里早就有了，不用再等。
+    */
+    const onVisibility = () => {
+      if (hidden()) return;
+      if (stale) {
+        stale = false;
+        publish();
+      }
+      if (held) {
+        held = false;
+        settleNow();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     /*
       **开窗之前就开始了的请求，事件流不会再说一遍。**关窗时窗口是被销毁的，
@@ -503,9 +750,11 @@ export function useRequests(ready: boolean) {
       /*
         **丢过事件，就整体对一次账。**进行中的问 core 要快照；丢掉的那些结局落库
         要一点时间，到时候照「落地之后对账」的那条路从库里补 —— 补的时候还在
-        「进行中」的行会按库里的记上结局（见 `pull`）。
+        「进行中」的行会按库里的记上结局（见 `pull`）。丢掉的是哪几行不知道，所以
+        读整份。
       */
       if (ev.kind === "events_dropped") {
+        whole.current = true;
         void resync();
         settleSoon();
       }
@@ -523,7 +772,7 @@ export function useRequests(ready: boolean) {
         // 等的这会儿 core 停了、或者又开始了一次对账：这份作废
         if (!alive || since !== mark) return;
         syncCoreClock(open.now_ms, sentAt, gotAt);
-        if (applyInFlight(store.current, open.requests, mark)) publish();
+        if (applyInFlight(rows.current, open.requests, mark)) commit();
       } catch {
         // 问不到就和以前一样：等它们结束、落库之后对账时出现
       } finally {
@@ -537,7 +786,7 @@ export function useRequests(ready: boolean) {
       再对一次账，补上重连之前就开始了的。
     */
     const unState = subscribe<string>("core-state", (e) => {
-      if (e.payload.startsWith("running")) {
+      if (isRunning(parseCoreState(e.payload))) {
         void resync();
         return;
       }
@@ -545,8 +794,12 @@ export function useRequests(ready: boolean) {
       // 先把缓冲里的事件落下去：结局已经到了的，别被记成中断
       flush();
       // 要改的行先换成新对象，见 `touches`
-      for (const [id, r] of store.current) if (r.state === "in_flight") store.current.set(id, { ...r });
-      if (interruptInFlight(store.current)) publish();
+      for (const [id, r] of rows.current) if (r.state === "in_flight") rows.current.set(id, { ...r });
+      if (interruptInFlight(rows.current)) {
+        // 连着远程时断的只是这边：那边照常跑完、落了库。下一次对账读整份，按库里的改回来
+        whole.current = true;
+        commit();
+      }
     });
 
     /*
@@ -558,35 +811,58 @@ export function useRequests(ready: boolean) {
       if (ev.kind === "scan_alert") setAlerts((prev) => [...ev.alerts, ...prev].slice(0, 50));
     });
 
-    // 窗口不可见时不必再排帧 —— 后台标签页的 rAF 本来就会被节流，
-    // 但显式断掉能省下事件堆积。
     return () => {
       alive = false;
       un();
       unState();
       unLocal();
+      document.removeEventListener("visibilitychange", onVisibility);
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (settle.current) clearTimeout(settle.current);
     };
-  }, [publish]);
+  }, [publish, prune, pull, loadSessions, store]);
 
-  return {
-    rows,
-    seeded,
-    seedError,
-    reseed,
-    settled,
-    health,
-    models,
-    listening,
-    upstreamState,
-    locallyAnswered,
-    rejected,
-    reloads,
-    alerts,
-    rotated,
-    clearAlerts: () => setAlerts([]),
-    /** 关掉一家的那一条。**不是全部**：关一条告知，不该顺手把另一家「重启前必须处理」的那条也关了 */
-    clearRotated: (provider: string) => setRotated((p) => p.filter((x) => x.provider !== provider)),
-  };
+  const clearAlerts = useCallback(() => setAlerts([]), []);
+  /** 关掉一家的那一条。**不是全部**：关一条告知，不该顺手把另一家「重启前必须处理」的那条也关了 */
+  const clearRotated = useCallback(
+    (provider: string) => setRotated((p) => p.filter((x) => x.provider !== provider)),
+    [],
+  );
+
+  // 引用不变：只在这几样变了的时候换，外壳据此决定要不要重画
+  return useMemo(
+    () => ({
+      store: store as RequestsStore,
+      health,
+      models,
+      listening,
+      upstreamState,
+      rejected,
+      reloads,
+      alerts,
+      rotated,
+      clearAlerts,
+      clearRotated,
+    }),
+    [store, health, models, listening, upstreamState, rejected, reloads, alerts, rotated, clearAlerts, clearRotated],
+  );
+}
+
+const pickRows = (v: RequestsView) => v.rows;
+const pickSessions = (v: RequestsView) => v.sessions;
+const pickSettled = (v: RequestsView) => v.settled;
+
+/** 实时请求列表，新的在前。**每一帧都可能变**：只在真要画它的地方订阅 */
+export function useRequestRows(): RequestRow[] {
+  return useRequestsView(pickRows);
+}
+
+/** 会话汇总（归组表的组头）。和请求列表同一份、同一个节拍，见 `RequestsView.sessions` */
+export function useSessionViews(): SessionView[] {
+  return useRequestsView(pickSessions);
+}
+
+/** 对过几次账了：概览、安全页据此重取（见 `RequestsView.settled`） */
+export function useSettled(): number {
+  return useRequestsView(pickSettled);
 }

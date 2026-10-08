@@ -1,10 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { cn } from "@/lib/utils";
-import { Button } from "@/ui/button";
-import { Spinner } from "@/ui/spinner";
+import { clsx } from "clsx";
 import { useText } from "@/i18n";
-import { errorText } from "@/i18n/core.i18n";
 import { troubleText } from "./trouble.i18n";
 import { launchText } from "./LaunchScreen.i18n";
 import { launchPhase } from "./phase";
@@ -20,6 +17,13 @@ export const MIN_MS = 800;
 const FADE_MS = 250;
 /** 过了这么久还没好，补一句已用时间 */
 const SLOW_MS = 5_000;
+
+/*
+  **启动画面是冷启动最先画出来的东西，它这一块越小越好**（见 `App`）。所以这里不用 `cn`
+  （它带着 tailwind-merge；这几处的类名本来就不会互相覆盖，`clsx` 拼起来就够了），出了事
+  才出现的「重新启动」按钮也是用到时才载入。
+*/
+const RestartButton = lazy(() => import("./RestartButton"));
 
 /**
  * TW 四笔和各自的长度。坐标和应用图标（src-tauri/icons/render.py 的 STROKES）
@@ -70,8 +74,8 @@ export function LaunchScreen({
   linked: boolean;
   /** 读状态失败了几次 */
   tries: number;
-  /** 最近一次读状态失败的原因 */
-  linkError: string | null;
+  /** 最近一次读状态失败的原因，原样（`invoke` 抛出来的东西） */
+  linkError: unknown;
   /** 主界面可以接手了：连上了，首屏的数据也取好了 */
   ready: boolean;
   /** 淡出完了 */
@@ -84,7 +88,10 @@ export function LaunchScreen({
   const [leaving, setLeaving] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [failedAction, setFailedAction] = useState<string | null>(null);
+  /** 点「重新启动」没成的原因，原样 */
+  const [failedAction, setFailedAction] = useState<unknown>(null);
+  const linkText = useErrorText(linkError);
+  const failedText = useErrorText(failedAction);
   const gone = useRef(onGone);
   gone.current = onGone;
 
@@ -110,9 +117,9 @@ export function LaunchScreen({
   const { what, problem } =
     remote !== null && !linked
       ? { what: ct.connectingTo(remote), problem: null }
-      : launchPhase(state, linked, tries, linkError);
+      : launchPhase(state, linked, tries, linkText);
   const sub =
-    failedAction ??
+    failedText ??
     problem?.next ??
     (elapsed >= SLOW_MS ? t.slow(Math.floor(elapsed / 1000)) : "");
   const dim = problem?.bad === true;
@@ -127,21 +134,21 @@ export function LaunchScreen({
     setBusy(true);
     setFailedAction(null);
     void invoke("restart_core")
-      .catch((e) => setFailedAction(errorText(e)))
+      .catch((e: unknown) => setFailedAction(e))
       .finally(() => setBusy(false));
   }
 
   return (
     <div
       data-tauri-drag-region
-      className={cn(
+      className={clsx(
         "launch fixed inset-0 z-[70] flex flex-col items-center justify-center bg-(--chrome-ground) px-8 select-none",
         leaving && "launch-leave",
       )}
     >
       <svg
         viewBox="0 0 32 32"
-        className={cn("launch-glyph size-24 overflow-visible", dim && "launch-dim")}
+        className={clsx("launch-glyph size-24 overflow-visible", dim && "launch-dim")}
         aria-hidden
       >
         <defs>
@@ -176,7 +183,7 @@ export function LaunchScreen({
       </svg>
       <p className="mt-5 tw-title text-foreground">ThinkWatch Lite</p>
       <div role="status" aria-live="polite" className="mt-2 flex flex-col items-center gap-1 text-center">
-        <p key={what} className={cn("launch-say tw-body", dim ? "text-destructive" : "text-muted-foreground")}>
+        <p key={what} className={clsx("launch-say tw-body", dim ? "text-destructive" : "text-muted-foreground")}>
           {what}
         </p>
         {/* 占住一行，文字出现时下面的按钮不跳 */}
@@ -184,12 +191,36 @@ export function LaunchScreen({
       </div>
       <div className="mt-3 h-8">
         {problem?.retry && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={retry}>
-            {busy && <Spinner />}
-            {tt.restart}
-          </Button>
+          <Suspense fallback={null}>
+            <RestartButton busy={busy} onClick={retry} label={tt.restart} />
+          </Suspense>
         )}
       </div>
     </div>
   );
+}
+
+/** core 的译文表（`errorText` 在里面），载入过就留着 */
+let coreI18n: typeof import("@/i18n/core.i18n") | null = null;
+
+/**
+ * 一个错误说成一句话（`errorText`）。**用到时才载入 core 的译文表**：那张表有一百多 kB，
+ * 启动画面是冷启动最先画出来的东西，不该为了一句多半用不上的错误先等它。第一次载入完之前
+ * 是 null，那一下照没出错画；载入过之后当场翻，连着失败、原因换了也不闪。
+ */
+function useErrorText(e: unknown): string | null {
+  const [, loaded] = useReducer((n: number) => n + 1, 0);
+  const want = e !== null && e !== undefined;
+  useEffect(() => {
+    if (!want || coreI18n) return;
+    let alive = true;
+    void import("@/i18n/core.i18n").then((m) => {
+      coreI18n = m;
+      if (alive) loaded();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [want]);
+  return want && coreI18n ? coreI18n.errorText(e) : null;
 }
