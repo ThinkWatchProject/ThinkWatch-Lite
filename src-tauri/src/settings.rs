@@ -58,13 +58,8 @@ pub fn app_language() -> LanguageView {
 
 /// 换语言。**开着的窗口当场换，托盘菜单跟着重建**，不用重启应用。
 #[tauri::command]
-pub fn set_language(app: tauri::AppHandle, setting: Option<i18n::Lang>) -> Out<LanguageView> {
-    prefs::update(&data_dir(), |p| p.language = setting).map_err(|e| {
-        tr!(
-            format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
-        )
-    })?;
+pub async fn set_language(app: tauri::AppHandle, setting: Option<i18n::Lang>) -> Out<LanguageView> {
+    prefs::change(move |p| p.language = setting).await?;
     i18n::set(i18n::effective(setting));
     // 菜单栏的文案跟着换，不等下一个事件
     if let Some(state) = app.try_state::<AppState>() {
@@ -101,13 +96,8 @@ pub fn app_theme() -> ThemeView {
 /// 换外观。**当场生效** —— 换的是窗口的外观，网页里的
 /// `prefers-color-scheme` 跟着翻，不用重启也不用重画。
 #[tauri::command]
-pub fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Out<ThemeView> {
-    prefs::update(&data_dir(), |p| p.theme = setting).map_err(|e| {
-        tr!(
-            format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
-        )
-    })?;
+pub async fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Out<ThemeView> {
+    prefs::change(move |p| p.theme = setting).await?;
     theme::apply(&app, setting);
     Ok(theme_view())
 }
@@ -201,18 +191,15 @@ pub fn notice_mode(notices: tauri::State<'_, Arc<notices::Notices>>) -> notices:
 /// 换一档。**先存盘再生效**：存不进去的话，界面弹回去，总线也还是原来那一档。
 /// 工具栏的铃铛听 `notice-mode-changed` —— 关掉之后它不该还在那儿
 #[tauri::command]
-pub fn set_notice_mode(
+pub async fn set_notice_mode(
     app: tauri::AppHandle,
     notices: tauri::State<'_, Arc<notices::Notices>>,
     mode: notices::Mode,
 ) -> Out<notices::Mode> {
-    prefs::update(&data_dir(), |p| p.notices = mode).map_err(|e| {
-        tr!(
-            format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
-        )
-    })?;
-    notices.set_mode(mode);
+    prefs::change(move |p| p.notices = mode).await?;
+    // 关掉时要清空列表，清空也要落盘
+    let n = notices.inner().clone();
+    crate::clients::blocking(move || n.set_mode(mode)).await?;
     let _ = app.emit("notice-mode-changed", mode);
     Ok(mode)
 }
@@ -225,17 +212,12 @@ pub fn menubar_style() -> menubar::Style {
 
 /// 换一档。**先存盘再生效**，和提醒那一档一样；改完菜单栏立刻重画
 #[tauri::command]
-pub fn set_menubar_style(
+pub async fn set_menubar_style(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     style: menubar::Style,
 ) -> Out<menubar::Style> {
-    prefs::update(&data_dir(), |p| p.menubar = style).map_err(|e| {
-        tr!(
-            format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
-        )
-    })?;
+    prefs::change(move |p| p.menubar = style).await?;
     menubar::set_style(style);
     state.menubar_now.notify_one();
     let _ = app.emit("menubar-style-changed", style);

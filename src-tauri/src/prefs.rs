@@ -136,10 +136,29 @@ pub fn save(dir: &Path, p: &Prefs) -> anyhow::Result<()> {
 /// **不能拿一个只填了一项的 `Prefs` 去存。**那样改一个开关会把其他设置
 /// 一起冲回出厂值 —— 加上语言这一项之前，存设置的地方正是这么写的。
 pub fn update(dir: &Path, f: impl FnOnce(&mut Prefs)) -> anyhow::Result<Prefs> {
+    // **一次只改一处。**读、改、写之间别处也在改的话，后写完的那一份会把先写的那一项
+    // 冲掉 —— 改设置的命令各在各的阻塞线程上跑（[`change`]），界面上接连改两项就是两处
+    // 同时在改
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let mut p = load(dir);
     f(&mut p);
     save(dir, &p)?;
     Ok(p)
+}
+
+/// 设置页改一项（[`update`]），写不进去就说成给人看的一句。
+///
+/// **在阻塞线程上写。**整份换上去之前要先落盘（`atomic_file`），macOS 上一次好几毫秒；
+/// 同步命令跑在主线程上，那几毫秒里整个界面都不动
+pub async fn change(f: impl FnOnce(&mut Prefs) + Send + 'static) -> crate::error::Out<Prefs> {
+    let saved = crate::clients::blocking(move || update(&crate::data_dir(), f)).await?;
+    saved.map_err(|e| {
+        crate::error::CmdError::from(tr!(
+            format!("无法保存设置：{e:#}"),
+            format!("The setting could not be saved: {e:#}")
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -185,6 +204,27 @@ mod tests {
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
         assert_eq!(p.notices, Mode::Off);
+    }
+
+    /// **几处同时改也不冲掉别的**：改设置的命令各在各的阻塞线程上跑，界面上接连点两下
+    /// 就是两处同时在读、改、写
+    #[test]
+    fn changes_made_at_the_same_time_all_stay() {
+        let (_tmp, dir) = tmp();
+        for _ in 0..10 {
+            std::thread::scope(|s| {
+                s.spawn(|| update(&dir, |p| p.language = Some(Lang::En)).unwrap());
+                s.spawn(|| update(&dir, |p| p.check_updates = false).unwrap());
+                s.spawn(|| update(&dir, |p| p.notices = Mode::Off).unwrap());
+                s.spawn(|| update(&dir, |p| p.theme = Some(Theme::Dark)).unwrap());
+            });
+            let p = load(&dir);
+            assert_eq!(p.language, Some(Lang::En));
+            assert!(!p.check_updates);
+            assert_eq!(p.notices, Mode::Off);
+            assert_eq!(p.theme, Some(Theme::Dark));
+            save(&dir, &Prefs::default()).unwrap();
+        }
     }
 
     /// **每一项都不是出厂值**：哪一项没被读回来，这里就对不上
