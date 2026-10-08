@@ -53,7 +53,8 @@ export function StatusDot({
         "inline-block shrink-0 rounded-full bg-current",
         size === "sm" ? "size-1.5" : "size-2",
         TONE[tone],
-        live && "motion-live",
+        // 脉冲那一圈扩到点外 5px：8px 的点放大 18/8 倍（6px 的是默认的 16/6，见 index.css）
+        live && (size === "sm" ? "motion-live" : "motion-live [--live-scale:2.25]"),
         className,
       )}
     />

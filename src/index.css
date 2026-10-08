@@ -368,21 +368,32 @@
   from {
     opacity: 0;
     transform: translateY(-3px);
-    background-color: var(--row-flash);
   }
   45% {
     opacity: 1;
     transform: none;
-    background-color: var(--row-flash);
   }
 }
+/* 新行底色亮的那一下：叠在行上的一层面，先亮着，滑进来之后再退掉 */
+@keyframes tw-row-flash {
+  from,
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* 实时状态点外面那一圈：和点同色的一块，放大到点外 5px 处，同时淡掉 */
 @keyframes tw-live {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent);
+  from {
+    transform: scale(1);
+    opacity: 0.55;
   }
   70%,
-  100% {
-    box-shadow: 0 0 0 5px color-mix(in oklab, currentColor 0%, transparent);
+  to {
+    transform: scale(var(--live-scale, calc(16 / 6)));
+    opacity: 0;
   }
 }
 @keyframes tw-ping {
@@ -413,9 +424,31 @@
 @utility motion-fade {
   animation: tw-fade-in var(--motion-base) var(--motion-ease);
 }
-/* 新出现的一行：从上面滑进来，底色亮一下再退掉 */
+/* 新出现的一行：从上面滑进来，底色亮一下再退掉。
+ *
+ * **只动透明度和位移。**原来亮的那一下动的是行的底色：底色每一帧都要重画，一秒来
+ * 两条请求时总有两行在闪，流量表一直在重画。现在底色画在叠上去的一层面上（伪元素），
+ * 动的是它的透明度，交给合成器去做。
+ *
+ * 表格的行在 WebKit 里不能做定位的参照（`tr` 上写 `position: relative` 不管用，
+ * 绝对定位的伪元素会跑到外面去），所以表格里那一层叠在每一格上；别的行叠在行上。
+ * 定位写在 `:where()` 里，行上自己写了 `absolute`、`sticky` 的照旧用它自己的。 */
 @utility motion-row-in {
   animation: tw-row-in 900ms var(--motion-ease);
+  :where(&:not(tr)),
+  :where(&):where(tr) > :where(td) {
+    position: relative;
+  }
+  &:not(tr)::after,
+  &:where(tr) > td::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--row-flash);
+    opacity: 0;
+    pointer-events: none;
+    animation: tw-row-flash 900ms var(--motion-ease);
+  }
 }
 /* 要消失的一行：淡出，期间不再接受点击（usePresentList 给 exit 状态） */
 @utility motion-row-out {
@@ -428,9 +461,25 @@
   transition-duration: var(--motion-slow);
   transition-timing-function: var(--motion-ease);
 }
-/* 实时状态点的脉冲。颜色取 currentColor */
+/* 实时状态点的脉冲。颜色取 currentColor。
+ *
+ * **只动透明度和缩放。**原来扩的是点的 `box-shadow`：阴影每一帧都要重画，十几条
+ * 请求在跑时十几个点一起重画，一秒六十次。现在那一圈是点里面一块同样大小、同样颜色
+ * 的伪元素（占满点的内容区，不用定位），放大、淡掉交给合成器。它叠在点上，同色，看不
+ * 出来；露在点外的那一圈就是原来的阴影。放大到点外 5px：6px 的点是 16/6 倍；别的
+ * 大小在点上写 `--live-scale`（见 `StatusDot`）。 */
 @utility motion-live {
-  animation: tw-live 1.6s var(--motion-ease) infinite;
+  &::after {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    animation: tw-live 1.6s var(--motion-ease) infinite;
+  }
 }
 /* 新数据落地：一个点向外闪一圈，放一次（不循环）。SVG 元素也能用 —— 缩放按它自己
  * 的中心。要再闪一次就换 React key 重新挂上（概览图上「现在」那一点） */
@@ -453,7 +502,9 @@
   .motion-page,
   .motion-fade,
   .motion-row-in,
-  .motion-live,
+  .motion-row-in::after,
+  .motion-row-in > td::after,
+  .motion-live::after,
   .motion-shimmer {
     animation: none;
   }
