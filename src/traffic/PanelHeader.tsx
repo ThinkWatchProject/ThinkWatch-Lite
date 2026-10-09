@@ -5,6 +5,7 @@ import { commonText } from "@/i18n/common.i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Skeleton } from "@/ui/skeleton";
+import { Tip } from "@/ui/tip";
 
 /**
  * 右侧浮层（请求详情、会话详情）顶上那一块：标题一行，下面一行要点，可选的一排
@@ -17,7 +18,7 @@ import { Skeleton } from "@/ui/skeleton";
  * right-3` 的方块，和这一行的基线对不上；放进来之后它跟着标题走。
  *
  * 标题截断、关闭钮 `shrink-0`：标题一长，浏览器会去挤按钮，按钮挤无可挤就把
- * 「关闭」折成两行。
+ * 「关闭」折成两行。截断了的标题（请求详情的标题是模型名）悬停看全。
  *
  * `tabs`：一排 `variant="line"` 的标签，贴着底边那条线 —— 和页头的标签同一个
  * 做法（`PageHeader`），选中的那条下划线压在分隔线上。
@@ -47,7 +48,13 @@ export function PanelHeader({
       className={cn("shrink-0 border-b border-border px-4 pt-3", tabs ? "pb-0" : "pb-3", className)}
     >
       <div className="flex min-h-7 items-center gap-2">
-        <h2 className="min-w-0 truncate tw-title text-foreground">{title}</h2>
+        {typeof title === "string" ? (
+          <Tip clip text={title}>
+            <h2 className="min-w-0 truncate tw-title text-foreground">{title}</h2>
+          </Tip>
+        ) : (
+          <h2 className="min-w-0 truncate tw-title text-foreground">{title}</h2>
+        )}
         {meta && <span className="shrink-0 tw-num tw-label whitespace-nowrap text-muted-foreground">{meta}</span>}
         <span className="flex-1" />
         <Button

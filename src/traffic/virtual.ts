@@ -99,3 +99,33 @@ export function textWidth(s: string): number {
   for (const ch of s) n += ch.codePointAt(0)! >= 0x2e80 ? 2 : 1;
   return n;
 }
+
+/**
+ * 写名字的三列一格最多多宽（像素，不含格子的内边距）。**再长的截断，悬停看全**：名字是
+ * 用户起的、上游给的，一个长名字不能把整张表撑宽 —— 默认窗口下常见的名字刚好放满，多出
+ * 来的每一像素都把最右边的费用往视野外推。
+ *
+ * 按 13px 正文量过常见的名字定的：
+ * - 模型 208（13rem）：日常的模型名都在 190 以内（`claude-sonnet-4-5-20250929` 186），带
+ *   厂商前缀、日期的长名（`deepseek-ai/DeepSeek-V3.1-Terminus` 231、Bedrock 的推理配置
+ *   300 上下）截断。
+ * - 上游 160（10rem）：标志 16 + 间距 6 + 名字 138。常见的上游名在 100 以内，带区域、
+ *   用途的（`bedrock-us-east-1` 113、`azure-openai-eastus2` 134）也放得下。
+ * - 密钥 160（10rem）：应用的标志、名字、来源记号一共。密钥名通常在 100 以内。
+ */
+export const NAME_PX = { model: 208, upstream: 160, client: 160 } as const;
+
+/** `textWidth` 的一格大约多宽：13px 的正文里一个中文字是两格 */
+const UNIT_PX = 6.5;
+
+/**
+ * 限宽的那一块里的字大约占几个字宽（`textWidth` 估的 `n`）：超过上限的按上限算 —— 画出来
+ * 就是那么宽。`beside` 是同一块里字旁边还有多宽（标志、间距），像素。
+ *
+ * **只用来挑表头里垫哪几格**（见 `widest`）：不封顶的话，挑出来的会是三个超长的名字，
+ * 画出来都只有上限那么宽，而真正最宽的那一格（一个短名字带着一排徽标）没垫进去，滚到
+ * 它时列宽跳一下。上限宁可估宽一点：比上限还长的那些画出来一样宽，挑哪个都一样。
+ */
+export function capped(n: number, maxPx: number, beside = 0): number {
+  return Math.min(n, Math.ceil((maxPx - beside) / UNIT_PX));
+}

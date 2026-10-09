@@ -25,6 +25,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { Tip } from "@/ui/tip";
 
 /** 子菜单里的一项：单选的那种，当前选中的打勾 */
 export interface MenuChoice {
@@ -33,10 +34,15 @@ export interface MenuChoice {
   onSelect: () => void;
 }
 
-/** 一份菜单：条目、子菜单或分隔线。**右键和行尾按钮共用同一份** */
+/**
+ * 一份菜单：条目、子菜单或分隔线。**右键和行尾按钮共用同一份**
+ *
+ * `name`：条目里带着的那个名字（「仅显示上游 X」的 X，`label` 里原样有它）。名字是用户
+ * 起的，可以很长：只截断名字，前后的字留着，菜单不被撑宽；截断了悬停看全。
+ */
 export type MenuItems = (
   | { kind: "sep" }
-  | { kind: "item"; label: string; onSelect: () => void; danger?: boolean; disabled?: boolean }
+  | { kind: "item"; label: string; name?: string; onSelect: () => void; danger?: boolean; disabled?: boolean }
   | { kind: "sub"; label: string; choices: MenuChoice[] }
 )[];
 
@@ -113,7 +119,7 @@ export function RowContextMenuContent({ items }: { items: MenuItems }) {
               disabled={it.disabled}
               variant={it.danger ? "destructive" : "default"}
             >
-              {it.label}
+              <MenuLabel label={it.label} name={it.name} />
             </ContextMenuItem>
           ),
         )}
@@ -151,11 +157,42 @@ export function RowDropdownMenuContent({
               disabled={it.disabled}
               variant={it.danger ? "destructive" : "default"}
             >
-              {it.label}
+              <MenuLabel label={it.label} name={it.name} />
             </DropdownMenuItem>
           ),
         )}
       </DropdownMenuGroup>
     </DropdownMenuContent>
   );
+}
+
+/** 条目里的名字最宽多宽：常见的上游、密钥名都在 150 以内，再长的截断 */
+const NAME_MAX_PX = 192;
+
+/**
+ * 一个条目的字。带着名字的，名字单独封顶（`NAME_MAX_PX`）、截断了悬停看全；前后的字
+ * 不截，「仅显示上游」一直看得见。整句还在格子里（读屏、按首字母跳都按整句）。
+ */
+function MenuLabel({ label, name }: { label: string; name?: string }) {
+  const parts = nameIn(label, name);
+  if (!parts) return <>{label}</>;
+  const [before, n, after] = parts;
+  return (
+    <span className="flex min-w-0">
+      <span className="shrink-0 whitespace-pre">{before}</span>
+      <Tip clip text={n}>
+        <span className="min-w-0 truncate" style={{ maxWidth: NAME_MAX_PX }}>
+          {n}
+        </span>
+      </Tip>
+      <span className="shrink-0 whitespace-pre">{after}</span>
+    </span>
+  );
+}
+
+/** 条目的字拆成名字前、名字、名字后。没给名字、字里找不到它：不拆 */
+export function nameIn(label: string, name?: string): [string, string, string] | null {
+  const at = name ? label.indexOf(name) : -1;
+  if (!name || at < 0) return null;
+  return [label.slice(0, at), name, label.slice(at + name.length)];
 }

@@ -162,14 +162,23 @@ export function SessionPanel({
           </TabsList>
         }
       >
+        {/* 名字太长时截断（这一行宽不过浮层），悬停看全 */}
         {providers.length > 0 && (
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <UpstreamLogo name={providers[0] ?? ""} className="opacity-70" />
-            <span className="truncate">{providers.join(" · ")}</span>
+            <Tip clip text={providers.join(" · ")}>
+              <span className="truncate">{providers.join(" · ")}</span>
+            </Tip>
           </span>
         )}
-        {client && <span className="min-w-0 truncate">{client}</span>}
-        <span className="min-w-0 truncate">{n.models.join(t.modelSep)}</span>
+        {client && (
+          <Tip clip text={client}>
+            <span className="min-w-0 truncate">{client}</span>
+          </Tip>
+        )}
+        <Tip clip text={n.models.join(t.modelSep)}>
+          <span className="min-w-0 truncate">{n.models.join(t.modelSep)}</span>
+        </Tip>
       </PanelHeader>
       <div className="relative min-h-0 flex-1">
         <TabsContent value="summary" forceMount className={PANE}>
@@ -391,7 +400,9 @@ function Waterfall({ steps, onOpen }: { steps: Step[]; onOpen: (id: number) => v
               onClick={() => onOpen(x.id)}
             >
               <span className="w-6 shrink-0 text-right tw-label text-muted-foreground">{i + 1}</span>
-              <span className="w-32 shrink-0 truncate text-left text-muted-foreground">{x.model}</span>
+              <Tip clip text={x.model}>
+                <span className="w-32 shrink-0 truncate text-left text-muted-foreground">{x.model}</span>
+              </Tip>
               <Meter value={x.cost ?? 0} max={max} color="var(--chart-2)" className="min-w-8 flex-1" />
               {/* 两格的宽度按最长的那个词定：英文的「In progress」「Canceled」，Windows 上字大 1px 也放得下 */}
               <span className="w-24 shrink-0 text-right">
