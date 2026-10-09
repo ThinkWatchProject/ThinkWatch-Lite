@@ -62,6 +62,10 @@ export const requestDrawerText = messages(
     /** 头上那一项：失败了。原因写在「时间线」的状态那一行 */
     failed: "失败",
     cancelledShort: "已取消",
+    /** 在界面上手动中止的 */
+    aborted: "手动中止",
+    /** 上游等到无响应超时还没有内容（一个字都没给，或者答到一半停住） */
+    idleTimeout: "无响应超时",
     cancelled: "已取消：客户端在响应结束前断开连接",
     bytes: "字节",
     /** 顶上那一排数字 */
@@ -100,7 +104,7 @@ export const requestDrawerText = messages(
     attempts: "尝试链",
     /** 这一跳等空位等了多久（上游满着）。秒数已经按一位小数写好 */
     queued: (s: string) => `排队 ${s} 秒`,
-    /** 放弃了的一跳（开头超时）下面那一行：上游没报用量时，网关估的输入 */
+    /** 放弃了的一跳（无响应超时）下面那一行：上游没报用量时，网关估的输入 */
     abandonedEstimate: (n: string) => `输入约 ${n} token`,
     mayBeBilled: "上游可能已计费",
     mayBeBilledTip: "上游是否收取这部分费用无法得知，此请求的费用不含这部分。",
@@ -118,7 +122,7 @@ export const requestDrawerText = messages(
     deniedAfterPick: (rule: string) => `选定上游后，规则「${rule}」拒绝了此请求，未发往任何上游。`,
     deniedBeforePick: (rule: string) => `选定上游之前，规则「${rule}」已拒绝此请求，未发往任何上游。`,
     unavailable: "规则选中的上游均无法服务此请求，未发往任何上游。",
-    /** 前面几跳里有满着跳过的、开头超时放弃的：它们不是上游的失败 */
+    /** 前面几跳里有满着跳过的：它们不是上游的失败 */
     switched: (n: number) => `已自动切换上游：前 ${n} 次尝试未接下此请求。`,
     limited: "网关密钥已达到用量上限，此请求未发往任何上游。",
     busy: "上游均已达到并发上限，等待期间没有空出位置，此请求未发往任何上游。",
@@ -231,6 +235,8 @@ export const requestDrawerText = messages(
     inProgress: "In progress",
     failed: "Failed",
     cancelledShort: "Canceled",
+    aborted: "Aborted",
+    idleTimeout: "No response",
     cancelled: "Canceled: the client disconnected before the response finished",
     bytes: "Bytes",
     tokens: "Tokens",

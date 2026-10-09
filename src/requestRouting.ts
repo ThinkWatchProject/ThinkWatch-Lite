@@ -57,8 +57,8 @@ export interface Hop {
  * 尝试链下面那一句。只说字面上成立的事：
  *
  * · `failover`：前 `failed` 个上游失败，换到了下一个（最后一跳的结果在它自己那一行）
- * · `switched`：前 `count` 跳没有接下它，换到了下一跳。其中有满着跳过的、或者开头超时
- *   放弃的 —— 那两种不是上游的失败，不说「失败」（每一跳为什么没接下在它自己那一行）
+ * · `switched`：前 `count` 跳没有接下它，换到了下一跳。其中有满着跳过的 —— 那不是上游的
+ *   失败，不说「失败」（每一跳为什么没接下在它自己那一行）
  * · `limited`：这把网关密钥的用量上限拒绝了它：没有发往任何上游
  * · `busy`：剩下的上游都满着，等过了也没空出位置。`tried` 是在那之前真的发出去、没成的
  *   几跳；0 就是没有发往任何上游
@@ -159,8 +159,8 @@ export function routingFacts(
         ? { kind: "failover_denied", failed: n - 1, rule: deniedBy }
         : { kind: "denied_after_pick", rule: deniedBy };
   } else if (n > 1) {
-    // 满着跳过、开头超时放弃都不是上游的失败
-    const plain = attempts.slice(0, -1).every((a) => !skippedHop(a) && a.outcome !== "slow_start");
+    // 满着跳过不是上游的失败（无响应超时是）
+    const plain = attempts.slice(0, -1).every((a) => !skippedHop(a));
     note = plain ? { kind: "failover", failed: n - 1 } : { kind: "switched", count: n - 1 };
   }
 

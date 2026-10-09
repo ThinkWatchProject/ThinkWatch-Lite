@@ -66,14 +66,13 @@
   "default_route": "default",
   "failover": {
     "failures_to_pause": 3,
+    "idle_timeout_secs": 300,
     "max_pause_secs": 600,
-    "next_on_slow_start": false,
     "no_balance_pause_secs": 1800,
     "pause_secs": 60,
     "quota_pause_secs": 3600,
     "rate_limit_max_pause_secs": 3600,
-    "slot_wait_secs": 30,
-    "stream_start_wait_secs": 15
+    "slot_wait_secs": 30
   },
   "groups": [
     {

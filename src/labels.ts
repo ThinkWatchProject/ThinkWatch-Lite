@@ -11,6 +11,7 @@ import { coreText } from "@/i18n/core.i18n";
 import {
   usd,
   type AttemptView,
+  type Msg,
   type BalanceBy,
   type ConditionView,
   type ConfigOrigin,
@@ -156,11 +157,26 @@ export function setText(s: SetView): string {
   }
 }
 
+/** 手动中止的请求报的码（core 的 `tw_api::ABORTED`）。码是契约 */
+export const ABORTED = "gw.request.aborted";
+/** 上游没有内容、等到无响应超时的两种码：一个字都没给，和答到一半停住 */
+const IDLE_TIMEOUT = ["gw.upstream.idle_timeout", "gw.upstream.idle_timeout_mid_stream"];
+
 /**
- * 尝试链里的一跳。`ok` 决定颜色。`tip`：短名后面悬停说的那一句（core 说的原话）；
- * 字本身就是那一句的没有
+ * 失败的请求里要单独说的两种：在界面上手动中止的（不是故障，和取消一样是灰的），和上游
+ * 没有内容超时的。别的失败是 `null`，照常写「失败」
  */
-export function attemptText(a: AttemptView): { text: string; ok: boolean; tip: string | null } {
+export function failureKind(error: Msg | null | undefined): "aborted" | "idle" | null {
+  if (!error) return null;
+  if (error.code === ABORTED) return "aborted";
+  return IDLE_TIMEOUT.includes(error.code) ? "idle" : null;
+}
+
+/**
+ * 尝试链里的一跳。`ok` 决定颜色，`idle` 是不算故障的那种（手动中止，灰色）。`tip`：短名后面
+ * 悬停说的那一句（core 说的原话）；字本身就是那一句的没有
+ */
+export function attemptText(a: AttemptView): { text: string; ok: boolean; idle?: boolean; tip: string | null } {
   const t = textOf(labelsText);
   const said = a.error ? coreText(a.error) : null;
   // 没有发出去的一跳：这家满着，换了下一家。短名说原因，悬停是 core 那一句（几个请求在
@@ -177,9 +193,15 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean; tip: s
     // 数 token 由网关自己估：上游不是这种格式（没问过它），或者问过、它没实现这个接口
     case "estimated":
       return { text: a.status == null ? t.estimated : t.estimatedAfter(a.status), ok: true, tip: null };
-    // 等过了开头的时限还没有内容，放弃了这一家、换了下一家。悬停说等了多久
-    case "slow_start":
-      return { text: t.slowStart, ok: false, tip: said };
+    // 等到无响应超时还没有内容，放弃了这一家（换了下一家，或者没有下一家了）。短名带着
+    // 等了多少秒，悬停是 core 的原话
+    case "idle_timeout": {
+      const secs = a.error?.args?.secs;
+      return { text: secs ? t.idleTimeoutSecs(secs) : t.idleTimeout, ok: false, tip: said };
+    }
+    // 在等上游的时候被手动中止：不是上游的问题
+    case "aborted":
+      return { text: t.aborted, ok: false, idle: true, tip: null };
     default:
       return { text: said ?? t.noResponse, ok: false, tip: null };
   }

@@ -104,6 +104,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   Sessions: (req) => sessions(req.limit ?? 200),
   SessionDetail: (_req, [id]) => ({ session: sessionView(id!) ?? notFound(`Session ${id}`), turns: turns(id!) }),
   SessionTranscript: (req, [id]) => (sessionView(id!) ? transcript(id!, req.from_turn ?? 0) : notFound(`Session ${id}`)),
+  AbortRequest: refuse,
+  AbortSession: refuse,
   SpeedQuote: refuse,
   SpeedRun: refuse,
   ReplayQuote: refuse,

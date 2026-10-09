@@ -6,7 +6,7 @@ import { ms, size, tokens as tokenPair } from "@/format";
 import { AnimatedNumber } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { KeyLabel } from "@/KeyLabel";
-import { appLabel, formatLabel, notSentText } from "@/labels";
+import { appLabel, failureKind, formatLabel, notSentText } from "@/labels";
 import { notSent } from "@/requestRouting";
 import { ActionBadge, byCodepoints, EventDetail, ruleName, whereOf } from "@/security/labels";
 import { pluginName } from "@/plugins/defaults";
@@ -184,7 +184,10 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
           label={t.status}
           value={
             r.error ? (
-              <span className="text-destructive">{coreText(r.error)}</span>
+              // 手动中止的不标红：和客户端断开一样，不是上游出了错
+              <span className={failureKind(r.error) === "aborted" ? undefined : "text-destructive"}>
+                {coreText(r.error)}
+              </span>
             ) : r.cancelled ? (
               // 不是失败，不标红：上游没有出错，是客户端先断开了
               <span>

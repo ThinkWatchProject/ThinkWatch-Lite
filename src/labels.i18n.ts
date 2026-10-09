@@ -73,8 +73,11 @@ export const labelsText = messages(
     noResponse: "未收到响应",
     estimated: "本地估算",
     estimatedAfter: (status: number) => `${status} · 本地估算`,
-    /** 开头等过了时限还没有内容，换了下一个上游 */
-    slowStart: "开头超时",
+    /** 等到无响应超时还没有内容，放弃了这个上游 */
+    idleTimeout: "无响应超时",
+    idleTimeoutSecs: (secs: string) => `无响应超时 · ${secs} 秒`,
+    /** 在界面上手动中止 */
+    aborted: "手动中止",
     /** 选定上游之后被规则拒绝的那一跳：没有发给这个上游 */
     deniedHop: (rule: string) => `未发送 · 被规则「${rule}」拒绝`,
     // 没有上游接下的请求，在「上游」的位置上写的那一句：规则拒绝、没有可用的上游、
@@ -220,7 +223,9 @@ export const labelsText = messages(
     noResponse: "No response received",
     estimated: "Estimated locally",
     estimatedAfter: (status: number) => `${status} · Estimated locally`,
-    slowStart: "Start timed out",
+    idleTimeout: "No response",
+    idleTimeoutSecs: (secs: string) => `No response · ${secs} s`,
+    aborted: "Aborted",
     deniedHop: (rule: string) => `Not sent · denied by rule “${rule}”`,
     // 流量表「上游」那一列放得下的长度：再长就折成两行
     notSent: {

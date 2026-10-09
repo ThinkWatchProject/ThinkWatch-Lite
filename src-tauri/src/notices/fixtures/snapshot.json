@@ -175,8 +175,7 @@
    "no_balance_pause_secs": 1800,
    "quota_pause_secs": 3600,
    "rate_limit_max_pause_secs": 3600,
-   "stream_start_wait_secs": 15,
-   "next_on_slow_start": false,
+   "idle_timeout_secs": 300,
    "slot_wait_secs": 30
   },
   "price_sheets": []

@@ -12,11 +12,11 @@ import {
   type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
-import { useText } from "@/i18n";
+import { textOf, useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { latency, money, ms, statusTone, tokens, when } from "@/format";
-import { notSentText, translatedText } from "@/labels";
+import { failureKind, notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
 import { promptTokens, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
@@ -37,6 +37,8 @@ import { rowMark, type ViaConfig } from "./modelVia";
 import { SessionRow, SessionSizerCell, sessionItems, sessionWidths } from "./SessionRow";
 import { sessionsText } from "./Sessions.i18n";
 import { RowActions, TableMenus, type MenuTarget } from "./TableMenus";
+import { abortRequest, abortable } from "./abort";
+import { abortText } from "./abort.i18n";
 import { trafficText } from "./Traffic.i18n";
 import { useViaConfig } from "./useModelVia";
 import {
@@ -97,6 +99,7 @@ export function RequestTable({
   selectedSession,
   onToggleGroup,
   onOpenSession,
+  onAbortSession,
   showClient,
   hints,
   cursor,
@@ -123,6 +126,8 @@ export function RequestTable({
   selectedSession: string | null;
   onToggleGroup: (id: string) => void;
   onOpenSession: (id: string) => void;
+  /** 中止一次会话里在跑的请求：交给页面弹确认 */
+  onAbortSession: (id: string) => void;
   showClient: boolean;
   /** 有哪一行带着推测出的应用：有的话密钥那一格给标志留出位置，名字才对得齐 */
   hints: boolean;
@@ -259,6 +264,7 @@ export function RequestTable({
           onFilter={onFilter}
           onToggleGroup={onToggleGroup}
           onOpenSession={onOpenSession}
+          onAbortSession={onAbortSession}
         />
       )}
     </Table>
@@ -512,6 +518,7 @@ function Body({
   onFilter,
   onToggleGroup,
   onOpenSession,
+  onAbortSession,
 }: {
   handle?: Ref<RequestTableHandle>;
   scroller: RefObject<HTMLElement | null>;
@@ -533,6 +540,8 @@ function Body({
   onFilter: (f: (prev: Filter) => Filter) => void;
   onToggleGroup: (id: string) => void;
   onOpenSession: (id: string) => void;
+  /** 中止一次会话里在跑的请求：交给页面弹确认 */
+  onAbortSession: (id: string) => void;
 }) {
   const t = useText(trafficText);
   const ts = useText(sessionsText);
@@ -729,6 +738,8 @@ function Body({
         onOpenSession(m.id);
       },
       toggle: () => onToggleGroup(m.id),
+      // 组里还有在跑、能中止的请求才给
+      abort: g.rows.some(abortable) ? () => onAbortSession(m.id) : undefined,
     });
   };
 
@@ -896,6 +907,13 @@ function requestItems(
             .join("\t"),
         ),
     },
+    // 还在跑的才能中止。跑在 WebSocket 连接上的跟着连接走，不单独中止（见 `abortable`）
+    ...(abortable(r)
+      ? ([
+          { kind: "sep" },
+          { kind: "item", label: textOf(abortText).abortRequest, danger: true, onSelect: () => void abortRequest(r.id) },
+        ] as const)
+      : []),
   ];
 }
 
@@ -1126,14 +1144,16 @@ function LatencyCell({ r }: { r: RequestRow }) {
 /** 状态那一格的字：在跑的写状态码（响应头到了才有），失败、取消写成字 */
 function statusText(r: RequestRow, t: Text): string {
   if (r.state === "in_flight") return r.status != null ? String(r.status) : "…";
-  if (r.state === "failed") return t.failed;
+  if (r.state === "failed") return failureKind(r.error) === "aborted" ? t.aborted : t.failed;
   if (r.state === "cancelled") return t.cancelled;
   return r.status != null ? String(r.status) : "";
 }
 
 function StatusCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
-  const tone = TONE[statusTone(r.status, r.state)];
+  // 手动中止的不是故障：和取消一样是灰的
+  const tone =
+    r.state === "failed" && failureKind(r.error) === "aborted" ? "idle" : TONE[statusTone(r.status, r.state)];
   return (
     <span className="flex items-center gap-1.5">
       {/* 成功的点压淡一点：一整列都是它，它不是要找的那个 */}

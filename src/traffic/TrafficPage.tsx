@@ -30,6 +30,7 @@ import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type 
 import { mergeFound, useHistorySearch, type HistorySearch } from "./historySearch";
 import { RequestTable, type RequestTableHandle } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
+import { AbortSessionDialog, abortable } from "./abort";
 import { TrafficSummary } from "./TrafficSummary";
 import { trafficText } from "./Traffic.i18n";
 import type { TrafficView } from "./view";
@@ -153,6 +154,13 @@ export default function TrafficPage({
   const [open, setOpen] = useState<number | null>(null);
   /** 右侧开着的那次会话。请求可以叠在它上面，见 `SessionSheet` */
   const [openSession, setOpenSession] = useState<string | null>(null);
+  /** 要中止的那次会话（确认框开着）。组头的菜单和会话详情的头上都能叫它 */
+  const [stopping, setStopping] = useState<string | null>(null);
+  /** 那次会话此刻在跑、能中止的有几个：确认框里说 */
+  const stoppingCount = useMemo(
+    () => (stopping === null ? 0 : allRows.filter((r) => r.session === stopping && abortable(r)).length),
+    [allRows, stopping],
+  );
   /** 那次会话在表里的行（不看筛选）：库里的详情还没有的那几轮从这里补 */
   const openSessionRows = useMemo(
     () => (openSession === null ? [] : allRows.filter((r) => r.session === openSession)),
@@ -554,6 +562,7 @@ export default function TrafficPage({
             selectedSession={openSession}
             onToggleGroup={toggleGroup}
             onOpenSession={openSessionPanel}
+            onAbortSession={setStopping}
           />
         )}
       </div>
@@ -571,7 +580,9 @@ export default function TrafficPage({
         rows={openSessionRows}
         onClose={() => setOpenSession(null)}
         onOpenTurn={setOpen}
+        onAbort={setStopping}
       />
+      <AbortSessionDialog session={stopping} running={stoppingCount} onClose={() => setStopping(null)} />
     </div>
   );
 }
