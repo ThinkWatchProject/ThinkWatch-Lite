@@ -14,6 +14,7 @@ import type {
   CostBucketGroup,
   CostGroup,
   LatencyView,
+  ManualModelsSave,
   ModelSpecSave,
   TokenRateView,
   PriceQuery,
@@ -58,6 +59,8 @@ export const api = {
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),
   /** 手写一个模型的上下文窗口、输出上限、推理、图片输入。四项都空 = 删掉手写的，回到价目表 */
   setModelSpec: (save: ModelSpecSave) => call("SetModelSpec", save),
+  /** 换掉一家上游手动添加的模型：交整份清单，空的就是一个都不留 */
+  setManualModels: (save: ManualModelsSave) => call("SetManualModels", save),
   /** 补问缺失、失败、过期的清单。**立刻回**，答案随 `models_changed` 到 */
   refreshStaleModels: () => call("RefreshStaleModels", null),
   /** 起点和格宽都由界面给：格子对齐到本地整点（见 `bucketStart`） */

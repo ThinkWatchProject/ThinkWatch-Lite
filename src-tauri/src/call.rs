@@ -99,6 +99,8 @@ webview_endpoints![
     ProviderModels,
     // 手写一个模型的上下文窗口、输出上限
     SetModelSpec,
+    // 手动添加的模型：上游能服务、却没列进清单的
+    SetManualModels,
     RefreshProviderModels,
     RefreshStaleModels,
     CreateProxy,

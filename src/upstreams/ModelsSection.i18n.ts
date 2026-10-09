@@ -8,7 +8,7 @@ export const modelsSectionText = messages(
     refresh: "刷新模型列表",
     fetching: "正在获取模型列表",
     notFetched: "尚未获取模型列表。",
-    manual: "手动清单",
+    manual: "手动添加的模型",
     manualDesc: (error?: string | null) =>
       `${error ? `${error.replace(/[。.]$/, "")}。` : "未获取到模型列表。"}每行填写一个模型 ID，这些模型会出现在客户端的模型列表中。`,
     scope: "启用范围",
@@ -35,7 +35,7 @@ export const modelsSectionText = messages(
     refresh: "Refresh model list",
     fetching: "Fetching the model list",
     notFetched: "The model list has not been fetched.",
-    manual: "Manual list",
+    manual: "Models added by hand",
     manualDesc: (error?: string | null) =>
       `${error ? `${error.replace(/[。.]$/, "")}.` : "No model list was fetched."} One model ID per line; these models appear in the model lists clients see.`,
     scope: "Enabled models",
