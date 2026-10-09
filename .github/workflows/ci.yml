@@ -68,18 +68,30 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # Formatting doesn't depend on the platform, so it is checked once, here,
+  # and the three platform jobs below only compile and test. It needs no
+  # build and no cache: rustfmt only reads the source.
+  format:
+    name: Rust format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+
   rust:
-    name: Rust
+    name: Rust (macOS)
     # macOS, Windows and Linux each get their own job: every platform has
     # `cfg` branches (menu bar, notifications, theme, login-shell env) that
-    # only its own compiler ever sees. This one also runs `cargo fmt`, once,
-    # since formatting doesn't depend on the platform.
+    # only its own compiler ever sees.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -99,8 +111,6 @@ jobs:
       # 让 CI 多下十四兆。校验和对得上就不会重复下载。
       - name: Fetch the core binary the bundle declares
         run: bash src-tauri/scripts/fetch-core.sh
-      - name: Format
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
       # Warnings are errors. Relaxing this on CI is the same as removing
       # it — a warning nobody is forced to read is a warning nobody
       # reads.
@@ -112,8 +122,6 @@ jobs:
   # **这台机器上没有 unix socket。**控制面在那里落在回环端口上，凭据是唯一的
   # 门，而在这个任务出现之前，那一半从来没有被编译过 —— 一个 `#[cfg(windows)]`
   # 分支「检查通过」和「根本没人看过它」长得一模一样。
-  #
-  # 不重复跑 `cargo fmt`：格式和平台无关，跑两遍只是慢一倍。
   #
   # **只编、只测，不打包。**安装包在 release.yml 里打；改了打包流程，推一个
   # `rehearse/` 开头的分支先演练。这个任务钉住的是「编得过、测得过、连得上」。
