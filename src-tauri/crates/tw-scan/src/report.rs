@@ -61,6 +61,12 @@ pub struct Finding {
     pub detail: Msg,
     /// 命中的那一行。不可见字符已经换成可见记号
     pub excerpt: String,
+    /// 这条发现说的是什么，**和它在文件里的位置无关**：远端 MCP 是服务器名和地址，
+    /// 规则命中是命中的那一段，藏起来的字符是那一行，skill 是它的名字。
+    ///
+    /// 「是不是新出现的」按它认（[`crate::watch::Seen`]），不按行号：文件上面多一行、
+    /// 少一行，下面的每一条都会挪位置，按行号认就会把早就看过的整批再报一遍
+    pub subject: String,
 }
 
 /// 一个 MCP server 在某个客户端里的样子。
@@ -703,6 +709,7 @@ fn hidden_finding(src: &Source, h: hidden::Kind, line: usize, excerpt: String) -
             why,
             src.kind.why()
         ),
+        subject: excerpt.clone(),
         excerpt,
     }
 }
@@ -729,6 +736,8 @@ fn not_all_checked(src: &Source, line: usize, listed: usize) -> Finding {
             => "It holds too many to list one by one. The first {count} are listed; from line {line} on it was not checked for them."
         ),
         excerpt: String::new(),
+        // 一份文件只会有一条
+        subject: String::new(),
     }
 }
 
@@ -772,6 +781,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                                 => "That server is at {url}, and using it sends the surrounding context there."
                             ),
                             excerpt,
+                            subject: format!("{}|{}", m.name, m.url.as_deref().unwrap_or("")),
                         });
                     }
                 }
@@ -807,6 +817,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                     title: msg!("scan.skill.all_tools", name = name.clone() => "skill `{name}` declares allowed-tools: [\"*\"]"),
                     detail: msg!("scan.skill.all_tools.detail" => "That skill may use any tool. It may well need to; it is worth confirming that it does."),
                     excerpt,
+                    subject: name.clone(),
                 });
             }
             r.skills.push(SkillEntry {
@@ -855,6 +866,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                     continue;
                 };
                 let (line, excerpt) = line_of(&text, m.as_str());
+                let subject = format!("{}|{}", of.slug(), m.as_str());
                 // `msg!` 会把 `rule`、`kind` 遮住，所以句子要用到的几段先取出来
                 let why = rule.why.clone();
                 let name = rule.name.clone();
@@ -889,6 +901,7 @@ pub fn scan(sources: &[Source], rules: &Rules) -> Report {
                         kind_why
                     ),
                     excerpt,
+                    subject,
                 });
             }
         }

@@ -387,6 +387,49 @@ mod tests {
         assert_eq!(rules_of(&alerts), vec!["zero_width".to_string()]);
     }
 
+    /// 改一下 `~/.codex/config.toml`（上面加几行、换个模型），下面早就报过的远端 MCP 服务器
+    /// 整体挪了位置：**不再报一遍**。真的新加了一台，才报那一台
+    #[tokio::test]
+    async fn editing_codex_config_does_not_report_known_mcp_servers_again() {
+        let home = tempfile::tempdir().unwrap();
+        let cfg = home.path().join(".codex/config.toml");
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        let docs = "[mcp_servers.docs]\nurl = \"https://mcp.example.com/sse\"\n";
+        std::fs::write(&cfg, format!("model = \"gpt-5\"\n\n{docs}")).unwrap();
+        let (_w, mut rx) = watching(home.path());
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        // 上面多了几行：服务器还是那一台，只是挪了位置
+        std::fs::write(
+            &cfg,
+            format!("model = \"gpt-5-codex\"\nmodel_reasoning_effort = \"high\"\n\n[tools]\nweb_search = true\n\n{docs}"),
+        )
+        .unwrap();
+        assert!(matches!(
+            next_event(&mut rx, "文件变了的那一声").await,
+            wire::LocalEvent::ClientsChanged { .. }
+        ));
+        let quiet = tokio::time::timeout(Duration::from_millis(1500), async {
+            loop {
+                if let Some(wire::LocalEvent::ScanAlert { alerts, .. }) = rx.recv().await {
+                    return alerts;
+                }
+            }
+        })
+        .await;
+        assert!(quiet.is_err(), "挪了位置也报了一遍：{:#?}", quiet.ok());
+
+        // 真的新加了一台：只报这一台
+        std::fs::write(
+            &cfg,
+            format!("model = \"gpt-5-codex\"\n\n{docs}\n[mcp_servers.search]\nurl = \"https://search.example.org/mcp\"\n"),
+        )
+        .unwrap();
+        let alerts = next_alert(&mut rx).await;
+        assert_eq!(alerts.len(), 1, "{alerts:#?}");
+        assert_eq!(alerts[0].rule, "remote-mcp");
+    }
+
     /// 写死的那条纪律：只报告，不自动删除。
     #[tokio::test]
     async fn the_watcher_never_touches_a_file() {
