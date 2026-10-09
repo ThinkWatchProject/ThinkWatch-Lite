@@ -8,8 +8,12 @@ import {
   formFromDraft,
   formFromView,
   headerRow,
+  inScope,
+  modelsMissing,
   oauthKept,
   toInput,
+  withManualAdded,
+  withManualRemoved,
   type UpstreamForm,
 } from "./upstreamForm";
 
@@ -333,5 +337,56 @@ describe("按客户端原来的 Bedrock 设置新建", () => {
     const none = formFromDraft({ region: "ap-northeast-1", auth: { kind: "none" } }, []);
     expect(none.authMode).toBe("key");
     expect(toInput(none).key).toBeUndefined();
+  });
+});
+
+describe("编辑对话框里手动添加的模型", () => {
+  it("回填配置里的手动清单，保存时和别的设置一起交回", () => {
+    const f = formFromView(view({ models: ["gpt-6-luna"] }));
+    expect(f.manualModels).toEqual(["gpt-6-luna"]);
+    const added = { ...f, ...withManualAdded(f, ["o5"]) };
+    expect(toInput(added).models).toEqual(["gpt-6-luna", "o5"]);
+    const removed = { ...added, ...withManualRemoved(added, "gpt-6-luna", false) };
+    expect(toInput(removed).models).toEqual(["o5"]);
+  });
+
+  it("全部模型：新加的本来就在范围里，留着的那份指定清单不动", () => {
+    const f = fresh({ scope: "all", scopeList: ["a"] });
+    const patch = withManualAdded(f, ["x"]);
+    expect(patch).toEqual({ manualModels: ["x"] });
+    expect(inScope({ ...f, ...patch }, "x")).toBe(true);
+  });
+
+  it("指定模型：新加的一并勾上，不会加完了却悄悄不生效", () => {
+    const f = fresh({ scope: "some", scopeList: ["a"], manualModels: ["m"] });
+    const next = { ...f, ...withManualAdded(f, ["x", "y"]) };
+    expect(next.manualModels).toEqual(["m", "x", "y"]);
+    expect(next.scopeList).toEqual(["a", "x", "y"]);
+    expect(inScope(next, "x") && inScope(next, "y")).toBe(true);
+    expect(toInput(next).models_only).toEqual(["a", "x", "y"]);
+  });
+
+  it("指定模型里的通配规则已经覆盖的，不再写一遍", () => {
+    const f = fresh({ scope: "some", scopeList: ["gpt-*"] });
+    expect(withManualAdded(f, ["gpt-6-luna", "o5"]).scopeList).toEqual(["gpt-*", "o5"]);
+    expect(withManualAdded(f, ["GPT-6"])).toEqual({ manualModels: ["GPT-6"] });
+  });
+
+  it("移除上游没列的：这一行没了，指定清单里写着它的那一项一起去掉（通配规则不动）", () => {
+    const f = fresh({ scope: "some", scopeList: ["gpt-*", "x", "a"], manualModels: ["x", "gpt-6"] });
+    expect(withManualRemoved(f, "x", false)).toEqual({ manualModels: ["gpt-6"], scopeList: ["gpt-*", "a"] });
+    expect(withManualRemoved(f, "gpt-6", false)).toEqual({ manualModels: ["x"], scopeList: ["gpt-*", "x", "a"] });
+  });
+
+  it("移除上游也列了的：只是不再是手动添加的，启用范围不动", () => {
+    const f = fresh({ scope: "some", scopeList: ["a"], manualModels: ["a"] });
+    expect(withManualRemoved(f, "a", true)).toEqual({ manualModels: [] });
+  });
+
+  it("指定模型里唯一启用的那个被移除了：要求至少选一个，不让存一个空的范围", () => {
+    const f = fresh({ scope: "some", scopeList: ["x"], manualModels: ["x"] });
+    const next = { ...f, ...withManualRemoved(f, "x", false) };
+    expect(next.scopeList).toEqual([]);
+    expect(modelsMissing(next)).toBe("至少选择一个模型");
   });
 });
