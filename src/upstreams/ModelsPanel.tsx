@@ -17,6 +17,7 @@ import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
 import { modelsKey, patch } from "./data";
 import { coreText, errorText, perMillion } from "./labels";
+import { ManualTag } from "./ManualModelInput";
 import { hasManual } from "./modelSpec";
 import { modelsPanelText } from "./ModelsPanel.i18n";
 
@@ -362,15 +363,7 @@ function Row({
         </AliasMark>
       ))}
       {/* 放在名字这一边，不放在数旁边：悬停时右边让给按钮，这些标记和它们的说明还看得见 */}
-      {m.manual && (
-        <Badge
-          variant="secondary"
-          title={m.listed ? t.manualListedTitle : t.manualOnlyTitle}
-          className="h-4 shrink-0 rounded-[4px] px-1 font-sans font-normal"
-        >
-          {t.manualTag}
-        </Badge>
-      )}
+      {m.manual && <ManualTag listed={m.listed} />}
       {hasManual(m) && (
         <Badge
           variant="secondary"

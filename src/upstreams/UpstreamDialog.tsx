@@ -25,7 +25,9 @@ import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { coreText, errorText, plain, protocolLabel, shortUrl } from "./labels";
-import { ModelsSection, catalogOf, inScope, type ModelCatalog } from "./ModelsSection";
+import { useManualEntry } from "./ManualModelInput";
+import { addToList, unionModels } from "./manualModels";
+import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
 import { DialogError, ProviderTile, StepNav } from "./parts";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
@@ -37,8 +39,10 @@ import {
   describeModelList,
   formFromDraft,
   formFromView,
+  inScope,
   modelsMissing,
   toInput,
+  withManualAdded,
   type UpstreamForm,
 } from "./upstreamForm";
 
@@ -212,8 +216,25 @@ export function UpstreamDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelsTick]);
 
-  const models = catalog?.source === "discovered" ? catalog.models : form.manualModels;
+  /** 上游列出的接上手动添加的（表单里的，没保存的改动也算）：启用范围、价格、计费都按这一份 */
+  const listed = catalog?.listed;
+  const models = useMemo(
+    () => unionModels(listed ?? [], form.manualModels).map((m) => m.id),
+    [listed, form.manualModels],
+  );
   const enabledModels = useMemo(() => models.filter((m) => inScope(form, m)), [models, form]);
+
+  /**
+   * 「模型」一节手动添加的输入框。**放在这里而不是那一节里**：切到别的分节，那一节就卸掉了，
+   * 而保存时输入框里没按回车的也要先加上（见 `save`）。加进表单的手动清单，指定了启用范围
+   * 时一并勾上（`withManualAdded`）
+   */
+  const entry = useManualEntry((raw) => {
+    const r = addToList(raw, { list: form.manualModels, listed: listed ?? [] });
+    const patch = withManualAdded(form, r.added);
+    if (r.added.length > 0) set(patch);
+    return { rest: r.rest, problem: r.problem, patch };
+  });
 
   // 按所选价目表查价。**界面不自己算** —— 覆盖、倍率、跨平台估算都在 core
   const sheetKey = form.pricing;
@@ -254,12 +275,12 @@ export function UpstreamDialog({
       setTest(r);
       setCatalog(
         r.ok && r.models.kind === "listed"
-          ? { source: "discovered", status: "listed", models: r.models.models, checkedAtMs: Date.now() }
+          ? { source: "discovered", status: "listed", listed: r.models.models, checkedAtMs: Date.now() }
           : {
-              // 没拿到清单（连接失败，或上游不提供列表接口）：手动清单兜底
-              source: form.manualModels.length > 0 ? "manual" : "none",
+              // 没拿到清单（连接失败，或上游不提供列表接口）。手动添加的照样在表单里
+              source: "none",
               status: r.ok ? "no_list" : "failed",
-              models: [],
+              listed: [],
               checkedAtMs: Date.now(),
               error: plain(r.ok ? describeModelList(r.models) : t.connectionFailed(r.error ? coreText(r.error) : t.unknownError)),
             },
@@ -269,9 +290,9 @@ export function UpstreamDialog({
       const error = errorText(e);
       setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error) });
       setCatalog({
-        source: form.manualModels.length > 0 ? "manual" : "none",
+        source: "none",
         status: "failed",
-        models: [],
+        listed: [],
         checkedAtMs: Date.now(),
         error: plain(t.connectionFailed(error)),
       });
@@ -305,16 +326,23 @@ export function UpstreamDialog({
   const blocking = connectionMissing(form, editing?.name ?? null, taken) ?? modelsMissing(form);
 
   async function save() {
+    // 手动添加的输入框里还有没按回车的：先加上；写错了就不存，回到「模型」一节，毛病在那里说
+    const added = entry.commit(true);
+    if (added?.problem) {
+      go("models");
+      return;
+    }
+    const f = added ? { ...form, ...added.patch } : form;
     setSaving(true);
     setError(null);
     try {
       const save = {
-        provider: toInput(form),
+        provider: toInput(f),
         base_version: base,
       };
       if (editing) await api.updateProvider(editing.name, save);
       else await api.createProvider(save);
-      onSaved(form.name);
+      onSaved(f.name);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -402,6 +430,7 @@ export function UpstreamDialog({
               form={form}
               set={set}
               catalog={catalog}
+              entry={entry}
               prices={prices}
               perToken={form.billing === "per-token"}
               sheetLabel={form.pricing ? t.namedSheet(form.pricing) : t.defaultSheet}

@@ -7,6 +7,7 @@ import {
   bedrockUrl,
   l1ErrorText,
   modelFace,
+  modelSourceLabel,
   planLabel,
   protocolLabel,
   quotaLeft,
@@ -64,6 +65,18 @@ describe("modelFace", () => {
   it("keeps showing a manual list that stands in for a failed or missing one", () => {
     const face = modelFace(p({ model_source: "manual", model_status: "failed", model_count: 2 }));
     expect(face).toEqual({ count: 2, note: "手动添加", warn: false });
+  });
+});
+
+describe("modelSourceLabel", () => {
+  // 编辑对话框的模型一节按还没保存的手动清单换这个词：上游不给清单时加了手动模型就是「手动添加」
+  it("names where the list comes from, and why there is none", () => {
+    expect(modelSourceLabel("discovered", "listed")).toBe("自动发现");
+    expect(modelSourceLabel("manual", "no_list")).toBe("手动添加");
+    expect(modelSourceLabel("manual", "failed")).toBe("手动添加");
+    expect(modelSourceLabel("none", "no_list")).toBe("未提供清单");
+    expect(modelSourceLabel("none", "failed")).toBe("获取失败");
+    expect(modelSourceLabel("none", "pending")).toBe("未获取");
   });
 });
 

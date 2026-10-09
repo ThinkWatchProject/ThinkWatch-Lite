@@ -21,6 +21,7 @@ import type {
   ProviderInput,
   ProviderView,
 } from "@/types";
+import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
 import { CUSTOM } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
@@ -80,7 +81,10 @@ export interface UpstreamForm {
   forwardClientIdentity: boolean;
   proxy: string;
   onProxyFail: OnProxyFail;
-  /** 服务不提供模型列表时的手动清单 */
+  /**
+   * 手动添加的模型（配置里这一家的 `models`）：上游能服务、却没列进模型列表的。不论上游给不给
+   * 清单都算这家提供，和上游列出的合在一起
+   */
   manualModels: string[];
   scope: "all" | "some";
   /** 指定范围：模型 ID 或通配规则 */
@@ -346,6 +350,36 @@ export function connectionMissing(
   }
   if (concurrencyOf(f) === undefined) return t.concurrency;
   return null;
+}
+
+/** 这个模型在不在启用范围里。和 core 同一套通配规则 */
+export function inScope(f: Pick<UpstreamForm, "scope" | "scopeList">, model: string): boolean {
+  return f.scope === "all" || f.scopeList.some((p) => globMatch(p, model));
+}
+
+/**
+ * 手动添加几个模型（已经查过写法，见 `addToList`）。
+ *
+ * **指定了启用范围时一并勾上。**手动添加就是为了用它：留在范围外面，加完了不生效，这一节里
+ * 只多出一个没勾的格子，很容易看漏。勾上之后照样能取消。通配规则已经覆盖的不再写一遍；
+ * 「全部模型」时本来就在范围里，留着的那份指定清单不动。
+ */
+export function withManualAdded(f: UpstreamForm, ids: readonly string[]): Partial<UpstreamForm> {
+  const manualModels = [...f.manualModels, ...ids];
+  if (f.scope !== "some") return { manualModels };
+  const outside = ids.filter((id) => !inScope(f, id));
+  return outside.length > 0 ? { manualModels, scopeList: [...f.scopeList, ...outside] } : { manualModels };
+}
+
+/**
+ * 移除一个手动添加的模型。`listed`：上游自己也列了它 —— 那一行还在，只是不再标「手动」，
+ * 启用范围不动。上游没列的，这一行就没了：启用范围里写着它的那一项也一起去掉，不然「指定
+ * 模型」里看着还有一个勾，实际一个也没启用（通配规则不动，它们说的不止这一个）。
+ */
+export function withManualRemoved(f: UpstreamForm, id: string, listed: boolean): Partial<UpstreamForm> {
+  const manualModels = f.manualModels.filter((m) => m !== id);
+  if (listed) return { manualModels };
+  return { manualModels, scopeList: f.scopeList.filter((p) => p !== id) };
 }
 
 export function modelsMissing(f: UpstreamForm): string | null {
