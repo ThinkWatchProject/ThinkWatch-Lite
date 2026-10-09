@@ -1,6 +1,6 @@
 [package]
 name = "thinkwatch-lite"
-version = "2026.10.9"
+version = "2026.10.10"
 edition = "2024"
 # **这个数决定依赖能升到哪一版。**edition 2024 的解析器只挑声明的 Rust
 # 版本编得动的依赖：写 1.85 的时候，`cargo update` 一直停在旧的 time 和
@@ -26,12 +26,12 @@ license = "MIT"
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "a3fe268653748c071f8ce62a1778d62774048625" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.66.0" }
 
 [lib]
 name = "thinkwatch_lite_lib"
