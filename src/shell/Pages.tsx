@@ -252,11 +252,18 @@ export function Pages({
       {/*
         每一页自己的滚动层，换页时淡入并上移 4px（`motion-page`）。流量页在
         自己那一层里横竖都滚（表头靠它吸顶），这一层不能再滚。
+
+        **它必须是定位的（`relative`）。**滚动容器只裁切、只带着滚「以它或它里面的元素为
+        包含块」的绝对定位元素。不定位的话，页里没有定位祖先的绝对定位元素（读屏用的
+        `sr-only`：概览每一行后面那句「在流量中查看」）包含块是整个窗口：这一层裁不到
+        它们，它们按原位排在内容的最底下，把文档撑得比窗口高。概览一长，空格键把这一层
+        滚到底之后接着滚文档，整列连工具栏一起上移，下面露出半屏空白。换页动画的那
+        250ms 里 `transform` 让它临时成了包含块，动画一停又不是了 —— 定位之后始终是。
       */}
       <div
         key={linked ? tab : `unlinked-${tab}`}
         className={cn(
-          "flex min-h-0 flex-1 flex-col motion-page",
+          "relative flex min-h-0 flex-1 flex-col motion-page",
           tab === "requests" && linked ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
