@@ -37,8 +37,9 @@ export function GeneralSection() {
         <LanguageRow />
         <AppearanceRow />
         {/*
-          **只有 macOS 有这三档。**别处的通知区只认一张正方形图标（100% DPI 下
-          16×16），塞不下两行数字 —— 那几行在右键菜单里给
+          **只有 macOS 有这几档。**别处的通知区只认一张正方形图标（100% DPI 下
+          16×16），塞不下两行数字 —— 那几行在右键菜单里给；「不显示」也不给，见
+          `src-tauri/src/menubar/mod.rs` 的 `drawn_style`
         */}
         {isMac && <MenubarRow />}
         <AutostartRow />
@@ -149,7 +150,13 @@ function AppearanceRow() {
   );
 }
 
-/** 菜单栏：标识和数值 / 仅标识 / 仅数值。数值是今日的 token 和费用 */
+/**
+ * 菜单栏：标识和数值 / 仅标识 / 仅数值 / 不显示。数值是今日的 token 和费用。
+ *
+ * **选了不显示，说明那一句换成怎么回到窗口**：窗口关着时应用不在 Dock 里，菜单栏上也
+ * 没有它，再打开一次应用是唯一的入口（Rust 那边接的是 `RunEvent::Reopen`）。一直写在
+ * 这一行上，而不是弹一次就没了 —— 要找的时候还在这里
+ */
 function MenubarRow() {
   const t = useText(generalText);
   const r = useResource(APP_KEYS.menubar, settingsApi.menubar);
@@ -160,9 +167,9 @@ function MenubarRow() {
     <SettingsRow
       anchor="menubar"
       label={t.menubar}
-      description={t.menubarWhat}
+      description={r.data === "hidden" ? t.menubarHiddenWhat : t.menubarWhat}
       control={
-        <Loaded r={r} width="w-60">
+        <Loaded r={r} width="w-72">
           {(style) => (
             <Segmented<MenubarStyle>
               label={t.menubar}
@@ -171,6 +178,7 @@ function MenubarRow() {
                 { id: "full", label: t.menubarFull },
                 { id: "icon", label: t.menubarIcon },
                 { id: "numbers", label: t.menubarNumbers },
+                { id: "hidden", label: t.menubarHidden },
               ]}
               onChange={(s) => void set(s)}
             />
@@ -190,12 +198,14 @@ function AutostartRow() {
   const t = useText(generalText);
   const r = useResource(APP_KEYS.autostart, settingsApi.autostart);
   const [pending, set] = useWrite(r, settingsApi.setAutostart);
+  // 菜单栏设成不显示时，登录后菜单栏上也没有它（和上面那一行同一份数据，不多问一次）
+  const menubar = useResource(isMac ? APP_KEYS.menubar : null, settingsApi.menubar);
   return (
     <SettingsRow
       anchor="autostart"
       label={t.autostart}
       htmlFor="settings-autostart"
-      description={t.autostartWhat}
+      description={menubar.data === "hidden" ? t.autostartHiddenWhat : t.autostartWhat}
       control={
         <Loaded r={r} width="h-[18px] w-8 rounded-full">
           {(on) => (

@@ -4,7 +4,7 @@
 //! 菜单；什么时候出现哪一节、数字怎么写、什么时候变色，都在这里定、在这里测。
 //! 画的那一层只管照着画。
 
-/// 菜单栏上显示什么。设置里的三档，出厂是标识和数值
+/// 菜单栏上显示什么。设置里的四档，出厂是标识和数值
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Style {
@@ -12,6 +12,9 @@ pub enum Style {
     Full,
     Icon,
     Numbers,
+    /// 不显示：菜单栏上没有这一项。窗口关着时再打开一次应用，主窗口就回来了
+    /// （`RunEvent::Reopen`，见 `lib.rs`）
+    Hidden,
 }
 
 /// 网关此刻的状态。守护进程的几种状态按「用户该知道什么」归成这几类

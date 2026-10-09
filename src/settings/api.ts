@@ -28,8 +28,8 @@ export interface LanguageView {
   system: Lang;
 }
 
-/** 菜单栏：标识和数值 / 仅标识 / 仅数值（只有 macOS 有） */
-export type MenubarStyle = "full" | "icon" | "numbers";
+/** 菜单栏：标识和数值 / 仅标识 / 仅数值 / 不显示（只有 macOS 有） */
+export type MenubarStyle = "full" | "icon" | "numbers" | "hidden";
 
 /** 提醒：系统通知 / 仅在应用内 / 关闭 */
 export type NoticeMode = "system" | "app" | "off";

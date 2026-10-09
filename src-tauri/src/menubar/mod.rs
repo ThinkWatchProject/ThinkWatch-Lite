@@ -52,15 +52,18 @@ pub fn style() -> Style {
     match STYLE.load(Ordering::Relaxed) {
         1 => Style::Icon,
         2 => Style::Numbers,
+        3 => Style::Hidden,
         _ => Style::Full,
     }
 }
 
 /// 实际画出来的那一档。
 ///
-/// **macOS 才有三档可选。**别处的通知区只认一张正方形图标（100% DPI 下
+/// **macOS 才有这几档可选。**别处的通知区只认一张正方形图标（100% DPI 下
 /// 16×16），两行数字塞不进去 —— 那几行在右键菜单里给，所以无论存的是什么，
-/// 画出来的都是图标。
+/// 画出来的都是图标。「不显示」也只有 macOS 有：那边藏掉托盘图标，窗口关着时
+/// 就只剩再启动一次这一条路，而这条路在各个桌面上走不走得通不一样（见
+/// `window::relaunch_token`）。
 ///
 /// 和 [`style`] 分开，因为它们回答的是两个问题：设置页问「存了什么」，
 /// 渲染问「画得出什么」。把它们合成一个，那条「存进去什么就读回什么」的
@@ -82,6 +85,7 @@ pub fn set_style(style: Style) {
             Style::Full => 0,
             Style::Icon => 1,
             Style::Numbers => 2,
+            Style::Hidden => 3,
         },
         Ordering::Relaxed,
     );
@@ -144,6 +148,14 @@ async fn run(app: tauri::AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             return;
         };
+        // 设成不显示：菜单栏上没有这一项，也就不问 core 要数。换成别的样式时
+        // `menubar_now` 叫醒这里，收一次、画出来
+        if drawn_style() == Style::Hidden {
+            #[cfg(target_os = "macos")]
+            macos::on_main(macos::hide);
+            now.notified().await;
+            continue;
+        }
         let mut snap = collect(&app, &state, &mut credits).await;
         present(&snap);
         let day_end = snap
@@ -942,12 +954,21 @@ mod tests {
         assert_eq!(why(CmdError::plain("剪贴板不可用")), "剪贴板不可用");
     }
 
+    /// 存进去什么就读回什么；**画出来的「不显示」只有 macOS 有**，别处照样是图标 ——
+    /// 那边藏掉托盘图标，窗口关着时就够不着这个应用了。（一条测试：样式是全局的，
+    /// 拆成两条会在并行跑时互相改掉）
     #[test]
     fn the_style_survives_a_round_trip() {
-        for s in [Style::Full, Style::Icon, Style::Numbers] {
+        for s in [Style::Full, Style::Icon, Style::Numbers, Style::Hidden] {
             set_style(s);
             assert_eq!(style(), s);
         }
+        set_style(Style::Hidden);
+        assert_eq!(
+            drawn_style() == Style::Hidden,
+            cfg!(target_os = "macos"),
+            "只有 macOS 能不显示"
+        );
         set_style(Style::Full);
     }
 
