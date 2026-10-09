@@ -157,10 +157,14 @@ function inScope(p: ProviderView, model: string) {
   return !p.models_only || p.models_only.some((g) => glob(g, model));
 }
 
-/** 这个上游能服务的模型：手动清单，或者列出来的里面在启用范围内的 */
+/** 这个上游的清单：列出来的，后面接上手动添加的（列了的不重复），和 core 一样 */
+function idsOf(p: ProviderView): string[] {
+  return [...new Set([...(LISTED[p.name] ?? []), ...p.models])];
+}
+
+/** 这个上游能服务的模型：清单里在启用范围内的 */
 export function catalogOf(p: ProviderView): string[] {
-  if (p.model_source === "manual" || p.models.length > 0) return p.models;
-  return (LISTED[p.name] ?? []).filter((m) => inScope(p, m));
+  return idsOf(p).filter((m) => inScope(p, m));
 }
 
 /** 上一次去问模型清单是什么时候 */
@@ -168,7 +172,8 @@ const CHECKED = NOW - 2 * HOUR - 17 * MIN;
 
 export function providers(): ProviderView[] {
   return FX.overview.providers.map((p) => {
-    const manual = p.models.length > 0;
+    // 上游不给清单时，手动添加的就是全部
+    const manual = !LISTED[p.name] && p.models.length > 0;
     return {
       ...clone(p),
       model_source: manual ? "manual" : "discovered",
@@ -183,17 +188,19 @@ export function providers(): ProviderView[] {
 export function providerModels(name: string): ProviderModelsView | null {
   const p = providers().find((x) => x.name === name);
   if (!p) return null;
-  const ids = p.model_source === "manual" ? p.models : (LISTED[name] ?? []);
-  const rows: ModelRow[] = ids.map((id) => {
+  const listed = LISTED[name] ?? [];
+  const rows: ModelRow[] = idsOf(p).map((id) => {
     const price = priceFor(name, id);
     return {
       id,
-      enabled: p.model_source === "manual" || inScope(p, id),
+      enabled: inScope(p, id),
       context_window: FX.prices.find((x) => x.model === id)?.max_input_tokens ?? null,
       price,
       price_source: price ? priceSource(name) : null,
       estimated: false,
       aliases: [],
+      manual: p.models.includes(id),
+      listed: listed.includes(id),
     };
   });
   return {

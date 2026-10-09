@@ -3,18 +3,19 @@ import { ChevronRightIcon, CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lu
 import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
 import { compact, whenMinute } from "@/format";
-import { useResource } from "@/lib/resource";
+import { invalidate, useResource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { StatusLabel } from "@/ui/status-dot";
+import { undoable } from "@/ui/notify";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { ModelRow, ProviderModelsView, ProviderView } from "@/types";
 import { api } from "./api";
-import { modelsKey } from "./data";
+import { modelsKey, patch } from "./data";
 import { coreText, errorText, perMillion } from "./labels";
 import { hasManual } from "./modelSpec";
 import { modelsPanelText } from "./ModelsPanel.i18n";
@@ -26,8 +27,10 @@ const FILTER_FROM = 10;
  * 点开「模型」一格看到的东西：这一家有哪些模型，是怎么知道的，没拿到的话
  * 原因和下一步。
  *
- * **只读，改动在编辑对话框里做** —— 启用范围、手动清单都要一次保存一个
- * 配置版本，和上游其余设置走同一条路。这里给的是去那儿的入口。
+ * **启用范围在编辑对话框里改**，和上游其余设置走同一条路，这里给的是去那儿的入口。
+ * 手动添加的模型（上游能服务、却没列进清单的）在这里加、在这里移除：「添加模型…」
+ * 打开添加的对话框（`onAdd`），手动添加的那几行标「手动」，悬停给「移除」—— 可撤销，
+ * 不弹确认。上游也列了的手动模型照样标着、照样能移除：手动清单里有什么，这里一样不藏。
  *
  * 清单按上游缓存（`upstream-models:<名字>`）：再点开一次先画上一次的，后台再读。
  * 概览里这一家的获取状态一变（开始问了、问完了）就重读 —— 开着面板等它问完，
@@ -42,19 +45,28 @@ const FILTER_FROM = 10;
 export function ModelsPanel({
   p,
   perToken,
+  configVersion,
   onEdit,
+  onAdd,
   onAlias,
   onSpec,
+  onChanged,
 }: {
   p: ProviderView;
   /** 按量计费：列出单价。别的计费方式不按单价算费用，列了也没意义 */
   perToken: boolean;
+  /** 概览里的配置版本：移除手动添加的模型时带它 */
+  configVersion: string;
   /** 打开编辑对话框的「模型」一节 */
   onEdit: () => void;
+  /** 打开添加模型的对话框。`listed` 是上游自己列出的那些 */
+  onAdd: (listed: string[]) => void;
   /** 给这个模型起别名。不给就不出「起别名…」 */
   onAlias?: (model: string) => void;
   /** 手写这个模型的规格。不给就不出「规格…」 */
   onSpec?: (model: ModelRow) => void;
+  /** 改了配置之后（移除了手动添加的模型）：让概览重读 */
+  onChanged?: () => void;
 }) {
   const t = useText(modelsPanelText);
   const c = useText(commonText);
@@ -93,6 +105,42 @@ export function ModelsPanel({
   const error = view?.error ?? p.model_error;
   const why = error ? coreText(error) : null;
   const readError = refreshError ?? (r.error !== undefined && !view ? errorText(r.error) : null);
+  const add = () => onAdd(models.filter((m) => m.listed).map((m) => m.id));
+
+  /**
+   * 从手动添加的模型里移除一个。**先改界面**：上游没列它的，这一行马上没了；列了的，只是
+   * 「手动」标记没了。撤销就是照移除之前的整份清单写回去，带移除写出的那一版 —— 这期间
+   * 别处又改了配置，撤销被拒，而不是把别人的改动盖掉。
+   */
+  async function remove(m: ModelRow) {
+    const before = p.models;
+    let written: string | undefined;
+    await undoable({
+      message: t.removed(m.id),
+      apply: () =>
+        r.mutate(
+          patch((v) => ({
+            ...v,
+            models: v.models.flatMap((x) => (x.id !== m.id ? [x] : x.listed ? [{ ...x, manual: false }] : [])),
+          })),
+        ),
+      do: async () => {
+        const w = await api.setManualModels({
+          provider: p.name,
+          models: before.filter((x) => x !== m.id),
+          base_version: configVersion,
+        });
+        written = w.version;
+      },
+      undo: () => api.setManualModels({ provider: p.name, models: before, base_version: written }),
+      after: () => {
+        invalidate(modelsKey(p.name));
+        invalidate("aliases");
+        invalidate("known-models");
+        onChanged?.();
+      },
+    });
+  }
 
   return (
     <div className="flex max-h-[min(30rem,var(--radix-popover-content-available-height))] flex-col">
@@ -158,8 +206,8 @@ export function ModelsPanel({
               text={t.noList(why ?? t.noListReason)}
               muted
               action={
-                <Button size="xs" variant="outline" onClick={onEdit}>
-                  {t.fillManual}
+                <Button size="xs" variant="outline" onClick={add}>
+                  {t.addModels}
                 </Button>
               }
             />
@@ -183,7 +231,14 @@ export function ModelsPanel({
               )}
               <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 motion-fade">
                 {shownOn.map((m) => (
-                  <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} onSpec={onSpec} />
+                  <Row
+                    key={m.id}
+                    m={m}
+                    perToken={perToken}
+                    onAlias={onAlias}
+                    onSpec={onSpec}
+                    onRemove={(row) => void remove(row)}
+                  />
                 ))}
                 {off.length > 0 && (
                   <>
@@ -203,16 +258,28 @@ export function ModelsPanel({
                       {t.notEnabled(off.length)}
                     </Button>
                     {(showOff || q !== "") &&
-                      shownOff.map((m) => <Row key={m.id} m={m} perToken={perToken} onAlias={onAlias} onSpec={onSpec} />)}
+                      shownOff.map((m) => (
+                        <Row
+                          key={m.id}
+                          m={m}
+                          perToken={perToken}
+                          onAlias={onAlias}
+                          onSpec={onSpec}
+                          onRemove={(row) => void remove(row)}
+                        />
+                      ))}
                   </>
                 )}
                 {q !== "" && shownOn.length + shownOff.length === 0 && (
                   <p className="px-1.5 py-2 tw-label text-muted-foreground">{t.noMatch}</p>
                 )}
               </div>
-              <div className="border-t px-1.5 py-1.5">
-                <Button size="xs" variant="ghost" className="w-full justify-start" onClick={onEdit}>
-                  {source === "manual" ? t.editManual : t.editScope}
+              <div className="flex gap-1 border-t px-1.5 py-1.5">
+                <Button size="xs" variant="ghost" className="flex-1 justify-start" onClick={add}>
+                  {t.addModels}
+                </Button>
+                <Button size="xs" variant="ghost" className="flex-1 justify-start" onClick={onEdit}>
+                  {t.editScope}
                 </Button>
               </div>
             </>
@@ -223,11 +290,19 @@ export function ModelsPanel({
   );
 }
 
-/** 标题下那一行：多少个、从哪儿来、什么时候问的 */
+/**
+ * 标题下那一行：多少个、从哪儿来、什么时候问的。上游列出的清单里接了手动添加的，两个数
+ * 分开说 —— 「上游列出 5 个」里有两个其实是手动添加的，就不对了。
+ */
 function summary(source: string, total: number, enabled: number, view: ProviderModelsView): string {
   const t = textOf(modelsPanelText);
   const count = enabled === total ? t.countAll(total) : t.countSome(total, enabled);
   if (source === "discovered") {
+    const added = view.models.filter((m) => m.manual && !m.listed).length;
+    if (added > 0) {
+      const both = t.listedAndAdded(total - added, added);
+      return view.checked_at_ms ? t.fetchedAt(both, whenMinute(view.checked_at_ms)) : both;
+    }
     return view.checked_at_ms ? t.listedAt(count, whenMinute(view.checked_at_ms)) : t.listed(count);
   }
   if (source === "manual") return t.manual(count);
@@ -240,18 +315,22 @@ function Row({
   perToken,
   onAlias,
   onSpec,
+  onRemove,
 }: {
   m: ModelRow;
   perToken: boolean;
   onAlias?: (model: string) => void;
   onSpec?: (model: ModelRow) => void;
+  /** 从手动添加的模型里移除。只给手动添加的那几行 */
+  onRemove?: (model: ModelRow) => void;
 }) {
   const t = useText(modelsPanelText);
   const price =
     perToken && m.price
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
-  const actions = onAlias || onSpec;
+  const removable = m.manual && onRemove;
+  const actions = onAlias || onSpec || removable;
   /** 手写了哪几项：「上下文窗口 128k」「输出上限 16k」「支持推理」「不支持图片输入」 */
   const manual = [
     m.context_window_source === "manual" && m.context_window ? t.manualContext(compact(m.context_window)) : null,
@@ -282,7 +361,16 @@ function Row({
           <span className="truncate">{t.aliasMark(a)}</span>
         </AliasMark>
       ))}
-      {/* 放在名字这一边，不放在数旁边：悬停时右边让给按钮，这个标记和它的说明还看得见 */}
+      {/* 放在名字这一边，不放在数旁边：悬停时右边让给按钮，这些标记和它们的说明还看得见 */}
+      {m.manual && (
+        <Badge
+          variant="secondary"
+          title={m.listed ? t.manualListedTitle : t.manualOnlyTitle}
+          className="h-4 shrink-0 rounded-[4px] px-1 font-sans font-normal"
+        >
+          {t.manualTag}
+        </Badge>
+      )}
       {hasManual(m) && (
         <Badge
           variant="secondary"
@@ -318,6 +406,17 @@ function Row({
           {onAlias && (
             <Button size="xs" variant="outline" className="h-5 bg-popover" onClick={() => onAlias(m.id)}>
               {t.makeAlias}
+            </Button>
+          )}
+          {removable && (
+            <Button
+              size="xs"
+              variant="outline"
+              className="h-5 bg-popover"
+              aria-label={t.removeLabel(m.id)}
+              onClick={() => onRemove(m)}
+            >
+              {t.remove}
             </Button>
           )}
         </span>

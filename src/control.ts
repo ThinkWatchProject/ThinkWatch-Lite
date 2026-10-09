@@ -60,6 +60,7 @@ export const WEBVIEW_ENDPOINTS = [
   "DeleteProvider",
   "ProviderModels",
   "SetModelSpec",
+  "SetManualModels",
   "RefreshProviderModels",
   "RefreshStaleModels",
   "CreateProxy",

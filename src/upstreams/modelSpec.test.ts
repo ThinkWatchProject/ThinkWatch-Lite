@@ -4,7 +4,7 @@ import { catalogOf } from "./ModelsSection";
 import { MAX_SPEC_TOKENS, hasManual, isEmptySpec, manualOf, sameSpec, specOf, tokensOf } from "./modelSpec";
 
 function row(patch: Partial<ModelRow> = {}): ModelRow {
-  return { id: "glm-5-air", enabled: true, estimated: false, aliases: [], ...patch };
+  return { id: "glm-5-air", enabled: true, estimated: false, aliases: [], manual: false, listed: true, ...patch };
 }
 
 /** 手写的模型规格：格子里的数怎么认，哪几项是手写的 */

@@ -33,6 +33,7 @@ import {
 import { labelsText } from "./labels.i18n";
 import { ModelsPanel } from "./ModelsPanel";
 import { ModelSpecDialog } from "./ModelSpecDialog";
+import { ManualModelsDialog } from "./ManualModelsDialog";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
@@ -46,7 +47,7 @@ export interface UpstreamActions {
   linkTest: (name: string) => void;
   speedTest: (name: string) => void;
   refreshModels: (name: string) => void;
-  /** 打开编辑对话框的「模型」一节：启用范围、手动清单 */
+  /** 打开编辑对话框的「模型」一节：启用范围、手动添加的模型 */
   editModels: (name: string) => void;
   /** ChatGPT 账号上游：编辑对话框的「账号」一节（额度与重置卡） */
   account: (name: string) => void;
@@ -417,6 +418,8 @@ function ModelsCell({
   const [aliasFor, setAliasFor] = useState<string | null>(null);
   /** 「规格…」点的那一行，同上 */
   const [specFor, setSpecFor] = useState<ModelRow | null>(null);
+  /** 「添加模型…」：上游自己列出的那些（加它们不改变什么），同上。没打开是 null */
+  const [addFor, setAddFor] = useState<string[] | null>(null);
   if (p.disabled) {
     return <TableCell className="text-right text-muted-foreground">—</TableCell>;
   }
@@ -447,10 +450,16 @@ function ModelsCell({
           <ModelsPanel
             p={p}
             perToken={p.billing === "per-token"}
+            configVersion={configVersion}
             onEdit={() => {
               setOpen(false);
               onEdit();
             }}
+            onAdd={(listed) => {
+              setOpen(false);
+              setAddFor(listed);
+            }}
+            onChanged={onChanged}
             onAlias={(model) => {
               setOpen(false);
               setAliasFor(model);
@@ -462,6 +471,14 @@ function ModelsCell({
           />
         </PopoverContent>
       </Popover>
+      <ManualModelsDialog
+        open={addFor !== null}
+        onOpenChange={(o) => !o && setAddFor(null)}
+        p={p}
+        listed={addFor ?? []}
+        configVersion={configVersion}
+        onSaved={onChanged}
+      />
       <ModelSpecDialog
         open={specFor !== null}
         onOpenChange={(o) => !o && setSpecFor(null)}

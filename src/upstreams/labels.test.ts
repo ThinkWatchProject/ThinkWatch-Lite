@@ -63,7 +63,7 @@ describe("modelFace", () => {
 
   it("keeps showing a manual list that stands in for a failed or missing one", () => {
     const face = modelFace(p({ model_source: "manual", model_status: "failed", model_count: 2 }));
-    expect(face).toEqual({ count: 2, note: "手动清单", warn: false });
+    expect(face).toEqual({ count: 2, note: "手动添加", warn: false });
   });
 });
 

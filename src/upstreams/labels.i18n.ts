@@ -20,7 +20,7 @@ export const labelsText = messages(
     accessKeys: "访问密钥",
     models: {
       discovered: "自动发现",
-      manual: "手动清单",
+      manual: "手动添加",
       failed: "获取失败",
       noList: "未提供清单",
       notFetched: "未获取",
@@ -102,7 +102,7 @@ export const labelsText = messages(
     accessKeys: "Access keys",
     models: {
       discovered: "Discovered",
-      manual: "Manual list",
+      manual: "Added by hand",
       failed: "Fetch failed",
       noList: "No list provided",
       notFetched: "Not fetched",
