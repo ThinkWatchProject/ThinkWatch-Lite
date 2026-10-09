@@ -18,7 +18,7 @@
 //!
 //! **盯目录不盯文件、不递归、去抖**，和配置文件的监听是同一份（[`tw_watch`]）。
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -260,26 +260,38 @@ fn is_ours(p: &Path) -> bool {
 /// 全文留在内存里没有任何必要。
 #[derive(Debug, Default)]
 pub struct Seen {
-    /// 每条发现的指纹
-    known: HashSet<String>,
+    /// 每条发现的指纹（只存哈希，不留文件里的任何内容），和这个指纹此刻有几条
+    known: HashMap<u64, usize>,
     /// 扫过了没有。**第一次扫的结果不算「新出现」** —— 否则用户第一次
     /// 打开就会被一屏「新发现」砸中，而那些东西可能在他机器上放了半年
     primed: bool,
 }
 
-fn key(f: &crate::report::Finding) -> String {
-    format!("{}|{}|{}|{}", f.path.display(), f.rule, f.line, f.excerpt)
+/// **不带行号**：认的是哪份文件、哪条规则、说的是什么（[`crate::report::Finding::subject`]）。
+/// 改一下 `~/.codex/config.toml`，下面的 MCP 服务器整体挪了几行，它们还是那几条
+fn key(f: &crate::report::Finding) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (&f.path, &f.rule, &f.subject).hash(&mut h);
+    h.finish()
 }
 
 impl Seen {
     /// 吃掉一次扫描结果，返回**这次新出现的那些**。
+    ///
+    /// 同一个指纹按条数算：原来有一条、现在有两条，多出来的那一条是新的
     pub fn diff(&mut self, findings: &[crate::report::Finding]) -> Vec<crate::report::Finding> {
-        let fresh: Vec<_> = findings
-            .iter()
-            .filter(|f| !self.known.contains(&key(f)))
-            .cloned()
-            .collect();
-        self.known = findings.iter().map(key).collect();
+        let mut now: HashMap<u64, usize> = HashMap::new();
+        let mut fresh = Vec::new();
+        for f in findings {
+            let k = key(f);
+            let n = now.entry(k).or_default();
+            *n += 1;
+            if *n > self.known.get(&k).copied().unwrap_or(0) {
+                fresh.push(f.clone());
+            }
+        }
+        self.known = now;
         if !self.primed {
             self.primed = true;
             return Vec::new();
@@ -308,6 +320,7 @@ mod tests {
             title: tw_types::msg!("t.title" => "t"),
             detail: tw_types::msg!("t.detail" => "d"),
             excerpt: "e".into(),
+            subject: "s".into(),
         }
     }
 
@@ -344,11 +357,34 @@ mod tests {
     }
 
     #[test]
-    fn the_same_finding_moving_to_another_line_counts_as_new() {
-        // 行号变了通常意味着文件被编辑过 —— 那正是我们想知道的时刻。
+    fn the_same_finding_moving_to_another_line_is_not_new() {
+        // 改一下 `~/.codex/config.toml`，上面多一行，下面的 MCP 服务器整体往下挪：
+        // 它们还是早就报过的那几条，不该再报一遍。
+        let mut seen = Seen::default();
+        seen.diff(&[f("a", "remote-mcp", 1), f("a", "tag", 3)]);
+        assert!(
+            seen.diff(&[f("a", "remote-mcp", 12), f("a", "tag", 40)])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn something_else_under_the_same_rule_is_new() {
+        // 同一份文件、同一条规则，说的是另一个东西（另一台远端服务器）：是新的。
+        let mut seen = Seen::default();
+        seen.diff(&[f("a", "remote-mcp", 1)]);
+        let mut other = f("a", "remote-mcp", 1);
+        other.subject = "other|https://mcp.example.com".into();
+        assert_eq!(seen.diff(&[f("a", "remote-mcp", 2), other]).len(), 1);
+    }
+
+    #[test]
+    fn one_more_of_the_same_is_new() {
+        // 原来一条，现在两条一模一样的：多出来的那一条是新的。
         let mut seen = Seen::default();
         seen.diff(&[f("a", "tag", 1)]);
-        assert_eq!(seen.diff(&[f("a", "tag", 40)]).len(), 1);
+        assert_eq!(seen.diff(&[f("a", "tag", 1), f("a", "tag", 5)]).len(), 1);
+        assert!(seen.diff(&[f("a", "tag", 2), f("a", "tag", 9)]).is_empty());
     }
 
     #[test]
@@ -358,6 +394,8 @@ mod tests {
         let mut secret = f("a", "tag", 1);
         secret.detail = tw_types::msg!("t.detail" => "这里有一段很私密的提示词内容");
         secret.title = tw_types::msg!("t.title" => "标题里也有私密内容");
+        secret.excerpt = "私密的那一行".into();
+        secret.subject = "私密的那一行".into();
         seen.diff(&[secret]);
         let dump = format!("{:?}", seen);
         assert!(!dump.contains("私密"), "{dump}");
