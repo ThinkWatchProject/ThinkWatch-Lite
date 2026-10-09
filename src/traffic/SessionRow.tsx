@@ -18,7 +18,7 @@ import { sessionsText } from "./Sessions.i18n";
 import { compact as short, span as dur, whenMinute as when } from "@/format";
 import { RowActions } from "./TableMenus";
 import { tallyOf, type Cursor, type Group, type Tally } from "./grouping";
-import { textWidth, type Col, type Widths } from "./virtual";
+import { capped, NAME_PX, textWidth, type Col, type Widths } from "./virtual";
 
 type Text = (typeof sessionsText)["zh"];
 
@@ -212,10 +212,11 @@ function sessionCell(col: Col, f: Facts, { t, open, selected, hints, onToggle }:
         />
       );
     case "model":
-      return <Names items={n.models} sep={t.modelSep} />;
+      return <Names items={n.models} sep={t.modelSep} max={NAME_PX.model} />;
+    // 标志和名字一起封顶，和请求行的上游那一格一样
     case "upstream":
       return (
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5" style={{ maxWidth: NAME_PX.upstream }}>
           {providers[0] !== undefined && !first?.local && <UpstreamLogo name={providers[0]} className="opacity-70" />}
           <Names items={providers} sep=" · " />
         </span>
@@ -244,17 +245,18 @@ export function SessionSizerCell({ col, g, hints }: { col: Col; g: Group; hints:
 
 /**
  * 组头各列大约多宽，挑表头里垫哪几格用（见 `widest`）。和 `sessionCell` 写的是同样的字；
- * 图标、展开钮按两三个字宽算。
+ * 图标、展开钮按两三个字宽算。名字和请求行一样按画出来的宽度封顶（`NAME_PX`）。
  */
 export function sessionWidths(g: Group, t: Text): Widths {
   const { s, first, n, providers } = sessionFacts(g);
-  const names = (xs: string[]) => (xs[0] === undefined ? 0 : Math.min(textWidth(xs[0]), 32) + (xs.length > 1 ? 2 : 0));
-  const upstream = names(providers) + 3;
+  // 第一个名字，有其余的再加上留给它们的一个省略号（`Names`）
+  const names = (xs: string[]) => (xs[0] === undefined ? 0 : textWidth(xs[0]) + (xs.length > 1 ? 2 : 0));
+  const upstream = capped(names(providers), NAME_PX.upstream, 22) + 3;
   return {
     status: 3 + textWidth(t.turnCount(n.turns)) + (n.failed > 0 ? 2 + String(n.failed).length : 0),
     time: textWidth(when(n.started)) + (n.running > 0 ? 2 : 0),
-    client: Math.min(textWidth(s?.client ?? first?.client ?? ""), 24) + (first?.peer ? 2 : 0),
-    model: names(n.models),
+    client: capped(textWidth(s?.client ?? first?.client ?? ""), NAME_PX.client, first?.peer ? 18 : 0) + (first?.peer ? 3 : 0),
+    model: capped(names(n.models), NAME_PX.model),
     upstream,
     upstreamMin: upstream,
     latency: textWidth(dur(n.ended - n.started)),
@@ -267,10 +269,12 @@ export function sessionWidths(g: Group, t: Text): Widths {
  * 组头里的一串名字（模型、上游）。**决定列宽的只有第一项。**
  *
  * 一次任务用过三个模型、走过四个上游很常见，连起来写有两三百像素 ——
- * 让它撑列宽，费用就被挤出视野。所以第一项完整显示（和请求行的模型
- * 一样最多 13rem）；分隔符和其余的那段宽度记作 0（`w-0 flex-1`），这一列
- * 有多宽就显示多少，最少留出一个省略号：窄的时候是「claude-sonnet-5…」，
- * 宽的时候整串都在。悬停看全。
+ * 让它撑列宽，费用就被挤出视野。所以第一项完整显示；分隔符和其余的那段
+ * 宽度记作 0（`w-0 flex-1`），这一列有多宽就显示多少，最少留出一个省略号：
+ * 窄的时候是「claude-sonnet-5…」，宽的时候整串都在。截断了的悬停看全。
+ *
+ * **整块和请求行同一个上限**（`max`，或者外面那一块的，见 `NAME_PX`）：第一项
+ * 本身就超长时，它让出最后那个省略号的位置，组头不比请求行宽。
  *
  * **分隔符跟着后面那段，不跟着第一项。**跟着第一项的话，第一个模型正好是
  * 全表最长的那个时，组头比请求行宽出一个分隔符，归组之后整张表被撑出视野。
@@ -278,13 +282,13 @@ export function sessionWidths(g: Group, t: Text): Widths {
  * `whitespace-pre` 是为了留住「 · 」两边的空格 —— 两段各是一个块，
  * 行尾和行首的空格会被吞掉。
  */
-function Names({ items, sep }: { items: string[]; sep: string }) {
+function Names({ items, sep, max }: { items: string[]; sep: string; max?: number }) {
   const [first, ...rest] = items;
   if (first === undefined) return null;
   return (
-    <Tip lazy text={items.join(sep)}>
-      <div className="flex min-w-0 flex-1">
-        <span className="max-w-[13rem] shrink-0 overflow-hidden text-ellipsis whitespace-pre">{first}</span>
+    <Tip clip text={items.join(sep)}>
+      <div className="flex min-w-0 flex-1" style={max === undefined ? undefined : { maxWidth: max }}>
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-pre">{first}</span>
         {rest.length > 0 && (
           <span className="w-0 min-w-3 flex-1 overflow-hidden text-ellipsis whitespace-pre">
             {sep + rest.join(sep)}

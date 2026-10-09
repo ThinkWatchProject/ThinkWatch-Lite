@@ -39,7 +39,18 @@ import { sessionsText } from "./Sessions.i18n";
 import { RowActions, TableMenus, type MenuTarget } from "./TableMenus";
 import { trafficText } from "./Traffic.i18n";
 import { useViaConfig } from "./useModelVia";
-import { indexAt, itemsOf, offsetsOf, textWidth, widest, type Col, type Item, type Widths } from "./virtual";
+import {
+  capped,
+  indexAt,
+  itemsOf,
+  NAME_PX,
+  offsetsOf,
+  textWidth,
+  widest,
+  type Col,
+  type Item,
+  type Widths,
+} from "./virtual";
 
 type Text = (typeof trafficText)["zh"];
 
@@ -296,7 +307,8 @@ function Th({
  * 哪几格最宽是按字数估的（`useSizers`），每列取前三名，估差一点也落在里面；画的是和
  * 行里一样的那一格（同一个组件），量出来的宽度就是真的。组头的字是中粗，请求行是常规；
  * 组里的请求行第一格往里缩了 22px（`pl-7`），这里照样缩。上游那一格会折行，量它最窄
- * 能收到多窄时也要能折。
+ * 能收到多窄时也要能折。名字类的几格自己封了顶（`NAME_PX`），垫在这里也一样：一个
+ * 长名字撑开的最多是上限那么宽。
  */
 function Sizer({
   col,
@@ -375,14 +387,19 @@ function useSizers(items: Item[], t: Text, ts: (typeof sessionsText)["zh"], toda
   }, [items, cache, t, ts, today, via]);
 }
 
-/** 请求行各列大约多宽：和 `requestCell` 写的是同样的字；图标、徽标的边距按一两个字宽算 */
+/**
+ * 请求行各列大约多宽：和 `requestCell` 写的是同样的字；图标、徽标的边距按一两个字宽算。
+ * 名字按画出来的宽度封顶（`capped`，上限见 `NAME_PX`）
+ */
 function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | null): Widths {
   const sent = notSent(r);
   const mark = rowMark(r, via);
+  const phrase = r.local || sent;
   const text = sent ? notSentText(sent) : r.local || r.provider ? upstreamText(r) : "—";
-  const name = textWidth(text) + 3;
-  // 本地应答、没有发往上游的那一句可以在词间折行（见 `UpstreamCell`）：最窄是最长的那个词
-  const nameMin = r.local || sent ? Math.max(...text.split(/\s+/).map(textWidth)) + 3 : name;
+  // 上游的名字和标志一起封顶；本地应答、没有发往上游的那一句是说明，不截断
+  const name = (phrase ? textWidth(text) : capped(textWidth(text), NAME_PX.upstream, 22)) + 3;
+  // 那一句可以在词间折行（见 `UpstreamCell`）：最窄是最长的那个词
+  const nameMin = phrase ? Math.max(...text.split(/\s+/).map(textWidth)) + 3 : name;
   const badges = [
     ...(mark ? [textWidth(t.pinned) + 1] : []),
     ...(r.secrets && r.secrets.items.length > 0
@@ -398,8 +415,9 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
   return {
     status: 2 + textWidth(statusText(r, t)),
     time: textWidth(when(r.atMs, today)),
-    client: Math.min(textWidth(r.client), 24) + (r.peer ? 2 : 0),
-    model: Math.min(textWidth(r.model ?? "—"), 32),
+    // 来源的记号在同一个限宽的块里（见 `KeyCell`）
+    client: capped(textWidth(r.client), NAME_PX.client, r.peer ? 18 : 0) + (r.peer ? 3 : 0),
+    model: capped(textWidth(r.model ?? "—"), NAME_PX.model),
     upstream: badges.reduce((a, b) => a + b + 1, name),
     upstreamMin: Math.max(nameMin, ...badges),
     // 在跑的：首 token 加上一个时钟（「0:42」）
@@ -887,9 +905,11 @@ function requestCell(col: Col, r: RequestRow, c: { hints: boolean; via: ViaConfi
     case "model":
       return (
         // 截断要套在里面一层：`max-width` 加在 td 上会被表格自己的列宽算法吃掉，长名字照样把这一列撑开
-        <div className="max-w-[13rem] truncate" title={r.model}>
-          {r.model ?? "—"}
-        </div>
+        <Tip clip text={r.model}>
+          <div className="truncate" style={{ maxWidth: NAME_PX.model }}>
+            {r.model ?? "—"}
+          </div>
+        </Tip>
       );
     case "upstream":
       return <UpstreamCell r={r} via={c.via} />;
@@ -1129,8 +1149,14 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
   const mark = rowMark(r, via);
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      {/* 本地应答的那一句（英文两个词）可以在词间折行：它不是一个名字，别让它定这一列的最小宽度 */}
-      <span className={cn("flex items-center gap-1.5", !r.local && !sent && "whitespace-nowrap")}>
+      {/*
+        本地应答的那一句（英文两个词）可以在词间折行：它不是一个名字，别让它定这一列的最小宽度。
+        上游的名字不折行，**连同标志封顶**（`NAME_PX`）：再长的截断，悬停看全
+      */}
+      <span
+        className={cn("flex items-center gap-1.5", !r.local && !sent && "whitespace-nowrap")}
+        style={r.local || sent ? undefined : { maxWidth: NAME_PX.upstream }}
+      >
         {/* 被规则拒绝、选中的上游一个都接不了的请求没有发往任何上游：上游是空的，
             这一格说是哪一种，图形和路由图上的拒绝一致。和本地应答一样是一句话、不是
             名字，可以在词间折行 */}
@@ -1146,7 +1172,15 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
             ) : (
               <UpstreamLogo name={r.provider} className="opacity-70" />
             )}
-            {r.local || r.provider ? <span>{upstreamText(r)}</span> : <span className="text-muted-foreground">—</span>}
+            {r.local ? (
+              <span>{upstreamText(r)}</span>
+            ) : r.provider ? (
+              <Tip clip text={r.provider}>
+                <span className="min-w-0 truncate">{r.provider}</span>
+              </Tip>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
           </>
         )}
       </span>

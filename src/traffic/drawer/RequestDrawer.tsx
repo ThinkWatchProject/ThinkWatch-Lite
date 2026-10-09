@@ -11,7 +11,8 @@ import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import { KeyLabel } from "@/KeyLabel";
+import { Tip } from "@/ui/tip";
+import { KeyLabel, keyText } from "@/KeyLabel";
 import { notSentText, probeLabel } from "@/labels";
 import { notSent } from "@/requestRouting";
 import type { CoreEvent, HistoryRow, RequestDetail } from "@/types";
@@ -188,13 +189,18 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
           (r.local || r.provider) && (
             <span className="inline-flex min-w-0 items-center gap-1.5">
               {!r.local && <UpstreamLogo name={r.provider} className="opacity-70" />}
-              <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
+              {/* 名字太长时截断（这一行宽不过浮层），悬停看全 */}
+              <Tip clip text={r.local ? t.answeredLocally : r.provider}>
+                <span className="truncate">{r.local ? t.answeredLocally : r.provider}</span>
+              </Tip>
             </span>
           )
         )}
-        <span className="min-w-0 truncate">
-          <KeyLabel name={r.client} masked={r.key_masked} />
-        </span>
+        <Tip clip text={keyText(r.client, r.key_masked)}>
+          <span className="min-w-0 truncate">
+            <KeyLabel name={r.client} masked={r.key_masked} />
+          </span>
+        </Tip>
       </PanelHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6 tw-body">

@@ -10,6 +10,7 @@ import { ClientLogo } from "@/ui/logos";
 import { Tip } from "@/ui/tip";
 import { coreNow, onTick, stopwatch } from "./clock";
 import { trafficText } from "./Traffic.i18n";
+import { NAME_PX } from "./virtual";
 
 /**
  * 请求行和组头共用的几样：行的底色、压暗的格子、密钥那一格、悬停里的几行字、复制、
@@ -40,6 +41,9 @@ export const MENU_REVEAL =
  *
  * `hints`：表里有哪一行带着推测出的应用。有的话没有应用的行也留出标志的位置，
  * 名字才对得齐。
+ *
+ * **整块封顶**（`NAME_PX`）：名字再长也只截断名字，标志和来源记号留着；悬停第一行就是
+ * 完整的名字（连同打码的值）。
  */
 export function KeyCell({
   client,
@@ -62,7 +66,7 @@ export function KeyCell({
   ];
   return (
     <Tip lazy text={<Lines lines={tip} />}>
-      <span className="flex max-w-40 items-center gap-1.5">
+      <span className="flex items-center gap-1.5" style={{ maxWidth: NAME_PX.client }}>
         {hints &&
           (hint ? (
             <ClientLogo id={hint} name={appLabel(hint)} className="opacity-70" />

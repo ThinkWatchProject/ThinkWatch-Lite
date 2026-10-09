@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RequestRow } from "@/types";
 import { lines, type Group } from "./grouping";
-import { indexAt, itemsOf, offsetsOf, textWidth, widest } from "./virtual";
+import { capped, indexAt, itemsOf, NAME_PX, offsetsOf, textWidth, widest } from "./virtual";
 
 const row = (id: number, atMs: number, session?: string): RequestRow => ({
   id,
@@ -81,5 +81,37 @@ describe("最宽的几项", () => {
     expect(textWidth("16:42:01")).toBe(8);
     expect(textWidth("已取消")).toBe(6);
     expect(textWidth("3 轮")).toBe(4);
+  });
+});
+
+describe("名字封顶", () => {
+  it("没到上限的照字数算，超过的按上限算：上限是像素，一格约 6.5px，宁可估宽", () => {
+    expect(capped(textWidth("claude-sonnet-5"), NAME_PX.model)).toBe(15);
+    expect(capped(400, NAME_PX.model)).toBe(32);
+    expect(capped(textWidth("公司内部的 Claude 中转（北京机房备用线路二号）"), NAME_PX.upstream, 22)).toBe(22);
+    // 旁边的标志、记号占掉的那截从上限里扣
+    expect(capped(400, 160, 18)).toBe(22);
+    expect(capped(400, 160)).toBe(25);
+  });
+
+  it("常见的名字不截断：估宽在上限以内", () => {
+    for (const m of ["claude-sonnet-4-5-20250929", "qwen3-coder-480b-a35b-instruct", "gpt-5.1-codex-max"])
+      expect(capped(textWidth(m), NAME_PX.model)).toBe(textWidth(m));
+    for (const u of ["bedrock-us-east-1", "azure-openai-eastus2", "阿里云百炼"])
+      expect(capped(textWidth(u), NAME_PX.upstream, 22)).toBe(textWidth(u));
+  });
+
+  it("挑表头里垫哪几格时，一个短名字带着一排徽标胜过三个超长的名字", () => {
+    // 上游那一格 = 名字（封顶）+ 徽标。三个超长名字、没有徽标；一个短名字带两枚徽标
+    const rows = [
+      { name: "x".repeat(60), badges: 0 },
+      { name: "y".repeat(80), badges: 0 },
+      { name: "z".repeat(70), badges: 0 },
+      { name: "openrouter", badges: 2 },
+    ];
+    const w = (i: number) => capped(textWidth(rows[i]!.name), NAME_PX.upstream, 22) + rows[i]!.badges * 10;
+    expect(widest(rows.length, 3, w)[0]).toBe(3);
+    // 不封顶的话它根本挑不进去
+    expect(widest(rows.length, 3, (i) => textWidth(rows[i]!.name) + rows[i]!.badges * 10)).not.toContain(3);
   });
 });
