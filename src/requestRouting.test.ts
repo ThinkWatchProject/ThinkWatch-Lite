@@ -36,12 +36,12 @@ const busy = (provider: string, queued?: number): AttemptView => ({
   skipped: "busy",
   queued_ms: queued ?? null,
 });
-/** 开头超时、放弃了的一跳 */
-const slow = (provider: string): AttemptView => ({
+/** 无响应超时、放弃了的一跳 */
+const quiet = (provider: string): AttemptView => ({
   provider,
-  outcome: "slow_start",
-  error: { code: "gw.slow_start", args: { upstream: provider, secs: "30" }, text: "" },
-  ms: 30_004,
+  outcome: "idle_timeout",
+  error: { code: "gw.upstream.idle_timeout", args: { upstream: provider, secs: "300" }, text: "" },
+  ms: 300_004,
   usage: { input: 48_210, cache_read: 0, cache_write: 0, estimated: true },
 });
 
@@ -118,9 +118,12 @@ describe("路由那一页", () => {
     expect(f.hops.map((h) => h.denied)).toEqual([false, false]);
   });
 
-  it("开头超时、满着跳过的不说成失败：换过上游，说前几次尝试没有接下", () => {
-    const f = routingFacts(row({ attempts: [slow("anthropic"), served("openrouter")] }, { provider: "openrouter" }), false)!;
-    expect(f.note).toEqual({ kind: "switched", count: 1 });
+  it("无响应超时是上游的失败：说故障转移", () => {
+    const f = routingFacts(row({ attempts: [quiet("anthropic"), served("openrouter")] }, { provider: "openrouter" }), false)!;
+    expect(f.note).toEqual({ kind: "failover", failed: 1 });
+  });
+
+  it("满着跳过的不说成失败：换过上游，说前几次尝试没有接下", () => {
     const g = routingFacts(
       row({ attempts: [busy("anthropic"), overloaded("openrouter"), served("deepseek")] }, { provider: "deepseek" }),
       false,

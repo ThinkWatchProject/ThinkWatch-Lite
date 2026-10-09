@@ -27,6 +27,7 @@ export function PanelHeader({
   title,
   meta,
   onClose,
+  actions,
   tabs,
   children,
   className,
@@ -35,6 +36,8 @@ export function PanelHeader({
   /** 标题后面淡一档的一小段（时刻） */
   meta?: ReactNode;
   onClose: () => void;
+  /** 标题这一行右边、关闭钮之前的几个按钮（`size="sm"`）。写成字，不用图标 */
+  actions?: ReactNode;
   /** 贴着底边的一排标签 */
   tabs?: ReactNode;
   /** 第二行：这一条的要点 */
@@ -57,6 +60,7 @@ export function PanelHeader({
         )}
         {meta && <span className="shrink-0 tw-num tw-label whitespace-nowrap text-muted-foreground">{meta}</span>}
         <span className="flex-1" />
+        {actions && <span className="flex shrink-0 items-center gap-2">{actions}</span>}
         <Button
           variant="ghost"
           size="icon-sm"

@@ -1,7 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useText } from "@/i18n";
+import { textOf, useText } from "@/i18n";
 import { notSent } from "@/requestRouting";
 import type { RequestRow, SessionView } from "@/types";
 import { Button } from "@/ui/button";
@@ -17,6 +17,7 @@ import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
 import { compact as short, span as dur, whenMinute as when } from "@/format";
 import { RowActions } from "./TableMenus";
+import { abortText } from "./abort.i18n";
 import { tallyOf, type Cursor, type Group, type Tally } from "./grouping";
 import { capped, NAME_PX, textWidth, type Col, type Widths } from "./virtual";
 
@@ -105,13 +106,20 @@ export function sessionItems(
   id: string,
   open: boolean,
   t: Text,
-  on: { openIt: () => void; toggle: () => void },
+  on: { openIt: () => void; toggle: () => void; abort?: () => void },
 ): MenuItems {
   return [
     { kind: "item", label: t.openSession, onSelect: on.openIt },
     { kind: "item", label: open ? t.collapseSession : t.expandSession, onSelect: on.toggle },
     { kind: "sep" },
     { kind: "item", label: t.copySessionId, onSelect: () => void copyText(id) },
+    // 组里有在跑的请求时才有。确认由页面弹
+    ...(on.abort
+      ? ([
+          { kind: "sep" },
+          { kind: "item", label: textOf(abortText).abortSession, danger: true, onSelect: on.abort },
+        ] as const)
+      : []),
   ];
 }
 

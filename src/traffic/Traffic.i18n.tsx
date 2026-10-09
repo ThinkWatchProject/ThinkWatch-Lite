@@ -134,6 +134,8 @@ export const trafficText = messages(
     // 状态一列
     failed: "失败",
     cancelled: "已取消",
+    /** 在界面上手动中止的 */
+    aborted: "手动中止",
 
     // 上游一列的徽标和它们的悬浮说明
     /** 客户端写的是别名，按这家上游换成了它的模型名。模型那一列照旧是客户端写的名称 */
@@ -276,6 +278,7 @@ export const trafficText = messages(
 
     failed: "Failed",
     cancelled: "Canceled",
+    aborted: "Aborted",
 
     aliasTip: (model: string, upstream: string, sent: string) =>
       `${model} is an alias; the model sent to ${upstream} is ${sent}.`,

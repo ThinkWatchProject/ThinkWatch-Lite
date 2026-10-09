@@ -9,8 +9,7 @@ const failover: FailoverView = {
   no_balance_pause_secs: 1800,
   quota_pause_secs: 3600,
   rate_limit_max_pause_secs: 3600,
-  stream_start_wait_secs: 15,
-  next_on_slow_start: false,
+  idle_timeout_secs: 300,
   slot_wait_secs: 30,
 };
 
@@ -23,11 +22,10 @@ describe("故障转移", () => {
     expect(allOk(checks(saved, saved))).toBe(true);
   });
 
-  it("停用时长和次数不能是 0，开头最多等 120 秒", () => {
+  it("停用时长和次数不能是 0", () => {
     const saved = draftOf(failover);
     expect(checks({ ...saved, pause_secs: "0" }, saved).pause_secs).toBe(false);
     expect(checks({ ...saved, failures_to_pause: "0" }, saved).failures_to_pause).toBe(false);
-    expect(checks({ ...saved, stream_start_wait_secs: "121" }, saved).stream_start_wait_secs).toBe(false);
     expect(checks({ ...saved, quota_pause_secs: "1.5" }, saved).quota_pause_secs).toBe(false);
   });
 
@@ -48,15 +46,12 @@ describe("故障转移", () => {
     expect(checks({ ...saved, slot_wait_secs: "" }, saved).slot_wait_secs).toBe(false);
   });
 
-  it("开头超时转到下一个上游：开着时开头至少等 5 秒，没动过的秒数也重查", () => {
-    const saved = draftOf({ ...failover, stream_start_wait_secs: 3 });
-    expect(saved.next_on_slow_start).toBe(false);
-    // 关着时 3 秒是合法的
-    expect(checks(saved, saved).stream_start_wait_secs).toBe(true);
-    // 打开开关，秒数没动也不行
-    const on = { ...saved, next_on_slow_start: true };
-    expect(checks(on, saved).stream_start_wait_secs).toBe(false);
-    expect(checks({ ...on, stream_start_wait_secs: "5" }, saved).stream_start_wait_secs).toBe(true);
-    expect(checks({ ...on, stream_start_wait_secs: "30" }, saved).stream_start_wait_secs).toBe(true);
+  it("无响应超时：默认 300 秒，30 到 3600 之间的整数", () => {
+    const saved = draftOf(failover);
+    expect(saved.idle_timeout_secs).toBe("300");
+    for (const ok of ["30", "600", "3600"])
+      expect(checks({ ...saved, idle_timeout_secs: ok }, saved).idle_timeout_secs).toBe(true);
+    for (const bad of ["29", "3601", "0", "", "90.5"])
+      expect(checks({ ...saved, idle_timeout_secs: bad }, saved).idle_timeout_secs).toBe(false);
   });
 });

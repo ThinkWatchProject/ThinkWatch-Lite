@@ -13,7 +13,7 @@ import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tip } from "@/ui/tip";
 import { KeyLabel, keyText } from "@/KeyLabel";
-import { notSentText, probeLabel } from "@/labels";
+import { failureKind, notSentText, probeLabel } from "@/labels";
 import { notSent } from "@/requestRouting";
 import type { CoreEvent, HistoryRow, RequestDetail } from "@/types";
 import { NotSentIcon } from "../cells";
@@ -238,7 +238,9 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
  */
 function HeadStatus({ r, state }: { r: HistoryRow; state: DrawerState }) {
   const t = useText(requestDrawerText);
-  const tone = TONE[statusTone(r.status ?? undefined, state)];
+  // 手动中止的不是故障：和取消一样是灰的
+  const tone =
+    state === "failed" && failureKind(r.error) === "aborted" ? "idle" : TONE[statusTone(r.status ?? undefined, state)];
   return (
     <StatusLabel tone={tone} muted={tone === "ok" || tone === "idle" || tone === "pending"}>
       {statusText(r, state, t)}
@@ -253,7 +255,12 @@ function statusText(
   t: (typeof requestDrawerText)["zh"],
 ): string {
   if (state === "in_flight") return r.status != null ? `${r.status} · ${t.inProgress}` : t.inProgress;
-  if (state === "failed") return r.status != null ? `${r.status} · ${t.failed}` : t.failed;
+  if (state === "failed") {
+    // 手动中止、上游没有内容超时的另有说法。超时的等了多久在尝试链和失败的那一句里
+    const kind = failureKind(r.error);
+    const word = kind === "aborted" ? t.aborted : kind === "idle" ? t.idleTimeout : t.failed;
+    return r.status != null && kind !== "aborted" ? `${r.status} · ${word}` : word;
+  }
   if (state === "cancelled") return t.cancelledShort;
   return r.status != null ? String(r.status) : "—";
 }

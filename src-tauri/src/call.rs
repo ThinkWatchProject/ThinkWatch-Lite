@@ -76,9 +76,11 @@ webview_endpoints![
     History,
     HistorySearch,
     RequestDetail,
+    AbortRequest,
     Sessions,
     SessionDetail,
     SessionTranscript,
+    AbortSession,
     // 测速、回放、试路由
     SpeedQuote,
     SpeedRun,

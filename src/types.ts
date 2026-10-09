@@ -90,6 +90,11 @@ export interface RequestRow {
   /** 改写了参数的规则，按求值的顺序。没有就没有这一项 */
   rewrittenBy?: string[];
   path: string;
+  /**
+   * 跑在 WebSocket 连接上（Responses 的一轮、整条连接一行的那种）。**这种请求不能单独中止**：
+   * 它跟着那条连接走（core 不登记它，见 `POST /request/{id}/abort`）。只有开始事件说得出来
+   */
+  ws?: boolean;
   atMs: number;
   /**
    * 进行中的行也要立刻画出来 —— 流式请求可能要跑几分钟。
@@ -180,6 +185,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         // WebSocket 这类认不出模型的请求发的是空串，当作「不知道」
         model: ev.model || undefined,
         path: ev.path,
+        ws: ev.method === "WS" || undefined,
         atMs: ev.at_ms,
         state: "in_flight",
         session: ev.session ?? undefined,

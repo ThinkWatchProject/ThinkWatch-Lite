@@ -50,6 +50,15 @@ describe("从事件缝出一行", () => {
     expect(rows.get(1)?.model).toBe("claude-sonnet-4-5");
   });
 
+  /** 跑在 WebSocket 连接上的那一行说得出来：它不能单独中止（`abortable`） */
+  it("开始事件说得出是不是 WebSocket", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ method: "WS", path: "/v1/responses" }));
+    applyEvent(rows, started({ id: 2 }));
+    expect(rows.get(1)?.ws).toBe(true);
+    expect(rows.get(2)?.ws).toBeUndefined();
+  });
+
   /** 会话是网关在开始的那一刻定的：正在跑的那一条已经在它的会话里，不用等落库 */
   it("开始就带着会话", () => {
     const rows = new Map<number, RequestRow>();

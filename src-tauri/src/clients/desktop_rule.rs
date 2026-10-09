@@ -477,8 +477,8 @@ mod tests {
             "security": {"redact": "observe", "inspect_tools": "observe", "content": "observe"},
             "retention": {"body_days": 7, "row_days": 90, "body_max_bytes": 0, "body_bytes_now": 0},
             "failover": {"failures_to_pause": 3, "pause_secs": 60, "max_pause_secs": 600, "no_balance_pause_secs": 1800,
-                         "quota_pause_secs": 3600, "rate_limit_max_pause_secs": 3600, "stream_start_wait_secs": 15,
-                         "next_on_slow_start": false, "slot_wait_secs": 30}
+                         "quota_pause_secs": 3600, "rate_limit_max_pause_secs": 3600, "idle_timeout_secs": 300,
+                         "slot_wait_secs": 30}
         })
     }
 

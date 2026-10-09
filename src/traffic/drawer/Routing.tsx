@@ -106,9 +106,14 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                       </Denied>
                     ) : (
                       /* **失败的原因要留着** —— 一条说「试过 A → B → C」的链和一条还说清
-                         每一跳为什么失败的链，排查价值差得远。短名（开头超时、并发已满）悬停
+                         每一跳为什么失败的链，排查价值差得远。短名（无响应超时、并发已满）悬停
                          是 core 的原话 */
-                      <StatusLabel tone={outcome.ok ? "ok" : "warn"} muted={outcome.ok} className="min-w-0 flex-1">
+                      // 手动中止的那一跳不是故障：灰的，和取消一样
+                      <StatusLabel
+                        tone={outcome.ok ? "ok" : outcome.idle ? "idle" : "warn"}
+                        muted={outcome.ok || outcome.idle}
+                        className="min-w-0 flex-1"
+                      >
                         {outcome.tip ? (
                           <Tip text={outcome.tip}>
                             <span className="underline decoration-dotted underline-offset-2">{outcome.text}</span>
@@ -127,7 +132,7 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                     {/* 没有发出的那一跳没有耗时可言 */}
                     <span className="shrink-0 tw-num text-muted-foreground">{unsent ? "—" : ms(a.ms)}</span>
                   </div>
-                  {/* 放弃了的这一跳（开头超时）上游可能已经按输入收了钱：不在这个请求的费用里 */}
+                  {/* 放弃了的这一跳（无响应超时）上游可能已经按输入收了钱：不在这个请求的费用里 */}
                   {a.usage && <AbandonedUsage usage={a.usage} />}
                 </li>
               );
@@ -145,7 +150,7 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
 }
 
 /**
- * 放弃了的一跳（开头超时）上游可能已经收了钱的输入，写在那一跳下面一行。上游在流开头
+ * 放弃了的一跳（无响应超时）上游可能已经收了钱的输入，写在那一跳下面一行。上游在流开头
  * 报了的写它报的几种 token；没报的是网关估的输入，写「约」。**输出不知道**，不写。
  *
  * 这部分不进这个请求的费用：上游收没收、收了多少，网关看不到。悬停说这一点

@@ -5,6 +5,7 @@ import {
   PROBES,
   attemptText,
   conditionName,
+  failureKind,
   conditionText,
   mismatchText,
   setText,
@@ -68,11 +69,17 @@ describe("规则的条件与改写", () => {
 });
 
 describe("尝试链里的一跳", () => {
-  const slow = {
+  const quiet = {
     provider: "anthropic",
-    outcome: "slow_start" as const,
-    error: { code: "gw.slow_start", args: { upstream: "anthropic", secs: "30" }, text: "" },
-    ms: 30_004,
+    outcome: "idle_timeout" as const,
+    error: { code: "gw.upstream.idle_timeout", args: { upstream: "anthropic", secs: "300" }, text: "" },
+    ms: 300_004,
+  };
+  const aborted = {
+    provider: "anthropic",
+    outcome: "aborted" as const,
+    error: { code: "gw.request.aborted", text: "" },
+    ms: 1_200,
   };
   const busy = {
     provider: "anthropic",
@@ -82,19 +89,21 @@ describe("尝试链里的一跳", () => {
     skipped: "busy" as const,
   };
 
-  it("开头超时、满着跳过：短名，悬停是 core 的原话", () => {
-    expect(attemptText(slow)).toEqual({
-      text: "开头超时",
+  it("无响应超时、满着跳过：短名，悬停是 core 的原话；手动中止是灰的", () => {
+    expect(attemptText(quiet)).toEqual({
+      text: "无响应超时 · 300 秒",
       ok: false,
-      tip: "上游「anthropic」在 30 秒内没有返回内容，请求已转到下一个上游。",
+      tip: "上游「anthropic」在 300 秒内没有发出内容。",
     });
+    expect(attemptText(aborted)).toEqual({ text: "手动中止", ok: false, idle: true, tip: null });
     expect(attemptText(busy)).toEqual({
       text: "并发已满",
       ok: false,
       tip: "上游「anthropic」已有 2 个请求在进行，达到其并发上限（max_concurrent）。",
     });
     setLang("en");
-    expect(attemptText(slow).text).toBe("Start timed out");
+    expect(attemptText(quiet).text).toBe("No response · 300 s");
+    expect(attemptText(aborted).text).toBe("Aborted");
     expect(attemptText(busy).text).toBe("At its concurrency limit");
   });
 
@@ -104,5 +113,15 @@ describe("尝试链里的一跳", () => {
       ok: true,
       tip: null,
     });
+  });
+});
+
+describe("失败里要单独说的两种", () => {
+  it("手动中止和无响应超时按码认，别的失败照常", () => {
+    expect(failureKind({ code: "gw.request.aborted", text: "" })).toBe("aborted");
+    expect(failureKind({ code: "gw.upstream.idle_timeout", args: { upstream: "a", secs: "300" }, text: "" })).toBe("idle");
+    expect(failureKind({ code: "gw.upstream.idle_timeout_mid_stream", text: "" })).toBe("idle");
+    expect(failureKind({ code: "gw.upstream.status", text: "" })).toBeNull();
+    expect(failureKind(undefined)).toBeNull();
   });
 });

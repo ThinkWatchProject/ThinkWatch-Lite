@@ -23,6 +23,8 @@ import { unrecorded } from "./transcript";
 import { turnCost, type TurnCost } from "./costCell";
 import { compact, span, whenMinute } from "@/format";
 import { tally } from "./grouping";
+import { abortable } from "./abort";
+import { abortText } from "./abort.i18n";
 
 /**
  * 一次会话，在右侧浮层里。**点开立刻出来**：先是和内容同样形状的骨架，取到了
@@ -43,6 +45,7 @@ export function SessionSheet({
   rows,
   onClose,
   onOpenTurn,
+  onAbort,
 }: {
   /** 开着的那次会话。`null` 是关着 */
   id: string | null;
@@ -51,6 +54,8 @@ export function SessionSheet({
   onClose: () => void;
   /** 点了其中一轮 —— 在这一层之上再叠一层请求详情 */
   onOpenTurn: (id: number) => void;
+  /** 中止这次会话里在跑的请求：交给页面弹确认 */
+  onAbort: (id: string) => void;
 }) {
   const t = useText(sessionsText);
   const r = useResource(id === null ? null : `session:${id}`, () => call("SessionDetail", null, id ?? ""), {
@@ -87,6 +92,7 @@ export function SessionSheet({
             rows={shown.rows}
             onOpenTurn={onOpenTurn}
             onClose={onClose}
+            onAbort={onAbort}
           />
         ) : r.error !== undefined ? (
           // 重试的时候留在这里，按钮转着 —— 换回骨架的话，看起来像是点了没反应
@@ -120,14 +126,17 @@ export function SessionPanel({
   rows,
   onOpenTurn,
   onClose,
+  onAbort,
 }: {
   id: string;
   d: SessionDetail | null;
   rows: readonly RequestRow[];
   onOpenTurn: (id: number) => void;
   onClose: () => void;
+  onAbort: (id: string) => void;
 }) {
   const t = useText(sessionsText);
+  const ta = useText(abortText);
   const s = d?.session ?? null;
   const turns = d?.turns ?? NO_TURNS;
   const pending = useMemo(() => unrecordedRows(turns, rows), [turns, rows]);
@@ -148,6 +157,8 @@ export function SessionPanel({
   };
   /** 还在跑的那几轮在「对话」末尾各占一行。序号和瀑布里一样：接在落了库的那几轮后面 */
   const running = pending.flatMap((r, i) => (r.state === "in_flight" ? [{ row: r, n: turns.length + i + 1 }] : []));
+  /** 还有在跑、能中止的请求：头上给「中止会话」 */
+  const stoppable = rows.some(abortable);
   return (
     <Tabs value={tab} onValueChange={(v) => show(v as Tab)} className="flex min-h-0 flex-1 flex-col gap-0">
       {/* 第二行和请求详情同一个顺序：上游、密钥，然后是这次用过的模型 */}
@@ -155,6 +166,13 @@ export function SessionPanel({
         title={t.title}
         meta={t.startedAt(whenMinute(n.started))}
         onClose={onClose}
+        actions={
+          stoppable && (
+            <Button size="sm" variant="outline" onClick={() => onAbort(id)}>
+              {ta.abortSession}
+            </Button>
+          )
+        }
         tabs={
           <TabsList variant="line">
             <TabsTrigger value="summary">{t.tabSummary}</TabsTrigger>
