@@ -855,12 +855,22 @@ function requestItems(
     // 没有发往任何上游的那几行上游是空的，没有可筛的
     ...(r.provider
       ? ([
-          { kind: "item", label: t.onlyUpstream(r.provider), onSelect: () => onFilter((f) => ({ ...f, provider: r.provider })) },
+          {
+            kind: "item",
+            label: t.onlyUpstream(r.provider),
+            name: r.provider,
+            onSelect: () => onFilter((f) => ({ ...f, provider: r.provider })),
+          },
         ] as const)
       : []),
     ...(showClient
       ? ([
-          { kind: "item", label: t.onlyClient(r.client), onSelect: () => onFilter((f) => ({ ...f, client: r.client })) },
+          {
+            kind: "item",
+            label: t.onlyClient(r.client),
+            name: r.client,
+            onSelect: () => onFilter((f) => ({ ...f, client: r.client })),
+          },
         ] as const)
       : []),
     { kind: "sep" },
