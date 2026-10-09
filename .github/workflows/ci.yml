@@ -69,7 +69,7 @@ jobs:
         run: pnpm build
 
   rust:
-    name: Rust
+    name: Rust (macOS)
     # macOS, Windows and Linux each get their own job: every platform has
     # `cfg` branches (menu bar, notifications, theme, login-shell env) that
     # only its own compiler ever sees. This one also runs `cargo fmt`, once,
