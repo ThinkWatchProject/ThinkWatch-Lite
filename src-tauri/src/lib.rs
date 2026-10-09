@@ -601,6 +601,10 @@ pub fn run() {
         .run(|app, event| {
             // 点 Dock 图标 / 从 ⌘Tab 回来时把窗口叫回来。没有这条，一个
             // 已经隐藏窗口的菜单栏应用在 Dock 上点了没反应。
+            //
+            // **窗口关着（不在 Dock 里）时从访达、聚焦搜索、启动台再打开一次，系统发来的
+            // 也是这一个**（实测：Accessory 的应用照样收到）。菜单栏设成不显示时，这就是
+            // 回到窗口的路 —— 所以关窗之后照旧退回菜单栏应用，不为它留着 Dock 图标
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 let _ = show_main_window(app);

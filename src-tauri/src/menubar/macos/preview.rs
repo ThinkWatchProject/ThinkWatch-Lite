@@ -29,7 +29,12 @@ pub fn is_open() -> bool {
 /// CFRunLoop 为了不让主队列重入，那期间不再处理主队列 —— 投递过来的更新全都要等
 /// 菜单关上。用户真点菜单栏时跟踪循环是从事件分发开始的，没有这个问题
 pub fn open_menu_later(mtm: MainThreadMarker, delay: f64) {
-    let button = UI.with(|ui| ui.borrow().as_ref().and_then(|ui| ui.item.button(mtm)));
+    let button = UI.with(|ui| {
+        ui.borrow()
+            .as_ref()
+            .and_then(|ui| ui.item.as_ref())
+            .and_then(|item| item.button(mtm))
+    });
     if let Some(button) = button {
         let none: Option<&AnyObject> = None;
         let _: () = unsafe {

@@ -31,7 +31,7 @@ pub struct Prefs {
     pub theme: Option<Theme>,
     /// 提醒：系统通知 / 仅在应用内 / 关闭。**只有这一个，不分类。**
     pub notices: Mode,
-    /// 菜单栏上显示什么：标识和数值（出厂）/ 仅标识 / 仅数值。
+    /// 菜单栏上显示什么：标识和数值（出厂）/ 仅标识 / 仅数值 / 不显示。
     ///
     /// **没写就是出厂那一档**，而不是整个设置文件读不出来、连语言和外观一起被冲回
     /// 出厂值
@@ -248,6 +248,17 @@ mod tests {
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);
+    }
+
+    /// 菜单栏不显示，存成 `"hidden"`（界面那边的 `MenubarStyle` 是同一个写法），读回来还是它
+    #[test]
+    fn a_hidden_menubar_is_written_as_hidden_and_read_back() {
+        let (_tmp, dir) = tmp();
+        update(&dir, |p| p.menubar = crate::menubar::Style::Hidden).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(prefs_path(&dir)).unwrap()).unwrap();
+        assert_eq!(raw["menubar"], "hidden");
+        assert_eq!(load(&dir).menubar, crate::menubar::Style::Hidden);
     }
 
     /// 旧的设置文件里没有菜单栏这一项：**别的设置照旧**，菜单栏按出厂那一档

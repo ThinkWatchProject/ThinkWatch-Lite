@@ -63,7 +63,10 @@ type OnAction = Rc<dyn Fn(Action)>;
 type OnOpen = Rc<dyn Fn(bool)>;
 
 struct Ui {
-    item: Retained<NSStatusItem>,
+    /// 菜单栏上的那一项。**设成不显示时整个拿掉**（`removeStatusItem`），换回来时再建一个、
+    /// 挂上同一份菜单。不用 `setVisible(false)`：它按 autosaveName 记进系统的偏好里，下次
+    /// 启动这一项先是藏着的 —— 换回不认识「不显示」的旧版本，它就再也出不来了
+    item: Option<Retained<NSStatusItem>>,
     menu: Retained<NSMenu>,
     target: Retained<Target>,
     /// 现在菜单里每一行的样子。样子没变就就地改，变了才重建
@@ -86,7 +89,8 @@ thread_local! {
     static OPEN: Cell<bool> = const { Cell::new(false) };
 }
 
-/// 在菜单栏上挂出来。只调一次
+/// 备好菜单和回调。只调一次。**菜单栏上的那一项在第一次 [`apply`] 时才挂出来**：
+/// 设成不显示的，启动时一帧都不出现
 pub fn install(
     mtm: MainThreadMarker,
     on_action: impl Fn(Action) + 'static,
@@ -95,18 +99,14 @@ pub fn install(
     ON_ACTION.with(|a| *a.borrow_mut() = Some(Rc::new(on_action)));
     ON_OPEN.with(|o| *o.borrow_mut() = Some(Rc::new(on_open)));
 
-    let item = NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
-    // 用户按住 ⌘ 拖过的位置，下次启动还在
-    item.setAutosaveName(Some(&NSString::from_str("ThinkWatchLite")));
     let target = Target::new(mtm);
     let menu = NSMenu::new(mtm);
     menu.setMinimumWidth(MENU_WIDTH);
     menu.setAutoenablesItems(false);
     menu.setDelegate(Some(ProtocolObject::from_ref(&*target)));
-    item.setMenu(Some(&menu));
     UI.with(|ui| {
         *ui.borrow_mut() = Some(Ui {
-            item,
+            item: None,
             menu,
             target,
             shapes: Vec::new(),
@@ -119,13 +119,18 @@ pub fn install(
 }
 
 /// 照着模型画一遍。**没变的不动**：菜单栏那一块文字和颜色都没变就不重画，菜单行的
-/// 样子没变就只改文字
+/// 样子没变就只改文字。设成不显示的，拿掉菜单栏上的那一项（[`hide`]）
 pub fn apply(mtm: MainThreadMarker, bar: &Bar, rows: &[Row]) {
+    if bar.style == Style::Hidden {
+        hide(mtm);
+        return;
+    }
     UI.with(|cell| {
         let mut guard = cell.borrow_mut();
         let Some(ui) = guard.as_mut() else { return };
+        let item = ui.item.get_or_insert_with(|| status_item(&ui.menu));
         if ui.bar.as_ref() != Some(bar) {
-            draw_bar(mtm, &ui.item, bar);
+            draw_bar(mtm, item, bar);
             ui.bar = Some(bar.clone());
         }
         let shapes: Vec<String> = rows.iter().map(Row::shape).collect();
@@ -137,6 +142,32 @@ pub fn apply(mtm: MainThreadMarker, bar: &Bar, rows: &[Row]) {
             ui.shapes = shapes;
         }
     });
+}
+
+/// 拿掉菜单栏上的那一项（设置里选了不显示）。**菜单留着**：换回来时挂到新建的那一项上，
+/// 菜单行照旧就地改。已经拿掉了就什么都不做
+pub fn hide(_mtm: MainThreadMarker) {
+    UI.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let Some(ui) = guard.as_mut() else { return };
+        let Some(item) = ui.item.take() else { return };
+        // 菜单开着的话先收起来，不留一份挂在空处的菜单
+        if OPEN.with(Cell::get) {
+            ui.menu.cancelTrackingWithoutAnimation();
+        }
+        NSStatusBar::systemStatusBar().removeStatusItem(&item);
+        // 再挂出来的是新的一项，那一块要整个重画
+        ui.bar = None;
+    });
+}
+
+/// 挂一项到菜单栏上，点开是 `menu`
+fn status_item(menu: &NSMenu) -> Retained<NSStatusItem> {
+    let item = NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
+    // 用户按住 ⌘ 拖过的位置，下次启动、下次挂出来都还在
+    item.setAutosaveName(Some(&NSString::from_str("ThinkWatchLite")));
+    item.setMenu(Some(menu));
+    item
 }
 
 // ------------------------------------------------------------------ 菜单栏那一块

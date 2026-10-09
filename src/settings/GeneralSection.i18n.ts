@@ -22,6 +22,9 @@ export const generalText = messages(
     menubarFull: "标识和数值",
     menubarIcon: "仅标识",
     menubarNumbers: "仅数值",
+    menubarHidden: "不显示",
+    /** 选了不显示时替换上面那句：窗口关着时怎么回来 */
+    menubarHiddenWhat: "从访达或聚焦搜索再次打开 ThinkWatch Lite，即可显示主窗口。",
 
     autostart: "开机启动",
     autostartWhat: isWindows
@@ -29,6 +32,8 @@ export const generalText = messages(
       : isLinux
         ? "登录后仅在系统托盘显示图标，不打开窗口。"
         : "登录后仅在菜单栏显示图标，不打开窗口。",
+    /** 菜单栏设成不显示时（只有 macOS）：登录后什么都不出现 */
+    autostartHiddenWhat: "登录后在后台运行，不打开窗口。",
 
     notices: "提醒",
     noticeSystem: "系统通知",
@@ -52,6 +57,8 @@ export const generalText = messages(
     menubarFull: "Icon and numbers",
     menubarIcon: "Icon only",
     menubarNumbers: "Numbers only",
+    menubarHidden: "Hidden",
+    menubarHiddenWhat: "To show the main window, open ThinkWatch Lite again from Finder or Spotlight.",
 
     autostart: "Launch at login",
     autostartWhat: isWindows
@@ -59,6 +66,7 @@ export const generalText = messages(
       : isLinux
         ? "At login, only the icon appears in the system tray; no window opens."
         : "At login, only the icon appears in the menu bar; no window opens.",
+    autostartHiddenWhat: "At login, it runs in the background; no window opens.",
 
     notices: "Notices",
     noticeSystem: "System notification",

@@ -265,17 +265,28 @@ pub(crate) fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
                 "It started at login. When the window is closed, the app keeps running in the system tray."
             ),
         );
+        // 菜单栏设成不显示时，那里没有它：说怎么回到窗口
         #[cfg(target_os = "macos")]
-        let (title, body) = (
-            tr!(
-                "ThinkWatch 已在菜单栏运行",
-                "ThinkWatch Is Running in the Menu Bar"
-            ),
-            tr!(
-                "开机时已自动启动。窗口关闭后，应用仍在菜单栏中运行。",
-                "It started at login. When the window is closed, the app keeps running in the menu bar."
-            ),
-        );
+        let (title, body) = if menubar::style() == menubar::Style::Hidden {
+            (
+                tr!("ThinkWatch 已在后台运行", "ThinkWatch Is Running"),
+                tr!(
+                    "开机时已自动启动。再次打开 ThinkWatch Lite 即可显示主窗口。",
+                    "It started at login. Open ThinkWatch Lite again to show the main window."
+                ),
+            )
+        } else {
+            (
+                tr!(
+                    "ThinkWatch 已在菜单栏运行",
+                    "ThinkWatch Is Running in the Menu Bar"
+                ),
+                tr!(
+                    "开机时已自动启动。窗口关闭后，应用仍在菜单栏中运行。",
+                    "It started at login. When the window is closed, the app keeps running in the menu bar."
+                ),
+            )
+        };
         n.announce("autostart", title, body);
     }
     tracing::info!("首次开机自启，已提示一次");
