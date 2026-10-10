@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
@@ -7,14 +8,16 @@ import { AnimatedNumber } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { KeyLabel } from "@/KeyLabel";
 import { appLabel, failureKind, formatLabel, notSentText } from "@/labels";
+import { useNav } from "@/nav";
 import { notSent } from "@/requestRouting";
+import { HitDetail } from "@/security/HitDetail";
 import { ActionBadge, byCodepoints, EventDetail, ruleName, whereOf } from "@/security/labels";
 import { pluginName } from "@/plugins/defaults";
 import { pluginLabelsText } from "@/plugins/labels.i18n";
 import { cpuMs } from "@/plugins/model";
 import { egressLabel } from "@/upstreams/labels";
 import { OutcomeOf, PluginText } from "@/plugins/parts";
-import type { AttemptView, PluginRunView, RequestDetail } from "@/types";
+import type { AttemptView, PluginRunView, RequestDetail, SecurityEventFull } from "@/types";
 import { Elapsed } from "../cells";
 import { CostText, Row, Rows, Stat, type DrawerState } from "./parts";
 import { requestDrawerText } from "./RequestDrawer.i18n";
@@ -156,25 +159,10 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
             }
           />
         )}
-        {/* 这次请求在各项防护上的全部命中：哪条规则、什么值、做了什么 */}
+        {/* 这次请求在各项防护上的全部命中：哪条规则、什么值、做了什么；点开一条看细节 */}
         {r.security && r.security.length > 0 && (
-          <Row
-            label={t.security}
-            value={
-              <span className="flex flex-col gap-1">
-                {r.security.map((e) => (
-                  <span key={e.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                    <span>{ruleName(e.guard, e.rule, e.custom)}</span>
-                    {whereOf(e) && <span className="text-muted-foreground">· {whereOf(e)}</span>}
-                    <span className="tw-label text-muted-foreground">
-                      <EventDetail e={e} codepoints={byCodepoints(e)} />
-                    </span>
-                    <ActionBadge action={e.action} />
-                  </span>
-                ))}
-              </span>
-            }
-          />
+          // TODO(S1): drop the cast when bindings are regenerated (the row's entries carry the detail)
+          <Row label={t.security} value={<SecurityHits events={r.security as SecurityEventFull[]} />} />
         )}
         {/* 这次请求上跑过的插件：哪一个、请求还是回答、结果、CPU 时间、出错的原因；试过不止
             一跳的按跳分组 */}
@@ -221,6 +209,67 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
         )}
       </Rows>
     </div>
+  );
+}
+
+/**
+ * 这次请求的防护记录，一条一行：哪条规则、在哪儿、命中的值、做了什么。**点一行就地展开
+ * 这一次命中的详情**（和安全日志里点开的是同一块，标签在上，这一栏窄）。请求就是这一条，
+ * 详情里不再给「请求」的链接；会话的链接跳到流量页的那次会话。
+ */
+function SecurityHits({ events }: { events: SecurityEventFull[] }) {
+  const nav = useNav();
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  const toggle = (id: number) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  return (
+    <span className="flex flex-col gap-0.5">
+      {events.map((e) => {
+        const shown = open.has(e.id);
+        const where = whereOf(e);
+        return (
+          <span key={e.id} className="flex flex-col">
+            <button
+              type="button"
+              aria-expanded={shown}
+              aria-controls={shown ? `request-hit-${e.id}` : undefined}
+              onClick={() => toggle(e.id)}
+              className={cn(
+                "-mx-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-md px-1.5 py-0.5 text-left break-normal",
+                "outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50",
+              )}
+            >
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  "-ml-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--motion-fast) ease-(--motion-ease)",
+                  shown && "rotate-90",
+                )}
+              />
+              <span>{ruleName(e.guard, e.rule, e.custom)}</span>
+              {where && <span className="text-muted-foreground">· {where}</span>}
+              <span className="min-w-0 break-all tw-label text-muted-foreground">
+                <EventDetail e={e} codepoints={byCodepoints(e)} />
+              </span>
+              <ActionBadge action={e.action} />
+            </button>
+            {shown && (
+              <HitDetail
+                stacked
+                id={`request-hit-${e.id}`}
+                e={e}
+                onOpenSession={(session) => nav.open("requests", { grouped: true, session })}
+                className="mt-1 mb-2.5 ml-5 break-normal animate-in fade-in-0 duration-(--motion-fast)"
+              />
+            )}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 

@@ -26,6 +26,12 @@ export const logTabText = messages(
     goTo: (guard: string) => `前往${guard}`,
     loadMore: "加载更多",
     loadFailed: "安全日志读取失败",
+    /** 工具条右边：导出这段时间里的全部命中 */
+    export: "导出",
+    exportJson: "JSON（完整细节）",
+    exportCsv: "CSV（每条一行）",
+    /** 存好了。下面一行是存到的路径 */
+    exported: (n: number) => `已导出 ${n.toLocaleString()} 条`,
   },
   {
     time: "Time",
@@ -48,5 +54,9 @@ export const logTabText = messages(
     goTo: (guard: string) => `Go to ${guard}`,
     loadMore: "Load more",
     loadFailed: "The security log could not be loaded",
+    export: "Export",
+    exportJson: "JSON (full detail)",
+    exportCsv: "CSV (one row per entry)",
+    exported: (n: number) => (n === 1 ? "Exported 1 entry" : `Exported ${n.toLocaleString()} entries`),
   },
 );

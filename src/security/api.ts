@@ -4,8 +4,17 @@
  * **只是类型化的调用。**正则怎么编译、哪些写进文件、测试怎么和网关对齐，
  * 全在 core。界面多判断一次，就多一处和 core 说法不一致的可能。
  */
+import { invoke } from "@tauri-apps/api/core";
 import { call } from "@/control";
-import type { ContentMatch, CustomRuleSave, Guard, GuardMode, RuleAction, SecurityEventsQuery } from "@/types";
+import type {
+  ContentMatch,
+  CustomRuleSave,
+  Guard,
+  GuardMode,
+  RuleAction,
+  SecurityEventsPageFull,
+  SecurityEventsQuery,
+} from "@/types";
 
 /** 自定义规则保存时带的内容。版本号由页面在写的那一刻补上 */
 export type RuleSave = Omit<CustomRuleSave, "base_version">;
@@ -17,7 +26,14 @@ export const hasAction = (g: Guard): g is ActionGuard => g === "inspect_tools" |
 export const api = {
   detail: () => call("Security", null),
   /** 安全日志的一页。`guard` 不给就是全部；`before` 翻页 */
-  events: (q: SecurityEventsQuery) => call("SecurityEvents", q),
+  // TODO(S1): drop the cast when bindings are regenerated (the generated page carries the detail)
+  events: (q: SecurityEventsQuery) => call("SecurityEvents", q) as Promise<SecurityEventsPageFull>,
+  /**
+   * 导出的文件：弹系统的「存储」对话框，`name` 是默认文件名，存到用户选的地方。返回存到的
+   * 路径；用户取消了是 `null`。**对话框和写文件都在 Rust 这一侧**（`export::save_export`），
+   * 网页拿不到任意写文件的能力
+   */
+  saveExport: (name: string, contents: string) => invoke<string | null>("save_export", { name, contents }),
   setMode: (guard: Guard, mode: GuardMode, baseVersion: string) =>
     call("SetSecurityMode", { mode, base_version: baseVersion }, guard),
   /** 启用或停用一条内置规则 */

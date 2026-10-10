@@ -2,16 +2,16 @@ import { useRef } from "react";
 import { useResource, type Resource } from "@/lib/resource";
 import { usePending } from "@/ui/notify";
 import { windowStart, type Range } from "@/ui/range";
-import type { SecurityEventsPage } from "@/types";
+import type { SecurityEventsPageFull } from "@/types";
 import { api } from "./api";
 
 /** 一次读多少条。**一屏半** —— 再多就是替用户翻他不会看的那几页 */
 const PAGE = 100;
-/** core 一次最多给这么多 */
-const MAX = 500;
+/** core 一次最多给这么多。导出整段时按它翻页 */
+export const MAX_PAGE = 500;
 
 export interface SecurityLog {
-  r: Resource<SecurityEventsPage>;
+  r: Resource<SecurityEventsPageFull>;
   /** 这一段时间的口径。换了区间就换，页头的数字按它决定滚不滚 */
   scope: string;
   loadMore: () => void;
@@ -37,12 +37,12 @@ export function useSecurityLog(range: Range, tick: number): SecurityLog {
   const scope = `${range.from ?? range.ms}|${range.live ? 1 : 0}|${range.custom ? 1 : 0}`;
   /** 已经翻出来多少条。重读时照这个数读，翻过的不丢 */
   const loaded = useRef(0);
-  const r = useResource<SecurityEventsPage>(
+  const r = useResource<SecurityEventsPageFull>(
     `security-log:${scope}`,
     () =>
       api.events({
         from_ms: windowStart(range),
-        limit: Math.min(MAX, Math.max(PAGE, loaded.current)),
+        limit: Math.min(MAX_PAGE, Math.max(PAGE, loaded.current)),
       }),
     // 库里多了请求就重读：新命中不用手动刷新
     { deps: [tick] },
