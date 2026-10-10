@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ms } from "@/format";
 import { useText } from "@/i18n";
 import type { Overview, Protocol, ProviderPreview, ProviderTestResult, ProviderView, ZaiFamily } from "@/types";
+import { AccountKeyPanel } from "./AccountPanel";
 import { connectionSectionText } from "./ConnectionSection.i18n";
 import { balanceBrief } from "./balance";
 import { useSystemProxyLabel } from "@/connection/Remote";
@@ -116,10 +117,20 @@ export function SiteField({
 }
 
 /**
+ * 编辑 Z.ai / BigModel 上游时的账号登录：登录哪一边、密钥是不是登录换来的、打开重新登录的
+ * 对话框（`AccountKeyPanel`）
+ */
+export interface ZaiAccount {
+  family: ZaiFamily;
+  signedIn: boolean;
+  onSignIn: () => void;
+}
+
+/**
  * 连接：名称、出站代理、地址、协议、凭据、请求头。新建和编辑是同一张表单；新建时
  * 第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，见 `presets.ts`。
- * 认证方式那一行和 Z.ai 的站点在这一节上面（`AuthField`、`SiteField`），登录账号时
- * 这一节整个让位给登录那一块
+ * 认证方式那一行和 Z.ai 的站点在这一节上面（`AuthField`、`SiteField`），新建时登录账号
+ * 这一节整个让位给登录那一块；编辑 Z.ai / BigModel 上游时账号登录只占密钥那一栏的位置
  */
 export function ConnectionSection({
   form,
@@ -131,7 +142,7 @@ export function ConnectionSection({
   test,
   onTest,
   onNewProxy,
-  onAccountSignIn,
+  account,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -143,8 +154,8 @@ export function ConnectionSection({
   test: ProviderTestResult | null;
   onTest: () => void;
   onNewProxy: () => void;
-  /** 编辑 Z.ai / BigModel 上游时：登录账号换一把密钥。别的时候不给 */
-  onAccountSignIn?: () => void;
+  /** 编辑 Z.ai / BigModel 上游、它在能登录的那一边时有；认证方式是账号登录时显示 */
+  account?: ZaiAccount;
 }) {
   const t = useText(connectionSectionText);
   // 连着远程 core 时 `${变量名}` 取的是服务器上 core 进程的环境
@@ -234,30 +245,7 @@ export function ConnectionSection({
       )}
 
       {rules.key && (
-        <FormItem
-          label={t.apiKey}
-          htmlFor="up-key"
-          desc={
-            remote || onAccountSignIn ? (
-              <>
-                {remote && rt.keyHint}
-                {onAccountSignIn && (
-                  // Z.ai / BigModel：登录账号换一把新密钥（core 按同名、同站点替换，别的设置不动）
-                  <button
-                    type="button"
-                    onClick={onAccountSignIn}
-                    className={cn(
-                      "rounded-sm text-foreground/85 underline decoration-foreground/30 underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-                      remote && "ml-1",
-                    )}
-                  >
-                    {t.accountSignIn}
-                  </button>
-                )}
-              </>
-            ) : undefined
-          }
-        >
+        <FormItem label={t.apiKey} htmlFor="up-key" desc={remote ? rt.keyHint : undefined}>
           <SecretInput
             id="up-key"
             className="font-mono"
@@ -270,6 +258,7 @@ export function ConnectionSection({
           />
         </FormItem>
       )}
+      {mode === "account" && account && <AccountKeyPanel {...account} />}
       {mode === "oauth" && <OAuth form={form} set={set} />}
       {mode === "aws-keys" && <AccessKeys form={form} set={set} remote={remote != null} />}
       {mode === "aws-profile" && (

@@ -49,6 +49,13 @@ export const accountPanelText = messages(
     reloginDone: (name: ReactNode) => <>已重新登录，上游 {name} 的凭据已更新。</>,
     quotaUsed: (window: string, percent: number) => `${window}已用 ${percent}%`,
     resets: (when: string) => `${when}重置`,
+    // 编辑 Z.ai / BigModel 上游，认证方式是账号登录：密钥那一栏的位置上
+    signedInTitle: (site: string) => `已登录 ${site} 账号`,
+    signedInDesc: "密钥由账号登录取得，额度计入该账号的编程套餐。",
+    relogin: "重新登录",
+    replaceTitle: (site: string) => `登录 ${site} 账号`,
+    replaceDesc: "登录后，账号中取得的密钥替换当前的密钥。模型范围、计费方式等设置保持不变。",
+    signIn: "登录账号",
   },
   {
     expired: "Authorization was not completed within the time limit",
@@ -98,5 +105,12 @@ export const accountPanelText = messages(
     reloginDone: (name: ReactNode) => <>Signed in again. The credential of the upstream {name} has been replaced.</>,
     quotaUsed: (window: string, percent: number) => `${window}: ${percent}% used`,
     resets: (when: string) => `resets ${when}`,
+    signedInTitle: (site: string) => `Signed in to a ${site} account`,
+    signedInDesc: "The key was obtained by signing in, and usage counts against the account's coding plan.",
+    relogin: "Sign in again",
+    replaceTitle: (site: string) => `Sign in to ${site}`,
+    replaceDesc:
+      "Signing in replaces the current key with a key from the account. Model scope, billing and other settings stay unchanged.",
+    signIn: "Sign in",
   },
 );

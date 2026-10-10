@@ -17,6 +17,8 @@ import {
   modelsMissing,
   oauthKept,
   retarget,
+  signedInKey,
+  siteLocked,
   toInput,
   withAuth,
   withManualAdded,
@@ -313,6 +315,18 @@ describe("编辑时认出是哪一种服务", () => {
     expect(of("https://openrouter.ai/api", "", "off").preset).toBe("openrouter");
   });
 
+  it("登录 Z.ai / BigModel 账号换来的密钥：是登录的那一边，不看地址", () => {
+    expect(serviceOf({ baseUrl: "https://api.z.ai/api/anthropic", protocol: "", balance: null, signedIn: "zai" })).toEqual({
+      preset: "zai",
+      family: "zai",
+    });
+    expect(serviceOf({ baseUrl: "https://glm.example/api", protocol: "", balance: null, signedIn: "bigmodel" })).toEqual({
+      preset: "zai",
+      family: "bigmodel",
+    });
+    expect(serviceOf({ baseUrl: "https://glm.example/api", protocol: "", balance: null, signedIn: null }).preset).toBe("custom");
+  });
+
   it("别的都是自定义；ChatGPT 账号也是（它有自己的「账号」一节）", () => {
     expect(of("https://relay.example/v1").preset).toBe("custom");
     expect(of("https://relay.example/v1", "", "auto").preset).toBe("custom");
@@ -326,13 +340,14 @@ describe("编辑时认出是哪一种服务", () => {
     const f = formFromView(view({ base_url: "https://api.anthropic.com", protocol: "anthropic", protocol_explicit: false, headers: [] }));
     expect(f.preset).toBe("anthropic");
     expect(fieldRules(f)).toEqual({ auth: ["key"], site: false, url: true, protocols: null, key: true, clientIdentity: false });
-    // 编辑时没有「登录账号」：换成账号是另一个上游
+    // OpenAI 编辑时没有「登录账号」：ChatGPT 账号是另一个上游
     const o = formFromView(view({ base_url: "https://api.openai.com", protocol: "openai-chat", protocol_explicit: true }));
     expect(fieldRules(o).auth).toEqual(["key"]);
     expect(fieldRules(o).protocols).toEqual(["openai-chat", "openai-responses"]);
+    // Z.ai / BigModel 有：登录换来的是这个上游的一把新密钥
     const z = formFromView(view({ base_url: "https://open.bigmodel.cn/api/anthropic", protocol_explicit: true }));
-    expect(z).toMatchObject({ preset: "zai", zaiFamily: "bigmodel" });
-    expect(fieldRules(z)).toMatchObject({ site: true, url: false, protocols: null, auth: ["key"] });
+    expect(z).toMatchObject({ preset: "zai", zaiFamily: "bigmodel", authMode: "key" });
+    expect(fieldRules(z)).toMatchObject({ site: true, url: false, protocols: null, auth: ["key", "account"], key: true });
   });
 
   it("改了地址就重认：官方地址改成别的主机，从此是自定义", () => {
@@ -347,6 +362,86 @@ describe("编辑时认出是哪一种服务", () => {
     // 新建时服务类型是第一步选的，不重认
     const c = applyPreset(blankForm(), "custom", []);
     expect(retarget({ ...c, baseUrl: "https://api.anthropic.com" }).preset).toBe("custom");
+  });
+});
+
+describe("编辑 Z.ai / BigModel 上游：账号登录", () => {
+  const zai = (patch: Partial<ProviderView> = {}) =>
+    view({
+      name: "zai",
+      base_url: "https://api.z.ai/api/anthropic",
+      key: "zk-signed-in",
+      headers: [],
+      protocol_explicit: true,
+      ...patch,
+    });
+
+  it("登录换来的密钥：认成那一边的账号登录，不显示密钥那一栏", () => {
+    const f = formFromView(zai({ signed_in: "zai" }));
+    expect(f).toMatchObject({ preset: "zai", zaiFamily: "zai", authMode: "account" });
+    expect(authModeOf(f)).toBe("account");
+    expect(fieldRules(f)).toMatchObject({ auth: ["key", "account"], site: true, url: false, key: false });
+    expect(signedInKey(f)).toBe(true);
+    // 站点跟着账号，不能换
+    expect(siteLocked(f)).toBe(true);
+    // 保存不拦，密钥原样交回（core 见密钥没变，还记着是登录换来的）
+    expect(connectionMissing(f, f.name, [f.name])).toBeNull();
+    expect(toInput(f).key).toBe("zk-signed-in");
+    expect(connectionChanged(f, zai({ signed_in: "zai" }))).toBe(false);
+  });
+
+  it("登录的是哪一边看 signed_in，不看地址", () => {
+    const b = formFromView(zai({ base_url: "https://glm.proxy.example/api/anthropic", signed_in: "bigmodel" }));
+    expect(b).toMatchObject({ preset: "zai", zaiFamily: "bigmodel", authMode: "account" });
+    expect(b.saved?.site).toBe("bigmodel");
+    // 改了地址也还是它
+    expect(retarget({ ...b, baseUrl: "https://other.example" })).toMatchObject({ preset: "zai", zaiFamily: "bigmodel" });
+  });
+
+  it("登录换来的上游换成 API 密钥：显示那一把密钥，原样交回", () => {
+    const f = withAuth(formFromView(zai({ signed_in: "zai" })), "key", ["zai"]);
+    expect(authModeOf(f)).toBe("key");
+    expect(fieldRules(f).key).toBe(true);
+    expect(f.key).toBe("zk-signed-in");
+    expect(toInput(f).key).toBe("zk-signed-in");
+    expect(f.name).toBe("zai");
+    expect(signedInKey(f)).toBe(false);
+    expect(siteLocked(f)).toBe(true);
+  });
+
+  it("手填的密钥：照旧是 API 密钥，可以换成账号登录 —— 登录之后才能保存", () => {
+    const f = formFromView(zai({ key: "zk-typed" }));
+    expect(authModeOf(f)).toBe("key");
+    expect(fieldRules(f)).toMatchObject({ auth: ["key", "account"], key: true });
+    expect(siteLocked(f)).toBe(false);
+    const a = withAuth(f, "account", ["zai"]);
+    expect(authModeOf(a)).toBe("account");
+    expect(a.name).toBe("zai");
+    expect(fieldRules(a).key).toBe(false);
+    expect(signedInKey(a)).toBe(false);
+    expect(siteLocked(a)).toBe(true);
+    expect(connectionMissing(a, a.name, [a.name])).toBe("登录后继续");
+    // 换回 API 密钥：照常保存
+    expect(connectionMissing(withAuth(a, "key", ["zai"]), "zai", ["zai"])).toBeNull();
+  });
+
+  it("换成账号登录时站点回到能登录的那一边", () => {
+    const f = formFromView(zai({ base_url: "https://open.bigmodel.cn/api/anthropic", key: "bk" }));
+    const moved = withSite(f, "zai", ["zai"]);
+    expect(moved).toMatchObject({ zaiFamily: "zai", baseUrl: "https://api.z.ai/api/anthropic" });
+    expect(withAuth(moved, "account", ["zai"])).toMatchObject({
+      zaiFamily: "bigmodel",
+      baseUrl: "https://open.bigmodel.cn/api/anthropic",
+    });
+    // 地址本来就是那一边的（末尾多一个 /）：原样留着
+    const slash = formFromView(zai({ base_url: "https://api.z.ai/api/anthropic/", key: "zk" }));
+    expect(withAuth(slash, "account", ["zai"]).baseUrl).toBe("https://api.z.ai/api/anthropic/");
+  });
+
+  it("不在标准地址上、也不是登录换来的：没有账号登录（core 不在那里换密钥）", () => {
+    const f = formFromView(zai({ base_url: "https://api.z.ai/api/paas/v4", protocol: "openai-chat" }));
+    expect(f.saved?.site).toBeNull();
+    expect(fieldRules(f).auth).toEqual(["key"]);
   });
 });
 

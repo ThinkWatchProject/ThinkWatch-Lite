@@ -27,13 +27,13 @@ import { AccountPanel } from "./AccountPanel";
 import { api } from "./api";
 import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
-import { AuthField, ConnectionSection, ProxyField, SiteField } from "./ConnectionSection";
+import { AuthField, ConnectionSection, ProxyField, SiteField, type ZaiAccount } from "./ConnectionSection";
 import { coreText, errorText, plain, protocolLabel, shortUrl } from "./labels";
 import { useManualEntry } from "./ManualModelInput";
 import { addToList, unionModels } from "./manualModels";
 import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
 import { DialogError, FormItem, ProviderTile, StepNav } from "./parts";
-import { CUSTOM, ZAI_ENDPOINTS, accountKind, presetById, zaiSiteOf } from "./presets";
+import { CUSTOM, ZAI_ENDPOINTS, accountKind, presetById } from "./presets";
 import type { Relogin } from "./ReloginDialog";
 import { PresetTile, ServiceSection } from "./ServiceSection";
 import { PriceSheetDialog } from "./PriceSheetDialog";
@@ -52,6 +52,7 @@ import {
   inScope,
   modelsMissing,
   retarget,
+  siteLocked,
   toInput,
   withAuth,
   withManualAdded,
@@ -174,9 +175,11 @@ export function UpstreamDialog({
   const email = editing?.oauth?.account?.email;
   /** 新建时第二步是登录账号：那一步叫「账号」 */
   const signingIn = mode.kind === "create" && (signedIn != null || authModeOf(form) === "account");
+  /** 那一节叫「账号」：新建时登录账号，编辑 Z.ai / BigModel 上游时认证方式是账号登录 */
+  const accountStep = signingIn || (editing != null && authModeOf(form) === "account");
   const sections = (editing ? (account ? ACCOUNT_SECTIONS : SECTIONS) : CREATE_SECTIONS).map((id) => ({
     id,
-    label: id === "connection" && signingIn ? t.sections.account : t.sections[id],
+    label: id === "connection" && accountStep ? t.sections.account : t.sections[id],
   }));
   // 按客户端原来的 Bedrock 设置新建：类型已经定了，直接落到「连接」
   const drafted = mode.kind === "create" && mode.draft != null;
@@ -466,13 +469,18 @@ export function UpstreamDialog({
   const service = presetById(signedIn?.preset ?? form.preset);
 
   /**
-   * 编辑 Z.ai / BigModel 的上游：登录账号换一把密钥。core 只在同名、同一个站点的标准地址上
-   * 这样替换，所以只给打开时就在标准地址上、现在也还是那一边的。表单里没保存的改动不带过去
+   * 编辑 Z.ai / BigModel 的上游：认证方式是账号登录时，登录（或重新登录）换一把密钥。core 只在
+   * 同名、同一边的标准地址上这样替换，所以只给能登录的那一边（`site`：登录过的那一边，或者
+   * 打开时就在那一边的标准地址上）。表单里没保存的改动不带过去
    */
-  const savedSite = editing ? zaiSiteOf(editing.base_url) : null;
-  const zaiSignIn =
-    editing && savedSite && form.preset === "zai" && zaiSiteOf(form.baseUrl) === savedSite
-      ? () => onRelogin({ kind: "zai", name: editing.name, proxy: editing.proxy, family: savedSite })
+  const site = editing && form.preset === "zai" ? (form.saved?.site ?? null) : null;
+  const zaiAccount: ZaiAccount | undefined =
+    editing && site
+      ? {
+          family: site,
+          signedIn: form.saved?.signedIn != null,
+          onSignIn: () => onRelogin({ kind: "zai", name: editing.name, proxy: editing.proxy, family: site }),
+        }
       : undefined;
 
   return (
@@ -556,6 +564,7 @@ export function UpstreamDialog({
                 form={form}
                 signedIn={signedIn}
                 frozen={login.waiting || signedIn != null}
+                siteFrozen={siteLocked(form)}
                 onAuth={(m) => setForm((f) => retarget(withAuth(f, m, taken)))}
                 onSite={(family) => setForm((f) => retarget(withSite(f, family, taken)))}
               />
@@ -580,7 +589,7 @@ export function UpstreamDialog({
                   test={test}
                   onTest={runTest}
                   onNewProxy={() => setNested({ kind: "proxy" })}
-                  onAccountSignIn={zaiSignIn}
+                  account={zaiAccount}
                 />
               )}
             </div>
@@ -719,18 +728,21 @@ export function UpstreamDialog({
 
 /**
  * 第二步顶上：认证方式（这种服务有几种时）和 Z.ai / BigModel 的站点。登录进行中和登录之后
- * 定住不能改 —— 登录用的就是这几样，上游已经按它们建好了
+ * 定住不能改 —— 登录用的就是这几样，上游已经按它们建好了。编辑时站点跟着账号走
+ * （`siteLocked`）：登录换来的密钥、要登录的账号都在那一边
  */
 function ConnectionHead({
   form,
   signedIn,
   frozen,
+  siteFrozen,
   onAuth,
   onSite,
 }: {
   form: UpstreamForm;
   signedIn: SignedIn | null;
   frozen: boolean;
+  siteFrozen: boolean;
   onAuth: (mode: AuthMode) => void;
   onSite: (family: ZaiFamily) => void;
 }) {
@@ -749,7 +761,7 @@ function ConnectionHead({
   return (
     <>
       {rules.auth.length > 1 && <AuthField form={shown} options={rules.auth} onChange={onAuth} disabled={frozen} />}
-      {rules.site && <SiteField value={shown.zaiFamily} onChange={onSite} disabled={frozen} />}
+      {rules.site && <SiteField value={shown.zaiFamily} onChange={onSite} disabled={frozen || siteFrozen} />}
     </>
   );
 }

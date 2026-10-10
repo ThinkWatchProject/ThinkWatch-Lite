@@ -75,6 +75,13 @@ export interface SavedTraits {
   clientIdentity: boolean;
   /** 地址不是 Z.ai / BigModel 的标准地址 */
   otherUrl: boolean;
+  /** 密钥是登录哪一边的账号换来的（配置里的 `signed_in:`）。手填的是 null */
+  signedIn: ZaiFamily | null;
+  /**
+   * 登录账号能换这个上游的密钥的那一边：登录过的那一边，或者地址正是哪一边的标准地址。
+   * 都不是（别的服务、别的地址）是 null —— core 只在同名、同一边的标准地址上换密钥
+   */
+  site: ZaiFamily | null;
 }
 
 export interface UpstreamForm {
@@ -195,11 +202,21 @@ export function applyPreset(form: UpstreamForm, id: string, taken: string[]): Up
 
 /**
  * 换认证方式。名称没动过就跟着换：OpenAI 用 API 密钥默认叫 `openai`，登录 ChatGPT
- * 账号默认叫 `chatgpt`
+ * 账号默认叫 `chatgpt`。
+ *
+ * **编辑时名称不动**；Z.ai / BigModel 的上游换成账号登录，站点回到能登录的那一边（`site`）——
+ * 登录换的是那一边账号的密钥
  */
 export function withAuth(form: UpstreamForm, authMode: AuthMode, taken: string[]): UpstreamForm {
   const out = { ...form, authMode };
-  return { ...out, name: renamed(form, out, taken) };
+  const site = form.saved?.site;
+  if (!form.saved) return { ...out, name: renamed(form, out, taken) };
+  if (authMode !== "account" || form.preset !== "zai" || !site) return out;
+  return {
+    ...out,
+    zaiFamily: site,
+    baseUrl: zaiSiteOf(form.baseUrl) === site ? form.baseUrl : ZAI_ENDPOINTS[site],
+  };
 }
 
 /** Z.ai / BigModel 换站点：地址跟着换，名称没动过也跟着换 */
@@ -219,8 +236,10 @@ const BEDROCK_AUTH: AuthMode[] = ["key", "aws-keys", "aws-profile"];
  * 这张表单能选的认证方式，按服务实际有的。「自定义」是 API 密钥和 OAuth，地址是 Bedrock 的
  * 就是 Bedrock 那三种。只有一种时界面上不显示那一行。
  *
- * **编辑时**：没有登录账号这一项（换成账号是另一个上游，不是编辑这一个）；已保存的认证方式
- * 不在这种服务的规矩里时（官方地址配了 OAuth），给「自定义」那几种，写着的那一种照样在
+ * **编辑时**：OpenAI 没有登录账号这一项（ChatGPT 账号是另一个上游，不是编辑这一个）；
+ * Z.ai / BigModel 有 —— 登录换来的是这个上游的一把新密钥，前提是它在能登录的那一边（`site`）。
+ * 已保存的认证方式不在这种服务的规矩里时（官方地址配了 OAuth），给「自定义」那几种，写着的
+ * 那一种照样在
  */
 export function authOptions(
   f: Pick<UpstreamForm, "preset" | "protocol" | "baseUrl"> & { saved?: SavedTraits | null },
@@ -229,8 +248,25 @@ export function authOptions(
   const generic = isBedrock(f) ? BEDROCK_AUTH : CUSTOM.auth;
   if (p.id === CUSTOM.id) return generic;
   if (!f.saved) return p.auth;
-  const own: AuthMode[] = p.auth.filter((m) => m !== "account");
+  const keepAccount = p.id === "zai" && f.saved.site !== null;
+  const own: AuthMode[] = p.auth.filter((m) => m !== "account" || keepAccount);
   return own.includes(f.saved.authMode) ? own : generic;
+}
+
+/**
+ * 编辑时用的是登录账号换来的那把密钥：认证方式是账号登录，打开时配置里就记着是登录换来的。
+ * 这时密钥那一栏的位置上是登录状态和「重新登录」
+ */
+export function signedInKey(f: UpstreamForm): boolean {
+  return f.saved?.signedIn != null && authModeOf(f) === "account";
+}
+
+/**
+ * Z.ai / BigModel 的站点能不能换。编辑时，登录换来的密钥属于那一边，换成账号登录时登的也是
+ * 那一边（`withAuth`）：都不能换
+ */
+export function siteLocked(f: UpstreamForm): boolean {
+  return f.saved != null && (f.saved.signedIn != null || authModeOf(f) === "account");
 }
 
 /** 这张表单显示哪几项。见 `fieldRules` */
@@ -301,7 +337,7 @@ export function fieldRules(f: UpstreamForm): FieldRules {
  */
 export function retarget(f: UpstreamForm): UpstreamForm {
   if (!f.saved) return f;
-  const r = serviceOf({ baseUrl: f.baseUrl, protocol: f.protocol, balance: f.balance });
+  const r = serviceOf({ baseUrl: f.baseUrl, protocol: f.protocol, balance: f.balance, signedIn: f.saved.signedIn });
   return r.preset === f.preset && (r.preset !== "zai" || r.family === f.zaiFamily)
     ? f
     : { ...f, preset: r.preset, zaiFamily: r.preset === "zai" ? r.family : f.zaiFamily };
@@ -372,10 +408,24 @@ export function formFromDraft(d: BedrockDraft, taken: string[]): UpstreamForm {
 
 export function formFromView(p: ProviderView): UpstreamForm {
   const protocol: Protocol | "" = p.protocol_explicit ? (p.protocol ?? "") : "";
-  const authMode: AuthMode = p.oauth ? "oauth" : p.aws?.profile ? "aws-profile" : p.aws ? "aws-keys" : "key";
+  // 登录 Z.ai / BigModel 账号换来的密钥：认证方式是账号登录，不是手填的 API 密钥
+  const authMode: AuthMode = p.oauth
+    ? "oauth"
+    : p.aws?.profile
+      ? "aws-profile"
+      : p.aws
+        ? "aws-keys"
+        : p.signed_in
+          ? "account"
+          : "key";
   const balance = p.balance_setting;
   // ChatGPT 账号认出来是「自定义」：它有自己的「账号」一节，不走连接那张表单
-  const service = serviceOf({ baseUrl: p.base_url, protocol: p.protocol === "chatgpt" ? "chatgpt" : protocol, balance });
+  const service = serviceOf({
+    baseUrl: p.base_url,
+    protocol: p.protocol === "chatgpt" ? "chatgpt" : protocol,
+    balance,
+    signedIn: p.signed_in,
+  });
   return {
     preset: service.preset,
     zaiFamily: service.family,
@@ -420,6 +470,8 @@ export function formFromView(p: ProviderView): UpstreamForm {
       key: (p.key ?? "") !== "",
       clientIdentity: p.forward_client_identity,
       otherUrl: zaiSiteOf(p.base_url) === null,
+      signedIn: p.signed_in,
+      site: service.preset === "zai" ? (p.signed_in ?? zaiSiteOf(p.base_url)) : null,
     },
   };
 }
@@ -491,15 +543,19 @@ function awsInput(f: UpstreamForm): AwsKeys | undefined {
 /**
  * 交给 core 的定义。**余额从哪里读，界面上没有地方选**：编辑时是配置里原来写的那个，
  * 原样交回；新建时由第一步选的服务类型定（Sub2API、New API、ThinkWatch 企业网关），
- * 别的不给，就是自动
+ * 别的不给，就是自动。
+ *
+ * 编辑时认证方式是账号登录：密钥那一栏不显示，配置里的那把**原样交回** —— core 见密钥
+ * 没变，就还记着它是登录换来的；不交就是把密钥删了
  */
 export function toInput(f: UpstreamForm): ProviderInput {
   const balance = f.balance ?? presetById(f.preset).balance;
+  const sendKey = fieldRules(f).key || (f.saved != null && authModeOf(f) === "account");
   return {
     name: f.name,
     base_url: f.baseUrl.trim(),
     ...(balance ? { balance } : {}),
-    key: fieldRules(f).key ? f.key.trim() || undefined : undefined,
+    key: sendKey ? f.key.trim() || undefined : undefined,
     headers: headerInputs(f),
     oauth: oauthChange(f),
     aws: awsInput(f),
@@ -551,8 +607,9 @@ export function connectionMissing(
   const t = textOf(upstreamFormText);
   const mode = authModeOf(f);
   // 登录账号：名称、重名由登录那一块自己查（Z.ai 同名同站点是换密钥，不算重名），
-  // 上游在登录成功时由 core 写进配置
-  if (mode === "account") return t.signIn;
+  // 上游在登录成功时由 core 写进配置。编辑时已经是登录换来的密钥，照常往下查；从 API 密钥
+  // 换成账号登录的，要先登录
+  if (mode === "account" && !f.saved?.signedIn) return t.signIn;
   const name = f.name.trim();
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);

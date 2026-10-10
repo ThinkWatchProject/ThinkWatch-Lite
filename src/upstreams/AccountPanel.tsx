@@ -10,7 +10,7 @@ import { resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
-import type { QuotaWindow } from "@/types";
+import type { QuotaWindow, ZaiFamily } from "@/types";
 import { api } from "./api";
 import type { AccountLogin, LoginParams } from "./accountLogin";
 import { accountPanelText } from "./AccountPanel.i18n";
@@ -128,6 +128,44 @@ export function AccountPanel({
         {phase.at === "done" && <Done login={login} relogin={relogin} />}
       </div>
       <DialogError error={login.error} />
+    </div>
+  );
+}
+
+/**
+ * 编辑 Z.ai / BigModel 的上游、认证方式是账号登录时，密钥那一栏的位置上是这一块。
+ *
+ * 密钥是登录换来的：写已登录哪一边的账号，给「重新登录」。从 API 密钥换成账号登录、还没登录
+ * 过的：给「登录账号」。两者都打开重新登录的对话框（说明、确认、登录都在那里），登录成功后
+ * core 只换这个上游的密钥，别的设置不动
+ */
+export function AccountKeyPanel({
+  family,
+  signedIn,
+  onSignIn,
+}: {
+  family: ZaiFamily;
+  signedIn: boolean;
+  onSignIn: () => void;
+}) {
+  const t = useText(accountPanelText);
+  const site = family === "zai" ? "Z.ai" : "BigModel";
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-surface px-7 py-6 text-center">
+      {signedIn ? (
+        <CircleCheckIcon className="size-10 text-success" strokeWidth={1.6} aria-hidden />
+      ) : (
+        <VendorTile
+          name={family}
+          baseUrl={family === "zai" ? "https://api.z.ai" : "https://open.bigmodel.cn"}
+          size="lg"
+        />
+      )}
+      <Title>{signedIn ? t.signedInTitle(site) : t.replaceTitle(site)}</Title>
+      <Desc>{signedIn ? t.signedInDesc : t.replaceDesc}</Desc>
+      <Button variant={signedIn ? "outline" : "default"} className="mt-1" onClick={onSignIn}>
+        {signedIn ? t.relogin : t.signIn}
+      </Button>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { presetsText } from "./presets.i18n";
 
 /**
  * 认证方式。`aws-keys` / `aws-profile` 只给 Bedrock；`account` 是登录账号（OpenAI 的
- * ChatGPT 账号、Z.ai / BigModel 的账号），只在新建时有 —— 登录由 core 写配置
+ * ChatGPT 账号、Z.ai / BigModel 的账号）—— 登录由 core 写配置。编辑时只有 Z.ai / BigModel
+ * 有它：登录换来的是这个上游的一把新密钥
  */
 export type AuthMode = "key" | "oauth" | "aws-keys" | "aws-profile" | "account";
 
@@ -312,14 +313,20 @@ const HOSTS: Record<string, string> = {
  * 11434 端口。中转平台和企业网关在任意地址上，按配置里写明的余额来源认。别的一律是「自定义」，
  * ChatGPT 账号也是 —— 它有自己的「账号」一节，不走这张表单。
  *
- * `family`：Z.ai / BigModel 是哪一边（看主机），别的服务是 `zai`（用不到）。
+ * **登录 Z.ai / BigModel 账号换来的密钥**（配置里的 `signed_in:`）不看地址：它就是那一边的
+ * 账号登录。
+ *
+ * `family`：Z.ai / BigModel 是哪一边（登录的那一边，否则看主机），别的服务是 `zai`（用不到）。
  */
 export function serviceOf(u: {
   baseUrl: string;
   /** 配置里写明的协议；没写是空 */
   protocol: Protocol | "" | null;
   balance: BalanceSetting | null;
+  /** 密钥是登录哪一边的账号换来的。手填的是空 */
+  signedIn?: ZaiFamily | null;
 }): { preset: string; family: ZaiFamily } {
+  if (u.signedIn) return { preset: "zai", family: u.signedIn };
   const host = hostOf(u.baseUrl);
   const family: ZaiFamily = host === "open.bigmodel.cn" ? "bigmodel" : "zai";
   const at = (preset: string) => ({ preset, family });
