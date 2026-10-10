@@ -1,9 +1,6 @@
 import { textOf } from "@/i18n";
-import type { Billing, Protocol, ProviderInput, ZaiFamily } from "@/types";
+import type { BalanceSetting, Billing, Protocol, ZaiFamily } from "@/types";
 import { presetsText } from "./presets.i18n";
-
-/** 余额从哪里读：配置里 `balance:` 的取值 */
-export type BalanceSetting = NonNullable<ProviderInput["balance"]>;
 
 /**
  * 认证方式。`aws-keys` / `aws-profile` 只给 Bedrock；`account` 是登录账号（OpenAI 的
@@ -54,7 +51,10 @@ export interface Preset {
   fixedUrl?: boolean;
   /** 「转发客户端身份」给不给开：只有中转站和自定义会只接受特定客户端 */
   clientIdentity?: boolean;
-  /** 余额从哪里读。不写 = 自动（按地址认、探测） */
+  /**
+   * 余额从哪里读。不写 = 自动：官方地址（OpenRouter、DeepSeek、Moonshot）和企业网关 core
+   * 自己认得出；中转平台在任意地址上，由这一格写明
+   */
   balance?: BalanceSetting;
 }
 

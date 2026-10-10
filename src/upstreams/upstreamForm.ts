@@ -14,6 +14,7 @@
 import { textOf } from "@/i18n";
 import type {
   AwsKeys,
+  BalanceSetting,
   BedrockDraft,
   Billing,
   HeaderInput,
@@ -101,6 +102,11 @@ export interface UpstreamForm {
   /** 同时最多发给这家几个请求，1 到 1000。空 = 不限 */
   maxConcurrent: string;
   disabled: boolean;
+  /**
+   * 配置里的 `balance:`。编辑时照原样回填、原样交回 —— 不交就是 `auto`，保存一次就把
+   * 「不读」或者写明的来源改没了。新建时空着，按第一步选的服务类型写（`toInput`）
+   */
+  balance: BalanceSetting | null;
 }
 
 /**
@@ -223,6 +229,7 @@ export function blankForm(): UpstreamForm {
     pricing: "",
     maxConcurrent: "",
     disabled: false,
+    balance: null,
   };
 }
 
@@ -290,6 +297,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     pricing: p.pricing ?? "",
     maxConcurrent: p.max_concurrent != null ? String(p.max_concurrent) : "",
     disabled: p.disabled,
+    balance: p.balance_setting ?? null,
   };
 }
 
@@ -358,11 +366,12 @@ function awsInput(f: UpstreamForm): AwsKeys | undefined {
 }
 
 /**
- * 交给 core 的定义。**余额从哪里读由第一步选的服务类型定**（Sub2API、New API、ThinkWatch
- * 企业网关），不给就是自动：按地址认，认不出来探测一次。界面上没有选余额来源的地方
+ * 交给 core 的定义。**余额从哪里读，界面上没有地方选**：编辑时是配置里原来写的那个，
+ * 原样交回；新建时由第一步选的服务类型定（Sub2API、New API、ThinkWatch 企业网关），
+ * 别的不给，就是自动
  */
 export function toInput(f: UpstreamForm): ProviderInput {
-  const balance = presetById(f.preset).balance;
+  const balance = f.balance ?? presetById(f.preset).balance;
   return {
     name: f.name,
     base_url: f.baseUrl.trim(),

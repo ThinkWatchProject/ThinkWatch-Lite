@@ -285,8 +285,17 @@ describe("交给 core 的定义", () => {
     for (const id of ["custom", "openrouter", "deepseek", "openai", "anthropic"]) {
       expect("balance" in toInput(filled(id))).toBe(false);
     }
-    // 编辑时没有预设：不写
-    expect("balance" in toInput(formFromView(view()))).toBe(false);
+  });
+
+  it("编辑时余额来源原样交回：保存一次不会把「不读」或写明的来源改回自动", () => {
+    for (const setting of ["off", "thinkwatch", "sub2api", "auto"] as const) {
+      const p = view({ balance_setting: setting });
+      const f = formFromView(p);
+      expect(toInput(f).balance).toBe(setting);
+      // 改了别的再保存也一样
+      expect(toInput({ ...f, billing: "free", maxConcurrent: "4" }).balance).toBe(setting);
+      expect(connectionChanged(f, p)).toBe(false);
+    }
   });
 
   it("要密钥的服务没填密钥不能往下走；自定义可以不填", () => {
