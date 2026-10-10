@@ -101,6 +101,9 @@ semver = "1"
 # Homebrew 那一档的「复制命令」。**在 Rust 这边写剪贴板**，理由见
 # `update_copy_command`。
 tauri-plugin-clipboard-manager = "2"
+# 导出（安全日志）时系统的「存储」对话框。**只在 Rust 这一侧用**（`export::save_export`
+# 弹框并写盘）：网页没有 dialog 的权限，也拿不到任意写文件的能力，见模块头上
+tauri-plugin-dialog = "2"
 # Windows 绿色版的更新包是 zip（见 `portable::unpack`）。版本是更新器插件在 Windows
 # 上本来就拉进来的那一份，只多开 Deflate（flate2 也是锁里本来就有的那一份）。不分
 # 平台：拆包和替换的测试在每个平台上都跑

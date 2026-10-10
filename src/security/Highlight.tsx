@@ -1,3 +1,5 @@
+import { cn } from "@/lib/utils";
+
 /** 一处要标出来的地方。下标按 UTF-16 码元，和 JavaScript 的字符串下标一致 */
 export interface Mark {
   start: number;
@@ -58,7 +60,16 @@ export function drawInvisible(text: string): string {
  *
  * 几处重叠时按先后合并，后一处只标没被前一处盖住的那部分。
  */
-export function Highlight({ text, marks }: { text: string; marks: Mark[] }) {
+export function Highlight({
+  text,
+  marks,
+  small = false,
+}: {
+  text: string;
+  marks: Mark[];
+  /** 小一号（`tw-label`），和请求详情里的报文同一个字号。规则测试里是正文字号 */
+  small?: boolean;
+}) {
   const parts: React.ReactNode[] = [];
   let at = 0;
   for (const m of [...marks].sort((a, b) => a.start - b.start)) {
@@ -75,7 +86,9 @@ export function Highlight({ text, marks }: { text: string; marks: Mark[] }) {
   }
   if (at < text.length) parts.push(text.slice(at));
   return (
-    <div className="font-mono tw-body leading-relaxed break-all whitespace-pre-wrap">{parts}</div>
+    <div className={cn("font-mono leading-relaxed break-all whitespace-pre-wrap", small ? "tw-label" : "tw-body")}>
+      {parts}
+    </div>
   );
 }
 

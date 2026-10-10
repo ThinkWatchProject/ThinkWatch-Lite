@@ -72,6 +72,33 @@ export const securityLabelsText = messages(
     custom: "自定义",
     /** 命中处在工具结果里（日志的 `tool` 是 `tool_result`） */
     toolResult: "工具结果",
+    /** 命中的一处在请求（或回答）的哪一段。消息按第几条数，从 1 数 */
+    parts: {
+      system: "系统提示",
+      message: (n: number) => `第 ${n} 条消息`,
+      tool_result: "工具结果",
+      tool_call: "工具调用",
+      response_text: "回答正文",
+    },
+    /** 消息的角色，按客户端写的查；表里没有的照写 */
+    roles: {
+      user: "用户",
+      assistant: "助手",
+      tool: "工具",
+      system: "系统",
+      developer: "开发者",
+    } as Record<string, string>,
+    /** 命中在请求里还是回答里 */
+    directions: {
+      request: "请求",
+      response: "回答",
+    },
+    /** 内容规则怎么认（规则快照、导出） */
+    matching: {
+      contains: "包含",
+      regex: "正则",
+      codepoints: "码位",
+    },
     /** 日志按天分组时，一天的标题 */
     day: {
       today: "今天",
@@ -190,6 +217,29 @@ export const securityLabelsText = messages(
     },
     custom: "Custom",
     toolResult: "tool result",
+    parts: {
+      system: "System prompt",
+      message: (n: number) => `Message ${n}`,
+      tool_result: "Tool result",
+      tool_call: "Tool call",
+      response_text: "Answer text",
+    },
+    roles: {
+      user: "User",
+      assistant: "Assistant",
+      tool: "Tool",
+      system: "System",
+      developer: "Developer",
+    },
+    directions: {
+      request: "Request",
+      response: "Answer",
+    },
+    matching: {
+      contains: "Contains",
+      regex: "Regex",
+      codepoints: "Code points",
+    },
     day: {
       today: "Today",
       yesterday: "Yesterday",
