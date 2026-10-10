@@ -15,6 +15,7 @@ import { size, when } from "@/format";
 import { useText } from "@/i18n";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
+import { useHitTone, useMarker, type Mark } from "@/security/Highlight";
 import { prettyJson } from "@/prettyJson";
 import { BodyText } from "./drawer/Payload";
 import type {
@@ -31,7 +32,7 @@ import { Button, DISCLOSURE } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, ErrorState } from "@/ui/states";
-import { StatusLabel } from "@/ui/status-dot";
+import { StatusDot, StatusLabel } from "@/ui/status-dot";
 import { IconSession } from "@/ui/icons";
 import { PanelSkeleton } from "./PanelHeader";
 import { sessionsText } from "./Sessions.i18n";
@@ -524,10 +525,11 @@ export function BlockLine({ b }: { b: Block }) {
 export function Earlier({ messages }: { messages: readonly TranscriptMessage[] }) {
   const t = useText(conversationText);
   const [open, setOpen] = useState(false);
+  const hit = useHitTone(messages);
   return (
     <>
       <Line>
-        <FoldRow open={open} onToggle={() => setOpen((o) => !o)}>
+        <FoldRow open={open} onToggle={() => setOpen((o) => !o)} hit={hit}>
           <span className="truncate">{t.earlier(messages.length)}</span>
         </FoldRow>
       </Line>
@@ -603,6 +605,7 @@ export function Prose({ text, muted = false }: { text: string; muted?: boolean }
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, PROSE), [text]);
   const cut = head !== null && !all;
+  const mark = useMarker();
   return (
     <div>
       {/* 上边 2px：一行字的中线和左边标签的中线对齐（标签那一格 24px 高，字的行高 19.5px） */}
@@ -612,7 +615,7 @@ export function Prose({ text, muted = false }: { text: string; muted?: boolean }
           muted ? "text-muted-foreground" : "text-foreground",
         )}
       >
-        {cut ? head : text}
+        {mark(cut ? head : text)}
         {cut && <span className="text-muted-foreground"> …</span>}
       </p>
       {head !== null && (
@@ -637,14 +640,18 @@ export function FoldRow({
   open,
   onToggle,
   meta,
+  hit = null,
   children,
 }: {
   open: boolean;
   onToggle: () => void;
   /** 右端那个淡的数（字数） */
   meta?: ReactNode;
+  /** 收起的内容里有安全命中（请求详情的「内容」）：数的前面一个点，颜色和标出来的底色一样 */
+  hit?: Mark["tone"] | null;
   children: ReactNode;
 }) {
+  const t = useText(conversationText);
   return (
     <div className="-mx-1.5">
       <Button
@@ -656,6 +663,7 @@ export function FoldRow({
       >
         <ChevronRightIcon className={cn("size-3.5 motion-bar", open && "rotate-90")} />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">{children}</span>
+        {hit && <StatusDot tone={hit === "warn" ? "warn" : "error"} label={t.hasHit} />}
         {meta !== undefined && <span className="shrink-0 tw-label tw-num text-muted-foreground">{meta}</span>}
       </Button>
     </div>
@@ -672,11 +680,21 @@ export function StillRow({ children }: { children: ReactNode }) {
   );
 }
 
-export function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; children: ReactNode }) {
+export function Fold({
+  head,
+  meta,
+  hit,
+  children,
+}: {
+  head: ReactNode;
+  meta?: ReactNode;
+  hit?: Mark["tone"] | null;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <FoldRow open={open} onToggle={() => setOpen((o) => !o)} meta={meta}>
+      <FoldRow open={open} onToggle={() => setOpen((o) => !o)} meta={meta} hit={hit}>
         {head}
       </FoldRow>
       {/* 收起时内容不在页面里：几百轮里每个工具结果都画出来，展开前就够重了 */}
@@ -690,8 +708,9 @@ export function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNo
 /** 一段要读的长文字（系统提示、思考），收起；点开是左边一道竖线引着的原文 */
 export function TextFold({ title, text, muted = false }: { title: string; text: string; muted?: boolean }) {
   const t = useText(conversationText);
+  const hit = useHitTone(text);
   return (
-    <Fold head={<span className="truncate text-foreground">{title}</span>} meta={t.chars(text.length)}>
+    <Fold head={<span className="truncate text-foreground">{title}</span>} meta={t.chars(text.length)} hit={hit}>
       <div className="ml-[5px] border-l-2 border-border pl-3">
         <Prose text={text} muted={muted} />
       </div>
@@ -716,8 +735,10 @@ export function Thinking({ text }: { text: string }) {
 /** 工具调用：名字和参数的提要一行，点开是排好的参数 */
 function ToolCallRow({ p }: { p: ToolCall }) {
   const preview = useMemo(() => argsPreview(p.input), [p.input]);
+  const hit = useHitTone(p.input);
   return (
     <Fold
+      hit={hit}
       head={
         <>
           <span className="shrink-0 font-medium text-foreground">{p.name}</span>
@@ -746,6 +767,7 @@ function firstLine(text: string): string {
 function ToolResultRow({ p }: { p: ToolResult }) {
   const t = useText(conversationText);
   const name = useContext(Names).get(p.call_id);
+  const hit = useHitTone(p.text);
   const label = (
     <span className="shrink-0 text-foreground">
       {name ? t.resultOf(<span className="font-medium">{name}</span>) : t.result}
@@ -775,6 +797,7 @@ function ToolResultRow({ p }: { p: ToolResult }) {
         </>
       }
       meta={t.chars(p.text.length)}
+      hit={hit}
     >
       <Mono text={p.text} json={false} error={p.is_error} />
     </Fold>

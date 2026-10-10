@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { prettyJson } from "@/prettyJson";
 import { clip } from "@/traffic/transcript";
-import type { HitLocation, OutcomeDetail, SecurityEventView, SecurityOutcome } from "@/types";
-import { Highlight, type Mark } from "./Highlight";
+import type { HitLocation, OutcomeDetail, SecurityEventView } from "@/types";
+import { Highlight, toneOf, type Mark } from "./Highlight";
 import { Code, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { hitDetailText } from "./HitDetail.i18n";
@@ -17,11 +17,6 @@ const FIRST = 3;
 const ARGS = { chars: 800, lines: 14 };
 /** 客户端收到的提示、回复：先显示这么多 */
 const NOTICE = { chars: 400, lines: 6 };
-
-/** 命中那一段的底色，和规则测试里标出来的同一套：会被切断、拒绝的红，会被删除的划掉，其余琥珀 */
-function toneOf(action: SecurityOutcome): Mark["tone"] {
-  return action === "cut" || action === "blocked" ? "bad" : action === "stripped" ? "strip" : "warn";
-}
 
 /** 详情里的链接：和正文同色，下划线淡一档 */
 const LINK =

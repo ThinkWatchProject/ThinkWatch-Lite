@@ -4,6 +4,7 @@ import { size } from "@/format";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { cn } from "@/lib/utils";
+import { useMarker, useScrollToFirstHit } from "@/security/Highlight";
 import { prettyJson } from "@/prettyJson";
 import { SourceDiff } from "@/plugins/parts";
 import { Button } from "@/ui/button";
@@ -153,6 +154,8 @@ function RequestBox({
   );
   const shown = pretty ?? text ?? "";
   const big = shown.length > FOLD;
+  const box = useRef<HTMLDivElement>(null);
+  useScrollToFirstHit(box);
   return (
     <section className="flex shrink-0 flex-col gap-2">
       <div className="flex min-h-6 items-center gap-2">
@@ -185,7 +188,7 @@ function RequestBox({
       {diff ? (
         <SourceDiff before={diff.before} after={diff.after} className="max-h-72" />
       ) : (
-        <div className={cn(BOX, "max-h-56")}>
+        <div ref={box} className={cn(BOX, "max-h-56")}>
           {hop.head ? (
             <HeadLines head={hop.head} />
           ) : (
@@ -229,6 +232,7 @@ function ResponseBox({
   const json = body ? isJson(body) : false;
   const box = useRef<HTMLDivElement>(null);
   const log = useEvents(body && !json ? body : null);
+  useScrollToFirstHit(box, !growing);
 
   // 跟着最新的：每次长了都停到最底下
   useLayoutEffect(() => {
@@ -400,6 +404,7 @@ function EventLog({ log, scroller }: { log: Events; scroller: RefObject<HTMLDivE
 /** 一块事件：`event:`、`data:` 这些字段名淡一些，注释行整行淡 */
 const EventBlock = memo(function EventBlock({ text }: { text: string }) {
   const lines = text.split("\n");
+  const mark = useMarker();
   return (
     <>
       {lines.map((line, i) => {
@@ -416,11 +421,11 @@ const EventBlock = memo(function EventBlock({ text }: { text: string }) {
           return (
             <span key={i}>
               <span className="text-muted-foreground">{line.slice(0, c + 1)}</span>
-              {line.slice(c + 1) + nl}
+              {mark(line.slice(c + 1) + nl)}
             </span>
           );
         }
-        return <span key={i}>{line + nl}</span>;
+        return <span key={i}>{mark(line + nl)}</span>;
       })}
     </>
   );

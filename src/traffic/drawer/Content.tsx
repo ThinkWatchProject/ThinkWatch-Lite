@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
+import { HitNeedles, needlesOf } from "@/security/Highlight";
 import { Checkbox } from "@/ui/checkbox";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
@@ -40,6 +41,9 @@ export function useContentView(): [ContentView | null, (v: ContentView) => void]
  * 在跑的请求看的是实时内容（`live`），一边收一边长；请求结束、存下的那一份取回来之后换成存下的
  * —— 两种整理成同一个样子（`wireModel`），换的那一下画面不跳。存下的那一份还没落盘（请求刚
  * 结束的那几毫秒）时接着画实时收到的。
+ *
+ * 安全命中的那几段（脱敏的凭据、它的占位符、可疑的工具调用、内容规则命中的字）在两种看法里都
+ * 标出来，颜色和安全日志里的一样（`needlesOf`）。
  */
 export function Content({
   d,
@@ -65,6 +69,7 @@ export function Content({
     [fromStream, live, version, d],
   );
   const streaming = running && live !== null && !live.closed;
+  const needles = useMemo(() => needlesOf(d.row.security), [d.row.security]);
   /**
    * 订阅不上、或者中途断了，而请求还在跑（已经结束的不算：去取存下的就是了）。说一句原因，
    * 下面照取到的画
@@ -111,89 +116,91 @@ export function Content({
       : null;
 
   return (
-    <div className={cn("flex flex-col gap-3", view === "raw" && "h-full min-h-[28rem]")}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Segmented<ContentView>
-          label={t.viewsLabel}
-          value={view}
-          options={[
-            { id: "parsed", label: t.views.parsed },
-            { id: "raw", label: t.views.raw },
-          ]}
-          onChange={onView}
-        />
-        {view === "raw" && hasUpstream && (
-          <Segmented<"client" | "upstream">
-            label={t.sidesLabel}
-            value={shownSide}
+    <HitNeedles.Provider value={needles}>
+      <div className={cn("flex flex-col gap-3", view === "raw" && "h-full min-h-[28rem]")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented<ContentView>
+            label={t.viewsLabel}
+            value={view}
             options={[
-              { id: "client", label: t.sides.client },
-              { id: "upstream", label: t.sides.upstream },
+              { id: "parsed", label: t.views.parsed },
+              { id: "raw", label: t.views.raw },
             ]}
-            onChange={setSide}
+            onChange={onView}
+          />
+          {view === "raw" && hasUpstream && (
+            <Segmented<"client" | "upstream">
+              label={t.sidesLabel}
+              value={shownSide}
+              options={[
+                { id: "client", label: t.sides.client },
+                { id: "upstream", label: t.sides.upstream },
+              ]}
+              onChange={setSide}
+            />
+          )}
+          <span className="flex-1" />
+          {view === "raw" && streaming && growing && (
+            <label className="flex h-7 cursor-pointer items-center gap-2 text-muted-foreground select-none">
+              <Checkbox
+                checked={follow}
+                onCheckedChange={(v) => {
+                  pausedByScroll.current = false;
+                  setFollow(v === true);
+                }}
+              />
+              {t.follow}
+            </label>
+          )}
+          {streaming && (
+            <StatusLabel tone="pending" muted className="tw-label">
+              {t.live}
+            </StatusLabel>
+          )}
+        </div>
+
+        {liveError && (
+          <div>
+            <Pill tone="error">{t.liveFailed(liveError)}</Pill>
+          </div>
+        )}
+
+        {view === "parsed" ? (
+          <Parsed
+            request={model.client.request}
+            response={model.client.response}
+            dialect={dialect}
+            d={d}
+            end={fromStream ? (live?.end ?? null) : null}
+          />
+        ) : (
+          <Raw
+            key={shownSide === "upstream" ? `up:${hop?.attempt}` : "client"}
+            side={shown}
+            at={d.row.at_ms}
+            pending={running}
+            follow={follow && streaming}
+            onUserScroll={onUserScroll}
+            plugin={plugin}
+            picker={
+              shownSide === "upstream" && model.upstream.length > 1 && hop ? (
+                <div className="flex items-center gap-2">
+                  <span className="tw-label text-muted-foreground">{t.attemptsLabel}</span>
+                  <Segmented<string>
+                    label={t.attemptsLabel}
+                    value={String(hop.attempt)}
+                    options={model.upstream.map((u) => ({
+                      id: String(u.attempt),
+                      label: r.attemptGroup(u.attempt, u.provider),
+                    }))}
+                    onChange={(v) => setPicked(Number(v))}
+                  />
+                </div>
+              ) : null
+            }
           />
         )}
-        <span className="flex-1" />
-        {view === "raw" && streaming && growing && (
-          <label className="flex h-7 cursor-pointer items-center gap-2 text-muted-foreground select-none">
-            <Checkbox
-              checked={follow}
-              onCheckedChange={(v) => {
-                pausedByScroll.current = false;
-                setFollow(v === true);
-              }}
-            />
-            {t.follow}
-          </label>
-        )}
-        {streaming && (
-          <StatusLabel tone="pending" muted className="tw-label">
-            {t.live}
-          </StatusLabel>
-        )}
       </div>
-
-      {liveError && (
-        <div>
-          <Pill tone="error">{t.liveFailed(liveError)}</Pill>
-        </div>
-      )}
-
-      {view === "parsed" ? (
-        <Parsed
-          request={model.client.request}
-          response={model.client.response}
-          dialect={dialect}
-          d={d}
-          end={fromStream ? (live?.end ?? null) : null}
-        />
-      ) : (
-        <Raw
-          key={shownSide === "upstream" ? `up:${hop?.attempt}` : "client"}
-          side={shown}
-          at={d.row.at_ms}
-          pending={running}
-          follow={follow && streaming}
-          onUserScroll={onUserScroll}
-          plugin={plugin}
-          picker={
-            shownSide === "upstream" && model.upstream.length > 1 && hop ? (
-              <div className="flex items-center gap-2">
-                <span className="tw-label text-muted-foreground">{t.attemptsLabel}</span>
-                <Segmented<string>
-                  label={t.attemptsLabel}
-                  value={String(hop.attempt)}
-                  options={model.upstream.map((u) => ({
-                    id: String(u.attempt),
-                    label: r.attemptGroup(u.attempt, u.provider),
-                  }))}
-                  onChange={(v) => setPicked(Number(v))}
-                />
-              </div>
-            ) : null
-          }
-        />
-      )}
-    </div>
+    </HitNeedles.Provider>
   );
 }
