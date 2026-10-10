@@ -12,10 +12,11 @@ import { protocolLabel } from "@/upstreams/labels";
 import { modelText } from "./model.i18n";
 import { routingText } from "./routing.i18n";
 import { aliasNamed, hasTarget, pinnedOf, pinnedText, targetNameOf } from "./target";
+import { blankTimeWindow, formatTimeWindow, parseTimeWindow } from "./timeWindow";
 
 // ---------------------------------------------------------------- 条件
 
-export type CondKind = "glob" | "compare" | "flag" | "one" | "many";
+export type CondKind = "glob" | "compare" | "flag" | "one" | "many" | "time";
 
 /** 「添加条件」菜单里的分组。显示的名字见 `condGroupLabel` */
 export type CondGroup = "request" | "features" | "source" | "upstream";
@@ -32,6 +33,7 @@ export const COND_FIELDS: CondField[] = [
   { id: "input_tokens", kind: "compare", group: "request" },
   { id: "max_tokens", kind: "compare", group: "request" },
   { id: "tool_count", kind: "compare", group: "request" },
+  { id: "time", kind: "time", group: "request" },
   { id: "cache", kind: "flag", group: "features" },
   { id: "tools", kind: "flag", group: "features" },
   { id: "image", kind: "flag", group: "features" },
@@ -84,6 +86,8 @@ export function blankCondition(id: ConditionField): ConditionView {
       return { field: id, values: [">"] };
     case "one":
       return { field: id, values: id === "dialect" ? ["anthropic"] : [] };
+    case "time":
+      return { field: id, values: [formatTimeWindow(blankTimeWindow())!] };
     default:
       return { field: id, values: [] };
   }
@@ -102,6 +106,10 @@ export function conditionProblem(c: ConditionView): string | null {
     }
     case "flag":
       return null;
+    case "time":
+      if (!values.length) return t.valueMissing(name);
+      // 对话框里的时段编辑器写出来的一定合语法；写不对的只会是原文编辑的，或者一天都没选的
+      return values.every((v) => parseTimeWindow(v)) ? null : t.timeInvalid(name);
     default:
       return values.length ? null : t.valueMissing(name);
   }

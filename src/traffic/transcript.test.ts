@@ -59,6 +59,7 @@ function view(id: number, x: Partial<TurnView> = {}): TurnView {
     cancelled: false,
     cost_estimated: false,
     billing: "per-token",
+    context_window: null,
     ...x,
   };
 }

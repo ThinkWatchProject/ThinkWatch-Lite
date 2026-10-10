@@ -49,6 +49,7 @@ export const labelsText = messages(
       tool_count: "工具数",
       intent: "辅助请求",
       provider_would_be: "选定上游",
+      time: "时段",
     },
     anyProbe: "任一辅助请求",
     /** 一个条件的几个取值之间 */
@@ -202,6 +203,7 @@ export const labelsText = messages(
       tool_count: "Tool count",
       intent: "Auxiliary request",
       provider_would_be: "Selected upstream",
+      time: "Time",
     },
     anyProbe: "Any auxiliary request",
     or: " or ",

@@ -81,6 +81,23 @@ export const conversationText = messages(
     responseUnreadable: "响应格式无法识别，原文见请求详情",
     /** 不生成回答的调用（数 token、压缩上下文）：轮次头上那一句 */
     noContent: "无对话内容",
+
+    // 上下文那一行：这一轮送进模型的 token 占模型上下文窗口的几成，点开是由什么组成
+    context: "上下文",
+    /** 条后面的说明：送进去的里面缓存读取占几成 */
+    cached: (pct: number) => `缓存 ${pct}%`,
+    /** 读屏念的那根条 */
+    contextBar: (used: string, window: string, cachedPct: number) =>
+      `上下文 ${used} / ${window}，缓存读取占 ${cachedPct}%`,
+    contextLoadFailed: "上下文读取失败",
+    partSystem: "系统提示",
+    partTools: "工具定义",
+    partHistory: "此前的对话",
+    partLastUser: "最后一条用户消息",
+    partTotal: "合计",
+    /** 各部分的数是估算的，数前带「~」；这一句是「~」的说明 */
+    estimated: "估算值",
+    estimatedTip: "各部分按保存的请求正文估算，与上游计量的输入不同。",
   },
   {
     loadFailed: "Could not load the conversation",
@@ -131,5 +148,18 @@ export const conversationText = messages(
     responseTruncated: "The response was too large to save in full",
     responseUnreadable: "The response format is not recognized; the raw body is in the request details",
     noContent: "No conversation content",
+
+    context: "Context",
+    cached: (pct: number) => `${pct}% cached`,
+    contextBar: (used: string, window: string, cachedPct: number) =>
+      `Context ${used} of ${window}, ${cachedPct}% from cache reads`,
+    contextLoadFailed: "Could not load the context breakdown",
+    partSystem: "System prompt",
+    partTools: "Tool definitions",
+    partHistory: "Earlier conversation",
+    partLastUser: "Last user message",
+    partTotal: "Total",
+    estimated: "Estimated",
+    estimatedTip: "Each part is estimated from the stored request body; it differs from the input the upstream measured.",
   },
 );

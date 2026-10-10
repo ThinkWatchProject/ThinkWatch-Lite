@@ -61,10 +61,26 @@ describe("规则的条件与改写", () => {
     expect(conditionText({ field: "stream", values: ["false"] })).toBe("Non-streaming");
     expect(conditionText({ field: "model", values: ["claude-*", "gpt-*"] })).toBe("Model claude-* or gpt-*");
     expect(conditionText({ field: "dialect", values: ["openai-chat"] })).toBe("Client format OpenAI Chat Completions");
+    expect(conditionText({ field: "time", values: ["mon-fri 09:00-18:00", "22:00-06:00"] })).toBe(
+      "Time Mon–Fri 09:00–18:00 or 22:00–06:00 next day",
+    );
+    expect(mismatchText({ field: "time", want: ["sat,sun 00:00-24:00"], got: "fri 16:42" })).toBe(
+      "Time must be Sat, Sun 00:00–24:00; actual: Fri 16:42",
+    );
     expect(setText({ field: "model", value: "claude-haiku-4-5" })).toBe(
       "Model set to claude-haiku-4-5; the entire prompt cache is invalidated",
     );
     expect(setText({ field: "max_tokens", value: "4096" })).toBe("max_tokens set to 4096");
+  });
+
+  it("时段条件写成人话；写不对的按原文", () => {
+    setLang("zh");
+    expect(conditionText({ field: "time", values: ["mon-fri 09:00-18:00"] })).toBe("时段 周一至周五 09:00–18:00");
+    expect(mismatchText({ field: "time", want: ["22:00-06:00"], got: "fri 16:42" })).toBe(
+      "要求时段为 22:00–次日 06:00，实际为 周五 16:42",
+    );
+    // 写不对的按原文
+    expect(conditionText({ field: "time", values: ["whenever"] })).toBe("时段 whenever");
   });
 });
 

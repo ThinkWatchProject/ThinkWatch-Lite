@@ -32,12 +32,13 @@ import type {
   SessionView,
   Summary,
   Transcript,
+  TurnContext,
   TurnView,
   UpstreamCheckup,
   UpstreamHealth,
 } from "@/types";
 import type { Dashboard } from "@/types";
-import { AS_OF, N, priceFor, priceSource } from "./config";
+import { AS_OF, N, contextWindowOf, priceFor, priceSource } from "./config";
 import { DAY, HOUR, MIN, NOW, SEC, L, clone, msg, rng } from "./util";
 import OV_EN from "../core/en/overview.json";
 
@@ -991,7 +992,28 @@ export function turns(id: string): TurnView[] {
     cancelled: h.cancelled,
     cost_estimated: h.cost_estimated,
     billing: h.billing,
+    context_window: contextWindowOf(h.model),
   }));
+}
+
+/**
+ * 一轮的上下文由什么组成（`GET /sessions/{id}/turns/{turn}/context`）。截图里不点开，给一份按
+ * 用量分成四部分的估算：系统提示 6%、工具定义 17%、此前的对话 73%、最后一条用户消息 4%
+ */
+export function turnContext(session: string, turn: number): TurnContext {
+  const h = HISTORY.find((x) => x.session === session && x.id === turn);
+  if (!h) throw msg("", `Turn ${turn} of session ${session} is not in the screenshot data.`);
+  const used = (h.input_tokens ?? 0) + (h.cache_read_tokens ?? 0);
+  const part = (share: number) => Math.round(used * share);
+  const parts = { system: part(0.06), tools: part(0.17), history: part(0.73), last_user: part(0.04), total: 0 };
+  parts.total = parts.system + parts.tools + parts.history + parts.last_user;
+  return {
+    kept: h.input_tokens != null,
+    window: contextWindowOf(h.model),
+    input_tokens: h.input_tokens,
+    cache_read_tokens: h.cache_read_tokens,
+    parts: h.input_tokens != null ? parts : null,
+  };
 }
 
 /**

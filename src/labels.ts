@@ -25,6 +25,7 @@ import {
 } from "./types";
 import { PROTOCOLS, skipLabel } from "./upstreams/labels";
 import { labelsText } from "./labels.i18n";
+import { timeValueText } from "./routing/timeWindow";
 import type { NotSent } from "./requestRouting";
 
 /*
@@ -109,6 +110,7 @@ const COUNTS = new Set(["input_tokens", "max_tokens", "tool_count"]);
 function conditionValue(field: string, value: string): string {
   if (field === "intent") return value === "assistant_internal" ? textOf(labelsText).anyProbe : probeLabel(value);
   if (field === "dialect") return formatLabel(value);
+  if (field === "time") return timeValueText(value);
   return value;
 }
 
