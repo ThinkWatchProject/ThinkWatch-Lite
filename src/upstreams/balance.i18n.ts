@@ -35,8 +35,6 @@ export const balanceText = messages(
       at: (time: string) => `${time} 读取`,
     },
     failed: "余额读取失败",
-    failedReason: (reason: string) => `余额读取失败：${reason}`,
-    lastFailed: (reason: string) => `最近一次读取失败：${reason}`,
     // `used`：「已用 / 总额」那一对
     quotaLine: (used: string, left: string) => `额度：已用 ${used}，剩余 ${left}`,
     quotaUsed: (used: string) => `额度：已用 ${used}`,
@@ -77,8 +75,6 @@ export const balanceText = messages(
       at: (time: string) => `read at ${time}`,
     },
     failed: "Balance unavailable",
-    failedReason: (reason: string) => `Balance unavailable: ${reason}`,
-    lastFailed: (reason: string) => `The last read failed: ${reason}`,
     quotaLine: (used: string, left: string) => `Quota: ${used} used, ${left} left`,
     quotaUsed: (used: string) => `Quota: ${used} used`,
     windowLine: (window: string, scope: string | null, used: string, percent: number, reset: string | null) =>

@@ -224,8 +224,8 @@ export function balanceFace(b: Balance | null | undefined, now: number): Balance
 
 /**
  * 悬停里的每一行，数写全：从哪儿读的、什么时候；钱包；用掉多少；总额度；每个还作数的
- * 窗口（带它是这把密钥的还是账号的）；到期；最近一次失败。读取失败、没有读到过的数时
- * 只有来源和原因
+ * 窗口（带它是这把密钥的还是账号的）；到期；最近一次失败的原因。读取失败、没有读到过的数时
+ * 只有来源和原因。**原因是 core 的原话**（「无法读取余额：……」），不再套一层
  */
 export function balanceTip(b: Balance, now: number): string[] {
   const t = textOf(balanceText);
@@ -257,7 +257,7 @@ export function balanceTip(b: Balance, now: number): string[] {
     );
   }
   if (b.expires_at_ms != null) out.push(t.expires(ymd(b.expires_at_ms)));
-  if (b.error) out.push(t.lastFailed(coreText(b.error)));
+  if (b.error) out.push(coreText(b.error));
   return out;
 }
 
@@ -274,7 +274,7 @@ export function balanceBrief(
   if (!b || !face) return null;
   const t = textOf(balanceText);
   const source = sourceLabel(b.source);
-  if (face.kind === "failed") return { source, text: t.failedReason(face.reason), failed: true };
+  if (face.kind === "failed") return { source, text: face.reason, failed: true };
   const q = b.quota;
   const tight = tightestWindow(b.windows, now);
   const parts = [

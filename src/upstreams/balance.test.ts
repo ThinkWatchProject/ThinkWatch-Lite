@@ -19,7 +19,13 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-const failure: Msg = { code: "test.balance.unreachable", args: {}, text: "The balance endpoint answered 401." };
+// core 的原话，界面按码说中文
+const failure: Msg = {
+  code: "gw.balance.rejected",
+  args: { status: "401" },
+  text: "The balance could not be read: the upstream rejected the key (HTTP 401).",
+};
+const FAILED_ZH = "无法读取余额：上游拒绝了此密钥（HTTP 401）。";
 
 function bal(patch: Partial<Balance> = {}): Balance {
   return {
@@ -310,14 +316,14 @@ describe("上游表那一格", () => {
 
   it("读取失败、没有读到过：琥珀色的标签，原因在悬停里", () => {
     const b = bal({ source: "newapi", error: failure });
-    expect(balanceFace(b, NOW)).toEqual({ kind: "failed", reason: "The balance endpoint answered 401." });
-    expect(balanceTip(b, NOW)).toEqual(["New API", "The balance endpoint answered 401."]);
+    expect(balanceFace(b, NOW)).toEqual({ kind: "failed", reason: FAILED_ZH });
+    expect(balanceTip(b, NOW)).toEqual(["New API", FAILED_ZH]);
   });
 
   it("读取失败、有上一次读到的：照常写那一份，失败只在悬停里", () => {
     const b = bal({ source: "deepseek", wallet: usd(18.4), error: failure });
     expect(balanceFace(b, NOW)).toEqual({ kind: "wallet", main: "余额 $18.40" });
-    expect(balanceTip(b, NOW).at(-1)).toBe("最近一次读取失败：The balance endpoint answered 401.");
+    expect(balanceTip(b, NOW).at(-1)).toBe(FAILED_ZH);
   });
 });
 
@@ -399,7 +405,7 @@ describe("检测连接的那一行", () => {
     });
     expect(balanceBrief(bal({ error: failure }), NOW)).toEqual({
       source: "Sub2API",
-      text: "余额读取失败：The balance endpoint answered 401.",
+      text: FAILED_ZH,
       failed: true,
     });
   });
@@ -424,7 +430,11 @@ describe("英文界面", () => {
       used: "86% used",
       label: "5h · in 2 h",
     });
-    expect(balanceFace(bal({ error: failure }), NOW)).toMatchObject({ kind: "failed" });
+    // 英文界面用 core 的原话
+    expect(balanceFace(bal({ error: failure }), NOW)).toEqual({
+      kind: "failed",
+      reason: "The balance could not be read: the upstream rejected the key (HTTP 401).",
+    });
     expect(balanceTip(bal({ windows: [win("daily", 4.1, 10, 7 * HOUR)] }), NOW)).toContain(
       "Daily limit: $4.10 / $10.00 used (41%), resets in 7 h",
     );
