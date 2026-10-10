@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
+import type { CostBucket } from "./types";
 import {
   bucketStart,
   compact,
@@ -16,6 +17,7 @@ import {
   span,
   statusTone,
   tokens,
+  traffic,
   when,
   whenMinute,
 } from "./format";
@@ -229,7 +231,7 @@ describe("格子边界", () => {
 });
 
 describe("补空桶", () => {
-  const b = (at_ms: number, requests: number) => ({
+  const b = (at_ms: number, requests: number): CostBucket => ({
     at_ms,
     requests,
     failed: 0,
@@ -237,6 +239,15 @@ describe("补空桶", () => {
     cost_micros_estimated: 0,
     unpriced_requests: 0,
     no_usage_requests: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    ttft_p50_ms: 900,
+    ttft_p95_ms: 1_800,
+    ttft_samples: requests,
   });
 
   /**
@@ -248,6 +259,14 @@ describe("补空桶", () => {
     const out = densify([b(0, 2), b(2000, 1)], 0, 3000, 1000);
     expect(out.map((x) => x.requests)).toEqual([2, 0, 1]);
     expect(out.map((x) => x.at_ms)).toEqual([0, 1000, 2000]);
+  });
+
+  /** 补出来的格子没有首 token 样本：分位是「没有」，画成 0 毫秒就是编了一段「很快」 */
+  it("补出来的格子没有分位", () => {
+    const out = densify([b(0, 2)], 0, 2000, 1000);
+    expect(out.map((x) => x.ttft_p50_ms)).toEqual([900, null]);
+    expect(out.map((x) => x.ttft_samples)).toEqual([2, 0]);
+    expect(out[1]).toMatchObject({ sent_bytes: 0, received_bytes: 0, input_tokens: 0 });
   });
 
   it("首尾的空格子也要补", () => {
@@ -381,5 +400,22 @@ describe("字节数", () => {
 
   it("进位之后满 1024 KB 的写成 MB", () => {
     expect(size(1024 * 1024 - 1)).toBe("1 MB");
+  });
+});
+
+describe("流量", () => {
+  it("不到 100 的留一位小数，100 以上取整，整数不带 .0", () => {
+    expect(traffic(0)).toBe("0 B");
+    expect(traffic(1023)).toBe("1023 B");
+    expect(traffic(1024)).toBe("1 KB");
+    expect(traffic(12_083)).toBe("11.8 KB");
+    expect(traffic(729_088)).toBe("712 KB");
+    expect(traffic(65_431_142)).toBe("62.4 MB");
+    expect(traffic(3 * 1024 ** 3)).toBe("3 GB");
+  });
+
+  it("进位之后满 1024 的写成下一级", () => {
+    expect(traffic(1024 * 1024 - 1)).toBe("1 MB");
+    expect(traffic(1024 ** 3 - 1)).toBe("1 GB");
   });
 });

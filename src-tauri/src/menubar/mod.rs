@@ -1077,6 +1077,8 @@ mod tests {
             output_tokens: tokens[1],
             cache_read_tokens: tokens[2],
             cache_write_tokens: tokens[3],
+            sent_bytes: 0,
+            received_bytes: 0,
         }
     }
 

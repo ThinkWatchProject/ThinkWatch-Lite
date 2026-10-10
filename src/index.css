@@ -71,6 +71,13 @@
   --color-cache-hit: var(--cache-hit);
   --color-cache-plain: var(--cache-plain);
   --color-cache-write: var(--cache-write);
+  --color-data-1: var(--data-1);
+  --color-data-2: var(--data-2);
+  --color-data-rest: var(--data-rest);
+  --color-data-fail: var(--data-fail);
+  --color-panel: var(--panel);
+  --color-brand-from: var(--brand-from);
+  --color-brand-to: var(--brand-to);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -183,6 +190,21 @@
   --cache-hit: oklch(0.62 0.115 174);
   --cache-plain: oklch(0.68 0 none);
   --cache-write: oklch(0.68 0.1 74);
+  /* 概览指标卡的数据色。**两个颜色、一档灰、一档红**：一张小图最多两条线（P50 和 P95、
+   * 上传和下载），蓝的是主要那条、橙的是对照的那条；构成条里不分彼此的那一段用灰；
+   * 请求柱上失败的那一截用红。蓝橙这一对浅色、深色各过了一遍色觉和对比度的校验。
+   * `--data-wash` 是线下面那片淡色的浓度 */
+  --data-1: #2a78d6;
+  --data-2: #eb6834;
+  --data-rest: #c8cbcd;
+  --data-fail: #e5484d;
+  --data-wash: 0.16;
+  /* 指标卡的面：比窗口底亮一档，卡片才从底上浮出来 */
+  --panel: #ffffff;
+  /* 品牌的青→品红（官网 logo 的两色，浅色底上换深一档）。**只做点缀**：悬停卡片的
+   * 边、联动的竖线、提示框顶上那一道、「进行中」的点。不碰数据颜色 */
+  --brand-from: #14c3d3;
+  --brand-to: #d94fc9;
   /* 配置文件编辑器的语法色。**键用正文色，值用两档低饱和的颜色** —— 一份
    * 配置读的是值，键只是标签；四五种撞色会让一个缩进错误淹没在颜色里 */
   --code-key: oklch(20.5% 0 none);
@@ -235,6 +257,14 @@
     --code-atom: oklch(0.8 0.1 262);
     --cache-plain: oklch(0.63 0 none);
     --cache-write: oklch(0.72 0.1 74);
+    --data-1: #3987e5;
+    --data-2: #d95926;
+    --data-rest: #4a4d55;
+    --data-fail: #ff6b6b;
+    --data-wash: 0.24;
+    --panel: #16181b;
+    --brand-from: #22e5f2;
+    --brand-to: #f05cd8;
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -315,23 +345,6 @@
     --surface: oklch(22% 0.006 260);
     --idle: oklch(50% 0.006 260);
     --destructive-foreground: oklch(88.5% 0.062 18.334); /* red-200 */
-  }
-}
-
-/* ─────────────────────────────────────────────────────── 在途的光点
- *
- * 路由图上请求流过去的那几个光点：品牌色的青 → 品红（和图标、启动画面同一对颜色），
- * 从密钥那一列铺到上游那一列。**只有这一处用它**：别的地方颜色仍只留给状态。浅色底上
- * 两头各压暗一档，不然青色在白底上发虚。
- */
-:root {
-  --flow-from: #14c3d3;
-  --flow-to: #d94fc9;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --flow-from: #22e5f2;
-    --flow-to: #f05cd8;
   }
 }
 
@@ -535,6 +548,31 @@
   transition: height var(--motion-fast) var(--motion-ease);
 }
 
+/* 品牌渐变的点缀（概览指标卡）。**只用在交互上**：指着的那张卡片的边、提示框顶上那一道。
+ * 渐变边是两层背景：里层铺卡片的面（padding-box），外层铺渐变（border-box），边框本身
+ * 透明 —— `border-image` 画不出圆角 */
+@utility brand-border {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(135deg, var(--brand-from), var(--brand-to)) border-box;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--brand-from) 8%, transparent);
+  @media (prefers-color-scheme: dark) {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--brand-from) 5%, transparent),
+      0 8px 28px color-mix(in srgb, var(--brand-to) 10%, transparent);
+  }
+}
+@utility brand-edge {
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--brand-from), var(--brand-to));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .motion-page,
   .motion-fade,
@@ -643,13 +681,20 @@ body {
  *
  * 数字用等宽：金额和延迟要按位对齐，否则一列数字读起来要重新对焦。
  */
-/* 概览上那个金额。**字阶里唯一一个展示级** —— 它是这一页要回答的那
- * 个问题的答案，其余都是它的注解。只此一处，多一处就不是展示级了。 */
+/* 概览指标卡上的大数。**字阶里唯一一个展示级** —— 它们是这一页要回答的那几个问题
+ * 的答案，其余都是注解。只在概览的指标卡上用，别处用就不是展示级了。
+ *
+ * 字是 Geist（官网的字），**打包在应用里**（`@fontsource/geist`，概览页引入），不在运行时
+ * 去网上取：离线也要是这个字。只带拉丁字符那一份，数字、$、%、单位都在里面；没有的字符
+ * 落回系统字体。数字用比例宽度：等宽的「1」两边空出一截，大字号上看得出来 */
 @utility tw-display {
-  font-size: 34px;
+  font-family: "Geist", var(--font-ui);
+  font-size: 26px;
   font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.01em;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: normal;
+  font-feature-settings: normal;
 }
 @utility tw-title {
   font-size: var(--fs-title);

@@ -663,8 +663,10 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
             usage: None,
             queued_ms: None,
             skipped: None,
+            proxy: None,
         }],
         billing: tw_api::Billing::PerToken,
+        egress: None,
     });
     assert!(b.bus.list().is_empty());
 }

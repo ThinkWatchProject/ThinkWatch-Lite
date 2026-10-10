@@ -4,15 +4,18 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { usd } from "@/types";
 import { overviewText } from "@/overview/overview.i18n";
-import { rankCost, type RankRow } from "@/overview/series";
+import { rankCost } from "@/overview/series";
 
-/** 一段时间里的费用，三态分开：实测加估算的金额、其中估算的部分、算不出钱的条数 */
-export type CostParts = Pick<RankRow, "cost" | "estimated" | "unpriced" | "noUsage">;
+/**
+ * 一段时间里的费用，三态分开：实测加估算的金额（微分）、其中估算的部分、算不出钱的条数
+ * （无法计价的、没有用量的）
+ */
+export type CostParts = { cost: number; estimated: number; unpriced: number; noUsage: number };
 
 /**
  * 一段时间里的费用：一个数或一个词，说明进悬停。
  *
- * **和概览的模型排行同一套写法**（`rankCost`）：有用量却一条都没算出钱的写「无法
+ * **和概览的明细表同一套写法**（`rankCost`）：有用量却一条都没算出钱的写「无法
  * 计价」，连用量都没有的写「无用量」 —— **不写 $0**，那是在说它不花钱；其余写金额，
  * 有算不出来的请求时金额只是下限（「≥」），含估算的带「~」。
  *

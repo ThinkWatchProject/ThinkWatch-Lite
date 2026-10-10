@@ -142,6 +142,26 @@ export function size(bytes: number): string {
 }
 
 /**
+ * 流量（网关和上游之间传了多少字节），写成 B / KB / MB / GB（按 1024 进位）。
+ *
+ * **比 `size` 多留一位**：不到 100 的带一位小数（「11.8 KB」「62.4 MB」），100 以上取整。
+ * 流量是拿来和代理的账单对、和上一段时间比的数，「12 KB」和「11.8 KB」在对账时是两个数。
+ * 整数不带「.0」；进位之后满 1024 的写成下一级，不写「1024 KB」。
+ */
+export function traffic(bytes: number): string {
+  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  const round = (n: number) => (n < 100 ? Math.round(n * 10) / 10 : Math.round(n));
+  let v = bytes / 1024;
+  let i = 0;
+  while (round(v) >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${round(v)} ${units[i]}`;
+}
+
+/**
  * 输入与输出 token。
  *
  * 合成一列，因为读的时候要的是两者的**比例**：输入远大于输出 = 上下文
@@ -281,6 +301,16 @@ export function densify(
         cost_micros_estimated: 0,
         unpriced_requests: 0,
         no_usage_requests: 0,
+        sent_bytes: 0,
+        received_bytes: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        // 空格子没有样本：分位是「没有」，不是 0 毫秒
+        ttft_p50_ms: null,
+        ttft_p95_ms: null,
+        ttft_samples: 0,
       },
     );
   }

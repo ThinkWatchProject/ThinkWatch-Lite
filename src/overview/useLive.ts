@@ -7,16 +7,16 @@ import type { CoreEvent, HistoryRow } from "@/types";
 import { liveText } from "./useLive.i18n";
 
 /**
- * 实时曲线一格多宽。五秒：十分钟铺一百二十格。
+ * 实时档一格多宽。十秒：十分钟铺六十格。
  *
- * **格宽跟着窗口走，不跟着「想看多细」走。**图就那么宽，一百二十格时
- * 一格六七个像素；再细下去，多出来的格子在屏幕上分不出来，只是多算。
- * 历史档把格数压在 120 上下也是这个道理（见 `bucketFor`）。
+ * **格宽跟着图的宽度走，不跟着「想看多细」走。**指标卡上的小图两百多像素宽，六十格时
+ * 一格四个像素，请求柱还是柱子；再细下去，多出来的格子在屏幕上分不出来，只是多算。
+ * 历史档把一张图压在三四十格上下也是这个道理（见 `bucketFor`）。
  */
-export const LIVE_BUCKET_MS = 5_000;
+export const LIVE_BUCKET_MS = 10_000;
 
 /**
- * 实时曲线的平滑尺度（高斯核的 σ）：三格。
+ * 实时曲线的平滑尺度（高斯核的 σ）：十五秒，一格半。
  *
  * **一格只数它自己那几秒的话，画出来是一排针。**请求是一个一个落下来
  * 的：落到的那一格冲到几万，左右两格都是 0。加宽格子救不了它 —— 只要
@@ -26,25 +26,23 @@ export const LIVE_BUCKET_MS = 5_000;
  * 针于是变成城墙。**要平滑，核本身必须是平滑的。**高斯核把一条请求摊
  * 成一个鼓包，叠起来天然连续。
  *
- * **σ 按格数定，不按秒数定。**要抹平的是屏幕上的针，针有多细取决于一格
- * 占几个像素。窗口拉长、格子放宽，σ 跟着放宽，一条请求在图上还是差不多
- * 宽的一个鼓包。
+ * **σ 按屏幕上的宽度定，不按秒数定。**要抹平的是屏幕上的针：一格四个像素，一格半
+ * 的 σ 是六个像素，一条请求在小图上是一个看得出、又不糊成一片的鼓包。
  *
  * 核归一到总权重 1，所以纵轴读作**速率**（见 `liveRate`）。这也是实时档
  * 该问的问题 —— 此刻跑多快，而不是某几秒恰好落了多少。
  */
-export const LIVE_SIGMA_MS = 3 * LIVE_BUCKET_MS;
+export const LIVE_SIGMA_MS = 15_000;
 
 /** 核铺多宽。三个 σ 之外的权重不到千分之五，铺了也是白铺。 */
 export const LIVE_REACH_MS = 3 * LIVE_SIGMA_MS;
 
 /**
- * 曲线多久往前走一步：十分之一格。
+ * 曲线多久往前走一步：半秒，二十分之一格。
  *
- * **不等于格宽。**按格宽重画的话，整条曲线每五秒向左跳一格 —— 八百像素
- * 宽的图上是六七个像素，那不是在滑，是在跳。
+ * **不等于格宽。**按格宽重画的话，整条曲线每十秒向左跳一格 —— 那不是在滑，是在跳。
  *
- * 也**不必更密**：一步十分之一格，屏幕上不到一个像素，看起来已经是连续
+ * 也**不必更密**：一步二十分之一格，屏幕上不到一个像素，看起来已经是连续
  * 的了；再密只是把同一张图更频繁地重画一遍。
  *
  * 能这么做的前提是核是连续的：高斯在任意时刻都求得出值，格子不必卡在
@@ -54,7 +52,7 @@ export const LIVE_REACH_MS = 3 * LIVE_SIGMA_MS;
  * 这个节拍**只管往左走**。请求开始、落地、价钱补到，都当场重画 —— 不然
  * 一条请求要等到下一步才冒出来。
  */
-export const LIVE_FRAME_MS = LIVE_BUCKET_MS / 10;
+export const LIVE_FRAME_MS = 500;
 
 /** 事件流丢过事件之后，等这么久再从库里补：丢掉的那些结局落库要一点时间 */
 const REFILL_MS = 2_500;
@@ -79,7 +77,10 @@ export interface LiveSample {
   /** 用量落地的时刻：请求**结束**的时候。事件流只在那时才知道用量 */
   at: number;
   model: string;
+  /** 四类 token 的合计 */
   tokens: number;
+  /** 其中输出的那部分。**其余是输入**（含命中缓存、写入缓存的），和汇总的「输入」同一个口径 */
+  output: number;
   /**
    * 微分。价钱比用量晚一拍到（`request_priced`）：没到之前是 `undefined`；到了却是
    * 空的是 `null` —— 用量是有的，模型不在价目表里（不计费的上游记的是 0）
@@ -89,10 +90,14 @@ export interface LiveSample {
   estimated?: boolean;
 }
 
-/** 一次失败。**带着 id**：事件流和补回来的历史会说到同一次，要能去重 */
-export interface LiveFail {
+/**
+ * 一次请求的结局：结束、失败、客户端取消都算，本地应答不算（core 另发一个事件）——
+ * 和汇总的请求数同一个口径。**带着 id**：事件流和补回来的历史会说到同一次，要能去重
+ */
+export interface LiveEnd {
   id: number;
   at: number;
+  failed: boolean;
 }
 
 /**
@@ -110,21 +115,21 @@ export interface LiveFail {
  */
 export function refill(
   samples: readonly LiveSample[],
-  fails: readonly LiveFail[],
+  ends: readonly LiveEnd[],
   rows: readonly HistoryRow[],
   { skew, cut, unknownModel }: { skew: number; cut: number; unknownModel: string },
-): { samples: LiveSample[]; fails: LiveFail[] } {
+): { samples: LiveSample[]; ends: LiveEnd[] } {
   const drawn = new Map(samples.map((s) => [s.id, s]));
-  const failed = new Set(fails.map((f) => f.id));
+  const ended = new Set(ends.map((f) => f.id));
   const seeded: LiveSample[] = [];
-  const seededFails: LiveFail[] = [];
+  const seededEnds: LiveEnd[] = [];
   for (const r of rows) {
     // 本地应答没到上游，和别处的汇总一样不算
     if (r.local) continue;
     // 和事件流同一个口径：落在结束的那一刻，换到这边的时钟上
     const at = r.at_ms + (r.duration_ms ?? 0) - skew;
     if (at < cut) continue;
-    if (r.error && !failed.has(r.id)) seededFails.push({ id: r.id, at });
+    if (!ended.has(r.id)) seededEnds.push({ id: r.id, at, failed: r.error != null });
     const x = drawn.get(r.id);
     if (x) {
       // 和 `request_priced` 一样补在那一格原来的位置上
@@ -143,6 +148,7 @@ export function refill(
       at,
       model: r.model || unknownModel,
       tokens,
+      output: r.output_tokens ?? 0,
       // 落了库的都已经算过价：有用量却是空的，就是未定价
       cost: r.cost_micros,
       estimated: r.cost_estimated,
@@ -151,7 +157,7 @@ export function refill(
   return {
     // **按时间排好**：`request_priced` 是从末尾倒着找那一条的
     samples: [...seeded, ...samples].sort((a, b) => a.at - b.at),
-    fails: [...seededFails, ...fails],
+    ends: [...seededEnds, ...ends].sort((a, b) => a.at - b.at),
   };
 }
 
@@ -292,16 +298,15 @@ export function useInFlight(): number {
  * 重铺一次，再接着走。
  *
  * **进这一档先把已经发生过的那一段补上。**只挂事件流的话，曲线永远从切进来
- * 的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图加一句「等待
- * 请求」，而顶上的数字说有几十次。请求发生过，没人看着不等于没发生。
+ * 的那一刻开始长 —— 刚打完一批请求切过来，看到的是一张空图，而这几分钟
+ * 明明有几十次。请求发生过，没人看着不等于没发生。
  *
- * `arrived`：事件流上落地了几条带用量的请求（补回来的历史不算）。每涨一次，
- * 图上「现在」那一点闪一下 —— 新数据到了。
+ * 交出来两样：`samples` 是带用量的请求（token、费用两张图），`ends` 是每一次结局
+ * （请求数、失败数）。
  */
 export function useLiveWindow(active: boolean, windowMs: number) {
   const samples = useRef<LiveSample[]>([]);
-  const fails = useRef<LiveFail[]>([]);
-  const arrived = useRef(0);
+  const ends = useRef<LiveEnd[]>([]);
   const [frame, soon] = useFrame();
 
   useEffect(() => {
@@ -309,7 +314,7 @@ export function useLiveWindow(active: boolean, windowMs: number) {
       // 切走就把攒的东西扔掉。**留着的话，切回来画的是一段过期的窗口**
       // —— 重新进来时按当下的时间补，比拿旧样本往左挪准。
       samples.current = [];
-      fails.current = [];
+      ends.current = [];
       return;
     }
     let alive = true;
@@ -318,13 +323,13 @@ export function useLiveWindow(active: boolean, windowMs: number) {
       和事件是两条路。所以两边落样本之前都要看一眼对方记过没有。
     */
     const counted = (id: number) => samples.current.some((s) => s.id === id);
-    const failedAlready = (id: number) => fails.current.some((f) => f.id === id);
+    const endedAlready = (id: number) => ends.current.some((f) => f.id === id);
     const hidden = () => document.visibilityState === "hidden";
     /** 丢掉窗口外的 */
     const trim = () => {
       const cut = Date.now() - windowMs;
       samples.current = samples.current.filter((s) => s.at >= cut);
-      fails.current = fails.current.filter((f) => f.at >= cut);
+      ends.current = ends.current.filter((f) => f.at >= cut);
     };
     const land = (id: number, model: string | null | undefined, u: { input: number; output: number; cache_read: number; cache_write: number }) => {
       if (counted(id)) return;
@@ -333,14 +338,19 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         at: Date.now(),
         model: model || textOf(liveText).unknownModel,
         tokens: u.input + u.output + u.cache_read + u.cache_write,
+        output: u.output,
       });
-      arrived.current += 1;
+    };
+    /** 请求的结局：结束、失败、取消。请求数和失败数从这里数 */
+    const end = (id: number, failed: boolean) => {
+      if (!endedAlready(id)) ends.current.push({ id, at: Date.now(), failed });
     };
     const un = subscribe<CoreEvent>("core-event", (e) => {
       const ev = e.payload;
       if (ev.kind === "request_finished" || ev.kind === "request_cancelled") {
         // 取消的也画进曲线：**上游已经为它计了费**，那些 token 真实发生过
         if (ev.usage) land(ev.id, ev.model, ev.usage);
+        end(ev.id, false);
       } else if (ev.kind === "request_priced") {
         // 费用补在那一格原来的位置上，**不是补在「现在」** —— 它说的
         // 是那次请求的费用，而那次请求发生在几十毫秒之前。
@@ -356,7 +366,7 @@ export function useLiveWindow(active: boolean, windowMs: number) {
       } else if (ev.kind === "request_failed") {
         // 断在中间的失败也带着用量：**上游已经为它计了费**，曲线上要有它
         if (ev.usage) land(ev.id, ev.model, ev.usage);
-        if (!failedAlready(ev.id)) fails.current.push({ id: ev.id, at: Date.now() });
+        end(ev.id, true);
       } else if (ev.kind === "events_dropped") {
         // 丢过事件：丢掉的结局从库里补进曲线。落库要一点时间，等一会儿再补；
         // 补的时候按 id 去重，事件流上已经画了的不会画两遍，它们没等到的价钱
@@ -399,13 +409,13 @@ export function useLiveWindow(active: boolean, windowMs: number) {
         });
         if (!alive) return;
         // 并进来、去重、补上没等到的价钱，见 `refill`
-        const next = refill(samples.current, fails.current, rows, {
+        const next = refill(samples.current, ends.current, rows, {
           skew,
           cut: Date.now() - windowMs,
           unknownModel: textOf(liveText).unknownModel,
         });
         samples.current = next.samples;
-        fails.current = next.fails;
+        ends.current = next.ends;
         frame();
       } catch {
         // 读不到就只画事件流那一半，和补这一段之前一样
@@ -445,7 +455,6 @@ export function useLiveWindow(active: boolean, windowMs: number) {
 
   return {
     samples: samples.current,
-    fails: fails.current,
-    arrived: arrived.current,
+    ends: ends.current,
   };
 }

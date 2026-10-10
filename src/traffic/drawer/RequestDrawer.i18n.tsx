@@ -67,7 +67,13 @@ export const requestDrawerText = messages(
     /** 上游等到无响应超时还没有内容（一个字都没给，或者答到一半停住） */
     idleTimeout: "无响应超时",
     cancelled: "已取消：客户端在响应结束前断开连接",
-    bytes: "字节",
+    /** 服务这个请求的那一跳走的代理，或者「直连」 */
+    egress: "出口",
+    /** 网关和上游之间：发给上游的请求体、从上游收到的响应体 */
+    upload: "上传",
+    download: "下载",
+    /** 尝试链上一跳走的代理 */
+    viaProxy: (name: string) => `经 ${name}`,
     /** 顶上那一排数字 */
     tokens: "token",
     /** 首 token 和生成的比例条：两段的名字，和读屏念的那一句 */
@@ -238,7 +244,10 @@ export const requestDrawerText = messages(
     aborted: "Aborted",
     idleTimeout: "No response",
     cancelled: "Canceled: the client disconnected before the response finished",
-    bytes: "Bytes",
+    egress: "Egress",
+    upload: "Upload",
+    download: "Download",
+    viaProxy: (name: string) => `via ${name}`,
     tokens: "Tokens",
     waiting: "Waiting for first token",
     generating: "Generating",

@@ -20,6 +20,7 @@
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
+    "@fontsource/geist": "5.3.0",
     "@lezer/highlight": "1.2.3",
     "@tauri-apps/api": "^2.12.1",
     "class-variance-authority": "^0.7.1",

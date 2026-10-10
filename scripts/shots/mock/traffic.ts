@@ -229,7 +229,11 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     ttft_ms: wait + ttfb,
     duration_ms: duration,
     tokens_per_sec: rate(usage.out, duration - wait - ttfb),
-    bytes: Math.round(usage.out * 5.2 + 900),
+    // 网关和上游之间：请求体大约随上下文长（一个 token 三四个字节），回答体随输出长
+    sent_bytes: Math.round((usage.in + usage.cr + usage.cw) * 3.6 + 2_400),
+    received_bytes: Math.round(usage.out * 5.2 + 900),
+    // openrouter 走代理 clash（overview.json），别的直连
+    egress: provider === "openrouter" ? "clash" : null,
     input_tokens: usage.in,
     output_tokens: usage.out,
     cache_read_tokens: usage.cr,
@@ -302,7 +306,9 @@ function localRow(who: Who, at: number, probe: "health_check" | "warmup"): Histo
     ttft_ms: null,
     duration_ms: 0,
     tokens_per_sec: null,
-    bytes: null,
+    sent_bytes: null,
+    received_bytes: null,
+    egress: null,
     input_tokens: null,
     output_tokens: null,
     cache_read_tokens: null,
@@ -595,6 +601,8 @@ export function summary(from: number, to = Infinity): Summary {
     cost_micros_estimated: sum(real, (h) => (h.cost_estimated ? (h.cost_micros ?? 0) : 0)),
     unpriced_requests: real.filter(unpriced).length,
     no_usage_requests: real.filter(noUsage).length,
+    sent_bytes: sum(real, (h) => h.sent_bytes ?? 0),
+    received_bytes: sum(real, (h) => h.received_bytes ?? 0),
     cache_saved_micros: sum(real, (h) => h.cache_saved_micros ?? 0),
     security: {
       secrets: count("redact"),
@@ -630,6 +638,14 @@ function latency(rows: HistoryRow[], key: (h: HistoryRow) => string): LatencyVie
     });
 }
 
+/** 一批请求的首 token 分位（dashboard.rs 的 `Percentiles`）。分位同 `latency`，没有样本是 null */
+export function ttftOf(rows: HistoryRow[]): { p50_ms: number | null; p95_ms: number | null; samples: number } {
+  const xs = rows.filter((h) => !h.local && h.ttft_ms != null).map((h) => h.ttft_ms!);
+  xs.sort((a, b) => a - b);
+  const pct = (p: number) => xs[Math.min(xs.length - 1, Math.max(0, Math.ceil((p * xs.length) / 100) - 1))] ?? null;
+  return { p50_ms: pct(50), p95_ms: pct(95), samples: xs.length };
+}
+
 /** 生成速度，照 tw-gateway 的 `ending::rate`：生成不到半秒的没有 */
 function rate(output: number, genMs: number): number | null {
   return output > 0 && genMs >= 500 ? Math.floor((output * 1000) / genMs) : null;
@@ -658,13 +674,36 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
   const byModel = new Map<string, CostBucketGroup>();
   for (const h of rows) {
     const at = sinceMs + Math.floor((h.at_ms - sinceMs) / bucketMs) * bucketMs;
-    const b = buckets.get(at) ?? { at_ms: at, requests: 0, failed: 0, cost_micros_exact: 0, cost_micros_estimated: 0, unpriced_requests: 0, no_usage_requests: 0 };
+    const b = buckets.get(at) ?? {
+      at_ms: at,
+      requests: 0,
+      failed: 0,
+      cost_micros_exact: 0,
+      cost_micros_estimated: 0,
+      unpriced_requests: 0,
+      no_usage_requests: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      ttft_p50_ms: null,
+      ttft_p95_ms: null,
+      ttft_samples: 0,
+    };
     b.requests += 1;
     if (h.error) b.failed += 1;
     if (h.cost_estimated) b.cost_micros_estimated += h.cost_micros ?? 0;
     else b.cost_micros_exact += h.cost_micros ?? 0;
     if (unpriced(h)) b.unpriced_requests += 1;
     if (noUsage(h)) b.no_usage_requests += 1;
+    b.sent_bytes += h.sent_bytes ?? 0;
+    b.received_bytes += h.received_bytes ?? 0;
+    b.input_tokens += h.input_tokens ?? 0;
+    b.output_tokens += h.output_tokens ?? 0;
+    b.cache_read_tokens += h.cache_read_tokens ?? 0;
+    b.cache_write_tokens += h.cache_write_tokens ?? 0;
     buckets.set(at, b);
     const k = `${at}|${h.model}`;
     const g = byModel.get(k) ?? {
@@ -680,6 +719,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
       output_tokens: 0,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
     };
     g.requests += 1;
     if (h.error) g.failed += 1;
@@ -691,7 +732,16 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
     g.cache_write_tokens += h.cache_write_tokens ?? 0;
+    g.sent_bytes += h.sent_bytes ?? 0;
+    g.received_bytes += h.received_bytes ?? 0;
     byModel.set(k, g);
+  }
+  // 每一格的首 token 分位（tw-store 的 `cost_buckets`）：样本是那一格里有第一个 token 的请求
+  for (const b of buckets.values()) {
+    const x = ttftOf(rows.filter((h) => h.at_ms >= b.at_ms && h.at_ms < b.at_ms + bucketMs));
+    b.ttft_p50_ms = x.p50_ms;
+    b.ttft_p95_ms = x.p95_ms;
+    b.ttft_samples = x.samples;
   }
   const span = NOW - sinceMs;
   // 延迟和汇总是同一个时间窗（dashboard.rs）
@@ -701,11 +751,18 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     prev: summary(sinceMs - span, sinceMs),
     latency: latency(window, (h) => h.model),
     latency_by_provider: latency(window, (h) => h.provider),
+    latency_by_client: latency(window, (h) => h.client),
     token_rate: tokenRate(window, (h) => h.model),
     token_rate_by_provider: tokenRate(window, (h) => h.provider),
     storage: { recording: true, rows: HISTORY.length, blob_bytes: 412 * 1024 ** 2, forwarding_affected: false },
     buckets: [...buckets.values()].sort((a, b) => a.at_ms - b.at_ms),
     buckets_by_model: [...byModel.values()].sort((a, b) => a.at_ms - b.at_ms),
+    // 明细表的另两页：按上游、按密钥（dashboard.rs 同一个格宽问的 `/summary/buckets/by`）
+    buckets_by_provider: costBucketsBy(sinceMs, bucketMs, (h) => h.provider),
+    buckets_by_client: costBucketsBy(sinceMs, bucketMs, (h) => h.client),
+    // 整段时间的首 token 分位：dashboard.rs 问的是宽过整段的一格
+    ttft: ttftOf(window),
+    prev_ttft: ttftOf(rowsBetween(sinceMs - span, sinceMs)),
     since_ms: sinceMs,
   };
 }
@@ -756,6 +813,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
       output_tokens: 0,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
     };
     g.requests += 1;
     if (h.error) g.failed += 1;
@@ -767,6 +826,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
     g.cache_write_tokens += h.cache_write_tokens ?? 0;
+    g.sent_bytes += h.sent_bytes ?? 0;
+    g.received_bytes += h.received_bytes ?? 0;
     by.set(k, g);
   }
   return [...by.values()].sort((a, b) => a.at_ms - b.at_ms);

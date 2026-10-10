@@ -5,10 +5,11 @@
 use tw_api::ep;
 
 use crate::AppState;
+use crate::dashboard::WHOLE_MS;
 use crate::error::Out;
 
 /// 上游列表那几列统计：一段时间里的请求与费用、第一个 token 到的时刻、生成速度、订阅
-/// 额度，以及同一段时间按上游分格的请求数（每一行的走势）。
+/// 额度，同一段时间按上游分格的请求数（每一行的走势），以及代理表那一列流量。
 ///
 /// **一起取。**列表上它们是同一行的几格，分几次 invoke 会让一行数字分几次
 /// 跳变。拿不到的那一样是 `None`，不让整张列表打不开 —— 存储层不在的时候网关照常
@@ -26,6 +27,10 @@ pub struct UpstreamStats {
     quotas: Option<Vec<tw_api::ProviderQuota>>,
     /// 按界面给的格宽、按上游分格。**稀疏的** —— 没有请求的格子不在里面，由界面补
     buckets: Option<Vec<tw_api::CostBucketGroup>>,
+    /// 按出口分的流量，`egress_since_ms` 里每个起点一份、顺序相同（代理表的 24 小时、7 天、
+    /// 30 天）。每一份一个出口一项（整段一格）：`name` 是代理名，直连是空串。拿不到的那一份
+    /// 是 `None`
+    egress: [Option<Vec<tw_api::CostBucketGroup>>; 3],
 }
 
 /// 格宽的下限。和概览同一条：再细就是把噪声当细节，而这一条查询还要乘上上游个数
@@ -38,6 +43,9 @@ pub async fn upstream_stats(
     // 只有界面知道（见 `dashboard` 的同名参数）
     since_ms: i64,
     bucket_ms: i64,
+    // 代理表那一列流量的几个时间窗的起点（24 小时、7 天、30 天）。**也由界面给**：和概览
+    // 同名区间的起点对齐到同样的格子边界，两页上的「7 天」是同一段时间
+    egress_since_ms: [i64; 3],
 ) -> Out<UpstreamStats> {
     // 钥匙读一次（见 `control::Pinned`）。读不到就是 core 不在：每一样都拿不到，不是报错
     let Ok(c) = state.control.pin() else {
@@ -55,12 +63,24 @@ pub async fn upstream_stats(
         bucket_ms: Some(bucket_ms.max(MIN_BUCKET_MS)),
         dim: tw_api::CostDim::Provider,
     };
-    let (costs, latency, token_rate, quotas, buckets) = tokio::join!(
+    // 按出口分的流量。`/summary/by` 的分组里没有字节数，按格分的那一份有：问一个宽过整个
+    // 时间窗的格子，一个出口正好一项
+    let egress = egress_since_ms.map(|from| tw_api::BucketGroupQuery {
+        from_ms: Some(from),
+        to_ms: None,
+        bucket_ms: Some(WHOLE_MS),
+        dim: tw_api::CostDim::Egress,
+    });
+    let [day, week, month] = &egress;
+    let (costs, latency, token_rate, quotas, buckets, day, week, month) = tokio::join!(
         c.call::<ep::CostBy>(&[], &costs),
         c.call::<ep::LatencyByProvider>(&[], &window),
         c.call::<ep::TokenRateByProvider>(&[], &window),
         c.call::<ep::Quota>(&[], &()),
         c.call::<ep::CostBucketsBy>(&[], &buckets),
+        c.call::<ep::CostBucketsBy>(&[], day),
+        c.call::<ep::CostBucketsBy>(&[], week),
+        c.call::<ep::CostBucketsBy>(&[], month),
     );
     Ok(UpstreamStats {
         costs: costs.ok(),
@@ -68,6 +88,7 @@ pub async fn upstream_stats(
         token_rate: token_rate.ok(),
         quotas: quotas.ok(),
         buckets: buckets.ok(),
+        egress: [day.ok(), week.ok(), month.ok()],
     })
 }
 
