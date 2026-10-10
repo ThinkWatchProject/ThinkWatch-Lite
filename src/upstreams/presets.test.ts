@@ -65,7 +65,7 @@ describe("服务类型那一步的格子", () => {
     });
   });
 
-  it("认证方式按实际有的：账号登录只有 OpenAI 和 Z.ai，Bedrock 三种，中转和自定义有 OAuth", () => {
+  it("认证方式按实际有的：账号登录只有 OpenAI 和 Z.ai，Bedrock 三种，只有自定义有 OAuth", () => {
     const auth = Object.fromEntries(PRESETS.map((p) => [p.id, p.auth]));
     expect(auth).toEqual({
       anthropic: ["key"],
@@ -75,9 +75,10 @@ describe("服务类型那一步的格子", () => {
       zai: ["key", "account"],
       bedrock: ["key", "aws-keys", "aws-profile"],
       openrouter: ["key"],
-      thinkwatch: ["key", "oauth"],
-      sub2api: ["key", "oauth"],
-      newapi: ["key", "oauth"],
+      // 中转平台和企业网关只发 API 密钥：认证方式那一行不出现
+      thinkwatch: ["key"],
+      sub2api: ["key"],
+      newapi: ["key"],
       ollama: ["key"],
       custom: ["key", "oauth"],
     });

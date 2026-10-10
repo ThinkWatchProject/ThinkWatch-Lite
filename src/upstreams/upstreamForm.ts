@@ -343,11 +343,14 @@ export function retarget(f: UpstreamForm): UpstreamForm {
     : { ...f, preset: r.preset, zaiFamily: r.preset === "zai" ? r.family : f.zaiFamily };
 }
 
-/** 新建时的空表单。服务类型在第一步选，从「自定义」开始 */
+/**
+ * 新建时的空表单。服务类型在第一步选，从「自定义」开始。Z.ai / BigModel 的站点默认是
+ * BigModel（中国大陆）
+ */
 export function blankForm(): UpstreamForm {
   return {
     preset: CUSTOM.id,
-    zaiFamily: "zai",
+    zaiFamily: "bigmodel",
     name: "",
     baseUrl: "",
     protocol: "",
@@ -570,6 +573,22 @@ export function toInput(f: UpstreamForm): ProviderInput {
     max_concurrent: concurrencyOf(f) ?? undefined,
     disabled: f.disabled,
   };
+}
+
+/**
+ * 「高级设置」里的几项有没有不是默认值的：写了请求头、打开了转发客户端身份、代理不可用时
+ * 改为直连、写了并发上限。**有就自动展开** —— 收着的一节里藏着一项在起作用的设置，
+ * 和没写一样看不见。只有名称或只有值的请求头也算：那一行正等着补全，保存按不下去
+ */
+export function advancedNonDefault(
+  f: Pick<UpstreamForm, "headers" | "forwardClientIdentity" | "onProxyFail" | "maxConcurrent">,
+): boolean {
+  return (
+    f.headers.some((h) => h.name.trim() !== "" || h.value.trim() !== "") ||
+    f.forwardClientIdentity ||
+    f.onProxyFail !== "fail" ||
+    f.maxConcurrent.trim() !== ""
+  );
 }
 
 /** 并发上限最多写多少（core 的 `MAX_PROVIDER_CONCURRENCY`） */

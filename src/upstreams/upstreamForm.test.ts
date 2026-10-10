@@ -3,6 +3,7 @@ import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
 import { serviceOf } from "./presets";
 import {
+  advancedNonDefault,
   applyPreset,
   authModeOf,
   authOptions,
@@ -228,9 +229,11 @@ describe("第一步选服务类型", () => {
     expect(applyPreset(o, "anthropic", []).authMode).toBe("key");
     const b = withAuth(applyPreset(blankForm(), "bedrock", []), "aws-profile", []);
     expect(applyPreset(b, "custom", []).authMode).toBe("key");
+    // 自定义的 OAuth 到了只发密钥的中转平台：换成 API 密钥
+    const c = withAuth(applyPreset(blankForm(), "custom", []), "oauth", []);
+    expect(authModeOf(applyPreset(c, "sub2api", []))).toBe("key");
     // 两格都有的留着
-    const t = withAuth(applyPreset(blankForm(), "thinkwatch", []), "oauth", []);
-    expect(applyPreset(t, "sub2api", []).authMode).toBe("oauth");
+    expect(applyPreset(o, "zai", []).authMode).toBe("account");
   });
 });
 
@@ -242,7 +245,12 @@ describe("认证方式与站点", () => {
     expect(opts("bedrock")).toEqual(["key", "aws-keys", "aws-profile"]);
     expect(opts("anthropic")).toEqual(["key"]);
     expect(opts("ollama")).toEqual(["key"]);
-    for (const id of ["custom", "thinkwatch", "sub2api", "newapi"]) expect(opts(id)).toEqual(["key", "oauth"]);
+    expect(opts("custom")).toEqual(["key", "oauth"]);
+    // 中转平台和企业网关只有 API 密钥：认证方式那一行不出现
+    for (const id of ["thinkwatch", "sub2api", "newapi"]) {
+      expect(opts(id)).toEqual(["key"]);
+      expect(fieldRules(applyPreset(blankForm(), id, [])).auth).toEqual(["key"]);
+    }
     const c = applyPreset(blankForm(), "custom", []);
     expect(authOptions({ ...c, baseUrl: "https://bedrock-runtime.eu-west-1.amazonaws.com" })).toEqual([
       "key",
@@ -257,6 +265,18 @@ describe("认证方式与站点", () => {
     expect(authModeOf(f)).toBe("oauth");
   });
 
+  it("编辑时写着 OAuth 的中转平台照样给 OAuth：新建时没有这一项，写着的不藏", () => {
+    for (const balance of ["sub2api", "newapi", "thinkwatch"] as const) {
+      const f = formFromView({ ...oauthView(), balance_setting: balance });
+      expect(f.preset).toBe(balance);
+      expect(authOptions(f)).toEqual(["key", "oauth"]);
+      expect(authModeOf(f)).toBe("oauth");
+      // 用密钥的那一个只有密钥
+      const k = formFromView(view({ balance_setting: balance }));
+      expect(authOptions(k)).toEqual(["key"]);
+    }
+  });
+
   it("OpenAI 换成 ChatGPT 账号：没动过的名称换成 chatgpt，动过的留着", () => {
     const o = applyPreset(blankForm(), "openai", ["chatgpt"]);
     expect(withAuth(o, "account", ["chatgpt"]).name).toBe("chatgpt-2");
@@ -264,14 +284,20 @@ describe("认证方式与站点", () => {
     expect(withAuth({ ...o, name: "work" }, "account", []).name).toBe("work");
   });
 
-  it("Z.ai / BigModel 换站点：地址和名称跟着换", () => {
-    const z = applyPreset(blankForm(), "zai", []);
-    expect(z).toMatchObject({ name: "zai", baseUrl: "https://api.z.ai/api/anthropic", protocol: "anthropic" });
-    const b = withSite(z, "bigmodel", []);
-    expect(b).toMatchObject({ zaiFamily: "bigmodel", name: "bigmodel", baseUrl: "https://open.bigmodel.cn/api/anthropic" });
+  it("Z.ai / BigModel 默认是 BigModel；换站点时地址和名称跟着换", () => {
+    const b = applyPreset(blankForm(), "zai", []);
+    expect(b).toMatchObject({
+      zaiFamily: "bigmodel",
+      name: "bigmodel",
+      baseUrl: "https://open.bigmodel.cn/api/anthropic",
+      protocol: "anthropic",
+    });
+    const z = withSite(b, "zai", []);
+    expect(z).toMatchObject({ zaiFamily: "zai", name: "zai", baseUrl: "https://api.z.ai/api/anthropic" });
     // 账号登录也按站点起名（和 core 登录时不给名字的叫法一样）
     expect(withAuth(b, "account", []).name).toBe("bigmodel");
-    expect(withSite({ ...z, name: "glm" }, "bigmodel", []).name).toBe("glm");
+    expect(withAuth(z, "account", []).name).toBe("zai");
+    expect(withSite({ ...b, name: "glm" }, "zai", []).name).toBe("glm");
   });
 
   it("登录账号时这张表单不往下交：登录成功由 core 写配置", () => {
@@ -534,7 +560,7 @@ describe("交给 core 的定义", () => {
     expect(connectionMissing({ ...a, key: "${ANTHROPIC_API_KEY}" }, null, [])).toBeNull();
     expect(connectionMissing({ ...applyPreset(blankForm(), "custom", []), name: "r", baseUrl: "https://r.example" }, null, [])).toBeNull();
     // OAuth 时不要密钥
-    const t = withAuth({ ...filled("thinkwatch"), key: "" }, "oauth", []);
+    const t = withAuth({ ...filled("custom"), key: "" }, "oauth", []);
     expect(connectionMissing({ ...t, oauthRefresh: "rt", oauthEndpoint: "https://auth.example/token" }, null, [])).toBeNull();
   });
 
@@ -759,5 +785,38 @@ describe("编辑对话框里手动添加的模型", () => {
     const next = { ...f, ...withManualRemoved(f, "x", false) };
     expect(next.scopeList).toEqual([]);
     expect(modelsMissing(next)).toBe("至少选择一个模型");
+  });
+});
+
+describe("高级设置自动展开", () => {
+  it("新建时四项都是默认值：收起", () => {
+    for (const id of ["openai", "sub2api", "custom", "bedrock"]) {
+      expect(advancedNonDefault(applyPreset(blankForm(), id, []))).toBe(false);
+    }
+  });
+
+  it("任何一项不是默认值就展开：请求头、转发客户端身份、代理不可用时改为直连、并发上限", () => {
+    const f = applyPreset(blankForm(), "sub2api", []);
+    expect(advancedNonDefault({ ...f, headers: [headerRow("X-Org", "o-1")] })).toBe(true);
+    expect(advancedNonDefault({ ...f, forwardClientIdentity: true })).toBe(true);
+    expect(advancedNonDefault({ ...f, onProxyFail: "direct" })).toBe(true);
+    expect(advancedNonDefault({ ...f, maxConcurrent: "4" })).toBe(true);
+    // 写错的并发上限也算：要让人看见那一格才改得了
+    expect(advancedNonDefault({ ...f, maxConcurrent: "abc" })).toBe(true);
+  });
+
+  it("只写了名称或只写了值的请求头也展开；空着的一行不算", () => {
+    const f = blankForm();
+    expect(advancedNonDefault({ ...f, headers: [headerRow("X-Org", "")] })).toBe(true);
+    expect(advancedNonDefault({ ...f, headers: [headerRow("", "v")] })).toBe(true);
+    expect(advancedNonDefault({ ...f, headers: [headerRow("  ", " ")] })).toBe(false);
+    expect(advancedNonDefault({ ...f, maxConcurrent: "  " })).toBe(false);
+  });
+
+  it("编辑时按已保存的：写了请求头的上游打开就是展开的，没写的收起", () => {
+    expect(advancedNonDefault(formFromView(view()))).toBe(true);
+    expect(advancedNonDefault(formFromView(view({ headers: [] })))).toBe(false);
+    expect(advancedNonDefault(formFromView(view({ headers: [], max_concurrent: 2 })))).toBe(true);
+    expect(advancedNonDefault(formFromView(view({ headers: [], proxy: "hk", on_proxy_fail: "direct" })))).toBe(true);
   });
 });

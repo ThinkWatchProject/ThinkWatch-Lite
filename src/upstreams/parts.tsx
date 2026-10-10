@@ -283,3 +283,15 @@ export function Note({
     </p>
   );
 }
+
+/**
+ * 「模型」一步顶上的一行框：新建时检测通过的结果（`CheckSummary`），或者登录的账号
+ * （`AccountSummary`）
+ */
+export function SummaryRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-lg border border-border bg-surface px-3 motion-fade">
+      {children}
+    </div>
+  );
+}

@@ -47,13 +47,19 @@ export function CopyIconButton({
 export function CopyButton({
   onCopy,
   label,
+  copiedLabel,
+  variant = "outline",
   disabled,
   flashAtStart = false,
 }: {
   onCopy: () => Promise<void>;
   label?: string;
+  /** 复制之后那一秒半写什么。不给是「已复制」 */
+  copiedLabel?: string;
+  /** 一组按钮里的次要那个用 `ghost` */
+  variant?: "outline" | "ghost";
   disabled?: boolean;
-  /** 一出现就是「已复制」：内容在它出现之前已经复制过了（「复制登录链接」开始的那次登录） */
+  /** 一出现就是「已复制」：内容在它出现之前已经复制过了（「复制链接」开始的那次登录） */
   flashAtStart?: boolean;
 }) {
   const common = useText(commonText);
@@ -67,7 +73,7 @@ export function CopyButton({
   }, []);
   return (
     <Button
-      variant="outline"
+      variant={variant}
       size="sm"
       className="shrink-0"
       disabled={disabled}
@@ -80,7 +86,7 @@ export function CopyButton({
       }}
     >
       {!busy && (copied ? <IconCopied /> : <IconCopy />)}
-      {copied ? common.copied : (label ?? common.copy)}
+      {copied ? (copiedLabel ?? common.copied) : (label ?? common.copy)}
     </Button>
   );
 }

@@ -44,7 +44,12 @@ export interface Preset {
    */
   protocols?: Protocol[] | "all";
   billing?: Billing;
-  /** 实际有的认证方式，第一个是默认。只有一种时不显示那一行 */
+  /**
+   * 实际有的认证方式，第一个是默认。只有一种时不显示那一行。
+   *
+   * 中转平台和企业网关只发 API 密钥：OAuth 只给「自定义」—— 那几种服务的密钥就是一把
+   * 字符串，多给一种认证方式只会让人以为要去配它
+   */
   auth: AuthMode[];
   /** 要不要 API 密钥：`required` 没有就不能往下走，`none` 不显示那一栏 */
   key: "required" | "optional" | "none";
@@ -206,7 +211,7 @@ export const PRESETS: Preset[] = [
     name: "",
     baseUrl: "",
     protocol: "",
-    auth: ["key", "oauth"],
+    auth: ["key"],
     key: "required",
     balance: "thinkwatch",
   },
@@ -222,7 +227,7 @@ export const PRESETS: Preset[] = [
     baseUrl: "",
     protocol: "",
     protocols: "all",
-    auth: ["key", "oauth"],
+    auth: ["key"],
     key: "required",
     clientIdentity: true,
     balance: "sub2api",
@@ -239,7 +244,7 @@ export const PRESETS: Preset[] = [
     baseUrl: "",
     protocol: "",
     protocols: "all",
-    auth: ["key", "oauth"],
+    auth: ["key"],
     key: "required",
     clientIdentity: true,
     balance: "newapi",

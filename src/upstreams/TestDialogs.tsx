@@ -101,7 +101,7 @@ export function TestConnectionDialog({
         </DialogHeader>
         <div className="flex min-h-10 items-center rounded-lg border border-border px-3 py-2.5">
           {result ? (
-            <TestLine result={result} bordered={false} />
+            <TestLine result={result} />
           ) : (
             <StatusLabel tone="pending" muted>
               {t.connection.checking}

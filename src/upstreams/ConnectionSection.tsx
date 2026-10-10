@@ -1,12 +1,13 @@
-import { useState } from "react";
-import { CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
-import { Button } from "@/ui/button";
+import { useState, type ReactNode } from "react";
+import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
+import { Button, DISCLOSURE } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
 import { Switch } from "@/ui/switch";
+import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { ms } from "@/format";
 import { useText } from "@/i18n";
@@ -29,11 +30,11 @@ import {
   egressLabel,
   protocolLabel,
   proxyKindLabel,
-  shortUrl,
 } from "./labels";
-import { FormItem, Note } from "./parts";
-import { ZAI_ENDPOINTS, nameFromUrl, presetById, type AuthMode } from "./presets";
+import { FormItem, Note, SummaryRow } from "./parts";
+import { nameFromUrl, presetById, type AuthMode } from "./presets";
 import {
+  advancedNonDefault,
   authModeOf,
   concurrencyOf,
   describeModelList,
@@ -41,6 +42,7 @@ import {
   freeName,
   isBedrock,
   oauthKept,
+  type FieldRules,
   type UpstreamForm,
 } from "./upstreamForm";
 
@@ -48,9 +50,9 @@ import {
 const NEW_PROXY = " new-proxy";
 
 /**
- * 认证方式：单独一行、各段等宽。**只在这种服务真有几种时出现**（见 `authOptions`）：
- * OpenAI 是 API 密钥和 ChatGPT 账号，Z.ai / BigModel 是 API 密钥和账号登录，Bedrock 是
- * 它那三种，中转、自建网关和自定义是 API 密钥和 OAuth。登录进行中和登录之后不能再换
+ * 认证方式：各段等宽。**只在这种服务真有几种时出现**（见 `authOptions`）：OpenAI 是 API
+ * 密钥和 ChatGPT 账号，Z.ai / BigModel 是 API 密钥和账号登录（和站点并排、各占一半），
+ * Bedrock 是它那三种，自定义是 API 密钥和 OAuth。登录进行中和登录之后不能再换
  */
 export function AuthField({
   form,
@@ -79,8 +81,8 @@ export function AuthField({
 }
 
 /**
- * Z.ai / BigModel 的站点。同一个服务的两个站点，账号和密钥不通用：API 密钥按它定地址，
- * 账号登录按它登哪一边
+ * Z.ai / BigModel 的站点：BigModel（中国大陆）在前、默认选它。同一个服务的两个站点，账号和
+ * 密钥不通用：API 密钥按它定地址，账号登录按它登哪一边
  */
 export function SiteField({
   value,
@@ -93,21 +95,14 @@ export function SiteField({
 }) {
   const t = useText(connectionSectionText);
   return (
-    <FormItem
-      label={t.site}
-      desc={
-        <>
-          {t.siteDesc} <span className="font-mono">{shortUrl(ZAI_ENDPOINTS[value])}</span>
-        </>
-      }
-    >
+    <FormItem label={t.site}>
       <Segmented
         block
         label={t.site}
         value={value}
         options={[
-          { id: "zai" as ZaiFamily, label: t.siteZai },
           { id: "bigmodel" as ZaiFamily, label: t.siteBigmodel },
+          { id: "zai" as ZaiFamily, label: t.siteZai },
         ]}
         onChange={onChange}
         disabled={disabled}
@@ -127,10 +122,15 @@ export interface ZaiAccount {
 }
 
 /**
- * 连接：名称、出站代理、地址、协议、凭据、请求头。新建和编辑是同一张表单；新建时
- * 第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，见 `presets.ts`。
+ * 连接：名称和出站代理一行，地址和协议一行（协议只在有得选时出现），凭据，最后是收起的
+ * 「高级设置」（请求头、转发客户端身份、代理不可用时、并发上限）。新建和编辑是同一张表单；
+ * 新建时第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，见 `presets.ts`。
+ *
  * 认证方式那一行和 Z.ai 的站点在这一节上面（`AuthField`、`SiteField`），新建时登录账号
- * 这一节整个让位给登录那一块；编辑 Z.ai / BigModel 上游时账号登录只占密钥那一栏的位置
+ * 这一节整个让位给登录那一块；编辑 Z.ai / BigModel 上游时账号登录只占密钥那一栏的位置。
+ *
+ * **「检测连接」只在编辑时是一个按钮**，在对话框底部左边（`CheckButton`）：新建时点「下一步」
+ * 就检测，通过了结果在「模型」一步顶上，没通过时对话框底部说原因（见 `UpstreamDialog`）。
  */
 export function ConnectionSection({
   form,
@@ -138,9 +138,6 @@ export function ConnectionSection({
   editing,
   ov,
   preview,
-  testing,
-  test,
-  onTest,
   onNewProxy,
   account,
 }: {
@@ -150,9 +147,6 @@ export function ConnectionSection({
   editing: ProviderView | null;
   ov: Overview;
   preview: ProviderPreview | null;
-  testing: boolean;
-  test: ProviderTestResult | null;
-  onTest: () => void;
   onNewProxy: () => void;
   /** 编辑 Z.ai / BigModel 上游、它在能登录的那一边时有；认证方式是账号登录时显示 */
   account?: ZaiAccount;
@@ -164,7 +158,7 @@ export function ConnectionSection({
   const taken = ov.providers.map((p) => p.name);
   /** 密钥显示与否：输入框和请求头第一行是同一个值，跟着同一个开关 */
   const [showKey, setShowKey] = useState(false);
-  /** 第一步选的服务类型。编辑时是「自定义」：完整的一张表单 */
+  /** 第一步选的服务类型。编辑时是认出来的那一种 */
   const preset = presetById(form.preset);
   /** 显示哪几项：这种服务定了的不问，写着的不藏 */
   const rules = fieldRules(form);
@@ -181,25 +175,16 @@ export function ConnectionSection({
   // 不签名，非标准地址也就用不着区域
   const showRegion = bedrock && (region !== null || mode !== "key");
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* 名称和出站代理在每种认证方式下都是这一行：换认证方式时它们不挪地方 */}
-      <div className="grid grid-cols-2 gap-4">
-        <FormItem label={t.name} htmlFor="up-name">
-          <Input
-            id="up-name"
-            className="font-mono"
-            value={form.name}
-            placeholder={nameFromUrl(form.baseUrl) || (preset.id === "thinkwatch" ? t.namePlaceholderGateway : t.namePlaceholder)}
-            onChange={(e) => set({ name: e.target.value })}
-          />
-        </FormItem>
-        <ProxyField ov={ov} value={form.proxy} onChange={(proxy) => set({ proxy })} onNewProxy={onNewProxy} />
-      </div>
-
-      {/* 地址由这一格定了的（Z.ai 按站点）不显示 */}
-      {rules.url && (
-        <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
+  /*
+    地址、协议、区域排成一行：地址占两份，协议、区域各占一份。地址由这一格定了的（Z.ai
+    按站点）不显示，剩下的各占一半
+  */
+  const addr: { key: string; node: ReactNode }[] = [];
+  if (rules.url) {
+    addr.push({
+      key: "url",
+      node: (
+        <FormItem label={t.baseUrl} htmlFor="up-url">
           <Input
             id="up-url"
             className="font-mono"
@@ -217,30 +202,60 @@ export function ConnectionSection({
             }
           />
         </FormItem>
-      )}
+      ),
+    });
+  }
+  // 协议只在真有得选时给选：只说一种接口的服务，选了那一格就定了
+  if (rules.protocols) {
+    addr.push({
+      key: "protocol",
+      node: (
+        <FormItem label={t.protocol} htmlFor="up-protocol">
+          <ProtocolSelect form={form} set={set} options={rules.protocols} auto={autoProtocol} />
+        </FormItem>
+      ),
+    });
+  }
+  if (showRegion) {
+    addr.push({
+      key: "region",
+      node: (
+        <FormItem label={t.region} htmlFor="up-region" desc={region === null ? t.signingRegionDesc : undefined}>
+          <RegionSelect
+            value={region ?? form.awsRegion.trim()}
+            onChange={(r) => (region !== null ? set({ baseUrl: bedrockUrl(r) }) : set({ awsRegion: r }))}
+          />
+        </FormItem>
+      ),
+    });
+  }
+  const addrColumns = rules.url
+    ? addr.map((c) => (c.key === "url" ? "minmax(0,2fr)" : "minmax(0,1fr)")).join(" ")
+    : "repeat(2,minmax(0,1fr))";
 
-      {/* 协议只在真有得选时给选：只说一种接口的服务，选了那一格就定了 */}
-      {(rules.protocols || showRegion) && (
-        <div className="grid grid-cols-2 gap-4">
-          {rules.protocols && (
-            <FormItem label={t.protocol} htmlFor="up-protocol">
-              <ProtocolSelect form={form} set={set} options={rules.protocols} auto={autoProtocol} />
-            </FormItem>
-          )}
-          {showRegion && (
-            <FormItem
-              label={t.region}
-              htmlFor="up-region"
-              desc={region === null ? t.signingRegionDesc : undefined}
-            >
-              <RegionSelect
-                value={region ?? form.awsRegion.trim()}
-                onChange={(r) =>
-                  region !== null ? set({ baseUrl: bedrockUrl(r) }) : set({ awsRegion: r })
-                }
-              />
-            </FormItem>
-          )}
+  return (
+    <div className="flex flex-col gap-3.5">
+      {/* 名称和出站代理在每种认证方式下都是这一行：换认证方式时它们不挪地方 */}
+      <div className="grid grid-cols-2 gap-4">
+        <FormItem label={t.name} htmlFor="up-name">
+          <Input
+            id="up-name"
+            className="font-mono"
+            value={form.name}
+            placeholder={nameFromUrl(form.baseUrl) || (preset.id === "thinkwatch" ? t.namePlaceholderGateway : t.namePlaceholder)}
+            onChange={(e) => set({ name: e.target.value })}
+          />
+        </FormItem>
+        <ProxyField ov={ov} value={form.proxy} onChange={(proxy) => set({ proxy })} onNewProxy={onNewProxy} />
+      </div>
+
+      {addr.length > 0 && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: addrColumns }}>
+          {addr.map((c) => (
+            <div key={c.key} className="min-w-0">
+              {c.node}
+            </div>
+          ))}
         </div>
       )}
 
@@ -273,64 +288,101 @@ export function ConnectionSection({
         </FormItem>
       )}
 
-      <FormItem label={t.headers} hint={remote ? rt.headersHint : t.headersHint}>
-        <HeaderEditor
-          form={form}
-          set={set}
-          auth={authRow(form, preview?.auth_header ?? editing?.auth_header ?? null, showKey, {
-            unknown: t.authUnknown,
-            token: t.renewedToken,
-            signed: t.signedPerRequest,
-          })}
-        />
-      </FormItem>
+      <AdvancedSettings form={form} set={set} rules={rules}>
+        {/* `${变量名}` 在值的占位里说过；连着远程 core 时读的是服务器上的环境，另说一句 */}
+        <FormItem label={t.headers} hint={remote ? rt.headersHint : undefined}>
+          <HeaderEditor
+            form={form}
+            set={set}
+            auth={authRow(form, preview?.auth_header ?? editing?.auth_header ?? null, showKey, {
+              unknown: t.authUnknown,
+              token: t.renewedToken,
+              signed: t.signedPerRequest,
+            })}
+          />
+        </FormItem>
+      </AdvancedSettings>
+    </div>
+  );
+}
 
-      {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
-      {rules.clientIdentity && (
-        <div className="flex flex-col gap-1.5">
-          <label className="flex items-center gap-2.5 tw-body font-medium">
-            <Switch
-              checked={form.forwardClientIdentity}
-              onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
-            />
-            {t.clientIdentity}
-          </label>
-          <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
+/**
+ * 「高级设置」：请求头、转发客户端身份（中转站和自定义才有）、代理不可用时、并发上限。
+ *
+ * **默认收起**，收起时那一行写着里面有哪几项；有一项不是默认值就自动展开（`advancedNonDefault`）
+ * —— 收着的一节里藏着一项在起作用的设置，等于看不见它。展开与否在这一节出现时定，之后由
+ * 用户收放
+ */
+function AdvancedSettings({
+  form,
+  set,
+  rules,
+  children,
+}: {
+  form: UpstreamForm;
+  set: (patch: Partial<UpstreamForm>) => void;
+  rules: FieldRules;
+  /** 请求头那一项：它跟着连接一节里密钥的显示开关 */
+  children: ReactNode;
+}) {
+  const t = useText(connectionSectionText);
+  const [open, setOpen] = useState(() => advancedNonDefault(form));
+  const inside = [t.headers, rules.clientIdentity ? t.clientIdentity : null, t.onProxyFail, t.concurrency].filter(
+    (x): x is string => x !== null,
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        aria-controls="up-advanced"
+        onClick={() => setOpen((o) => !o)}
+        className={cn("-ml-2 w-fit max-w-full gap-2 px-2", DISCLOSURE)}
+      >
+        <ChevronRightIcon className={cn("text-muted-foreground motion-bar", open && "rotate-90")} />
+        <span className="font-medium">{t.advanced}</span>
+        {!open && <span className="truncate font-normal text-muted-foreground">{inside.join(t.listSep)}</span>}
+      </Button>
+      {/*
+        展开时左右两栏：左边请求头，右边转发客户端身份、代理不可用时和并发上限 —— 上下排开
+        放不进一屏
+      */}
+      {open && (
+        <div id="up-advanced" className="grid grid-cols-2 items-start gap-x-6 motion-fade">
+          <div className="min-w-0">{children}</div>
+          <div className="flex min-w-0 flex-col gap-4">
+            {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
+            {rules.clientIdentity && (
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2.5 tw-body font-medium">
+                  <Switch
+                    checked={form.forwardClientIdentity}
+                    onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
+                  />
+                  {t.clientIdentity}
+                </label>
+                <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <FormItem label={t.onProxyFail} htmlFor="up-proxy-fail">
+                <NativeSelect
+                  id="up-proxy-fail"
+                  className="w-full"
+                  value={form.onProxyFail}
+                  disabled={form.proxy === "direct"}
+                  onChange={(e) => set({ onProxyFail: e.target.value === "direct" ? "direct" : "fail" })}
+                >
+                  <NativeSelectOption value="fail">{t.failWithError}</NativeSelectOption>
+                  <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
+                </NativeSelect>
+              </FormItem>
+              <ConcurrencyField form={form} set={set} bare />
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormItem label={t.onProxyFail} htmlFor="up-proxy-fail">
-          <NativeSelect
-            id="up-proxy-fail"
-            className="w-full"
-            value={form.onProxyFail}
-            disabled={form.proxy === "direct"}
-            onChange={(e) => set({ onProxyFail: e.target.value === "direct" ? "direct" : "fail" })}
-          >
-            <NativeSelectOption value="fail">{t.failWithError}</NativeSelectOption>
-            <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
-          </NativeSelect>
-        </FormItem>
-        <ConcurrencyField form={form} set={set} />
-      </div>
-
-      <div className="flex flex-col gap-2.5 rounded-lg border border-border p-3">
-        <div className="flex items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={onTest} pending={testing}>
-            {!testing && <PlugIcon />}
-            {t.check}
-          </Button>
-          {testing ? (
-            <StatusLabel tone="pending" muted>
-              {t.checking}
-            </StatusLabel>
-          ) : (
-            <Note>{t.checkNote}</Note>
-          )}
-        </div>
-        {test && !testing && <TestLine result={test} />}
-      </div>
     </div>
   );
 }
@@ -390,9 +442,12 @@ export function ProxyField({
 export function ConcurrencyField({
   form,
   set,
+  bare = false,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
+  /** 不写那句说明（窄的一格里）。写错时照样说 */
+  bare?: boolean;
 }) {
   const t = useText(connectionSectionText);
   const bad = concurrencyOf(form) === undefined;
@@ -400,7 +455,7 @@ export function ConcurrencyField({
     <FormItem
       label={t.concurrency}
       htmlFor="up-concurrency"
-      desc={bad ? <span className="text-destructive">{t.badConcurrency}</span> : t.concurrencyDesc}
+      desc={bad ? <span className="text-destructive">{t.badConcurrency}</span> : bare ? undefined : t.concurrencyDesc}
     >
       <Input
         id="up-concurrency"
@@ -517,7 +572,7 @@ function RegionSelect({ value, onChange }: { value: string; onChange: (region: s
   );
 }
 
-/** AWS 访问密钥：写在这里，每一项都可以写 `${变量名}` */
+/** AWS 访问密钥：三项一行，每一项都可以写 `${变量名}`。会话令牌只有临时凭证才有 */
 function AccessKeys({
   form,
   set,
@@ -531,45 +586,47 @@ function AccessKeys({
   const rt = useText(remoteText);
   const env = (v: string) => ENV_REF.test(v.trim());
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <FormItem label={t.accessKeyId} htmlFor="up-aws-id">
-        <Input
-          id="up-aws-id"
-          className="font-mono"
-          value={form.awsKeyId}
-          placeholder="${AWS_ACCESS_KEY_ID}"
-          onChange={(e) => set({ awsKeyId: e.target.value })}
-        />
-      </FormItem>
-      <FormItem label={t.secretAccessKey} htmlFor="up-aws-secret">
-        <SecretInput
-          id="up-aws-secret"
-          className="font-mono"
-          value={form.awsSecret}
-          placeholder="${AWS_SECRET_ACCESS_KEY}"
-          plain={env(form.awsSecret)}
-          onChange={(e) => set({ awsSecret: e.target.value })}
-        />
-      </FormItem>
-      <FormItem
-        label={t.sessionToken}
-        htmlFor="up-aws-token"
-        className="col-span-2"
-        desc={remote ? rt.keyHint : t.sessionTokenDesc}
-      >
-        <SecretInput
-          id="up-aws-token"
-          className="font-mono"
-          value={form.awsToken}
-          placeholder="${AWS_SESSION_TOKEN}"
-          plain={env(form.awsToken)}
-          onChange={(e) => set({ awsToken: e.target.value })}
-        />
-      </FormItem>
+    <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-3 gap-4">
+        <FormItem label={t.accessKeyId} htmlFor="up-aws-id">
+          <Input
+            id="up-aws-id"
+            className="font-mono"
+            value={form.awsKeyId}
+            placeholder="${AWS_ACCESS_KEY_ID}"
+            onChange={(e) => set({ awsKeyId: e.target.value })}
+          />
+        </FormItem>
+        <FormItem label={t.secretAccessKey} htmlFor="up-aws-secret">
+          <SecretInput
+            id="up-aws-secret"
+            className="font-mono"
+            value={form.awsSecret}
+            placeholder="${AWS_SECRET_ACCESS_KEY}"
+            plain={env(form.awsSecret)}
+            onChange={(e) => set({ awsSecret: e.target.value })}
+          />
+        </FormItem>
+        <FormItem label={t.sessionToken} htmlFor="up-aws-token">
+          <SecretInput
+            id="up-aws-token"
+            className="font-mono"
+            value={form.awsToken}
+            placeholder="${AWS_SESSION_TOKEN}"
+            plain={env(form.awsToken)}
+            onChange={(e) => set({ awsToken: e.target.value })}
+          />
+        </FormItem>
+      </div>
+      {remote && <Note>{rt.keyHint}</Note>}
     </div>
   );
 }
 
+/**
+ * OAuth 凭据，两行：Token 端点和 Refresh Token；Client ID、Client Secret，和检测用的
+ * Access Token（凭据没改时检测用网关现有的 token，不要它）
+ */
 function OAuth({
   form,
   set,
@@ -578,72 +635,72 @@ function OAuth({
   set: (patch: Partial<UpstreamForm>) => void;
 }) {
   const t = useText(connectionSectionText);
+  const access = !oauthKept(form);
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <FormItem label={t.tokenEndpoint} htmlFor="up-endpoint">
-        <Input
-          id="up-endpoint"
-          className="font-mono"
-          placeholder="https://auth.example.com/oauth/token"
-          value={form.oauthEndpoint}
-          onChange={(e) => set({ oauthEndpoint: e.target.value })}
-        />
-      </FormItem>
-      <FormItem label={t.refreshToken} htmlFor="up-refresh">
-        <SecretInput
-          id="up-refresh"
-          className="font-mono"
-          value={form.oauthRefresh}
-          onChange={(e) => set({ oauthRefresh: e.target.value })}
-        />
-      </FormItem>
-      <FormItem label={t.clientId} htmlFor="up-client-id">
-        <Input
-          id="up-client-id"
-          className="font-mono"
-          value={form.oauthClientId}
-          onChange={(e) => set({ oauthClientId: e.target.value })}
-        />
-      </FormItem>
-      <FormItem label={t.clientSecret} htmlFor="up-client-secret">
-        <SecretInput
-          id="up-client-secret"
-          className="font-mono"
-          value={form.oauthClientSecret}
-          onChange={(e) => set({ oauthClientSecret: e.target.value })}
-        />
-      </FormItem>
-      {/* 凭据没改时检测用网关现有的 token；新填或改过的才需要现成的 Access Token */}
-      {!oauthKept(form) && (
-        <FormItem
-          label={t.accessToken}
-          htmlFor="up-access"
-          className="col-span-2"
-          desc={t.accessTokenDesc}
-        >
-          <SecretInput
-            id="up-access"
+    <div className="flex flex-col gap-3.5">
+      <div className="grid grid-cols-2 gap-4">
+        <FormItem label={t.tokenEndpoint} htmlFor="up-endpoint">
+          <Input
+            id="up-endpoint"
             className="font-mono"
-            value={form.oauthAccess}
-            onChange={(e) => set({ oauthAccess: e.target.value })}
+            placeholder="https://auth.example.com/oauth/token"
+            value={form.oauthEndpoint}
+            onChange={(e) => set({ oauthEndpoint: e.target.value })}
           />
         </FormItem>
-      )}
+        <FormItem label={t.refreshToken} htmlFor="up-refresh">
+          <SecretInput
+            id="up-refresh"
+            className="font-mono"
+            value={form.oauthRefresh}
+            onChange={(e) => set({ oauthRefresh: e.target.value })}
+          />
+        </FormItem>
+      </div>
+      <div className={cn("grid gap-4", access ? "grid-cols-3" : "grid-cols-2")}>
+        <FormItem label={t.clientId} htmlFor="up-client-id">
+          <Input
+            id="up-client-id"
+            className="font-mono"
+            value={form.oauthClientId}
+            onChange={(e) => set({ oauthClientId: e.target.value })}
+          />
+        </FormItem>
+        <FormItem label={t.clientSecret} htmlFor="up-client-secret">
+          <SecretInput
+            id="up-client-secret"
+            className="font-mono"
+            value={form.oauthClientSecret}
+            onChange={(e) => set({ oauthClientSecret: e.target.value })}
+          />
+        </FormItem>
+        {access && (
+          <FormItem label={t.accessToken} htmlFor="up-access">
+            <SecretInput
+              id="up-access"
+              className="font-mono"
+              value={form.oauthAccess}
+              onChange={(e) => set({ oauthAccess: e.target.value })}
+            />
+          </FormItem>
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * 「连接正常 · 认证通过 · 响应 312ms · 经由 hk-socks · 发现 6 个模型」。
+ * 行菜单「检测连接」对话框里的结果：「连接正常 · 认证通过 · 响应 312ms · 经由 hk-socks ·
+ * 发现 6 个模型」。
  *
  * 检测时一并读了余额的，下面再一行：从哪儿读的，和上游表那一格写的那几样（`balanceBrief`）。
  * 读取失败时这一行是琥珀色的原因。
  */
-export function TestLine({ result, bordered = true }: { result: ProviderTestResult; bordered?: boolean }) {
+export function TestLine({ result }: { result: ProviderTestResult }) {
   const t = useText(connectionSectionText);
   if (!result.ok) {
     return (
-      <div className={cn("flex items-start gap-2 motion-fade", bordered && "border-t border-border pt-2.5")}>
+      <div className="flex min-w-0 items-start gap-2 motion-fade">
         <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="tw-body font-medium">{t.failed}</span>
@@ -660,10 +717,10 @@ export function TestLine({ result, bordered = true }: { result: ProviderTestResu
   ].filter(Boolean);
   const balance = balanceBrief(result.balance, Date.now());
   return (
-    <div className={cn("flex flex-col gap-0.5 motion-fade", bordered && "border-t border-border pt-2.5")}>
+    <div className="flex min-w-0 flex-col gap-0.5 motion-fade">
       <div className="flex items-center gap-2">
         <CircleCheckIcon className="size-4 shrink-0 text-success" />
-        <span className="tw-body font-medium">{t.ok}</span>
+        <span className="shrink-0 tw-body font-medium">{t.ok}</span>
         <span className="tw-label tw-num text-muted-foreground">{parts.join(" · ")}</span>
       </div>
       {/* 和上一行的字对齐：图标 16px 加间距 8px */}
@@ -678,5 +735,103 @@ export function TestLine({ result, bordered = true }: { result: ProviderTestResu
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * 编辑时对话框底部左边的「检测连接」，结果接在右边一行：「✓ 连接正常 · 认证通过 · 响应
+ * 312ms · 发现 6 个模型」，没通过是「连接失败」和 core 给的原因。一行放不下的截断，全文
+ * （和检测时读到的余额）在悬停里
+ */
+export function CheckButton({
+  testing,
+  test,
+  onTest,
+}: {
+  testing: boolean;
+  test: ProviderTestResult | null;
+  onTest: () => void;
+}) {
+  const t = useText(connectionSectionText);
+  const lines = test ? testLines(test, t) : [];
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <Tip text={t.checkNote}>
+        <Button variant="outline" className="shrink-0" onClick={onTest} pending={testing}>
+          {!testing && <PlugIcon />}
+          {t.check}
+        </Button>
+      </Tip>
+      {testing ? (
+        <StatusLabel tone="pending" muted>
+          {t.checking}
+        </StatusLabel>
+      ) : (
+        test && (
+          <Tip
+            text={
+              <span className="flex flex-col gap-0.5">
+                {lines.map((l, i) => (
+                  <span key={i}>{l}</span>
+                ))}
+              </span>
+            }
+          >
+            <div className="flex min-w-0 items-center gap-2 motion-fade" tabIndex={0}>
+              {test.ok ? (
+                <CircleCheckIcon className="size-4 shrink-0 text-success" />
+              ) : (
+                <CircleAlertIcon className="size-4 shrink-0 text-destructive" />
+              )}
+              <span className="shrink-0 tw-body font-medium">{test.ok ? t.ok : t.failed}</span>
+              <span className="truncate tw-label tw-num text-muted-foreground">{lines.slice(1).join(" · ")}</span>
+            </div>
+          </Tip>
+        )
+      )}
+    </div>
+  );
+}
+
+/** 检测结果写成几行：结论、细节（或原因）、余额 */
+function testLines(r: ProviderTestResult, t: (typeof connectionSectionText)["zh"]): string[] {
+  if (!r.ok) return [t.failed, ...(r.error ? [coreText(r.error)] : [])];
+  const parts = [t.authenticated, t.responded(ms(r.latency_ms)), r.via ? t.via(r.via) : null, describeModelList(r.models)];
+  const balance = balanceBrief(r.balance, Date.now());
+  return [
+    t.ok,
+    parts.filter(Boolean).join(" · "),
+    ...(balance ? [`${balance.source} · ${balance.text}`] : []),
+  ];
+}
+
+/**
+ * 新建时「模型」一步顶上的一行：点「下一步」检测通过的结果。「连接正常 · 响应 312ms · 发现
+ * 24 个模型」，经由代理时带上代理；检测时读到了余额的，右边写余额（和上游表那一格同一套写法）
+ */
+export function CheckSummary({ result }: { result: ProviderTestResult }) {
+  const t = useText(connectionSectionText);
+  const parts = [
+    t.responded(ms(result.latency_ms)),
+    result.via ? t.via(result.via) : null,
+    describeModelList(result.models),
+  ].filter(Boolean);
+  const balance = balanceBrief(result.balance, Date.now());
+  return (
+    <SummaryRow>
+      <CircleCheckIcon className="size-4 shrink-0 text-success" />
+      <span className="shrink-0 tw-body font-medium">{t.ok}</span>
+      <span className="min-w-0 truncate tw-body tw-num text-muted-foreground">{parts.join(" · ")}</span>
+      {balance && (
+        <span
+          className={cn(
+            "ml-auto min-w-0 shrink truncate pl-3 tw-body tw-num",
+            balance.failed ? "text-warning" : "text-muted-foreground",
+          )}
+        >
+          {balance.source} · {balance.text}
+        </span>
+      )}
+    </SummaryRow>
   );
 }

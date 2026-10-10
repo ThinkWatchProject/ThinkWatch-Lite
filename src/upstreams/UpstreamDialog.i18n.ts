@@ -11,6 +11,9 @@ export const upstreamDialogText = messages(
     },
     connectionFailed: (error: string) => `连接失败：${error}`,
     unknownError: "未知错误",
+    /** 点「下一步」检测没通过时底部那一条 */
+    checkFailed: "连接失败",
+    continueAnyway: "仍然继续",
     titleEdit: "编辑上游",
     titleNew: "新建上游",
     pickService: "选择要接入的服务",
@@ -39,6 +42,8 @@ export const upstreamDialogText = messages(
     },
     connectionFailed: (error: string) => `Connection failed: ${error}`,
     unknownError: "Unknown error",
+    checkFailed: "Connection failed",
+    continueAnyway: "Continue anyway",
     titleEdit: "Edit upstream",
     titleNew: "New upstream",
     pickService: "Choose the service to connect",
