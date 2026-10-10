@@ -1,7 +1,7 @@
 //! 菜单栏那一块和它的菜单要显示什么。
 //!
 //! **只有数据和文案，没有 AppKit。**macOS 把它画成原生菜单，别的平台画成托盘
-//! 菜单；什么时候出现哪一节、数字怎么写、什么时候变色，都在这里定、在这里测。
+//! 菜单；什么时候出现哪一节、数字怎么写、哪一行变色，都在这里定、在这里测。
 //! 画的那一层只管照着画。
 
 /// 菜单栏上显示什么。设置里的四档，出厂是标识和数值
@@ -281,7 +281,11 @@ pub enum Action {
     Quit,
 }
 
-/// 数字和标识染什么颜色。**越往下越要紧**：比较的顺序就是这个顺序
+/// 一个额度窗口有多要紧：菜单里的额度条按它上色，悬停提示挑最要紧的那个说。
+/// **越往下越要紧**：比较的顺序就是这个顺序。
+///
+/// **菜单栏上的那一块不按它变色**：一家上游没额度了，别家照样在转发，菜单栏红
+/// 着是在为一件不一定要紧的事喊叫 —— 哪家紧张、哪家用完，点开菜单看每一行
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tone {
     #[default]
@@ -298,7 +302,6 @@ pub struct Bar {
     pub style: Style,
     /// 上面一行今日 token，下面一行今日费用。**None 画成两道破折号**：还不知道
     pub numbers: Option<(String, String)>,
-    pub tone: Tone,
     /// 正在启动，或者不在运行
     pub dim: bool,
     /// 有请求在跑
@@ -544,7 +547,7 @@ impl Row {
 pub const MAX_NOTICES: usize = 3;
 /// 最多列几个进行中的请求
 pub const MAX_LIVE: usize = 5;
-/// 额度用到多少开始在菜单栏上变橙。**上游说快到了的，不管用了多少都算**
+/// 额度用到多少算紧张（悬停提示挑窗口时用）。**上游说快到了的，不管用了多少都算**
 pub const WARN_PERCENT: f64 = 90.0;
 /// 菜单里的额度条从多少开始变橙
 pub const BAR_WARN_PERCENT: f64 = 80.0;
@@ -569,11 +572,6 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
             // 不在运行时，上一次的数字已经不代表现在：画破折号，不画一个凝固的旧值
             None
         },
-        tone: if running {
-            tight.map(|(_, w)| bar_tone(w)).unwrap_or_default()
-        } else {
-            Tone::Normal
-        },
         dim: !running,
         dot: running && !s.live.is_empty(),
         alert: !running && !matches!(s.gateway, Gateway::Starting),
@@ -581,9 +579,9 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
     }
 }
 
-/// 还在当前的窗口里最紧张的那个。**先比颜色，再比用了多少**：上游说快到了、说已经
-/// 拒绝的那个窗口，用得再少也比一个用了 89% 的要紧 —— 只比百分比的话，菜单栏就不变色，
-/// 悬停提示说的也是另一个窗口。**过了重置时刻的不算**：手上的百分比是重置之前的，
+/// 还在当前的窗口里最紧张的那个，悬停提示说的就是它。**先比要紧程度，再比用了多少**：
+/// 上游说快到了、说已经拒绝的那个窗口，用得再少也比一个用了 89% 的要紧 —— 只比百分比
+/// 的话，悬停提示说的就是另一个窗口。**过了重置时刻的不算**：手上的百分比是重置之前的，
 /// 下一个请求才会带来新的
 fn tightest(s: &Snapshot) -> Option<(&str, &Window)> {
     s.quotas

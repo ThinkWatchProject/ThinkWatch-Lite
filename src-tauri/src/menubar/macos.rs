@@ -35,7 +35,7 @@ use objc2_foundation::{
     NSAttributedString, NSDictionary, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
-use super::model::{Action, Bar, Row, Style, SubItem, Tone};
+use super::model::{Action, Bar, Row, Style, SubItem};
 
 mod info;
 #[cfg(debug_assertions)]
@@ -195,8 +195,9 @@ const MARK_W: f64 = MARK_H * 22.0 / 20.0;
 const GAP: f64 = 5.0;
 const EDGE: f64 = 3.0;
 
-/// 画成一张图。**正常时是模板图**：系统按菜单栏的深浅自动着色；额度紧张、用完、
-/// 网关不在的时候要上色，只能关掉模板，用跟着外观走的系统颜色自己画
+/// 画成一张图。**正常时是模板图**：系统按菜单栏的深浅自动着色；网关不在的时候要
+/// 画红色角标，只能关掉模板，用跟着外观走的系统颜色自己画。**额度不改这一块的颜色**
+/// （见 `Tone`）：紧张、用完都在菜单里的那一行说
 pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
     let show_mark = bar.style != Style::Numbers;
     let show_numbers = bar.style != Style::Icon;
@@ -226,7 +227,7 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
         width += GAP;
     }
     let height = thickness();
-    let template = bar.tone == Tone::Normal && !bar.alert;
+    let template = !bar.alert;
     let bar = bar.clone();
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
         let fg = if template {
@@ -237,15 +238,10 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
         let alpha = if bar.dim { 0.42 } else { 1.0 };
         let mut x = EDGE;
         if show_mark {
-            let mark_color = match (bar.style, bar.tone) {
-                (Style::Icon, Tone::Warn) => NSColor::systemOrangeColor(),
-                (Style::Icon, Tone::Full) => NSColor::systemRedColor(),
-                _ => fg.clone(),
-            };
             draw_mark(
                 x,
                 (height - MARK_H) / 2.0,
-                &mark_color.colorWithAlphaComponent(alpha),
+                &fg.colorWithAlphaComponent(alpha),
             );
             if bar.dot {
                 fill_oval(x + MARK_W - 1.5, (height - MARK_H) / 2.0 - 1.5, 5.0, &fg);
@@ -261,12 +257,11 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
             x += MARK_W + GAP;
         }
         if show_numbers {
-            let (color, alpha) = match bar.tone {
-                Tone::Warn => (NSColor::systemOrangeColor(), alpha),
-                Tone::Full => (NSColor::systemRedColor(), alpha),
-                // 仅数值时没有角标可画：不在运行就让破折号本身变红，而且不淡化
-                Tone::Normal if bar.alert && !show_mark => (NSColor::systemRedColor(), 1.0),
-                Tone::Normal => (fg.clone(), alpha),
+            // 仅数值时没有角标可画：不在运行就让破折号本身变红，而且不淡化
+            let (color, alpha) = if bar.alert && !show_mark {
+                (NSColor::systemRedColor(), 1.0)
+            } else {
+                (fg.clone(), alpha)
             };
             let color = color.colorWithAlphaComponent(alpha);
             if dot_w > 0.0 {

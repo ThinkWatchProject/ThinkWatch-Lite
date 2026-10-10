@@ -505,33 +505,24 @@ fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
     });
 }
 
+/// 一个窗口有多要紧：过了 90% 算紧张，上游说快到了的不管用了多少都算，拒绝了的算用完
 #[test]
-fn a_tight_quota_turns_the_numbers_orange_and_a_used_up_one_red() {
-    let mut s = running();
-    s.quotas = vec![Quota {
-        provider: "chatgpt".into(),
-        windows: vec![
-            window("5h", 42.0, 3_600_000),
-            window("weekly", 18.0, 86_400_000),
-        ],
-        reset_credits: None,
-    }];
-    assert_eq!(build(&s, Style::Full).0.tone, Tone::Normal);
-    s.quotas[0].windows[0].used_percent = 91.0;
-    assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
-    // 上游说快到了的，不管用了多少都算
-    s.quotas[0].windows[0].used_percent = 50.0;
-    s.quotas[0].windows[0].status = Some("allowed_warning".into());
-    assert_eq!(build(&s, Style::Full).0.tone, Tone::Warn);
-    s.quotas[0].windows[0].status = Some("rejected".into());
-    assert_eq!(build(&s, Style::Full).0.tone, Tone::Full);
+fn a_window_is_tight_past_ninety_percent_or_when_the_upstream_says_so() {
+    let mut w = window("5h", 42.0, 3_600_000);
+    assert_eq!(bar_tone(&w), Tone::Normal);
+    w.used_percent = 91.0;
+    assert_eq!(bar_tone(&w), Tone::Warn);
+    w.used_percent = 50.0;
+    w.status = Some("allowed_warning".into());
+    assert_eq!(bar_tone(&w), Tone::Warn);
+    w.status = Some("rejected".into());
+    assert_eq!(bar_tone(&w), Tone::Full);
 }
 
-/// 颜色看**最要紧**的那个窗口，不是用得最多的那个：每周的用了 95%，5 小时的上游已经
-/// 拒绝了，菜单栏是红的；用得最多的那个没事、另一家上游说快到了，是橙的。悬停提示说的
-/// 也是定了颜色的那个窗口
+/// 悬停提示说**最要紧**的那个窗口，不是用得最多的那个：每周的用了 95%，5 小时的上游
+/// 已经拒绝了，说 5 小时的；用得最多的那个没事、另一家上游说快到了，说另一家的
 #[test]
-fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
+fn the_tooltip_names_the_most_severe_window_not_the_fullest() {
     let mut s = running();
     s.quotas = vec![Quota {
         provider: "chatgpt".into(),
@@ -545,7 +536,6 @@ fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
         reset_credits: None,
     }];
     let (bar, _) = build(&s, Style::Full);
-    assert_eq!(bar.tone, Tone::Full);
     assert!(
         bar.tooltip.ends_with("chatgpt 5 小时额度已用 40%"),
         "{}",
@@ -568,7 +558,6 @@ fn the_bar_takes_its_color_from_the_most_severe_window_not_the_fullest() {
         },
     ];
     let (bar, _) = build(&s, Style::Full);
-    assert_eq!(bar.tone, Tone::Warn);
     assert!(
         bar.tooltip.ends_with("glm 每周额度已用 30%"),
         "{}",
@@ -591,7 +580,11 @@ fn a_window_past_its_reset_is_not_the_current_state() {
         reset_credits: Some(2),
     }];
     let (bar, rows) = build(&s, Style::Full);
-    assert_eq!(bar.tone, Tone::Normal, "已经重置过的窗口还在让菜单栏变红");
+    assert!(
+        !bar.tooltip.contains("额度"),
+        "已经重置过的窗口还在悬停提示里：{}",
+        bar.tooltip
+    );
     let w = windows(&rows)[0].1;
     assert_eq!(w.percent, None, "重置过的窗口还在画条");
     assert_eq!(w.reset, "已重置");
