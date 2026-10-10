@@ -7,6 +7,7 @@ export const modelText = messages(
     amountMissing: (name: string) => `填写条件「${name}」的数值`,
     amountInvalid: (name: string) => `条件「${name}」的数值有误，示例：200k`,
     valueMissing: (name: string) => `填写条件「${name}」的取值`,
+    timeInvalid: (name: string) => `条件「${name}」须选择至少一天，时间写成 HH:MM，示例：09:00`,
     ruleNameMissing: "填写规则名称",
     ruleNameTaken: (name: string) => `规则名称「${name}」已存在`,
     phaseTwoForward: "含「选定上游」条件的规则不能转发",
@@ -46,6 +47,8 @@ export const modelText = messages(
     amountMissing: (name: string) => `Enter a number for the “${name}” condition`,
     amountInvalid: (name: string) => `The number for the “${name}” condition is invalid; example: 200k`,
     valueMissing: (name: string) => `Enter a value for the “${name}” condition`,
+    timeInvalid: (name: string) =>
+      `The “${name}” condition needs at least one day and times written as HH:MM; example: 09:00`,
     ruleNameMissing: "Enter a rule name",
     ruleNameTaken: (name: string) => `A rule named “${name}” already exists`,
     phaseTwoForward: "Rules with a “Selected upstream” condition cannot forward",
