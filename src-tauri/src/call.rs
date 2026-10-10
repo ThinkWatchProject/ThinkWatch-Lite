@@ -80,6 +80,8 @@ webview_endpoints![
     Sessions,
     SessionDetail,
     SessionTranscript,
+    // 一轮的上下文由什么组成（估算），点开那一轮才取
+    SessionTurnContext,
     AbortSession,
     // 测速、回放、试路由
     SpeedQuote,

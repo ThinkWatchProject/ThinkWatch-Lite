@@ -1,4 +1,5 @@
 import {
+  Fragment,
   createContext,
   memo,
   useCallback,
@@ -11,7 +12,7 @@ import {
 } from "react";
 import { ChevronRightIcon, ImageIcon } from "lucide-react";
 import { call } from "@/control";
-import { size, when } from "@/format";
+import { compact, size, when } from "@/format";
 import { useText } from "@/i18n";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
@@ -29,14 +30,17 @@ import type {
 } from "@/types";
 import { useNow } from "@/useNow";
 import { Button, DISCLOSURE } from "@/ui/button";
+import { Meter } from "@/ui/meter";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, ErrorState } from "@/ui/states";
 import { StatusDot, StatusLabel } from "@/ui/status-dot";
+import { Tip } from "@/ui/tip";
 import { IconSession } from "@/ui/icons";
 import { PanelSkeleton } from "./PanelHeader";
 import { sessionsText } from "./Sessions.i18n";
 import { conversationText } from "./Conversation.i18n";
+import { contextFill, contextShares, type ContextFill, type ContextShare } from "./contextWindow";
 import { turnCost } from "./costCell";
 import {
   allLost,
@@ -131,6 +135,10 @@ interface Head {
   failure: string | null;
   /** 点「请求详情」打开哪一条 */
   rid: number | null;
+  /** 上下文那一行（`contextFill`）：送进去的新输入、缓存读取和模型的窗口。没有用量的没有那一行 */
+  input: number | null;
+  cached: number | null;
+  window: number | null;
 }
 
 /**
@@ -149,6 +157,8 @@ interface Head {
  *
  * 正文不在的那几轮，按那一轮的时刻和报文的保留天数（概览里的 `retention`）说是已超过保留
  * 期限，还是未保留（见 `missingWhy`）。
+ *
+ * **一次只点开一轮的上下文**（`picked`）：点开另一轮，上一轮的收起、它的取数不再要。
  */
 export function Conversation({
   id,
@@ -189,6 +199,8 @@ export function Conversation({
   const list = useMemo(() => (data ? items(data.turns, why) : []), [data, why]);
   const names = useMemo(() => (data ? toolNames(data.turns) : new Map<string, string>()), [data]);
   const shown = useProgressive(list);
+  const [picked, setPicked] = useState<string | null>(null);
+  const pick = useCallback((turnId: string) => setPicked((p) => (p === turnId ? null : turnId)), []);
 
   if (data === undefined) {
     return r.error !== undefined ? (
@@ -240,6 +252,9 @@ export function Conversation({
       outcome: outcomeOf(v),
       failure: failureLine(v),
       rid: requestIdOf(turnId, v),
+      input: v?.input_tokens ?? null,
+      cached: v?.cache_read_tokens ?? null,
+      window: v?.context_window ?? null,
     };
   };
   /** 还没补齐的时候不画末尾在跑的那几轮：它们会先出现在第 30 轮后面，再跳到最后 */
@@ -271,7 +286,16 @@ export function Conversation({
                 key={it.turn.id}
                 className={cn(!first && (it.turn.restart ? "mt-4" : "mt-4 border-t border-border pt-4"))}
               >
-                <Turn turn={it.turn} n={it.n} head={headOf(it.turn.id)} why={why(it.turn)} onOpen={onOpenTurn} />
+                <Turn
+                  turn={it.turn}
+                  n={it.n}
+                  head={headOf(it.turn.id)}
+                  why={why(it.turn)}
+                  session={id}
+                  picked={picked === it.turn.id}
+                  onPick={pick}
+                  onOpen={onOpenTurn}
+                />
               </li>
             );
           })}
@@ -291,6 +315,9 @@ export function Conversation({
                     outcome: "done",
                     failure: null,
                     rid: row.id,
+                    input: null,
+                    cached: null,
+                    window: null,
                   }}
                   running
                   onOpen={onOpenTurn}
@@ -332,12 +359,16 @@ function sameHead(a: Head, b: Head): boolean {
     a.costMuted === b.costMuted &&
     a.outcome === b.outcome &&
     a.failure === b.failure &&
-    a.rid === b.rid
+    a.rid === b.rid &&
+    a.input === b.input &&
+    a.cached === b.cached &&
+    a.window === b.window
   );
 }
 
 /**
- * 一轮：头（第几轮、时刻、模型、费用、请求详情），然后是这一轮新加的输入和回答。
+ * 一轮：头（第几轮、时刻、模型、费用、请求详情），上下文那一行（送进去的 token 占模型窗口的
+ * 几成，见 `ContextRow`），然后是这一轮新加的输入和回答。
  *
  * 输入里可能先有一条助手消息：上一轮的回答没能完整显示（响应有缺口），客户端在这一轮的
  * 历史里带着它 —— 那是它说过什么的唯一记录，照常画在这一轮的开头。
@@ -355,25 +386,40 @@ const Turn = memo(
     n,
     head,
     why,
+    session,
+    picked,
+    onPick,
     onOpen,
   }: {
     turn: TranscriptTurn;
     n: number;
     head: Head;
     why: Missing;
+    session: string;
+    /** 这一轮的上下文点开着 */
+    picked: boolean;
+    onPick: (turnId: string) => void;
     onOpen: (id: number) => void;
   }) {
     const t = useText(conversationText);
     const restart = useMemo(() => (turn.restart ? splitRestart(turn.input) : null), [turn]);
     const blocks = useMemo(() => blocksOf(restart ? restart.latest : turn.input), [turn, restart]);
     const output = useMemo(() => visibleParts(turn.output), [turn]);
+    const fill = useMemo(
+      () => contextFill({ input_tokens: head.input, cache_read_tokens: head.cached, context_window: head.window }),
+      [head.input, head.cached, head.window],
+    );
     const notes = notesOf(turn, head.outcome, why);
     const reply = output.length > 0 || notes.response.length > 0;
+    const context = fill && head.rid !== null && (
+      <ContextRow fill={fill} session={session} rid={head.rid} why={why} open={picked} onToggle={() => onPick(turn.id)} />
+    );
     // 失败了的不算：失败的原因要写出来
     if (quiet(turn) && !reply) {
       return (
         <article>
           <TurnHeader n={n} head={head} note={t.noContent} onOpen={onOpen} />
+          {context && <div className={cn(LINES, "mt-1.5")}>{context}</div>}
         </article>
       );
     }
@@ -382,6 +428,7 @@ const Turn = memo(
         {turn.restart && <RestartRule />}
         <TurnHeader n={n} head={head} onOpen={onOpen} />
         <div className={cn(LINES, "mt-1.5")}>
+          {context}
           {turn.system_changed !== null && (
             <Line>
               <TextFold title={t.systemChanged} text={turn.system_changed} />
@@ -408,8 +455,137 @@ const Turn = memo(
       </article>
     );
   },
-  (a, b) => a.turn === b.turn && a.n === b.n && a.why === b.why && a.onOpen === b.onOpen && sameHead(a.head, b.head),
+  (a, b) =>
+    a.turn === b.turn &&
+    a.n === b.n &&
+    a.why === b.why &&
+    a.session === b.session &&
+    a.picked === b.picked &&
+    a.onPick === b.onPick &&
+    a.onOpen === b.onOpen &&
+    sameHead(a.head, b.head),
 );
+
+/**
+ * 上下文那一行：一根细条画这一轮送进模型的 token 占模型上下文窗口的几成，缓存读取是单独的一截，
+ * 后面写「128k / 200k · 缓存 61%」。模型的窗口不知道时只写用了多少，不画条。
+ *
+ * 点开是由什么组成（`ContextParts`）：系统提示、工具定义、此前的对话、最后一条用户消息各多少。
+ * 点开才取，取过的留在缓存里（`useResource`）；收起或点开另一轮时这里卸掉，还没回来的结果
+ * 只进缓存，不画。
+ */
+function ContextRow({
+  fill,
+  session,
+  rid,
+  why,
+  open,
+  onToggle,
+}: {
+  fill: ContextFill;
+  session: string;
+  rid: number;
+  why: Missing;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const t = useText(conversationText);
+  return (
+    <Line label={t.context}>
+      <FoldRow open={open} onToggle={onToggle}>
+        {fill.fill !== null && fill.cachedFill !== null && (
+          <span
+            role="img"
+            aria-label={t.contextBar(compact(fill.used), compact(fill.window ?? 0), fill.cachedPct)}
+            className="flex h-1 w-20 shrink-0 self-center overflow-hidden rounded-full bg-foreground/[0.08]"
+          >
+            {fill.cachedFill > 0 && (
+              <span className="motion-bar shrink-0 bg-cache-hit" style={{ width: `max(2px, ${fill.cachedFill * 100}%)` }} />
+            )}
+            {fill.fill > fill.cachedFill && (
+              <span
+                className="motion-bar shrink-0 bg-cache-plain"
+                style={{ width: `max(2px, ${(fill.fill - fill.cachedFill) * 100}%)` }}
+              />
+            )}
+          </span>
+        )}
+        <span className="min-w-0 truncate tw-num text-foreground">
+          {fill.text}
+          {fill.cached !== null && <span className="text-muted-foreground"> · {t.cached(fill.cachedPct)}</span>}
+        </span>
+      </FoldRow>
+      <Reveal show={open}>
+        <div className="pt-1 pb-1.5">
+          <ContextParts session={session} rid={rid} why={why} />
+        </div>
+      </Reveal>
+    </Line>
+  );
+}
+
+/** 点开的那一轮由什么组成。各部分是 core 按保存的请求正文估算的：数前带「~」，下面说明是估算值 */
+function ContextParts({ session, rid, why }: { session: string; rid: number; why: Missing }) {
+  const t = useText(conversationText);
+  const r = useResource(`turn-context:${rid}`, () => call("SessionTurnContext", null, session, rid));
+  if (r.data === undefined) {
+    return r.error !== undefined ? (
+      <ErrorState compact title={t.contextLoadFailed} error={r.error} onRetry={() => void r.reload()} retrying={r.loading} />
+    ) : (
+      <PanelSkeleton>
+        <div className="my-1 rounded-lg bg-foreground/[0.025] px-3 py-2.5">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className={cn("h-3 w-2/3 rounded-sm", i > 0 && "mt-2.5")} style={{ opacity: 1 - i * 0.2 }} />
+          ))}
+        </div>
+      </PanelSkeleton>
+    );
+  }
+  const parts = r.data.kept ? r.data.parts : null;
+  if (parts === null) {
+    return (
+      <div className="pt-0.5">
+        <Pill>{why === "expired" ? t.requestExpired : t.requestUnkept}</Pill>
+      </div>
+    );
+  }
+  const shares = contextShares(parts);
+  const label = (s: ContextShare["kind"]) =>
+    s === "system" ? t.partSystem : s === "tools" ? t.partTools : s === "history" ? t.partHistory : t.partLastUser;
+  return (
+    <div className="my-1 rounded-lg bg-foreground/[0.025] px-3 py-2.5">
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)_auto_2.5rem] items-center gap-x-3 gap-y-1.5 tw-num">
+        {shares.map((x) => (
+          <Fragment key={x.kind}>
+            <dt className="text-muted-foreground">{label(x.kind)}</dt>
+            <dd className="min-w-0">
+              <Meter value={x.pct} max={100} size="sm" />
+            </dd>
+            <dd className="text-right text-foreground">
+              <Tip lazy text={x.tokens.toLocaleString()}>
+                <span>~{compact(x.tokens)}</span>
+              </Tip>
+            </dd>
+            <dd className="text-right text-muted-foreground">{x.pct}%</dd>
+          </Fragment>
+        ))}
+        <dt className="border-t border-border pt-1.5 text-muted-foreground">{t.partTotal}</dt>
+        <dd className="border-t border-border pt-1.5" />
+        <dd className="border-t border-border pt-1.5 text-right text-foreground">
+          <Tip lazy text={parts.total.toLocaleString()}>
+            <span>~{compact(parts.total)}</span>
+          </Tip>
+        </dd>
+        <dd className="border-t border-border pt-1.5" />
+      </dl>
+      <p className="mt-2 tw-label text-muted-foreground">
+        <Tip text={t.estimatedTip}>
+          <span className="underline decoration-dotted underline-offset-2">{t.estimated}</span>
+        </Tip>
+      </p>
+    </div>
+  );
+}
 
 /**
  * 一轮的头。还在跑的那一轮（`running`）没有费用，写「进行中」；`note` 是跟在后面的一句

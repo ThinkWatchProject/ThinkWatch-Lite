@@ -185,6 +185,11 @@ export function providers(): ProviderView[] {
   });
 }
 
+/** 一个模型的上下文窗口，按价目表（截图里没有手写的规格）。价目表里没有的是 null */
+export function contextWindowOf(model: string): number | null {
+  return FX.prices.find((x) => x.model === model)?.max_input_tokens ?? null;
+}
+
 export function providerModels(name: string): ProviderModelsView | null {
   const p = providers().find((x) => x.name === name);
   if (!p) return null;
@@ -194,7 +199,7 @@ export function providerModels(name: string): ProviderModelsView | null {
     return {
       id,
       enabled: inScope(p, id),
-      context_window: FX.prices.find((x) => x.model === id)?.max_input_tokens ?? null,
+      context_window: contextWindowOf(id),
       price,
       price_source: price ? priceSource(name) : null,
       estimated: false,

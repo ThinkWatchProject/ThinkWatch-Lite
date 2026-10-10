@@ -5119,7 +5119,27 @@ cost_estimated: boolean,
  * 服务它的那家怎么收钱，和 `HistoryRow::billing` 同一套词：`per-token` /
  * `free`
  */
-billing: Billing, };
+billing: Billing, 
+/**
+ * 答这一轮的模型的上下文窗口（token），按**现在**知道的模型规格：手写的、上游列出的、价目表的，
+ * 依次取第一个有的。不知道是 None
+ */
+context_window: number | null, };
+
+/**
+ * 一轮的上下文由什么组成（`GET /sessions/{id}/turns/{turn}/context`）。
+ *
+ * `window`、`input_tokens`、`cache_read_tokens` 是这一轮记录里的数；`parts` 是按保存的请求正文
+ * **估算**的（和 count_tokens 同一个估算器），正文不在了（过期或未保留）时 `kept` 是 false、
+ * `parts` 是 None。
+ */
+export type TurnContext = { kept: boolean, window: number | null, input_tokens: number | null, cache_read_tokens: number | null, parts: TurnContextParts | null, };
+
+/**
+ * [`TurnContext::parts`]：系统提示、工具定义、最后一条用户消息之前的历史、最后一条用户消息
+ * （正文和它带着的工具结果），各多少 token，`total` 是四项之和。
+ */
+export type TurnContextParts = { system: number, tools: number, history: number, last_user: number, total: number, };
 
 /**
  * 一个无法计价的 (上游, 模型)。
@@ -5311,6 +5331,7 @@ export const ENDPOINTS = {
   Sessions: { method: "GET", path: "/sessions", params: [], format: "json" },
   SessionDetail: { method: "GET", path: "/sessions/{id}", params: ["id"], format: "json" },
   SessionTranscript: { method: "GET", path: "/sessions/{id}/transcript", params: ["id"], format: "json" },
+  SessionTurnContext: { method: "GET", path: "/sessions/{id}/turns/{turn}/context", params: ["id", "turn"], format: "json" },
   AbortSession: { method: "POST", path: "/sessions/{id}/abort", params: ["id"], format: "json" },
   SpeedQuote: { method: "POST", path: "/speed/quote", params: [], format: "json" },
   SpeedRun: { method: "POST", path: "/speed/run", params: [], format: "json" },
@@ -5438,6 +5459,7 @@ export type Endpoints = {
   Sessions: { req: ListQuery; res: Array<SessionView> };
   SessionDetail: { req: null; res: SessionDetail };
   SessionTranscript: { req: TranscriptQuery; res: Transcript };
+  SessionTurnContext: { req: null; res: TurnContext };
   AbortSession: { req: null; res: Aborted };
   SpeedQuote: { req: SpeedRunRequest; res: SpeedQuote };
   SpeedRun: { req: SpeedRunRequest; res: Array<SpeedResult> };
