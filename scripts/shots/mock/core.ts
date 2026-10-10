@@ -137,6 +137,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   SetModelSpec: refuse,
   SetManualModels: refuse,
   RefreshProviderModels: (_req, [name]) => providerModels(name!) ?? notFound(`Upstream ${name}`),
+  RefreshBalance: refuse,
   RefreshStaleModels: () => ({ providers: [] }),
 
   CreateProxy: refuse,

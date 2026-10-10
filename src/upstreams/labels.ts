@@ -273,17 +273,20 @@ export function planLabel(plan: ChatgptPlan | null | undefined): string | null {
   return Object.hasOwn(PLANS, plan) ? PLANS[plan as KnownChatgptPlan] : plan;
 }
 
+/** 有自己叫法的额度窗口。`daily`、`monthly` 是余额接口报的按自然日、自然月的窗口 */
+type NamedWindow = "5h" | "weekly" | "daily" | "monthly";
+const NAMED_WINDOWS: readonly string[] = ["5h", "weekly", "daily", "monthly"] satisfies NamedWindow[];
+
 /**
- * 订阅额度窗口。`5h`、`weekly` 有自己的叫法；别的按长度说 —— core 把窗口的分钟数
- * 写成 `<数>d`、`<数>h`、`<数>m`（ChatGPT 账号的 `30d` 是「30 天」），和菜单栏
- * 同一套写法。认不出来的原样显示
+ * 订阅额度窗口。`5h`、`weekly`、`daily`、`monthly` 有自己的叫法；别的按长度说 —— core
+ * 把窗口的分钟数写成 `<数>d`、`<数>h`、`<数>m`（ChatGPT 账号的 `30d` 是「30 天」），
+ * 和菜单栏同一套写法；企业网关的余额还有按周的 `<数>w`。认不出来的原样显示
  */
 export function quotaWindowLabel(window: string): string {
   const t = textOf(labelsText);
-  if (window === "5h") return t.quotaWindows["5h"];
-  if (window === "weekly") return t.quotaWindows.weekly;
-  const span = /^(\d+)([dhm])$/.exec(window);
-  return span ? t.quotaSpans[span[2] as "d" | "h" | "m"](Number(span[1])) : window;
+  if (NAMED_WINDOWS.includes(window)) return t.quotaWindows[window as NamedWindow];
+  const span = /^(\d+)([wdhm])$/.exec(window);
+  return span ? t.quotaSpans[span[2] as "w" | "d" | "h" | "m"](Number(span[1])) : window;
 }
 
 /**
@@ -292,10 +295,9 @@ export function quotaWindowLabel(window: string): string {
  */
 export function quotaWindowBefore(window: string): string {
   const t = textOf(labelsText);
-  if (window === "5h") return t.quotaWindows["5h"];
-  if (window === "weekly") return t.quotaWindows.weekly;
-  const span = /^(\d+)([dhm])$/.exec(window);
-  return span ? t.quotaSpansBefore[span[2] as "d" | "h" | "m"](Number(span[1])) : window;
+  if (NAMED_WINDOWS.includes(window)) return t.quotaWindows[window as NamedWindow];
+  const span = /^(\d+)([wdhm])$/.exec(window);
+  return span ? t.quotaSpansBefore[span[2] as "w" | "d" | "h" | "m"](Number(span[1])) : window;
 }
 
 /**

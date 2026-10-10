@@ -345,6 +345,84 @@ profile?: string | null,
 region?: string | null, };
 
 /**
+ * 一家上游的余额：最近一次从它的余额接口读到的。**每个数都是上游给的**，没有一个是
+ * 我们按请求记录推算的。
+ *
+ * 读失败了 `error` 是原因，**其余字段留着上一次读到的**（从没读到过就是空的），
+ * `read_at_ms` 也还是那一次的。
+ */
+export type Balance = { source: BalanceSource, 
+/**
+ * 这些数是什么时候读到的，Unix 毫秒。从没读到过时是最近一次去读的时刻
+ */
+read_at_ms: number, 
+/**
+ * 还能花的钱：账户余额、钱包余额
+ */
+wallet: Money | null, 
+/**
+ * 一笔总的额度和用了多少：密钥的额度、套餐的总额
+ */
+quota: BalanceQuota | null, 
+/**
+ * 按时间窗口算的额度，每个窗口一项。没有是空的
+ */
+windows: Array<BalanceWindow>, 
+/**
+ * 密钥或套餐什么时候到期，Unix 毫秒。不会到期、上游没说都是空
+ */
+expires_at_ms: number | null, 
+/**
+ * 已经花了多少，和算的是哪一段时间：没有上限可比时说得出的就是它
+ */
+spent: Spent | null, 
+/**
+ * 最近一次没读成的原因。读成了是空
+ */
+error: Msg | null, };
+
+/**
+ * 一笔总的额度。
+ */
+export type BalanceQuota = { limit: number, used: number, 
+/**
+ * `USD` / `CNY` / `tokens` / `requests`
+ */
+unit: string, };
+
+/**
+ * 企业网关的一条限额管的是谁。
+ */
+export type BalanceScope = "key" | "user";
+
+/**
+ * 上游的余额从哪个接口读。每一种都用这家上游自己的密钥、走它自己的出站设置。
+ */
+export type BalanceSource = "openrouter" | "deepseek" | "moonshot" | "sub2api" | "newapi" | "thinkwatch";
+
+/**
+ * 一个时间窗口里的额度。
+ */
+export type BalanceWindow = { 
+/**
+ * `5h` / `1d` / `7d` / `30d` / `daily` / `weekly` / `monthly`（企业网关还有 `1m`、`5m`、
+ * `1h`、`1w`），上游怎么叫就是什么
+ */
+window: string, limit: number, used: number, 
+/**
+ * `USD` / `CNY` / `tokens` / `requests`
+ */
+unit: string, 
+/**
+ * 什么时候重置，Unix 毫秒。上游没说是空
+ */
+resets_at_ms: number | null, 
+/**
+ * 管的是谁：这把密钥，还是它所属的用户。只有企业网关说，别的来源是空
+ */
+scope: BalanceScope | null, };
+
+/**
  * `load-balance` 组按什么分请求：配置里 `balance_by` 写的那个词。
  *
  * 成员的权重永远是底数，快慢、成败算出的系数乘在上面
@@ -1504,7 +1582,7 @@ detail: SecurityHitDetail, at_ms: number, } | { "kind": "request_priced", id: nu
 /**
  * `open` = 熔断中，不进候选链；`closed` = 可以用
  */
-state: BreakerState, at_ms: number, } | { "kind": "models_changed", id: number, provider: string, at_ms: number, } | { "kind": "proxy_changed", id: number, proxy: string, 
+state: BreakerState, at_ms: number, } | { "kind": "models_changed", id: number, provider: string, at_ms: number, } | { "kind": "balance_updated", id: number, provider: string, at_ms: number, } | { "kind": "proxy_changed", id: number, proxy: string, 
 /**
  * `unreachable` = 刚刚检查不通；`reachable` = 又通了
  */
@@ -2691,6 +2769,15 @@ base_version?: string | null, };
 export type ModelsRefreshing = { providers: Array<string>, };
 
 /**
+ * 一笔钱。
+ */
+export type Money = { amount: number, 
+/**
+ * `USD`、`CNY` 这样的货币代码，上游怎么写就是什么
+ */
+currency: string, };
+
+/**
  * 一条给人看的话：一个稳定的码、填进句子的参数，以及英文原句。
  *
  * **core 不翻译，只出英文。**桌面版有中英两套界面，而这些句子是从这里
@@ -3477,7 +3564,12 @@ via?: string | null,
 /**
  * 失败的原因，和下一步该查什么
  */
-error: Msg | null, };
+error: Msg | null, 
+/**
+ * 顺带读到的余额（`balance` 是 `auto` 时先认出是哪一种中转站）。没有余额可读、
+ * 检测没通过时是空
+ */
+balance?: Balance | null, };
 
 /**
  * 一个上游。**设置是配置里写的原样**，密钥也不打码：编辑对话框回填的就是它，
@@ -3600,7 +3692,13 @@ pricing: string | null,
 /**
  * 同时最多发给这家几个请求。不限是空
  */
-max_concurrent?: number | null, };
+max_concurrent?: number | null, 
+/**
+ * 最近一次读到的余额。**是空的：这家没有余额可读**（关掉了、账号上游和 Bedrock、
+ * 认不出是哪一种中转站），或者还没读完第一次。读到了、读失败了都报
+ * [`Event::BalanceUpdated`]
+ */
+balance: Balance | null, };
 
 /**
  * 代理的用户名和密码。
@@ -4844,6 +4942,16 @@ providers?: Array<string>,
  */
 model: string, };
 
+/**
+ * 已经花掉的一笔钱。
+ */
+export type Spent = { amount: number, currency: string, period: SpentPeriod, };
+
+/**
+ * 花费算的是哪一段时间。
+ */
+export type SpentPeriod = "today" | "month" | "total";
+
 export type Status = { api_version: number, 
 /**
  * 二进制的 CalVer
@@ -5401,6 +5509,7 @@ export const ENDPOINTS = {
   SetModelSpec: { method: "PUT", path: "/provider-model-spec", params: [], format: "json" },
   SetManualModels: { method: "PUT", path: "/provider-manual-models", params: [], format: "json" },
   RefreshProviderModels: { method: "POST", path: "/providers/{name}/models/refresh", params: ["name"], format: "json" },
+  RefreshBalance: { method: "POST", path: "/providers/{name}/balance/refresh", params: ["name"], format: "json" },
   RefreshStaleModels: { method: "POST", path: "/models/refresh", params: [], format: "json" },
   CreateProxy: { method: "POST", path: "/proxies", params: [], format: "json" },
   TestProxy: { method: "POST", path: "/proxy-test", params: [], format: "json" },
@@ -5529,6 +5638,7 @@ export type Endpoints = {
   SetModelSpec: { req: ModelSpecSave; res: ConfigWritten };
   SetManualModels: { req: ManualModelsSave; res: ConfigWritten };
   RefreshProviderModels: { req: null; res: ProviderModelsView };
+  RefreshBalance: { req: null; res: Balance };
   RefreshStaleModels: { req: null; res: ModelsRefreshing };
   CreateProxy: { req: ProxySave; res: ConfigWritten };
   TestProxy: { req: ProxyTest; res: L1Result };

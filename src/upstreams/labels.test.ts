@@ -142,8 +142,25 @@ describe("额度窗口", () => {
     expect(["5h", "weekly"].map(quotaWindowLabel)).toEqual(["5 小时", "每周"]);
   });
 
+  // 余额接口报的按自然日、自然月的窗口
+  it("names the calendar windows of a balance", () => {
+    expect(["daily", "monthly"].map(quotaWindowLabel)).toEqual(["每天", "每月"]);
+  });
+
+  // 企业网关的余额按周的窗口
+  it("says weeks", () => {
+    expect(["1w", "2w"].map(quotaWindowLabel)).toEqual(["1 周", "2 周"]);
+    setLang("en");
+    try {
+      expect(["1w", "2w"].map(quotaWindowLabel)).toEqual(["1 week", "2 weeks"]);
+      expect(quotaWindowBefore("1w")).toBe("1-week");
+    } finally {
+      setLang("zh");
+    }
+  });
+
   // core 按长度起的名字（ChatGPT 账号的 30 天窗口是 `30d`）按长度说；认不出来的原样显示
-  const byLength = ["30d", "1d", "7d", "3h", "1h", "45m", "1m", "monthly", "d", "+5h", "5 h", ""];
+  const byLength = ["30d", "1d", "7d", "3h", "1h", "45m", "1m", "fortnightly", "d", "+5h", "5 h", ""];
 
   it("says windows named by their length in words", () => {
     expect(byLength.map(quotaWindowLabel)).toEqual([
@@ -154,7 +171,7 @@ describe("额度窗口", () => {
       "1 小时",
       "45 分钟",
       "1 分钟",
-      "monthly",
+      "fortnightly",
       "d",
       "+5h",
       "5 h",
@@ -172,7 +189,7 @@ describe("额度窗口", () => {
   it("follows the interface language", () => {
     setLang("en");
     try {
-      expect(["5h", "weekly"].map(quotaWindowLabel)).toEqual(["5h", "Weekly"]);
+      expect(["5h", "weekly", "daily", "monthly"].map(quotaWindowLabel)).toEqual(["5h", "Weekly", "Daily", "Monthly"]);
       expect(byLength.map(quotaWindowLabel)).toEqual([
         "30 days",
         "1 day",
@@ -181,7 +198,7 @@ describe("额度窗口", () => {
         "1 hour",
         "45 minutes",
         "1 minute",
-        "monthly",
+        "fortnightly",
         "d",
         "+5h",
         "5 h",
@@ -197,17 +214,24 @@ describe("额度窗口", () => {
 
   // 放在名词前面（「30-day window」「30-day usage limit」）时英文要换成连字符的写法
   it("names a window before a noun", () => {
-    expect(["30d", "5h", "weekly", "monthly"].map(quotaWindowBefore)).toEqual(["30 天", "5 小时", "每周", "monthly"]);
+    expect(["30d", "5h", "weekly", "monthly", "fortnightly"].map(quotaWindowBefore)).toEqual([
+      "30 天",
+      "5 小时",
+      "每周",
+      "每月",
+      "fortnightly",
+    ]);
     setLang("en");
     try {
-      expect(["30d", "1d", "3h", "45m", "5h", "weekly", "monthly"].map(quotaWindowBefore)).toEqual([
+      expect(["30d", "1d", "3h", "45m", "5h", "weekly", "monthly", "fortnightly"].map(quotaWindowBefore)).toEqual([
         "30-day",
         "1-day",
         "3-hour",
         "45-minute",
         "5h",
         "Weekly",
-        "monthly",
+        "Monthly",
+        "fortnightly",
       ]);
     } finally {
       setLang("zh");

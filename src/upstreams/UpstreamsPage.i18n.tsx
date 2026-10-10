@@ -18,6 +18,11 @@ export const upstreamsPageText = messages(
     },
     modelsFailed: (name: string) => `${name} 的模型列表获取失败`,
     modelsFetched: (name: string, n: number) => `${name}：已获取 ${n} 个模型`,
+    balanceReading: (name: string) => `正在读取 ${name} 的余额…`,
+    /** `brief`：读到的那几样，和检测连接的结果里写的一样（「余额 $18.40」） */
+    balanceRead: (name: string, brief: string) => `${name}：${brief}`,
+    balanceReadEmpty: (name: string) => `已读取 ${name} 的余额`,
+    balanceFailed: (name: string) => `${name} 的余额读取失败`,
     pricesUpdated: (changed: number) => `默认价目表已更新，${changed} 个模型的价格有变化`,
     pricesCurrent: "默认价目表已是最新",
     tabs: { upstreams: "上游", proxies: "代理", pricing: "价目表" },
@@ -65,6 +70,10 @@ export const upstreamsPageText = messages(
     },
     modelsFailed: (name: string) => `Could not fetch the model list for ${name}`,
     modelsFetched: (name: string, n: number) => `${name}: ${n === 1 ? "1 model" : `${n} models`} fetched`,
+    balanceReading: (name: string) => `Reading the balance for ${name}…`,
+    balanceRead: (name: string, brief: string) => `${name}: ${brief}`,
+    balanceReadEmpty: (name: string) => `Balance read for ${name}`,
+    balanceFailed: (name: string) => `Could not read the balance for ${name}`,
     pricesUpdated: (changed: number) =>
       changed === 1
         ? "Default price sheet updated; 1 model's price changed"
