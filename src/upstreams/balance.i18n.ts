@@ -61,9 +61,9 @@ export const balanceText = messages(
       total: (amount: string) => `${amount} spent to date`,
     },
     accountSpent: {
-      today: (amount: string) => `${amount} spent by the account today`,
-      month: (amount: string) => `${amount} spent by the account this month`,
-      total: (amount: string) => `${amount} spent by the account to date`,
+      today: (amount: string) => `Account: ${amount} today`,
+      month: (amount: string) => `Account: ${amount} this month`,
+      total: (amount: string) => `Account: ${amount} to date`,
     },
     sourceQuota: (source: string) => `${source} quota`,
     accountLimit: "Account limit",

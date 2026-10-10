@@ -443,13 +443,13 @@ describe("英文界面", () => {
       main: "$12.40 spent this month",
     });
     expect(balanceFace(bal({ spent: spentUsd(12.4, "month", "user") }), NOW)).toMatchObject({
-      main: "$12.40 spent by the account this month",
+      main: "Account: $12.40 this month",
     });
     expect(balanceFace(bal({ spent: spentUsd(3, "today", "user") }), NOW)).toMatchObject({
-      main: "$3 spent by the account today",
+      main: "Account: $3 today",
     });
     expect(balanceFace(bal({ spent: spentUsd(3, "total", "user") }), NOW)).toMatchObject({
-      main: "$3 spent by the account to date",
+      main: "Account: $3 to date",
     });
     expect(balanceFace(bal({ quota: { limit: 100, used: 57.82, unit: "unknown" } }), NOW)).toMatchObject({
       main: "42.18 / 100 left",
