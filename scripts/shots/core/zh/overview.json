@@ -145,6 +145,7 @@
     {
       "auth_header": "x-api-key",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://api.anthropic.com",
       "billing": "per-token",
       "disabled": false,
@@ -176,11 +177,13 @@
           "group": "低价",
           "kind": "group"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-api-key",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://relay.example.com",
       "billing": "per-token",
       "disabled": false,
@@ -207,11 +210,13 @@
           "group": "低价",
           "kind": "group"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://chatgpt.com/backend-api/codex",
       "billing": "per-token",
       "disabled": false,
@@ -244,11 +249,13 @@
           "route": "codex",
           "rule": "兜底"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://openrouter.ai/api/v1",
       "billing": "per-token",
       "disabled": false,
@@ -276,11 +283,13 @@
           "route": "codex",
           "rule": "Qwen 模型"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-api-key",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://api.deepseek.com/anthropic",
       "billing": "per-token",
       "disabled": false,
@@ -304,11 +313,13 @@
           "route": "default",
           "rule": "DeepSeek 模型"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-goog-api-key",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://generativelanguage.googleapis.com",
       "billing": "per-token",
       "disabled": false,
@@ -337,11 +348,13 @@
           "route": "cursor",
           "rule": "Gemini 模型"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
       "balance": null,
+      "balance_setting": "auto",
       "base_url": "http://127.0.0.1:11434/v1",
       "billing": "free",
       "disabled": false,
@@ -366,7 +379,8 @@
           "route": "default",
           "rule": "本地模型"
         }
-      ]
+      ],
+      "signed_in": null
     }
   ],
   "proxies": [

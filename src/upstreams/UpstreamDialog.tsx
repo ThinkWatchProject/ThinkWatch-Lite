@@ -363,7 +363,7 @@ export function UpstreamDialog({
     } catch (e) {
       if (!current()) return;
       const error = errorText(e);
-      setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error) });
+      setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error), balance: null });
       setCatalog({
         source: "none",
         status: "failed",

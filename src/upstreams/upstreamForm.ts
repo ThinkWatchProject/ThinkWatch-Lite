@@ -373,7 +373,7 @@ export function formFromDraft(d: BedrockDraft, taken: string[]): UpstreamForm {
 export function formFromView(p: ProviderView): UpstreamForm {
   const protocol: Protocol | "" = p.protocol_explicit ? (p.protocol ?? "") : "";
   const authMode: AuthMode = p.oauth ? "oauth" : p.aws?.profile ? "aws-profile" : p.aws ? "aws-keys" : "key";
-  const balance = p.balance_setting ?? null;
+  const balance = p.balance_setting;
   // ChatGPT 账号认出来是「自定义」：它有自己的「账号」一节，不走连接那张表单
   const service = serviceOf({ baseUrl: p.base_url, protocol: p.protocol === "chatgpt" ? "chatgpt" : protocol, balance });
   return {

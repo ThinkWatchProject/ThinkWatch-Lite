@@ -55,7 +55,9 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     billing: "per-token",
     references: [],
     pricing: null,
+    balance_setting: "auto",
     balance: null,
+    signed_in: null,
     ...patch,
   };
 }
