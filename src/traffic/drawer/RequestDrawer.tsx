@@ -19,12 +19,15 @@ import type { CoreEvent, HistoryRow, RequestDetail } from "@/types";
 import { NotSentIcon } from "../cells";
 import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "../PanelHeader";
 import { stateOf, type DrawerState } from "./parts";
-import { Body, RequestBody } from "./Payload";
+import { Content, useContentView } from "./Content";
+import { dialectOf } from "./dialect";
+import { useLiveContent } from "./live";
 import { Replay } from "./Replay";
 import { requestDrawerText } from "./RequestDrawer.i18n";
 import { Routing } from "./Routing";
 import { Timeline } from "./Timeline";
 import { Usage } from "./Usage";
+import { landed } from "./wireModel";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -118,6 +121,40 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
     和写库在同一把锁里，这时再取，拿到的一定是完整的一份。
   */
   const running = d?.in_flight === true;
+
+  /*
+    **「内容」实时跟着在跑的那一条**：打开过「内容」之后订阅它的实时内容，切到别的标签也不断
+    （切回来不必再补发一遍几 MB 的请求体）；浮层关了、换了一条，跟着退订。
+  */
+  const [contentView, setContentView] = useContentView();
+  const [sawContent, setSawContent] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  /*
+    **实时内容结束了，取存下的那一份。**结局和正文是分开落盘的，正文可能晚几毫秒才到：取回来的
+    还在跑、或者还没有报文，隔一会儿再取，几次之后照取到的画
+  */
+  const settle = useCallback(async () => {
+    let last: RequestDetail | null = null;
+    for (const ms of [0, 150, 400, 1_000, 2_500]) {
+      if (ms) await new Promise((r) => setTimeout(r, ms));
+      if (!mounted.current) return;
+      try {
+        last = await call("RequestDetail", null, id);
+        if (landed(last)) break;
+      } catch {
+        // 下一轮再取
+      }
+    }
+    if (last && mounted.current) setD(last);
+  }, [id]);
+  const live = useLiveContent(id, running && sawContent, () => void settle());
+
   useEffect(() => {
     if (!running) return;
     let alive = true;
@@ -159,8 +196,16 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   const r = d.row;
   const state = stateOf(d);
   const sent = notSent(r);
+  const rawView = (contentView ?? (dialectOf(r.path, r.translated?.from) ? "parsed" : "raw")) === "raw";
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex min-h-0 flex-1 flex-col gap-0">
+    <Tabs
+      value={tab}
+      onValueChange={(v) => {
+        setTab(v as Tab);
+        if (v === "payload") setSawContent(true);
+      }}
+      className="flex min-h-0 flex-1 flex-col gap-0"
+    >
       <PanelHeader
         // 本地应答的没有模型，路径是辅助请求的类别：标题写类别的名字
         title={r.model || (r.local ? probeLabel(r.path) : t.requestNo(id))}
@@ -210,11 +255,9 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         <TabsContent value="routing">
           <Routing r={r} plugins={d.plugins} running={running} />
         </TabsContent>
-        <TabsContent value="payload">
-          <div className="space-y-5">
-            <RequestBody d={d} />
-            <Body b={d.response_body} title={t.response} which="response" at={r.at_ms} pending={running} />
-          </div>
+        {/* 原始报文铺满这一页：回答那一框占去剩下的高度、自己滚 */}
+        <TabsContent value="payload" className={cn(rawView && "h-full")}>
+          <Content d={d} live={live} view={contentView} onView={setContentView} />
         </TabsContent>
         <TabsContent value="usage">
           <Usage r={r} running={running} />

@@ -84,7 +84,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 4_096,
+      sent_bytes: 1_000,
+      received_bytes: 4_096,
       duration_ms: 1_827,
       usage: { input: 2_345, output: 463, cache_read: 0, cache_write: 0 },
     });
@@ -104,7 +105,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 4_096,
+      sent_bytes: 1_000,
+      received_bytes: 4_096,
       duration_ms: 1_827,
     });
     expect(rows.get(1)?.inputTokens).toBeUndefined();
@@ -123,7 +125,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 1,
+      sent_bytes: 1_000,
+      received_bytes: 1,
       duration_ms: 1,
       usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 },
     });
@@ -146,7 +149,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 10,
+      sent_bytes: 1_000,
+      received_bytes: 10,
       duration_ms: 4_000,
       usage: { input: 10, output: 280, cache_read: 0, cache_write: 0 },
       tokens_per_sec: 100,
@@ -160,7 +164,8 @@ describe("从事件缝出一行", () => {
       id: 2,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 10,
+      sent_bytes: 1_000,
+      received_bytes: 10,
       duration_ms: 4_000,
       usage: { input: 10, output: 280, cache_read: 0, cache_write: 0 },
     });
@@ -181,7 +186,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 312,
+      sent_bytes: 1_000,
+      received_bytes: 312,
       duration_ms: 2_500,
       usage: { input: 100_000, output: 1, cache_read: 0, cache_write: 0 },
     });
@@ -203,7 +209,8 @@ describe("从事件缝出一行", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 0,
+      sent_bytes: 1_000,
+      received_bytes: 0,
       duration_ms: 400,
     });
     expect(rows.get(1)?.state).toBe("cancelled");
@@ -219,7 +226,8 @@ describe("从事件缝出一行", () => {
       kind: "request_cancelled",
       id: 1,
       model: "claude-sonnet-4-5",
-      bytes: 0,
+      sent_bytes: 1_000,
+      received_bytes: 0,
       duration_ms: 12_000,
     });
     expect(rows.get(1)?.state).toBe("cancelled");
@@ -241,7 +249,8 @@ describe("从事件缝出一行", () => {
       model: "claude-sonnet-4-5",
       source: "denied",
       message: plain("流中断：已切断"),
-      bytes: 480,
+      sent_bytes: 1_000,
+      received_bytes: 480,
       duration_ms: 3_100,
       usage: { input: 5_000, output: 1, cache_read: 0, cache_write: 0 },
     });
@@ -250,7 +259,8 @@ describe("从事件缝出一行", () => {
     expect(r?.error?.text).toBe("流中断：已切断");
     expect(r?.inputTokens).toBe(5_000);
     expect(r?.durationMs).toBe(3_100);
-    expect(r?.bytes).toBe(480);
+    expect(r?.sentBytes).toBe(1_000);
+    expect(r?.receivedBytes).toBe(480);
   });
 
   /** 响应头之前就失败的：有耗时，**没有用量就不填** */
@@ -269,7 +279,9 @@ describe("从事件缝出一行", () => {
     expect(r?.state).toBe("failed");
     expect(r?.durationMs).toBe(20_000);
     expect(r?.inputTokens).toBeUndefined();
-    expect(r?.bytes).toBeUndefined();
+    // 一跳都没发出去：没有流量，不是 0
+    expect(r?.sentBytes).toBeUndefined();
+    expect(r?.receivedBytes).toBeUndefined();
   });
 });
 
@@ -376,7 +388,8 @@ describe("core 停下时还在跑的行", () => {
       id: 2,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 10,
+      sent_bytes: 1_000,
+      received_bytes: 10,
       duration_ms: 900,
     });
     expect(interruptInFlight(rows)).toBe(true);
@@ -422,6 +435,31 @@ describe("故障转移之后的上游", () => {
       billing: "per-token",
     });
     expect(rows.get(1)?.provider).toBe("official");
+  });
+
+  /** 出口跟着服务它的那一跳走：路由结论里说的那个代理，直连的没有 */
+  it("路由结论带出出口", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started({ id: 1 }));
+    applyEvent(rows, started({ id: 2 }));
+    const routed = (id: number, egress: string | null) =>
+      applyEvent(rows, {
+        kind: "request_routed",
+        id,
+        route: "default",
+        rule: "catch-all",
+        rewritten_by: [],
+        attempts: [{ provider: "official", outcome: "served", status: 200, ms: 900, proxy: egress }],
+        billing: "per-token",
+        egress,
+      });
+    routed(1, "clash");
+    routed(2, null);
+    expect(rows.get(1)?.egress).toBe("clash");
+    expect(rows.get(2)?.egress).toBeUndefined();
+    // 库里那一份说了算
+    mergeHistory(rows, [stored({ id: 1, egress: null })]);
+    expect(rows.get(1)?.egress).toBeUndefined();
   });
 
   /** 被规则拒绝的请求没有发往任何上游：开始时上游就是空的，尝试链也是空的 */
@@ -531,7 +569,9 @@ function stored(over: Partial<HistoryRow> = {}): HistoryRow {
     ttft_ms: 800,
     duration_ms: 4_000,
     tokens_per_sec: 6,
-    bytes: 1_234,
+    sent_bytes: 8_000,
+    received_bytes: 1_234,
+    egress: null,
     input_tokens: 100,
     output_tokens: 20,
     cache_read_tokens: null,
@@ -559,7 +599,8 @@ describe("丢了结局的行，由库里补上", () => {
     const r = rows.get(1);
     expect(r?.state).toBe("done");
     expect(r?.durationMs).toBe(4_000);
-    expect(r?.bytes).toBe(1_234);
+    expect(r?.sentBytes).toBe(8_000);
+    expect(r?.receivedBytes).toBe(1_234);
     // 上游以库里的为准：服务它的是 official，不是开始时首选的 relay
     expect(r?.provider).toBe("official");
     expect(r?.costMicros).toBe(1_500);
@@ -610,7 +651,8 @@ describe("丢了结局的行，由库里补上", () => {
       kind: "request_cancelled",
       id: 1,
       model: "claude-sonnet-4-5",
-      bytes: 10,
+      sent_bytes: 1_000,
+      received_bytes: 10,
       duration_ms: 300,
     });
     mergeHistory(rows, [stored({ cancelled: true })]);
@@ -687,6 +729,13 @@ describe("对账时行对象换不换", () => {
       action: "record",
       blocked: false,
       at_ms: 1_000_500,
+      detail: {
+        direction: "response",
+        locations: [],
+        more_locations: 0,
+        rule_snapshot: { builtin: true, id: "curl-pipe-sh", name: "curl-pipe-sh", core_version: "0.68.0" },
+        outcome_detail: { action: "recorded" },
+      },
     } satisfies CoreEvent;
     applyEvent(rows, flag);
     const first = rows.get(1)?.flagged;
@@ -717,6 +766,18 @@ describe("对账时行对象换不换", () => {
         count: 74,
         revealed: "Ignore the previous task",
         at_ms: 1_000_400,
+        detail: {
+          direction: "request",
+          locations: [],
+          more_locations: 0,
+          rule_snapshot: { builtin: true, id: rule, name: rule, matching: "codepoints", core_version: "0.68.0" },
+          outcome_detail:
+            outcome === "stripped"
+              ? { action: "stripped", segments: 1 }
+              : outcome === "blocked"
+                ? { action: "blocked", client_notice: "[ThinkWatch] refused" }
+                : { action: "recorded" },
+        },
       }) satisfies CoreEvent;
     const before = rows.get(1);
     expect(applyBatch(rows, [matched("recorded", "act-as")])).toBe(false);
@@ -741,7 +802,8 @@ describe("缓存读写跟着用量走", () => {
       id: 1,
       model: "claude-sonnet-4-5",
       status: 200,
-      bytes: 10,
+      sent_bytes: 1_000,
+      received_bytes: 10,
       duration_ms: 900,
       usage: { input: 1_200, output: 300, cache_read: 48_000, cache_write: 2_000 },
     });

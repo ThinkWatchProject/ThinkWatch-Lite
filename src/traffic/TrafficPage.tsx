@@ -187,11 +187,14 @@ export default function TrafficPage({
   }, []);
   const toggleGroup = useCallback((id: string) => setOpenGroups((prev) => toggled(prev, id)), [setOpenGroups]);
 
-  // 深链：带着筛选（外壳已经改好 `view`）、打开某一条、聚焦搜索框
+  // 深链：带着筛选（外壳已经改好 `view`）、打开某一条或某次会话、聚焦搜索框
   useNavParams("requests", (p) => {
     if (p.request !== undefined) {
       setOpenSession(null);
       setOpen(p.request);
+    } else if (p.session !== undefined) {
+      setOpen(null);
+      setOpenSession(p.session);
     }
     if (p.search) requestAnimationFrame(() => searchRef.current?.select());
   });

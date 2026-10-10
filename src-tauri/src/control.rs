@@ -345,41 +345,223 @@ impl ControlClient {
         }
         on_open();
 
-        let mut buf: Vec<u8> = Vec::new();
-        loop {
-            // **一直没有字节就算断了。**连着远程的机器睡过一觉、换过网络，TCP 那一头早就
-            // 不在，这一头却收不到 FIN，会在这里一直等下去：链接还显示「已连接」，实时的
-            // 东西再也不来。core 每 15 秒发一次心跳，错过三次还没有动静就是没了 —— 返回
-            // 错误，调用方照断线处理（远程的重连一次、再订阅，并补报丢过事件）
-            let frame = match tokio::time::timeout(EVENTS_SILENT_FOR, resp.frame()).await {
-                Ok(Some(frame)) => frame?,
-                Ok(None) => break,
-                Err(_) => anyhow::bail!(
-                    "the event stream was silent for {} seconds",
-                    EVENTS_SILENT_FOR.as_secs()
-                ),
-            };
-            let Some(chunk) = frame.data_ref() else {
-                continue;
-            };
-            buf.extend_from_slice(chunk);
-            // SSE 的事件以空行分隔。**必须按空行切而不是按 chunk 切** ——
-            // 一个事件可能被拆在两个 TCP 包里，按 chunk 处理会切出半个
-            // JSON，然后每隔一阵就丢一条事件而且看不出原因。**也按字节切、切完
-            // 再解码**：拆在两半中间的一个汉字，各自解码就成了两个替换符
-            while let Some(idx) = buf.windows(2).position(|w| w == b"\n\n") {
-                let raw = String::from_utf8_lossy(&buf[..idx]).into_owned();
-                buf.drain(..idx + 2);
-                for line in raw.lines() {
-                    if let Some(data) = line.strip_prefix("data:")
-                        && let Ok(ev) = serde_json::from_str::<tw_api::Event>(data.trim())
-                    {
-                        on_event(ev);
-                    }
+        let mut frames = SseFrames::default();
+        // **一直没有字节就算断了**，见 [`silent_frame`]
+        while let Some(chunk) = silent_frame(&mut resp, "event stream").await? {
+            for m in frames.push(&chunk) {
+                if let Ok(ev) = serde_json::from_str::<tw_api::Event>(&m.data) {
+                    on_event(ev);
                 }
             }
         }
         Ok(())
+    }
+
+    /// 打开一个在跑的请求的实时内容（`GET /request/{id}/live`），一条一条读见 [`LiveStream`]。
+    ///
+    /// **先看状态码再交出去**：请求已经结束（或者没有这个请求、是 WebSocket 的）时 core 答
+    /// 404，码是 `control.request_not_running`，这里原样是一条 [`Refused`] —— 调用方按码分得
+    /// 清「已经结束了，去取存下的」和别的失败。
+    ///
+    /// 和事件流一样走 [`Pinned::connect`]：本机的 socket（Windows 上是回环端口）和远程的
+    /// 加密连接是同一条路，打开之后的每一步两边都一样
+    pub async fn open_live(&self, id: u64) -> Result<LiveStream> {
+        LiveStream::open(self.connect().await?, id).await
+    }
+}
+
+/// 读一段响应体，**一直没有字节就算断了**。
+///
+/// 连着远程的机器睡过一觉、换过网络，TCP 那一头早就不在，这一头却收不到 FIN，会在这里一直
+/// 等下去：链接还显示「已连接」，实时的东西再也不来。core 每 15 秒发一次心跳，错过三次还没有
+/// 动静就是没了 —— 返回错误，调用方照断线处理（远程的重连一次、再订阅，并补报丢过事件）。
+///
+/// 流正常结束是 `None`；不是数据的帧（HTTP 的 trailer）跳过
+async fn silent_frame(
+    resp: &mut hyper::Response<hyper::body::Incoming>,
+    what: &str,
+) -> Result<Option<hyper::body::Bytes>> {
+    loop {
+        let frame = match tokio::time::timeout(EVENTS_SILENT_FOR, resp.frame()).await {
+            Ok(Some(frame)) => frame?,
+            Ok(None) => return Ok(None),
+            Err(_) => anyhow::bail!(
+                "the {what} was silent for {} seconds",
+                EVENTS_SILENT_FOR.as_secs()
+            ),
+        };
+        if let Ok(data) = frame.into_data() {
+            return Ok(Some(data));
+        }
+    }
+}
+
+/// 一条 SSE 消息：`event:` 那一行（没写是空串）和 `data:` 的那几行（几行之间换行连起来）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SseMessage {
+    pub event: String,
+    pub data: String,
+}
+
+/// 把 SSE 的字节流切成一条一条消息。
+///
+/// **按空行切，不按收到的那一块切** —— 一条消息可能被拆在两个 TCP 包里，按块处理会切出
+/// 半个 JSON，然后每隔一阵就丢一条而且看不出原因。**也按字节切、切完再解码**：拆在两半
+/// 中间的一个汉字，各自解码就成了两个替换符。
+///
+/// 只有注释（`: keep-alive` 这样的心跳）、什么字段都没有的不算一条。`\r\n` 的换行也认
+#[derive(Default)]
+pub(crate) struct SseFrames {
+    buf: Vec<u8>,
+}
+
+impl SseFrames {
+    /// 收进一块字节，交出这一块里凑齐了的消息，按先后
+    pub(crate) fn push(&mut self, chunk: &[u8]) -> Vec<SseMessage> {
+        self.buf.extend_from_slice(chunk);
+        let mut out = Vec::new();
+        let mut from = 0;
+        while let Some((end, sep)) = frame_end(&self.buf[from..]) {
+            if let Some(m) = sse_message(&self.buf[from..from + end]) {
+                out.push(m);
+            }
+            from += end + sep;
+        }
+        self.buf.drain(..from);
+        out
+    }
+}
+
+/// 第一个空行在哪：它前面是一条消息，`.1` 是空行本身占几个字节
+fn frame_end(buf: &[u8]) -> Option<(usize, usize)> {
+    let mut i = 0;
+    while i + 1 < buf.len() {
+        match (buf[i], buf[i + 1]) {
+            (b'\n', b'\n') => return Some((i, 2)),
+            (b'\r', b'\n') if buf.get(i + 2..i + 4) == Some(b"\r\n") => return Some((i, 4)),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// 一条消息（不含结尾的空行）读成字段。冒号后面的一个空格可有可无，`:` 开头的是注释
+fn sse_message(raw: &[u8]) -> Option<SseMessage> {
+    let text = String::from_utf8_lossy(raw);
+    let mut event = None;
+    let mut data: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.starts_with(':') {
+            continue;
+        }
+        let (field, value) = match line.split_once(':') {
+            Some((f, v)) => (f, v.strip_prefix(' ').unwrap_or(v)),
+            None => (line, ""),
+        };
+        match field {
+            "event" => event = Some(value),
+            "data" => data.push(value),
+            _ => {}
+        }
+    }
+    if event.is_none() && data.is_empty() {
+        return None;
+    }
+    Some(SseMessage {
+        event: event.unwrap_or_default().to_string(),
+        data: data.join("\n"),
+    })
+}
+
+/// 一个在跑的请求的实时内容（[`ControlClient::open_live`]）。
+///
+/// core 先把到目前为止有的补发一遍，再接着发新来的，`end` 之后关掉。[`LiveStream::next`]
+/// 一条一条交出来；认不出的消息（新版 core 多出来的种类）跳过。
+///
+/// **丢掉它就断开**：连接的那个任务跟着它走（`Drop`），界面关了浮层、换了一条请求，core 那边
+/// 的订阅随即结束，这一侧不留一个还在读的任务
+pub struct LiveStream {
+    resp: hyper::Response<hyper::body::Incoming>,
+    /// 驱动这条连接的任务
+    conn: tokio::task::JoinHandle<()>,
+    frames: SseFrames,
+    /// 切出来了、还没交出去的
+    ready: std::collections::VecDeque<tw_api::LiveContent>,
+    /// 交出过 `end`
+    ended: bool,
+}
+
+impl Drop for LiveStream {
+    fn drop(&mut self) {
+        self.conn.abort();
+    }
+}
+
+impl LiveStream {
+    /// 在一条已经连上、握过手的流上发出订阅
+    async fn open(stream: Box<dyn Stream>, id: u64) -> Result<Self> {
+        let io = TokioIo::new(stream);
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+        let conn = tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                tracing::debug!("实时内容的连接结束：{e}");
+            }
+        });
+        let id = id.to_string();
+        let req = hyper::Request::builder()
+            .uri(tw_api::fill(ep::RequestLive::PATH, &[("id", id.as_str())]))
+            .header(hyper::header::HOST, "localhost")
+            .header(hyper::header::ACCEPT, "text/event-stream")
+            .body(String::new())?;
+        let resp = sender.send_request(req).await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.into_body().collect().await?.to_bytes();
+            conn.abort();
+            return Err(refused(status, &body));
+        }
+        Ok(Self {
+            resp,
+            conn,
+            frames: SseFrames::default(),
+            ready: Default::default(),
+            ended: false,
+        })
+    }
+
+    /// 下一条。交出 `end` 之后是 `None`。
+    ///
+    /// **没等到 `end` 流就断了是错误**（core 退了、连接断了、太久没有一个字节）：请求怎么
+    /// 收的场这一侧不知道，调用方该去取一次存下的详情。界面上会显示这一句，原话进日志
+    pub async fn next(&mut self) -> Result<Option<tw_api::LiveContent>> {
+        let cut = |why: &dyn std::fmt::Display| {
+            tracing::debug!("实时内容断了：{why}");
+            anyhow::anyhow!(tr!(
+                "连接在请求结束前中断",
+                "The connection closed before the request ended"
+            ))
+        };
+        loop {
+            if let Some(c) = self.ready.pop_front() {
+                self.ended |= matches!(c, tw_api::LiveContent::End(_));
+                return Ok(Some(c));
+            }
+            if self.ended {
+                return Ok(None);
+            }
+            let chunk = match silent_frame(&mut self.resp, "live content stream").await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => return Err(cut(&"closed")),
+                Err(e) => return Err(cut(&format!("{e:#}"))),
+            };
+            for m in self.frames.push(&chunk) {
+                if let Some(c) = tw_api::LiveContent::parse(&m.event, &m.data) {
+                    self.ready.push_back(c);
+                }
+            }
+        }
     }
 }
 
@@ -473,7 +655,7 @@ fn request<E: Endpoint>(params: &[&str], req: &E::Req) -> Result<(String, Option
     );
     anyhow::ensure!(
         E::FORMAT != Format::Events,
-        "{} is an event stream; use subscribe_events",
+        "{} is an event stream; use subscribe_events or open_live",
         E::NAME
     );
     let filled: Vec<(&str, &str)> = E::PARAMS
@@ -777,28 +959,172 @@ mod tests {
     #[test]
     fn sse_framing_splits_on_blank_lines_not_chunks() {
         // 一个事件可能被拆在两个 TCP 包里。按 chunk 处理会切出半个 JSON，
-        // 然后每隔一阵丢一条事件而且看不出原因。这里把那个分帧逻辑单独
-        // 验一遍。
-        let mut buf = String::new();
+        // 然后每隔一阵丢一条事件而且看不出原因。事件流和实时内容用的是同一个分帧
+        let mut frames = SseFrames::default();
         let mut got = Vec::new();
         for chunk in [
             "data: {\"kind\":\"request_",
             "started\",\"id\":1,\"client\":\"c\",\"route\":\"default\",\"rule\":\"catch-all\",\"rewritten_by\":[],\"provider\":\"p\",\"billing\":\"per-token\",\"model\":\"m\",\"method\":\"POST\",\"path\":\"/x\",\"at_ms\":0}\n\n",
         ] {
-            buf.push_str(chunk);
-            while let Some(idx) = buf.find("\n\n") {
-                let raw = buf[..idx].to_string();
-                buf.drain(..idx + 2);
-                for line in raw.lines() {
-                    if let Some(d) = line.strip_prefix("data:")
-                        && let Ok(ev) = serde_json::from_str::<tw_api::Event>(d.trim())
-                    {
-                        got.push(ev);
-                    }
+            for m in frames.push(chunk.as_bytes()) {
+                if let Ok(ev) = serde_json::from_str::<tw_api::Event>(&m.data) {
+                    got.push(ev);
                 }
             }
         }
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id(), 1);
+    }
+
+    /// 实时内容的分帧：名字和数据各归各的，心跳不算一条，`\r\n` 也认，一个汉字拆在两块
+    /// 中间也拼得回来
+    #[test]
+    fn sse_messages_keep_their_event_name_and_skip_heartbeats() {
+        let mut frames = SseFrames::default();
+        let whole = "event: head\ndata: {\"a\":1}\n\n: keep-alive\n\nevent: body\r\ndata: 第一行\r\ndata:第二行\r\n\r\nevent: end\ndata: {}\n\n";
+        let bytes = whole.as_bytes();
+        // 切在「第」字的第二个字节上
+        let cut = whole.find("第").unwrap() + 1;
+        let mut got = frames.push(&bytes[..cut]);
+        assert_eq!(got.len(), 1, "{got:?}");
+        got.extend(frames.push(&bytes[cut..]));
+        assert_eq!(
+            got,
+            [
+                SseMessage {
+                    event: "head".into(),
+                    data: "{\"a\":1}".into()
+                },
+                SseMessage {
+                    event: "body".into(),
+                    data: "第一行\n第二行".into()
+                },
+                SseMessage {
+                    event: "end".into(),
+                    data: "{}".into()
+                },
+            ]
+        );
+        assert!(frames.push(b"").is_empty());
+    }
+
+    /// 一个假的控制面：握手照 core 那样做，然后对第一个请求原样写回 `answer` 的那几段
+    /// （每段之间停一下，让它们分在不同的包里）。回环那一档，每个平台上都跑。
+    ///
+    /// 返回连它的客户端、收到的请求行，和放钥匙的临时目录（拿着它到测试结束）
+    async fn fake_core(
+        answer: Vec<Vec<u8>>,
+    ) -> (
+        ControlClient,
+        tokio::sync::oneshot::Receiver<String>,
+        tempfile::TempDir,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (dir, config) = key_file("live");
+        let key = tw_link::read_key(&config).unwrap();
+        let port_file = dir.path().join("control.port");
+        let l = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        std::fs::write(&port_file, l.local_addr().unwrap().port().to_string()).unwrap();
+        let (line_tx, line_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (tcp, _) = l.accept().await.unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "test");
+            let mut s = acceptor.accept(tcp).await.unwrap().stream;
+            let mut req = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = s.read(&mut buf).await.unwrap();
+                assert!(n > 0, "请求没写完连接就关了");
+                req.extend_from_slice(&buf[..n]);
+            }
+            let text = String::from_utf8_lossy(&req).into_owned();
+            let _ = line_tx.send(text.lines().next().unwrap_or_default().to_string());
+            for part in answer {
+                s.write_all(&part).await.unwrap();
+                s.flush().await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            let _ = s.shutdown().await;
+        });
+        let client = ControlClient::new(tw_api::control::Address::Loopback { port_file }, config);
+        (client, line_rx, dir)
+    }
+
+    /// SSE 的响应头：不写长度，连接关掉就是结束
+    const SSE_HEAD: &str =
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+
+    /// 实时内容一条一条读出来：补发的和后来的都在，心跳不算，一条消息拆在两个包里、一个汉字
+    /// 拆在两半中间也拼得回来，`end` 之后没有了
+    #[tokio::test]
+    async fn live_content_is_read_message_by_message_until_end() {
+        let body = "event: body\ndata: {\"side\":\"client\",\"dir\":\"response\",\"attempt\":0,\"text\":\"你好\",\"truncated\":false}\n\n";
+        let split = body.find("你").unwrap() + 2;
+        let (client, line, _dir) = fake_core(vec![
+            SSE_HEAD.into(),
+            "event: head\ndata: {\"side\":\"client\",\"dir\":\"request\",\"attempt\":0,\"line\":\"POST /v1/messages HTTP/1.1\",\"headers\":[[\"x-api-key\",\"tw-ab…cd\"]]}\n\n: keep-alive\n\n".into(),
+            body.as_bytes()[..split].to_vec(),
+            body.as_bytes()[split..].to_vec(),
+            "event: end\ndata: {\"status\":200,\"outcome\":\"finished\"}\n\n".into(),
+        ])
+        .await;
+        let mut live = client.open_live(42).await.unwrap();
+        assert_eq!(line.await.unwrap(), "GET /request/42/live HTTP/1.1");
+
+        let Some(tw_api::LiveContent::Head(h)) = live.next().await.unwrap() else {
+            panic!("第一条应当是报文头");
+        };
+        assert_eq!(h.line, "POST /v1/messages HTTP/1.1");
+        assert_eq!(
+            h.headers,
+            vec![("x-api-key".to_string(), "tw-ab…cd".to_string())]
+        );
+        let Some(tw_api::LiveContent::Body(b)) = live.next().await.unwrap() else {
+            panic!("第二条应当是正文");
+        };
+        assert_eq!(b.text, "你好");
+        assert_eq!(b.dir, tw_api::WireDir::Response);
+        let Some(tw_api::LiveContent::End(e)) = live.next().await.unwrap() else {
+            panic!("最后一条应当是 end");
+        };
+        assert_eq!(e.status, Some(200));
+        assert_eq!(e.outcome, tw_api::LiveOutcome::Finished);
+        assert!(live.next().await.unwrap().is_none());
+    }
+
+    /// 请求已经结束：core 的 404 原样是一条带码的拒绝，界面按码去取存下的
+    #[tokio::test]
+    async fn a_request_that_is_not_running_is_refused_with_its_code() {
+        let body = r#"{"code":"control.request_not_running","args":{"id":"7"},"text":"Request #7 is not running."}"#;
+        let (client, _line, _dir) = fake_core(vec![format!(
+            "HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        ).into_bytes()])
+        .await;
+        let Err(e) = client.open_live(7).await else {
+            panic!("应当被拒绝");
+        };
+        let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
+            panic!("应当是一条带码的拒绝：{e:#}");
+        };
+        assert_eq!(m.code, "control.request_not_running");
+    }
+
+    /// 没等到 `end` 流就断了：是错误，不是正常结束 —— 结局这一侧不知道
+    #[tokio::test]
+    async fn a_stream_that_closes_before_end_is_an_error() {
+        let (client, _line, _dir) = fake_core(vec![
+            SSE_HEAD.into(),
+            "event: body\ndata: {\"side\":\"client\",\"dir\":\"response\",\"attempt\":0,\"text\":\"半\",\"truncated\":false}\n\n".into(),
+        ])
+        .await;
+        let mut live = client.open_live(9).await.unwrap();
+        assert!(matches!(
+            live.next().await.unwrap(),
+            Some(tw_api::LiveContent::Body(_))
+        ));
+        assert!(live.next().await.is_err());
     }
 }

@@ -7,8 +7,8 @@ import { api } from "./api";
 
 /** 一次读多少条。**一屏半** —— 再多就是替用户翻他不会看的那几页 */
 const PAGE = 100;
-/** core 一次最多给这么多 */
-const MAX = 500;
+/** core 一次最多给这么多。导出整段时按它翻页 */
+export const MAX_PAGE = 500;
 
 export interface SecurityLog {
   r: Resource<SecurityEventsPage>;
@@ -42,7 +42,7 @@ export function useSecurityLog(range: Range, tick: number): SecurityLog {
     () =>
       api.events({
         from_ms: windowStart(range),
-        limit: Math.min(MAX, Math.max(PAGE, loaded.current)),
+        limit: Math.min(MAX_PAGE, Math.max(PAGE, loaded.current)),
       }),
     // 库里多了请求就重读：新命中不用手动刷新
     { deps: [tick] },

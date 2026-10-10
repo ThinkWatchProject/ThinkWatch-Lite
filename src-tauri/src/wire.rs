@@ -778,6 +778,48 @@ pub enum LocalEvent {
     ClockChanged { at_ms: u64 },
 }
 
+// ---------------------------------------------------------- 一个在跑的请求的实时内容
+
+/// 一个在跑的请求的实时内容，搬给界面的一批（Tauri 事件 `request-live`，见 `crate::live`）。
+///
+/// **一批不止一条**：回答按上游的 SSE 事件一段一段来，快的模型一秒几百段；攒一小会儿再
+/// 一起交，界面那边一帧收一次。
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct LiveBatch {
+    /// 界面订阅时自己起的号（`live_subscribe` 的 `sub`）：只认自己那一个
+    pub sub: String,
+    /// core 发来的，按先后
+    pub items: Vec<LiveItem>,
+    /// 这个订阅结束了，之后不再有它的消息：收到 `end` 之后是 `{ error: null }`；没等到 `end`
+    /// 就断了（core 退了、连接断了、换了连接）是那条错误 —— 界面该去取一次存下的详情
+    pub closed: Option<LiveClosed>,
+}
+
+/// core 发来的一条（[`tw_api::LiveContent`]），带上它的种类
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
+pub enum LiveItem {
+    Head(tw_api::HeadView),
+    Body(tw_api::LiveBody),
+    End(tw_api::LiveEnd),
+}
+
+impl From<tw_api::LiveContent> for LiveItem {
+    fn from(c: tw_api::LiveContent) -> Self {
+        match c {
+            tw_api::LiveContent::Head(h) => Self::Head(h),
+            tw_api::LiveContent::Body(b) => Self::Body(b),
+            tw_api::LiveContent::End(e) => Self::End(e),
+        }
+    }
+}
+
+/// 订阅怎么结束的（[`LiveBatch::closed`]）
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct LiveClosed {
+    pub error: Option<Msg>,
+}
+
 // ---------------------------------------------------------- 导入链接
 
 /// 一条导入链接（`thinkwatch://import?…`）提议新建的上游。**已经在 Rust 侧逐项校验过**

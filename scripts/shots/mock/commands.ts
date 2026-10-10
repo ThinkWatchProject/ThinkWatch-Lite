@@ -21,7 +21,7 @@ import { IN_FLIGHT, costBucketsBy, costBy, dashboard, upstreamLatency, upstreamT
 import { clientsResponse, mcpTargets, plan, scanReport } from "./clients";
 import { NOTICES, APP_VERSION, SERVER, autostart, connView, langView, menubar, noticeMode, tested, themeView, updateView } from "./app";
 import { P } from "./params";
-import { clone, msg } from "./util";
+import { DAY, clone, msg } from "./util";
 
 /** 连着远程时，状态、概览都是服务器那台 core 答的：它的网关绑在所有网卡上 */
 const gatewayAddr = () => (P.remote ? SERVER.gateway_addr : LOCAL_GATEWAY);
@@ -57,7 +57,7 @@ interface Commands {
   update_fit: [void, void];
   // 概览与用量（Rust 侧从 core 取齐了一起给）
   dashboard: [Span, Dashboard];
-  upstream_stats: [Span, UpstreamStats];
+  upstream_stats: [Span & { egressSinceMs: [number, number, number] }, UpstreamStats];
   key_usage: [Span, KeyUsage];
   // 提醒
   notices_list: [void, Notice[]];
@@ -121,8 +121,11 @@ const COMMANDS: Table = {
     return dashboard(sinceMs, bucketMs);
   },
   upstream_stats: (a) => {
-    const { sinceMs, bucketMs } = need("upstream_stats", a, "sinceMs", "bucketMs");
+    const { sinceMs, bucketMs, egressSinceMs } = need("upstream_stats", a, "sinceMs", "bucketMs", "egressSinceMs");
+    // 按出口分的流量，每个起点一份、整段一格（upstreams.rs 的 `WHOLE_MS`）：直连是空串
+    const egress = (from: number) => costBucketsBy(from, 100 * 365 * DAY, (h) => h.egress ?? "");
     return {
+      egress: [egress(egressSinceMs[0]), egress(egressSinceMs[1]), egress(egressSinceMs[2])],
       costs: costBy(sinceMs, (h) => h.provider || null),
       latency: upstreamLatency(sinceMs),
       token_rate: upstreamTokenRate(sinceMs),

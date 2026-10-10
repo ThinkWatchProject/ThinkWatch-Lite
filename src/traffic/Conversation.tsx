@@ -15,6 +15,7 @@ import { size, when } from "@/format";
 import { useText } from "@/i18n";
 import { forget, useResource } from "@/lib/resource";
 import { cn } from "@/lib/utils";
+import { useHitTone, useMarker, type Mark } from "@/security/Highlight";
 import { prettyJson } from "@/prettyJson";
 import { BodyText } from "./drawer/Payload";
 import type {
@@ -31,7 +32,7 @@ import { Button, DISCLOSURE } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
 import { Skeleton } from "@/ui/skeleton";
 import { EmptyState, ErrorState } from "@/ui/states";
-import { StatusLabel } from "@/ui/status-dot";
+import { StatusDot, StatusLabel } from "@/ui/status-dot";
 import { IconSession } from "@/ui/icons";
 import { PanelSkeleton } from "./PanelHeader";
 import { sessionsText } from "./Sessions.i18n";
@@ -84,13 +85,13 @@ const HOUR_MS = 3_600_000;
  * 英文最长的「Assistant」在 Windows 大一号的字下有 54px。
  */
 const COLS = "grid-cols-[2.75rem_minmax(0,1fr)] [&:lang(en)]:grid-cols-[4rem_minmax(0,1fr)]";
-const LINES = `grid ${COLS} items-start gap-x-3 gap-y-2`;
+export const LINES = `grid ${COLS} items-start gap-x-3 gap-y-2`;
 /** 底色那一块里的（见 `EarlierBlocks`）：左右各有 8px 内边距，左边一列窄 8px，右边的内容和外面对齐 */
 const NESTED_COLS = "grid-cols-[2.25rem_minmax(0,1fr)] [&:lang(en)]:grid-cols-[3.5rem_minmax(0,1fr)]";
 const NESTED_LINES = `grid ${NESTED_COLS} items-start gap-x-3 gap-y-2`;
 
 /** 结果那一行写「Read 的结果」：调用 id → 工具名（见 `toolNames`） */
-const Names = createContext<ReadonlyMap<string, string>>(new Map());
+export const Names = createContext<ReadonlyMap<string, string>>(new Map());
 
 /**
  * 最近看过的几次会话的对话留在缓存里，再早的丢掉。一次长会话的对话就有几 MB，
@@ -482,7 +483,7 @@ function RestartRule() {
 }
 
 /** 网格里的一行：左边是谁说的（可以空着），右边是内容 */
-function Line({ label, children }: { label?: string; children: ReactNode }) {
+export function Line({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <>
       {/* 和右边第一行的中线对齐：右边的行（折叠行、一行字）都是 24px 高 */}
@@ -506,7 +507,7 @@ function roleLabel(role: TranscriptRole, t: (typeof conversationText)["zh"]): st
 }
 
 /** 一块：一个角色说的几段，或者几条工具结果（结果那一行自己写着是谁的，左边不标） */
-function BlockLine({ b }: { b: Block }) {
+export function BlockLine({ b }: { b: Block }) {
   const t = useText(conversationText);
   return (
     <Line label={b.kind === "said" ? roleLabel(b.role, t) : undefined}>
@@ -521,13 +522,14 @@ function BlockLine({ b }: { b: Block }) {
  *
  * 展开的仍是同样的两列，左边那一列和外面对齐；淡淡的底色说明它是一整段带过来的历史。
  */
-function Earlier({ messages }: { messages: readonly TranscriptMessage[] }) {
+export function Earlier({ messages }: { messages: readonly TranscriptMessage[] }) {
   const t = useText(conversationText);
   const [open, setOpen] = useState(false);
+  const hit = useHitTone(messages);
   return (
     <>
       <Line>
-        <FoldRow open={open} onToggle={() => setOpen((o) => !o)}>
+        <FoldRow open={open} onToggle={() => setOpen((o) => !o)} hit={hit}>
           <span className="truncate">{t.earlier(messages.length)}</span>
         </FoldRow>
       </Line>
@@ -553,7 +555,7 @@ function EarlierBlocks({ messages }: { messages: readonly TranscriptMessage[] })
 }
 
 /** 一块里的几段，上下排。相邻的图片和附件排成一行 */
-function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
+export function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
   const runs: (TranscriptPart | TranscriptPart[])[] = [];
   for (const p of parts) {
     const chip = p.kind === "image" || p.kind === "other";
@@ -598,11 +600,12 @@ function Part({ p }: { p: TranscriptPart }) {
  * 说的话：原样的空白和换行，不当 Markdown 解析（模型写的 `**` 和 `#` 就是那几个字符）。
  * 长的先显示开头，「展开全部」看整段。
  */
-function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
+export function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
   const t = useText(conversationText);
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, PROSE), [text]);
   const cut = head !== null && !all;
+  const mark = useMarker();
   return (
     <div>
       {/* 上边 2px：一行字的中线和左边标签的中线对齐（标签那一格 24px 高，字的行高 19.5px） */}
@@ -612,7 +615,7 @@ function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
           muted ? "text-muted-foreground" : "text-foreground",
         )}
       >
-        {cut ? head : text}
+        {mark(cut ? head : text)}
         {cut && <span className="text-muted-foreground"> …</span>}
       </p>
       {head !== null && (
@@ -633,18 +636,22 @@ function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
  * 可以点开的一行：箭头，一行提要，右边一个淡的数。点开的内容在 `Fold` 里。
  * 按钮左右各伸出 6px，悬停的底色比文字宽一圈，文字和上下的正文对齐（同「每轮费用」）。
  */
-function FoldRow({
+export function FoldRow({
   open,
   onToggle,
   meta,
+  hit = null,
   children,
 }: {
   open: boolean;
   onToggle: () => void;
   /** 右端那个淡的数（字数） */
   meta?: ReactNode;
+  /** 收起的内容里有安全命中（请求详情的「内容」）：数的前面一个点，颜色和标出来的底色一样 */
+  hit?: Mark["tone"] | null;
   children: ReactNode;
 }) {
+  const t = useText(conversationText);
   return (
     <div className="-mx-1.5">
       <Button
@@ -656,6 +663,7 @@ function FoldRow({
       >
         <ChevronRightIcon className={cn("size-3.5 motion-bar", open && "rotate-90")} />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">{children}</span>
+        {hit && <StatusDot tone={hit === "warn" ? "warn" : "error"} label={t.hasHit} />}
         {meta !== undefined && <span className="shrink-0 tw-label tw-num text-muted-foreground">{meta}</span>}
       </Button>
     </div>
@@ -663,7 +671,7 @@ function FoldRow({
 }
 
 /** 点不开的一行，和 `FoldRow` 对齐：箭头的位置空着 */
-function StillRow({ children }: { children: ReactNode }) {
+export function StillRow({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-6 min-w-0 items-center gap-1.5 text-muted-foreground">
       <span aria-hidden className="size-3.5 shrink-0" />
@@ -672,11 +680,21 @@ function StillRow({ children }: { children: ReactNode }) {
   );
 }
 
-function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; children: ReactNode }) {
+export function Fold({
+  head,
+  meta,
+  hit,
+  children,
+}: {
+  head: ReactNode;
+  meta?: ReactNode;
+  hit?: Mark["tone"] | null;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <FoldRow open={open} onToggle={() => setOpen((o) => !o)} meta={meta}>
+      <FoldRow open={open} onToggle={() => setOpen((o) => !o)} meta={meta} hit={hit}>
         {head}
       </FoldRow>
       {/* 收起时内容不在页面里：几百轮里每个工具结果都画出来，展开前就够重了 */}
@@ -688,10 +706,11 @@ function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; chi
 }
 
 /** 一段要读的长文字（系统提示、思考），收起；点开是左边一道竖线引着的原文 */
-function TextFold({ title, text, muted = false }: { title: string; text: string; muted?: boolean }) {
+export function TextFold({ title, text, muted = false }: { title: string; text: string; muted?: boolean }) {
   const t = useText(conversationText);
+  const hit = useHitTone(text);
   return (
-    <Fold head={<span className="truncate text-foreground">{title}</span>} meta={t.chars(text.length)}>
+    <Fold head={<span className="truncate text-foreground">{title}</span>} meta={t.chars(text.length)} hit={hit}>
       <div className="ml-[5px] border-l-2 border-border pl-3">
         <Prose text={text} muted={muted} />
       </div>
@@ -700,7 +719,7 @@ function TextFold({ title, text, muted = false }: { title: string; text: string;
 }
 
 /** 思考，默认收起。只有签名没有正文的，说上游没给 */
-function Thinking({ text }: { text: string }) {
+export function Thinking({ text }: { text: string }) {
   const t = useText(conversationText);
   if (text.trim() === "") {
     return (
@@ -716,8 +735,10 @@ function Thinking({ text }: { text: string }) {
 /** 工具调用：名字和参数的提要一行，点开是排好的参数 */
 function ToolCallRow({ p }: { p: ToolCall }) {
   const preview = useMemo(() => argsPreview(p.input), [p.input]);
+  const hit = useHitTone(p.input);
   return (
     <Fold
+      hit={hit}
       head={
         <>
           <span className="shrink-0 font-medium text-foreground">{p.name}</span>
@@ -731,7 +752,7 @@ function ToolCallRow({ p }: { p: ToolCall }) {
 }
 
 /** 点开之后才排：Write 的参数里是整个文件 */
-function Args({ input }: { input: string }) {
+export function Args({ input }: { input: string }) {
   const pretty = useMemo(() => prettyJson(input, false), [input]);
   return <Mono text={pretty ?? input} json={pretty !== null} />;
 }
@@ -746,6 +767,7 @@ function firstLine(text: string): string {
 function ToolResultRow({ p }: { p: ToolResult }) {
   const t = useText(conversationText);
   const name = useContext(Names).get(p.call_id);
+  const hit = useHitTone(p.text);
   const label = (
     <span className="shrink-0 text-foreground">
       {name ? t.resultOf(<span className="font-medium">{name}</span>) : t.result}
@@ -775,6 +797,7 @@ function ToolResultRow({ p }: { p: ToolResult }) {
         </>
       }
       meta={t.chars(p.text.length)}
+      hit={hit}
     >
       <Mono text={p.text} json={false} error={p.is_error} />
     </Fold>
@@ -785,7 +808,7 @@ function ToolResultRow({ p }: { p: ToolResult }) {
  * 等宽的一框（工具参数、工具结果），和请求详情「内容」那一页同一个样子：框子最高
  * 320px、自己滚。整个文件那么长的结果先画开头，「展开全部」再画其余。
  */
-function Mono({ text, json, error = false }: { text: string; json: boolean; error?: boolean }) {
+export function Mono({ text, json, error = false }: { text: string; json: boolean; error?: boolean }) {
   const t = useText(conversationText);
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, MONO), [text]);
@@ -816,7 +839,7 @@ function Mono({ text, json, error = false }: { text: string; json: boolean; erro
 }
 
 /** 图片和其他附件：一个小方块写清是什么，不画内容（记录里本来也没有） */
-function Chip({ p }: { p: TranscriptPart }) {
+export function Chip({ p }: { p: TranscriptPart }) {
   const t = useText(conversationText);
   if (p.kind !== "image" && p.kind !== "other") return null;
   const text =
@@ -837,7 +860,7 @@ function Chip({ p }: { p: TranscriptPart }) {
 }
 
 /** 一小块说明：显示不出来的部分（虚线框），或者失败（红） */
-function Pill({ tone = "gap", children }: { tone?: "gap" | "error"; children: ReactNode }) {
+export function Pill({ tone = "gap", children }: { tone?: "gap" | "error"; children: ReactNode }) {
   return (
     <span
       className={cn(

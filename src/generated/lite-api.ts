@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, Msg, PinnedModel, Protocol } from "./tw-api";
+import type { CostBucketGroup, CostGroup, HeadView, LiveBody, LiveEnd, Msg, PinnedModel, Protocol } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -346,6 +346,37 @@ totals: Array<CostGroup>,
  * 按格子分。**稀疏的**：没有请求的格子不在里面，由界面补
  */
 buckets: Array<CostBucketGroup>, };
+
+/**
+ * 一个在跑的请求的实时内容，搬给界面的一批（Tauri 事件 `request-live`，见 `crate::live`）。
+ *
+ * **一批不止一条**：回答按上游的 SSE 事件一段一段来，快的模型一秒几百段；攒一小会儿再
+ * 一起交，界面那边一帧收一次。
+ */
+export type LiveBatch = { 
+/**
+ * 界面订阅时自己起的号（`live_subscribe` 的 `sub`）：只认自己那一个
+ */
+sub: string, 
+/**
+ * core 发来的，按先后
+ */
+items: Array<LiveItem>, 
+/**
+ * 这个订阅结束了，之后不再有它的消息：收到 `end` 之后是 `{ error: null }`；没等到 `end`
+ * 就断了（core 退了、连接断了、换了连接）是那条错误 —— 界面该去取一次存下的详情
+ */
+closed: LiveClosed | null, };
+
+/**
+ * 订阅怎么结束的（[`LiveBatch::closed`]）
+ */
+export type LiveClosed = { error: Msg | null, };
+
+/**
+ * core 发来的一条（[`tw_api::LiveContent`]），带上它的种类
+ */
+export type LiveItem = { "event": "head", "data": HeadView } | { "event": "body", "data": LiveBody } | { "event": "end", "data": LiveEnd };
 
 /**
  * 这台机器上发生的、界面要跟上的事（Tauri 事件 `local-event`）。

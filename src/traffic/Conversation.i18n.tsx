@@ -53,6 +53,8 @@ export const conversationText = messages(
     chars: (n: number) => `${n.toLocaleString()} 字符`,
     showAll: "展开全部",
     collapse: "折叠",
+    /** 收起的那一行后面的点：里面有安全命中（读屏用） */
+    hasHit: "含安全命中",
 
     /** 历史重新开始的那一轮上面的分隔线 */
     restart: "对话历史从此处重新开始",
@@ -110,6 +112,7 @@ export const conversationText = messages(
     chars: (n: number) => count(n, "character", "characters"),
     showAll: "Show all",
     collapse: "Collapse",
+    hasHit: "Contains a security hit",
 
     restart: "The conversation history starts over here",
     earlier: (n: number) => `Earlier conversation · ${count(n, "message", "messages")}`,

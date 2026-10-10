@@ -25,7 +25,7 @@ Claude Code、Codex 等 AI 客户端的本地网关，支持 macOS、Windows 与
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh/overview-dark.png">
-  <img src="docs/screenshots/zh/overview-light.png" alt="最近 7 天的概览：token、费用与请求数及其与前 7 天的对比，注明费用中的估算部分和无法计价的请求；按模型分层的趋势图，标出有失败的时段；以及按 token 与费用排列的模型">
+  <img src="docs/screenshots/zh/overview-light.png" alt="最近 7 天的概览：需要处理的事项（失败的请求、被切断的工具调用、无法计价的请求）；token、费用、缓存命中、请求、首 token 与流量六张卡片，各带与前 7 天的对比和趋势图；下方是按模型的统计">
 </picture>
 
 ## 要点

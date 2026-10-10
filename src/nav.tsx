@@ -27,7 +27,8 @@ export type Surface = (typeof SURFACES)[number];
  * 页面的状态：
  *
  * · `requests`：带着筛选条件打开流量（`filter` 覆盖在空条件上，不和现有的叠加）、
- *   打开某一条请求的详情、聚焦搜索框。
+ *   打开某一条请求的详情、打开某次会话的详情（`session`，安全日志里「查看会话」）、
+ *   聚焦搜索框。
  * · `keys`：定位并高亮某把密钥（`key`）。
  * · `security`：日志定位到某个时间段。
  * · `upstreams`：定位某个上游（`upstream`，页面接上之前忽略）。
@@ -48,7 +49,7 @@ export type Surface = (typeof SURFACES)[number];
  */
 export interface NavParams {
   dashboard: undefined;
-  requests: { filter?: Partial<Filter>; grouped?: boolean; request?: number; search?: boolean };
+  requests: { filter?: Partial<Filter>; grouped?: boolean; request?: number; session?: string; search?: boolean };
   clients: { detail?: string; setup?: string };
   keys: { key?: string; edit?: string; create?: boolean };
   upstreams: {

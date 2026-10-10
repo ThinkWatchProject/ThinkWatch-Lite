@@ -114,7 +114,17 @@ export interface RequestRow {
   durationMs?: number;
   /** 生成速度，token/秒，core 在结局里算好的。只有跑完的流式请求有 */
   tokensPerSec?: number;
-  bytes?: number;
+  /**
+   * 发给上游的请求体、从上游收到的响应体，字节，每一跳加起来（网关和上游之间、线上的
+   * 样子）。**结局到了才有**；本地应答的、一跳都没发出去的没有
+   */
+  sentBytes?: number;
+  receivedBytes?: number;
+  /**
+   * 从哪个出口出去的：服务它的那一跳走的代理名（跟随系统的是 `system`）。**直连的没有，
+   * 路由报出结论之前也没有**
+   */
+  egress?: string;
   /** 新输入的 token。**不含缓存读写**：三者不重叠，加起来才是这一轮送进去的全部 */
   inputTokens?: number;
   outputTokens?: number;
@@ -213,7 +223,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       if (r) {
         r.state = "done";
         r.status = ev.status;
-        r.bytes = ev.bytes;
+        r.sentBytes = ev.sent_bytes;
+        r.receivedBytes = ev.received_bytes;
         r.durationMs = ev.duration_ms;
         r.tokensPerSec = ev.tokens_per_sec ?? undefined;
         if (ev.usage) {
@@ -231,7 +242,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.state = "cancelled";
         // 响应头之前就断开的没有状态码 —— 那就保留原样（也是没有）
         if (ev.status != null) r.status = ev.status;
-        r.bytes = ev.bytes;
+        // 还没发给上游就走了的没有（不是 0）
+        r.sentBytes = ev.sent_bytes ?? undefined;
+        r.receivedBytes = ev.received_bytes ?? undefined;
         r.durationMs = ev.duration_ms;
         // 用量停在断开那一刻。**没有就不填** —— 客户端可能在第一帧之前
         // 就走了，那时填 0 说的是一件没有发生过的事
@@ -258,6 +271,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.rule = ev.rule;
         // 选定上游之后才判断的改写在这里才有
         r.rewrittenBy = nonEmpty(ev.rewritten_by);
+        r.egress = ev.egress ?? undefined;
       }
       break;
     }
@@ -322,7 +336,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.state = "failed";
         r.error = ev.message;
         if (ev.duration_ms != null) r.durationMs = ev.duration_ms;
-        if (ev.bytes != null) r.bytes = ev.bytes;
+        // 一跳都没发出去的失败没有（被规则拒绝、上游都满着……）
+        if (ev.sent_bytes != null) r.sentBytes = ev.sent_bytes;
+        if (ev.received_bytes != null) r.receivedBytes = ev.received_bytes;
         // 断在中间的失败，上游已经为这些 token 计了费
         if (ev.usage) {
           r.inputTokens = ev.usage.input;
@@ -414,27 +430,43 @@ export interface Dashboard {
   latency: LatencyView[] | null;
   /** 按上游分。**和按模型分是两个问题** */
   latency_by_provider: LatencyView[] | null;
+  /** 按密钥分（`model` 是密钥名）：明细表的「密钥」一页 */
+  latency_by_client: LatencyView[] | null;
   /** 生成速度的中位数，按模型分。同一个时间窗 */
   token_rate: TokenRateView[] | null;
   /** 按上游分 */
   token_rate_by_provider: TokenRateView[] | null;
   storage: StorageStatus | null;
   /**
-   * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
+   * 按所选时间范围分格（格宽见 `bucketOf`）。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets: CostBucket[] | null;
-  /**
-   * 同样的格子，再按模型分层。
-   *
-   * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
-   * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
-   */
+  /** 同样的格子，再按模型分：明细表的「模型」一页是各模型跨格的合计 */
   buckets_by_model: CostBucketGroup[] | null;
+  /** 同样的格子按上游分：明细表的「上游」一页，失败集中在哪个上游也从这里看 */
+  buckets_by_provider: CostBucketGroup[] | null;
+  /** 同样的格子按密钥分（core 的 `client` 就是密钥名）：明细表的「密钥」一页 */
+  buckets_by_client: CostBucketGroup[] | null;
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
   prev: Summary | null;
+  /**
+   * 整段时间的首 token 分位，不分模型（core 拿整段的样本求的：各模型、各格的分位合不出
+   * 整体的）。取不到是 `null`；没有样本是 `samples` 为 0
+   */
+  ttft: Percentiles | null;
+  /** 上一个等长区间的，首 token 卡片的环比用 */
+  prev_ttft: Percentiles | null;
   /** 上面几样的时间窗起点，补空桶要用 */
   since_ms: number;
+}
+
+/** 一段时间里第一个 token 到的时刻的分位，毫秒（Rust 侧 `dashboard::Percentiles`） */
+export interface Percentiles {
+  /** 没有样本时是 `null` */
+  p50_ms: number | null;
+  p95_ms: number | null;
+  samples: number;
 }
 
 /**

@@ -44,6 +44,11 @@ export interface UpstreamStats {
   quotas: ProviderQuota[] | null;
   /** 按 `bucketMs` 分格、按上游分开的请求数。**稀疏的**：没有请求的格子不在里面 */
   buckets: CostBucketGroup[] | null;
+  /**
+   * 按出口分的流量：24 小时、7 天、30 天各一份（起点见 `egressSince`），每一份一个出口一项，
+   * `name` 是代理名，直连是空串。代理表那一列。拿不到的那一份是 `null`
+   */
+  egress: [CostBucketGroup[] | null, CostBucketGroup[] | null, CostBucketGroup[] | null];
 }
 
 export const api = {
@@ -63,9 +68,12 @@ export const api = {
   setManualModels: (save: ManualModelsSave) => call("SetManualModels", save),
   /** 补问缺失、失败、过期的清单。**立刻回**，答案随 `models_changed` 到 */
   refreshStaleModels: () => call("RefreshStaleModels", null),
-  /** 起点和格宽都由界面给：格子对齐到本地整点（见 `bucketStart`） */
-  upstreamStats: (sinceMs: number, bucketMs: number) =>
-    invoke<UpstreamStats>("upstream_stats", { sinceMs, bucketMs }),
+  /**
+   * 起点和格宽都由界面给：格子对齐到本地整点（见 `bucketStart`）。`egressSinceMs` 是代理表
+   * 那一列流量的三个时间窗的起点（24 小时、7 天、30 天）
+   */
+  upstreamStats: (sinceMs: number, bucketMs: number, egressSinceMs: [number, number, number]) =>
+    invoke<UpstreamStats>("upstream_stats", { sinceMs, bucketMs, egressSinceMs }),
   /** 此刻在途的请求，各带到目前为止的事件。页面半路挂上时用它补齐 */
   inFlight: () => call("InFlight", null),
 

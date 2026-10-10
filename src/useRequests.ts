@@ -100,11 +100,14 @@ function patchFromHistory(cur: RequestRow, h: HistoryRow, cut: boolean): Partial
     if (h.status != null) put("status", h.status);
     put("durationMs", h.duration_ms ?? undefined);
     put("tokensPerSec", h.tokens_per_sec ?? undefined);
-    put("bytes", h.bytes ?? undefined);
+    put("sentBytes", h.sent_bytes ?? undefined);
+    put("receivedBytes", h.received_bytes ?? undefined);
     put("error", h.error ?? undefined);
   }
   // 上游以库里的为准：故障转移之后服务它的是尝试链的最后一跳
   if (!h.local) put("provider", h.provider);
+  // 出口跟着服务它的那一跳走，同样以库里的为准
+  put("egress", h.egress ?? undefined);
   fill("model", h.model || undefined);
   // 路由也以库里的为准：服务它的那一跳和它发出的模型名是一对，跟着上游走。改写的规则
   // 名单一样就留着原来那个数组，不然每次对账这一行都「变了」
@@ -166,7 +169,9 @@ export function rowFromHistory(h: HistoryRow): RequestRow {
     ttftMs: h.ttft_ms ?? undefined,
     durationMs: h.duration_ms ?? undefined,
     tokensPerSec: h.tokens_per_sec ?? undefined,
-    bytes: h.bytes ?? undefined,
+    sentBytes: h.sent_bytes ?? undefined,
+    receivedBytes: h.received_bytes ?? undefined,
+    egress: h.egress ?? undefined,
     inputTokens: h.input_tokens ?? undefined,
     outputTokens: h.output_tokens ?? undefined,
     cacheReadTokens: h.cache_read_tokens ?? undefined,

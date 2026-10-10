@@ -84,7 +84,7 @@ const routed = (id: number, f: Pick<Flight, "route" | "rule" | "group">, attempt
   billing: "per-token",
 });
 const finished = (id: number): CoreEvent =>
-  ({ kind: "request_finished", id, model: "m", status: 200, bytes: 1, duration_ms: 1 }) as CoreEvent;
+  ({ kind: "request_finished", id, model: "m", status: 200, sent_bytes: 1, received_bytes: 1, duration_ms: 1 }) as CoreEvent;
 
 /** 一串事件落完之后的在途请求 */
 function fly(...events: CoreEvent[]): Map<number, Flight> {

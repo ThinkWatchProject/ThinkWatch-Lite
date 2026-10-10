@@ -179,8 +179,8 @@ export function ChainMap({
                   x2={layout.cols[layout.cols.length - 1]!.x}
                   y2={0}
                 >
-                  <stop offset={0} style={{ stopColor: "var(--flow-from)" }} />
-                  <stop offset={1} style={{ stopColor: "var(--flow-to)" }} />
+                  <stop offset={0} style={{ stopColor: "var(--brand-from)" }} />
+                  <stop offset={1} style={{ stopColor: "var(--brand-to)" }} />
                 </linearGradient>
               </defs>
               {/*

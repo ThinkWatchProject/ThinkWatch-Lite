@@ -26,6 +26,14 @@ export function marksFromEvents(
               custom: e.custom === true,
               masked: e.excerpt,
               count: e.count,
+              // 和实时事件那一项（`SecretItem.detail`）同一个形状
+              detail: {
+                direction: e.direction,
+                locations: e.locations,
+                more_locations: e.more_locations,
+                rule_snapshot: e.rule_snapshot,
+                outcome_detail: e.outcome_detail,
+              },
             })),
           }
         : undefined,

@@ -4,6 +4,12 @@ export const proxyTableText = messages(
   {
     proxy: "代理",
     usedBy: "使用上游",
+    /** 经过这个代理的上传加下载 */
+    traffic: "流量 · 24 小时",
+    trafficSplit: (up: string, down: string) => `上传 ${up} · 下载 ${down}`,
+    trafficNote: "经过这个代理的上传与下载之和",
+    trafficUnavailable: "流量暂时取不到",
+    unavailableShort: "取不到",
     connectivity: "连通性",
     actionsColumn: "操作",
     edit: "编辑…",
@@ -20,6 +26,11 @@ export const proxyTableText = messages(
   {
     proxy: "Proxy",
     usedBy: "Used by",
+    traffic: "Traffic · 24 h",
+    trafficSplit: (up: string, down: string) => `Up ${up} · Down ${down}`,
+    trafficNote: "Upload and download through this proxy",
+    trafficUnavailable: "Traffic is unavailable right now",
+    unavailableShort: "Unavailable",
     connectivity: "Connectivity",
     actionsColumn: "Actions",
     edit: "Edit…",

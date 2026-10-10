@@ -10,6 +10,7 @@ import { Tip } from "@/ui/tip";
 import { attemptText, deniedHopText, targetLabel } from "@/labels";
 import { routingFacts, skippedHop, type RoutingNote } from "@/requestRouting";
 import type { AttemptUsage, HistoryRow, PluginRunView } from "@/types";
+import { egressLabel } from "@/upstreams/labels";
 import { routingModels, type HopModel } from "../modelVia";
 import { useViaConfig } from "../useModelVia";
 import { Row, Rows } from "./parts";
@@ -132,6 +133,9 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                     {/* 没有发出的那一跳没有耗时可言 */}
                     <span className="shrink-0 tw-num text-muted-foreground">{unsent ? "—" : ms(a.ms)}</span>
                   </div>
+                  {/* 这一跳走的代理，在下面一行（和上游名对齐）：挤在同一行会把结果那一格挤短。
+                      直连的不写 —— 多数上游是直连的，每一跳都写一遍只是噪声 */}
+                  {a.proxy && <p className="mt-0.5 pl-7 tw-label text-muted-foreground">{t.viaProxy(egressLabel(a.proxy))}</p>}
                   {/* 放弃了的这一跳（无响应超时）上游可能已经按输入收了钱：不在这个请求的费用里 */}
                   {a.usage && <AbandonedUsage usage={a.usage} />}
                 </li>

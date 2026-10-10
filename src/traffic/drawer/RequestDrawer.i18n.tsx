@@ -67,7 +67,13 @@ export const requestDrawerText = messages(
     /** 上游等到无响应超时还没有内容（一个字都没给，或者答到一半停住） */
     idleTimeout: "无响应超时",
     cancelled: "已取消：客户端在响应结束前断开连接",
-    bytes: "字节",
+    /** 服务这个请求的那一跳走的代理，或者「直连」 */
+    egress: "出口",
+    /** 网关和上游之间：发给上游的请求体、从上游收到的响应体 */
+    upload: "上传",
+    download: "下载",
+    /** 尝试链上一跳走的代理 */
+    viaProxy: (name: string) => `经 ${name}`,
     /** 顶上那一排数字 */
     tokens: "token",
     /** 首 token 和生成的比例条：两段的名字，和读屏念的那一句 */
@@ -132,10 +138,8 @@ export const requestDrawerText = messages(
     noAttempts: "此请求没有上游尝试记录。",
 
     // 内容
-    request: "请求",
-    response: "响应",
-    /** 插件改写过的请求：看原始的、改写后的，或者对比两者 */
-    payloadViews: { compare: "对比", original: "原始请求", after: "插件改写后" },
+    /** 插件改写过的请求（上游一侧）：对比原样和改写后的，或者只看改写后的 */
+    payloadViews: { compare: "对比", after: "插件改写后" },
     /** 试过不止一跳时，改写后的那一份是哪一跳发出的 */
     afterPluginsSentBy: (n: number, upstream: string) => `插件改写后的请求：第 ${n} 跳发往 ${upstream} 的那一份`,
     notSaved: "未保存",
@@ -145,7 +149,6 @@ export const requestDrawerText = messages(
     /** 「未保存」的说明：期限之内也没有的（WebSocket、本地应答从来不存），不说原因 */
     requestNotKeptTip: "请求正文未保留。",
     responseNotKeptTip: "响应正文未保留。",
-    size: (n: number) => `${n.toLocaleString()} 字节`,
     truncated: "仅保存开头部分",
     collapse: "折叠",
     showAll: "展开全部",
@@ -238,7 +241,10 @@ export const requestDrawerText = messages(
     aborted: "Aborted",
     idleTimeout: "No response",
     cancelled: "Canceled: the client disconnected before the response finished",
-    bytes: "Bytes",
+    egress: "Egress",
+    upload: "Upload",
+    download: "Download",
+    viaProxy: (name: string) => `via ${name}`,
     tokens: "Tokens",
     waiting: "Waiting for first token",
     generating: "Generating",
@@ -300,16 +306,13 @@ export const requestDrawerText = messages(
     routingPending: "Routing has not finished yet",
     noAttempts: "No upstream attempts were recorded for this request.",
 
-    request: "Request",
-    response: "Response",
-    payloadViews: { compare: "Compare", original: "Original", after: "After plugins" },
+    payloadViews: { compare: "Compare", after: "After plugins" },
     afterPluginsSentBy: (n: number, upstream: string) => `After plugins: what attempt ${n} sent to ${upstream}`,
     notSaved: "Not saved",
     afterEnd: "Available when the request ends",
     pastRetentionTip: "This record is past its retention period.",
     requestNotKeptTip: "The request body was not kept.",
     responseNotKeptTip: "The response body was not kept.",
-    size: (n: number) => (n === 1 ? "1 byte" : `${n.toLocaleString()} bytes`),
     truncated: "only the beginning was saved",
     collapse: "Collapse",
     showAll: "Show all",

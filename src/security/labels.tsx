@@ -2,7 +2,16 @@ import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { getLang, textOf, useText } from "@/i18n";
 import { contentWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
 import { secretLabel } from "@/labels";
-import type { Guard, GuardMode, Matcher, SecurityEventView, SecurityOutcome, SecurityRuleView } from "@/types";
+import type {
+  ContentMatch,
+  Guard,
+  GuardMode,
+  HitLocation,
+  Matcher,
+  SecurityEventView,
+  SecurityOutcome,
+  SecurityRuleView,
+} from "@/types";
 import { securityLabelsText } from "./labels.i18n";
 
 /**
@@ -94,6 +103,48 @@ export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
 export function whereOf(e: SecurityEventView): string | null {
   if (!e.tool) return null;
   return e.tool === "tool_result" ? textOf(securityLabelsText).toolResult : e.tool;
+}
+
+/**
+ * 命中的一处在哪一段：系统提示、第几条消息（带角色）、工具结果或工具调用（带工具名）、
+ * 回答正文。**消息从 1 数**（「第 4 条消息」），JSON 路径里的下标照 core 给的从 0 数
+ * （`messages[3]`）：前者是给人读的序数，后者是报文里的原样。角色按客户端写的查表，
+ * 表里没有的照写。
+ */
+export function partLabel(l: HitLocation): string {
+  const t = textOf(securityLabelsText);
+  switch (l.part) {
+    case "message": {
+      const head = l.message_index != null ? t.parts.message(l.message_index + 1) : null;
+      const role = l.role ? (t.roles[l.role] ?? l.role) : null;
+      // 两样都没有（core 不会这样给）时，路径本身就是位置
+      return [head, role].filter(Boolean).join(" · ") || l.path;
+    }
+    case "tool_result":
+    case "tool_call":
+      return l.tool ? `${t.parts[l.part]} · ${l.tool}` : t.parts[l.part];
+    default:
+      return t.parts[l.part];
+  }
+}
+
+/**
+ * 命中那一刻的规则叫什么。**按快照，不按现在的规则表**：规则改了名、删掉了，日志里
+ * 还是当时那一条。内置规则的名字照常查词表（快照里的英文名是退路）。
+ */
+export function snapshotName(e: SecurityEventView): string {
+  const s = e.rule_snapshot;
+  return s.builtin ? ruleName(e.guard, s.id, false, s.name) : s.name;
+}
+
+/**
+ * 自定义规则怎么认。内容过滤的快照里写着；**另两项的自定义规则只有正则一种写法**
+ * （脱敏和工具调用规则都是一个正则），快照里不写，这里补上。内置规则没有写法可展示。
+ */
+export function matchingOf(e: SecurityEventView): ContentMatch | null {
+  const s = e.rule_snapshot;
+  if (s.builtin) return null;
+  return s.matching ?? (e.guard === "content" ? null : "regex");
 }
 
 /** 一条内容过滤的命中是不是码位规则的（日志里带着规则怎么认）。是的话 `count` 数的是字符，不是几处 */

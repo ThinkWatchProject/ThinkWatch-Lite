@@ -3,19 +3,12 @@ import { StatusDot } from "@/ui/status-dot";
 import { AnimatedNumber } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { useNav } from "@/nav";
-import type { Overview, ProviderView } from "@/types";
+import type { Overview } from "@/types";
 import { useText } from "@/i18n";
 import { useInFlight } from "./useLive";
 import { LinkText } from "./parts";
+import { downWhy } from "./series";
 import { overviewText } from "./overview.i18n";
-
-/**
- * 上游现在用不了：熔断中、凭据被拒、登录失效。**停用的不算** —— 那是有意关掉的。
- * 和上游页那一行上的三个标记是同一套判断。
- */
-function unavailable(p: ProviderView): boolean {
-  return !p.disabled && (p.health === "open" || p.auth_rejected != null || p.oauth?.needs_login === true);
-}
 
 /**
  * 页头下面那一行：此刻的状态。**只有数字和状态点，不写说明。**
@@ -30,11 +23,17 @@ export function OverviewStatus({ ov }: { ov: Overview | null }) {
   const nav = useNav();
   const n = useInFlight();
   const providers = ov?.providers.filter((p) => !p.disabled);
-  const down = ov?.providers.filter(unavailable) ?? [];
+  // 用不了的上游：熔断中、凭据被拒、登录失效。和上游页那一行上的三个标记是同一套判断
+  const down = ov?.providers.filter((p) => downWhy(p) !== null) ?? [];
   return (
     <>
       {n > 0 ? (
-        <SummaryItem lead={<StatusDot tone="pending" />} value={<AnimatedNumber value={n} />} label={t.inFlight(n)} />
+        <SummaryItem
+          // 在跑的点用品牌的青→品红：这一页的品牌点缀之一（外面那一圈脉冲跟着青色走）
+          lead={<StatusDot tone="pending" className="bg-linear-135 from-brand-from to-brand-to text-brand-from" />}
+          value={<AnimatedNumber value={n} />}
+          label={t.inFlight(n)}
+        />
       ) : (
         <SummaryItem lead={<StatusDot tone="idle" />} label={t.idle} />
       )}

@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subscribe } from "@/lib/tauriEvent";
 import { bucketStart } from "@/format";
+import { presetRange, windowStart } from "@/ui/range";
 import { isRunning, parseCoreState } from "@/coreState";
 import { useResource, useResources, type Resource } from "@/lib/resource";
 import type { CoreEvent, CostBucketGroup, ProviderModelsView, ProviderView } from "@/types";
@@ -58,7 +59,7 @@ export function dayStart(now: number): number {
 export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: number } {
   const now = useNow(60_000);
   const since = dayStart(now);
-  const stats = useResource("upstream-stats", () => api.upstreamStats(since, HOUR), {
+  const stats = useResource("upstream-stats", () => api.upstreamStats(since, HOUR, egressSince(now)), {
     events: ["request_finished", "request_failed", "request_cancelled"],
     deps: [since],
   });
@@ -89,6 +90,38 @@ export function useUpstreamStats(): { stats: Resource<UpstreamStats>; since: num
   }, [reload]);
 
   return { stats, since };
+}
+
+/**
+ * 代理表那一列流量的三个时间窗的起点：24 小时、7 天、30 天。
+ *
+ * **和概览同名区间的起点一样**（`windowStart`）：两页上的「7 天」是同一段时间，数字对得上。
+ * 24 小时就是这一页别的统计的那个起点（`dayStart`）。三个起点都落在整点上，起点挪动时
+ * `dayStart` 一定也挪了（`deps` 跟着它就够）。
+ */
+export function egressSince(now: number): [number, number, number] {
+  return [dayStart(now), windowStart(presetRange("7d"), now), windowStart(presetRange("30d"), now)];
+}
+
+/** 一个出口经过的流量：发给上游的、从上游收到的，字节 */
+export interface Io {
+  sent: number;
+  received: number;
+}
+
+/**
+ * 一个代理在一份按出口分的流量里的合计。**取不到是 `null`**（那一份读取失败），没有经过它的
+ * 流量是两个 0 —— 读的人看到的是「—」还是「取不到」，取决于这两种分没分开。
+ */
+export function egressOf(groups: readonly CostBucketGroup[] | null | undefined, proxy: string): Io | null {
+  if (!groups) return null;
+  const io = { sent: 0, received: 0 };
+  for (const g of groups) {
+    if (g.name !== proxy) continue;
+    io.sent += g.sent_bytes;
+    io.received += g.received_bytes;
+  }
+  return io;
 }
 
 /** 给 `mutate` 用：手里还没有数据时什么都不改（`mutate` 要的是一个新值，拿不出就原样还回去） */

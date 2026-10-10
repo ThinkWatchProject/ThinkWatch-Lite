@@ -37,9 +37,13 @@ pub mod dialog;
 #[cfg(target_os = "macos")]
 pub mod dmg;
 pub mod error;
+/// 导出文件时系统的「存储」对话框和写盘（安全日志的导出），见模块头上
+pub mod export;
 pub mod gateway;
 pub mod import_link;
 pub mod keys;
+/// 一个在跑的请求的实时内容，搬给请求详情的「内容」页
+pub mod live;
 pub mod mcp;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
 ///
@@ -174,6 +178,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // 「存储」对话框。只从 Rust 调（`export`）；网页没有 dialog 的权限
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init());
     // Linux 上不注册：自启项是自己写的（见 `autostart::linux`）。插件在那边
@@ -207,6 +213,9 @@ pub fn run() {
             connection::picker_fit,
             gateway::restart_core,
             dashboard::dashboard,
+            live::live_subscribe,
+            live::live_unsubscribe,
+            export::save_export,
             upstreams::upstream_stats,
             aliases::alias_hints,
             notices::commands::notices_list,
@@ -331,6 +340,7 @@ pub fn run() {
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(Updates::default());
+            app.manage(live::LiveSubs::default());
             // 被更新换下来之后又被重新打开的：说一声换到了哪一版，窗口照更新之前的样子
             // （见下面的静默启动）
             let relaunch = updater::relaunched(

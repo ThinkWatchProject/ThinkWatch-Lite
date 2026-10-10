@@ -122,6 +122,9 @@ export const trafficText = messages(
     promptParts: (input: string, read: string, write: string) =>
       `新输入 ${input} · 缓存读取 ${read} · 缓存写入 ${write}`,
     outputTip: (n: string) => `输出 ${n}`,
+    /** 网关和上游之间：发给上游的请求体、从上游收到的响应体 */
+    uploadTip: (shown: string) => `上传 ${shown}`,
+    downloadTip: (shown: string) => `下载 ${shown}`,
 
     // 行菜单（右键和行尾的「…」是同一份）
     rowActions: (id: number) => `第 ${id} 号请求的操作`,
@@ -268,6 +271,8 @@ export const trafficText = messages(
     promptParts: (input: string, read: string, write: string) =>
       `Uncached input ${input} · Cache reads ${read} · Cache writes ${write}`,
     outputTip: (n: string) => `Output ${n}`,
+    uploadTip: (shown: string) => `Upload ${shown}`,
+    downloadTip: (shown: string) => `Download ${shown}`,
 
     rowActions: (id: number) => `Actions for request #${id}`,
     openDetails: "Open details",
