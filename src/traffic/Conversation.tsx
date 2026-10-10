@@ -84,13 +84,13 @@ const HOUR_MS = 3_600_000;
  * 英文最长的「Assistant」在 Windows 大一号的字下有 54px。
  */
 const COLS = "grid-cols-[2.75rem_minmax(0,1fr)] [&:lang(en)]:grid-cols-[4rem_minmax(0,1fr)]";
-const LINES = `grid ${COLS} items-start gap-x-3 gap-y-2`;
+export const LINES = `grid ${COLS} items-start gap-x-3 gap-y-2`;
 /** 底色那一块里的（见 `EarlierBlocks`）：左右各有 8px 内边距，左边一列窄 8px，右边的内容和外面对齐 */
 const NESTED_COLS = "grid-cols-[2.25rem_minmax(0,1fr)] [&:lang(en)]:grid-cols-[3.5rem_minmax(0,1fr)]";
 const NESTED_LINES = `grid ${NESTED_COLS} items-start gap-x-3 gap-y-2`;
 
 /** 结果那一行写「Read 的结果」：调用 id → 工具名（见 `toolNames`） */
-const Names = createContext<ReadonlyMap<string, string>>(new Map());
+export const Names = createContext<ReadonlyMap<string, string>>(new Map());
 
 /**
  * 最近看过的几次会话的对话留在缓存里，再早的丢掉。一次长会话的对话就有几 MB，
@@ -482,7 +482,7 @@ function RestartRule() {
 }
 
 /** 网格里的一行：左边是谁说的（可以空着），右边是内容 */
-function Line({ label, children }: { label?: string; children: ReactNode }) {
+export function Line({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <>
       {/* 和右边第一行的中线对齐：右边的行（折叠行、一行字）都是 24px 高 */}
@@ -506,7 +506,7 @@ function roleLabel(role: TranscriptRole, t: (typeof conversationText)["zh"]): st
 }
 
 /** 一块：一个角色说的几段，或者几条工具结果（结果那一行自己写着是谁的，左边不标） */
-function BlockLine({ b }: { b: Block }) {
+export function BlockLine({ b }: { b: Block }) {
   const t = useText(conversationText);
   return (
     <Line label={b.kind === "said" ? roleLabel(b.role, t) : undefined}>
@@ -521,7 +521,7 @@ function BlockLine({ b }: { b: Block }) {
  *
  * 展开的仍是同样的两列，左边那一列和外面对齐；淡淡的底色说明它是一整段带过来的历史。
  */
-function Earlier({ messages }: { messages: readonly TranscriptMessage[] }) {
+export function Earlier({ messages }: { messages: readonly TranscriptMessage[] }) {
   const t = useText(conversationText);
   const [open, setOpen] = useState(false);
   return (
@@ -553,7 +553,7 @@ function EarlierBlocks({ messages }: { messages: readonly TranscriptMessage[] })
 }
 
 /** 一块里的几段，上下排。相邻的图片和附件排成一行 */
-function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
+export function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
   const runs: (TranscriptPart | TranscriptPart[])[] = [];
   for (const p of parts) {
     const chip = p.kind === "image" || p.kind === "other";
@@ -598,7 +598,7 @@ function Part({ p }: { p: TranscriptPart }) {
  * 说的话：原样的空白和换行，不当 Markdown 解析（模型写的 `**` 和 `#` 就是那几个字符）。
  * 长的先显示开头，「展开全部」看整段。
  */
-function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
+export function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
   const t = useText(conversationText);
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, PROSE), [text]);
@@ -633,7 +633,7 @@ function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
  * 可以点开的一行：箭头，一行提要，右边一个淡的数。点开的内容在 `Fold` 里。
  * 按钮左右各伸出 6px，悬停的底色比文字宽一圈，文字和上下的正文对齐（同「每轮费用」）。
  */
-function FoldRow({
+export function FoldRow({
   open,
   onToggle,
   meta,
@@ -663,7 +663,7 @@ function FoldRow({
 }
 
 /** 点不开的一行，和 `FoldRow` 对齐：箭头的位置空着 */
-function StillRow({ children }: { children: ReactNode }) {
+export function StillRow({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-6 min-w-0 items-center gap-1.5 text-muted-foreground">
       <span aria-hidden className="size-3.5 shrink-0" />
@@ -672,7 +672,7 @@ function StillRow({ children }: { children: ReactNode }) {
   );
 }
 
-function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; children: ReactNode }) {
+export function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -688,7 +688,7 @@ function Fold({ head, meta, children }: { head: ReactNode; meta?: ReactNode; chi
 }
 
 /** 一段要读的长文字（系统提示、思考），收起；点开是左边一道竖线引着的原文 */
-function TextFold({ title, text, muted = false }: { title: string; text: string; muted?: boolean }) {
+export function TextFold({ title, text, muted = false }: { title: string; text: string; muted?: boolean }) {
   const t = useText(conversationText);
   return (
     <Fold head={<span className="truncate text-foreground">{title}</span>} meta={t.chars(text.length)}>
@@ -700,7 +700,7 @@ function TextFold({ title, text, muted = false }: { title: string; text: string;
 }
 
 /** 思考，默认收起。只有签名没有正文的，说上游没给 */
-function Thinking({ text }: { text: string }) {
+export function Thinking({ text }: { text: string }) {
   const t = useText(conversationText);
   if (text.trim() === "") {
     return (
@@ -731,7 +731,7 @@ function ToolCallRow({ p }: { p: ToolCall }) {
 }
 
 /** 点开之后才排：Write 的参数里是整个文件 */
-function Args({ input }: { input: string }) {
+export function Args({ input }: { input: string }) {
   const pretty = useMemo(() => prettyJson(input, false), [input]);
   return <Mono text={pretty ?? input} json={pretty !== null} />;
 }
@@ -785,7 +785,7 @@ function ToolResultRow({ p }: { p: ToolResult }) {
  * 等宽的一框（工具参数、工具结果），和请求详情「内容」那一页同一个样子：框子最高
  * 320px、自己滚。整个文件那么长的结果先画开头，「展开全部」再画其余。
  */
-function Mono({ text, json, error = false }: { text: string; json: boolean; error?: boolean }) {
+export function Mono({ text, json, error = false }: { text: string; json: boolean; error?: boolean }) {
   const t = useText(conversationText);
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, MONO), [text]);
@@ -816,7 +816,7 @@ function Mono({ text, json, error = false }: { text: string; json: boolean; erro
 }
 
 /** 图片和其他附件：一个小方块写清是什么，不画内容（记录里本来也没有） */
-function Chip({ p }: { p: TranscriptPart }) {
+export function Chip({ p }: { p: TranscriptPart }) {
   const t = useText(conversationText);
   if (p.kind !== "image" && p.kind !== "other") return null;
   const text =
@@ -837,7 +837,7 @@ function Chip({ p }: { p: TranscriptPart }) {
 }
 
 /** 一小块说明：显示不出来的部分（虚线框），或者失败（红） */
-function Pill({ tone = "gap", children }: { tone?: "gap" | "error"; children: ReactNode }) {
+export function Pill({ tone = "gap", children }: { tone?: "gap" | "error"; children: ReactNode }) {
   return (
     <span
       className={cn(

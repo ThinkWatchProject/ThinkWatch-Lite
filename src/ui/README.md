@@ -414,6 +414,7 @@ movement. Do not write your own `@keyframes` or `transition-all` in pages.
 | Bars, meters, progress | Built into `Meter` and `Sparkline`. Anything else: `motion-bar` on the element whose width/height changes. |
 | Live / in-flight | `<StatusDot tone="pending" />` or `motion-live` on a dot. |
 | New data at a live edge | `motion-ping` on a dot (HTML or SVG): one ring, not looping. Re-key the element to play it again. |
+| Text still arriving | `motion-caret` on an empty `<span aria-hidden>` after the last character: a blinking block caret in the text colour, steady under reduced motion. |
 | Skeleton shimmer | Built into `Skeleton` (`motion-shimmer`). |
 | Hover / press | `transition-colors duration-(--motion-fast)`. |
 

@@ -519,6 +519,27 @@
   animation: tw-ping 900ms var(--motion-ease) both;
   pointer-events: none;
 }
+/* 回答还在一个字一个字地到：正文末尾的光标，一亮一灭。颜色取 currentColor，和那一段字同色。
+ * 系统里关了动效就一直亮着，不闪 */
+@keyframes tw-caret {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+@utility motion-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.15em;
+  margin-left: 1px;
+  vertical-align: -0.2em;
+  background: currentColor;
+  animation: tw-caret 1.1s linear infinite;
+}
 /* 骨架的明暗。比 `animate-pulse` 慢、幅度小，读起来是「在取」而不是「在闪」 */
 @utility motion-shimmer {
   animation: tw-shimmer 1.6s ease-in-out infinite;
@@ -560,7 +581,8 @@
   .motion-row-in::after,
   .motion-row-in > td::after,
   .motion-live::after,
-  .motion-shimmer {
+  .motion-shimmer,
+  .motion-caret {
     animation: none;
   }
   .motion-row-out {
