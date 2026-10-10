@@ -61,10 +61,10 @@ export function applyFlightEvent(flights: Map<number, Flight>, ev: CoreEvent): "
   }
 }
 
-/** 在途请求经过的节点（和经过它的请求数）与线 */
+/** 在途请求经过的节点与线，和各自经过的请求数 */
 export interface Activity {
   nodes: ReadonlyMap<string, number>;
-  edges: ReadonlySet<string>;
+  edges: ReadonlyMap<string, number>;
 }
 
 /**
@@ -75,13 +75,16 @@ export function activityOf(flights: ReadonlyMap<number, Flight>, chain: Chain): 
   if (flights.size === 0) return null;
   const onMap = new Set(chain.nodes.map((n) => n.id));
   const nodes = new Map<string, number>();
-  const edges = new Set<string>();
+  const edges = new Map<string, number>();
   for (const f of flights.values()) {
     const ids = [chainId.key(f.client), chainId.route(f.route), ...stationsOf(f, chain)];
     const cut = ids.findIndex((id) => !onMap.has(id));
     const path = cut < 0 ? ids : ids.slice(0, cut);
     for (const id of path) nodes.set(id, (nodes.get(id) ?? 0) + 1);
-    for (let i = 1; i < path.length; i++) edges.add(edgeId(path[i - 1]!, path[i]!));
+    for (let i = 1; i < path.length; i++) {
+      const id = edgeId(path[i - 1]!, path[i]!);
+      edges.set(id, (edges.get(id) ?? 0) + 1);
+    }
   }
   return nodes.size > 0 ? { nodes, edges } : null;
 }

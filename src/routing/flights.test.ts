@@ -130,13 +130,13 @@ describe("在途请求", () => {
   it("直连上游的规则在上游接下之前只画到路由；被规则拒绝的画到拒绝", () => {
     const chain = buildChain(ov);
     const direct = activityOf(fly(started(1, "claude-code", "default", "opus")), chain)!;
-    expect([...direct.edges]).toEqual(["key:claude-code>route:default"]);
+    expect([...direct.edges.keys()]).toEqual(["key:claude-code>route:default"]);
     const deny = activityOf(fly(started(2, "codex", "codex", "no-opus")), chain)!;
-    expect([...deny.edges]).toEqual(["key:codex>route:codex", "route:codex>deny"]);
+    expect([...deny.edges.keys()]).toEqual(["key:codex>route:codex", "route:codex>deny"]);
     expect(deny.nodes.get("deny")).toBe(1);
     // 拒绝之后的路由事件没有尝试链：还是停在拒绝
     const after = activityOf(fly(started(2, "codex", "codex", "no-opus"), routed(2, { route: "codex", rule: "no-opus", group: null }, [])), chain)!;
-    expect([...after.edges]).toEqual(["key:codex>route:codex", "route:codex>deny"]);
+    expect([...after.edges.keys()]).toEqual(["key:codex>route:codex", "route:codex>deny"]);
   });
 
   it("经策略组、直连上游两种路；同一站上的请求数相加", () => {
@@ -162,6 +162,26 @@ describe("在途请求", () => {
     expect(a.edges.has("group:main>up:anthropic")).toBe(false);
   });
 
+  it("每段线上走着几个请求：共用的那段相加，各走各的那段各算各的", () => {
+    const chain = buildChain(ov);
+    const a = activityOf(
+      fly(
+        started(1, "claude-code", "default", "catch-all", "main"),
+        routed(1, { route: "default", rule: "catch-all", group: "main" }, [attempt("anthropic")]),
+        started(2, "claude-code", "default", "catch-all", "main"),
+        routed(2, { route: "default", rule: "catch-all", group: "main" }, [attempt("openrouter")]),
+        started(3, "claude-code", "default", "catch-all", "main"),
+        started(4, "default", "default", "catch-all", "main"),
+      ),
+      chain,
+    )!;
+    expect(a.edges.get("key:claude-code>route:default")).toBe(3);
+    expect(a.edges.get("key:default>route:default")).toBe(1);
+    expect(a.edges.get("route:default>group:main")).toBe(4);
+    expect(a.edges.get("group:main>up:anthropic")).toBe(1);
+    expect(a.edges.get("group:main>up:openrouter")).toBe(1);
+  });
+
   it("图上已经没有的那一站到此为止；没有在途请求时为空", () => {
     const chain = buildChain(ov);
     const a = activityOf(
@@ -173,7 +193,7 @@ describe("在途请求", () => {
       ),
       chain,
     )!;
-    expect([...a.edges]).toEqual(["key:claude-code>route:default"]);
+    expect([...a.edges.keys()]).toEqual(["key:claude-code>route:default"]);
     expect(a.nodes.has("key:deleted-key")).toBe(false);
     expect(a.nodes.get("key:claude-code")).toBe(2);
     expect(activityOf(new Map(), chain)).toBeNull();
