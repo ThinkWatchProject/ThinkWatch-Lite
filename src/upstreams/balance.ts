@@ -7,8 +7,14 @@
  * 一格里只画一样，**画最紧张的那一样**，和账号额度同一个道理：总额度和各个窗口里，已用
  * 比例最高的那个决定什么时候用完，其余的在悬停里。钱包说不出「用了多少」，跟在那一行
  * 后面；只有钱包时写余额，下面一行照旧是计费方式。余额、额度、窗口都没有，只知道用掉了
- * 多少的（不限额的密钥），写「本月已用 $12.40」，不画条。读取失败、手上又没有读到过的
- * 数时，写一个琥珀色的「余额读取失败」；读到过的照常写那一份，失败只在悬停里。
+ * 多少的（不限额的密钥、没设额度的 OpenRouter 密钥），写「本月已用 $12.40」，不画条；
+ * 花的是账号整体的（企业网关上没设限额的密钥），写「账号本月已用 $12.40」。读取失败、
+ * 手上又没有读到过的数时，写一个琥珀色的「余额读取失败」；读到过的照常写那一份，失败
+ * 只在悬停里。
+ *
+ * 数的单位：`USD` / `CNY` 是钱，`tokens` / `requests` 是计数，`unknown` 是上游没说按什么
+ * 计的一个数（New API 站点没说它的额度怎么显示）—— **只写数，不带货币符号**，写成美元
+ * 就说错了。
  */
 import { compact, resetAt, whenMinute } from "@/format";
 import { textOf } from "@/i18n";
@@ -38,8 +44,12 @@ export function sourceLabel(source: BalanceSource): string {
 
 const SYMBOLS: Record<string, string> = { USD: "$", CNY: "¥" };
 
+/** 上游没说数是按什么计的：只写数 */
+const UNKNOWN = "UNKNOWN";
+
 /**
- * 一笔钱。`$` 美元、`¥` 人民币，别的币种写代码（「EUR 12.50」）。
+ * 一笔钱。`$` 美元、`¥` 人民币，别的币种写代码（「EUR 12.50」）；单位是 `unknown` 的只写数
+ * （「12.50」），不写成「UNKNOWN 12.50」。
  *
  * 格子里（默认）到分为止，整数不带小数（「$100」「$42.18」）；不到半分的正数写「<$0.01」
  * —— 写成「$0」等于说它一分钱都没有了。悬停里（`exact`）一律两位小数，不到一分的写到四位。
@@ -47,7 +57,7 @@ const SYMBOLS: Record<string, string> = { USD: "$", CNY: "¥" };
 export function cash(amount: number, currency: string, exact = false): string {
   const code = currency.toUpperCase();
   const sym = SYMBOLS[code];
-  const put = (digits: string) => (sym ? `${sym}${digits}` : `${code} ${digits}`);
+  const put = (digits: string) => (sym ? `${sym}${digits}` : code === UNKNOWN ? digits : `${code} ${digits}`);
   if (amount < 0) return `-${cash(-amount, currency, exact)}`;
   if (exact) {
     const tiny = amount > 0 && amount < 0.01;
@@ -60,8 +70,8 @@ export function cash(amount: number, currency: string, exact = false): string {
 }
 
 /**
- * 一个数，不带单位：金额带符号；token 收成 k / M（悬停里写全），请求数写整数。
- * 限额多是整数（5M、500k）：收成「5.0M」的那个「.0」不写
+ * 一个数，不带单位：金额带符号（单位不明的只写数）；token 收成 k / M（悬停里写全），
+ * 请求数写整数。限额多是整数（5M、500k）：收成「5.0M」的那个「.0」不写
  */
 function figure(v: number, unit: string, exact: boolean): string {
   if (unit === "tokens") {
@@ -134,9 +144,18 @@ export function readAgo(atMs: number, now: number): string {
   return t.at(whenMinute(atMs, now));
 }
 
-/** 「本月已用 $12.40」 */
+/**
+ * 「本月已用 $12.40」；花的是账号整体的（`scope: user`，账号下几把密钥合计）写「账号本月
+ * 已用 $12.40」，这把密钥自己的和没说的照旧。按 token 计的写成计数（「累计已用 1.2M token」）
+ */
 function spentOf(x: Spent, exact = false): string {
-  return textOf(balanceText).spent[x.period](cash(x.amount, x.currency, exact));
+  const t = textOf(balanceText);
+  return (x.scope === "user" ? t.accountSpent : t.spent)[x.period](measure(x.amount, x.currency, exact));
+}
+
+/** 「余额 $18.40」 */
+function walletOf(w: NonNullable<Balance["wallet"]>, exact = false): string {
+  return textOf(balanceText).wallet(measure(w.amount, w.currency, exact));
 }
 
 /** 本地日历上的日期：「2026-11-01」 */
@@ -171,7 +190,7 @@ export type BalanceFace =
 export function balanceFace(b: Balance | null | undefined, now: number): BalanceFace | null {
   if (!b) return null;
   const t = textOf(balanceText);
-  const wallet = b.wallet ? t.wallet(cash(b.wallet.amount, b.wallet.currency)) : null;
+  const wallet = b.wallet ? walletOf(b.wallet) : null;
   const q = b.quota;
   const qPercent = q ? usedPercent(q.used, q.limit) : null;
   const tight = tightestWindow(b.windows, now);
@@ -214,7 +233,7 @@ export function balanceTip(b: Balance, now: number): string[] {
   const face = balanceFace(b, now);
   if (!face || face.kind === "failed") return [source, ...(b.error ? [coreText(b.error)] : [])];
   const out = [`${source} · ${t.read.at(whenMinute(b.read_at_ms, now))}`];
-  if (b.wallet) out.push(t.wallet(cash(b.wallet.amount, b.wallet.currency, true)));
+  if (b.wallet) out.push(walletOf(b.wallet, true));
   if (b.spent) out.push(spentOf(b.spent, true));
   const q = b.quota;
   if (q) {
@@ -260,7 +279,7 @@ export function balanceBrief(
   const tight = tightestWindow(b.windows, now);
   const parts = [
     q && (usedPercent(q.used, q.limit) === null ? t.usedAmount(measure(q.used, q.unit)) : leftOf(q)),
-    b.wallet && t.wallet(cash(b.wallet.amount, b.wallet.currency)),
+    b.wallet && walletOf(b.wallet),
     tight &&
       t.windowBrief(
         quotaWindowBefore(tight.w.window),

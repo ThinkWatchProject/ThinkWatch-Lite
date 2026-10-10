@@ -18,6 +18,12 @@ export const balanceText = messages(
       month: (amount: string) => `本月已用 ${amount}`,
       total: (amount: string) => `累计已用 ${amount}`,
     },
+    // 花的是账号整体的（账号下几把密钥合计），不是这把密钥自己的
+    accountSpent: {
+      today: (amount: string) => `账号今日已用 ${amount}`,
+      month: (amount: string) => `账号本月已用 ${amount}`,
+      total: (amount: string) => `账号累计已用 ${amount}`,
+    },
     sourceQuota: (source: string) => `${source} 额度`,
     // 账号的限额：账号下每把密钥共用。这把密钥自己的不用说
     accountLimit: "账号额度",
@@ -55,6 +61,11 @@ export const balanceText = messages(
       today: (amount: string) => `${amount} spent today`,
       month: (amount: string) => `${amount} spent this month`,
       total: (amount: string) => `${amount} spent to date`,
+    },
+    accountSpent: {
+      today: (amount: string) => `${amount} spent by the account today`,
+      month: (amount: string) => `${amount} spent by the account this month`,
+      total: (amount: string) => `${amount} spent by the account to date`,
     },
     sourceQuota: (source: string) => `${source} quota`,
     accountLimit: "Account limit",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { Balance, BalanceWindow, Msg } from "@/types";
+import type { Balance, BalanceScope, BalanceWindow, Msg, Spent, SpentPeriod } from "@/types";
 import {
   balanceBrief,
   balanceFace,
@@ -36,6 +36,12 @@ function bal(patch: Partial<Balance> = {}): Balance {
 }
 
 const usd = (amount: number) => ({ amount, currency: "USD" });
+const spentUsd = (amount: number, period: SpentPeriod, scope: BalanceScope | null = null): Spent => ({
+  amount,
+  currency: "USD",
+  period,
+  scope,
+});
 const win = (
   window: string,
   used: number,
@@ -67,6 +73,14 @@ describe("金额", () => {
     expect(cash(0, "USD")).toBe("$0");
     expect(cash(0.004, "USD")).toBe("<$0.01");
     expect(cash(-1.2, "USD")).toBe("-$1.20");
+  });
+
+  it("单位不明的只写数，不带货币符号，也不写「UNKNOWN」", () => {
+    expect(cash(12.5, "unknown")).toBe("12.50");
+    expect(cash(300_000_000, "unknown")).toBe("300,000,000");
+    expect(measure(12.5, "unknown")).toBe("12.50");
+    expect(measurePair(42.18, 100, "unknown")).toBe("42.18 / 100");
+    expect(measurePair(42.18, 100, "unknown", true)).toBe("42.18 / 100.00");
   });
 
   it("悬停里写全：一律两位小数，不到一分的写到四位", () => {
@@ -210,15 +224,42 @@ describe("上游表那一格", () => {
   });
 
   it("只知道用掉了多少：今日、本月、累计，不画条", () => {
-    const spent = (period: "today" | "month" | "total") =>
-      balanceFace(bal({ source: "thinkwatch", spent: { amount: 12.4, currency: "USD", period } }), NOW);
+    const spent = (period: SpentPeriod, scope: BalanceScope | null = null) =>
+      balanceFace(bal({ source: "thinkwatch", spent: spentUsd(12.4, period, scope) }), NOW);
     expect(spent("today")).toEqual({ kind: "wallet", main: "今日已用 $12.40" });
     expect(spent("month")).toEqual({ kind: "wallet", main: "本月已用 $12.40" });
     expect(spent("total")).toEqual({ kind: "wallet", main: "累计已用 $12.40" });
+    // 这把密钥自己花的，和没说是谁的一样写
+    expect(spent("month", "key")).toEqual({ kind: "wallet", main: "本月已用 $12.40" });
     // 有余额、额度或窗口时写它们，用掉多少在悬停里
-    const both = bal({ wallet: usd(3), spent: { amount: 12.4, currency: "USD", period: "month" } });
+    const both = bal({ wallet: usd(3), spent: spentUsd(12.4, "month") });
     expect(balanceFace(both, NOW)).toEqual({ kind: "wallet", main: "余额 $3" });
     expect(balanceTip(both, NOW)).toContain("本月已用 $12.40");
+  });
+
+  it("花的是账号整体的：写「账号…已用」", () => {
+    const spent = (period: SpentPeriod) =>
+      balanceFace(bal({ source: "thinkwatch", spent: spentUsd(12.4, period, "user") }), NOW);
+    expect(spent("month")).toEqual({ kind: "wallet", main: "账号本月已用 $12.40" });
+    expect(spent("today")).toEqual({ kind: "wallet", main: "账号今日已用 $12.40" });
+    expect(spent("total")).toEqual({ kind: "wallet", main: "账号累计已用 $12.40" });
+    // 有窗口时格子写窗口，账号花的钱在悬停里
+    const b = bal({
+      source: "thinkwatch",
+      windows: [win("1d", 2, 10, HOUR, { scope: "user" })],
+      spent: spentUsd(12.4, "month", "user"),
+    });
+    expect(balanceFace(b, NOW)?.kind).toBe("window");
+    expect(balanceTip(b, NOW)).toContain("账号本月已用 $12.40");
+    expect(balanceBrief(bal({ spent: spentUsd(12.4, "month", "user") }), NOW)?.text).toBe("账号本月已用 $12.40");
+  });
+
+  it("用掉的是 token、或者单位不明：写成计数、只写数", () => {
+    const tokens = bal({ source: "newapi", spent: { amount: 1_234_567, currency: "tokens", period: "total", scope: null } });
+    expect(balanceFace(tokens, NOW)).toEqual({ kind: "wallet", main: "累计已用 1.2M token" });
+    expect(balanceTip(tokens, NOW)).toContain("累计已用 1,234,567 token");
+    const unknown = bal({ source: "newapi", spent: { amount: 81.6, currency: "unknown", period: "total", scope: null } });
+    expect(balanceFace(unknown, NOW)).toEqual({ kind: "wallet", main: "累计已用 81.60" });
   });
 
   it("窗口和钱包：钱包接在剩余后面", () => {
@@ -227,7 +268,7 @@ describe("上游表那一格", () => {
   });
 
   it("只有钱包：美元、人民币", () => {
-    expect(balanceFace(bal({ source: "openrouter", wallet: usd(18.4) }), NOW)).toEqual({
+    expect(balanceFace(bal({ source: "moonshot", wallet: usd(18.4) }), NOW)).toEqual({
       kind: "wallet",
       main: "余额 $18.40",
     });
@@ -237,6 +278,36 @@ describe("上游表那一格", () => {
     });
   });
 
+  it("OpenRouter：设了额度的密钥写额度，花费在悬停里；没设的只写花费", () => {
+    const limited = bal({
+      source: "openrouter",
+      quota: { limit: 10, used: 2.5, unit: "USD" },
+      spent: spentUsd(2.5, "month"),
+    });
+    expect(balanceFace(limited, NOW)).toMatchObject({
+      kind: "quota",
+      main: "剩余 $7.50 / $10",
+      sub: "OpenRouter 额度 · 1 分钟前读取",
+    });
+    expect(balanceTip(limited, NOW)).toContain("本月已用 $2.50");
+    const open = bal({ source: "openrouter", spent: spentUsd(42.25, "month") });
+    expect(balanceFace(open, NOW)).toEqual({ kind: "wallet", main: "本月已用 $42.25" });
+    expect(balanceBrief(open, NOW)).toEqual({ source: "OpenRouter", text: "本月已用 $42.25", failed: false });
+  });
+
+  it("New API 的单位：人民币、token、单位不明", () => {
+    const cny = balanceFace(bal({ source: "newapi", quota: { limit: 100, used: 36.8, unit: "CNY" } }), NOW);
+    expect(cny).toMatchObject({ kind: "quota", main: "剩余 ¥63.20 / ¥100" });
+    const tokens = balanceFace(bal({ source: "newapi", quota: { limit: 5_000_000, used: 1_000_000, unit: "tokens" } }), NOW);
+    expect(tokens).toMatchObject({ kind: "quota", main: "剩余 4M / 5M token" });
+    const unknown = bal({ source: "newapi", quota: { limit: 100, used: 57.82, unit: "unknown" } });
+    expect(balanceFace(unknown, NOW)).toMatchObject({ kind: "quota", main: "剩余 42.18 / 100" });
+    expect(balanceTip(unknown, NOW)).toContain("额度：已用 57.82 / 100.00，剩余 42.18");
+    expect(balanceBrief(unknown, NOW)?.text).toBe("剩余 42.18 / 100");
+    // 哪儿都不写「UNKNOWN」
+    expect(balanceTip(unknown, NOW).join("\n")).not.toMatch(/unknown/i);
+  });
+
   it("读取失败、没有读到过：琥珀色的标签，原因在悬停里", () => {
     const b = bal({ source: "newapi", error: failure });
     expect(balanceFace(b, NOW)).toEqual({ kind: "failed", reason: "The balance endpoint answered 401." });
@@ -244,7 +315,7 @@ describe("上游表那一格", () => {
   });
 
   it("读取失败、有上一次读到的：照常写那一份，失败只在悬停里", () => {
-    const b = bal({ source: "openrouter", wallet: usd(18.4), error: failure });
+    const b = bal({ source: "deepseek", wallet: usd(18.4), error: failure });
     expect(balanceFace(b, NOW)).toEqual({ kind: "wallet", main: "余额 $18.40" });
     expect(balanceTip(b, NOW).at(-1)).toBe("最近一次读取失败：The balance endpoint answered 401.");
   });
@@ -300,8 +371,8 @@ describe("检测连接的那一行", () => {
   });
 
   it("来源，和格子里那几样排成一行", () => {
-    expect(balanceBrief(bal({ source: "openrouter", wallet: usd(18.4) }), NOW)).toEqual({
-      source: "OpenRouter",
+    expect(balanceBrief(bal({ source: "deepseek", wallet: usd(18.4) }), NOW)).toEqual({
+      source: "DeepSeek",
       text: "余额 $18.40",
       failed: false,
     });
@@ -321,7 +392,7 @@ describe("检测连接的那一行", () => {
   });
 
   it("读取失败写原因", () => {
-    expect(balanceBrief(bal({ spent: { amount: 12.4, currency: "USD", period: "month" } }), NOW)).toEqual({
+    expect(balanceBrief(bal({ spent: spentUsd(12.4, "month") }), NOW)).toEqual({
       source: "Sub2API",
       text: "本月已用 $12.40",
       failed: false,
@@ -358,9 +429,22 @@ describe("英文界面", () => {
       "Daily limit: $4.10 / $10.00 used (41%), resets in 7 h",
     );
     expect(measure(1_234_567, "tokens")).toBe("1.2M tokens");
-    expect(balanceFace(bal({ spent: { amount: 12.4, currency: "USD", period: "month" } }), NOW)).toMatchObject({
+    expect(balanceFace(bal({ spent: spentUsd(12.4, "month") }), NOW)).toMatchObject({
       main: "$12.40 spent this month",
     });
+    expect(balanceFace(bal({ spent: spentUsd(12.4, "month", "user") }), NOW)).toMatchObject({
+      main: "$12.40 spent by the account this month",
+    });
+    expect(balanceFace(bal({ spent: spentUsd(3, "today", "user") }), NOW)).toMatchObject({
+      main: "$3 spent by the account today",
+    });
+    expect(balanceFace(bal({ spent: spentUsd(3, "total", "user") }), NOW)).toMatchObject({
+      main: "$3 spent by the account to date",
+    });
+    expect(balanceFace(bal({ quota: { limit: 100, used: 57.82, unit: "unknown" } }), NOW)).toMatchObject({
+      main: "42.18 / 100 left",
+    });
+    expect(measurePair(320, 1000, "requests")).toBe("320 / 1,000 requests");
     expect(balanceFace(bal({ windows: [win("7d", 85, 100, HOUR, { scope: "user" })] }), NOW)).toMatchObject({
       sub: "Account limit · $15 / $100 left",
     });
