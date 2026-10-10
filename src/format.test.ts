@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
+import type { CostBucket } from "./types";
 import {
   bucketStart,
   compact,
@@ -229,7 +230,7 @@ describe("格子边界", () => {
 });
 
 describe("补空桶", () => {
-  const b = (at_ms: number, requests: number) => ({
+  const b = (at_ms: number, requests: number): CostBucket => ({
     at_ms,
     requests,
     failed: 0,
@@ -237,6 +238,15 @@ describe("补空桶", () => {
     cost_micros_estimated: 0,
     unpriced_requests: 0,
     no_usage_requests: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    ttft_p50_ms: 900,
+    ttft_p95_ms: 1_800,
+    ttft_samples: requests,
   });
 
   /**
@@ -248,6 +258,14 @@ describe("补空桶", () => {
     const out = densify([b(0, 2), b(2000, 1)], 0, 3000, 1000);
     expect(out.map((x) => x.requests)).toEqual([2, 0, 1]);
     expect(out.map((x) => x.at_ms)).toEqual([0, 1000, 2000]);
+  });
+
+  /** 补出来的格子没有首 token 样本：分位是「没有」，画成 0 毫秒就是编了一段「很快」 */
+  it("补出来的格子没有分位", () => {
+    const out = densify([b(0, 2)], 0, 2000, 1000);
+    expect(out.map((x) => x.ttft_p50_ms)).toEqual([900, null]);
+    expect(out.map((x) => x.ttft_samples)).toEqual([2, 0]);
+    expect(out[1]).toMatchObject({ sent_bytes: 0, received_bytes: 0, input_tokens: 0 });
   });
 
   it("首尾的空格子也要补", () => {

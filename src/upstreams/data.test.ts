@@ -17,6 +17,8 @@ function bucket(name: string, at: number, requests: number, failed = 0): CostBuc
     output_tokens: 0,
     cache_read_tokens: 0,
     cache_write_tokens: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
   };
 }
 

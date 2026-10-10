@@ -201,7 +201,7 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
             )
           }
         />
-        <Row label={t.bytes} value={r.bytes?.toLocaleString() ?? "—"} />
+        <Row label={t.bytes} value={r.received_bytes?.toLocaleString() ?? "—"} />
       </Rows>
     </div>
   );

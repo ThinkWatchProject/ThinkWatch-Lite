@@ -229,7 +229,11 @@ function makeRow(s: Spec, r: () => number): HistoryRow {
     ttft_ms: wait + ttfb,
     duration_ms: duration,
     tokens_per_sec: rate(usage.out, duration - wait - ttfb),
-    bytes: Math.round(usage.out * 5.2 + 900),
+    // 网关和上游之间：请求体大约随上下文长（一个 token 三四个字节），回答体随输出长
+    sent_bytes: Math.round((usage.in + usage.cr + usage.cw) * 3.6 + 2_400),
+    received_bytes: Math.round(usage.out * 5.2 + 900),
+    // openrouter 走代理 clash（overview.json），别的直连
+    egress: provider === "openrouter" ? "clash" : null,
     input_tokens: usage.in,
     output_tokens: usage.out,
     cache_read_tokens: usage.cr,
@@ -302,7 +306,9 @@ function localRow(who: Who, at: number, probe: "health_check" | "warmup"): Histo
     ttft_ms: null,
     duration_ms: 0,
     tokens_per_sec: null,
-    bytes: null,
+    sent_bytes: null,
+    received_bytes: null,
+    egress: null,
     input_tokens: null,
     output_tokens: null,
     cache_read_tokens: null,
@@ -595,6 +601,8 @@ export function summary(from: number, to = Infinity): Summary {
     cost_micros_estimated: sum(real, (h) => (h.cost_estimated ? (h.cost_micros ?? 0) : 0)),
     unpriced_requests: real.filter(unpriced).length,
     no_usage_requests: real.filter(noUsage).length,
+    sent_bytes: sum(real, (h) => h.sent_bytes ?? 0),
+    received_bytes: sum(real, (h) => h.received_bytes ?? 0),
     cache_saved_micros: sum(real, (h) => h.cache_saved_micros ?? 0),
     security: {
       secrets: count("redact"),
@@ -658,13 +666,36 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
   const byModel = new Map<string, CostBucketGroup>();
   for (const h of rows) {
     const at = sinceMs + Math.floor((h.at_ms - sinceMs) / bucketMs) * bucketMs;
-    const b = buckets.get(at) ?? { at_ms: at, requests: 0, failed: 0, cost_micros_exact: 0, cost_micros_estimated: 0, unpriced_requests: 0, no_usage_requests: 0 };
+    const b = buckets.get(at) ?? {
+      at_ms: at,
+      requests: 0,
+      failed: 0,
+      cost_micros_exact: 0,
+      cost_micros_estimated: 0,
+      unpriced_requests: 0,
+      no_usage_requests: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      ttft_p50_ms: null,
+      ttft_p95_ms: null,
+      ttft_samples: 0,
+    };
     b.requests += 1;
     if (h.error) b.failed += 1;
     if (h.cost_estimated) b.cost_micros_estimated += h.cost_micros ?? 0;
     else b.cost_micros_exact += h.cost_micros ?? 0;
     if (unpriced(h)) b.unpriced_requests += 1;
     if (noUsage(h)) b.no_usage_requests += 1;
+    b.sent_bytes += h.sent_bytes ?? 0;
+    b.received_bytes += h.received_bytes ?? 0;
+    b.input_tokens += h.input_tokens ?? 0;
+    b.output_tokens += h.output_tokens ?? 0;
+    b.cache_read_tokens += h.cache_read_tokens ?? 0;
+    b.cache_write_tokens += h.cache_write_tokens ?? 0;
     buckets.set(at, b);
     const k = `${at}|${h.model}`;
     const g = byModel.get(k) ?? {
@@ -680,6 +711,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
       output_tokens: 0,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
     };
     g.requests += 1;
     if (h.error) g.failed += 1;
@@ -691,6 +724,8 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
     g.cache_write_tokens += h.cache_write_tokens ?? 0;
+    g.sent_bytes += h.sent_bytes ?? 0;
+    g.received_bytes += h.received_bytes ?? 0;
     byModel.set(k, g);
   }
   const span = NOW - sinceMs;
@@ -759,6 +794,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
       output_tokens: 0,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
     };
     g.requests += 1;
     if (h.error) g.failed += 1;
@@ -770,6 +807,8 @@ export function costBucketsBy(from: number, bucketMs: number, key: (h: HistoryRo
     g.output_tokens += h.output_tokens ?? 0;
     g.cache_read_tokens += h.cache_read_tokens ?? 0;
     g.cache_write_tokens += h.cache_write_tokens ?? 0;
+    g.sent_bytes += h.sent_bytes ?? 0;
+    g.received_bytes += h.received_bytes ?? 0;
     by.set(k, g);
   }
   return [...by.values()].sort((a, b) => a.at_ms - b.at_ms);

@@ -99,7 +99,16 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   HistorySearch: (req) => historySearch(req),
   RequestDetail: (_req, [id]) => {
     const h = HISTORY.find((x) => x.id === Number(id)) ?? notFound(`Request #${id}`);
-    return { row: clone(h), ...bodies(h), request_after_plugins: null, plugins: [], in_flight: false };
+    return {
+      row: clone(h),
+      ...bodies(h),
+      request_after_plugins: null,
+      upstream_request_body: null,
+      upstream_response_body: null,
+      heads: [],
+      plugins: [],
+      in_flight: false,
+    };
   },
   Sessions: (req) => sessions(req.limit ?? 200),
   SessionDetail: (_req, [id]) => ({ session: sessionView(id!) ?? notFound(`Session ${id}`), turns: turns(id!) }),

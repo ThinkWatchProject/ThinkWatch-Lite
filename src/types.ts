@@ -114,7 +114,17 @@ export interface RequestRow {
   durationMs?: number;
   /** 生成速度，token/秒，core 在结局里算好的。只有跑完的流式请求有 */
   tokensPerSec?: number;
-  bytes?: number;
+  /**
+   * 发给上游的请求体、从上游收到的响应体，字节，每一跳加起来（网关和上游之间、线上的
+   * 样子）。**结局到了才有**；本地应答的、一跳都没发出去的没有
+   */
+  sentBytes?: number;
+  receivedBytes?: number;
+  /**
+   * 从哪个出口出去的：服务它的那一跳走的代理名（跟随系统的是 `system`）。**直连的没有，
+   * 路由报出结论之前也没有**
+   */
+  egress?: string;
   /** 新输入的 token。**不含缓存读写**：三者不重叠，加起来才是这一轮送进去的全部 */
   inputTokens?: number;
   outputTokens?: number;
@@ -213,7 +223,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       if (r) {
         r.state = "done";
         r.status = ev.status;
-        r.bytes = ev.bytes;
+        r.sentBytes = ev.sent_bytes;
+        r.receivedBytes = ev.received_bytes;
         r.durationMs = ev.duration_ms;
         r.tokensPerSec = ev.tokens_per_sec ?? undefined;
         if (ev.usage) {
@@ -231,7 +242,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.state = "cancelled";
         // 响应头之前就断开的没有状态码 —— 那就保留原样（也是没有）
         if (ev.status != null) r.status = ev.status;
-        r.bytes = ev.bytes;
+        // 还没发给上游就走了的没有（不是 0）
+        r.sentBytes = ev.sent_bytes ?? undefined;
+        r.receivedBytes = ev.received_bytes ?? undefined;
         r.durationMs = ev.duration_ms;
         // 用量停在断开那一刻。**没有就不填** —— 客户端可能在第一帧之前
         // 就走了，那时填 0 说的是一件没有发生过的事
@@ -258,6 +271,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.rule = ev.rule;
         // 选定上游之后才判断的改写在这里才有
         r.rewrittenBy = nonEmpty(ev.rewritten_by);
+        r.egress = ev.egress ?? undefined;
       }
       break;
     }
@@ -322,7 +336,9 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.state = "failed";
         r.error = ev.message;
         if (ev.duration_ms != null) r.durationMs = ev.duration_ms;
-        if (ev.bytes != null) r.bytes = ev.bytes;
+        // 一跳都没发出去的失败没有（被规则拒绝、上游都满着……）
+        if (ev.sent_bytes != null) r.sentBytes = ev.sent_bytes;
+        if (ev.received_bytes != null) r.receivedBytes = ev.received_bytes;
         // 断在中间的失败，上游已经为这些 token 计了费
         if (ev.usage) {
           r.inputTokens = ev.usage.input;

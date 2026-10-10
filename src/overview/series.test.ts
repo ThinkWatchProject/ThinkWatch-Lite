@@ -34,6 +34,8 @@ function summary(over: Partial<Summary> = {}): Summary {
     cost_micros_estimated: 0,
     unpriced_requests: 0,
     no_usage_requests: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
     cache_saved_micros: 0,
     security: {
       secrets: 0,
@@ -64,6 +66,8 @@ function group(at_ms: number, name: string, tokens: number, over: Partial<CostBu
     output_tokens: 0,
     cache_read_tokens: 0,
     cache_write_tokens: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
     ...over,
   };
 }
@@ -80,6 +84,15 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
       cost_micros_estimated: 0,
       unpriced_requests: 0,
       no_usage_requests: 0,
+      sent_bytes: 0,
+      received_bytes: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      ttft_p50_ms: null,
+      ttft_p95_ms: null,
+      ttft_samples: 0,
     };
     b.requests += g.requests;
     b.failed += g.failed;
@@ -87,6 +100,12 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
     b.cost_micros_estimated += g.cost_micros_estimated;
     b.unpriced_requests += g.unpriced_requests;
     b.no_usage_requests += g.no_usage_requests;
+    b.input_tokens += g.input_tokens;
+    b.output_tokens += g.output_tokens;
+    b.cache_read_tokens += g.cache_read_tokens;
+    b.cache_write_tokens += g.cache_write_tokens;
+    b.sent_bytes += g.sent_bytes;
+    b.received_bytes += g.received_bytes;
     buckets.set(g.at_ms, b);
   }
   return {

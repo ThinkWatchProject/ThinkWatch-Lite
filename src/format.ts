@@ -281,6 +281,16 @@ export function densify(
         cost_micros_estimated: 0,
         unpriced_requests: 0,
         no_usage_requests: 0,
+        sent_bytes: 0,
+        received_bytes: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        // 空格子没有样本：分位是「没有」，不是 0 毫秒
+        ttft_p50_ms: null,
+        ttft_p95_ms: null,
+        ttft_samples: 0,
       },
     );
   }

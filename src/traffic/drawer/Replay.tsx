@@ -161,7 +161,7 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
               <Cmp label={t.status} a={result.original.status} b={result.status} format={String} />
               <Cmp label={t.ttfb} a={result.original.ttfb_ms} b={result.ttfb_ms} format={ms} />
               <Cmp label={t.duration} a={result.original.duration_ms} b={result.duration_ms} format={ms} />
-              <Cmp label={t.bytes} a={result.original.bytes} b={result.bytes} />
+              <Cmp label={t.bytes} a={result.original.received_bytes} b={result.bytes} />
             </TableBody>
           </Table>
           <BodyText
