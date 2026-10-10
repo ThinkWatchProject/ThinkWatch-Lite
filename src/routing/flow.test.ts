@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLOW_LAYERS, FLOW_MS, FLOW_PERIOD_PX, flowCycles, flowDelay, flowStrength } from "./flow";
+import { FLOW_COLORS, FLOW_LAYERS, FLOW_MS, FLOW_PERIOD_PX, flowColor, flowCycles, flowDelay, flowShift, flowStrength } from "./flow";
 
 /** 一层光点的前头在 `t` 时刻落在线上哪儿（按周期，0–1）：偏移从 1 匀速走到 0，`delay` 是它的起点 */
 function frontAt(t: number, dash: number, delay: number): number {
@@ -38,6 +38,24 @@ describe("在途请求的光点", () => {
           const ref = frontAt(t, FLOW_LAYERS[0]!.dash, flowDelay(0, FLOW_LAYERS[0]!.dash));
           expect(Math.min(Math.abs(front - ref), 1 - Math.abs(front - ref))).toBeLessThan(1e-9);
         }
+      }
+    }
+  });
+
+  it("每个请求一种颜色，先后到的轮着取；同一个请求每一段的错开量一样，所以接得上", () => {
+    const colors = new Set(Array.from({ length: FLOW_COLORS }, (_, i) => flowColor(100 + i)));
+    expect(colors.size).toBe(FLOW_COLORS);
+    expect(flowColor(7)).toBe(flowColor(7 + FLOW_COLORS));
+    expect(flowShift(0)).toBe(0);
+    for (const id of [1, 2, 9]) {
+      expect(flowShift(id)).toBeGreaterThanOrEqual(0);
+      expect(flowShift(id)).toBeLessThan(1);
+      // 错开量只是把每一层一起往后挪：不管哪一刻挂上，这个请求的几段前头都在同一处
+      for (const mount of [0, 640.5, 98_765.25]) {
+        const l = FLOW_LAYERS[0]!;
+        const front = frontAt(1000 - mount, l.dash, flowDelay(mount, l.dash, flowShift(id)));
+        const ref = frontAt(1000, l.dash, flowDelay(0, l.dash, flowShift(id)));
+        expect(Math.min(Math.abs(front - ref), 1 - Math.abs(front - ref))).toBeLessThan(1e-9);
       }
     }
   });

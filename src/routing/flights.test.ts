@@ -175,11 +175,12 @@ describe("在途请求", () => {
       ),
       chain,
     )!;
-    expect(a.edges.get("key:claude-code>route:default")).toBe(3);
-    expect(a.edges.get("key:default>route:default")).toBe(1);
-    expect(a.edges.get("route:default>group:main")).toBe(4);
-    expect(a.edges.get("group:main>up:anthropic")).toBe(1);
-    expect(a.edges.get("group:main>up:openrouter")).toBe(1);
+    // 每段线上记的是经过的请求（先开始的在前）：每个请求的光点各画各的颜色
+    expect(a.edges.get("key:claude-code>route:default")).toEqual([1, 2, 3]);
+    expect(a.edges.get("key:default>route:default")).toEqual([4]);
+    expect(a.edges.get("route:default>group:main")).toEqual([1, 2, 3, 4]);
+    expect(a.edges.get("group:main>up:anthropic")).toEqual([1]);
+    expect(a.edges.get("group:main>up:openrouter")).toEqual([2]);
   });
 
   it("图上已经没有的那一站到此为止；没有在途请求时为空", () => {
