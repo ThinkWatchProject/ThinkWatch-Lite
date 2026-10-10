@@ -1,5 +1,5 @@
 import { compact } from "@/format";
-import type { TurnContextParts, TurnView } from "@/types";
+import type { ContextParts, TurnView } from "@/types";
 
 /**
  * 会话「对话」里每一轮头下那根上下文条的算术。界面在 `Conversation.tsx`（`ContextRow`）。
@@ -56,7 +56,7 @@ export interface ContextShare {
  * 四部分各占几成，按 core 估算的合计算。**合计是 0 时都写 0**，不除零；不按四项之和重算
  * 合计 —— 合计是 core 给的，界面不另算一个。
  */
-export function contextShares(p: TurnContextParts): ContextShare[] {
+export function contextShares(p: ContextParts): ContextShare[] {
   const pct = (n: number) => (p.total > 0 ? Math.round((n / p.total) * 100) : 0);
   return [
     { kind: "system", tokens: p.system, pct: pct(p.system) },
