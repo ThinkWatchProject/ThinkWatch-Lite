@@ -71,7 +71,10 @@
     "health": "ok",
     "billing": "per-token",
     "references": [],
-    "pricing": null
+    "pricing": null,
+    "balance_setting": "auto",
+    "balance": null,
+    "signed_in": null
    }
   ],
   "proxies": [],
