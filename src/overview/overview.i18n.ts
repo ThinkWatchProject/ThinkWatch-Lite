@@ -1,5 +1,8 @@
 import { messages } from "@/i18n";
 
+/** 数字开头的和前面的汉字之间空一格，和别处「另有 3 项」的写法一致 */
+const sp = (s: string) => (/^[0-9]/.test(s) ? " " : "");
+
 /** 概览页的文案。 */
 export const overviewText = messages(
   {
@@ -14,151 +17,123 @@ export const overviewText = messages(
     noUpstreams: "尚未添加上游",
     showUpstreams: "在上游页中查看",
 
-    /** 实时档的标记 */
-    live: "实时",
-    /** 实时档下，不跟着图走的那几块按这个区间统计 */
-    liveWindow: "10 分钟",
+    // 需要处理的事。一件一句，陈述式
+    attentionLabel: "需要处理的事",
+    /** 失败过半集中在一个上游时点出它；全在一个上游时说「均」 */
+    attnFailed: (n: number, top: { name: string; n: number } | null) =>
+      `${n} 次请求失败` + (top ? (top.n === n ? `，均发生在 ${top.name}` : `，其中 ${top.name} ${top.n} 次`) : ""),
+    attnToolCut: (n: number) => `工具调用审查切断了 ${n} 个可疑工具调用`,
+    attnUpstream: (name: string, why: string) => `${name} ${why}`,
+    attnUpstreams: (n: number, names: string[]) =>
+      `${n} 个上游不可用：${names.slice(0, 3).join("、")}${names.length > 3 ? " 等" : ""}`,
+    whyOpen: "熔断中",
+    whyAuth: "凭据被拒",
+    whyLogin: "需要重新登录",
+    attnUnpriced: (n: number) => `${n} 条请求无法计价：所用模型未定价，费用未计入`,
+    /** 实时档：这几句的数按 24 小时算 */
+    scoped: (period: string, text: string) => `${period}内${sp(text)}${text}`,
+    viewInTraffic: "在流量中查看",
+    showLog: "在安全日志中查看",
 
-    // 三个大数
+    // 指标卡的名目
     kpiTokens: "Token",
     kpiCost: "费用",
+    kpiCache: "缓存命中",
     kpiRequests: "请求",
+    kpiLatency: "首 token",
+    kpiTraffic: "流量",
+    /** 读屏念的那张小图：「Token 走势」 */
+    chartOf: (name: string) => `${name}走势`,
+
     /**
-     * 环比。`period` 是时间范围给的「24 小时」「7 天」「等长区间」；带箭头的幅度另画。
-     * 数字开头的和前面的汉字之间空一格，和别处「另有 3 项」的写法一致
+     * 环比的悬停：和什么比、从多少到多少。`period` 是时间范围给的「24 小时」「7 天」
+     * 「等长区间」
      */
-    deltaVs: (period: string) => `较上一个${/^[0-9]/.test(period) ? " " : ""}${period}`,
+    deltaTip: (period: string, before: string, now: string) => `较上一个${sp(period)}${period}：${before} → ${now}`,
     /** 上一个区间没有数据时，幅度那一格（「—」）的悬停说明 */
-    noPrior: (period: string) => `上一个${/^[0-9]/.test(period) ? " " : ""}${period}无记录`,
+    noPrior: (period: string) => `上一个${sp(period)}${period}无记录`,
+
+    // 小图下面首尾两头
+    ago: (period: string) => `${period}前`,
+    liveAgo: "10 分钟前",
+    now: "现在",
+    /** 那一样读取失败：**不是没有** */
+    chartUnavailable: "暂时取不到",
+
+    // Token
+    inOut: (input: string, output: string) => `输入 ${input} · 输出 ${output}`,
+    /** 实时档的提示读的是速率 */
+    tokenRate: (shown: string) => `${shown} token/秒`,
     /** token 数。`shown` 是写出来的样子（缩写或精确值），`n` 决定英文的单复数 */
     tokens: (shown: string, _n: number) => `${shown} token`,
-    /** token 那一栏的限定语：「输入 10.5M · 输出 356k」，两个数各自走 */
-    input: "输入",
-    output: "输出",
 
-    // 费用那一栏的限定语。**估算、无法计价、无用量各说各的**
-    estimated: (amount: string) => `含估算 ${amount}`,
-    estimatedTip:
-      "此部分金额为估算值：请求在响应结束前断开或中断，输出用量计至断开时；或该模型的单价取自其他平台。",
-    unpriced: (n: number) => `${n} 条无法计价`,
-    unpricedTip:
-      "这些请求所用的模型未定价，费用未计入上方金额。在「上游 › 价目表」中设置价格后，之后的请求将按该价格计入。",
-    noUsage: (n: number) => `${n} 条无用量`,
-    noUsageTip:
-      "这些请求没有用量数据：上游未报告，或连接在报告之前已结束。费用无法计算，未计入上方金额。",
-    allMeasured: "全部按价目表实测",
-
-    // 请求数那一栏
-    failed: (n: number) => `${n} 次失败`,
-    failureRate: (pct: string) => `失败率 ${pct}%`,
-    showFailed: "在流量中查看失败的请求",
-
-    // 图
-    trend: "趋势",
-    /** 图的口径。读屏读出来的这一组的名字 */
-    metric: "图表口径",
-    byTokens: "token",
-    byCost: "费用",
-    unknownModel: "未知模型",
-    /** 前五项以外合并成的那一层。**它同时是图里那一层的名字** */
-    other: "其他",
-    otherCount: (n: number) => `其他 ${n} 项`,
-    /** 悬停提示的抬头。**实时档读的是速率，不是那一格的量** */
-    tokenRate: (shown: string) => `${shown} token/秒`,
+    // 费用。**估算、无法计价、无用量各说各的**
+    avgCost: (amount: string) => `平均每次请求 ${amount}`,
     costRate: (amount: string) => `${amount}/小时`,
-    /** 悬停提示抬头下面那一句：这一格有几次请求 */
-    tipRequests: (requests: number, failed: number) => `${requests} 次请求${failed ? `，${failed} 次失败` : ""}`,
-    /** 那一句后面接着的几项（费用口径下的「3 条无法计价」）之间的分隔 */
-    listSep: "，",
-    tipNone: "无请求",
-    waiting: "等待请求",
-    noRequests: "所选区间内无请求记录",
-    /** 趋势那两样取数失败：**不是没有请求**，不能画成一张全零的图 */
-    trendUnavailable: "趋势数据暂时取不到",
-    /** 同一份数据：排行就是趋势图的图例 */
-    rankingUnavailable: "模型排行暂时取不到",
-    liveTicks: ["10 分钟前", "8 分钟", "6 分钟", "4 分钟", "2 分钟"],
-    now: "现在",
-    failureMarks: "存在失败的时段",
-    /** 基线上一段红色的悬停说明 */
-    failedAt: (at: string, n: number) => `${at}　${n} 次失败`,
-
-    // 模型排行
-    models: "模型",
-    times: (n: number) => `${n} 次`,
-    /** 排行费用那一格（和费用口径下悬停的合计）：有用量，却一条都没算出费用 */
+    noRequestsShort: "无请求",
+    estimated: (amount: string) => `含估算 ${amount}`,
+    /** 费用那一格：有用量，却一条都没算出费用 */
     unpricedCell: "无法计价",
     /** 同上：连用量都没有 */
     noUsageCell: "无用量",
-    /** 费用那一格悬停里的句子：金额之外的请求。含估算的那句和费用大数的限定语共用 `estimated` */
+    /** 费用悬停里的句子：金额之外的请求 */
     rankUnpriced: (n: number) => `${n} 条请求无法计价：模型未定价，费用未计入`,
     rankNoUsage: (n: number) => `${n} 条请求没有用量数据，费用未计入`,
     /** 实时档：请求刚落地，价钱还没算出来 */
     rankPending: (n: number) => `${n} 条请求的费用尚在计算，暂未计入`,
-    /** 可以点的「无法计价」，读屏读出来的后半句 */
-    viewUnpriced: "在流量中查看无法计价的请求",
-    moreNotListed: (n: number) => `另有 ${n} 项未列出`,
-    /** 可以点的一行，读屏读出来的后半句 */
-    viewInTraffic: "在流量中查看",
 
     // 缓存
-    cache: "缓存",
-    noTokens: "所选区间内无 token 记录",
-    /** 按模型分的那份取数失败：总账照常，右边那一栏不能写成「没有模型」 */
-    cacheModelsUnavailable: "按模型的构成暂时取不到",
-    hitRate: "命中",
-    netCost: "净增费用",
-    netSavings: "净节省",
-    readWrite: "读写比",
+    saved: (amount: string) => `省下 ${amount}`,
+    netCost: (amount: string) => `净增费用 ${amount}`,
+    noTokens: "无 token 记录",
     cacheReads: "缓存读取",
     uncachedInput: "新输入",
     cacheWrites: "缓存写入",
-    hitByModel: "各模型命中率",
 
-    // 延迟
-    latency: "延迟",
-    latencyWhat: "首 token 时间",
-    notEnoughSamples: "所选区间内样本不足，暂无分位数据",
-    /** 取数失败，**不是样本不足** */
-    latencyUnavailable: "延迟数据暂时取不到",
-    byModel: "按模型",
-    byUpstream: "按上游",
-    /** 延迟表头的最后一列：每一行的分位数由几个请求算出 */
-    samples: "样本",
-    /** 样本太少的那一格的悬停说明 */
-    fewSamples: "样本较少，分位数仅供参考",
+    // 请求
+    failedSub: (n: number) => `失败 ${n} 次`,
+    rateSuffix: (pct: string) => ` · ${pct}%`,
+    noFailures: "无失败",
+    showFailed: "在流量中查看失败的请求",
+    reqTip: (n: number, failed: number) => `${n} 次${failed ? ` · 失败 ${failed}` : ""}`,
 
-    // 生成速度：和延迟一节同一个样子
-    speed: "生成速度",
-    speedWhat: "token/秒",
-    /** 取数失败，**不是样本不足** */
-    speedUnavailable: "生成速度数据暂时取不到",
+    // 首 token
+    /** core 给出整体分位之前：写明是哪个模型的 */
+    latencyOf: (model: string, p95: string) => `${model} · P95 ${p95}`,
+    p95: (shown: string) => `P95 ${shown}`,
+    latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
+    noSamples: "无样本",
 
-    // 安全：三项防护的档位和这段时间各自看见了什么。数的是安全日志里的条数；档位名和
-    // 安全页同一组（见 `@/security/labels` 的 `modeName`）
-    security: "安全",
-    redact: "出站脱敏",
-    inspect: "工具调用审查",
-    notChecked: "不检查，不记录",
-    secrets: (n: number, replaced: number) =>
-      `发现 ${n} 处凭据，` + (replaced === 0 ? "均未替换" : replaced === n ? "均已替换" : `已替换 ${replaced} 处`),
-    noSecrets: "未发现凭据",
-    toolCalls: (n: number, cut: number) =>
-      `发现 ${n} 个可疑工具调用，` + (cut === 0 ? "均未切断" : cut === n ? "均已切断" : `已切断 ${cut} 个`),
-    noToolCalls: "未发现可疑工具调用",
-    content: "内容过滤",
-    /** 命中几次，其中拒绝了几次、删除了几次。都没有就是只记录了 */
-    contentMatched: (n: number, blocked: number, stripped: number) =>
-      `命中内容规则 ${n} 次，` +
-      (blocked === 0 && stripped === 0
-        ? "均仅记录"
-        : blocked === n
-          ? "均已拒绝"
-          : stripped === n
-            ? "均已删除"
-            : [blocked > 0 && `已拒绝 ${blocked} 次`, stripped > 0 && `已删除 ${stripped} 次`].filter(Boolean).join("、")),
-    noContent: "未命中内容规则",
-    showLog: "在安全日志中查看",
+    // 流量
+    upload: (shown: string) => `上传 ${shown}`,
+    download: (shown: string) => `下载 ${shown}`,
+    trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
+    trafficNone: "暂无流量记录",
+
+    // 明细表
+    tableLabel: "明细",
+    tabModels: "模型",
+    tabUpstreams: "上游",
+    tabKeys: "密钥",
+    colRequests: "请求",
+    colTokens: "Token",
+    colCost: "费用",
+    colCache: "缓存命中",
+    colLatency: "首 token",
+    colSpeed: "生成速度",
+    unknownModel: "未知模型",
+    /** 没到上游的请求：被规则拒绝、没有可用的上游 */
+    noUpstream: "未到上游",
+    unknownKey: "未知密钥",
+    more: (n: number) => `另有 ${n} 项`,
+    less: "收起",
+    tableEmpty: "所选区间内无请求记录",
+    tableUnavailable: "明细暂时取不到",
+    latencyCellTip: (p50: string, p95: string, samples: number) => `P50 ${p50} · P95 ${p95} · ${samples} 个样本`,
+    speedCell: (n: string) => `${n}/秒`,
+    speedTip: (n: string, samples: number) => `生成速度中位数 ${n} token/秒 · ${samples} 个样本`,
+    /** 可以点的「无法计价」，读屏读出来的后半句 */
+    viewUnpriced: "在流量中查看无法计价的请求",
 
     // 请求记录没起来。正常时不显示
     recordingUnavailable: "请求记录未能启动",
@@ -174,57 +149,50 @@ export const overviewText = messages(
     noUpstreams: "No upstreams yet",
     showUpstreams: "View in Upstreams",
 
-    live: "Live",
-    liveWindow: "10 minutes",
+    attentionLabel: "Needs attention",
+    attnFailed: (n: number, top: { name: string; n: number } | null) =>
+      (n === 1 ? "1 request failed" : `${n} requests failed`) +
+      (top ? (top.n === n ? (n === 1 ? ` on ${top.name}` : `, all on ${top.name}`) : `, ${top.n} of them on ${top.name}`) : ""),
+    attnToolCut: (n: number) =>
+      n === 1 ? "Tool-call inspection cut off 1 suspicious tool call" : `Tool-call inspection cut off ${n} suspicious tool calls`,
+    attnUpstream: (name: string, why: string) => `${name}: ${why}`,
+    attnUpstreams: (n: number, names: string[]) =>
+      `${n} upstreams unavailable: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
+    whyOpen: "circuit open",
+    whyAuth: "credentials rejected",
+    whyLogin: "sign-in required",
+    attnUnpriced: (n: number) =>
+      n === 1
+        ? "1 request unpriced: its model has no price, so its cost is not included"
+        : `${n} requests unpriced: their models have no price, so their cost is not included`,
+    scoped: (period: string, text: string) => `Last ${period}: ${text}`,
+    viewInTraffic: "View in Traffic",
+    showLog: "View in the security log",
 
     kpiTokens: "Tokens",
     kpiCost: "Cost",
+    kpiCache: "Cache hits",
     kpiRequests: "Requests",
-    deltaVs: (period: string) => `vs. prior ${period}`,
+    kpiLatency: "First token",
+    kpiTraffic: "Traffic",
+    chartOf: (name: string) => `${name} over time`,
+
+    deltaTip: (period: string, before: string, now: string) => `vs. prior ${period}: ${before} → ${now}`,
     noPrior: (period: string) => `No data for the prior ${period}`,
-    tokens: (shown: string, n: number) => `${shown} ${n === 1 ? "token" : "tokens"}`,
-    input: "Input",
-    output: "Output",
 
-    estimated: (amount: string) => `Incl. ${amount} estimated`,
-    estimatedTip:
-      "This part of the cost is estimated: requests disconnected or were interrupted before the response finished, and output usage is counted up to the disconnect; or the model's price was taken from another platform.",
-    unpriced: (n: number) => `${n} unpriced`,
-    unpricedTip:
-      "The models used by these requests have no price, so their cost is not included in the amount above. Once a price is set in Upstreams › Price sheets, later requests are counted at that price.",
-    noUsage: (n: number) => `${n} with no usage`,
-    noUsageTip:
-      "These requests have no usage data: the upstream did not report it, or the connection ended before it was reported. Their cost cannot be calculated and is not included in the amount above.",
-    allMeasured: "All measured at price-sheet rates",
-
-    failed: (n: number) => `${n} failed`,
-    failureRate: (pct: string) => `Failure rate ${pct}%`,
-    showFailed: "View failed requests in Traffic",
-
-    trend: "Trend",
-    metric: "Chart measure",
-    byTokens: "Tokens",
-    byCost: "Cost",
-    unknownModel: "Unknown model",
-    other: "Other",
-    otherCount: (n: number) => (n === 1 ? "1 other" : `${n} others`),
-    tokenRate: (shown: string) => `${shown} tokens/s`,
-    costRate: (amount: string) => `${amount}/hour`,
-    tipRequests: (requests: number, failed: number) =>
-      `${requests === 1 ? "1 request" : `${requests} requests`}${failed ? `, ${failed} failed` : ""}`,
-    listSep: ", ",
-    tipNone: "No requests",
-    waiting: "Waiting for requests",
-    noRequests: "No requests recorded in the selected range",
-    trendUnavailable: "Trend data is unavailable right now",
-    rankingUnavailable: "The model ranking is unavailable right now",
-    liveTicks: ["10 min ago", "8 min", "6 min", "4 min", "2 min"],
+    ago: (period: string) => `${period} ago`,
+    liveAgo: "10 min ago",
     now: "Now",
-    failureMarks: "Periods with failures",
-    failedAt: (at: string, n: number) => `${at} · ${n} failed`,
+    chartUnavailable: "Unavailable right now",
 
-    models: "Models",
-    times: (n: number) => `${n}×`,
+    inOut: (input: string, output: string) => `Input ${input} · Output ${output}`,
+    tokenRate: (shown: string) => `${shown} tokens/s`,
+    tokens: (shown: string, n: number) => `${shown} ${n === 1 ? "token" : "tokens"}`,
+
+    avgCost: (amount: string) => `${amount} per request on average`,
+    costRate: (amount: string) => `${amount}/hour`,
+    noRequestsShort: "No requests",
+    estimated: (amount: string) => `Incl. ${amount} estimated`,
     unpricedCell: "Unpriced",
     noUsageCell: "No usage",
     rankUnpriced: (n: number) =>
@@ -239,65 +207,53 @@ export const overviewText = messages(
       n === 1
         ? "1 request is still being priced, so its cost is not included yet"
         : `${n} requests are still being priced, so their cost is not included yet`,
-    viewUnpriced: "View unpriced requests in Traffic",
-    moreNotListed: (n: number) => `${n} more not listed`,
-    viewInTraffic: "View in Traffic",
 
-    cache: "Cache",
-    noTokens: "No tokens recorded in the selected range",
-    cacheModelsUnavailable: "The per-model breakdown is unavailable right now",
-    hitRate: "hit rate",
-    netCost: "Net cost increase",
-    netSavings: "Net savings",
-    readWrite: "Read/write ratio",
+    saved: (amount: string) => `${amount} saved`,
+    netCost: (amount: string) => `${amount} net cost increase`,
+    noTokens: "No tokens recorded",
     cacheReads: "Cache reads",
     uncachedInput: "Uncached input",
     cacheWrites: "Cache writes",
-    hitByModel: "Hit rate by model",
 
-    latency: "Latency",
-    latencyWhat: "Time to first token",
-    notEnoughSamples: "Not enough samples in the selected range; no percentiles yet",
-    latencyUnavailable: "Latency data is unavailable right now",
-    byModel: "By model",
-    byUpstream: "By upstream",
-    samples: "Samples",
-    fewSamples: "Few samples; the percentiles are only indicative",
+    failedSub: (n: number) => `${n} failed`,
+    rateSuffix: (pct: string) => ` · ${pct}%`,
+    noFailures: "No failures",
+    showFailed: "View failed requests in Traffic",
+    reqTip: (n: number, failed: number) => `${n === 1 ? "1 request" : `${n} requests`}${failed ? ` · ${failed} failed` : ""}`,
 
-    speed: "Generation speed",
-    speedWhat: "Tokens/s",
-    speedUnavailable: "Generation speed data is unavailable right now",
+    latencyOf: (model: string, p95: string) => `${model} · P95 ${p95}`,
+    p95: (shown: string) => `P95 ${shown}`,
+    latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
+    noSamples: "No samples",
 
-    security: "Security",
-    redact: "Outbound redaction",
-    inspect: "Tool-call inspection",
-    notChecked: "Not checked or recorded",
-    secrets: (n: number, replaced: number) =>
-      (n === 1 ? "1 credential found, " : `${n} credentials found, `) +
-      (replaced === 0 ? "none replaced" : replaced === n ? (n === 1 ? "replaced" : "all replaced") : `${replaced} replaced`),
-    noSecrets: "No credentials found",
-    toolCalls: (n: number, cut: number) =>
-      (n === 1 ? "1 suspicious tool call found, " : `${n} suspicious tool calls found, `) +
-      (cut === 0 ? "none cut off" : cut === n ? (n === 1 ? "cut off" : "all cut off") : `${cut} cut off`),
-    noToolCalls: "No suspicious tool calls found",
-    content: "Content filter",
-    contentMatched: (n: number, blocked: number, stripped: number) =>
-      (n === 1 ? "1 content rule match, " : `${n} content rule matches, `) +
-      (blocked === 0 && stripped === 0
-        ? n === 1
-          ? "recorded only"
-          : "all recorded only"
-        : blocked === n
-          ? n === 1
-            ? "refused"
-            : "all refused"
-          : stripped === n
-            ? n === 1
-              ? "deleted"
-              : "all deleted"
-            : [blocked > 0 && `${blocked} refused`, stripped > 0 && `${stripped} deleted`].filter(Boolean).join(", ")),
-    noContent: "No content rule matches",
-    showLog: "View in the security log",
+    upload: (shown: string) => `Up ${shown}`,
+    download: (shown: string) => `Down ${shown}`,
+    trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
+    trafficNone: "No traffic recorded yet",
+
+    tableLabel: "Breakdown",
+    tabModels: "Models",
+    tabUpstreams: "Upstreams",
+    tabKeys: "Keys",
+    colRequests: "Requests",
+    colTokens: "Tokens",
+    colCost: "Cost",
+    colCache: "Cache hits",
+    colLatency: "First token",
+    colSpeed: "Speed",
+    unknownModel: "Unknown model",
+    noUpstream: "No upstream",
+    unknownKey: "Unknown key",
+    more: (n: number) => `${n} more`,
+    less: "Show less",
+    tableEmpty: "No requests recorded in the selected range",
+    tableUnavailable: "The breakdown is unavailable right now",
+    latencyCellTip: (p50: string, p95: string, samples: number) =>
+      `P50 ${p50} · P95 ${p95} · ${samples === 1 ? "1 sample" : `${samples} samples`}`,
+    speedCell: (n: string) => `${n}/s`,
+    speedTip: (n: string, samples: number) =>
+      `Median speed ${n} tokens/s · ${samples === 1 ? "1 sample" : `${samples} samples`}`,
+    viewUnpriced: "View unpriced requests in Traffic",
 
     recordingUnavailable: "Request recording could not start",
     forwardingUnaffected: "Forwarding is not affected.",

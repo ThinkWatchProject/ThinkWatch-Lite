@@ -706,6 +706,9 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     storage: { recording: true, rows: HISTORY.length, blob_bytes: 412 * 1024 ** 2, forwarding_affected: false },
     buckets: [...buckets.values()].sort((a, b) => a.at_ms - b.at_ms),
     buckets_by_model: [...byModel.values()].sort((a, b) => a.at_ms - b.at_ms),
+    // 明细表的另两页：按上游、按密钥（dashboard.rs 同一个格宽问的 `/summary/buckets/by`）
+    buckets_by_provider: costBucketsBy(sinceMs, bucketMs, (h) => h.provider),
+    buckets_by_client: costBucketsBy(sinceMs, bucketMs, (h) => h.client),
     since_ms: sinceMs,
   };
 }

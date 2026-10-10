@@ -82,8 +82,8 @@ describe("实时档从库里补", () => {
   const opts = { skew: 0, cut: 0, unknownModel: "未知模型" };
 
   it("事件流上画了、价钱没等到的，按库里的补上；已经有价钱的不动", () => {
-    const waiting: LiveSample = { id: 1, at: 1_004_000, model: "claude-sonnet-5", tokens: 120 };
-    const priced: LiveSample = { id: 2, at: 1_004_500, model: "claude-sonnet-5", tokens: 120, cost: 900 };
+    const waiting: LiveSample = { id: 1, at: 1_004_000, model: "claude-sonnet-5", tokens: 120, output: 20 };
+    const priced: LiveSample = { id: 2, at: 1_004_500, model: "claude-sonnet-5", tokens: 120, output: 20, cost: 900 };
     const out = refill([waiting, priced], [], [stored(), stored({ id: 2, cost_micros: 1_700 })], opts);
     expect(out.samples).toHaveLength(2);
     expect(out.samples.find((s) => s.id === 1)).toMatchObject({ cost: 1_500, estimated: false });
@@ -91,22 +91,34 @@ describe("实时档从库里补", () => {
   });
 
   it("库里是空的价钱（未定价）也补上：那是价钱到了，不是还没到", () => {
-    const waiting: LiveSample = { id: 1, at: 1_004_000, model: "m", tokens: 120 };
+    const waiting: LiveSample = { id: 1, at: 1_004_000, model: "m", tokens: 120, output: 20 };
     const out = refill([waiting], [], [stored({ cost_micros: null })], opts);
     expect(out.samples[0]?.cost).toBeNull();
   });
 
-  it("事件流上没有的补进来，按时间排；失败只记一次；本地应答不算", () => {
-    const drawn: LiveSample = { id: 5, at: 1_010_000, model: "m", tokens: 10, cost: 1 };
+  it("事件流上没有的补进来，按时间排；结局只记一次；本地应答不算", () => {
+    const drawn: LiveSample = { id: 5, at: 1_010_000, model: "m", tokens: 10, output: 2, cost: 1 };
     const why = { code: "gw.upstream.status", args: {}, text: "Upstream answered 503." };
     const out = refill(
       [drawn],
-      [{ id: 3, at: 1_006_000 }],
+      [{ id: 3, at: 1_006_000, failed: true }, { id: 5, at: 1_010_000, failed: false }],
       [stored({ id: 3, error: why }), stored({ id: 4, at_ms: 1_001_000, error: why }), stored({ id: 6, local: true })],
       opts,
     );
     // 落在结束的那一刻：3 在 1_004_000，4 在 1_005_000
     expect(out.samples.map((s) => s.id)).toEqual([3, 4, 5]);
-    expect(out.fails.map((f) => f.id).sort()).toEqual([3, 4]);
+    expect(out.samples.find((s) => s.id === 3)?.output).toBe(20);
+    // 3 在事件流上已经有了，不再记一遍；6 是本地应答
+    expect(out.ends.map((f) => [f.id, f.failed])).toEqual([
+      [4, true],
+      [3, true],
+      [5, false],
+    ]);
+  });
+
+  it("没有用量的成功请求也是一次结局：请求数里有它，曲线上没有", () => {
+    const out = refill([], [], [stored({ id: 7, input_tokens: null, output_tokens: null, cost_micros: null })], opts);
+    expect(out.samples).toEqual([]);
+    expect(out.ends).toEqual([{ id: 7, at: 1_004_000, failed: false }]);
   });
 });

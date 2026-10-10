@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { CostBucket, CostBucketGroup, Dashboard, Summary } from "@/types";
+import type { CostBucket, CostBucketGroup, Dashboard, ProviderView, Summary } from "@/types";
 import {
-  axisLabel,
-  buildTrend,
-  cacheByModel,
-  fmtBucket,
-  historyTicks,
-  holdY,
-  latencyRows,
-  liveTicks,
-  modelGlyph,
-  niceCeil,
+  attention,
+  breakdown,
+  busiest,
+  cacheOf,
+  delta,
+  historySeries,
+  liveSeries,
   rankCost,
-  type RankRow,
+  slotOf,
+  slotTitle,
+  topFailure,
+  type Grid,
 } from "./series";
 import { overviewText } from "./overview.i18n";
 import { LIVE_BUCKET_MS, type LiveSample } from "./useLive";
@@ -49,14 +49,14 @@ function summary(over: Partial<Summary> = {}): Summary {
   };
 }
 
-/** 一个模型在一格里的量。`tokens` 全记成输入，`cost` 全记成实测 */
-function group(at_ms: number, name: string, tokens: number, cost = 0, requests = 1): CostBucketGroup {
+/** 一项在一格里的量。`tokens` 全记成输入，`cost` 全记成实测 */
+function group(at_ms: number, name: string, tokens: number, over: Partial<CostBucketGroup> = {}): CostBucketGroup {
   return {
     at_ms,
     name,
-    requests,
+    requests: 1,
     failed: 0,
-    cost_micros_exact: cost,
+    cost_micros_exact: 0,
     cost_micros_estimated: 0,
     unpriced_requests: 0,
     no_usage_requests: 0,
@@ -64,11 +64,12 @@ function group(at_ms: number, name: string, tokens: number, cost = 0, requests =
     output_tokens: 0,
     cache_read_tokens: 0,
     cache_write_tokens: 0,
+    ...over,
   };
 }
 
 /** 各格按模型加起来，和 core 的 `/summary/buckets` 对得上 */
-function dashboard(since: number, groups: CostBucketGroup[]): Dashboard {
+function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashboard> = {}): Dashboard {
   const buckets = new Map<number, CostBucket>();
   for (const g of groups) {
     const b = buckets.get(g.at_ms) ?? {
@@ -97,440 +98,322 @@ function dashboard(since: number, groups: CostBucketGroup[]): Dashboard {
     storage: null,
     buckets: [...buckets.values()],
     buckets_by_model: groups,
+    buckets_by_provider: [],
+    buckets_by_client: [],
     prev: null,
     since_ms: since,
-  };
-}
-
-/** 排行里的一行，只写要测的那几项 */
-function rank(over: Partial<RankRow>): RankRow {
-  return {
-    name: "m",
-    merged: 0,
-    tokens: 1000,
-    cost: 0,
-    estimated: 0,
-    unpriced: 0,
-    noUsage: 0,
-    pending: 0,
-    requests: 1,
-    color: "var(--chart-1)",
     ...over,
   };
 }
 
-describe("纵轴上界", () => {
-  it("粗档是 1 / 2 / 5", () => {
-    expect(niceCeil(0)).toBe(1);
-    expect(niceCeil(0.7)).toBe(1);
-    expect(niceCeil(1.3)).toBe(2);
-    expect(niceCeil(3)).toBe(5);
-    expect(niceCeil(7)).toBe(10);
-    expect(niceCeil(2_300)).toBe(5_000);
+/**
+ * 联动的竖线按时刻对：指着一张卡片，别的卡片停在同一个时刻所在的那一格。实时档里有的
+ * 卡片是十分钟、有的是 24 小时，同一刻落在各自的格子上；不在图上的那一刻不画。
+ */
+describe("联动的竖线落在哪一格", () => {
+  const since = new Date(2026, 8, 24, 17, 0).getTime();
+  const hourly: Grid = { at: Array.from({ length: 25 }, (_, i) => since + i * HOUR), step: HOUR, kind: "bucket" };
+
+  it("历史档：落在包着这一刻的那一格（格子管 [起点, 起点 + 格宽)）", () => {
+    expect(slotOf(hourly, since)).toBe(0);
+    expect(slotOf(hourly, since + HOUR - 1)).toBe(0);
+    expect(slotOf(hourly, since + 3 * HOUR + 20 * 60_000)).toBe(3);
   });
 
-  it("细档在两档之间补上中间的数，浮点的整数不往上多跳一档", () => {
-    expect(niceCeil(1.1, true)).toBe(1.2);
-    expect(niceCeil(2.9e6, true)).toBe(3e6);
-    expect(niceCeil(3e6, true)).toBe(3e6);
-    expect(niceCeil(3.01, true)).toBe(4);
-    expect(niceCeil(0.3, true)).toBeCloseTo(0.3, 12);
+  it("实时档：落在离这一刻最近的那一格", () => {
+    const now = since + 24 * HOUR + 42 * 60_000;
+    const live: Grid = { at: Array.from({ length: 61 }, (_, i) => now - (60 - i) * LIVE_BUCKET_MS), step: LIVE_BUCKET_MS, kind: "instant" };
+    expect(slotOf(live, now)).toBe(60);
+    expect(slotOf(live, now - 3 * LIVE_BUCKET_MS - 4_000)).toBe(57);
+    // 实时档上指着的那一刻，落在 24 小时那几张图的最后一格
+    expect(slotOf(hourly, now - 30_000)).toBe(24);
   });
 
-  /**
-   * 这就是细档的理由：1/2/5 下峰值刚过 2 就得取 5，图只占下面四成。细档下最坏
-   * 也占到四分之三。
-   */
-  it("细档下图至少占满四分之三的高", () => {
-    for (let v = 0.011; v < 1e7; v *= 1.037) {
-      const top = niceCeil(v, true);
-      expect(top).toBeGreaterThanOrEqual(v);
-      expect(v / top).toBeGreaterThan(0.74);
-    }
-  });
-
-  /** 刻度写的是上界和它的一半，所以一半也要是整齐的数（最多一位小数） */
-  it("每一档的一半也是整齐的数", () => {
-    for (const s of [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10]) {
-      const half = niceCeil(s * 1000, true) / 2;
-      expect(half % 100).toBe(0);
-    }
-  });
-
-  it("峰值涨过上界就重取，掉得不多不动，掉到一半以下才降档", () => {
-    let y = holdY({ key: "", v: 0 }, "token/last:1d", 900);
-    expect(y.v).toBe(1000);
-    y = holdY(y, "token/last:1d", 600);
-    expect(y.v).toBe(1000);
-    y = holdY(y, "token/last:1d", 1300);
-    expect(y.v).toBe(2000);
-    y = holdY(y, "token/last:1d", 700);
-    expect(y.v).toBe(1000);
-  });
-
-  it("口径或区间一换，从头取", () => {
-    const y = holdY({ key: "token/last:1d", v: 5_000_000 }, "cost/last:1d", 3_000);
-    expect(y).toEqual({ key: "cost/last:1d", v: 5_000 });
-  });
-
-  /**
-   * 纵轴那一栏只有 46px：「100.0M」「$120.00」塞不下，而按周分格的长区间里一格的量大，
-   * 这样的刻度最常见。刻度是取整过的数，小数点后全是 0 的不写
-   */
-  it("刻度上的字：小数点后全是 0 的不写", () => {
-    expect(axisLabel("100.0M")).toBe("100M");
-    expect(axisLabel("$120.00")).toBe("$120");
-    expect(axisLabel("1.0k")).toBe("1k");
-    // 有意义的小数照写
-    expect(axisLabel("1.2k")).toBe("1.2k");
-    expect(axisLabel("$0.500")).toBe("$0.500");
-    expect(axisLabel("$0.0050")).toBe("$0.0050");
-    expect(axisLabel("$0")).toBe("$0");
+  it("不在图上的那一刻是 null", () => {
+    expect(slotOf(hourly, since - 1)).toBeNull();
+    expect(slotOf(hourly, since + 25 * HOUR)).toBeNull();
+    expect(slotOf({ at: [], step: HOUR, kind: "bucket" }, since)).toBeNull();
   });
 });
 
-describe("时间刻度", () => {
-  it("24 小时：起点、每 4 小时一个整点（零点写日期）、现在", () => {
-    const since = new Date(2026, 8, 24, 16, 0).getTime();
-    const ticks = historyTicks(since, HOUR / 2, 49, t.now);
-    expect(ticks.map((x) => x.label)).toEqual(["09-24 16:00", "20:00", "09-25", "04:00", "08:00", "12:00", "现在"]);
-    expect(ticks[0]?.at).toBe(0);
-    expect(ticks.at(-1)).toMatchObject({ at: 1, now: true });
-    // 标在它说的那个时刻：20:00 是 24 小时里的第 4 个小时
-    expect(ticks[1]?.at).toBeCloseTo(4 / 24, 9);
+describe("一格的悬停抬头", () => {
+  it("24 小时：写起止，不带日期；还没过完的那一格止于「现在」", () => {
+    const since = new Date(2026, 8, 24, 17, 0).getTime();
+    const g: Grid = { at: Array.from({ length: 25 }, (_, i) => since + i * HOUR), step: HOUR, kind: "bucket" };
+    const now = since + 24 * HOUR + 42 * 60_000;
+    expect(slotTitle(g, 21, now, t.now)).toBe("14:00–15:00");
+    expect(slotTitle(g, 24, now, t.now)).toBe("17:00–现在");
   });
 
-  it("7 天：按天写，离两头太近的不写", () => {
-    const since = new Date(2026, 8, 18, 16, 0).getTime();
-    const ticks = historyTicks(since, 2 * HOUR, 85, t.now);
-    // 9 月 19 日零点离起点只有 8 小时（<12%），25 日零点离「现在」太近
-    expect(ticks.map((x) => x.label)).toEqual(["09-18 16:00", "09-20", "09-21", "09-22", "09-23", "09-24", "现在"]);
+  it("7 天：几小时一格的前面带上日期", () => {
+    const since = new Date(2026, 8, 18, 12, 0).getTime();
+    const g: Grid = { at: Array.from({ length: 29 }, (_, i) => since + i * 6 * HOUR), step: 6 * HOUR, kind: "bucket" };
+    expect(slotTitle(g, 1, since + 7 * DAY, t.now)).toBe("09-18 18:00–00:00");
   });
 
-  it("只有一格时只写起点和现在", () => {
-    expect(historyTicks(0, HOUR, 1, "now").map((x) => x.label)).toEqual([fmtBucket(0, HOUR), "now"]);
-  });
-
-  it("实时档：等距，最后一个是亮着的「现在」", () => {
-    const ticks = liveTicks(t.liveTicks, t.now);
-    expect(ticks).toHaveLength(6);
-    expect(ticks.map((x) => x.at)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);
-    expect(ticks.filter((x) => x.now).map((x) => x.label)).toEqual(["现在"]);
-  });
-
-  it("一格的时间标签：按天、按分钟、实时档到秒", () => {
-    const at = new Date(2026, 8, 25, 7, 5, 9).getTime();
-    expect(fmtBucket(at, DAY)).toBe("09-25");
-    expect(fmtBucket(at, HOUR)).toBe("09-25 07:05");
-    expect(fmtBucket(at, LIVE_BUCKET_MS)).toBe("07:05:09");
+  it("一天一格写那一天；一周一格写起止两天", () => {
+    const at = new Date(2026, 8, 22).getTime();
+    expect(slotTitle({ at: [at], step: DAY, kind: "bucket" }, 0, at + 2 * DAY, t.now)).toBe("09-22");
+    expect(slotTitle({ at: [at], step: 7 * DAY, kind: "bucket" }, 0, at + 30 * DAY, t.now)).toBe("09-22–09-28");
+    expect(slotTitle({ at: [at], step: 7 * DAY, kind: "bucket" }, 0, at + 3 * DAY, t.now)).toBe("09-22–现在");
   });
 
   /**
-   * 按天、按周的格子是从本地零点起按固定毫秒数数的，过了夏令时切换，起点落在前一天
-   * 的 23 点或当天的 1 点。**写离起点最近的那一天**，不然那一格写成前一天，和上一格
-   * 撞成同一个标签。
+   * 按天的格子是从本地零点起按固定毫秒数数的，过了夏令时切换，起点落在前一天的 23 点。
+   * **写离起点最近的那一天**，不然那一格写成前一天，和上一格撞成同一个标签。
    */
   it("按天的格子起点偏了一小时，还是写那一天", () => {
-    expect(fmtBucket(new Date(2026, 10, 1, 23, 0).getTime(), DAY)).toBe("11-02");
-    expect(fmtBucket(new Date(2026, 2, 9, 1, 0).getTime(), 7 * DAY)).toBe("03-09");
+    const at = new Date(2026, 10, 1, 23, 0).getTime();
+    expect(slotTitle({ at: [at], step: DAY, kind: "bucket" }, 0, at + 3 * DAY, t.now)).toBe("11-02");
   });
 
-  /** 按周分格、跨度几年的自定义区间：零点刻度的间隔跟着放宽，中间不超过七个 */
-  it("跨度很长时刻度不挤在一起", () => {
-    const since = new Date(2023, 0, 2).getTime();
-    const ticks = historyTicks(since, 7 * DAY, 190, t.now);
-    expect(ticks.length - 2).toBeLessThanOrEqual(7);
-    expect(ticks.length - 2).toBeGreaterThan(2);
+  it("实时档写到秒", () => {
+    const at = new Date(2026, 8, 25, 7, 5, 9).getTime();
+    expect(slotTitle({ at: [at], step: LIVE_BUCKET_MS, kind: "instant" }, 0, at, t.now)).toBe("07:05:09");
   });
 });
 
-describe("趋势图和模型排行", () => {
+describe("历史档的小图", () => {
   const since = new Date(2026, 8, 24, 0, 0).getTime();
-  // 三点过五分：最后一格（3:00）刚开始
-  const now = since + 3 * HOUR + 5 * 60_000;
-  const models = ["a", "b", "c", "d", "e", "f", "g"];
-  // a 最多、g 最少；f 和 g 合并成「其他」
-  const groups = models.map((m, i) => group(since + HOUR, m, (7 - i) * 1000, (i + 1) * 100));
-  const d = dashboard(since, groups);
-  const base = { d, live: false, bucketMs: HOUR, rangeMs: DAY, samples: [], fails: [], now, prevStack: [], t };
+  const now = since + 3 * HOUR + 10 * 60_000;
 
-  it("趋势那两样取不到（null）时不报错，也排不出任何模型", () => {
-    const tr = buildTrend({ ...base, d: { ...d, buckets: null, buckets_by_model: null }, by: "cost" });
-    expect(tr.ranking).toEqual([]);
-    expect(tr.keys).toEqual([]);
+  it("空桶补成 0，每一格的 token 是各模型的合计", () => {
+    const d = dashboard(since, [group(since + HOUR, "a", 100), group(since + HOUR, "b", 50, { output_tokens: 7 }), group(since + 3 * HOUR, "a", 9)]);
+    const s = historySeries(d, now, HOUR);
+    expect(s.grid.at).toEqual([0, 1, 2, 3].map((i) => since + i * HOUR));
+    expect(s.tokens).toEqual([0, 157, 0, 9]);
+    expect(s.requests).toEqual([0, 2, 0, 1]);
   });
 
-  it("按 token 排：前五项各一层，其余合并成「其他」，排行从大到小", () => {
-    const tr = buildTrend({ ...base, by: "token" });
-    expect(tr.ranking.map((r) => r.name)).toEqual(["a", "b", "c", "d", "e", t.other]);
-    expect(tr.ranking.at(-1)).toMatchObject({ merged: 2, tokens: 2000 + 1000, requests: 2 });
-    // 图的层从下往上：「其他」垫底，量大的在上
-    expect(tr.keys).toEqual([t.other, "e", "d", "c", "b", "a"]);
-    // 最大的那层颜色最深；「其他」是灰的，不和最小的那个模型撞色；排行里同一个模型
-    // 是同一个颜色
-    expect(tr.colors).toEqual([
-      "var(--chart-other)",
-      "var(--chart-5)",
-      "var(--chart-4)",
-      "var(--chart-3)",
-      "var(--chart-2)",
-      "var(--chart-1)",
-    ]);
-    for (const r of tr.ranking) expect(r.color).toBe(tr.colors[tr.keys.indexOf(r.name)]);
-    expect(tr.topBar).toBe(7000);
+  /** 取不到不是没有：画成一条贴底的线就是编了一段「没有用」 */
+  it("哪一样取不到，那一样就是 null；格子照样排出来", () => {
+    const d = dashboard(since, [group(since, "a", 1)], { buckets: null, buckets_by_model: null });
+    const s = historySeries(d, now, HOUR);
+    expect(s.grid.at).toHaveLength(4);
+    expect(s.tokens).toBeNull();
+    expect(s.cost).toBeNull();
+    expect(s.requests).toBeNull();
   });
 
-  it("按费用排：次序跟着费用走", () => {
-    const tr = buildTrend({ ...base, by: "cost" });
-    expect(tr.ranking.slice(0, 5).map((r) => r.name)).toEqual(["g", "f", "e", "d", "c"]);
+  it("费用是实测加估算", () => {
+    const d = dashboard(since, [group(since, "a", 1, { cost_micros_exact: 300, cost_micros_estimated: 20 })]);
+    expect(historySeries(d, now, HOUR).cost?.[0]).toBe(320);
+  });
+});
+
+describe("实时档的小图", () => {
+  const now = 10_000_000;
+  const RANGE = 10 * 60_000;
+  const sample = (id: number, at: number, over: Partial<LiveSample> = {}): LiveSample => ({
+    id,
+    at,
+    model: "m",
+    tokens: 1000,
+    output: 100,
+    cost: 500,
+    ...over,
   });
 
-  it("空桶补成 0，每一格每一层都有值", () => {
-    const tr = buildTrend({ ...base, by: "token" });
-    // 0:00 到 3:00，一小时一格：四格
-    expect(tr.rows).toHaveLength(4);
-    for (const row of tr.rows) for (const k of tr.keys) expect(typeof row[k]).toBe("number");
-    expect(tr.rows[0]?.a).toBe(0);
-    expect(tr.rows[1]?.a).toBe(7000);
-    expect(tr.peak).toBe(28_000);
+  it("十分钟、十秒一格，最右边那一格就是现在", () => {
+    const s = liveSeries([], [], now, RANGE);
+    expect(s.grid.at).toHaveLength(61);
+    expect(s.grid.at.at(-1)).toBe(now);
+    expect(s.grid.at[0]).toBe(now - RANGE);
   });
 
-  it("悬停抬头：时刻、合计，空格写「无请求」", () => {
-    const tr = buildTrend({ ...base, by: "token" });
-    expect(tr.tips[0]).toEqual({ title: fmtBucket(since, HOUR), value: t.tokens("0", 0), note: t.tipNone });
-    expect(tr.tips[1]).toMatchObject({ value: t.tokens("28k", 28_000), note: t.tipRequests(7, 0) });
+  it("大数只数窗口里的；窗口外那一个核宽的样本只进曲线", () => {
+    const s = liveSeries([sample(1, now - RANGE - 20_000), sample(2, now - 30_000)], [], now, RANGE);
+    expect(s.totals.tokens).toBe(1000);
+    expect(s.totals.output).toBe(100);
+    // 窗口外的那一条在最左边那一格上还有鼓包
+    expect(s.tokens![0]).toBeGreaterThan(0);
   });
 
-  it("费用口径的图值是千分之一美元", () => {
-    const tr = buildTrend({ ...base, by: "cost" });
-    expect(tr.rows[1]?.g).toBe(0.7);
+  it("价钱还没到的和未定价的分开数，都不当成 $0", () => {
+    const s = liveSeries(
+      [sample(1, now - 1000), sample(2, now - 2000, { cost: undefined }), sample(3, now - 3000, { cost: null }), sample(4, now - 4000, { estimated: true })],
+      [],
+      now,
+      RANGE,
+    );
+    expect(s.totals).toMatchObject({ cost: 1000, estimated: 500, pending: 1, unpriced: 1 });
   });
 
-  /**
-   * 实时档的堆叠次序有滞回：两个量级接近的模型不因为一点起伏就互换位置（一换，
-   * 整条带子在纵向跳过另一条，颜色也跟着换）。
-   */
-  describe("实时档的堆叠次序", () => {
-    const at = since + HOUR;
-    const live = { ...base, live: true, by: "token" as const, rangeMs: 10 * 60_000 };
-    const sample = (id: number, model: string) => ({ id, at: now - 30_000, model, tokens: 100 });
+  it("请求柱：每一格数它前面那十秒里结束了几次、失败了几次", () => {
+    const s = liveSeries(
+      [],
+      [
+        { id: 1, at: now - 1_000, failed: false },
+        { id: 2, at: now - 9_000, failed: true },
+        { id: 3, at: now - 12_000, failed: false },
+        { id: 4, at: now - RANGE - 1, failed: true },
+      ],
+      now,
+      RANGE,
+    );
+    expect(s.requests!.at(-1)).toBe(2);
+    expect(s.failed!.at(-1)).toBe(1);
+    expect(s.requests!.at(-2)).toBe(1);
+    expect(s.totals).toMatchObject({ requests: 3, failed: 1 });
+  });
+});
 
-    it("差不到两成：保持上一次的次序", () => {
-      const d2 = dashboard(since, [group(at, "a", 1000), group(at, "b", 1150)]);
-      const tr = buildTrend({ ...live, d: d2, samples: [sample(1, "a"), sample(2, "b")], prevStack: ["a", "b"] });
-      expect(tr.stack).toEqual(["a", "b"]);
+describe("环比", () => {
+  it("取不到上一个区间：没有这一格", () => {
+    expect(delta(10, null)).toBeNull();
+    expect(delta(10, undefined)).toBeNull();
+  });
+
+  it("上一个区间是零：写「—」", () => {
+    expect(delta(10, 0)).toEqual({ kind: "noPrior" });
+  });
+
+  it("其余是变化的比例", () => {
+    expect(delta(17, 10)).toEqual({ kind: "change", ratio: 0.7 });
+    expect(delta(5, 10)).toEqual({ kind: "change", ratio: -0.5 });
+  });
+});
+
+describe("缓存", () => {
+  it("命中率是读缓存占全部上下文（含缓存）的比例；没有上下文时无从谈起", () => {
+    expect(cacheOf({ input_tokens: 30, cache_read_tokens: 940, cache_write_tokens: 30 })).toEqual({
+      read: 940,
+      plain: 30,
+      write: 30,
+      ctx: 1000,
+      hit: 0.94,
     });
-
-    it("超过两成：换位", () => {
-      const d2 = dashboard(since, [group(at, "a", 1000), group(at, "b", 1300)]);
-      const tr = buildTrend({ ...live, d: d2, samples: [sample(1, "a"), sample(2, "b")], prevStack: ["a", "b"] });
-      expect(tr.stack).toEqual(["b", "a"]);
-    });
-
-    it("格子一路铺到「现在」，失败落在它那一格上", () => {
-      const tr = buildTrend({ ...live, samples: [sample(1, "a")], fails: [{ id: 9, at: now - 12_000 }] });
-      expect(tr.grid).toHaveLength(121);
-      expect(tr.grid.at(-1)?.at_ms).toBe(now);
-      expect(tr.grid.at(-3)?.failed).toBe(1);
-      expect(tr.tips.at(-1)?.note).toBeUndefined();
-    });
+    expect(cacheOf({ input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 }).hit).toBeNull();
   });
 });
 
 /**
- * 排行里费用那一格。**「没有价格」「确实不花钱」「没有用量」是三件事**，都写成
- * 一个 `$0` 或一个「—」的话，读的人分不出哪一行该去补价。
+ * 费用那一格。**「没有价格」「确实不花钱」「没有用量」是三件事**，都写成一个 `$0` 或一个
+ * 「—」的话，读的人分不出哪一行该去补价。
  */
-describe("排行的费用", () => {
+describe("费用写什么", () => {
+  const c = (over: Partial<{ cost: number; estimated: number; unpriced: number; noUsage: number; pending: number }>) => ({
+    cost: 0,
+    estimated: 0,
+    unpriced: 0,
+    noUsage: 0,
+    ...over,
+  });
+
   it("全都算出来了：写金额，没有悬停；合计是零就写 $0（不计费的上游）", () => {
-    expect(rankCost(rank({ cost: 1_234 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
-    expect(rankCost(rank({ cost: 0 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+    expect(rankCost(c({ cost: 1_234 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
+    expect(rankCost(c({ cost: 0 }), t)).toEqual({ kind: "amount", prefix: "", notes: [] });
   });
 
   it("有用量、一条都没算出费用：「无法计价」，不写 $0", () => {
-    const c = rankCost(rank({ unpriced: 5 }), t);
-    expect(c.kind).toBe("unpriced");
-    expect(c.notes).toEqual([t.rankUnpriced(5)]);
+    const r = rankCost(c({ unpriced: 5 }), t);
+    expect(r.kind).toBe("unpriced");
+    expect(r.notes).toEqual([t.rankUnpriced(5)]);
   });
 
   it("连用量都没有：「无用量」", () => {
-    const c = rankCost(rank({ tokens: 0, noUsage: 2 }), t);
-    expect(c.kind).toBe("noUsage");
-    expect(c.notes).toEqual([t.rankNoUsage(2)]);
+    expect(rankCost(c({ noUsage: 2 }), t)).toEqual({ kind: "noUsage", prefix: "", notes: [t.rankNoUsage(2)] });
   });
 
   it("两样都有、一分钱都没算出来：算「无法计价」—— 补价修得好的那一种优先说", () => {
-    const c = rankCost(rank({ unpriced: 1, noUsage: 3 }), t);
-    expect(c.kind).toBe("unpriced");
-    expect(c.notes).toEqual([t.rankUnpriced(1), t.rankNoUsage(3)]);
+    const r = rankCost(c({ unpriced: 1, noUsage: 3 }), t);
+    expect(r.kind).toBe("unpriced");
+    expect(r.notes).toEqual([t.rankUnpriced(1), t.rankNoUsage(3)]);
   });
 
-  it("算出了一部分：金额是下限，写「≥」，缺的那几条写在悬停里", () => {
-    expect(rankCost(rank({ cost: 500, unpriced: 2 }), t)).toEqual({
-      kind: "amount",
-      prefix: "≥",
-      notes: [t.rankUnpriced(2)],
-    });
-    expect(rankCost(rank({ cost: 500, noUsage: 1 }), t)).toMatchObject({ prefix: "≥", notes: [t.rankNoUsage(1)] });
+  it("算出了一部分：金额是下限，写「≥」；价钱还没到的也一样", () => {
+    expect(rankCost(c({ cost: 500, unpriced: 2 }), t)).toEqual({ kind: "amount", prefix: "≥", notes: [t.rankUnpriced(2)] });
+    expect(rankCost(c({ cost: 500, pending: 1 }), t)).toMatchObject({ prefix: "≥", notes: [t.rankPending(1)] });
   });
 
   it("含估算：带「~」，估算的数写在悬停里；两样都有是「≥~」", () => {
-    expect(rankCost(rank({ cost: 500, estimated: 120 }), t)).toEqual({
-      kind: "amount",
-      prefix: "~",
-      notes: [t.estimated("$0.0001")],
-    });
-    expect(rankCost(rank({ cost: 500, estimated: 120, unpriced: 1 }), t)).toMatchObject({
+    expect(rankCost(c({ cost: 500, estimated: 120 }), t)).toEqual({ kind: "amount", prefix: "~", notes: [t.estimated("$0.0001")] });
+    expect(rankCost(c({ cost: 500, estimated: 120, unpriced: 1 }), t)).toMatchObject({
       prefix: "≥~",
       notes: [t.estimated("$0.0001"), t.rankUnpriced(1)],
     });
   });
-
-  describe("从哪儿数出来", () => {
-    const since = new Date(2026, 8, 24, 0, 0).getTime();
-    const now = since + 3 * HOUR;
-    const base = { live: false, bucketMs: HOUR, rangeMs: DAY, samples: [], fails: [], now, prevStack: [], t };
-    const at = since + HOUR;
-    const g = (name: string, over: Partial<CostBucketGroup>): CostBucketGroup => ({ ...group(at, name, 1000), ...over });
-
-    it("历史档：每个模型自己带着无法计价、无用量的条数和估算的金额，跨格加起来", () => {
-      const d = dashboard(since, [
-        g("priced", { cost_micros_exact: 900, cost_micros_estimated: 100 }),
-        g("priced", { at_ms: at + HOUR, cost_micros_exact: 50 }),
-        g("unpriced", { unpriced_requests: 4, requests: 4 }),
-        g("free", {}),
-        g("silent", { input_tokens: 0, no_usage_requests: 2, requests: 2 }),
-      ]);
-      const by = new Map(buildTrend({ ...base, d, by: "token" }).ranking.map((r) => [r.name, r]));
-      expect(by.get("priced")).toMatchObject({ cost: 1050, estimated: 100, unpriced: 0, noUsage: 0 });
-      expect(by.get("unpriced")).toMatchObject({ cost: 0, unpriced: 4, noUsage: 0 });
-      expect(by.get("free")).toMatchObject({ cost: 0, unpriced: 0, noUsage: 0 });
-      expect(by.get("silent")).toMatchObject({ tokens: 0, noUsage: 2 });
-      expect(rankCost(by.get("unpriced")!, t).kind).toBe("unpriced");
-      expect(rankCost(by.get("free")!, t)).toEqual({ kind: "amount", prefix: "", notes: [] });
-      expect(rankCost(by.get("silent")!, t).kind).toBe("noUsage");
-    });
-
-    it("合并的「其他」把几项的条数加在一起：里面有无法计价的，金额就是下限", () => {
-      const d = dashboard(
-        since,
-        ["a", "b", "c", "d", "e"].map((m, i) => g(m, { input_tokens: (10 - i) * 1000, cost_micros_exact: 100 })).concat([
-          g("f", { input_tokens: 10, cost_micros_exact: 30 }),
-          g("g", { input_tokens: 5, unpriced_requests: 1 }),
-        ]),
-      );
-      const other = buildTrend({ ...base, d, by: "token" }).ranking.at(-1)!;
-      expect(other).toMatchObject({ merged: 2, cost: 30, unpriced: 1 });
-      expect(rankCost(other, t).prefix).toBe("≥");
-    });
-
-    it("实时档：价钱到了却是空的算无法计价，还没到的不算", () => {
-      const live = { ...base, live: true, rangeMs: 10 * 60_000, d: dashboard(since, []) };
-      const s = (id: number, model: string, over: Partial<LiveSample>): LiveSample => ({ id, at: now - 30_000, model, tokens: 100, ...over });
-      const tr = buildTrend({
-        ...live,
-        by: "cost",
-        samples: [
-          s(1, "a", { cost: 300 }),
-          s(2, "a", { cost: 200, estimated: true }),
-          s(3, "b", { cost: null }),
-          // 刚落地，价钱还在路上
-          s(4, "b", {}),
-          s(5, "c", { cost: 0 }),
-        ],
-      });
-      const by = new Map(tr.ranking.map((r) => [r.name, r]));
-      expect(by.get("a")).toMatchObject({ cost: 500, estimated: 200, unpriced: 0, requests: 2 });
-      expect(by.get("b")).toMatchObject({ cost: 0, unpriced: 1, requests: 2 });
-      expect(by.get("c")).toMatchObject({ cost: 0, unpriced: 0 });
-    });
-
-    /**
-     * **价钱还在路上的不是 $0。**它落地了、用量有了，`request_priced` 还没到：这时
-     * 这个模型的金额只是下限，和缺了算不出钱的请求同一个写法（「≥」）；到了就不带了。
-     */
-    it("实时档：价钱还没到的，金额写成下限", () => {
-      const live = { ...base, live: true, rangeMs: 10 * 60_000, d: dashboard(since, []) };
-      const s = (id: number, over: Partial<LiveSample>): LiveSample => ({ id, at: now - 30_000, model: "a", tokens: 100, ...over });
-      const waiting = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, {})] }).ranking[0]!;
-      expect(waiting).toMatchObject({ cost: 300, pending: 1, requests: 2 });
-      expect(rankCost(waiting, t)).toEqual({ kind: "amount", prefix: "≥", notes: [t.rankPending(1)] });
-      const priced = buildTrend({ ...live, by: "cost", samples: [s(1, { cost: 300 }), s(2, { cost: 200 })] }).ranking[0]!;
-      expect(priced.pending).toBe(0);
-      expect(rankCost(priced, t)).toEqual({ kind: "amount", prefix: "", notes: [] });
-    });
-
-    it("费用口径的悬停：金额之外的条数跟在请求数后面，金额写成下限", () => {
-      const d = dashboard(since, [
-        g("a", { cost_micros_exact: 5_000, requests: 3, failed: 1 }),
-        g("b", { unpriced_requests: 2, requests: 2 }),
-        g("c", { no_usage_requests: 1, requests: 1 }),
-      ]);
-      const tip = buildTrend({ ...base, d, by: "cost" }).tips[1];
-      expect(tip).toEqual({
-        title: fmtBucket(at, HOUR),
-        value: "≥$0.0050",
-        note: [t.tipRequests(6, 1), t.unpriced(2), t.noUsage(1)].join(t.listSep),
-      });
-      // token 口径说的是用量，和价钱无关
-      expect(buildTrend({ ...base, d, by: "token" }).tips[1]?.note).toBe(t.tipRequests(6, 1));
-    });
-
-    it("一格里一分钱都没算出来：合计写成词，不写「≥$0」", () => {
-      const only = (over: Partial<CostBucketGroup>) =>
-        buildTrend({ ...base, d: dashboard(since, [g("x", over)]), by: "cost" }).tips[1]?.value;
-      expect(only({ unpriced_requests: 1 })).toBe(t.unpricedCell);
-      expect(only({ input_tokens: 0, no_usage_requests: 1 })).toBe(t.noUsageCell);
-      // 不计费：真的是零
-      expect(only({})).toBe("$0");
-    });
-  });
 });
 
-describe("各模型的缓存", () => {
-  it("按上下文量从大到小，跨格合计，没有上下文的不列", () => {
-    const g = (name: string, read: number, plain: number, write: number): CostBucketGroup => ({
-      ...group(0, name, plain),
-      cache_read_tokens: read,
-      cache_write_tokens: write,
-    });
-    const d = dashboard(0, [g("a", 80, 10, 10), g("b", 900, 50, 50), g("a", 0, 100, 0), g("", 5, 5, 0), g("z", 0, 0, 0)]);
-    const rows = cacheByModel(d, t.unknownModel);
-    expect(rows.map((r) => r.name)).toEqual(["b", "a", t.unknownModel]);
-    expect(rows[0]).toMatchObject({ ctx: 1000, hit: 0.9 });
-    expect(rows[1]).toMatchObject({ read: 80, plain: 110, write: 10, ctx: 200, hit: 0.4 });
-  });
+describe("明细表", () => {
+  const at = new Date(2026, 8, 24).getTime();
 
-  it("按模型那份取不到（null）时一行也不列，不报错", () => {
-    expect(cacheByModel({ ...dashboard(0, []), buckets_by_model: null }, t.unknownModel)).toEqual([]);
-  });
-});
-
-describe("延迟", () => {
-  it("样本多的在前", () => {
-    const rows = latencyRows([
-      { model: "b", p50: 1, p95: 2, samples: 3 },
-      { model: "a", p50: 1, p95: 2, samples: 30 },
-      { model: "c", p50: 1, p95: 2, samples: 3 },
+  it("跨格加成每个名字一行：请求多的在前，一样多的按 token", () => {
+    const rows = breakdown([
+      group(at, "a", 100, { requests: 2, cache_read_tokens: 300 }),
+      group(at + HOUR, "a", 50, { requests: 1, failed: 1, cost_micros_exact: 10, cost_micros_estimated: 5 }),
+      group(at, "b", 10, { requests: 3, unpriced_requests: 3 }),
+      group(at, "c", 999, { requests: 3 }),
     ]);
-    expect(rows.map((r) => r.model)).toEqual(["a", "b", "c"]);
+    expect(rows.map((r) => r.name)).toEqual(["c", "a", "b"]);
+    expect(rows[1]).toMatchObject({ requests: 3, failed: 1, tokens: 450, ctx: 450, read: 300, cost: 15, estimated: 5 });
+    expect(rows[2]).toMatchObject({ unpriced: 3 });
   });
 });
 
-describe("模型的厂商标志", () => {
-  it("按名字认", () => {
-    expect(modelGlyph("claude-sonnet-5")).toBe("claude");
-    expect(modelGlyph("gpt-5.5-codex")).toBe("openai");
-    expect(modelGlyph("o3-mini")).toBe("openai");
-    expect(modelGlyph("openai/gpt-oss-120b")).toBe("openai");
-    expect(modelGlyph("gemini-2.5-pro")).toBe("gemini");
-    expect(modelGlyph("deepseek-chat")).toBe("deepseek");
-    expect(modelGlyph("qwen/qwen3-coder")).toBe("qwen");
-    expect(modelGlyph("glm-4.6")).toBe("zhipu");
+describe("失败集中在哪个上游", () => {
+  const at = 0;
+  const g = (name: string, failed: number) => group(at, name, 0, { failed, requests: failed });
+
+  it("过半才点名；没到上游的（空名字）不归给谁", () => {
+    expect(topFailure([g("openrouter", 11), g("anthropic", 4), g("", 3)], 18)).toEqual({ name: "openrouter", n: 11 });
+    expect(topFailure([g("openrouter", 9), g("anthropic", 4), g("", 5)], 18)).toBeNull();
+    expect(topFailure([g("", 18)], 18)).toBeNull();
   });
 
-  it("认不出来是 null（画首字母方块）", () => {
-    expect(modelGlyph("llama3.1:8b")).toBeNull();
-    expect(modelGlyph("未知模型")).toBeNull();
+  it("跨格加起来", () => {
+    expect(topFailure([g("a", 2), { ...g("a", 2), at_ms: HOUR }, g("b", 1)], 5)).toEqual({ name: "a", n: 4 });
+  });
+
+  it("取不到按上游分的那份：不点名", () => {
+    expect(topFailure(null, 5)).toBeNull();
+  });
+});
+
+describe("需要处理的事", () => {
+  const provider = (name: string, over: Partial<ProviderView> = {}) => ({ name, disabled: false, health: "closed", ...over }) as ProviderView;
+
+  it("什么都不用处理：空的，那一条整个不出现", () => {
+    expect(attention(dashboard(0, []), [provider("a")])).toEqual([]);
+  });
+
+  it("失败、切断的工具调用、用不了的上游、无法计价，按这个次序", () => {
+    const d = dashboard(0, [], {
+      summary: summary({
+        failed: 18,
+        unpriced_requests: 3,
+        security: { ...summary().security, tool_calls: 2, tool_calls_cut: 1, secrets: 40 },
+      }),
+      buckets_by_provider: [group(0, "openrouter", 0, { failed: 11 })],
+    });
+    const items = attention(d, [
+      provider("a"),
+      provider("b", { health: "open" }),
+      provider("c", { disabled: true, health: "open" }),
+    ]);
+    expect(items).toEqual([
+      { kind: "failed", n: 18, top: { name: "openrouter", n: 11 } },
+      { kind: "toolCut", n: 1 },
+      { kind: "upstreams", down: [{ name: "b", why: "open" }] },
+      { kind: "unpriced", n: 3 },
+    ]);
+  });
+
+  /** 日常的脱敏是防护在正常工作，不用处理；记录档里看见但没切断的工具调用也不算 */
+  it("只有脱敏、只记录了的工具调用：不出现", () => {
+    const d = dashboard(0, [], { summary: summary({ security: { ...summary().security, secrets: 12, secrets_replaced: 12, tool_calls: 3 } }) });
+    expect(attention(d, [])).toEqual([]);
+  });
+});
+
+describe("首 token 卡片现在写哪个模型", () => {
+  it("样本最多的那个", () => {
+    expect(
+      busiest([
+        { model: "a", p50: 900, p95: 2000, samples: 10 },
+        { model: "b", p50: 400, p95: 800, samples: 120 },
+      ])?.model,
+    ).toBe("b");
+    expect(busiest([])).toBeNull();
   });
 });

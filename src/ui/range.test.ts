@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { densify, MAX_BUCKETS } from "@/format";
+import { densify } from "@/format";
 import { bucketFor, customRange, presetRange, windowStart } from "./range";
 
 const HOUR = 3_600_000;
@@ -34,34 +34,34 @@ describe("时间窗的起点", () => {
 /**
  * 一格多宽。
  *
- * 三个预设的格子不变；**自定义区间可以很长**，一路往上要有更宽的格子，不然格数顶到
- * `densify` 的上限，最近的那一段被截掉，图的右边却照样写着「现在」。
+ * 按概览指标卡上的小图定，一张图三四十格上下；**自定义区间可以很长**，一路往上要有更宽
+ * 的格子，不然格数顶到 `densify` 的上限，最近的那一段被截掉，图的右边却照样写着「现在」。
  */
 describe("一格多宽", () => {
-  it("三个预设照旧", () => {
-    expect(bucketFor(DAY)).toBe(HOUR / 2);
-    expect(bucketFor(7 * DAY)).toBe(2 * HOUR);
-    expect(bucketFor(30 * DAY)).toBe(6 * HOUR);
+  it("三个预设：一小时、六小时、一天", () => {
+    expect(bucketFor(DAY)).toBe(HOUR);
+    expect(bucketFor(7 * DAY)).toBe(6 * HOUR);
+    expect(bucketFor(30 * DAY)).toBe(DAY);
   });
 
-  it("更长的自定义区间按天、按周分格", () => {
-    expect(bucketFor(31 * DAY)).toBe(DAY);
-    expect(bucketFor(120 * DAY)).toBe(DAY);
-    expect(bucketFor(121 * DAY)).toBe(7 * DAY);
-    expect(bucketFor(3 * 365 * DAY)).toBe(7 * DAY);
+  it("更长的自定义区间按周、按三十天分格", () => {
+    expect(bucketFor(62 * DAY)).toBe(DAY);
+    expect(bucketFor(63 * DAY)).toBe(7 * DAY);
+    expect(bucketFor(365 * DAY)).toBe(7 * DAY);
+    expect(bucketFor(3 * 365 * DAY)).toBe(30 * DAY);
   });
 
-  /** 设计上压在 120 格上下；一周一格要到九年半才顶到上限 */
+  /** 一张小图不超过六十多格；十年也远在上限之下 */
   it("格数不超过上限", () => {
-    for (let days = 1; days <= 9 * 365; days += 1) {
+    for (let days = 1; days <= 10 * 365; days += 1) {
       const n = Math.ceil((days * DAY) / bucketFor(days * DAY));
-      expect(n, `${days} 天`).toBeLessThanOrEqual(days <= 120 ? 120 : MAX_BUCKETS);
+      expect(n, `${days} 天`).toBeLessThanOrEqual(days <= 365 ? 63 : 122);
     }
   });
 
   /**
-   * 这就是要修的那件事：从半年前的某一天到现在，趋势图要一直画到现在 —— 原来按六小时
-   * 分格是七百多格，截在第五百格上，最近的两个月不见了。
+   * 从半年前的某一天到现在，图要一直画到现在：原来按六小时分格是七百多格，截在第五百格
+   * 上，最近的两个月不见了。
    */
   it("半年前到现在：最近的那一格在图上", () => {
     const now = new Date(2026, 8, 25, 16, 42).getTime();

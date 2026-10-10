@@ -420,17 +420,19 @@ export interface Dashboard {
   token_rate_by_provider: TokenRateView[] | null;
   storage: StorageStatus | null;
   /**
-   * 按所选时间范围分格。**稀疏的** —— core 那边只产出有数据的桶，
+   * 按所选时间范围分格（格宽见 `bucketOf`）。**稀疏的** —— core 那边只产出有数据的桶，
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets: CostBucket[] | null;
   /**
-   * 同样的格子，再按模型分层。
-   *
-   * 趋势图靠它把两个问题画成同一张图：**什么时候花的**，以及**花在
-   * 哪个模型上**。拆成两张图的话，读的人要在它们之间自己对时间。
+   * 同样的格子，再按模型分。Token 那张小图的每一格是各模型的合计，明细表的「模型」
+   * 一页是各模型跨格的合计。
    */
   buckets_by_model: CostBucketGroup[] | null;
+  /** 同样的格子按上游分：明细表的「上游」一页，失败集中在哪个上游也从这里看 */
+  buckets_by_provider: CostBucketGroup[] | null;
+  /** 同样的格子按密钥分（core 的 `client` 就是密钥名）：明细表的「密钥」一页 */
+  buckets_by_client: CostBucketGroup[] | null;
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
   prev: Summary | null;
   /** 上面几样的时间窗起点，补空桶要用 */

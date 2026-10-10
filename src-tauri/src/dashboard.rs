@@ -1,4 +1,4 @@
-//! 概览页：一次取齐的汇总、趋势、延迟和生成速度。
+//! 概览页：一次取齐的汇总、趋势、分组、延迟和生成速度。
 
 use tw_api::ep;
 
@@ -36,8 +36,8 @@ pub async fn dashboard(
         .unwrap_or(0);
     let since = since_ms.min(now);
     let bucket = bucket_ms.max(60_000);
-    // **九样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
-    // 九问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
+    // **十一样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
+    // 十一问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
     // 钥匙只读一次（`pin`）
     let c = state.control.pin().map_err(text)?;
     // 延迟、生成速度和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，
@@ -48,12 +48,19 @@ pub async fn dashboard(
         to_ms: None,
         bucket_ms: Some(bucket),
     };
-    let by_model = tw_api::BucketGroupQuery {
+    // 同样的格子按三个维度分：模型（趋势图的 token 合计、明细表的「模型」）、上游和
+    // 密钥（明细表的另两页）。**格宽和模型那份一样**，三份的格子对得上
+    let by = |dim| tw_api::BucketGroupQuery {
         from_ms: Some(since),
         to_ms: None,
         bucket_ms: Some(bucket),
-        dim: tw_api::CostDim::Model,
+        dim,
     };
+    let (by_model, by_provider, by_client) = (
+        by(tw_api::CostDim::Model),
+        by(tw_api::CostDim::Provider),
+        by(tw_api::CostDim::Client),
+    );
     // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
     // ——「$4.05」是多还是少，只有和上一个七天比过才知道
     let before = window(Some(since - (now - since)), Some(since));
@@ -66,6 +73,8 @@ pub async fn dashboard(
         storage,
         buckets,
         buckets_by_model,
+        buckets_by_provider,
+        buckets_by_client,
         prev,
     ) = tokio::join!(
         c.call::<ep::Summary>(&[], &win),
@@ -76,6 +85,8 @@ pub async fn dashboard(
         c.call::<ep::Storage>(&[], &()),
         c.call::<ep::CostBuckets>(&[], &buckets),
         c.call::<ep::CostBucketsBy>(&[], &by_model),
+        c.call::<ep::CostBucketsBy>(&[], &by_provider),
+        c.call::<ep::CostBucketsBy>(&[], &by_client),
         c.call::<ep::Summary>(&[], &before),
     );
     Ok(Dashboard {
@@ -90,6 +101,8 @@ pub async fn dashboard(
         // 一张全零的图，读作「这段时间没有请求」，那是一个编出来的零
         buckets: buckets.ok(),
         buckets_by_model: buckets_by_model.ok(),
+        buckets_by_provider: buckets_by_provider.ok(),
+        buckets_by_client: buckets_by_client.ok(),
         // 拿不到就不显示那句对比，不影响这一页别的部分
         prev: prev.ok(),
         since_ms: since,
@@ -117,6 +130,10 @@ pub struct Dashboard {
     /// 同样的格子，再按模型分层。趋势图靠它把「什么时候花的」和
     /// 「花在哪个模型上」画成同一张图
     buckets_by_model: Option<Vec<tw_api::CostBucketGroup>>,
+    /// 同样的格子按上游分。概览明细表的「上游」一页，失败最多的那个上游也从这里看
+    buckets_by_provider: Option<Vec<tw_api::CostBucketGroup>>,
+    /// 同样的格子按密钥分（core 的 `client` 就是密钥名）。明细表的「密钥」一页
+    buckets_by_client: Option<Vec<tw_api::CostBucketGroup>>,
     /// 上一个等长区间的汇总。拿不到就是没有对比，不是零
     prev: Option<tw_api::Summary>,
     /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，而界面送来的

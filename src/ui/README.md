@@ -4,11 +4,12 @@ The rules every page follows. Read it top to bottom once; after that, use it as 
 checklist. When a rule here and an older pattern in a page disagree, the rule wins —
 migrate the page.
 
-The look is deliberately restrained: **black, white and grey**. There is no brand or
-accent colour. Colour appears only to say something about state (ok / warning / error)
-and in data visualisation (`--chart-*`, `--cache-*`). The premium feel comes from the
-material (translucent sidebar on macOS), consistent hierarchy, motion and complete
-states — not from decoration.
+The look is deliberately restrained: **black, white and grey**. Colour appears only to say
+something about state (ok / warning / error) and in data visualisation (`--chart-*`,
+`--cache-*`, `--data-*`). The one exception is the Overview, where the brand cyan → magenta
+(`--brand-*`) marks interaction (the hovered card, the synced crosshair) — never data, never
+a page outside the Overview. The premium feel comes from the material (translucent sidebar
+on macOS), consistent hierarchy, motion and complete states — not from decoration.
 
 House rules that also apply (from the product owner, binding):
 
@@ -124,7 +125,7 @@ Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outsi
 
 | Class | Size | Use |
 | --- | --- | --- |
-| `tw-display` | 34px/600 | The one headline figure on Overview. Nowhere else. |
+| `tw-display` | 26px/600 Geist | The big figures on the Overview metric cards. Nowhere else. Geist is bundled (`@fontsource/geist`, latin 600), never fetched at runtime. |
 | `tw-title` | 15px/600 | Dialog title, standalone-window title. One per screen. |
 | `tw-head` | 13px/500 | Page name in the toolbar, section titles, table headers, emphasised labels. |
 | `tw-body` | 13px | Body text, table cells. |
@@ -170,6 +171,9 @@ All colours are CSS tokens (`src/index.css`) exposed as Tailwind colours. **Neve
 | `idle` | not working but not a fault: unused, disabled, no data yet |
 | `warning-foreground`, `destructive-foreground`, `success-foreground` | **Text** in that hue on a tinted background (`bg-warning/10`). Not text on a solid fill — that is `text-white`. |
 | `chart-1…5`, `chart-other`, `cache-*` | Data visualisation only (`chart-other` is the grey "Other" series) |
+| `data-1`, `data-2`, `data-rest`, `data-fail` | Overview card charts: the main series (blue), the comparison series (orange), the undistinguished part of a composition (grey), failures (red). `--data-wash` is the area opacity |
+| `panel` | The face of an Overview card, one step lighter than the window ground |
+| `brand-from`, `brand-to` | The logo's cyan → magenta. **Accents only** (hovered card border, synced crosshair, tooltip top edge, the in-flight dot); never a data colour |
 | `--chrome-*` | Window chrome (sidebar, toolbar). Shell only. |
 
 Tinted status backgrounds are the status colour at low alpha: `bg-warning/10`,
@@ -196,13 +200,13 @@ something happening right now (a request in flight, connecting).
 
 ## Data visualisation
 
-Three primitives, all hand-written (no chart library). Colour comes from `--chart-*` /
-`--cache-*` for data and from the state tokens for state; nothing else.
+Two primitives here, all hand-written (no chart library), plus the Overview card charts.
+Colour comes from `--chart-*` / `--cache-*` / `--data-*` for data and from the state tokens
+for state; nothing else.
 
 ```tsx
 import { Meter } from "@/ui/meter";
 import { Sparkline, sparklineWidth } from "@/ui/sparkline";
-import { StackedArea } from "@/ui/charts";
 
 <Meter size="lg" value={r.tokens} max={top} color={r.color} />            // a share, data colour
 <Meter from={p50} value={p95} max={max} color="var(--chart-3)" mark="start" /> // a range with its median
@@ -225,9 +229,12 @@ import { StackedArea } from "@/ui/charts";
   slots keep a faint baseline. Without `tip` bars are 2px with 1px gaps (`sparklineWidth(n)`
   for its skeleton); with `tip` each slot is a 4px hover cell. Keep `bars` and `tip`
   referentially stable where the parent re-renders often (it is memoised).
-- **`StackedArea`** (`@/ui/charts`): the Overview trend chart. Monotone curves, the axis
-  on the right (`Y_AXIS_WIDTH`), the caller pins `yMax`. It animates only when told to
-  (`animate`, once per change of view) and never on a refresh.
+- **Overview card charts** (`src/overview/Spark.tsx`, page-specific): `LineChart` (one or two
+  lines, 1.75px, a faint `--data-wash` area under quantities, none under percentiles; `null`
+  = no samples, bridged by a faint dashed connector, never a made-up value) and `BarChart`
+  (requests per slot, failures stacked on top in `--data-fail`). No axes, no grid, no entry
+  animation; the crosshair is synced across cards by time (`slotOf`) and drawn with the brand
+  gradient (`gradientUnits="userSpaceOnUse"`: a vertical line has a zero-width box).
 - Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
 
 ---
