@@ -603,7 +603,12 @@ class Assembly {
     return true;
   }
 
-  /** 此刻的几块。`done`：读完了，空的文字块去掉、没有参数的调用写成 `{}`（和 core 一样） */
+  /**
+   * 此刻的几块。`done`：读完了，没有参数的调用写成 `{}`（和 core 一样）。
+   *
+   * **空的文字块留着**（core 读完会去掉）：块的位置就是界面上的位置，读完时少一块，后面的块就
+   * 挪了位，展开着的思考会变成别的块。界面不画空的那几块
+   */
   parts(done: boolean): Part[] {
     const out: Part[] = [];
     this.items.forEach((it, i) => {
@@ -614,7 +619,6 @@ class Assembly {
         this.shown[i] = s;
       }
       const p = s.part;
-      if (done && p.kind === "text" && p.text === "") return;
       if (done && p.kind === "tool_call" && p.input.trim() === "") {
         out.push({ ...p, input: "{}" });
         return;

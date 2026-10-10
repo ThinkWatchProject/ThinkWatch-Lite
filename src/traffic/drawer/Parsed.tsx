@@ -208,6 +208,8 @@ function AnswerPart({
   // 回答的报文头到了、正文还没到：已经在收了
   const streaming = body?.growing ?? (hop.body.kind === "pending" && hop.head !== null);
   const parts = answer?.parts ?? [];
+  // 空的文字块不画（位置留着，见 `AnswerReader.parts`）
+  const shown = parts.some((p) => p.kind !== "text" || p.text !== "");
   const row = d.row;
   // 结局：实时的看 `end`，存下的看记录
   const failed = end ? end.outcome === "failed" : !d.in_flight && row.error !== null && !row.cancelled;
@@ -244,7 +246,7 @@ function AnswerPart({
       );
   } else if (!dialect) {
     content = <Pill>{t.unknownFormat}</Pill>;
-  } else if (parts.length === 0) {
+  } else if (!shown) {
     content = streaming ? justStarted : failed ? null : <Pill>{answer?.recognized ? t.noAnswer : t.responseUnreadable}</Pill>;
   } else {
     content = (
@@ -279,7 +281,7 @@ function AnswerPart({
       {content && <div className="mt-2">{content}</div>}
       {notes.length > 0 && (
         // 有回答的，说明排在回答那一列下面；没有的顶着左边
-        <div className={cn("mt-2 flex flex-col items-start gap-1", parts.length > 0 && "pl-[calc(2.75rem+0.75rem)] [&:lang(en)]:pl-[calc(4rem+0.75rem)]")}>
+        <div className={cn("mt-2 flex flex-col items-start gap-1", shown && "pl-[calc(2.75rem+0.75rem)] [&:lang(en)]:pl-[calc(4rem+0.75rem)]")}>
           {notes.map((n) => (
             <Pill key={n.key} tone={n.error ? "error" : "gap"}>
               {n.text}
@@ -306,7 +308,7 @@ const AnswerBlock = memo(function AnswerBlock({
 }) {
   switch (p.kind) {
     case "text":
-      return <AnswerText text={p.text} live={live} streaming={streaming} />;
+      return p.text === "" && !live ? null : <AnswerText text={p.text} live={live} streaming={streaming} />;
     case "thinking":
       return <AnswerThinking text={p.text} live={live} streaming={streaming} />;
     case "tool_call":
