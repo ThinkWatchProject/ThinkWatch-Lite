@@ -8,8 +8,9 @@
 //! （见 ChatGPT 那条路的 `handle_return`：那是因为回调页是 core 自己发的）。所以登录
 //! 成没成只有界面在轮询里知道。
 //!
-//! 授权地址存在这里而不是交给界面：界面拿着地址，就等于多了一条「界面传来一个地址、
-//! 应用去打开它」的路径。重新打开授权页只按登录 ID 找。
+//! 授权地址**界面只拿来显示**（用户要能把它复制到别的浏览器里）。打开、复制都在这里
+//! 做，只按登录 ID 找这里存着的那一份 —— 「界面传一个地址进来、应用去打开它」这条路
+//! 不存在。
 
 use std::sync::Mutex;
 
@@ -26,16 +27,18 @@ struct Pending {
     url: String,
 }
 
-/// 一次登录里界面该知道的部分。**授权地址不在其中**
+/// 一次登录里界面该知道的部分。地址只拿来显示，打开和复制都按 ID 回到这里
 #[derive(serde::Serialize)]
 pub struct Login {
     id: String,
+    authorize_url: String,
     expires_in_secs: u64,
 }
 
 /// `family`：`zai`（api.z.ai）或 `bigmodel`（open.bigmodel.cn）。
 ///
-/// **这里就把授权页打开**：让用户再点一次「打开授权页」，中间那一步没有任何意义。
+/// **默认在这里就把授权页打开**：让用户再点一次「打开授权页」，中间那一步没有任何
+/// 意义。`open: false` 是用户要把登录链接复制到别的浏览器里：不开默认浏览器。
 #[tauri::command]
 pub async fn start_zai_login(
     app: tauri::AppHandle,
@@ -43,6 +46,7 @@ pub async fn start_zai_login(
     family: Option<tw_api::ZaiFamily>,
     name: Option<String>,
     proxy: Option<String>,
+    open: Option<bool>,
 ) -> Out<Login> {
     let login = state
         .control
@@ -62,9 +66,12 @@ pub async fn start_zai_login(
             url: login.authorize_url.clone(),
         });
     }
-    crate::chatgpt::open_page(&app, &login.authorize_url)?;
+    if open != Some(false) {
+        crate::chatgpt::open_page(&app, &login.authorize_url)?;
+    }
     Ok(Login {
         id: login.id,
+        authorize_url: login.authorize_url,
         expires_in_secs: login.expires_in_secs,
     })
 }
@@ -72,7 +79,21 @@ pub async fn start_zai_login(
 /// 浏览器被关掉、或者授权页打不开时再打开一次。**只认还在等的那一次**
 #[tauri::command]
 pub async fn reopen_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
-    let url = PENDING
+    let url = pending_url(&id)?;
+    Ok(crate::chatgpt::open_page(&app, &url)?)
+}
+
+/// 把登录链接放进剪贴板。**链接由这里给出，不从界面传进来**（见 ChatGPT 那边的
+/// `copy_chatgpt_login`）
+#[tauri::command]
+pub fn copy_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
+    let url = pending_url(&id)?;
+    Ok(crate::chatgpt::copy_text(&app, url)?)
+}
+
+/// 还在等的那次登录的授权地址。**只认还在等的那一次**
+fn pending_url(id: &str) -> Result<String, String> {
+    PENDING
         .lock()
         .ok()
         .and_then(|g| g.as_ref().filter(|p| p.id == id).map(|p| p.url.clone()))
@@ -82,8 +103,7 @@ pub async fn reopen_zai_login(app: tauri::AppHandle, id: String) -> Out<()> {
                 "This sign-in has ended; start a new one"
             )
             .to_string()
-        })?;
-    Ok(crate::chatgpt::open_page(&app, &url)?)
+        })
 }
 
 #[tauri::command]

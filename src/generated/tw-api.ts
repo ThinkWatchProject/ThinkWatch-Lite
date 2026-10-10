@@ -437,6 +437,11 @@ export type BalanceBy = "weights" | "latency" | "health" | "latency-health";
 export type BaseVersion = { base_version?: string | null, };
 
 /**
+ * 一家上游的 `balance:` 写的是什么。
+ */
+export type BalanceSetting = "auto" | "off" | "openrouter" | "deepseek" | "moonshot" | "sub2api" | "newapi" | "thinkwatch";
+
+/**
  * 一个上游怎么收钱。
  */
 export type Billing = "per-token" | "free";
@@ -3466,11 +3471,15 @@ pricing?: string | null,
 /**
  * 同时最多发给这家几个请求，1 到 1000。不给就是不限
  */
-max_concurrent?: number | null, 
+max_concurrent?: number | null,
 /**
  * 停用
  */
-disabled: boolean, };
+disabled: boolean,
+/**
+ * 余额从哪儿读。不给就是 `auto`
+ */
+balance?: BalanceSetting | null, };
 
 /**
  * 一个上游的模型清单。
@@ -3698,7 +3707,11 @@ max_concurrent?: number | null,
  * 认不出是哪一种中转站），或者还没读完第一次。读到了、读失败了都报
  * [`Event::BalanceUpdated`]
  */
-balance: Balance | null, };
+balance: Balance | null, 
+/**
+ * 配置里的 `balance:`，原样：编辑对话框保存时交回去（[`ProviderInput::balance`]）
+ */
+balance_setting?: BalanceSetting, };
 
 /**
  * 代理的用户名和密码。

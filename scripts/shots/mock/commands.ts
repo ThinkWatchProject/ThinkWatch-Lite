@@ -80,7 +80,7 @@ interface Commands {
   copy_key: [void, void];
   copy_gateway_base: [void, void];
   copy_client_endpoint: [void, void];
-  copy_chatgpt_code: [void, void];
+  copy_chatgpt_login: [void, void];
   reveal_client_config: [void, void];
 }
 
@@ -170,7 +170,7 @@ const COMMANDS: Table = {
   copy_key: done,
   copy_gateway_base: done,
   copy_client_endpoint: done,
-  copy_chatgpt_code: done,
+  copy_chatgpt_login: done,
   reveal_client_config: done,
 };
 

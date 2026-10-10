@@ -21,7 +21,7 @@ import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
 import { balanceBrief } from "./balance";
-import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
+import { ReloginDialog, type Relogin } from "./ReloginDialog";
 import {
   modelsKey,
   patch,
@@ -44,7 +44,6 @@ import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
-import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { NextClientsHint } from "@/guide/PageHints";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
 import { AliasDialog } from "@/aliases/AliasDialog";
@@ -62,9 +61,8 @@ let lastTab: UpstreamTab = "upstreams";
 type DialogState =
   | null
   | { kind: "upstream"; mode: UpstreamDialogMode }
-  /** `relogin`：给已有的 ChatGPT 账号换一次凭据，名称和出站方式沿用它的 */
-  | { kind: "chatgpt-login"; relogin?: { name: string; proxy: string } }
-  | { kind: "zai-login" }
+  /** 给已有的账号上游换一次凭据（ChatGPT 重新登录、Z.ai 登录换密钥），名称和出站方式沿用它的。新建账号上游在新建对话框里登录 */
+  | { kind: "relogin"; relogin: Relogin }
   | { kind: "delete-upstream"; name: string }
   | { kind: "test"; name: string }
   | { kind: "link"; provider: string | null }
@@ -537,8 +535,7 @@ export default function UpstreamsPage({
             changed();
           }}
           onChanged={changed}
-          onChatgptLogin={(relogin) => setDialog({ kind: "chatgpt-login", relogin })}
-          onZaiLogin={() => setDialog({ kind: "zai-login" })}
+          onRelogin={(relogin) => setDialog({ kind: "relogin", relogin })}
         />
       )}
       {dialog?.kind === "delete-upstream" && (
@@ -562,16 +559,13 @@ export default function UpstreamsPage({
           }}
         />
       )}
-      {dialog?.kind === "chatgpt-login" && (
-        <ChatgptLoginDialog
+      {dialog?.kind === "relogin" && (
+        <ReloginDialog
           ov={ov}
           relogin={dialog.relogin}
           onClose={() => setDialog(null)}
           onSaved={() => changed()}
         />
-      )}
-      {dialog?.kind === "zai-login" && (
-        <ZaiLoginDialog ov={ov} onClose={() => setDialog(null)} onSaved={() => changed()} />
       )}
       {dialog?.kind === "test" && (
         <TestConnectionDialog ov={ov} name={dialog.name} onClose={() => setDialog(null)} />

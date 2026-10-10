@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
+import { AppMark } from "@/ui/app-mark";
 import { Logo, upstreamGlyph } from "@/ui/logos";
 import { StatusDot } from "@/ui/status-dot";
 import type { ProviderView } from "@/types";
@@ -23,6 +24,7 @@ export function VendorTile({
   name,
   baseUrl,
   protocol,
+  own = false,
   size = "md",
   muted = false,
   live = false,
@@ -31,30 +33,36 @@ export function VendorTile({
   name: string;
   baseUrl?: string | null;
   protocol?: string | null;
-  /** `md` 28px（表格行）；`sm` 20px（下拉、标签里） */
-  size?: "sm" | "md";
+  /** ThinkWatch 企业网关：画应用自己的标志 */
+  own?: boolean;
+  /** `md` 28px（表格行）；`sm` 20px（下拉、标签里）；`lg` 44px（登录那一块的主图） */
+  size?: "sm" | "md" | "lg";
   /** 停用的上游：整块退成次要色 */
   muted?: boolean;
   live?: boolean;
   className?: string;
 }) {
-  const id = upstreamGlyph({ name, baseUrl, protocol });
-  const px = size === "md" ? 16 : 12;
+  const id = own ? null : upstreamGlyph({ name, baseUrl, protocol });
+  const px = size === "lg" ? 22 : size === "md" ? 16 : 12;
   return (
     <span
       data-slot="vendor-tile"
       aria-hidden
       className={cn(
         "relative inline-flex shrink-0 items-center justify-center border border-border bg-surface shadow-[0_1px_0_0_var(--border)]",
-        size === "md" ? "size-7 rounded-lg" : "size-5 rounded-md",
+        size === "lg" ? "size-11 rounded-xl" : size === "md" ? "size-7 rounded-lg" : "size-5 rounded-md",
         muted ? "text-idle" : "text-foreground/85",
         className,
       )}
     >
-      {id ? (
+      {own ? (
+        <AppMark size={px} />
+      ) : id ? (
         <Logo id={id} size={px} />
       ) : (
-        <span className={cn("font-semibold leading-none", size === "md" ? "tw-body" : "tw-label")}>{initial(name)}</span>
+        <span className={cn("font-semibold leading-none", size === "lg" ? "tw-title" : size === "md" ? "tw-body" : "tw-label")}>
+          {initial(name)}
+        </span>
       )}
       {live && <StatusDot tone="pending" className="absolute -top-[3px] -right-[3px] ring-2 ring-background" />}
     </span>
@@ -202,19 +210,22 @@ export function StepNav<T extends string>({
   steps,
   current,
   done,
+  locked,
   onPick,
 }: {
   steps: { id: T; label: string }[];
   current: T;
   /** 新建流程里已经走过的；编辑时传 undefined，每一节都能点 */
   done?: Set<T>;
+  /** 走过、但回不去的（登录进行中的别的步，登录后的服务类型） */
+  locked?: ReadonlySet<T>;
   onPick?: (id: T) => void;
 }) {
   return (
     <ol className="flex items-center gap-1">
       {steps.map((s, i) => {
         const on = s.id === current;
-        const reachable = !done || done.has(s.id) || on;
+        const reachable = (!done || done.has(s.id) || on) && !(locked?.has(s.id) && !on);
         return (
           <li key={s.id} className="flex items-center gap-1">
             {i > 0 && <span aria-hidden className="mx-1 h-px w-6 bg-border" />}

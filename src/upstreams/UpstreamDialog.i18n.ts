@@ -20,6 +20,14 @@ export const upstreamDialogText = messages(
     back: "上一步",
     next: "下一步",
     create: "创建",
+    finish: "完成",
+    cancelSignIn: "取消登录",
+    /** 登录成功、概览还没读到这个上游的那一下 */
+    signingIn: "正在读取上游",
+    createdNote: "上游已创建，关闭对话框不会撤销登录",
+    name: "名称",
+    nameTaken: "这个名称已被占用",
+    nameReplaces: "将替换该上游的密钥",
   },
   {
     sections: {
@@ -39,5 +47,12 @@ export const upstreamDialogText = messages(
     back: "Back",
     next: "Next",
     create: "Create",
+    finish: "Done",
+    cancelSignIn: "Cancel sign-in",
+    signingIn: "Reading the upstream",
+    createdNote: "The upstream has been created; closing this dialog does not undo the sign-in",
+    name: "Name",
+    nameTaken: "This name is already in use",
+    nameReplaces: "The key of that upstream will be replaced",
   },
 );

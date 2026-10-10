@@ -13,6 +13,7 @@ export function Segmented<T extends string>({
   onChange,
   disabled,
   label,
+  block = false,
 }: {
   value: T;
   options: { id: T; label: ReactNode; disabled?: boolean }[];
@@ -20,12 +21,20 @@ export function Segmented<T extends string>({
   disabled?: boolean;
   /** 读屏读出来的这一组叫什么。旁边没有可见的标题时要给 */
   label?: string;
+  /**
+   * 占满一行、各段等宽，和表单字段一样高（32px）。表单里单独一行的选择用它（认证方式、
+   * 站点）；工具条上的用默认的 28px
+   */
+  block?: boolean;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="inline-flex h-7 w-fit items-center rounded-lg bg-muted p-0.5"
+      className={cn(
+        "items-center rounded-lg bg-muted p-0.5",
+        block ? "grid h-8 w-full auto-cols-fr grid-flow-col" : "inline-flex h-7 w-fit",
+      )}
     >
       {options.map((o) => (
         <button
@@ -36,7 +45,8 @@ export function Segmented<T extends string>({
           disabled={disabled || o.disabled}
           onClick={() => onChange(o.id)}
           className={cn(
-            "inline-flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2.5 tw-body font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
+            "inline-flex items-center gap-1.5 rounded-md border border-transparent px-2.5 tw-body font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
+            block ? "h-7 justify-center" : "h-6",
             value === o.id &&
               "border-input bg-background text-foreground shadow-sm dark:bg-input/30",
           )}

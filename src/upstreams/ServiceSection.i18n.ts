@@ -3,24 +3,20 @@ import { messages } from "@/i18n";
 export const serviceSectionText = messages(
   {
     search: "搜索服务",
-    accounts: "账号登录",
-    api: "API 接入",
-    chatgpt: "ChatGPT 账号",
-    zai: "Z.ai / BigModel 账号",
-    signIn: "登录账号后使用",
-    customDesc: "填写地址和密钥",
-    local: "本机服务",
+    groups: {
+      vendor: "模型厂商",
+      platform: "平台与中转",
+      local: "本机与自定义",
+    },
     none: "没有匹配的服务",
   },
   {
     search: "Search services",
-    accounts: "Sign in with an account",
-    api: "API access",
-    chatgpt: "ChatGPT account",
-    zai: "Z.ai / BigModel account",
-    signIn: "Sign in to use",
-    customDesc: "Enter the address and key",
-    local: "Local service",
+    groups: {
+      vendor: "Model vendors",
+      platform: "Platforms and relays",
+      local: "Local and custom",
+    },
     none: "No matching service",
   },
 );

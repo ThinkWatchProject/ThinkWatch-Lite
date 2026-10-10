@@ -1,20 +1,27 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
+import { serviceOf } from "./presets";
 import {
   applyPreset,
+  authModeOf,
+  authOptions,
   blankForm,
   connectionChanged,
   connectionMissing,
+  fieldRules,
   formFromDraft,
   formFromView,
   headerRow,
   inScope,
   modelsMissing,
   oauthKept,
+  retarget,
   toInput,
+  withAuth,
   withManualAdded,
   withManualRemoved,
+  withSite,
   type UpstreamForm,
 } from "./upstreamForm";
 
@@ -205,6 +212,245 @@ describe("第一步选服务类型", () => {
     expect(o.billing).toBe("free");
     const c = applyPreset(o, "custom", []);
     expect(c).toMatchObject({ preset: "custom", name: "", baseUrl: "", protocol: "", billing: "per-token" });
+  });
+
+  it("跟着地址猜出的名称也算没动过：换一格时跟着换", () => {
+    const s = { ...applyPreset(blankForm(), "sub2api", []), baseUrl: "https://api.relay-hk.example", name: "relay-hk" };
+    expect(applyPreset(s, "anthropic", []).name).toBe("anthropic");
+  });
+
+  it("这一格没有的认证方式换成它的第一种", () => {
+    const o = withAuth(applyPreset(blankForm(), "openai", []), "account", []);
+    expect(applyPreset(o, "anthropic", []).authMode).toBe("key");
+    const b = withAuth(applyPreset(blankForm(), "bedrock", []), "aws-profile", []);
+    expect(applyPreset(b, "custom", []).authMode).toBe("key");
+    // 两格都有的留着
+    const t = withAuth(applyPreset(blankForm(), "thinkwatch", []), "oauth", []);
+    expect(applyPreset(t, "sub2api", []).authMode).toBe("oauth");
+  });
+});
+
+describe("认证方式与站点", () => {
+  it("每种服务能选的认证方式；自定义填了 Bedrock 地址就是 Bedrock 那三种", () => {
+    const opts = (id: string) => authOptions(applyPreset(blankForm(), id, []));
+    expect(opts("openai")).toEqual(["key", "account"]);
+    expect(opts("zai")).toEqual(["key", "account"]);
+    expect(opts("bedrock")).toEqual(["key", "aws-keys", "aws-profile"]);
+    expect(opts("anthropic")).toEqual(["key"]);
+    expect(opts("ollama")).toEqual(["key"]);
+    for (const id of ["custom", "thinkwatch", "sub2api", "newapi"]) expect(opts(id)).toEqual(["key", "oauth"]);
+    const c = applyPreset(blankForm(), "custom", []);
+    expect(authOptions({ ...c, baseUrl: "https://bedrock-runtime.eu-west-1.amazonaws.com" })).toEqual([
+      "key",
+      "aws-keys",
+      "aws-profile",
+    ]);
+  });
+
+  it("编辑时没有预设：OAuth 的上游照旧是 OAuth，不被当成这一格没有的方式", () => {
+    const f = formFromView(oauthView());
+    expect(authOptions(f)).toEqual(["key", "oauth"]);
+    expect(authModeOf(f)).toBe("oauth");
+  });
+
+  it("OpenAI 换成 ChatGPT 账号：没动过的名称换成 chatgpt，动过的留着", () => {
+    const o = applyPreset(blankForm(), "openai", ["chatgpt"]);
+    expect(withAuth(o, "account", ["chatgpt"]).name).toBe("chatgpt-2");
+    expect(withAuth(withAuth(o, "account", []), "key", []).name).toBe("openai");
+    expect(withAuth({ ...o, name: "work" }, "account", []).name).toBe("work");
+  });
+
+  it("Z.ai / BigModel 换站点：地址和名称跟着换", () => {
+    const z = applyPreset(blankForm(), "zai", []);
+    expect(z).toMatchObject({ name: "zai", baseUrl: "https://api.z.ai/api/anthropic", protocol: "anthropic" });
+    const b = withSite(z, "bigmodel", []);
+    expect(b).toMatchObject({ zaiFamily: "bigmodel", name: "bigmodel", baseUrl: "https://open.bigmodel.cn/api/anthropic" });
+    // 账号登录也按站点起名（和 core 登录时不给名字的叫法一样）
+    expect(withAuth(b, "account", []).name).toBe("bigmodel");
+    expect(withSite({ ...z, name: "glm" }, "bigmodel", []).name).toBe("glm");
+  });
+
+  it("登录账号时这张表单不往下交：登录成功由 core 写配置", () => {
+    const o = withAuth(applyPreset(blankForm(), "openai", []), "account", []);
+    expect(authModeOf(o)).toBe("account");
+    expect(connectionMissing(o, null, [])).toBe("登录后继续");
+    // 别的服务没有账号登录：按 API 密钥算
+    expect(authModeOf({ ...applyPreset(blankForm(), "anthropic", []), authMode: "account" })).toBe("key");
+  });
+});
+
+describe("编辑时认出是哪一种服务", () => {
+  const of = (baseUrl: string, protocol: ProviderView["protocol"] | "" = "", balance: ProviderView["balance_setting"] | null = null) =>
+    serviceOf({ baseUrl, protocol, balance: balance ?? null });
+
+  it("官方地址按主机认，路径不同照样是它", () => {
+    expect(of("https://api.anthropic.com").preset).toBe("anthropic");
+    expect(of("https://api.openai.com/v1").preset).toBe("openai");
+    expect(of("https://generativelanguage.googleapis.com/v1beta").preset).toBe("gemini");
+    expect(of("https://api.deepseek.com/anthropic").preset).toBe("deepseek");
+    expect(of("https://api.deepseek.com").preset).toBe("deepseek");
+    expect(of("https://openrouter.ai/api").preset).toBe("openrouter");
+    expect(of("https://api.z.ai/api/anthropic")).toEqual({ preset: "zai", family: "zai" });
+    expect(of("https://api.z.ai/api/paas/v4")).toEqual({ preset: "zai", family: "zai" });
+    expect(of("https://open.bigmodel.cn/api/anthropic")).toEqual({ preset: "zai", family: "bigmodel" });
+  });
+
+  it("Bedrock 认标准地址，也认协议；Ollama 认 11434 端口", () => {
+    expect(of("https://bedrock-runtime.us-west-2.amazonaws.com").preset).toBe("bedrock");
+    expect(of("https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com").preset).toBe("bedrock");
+    expect(of("https://vpce-1.bedrock.example.internal", "bedrock").preset).toBe("bedrock");
+    expect(of("http://127.0.0.1:11434").preset).toBe("ollama");
+    expect(of("http://gpu-box.lan:11434/").preset).toBe("ollama");
+  });
+
+  it("中转平台和企业网关在任意地址上：按写明的余额来源认", () => {
+    expect(of("https://api.relay-hk.example", "", "sub2api").preset).toBe("sub2api");
+    expect(of("https://one.example.com", "", "newapi").preset).toBe("newapi");
+    expect(of("https://gateway.corp.example", "", "thinkwatch").preset).toBe("thinkwatch");
+    // 官方地址先认：写了别的来源也还是那一家
+    expect(of("https://openrouter.ai/api", "", "off").preset).toBe("openrouter");
+  });
+
+  it("别的都是自定义；ChatGPT 账号也是（它有自己的「账号」一节）", () => {
+    expect(of("https://relay.example/v1").preset).toBe("custom");
+    expect(of("https://relay.example/v1", "", "auto").preset).toBe("custom");
+    expect(of("https://relay.example/v1", "", "off").preset).toBe("custom");
+    expect(of("https://chatgpt.com/backend-api/codex", "chatgpt").preset).toBe("custom");
+    expect(of("not a url").preset).toBe("custom");
+    expect(formFromView(view({ base_url: "https://chatgpt.com/backend-api/codex", protocol: "chatgpt" })).preset).toBe("custom");
+  });
+
+  it("编辑表单按认出来的服务问：官方地址、标准写法时只剩密钥", () => {
+    const f = formFromView(view({ base_url: "https://api.anthropic.com", protocol: "anthropic", protocol_explicit: false, headers: [] }));
+    expect(f.preset).toBe("anthropic");
+    expect(fieldRules(f)).toEqual({ auth: ["key"], site: false, url: true, protocols: null, key: true, clientIdentity: false });
+    // 编辑时没有「登录账号」：换成账号是另一个上游
+    const o = formFromView(view({ base_url: "https://api.openai.com", protocol: "openai-chat", protocol_explicit: true }));
+    expect(fieldRules(o).auth).toEqual(["key"]);
+    expect(fieldRules(o).protocols).toEqual(["openai-chat", "openai-responses"]);
+    const z = formFromView(view({ base_url: "https://open.bigmodel.cn/api/anthropic", protocol_explicit: true }));
+    expect(z).toMatchObject({ preset: "zai", zaiFamily: "bigmodel" });
+    expect(fieldRules(z)).toMatchObject({ site: true, url: false, protocols: null, auth: ["key"] });
+  });
+
+  it("改了地址就重认：官方地址改成别的主机，从此是自定义", () => {
+    const f = formFromView(view({ base_url: "https://api.anthropic.com", protocol_explicit: false }));
+    const moved = retarget({ ...f, baseUrl: "https://relay.example" });
+    expect(moved.preset).toBe("custom");
+    expect(fieldRules(moved).protocols).toBe("all");
+    expect(retarget({ ...moved, baseUrl: "https://api.anthropic.com/" }).preset).toBe("anthropic");
+    // 按余额来源认出来的，换地址还是它
+    const s = formFromView(view({ base_url: "https://a.example", balance_setting: "sub2api" }));
+    expect(retarget({ ...s, baseUrl: "https://b.example" }).preset).toBe("sub2api");
+    // 新建时服务类型是第一步选的，不重认
+    const c = applyPreset(blankForm(), "custom", []);
+    expect(retarget({ ...c, baseUrl: "https://api.anthropic.com" }).preset).toBe("custom");
+  });
+});
+
+describe("写着的值一律显示", () => {
+  it("官方地址配了 OAuth：给「自定义」的认证方式，OAuth 照样在、照样交回", () => {
+    const f = formFromView({
+      ...view({ base_url: "https://api.anthropic.com", key: null, protocol_explicit: false }),
+      oauth: { endpoint: "https://auth.example/token", refresh: "rt", client_id: null, client_secret: null },
+    });
+    expect(f.preset).toBe("anthropic");
+    expect(fieldRules(f).auth).toEqual(["key", "oauth"]);
+    expect(authModeOf(f)).toBe("oauth");
+    expect(toInput(f).oauth).toEqual({ mode: "keep" });
+  });
+
+  it("本机的 Ollama 写了密钥：显示，也交回；没写就不显示", () => {
+    const k = formFromView(view({ base_url: "http://127.0.0.1:11434", key: "${OLLAMA_KEY}", protocol: "openai-chat" }));
+    expect(k.preset).toBe("ollama");
+    expect(fieldRules(k).key).toBe(true);
+    expect(toInput(k).key).toBe("${OLLAMA_KEY}");
+    // 清空了也不会让那一栏消失：按打开时写着的定
+    expect(fieldRules({ ...k, key: "" }).key).toBe(true);
+    const n = formFromView(view({ base_url: "http://127.0.0.1:11434", key: null, protocol: "openai-chat" }));
+    expect(fieldRules(n).key).toBe(false);
+  });
+
+  it("写着的协议不是这种服务定的那个：给完整的协议列表", () => {
+    const a = formFromView(view({ base_url: "https://api.anthropic.com", protocol: "openai-chat", protocol_explicit: true }));
+    expect(fieldRules(a).protocols).toBe("all");
+    expect(toInput(a).protocol).toBe("openai-chat");
+    // OpenAI 没写协议（自动识别）：只给那两种的话「自动识别」就选不回来了
+    const o = formFromView(view({ base_url: "https://api.openai.com", protocol: "openai-chat", protocol_explicit: false }));
+    expect(fieldRules(o).protocols).toBe("all");
+    // DeepSeek 没写协议：地址认不出来，按原格式转发 —— 不是这种服务定的 Anthropic，显示出来
+    const d = formFromView(view({ base_url: "https://api.deepseek.com", protocol: null, protocol_explicit: false }));
+    expect(fieldRules(d).protocols).toBe("all");
+  });
+
+  it("Z.ai 的地址不是标准地址：显示地址，不给站点", () => {
+    const z = formFromView(view({ base_url: "https://api.z.ai/api/paas/v4", protocol: "openai-chat", protocol_explicit: true }));
+    expect(z.preset).toBe("zai");
+    expect(fieldRules(z)).toMatchObject({ site: false, url: true, protocols: "all" });
+    // 改成标准地址：站点出现，地址那一栏留着（打开时写的是别的地址）
+    expect(fieldRules({ ...z, baseUrl: "https://api.z.ai/api/anthropic" })).toMatchObject({ site: true, url: true });
+  });
+
+  it("打开了「转发客户端身份」的官方地址上游：照样显示", () => {
+    const f = formFromView(view({ base_url: "https://api.deepseek.com/anthropic", forward_client_identity: true }));
+    expect(fieldRules(f).clientIdentity).toBe(true);
+    expect(fieldRules(formFromView(view({ base_url: "https://api.deepseek.com/anthropic" }))).clientIdentity).toBe(false);
+  });
+
+  it("编辑时不要求密钥：已保存的上游可能用自己写的请求头鉴权", () => {
+    const f = formFromView(view({ base_url: "https://api.anthropic.com", key: null }));
+    expect(f.headers.length).toBeGreaterThan(0);
+    expect(connectionMissing(f, f.name, [f.name])).toBeNull();
+    expect(toInput(f).headers).toEqual([
+      { name: "anthropic-version", value: "2023-06-01" },
+      { name: "X-Relay-Token", value: "rt-5d1e9f2c" },
+    ]);
+  });
+});
+
+describe("交给 core 的定义", () => {
+  const filled = (id: string) => ({ ...applyPreset(blankForm(), id, []), name: "x", baseUrl: "https://relay.example", key: "sk-1" });
+
+  it("余额来源跟着服务类型：Sub2API、New API、企业网关写明，其余不写（自动）", () => {
+    expect(toInput(filled("sub2api")).balance).toBe("sub2api");
+    expect(toInput(filled("newapi")).balance).toBe("newapi");
+    expect(toInput(filled("thinkwatch")).balance).toBe("thinkwatch");
+    for (const id of ["custom", "openrouter", "deepseek", "openai", "anthropic"]) {
+      expect("balance" in toInput(filled(id))).toBe(false);
+    }
+  });
+
+  it("编辑时余额来源原样交回：保存一次不会把「不读」或写明的来源改回自动", () => {
+    for (const setting of ["off", "thinkwatch", "sub2api", "auto"] as const) {
+      const p = view({ balance_setting: setting });
+      const f = formFromView(p);
+      expect(toInput(f).balance).toBe(setting);
+      // 改了别的再保存也一样
+      expect(toInput({ ...f, billing: "free", maxConcurrent: "4" }).balance).toBe(setting);
+      expect(connectionChanged(f, p)).toBe(false);
+    }
+  });
+
+  it("要密钥的服务没填密钥不能往下走；自定义可以不填", () => {
+    const a = { ...applyPreset(blankForm(), "anthropic", []), key: "" };
+    expect(connectionMissing(a, null, [])).toBe("填写 API 密钥");
+    expect(connectionMissing({ ...a, key: "${ANTHROPIC_API_KEY}" }, null, [])).toBeNull();
+    expect(connectionMissing({ ...applyPreset(blankForm(), "custom", []), name: "r", baseUrl: "https://r.example" }, null, [])).toBeNull();
+    // OAuth 时不要密钥
+    const t = withAuth({ ...filled("thinkwatch"), key: "" }, "oauth", []);
+    expect(connectionMissing({ ...t, oauthRefresh: "rt", oauthEndpoint: "https://auth.example/token" }, null, [])).toBeNull();
+  });
+
+  it("Ollama 不显示密钥，也不交：别的服务上填过的不会跟过来", () => {
+    const o = applyPreset({ ...blankForm(), key: "sk-left-over" }, "ollama", []);
+    expect(connectionMissing(o, null, [])).toBeNull();
+    expect(toInput(o).key).toBeUndefined();
+  });
+
+  it("这一格定了的协议原样交；企业网关自动识别", () => {
+    expect(toInput(filled("openrouter")).protocol).toBe("openai-chat");
+    expect(toInput(filled("deepseek")).protocol).toBe("anthropic");
+    expect(toInput(filled("thinkwatch")).protocol).toBeUndefined();
   });
 });
 
