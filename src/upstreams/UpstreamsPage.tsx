@@ -20,6 +20,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
+import { balanceBrief } from "./balance";
 import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
 import {
   modelsKey,
@@ -231,6 +232,26 @@ export default function UpstreamsPage({
     }
   }
 
+  /**
+   * 立刻重读一次余额。要等上游答话（最多十来秒），所以先说「正在读取」，完了原地换成读到的
+   * 那几样；**读失败也是一份答案**（带着原因），按失败说。完了重读概览，那一格换上新的
+   */
+  function refreshBalance(name: string) {
+    const read = api.refreshProviderBalance(name).then((b) => {
+      if (b.error) throw b.error;
+      return b;
+    });
+    void read.then(onChanged, onChanged);
+    notify.promise(read, {
+      loading: t.balanceReading(name),
+      success: (b) => {
+        const brief = balanceBrief(b, Date.now());
+        return brief ? t.balanceRead(name, brief.text) : t.balanceReadEmpty(name);
+      },
+      error: t.balanceFailed(name),
+    });
+  }
+
   const [checks, setChecks] = useState<Record<string, ProxyCheck>>({});
   async function testProxy(name: string) {
     const x = proxies.find((p) => p.name === name);
@@ -433,6 +454,7 @@ export default function UpstreamsPage({
                 linkTest: (name) => setDialog({ kind: "link", provider: name }),
                 speedTest: (name) => setDialog({ kind: "speed", provider: name }),
                 refreshModels: (name) => void refreshModels(name),
+                refreshBalance,
                 editModels: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "models" } }),
                 account: (name) =>

@@ -144,6 +144,7 @@
   "providers": [
     {
       "auth_header": "x-api-key",
+      "balance": null,
       "base_url": "https://api.anthropic.com",
       "billing": "per-token",
       "disabled": false,
@@ -179,6 +180,7 @@
     },
     {
       "auth_header": "x-api-key",
+      "balance": null,
       "base_url": "https://relay.example.com",
       "billing": "per-token",
       "disabled": false,
@@ -209,6 +211,7 @@
     },
     {
       "auth_header": "authorization",
+      "balance": null,
       "base_url": "https://chatgpt.com/backend-api/codex",
       "billing": "per-token",
       "disabled": false,
@@ -245,6 +248,7 @@
     },
     {
       "auth_header": "authorization",
+      "balance": null,
       "base_url": "https://openrouter.ai/api/v1",
       "billing": "per-token",
       "disabled": false,
@@ -276,6 +280,7 @@
     },
     {
       "auth_header": "x-api-key",
+      "balance": null,
       "base_url": "https://api.deepseek.com/anthropic",
       "billing": "per-token",
       "disabled": false,
@@ -303,6 +308,7 @@
     },
     {
       "auth_header": "x-goog-api-key",
+      "balance": null,
       "base_url": "https://generativelanguage.googleapis.com",
       "billing": "per-token",
       "disabled": false,
@@ -335,6 +341,7 @@
     },
     {
       "auth_header": "authorization",
+      "balance": null,
       "base_url": "http://127.0.0.1:11434/v1",
       "billing": "free",
       "disabled": false,

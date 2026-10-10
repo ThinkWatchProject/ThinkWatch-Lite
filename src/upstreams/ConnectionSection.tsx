@@ -12,6 +12,7 @@ import { ms } from "@/format";
 import { useText } from "@/i18n";
 import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
+import { balanceBrief } from "./balance";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { HeaderEditor, type AuthRow } from "./HeaderEditor";
@@ -509,7 +510,12 @@ function OAuth({
   );
 }
 
-/** 「连接正常 · 认证通过 · 响应 312ms · 经由 hk-socks · 发现 6 个模型」 */
+/**
+ * 「连接正常 · 认证通过 · 响应 312ms · 经由 hk-socks · 发现 6 个模型」。
+ *
+ * 检测时一并读了余额的，下面再一行：从哪儿读的，和上游表那一格写的那几样（`balanceBrief`）。
+ * 读取失败时这一行是琥珀色的原因。
+ */
 export function TestLine({ result, bordered = true }: { result: ProviderTestResult; bordered?: boolean }) {
   const t = useText(connectionSectionText);
   if (!result.ok) {
@@ -529,11 +535,25 @@ export function TestLine({ result, bordered = true }: { result: ProviderTestResu
     result.via ? t.via(result.via) : null,
     describeModelList(result.models),
   ].filter(Boolean);
+  const balance = balanceBrief(result.balance, Date.now());
   return (
-    <div className={cn("flex items-center gap-2 motion-fade", bordered && "border-t border-border pt-2.5")}>
-      <CircleCheckIcon className="size-4 shrink-0 text-success" />
-      <span className="tw-body font-medium">{t.ok}</span>
-      <span className="tw-label tw-num text-muted-foreground">{parts.join(" · ")}</span>
+    <div className={cn("flex flex-col gap-0.5 motion-fade", bordered && "border-t border-border pt-2.5")}>
+      <div className="flex items-center gap-2">
+        <CircleCheckIcon className="size-4 shrink-0 text-success" />
+        <span className="tw-body font-medium">{t.ok}</span>
+        <span className="tw-label tw-num text-muted-foreground">{parts.join(" · ")}</span>
+      </div>
+      {/* 和上一行的字对齐：图标 16px 加间距 8px */}
+      {balance && (
+        <p
+          className={cn(
+            "pl-6 tw-label tw-num break-words",
+            balance.failed ? "text-warning" : "text-muted-foreground",
+          )}
+        >
+          {balance.source} · {balance.text}
+        </p>
+      )}
     </div>
   );
 }

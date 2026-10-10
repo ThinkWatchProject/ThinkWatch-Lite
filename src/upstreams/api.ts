@@ -62,6 +62,8 @@ export const api = {
     call("PreviewProvider", { base_url: baseUrl, protocol }),
   providerModels: (name: string) => call("ProviderModels", null, name),
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),
+  /** 立刻重读一次余额（平时 core 自己按时读）。读失败时答的是带着原因的那一份，不是报错 */
+  refreshProviderBalance: (name: string) => call("RefreshBalance", null, name),
   /** 手写一个模型的上下文窗口、输出上限、推理、图片输入。四项都空 = 删掉手写的，回到价目表 */
   setModelSpec: (save: ModelSpecSave) => call("SetModelSpec", save),
   /** 换掉一家上游手动添加的模型：交整份清单，空的就是一个都不留 */

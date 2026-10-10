@@ -106,6 +106,8 @@ webview_endpoints![
     // 手动添加的模型：上游能服务、却没列进清单的
     SetManualModels,
     RefreshProviderModels,
+    // 余额：上游自己的接口报的钱包、额度、窗口限额，立刻重读一次
+    RefreshBalance,
     RefreshStaleModels,
     CreateProxy,
     TestProxy,

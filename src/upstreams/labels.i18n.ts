@@ -27,15 +27,17 @@ export const labelsText = messages(
       fetching: "获取中",
       scoped: "指定范围",
     },
-    quotaWindows: { "5h": "5 小时", weekly: "每周" },
+    quotaWindows: { "5h": "5 小时", weekly: "每周", daily: "每天", monthly: "每月" },
     // 按长度起名的额度窗口（`30d`、`3h`、`45m`）
     quotaSpans: {
+      w: (n: number) => `${n} 周`,
       d: (n: number) => `${n} 天`,
       h: (n: number) => `${n} 小时`,
       m: (n: number) => `${n} 分钟`,
     },
     // 同上，放在名词前面时的写法（「30 天窗口」）。中文和单独用时一样
     quotaSpansBefore: {
+      w: (n: number) => `${n} 周`,
       d: (n: number) => `${n} 天`,
       h: (n: number) => `${n} 小时`,
       m: (n: number) => `${n} 分钟`,
@@ -110,14 +112,16 @@ export const labelsText = messages(
       // 模型数下面的一个词：「5 / Selected」。对话框里那一项叫 Selected models
       scoped: "Selected",
     },
-    quotaWindows: { "5h": "5h", weekly: "Weekly" },
+    quotaWindows: { "5h": "5h", weekly: "Weekly", daily: "Daily", monthly: "Monthly" },
     quotaSpans: {
+      w: (n: number) => (n === 1 ? "1 week" : `${n} weeks`),
       d: (n: number) => (n === 1 ? "1 day" : `${n} days`),
       h: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
       m: (n: number) => (n === 1 ? "1 minute" : `${n} minutes`),
     },
     // Before a noun: "30-day window", "30-day usage limit"
     quotaSpansBefore: {
+      w: (n: number) => `${n}-week`,
       d: (n: number) => `${n}-day`,
       h: (n: number) => `${n}-hour`,
       m: (n: number) => `${n}-minute`,
