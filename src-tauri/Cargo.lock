@@ -5335,8 +5335,8 @@ dependencies = [
 
 [[package]]
 name = "tw-api"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "serde",
  "serde_json",
@@ -5347,8 +5347,8 @@ dependencies = [
 
 [[package]]
 name = "tw-dialect"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "memchr",
  "serde",
@@ -5357,8 +5357,8 @@ dependencies = [
 
 [[package]]
 name = "tw-guard"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5374,8 +5374,8 @@ dependencies = [
 
 [[package]]
 name = "tw-link"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "serde",
  "serde_json",
@@ -5401,8 +5401,8 @@ dependencies = [
 
 [[package]]
 name = "tw-types"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "serde",
  "ts-rs",
@@ -5410,8 +5410,8 @@ dependencies = [
 
 [[package]]
 name = "tw-watch"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "libc",
  "notify",
@@ -5421,8 +5421,8 @@ dependencies = [
 
 [[package]]
 name = "tw-yaml"
-version = "0.67.1"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?rev=62c807fd908845a6b652f5a1620c277144615ac9#62c807fd908845a6b652f5a1620c277144615ac9"
+version = "0.68.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.68.0#0955f9906c88f9c8fba99a17e3898efa23c952b9"
 dependencies = [
  "saphyr-parser",
  "thiserror 2.0.21",
