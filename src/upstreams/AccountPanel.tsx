@@ -37,14 +37,20 @@ export function AccountPanel({
   params,
   blocked,
   relogin = false,
+  notices = !relogin,
 }: {
   login: AccountLogin;
   /** 发起登录时交给 core 的名称、出站代理、站点 */
   params: LoginParams;
   /** 名称不能用（空的、被占用）：先不能开始 */
   blocked: boolean;
-  /** 给已有的账号换一次凭据：此前已经看过并同意了说明，不再拦一次 */
+  /** 给已有的账号换一次凭据：完成时说的是换了凭据 */
   relogin?: boolean;
+  /**
+   * 要不要先看说明、勾确认。新建要；ChatGPT 重新登录不要（此前看过并同意了）；Z.ai 的上游
+   * 登录换密钥要（那个上游的密钥可能是手填的，没看过会建一把密钥的那几条）
+   */
+  notices?: boolean;
 }) {
   const t = useText(accountPanelText);
   const remote = useRemote();
@@ -60,7 +66,7 @@ export function AccountPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-surface px-7 py-6 text-center">
-        {phase.at === "idle" && <Intro login={login} params={params} blocked={blocked} relogin={relogin} tile={tile} />}
+        {phase.at === "idle" && <Intro login={login} params={params} blocked={blocked} notices={notices} tile={tile} />}
         {phase.at === "browser" && (
           <>
             {tile}
@@ -131,20 +137,20 @@ function Intro({
   login,
   params,
   blocked,
-  relogin,
+  notices,
   tile,
 }: {
   login: AccountLogin;
   params: LoginParams;
   blocked: boolean;
-  relogin: boolean;
+  notices: boolean;
   tile: ReactNode;
 }) {
   const t = useText(accountPanelText);
   const rt = useText(remoteText);
   const remote = useRemote();
-  // 重新登录的人此前已经看过并同意了这些
-  const [understood, setUnderstood] = useState(relogin);
+  // 不再拦一次的（ChatGPT 重新登录）一开始就算确认过
+  const [understood, setUnderstood] = useState(!notices);
   const chatgpt = login.kind === "chatgpt";
   const where = remote ? t.server(remote.name) : t.here;
   const site = params.family === "zai" ? "Z.ai" : "BigModel";
@@ -157,7 +163,7 @@ function Intro({
       {tile}
       <Title>{chatgpt ? t.chatgptTitle : t.zaiTitle(site)}</Title>
       <Desc>{chatgpt ? t.chatgptDesc : t.zaiDesc}</Desc>
-      {!relogin && (
+      {notices && (
         <>
           <ul className="mt-1 flex w-full max-w-xl list-disc flex-col gap-1 border-t border-border pt-3 pl-5 text-left tw-body text-muted-foreground">
             {chatgpt ? (

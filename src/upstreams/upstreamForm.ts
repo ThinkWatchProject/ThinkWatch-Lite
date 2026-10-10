@@ -28,7 +28,15 @@ import type {
 } from "@/types";
 import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
-import { CUSTOM, ZAI_ENDPOINTS, nameFromUrl, presetById, type AuthMode } from "./presets";
+import {
+  CUSTOM,
+  ZAI_ENDPOINTS,
+  nameFromUrl,
+  presetById,
+  serviceOf,
+  zaiSiteOf,
+  type AuthMode,
+} from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
 export type { AuthMode } from "./presets";
@@ -55,7 +63,25 @@ interface OAuthFields {
   clientSecret: string;
 }
 
+/**
+ * 编辑时打开那一刻配置里已经写着的几样。**写着的值一律显示**：哪怕它不在认出来的这种服务的
+ * 规矩里（官方地址的上游配了 OAuth、本机的 Ollama 写了密钥），那一项照「自定义」的样子摆出来，
+ * 不藏（`fieldRules`）。按打开时的定，不按正在改的 —— 改着改着那一栏自己消失是不行的
+ */
+export interface SavedTraits {
+  authMode: AuthMode;
+  protocol: Protocol | "";
+  key: boolean;
+  clientIdentity: boolean;
+  /** 地址不是 Z.ai / BigModel 的标准地址 */
+  otherUrl: boolean;
+}
+
 export interface UpstreamForm {
+  /**
+   * 服务类型：新建时第一步选的那一格；编辑时按已保存的上游认出来的（`serviceOf`），
+   * 改了地址跟着重认（`retarget`）
+   */
   preset: string;
   /** Z.ai / BigModel 那一格选的站点：定了地址（API 密钥）或登录哪一边（账号） */
   zaiFamily: ZaiFamily;
@@ -107,6 +133,8 @@ export interface UpstreamForm {
    * 「不读」或者写明的来源改没了。新建时空着，按第一步选的服务类型写（`toInput`）
    */
   balance: BalanceSetting | null;
+  /** 编辑时打开那一刻写着的几样；新建是 null */
+  saved: SavedTraits | null;
 }
 
 /**
@@ -188,13 +216,95 @@ export function withSite(form: UpstreamForm, zaiFamily: ZaiFamily, taken: string
 const BEDROCK_AUTH: AuthMode[] = ["key", "aws-keys", "aws-profile"];
 
 /**
- * 这张表单能选的认证方式，按服务实际有的。「自定义」（编辑时也按它）是 API 密钥和 OAuth，
- * 地址是 Bedrock 的就是 Bedrock 那三种。只有一种时界面上不显示那一行
+ * 这张表单能选的认证方式，按服务实际有的。「自定义」是 API 密钥和 OAuth，地址是 Bedrock 的
+ * 就是 Bedrock 那三种。只有一种时界面上不显示那一行。
+ *
+ * **编辑时**：没有登录账号这一项（换成账号是另一个上游，不是编辑这一个）；已保存的认证方式
+ * 不在这种服务的规矩里时（官方地址配了 OAuth），给「自定义」那几种，写着的那一种照样在
  */
-export function authOptions(f: Pick<UpstreamForm, "preset" | "protocol" | "baseUrl">): AuthMode[] {
+export function authOptions(
+  f: Pick<UpstreamForm, "preset" | "protocol" | "baseUrl"> & { saved?: SavedTraits | null },
+): AuthMode[] {
   const p = presetById(f.preset);
-  if (p.id === CUSTOM.id) return isBedrock(f) ? BEDROCK_AUTH : CUSTOM.auth;
-  return p.auth;
+  const generic = isBedrock(f) ? BEDROCK_AUTH : CUSTOM.auth;
+  if (p.id === CUSTOM.id) return generic;
+  if (!f.saved) return p.auth;
+  const own: AuthMode[] = p.auth.filter((m) => m !== "account");
+  return own.includes(f.saved.authMode) ? own : generic;
+}
+
+/** 这张表单显示哪几项。见 `fieldRules` */
+export interface FieldRules {
+  /** 能选的认证方式。只有一种时不显示那一行 */
+  auth: AuthMode[];
+  /** Z.ai / BigModel 的站点那一行：地址是两个标准地址之一 */
+  site: boolean;
+  /** 接口地址那一栏 */
+  url: boolean;
+  /** 接口协议：null 不显示（这种服务只有一种、而且就是它）；`all` 全部外加自动识别 */
+  protocols: Protocol[] | "all" | null;
+  /** API 密钥那一栏（认证方式是 API 密钥时） */
+  key: boolean;
+  /** 「转发客户端身份」 */
+  clientIdentity: boolean;
+}
+
+/**
+ * 地址自动识别出的协议，和 core 认的是同一套（`Provider::guess_protocol`）：ChatGPT 的后端、
+ * 标准 Bedrock 地址、Anthropic、Gemini、OpenAI 的官方地址。别的认不出
+ */
+export function guessProtocol(url: string): Protocol | "" {
+  const u = url.toLowerCase();
+  if (u.includes("chatgpt.com/backend-api")) return "chatgpt";
+  if (bedrockRegionOf(url.trim()) !== null) return "bedrock";
+  if (u.includes("api.anthropic.com")) return "anthropic";
+  if (u.includes("generativelanguage.googleapis.com")) return "gemini";
+  if (u.includes("api.openai.com")) return "openai-chat";
+  return "";
+}
+
+/**
+ * 这张表单显示哪几项：**不问这种服务已经定了的事**（选了那一格，或者编辑时认出来的那一种），
+ * **也不藏写着的值**。新建和编辑同一套规矩，编辑时多一条：打开时配置里写着、却不在这种服务的
+ * 规矩里的那一项，照「自定义」的样子显示（`saved`）。
+ *
+ * · 协议：这种服务只有一种、写着的（或地址认出来的）正是它，不显示；有得选的只在那几种里选；
+ *   写着的不在其中，给全部。
+ * · 地址：Z.ai / BigModel 由站点定，标准地址时不显示；别的服务一律显示。
+ * · 密钥：本机的 Ollama 不显示，写着密钥时照样显示。
+ * · 转发客户端身份：只有中转站和自定义有；打开着的照样显示。
+ */
+export function fieldRules(f: UpstreamForm): FieldRules {
+  const p = presetById(f.preset);
+  const s = f.saved;
+  const site = p.id === "zai" && zaiSiteOf(f.baseUrl) !== null;
+  /** 这一个协议值算不算「就是这种服务定的那个」 */
+  const fixedOk = (v: Protocol | "") => (v || guessProtocol(f.baseUrl)) === p.protocol;
+  const listOk = (list: Protocol[], v: Protocol | "") => v !== "" && list.includes(v);
+  let protocols: Protocol[] | "all" | null;
+  if (!p.protocols) protocols = fixedOk(f.protocol) && (!s || fixedOk(s.protocol)) ? null : "all";
+  else if (p.protocols === "all") protocols = "all";
+  else protocols = listOk(p.protocols, f.protocol) && (!s || listOk(p.protocols, s.protocol)) ? p.protocols : "all";
+  return {
+    auth: authOptions(f),
+    site,
+    url: !p.fixedUrl || !site || !!s?.otherUrl,
+    protocols,
+    key: authModeOf(f) === "key" && (p.key !== "none" || !!s?.key),
+    clientIdentity: !!p.clientIdentity || !!s?.clientIdentity,
+  };
+}
+
+/**
+ * 编辑时改了地址（或协议）：按改过的重新认是哪一种服务。官方地址改成了别的主机，从此就是
+ * 「自定义」，问的也是完整的那一张。新建时服务类型是第一步选的，不重认
+ */
+export function retarget(f: UpstreamForm): UpstreamForm {
+  if (!f.saved) return f;
+  const r = serviceOf({ baseUrl: f.baseUrl, protocol: f.protocol, balance: f.balance });
+  return r.preset === f.preset && (r.preset !== "zai" || r.family === f.zaiFamily)
+    ? f
+    : { ...f, preset: r.preset, zaiFamily: r.preset === "zai" ? r.family : f.zaiFamily };
 }
 
 /** 新建时的空表单。服务类型在第一步选，从「自定义」开始 */
@@ -230,6 +340,7 @@ export function blankForm(): UpstreamForm {
     maxConcurrent: "",
     disabled: false,
     balance: null,
+    saved: null,
   };
 }
 
@@ -260,13 +371,18 @@ export function formFromDraft(d: BedrockDraft, taken: string[]): UpstreamForm {
 }
 
 export function formFromView(p: ProviderView): UpstreamForm {
+  const protocol: Protocol | "" = p.protocol_explicit ? (p.protocol ?? "") : "";
+  const authMode: AuthMode = p.oauth ? "oauth" : p.aws?.profile ? "aws-profile" : p.aws ? "aws-keys" : "key";
+  const balance = p.balance_setting ?? null;
+  // ChatGPT 账号认出来是「自定义」：它有自己的「账号」一节，不走连接那张表单
+  const service = serviceOf({ baseUrl: p.base_url, protocol: p.protocol === "chatgpt" ? "chatgpt" : protocol, balance });
   return {
-    preset: "custom",
-    zaiFamily: "zai",
+    preset: service.preset,
+    zaiFamily: service.family,
     name: p.name,
     baseUrl: p.base_url,
-    protocol: p.protocol_explicit ? (p.protocol ?? "") : "",
-    authMode: p.oauth ? "oauth" : p.aws?.profile ? "aws-profile" : p.aws ? "aws-keys" : "key",
+    protocol,
+    authMode,
     key: p.key ?? "",
     headers: (p.headers ?? []).map((h) => headerRow(h.name, h.value)),
     oauthSaved: p.oauth
@@ -297,7 +413,14 @@ export function formFromView(p: ProviderView): UpstreamForm {
     pricing: p.pricing ?? "",
     maxConcurrent: p.max_concurrent != null ? String(p.max_concurrent) : "",
     disabled: p.disabled,
-    balance: p.balance_setting ?? null,
+    balance,
+    saved: {
+      authMode,
+      protocol,
+      key: (p.key ?? "") !== "",
+      clientIdentity: p.forward_client_identity,
+      otherUrl: zaiSiteOf(p.base_url) === null,
+    },
   };
 }
 
@@ -376,7 +499,7 @@ export function toInput(f: UpstreamForm): ProviderInput {
     name: f.name,
     base_url: f.baseUrl.trim(),
     ...(balance ? { balance } : {}),
-    key: authModeOf(f) === "key" && presetById(f.preset).key !== "none" ? f.key.trim() || undefined : undefined,
+    key: fieldRules(f).key ? f.key.trim() || undefined : undefined,
     headers: headerInputs(f),
     oauth: oauthChange(f),
     aws: awsInput(f),
@@ -434,7 +557,8 @@ export function connectionMissing(
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);
   if (f.baseUrl.trim() === "") return t.baseUrl;
-  if (mode === "key" && presetById(f.preset).key === "required" && f.key.trim() === "") return t.key;
+  // 新建时才要求：已保存的上游可能用自己写的请求头鉴权，编辑它不该被一个空的密钥栏拦住
+  if (!f.saved && mode === "key" && presetById(f.preset).key === "required" && f.key.trim() === "") return t.key;
   if (
     mode === "oauth" &&
     !oauthKept(f) &&

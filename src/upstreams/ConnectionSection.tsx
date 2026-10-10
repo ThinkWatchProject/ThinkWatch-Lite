@@ -35,6 +35,7 @@ import {
   authModeOf,
   concurrencyOf,
   describeModelList,
+  fieldRules,
   freeName,
   isBedrock,
   oauthKept,
@@ -129,6 +130,7 @@ export function ConnectionSection({
   test,
   onTest,
   onNewProxy,
+  onAccountSignIn,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -140,6 +142,8 @@ export function ConnectionSection({
   test: ProviderTestResult | null;
   onTest: () => void;
   onNewProxy: () => void;
+  /** 编辑 Z.ai / BigModel 上游时：登录账号换一把密钥。别的时候不给 */
+  onAccountSignIn?: () => void;
 }) {
   const t = useText(connectionSectionText);
   // 连着远程 core 时 `${变量名}` 取的是服务器上 core 进程的环境
@@ -150,6 +154,8 @@ export function ConnectionSection({
   const [showKey, setShowKey] = useState(false);
   /** 第一步选的服务类型。编辑时是「自定义」：完整的一张表单 */
   const preset = presetById(form.preset);
+  /** 显示哪几项：这种服务定了的不问，写着的不藏 */
+  const rules = fieldRules(form);
   const bedrock = isBedrock(form);
   const mode = authModeOf(form);
   /** 标准 Bedrock 地址里的区域；别的地址是 null */
@@ -180,7 +186,7 @@ export function ConnectionSection({
       </div>
 
       {/* 地址由这一格定了的（Z.ai 按站点）不显示 */}
-      {!preset.fixedUrl && (
+      {rules.url && (
         <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
           <Input
             id="up-url"
@@ -202,11 +208,11 @@ export function ConnectionSection({
       )}
 
       {/* 协议只在真有得选时给选：只说一种接口的服务，选了那一格就定了 */}
-      {(preset.protocols || showRegion) && (
+      {(rules.protocols || showRegion) && (
         <div className="grid grid-cols-2 gap-4">
-          {preset.protocols && (
+          {rules.protocols && (
             <FormItem label={t.protocol} htmlFor="up-protocol">
-              <ProtocolSelect form={form} set={set} options={preset.protocols} auto={autoProtocol} />
+              <ProtocolSelect form={form} set={set} options={rules.protocols} auto={autoProtocol} />
             </FormItem>
           )}
           {showRegion && (
@@ -226,8 +232,31 @@ export function ConnectionSection({
         </div>
       )}
 
-      {mode === "key" && preset.key !== "none" && (
-        <FormItem label={t.apiKey} htmlFor="up-key" desc={remote ? rt.keyHint : undefined}>
+      {rules.key && (
+        <FormItem
+          label={t.apiKey}
+          htmlFor="up-key"
+          desc={
+            remote || onAccountSignIn ? (
+              <>
+                {remote && rt.keyHint}
+                {onAccountSignIn && (
+                  // Z.ai / BigModel：登录账号换一把新密钥（core 按同名、同站点替换，别的设置不动）
+                  <button
+                    type="button"
+                    onClick={onAccountSignIn}
+                    className={cn(
+                      "rounded-sm text-foreground/85 underline decoration-foreground/30 underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+                      remote && "ml-1",
+                    )}
+                  >
+                    {t.accountSignIn}
+                  </button>
+                )}
+              </>
+            ) : undefined
+          }
+        >
           <SecretInput
             id="up-key"
             className="font-mono"
@@ -267,7 +296,7 @@ export function ConnectionSection({
       </FormItem>
 
       {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
-      {preset.clientIdentity && (
+      {rules.clientIdentity && (
         <div className="flex flex-col gap-1.5">
           <label className="flex items-center gap-2.5 tw-body font-medium">
             <Switch

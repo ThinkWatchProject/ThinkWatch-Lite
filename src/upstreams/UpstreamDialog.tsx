@@ -33,7 +33,8 @@ import { useManualEntry } from "./ManualModelInput";
 import { addToList, unionModels } from "./manualModels";
 import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
 import { DialogError, FormItem, ProviderTile, StepNav } from "./parts";
-import { ZAI_ENDPOINTS, accountKind, presetById } from "./presets";
+import { CUSTOM, ZAI_ENDPOINTS, accountKind, presetById, zaiSiteOf } from "./presets";
+import type { Relogin } from "./ReloginDialog";
 import { PresetTile, ServiceSection } from "./ServiceSection";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
@@ -41,15 +42,16 @@ import { upstreamDialogText } from "./UpstreamDialog.i18n";
 import {
   applyPreset,
   authModeOf,
-  authOptions,
   blankForm,
   connectionChanged,
   connectionMissing,
   describeModelList,
+  fieldRules,
   formFromDraft,
   formFromView,
   inScope,
   modelsMissing,
+  retarget,
   toInput,
   withAuth,
   withManualAdded,
@@ -120,8 +122,11 @@ export function UpstreamDialog({
   onSaved: (name: string) => void;
   /** 对话框里新建了代理或价目表、登录建出了上游：外面要重新读概览 */
   onChanged: () => void;
-  /** 给已有的 ChatGPT 账号换一次凭据：这张表单让位给重新登录的对话框 */
-  onRelogin: (relogin: { name: string; proxy: string }) => void;
+  /**
+   * 给已有的账号上游换一次凭据：ChatGPT 账号「账号」一节里的重新登录，Z.ai / BigModel 上游
+   * 登录账号换一把密钥。这张表单让位给重新登录的对话框
+   */
+  onRelogin: (relogin: Relogin) => void;
 }) {
   const t = useText(upstreamDialogText);
   const c = useText(commonText);
@@ -145,7 +150,8 @@ export function UpstreamDialog({
    * 那一刻，版本也换成那一版
    */
   const [base, setBase] = useState(configVersion);
-  const set = (patch: Partial<UpstreamForm>) => setForm((f) => ({ ...f, ...patch }));
+  /** 改表单。编辑时改了地址或协议，按改过的重新认是哪一种服务（`retarget`） */
+  const set = (patch: Partial<UpstreamForm>) => setForm((f) => retarget({ ...f, ...patch }));
 
   /** 登录账号建出来的上游。之后两步改的是它 */
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
@@ -459,6 +465,16 @@ export function UpstreamDialog({
   /** 标题旁的服务类型：登录之后是登录时选的那一格 */
   const service = presetById(signedIn?.preset ?? form.preset);
 
+  /**
+   * 编辑 Z.ai / BigModel 的上游：登录账号换一把密钥。core 只在同名、同一个站点的标准地址上
+   * 这样替换，所以只给打开时就在标准地址上、现在也还是那一边的。表单里没保存的改动不带过去
+   */
+  const savedSite = editing ? zaiSiteOf(editing.base_url) : null;
+  const zaiSignIn =
+    editing && savedSite && form.preset === "zai" && zaiSiteOf(form.baseUrl) === savedSite
+      ? () => onRelogin({ kind: "zai", name: editing.name, proxy: editing.proxy, family: savedSite })
+      : undefined;
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       {/*
@@ -473,13 +489,24 @@ export function UpstreamDialog({
         <DialogHeader className="flex-row items-center gap-3">
           {/* 新建：第一步还没选，标题旁没有标志；选定之后每一步都带着 */}
           {editing ? (
-            <ProviderTile p={editing} />
+            // 认出来的服务：和新建时第二步一样带它的标志。没有固定地址的三种按服务画（企业网关是
+            // 应用自己的标志），别的按这个上游实际的地址画（BigModel 那一边是智谱的标志）
+            ["thinkwatch", "sub2api", "newapi"].includes(service.id) ? (
+              <PresetTile preset={service} />
+            ) : (
+              <ProviderTile p={editing} />
+            )
           ) : (
             section !== "service" && <PresetTile preset={service} />
           )}
           <div className="flex min-w-0 flex-col gap-0.5">
             <DialogTitle className="tw-title">{editing ? t.titleEdit : t.titleNew}</DialogTitle>
-            {editing ? (
+            {editing && !account && service.id !== CUSTOM.id ? (
+              // 认出来的服务：名字和服务类型，和新建时一样；地址、协议在表单里
+              <DialogDescription className="truncate">
+                <span className="font-mono text-foreground">{editing.name}</span> · {service.label}
+              </DialogDescription>
+            ) : editing ? (
               <DialogDescription className="truncate">
                 <span className="font-mono text-foreground">{editing.name}</span> ·{" "}
                 {protocolLabel(editing.protocol)}
@@ -513,7 +540,7 @@ export function UpstreamDialog({
               set={set}
               editing={editing}
               ov={ov}
-              onRelogin={() => onRelogin({ name: editing.name, proxy: editing.proxy })}
+              onRelogin={() => onRelogin({ kind: "chatgpt", name: editing.name, proxy: editing.proxy, family: "zai" })}
             />
           )}
           {section === "service" && (
@@ -529,8 +556,8 @@ export function UpstreamDialog({
                 form={form}
                 signedIn={signedIn}
                 frozen={login.waiting || signedIn != null}
-                onAuth={(m) => setForm((f) => withAuth(f, m, taken))}
-                onSite={(family) => setForm((f) => withSite(f, family, taken))}
+                onAuth={(m) => setForm((f) => retarget(withAuth(f, m, taken)))}
+                onSite={(family) => setForm((f) => retarget(withSite(f, family, taken)))}
               />
               {signingIn ? (
                 <AccountStep
@@ -553,6 +580,7 @@ export function UpstreamDialog({
                   test={test}
                   onTest={runTest}
                   onNewProxy={() => setNested({ kind: "proxy" })}
+                  onAccountSignIn={zaiSignIn}
                 />
               )}
             </div>
@@ -708,13 +736,20 @@ function ConnectionHead({
 }) {
   // 登录之后表单换成了那个上游的定义：这一行照登录时的样子画
   const shown: UpstreamForm = signedIn
-    ? { ...form, preset: signedIn.preset, authMode: "account", zaiFamily: signedIn.family }
+    ? {
+        ...form,
+        preset: signedIn.preset,
+        authMode: "account",
+        zaiFamily: signedIn.family,
+        baseUrl: ZAI_ENDPOINTS[signedIn.family],
+        saved: null,
+      }
     : form;
-  const options = authOptions(shown);
+  const rules = fieldRules(shown);
   return (
     <>
-      {options.length > 1 && <AuthField form={shown} options={options} onChange={onAuth} disabled={frozen} />}
-      {shown.preset === "zai" && <SiteField value={shown.zaiFamily} onChange={onSite} disabled={frozen} />}
+      {rules.auth.length > 1 && <AuthField form={shown} options={rules.auth} onChange={onAuth} disabled={frozen} />}
+      {rules.site && <SiteField value={shown.zaiFamily} onChange={onSite} disabled={frozen} />}
     </>
   );
 }

@@ -278,13 +278,68 @@ export function accountKind(id: string): "chatgpt" | "zai" | null {
   return null;
 }
 
-/** 从地址猜一个名称：`https://api.relay-hk.example/v1` → `relay-hk` */
-export function nameFromUrl(url: string): string {
+function hostOf(url: string): string {
   try {
-    const host = new URL(url).hostname;
-    const parts = host.replace(/^api\./, "").split(".");
-    return parts[0] || "";
+    return new URL(url.trim()).hostname.toLowerCase();
   } catch {
     return "";
   }
+}
+
+/** Z.ai / BigModel 的哪一个站点：地址正是那一边的标准地址（末尾的 `/` 不算）。别的地址是 null */
+export function zaiSiteOf(url: string): ZaiFamily | null {
+  const u = url.trim().replace(/\/+$/, "");
+  if (u === ZAI_ENDPOINTS.zai) return "zai";
+  if (u === ZAI_ENDPOINTS.bigmodel) return "bigmodel";
+  return null;
+}
+
+/** 官方地址 → 服务类型。只认主机：路径不一样（别的接口、别的版本）照样是这一家 */
+const HOSTS: Record<string, string> = {
+  "api.anthropic.com": "anthropic",
+  "api.openai.com": "openai",
+  "generativelanguage.googleapis.com": "gemini",
+  "api.deepseek.com": "deepseek",
+  "openrouter.ai": "openrouter",
+  "api.z.ai": "zai",
+  "open.bigmodel.cn": "zai",
+};
+
+/**
+ * 已保存的上游是哪一种服务：编辑时按它定问哪几项（和新建时选了那一格一样）。
+ *
+ * **官方地址按主机认**；Bedrock 也认协议（VPC 端点、代理的地址认不出来）；本机的 Ollama 认
+ * 11434 端口。中转平台和企业网关在任意地址上，按配置里写明的余额来源认。别的一律是「自定义」，
+ * ChatGPT 账号也是 —— 它有自己的「账号」一节，不走这张表单。
+ *
+ * `family`：Z.ai / BigModel 是哪一边（看主机），别的服务是 `zai`（用不到）。
+ */
+export function serviceOf(u: {
+  baseUrl: string;
+  /** 配置里写明的协议；没写是空 */
+  protocol: Protocol | "" | null;
+  balance: BalanceSetting | null;
+}): { preset: string; family: ZaiFamily } {
+  const host = hostOf(u.baseUrl);
+  const family: ZaiFamily = host === "open.bigmodel.cn" ? "bigmodel" : "zai";
+  const at = (preset: string) => ({ preset, family });
+  if (u.protocol === "chatgpt" || host === "chatgpt.com") return at(CUSTOM.id);
+  const byHost = HOSTS[host];
+  if (byHost) return at(byHost);
+  if (u.protocol === "bedrock" || /^bedrock-runtime(-fips)?\.[a-z0-9-]+\.amazonaws\.com$/.test(host)) {
+    return at("bedrock");
+  }
+  try {
+    if (new URL(u.baseUrl.trim()).port === "11434") return at("ollama");
+  } catch {
+    // 地址写错了：下面按自定义
+  }
+  if (u.balance === "sub2api" || u.balance === "newapi" || u.balance === "thinkwatch") return at(u.balance);
+  return at(CUSTOM.id);
+}
+
+/** 从地址猜一个名称：`https://api.relay-hk.example/v1` → `relay-hk` */
+export function nameFromUrl(url: string): string {
+  const parts = hostOf(url).replace(/^api\./, "").split(".");
+  return parts[0] || "";
 }
