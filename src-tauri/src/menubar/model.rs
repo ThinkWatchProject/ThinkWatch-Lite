@@ -1205,17 +1205,17 @@ pub fn tokens_short(n: i64) -> String {
     }
 }
 
-/// 菜单栏上的费用。**写法和 token 数一样，单位跟在数后面**：`41.20$`、`123$`、`1.2k$`。
-/// 位数少才放得下：满 100 去掉小数，满 1000 写成 k。和 token 数一样取整之后再定单位：
-/// 99.996 是「100$」，9,960 是「10k$」
+/// 菜单栏上的费用：`$41.20`、`$123`、`$1.2k`。**只写数，不带「≥」「~」**，和 token 数一样短；
+/// 美元符号照通行写法放在前面。位数少才放得下：满 100 去掉小数，满 1000 写成 k。和 token
+/// 数一样取整之后再定单位：99.996 是「$100」，9,960 是「$10k」
 pub fn cost_short(micros: i64) -> String {
     let d = micros.max(0) as f64 / 1_000_000.0;
     if let Some(s) = below(d, 2, 100.0).or_else(|| below(d, 0, 1_000.0)) {
-        return format!("{s}$");
+        return format!("${s}");
     }
     match below(d / 1_000.0, 1, 10.0) {
-        Some(s) => format!("{s}k$"),
-        None => format!("{:.0}k$", d / 1_000.0),
+        Some(s) => format!("${s}k"),
+        None => format!("${:.0}k", d / 1_000.0),
     }
 }
 
