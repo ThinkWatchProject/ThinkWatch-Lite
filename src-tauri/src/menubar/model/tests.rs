@@ -349,12 +349,13 @@ fn the_status_block_says_why_the_gateway_is_not_running() {
 #[test]
 fn the_bar_shows_todays_tokens_over_todays_cost() {
     let (bar, _) = build(&running(), Style::Full);
-    assert_eq!(bar.numbers, Some(("3.1M".into(), "$41.20".into())));
+    assert_eq!(bar.numbers, Some(("3.1M".into(), "41.20$".into())));
     assert!(!bar.dim && !bar.alert && !bar.dot);
 }
 
-/// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单栏上
-/// 那个数是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面
+/// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单里和悬停
+/// 提示里的金额是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面。**菜单栏上
+/// 只写数**（用户要求和 token 数一样短），那几个记号不上菜单栏
 #[test]
 fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
     use crate::i18n::{Lang, with_lang};
@@ -377,7 +378,7 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
         let (short, long, note, _) = cost(base.clone());
         assert_eq!(
             (short.as_str(), long.as_str(), note),
-            ("$2.50", "$2.50", None)
+            ("2.50$", "$2.50", None)
         );
 
         let (short, long, note, tip) = cost(Today {
@@ -386,7 +387,7 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
         });
         assert_eq!(
             (short.as_str(), long.as_str(), note),
-            ("~$2.50", "~$2.50", None)
+            ("2.50$", "~$2.50", None)
         );
         assert!(tip.contains("~$2.50 cost"), "{tip}");
 
@@ -394,7 +395,7 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
             unpriced: 3,
             ..base.clone()
         });
-        assert_eq!(short, "≥$2.50");
+        assert_eq!(short, "2.50$");
         assert_eq!(note.as_deref(), Some("3 unpriced"));
         // 那一行放不下小字时它只在悬停提示里：提示里总有它
         let mut s = running();
@@ -419,7 +420,7 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
             no_usage: 2,
             ..base.clone()
         });
-        assert_eq!(short, "≥$0.00");
+        assert_eq!(short, "0.00$");
         assert_eq!(note.as_deref(), Some("2 with no usage"));
     });
 }
@@ -433,7 +434,7 @@ fn an_unknown_day_is_two_dashes_and_a_quiet_day_is_zero() {
     s.today = Some(Today::default());
     assert_eq!(
         build(&s, Style::Full).0.numbers,
-        Some(("0".into(), "$0.00".into()))
+        Some(("0".into(), "0.00$".into()))
     );
 }
 
@@ -450,12 +451,12 @@ fn numbers_are_written_the_way_the_overview_writes_them() {
         assert_eq!(tokens_short(n), want, "{n}");
     }
     for (micros, want) in [
-        (0, "$0.00"),
-        (3_420_000, "$3.42"),
-        (99_990_000, "$99.99"),
-        (123_400_000, "$123"),
-        (1_234_000_000, "$1.2k"),
-        (12_345_000_000, "$12k"),
+        (0, "0.00$"),
+        (3_420_000, "3.42$"),
+        (99_990_000, "99.99$"),
+        (123_400_000, "123$"),
+        (1_234_000_000, "1.2k$"),
+        (12_345_000_000, "12k$"),
     ] {
         assert_eq!(cost_short(micros), want, "{micros}");
     }
@@ -482,12 +483,12 @@ fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
         assert_eq!(tokens_short(n), want, "{n}");
     }
     for (micros, want) in [
-        (99_994_999, "$99.99"),
-        (99_996_000, "$100"),
-        (999_499_999, "$999"),
-        (999_600_000, "$1.0k"),
-        (9_949_000_000, "$9.9k"),
-        (9_960_000_000, "$10k"),
+        (99_994_999, "99.99$"),
+        (99_996_000, "100$"),
+        (999_499_999, "999$"),
+        (999_600_000, "1.0k$"),
+        (9_949_000_000, "9.9k$"),
+        (9_960_000_000, "10k$"),
     ] {
         assert_eq!(cost_short(micros), want, "{micros}");
     }
