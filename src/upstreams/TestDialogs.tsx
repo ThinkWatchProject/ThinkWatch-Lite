@@ -75,7 +75,14 @@ export function TestConnectionDialog({
       .catch(
         (e) =>
           alive &&
-          setResult({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(errorText(e)) }),
+          setResult({
+            ok: false,
+            protocol: null,
+            latency_ms: 0,
+            models: { kind: "empty" },
+            error: plain(errorText(e)),
+            balance: null,
+          }),
       );
     return () => {
       alive = false;

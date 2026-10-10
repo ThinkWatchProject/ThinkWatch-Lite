@@ -47,7 +47,6 @@ export const remoteText = messages(
     // 账号登录、环境变量、系统代理
     deviceOnly: (name: string) =>
       `浏览器登录完成后会回到运行 core 的那台机器，而当前连接的是 ${name}，因此只能用设备码登录。`,
-    signInWithCode: "用设备码登录",
     headersHint: "随每个请求发送。值中的 ${变量名} 读取服务器上 core 进程的环境变量。",
     keyHint: "${变量名} 读取服务器上 core 进程的环境变量。",
     profileHint:
@@ -84,7 +83,6 @@ export const remoteText = messages(
 
     deviceOnly: (name: string) =>
       `A browser sign-in returns to the machine that runs core, and this app is connected to ${name}, so only the device code sign-in is available.`,
-    signInWithCode: "Sign in with a device code",
     headersHint: "Sent with every request. ${NAME} in a value reads an environment variable of the core process on the server.",
     keyHint: "${NAME} reads an environment variable of the core process on the server.",
     profileHint:

@@ -15,7 +15,7 @@ import { ms, resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { usd, type ModelRow, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
+import { usd, type Balance, type ModelRow, type ProviderView, type QuotaWindow, type UpstreamHealth } from "@/types";
 import type { UpstreamStats } from "./api";
 import { discrepancies, pct, signedPct, type Discrepancies } from "./checkup";
 import { SLOTS, slotsByUpstream, type Slot } from "./data";
@@ -38,6 +38,8 @@ import { AliasDialog } from "@/aliases/AliasDialog";
 import { ProviderTile, keepInRow, openRow } from "./parts";
 import { QUOTA_FULL, QuotaBar } from "./QuotaBar";
 import { upstreamTableText } from "./UpstreamTable.i18n";
+import { balanceFace, balanceTip, billingLine, sourceLabel, type BalanceFace } from "./balance";
+import { balanceText } from "./balance.i18n";
 import { overviewText } from "@/overview/overview.i18n";
 import { rankCost } from "@/overview/series";
 
@@ -47,6 +49,8 @@ export interface UpstreamActions {
   linkTest: (name: string) => void;
   speedTest: (name: string) => void;
   refreshModels: (name: string) => void;
+  /** 立刻重读一次余额。只给有余额的上游 */
+  refreshBalance: (name: string) => void;
   /** 打开编辑对话框的「模型」一节：启用范围、手动添加的模型 */
   editModels: (name: string) => void;
   /** ChatGPT 账号上游：编辑对话框的「账号」一节（额度与重置卡） */
@@ -183,6 +187,9 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
     { kind: "item", label: t.linkTest, onSelect: () => a.linkTest(p.name) },
     { kind: "item", label: t.speedTest, onSelect: () => a.speedTest(p.name) },
     { kind: "item", label: t.refreshModels, onSelect: () => a.refreshModels(p.name) },
+    ...(p.balance
+      ? ([{ kind: "item", label: t.refreshBalance, onSelect: () => a.refreshBalance(p.name) }] as MenuItems)
+      : []),
     ...(p.protocol === "chatgpt"
       ? ([{ kind: "item", label: t.account, onSelect: () => a.account(p.name) }] as MenuItems)
       : []),
@@ -501,8 +508,12 @@ function ModelsCell({
  *
  * 报过额度的上游，答案是额度条 —— 那是这一家「今天还能不能接着用」的唯一答案，
  * 画的是**最紧张的那个窗口**，其余窗口在悬停里。积分制套餐（GLM Coding Plan）的
- * 窗口，条下面再写一行还剩多少积分。**没报过额度就退回说计费方式**：画一根 0% 的空条
- * 等于说「一点没用」，而事实是不知道。
+ * 窗口，条下面再写一行还剩多少积分。
+ *
+ * 读得到余额的上游（中转平台、按充值扣费的服务），答案是余额：总额度、时间窗口、钱包，
+ * 写法见 `balance.ts`（`BalanceCell`）。
+ *
+ * **都没有就退回说计费方式**：画一根 0% 的空条等于说「一点没用」，而事实是不知道。
  */
 function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<UpstreamStats>; now: number }) {
   const t = useText(upstreamTableText);
@@ -549,6 +560,9 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
       </TableCell>
     );
   }
+  // 停用的上游和额度一样不写余额：整行退成次要色，那一格说计费方式
+  const face = p.disabled || !p.balance ? null : balanceFace(p.balance, now);
+  if (p.balance && face) return <BalanceCell p={p} balance={p.balance} face={face} now={now} />;
   const billing = p.billing;
   return (
     <TableCell>
@@ -560,6 +574,107 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
       )}
     </TableCell>
   );
+}
+
+/**
+ * 余额那一格。样子跟着最紧张的那一样走（`balanceFace`）：
+ *
+ * · 总额度：「剩余 $42.18 / $100」、和账号额度同一根条、从哪儿读的和多久前；
+ * · 窗口：和账号额度一模一样（已用比例、窗口与重置、条），下面一行是这个窗口还剩多少，
+ *   账号下每把密钥共用的限额在前面写「账号额度」；
+ * · 只有钱包：「余额 $18.40」，只知道用掉多少：「本月已用 $12.40」，下面照旧是计费方式；
+ * · 读取失败、手上没有读到过的数：琥珀色的「余额读取失败」，原因在悬停里。
+ *
+ * 和额度那一格一样，**下面那一行不撑宽这一列**（`w-0 min-w-full`），放不下就截断，
+ * 全文在悬停里。
+ */
+function BalanceCell({
+  p,
+  balance,
+  face,
+  now,
+}: {
+  p: ProviderView;
+  balance: Balance;
+  face: BalanceFace;
+  now: number;
+}) {
+  const t = useText(upstreamTableText);
+  const bt = useText(balanceText);
+  const tip = (
+    <div className="flex max-w-80 flex-col gap-0.5">
+      {balanceTip(balance, now).map((line, i) => (
+        // 第一行是从哪儿读的、什么时候，和别处悬停里的标题一样加粗
+        <p key={i} className={cn("break-words", i === 0 && "font-medium")}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+  const sub = "mt-0.5 w-0 min-w-full truncate tw-label leading-none text-muted-foreground";
+  switch (face.kind) {
+    case "failed":
+      return (
+        <TableCell>
+          <Tip text={tip}>
+            <span className="inline-flex">
+              <Badge variant="warning">{bt.failed}</Badge>
+            </span>
+          </Tip>
+          <div className="w-0 min-w-full truncate tw-label text-muted-foreground">{billingLine(p)}</div>
+        </TableCell>
+      );
+    case "wallet":
+      return (
+        <TableCell>
+          <Tip text={tip}>
+            <div>
+              <div className="w-0 min-w-full truncate tw-num">{face.main}</div>
+              <div className="w-0 min-w-full truncate tw-label text-muted-foreground">{billingLine(p)}</div>
+            </div>
+          </Tip>
+        </TableCell>
+      );
+    case "quota":
+      return (
+        <TableCell>
+          <Tip text={tip}>
+            <div>
+              <div className={cn("w-0 min-w-full truncate tw-num", face.tone === "error" && "text-destructive")}>
+                {face.main}
+              </div>
+              {face.percent !== null && (
+                <QuotaBar
+                  percent={face.percent}
+                  label={bt.sourceQuota(sourceLabel(balance.source))}
+                  className="mt-0.5"
+                />
+              )}
+              <div className={sub}>{face.sub}</div>
+            </div>
+          </Tip>
+        </TableCell>
+      );
+    case "window":
+      return (
+        <TableCell>
+          <Tip text={tip}>
+            <div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={cn("tw-num", face.tone === "error" && "text-destructive")}>{face.used}</span>
+                <span className="truncate tw-label text-muted-foreground">{face.label}</span>
+              </div>
+              <QuotaBar
+                percent={face.percent}
+                label={t.quotaOf(quotaWindowBefore(face.window))}
+                className="mt-0.5"
+              />
+              <div className={sub}>{face.sub}</div>
+            </div>
+          </Tip>
+        </TableCell>
+      );
+  }
 }
 
 /** 悬停在额度上：每个窗口一行 */

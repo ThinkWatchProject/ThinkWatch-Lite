@@ -65,6 +65,7 @@ export const WEBVIEW_ENDPOINTS = [
   "SetModelSpec",
   "SetManualModels",
   "RefreshProviderModels",
+  "RefreshBalance",
   "RefreshStaleModels",
   "CreateProxy",
   "TestProxy",

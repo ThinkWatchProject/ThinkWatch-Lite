@@ -5,6 +5,11 @@ export const QUOTA_WARN = 80;
 /** 用满：这个窗口里已经用完（红） */
 export const QUOTA_FULL = 100;
 
+/** 用到这个比例的条是什么颜色：平时灰，八成琥珀，用满红 */
+export function quotaTone(percent: number): "neutral" | "warn" | "error" {
+  return percent >= QUOTA_FULL ? "error" : percent >= QUOTA_WARN ? "warn" : "neutral";
+}
+
 /**
  * 订阅额度的一根条：已用的比例。
  *
@@ -18,7 +23,7 @@ export function QuotaBar({ percent, label, className }: { percent: number; label
       size="sm"
       value={percent}
       max={100}
-      tone={percent >= QUOTA_FULL ? "error" : percent >= QUOTA_WARN ? "warn" : "neutral"}
+      tone={quotaTone(percent)}
       label={label}
       className={className}
     />

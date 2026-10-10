@@ -424,6 +424,7 @@ async fn a_streaming_request_can_be_followed_live_until_it_ends() {
                 pricing: None,
                 max_concurrent: None,
                 disabled: false,
+                balance: None,
             },
             base_version: None,
         },
@@ -655,6 +656,7 @@ async fn a_bedrock_upstream_is_saved_the_way_the_dialog_sends_it() {
             pricing: None,
             max_concurrent: None,
             disabled: false,
+            balance: None,
         },
         base_version: None,
     };

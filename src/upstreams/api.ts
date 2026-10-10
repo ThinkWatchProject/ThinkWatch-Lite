@@ -62,6 +62,8 @@ export const api = {
     call("PreviewProvider", { base_url: baseUrl, protocol }),
   providerModels: (name: string) => call("ProviderModels", null, name),
   refreshProviderModels: (name: string) => call("RefreshProviderModels", null, name),
+  /** 立刻重读一次余额（平时 core 自己按时读）。读失败时答的是带着原因的那一份，不是报错 */
+  refreshProviderBalance: (name: string) => call("RefreshBalance", null, name),
   /** 手写一个模型的上下文窗口、输出上限、推理、图片输入。四项都空 = 删掉手写的，回到价目表 */
   setModelSpec: (save: ModelSpecSave) => call("SetModelSpec", save),
   /** 换掉一家上游手动添加的模型：交整份清单，空的就是一个都不留 */
@@ -83,18 +85,23 @@ export const api = {
     call("DeleteProxy", { base_version: baseVersion }, name),
   testProxy: (test: ProxyTest) => call("TestProxy", test),
 
-  /** 开始登录。浏览器登录会顺手打开授权页 —— 授权地址留在 Rust 侧，界面不经手 */
-  startChatgptLogin: (name: string, proxy: string, mode: ChatgptLoginMode) =>
-    invoke<ChatgptLogin>("start_chatgpt_login", { name, proxy, mode }),
+  /**
+   * 开始登录。浏览器登录默认顺手打开授权页；`open: false` 只拿到登录链接，由用户复制到
+   * 别的浏览器里。**地址只拿来显示**：打开、复制都按登录 ID 回到 Rust 侧
+   */
+  startChatgptLogin: (name: string, proxy: string, mode: ChatgptLoginMode, open = true) =>
+    invoke<ChatgptLogin>("start_chatgpt_login", { name, proxy, mode, open }),
+  /** 再打开一次：浏览器登录是授权页，设备码登录是输码的验证网址 */
   reopenChatgptLogin: (id: string) => invoke<void>("reopen_chatgpt_login", { id }),
-  /** 把登录码放进剪贴板。码也留在 Rust 侧：界面拿不到一个写剪贴板的口子 */
-  copyChatgptCode: (id: string) => invoke<void>("copy_chatgpt_code", { id }),
+  /** 复制登录链接（设备码登录是验证网址）或设备码。内容由 Rust 侧给：界面拿不到一个写剪贴板的口子 */
+  copyChatgptLogin: (id: string, item: "url" | "code") => invoke<void>("copy_chatgpt_login", { id, item }),
   chatgptLoginStatus: (id: string) => call("ChatgptLoginStatus", null, id),
   cancelChatgptLogin: (id: string) => invoke<ChatgptLoginStatus>("cancel_chatgpt_login", { id }),
-  /** 开始一次 Z.ai / BigModel 登录。顺手打开授权页 —— 地址留在 Rust 侧 */
-  startZaiLogin: (family: ZaiFamily, name: string, proxy: string) =>
-    invoke<ZaiLogin>("start_zai_login", { family, name, proxy }),
+  /** 开始一次 Z.ai / BigModel 登录。`open` 同 ChatGPT 那一条 */
+  startZaiLogin: (family: ZaiFamily, name: string, proxy: string, open = true) =>
+    invoke<ZaiLogin>("start_zai_login", { family, name, proxy, open }),
   reopenZaiLogin: (id: string) => invoke<void>("reopen_zai_login", { id }),
+  copyZaiLogin: (id: string) => invoke<void>("copy_zai_login", { id }),
   zaiLoginStatus: (id: string) => call("ZaiLoginStatus", null, id),
   cancelZaiLogin: (id: string) => invoke<ZaiLoginStatus>("cancel_zai_login", { id }),
 

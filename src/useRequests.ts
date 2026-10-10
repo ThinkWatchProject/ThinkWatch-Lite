@@ -481,9 +481,9 @@ export function useRequests(ready: boolean) {
    */
   const [listening, setListening] = useState(0);
   /**
-   * 上游的现状变了几次：凭据被拒或者恢复、代理不通或者恢复、要重新登录。**这些
-   * 都在概览里**，App 据此重读。事件流丢过事件时也算一次：丢掉的里面可能就有
-   * 它们。
+   * 上游的现状变了几次：凭据被拒或者恢复、代理不通或者恢复、要重新登录、读到了新的
+   * 余额。**这些都在概览里**，App 据此重读。事件流丢过事件时也算一次：丢掉的里面
+   * 可能就有它们。
    */
   const [upstreamState, setUpstreamState] = useState(0);
   const rows = useRef(new Map<number, RequestRow>());
@@ -645,6 +645,7 @@ export function useRequests(ready: boolean) {
           ev.kind === "auth_changed" ||
           ev.kind === "proxy_changed" ||
           ev.kind === "credential_expired" ||
+          ev.kind === "balance_updated" ||
           ev.kind === "events_dropped"
         ) {
           setUpstreamState((n) => n + 1);

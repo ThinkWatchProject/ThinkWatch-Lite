@@ -20,7 +20,8 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import type { Overview, PricingStatus, ProviderView } from "@/types";
 import { api, type UpstreamStats } from "./api";
-import { ChatgptLoginDialog } from "./ChatgptLoginDialog";
+import { balanceBrief } from "./balance";
+import { ReloginDialog, type Relogin } from "./ReloginDialog";
 import {
   modelsKey,
   patch,
@@ -43,7 +44,6 @@ import { formFromView, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
-import { ZaiLoginDialog } from "./ZaiLoginDialog";
 import { NextClientsHint } from "@/guide/PageHints";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
 import { AliasDialog } from "@/aliases/AliasDialog";
@@ -61,9 +61,8 @@ let lastTab: UpstreamTab = "upstreams";
 type DialogState =
   | null
   | { kind: "upstream"; mode: UpstreamDialogMode }
-  /** `relogin`：给已有的 ChatGPT 账号换一次凭据，名称和出站方式沿用它的 */
-  | { kind: "chatgpt-login"; relogin?: { name: string; proxy: string } }
-  | { kind: "zai-login" }
+  /** 给已有的账号上游换一次凭据（ChatGPT 重新登录、Z.ai 登录换密钥），名称和出站方式沿用它的。新建账号上游在新建对话框里登录 */
+  | { kind: "relogin"; relogin: Relogin }
   | { kind: "delete-upstream"; name: string }
   | { kind: "test"; name: string }
   | { kind: "link"; provider: string | null }
@@ -229,6 +228,26 @@ export default function UpstreamsPage({
         return n;
       });
     }
+  }
+
+  /**
+   * 立刻重读一次余额。要等上游答话（最多十来秒），所以先说「正在读取」，完了原地换成读到的
+   * 那几样；**读失败也是一份答案**（带着原因），按失败说。完了重读概览，那一格换上新的
+   */
+  function refreshBalance(name: string) {
+    const read = api.refreshProviderBalance(name).then((b) => {
+      if (b.error) throw b.error;
+      return b;
+    });
+    void read.then(onChanged, onChanged);
+    notify.promise(read, {
+      loading: t.balanceReading(name),
+      success: (b) => {
+        const brief = balanceBrief(b, Date.now());
+        return brief ? t.balanceRead(name, brief.text) : t.balanceReadEmpty(name);
+      },
+      error: t.balanceFailed(name),
+    });
   }
 
   const [checks, setChecks] = useState<Record<string, ProxyCheck>>({});
@@ -433,6 +452,7 @@ export default function UpstreamsPage({
                 linkTest: (name) => setDialog({ kind: "link", provider: name }),
                 speedTest: (name) => setDialog({ kind: "speed", provider: name }),
                 refreshModels: (name) => void refreshModels(name),
+                refreshBalance,
                 editModels: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "models" } }),
                 account: (name) =>
@@ -515,8 +535,7 @@ export default function UpstreamsPage({
             changed();
           }}
           onChanged={changed}
-          onChatgptLogin={(relogin) => setDialog({ kind: "chatgpt-login", relogin })}
-          onZaiLogin={() => setDialog({ kind: "zai-login" })}
+          onRelogin={(relogin) => setDialog({ kind: "relogin", relogin })}
         />
       )}
       {dialog?.kind === "delete-upstream" && (
@@ -540,16 +559,13 @@ export default function UpstreamsPage({
           }}
         />
       )}
-      {dialog?.kind === "chatgpt-login" && (
-        <ChatgptLoginDialog
+      {dialog?.kind === "relogin" && (
+        <ReloginDialog
           ov={ov}
           relogin={dialog.relogin}
           onClose={() => setDialog(null)}
           onSaved={() => changed()}
         />
-      )}
-      {dialog?.kind === "zai-login" && (
-        <ZaiLoginDialog ov={ov} onClose={() => setDialog(null)} onSaved={() => changed()} />
       )}
       {dialog?.kind === "test" && (
         <TestConnectionDialog ov={ov} name={dialog.name} onClose={() => setDialog(null)} />

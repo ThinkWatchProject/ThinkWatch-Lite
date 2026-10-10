@@ -144,6 +144,8 @@
   "providers": [
     {
       "auth_header": "x-api-key",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://api.anthropic.com",
       "billing": "per-token",
       "disabled": false,
@@ -175,10 +177,13 @@
           "group": "budget",
           "kind": "group"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-api-key",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://relay.example.com",
       "billing": "per-token",
       "disabled": false,
@@ -205,10 +210,13 @@
           "group": "budget",
           "kind": "group"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://chatgpt.com/backend-api/codex",
       "billing": "per-token",
       "disabled": false,
@@ -241,10 +249,13 @@
           "route": "codex",
           "rule": "catch-all"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://openrouter.ai/api/v1",
       "billing": "per-token",
       "disabled": false,
@@ -272,10 +283,13 @@
           "route": "codex",
           "rule": "qwen"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-api-key",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://api.deepseek.com/anthropic",
       "billing": "per-token",
       "disabled": false,
@@ -299,10 +313,13 @@
           "route": "default",
           "rule": "deepseek"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "x-goog-api-key",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "https://generativelanguage.googleapis.com",
       "billing": "per-token",
       "disabled": false,
@@ -331,10 +348,13 @@
           "route": "cursor",
           "rule": "gemini"
         }
-      ]
+      ],
+      "signed_in": null
     },
     {
       "auth_header": "authorization",
+      "balance": null,
+      "balance_setting": "auto",
       "base_url": "http://127.0.0.1:11434/v1",
       "billing": "free",
       "disabled": false,
@@ -359,7 +379,8 @@
           "route": "default",
           "rule": "local-models"
         }
-      ]
+      ],
+      "signed_in": null
     }
   ],
   "proxies": [

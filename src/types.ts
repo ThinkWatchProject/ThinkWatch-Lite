@@ -281,13 +281,14 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "config_rejected":
     case "health_changed":
     case "models_changed":
+    case "balance_updated":
     case "quota_seen":
     case "quota_exhausted":
     case "proxy_changed":
     case "auth_changed":
     case "credential_expired":
     case "events_dropped":
-      // 都不进请求列表。配置事件、熔断、额度、凭据、代理说的都是「现在什么情况」，
+      // 都不进请求列表。配置事件、熔断、额度、余额、凭据、代理说的都是「现在什么情况」，
       // 而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "content_matched": {
