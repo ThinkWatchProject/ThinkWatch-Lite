@@ -3,6 +3,7 @@ import { messages } from "@/i18n";
 export const upstreamDialogText = messages(
   {
     sections: {
+      service: "服务类型",
       connection: "连接",
       account: "账号",
       models: "模型",
@@ -12,7 +13,7 @@ export const upstreamDialogText = messages(
     unknownError: "未知错误",
     titleEdit: "编辑上游",
     titleNew: "新建上游",
-    desc: "填写连接信息，选择模型范围与计费方式。",
+    pickService: "选择要接入的服务",
     /** 这两条嵌在模型一节「N 个已启用的模型在…中未定价」的句子里：英文小写、带冠词 */
     namedSheet: (name: string) => `价目表「${name}」`,
     defaultSheet: "默认价目表",
@@ -22,6 +23,7 @@ export const upstreamDialogText = messages(
   },
   {
     sections: {
+      service: "Service",
       connection: "Connection",
       account: "Account",
       models: "Models",
@@ -31,7 +33,7 @@ export const upstreamDialogText = messages(
     unknownError: "Unknown error",
     titleEdit: "Edit upstream",
     titleNew: "New upstream",
-    desc: "Enter the connection details, then choose the enabled models and billing.",
+    pickService: "Choose the service to connect",
     namedSheet: (name: string) => `price sheet “${name}”`,
     defaultSheet: "the default price sheet",
     back: "Back",

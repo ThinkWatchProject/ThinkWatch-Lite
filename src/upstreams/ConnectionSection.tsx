@@ -29,8 +29,7 @@ import {
   proxyKindLabel,
 } from "./labels";
 import { FormItem, Note } from "./parts";
-import { CHATGPT, ZAI, nameFromUrl, presetById } from "./presets";
-import { ServicePicker } from "./ServicePicker";
+import { nameFromUrl } from "./presets";
 import {
   authModeOf,
   concurrencyOf,
@@ -54,8 +53,6 @@ export function ConnectionSection({
   test,
   onTest,
   onNewProxy,
-  onChatgptLogin,
-  onZaiLogin,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -67,10 +64,6 @@ export function ConnectionSection({
   test: ProviderTestResult | null;
   onTest: () => void;
   onNewProxy: () => void;
-  /** 服务类型选了 ChatGPT 账号：那一条走登录，不走这张表单 */
-  onChatgptLogin: () => void;
-  /** 服务类型选了 Z.ai / BigModel 账号：同样走登录 */
-  onZaiLogin: () => void;
 }) {
   const t = useText(connectionSectionText);
   // 连着远程 core 时 `${变量名}` 取的是服务器上 core 进程的环境
@@ -90,42 +83,13 @@ export function ConnectionSection({
       ? t.autoDetected(protocolLabel(preview.protocol))
       : t.autoUndetected;
 
-  function pickPreset(id: string) {
-    if (id === CHATGPT) {
-      onChatgptLogin();
-      return;
-    }
-    if (id === ZAI) {
-      onZaiLogin();
-      return;
-    }
-    const prev = presetById(form.preset);
-    const next = presetById(id);
-    set({
-      preset: id,
-      // 名称没被手动改过（空的，或者还是上一个预设填的）才跟着换
-      name:
-        form.name === "" || form.name === freeName(prev.name, taken)
-          ? freeName(next.name, taken)
-          : form.name,
-      baseUrl: next.baseUrl,
-      protocol: next.protocol,
-      billing: next.billing ?? "per-token",
-    });
-  }
-
   return (
     <div className="flex flex-col gap-4">
+      {/* 服务类型在上一步选定；这里新建和编辑是同一张表单 */}
       <div className="grid grid-cols-2 gap-4">
-        {editing ? (
-          <FormItem label={t.protocol} htmlFor="up-protocol">
-            <ProtocolSelect form={form} set={set} auto={autoProtocol} />
-          </FormItem>
-        ) : (
-          <FormItem label={t.service} htmlFor="up-preset">
-            <ServicePicker id="up-preset" value={form.preset} onPick={pickPreset} />
-          </FormItem>
-        )}
+        <FormItem label={t.protocol} htmlFor="up-protocol">
+          <ProtocolSelect form={form} set={set} auto={autoProtocol} />
+        </FormItem>
         <FormItem label={t.name} htmlFor="up-name">
           <Input
             id="up-name"
@@ -157,11 +121,6 @@ export function ConnectionSection({
       </FormItem>
 
       <div className="grid grid-cols-2 gap-4">
-        {!editing && (
-          <FormItem label={t.protocol} htmlFor="up-protocol">
-            <ProtocolSelect form={form} set={set} auto={autoProtocol} />
-          </FormItem>
-        )}
         <FormItem label={t.auth}>
           {/* 和旁边的下拉框等高 */}
           <div className="flex h-8 items-center">
