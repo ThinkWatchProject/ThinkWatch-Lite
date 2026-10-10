@@ -98,35 +98,29 @@ export function egressLabel(proxy: string): string {
   return proxy;
 }
 
-export const AUTH_MODES: { id: "key" | "oauth"; label: string }[] = [
-  {
-    id: "key",
-    get label() {
-      return textOf(labelsText).apiKey;
-    },
-  },
-  { id: "oauth", label: "OAuth" },
-];
-
 /**
- * Bedrock 上游的认证方式：Bedrock 的 API 密钥（放进 `Authorization: Bearer`），或者
- * AWS 访问密钥（每个请求签名），访问密钥可以写在这里，也可以从 AWS 的 profile 读
+ * 认证方式的叫法。Bedrock 的三种：Bedrock 的 API 密钥（放进 `Authorization: Bearer`），
+ * 或者 AWS 访问密钥（每个请求签名），访问密钥可以写在这里，也可以从 AWS 的 profile 读。
+ * 登录账号按服务叫：OpenAI 的是「ChatGPT 账号」，Z.ai / BigModel 的是「账号登录」
  */
-export const BEDROCK_AUTH_MODES: { id: "key" | "aws-keys" | "aws-profile"; label: string }[] = [
-  {
-    id: "key",
-    get label() {
-      return textOf(labelsText).apiKey;
-    },
-  },
-  {
-    id: "aws-keys",
-    get label() {
-      return textOf(labelsText).accessKeys;
-    },
-  },
-  { id: "aws-profile", label: "AWS profile" },
-];
+export function authModeLabel(
+  mode: "key" | "oauth" | "aws-keys" | "aws-profile" | "account",
+  presetId: string,
+): string {
+  const t = textOf(labelsText);
+  switch (mode) {
+    case "key":
+      return t.apiKey;
+    case "oauth":
+      return "OAuth";
+    case "aws-keys":
+      return t.accessKeys;
+    case "aws-profile":
+      return "AWS profile";
+    case "account":
+      return presetId === "openai" ? t.chatgptAccount : t.accountSignIn;
+  }
+}
 
 /**
  * 有 Bedrock 推理地址的区域，下拉里的顺序。**只用来生成标准地址** —— 列表外的区域

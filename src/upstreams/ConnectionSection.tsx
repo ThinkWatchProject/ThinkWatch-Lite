@@ -10,26 +10,27 @@ import { Switch } from "@/ui/switch";
 import { cn } from "@/lib/utils";
 import { ms } from "@/format";
 import { useText } from "@/i18n";
-import type { Overview, ProviderPreview, ProviderTestResult, ProviderView } from "@/types";
+import type { Overview, Protocol, ProviderPreview, ProviderTestResult, ProviderView, ZaiFamily } from "@/types";
 import { connectionSectionText } from "./ConnectionSection.i18n";
+import { useSystemProxyLabel } from "@/connection/Remote";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { HeaderEditor, type AuthRow } from "./HeaderEditor";
 import {
-  AUTH_MODES,
-  BEDROCK_AUTH_MODES,
   BEDROCK_REGIONS,
   PROTOCOLS,
   authHeaderParts,
+  authModeLabel,
   bedrockRegionOf,
   bedrockUrl,
   coreText,
   egressLabel,
   protocolLabel,
   proxyKindLabel,
+  shortUrl,
 } from "./labels";
 import { FormItem, Note } from "./parts";
-import { nameFromUrl } from "./presets";
+import { ZAI_ENDPOINTS, nameFromUrl, presetById, type AuthMode } from "./presets";
 import {
   authModeOf,
   concurrencyOf,
@@ -43,6 +44,81 @@ import {
 /** 「新建代理…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
 const NEW_PROXY = " new-proxy";
 
+/**
+ * 认证方式：单独一行、各段等宽。**只在这种服务真有几种时出现**（见 `authOptions`）：
+ * OpenAI 是 API 密钥和 ChatGPT 账号，Z.ai / BigModel 是 API 密钥和账号登录，Bedrock 是
+ * 它那三种，中转、自建网关和自定义是 API 密钥和 OAuth。登录进行中和登录之后不能再换
+ */
+export function AuthField({
+  form,
+  options,
+  onChange,
+  disabled,
+}: {
+  form: UpstreamForm;
+  options: AuthMode[];
+  onChange: (mode: AuthMode) => void;
+  disabled?: boolean;
+}) {
+  const t = useText(connectionSectionText);
+  return (
+    <FormItem label={t.auth}>
+      <Segmented
+        block
+        label={t.auth}
+        value={authModeOf(form)}
+        options={options.map((id) => ({ id, label: authModeLabel(id, form.preset) }))}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    </FormItem>
+  );
+}
+
+/**
+ * Z.ai / BigModel 的站点。同一个服务的两个站点，账号和密钥不通用：API 密钥按它定地址，
+ * 账号登录按它登哪一边
+ */
+export function SiteField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ZaiFamily;
+  onChange: (family: ZaiFamily) => void;
+  disabled?: boolean;
+}) {
+  const t = useText(connectionSectionText);
+  return (
+    <FormItem
+      label={t.site}
+      desc={
+        <>
+          {t.siteDesc} <span className="font-mono">{shortUrl(ZAI_ENDPOINTS[value])}</span>
+        </>
+      }
+    >
+      <Segmented
+        block
+        label={t.site}
+        value={value}
+        options={[
+          { id: "zai" as ZaiFamily, label: t.siteZai },
+          { id: "bigmodel" as ZaiFamily, label: t.siteBigmodel },
+        ]}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    </FormItem>
+  );
+}
+
+/**
+ * 连接：名称、出站代理、地址、协议、凭据、请求头。新建和编辑是同一张表单；新建时
+ * 第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，见 `presets.ts`。
+ * 认证方式那一行和 Z.ai 的站点在这一节上面（`AuthField`、`SiteField`），登录账号时
+ * 这一节整个让位给登录那一块
+ */
 export function ConnectionSection({
   form,
   set,
@@ -69,10 +145,11 @@ export function ConnectionSection({
   // 连着远程 core 时 `${变量名}` 取的是服务器上 core 进程的环境
   const rt = useText(remoteText);
   const remote = useRemote();
-  const proxies = ov.proxies;
   const taken = ov.providers.map((p) => p.name);
   /** 密钥显示与否：输入框和请求头第一行是同一个值，跟着同一个开关 */
   const [showKey, setShowKey] = useState(false);
+  /** 第一步选的服务类型。编辑时是「自定义」：完整的一张表单 */
+  const preset = presetById(form.preset);
   const bedrock = isBedrock(form);
   const mode = authModeOf(form);
   /** 标准 Bedrock 地址里的区域；别的地址是 null */
@@ -82,77 +159,74 @@ export function ConnectionSection({
     : preview?.protocol
       ? t.autoDetected(protocolLabel(preview.protocol))
       : t.autoUndetected;
+  // 标准地址按区域生成；VPC 端点、代理这些地址，签名用的区域另写。只用 API 密钥时
+  // 不签名，非标准地址也就用不着区域
+  const showRegion = bedrock && (region !== null || mode !== "key");
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 服务类型在上一步选定；这里新建和编辑是同一张表单 */}
+      {/* 名称和出站代理在每种认证方式下都是这一行：换认证方式时它们不挪地方 */}
       <div className="grid grid-cols-2 gap-4">
-        <FormItem label={t.protocol} htmlFor="up-protocol">
-          <ProtocolSelect form={form} set={set} auto={autoProtocol} />
-        </FormItem>
         <FormItem label={t.name} htmlFor="up-name">
           <Input
             id="up-name"
             className="font-mono"
             value={form.name}
-            placeholder={nameFromUrl(form.baseUrl) || t.namePlaceholder}
+            placeholder={nameFromUrl(form.baseUrl) || (preset.id === "thinkwatch" ? t.namePlaceholderGateway : t.namePlaceholder)}
             onChange={(e) => set({ name: e.target.value })}
           />
         </FormItem>
+        <ProxyField ov={ov} value={form.proxy} onChange={(proxy) => set({ proxy })} onNewProxy={onNewProxy} />
       </div>
 
-      <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
-        <Input
-          id="up-url"
-          className="font-mono"
-          value={form.baseUrl}
-          placeholder="https://api.example.com"
-          onChange={(e) =>
-            set({
-              baseUrl: e.target.value,
-              // 新建时名称跟着地址猜，直到用户自己填了
-              name:
-                !editing && (form.name === "" || form.name === freeName(nameFromUrl(form.baseUrl), taken))
-                  ? freeName(nameFromUrl(e.target.value), taken)
-                  : form.name,
-            })
-          }
-        />
-      </FormItem>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormItem label={t.auth}>
-          {/* 和旁边的下拉框等高 */}
-          <div className="flex h-8 items-center">
-            {bedrock ? (
-              <Segmented value={mode} options={BEDROCK_AUTH_MODES} onChange={(authMode) => set({ authMode })} />
-            ) : (
-              <Segmented value={mode} options={AUTH_MODES} onChange={(authMode) => set({ authMode })} />
-            )}
-          </div>
+      {/* 地址由这一格定了的（Z.ai 按站点）不显示 */}
+      {!preset.fixedUrl && (
+        <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
+          <Input
+            id="up-url"
+            className="font-mono"
+            value={form.baseUrl}
+            placeholder={preset.id === "thinkwatch" ? "https://gateway.example.com" : "https://api.example.com"}
+            onChange={(e) =>
+              set({
+                baseUrl: e.target.value,
+                // 新建时名称跟着地址猜，直到用户自己填了
+                name:
+                  !editing && (form.name === "" || form.name === freeName(nameFromUrl(form.baseUrl), taken))
+                    ? freeName(nameFromUrl(e.target.value), taken)
+                    : form.name,
+              })
+            }
+          />
         </FormItem>
-      </div>
+      )}
 
-      {/* 标准地址按区域生成；VPC 端点、代理这些地址，签名用的区域另写。只用 API 密钥时
-          不签名，非标准地址也就用不着区域 */}
-      {bedrock && (region !== null || mode !== "key") && (
+      {/* 协议只在真有得选时给选：只说一种接口的服务，选了那一格就定了 */}
+      {(preset.protocols || showRegion) && (
         <div className="grid grid-cols-2 gap-4">
-          <FormItem
-            label={t.region}
-            htmlFor="up-region"
-            desc={region === null ? t.signingRegionDesc : undefined}
-          >
-            <RegionSelect
-              value={region ?? form.awsRegion.trim()}
-              onChange={(r) =>
-                region !== null ? set({ baseUrl: bedrockUrl(r) }) : set({ awsRegion: r })
-              }
-            />
-          </FormItem>
+          {preset.protocols && (
+            <FormItem label={t.protocol} htmlFor="up-protocol">
+              <ProtocolSelect form={form} set={set} options={preset.protocols} auto={autoProtocol} />
+            </FormItem>
+          )}
+          {showRegion && (
+            <FormItem
+              label={t.region}
+              htmlFor="up-region"
+              desc={region === null ? t.signingRegionDesc : undefined}
+            >
+              <RegionSelect
+                value={region ?? form.awsRegion.trim()}
+                onChange={(r) =>
+                  region !== null ? set({ baseUrl: bedrockUrl(r) }) : set({ awsRegion: r })
+                }
+              />
+            </FormItem>
+          )}
         </div>
       )}
 
-      {mode === "key" && (
+      {mode === "key" && preset.key !== "none" && (
         <FormItem label={t.apiKey} htmlFor="up-key" desc={remote ? rt.keyHint : undefined}>
           <SecretInput
             id="up-key"
@@ -192,42 +266,21 @@ export function ConnectionSection({
         />
       </FormItem>
 
-      <div className="flex flex-col gap-1.5">
-        <label className="flex items-center gap-2.5 tw-body font-medium">
-          <Switch
-            checked={form.forwardClientIdentity}
-            onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
-          />
-          {t.clientIdentity}
-        </label>
-        <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
-      </div>
+      {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
+      {preset.clientIdentity && (
+        <div className="flex flex-col gap-1.5">
+          <label className="flex items-center gap-2.5 tw-body font-medium">
+            <Switch
+              checked={form.forwardClientIdentity}
+              onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
+            />
+            {t.clientIdentity}
+          </label>
+          <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
-        <FormItem label={t.proxy} htmlFor="up-proxy">
-          <NativeSelect
-            id="up-proxy"
-            className="w-full"
-            value={form.proxy}
-            onChange={(e) =>
-              e.target.value === NEW_PROXY ? onNewProxy() : set({ proxy: e.target.value })
-            }
-          >
-            <NativeSelectOption value="direct">{egressLabel("direct")}</NativeSelectOption>
-            <NativeSelectOption value="system">{egressLabel("system")}</NativeSelectOption>
-            {proxies.map((x) => (
-              <NativeSelectOption key={x.name} value={x.name}>
-                {x.name} · {proxyKindLabel(x.kind)} {x.addr}
-              </NativeSelectOption>
-            ))}
-            {form.proxy !== "direct" &&
-              form.proxy !== "system" &&
-              !proxies.some((x) => x.name === form.proxy) && (
-                <NativeSelectOption value={form.proxy}>{form.proxy}</NativeSelectOption>
-              )}
-            <NativeSelectOption value={NEW_PROXY}>{t.newProxy}</NativeSelectOption>
-          </NativeSelect>
-        </FormItem>
         <FormItem label={t.onProxyFail} htmlFor="up-proxy-fail">
           <NativeSelect
             id="up-proxy-fail"
@@ -240,9 +293,6 @@ export function ConnectionSection({
             <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
           </NativeSelect>
         </FormItem>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <ConcurrencyField form={form} set={set} />
       </div>
 
@@ -263,6 +313,54 @@ export function ConnectionSection({
         {test && !testing && <TestLine result={test} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * 出站代理：直连、系统代理（连着远程 core 时是服务器的）、各个代理，最后一项新建一个。
+ * 登录账号那一块也用它：登录本身也经它发出
+ */
+export function ProxyField({
+  ov,
+  value,
+  onChange,
+  onNewProxy,
+  disabled,
+  desc,
+}: {
+  ov: Overview;
+  value: string;
+  onChange: (proxy: string) => void;
+  /** 下拉最后一项「新建代理…」。不给就没有这一项（重新登录的对话框里不套一层新建） */
+  onNewProxy?: () => void;
+  disabled?: boolean;
+  desc?: string;
+}) {
+  const t = useText(connectionSectionText);
+  const systemProxy = useSystemProxyLabel(egressLabel("system"));
+  const proxies = ov.proxies;
+  return (
+    <FormItem label={t.proxy} htmlFor="up-proxy" desc={desc}>
+      <NativeSelect
+        id="up-proxy"
+        className="w-full"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => (e.target.value === NEW_PROXY ? onNewProxy?.() : onChange(e.target.value))}
+      >
+        <NativeSelectOption value="direct">{egressLabel("direct")}</NativeSelectOption>
+        <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
+        {proxies.map((x) => (
+          <NativeSelectOption key={x.name} value={x.name}>
+            {x.name} · {proxyKindLabel(x.kind)} {x.addr}
+          </NativeSelectOption>
+        ))}
+        {value !== "direct" && value !== "system" && !proxies.some((x) => x.name === value) && (
+          <NativeSelectOption value={value}>{value}</NativeSelectOption>
+        )}
+        {onNewProxy && <NativeSelectOption value={NEW_PROXY}>{t.newProxy}</NativeSelectOption>}
+      </NativeSelect>
+    </FormItem>
   );
 }
 
@@ -302,24 +400,31 @@ export function ConcurrencyField({
   );
 }
 
+/**
+ * 接口协议。`all`：全部，外加自动识别（按地址认，认不出来按客户端发来的格式原样转发）；
+ * 给了几种就只在这几种里选（OpenAI 的 Chat Completions 和 Responses）
+ */
 function ProtocolSelect({
   form,
   set,
+  options,
   auto,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
+  options: Protocol[] | "all";
   auto: string;
 }) {
+  const list = options === "all" ? PROTOCOLS : PROTOCOLS.filter((p) => options.includes(p.id));
   return (
     <NativeSelect
       id="up-protocol"
       className="w-full"
       value={form.protocol}
-      onChange={(e) => set({ protocol: PROTOCOLS.find((p) => p.id === e.target.value)?.id ?? "" })}
+      onChange={(e) => set({ protocol: list.find((p) => p.id === e.target.value)?.id ?? "" })}
     >
-      <NativeSelectOption value="">{auto}</NativeSelectOption>
-      {PROTOCOLS.map((p) => (
+      {options === "all" && <NativeSelectOption value="">{auto}</NativeSelectOption>}
+      {list.map((p) => (
         <NativeSelectOption key={p.id} value={p.id}>
           {p.label}
         </NativeSelectOption>

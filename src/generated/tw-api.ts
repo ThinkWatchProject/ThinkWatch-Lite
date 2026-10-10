@@ -3379,11 +3379,16 @@ pricing?: string | null,
 /**
  * 同时最多发给这家几个请求，1 到 1000。不给就是不限
  */
-max_concurrent?: number | null, 
+max_concurrent?: number | null,
 /**
  * 停用
  */
-disabled: boolean, };
+disabled: boolean,
+/**
+ * 余额从哪里读：`auto`（按地址认，认不出来探测一次）、`off`，或者指定一种来源。
+ * 不给就是 `auto`
+ */
+balance?: "auto" | "off" | "openrouter" | "deepseek" | "moonshot" | "sub2api" | "newapi" | "thinkwatch", };
 
 /**
  * 一个上游的模型清单。

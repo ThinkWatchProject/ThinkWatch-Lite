@@ -18,6 +18,7 @@ export const labelsText = messages(
     systemProxy: "系统代理",
     apiKey: "API 密钥",
     accessKeys: "访问密钥",
+    accountSignIn: "账号登录",
     models: {
       discovered: "自动发现",
       manual: "手动添加",
@@ -100,6 +101,7 @@ export const labelsText = messages(
     systemProxy: "System proxy",
     apiKey: "API key",
     accessKeys: "Access keys",
+    accountSignIn: "Account sign-in",
     models: {
       discovered: "Discovered",
       manual: "Added by hand",

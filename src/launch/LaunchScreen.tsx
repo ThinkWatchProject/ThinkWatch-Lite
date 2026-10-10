@@ -6,6 +6,7 @@ import { troubleText } from "./trouble.i18n";
 import { launchText } from "./LaunchScreen.i18n";
 import { launchPhase } from "./phase";
 import { connText } from "@/connection/connection.i18n";
+import { TW_STROKES } from "@/ui/tw-strokes";
 
 /**
  * 至少停多久。**冷启动每次都停**：秒开也不跳过，四笔要画完、亮一下。
@@ -25,20 +26,8 @@ const SLOW_MS = 5_000;
 */
 const RestartButton = lazy(() => import("./RestartButton"));
 
-/**
- * TW 四笔和各自的长度。坐标和应用图标（src-tauri/icons/render.py 的 STROKES）
- * 是同一套。
- *
- * **长度写死，不用 `pathLength="1"` 归一。**虚线按归一的长度算，WebKit 各个
- * 版本的支持不一样；写死的长度哪儿都一样。V 的一边是 √(4.5² + 8²)
- */
-const V = Math.hypot(4.5, 8);
-const STROKES: [string, number][] = [
-  ["M7 9H25", 18],
-  ["M16 9V17", 8],
-  ["M7 17L11.5 25L16 17", 2 * V],
-  ["M16 17L20.5 25L25 17", 2 * V],
-];
+/** TW 四笔（见 `@/ui/tw-strokes`：那个文件不引任何东西，不会把启动画面这一块撑大） */
+const STROKES = TW_STROKES;
 
 /**
  * 启动画面：开窗到主界面能用之间的那一面。

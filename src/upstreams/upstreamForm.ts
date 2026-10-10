@@ -7,6 +7,9 @@
  *
  * Bedrock 上游的凭据有三种：API 密钥（走 `key`），写在这里的访问密钥，或者从 AWS 的
  * profile 读访问密钥（后两种都在 `aws` 里）。
+ *
+ * 新建时第一步选的服务类型（`preset`）决定这张表单问什么：认证方式有哪几种、协议给不给
+ * 选、要不要密钥、余额从哪里读（见 `presets.ts`）。编辑时没有预设，按「自定义」那一张。
  */
 import { textOf } from "@/i18n";
 import type {
@@ -20,14 +23,14 @@ import type {
   Protocol,
   ProviderInput,
   ProviderView,
+  ZaiFamily,
 } from "@/types";
 import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
-import { CUSTOM, presetById } from "./presets";
+import { CUSTOM, ZAI_ENDPOINTS, nameFromUrl, presetById, type AuthMode } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
-/** `aws-keys` / `aws-profile` 只给 Bedrock 上游 */
-export type AuthMode = "key" | "oauth" | "aws-keys" | "aws-profile";
+export type { AuthMode } from "./presets";
 
 /** 请求头表里的一行 */
 export interface HeaderRow {
@@ -53,6 +56,8 @@ interface OAuthFields {
 
 export interface UpstreamForm {
   preset: string;
+  /** Z.ai / BigModel 那一格选的站点：定了地址（API 密钥）或登录哪一边（账号） */
+  zaiFamily: ZaiFamily;
   name: string;
   baseUrl: string;
   /** 空 = 自动识别 */
@@ -111,31 +116,86 @@ export function freeName(base: string, taken: string[]): string {
 }
 
 /**
+ * 这张表单此刻默认叫什么：预设的名字；登录 ChatGPT 账号是 `chatgpt`，Z.ai / BigModel 按
+ * 站点（和 core 登录时不给名字的叫法一样）。没有固定地址的（中转、自建网关）是空的，跟着
+ * 地址猜
+ */
+export function defaultName(f: Pick<UpstreamForm, "preset" | "authMode" | "zaiFamily">): string {
+  if (f.preset === "zai") return f.zaiFamily;
+  if (f.preset === "openai" && f.authMode === "account") return "chatgpt";
+  return presetById(f.preset).name;
+}
+
+/**
+ * 名称是不是还没人动过：空的、还是这张表单默认的那个，或者是跟着地址猜的那个。动过的
+ * 名称换服务类型、换认证方式、换站点时都留着
+ */
+function untouchedName(f: UpstreamForm, taken: string[]): boolean {
+  const n = f.name;
+  return n === "" || n === freeName(defaultName(f), taken) || n === freeName(nameFromUrl(f.baseUrl), taken);
+}
+
+/** 跟着改过的那几项重新起名：没动过的换成新的默认名，动过的留着 */
+function renamed(prev: UpstreamForm, next: UpstreamForm, taken: string[]): string {
+  return untouchedName(prev, taken) ? freeName(defaultName(next), taken) : prev.name;
+}
+
+/**
  * 新建的第一步选了一种服务类型：预设填进表单。
  *
- * 名称只在没被手动改过时跟着换（空的，或者还是上一个预设填的）；地址、协议、计费
- * 一律按预设 —— 这一步就是用来定这几样的。「自定义」清空地址和协议，交给人填。
+ * 名称只在没被手动改过时跟着换；地址、协议、计费一律按预设 —— 这一步就是用来定这几样
+ * 的。「自定义」清空地址和协议，交给人填。认证方式这一格没有的，换成它的第一种。
  */
 export function applyPreset(form: UpstreamForm, id: string, taken: string[]): UpstreamForm {
-  const prev = presetById(form.preset);
   const next = presetById(id);
-  return {
+  const out: UpstreamForm = {
     ...form,
     preset: next.id,
-    name:
-      form.name === "" || form.name === freeName(prev.name, taken)
-        ? freeName(next.name, taken)
-        : form.name,
-    baseUrl: next.baseUrl,
+    baseUrl: next.id === "zai" ? ZAI_ENDPOINTS[form.zaiFamily] : next.baseUrl,
     protocol: next.protocol,
     billing: next.billing ?? "per-token",
+    authMode: next.auth.includes(form.authMode) ? form.authMode : next.auth[0]!,
   };
+  return { ...out, name: renamed(form, out, taken) };
+}
+
+/**
+ * 换认证方式。名称没动过就跟着换：OpenAI 用 API 密钥默认叫 `openai`，登录 ChatGPT
+ * 账号默认叫 `chatgpt`
+ */
+export function withAuth(form: UpstreamForm, authMode: AuthMode, taken: string[]): UpstreamForm {
+  const out = { ...form, authMode };
+  return { ...out, name: renamed(form, out, taken) };
+}
+
+/** Z.ai / BigModel 换站点：地址跟着换，名称没动过也跟着换 */
+export function withSite(form: UpstreamForm, zaiFamily: ZaiFamily, taken: string[]): UpstreamForm {
+  const out = {
+    ...form,
+    zaiFamily,
+    baseUrl: form.preset === "zai" ? ZAI_ENDPOINTS[zaiFamily] : form.baseUrl,
+  };
+  return { ...out, name: renamed(form, out, taken) };
+}
+
+/** Bedrock 的三种认证方式 */
+const BEDROCK_AUTH: AuthMode[] = ["key", "aws-keys", "aws-profile"];
+
+/**
+ * 这张表单能选的认证方式，按服务实际有的。「自定义」（编辑时也按它）是 API 密钥和 OAuth，
+ * 地址是 Bedrock 的就是 Bedrock 那三种。只有一种时界面上不显示那一行
+ */
+export function authOptions(f: Pick<UpstreamForm, "preset" | "protocol" | "baseUrl">): AuthMode[] {
+  const p = presetById(f.preset);
+  if (p.id === CUSTOM.id) return isBedrock(f) ? BEDROCK_AUTH : CUSTOM.auth;
+  return p.auth;
 }
 
 /** 新建时的空表单。服务类型在第一步选，从「自定义」开始 */
 export function blankForm(): UpstreamForm {
   return {
     preset: CUSTOM.id,
+    zaiFamily: "zai",
     name: "",
     baseUrl: "",
     protocol: "",
@@ -195,6 +255,7 @@ export function formFromDraft(d: BedrockDraft, taken: string[]): UpstreamForm {
 export function formFromView(p: ProviderView): UpstreamForm {
   return {
     preset: "custom",
+    zaiFamily: "zai",
     name: p.name,
     baseUrl: p.base_url,
     protocol: p.protocol_explicit ? (p.protocol ?? "") : "",
@@ -236,18 +297,17 @@ export function formFromView(p: ProviderView): UpstreamForm {
  * 这一家是 Bedrock：协议选的就是它，或者自动识别、地址是标准的 Bedrock 地址（core 按
  * 同一个规矩认）。**不等识别结果**：那是异步的，换地址的一瞬间会闪一下
  */
-export function isBedrock(f: UpstreamForm): boolean {
+export function isBedrock(f: Pick<UpstreamForm, "protocol" | "baseUrl">): boolean {
   return f.protocol === "bedrock" || (f.protocol === "" && bedrockRegionOf(f.baseUrl) !== null);
 }
 
 /**
  * 实际生效的认证方式。换了协议之后原来那种不再适用（Bedrock 不收 OAuth，访问密钥
- * 只给 Bedrock）：按 API 密钥算。**表单里填过的留着**，切回来还在
+ * 只给 Bedrock），换了服务类型之后它没有的那种也不算：按 API 密钥算。**表单里填过的
+ * 留着**，切回来还在
  */
 export function authModeOf(f: UpstreamForm): AuthMode {
-  const aws = f.authMode === "aws-keys" || f.authMode === "aws-profile";
-  if (isBedrock(f) ? f.authMode === "oauth" : aws) return "key";
-  return f.authMode;
+  return authOptions(f).includes(f.authMode) ? f.authMode : "key";
 }
 
 /** OAuth 凭据和回填的一样：保存时交「保持原样」，检测时用网关现有的 token */
@@ -297,11 +357,17 @@ function awsInput(f: UpstreamForm): AwsKeys | undefined {
   return undefined;
 }
 
+/**
+ * 交给 core 的定义。**余额从哪里读由第一步选的服务类型定**（Sub2API、New API、ThinkWatch
+ * 企业网关），不给就是自动：按地址认，认不出来探测一次。界面上没有选余额来源的地方
+ */
 export function toInput(f: UpstreamForm): ProviderInput {
+  const balance = presetById(f.preset).balance;
   return {
     name: f.name,
     base_url: f.baseUrl.trim(),
-    key: authModeOf(f) === "key" ? f.key.trim() || undefined : undefined,
+    ...(balance ? { balance } : {}),
+    key: authModeOf(f) === "key" && presetById(f.preset).key !== "none" ? f.key.trim() || undefined : undefined,
     headers: headerInputs(f),
     oauth: oauthChange(f),
     aws: awsInput(f),
@@ -351,11 +417,15 @@ export function connectionMissing(
   taken: string[],
 ): string | null {
   const t = textOf(upstreamFormText);
+  const mode = authModeOf(f);
+  // 登录账号：名称、重名由登录那一块自己查（Z.ai 同名同站点是换密钥，不算重名），
+  // 上游在登录成功时由 core 写进配置
+  if (mode === "account") return t.signIn;
   const name = f.name.trim();
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);
   if (f.baseUrl.trim() === "") return t.baseUrl;
-  const mode = authModeOf(f);
+  if (mode === "key" && presetById(f.preset).key === "required" && f.key.trim() === "") return t.key;
   if (
     mode === "oauth" &&
     !oauthKept(f) &&

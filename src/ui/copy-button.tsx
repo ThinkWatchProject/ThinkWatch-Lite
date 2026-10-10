@@ -48,14 +48,23 @@ export function CopyButton({
   onCopy,
   label,
   disabled,
+  flashAtStart = false,
 }: {
   onCopy: () => Promise<void>;
   label?: string;
   disabled?: boolean;
+  /** 一出现就是「已复制」：内容在它出现之前已经复制过了（「复制登录链接」开始的那次登录） */
+  flashAtStart?: boolean;
 }) {
   const common = useText(commonText);
   const [copied, flash] = useFlash();
   const [busy, setBusy] = useState(false);
+  const firstFlash = useRef(flashAtStart);
+  useEffect(() => {
+    if (firstFlash.current) flash();
+    // 只在出现时亮一下
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <Button
       variant="outline"
