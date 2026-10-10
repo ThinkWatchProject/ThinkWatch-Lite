@@ -30,7 +30,7 @@ before the client runs them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
-  <img src="docs/screenshots/en/overview-light.png" alt="The overview for the last seven days: tokens, cost and requests against the seven days before, with the estimated part of the cost and the unpriced requests stated; a trend chart stacked by model with the periods that had failures marked; and the models ranked by tokens and cost">
+  <img src="docs/screenshots/en/overview-light.png" alt="The overview for the last seven days: what needs attention (failed requests, a cut tool call, unpriced requests); six cards for tokens, cost, cache hits, requests, first token and traffic, each with the change against the seven days before and a chart; and the statistics by model below">
 </picture>
 
 ## Highlights
