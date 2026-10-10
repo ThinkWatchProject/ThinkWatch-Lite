@@ -52,10 +52,7 @@ export const appText = messages(
     rejectedAt: (stage: string, line: number | null) =>
       `${stage}错误${line != null ? `（第 ${line} 行）` : ""}：`,
 
-    // token 端点换发了新凭据
-    rotatedSaved: (provider: ReactNode) => <>{provider} 的 token 端点已换发新凭据，并已写回 config.yaml。</>,
-    reloadTip: "如果编辑器中打开了 config.yaml，编辑器可能提示「文件已在磁盘上更改」，需重新加载。",
-    reload: "编辑器需重新加载",
+    // token 端点换发了新凭据但没写回
     rotatedUnsaved: (provider: string) => `${provider} 已换发新凭据，但未能写回 config.yaml。当前转发正常。`,
     oldRevoked: (em: Em) => <>原凭据已在服务端失效。{em("重启前如未处理，该上游的请求将持续返回 401")}。</>,
 
@@ -99,12 +96,6 @@ export const appText = messages(
     rejectedTitle: "Config validation failed; the previous version is still in use",
     rejectedAt: (stage: string, line: number | null) => `${stage} error${line != null ? ` (line ${line})` : ""}: `,
 
-    rotatedSaved: (provider: ReactNode) => (
-      <>The token endpoint for {provider} issued new credentials; they have been written back to config.yaml.</>
-    ),
-    reloadTip:
-      "If config.yaml is open in an editor, the editor may report “The file has been changed on disk” and needs to reload it.",
-    reload: "Editor needs to reload",
     rotatedUnsaved: (provider: string) =>
       `${provider} issued new credentials, but they could not be written back to config.yaml. Forwarding currently works normally.`,
     oldRevoked: (em: Em) => (

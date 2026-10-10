@@ -453,11 +453,8 @@ export function useRequests(ready: boolean) {
   /**
    * token 端点换发了 refresh token。
    *
-   * 写回成功的只报一次，是**告知**：用户的配置文件被我们改了，哪怕改得
-   * 完全正确，他的编辑器弹「文件已更改」时也该知道是谁干的。
-   *
-   * 写回失败的**不自动消失**：重启之前不处理，那家上游就废了。同一个
-   * 上游只留最新那条 —— 失败每次都会报，攒着只是同一句话的副本。
+   * **只留写回失败的**：重启之前不处理，那家上游就废了。写回成功是网关的分内事，
+   * 不拿来打扰人。同一个上游只留最新那条 —— 失败每次都会报，攒着只是同一句话的副本。
    */
   const [rotated, setRotated] = useState<Extract<CoreEvent, { kind: "credential_rotated" }>[]>([]);
   /**
@@ -654,7 +651,7 @@ export function useRequests(ready: boolean) {
         }
         if (ev.kind === "locally_answered") local += 1;
         if (ev.kind === "config_rejected") setRejected(ev);
-        if (ev.kind === "credential_rotated") {
+        if (ev.kind === "credential_rotated" && !ev.persisted) {
           setRotated((prev) => [...prev.filter((x) => x.provider !== ev.provider), ev]);
         }
         if (ev.kind === "config_reloaded") {

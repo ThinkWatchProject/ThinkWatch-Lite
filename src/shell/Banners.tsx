@@ -12,7 +12,6 @@ import { useIgnored } from "@/ignore";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
-import { Tip } from "@/ui/tip";
 
 /**
  * 工具栏下面那一摞横幅：配置被拒、凭据换发、断线。**状态类的事都在这里**，不走吐司 ——
@@ -35,6 +34,7 @@ export function Banners({
   rejected: Extract<CoreEvent, { kind: "config_rejected" }> | null;
   broken: boolean;
   repair: { fixes: ConfigFix[]; repairing: boolean; repair: () => void };
+  /** 换发了凭据但没写回的（`useRequests` 只留这种） */
   rotated: Extract<CoreEvent, { kind: "credential_rotated" }>[];
   onCloseRotated: (provider: string) => void;
   /** 连着远程、连上过、现在断了 */
@@ -108,42 +108,23 @@ export function Banners({
       </Banner>
 
       {/*
-        token 端点换发了新的 refresh token。**两种完全不同的话，长得也要不一样**：
-        写回成功只是告知（编辑器会弹「文件已更改」，该知道是谁改的）；写回失败是
-        必须处理的问题：重启之前不解决，该上游就不可用了。
+        token 端点换发了新的 refresh token，但没能写回配置：必须处理的问题，重启之前不解决，
+        该上游就不可用了。写回成功的不说（`useRequests` 里就不留）：那是网关的分内事。
       */}
       {rotated.map((r) => (
         <Reveal key={r.provider} show>
-          {r.persisted ? (
-            <Banner
-              tone="info"
-              actions={
-                <Button variant="ghost" size="xs" onClick={() => onCloseRotated(r.provider)}>
-                  {common.close}
-                </Button>
-              }
-            >
-              {t.rotatedSaved(<span className="font-medium">{r.provider}</span>)}
-              <Tip text={t.reloadTip}>
-                <span className="ml-1 text-muted-foreground underline decoration-dotted underline-offset-2">
-                  {t.reload}
-                </span>
-              </Tip>
-            </Banner>
-          ) : (
-            <Banner
-              tone="error"
-              title={t.rotatedUnsaved(r.provider)}
-              actions={
-                <Button variant="ghost" size="sm" onClick={() => onCloseRotated(r.provider)}>
-                  {common.close}
-                </Button>
-              }
-            >
-              <p>{coreText(r.detail)}</p>
-              <p className="mt-0.5">{t.oldRevoked((s) => <span className="font-medium">{s}</span>)}</p>
-            </Banner>
-          )}
+          <Banner
+            tone="error"
+            title={t.rotatedUnsaved(r.provider)}
+            actions={
+              <Button variant="ghost" size="sm" onClick={() => onCloseRotated(r.provider)}>
+                {common.close}
+              </Button>
+            }
+          >
+            <p>{coreText(r.detail)}</p>
+            <p className="mt-0.5">{t.oldRevoked((s) => <span className="font-medium">{s}</span>)}</p>
+          </Banner>
         </Reveal>
       ))}
 

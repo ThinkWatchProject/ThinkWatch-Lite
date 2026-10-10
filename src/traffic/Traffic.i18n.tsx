@@ -146,7 +146,7 @@ export const trafficText = messages(
     /** 决定去向的规则用了「指定模型」：上游和模型都是规则列出的 */
     pinned: "指定",
     pinnedTip: (rule: string, upstream: string, sent: string) => `规则「${rule}」指定了发往 ${upstream} 的模型：${sent}。`,
-    redactedTip: (items: string[]) => `发送前已替换：${items.join("、")}\n模型回显的内容将自动还原。`,
+    redactedTip: (items: string[]) => `发送前已替换：${items.join("、")}`,
     redacted: (n: number) => `已脱敏 ${n}`,
     secretsTip: (items: string[]) => `请求中含有凭据，已原样发出：${items.join("、")}`,
     withSecrets: (n: number) => `含凭据 ${n}`,
@@ -290,8 +290,7 @@ export const trafficText = messages(
     pinned: "Pinned",
     pinnedTip: (rule: string, upstream: string, sent: string) =>
       `Rule “${rule}” pins the model sent to ${upstream}: ${sent}.`,
-    redactedTip: (items: string[]) =>
-      `Replaced before sending: ${items.join(", ")}\nContent echoed by the model is restored automatically.`,
+    redactedTip: (items: string[]) => `Replaced before sending: ${items.join(", ")}`,
     redacted: (n: number) => `Redacted ${n}`,
     secretsTip: (items: string[]) => `Sent as is, with credentials in it: ${items.join(", ")}`,
     withSecrets: (n: number) => `Credentials ${n}`,
